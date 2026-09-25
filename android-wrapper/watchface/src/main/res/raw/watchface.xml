@@ -1,65 +1,71 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  CrewCheck Pulse — 450x450, Galaxy Watch 4 (44 mm) e demais Wear OS 4+.
+  CrewCheck Pulse Premium — round-first 450x450 Watch Face Format face.
 
-  Desenho de relógio digital antes de painel de app: a hora domina o mostrador, e cada
-  domínio CrewCheck ocupa um slot próprio e discreto ao redor dela.
-
-  Em ambiente (always-on) ficam a hora fina, a escala e o portão — é para isso que o
-  relógio serve num voo. CrewLife, Rotina e bateria somem: dado de saúde não fica aceso
-  numa tela que quem está do lado enxerga, e apagar esses pixels ajuda a bateria.
-
-  Cada slot aponta para uma FONTE DE DADOS distinta, porque no seletor do Wear OS é a fonte
-  que se escolhe, não o slot. O slot 1 mantém de propósito o provider histórico
-  (CrewCheckComplicationService): já há instalações configuradas contra ele.
+  Design goals:
+  - the time is always the visual hero;
+  - one operational card answers "what is next?";
+  - gate + battery stay at the top edge without competing with the clock;
+  - CrewLife, steps and routine are compact glance surfaces, not an app dashboard;
+  - ambient mode keeps only time/date plus operationally useful gate/next-step data;
+  - existing slot ids/providers stay stable so configured peers do not silently downgrade.
 -->
 <WatchFace width="450" height="450">
     <Metadata key="CLOCK_TYPE" value="DIGITAL" />
-    <Metadata key="PREVIEW_TIME" value="10:42:00" />
+    <Metadata key="PREVIEW_TIME" value="18:16:00" />
 
-    <Scene backgroundColor="#FF050B14">
-        <!-- Anéis de identidade. Decorativos, somem em ambiente. -->
-        <PartDraw x="45" y="45" width="360" height="360">
-            <Ellipse x="0" y="0" width="360" height="360">
-                <Stroke thickness="3" color="#5538BDF8" />
+    <Scene backgroundColor="#FF000000">
+        <!-- Subtle instrument identity; both rings disappear in ambient. -->
+        <PartDraw x="24" y="24" width="402" height="402">
+            <Ellipse x="0" y="0" width="402" height="402">
+                <Stroke thickness="2" color="#5522D3EE" />
             </Ellipse>
             <Variant mode="AMBIENT" target="alpha" value="0" />
         </PartDraw>
 
-        <PartDraw x="53" y="53" width="344" height="344">
-            <Ellipse x="0" y="0" width="344" height="344">
-                <Stroke thickness="2" color="#444C1D95" />
+        <PartDraw x="34" y="34" width="382" height="382">
+            <Ellipse x="0" y="0" width="382" height="382">
+                <Stroke thickness="1" color="#448B5CF6" />
             </Ellipse>
             <Variant mode="AMBIENT" target="alpha" value="0" />
         </PartDraw>
 
-        <PartText x="0" y="34" width="450" height="22">
+        <!-- Restrained brand signature. -->
+        <PartText x="0" y="28" width="450" height="20">
             <Text align="CENTER">
-                <Font family="SYNC_TO_DEVICE" size="16" weight="BOLD" color="#FF22D3EE"><![CDATA[CrewCheck]]></Font>
+                <Font family="SYNC_TO_DEVICE" size="12" weight="BOLD" color="#FF22D3EE"><![CDATA[CREWCHECK]]></Font>
             </Text>
             <Variant mode="AMBIENT" target="alpha" value="0" />
         </PartText>
 
-        <!-- ===== Faixa superior: portão à esquerda, bateria à direita ===== -->
+        <!-- ===== Top status rail: gate + battery ===== -->
+
+        <PartDraw x="68" y="56" width="142" height="36">
+            <RoundRectangle x="0" y="0" width="142" height="36" cornerRadiusX="18" cornerRadiusY="18">
+                <Fill color="#FF0C1726" />
+                <Stroke thickness="1" color="#554C8DF8" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
 
         <ComplicationSlot
-            x="105"
-            y="60"
-            width="112"
-            height="30"
+            x="68"
+            y="56"
+            width="142"
+            height="36"
             slotId="2"
             displayName="gate_label"
             supportedTypes="SHORT_TEXT EMPTY">
-            <BoundingRoundBox x="0" y="0" width="112" height="30" outlinePadding="2.0" cornerRadius="15" />
+            <BoundingRoundBox x="0" y="0" width="142" height="36" outlinePadding="2.0" cornerRadius="18" />
             <DefaultProviderPolicy
                 primaryProvider="com.crewcheck.app/com.crewcheck.watch.GateComplicationService"
                 primaryProviderType="SHORT_TEXT"
                 defaultSystemProvider="EMPTY"
                 defaultSystemProviderType="EMPTY" />
             <Complication type="SHORT_TEXT">
-                <PartText x="0" y="3" width="112" height="24">
+                <PartText x="6" y="5" width="130" height="26">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="17" weight="BOLD" color="#FFF59E0B">
+                        <Font family="SYNC_TO_DEVICE" size="16" weight="BOLD" color="#FFFBBF24">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TEXT]" /></Template>
                         </Font>
                     </Text>
@@ -67,22 +73,30 @@
             </Complication>
         </ComplicationSlot>
 
+        <PartDraw x="240" y="56" width="142" height="36">
+            <RoundRectangle x="0" y="0" width="142" height="36" cornerRadiusX="18" cornerRadiusY="18">
+                <Fill color="#FF0C1726" />
+                <Stroke thickness="1" color="#334B647C" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
+
         <ComplicationSlot
-            x="233"
-            y="60"
-            width="112"
-            height="30"
+            x="240"
+            y="56"
+            width="142"
+            height="36"
             slotId="5"
             displayName="battery_label"
             supportedTypes="SHORT_TEXT EMPTY">
-            <BoundingRoundBox x="0" y="0" width="112" height="30" outlinePadding="2.0" cornerRadius="15" />
+            <BoundingRoundBox x="0" y="0" width="142" height="36" outlinePadding="2.0" cornerRadius="18" />
             <DefaultProviderPolicy
                 defaultSystemProvider="WATCH_BATTERY"
                 defaultSystemProviderType="SHORT_TEXT" />
             <Complication type="SHORT_TEXT">
-                <PartText x="0" y="3" width="112" height="24">
+                <PartText x="6" y="5" width="130" height="26">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="17" weight="NORMAL" color="#FF9EABBE">
+                        <Font family="SYNC_TO_DEVICE" size="15" weight="BOLD" color="#FFB7C7D9">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TEXT]" /></Template>
                         </Font>
                     </Text>
@@ -91,71 +105,74 @@
             </Complication>
         </ComplicationSlot>
 
-        <!-- ===== Hora ===== -->
+        <!-- ===== Clock ===== -->
 
         <DigitalClock x="0" y="0" width="450" height="450">
-            <!-- Interativo: numeral cheio. -->
             <TimeText
                 x="0"
-                y="96"
+                y="98"
                 width="450"
-                height="100"
+                height="94"
                 alpha="255"
                 align="CENTER"
                 format="hh:mm"
                 hourFormat="SYNC_TO_DEVICE">
-                <Font family="SYNC_TO_DEVICE" size="90" weight="NORMAL" slant="NORMAL" color="#FFFFFFFF" />
+                <Font family="SYNC_TO_DEVICE" size="88" weight="BOLD" slant="NORMAL" color="#FFFFFFFF" />
                 <Variant mode="AMBIENT" target="alpha" value="0" />
             </TimeText>
 
-            <!-- Ambiente: mesmo numeral em peso fino, para gastar menos pixel aceso. -->
             <TimeText
                 x="0"
                 y="104"
                 width="450"
-                height="92"
+                height="88"
                 alpha="0"
                 align="CENTER"
                 format="hh:mm"
                 hourFormat="SYNC_TO_DEVICE">
-                <Font family="SYNC_TO_DEVICE" size="84" weight="THIN" slant="NORMAL" color="#FFDDE3EC" />
+                <Font family="SYNC_TO_DEVICE" size="80" weight="THIN" slant="NORMAL" color="#FFDDE3EC" />
                 <Variant mode="AMBIENT" target="alpha" value="255" />
             </TimeText>
 
             <TimeText
                 x="0"
-                y="200"
+                y="188"
                 width="450"
-                height="26"
+                height="24"
                 alpha="255"
                 align="CENTER"
                 format="EEE dd MMM"
                 hourFormat="SYNC_TO_DEVICE">
-                <Font family="SYNC_TO_DEVICE" size="17" weight="BOLD" slant="NORMAL" color="#FF2DD4BF" />
-                <Variant mode="AMBIENT" target="alpha" value="0" />
+                <Font family="SYNC_TO_DEVICE" size="16" weight="BOLD" slant="NORMAL" color="#FFA78BFA" />
             </TimeText>
         </DigitalClock>
 
-        <PartDraw x="92" y="228" width="266" height="2">
-            <RoundRectangle x="0" y="0" width="266" height="2" cornerRadiusX="1" cornerRadiusY="1">
-                <Fill color="#445B6B7E" />
+        <!-- ===== Operational hero ===== -->
+
+        <PartDraw x="40" y="224" width="370" height="104">
+            <RoundRectangle x="0" y="0" width="370" height="104" cornerRadiusX="32" cornerRadiusY="32">
+                <Fill color="#FF0C1726" />
+                <Stroke thickness="1" color="#554C8DF8" />
             </RoundRectangle>
             <Variant mode="AMBIENT" target="alpha" value="0" />
         </PartDraw>
 
-        <!-- ===== Cartão do próximo passo ===== -->
+        <PartDraw x="48" y="242" width="4" height="68">
+            <RoundRectangle x="0" y="0" width="4" height="68" cornerRadiusX="2" cornerRadiusY="2">
+                <Fill color="#FFEC4899" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
 
         <ComplicationSlot
-            x="46"
-            y="238"
-            width="358"
-            height="88"
+            x="40"
+            y="224"
+            width="370"
+            height="104"
             slotId="1"
             displayName="next_step_label"
             supportedTypes="LONG_TEXT SHORT_TEXT EMPTY">
-            <BoundingRoundBox x="0" y="0" width="358" height="88" outlinePadding="2.0" cornerRadius="30" />
-
-            <!-- Provider histórico de propósito: há instalações já configuradas contra ele. -->
+            <BoundingRoundBox x="0" y="0" width="370" height="104" outlinePadding="2.0" cornerRadius="32" />
             <DefaultProviderPolicy
                 primaryProvider="com.crewcheck.app/com.crewcheck.watch.CrewCheckComplicationService"
                 primaryProviderType="LONG_TEXT"
@@ -163,16 +180,16 @@
                 defaultSystemProviderType="EMPTY" />
 
             <Complication type="LONG_TEXT">
-                <PartText x="14" y="6" width="330" height="24">
+                <PartText x="22" y="12" width="326" height="22">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="15" weight="BOLD" color="#FFEC4899">
+                        <Font family="SYNC_TO_DEVICE" size="13" weight="BOLD" color="#FFEC4899">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TITLE]" /></Template>
                         </Font>
                     </Text>
                 </PartText>
-                <PartText x="14" y="32" width="330" height="50">
+                <PartText x="22" y="36" width="326" height="58">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="23" weight="BOLD" color="#FFFFFFFF">
+                        <Font family="SYNC_TO_DEVICE" size="25" weight="BOLD" color="#FFFFFFFF">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TEXT]" /></Template>
                         </Font>
                     </Text>
@@ -180,16 +197,16 @@
             </Complication>
 
             <Complication type="SHORT_TEXT">
-                <PartText x="14" y="6" width="330" height="22">
+                <PartText x="22" y="12" width="326" height="22">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="15" weight="BOLD" color="#FF22D3EE">
+                        <Font family="SYNC_TO_DEVICE" size="13" weight="BOLD" color="#FF22D3EE">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TITLE]" /></Template>
                         </Font>
                     </Text>
                 </PartText>
-                <PartText x="14" y="30" width="330" height="52">
+                <PartText x="22" y="36" width="326" height="58">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="30" weight="BOLD" color="#FFFFFFFF">
+                        <Font family="SYNC_TO_DEVICE" size="29" weight="BOLD" color="#FFFFFFFF">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TEXT]" /></Template>
                         </Font>
                     </Text>
@@ -197,34 +214,42 @@
             </Complication>
         </ComplicationSlot>
 
-        <!-- ===== Faixa inferior: CrewLife e Rotina ===== -->
+        <!-- ===== Bottom glance dock: CrewLife + steps + routine ===== -->
+
+        <PartDraw x="48" y="342" width="104" height="64">
+            <RoundRectangle x="0" y="0" width="104" height="64" cornerRadiusX="24" cornerRadiusY="24">
+                <Fill color="#FF0C1726" />
+                <Stroke thickness="1" color="#4434D399" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
 
         <ComplicationSlot
-            x="98"
-            y="334"
-            width="124"
-            height="56"
+            x="48"
+            y="342"
+            width="104"
+            height="64"
             slotId="3"
             displayName="crewlife_label"
             supportedTypes="SHORT_TEXT EMPTY">
-            <BoundingRoundBox x="0" y="0" width="124" height="56" outlinePadding="2.0" cornerRadius="24" />
+            <BoundingRoundBox x="0" y="0" width="104" height="64" outlinePadding="2.0" cornerRadius="24" />
             <DefaultProviderPolicy
                 primaryProvider="com.crewcheck.app/com.crewcheck.watch.CrewLifeComplicationService"
                 primaryProviderType="SHORT_TEXT"
                 defaultSystemProvider="EMPTY"
                 defaultSystemProviderType="EMPTY" />
             <Complication type="SHORT_TEXT">
-                <PartText x="0" y="2" width="124" height="18">
+                <PartText x="4" y="6" width="96" height="17">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="13" weight="NORMAL" color="#FF6E7C8F">
+                        <Font family="SYNC_TO_DEVICE" size="10" weight="BOLD" color="#FF7E9AAB">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TITLE]" /></Template>
                         </Font>
                     </Text>
                     <Variant mode="AMBIENT" target="alpha" value="0" />
                 </PartText>
-                <PartText x="0" y="20" width="124" height="34">
+                <PartText x="4" y="24" width="96" height="34">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="26" weight="BOLD" color="#FF34D399">
+                        <Font family="SYNC_TO_DEVICE" size="22" weight="BOLD" color="#FF34D399">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TEXT]" /></Template>
                         </Font>
                     </Text>
@@ -233,32 +258,80 @@
             </Complication>
         </ComplicationSlot>
 
+        <PartDraw x="173" y="342" width="104" height="64">
+            <RoundRectangle x="0" y="0" width="104" height="64" cornerRadiusX="24" cornerRadiusY="24">
+                <Fill color="#FF0C1726" />
+                <Stroke thickness="1" color="#4422D3EE" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
+
         <ComplicationSlot
-            x="228"
-            y="334"
-            width="124"
-            height="56"
+            x="173"
+            y="342"
+            width="104"
+            height="64"
+            slotId="6"
+            displayName="steps_label"
+            supportedTypes="SHORT_TEXT EMPTY">
+            <BoundingRoundBox x="0" y="0" width="104" height="64" outlinePadding="2.0" cornerRadius="24" />
+            <DefaultProviderPolicy
+                defaultSystemProvider="STEP_COUNT"
+                defaultSystemProviderType="SHORT_TEXT" />
+            <Complication type="SHORT_TEXT">
+                <PartText x="4" y="6" width="96" height="17">
+                    <Text align="CENTER" ellipsis="TRUE">
+                        <Font family="SYNC_TO_DEVICE" size="10" weight="BOLD" color="#FF7E9AAB">
+                            <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TITLE]" /></Template>
+                        </Font>
+                    </Text>
+                    <Variant mode="AMBIENT" target="alpha" value="0" />
+                </PartText>
+                <PartText x="4" y="24" width="96" height="34">
+                    <Text align="CENTER" ellipsis="TRUE">
+                        <Font family="SYNC_TO_DEVICE" size="22" weight="BOLD" color="#FF22D3EE">
+                            <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TEXT]" /></Template>
+                        </Font>
+                    </Text>
+                    <Variant mode="AMBIENT" target="alpha" value="0" />
+                </PartText>
+            </Complication>
+        </ComplicationSlot>
+
+        <PartDraw x="298" y="342" width="104" height="64">
+            <RoundRectangle x="0" y="0" width="104" height="64" cornerRadiusX="24" cornerRadiusY="24">
+                <Fill color="#FF0C1726" />
+                <Stroke thickness="1" color="#44A78BFA" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
+
+        <ComplicationSlot
+            x="298"
+            y="342"
+            width="104"
+            height="64"
             slotId="4"
             displayName="routine_label"
             supportedTypes="SHORT_TEXT EMPTY">
-            <BoundingRoundBox x="0" y="0" width="124" height="56" outlinePadding="2.0" cornerRadius="24" />
+            <BoundingRoundBox x="0" y="0" width="104" height="64" outlinePadding="2.0" cornerRadius="24" />
             <DefaultProviderPolicy
                 primaryProvider="com.crewcheck.app/com.crewcheck.watch.RoutineComplicationService"
                 primaryProviderType="SHORT_TEXT"
                 defaultSystemProvider="EMPTY"
                 defaultSystemProviderType="EMPTY" />
             <Complication type="SHORT_TEXT">
-                <PartText x="0" y="2" width="124" height="18">
+                <PartText x="4" y="6" width="96" height="17">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="13" weight="NORMAL" color="#FF6E7C8F">
+                        <Font family="SYNC_TO_DEVICE" size="10" weight="BOLD" color="#FF7E9AAB">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TITLE]" /></Template>
                         </Font>
                     </Text>
                     <Variant mode="AMBIENT" target="alpha" value="0" />
                 </PartText>
-                <PartText x="0" y="20" width="124" height="34">
+                <PartText x="4" y="24" width="96" height="34">
                     <Text align="CENTER" ellipsis="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="24" weight="BOLD" color="#FFA78BFA">
+                        <Font family="SYNC_TO_DEVICE" size="21" weight="BOLD" color="#FFA78BFA">
                             <Template><![CDATA[%s]]><Parameter expression="[COMPLICATION.TEXT]" /></Template>
                         </Font>
                     </Text>
@@ -266,12 +339,5 @@
                 </PartText>
             </Complication>
         </ComplicationSlot>
-
-        <PartText x="0" y="396" width="450" height="22">
-            <Text align="CENTER">
-                <Font family="SYNC_TO_DEVICE" size="13" weight="NORMAL" color="#FF9EABBE"><![CDATA[TOQUE PARA ABRIR • ESCALA]]></Font>
-            </Text>
-            <Variant mode="AMBIENT" target="alpha" value="0" />
-        </PartText>
     </Scene>
 </WatchFace>
