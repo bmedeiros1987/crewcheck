@@ -575,6 +575,7 @@ public final class MainActivity extends FragmentActivity
                 ? (life.isEnergyScore() ? life.recoveryScore + "/100" : life.recoveryScore + "%")
                 : life.recoveryLabel;
         TextView score = text(primaryScore, 34, SUCCESS, true, Gravity.CENTER);
+        tabular(score);
         content.addView(score);
 
         String scoreCaption = life.isEnergyScore()
@@ -676,6 +677,7 @@ public final class MainActivity extends FragmentActivity
 
         TextView time = text(item.time.isBlank() ? "•" : item.time, 12,
                 first ? accent : WHITE, true, Gravity.CENTER);
+        tabular(time);
         card.addView(time, new LinearLayout.LayoutParams(dp(52), dp(42)));
 
         LinearLayout copy = new LinearLayout(this);
@@ -939,6 +941,7 @@ public final class MainActivity extends FragmentActivity
         box.addView(text(label, 7, MUTED, true, Gravity.CENTER));
         TextView metric = text(value, 11, accent, true, Gravity.CENTER);
         metric.setMaxLines(2);
+        tabular(metric);
         box.addView(metric);
 
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
