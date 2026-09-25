@@ -77,8 +77,20 @@ final class ComplicationText {
                 truncate(snapshot.complicationText(nowEpochMs), SHORT_LIMIT),
                 truncate(crewLifeLongText(snapshot, nowEpochMs), LONG_LIMIT),
                 snapshot.complicationTitle(),
-                truncate(snapshot.accessibilityDescription(nowEpochMs), DESCRIPTION_LIMIT)
+                truncate(snapshot.accessibilityDescription(nowEpochMs), DESCRIPTION_LIMIT),
+                crewLifeRingValue(snapshot, nowEpochMs)
         );
+    }
+
+    /**
+     * Recuperação e Energia Samsung são ambas 0–100, então servem ao slot de anel.
+     *
+     * Sem medida — desatualizado ou score ausente — devolve null: o anel some em vez de
+     * desenhar zero, porque zero desenhado é medida inventada.
+     */
+    private static Integer crewLifeRingValue(CrewLifeSnapshot snapshot, long nowEpochMs) {
+        if (snapshot.isStale(nowEpochMs) || snapshot.recoveryScore <= 0) return null;
+        return snapshot.recoveryScore;
     }
 
     static ComplicationRendering routine(RoutineSnapshot snapshot, long nowEpochMs) {

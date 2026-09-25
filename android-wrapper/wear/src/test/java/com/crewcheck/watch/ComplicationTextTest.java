@@ -1,6 +1,7 @@
 package com.crewcheck.watch;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import org.json.JSONObject;
@@ -154,5 +155,46 @@ public final class ComplicationTextTest {
         } catch (Exception error) {
             throw new IllegalStateException(error);
         }
+    }
+
+    // --- valor de anel (RANGED_VALUE) ----------------------------------------------------
+
+    @Test
+    public void crewLifeExposesTheRecoveryScoreAsRingValue() {
+        CrewLifeSnapshot snapshot = CrewLifeSnapshot.demo(NOW);
+        ComplicationRendering rendering = ComplicationText.crewLife(snapshot, NOW);
+        assertEquals(Integer.valueOf(snapshot.recoveryScore), rendering.rangedValue);
+        assertTrue("faixa do anel é 0–100", snapshot.recoveryScore >= 0 && snapshot.recoveryScore <= 100);
+    }
+
+    @Test
+    public void staleCrewLifeHasNoRingValue() {
+        CrewLifeSnapshot snapshot = CrewLifeSnapshot.demo(NOW);
+        long afterValidity = NOW + 7 * 60 * 60 * 1000L;
+        assertTrue("fixture precisa estar desatualizada", snapshot.isStale(afterValidity));
+        assertNull(ComplicationText.crewLife(snapshot, afterValidity).rangedValue);
+    }
+
+    @Test
+    public void crewLifeWithoutScoreHasNoRingValue() throws Exception {
+        JSONObject withoutScore = new JSONObject()
+                .put("schemaVersion", WatchContract.CREWLIFE_SCHEMA_VERSION)
+                .put("generatedAtEpochMs", NOW)
+                .put("validUntilEpochMs", NOW + 3_600_000L)
+                .put("sleepLabel", "6h52");
+        // Anel só existe com medida: silêncio não vira zero desenhado no pulso.
+        assertNull(ComplicationText.crewLife(CrewLifeSnapshot.fromJson(withoutScore), NOW).rangedValue);
+    }
+
+    @Test
+    public void crewLifeWithoutCacheHasNoRingValue() {
+        assertNull(ComplicationText.crewLife(null, NOW).rangedValue);
+    }
+
+    @Test
+    public void providersWithoutAMeasurementHaveNoRingValue() {
+        assertNull(ComplicationText.nextStep(WatchContextSnapshot.demo(NOW), NOW).rangedValue);
+        assertNull(ComplicationText.gate(WatchContextSnapshot.demo(NOW), NOW).rangedValue);
+        assertNull(ComplicationText.routine(RoutineSnapshot.demo(NOW), NOW).rangedValue);
     }
 }

@@ -13,9 +13,13 @@ update('client/src/main.tsx', source => {
 });
 update('android-wrapper/wear/src/main/java/com/crewcheck/watch/MainActivity.java', source => {
   if (source.includes('// Accessible store controls')) return source;
+  // Âncoras acompanham os controles do relógio. A garantia deste passo é o alvo de toque
+  // de 48dp e o texto de no mínimo 12sp exigidos pela loja — não a cor, que é decisão de
+  // design e vem do arquivo: texto preto sobre o preenchimento do acento, cinza no chip
+  // não selecionado.
   const patches = [
-    ['TextView chip = text(label, 10, WHITE, true, Gravity.CENTER);', 'TextView chip = text(label, 12, WHITE, true, Gravity.CENTER);'],
-    ['TextView chip = text(label, 9, selected ? WHITE : accent, true, Gravity.CENTER);', 'TextView chip = text(label, 12, selected ? WHITE : accent, true, Gravity.CENTER);'],
+    ['TextView chip = text(label, 12, BLACK, true, Gravity.CENTER);', 'TextView chip = text(label, 12, BLACK, true, Gravity.CENTER);'],
+    ['TextView chip = text(label, 11, selected ? BLACK : MUTED, true, Gravity.CENTER);', 'TextView chip = text(label, 12, selected ? BLACK : MUTED, true, Gravity.CENTER);'],
   ];
   for (const [before, after] of patches) {
     if (!source.includes(before)) throw new Error('Wear control anchor changed');
