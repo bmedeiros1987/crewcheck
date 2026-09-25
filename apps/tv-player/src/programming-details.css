@@ -117,3 +117,37 @@
 .theme-mobile .program-card-copy h2,.theme-mobile .program-overview-head h1,.theme-mobile .program-detail-title h1,.theme-mobile .program-route-heading strong,.theme-mobile .flight-leg-main h3,.theme-mobile .program-key-facts strong,.theme-mobile .detail-module dd{color:#0b2034}
 .theme-mobile .stay-exclusive-card{background:linear-gradient(145deg,#f7f2ff,#eef6ff);color:#17213c}.theme-mobile .stay-exclusive-card h2{color:#17213c}
 .theme-mobile .display-pref-grid>button{background:#fff!important;color:#0b2034!important;border-color:#d2e0e9!important}
+
+.stay-program-symbol{position:relative;display:block;width:2.35vw;height:2.35vw;color:#c8a3ff}
+.stay-program-symbol svg:first-child{position:absolute;left:.05vw;bottom:.05vw;width:1.85vw;height:1.85vw}
+.stay-program-symbol svg:last-child{position:absolute;right:-.02vw;top:-.02vw;width:.95vw;height:.95vw;color:#f0d7ff;filter:drop-shadow(0 0 .35vw rgba(202,164,255,.35))}
+.stay-card-caption{display:flex!important;align-items:center!important;color:#b9a4d8!important}
+.stay-card-caption svg{width:.85vw;height:.85vw;margin-right:.35vw;color:#c8a3ff}
+.program-card.program-stay{box-shadow:inset .24vw 0 0 #a478ef,0 .7vw 1.8vw rgba(23,12,48,.16)}
+.program-card.program-stay:focus{outline-color:#d8c0ff}
+.program-card.program-stay .program-card-copy small{color:#c8a4ff}
+
+.display-preset-row{display:flex!important;flex-wrap:wrap!important;margin:.8vh -.28vw .4vh!important}
+.display-preset-row>button{display:flex!important;flex-direction:column!important;align-items:flex-start!important;justify-content:center!important;width:calc(20% - .56vw)!important;min-height:7.8vh!important;margin:.28vw!important;padding:.65vw .72vw!important;border:1px solid #334960!important;border-radius:.68vw!important;background:linear-gradient(145deg,rgba(9,27,47,.82),rgba(12,23,43,.78))!important;color:#edf6ff!important;text-align:left!important}
+.display-preset-row>button:focus{outline:3px solid #fff!important;outline-offset:3px!important}
+.display-preset-row b{font-size:.69vw!important;color:#edf7ff!important}
+.display-preset-row small{display:block!important;margin-top:.25vh!important;font-size:.50vw!important;line-height:1.3!important;color:#8299b1!important}
+.theme-mobile .display-preset-row>button{background:#fff!important;color:#0b2034!important;border-color:#d2e0e9!important}
+.theme-mobile .display-preset-row b{color:#0b2034!important}
+
+.visitor-airport-glossary,.visitor-term-glossary{display:flex;flex-wrap:wrap;margin:.75vh -.25vw 0}
+.visitor-airport-glossary>span,.visitor-term-glossary>span{display:flex;flex-direction:column;width:calc(50% - .5vw);margin:.25vw;padding:.55vw .65vw;border:1px solid #31566f;border-radius:.55vw;background:rgba(18,57,77,.24)}
+.visitor-term-glossary>span{width:calc(33.333% - .5vw);border-color:#3b4c66;background:rgba(22,37,58,.32)}
+.visitor-airport-glossary b,.visitor-term-glossary b{font-size:.64vw;color:#dff6ff}
+.visitor-airport-glossary small,.visitor-term-glossary small{margin-top:.25vh!important;font-size:.52vw!important;line-height:1.35!important;color:#8da7bc!important}
+.theme-mobile .visitor-airport-glossary>span,.theme-mobile .visitor-term-glossary>span{background:#f6fbfe;border-color:#d3e3ec}
+.theme-mobile .visitor-airport-glossary b,.theme-mobile .visitor-term-glossary b{color:#0d2a3e}
+
+.context-scope-note{display:block;margin-top:.7vh;font-size:.54vw;color:#748ba2;line-height:1.35}
+.program-weather-list{display:flex;flex-direction:column}
+.program-weather-list .detail-weather{margin-top:.55vh;padding:.45vw .55vw;border:1px solid #29465f;border-radius:.55vw;background:rgba(5,28,47,.35)}
+.program-weather-list .detail-weather:first-child{margin-top:0}
+.program-weather-list .detail-weather .weather-art{flex-basis:4.8vw;width:4.8vw;height:4.3vw;margin-right:.65vw}
+.program-weather-list .detail-weather strong{font-size:1.65vw}
+.program-weather-list .detail-weather small{display:block;margin-top:.15vh;font-size:.49vw;color:#7892aa}
+.theme-mobile .program-weather-list .detail-weather{background:#f5fbff;border-color:#d4e4ed}

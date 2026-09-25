@@ -27,8 +27,10 @@ assert.equal(mod.programRouteCodes(programs[0]).join('>'),'BSB>GRU>REC>FOR');
 assert.equal(mod.programPresentation(programs[0]),'08:50');
 assert.match(mod.programTitle(programs[0],false),/BSB → GRU → REC → FOR/);
 assert.match(mod.programTitle(programs[0],true),/Brasília \(BSB\)/);
-assert.equal(mod.visitorAirportLabel('SBBR',true),'Brasília (BSB · SBBR)');
-assert.equal(mod.visitorAirportLabel('SCEL',true),'Santiago (SCL · SCEL)');
+assert.equal(mod.visitorAirportLabel('SBBR',true),'Brasília (BSB)');
+assert.equal(mod.visitorAirportLabel('SCEL',true),'Santiago (SCL)');
+const bsbGlossary=mod.visitorRouteGlossary(programs[0]).find(item=>item.iata==='BSB');
+assert.equal(bsbGlossary?.icao,'SBBR');
 assert.equal(programs[1].kind,'stay');
 assert.match(mod.programTitle(programs[1],false),/Pernoite/);
 const summary=mod.calendarProgramSummary(values,false);
@@ -43,12 +45,14 @@ assert.match(details,/ProgramDetails/);
 assert.match(details,/FlightTimeline/);
 assert.match(details,/stay-exclusive-card/);
 assert.match(details,/Ative este compartilhamento no CrewCheck do celular/);
-assert.match(details,/Códigos IATA aparecem acompanhados da cidade/);
+assert.match(details,/Códigos aeronáuticos aparecem acompanhados de significado/);
+assert.match(details,/visitorRouteGlossary/);
+assert.match(details,/visitorOperationalGlossary/);
 assert.match(details,/UberHandoff/);
 assert.match(details,/Não informada/);
 
 const prefs=await readFile('apps/tv-player/src/displayPreferences.tsx','utf8');
-for(const field of ['gate','traffic','weather','finance','crew','hotel','visitorExplanations','airlinePhoto']) assert.match(prefs,new RegExp(field));
+for(const field of ['gate','traffic','mobility','weather','finance','crew','hotel','visitorExplanations','airlinePhoto']) assert.match(prefs,new RegExp(field));
 assert.match(prefs,/Autorização no celular/);
 
 const uber=await readFile('apps/tv-player/src/UberHandoff.tsx','utf8');
@@ -67,7 +71,7 @@ assert.match(broadcast,/packagedAirlinePhoto/);
 assert.match(broadcast,/O QUE IMPORTA PARA APRESENTAR/);
 assert.match(broadcast,/traffic/);
 assert.match(broadcast,/licensed/);
-assert.match(broadcast,/Foto oficial\/licenciada/);
+assert.match(broadcast,/Foto real\/licenciada/);
 assert.doesNotMatch(broadcast,/backgroundImage:[^\n]*http:/);
 
 const compatibilityCss=(await readFile('apps/tv-player/src/broadcast.css','utf8'))+'\n'+(await readFile('apps/tv-player/src/programming-details.css','utf8'));

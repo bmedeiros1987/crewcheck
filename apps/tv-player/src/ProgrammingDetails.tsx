@@ -10,7 +10,7 @@ import { formatTvTime as time, activityLabel } from './presentation';
 import {
   programsForDay, programForKey, programKicker, programPresentation,
   programRouteCodes, programTitle, simpleCodeExplanation, visitorAirportLabel,
-  isVisitorPresentation, type TvProgram,
+  visitorRouteGlossary, visitorOperationalGlossary, isVisitorPresentation, type TvProgram,
 } from './programming';
 import type { TvDisplayPreferences } from './displayPreferences';
 import { UberHandoff, type TvMobilityHandoff } from './UberHandoff';
@@ -27,6 +27,7 @@ type ExtensionSnapshot=TvSnapshot & {
     operational?:boolean;mobility?:boolean;
   };
   journeyDetails?:Record<string,{
+    operational?:{gateLabel?:string|null;remoteStand?:boolean|null;terminal?:string|null;boardingAt?:string|null;trafficDurationText?:string|null;trafficDelayText?:string|null;trafficStatus?:string|null};
     crew?:Array<{role?:string;name?:string;position?:string}>;
     finance?:{currency?:string;estimated?:number;perDiem?:number;production?:number;note?:string};
     hotel?:{name?:string;room?:string;transport?:string};
@@ -40,7 +41,7 @@ function routeText(program:TvProgram,visitor:boolean){
   return codes.length?codes.map(code=>visitorAirportLabel(code,visitor)).join(' → '):programTitle(program,visitor);
 }
 function programIcon(program:TvProgram){
-  if(program.kind==='stay')return <BedDouble/>;
+  if(program.kind==='stay')return <span className="stay-program-symbol" aria-hidden="true"><Hotel/><Moon/></span>;
   if(program.kind==='rest')return <Moon/>;
   return <Plane/>;
 }
@@ -60,7 +61,7 @@ export function DayProgrammingView({snapshot,date,onBack,onOpenProgram}:{snapsho
         <span className="program-card-icon">{programIcon(program)}</span>
         <div className="program-card-copy"><small>{programKicker(program)}</small><h2>{programTitle(program,visitor)}</h2>
           {program.kind==='journey'&&<div className="program-route-mini">{programRouteCodes(program).map((code,index)=><React.Fragment key={code+'-'+index}><b>{visitorAirportLabel(code,visitor)}</b>{index<programRouteCodes(program).length-1&&<i/>}</React.Fragment>)}</div>}
-          {program.kind==='stay'&&<p>Descanso publicado · visual separado de voo</p>}
+          {program.kind==='stay'&&<p className="stay-card-caption"><BedDouble/> Pernoite publicado · descanso fora da base</p>}
           <div className="program-card-meta"><span><Clock3/>{fullProgramTime(program)}</span>{programPresentation(program)&&<span><ShieldCheck/>Apresentação {programPresentation(program)}</span>}</div>
         </div>
         <ChevronRight className="program-card-open"/>
@@ -114,9 +115,19 @@ export function ProgramDetails({snapshot,programKey,prefs,onBack}:{snapshot:TvSn
   const visitor=isVisitorPresentation(snapshot);
   const permissions=extended.sharePermissions||{};
   const details=extended.journeyDetails?.[program.journeyId||program.key]||{};
-  const gate=currentFact(snapshot.gate);
-  const weather=currentFact(snapshot.weather);
-  const traffic=extended.traffic?.value||null;
+  const isCurrentProgram=Boolean(program.journeyId&&snapshot.next?.journeyId&&program.journeyId===snapshot.next.journeyId);
+  const globalGate=isCurrentProgram?currentFact(snapshot.gate):null;
+  const globalWeather=isCurrentProgram?currentFact(snapshot.weather):null;
+  const globalTraffic=isCurrentProgram?extended.traffic?.value||null:null;
+  const operational=details.operational||{};
+  const routeCodes=new Set(programRouteCodes(program));
+  const programWeather=Array.isArray(details.weather)&&details.weather.length
+    ? details.weather
+    : globalWeather&&routeCodes.has(globalWeather.airport)?[globalWeather]:[];
+  const gateLabel=operational.gateLabel||globalGate?.label||null;
+  const remoteStand=typeof operational.remoteStand==='boolean'?operational.remoteStand:globalGate?.remoteStand;
+  const trafficDuration=operational.trafficDurationText||globalTraffic?.durationText||globalTraffic?.delayText||null;
+  const trafficStatus=operational.trafficStatus||operational.trafficDelayText||globalTraffic?.status||globalTraffic?.delayText||null;
   const codeExplanation=simpleCodeExplanation(program.first.publishedCode);
 
   return <section className="program-details detail">
@@ -125,14 +136,17 @@ export function ProgramDetails({snapshot,programKey,prefs,onBack}:{snapshot:TvSn
 
     <div className="details-grid">
       <article className="detail-module operational-module"><header><Plane/><div><small>OPERAÇÃO</small><h2>O que importa para o voo</h2></div></header>
-        <dl><dt>Apresentação</dt><dd>{programPresentation(program)||'Não informada'}</dd>
-          {prefs.gate&&<><dt>Portão</dt><dd>{gate?.label||'Não confirmado'}</dd></>}
-          {prefs.traffic&&<><dt>Trânsito</dt><dd>{traffic?.durationText||traffic?.delayText||'Sem leitura confirmada'}</dd></>}
-        </dl>
+        {permissions.operational===false?<LockedSection title="Contexto operacional"/>:<dl>
+          <dt>Apresentação</dt><dd>{programPresentation(program)||'Não informada'}</dd>
+          {prefs.gate&&<><dt>Portão</dt><dd>{gateLabel||'Não confirmado'}</dd>{remoteStand===true&&<><dt>Embarque</dt><dd>Posição remota</dd></>}{operational.terminal&&<><dt>Terminal</dt><dd>{operational.terminal}</dd></>}</>}
+          {operational.boardingAt&&<><dt>Embarque</dt><dd>{operational.boardingAt}</dd></>}
+          {prefs.traffic&&<><dt>Trânsito</dt><dd>{trafficDuration||'Sem leitura confirmada'}</dd>{trafficStatus&&<><dt>Situação</dt><dd>{trafficStatus}</dd></>}</>}
+        </dl>}
+        {!isCurrentProgram&&!details.operational&&<small className="context-scope-note">Portão e trânsito atuais não são reutilizados em outra programação.</small>}
       </article>
 
-      {prefs.weather&&<article className="detail-module weather-module"><header><CloudSun/><div><small>METEOROLOGIA</small><h2>Condição disponível</h2></div></header>
-        {weather?<div className="detail-weather"><WeatherArtwork label={weather.label}/><div><strong>{Math.round(weather.temperature)}°C</strong><span>{visitorAirportLabel(weather.airport,visitor)} · {weather.label}</span></div></div>:<p>Nenhuma condição confirmada para esta programação.</p>}
+      {prefs.weather&&<article className="detail-module weather-module"><header><CloudSun/><div><small>METEOROLOGIA</small><h2>Condição da programação</h2></div></header>
+        {permissions.weather===false?<LockedSection title="Meteorologia"/>:programWeather.length?<div className="program-weather-list">{programWeather.slice(0,3).map((item,index)=><div className="detail-weather" key={(item.airport||'weather')+'-'+index}><WeatherArtwork label={item.label}/><div><strong>{Number.isFinite(Number(item.temperature))?Math.round(Number(item.temperature))+'°C':'—'}</strong><span>{visitorAirportLabel(item.airport,visitor)} · {item.label||'Condição disponível'}</span>{Number.isFinite(Number(item.wind))&&<small>Vento {Math.round(Number(item.wind))} km/h</small>}{Number.isFinite(Number(item.rainChance))&&<small>Chuva {Math.round(Number(item.rainChance))}%</small>}</div></div>)}</div>:<p>Nenhuma condição confirmada especificamente para esta programação.</p>}
       </article>}
 
       {prefs.crew&&<article className="detail-module sensitive-module"><header><Users/><div><small>DADO SENSÍVEL</small><h2>Tripulação</h2></div></header>
@@ -150,11 +164,13 @@ export function ProgramDetails({snapshot,programKey,prefs,onBack}:{snapshot:TvSn
       {(visitor||prefs.visitorExplanations)&&<article className="detail-module visitor-module"><header><Languages/><div><small>MODO VISITANTE</small><h2>Em linguagem simples</h2></div></header>
         <p>{program.kind==='journey'?`Trajeto: ${routeText(program,true)}.`:programTitle(program,true)}</p>
         {codeExplanation&&<p><b>{program.first.publishedCode}</b> significa “{codeExplanation}”.</p>}
-        <small>Códigos IATA aparecem acompanhados da cidade; siglas internas não ficam sem explicação.</small>
+        {program.kind==='journey'&&<div className="visitor-airport-glossary">{visitorRouteGlossary(program).map(item=><span key={item.iata}><b>{item.city}</b><small>IATA {item.iata}{item.icao?` · ICAO ${item.icao}`:''}</small></span>)}</div>}
+        <div className="visitor-term-glossary">{visitorOperationalGlossary().slice(0,visitor?5:3).map(item=><span key={item.term}><b>{item.term}</b><small>{item.meaning}</small></span>)}</div>
+        <small>Códigos aeronáuticos aparecem acompanhados de significado. Informações internas sem tradução são omitidas do destaque visitante.</small>
       </article>}
     </div>
 
-    {prefs.traffic&&permissions.mobility!==false&&<UberHandoff mobility={extended.mobility}/>}
+    {prefs.mobility&&permissions.mobility!==false&&<UberHandoff mobility={extended.mobility}/>}
     <p className="detail-disclaimer"><Info/>Dados sensíveis só devem chegar à TV quando o proprietário autorizar. Revogar no celular deve interromper a próxima sincronização.</p>
   </section>;
 }

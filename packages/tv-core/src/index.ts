@@ -92,7 +92,21 @@ export type TvSnapshot = {
     operational?: boolean;
     mobility?: boolean;
   };
-  journeyDetails?: Record<string, unknown>;
+  journeyDetails?: Record<string, {
+    operational?: {
+      gateLabel?: string | null;
+      remoteStand?: boolean | null;
+      terminal?: string | null;
+      boardingAt?: string | null;
+      trafficDurationText?: string | null;
+      trafficDelayText?: string | null;
+      trafficStatus?: string | null;
+    };
+    crew?: Array<{ role?: string; name?: string; position?: string }>;
+    finance?: { currency?: string; estimated?: number; perDiem?: number; production?: number; note?: string };
+    hotel?: { name?: string; room?: string; transport?: string };
+    weather?: Array<{ airport?: string; temperature?: number; label?: string; wind?: number; rainChance?: number }>;
+  }>;
   mobility?: {
     provider: "uber";
     deepLink: string;

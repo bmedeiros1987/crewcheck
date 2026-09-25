@@ -1,0 +1,28 @@
+name: TV deep programming and personalization
+on:
+  pull_request:
+    paths:
+      - 'apps/tv-player/**'
+      - 'packages/tv-core/**'
+      - 'scripts/tv-deep-programming-test.mjs'
+      - '.github/workflows/tv-deep-programming.yml'
+permissions:
+  contents: read
+jobs:
+  deep-tv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/tv-deep-programming-test.mjs
+      - run: node scripts/tv-test.mjs
+      - run: node scripts/tv-broadcast-prepare.mjs && node scripts/tv-broadcast-fit.mjs
+      - run: node scripts/tv-pairing-prepare.mjs && node scripts/tv-pairing-prepare.mjs
+      - run: node scripts/tv-channel-test.mjs
+      - run: node scripts/tv-broadcast-test.mjs
+      - run: npx tsc --noEmit -p tsconfig.tv.json

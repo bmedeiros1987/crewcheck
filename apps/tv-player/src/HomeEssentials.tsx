@@ -12,6 +12,7 @@ import {
 } from './programming';
 import type { TvDisplayPreferences } from './displayPreferences';
 import { UberHandoff, type TvMobilityHandoff } from './UberHandoff';
+import { packagedAirlinePhoto } from './licensedAirlinePhotos';
 import './home-essentials.css';
 
 type ExtendedSnapshot=TvSnapshot & {
@@ -34,9 +35,16 @@ function routeText(program:TvProgram|null,visitor:boolean){
   return programRouteCodes(program).map(code=>visitorAirportLabel(code,visitor)).join(' → ')||'Jornada publicada';
 }
 function airlinePhoto(snapshot:TvSnapshot,prefs:TvDisplayPreferences){
+  if(!prefs.airlinePhoto)return null;
   const visual=snapshot.profile?.airlineVisual;
-  if(!prefs.airlinePhoto||!visual?.licensed||!/^https:\/\//i.test(visual.imageUrl||''))return null;
-  return visual;
+  if(visual?.licensed&&/^https:\/\//i.test(visual.imageUrl||''))return visual;
+  const packaged=packagedAirlinePhoto(snapshot.profile?.airline);
+  return packaged?{
+    imageUrl:packaged.url,
+    source:packaged.source,
+    licensed:true,
+    attribution:`${packaged.credit} · ${packaged.license}`,
+  }:null;
 }
 function factIsCurrent(value:any,now:number){
   return value?.observedAt&&value?.expiresAt&&freshness({generatedAt:value.observedAt,expiresAt:value.expiresAt},now)==='current';
@@ -124,7 +132,7 @@ export function HomeEssentials({
         <small>Hospedagem e quarto só aparecem quando confirmados e autorizados.</small>
       </article>}
 
-      {prefs.traffic&&extended.mobility&&snapshot.audience!=='visitor'&&<UberHandoff mobility={extended.mobility}/>}
+      {prefs.mobility&&extended.mobility&&snapshot.audience!=='visitor'&&<UberHandoff mobility={extended.mobility}/>}
       {visitor&&<article className="home-context-card visitor-home-card"><p className="eyebrow"><Info/> MODO VISITANTE</p><h2>Informação em linguagem simples</h2><p>Códigos de aeroportos são acompanhados da cidade e dados sensíveis permanecem ocultos.</p></article>}
     </aside>
   </section>;

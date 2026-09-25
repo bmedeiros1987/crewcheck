@@ -77,7 +77,7 @@ export function BroadcastPanel({view,snapshot,demo,clock,openDay,openView,prefs}
   const airlinePhoto=trustedAirlinePhoto(snapshot,prefs);
   if(view==='Agora') return <section className="broadcast-panel broadcast-overview">
     <article className={'broadcast-card broadcast-hero airline-'+airline+(airlinePhoto?' has-real-airline-photo':'')}><div className="flight-art" aria-hidden="true" style={airlinePhoto?{backgroundImage:`url("${airlinePhoto.url}")`}:undefined}/><div className="flight-art-shade"/>
-      <div className="hero-copy"><Eyebrow><Plane/> {next?'PRÓXIMA ATIVIDADE':'BEM-VINDO A BORDO'}</Eyebrow><div className="broadcast-flight">{next?activityLabel(next):'CrewCheck'}</div><Route activity={next}/><span className="image-notice">{airlinePhoto?`Foto oficial/licenciada · ${airlinePhoto.credit}`:snapshot.profile?.airline?'Visual adaptado à '+snapshot.profile.airline+' · imagem ilustrativa':'Arte CrewCheck · imagem ilustrativa'}</span></div>
+      <div className="hero-copy"><Eyebrow><Plane/> {next?'PRÓXIMA ATIVIDADE':'BEM-VINDO A BORDO'}</Eyebrow><div className="broadcast-flight">{next?activityLabel(next):'CrewCheck'}</div><Route activity={next}/><span className="image-notice">{airlinePhoto?`Foto real/licenciada · ${airlinePhoto.credit}`:snapshot.profile?.airline?'Visual adaptado à '+snapshot.profile.airline+' · imagem ilustrativa':'Arte CrewCheck · imagem ilustrativa'}</span></div>
       <div className="hero-bottom-panel"><Timings snapshot={snapshot}/><div className="broadcast-hero-foot"><FactStatus snapshot={snapshot}/><button className="primary-button" disabled={!next} onClick={()=>next&&openDay(next.date)}>Ver jornada <ChevronRight/></button></div></div>
     </article>
     <aside className="broadcast-column">
