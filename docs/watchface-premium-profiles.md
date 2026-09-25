@@ -1,34 +1,29 @@
 # CrewCheck: opções de mostrador
 
-Camada visual da #837, filha da #836. Não é navegação por páginas do app CrewWatch.
+Camada visual da #837, filha da #836. Não é navegação por páginas do CrewWatch.
 
-## Opções implementadas
+## Escolhas preservadas
 
-O editor nativo do mostrador recebe duas preferências, independentes:
+O editor nativo recebe Signature (hora branca forte/card suave), Flight Deck (hora no acento/card instrumental) e Minimal (hora fina/sem fundo). Ciano, violeta e magenta oferecem nove combinações. Os seis slots/providers ficam nas mesmas posições; a logo neon original não foi redesenhada, recolorida ou substituída.
 
-- **Visual do mostrador**: Signature (padrão, hora branca forte e card suave), Flight Deck (hora na cor de destaque e card instrumental) e Minimal (hora fina, sem fundo de card).
-- **Cor de destaque**: ciano, violeta ou magenta CrewCheck. São nove combinações.
+Escolher um visual não cria voo, consentimento, assinatura ou dado. Valores e validade continuam vindo dos provedores existentes. AOD mantém hora fina, data e operação; logo, fundos, saúde, passos, bateria e rotina ficam ocultos.
 
-Os seis campos ficam nas mesmas posições em todos os visuais. Nenhum desaparece só porque um estilo foi selecionado. A logo neon permanece a mesma, sem recoloração. As opções não autorizam saúde, não ativam assinatura Premium e não mudam dados, validade, providers ou sincronização. Escolher Flight Deck não declara que há um voo em andamento.
+No Galaxy, o caminho esperado é manter o dedo no mostrador e escolher Personalizar. O texto exato depende do editor. As seis fontes continuam editáveis e não devem ser perdidas ao trocar visual.
 
-No Galaxy, o caminho esperado é manter o dedo sobre o mostrador, abrir **Personalizar** e escolher **Visual do mostrador** / **Cor de destaque**. O nome exato da ação depende do editor do dispositivo. O seletor de complicações já existente continua permitindo escolher suas fontes de informação. Trocar o visual não deve exigir reinstalação nem configurar os campos novamente.
+## Reconciliação #836 / #838
 
-## Implementação e limites
+A filha foi sincronizada com a versão periférica da #836, sem reintroduzir Home/watchContext: esses arquivos pertencem ao Mobile Core/#824.
 
-`UserConfigurations/ListConfiguration` e `ColorConfiguration` do WFF v1; sem `Flavors` (v2+), nova permissão, nova dependência, mudança de pacote ou código executável na face. Seis `ComplicationSlot` únicos, declarados uma única vez no Scene; os perfis contêm apenas relógio e superfície de fundo. O AOD é idêntico em todos: hora fina/data/operação; logo, fundos, saúde, passos, bateria e rotina ocultos.
+Da #838 foram absorvidas as correções **de especificação**, não seu layout alternativo: todos os TimeText têm Variant antes de Font, e a data usa um único PartText compartilhado com DAY_OF_WEEK_S, DAY_Z e MONTH_S. O formato EEE dd MMM não volta a ser usado em TimeText. A geometria circular mais conservadora da #837 é preservada.
 
-São opções visuais, não telas deslizantes. As páginas funcionais Agora, Jornada, Alertas, Escala e CrewLife pertencem ao app CrewWatch; Concierge depende do seu contrato funcional. Esta entrega não adiciona essas páginas, não captura gestos do sistema e não considera os testes físicos da #836 concluídos.
+A miniatura do seletor/renderizador da proposta alternativa #838 não foi incorporada nesta reconciliação: precisará representar os perfis aprovados, não mostrar uma prévia de outro layout. Não afirmar que a miniatura está implementada aqui.
 
 ## Verificação
 
-Executar `node scripts/regression-watchface-premium-layout.mjs`. Matriz local: 3 visuais × 3 paletas, geometria circular, seis providers/tipos, limites e não sobreposição, regras ativo/AOD, PNG original íntegro, referências do editor e contraste nominal das cores de destaque >=4.5:1. São 68 testes negativos. Isso não é execução do renderer WFF nem teste no pulso. O ajuste automático de texto continua exigindo teste com strings longas e dados ausentes.
+`node scripts/regression-watchface-premium-layout.mjs` verifica as nove combinações, limites circulares e colisões, seis providers/tipos, regras ativo/AOD, PNG original/hash, referências do editor, contraste nominal dos acentos e casos negativos de calendário/ordem WFF.
 
-Checklist físico: alternar as nove combinações; editar os seis campos e trocar visual sem perder fontes; reiniciar e verificar persistência; conferir 12/24h; verificar AOD em todos; testar valores vazios/longos/stale e mudança de dados pelo celular. Saúde só deve aparecer quando autorizada no fluxo existente.
+O workflow `Watch Face WFF v1 specification` valida também o XSD oficial, pinado em google/watchface@b6cdda0acd3e4c5d0be5624fcdc01209380029d1, antes e depois da preparação canônica. Aceitação de schema não substitui compilação Android ou renderer físico.
 
-Sem merge/publicação nesta revisão. CI e validação física ainda são gates.
+Checklist físico: alternar os nove visuais/paletas; editar seis fontes e trocar visual; reiniciar; 12/24h; strings longas/vazias/stale; data no idioma do relógio; AOD sem saúde; sincronização existente. Não captura gestos do sistema, não adiciona páginas, permissões ou canais.
 
-## Referências oficiais
-
-- https://developer.android.com/training/wearables/wff/personalization/user-configurations
-- https://developer.android.com/reference/wear-os/wff/user-configuration/list-configuration
-- https://developer.android.com/reference/wear-os/wff/group/configuration/list-configuration
+DRAFT. Sem merge/publicação; CI do HEAD exato e homologação física continuam obrigatórios.

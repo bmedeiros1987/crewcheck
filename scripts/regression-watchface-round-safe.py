@@ -1,4 +1,4 @@
-"""Visual regression matrix only: WFF XML/geometry/privacy, not an Android renderer."""
+"""Visual regression matrix: WFF geometry/privacy plus calendar/order guards, not a renderer."""
 from copy import deepcopy
 from hashlib import sha256
 from itertools import combinations, product
@@ -22,6 +22,7 @@ PROVIDERS = {
 }
 CLOCKS = {'0': ('88', 'BOLD'), '1': ('84', 'BOLD'), '2': ('88', 'THIN')}
 PALETTES = {'0': '#FF22D3EE #5522D3EE', '1': '#FFA78BFA #55A78BFA', '2': '#FFF472B6 #55F472B6'}
+CALENDAR = ['[DAY_OF_WEEK_S]', '[DAY_Z]', '[MONTH_S]']
 
 
 def box(node):
@@ -80,8 +81,6 @@ def validate_config(root, labels):
     for option in refs[0]:
         assert all(n.tag in ('DigitalClock', 'PartDraw') for n in option), 'profile contains unexpected content'
         assert len(option.findall('DigitalClock')) == 1
-    # Keep WFF v1 and the installed contract: no duplicate slots, new permissions, custom
-    # gesture handler, Flavors (v2+) or invisible interactive areas masquerading as pages.
     assert len(root.findall('.//ComplicationSlot')) == len(scene.findall('ComplicationSlot')) == 6
     assert not root.findall('.//Flavors') and not root.findall('.//Launch')
     assert not root.findall('.//SecondHand') and not root.findall('.//PartAnimatedImage')
@@ -93,7 +92,7 @@ def validate_config(root, labels):
 
 
 def resolve_profile(root, style, palette):
-    """Flatten the selected declarative option for geometry tests, not full WFF execution."""
+    """Flatten the selected declarative option for geometry tests, not WFF execution."""
     selected = deepcopy(root)
     scene = selected.find('Scene')
     config = scene.find('ListConfiguration')
@@ -155,18 +154,26 @@ def validate(root, style='0'):
     clocks = scene.findall('DigitalClock')
     assert len(clocks) == 1, 'profiles must never stack their clocks'
     times = clocks[0].findall('TimeText')
-    assert len(times) == 3
-    active, ambient, date = times
-    assert active.get('format') == ambient.get('format') == 'hh:mm'
-    assert active.get('hourFormat') == ambient.get('hourFormat') == 'SYNC_TO_DEVICE'
+    assert len(times) == 2, 'Calendar must not be TimeText'
+    active, ambient = times
+    for time in times:
+        assert time.get('format') == 'hh:mm', 'TimeText only formats time, never calendar'
+        assert time.get('hourFormat') == 'SYNC_TO_DEVICE'
+        assert [n.tag for n in time] == ['Variant', 'Font'], 'WFF sequence: Variant before Font'
     assert active.get('alpha') == '255' and hidden_in_ambient(active)
     assert ambient.get('alpha') == '0'
     assert ambient.find('Variant').attrib == {'mode': 'AMBIENT', 'target': 'alpha', 'value': '255'}
     assert (active.find('Font').get('size'), active.find('Font').get('weight')) == CLOCKS[style]
     assert ambient.find('Font').get('size') == '80' and ambient.find('Font').get('weight') == 'THIN'
     assert ambient.find('Font').get('color') == '#FFDDE3EC'
-    assert date.get('format') == 'EEE dd MMM' and float(date.find('Font').get('size')) >= 20
-    for t in times:
+    dates = scene.findall('PartText')
+    assert len(dates) == 1, 'One calendar shared by all profiles'
+    date = dates[0]
+    font = date.find('Text/Font')
+    assert font is not None and float(font.get('size')) >= 20
+    assert [p.get('expression') for p in font.findall('Upper/Template/Parameter')] == CALENDAR
+    assert not hidden_in_ambient(date), 'Calendar remains readable in AOD'
+    for t in [*times, date]:
         round_safe(box(t))
         assert all(not overlaps(box(t), box(s)) for s in slots), 'clock/date collide with live data'
     assert not overlaps(box(active), box(date))
@@ -214,6 +221,8 @@ def run():
         (".//ComplicationSlot[@slotId='2']/DefaultProviderPolicy", {'primaryProvider': PREFIX + 'RoutineComplicationService'}),
         ('.//ComplicationSlot//PartText', {'width': '999'}),
         ('.//DigitalClock/TimeText/Variant', {'value': '255'}),
+        ('.//DigitalClock/TimeText', {'format': 'EEE dd MMM'}),
+        ('Scene/PartText/Text/Font/Upper/Template/Parameter', {'expression': '[HOUR_0_23]'}),
     ]
     negative = 0
     for style, palette in product(CLOCKS, PALETTES):
@@ -224,6 +233,12 @@ def run():
             try: validate(changed, style)
             except AssertionError: negative += 1; continue
             raise AssertionError(f'mutation not caught: {selector}')
+        changed = deepcopy(resolved)
+        time = changed.find('.//DigitalClock/TimeText')
+        variant = time.find('Variant'); time.remove(variant); time.append(variant)
+        try: validate(changed, style)
+        except AssertionError: negative += 1
+        else: raise AssertionError('Variant-after-Font mutation not caught')
     for selector, attrs in [
         ('UserConfigurations/ListConfiguration', {'defaultValue': '99'}),
         ('UserConfigurations/ListConfiguration/ListOption', {'displayName': 'missing_label'}),
@@ -235,7 +250,7 @@ def run():
         try: validate_config(changed, labels)
         except AssertionError: negative += 1; continue
         raise AssertionError(f'configuration mutation not caught: {selector}')
-    print(f'[watchface-premium-layout] PASS: 9 style/palette combinations, active/AOD rules, six stable slots, logo integrity; {negative} negative cases')
+    print(f'[watchface-premium-layout] PASS: 9 combinations, calendar/order, active/AOD, six stable slots, original logo; {negative} negative cases')
 
 
 if __name__ == '__main__':

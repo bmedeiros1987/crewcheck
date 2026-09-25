@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- CrewCheck: three selectable visual profiles, three brand palettes. WFF v1.
-     Six stable slots/providers; no data, entitlement, consent or synchronization changes. -->
+<!-- CrewCheck WFF v1: three visual profiles, original logo, six stable providers.
+     Spec fixes from #838: Variant precedes Font; calendar is PartText, not TimeText. -->
 <WatchFace width="450" height="450">
     <Metadata key="CLOCK_TYPE" value="DIGITAL" />
     <Metadata key="PREVIEW_TIME" value="18:16:00" />
@@ -25,15 +25,12 @@
             <ListOption id="0">
                 <DigitalClock x="0" y="0" width="450" height="450">
                     <TimeText x="52" y="118" width="346" height="90" alpha="255" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
-                        <Font family="SYNC_TO_DEVICE" size="88" weight="BOLD" slant="NORMAL" color="#FFFFFFFF" />
                         <Variant mode="AMBIENT" target="alpha" value="0" />
+                        <Font family="SYNC_TO_DEVICE" size="88" weight="BOLD" slant="NORMAL" color="#FFFFFFFF" />
                     </TimeText>
                     <TimeText x="52" y="118" width="346" height="90" alpha="0" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
-                        <Font family="SYNC_TO_DEVICE" size="80" weight="THIN" slant="NORMAL" color="#FFDDE3EC" />
                         <Variant mode="AMBIENT" target="alpha" value="255" />
-                    </TimeText>
-                    <TimeText x="105" y="210" width="240" height="28" align="CENTER" format="EEE dd MMM" hourFormat="SYNC_TO_DEVICE">
-                        <Font family="SYNC_TO_DEVICE" size="20" weight="NORMAL" color="#FFB7C7D9" />
+                        <Font family="SYNC_TO_DEVICE" size="80" weight="THIN" slant="NORMAL" color="#FFDDE3EC" />
                     </TimeText>
                 </DigitalClock>
                 <PartDraw x="55" y="242" width="340" height="82">
@@ -47,15 +44,12 @@
             <ListOption id="1">
                 <DigitalClock x="0" y="0" width="450" height="450">
                     <TimeText x="52" y="118" width="346" height="90" alpha="255" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
-                        <Font family="SYNC_TO_DEVICE" size="84" weight="BOLD" slant="NORMAL" color="[CONFIGURATION.crewcheck_palette.0]" />
                         <Variant mode="AMBIENT" target="alpha" value="0" />
+                        <Font family="SYNC_TO_DEVICE" size="84" weight="BOLD" slant="NORMAL" color="[CONFIGURATION.crewcheck_palette.0]" />
                     </TimeText>
                     <TimeText x="52" y="118" width="346" height="90" alpha="0" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
-                        <Font family="SYNC_TO_DEVICE" size="80" weight="THIN" slant="NORMAL" color="#FFDDE3EC" />
                         <Variant mode="AMBIENT" target="alpha" value="255" />
-                    </TimeText>
-                    <TimeText x="105" y="210" width="240" height="28" align="CENTER" format="EEE dd MMM" hourFormat="SYNC_TO_DEVICE">
-                        <Font family="SYNC_TO_DEVICE" size="20" weight="NORMAL" color="#FFB7C7D9" />
+                        <Font family="SYNC_TO_DEVICE" size="80" weight="THIN" slant="NORMAL" color="#FFDDE3EC" />
                     </TimeText>
                 </DigitalClock>
                 <PartDraw x="55" y="242" width="340" height="82">
@@ -69,36 +63,33 @@
             <ListOption id="2">
                 <DigitalClock x="0" y="0" width="450" height="450">
                     <TimeText x="52" y="118" width="346" height="90" alpha="255" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
-                        <Font family="SYNC_TO_DEVICE" size="88" weight="THIN" slant="NORMAL" color="#FFFFFFFF" />
                         <Variant mode="AMBIENT" target="alpha" value="0" />
+                        <Font family="SYNC_TO_DEVICE" size="88" weight="THIN" slant="NORMAL" color="#FFFFFFFF" />
                     </TimeText>
                     <TimeText x="52" y="118" width="346" height="90" alpha="0" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
-                        <Font family="SYNC_TO_DEVICE" size="80" weight="THIN" slant="NORMAL" color="#FFDDE3EC" />
                         <Variant mode="AMBIENT" target="alpha" value="255" />
-                    </TimeText>
-                    <TimeText x="105" y="210" width="240" height="28" align="CENTER" format="EEE dd MMM" hourFormat="SYNC_TO_DEVICE">
-                        <Font family="SYNC_TO_DEVICE" size="20" weight="NORMAL" color="#FFB7C7D9" />
+                        <Font family="SYNC_TO_DEVICE" size="80" weight="THIN" slant="NORMAL" color="#FFDDE3EC" />
                     </TimeText>
                 </DigitalClock>
             </ListOption>
         </ListConfiguration>
+        <!-- Calendar is shared by all profiles and remains visible in ambient mode. -->
+        <PartText x="105" y="210" width="240" height="28">
+            <Text align="CENTER">
+                <Font family="SYNC_TO_DEVICE" size="20" weight="NORMAL" color="#FFB7C7D9">
+                    <Upper><Template>%s %s %s<Parameter expression="[DAY_OF_WEEK_S]" /><Parameter expression="[DAY_Z]" /><Parameter expression="[MONTH_S]" /></Template></Upper>
+                </Font>
+            </Text>
+        </PartText>
         <ComplicationSlot x="97" y="62" width="124" height="52" slotId="2" displayName="gate_label" supportedTypes="SHORT_TEXT EMPTY">
             <BoundingRoundBox x="0" y="0" width="124" height="52" outlinePadding="2.0" cornerRadius="18" />
             <DefaultProviderPolicy primaryProvider="com.crewcheck.app/com.crewcheck.watch.GateComplicationService" primaryProviderType="SHORT_TEXT" defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY" />
             <Complication type="SHORT_TEXT">
                 <PartText x="6" y="0" width="112" height="22">
-                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="18" weight="BOLD" color="#FF9EBDCB">
-                            <Template>%s<Parameter expression="[COMPLICATION.TITLE]" /></Template>
-                        </Font>
-                    </Text>
+                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE"><Font family="SYNC_TO_DEVICE" size="18" weight="BOLD" color="#FF9EBDCB"><Template>%s<Parameter expression="[COMPLICATION.TITLE]" /></Template></Font></Text>
                 </PartText>
                 <PartText x="6" y="24" width="112" height="28">
-                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="24" weight="BOLD" color="#FFFFFFFF">
-                            <Template>%s<Parameter expression="[COMPLICATION.TEXT]" /></Template>
-                        </Font>
-                    </Text>
+                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE"><Font family="SYNC_TO_DEVICE" size="24" weight="BOLD" color="#FFFFFFFF"><Template>%s<Parameter expression="[COMPLICATION.TEXT]" /></Template></Font></Text>
                 </PartText>
             </Complication>
         </ComplicationSlot>
@@ -107,19 +98,11 @@
             <DefaultProviderPolicy defaultSystemProvider="WATCH_BATTERY" defaultSystemProviderType="SHORT_TEXT" />
             <Complication type="SHORT_TEXT">
                 <PartText x="6" y="0" width="112" height="22">
-                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="18" weight="BOLD" color="#FF9EBDCB">
-                            <Template>%s<Parameter expression="[COMPLICATION.TITLE]" /></Template>
-                        </Font>
-                    </Text>
+                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE"><Font family="SYNC_TO_DEVICE" size="18" weight="BOLD" color="#FF9EBDCB"><Template>%s<Parameter expression="[COMPLICATION.TITLE]" /></Template></Font></Text>
                     <Variant mode="AMBIENT" target="alpha" value="0" />
                 </PartText>
                 <PartText x="6" y="24" width="112" height="28">
-                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="24" weight="BOLD" color="#FFFFFFFF">
-                            <Template>%s<Parameter expression="[COMPLICATION.TEXT]" /></Template>
-                        </Font>
-                    </Text>
+                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE"><Font family="SYNC_TO_DEVICE" size="24" weight="BOLD" color="#FFFFFFFF"><Template>%s<Parameter expression="[COMPLICATION.TEXT]" /></Template></Font></Text>
                     <Variant mode="AMBIENT" target="alpha" value="0" />
                 </PartText>
             </Complication>
@@ -129,34 +112,18 @@
             <DefaultProviderPolicy primaryProvider="com.crewcheck.app/com.crewcheck.watch.CrewCheckComplicationService" primaryProviderType="LONG_TEXT" defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY" />
             <Complication type="LONG_TEXT">
                 <PartText x="16" y="4" width="308" height="24">
-                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="18" weight="BOLD" color="[CONFIGURATION.crewcheck_palette.0]">
-                            <Template>%s<Parameter expression="[COMPLICATION.TITLE]" /></Template>
-                        </Font>
-                    </Text>
+                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE"><Font family="SYNC_TO_DEVICE" size="18" weight="BOLD" color="[CONFIGURATION.crewcheck_palette.0]"><Template>%s<Parameter expression="[COMPLICATION.TITLE]" /></Template></Font></Text>
                 </PartText>
                 <PartText x="16" y="30" width="308" height="48">
-                    <Text align="CENTER" ellipsis="TRUE" maxLines="2" isAutoSize="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="25" weight="BOLD" color="#FFFFFFFF">
-                            <Template>%s<Parameter expression="[COMPLICATION.TEXT]" /></Template>
-                        </Font>
-                    </Text>
+                    <Text align="CENTER" ellipsis="TRUE" maxLines="2" isAutoSize="TRUE"><Font family="SYNC_TO_DEVICE" size="25" weight="BOLD" color="#FFFFFFFF"><Template>%s<Parameter expression="[COMPLICATION.TEXT]" /></Template></Font></Text>
                 </PartText>
             </Complication>
             <Complication type="SHORT_TEXT">
                 <PartText x="16" y="4" width="308" height="24">
-                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="18" weight="BOLD" color="[CONFIGURATION.crewcheck_palette.0]">
-                            <Template>%s<Parameter expression="[COMPLICATION.TITLE]" /></Template>
-                        </Font>
-                    </Text>
+                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE"><Font family="SYNC_TO_DEVICE" size="18" weight="BOLD" color="[CONFIGURATION.crewcheck_palette.0]"><Template>%s<Parameter expression="[COMPLICATION.TITLE]" /></Template></Font></Text>
                 </PartText>
                 <PartText x="16" y="30" width="308" height="48">
-                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="30" weight="BOLD" color="#FFFFFFFF">
-                            <Template>%s<Parameter expression="[COMPLICATION.TEXT]" /></Template>
-                        </Font>
-                    </Text>
+                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE"><Font family="SYNC_TO_DEVICE" size="30" weight="BOLD" color="#FFFFFFFF"><Template>%s<Parameter expression="[COMPLICATION.TEXT]" /></Template></Font></Text>
                 </PartText>
             </Complication>
         </ComplicationSlot>
@@ -165,19 +132,11 @@
             <DefaultProviderPolicy primaryProvider="com.crewcheck.app/com.crewcheck.watch.CrewLifeComplicationService" primaryProviderType="SHORT_TEXT" defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY" />
             <Complication type="SHORT_TEXT">
                 <PartText x="4" y="0" width="110" height="22">
-                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="18" weight="BOLD" color="#FF9EBDCB">
-                            <Template>%s<Parameter expression="[COMPLICATION.TITLE]" /></Template>
-                        </Font>
-                    </Text>
+                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE"><Font family="SYNC_TO_DEVICE" size="18" weight="BOLD" color="#FF9EBDCB"><Template>%s<Parameter expression="[COMPLICATION.TITLE]" /></Template></Font></Text>
                     <Variant mode="AMBIENT" target="alpha" value="0" />
                 </PartText>
                 <PartText x="4" y="24" width="110" height="30">
-                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="26" weight="BOLD" color="#FF34D399">
-                            <Template>%s<Parameter expression="[COMPLICATION.TEXT]" /></Template>
-                        </Font>
-                    </Text>
+                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE"><Font family="SYNC_TO_DEVICE" size="26" weight="BOLD" color="#FF34D399"><Template>%s<Parameter expression="[COMPLICATION.TEXT]" /></Template></Font></Text>
                     <Variant mode="AMBIENT" target="alpha" value="0" />
                 </PartText>
             </Complication>
@@ -187,19 +146,11 @@
             <DefaultProviderPolicy defaultSystemProvider="STEP_COUNT" defaultSystemProviderType="SHORT_TEXT" />
             <Complication type="SHORT_TEXT">
                 <PartText x="4" y="0" width="110" height="22">
-                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="18" weight="BOLD" color="#FF9EBDCB">
-                            <Template>%s<Parameter expression="[COMPLICATION.TITLE]" /></Template>
-                        </Font>
-                    </Text>
+                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE"><Font family="SYNC_TO_DEVICE" size="18" weight="BOLD" color="#FF9EBDCB"><Template>%s<Parameter expression="[COMPLICATION.TITLE]" /></Template></Font></Text>
                     <Variant mode="AMBIENT" target="alpha" value="0" />
                 </PartText>
                 <PartText x="4" y="24" width="110" height="30">
-                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="26" weight="BOLD" color="[CONFIGURATION.crewcheck_palette.0]">
-                            <Template>%s<Parameter expression="[COMPLICATION.TEXT]" /></Template>
-                        </Font>
-                    </Text>
+                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE"><Font family="SYNC_TO_DEVICE" size="26" weight="BOLD" color="[CONFIGURATION.crewcheck_palette.0]"><Template>%s<Parameter expression="[COMPLICATION.TEXT]" /></Template></Font></Text>
                     <Variant mode="AMBIENT" target="alpha" value="0" />
                 </PartText>
             </Complication>
@@ -209,11 +160,7 @@
             <DefaultProviderPolicy primaryProvider="com.crewcheck.app/com.crewcheck.watch.RoutineComplicationService" primaryProviderType="SHORT_TEXT" defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY" />
             <Complication type="SHORT_TEXT">
                 <PartText x="4" y="0" width="136" height="28">
-                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE">
-                        <Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL" color="#FFB7C7D9">
-                            <Template>%s · %s<Parameter expression="[COMPLICATION.TITLE]" /><Parameter expression="[COMPLICATION.TEXT]" /></Template>
-                        </Font>
-                    </Text>
+                    <Text align="CENTER" ellipsis="TRUE" maxLines="1" isAutoSize="TRUE"><Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL" color="#FFB7C7D9"><Template>%s · %s<Parameter expression="[COMPLICATION.TITLE]" /><Parameter expression="[COMPLICATION.TEXT]" /></Template></Font></Text>
                     <Variant mode="AMBIENT" target="alpha" value="0" />
                 </PartText>
             </Complication>

@@ -7,7 +7,6 @@ on:
       - 'android-wrapper/watchface/**'
       - 'android-wrapper/app/**'
       - 'client/src/components/v1434/CrewCheckLifeView.tsx'
-      - 'client/src/lib/watchContext.ts'
       - 'android-wrapper/settings.gradle'
       - 'scripts/regression-crewwatch-premium-consolidated.mjs'
       - 'scripts/regression-watchface-premium-layout.mjs'
