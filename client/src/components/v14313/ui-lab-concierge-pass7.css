@@ -1,0 +1,416 @@
+/* CrewCheck UI Lab — pass 7: Concierge clarity
+ * Presentation-only layer. No business logic, storage, networking or recommendation behavior.
+ */
+.cc-life-ai-shell {
+  --cc-concierge-surface: rgba(8, 22, 42, 0.92);
+  --cc-concierge-surface-quiet: rgba(10, 28, 52, 0.72);
+  --cc-concierge-border: rgba(148, 197, 240, 0.17);
+  --cc-concierge-copy: #d8e7f4;
+  --cc-concierge-muted: #9fb7cc;
+  --cc-concierge-focus: #67e8f9;
+  gap: 14px;
+}
+
+.cc-life-ai-shell .cc-life-ai-hero,
+.cc-life-ai-shell .cc-life-ai-recommendation,
+.cc-life-ai-shell .cc-life-ai-actions,
+.cc-life-ai-shell .cc-life-gym-checkin,
+.cc-life-ai-shell .cc-life-ai-collapsible,
+.cc-life-ai-shell .cc-life-ai-privacy {
+  border-color: var(--cc-concierge-border);
+  background: linear-gradient(150deg, rgba(9, 27, 50, 0.96), rgba(5, 17, 34, 0.98));
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+}
+
+/* Calm hero: identity supports the message instead of competing with it. */
+.cc-life-ai-shell .cc-life-ai-hero {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  padding: 20px 22px;
+}
+
+.cc-life-ai-shell .cc-life-ai-hero::after {
+  width: 210px;
+  height: 210px;
+  opacity: 0.52;
+}
+
+.cc-life-ai-shell .cc-life-ai-orb {
+  width: 58px;
+  height: 58px;
+  border-radius: 19px;
+  box-shadow: 0 12px 30px rgba(139, 92, 246, 0.2);
+}
+
+.cc-life-ai-shell .cc-life-ai-orb > svg:first-child {
+  width: 28px;
+  height: 28px;
+}
+
+.cc-life-ai-shell .cc-life-ai-orb > svg:last-child {
+  width: 15px;
+  height: 15px;
+  right: 8px;
+  top: 7px;
+}
+
+.cc-life-ai-shell .cc-life-ai-hero > div:nth-child(2) {
+  min-width: 0;
+  max-width: 760px;
+}
+
+.cc-life-ai-shell .cc-life-ai-hero h2 {
+  margin-top: 3px;
+  margin-bottom: 5px;
+  font-size: clamp(1.22rem, 2.2vw, 1.62rem);
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+}
+
+.cc-life-ai-shell .cc-life-ai-hero p {
+  max-width: 68ch;
+  color: var(--cc-concierge-copy);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.cc-life-ai-shell .cc-life-learning {
+  align-self: start;
+  padding: 7px 10px;
+  font-size: 0.78rem;
+  background: rgba(59, 130, 246, 0.1);
+}
+
+/* Recommendation is the single visual priority after the hero. */
+.cc-life-ai-shell .cc-life-ai-recommendation {
+  grid-template-columns: minmax(0, 1fr) minmax(188px, 230px);
+  gap: 18px;
+  padding: 22px 22px 22px 24px;
+  border-color: rgba(103, 232, 249, 0.24);
+  background:
+    radial-gradient(circle at 88% 12%, rgba(139, 92, 246, 0.1), transparent 32%),
+    linear-gradient(150deg, rgba(10, 31, 57, 0.98), rgba(5, 18, 36, 0.99));
+}
+
+.cc-life-ai-shell .cc-life-ai-recommendation::before {
+  width: 3px;
+}
+
+.cc-life-ai-shell .cc-life-ai-recommendation h3 {
+  margin-top: 5px;
+  margin-bottom: 6px;
+  font-size: clamp(1.25rem, 2.5vw, 1.72rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+}
+
+.cc-life-ai-shell .cc-life-ai-recommendation p {
+  max-width: 72ch;
+  color: var(--cc-concierge-copy);
+}
+
+.cc-life-ai-shell .cc-life-ai-reasons {
+  margin-top: 12px;
+  gap: 6px;
+}
+
+.cc-life-ai-shell .cc-life-ai-reasons span {
+  padding: 6px 9px;
+  border-color: rgba(148, 197, 240, 0.11);
+  background: rgba(255, 255, 255, 0.035);
+  color: #bfd5e6;
+  font-size: 0.74rem;
+}
+
+.cc-life-ai-shell .cc-life-ai-rec-actions {
+  align-content: center;
+  min-width: 0;
+}
+
+.cc-life-ai-shell .cc-life-ai-rec-actions > .primary {
+  width: 100%;
+  min-height: 46px;
+}
+
+.cc-life-ai-shell .cc-life-ai-feedback {
+  justify-content: flex-end;
+  color: var(--cc-concierge-muted);
+}
+
+/* Metrics read as one system, with value > context > decoration. */
+.cc-life-ai-shell .cc-life-ai-dashboard {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.cc-life-ai-shell .cc-life-ai-dashboard article {
+  min-height: 132px;
+  padding: 15px;
+  gap: 5px;
+  border-radius: 20px;
+  border-color: var(--cc-concierge-border);
+  background: linear-gradient(155deg, rgba(12, 35, 62, 0.88), rgba(7, 22, 42, 0.94));
+  box-shadow: none;
+}
+
+.cc-life-ai-shell .cc-life-ai-dashboard article > svg {
+  width: 23px;
+  height: 23px;
+  margin-bottom: 3px;
+  color: #bdefff;
+}
+
+.cc-life-ai-shell .cc-life-ai-dashboard small {
+  color: var(--cc-concierge-muted);
+  font-size: 0.72rem;
+}
+
+.cc-life-ai-shell .cc-life-ai-dashboard strong {
+  font-size: 1.34rem;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+}
+
+.cc-life-ai-shell .cc-life-ai-dashboard span {
+  color: #b8ccdd;
+  font-size: 0.75rem;
+}
+
+.cc-life-ai-shell .cc-life-ai-dashboard i {
+  height: 5px;
+  margin-top: auto;
+}
+
+/* Actions stay touch-friendly but visually quieter than the recommendation. */
+.cc-life-ai-shell .cc-life-ai-actions,
+.cc-life-ai-shell .cc-life-gym-checkin {
+  padding: 18px;
+}
+
+.cc-life-ai-shell .cc-life-ai-actions > header {
+  margin-bottom: 11px;
+}
+
+.cc-life-ai-shell .cc-life-ai-actions h3,
+.cc-life-ai-shell .cc-life-gym-checkin h3 {
+  margin-bottom: 4px;
+}
+
+.cc-life-ai-shell .cc-life-ai-action-grid {
+  gap: 8px;
+}
+
+.cc-life-ai-shell .cc-life-ai-action-grid button {
+  min-height: 54px;
+  padding: 10px 12px;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.cc-life-ai-shell .cc-life-ai-action-grid button strong {
+  line-height: 1.15;
+}
+
+.cc-life-ai-shell .cc-life-ai-action-grid button small {
+  color: var(--cc-concierge-muted);
+}
+
+.cc-life-ai-shell .cc-life-session-live {
+  padding: 7px 10px;
+  font-size: 0.78rem;
+}
+
+.cc-life-ai-shell .cc-life-gym-checkin {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 390px);
+}
+
+.cc-life-ai-shell .cc-life-gym-checkin p {
+  max-width: 64ch;
+  color: var(--cc-concierge-copy);
+  font-size: 0.86rem;
+}
+
+.cc-life-ai-shell .cc-life-gym-checkin > div:last-child {
+  align-items: stretch;
+}
+
+.cc-life-ai-shell input,
+.cc-life-ai-shell select,
+.cc-life-ai-shell button {
+  min-height: 44px;
+}
+
+/* Secondary configuration collapses into deliberately quiet surfaces. */
+.cc-life-ai-shell .cc-life-ai-collapsible {
+  box-shadow: none;
+  background: rgba(7, 21, 40, 0.78);
+}
+
+.cc-life-ai-shell .cc-life-ai-collapse-head {
+  min-height: 58px;
+  padding: 14px 17px !important;
+}
+
+.cc-life-ai-shell .cc-life-ai-collapse-head > span > svg {
+  width: 23px;
+  height: 23px;
+}
+
+.cc-life-ai-shell .cc-life-ai-collapse-head strong {
+  font-size: 0.95rem;
+}
+
+.cc-life-ai-shell .cc-life-pattern-grid {
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.cc-life-ai-shell .cc-life-pattern-grid article,
+.cc-life-ai-shell .cc-life-ai-form-grid label,
+.cc-life-ai-shell .cc-life-ai-toggle-grid label {
+  border-radius: 15px;
+  border-color: rgba(148, 197, 240, 0.1);
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.cc-life-ai-shell .cc-life-ai-settings {
+  padding: 0 14px 14px;
+}
+
+.cc-life-ai-shell .cc-life-ai-privacy {
+  padding: 14px 16px;
+  box-shadow: none;
+}
+
+.cc-life-ai-shell .cc-life-ai-privacy p {
+  color: var(--cc-concierge-muted);
+  font-size: 0.8rem;
+}
+
+/* Keyboard/touch state remains explicit on every interactive control. */
+.cc-life-ai-shell button:focus-visible,
+.cc-life-ai-shell input:focus-visible,
+.cc-life-ai-shell select:focus-visible {
+  outline: 2px solid var(--cc-concierge-focus);
+  outline-offset: 2px;
+}
+
+.cc-life-ai-shell button:active {
+  transform: translateY(0) scale(0.985);
+}
+
+@media (max-width: 1050px) {
+  .cc-life-ai-shell .cc-life-ai-dashboard {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cc-life-ai-shell .cc-life-ai-hero {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .cc-life-ai-shell .cc-life-learning {
+    grid-column: 1 / -1;
+    width: max-content;
+  }
+}
+
+@media (max-width: 680px) {
+  .cc-life-ai-shell {
+    gap: 11px;
+    margin-top: 12px;
+  }
+
+  .cc-life-ai-shell .cc-life-ai-hero,
+  .cc-life-ai-shell .cc-life-ai-recommendation,
+  .cc-life-ai-shell .cc-life-ai-actions,
+  .cc-life-ai-shell .cc-life-gym-checkin,
+  .cc-life-ai-shell .cc-life-ai-collapsible,
+  .cc-life-ai-shell .cc-life-ai-privacy {
+    border-radius: 20px;
+  }
+
+  .cc-life-ai-shell .cc-life-ai-hero {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .cc-life-ai-shell .cc-life-ai-orb {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+  }
+
+  .cc-life-ai-shell .cc-life-ai-hero p {
+    grid-column: 1 / -1;
+    font-size: 0.84rem;
+  }
+
+  .cc-life-ai-shell .cc-life-learning {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .cc-life-ai-shell .cc-life-ai-recommendation {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 18px 17px 18px 19px;
+  }
+
+  .cc-life-ai-shell .cc-life-ai-feedback {
+    justify-content: flex-start;
+  }
+
+  .cc-life-ai-shell .cc-life-ai-dashboard {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .cc-life-ai-shell .cc-life-ai-dashboard article {
+    min-height: 122px;
+    padding: 13px;
+  }
+
+  .cc-life-ai-shell .cc-life-ai-dashboard article:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .cc-life-ai-shell .cc-life-ai-actions,
+  .cc-life-ai-shell .cc-life-gym-checkin {
+    padding: 16px;
+  }
+
+  .cc-life-ai-shell .cc-life-gym-checkin {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 420px) {
+  .cc-life-ai-shell .cc-life-ai-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .cc-life-ai-shell .cc-life-ai-orb {
+    width: 44px;
+    height: 44px;
+  }
+
+  .cc-life-ai-shell .cc-life-ai-dashboard {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .cc-life-ai-shell .cc-life-ai-dashboard strong {
+    font-size: 1.18rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-life-ai-shell button {
+    transition: none;
+  }
+
+  .cc-life-ai-shell button:hover,
+  .cc-life-ai-shell button:active {
+    transform: none;
+  }
+}
