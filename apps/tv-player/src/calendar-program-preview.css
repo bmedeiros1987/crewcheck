@@ -15,3 +15,12 @@
 .calendar-program-more{border-style:dashed;background:rgba(8,24,42,.24)}
 .theme-mobile .calendar-program-line,.theme-mobile .calendar-program-more{background:#fff;border-color:#d8e2ea}
 .theme-mobile .calendar-program-line>b,.theme-mobile .calendar-program-more>b{color:#11283e}
+
+.calendar-day-head{display:flex;align-items:center;justify-content:space-between;width:100%;min-width:0;margin-bottom:.45vh}
+.calendar-day-head>b{font-size:1.05vw!important;color:#f3f8ff!important}
+.calendar-day-head>span{margin-left:.4vw;font-size:.45vw!important;color:#7f96ac!important;font-weight:700!important;text-align:right}
+.week-view .calendar-day-head>b{font-size:1.35vw!important}
+.week-view .calendar-program-line{padding:.34vw .42vw}
+.week-view .calendar-program-line>b{font-size:.62vw}
+.week-view .calendar-program-line>small{font-size:.48vw}
+.theme-mobile .calendar-day-head>b{color:#10263a!important}
