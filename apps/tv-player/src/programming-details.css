@@ -117,3 +117,12 @@
 .theme-mobile .program-card-copy h2,.theme-mobile .program-overview-head h1,.theme-mobile .program-detail-title h1,.theme-mobile .program-route-heading strong,.theme-mobile .flight-leg-main h3,.theme-mobile .program-key-facts strong,.theme-mobile .detail-module dd{color:#0b2034}
 .theme-mobile .stay-exclusive-card{background:linear-gradient(145deg,#f7f2ff,#eef6ff);color:#17213c}.theme-mobile .stay-exclusive-card h2{color:#17213c}
 .theme-mobile .display-pref-grid>button{background:#fff!important;color:#0b2034!important;border-color:#d2e0e9!important}
+
+.stay-program-symbol{position:relative;display:block;width:2.35vw;height:2.35vw;color:#c8a3ff}
+.stay-program-symbol svg:first-child{position:absolute;left:.05vw;bottom:.05vw;width:1.85vw;height:1.85vw}
+.stay-program-symbol svg:last-child{position:absolute;right:-.02vw;top:-.02vw;width:.95vw;height:.95vw;color:#f0d7ff;filter:drop-shadow(0 0 .35vw rgba(202,164,255,.35))}
+.stay-card-caption{display:flex!important;align-items:center!important;color:#b9a4d8!important}
+.stay-card-caption svg{width:.85vw;height:.85vw;margin-right:.35vw;color:#c8a3ff}
+.program-card.program-stay{box-shadow:inset .24vw 0 0 #a478ef,0 .7vw 1.8vw rgba(23,12,48,.16)}
+.program-card.program-stay:focus{outline-color:#d8c0ff}
+.program-card.program-stay .program-card-copy small{color:#c8a4ff}
