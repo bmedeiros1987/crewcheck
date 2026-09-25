@@ -1,4 +1,4 @@
-"""Visual regression matrix: WFF geometry/privacy plus calendar/order guards, not a renderer."""
+"""WFF visual/geometry/privacy checks. Official XSD validation runs separately in CI."""
 from copy import deepcopy
 from hashlib import sha256
 from itertools import combinations, product
@@ -54,6 +54,16 @@ def luminance(color):
     return sum(v * weight for v, weight in zip(channels, (.2126, .7152, .0722)))
 
 
+def profile_children(option):
+    assert len(option) == 1 and option[0].tag == 'Group', 'WFF ListOption requires one child'
+    group = option[0]
+    assert box(group) == (0, 0, 450, 450) and group.get('name'), 'group must not shift its children'
+    assert not (set(group.attrib) - {'name', 'x', 'y', 'width', 'height'}), 'no hidden group transforms'
+    assert all(n.tag in ('DigitalClock', 'PartDraw') for n in group)
+    assert len(group.findall('DigitalClock')) == 1
+    return list(group)
+
+
 def validate_config(root, labels):
     cfg = root.find('UserConfigurations')
     assert cfg is not None and [n.tag for n in cfg] == ['ListConfiguration', 'ColorConfiguration']
@@ -78,9 +88,7 @@ def validate_config(root, labels):
     refs = scene.findall('ListConfiguration')
     assert len(refs) == 1 and refs[0].get('id') == choice.get('id'), 'unbound style selector'
     assert [n.get('id') for n in refs[0]] == ['0', '1', '2']
-    for option in refs[0]:
-        assert all(n.tag in ('DigitalClock', 'PartDraw') for n in option), 'profile contains unexpected content'
-        assert len(option.findall('DigitalClock')) == 1
+    for option in refs[0]: profile_children(option)
     assert len(root.findall('.//ComplicationSlot')) == len(scene.findall('ComplicationSlot')) == 6
     assert not root.findall('.//Flavors') and not root.findall('.//Launch')
     assert not root.findall('.//SecondHand') and not root.findall('.//PartAnimatedImage')
@@ -88,26 +96,24 @@ def validate_config(root, labels):
         for value in n.attrib.values():
             if 'CONFIGURATION.' in value:
                 assert value in ('[CONFIGURATION.crewcheck_palette.0]', '[CONFIGURATION.crewcheck_palette.1]'), 'unknown palette reference'
-    return True
 
 
 def resolve_profile(root, style, palette):
-    """Flatten the selected declarative option for geometry tests, not WFF execution."""
+    """Flatten only an identity Group for geometry checks; not a WFF renderer."""
     selected = deepcopy(root)
     scene = selected.find('Scene')
     config = scene.find('ListConfiguration')
     option = config.find(f"ListOption[@id='{style}']")
     assert option is not None, 'unknown profile'
+    children = profile_children(option)
     index = list(scene).index(config)
     scene.remove(config)
-    for n in reversed(list(option)):
-        scene.insert(index, deepcopy(n))
+    for n in reversed(children): scene.insert(index, deepcopy(n))
     colors = PALETTES[palette].split()
     for n in selected.iter():
         for key, value in list(n.attrib.items()):
             match = re.fullmatch(r'\[CONFIGURATION\.crewcheck_palette\.([01])\]', value)
-            if match:
-                n.set(key, colors[int(match[1])])
+            if match: n.set(key, colors[int(match[1])])
     return selected
 
 
@@ -117,8 +123,7 @@ def validate(root, style='0'):
     assert scene is not None and scene.get('backgroundColor') == '#FF000000'
     slots = scene.findall('ComplicationSlot')
     assert len(slots) == 6 and {int(s.get('slotId')) for s in slots} == set(PROVIDERS)
-    for a, b in combinations(slots, 2):
-        assert not overlaps(box(a), box(b)), 'complication slots overlap'
+    for a, b in combinations(slots, 2): assert not overlaps(box(a), box(b)), 'complication slots overlap'
     for slot in slots:
         sid = int(slot.get('slotId'))
         assert slot.get('supportedTypes') == ('LONG_TEXT SHORT_TEXT EMPTY' if sid == 1 else 'SHORT_TEXT EMPTY')
@@ -134,8 +139,7 @@ def validate(root, style='0'):
         for comp in comps:
             texts = comp.findall('PartText')
             assert len(texts) == (1 if sid == 4 else 2), 'missing complication content'
-            for a, b in combinations(texts, 2):
-                assert not overlaps(box(a), box(b)), 'title/value overlap'
+            for a, b in combinations(texts, 2): assert not overlaps(box(a), box(b)), 'title/value overlap'
             for part in texts:
                 x, y, w, h = box(part)
                 assert x >= 0 and y >= 0 and x + w <= box(slot)[2] and y + h <= box(slot)[3], 'text leaves slot'
@@ -147,8 +151,7 @@ def validate(root, style='0'):
                 assert font.find('Template') is not None, 'provider values missing'
                 expressions = [p.get('expression') for p in font.findall('.//Parameter')]
                 assert expressions and all(e in ('[COMPLICATION.TITLE]', '[COMPLICATION.TEXT]') for e in expressions)
-                if sid in (3, 4, 5, 6):
-                    assert hidden_in_ambient(part), 'health/routine/battery/steps must clear in ambient'
+                if sid in (3, 4, 5, 6): assert hidden_in_ambient(part), 'health/routine/battery/steps must clear in ambient'
     hero = next(s for s in slots if s.get('slotId') == '1')
     assert hero.find("Complication[@type='LONG_TEXT']/PartText[@y='30']/Text").get('maxLines') == '2'
     clocks = scene.findall('DigitalClock')
@@ -157,7 +160,7 @@ def validate(root, style='0'):
     assert len(times) == 2, 'Calendar must not be TimeText'
     active, ambient = times
     for time in times:
-        assert time.get('format') == 'hh:mm', 'TimeText only formats time, never calendar'
+        assert time.get('format') == 'hh:mm', 'TimeText formats time, never calendar'
         assert time.get('hourFormat') == 'SYNC_TO_DEVICE'
         assert [n.tag for n in time] == ['Variant', 'Font'], 'WFF sequence: Variant before Font'
     assert active.get('alpha') == '255' and hidden_in_ambient(active)
@@ -168,8 +171,7 @@ def validate(root, style='0'):
     assert ambient.find('Font').get('color') == '#FFDDE3EC'
     dates = scene.findall('PartText')
     assert len(dates) == 1, 'One calendar shared by all profiles'
-    date = dates[0]
-    font = date.find('Text/Font')
+    date = dates[0]; font = date.find('Text/Font')
     assert font is not None and float(font.get('size')) >= 20
     assert [p.get('expression') for p in font.findall('Upper/Template/Parameter')] == CALENDAR
     assert not hidden_in_ambient(date), 'Calendar remains readable in AOD'
@@ -226,15 +228,13 @@ def run():
     ]
     negative = 0
     for style, palette in product(CLOCKS, PALETTES):
-        resolved = resolve_profile(root, style, palette)
-        validate(resolved, style)
+        resolved = resolve_profile(root, style, palette); validate(resolved, style)
         for selector, attrs in mutations:
             changed = deepcopy(resolved); changed.find(selector).attrib.update(attrs)
             try: validate(changed, style)
             except AssertionError: negative += 1; continue
             raise AssertionError(f'mutation not caught: {selector}')
-        changed = deepcopy(resolved)
-        time = changed.find('.//DigitalClock/TimeText')
+        changed = deepcopy(resolved); time = changed.find('.//DigitalClock/TimeText')
         variant = time.find('Variant'); time.remove(variant); time.append(variant)
         try: validate(changed, style)
         except AssertionError: negative += 1
@@ -245,13 +245,19 @@ def run():
         ('Scene/ListConfiguration', {'id': 'missing_config'}),
         ('Scene/ListConfiguration/ListOption', {'id': '99'}),
         ('UserConfigurations/ColorConfiguration/ColorOption', {'colors': '#FF000001 #55000001'}),
+        ('Scene/ListConfiguration/ListOption/Group', {'x': '1'}),
     ]:
         changed = deepcopy(root); changed.find(selector).attrib.update(attrs)
         try: validate_config(changed, labels)
         except AssertionError: negative += 1; continue
         raise AssertionError(f'configuration mutation not caught: {selector}')
-    print(f'[watchface-premium-layout] PASS: 9 combinations, calendar/order, active/AOD, six stable slots, original logo; {negative} negative cases')
+    changed = deepcopy(root); option = changed.find('Scene/ListConfiguration/ListOption')
+    group = option[0]; option.remove(group)
+    for child in group: option.append(child)
+    try: validate_config(changed, labels)
+    except AssertionError: negative += 1
+    else: raise AssertionError('multiple ListOption children not caught')
+    print(f'[watchface-premium-layout] PASS: 9 combinations, calendar/order/groups, active/AOD, six stable slots, original logo; {negative} negative cases')
 
 
-if __name__ == '__main__':
-    run()
+if __name__ == '__main__': run()

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- CrewCheck WFF v1: three visual profiles, original logo, six stable providers.
-     Spec fixes from #838: Variant precedes Font; calendar is PartText, not TimeText. -->
+     Variant precedes Font; calendar is PartText; each ListOption holds one Group. -->
 <WatchFace width="450" height="450">
     <Metadata key="CLOCK_TYPE" value="DIGITAL" />
     <Metadata key="PREVIEW_TIME" value="18:16:00" />
@@ -23,6 +23,7 @@
         </PartImage>
         <ListConfiguration id="crewcheck_style">
             <ListOption id="0">
+              <Group name="Signature" x="0" y="0" width="450" height="450">
                 <DigitalClock x="0" y="0" width="450" height="450">
                     <TimeText x="52" y="118" width="346" height="90" alpha="255" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
                         <Variant mode="AMBIENT" target="alpha" value="0" />
@@ -40,8 +41,10 @@
                     </RoundRectangle>
                     <Variant mode="AMBIENT" target="alpha" value="0" />
                 </PartDraw>
+              </Group>
             </ListOption>
             <ListOption id="1">
+              <Group name="Flight Deck" x="0" y="0" width="450" height="450">
                 <DigitalClock x="0" y="0" width="450" height="450">
                     <TimeText x="52" y="118" width="346" height="90" alpha="255" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
                         <Variant mode="AMBIENT" target="alpha" value="0" />
@@ -59,8 +62,10 @@
                     </RoundRectangle>
                     <Variant mode="AMBIENT" target="alpha" value="0" />
                 </PartDraw>
+              </Group>
             </ListOption>
             <ListOption id="2">
+              <Group name="Minimal" x="0" y="0" width="450" height="450">
                 <DigitalClock x="0" y="0" width="450" height="450">
                     <TimeText x="52" y="118" width="346" height="90" alpha="255" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
                         <Variant mode="AMBIENT" target="alpha" value="0" />
@@ -71,15 +76,11 @@
                         <Font family="SYNC_TO_DEVICE" size="80" weight="THIN" slant="NORMAL" color="#FFDDE3EC" />
                     </TimeText>
                 </DigitalClock>
+              </Group>
             </ListOption>
         </ListConfiguration>
-        <!-- Calendar is shared by all profiles and remains visible in ambient mode. -->
         <PartText x="105" y="210" width="240" height="28">
-            <Text align="CENTER">
-                <Font family="SYNC_TO_DEVICE" size="20" weight="NORMAL" color="#FFB7C7D9">
-                    <Upper><Template>%s %s %s<Parameter expression="[DAY_OF_WEEK_S]" /><Parameter expression="[DAY_Z]" /><Parameter expression="[MONTH_S]" /></Template></Upper>
-                </Font>
-            </Text>
+            <Text align="CENTER"><Font family="SYNC_TO_DEVICE" size="20" weight="NORMAL" color="#FFB7C7D9"><Upper><Template>%s %s %s<Parameter expression="[DAY_OF_WEEK_S]" /><Parameter expression="[DAY_Z]" /><Parameter expression="[MONTH_S]" /></Template></Upper></Font></Text>
         </PartText>
         <ComplicationSlot x="97" y="62" width="124" height="52" slotId="2" displayName="gate_label" supportedTypes="SHORT_TEXT EMPTY">
             <BoundingRoundBox x="0" y="0" width="124" height="52" outlinePadding="2.0" cornerRadius="18" />
