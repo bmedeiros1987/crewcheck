@@ -134,3 +134,11 @@
 .display-preset-row small{display:block!important;margin-top:.25vh!important;font-size:.50vw!important;line-height:1.3!important;color:#8299b1!important}
 .theme-mobile .display-preset-row>button{background:#fff!important;color:#0b2034!important;border-color:#d2e0e9!important}
 .theme-mobile .display-preset-row b{color:#0b2034!important}
+
+.visitor-airport-glossary,.visitor-term-glossary{display:flex;flex-wrap:wrap;margin:.75vh -.25vw 0}
+.visitor-airport-glossary>span,.visitor-term-glossary>span{display:flex;flex-direction:column;width:calc(50% - .5vw);margin:.25vw;padding:.55vw .65vw;border:1px solid #31566f;border-radius:.55vw;background:rgba(18,57,77,.24)}
+.visitor-term-glossary>span{width:calc(33.333% - .5vw);border-color:#3b4c66;background:rgba(22,37,58,.32)}
+.visitor-airport-glossary b,.visitor-term-glossary b{font-size:.64vw;color:#dff6ff}
+.visitor-airport-glossary small,.visitor-term-glossary small{margin-top:.25vh!important;font-size:.52vw!important;line-height:1.35!important;color:#8da7bc!important}
+.theme-mobile .visitor-airport-glossary>span,.theme-mobile .visitor-term-glossary>span{background:#f6fbfe;border-color:#d3e3ec}
+.theme-mobile .visitor-airport-glossary b,.theme-mobile .visitor-term-glossary b{color:#0d2a3e}
