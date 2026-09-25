@@ -10,9 +10,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import * as icons from 'lucide-react';
 import ts from 'typescript';
 
-// Tests the actual prepared MenuDrawer and shipped CSS, not a second hand-built menu.
-// Account data is synthetic; no authentication, API, roster or production data is used.
-// This is a component layout test, not a full-app or physical-device acceptance test.
+// Actual prepared MenuDrawer + shipped CSS + unmodified theme runtime.
+// Synthetic account only. This component test is not full-app/device acceptance.
 const output = path.resolve(process.env.MENU_EVIDENCE_DIR || 'artifacts/menu-responsive');
 fs.mkdirSync(output, { recursive: true });
 const dist = path.resolve('dist');
@@ -20,11 +19,17 @@ const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 const source = ts.createSourceFile('Home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const names = ['CrewCheckMark', 'MenuDrawer'];
 const declarations = source.statements.filter(n => ts.isFunctionDeclaration(n) && names.includes(n.name?.text));
-assert.equal(declarations.length, names.length, 'Canonical MenuDrawer/brand must exist after preparation');
-const rootProps = { className: 'cz-app', 'data-version': 'prepared', 'data-view': 'roster', 'data-menu-open': 'true' };
+assert.equal(declarations.length, names.length, 'Prepared MenuDrawer/brand must exist');
+let rootTag;
+const rootProps = { className: 'cz-app', 'data-view': 'roster', 'data-menu-open': 'true' };
 function collectRoot(node) {
+  if (ts.isVariableDeclaration(node) && node.name.getText(source) === 'DEFAULT_VERSION'
+      && node.initializer && ts.isStringLiteral(node.initializer)) {
+    rootProps['data-version'] = node.initializer.text;
+  }
   if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node))
       && node.attributes.properties.some(a => ts.isJsxAttribute(a) && a.name.text === 'data-ipad-layout-v14394')) {
+    rootTag = node.tagName.getText(source);
     for (const attr of node.attributes.properties) {
       if (!ts.isJsxAttribute(attr) || !attr.name.text.startsWith('data-')) continue;
       if (attr.initializer && ts.isStringLiteral(attr.initializer)) rootProps[attr.name.text] = attr.initializer.text;
@@ -33,7 +38,9 @@ function collectRoot(node) {
   ts.forEachChild(node, collectRoot);
 }
 collectRoot(source);
-assert.equal(rootProps['data-ipad-layout-v14394'], 'contained', 'Use prepared canonical root markers');
+assert.equal(rootTag, 'main', 'Use the actual canonical root tag');
+assert.ok(rootProps['data-version'], 'Use actual prepared version, not a mock selector value');
+assert.equal(rootProps['data-ipad-layout-v14394'], 'contained');
 const code = ts.transpileModule(declarations.map(n => n.getText(source)).join('\n'), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.React },
 }).outputText;
@@ -44,24 +51,27 @@ const scope = {
   isAdmin: () => true,
 };
 vm.runInNewContext(code + '\nthis.RenderMenu = MenuDrawer;', scope, { timeout: 1000 });
-const menu = renderToStaticMarkup(React.createElement(scope.RenderMenu, {
-  open: true, close: () => {}, view: 'roster', setView: () => {}, actions: { logout: () => {} },
-}));
-assert.ok(menu.includes('data-menu-label='), 'Render the current canonical labeled destinations');
+// React serializes className to class. Hand-building HTML previously lost this selector.
+const markup = renderToStaticMarkup(React.createElement(rootTag, rootProps,
+  React.createElement(scope.RenderMenu, {
+    open: true, close: () => {}, view: 'roster', setView: () => {}, actions: { logout: () => {} },
+  })));
+assert.ok(markup.includes('class="cz-app"') && markup.includes('data-menu-label='));
 const index = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
 const links = [...index.matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/g)].map(m => m[0]).join('\n');
 assert.ok(links, 'Use CSS linked by the real Vite build');
-// rootProps usa o nome JSX (className); no HTML estático o atributo é class. Sem isso o
-// fixture saía com className="cz-app" literal e nenhuma regra .cz-app do CSS real casava —
-// o teste media uma cascata diferente da que o app mostra.
-const attrs = Object.entries(rootProps).map(([k, v]) => `${k === 'className' ? 'class' : k}="${String(v).replaceAll('&', '&amp;').replaceAll('"', '&quot;')}"`).join(' ');
-const fixture = `<!doctype html><html lang="pt-BR" data-crew-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">${links}</head><body><div id="root"><div ${attrs}>${menu}</div></div></body></html>`;
+const themeSource = fs.readFileSync('client/src/lib/themeRuntime.ts', 'utf8');
+const themeJs = ts.transpileModule(themeSource, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
+}).outputText;
+fs.writeFileSync(path.join(output, 'theme-runtime.js'), themeJs);
+const fixture = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">${links}</head><body><div id="root">${markup}</div><script type="module">import { applyCrewCheckTheme } from './theme-runtime.js'; window.applyMenuTestTheme = applyCrewCheckTheme;</script></body></html>`;
 fs.writeFileSync(path.join(output, 'menu.html'), fixture);
 fs.writeFileSync(path.join(output, 'prepared-menu.tsx'), declarations.map(n => n.getText(source)).join('\n'));
 fs.cpSync(path.join(dist, 'assets'), path.join(output, 'assets'), { recursive: true });
 if (fs.existsSync(path.join(dist, 'icons'))) fs.cpSync(path.join(dist, 'icons'), path.join(output, 'icons'), { recursive: true });
 
-const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' };
 const server = http.createServer((req, res) => {
   const pathname = decodeURIComponent(new URL(req.url || '/', 'http://localhost').pathname);
   const file = path.resolve(output, '.' + (pathname === '/' ? '/menu.html' : pathname));
@@ -86,8 +96,22 @@ const matrix = [
   { name: 'desktop', width: 1440, height: 900, touch: false },
 ];
 const results = [];
+async function settle(page) {
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    for (const animation of document.getAnimations()) {
+      if (Number.isFinite(animation.effect?.getComputedTiming().endTime)) {
+        try { animation.finish(); } catch {}
+      }
+    }
+    await new Promise(resolve => requestAnimationFrame(resolve));
+  });
+}
 async function inspect(page, label) {
+  assert.equal(await page.locator('main.cz-app[data-version]').count(), 1, 'Canonical root must match the shipped selectors');
   await page.evaluate(() => { document.querySelector('.cz-menu-scroll').scrollTop = 0; });
+  await settle(page);
   const metrics = await page.evaluate(() => {
     const box = e => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; };
     const panel = document.querySelector('.cz-menu-panel');
@@ -95,6 +119,9 @@ async function inspect(page, label) {
     const buttons = [...document.querySelectorAll('.cz-menu-group > button')];
     return {
       viewport: { width: innerWidth, height: innerHeight },
+      theme: document.documentElement.dataset.crewTheme,
+      expectedColumns: matchMedia('(pointer: coarse) and (min-width: 821px)').matches ? 2 : 1,
+      columns: getComputedStyle(document.querySelector('.cz-menu-group')).gridTemplateColumns.split(' ').length,
       panel: box(panel), scroll: { ...box(scroll), scrollWidth: scroll.scrollWidth, clientWidth: scroll.clientWidth },
       close: box(document.querySelector('.cz-menu-close')),
       logout: box(document.querySelector('.cz-menu-logout')),
@@ -103,7 +130,13 @@ async function inspect(page, label) {
       rows: buttons.map(b => {
         const copy = b.querySelector(':scope > span');
         const style = getComputedStyle(copy);
-        return { name: b.dataset.menuLabel, button: box(b), copy: box(copy), opacity: style.opacity, visibility: style.visibility, position: style.position };
+        const icon = b.querySelector(':scope > svg:first-child');
+        const iconStyle = getComputedStyle(icon);
+        const glyphWidth = parseFloat(iconStyle.width) - (iconStyle.boxSizing === 'border-box'
+          ? parseFloat(iconStyle.paddingLeft) + parseFloat(iconStyle.paddingRight) + parseFloat(iconStyle.borderLeftWidth) + parseFloat(iconStyle.borderRightWidth) : 0);
+        return { name: b.dataset.menuLabel, button: box(b), copy: box(copy), glyphWidth,
+          opacity: style.opacity, visibility: style.visibility, position: style.position,
+          textColor: getComputedStyle(copy.querySelector('strong')).color };
       }),
     };
   });
@@ -121,14 +154,17 @@ async function inspect(page, label) {
   if (overlap(metrics.close, metrics.logout) || overlap(metrics.profile, metrics.logout) || overlap(metrics.profile, metrics.close)) failures.push('Header actions overlap');
   if (metrics.scroll.height < 100) failures.push('No useful scrolling area');
   if (metrics.scroll.scrollWidth > metrics.scroll.clientWidth + 1) failures.push('Horizontal overflow in menu list');
+  if (metrics.columns !== metrics.expectedColumns) failures.push('Wrong navigation column count');
   if (metrics.count !== 40) failures.push(`Expected 40 canonical destinations; got ${metrics.count}`);
   for (const row of metrics.rows) {
     if (row.visibility !== 'visible' || Number(row.opacity) < 0.99 || row.position === 'absolute') failures.push(`${row.name}: label depends on hover`);
     if (row.button.width < 200 || row.button.height < 44) failures.push(`${row.name}: collapsed navigation row`);
     if (!inside(row.copy, row.button)) failures.push(`${row.name}: copy outside button`);
+    if (row.glyphWidth < 18) failures.push(`${row.name}: icon glyph collapsed inside padding`);
   }
   await page.screenshot({ path: path.join(output, `${label}.png`), animations: 'disabled' });
   await page.evaluate(() => { const el = document.querySelector('.cz-menu-scroll'); el.scrollTop = el.scrollHeight; });
+  await settle(page);
   const end = await page.evaluate(() => {
     const scroll = document.querySelector('.cz-menu-scroll').getBoundingClientRect();
     const last = [...document.querySelectorAll('.cz-menu-group > button')].at(-1).getBoundingClientRect();
@@ -144,8 +180,9 @@ try {
     await context.route('**/*', route => route.request().url().startsWith(url) ? route.continue() : route.abort());
     const page = await context.newPage();
     await page.goto(url, { waitUntil: 'networkidle' });
+    await page.waitForFunction(() => typeof window.applyMenuTestTheme === 'function');
     for (const theme of ['dark', 'light']) {
-      await page.evaluate(theme => { document.documentElement.dataset.crewTheme = theme; }, theme);
+      await page.evaluate(theme => window.applyMenuTestTheme(theme), theme);
       await inspect(page, `${device.name}-${theme}`);
     }
     if (device.name === 'phone-portrait') {
@@ -159,7 +196,7 @@ try {
 } finally {
   fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({
     commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
-    scope: 'Prepared MenuDrawer + shipped CSS; synthetic account; no full-app/device acceptance', results,
+    scope: 'Prepared MenuDrawer + shipped CSS + actual theme runtime; synthetic account; no full-app/device acceptance', results,
   }, null, 2));
   await browser.close();
   await new Promise(resolve => server.close(resolve));
