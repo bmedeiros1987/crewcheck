@@ -86,6 +86,15 @@ export type WatchRouteContext = {
 
 const HOUR_MS = 60 * 60 * 1000;
 
+/** Mobile-owned publishing cadence, transferred from #836 without changing snapshot semantics. */
+export const WATCH_UNCHANGED_REPUBLISH_MS = 10 * 60 * 1000;
+
+/** Timestamps are transport freshness, not a content change; entitlement remains part of content. */
+export function watchSnapshotContentSignature(snapshot: CrewCheckWatchSnapshot): string {
+  const { generatedAtEpochMs: _generated, validUntilEpochMs: _validUntil, ...content } = snapshot;
+  return JSON.stringify(content);
+}
+
 function clean(value: unknown): string {
   const text = String(value ?? '').trim();
   return text === '—' || /^a confirmar$/i.test(text) ? '' : text;

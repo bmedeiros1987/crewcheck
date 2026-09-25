@@ -81,7 +81,7 @@ import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatfo
 import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient';
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
-import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
+import { buildCrewCheckWatchSnapshot, watchSnapshotContentSignature, WATCH_UNCHANGED_REPUBLISH_MS } from '@/lib/watchContext';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
 import '@/components/v1393/weather.css';
@@ -4639,20 +4639,32 @@ export default function Home() {
   useWeatherLandingMonitor(flightEvent);
 
   useEffect(() => {
-    const publishWatchSnapshot = () => {
+    // O tick de 1 min só existe para pegar viradas de estado (apresentação → embarque → voo)
+    // e a contagem da conexão. Sem mudança de conteúdo ele não publica: cada publicação é um
+    // DataItem urgente que acorda o relógio, recriptografa o cache e atualiza as complicações.
+    // Pedidos explícitos (relógio pedindo sync, bridge nativa pronta) sempre publicam — o
+    // relógio espera um sentAt novo para confirmar o sync.
+    let lastSignature = '';
+    let lastPublishedAt = 0;
+    const publishWatchSnapshot = (force: boolean) => {
       try {
         const snapshot = buildCrewCheckWatchSnapshot(events, event);
+        const signature = watchSnapshotContentSignature(snapshot);
+        const now = Date.now();
+        if (!force && signature === lastSignature && now - lastPublishedAt < WATCH_UNCHANGED_REPUBLISH_MS) return;
+        lastSignature = signature;
+        lastPublishedAt = now;
         window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: snapshot }));
       } catch {
         // Watch sync is auxiliary. Never interfere with roster rendering.
       }
     };
 
-    publishWatchSnapshot();
-    const onRequest = () => publishWatchSnapshot();
+    publishWatchSnapshot(true);
+    const onRequest = () => publishWatchSnapshot(true);
     window.addEventListener('crewcheck:watch-snapshot-request', onRequest);
     window.addEventListener('crewcheck:native-ready', onRequest);
-    const timer = window.setInterval(publishWatchSnapshot, 60_000);
+    const timer = window.setInterval(() => publishWatchSnapshot(false), 60_000);
     return () => {
       window.removeEventListener('crewcheck:watch-snapshot-request', onRequest);
       window.removeEventListener('crewcheck:native-ready', onRequest);
