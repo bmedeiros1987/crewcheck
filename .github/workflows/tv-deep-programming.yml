@@ -21,6 +21,8 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node scripts/tv-deep-programming-test.mjs
       - run: node scripts/tv-test.mjs
+      - run: node scripts/tv-broadcast-prepare.mjs && node scripts/tv-broadcast-fit.mjs
+      - run: node scripts/tv-pairing-prepare.mjs && node scripts/tv-pairing-prepare.mjs
       - run: node scripts/tv-channel-test.mjs
       - run: node scripts/tv-broadcast-test.mjs
       - run: npx tsc --noEmit -p tsconfig.tv.json
