@@ -5,6 +5,7 @@ export type TvDisplayPreset='essential'|'operational'|'rest'|'complete'|'visitor
 export type TvDisplayPreferences={
   gate:boolean;
   traffic:boolean;
+  mobility:boolean;
   weather:boolean;
   week:boolean;
   changes:boolean;
@@ -17,15 +18,15 @@ export type TvDisplayPreferences={
 };
 const KEY='crewcheck-tv-display-preferences-v1';
 export const DEFAULT_TV_DISPLAY_PREFERENCES:TvDisplayPreferences={
-  gate:true,traffic:true,weather:true,week:true,changes:true,news:false,
+  gate:true,traffic:true,mobility:true,weather:true,week:true,changes:true,news:false,
   finance:false,crew:false,hotel:true,visitorExplanations:true,airlinePhoto:true,
 };
 export const TV_DISPLAY_PRESETS:Record<TvDisplayPreset,TvDisplayPreferences>={
-  essential:{...DEFAULT_TV_DISPLAY_PREFERENCES,week:false,changes:true,news:false,finance:false,crew:false,hotel:true},
-  operational:{...DEFAULT_TV_DISPLAY_PREFERENCES,gate:true,traffic:true,weather:true,week:true,changes:true,news:false,finance:false,crew:false,hotel:true},
-  rest:{...DEFAULT_TV_DISPLAY_PREFERENCES,gate:false,traffic:false,weather:true,week:true,changes:false,news:false,finance:false,crew:false,hotel:true},
-  complete:{...DEFAULT_TV_DISPLAY_PREFERENCES,gate:true,traffic:true,weather:true,week:true,changes:true,news:true,finance:true,crew:true,hotel:true},
-  visitor:{...DEFAULT_TV_DISPLAY_PREFERENCES,gate:false,traffic:false,weather:true,week:true,changes:false,news:false,finance:false,crew:false,hotel:false,visitorExplanations:true,airlinePhoto:true},
+  essential:{...DEFAULT_TV_DISPLAY_PREFERENCES,week:false,changes:true,news:false,finance:false,crew:false,hotel:true,mobility:true},
+  operational:{...DEFAULT_TV_DISPLAY_PREFERENCES,gate:true,traffic:true,mobility:true,weather:true,week:true,changes:true,news:false,finance:false,crew:false,hotel:true},
+  rest:{...DEFAULT_TV_DISPLAY_PREFERENCES,gate:false,traffic:false,mobility:false,weather:true,week:true,changes:false,news:false,finance:false,crew:false,hotel:true},
+  complete:{...DEFAULT_TV_DISPLAY_PREFERENCES,gate:true,traffic:true,mobility:true,weather:true,week:true,changes:true,news:true,finance:true,crew:true,hotel:true},
+  visitor:{...DEFAULT_TV_DISPLAY_PREFERENCES,gate:false,traffic:false,mobility:false,weather:true,week:true,changes:false,news:false,finance:false,crew:false,hotel:false,visitorExplanations:true,airlinePhoto:true},
 };
 
 function load():TvDisplayPreferences{
@@ -55,6 +56,7 @@ export type TvDisplayPreferencesApi=ReturnType<typeof useTvDisplayPreferences>;
 const rows:Array<[keyof TvDisplayPreferences,string,string,React.ReactNode,boolean?]>=[
   ['gate','Portão','Exibir portão/embarque quando a fonte estiver válida.',<MapPin/>],
   ['traffic','Trânsito','Priorizar duração de trajeto e atrasos na tela Agora.',<Gauge/>],
+  ['mobility','Uber / mobilidade','Mostrar handoff por QR para concluir a corrida no celular quando autorizado.',<Gauge/>],
   ['weather','Meteorologia','Clima da base, origem e próximo pernoite quando disponível.',<CloudSun/>],
   ['week','Resumo da semana','Voos, jornadas e pernoites no painel inicial.',<Plane/>],
   ['changes','Mudanças','Mostrar alterações confirmadas da escala.',<Plane/>],
