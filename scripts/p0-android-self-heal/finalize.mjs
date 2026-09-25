@@ -32,3 +32,7 @@ for (const required of [
 
 fs.writeFileSync(file, source, 'utf8');
 console.log('[p0-android-self-heal:finalize] hooks finais de erro/HTTP reafirmados após android-play/layout.');
+
+// Phone-only post-finalizer: after every native/store transform has settled, attach
+// the non-disruptive Google Play availability bridge without touching roster state.
+await import('../mobile-play-update/apply.mjs');

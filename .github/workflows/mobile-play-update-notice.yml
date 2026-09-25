@@ -1,0 +1,46 @@
+name: CrewCheck Mobile safe Play update notice
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'android-wrapper/app/build.gradle'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckPlayUpdateCoordinator.java'
+      - 'scripts/mobile-play-update/**'
+      - 'scripts/p0-android-self-heal/finalize.mjs'
+      - 'scripts/regression-mobile-play-update-notice.mjs'
+      - '.github/workflows/mobile-play-update-notice.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+      - run: npm ci
+      - name: Materialize canonical Mobile runtime
+        run: node scripts/v139/apply.mjs
+      - name: Assert non-disruptive Play update contract
+        run: node scripts/regression-mobile-play-update-notice.mjs
+      - name: Build embedded/offline web shell from materialized sources
+        run: npx vite build
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - name: Compile Android phone wrapper
+        run: gradle -p android-wrapper --no-daemon --console=plain :app:assembleDebug
