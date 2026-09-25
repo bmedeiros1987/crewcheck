@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import * as icons from 'lucide-react';
 import ts from 'typescript';
 
-// Actual prepared MenuDrawer + shipped CSS + unmodified theme runtime.
+// Actual prepared MenuDrawer + shipped CSS + unmodified theme functions.
 // Synthetic account only. This component test is not full-app/device acceptance.
 const output = path.resolve(process.env.MENU_EVIDENCE_DIR || 'artifacts/menu-responsive');
 fs.mkdirSync(output, { recursive: true });
@@ -61,11 +61,20 @@ const index = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
 const links = [...index.matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/g)].map(m => m[0]).join('\n');
 assert.ok(links, 'Use CSS linked by the real Vite build');
 const themeSource = fs.readFileSync('client/src/lib/themeRuntime.ts', 'utf8');
-const themeJs = ts.transpileModule(themeSource, {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
-}).outputText;
-fs.writeFileSync(path.join(output, 'theme-runtime.js'), themeJs);
-const fixture = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">${links}</head><body><div id="root">${markup}</div><script type="module">import { applyCrewCheckTheme } from './theme-runtime.js'; window.applyMenuTestTheme = applyCrewCheckTheme;</script></body></html>`;
+const moduleOptions = { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 };
+fs.writeFileSync(path.join(output, 'theme-runtime.js'), ts.transpileModule(themeSource, { compilerOptions: moduleOptions }).outputText);
+// Preparation rewrites themeRuntime; the effective data-crew-theme is applied by
+// App's effect. Include those exact prepared functions, not fabricated attributes.
+const appText = fs.readFileSync('client/src/App.tsx', 'utf8');
+const appSource = ts.createSourceFile('App.tsx', appText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const themeNames = ['getEffectiveCrewTheme', 'applyCrewThemeMode'];
+const appTheme = appSource.statements.filter(n => ts.isFunctionDeclaration(n) && themeNames.includes(n.name?.text));
+assert.equal(appTheme.length, 2, 'Locate actual effective-theme functions in the prepared App');
+fs.writeFileSync(path.join(output, 'app-theme.js'), ts.transpileModule(
+  appTheme.map(n => n.getText(appSource)).join('\n') + '\nexport { applyCrewThemeMode };',
+  { compilerOptions: moduleOptions },
+).outputText);
+const fixture = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">${links}</head><body><div id="root">${markup}</div><script type="module">import { applyCrewCheckTheme } from './theme-runtime.js'; import { applyCrewThemeMode } from './app-theme.js'; window.applyMenuTestTheme = mode => { applyCrewCheckTheme(mode); applyCrewThemeMode(mode); };</script></body></html>`;
 fs.writeFileSync(path.join(output, 'menu.html'), fixture);
 fs.writeFileSync(path.join(output, 'prepared-menu.tsx'), declarations.map(n => n.getText(source)).join('\n'));
 fs.cpSync(path.join(dist, 'assets'), path.join(output, 'assets'), { recursive: true });
@@ -117,6 +126,19 @@ async function inspect(page, label) {
     const panel = document.querySelector('.cz-menu-panel');
     const scroll = document.querySelector('.cz-menu-scroll');
     const buttons = [...document.querySelectorAll('.cz-menu-group > button')];
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    const rgba = color => {
+      context.clearRect(0, 0, 1, 1); context.fillStyle = color; context.fillRect(0, 0, 1, 1);
+      return Array.from(context.getImageData(0, 0, 1, 1).data);
+    };
+    const luminance = rgb => rgb.slice(0, 3).map(v => { const s = v / 255; return s <= .04045 ? s / 12.92 : ((s + .055) / 1.055) ** 2.4; }).reduce((n, v, i) => n + v * [.2126, .7152, .0722][i], 0);
+    const contrast = (color, background) => {
+      const fg = rgba(color), bg = rgba(background);
+      if (fg[3] !== 255 || bg[3] !== 255) return null; // Fail closed for non-opaque fixtures.
+      const a = luminance(fg), b = luminance(bg);
+      return (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
+    };
     return {
       viewport: { width: innerWidth, height: innerHeight },
       theme: document.documentElement.dataset.crewTheme,
@@ -130,13 +152,15 @@ async function inspect(page, label) {
       rows: buttons.map(b => {
         const copy = b.querySelector(':scope > span');
         const style = getComputedStyle(copy);
-        const icon = b.querySelector(':scope > svg:first-child');
-        const iconStyle = getComputedStyle(icon);
+        const iconStyle = getComputedStyle(b.querySelector(':scope > svg:first-child'));
         const glyphWidth = parseFloat(iconStyle.width) - (iconStyle.boxSizing === 'border-box'
           ? parseFloat(iconStyle.paddingLeft) + parseFloat(iconStyle.paddingRight) + parseFloat(iconStyle.borderLeftWidth) + parseFloat(iconStyle.borderRightWidth) : 0);
+        const textColor = getComputedStyle(copy.querySelector('strong')).color;
+        const detailColor = getComputedStyle(copy.querySelector('small')).color;
+        const background = getComputedStyle(b).backgroundColor;
         return { name: b.dataset.menuLabel, button: box(b), copy: box(copy), glyphWidth,
           opacity: style.opacity, visibility: style.visibility, position: style.position,
-          textColor: getComputedStyle(copy.querySelector('strong')).color };
+          textColor, background, titleContrast: contrast(textColor, background), detailContrast: contrast(detailColor, background) };
       }),
     };
   });
@@ -144,6 +168,7 @@ async function inspect(page, label) {
   const inside = (r, outer) => r.width > 0 && r.height > 0 && r.x >= outer.x - 1 && r.y >= outer.y - 1 && r.right <= outer.right + 1 && r.bottom <= outer.bottom + 1;
   const viewport = { x: 0, y: 0, right: metrics.viewport.width, bottom: metrics.viewport.height };
   if (!inside(metrics.panel, viewport)) failures.push('Menu panel escapes viewport');
+  if (!['dark', 'light'].includes(metrics.theme)) failures.push('Effective app theme missing from fixture');
   for (const key of ['close', 'logout', 'profile']) {
     if (!inside(metrics[key], metrics.panel)) failures.push(`${key} escapes panel`);
   }
@@ -161,6 +186,7 @@ async function inspect(page, label) {
     if (row.button.width < 200 || row.button.height < 44) failures.push(`${row.name}: collapsed navigation row`);
     if (!inside(row.copy, row.button)) failures.push(`${row.name}: copy outside button`);
     if (row.glyphWidth < 18) failures.push(`${row.name}: icon glyph collapsed inside padding`);
+    if (!(row.titleContrast >= 4.5) || !(row.detailContrast >= 4.5)) failures.push(`${row.name}: text contrast below 4.5:1`);
   }
   await page.screenshot({ path: path.join(output, `${label}.png`), animations: 'disabled' });
   await page.evaluate(() => { const el = document.querySelector('.cz-menu-scroll'); el.scrollTop = el.scrollHeight; });
@@ -196,7 +222,7 @@ try {
 } finally {
   fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({
     commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
-    scope: 'Prepared MenuDrawer + shipped CSS + actual theme runtime; synthetic account; no full-app/device acceptance', results,
+    scope: 'Prepared MenuDrawer + shipped CSS + App effective theme; synthetic account; no full-app/device acceptance', results,
   }, null, 2));
   await browser.close();
   await new Promise(resolve => server.close(resolve));
