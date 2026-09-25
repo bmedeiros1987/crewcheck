@@ -132,7 +132,7 @@ export function HomeEssentials({
         <small>Hospedagem e quarto só aparecem quando confirmados e autorizados.</small>
       </article>}
 
-      {prefs.traffic&&extended.mobility&&snapshot.audience!=='visitor'&&<UberHandoff mobility={extended.mobility}/>}
+      {prefs.mobility&&extended.mobility&&snapshot.audience!=='visitor'&&<UberHandoff mobility={extended.mobility}/>}
       {visitor&&<article className="home-context-card visitor-home-card"><p className="eyebrow"><Info/> MODO VISITANTE</p><h2>Informação em linguagem simples</h2><p>Códigos de aeroportos são acompanhados da cidade e dados sensíveis permanecem ocultos.</p></article>}
     </aside>
   </section>;
