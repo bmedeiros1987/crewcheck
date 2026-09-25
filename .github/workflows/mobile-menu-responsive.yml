@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      # Default PR checkout deliberately tests the merge result with the current main.
+      # Default PR checkout tests the merge result with the current main.
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
@@ -34,12 +34,13 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - name: Prepare canonical sources once
-        run: node scripts/v139/apply.mjs
+      # This existing regression prepares the full chain itself. Do not prepare twice.
+      - name: Prepare once through the iPad source regression
+        run: node scripts/regression-v14-3-94-ipad-menu-layout.mjs
       - name: Preserve navigation inventory and source contracts
         run: |
           node scripts/regression-p1-menu-premium.mjs
-          node scripts/regression-v14-3-94-ipad-menu-layout.mjs
+          node scripts/regression-web-desktop-shell.mjs
           node scripts/regression-web-desktop-menu-panel-specificity.mjs
       - name: TypeScript and web build
         run: |
