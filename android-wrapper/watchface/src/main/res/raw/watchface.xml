@@ -30,6 +30,35 @@
             <Variant mode="AMBIENT" target="alpha" value="0" />
         </PartDraw>
 
+        <!-- Flight-deck cardinal markers: instrument identity without radial clutter. -->
+        <PartDraw x="220" y="8" width="10" height="18">
+            <RoundRectangle x="0" y="0" width="10" height="18" cornerRadiusX="5" cornerRadiusY="5">
+                <Fill color="#FF22D3EE" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
+
+        <PartDraw x="8" y="220" width="18" height="10">
+            <RoundRectangle x="0" y="0" width="18" height="10" cornerRadiusX="5" cornerRadiusY="5">
+                <Fill color="#FF60A5FA" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
+
+        <PartDraw x="424" y="220" width="18" height="10">
+            <RoundRectangle x="0" y="0" width="18" height="10" cornerRadiusX="5" cornerRadiusY="5">
+                <Fill color="#FFA78BFA" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
+
+        <PartDraw x="220" y="424" width="10" height="18">
+            <RoundRectangle x="0" y="0" width="10" height="18" cornerRadiusX="5" cornerRadiusY="5">
+                <Fill color="#FFEC4899" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
+
         <!-- Restrained brand signature. -->
         <PartText x="0" y="28" width="450" height="20">
             <Text align="CENTER">
@@ -106,6 +135,15 @@
         </ComplicationSlot>
 
         <!-- ===== Clock ===== -->
+
+        <!-- A quiet hero stage borrowed from the Mobile premium cards. -->
+        <PartDraw x="56" y="88" width="338" height="126">
+            <RoundRectangle x="0" y="0" width="338" height="126" cornerRadiusX="34" cornerRadiusY="34">
+                <Fill color="#220D1B2F" />
+                <Stroke thickness="1" color="#3322D3EE" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartDraw>
 
         <DigitalClock x="0" y="0" width="450" height="450">
             <TimeText
