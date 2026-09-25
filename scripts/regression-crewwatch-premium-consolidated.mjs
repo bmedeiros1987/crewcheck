@@ -54,6 +54,18 @@ assert.ok((wearMain.match(/setAccessibilityHeading\(true\)/g) || []).length >= 5
 assert.ok((wearMain.match(/setScreenReaderFocusable\(true\)/g) || []).length >= 5);
 assert.match(wearMain, /chip\.setSelected\(selected\);/);
 assert.match(wearMain, /badge\.setContentDescription\(/);
+// Recusas da revisão do Play de 24/09/2026: fundo preto e barra de rolagem visível.
+assert.match(wearMain, /scroll\.setVerticalScrollBarEnabled\(true\);/, 'Play recusou a tela sem barra de rolagem');
+assert.doesNotMatch(wearMain, /setVerticalScrollBarEnabled\(false\)/);
+// Sempre-ligado: deslocamento anti-burn-in e tinta de low-bit.
+assert.match(wearMain, /AmbientModeSupport\.EXTRA_BURN_IN_PROTECTION/);
+assert.match(wearMain, /AmbientModeSupport\.EXTRA_LOWBIT_AMBIENT/);
+assert.match(wearMain, /applyBurnInShift\(\);\n    \}/, 'o tick do ambiente precisa deslocar o conteúdo');
+// Dado novo do celular não joga a leitura de volta ao topo.
+assert.match(wearMain, /scroll\.scrollTo\(0, keepScroll\)/);
+// Valor herói medido, não chutado por contagem de caracteres.
+assert.match(wearMain, /setAutoSizeTextTypeUniformWithConfiguration/);
+assert.doesNotMatch(wearMain, /\.value\.length\(\) > 1[24] \?/);
 const notificationCenter = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchNotificationCenter.java');
 assert.match(notificationCenter, /if \(snapshot\.isStale\(System\.currentTimeMillis\(\)\)\) return;/);
 
