@@ -99,8 +99,9 @@ export function visitorAirportLabel(code:string|null|undefined, visitor=false):s
   const explained=airportCodeExplanation(normalized);
   if(!explained)return normalized;
   if(!explained.known)return normalized.length===4?`Aeroporto (ICAO ${normalized})`:`Aeroporto ${normalized}`;
-  const codes=explained.icao?`${explained.iata} · ${explained.icao}`:explained.iata;
-  return explained.city!==explained.iata?`${explained.city} (${codes})`:`${codes}`;
+  // Keep the primary route readable from the sofa: city + IATA. ICAO stays
+  // available in the visitor glossary/detail instead of making every route noisy.
+  return explained.city!==explained.iata?`${explained.city} (${explained.iata})`:explained.iata;
 }
 
 export function programTitle(program:TvProgram,visitor=false):string{
