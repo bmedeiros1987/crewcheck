@@ -1,0 +1,42 @@
+name: Concierge room memory
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/conciergeRoomHistory.ts'
+      - 'client/src/lib/conciergeRoomIntelligence.ts'
+      - 'client/src/lib/conciergeRoomPreferences.ts'
+      - 'client/src/lib/conciergeRoomNoise.ts'
+      - 'client/src/lib/conciergeHotelKnowledge.ts'
+      - 'client/src/components/v1391/ConciergeRoomNoiseCard.tsx'
+      - 'scripts/regression-concierge-room-memory.mjs'
+      - 'scripts/regression-concierge-room-intelligence.mjs'
+      - 'scripts/regression-concierge-room-preferences.mjs'
+      - 'scripts/regression-concierge-room-noise.mjs'
+      - 'scripts/regression-concierge-hotel-knowledge.mjs'
+      - '.github/workflows/concierge-room-memory.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Concierge room-memory regression
+        run: node scripts/regression-concierge-room-memory.mjs
+      - name: Concierge room-intelligence regression
+        run: node scripts/regression-concierge-room-intelligence.mjs
+      - name: Concierge room-preferences regression
+        run: node scripts/regression-concierge-room-preferences.mjs
+      - name: Concierge structured-noise regression
+        run: node scripts/regression-concierge-room-noise.mjs
+      - name: Concierge private hotel-knowledge regression
+        run: node scripts/regression-concierge-hotel-knowledge.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
