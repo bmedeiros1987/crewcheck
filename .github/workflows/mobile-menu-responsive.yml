@@ -10,6 +10,8 @@ on:
       - 'scripts/v14344/**'
       - 'scripts/v14394/**'
       - 'scripts/regression-menu-responsive-browser.mjs'
+      - 'scripts/regression-shell-navigation-browser.mjs'
+      - 'scripts/regression-web-desktop-shell.mjs'
       - '.github/workflows/mobile-menu-responsive.yml'
   workflow_dispatch:
 
@@ -25,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      # Default PR checkout tests the merge result with the current main.
+      # PR checkout tests the merge result with the current main, not a stale base.
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
@@ -34,7 +36,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      # This existing regression prepares the full chain itself. Do not prepare twice.
+      # This regression prepares the full chain itself. Do not prepare twice.
       - name: Prepare once through the iPad source regression
         run: node scripts/regression-v14-3-94-ipad-menu-layout.mjs
       - name: Preserve navigation inventory and source contracts
@@ -49,11 +51,15 @@ jobs:
       - name: Install isolated browser test dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/menu-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
-          node "$RUNNER_TEMP/menu-browser/node_modules/playwright/cli.js" install --with-deps chromium
+          node "$RUNNER_TEMP/menu-browser/node_modules/playwright/cli.js" install --with-deps chromium webkit
       - name: Render menu in desktop, tablet and rotating phone viewports
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
         run: node scripts/regression-menu-responsive-browser.mjs
+      - name: Render canonical footer and content clearance in Chromium and WebKit
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-shell-navigation-browser.mjs
       - name: Save actual viewport evidence
         if: always()
         uses: actions/upload-artifact@v4
