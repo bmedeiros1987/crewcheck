@@ -13,3 +13,4 @@ update('client/src/pages/Home.tsx', normalizeFlightDeckUi);
 update('client/src/index.css', (source) => installMenuClarityCss(source, menuClarityCss));
 
 console.log('[crewcheck:prepare] P0 FlightDeck naming and overflow-safe desktop menu applied.');
+await import('../p0-departure-portrait/apply.mjs');

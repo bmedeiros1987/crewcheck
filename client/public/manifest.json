@@ -10,7 +10,7 @@
     "standalone",
     "minimal-ui"
   ],
-  "orientation": "any",
+  "orientation": "portrait",
   "background_color": "#020817",
   "theme_color": "#071D33",
   "lang": "pt-BR",
@@ -58,49 +58,25 @@
       "name": "Escala",
       "short_name": "Escala",
       "url": "/?view=roster",
-      "icons": [
-        {
-          "src": "/icons/crewcheck-icon-v2.png?v=13910",
-          "sizes": "512x512",
-          "type": "image/png"
-        }
-      ]
+      "icons": [{ "src": "/icons/crewcheck-icon-v2.png?v=13910", "sizes": "512x512", "type": "image/png" }]
     },
     {
       "name": "CrewLock",
       "short_name": "CrewLock",
       "url": "/?view=crewlock",
-      "icons": [
-        {
-          "src": "/icons/crewcheck-icon-v2.png?v=13910",
-          "sizes": "512x512",
-          "type": "image/png"
-        }
-      ]
+      "icons": [{ "src": "/icons/crewcheck-icon-v2.png?v=13910", "sizes": "512x512", "type": "image/png" }]
     },
     {
       "name": "Emergência",
       "short_name": "Emergência",
       "url": "/?view=emergency",
-      "icons": [
-        {
-          "src": "/icons/crewcheck-icon-v2.png?v=13910",
-          "sizes": "512x512",
-          "type": "image/png"
-        }
-      ]
+      "icons": [{ "src": "/icons/crewcheck-icon-v2.png?v=13910", "sizes": "512x512", "type": "image/png" }]
     },
     {
       "name": "Radar",
       "short_name": "Radar",
       "url": "/?view=radar",
-      "icons": [
-        {
-          "src": "/icons/crewcheck-icon-v2.png?v=13910",
-          "sizes": "512x512",
-          "type": "image/png"
-        }
-      ]
+      "icons": [{ "src": "/icons/crewcheck-icon-v2.png?v=13910", "sizes": "512x512", "type": "image/png" }]
     }
   ]
 }
