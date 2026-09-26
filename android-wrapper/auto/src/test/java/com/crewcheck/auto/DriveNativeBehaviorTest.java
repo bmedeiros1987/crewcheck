@@ -1,10 +1,12 @@
 package com.crewcheck.auto;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
 import androidx.car.app.CarContext;
+import androidx.car.app.HandshakeInfo;
 import androidx.car.app.OnDoneCallback;
 import androidx.car.app.ScreenManager;
 import androidx.car.app.model.Action;
@@ -30,6 +32,7 @@ import org.robolectric.util.ReflectionHelpers;
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import static org.junit.Assert.*;
 
 /** Android framework + official fake car host. Not DHU, not physical IPC or a real login. */
@@ -41,12 +44,14 @@ public final class DriveNativeBehaviorTest {
     private DriveRepository repository;
     private TestCarContext car;
     private SessionController session;
+    private AtomicLong wallClock;
 
     @Before public void setUp() {
         app = RuntimeEnvironment.getApplication();
         app.getSharedPreferences("crewcheck_drive_lab", Context.MODE_PRIVATE).edit().clear().commit();
-        ReflectionHelpers.setStaticField(DriveRepository.class, "instance", null);
-        repository = DriveRepository.get(app);
+        wallClock = new AtomicLong(System.currentTimeMillis());
+        repository = new DriveRepository(app, wallClock::get);
+        ReflectionHelpers.setStaticField(DriveRepository.class, "instance", repository);
     }
     @After public void tearDown() {
         if (session != null) session.moveToState(Lifecycle.State.DESTROYED);
@@ -57,17 +62,25 @@ public final class DriveNativeBehaviorTest {
         ReflectionHelpers.setStaticField(DriveRepository.class, "instance", null);
         app.getSharedPreferences("crewcheck_drive_lab", Context.MODE_PRIVATE).edit().clear().commit();
     }
+    @SuppressLint("RestrictedApi")
     private TestCarContext car() {
         if (car == null) {
             car = TestCarContext.createCarContext(app);
+            // Fake host initialization: Car App API level is distinct from Android API 28/36.
+            car.updateHandshakeInfo(new HandshakeInfo("crewcheck.test.host", 1));
             session = new SessionController(new CrewCheckCarSession(), car, new Intent());
             session.moveToState(Lifecycle.State.RESUMED);
             Shadows.shadowOf(Looper.getMainLooper()).idle();
         }
         return car;
     }
+    private void advance(Duration elapsed) {
+        // Looper uptime alone does not advance Java's System.currentTimeMillis.
+        wallClock.addAndGet(elapsed.toMillis());
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(elapsed);
+    }
     private void seed(String id, long lifetimeMs) throws Exception {
-        long now = System.currentTimeMillis();
+        long now = wallClock.get();
         String json = new JSONObject().put("schemaVersion", 1).put("source", "canonical-roster")
                 .put("contextId", id).put("generatedAtEpochMs", now)
                 .put("validUntilEpochMs", now + lifetimeMs).put("state", "REPORTING")
@@ -134,7 +147,7 @@ public final class DriveNativeBehaviorTest {
         seed("journey-a", 1000);
         DriveDestinationScreen detail = new DriveDestinationScreen(car(), repository.destinations().get(0));
         Action button = ((PaneTemplate) detail.onGetTemplate()).getPane().getActions().get(0);
-        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2));
+        advance(Duration.ofSeconds(2));
         click(button);
         assertTrue(car.getStartCarAppIntents().isEmpty());
         assertTrue(detail.onGetTemplate() instanceof MessageTemplate);
@@ -163,7 +176,7 @@ public final class DriveNativeBehaviorTest {
         repository.start(observer);
         Shadows.shadowOf(Looper.getMainLooper()).idle();
         changes.set(0);
-        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2));
+        advance(Duration.ofSeconds(2));
         assertTrue(repository.destinations().isEmpty());
         assertTrue("Visible UI must be invalidated at expiry without a fresh transport response", changes.get() > 0);
         repository.stop(observer);
@@ -174,7 +187,7 @@ public final class DriveNativeBehaviorTest {
         repository.start(observer);
         Shadows.shadowOf(Looper.getMainLooper()).idle();
         repository.stop(observer);
-        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2));
+        advance(Duration.ofSeconds(2));
         assertNull(repository.snapshot());
         assertFalse("Do not claim an already discarded snapshot is connected", repository.status().contains("Escala recebida"));
     }
@@ -185,12 +198,12 @@ public final class DriveNativeBehaviorTest {
         repository.start(first);
         Shadows.shadowOf(Looper.getMainLooper()).idle();
         repository.stop(first);
-        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500));
+        advance(Duration.ofMillis(500));
         repository.start(second);
-        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2));
+        advance(Duration.ofSeconds(2));
         assertNotNull(repository.snapshot());
         repository.stop(second);
-        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2));
+        advance(Duration.ofSeconds(2));
         assertNull(repository.snapshot());
     }
 }

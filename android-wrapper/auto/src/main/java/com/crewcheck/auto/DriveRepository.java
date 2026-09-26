@@ -12,10 +12,12 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.LongSupplier;
 
 /** Private local destinations plus an opt-in, same-signature, read-only lab bridge. */
 public final class DriveRepository {
@@ -28,6 +30,7 @@ public final class DriveRepository {
     }
     private final Context app;
     private final SharedPreferences prefs;
+    private final LongSupplier clock;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Set<Runnable> listeners = new LinkedHashSet<>();
@@ -47,7 +50,7 @@ public final class DriveRepository {
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (listeners.isEmpty()) return;
-            boolean fresh = snapshot != null && snapshot.isFresh(System.currentTimeMillis());
+            boolean fresh = snapshot != null && snapshot.isFresh(clock.getAsLong());
             if (fresh != wasFresh) { wasFresh = fresh; changed(); }
             refresh();
             handler.postDelayed(this, 30_000L);
@@ -55,7 +58,13 @@ public final class DriveRepository {
     };
 
     private DriveRepository(Context context) {
+        this(context, System::currentTimeMillis);
+    }
+
+    /** Clock seam for deterministic Android tests; normal instances use wall-clock epoch time. */
+    DriveRepository(Context context, LongSupplier clock) {
         app = context;
+        this.clock = Objects.requireNonNull(clock);
         prefs = app.getSharedPreferences("crewcheck_drive_lab", Context.MODE_PRIVATE);
         if (enabled()) status = "Conectando ao CrewCheck Phone Lab";
     }
@@ -86,7 +95,7 @@ public final class DriveRepository {
         }
     }
     public String status() {
-        if (snapshot != null && !snapshot.isFresh(System.currentTimeMillis())) {
+        if (snapshot != null && !snapshot.isFresh(clock.getAsLong())) {
             return "Dados desatualizados. Atualize a escala no Phone Lab.";
         }
         return status;
@@ -111,7 +120,7 @@ public final class DriveRepository {
                         if (cursor == null || !cursor.moveToFirst() || cursor.isNull(0)) {
                             message = "Abra a escala no CrewCheck Phone Lab para sincronizar.";
                         } else {
-                            next = DriveSnapshot.parse(cursor.getString(0), System.currentTimeMillis());
+                            next = DriveSnapshot.parse(cursor.getString(0), clock.getAsLong());
                             nextJson = next.toSafeJson();
                             message = "Escala recebida em modo somente leitura";
                         }
@@ -139,7 +148,7 @@ public final class DriveRepository {
 
     public List<DriveSnapshot.Destination> destinations() {
         List<DriveSnapshot.Destination> values = new ArrayList<>();
-        if (snapshot != null) values.addAll(snapshot.destinations(System.currentTimeMillis()));
+        if (snapshot != null) values.addAll(snapshot.destinations(clock.getAsLong()));
         values.addAll(manual());
         return values;
     }
