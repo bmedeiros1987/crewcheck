@@ -1,5 +1,9 @@
 import type { CrewRoster } from './pdfParser';
 import { getLegalProfile, type CrewRoleSelection } from './actRules';
+import {
+  BREAKFAST_PERCENT,
+  DOMESTIC_MAIN_MEAL_BRL,
+} from './financialAmounts';
 
 export type PerDiemCurrency = 'BRL' | 'USD' | 'EUR' | 'GBP';
 export type PerDiemRateKey =
@@ -54,7 +58,9 @@ export type AirportPerDiemOverrides = Record<string, PerDiemRateKey>;
 export const ACT_FINANCIAL_RULES_VERSION = 'ACT-LATAM-2025-2027.2025-12-SNA';
 
 export const ACT_PER_DIEM_RATES: PerDiemActRate[] = [
-  { key: 'domestic', label: 'Nacional', currency: 'BRL', mainMeal: 105.04 },
+  // Default operacional confirmado em demonstrativo anonimizado de 05/08 a 01/09/2026.
+  // Não alterar salários ou tarifas internacionais por inferência a partir deste documento.
+  { key: 'domestic', label: 'Nacional', currency: 'BRL', mainMeal: DOMESTIC_MAIN_MEAL_BRL },
   { key: 'north_america', label: 'América do Norte', currency: 'USD', mainMeal: 25.70 },
   { key: 'mexico', label: 'México', currency: 'USD', mainMeal: 23.00 },
   { key: 'south_america_caribbean', label: 'América do Sul e Caribe', currency: 'USD', mainMeal: 21.00 },
@@ -206,7 +212,7 @@ export function resolveActFinancialRules(
       legalReference: 'ACT Aeronautas Comissários 2025/2027 - cláusulas 2.4.1, 2.4.2, 3.2.7 e 3.2.8',
       salary: CABIN_RATES,
       perDiem: ACT_PER_DIEM_RATES,
-      breakfastPercent: 0.25,
+      breakfastPercent: BREAKFAST_PERCENT,
       requiresManualFunction: false,
     };
   }
@@ -220,7 +226,7 @@ export function resolveActFinancialRules(
     legalReference: 'ACT Aeronautas Pilotos 2025/2027 - cláusulas 2.4.1, 2.4.2, 3.2.7 e 3.2.8',
     salary: pilot.rates,
     perDiem: ACT_PER_DIEM_RATES,
-    breakfastPercent: 0.25,
+    breakfastPercent: BREAKFAST_PERCENT,
     requiresManualFunction: pilot.manual,
   };
 }
