@@ -574,3 +574,400 @@ html[data-crew-theme="light"] .cc-roster-meals-v1397 > div > span { background: 
 @media (prefers-reduced-motion: reduce) {
   .cc-roster-premium-v1397 * { scroll-behavior: auto !important; transition: none !important; }
 }
+
+
+/* CrewCheck Mobile v14.0 — linguagem broadcast herdada da TV.
+   Somente apresentação: nenhum parser, APZ, regra financeira ou journeyId é recalculado aqui. */
+.cc-roster-mobile-broadcast-v140 { display: none !important; }
+
+@media (max-width: 680px) {
+  .cc-roster-premium-v1397 {
+    --ccm-panel: rgba(8, 24, 44, .96);
+    --ccm-panel-soft: rgba(14, 38, 65, .82);
+    --ccm-line: rgba(111, 178, 223, .20);
+    --ccm-cyan: #38d8ee;
+    --ccm-violet: #9a62ff;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  .cc-roster-mobile-broadcast-v140 {
+    display: block !important;
+    margin: 8px 0 16px !important;
+  }
+
+  .cc-roster-period-v1399,
+  .cc-roster-hero-v1397 {
+    display: none !important;
+  }
+
+  .cc-mobile-now-v140 {
+    --mobile-accent: #35d5ec;
+    position: relative !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 18px !important;
+    border: 1px solid rgba(97, 168, 220, .24) !important;
+    border-radius: 24px !important;
+    background:
+      radial-gradient(circle at 82% 4%, rgba(147, 82, 246, .22), transparent 36%),
+      radial-gradient(circle at 12% 0%, rgba(53, 213, 236, .14), transparent 38%),
+      linear-gradient(145deg, #07182e, #081328 62%, #101633) !important;
+    box-shadow: 0 18px 42px rgba(0, 0, 0, .24), inset 0 1px 0 rgba(255,255,255,.04) !important;
+  }
+
+  html[data-crew-theme="light"] .cc-mobile-now-v140 {
+    background:
+      radial-gradient(circle at 82% 4%, rgba(147, 82, 246, .12), transparent 36%),
+      radial-gradient(circle at 12% 0%, rgba(53, 213, 236, .12), transparent 38%),
+      linear-gradient(145deg, #ffffff, #edf7fc 62%, #f1efff) !important;
+    box-shadow: 0 14px 36px rgba(20, 59, 89, .12) !important;
+  }
+
+  .cc-mobile-now-v140[data-mode="operating"] { --mobile-accent: #35d5ec; }
+  .cc-mobile-now-v140[data-mode="extra"] { --mobile-accent: #9ca8ba; }
+  .cc-mobile-now-v140[data-mode="stay"] { --mobile-accent: #a78bfa; }
+  .cc-mobile-now-v140[data-mode="rest"],
+  .cc-mobile-now-v140[data-mode="journey-rest"] { --mobile-accent: #38bdf8; }
+  .cc-mobile-now-v140[data-mode="reserve"] { --mobile-accent: #fbbf24; }
+  .cc-mobile-now-v140[data-mode="standby"] { --mobile-accent: #fb7185; }
+  .cc-mobile-now-v140[data-mode="training"] { --mobile-accent: #818cf8; }
+
+  .cc-mobile-now-glow-v140 {
+    position: absolute !important;
+    right: -86px !important;
+    top: -96px !important;
+    width: 220px !important;
+    height: 220px !important;
+    border: 1px solid color-mix(in srgb, var(--mobile-accent) 35%, transparent) !important;
+    border-radius: 50% !important;
+    box-shadow:
+      0 0 0 34px color-mix(in srgb, var(--mobile-accent) 4%, transparent),
+      0 0 0 68px color-mix(in srgb, var(--mobile-accent) 3%, transparent) !important;
+    pointer-events: none !important;
+  }
+
+  .cc-mobile-now-v140 > header {
+    position: relative !important;
+    z-index: 1 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 10px !important;
+  }
+
+  .cc-mobile-now-v140 > header > span {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 7px !important;
+    color: var(--mobile-accent) !important;
+    font-size: 9px !important;
+    font-weight: 900 !important;
+    letter-spacing: .10em !important;
+  }
+
+  .cc-mobile-now-v140 > header > span svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+
+  .cc-mobile-now-v140 > header > button {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    min-height: 34px !important;
+    padding: 0 10px !important;
+    border: 1px solid rgba(104, 183, 224, .24) !important;
+    border-radius: 11px !important;
+    background: rgba(7, 27, 49, .44) !important;
+    color: var(--ccr-title) !important;
+    font-size: 10px !important;
+    font-weight: 800 !important;
+  }
+
+  html[data-crew-theme="light"] .cc-mobile-now-v140 > header > button { background: rgba(255,255,255,.72) !important; }
+  .cc-mobile-now-v140 > header > button svg { width: 14px !important; height: 14px !important; }
+
+  .cc-mobile-now-main-v140 {
+    position: relative !important;
+    z-index: 1 !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 52px !important;
+    gap: 12px !important;
+    align-items: start !important;
+    margin-top: 19px !important;
+  }
+
+  .cc-mobile-now-main-v140 small {
+    display: block !important;
+    margin-bottom: 5px !important;
+    color: var(--ccr-muted) !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    text-transform: capitalize !important;
+  }
+
+  .cc-mobile-now-main-v140 h2 {
+    margin: 0 !important;
+    color: var(--ccr-title) !important;
+    font-size: clamp(1.55rem, 8.3vw, 2.15rem) !important;
+    font-weight: 900 !important;
+    line-height: 1.02 !important;
+    letter-spacing: -.045em !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .cc-mobile-now-icon-v140 {
+    display: grid !important;
+    place-items: center !important;
+    width: 52px !important;
+    height: 52px !important;
+    border: 1px solid color-mix(in srgb, var(--mobile-accent) 28%, transparent) !important;
+    border-radius: 17px !important;
+    background: color-mix(in srgb, var(--mobile-accent) 10%, transparent) !important;
+    color: var(--mobile-accent) !important;
+  }
+
+  .cc-mobile-now-icon-v140 svg { width: 25px !important; height: 25px !important; }
+
+  .cc-mobile-route-v140 {
+    display: flex !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 7px !important;
+    margin: 10px 0 0 !important;
+    color: var(--ccr-muted) !important;
+    font-size: 11px !important;
+  }
+
+  .cc-mobile-route-v140 b {
+    color: var(--ccr-title) !important;
+    font-size: 15px !important;
+    letter-spacing: .03em !important;
+  }
+
+  .cc-mobile-route-v140 svg { width: 14px !important; height: 14px !important; color: var(--mobile-accent) !important; }
+  .cc-mobile-route-v140 span { color: var(--ccr-muted) !important; }
+
+  .cc-mobile-time-strip-v140 {
+    position: relative !important;
+    z-index: 1 !important;
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+    margin-top: 18px !important;
+  }
+
+  .cc-mobile-time-strip-v140 > span {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 4px !important;
+    min-height: 63px !important;
+    padding: 10px !important;
+    border: 1px solid var(--ccm-line) !important;
+    border-radius: 14px !important;
+    background: rgba(3, 18, 36, .44) !important;
+  }
+
+  html[data-crew-theme="light"] .cc-mobile-time-strip-v140 > span { background: rgba(255,255,255,.64) !important; }
+  .cc-mobile-time-strip-v140 > span.primary {
+    border-color: color-mix(in srgb, var(--mobile-accent) 38%, transparent) !important;
+    background: color-mix(in srgb, var(--mobile-accent) 10%, rgba(3,18,36,.38)) !important;
+  }
+
+  .cc-mobile-time-strip-v140 small {
+    color: var(--ccr-muted) !important;
+    font-size: 8px !important;
+    font-weight: 850 !important;
+    letter-spacing: .06em !important;
+    text-transform: uppercase !important;
+  }
+
+  .cc-mobile-time-strip-v140 b {
+    margin-top: auto !important;
+    color: var(--ccr-title) !important;
+    font-size: 16px !important;
+    font-variant-numeric: tabular-nums !important;
+  }
+
+  .cc-mobile-now-footer-v140 {
+    position: relative !important;
+    z-index: 1 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 10px !important;
+    margin-top: 14px !important;
+    padding-top: 12px !important;
+    border-top: 1px solid rgba(117, 190, 226, .16) !important;
+  }
+
+  .cc-mobile-now-footer-v140 > span {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    color: var(--ccr-muted) !important;
+    font-size: 9px !important;
+  }
+
+  .cc-mobile-now-footer-v140 > span svg { width: 13px !important; height: 13px !important; color: var(--mobile-accent) !important; }
+
+  .cc-mobile-now-footer-v140 > button {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    min-height: 34px !important;
+    padding: 0 11px !important;
+    border: 1px solid color-mix(in srgb, var(--mobile-accent) 35%, transparent) !important;
+    border-radius: 11px !important;
+    background: color-mix(in srgb, var(--mobile-accent) 12%, transparent) !important;
+    color: var(--ccr-title) !important;
+    font-size: 10px !important;
+    font-weight: 850 !important;
+  }
+
+  .cc-mobile-now-footer-v140 > button svg { width: 14px !important; height: 14px !important; }
+
+  .cc-mobile-month-summary-v140 {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    margin-top: 9px !important;
+  }
+
+  .cc-mobile-month-summary-v140 > article {
+    display: grid !important;
+    grid-template-columns: 18px minmax(0, 1fr) !important;
+    grid-template-areas: "icon value" "icon label" !important;
+    gap: 0 6px !important;
+    align-items: center !important;
+    padding: 11px 9px !important;
+    border: 1px solid var(--ccm-line) !important;
+    border-radius: 15px !important;
+    background: linear-gradient(145deg, rgba(13, 38, 64, .72), rgba(7, 24, 44, .78)) !important;
+  }
+
+  html[data-crew-theme="light"] .cc-mobile-month-summary-v140 > article {
+    background: linear-gradient(145deg, #fff, #eff7fb) !important;
+  }
+
+  .cc-mobile-month-summary-v140 svg { grid-area: icon; width: 17px !important; height: 17px !important; color: var(--ccm-cyan) !important; }
+  .cc-mobile-month-summary-v140 strong { grid-area: value; color: var(--ccr-title) !important; font-size: 14px !important; overflow-wrap: anywhere !important; }
+  .cc-mobile-month-summary-v140 span { grid-area: label; color: var(--ccr-muted) !important; font-size: 8px !important; }
+
+  .cc-mobile-month-tabs-v140 {
+    display: flex !important;
+    gap: 7px !important;
+    margin-top: 10px !important;
+    padding: 2px 0 4px !important;
+    overflow-x: auto !important;
+    overscroll-behavior-inline: contain !important;
+    scrollbar-width: none !important;
+  }
+
+  .cc-mobile-month-tabs-v140::-webkit-scrollbar { display: none !important; }
+
+  .cc-mobile-month-tabs-v140 button {
+    flex: 0 0 auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    min-width: 62px !important;
+    padding: 8px 12px !important;
+    border: 1px solid var(--ccm-line) !important;
+    border-radius: 13px !important;
+    background: rgba(9, 29, 51, .68) !important;
+    color: var(--ccr-muted) !important;
+  }
+
+  html[data-crew-theme="light"] .cc-mobile-month-tabs-v140 button { background: rgba(255,255,255,.78) !important; }
+
+  .cc-mobile-month-tabs-v140 button[aria-pressed="true"] {
+    border-color: rgba(89, 211, 235, .48) !important;
+    background: linear-gradient(135deg, rgba(53, 213, 236, .16), rgba(143, 83, 241, .16)) !important;
+    color: var(--ccr-title) !important;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.025) !important;
+  }
+
+  .cc-mobile-month-tabs-v140 small { font-size: 10px !important; font-weight: 900 !important; }
+  .cc-mobile-month-tabs-v140 b { margin-top: 2px !important; font-size: 8px !important; font-weight: 650 !important; opacity: .72 !important; }
+
+  .cc-roster-legend-v1397 {
+    margin: 0 0 12px !important;
+    padding: 8px !important;
+    border-radius: 15px !important;
+    background: rgba(8, 26, 45, .72) !important;
+  }
+
+  html[data-crew-theme="light"] .cc-roster-legend-v1397 { background: rgba(255,255,255,.76) !important; }
+
+  .cc-roster-legend-v1397 span {
+    padding: 6px 9px !important;
+    border-radius: 999px !important;
+    font-size: 9px !important;
+  }
+
+  .cc-roster-days-v1397 { gap: 12px !important; }
+
+  .cc-roster-day-v1397 {
+    border-radius: 20px !important;
+    background:
+      radial-gradient(circle at 100% 0, rgba(53, 213, 236, .04), transparent 30%),
+      linear-gradient(145deg, rgba(9, 29, 50, .92), rgba(6, 20, 37, .94)) !important;
+    box-shadow: 0 13px 30px rgba(0,0,0,.16) !important;
+  }
+
+  html[data-crew-theme="light"] .cc-roster-day-v1397 {
+    background: linear-gradient(145deg, #fff, #f2f8fc) !important;
+  }
+
+  .cc-roster-day-header-v1397 {
+    margin-bottom: 10px !important;
+    padding-bottom: 10px !important;
+  }
+
+  .cc-roster-day-header-v1397 > time {
+    border-radius: 15px !important;
+    background: linear-gradient(145deg, rgba(53,213,236,.12), rgba(139,92,246,.09)) !important;
+  }
+
+  .cc-roster-program-v1397 {
+    border-radius: 17px !important;
+    box-shadow: inset 3px 0 0 var(--program-accent), inset 0 1px 0 rgba(255,255,255,.025) !important;
+  }
+
+  .cc-roster-program-head-v1397 h3 {
+    font-size: 1rem !important;
+    line-height: 1.16 !important;
+  }
+
+  .cc-roster-flight-grid-v1397 {
+    gap: 6px !important;
+    margin-top: 11px !important;
+  }
+
+  .cc-roster-flight-grid-v1397 > span {
+    border-radius: 11px !important;
+    background: rgba(2, 16, 31, .32) !important;
+  }
+
+  html[data-crew-theme="light"] .cc-roster-flight-grid-v1397 > span { background: rgba(255,255,255,.68) !important; }
+
+  .cc-roster-summary-v1397 { margin-top: 11px !important; }
+  .cc-roster-detail-chips-v1397 { margin-top: 10px !important; }
+  .cc-roster-actions-v1397 { padding-top: 11px !important; }
+
+  .cc-roster-money-overview-v1397,
+  .cc-roster-hero-v1397 {
+    display: none !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .cc-mobile-now-v140 { padding: 15px !important; border-radius: 21px !important; }
+  .cc-mobile-time-strip-v140 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 5px !important; }
+  .cc-mobile-time-strip-v140 > span { padding: 8px 6px !important; }
+  .cc-mobile-time-strip-v140 b { font-size: 14px !important; }
+  .cc-mobile-month-summary-v140 { gap: 5px !important; }
+  .cc-mobile-month-summary-v140 > article { padding: 9px 7px !important; }
+}
