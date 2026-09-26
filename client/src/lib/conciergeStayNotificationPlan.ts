@@ -247,7 +247,8 @@ export function buildConciergeStayReminderReconciliation(
     const isActive = ACTIVE_REMINDER_STATUSES.has(status);
 
     if (!desired) {
-      if (isActive) cancelJobKeys.push(key);
+      if (status === 'processing') deferredJobKeys.push(key);
+      else if (isActive) cancelJobKeys.push(key);
       continue;
     }
 
