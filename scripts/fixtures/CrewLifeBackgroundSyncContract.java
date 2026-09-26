@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
+/** Deterministic synthetic inputs, unrelated to any installed device or personal record. */
 public final class CrewLifeBackgroundSyncContract {
     static int passed;
     static final long NOW = 1_790_000_000_000L;
@@ -14,7 +15,7 @@ public final class CrewLifeBackgroundSyncContract {
         long now = NOW;
         Map<String, Object> input = new LinkedHashMap<>(Map.of(
             "automatic", true, "generatedAtEpochMs", NOW - 60_000L,
-            "energyScore", 69, "sleepMinutes", 222, "steps", 11345, "activeMinutes", 133));
+            "energyScore", 80, "sleepMinutes", 480, "steps", 1234, "activeMinutes", 30));
         Map<String, Object> output;
         int reads;
         RuntimeException failure;
@@ -37,7 +38,7 @@ public final class CrewLifeBackgroundSyncContract {
     public static void main(String[] args) {
         Fake f = new Fake();
         expect(run(f) == CrewLifeBackgroundSync.Outcome.SUBMITTED, "No Activity needed for submission");
-        expect(f.output.get("steps").equals(11345), "Real steps preserved");
+        expect(f.output.get("steps").equals(1234), "Source steps preserved");
         expect(f.output.get("generatedAtEpochMs").equals(NOW - 60_000L), "Do not redate source");
         expect(f.output.get("validUntilEpochMs").equals(NOW - 60_000L + CrewLifeBackgroundSync.MAX_AGE_MS), "Original TTL");
         expect(f.output.get("scoreKind").equals("ENERGY"), "Energy is not an invented recovery score");
@@ -82,7 +83,7 @@ public final class CrewLifeBackgroundSyncContract {
         f = new Fake(); f.failure = new SecurityException();
         expect(run(f) == CrewLifeBackgroundSync.Outcome.PROVIDER_BLOCKED && f.output == null, "Provider denial not bypassed");
         f = new Fake(); f.input.put("activityMinutes", f.input.remove("activeMinutes"));
-        expect(run(f) == CrewLifeBackgroundSync.Outcome.SUBMITTED && f.output.get("activeMinutes").equals(133), "Activity alias normalized");
+        expect(run(f) == CrewLifeBackgroundSync.Outcome.SUBMITTED && f.output.get("activeMinutes").equals(30), "Activity alias normalized");
         f = new Fake(); f.input.put("activityMinutes", 12);
         expect(run(f) == CrewLifeBackgroundSync.Outcome.INVALID, "Conflicting aliases rejected");
         f = new Fake(); f.input.put("generatedAtEpochMs", Long.MAX_VALUE);
