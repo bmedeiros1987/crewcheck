@@ -1,0 +1,114 @@
+name: CrewCheck Android Auto Lab
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/android-auto-foundation]
+    paths:
+      - 'android-wrapper/auto/**'
+      - '.github/workflows/crewcheck-android-auto-lab.yml'
+  pull_request:
+    paths:
+      - 'android-wrapper/auto/**'
+      - '.github/workflows/crewcheck-android-auto-lab.yml'
+
+jobs:
+  build-auto-debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Peripherals
+        uses: actions/checkout@v4
+      - name: Guard no phone implementation in Auto
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('android-wrapper/auto')
+          assert not (root / 'phone-bridge').exists(), 'Phone bridge belongs to Mobile Core #839'
+          for p in root.rglob('*'):
+              if p.is_file() and p.suffix in ('.java', '.gradle'):
+                  text = p.read_text()
+                  for forbidden in ('crewcheck_watch_sync', 'ACTION_WATCH_SYNC_REQUEST', 'extends ContentProvider', "project.path == ':app'"):
+                      assert forbidden not in text, str(p) + ': Mobile internals in Auto'
+          print('PASS: Auto owns consumers, not the phone provider')
+          PY
+      - name: Checkout immutable Mobile Core provider source (PR 839)
+        uses: actions/checkout@v4
+        with:
+          repository: bmedeiros1987/crewcheck
+          ref: e995dcf3cb75a150f08330d0aef68bc2495b134f
+          path: mobile-core-provider
+          sparse-checkout: android-wrapper/mobile-core/drive-lab
+          persist-credentials: false
+      - name: Set up Java 21 for simulated Android API 36 tests
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: false
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Unit and simulated Android tests plus Auto APK
+        run: gradle -p android-wrapper -I "$GITHUB_WORKSPACE/android-wrapper/auto/auto-module.init.gradle" --no-daemon --console=plain :auto:testDebugUnitTest :auto:assembleDebug --stacktrace
+      - name: Summarize unit tests
+        shell: python
+        run: |
+          import pathlib
+          import xml.etree.ElementTree as ET
+          reports = list(pathlib.Path('android-wrapper/auto/build/test-results/testDebugUnitTest').glob('TEST-*.xml'))
+          assert reports, 'No unit-test reports were generated'
+          totals = dict(tests=0, failures=0, errors=0, skipped=0)
+          for path in reports:
+              root = ET.parse(path).getroot()
+              for key in totals:
+                  totals[key] += int(root.get(key, '0'))
+          print('Drive Lab unit tests:', totals)
+          assert totals['tests'] >= 50, 'Preserve the 30 JVM tests and 20 API 28/36 scenarios'
+          assert totals['failures'] == totals['errors'] == totals['skipped'] == 0
+      - name: Consume Mobile-owned Phone Lab build (same runner and debug key)
+        run: |
+          MOBILE_ROOT="$GITHUB_WORKSPACE/mobile-core-provider/android-wrapper/mobile-core/drive-lab"
+          gradle -p android-wrapper -I "$MOBILE_ROOT/init.gradle" -PcrewcheckMobileDriveLabRoot="$MOBILE_ROOT" --no-daemon --console=plain :app:assembleDriveLab --stacktrace
+      - name: Verify separate packages and matching signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          AUTO=android-wrapper/auto/build/outputs/apk/debug/auto-debug.apk
+          PHONE=android-wrapper/app/build/outputs/apk/driveLab/app-driveLab.apk
+          TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          "$TOOLS/aapt" dump badging "$AUTO" | grep -F "package: name='com.crewcheck.auto.prototype'"
+          "$TOOLS/aapt" dump badging "$PHONE" | grep -F "package: name='com.crewcheck.app.drivelab'"
+          AUTO_CERT=$("$TOOLS/apksigner" verify --print-certs "$AUTO" | grep 'Signer #1 certificate SHA-256 digest:')
+          PHONE_CERT=$("$TOOLS/apksigner" verify --print-certs "$PHONE" | grep 'Signer #1 certificate SHA-256 digest:')
+          test "$AUTO_CERT" = "$PHONE_CERT"
+          mkdir -p drive-lab-artifacts
+          cp "$AUTO" drive-lab-artifacts/crewcheck-drive-lab.apk
+          cp "$PHONE" drive-lab-artifacts/crewcheck-phone-lab.apk
+          cp android-wrapper/auto/README.md drive-lab-artifacts/LEIA-ME.md
+          git rev-parse HEAD > drive-lab-artifacts/AUTO_COMMIT.txt
+          git -C mobile-core-provider rev-parse HEAD > drive-lab-artifacts/MOBILE_COMMIT.txt
+          (cd drive-lab-artifacts && sha256sum *.apk > SHA256SUMS.txt)
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crewcheck-drive-lab-tests
+          path: |
+            android-wrapper/auto/build/reports/tests/testDebugUnitTest
+            android-wrapper/auto/build/test-results/testDebugUnitTest/TEST-*.xml
+          if-no-files-found: warn
+      - name: Upload paired lab APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: crewcheck-drive-lab-debug
+          path: drive-lab-artifacts/
+          if-no-files-found: error

@@ -1,0 +1,6 @@
+// Peripherals-only laboratory module registration. Never injects code into :app.
+// Root settings.gradle remains owned by the Android/Mobile integration owner.
+gradle.settingsEvaluated { settings ->
+    settings.include ':auto'
+    settings.project(':auto').projectDir = new File(settings.settingsDir, 'auto')
+}
