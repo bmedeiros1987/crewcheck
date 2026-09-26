@@ -6,7 +6,7 @@ This adapter is a native Connect IQ renderer. It does not port the Android APK a
 
 ## Ownership
 
-This PR is peripheral-only. It owns the Connect IQ adapter, compact wire projection, fixtures/tests and peripheral contract documentation. It does **not** own `android-wrapper/app/**`, `client/**`, PWA/native phone shell or the canonical phone publisher. Any phone bridge implementation is a handoff to CrewCheck Mobile Core.
+This PR is peripheral-only. It owns the Connect IQ adapter, compact wire projection, fixtures/tests and consumer documentation. It does **not** own `android-wrapper/app/**`, `client/**`, PWA/native phone shell or the canonical phone publisher. Any phone bridge implementation is a handoff to CrewCheck Mobile Core. Maintaining a consumer schema mirror does not grant authority to redefine the canonical snapshot.
 
 ## Toolchain baseline
 
@@ -33,7 +33,11 @@ Free always keeps the useful roster. Premium-only surfaces are additive.
 
 ## Portable input contract
 
-The adapter consumes the stable `watchSnapshotV1` documented by the parent peripherals PR and mirrored in `peripherals/contracts/watchSnapshotV1.schema.json`.
+The adapter consumes `watchSnapshotV1`, whose canonical payload authority is **CrewCheck Mobile Core**, in `docs/mobile_watch_snapshot_v1_contract.md` (#824). Reviewed documentation reference: [Mobile contract at d35adceb08b283a234d1f86f0ae41c9b17bfff61](https://github.com/bmedeiros1987/crewcheck/blob/d35adceb08b283a234d1f86f0ae41c9b17bfff61/docs/mobile_watch_snapshot_v1_contract.md).
+
+The parent peripheral document `docs/peripherals/watch_snapshot_v1.md` is consumer guidance; `peripherals/contracts/watchSnapshotV1.schema.json` is a consumer validation mirror, not a second normative source. This documentation change does not edit that JSON schema, its `$id`, validation keywords, fixtures or encoder. It does not certify complete runtime equivalence: timestamp ordering, normalization, entitlement and privacy checks also require the implementation tests; a schema declaration alone is not evidence of end-to-end interoperability.
+
+If a difference is found, send the exact field, observed behavior and source SHAs to Mobile Core first. After the canonical decision, Peripherals updates only its own mirror, fixtures, encoder, cache and renderer and records the Mobile revision consumed. Do not import phone-side files from the parent stack to reconcile the contract. Cross-lane CI reads do not grant write ownership. The pinned draft reference is not a claim of merge, deployment, simulator acceptance or hardware validation.
 
 Compatibility rules are deliberate:
 
