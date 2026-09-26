@@ -1,0 +1,18 @@
+// Peripherals-owned build tool only. No renderer code is packaged in the WFF app.
+def previewSource = file('tools/PreviewGenerator.java')
+def previewRes = file('src/main/res')
+def previewOutput = file("$buildDir/generated/res/watchfacePreviews")
+
+def generatePreviews = tasks.register('generateCrewWatchFacePreviewAssets', Exec) {
+    inputs.file(previewSource)
+    inputs.file(file('src/main/res/raw/watchface.xml'))
+    inputs.file(file('src/main/res/drawable-nodpi/crewcheck_logo_neon.png'))
+    inputs.property('javaRuntimeVersion', System.getProperty('java.runtime.version'))
+    outputs.dir(previewOutput)
+    commandLine new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+        '-Djava.awt.headless=true', previewSource.absolutePath,
+        previewRes.absolutePath, previewOutput.absolutePath
+}
+
+android.sourceSets.main.res.srcDir previewOutput
+tasks.named('preBuild').configure { dependsOn generatePreviews }
