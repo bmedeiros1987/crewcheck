@@ -47,8 +47,8 @@
   font-size: 0.5rem;
   line-height: 1;
   font-weight: 850;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
   box-sizing: border-box;
   pointer-events: none;
 }
@@ -63,7 +63,6 @@
   line-height: 1.05;
 }
 
-/* Semantic icon tint: calm when idle, stronger when active. */
 .cc-bottom-nav-item[data-nav-id='cockpit'] { --cc-nav-icon: var(--event-flight); }
 .cc-bottom-nav-item[data-nav-id='roster'] { --cc-nav-icon: var(--event-reserve); }
 .cc-bottom-nav-item[data-nav-id='departure'] { --cc-nav-icon: var(--event-conforme); }
@@ -94,4 +93,135 @@
 
 @media (prefers-reduced-motion: reduce) {
   .cc-bottom-nav-icon > svg { transition: none; transform: none !important; }
+}
+
+/* Mobile Core: the active shell uses .cz-bottom-nav portaled to document.body.
+   The .cc-* component above is separate; styling it alone never fixes this footer.
+   One height token governs BOTH fixed navigation and content clearance. */
+:root {
+  --cc-canonical-nav-height: max(5rem, 80px);
+  --cc-canonical-nav-offset: max(8px, env(safe-area-inset-bottom, 0px));
+  --cc-canonical-nav-clearance: calc(var(--cc-canonical-nav-height) + var(--cc-canonical-nav-offset) + 24px);
+}
+
+body > nav.cz-bottom-nav[aria-label="Navegação principal"] {
+  display: grid !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  position: fixed !important;
+  left: max(8px, env(safe-area-inset-left, 0px)) !important;
+  right: max(8px, env(safe-area-inset-right, 0px)) !important;
+  bottom: var(--cc-canonical-nav-offset) !important;
+  width: auto !important;
+  max-width: 920px !important;
+  min-width: 0 !important;
+  height: var(--cc-canonical-nav-height) !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  margin: 0 auto !important;
+  padding: 6px !important;
+  box-sizing: border-box !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 2px !important;
+  border-radius: 20px !important;
+  transform: none !important;
+}
+
+body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  min-height: 44px !important;
+  height: 100% !important;
+  padding: 4px 2px !important;
+  box-sizing: border-box !important;
+  border-radius: 14px !important;
+}
+
+body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button > svg {
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 22px !important;
+  flex: 0 0 22px !important;
+}
+
+body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button > span {
+  display: block !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  font-size: .75rem !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  text-align: center !important;
+}
+
+body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button > em {
+  top: 0 !important;
+  right: max(0px, calc(50% - 31px)) !important;
+  transform: none !important;
+  min-width: 20px !important;
+  height: 20px !important;
+  padding: 0 4px !important;
+  font-size: 10px !important;
+  line-height: 1 !important;
+  pointer-events: none !important;
+}
+
+body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button:focus-visible {
+  outline: 2px solid var(--cc-atlas-tone, currentColor) !important;
+  outline-offset: -3px !important;
+}
+
+.cz-app[data-version][data-view] {
+  padding-bottom: var(--cc-canonical-nav-clearance) !important;
+  scroll-padding-bottom: var(--cc-canonical-nav-clearance) !important;
+}
+
+/* This selector must outrank the visible footer rule above. The existing drawer
+   lifecycle already owns these flags; do not add another JS state coordinator. */
+html.crewcheck-menu-open body > nav.cz-bottom-nav[aria-label="Navegação principal"],
+body.crewcheck-menu-open > nav.cz-bottom-nav[aria-label="Navegação principal"] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+@media (max-width: 380px) {
+  body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button > span {
+    font-size: .6875rem !important;
+  }
+}
+
+/* More reading space in a short landscape viewport without shrinking tap targets. */
+@media (orientation: landscape) and (max-height: 500px) {
+  :root { --cc-canonical-nav-height: max(3.5rem, 56px); }
+
+  body > nav.cz-bottom-nav[aria-label="Navegação principal"] {
+    padding: 4px !important;
+    border-radius: 16px !important;
+  }
+
+  body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button {
+    flex-direction: row !important;
+    gap: 6px !important;
+  }
+
+  body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button > em {
+    right: 0 !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button,
+  body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button > svg {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
 }
