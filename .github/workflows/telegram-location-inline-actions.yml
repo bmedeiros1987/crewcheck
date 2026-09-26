@@ -1,0 +1,38 @@
+name: CrewCheck Telegram location inline actions
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/v14411/**'
+      - 'scripts/v14410/apply.mjs'
+      - 'scripts/regression-v14-4-11-telegram-location-inline-actions.mjs'
+      - '.github/workflows/telegram-location-inline-actions.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Static regression
+        run: node scripts/regression-v14-4-11-telegram-location-inline-actions.mjs
+      - name: Materialize source
+        run: node scripts/v139/apply.mjs
+      - name: Verify materialized Telegram contract
+        run: |
+          grep -q "cc_location:hospitals" server.mjs
+          grep -q "cc_location:pharmacies" server.mjs
+          grep -q "cc_location:gyms" server.mjs
+          grep -q "conciergeLocationActionsKeyboard()" server.mjs
+          if grep -q "Vou priorizar estas coordenadas por até 6 horas para /saida, /hospitais, /farmacias e /academias" server.mjs; then
+            echo "legacy location copy still present"
+            exit 1
+          fi
+      - name: TypeScript
+        run: npx tsc --noEmit --pretty false --project tsconfig.json
