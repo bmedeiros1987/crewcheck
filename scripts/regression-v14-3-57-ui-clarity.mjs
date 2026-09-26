@@ -49,7 +49,8 @@ assert.ok(timelineCss.includes("[data-crew-theme='dark']"), 'Linha do Dia deve r
 const clarityCss = read('client/src/styles/v14357-ui-clarity.css');
 const indexCss = read('client/src/index.css');
 assert.ok(clarityCss.includes('@media (min-width: 901px)'), 'desktop deve possuir regra própria');
-assert.match(clarityCss, /@media \(min-width: 901px\)[\s\S]*\.cz-bottom-nav[\s\S]*display:\s*none/, 'navegação inferior não deve cobrir o desktop');
+assert.doesNotMatch(clarityCss, /@media \(min-width: 901px\)[\s\S]*?\.cz-bottom-nav\s*\{[\s\S]*?display:\s*none/, 'camada de clareza não pode esconder o rodapé no desktop');
+assert.match(clarityCss, /@media \(min-width: 901px\)[\s\S]*?\.cz-bottom-nav\s*\{[\s\S]*?display:\s*grid\s*!important/, 'camada de clareza deve preservar o rodapé canônico no desktop');
 assert.ok(clarityCss.includes('width: min(100%, 1180px)'), 'FlyDeck e Linha do Dia devem compartilhar largura previsível');
 assert.ok(indexCss.includes('@import "./styles/v14357-ui-clarity.css";'), 'camada global de clareza deve estar carregada');
 const cssFixture = '@import "tailwindcss";\nbody{}';

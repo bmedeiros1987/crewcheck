@@ -1,0 +1,63 @@
+name: P1 #744 Web roster and footer parity
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/styles/web-desktop-shell.css'
+      - 'client/src/index.css'
+      - 'scripts/v14357/**'
+      - 'scripts/p1-744-web-roster-footer-parity/**'
+      - 'scripts/regression-p1-744-web-roster-footer-parity.mjs'
+      - 'scripts/regression-web-desktop-shell.mjs'
+      - 'scripts/regression-v14-3-57-ui-clarity.mjs'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/p1-744-web-roster-footer-parity.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout immutable PR HEAD
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Protected-scope guard
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          git fetch origin "$base_sha" --depth=1
+          changed="$(git diff --name-only "$base_sha" HEAD)"
+          printf '%s\n' "$changed"
+          if printf '%s\n' "$changed" | grep -Eq '^(client/src/lib/(pdfParser|canonicalRoster|rosterContinuity|complianceEngine|regulatoryHistory|financialRules)|server/.*finance|scripts/p0-530-|scripts/p0-580-|scripts/p0-623-)'; then
+            echo "::error::#744 is Web presentation/parity only; sovereign parser/journey/compliance/finance paths changed."
+            exit 1
+          fi
+      - name: Prepare canonical runtime
+        run: node scripts/v139/apply.mjs
+      - name: P1 #744 reproducer
+        run: node scripts/regression-p1-744-web-roster-footer-parity.mjs
+      - name: Existing desktop shell contract
+        run: node scripts/regression-web-desktop-shell.mjs
+      - name: Existing UI clarity contract
+        run: node scripts/regression-v14-3-57-ui-clarity.mjs
+      - name: Care semantics
+        run: node scripts/regression-p0-691-care-context.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npx vite build
