@@ -1,6 +1,7 @@
 import {
   normalizeConciergeHotelName,
   normalizeConciergeRoom,
+  selectConciergeHistoricalStays,
   type ConciergeStayRecord,
 } from './conciergeRoomHistory';
 
@@ -34,9 +35,9 @@ export function buildConciergeRoomIntelligence(
   stays: ConciergeStayRecord[],
   hotelName: unknown,
   currentStayDate?: unknown,
+  currentStayId?: unknown,
 ): ConciergeRoomIntelligence {
   const targetHotel = normalizeConciergeHotelName(hotelName);
-  const currentDay = normalizedStayDay(currentStayDate);
 
   if (!targetHotel) {
     return {
@@ -49,44 +50,36 @@ export function buildConciergeRoomIntelligence(
     };
   }
 
-  const hotelDays = new Set<string>();
-  const roomDays = new Map<string, Set<string>>();
+  const historicalStays = selectConciergeHistoricalStays(stays, hotelName, currentStayDate, currentStayId);
+  const roomStays = new Map<string, ConciergeStayRecord[]>();
 
-  for (const stay of Array.isArray(stays) ? stays : []) {
-    if (normalizeConciergeHotelName(stay?.hotelName) !== targetHotel) continue;
-    const day = normalizedStayDay(stay?.stayDate);
-    if (!day || (currentDay && day === currentDay)) continue;
-
-    hotelDays.add(day);
-    const room = normalizeConciergeRoom(stay?.room);
+  for (const stay of historicalStays) {
+    const room = normalizeConciergeRoom(stay.room);
     if (!room) continue;
-
-    const days = roomDays.get(room) || new Set<string>();
-    days.add(day);
-    roomDays.set(room, days);
+    const records = roomStays.get(room) || [];
+    records.push(stay);
+    roomStays.set(room, records);
   }
 
-  const knownRooms = Array.from(roomDays.entries())
-    .map(([room, days]) => {
-      const stayDates = Array.from(days).sort((a, b) => b.localeCompare(a));
+  const knownRooms = Array.from(roomStays.entries())
+    .map(([room, records]) => {
+      const stayDates = [...new Set(records.map((stay) => normalizedStayDay(stay.stayDate)))]
+        .sort((a, b) => b.localeCompare(a));
       return {
         room,
-        visits: stayDates.length,
+        visits: records.length,
         lastStayDate: stayDates[0],
         stayDates,
       };
     })
     .sort((a, b) => b.visits - a.visits || b.lastStayDate.localeCompare(a.lastStayDate) || a.room.localeCompare(b.room, 'pt-BR'));
 
-  const roomVisitDays = new Set<string>();
-  for (const room of knownRooms) for (const day of room.stayDates) roomVisitDays.add(day);
-
   const mostRecentRoom = [...knownRooms]
     .sort((a, b) => b.lastStayDate.localeCompare(a.lastStayDate) || b.visits - a.visits || a.room.localeCompare(b.room, 'pt-BR'))[0] || null;
 
   return {
-    hotelVisits: hotelDays.size,
-    staysWithKnownRoom: roomVisitDays.size,
+    hotelVisits: historicalStays.length,
+    staysWithKnownRoom: knownRooms.reduce((total, room) => total + room.visits, 0),
     distinctRooms: knownRooms.length,
     knownRooms,
     mostFrequentRoom: knownRooms[0] || null,
