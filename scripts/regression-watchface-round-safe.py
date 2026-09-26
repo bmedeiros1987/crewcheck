@@ -24,6 +24,98 @@ CLOCKS = {'0': ('88', 'BOLD'), '1': ('84', 'BOLD'), '2': ('88', 'THIN')}
 PALETTES = {'0': '#FF22D3EE #5522D3EE', '1': '#FFA78BFA #55A78BFA', '2': '#FFF472B6 #55F472B6'}
 CALENDAR = ['[DAY_OF_WEEK_S]', '[DAY_Z]', '[MONTH_S]']
 
+# Presentation-only substitutions from the first physical Galaxy photo. Unknown titles
+# and numeric strings pass through unchanged, even when the user chooses another provider.
+CAPTION_RULES = {
+    1: [('CREWCHECK', 'AGORA'), ('CrewCheck', 'AGORA')],
+    3: [('CREWLIFE', 'CrewLife')],
+    4: [('ROTINA', 'Rotina')],
+    5: [('Battery', 'BATERIA'), ('BATTERY', 'BATERIA')],
+    6: [('Steps', 'PASSOS'), ('STEPS', 'PASSOS'), ('Step count', 'PASSOS'), ('Step Count', 'PASSOS')],
+}
+
+
+def display_expression(sid, field):
+    import json
+    ref = '[COMPLICATION.' + field + ']'
+    rules = CAPTION_RULES.get(sid, []) if field == 'TITLE' else [('--', '—')]
+    if field == 'TEXT' and sid == 1:
+        rules = [('SEM ATIVIDADE', 'Sem atividade'), *rules]
+    result = ref
+    for before, after in reversed(rules):
+        result = f'{ref} == {json.dumps(before, ensure_ascii=False)} ? {json.dumps(after, ensure_ascii=False)} : {result}'
+    return result
+
+
+def resolve_display(expression, title, value):
+    """Evaluate only equality/string-ternary substitutions, never arbitrary code."""
+    rule = re.compile(r'^\[COMPLICATION\.(TITLE|TEXT)\] == "([^"\\]*)" \? "([^"\\]*)" : (.+)$')
+    source, matched, selected = None, False, None
+    remaining = expression
+    while match := rule.fullmatch(remaining):
+        field, before, after, remaining = match.groups()
+        assert source in (None, field), 'mixed source fields'
+        source = field
+        current = title if field == 'TITLE' else value
+        if not matched and current == before:
+            selected, matched = after, True
+    assert remaining in ('[COMPLICATION.TITLE]', '[COMPLICATION.TEXT]'), 'non-source fallback'
+    field = remaining[14:-1]
+    assert source in (None, field), 'fallback source changed'
+    return selected if matched else (title if field == 'TITLE' else value)
+
+
+def validate_physical_polish(root):
+    date = root.find('Scene/PartText')
+    loc = date.find('Localization')
+    assert loc is not None and loc.attrib == {'locales': 'pt_BR'}, 'Portuguese date, device timezone preserved'
+    assert date.find('Text/Font/Upper/Template').text == '%s · %s %s', 'date separator missing'
+    battery = root.find("Scene/ComplicationSlot[@slotId='5']/Complication")
+    condition = battery.find('Condition')
+    assert condition is not None and [n.tag for n in condition] == ['Expressions', 'Compare']
+    expr = condition.find('Expressions/Expression')
+    assert expr is not None and expr.get('name') == 'battery_title_missing'
+    assert expr.text == 'textLength([COMPLICATION.TITLE]) == 0', 'icon must not overlap a provided title'
+    compare = condition.find('Compare')
+    assert compare.get('expression') == expr.get('name') and len(compare) == 1
+    group = compare.find('Group')
+    assert group is not None and box(group) == (0, 0, 124, 22) and len(group) == 1
+    icon = group.find('PartImage')
+    assert icon is not None and box(icon) == (51, 0, 22, 22)
+    assert icon.find('Image').get('resource') == '[COMPLICATION.MONOCHROMATIC_IMAGE]', 'never fabricate a battery icon for another provider'
+    assert hidden_in_ambient(icon), 'fallback icon must disappear in AOD'
+    assert len(root.findall('.//Condition')) == 1, 'no hidden state logic added to the face'
+    assert root.find("Scene/ComplicationSlot[@slotId='3']/Complication/PartText[@y='24']/Text/Font").get('color') == '#FFB7C7D9'
+    for slot in root.findall('Scene/ComplicationSlot'):
+        sid = int(slot.get('slotId'))
+        for comp in slot.findall('Complication'):
+            parts = comp.findall('PartText')
+            for i, part in enumerate(parts):
+                font = part.find('Text/Font')
+                fields = ('TITLE', 'TEXT') if sid == 4 else (('TITLE',) if i == 0 else ('TEXT',))
+                assert [n.get('expression') for n in font.findall('Template/Parameter')] == [display_expression(sid, f) for f in fields]
+                if i == 0 or sid == 4:
+                    assert font.get('weight') == 'NORMAL', 'secondary labels must not compete with the time'
+    # Deliberately no locale parsing of numbers, fake zero, healthy/connected state, or
+    # inference that missing values prove lack of consent or an off-duty day.
+    checks = [(6, 'TITLE', 'Steps', '9332', 'PASSOS'),
+              (6, 'TITLE', 'Weather', '22°', 'Weather'),
+              (6, 'TITLE', '', '0', ''),
+              (5, 'TITLE', '', '79%', ''),
+              (5, 'TITLE', 'Battery', '79%', 'BATERIA'),
+              (5, 'TITLE', 'Sono', '7h', 'Sono'),
+              (1, 'TITLE', 'CREWCHECK', 'SEM ATIVIDADE', 'AGORA'),
+              (1, 'TEXT', 'CREWCHECK', 'SEM ATIVIDADE', 'Sem atividade'),
+              (3, 'TEXT', 'CrewLife', '--', '—'),
+              (3, 'TEXT', 'CrewLife', '', ''),
+              (3, 'TEXT', 'CrewLife', '0', '0'),
+              (6, 'TEXT', 'Steps', '9,332', '9,332'),
+              (6, 'TEXT', 'Passos', '9.332', '9.332'),
+              (1, 'TEXT', 'Escala', 'Dados antigos', 'Dados antigos'),
+              (1, 'TEXT', 'Portão', 'REMOTA', 'REMOTA')]
+    for sid, field, title, value, expected in checks:
+        assert resolve_display(display_expression(sid, field), title, value) == expected
+
 
 def box(node):
     return tuple(float(node.attrib[key]) for key in ('x', 'y', 'width', 'height'))
@@ -116,6 +208,7 @@ def validate(root, style='0'):
     assert root.tag == 'WatchFace' and root.get('width') == root.get('height') == '450'
     scene = root.find('Scene')
     assert scene is not None and scene.get('backgroundColor') == '#FF000000'
+    validate_physical_polish(root)
     slots = scene.findall('ComplicationSlot')
     assert len(slots) == 6 and {int(s.get('slotId')) for s in slots} == set(PROVIDERS)
     for a, b in combinations(slots, 2): assert not overlaps(box(a), box(b)), 'complication slots overlap'
@@ -145,7 +238,7 @@ def validate(root, style='0'):
                 assert font is not None and float(font.get('size')) >= 18, 'tiny label reintroduced'
                 assert font.find('Template') is not None, 'provider values missing'
                 expressions = [p.get('expression') for p in font.findall('.//Parameter')]
-                assert expressions and all(e in ('[COMPLICATION.TITLE]', '[COMPLICATION.TEXT]') for e in expressions)
+                assert expressions and all(e in (display_expression(sid, 'TITLE'), display_expression(sid, 'TEXT')) for e in expressions)
                 if sid in (3, 4, 5, 6): assert hidden_in_ambient(part), 'health/routine/battery/steps must clear in ambient'
     hero = next(s for s in slots if s.get('slotId') == '1')
     assert hero.find("Complication[@type='LONG_TEXT']/PartText[@y='30']/Text").get('maxLines') == '2'
@@ -219,6 +312,13 @@ def run():
         ('.//DigitalClock/TimeText', {'format': 'EEE dd MMM'}),
         ('Scene/PartText/Text/Font/Upper/Template/Parameter', {'expression': '[HOUR_0_23]'}),
         ('.//ComplicationSlot//Text', {'isAutoSize': 'TRUE'}),
+        ('Scene/PartText/Localization', {'locales': 'en_US'}),
+        ('Scene/PartText/Localization', {'timeZone': 'America/Sao_Paulo'}),
+        (".//ComplicationSlot[@slotId='5']//Compare", {'expression': 'wrong_condition'}),
+        (".//ComplicationSlot[@slotId='5']//Image", {'resource': 'fabricated_battery'}),
+        (".//ComplicationSlot[@slotId='5']//PartImage/Variant", {'value': '255'}),
+        (".//ComplicationSlot[@slotId='6']//Parameter", {'expression': '"PASSOS"'}),
+        (".//ComplicationSlot[@slotId='3']//Parameter", {'expression': '"Conectado"'}),
     ]
     negative = 0
     for style, palette in product(CLOCKS, PALETTES):
@@ -251,7 +351,7 @@ def run():
     try: validate_config(changed, labels)
     except AssertionError: negative += 1
     else: raise AssertionError('multiple ListOption children not caught')
-    print(f'[watchface-premium-layout] PASS: 9 combinations, WFF v1 text/calendar/groups, active/AOD, six stable slots, original logo; {negative} negative cases')
+    print(f'[watchface-premium-layout] PASS: 9 combinations, WFF v1 text/calendar/groups, active/AOD, six stable slots, original logo, physical-photo labels, 15 data-preservation cases; {negative} negative cases')
 
 
 if __name__ == '__main__': run()
