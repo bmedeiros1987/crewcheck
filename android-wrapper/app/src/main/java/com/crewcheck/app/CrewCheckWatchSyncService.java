@@ -33,5 +33,9 @@ public final class CrewCheckWatchSyncService extends WearableListenerService {
                 new android.content.Intent(MainActivity.ACTION_WATCH_SYNC_REQUEST)
                         .setPackage(getPackageName());
         sendBroadcast(syncRequest);
+
+        // This callback also runs without a live Activity. Resend only an authorized,
+        // still-valid local Companion aggregate; roster/telemetry paths remain independent.
+        CrewLifeCompanionBackgroundSync.republishCurrent(this);
     }
 }
