@@ -380,3 +380,143 @@ html[data-crew-theme="light"] .cc-manual-center {
   .cc-life-auto-source { grid-template-columns: 1fr auto; }
   .cc-life-auto-source button { grid-column: 1 / -1; width: 100%; }
 }
+
+
+/* CrewLife Fem — separate, privacy-first surface. */
+.cc-life-fem {
+  margin-top: 14px;
+  padding: 22px;
+  border: 1px solid color-mix(in srgb, #ec4899 42%, var(--life-line));
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 94% 0%, rgba(236, 72, 153, 0.16), transparent 34%),
+    linear-gradient(145deg, var(--life-card), var(--life-bg));
+  box-shadow: 0 16px 42px rgba(2, 12, 27, 0.18);
+}
+.cc-life-fem > header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.cc-life-fem > header > span {
+  display: grid;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 17px;
+  color: #fff;
+  background: linear-gradient(145deg, #a78bfa, #ec4899);
+}
+.cc-life-fem > header > span svg { width: 24px; height: 24px; }
+.cc-life-fem > header > div { min-width: 0; flex: 1; }
+.cc-life-fem > header > svg { color: #f9a8d4; }
+.cc-life-fem > header > b {
+  padding: 7px 10px;
+  border: 1px solid rgba(249, 168, 212, 0.34);
+  border-radius: 999px;
+  color: #f9a8d4;
+  background: rgba(236, 72, 153, 0.1);
+  font-size: .76rem;
+}
+.cc-life-fem small {
+  color: #f9a8d4;
+  font-size: .72rem;
+  font-weight: 900;
+  letter-spacing: .1em;
+}
+.cc-life-fem h2 {
+  margin: 3px 0 4px;
+  color: var(--life-ink);
+  font-size: clamp(1.35rem, 4vw, 1.9rem);
+}
+.cc-life-fem p,
+.cc-life-fem span { color: var(--life-muted); line-height: 1.5; }
+.cc-life-fem-notice,
+.cc-life-fem-source {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 15px;
+  border: 1px solid var(--life-line);
+  border-radius: 18px;
+  background: rgba(139, 92, 246, 0.08);
+}
+.cc-life-fem-notice { display: block; }
+.cc-life-fem-notice strong,
+.cc-life-fem-source strong { color: var(--life-ink); }
+.cc-life-fem-notice p { margin: 5px 0 0; }
+.cc-life-fem-source svg { flex: 0 0 auto; color: #f9a8d4; }
+.cc-life-fem-source div { display: grid; gap: 3px; }
+.cc-life-fem-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr);
+  gap: 12px;
+  margin-top: 16px;
+}
+.cc-life-fem-grid article {
+  padding: 17px;
+  border: 1px solid var(--life-line);
+  border-radius: 20px;
+  background: var(--life-card);
+}
+.cc-life-fem-cycle {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+}
+.cc-life-fem-cycle > svg { color: #f9a8d4; }
+.cc-life-fem-cycle > div:nth-child(2) { display: grid; gap: 3px; }
+.cc-life-fem-cycle > div:nth-child(2) strong { color: var(--life-ink); font-size: 1.1rem; }
+.cc-life-fem-cycle-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: end;
+}
+.cc-life-fem-cycle-actions label {
+  display: grid;
+  gap: 4px;
+  color: var(--life-muted);
+  font-size: .78rem;
+}
+.cc-life-fem-cycle-actions input {
+  min-height: 40px;
+  padding: 7px 10px;
+  border: 1px solid var(--life-line);
+  border-radius: 12px;
+  color: var(--life-ink);
+  background: var(--life-bg);
+}
+.cc-life-fem-context > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 10px 0;
+}
+.cc-life-fem-context button,
+.cc-life-fem-cycle-actions button {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--life-line);
+  border-radius: 999px;
+  color: var(--life-ink);
+  background: rgba(255,255,255,.05);
+  font-weight: 800;
+}
+.cc-life-fem-context button.selected,
+.cc-life-fem-cycle-actions button.primary {
+  border-color: rgba(249, 168, 212, .5);
+  background: linear-gradient(135deg, rgba(167,139,250,.3), rgba(236,72,153,.28));
+}
+.cc-life-fem .cc-life-check { margin-top: 16px; }
+.cc-life-fem .cc-life-actions { margin-top: 16px; }
+.cc-life-fem .cc-life-actions .danger { color: var(--life-danger); }
+
+@media (max-width: 760px) {
+  .cc-life-fem-grid { grid-template-columns: 1fr; }
+  .cc-life-fem > header { align-items: flex-start; }
+  .cc-life-fem-cycle-actions { display: grid; grid-template-columns: 1fr; }
+}

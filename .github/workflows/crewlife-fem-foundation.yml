@@ -1,0 +1,41 @@
+name: CrewLife Fem foundation
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/components/v1434/CrewLifeFemPanel.tsx'
+      - 'client/src/components/v1434/CrewCheckLifeView.tsx'
+      - 'client/src/components/v1434/crewcheck-life.css'
+      - 'scripts/regression-crewlife-fem-foundation.mjs'
+      - '.github/workflows/crewlife-fem-foundation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare canonical sources
+        run: node scripts/v139/apply.mjs
+
+      - name: CrewLife Fem privacy contract
+        run: node scripts/regression-crewlife-fem-foundation.mjs
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Build web
+        run: npx vite build

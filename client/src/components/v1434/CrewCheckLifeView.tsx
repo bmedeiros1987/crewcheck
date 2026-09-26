@@ -16,6 +16,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import CrewLifeFemPanel from './CrewLifeFemPanel';
 
 type NextProgram = {
   title?: string;
@@ -541,6 +542,8 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       <article><Activity/><small>Atividade</small><strong>{metrics.activityMinutes ? `${metrics.activityMinutes} min` : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : 'sem avaliação clínica'}</span></article>
       <article><BookOpen/><small>Estudo</small><strong>{metrics.studyMinutes ? `${metrics.studyMinutes} min` : 'Sem dado'}</strong><span>meta {profile.studyTargetMinutes} min</span></article>
     </section>
+
+    <CrewLifeFemPanel/>
 
     <section className="cc-life-block cc-life-integrations">
       <header><div><small>INTEGRAÇÕES</small><h2>Conecte somente o que quiser</h2></div><ShieldCheck/></header>
