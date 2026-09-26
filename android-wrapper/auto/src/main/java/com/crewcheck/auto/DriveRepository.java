@@ -39,6 +39,7 @@ public final class DriveRepository {
     private boolean inFlight;
     private long generation;
     private boolean wasFresh;
+    private final Runnable expiry = this::onSnapshotExpiry;
     // A short grace period bridges Home -> Detail lifecycle handoff without losing the target.
     private final Runnable clearSession = () -> {
         if (!listeners.isEmpty()) return;
@@ -46,12 +47,15 @@ public final class DriveRepository {
         snapshot = null;
         safeJson = "";
         wasFresh = false;
+        handler.removeCallbacks(expiry);
+        status = enabled() ? "Aguardando nova sincronização com o Phone Lab" : "Sincronização desativada";
     };
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (listeners.isEmpty()) return;
             boolean fresh = snapshot != null && snapshot.isFresh(clock.getAsLong());
             if (fresh != wasFresh) { wasFresh = fresh; changed(); }
+            scheduleExpiry();
             refresh();
             handler.postDelayed(this, 30_000L);
         }
@@ -75,6 +79,8 @@ public final class DriveRepository {
         prefs.edit().putBoolean("sync_enabled", enabled).apply();
         snapshot = null;
         safeJson = "";
+        wasFresh = false;
+        handler.removeCallbacks(expiry);
         status = enabled ? "Conectando ao CrewCheck Phone Lab" : "Sincronização desativada";
         changed();
         if (enabled) refresh();
@@ -90,6 +96,7 @@ public final class DriveRepository {
         listeners.remove(listener);
         if (listeners.isEmpty()) {
             handler.removeCallbacks(tick);
+            handler.removeCallbacks(expiry);
             handler.removeCallbacks(clearSession);
             handler.postDelayed(clearSession, 1000L);
         }
@@ -101,6 +108,22 @@ public final class DriveRepository {
         return status;
     }
     public DriveSnapshot snapshot() { return snapshot; }
+
+    // Expiry is a local UI event, not another provider query. Never extends source validity.
+    private void scheduleExpiry() {
+        handler.removeCallbacks(expiry);
+        long now = clock.getAsLong();
+        if (listeners.isEmpty() || snapshot == null || !snapshot.isFresh(now)) return;
+        long deadline = Math.min(snapshot.validUntil, snapshot.generatedAt + DriveSnapshot.MAX_AGE_MS);
+        handler.postDelayed(expiry, Math.max(1L, deadline - now));
+    }
+    private void onSnapshotExpiry() {
+        if (listeners.isEmpty()) return;
+        boolean fresh = snapshot != null && snapshot.isFresh(clock.getAsLong());
+        if (fresh != wasFresh) { wasFresh = fresh; changed(); }
+        // The wall clock may have changed while the callback was waiting.
+        scheduleExpiry();
+    }
 
     public void refresh() {
         if (!enabled() || inFlight || listeners.isEmpty()) return;
@@ -137,10 +160,13 @@ public final class DriveRepository {
             handler.post(() -> {
                 inFlight = false;
                 if (requestGeneration != generation || !enabled() || listeners.isEmpty()) return;
-                boolean different = !normalized.equals(safeJson) || !resultStatus.equals(status);
+                boolean fresh = result != null && result.isFresh(clock.getAsLong());
+                boolean different = !normalized.equals(safeJson) || !resultStatus.equals(status) || fresh != wasFresh;
                 snapshot = result;
                 safeJson = normalized;
                 status = resultStatus;
+                wasFresh = fresh;
+                scheduleExpiry();
                 if (different) changed();
             });
         });
