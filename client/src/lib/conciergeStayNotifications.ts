@@ -66,8 +66,8 @@ export function getConciergeStayReminderDelivery(): ConciergeStayReminderDeliver
   };
 }
 
-export async function listConciergeStayReminderJobs(stayDate: unknown): Promise<ConciergeStayReminderJob[]> {
-  const keys = conciergeStayReminderJobKeys(stayDate);
+export async function listConciergeStayReminderJobs(stayDate: unknown, stayId?: unknown): Promise<ConciergeStayReminderJob[]> {
+  const keys = conciergeStayReminderJobKeys(stayDate, stayId);
   if (!keys) return [];
   const wanted = new Set(Object.values(keys));
   const payload = await authFetch<any>('/api/alarm/scheduled', { cache: 'no-store' });
@@ -110,8 +110,8 @@ export async function scheduleConciergeStayReminders(plan: ConciergeStayReminder
   };
 }
 
-export async function cancelConciergeStayReminders(stayDate: unknown) {
-  const keys = conciergeStayReminderJobKeys(stayDate);
+export async function cancelConciergeStayReminders(stayDate: unknown, stayId?: unknown) {
+  const keys = conciergeStayReminderJobKeys(stayDate, stayId);
   if (!keys) return { cancelled: 0, errors: [] as string[] };
 
   let cancelled = 0;
@@ -127,14 +127,16 @@ export async function cancelConciergeStayReminders(stayDate: unknown) {
 export async function reconcileConciergeStayReminders(
   stayDate: unknown,
   desiredPlan: ConciergeStayReminderPlanItem[],
+  stayId?: unknown,
 ) {
-  const existingJobs = await listConciergeStayReminderJobs(stayDate);
+  const existingJobs = await listConciergeStayReminderJobs(stayDate, stayId);
   const delivery = getConciergeStayReminderDelivery();
   const reconciliation = buildConciergeStayReminderReconciliation(
     stayDate,
     desiredPlan,
     existingJobs,
     delivery.channel,
+    stayId,
   );
 
   if (!reconciliation.enabled) {
