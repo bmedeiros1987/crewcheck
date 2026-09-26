@@ -1,0 +1,13 @@
+# PR #837: piloto Wear autorizado no Play Internal
+
+Bruno solicitou explicitamente enviar o candidato ao Play Console para homologar pela loja. Essa autorização altera o meio de distribuição do teste; não certifica que o teste físico foi feito, nem autoriza produção ou merge das PRs #836/#837.
+
+Fonte imutável: `a1f4e5fe3700d288c553df651b31999ae0d066c6`. Branch de release: `release/wear-pr837-internal-a1f4e5fe`. Somente `com.crewcheck.app` módulo Wear e `com.crewcheck.watch.app` Watch Face, na track Wear internal retornada pela API (`wear:qa` ou o alias legado `wear:internal`). Nunca fallback para qa/internal do telefone, outros canais, produção, Companion ou outro pacote.
+
+O workflow usa checkout separado do fonte, exige CI independente verde no SHA exato, repete regressões/WFF/TypeScript/web e testes/lint Wear, aloca versionCodes acima de todas as versões atualmente observadas na Play e verifica assinatura/manifests dos APKs/AABs. Faz auditoria do seletor/resource-only do mostrador. Não modifica os guards main-only de `publish.py`/`allocate_versions.py`, não falsifica GITHUB_REF, não altera chaves/permissões e não publica Mobile. O JSON de versão é materializado somente no checkout temporário.
+
+Release auxiliar estreito e não genérico: source, branch, módulos, pacotes e destinos estão pinados. Testes negativos sem rede bloqueiam desvio de assinatura, pacote, track, source, versão, manifesto de release e checksum. A mesma concurrency group do publicador existente serializa as operações na Play. Qualquer release interna unfinished é bloqueada, sem apagar rascunhos existentes. Os canais não alvos são comparados antes/depois e há readback da Play após commit. Uma falha após o primeiro pacote é registrada como publicação parcial, sem rollback automático.
+
+`previous-internal-releases.json` conserva os códigos e hashes anteriores; `publish-result.json` registra códigos efetivamente aceitos e modo de revisão. Commit/readback não garante liberação instantânea ao aparelho: revisão pendente/propagação da Play podem permanecer. Nenhum usuário/testador é adicionado ou removido.
+
+Recuperação: a Play não atualiza normalmente para um versionCode menor. Para retornar à implementação anterior, reconstruir a fonte conhecida com código maior e a mesma identidade no mesmo canal interno, após confirmar o problema. Não desinstalar o aplicativo principal, limpar dados ou substituir a chave. Este workflow não executa rollback nem faz merge em main. O upload de piloto não dispensa homologação de fontes, persistência, 12/24h, texto longo, AOD, gestos, TalkBack e sincronização por canal.

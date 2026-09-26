@@ -1,0 +1,177 @@
+name: CrewWatch PR837 authorized Play Internal
+
+# One pilot explicitly authorized by Bruno for physical testing through the Play Store.
+# No main merge, no release of Mobile/Companion and no production track.
+on:
+  push:
+    branches: ['release/wear-pr837-internal-a1f4e5fe']
+    paths:
+      - '.github/workflows/wear-pr837-internal.yml'
+      - 'peripherals/release/pr837-internal/**'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: crewcheck-play-release
+  cancel-in-progress: false
+
+jobs:
+  publication-policy-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Negative publication safety cases (no credentials)
+        run: python3 peripherals/release/pr837-internal/test_release.py
+
+  build:
+    needs: publication-policy-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout immutable authorized source
+        uses: actions/checkout@v6
+        with:
+          ref: a1f4e5fe3700d288c553df651b31999ae0d066c6
+          path: source
+          persist-credentials: false
+      - name: Official WFF v1 schema
+        uses: actions/checkout@v6
+        with:
+          repository: google/watchface
+          ref: b6cdda0acd3e4c5d0be5624fcdc01209380029d1
+          path: wff-spec
+          sparse-checkout: third_party/wff/specification/documents/1
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+          cache-dependency-path: source/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+      - run: python3 -m pip install 'requests==2.32.4' 'google-auth==2.40.3' 'xmlschema==4.1.0'
+      - name: Require exact-source green CI and release-only branch diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 peripherals/release/pr837-internal/release.py guard
+      - name: Validate original WFF
+        run: |
+          python3 - <<'PY'
+          import xmlschema
+          schema = xmlschema.XMLSchema11('wff-spec/third_party/wff/specification/documents/1/watchface.xsd')
+          schema.validate('source/android-wrapper/watchface/src/main/res/raw/watchface.xml')
+          PY
+      - name: Canonical preparation, regressions and web validation
+        working-directory: source
+        run: |
+          npm ci
+          node scripts/v139/apply.mjs
+          node scripts/regression-crewwatch-premium-consolidated.mjs
+          node scripts/regression-watchface-premium-layout.mjs
+          node scripts/regression-watch-first-sync.mjs
+          python3 scripts/android-play/test_validate.py
+          python3 scripts/android-play/test_credential.py
+          python3 scripts/android-play/test_review_policy.py
+          npx tsc --noEmit
+          npx vite build
+      - name: Validate prepared WFF
+        run: |
+          python3 - <<'PY'
+          import xmlschema
+          schema = xmlschema.XMLSchema11('wff-spec/third_party/wff/specification/documents/1/watchface.xsd')
+          schema.validate('source/android-wrapper/watchface/src/main/res/raw/watchface.xml')
+          PY
+      - name: Allocate newer Wear version codes and preserve previous releases
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: python3 peripherals/release/pr837-internal/release.py allocate
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - name: Restore existing signing identity (no key changes)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64" && test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS"
+          umask 077
+          printf '%s' "${KEYSTORE_BASE64#base64:}" | tr -d '\r\n ' | base64 --decode > "$RUNNER_TEMP/crewcheck-release.jks"
+          keytool -exportcert -keystore "$RUNNER_TEMP/crewcheck-release.jks" -storepass:env STORE_PASSWORD -alias "$KEY_ALIAS" -file "$RUNNER_TEMP/upload-cert.der"
+          echo "EXPECTED_UPLOAD_CERT_SHA256=$(sha256sum "$RUNNER_TEMP/upload-cert.der" | cut -d ' ' -f1)" >> "$GITHUB_ENV"
+      - name: Test, lint and build only CrewWatch and Watch Face
+        working-directory: source
+        env:
+          CREWCHECK_STORE_FILE: ${{ runner.temp }}/crewcheck-release.jks
+          CREWCHECK_STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD }}
+          CREWCHECK_KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS }}
+          CREWCHECK_KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD }}
+        run: gradle -p android-wrapper --no-daemon --console=plain :wear:testDebugUnitTest :wear:lintDebug :wear:assembleRelease :wear:bundleRelease :watchface:assembleRelease :watchface:bundleRelease
+      - name: Audit signed Watch Face picker and resource-only release
+        working-directory: source
+        run: python3 android-wrapper/watchface/tools/verify_preview_apk.py android-wrapper/watchface/build/outputs/apk/release/watchface-release.apk ../wear-internal-output/face-preview-evidence
+      - name: Verify AAB/APK identity and stage exact artifacts
+        run: |
+          curl --fail --location --retry 3 https://github.com/google/bundletool/releases/download/1.18.2/bundletool-all-1.18.2.jar -o "$RUNNER_TEMP/bundletool.jar"
+          python3 peripherals/release/pr837-internal/release.py stage --bundletool "$RUNNER_TEMP/bundletool.jar"
+      - name: Upload verified Wear pilot and prior-release references
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewWatch-PR837-Play-Internal-verified
+          path: wear-internal-output/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove temporary signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/crewcheck-release.jks" "$RUNNER_TEMP/upload-cert.der"
+
+  publish-wear-internal:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          ref: a1f4e5fe3700d288c553df651b31999ae0d066c6
+          path: source
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: CrewWatch-PR837-Play-Internal-verified
+          path: wear-internal-output
+      - run: python3 -m pip install 'requests==2.32.4' 'google-auth==2.40.3'
+      - name: Upload only Wear internal, commit and read back Play state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: python3 peripherals/release/pr837-internal/release.py publish
+      - name: Preserve publication result, including any partial commit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewWatch-PR837-Play-Internal-result
+          path: |
+            wear-internal-output/publish-result.json
+            wear-internal-output/previous-internal-releases.json
+            wear-internal-output/release-report.json
+          if-no-files-found: warn
+          retention-days: 30
