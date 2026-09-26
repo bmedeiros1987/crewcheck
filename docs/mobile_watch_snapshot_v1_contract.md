@@ -2,9 +2,26 @@
 
 ## Ownership and source of truth
 
-This document describes the **phone-side contract owned by CrewCheck Mobile**. Peripherals consume it; they do not own `android-wrapper/app/**` or the mobile/PWA producer. The integration was reconciled on top of `main@5c925ab5bb62dcea28ecd533381b7461f935a253` and re-audited against peripheral specs #773@`7f30c16b2abb19427646f0ffccbac50f2471fba8` and #801@`913520fa00ca0a9d398b9120fc9358adec7072e7`.
+This document describes the **phone-side contract owned by CrewCheck Mobile**. It is the authoritative reference for the canonical `watchSnapshotV1` payload semantics: version, required and optional fields, defaults, entitlement projection, timestamp meaning and compatibility. Peripherals consume it; they do not own `android-wrapper/app/**` or the mobile/PWA producer. The integration was reconciled on top of `main@5c925ab5bb62dcea28ecd533381b7461f935a253` and re-audited against peripheral specs #773@`7f30c16b2abb19427646f0ffccbac50f2471fba8` and #801@`913520fa00ca0a9d398b9120fc9358adec7072e7`.
 
 The watch never parses PDFs, recalculates APZ/journeys/compliance/finance, or becomes an operational source of truth. The source remains the canonical CrewCheck roster. The phone only projects an allow-listed presentation snapshot and transports it through Wear Data Layer.
+
+### Documentation authority and consumer-owned representations
+
+Ownership of a consumer document, schema mirror or interoperability test does not create a second authority over the canonical payload. The responsibilities are distinct:
+
+| Surface | Authoritative owner | Scope |
+| --- | --- | --- |
+| This document and the phone producer/publisher | CrewCheck Mobile Core | Canonical snapshot semantics and phone-side implementation. |
+| `docs/peripherals/watch_snapshot_v1.md` | CrewCheck Peripherals | Consumer/renderer guidance subordinate to this document, with a reviewed Mobile commit reference. |
+| `peripherals/contracts/watchSnapshotV1.schema.json` and Garmin input documentation | CrewCheck Peripherals | Consumer validation mirror, not an independently evolving canonical schema. |
+| Wear/Garmin/TV renderers and device-specific adapters | CrewCheck Peripherals | Local presentation, transport adaptation and device limits; never authority over the phone payload. |
+
+If a consumer summary or mirror disagrees with this document, report the exact discrepancy to Mobile Core first. Do not silently change either endpoint, retarget a peripheral PR to import phone files, or make a missing optional v1 field fatal. A device-specific compact representation may have different keys or units only through an explicitly documented adapter; it must not redefine the source fields.
+
+Change order: Mobile Core first reviews any proposed canonical semantic change and records its exact commit and compatibility expectations; Peripherals then reviews and updates only its own consumer documentation, mirrors, fixtures and adapters against that reference. CI may read both sides for interoperability without granting either lane write ownership of the other's files. A draft contract revision or a passing check is not authorization to merge, publish or bypass physical acceptance.
+
+This authority clarification changes documentation only. It does not add, remove or rename fields, change defaults, transport paths, freshness, consent, entitlements or runtime behavior. Source references in draft PRs identify candidates, not a deployed release.
 
 ## watchSnapshotV1
 
@@ -90,4 +107,4 @@ Before merge, this phone-side integration must remain compatible with the curren
 - canonical parser/APZ/journey/compliance/finance behavior;
 - CrewLife privacy boundary (no raw health series through this contract).
 
-PR #773 and PR #801 remain peripheral specifications while they continue changing the same phone-side files. Their phone-side hunks must not be merged independently after this Mobile-owned contract lands; future peripheral work should consume this contract instead.
+The earlier wording that #773 and #801 were still changing phone-side files is obsolete; the reconciliation recorded in #824 removed that overlap. This is not a blanket certification of future heads: check the current diff and inherited stack before consolidation. Phone-side changes remain exclusively Mobile Core-owned. Consumer-side requirements from any peripheral PR are handed off here rather than merged as independent phone implementations. Existing CI and physical-device acceptance gates remain unchanged.
