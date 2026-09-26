@@ -193,6 +193,12 @@ body.crewcheck-menu-open > nav.cz-bottom-nav[aria-label="Navegação principal"]
 }
 
 @media (max-width: 380px) {
+  /* Give the longer canonical FlightDeck label actual width rather than letting
+     its final letter wrap alone. Other destinations still exceed 44px at 320px. */
+  body > nav.cz-bottom-nav[aria-label="Navegação principal"] {
+    grid-template-columns: minmax(0, 1.4fr) repeat(4, minmax(0, 1fr)) !important;
+  }
+
   body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button > span {
     font-size: .6875rem !important;
   }

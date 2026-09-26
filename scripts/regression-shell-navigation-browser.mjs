@@ -99,6 +99,7 @@ async function inspect(page, name, scale = 1) {
       rows: buttons.map(button => {
         const label = button.querySelector('span'); const r = button.getBoundingClientRect();
         return { button: box(button), label: box(label), text: label.textContent, svg: box(button.querySelector('svg')),
+          lineHeight: parseFloat(getComputedStyle(label).lineHeight),
           textFits: label.scrollWidth <= label.clientWidth + 1 && label.scrollHeight <= label.clientHeight + 1,
           hit: document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('button') === button };
       }) };
@@ -111,6 +112,7 @@ async function inspect(page, name, scale = 1) {
   for (const row of metrics.rows) {
     if (row.button.width < 44 || row.button.height < 44) failures.push(`${row.text}: target below 44 CSS px`);
     if (!within(row.label, row.button) || !row.textFits) failures.push(`${row.text}: text clipped`);
+    if (scale === 1 && row.label.height > row.lineHeight + 1) failures.push(`${row.text}: normal-size label wraps`);
     if (!within(row.svg, row.button) || row.svg.width < 18 || row.svg.height < 18) failures.push(`${row.text}: icon clipped`);
     if (!row.hit) failures.push(`${row.text}: covered/non-interactive`);
   }
