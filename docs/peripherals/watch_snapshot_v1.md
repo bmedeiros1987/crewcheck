@@ -1,6 +1,16 @@
 # watchSnapshotV1 — contrato portátil do lado periférico
 
-Status: v1 estável. Ownership desta especificação: trilha de periféricos. Ownership do produtor/publisher no telefone: CrewCheck Mobile Core.
+Status: v1 estável. Ownership deste guia de consumo/representação: CrewCheck Peripherals. A autoridade da semântica do payload canônico e do produtor/publisher no telefone é CrewCheck Mobile Core.
+
+## Referência autoritativa e limite deste guia
+
+A fonte normativa de `watchSnapshotV1` é `docs/mobile_watch_snapshot_v1_contract.md`, mantida pelo Mobile Core na #824. Referência revisada desta reconciliação: [contrato Mobile no commit d35adceb08b283a234d1f86f0ae41c9b17bfff61](https://github.com/bmedeiros1987/crewcheck/blob/d35adceb08b283a234d1f86f0ae41c9b17bfff61/docs/mobile_watch_snapshot_v1_contract.md).
+
+Este arquivo resume o contrato para consumidores e documenta responsabilidades locais. Não é uma segunda especificação normativa independente. O mesmo vale para `peripherals/contracts/watchSnapshotV1.schema.json`: o espelho é mantido por Peripherals para validação do consumidor, mas não autoriza redefinir campos, defaults, permissões ou frescor. A referência acima aponta para uma candidata em revisão; não afirma que a #824 foi mesclada ou publicada.
+
+Em caso de divergência, entregar primeiro ao Mobile Core o campo, o efeito observado e os SHAs das duas pontas. Não corrigir o conflito alterando a implementação do telefone nesta trilha. Depois da decisão canônica, Peripherals atualiza somente seu guia, espelhos, fixtures, adapters e renderizadores, registrando a revisão Mobile consumida. Ler arquivos Mobile em testes de interoperabilidade não transfere ownership desses arquivos.
+
+Para UX, a mesma projeção validada deve preservar o significado de estado e timestamps em cada dispositivo. Tipografia, espaçamento, densidade, truncamento e feedbacks são adaptações locais; não podem fabricar dados, renovar o frescor ou transformar ausência de snapshot em escala vazia. Nenhuma mudança de formato ou comportamento é introduzida por esta correção documental.
 
 ## Objetivo
 
@@ -50,7 +60,7 @@ Como proteção contra downgrade perdido ou peer desconectado, `premiumAccess=tr
 
 ## Handoff para Mobile Core
 
-O Mobile Core deve implementar o produtor/bridge, sem código autoritativo nesta trilha:
+O Mobile Core deve implementar o produtor/bridge conforme a referência autoritativa acima, sem código phone-side nesta trilha:
 
 1. construir o snapshot exclusivamente a partir da projeção canônica já validada pelo CrewCheck;
 2. nunca enviar PDF bruto, credenciais ou regras para o relógio recalcular;
@@ -60,4 +70,4 @@ O Mobile Core deve implementar o produtor/bridge, sem código autoritativo nesta
 6. quando o peer for antigo, manter schema 1 e omitir extensões novas em vez de alterar semântica;
 7. quando o telefone não conseguir produzir snapshot novo, repassar somente o último snapshot validado compatível, preservando `generatedAtEpochMs/validUntilEpochMs` para que o periférico reporte stale honestamente.
 
-Nenhuma implementação de `android-wrapper/app/**` ou `client/**` faz parte desta PR periférica.
+Nenhuma implementação de `android-wrapper/app/**` ou `client/**` faz parte desta PR periférica. Esta documentação não libera merge da pilha, não substitui CI nem encerra validação física em Galaxy Watch.
