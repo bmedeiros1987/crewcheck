@@ -38,6 +38,10 @@ jobs:
         run: node scripts/v139/apply.mjs
       - name: Recheck the prepared release sources
         run: node scripts/regression-crewlife-background-sync.mjs
+      - name: Type-check the prepared web shell
+        run: npx tsc --noEmit
+      - name: Build embedded web assets required by the Android wrapper
+        run: npx vite build
       - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.13'
