@@ -25,50 +25,109 @@ body,
   pointer-events: none !important;
 }
 
-.cz-menu-overlay {
+/* One menu geometry for every input type. The root qualifier intentionally beats
+   the legacy [data-version] rules, including on touch landscape, not only desktop.
+   Keep header/actions outside the flexing scroll area; use the dynamic viewport. */
+.cz-app[data-version] .cz-menu-overlay {
+  position: fixed !important;
   inset: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  width: 100% !important;
+  display: flex !important;
+  align-items: stretch !important;
+  justify-content: flex-end !important;
+  width: 100vw !important;
   max-width: 100% !important;
+  height: 100vh !important;
+  height: 100dvh !important;
   min-width: 0 !important;
+  padding: max(8px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)) !important;
   overflow: hidden !important;
   box-sizing: border-box !important;
 }
 
-.cz-menu-panel,
-.cz-menu-scroll,
-.cz-menu-section,
-.cz-menu-section.cz-menu-group,
-.cz-menu-header,
-.cz-menu-identity,
-.cz-menu-profile,
-.cz-menu-profile-copy {
+.cz-app[data-version] .cz-menu-backdrop {
+  position: absolute !important;
+  inset: 0 !important;
+}
+
+.cz-app[data-version] .cz-menu-panel {
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 0 1 auto !important;
+  inset: auto !important;
+  width: min(100%, 520px) !important;
   min-width: 0 !important;
   max-width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  transform: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 24px !important;
+  overflow: hidden !important;
   box-sizing: border-box !important;
 }
 
-.cz-menu-panel {
-  right: 0 !important;
-  left: auto !important;
-  transform: none !important;
-  margin-left: auto !important;
-}
-
-.cz-menu-header {
+.cz-app[data-version] .cz-menu-panel .cz-menu-header {
+  position: relative !important;
+  top: auto !important;
   display: flex !important;
+  flex: 0 0 auto !important;
   align-items: center !important;
   justify-content: space-between !important;
   gap: 10px !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 12px !important;
+  box-sizing: border-box !important;
 }
 
-.cz-menu-identity {
+.cz-app[data-version] .cz-menu-panel .cz-menu-identity {
+  display: flex !important;
   flex: 1 1 auto !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
   overflow: hidden !important;
 }
 
-.cz-menu-header-actions {
+.cz-app[data-version] .cz-menu-panel .cz-menu-profile {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  min-height: 48px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.cz-app[data-version] .cz-menu-panel .cz-menu-profile > span:last-child {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+.cz-app[data-version] .cz-menu-panel .cz-menu-profile strong,
+.cz-app[data-version] .cz-menu-panel .cz-menu-profile small {
+  display: block !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.cz-app[data-version] .cz-menu-panel .cz-menu-avatar,
+.cz-app[data-version] .cz-menu-panel .cz-menu-brandmark {
+  flex-shrink: 0 !important;
+}
+
+.cz-app[data-version] .cz-menu-panel .cz-menu-header-actions {
   display: flex !important;
   align-items: center !important;
   justify-content: flex-end !important;
@@ -78,46 +137,133 @@ body,
   white-space: nowrap !important;
 }
 
-.cz-menu-logout,
-.cz-menu-close {
+.cz-app[data-version] .cz-menu-panel .cz-menu-logout,
+.cz-app[data-version] .cz-menu-panel .cz-menu-close {
   flex: 0 0 auto !important;
+  width: 48px !important;
+  height: 48px !important;
+  min-width: 48px !important;
+  min-height: 48px !important;
+  margin: 0 !important;
+  padding: 8px !important;
+  box-sizing: border-box !important;
   writing-mode: horizontal-tb !important;
   text-orientation: mixed !important;
   word-break: keep-all !important;
   overflow-wrap: normal !important;
 }
 
-.cz-menu-logout {
+.cz-app[data-version] .cz-menu-panel .cz-menu-logout {
   width: auto !important;
   min-width: 78px !important;
   max-width: none !important;
   white-space: nowrap !important;
 }
 
-.cz-menu-logout span {
+.cz-app[data-version] .cz-menu-panel .cz-menu-logout span {
   display: inline !important;
   white-space: nowrap !important;
   word-break: keep-all !important;
   overflow-wrap: normal !important;
 }
 
-.cz-menu-section > button,
-.cz-menu-section.cz-menu-group > button {
+.cz-app[data-version] .cz-menu-panel .cz-menu-scroll {
+  display: block !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  width: 100% !important;
   min-width: 0 !important;
   max-width: 100% !important;
+  margin: 0 !important;
+  padding: 12px 14px 24px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  scrollbar-gutter: stable !important;
   box-sizing: border-box !important;
 }
 
-.cz-menu-section > button > span,
-.cz-menu-section.cz-menu-group > button > span,
-.cz-menu-section > button > span strong,
-.cz-menu-section > button > span small,
-.cz-menu-section.cz-menu-group > button > span strong,
-.cz-menu-section.cz-menu-group > button > span small {
+.cz-app[data-version] .cz-menu-panel .cz-menu-section.cz-menu-group {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  align-content: start !important;
+  gap: 10px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 0 18px !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.cz-app[data-version] .cz-menu-panel .cz-menu-section.cz-menu-group > h3 {
+  grid-column: 1 / -1 !important;
+}
+
+/* Full rows, not the old 72px icon tiles with hover-only labels. This contract
+   also handles mouse/trackpad attached to a tablet without switching semantics. */
+.cz-app[data-version] .cz-menu-panel .cz-menu-section.cz-menu-group > button {
+  position: relative !important;
+  display: grid !important;
+  grid-template-columns: 36px minmax(0, 1fr) 20px !important;
+  align-items: center !important;
+  gap: 10px !important;
+  width: 100% !important;
   min-width: 0 !important;
   max-width: 100% !important;
+  height: auto !important;
+  min-height: 64px !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 10px 12px !important;
+  overflow: hidden !important;
+  text-align: left !important;
+  box-sizing: border-box !important;
+}
+
+.cz-app[data-version] .cz-menu-panel .cz-menu-section.cz-menu-group > button > span {
+  position: static !important;
+  inset: auto !important;
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  text-align: left !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: none !important;
+  pointer-events: auto !important;
+}
+
+.cz-app[data-version] .cz-menu-panel .cz-menu-section.cz-menu-group > button > span strong,
+.cz-app[data-version] .cz-menu-panel .cz-menu-section.cz-menu-group > button > span small {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  white-space: normal !important;
   word-break: normal !important;
-  overflow-wrap: anywhere !important;
+  overflow-wrap: break-word !important;
+  line-height: 1.35 !important;
+}
+
+.cz-app[data-version] .cz-menu-panel .cz-menu-section.cz-menu-group > button > span strong {
+  font-size: 14px !important;
+}
+
+.cz-app[data-version] .cz-menu-panel .cz-menu-section.cz-menu-group > button > span small {
+  font-size: 12px !important;
+}
+
+.cz-app[data-version] .cz-menu-panel .cz-menu-section.cz-menu-group > button > svg:last-child {
+  display: block !important;
+  width: 18px !important;
+  height: 18px !important;
+  justify-self: end !important;
 }
 
 /* Tablet widths must use the available viewport instead of the old 1180px desktop cap. */
@@ -154,11 +300,6 @@ body,
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
-  }
-
-  .cz-menu-panel {
-    width: min(100vw, 620px) !important;
-    max-width: min(100vw, 620px) !important;
   }
 }
 
@@ -198,7 +339,7 @@ body,
   }
 }
 
-/* iPad/Android touch landscape: drawer overlays; no phantom desktop rail may reserve width. */
+/* Touch landscape uses an overlay, never a phantom desktop rail. */
 @media (pointer: coarse) and (min-width: 700px) {
   .cc-sidebar {
     width: 0 !important;
@@ -221,14 +362,12 @@ body,
     transform: none !important;
   }
 
-  .cz-menu-panel {
-    width: 100vw !important;
+  .cz-app[data-version] .cz-menu-panel {
+    width: 100% !important;
     max-width: none !important;
-    border-radius: 0 !important;
-    margin: 0 !important;
   }
 
-  .cz-menu-scroll {
+  .cz-app[data-version] .cz-menu-panel .cz-menu-scroll {
     width: min(100%, 980px) !important;
     max-width: 980px !important;
     margin-inline: auto !important;
@@ -236,60 +375,40 @@ body,
     scrollbar-gutter: auto !important;
   }
 
-  .cz-menu-section.cz-menu-group {
-    display: grid !important;
+  .cz-app[data-version] .cz-menu-panel .cz-menu-section.cz-menu-group {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    gap: 12px !important;
-    width: 100% !important;
-  }
-
-  .cz-menu-section.cz-menu-group > h3 {
-    grid-column: 1 / -1 !important;
-  }
-
-  .cz-menu-section.cz-menu-group > button {
-    position: relative !important;
-    display: grid !important;
-    grid-template-columns: 42px minmax(0, 1fr) 20px !important;
-    width: 100% !important;
-    height: auto !important;
-    min-height: 72px !important;
-    overflow: hidden !important;
-    text-align: left !important;
-  }
-
-  .cz-menu-section.cz-menu-group > button > span {
-    position: static !important;
-    inset: auto !important;
-    display: block !important;
-    width: 100% !important;
-    padding: 0 !important;
-    border: 0 !important;
-    background: transparent !important;
-    box-shadow: none !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-    transform: none !important;
-    pointer-events: auto !important;
-  }
-
-  .cz-menu-section.cz-menu-group > button > svg:last-child {
-    display: block !important;
   }
 }
 
 @media (pointer: coarse) and (min-width: 700px) and (max-width: 820px) {
-  .cz-menu-section.cz-menu-group {
+  .cz-app[data-version] .cz-menu-panel .cz-menu-section.cz-menu-group {
     grid-template-columns: minmax(0, 1fr) !important;
   }
 }
 
 @media (max-width: 699px) {
-  .cz-menu-logout {
-    min-width: 40px !important;
+  .cz-app[data-version] .cz-menu-panel .cz-menu-logout {
+    min-width: 48px !important;
   }
 
-  .cz-menu-logout span {
+  .cz-app[data-version] .cz-menu-panel .cz-menu-logout span {
     display: none !important;
+  }
+}
+
+/* Short landscape viewports need room for the list, not smaller type or targets. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .cz-app[data-version] .cz-menu-panel .cz-menu-header {
+    padding: 8px 12px !important;
+  }
+
+  .cz-app[data-version] .cz-menu-panel .cz-menu-scroll {
+    padding-top: 8px !important;
+    padding-bottom: 12px !important;
+  }
+
+  .cz-app[data-version] .cz-menu-panel .cz-menu-section.cz-menu-group {
+    gap: 6px !important;
+    margin-bottom: 12px !important;
   }
 }

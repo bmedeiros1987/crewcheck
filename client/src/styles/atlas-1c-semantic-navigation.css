@@ -29,7 +29,7 @@
 .cz-menu-section > button:is([data-menu-label='Saída Inteligente'], [data-menu-label='Meu carro'], [data-menu-label='Radar de voos'], [data-menu-label='Locais próximos'], [data-menu-label='Rotina'], [data-menu-label='Tripulação e função'], [data-menu-label='Pessoas e visitantes'], [data-menu-label='CrewCheck Life']) {
   --cc-atlas-tone: var(--cc-atlas-positive);
 }
-.cz-menu-section > button:is([data-menu-label='Escala oficial'], [data-menu-label='Push iFlight'], [data-menu-label='Meteorologia'], [data-menu-label='Calendário'], [data-menu-label='Exportar'], [data-menu-label='Atualizações'], [data-menu-label='Importar escala']) {
+.cz-menu-section > button:is([data-menu-label='Escala oficial'], [data-menu-label='Push iFlight'], [data-menu-label='Meteorologia'], [data-menu-label='Calendário'], [data-menu-label='Exportar'], [data-menu-label='Atualizações'], [data-menu-label='Importar escala'], [data-menu-label='Mapa do mês']) {
   --cc-atlas-tone: var(--cc-atlas-flight);
 }
 .cz-menu-section > button:is([data-menu-label='Carga de trabalho'], [data-menu-label='Despertador'], [data-menu-label='Diárias'], [data-menu-label='Salário'], [data-menu-label='Manutenção']) {
@@ -45,10 +45,22 @@
 .cz-menu-section:not(.cz-menu-group) > button:is(:nth-of-type(5), :nth-of-type(31)) { --cc-atlas-tone: var(--cc-atlas-alert); }
 .cz-menu-section:not(.cz-menu-group) > button:nth-of-type(28) { --cc-atlas-tone: var(--cc-atlas-brand-2); }
 
+/* A desktop drawer is a single readable list. Only wide touch panels use two
+   columns. A shared variable prevents auto-fit silently making a third column. */
+.cz-app[data-version] .cz-menu-panel {
+  --cc-menu-columns: minmax(0, 1fr);
+}
+
+@media (pointer: coarse) and (min-width: 821px) {
+  .cz-app[data-version] .cz-menu-panel {
+    --cc-menu-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* Responsive menu: one column whenever two cards cannot keep whole words readable. */
 .cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group],
 .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)) !important;
+  grid-template-columns: var(--cc-menu-columns, repeat(auto-fit, minmax(min(100%, 220px), 1fr))) !important;
   gap: 10px !important;
 }
 
@@ -70,7 +82,9 @@
 
 .cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button > svg:first-child,
 .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button > svg:first-child {
-  box-sizing: content-box;
+  /* The global border-box !important rule otherwise leaves only a 6px glyph
+     after 14px padding and 2px border inside the nominal 22px icon. */
+  box-sizing: content-box !important;
   width: 22px !important;
   height: 22px !important;
   padding: 7px;

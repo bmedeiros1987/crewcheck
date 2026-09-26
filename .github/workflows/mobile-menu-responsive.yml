@@ -1,0 +1,70 @@
+name: Mobile menu responsive browser
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/styles/**'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/p1-menu-premium/**'
+      - 'scripts/v14344/**'
+      - 'scripts/v14394/**'
+      - 'scripts/regression-menu-responsive-browser.mjs'
+      - 'scripts/regression-shell-navigation-browser.mjs'
+      - 'scripts/regression-web-desktop-shell.mjs'
+      - '.github/workflows/mobile-menu-responsive.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-menu-responsive-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  menu-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # PR checkout tests the merge result with the current main, not a stale base.
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      # This regression prepares the full chain itself. Do not prepare twice.
+      - name: Prepare once through the iPad source regression
+        run: node scripts/regression-v14-3-94-ipad-menu-layout.mjs
+      - name: Preserve navigation inventory and source contracts
+        run: |
+          node scripts/regression-p1-menu-premium.mjs
+          node scripts/regression-web-desktop-shell.mjs
+          node scripts/regression-web-desktop-menu-panel-specificity.mjs
+      - name: TypeScript and web build
+        run: |
+          npx tsc --noEmit
+          npx vite build
+      - name: Install isolated browser test dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/menu-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/menu-browser/node_modules/playwright/cli.js" install --with-deps chromium webkit
+      - name: Render menu in desktop, tablet and rotating phone viewports
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-menu-responsive-browser.mjs
+      - name: Render canonical footer and content clearance in Chromium and WebKit
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-shell-navigation-browser.mjs
+      - name: Save actual viewport evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-menu-responsive-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/menu-responsive
+          if-no-files-found: warn
+          retention-days: 7

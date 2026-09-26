@@ -101,6 +101,8 @@ jobs:
         run: node scripts/regression-v14-3-47-smart-departure-operational-airport.mjs 2>&1 | tee "$RUNNER_TEMP/smart-departure-operational-airport-regression.log"
       - name: Validate separate ElevenLabs voices for Daniel and Bruno
         run: node scripts/regression-v14-3-48-elevenlabs-dual-voice.mjs 2>&1 | tee "$RUNNER_TEMP/elevenlabs-dual-voice-regression.log"
+      - name: Menu premium (ordem, grupos e ícones)
+        run: node scripts/regression-p1-menu-premium.mjs 2>&1 | tee "$RUNNER_TEMP/menu-premium-regression.log"
       - name: Test server
         run: node test-server.mjs
       - name: Publish functional audit report
