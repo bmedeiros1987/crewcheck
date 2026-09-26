@@ -1,0 +1,40 @@
+name: Concierge stay identity isolation
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/concierge*.ts'
+      - 'client/src/components/v1391/Concierge*.tsx'
+      - 'scripts/regression-concierge-*.mjs'
+      - '.github/workflows/concierge-stay-identity-isolation.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Same-day identity service and history regression
+        run: node scripts/regression-concierge-stay-isolation.mjs
+      - name: Existing Concierge regressions (unchanged)
+        run: |
+          set -euo pipefail
+          node scripts/regression-concierge-room-memory.mjs
+          node scripts/regression-concierge-room-intelligence.mjs
+          node scripts/regression-concierge-room-preferences.mjs
+          node scripts/regression-concierge-room-noise.mjs
+          node scripts/regression-concierge-hotel-knowledge.mjs
+          node scripts/regression-concierge-stay-offline-sync.mjs
+          node scripts/regression-concierge-stay-inference.mjs
+          node scripts/regression-concierge-stay-identity.mjs
+          node scripts/regression-concierge-stay-context.mjs
+          node scripts/regression-concierge-stay-notifications.mjs
+          node scripts/regression-concierge-stay-reminder-identity.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
