@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { buildConciergeStayContext, type ConciergeStayContextStep } from '@/lib/conciergeStayContext';
 import {
   buildConciergeStayReminderPlan,
+  conciergeStayReminderJobKeys,
   type ConciergeStayReminderKind,
 } from '@/lib/conciergeStayNotificationPlan';
 import {
@@ -14,8 +15,10 @@ import {
   type ConciergeStayReminderJob,
 } from '@/lib/conciergeStayNotifications';
 import { listConciergeStays } from '@/lib/conciergeStaySync';
+import { selectConciergeSavedStay } from '@/lib/conciergeStayIdentity';
 
 type SavedStay = {
+  id?: unknown;
   stayDate?: unknown;
   hotelName?: unknown;
   room?: unknown;
@@ -83,23 +86,28 @@ export default function ConciergeStayContextCard({
   hotelName,
   room,
   stayDate,
+  stayId,
 }: {
   hotelName: string;
   room: string;
   stayDate: string;
+  stayId?: string;
 }) {
-  const [savedStay, setSavedStay] = useState<SavedStay | null>(null);
+  const [loadedStay, setSavedStay] = useState<SavedStay | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [localOnly, setLocalOnly] = useState(false);
   const [reminderJobs, setReminderJobs] = useState<ConciergeStayReminderJob[]>([]);
   const [reminderBusy, setReminderBusy] = useState(false);
 
+  // Do not render a previous selection while its replacement is loading.
+  const savedStay = selectConciergeSavedStay(loadedStay ? [loadedStay] : [], stayDate, stayId);
+
   async function refresh() {
     const [stayPayload, jobs] = await Promise.all([
       listConciergeStays(),
-      listConciergeStayReminderJobs(stayDate).catch(() => []),
+      listConciergeStayReminderJobs(stayDate, stayId).catch(() => []),
     ]);
-    const target = (stayPayload.stays || []).find((item: SavedStay) => text(item?.stayDate).slice(0, 10) === stayDate) || null;
+    const target = selectConciergeSavedStay<SavedStay>(stayPayload.stays || [], stayDate, stayId);
     setSavedStay(target);
     setLocalOnly(Boolean(stayPayload.localOnly));
     setReminderJobs(jobs);
@@ -107,15 +115,17 @@ export default function ConciergeStayContextCard({
 
   useEffect(() => {
     let active = true;
+    setSavedStay(null);
+    setReminderJobs([]);
 
     async function guardedRefresh() {
       try {
         const [stayPayload, jobs] = await Promise.all([
           listConciergeStays(),
-          listConciergeStayReminderJobs(stayDate).catch(() => []),
+          listConciergeStayReminderJobs(stayDate, stayId).catch(() => []),
         ]);
         if (!active) return;
-        const target = (stayPayload.stays || []).find((item: SavedStay) => text(item?.stayDate).slice(0, 10) === stayDate) || null;
+        const target = selectConciergeSavedStay<SavedStay>(stayPayload.stays || [], stayDate, stayId);
         setSavedStay(target);
         setLocalOnly(Boolean(stayPayload.localOnly));
         setReminderJobs(jobs);
@@ -133,7 +143,7 @@ export default function ConciergeStayContextCard({
       window.removeEventListener('online', handleRefresh);
       window.removeEventListener('focus', handleRefresh);
     };
-  }, [stayDate]);
+  }, [stayDate, stayId]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
@@ -149,11 +159,12 @@ export default function ConciergeStayContextCard({
   }, now), [hotelName, room, stayDate, savedStay, now]);
 
   const reminderPlan = useMemo(
-    () => buildConciergeStayReminderPlan(context, now),
-    [context, now],
+    () => buildConciergeStayReminderPlan({ ...context, stayId }, now),
+    [context, stayId, now],
   );
   const delivery = getConciergeStayReminderDelivery();
-  const pendingReminderJobs = reminderJobs.filter((job) => ['pending', 'processing'].includes(text(job.status).toLowerCase()));
+  const allowedReminderKeys = new Set(Object.values(conciergeStayReminderJobKeys(stayDate, stayId) || {}));
+  const pendingReminderJobs = reminderJobs.filter((job) => allowedReminderKeys.has(reminderJobKey(job)) && ['pending', 'processing'].includes(text(job.status).toLowerCase()));
   const pendingKeys = new Set(pendingReminderJobs.map(reminderJobKey).filter(Boolean));
 
   const copy = stepCopy(context.step);
@@ -188,7 +199,7 @@ export default function ConciergeStayContextCard({
   async function disableReminders() {
     setReminderBusy(true);
     try {
-      const result = await cancelConciergeStayReminders(stayDate);
+      const result = await cancelConciergeStayReminders(stayDate, stayId);
       await refresh();
       if (result.errors.length) toast.error(result.errors[0]);
       else toast.success(result.cancelled ? 'Lembretes deste pernoite desativados.' : 'Nenhum lembrete pendente para cancelar.');
@@ -209,6 +220,7 @@ export default function ConciergeStayContextCard({
       {context.presentationAt && <span>Apresentação {timeLabel(context.presentationAt)}{presentationCountdown ? ` · ${presentationCountdown}` : ''}</span>}
     </div>
 
+    {!savedStay && <small>Estadia ainda não identificada com segurança. Nenhuma apresentação de outro pernoite será reutilizada.</small>}
     <h3><Bell/> Lembretes deste pernoite</h3>
     {reminderPlan.length > 0 ? <>
       <div className="cc139-badges">{reminderPlan.map((item) => <span key={item.jobKey}>
