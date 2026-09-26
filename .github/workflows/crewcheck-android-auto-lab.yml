@@ -40,11 +40,11 @@ jobs:
           path: mobile-core-provider
           sparse-checkout: android-wrapper/mobile-core/drive-lab
           persist-credentials: false
-      - name: Set up Java 17
+      - name: Set up Java 21 for simulated Android API 36 tests
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -57,7 +57,7 @@ jobs:
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
-      - name: Unit tests and Auto APK (no root-settings write)
+      - name: Unit and simulated Android tests plus Auto APK
         run: gradle -p android-wrapper -I "$GITHUB_WORKSPACE/android-wrapper/auto/auto-module.init.gradle" --no-daemon --console=plain :auto:testDebugUnitTest :auto:assembleDebug --stacktrace
       - name: Summarize unit tests
         shell: python
@@ -72,7 +72,7 @@ jobs:
               for key in totals:
                   totals[key] += int(root.get(key, '0'))
           print('Drive Lab unit tests:', totals)
-          assert totals['tests'] >= 30
+          assert totals['tests'] >= 50, 'Preserve the 30 JVM tests and 20 API 28/36 scenarios'
           assert totals['failures'] == totals['errors'] == totals['skipped'] == 0
       - name: Consume Mobile-owned Phone Lab build (same runner and debug key)
         run: |
