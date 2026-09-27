@@ -166,6 +166,9 @@ public final class MainActivity extends FragmentActivity
         super.onResume();
         store.registerChangeListener(dataListener);
         wellbeingStore.registerChangeListener(dataListener);
+        // Opening CrewWatch should refresh from the phone, but the same requester is also
+        // invoked by complication wakeups so background sync does not depend on this Activity.
+        WatchBackgroundSyncRequester.requestIfDue(this);
         restartClock();
         renderSnapshot();
         ensureRotaryFocus();
