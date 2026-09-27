@@ -71,6 +71,11 @@ def main():
         for run in runs:
             if str(run['id']) == os.environ['GITHUB_RUN_ID']:
                 continue
+            # The same workflow also runs for the PR head, but workflow-level concurrency
+            # keeps that sibling pending until this push release completes. Never wait on
+            # our own workflow name or the internal pilot would deadlock itself.
+            if release_branch and run.get('name') == os.environ.get('GITHUB_WORKFLOW'):
+                continue
             if not release_branch and run.get('event') != 'push':
                 continue
             if release_branch and run.get('event') not in {'push', 'pull_request'}:
