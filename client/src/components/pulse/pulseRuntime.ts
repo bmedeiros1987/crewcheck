@@ -82,7 +82,7 @@ function pulseEnabled(): boolean {
 }
 
 function deviceNotificationsEnabled(): boolean {
-  return safeLocalGet(DEVICE_NOTIFICATIONS_KEY, '1') !== '0';
+  return safeLocalGet(DEVICE_NOTIFICATIONS_KEY, '0') !== '0';
 }
 
 type SeenMap = Record<string, number>;
