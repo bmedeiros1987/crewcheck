@@ -71,8 +71,9 @@ def main():
         for run in runs:
             if str(run['id']) == os.environ['GITHUB_RUN_ID']:
                 continue
-            allowed_events = {'push', 'pull_request'} if release_branch else {'push'}
-            if run.get('event') not in allowed_events:
+            if not release_branch and run.get('event') != 'push':
+                continue
+            if release_branch and run.get('event') not in {'push', 'pull_request'}:
                 continue
             if run.get('event') == 'workflow_run' and run.get('name') in dependent_ci_workflow_names:
                 continue
