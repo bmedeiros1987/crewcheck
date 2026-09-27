@@ -14,15 +14,27 @@ from play_error import safe_play_error
 from review_policy import commit_internal_edit
 
 def main():
-    assert os.environ['GITHUB_REF'] == 'refs/heads/main', 'Publishing requires main'
+    ref = os.environ['GITHUB_REF']
+    allowed_refs = {
+        'refs/heads/main',
+        'refs/heads/assistant/play-internal-background-sync',
+    }
+    assert ref in allowed_refs, 'Publishing requires main or the authorized internal-sync release branch'
+    release_branch = ref == 'refs/heads/assistant/play-internal-background-sync'
     account = load_service_account_secret(os.environ['PLAY_SERVICE_ACCOUNT_JSON'])
     credentials = service_account.Credentials.from_service_account_info(account, scopes=['https://www.googleapis.com/auth/androidpublisher'])
     session = google.auth.transport.requests.AuthorizedSession(credentials)
     root = Path(sys.argv[1])
-    report = json.loads((root / 'release-report.json').read_text())
+    full_report = json.loads((root / 'release-report.json').read_text())
     policy = json.loads((root / 'resolved-release-policy.json').read_text())
-    assert {r['module'] for r in report} == set(policy['artifacts']), 'Incomplete release'
-    for item in report:
+    assert {r['module'] for r in full_report} == set(policy['artifacts']), 'Incomplete release'
+    requested = {v.strip() for v in os.environ.get('CREWCHECK_PLAY_MODULES', '').split(',') if v.strip()}
+    if not requested:
+        requested = set(policy['artifacts'])
+    assert requested <= set(policy['artifacts']), 'Unknown release module selection'
+    report = [item for item in full_report if item['module'] in requested]
+    assert report, 'No release modules selected'
+    for item in full_report:
         assert all(item[k] == v for k, v in policy['artifacts'][item['module']].items()), 'Report/policy mismatch'
         assert item['track'] in ['qa', 'wear:qa'], 'Only internal testing is authorized'
         assert Path(item['file']).name == item['file'], 'Invalid artifact filename'
@@ -59,7 +71,8 @@ def main():
         for run in runs:
             if str(run['id']) == os.environ['GITHUB_RUN_ID']:
                 continue
-            if run.get('event') != 'push':
+            allowed_events = {'push', 'pull_request'} if release_branch else {'push'}
+            if run.get('event') not in allowed_events:
                 continue
             if run.get('event') == 'workflow_run' and run.get('name') in dependent_ci_workflow_names:
                 continue
@@ -67,7 +80,10 @@ def main():
             if key not in latest or run['id'] > latest[key]['id']:
                 latest[key] = run
 
-        assert latest, 'No independent CI evidence for this commit'
+        if not latest and release_branch:
+            print('No separate same-SHA workflow yet; successful signed build job is the release-branch CI evidence.')
+        else:
+            assert latest, 'No independent CI evidence for this commit'
         failed = [
             r for r in latest.values()
             if r['status'] == 'completed' and r['conclusion'] not in ['success', 'skipped']

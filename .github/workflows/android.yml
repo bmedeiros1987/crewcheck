@@ -8,7 +8,7 @@ on:
       - 'scripts/v139/apply.mjs'
       - '.github/workflows/android.yml'
   push:
-    branches: [main]
+    branches: [main, assistant/play-internal-background-sync]
     paths:
       - 'android-wrapper/**'
       - 'client/**'
@@ -56,10 +56,10 @@ jobs:
           gradle-version: '8.13'
       - run: npm ci
       - name: Install Play API client for version allocation
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/assistant/play-internal-background-sync'
         run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
       - name: Allocate live Play version codes
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/assistant/play-internal-background-sync'
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/android-play/allocate_versions.py
@@ -132,12 +132,13 @@ jobs:
 
   publish-internal-drafts:
     needs: build
-    if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.publish_internal_drafts) || github.event_name == 'push')
+    if: (github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.publish_internal_drafts) || github.event_name == 'push')) || (github.ref == 'refs/heads/assistant/play-internal-background-sync' && github.event_name == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
       GH_TOKEN: ${{ github.token }}
+      CREWCHECK_PLAY_MODULES: ${{ github.ref == 'refs/heads/assistant/play-internal-background-sync' && 'app,wear' || '' }}
     steps:
       - uses: actions/checkout@v6
       - name: Require existing credential

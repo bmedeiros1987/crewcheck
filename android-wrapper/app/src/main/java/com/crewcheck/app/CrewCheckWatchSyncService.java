@@ -21,5 +21,9 @@ public final class CrewCheckWatchSyncService extends WearableListenerService {
                 new android.content.Intent(MainActivity.ACTION_WATCH_SYNC_REQUEST)
                         .setPackage(getPackageName());
         sendBroadcast(syncRequest);
+
+        // Keep the authorized Companion aggregate available to Wear even without a live
+        // MainActivity/WebView. This does not invoke Samsung SDK or open any UI.
+        CrewLifeCompanionBackgroundSync.republishCurrent(this);
     }
 }

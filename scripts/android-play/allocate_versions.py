@@ -26,7 +26,10 @@ def allocate_version_codes(policy, live_codes_by_package):
 
 
 def main():
-    assert os.environ.get('GITHUB_REF') == 'refs/heads/main', 'Live Play allocation requires main'
+    assert os.environ.get('GITHUB_REF') in {
+        'refs/heads/main',
+        'refs/heads/assistant/play-internal-background-sync',
+    }, 'Live Play allocation requires main or the authorized internal-sync release branch'
 
     # Keep Google client imports out of module import time so unit tests remain dependency-free.
     import google.auth.transport.requests

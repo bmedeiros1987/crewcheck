@@ -50,6 +50,9 @@ abstract class BaseComplicationService extends ComplicationDataSourceService {
             ComplicationRequest request,
             ComplicationRequestListener listener
     ) {
+        // System-owned complication wakeups keep sync alive even when neither app UI is open.
+        // The requester is throttled and cached data is returned immediately.
+        WatchBackgroundSyncRequester.requestIfDue(this);
         try {
             listener.onComplicationData(buildData(request.getComplicationType(), false));
         } catch (RemoteException ignored) {
