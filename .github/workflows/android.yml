@@ -10,7 +10,16 @@ on:
   push:
     branches: [main]
     paths:
-      - 'android-wrapper/**'
+      # Wear-only changes are released by crewwatch-play-internal.yml.
+      # Keep shared/mobile/watch-face surfaces here so mixed releases still use the
+      # full package-aware pipeline.
+      - 'android-wrapper/app/**'
+      - 'android-wrapper/watchface/**'
+      - 'android-wrapper/lifecompanion/**'
+      - 'android-wrapper/build.gradle'
+      - 'android-wrapper/gradle.properties'
+      - 'android-wrapper/settings.gradle'
+      - 'android-wrapper/store-policy.gradle'
       - 'client/**'
       - 'scripts/**'
       - 'package*.json'
