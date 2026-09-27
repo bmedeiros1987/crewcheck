@@ -33,8 +33,6 @@ export function CrewCheckPulse() {
 
   const tone: CrewCheckPulseTone = message.tone || 'informativo';
   const Icon = TONE_ICON[tone] || Info;
-  const assertive = tone === 'erro';
-
   const act = () => {
     if (!message.action?.view) return;
     try {
@@ -49,8 +47,8 @@ export function CrewCheckPulse() {
       data-tone={tone}
       data-priority={message.priority || 'normal'}
       data-leaving={leaving ? 'true' : 'false'}
-      role={assertive ? 'alert' : 'status'}
-      aria-live={assertive ? 'assertive' : 'polite'}
+      role="status"
+      aria-live="polite"
     >
       <span className="cc-pulse-icon" aria-hidden="true">
         <Icon size={18} />
