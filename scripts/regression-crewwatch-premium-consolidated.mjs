@@ -9,6 +9,8 @@ const faceGradle = read('android-wrapper/watchface/build.gradle');
 const wearMain = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/MainActivity.java');
 const wearStyles = read('android-wrapper/wear/src/main/res/values/styles.xml');
 const dataService = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/CrewCheckDataLayerService.java');
+const complicationBase = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/BaseComplicationService.java');
+const backgroundRequester = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchBackgroundSyncRequester.java');
 // Existing read-only interoperability checks are not ownership of phone implementations.
 const phoneMain = read('android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java');
 const lifeView = read('client/src/components/v1434/CrewCheckLifeView.tsx');
@@ -71,6 +73,20 @@ assert.match(triage, /ROUTINE\(WatchContract\.ROUTINE_PATH, WatchContract\.DATA_
 assert.match(syncClient, /DataItemTriage\.Channel\.CREWLIFE/);
 assert.match(syncClient, /clearCrewLife\(\)/, 'saúde ausente no Data Layer não fica retida no relógio');
 assert.match(wearMain, /WatchSyncClient\.refresh\(this, crewLifeRequest,/);
+assert.match(wearMain, /WatchBackgroundSyncRequester\.requestIfDue\(this\);/,
+  'abrir o app do relógio deve pedir sync sem exigir abrir o celular');
+assert.match(complicationBase, /WatchBackgroundSyncRequester\.requestIfDue\(this\);/,
+  'complication host deve manter sync em background sem Activity do relógio');
+assert.match(backgroundRequester, /SUCCESS_INTERVAL_MS = 5 \* 60_000L;/,
+  'sync automático deve ser limitado a cinco minutos após sucesso');
+assert.match(backgroundRequester, /RETRY_INTERVAL_MS = 60_000L;/,
+  'falha/desconexão pode tentar novamente sem loop agressivo');
+assert.match(backgroundRequester, /WatchContract\.REQUEST_SYNC_PATH/);
+assert.match(backgroundRequester, /getConnectedNodes\(\)/);
+assert.match(backgroundRequester, /new byte\[0\]/);
+assert.doesNotMatch(backgroundRequester, /startForeground|AlarmManager|setExact|while \(|Thread\.sleep/,
+  'não criar serviço persistente, alarme exato ou polling ocupado');
+assert.ok(fs.existsSync('android-wrapper/wear/src/test/java/com/crewcheck/watch/WatchBackgroundSyncRequesterTest.java'));
 assert.match(wearMain, /report\.crewLifeStatus\(\)/);
 assert.ok(fs.existsSync('android-wrapper/wear/src/test/java/com/crewcheck/watch/CrewLifeSyncTest.java'));
 const notificationCenter = read('android-wrapper/wear/src/main/java/com/crewcheck/watch/WatchNotificationCenter.java');
