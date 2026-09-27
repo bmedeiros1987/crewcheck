@@ -27,7 +27,9 @@ permissions:
   actions: read
 
 concurrency:
-  group: crewcheck-play-release
+  # This one-off Internal Testing branch must not let its PR validation cancel/replace
+  # the push run that owns Play publication. Main keeps the original shared release lock.
+  group: ${{ (github.ref == 'refs/heads/assistant/play-internal-background-sync' || github.event.pull_request.head.ref == 'assistant/play-internal-background-sync') && format('crewcheck-play-release-internal-sync-{0}', github.event_name) || 'crewcheck-play-release' }}
   cancel-in-progress: false
 
 jobs:
