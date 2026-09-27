@@ -1,0 +1,77 @@
+name: Watch Face WFF v1 specification
+on:
+  pull_request:
+    paths:
+      - 'android-wrapper/watchface/**'
+      - 'scripts/regression-watchface*'
+      - '.github/workflows/watchface-wff-v1-spec.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  official-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Official Google schema, immutable source
+        uses: actions/checkout@v6
+        with:
+          repository: google/watchface
+          ref: b6cdda0acd3e4c5d0be5624fcdc01209380029d1
+          path: wff-spec
+          sparse-checkout: third_party/wff/specification/documents/1
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+      - name: Install schema validator and project dependencies
+        run: |
+          python3 -m pip install xmlschema==4.1.0
+          npm ci
+      - name: Validate original source and negative cases against XSD 1.1
+        run: |
+          python3 - <<'PY'
+          from copy import deepcopy
+          import xml.etree.ElementTree as ET
+          import xmlschema
+          schema = xmlschema.XMLSchema11('wff-spec/third_party/wff/specification/documents/1/watchface.xsd')
+          root = ET.parse('android-wrapper/watchface/src/main/res/raw/watchface.xml').getroot()
+          errors = list(schema.iter_errors(root))
+          for error in errors: print(error.path, error.reason)
+          assert not errors, str(len(errors)) + ' official schema errors'
+          bad = deepcopy(root); bad.find('.//TimeText').set('format', 'EEE dd MMM')
+          assert not schema.is_valid(bad), 'Must reject calendar TimeText'
+          bad = deepcopy(root); time = bad.find('.//TimeText')
+          variant = time.find('Variant'); time.remove(variant); time.append(variant)
+          assert not schema.is_valid(bad), 'Must reject Variant after Font'
+          bad = deepcopy(root); bad.find('.//Text').set('isAutoSize', 'TRUE')
+          assert not schema.is_valid(bad), 'Must reject unsupported v1 Text attribute'
+          bad = deepcopy(root); option = bad.find('Scene/ListConfiguration/ListOption')
+          group = option[0]; option.remove(group)
+          for child in group: option.append(child)
+          assert not schema.is_valid(bad), 'Must reject multiple ListOption children'
+          print('PASS: official WFF v1 schema + four negative cases')
+          PY
+      - name: Prepare canonical sources once
+        run: node scripts/v139/apply.mjs
+      - name: Recheck schema and visual contracts after preparation
+        run: |
+          python3 - <<'PY'
+          import xmlschema
+          schema = xmlschema.XMLSchema11('wff-spec/third_party/wff/specification/documents/1/watchface.xsd')
+          errors = list(schema.iter_errors('android-wrapper/watchface/src/main/res/raw/watchface.xml'))
+          for error in errors: print(error.path, error.reason)
+          assert not errors, str(len(errors)) + ' prepared schema errors'
+          print('PASS: prepared XML matches official WFF v1 schema')
+          PY
+          node scripts/regression-watchface-premium-layout.mjs
+          node scripts/regression-crewwatch-premium-consolidated.mjs
+      - name: Store validated XML evidence (not a physical-device screenshot)
+        uses: actions/upload-artifact@v4
+        with:
+          name: watchface-wff-v1-validated-source
+          path: android-wrapper/watchface/src/main/res/raw/watchface.xml
+          retention-days: 7

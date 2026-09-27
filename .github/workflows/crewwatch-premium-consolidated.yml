@@ -97,6 +97,10 @@ jobs:
         run: |
           gradle --no-daemon --console=plain             :app:assembleRelease             :wear:assembleRelease             :watchface:assembleRelease
 
+      - name: Audit signed Watch Face picker and resource-only release
+        run: |
+          python3 android-wrapper/watchface/tools/verify_preview_apk.py android-wrapper/watchface/build/outputs/apk/release/watchface-release.apk "$RUNNER_TEMP/crewwatch-premium/face-preview-evidence"
+
       - name: Lint Wear
         run: gradle -p android-wrapper :wear:lintDebug
 
@@ -128,3 +132,4 @@ jobs:
           path: |
             ${{ runner.temp }}/crewwatch-premium/*.apk
             ${{ runner.temp }}/crewwatch-premium/SHA256SUMS.txt
+            ${{ runner.temp }}/crewwatch-premium/face-preview-evidence/**

@@ -1,0 +1,75 @@
+name: Watch Face picker previews
+on:
+  pull_request:
+    paths:
+      - 'android-wrapper/watchface/**'
+      - 'scripts/regression-watchface*'
+      - '.github/workflows/watchface-picker-preview.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: watchface-picker-preview-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  preview-resources:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+      - name: Generate and verify source previews
+        run: |
+          java -Djava.awt.headless=true android-wrapper/watchface/tools/PreviewGenerator.java android-wrapper/watchface/src/main/res "$RUNNER_TEMP/preview-before" artifacts/watchface-previews/before
+      - run: npm ci
+      - name: Prepare sources once
+        run: node scripts/v139/apply.mjs
+      - name: Generate prepared previews and protect existing contracts
+        run: |
+          java -Djava.awt.headless=true android-wrapper/watchface/tools/PreviewGenerator.java android-wrapper/watchface/src/main/res "$RUNNER_TEMP/preview-after" artifacts/watchface-previews/after
+          diff -r "$RUNNER_TEMP/preview-before" "$RUNNER_TEMP/preview-after"
+          node scripts/regression-watchface-premium-layout.mjs
+          node scripts/regression-crewwatch-premium-consolidated.mjs
+          grep -F "apply from: file('preview-assets.gradle')" android-wrapper/watchface/build.gradle
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+          log-accepted-android-sdk-licenses: false
+      - name: Install Android API 36
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      # Store policy requires the real signature for any release. Keep this job
+      # secret-free; the existing signed pipeline audits the release separately.
+      - name: Build Watch Face debug resources
+        run: gradle --no-daemon --console=plain -p android-wrapper :watchface:assembleDebug
+      - name: Verify compiled preview references and inspect debug resource classes
+        run: |
+          python3 android-wrapper/watchface/tools/verify_preview_apk.py android-wrapper/watchface/build/outputs/apk/debug/watchface-debug.apk artifacts/watchface-previews/debug-packaging --debug
+          git rev-parse HEAD > artifacts/watchface-previews/TESTED_COMMIT.txt
+      - name: Stage debug APK only if packaging investigation is required
+        if: failure()
+        run: |
+          mkdir -p artifacts/watchface-previews/diagnostics
+          find android-wrapper/watchface/build/outputs/apk -name '*.apk' -exec cp {} artifacts/watchface-previews/diagnostics/ \; || true
+      - name: Save technical gallery and packaging evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: watchface-picker-previews-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/watchface-previews
+          if-no-files-found: error
+          retention-days: 7

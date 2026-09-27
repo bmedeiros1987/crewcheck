@@ -7,4 +7,12 @@
     <string name="routine_label">Rotina CrewCheck</string>
     <string name="battery_label">Bateria do relógio</string>
     <string name="steps_label">Passos</string>
+    <string name="crewcheck_style_label">Visual do mostrador</string>
+    <string name="crewcheck_style_signature">Signature · CrewCheck</string>
+    <string name="crewcheck_style_flightdeck">Flight Deck · Instrumental</string>
+    <string name="crewcheck_style_minimal">Minimal · Leve</string>
+    <string name="crewcheck_palette_label">Cor de destaque</string>
+    <string name="crewcheck_palette_cyan">Ciano CrewCheck</string>
+    <string name="crewcheck_palette_violet">Violeta CrewCheck</string>
+    <string name="crewcheck_palette_magenta">Magenta CrewCheck</string>
 </resources>
