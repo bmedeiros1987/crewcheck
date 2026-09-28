@@ -1,3 +1,0 @@
-CrewCheck Android TypeScript diagnostics trigger.
-
-This marker exists only to trigger the diagnostic workflow on the branch without changing application runtime.

@@ -118,6 +118,9 @@ public final class DriveNativeBehaviorTest {
         assertEquals(1, list.getSingleList().getItems().size());
         Row row = (Row) list.getSingleList().getItems().get(0);
         assertEquals("Hotel de teste", row.getTitle().toString());
+        assertNotNull(row.getImage());
+        assertEquals(2, list.getActionStrip().getActions().size());
+        assertNotNull(list.getActionStrip().getActions().get(1).getIcon());
         assertFalse(repository.enabled());
     }
     @Test public void manualDestinationUsesHostNavigationAndEncodedGeoQuery() throws Exception {
