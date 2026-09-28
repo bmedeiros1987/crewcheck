@@ -177,4 +177,6 @@ await import('../ci/sync-service-worker-version.mjs');
 await import('../android-play/prepare.mjs');
 await import('../android-play/layout.mjs');
 await import('../p1-546-pulse-live/finalize.mjs');
+// Transport/UI handoff runs after current Mobile finalizers; canonical manual sync remains terminal.
+await import('../p0-shared-pdf-durable/apply.mjs');
 await import('../ci/sync-canonical-manual.mjs');

@@ -83,4 +83,4 @@ await import('../p0-android-self-heal/apply.mjs');
 await import('../p1-565-roster-regulation-context/apply.mjs');
 await import('../p1-566-flightdeck-radar-briefing-context/apply.mjs');
 await import('../p1-566-stay-wakeup-concierge-context/apply.mjs');
-console.log('[p0-build-identity] rodapé de versão dinâmico, buildTimestamp, fast logout, alerta de rota, self-heal Android e navegação contextual #565/#566 reafirmados no estado materializado final.');
+console.log('[p0-build-identity] rodapé dinâmico, fast logout, self-heal e navegação contextual reafirmados; transforms finais de transporte ficam sob o orquestrador canônico.');

@@ -22,11 +22,39 @@ expect(home.includes("event.key === 'Escape'"), 'Escape deve cancelar o modal.')
 expect(home.includes("if (event.target === overlay) finish(false)"), 'Backdrop deve cancelar sem ativar a escala.');
 expect(home.includes("note.textContent = 'A escala oficial e as comunicações da empresa prevalecem em caso de divergência.'"), 'Modal precisa manter ressalva da fonte oficial.');
 
-expect(home.includes('async function confirmRosterImport(roster: CrewRoster, sourceFileName: string): Promise<ImportGuardianDecision>'), 'Gate de importação deve aguardar consentimento assíncrono.');
+const guardianSignature = 'async function confirmRosterImport(roster: CrewRoster, sourceFileName: string): Promise<ImportGuardianDecision>';
+expect(home.includes(guardianSignature), 'Gate de importação deve aguardar consentimento assíncrono.');
 expect(home.includes('const decision = await confirmRosterImport(roster, source);'), 'Importação Telegram deve aguardar o mesmo modal.');
 expect(home.includes('const decision = await confirmRosterImport(roster, file.name);'), 'Importação PDF deve aguardar o mesmo modal.');
-expect(home.includes("toast.message('Importação cancelada. Sua escala ativa foi preservada.')"), 'Cancelar deve preservar a escala ativa explicitamente.');
-expect(home.includes("toast.error('Nenhuma data de escala foi reconhecida."), 'Escala sem datas deve continuar bloqueada antes da ativação.');
+
+const guardianStart = home.indexOf(guardianSignature);
+const guardianEnd = home.indexOf('function emptyRoster()', guardianStart);
+expect(guardianEnd > guardianStart, 'Escopo do guardião de importação não foi localizado.');
+const guardianScope = home.slice(guardianStart, guardianEnd);
+const noDaysIndex = guardianScope.indexOf("if (!days)");
+const confirmIndex = guardianScope.indexOf('await requestCrewCheckImportConfirmation(decision)');
+expect(noDaysIndex >= 0 && confirmIndex > noDaysIndex, 'Escala sem datas deve ser bloqueada antes de abrir o modal/ativar a escala.');
+expect(guardianScope.slice(noDaysIndex, confirmIndex).includes('ok: false'), 'Escala sem datas precisa falhar fechada no guardião.');
+
+// O transporte Android/PWA pode envolver o picker manual em processRosterFile,
+// mas cancelar deve continuar sendo fail-closed: nenhum saveRoster/setBundle pode
+// ocorrer antes do retorno negativo do mesmo guardião assíncrono.
+const sharedStart = home.indexOf('async function processRosterFile(file: File): Promise<boolean>');
+if (sharedStart >= 0) {
+  const sharedEnd = home.indexOf('async function handleFile(inputEvent: ChangeEvent<HTMLInputElement>)', sharedStart);
+  expect(sharedEnd > sharedStart, 'processRosterFile compartilhado não possui limite identificável.');
+  const sharedScope = home.slice(sharedStart, sharedEnd);
+  const decisionIndex = sharedScope.indexOf('const decision = await confirmRosterImport(roster, file.name);');
+  const cancelIndex = sharedScope.indexOf('if (!decision.ok)', decisionIndex);
+  const returnIndex = sharedScope.indexOf('return false;', cancelIndex);
+  const saveIndex = sharedScope.indexOf('saveRoster(roster, file.name)');
+  const bundleIndex = sharedScope.indexOf('setBundle(nextBundle)');
+  expect(decisionIndex >= 0 && cancelIndex > decisionIndex && returnIndex > cancelIndex, 'Cancelar deve retornar false após o mesmo guardião assíncrono.');
+  expect(saveIndex > returnIndex && bundleIndex > returnIndex, 'Cancelar deve preservar a escala ativa antes de qualquer saveRoster/setBundle.');
+} else {
+  expect(home.includes("toast.message('Importação cancelada. Sua escala ativa foi preservada.')"), 'Cancelar deve preservar a escala ativa explicitamente.');
+  expect(home.includes("toast.error('Nenhuma data de escala foi reconhecida."), 'Escala sem datas deve continuar bloqueada antes da ativação.');
+}
 
 expect(!home.includes('const confirmed = window.confirm(decision.summaryText);'), 'Confirm nativo principal não pode permanecer.');
 expect(!/overrideImport\s*=\s*window\.confirm/.test(home), 'Segundo confirm nativo de override não pode permanecer.');
@@ -47,4 +75,4 @@ for (const protectedPath of [
   expect(!patch.includes(`'${protectedPath}'`), `Patch de UX não deve alterar motor protegido: ${protectedPath}.`);
 }
 
-console.log('[P0/#303/import] OK — uma única confirmação CrewCheck responsiva substitui os confirms nativos; cancelar preserva a escala ativa.');
+console.log('[P0/#303/import] OK — uma única confirmação CrewCheck responsiva; sem-datas e cancelamento falham antes de persistir/substituir a escala ativa.');
