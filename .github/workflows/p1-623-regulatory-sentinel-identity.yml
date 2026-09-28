@@ -1,0 +1,23 @@
+name: P1 #623 regulatory sentinel identity
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/regulatoryHistory.ts'
+      - 'scripts/regression-p1-623-regulatory-sentinel-identity.mjs'
+      - '.github/workflows/p1-623-regulatory-sentinel-identity.yml'
+  workflow_dispatch:
+
+jobs:
+  sentinel-identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Reject sentinel crew ids as regulatory authority
+        run: node scripts/regression-p1-623-regulatory-sentinel-identity.mjs

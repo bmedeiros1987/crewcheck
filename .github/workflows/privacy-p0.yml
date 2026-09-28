@@ -1,0 +1,69 @@
+name: CrewCheck privacy P0
+
+on:
+  pull_request:
+    paths:
+      - 'client/**'
+      - 'android-wrapper/**'
+      - 'docs/**'
+      - 'README*'
+      - 'scripts/v139/**'
+      - 'scripts/v14372/**'
+      - 'scripts/android-play/**'
+      - 'scripts/regression-crewlife-play-disclosure.mjs'
+      - 'scripts/regression-account-health-deletion.mjs'
+      - 'server/platform.mjs'
+      - 'server/v1391/emergency.mjs'
+      - 'server/v14316/controlCenter.mjs'
+      - '.github/workflows/privacy-p0.yml'
+
+jobs:
+  privacy-p0:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Validate source CrewLife Play disclosures
+        run: node --test scripts/regression-crewlife-play-disclosure.mjs
+      - name: Validate source account deletion of health data
+        run: node --test scripts/regression-account-health-deletion.mjs
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Validate prepared CrewLife Play disclosures
+        run: node --test scripts/regression-crewlife-play-disclosure.mjs
+      - name: Validate prepared account deletion of health data
+        run: node --test scripts/regression-account-health-deletion.mjs
+      - name: Preserve executable external endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'https://iflightla.ibsplc.aero/iflight-crew/web/getMainPage' client/src/components/premium/IFlightIntegrationView.tsx
+          grep -Fq 'https://iflightla.ibsplc.aero/iflight-crew/web/getMainPage' android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java
+          if grep -Fq 'ibsplc.aeroacesso externo' client/src/components/premium/IFlightIntegrationView.tsx android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java; then
+            echo 'P0 privacy gate failed: executable endpoint was corrupted by redaction.' >&2
+            exit 1
+          fi
+      - name: Block user-facing corporate portal references
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' files < <(find client android-wrapper docs -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.mjs' -o -name '*.java' -o -name '*.html' -o -name '*.md' -o -name '*.txt' -o -name '*.xml' \) -print0)
+          if grep -Ein 'iFlight Admin|Calendar Sweep iFlight|conta corporativa|login corporativo' "${files[@]}" README* 2>/dev/null; then
+            echo 'P0 privacy gate failed: forbidden user-facing reference found in a distributed/public surface.' >&2
+            exit 1
+          fi
+          echo 'P0 privacy gate passed.'
+      - name: Validate CrewCheck Life health privacy disclosure
+        shell: bash
+        run: |
+          set -euo pipefail
+          privacy='client/public/privacy.html'
+          grep -Fiq 'Health Connect' "$privacy"
+          grep -Fiq 'dados de saúde' "$privacy"
+          grep -Fiq 'consentimento' "$privacy"
+          grep -Eiq 'revogar|revoga[cç][aã]o|revogad[oa]' "$privacy"
+          grep -Fiq 'não vendemos' "$privacy"

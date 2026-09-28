@@ -1,0 +1,106 @@
+{
+  "name": "CrewCheck — Roster Intelligence",
+  "short_name": "CrewCheck",
+  "description": "Escala inteligente, Saída Inteligente, CrewLock, BIDS, rotina e alertas para tripulantes.",
+  "start_url": "/?source=pwa&v=13.9.10",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "any",
+  "background_color": "#020817",
+  "theme_color": "#071D33",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "categories": [
+    "productivity",
+    "travel",
+    "utilities",
+    "lifestyle"
+  ],
+  "prefer_related_applications": false,
+  "version": "13.9.10",
+  "share_target": {
+    "action": "/share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "pdf",
+          "accept": [
+            "application/pdf",
+            ".pdf"
+          ]
+        }
+      ]
+    }
+  },
+  "icons": [
+    {
+      "src": "/icons/crewcheck-icon-v2.png?v=13910",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/crewcheck-icon-v2.png?v=13910",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Escala",
+      "short_name": "Escala",
+      "url": "/?view=roster",
+      "icons": [
+        {
+          "src": "/icons/crewcheck-icon-v2.png?v=13910",
+          "sizes": "512x512",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "CrewLock",
+      "short_name": "CrewLock",
+      "url": "/?view=crewlock",
+      "icons": [
+        {
+          "src": "/icons/crewcheck-icon-v2.png?v=13910",
+          "sizes": "512x512",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Emergência",
+      "short_name": "Emergência",
+      "url": "/?view=emergency",
+      "icons": [
+        {
+          "src": "/icons/crewcheck-icon-v2.png?v=13910",
+          "sizes": "512x512",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Radar",
+      "short_name": "Radar",
+      "url": "/?view=radar",
+      "icons": [
+        {
+          "src": "/icons/crewcheck-icon-v2.png?v=13910",
+          "sizes": "512x512",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

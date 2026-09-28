@@ -1,0 +1,27 @@
+name: CrewCheck v14.3.78 auth visual
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/v14378/**'
+      - 'scripts/regression-v14-3-78-auth-visual.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'client/src/pages/AuthPage.tsx'
+      - 'client/src/pages/auth-premium.css'
+      - '.github/workflows/v14378-auth-visual.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  auth-visual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+      - name: Validate premium authentication visual contract
+        run: node scripts/regression-v14-3-78-auth-visual.mjs

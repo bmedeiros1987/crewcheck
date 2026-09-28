@@ -1,0 +1,6 @@
+function RosterRegulationBadge({ day }: { day: RosterDay }) {
+  const result = regulationForScheduleDay(day);
+  if (result.status === 'waiting') return <span className="cc-regulation-roster-chip waiting"><Clock/> Aguardando acionamento</span>;
+  if (result.status !== 'ready') return <span className="cc-regulation-roster-chip invalid"><Clock/> {result.label}</span>;
+  return <span className="cc-regulation-roster-chip" title="Premissa automática: RBAC 117 B.1, tripulação mínima/simples e tripulante aclimatizado"><Clock/> Corte {result.cutoffTime} · fim {result.dutyEndTime}</span>;
+}

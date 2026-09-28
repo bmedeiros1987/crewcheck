@@ -1,0 +1,43 @@
+name: CrewCheck P0 multichannel roster gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/**'
+      - 'server.mjs'
+      - 'server/**'
+      - 'android-wrapper/**'
+      - 'shared/**'
+      - 'scripts/v139/**'
+      - 'scripts/v14368/**'
+      - 'scripts/v14371/**'
+      - 'scripts/v14372/**'
+      - 'scripts/v14374/**'
+      - 'scripts/v14375/**'
+      - 'scripts/v14376/**'
+      - 'scripts/p0-active-roster-server/**'
+      - 'scripts/regression-p0-multichannel-roster-gate.mjs'
+      - '.github/workflows/p0-multichannel-roster-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  multichannel-roster:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck source
+        run: node scripts/v139/apply.mjs
+      - name: Run P0 same-roster multichannel gate
+        run: node scripts/regression-p0-multichannel-roster-gate.mjs
+      - name: TypeScript check
+        run: npx tsc --noEmit

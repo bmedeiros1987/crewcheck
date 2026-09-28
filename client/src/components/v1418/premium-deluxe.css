@@ -1,0 +1,92 @@
+/* CrewCheck v14.1.8 — Premium Deluxe mobile hardening */
+:root {
+  --cc-deluxe-field-bg: color-mix(in srgb, var(--card, #ffffff) 88%, #dff6ff 12%);
+  --cc-deluxe-border: color-mix(in srgb, var(--border, #cbd5e1) 76%, #4fc3f7 24%);
+}
+
+/* Keep floating shortcuts out of operational content. Their destinations remain in menus. */
+button:has(> span:only-child):where([aria-label="Telegram"],[aria-label="Parceiros"]),
+.crewcheck-floating-telegram,
+.crewcheck-floating-partners,
+[data-floating-action="telegram"],
+[data-floating-action="partners"] {
+  display: none !important;
+}
+
+/* Health, gym, weather and operational forms share the same field geometry. */
+form select,
+form input:not([type="checkbox"]):not([type="radio"]),
+form textarea,
+.cc-field,
+.cc-select {
+  width: 100%;
+  min-height: 52px;
+  box-sizing: border-box;
+  border: 1px solid var(--cc-deluxe-border);
+  border-radius: 16px;
+  background: var(--cc-deluxe-field-bg);
+  color: var(--foreground, #10243b);
+  padding: 12px 14px;
+  font: inherit;
+  line-height: 1.25;
+}
+
+form label {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  color: var(--muted-foreground, #52677b);
+}
+
+form button[type="submit"],
+.cc-primary-action {
+  width: 100%;
+  min-height: 54px;
+  border-radius: 17px;
+  font-weight: 800;
+}
+
+/* Route and weather actions must never hide behind the bottom navigation. */
+.cc-operational-page,
+.cc-weather-page,
+.cc-health-page,
+.cc-smart-departure-page {
+  padding-bottom: calc(118px + env(safe-area-inset-bottom));
+}
+
+/* Responsive cards and result rows. */
+.cc-health-results,
+.cc-gym-results,
+.cc-weather-grid,
+.cc-route-steps {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cc-route-step,
+.cc-health-result,
+.cc-weather-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  form,
+  .cc-form-grid {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 14px !important;
+  }
+
+  form select,
+  form input:not([type="checkbox"]):not([type="radio"]),
+  form textarea {
+    font-size: 16px; /* prevents mobile browser zoom */
+  }
+
+  .cc-route-mode-grid,
+  .cc-margin-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}

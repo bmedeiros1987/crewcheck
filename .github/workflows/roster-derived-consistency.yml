@@ -1,0 +1,29 @@
+name: Roster derived consistency
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/pdfExport.ts'
+      - 'scripts/v14395/**'
+      - 'scripts/regression-v14-3-95-roster-derived-consistency.mjs'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/roster-derived-consistency.yml'
+  workflow_dispatch:
+
+jobs:
+  consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply focused roster consistency patch
+        run: node scripts/v14395/apply.mjs
+      - name: Regression contract
+        run: node scripts/regression-v14-3-95-roster-derived-consistency.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit

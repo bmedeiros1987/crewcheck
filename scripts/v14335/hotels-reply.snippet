@@ -1,0 +1,19 @@
+async function conciergeHotelsReply(snapshot) {
+  const roster = snapshot?.roster || {};
+  const assigned = (roster.days || []).filter((day) => day?.hotel).slice(0, 6);
+  if (assigned.length) return ['Hotéis publicados/detectados na escala:', ...assigned.map((day) => `• ${day.hotel} · ${day.date || ''}`)].join('\n');
+  const locationState = conciergeLocationContextV14335(snapshot);
+  const stay = conciergeCurrentStay(roster);
+  const next = conciergeNextProgram(roster);
+  const airport = stay?.location || next?.legs?.[0]?.origin || roster.base || '';
+  const contextText = stay?.hotel || (airport ? `${airport} ${WEATHER_AIRPORT_POINTS[airport]?.city || ''}` : '');
+  if (!locationState.fresh && !contextText) return locationState.message;
+  const places = await conciergeSearchPlaces('hotel para tripulação próximo ao aeroporto', locationState.fresh ? '' : contextText, locationState.fresh ? locationState.location : null, 4);
+  if (!places.length) return `Nenhum hotel foi publicado na escala e não encontrei sugestões agora. ${locationState.fresh ? conciergeLocationLineV14335(snapshot) : locationState.message}`;
+  return [
+    'A escala não informa hotel. Estas são sugestões — não são reserva da companhia:',
+    locationState.fresh ? conciergeLocationLineV14335(snapshot) : `Contexto usado: ${contextText}. Nenhuma localização pessoal recente foi aplicada.`,
+    '',
+    conciergePlaceLines(places),
+  ].join('\n');
+}

@@ -1,0 +1,153 @@
+/* CrewCheck v14.1.7 — accessible weather and operational route intelligence. */
+
+.cc-weather-heading > span {
+  border-color: color-mix(in srgb, var(--cc-success) 35%, var(--cc-border));
+  color: var(--cc-success);
+  background: color-mix(in srgb, var(--cc-success) 10%, var(--cc-surface));
+}
+
+.cc-weather-console,
+.cc-weather-station,
+.cc-weather-alert-policy {
+  color: var(--cc-text);
+  border-color: var(--cc-border);
+  background: var(--cc-surface);
+  box-shadow: var(--cc-shadow);
+}
+
+.cc-weather-search label > span,
+.cc-weather-mode > span,
+.cc-weather-flight-window span,
+.cc-weather-flight-window small,
+.cc-weather-source span,
+.cc-weather-disclaimer,
+.cc-weather-alert-policy p,
+.cc-weather-unavailable {
+  color: var(--cc-text-muted);
+}
+
+.cc-weather-search label > div {
+  border-color: var(--cc-border-strong);
+  background: var(--cc-surface-raised);
+}
+
+.cc-weather-search input {
+  color: var(--cc-text);
+  caret-color: var(--cc-accent);
+}
+
+.cc-weather-search input::placeholder { color: var(--cc-text-muted); opacity: .9; }
+.cc-weather-search svg { color: var(--cc-accent); }
+
+.cc-weather-search button,
+.cc-weather-mode button {
+  color: var(--cc-text);
+  border: 1px solid var(--cc-border);
+  background: var(--cc-surface-soft);
+}
+
+.cc-weather-search button,
+.cc-weather-mode button.active {
+  color: #fff;
+  border-color: var(--cc-accent-strong);
+  background: var(--cc-accent-strong);
+  box-shadow: none;
+}
+
+.cc-weather-flight-window {
+  color: var(--cc-text);
+  border: 1px solid color-mix(in srgb, var(--cc-accent) 25%, var(--cc-border));
+  background: color-mix(in srgb, var(--cc-accent) 8%, var(--cc-surface-raised));
+}
+
+.cc-weather-flight-window > svg,
+.cc-weather-source svg,
+.cc-weather-report h3,
+.cc-weather-decoded li::before,
+.cc-weather-alert-policy > svg { color: var(--cc-accent); }
+
+.cc-weather-station > header h2,
+.cc-weather-alert-policy h2 { color: var(--cc-text); }
+
+.cc-weather-station > header small { color: var(--cc-text-muted); }
+.cc-weather-status { color: var(--cc-success); background: color-mix(in srgb, var(--cc-success) 12%, var(--cc-surface-raised)); }
+.severity-2 .cc-weather-status { color: #92400e; background: #fef3c7; }
+.severity-3 .cc-weather-status { color: #991b1b; background: #fee2e2; }
+
+.cc-weather-report { border-top-color: var(--cc-border); }
+.cc-weather-report pre {
+  color: #f8fafc;
+  border: 1px solid #334155;
+  background: #0f172a;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.cc-weather-decoded li {
+  color: var(--cc-text);
+  font-size: 14px;
+  line-height: 1.58;
+}
+
+.cc-weather-alert-policy {
+  border-color: color-mix(in srgb, var(--cc-accent) 28%, var(--cc-border));
+  background: color-mix(in srgb, var(--cc-accent) 7%, var(--cc-surface));
+}
+
+.cc-weather-alert-policy code {
+  color: var(--cc-accent-strong);
+  border: 1px solid var(--cc-border);
+  background: var(--cc-surface-raised);
+}
+
+.cc-departure-explainer,
+.cc-route-monitor,
+.cc-route-incidents {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 16px;
+  color: var(--cc-text);
+  border: 1px solid var(--cc-border);
+  border-radius: 18px;
+  background: var(--cc-surface);
+}
+
+.cc-departure-explainer { margin-bottom: 14px; }
+.cc-departure-explainer > svg,
+.cc-route-monitor > svg { color: var(--cc-accent); }
+.cc-departure-explainer h1 { margin: 0 0 5px; font-size: clamp(20px, 4vw, 28px); }
+.cc-departure-explainer p { margin: 0; color: var(--cc-text-muted); line-height: 1.55; }
+
+.cc-route-monitor,
+.cc-route-incidents { margin: 14px 0; }
+.cc-route-monitor div,
+.cc-route-incidents div { display: grid; gap: 4px; }
+.cc-route-monitor span,
+.cc-route-monitor small,
+.cc-route-incidents span { color: var(--cc-text-muted); line-height: 1.45; }
+
+.cc-route-monitor {
+  border-color: color-mix(in srgb, var(--cc-success) 30%, var(--cc-border));
+  background: color-mix(in srgb, var(--cc-success) 7%, var(--cc-surface));
+}
+
+.cc-route-incidents {
+  border-color: #f59e0b;
+  background: color-mix(in srgb, #f59e0b 10%, var(--cc-surface));
+}
+
+.cc-route-incidents > svg { color: #d97706; }
+.cc-route-incidents.critical { border-color: var(--cc-danger); background: color-mix(in srgb, var(--cc-danger) 10%, var(--cc-surface)); }
+.cc-route-incidents.critical > svg { color: var(--cc-danger); }
+
+@media (max-width: 520px) {
+  .cc-weather-console { padding: 12px; }
+  .cc-weather-station > header,
+  .cc-weather-report { padding-left: 14px; padding-right: 14px; }
+  .cc-weather-report pre { font-size: 12px; }
+  .cc-departure-explainer,
+  .cc-route-monitor,
+  .cc-route-incidents { padding: 14px; border-radius: 15px; }
+}

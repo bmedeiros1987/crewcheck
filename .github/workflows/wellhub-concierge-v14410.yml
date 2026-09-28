@@ -1,0 +1,44 @@
+name: CrewCheck Wellhub Concierge plan location
+
+on:
+  pull_request:
+    paths:
+      - 'server/v14335/concierge-location.mjs'
+      - 'server/v14410/**'
+      - 'scripts/v14410/**'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-v14-4-10-wellhub-concierge-plan-location.mjs'
+      - '.github/workflows/wellhub-concierge-v14410.yml'
+  workflow_dispatch:
+
+jobs:
+  wellhub-concierge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: |
+          node --check server/v14335/concierge-location.mjs
+          node --check server/v14410/wellhub-concierge.mjs
+          node --check scripts/v14410/apply.mjs
+          node --check scripts/regression-v14-4-10-wellhub-concierge-plan-location.mjs
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Materialized syntax
+        run: |
+          node --check server.mjs
+          node --check server/whatsapp.mjs
+      - name: Regression Silver+ geo fail-closed and WhatsApp
+        run: node scripts/regression-v14-4-10-wellhub-concierge-plan-location.mjs
+      - name: Verify materialized server
+        run: |
+          grep -F "cc-v14410:concierge-gyms-plan-location" server.mjs
+          ! grep -F "return conciergeGymsReply(snapshot);" server.mjs
+          grep -F "isWellhubPlanPreferenceMessage(value)" server.mjs
+          grep -F "filterWellhubPartnersForLocation(candidatePartners" server.mjs
+          grep -F "source: 'whatsapp'" server.mjs
+          grep -F "conciergeLocation: true" server/whatsapp.mjs

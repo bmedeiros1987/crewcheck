@@ -1,0 +1,36 @@
+name: CrewCheck v14.3.75 Telegram roster parity
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/rosterParser.mjs'
+      - 'client/src/lib/aimsParser.ts'
+      - 'client/src/lib/rosterCodes.ts'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14374/**'
+      - 'scripts/v14375/**'
+      - 'scripts/regression-v14-3-75-telegram-roster-parity.mjs'
+      - '.github/workflows/v14375-telegram-roster-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  telegram-roster-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck source
+        run: node scripts/v139/apply.mjs
+      - name: Compare Telegram server and PWA APK AIMS parsing
+        run: node scripts/regression-v14-3-75-telegram-roster-parity.mjs
+      - name: TypeScript check
+        run: npx tsc --noEmit

@@ -1,0 +1,62 @@
+function buildCrewCheckDemoRoster(): CrewRoster {
+  const atNoon = (offset: number) => {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() + offset);
+    return date;
+  };
+  const dateLabel = (date: Date) => `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()}`;
+  const day = (offset: number, values: Partial<RosterDay>): RosterDay => {
+    const date = atNoon(offset);
+    return {
+      date: dateLabel(date),
+      dayOfWeek: new Intl.DateTimeFormat('pt-BR', { weekday: 'short' }).format(date),
+      dayNumber: date.getDate(),
+      month: date.getMonth() + 1,
+      year: date.getFullYear(),
+      type: 'OTHER',
+      pairingCode: '',
+      dutyReport: null,
+      dutyDebrief: null,
+      legs: [],
+      dutyHours: null,
+      flyingHours: null,
+      isNextDay: false,
+      hotel: null,
+      base: 'BSB',
+      ...values,
+    } as RosterDay;
+  };
+  const first = atNoon(1);
+  return {
+    crewName: 'Tripulante demonstração',
+    crewId: 'DEMO-001',
+    base: 'BSB',
+    rank: 'Comissário(a)',
+    airline: 'Companhia demonstração',
+    month: first.getMonth() + 1,
+    year: first.getFullYear(),
+    rawText: 'ESCALA FICTÍCIA CREWCHECK — NÃO USAR OPERACIONALMENTE',
+    days: [
+      day(1, {
+        type: 'VOO', pairingCode: 'CC101', dutyReport: '07:00', dutyDebrief: '14:00', dutyHours: 7, flyingHours: 4,
+        legs: [
+          { flightNumber: 'CC 101', origin: 'BSB', destination: 'GRU', departureTime: '08:00', arrivalTime: '09:45', workType: 'OP', duration: 105, aircraftType: 'A320' },
+          { flightNumber: 'CC 202', origin: 'GRU', destination: 'SSA', departureTime: '11:00', arrivalTime: '13:15', workType: 'OP', duration: 135, aircraftType: 'A320' },
+        ],
+        hotel: 'Hotel demonstração — Salvador',
+      }),
+      day(2, {
+        type: 'VOO', pairingCode: 'CC203', dutyReport: '09:00', dutyDebrief: '16:40', dutyHours: 7.67, flyingHours: 4.25,
+        legs: [
+          { flightNumber: 'CC 203', origin: 'SSA', destination: 'GRU', departureTime: '10:00', arrivalTime: '12:20', workType: 'OP', duration: 140, aircraftType: 'A320' },
+          { flightNumber: 'CC 104', origin: 'GRU', destination: 'BSB', departureTime: '14:15', arrivalTime: '15:55', workType: 'OP', duration: 100, aircraftType: 'A320' },
+        ],
+      }),
+      day(3, { type: 'RES', pairingCode: 'RES-BSB', dutyReport: '14:00', dutyDebrief: '22:00', dutyHours: 8 }),
+      day(4, { type: 'HSB', pairingCode: 'HSB', dutyReport: '06:00', dutyDebrief: '18:00', dutyHours: 12 }),
+      day(5, { type: 'OFF', pairingCode: 'FOLGA' }),
+    ],
+  } as CrewRoster;
+}
+

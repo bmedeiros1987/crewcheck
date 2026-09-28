@@ -1,0 +1,456 @@
+/* CrewCheck v14.3.43 — premium layout hardening for Web, iPad and mobile */
+html,
+body,
+#root,
+.cz-app {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+html,
+body {
+  overflow-x: clip !important;
+}
+.cz-app {
+  width: 100% !important;
+  max-width: 100vw !important;
+  overflow-x: clip !important;
+}
+
+/* One predictable premium drawer instead of a viewport-wide card mosaic. */
+.cz-menu-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 9999 !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: stretch !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+.cz-menu-panel {
+  position: relative !important;
+  inset: auto !important;
+  width: min(92vw, 520px) !important;
+  min-width: 0 !important;
+  max-width: 520px !important;
+  height: 100dvh !important;
+  min-height: 0 !important;
+  max-height: 100dvh !important;
+  margin: 0 0 0 auto !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  border-radius: 28px 0 0 28px !important;
+  background: color-mix(in srgb, var(--popover, #0d1829) 97%, #06111f) !important;
+  border: 1px solid color-mix(in srgb, var(--border, rgba(255,255,255,.1)) 86%, transparent) !important;
+  box-shadow: -28px 0 90px rgba(0,0,0,.42) !important;
+  contain: layout paint !important;
+}
+.cz-menu-header {
+  position: relative !important;
+  top: auto !important;
+  flex: 0 0 auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  padding: max(16px, env(safe-area-inset-top, 0px)) 18px 14px !important;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent) !important;
+  background: inherit !important;
+  backdrop-filter: none !important;
+}
+.cz-menu-identity,
+.cz-menu-profile,
+.cz-menu-profile > span:last-child {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+.cz-menu-profile strong,
+.cz-menu-profile small {
+  display: block !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+.cz-menu-scroll {
+  flex: 1 1 auto !important;
+  display: block !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-auto-flow: row !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-y !important;
+  padding: 12px 16px calc(32px + env(safe-area-inset-bottom, 0px)) !important;
+  scrollbar-gutter: stable !important;
+}
+.cz-menu-section,
+.cz-menu-group {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-auto-flow: row !important;
+  gap: 8px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  min-height: auto !important;
+  overflow: visible !important;
+  padding: 14px 0 0 !important;
+  margin: 0 !important;
+}
+.cz-menu-group:first-child {
+  padding-top: 2px !important;
+}
+.cz-menu-section h3,
+.cz-menu-group h3 {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 0 3px !important;
+  padding: 0 4px !important;
+  font-size: .69rem !important;
+  line-height: 1.25 !important;
+  letter-spacing: .15em !important;
+  white-space: normal !important;
+  word-break: normal !important;
+}
+.cz-menu-section button,
+.cz-menu-group button {
+  display: grid !important;
+  grid-template-columns: 42px minmax(0, 1fr) 20px !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  min-height: 66px !important;
+  margin: 0 !important;
+  padding: 12px 14px !important;
+  border-radius: 18px !important;
+  text-align: left !important;
+  overflow: hidden !important;
+  white-space: normal !important;
+}
+.cz-menu-section button > svg:first-child,
+.cz-menu-group button > svg:first-child {
+  width: 22px !important;
+  height: 22px !important;
+  justify-self: center !important;
+  flex: none !important;
+}
+.cz-menu-section button > svg:last-child,
+.cz-menu-group button > svg:last-child {
+  width: 18px !important;
+  height: 18px !important;
+  justify-self: end !important;
+}
+.cz-menu-section button > span,
+.cz-menu-group button > span {
+  display: grid !important;
+  gap: 3px !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+.cz-menu-section button strong,
+.cz-menu-group button strong,
+.cz-menu-section button small,
+.cz-menu-group button small {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  line-break: auto !important;
+  hyphens: none !important;
+}
+.cz-menu-section button strong,
+.cz-menu-group button strong {
+  overflow-wrap: normal !important;
+  font-size: .95rem !important;
+  line-height: 1.22 !important;
+}
+.cz-menu-section button small,
+.cz-menu-group button small {
+  overflow-wrap: anywhere !important;
+  font-size: .76rem !important;
+  line-height: 1.3 !important;
+}
+
+/* Explicit permission control remains visible and contained. */
+.cc-location-access {
+  display: grid !important;
+  grid-template-columns: 42px minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin: 14px 0 !important;
+  padding: 14px !important;
+  border-radius: 20px !important;
+  border: 1px solid color-mix(in srgb, var(--accent, #22d3ee) 28%, transparent) !important;
+  background: color-mix(in srgb, var(--card, #101827) 92%, transparent) !important;
+  overflow: hidden !important;
+}
+.cc-location-access.compact {
+  flex: 0 0 auto !important;
+  margin: 12px 16px 0 !important;
+  width: calc(100% - 32px) !important;
+}
+.cc-location-access > svg {
+  width: 24px !important;
+  height: 24px !important;
+  color: var(--accent, #22d3ee) !important;
+}
+.cc-location-access > div {
+  display: grid !important;
+  gap: 3px !important;
+  min-width: 0 !important;
+}
+.cc-location-access strong,
+.cc-location-access span,
+.cc-location-access small {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: anywhere !important;
+}
+.cc-location-access span,
+.cc-location-access small {
+  color: var(--muted-foreground, #94a3b8) !important;
+  font-size: .76rem !important;
+  line-height: 1.35 !important;
+}
+.cc-location-access button {
+  min-height: 42px !important;
+  max-width: 190px !important;
+  padding: 0 14px !important;
+  border-radius: 14px !important;
+  white-space: normal !important;
+  line-height: 1.15 !important;
+}
+.cc-location-access > small {
+  grid-column: 2 / -1 !important;
+}
+.cc-location-access.state-granted {
+  border-color: color-mix(in srgb, #10b981 42%, transparent) !important;
+}
+.cc-location-access.state-denied {
+  border-color: color-mix(in srgb, #f59e0b 45%, transparent) !important;
+}
+
+/* Global containment for the existing card surfaces that overflowed on iPad. */
+.cz-kpi-row,
+.cz-money-row,
+.cz-finance-grid,
+.cz-car-grid,
+.cz-radar-screen,
+.cc-weather-stations,
+.cc-departure-mode-grid,
+.cz-hotel-grid,
+.cz-hotels-grid,
+.cz-gym-grid,
+.cz-gyms-grid,
+.cz-nearby-grid,
+.cz-nearby-list,
+.cz-place-grid,
+.cz-places-grid,
+.cz-stack-list,
+.cz-tool-actions,
+.cz-roster-actions,
+.cz-route-kpis,
+.cz-depart-kpis,
+.cz-detail-grid {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+.cz-kpi-row,
+.cz-money-row,
+.cz-finance-grid,
+.cz-car-grid,
+.cz-radar-screen,
+.cc-weather-stations,
+.cc-departure-mode-grid,
+.cz-hotel-grid,
+.cz-hotels-grid,
+.cz-gym-grid,
+.cz-gyms-grid,
+.cz-nearby-grid,
+.cz-place-grid,
+.cz-places-grid,
+.cz-route-kpis,
+.cz-depart-kpis,
+.cz-detail-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)) !important;
+  gap: 12px !important;
+}
+.cz-stack-list > *,
+.cz-tool-actions > *,
+.cz-roster-actions > *,
+.cz-kpi-row > *,
+.cz-money-row > *,
+.cz-finance-grid > *,
+.cz-car-grid > *,
+.cz-radar-screen > *,
+.cc-weather-stations > *,
+.cc-departure-mode-grid > *,
+.cz-hotel-grid > *,
+.cz-hotels-grid > *,
+.cz-gym-grid > *,
+.cz-gyms-grid > *,
+.cz-nearby-grid > *,
+.cz-nearby-list > *,
+.cz-place-grid > *,
+.cz-places-grid > *,
+.cz-route-kpis > *,
+.cz-depart-kpis > *,
+.cz-detail-grid > * {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+.cz-roster-card,
+.cz-flight-card,
+.cz-toolbox,
+.cz-google-route-card,
+.cz-car-card,
+.cz-finance-row,
+.cz-weather-station,
+.cc-weather-station,
+.cz-nearby-card,
+.cz-place-card,
+.cz-hotel-card,
+.cz-gym-card {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+}
+.cz-roster-card *,
+.cz-flight-card *,
+.cz-toolbox *,
+.cz-google-route-card *,
+.cz-car-card *,
+.cz-finance-row *,
+.cc-weather-station *,
+.cz-nearby-card *,
+.cz-place-card *,
+.cz-hotel-card *,
+.cz-gym-card * {
+  min-width: 0;
+}
+.cz-roster-card p,
+.cz-flight-card p,
+.cz-toolbox p,
+.cz-google-route-card p,
+.cz-car-card p,
+.cz-finance-row small,
+.cc-weather-station p,
+.cz-nearby-card p,
+.cz-place-card p,
+.cz-hotel-card p,
+.cz-gym-card p,
+.cz-destination-strip span,
+.cz-routine-strip span {
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: anywhere !important;
+}
+.cz-google-map-preview,
+.cz-google-map-preview iframe,
+.cz-google-map-preview img,
+.cz-static-map-img {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+@media (min-width: 721px) and (max-width: 1366px) {
+  .cz-menu-panel {
+    width: min(78vw, 520px) !important;
+    max-width: 520px !important;
+  }
+  .cz-menu-scroll,
+  .cz-menu-section,
+  .cz-menu-group {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .cz-kpi-row,
+  .cz-money-row,
+  .cz-finance-grid,
+  .cz-car-grid,
+  .cz-radar-screen,
+  .cc-weather-stations,
+  .cc-departure-mode-grid,
+  .cz-hotel-grid,
+  .cz-hotels-grid,
+  .cz-gym-grid,
+  .cz-gyms-grid,
+  .cz-nearby-grid,
+  .cz-place-grid,
+  .cz-places-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)) !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .cz-menu-panel {
+    width: 100vw !important;
+    max-width: none !important;
+    border-radius: 0 !important;
+  }
+  .cz-menu-scroll {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+  .cc-location-access {
+    grid-template-columns: 38px minmax(0, 1fr) !important;
+  }
+  .cc-location-access button,
+  .cc-location-access > small {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+  .cz-kpi-row,
+  .cz-money-row,
+  .cz-finance-grid,
+  .cz-car-grid,
+  .cz-radar-screen,
+  .cc-weather-stations,
+  .cc-departure-mode-grid,
+  .cz-hotel-grid,
+  .cz-hotels-grid,
+  .cz-gym-grid,
+  .cz-gyms-grid,
+  .cz-nearby-grid,
+  .cz-place-grid,
+  .cz-places-grid,
+  .cz-route-kpis,
+  .cz-depart-kpis,
+  .cz-detail-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .cz-tool-actions,
+  .cz-roster-actions {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .cz-tool-actions > button,
+  .cz-tool-actions > a,
+  .cz-roster-actions > button,
+  .cz-roster-actions > a {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}

@@ -1,0 +1,25 @@
+name: P-1 Auth verification schema
+
+on:
+  pull_request:
+    paths:
+      - 'migrations/20260812_015_p1_auth_verification_artifacts.sql'
+      - 'scripts/regression-p1-auth-verification-schema.mjs'
+      - '.github/workflows/p1-auth-verification-schema.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'migrations/20260812_015_p1_auth_verification_artifacts.sql'
+      - 'scripts/regression-p1-auth-verification-schema.mjs'
+      - '.github/workflows/p1-auth-verification-schema.yml'
+
+jobs:
+  verification-schema-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verification schema contract
+        run: node scripts/regression-p1-auth-verification-schema.mjs

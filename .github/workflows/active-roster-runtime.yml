@@ -1,0 +1,30 @@
+name: CrewCheck active roster runtime
+
+on:
+  pull_request:
+    paths:
+      - 'shared/activeRosterIdentity.mjs'
+      - 'shared/activeRosterIdentity.d.mts'
+      - 'scripts/v14371/apply.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-active-roster-runtime.mjs'
+      - 'client/src/lib/databaseClient.ts'
+      - '.github/workflows/active-roster-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  active-roster-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+      - name: Prepare canonical sources
+        run: node scripts/v139/apply.mjs
+      - name: Validate active roster runtime reconciliation
+        run: node scripts/regression-active-roster-runtime.mjs

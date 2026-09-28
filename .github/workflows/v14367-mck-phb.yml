@@ -1,0 +1,30 @@
+name: CrewCheck v14.3.67 MCK PHB
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/v14367/**'
+      - 'scripts/regression-v14-3-67-mck-phb.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'client/src/lib/aimsParser.ts'
+      - 'client/src/lib/airports.ts'
+      - '.github/workflows/v14367-mck-phb.yml'
+  workflow_dispatch:
+
+jobs:
+  roster-mck-phb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical sources
+        run: node scripts/v139/apply.mjs
+      - name: Validate MCK and PHB contract
+        run: node scripts/regression-v14-3-67-mck-phb.mjs
+      - name: TypeScript check
+        run: npx tsc --noEmit

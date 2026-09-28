@@ -1,0 +1,247 @@
+/* CrewCheck P2 #738 — Vacation work-first START */
+
+type VacationProgressModeV14738 = 'quiet' | 'return-date' | 'days' | 'progress';
+
+type VacationContextV14738 = {
+  startStamp: number;
+  endStamp: number;
+  totalDays: number;
+  daysRemaining: number;
+  progressPercent: number;
+  nextOperational: ZeroLeg | null;
+};
+
+const VACATION_PROGRESS_MODE_KEY_V14738 = 'crewcheck_vacation_progress_mode_v1';
+const VACATION_PROGRESS_ASKED_KEY_V14738 = 'crewcheck_vacation_progress_asked_v1';
+const VACATION_RETURN_LEAD_KEY_V14738 = 'crewcheck_vacation_return_lead_v1';
+const VACATION_DAY_MS_V14738 = 24 * 60 * 60 * 1000;
+
+function normalizeVacationCodeV14738(value: unknown): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toUpperCase();
+}
+
+function publishedVacationCodeV14738(event: Pick<ZeroLeg, 'day'>): string {
+  const day = event?.day as any;
+  const type = normalizeVacationCodeV14738(day?.type);
+  const pairing = normalizeVacationCodeV14738(day?.pairingCode);
+  if (type === 'VC' || type === 'FERIAS') return type;
+  if (type === 'DO' && (pairing === 'VC' || pairing === 'FERIAS')) return pairing;
+  if ((!type || type === 'OTHER') && (pairing === 'VC' || pairing === 'FERIAS')) return pairing;
+  return '';
+}
+
+function isPublishedVacationDayV14738(event: Pick<ZeroLeg, 'day'>): boolean {
+  return Boolean(publishedVacationCodeV14738(event));
+}
+
+function vacationDayStampV14738(event: Pick<ZeroLeg, 'day' | 'date'>): number | null {
+  const day = event?.day as any;
+  const raw = String(day?.date || '').trim();
+  let match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (match) return Date.UTC(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+  match = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (match) return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const year = Number(day?.year);
+  const month = Number(day?.month);
+  const dayNumber = Number(day?.dayNumber);
+  if (Number.isInteger(year) && Number.isInteger(month) && Number.isInteger(dayNumber) && year > 2000 && month >= 1 && month <= 12 && dayNumber >= 1 && dayNumber <= 31) {
+    return Date.UTC(year, month - 1, dayNumber);
+  }
+  const fallback = event?.date instanceof Date ? event.date : null;
+  if (!fallback || Number.isNaN(fallback.getTime())) return null;
+  return Date.UTC(fallback.getFullYear(), fallback.getMonth(), fallback.getDate());
+}
+
+function vacationTodayStampV14738(nowMs: number): number {
+  const now = new Date(nowMs);
+  return Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function vacationContextForEventsV14738(events: ZeroLeg[], nowMs: number): VacationContextV14738 | null {
+  const byStamp = new Map<number, ZeroLeg>();
+  for (const event of events) {
+    if (event.placeholder || !isPublishedVacationDayV14738(event)) continue;
+    const stamp = vacationDayStampV14738(event);
+    if (stamp != null && !byStamp.has(stamp)) byStamp.set(stamp, event);
+  }
+
+  const todayStamp = vacationTodayStampV14738(nowMs);
+  if (!byStamp.has(todayStamp)) return null;
+
+  let startStamp = todayStamp;
+  let endStamp = todayStamp;
+  while (byStamp.has(startStamp - VACATION_DAY_MS_V14738)) startStamp -= VACATION_DAY_MS_V14738;
+  while (byStamp.has(endStamp + VACATION_DAY_MS_V14738)) endStamp += VACATION_DAY_MS_V14738;
+
+  const totalDays = Math.max(1, Math.round((endStamp - startStamp) / VACATION_DAY_MS_V14738) + 1);
+  const elapsedDays = Math.max(1, Math.round((todayStamp - startStamp) / VACATION_DAY_MS_V14738) + 1);
+  const daysRemaining = Math.max(1, totalDays - elapsedDays + 1);
+  const progressPercent = Math.min(100, Math.max(0, Math.round((elapsedDays / totalDays) * 100)));
+  const endOfVacation = endStamp + VACATION_DAY_MS_V14738 - 1;
+
+  const nextOperational = events
+    .filter((event) => !event.placeholder && isProgramScheduleActivity(event))
+    .filter((event) => eventStartDateTime(event).getTime() > endOfVacation)
+    .sort((a, b) => eventStartDateTime(a).getTime() - eventStartDateTime(b).getTime())[0] || null;
+
+  return { startStamp, endStamp, totalDays, daysRemaining, progressPercent, nextOperational };
+}
+
+function formatVacationDayV14738(stamp: number): string {
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', timeZone: 'UTC' })
+    .format(new Date(stamp))
+    .replace('.', '')
+    .toUpperCase();
+}
+
+function vacationModeFromStorageV14738(): VacationProgressModeV14738 {
+  const value = storage.get(VACATION_PROGRESS_MODE_KEY_V14738, 'quiet');
+  return value === 'return-date' || value === 'days' || value === 'progress' ? value : 'quiet';
+}
+
+function VacationModeCardV14738({ context, setView, openMenu }: { context: VacationContextV14738; setView: (v: ZeroView) => void; openMenu: () => void }) {
+  const [displayMode, setDisplayMode] = useState<VacationProgressModeV14738>(() => vacationModeFromStorageV14738());
+  const [returnLead, setReturnLead] = useState(() => storage.get(VACATION_RETURN_LEAD_KEY_V14738, 'off'));
+  const [showPreferences, setShowPreferences] = useState(() => storage.get(VACATION_PROGRESS_ASKED_KEY_V14738, '0') !== '1');
+  const [showReturn, setShowReturn] = useState(false);
+
+  const next = context.nextOperational;
+  const hoursUntilReturn = next ? (flyDeckProgramMomentV14353(next).getTime() - Date.now()) / 3_600_000 : Number.POSITIVE_INFINITY;
+  const leadHours = Number(returnLead);
+  const automaticSoftReturn = Number.isFinite(leadHours) && leadHours > 0 && hoursUntilReturn >= 0 && hoursUntilReturn <= leadHours;
+  const revealReturn = showReturn || automaticSoftReturn;
+  const returnDate = next ? programDateLabel(next) : 'A confirmar';
+  const returnTime = next ? flyDeckClockV14353(next.presentation) : 'A confirmar';
+  const elapsedDay = Math.max(1, context.totalDays - context.daysRemaining + 1);
+
+  function savePreferences() {
+    storage.set(VACATION_PROGRESS_MODE_KEY_V14738, displayMode);
+    storage.set(VACATION_RETURN_LEAD_KEY_V14738, returnLead);
+    storage.set(VACATION_PROGRESS_ASKED_KEY_V14738, '1');
+    setShowPreferences(false);
+  }
+
+  function keepQuiet() {
+    setDisplayMode('quiet');
+    setReturnLead('off');
+    storage.set(VACATION_PROGRESS_MODE_KEY_V14738, 'quiet');
+    storage.set(VACATION_RETURN_LEAD_KEY_V14738, 'off');
+    storage.set(VACATION_PROGRESS_ASKED_KEY_V14738, '1');
+    setShowPreferences(false);
+  }
+
+  return <><Brand onMenu={openMenu}/><main className="cc-vacation-mode-v14738" data-vacation-work-first-v14738="true">
+    <header className="cc-vacation-topline-v14738">
+      <div><small>CREWCHECK</small><h1>Modo Férias</h1></div>
+      <span><Sun aria-hidden="true"/> PAUSA OPERACIONAL</span>
+    </header>
+
+    <article className="cc-vacation-hero-v14738">
+      <div className="cc-vacation-icon-v14738"><Sun aria-hidden="true"/></div>
+      <div className="cc-vacation-copy-v14738">
+        <small>PERÍODO PUBLICADO NA ESCALA</small>
+        <h2>Você está de férias</h2>
+        <p>O CrewCheck deixa a preparação de trabalho recolhida. Sua escala continua disponível quando você quiser consultar.</p>
+      </div>
+
+      {displayMode === 'return-date' ? <div className="cc-vacation-metric-v14738">
+        <span>Retorno operacional</span>
+        <strong>{returnDate}</strong>
+        <small>Sem contagem regressiva</small>
+      </div> : null}
+
+      {displayMode === 'days' ? <div className="cc-vacation-metric-v14738">
+        <span>Férias na escala</span>
+        <strong>{context.daysRemaining + (context.daysRemaining === 1 ? ' dia' : ' dias')}</strong>
+        <small>Você escolheu ver a quantidade restante</small>
+      </div> : null}
+
+      {displayMode === 'progress' ? <div className="cc-vacation-metric-v14738">
+        <span>Período de férias</span>
+        <strong>{'Dia ' + elapsedDay + ' de ' + context.totalDays}</strong>
+        <div className="cc-vacation-progress-v14738" role="progressbar" aria-label="Progresso do período de férias" aria-valuemin={0} aria-valuemax={100} aria-valuenow={context.progressPercent}>
+          <span style={{ width: String(context.progressPercent) + '%' }}/>
+        </div>
+        <small>{formatVacationDayV14738(context.startStamp) + ' — ' + formatVacationDayV14738(context.endStamp)}</small>
+      </div> : null}
+
+      <footer className="cc-vacation-actions-v14738">
+        <button type="button" onClick={() => setView('roster')}><CalendarDays aria-hidden="true"/> Ver escala</button>
+        <button type="button" onClick={() => setShowReturn((value) => !value)}><ChevronRight aria-hidden="true"/> {showReturn ? 'Ocultar retorno' : 'Ver meu retorno'}</button>
+        <button type="button" onClick={() => setShowPreferences((value) => !value)}><Settings aria-hidden="true"/> Preferências</button>
+      </footer>
+    </article>
+
+    {showPreferences ? <section className="cc-vacation-preferences-v14738" aria-label="Preferências de férias">
+      <header><div><small>CONTROLE SEU NÍVEL DE INFORMAÇÃO</small><h2>Como você prefere acompanhar suas férias?</h2></div><ShieldCheck aria-hidden="true"/></header>
+      <p>Nenhuma contagem aparece sem sua escolha. O padrão do CrewCheck é apenas informar que o período de férias está ativo.</p>
+
+      <div className="cc-vacation-choice-grid-v14738" role="group" aria-label="Exibição do período de férias">
+        <button type="button" className={displayMode === 'quiet' ? 'active' : ''} aria-pressed={displayMode === 'quiet'} onClick={() => setDisplayMode('quiet')}>
+          <strong>Só mostrar férias</strong><small>Sem datas, dias restantes ou barra.</small>
+        </button>
+        <button type="button" className={displayMode === 'return-date' ? 'active' : ''} aria-pressed={displayMode === 'return-date'} onClick={() => setDisplayMode('return-date')}>
+          <strong>Somente data de retorno</strong><small>Mostra a próxima programação sem contagem.</small>
+        </button>
+        <button type="button" className={displayMode === 'days' ? 'active' : ''} aria-pressed={displayMode === 'days'} onClick={() => setDisplayMode('days')}>
+          <strong>Dias restantes</strong><small>Exibe a quantidade somente porque você escolheu.</small>
+        </button>
+        <button type="button" className={displayMode === 'progress' ? 'active' : ''} aria-pressed={displayMode === 'progress'} onClick={() => setDisplayMode('progress')}>
+          <strong>Barra de progresso</strong><small>Acompanhamento visual do período.</small>
+        </button>
+      </div>
+
+      <div className="cc-vacation-soft-return-v14738">
+        <div><strong>Retorno suave</strong><small>Mostrar preparação de trabalho na Home somente perto da próxima programação.</small></div>
+        <div role="group" aria-label="Antecedência do retorno suave">
+          {[
+            ['off', 'Desligado'],
+            ['24', '24h'],
+            ['48', '48h'],
+            ['72', '72h'],
+          ].map(([value, label]) => <button type="button" key={value} className={returnLead === value ? 'active' : ''} aria-pressed={returnLead === value} onClick={() => setReturnLead(value)}>{label}</button>)}
+        </div>
+      </div>
+
+      <footer>
+        <button type="button" onClick={keepQuiet}>Agora não</button>
+        <button type="button" className="primary" onClick={savePreferences}><Check aria-hidden="true"/> Salvar preferências</button>
+      </footer>
+    </section> : null}
+
+    {revealReturn ? <article className="cc-vacation-return-v14738">
+      <div className="cc-vacation-return-icon-v14738"><CalendarDays aria-hidden="true"/></div>
+      <div>
+        <small>{automaticSoftReturn ? 'RETORNO SUAVE' : 'SOB DEMANDA'}</small>
+        <h2>Próxima programação operacional</h2>
+        {next ? <p><strong>{returnDate}</strong> · apresentação {returnTime}. Os detalhes continuam na sua escala oficial.</p> : <p>Ainda não há programação operacional posterior às férias neste período carregado.</p>}
+      </div>
+      <button type="button" onClick={() => setView('roster')}>Ver na escala <ChevronRight aria-hidden="true"/></button>
+    </article> : null}
+
+    <aside className="cc-vacation-note-v14738"><ShieldCheck aria-hidden="true"/><p><strong>Sem pressão desnecessária.</strong> O modo férias não altera sua escala e não cria atividade operacional. Você decide quando quer voltar a ver informações de trabalho.</p></aside>
+  </main></>;
+}
+
+function VacationDepartureV14738({ event, setView, onPrepare }: { event: ZeroLeg; setView: (v: ZeroView) => void; onPrepare: () => void }) {
+  const canPrepare = !event.placeholder && isSmartDepartureEligible(event);
+  return <section className="cc-vacation-departure-v14738" data-vacation-departure-v14738="true">
+    <article>
+      <div className="cc-vacation-icon-v14738"><Sun aria-hidden="true"/></div>
+      <small>MODO FÉRIAS ATIVO</small>
+      <h1>O Planejador de Saída fica recolhido</h1>
+      <p>O CrewCheck evita antecipar a rotina de trabalho durante as férias. Se você quiser se preparar, a decisão é sua.</p>
+      <div>
+        <button type="button" onClick={() => setView('cockpit')}>Voltar ao início</button>
+        <button type="button" onClick={() => setView('roster')}><CalendarDays aria-hidden="true"/> Ver escala</button>
+        {canPrepare ? <button type="button" className="primary" onClick={onPrepare}><Navigation aria-hidden="true"/> Preparar meu retorno</button> : null}
+      </div>
+    </article>
+  </section>;
+}
+
+/* CrewCheck P2 #738 — Vacation work-first END */

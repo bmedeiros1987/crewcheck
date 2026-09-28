@@ -1,0 +1,51 @@
+name: "P0 #530 finance canonical journeys"
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'client/src/lib/financialJourneyGrouping.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-p0-530-finance-canonical-journey.mjs'
+      - 'scripts/p0-530-adjacent-month-retention/**'
+      - 'scripts/v139/**'
+      - '.github/workflows/p0-530-finance-canonical-journeys.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/lib/financialJourneyGrouping.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-p0-530-finance-canonical-journey.mjs'
+      - '.github/workflows/p0-530-finance-canonical-journeys.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  finance-canonical:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Source finance canonical regression
+        run: node scripts/regression-p0-530-finance-canonical-journey.mjs
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Prepared finance canonical regression
+        run: node scripts/regression-p0-530-finance-canonical-journey.mjs
+      - name: Preserve adjacent-month finance isolation
+        run: node scripts/regression-p2-530-adjacent-fallback-finance.mjs
+      - name: Preserve exact-competence roster contract
+        run: node scripts/regression-p0-580-exact-competence-open.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npx vite build

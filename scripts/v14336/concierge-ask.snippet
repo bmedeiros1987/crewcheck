@@ -1,0 +1,48 @@
+async function handleTelegramConciergeAsk(req, res) {
+  if (req.method !== 'POST') return sendJson(res, 200, {
+    ok: true,
+    commands: ['/hoje','/amanha','/proximo','/escala','/radar','/saida','/metar','/hoteis','/academias','/farmacias','/rotina','/diarias','/regulamentacao','/conformidade','/modo formal','/modo comico','/voz padrao','/voz bruno'],
+    voiceOptions: conciergeVoiceOptionsV14336(),
+    modes: [{ id: 'formal', label: 'Formal (profissional)' }, { id: 'comic', label: 'Cômico leve (impessoal)' }],
+    message: 'Concierge pronto.',
+  });
+  const body = await readJsonBody(req, 1_000_000);
+  const user = telegramRequestUser(req, body);
+  if (!telegramAppRequestAllowed(user)) return sendJson(res, 401, { ok: false, message: 'Faça login para consultar o Concierge no app.' });
+  const linkedRecord = await telegramLinkedRecordForEmail(user.email);
+  if (linkedRecord && !conciergeAccessMatches(user, linkedRecord)) return sendJson(res, 403, { ok: false, message: 'Este dispositivo não está autorizado a usar o Telegram vinculado.' });
+  const chatId = String(linkedRecord?.chatId || '');
+  const profile = { ...user, chatId, linked: Boolean(chatId) };
+  let snapshot = await conciergeLoadSnapshot(profile);
+  if (snapshot && !conciergeAccessMatches(user, snapshot)) return sendJson(res, 403, { ok: false, message: 'Este dispositivo não está autorizado a consultar esta escala.' });
+  if (body.location && typeof body.location === 'object') snapshot = await conciergeSaveSnapshotAsync(profile, null, { preferences: { location: body.location } });
+  if (body.preferences && typeof body.preferences === 'object') {
+    const normalizedPreferences = normalizeConciergePreferencesV14336(body.preferences, snapshot?.preferences || {}, process.env);
+    snapshot = await conciergeSaveSnapshotAsync(profile, null, { preferences: normalizedPreferences });
+    const requestedText = String(body.text || body.message || '').trim();
+    if (!requestedText || /^\/(?:preferencias|preferências)$/i.test(requestedText)) {
+      return sendJson(res, 200, {
+        ok: true,
+        reply: `Preferências atualizadas.\n\n${conciergePreferenceSummaryV14336(snapshot)}`,
+        linked: profile.linked,
+        hasRoster: Boolean(snapshot?.roster),
+        preferences: conciergePreferencesV14336(snapshot),
+        voiceOptions: conciergeVoiceOptionsV14336(),
+        updatedAt: snapshot?.updatedAt || '',
+        message: 'Preferências do Concierge salvas.',
+      });
+    }
+  }
+  const reply = await buildTelegramConciergeReply(String(body.text || body.message || ''), profile, snapshot);
+  const refreshed = await conciergeLoadSnapshot(profile) || snapshot;
+  return sendJson(res, 200, {
+    ok: true,
+    reply,
+    linked: profile.linked,
+    hasRoster: Boolean(refreshed?.roster),
+    preferences: conciergePreferencesV14336(refreshed),
+    voiceOptions: conciergeVoiceOptionsV14336(),
+    updatedAt: refreshed?.updatedAt || '',
+    message: 'Resposta operacional gerada.',
+  });
+}

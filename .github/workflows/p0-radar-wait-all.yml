@@ -1,0 +1,35 @@
+name: CrewCheck P0 Radar wait all sources
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server.mjs'
+      - 'scripts/v14389/**'
+      - 'scripts/v14390/**'
+      - 'scripts/regression-v14-3-90-radar-wait-all.mjs'
+      - '.github/workflows/p0-radar-wait-all.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  radar-wait-all:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Validate radar source window
+        run: node scripts/regression-v14-3-90-radar-wait-all.mjs
+      - name: Validate server syntax
+        run: node --check server.mjs
+      - name: TypeScript check
+        run: npx tsc --noEmit

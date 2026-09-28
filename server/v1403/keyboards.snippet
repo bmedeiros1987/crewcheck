@@ -1,0 +1,59 @@
+const conciergeKeyboard = {
+  keyboard: [
+    [{ text: '✈️ Próxima programação' }, { text: '📅 Hoje' }],
+    [{ text: '🛫 Radar / portão' }, { text: '🚗 Saída inteligente' }],
+    [{ text: '🗓 Minha escala' }, { text: '🧘 Rotina' }],
+    [{ text: '🏨 Hotéis' }, { text: '🏥 Hospitais' }],
+    [{ text: '💊 Farmácias' }, { text: '🏋️ Academias' }],
+    [{ text: '🌦️ ATIS / METAR' }, { text: '📞 Solicitar ligação' }],
+    [{ text: '⚙️ Configurações' }, { text: '🚨 Emergência' }],
+  ],
+  resize_keyboard: true,
+  is_persistent: true,
+  one_time_keyboard: false,
+  input_field_placeholder: 'Pergunte naturalmente sobre a sua escala…',
+};
+const conciergeFunctionKeyboard = {
+  keyboard: [
+    [{ text: '⬅️ Voltar ao menu' }],
+    [{ text: '✈️ Próxima programação' }, { text: '🚗 Saída inteligente' }],
+    [{ text: '🛫 Radar / portão' }, { text: '⚙️ Configurações' }],
+  ],
+  resize_keyboard: true,
+  is_persistent: true,
+  one_time_keyboard: false,
+  input_field_placeholder: 'Faça outra pergunta ou volte ao menu…',
+};
+const conciergeSettingsKeyboard = {
+  keyboard: [
+    [{ text: '✏️ Como me chamar' }, { text: '🪪 Nome do concierge' }],
+    [{ text: '⬅️ Voltar ao menu' }],
+  ],
+  resize_keyboard: true,
+  is_persistent: true,
+  one_time_keyboard: false,
+  input_field_placeholder: 'As configurações são alteradas somente por texto…',
+};
+function normalizeConciergeButtonText(value = '') {
+  const text = String(value || '').trim();
+  const normalized = text.replace(/^\p{Extended_Pictographic}\uFE0F?\s*/u, '').trim().toLowerCase();
+  if (normalized === 'próxima programação' || normalized === 'proxima programacao' || normalized === 'próximo voo' || normalized === 'proximo voo') return '/proximo';
+  if (normalized === 'hoje') return '/hoje';
+  if (normalized.includes('radar') || normalized.includes('portão')) return '/radar';
+  if (normalized.includes('saída inteligente') || normalized.includes('saida inteligente')) return '/saida';
+  if (normalized === 'minha escala') return '/escala';
+  if (normalized === 'rotina') return '/rotina';
+  if (normalized === 'hotéis' || normalized === 'hoteis') return '/hoteis';
+  if (normalized === 'hospitais' || normalized.includes('pronto atendimento') || normalized.includes('pronto-socorro')) return '/hospitais';
+  if (normalized === 'farmácias' || normalized === 'farmacias') return '/farmacias';
+  if (normalized === 'academias') return '/academias';
+  if (normalized.includes('atis')) return '/metar';
+  if (normalized.includes('solicitar ligação') || normalized.includes('solicitar ligacao')) return '/ligacao';
+  if (normalized.includes('emergência') || normalized.includes('emergencia')) return '/emergencia';
+  if (normalized.includes('configurações') || normalized.includes('configuracoes')) return '/configuracoes';
+  if (normalized.includes('como me chamar')) return '/meunome';
+  if (normalized.includes('nome do concierge')) return '/nomeconcierge';
+  if (normalized.includes('voltar ao menu') || normalized === 'voltar' || normalized === 'menu') return '/menu';
+  if (normalized === 'ajuda') return '/ajuda';
+  return text;
+}

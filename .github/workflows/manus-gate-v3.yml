@@ -1,0 +1,250 @@
+name: Manus gate v3
+
+on:
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to audit (605, 626, or 627)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  checks: read
+
+concurrency:
+  group: manus-gate-v3
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: >-
+      github.repository == 'bmedeiros1987/crewcheck' &&
+      (
+        github.event_name == 'schedule' ||
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'issue_comment' &&
+          github.event.issue.pull_request &&
+          (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR') &&
+          (github.event.comment.body == '@manus-v3' || startsWith(github.event.comment.body, '@manus-v3 '))
+        )
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Select exact PR and SHA
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PR: ${{ github.event.issue.number }}
+          INPUT_PR: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+
+          api_get() {
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "$1"
+          }
+
+          if [ "$EVENT_NAME" = "issue_comment" ]; then
+            PR_NUMBER="$EVENT_PR"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "${INPUT_PR:-}" ]; then
+            PR_NUMBER="$INPUT_PR"
+          else
+            PR_NUMBER=""
+            for candidate in 605 626 627; do
+              pr="$(api_get "https://api.github.com/repos/${{ github.repository }}/pulls/$candidate")"
+              [ "$(jq -r '.state' <<<"$pr")" = "open" ] || continue
+              sha="$(jq -r '.head.sha' <<<"$pr")"
+              comments="$(api_get "https://api.github.com/repos/${{ github.repository }}/issues/$candidate/comments?per_page=100")"
+              if jq -e --arg sha "$sha" 'any(.[]; .user.login == "github-actions[bot]" and (.body | contains($sha)) and ((.body | contains("[MANUS-AUDIT] MANUS: MERGE")) or (.body | contains("[MANUS-AUDIT] MANUS: BLOCKER"))))' <<<"$comments" >/dev/null; then
+                continue
+              fi
+              PR_NUMBER="$candidate"
+              break
+            done
+            if [ -z "$PR_NUMBER" ]; then
+              echo 'No tracked P0 PR needs a Manus verdict.'
+              echo 'skip=true' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          case "$PR_NUMBER" in 605|626|627) ;; *) echo "Unsupported PR #$PR_NUMBER" >&2; exit 1 ;; esac
+          PR_JSON="$(api_get "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER")"
+          test "$(jq -r '.state' <<<"$PR_JSON")" = "open"
+          test "$(jq -r '.head.repo.full_name' <<<"$PR_JSON")" = "${{ github.repository }}"
+          SHA="$(jq -r '.head.sha' <<<"$PR_JSON")"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "pr=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Create Manus audit task
+        if: steps.select.outputs.skip != 'true'
+        id: create
+        env:
+          MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}
+          MANUS_GITHUB_CONNECTOR_ID: ${{ vars.MANUS_GITHUB_CONNECTOR_ID }}
+          PR_NUMBER: ${{ steps.select.outputs.pr }}
+          SHA: ${{ steps.select.outputs.sha }}
+        run: |
+          set -euo pipefail
+          test -n "$MANUS_API_KEY"
+          test -n "$MANUS_GITHUB_CONNECTOR_ID"
+
+          case "$PR_NUMBER" in
+            605) SCOPE='Audit P1 #526 rolling 28-day compliance adversarially: D1..D28/D29, cross-competence history without active-KPI contamination, incomplete history fail-closed, 98h NarrowBody vs 90h, 98h WideBody vs 100h, implausible ~480h review, multiplicity, invalid dates, UTC/Sao_Paulo/Kiritimati, supported aircraft provenance, #533/#534 preserved, no #532/hardcodes/APZ=STD.' ;;
+            626) SCOPE='Audit P0 Deslocamento Inteligente/Radar: HSB home standby never anchors commute, ASB reserve remains eligible using event-local identity, Radar only same civil day/base/window and never rewrites presentation, route alerts only roadClosure/critical/delay>=300s, HH:MM stable, #533/#534 preserved.' ;;
+            627) SCOPE='Audit P0 iOS/iPad/Web layout: no horizontal overflow, legacy 1180px rule cannot resurrect, portrait/landscape and safe-area correct, touch plus trackpad correct, cards/header/logout not cut, desktop fine-pointer preserved. Layout only.' ;;
+          esac
+
+          PROMPT="[MANUS-AUTO-AUDIT] Read-only independent audit of CrewCheck PR #$PR_NUMBER at exact immutable SHA $SHA. Repository: https://github.com/${{ github.repository }}. Re-read the PR and verify HEAD is still exactly $SHA before verdict. Treat PR comments as coordination only. Do not modify code, fixtures/oracles, #533/#534, or merge. $SCOPE Return only the structured schema. MERGE requires no material reproducible blocker. BLOCKER must include severity, reproducer, expected, actual, and root cause. Always return the full SHA."
+
+          jq -n \
+            --arg prompt "$PROMPT" \
+            --arg connector "$MANUS_GITHUB_CONNECTOR_ID" \
+            --arg title "CrewCheck #$PR_NUMBER audit ${SHA:0:12}" \
+            '{message:{content:[{type:"text",text:$prompt}],connectors:[$connector]},title:$title,locale:"en",interactive_mode:false,hide_in_task_list:false,share_visibility:"private",agent_profile:"standard",structured_output_schema:{type:"object",properties:{verdict:{type:"string",enum:["MERGE","BLOCKER"]},sha:{type:"string"},severity:{type:"string",enum:["NONE","P0","P1","P2"]},summary:{type:"string"},reproducer:{type:"string"},expected:{type:"string"},actual:{type:"string"},root_cause:{type:"string"}},required:["verdict","sha","severity","summary","reproducer","expected","actual","root_cause"],additionalProperties:false}}' > request.json
+
+          response="$(curl --fail-with-body --silent --show-error \
+            --request POST \
+            --url 'https://api.manus.ai/v2/task.create' \
+            --header 'Content-Type: application/json' \
+            --header "x-manus-api-key: $MANUS_API_KEY" \
+            --data-binary @request.json)"
+          test "$(jq -r '.ok' <<<"$response")" = "true"
+          TASK_ID="$(jq -r '.task_id' <<<"$response")"
+          [[ "$TASK_ID" =~ ^[A-Za-z0-9_-]+$ ]]
+          echo "task_id=$TASK_ID" >> "$GITHUB_OUTPUT"
+          echo "Created private Manus task $TASK_ID for PR #$PR_NUMBER at $SHA"
+
+      - name: Poll Manus with transient retry
+        if: steps.select.outputs.skip != 'true'
+        id: poll
+        env:
+          MANUS_API_KEY: ${{ secrets.MANUS_API_KEY }}
+          TASK_ID: ${{ steps.create.outputs.task_id }}
+        run: |
+          set -euo pipefail
+          sleep 8
+          RESULT=''
+
+          for attempt in $(seq 1 100); do
+            body="$(mktemp)"
+            code="$(curl --silent --show-error --output "$body" --write-out '%{http_code}' --get \
+              --url 'https://api.manus.ai/v2/task.listMessages' \
+              --header "x-manus-api-key: $MANUS_API_KEY" \
+              --data-urlencode "task_id=$TASK_ID" \
+              --data-urlencode 'order=desc' \
+              --data-urlencode 'limit=50')"
+
+            if [ "$code" = "200" ]; then
+              response="$(cat "$body")"
+              test "$(jq -r '.ok' <<<"$response")" = "true"
+              status="$(jq -r '[.messages[] | select(.type == "status_update") | .status_update.agent_status][0] // "unknown"' <<<"$response")"
+              if [ "$status" = "error" ]; then
+                jq -r '[.messages[] | select(.type == "error_message") | .error_message.content][0] // "Manus task failed"' <<<"$response" >&2
+                exit 1
+              fi
+              if [ "$status" = "waiting" ]; then
+                echo 'Manus requested interactive input; failing closed.' >&2
+                exit 1
+              fi
+              RESULT="$(jq -c '[.messages[] | select(.type == "structured_output_result") | .structured_output_result][0] // empty' <<<"$response")"
+              if [ -n "$RESULT" ]; then
+                printf '%s' "$RESULT" > result.json
+                echo "result_json=$PWD/result.json" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              [ "$status" = "stopped" ] && sleep 5 || sleep 10
+            elif [ "$code" = "404" ] && [ "$attempt" -le 12 ]; then
+              echo "task.listMessages not visible yet (404), retry $attempt/12"
+              sleep 5
+            elif [ "$code" = "429" ] || [[ "$code" =~ ^5 ]]; then
+              echo "Transient Manus HTTP $code, retrying"
+              sleep 15
+            else
+              echo "Manus task.listMessages HTTP $code" >&2
+              cat "$body" >&2
+              exit 1
+            fi
+          done
+
+          echo 'Timed out waiting for structured Manus verdict.' >&2
+          exit 1
+
+      - name: Validate exact SHA and publish verdict
+        if: steps.select.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.select.outputs.pr }}
+          REQUESTED_SHA: ${{ steps.select.outputs.sha }}
+          RESULT_FILE: ${{ steps.poll.outputs.result_json }}
+        run: |
+          set -euo pipefail
+          test -f "$RESULT_FILE"
+          RESULT="$(cat "$RESULT_FILE")"
+          test "$(jq -r '.success' <<<"$RESULT")" = "true"
+          verdict="$(jq -r '.value.verdict' <<<"$RESULT")"
+          sha="$(jq -r '.value.sha' <<<"$RESULT")"
+          severity="$(jq -r '.value.severity' <<<"$RESULT")"
+          summary="$(jq -r '.value.summary' <<<"$RESULT")"
+          reproducer="$(jq -r '.value.reproducer' <<<"$RESULT")"
+          expected="$(jq -r '.value.expected' <<<"$RESULT")"
+          actual="$(jq -r '.value.actual' <<<"$RESULT")"
+          root_cause="$(jq -r '.value.root_cause' <<<"$RESULT")"
+
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          test "$sha" = "$REQUESTED_SHA"
+          current_sha="$(curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER" | jq -r '.head.sha')"
+
+          if [ "$current_sha" != "$REQUESTED_SHA" ]; then
+            echo "STALE: requested=$REQUESTED_SHA current=$current_sha" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          case "$verdict" in
+            MERGE)
+              test "$severity" = "NONE"
+              BODY="$(printf '[MANUS-AUDIT] MANUS: MERGE — SHA %s\n\n%s' "$REQUESTED_SHA" "$summary")"
+              ;;
+            BLOCKER)
+              case "$severity" in P0|P1|P2) ;; *) exit 1 ;; esac
+              BODY="$(printf '[MANUS-AUDIT] MANUS: BLOCKER — SHA %s\nSeverity: %s\n\nSummary: %s\n\nReproducer: %s\nExpected: %s\nActual: %s\nRoot cause: %s' "$REQUESTED_SHA" "$severity" "$summary" "$reproducer" "$expected" "$actual" "$root_cause")"
+              ;;
+            *) echo "Unknown verdict: $verdict" >&2; exit 1 ;;
+          esac
+
+          payload="$(jq -n --arg body "$BODY" '{body:$body}')"
+          out="$(mktemp)"
+          code="$(curl --silent --show-error --output "$out" --write-out '%{http_code}' \
+            --request POST \
+            --url "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --header 'Content-Type: application/json' \
+            --data-binary "$payload")"
+          if [ "$code" != "201" ]; then
+            echo "GitHub comment HTTP $code" >&2
+            cat "$out" >&2
+            exit 1
+          fi
+          echo "Published $verdict for PR #$PR_NUMBER at exact SHA $REQUESTED_SHA"

@@ -1,0 +1,37 @@
+name: CrewCheck Concierge human voice
+
+on:
+  pull_request:
+    paths:
+      - 'server.mjs'
+      - 'server/v1404/**'
+      - 'server/v14336/**'
+      - 'server/v14348/**'
+      - 'server/v14405/**'
+      - 'server/v14408/**'
+      - 'elevenlabs_tts_1377.js'
+      - 'scripts/v139/**'
+      - 'scripts/v14408/**'
+      - 'client/src/pages/Home.tsx'
+      - '.github/workflows/concierge-human-voice-v14408.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'server/v14408/**'
+      - 'scripts/v14408/**'
+      - 'scripts/v139/**'
+      - '.github/workflows/concierge-human-voice-v14408.yml'
+
+jobs:
+  concierge-human-voice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Validate contextual text and audio policy
+        run: node scripts/regression-v14-4-08-concierge-human-voice.mjs

@@ -1,0 +1,41 @@
+name: Canonical health location
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/v14365/**'
+      - 'scripts/v14335/pharmacies-reply.snippet'
+      - 'scripts/v14335/hospitals-reply.snippet'
+      - 'scripts/regression-v14-3-65-canonical-health-location.mjs'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/canonical-health-location.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/v14365/**'
+      - 'scripts/v14335/pharmacies-reply.snippet'
+      - 'scripts/v14335/hospitals-reply.snippet'
+      - 'scripts/regression-v14-3-65-canonical-health-location.mjs'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/canonical-health-location.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-health-location:
+    name: Pharmacies and hospitals use current location
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Validate canonical health location contract
+        run: node scripts/regression-v14-3-65-canonical-health-location.mjs
+      - name: Validate source preparation
+        run: node scripts/v139/apply.mjs
+      - name: Revalidate contract after preparation
+        run: node scripts/regression-v14-3-65-canonical-health-location.mjs

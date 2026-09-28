@@ -1,0 +1,65 @@
+import fs from 'node:fs';
+
+const databasePath = 'client/src/lib/databaseClient.ts';
+const marker = 'P0_580_ACTIVE_BODY_FINGERPRINT_GUARD';
+const legacyMarker = 'P0_580_LEGACY_CHECKSUM_SNAPSHOT_GUARD';
+
+if (!fs.existsSync(databasePath)) throw new Error(`[${marker}] ${databasePath} not found`);
+let source = fs.readFileSync(databasePath, 'utf8');
+
+if (!source.includes(marker)) {
+  const helperAnchor = `export async function openActiveRoster(): Promise<{ roster: CrewRoster; compliance: ComplianceResult; gym: GymRecommendation[]; summary?: SavedRosterSummary | null }> {`;
+  const helperCount = source.split(helperAnchor).length - 1;
+  if (helperCount !== 1) throw new Error(`[${marker}] openActiveRoster anchor count ${helperCount}, expected 1`);
+
+  const helper = `function activeRosterFingerprintPayload(roster: CrewRoster): string {\n  return JSON.stringify({ year: roster?.year, month: roster?.month, crewId: roster?.crewId, days: roster?.days });\n}\n\nfunction activeRosterBodyMismatch(message: string): Error & { code: string } {\n  return Object.assign(new Error(message), { code: 'ACTIVE_ROSTER_BODY_MISMATCH' });\n}\n\nasync function sha256RosterFingerprint(text: string): Promise<string> {\n  if (!globalThis.crypto?.subtle) {\n    throw activeRosterBodyMismatch('Não foi possível verificar o checksum da escala ativa recebida.');\n  }\n  try {\n    const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));\n    return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('');\n  } catch {\n    throw activeRosterBodyMismatch('Falha ao verificar o checksum da escala ativa recebida.');\n  }\n}\n\nasync function assertActiveRosterBodyIdentity(summary: SavedRosterSummary | null | undefined, roster: CrewRoster, localSummary: SavedRosterSummary | null | undefined): Promise<void> {\n  // ${marker}: an announced checksum authorizes one concrete roster body, not merely\n  // a nominal month. Compare a canonical SHA-256 when the summary exposes one, and\n  // also compare against the already-trusted local snapshot when the same checksum\n  // is present there (covers legacy/non-hex checksum records). Any mismatch or\n  // unavailable verification mechanism fails closed.\n  const announced = String(summary?.checksum || '').trim().toLowerCase();\n  if (!announced) return;\n  const bodyIdentity = activeRosterFingerprintPayload(roster);\n  const canonicalSha256 = /^[a-f0-9]{64}$/.test(announced);\n  if (canonicalSha256) {\n    const bodyFingerprint = await sha256RosterFingerprint(bodyIdentity);\n    if (bodyFingerprint !== announced) {\n      throw activeRosterBodyMismatch('A escala ativa recebida não corresponde ao checksum anunciado.');\n    }\n  }\n  const matchingLocalSummary = localSummary && String(localSummary.checksum || '').trim().toLowerCase() === announced\n    ? localSummary\n    : getLocalRosterSummaries(12).find((item) => String(item.checksum || '').trim().toLowerCase() === announced);\n  // ${legacyMarker}: a legacy/non-SHA checksum has no independently computable body\n  // proof. It is authoritative only when it resolves to a trusted local snapshot.\n  if (!canonicalSha256 && !matchingLocalSummary?.id) {\n    throw activeRosterBodyMismatch('Checksum legado sem snapshot local confiável.');\n  }\n  if (!matchingLocalSummary?.id) return;\n  const trustedLocal = findLocalRoster(matchingLocalSummary.id, matchingLocalSummary);\n  if (!trustedLocal?.roster) {\n    if (!canonicalSha256) throw activeRosterBodyMismatch('Snapshot local do checksum legado não encontrado.');\n    return;\n  }\n  if (activeRosterFingerprintPayload(trustedLocal.roster) !== bodyIdentity) {\n    throw activeRosterBodyMismatch('A escala ativa recebida diverge do snapshot autorizado pelo checksum.');\n  }\n}\n\n${helperAnchor}`;
+  source = source.replace(helperAnchor, helper);
+
+  const guardAnchor = `      if (payload.roster) assertExpectedRosterPeriod(payload.data.roster, payload.roster);\n      const reconciliation = reconcileActiveRosterIdentity({ remote: payload.roster || null, local: local || null });`;
+  const guardCount = source.split(guardAnchor).length - 1;
+  if (guardCount !== 1) throw new Error(`[${marker}] summary/body guard anchor count ${guardCount}, expected 1`);
+  source = source.replace(guardAnchor, `      if (payload.roster) assertExpectedRosterPeriod(payload.data.roster, payload.roster);\n      await assertActiveRosterBodyIdentity(payload.roster || null, payload.data.roster, local || null);\n      const reconciliation = reconcileActiveRosterIdentity({ remote: payload.roster || null, local: local || null });`);
+
+  const rethrowAnchor = `    if (['ACTIVE_ROSTER_CONFLICT', 'ROSTER_PERIOD_MISMATCH'].includes(String(error?.code || '').toUpperCase())) throw error;`;
+  const mismatchGuard = `    if (String(error?.code || '').toUpperCase() === 'ACTIVE_ROSTER_BODY_MISMATCH') throw error;`;
+  if (source.includes(rethrowAnchor) && !source.includes(mismatchGuard)) {
+    source = source.replace(rethrowAnchor, `${mismatchGuard}\n${rethrowAnchor}`);
+  } else if (!source.includes(rethrowAnchor) || !source.includes(mismatchGuard)) {
+    throw new Error(`[${marker}] active-roster rethrow anchor not found`);
+  }
+
+  fs.writeFileSync(databasePath, source, 'utf8');
+  console.log(`[crewcheck:prepare] applied ${marker}`);
+} else if (!source.includes(legacyMarker)) {
+  const oldLegacy = `  const matchingLocalSummary = localSummary && String(localSummary.checksum || '').trim().toLowerCase() === announced\n    ? localSummary\n    : getLocalRosterSummaries(12).find((item) => String(item.checksum || '').trim().toLowerCase() === announced);\n  if (!matchingLocalSummary?.id) return;\n  const trustedLocal = findLocalRoster(matchingLocalSummary.id, matchingLocalSummary);\n  if (!trustedLocal?.roster) return;`;
+  const count = source.split(oldLegacy).length - 1;
+  if (count !== 1) throw new Error(`[${legacyMarker}] legacy checksum anchor count ${count}, expected 1`);
+  const newLegacy = `  const canonicalSha256 = /^[a-f0-9]{64}$/.test(announced);\n  const matchingLocalSummary = localSummary && String(localSummary.checksum || '').trim().toLowerCase() === announced\n    ? localSummary\n    : getLocalRosterSummaries(12).find((item) => String(item.checksum || '').trim().toLowerCase() === announced);\n  // ${legacyMarker}: a legacy/non-SHA checksum has no independently computable body\n  // proof. It is authoritative only when it resolves to a trusted local snapshot.\n  if (!canonicalSha256 && !matchingLocalSummary?.id) {\n    throw activeRosterBodyMismatch('Checksum legado sem snapshot local confiável.');\n  }\n  if (!matchingLocalSummary?.id) return;\n  const trustedLocal = findLocalRoster(matchingLocalSummary.id, matchingLocalSummary);\n  if (!trustedLocal?.roster) {\n    if (!canonicalSha256) throw activeRosterBodyMismatch('Snapshot local do checksum legado não encontrado.');\n    return;\n  }`;
+  source = source.replace(oldLegacy, newLegacy);
+  fs.writeFileSync(databasePath, source, 'utf8');
+  console.log(`[crewcheck:prepare] applied ${legacyMarker}`);
+} else {
+  console.log(`[crewcheck:prepare] ${marker} already applied; validating structure`);
+}
+
+const prepared = fs.readFileSync(databasePath, 'utf8');
+for (const fragment of [
+  marker,
+  legacyMarker,
+  'function activeRosterFingerprintPayload(roster: CrewRoster): string',
+  "throw activeRosterBodyMismatch('Não foi possível verificar o checksum da escala ativa recebida.')",
+  "globalThis.crypto.subtle.digest('SHA-256'",
+  'if (bodyFingerprint !== announced)',
+  'await assertActiveRosterBodyIdentity(payload.roster || null, payload.data.roster, local || null);',
+  "String(error?.code || '').toUpperCase() === 'ACTIVE_ROSTER_BODY_MISMATCH'",
+  "['ACTIVE_ROSTER_CONFLICT', 'ROSTER_PERIOD_MISMATCH'].includes(String(error?.code || '').toUpperCase())",
+  'if (!canonicalSha256 && !matchingLocalSummary?.id)',
+  'activeRosterFingerprintPayload(trustedLocal.roster) !== bodyIdentity',
+]) {
+  if (!prepared.includes(fragment)) throw new Error(`[${marker}] missing structural guard: ${fragment}`);
+}
+const bodyGuardIndex = prepared.indexOf('await assertActiveRosterBodyIdentity(payload.roster || null, payload.data.roster, local || null);');
+const reconciliationIndex = prepared.indexOf('const reconciliation = reconcileActiveRosterIdentity({ remote: payload.roster || null, local: local || null });');
+if (bodyGuardIndex < 0 || reconciliationIndex < 0 || bodyGuardIndex > reconciliationIndex) {
+  throw new Error(`[${marker}] body fingerprint guard must precede active identity reconciliation`);
+}

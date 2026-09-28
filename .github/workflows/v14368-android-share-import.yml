@@ -1,0 +1,48 @@
+name: CrewCheck v14.3.68 Android share import
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'android-wrapper/**'
+      - 'client/**'
+      - 'scripts/v14365/**'
+      - 'scripts/v14368/**'
+      - 'scripts/regression-v14-3-68-android-share-import.mjs'
+      - '.github/workflows/v14368-android-share-import.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-shared-pdf-import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - run: npm ci || npm install
+      - name: Prepare canonical CrewCheck source
+        run: node scripts/v139/apply.mjs
+      - name: Validate Android share bridge and canonical import
+        run: node scripts/regression-v14-3-68-android-share-import.mjs
+      - name: TypeScript check
+        run: npx tsc --noEmit
+      - name: Build offline web shell consumed by Android
+        run: npx vite build
+      - name: Compile Android mobile shell
+        run: gradle -p android-wrapper --no-daemon --console=plain :app:assembleDebug --stacktrace

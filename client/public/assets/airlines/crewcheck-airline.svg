@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="120" viewBox="0 0 360 120">
+<rect width="360" height="120" rx="30" fill="#08172a"/>
+<path d="M58 78c31-41 77-58 137-53-43 9-78 28-106 58 37-10 76-6 118 12-54 9-103 5-149-17z" fill="#55d6ee"/>
+<path d="M96 64c35-23 76-34 126-31-36 8-66 21-90 40 28-5 61-2 98 11-47 7-91 0-134-20z" fill="#ffffff" opacity=".82"/>
+<text x="156" y="70" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="800" fill="#ffffff">CrewCheck</text>
+<text x="158" y="94" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#9eeaff" letter-spacing="4">AIRLINE</text>
+</svg>

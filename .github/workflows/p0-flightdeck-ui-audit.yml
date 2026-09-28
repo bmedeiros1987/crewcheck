@@ -1,0 +1,31 @@
+name: P0 FlightDeck UI audit
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/index.css'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/p0-flightdeck-ui-audit/**'
+      - 'scripts/regression-p0-flightdeck-ui-audit.mjs'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/p0-flightdeck-ui-audit.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/index.css'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/p0-flightdeck-ui-audit/**'
+      - 'scripts/regression-p0-flightdeck-ui-audit.mjs'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/p0-flightdeck-ui-audit.yml'
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/regression-p0-flightdeck-ui-audit.mjs

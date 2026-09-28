@@ -1,0 +1,43 @@
+async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = null) {
+  const command = await conciergePreferenceCommandV14336(text, profile, snapshot);
+  if (command.handled) {
+    return conciergeHumanizeReplyV14408(conciergeFinalizeReplyV14354(command.reply, text), text);
+  }
+
+  let currentSnapshot = command.snapshot || snapshot;
+  const inputContext = conciergeSemanticInputContextV14338(text, currentSnapshot);
+  const semantic = interpretConciergeNaturalTextV14338(text, inputContext);
+  if (semantic.intent === 'explicit_command') semantic.intent = conciergeSemanticCommandIntentV14338(text);
+  const resolved = await conciergeSemanticResolveV14338(semantic, profile, currentSnapshot, inputContext);
+  const rawReply = resolved.handled
+    ? resolved.reply
+    : await buildTelegramConciergeReplyCore(resolved.rewrite || semantic.rewrite || text, profile, currentSnapshot);
+
+  const info = conciergeSemanticFindRecordV14338(currentSnapshot, semantic, inputContext);
+  const extra = conciergeSemanticRecordExtraV14338(info);
+  const contextIntent = semantic.intent === 'unknown' ? String(inputContext?.lastIntent || 'unknown') : semantic.intent;
+  const conversation = {
+    ...buildConciergeContextV14338({ ...semantic, intent: contextIntent }, inputContext, new Date(), extra),
+    origin: extra.origin || String(inputContext?.origin || ''),
+    destination: extra.destination || String(inputContext?.destination || ''),
+  };
+  if (profile?.email || profile?.chatId) {
+    currentSnapshot = await conciergeSaveSnapshotAsync(profile, null, { preferences: { conciergeConversation: conversation } }) || currentSnapshot;
+  }
+
+  const decorated = decorateConciergeReplyV14336(rawReply, {
+    preferences: conciergePreferencesV14336(currentSnapshot),
+    roster: currentSnapshot?.roster || {},
+  });
+  if (decorated.humorApplied) {
+    await conciergeSaveSnapshotAsync(profile, null, {
+      preferences: {
+        lastHumorAt: new Date().toISOString(),
+        lastHumorKey: decorated.humorKey,
+      },
+    });
+  }
+
+  const finalized = conciergeFinalizeReplyV14354(decorated.reply, text);
+  return conciergeHumanizeReplyV14408(finalized, text);
+}

@@ -1,0 +1,30 @@
+function serverCrewRosterOffsetDateTokenFromLine(line, fallbackYear) {
+ const source = String(line || '').replace(/\s+/g, ' ').trim();
+ const explicit = source.match(/\b(\d{2})-([A-Za-z]{3})-(\d{4})\b/);
+ if (explicit) return { token: explicit[0], day: Number(explicit[1]), month: monthNameToNum(explicit[2]), year: Number(explicit[3]) };
+ const pairing = source.match(/\bLA\s?\d{3,4}[/-](\d{6})(?:\/|\b)/i)?.[1];
+ if (!pairing) return null;
+ const day = Number(pairing.slice(0, 2));
+ const month = Number(pairing.slice(2, 4));
+ const year = 2000 + Number(pairing.slice(4, 6));
+ if (!day || month < 1 || month > 12) return null;
+ return { token: `${String(day).padStart(2, '0')}-${['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][month]}-${year || fallbackYear}`, day, month, year: year || fallbackYear };
+}
+function buildServerCrewRosterOffsetBlocks(fullText, fallbackYear) {
+ const lines = String(fullText || '').split(/\r?\n/).map((line) => String(line || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+ const blocks = [];
+ let current = null;
+ for (const line of lines) {
+  if (/^Roster\s+Report\b/i.test(line)) continue;
+  const marker = serverCrewRosterOffsetDateTokenFromLine(line, fallbackYear);
+  const startsBlock = marker && (line.indexOf(marker.token) <= 18 || /^<==/.test(line) || /\bLA\s?\d{3,4}[/-]\d{6}\//i.test(line));
+  if (startsBlock) {
+   if (current) blocks.push(current);
+   current = { dayToken: String(marker.day).padStart(2, '0'), monthToken: ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][marker.month], yearToken: String(marker.year), text: line.replace(/\b\d{2}-[A-Za-z]{3}-\d{4}\b/, '').trim() };
+   continue;
+  }
+  if (current && /\b(LA\s?\d{3,4}|MCK(?:320|_SS)?|OP|PS|DH|[A-Z]{3}\s+\d{1,2}:\d{2}|\d{1,2}:\d{2}\(\+\d+\))\b/i.test(line)) current.text += ` ${line}`;
+ }
+ if (current) blocks.push(current);
+ return blocks;
+}

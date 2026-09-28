@@ -1,0 +1,44 @@
+name: WhatsApp Business webhook
+
+on:
+  pull_request:
+    paths:
+      - 'server/whatsapp.mjs'
+      - 'server.mjs'
+      - 'scripts/v14382/**'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-whatsapp-business-webhook.mjs'
+      - 'render.yaml'
+      - '.env.example'
+      - '.github/workflows/whatsapp-business-webhook.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'server/whatsapp.mjs'
+      - 'server.mjs'
+      - 'scripts/v14382/**'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-whatsapp-business-webhook.mjs'
+      - 'render.yaml'
+      - '.env.example'
+      - '.github/workflows/whatsapp-business-webhook.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-webhook:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.13.0
+      - name: Validate JavaScript syntax
+        run: |
+          node --check server/whatsapp.mjs
+          node --check scripts/v14382/apply.mjs
+          node --check scripts/regression-whatsapp-business-webhook.mjs
+      - name: Run official WhatsApp webhook regression
+        run: node scripts/regression-whatsapp-business-webhook.mjs

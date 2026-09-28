@@ -1,0 +1,31 @@
+{
+  "source": "Official company CrewRosterReport, May 2026, anonymized",
+  "period": { "start": "01/05/2026", "end": "31/05/2026" },
+  "cases": {
+    "formalRecoveryOpening": [
+      { "date": "01/05/2026", "type": "DO" },
+      { "date": "02/05/2026", "type": "DO" },
+      { "date": "03/05/2026", "type": "DO" },
+      { "date": "04/05/2026", "type": "DOF" },
+      { "date": "05/05/2026", "type": "DOF" },
+      { "date": "06/05/2026", "type": "DO" },
+      { "date": "07/05/2026", "type": "DO" },
+      { "date": "08/05/2026", "type": "DO" }
+    ],
+    "internationalOvernightPairing": {
+      "started": "09/05/2026",
+      "report": "13:25",
+      "route": ["BSB", "POA", "CNF", "POA", "GRU", "EZE", "GRU"],
+      "touchesNextDay": true,
+      "workTypes": ["OP", "OP", "OP", "OP", "OP", "OP"],
+      "mustKeepInternationalStation": "EZE"
+    },
+    "mustPreserve": [
+      "DO e DOF como recuperações distintas",
+      "nenhuma Saída Inteligente em DO ou DOF",
+      "continuidade internacional sem teletransporte",
+      "virada (+1) preservada no trecho GRU-EZE",
+      "retorno EZE-GRU mantido na data operacional correta"
+    ]
+  }
+}

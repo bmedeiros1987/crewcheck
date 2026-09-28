@@ -1,0 +1,22 @@
+name: v14.3.62 official May roster canonical audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/fixtures/official-roster-2026-05-canonical-anonymized.json'
+      - 'scripts/regression-v14-3-62-official-may-roster.mjs'
+      - '.github/workflows/v14362-official-may-roster-audit.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate anonymized May roster fixture
+        run: node scripts/regression-v14-3-62-official-may-roster.mjs

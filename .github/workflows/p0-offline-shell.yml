@@ -1,0 +1,27 @@
+name: CrewCheck P0 offline shell
+
+on:
+  pull_request:
+    paths:
+      - 'client/public/sw.js'
+      - 'client/src/lib/offlineRuntime.ts'
+      - 'client/src/main.tsx'
+      - 'scripts/regression-p0-offline-shell.mjs'
+      - '.github/workflows/p0-offline-shell.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  offline-shell:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+      - name: Validate P0 offline shell contract
+        run: node scripts/regression-p0-offline-shell.mjs

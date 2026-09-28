@@ -1,0 +1,35 @@
+name: CrewCheck P0 Radar semantic quality
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server.mjs'
+      - 'scripts/v14390/**'
+      - 'scripts/v14391/**'
+      - 'scripts/regression-v14-3-91-radar-no-latency-bias.mjs'
+      - '.github/workflows/p0-radar-no-latency-bias.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  radar-semantic-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Validate radar semantic score
+        run: node scripts/regression-v14-3-91-radar-no-latency-bias.mjs
+      - name: Validate server syntax
+        run: node --check server.mjs
+      - name: TypeScript check
+        run: npx tsc --noEmit

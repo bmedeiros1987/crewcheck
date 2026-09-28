@@ -1,0 +1,204 @@
+/* CrewCheck v14.3.78 — autenticação premium, responsiva e consistente */
+.cz-auth.cc-auth-premium {
+  --auth-bg: #f5f7fb;
+  --auth-surface: rgba(255,255,255,.94);
+  --auth-surface-strong: #ffffff;
+  --auth-text: #152033;
+  --auth-muted: #667085;
+  --auth-line: rgba(15,23,42,.12);
+  --auth-accent: #7c3aed;
+  --auth-accent-2: #ec4899;
+  min-height: 100dvh;
+  padding: clamp(18px, 3vw, 34px);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: clamp(18px, 3vw, 30px);
+  background:
+    radial-gradient(circle at 12% 8%, rgba(124,58,237,.16), transparent 34%),
+    radial-gradient(circle at 88% 0%, rgba(236,72,153,.14), transparent 30%),
+    var(--auth-bg);
+  color: var(--auth-text);
+}
+
+html[data-crew-theme="dark"] .cz-auth.cc-auth-premium,
+.dark .cz-auth.cc-auth-premium {
+  --auth-bg: #080d18;
+  --auth-surface: rgba(15,23,42,.9);
+  --auth-surface-strong: #111827;
+  --auth-text: #f8fafc;
+  --auth-muted: #a6b0c2;
+  --auth-line: rgba(148,163,184,.22);
+  background:
+    radial-gradient(circle at 10% 8%, rgba(124,58,237,.24), transparent 34%),
+    radial-gradient(circle at 88% 0%, rgba(236,72,153,.18), transparent 30%),
+    var(--auth-bg);
+}
+
+.cc-auth-premium .cz-wallpaper { display: none !important; }
+
+.cc-auth-premium .cz-auth-brand {
+  position: relative;
+  inset: auto;
+  z-index: 2;
+  width: min(100%, 980px);
+  margin: 0 auto;
+  min-height: 72px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--auth-line);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--auth-surface) 88%, transparent);
+  box-shadow: 0 16px 44px rgba(15,23,42,.12);
+  backdrop-filter: blur(18px);
+}
+
+.cc-auth-premium .cz-auth-brand > span {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  background: linear-gradient(135deg, var(--auth-accent), var(--auth-accent-2));
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(124,58,237,.3);
+}
+
+.cc-auth-premium .cz-auth-brand > div { min-width: 0; }
+.cc-auth-premium .cz-auth-brand strong { color: var(--auth-text) !important; font-size: 1.08rem !important; }
+.cc-auth-premium .cz-auth-brand small { color: var(--auth-muted) !important; letter-spacing: .12em; }
+.cc-auth-premium .cz-auth-brand > p { margin-left: auto; display: flex; gap: 8px; }
+
+.cc-auth-premium .cz-auth-theme-switch {
+  margin-left: 8px;
+  display: inline-grid;
+  grid-template-columns: repeat(3, 38px);
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--auth-line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--auth-surface-strong) 72%, transparent);
+}
+
+.cc-auth-premium .cz-auth-theme-switch button {
+  width: 38px !important;
+  min-width: 38px !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  padding: 0 !important;
+  display: grid !important;
+  place-items: center;
+  border: 0 !important;
+  border-radius: 11px !important;
+  background: transparent !important;
+  color: var(--auth-muted) !important;
+  box-shadow: none !important;
+}
+
+.cc-auth-premium .cz-auth-theme-switch button.active {
+  background: linear-gradient(135deg, var(--auth-accent), var(--auth-accent-2)) !important;
+  color: #fff !important;
+}
+
+.cc-auth-premium .cz-login-card {
+  align-self: center;
+  width: min(100%, 540px) !important;
+  min-height: 610px;
+  margin: 0 auto;
+  padding: clamp(22px, 4vw, 34px) !important;
+  border: 1px solid var(--auth-line) !important;
+  border-radius: 28px !important;
+  background: var(--auth-surface) !important;
+  color: var(--auth-text) !important;
+  box-shadow: 0 28px 80px rgba(15,23,42,.18) !important;
+  backdrop-filter: blur(22px);
+}
+
+.cc-auth-premium .cz-login-card h1,
+.cc-auth-premium .cz-login-card label,
+.cc-auth-premium .cz-login-card strong { color: var(--auth-text) !important; }
+.cc-auth-premium .cz-login-card > p,
+.cc-auth-premium .cz-login-card label small { color: var(--auth-muted) !important; }
+
+.cc-auth-premium .cz-tabs {
+  min-height: 48px;
+  padding: 4px;
+  border: 1px solid var(--auth-line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--auth-surface-strong) 76%, transparent);
+}
+
+.cc-auth-premium .cz-tabs button {
+  min-height: 40px !important;
+  border-radius: 12px !important;
+}
+
+.cc-auth-premium .cz-login-card input,
+.cc-auth-premium .cz-login-card select {
+  min-height: 52px !important;
+  border: 1px solid var(--auth-line) !important;
+  border-radius: 15px !important;
+  background: var(--auth-surface-strong) !important;
+  color: var(--auth-text) !important;
+}
+
+.cc-auth-premium .cz-password-field {
+  position: relative !important;
+  display: block !important;
+  width: 100%;
+}
+
+.cc-auth-premium .cz-password-field input {
+  width: 100% !important;
+  padding-right: 58px !important;
+}
+
+.cc-auth-premium .cz-password-toggle {
+  position: absolute !important;
+  top: 50% !important;
+  right: 5px !important;
+  width: 42px !important;
+  min-width: 42px !important;
+  height: 42px !important;
+  min-height: 42px !important;
+  transform: translateY(-50%) !important;
+  display: grid !important;
+  place-items: center;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+  color: var(--auth-muted) !important;
+  box-shadow: none !important;
+  z-index: 2;
+}
+
+.cc-auth-premium .cz-password-toggle svg { width: 21px; height: 21px; }
+.cc-auth-premium .cz-primary,
+.cc-auth-premium .cz-secondary { min-height: 52px !important; border-radius: 16px !important; }
+
+.cc-auth-premium .cz-auth-footer {
+  position: relative;
+  inset: auto;
+  width: min(100%, 980px);
+  margin: 0 auto;
+  color: var(--auth-muted) !important;
+}
+
+@media (max-width: 640px) {
+  .cz-auth.cc-auth-premium { padding: 12px; gap: 14px; }
+  .cc-auth-premium .cz-auth-brand { min-height: 62px; padding: 10px 12px; border-radius: 18px; }
+  .cc-auth-premium .cz-auth-brand > p { display: none; }
+  .cc-auth-premium .cz-auth-theme-switch { margin-left: auto; grid-template-columns: repeat(3, 34px); }
+  .cc-auth-premium .cz-auth-theme-switch button { width: 34px !important; min-width: 34px !important; height: 34px !important; min-height: 34px !important; }
+  .cc-auth-premium .cz-login-card { min-height: 0; padding: 20px 16px !important; border-radius: 22px !important; }
+  .cc-auth-premium .cz-login-card footer { gap: 8px 12px; }
+  .cc-auth-premium .cz-auth-link { min-height: 44px !important; }
+}
+
+@media (max-width: 380px) {
+  .cc-auth-premium .cz-auth-brand small { display: none; }
+  .cc-auth-premium .cz-auth-theme-switch { grid-template-columns: repeat(3, 32px); }
+  .cc-auth-premium .cz-auth-theme-switch button { width: 32px !important; min-width: 32px !important; }
+}

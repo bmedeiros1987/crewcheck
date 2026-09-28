@@ -1,0 +1,20 @@
+name: P-1 Auth delivery message index
+
+on:
+  pull_request:
+    paths:
+      - 'migrations/20260812_015_p1_auth_verification_artifacts.sql'
+      - 'migrations/20260814_016_p1_auth_delivery_message_index.sql'
+      - 'scripts/regression-p1-auth-delivery-message-index.mjs'
+      - '.github/workflows/p1-auth-delivery-message-index.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/regression-p1-auth-delivery-message-index.mjs

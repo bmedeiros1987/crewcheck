@@ -1,0 +1,98 @@
+function parsedRouteMinutes(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.round(value);
+  const text = String(value || '').trim().toLowerCase().replace(',', '.');
+  if (!text) return 0;
+  const colon = text.match(/\b(\d{1,2}):(\d{2})\b/);
+  if (colon) return Number(colon[1]) * 60 + Number(colon[2]);
+  const hours = Number(text.match(/(\d+(?:\.\d+)?)\s*(?:h|hora|horas|hour|hours)\b/)?.[1] || 0);
+  const minutes = Number(text.match(/(\d+)\s*(?:min|mins|minuto|minutos|minute|minutes)\b/)?.[1] || 0);
+  if (hours || minutes) return Math.round(hours * 60 + minutes);
+  const compact = text.match(/\b(\d{1,2})h\s*(\d{1,2})\b/);
+  if (compact) return Number(compact[1]) * 60 + Number(compact[2]);
+  const bare = text.match(/^\s*(\d{1,3})\s*$/);
+  return bare ? Number(bare[1]) : 0;
+}
+
+function routeDurationMinutes(route: RoutePreviewInfo | null): number {
+  if (!route) return 0;
+  const seconds = [route.durationInTrafficSeconds, route.durationSeconds]
+    .map(Number)
+    .find((value) => Number.isFinite(value) && value > 0);
+  if (seconds) return Math.max(1, Math.ceil(seconds / 60));
+  const numericMinutes = [route.durationInTrafficMinutes, route.durationMinutes]
+    .map(Number)
+    .find((value) => Number.isFinite(value) && value > 0);
+  if (numericMinutes) return Math.max(1, Math.round(numericMinutes));
+  const parsed = parsedRouteMinutes(route.durationInTrafficText || route.durationText);
+  if (parsed > 0) return parsed;
+  const distanceKm = Number(route.distanceMeters || 0) / 1000;
+  if (distanceKm > 0) return Math.max(15, Math.min(180, Math.ceil((distanceKm / 28) * 60)));
+  return 0;
+}
+
+function departureTravelCacheKey(event: ZeroLeg): string {
+  const origin = eventRouteOrigin(event).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 48);
+  const airport = String(event.origin || event.destination || 'airport').trim().toUpperCase();
+  return `crewcheck_departure_travel_v1406:${origin}:${airport}`;
+}
+
+function readDepartureTravelMinutes(event: ZeroLeg): number {
+  const value = Number(storage.get(departureTravelCacheKey(event), '0'));
+  return Number.isFinite(value) && value >= 5 && value <= 300 ? Math.round(value) : 0;
+}
+
+function saveDepartureTravelMinutes(event: ZeroLeg, minutes: number): void {
+  if (!Number.isFinite(minutes) || minutes < 5 || minutes > 300) return;
+  storage.set(departureTravelCacheKey(event), String(Math.round(minutes)));
+  storage.set(`${departureTravelCacheKey(event)}:updatedAt`, new Date().toISOString());
+}
+
+function defaultDepartureTravelMinutes(): number {
+  const configured = Number(storage.get('crewcheck_departure_default_travel_minutes', '35'));
+  return Number.isFinite(configured) ? Math.max(15, Math.min(180, Math.round(configured))) : 35;
+}
+
+type SmartDepartureEstimate = {
+  leaveDate: Date;
+  leaveLabel: string;
+  presentationDate: Date;
+  presentationLabel: string;
+  travelMinutes: number;
+  marginMinutes: number;
+  leadMinutes: number;
+  source: 'live' | 'cached' | 'estimated';
+  sourceLabel: string;
+  travelLabel: string;
+};
+
+function smartDepartureEstimate(event: ZeroLeg, route: RoutePreviewInfo | null, margin: number): SmartDepartureEstimate {
+  const liveMinutes = routeDurationMinutes(route);
+  if (liveMinutes > 0) saveDepartureTravelMinutes(event, liveMinutes);
+  const cachedMinutes = readDepartureTravelMinutes(event);
+  const travelMinutes = liveMinutes || cachedMinutes || defaultDepartureTravelMinutes();
+  const source: SmartDepartureEstimate['source'] = liveMinutes ? 'live' : cachedMinutes ? 'cached' : 'estimated';
+  const marginMinutes = Math.max(0, Math.min(180, Number.isFinite(Number(margin)) ? Math.round(Number(margin)) : 35));
+  const hasPublishedPresentation = /^\d{1,2}:\d{2}$/.test(String(event.presentation || '').trim());
+  const hasDeparture = /^\d{1,2}:\d{2}$/.test(String(event.departure || '').trim());
+  const clock = hasPublishedPresentation ? event.presentation : hasDeparture ? event.departure : '';
+  const presentationDate = eventClockDate(event, clock);
+  if (!hasPublishedPresentation && hasDeparture) presentationDate.setMinutes(presentationDate.getMinutes() - 60);
+  const leadMinutes = Math.max(45, travelMinutes + marginMinutes);
+  let leaveDate = new Date(presentationDate.getTime() - leadMinutes * 60_000);
+  if (!Number.isFinite(leaveDate.getTime()) || leaveDate.getTime() >= presentationDate.getTime()) {
+    leaveDate = new Date(presentationDate.getTime() - 45 * 60_000);
+  }
+  const formatTime = (value: Date) => new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(value);
+  return {
+    leaveDate,
+    leaveLabel: formatTime(leaveDate),
+    presentationDate,
+    presentationLabel: formatTime(presentationDate),
+    travelMinutes,
+    marginMinutes,
+    leadMinutes,
+    source,
+    sourceLabel: source === 'live' ? 'Trânsito atualizado' : source === 'cached' ? 'Último trajeto confirmado' : 'Estimativa protegida',
+    travelLabel: travelMinutes >= 60 ? `${Math.floor(travelMinutes / 60)} h ${travelMinutes % 60 ? `${travelMinutes % 60} min` : ''}`.trim() : `${travelMinutes} min`,
+  };
+}

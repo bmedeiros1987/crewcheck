@@ -1,0 +1,70 @@
+/* CrewCheck v14.3.17 — hardening visual global, carregado por último. */
+:root{
+  --cc-gap-1:4px;--cc-gap-2:8px;--cc-gap-3:12px;--cc-gap-4:16px;--cc-gap-5:20px;--cc-gap-6:24px;
+  --cc-radius-input:14px;--cc-radius-button:16px;--cc-radius-card:22px;
+  --cc-control-height:50px;--cc-bottom-safe:calc(104px + env(safe-area-inset-bottom,0px));
+}
+html{color-scheme:light dark}body{overflow-x:hidden}button,input,select,textarea{font:inherit}button,a,[role="button"]{min-width:0}button svg,a svg{flex:none}.cc-page,.cc-shell,main{padding-bottom:max(var(--cc-bottom-safe),env(safe-area-inset-bottom,0px))}
+
+/* Controles: mesma altura, espaçamento e alinhamento em todo o sistema. */
+button:not(.cc-icon-only):not([aria-label="Fechar"]),a[class*="button"],a[class*="btn"],input:not([type="checkbox"]):not([type="radio"]),select{
+  min-height:var(--cc-control-height);border-radius:var(--cc-radius-button);box-sizing:border-box
+}
+button,a[class*="button"],a[class*="btn"]{align-items:center;justify-content:center;gap:var(--cc-gap-2);line-height:1.2;text-align:center;white-space:normal}
+input:not([type="checkbox"]):not([type="radio"]),select,textarea{padding:12px 14px;line-height:1.35}
+textarea{min-height:96px;border-radius:var(--cc-radius-input)}
+form,.cc-form,[class*="form-grid"],[class*="action-grid"],[class*="button-grid"],[class*="actions"]{gap:var(--cc-gap-3)}
+[class*="card"],[class*="panel"],[class*="section"]{scroll-margin-top:84px}
+
+/* Navegação fixa nunca cobre o último card. */
+nav[class*="bottom"],[class*="bottom-nav"],[class*="mobile-nav"]{padding-bottom:max(10px,env(safe-area-inset-bottom,0px));box-sizing:border-box}
+
+/* Tema escuro coerente. */
+:root,[data-crewcheck-theme="dark"]{
+  --cc-page-bg:#061426;--cc-surface:#0b2038;--cc-surface-2:#102a46;--cc-surface-3:#153451;
+  --cc-text:#f8fafc;--cc-muted:#c6d4e1;--cc-line:#31506e;--cc-input:#071a2e;--cc-shadow:0 18px 44px rgba(0,0,0,.25)
+}
+
+/* Tema claro explícito e automático. O seletor amplo corrige componentes antigos com cores hardcoded. */
+[data-crewcheck-theme="light"]{
+  color-scheme:light;--cc-page-bg:#eef5fa;--cc-surface:#ffffff;--cc-surface-2:#f7fbfe;--cc-surface-3:#eaf3f9;
+  --cc-text:#10283c;--cc-muted:#50697d;--cc-line:#bfd0dc;--cc-input:#ffffff;--cc-shadow:0 14px 36px rgba(31,62,84,.12)
+}
+@media(prefers-color-scheme:light){
+  html:not([data-crewcheck-theme="dark"]){color-scheme:light;--cc-page-bg:#eef5fa;--cc-surface:#ffffff;--cc-surface-2:#f7fbfe;--cc-surface-3:#eaf3f9;--cc-text:#10283c;--cc-muted:#50697d;--cc-line:#bfd0dc;--cc-input:#ffffff;--cc-shadow:0 14px 36px rgba(31,62,84,.12)}
+}
+
+[data-crewcheck-theme="light"] body,
+@media(prefers-color-scheme:light){html:not([data-crewcheck-theme="dark"]) body{background:var(--cc-page-bg)!important;color:var(--cc-text)!important}}
+
+[data-crewcheck-theme="light"] :is(.cc-control-card,.cc-control-hero,.cc-life-ai-hero,.cc-life-ai-recommendation,.cc-life-ai-actions,.cc-life-gym-checkin,.cc-life-ai-collapsible,.cc-life-ai-privacy,.cc-life-ai-dashboard article,.cc-life-day-shell,.cc-routine-daily,.cc-about-card,.cc-about-founder,[class*="premium-card"],[class*="metric-card"],[class*="alert-card"],[class*="roster-card"],[class*="routine-card"],[class*="departure-card"],[class*="radar-card"],[class*="hospital-card"],[class*="gym-card"]),
+@media(prefers-color-scheme:light){html:not([data-crewcheck-theme="dark"]) :is(.cc-control-card,.cc-control-hero,.cc-life-ai-hero,.cc-life-ai-recommendation,.cc-life-ai-actions,.cc-life-gym-checkin,.cc-life-ai-collapsible,.cc-life-ai-privacy,.cc-life-ai-dashboard article,.cc-life-day-shell,.cc-routine-daily,.cc-about-card,.cc-about-founder,[class*="premium-card"],[class*="metric-card"],[class*="alert-card"],[class*="roster-card"],[class*="routine-card"],[class*="departure-card"],[class*="radar-card"],[class*="hospital-card"],[class*="gym-card"]){background:var(--cc-surface)!important;color:var(--cc-text)!important;border-color:var(--cc-line)!important;box-shadow:var(--cc-shadow)!important}}
+
+[data-crewcheck-theme="light"] :is(h1,h2,h3,h4,strong,label,[class*="title"],[class*="value"]),
+@media(prefers-color-scheme:light){html:not([data-crewcheck-theme="dark"]) :is(h1,h2,h3,h4,strong,label,[class*="title"],[class*="value"]){color:var(--cc-text)!important}}
+[data-crewcheck-theme="light"] :is(p,small,[class*="subtitle"],[class*="muted"],[class*="description"]),
+@media(prefers-color-scheme:light){html:not([data-crewcheck-theme="dark"]) :is(p,small,[class*="subtitle"],[class*="muted"],[class*="description"]){color:var(--cc-muted)!important}}
+[data-crewcheck-theme="light"] :is(input,select,textarea),
+@media(prefers-color-scheme:light){html:not([data-crewcheck-theme="dark"]) :is(input,select,textarea){background:var(--cc-input)!important;color:var(--cc-text)!important;border-color:var(--cc-line)!important}}
+[data-crewcheck-theme="light"] :is(button:not(.cc-primary),a[class*="button"]:not(.cc-primary),a[class*="btn"]:not(.cc-primary)),
+@media(prefers-color-scheme:light){html:not([data-crewcheck-theme="dark"]) :is(button:not(.cc-primary),a[class*="button"]:not(.cc-primary),a[class*="btn"]:not(.cc-primary)){background:var(--cc-surface-2)!important;color:var(--cc-text)!important;border-color:var(--cc-line)!important}}
+
+/* Cabeçalhos/hero podem manter identidade, mas nunca texto preto sobre fundo escuro. */
+:is(.cc-control-hero,[class*="hero"][class*="dark"],[class*="banner"][class*="dark"]){color:#f8fafc}
+:is(.cc-control-hero,[class*="hero"][class*="dark"],[class*="banner"][class*="dark"]) :is(h1,h2,h3,strong){color:#fff!important}
+:is(.cc-control-hero,[class*="hero"][class*="dark"],[class*="banner"][class*="dark"]) :is(p,small){color:#d8e5ef!important}
+
+/* Tablet/iPad: ações respiram e nunca ficam amontoadas. */
+@media(min-width:700px) and (max-width:1180px){
+  [class*="action-grid"],[class*="button-grid"]{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  [class*="form-grid"]{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  [class*="actions"]>button,[class*="actions"]>a{min-width:160px}
+}
+@media(max-width:699px){
+  [class*="action-grid"],[class*="button-grid"],[class*="form-grid"]{grid-template-columns:1fr!important}
+  [class*="actions"]{display:grid!important;grid-template-columns:1fr!important}
+  [class*="actions"]>button,[class*="actions"]>a{width:100%}
+}
+
+/* Estado de foco acessível. */
+:is(button,a,input,select,textarea):focus-visible{outline:3px solid rgba(14,165,233,.45)!important;outline-offset:2px!important}

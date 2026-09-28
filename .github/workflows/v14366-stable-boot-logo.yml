@@ -1,0 +1,29 @@
+name: CrewCheck v14.3.66 stable boot
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/v14365/apply.mjs'
+      - 'scripts/v14366/**'
+      - 'scripts/regression-v14-3-66-stable-boot-logo.mjs'
+      - 'client/src/App.tsx'
+      - 'client/index.html'
+      - 'client/src/index.css'
+      - '.github/workflows/v14366-stable-boot-logo.yml'
+  workflow_dispatch:
+
+jobs:
+  stable-boot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical source and build Web
+        run: npm run build
+      - name: Validate stable boot contract
+        run: node scripts/regression-v14-3-66-stable-boot-logo.mjs

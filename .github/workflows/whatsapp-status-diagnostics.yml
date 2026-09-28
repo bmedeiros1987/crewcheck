@@ -1,0 +1,29 @@
+name: CrewCheck WhatsApp delivery diagnostics
+
+on:
+  pull_request:
+    paths:
+      - 'server/whatsapp.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14387c/apply.mjs'
+      - 'scripts/regression-whatsapp-status-diagnostics.mjs'
+      - '.github/workflows/whatsapp-status-diagnostics.yml'
+  push:
+    branches:
+      - fix/whatsapp-status-diagnostics-v6
+
+jobs:
+  whatsapp-status-diagnostics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Safe WhatsApp status regression
+        run: node scripts/regression-whatsapp-status-diagnostics.mjs

@@ -1,0 +1,52 @@
+.cc139-card .cc139-form label:has(> input[type='checkbox']) {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.cc139-card .cc139-form input[type='checkbox'] {
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  min-height: 18px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  accent-color: #22c7e8;
+}
+
+.cc139-card .cc139-form select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid rgba(83, 199, 231, .28);
+  border-radius: 12px;
+  background: rgba(3, 20, 37, .82);
+  color: #edfaff;
+  padding: 0 12px;
+}
+
+.cc139-delivery-report {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid rgba(64, 213, 151, .34);
+  border-radius: 14px;
+  background: rgba(25, 116, 81, .14);
+}
+
+.cc139-delivery-report ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cc139-delivery-report li.ok { color: #9cf4c9; }
+.cc139-delivery-report li.failed { color: #ffb8b8; }
+.cc139-delivery-report small { color: #b9ceda; }
+
+@media (max-width: 720px) {
+  .cc139-delivery-report .primary { width: 100%; }
+}

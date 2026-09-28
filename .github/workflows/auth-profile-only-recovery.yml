@@ -1,0 +1,35 @@
+name: Auth profile-only recovery
+
+on:
+  pull_request:
+    paths:
+      - 'server/v139/auth.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14396/apply.mjs'
+      - 'scripts/regression-auth-profile-only-recovery.mjs'
+      - '.github/workflows/auth-profile-only-recovery.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'server/v139/auth.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14396/apply.mjs'
+      - 'scripts/regression-auth-profile-only-recovery.mjs'
+      - '.github/workflows/auth-profile-only-recovery.yml'
+
+jobs:
+  profile-only-recovery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Apply auth migration slice
+        run: node scripts/v14396/apply.mjs
+      - name: Syntax check
+        run: node --check server/v139/auth.mjs && node --check scripts/v14396/apply.mjs
+      - name: Recovery identity contract
+        run: node scripts/regression-auth-profile-only-recovery.mjs
+      - name: Idempotence
+        run: node scripts/v14396/apply.mjs && node scripts/regression-auth-profile-only-recovery.mjs

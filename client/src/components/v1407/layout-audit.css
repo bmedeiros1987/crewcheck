@@ -1,0 +1,836 @@
+/* CrewCheck v14.0.7 — auditoria visual transversal para mobile, tablet e desktop */
+
+:root {
+  --cc-audit-max: 1180px;
+  --cc-audit-radius: 24px;
+  --cc-audit-radius-small: 16px;
+  --cc-audit-border: rgba(89, 195, 231, .22);
+  --cc-audit-surface: linear-gradient(150deg, rgba(10, 38, 61, .96), rgba(7, 24, 43, .98));
+  --cc-audit-surface-soft: rgba(14, 49, 74, .72);
+  --cc-audit-shadow: 0 22px 58px rgba(0, 0, 0, .24), inset 0 1px rgba(255, 255, 255, .045);
+  --cc-audit-muted: #9cb3c5;
+}
+
+html[data-crew-theme="light"] {
+  --cc-audit-border: rgba(32, 107, 151, .18);
+  --cc-audit-surface: linear-gradient(150deg, rgba(255, 255, 255, .99), rgba(237, 247, 252, .99));
+  --cc-audit-surface-soft: rgba(236, 247, 253, .92);
+  --cc-audit-shadow: 0 22px 52px rgba(30, 67, 92, .13), inset 0 1px #fff;
+  --cc-audit-muted: #567084;
+}
+
+html,
+body,
+#root,
+.cz-app {
+  width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+}
+
+.cz-app {
+  padding-bottom: calc(148px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+.cz-app :where(section, article, header, footer, div, button, label, span) {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.cz-app :where(h1, h2, h3, h4, p, small, strong, b, em, span, button, label) {
+  writing-mode: horizontal-tb !important;
+  word-break: normal !important;
+  hyphens: none !important;
+}
+
+.cz-app :where(p, small, .cz-roster-copy, .cz-panel-head, .cz-toolbox, .cc139-card) {
+  overflow-wrap: break-word;
+}
+
+.cz-panel-head,
+.cz-toolbox,
+.cz-alert-stack,
+.cz-alert-detail,
+.cz-stack-list,
+.cz-hotel-stays,
+.cz-hotel-finder,
+.cz-manual-hotel-form,
+.cc139-head,
+.cc139-grid,
+.cc139-card,
+.cc139-list,
+.cz-money-panel,
+.cz-smart-card,
+.cz-departure {
+  width: min(100%, var(--cc-audit-max)) !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.cz-panel-head {
+  padding: clamp(20px, 4vw, 32px) !important;
+  border: 1px solid var(--cc-audit-border) !important;
+  border-radius: clamp(22px, 4vw, 32px) !important;
+  background: var(--cc-audit-surface) !important;
+  box-shadow: var(--cc-audit-shadow) !important;
+  overflow: hidden !important;
+}
+
+.cz-panel-head h1 {
+  margin: 0 0 12px !important;
+  font-size: clamp(2rem, 7vw, 3.25rem) !important;
+  line-height: 1.03 !important;
+  letter-spacing: -.045em !important;
+}
+
+.cz-panel-head p {
+  max-width: 68ch;
+  margin: 0 !important;
+  color: var(--cc-audit-muted) !important;
+  font-size: clamp(.98rem, 3.4vw, 1.14rem) !important;
+  line-height: 1.55 !important;
+}
+
+/* Alertas: hierarquia, severidade e confiança sem textos colados. */
+.cz-alert-stack {
+  display: grid !important;
+  gap: 14px !important;
+  margin-block: 18px !important;
+}
+
+.cz-alert-stack > article {
+  position: relative;
+  display: grid !important;
+  grid-template-columns: 52px minmax(0, 1fr) 22px !important;
+  align-items: start !important;
+  gap: 14px !important;
+  padding: clamp(17px, 4vw, 23px) !important;
+  border: 1px solid var(--cc-audit-border) !important;
+  border-radius: 24px !important;
+  background: var(--cc-audit-surface) !important;
+  box-shadow: var(--cc-audit-shadow) !important;
+  overflow: hidden !important;
+}
+
+.cz-alert-stack > article::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  background: linear-gradient(180deg, #f59e0b, #fb7185);
+}
+
+.cz-alert-stack > article.danger::before {
+  background: linear-gradient(180deg, #fb7185, #ef4444);
+}
+
+.cz-alert-stack > article > svg:first-child {
+  width: 48px !important;
+  height: 48px !important;
+  padding: 11px;
+  border: 1px solid rgba(245, 158, 11, .28);
+  border-radius: 16px;
+  background: rgba(245, 158, 11, .1);
+  color: #fbbf24;
+}
+
+.cz-alert-stack > article.danger > svg:first-child {
+  border-color: rgba(251, 113, 133, .3);
+  background: rgba(251, 113, 133, .11);
+  color: #fb7185;
+}
+
+.cz-alert-stack > article > div {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 8px 10px !important;
+}
+
+.cz-alert-stack h2,
+.cz-alert-stack p {
+  flex: 1 0 100%;
+  width: 100%;
+}
+
+.cz-alert-stack h2 {
+  margin: 0 !important;
+  color: var(--cc-text, #f8fbff) !important;
+  font-size: clamp(1.04rem, 3.8vw, 1.32rem) !important;
+  line-height: 1.28 !important;
+}
+
+.cz-alert-stack p {
+  margin: 2px 0 5px !important;
+  color: var(--cc-audit-muted) !important;
+  font-size: clamp(.92rem, 3.35vw, 1.05rem) !important;
+  line-height: 1.48 !important;
+}
+
+.cz-alert-stack article span,
+.cz-alert-stack article b {
+  display: inline-flex !important;
+  align-items: center;
+  width: auto !important;
+  min-height: 30px;
+  margin: 0 !important;
+  padding: 6px 10px !important;
+  border-radius: 999px;
+  font-size: .78rem !important;
+  line-height: 1 !important;
+  white-space: nowrap;
+}
+
+.cz-alert-stack article span {
+  background: rgba(245, 158, 11, .12);
+  color: #fbbf24 !important;
+}
+
+.cz-alert-stack article.danger span {
+  background: rgba(251, 113, 133, .12);
+  color: #fda4af !important;
+}
+
+.cz-alert-stack article b {
+  border: 1px solid var(--cc-audit-border);
+  background: rgba(77, 187, 221, .08);
+  color: var(--cc-text, #effaff) !important;
+}
+
+.cz-alert-stack > article > svg:last-child {
+  align-self: center;
+  color: var(--cc-audit-muted);
+}
+
+.cz-alert-detail {
+  display: grid !important;
+  gap: 16px;
+  padding: clamp(18px, 4vw, 28px) !important;
+  border: 1px solid var(--cc-audit-border) !important;
+  border-radius: 26px !important;
+  background: var(--cc-audit-surface) !important;
+  box-shadow: var(--cc-audit-shadow) !important;
+  overflow: hidden !important;
+}
+
+.cz-alert-detail > h2 {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 !important;
+}
+
+.cz-alert-detail > h2 > b {
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: rgba(139, 92, 246, .15);
+  color: #d8b4fe;
+  font-size: .8rem;
+}
+
+.cz-alert-detail > div {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+.cz-alert-detail > div > p {
+  display: grid !important;
+  gap: 10px;
+  margin: 0 !important;
+  padding: 17px !important;
+  border: 1px solid var(--cc-audit-border);
+  border-radius: 18px;
+  background: var(--cc-audit-surface-soft);
+  color: var(--cc-audit-muted) !important;
+  line-height: 1.5 !important;
+}
+
+.cz-alert-detail > div > p strong {
+  color: var(--cc-text, #f7fbff) !important;
+  font-size: .78rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.cz-alert-detail footer {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.cz-alert-detail footer button {
+  min-height: 48px !important;
+  border-radius: 15px !important;
+}
+
+/* Financeiro: conteúdo ocupa toda a largura do card. */
+.cz-money-panel {
+  display: grid !important;
+  gap: 14px !important;
+  margin-block: 20px !important;
+}
+
+.cz-money-row {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+  width: 100% !important;
+}
+
+.cz-money-card {
+  display: grid !important;
+  grid-template-columns: 50px minmax(0, 1fr) 22px !important;
+  align-items: center !important;
+  justify-content: stretch !important;
+  gap: 13px !important;
+  width: 100% !important;
+  min-height: 126px !important;
+  padding: 18px !important;
+  border: 1px solid var(--cc-audit-border) !important;
+  border-radius: 22px !important;
+  background: var(--cc-audit-surface) !important;
+  box-shadow: var(--cc-audit-shadow) !important;
+  text-align: left !important;
+  overflow: hidden !important;
+}
+
+.cz-money-card > span:first-child {
+  display: grid !important;
+  place-items: center !important;
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 16px !important;
+  background: linear-gradient(135deg, rgba(139, 92, 246, .25), rgba(34, 211, 238, .18)) !important;
+}
+
+.cz-money-card > div {
+  display: grid !important;
+  gap: 6px !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+}
+
+.cz-money-card > div > small {
+  display: block !important;
+  width: 100% !important;
+  color: var(--cc-audit-muted) !important;
+  font-size: .86rem !important;
+  line-height: 1.42 !important;
+}
+
+.cz-money-card > div > strong {
+  display: block !important;
+  width: 100% !important;
+  color: var(--cc-text, #f8fbff) !important;
+  font-size: clamp(1.65rem, 5.4vw, 2.45rem) !important;
+  line-height: 1.05 !important;
+  white-space: nowrap;
+}
+
+.cz-money-card > svg:last-child {
+  width: 22px;
+  color: var(--cc-audit-muted);
+}
+
+/* Saída Inteligente: sem sobreposição entre horário, status, origem e trânsito. */
+.cz-smart-card {
+  border: 1px solid var(--cc-audit-border) !important;
+  border-radius: 28px !important;
+  background: var(--cc-audit-surface) !important;
+  box-shadow: var(--cc-audit-shadow) !important;
+  overflow: hidden !important;
+}
+
+.cz-smart-content {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-template-areas:
+    "time status"
+    "route route"
+    "source source" !important;
+  align-items: center !important;
+  gap: 11px 14px !important;
+  padding: clamp(18px, 4.5vw, 26px) !important;
+  overflow: hidden !important;
+}
+
+.cz-smart-content > strong {
+  grid-area: time;
+  min-width: 0;
+  font-size: clamp(3rem, 12vw, 5rem) !important;
+  line-height: .94 !important;
+  white-space: nowrap;
+}
+
+.cz-smart-content > em {
+  grid-area: status;
+  justify-self: end;
+  width: max-content !important;
+  max-width: 100%;
+  padding: 8px 13px !important;
+  border: 1px solid rgba(45, 212, 191, .34) !important;
+  border-radius: 999px !important;
+  background: rgba(45, 212, 191, .1) !important;
+  color: var(--cc-text, #f8fbff) !important;
+  font-size: .78rem !important;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.cz-smart-content > p {
+  grid-area: route;
+  width: 100% !important;
+  margin: 0 !important;
+  color: var(--cc-audit-muted) !important;
+  font-size: clamp(.98rem, 3.8vw, 1.18rem) !important;
+  line-height: 1.38 !important;
+}
+
+.cz-smart-content > div {
+  grid-area: source;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  flex-wrap: wrap !important;
+  gap: 7px 14px !important;
+  width: 100% !important;
+}
+
+.cz-smart-content > div small,
+.cz-smart-content > div b {
+  display: block !important;
+  margin: 0 !important;
+  color: var(--cc-audit-muted) !important;
+  font-size: .82rem !important;
+  line-height: 1.35 !important;
+}
+
+.cz-smart-content > div b {
+  color: var(--cc-text, #f7fbff) !important;
+}
+
+/* Hotéis e apresentação: cards legíveis e campos horizontais. */
+.cz-hotel-finder,
+.cz-manual-hotel-form,
+.cz-hotel-stay-card,
+.cc139-card,
+.cc139-grid > article {
+  border: 1px solid var(--cc-audit-border) !important;
+  background: var(--cc-audit-surface) !important;
+  box-shadow: var(--cc-audit-shadow) !important;
+}
+
+.cz-search-row {
+  display: grid !important;
+  grid-template-columns: minmax(240px, 1fr) auto auto !important;
+  gap: 10px !important;
+  align-items: stretch !important;
+}
+
+.cz-hotel-catalog-results {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 11px !important;
+}
+
+.cz-hotel-catalog-results > article {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto auto !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 14px !important;
+  border: 1px solid var(--cc-audit-border) !important;
+  border-radius: 18px !important;
+  background: var(--cc-audit-surface-soft) !important;
+  overflow: hidden !important;
+}
+
+.cz-hotel-catalog-results > article > div:first-child {
+  display: grid !important;
+  grid-template-columns: 44px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 11px !important;
+}
+
+.cz-hotel-catalog-results :where(strong, small, b) {
+  overflow-wrap: break-word !important;
+  writing-mode: horizontal-tb !important;
+}
+
+.cz-hotel-stays {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 16px !important;
+  align-items: start !important;
+}
+
+.cz-hotel-stay-card {
+  padding: clamp(17px, 3vw, 23px) !important;
+  border-radius: 26px !important;
+  overflow: hidden !important;
+}
+
+.cz-hotel-stay-card > .cz-roster-main {
+  display: grid !important;
+  grid-template-columns: 54px minmax(0, 1fr) 22px !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+.cz-hotel-stay-card .cz-roster-copy {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.cz-hotel-stay-card .cz-roster-copy h3 {
+  margin: 0 0 4px !important;
+  font-size: clamp(1.25rem, 4vw, 1.65rem) !important;
+  line-height: 1.18 !important;
+}
+
+.cz-hotel-stay-card .cz-detail-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 11px !important;
+  margin-block: 16px !important;
+}
+
+.cz-hotel-stay-card .cz-detail-grid > div {
+  display: grid !important;
+  gap: 8px !important;
+  min-height: 86px !important;
+  padding: 14px !important;
+  border: 1px solid var(--cc-audit-border) !important;
+  border-radius: 17px !important;
+  background: var(--cc-audit-surface-soft) !important;
+  text-align: left !important;
+  overflow: hidden !important;
+}
+
+.cz-hotel-stay-card .cz-detail-grid span {
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--cc-audit-muted) !important;
+  font-size: .72rem !important;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.cz-hotel-stay-card .cz-detail-grid strong {
+  display: block !important;
+  width: 100% !important;
+  color: var(--cc-text, #f8fbff) !important;
+  font-size: 1rem !important;
+  line-height: 1.35 !important;
+  overflow-wrap: break-word !important;
+}
+
+.cz-hotel-stay-card .cz-tool-actions {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 9px !important;
+}
+
+.cc139-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+.cc139-grid > article {
+  min-height: 112px !important;
+  padding: 17px !important;
+  border-radius: 20px !important;
+}
+
+.cc139-form {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+.cc139-form label,
+.cc139-form label.wide {
+  min-width: 0 !important;
+}
+
+.cc139-form label.wide {
+  grid-column: 1 / -1 !important;
+}
+
+.cc139-form label > svg {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+.cc139-form :where(input, select, textarea) {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 48px !important;
+}
+
+.cc139-choices {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.cc139-choices > button {
+  display: grid !important;
+  grid-template-columns: 22px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 6px 10px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 88px !important;
+  padding: 14px !important;
+  text-align: left !important;
+  line-height: 1.28 !important;
+  overflow: hidden !important;
+}
+
+.cc139-choices > button > svg {
+  grid-row: 1 / span 2;
+  width: 20px !important;
+  height: 20px !important;
+}
+
+.cc139-choices > button > small {
+  grid-column: 2;
+  color: var(--cc-audit-muted) !important;
+  font-size: .78rem !important;
+  line-height: 1.35 !important;
+}
+
+/* Rotina, apresentação e despertador seguem o mesmo padrão de produto. */
+[data-view="routine"] .cz-finance-grid,
+[data-view="wakeup"] .cz-finance-grid,
+[data-view="presentation"] .cc139-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+[data-view="routine"] .cz-toolbox,
+[data-view="wakeup"] .cz-toolbox,
+[data-view="presentation"] .cc139-card {
+  border-radius: 24px !important;
+  overflow: hidden !important;
+}
+
+[data-view="routine"] .cz-stack-list,
+[data-view="wakeup"] .cz-stack-list {
+  display: grid !important;
+  gap: 12px !important;
+}
+
+[data-view="routine"] .cz-roster-card,
+[data-view="wakeup"] .cz-roster-card {
+  border: 1px solid var(--cc-audit-border) !important;
+  border-radius: 20px !important;
+  background: var(--cc-audit-surface) !important;
+  box-shadow: var(--cc-audit-shadow) !important;
+  overflow: hidden !important;
+}
+
+[data-view="routine"] .cz-tool-actions,
+[data-view="wakeup"] .cz-tool-actions,
+[data-view="presentation"] .cc139-actions {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+  gap: 10px !important;
+}
+
+/* A barra inferior não deve esconder botões ou o fim dos cards. */
+.cz-bottom-nav {
+  max-width: min(100% - 20px, 760px) !important;
+  margin-inline: auto !important;
+  border: 1px solid var(--cc-audit-border) !important;
+  background: rgba(7, 28, 48, .96) !important;
+  box-shadow: 0 20px 55px rgba(0, 0, 0, .38) !important;
+  backdrop-filter: blur(18px) saturate(140%) !important;
+}
+
+html[data-crew-theme="light"] .cz-bottom-nav {
+  background: rgba(248, 253, 255, .96) !important;
+}
+
+@media (max-width: 1024px) {
+  .cz-hotel-stays,
+  .cz-money-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .cc139-choices {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .cz-app {
+    padding-inline: 12px !important;
+    padding-bottom: calc(142px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .cz-panel-head,
+  .cz-toolbox,
+  .cz-alert-detail,
+  .cz-hotel-stay-card,
+  .cc139-card {
+    border-radius: 22px !important;
+  }
+
+  .cz-alert-stack > article {
+    grid-template-columns: 44px minmax(0, 1fr) !important;
+    gap: 12px !important;
+  }
+
+  .cz-alert-stack > article > svg:first-child {
+    width: 42px !important;
+    height: 42px !important;
+    padding: 9px;
+  }
+
+  .cz-alert-stack > article > svg:last-child {
+    display: none;
+  }
+
+  .cz-alert-detail > div,
+  .cz-alert-detail footer,
+  .cz-search-row,
+  .cz-hotel-catalog-results > article,
+  .cz-hotel-stay-card .cz-detail-grid,
+  .cz-hotel-stay-card .cz-tool-actions,
+  .cc139-grid,
+  .cc139-form,
+  .cc139-choices,
+  [data-view="routine"] .cz-finance-grid,
+  [data-view="wakeup"] .cz-finance-grid,
+  [data-view="presentation"] .cc139-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .cc139-form label.wide {
+    grid-column: auto !important;
+  }
+
+  .cz-hotel-catalog-results > article > b {
+    justify-self: start !important;
+  }
+
+  .cz-hotel-catalog-results > article .cz-tool-actions {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    width: 100% !important;
+  }
+
+  .cz-money-card {
+    grid-template-columns: 44px minmax(0, 1fr) 18px !important;
+    min-height: 112px !important;
+    padding: 16px !important;
+  }
+
+  .cz-money-card > span:first-child {
+    width: 42px !important;
+    height: 42px !important;
+  }
+
+  .cz-money-card > div > strong {
+    font-size: clamp(1.55rem, 8vw, 2.2rem) !important;
+  }
+
+  .cz-smart-content {
+    grid-template-columns: 1fr !important;
+    grid-template-areas:
+      "time"
+      "status"
+      "route"
+      "source" !important;
+  }
+
+  .cz-smart-content > em {
+    justify-self: start !important;
+  }
+
+  .cz-smart-content > div {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    justify-items: start !important;
+  }
+
+  .cz-hotel-stay-card > .cz-roster-main {
+    grid-template-columns: 48px minmax(0, 1fr) 18px !important;
+  }
+
+  [data-view="routine"] .cz-tool-actions,
+  [data-view="wakeup"] .cz-tool-actions,
+  [data-view="presentation"] .cc139-actions {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .cz-app {
+    padding-inline: 9px !important;
+  }
+
+  .cz-panel-head {
+    padding: 19px !important;
+  }
+
+  .cz-panel-head h1 {
+    font-size: clamp(1.85rem, 10vw, 2.35rem) !important;
+  }
+
+  .cz-alert-stack > article {
+    grid-template-columns: 1fr !important;
+  }
+
+  .cz-alert-stack > article > svg:first-child {
+    width: 40px !important;
+    height: 40px !important;
+  }
+
+  .cz-alert-stack article span,
+  .cz-alert-stack article b {
+    white-space: normal;
+  }
+
+  .cz-money-panel-head {
+    align-items: flex-start !important;
+  }
+
+  .cz-money-visibility span {
+    display: none !important;
+  }
+
+  .cz-money-card {
+    grid-template-columns: 40px minmax(0, 1fr) 16px !important;
+    gap: 10px !important;
+    padding: 14px !important;
+  }
+
+  .cz-money-card > span:first-child {
+    width: 38px !important;
+    height: 38px !important;
+  }
+
+  .cz-money-card > div > strong {
+    font-size: clamp(1.35rem, 8vw, 1.9rem) !important;
+  }
+
+  .cz-bottom-nav {
+    max-width: calc(100% - 12px) !important;
+  }
+}

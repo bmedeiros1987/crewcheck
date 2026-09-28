@@ -1,0 +1,23 @@
+name: P-1 Auth artifact helpers
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/v14398/**'
+      - 'scripts/v14397/apply.mjs'
+      - 'scripts/regression-p1-auth-artifact-helpers.mjs'
+      - '.github/workflows/p1-auth-artifact-helpers.yml'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/regression-p1-auth-artifact-helpers.mjs
+      - run: node scripts/v139/apply.mjs
+      - run: node --check server/v139/auth.mjs
+      - run: node scripts/regression-p1-auth-artifact-helpers.mjs

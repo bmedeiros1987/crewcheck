@@ -1,0 +1,161 @@
+services:
+  - type: web
+    name: crewcheck-premium
+    runtime: node
+    plan: free
+    branch: main
+    autoDeployTrigger: commit
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: DATABASE_URL
+        sync: false
+      - key: MYSQL_SSL_MODE
+        value: REQUIRED
+      - key: CREWCHECK_AUTO_MIGRATE
+        value: true
+      - key: CREWCHECK_AUTH_REQUIRED
+        value: true
+      - key: CREWCHECK_EMAIL_PROVIDER
+        value: mailersend
+      - key: CREWCHECK_EMAIL_FROM_LOCK
+        value: contato@crewcheck.com.br
+      - key: MAILERSEND_API_KEY
+        sync: false
+      - key: MAILERSEND_FROM
+        value: contato@crewcheck.com.br
+      - key: MAILERSEND_FROM_NAME
+        value: CrewCheck
+      - key: MAILERSEND_WEBHOOK_SECRET
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: CrewCheck
+      - key: CREWCHECK_EMAIL_REPLY_TO
+        sync: false
+      - key: CREWCHECK_EMAIL_BCC
+        sync: false
+      - key: CREWCHECK_EMAIL_FALLBACK_ENABLED
+        value: false
+      - key: CREWCHECK_EMAIL_DISABLE_SMTP
+        value: true
+      - key: ASAAS_API_KEY
+        sync: false
+      - key: ASAAS_WEBHOOK_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      - key: TELEGRAM_PUBLIC_BASE_URL
+        value: https://crewcheck.online
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_BUSINESS_ACCOUNT_ID
+        sync: false
+      - key: WHATSAPP_BUSINESS_NUMBER
+        sync: false
+      - key: CREWCHECK_WHATSAPP_NUMBER
+        sync: false
+      - key: WHATSAPP_GRAPH_VERSION
+        value: v26.0
+      - key: CREWCHECK_WHATSAPP_AUDIT_SALT
+        sync: false
+      - key: GOOGLE_MAPS_SERVER_KEY
+        sync: false
+      - key: GOOGLE_ROUTES_API_KEY
+        sync: false
+      - key: TOMTOM_API_KEY
+        sync: false
+      - key: CREWCHECK_NOTIFICATION_INTERVAL_MS
+        value: 30000
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_WEB_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_WEB_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_OAUTH_REDIRECT_URI
+        value: https://crewcheck.online/api/google-calendar/oauth/callback
+      - key: CREWCHECK_PUBLIC_BASE_URL
+        value: https://crewcheck.online
+      - key: CREWCHECK_AUTH_SECRET
+        sync: false
+      - key: CREWCHECK_GOOGLE_TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: UBER_CLIENT_ID
+        sync: false
+      - key: CREWCHECK_EMERGENCY_ENABLED
+        value: true
+      - key: REDEMET_API_KEY
+        sync: false
+      - key: AISWEB_API_KEY
+        sync: false
+      - key: AISWEB_API_PASS
+        sync: false
+      - key: CREWCHECK_SCHEDULER_SECRET
+        generateValue: true
+      - key: CREWCHECK_WEATHER_MONITOR_ENABLED
+        value: true
+      - key: CREWCHECK_WEATHER_MONITOR_INTERVAL_MINUTES
+        value: 10
+      - key: CREWCHECK_WAKEUP_CALL_PROVIDER
+        value: infobip
+      - key: ELEVENLABS_STT_API_KEY
+        sync: false
+      - key: INFOBIP_API_KEY
+        sync: false
+      - key: INFOBIP_BASE_URL
+        value: https://y4x2z9.api.infobip.com
+      - key: INFOBIP_PHONE_FROM
+        value: "+16728742360"
+      - key: INFOBIP_SUBSCRIPTION_ID
+        sync: false
+      - key: INFOBIP_VOICE_LANGUAGE
+        value: pt-BR
+      - key: CALLMEBOT_MODE
+        sync: false
+      - key: CALLMEBOT_PHONE
+        sync: false
+      - key: CALLMEBOT_API_KEY
+        sync: false
+      - key: CALLMEBOT_TELEGRAM_CALL_USER
+        sync: false
+      - key: CALLMEBOT_TELEGRAM_CALL_ENABLED
+        value: true
+      - key: OAG_ENABLED
+        value: true
+      - key: OAG_EXTRA_ENABLED
+        value: true
+      - key: OAG_FLIGHT_INFO_PRIMARY_KEY
+        sync: false
+      - key: OAG_FLIGHT_INFO_SECONDARY_KEY
+        sync: false
+      - key: OAG_FLIGHT_INFO_CONNECTIONS_PRIMARY_KEY
+        sync: false
+      - key: OAG_FLIGHT_INFO_CONNECTIONS_SECONDARY_KEY
+        sync: false
+      - key: CIRIUM_SKY_BASE_URL
+        value: https://api.sky.cirium.com
+      - key: CIRIUM_SKY_IDENTIFIER
+        sync: false
+      - key: CIRIUM_SKY_API_TOKEN
+        sync: false
+      - key: CIRIUM_SKY_SECRET
+        sync: false
+      - key: CIRIUM_APP_ID
+        sync: false
+      - key: CIRIUM_APP_KEY
+        sync: false
+      - key: EXTRA_FLIGHT_PROVIDER_ORDER
+        value: OAG_CONNECTIONS,OAG_FLIGHT_INFO,SABRE,SERPAPI,SEARCHAPI,AMADEUS

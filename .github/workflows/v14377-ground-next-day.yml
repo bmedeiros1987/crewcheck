@@ -1,0 +1,38 @@
+name: CrewCheck v14.3.77 ground next-day
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/rosterParser.mjs'
+      - 'client/src/lib/aimsParser.ts'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14375/**'
+      - 'scripts/v14376/**'
+      - 'scripts/v14377/**'
+      - 'scripts/regression-v14-3-77-ground-next-day.mjs'
+      - '.github/workflows/v14377-ground-next-day.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ground-next-day:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck source
+        run: node scripts/v139/apply.mjs
+      - name: Regress overnight MCK and RCFI next-day semantics
+        run: node scripts/regression-v14-3-77-ground-next-day.mjs
+      - name: Revalidate multichannel roster trust gate
+        run: node scripts/regression-p0-multichannel-roster-gate.mjs
+      - name: TypeScript check
+        run: npx tsc --noEmit

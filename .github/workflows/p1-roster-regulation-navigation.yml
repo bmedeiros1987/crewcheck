@@ -1,0 +1,67 @@
+name: P1 roster regulation navigation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/components/regulation/RegulationNavigationContext.tsx'
+      - 'client/src/lib/navigationContext.ts'
+      - 'client/src/lib/rosterFocus.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'client/src/components/v1392/ManualRegulationView.tsx'
+      - 'client/src/components/v1392/v1392.css'
+      - 'client/src/components/v1432/ManualRegulationView.tsx'
+      - 'scripts/p1-565-roster-regulation-context/**'
+      - 'scripts/p0-build-identity/apply.mjs'
+      - 'scripts/regression-p1-565-roster-regulation-navigation.mjs'
+      - '.github/workflows/p1-roster-regulation-navigation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/components/regulation/RegulationNavigationContext.tsx'
+      - 'client/src/lib/navigationContext.ts'
+      - 'client/src/lib/rosterFocus.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'client/src/components/v1392/ManualRegulationView.tsx'
+      - 'client/src/components/v1392/v1392.css'
+      - 'client/src/components/v1432/ManualRegulationView.tsx'
+      - 'scripts/p1-565-roster-regulation-context/**'
+      - 'scripts/p0-build-identity/apply.mjs'
+      - 'scripts/regression-p1-565-roster-regulation-navigation.mjs'
+      - '.github/workflows/p1-roster-regulation-navigation.yml'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash -o pipefail {0}
+
+concurrency:
+  group: p1-roster-regulation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Contextual roster regulation round trip
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical client sources
+        run: node scripts/v139/apply.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Shared Navigation Context regression
+        run: node scripts/regression-p1-566-navigation-context.mjs
+      - name: Roster regulation contextual round trip
+        run: node scripts/regression-p1-565-roster-regulation-navigation.mjs
+      - name: Roster focus compatibility
+        run: node scripts/regression-p1-548-dynamic-calendar.mjs

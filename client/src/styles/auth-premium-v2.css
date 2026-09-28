@@ -1,0 +1,284 @@
+/* CrewCheck auth premium v2 — compact, centered, theme-safe */
+.cz-auth {
+  --auth-accent: #7c3aed;
+  --auth-accent-2: #06b6d4;
+  --auth-danger: #ef4444;
+  --auth-card: color-mix(in srgb, var(--cc-surface, #ffffff) 92%, transparent);
+  --auth-line: color-mix(in srgb, var(--cc-text, #0f172a) 13%, transparent);
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 18px;
+  padding: max(24px, env(safe-area-inset-top)) 18px max(24px, env(safe-area-inset-bottom));
+  color: var(--cc-text, #0f172a);
+}
+
+.cz-auth-brand {
+  width: min(100%, 520px);
+  display: grid !important;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: 0 auto;
+}
+
+.cz-auth-brand > span {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--auth-accent) 18%, transparent), color-mix(in srgb, var(--auth-accent-2) 16%, transparent));
+  border: 1px solid color-mix(in srgb, var(--auth-accent) 26%, transparent);
+}
+
+.cz-auth-brand > span svg { width: 24px; height: 24px; }
+.cz-auth-brand > div { min-width: 0; }
+.cz-auth-brand strong { display: block; font-size: 1.35rem; line-height: 1.05; letter-spacing: -.025em; }
+.cz-auth-brand small { display: block; margin-top: 4px; font-size: .68rem; letter-spacing: .16em; opacity: .66; }
+.cz-auth-brand > p { display: flex; gap: 6px; margin: 0; align-items: center; }
+.cz-auth-brand > p em,
+.cz-auth-brand > p b { padding: 6px 9px; border-radius: 999px; font-size: .68rem; font-style: normal; line-height: 1; }
+.cz-auth-brand > p em { background: color-mix(in srgb, var(--auth-accent) 15%, transparent); color: color-mix(in srgb, var(--auth-accent) 82%, var(--cc-text, #0f172a)); }
+.cz-auth-brand > p b { background: color-mix(in srgb, var(--auth-accent-2) 13%, transparent); }
+
+.cz-login-card {
+  width: min(100%, 520px) !important;
+  margin: 0 auto !important;
+  padding: clamp(22px, 5vw, 34px) !important;
+  border-radius: 28px !important;
+  border: 1px solid var(--auth-line) !important;
+  background: var(--auth-card) !important;
+  box-shadow: 0 24px 70px rgba(2, 6, 23, .18) !important;
+  backdrop-filter: blur(22px) saturate(1.1);
+}
+
+.cz-login-card h1 {
+  margin: 8px 0 8px !important;
+  font-size: clamp(1.8rem, 7vw, 2.55rem) !important;
+  line-height: 1.02 !important;
+  letter-spacing: -.045em;
+  text-align: center;
+}
+
+.cz-login-card > p:not(.cz-auth-mode-feedback) {
+  max-width: 42ch;
+  margin: 0 auto 14px !important;
+  text-align: center;
+  color: var(--cc-muted, var(--cc-text-muted)) !important;
+  line-height: 1.5;
+}
+
+.cz-login-card > small {
+  display: flex !important;
+  justify-content: center;
+  align-items: center;
+  width: max-content;
+  margin: 12px auto 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--auth-accent) 10%, transparent);
+  color: var(--auth-accent) !important;
+  font-weight: 800;
+}
+
+.cz-tabs {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 5px;
+  border-radius: 16px;
+  border: 1px solid var(--auth-line);
+  background: color-mix(in srgb, var(--cc-text, #0f172a) 4%, transparent);
+}
+
+.cz-tabs button {
+  min-height: 44px;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+  color: var(--cc-muted, var(--cc-text-muted)) !important;
+  font-weight: 850 !important;
+  box-shadow: none !important;
+}
+
+.cz-tabs button.active {
+  background: var(--cc-surface, #fff) !important;
+  color: var(--cc-text, #0f172a) !important;
+  box-shadow: 0 5px 16px rgba(2, 6, 23, .08) !important;
+}
+
+.cz-login-card label {
+  display: grid !important;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px 9px;
+  margin-top: 15px;
+  color: var(--cc-text, #0f172a) !important;
+  font-size: .82rem;
+  font-weight: 800;
+}
+
+.cz-login-card label > svg {
+  grid-column: 1;
+  width: 18px;
+  height: 18px;
+  justify-self: center;
+  color: var(--auth-accent);
+}
+
+.cz-login-card label > input,
+.cz-login-card label > select,
+.cz-login-card label > .cz-password-field,
+.cz-login-card label > small {
+  grid-column: 1 / -1;
+}
+
+.cz-login-card input,
+.cz-login-card select {
+  width: 100%;
+  min-height: 50px;
+  padding: 0 15px;
+  border: 1px solid var(--auth-line) !important;
+  border-radius: 15px !important;
+  background: color-mix(in srgb, var(--cc-surface, #fff) 94%, transparent) !important;
+  color: var(--cc-text, #0f172a) !important;
+  outline: none;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.cz-login-card input:focus,
+.cz-login-card select:focus {
+  border-color: color-mix(in srgb, var(--auth-accent) 62%, transparent) !important;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--auth-accent) 12%, transparent) !important;
+}
+
+.cz-password-field { position: relative; width: 100%; }
+.cz-password-field input { padding-right: 56px !important; }
+.cz-password-toggle {
+  position: absolute !important;
+  right: 4px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 44px !important;
+  min-width: 44px !important;
+  height: 44px !important;
+  min-height: 44px !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+  color: var(--cc-text, #0f172a) !important;
+  box-shadow: none !important;
+}
+.cz-password-toggle svg { width: 20px; height: 20px; margin: 0 !important; }
+
+.cz-primary,
+.cz-secondary {
+  width: 100% !important;
+  min-height: 52px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 9px !important;
+  margin-top: 16px !important;
+  padding: 0 18px !important;
+  border-radius: 16px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+}
+
+.cz-primary {
+  border: 0 !important;
+  background: linear-gradient(135deg, var(--auth-accent), #5b21b6 58%, #2563eb) !important;
+  color: #fff !important;
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--auth-accent) 28%, transparent) !important;
+}
+.cz-primary > span { display: grid; place-items: center; margin: 0 !important; font-size: 1.15rem; }
+.cz-primary:disabled { opacity: .55; box-shadow: none !important; }
+
+.cz-secondary {
+  border: 1px solid var(--auth-line) !important;
+  background: color-mix(in srgb, var(--cc-surface, #fff) 88%, transparent) !important;
+  color: var(--cc-text, #0f172a) !important;
+  box-shadow: none !important;
+}
+.cz-secondary svg { width: 19px; height: 19px; margin: 0 !important; color: var(--auth-accent); }
+
+.cz-login-card footer {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 8px !important;
+  margin-top: 12px !important;
+}
+
+.cz-auth-link {
+  min-height: 42px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 8px 10px !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+  color: var(--auth-accent) !important;
+  font-weight: 850 !important;
+  text-decoration: none !important;
+  box-shadow: none !important;
+}
+
+.cz-auth-mode-feedback {
+  min-height: 0 !important;
+  margin: 0 0 4px !important;
+  padding: 9px 12px !important;
+  border-radius: 12px !important;
+  background: color-mix(in srgb, var(--auth-accent) 8%, transparent) !important;
+  color: color-mix(in srgb, var(--auth-accent) 78%, var(--cc-text, #0f172a)) !important;
+  text-align: center;
+  font-size: .75rem !important;
+  font-weight: 750;
+}
+
+.cz-auth-footer {
+  width: min(100%, 520px);
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  text-align: center;
+  opacity: .64;
+  font-size: .68rem;
+  letter-spacing: .08em;
+}
+.cz-auth-footer svg { width: 14px; height: 14px; }
+
+html[data-crew-theme='dark'] .cz-auth {
+  --auth-card: rgba(8, 15, 30, .84);
+  --auth-line: rgba(255,255,255,.11);
+}
+html[data-crew-theme='dark'] .cz-tabs button.active,
+html[data-crew-theme='dark'] .cz-login-card input,
+html[data-crew-theme='dark'] .cz-login-card select,
+html[data-crew-theme='dark'] .cz-secondary {
+  background: rgba(255,255,255,.055) !important;
+}
+
+@media (max-width: 560px) {
+  .cz-auth { place-items: start center; align-content: start; padding-inline: 12px; gap: 14px; }
+  .cz-auth-brand { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  .cz-auth-brand > span { width: 44px; height: 44px; border-radius: 14px; }
+  .cz-auth-brand > p b { display: none; }
+  .cz-login-card { padding: 20px 16px 18px !important; border-radius: 24px !important; }
+  .cz-login-card footer { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cz-login-card input,
+  .cz-login-card select,
+  .cz-primary,
+  .cz-secondary { transition: none !important; }
+}

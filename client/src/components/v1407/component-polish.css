@@ -1,0 +1,54 @@
+/* Complementos do audit v14.0.7 */
+
+.cc139-choices > button > span {
+  display: grid !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+}
+
+.cc139-choices > button > span > strong {
+  display: block !important;
+  min-width: 0 !important;
+  color: var(--cc-text, #f8fbff) !important;
+  font-size: .96rem !important;
+  line-height: 1.28 !important;
+  overflow-wrap: break-word !important;
+}
+
+.cc139-choices > button > span > small {
+  display: block !important;
+  min-width: 0 !important;
+  color: var(--cc-audit-muted, #9cb3c5) !important;
+  font-size: .78rem !important;
+  line-height: 1.35 !important;
+  overflow-wrap: break-word !important;
+}
+
+html[data-crew-theme="light"] .cz-alert-stack h2,
+html[data-crew-theme="light"] .cz-alert-stack article b,
+html[data-crew-theme="light"] .cz-alert-detail,
+html[data-crew-theme="light"] .cz-alert-detail > div > p strong,
+html[data-crew-theme="light"] .cz-money-card > div > strong,
+html[data-crew-theme="light"] .cz-smart-content > strong,
+html[data-crew-theme="light"] .cz-smart-content > em,
+html[data-crew-theme="light"] .cz-smart-content > div b,
+html[data-crew-theme="light"] .cz-hotel-stay-card .cz-detail-grid strong,
+html[data-crew-theme="light"] .cc139-choices > button > span > strong {
+  color: #10243a !important;
+}
+
+[data-view="alerts"] .cz-bottom-nav,
+[data-view="hotels"] .cz-bottom-nav,
+[data-view="presentation"] .cz-bottom-nav,
+[data-view="routine"] .cz-bottom-nav,
+[data-view="wakeup"] .cz-bottom-nav {
+  z-index: 80 !important;
+}
+
+[data-view="alerts"],
+[data-view="hotels"],
+[data-view="presentation"],
+[data-view="routine"],
+[data-view="wakeup"] {
+  padding-bottom: calc(158px + env(safe-area-inset-bottom, 0px)) !important;
+}

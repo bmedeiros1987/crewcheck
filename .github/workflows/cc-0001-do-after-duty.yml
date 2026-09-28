@@ -1,0 +1,32 @@
+name: CrewCheck CC-0001 DO after duty
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/embeddedFormalDaysOff.ts'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14384/apply.mjs'
+      - 'scripts/regression-cc-0001-do-after-duty.mjs'
+      - '.github/workflows/cc-0001-do-after-duty.yml'
+  push:
+    branches:
+      - fix/cc-0001-do-after-duty
+
+jobs:
+  cc-0001-do-after-duty:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Regressão CC-0001 / issue 225
+        run: node scripts/regression-cc-0001-do-after-duty.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit

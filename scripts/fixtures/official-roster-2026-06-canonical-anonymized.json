@@ -1,0 +1,58 @@
+{
+  "source": "Official company CrewRosterReport, June 2026, anonymized",
+  "timezone": "America/Sao_Paulo",
+  "cases": {
+    "carryIn": {
+      "startDate": "30/05/2026",
+      "endDate": "01/06/2026",
+      "report": "13:40",
+      "debrief": "09:40(+2)",
+      "legs": [
+        { "flight": "F3322", "origin": "BSB", "destination": "VCP", "departure": "14:25", "arrival": "16:00", "workType": "PS" },
+        { "flight": "F3323", "origin": "VCP", "destination": "BSB", "departure": "16:55", "arrival": "18:30", "workType": "OP" },
+        { "flight": "F3992", "origin": "BSB", "destination": "NAT", "departure": "21:00", "arrival": "23:45", "workType": "OP" },
+        { "flight": "F3445", "origin": "NAT", "destination": "GRU", "departure": "02:40(+2)", "arrival": "06:05(+2)", "workType": "OP" },
+        { "flight": "F4676", "origin": "GRU", "destination": "BSB", "departure": "07:25(+2)", "arrival": "09:10(+2)", "workType": "OP" }
+      ]
+    },
+    "sameDayActivities": [
+      { "date": "02/06/2026", "type": "CBF", "start": "09:00", "end": "11:00", "location": "BSB" },
+      { "date": "02/06/2026", "type": "EMER", "start": "11:00", "end": "13:00", "location": "BSB" }
+    ],
+    "standbyAndReserve": [
+      { "date": "03/06/2026", "type": "HSBE", "start": "11:07", "end": "14:07", "activated": false },
+      { "date": "09/06/2026", "type": "HSBE", "start": "13:07", "end": "16:07", "activated": false },
+      { "date": "10/06/2026", "type": "HSBE", "start": "13:07", "end": "16:07", "activated": false },
+      { "date": "13/06/2026", "type": "ASB", "start": "06:30", "end": "12:30", "activated": false }
+    ],
+    "recovery": [
+      { "date": "04/06/2026", "type": "DO" },
+      { "date": "05/06/2026", "type": "DO" },
+      { "date": "06/06/2026", "type": "DO" },
+      { "date": "11/06/2026", "type": "DO" },
+      { "date": "12/06/2026", "type": "DR" }
+    ],
+    "psGroundPs": {
+      "startDate": "07/06/2026",
+      "endDate": "08/06/2026",
+      "report": "19:10",
+      "debrief": "23:20(+1)",
+      "activities": [
+        { "type": "PS", "flight": "F4737", "origin": "BSB", "destination": "CGH", "departure": "19:55", "arrival": "21:40" },
+        { "type": "C32F", "location": "CGH", "start": "18:00(+1)", "end": "19:15(+1)" },
+        { "type": "PS", "flight": "F4546", "origin": "CGH", "destination": "BSB", "departure": "21:05(+1)", "arrival": "22:50(+1)" }
+      ]
+    }
+  },
+  "expected": {
+    "carryInLegCount": 5,
+    "carryInRoute": ["BSB", "VCP", "BSB", "NAT", "GRU", "BSB"],
+    "sameDayActivityCountOn02June": 2,
+    "unactivatedStandbyOrReserveCount": 4,
+    "recoveryCountInCoveredSlice": 5,
+    "psGroundPsActivityCount": 3,
+    "mustPreserveDistinctSameDayActivities": ["CBF", "EMER"],
+    "mustNotCreateSmartDepartureFor": ["DO", "DR", "HSBE", "ASB"],
+    "mustNotInfer": ["folga em dia sem código formal", "voo para CBF", "voo para EMER", "acionamento de HSBE", "acionamento de ASB"]
+  }
+}

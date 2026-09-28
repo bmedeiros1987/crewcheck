@@ -1,0 +1,38 @@
+name: CrewCheck v14.3.76 Telegram platform roster sync
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server.mjs'
+      - 'server/platform.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/p0-active-roster-server/**'
+      - 'scripts/v14375/**'
+      - 'scripts/v14376/**'
+      - 'scripts/regression-v14-3-76-telegram-platform-roster-sync.mjs'
+      - '.github/workflows/v14376-telegram-platform-roster-sync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  telegram-platform-roster-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Prepare canonical CrewCheck source
+        run: node scripts/v139/apply.mjs
+      - name: Validate linked Telegram active-roster sync
+        run: node scripts/regression-v14-3-76-telegram-platform-roster-sync.mjs
+      - name: Revalidate active-roster invariant
+        run: node scripts/regression-p0-active-roster-server.mjs
+      - name: TypeScript check
+        run: npx tsc --noEmit

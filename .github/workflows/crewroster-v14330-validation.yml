@@ -1,0 +1,38 @@
+name: CrewRoster v14.3.30 validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/lib/pdfParser.ts'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14330/**'
+      - '.github/workflows/crewroster-v14330-validation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/lib/pdfParser.ts'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14330/**'
+      - '.github/workflows/crewroster-v14330-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-crewroster:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare current CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: TypeScript check
+        run: npx tsc --noEmit
+      - name: Validate multiday pairings and MCK
+        run: node scripts/regression-v14-3-30-crewroster-multiday.mjs

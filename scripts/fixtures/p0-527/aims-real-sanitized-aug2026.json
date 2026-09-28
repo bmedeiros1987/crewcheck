@@ -1,0 +1,187 @@
+{
+  "schema": "crewcheck.p0-527.corpus.v1",
+  "provenance": {
+    "source": "private real AIMS-converted roster supplied by user",
+    "sanitization": "PII, BP, crew names, crew list and nonessential metadata removed; only operational tokens required to reproduce parser classes retained",
+    "oracle": "published source values, never current CrewCheck output",
+    "base": "BSB"
+  },
+  "cases": [
+    {
+      "id": "aims-real-aug26-la3730-boundary",
+      "status": "PASS",
+      "month": 8,
+      "year": 2026,
+      "tokens": [
+        "17Aug",
+        "Mon",
+        "(...)",
+        "BSB",
+        "08:29",
+        "08:29",
+        "LA",
+        "3730",
+        "09:25",
+        "10:14",
+        "BSB",
+        "FOR",
+        "12:44",
+        "(320)",
+        "LA",
+        "4509",
+        "13:53",
+        "FOR",
+        "CNF",
+        "16:37",
+        "17:07",
+        "(320)"
+      ],
+      "expected": {
+        "events": 1,
+        "legs": 2,
+        "dutyReport": "09:25",
+        "firstFlight": "LA3730",
+        "firstDeparture": "10:14",
+        "lastFlight": "LA4509",
+        "lastArrival": "16:37"
+      }
+    },
+    {
+      "id": "aims-real-aug26-la3246-midnight",
+      "status": "PASS",
+      "month": 8,
+      "year": 2026,
+      "tokens": [
+        "18Aug",
+        "Tue",
+        "LA",
+        "3246",
+        "23:03",
+        "23:59",
+        "GRU",
+        "(...)",
+        "19Aug",
+        "Wed",
+        "(...)",
+        "BPS",
+        "01:41",
+        "(320)",
+        "LA",
+        "3347",
+        "03:27",
+        "BPS",
+        "GRU",
+        "05:16",
+        "05:46",
+        "(320)"
+      ],
+      "expected": {
+        "events": 1,
+        "legs": 2,
+        "dutyReport": "23:03",
+        "firstFlight": "LA3246",
+        "firstDeparture": "23:59",
+        "firstArrival": "01:41",
+        "lastFlight": "LA3347",
+        "lastArrival": "05:16"
+      }
+    },
+    {
+      "id": "aims-real-aug26-la3558-cna-chain",
+      "status": "PASS",
+      "month": 8,
+      "year": 2026,
+      "tokens": [
+        "01Aug",
+        "Sat",
+        "LA",
+        "3558",
+        "13:35",
+        "14:37",
+        "FOR",
+        "PHB",
+        "15:31",
+        "(320)",
+        "LA",
+        "3559",
+        "15:58",
+        "PHB",
+        "FOR",
+        "16:52",
+        "(320)",
+        "LA",
+        "4631",
+        "17:39",
+        "FOR",
+        "CGH",
+        "21:09",
+        "(320)",
+        "CNA",
+        "21:10",
+        "CGH",
+        "CGH",
+        "21:20",
+        "21:50"
+      ],
+      "expected": {
+        "events": 1,
+        "legs": 3,
+        "dutyReport": "13:35",
+        "firstFlight": "LA3558",
+        "firstDeparture": "14:37",
+        "lastFlight": "LA4631",
+        "lastArrival": "21:09",
+        "noBogusCnaLeg": true
+      }
+    },
+    {
+      "id": "aims-real-aug26-extra-la4737",
+      "status": "REVIEW",
+      "month": 8,
+      "year": 2026,
+      "tokens": [
+        "06Aug",
+        "Thu",
+        "(...)",
+        "BSB",
+        "17:05",
+        "17:05",
+        "[extra]",
+        "LA",
+        "4737",
+        "17:20",
+        "18:04",
+        "BSB",
+        "CGH",
+        "19:45",
+        "20:15",
+        "(320)"
+      ],
+      "expected": {
+        "note": "extra/workType semantics remain REVIEW in #527 until independent oracle for PS mapping is confirmed; APZ/route values remain source evidence"
+      }
+    }
+  ],
+  "matrix": [
+    {
+      "source": "AIMS real sanitized",
+      "coverage": "PASS",
+      "cases": 3
+    },
+    {
+      "source": "AIMS real extra marker",
+      "coverage": "REVIEW",
+      "cases": 1
+    },
+    {
+      "source": "CrewTopia JSON",
+      "coverage": "NOT_COVERED",
+      "reason": "schema/spec exists but no production CrewtopiaJsonAdapter is present on main; do not fabricate parity"
+    },
+    {
+      "source": "NCF sensitive day marker",
+      "coverage": "REVIEW",
+      "reason": "real source observed elsewhere; meaning not promoted to LUTO without confirmed oracle"
+    }
+  ]
+}

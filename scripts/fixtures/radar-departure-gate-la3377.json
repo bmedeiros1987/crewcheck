@@ -1,0 +1,47 @@
+{
+  "case": "LA3377 REC-GRU departure gate mismatch",
+  "operationalDate": "2026-07-31",
+  "flightNumber": "LA3377",
+  "origin": "REC",
+  "destination": "GRU",
+  "candidates": [
+    {
+      "source": "primary",
+      "flightNumber": "LA3377",
+      "operationalDate": "2026-07-31",
+      "origin": "REC",
+      "destination": "GRU",
+      "departureGate": "9",
+      "departureTerminal": "1",
+      "arrivalGate": "11",
+      "updatedAt": "2026-07-31T15:20:00Z"
+    },
+    {
+      "source": "secondary",
+      "flightNumber": "LA3377",
+      "operationalDate": "2026-07-31",
+      "origin": "REC",
+      "destination": "GRU",
+      "departureGate": "9",
+      "departureTerminal": "1",
+      "arrivalGate": "11",
+      "updatedAt": "2026-07-31T15:18:00Z"
+    },
+    {
+      "source": "stale-other-segment",
+      "flightNumber": "LA3377",
+      "operationalDate": "2026-07-31",
+      "origin": "GRU",
+      "destination": "REC",
+      "departureGate": "11",
+      "departureTerminal": "2",
+      "arrivalGate": "9",
+      "updatedAt": "2026-07-31T14:00:00Z"
+    }
+  ],
+  "expected": {
+    "gate": "9",
+    "terminal": "1",
+    "mustNotUse": ["11"]
+  }
+}

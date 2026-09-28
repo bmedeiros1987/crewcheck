@@ -1,0 +1,14 @@
+async function conciergeHospitalsReply(snapshot) {
+  const locationState = conciergeLocationContextV14335(snapshot);
+  if (!locationState.fresh) return `${locationState.message}\nEm emergência, use imediatamente os canais oficiais da sua região; o CrewCheck não substitui atendimento médico.`;
+  const places = await conciergeSearchNearbyHealthPlaces(['hospital'], locationState.location, 5);
+  if (!places.length) return `Não encontrei hospitais próximos agora. ${conciergeLocationLineV14335(snapshot)} Em emergência, use os canais oficiais da sua região.`;
+  return [
+    'Hospitais e prontos atendimentos próximos',
+    conciergeLocationLineV14335(snapshot),
+    '',
+    conciergePlaceLines(places),
+    '',
+    'A busca usa exclusivamente a localização recente compartilhada. Confirme rota, atendimento e disponibilidade. Em emergência, procure o serviço oficial imediatamente.',
+  ].join('\n');
+}
