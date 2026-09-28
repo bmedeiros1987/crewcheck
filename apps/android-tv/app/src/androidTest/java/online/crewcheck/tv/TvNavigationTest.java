@@ -21,6 +21,15 @@ public final class TvNavigationTest {
     private TvActivity getActivity() { return activityRule.getActivity(); }
     private Instrumentation getInstrumentation() { return InstrumentationRegistry.getInstrumentation(); }
 
+    private void sendNativeKey(int keyCode) throws Exception {
+        getInstrumentation().runOnMainSync(() -> {
+            TvActivity activity = getActivity();
+            activity.dispatchKeyEvent(new android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, keyCode));
+            activity.dispatchKeyEvent(new android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, keyCode));
+        });
+        Thread.sleep(120);
+    }
+
     private String evaluate(String script) throws Exception {
         AtomicReference<String> result = new AtomicReference<>();
         CountDownLatch done = new CountDownLatch(1);
@@ -57,16 +66,16 @@ public final class TvNavigationTest {
         awaitText("PRÓXIMA JORNADA");
         assertLayoutFits();
         // Native remote events, not DOM clicks: Agora -> Semana -> Mês.
-        getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_RIGHT);
-        getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_RIGHT);
-        getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_DPAD_CENTER);
+        sendNativeKey(android.view.KeyEvent.KEYCODE_DPAD_RIGHT);
+        sendNativeKey(android.view.KeyEvent.KEYCODE_DPAD_RIGHT);
+        sendNativeKey(android.view.KeyEvent.KEYCODE_DPAD_CENTER);
         for (int attempt = 0; attempt < 40; attempt++) {
             if (evaluate("document.querySelector('nav .active')?.textContent").contains("Mês")) break;
             Thread.sleep(250);
         }
         assertTrue("D-pad must open month", evaluate("document.querySelector('nav .active')?.textContent").contains("Mês"));
         assertLayoutFits();
-        getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);
+        sendNativeKey(android.view.KeyEvent.KEYCODE_BACK);
         awaitText("PRÓXIMA JORNADA");
         assertTrue("Back must return to Agora", evaluate("document.querySelector('nav .active')?.textContent").contains("Agora"));
         assertFalse("Back from month must not close app", getActivity().isFinishing());
