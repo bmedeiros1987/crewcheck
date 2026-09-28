@@ -1,33 +1,31 @@
-import type { CrewCheckPulseMessage } from './pulseTypes';
+import type { CrewCheckPulseMessage, CrewCheckPulsePriority } from './pulseTypes';
 
 /**
- * Estado de uma única mensagem do Pulse, com dono único do timer de saída.
+ * Fila do CrewCheck Pulse.
  *
- * Existe por causa de uma corrida real da fundação: dispensar uma mensagem
- * agendava `setMessage(null)` para 180 ms depois — e se outra mensagem chegasse
- * dentro dessa janela, o timer antigo apagava a mensagem nova. Para um banner
- * operacional isso é inaceitável: o aviso que acabou de chegar é justamente o
- * que não pode sumir.
- *
- * A lógica mora aqui, fora do componente, por um motivo prático: sem jsdom,
- * testing-library ou vitest no projeto, uma correção só dentro do React seria
- * verificável apenas lendo o texto do fonte. Esta frente já foi mordida duas
- * vezes por gates que afirmam texto em vez de comportamento — o gate textual do
- * #303 e o meu próprio falso positivo com "#546" lido como cor. Aqui o teste
- * executa a sequência de verdade, com relógio injetado.
- *
- * Escopo deliberadamente mínimo: uma mensagem por vez. Fila, prioridade e
- * integração com eventos reais continuam sendo slice 2.
+ * Regras:
+ * - uma mensagem visível por vez;
+ * - prioridade maior interrompe a atual e a devolve para a fila;
+ * - mensagens da mesma prioridade preservam FIFO;
+ * - dedupeKey/id substitui a versão anterior em vez de empilhar duplicatas;
+ * - dispensa/auto-dismiss avançam para a próxima mensagem somente após a animação;
+ * - publicação durante uma saída cancela a limpeza antiga e nunca apaga a mensagem nova.
  */
 
 export type PulseSessionState = {
   message: CrewCheckPulseMessage | null;
   leaving: boolean;
+  queued: number;
 };
 
 type Timers = {
   set: (fn: () => void, ms: number) => unknown;
   clear: (id: unknown) => void;
+};
+
+type QueueItem = {
+  message: CrewCheckPulseMessage;
+  sequence: number;
 };
 
 const defaultTimers: Timers = {
@@ -38,26 +36,111 @@ const defaultTimers: Timers = {
 };
 
 export const PULSE_LEAVE_MS = 180;
+export const PULSE_QUEUE_LIMIT = 8;
+
+const PRIORITY_WEIGHT: Record<CrewCheckPulsePriority, number> = {
+  baixa: 0,
+  normal: 1,
+  alta: 2,
+  critica: 3,
+};
+
+function priorityOf(message: CrewCheckPulseMessage): CrewCheckPulsePriority {
+  return message.priority || 'normal';
+}
+
+function keyOf(message: CrewCheckPulseMessage): string {
+  return String(message.dedupeKey || message.id || '').trim();
+}
 
 export function createPulseSession(
   onChange: (state: PulseSessionState) => void,
-  options: { leaveMs?: number; timers?: Timers } = {},
+  options: { leaveMs?: number; timers?: Timers; queueLimit?: number } = {},
 ) {
   const leaveMs = options.leaveMs ?? PULSE_LEAVE_MS;
   const timers = options.timers ?? defaultTimers;
+  const queueLimit = Math.max(1, options.queueLimit ?? PULSE_QUEUE_LIMIT);
 
-  let state: PulseSessionState = { message: null, leaving: false };
-  let pending: unknown = null;
+  let state: PulseSessionState = { message: null, leaving: false, queued: 0 };
+  let current: CrewCheckPulseMessage | null = null;
+  let queue: QueueItem[] = [];
+  let sequence = 0;
+  let leaveTimer: unknown = null;
+  let autoTimer: unknown = null;
 
-  const cancelPending = () => {
-    if (pending === null) return;
-    timers.clear(pending);
-    pending = null;
+  const clearTimer = (kind: 'leave' | 'auto') => {
+    const timer = kind === 'leave' ? leaveTimer : autoTimer;
+    if (timer === null) return;
+    timers.clear(timer);
+    if (kind === 'leave') leaveTimer = null;
+    else autoTimer = null;
   };
 
-  const commit = (next: PulseSessionState) => {
-    state = next;
+  const commit = (leaving = state.leaving) => {
+    state = { message: current, leaving, queued: queue.length };
     onChange(state);
+  };
+
+  const sortQueue = () => {
+    queue.sort((a, b) => {
+      const priority = PRIORITY_WEIGHT[priorityOf(b.message)] - PRIORITY_WEIGHT[priorityOf(a.message)];
+      return priority || a.sequence - b.sequence;
+    });
+    if (queue.length > queueLimit) queue = queue.slice(0, queueLimit);
+  };
+
+  const enqueue = (message: CrewCheckPulseMessage) => {
+    const key = keyOf(message);
+    if (key) {
+      const index = queue.findIndex((item) => keyOf(item.message) === key);
+      if (index >= 0) {
+        const sequenceValue = queue[index].sequence;
+        queue[index] = { message, sequence: sequenceValue };
+        sortQueue();
+        return;
+      }
+    }
+    queue.push({ message, sequence: sequence++ });
+    sortQueue();
+  };
+
+  const scheduleAutoDismiss = () => {
+    clearTimer('auto');
+    const delay = Number(current?.autoDismissMs || 0);
+    if (!current || current.dismissible === false || !Number.isFinite(delay) || delay <= 0) return;
+    autoTimer = timers.set(() => {
+      autoTimer = null;
+      dismiss();
+    }, delay);
+  };
+
+  const show = (message: CrewCheckPulseMessage) => {
+    clearTimer('leave');
+    current = message;
+    commit(false);
+    scheduleAutoDismiss();
+  };
+
+  const showNext = () => {
+    clearTimer('auto');
+    current = null;
+    if (!queue.length) {
+      commit(false);
+      return;
+    }
+    const next = queue.shift()!.message;
+    show(next);
+  };
+
+  const dismiss = () => {
+    if (!current) return;
+    clearTimer('auto');
+    clearTimer('leave');
+    commit(true);
+    leaveTimer = timers.set(() => {
+      leaveTimer = null;
+      showNext();
+    }, leaveMs);
   };
 
   return {
@@ -65,30 +148,61 @@ export function createPulseSession(
       return state;
     },
 
-    /**
-     * Publica uma mensagem. Cancela qualquer saída pendente: se o usuário
-     * dispensou algo há 50 ms e um aviso novo chega agora, o aviso novo fica.
-     */
     publish(message: CrewCheckPulseMessage) {
-      if (!message || !message.title) return;
-      cancelPending();
-      commit({ message, leaving: false });
+      if (!message || !String(message.title || '').trim()) return;
+      clearTimer('leave');
+
+      const incomingKey = keyOf(message);
+      const currentKey = current ? keyOf(current) : '';
+
+      if (incomingKey && current && incomingKey === currentKey) {
+        current = message;
+        commit(false);
+        scheduleAutoDismiss();
+        return;
+      }
+
+      // Se a mensagem atual já estava saindo por ação do usuário/auto-dismiss,
+      // ela não deve voltar à fila só porque outra chegou durante os 180 ms.
+      if (state.leaving) {
+        clearTimer('auto');
+        current = null;
+        show(message);
+        return;
+      }
+
+      if (!current) {
+        show(message);
+        return;
+      }
+
+      const incomingPriority = PRIORITY_WEIGHT[priorityOf(message)];
+      const currentPriority = PRIORITY_WEIGHT[priorityOf(current)];
+      if (incomingPriority > currentPriority) {
+        clearTimer('auto');
+        enqueue(current);
+        show(message);
+        return;
+      }
+
+      enqueue(message);
+      commit(false);
     },
 
-    /** Inicia a saída animada. O estado só zera quando o timer completa. */
-    dismiss() {
-      if (!state.message) return;
-      cancelPending();
-      commit({ message: state.message, leaving: true });
-      pending = timers.set(() => {
-        pending = null;
-        commit({ message: null, leaving: false });
-      }, leaveMs);
+    dismiss,
+
+    clear() {
+      clearTimer('auto');
+      clearTimer('leave');
+      queue = [];
+      current = null;
+      commit(false);
     },
 
-    /** Desmontagem: nenhum timer sobrevive ao componente. */
     dispose() {
-      cancelPending();
+      clearTimer('auto');
+      clearTimer('leave');
+      queue = [];
     },
   };
 }

@@ -83,6 +83,7 @@ import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotel
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
+import { crewCheckNotificationPermission, publishCrewCheckNotice, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
 import '@/components/v1393/weather.css';
 import '@/components/v1394/v1394.css';
@@ -722,12 +723,34 @@ function savePresentationOverride(event: ZeroLeg, presentation: string, saveAsLe
     };
     writeJsonRecord(PRESENTATION_RULES_KEY, rules);
   }
+  publishCrewCheckNotice({
+    id: `presentation:${event.id}:${clean}`,
+    dedupeKey: `presentation:${event.id}:${clean}`,
+    tone: 'sucesso',
+    priority: 'normal',
+    title: 'Apresentação atualizada',
+    detail: `${rosterEventTitle(event)} · ${clean}${saveAsLearning ? ' · padrão aprendido' : ''}`,
+    autoDismissMs: 7_000,
+    systemNotification: 'never',
+    action: { label: 'Ver programação', view: 'roster' },
+  });
   window.dispatchEvent(new Event('crewcheck:presentation-updated'));
 }
 function clearPresentationOverride(event: ZeroLeg) {
   const overrides = loadPresentationOverrides();
   delete overrides[presentationOverrideKey(event)];
   writeJsonRecord(PRESENTATION_OVERRIDES_KEY, overrides);
+  publishCrewCheckNotice({
+    id: `presentation-reset:${event.id}`,
+    dedupeKey: `presentation-reset:${event.id}`,
+    tone: 'informativo',
+    priority: 'normal',
+    title: 'Apresentação restaurada',
+    detail: `${rosterEventTitle(event)} voltou ao horário publicado/aprendido.`,
+    autoDismissMs: 7_000,
+    systemNotification: 'never',
+    action: { label: 'Ver programação', view: 'roster' },
+  });
   window.dispatchEvent(new Event('crewcheck:presentation-updated'));
 }
 function clearPresentationLearning(event: ZeroLeg) {
@@ -2154,14 +2177,28 @@ function financeSnapshot(roster: CrewRoster) {
   return { perdiem, salary };
 }
 function notifyCrewCheck(title: string, body: string) {
-  try {
-    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      new Notification(title, { body });
-      return;
-    }
-    if (typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
-  } catch {}
-  toast.message(`${title}: ${body}`);
+  const reminder = /despertador|soneca/i.test(title);
+  const lower = `${title} ${body}`.toLowerCase();
+  const action = lower.includes('metar') || lower.includes('speci') || lower.includes('meteorologia')
+    ? { label: 'Ver tempo', view: 'weather' }
+    : lower.includes('rota') || lower.includes('trânsito') || lower.includes('trajeto')
+      ? { label: 'Ver saída', view: 'departure' }
+      : reminder
+        ? { label: 'Ver despertador', view: 'wakeup' }
+        : undefined;
+  publishCrewCheckNotice({
+    id: `local:${title}:${body}`,
+    dedupeKey: `local:${title}:${body}`,
+    tone: reminder ? 'lembrete' : 'atencao',
+    priority: 'alta',
+    title,
+    detail: body,
+    pulseCooldownMs: 60_000,
+    systemNotification: 'background',
+    notificationTag: `crewcheck:${title}`,
+    notificationCooldownMs: 5 * 60_000,
+    action,
+  });
 }
 function useWeatherLandingMonitor(event: ZeroLeg) {
   useEffect(() => {
@@ -2625,6 +2662,52 @@ function ToggleSetting({ icon: Icon, label, storageKey, defaultOn = true, detail
   const toggle = () => { const next = !on; setOn(next); storage.set(storageKey, next ? '1' : '0'); if (storageKey === 'crewcheck_light_premium') { localStorage.setItem('crewcheck_theme_mode', next ? 'light' : 'dark'); document.documentElement.dataset.crewTheme = next ? 'light' : 'dark'; document.documentElement.classList.toggle('dark', !next); document.documentElement.style.colorScheme = next ? 'light' : 'dark'; window.dispatchEvent(new Event('crewcheck:theme-change')); } toast.success(`${label}: ${next ? 'ativado' : 'desativado'}`); };
   return <button className="cz-setting" onClick={toggle}><Icon/><div><strong>{label}</strong><small>{detail || (on ? 'Ativo' : 'Inativo')}</small></div><span className={on ? 'on' : ''}/></button>;
 }
+function NotificationPermissionSetting() {
+  const [enabled, setEnabled] = useState(() => storage.get('crewcheck_device_notifications', '0') === '1');
+  const [permission, setPermission] = useState(() => crewCheckNotificationPermission());
+  const refresh = () => setPermission(crewCheckNotificationPermission());
+
+  useEffect(() => {
+    const onPermission = () => refresh();
+    window.addEventListener('focus', onPermission);
+    window.addEventListener('crewcheck:notification-permission', onPermission);
+    return () => {
+      window.removeEventListener('focus', onPermission);
+      window.removeEventListener('crewcheck:notification-permission', onPermission);
+    };
+  }, []);
+
+  async function toggle() {
+    if (enabled && permission === 'granted') {
+      setCrewCheckDeviceNotificationsEnabled(false);
+      storage.set('crewcheck_device_notifications', '0');
+      setEnabled(false);
+      toast.success('Notificações do aparelho desativadas no CrewCheck.');
+      return;
+    }
+
+    setCrewCheckDeviceNotificationsEnabled(true);
+    storage.set('crewcheck_device_notifications', '1');
+    setEnabled(true);
+    const ok = await requestCrewCheckNotificationPermission();
+    refresh();
+    if (ok) toast.success('Notificações do aparelho autorizadas.');
+    else if (crewCheckNotificationPermission() === 'denied') toast.info('Permissão negada pelo sistema. Você pode alterá-la nas configurações do aparelho.');
+    else toast.info('As notificações ficam ativas quando a permissão do sistema for concedida.');
+  }
+
+  const detail = !enabled
+    ? 'Desativadas no CrewCheck'
+    : permission === 'granted'
+      ? 'Ativas · somente avisos relevantes em segundo plano'
+      : permission === 'denied'
+        ? 'Ativas no CrewCheck · bloqueadas pelo sistema'
+        : permission === 'unsupported'
+          ? 'Não disponíveis neste navegador'
+          : 'Toque para autorizar no aparelho';
+
+  return <button className="cz-setting" onClick={() => void toggle()} aria-pressed={enabled && permission === 'granted'}><Bell/><div><strong>Notificações do aparelho</strong><small>{detail}</small></div><span className={enabled && permission === 'granted' ? 'on' : ''}/></button>;
+}
 function FieldSetting({ icon: Icon, label, storageKey, placeholder }: { icon: any; label: string; storageKey: string; placeholder: string }) {
   const [value, setValue] = useState(() => storage.get(storageKey, ''));
   return <label className="cz-setting cz-field-setting"><Icon/><div><strong>{label}</strong><input value={value} onChange={(event) => { setValue(event.target.value); storage.set(storageKey, event.target.value); }} placeholder={placeholder}/></div><ChevronRight/></label>;
@@ -2883,6 +2966,8 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     <ToggleSetting icon={GraduationCap} label="Sou instrutor" storageKey="crewcheck_instructor" defaultOn={false}/>
 
     <h3>Notificações e concierge</h3>
+    <ToggleSetting icon={Bell} label="CrewCheck Pulse" storageKey="crewcheck_pulse_enabled" detail="Banner contextual dentro do app"/>
+    <NotificationPermissionSetting/>
     <ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/>
     <ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/>
     <ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/>
@@ -4639,6 +4724,47 @@ export default function Home() {
   useWeatherLandingMonitor(flightEvent);
 
   useEffect(() => {
+    if (!event || event.placeholder) return;
+    const details = [
+      event.presentation && event.presentation !== '—' && event.presentation !== 'Conexão/Solo' ? `Apresentação ${event.presentation}` : '',
+      event.kind === 'flight' && event.origin && event.destination ? `${event.origin} → ${event.destination}` : '',
+      event.gate ? `Portão ${event.gate}` : '',
+      event.status ? String(event.status) : '',
+    ].filter(Boolean).join(' · ');
+
+    publishCrewCheckNotice({
+      id: `next:${event.id}:${event.presentation}:${event.gate || ''}:${event.status || ''}`,
+      dedupeKey: `next:${event.id}:${event.presentation}:${event.gate || ''}:${event.status || ''}`,
+      pulseCooldownMs: 2 * 60 * 60_000,
+      tone: event.kind === 'flight' ? 'operacional' : 'informativo',
+      priority: 'normal',
+      title: event.kind === 'stay'
+        ? `Pernoite · ${safe(event.destination || event.origin, 'programação')}`
+        : `Próxima programação · ${rosterEventTitle(event)}`,
+      detail: details || programDateLabel(event),
+      systemNotification: 'never',
+      action: { label: event.kind === 'stay' ? 'Ver pernoite' : 'Ver escala', view: event.kind === 'stay' ? 'hotels' : 'roster' },
+    });
+  }, [event.id, event.kind, event.presentation, event.gate, event.status, event.origin, event.destination]);
+
+  useEffect(() => {
+    const count = actionableComplianceAlerts(compliance).length;
+    if (!count) return;
+    const signature = complianceAlertSignature(compliance) || String(count);
+    publishCrewCheckNotice({
+      id: `compliance:${signature}`,
+      dedupeKey: `compliance:${signature}`,
+      pulseCooldownMs: 6 * 60 * 60_000,
+      tone: 'atencao',
+      priority: 'alta',
+      title: `${count} ponto${count === 1 ? '' : 's'} para revisar`,
+      detail: 'Confira os alertas antes de considerar a programação conferida.',
+      systemNotification: 'never',
+      action: { label: 'Revisar', view: 'alerts' },
+    });
+  }, [compliance]);
+
+  useEffect(() => {
     const publishWatchSnapshot = () => {
       try {
         const snapshot = buildCrewCheckWatchSnapshot(events, event);
@@ -4669,6 +4795,18 @@ export default function Home() {
       const compliance = active.compliance || analyzeSafe(active.roster);
       saveRoster(active.roster, 'Escala ativa sincronizada');
       setBundle({ roster: active.roster, compliance, source: 'Escala ativa sincronizada' });
+      publishCrewCheckNotice({
+        id: `active-roster:${active.roster.year}:${active.roster.month}`,
+        dedupeKey: `active-roster:${active.roster.year}:${active.roster.month}`,
+        pulseCooldownMs: 30 * 60_000,
+        tone: 'informativo',
+        priority: 'baixa',
+        title: 'Escala sincronizada',
+        detail: 'A escala ativa da sua conta foi restaurada neste aparelho.',
+        autoDismissMs: 6_500,
+        systemNotification: 'never',
+        action: { label: 'Ver escala', view: 'roster' },
+      });
     }).catch((error: any) => {
       if (!alive) return;
       if (Number(error?.status) === 409) toast.error('Há um conflito de escala ativa. Atualize a sessão antes de importar novamente.');
@@ -4739,6 +4877,42 @@ export default function Home() {
       storage.set('crewcheck_last_import_guardian_period', decision.periodLabel);
       storage.set('crewcheck_last_pdf_import_source', parsed.source);
       setBundle({ roster, compliance: newCompliance, source: file.name });
+      if (opensComparison) {
+        publishCrewCheckNotice({
+          id: `roster-import-change:${roster.year}:${roster.month}:${importComparison?.summary.changedDays || 0}`,
+          dedupeKey: `roster-import-change:${roster.year}:${roster.month}:${importComparison?.summary.changedDays || 0}`,
+          tone: 'atencao',
+          priority: 'alta',
+          title: 'Escala atualizada',
+          detail: `${importComparison?.summary.changedDays || 0} dia(s) com mudanças em relação à escala planejada.`,
+          systemNotification: 'never',
+          action: { label: 'Ver mudanças', view: 'compare' },
+        });
+      } else {
+        publishCrewCheckNotice({
+          id: `roster-import:${roster.year}:${roster.month}`,
+          dedupeKey: `roster-import:${roster.year}:${roster.month}`,
+          tone: 'sucesso',
+          priority: 'normal',
+          title: 'Escala importada com sucesso',
+          detail: decision.periodLabel || `${String(roster.month).padStart(2, '0')}/${roster.year}`,
+          autoDismissMs: 6_500,
+          systemNotification: 'never',
+          action: { label: 'Ver escala', view: 'roster' },
+        });
+      }
+      if (!decision.hasFuture) {
+        publishCrewCheckNotice({
+          id: `roster-no-future:${roster.year}:${roster.month}`,
+          dedupeKey: `roster-no-future:${roster.year}:${roster.month}`,
+          tone: 'erro',
+          priority: 'alta',
+          title: 'Escala sem programação futura',
+          detail: 'A competência foi importada, mas não há programação futura após agora.',
+          systemNotification: 'never',
+          action: { label: 'Revisar escala', view: 'roster' },
+        });
+      }
       syncRosterWithTelegramConcierge(roster, file.name).catch(() => undefined);
       syncPlatformRoster(roster, newCompliance, file.name).catch(() => toast.message('Escala salva neste dispositivo; a sincronização com o banco será tentada novamente.'));
       sessionStorage.setItem('crewcheck_force_view_once', opensComparison ? 'compare' : 'roster');
