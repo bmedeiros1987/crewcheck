@@ -18,7 +18,8 @@ import org.w3c.dom.*;
  * Text uses Java logical fonts and illustrative data: physical Wear validation remains required.
  * This file lives outside src/main and is never compiled into the resource-only face APK. */
 public final class PreviewGenerator {
-    static final String[] NAMES = {"signature", "flightdeck", "minimal"};
+    static final String[] STYLES = {"masculine", "elegance", "balanced"};
+    static final String[] MODES = {"hybrid", "digital"};
     static final String[] PALETTES = {"cyan", "violet", "magenta"};
     // Selector-only examples. These values never become provider defaults or live app data.
     static final Map<String, String[]> EXAMPLES = Map.of(
@@ -38,6 +39,7 @@ public final class PreviewGenerator {
     final BufferedImage logo;
     final String[] colors;
     final String style;
+    final String mode;
     final boolean ambient;
     final String time;
 
@@ -65,8 +67,8 @@ public final class PreviewGenerator {
     static String sha(Path p) throws Exception {
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(p)));
     }
-    PreviewGenerator(Path res, String style, int palette, boolean ambient) throws Exception {
-        this.res = res; this.style = style; this.ambient = ambient;
+    PreviewGenerator(Path res, String style, String mode, int palette, boolean ambient) throws Exception {
+        this.res = res; this.style = style; this.mode = mode; this.ambient = ambient;
         root = parse(res.resolve("raw/watchface.xml")).getDocumentElement();
         if (number(root, "width", 0) != 450 || number(root, "height", 0) != 450)
             throw new IllegalArgumentException("Requalify thumbnail renderer for new canvas");
@@ -181,11 +183,33 @@ public final class PreviewGenerator {
                     for (Element n : children(e)) paint(n, g, slot);
                 }
                 case "ListConfiguration" -> {
-                    Element option = children(e).stream().filter(n -> n.getAttribute("id").equals(style)).findFirst().orElseThrow();
+                    String selected = switch (e.getAttribute("id")) {
+                        case "crewcheck_style" -> style;
+                        case "crewcheck_mode" -> mode;
+                        default -> throw new IllegalArgumentException("Unknown ListConfiguration " + e.getAttribute("id"));
+                    };
+                    Element option = children(e).stream().filter(n -> n.getAttribute("id").equals(selected)).findFirst().orElseThrow();
                     for (Element n : children(option)) paint(n, g, slot);
                 }
-                case "Group", "DigitalClock", "PartDraw" -> {
+                case "Group", "AnalogClock", "DigitalClock", "PartDraw" -> {
                     for (Element n : children(e)) paint(n, g, slot);
+                }
+                case "HourHand", "MinuteHand", "SecondHand" -> {
+                    int hour = Integer.parseInt(time.substring(0, 2));
+                    int minute = Integer.parseInt(time.substring(3, 5));
+                    double angle = switch (e.getTagName()) {
+                        case "HourHand" -> (hour % 12) * 30.0 + minute * 0.5;
+                        case "MinuteHand" -> minute * 6.0;
+                        default -> 0.0;
+                    };
+                    double px = w * number(e, "pivotX", .5);
+                    double py = h * number(e, "pivotY", .5);
+                    g.rotate(Math.toRadians(angle), px, py);
+                    String tint = e.getAttribute("tintColor");
+                    g.setColor(tint.isEmpty() ? Color.WHITE : color(tint));
+                    g.setStroke(new BasicStroke((float)Math.max(2, w * .62),
+                        BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                    g.draw(new Line2D.Double(px, 2, px, py));
                 }
                 case "PartImage" -> {
                     String resource = child(e, "Image").getAttribute("resource");
@@ -273,32 +297,46 @@ public final class PreviewGenerator {
     }
     static void verify(Path res, Path out, Path gallery) throws Exception {
         Element xml = parse(res.resolve("raw/watchface.xml")).getDocumentElement();
-        Element config = child(child(xml, "UserConfigurations"), "ListConfiguration");
-        check(config.getAttribute("defaultValue").equals("0"), "Picker preview must track default Signature");
-        check(children(config).size() == 3, "Three editor styles expected");
-        for (int i = 0; i < 3; i++) {
-            Element option = children(config).get(i);
-            check(option.getAttribute("id").equals("" + i), "Stable editor ids required");
-            check(option.getAttribute("icon").equals("crewcheck_preview_" + NAMES[i]), "Missing style icon reference");
-            Path png = out.resolve("drawable-nodpi/" + option.getAttribute("icon") + ".png");
-            BufferedImage image = ImageIO.read(png.toFile());
+        Element user = child(xml, "UserConfigurations");
+        List<Element> lists = children(user).stream().filter(n -> n.getTagName().equals("ListConfiguration")).toList();
+        Element stylesConfig = lists.stream().filter(n -> n.getAttribute("id").equals("crewcheck_style")).findFirst().orElseThrow();
+        Element modesConfig = lists.stream().filter(n -> n.getAttribute("id").equals("crewcheck_mode")).findFirst().orElseThrow();
+        check(stylesConfig.getAttribute("defaultValue").equals("0"), "Picker preview must track default Flight Deck");
+        check(modesConfig.getAttribute("defaultValue").equals("1"), "Digital-only must be the default clock mode");
+        check(children(stylesConfig).size() == 3, "Three editor styles expected");
+        check(children(modesConfig).size() == 2, "Two clock modes expected");
+
+        for (int i = 0; i < STYLES.length; i++) {
+            Element option = children(stylesConfig).get(i);
+            check(option.getAttribute("id").equals("" + i), "Stable style ids required");
+            check(option.getAttribute("icon").equals("crewcheck_preview_" + STYLES[i]), "Missing style icon reference");
+        }
+        for (int i = 0; i < MODES.length; i++) {
+            Element option = children(modesConfig).get(i);
+            check(option.getAttribute("id").equals("" + i), "Stable mode ids required");
+            check(option.getAttribute("icon").equals("crewcheck_preview_" + MODES[i]), "Missing mode icon reference");
+        }
+        for (String name : new String[]{"masculine", "elegance", "balanced", "hybrid", "digital"}) {
+            BufferedImage image = ImageIO.read(out.resolve("drawable-nodpi/crewcheck_preview_" + name + ".png").toFile());
             check(image.getWidth() == 360 && image.getHeight() == 360, "Editor icons must fit the 400px ceiling");
             check((image.getRGB(0, 0) >>> 24) == 0, "Round preview must have transparent corners");
         }
+
         Element info = parse(res.resolve("xml/watch_face_info.xml")).getDocumentElement();
-        check(child(info, "Preview").getAttribute("value").equals("@drawable/crewcheck_preview_signature"), "Default picker resource missing");
+        check(child(info, "Preview").getAttribute("value").equals("@drawable/crewcheck_preview_masculine"), "Default picker resource missing");
         check(child(info, "Editable").getAttribute("value").equals("true"), "Native editing must be available");
-        Set<String> styles = new HashSet<>();
-        for (String name : NAMES) styles.add(sha(out.resolve("drawable-nodpi/crewcheck_preview_" + name + ".png")));
-        check(styles.size() == 3, "Style previews must not be duplicates");
-        for (String name : NAMES) for (String palette : PALETTES) {
-            BufferedImage ambient = ImageIO.read(gallery.resolve(name + "-" + palette + "-aod.png").toFile());
+        Set<String> previews = new HashSet<>();
+        for (String name : new String[]{"masculine", "elegance", "balanced", "hybrid", "digital"})
+            previews.add(sha(out.resolve("drawable-nodpi/crewcheck_preview_" + name + ".png")));
+        check(previews.size() == 5, "Style/mode previews must not be duplicates");
+        for (String styleName : STYLES) for (String modeName : MODES) for (String palette : PALETTES) {
+            BufferedImage ambient = ImageIO.read(gallery.resolve(styleName + "-" + modeName + "-" + palette + "-aod.png").toFile());
             black(ambient, 207, 20, 36, 36); // Original logo hidden in AOD.
             black(ambient, 229, 62, 124, 52); // Battery hidden in AOD.
             black(ambient, 101, 332, 248, 54); // CrewLife and steps hidden.
             black(ambient, 153, 394, 144, 28); // Routine hidden.
         }
-        var copyCheck = new PreviewGenerator(res, "0", 0, false);
+        var copyCheck = new PreviewGenerator(res, "0", "1", 0, false);
         Element scene = child(copyCheck.root, "Scene");
         for (Element slot : children(scene)) if (slot.getTagName().equals("ComplicationSlot")) {
             String sid = slot.getAttribute("slotId");
@@ -318,7 +356,7 @@ public final class PreviewGenerator {
             }
         }
         // Synthetic icon is ONLY a test fixture, never written to a selector resource.
-        var iconTest = new PreviewGenerator(res, "0", 0, false);
+        var iconTest = new PreviewGenerator(res, "0", "1", 0, false);
         iconTest.examples.put("5", new String[]{"", "--"});
         BufferedImage synthetic = new BufferedImage(22, 22, BufferedImage.TYPE_INT_ARGB);
         Graphics2D marker = synthetic.createGraphics(); marker.setColor(Color.WHITE); marker.fillRect(0, 0, 22, 22); marker.dispose();
@@ -330,28 +368,34 @@ public final class PreviewGenerator {
         BufferedImage withoutIcon = iconTest.render(450);
         for (int y = 62; y < 84; y++) for (int x = 280; x < 302; x++)
             check(withTitle.getRGB(x, y) == withoutIcon.getRGB(x, y), "Icon overlaps a supplied caption");
-        var aodIcon = new PreviewGenerator(res, "0", 0, true);
+        var aodIcon = new PreviewGenerator(res, "0", "1", 0, true);
         aodIcon.examples.put("5", new String[]{"", "--"}); aodIcon.exampleIcons.put("5", synthetic);
         black(aodIcon.render(450), 229, 62, 124, 52);
-        var malformed = new PreviewGenerator(res, "0", 0, false);
+        var malformed = new PreviewGenerator(res, "0", "1", 0, false);
         child(malformed.root, "Scene").appendChild(malformed.root.getOwnerDocument().createElement("UnsupportedPreviewElement"));
         boolean rejected = false;
         try { malformed.render(360); } catch (IllegalArgumentException expected) { rejected = true; }
         check(rejected, "Generator must fail on unsupported additions instead of silently hiding them");
-        System.out.println("PASS: metadata/editor links, three distinct icons, 9 AOD privacy checks, unknown-element negative case");
+        System.out.println("PASS: metadata/editor links, five distinct icons, 18 AOD privacy checks, unknown-element negative case");
     }
     public static void main(String[] args) throws Exception {
         if (args.length < 2 || args.length > 3) throw new IllegalArgumentException("Usage: PreviewGenerator.java <source res> <generated res> [gallery]");
         Path res = Path.of(args[0]), out = Path.of(args[1]);
-        for (int s = 0; s < NAMES.length; s++) {
-            var renderer = new PreviewGenerator(res, "" + s, 0, false);
-            write(renderer.render(360), out.resolve("drawable-nodpi/crewcheck_preview_" + NAMES[s] + ".png"));
+        // Style icons use the default digital mode; mode icons use the neutral Balanced style.
+        for (int s = 0; s < STYLES.length; s++) {
+            var renderer = new PreviewGenerator(res, "" + s, "1", 0, false);
+            write(renderer.render(360), out.resolve("drawable-nodpi/crewcheck_preview_" + STYLES[s] + ".png"));
+        }
+        for (int m = 0; m < MODES.length; m++) {
+            var renderer = new PreviewGenerator(res, "2", "" + m, 0, false);
+            write(renderer.render(360), out.resolve("drawable-nodpi/crewcheck_preview_" + MODES[m] + ".png"));
         }
         if (args.length == 3) {
             Path gallery = Path.of(args[2]);
-            for (int s = 0; s < 3; s++) for (int p = 0; p < 3; p++) for (boolean aod : new boolean[]{false, true})
-                write(new PreviewGenerator(res, "" + s, p, aod).render(450),
-                    gallery.resolve(NAMES[s] + "-" + PALETTES[p] + (aod ? "-aod" : "-active") + ".png"));
+            for (int s = 0; s < STYLES.length; s++) for (int m = 0; m < MODES.length; m++)
+                for (int p = 0; p < PALETTES.length; p++) for (boolean aod : new boolean[]{false, true})
+                    write(new PreviewGenerator(res, "" + s, "" + m, p, aod).render(450),
+                        gallery.resolve(STYLES[s] + "-" + MODES[m] + "-" + PALETTES[p] + (aod ? "-aod" : "-active") + ".png"));
             Files.writeString(gallery.resolve("PROVENANCE.txt"),
                 "Technical previews generated from WFF, NOT Wear OS screenshots.\n" +
                 "Illustrative placeholders; no real flight, health or account data.\n" +
@@ -362,6 +406,6 @@ public final class PreviewGenerator {
                 "Java runtime: " + System.getProperty("java.runtime.version") + "\n");
             verify(res, out, gallery);
         }
-        System.out.println("PASS: three 360px selector resources" + (args.length == 3 ? " + 18 illustrative active/AOD previews" : ""));
+        System.out.println("PASS: five 360px selector resources" + (args.length == 3 ? " + 36 illustrative active/AOD previews" : ""));
     }
 }
