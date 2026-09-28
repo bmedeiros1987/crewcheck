@@ -1,91 +1,210 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- CrewCheck WFF v1: original logo, three profiles, six unchanged providers.
-     Physical-photo polish: Portuguese captions/date; original numeric data retained.
-     TimeText is clock-only; each ListOption has one Group; Text uses v1 attributes. -->
+<!--
+  CrewCheck WFF v1 — implementation of the Higgsfield visual system.
+
+  Two independent personalization axes:
+  - visual personality: Flight Deck (masculino), Elegance (feminino), Balanced (unissex);
+  - clock mode: Hybrid (analógico + digital) or Digital.
+
+  Data providers and slot ids remain unchanged. The face does not invent flight status,
+  duty progress, health values or phone-side business logic. AOD keeps only clock/date and
+  the operational complication while hiding branding, decoration, health, steps and routine.
+-->
 <WatchFace width="450" height="450">
   <Metadata key="CLOCK_TYPE" value="DIGITAL" />
-  <Metadata key="PREVIEW_TIME" value="18:16:00" />
+  <Metadata key="PREVIEW_TIME" value="10:24:00" />
+
   <UserConfigurations>
     <ListConfiguration id="crewcheck_style" displayName="crewcheck_style_label" screenReaderText="crewcheck_style_label" defaultValue="0">
-      <ListOption id="0" icon="crewcheck_preview_signature" displayName="crewcheck_style_signature" screenReaderText="crewcheck_style_signature" />
-      <ListOption id="1" icon="crewcheck_preview_flightdeck" displayName="crewcheck_style_flightdeck" screenReaderText="crewcheck_style_flightdeck" />
-      <ListOption id="2" icon="crewcheck_preview_minimal" displayName="crewcheck_style_minimal" screenReaderText="crewcheck_style_minimal" />
+      <ListOption id="0" icon="crewcheck_preview_masculine" displayName="crewcheck_style_masculine" screenReaderText="crewcheck_style_masculine" />
+      <ListOption id="1" icon="crewcheck_preview_elegance" displayName="crewcheck_style_elegance" screenReaderText="crewcheck_style_elegance" />
+      <ListOption id="2" icon="crewcheck_preview_balanced" displayName="crewcheck_style_balanced" screenReaderText="crewcheck_style_balanced" />
     </ListConfiguration>
+
+    <ListConfiguration id="crewcheck_mode" displayName="crewcheck_mode_label" screenReaderText="crewcheck_mode_label" defaultValue="1">
+      <ListOption id="0" icon="crewcheck_preview_hybrid" displayName="crewcheck_mode_hybrid" screenReaderText="crewcheck_mode_hybrid" />
+      <ListOption id="1" icon="crewcheck_preview_digital" displayName="crewcheck_mode_digital" screenReaderText="crewcheck_mode_digital" />
+    </ListConfiguration>
+
     <ColorConfiguration id="crewcheck_palette" displayName="crewcheck_palette_label" defaultValue="0">
       <ColorOption id="0" displayName="crewcheck_palette_cyan" colors="#FF22D3EE #5522D3EE" />
       <ColorOption id="1" displayName="crewcheck_palette_violet" colors="#FFA78BFA #55A78BFA" />
       <ColorOption id="2" displayName="crewcheck_palette_magenta" colors="#FFF472B6 #55F472B6" />
     </ColorConfiguration>
   </UserConfigurations>
+
   <Scene backgroundColor="#FF000000">
-    <PartImage x="207" y="20" width="36" height="36">
-      <Image resource="crewcheck_logo_neon" /><Variant mode="AMBIENT" target="alpha" value="0" />
+    <!-- Official CrewCheck mark: small, never competing with operational data. -->
+    <PartImage x="207" y="18" width="36" height="36">
+      <Image resource="crewcheck_logo_neon" />
+      <Variant mode="AMBIENT" target="alpha" value="0" />
     </PartImage>
+
+    <!-- Visual personality. Only presentation changes; the operational slots stay fixed. -->
     <ListConfiguration id="crewcheck_style">
       <ListOption id="0">
-        <Group name="Signature" x="0" y="0" width="450" height="450">
-          <DigitalClock x="0" y="0" width="450" height="450">
-            <TimeText x="52" y="118" width="346" height="90" alpha="255" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
-              <Variant mode="AMBIENT" target="alpha" value="0" /><Font family="SYNC_TO_DEVICE" size="88" weight="BOLD" slant="NORMAL" color="#FFFFFFFF" />
-            </TimeText>
-            <TimeText x="52" y="118" width="346" height="90" alpha="0" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
-              <Variant mode="AMBIENT" target="alpha" value="255" /><Font family="SYNC_TO_DEVICE" size="80" weight="THIN" slant="NORMAL" color="#FFDDE3EC" />
-            </TimeText>
-          </DigitalClock>
+        <Group name="Flight Deck Masculine" x="0" y="0" width="450" height="450">
+          <PartDraw x="84" y="116" width="282" height="92">
+            <RoundRectangle x="0" y="0" width="282" height="92" cornerRadiusX="20" cornerRadiusY="20">
+              <Fill color="#CC050E18" />
+              <Stroke thickness="1" color="[CONFIGURATION.crewcheck_palette.1]" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+          </PartDraw>
           <PartDraw x="55" y="242" width="340" height="82">
-            <RoundRectangle x="0" y="0" width="340" height="82" cornerRadiusX="26" cornerRadiusY="26"><Fill color="#FF0C1726" /><Stroke thickness="1" color="[CONFIGURATION.crewcheck_palette.1]" /></RoundRectangle>
+            <RoundRectangle x="0" y="0" width="340" height="82" cornerRadiusX="14" cornerRadiusY="14">
+              <Fill color="#FF050E18" />
+              <Stroke thickness="1" color="[CONFIGURATION.crewcheck_palette.1]" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+          </PartDraw>
+          <PartDraw x="112" y="232" width="226" height="3">
+            <RoundRectangle x="0" y="0" width="226" height="3" cornerRadiusX="1.5" cornerRadiusY="1.5">
+              <Fill color="[CONFIGURATION.crewcheck_palette.0]" />
+            </RoundRectangle>
             <Variant mode="AMBIENT" target="alpha" value="0" />
           </PartDraw>
         </Group>
       </ListOption>
+
       <ListOption id="1">
-        <Group name="Flight Deck" x="0" y="0" width="450" height="450">
-          <DigitalClock x="0" y="0" width="450" height="450">
-            <TimeText x="52" y="118" width="346" height="90" alpha="255" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
-              <Variant mode="AMBIENT" target="alpha" value="0" /><Font family="SYNC_TO_DEVICE" size="84" weight="BOLD" slant="NORMAL" color="[CONFIGURATION.crewcheck_palette.0]" />
-            </TimeText>
-            <TimeText x="52" y="118" width="346" height="90" alpha="0" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
-              <Variant mode="AMBIENT" target="alpha" value="255" /><Font family="SYNC_TO_DEVICE" size="80" weight="THIN" slant="NORMAL" color="#FFDDE3EC" />
-            </TimeText>
-          </DigitalClock>
+        <Group name="Elegance Feminine" x="0" y="0" width="450" height="450">
+          <PartDraw x="92" y="118" width="266" height="88">
+            <RoundRectangle x="0" y="0" width="266" height="88" cornerRadiusX="44" cornerRadiusY="44">
+              <Fill color="#990C1726" />
+              <Stroke thickness="1" color="[CONFIGURATION.crewcheck_palette.1]" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+          </PartDraw>
           <PartDraw x="55" y="242" width="340" height="82">
-            <RoundRectangle x="0" y="0" width="340" height="82" cornerRadiusX="14" cornerRadiusY="14"><Fill color="#FF050E18" /><Stroke thickness="1" color="[CONFIGURATION.crewcheck_palette.1]" /></RoundRectangle>
+            <RoundRectangle x="0" y="0" width="340" height="82" cornerRadiusX="28" cornerRadiusY="28">
+              <Fill color="#FF0C1726" />
+              <Stroke thickness="1" color="[CONFIGURATION.crewcheck_palette.1]" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+          </PartDraw>
+          <PartDraw x="195" y="228" width="60" height="4">
+            <RoundRectangle x="0" y="0" width="60" height="4" cornerRadiusX="2" cornerRadiusY="2">
+              <Fill color="[CONFIGURATION.crewcheck_palette.0]" />
+            </RoundRectangle>
             <Variant mode="AMBIENT" target="alpha" value="0" />
           </PartDraw>
         </Group>
       </ListOption>
+
       <ListOption id="2">
-        <Group name="Minimal" x="0" y="0" width="450" height="450">
+        <Group name="Balanced Unisex" x="0" y="0" width="450" height="450">
+          <PartDraw x="55" y="242" width="340" height="82">
+            <RoundRectangle x="0" y="0" width="340" height="82" cornerRadiusX="22" cornerRadiusY="22">
+              <Fill color="#DD07111F" />
+              <Stroke thickness="1" color="[CONFIGURATION.crewcheck_palette.1]" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+          </PartDraw>
+        </Group>
+      </ListOption>
+    </ListConfiguration>
+
+    <!-- Clock mode. Hybrid uses a compact subdial so hands never cover gate/APZ data. -->
+    <ListConfiguration id="crewcheck_mode">
+      <ListOption id="0">
+        <Group name="Hybrid Analog Digital" x="0" y="0" width="450" height="450">
+          <AnalogClock x="0" y="0" width="450" height="450">
+            <HourHand resource="crewcheck_hour_hand" x="220" y="128" width="10" height="34" pivotX="0.5" pivotY="0.94" tintColor="#FFFFFFFF">
+              <Variant mode="AMBIENT" target="alpha" value="0" />
+            </HourHand>
+            <MinuteHand resource="crewcheck_minute_hand" x="222" y="114" width="6" height="48" pivotX="0.5" pivotY="0.958" tintColor="[CONFIGURATION.crewcheck_palette.0]">
+              <Variant mode="AMBIENT" target="alpha" value="0" />
+            </MinuteHand>
+            <SecondHand resource="crewcheck_second_hand" x="224" y="111" width="2" height="51" pivotX="0.5" pivotY="0.96" tintColor="[CONFIGURATION.crewcheck_palette.0]">
+              <Variant mode="AMBIENT" target="alpha" value="0" />
+              <Sweep frequency="15" />
+            </SecondHand>
+          </AnalogClock>
+
+          <PartDraw x="219" y="154" width="12" height="12">
+            <RoundRectangle x="0" y="0" width="12" height="12" cornerRadiusX="6" cornerRadiusY="6">
+              <Fill color="#FFFFFFFF" />
+              <Stroke thickness="2" color="[CONFIGURATION.crewcheck_palette.0]" />
+            </RoundRectangle>
+            <Variant mode="AMBIENT" target="alpha" value="0" />
+          </PartDraw>
+
           <DigitalClock x="0" y="0" width="450" height="450">
-            <TimeText x="52" y="118" width="346" height="90" alpha="255" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
-              <Variant mode="AMBIENT" target="alpha" value="0" /><Font family="SYNC_TO_DEVICE" size="88" weight="THIN" slant="NORMAL" color="#FFFFFFFF" />
+            <TimeText x="125" y="171" width="200" height="38" alpha="255" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
+              <Variant mode="AMBIENT" target="alpha" value="0" />
+              <Font family="SYNC_TO_DEVICE" size="36" weight="BOLD" slant="NORMAL" color="#FFFFFFFF" />
             </TimeText>
             <TimeText x="52" y="118" width="346" height="90" alpha="0" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
-              <Variant mode="AMBIENT" target="alpha" value="255" /><Font family="SYNC_TO_DEVICE" size="80" weight="THIN" slant="NORMAL" color="#FFDDE3EC" />
+              <Variant mode="AMBIENT" target="alpha" value="255" />
+              <Font family="SYNC_TO_DEVICE" size="80" weight="THIN" slant="NORMAL" color="#FFDDE3EC" />
+            </TimeText>
+          </DigitalClock>
+        </Group>
+      </ListOption>
+
+      <ListOption id="1">
+        <Group name="Digital Only" x="0" y="0" width="450" height="450">
+          <DigitalClock x="0" y="0" width="450" height="450">
+            <TimeText x="52" y="118" width="346" height="90" alpha="255" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
+              <Variant mode="AMBIENT" target="alpha" value="0" />
+              <Font family="SYNC_TO_DEVICE" size="88" weight="BOLD" slant="NORMAL" color="#FFFFFFFF" />
+            </TimeText>
+            <TimeText x="52" y="118" width="346" height="90" alpha="0" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
+              <Variant mode="AMBIENT" target="alpha" value="255" />
+              <Font family="SYNC_TO_DEVICE" size="80" weight="THIN" slant="NORMAL" color="#FFDDE3EC" />
             </TimeText>
           </DigitalClock>
         </Group>
       </ListOption>
     </ListConfiguration>
+
+    <!-- Calendar shared by every style/mode; device timezone remains authoritative. -->
     <PartText x="105" y="210" width="240" height="28">
       <Localization locales="pt_BR" />
-      <Text align="CENTER"><Font family="SYNC_TO_DEVICE" size="22" weight="NORMAL" color="#FFB7C7D9"><Upper><Template>%s · %s %s<Parameter expression="[DAY_OF_WEEK_S]" /><Parameter expression="[DAY_Z]" /><Parameter expression="[MONTH_S]" /></Template></Upper></Font></Text>
+      <Text align="CENTER">
+        <Font family="SYNC_TO_DEVICE" size="22" weight="NORMAL" color="#FFB7C7D9">
+          <Upper>
+            <Template>%s · %s %s<Parameter expression="[DAY_OF_WEEK_S]" /><Parameter expression="[DAY_Z]" /><Parameter expression="[MONTH_S]" /></Template>
+          </Upper>
+        </Font>
+      </Text>
     </PartText>
+
+    <!-- Existing providers/slot ids are intentionally unchanged. -->
     <ComplicationSlot x="97" y="62" width="124" height="52" slotId="2" displayName="gate_label" supportedTypes="SHORT_TEXT EMPTY">
       <BoundingRoundBox x="0" y="0" width="124" height="52" outlinePadding="2.0" cornerRadius="18" />
       <DefaultProviderPolicy primaryProvider="com.crewcheck.app/com.crewcheck.watch.GateComplicationService" primaryProviderType="SHORT_TEXT" defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY" />
       <Complication type="SHORT_TEXT">
-        <PartText x="6" y="0" width="112" height="22"><Text align="CENTER" ellipsis="TRUE" maxLines="1"><Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL" color="#FF9EBDCB"><Template>%s<Parameter expression="[COMPLICATION.TITLE]" /></Template></Font></Text></PartText>
-        <PartText x="6" y="24" width="112" height="28"><Text align="CENTER" ellipsis="TRUE" maxLines="1"><Font family="SYNC_TO_DEVICE" size="24" weight="BOLD" color="#FFFFFFFF"><Template>%s<Parameter expression="[COMPLICATION.TEXT] == &quot;--&quot; ? &quot;—&quot; : [COMPLICATION.TEXT]" /></Template></Font></Text></PartText>
+        <PartText x="6" y="0" width="112" height="22">
+          <Text align="CENTER" ellipsis="TRUE" maxLines="1">
+            <Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL" color="#FF9EBDCB"><Template>%s<Parameter expression="[COMPLICATION.TITLE]" /></Template></Font>
+          </Text>
+        </PartText>
+        <PartText x="6" y="24" width="112" height="28">
+          <Text align="CENTER" ellipsis="TRUE" maxLines="1">
+            <Font family="SYNC_TO_DEVICE" size="24" weight="BOLD" color="#FFFFFFFF"><Template>%s<Parameter expression="[COMPLICATION.TEXT] == &quot;--&quot; ? &quot;—&quot; : [COMPLICATION.TEXT]" /></Template></Font>
+          </Text>
+        </PartText>
       </Complication>
     </ComplicationSlot>
+
     <ComplicationSlot x="229" y="62" width="124" height="52" slotId="5" displayName="battery_label" supportedTypes="SHORT_TEXT EMPTY">
       <BoundingRoundBox x="0" y="0" width="124" height="52" outlinePadding="2.0" cornerRadius="18" />
       <DefaultProviderPolicy defaultSystemProvider="WATCH_BATTERY" defaultSystemProviderType="SHORT_TEXT" />
       <Complication type="SHORT_TEXT">
-        <PartText x="6" y="0" width="112" height="22"><Text align="CENTER" ellipsis="TRUE" maxLines="1"><Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL" color="#FF9EBDCB"><Template>%s<Parameter expression="[COMPLICATION.TITLE] == &quot;Battery&quot; ? &quot;BATERIA&quot; : [COMPLICATION.TITLE] == &quot;BATTERY&quot; ? &quot;BATERIA&quot; : [COMPLICATION.TITLE]" /></Template></Font></Text><Variant mode="AMBIENT" target="alpha" value="0" /></PartText>
-        <PartText x="6" y="24" width="112" height="28"><Text align="CENTER" ellipsis="TRUE" maxLines="1"><Font family="SYNC_TO_DEVICE" size="24" weight="BOLD" color="#FFFFFFFF"><Template>%s<Parameter expression="[COMPLICATION.TEXT] == &quot;--&quot; ? &quot;—&quot; : [COMPLICATION.TEXT]" /></Template></Font></Text><Variant mode="AMBIENT" target="alpha" value="0" /></PartText>
-        <!-- No fake label: if a provider omits its title, use its own icon. -->
+        <PartText x="6" y="0" width="112" height="22">
+          <Text align="CENTER" ellipsis="TRUE" maxLines="1">
+            <Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL" color="#FF9EBDCB"><Template>%s<Parameter expression="[COMPLICATION.TITLE] == &quot;Battery&quot; ? &quot;BATERIA&quot; : [COMPLICATION.TITLE] == &quot;BATTERY&quot; ? &quot;BATERIA&quot; : [COMPLICATION.TITLE]" /></Template></Font>
+          </Text>
+          <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartText>
+        <PartText x="6" y="24" width="112" height="28">
+          <Text align="CENTER" ellipsis="TRUE" maxLines="1">
+            <Font family="SYNC_TO_DEVICE" size="24" weight="BOLD" color="#FFFFFFFF"><Template>%s<Parameter expression="[COMPLICATION.TEXT] == &quot;--&quot; ? &quot;—&quot; : [COMPLICATION.TEXT]" /></Template></Font>
+          </Text>
+          <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartText>
         <Condition>
           <Expressions><Expression name="battery_title_missing">textLength([COMPLICATION.TITLE]) == 0</Expression></Expressions>
           <Compare expression="battery_title_missing">
@@ -99,39 +218,84 @@
         </Condition>
       </Complication>
     </ComplicationSlot>
+
     <ComplicationSlot x="55" y="242" width="340" height="82" slotId="1" displayName="next_step_label" supportedTypes="LONG_TEXT SHORT_TEXT EMPTY">
       <BoundingRoundBox x="0" y="0" width="340" height="82" outlinePadding="2.0" cornerRadius="26" />
       <DefaultProviderPolicy primaryProvider="com.crewcheck.app/com.crewcheck.watch.CrewCheckComplicationService" primaryProviderType="LONG_TEXT" defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY" />
       <Complication type="LONG_TEXT">
-        <PartText x="16" y="4" width="308" height="24"><Text align="CENTER" ellipsis="TRUE" maxLines="1"><Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL" color="[CONFIGURATION.crewcheck_palette.0]"><Template>%s<Parameter expression="[COMPLICATION.TITLE] == &quot;CREWCHECK&quot; ? &quot;AGORA&quot; : [COMPLICATION.TITLE] == &quot;CrewCheck&quot; ? &quot;AGORA&quot; : [COMPLICATION.TITLE]" /></Template></Font></Text></PartText>
-        <PartText x="16" y="30" width="308" height="48"><Text align="CENTER" ellipsis="TRUE" maxLines="2"><Font family="SYNC_TO_DEVICE" size="25" weight="BOLD" color="#FFFFFFFF"><Template>%s<Parameter expression="[COMPLICATION.TEXT] == &quot;SEM ATIVIDADE&quot; ? &quot;Sem atividade&quot; : [COMPLICATION.TEXT] == &quot;--&quot; ? &quot;—&quot; : [COMPLICATION.TEXT]" /></Template></Font></Text></PartText>
+        <PartText x="16" y="4" width="308" height="24">
+          <Text align="CENTER" ellipsis="TRUE" maxLines="1">
+            <Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL" color="[CONFIGURATION.crewcheck_palette.0]"><Template>%s<Parameter expression="[COMPLICATION.TITLE] == &quot;CREWCHECK&quot; ? &quot;AGORA&quot; : [COMPLICATION.TITLE] == &quot;CrewCheck&quot; ? &quot;AGORA&quot; : [COMPLICATION.TITLE]" /></Template></Font>
+          </Text>
+        </PartText>
+        <PartText x="16" y="30" width="308" height="48">
+          <Text align="CENTER" ellipsis="TRUE" maxLines="2">
+            <Font family="SYNC_TO_DEVICE" size="25" weight="BOLD" color="#FFFFFFFF"><Template>%s<Parameter expression="[COMPLICATION.TEXT] == &quot;SEM ATIVIDADE&quot; ? &quot;Sem atividade&quot; : [COMPLICATION.TEXT] == &quot;--&quot; ? &quot;—&quot; : [COMPLICATION.TEXT]" /></Template></Font>
+          </Text>
+        </PartText>
       </Complication>
       <Complication type="SHORT_TEXT">
-        <PartText x="16" y="4" width="308" height="24"><Text align="CENTER" ellipsis="TRUE" maxLines="1"><Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL" color="[CONFIGURATION.crewcheck_palette.0]"><Template>%s<Parameter expression="[COMPLICATION.TITLE] == &quot;CREWCHECK&quot; ? &quot;AGORA&quot; : [COMPLICATION.TITLE] == &quot;CrewCheck&quot; ? &quot;AGORA&quot; : [COMPLICATION.TITLE]" /></Template></Font></Text></PartText>
-        <PartText x="16" y="30" width="308" height="48"><Text align="CENTER" ellipsis="TRUE" maxLines="1"><Font family="SYNC_TO_DEVICE" size="30" weight="BOLD" color="#FFFFFFFF"><Template>%s<Parameter expression="[COMPLICATION.TEXT] == &quot;SEM ATIVIDADE&quot; ? &quot;Sem atividade&quot; : [COMPLICATION.TEXT] == &quot;--&quot; ? &quot;—&quot; : [COMPLICATION.TEXT]" /></Template></Font></Text></PartText>
+        <PartText x="16" y="4" width="308" height="24">
+          <Text align="CENTER" ellipsis="TRUE" maxLines="1">
+            <Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL" color="[CONFIGURATION.crewcheck_palette.0]"><Template>%s<Parameter expression="[COMPLICATION.TITLE] == &quot;CREWCHECK&quot; ? &quot;AGORA&quot; : [COMPLICATION.TITLE] == &quot;CrewCheck&quot; ? &quot;AGORA&quot; : [COMPLICATION.TITLE]" /></Template></Font>
+          </Text>
+        </PartText>
+        <PartText x="16" y="30" width="308" height="48">
+          <Text align="CENTER" ellipsis="TRUE" maxLines="1">
+            <Font family="SYNC_TO_DEVICE" size="30" weight="BOLD" color="#FFFFFFFF"><Template>%s<Parameter expression="[COMPLICATION.TEXT] == &quot;SEM ATIVIDADE&quot; ? &quot;Sem atividade&quot; : [COMPLICATION.TEXT] == &quot;--&quot; ? &quot;—&quot; : [COMPLICATION.TEXT]" /></Template></Font>
+          </Text>
+        </PartText>
       </Complication>
     </ComplicationSlot>
+
     <ComplicationSlot x="101" y="332" width="118" height="54" slotId="3" displayName="crewlife_label" supportedTypes="SHORT_TEXT EMPTY">
       <BoundingRoundBox x="0" y="0" width="118" height="54" outlinePadding="2.0" cornerRadius="18" />
       <DefaultProviderPolicy primaryProvider="com.crewcheck.app/com.crewcheck.watch.CrewLifeComplicationService" primaryProviderType="SHORT_TEXT" defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY" />
       <Complication type="SHORT_TEXT">
-        <PartText x="4" y="0" width="110" height="22"><Text align="CENTER" ellipsis="TRUE" maxLines="1"><Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL" color="#FF9EBDCB"><Template>%s<Parameter expression="[COMPLICATION.TITLE] == &quot;CREWLIFE&quot; ? &quot;CrewLife&quot; : [COMPLICATION.TITLE]" /></Template></Font></Text><Variant mode="AMBIENT" target="alpha" value="0" /></PartText>
-        <PartText x="4" y="24" width="110" height="30"><Text align="CENTER" ellipsis="TRUE" maxLines="1"><Font family="SYNC_TO_DEVICE" size="26" weight="BOLD" color="#FFB7C7D9"><Template>%s<Parameter expression="[COMPLICATION.TEXT] == &quot;--&quot; ? &quot;—&quot; : [COMPLICATION.TEXT]" /></Template></Font></Text><Variant mode="AMBIENT" target="alpha" value="0" /></PartText>
+        <PartText x="4" y="0" width="110" height="22">
+          <Text align="CENTER" ellipsis="TRUE" maxLines="1">
+            <Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL" color="#FF9EBDCB"><Template>%s<Parameter expression="[COMPLICATION.TITLE] == &quot;CREWLIFE&quot; ? &quot;CrewLife&quot; : [COMPLICATION.TITLE]" /></Template></Font>
+          </Text>
+          <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartText>
+        <PartText x="4" y="24" width="110" height="30">
+          <Text align="CENTER" ellipsis="TRUE" maxLines="1">
+            <Font family="SYNC_TO_DEVICE" size="26" weight="BOLD" color="#FFB7C7D9"><Template>%s<Parameter expression="[COMPLICATION.TEXT] == &quot;--&quot; ? &quot;—&quot; : [COMPLICATION.TEXT]" /></Template></Font>
+          </Text>
+          <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartText>
       </Complication>
     </ComplicationSlot>
+
     <ComplicationSlot x="231" y="332" width="118" height="54" slotId="6" displayName="steps_label" supportedTypes="SHORT_TEXT EMPTY">
       <BoundingRoundBox x="0" y="0" width="118" height="54" outlinePadding="2.0" cornerRadius="18" />
       <DefaultProviderPolicy defaultSystemProvider="STEP_COUNT" defaultSystemProviderType="SHORT_TEXT" />
       <Complication type="SHORT_TEXT">
-        <PartText x="4" y="0" width="110" height="22"><Text align="CENTER" ellipsis="TRUE" maxLines="1"><Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL" color="#FF9EBDCB"><Template>%s<Parameter expression="[COMPLICATION.TITLE] == &quot;Steps&quot; ? &quot;PASSOS&quot; : [COMPLICATION.TITLE] == &quot;STEPS&quot; ? &quot;PASSOS&quot; : [COMPLICATION.TITLE] == &quot;Step count&quot; ? &quot;PASSOS&quot; : [COMPLICATION.TITLE] == &quot;Step Count&quot; ? &quot;PASSOS&quot; : [COMPLICATION.TITLE]" /></Template></Font></Text><Variant mode="AMBIENT" target="alpha" value="0" /></PartText>
-        <PartText x="4" y="24" width="110" height="30"><Text align="CENTER" ellipsis="TRUE" maxLines="1"><Font family="SYNC_TO_DEVICE" size="26" weight="BOLD" color="[CONFIGURATION.crewcheck_palette.0]"><Template>%s<Parameter expression="[COMPLICATION.TEXT] == &quot;--&quot; ? &quot;—&quot; : [COMPLICATION.TEXT]" /></Template></Font></Text><Variant mode="AMBIENT" target="alpha" value="0" /></PartText>
+        <PartText x="4" y="0" width="110" height="22">
+          <Text align="CENTER" ellipsis="TRUE" maxLines="1">
+            <Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL" color="#FF9EBDCB"><Template>%s<Parameter expression="[COMPLICATION.TITLE] == &quot;Steps&quot; ? &quot;PASSOS&quot; : [COMPLICATION.TITLE] == &quot;STEPS&quot; ? &quot;PASSOS&quot; : [COMPLICATION.TITLE] == &quot;Step count&quot; ? &quot;PASSOS&quot; : [COMPLICATION.TITLE] == &quot;Step Count&quot; ? &quot;PASSOS&quot; : [COMPLICATION.TITLE]" /></Template></Font>
+          </Text>
+          <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartText>
+        <PartText x="4" y="24" width="110" height="30">
+          <Text align="CENTER" ellipsis="TRUE" maxLines="1">
+            <Font family="SYNC_TO_DEVICE" size="26" weight="BOLD" color="[CONFIGURATION.crewcheck_palette.0]"><Template>%s<Parameter expression="[COMPLICATION.TEXT] == &quot;--&quot; ? &quot;—&quot; : [COMPLICATION.TEXT]" /></Template></Font>
+          </Text>
+          <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartText>
       </Complication>
     </ComplicationSlot>
+
     <ComplicationSlot x="153" y="394" width="144" height="28" slotId="4" displayName="routine_label" supportedTypes="SHORT_TEXT EMPTY">
       <BoundingRoundBox x="0" y="0" width="144" height="28" outlinePadding="2.0" cornerRadius="14" />
       <DefaultProviderPolicy primaryProvider="com.crewcheck.app/com.crewcheck.watch.RoutineComplicationService" primaryProviderType="SHORT_TEXT" defaultSystemProvider="EMPTY" defaultSystemProviderType="EMPTY" />
       <Complication type="SHORT_TEXT">
-        <PartText x="4" y="0" width="136" height="28"><Text align="CENTER" ellipsis="TRUE" maxLines="1"><Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL" color="#FFB7C7D9"><Template>%s · %s<Parameter expression="[COMPLICATION.TITLE] == &quot;ROTINA&quot; ? &quot;Rotina&quot; : [COMPLICATION.TITLE]" /><Parameter expression="[COMPLICATION.TEXT] == &quot;--&quot; ? &quot;—&quot; : [COMPLICATION.TEXT]" /></Template></Font></Text><Variant mode="AMBIENT" target="alpha" value="0" /></PartText>
+        <PartText x="4" y="0" width="136" height="28">
+          <Text align="CENTER" ellipsis="TRUE" maxLines="1">
+            <Font family="SYNC_TO_DEVICE" size="18" weight="NORMAL" color="#FFB7C7D9"><Template>%s · %s<Parameter expression="[COMPLICATION.TITLE] == &quot;ROTINA&quot; ? &quot;Rotina&quot; : [COMPLICATION.TITLE]" /><Parameter expression="[COMPLICATION.TEXT] == &quot;--&quot; ? &quot;—&quot; : [COMPLICATION.TEXT]" /></Template></Font>
+          </Text>
+          <Variant mode="AMBIENT" target="alpha" value="0" />
+        </PartText>
       </Complication>
     </ComplicationSlot>
   </Scene>
