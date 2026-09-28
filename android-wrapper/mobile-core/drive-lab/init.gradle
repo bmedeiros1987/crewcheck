@@ -1,0 +1,28 @@
+// Mobile Core owns this opt-in phone variant and its private-cache adapter.
+// Normal app builds never load this script. A consumer may pin this directory
+// from a Mobile Core commit using -PcrewcheckMobileDriveLabRoot=/absolute/path.
+gradle.beforeProject { project ->
+    if (project.path == ':app') {
+        project.plugins.withId('com.android.application') {
+            def sourceRoot = project.hasProperty('crewcheckMobileDriveLabRoot')
+                ? project.file(project.property('crewcheckMobileDriveLabRoot'))
+                : project.rootProject.file('mobile-core/drive-lab')
+            if (!new File(sourceRoot, 'AndroidManifest.xml').isFile()
+                    || !new File(sourceRoot, 'java/com/crewcheck/app/CrewCheckDriveProvider.java').isFile()) {
+                throw new GradleException('Mobile Core Drive Lab source is missing; refuse an incomplete phone lab.')
+            }
+            project.android.buildTypes.create('driveLab') {
+                initWith project.android.buildTypes.getByName('debug')
+                applicationIdSuffix '.drivelab'
+                versionNameSuffix '-drive-lab'
+                debuggable true
+                signingConfig project.android.signingConfigs.getByName('debug')
+                matchingFallbacks = ['debug']
+            }
+            project.android.sourceSets.getByName('driveLab') {
+                java.srcDir new File(sourceRoot, 'java')
+                manifest.srcFile new File(sourceRoot, 'AndroidManifest.xml')
+            }
+        }
+    }
+}
