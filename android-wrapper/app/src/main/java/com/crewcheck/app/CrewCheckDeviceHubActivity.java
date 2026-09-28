@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.net.Uri;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -268,6 +269,18 @@ public final class CrewCheckDeviceHubActivity extends Activity {
         refreshParams.setMargins(0, dp(10), 0, 0);
         content.addView(refresh, refreshParams);
 
+        Button install = button("Instalar CrewWatch pela Play", SURFACE_ALT, WHITE);
+        install.setOnClickListener(view -> openCrewWatchOnPlay());
+        LinearLayout.LayoutParams installParams = buttonParams();
+        installParams.setMargins(0, dp(10), 0, 0);
+        content.addView(install, installParams);
+        TextView installHint = text(
+                "Na Play Store, escolha seu Galaxy Watch como dispositivo de instalação. Depois, abra o CrewWatch uma vez no relógio.",
+                12, MUTED, false
+        );
+        installHint.setPadding(dp(3), dp(8), dp(3), 0);
+        content.addView(installHint);
+
         TextView privacy = text(
                 "Privacidade: este painel guarda apenas modelo, versão, bateria e horários de sincronização. Não recebe PDF, conteúdo da escala, credenciais nem dados brutos de saúde.",
                 12,
@@ -276,6 +289,18 @@ public final class CrewCheckDeviceHubActivity extends Activity {
         );
         privacy.setPadding(0, dp(18), 0, 0);
         content.addView(privacy);
+    }
+
+    private void openCrewWatchOnPlay() {
+        try {
+            Intent market = new Intent(Intent.ACTION_VIEW,
+                    Uri.parse("market://details?id=com.crewcheck.app"));
+            market.setPackage("com.android.vending");
+            startActivity(market);
+        } catch (android.content.ActivityNotFoundException | SecurityException unavailable) {
+            startActivity(new Intent(Intent.ACTION_VIEW,
+                    Uri.parse("https://play.google.com/store/apps/details?id=com.crewcheck.app")));
+        }
     }
 
     private LinearLayout card() {
