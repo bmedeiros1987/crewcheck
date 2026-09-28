@@ -216,37 +216,3 @@ html[data-crew-theme='light'] body > .cz-bottom-nav > button.active {
     transform: none !important;
   }
 }
-
-
-/* Keep the profile identity readable in the menu's narrow phone header. */
-.cz-app[data-version] .cz-menu-panel .cz-menu-profile {
-  flex: 1 1 auto !important;
-  min-width: 0 !important;
-  text-align: left !important;
-}
-.cz-app[data-version] .cz-menu-panel .cz-menu-profile-copy strong,
-.cz-app[data-version] .cz-menu-panel .cz-menu-profile > span:last-child > strong {
-  display: -webkit-box !important;
-  -webkit-box-orient: vertical !important;
-  -webkit-line-clamp: 2 !important;
-  white-space: normal !important;
-  overflow: hidden !important;
-  overflow-wrap: anywhere !important;
-  line-height: 1.25 !important;
-  font-size: clamp(.92rem, 3.8vw, 1.08rem) !important;
-}
-.cz-app[data-version] .cz-menu-panel .cz-menu-profile-copy small,
-.cz-app[data-version] .cz-menu-panel .cz-menu-profile > span:last-child > small {
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  line-height: 1.3 !important;
-}
-@media (max-width: 420px) {
-  .cz-app[data-version] .cz-menu-panel .cz-menu-brandmark {
-    display: none !important;
-  }
-  .cz-app[data-version] .cz-menu-panel .cz-menu-header {
-    gap: 8px !important;
-  }
-}
