@@ -7,11 +7,14 @@ import androidx.car.app.CarContext;
 import androidx.car.app.CarToast;
 import androidx.car.app.HostException;
 import androidx.car.app.model.Action;
+import androidx.car.app.model.CarIcon;
+import androidx.car.app.model.CarColor;
 import androidx.car.app.model.MessageTemplate;
 import androidx.car.app.model.Pane;
 import androidx.car.app.model.PaneTemplate;
 import androidx.car.app.model.Row;
 import androidx.car.app.model.Template;
+import androidx.core.graphics.drawable.IconCompat;
 import java.util.List;
 
 /** A short, read-only operational glance using the host's driving-safe templates. */
@@ -22,31 +25,41 @@ final class DriveTodayScreen extends DriveScreen {
         DriveSnapshot snapshot = repository.snapshot();
         long now = repository.now();
         if (snapshot == null || !snapshot.isFresh(now)) {
-            return new MessageTemplate.Builder("Abra o Phone Lab no celular para atualizar a programação.")
-                    .setTitle("Hoje").setHeaderAction(Action.BACK).build();
+            return new MessageTemplate.Builder("Programação indisponível no carro. Abra o Drive Lab no celular para atualizar.")
+                    .setTitle("CrewCheck • Hoje").setHeaderAction(Action.BACK).build();
         }
         if ("OFF_DUTY".equals(snapshot.state)) {
-            return new MessageTemplate.Builder("Folga. Nenhum deslocamento foi sugerido pela escala.")
-                    .setTitle("Hoje").setHeaderAction(Action.BACK).build();
+            return new MessageTemplate.Builder("Dia de folga. A escala não indica deslocamento agora.")
+                    .setTitle("CrewCheck • Hoje").setHeaderAction(Action.BACK).build();
         }
 
         Pane.Builder pane = new Pane.Builder();
-        pane.addRow(new Row.Builder().setTitle("Programação")
-                .addText(snapshot.flight.isEmpty() ? "Sem voo atual confirmado" : snapshot.flight).build());
+        pane.addRow(new Row.Builder().setTitle("Próximo voo")
+                .addText(snapshot.flight.isEmpty() ? "Sem voo confirmado" : snapshot.flight)
+                .setImage(icon(R.drawable.ic_drive_flight)).build());
         if (!snapshot.presentationTime.isEmpty() || !snapshot.place.isEmpty()) {
-            String presentation = (snapshot.presentationTime + "  " + snapshot.place).trim();
-            pane.addRow(new Row.Builder().setTitle("Apresentação").addText(presentation).build());
+            String presentation = snapshot.presentationTime.isEmpty()
+                    ? "Apresentação" : "Apresentação • " + snapshot.presentationTime;
+            pane.addRow(new Row.Builder().setTitle(presentation)
+                    .addText(snapshot.place.isEmpty() ? "Local não informado" : snapshot.place)
+                    .setImage(icon(R.drawable.ic_drive_clock)).build());
         }
         List<DriveSnapshot.Destination> destinations = snapshot.destinations(now);
         if (!destinations.isEmpty()) {
             DriveSnapshot.Destination destination = destinations.get(0);
-            pane.addRow(new Row.Builder().setTitle("Destino")
-                    .addText(destination.title).build());
-            pane.addAction(new Action.Builder().setTitle("Abrir rota")
+            pane.addRow(new Row.Builder().setTitle("Destino da escala")
+                    .addText(destination.title)
+                    .setImage(icon(R.drawable.ic_drive_route)).build());
+            pane.addAction(new Action.Builder().setTitle("Abrir no GPS")
                     .setOnClickListener(() -> navigate(destination)).build());
         }
-        return new PaneTemplate.Builder(pane.build()).setTitle("Hoje")
+        return new PaneTemplate.Builder(pane.build()).setTitle("CrewCheck • Hoje")
                 .setHeaderAction(Action.BACK).build();
+    }
+
+    private CarIcon icon(int drawable) {
+        return new CarIcon.Builder(IconCompat.createWithResource(getCarContext(), drawable))
+                .setTint(CarColor.PRIMARY).build();
     }
 
     private void navigate(DriveSnapshot.Destination destination) {
