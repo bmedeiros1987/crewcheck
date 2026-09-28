@@ -6,6 +6,9 @@ on:
       - 'android-wrapper/app/**'
       - 'client/src/lib/watchContext.ts'
       - 'client/src/pages/Home.tsx'
+      - 'docs/mobile_watch_snapshot_v1_contract.md'
+      - 'scripts/regression-mobile-watch-v1-handoff.mjs'
+      - 'scripts/regression-mobile-watch-publish-cadence.mjs'
       - '.github/workflows/watch-phone-sync.yml'
   workflow_dispatch:
 
@@ -19,45 +22,41 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
           node-version: '22.13.0'
           cache: npm
-
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Setup Gradle 8.13
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.13'
-
       - name: Install web dependencies
         run: npm ci
-
+      - name: Guard mobile-owned watch v1 contract
+        run: node scripts/regression-mobile-watch-v1-handoff.mjs
+      - name: Guard extracted Mobile publishing cadence
+        run: node scripts/regression-mobile-watch-publish-cadence.mjs
       - name: Prepare CrewCheck sources
         run: node scripts/v139/apply.mjs
-
+      - name: Recheck cadence after canonical preparation
+        run: node scripts/regression-mobile-watch-publish-cadence.mjs
       - name: TypeScript check
         run: npx tsc --noEmit
-
       - name: Build web client
         run: npx vite build
-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools'
-
       - name: Install Android API 36
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
-
       - name: Compile phone companion
         run: gradle -p android-wrapper --no-daemon --console=plain :app:assembleDebug
