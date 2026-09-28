@@ -1,4 +1,4 @@
-/** Tipos compartilhados entre o componente do Pulse e o estado da sessão. */
+/** Tipos compartilhados entre o componente, a fila e o runtime do Pulse. */
 
 export type CrewCheckPulseTone =
   | 'informativo'
@@ -8,11 +8,33 @@ export type CrewCheckPulseTone =
   | 'operacional'
   | 'lembrete';
 
+export type CrewCheckPulsePriority = 'baixa' | 'normal' | 'alta' | 'critica';
+
+export type CrewCheckPulseSystemNotification = 'never' | 'background' | 'always';
+
+export type CrewCheckPulseAction = {
+  label: string;
+  /** Destino já existente do shell; o Pulse apenas dispara crewcheck:set-view. */
+  view: string;
+};
+
 export type CrewCheckPulseMessage = {
   id?: string;
+  /** Chave estável para substituir/evitar duplicatas sem comparar texto livre. */
+  dedupeKey?: string;
   tone?: CrewCheckPulseTone;
+  priority?: CrewCheckPulsePriority;
   title: string;
   detail?: string;
   /** Mensagens dispensáveis ganham o botão de fechar. */
   dismissible?: boolean;
+  /** Tempo até iniciar a saída. Ausente = permanece até outra mensagem/dispensa. */
+  autoDismissMs?: number;
+  /** Política para a notificação nativa/browser. Nunca pede permissão implicitamente. */
+  systemNotification?: CrewCheckPulseSystemNotification;
+  notificationTag?: string;
+  notificationCooldownMs?: number;
+  /** Cooldown do próprio banner na sessão, útil para contexto recorrente. */
+  pulseCooldownMs?: number;
+  action?: CrewCheckPulseAction;
 };

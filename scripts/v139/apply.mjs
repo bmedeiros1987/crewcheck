@@ -176,4 +176,5 @@ await import('../p1-menu-premium/apply.mjs');
 await import('../ci/sync-service-worker-version.mjs');
 await import('../android-play/prepare.mjs');
 await import('../android-play/layout.mjs');
+await import('../p1-546-pulse-live/finalize.mjs');
 await import('../ci/sync-canonical-manual.mjs');

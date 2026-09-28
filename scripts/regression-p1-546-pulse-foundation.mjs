@@ -213,8 +213,8 @@ assert.ok(
   'CrewCheckPulse.tsx voltou a agendar timer diretamente: o dono do timer é a sessão',
 );
 assert.ok(
-  tsx.includes('session.dispose()'),
-  'o componente precisa descartar a sessão ao desmontar',
+  tsx.includes('subscribeCrewCheckPulse(setState)'),
+  'o componente precisa assinar o runtime singleton do Pulse para a fila sobreviver a remontagens',
 );
 
 console.log('[p1-546] Pulse: superfície própria montada no shell, sticky sem fixed, sem !important, alvo de toque 44x44, sem cor literal, seis categorias, foco e movimento reduzido; dispensa não apaga mensagem nova.');
