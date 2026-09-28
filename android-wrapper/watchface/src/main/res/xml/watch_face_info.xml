@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <WatchFaceInfo>
-    <Preview value="@drawable/crewcheck_preview_signature" />
+    <Preview value="@drawable/crewcheck_preview_masculine" />
     <Editable value="true" />
     <MultipleInstancesAllowed value="true" />
 </WatchFaceInfo>
