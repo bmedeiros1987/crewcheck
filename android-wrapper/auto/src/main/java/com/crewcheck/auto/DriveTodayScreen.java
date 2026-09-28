@@ -26,15 +26,15 @@ final class DriveTodayScreen extends DriveScreen {
         long now = repository.now();
         if (snapshot == null || !snapshot.isFresh(now)) {
             return new MessageTemplate.Builder("Programação indisponível no carro. Abra o Drive Lab no celular para atualizar.")
-                    .setTitle("CrewCheck • Hoje").setHeaderAction(Action.BACK).build();
+                    .setTitle("CrewCheck • Escala").setHeaderAction(Action.BACK).build();
         }
         if ("OFF_DUTY".equals(snapshot.state)) {
             return new MessageTemplate.Builder("Dia de folga. A escala não indica deslocamento agora.")
-                    .setTitle("CrewCheck • Hoje").setHeaderAction(Action.BACK).build();
+                    .setTitle("CrewCheck • Escala").setHeaderAction(Action.BACK).build();
         }
 
         Pane.Builder pane = new Pane.Builder();
-        pane.addRow(new Row.Builder().setTitle("Próximo voo")
+        pane.addRow(new Row.Builder().setTitle("Voo atual")
                 .addText(snapshot.flight.isEmpty() ? "Sem voo confirmado" : snapshot.flight)
                 .setImage(icon(R.drawable.ic_drive_flight)).build());
         if (!snapshot.presentationTime.isEmpty() || !snapshot.place.isEmpty()) {
@@ -43,6 +43,11 @@ final class DriveTodayScreen extends DriveScreen {
             pane.addRow(new Row.Builder().setTitle(presentation)
                     .addText(snapshot.place.isEmpty() ? "Local não informado" : snapshot.place)
                     .setImage(icon(R.drawable.ic_drive_clock)).build());
+        }
+        if (!snapshot.flight.isEmpty()) {
+            pane.addRow(new Row.Builder().setTitle("Status e portão")
+                    .addText("Aguardando informação confirmada")
+                    .setImage(icon(R.drawable.ic_drive_gate)).build());
         }
         List<DriveSnapshot.Destination> destinations = snapshot.destinations(now);
         if (!destinations.isEmpty()) {
@@ -53,7 +58,7 @@ final class DriveTodayScreen extends DriveScreen {
             pane.addAction(new Action.Builder().setTitle("Abrir no GPS")
                     .setOnClickListener(() -> navigate(destination)).build());
         }
-        return new PaneTemplate.Builder(pane.build()).setTitle("CrewCheck • Hoje")
+        return new PaneTemplate.Builder(pane.build()).setTitle("CrewCheck • Escala")
                 .setHeaderAction(Action.BACK).build();
     }
 

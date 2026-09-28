@@ -213,11 +213,13 @@ public final class DriveNativeBehaviorTest {
         seed("journey-a", 60_000);
         DriveTodayScreen today = new DriveTodayScreen(car());
         PaneTemplate pane = (PaneTemplate) today.onGetTemplate();
-        assertEquals(3, pane.getPane().getRows().size());
+        assertEquals(4, pane.getPane().getRows().size());
         assertEquals("LA0000", pane.getPane().getRows().get(0).getTexts().get(0).toString());
         assertEquals("Apresentação • 08:10", pane.getPane().getRows().get(1).getTitle().toString());
         assertEquals("BSB", pane.getPane().getRows().get(1).getTexts().get(0).toString());
-        assertEquals("Destino da escala", pane.getPane().getRows().get(2).getTitle().toString());
+        assertEquals("Status e portão", pane.getPane().getRows().get(2).getTitle().toString());
+        assertEquals("Aguardando informação confirmada", pane.getPane().getRows().get(2).getTexts().get(0).toString());
+        assertEquals("Destino da escala", pane.getPane().getRows().get(3).getTitle().toString());
         for (Row row : pane.getPane().getRows()) assertNotNull(row.getImage());
         click(pane.getPane().getActions().get(0));
         assertEquals(CarContext.ACTION_NAVIGATE, car.getStartCarAppIntents().get(0).getAction());

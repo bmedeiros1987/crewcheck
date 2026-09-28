@@ -44,3 +44,22 @@ Uma lista mensal como a TV não é apropriada ao fluxo em movimento. No carro,
 mostrar somente o contexto atual/próximo necessário ao deslocamento; o restante
 fica no telefone/TV. Testar legibilidade e limite de templates em DHU e central
 física estacionada antes de avançar para distribuição.
+
+## Escala e status do voo
+
+A ação Escala abre somente o contexto atual publicado pelo Mobile Core v1: voo,
+apresentação e destino vigente. Não representa a escala completa do dia ou do mês.
+Enquanto a ponte não entrega status e portão, o carro informa “Aguardando
+informação confirmada”; não usa portão de voo anterior nem inventa um status.
+
+Para publicar status real, Mobile Core deve projetar um contrato v2 com identificador
+de voo, data/local operacional, portão e terminal confirmados, fonte e horário da
+última verificação, validade curta e invalidação explícita em mudança de jornada,
+logout ou alteração do voo. O consumidor deve omitir dado expirado e manter a
+navegação no GPS independente da disponibilidade do status. A integração com
+provedor operacional e a implementação autoritativa no celular pertencem à trilha
+Mobile Core; não foram incluídas nesta PR de periféricos.
+
+A marca recebida do usuário foi reduzida proporcionalmente para recurso Android
+sem alterar a composição. O host escolhe a apresentação do ícone; slogans e texto
+miúdo podem não ser legíveis na barra lateral do carro.
