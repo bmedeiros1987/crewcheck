@@ -168,10 +168,17 @@ def validate_config(root, labels):
         for bg in ('#FF000000', '#FF0C1726', '#FF050E18', '#DD07111F'):
             assert (luminance(accent) + .05) / (luminance(bg) + .05) >= 4.5
 
-    for option in styles:
+    scene = root.find('Scene')
+    refs = scene.findall('ListConfiguration')
+    assert [n.get('id') for n in refs] == ['crewcheck_style', 'crewcheck_mode']
+    assert [n.get('id') for n in refs[0]] == ['0', '1', '2']
+    assert [n.get('id') for n in refs[1]] == ['0', '1']
+
+    # UserConfigurations options are metadata-only; the scene-bound options carry the Groups.
+    for option in refs[0]:
         group = profile_group(option, {'PartDraw'})
         assert len(group.findall('PartDraw')) >= 1
-    for option in modes:
+    for option in refs[1]:
         group = profile_group(option, {'AnalogClock', 'DigitalClock', 'PartDraw'})
         assert len(group.findall('DigitalClock')) == 1
         if option.get('id') == '0':
@@ -179,16 +186,11 @@ def validate_config(root, labels):
         else:
             assert not group.findall('AnalogClock')
 
-    scene = root.find('Scene')
-    refs = scene.findall('ListConfiguration')
-    assert [n.get('id') for n in refs] == ['crewcheck_style', 'crewcheck_mode']
-    assert [n.get('id') for n in refs[0]] == ['0', '1', '2']
-    assert [n.get('id') for n in refs[1]] == ['0', '1']
     assert len(root.findall('.//ComplicationSlot')) == len(scene.findall('ComplicationSlot')) == 6
     assert not root.findall('.//Flavors') and not root.findall('.//Launch')
     assert not root.findall('.//PartAnimatedImage')
 
-    second = modes.find("ListOption[@id='0']/Group/AnalogClock/SecondHand")
+    second = refs[1].find("ListOption[@id='0']/Group/AnalogClock/SecondHand")
     assert second is not None and hidden_in_ambient(second)
     sweep = second.find('Sweep')
     assert sweep is not None and sweep.get('frequency') == '15'
