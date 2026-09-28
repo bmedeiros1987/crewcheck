@@ -74,22 +74,32 @@ def verify(apk_path, out, debug=False):
         assert 'Editable' in info and 'MultipleInstancesAllowed' in info
         _, face_path = resource('raw', 'watchface')
         face = ElementTree.fromstring(apk.read(face_path))
-        options = face.find('UserConfigurations/ListConfiguration[@id="crewcheck_style"]')
-        assert options is not None and options.attrib['defaultValue'] == '0'
-        assert len(options) == 3
-        for index, style in enumerate(('signature', 'flightdeck', 'minimal')):
-            expected_icon = 'crewcheck_preview_' + style
-            assert options[index].attrib['id'] == str(index)
-            assert options[index].attrib['icon'] == expected_icon
+        styles = face.find('UserConfigurations/ListConfiguration[@id="crewcheck_style"]')
+        modes = face.find('UserConfigurations/ListConfiguration[@id="crewcheck_mode"]')
+        assert styles is not None and styles.attrib['defaultValue'] == '0'
+        assert modes is not None and modes.attrib['defaultValue'] == '1'
+        assert len(styles) == 3 and len(modes) == 2
+
+        entries = [
+            ('masculine', styles[0], '0'),
+            ('elegance', styles[1], '1'),
+            ('balanced', styles[2], '2'),
+            ('hybrid', modes[0], '0'),
+            ('digital', modes[1], '1'),
+        ]
+        for name, option, stable_id in entries:
+            expected_icon = 'crewcheck_preview_' + name
+            assert option.attrib['id'] == stable_id
+            assert option.attrib['icon'] == expected_icon
             resource_id, file_path = resource('drawable', expected_icon)
             data = apk.read(file_path)
             assert data[:8] == b'\x89PNG\r\n\x1a\n'
             assert struct.unpack('>II', data[16:24]) == (360, 360)
-            if style == 'signature':
+            if name == 'masculine':
                 preview_block = re.search(r'(?s)E: Preview.*?(?=\n\s*E:|\Z)', info)
-                assert preview_block and resource_id.lower() in preview_block.group().lower(), 'Picker must reference Signature drawable'
-            previews[style] = {'resource_id': resource_id, 'path': file_path, 'sha256': hashlib.sha256(data).hexdigest()}
-        assert len({v['sha256'] for v in previews.values()}) == 3, 'Distinct style previews required'
+                assert preview_block and resource_id.lower() in preview_block.group().lower(), 'Picker must reference masculine default drawable'
+            previews[name] = {'resource_id': resource_id, 'path': file_path, 'sha256': hashlib.sha256(data).hexdigest()}
+        assert len({v['sha256'] for v in previews.values()}) == 5, 'Distinct style/mode previews required'
     report = {
         'artifact_kind': 'debug-resource-test-only' if debug else 'release',
         'apk_sha256': hashlib.sha256(apk_path.read_bytes()).hexdigest(),
@@ -98,7 +108,7 @@ def verify(apk_path, out, debug=False):
         'previews': previews,
     }
     (out / 'packaging.json').write_text(json.dumps(report, indent=2))
-    print('PASS: compiled preview/editor references and three 360px PNGs;' + (' debug contains only generated R classes' if debug else ' release is strictly resource-only'))
+    print('PASS: compiled preview/editor references and five 360px PNGs;' + (' debug contains only generated R classes' if debug else ' release is strictly resource-only'))
 
 
 if __name__ == '__main__':
