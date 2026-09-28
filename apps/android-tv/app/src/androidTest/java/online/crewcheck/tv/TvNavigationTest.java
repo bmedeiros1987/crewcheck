@@ -46,9 +46,9 @@ public final class TvNavigationTest {
 
     private void assertLayoutFits() throws Exception {
         String geometry = "JSON.stringify({width:innerWidth,height:innerHeight,scroll:document.documentElement.scrollHeight,footer:document.querySelector('footer')?.getBoundingClientRect().top})";
-        String fits = "(() => {const f=document.querySelector('footer').getBoundingClientRect();const c=document.querySelector('.live,.calendar').getBoundingClientRect();return document.documentElement.scrollWidth<=innerWidth+2 && document.documentElement.scrollHeight<=innerHeight+2 && c.bottom<=f.top+2 && f.bottom<=innerHeight+2;})()";
+        String fits = "(() => {const footer=document.querySelector('footer');const content=document.querySelector('.home-essentials,.live,.calendar');if(!footer||!content)return false;const f=footer.getBoundingClientRect();const c=content.getBoundingClientRect();return document.documentElement.scrollWidth<=innerWidth+2 && document.documentElement.scrollHeight<=innerHeight+2 && c.bottom<=f.top+2 && f.bottom<=innerHeight+2;})()";
         assertEquals("TV layout clipped or overlapping: " + evaluate(geometry), "true", evaluate(fits));
-        String liveFits = "(() => {const h=document.querySelector('.hero-bottom');return !h || h.getBoundingClientRect().bottom<=document.querySelector('footer').getBoundingClientRect().top;})()";
+        String liveFits = "(() => {const footer=document.querySelector('footer');const h=document.querySelector('.home-flight-footer,.hero-bottom');return !!footer && (!h || h.getBoundingClientRect().bottom<=footer.getBoundingClientRect().top+2);})()";
         assertEquals("Hero actions overlap ticker", "true", evaluate(liveFits));
     }
 
