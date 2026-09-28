@@ -73,6 +73,8 @@ public final class DriveRepository {
         if (enabled()) status = "Conectando ao CrewCheck Phone Lab";
     }
 
+    long now() { return clock.getAsLong(); }
+
     public boolean enabled() { return prefs.getBoolean("sync_enabled", false); }
     public void setEnabled(boolean enabled) {
         generation++;

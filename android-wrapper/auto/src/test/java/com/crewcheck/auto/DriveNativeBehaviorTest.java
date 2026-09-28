@@ -206,4 +206,32 @@ public final class DriveNativeBehaviorTest {
         advance(Duration.ofSeconds(2));
         assertNull(repository.snapshot());
     }
+    @Test public void todayGlanceUsesPublishedContextAndOpensExistingGps() throws Exception {
+        seed("journey-a", 60_000);
+        DriveTodayScreen today = new DriveTodayScreen(car());
+        PaneTemplate pane = (PaneTemplate) today.onGetTemplate();
+        assertEquals(3, pane.getPane().getRows().size());
+        assertEquals("LA0000", pane.getPane().getRows().get(0).getTexts().get(0).toString());
+        assertEquals("08:10  BSB", pane.getPane().getRows().get(1).getTexts().get(0).toString());
+        click(pane.getPane().getActions().get(0));
+        assertEquals(CarContext.ACTION_NAVIGATE, car.getStartCarAppIntents().get(0).getAction());
+    }
+    @Test public void todayDoesNotInventTripOnDayOff() throws Exception {
+        seed("journey-a", 60_000);
+        String raw = ((String) ReflectionHelpers.getField(repository, "safeJson"))
+                .replace("\"REPORTING\"", "\"OFF_DUTY\"");
+        ReflectionHelpers.setField(repository, "snapshot", DriveSnapshot.parse(raw, wallClock.get()));
+        assertTrue(new DriveTodayScreen(car()).onGetTemplate() instanceof MessageTemplate);
+        assertTrue(car.getStartCarAppIntents().isEmpty());
+    }
+    @Test public void todayButtonCannotNavigateAfterExpiry() throws Exception {
+        seed("journey-a", 1000);
+        DriveTodayScreen today = new DriveTodayScreen(car());
+        Action button = ((PaneTemplate) today.onGetTemplate()).getPane().getActions().get(0);
+        advance(Duration.ofSeconds(2));
+        click(button);
+        assertTrue(car.getStartCarAppIntents().isEmpty());
+        assertTrue(today.onGetTemplate() instanceof MessageTemplate);
+    }
+
 }

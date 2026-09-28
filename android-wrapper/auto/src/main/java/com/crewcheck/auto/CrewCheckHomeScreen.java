@@ -27,6 +27,8 @@ public final class CrewCheckHomeScreen extends DriveScreen {
             }
             return new MessageTemplate.Builder(text + "\nCom o carro estacionado, abra o Drive Lab no celular para configurar destinos.")
                     .setTitle("CrewCheck Drive").setHeaderAction(Action.APP_ICON)
+                    .addAction(new Action.Builder().setTitle("Hoje")
+                            .setOnClickListener(() -> getScreenManager().push(new DriveTodayScreen(getCarContext()))).build())
                     .addAction(refresh).build();
         }
         int limit = 5;
@@ -41,7 +43,10 @@ public final class CrewCheckHomeScreen extends DriveScreen {
                     .setBrowsable(true).setOnClickListener(() -> getScreenManager().push(
                             new DriveDestinationScreen(getCarContext(), destination))).build());
         }
+        Action today = new Action.Builder().setTitle("Hoje")
+                .setOnClickListener(() -> getScreenManager().push(new DriveTodayScreen(getCarContext()))).build();
         return new ListTemplate.Builder().setTitle("CrewCheck Drive").setHeaderAction(Action.APP_ICON)
-                .setSingleList(items.build()).setActionStrip(new ActionStrip.Builder().addAction(refresh).build()).build();
+                .setSingleList(items.build()).setActionStrip(new ActionStrip.Builder()
+                        .addAction(today).addAction(refresh).build()).build();
     }
 }
