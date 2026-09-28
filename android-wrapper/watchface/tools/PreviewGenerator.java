@@ -387,7 +387,8 @@ public final class PreviewGenerator {
             write(renderer.render(360), out.resolve("drawable-nodpi/crewcheck_preview_" + STYLES[s] + ".png"));
         }
         for (int m = 0; m < MODES.length; m++) {
-            var renderer = new PreviewGenerator(res, "2", "" + m, 0, false);
+            // Violet distinguishes clock-mode thumbnails from the cyan Balanced style thumbnail.
+            var renderer = new PreviewGenerator(res, "2", "" + m, 1, false);
             write(renderer.render(360), out.resolve("drawable-nodpi/crewcheck_preview_" + MODES[m] + ".png"));
         }
         if (args.length == 3) {
