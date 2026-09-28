@@ -47,6 +47,6 @@ public final class CrewCheckHomeScreen extends DriveScreen {
                 .setOnClickListener(() -> getScreenManager().push(new DriveTodayScreen(getCarContext()))).build();
         return new ListTemplate.Builder().setTitle("CrewCheck Drive").setHeaderAction(Action.APP_ICON)
                 .setSingleList(items.build()).setActionStrip(new ActionStrip.Builder()
-                        .addAction(today).addAction(refresh).build()).build();
+                        .addAction(today).build()).build();
     }
 }
