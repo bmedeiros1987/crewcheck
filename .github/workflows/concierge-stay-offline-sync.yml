@@ -1,0 +1,26 @@
+name: Concierge stay offline sync
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/conciergeStayQueue.ts'
+      - 'client/src/lib/conciergeStaySync.ts'
+      - 'scripts/regression-concierge-stay-offline-sync.mjs'
+      - '.github/workflows/concierge-stay-offline-sync.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Concierge offline stay sync regression
+        run: node scripts/regression-concierge-stay-offline-sync.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit

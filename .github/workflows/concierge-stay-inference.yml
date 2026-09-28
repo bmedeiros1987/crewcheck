@@ -1,0 +1,28 @@
+name: Concierge stay inference
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/conciergeStayInference.ts'
+      - 'scripts/regression-concierge-stay-inference.mjs'
+      - 'scripts/regression-concierge-stay-identity.mjs'
+      - '.github/workflows/concierge-stay-inference.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Concierge stay-inference regression
+        run: node scripts/regression-concierge-stay-inference.mjs
+      - name: Concierge same-day stay identity regression
+        run: node scripts/regression-concierge-stay-identity.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
