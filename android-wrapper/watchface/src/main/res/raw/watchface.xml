@@ -110,19 +110,19 @@
       <ListOption id="0">
         <Group name="Hybrid Analog Digital" x="0" y="0" width="450" height="450">
           <AnalogClock x="0" y="0" width="450" height="450">
-            <HourHand resource="crewcheck_hour_hand" x="220" y="128" width="10" height="34" pivotX="0.5" pivotY="0.94" tintColor="#FFFFFFFF">
+            <HourHand resource="crewcheck_hour_hand" x="163" y="135" width="10" height="27" pivotX="0.5" pivotY="0.925" tintColor="#FFFFFFFF">
               <Variant mode="AMBIENT" target="alpha" value="0" />
             </HourHand>
-            <MinuteHand resource="crewcheck_minute_hand" x="222" y="114" width="6" height="48" pivotX="0.5" pivotY="0.958" tintColor="[CONFIGURATION.crewcheck_palette.0]">
+            <MinuteHand resource="crewcheck_minute_hand" x="165" y="123" width="6" height="39" pivotX="0.5" pivotY="0.9487" tintColor="[CONFIGURATION.crewcheck_palette.0]">
               <Variant mode="AMBIENT" target="alpha" value="0" />
             </MinuteHand>
-            <SecondHand resource="crewcheck_second_hand" x="224" y="111" width="2" height="51" pivotX="0.5" pivotY="0.96" tintColor="[CONFIGURATION.crewcheck_palette.0]">
+            <SecondHand resource="crewcheck_second_hand" x="167" y="123" width="2" height="39" pivotX="0.5" pivotY="0.9487" tintColor="[CONFIGURATION.crewcheck_palette.0]">
               <Variant mode="AMBIENT" target="alpha" value="0" />
               <Sweep frequency="15" />
             </SecondHand>
           </AnalogClock>
 
-          <PartDraw x="219" y="154" width="12" height="12">
+          <PartDraw x="162" y="154" width="12" height="12">
             <RoundRectangle x="0" y="0" width="12" height="12" cornerRadiusX="6" cornerRadiusY="6">
               <Fill color="#FFFFFFFF" />
               <Stroke thickness="2" color="[CONFIGURATION.crewcheck_palette.0]" />
@@ -131,9 +131,9 @@
           </PartDraw>
 
           <DigitalClock x="0" y="0" width="450" height="450">
-            <TimeText x="125" y="171" width="200" height="38" alpha="255" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
+            <TimeText x="214" y="135" width="145" height="52" alpha="255" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
               <Variant mode="AMBIENT" target="alpha" value="0" />
-              <Font family="SYNC_TO_DEVICE" size="36" weight="BOLD" slant="NORMAL" color="#FFFFFFFF" />
+              <Font family="SYNC_TO_DEVICE" size="44" weight="BOLD" slant="NORMAL" color="#FFFFFFFF" />
             </TimeText>
             <TimeText x="52" y="118" width="346" height="90" alpha="0" align="CENTER" format="hh:mm" hourFormat="SYNC_TO_DEVICE">
               <Variant mode="AMBIENT" target="alpha" value="255" />
