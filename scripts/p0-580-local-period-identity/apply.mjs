@@ -26,6 +26,23 @@ const newIdentity = `function localRosterPeriodIdentity(roster: CrewRoster): str
 if (source.includes(oldIdentity)) source = source.replace(oldIdentity, newIdentity);
 else if (!source.includes('P0_580_LOCAL_PERIOD_IDENTITY_GUARD')) throw new Error('[p0-580-local-period-identity] função localRosterPeriodIdentity não localizada');
 
+const revisionHelper = `function localRosterRevisionChecksum(roster: CrewRoster, periodIdentity: string): string {
+  // MOBILE_ACTIVE_ROSTER_REVISION_GUARD: the verified period owns the slot, while
+  // the content suffix distinguishes later corrections published for that month.
+  const text = JSON.stringify({ year: roster.year, month: roster.month, crewId: roster.crewId, days: roster.days });
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return \`${'${periodIdentity}:${(hash >>> 0).toString(16).padStart(8, \'0\')}'}\`;
+}`;
+if (!source.includes('function localRosterRevisionChecksum(roster: CrewRoster, periodIdentity: string): string {')) {
+  const anchor = 'function persistRosterHistoryLocally(payload: SaveRosterPayload): SavedRosterSummary {';
+  if (!source.includes(anchor)) throw new Error('[p0-580-local-period-identity] persistência local não localizada para revision checksum');
+  source = source.replace(anchor, `${revisionHelper}\n${anchor}`);
+}
+
 const oldPersistHead = `  const periodIdentity = localRosterPeriodIdentity(roster);
   const previousItems = readLocalHistory();
   const previous = previousItems.find((item) => localRosterPeriodIdentity(item.roster) === periodIdentity) || null;
@@ -52,15 +69,31 @@ else if (!source.includes('const identitySlug = localRosterIdentitySlug(roster);
 
 const oldItem = `    id: previous?.id || \`local-\${safeStorageScope()}-\${localRosterIdentitySlug(roster)}-\${year}-\${month}\`,
     checksum: String(payload.checksum || periodIdentity),`;
+const mobileRevisionItem = `    id: previous?.id || \`local-\${safeStorageScope()}-\${localRosterIdentitySlug(roster)}-\${year}-\${month}\`,
+    checksum: String(payload.checksum || localRosterContentChecksum(roster)),`;
 const newItem = `    id: previous?.id || \`local-\${safeStorageScope()}-\${identitySlug}-\${year}-\${month}\`,
-    checksum: String(payload.checksum || periodIdentity || \`unverified:\${identitySlug}:\${year}:\${month}:\${now}\`),`;
+    checksum: String(payload.checksum || (periodIdentity ? localRosterRevisionChecksum(roster, periodIdentity) : \`unverified:\${identitySlug}:\${year}:\${month}:\${now}\`)),`;
 if (source.includes(oldItem)) source = source.replace(oldItem, newItem);
-else if (!source.includes('unverified:${identitySlug}:${year}:${month}:${now}')) throw new Error('[p0-580-local-period-identity] identidade do item não localizada');
+else if (source.includes(mobileRevisionItem)) source = source.replace(mobileRevisionItem, newItem);
+else if (!source.includes('periodIdentity ? localRosterRevisionChecksum(roster, periodIdentity)')) throw new Error('[p0-580-local-period-identity] identidade do item não localizada');
 
 const oldMerge = `    ...previousItems.filter((candidate) => localRosterPeriodIdentity(candidate.roster) !== periodIdentity),`;
 const newMerge = `    ...previousItems.filter((candidate) => !periodIdentity || localRosterPeriodIdentity(candidate.roster) !== periodIdentity),`;
 if (source.includes(oldMerge)) source = source.replace(oldMerge, newMerge);
 else if (!source.includes('!periodIdentity || localRosterPeriodIdentity(candidate.roster) !== periodIdentity')) throw new Error('[p0-580-local-period-identity] filtro de merge não localizado');
 
+// saveRosterAnalysis has always been local-first/offline-friendly. The Mobile retry
+// loop below reads unsynced local history directly, so a 5xx must not turn a durable
+// local import into a rejected user action or break P0_580's existing offline contract.
+const mobileCloudThrow = `  } catch (error) {
+    (error as any).localSummary = localSummary;
+    throw error;
+  }`;
+const offlineLocalSuccess = `  } catch {
+    return localSummary;
+  }`;
+if (source.includes(mobileCloudThrow)) source = source.replace(mobileCloudThrow, offlineLocalSuccess);
+if (!source.includes(offlineLocalSuccess)) throw new Error('[p0-580-local-period-identity] contrato local-first offline ausente');
+
 fs.writeFileSync(path, source, 'utf8');
-console.log('[p0-580-local-period-identity] applied');
+console.log('[p0-580-local-period-identity] applied with Mobile revision-aware checksum and offline-local save compatibility.');
