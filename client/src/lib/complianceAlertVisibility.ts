@@ -8,6 +8,13 @@ export type ComplianceAlertLike = {
   dismissed?: boolean;
   falsePositive?: boolean;
   active?: boolean;
+  classification?: string;
+  code?: string;
+  actionable?: boolean;
+  coverage?: {
+    windowDays?: number;
+    missingDates?: string[];
+  };
 };
 
 export type AlertVisibilityStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -18,14 +25,13 @@ type ComplianceAlertDismissal = {
 };
 
 type ComplianceAlertDismissalState = {
-  version: 2;
+  version: 3;
   rosterRevision: string;
   ignored: ComplianceAlertDismissal[];
 };
 
-const DISMISSAL_VERSION = 2;
-const DISMISSAL_PREFIX = 'crewcheck:compliance-alert-visibility:v2:';
-export const INCOMPLETE_28_DAY_TITLE = 'Avaliação de horas de voo em 28 dias incompleta';
+const DISMISSAL_VERSION = 3;
+const DISMISSAL_PREFIX = 'crewcheck:compliance-alert-visibility:v3:';
 
 function clean(value: unknown): string {
   return String(value || '').trim();
@@ -41,13 +47,25 @@ export function complianceAlertVisibilityKey(accountId: string | null | undefine
 }
 
 export function complianceAlertFingerprint(alert: ComplianceAlertLike): string {
-  return [alert.title, alert.date, alert.description, alert.legalReference]
+  return [alert.code, alert.title, alert.date, alert.description, alert.legalReference]
     .map(clean)
     .join('|');
 }
 
-export function isIncomplete28DayAssessment(alert: ComplianceAlertLike): boolean {
-  return clean(alert.title) === INCOMPLETE_28_DAY_TITLE;
+/**
+ * Informational alerts are emitted by the authoritative compliance engine.
+ * UI must never infer this state from user-facing title/message text.
+ */
+export function isInformationalComplianceAlert(alert: ComplianceAlertLike): boolean {
+  return alert.actionable === false
+    || clean(alert.classification) === 'dados_insuficientes'
+    || clean(alert.code) === 'ROLLING_28D_DATA_GAP';
+}
+
+function isCandidateAlert(alert: ComplianceAlertLike): boolean {
+  if (alert.dismissed || alert.falsePositive || alert.active === false) return false;
+  const severity = clean(alert.severity).toLowerCase();
+  return ['error', 'warning'].includes(severity);
 }
 
 export function filterActionableComplianceAlerts(source: unknown): ComplianceAlertLike[] {
@@ -55,10 +73,7 @@ export function filterActionableComplianceAlerts(source: unknown): ComplianceAle
   const seen = new Set<string>();
   return alerts.filter((alert): alert is ComplianceAlertLike => {
     if (!alert || typeof alert !== 'object') return false;
-    if (alert.dismissed || alert.falsePositive || alert.active === false) return false;
-    if (isIncomplete28DayAssessment(alert)) return false;
-    const severity = clean(alert.severity).toLowerCase();
-    if (!['error', 'warning'].includes(severity)) return false;
+    if (!isCandidateAlert(alert) || isInformationalComplianceAlert(alert)) return false;
     const fingerprint = complianceAlertFingerprint(alert);
     if (!fingerprint.replaceAll('|', '')) return false;
     if (seen.has(fingerprint)) return false;
@@ -69,9 +84,16 @@ export function filterActionableComplianceAlerts(source: unknown): ComplianceAle
 
 export function informationalComplianceAlerts(source: unknown): ComplianceAlertLike[] {
   const alerts = Array.isArray(source) ? source : [];
-  return alerts.filter((alert): alert is ComplianceAlertLike =>
-    Boolean(alert && typeof alert === 'object' && isIncomplete28DayAssessment(alert)),
-  );
+  const seen = new Set<string>();
+  return alerts.filter((alert): alert is ComplianceAlertLike => {
+    if (!alert || typeof alert !== 'object') return false;
+    if (!isCandidateAlert(alert) || !isInformationalComplianceAlert(alert)) return false;
+    const fingerprint = complianceAlertFingerprint(alert);
+    if (!fingerprint.replaceAll('|', '')) return false;
+    if (seen.has(fingerprint)) return false;
+    seen.add(fingerprint);
+    return true;
+  });
 }
 
 export function readComplianceAlertDismissals(
@@ -91,16 +113,33 @@ export function readComplianceAlertDismissals(
   }
 }
 
+function ignoredFingerprintSet(
+  storage: AlertVisibilityStorage,
+  accountId: string | null | undefined,
+  rosterRevision: string,
+): Set<string> {
+  return new Set(readComplianceAlertDismissals(storage, accountId, rosterRevision).map((item) => item.fingerprint));
+}
+
 export function activeComplianceAlerts(
   source: unknown,
   storage: AlertVisibilityStorage,
   accountId: string | null | undefined,
   rosterRevision: string,
 ): ComplianceAlertLike[] {
-  const ignored = new Set(
-    readComplianceAlertDismissals(storage, accountId, rosterRevision).map((item) => item.fingerprint),
-  );
+  const ignored = ignoredFingerprintSet(storage, accountId, rosterRevision);
   return filterActionableComplianceAlerts(source)
+    .filter((alert) => !ignored.has(complianceAlertFingerprint(alert)));
+}
+
+export function visibleInformationalComplianceAlerts(
+  source: unknown,
+  storage: AlertVisibilityStorage,
+  accountId: string | null | undefined,
+  rosterRevision: string,
+): ComplianceAlertLike[] {
+  const ignored = ignoredFingerprintSet(storage, accountId, rosterRevision);
+  return informationalComplianceAlerts(source)
     .filter((alert) => !ignored.has(complianceAlertFingerprint(alert)));
 }
 
