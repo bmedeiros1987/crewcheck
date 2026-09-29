@@ -1395,8 +1395,8 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', margin = 25, onRoute,
     if (previous === fingerprint) return;
     lastAlertedIncidentFingerprintRef.current = fingerprint;
     storage.set(signatureKey, fingerprint);
-    if (!previous) return;
     const critical = incidents.find((item) => item.roadClosure || item.severity === 'critical');
+    if (!previous && !critical) return;
     const title = critical ? 'Bloqueio ou ocorrência crítica na rota' : 'Nova ocorrência na rota';
     const body = (critical || incidents[0])?.title || 'Revise o trajeto antes de sair.';
     notifyCrewCheck(title, body);
@@ -2241,6 +2241,73 @@ function useWeatherLandingMonitor(event: ZeroLeg) {
     const timer = window.setInterval(check, 60000);
     return () => window.clearInterval(timer);
   }, [event?.id, event?.destination, event?.kind]);
+}
+
+
+function useOperationalRadarPulse(event: ZeroLeg) {
+  useEffect(() => {
+    if (!event || event.placeholder || event.kind !== 'flight' || !/\d/.test(String(event.flightNumber || ''))) return;
+    let alive = true;
+    const check = () => {
+      const cached = readRadarSnapshot(event);
+      if (cached?.updatedAt && Date.now() - cached.updatedAt < RADAR_CARD_REFRESH_MS) return;
+      fetchRadarSnapshot(event, false).catch(() => undefined);
+    };
+    check();
+    const timer = window.setInterval(() => { if (alive) check(); }, RADAR_CARD_REFRESH_MS);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [event.id, event.kind, event.placeholder, event.flightNumber, event.origin, event.destination]);
+}
+
+function useOperationalWeatherPulse(event: ZeroLeg) {
+  useEffect(() => {
+    if (!event || event.placeholder || event.kind !== 'flight') return;
+    if (storage.get('crewcheck_weather_hourly', '1') === '0') return;
+    const airports = Array.from(new Set([event.origin, event.destination].map((value) => String(value || '').trim().toUpperCase()).filter(Boolean))).slice(0, 2);
+    if (!airports.length) return;
+
+    let alive = true;
+    const check = async () => {
+      try {
+        const response = await fetch(`/api/aviation-weather?airports=${encodeURIComponent(airports.join(','))}&type=all&view=decoded&v=1393`, { cache: 'no-store' });
+        const payload = await response.json().catch(() => null);
+        if (!alive || !payload?.stations) return;
+
+        for (const airport of airports) {
+          const station = payload.stations?.[airport];
+          const severity = Number(station?.monitoring?.severity || 0);
+          if (!station || severity < 2) continue;
+          const hazards = Array.isArray(station.monitoring?.hazards) ? station.monitoring.hazards : [];
+          const hazardText = hazards.map((item: any) => String(item?.label || item?.code || '').trim()).filter(Boolean).slice(0, 3).join(' · ');
+          const signature = [severity, station.metar || '', station.taf || '', hazardText].join('|');
+          const signatureKey = `crewcheck_weather_pulse_signature_${event.id}_${airport}`;
+          if (storage.get(signatureKey, '') === signature) continue;
+          storage.set(signatureKey, signature);
+
+          publishCrewCheckNotice({
+            id: `weather:${event.id}:${airport}:${signature}`,
+            dedupeKey: `weather:${event.id}:${airport}:${signature}`,
+            category: 'weather',
+            tone: severity >= 3 ? 'erro' : 'atencao',
+            priority: severity >= 3 ? 'critica' : 'alta',
+            title: severity >= 3 ? `Meteorologia crítica · ${airport}` : `Meteorologia requer atenção · ${airport}`,
+            detail: hazardText || `${event.flightNumber || 'Próximo voo'} · METAR/TAF com critério operacional relevante.`,
+            pulseCooldownMs: 10 * 60_000,
+            systemNotification: 'background',
+            notificationTag: `crewcheck:weather:${event.id}:${airport}`,
+            notificationCooldownMs: 15 * 60_000,
+            action: { label: 'Ver meteorologia', view: 'weather' },
+          });
+        }
+      } catch {
+        // Alert monitoring is auxiliary; never block roster rendering.
+      }
+    };
+
+    void check();
+    const timer = window.setInterval(() => { void check(); }, 60 * 60_000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [event.id, event.kind, event.placeholder, event.flightNumber, event.origin, event.destination]);
 }
 
 function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroLeg[]; setView: (v: ZeroView) => void }) {
@@ -4740,6 +4807,8 @@ export default function Home() {
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
   useWeatherLandingMonitor(flightEvent);
+  useOperationalRadarPulse(flightEvent);
+  useOperationalWeatherPulse(flightEvent);
 
 
   useEffect(() => {
