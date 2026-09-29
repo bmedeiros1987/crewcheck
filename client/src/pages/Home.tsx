@@ -4771,9 +4771,24 @@ export default function Home() {
     let lastPublishedAt = 0;
     const publishWatchSnapshot = (force: boolean) => {
       try {
-        const snapshot = buildCrewCheckWatchSnapshot(events, event);
-        const signature = watchSnapshotContentSignature(snapshot);
         const now = Date.now();
+        // Radar enriches the phone card independently of the canonical roster.
+        // Read its validated cache on every publish, including expiry/minute ticks.
+        const radar = readRadarSnapshot(event);
+        const radarExpiresAt = Number(radar?.updatedAt || 0) + RADAR_CARD_CACHE_TTL_MS;
+        const radarGate = radar?.ok === true
+          && Number(radar.updatedAt) <= now && radarExpiresAt > now
+          ? String(radar.gate || '').trim() : '';
+        const hasRadarGate = Boolean(radarGate && radarGate !== '—' && radarGate !== '--'
+          && !/^a confirmar$/i.test(radarGate));
+        const watchEvent = hasRadarGate ? { ...event, gate: radarGate } : event;
+        const watchEvents = hasRadarGate
+          ? events.map((candidate) => candidate.id === event.id ? watchEvent : candidate)
+          : events;
+        const snapshot = buildCrewCheckWatchSnapshot(watchEvents, watchEvent);
+        // Republishing must not extend the lifetime of an old Radar gate.
+        if (hasRadarGate) snapshot.validUntilEpochMs = Math.min(snapshot.validUntilEpochMs, radarExpiresAt);
+        const signature = watchSnapshotContentSignature(snapshot);
         if (!force && signature === lastSignature && now - lastPublishedAt < WATCH_UNCHANGED_REPUBLISH_MS) return;
         lastSignature = signature;
         lastPublishedAt = now;
@@ -4785,10 +4800,13 @@ export default function Home() {
 
     publishWatchSnapshot(true);
     const onRequest = () => publishWatchSnapshot(true);
+    const onRadar = () => publishWatchSnapshot(false);
+    window.addEventListener('crewcheck:radar-updated', onRadar);
     window.addEventListener('crewcheck:watch-snapshot-request', onRequest);
     window.addEventListener('crewcheck:native-ready', onRequest);
     const timer = window.setInterval(() => publishWatchSnapshot(false), 60_000);
     return () => {
+      window.removeEventListener('crewcheck:radar-updated', onRadar);
       window.removeEventListener('crewcheck:watch-snapshot-request', onRequest);
       window.removeEventListener('crewcheck:native-ready', onRequest);
       window.clearInterval(timer);
