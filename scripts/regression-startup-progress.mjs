@@ -23,8 +23,21 @@ vm.runInNewContext(js, { exports:offlineExports, require, navigator:{onLine:fals
 const offline = renderToStaticMarkup(React.createElement(offlineExports.StartupProgress, {stage:'session'}));
 assert.match(offline, /sem conexão/);
 assert.match(offline, /Tentar novamente/);
+
+const css = fs.readFileSync('client/src/components/startup-progress.css','utf8');
+assert.match(css, /\.cc-startup-help button\s*\{[^}]*min-height:\s*44px/s);
+assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[^}]*\.cc-startup-track span\s*\{[^}]*animation:\s*none/s);
+
 const app = fs.readFileSync('client/src/App.tsx','utf8');
 assert.match(app, /getMe\(\)\.then\(\(\) => \{\s*if \(!mounted\) return;\s*setStartupStage\("profile"\);\s*return enablePartnerDemoRoster\(\);/);
 assert.match(app, /if \(!ready\) return <CrewCheckOpeningSplash stage=\{startupStage\}/);
 assert.match(app, /<StartupProgress stage=\{stage\}/);
-console.log('PASS startup: rendered stages, offline fallback, no fictitious percentage, prepared integration');
+
+const nativeBoot = fs.readFileSync('scripts/p0-android-self-heal/boot-progress.mjs','utf8');
+assert.match(nativeBoot, /progress\.setIndeterminate\(true\)/);
+assert.match(nativeBoot, /status\.setAccessibilityLiveRegion\(View\.ACCESSIBILITY_LIVE_REGION_POLITE\)/);
+assert.match(nativeBoot, /crewCheckBootStatusText\.setText\(message\)/);
+assert.match(nativeBoot, /CREWCHECK_PROGRESS_DELAY_MS/);
+assert.doesNotMatch(nativeBoot, /setProgress\s*\(/);
+
+console.log('PASS startup: rendered stages, offline fallback, reduced motion, native live status, no fictitious percentage, prepared integration');
