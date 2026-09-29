@@ -42,6 +42,21 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function readJson(req, limit = 200_000) {
+  return new Promise((resolve) => {
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk;
+      if (raw.length > limit) req.destroy();
+    });
+    req.on('end', () => {
+      try { resolve(raw ? JSON.parse(raw) : {}); }
+      catch { resolve({}); }
+    });
+    req.on('error', () => resolve({}));
+  });
+}
+
 function safeText(value, fallback = '') {
   const text = String(value || '').replace(/[\r\n<>]/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 320);
   return text || fallback;
@@ -134,6 +149,50 @@ async function storeGet(key) {
   return { payload: decryptPayload(row.payload, cfg.encryptionSecret), consumed: Boolean(row.consumed_at) };
 }
 
+async function storeDelete(key) {
+  const pool = await dbPool();
+  if (!pool) return false;
+  await pool.query('DELETE FROM crewcheck_google_identity_oidc WHERE record_key=?', [key]);
+  return true;
+}
+
+async function claimOnce(key, payload, expiresAt) {
+  const cfg = config();
+  const pool = await dbPool();
+  if (!pool) return false;
+  const encrypted = encryptPayload(payload, cfg.encryptionSecret);
+  const [result] = await pool.query(
+    'INSERT IGNORE INTO crewcheck_google_identity_oidc (record_key, payload, expires_at, consumed_at, updated_at) VALUES (?, ?, ?, NOW(3), NOW(3))',
+    [key, encrypted, new Date(expiresAt)],
+  );
+  return Number(result?.affectedRows || 0) === 1;
+}
+
+function providerLinkKey(providerKey) {
+  return `link:google:${providerKey}`;
+}
+
+function crewLinkKey(crewcheckSub, secret) {
+  const digest = crypto.createHmac('sha256', secret).update(`crewcheck:${String(crewcheckSub || '')}`).digest('hex');
+  return `link:crewcheck:${digest}`;
+}
+
+function completionKey(state) {
+  return `complete:${crypto.createHash('sha256').update(String(state || '')).digest('hex')}`;
+}
+
+function sessionIdentity(identity = {}) {
+  return {
+    sub: String(identity.sub || ''),
+    email: String(identity.email || '').trim().toLowerCase(),
+    name: safeText(identity.name || ''),
+    role: String(identity.role || 'premium'),
+    plan: String(identity.plan || 'premium'),
+    admin: Boolean(identity.admin),
+    emergency: Boolean(identity.emergency),
+  };
+}
+
 function parseJwtPart(value) {
   return JSON.parse(Buffer.from(String(value || ''), 'base64url').toString('utf8'));
 }
@@ -207,17 +266,26 @@ async function health(_req, res) {
   });
 }
 
-async function start(req, res) {
+async function start(req, res, context) {
   if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Use POST para iniciar o login Google.' });
   const cfg = config();
   const pool = await dbPool();
   if (!cfg.configured || !pool) return sendJson(res, 503, { ok: false, code: 'GOOGLE_IDENTITY_NOT_CONFIGURED', message: 'O login Google ainda não está configurado de forma segura.' });
+  const body = await readJson(req);
+  const intent = body.intent === 'link' ? 'link' : 'login';
+  const owner = intent === 'link' ? sessionIdentity(context.identity) : null;
+  if (intent === 'link' && (!owner?.sub || !owner?.email)) {
+    return sendJson(res, 401, { ok: false, code: 'AUTH_REQUIRED', message: 'Entre no CrewCheck antes de vincular uma Conta Google.' });
+  }
+  if (intent === 'link' && body.confirmLink !== true) {
+    return sendJson(res, 400, { ok: false, code: 'EXPLICIT_LINK_CONFIRMATION_REQUIRED', message: 'Confirme explicitamente o vínculo com esta conta CrewCheck.' });
+  }
   const state = crypto.randomBytes(32).toString('base64url');
   const nonce = crypto.randomBytes(32).toString('base64url');
   const verifier = crypto.randomBytes(48).toString('base64url');
   const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
   const expiresAt = Date.now() + STATE_TTL_MS;
-  await storePut(stateKey(state), { status: 'pending', nonce, verifier, createdAt: Date.now() }, expiresAt);
+  await storePut(stateKey(state), { status: 'pending', intent, owner, nonce, verifier, createdAt: Date.now() }, expiresAt);
   const query = new URLSearchParams({
     client_id: cfg.clientId,
     redirect_uri: cfg.redirectUri,
@@ -251,15 +319,38 @@ async function callback(_req, res, url) {
     const exchanged = await exchangeCode(code, stored.payload.verifier, cfg);
     const claims = await verifyGoogleIdToken(exchanged.id_token, { clientId: cfg.clientId, nonce: stored.payload.nonce });
     const providerKey = crypto.createHmac('sha256', cfg.encryptionSecret).update(`google:${claims.sub}`).digest('hex');
-    await storePut(stateKey(state), {
-      status: 'link_required',
-      providerKey,
-      email: String(claims.email).toLowerCase(),
-      name: safeText(claims.name || ''),
-      verifiedAt: Date.now(),
-    }, expiresAt, true);
+    const existingProviderLink = await storeGet(providerLinkKey(providerKey));
+    if (stored.payload.intent === 'link') {
+      const owner = sessionIdentity(stored.payload.owner);
+      if (!owner.sub || !owner.email) throw new Error('A sessão CrewCheck usada para vincular expirou.');
+      if (existingProviderLink?.payload?.user?.sub && existingProviderLink.payload.user.sub !== owner.sub) {
+        throw new Error('Esta Conta Google já está vinculada a outra conta CrewCheck.');
+      }
+      const reverseKey = crewLinkKey(owner.sub, cfg.encryptionSecret);
+      const existingCrewLink = await storeGet(reverseKey);
+      if (existingCrewLink?.payload?.providerKey && existingCrewLink.payload.providerKey !== providerKey) {
+        throw new Error('Esta conta CrewCheck já possui outra Conta Google vinculada. Desvincule-a antes de trocar.');
+      }
+      const linkedAt = new Date().toISOString();
+      await storePut(providerLinkKey(providerKey), { provider: 'google', providerKey, user: owner, linkedAt }, null);
+      await storePut(reverseKey, { provider: 'google', providerKey, emailHint: maskEmail(claims.email), linkedAt }, null);
+      await storePut(stateKey(state), { status: 'linked', intent: 'link', user: owner, email: String(claims.email).toLowerCase(), linkedAt }, expiresAt, true);
+    } else if (existingProviderLink?.payload?.user?.sub) {
+      await storePut(stateKey(state), { status: 'ready', intent: 'login', user: sessionIdentity(existingProviderLink.payload.user), email: String(claims.email).toLowerCase(), verifiedAt: Date.now() }, expiresAt, true);
+    } else {
+      await storePut(stateKey(state), {
+        status: 'link_required',
+        intent: 'login',
+        providerKey,
+        email: String(claims.email).toLowerCase(),
+        name: safeText(claims.name || ''),
+        verifiedAt: Date.now(),
+      }, expiresAt, true);
+    }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-    return res.end(callbackHtml(true, 'Conta Google confirmada', 'Nenhuma conta CrewCheck foi criada ou vinculada automaticamente. Confirme o vínculo no aplicativo.'));
+    const linked = stored.payload.intent === 'link';
+    const known = Boolean(existingProviderLink?.payload?.user?.sub);
+    return res.end(callbackHtml(true, linked ? 'Conta Google vinculada' : known ? 'Conta Google confirmada' : 'Conta Google ainda não vinculada', linked ? 'O vínculo explícito foi concluído. Volte ao CrewCheck.' : known ? 'Volte ao CrewCheck para concluir o login.' : 'Entre com e-mail e senha uma vez e vincule esta Conta Google nas configurações.'));
   } catch (error) {
     await storePut(stateKey(state), { status: 'failed', error: safeText(error instanceof Error ? error.message : error, 'O login Google falhou.') }, expiresAt, true);
     res.writeHead(400, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
@@ -276,20 +367,68 @@ async function status(_req, res, url) {
     ok: payload.status !== 'failed',
     state: payload.status,
     linkRequired: payload.status === 'link_required',
+    canComplete: payload.status === 'ready',
+    linked: payload.status === 'linked',
     emailHint: payload.email ? maskEmail(payload.email) : '',
     message: payload.status === 'link_required'
-      ? 'Conta Google confirmada. O vínculo com uma conta CrewCheck exige confirmação explícita.'
-      : payload.error || 'Aguardando a confirmação da Conta Google.',
+      ? 'Conta Google confirmada. Entre com e-mail e senha uma vez para autorizar o vínculo.'
+      : payload.status === 'ready'
+        ? 'Conta Google reconhecida. Conclua o login no CrewCheck.'
+        : payload.status === 'linked'
+          ? 'Conta Google vinculada explicitamente a esta conta CrewCheck.'
+          : payload.error || 'Aguardando a confirmação da Conta Google.',
   });
 }
 
-export async function handleGoogleIdentityRoute(req, res, url) {
+async function complete(req, res, context) {
+  if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Use POST para concluir o login Google.' });
+  const body = await readJson(req);
+  const state = String(body.state || '');
+  const stored = state ? await storeGet(stateKey(state)) : null;
+  if (!stored?.payload || stored.payload.status !== 'ready' || !stored.payload.user?.sub) {
+    return sendJson(res, 409, { ok: false, code: 'GOOGLE_IDENTITY_NOT_READY', message: 'A Conta Google ainda não está pronta para concluir o login.' });
+  }
+  if (typeof context.issueSession !== 'function') {
+    return sendJson(res, 503, { ok: false, code: 'SESSION_ISSUER_UNAVAILABLE', message: 'O emissor de sessão do CrewCheck está indisponível.' });
+  }
+  const claimed = await claimOnce(completionKey(state), { completedAt: Date.now() }, Date.now() + STATE_TTL_MS);
+  if (!claimed) return sendJson(res, 409, { ok: false, code: 'GOOGLE_IDENTITY_ALREADY_COMPLETED', message: 'Este login Google já foi concluído. Inicie outro se necessário.' });
+  await storePut(stateKey(state), { ...stored.payload, status: 'completed', completedAt: Date.now() }, Date.now() + STATE_TTL_MS, true);
+  return context.issueSession(res, stored.payload.user, 'Login com Google concluído.');
+}
+
+async function connection(_req, res, context) {
+  const identity = sessionIdentity(context.identity);
+  if (!identity.sub) return sendJson(res, 401, { ok: false, code: 'AUTH_REQUIRED', message: 'Entre no CrewCheck para consultar o vínculo Google.' });
+  const cfg = config();
+  if (!cfg.configured || !(await dbPool())) return sendJson(res, 503, { ok: false, code: 'GOOGLE_IDENTITY_NOT_CONFIGURED', message: 'O vínculo Google está indisponível no servidor.' });
+  const reverse = await storeGet(crewLinkKey(identity.sub, cfg.encryptionSecret));
+  return sendJson(res, 200, { ok: true, linked: Boolean(reverse?.payload?.providerKey), provider: reverse?.payload?.provider || null, emailHint: reverse?.payload?.emailHint || '', linkedAt: reverse?.payload?.linkedAt || null });
+}
+
+async function unlink(req, res, context) {
+  if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Use POST para desvincular a Conta Google.' });
+  const identity = sessionIdentity(context.identity);
+  if (!identity.sub) return sendJson(res, 401, { ok: false, code: 'AUTH_REQUIRED', message: 'Entre no CrewCheck antes de desvincular a Conta Google.' });
+  const cfg = config();
+  if (!cfg.configured || !(await dbPool())) return sendJson(res, 503, { ok: false, code: 'GOOGLE_IDENTITY_NOT_CONFIGURED', message: 'O vínculo Google está indisponível no servidor.' });
+  const reverseKey = crewLinkKey(identity.sub, cfg.encryptionSecret);
+  const reverse = await storeGet(reverseKey);
+  if (reverse?.payload?.providerKey) await storeDelete(providerLinkKey(reverse.payload.providerKey));
+  await storeDelete(reverseKey);
+  return sendJson(res, 200, { ok: true, linked: false, message: 'Conta Google desvinculada. Sua conta e escala CrewCheck foram preservadas.' });
+}
+
+export async function handleGoogleIdentityRoute(req, res, url, context = {}) {
   if (!String(url?.pathname || '').startsWith('/api/auth/google')) return false;
   const pathname = String(url.pathname || '');
   if (pathname === '/api/auth/google/health') await health(req, res);
-  else if (pathname === '/api/auth/google/start') await start(req, res);
+  else if (pathname === '/api/auth/google/start') await start(req, res, context);
   else if (pathname === '/api/auth/google/callback') await callback(req, res, url);
   else if (pathname === '/api/auth/google/status') await status(req, res, url);
+  else if (pathname === '/api/auth/google/complete') await complete(req, res, context);
+  else if (pathname === '/api/auth/google/connection') await connection(req, res, context);
+  else if (pathname === '/api/auth/google/unlink') await unlink(req, res, context);
   else sendJson(res, 404, { ok: false, message: 'Rota de identidade Google não encontrada.' });
   return true;
 }
