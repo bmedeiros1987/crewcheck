@@ -14,6 +14,7 @@ on:
       - 'scripts/regression-home-layout-preference.mjs'
       - 'scripts/regression-menu-5s.mjs'
       - 'scripts/regression-p1-566-departure-program-context.mjs'
+      - 'scripts/regression-p1-566-roster-focus-layouts.mjs'
       - 'scripts/regression-roster-change-awareness.mjs'
       - '.github/workflows/roster-layout-preferences.yml'
 jobs:
@@ -31,6 +32,7 @@ jobs:
       - run: node scripts/regression-home-layout-preference.mjs
       - run: node scripts/regression-menu-5s.mjs
       - run: node scripts/regression-p1-566-departure-program-context.mjs
+          node scripts/regression-p1-566-roster-focus-layouts.mjs
       - run: node scripts/regression-roster-change-awareness.mjs
       - run: npx tsc --noEmit
       - run: npx vite build

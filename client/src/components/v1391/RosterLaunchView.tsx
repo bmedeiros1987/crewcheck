@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { consumePendingRosterFocus } from '@/lib/rosterFocus';
 import {
   Banknote,
   BedDouble,
@@ -95,9 +96,12 @@ function dateOf(event: RosterEvent) {
   return Number.isFinite(date.getTime()) ? date : new Date();
 }
 
-function isoOf(event: RosterEvent) {
-  const value = dateOf(event);
+function isoFromDate(value: Date) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+}
+
+function isoOf(event: RosterEvent) {
+  return isoFromDate(dateOf(event));
 }
 
 function monthOf(event: RosterEvent) {
@@ -235,9 +239,40 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
   const months = useMemo(() => Array.from(new Set(allOrdered.map(monthOf))).sort(), [allOrdered]);
   const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
   const [selectedMonth, setSelectedMonth] = useState(() => months.includes(currentMonth) ? currentMonth : months[0] || currentMonth);
+  const [pendingRosterFocusIso, setPendingRosterFocusIso] = useState<string | null>(null);
+  const [rosterFocusStatus, setRosterFocusStatus] = useState('');
   useEffect(() => {
     if (months.length && !months.includes(selectedMonth)) setSelectedMonth(months.includes(currentMonth) ? currentMonth : months[0]);
   }, [months.join('|'), selectedMonth, currentMonth]);
+  useEffect(() => {
+    const focus = consumePendingRosterFocus();
+    if (!focus) return;
+    const iso = isoFromDate(focus);
+    const month = iso.slice(0, 7);
+    if (!months.includes(month)) {
+      setRosterFocusStatus('A programação aberta no FlightDeck não está mais neste período da escala.');
+      return;
+    }
+    setPendingRosterFocusIso(iso);
+    if (selectedMonth !== month) setSelectedMonth(month);
+  }, []);
+  useEffect(() => {
+    if (!pendingRosterFocusIso || selectedMonth !== pendingRosterFocusIso.slice(0, 7)) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.querySelector<HTMLElement>(`[data-roster-iso="${pendingRosterFocusIso}"]`);
+      if (!target) {
+        setRosterFocusStatus('A data da programação não está mais disponível nesta escala.');
+        setPendingRosterFocusIso(null);
+        return;
+      }
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (target.tabIndex >= 0) target.focus({ preventScroll: true });
+      const [year, month, day] = pendingRosterFocusIso.split('-');
+      setRosterFocusStatus(`Programação localizada em ${day}/${month}/${year}.`);
+      setPendingRosterFocusIso(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [pendingRosterFocusIso, selectedMonth, layout]);
   const ordered = useMemo(() => allOrdered.filter((event) => monthOf(event) === selectedMonth), [allOrdered, selectedMonth]);
   const groups = Array.from(ordered.reduce((map, event) => {
     const iso = isoOf(event);
@@ -296,7 +331,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
       <button className="cc-roster-layout-reset" type="button" onClick={() => choose('cards')} disabled={layout === 'cards'}>
         <RotateCcw aria-hidden="true"/> Restaurar padrão CrewCheck
       </button>
-      <p className="cc-roster-layout-status" role="status" aria-live="polite">{message}</p>
+      <p className="cc-roster-layout-status" role="status" aria-live="polite">{rosterFocusStatus || message}</p>
     </section>
 
     <section className="cc-roster-period-v1399" aria-label="Período da escala">
