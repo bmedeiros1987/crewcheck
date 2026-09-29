@@ -48,13 +48,11 @@ fs.writeFileSync(compliancePath, compliance, 'utf8');
 
 let database = fs.readFileSync(databasePath, 'utf8');
 if (!database.includes(marker)) {
-  const legacyImportAnchor = "import type { ComplianceResult, GymRecommendation } from './complianceEngine';";
-  const actionableImportAnchor = "import { isActionableComplianceAlert, type ComplianceResult, type GymRecommendation } from './complianceEngine';";
-  const importAnchor = database.includes(actionableImportAnchor) ? actionableImportAnchor : legacyImportAnchor;
+  const importAnchor = "import type { ComplianceResult, GymRecommendation } from './complianceEngine';";
   if (!database.includes(importAnchor)) throw new Error(`[${marker}] import complianceEngine não localizado`);
   database = database.replace(
     importAnchor,
-    `import { analyzeCompliance, isActionableComplianceAlert, type ComplianceResult, type GymRecommendation } from './complianceEngine';\nimport type { CrewRoleSelection } from './actRules';\nimport { ROLLING_FLIGHT_HOURS_KERNEL_VERSION } from './rollingFlightHours';\nimport { regulatoryCrewIdentity, selectRegulatoryCarryIn } from './regulatoryHistory';`,
+    `import { analyzeCompliance, type ComplianceResult, type GymRecommendation } from './complianceEngine';\nimport type { CrewRoleSelection } from './actRules';\nimport { ROLLING_FLIGHT_HOURS_KERNEL_VERSION } from './rollingFlightHours';\nimport { regulatoryCrewIdentity, selectRegulatoryCarryIn } from './regulatoryHistory';`,
   );
 
   const insertionAnchor = `\nexport async function deleteRosterAnalysis(`;
