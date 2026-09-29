@@ -13,8 +13,8 @@ if (!source.includes(importLine)) {
 
 if (!source.includes('return <MenuDrawer5S')) {
   const start = source.indexOf('function MenuDrawer(');
-  const end = source.indexOf('\nfunction Cockpit(', start);
-  if (start < 0 || end < 0) throw new Error('[p1-menu-5s] MenuDrawer canônico não localizado');
+  const end = source.indexOf('\nfunction ', start + 'function MenuDrawer('.length);
+  if (start < 0 || end < 0) throw new Error('[p1-menu-5s] limite exato do MenuDrawer canônico não localizado');
   const replacement = `function MenuDrawer({ open, close, view, setView, actions: _actions }: { open: boolean; close: () => void; view: ZeroView; setView: (v: ZeroView) => void; actions: QuickActions }) {
   return <MenuDrawer5S open={open} close={close} view={view} setView={(next) => setView(next as ZeroView)} admin={isAdmin()}/>;
 }
