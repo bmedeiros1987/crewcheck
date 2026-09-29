@@ -11,32 +11,31 @@ if (!source.includes(importLine)) {
   source = source.replace(typeAnchor, `\n${importLine}\n${typeAnchor.slice(1)}`);
 }
 
-if (!source.includes('<HomeLayoutShell slots={slots}/>')) {
+if (!source.includes('function PersonalizedCockpit(')) {
   const start = source.indexOf('function Cockpit(');
   const end = source.indexOf('\nfunction rosterCode', start);
   if (start < 0 || end < 0) throw new Error('[p1-home-layout] Cockpit não localizado');
-  const block = `function PersonalizedCockpit({ events, compliance, setView, onUpload, openMenu }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {
+  const cockpit = source.slice(start, end);
+  const returnStart = cockpit.lastIndexOf('  return <>');
+  const returnEnd = cockpit.lastIndexOf('</>;');
+  if (returnStart < 0 || returnEnd < returnStart) throw new Error('[p1-home-layout] retorno canônico do Cockpit não localizado');
+  const wrappedCockpit = cockpit.slice(0, returnStart)
+    + '  return <PersonalizedCockpit events={events} compliance={compliance} setView={setView} onUpload={onUpload} openMenu={openMenu} canonicalContent={<>'
+    + cockpit.slice(returnStart + '  return <>'.length, returnEnd)
+    + '</>} />;'
+    + cockpit.slice(returnEnd + '</>;'.length);
+  source = source.slice(0, start) + wrappedCockpit + source.slice(end);
+  const block = `function PersonalizedCockpit({ events, compliance, setView, onUpload, openMenu, canonicalContent }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void; canonicalContent: React.ReactNode }) {
   const event = nextFlight(events);
   const loaded = events.some((event) => !event.placeholder);
   const alertCount = actionableComplianceAlerts(compliance).length;
   const dutyLimit = event.kind === 'flight' && !event.placeholder ? getPublishedDutyLimitSummary(event.day, compliance?.legalProfile) : null;
-  const counters = loaded && events[0]?.day ? {
-    days: new Set(events.map((e) => e.day.date)).size,
-    flights: events.filter((e) => e.kind === 'flight').length,
-    activities: events.filter((e) => e.kind !== 'flight' && e.canonical?.kind !== 'rest').length,
-    rest: events.filter((e) => e.canonical?.kind === 'rest').length,
-  } : { days: 0, flights: 0, activities: 0, rest: 0 };
   const slots: HomeLayoutSlot[] = [
     {
       id: 'summary',
       label: 'Resumo operacional',
-      description: 'Dias, voos, atividades e alertas.',
-      content: <section className="cz-kpi-row">
-        <KpiCard icon={CalendarDays} title="Dias publicados" value={String(counters.days)} detail="Datas reais"/>
-        <KpiCard icon={Plane} title="Voos" value={String(counters.flights)} detail="Pernas detectadas" tone="blue"/>
-        <KpiCard icon={BriefcaseBusiness} title="Atividades" value={String(counters.activities)} detail={'Folgas ' + counters.rest} tone="blue"/>
-        <KpiCard icon={Bell} title="Alertas" value={String(alertCount)} detail="Confirmados" tone="pink"/>
-      </section>,
+      description: 'Alertas operacionais e acesso ao painel completo.',
+      content: <button className="cz-mini-status" onClick={() => setView('alerts')}><Bell/><strong>Alertas operacionais</strong><span>{alertCount ? alertCount + ' confirmado(s)' : 'Nenhum alerta confirmado'}</span><ChevronRight/></button>,
     },
     {
       id: 'finance',
@@ -74,12 +73,11 @@ if (!source.includes('<HomeLayoutShell slots={slots}/>')) {
     },
   ];
 
-  return <><Brand onMenu={openMenu}/><section className="cz-title"><small>Cockpit</small><i/></section><HomeLayoutShell slots={slots}/></>;
+  return <HomeLayoutShell slots={slots} standardContent={canonicalContent}/>;
 }
 `;
   const wrapperAnchor = source.indexOf('\nfunction rosterCode', start);
   source = source.slice(0, wrapperAnchor) + '\n' + block + source.slice(wrapperAnchor);
-  source = source.replace(/<Cockpit(?=[\s/>])/g, '<PersonalizedCockpit');
 }
 
 fs.writeFileSync(path, source, 'utf8');
