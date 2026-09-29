@@ -83,12 +83,22 @@ import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotel
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
-import { crewCheckNotificationPermission, publishCrewCheckNotice, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';
+import { crewCheckNotificationPermission, currentCrewCheckPulseState, dismissCrewCheckPulse, publishCrewCheckNotice, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
 import '@/components/v1393/weather.css';
 import '@/components/v1394/v1394.css';
 import '@/components/v1399/premium.css';
 
+import { currentAccountId } from '@/lib/rosterChangeAwareness';
+import {
+  activeComplianceAlerts,
+  complianceAlertFingerprint,
+  dismissComplianceAlertUntilRosterUpdate,
+  filterActionableComplianceAlerts,
+  informationalComplianceAlerts,
+  readComplianceAlertDismissals,
+  resetComplianceAlertDismissals,
+} from '@/lib/complianceAlertVisibility';
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
   | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community' | 'compare' | 'regulation' | 'bids' | 'admin';
@@ -942,40 +952,25 @@ function neutralCompliance(roster: CrewRoster): ComplianceResult {
   } as any;
 }
 
-function actionableComplianceAlerts(compliance: ComplianceResult | null): any[] {
-  const source = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
-  const seen = new Set<string>();
-  return source.filter((alert: any) => {
-    if (!alert || alert.dismissed || alert.falsePositive || alert.active === false) return false;
-    const title = String(alert.title || '').trim();
-    const description = String(alert.description || '').trim();
-    const severity = String(alert.severity || '').toLowerCase();
-    if ((!title && !description) || !['error', 'warning'].includes(severity)) return false;
-    const signature = `${severity}|${title}|${description}|${String(alert.legalReference || '')}`;
-    if (seen.has(signature)) return false;
-    seen.add(signature);
-    return true;
-  });
+function complianceAlertRosterRevision(): string {
+  try {
+    const payload = JSON.parse(storage.get('crewcheck_latest_roster_bundle', 'null'));
+    const roster = payload?.roster || payload;
+    return String(payload?.updatedAt || rosterFingerprint(roster) || 'unversioned-roster');
+  } catch {
+    return 'unversioned-roster';
+  }
 }
 
-type ComplianceAlertDisposition = {
-  reason: 'user_schedule_change';
-  ignoredAt: string;
-  alertTitle: string;
-  alertDate: string;
-};
-const COMPLIANCE_ALERT_DISPOSITIONS_KEY = 'crewcheck_compliance_alert_dispositions_v1';
-function complianceAlertFingerprint(alert: any): string {
-  return [alert?.title, alert?.date, alert?.description, alert?.legalReference].map((value) => String(value || '').trim()).join('|');
+function complianceAlertStorage(): Storage | null {
+  try { return window.localStorage; } catch { return null; }
 }
-function loadComplianceAlertDispositions(): Record<string, ComplianceAlertDisposition> {
-  try { return JSON.parse(storage.get(COMPLIANCE_ALERT_DISPOSITIONS_KEY, '{}')) || {}; } catch { return {}; }
-}
-function saveComplianceAlertDispositions(value: Record<string, ComplianceAlertDisposition>) {
-  storage.set(COMPLIANCE_ALERT_DISPOSITIONS_KEY, JSON.stringify(value));
-}
-function isGroundLimitAlert(alert: any): boolean {
-  return String(alert?.title || '').trim() === 'Tempo em solo entre etapas acima do limite ACT';
+
+function actionableComplianceAlerts(compliance: ComplianceResult | null): any[] {
+  const raw = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
+  const store = complianceAlertStorage();
+  if (!store) return filterActionableComplianceAlerts(raw);
+  return activeComplianceAlerts(raw, store, currentAccountId(), complianceAlertRosterRevision());
 }
 
 function analyzeSafe(roster: CrewRoster): ComplianceResult {
@@ -2430,25 +2425,81 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
   </>;
 }
 
-function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
+function Alerts({ compliance, roster }: { compliance: ComplianceResult | null; roster: CrewRoster }) {
   const [dispositionRevision, setDispositionRevision] = useState(0);
-  const dispositions = useMemo(() => loadComplianceAlertDispositions(), [dispositionRevision]);
-  const source = actionableComplianceAlerts(compliance);
-  const ignored = source.filter((alert) => dispositions[complianceAlertFingerprint(alert)]);
-  const list = source.filter((alert) => !dispositions[complianceAlertFingerprint(alert)]).slice(0, 12);
-  function ignoreAsUserScheduleChange(alert: any) {
-    const next = loadComplianceAlertDispositions();
-    next[complianceAlertFingerprint(alert)] = { reason: 'user_schedule_change', ignoredAt: new Date().toISOString(), alertTitle: String(alert.title || ''), alertDate: String(alert.date || '') };
-    saveComplianceAlertDispositions(next);
+  const store = complianceAlertStorage();
+  const accountId = currentAccountId();
+  const rosterRevision = complianceAlertRosterRevision() || rosterFingerprint(roster);
+  const raw = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
+  const list = actionableComplianceAlerts(compliance).slice(0, 12);
+  const informational = informationalComplianceAlerts(raw);
+  const dismissedCount = store
+    ? readComplianceAlertDismissals(store, accountId, rosterRevision).length
+    : 0;
+
+  function ignoreUntilRosterUpdate(alert: any) {
+    if (!store || !dismissComplianceAlertUntilRosterUpdate(store, accountId, rosterRevision, alert)) return;
+    const pulse = currentCrewCheckPulseState().message;
+    if (pulse?.category === 'compliance') dismissCrewCheckPulse();
     setDispositionRevision((value) => value + 1);
-    toast.success('Alerta ocultado como alteração da sua programação.', { description: 'A análise original permanece preservada para auditoria.' });
+    toast.success('Alerta ocultado até a próxima atualização da escala.', {
+      description: 'Uma nova importação ou sincronização refará a análise e poderá exibi-lo novamente.',
+    });
   }
+
   function restoreIgnoredAlerts() {
-    saveComplianceAlertDispositions({});
+    if (!store) return;
+    resetComplianceAlertDismissals(store, accountId);
     setDispositionRevision((value) => value + 1);
   }
-  return <><Brand back/><section className="cz-panel-head"><h1>Irregularidades e alertas</h1><p>RBAC 117, ACT, repouso, jornada, sobreaviso, reserva e acionamentos. Sem alertas fictícios.</p></section>{list.length ? <section className="cz-alert-stack">{list.map((a: any, idx: number) => <article className={a.severity === 'error' ? 'danger' : 'warn'} key={`${a.title}-${idx}`}><AlertTriangle/><div><h2>{a.title}</h2><p>{a.description}</p><span>{a.severity === 'error' ? 'Confirmada' : 'Atenção'}</span><b>Confiança: {a.severity === 'error' ? 'alta' : 'média'}</b>{isGroundLimitAlert(a) && <button type="button" onClick={() => ignoreAsUserScheduleChange(a)}>Ignorar — alteração da minha programação</button>}</div><ChevronRight/></article>)}</section> : <article className="cz-empty-real"><ShieldCheck/><h2>Nenhuma irregularidade confirmada</h2><p>{ignored.length ? 'Os alertas desta análise foram classificados por você como alterações da programação.' : 'Carregue a escala real para que o motor regulatório refaça a análise completa.'}</p></article>}{ignored.length > 0 && <article className="cz-alert-detail"><h2>Alterações informadas por você <b>{ignored.length}</b></h2><div><p><strong>Tratamento</strong>Esses itens ficam fora dos alertas ativos, sem apagar a análise da escala publicada.</p><p><strong>Rastreabilidade</strong>A classificação é uma preferência do usuário e não altera o motor regulatório canônico.</p></div><footer><button onClick={restoreIgnoredAlerts}><RotateCcw/> Restaurar alertas ignorados</button></footer></article>}<article className="cz-alert-detail"><h2>Detalhes regulatórios <b>{list.length ? 'Ativo' : 'Aguardando escala'}</b></h2><div><p><strong>O que o sistema avalia</strong>Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p><p><strong>Dados usados</strong>Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p></div><footer><button>Ver base regulatória</button></footer></article></>;
+
+  return <>
+    <Brand back/>
+    <section className="cz-panel-head">
+      <h1>Irregularidades e alertas</h1>
+      <p>Primeiro aparecem ocorrências que exigem ação. Explicações e análises incompletas ficam recolhidas abaixo.</p>
+    </section>
+    {list.length
+      ? <section className="cz-alert-stack">{list.map((alert: any, idx: number) => {
+          const warning = String(alert.severity || '').toLowerCase() === 'warning';
+          return <article className={alert.severity === 'error' ? 'danger' : 'warn'} key={`${complianceAlertFingerprint(alert)}-${idx}`}>
+            <AlertTriangle/>
+            <div>
+              <h2>{alert.title}</h2>
+              <p>{alert.description}</p>
+              <span>{alert.severity === 'error' ? 'Confirmada' : 'Atenção'}</span>
+              <b>Confiança: {alert.severity === 'error' ? 'alta' : 'média'}</b>
+              {warning && <button type="button" onClick={() => ignoreUntilRosterUpdate(alert)}>Ignorar até a próxima atualização</button>}
+            </div>
+            <ChevronRight/>
+          </article>;
+        })}</section>
+      : <article className="cz-empty-real">
+          <ShieldCheck/>
+          <h2>Nenhuma irregularidade ativa</h2>
+          <p>{dismissedCount ? 'Os avisos dispensados voltarão a ser avaliados na próxima atualização da escala.' : 'Não há ocorrência confirmada que exija ação agora.'}</p>
+        </article>}
+    {dismissedCount > 0 && <article className="cz-alert-detail">
+      <h2>Ocultados até a próxima atualização <b>{dismissedCount}</b></h2>
+      <footer><button onClick={restoreIgnoredAlerts}><RotateCcw/> Mostrar novamente agora</button></footer>
+    </article>}
+    {informational.length > 0 && <details className="cz-alert-detail">
+      <summary>Entenda a análise de 28 dias</summary>
+      <div>
+        <p><strong>Não é uma irregularidade confirmada.</strong> O CrewCheck soma somente horas de voo em qualquer janela móvel de 28 dias. Quando faltam dias da competência anterior ou posterior, a verificação fica incompleta e não deve ocupar o Pulse.</p>
+        <p>O aviso permanece disponível aqui como transparência. Ele só vira alerta ativo se as horas observadas realmente se aproximarem ou ultrapassarem o limite aplicável.</p>
+      </div>
+    </details>}
+    <details className="cz-alert-detail">
+      <summary>Como o CrewCheck analisa</summary>
+      <div>
+        <p><strong>O que o sistema avalia</strong> Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p>
+        <p><strong>Dados usados</strong> Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p>
+      </div>
+    </details>
+  </>;
 }
+
 function routeDurationMinutes(route: RoutePreviewInfo | null): number {
   const text = String(route?.durationInTrafficText || route?.durationText || '').toLowerCase();
   const hours = Number(text.match(/(\d+(?:[.,]\d+)?)\s*h/)?.[1]?.replace(',', '.') || 0);
@@ -4961,7 +5012,7 @@ export default function Home() {
     {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>} 
     {view === 'compare' && <CompareRosterView bundle={bundle} onUpload={actions.upload}/>} 
     {view === 'bids' && <BidsView events={events}/>} 
-    {view === 'alerts' && <Alerts compliance={compliance}/>}
+    {view === 'alerts' && <Alerts compliance={compliance} roster={bundle.roster}/>}
     {view === 'regulation' && <ManualRegulationView compliance={compliance}/>}
     {view === 'departure' && <Departure event={event}/>}
     {view === 'mycar' && <CarView event={event}/>}
