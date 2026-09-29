@@ -11,9 +11,12 @@ import {
   GraduationCap,
   Home,
   Hotel,
+  LayoutGrid,
+  List,
   MapPin,
   Moon,
   Plane,
+  RotateCcw,
   Route,
   ShieldCheck,
   Sparkles,
@@ -267,12 +270,24 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
   return <div className="cc-roster-premium-v1397">
     <V139Header title="Escala inteligente" detail="Programações organizadas por dia, leitura operacional imediata e ganhos estimados com as regras já configuradas no CrewCheck."/>
 
-    <section className="cc-roster-layout-picker" aria-label="Visualização da escala">
-      <label>Visualização <select value={layout} onChange={(event) => choose(event.target.value === 'list' ? 'list' : 'cards')}>
-        <option value="cards">Cards</option><option value="list">Lista</option>
-      </select></label>
-      <button type="button" onClick={() => choose('cards')}>Restaurar padrão CrewCheck</button>
-      <p role="status">{message}</p>
+    <section className="cc-roster-layout-picker" aria-labelledby="cc-roster-layout-title">
+      <div className="cc-roster-layout-copy">
+        <small>FORMATO DA ESCALA</small>
+        <h2 id="cc-roster-layout-title">Escolha sua visualização</h2>
+        <p>O formato muda. Programações, alertas, horários e valores continuam completos.</p>
+      </div>
+      <div className="cc-roster-layout-options" role="group" aria-label="Escolher formato da escala">
+        <button type="button" aria-pressed={layout === 'cards'} data-active={layout === 'cards' ? 'true' : 'false'} onClick={() => choose('cards')}>
+          <LayoutGrid aria-hidden="true"/><span><b>Cards</b><small>Leitura visual por programação</small></span>
+        </button>
+        <button type="button" aria-pressed={layout === 'list'} data-active={layout === 'list' ? 'true' : 'false'} onClick={() => choose('list')}>
+          <List aria-hidden="true"/><span><b>Lista</b><small>Sequência contínua por dia</small></span>
+        </button>
+      </div>
+      <button className="cc-roster-layout-reset" type="button" onClick={() => choose('cards')} disabled={layout === 'cards'}>
+        <RotateCcw aria-hidden="true"/> Restaurar padrão CrewCheck
+      </button>
+      <p className="cc-roster-layout-status" role="status" aria-live="polite">{message}</p>
     </section>
 
     <section className="cc-roster-period-v1399" aria-label="Período da escala">
