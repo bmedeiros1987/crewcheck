@@ -252,3 +252,174 @@
   .cc-pulse-dismiss,
   .cc-pulse-action { transition: none; }
 }
+
+
+/* Compact header Pulse — attention without stealing the content canvas. */
+.cc-pulse-compact {
+  --cc-pulse-accent: var(--cc-accent);
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cc-pulse-compact[data-category='gate'] { --cc-pulse-accent: var(--event-flight); }
+.cc-pulse-compact[data-category='traffic'] { --cc-pulse-accent: var(--event-layover); }
+.cc-pulse-compact[data-category='weather'] { --cc-pulse-accent: var(--event-flight); }
+.cc-pulse-compact[data-category='roster'] { --cc-pulse-accent: var(--event-reserve); }
+.cc-pulse-compact[data-category='compliance'] { --cc-pulse-accent: var(--event-alert); }
+.cc-pulse-compact[data-category='wakeup'] { --cc-pulse-accent: var(--event-standby, var(--cc-accent)); }
+.cc-pulse-compact[data-priority='critica'] { --cc-pulse-accent: var(--event-alert); }
+
+.cc-pulse-compact-trigger {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--cc-pulse-accent) 18%, transparent);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--cc-pulse-accent) 7%, transparent);
+  color: var(--cc-text);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.cc-pulse-compact-trigger:hover,
+.cc-pulse-compact-trigger[aria-expanded='true'] {
+  border-color: color-mix(in srgb, var(--cc-pulse-accent) 32%, transparent);
+  background: color-mix(in srgb, var(--cc-pulse-accent) 11%, transparent);
+}
+
+.cc-pulse-compact-trigger:focus-visible {
+  outline: 2px solid var(--cc-pulse-accent);
+  outline-offset: 2px;
+}
+
+.cc-pulse-compact-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--cc-pulse-accent) 13%, transparent);
+  color: var(--cc-pulse-accent);
+}
+
+.cc-pulse-compact-icon i {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--cc-pulse-accent);
+}
+
+.cc-pulse-compact-trigger > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .88rem;
+  font-weight: 760;
+  line-height: 1.2;
+}
+
+.cc-pulse-compact .cc-pulse-queue {
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  font-size: .7rem;
+}
+
+.cc-pulse-compact-chevron {
+  color: var(--cc-text-muted);
+  transition: transform 160ms ease;
+}
+
+.cc-pulse-compact-trigger[aria-expanded='true'] .cc-pulse-compact-chevron {
+  transform: rotate(180deg);
+}
+
+.cc-pulse-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: min(430px, calc(100vw - 20px));
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--cc-pulse-accent) 30%, var(--cc-border));
+  border-radius: 18px;
+  background: var(--cc-surface);
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--cc-pulse-accent) 10%, transparent);
+  color: var(--cc-text);
+}
+
+.cc-pulse-popover-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cc-pulse-popover-copy strong {
+  font-size: .92rem;
+  line-height: 1.25;
+}
+
+.cc-pulse-popover-copy small {
+  color: var(--cc-text-muted);
+  font-size: .82rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 720px) {
+  .cc-pulse-compact-trigger {
+    grid-template-columns: 30px minmax(0, 1fr) auto auto;
+    gap: 6px;
+    padding: 3px 6px;
+  }
+
+  .cc-pulse-compact-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+  }
+
+  .cc-pulse-compact-trigger > strong {
+    font-size: .82rem;
+  }
+
+  .cc-pulse-popover {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    width: min(360px, calc(100vw - 16px));
+    padding: 13px;
+  }
+
+  .cc-pulse-popover .cc-pulse-controls {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 360px) {
+  .cc-pulse-compact .cc-pulse-queue {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-pulse-compact-trigger,
+  .cc-pulse-compact-chevron {
+    transition: none;
+  }
+}
