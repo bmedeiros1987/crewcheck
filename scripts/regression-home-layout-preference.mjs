@@ -106,6 +106,7 @@ assert.match(source, /alertCount/);
 assert.match(source, /Ignorar até a próxima atualização/);
 assert.match(source, /Entenda a análise de 28 dias/);
 assert.match(source, /warning && <button/);
+assert.match(source, /message as \(\{ category\?: string \} \| null\)/, 'alert visibility must compile before and after Pulse category contract');
 assert.match(source, /<Alerts compliance=\{compliance\} roster=\{bundle\.roster\}\/>/);
 assert.doesNotMatch(source, /reason: 'user_schedule_change'/, 'dispensa antiga global não pode sobreviver');
 const finalizer = fs.readFileSync('scripts/p1-home-layout/apply.mjs', 'utf8');
