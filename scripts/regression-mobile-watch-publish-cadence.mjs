@@ -76,3 +76,35 @@ for (const invalid of [null, { ok: false, gate: '99', updatedAt: now },
 assert.match(home, /addEventListener\('crewcheck:radar-updated', onRadar\)/);
 assert.match(home, /removeEventListener\('crewcheck:radar-updated', onRadar\)/);
 console.log('Mobile Radar to watch: PASS (gate, schedule, change, expiry, failure, no roster mutation)');
+
+const saveStart = home.indexOf('function saveRadarSnapshot(');
+const saveEnd = home.indexOf('\nasync function fetchRadarSnapshot(', saveStart);
+const saveCode = ts.transpileModule(home.slice(saveStart, saveEnd) + '\nthis.save = saveRadarSnapshot;', { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+let cached = null;
+const notices = [];
+const radarEnv = {
+  Date: { now: () => now },
+  readRadarSnapshot: () => cached,
+  radarEventOperationalDate: () => '2026-09-29',
+  radarSnapshotMatchesEvent: s => s.flight === 'LA9001',
+  radarSnapshotKey: () => 'demo-flight-key',
+  storage: { set: (_key, value) => { cached = JSON.parse(value); } },
+  window: { dispatchEvent() {} }, CustomEvent: env.CustomEvent,
+  publishCrewCheckNotice: n => notices.push(n),
+};
+vm.runInNewContext(saveCode, radarEnv, { timeout: 1000 });
+radarEnv.save(flight, { ok: true, gate: '9' });
+assert.equal(notices.length, 0, 'Initial Radar value is silent');
+radarEnv.save(flight, { ok: true, gate: '9' });
+assert.equal(notices.length, 0, 'Repeated sync is silent');
+radarEnv.save(flight, { ok: true, gate: '12' });
+assert.equal(notices.length, 1);
+assert.equal(notices[0].detail, 'LA9001: 9 → 12');
+radarEnv.save(flight, { ok: true, gate: '9' });
+assert.equal(notices.length, 2, 'A real reversal is not suppressed by cooldown');
+radarEnv.save(flight, { ok: false, gate: '99' });
+radarEnv.save(flight, { ok: true, gate: '12' });
+assert.equal(notices.length, 2, 'Failure/recovery is not a confirmed change');
+radarEnv.save(flight, { ok: true, gate: '99', flight: 'LA9999' });
+assert.equal(notices.length, 2, 'Mismatched flight does not alert');
+console.log('Mobile Radar notices: PASS (initial load, duplicates, transition, reversal, failure, identity)');
