@@ -5,7 +5,7 @@ on:
     paths:
       - 'client/src/components/ErrorBoundary.tsx'
       - 'client/src/pages/Home.tsx'
-      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/complianceAlertSemantics.ts'
       - 'client/src/lib/emailClient.ts'
       - 'client/src/lib/sharing.ts'
       - 'client/src/lib/pdfExport.ts'
