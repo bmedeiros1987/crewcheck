@@ -97,6 +97,7 @@ import {
   filterActionableComplianceAlerts,
   informationalComplianceAlerts,
   readComplianceAlertDismissals,
+  visibleInformationalComplianceAlerts,
   resetComplianceAlertDismissals,
 } from '@/lib/complianceAlertVisibility';
 type ZeroView =
@@ -2432,7 +2433,9 @@ function Alerts({ compliance, roster }: { compliance: ComplianceResult | null; r
   const rosterRevision = complianceAlertRosterRevision() || rosterFingerprint(roster);
   const raw = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
   const list = actionableComplianceAlerts(compliance).slice(0, 12);
-  const informational = informationalComplianceAlerts(raw);
+  const informational = store
+    ? visibleInformationalComplianceAlerts(raw, store, accountId, rosterRevision)
+    : informationalComplianceAlerts(raw);
   const dismissedCount = store
     ? readComplianceAlertDismissals(store, accountId, rosterRevision).length
     : 0;
@@ -2484,10 +2487,14 @@ function Alerts({ compliance, roster }: { compliance: ComplianceResult | null; r
       <footer><button onClick={restoreIgnoredAlerts}><RotateCcw/> Mostrar novamente agora</button></footer>
     </article>}
     {informational.length > 0 && <details className="cz-alert-detail">
-      <summary>Entenda a análise de 28 dias</summary>
+      <summary>Análises incompletas <b>{informational.length}</b></summary>
       <div>
-        <p><strong>Não é uma irregularidade confirmada.</strong> O CrewCheck soma somente horas de voo em qualquer janela móvel de 28 dias. Quando faltam dias da competência anterior ou posterior, a verificação fica incompleta e não deve ocupar o Pulse.</p>
-        <p>O aviso permanece disponível aqui como transparência. Ele só vira alerta ativo se as horas observadas realmente se aproximarem ou ultrapassarem o limite aplicável.</p>
+        {informational.map((alert) => <div key={complianceAlertFingerprint(alert)}>
+          <p><strong>{alert.title || 'Histórico insuficiente'}</strong> {alert.description}</p>
+          {alert.coverage?.missingDates?.length ? <p><strong>Cobertura faltante</strong> {alert.coverage.missingDates.length} dia(s) necessários para a janela de {alert.coverage.windowDays || 28} dias.</p> : null}
+          {alert.details ? <p>{alert.details}</p> : null}
+          <button type="button" onClick={() => ignoreUntilRosterUpdate(alert)}>Ignorar até a próxima atualização</button>
+        </div>)}
       </div>
     </details>}
     <details className="cz-alert-detail">
