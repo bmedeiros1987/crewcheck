@@ -18,8 +18,11 @@ const dist = path.resolve('dist');
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 const source = ts.createSourceFile('Home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const names = ['CrewCheckMark', 'MenuDrawer'];
-const declarations = source.statements.filter(n => ts.isFunctionDeclaration(n) && names.includes(n.name?.text));
-assert.equal(declarations.length, names.length, 'Prepared MenuDrawer/brand must exist');
+const declarations = source.statements.filter(n =>
+  (ts.isFunctionDeclaration(n) && names.includes(n.name?.text))
+  || (ts.isVariableStatement(n) && n.declarationList.declarations.some((entry) => entry.name.getText(source) === 'MENU_5S_ALLOWED_IDS')),
+);
+assert.equal(declarations.length, names.length + 1, 'Prepared MenuDrawer/brand and its canonical 5S allowlist must exist');
 let rootTag;
 const rootProps = { className: 'cz-app', 'data-view': 'roster', 'data-menu-open': 'true' };
 function collectRoot(node) {
@@ -44,10 +47,21 @@ assert.equal(rootProps['data-ipad-layout-v14394'], 'contained');
 const code = ts.transpileModule(declarations.map(n => n.getText(source)).join('\n'), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.React },
 }).outputText;
+const menuPreferenceCode = ts.transpileModule(fs.readFileSync('client/src/lib/menuPreference.ts', 'utf8'), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
+}).outputText;
+const menuPreference = await import(`data:text/javascript;base64,${Buffer.from(menuPreferenceCode).toString('base64')}`);
+const storedMenuValues = new Map();
+const localStorage = {
+  getItem: (key) => storedMenuValues.get(key) ?? null,
+  setItem: (key, value) => storedMenuValues.set(key, String(value)),
+  removeItem: (key) => storedMenuValues.delete(key),
+};
 const scope = {
-  React, ...React, ...icons, HomeIcon: icons.Home, MapIcon: icons.Map,
+  React, ...React, ...icons, ...menuPreference, HomeIcon: icons.Home, MapIcon: icons.Map,
+  window: { localStorage },
   storage: { get: (_key, fallback) => fallback, set: () => {} },
-  getStoredUser: () => ({ name: 'Tripulante de demonstração com nome longo', email: 'demo@example.invalid' }),
+  getStoredUser: () => ({ id: 'menu-browser-account', name: 'Tripulante de demonstração com nome longo', email: 'demo@example.invalid' }),
   isAdmin: () => true,
 };
 vm.runInNewContext(code + '\nthis.RenderMenu = MenuDrawer;', scope, { timeout: 1000 });
@@ -125,7 +139,7 @@ async function inspect(page, label) {
     const box = e => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; };
     const panel = document.querySelector('.cz-menu-panel');
     const scroll = document.querySelector('.cz-menu-scroll');
-    const buttons = [...document.querySelectorAll('.cz-menu-group > button')];
+    const buttons = [...document.querySelectorAll('.cc-menu-destination[data-menu-label]')];
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
     const context = canvas.getContext('2d', { willReadFrequently: true });
     const rgba = color => {
@@ -193,7 +207,7 @@ async function inspect(page, label) {
   await settle(page);
   const end = await page.evaluate(() => {
     const scroll = document.querySelector('.cz-menu-scroll').getBoundingClientRect();
-    const last = [...document.querySelectorAll('.cz-menu-group > button')].at(-1).getBoundingClientRect();
+    const last = [...document.querySelectorAll('.cc-menu-destination[data-menu-label]')].at(-1).getBoundingClientRect();
     return { scrollTop: scroll.top, scrollBottom: scroll.bottom, top: last.top, bottom: last.bottom };
   });
   if (end.top < end.scrollTop - 1 || end.bottom > Math.min(end.scrollBottom, metrics.viewport.height) + 1) failures.push('Last destination unreachable');
