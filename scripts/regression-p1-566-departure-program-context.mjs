@@ -8,7 +8,7 @@ function read(path) {
 const home = read('client/src/pages/Home.tsx');
 const bridge = read('client/src/components/navigation/FlightDeckNavigationContext.tsx');
 const navigation = read('client/src/lib/navigationContext.ts');
-const navigationRuntime = navigation.replace(/\/\\*[\\s\\S]*?\\*\//g, '').replace(/\/\/.*$/gm, '');
+const navigationRuntime = navigation.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 const apply = read('scripts/p1-566-departure-program-context/apply.mjs');
 const prepare = read('scripts/v139/apply.mjs');
 
