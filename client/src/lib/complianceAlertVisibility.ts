@@ -1,3 +1,5 @@
+import { isActionableComplianceAlert } from './complianceAlertSemantics';
+
 export type ComplianceAlertLike = {
   severity?: string;
   title?: string;
@@ -57,9 +59,7 @@ export function complianceAlertFingerprint(alert: ComplianceAlertLike): string {
  * UI must never infer this state from user-facing title/message text.
  */
 export function isInformationalComplianceAlert(alert: ComplianceAlertLike): boolean {
-  return alert.actionable === false
-    || clean(alert.classification) === 'dados_insuficientes'
-    || clean(alert.code) === 'ROLLING_28D_DATA_GAP';
+  return !isActionableComplianceAlert(alert);
 }
 
 function isCandidateAlert(alert: ComplianceAlertLike): boolean {
@@ -73,7 +73,7 @@ export function filterActionableComplianceAlerts(source: unknown): ComplianceAle
   const seen = new Set<string>();
   return alerts.filter((alert): alert is ComplianceAlertLike => {
     if (!alert || typeof alert !== 'object') return false;
-    if (!isCandidateAlert(alert) || isInformationalComplianceAlert(alert)) return false;
+    if (!isCandidateAlert(alert) || !isActionableComplianceAlert(alert)) return false;
     const fingerprint = complianceAlertFingerprint(alert);
     if (!fingerprint.replaceAll('|', '')) return false;
     if (seen.has(fingerprint)) return false;
@@ -87,7 +87,7 @@ export function informationalComplianceAlerts(source: unknown): ComplianceAlertL
   const seen = new Set<string>();
   return alerts.filter((alert): alert is ComplianceAlertLike => {
     if (!alert || typeof alert !== 'object') return false;
-    if (!isCandidateAlert(alert) || !isInformationalComplianceAlert(alert)) return false;
+    if (!isCandidateAlert(alert) || isActionableComplianceAlert(alert)) return false;
     const fingerprint = complianceAlertFingerprint(alert);
     if (!fingerprint.replaceAll('|', '')) return false;
     if (seen.has(fingerprint)) return false;
