@@ -23,11 +23,9 @@ export type GoogleIdentityConnection = {
   linkedAt?: string | null;
 };
 
-declare global {
-  interface Window {
-    CrewCheckNative?: { openExternal?: (url: string) => boolean };
-  }
-}
+type GoogleIdentityWindow = Window & typeof globalThis & {
+  CrewCheckNative?: { openExternal?: (url: string) => boolean };
+};
 
 async function json<T>(url: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(url, {
@@ -41,7 +39,8 @@ async function json<T>(url: string, init: RequestInit = {}): Promise<T> {
 }
 
 function openSecureBrowser(url: string) {
-  const openedNatively = Boolean(window.CrewCheckNative?.openExternal?.(url));
+  const nativeWindow = window as GoogleIdentityWindow;
+  const openedNatively = Boolean(nativeWindow.CrewCheckNative?.openExternal?.(url));
   if (openedNatively) return;
   const popup = window.open(url, '_blank', 'noopener,noreferrer');
   if (!popup) throw new Error('O navegador bloqueou a janela do Google. Permita pop-ups e tente novamente.');
