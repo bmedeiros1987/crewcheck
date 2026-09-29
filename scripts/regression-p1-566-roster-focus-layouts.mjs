@@ -25,7 +25,15 @@ assert.match(calendar, /data-roster-iso=\{iso\}/, 'Calendário precisa expor a d
 assert.match(roster, /if \(!focus\) return;/);
 assert.match(roster, /não está mais neste período da escala/);
 assert.match(roster, /A data da programação não está mais disponível nesta escala/);
-assert.doesNotMatch(roster, /setPendingNavigationContext/, 'renderer da Escala não deve criar segundo contexto');
+const focusBlockStart = roster.indexOf('const focus = consumePendingRosterFocus();');
+const focusBlockEnd = roster.indexOf('  }, []);', focusBlockStart);
+assert.ok(focusBlockStart >= 0 && focusBlockEnd > focusBlockStart, 'bloco de restauração de foco deve continuar isolado');
+const focusBlock = roster.slice(focusBlockStart, focusBlockEnd);
+assert.doesNotMatch(
+  focusBlock,
+  /setPendingNavigationContext|localStorage|sessionStorage/,
+  'restauração de foco não deve criar segundo contexto ou storage',
+);
 assert.match(focus, /consumePendingNavigationContext\('roster'\)/, 'adapter deve continuar consumindo o relay compartilhado');
 assert.doesNotMatch(focus, /localStorage|sessionStorage/, 'foco contextual não pode ser persistido no navegador');
 
