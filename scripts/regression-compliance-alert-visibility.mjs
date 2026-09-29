@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 
-const source = fs.readFileSync(new URL('../client/src/lib/complianceAlertVisibility.ts', import.meta.url), 'utf8');
-const javascript = stripTypeScriptTypes(source, { mode: 'strip' });
+const semanticsSource = fs.readFileSync(new URL('../client/src/lib/complianceAlertSemantics.ts', import.meta.url), 'utf8');
+const visibilitySource = fs.readFileSync(new URL('../client/src/lib/complianceAlertVisibility.ts', import.meta.url), 'utf8')
+  .replace(/^import \{ isActionableComplianceAlert \} from '\.\/complianceAlertSemantics';\s*/m, '');
+const javascript = stripTypeScriptTypes(`${semanticsSource}\n${visibilitySource}`, { mode: 'strip' });
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(javascript).toString('base64')}`;
 const visibility = await import(moduleUrl);
 
