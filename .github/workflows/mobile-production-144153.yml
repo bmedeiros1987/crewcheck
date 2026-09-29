@@ -22,7 +22,7 @@ jobs:
     env:
       ROSTER_LAYOUT_HEAD: 769790144977bc0cc56eb04d2e919287e553b152
       STARTUP_PROGRESS_HEAD: bf7a085558284791ebf6b8ee7e6f08ce9abe9b42
-      EXPECTED_PARENT: 98c1de43c8fc29c32e42f0fbe7f4bfe517197018
+      EXPECTED_PARENT: 64653e9d223ac085e2222cba65c8ca2d5814d186
       VERSION_CODE: '144153'
       VERSION_NAME: '14.4.11'
       KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 }}
@@ -261,8 +261,9 @@ jobs:
                   },
               )
 
-              api('POST', edit + ':validate')
-              api('POST', edit + ':commit', params={'changesNotSentForReview': 'true'})
+              # For rejected apps, Play's validate endpoint itself rejects deferred-review edits.
+              # commit performs validation and accepts the required changesNotSentForReview flag.
+              api('POST', edit + ':commit', params={'changesNotSentForReview': True})
               committed = True
               print(
                   f'PLAY_PRODUCTION_STAGED package={package} '
