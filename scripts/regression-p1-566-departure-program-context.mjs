@@ -51,7 +51,7 @@ assert.doesNotMatch(
 );
 assert.match(
   home,
-  /departureSurfaceEvent \? <Departure event=\{departureSurfaceEvent\} events=\{events\} setView=\{setView\}\/> : <><Brand back\/><FlightDeckContextUnavailable targetView="departure"\/><>/,
+  /departureSurfaceEvent \? <Departure event=\{departureSurfaceEvent\} events=\{events\} setView=\{setView\}\/> : <><Brand back\/><FlightDeckContextUnavailable targetView="departure"\/><\/>/,
   'programação contextual ausente deve mostrar estado indisponível',
 );
 
