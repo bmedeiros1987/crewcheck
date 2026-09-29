@@ -48,7 +48,7 @@
 }
 
 .cc-pulse[data-leaving='true'] {
-  animation: cc-pulse-leave 140ms ease-in both;
+  animation: cc-pulse-leave 180ms ease-in both;
 }
 
 /* Cor semântica por categoria. A identidade rosa→roxo fica no informativo e no
@@ -112,8 +112,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 32px;
+  height: 32px;
   flex: 0 0 auto;
   padding: 0;
   border: 1px solid transparent;
