@@ -9,10 +9,10 @@ if (!server.includes(importLine)) {
   if (!server.includes(anchor)) throw new Error('[mobile-google-identity] import Calendar canônico não localizado após preparação v14.0.5.');
   server = server.replace(anchor, `${anchor}\n${importLine}`);
 }
-if (!server.includes('handleGoogleIdentityRoute(req, res, url)')) {
+if (!server.includes('handleGoogleIdentityRoute(req, res, url, {')) {
   const routeAnchor = '  if (await handleGoogleCalendarOAuthRoute(req, res, url, { identity: cc1371Verify(cc1371RequestToken(req)), authRequired: cc1371AuthRequired() })) return;';
   if (!server.includes(routeAnchor)) throw new Error('[mobile-google-identity] rota Calendar canônica não localizada.');
-  server = server.replace(routeAnchor, `${routeAnchor}\n  if (await handleGoogleIdentityRoute(req, res, url)) return;`);
+  server = server.replace(routeAnchor, `${routeAnchor}\n  if (await handleGoogleIdentityRoute(req, res, url, { identity: cc1371Verify(cc1371RequestToken(req)), issueSession: (response, user, message) => cc1371Issue(response, user, message) })) return;`);
 }
 fs.writeFileSync(serverPath, server, 'utf8');
 
