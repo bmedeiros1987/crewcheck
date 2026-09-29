@@ -37,9 +37,6 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      COMPLIANCE_HEAD: 8e018551d5a801e89fb56f1156438944b42d865c
-      PULSE_HEAD: e94d04648e8e747f2d76dd38a8de89f7e9f52178
     steps:
       - uses: actions/checkout@v6
         with:
@@ -48,23 +45,15 @@ jobs:
         with:
           node-version: '22.13.0'
           cache: npm
-      - name: Compose immutable Compliance owner
+      - name: Compose current main owners
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'CrewCheck Mobile composition'
           git config user.email 'actions@crewcheck.invalid'
-          git fetch --no-tags origin "${COMPLIANCE_HEAD}"
-          git merge --no-ff --no-edit "${COMPLIANCE_HEAD}"
+          git fetch --no-tags origin main
+          git merge --no-ff --no-edit origin/main
           test -z "$(git diff --name-only --diff-filter=U)"
-      - name: Compose immutable Pulse owner
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch --no-tags origin "${PULSE_HEAD}"
-          git merge --no-ff --no-edit "${PULSE_HEAD}"
-          test -z "$(git diff --name-only --diff-filter=U)"
-          test "$(git show -s --format=%P HEAD | wc -w)" -ge 2
       - run: npm ci --ignore-scripts
       - name: Prepare canonical composed runtime
         run: node scripts/v139/apply.mjs
@@ -75,6 +64,7 @@ jobs:
       - name: Validate compliance ownership contract
         run: |
           node scripts/regression-p1-526-rolling-boundaries.mjs
+          node scripts/regression-compliance-actionable-consumers.mjs
           node scripts/regression-compliance-alert-visibility.mjs
           grep -q "ROLLING_28D_DATA_GAP" client/src/lib/complianceAlertVisibility.ts
           ! grep -q "Avaliação de horas de voo em 28 dias incompleta" client/src/lib/complianceAlertVisibility.ts
