@@ -45,8 +45,9 @@ public final class WatchNotificationCenter {
         if (context == null || snapshot == null) return;
         // Um DataItem pode chegar horas depois, quando o relógio reconecta: sem isto ele
         // vibrava "Hora de sair" para uma saída que já passou.
+        if (snapshot.isStale(System.currentTimeMillis())) return;
         long now = System.currentTimeMillis();
-        if (snapshot.isStale(now) || snapshot.generatedAtEpochMs > now) return;
+        if (snapshot.generatedAtEpochMs > now) return;
         SharedPreferences prefs = preferences(context);
         WatchContextSnapshot previous = null;
         try { previous = WatchContextSnapshot.fromJson(prefs.getString(LAST_SNAPSHOT, "")); }
