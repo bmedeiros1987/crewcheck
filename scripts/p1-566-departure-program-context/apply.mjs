@@ -78,16 +78,17 @@ update(HOME, (source) => {
   }, 'Cockpit/FlightDeck');
 
   if (!next.includes("const departureSurfaceContext = view === 'departure'")) {
-    const anchor = "  const flightSurfaceEvent = flightSurfaceContext?.programId ? contextualFlightEvent : flightEvent;";
-    if (!next.includes(anchor)) throw new Error(`[${MARKER}] Seleção contextual Radar/Meteorologia não localizada.`);
-    next = next.replace(anchor, `${anchor}
+    const anchor = "  const departureEvent = nextDepartureEvent(events);\n  const compliance = currentCompliance(bundle);";
+    if (!next.includes(anchor)) throw new Error(`[${MARKER}] Seleção canônica da Saída não localizada.`);
+    next = next.replace(anchor, `  const departureEvent = nextDepartureEvent(events);
   const departureSurfaceContext = view === 'departure' ? peekPendingNavigationContext('departure') : null;
   const contextualDepartureEvent = departureSurfaceContext?.programId
     ? events.find((candidate) => candidate.id === departureSurfaceContext.programId && !candidate.placeholder && isSmartDepartureEligible(candidate)) || null
     : null;
   // Entrada contextual nunca troca silenciosamente a programação escolhida por outra.
   // Entrada global continua usando a seleção canônica existente da Saída Inteligente.
-  const departureSurfaceEvent = departureSurfaceContext?.programId ? contextualDepartureEvent : departureEvent;`);
+  const departureSurfaceEvent = departureSurfaceContext?.programId ? contextualDepartureEvent : departureEvent;
+  const compliance = currentCompliance(bundle);`);
   }
 
   const contextualRender = "    {view === 'departure' && (departureSurfaceEvent ? <Departure event={departureSurfaceEvent} events={events} setView={setView}/> : <><Brand back/><FlightDeckContextUnavailable targetView=\"departure\"/></>)}";
