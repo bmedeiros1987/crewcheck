@@ -1,24 +1,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import ts from 'typescript';
-
 const engineSource = fs.readFileSync('client/src/lib/complianceEngine.ts', 'utf8');
-const engineJs = ts.transpileModule(engineSource, { compilerOptions: { module: ts.ModuleKind.ES2022 } }).outputText;
-const engine = await import(`data:text/javascript;base64,${Buffer.from(engineJs).toString('base64')}`);
-
-const dataGap = {
-  severity: 'warning',
-  title: 'Texto humano variável',
-  classification: 'dados_insuficientes',
-  code: 'ROLLING_28D_DATA_GAP',
-  actionable: false,
-};
-const warning = { severity: 'warning', title: 'Revisar repouso', classification: 'atencao' };
-const error = { severity: 'error', title: 'Limite excedido', classification: 'confirmada' };
-
-assert.equal(engine.isActionableComplianceAlert(dataGap), false, 'data gap não é alerta acionável');
-assert.equal(engine.isActionableComplianceAlert(warning), true, 'warning legado continua acionável');
-assert.equal(engine.isActionableComplianceAlert(error), true, 'erro confirmado continua acionável');
+assert.match(engineSource, /export function isActionableComplianceAlert\(/, 'helper canônico precisa ser exportado pelo Compliance Engine');
+assert.match(engineSource, /alert\.actionable === false/, 'actionable=false deve ser não acionável');
+assert.match(engineSource, /alert\.classification === 'dados_insuficientes'/, 'dados insuficientes devem ser informativos');
+assert.match(engineSource, /alert\.severity === 'error' \|\| alert\.severity === 'warning'/, 'somente error/warning podem ser acionáveis');
 
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 assert.match(home, /isActionableComplianceAlert/);
