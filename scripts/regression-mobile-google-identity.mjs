@@ -5,6 +5,11 @@ import { GOOGLE_IDENTITY_SCOPE, verifyGoogleIdToken } from '../server/mobile/goo
 
 const read = (path) => fs.readFileSync(path, 'utf8');
 const bridge = read('server/mobile/google-identity-oidc.mjs');
+const client = read('client/src/lib/googleIdentityAuth.ts');
+const linkCard = read('client/src/components/GoogleIdentityLinkCard.tsx');
+const authClient = read('client/src/lib/authClient.ts');
+const authPage = read('client/src/pages/AuthPage.tsx');
+const home = read('client/src/pages/Home.tsx');
 const server = read('server.mjs');
 const prepare = read('scripts/v139/apply.mjs');
 
@@ -27,6 +32,16 @@ assert.doesNotMatch(bridge, /local-fallback|writeFileSync/);
 assert.match(server, /handleGoogleIdentityRoute\(req, res, url, \{/);
 assert.match(server, /issueSession: \(response, user, message\) => cc1371Issue\(response, user, message\)/);
 assert.match(prepare, /mobile-google-identity\/apply\.mjs/);
+assert.match(client, /intent: 'login'/);
+assert.match(client, /intent: 'link', confirmLink: true/);
+assert.match(client, /CrewCheckNative\?\.openExternal/);
+assert.match(client, /persistExternalAuthSession\(session\)/);
+assert.match(client, /Configurações/);
+assert.match(linkCard, /não concede acesso ao Gmail nem ao Google Calendar/);
+assert.match(linkCard, /Calendar separado/);
+assert.match(authClient, /export function persistExternalAuthSession/);
+assert.match(authPage, /Entrar com Google/);
+assert.match(home, /<GoogleIdentityLinkCard\/>/);
 
 const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
 const jwk = publicKey.export({ format: 'jwk' });
