@@ -1,7 +1,8 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { CrewRoster } from './pdfParser';
-import { isActionableComplianceAlert, type ComplianceResult, type GymRecommendation } from './complianceEngine';
+import type { ComplianceResult, GymRecommendation } from './complianceEngine';
+import { isActionableComplianceAlert } from './complianceAlertSemantics';
 import { CREWCHECK_BRAND } from './brand';
 
 export type CrewCheckPdfExportResult = {
