@@ -70,10 +70,13 @@ jobs:
           const path = 'scripts/v139/apply.mjs';
           let source = fs.readFileSync(path, 'utf8');
           const home = "await import('../p1-home-layout/apply.mjs');";
+          const menu5s = "await import('../p1-menu-5s/apply.mjs');";
           const durable = "await import('../p0-shared-pdf-durable/apply.mjs');";
           if (!source.includes(durable)) throw new Error('Durable PDF finalizer missing from #825');
           if (!source.includes(home)) source = source.replace(durable, home + '\n' + durable);
-          if (source.indexOf(home) > source.indexOf(durable)) throw new Error('Home must materialize before the durable PDF consumer');
+          if (!source.includes(menu5s)) source = source.replace(durable, menu5s + '\n' + durable);
+          if (source.indexOf(home) > source.indexOf(menu5s)) throw new Error('Home must materialize before Menu 5S');
+          if (source.indexOf(menu5s) > source.indexOf(durable)) throw new Error('Menu 5S must materialize before the durable PDF consumer');
           fs.writeFileSync(path, source);
           NODE
             git add scripts/v139/apply.mjs
@@ -93,6 +96,7 @@ jobs:
           node scripts/regression-roster-layout-preference.mjs
           node scripts/regression-roster-change-awareness.mjs
           node scripts/regression-home-layout-preference.mjs
+          node scripts/regression-menu-5s.mjs
           node scripts/regression-startup-progress.mjs
           npx tsc --noEmit
           npx vite build
