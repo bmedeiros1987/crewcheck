@@ -26,10 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      ROSTER_LAYOUT_HEAD: 769790144977bc0cc56eb04d2e919287e553b152
+      ROSTER_LAYOUT_HEAD: 9ab8a4e5c3f51942a37ce2f8e08b1fa50665c3fa
       STARTUP_PROGRESS_HEAD: bf7a085558284791ebf6b8ee7e6f08ce9abe9b42
-      MOBILE_CANDIDATE_VERSION_CODE: '144153'
-      MOBILE_CANDIDATE_VERSION_NAME: 14.4.11
+      MOBILE_CANDIDATE_VERSION_CODE: '144154'
+      MOBILE_CANDIDATE_VERSION_NAME: 14.4.12-rc1
       KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 }}
       STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD }}
       KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS }}
@@ -154,8 +154,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "${RUNNER_TEMP}/crewcheck-mobile-candidate"
-          cp android-wrapper/app/build/outputs/apk/release/app-release.apk "${RUNNER_TEMP}/crewcheck-mobile-candidate/CrewCheck-Mobile-14.4.11-144153.apk"
-          cp android-wrapper/app/build/outputs/bundle/release/app-release.aab "${RUNNER_TEMP}/crewcheck-mobile-candidate/CrewCheck-Mobile-14.4.11-144153.aab"
+          cp android-wrapper/app/build/outputs/apk/release/app-release.apk "${RUNNER_TEMP}/crewcheck-mobile-candidate/CrewCheck-Mobile-14.4.12-rc1-144154.apk"
+          cp android-wrapper/app/build/outputs/bundle/release/app-release.aab "${RUNNER_TEMP}/crewcheck-mobile-candidate/CrewCheck-Mobile-14.4.12-rc1-144154.aab"
           cp "${RUNNER_TEMP}/phone-badging.txt" "${RUNNER_TEMP}/crewcheck-mobile-candidate/"
           cp "${RUNNER_TEMP}/phone-permissions.txt" "${RUNNER_TEMP}/crewcheck-mobile-candidate/"
           printf '%s\n' \
@@ -168,7 +168,7 @@ jobs:
             > "${RUNNER_TEMP}/crewcheck-mobile-candidate/composition.txt"
       - uses: actions/upload-artifact@v4
         with:
-          name: CrewCheck-Mobile-Production-Candidate-144153
+          name: CrewCheck-Mobile-PDF-Physical-Candidate-144154
           path: ${{ runner.temp }}/crewcheck-mobile-candidate/
           if-no-files-found: error
           retention-days: 14
