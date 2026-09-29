@@ -18526,3 +18526,7 @@ body.crewcheck-menu-open .cz-bottom-nav {
   white-space: normal !important;
   overflow-wrap: anywhere !important;
 }
+.cz-coverage-pending{display:grid;gap:12px;margin:18px 0;padding:16px 18px;border:1px solid rgba(125,211,252,.28);border-radius:20px;background:rgba(12,34,53,.76);color:var(--cz-text)}
+.cz-coverage-pending strong{font-size:16px}.cz-coverage-pending p{margin:5px 0 0;color:var(--cz-muted);line-height:1.45;font-size:14px}
+.cz-coverage-pending button,.cz-alert-actions button{min-height:44px;padding:10px 14px;border:1px solid rgba(125,211,252,.32);border-radius:12px;background:rgba(20,51,79,.86);color:var(--cz-text);font-weight:650;cursor:pointer}
+.cz-alert-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.cz-alert-stack details,.cz-coverage-pending details,.cz-alert-detail[open]{margin-top:10px}.cz-alert-detail>summary,.cz-coverage-pending summary,.cz-alert-stack summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:650}
