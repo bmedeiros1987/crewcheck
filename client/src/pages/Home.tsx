@@ -1657,10 +1657,37 @@ function readRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
   }
 }
 function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapshot {
+  const previous = readRadarSnapshot(event);
   const snapshot = { ...payload, flight: payload.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
   const key = radarSnapshotKey(event);
   storage.set(key, JSON.stringify(snapshot));
   window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));
+  // Initial loading and unavailable data are not operational changes.
+  const usableGate = (value: unknown) => {
+    const gate = String(value || '').trim();
+    return gate && !['—', '--'].includes(gate) && !/^a confirmar$/i.test(gate) ? gate : '';
+  };
+  const oldGate = usableGate(previous?.gate);
+  const newGate = usableGate(snapshot.gate);
+  if (previous?.ok === true && snapshot.ok === true
+      && radarSnapshotMatchesEvent(snapshot, event)
+      && Number(previous.updatedAt) <= snapshot.updatedAt
+      && oldGate && newGate && oldGate !== newGate) {
+    try {
+      publishCrewCheckNotice({
+        id: `radar-gate:${key}:${snapshot.updatedAt}`,
+        tone: 'atencao',
+        priority: 'alta',
+        title: 'Portão alterado',
+        detail: `${event.flightNumber}: ${oldGate} → ${newGate}`,
+        systemNotification: 'always',
+        notificationCooldownMs: 0,
+        action: { label: 'Ver Radar', view: 'radar' },
+      });
+    } catch {
+      // Notification delivery must never interrupt Radar caching or watch sync.
+    }
+  }
   return snapshot;
 }
 async function fetchRadarSnapshot(event: ZeroLeg, force = false): Promise<RadarSnapshot> {
