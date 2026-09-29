@@ -80,7 +80,7 @@ assert.match(
 // Global/menu/bottom-nav continuam limpando contexto; nenhum estado privado é persistido.
 assert.match(
   home,
-  /clearPendingNavigationContext\(\);[\s\S]*setViewRaw\(next\)/,
+  /function setView\(nextView: ZeroView\) \{[\s\S]*pendingNavigation\.targetView !== nextView\) clearPendingNavigationContext\(\);[\s\S]*setViewState\(nextView\);/,
   'navegação global deve impedir herança de contexto antigo',
 );
 assert.doesNotMatch(
