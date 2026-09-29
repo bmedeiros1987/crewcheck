@@ -101,7 +101,7 @@ if (!block.includes('className="cc-menu-search"')) {
             <button type="button" className="cc-menu-favorite" aria-label={favorite ? 'Remover ' + label + ' dos favoritos' : 'Adicionar ' + label + ' aos favoritos'} aria-pressed={favorite} onClick={() => toggleMenuFavorite(v)}>{favorite ? '★' : '☆'}</button>
           </div>;
         })}</section>)}
-        {filteredGroups.length === 0 && <p className="cc-menu-empty">Nenhuma função encontrada. Tente outro termo.</p>`;
+        {filteredGroups.length === 0 && <p className="cc-menu-empty">Nenhuma função encontrada. Tente outro termo.</p>}`;
   block = block.slice(0, listStart) + enhanced + block.slice(listEnd);
 }
 
