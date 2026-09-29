@@ -24,6 +24,8 @@ import { V139Header } from '@/components/v139/Shell';
 import '@/components/v139/v139.css';
 import '@/launch-v13-9-1.css';
 import '@/components/v1397/roster-premium.css';
+import { useRosterLayout } from './useRosterLayout';
+import './roster-layout.css';
 
 type RosterEvent = {
   id: string;
@@ -220,6 +222,7 @@ function publishedProgramWindow(event: RosterEvent) {
 }
 
 export default function RosterLaunchView({ events, finance, setView }: { events: RosterEvent[]; finance?: RosterFinance; setView: (view: any) => void }) {
+  const { layout, choose, message } = useRosterLayout();
   const allOrdered = useMemo(() => [...events]
     .filter((event) => !event.id?.includes('placeholder'))
     .sort((a, b) => dateOf(a).getTime() - dateOf(b).getTime() || String(a.id).localeCompare(String(b.id))), [events]);
@@ -264,6 +267,14 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
   return <div className="cc-roster-premium-v1397">
     <V139Header title="Escala inteligente" detail="Programações organizadas por dia, leitura operacional imediata e ganhos estimados com as regras já configuradas no CrewCheck."/>
 
+    <section className="cc-roster-layout-picker" aria-label="Visualização da escala">
+      <label>Visualização <select value={layout} onChange={(event) => choose(event.target.value === 'list' ? 'list' : 'cards')}>
+        <option value="cards">Cards</option><option value="list">Lista</option>
+      </select></label>
+      <button type="button" onClick={() => choose('cards')}>Restaurar padrão CrewCheck</button>
+      <p role="status">{message}</p>
+    </section>
+
     <section className="cc-roster-period-v1399" aria-label="Período da escala">
       <div><small>PERÍODO EXIBIDO</small><strong>{monthLabel(selectedMonth)}</strong><span>Totais financeiros e horas isolados por mês.</span></div>
       <label><CalendarDays/><span>Mês</span><select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>{months.map((month) => <option key={month} value={month}>{monthLabel(month)}</option>)}</select></label>
@@ -302,7 +313,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
       )}
     </section>
 
-    <section className="cc-roster-days-v1397">
+    <section className="cc-roster-days-v1397" data-roster-layout={layout}>
       {groups.map((group) => {
         const groupPerDiems = group.events.flatMap(perDiemForEvent);
         const groupEarnings = group.events.map((event) => salaryByEvent.get(event.id)).filter(Boolean) as FlightEarningItem[];

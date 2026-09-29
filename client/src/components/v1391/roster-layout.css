@@ -1,0 +1,9 @@
+.cc-roster-layout-picker { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin:16px 0; }
+.cc-roster-layout-picker label { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-weight:600; }
+.cc-roster-layout-picker select, .cc-roster-layout-picker button { min-height:44px; padding:8px 12px; border:1px solid currentColor; border-radius:12px; color:inherit; background:transparent; font:inherit; }
+.cc-roster-layout-picker select option { color:CanvasText; background:Canvas; }
+.cc-roster-layout-picker :focus-visible { outline:3px solid #16bcd0; outline-offset:3px; }
+.cc-roster-layout-picker p { flex-basis:100%; margin:0; font-size:.875rem; }
+.cc-roster-days-v1397[data-roster-layout="list"] .cc-roster-programs-v1397 { display:flex; flex-direction:column; gap:0; }
+.cc-roster-days-v1397[data-roster-layout="list"] .cc-roster-program-v1397 { border-radius:0; box-shadow:none; margin:0; border-bottom:1px solid currentColor; padding:16px; }
+.cc-roster-days-v1397[data-roster-layout="list"] .cc-roster-program-v1397:last-child { border-bottom:0; }

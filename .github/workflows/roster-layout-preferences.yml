@@ -1,0 +1,22 @@
+name: Roster layout preferences
+on:
+  pull_request:
+    paths:
+      - 'client/src/components/v1391/**'
+      - 'client/src/lib/rosterLayoutPreference.ts'
+      - 'scripts/regression-roster-layout-preference.mjs'
+      - '.github/workflows/roster-layout-preferences.yml'
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-roster-layout-preference.mjs
+      - run: npx tsc --noEmit
+      - run: npx vite build
