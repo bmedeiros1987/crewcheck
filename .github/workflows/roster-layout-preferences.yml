@@ -4,12 +4,14 @@ on:
     paths:
       - 'client/src/components/v1391/**'
       - 'client/src/pages/Home.tsx'
+      - 'client/src/lib/complianceAlertVisibility.ts'
       - 'client/src/lib/homeLayoutPreference.ts'
       - 'client/src/lib/menuPreference.ts'
       - 'scripts/p1-menu-5s/**'
       - 'scripts/p1-566-departure-program-context/**'
       - 'client/src/lib/rosterLayoutPreference.ts'
       - 'client/src/lib/rosterChangeAwareness.ts'
+      - 'scripts/regression-compliance-alert-visibility.mjs'
       - 'scripts/regression-roster-layout-preference.mjs'
       - 'scripts/regression-home-layout-preference.mjs'
       - 'scripts/regression-menu-5s.mjs'
@@ -32,7 +34,8 @@ jobs:
       - run: node scripts/regression-home-layout-preference.mjs
       - run: node scripts/regression-menu-5s.mjs
       - run: node scripts/regression-p1-566-departure-program-context.mjs
-          node scripts/regression-p1-566-roster-focus-layouts.mjs
+      - run: node scripts/regression-p1-566-roster-focus-layouts.mjs
       - run: node scripts/regression-roster-change-awareness.mjs
+      - run: node scripts/regression-compliance-alert-visibility.mjs
       - run: npx tsc --noEmit
       - run: npx vite build
