@@ -100,9 +100,9 @@ html[data-crew-theme="light"] .cc-roster-hero-v1397 {
   border-radius: 999px !important;
   background: rgba(53, 213, 236, .09) !important;
   color: #6ce6f7 !important;
-  font-size: 10px !important;
+  font-size: 11px !important;
   font-weight: 900 !important;
-  letter-spacing: .14em !important;
+  letter-spacing: .12em !important;
 }
 
 html[data-crew-theme="light"] .cc-roster-eyebrow-v1397 { color: #087d97 !important; }
@@ -181,9 +181,9 @@ html[data-crew-theme="light"] .cc-roster-hero-counts-v1397 span { background: rg
   transition: transform .18s ease, border-color .18s ease !important;
 }
 
-.cc-roster-money-overview-v1397 button:hover { transform: translateY(-2px) !important; border-color: rgba(74, 218, 236, .42) !important; }
-.cc-roster-money-overview-v1397 button::after { content: ""; position: absolute; right: -30px; bottom: -50px; width: 140px; height: 140px; border-radius: 50%; background: rgba(40, 211, 222, .08); filter: blur(2px); }
-.cc-roster-money-overview-v1397 button:last-child::after { background: rgba(139, 92, 246, .12); }
+.cc-roster-money-overview-v1397 button:hover { transform: translateY(-1px) !important; border-color: rgba(74, 218, 236, .42) !important; }
+.cc-roster-money-overview-v1397 button::after { content: ""; position: absolute; right: -30px; bottom: -50px; width: 140px; height: 140px; border-radius: 50%; background: rgba(40, 211, 222, .045); filter: blur(2px); }
+.cc-roster-money-overview-v1397 button:last-child::after { background: rgba(139, 92, 246, .07); }
 html[data-crew-theme="light"] .cc-roster-money-overview-v1397 button { background: rgba(255, 255, 255, .72) !important; }
 
 .cc-roster-money-overview-v1397 button > span {
@@ -191,15 +191,15 @@ html[data-crew-theme="light"] .cc-roster-money-overview-v1397 button { backgroun
   align-items: center !important;
   gap: 8px !important;
   color: var(--ccr-muted) !important;
-  font-size: 11px !important;
+  font-size: 12px !important;
   font-weight: 850 !important;
-  letter-spacing: .08em !important;
+  letter-spacing: .06em !important;
   text-transform: uppercase !important;
 }
 
 .cc-roster-money-overview-v1397 button svg { width: 18px !important; height: 18px !important; color: var(--ccr-cyan) !important; }
 .cc-roster-money-overview-v1397 button strong { z-index: 1; margin-top: 8px !important; color: var(--ccr-title) !important; font-size: clamp(1.75rem, 3vw, 2.75rem) !important; line-height: 1 !important; letter-spacing: -.045em !important; overflow-wrap: anywhere !important; }
-.cc-roster-money-overview-v1397 button small { z-index: 1; margin-top: 8px !important; color: var(--ccr-muted) !important; font-size: 11px !important; }
+.cc-roster-money-overview-v1397 button small { z-index: 1; margin-top: 8px !important; color: var(--ccr-muted) !important; font-size: 12px !important; }
 
 .cc-roster-legend-v1397 {
   display: flex !important;
@@ -224,11 +224,11 @@ html[data-crew-theme="light"] .cc-roster-money-overview-v1397 button { backgroun
   border-radius: 999px !important;
   background: color-mix(in srgb, var(--legend-accent) 7%, transparent) !important;
   color: var(--ccr-text) !important;
-  font-size: 10px !important;
+  font-size: 11px !important;
   font-weight: 760 !important;
 }
 
-.cc-roster-legend-v1397 i { width: 8px !important; height: 8px !important; border-radius: 50% !important; background: var(--legend-accent) !important; box-shadow: 0 0 14px color-mix(in srgb, var(--legend-accent) 70%, transparent) !important; }
+.cc-roster-legend-v1397 i { width: 8px !important; height: 8px !important; border-radius: 50% !important; background: var(--legend-accent) !important; box-shadow: 0 0 9px color-mix(in srgb, var(--legend-accent) 48%, transparent) !important; }
 .cc-roster-legend-v1397 [data-mode="operating"] { --legend-accent: #2dd4a2; }
 .cc-roster-legend-v1397 [data-mode="extra"] { --legend-accent: #94a3b8; }
 .cc-roster-legend-v1397 [data-mode="stay"] { --legend-accent: #a78bfa; }
@@ -279,8 +279,8 @@ html[data-crew-theme="light"] .cc-roster-day-v1397 { box-shadow: 0 15px 38px rgb
 }
 
 .cc-roster-day-header-v1397 > time b { color: var(--ccr-title) !important; font-size: 24px !important; line-height: 1 !important; }
-.cc-roster-day-header-v1397 > time span { color: var(--ccr-cyan) !important; font-size: 9px !important; font-weight: 900 !important; letter-spacing: .08em !important; }
-.cc-roster-day-header-v1397 > div:nth-child(2) small { color: var(--ccr-muted) !important; font-size: 10px !important; font-weight: 800 !important; letter-spacing: .08em !important; text-transform: uppercase !important; }
+.cc-roster-day-header-v1397 > time span { color: var(--ccr-cyan) !important; font-size: 11px !important; font-weight: 900 !important; letter-spacing: .06em !important; }
+.cc-roster-day-header-v1397 > div:nth-child(2) small { color: var(--ccr-muted) !important; font-size: 12px !important; font-weight: 800 !important; letter-spacing: .06em !important; text-transform: uppercase !important; }
 .cc-roster-day-header-v1397 h2 { margin: 3px 0 0 !important; color: var(--ccr-title) !important; font-size: clamp(1.05rem, 1.8vw, 1.35rem) !important; line-height: 1.1 !important; }
 
 .cc-roster-day-money-v1397 {
@@ -303,7 +303,7 @@ html[data-crew-theme="light"] .cc-roster-day-v1397 { box-shadow: 0 15px 38px rgb
 }
 
 .cc-roster-day-money-v1397 svg { grid-area: icon; width: 17px !important; height: 17px !important; color: var(--ccr-cyan) !important; }
-.cc-roster-day-money-v1397 small { grid-area: label; color: var(--ccr-muted) !important; font-size: 8px !important; text-transform: uppercase !important; }
+.cc-roster-day-money-v1397 small { grid-area: label; color: var(--ccr-muted) !important; font-size: 10px !important; text-transform: uppercase !important; }
 .cc-roster-day-money-v1397 b { grid-area: value; color: var(--ccr-title) !important; font-size: 12px !important; }
 
 .cc-roster-programs-v1397 {
@@ -362,7 +362,7 @@ html[data-crew-theme="light"] .cc-roster-program-v1397 {
 }
 
 .cc-roster-program-icon-v1397 svg { width: 21px !important; height: 21px !important; }
-.cc-roster-program-head-v1397 > div > small { display: block !important; margin-bottom: 4px !important; color: var(--program-accent) !important; font-size: 9px !important; font-weight: 850 !important; letter-spacing: .075em !important; text-transform: uppercase !important; }
+.cc-roster-program-head-v1397 > div > small { display: block !important; margin-bottom: 4px !important; color: var(--program-accent) !important; font-size: 11px !important; font-weight: 850 !important; letter-spacing: .06em !important; text-transform: uppercase !important; }
 .cc-roster-program-head-v1397 h3 { margin: 0 !important; color: var(--ccr-title) !important; font-size: clamp(1rem, 1.6vw, 1.28rem) !important; line-height: 1.18 !important; overflow-wrap: anywhere !important; }
 
 .cc-roster-duration-v1397 {
@@ -379,7 +379,7 @@ html[data-crew-theme="light"] .cc-roster-program-v1397 {
 
 html[data-crew-theme="light"] .cc-roster-duration-v1397 { background: var(--ccr-panel-soft) !important; }
 .cc-roster-duration-v1397 svg { width: 14px !important; height: 14px !important; }
-.cc-roster-duration-v1397 b { color: var(--ccr-text) !important; font-size: 10px !important; }
+.cc-roster-duration-v1397 b { color: var(--ccr-text) !important; font-size: 12px !important; }
 
 .cc-roster-flight-grid-v1397 {
   display: grid !important;
@@ -400,7 +400,7 @@ html[data-crew-theme="light"] .cc-roster-duration-v1397 { background: var(--ccr-
 
 html[data-crew-theme="light"] .cc-roster-flight-grid-v1397 > span { background: var(--ccr-panel-soft) !important; }
 .cc-roster-flight-grid-v1397 > .wide { grid-column: 1 / -1 !important; }
-.cc-roster-flight-grid-v1397 small { color: var(--ccr-muted) !important; font-size: 8px !important; font-weight: 850 !important; letter-spacing: .08em !important; text-transform: uppercase !important; }
+.cc-roster-flight-grid-v1397 small { color: var(--ccr-muted) !important; font-size: 10px !important; font-weight: 850 !important; letter-spacing: .06em !important; text-transform: uppercase !important; }
 .cc-roster-flight-grid-v1397 b { color: var(--ccr-title) !important; font-size: 12px !important; line-height: 1.25 !important; overflow-wrap: anywhere !important; }
 
 .cc-roster-program-time-grid-v1397 {
@@ -436,18 +436,18 @@ html[data-crew-theme="light"] .cc-roster-flight-grid-v1397 > span { background: 
 .cc-roster-meals-v1397,
 .cc-roster-km-gain-v1397 { padding: 12px !important; border: 1px solid rgba(var(--program-rgb), .20) !important; border-radius: 15px !important; background: rgba(var(--program-rgb), .055) !important; }
 .cc-roster-meals-v1397 > small,
-.cc-roster-km-gain-v1397 > small { display: flex !important; align-items: center !important; gap: 6px !important; color: var(--ccr-muted) !important; font-size: 8px !important; font-weight: 850 !important; letter-spacing: .07em !important; text-transform: uppercase !important; }
+.cc-roster-km-gain-v1397 > small { display: flex !important; align-items: center !important; gap: 6px !important; color: var(--ccr-muted) !important; font-size: 10px !important; font-weight: 850 !important; letter-spacing: .06em !important; text-transform: uppercase !important; }
 .cc-roster-meals-v1397 > small svg,
 .cc-roster-km-gain-v1397 > small svg { width: 14px !important; height: 14px !important; color: var(--program-accent) !important; }
 .cc-roster-meals-v1397 > div { display: flex !important; flex-wrap: wrap !important; gap: 6px !important; margin-top: 9px !important; }
 .cc-roster-meals-v1397 > div > span { display: grid !important; grid-template-columns: 15px minmax(0, 1fr) !important; grid-template-areas: "icon meal" "icon value" !important; gap: 1px 5px !important; align-items: center !important; flex: 1 1 108px !important; padding: 7px 8px !important; border-radius: 10px !important; background: rgba(1, 13, 25, .24) !important; }
 html[data-crew-theme="light"] .cc-roster-meals-v1397 > div > span { background: rgba(255, 255, 255, .62) !important; }
 .cc-roster-meals-v1397 span svg { grid-area: icon; width: 14px !important; height: 14px !important; color: var(--program-accent) !important; }
-.cc-roster-meals-v1397 span b { grid-area: meal; color: var(--ccr-title) !important; font-size: 9px !important; }
-.cc-roster-meals-v1397 span em { grid-area: value; color: var(--ccr-muted) !important; font-size: 9px !important; font-style: normal !important; }
+.cc-roster-meals-v1397 span b { grid-area: meal; color: var(--ccr-title) !important; font-size: 11px !important; }
+.cc-roster-meals-v1397 span em { grid-area: value; color: var(--ccr-muted) !important; font-size: 11px !important; font-style: normal !important; }
 .cc-roster-km-gain-v1397 strong { display: block !important; margin-top: 8px !important; color: var(--ccr-title) !important; font-size: 19px !important; letter-spacing: -.03em !important; }
-.cc-roster-km-gain-v1397 p { margin: 5px 0 0 !important; color: var(--ccr-muted) !important; font-size: 9px !important; line-height: 1.42 !important; overflow-wrap: anywhere !important; }
-.cc-roster-km-gain-v1397 em { display: inline-block !important; margin-top: 6px !important; color: var(--program-accent) !important; font-size: 8px !important; font-style: normal !important; font-weight: 800 !important; text-transform: uppercase !important; }
+.cc-roster-km-gain-v1397 p { margin: 5px 0 0 !important; color: var(--ccr-muted) !important; font-size: 11px !important; line-height: 1.5 !important; overflow-wrap: anywhere !important; }
+.cc-roster-km-gain-v1397 em { display: inline-block !important; margin-top: 6px !important; color: var(--program-accent) !important; font-size: 10px !important; font-style: normal !important; font-weight: 800 !important; text-transform: uppercase !important; }
 
 .cc-roster-detail-chips-v1397 {
   display: flex !important;
@@ -466,8 +466,8 @@ html[data-crew-theme="light"] .cc-roster-meals-v1397 > div > span { background: 
   border-radius: 999px !important;
   background: rgba(65, 117, 148, .10) !important;
   color: var(--ccr-text) !important;
-  font-size: 9px !important;
-  line-height: 1.25 !important;
+  font-size: 11px !important;
+  line-height: 1.35 !important;
   overflow-wrap: anywhere !important;
 }
 
@@ -486,13 +486,13 @@ html[data-crew-theme="light"] .cc-roster-meals-v1397 > div > span { background: 
   align-items: center !important;
   justify-content: center !important;
   gap: 7px !important;
-  min-height: 39px !important;
+  min-height: 44px !important;
   padding: 8px 10px !important;
   border: 1px solid rgba(var(--program-rgb), .25) !important;
   border-radius: 11px !important;
   background: rgba(var(--program-rgb), .085) !important;
   color: var(--ccr-text) !important;
-  font-size: 9px !important;
+  font-size: 12px !important;
   font-weight: 820 !important;
   transition: transform .16s ease, background .16s ease !important;
 }
@@ -528,7 +528,7 @@ html[data-crew-theme="light"] .cc-roster-meals-v1397 > div > span { background: 
 }
 
 .cc-roster-estimate-note-v1397 svg { flex: 0 0 auto !important; width: 20px !important; height: 20px !important; color: var(--ccr-cyan) !important; }
-.cc-roster-estimate-note-v1397 p { margin: 0 !important; color: var(--ccr-muted) !important; font-size: 10px !important; line-height: 1.5 !important; }
+.cc-roster-estimate-note-v1397 p { margin: 0 !important; color: var(--ccr-muted) !important; font-size: 12px !important; line-height: 1.55 !important; }
 .cc-roster-estimate-note-v1397 strong { color: var(--ccr-text) !important; }
 
 @media (max-width: 1080px) {
