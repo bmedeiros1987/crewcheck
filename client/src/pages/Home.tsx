@@ -2426,7 +2426,7 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
 }
 
 function Alerts({ compliance, roster }: { compliance: ComplianceResult | null; roster: CrewRoster }) {
-  const [dispositionRevision, setDispositionRevision] = useState(0);
+  const [, setDispositionRevision] = useState(0);
   const store = complianceAlertStorage();
   const accountId = currentAccountId();
   const rosterRevision = complianceAlertRosterRevision() || rosterFingerprint(roster);
