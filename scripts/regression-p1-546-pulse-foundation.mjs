@@ -23,57 +23,53 @@ const css = fs.readFileSync('client/src/components/pulse/crewcheck-pulse.css', '
 const cssRules = css.replace(/\/\*[\s\S]*?\*\//g, '');
 const tsx = fs.readFileSync('client/src/components/pulse/CrewCheckPulse.tsx', 'utf8');
 
-// 1. A superfície está montada no shell e sobreviveu à cadeia.
+// 1. O Pulse vive no header global em modo compacto e a marca é o fallback
+//    quando não existe alerta. Não existe uma segunda barra permanente.
 assert.match(
   home,
-  /<CrewCheckPulse\/>/,
-  'CrewCheckPulse não está montado em Home.tsx: a fundação do Pulse sumiu do shell',
+  /<CrewCheckPulse compact fallback=\{lockup\}\/>/,
+  'o Brand precisa montar o Pulse compacto com a identidade como fallback',
 );
 assert.match(
   home,
-  /import CrewCheckPulse from '@\/components\/pulse\/CrewCheckPulse';/,
-  'o import do CrewCheckPulse desapareceu de Home.tsx',
-);
-
-// 2. Fica logo depois do espaçador do cabeçalho, no fluxo normal — é o que
-//    garante que não cobre conteúdo nem a navegação inferior.
-const spacer = home.indexOf('<div className="cz-global-header-spacer"');
-const pulse = home.indexOf('<CrewCheckPulse/>');
-assert.ok(spacer !== -1 && pulse > spacer, 'o Pulse precisa vir depois do espaçador do cabeçalho');
-
-// 3. Sem mensagem publicada, não renderiza nada. É o que torna a fundação
-//    segura de montar antes de existir fila e integração (slice 2).
-assert.match(
-  tsx,
-  /if \(!message\) return null;/,
-  'o Pulse precisa não renderizar nada enquanto não houver mensagem publicada',
-);
-
-// 4. Fixação: o Pulse acompanha a tela enquanto está ativo, mas por sticky, não
-//    por fixed. Sticky some junto com o elemento quando não há mensagem e não
-//    reserva espaço; fixed transformaria a superfície em mais uma barra do shell,
-//    que é justamente o que a separação header/Pulse existe para evitar.
-assert.match(
-  cssRules,
-  /\.cc-pulse \{[^}]*position: sticky;/,
-  'o Pulse precisa ser sticky para não sumir com o scroll',
+  /<Brand pulse back=/,
+  'o header global precisa ativar o modo Pulse',
 );
 assert.ok(
-  !/position:\s*fixed/.test(cssRules),
-  'o Pulse não pode ser fixed: isso o transformaria em barra de shell',
+  !home.includes('<CrewCheckPulse/>'),
+  'não pode existir uma segunda superfície Pulse abaixo do header',
 );
 
-// O deslocamento de topo espelha as três alturas do espaçador do cabeçalho, para
-// o banner parar abaixo dele em vez de escorregar por baixo.
-for (const altura of ['116px', '62px', '88px']) {
-  assert.ok(
-    cssRules.includes(`--cc-pulse-offset: calc(${altura} + env(safe-area-inset-top, 0px))`),
-    `deslocamento de ${altura} ausente: o Pulse deixaria de espelhar o espaçador do cabeçalho`,
-  );
-}
+// 2. Sem mensagem importante, o header volta à identidade normal.
+assert.match(
+  tsx,
+  /if \(!message\) return compact \? <>\{fallback\}<\/> : null;/,
+  'sem alerta, o Pulse compacto precisa devolver a identidade do header',
+);
 
-// 4b. O Pulse não entra na disputa de !important do shell. É classe nova, que
-//     nenhuma outra folha estiliza — não precisa de força bruta para vencer.
+// 3. O resumo é uma linha só. Detalhes aparecem somente quando o usuário expande,
+//    em popover absoluto que não aumenta a altura do shell nem empurra o conteúdo.
+assert.match(
+  cssRules,
+  /\.cc-pulse-compact-trigger \{[^}]*min-height: 44px;/,
+  'o resumo compacto precisa manter alvo de toque de 44px',
+);
+assert.match(
+  cssRules,
+  /\.cc-pulse-compact-trigger > strong \{[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/,
+  'o título do Pulse compacto precisa permanecer em uma linha',
+);
+assert.match(
+  cssRules,
+  /\.cc-pulse-popover \{[^}]*position: absolute;/,
+  'os detalhes precisam abrir em popover absoluto sem empurrar o conteúdo',
+);
+assert.ok(
+  !/--cc-header-clearance|ResizeObserver/.test(css + home),
+  'o Pulse não pode voltar a controlar dinamicamente a geometria do header',
+);
+
+// 4. O Pulse continua sem entrar na disputa de !important do shell.
 const importantes = cssRules
   .split('\n')
   .map((linha) => linha.trim())
@@ -84,16 +80,21 @@ assert.deepEqual(
   `crewcheck-pulse.css usa !important: ${importantes[0]}`,
 );
 
-// 4c. Alvo de toque de 44x44 no dispensar, sem inchar o visual do ícone.
+// 4b. O botão de dispensar mantém visual de 32px com alvo efetivo expandido,
+//     enquanto o trigger compacto já possui 44px visíveis.
 assert.match(
   cssRules,
   /\.cc-pulse-dismiss::after \{[^}]*inset: -6px;/,
-  'o botão de dispensar precisa expandir o alvo de toque para 44x44 por pseudo-elemento',
+  'o botão de dispensar precisa preservar o alvo expandido',
 );
 assert.match(
   cssRules,
   /\.cc-pulse-dismiss \{[^}]*width: 32px;[^}]*height: 32px;/,
-  'o visual do dispensar deve continuar em 32px — a expansão é só do alvo de toque',
+  'o visual do dispensar deve continuar em 32px',
+);
+assert.ok(
+  !/position:\s*fixed/.test(cssRules),
+  'o Pulse não deve criar uma segunda superfície fixed',
 );
 
 // 5. Tokens antes de hardcoded, nos dois temas.
@@ -217,4 +218,4 @@ assert.ok(
   'o componente precisa assinar o runtime singleton do Pulse para a fila sobreviver a remontagens',
 );
 
-console.log('[p1-546] Pulse: superfície própria montada no shell, sticky sem fixed, sem !important, alvo de toque 44x44, sem cor literal, seis categorias, foco e movimento reduzido; dispensa não apaga mensagem nova.');
+console.log('[p1-546] Pulse: resumo compacto no header, marca como fallback, detalhes em popover sem empurrar o shell, sem !important/cores literais; fila e dispensa continuam seguras.');
