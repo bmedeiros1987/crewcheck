@@ -83,23 +83,13 @@ import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotel
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
-import { crewCheckNotificationPermission, currentCrewCheckPulseState, dismissCrewCheckPulse, publishCrewCheckNotice, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';
+import { crewCheckNotificationPermission, publishCrewCheckNotice, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
+import { isActionableComplianceAlert } from '@/lib/complianceAlertSemantics';
 import '@/components/v1393/weather.css';
 import '@/components/v1394/v1394.css';
 import '@/components/v1399/premium.css';
 
-import { currentAccountId } from '@/lib/rosterChangeAwareness';
-import {
-  activeComplianceAlerts,
-  complianceAlertFingerprint,
-  dismissComplianceAlertUntilRosterUpdate,
-  filterActionableComplianceAlerts,
-  informationalComplianceAlerts,
-  readComplianceAlertDismissals,
-  visibleInformationalComplianceAlerts,
-  resetComplianceAlertDismissals,
-} from '@/lib/complianceAlertVisibility';
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
   | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community' | 'compare' | 'regulation' | 'bids' | 'admin';
@@ -734,34 +724,14 @@ function savePresentationOverride(event: ZeroLeg, presentation: string, saveAsLe
     };
     writeJsonRecord(PRESENTATION_RULES_KEY, rules);
   }
-  publishCrewCheckNotice({
-    id: `presentation:${event.id}:${clean}`,
-    dedupeKey: `presentation:${event.id}:${clean}`,
-    tone: 'sucesso',
-    priority: 'normal',
-    title: 'Apresentação atualizada',
-    detail: `${rosterEventTitle(event)} · ${clean}${saveAsLearning ? ' · padrão aprendido' : ''}`,
-    autoDismissMs: 7_000,
-    systemNotification: 'never',
-    action: { label: 'Ver programação', view: 'roster' },
-  });
+  toast.success('Apresentação atualizada.', { description: `${rosterEventTitle(event)} · ${clean}${saveAsLearning ? ' · padrão aprendido' : ''}` });
   window.dispatchEvent(new Event('crewcheck:presentation-updated'));
 }
 function clearPresentationOverride(event: ZeroLeg) {
   const overrides = loadPresentationOverrides();
   delete overrides[presentationOverrideKey(event)];
   writeJsonRecord(PRESENTATION_OVERRIDES_KEY, overrides);
-  publishCrewCheckNotice({
-    id: `presentation-reset:${event.id}`,
-    dedupeKey: `presentation-reset:${event.id}`,
-    tone: 'informativo',
-    priority: 'normal',
-    title: 'Apresentação restaurada',
-    detail: `${rosterEventTitle(event)} voltou ao horário publicado/aprendido.`,
-    autoDismissMs: 7_000,
-    systemNotification: 'never',
-    action: { label: 'Ver programação', view: 'roster' },
-  });
+  toast.message('Apresentação restaurada.', { description: `${rosterEventTitle(event)} voltou ao horário publicado/aprendido.` });
   window.dispatchEvent(new Event('crewcheck:presentation-updated'));
 }
 function clearPresentationLearning(event: ZeroLeg) {
@@ -953,25 +923,40 @@ function neutralCompliance(roster: CrewRoster): ComplianceResult {
   } as any;
 }
 
-function complianceAlertRosterRevision(): string {
-  try {
-    const payload = JSON.parse(storage.get('crewcheck_latest_roster_bundle', 'null'));
-    const roster = payload?.roster || payload;
-    return String(payload?.updatedAt || rosterFingerprint(roster) || 'unversioned-roster');
-  } catch {
-    return 'unversioned-roster';
-  }
-}
-
-function complianceAlertStorage(): Storage | null {
-  try { return window.localStorage; } catch { return null; }
-}
-
 function actionableComplianceAlerts(compliance: ComplianceResult | null): any[] {
-  const raw = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
-  const store = complianceAlertStorage();
-  if (!store) return filterActionableComplianceAlerts(raw);
-  return activeComplianceAlerts(raw, store, currentAccountId(), complianceAlertRosterRevision());
+  const source = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
+  const seen = new Set<string>();
+  return source.filter((alert: any) => {
+    if (!alert || alert.dismissed || alert.falsePositive || alert.active === false || !isActionableComplianceAlert(alert)) return false;
+    const title = String(alert.title || '').trim();
+    const description = String(alert.description || '').trim();
+    const severity = String(alert.severity || '').toLowerCase();
+    if ((!title && !description) || !['error', 'warning'].includes(severity)) return false;
+    const signature = `${severity}|${title}|${description}|${String(alert.legalReference || '')}`;
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+}
+
+type ComplianceAlertDisposition = {
+  reason: 'user_schedule_change';
+  ignoredAt: string;
+  alertTitle: string;
+  alertDate: string;
+};
+const COMPLIANCE_ALERT_DISPOSITIONS_KEY = 'crewcheck_compliance_alert_dispositions_v1';
+function complianceAlertFingerprint(alert: any): string {
+  return [alert?.title, alert?.date, alert?.description, alert?.legalReference].map((value) => String(value || '').trim()).join('|');
+}
+function loadComplianceAlertDispositions(): Record<string, ComplianceAlertDisposition> {
+  try { return JSON.parse(storage.get(COMPLIANCE_ALERT_DISPOSITIONS_KEY, '{}')) || {}; } catch { return {}; }
+}
+function saveComplianceAlertDispositions(value: Record<string, ComplianceAlertDisposition>) {
+  storage.set(COMPLIANCE_ALERT_DISPOSITIONS_KEY, JSON.stringify(value));
+}
+function isGroundLimitAlert(alert: any): boolean {
+  return String(alert?.title || '').trim() === 'Tempo em solo entre etapas acima do limite ACT';
 }
 
 function analyzeSafe(roster: CrewRoster): ComplianceResult {
@@ -1411,8 +1396,8 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', margin = 25, onRoute,
     if (previous === fingerprint) return;
     lastAlertedIncidentFingerprintRef.current = fingerprint;
     storage.set(signatureKey, fingerprint);
-    if (!previous) return;
     const critical = incidents.find((item) => item.roadClosure || item.severity === 'critical');
+    if (!previous && !critical) return;
     const title = critical ? 'Bloqueio ou ocorrência crítica na rota' : 'Nova ocorrência na rota';
     const body = (critical || incidents[0])?.title || 'Revise o trajeto antes de sair.';
     notifyCrewCheck(title, body);
@@ -1570,11 +1555,12 @@ async function askTelegramConcierge(text: string) {
   return payload;
 }
 
-function Brand({ back, onMenu }: { back?: boolean; onMenu?: () => void }) {
+function Brand({ back, onMenu, pulse = false }: { back?: boolean; onMenu?: () => void; pulse?: boolean }) {
   const click = onMenu || (back ? (() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' }))) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));
+  const lockup = <div className="cz-brand-lockup"><span className="cz-logo"><Plane size={26}/></span><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>;
   return <header className="cz-brand-row">
     <button className="cz-menu-btn" onClick={click} aria-label={back ? 'Voltar' : 'Menu'}>{back ? '←' : <Menu size={28}/>}</button>
-    <div className="cz-brand-lockup"><span className="cz-logo"><Plane size={26}/></span><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>
+    {pulse ? <CrewCheckPulse compact fallback={lockup}/> : lockup}
   </header>;
 }
 function complianceAlertSignature(compliance: ComplianceResult | null): string {
@@ -1652,11 +1638,36 @@ function readRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
     return null;
   }
 }
+function confirmedRadarGate(value?: string): string {
+  const normalized = String(value || '').trim().toUpperCase();
+  if (!normalized || normalized === '—' || normalized === '-' || /CONFIRMAR|INFORMAD|UNKNOWN|N\/A/.test(normalized)) return '';
+  return normalized;
+}
 function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapshot {
+  const previous = readRadarSnapshot(event);
   const snapshot = { ...payload, flight: payload.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
   const key = radarSnapshotKey(event);
   storage.set(key, JSON.stringify(snapshot));
   window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));
+
+  const previousGate = confirmedRadarGate(previous?.gate) || confirmedRadarGate(event.gate);
+  const nextGate = confirmedRadarGate(snapshot.gate);
+  if (previousGate && nextGate && previousGate !== nextGate) {
+    publishCrewCheckNotice({
+      id: `gate-change:${event.id}:${nextGate}`,
+      dedupeKey: `gate-change:${event.id}:${nextGate}`,
+      category: 'gate',
+      tone: 'atencao',
+      priority: 'alta',
+      title: `Portão alterado · ${nextGate}`,
+      detail: [event.flightNumber, `${previousGate} → ${nextGate}`, snapshot.terminal].filter(Boolean).join(' · '),
+      pulseCooldownMs: 60_000,
+      systemNotification: 'background',
+      notificationTag: `crewcheck:gate:${event.id}`,
+      notificationCooldownMs: 2 * 60_000,
+      action: { label: 'Abrir Radar', view: 'radar' },
+    });
+  }
   return snapshot;
 }
 async function fetchRadarSnapshot(event: ZeroLeg, force = false): Promise<RadarSnapshot> {
@@ -2175,16 +2186,28 @@ function financeSnapshot(roster: CrewRoster) {
 function notifyCrewCheck(title: string, body: string) {
   const reminder = /despertador|soneca/i.test(title);
   const lower = `${title} ${body}`.toLowerCase();
-  const action = lower.includes('metar') || lower.includes('speci') || lower.includes('meteorologia')
-    ? { label: 'Ver tempo', view: 'weather' }
-    : lower.includes('rota') || lower.includes('trânsito') || lower.includes('trajeto')
-      ? { label: 'Ver saída', view: 'departure' }
-      : reminder
-        ? { label: 'Ver despertador', view: 'wakeup' }
-        : undefined;
+  const category = /portão|portao|gate/.test(lower)
+    ? 'gate'
+    : /metar|speci|meteorologia|tempo/.test(lower)
+      ? 'weather'
+      : /rota|trânsito|transito|trajeto|bloqueio/.test(lower)
+        ? 'traffic'
+        : reminder
+          ? 'wakeup'
+          : 'general';
+  const action = category === 'gate'
+    ? { label: 'Abrir Radar', view: 'radar' }
+    : category === 'weather'
+      ? { label: 'Ver tempo', view: 'weather' }
+      : category === 'traffic'
+        ? { label: 'Ver saída', view: 'departure' }
+        : reminder
+          ? { label: 'Ver despertador', view: 'wakeup' }
+          : undefined;
   publishCrewCheckNotice({
     id: `local:${title}:${body}`,
     dedupeKey: `local:${title}:${body}`,
+    category,
     tone: reminder ? 'lembrete' : 'atencao',
     priority: 'alta',
     title,
@@ -2219,6 +2242,73 @@ function useWeatherLandingMonitor(event: ZeroLeg) {
     const timer = window.setInterval(check, 60000);
     return () => window.clearInterval(timer);
   }, [event?.id, event?.destination, event?.kind]);
+}
+
+
+function useOperationalRadarPulse(event: ZeroLeg) {
+  useEffect(() => {
+    if (!event || event.placeholder || event.kind !== 'flight' || !/\d/.test(String(event.flightNumber || ''))) return;
+    let alive = true;
+    const check = () => {
+      const cached = readRadarSnapshot(event);
+      if (cached?.updatedAt && Date.now() - cached.updatedAt < RADAR_CARD_REFRESH_MS) return;
+      fetchRadarSnapshot(event, false).catch(() => undefined);
+    };
+    check();
+    const timer = window.setInterval(() => { if (alive) check(); }, RADAR_CARD_REFRESH_MS);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [event.id, event.kind, event.placeholder, event.flightNumber, event.origin, event.destination]);
+}
+
+function useOperationalWeatherPulse(event: ZeroLeg) {
+  useEffect(() => {
+    if (!event || event.placeholder || event.kind !== 'flight') return;
+    if (storage.get('crewcheck_weather_hourly', '1') === '0') return;
+    const airports = Array.from(new Set([event.origin, event.destination].map((value) => String(value || '').trim().toUpperCase()).filter(Boolean))).slice(0, 2);
+    if (!airports.length) return;
+
+    let alive = true;
+    const check = async () => {
+      try {
+        const response = await fetch(`/api/aviation-weather?airports=${encodeURIComponent(airports.join(','))}&type=all&view=decoded&v=1393`, { cache: 'no-store' });
+        const payload = await response.json().catch(() => null);
+        if (!alive || !payload?.stations) return;
+
+        for (const airport of airports) {
+          const station = payload.stations?.[airport];
+          const severity = Number(station?.monitoring?.severity || 0);
+          if (!station || severity < 2) continue;
+          const hazards = Array.isArray(station.monitoring?.hazards) ? station.monitoring.hazards : [];
+          const hazardText = hazards.map((item: any) => String(item?.label || item?.code || '').trim()).filter(Boolean).slice(0, 3).join(' · ');
+          const signature = [severity, station.metar || '', station.taf || '', hazardText].join('|');
+          const signatureKey = `crewcheck_weather_pulse_signature_${event.id}_${airport}`;
+          if (storage.get(signatureKey, '') === signature) continue;
+          storage.set(signatureKey, signature);
+
+          publishCrewCheckNotice({
+            id: `weather:${event.id}:${airport}:${signature}`,
+            dedupeKey: `weather:${event.id}:${airport}:${signature}`,
+            category: 'weather',
+            tone: severity >= 3 ? 'erro' : 'atencao',
+            priority: severity >= 3 ? 'critica' : 'alta',
+            title: severity >= 3 ? `Meteorologia crítica · ${airport}` : `Meteorologia requer atenção · ${airport}`,
+            detail: hazardText || `${event.flightNumber || 'Próximo voo'} · METAR/TAF com critério operacional relevante.`,
+            pulseCooldownMs: 10 * 60_000,
+            systemNotification: 'background',
+            notificationTag: `crewcheck:weather:${event.id}:${airport}`,
+            notificationCooldownMs: 15 * 60_000,
+            action: { label: 'Ver meteorologia', view: 'weather' },
+          });
+        }
+      } catch {
+        // Alert monitoring is auxiliary; never block roster rendering.
+      }
+    };
+
+    void check();
+    const timer = window.setInterval(() => { void check(); }, 60 * 60_000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [event.id, event.kind, event.placeholder, event.flightNumber, event.origin, event.destination]);
 }
 
 function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroLeg[]; setView: (v: ZeroView) => void }) {
@@ -2426,87 +2516,25 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
   </>;
 }
 
-function Alerts({ compliance, roster }: { compliance: ComplianceResult | null; roster: CrewRoster }) {
-  const [, setDispositionRevision] = useState(0);
-  const store = complianceAlertStorage();
-  const accountId = currentAccountId();
-  const rosterRevision = complianceAlertRosterRevision() || rosterFingerprint(roster);
-  const raw = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
-  const list = actionableComplianceAlerts(compliance).slice(0, 12);
-  const informational = store
-    ? visibleInformationalComplianceAlerts(raw, store, accountId, rosterRevision)
-    : informationalComplianceAlerts(raw);
-  const dismissedCount = store
-    ? readComplianceAlertDismissals(store, accountId, rosterRevision).length
-    : 0;
-
-  function ignoreUntilRosterUpdate(alert: any) {
-    if (!store || !dismissComplianceAlertUntilRosterUpdate(store, accountId, rosterRevision, alert)) return;
-    const pulse = currentCrewCheckPulseState().message as ({ category?: string } | null);
-    if (pulse?.category === 'compliance') dismissCrewCheckPulse();
+function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
+  const [dispositionRevision, setDispositionRevision] = useState(0);
+  const dispositions = useMemo(() => loadComplianceAlertDispositions(), [dispositionRevision]);
+  const source = actionableComplianceAlerts(compliance);
+  const ignored = source.filter((alert) => dispositions[complianceAlertFingerprint(alert)]);
+  const list = source.filter((alert) => !dispositions[complianceAlertFingerprint(alert)]).slice(0, 12);
+  function ignoreAsUserScheduleChange(alert: any) {
+    const next = loadComplianceAlertDispositions();
+    next[complianceAlertFingerprint(alert)] = { reason: 'user_schedule_change', ignoredAt: new Date().toISOString(), alertTitle: String(alert.title || ''), alertDate: String(alert.date || '') };
+    saveComplianceAlertDispositions(next);
     setDispositionRevision((value) => value + 1);
-    toast.success('Alerta ocultado até a próxima atualização da escala.', {
-      description: 'Uma nova importação ou sincronização refará a análise e poderá exibi-lo novamente.',
-    });
+    toast.success('Alerta ocultado como alteração da sua programação.', { description: 'A análise original permanece preservada para auditoria.' });
   }
-
   function restoreIgnoredAlerts() {
-    if (!store) return;
-    resetComplianceAlertDismissals(store, accountId);
+    saveComplianceAlertDispositions({});
     setDispositionRevision((value) => value + 1);
   }
-
-  return <>
-    <Brand back/>
-    <section className="cz-panel-head">
-      <h1>Irregularidades e alertas</h1>
-      <p>Primeiro aparecem ocorrências que exigem ação. Explicações e análises incompletas ficam recolhidas abaixo.</p>
-    </section>
-    {list.length
-      ? <section className="cz-alert-stack">{list.map((alert: any, idx: number) => {
-          const warning = String(alert.severity || '').toLowerCase() === 'warning';
-          return <article className={alert.severity === 'error' ? 'danger' : 'warn'} key={`${complianceAlertFingerprint(alert)}-${idx}`}>
-            <AlertTriangle/>
-            <div>
-              <h2>{alert.title}</h2>
-              <p>{alert.description}</p>
-              <span>{alert.severity === 'error' ? 'Confirmada' : 'Atenção'}</span>
-              <b>Confiança: {alert.severity === 'error' ? 'alta' : 'média'}</b>
-              {warning && <button type="button" onClick={() => ignoreUntilRosterUpdate(alert)}>Ignorar até a próxima atualização</button>}
-            </div>
-            <ChevronRight/>
-          </article>;
-        })}</section>
-      : <article className="cz-empty-real">
-          <ShieldCheck/>
-          <h2>Nenhuma irregularidade ativa</h2>
-          <p>{dismissedCount ? 'Os avisos dispensados voltarão a ser avaliados na próxima atualização da escala.' : 'Não há ocorrência confirmada que exija ação agora.'}</p>
-        </article>}
-    {dismissedCount > 0 && <article className="cz-alert-detail">
-      <h2>Ocultados até a próxima atualização <b>{dismissedCount}</b></h2>
-      <footer><button onClick={restoreIgnoredAlerts}><RotateCcw/> Mostrar novamente agora</button></footer>
-    </article>}
-    {informational.length > 0 && <details className="cz-alert-detail">
-      <summary>Análises incompletas <b>{informational.length}</b></summary>
-      <div>
-        {informational.map((alert) => <div key={complianceAlertFingerprint(alert)}>
-          <p><strong>{alert.title || 'Histórico insuficiente'}</strong> {alert.description}</p>
-          {alert.coverage?.missingDates?.length ? <p><strong>Cobertura faltante</strong> {alert.coverage.missingDates.length} dia(s) necessários para a janela de {alert.coverage.windowDays || 28} dias.</p> : null}
-          {alert.details ? <p>{alert.details}</p> : null}
-          <button type="button" onClick={() => ignoreUntilRosterUpdate(alert)}>Ignorar até a próxima atualização</button>
-        </div>)}
-      </div>
-    </details>}
-    <details className="cz-alert-detail">
-      <summary>Como o CrewCheck analisa</summary>
-      <div>
-        <p><strong>O que o sistema avalia</strong> Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p>
-        <p><strong>Dados usados</strong> Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p>
-      </div>
-    </details>
-  </>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Irregularidades e alertas</h1><p>RBAC 117, ACT, repouso, jornada, sobreaviso, reserva e acionamentos. Sem alertas fictícios.</p></section>{list.length ? <section className="cz-alert-stack">{list.map((a: any, idx: number) => <article className={a.severity === 'error' ? 'danger' : 'warn'} key={`${a.title}-${idx}`}><AlertTriangle/><div><h2>{a.title}</h2><p>{a.description}</p><span>{a.severity === 'error' ? 'Confirmada' : 'Atenção'}</span><b>Confiança: {a.severity === 'error' ? 'alta' : 'média'}</b>{isGroundLimitAlert(a) && <button type="button" onClick={() => ignoreAsUserScheduleChange(a)}>Ignorar — alteração da minha programação</button>}</div><ChevronRight/></article>)}</section> : <article className="cz-empty-real"><ShieldCheck/><h2>Nenhuma irregularidade confirmada</h2><p>{ignored.length ? 'Os alertas desta análise foram classificados por você como alterações da programação.' : 'Carregue a escala real para que o motor regulatório refaça a análise completa.'}</p></article>}{ignored.length > 0 && <article className="cz-alert-detail"><h2>Alterações informadas por você <b>{ignored.length}</b></h2><div><p><strong>Tratamento</strong>Esses itens ficam fora dos alertas ativos, sem apagar a análise da escala publicada.</p><p><strong>Rastreabilidade</strong>A classificação é uma preferência do usuário e não altera o motor regulatório canônico.</p></div><footer><button onClick={restoreIgnoredAlerts}><RotateCcw/> Restaurar alertas ignorados</button></footer></article>}<article className="cz-alert-detail"><h2>Detalhes regulatórios <b>{list.length ? 'Ativo' : 'Aguardando escala'}</b></h2><div><p><strong>O que o sistema avalia</strong>Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p><p><strong>Dados usados</strong>Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p></div><footer><button>Ver base regulatória</button></footer></article></>;
 }
-
 function routeDurationMinutes(route: RoutePreviewInfo | null): number {
   const text = String(route?.durationInTrafficText || route?.durationText || '').toLowerCase();
   const hours = Number(text.match(/(\d+(?:[.,]\d+)?)\s*h/)?.[1]?.replace(',', '.') || 0);
@@ -4780,30 +4808,9 @@ export default function Home() {
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
   useWeatherLandingMonitor(flightEvent);
+  useOperationalRadarPulse(flightEvent);
+  useOperationalWeatherPulse(flightEvent);
 
-  useEffect(() => {
-    if (!event || event.placeholder) return;
-    const details = [
-      event.presentation && event.presentation !== '—' && event.presentation !== 'Conexão/Solo' ? `Apresentação ${event.presentation}` : '',
-      event.kind === 'flight' && event.origin && event.destination ? `${event.origin} → ${event.destination}` : '',
-      event.gate ? `Portão ${event.gate}` : '',
-      event.status ? String(event.status) : '',
-    ].filter(Boolean).join(' · ');
-
-    publishCrewCheckNotice({
-      id: `next:${event.id}:${event.presentation}:${event.gate || ''}:${event.status || ''}`,
-      dedupeKey: `next:${event.id}:${event.presentation}:${event.gate || ''}:${event.status || ''}`,
-      pulseCooldownMs: 2 * 60 * 60_000,
-      tone: event.kind === 'flight' ? 'operacional' : 'informativo',
-      priority: 'normal',
-      title: event.kind === 'stay'
-        ? `Pernoite · ${safe(event.destination || event.origin, 'programação')}`
-        : `Próxima programação · ${rosterEventTitle(event)}`,
-      detail: details || programDateLabel(event),
-      systemNotification: 'never',
-      action: { label: event.kind === 'stay' ? 'Ver pernoite' : 'Ver escala', view: event.kind === 'stay' ? 'hotels' : 'roster' },
-    });
-  }, [event.id, event.kind, event.presentation, event.gate, event.status, event.origin, event.destination]);
 
   useEffect(() => {
     const count = actionableComplianceAlerts(compliance).length;
@@ -4813,6 +4820,7 @@ export default function Home() {
       id: `compliance:${signature}`,
       dedupeKey: `compliance:${signature}`,
       pulseCooldownMs: 6 * 60 * 60_000,
+      category: 'compliance',
       tone: 'atencao',
       priority: 'alta',
       title: `${count} ponto${count === 1 ? '' : 's'} para revisar`,
@@ -4853,18 +4861,6 @@ export default function Home() {
       const compliance = active.compliance || analyzeSafe(active.roster);
       saveRoster(active.roster, 'Escala ativa sincronizada');
       setBundle({ roster: active.roster, compliance, source: 'Escala ativa sincronizada' });
-      publishCrewCheckNotice({
-        id: `active-roster:${active.roster.year}:${active.roster.month}`,
-        dedupeKey: `active-roster:${active.roster.year}:${active.roster.month}`,
-        pulseCooldownMs: 30 * 60_000,
-        tone: 'informativo',
-        priority: 'baixa',
-        title: 'Escala sincronizada',
-        detail: 'A escala ativa da sua conta foi restaurada neste aparelho.',
-        autoDismissMs: 6_500,
-        systemNotification: 'never',
-        action: { label: 'Ver escala', view: 'roster' },
-      });
     }).catch((error: any) => {
       if (!alive) return;
       if (Number(error?.status) === 409) toast.error('Há um conflito de escala ativa. Atualize a sessão antes de importar novamente.');
@@ -4939,6 +4935,7 @@ export default function Home() {
         publishCrewCheckNotice({
           id: `roster-import-change:${roster.year}:${roster.month}:${importComparison?.summary.changedDays || 0}`,
           dedupeKey: `roster-import-change:${roster.year}:${roster.month}:${importComparison?.summary.changedDays || 0}`,
+          category: 'roster',
           tone: 'atencao',
           priority: 'alta',
           title: 'Escala atualizada',
@@ -4946,23 +4943,12 @@ export default function Home() {
           systemNotification: 'never',
           action: { label: 'Ver mudanças', view: 'compare' },
         });
-      } else {
-        publishCrewCheckNotice({
-          id: `roster-import:${roster.year}:${roster.month}`,
-          dedupeKey: `roster-import:${roster.year}:${roster.month}`,
-          tone: 'sucesso',
-          priority: 'normal',
-          title: 'Escala importada com sucesso',
-          detail: decision.periodLabel || `${String(roster.month).padStart(2, '0')}/${roster.year}`,
-          autoDismissMs: 6_500,
-          systemNotification: 'never',
-          action: { label: 'Ver escala', view: 'roster' },
-        });
       }
       if (!decision.hasFuture) {
         publishCrewCheckNotice({
           id: `roster-no-future:${roster.year}:${roster.month}`,
           dedupeKey: `roster-no-future:${roster.year}:${roster.month}`,
+          category: 'roster',
           tone: 'erro',
           priority: 'alta',
           title: 'Escala sem programação futura',
@@ -5008,10 +4994,9 @@ export default function Home() {
     <div className="cz-wallpaper"/>
     <input ref={fileRef} type="file" accept="application/pdf,.pdf" hidden onChange={handleFile}/>
     <div className="cz-global-header" data-global-internal-header="true">
-      <Brand back={view !== 'cockpit'} onMenu={view === 'cockpit' ? () => setDrawer(true) : undefined}/>
+      <Brand pulse back={view !== 'cockpit'} onMenu={view === 'cockpit' ? () => setDrawer(true) : undefined}/>
     </div>
     <div className="cz-global-header-spacer" aria-hidden="true"/>
-    <CrewCheckPulse/>
     {busy && <div className="cz-busy"><Plane/><strong>Interpretando escala...</strong></div>}
     {showIntro && <OpeningVideo onDone={() => setShowIntro(false)}/>}
     <MenuDrawer open={drawer} close={() => setDrawer(false)} view={view} setView={setView} actions={actions}/>
@@ -5019,7 +5004,7 @@ export default function Home() {
     {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>} 
     {view === 'compare' && <CompareRosterView bundle={bundle} onUpload={actions.upload}/>} 
     {view === 'bids' && <BidsView events={events}/>} 
-    {view === 'alerts' && <Alerts compliance={compliance} roster={bundle.roster}/>}
+    {view === 'alerts' && <Alerts compliance={compliance}/>}
     {view === 'regulation' && <ManualRegulationView compliance={compliance}/>}
     {view === 'departure' && <Departure event={event}/>}
     {view === 'mycar' && <CarView event={event}/>}
