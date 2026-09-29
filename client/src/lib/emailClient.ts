@@ -1,6 +1,7 @@
 import { authFetch } from './authClient';
 import type { CrewRoster } from './pdfParser';
-import { isActionableComplianceAlert, type ComplianceResult, type GymRecommendation } from './complianceEngine';
+import type { ComplianceResult, GymRecommendation } from './complianceEngine';
+import { isActionableComplianceAlert } from './complianceAlertSemantics';
 import { CREWCHECK_BRAND, crewCheckPublicAssetUrl } from './brand';
 
 type PdfAttachment = {
