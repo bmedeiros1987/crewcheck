@@ -22,7 +22,7 @@ jobs:
     env:
       ROSTER_LAYOUT_HEAD: 769790144977bc0cc56eb04d2e919287e553b152
       STARTUP_PROGRESS_HEAD: bf7a085558284791ebf6b8ee7e6f08ce9abe9b42
-      EXPECTED_PARENT: 66fc03f2ecd51e6adee329703f18fb28232f3273
+      EXPECTED_PARENT: 98c1de43c8fc29c32e42f0fbe7f4bfe517197018
       VERSION_CODE: '144153'
       VERSION_NAME: '14.4.11'
       KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 }}
@@ -169,7 +169,7 @@ jobs:
       - name: Install Android Publisher client
         run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
 
-      - name: Upload phone bundle to Production and send for review
+      - name: Stage phone bundle on Production for Console review
         shell: bash
         run: |
           set -euo pipefail
@@ -262,11 +262,12 @@ jobs:
               )
 
               api('POST', edit + ':validate')
-              api('POST', edit + ':commit')
+              api('POST', edit + ':commit', params={'changesNotSentForReview': 'true'})
               committed = True
               print(
-                  f'PLAY_PRODUCTION_SUBMITTED package={package} '
-                  f'versionName={version_name} versionCode={version_code}'
+                  f'PLAY_PRODUCTION_STAGED package={package} '
+                  f'versionName={version_name} versionCode={version_code} '
+                  f'REVIEW_UI_REQUIRED=true'
               )
           finally:
               if not committed:
