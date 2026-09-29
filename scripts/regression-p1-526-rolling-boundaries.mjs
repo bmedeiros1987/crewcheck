@@ -22,9 +22,14 @@ function day(offset, hours = 0, aircraftType = 'A320') {
 const range = (offset, count, hours = 0, aircraft) => Array.from({ length: count }, (_, i) => day(offset + i, hours, aircraft));
 const analyze = days => analyzeCompliance({ month: 5, year: 2032, rank: 'CCM', days, rawText: '' });
 const violation = r => r.alerts.some(a => a.title === 'Limite de 28 dias de horas de voo excedido' && a.classification === 'confirmada');
-const incomplete = r => r.alerts.some(a => /histórico insuficiente.*28 dias/i.test(a.title)
-  && a.severity === 'warning' && a.classification === 'dados_insuficientes'
-  && /Faltam registros de \d+ dia\(s\) entre \d{2}\/\d{2}\/\d{4} a \d{2}\/\d{2}\/\d{4}/.test(a.description));
+const incomplete = r => r.alerts.some(a => a.code === 'ROLLING_28D_DATA_GAP'
+  && a.severity === 'warning'
+  && a.classification === 'dados_insuficientes'
+  && a.actionable === false
+  && a.coverage?.windowDays === 28
+  && Array.isArray(a.coverage?.missingDates)
+  && a.coverage.missingDates.length > 0
+  && a.coverage.missingDates.every(date => /^\d{4}-\d{2}-\d{2}$/.test(date)));
 
 const partial = analyze(range(0, 11, 3.5));
 check('missing previous history is explicitly incomplete', incomplete(partial));
