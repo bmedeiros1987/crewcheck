@@ -3,9 +3,12 @@ on:
   pull_request:
     paths:
       - 'client/src/components/v1391/**'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/lib/homeLayoutPreference.ts'
       - 'client/src/lib/rosterLayoutPreference.ts'
       - 'client/src/lib/rosterChangeAwareness.ts'
       - 'scripts/regression-roster-layout-preference.mjs'
+      - 'scripts/regression-home-layout-preference.mjs'
       - 'scripts/regression-roster-change-awareness.mjs'
       - '.github/workflows/roster-layout-preferences.yml'
 jobs:
@@ -20,6 +23,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node scripts/v139/apply.mjs
       - run: node scripts/regression-roster-layout-preference.mjs
+      - run: node scripts/regression-home-layout-preference.mjs
       - run: node scripts/regression-roster-change-awareness.mjs
       - run: npx tsc --noEmit
       - run: npx vite build
