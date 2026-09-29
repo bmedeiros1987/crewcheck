@@ -4,11 +4,11 @@ const path = 'client/src/pages/Home.tsx';
 if (!fs.existsSync(path)) throw new Error(`[p1-home-layout] arquivo ausente: ${path}`);
 let source = fs.readFileSync(path, 'utf8');
 
-const importAnchor = "import { authFetch, getStoredUser, logout } from '@/lib/authClient';";
 const importLine = "import { HomeLayoutShell, type HomeLayoutSlot } from '@/components/v1391/HomeLayoutShell';";
 if (!source.includes(importLine)) {
-  if (!source.includes(importAnchor)) throw new Error('[p1-home-layout] import authClient não localizado');
-  source = source.replace(importAnchor, `${importAnchor}\n${importLine}`);
+  const typeAnchor = '\ntype ZeroView =';
+  if (!source.includes(typeAnchor)) throw new Error('[p1-home-layout] limite estrutural dos imports não localizado');
+  source = source.replace(typeAnchor, `\n${importLine}\n${typeAnchor.slice(1)}`);
 }
 
 if (!source.includes('<HomeLayoutShell slots={slots}/>')) {
