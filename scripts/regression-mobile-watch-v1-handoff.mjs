@@ -20,6 +20,8 @@ const publisher = read('android-wrapper/app/src/main/java/com/crewcheck/app/Crew
 const telemetry = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchDeviceTelemetry.java');
 const syncService = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWatchSyncService.java');
 const manifest = read('android-wrapper/app/src/main/AndroidManifest.xml');
+const deviceHub = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckDeviceHubActivity.java');
+const wearBuild = read('android-wrapper/wear/build.gradle');
 const watchContext = read('client/src/lib/watchContext.ts');
 const contract = read('docs/mobile_watch_snapshot_v1_contract.md');
 
@@ -62,6 +64,10 @@ requireText(syncService, 'CrewCheckWatchDeviceTelemetry.STATUS_RESPONSE_PATH.equ
 requireText(syncService, 'CrewCheckWatchPublisher.republishLast(this)', 'cached snapshot fast path');
 requireText(manifest, 'android:name=".CrewCheckDeviceHubActivity"', 'Device Hub activity');
 requireText(manifest, 'android:pathPrefix="/crewcheck/watch/device-status/response/"', 'telemetry manifest filter');
+requireText(deviceHub, 'market://details?id=com.crewcheck.app', 'single Play listing used for phone and Wear install');
+requireText(deviceHub, 'escolha seu Galaxy Watch como dispositivo de instalação', 'watch-target installation guidance');
+requireText(wearBuild, "applicationId 'com.crewcheck.app'", 'Wear module shares the canonical Play application id');
+forbidText(deviceHub, 'details?id=com.crewcheck.watch', 'nonexistent separate CrewWatch Play package');
 
 requireText(contract, 'missing `premiumAccess` means `false`', 'old-phone/new-peer compatibility documentation');
 requireText(contract, 'JSON integer values, never numeric strings or fractional numbers', 'strict required numeric type documentation');
