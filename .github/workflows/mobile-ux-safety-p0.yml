@@ -1,0 +1,44 @@
+name: Mobile UX safety P0
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/components/ErrorBoundary.tsx'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/emailClient.ts'
+      - 'client/src/lib/sharing.ts'
+      - 'client/src/lib/pdfExport.ts'
+      - 'client/src/lib/databaseClient.ts'
+      - 'client/src/components/v1392/ManualRegulationView.tsx'
+      - 'client/src/components/v1432/ManualRegulationView.tsx'
+      - 'server/platform.mjs'
+      - 'scripts/v14338/apply.mjs'
+      - 'scripts/regression-error-boundary-safe.mjs'
+      - 'scripts/regression-compliance-actionable-consumers.mjs'
+      - '.github/workflows/mobile-ux-safety-p0.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Prepare canonical sources
+        run: node scripts/v139/apply.mjs
+      - name: Validate actionable compliance consumers
+        run: node scripts/regression-compliance-actionable-consumers.mjs
+      - name: Validate safe global error presentation
+        run: node scripts/regression-error-boundary-safe.mjs
+      - name: TypeScript and web
+        run: |
+          npx tsc --noEmit
+          npx vite build
