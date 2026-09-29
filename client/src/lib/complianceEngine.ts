@@ -36,6 +36,11 @@ export interface ComplianceAlert {
   evidence?: string;
 }
 
+export function isActionableComplianceAlert(alert: Partial<ComplianceAlert> | null | undefined): boolean {
+  if (!alert || alert.actionable === false || alert.classification === 'dados_insuficientes') return false;
+  return alert.severity === 'error' || alert.severity === 'warning';
+}
+
 export interface Metrics {
   /** Horas de voo da COMPETÊNCIA ATIVA. Histórico adjacente carregado para a
    *  janela móvel não entra aqui — ver `maxFlightHoursRolling28Days`. */
