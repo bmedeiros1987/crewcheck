@@ -1574,11 +1574,29 @@ async function askTelegramConcierge(text: string) {
   return payload;
 }
 
-function Brand({ back, onMenu }: { back?: boolean; onMenu?: () => void }) {
+function Brand({ back, onMenu, pulse = false }: { back?: boolean; onMenu?: () => void; pulse?: boolean }) {
+  const headerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!pulse) return;
+    const row = headerRef.current;
+    const header = row?.parentElement;
+    const app = header?.parentElement;
+    if (!header || !app) return;
+    const measure = () => app.style.setProperty('--cc-header-clearance', `${Math.ceil(header.getBoundingClientRect().bottom + 12)}px`);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+      app.style.removeProperty('--cc-header-clearance');
+    };
+  }, [pulse]);
   const click = onMenu || (back ? (() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' }))) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));
-  return <header className="cz-brand-row">
+  return <header ref={headerRef} className="cz-brand-row">
     <button className="cz-menu-btn" onClick={click} aria-label={back ? 'Voltar' : 'Menu'}>{back ? '←' : <Menu size={28}/>}</button>
-    <div className="cz-brand-lockup"><span className="cz-logo"><Plane size={26}/></span><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>
+    {pulse ? <CrewCheckPulse embedded fallback={<div className="cz-brand-lockup"><span className="cz-logo"><Plane size={26}/></span><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>}/> : <div className="cz-brand-lockup"><span className="cz-logo"><Plane size={26}/></span><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>}
   </header>;
 }
 function complianceAlertSignature(compliance: ComplianceResult | null): string {
@@ -5004,10 +5022,9 @@ export default function Home() {
     <div className="cz-wallpaper"/>
     <input ref={fileRef} type="file" accept="application/pdf,.pdf" hidden onChange={handleFile}/>
     <div className="cz-global-header" data-global-internal-header="true">
-      <Brand back={view !== 'cockpit'} onMenu={view === 'cockpit' ? () => setDrawer(true) : undefined}/>
+      <Brand pulse back={view !== 'cockpit'} onMenu={view === 'cockpit' ? () => setDrawer(true) : undefined}/>
     </div>
     <div className="cz-global-header-spacer" aria-hidden="true"/>
-    <CrewCheckPulse/>
     {busy && <div className="cz-busy"><Plane/><strong>Interpretando escala...</strong></div>}
     {showIntro && <OpeningVideo onDone={() => setShowIntro(false)}/>}
     <MenuDrawer open={drawer} close={() => setDrawer(false)} view={view} setView={setView} actions={actions}/>
