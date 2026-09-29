@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { V139Header } from '@/components/v139/Shell';
 import { AimsRosterTable } from './AimsRosterTable';
+import { CalendarRosterView } from './CalendarRosterView';
 import '@/components/v139/v139.css';
 import '@/launch-v13-9-1.css';
 import '@/components/v1397/roster-premium.css';
@@ -288,6 +289,9 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
         <button type="button" aria-pressed={layout === 'aims'} data-active={layout === 'aims' ? 'true' : 'false'} onClick={() => choose('aims')}>
           <Table2 aria-hidden="true"/><span><b>AIMS</b><small>Tabela fiel à escala publicada</small></span>
         </button>
+        <button type="button" aria-pressed={layout === 'calendar'} data-active={layout === 'calendar' ? 'true' : 'false'} onClick={() => choose('calendar')}>
+          <CalendarDays aria-hidden="true"/><span><b>Calendário</b><small>Mês completo por dia</small></span>
+        </button>
       </div>
       <button className="cc-roster-layout-reset" type="button" onClick={() => choose('cards')} disabled={layout === 'cards'}>
         <RotateCcw aria-hidden="true"/> Restaurar padrão CrewCheck
@@ -333,7 +337,11 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
       )}
     </section>
 
-    {layout === 'aims' && ordered.length ? <AimsRosterTable events={ordered}/> : <section className="cc-roster-days-v1397" data-roster-layout={layout}>
+    {layout === 'aims' && ordered.length
+      ? <AimsRosterTable events={ordered}/>
+      : layout === 'calendar' && ordered.length
+        ? <CalendarRosterView events={ordered} month={selectedMonth}/>
+        : <section className="cc-roster-days-v1397" data-roster-layout={layout}>
       {groups.map((group) => {
         const groupPerDiems = group.events.flatMap(perDiemForEvent);
         const groupEarnings = group.events.map((event) => salaryByEvent.get(event.id)).filter(Boolean) as FlightEarningItem[];
