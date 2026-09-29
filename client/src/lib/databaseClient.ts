@@ -1,5 +1,6 @@
 import type { CrewRoster } from './pdfParser';
-import { isActionableComplianceAlert, type ComplianceResult, type GymRecommendation } from './complianceEngine';
+import type { ComplianceResult, GymRecommendation } from './complianceEngine';
+import { isActionableComplianceAlert } from './complianceAlertSemantics';
 import { authFetch, getStoredUser, getToken } from './authClient';
 
 export interface DatabaseStatus {
