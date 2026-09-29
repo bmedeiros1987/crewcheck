@@ -55,7 +55,10 @@ function februaryRoster(hours = 50) {
 }
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
-const incomplete = (result) => result.alerts.some((alert) => /28 dias.*incompleta/i.test(String(alert.title || '')));
+const incomplete = (result) => result.alerts.some((alert) =>
+  alert?.code === 'ROLLING_28D_DATA_GAP'
+  && alert?.classification === 'dados_insuficientes'
+  && alert?.actionable === false);
 const violation = (result) => result.alerts.some((alert) => alert.title === 'Limite de 28 dias de horas de voo excedido' && alert.classification === 'confirmada');
 
 function json(body, status = 200) {
