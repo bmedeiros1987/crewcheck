@@ -5,10 +5,13 @@ on:
       - 'client/src/components/v1391/**'
       - 'client/src/pages/Home.tsx'
       - 'client/src/lib/homeLayoutPreference.ts'
+      - 'client/src/lib/menuPreference.ts'
+      - 'scripts/p1-menu-5s/**'
       - 'client/src/lib/rosterLayoutPreference.ts'
       - 'client/src/lib/rosterChangeAwareness.ts'
       - 'scripts/regression-roster-layout-preference.mjs'
       - 'scripts/regression-home-layout-preference.mjs'
+      - 'scripts/regression-menu-5s.mjs'
       - 'scripts/regression-roster-change-awareness.mjs'
       - '.github/workflows/roster-layout-preferences.yml'
 jobs:
@@ -24,6 +27,7 @@ jobs:
       - run: node scripts/v139/apply.mjs
       - run: node scripts/regression-roster-layout-preference.mjs
       - run: node scripts/regression-home-layout-preference.mjs
+      - run: node scripts/regression-menu-5s.mjs
       - run: node scripts/regression-roster-change-awareness.mjs
       - run: npx tsc --noEmit
       - run: npx vite build
