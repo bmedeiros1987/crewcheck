@@ -52,6 +52,9 @@ source = source.replace(
   "          category: 'roster',\n          tone: 'erro',\n          priority: 'alta',\n          title: 'Escala sem programação futura',",
 );
 
+// A branch fonte já pode conter a categoria. O finalizador precisa ser idempotente.
+source = source.replace(/(\n\s*category: '([^']+)',)\n\s*category: '\2',/g, '$1');
+
 if (!source.includes(MARKER)) {
   const anchor = "export default function Home() {";
   if (!source.includes(anchor)) throw new Error('[p1-546-live] Home final não localizado para marker.');
