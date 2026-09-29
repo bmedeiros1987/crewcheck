@@ -32,7 +32,7 @@ function copyPreference(value: HomeLayoutPreference): HomeLayoutPreference {
   return { ...value, order: [...value.order], visible: [...value.visible] };
 }
 
-export function HomeLayoutShell({ slots }: { slots: HomeLayoutSlot[] }) {
+export function HomeLayoutShell({ slots, standardContent }: { slots: HomeLayoutSlot[]; standardContent?: ReactNode }) {
   const accountId = (() => { try { return getStoredUser()?.id || null; } catch { return null; } })();
   const [saved, setSaved] = useState(() => readHomeLayout(window.localStorage, accountId));
   const [draft, setDraft] = useState(() => copyPreference(saved));
@@ -120,6 +120,8 @@ export function HomeLayoutShell({ slots }: { slots: HomeLayoutSlot[] }) {
     </section>}
 
     <p className="cc-home-layout-status" role="status" aria-live="polite">{status}</p>
-    <div className="cc-home-layout-content">{rendered.map((id) => <div key={id} data-home-slot={id}>{slotById.get(id)?.content}</div>)}</div>
+    <div className="cc-home-layout-content">{saved.mode === 'standard' && standardContent
+      ? standardContent
+      : rendered.map((id) => <div key={id} data-home-slot={id}>{slotById.get(id)?.content}</div>)}</div>
   </section>;
 }
