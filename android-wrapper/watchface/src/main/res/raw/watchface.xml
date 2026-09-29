@@ -3,7 +3,7 @@
   CrewCheck WFF v1 — implementation of the Higgsfield visual system.
 
   Two independent personalization axes:
-  - visual personality: Flight Deck (masculino), Elegance (feminino), Balanced (unissex);
+  - visual personality: Flight Deck, Elegance, Balanced;
   - clock mode: Hybrid (analógico + digital) or Digital.
 
   Data providers and slot ids remain unchanged. The face does not invent flight status,
@@ -43,7 +43,7 @@
     <!-- Visual personality. Only presentation changes; the operational slots stay fixed. -->
     <ListConfiguration id="crewcheck_style">
       <ListOption id="0">
-        <Group name="Flight Deck Masculine" x="0" y="0" width="450" height="450">
+        <Group name="Flight Deck" x="0" y="0" width="450" height="450">
           <PartDraw x="84" y="116" width="282" height="92">
             <RoundRectangle x="0" y="0" width="282" height="92" cornerRadiusX="20" cornerRadiusY="20">
               <Fill color="#CC050E18" />
@@ -68,7 +68,7 @@
       </ListOption>
 
       <ListOption id="1">
-        <Group name="Elegance Feminine" x="0" y="0" width="450" height="450">
+        <Group name="Elegance" x="0" y="0" width="450" height="450">
           <PartDraw x="92" y="118" width="266" height="88">
             <RoundRectangle x="0" y="0" width="266" height="88" cornerRadiusX="44" cornerRadiusY="44">
               <Fill color="#990C1726" />
@@ -93,7 +93,7 @@
       </ListOption>
 
       <ListOption id="2">
-        <Group name="Balanced Unisex" x="0" y="0" width="450" height="450">
+        <Group name="Balanced" x="0" y="0" width="450" height="450">
           <PartDraw x="55" y="242" width="340" height="82">
             <RoundRectangle x="0" y="0" width="340" height="82" cornerRadiusX="22" cornerRadiusY="22">
               <Fill color="#DD07111F" />
