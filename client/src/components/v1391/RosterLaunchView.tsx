@@ -20,10 +20,12 @@ import {
   Route,
   ShieldCheck,
   Sparkles,
+  Table2,
   Utensils,
   WalletCards,
 } from 'lucide-react';
 import { V139Header } from '@/components/v139/Shell';
+import { AimsRosterTable } from './AimsRosterTable';
 import '@/components/v139/v139.css';
 import '@/launch-v13-9-1.css';
 import '@/components/v1397/roster-premium.css';
@@ -283,6 +285,9 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
         <button type="button" aria-pressed={layout === 'list'} data-active={layout === 'list' ? 'true' : 'false'} onClick={() => choose('list')}>
           <List aria-hidden="true"/><span><b>Lista</b><small>Sequência contínua por dia</small></span>
         </button>
+        <button type="button" aria-pressed={layout === 'aims'} data-active={layout === 'aims' ? 'true' : 'false'} onClick={() => choose('aims')}>
+          <Table2 aria-hidden="true"/><span><b>AIMS</b><small>Tabela fiel à escala publicada</small></span>
+        </button>
       </div>
       <button className="cc-roster-layout-reset" type="button" onClick={() => choose('cards')} disabled={layout === 'cards'}>
         <RotateCcw aria-hidden="true"/> Restaurar padrão CrewCheck
@@ -328,7 +333,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
       )}
     </section>
 
-    <section className="cc-roster-days-v1397" data-roster-layout={layout}>
+    {layout === 'aims' && ordered.length ? <AimsRosterTable events={ordered}/> : <section className="cc-roster-days-v1397" data-roster-layout={layout}>
       {groups.map((group) => {
         const groupPerDiems = group.events.flatMap(perDiemForEvent);
         const groupEarnings = group.events.map((event) => salaryByEvent.get(event.id)).filter(Boolean) as FlightEarningItem[];
@@ -414,7 +419,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
       })}
 
       {!ordered.length && <article className="cc-roster-empty-v1397"><CalendarDays/><h2>Nenhuma escala carregada</h2><p>Importe o PDF ou sincronize o calendário autorizado do iFlight.</p></article>}
-    </section>
+    </section>}
 
     {ordered.length > 0 && <footer className="cc-roster-estimate-note-v1397"><ShieldCheck/><p><strong>Estimativa conferível.</strong> Diárias e produção por KM usam as regras ACT, tarifas administrativas e dados aprendidos já configurados no CrewCheck. Não substituem o demonstrativo oficial.</p></footer>}
   </div>;
