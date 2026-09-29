@@ -23,7 +23,16 @@ export interface ComplianceAlert {
   legalReference?: string;
   date?: string;
   confidence?: 'alta' | 'media' | 'baixa';
-  classification?: 'confirmada' | 'atencao' | 'leitura_inconsistente';
+  classification?: 'confirmada' | 'atencao' | 'leitura_inconsistente' | 'dados_insuficientes';
+  /** Código estável para consumidores de UI/integrações; nunca dependa do título humano. */
+  code?: string;
+  /** false = transparência/informação; não é irregularidade acionável nem deve alimentar o Pulse. */
+  actionable?: boolean;
+  /** Evidência de cobertura para avaliações que dependem de histórico adjacente. */
+  coverage?: {
+    windowDays: number;
+    missingDates: string[];
+  };
   evidence?: string;
 }
 
@@ -1523,7 +1532,8 @@ function auditAlertConfidence(alerts: ComplianceAlert[], days: RosterDay[]): Com
     const day = alert.date ? dayByDate.get(alert.date) : null;
     const defaultConfidence: ComplianceAlert['confidence'] = alert.severity === 'error' ? 'alta' : 'media';
     let confidence = alert.confidence || defaultConfidence;
-    let classification: ComplianceAlert['classification'] = alert.severity === 'error' ? 'confirmada' : 'atencao';
+    let classification: ComplianceAlert['classification'] = alert.classification === 'dados_insuficientes'
+      ? 'dados_insuficientes' : alert.severity === 'error' ? 'confirmada' : 'atencao';
     let evidence = alert.evidence;
     let details = alert.details;
     let severity = alert.severity;
@@ -1546,7 +1556,7 @@ function auditAlertConfidence(alerts: ComplianceAlert[], days: RosterDay[]): Com
       }
     }
 
-    if (!day && alert.severity === 'warning') {
+    if (!day && alert.severity === 'warning' && alert.actionable !== false && classification !== 'dados_insuficientes') {
       classification = 'atencao';
       confidence = alert.confidence || 'media';
     }
@@ -1969,13 +1979,22 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   );
   metrics.maxFlightHoursRolling28Days = rollingAssessment.maxHours;
   if (!rollingAssessment.complete) {
+    const missing = rollingAssessment.missingDates;
+    const missingPeriod = missing.length
+      ? `${missing[0]} a ${missing[missing.length - 1]}`
+      : 'o período anterior à escala ativa';
     pushAlert(alerts, {
       severity: 'warning',
-      title: 'Avaliação de horas de voo em 28 dias incompleta',
-      description: 'Faltam dias da escala ou do histórico anterior para avaliar todas as janelas de 28 dias até o último dia disponível da competência ativa. As horas observadas não comprovam conformidade.',
-      details: 'Carregue o histórico e os dias ausentes para concluir a avaliação. Ausência de registro não equivale a zero horas; excessos já comprovados pelas horas observadas continuam sinalizados.',
+      title: 'Histórico insuficiente para concluir a janela de 28 dias',
+      description: missing.length
+        ? `Faltam registros de ${missing.length} dia(s) no histórico necessário (${missingPeriod}). Importe a escala anterior para concluir a avaliação.`
+        : 'Não há dias suficientes para concluir a avaliação. Confira a escala ativa e o histórico anterior.',
+      details: 'Pendência de cobertura de dados: não é irregularidade confirmada. Dias sem registro não são presumidos como zero hora de voo. Excessos já comprovados pelas horas observadas continuam sinalizados separadamente.',
       confidence: 'media',
-      classification: 'atencao',
+      classification: 'dados_insuficientes',
+      code: 'ROLLING_28D_DATA_GAP',
+      actionable: false,
+      coverage: { windowDays: 28, missingDates: missing },
       legalReference: actRules.flightLimits.legalReference,
     });
   }
@@ -2119,14 +2138,19 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
 
   const loadAnalysis = analyzeDayLoads(roster);
   const errorCount = alerts.filter(alert => alert.severity === 'error').length;
-  const warningCount = alerts.filter(alert => alert.severity === 'warning').length;
+  const warningCount = alerts.filter(alert => alert.severity === 'warning' && alert.actionable !== false).length;
+  const incompleteDataCount = alerts.filter(alert => alert.severity === 'warning' && alert.actionable === false && alert.classification === 'dados_insuficientes').length;
   const legalScore = Math.max(0, Math.min(100, 100 - errorCount * 18 - warningCount * 6));
-  const overallStatus = errorCount > 0 ? 'violation' : warningCount > 0 ? 'warning' : 'compliant';
+  // Cobertura incompleta continua visível como estado de atenção, mas não reduz o score
+  // nem é contada como irregularidade acionável. Assim não produzimos um falso "conforme".
+  const overallStatus = errorCount > 0 ? 'violation' : (warningCount > 0 || incompleteDataCount > 0) ? 'warning' : 'compliant';
   const summary = errorCount > 0
     ? `Foram encontradas ${errorCount} irregularidade(s) e ${warningCount} ponto(s) de atenção. Escala classificada como ${loadAnalysis.grade.toLowerCase()} (${loadAnalysis.intensityScore}/100 de puxada).`
     : warningCount > 0
       ? `Sem irregularidade crítica automática, mas com ${warningCount} ponto(s) de atenção. Escala ${loadAnalysis.grade.toLowerCase()} (${loadAnalysis.intensityScore}/100 de puxada).`
-      : `A escala não apresentou alertas nos parâmetros automáticos. Intensidade ${loadAnalysis.grade.toLowerCase()} (${loadAnalysis.intensityScore}/100).`;
+      : incompleteDataCount > 0
+        ? `Sem irregularidade automática confirmada, porém ${incompleteDataCount} verificação(ões) ficaram incompletas por falta de histórico. Intensidade ${loadAnalysis.grade.toLowerCase()} (${loadAnalysis.intensityScore}/100).`
+        : `A escala não apresentou alertas nos parâmetros automáticos. Intensidade ${loadAnalysis.grade.toLowerCase()} (${loadAnalysis.intensityScore}/100).`;
 
   return {
     engineVersion: COMPLIANCE_ENGINE_VERSION,

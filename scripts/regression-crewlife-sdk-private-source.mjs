@@ -81,6 +81,17 @@ assert.match(
 );
 assert.match(
   playWorkflow,
+  /publish-internal:[\s\S]*github\.event_name\s*==\s*'workflow_dispatch'[\s\S]*inputs\.publish_internal/,
+  'CrewLife Internal Testing publication must require explicit manual dispatch',
+);
+const publishCondition = playWorkflow.split('publish-internal:', 2)[1].split('runs-on:', 1)[0];
+assert.doesNotMatch(
+  publishCondition,
+  /github\.event_name\s*==\s*'push'/,
+  'CrewLife publication must never run merely because main received a push',
+);
+assert.match(
+  playWorkflow,
   /Install Play API client[\s\S]*?if:\s*github\.ref == 'refs\/heads\/main' && env\.SAMSUNG_SDK_READY == 'true'/,
   'Play API calls must not run when the private Samsung SDK is unavailable',
 );

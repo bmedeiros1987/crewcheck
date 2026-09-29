@@ -1,6 +1,7 @@
 import { authFetch } from './authClient';
 import type { CrewRoster } from './pdfParser';
 import type { ComplianceResult, GymRecommendation } from './complianceEngine';
+import { isActionableComplianceAlert } from './complianceAlertSemantics';
 import { CREWCHECK_BRAND, crewCheckPublicAssetUrl } from './brand';
 
 type PdfAttachment = {
@@ -12,7 +13,7 @@ function actionableAlerts(compliance: ComplianceResult): any[] {
   const source = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
   const seen = new Set<string>();
   return source.filter((alert: any) => {
-    if (!alert || alert.dismissed || alert.falsePositive || alert.active === false) return false;
+    if (!alert || alert.dismissed || alert.falsePositive || alert.active === false || !isActionableComplianceAlert(alert)) return false;
     const severity = String(alert.severity || '').toLowerCase();
     const title = String(alert.title || '').trim();
     const description = String(alert.description || '').trim();

@@ -39,13 +39,15 @@ but now releases verified bundles directly to the INTERNAL TESTING tracks only. 
 the existing `PLAY_SERVICE_ACCOUNT_JSON` with Android Publisher API access to both packages.
 Existing `CREWCHECK_*` signing secrets are reused.
 
-Every eligible push to `main` now runs the guarded internal-release job automatically.
-`PLAY_SERVICE_ACCOUNT_JSON` remains the required credential gate; if it is absent, publication
-fails closed with no Play changes. The publisher waits for independent CI on the exact commit to
-finish, fails closed if any workflow fails, validates live Play version codes, requires the
-dedicated `qa` / `wear:qa` tracks, rejects unfinished test releases, uploads only verified
-bundles, sets the internal release status to `completed`, validates the Play edit, and commits it.
-There is no production-track code path in the publisher.
+Pushes to `main` may build, sign and validate artifacts, but **never publish to Google Play by themselves**.
+Internal Testing publication requires an explicit `workflow_dispatch` run on `main` with the
+corresponding publish input deliberately enabled. All publish inputs default to `false`.
+`PLAY_SERVICE_ACCOUNT_JSON` remains a credential gate after that operator decision. The publisher
+then waits for independent CI on the exact commit to finish, fails closed if any workflow fails,
+validates live Play version codes, requires the dedicated `qa` / `wear:qa` tracks, rejects
+unfinished test releases, uploads only verified bundles, sets the internal release status to
+`completed`, validates the Play edit, and commits it. There is no production-track code path in
+the publisher.
 
 ## Console follow-up
 
