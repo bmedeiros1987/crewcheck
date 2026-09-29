@@ -22,6 +22,7 @@ import java.util.Locale;
 public final class WatchNotificationCenter {
     private static final String PREFS = "crewcheck_watch_notifications";
     private static final String ENABLED = "enabled";
+    private static final String LAST_SNAPSHOT = "last_operational_snapshot";
     private static final String LAST_FINGERPRINT = "last_fingerprint";
     private static final String OPS_CHANNEL = "crewcheck_watch_ops";
     private static final int OPS_NOTIFICATION_ID = 4101;
@@ -41,19 +42,30 @@ public final class WatchNotificationCenter {
     }
 
     public static void postForSnapshot(Context context, WatchContextSnapshot snapshot) {
-        if (context == null || snapshot == null || !isEnabled(context)) return;
+        if (context == null || snapshot == null) return;
         // Um DataItem pode chegar horas depois, quando o relógio reconecta: sem isto ele
         // vibrava "Hora de sair" para uma saída que já passou.
         if (snapshot.isStale(System.currentTimeMillis())) return;
+        long now = System.currentTimeMillis();
+        if (snapshot.generatedAtEpochMs > now) return;
+        SharedPreferences prefs = preferences(context);
+        WatchContextSnapshot previous = null;
+        try { previous = WatchContextSnapshot.fromJson(prefs.getString(LAST_SNAPSHOT, "")); }
+        catch (IllegalArgumentException ignored) { /* First sync has no baseline. */ }
+        if (previous != null && snapshot.generatedAtEpochMs < previous.generatedAtEpochMs) return;
+        String gateChange = WatchGateChange.describe(previous, snapshot, now);
+        // Track baseline even when notifications are disabled: no backlog on re-enable.
+        prefs.edit().putString(LAST_SNAPSHOT, snapshot.toJson().toString()).apply();
+        if (!isEnabled(context)) return;
         if (Build.VERSION.SDK_INT >= 33
                 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) return;
 
-        Notice notice = noticeFor(snapshot);
+        Notice notice = gateChange.isBlank() ? noticeFor(snapshot)
+                : new Notice("Portão alterado", gateChange);
         if (notice == null) return;
 
         String fingerprint = fingerprint(snapshot, notice);
-        SharedPreferences prefs = preferences(context);
         if (fingerprint.equals(prefs.getString(LAST_FINGERPRINT, ""))) return;
 
         NotificationManager manager = context.getSystemService(NotificationManager.class);
@@ -78,7 +90,7 @@ public final class WatchNotificationCenter {
                 .setCategory(Notification.CATEGORY_EVENT)
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
-                .setOnlyAlertOnce(true)
+                .setOnlyAlertOnce(gateChange.isBlank())
                 .setShowWhen(true)
                 .build();
 
@@ -142,6 +154,7 @@ public final class WatchNotificationCenter {
 
     private static String fingerprint(WatchContextSnapshot s, Notice notice) {
         return String.join("|",
+                s.contextId,
                 s.state,
                 s.headline,
                 s.primaryTime,
