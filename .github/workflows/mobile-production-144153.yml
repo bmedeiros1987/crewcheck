@@ -22,7 +22,7 @@ jobs:
     env:
       ROSTER_LAYOUT_HEAD: 769790144977bc0cc56eb04d2e919287e553b152
       STARTUP_PROGRESS_HEAD: bf7a085558284791ebf6b8ee7e6f08ce9abe9b42
-      EXPECTED_PARENT: a110a6a9f6e898597ef3b5040bdfc11216b65ece
+      EXPECTED_PARENT: 66fc03f2ecd51e6adee329703f18fb28232f3273
       VERSION_CODE: '144153'
       VERSION_NAME: '14.4.11'
       KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 }}
@@ -121,6 +121,12 @@ jobs:
             .replace(/versionCode\s+\d+/, 'versionCode ' + process.env.VERSION_CODE)
             .replace(/versionName\s+['"][^'"]+['"]/, "versionName '" + process.env.VERSION_NAME + "'");
           fs.writeFileSync(path, source);
+
+          const policyPath = 'scripts/android-play/release-policy.json';
+          const policy = JSON.parse(fs.readFileSync(policyPath, 'utf8'));
+          policy.versionName = process.env.VERSION_NAME;
+          policy.artifacts.app.versionCode = Number(process.env.VERSION_CODE);
+          fs.writeFileSync(policyPath, JSON.stringify(policy, null, 2) + '\n');
           NODE
 
       - uses: android-actions/setup-android@v4
