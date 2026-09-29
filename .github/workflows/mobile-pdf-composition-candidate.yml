@@ -106,6 +106,12 @@ jobs:
             .replace(/versionCode\s+\d+/, 'versionCode ' + process.env.MOBILE_CANDIDATE_VERSION_CODE)
             .replace(/versionName\s+['"][^'"]+['"]/, "versionName '" + process.env.MOBILE_CANDIDATE_VERSION_NAME + "'");
           fs.writeFileSync(path, source);
+
+          const policyPath = 'scripts/android-play/release-policy.json';
+          const policy = JSON.parse(fs.readFileSync(policyPath, 'utf8'));
+          policy.versionName = process.env.MOBILE_CANDIDATE_VERSION_NAME;
+          policy.artifacts.app.versionCode = Number(process.env.MOBILE_CANDIDATE_VERSION_CODE);
+          fs.writeFileSync(policyPath, JSON.stringify(policy, null, 2) + '\n');
           NODE
       - uses: android-actions/setup-android@v4
         with:
