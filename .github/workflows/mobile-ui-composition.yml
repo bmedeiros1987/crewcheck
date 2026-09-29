@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      COMPLIANCE_HEAD: 9a84b87b8e53e59f8a38e809888cc90f48baa588
+      COMPLIANCE_HEAD: 8e018551d5a801e89fb56f1156438944b42d865c
       PULSE_HEAD: e94d04648e8e747f2d76dd38a8de89f7e9f52178
     steps:
       - uses: actions/checkout@v6
