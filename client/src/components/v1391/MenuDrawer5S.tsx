@@ -188,13 +188,13 @@ export function MenuDrawer5S({
 
         <section className="cz-menu-section" aria-label={query ? 'Resultados da busca' : 'Índice completo'}>
           <h3>{query ? 'Resultados da busca' : 'Índice completo'}</h3>
-          {visibleGroups.map(({ group, entries: groupEntries }) => <div className="cc-menu-index-group" key={group}>
+          {visibleGroups.map(({ group, entries: groupEntries }) => <div className="cz-menu-section cz-menu-group cc-menu-index-group" data-menu-group={group} key={group}>
             <h4>{group}</h4>
             {groupEntries.map((entry) => {
               const Icon = entry.icon;
               const favorite = favorites.includes(entry.id);
               return <div className="cc-menu-index-row" key={entry.id}>
-                <button type="button" className={`cc-menu-destination ${view === entry.id ? 'active' : ''}`} onClick={() => jump(entry.id)}>
+                <button type="button" className={`cc-menu-destination ${view === entry.id ? 'active' : ''}`} data-menu-label={entry.id === 'hotels' ? 'Hotéis' : entry.label} onClick={() => jump(entry.id)}>
                   <Icon aria-hidden="true"/><span><strong>{entry.label}</strong><small>{entry.description}</small></span><ChevronRight aria-hidden="true"/>
                 </button>
                 <button type="button" className="cc-menu-favorite" aria-label={favorite ? `Remover ${entry.label} dos favoritos` : `Adicionar ${entry.label} aos favoritos`} aria-pressed={favorite} onClick={() => toggleFavorite(entry.id)}>{favorite ? '★' : '☆'}</button>
