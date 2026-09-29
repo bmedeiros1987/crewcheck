@@ -1,5 +1,6 @@
 import type { CrewRoster } from './pdfParser';
-import { isActionableComplianceAlert, type ComplianceResult } from './complianceEngine';
+import type { ComplianceResult } from './complianceEngine';
+import { isActionableComplianceAlert } from './complianceAlertSemantics';
 import { CREWCHECK_BRAND } from './brand';
 
 /**
