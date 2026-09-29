@@ -1,0 +1,54 @@
+name: CrewCheck Play production status 144153
+
+on:
+  push:
+    branches:
+      - fix/p0-mobile-shared-pdf-mainline-v2
+    paths:
+      - '.github/workflows/mobile-play-production-status-144153.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+    steps:
+      - name: Inspect production lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
+          python3 - <<'PY'
+          import base64, json, os
+          import google.auth.transport.requests
+          from google.oauth2 import service_account
+
+          raw = os.environ['PLAY_SERVICE_ACCOUNT_JSON'].strip()
+          if raw.startswith('base64:'):
+              raw = base64.b64decode(raw[7:]).decode()
+          account = json.loads(raw)
+          credentials = service_account.Credentials.from_service_account_info(
+              account, scopes=['https://www.googleapis.com/auth/androidpublisher']
+          )
+          session = google.auth.transport.requests.AuthorizedSession(credentials)
+          url = 'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.crewcheck.app/tracks/production/releases'
+          response = session.get(url, timeout=60)
+          response.raise_for_status()
+          data = response.json()
+          matches = []
+          for release in data.get('releases', []):
+              codes = [int(a.get('versionCode', -1)) for a in release.get('activeArtifacts', [])]
+              if 144153 in codes:
+                  matches.append({
+                      'releaseName': release.get('releaseName'),
+                      'track': release.get('track'),
+                      'activeArtifacts': release.get('activeArtifacts'),
+                      'releaseLifecycleState': release.get('releaseLifecycleState'),
+                  })
+          if not matches:
+              raise SystemExit('versionCode 144153 not found in production release lifecycle list')
+          print('PLAY_RELEASE_LIFECYCLE ' + json.dumps(matches, sort_keys=True))
+          PY
