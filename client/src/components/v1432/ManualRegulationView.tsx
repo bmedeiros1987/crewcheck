@@ -39,7 +39,7 @@ type FormState = {
 type ComplianceLike = {
   score?: number;
   summary?: string;
-  alerts?: Array<{ title?: string; description?: string; severity?: string; classification?: string }>;
+  alerts?: Array<{ title?: string; description?: string; severity?: string; classification?: string; actionable?: boolean }>;
 };
 
 export type DayRegulationResult = {
@@ -255,7 +255,7 @@ export default function ManualRegulationView({ compliance, scheduleDay }: { comp
     };
   }, [form]);
 
-  const alerts = (compliance?.alerts || []).filter((item) => item.classification !== 'informativa').slice(0, 4);
+  const alerts = (compliance?.alerts || []).filter((item) => item.actionable !== false && item.classification !== 'dados_insuficientes' && item.classification !== 'informativa').slice(0, 4);
   const regulatoryProfile = form.role === 'pilot' ? 'Tripulante de voo · RBAC 117 B.1' : 'Tripulante de cabine · RBAC 117 B.1';
   const activityLabel = form.dutyOrigin === 'reserve-activation' ? 'início da reserva acionada' : form.dutyOrigin === 'standby-activation' ? 'início operacional após acionamento do sobreaviso' : 'apresentação';
   const waitingActivation = isWaitingActivation(scheduleDay);

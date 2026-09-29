@@ -85,6 +85,7 @@ import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import { crewCheckNotificationPermission, publishCrewCheckNotice, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
+import { isActionableComplianceAlert } from '@/lib/complianceAlertSemantics';
 import '@/components/v1393/weather.css';
 import '@/components/v1394/v1394.css';
 import '@/components/v1399/premium.css';
@@ -926,7 +927,7 @@ function actionableComplianceAlerts(compliance: ComplianceResult | null): any[] 
   const source = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
   const seen = new Set<string>();
   return source.filter((alert: any) => {
-    if (!alert || alert.dismissed || alert.falsePositive || alert.active === false) return false;
+    if (!alert || alert.dismissed || alert.falsePositive || alert.active === false || !isActionableComplianceAlert(alert)) return false;
     const title = String(alert.title || '').trim();
     const description = String(alert.description || '').trim();
     const severity = String(alert.severity || '').toLowerCase();
