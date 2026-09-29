@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ComponentType } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Bell,
@@ -26,6 +26,7 @@ import {
   Upload,
   UserRound,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import { getStoredUser } from '@/lib/authClient';
 import {
@@ -36,7 +37,7 @@ import {
 } from '@/lib/menuPreference';
 import './menu-5s.css';
 
-type MenuIcon = ComponentType<{ size?: number; 'aria-hidden'?: boolean }>;
+type MenuIcon = LucideIcon;
 type MenuGroup = 'Hoje e escala' | 'Operação' | 'Pernoite' | 'Financeiro' | 'Serviços' | 'Conta' | 'Administração';
 type MenuEntry = { id: string; label: string; description: string; icon: MenuIcon; group: MenuGroup };
 
