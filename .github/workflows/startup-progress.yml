@@ -4,10 +4,12 @@ on:
     paths:
       - 'client/src/App.tsx'
       - 'client/src/components/StartupProgress.tsx'
+      - 'client/src/components/ErrorBoundary.tsx'
       - 'client/src/components/startup-progress.css'
       - 'scripts/v14366/apply.mjs'
       - 'scripts/p0-android-self-heal/**'
       - 'scripts/regression-startup-progress.mjs'
+      - 'scripts/regression-error-boundary-safe.mjs'
       - '.github/workflows/startup-progress.yml'
 permissions:
   contents: read
@@ -23,6 +25,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node scripts/v139/apply.mjs
       - run: node scripts/regression-startup-progress.mjs
+      - run: node scripts/regression-error-boundary-safe.mjs
       - run: node scripts/p0-android-self-heal/regression.mjs
       - run: node scripts/regression-v14-3-66-stable-boot-logo.mjs
       - run: npx tsc --noEmit
