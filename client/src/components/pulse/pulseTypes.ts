@@ -10,6 +10,15 @@ export type CrewCheckPulseTone =
 
 export type CrewCheckPulsePriority = 'baixa' | 'normal' | 'alta' | 'critica';
 
+export type CrewCheckPulseCategory =
+  | 'gate'
+  | 'traffic'
+  | 'weather'
+  | 'roster'
+  | 'compliance'
+  | 'wakeup'
+  | 'general';
+
 export type CrewCheckPulseSystemNotification = 'never' | 'background' | 'always';
 
 export type CrewCheckPulseAction = {
@@ -24,6 +33,8 @@ export type CrewCheckPulseMessage = {
   dedupeKey?: string;
   tone?: CrewCheckPulseTone;
   priority?: CrewCheckPulsePriority;
+  /** Categoria visual/semântica; não altera a regra operacional que gerou o aviso. */
+  category?: CrewCheckPulseCategory;
   title: string;
   detail?: string;
   /** Mensagens dispensáveis ganham o botão de fechar. */
