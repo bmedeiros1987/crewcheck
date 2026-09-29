@@ -15,6 +15,7 @@ if (!source.includes('<HomeLayoutShell slots={slots}/>')) {
   const start = source.indexOf('function Cockpit(');
   const end = source.indexOf('\nfunction rosterCode', start);
   if (start < 0 || end < 0) throw new Error('[p1-home-layout] Cockpit não localizado');
+  source = source.slice(0, start) + source.slice(start).replace('function Cockpit(', 'function CrewCheckStandardCockpit(');
   const block = `function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void }) {
   const event = nextFlight(events);
   const loaded = events.some((event) => !event.placeholder);
@@ -77,7 +78,8 @@ if (!source.includes('<HomeLayoutShell slots={slots}/>')) {
   return <><Brand onMenu={openMenu}/><section className="cz-title"><small>Cockpit</small><i/></section><HomeLayoutShell slots={slots}/></>;
 }
 `;
-  source = source.slice(0, start) + block + source.slice(end);
+  const wrapperAnchor = source.indexOf('\nfunction rosterCode', start);
+  source = source.slice(0, wrapperAnchor) + '\n' + block + source.slice(wrapperAnchor);
 }
 
 fs.writeFileSync(path, source, 'utf8');
