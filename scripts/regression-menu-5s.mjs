@@ -27,26 +27,34 @@ assert.equal(menu.menuEntryMatches('operacao', 'Radar', 'Portão e status', 'Ope
 assert.equal(menu.resetMenuFavorites(storage, 'A'), true);
 assert.deepEqual(menu.readMenuFavorites(storage, 'A', allowed), ['roster', 'radar', 'departure']);
 
-const component = fs.readFileSync('client/src/components/v1391/MenuDrawer5S.tsx', 'utf8');
-for (const id of [
-  'cockpit', 'roster', 'alerts', 'departure', 'settings', 'maintenance', 'import', 'features',
-  'radar', 'weather', 'perdiem', 'salary', 'reports', 'calendar', 'exports', 'routine',
-  'database', 'crew', 'load', 'wakeup', 'hotels', 'presentation', 'map', 'mycar', 'gyms',
-  'iflight', 'updates', 'concierge', 'plans', 'community', 'compare', 'regulation', 'bids', 'admin',
-]) assert.match(component, new RegExp(`id: '${id}'`), `menu index must keep ${id} discoverable`);
-assert.match(component, /Índice completo/);
-assert.match(component, /Favoritos/);
-assert.match(component, /Buscar função/);
-assert.match(component, /aria-pressed=\{favorite\}/);
-assert.match(component, /storedUser\?\.id \|\| null/);
-assert.match(component, /group: 'Pernoite'/);
-assert.match(component, /group: 'Financeiro'/);
-assert.doesNotMatch(component, /parsePDF|analyzeCompliance|financialRules/, 'Menu must not duplicate domain engines');
+const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
+const menuStart = home.indexOf('function MenuDrawer(');
+const menuEnd = home.indexOf('\nfunction ', menuStart + 'function MenuDrawer('.length);
+assert.ok(menuStart >= 0 && menuEnd > menuStart, 'prepared MenuDrawer missing');
+const preparedMenu = home.slice(menuStart, menuEnd);
 
-const preparedHome = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
-assert.match(preparedHome, /import \{ MenuDrawer5S \}/);
-assert.match(preparedHome, /return <MenuDrawer5S/);
-assert.doesNotMatch(preparedHome, /const nav: Array<\[ZeroView/, 'legacy ungrouped menu must be replaced');
+for (const route of [
+  'cockpit', 'roster', 'compare', 'departure', 'wakeup', 'weather', 'presentation', 'mycar',
+  'radar', 'alerts', 'regulation', 'load', 'emergency', 'import', 'iflight', 'bids', 'map', 'database', 'crewlocker',
+  'perdiem', 'salary', 'crew', 'concierge', 'hotels', 'gyms', 'routine', 'community', 'life',
+  'reports', 'calendar', 'exports', 'plans', 'settings', 'manual', 'guardian', 'support', 'crewlock',
+  'updates', 'maintenance', 'admin',
+]) assert.match(preparedMenu, new RegExp(`\\['${route}',`), `menu index must keep ${route} discoverable`);
+
+assert.match(preparedMenu, /const groups: Array/);
+assert.match(preparedMenu, /CrewCheckMark className="cz-menu-brandmark"/);
+assert.match(preparedMenu, /Buscar função/);
+assert.match(preparedMenu, />Favoritos</);
+assert.match(preparedMenu, /filteredGroups\.map/);
+assert.match(preparedMenu, /aria-pressed=\{favorite\}/);
+assert.match(preparedMenu, /storedUser\?\.id \|\| null/);
+assert.match(preparedMenu, /data-menu-label=\{label\}/);
+assert.match(preparedMenu, /data-menu-group=\{group\.title\}/);
+assert.doesNotMatch(preparedMenu, /parsePDF|analyzeCompliance|financialRules/, 'Menu must not duplicate domain engines');
+
+const homeImports = home.slice(0, menuStart);
+assert.match(homeImports, /menuEntryMatches/);
+assert.match(homeImports, /menu-5s\.css/);
 
 const css = fs.readFileSync('client/src/components/v1391/menu-5s.css', 'utf8');
 assert.match(css, /min-height: 44px/);
@@ -62,4 +70,4 @@ for (const id of ['salary', 'perdiem', 'crew']) {
   assert.equal(inventory.surfaces.find((surface) => surface.id === id)?.owner, 'financeiro');
 }
 
-console.log('PASS: Menu 5S keeps the complete index, account-scoped favorites, search, 44px targets and 5S domain ownership');
+console.log('PASS: canonical grouped Menu gained account favorites and search without losing routes, brand or 5S ownership');
