@@ -16,6 +16,7 @@ on:
       - 'scripts/p1-566-departure-program-context/**'
       - 'scripts/p1-home-layout/**'
       - 'scripts/p1-menu-5s/**'
+      - 'scripts/regression-compliance-alert-visibility.mjs'
       - 'scripts/regression-home-layout-preference.mjs'
       - 'scripts/regression-menu-5s.mjs'
       - 'scripts/regression-p1-566-departure-program-context.mjs'
@@ -74,6 +75,7 @@ jobs:
       - name: Validate compliance ownership contract
         run: |
           node scripts/regression-p1-526-rolling-boundaries.mjs
+          node scripts/regression-compliance-alert-visibility.mjs
           grep -q "ROLLING_28D_DATA_GAP" client/src/lib/complianceAlertVisibility.ts
           ! grep -q "Avaliação de horas de voo em 28 dias incompleta" client/src/lib/complianceAlertVisibility.ts
           ! grep -q "Histórico insuficiente para concluir a janela de 28 dias" client/src/lib/complianceAlertVisibility.ts
