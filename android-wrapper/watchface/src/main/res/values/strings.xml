@@ -9,13 +9,13 @@
     <string name="steps_label">Passos</string>
 
     <string name="crewcheck_style_label">Estilo do mostrador</string>
-    <string name="crewcheck_style_masculine">Flight Deck · Masculino</string>
-    <string name="crewcheck_style_elegance">Elegance · Feminino</string>
-    <string name="crewcheck_style_balanced">Balanced · Unissex</string>
+    <string name="crewcheck_style_masculine">Flight Deck</string>
+    <string name="crewcheck_style_elegance">Elegance</string>
+    <string name="crewcheck_style_balanced">Balanced</string>
 
     <string name="crewcheck_mode_label">Modo do relógio</string>
-    <string name="crewcheck_mode_hybrid">Misto · Analógico + digital</string>
-    <string name="crewcheck_mode_digital">Somente digital</string>
+    <string name="crewcheck_mode_hybrid">Hybrid · Analógico + digital</string>
+    <string name="crewcheck_mode_digital">Digital</string>
 
     <string name="crewcheck_palette_label">Cor de destaque</string>
     <string name="crewcheck_palette_cyan">Ciano CrewCheck</string>
