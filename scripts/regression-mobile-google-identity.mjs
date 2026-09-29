@@ -34,7 +34,7 @@ assert.match(server, /issueSession: \(response, user, message\) => cc1371Issue\(
 assert.match(prepare, /mobile-google-identity\/apply\.mjs/);
 assert.match(client, /intent: 'login'/);
 assert.match(client, /intent: 'link', confirmLink: true/);
-assert.match(client, /CrewCheckNative\?\.openExternal/);
+assert.match(client, /nativeWindow\.CrewCheckNative\?\.openExternal/);
 assert.match(client, /persistExternalAuthSession\(session\)/);
 assert.match(client, /Configurações/);
 assert.match(linkCard, /não concede acesso ao Gmail nem ao Google Calendar/);
