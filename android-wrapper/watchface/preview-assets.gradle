@@ -7,6 +7,11 @@ def generatePreviews = tasks.register('generateCrewWatchFacePreviewAssets', Exec
     inputs.file(previewSource)
     inputs.file(file('src/main/res/raw/watchface.xml'))
     inputs.file(file('src/main/res/drawable-nodpi/crewcheck_logo_neon.png'))
+    inputs.files(
+        file('src/main/res/drawable/crewcheck_hour_hand.xml'),
+        file('src/main/res/drawable/crewcheck_minute_hand.xml'),
+        file('src/main/res/drawable/crewcheck_second_hand.xml')
+    )
     inputs.property('javaRuntimeVersion', System.getProperty('java.runtime.version'))
     outputs.dir(previewOutput)
     commandLine new File(System.getProperty('java.home'), 'bin/java').absolutePath,

@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   peripheral-diff:
-    if: github.event.pull_request.number == 836 || github.event.pull_request.number == 837 || github.event.pull_request.number == 838
+    if: github.event.pull_request.number == 836 || github.event.pull_request.number == 837 || github.event.pull_request.number == 838 || github.event.pull_request.number == 850
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
