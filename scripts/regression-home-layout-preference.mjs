@@ -32,7 +32,7 @@ assert.match(shell, /Essencial · sempre visível/);
 assert.doesNotMatch(shell, /financeEngine|parsePDF|compareRosters/, 'Home editor must not duplicate domain engines');
 
 const source = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
-assert.match(source, /<HomeLayoutShell slots=\{\[/);
+assert.match(source, /<HomeLayoutShell slots=\{slots\}/);
 for (const id of ['summary','finance','next','limits','smart']) assert.match(source, new RegExp(`id: '${id}'`));
 assert.match(source, /alertCount/);
 
