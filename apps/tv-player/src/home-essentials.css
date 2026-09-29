@@ -67,3 +67,21 @@
 .theme-mobile .home-leg-ribbon{background:rgba(242,248,252,.72);border-color:#d5e3eb}
 .theme-mobile .home-leg-ribbon>span>b{color:#10243a}
 .theme-mobile .home-flight-footer{border-color:#d6e2ea}
+
+
+/* CrewCheck TV premium distance-legibility pass.
+   Keep 10-foot reading strong without changing data or navigation. */
+.home-airline-line>span{font-size:.82vw}
+.home-airline-line>small{font-size:.78vw}
+.home-leg-ribbon>span>small{font-size:.78vw}
+.home-essential small{font-size:.78vw;letter-spacing:.055em}
+.home-essential p{font-size:.78vw}
+.home-flight-footer>span{font-size:.78vw}
+.home-flight-footer>button{font-size:.82vw}
+.home-context-card .eyebrow{font-size:.78vw}
+.home-context-card p{font-size:.86vw;line-height:1.5}
+.home-context-card>small{font-size:.76vw;line-height:1.45}
+.weather-context-card>div>span{font-size:.8vw}
+.home-context-column .uber-handoff-copy>span{font-size:.78vw}
+.home-flight-hero{box-shadow:0 .8vw 2vw rgba(0,0,0,.18)}
+.home-context-card{box-shadow:0 .55vw 1.3vw rgba(0,0,0,.11)}
