@@ -4,8 +4,17 @@ import ts from 'typescript';
 
 const code = ts.transpileModule(fs.readFileSync('client/src/lib/homeLayoutPreference.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.ES2022 } }).outputText;
 const home = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
-const visibilityCode = ts.transpileModule(fs.readFileSync('client/src/lib/complianceAlertVisibility.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.ES2022 } }).outputText;
+const semanticsCode = ts.transpileModule(fs.readFileSync('client/src/lib/complianceAlertSemantics.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.ES2022 } }).outputText;
+const visibilitySource = fs.readFileSync('client/src/lib/complianceAlertVisibility.ts', 'utf8')
+  .replace("import { isActionableComplianceAlert } from './complianceAlertSemantics';", '');
+const visibilityCode = semanticsCode + '\n' + ts.transpileModule(visibilitySource, { compilerOptions: { module: ts.ModuleKind.ES2022 } }).outputText;
 const visibility = await import(`data:text/javascript;base64,${Buffer.from(visibilityCode).toString('base64')}`);
+const preparedHome = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
+assert.match(preparedHome, /!isActionableComplianceAlert\(alert\)/, 'Home preparado deve honrar diretamente o helper semântico compartilhado');
+if (preparedHome.includes('const parsed = parsedRouteMinutes(')) {
+  assert.match(preparedHome, /function parsedRouteMinutes\(/, 'materialização da Home não pode remover o parser de duração da rota');
+}
+
 const values = new Map();
 const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
 
