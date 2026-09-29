@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, Info, Plane, ShieldAlert, Clock3, X } from 'lucide-react';
 import type { CrewCheckPulseMessage, CrewCheckPulseTone } from './pulseTypes';
 import {
@@ -22,14 +22,14 @@ const TONE_ICON = {
   lembrete: Clock3,
 } as const;
 
-export function CrewCheckPulse() {
+export function CrewCheckPulse({ embedded = false, fallback = null }: { embedded?: boolean; fallback?: ReactNode }) {
   const [state, setState] = useState(() => currentCrewCheckPulseState());
 
   useEffect(() => subscribeCrewCheckPulse(setState), []);
   const dismiss = useCallback(() => dismissCrewCheckPulse(), []);
 
   const { message, leaving, queued } = state;
-  if (!message) return null;
+  if (!message) return <>{fallback}</>;
 
   const tone: CrewCheckPulseTone = message.tone || 'informativo';
   const Icon = TONE_ICON[tone] || Info;
@@ -43,7 +43,7 @@ export function CrewCheckPulse() {
 
   return (
     <div
-      className="cc-pulse"
+      className={embedded ? "cc-pulse cc-pulse--header" : "cc-pulse"}
       data-tone={tone}
       data-priority={message.priority || 'normal'}
       data-leaving={leaving ? 'true' : 'false'}
