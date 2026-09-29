@@ -132,7 +132,7 @@
 .cc-pulse-dismiss::after {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: -6px;
 }
 
 .cc-pulse-dismiss:focus-visible {
