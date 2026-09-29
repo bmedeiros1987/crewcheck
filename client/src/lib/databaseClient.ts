@@ -1,5 +1,5 @@
 import type { CrewRoster } from './pdfParser';
-import type { ComplianceResult, GymRecommendation } from './complianceEngine';
+import { isActionableComplianceAlert, type ComplianceResult, type GymRecommendation } from './complianceEngine';
 import { authFetch, getStoredUser, getToken } from './authClient';
 
 export interface DatabaseStatus {
@@ -744,7 +744,7 @@ function getLocalRosterSummaries(limit: number): SavedRosterSummary[] {
     sourceFileName: item.sourceFileName || null,
     score: Number(item.compliance?.score ?? 0),
     intensityScore: Number(item.compliance?.loadAnalysis?.intensityScore ?? 0),
-    alertsCount: Array.isArray(item.compliance?.alerts) ? item.compliance.alerts.length : 0,
+    alertsCount: Array.isArray(item.compliance?.alerts) ? item.compliance.alerts.filter(isActionableComplianceAlert).length : 0,
     criticalAlertsCount: Array.isArray(item.compliance?.alerts) ? item.compliance.alerts.filter((a: any) => a?.severity === 'error').length : 0,
     checksum: item.checksum,
     isActive: item.id.startsWith('local-active-'),
