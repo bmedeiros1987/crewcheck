@@ -4,6 +4,11 @@ on:
   pull_request:
     paths:
       - 'server/mobile/google-identity-oidc.mjs'
+      - 'client/src/lib/googleIdentityAuth.ts'
+      - 'client/src/lib/authClient.ts'
+      - 'client/src/components/GoogleIdentityLinkCard.tsx'
+      - 'client/src/pages/AuthPage.tsx'
+      - 'client/src/pages/Home.tsx'
       - 'scripts/mobile-google-identity/**'
       - 'scripts/regression-mobile-google-identity.mjs'
       - 'scripts/v139/apply.mjs'
