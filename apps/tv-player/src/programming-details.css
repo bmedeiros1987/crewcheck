@@ -151,3 +151,43 @@
 .program-weather-list .detail-weather strong{font-size:1.65vw}
 .program-weather-list .detail-weather small{display:block;margin-top:.15vh;font-size:.49vw;color:#7892aa}
 .theme-mobile .program-weather-list .detail-weather{background:#f5fbff;border-color:#d4e4ed}
+
+
+/* CrewCheck TV premium drill-down legibility. */
+.program-day-title>span{font-size:.86vw}
+.program-card-copy small{font-size:.82vw;letter-spacing:.06em}
+.program-card-copy>p{font-size:.9vw;line-height:1.45}
+.program-card-meta span{font-size:.8vw}
+.program-route-heading small{font-size:.8vw;letter-spacing:.06em}
+.flight-leg-index{font-size:.82vw}
+.flight-leg-main small{font-size:.78vw}
+.flight-leg-main>div{font-size:.82vw}
+.ground-chip{font-size:.76vw}
+.stay-exclusive-card>div>small{font-size:.82vw;letter-spacing:.065em}
+.stay-window small{font-size:.78vw}
+.program-key-facts small{font-size:.78vw}
+.program-key-facts span{font-size:.8vw}
+.program-details-button{font-size:.86vw}
+.program-detail-title>div>p:last-child{font-size:.9vw}
+.detail-module>header small{font-size:.76vw;letter-spacing:.065em}
+.detail-module dt,.detail-module dd{font-size:.84vw}
+.detail-module>p{font-size:.86vw;line-height:1.5}
+.detail-weather span{font-size:.82vw}
+.sensitive-locked span{font-size:.78vw}
+.sensitive-module li{font-size:.82vw}
+.visitor-module small{font-size:.78vw}
+.detail-disclaimer{font-size:.76vw}
+.uber-handoff-copy>p{font-size:.8vw;letter-spacing:.06em}
+.uber-handoff-copy>span{font-size:.82vw}
+.uber-handoff-copy>small{font-size:.76vw}
+.uber-handoff-qr b{font-size:.76vw}
+.display-pref-grid b{font-size:.84vw}
+.display-pref-grid small{font-size:.76vw}
+.display-pref-grid em{font-size:.7vw}
+.display-pref-grid>button>i{font-size:.74vw}
+.display-preset-row b{font-size:.82vw!important}
+.display-preset-row small{font-size:.74vw!important;line-height:1.4!important}
+.visitor-airport-glossary b,.visitor-term-glossary b{font-size:.8vw}
+.visitor-airport-glossary small,.visitor-term-glossary small{font-size:.74vw!important;line-height:1.45!important}
+.context-scope-note{font-size:.74vw;line-height:1.45}
+.program-weather-list .detail-weather small{font-size:.72vw}
