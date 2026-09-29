@@ -11,6 +11,7 @@ on:
       - 'scripts/android-play/play_error.py'
       - 'scripts/android-play/review_policy.py'
       - '.github/workflows/crewlife-companion-play.yml'
+      - 'scripts/regression-play-manual-publication-gates.mjs'
   push:
     branches: [main]
     paths:
@@ -19,12 +20,13 @@ on:
       - 'scripts/regression-crewlife-sdk-private-source.mjs'
       - 'scripts/android-play/companion_play.py'
       - '.github/workflows/crewlife-companion-play.yml'
+      - 'scripts/regression-play-manual-publication-gates.mjs'
   workflow_dispatch:
     inputs:
       publish_internal:
         description: 'Release CrewLife Companion to Internal Testing only'
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -81,6 +83,9 @@ jobs:
 
       - name: Private Samsung SDK sourcing policy
         run: node scripts/regression-crewlife-sdk-private-source.mjs
+
+      - name: Manual Play publication gate
+        run: node scripts/regression-play-manual-publication-gates.mjs
 
       - name: Restore Samsung Health Data SDK
         id: sdk
@@ -199,7 +204,7 @@ jobs:
 
   publish-internal:
     needs: build
-    if: needs.build.outputs.sdk_ready == 'true' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.publish_internal) || github.event_name == 'push')
+    if: needs.build.outputs.sdk_ready == 'true' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.publish_internal
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
