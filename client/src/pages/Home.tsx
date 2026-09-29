@@ -56,7 +56,7 @@ import {
   Plus,
   Search,
 } from 'lucide-react';
-import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getPublishedDutyLimitSummary, type ComplianceResult } from '@/lib/complianceEngine';
+import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getPublishedDutyLimitSummary, isActionableComplianceAlert, type ComplianceResult } from '@/lib/complianceEngine';
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
 import { authFetch, getStoredUser, logout } from '@/lib/authClient';
 import { exportReport } from '@/lib/pdfExport';
@@ -926,7 +926,7 @@ function actionableComplianceAlerts(compliance: ComplianceResult | null): any[] 
   const source = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
   const seen = new Set<string>();
   return source.filter((alert: any) => {
-    if (!alert || alert.dismissed || alert.falsePositive || alert.active === false) return false;
+    if (!alert || alert.dismissed || alert.falsePositive || alert.active === false || !isActionableComplianceAlert(alert)) return false;
     const title = String(alert.title || '').trim();
     const description = String(alert.description || '').trim();
     const severity = String(alert.severity || '').toLowerCase();
