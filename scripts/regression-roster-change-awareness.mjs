@@ -128,9 +128,20 @@ assert.equal(duplicateState.ledger.active.length, 1, 'only the edited repeated o
 assert.match(duplicateState.ledger.active[0].descriptions.join(' '), /10:00.*10:30/);
 assert.ok(duplicateState.ledger.active[0].occurrenceId, 'repeated occurrences need their own stable occurrence id');
 
-const removedState = awareness.registerRosterPublication(storage, 'DUP', roster([]), 'dup-3.pdf', '2026-07-02T12:00:00.000Z');
+const removalBaseline = roster([
+  day('02/07/2026', [leg('LA200', '08:00', '10:30')]),
+  day('03/07/2026', [leg('LA201', '12:00', '14:00')]),
+]);
+awareness.registerRosterPublication(storage, 'REMOVED', removalBaseline, 'removed-1.pdf', '2026-07-02T11:00:00.000Z');
+const removedState = awareness.registerRosterPublication(
+  storage,
+  'REMOVED',
+  roster([day('03/07/2026', [leg('LA201', '12:00', '14:00')])]),
+  'removed-2.pdf',
+  '2026-07-02T12:00:00.000Z',
+);
 assert.ok(removedState.ledger.active.some((record) => record.kind === 'removed' && record.current === null), 'removals must remain in the change history');
-assert.equal(removedState.ledger.current.roster.days.length, 0);
+assert.equal(removedState.ledger.current.roster.days.length, 1);
 
 const accountB = awareness.registerRosterPublication(storage, 'B', third, 'conta-b.pdf', '2026-07-01T12:00:00.000Z');
 assert.equal(accountB.ledger.active.length, 0, 'another account must get an independent baseline');
