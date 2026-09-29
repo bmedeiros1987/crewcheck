@@ -133,8 +133,7 @@ export function assessFlightHoursRolling28Days(
   for (let epoch = firstRequired; epoch <= last; epoch += DAY_MS) {
     if (!byDay.has(epoch)) {
       complete = false;
-      const date = new Date(epoch);
-      missingDates.push(`${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}/${date.getUTCFullYear()}`);
+      missingDates.push(new Date(epoch).toISOString().slice(0, 10));
     }
     sum += byDay.get(epoch) || 0;
     sum -= byDay.get(epoch - ROLLING_28_DAYS_MS) || 0;
