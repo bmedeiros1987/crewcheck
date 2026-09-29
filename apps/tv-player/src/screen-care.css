@@ -1,0 +1,26 @@
+/* Full-screen cover, not opacity over operational information. CSS 53-safe. */
+html,body,#root{overflow:hidden}
+.tv-app[data-screen-care]{position:relative}
+.tv-app[data-screen-care=covered]{display:none!important}
+.screen-care-cover{position:fixed;top:0;right:0;bottom:0;left:0;z-index:200;background:#000;color:#8590a0;overflow:hidden;opacity:1!important;animation:none!important}
+.screen-care-mark{position:absolute;width:32vw;height:20vh;text-align:center;animation:none!important;transition:none!important;pointer-events:none}
+.screen-care-mark p{font-size:1.05vw;line-height:1.3;margin:1vh 0}
+.screen-care-mark p.screen-care-clock{font-size:3vw;line-height:1.2;margin:0 0 1vh;letter-spacing:0;font-variant-numeric:tabular-nums}
+.screen-care-mark small{font-size:.8vw;color:#8590a0}
+.screen-care-settings{padding:1.2vw 1.4vw;border:1px solid #384461;border-radius:1vw;background:#0f2038;margin:1vh 0 1.2vh}
+.screen-care-settings h2{margin:0 0 .5vh}
+.screen-care-settings p{font-size:.86vw;color:#b5c3d6;margin:.5vh 0 1vh}
+.screen-care-settings small{font-size:.7vw;display:block;line-height:1.4;margin:.5vh 0 0}
+.theme-mobile .screen-care-settings{background:#fff;border-color:#dce6f0}
+.theme-mobile .screen-care-settings p{color:#35465a}
+
+/* Explicit on/off control. No change to native LG screen saver or panel power. */
+.screen-care-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:.7vh}
+.screen-care-heading h2{margin:0}
+button.screen-care-toggle{display:flex;align-items:center;font-size:.92vw;min-width:11vw;justify-content:center}
+.screen-care-toggle-track{display:inline-block;position:relative;width:2.5vw;height:1.35vw;border-radius:1vw;background:#69768a;margin-right:.6vw;flex-shrink:0}
+.screen-care-toggle-track>span{position:absolute;top:.2vw;left:.2vw;width:.95vw;height:.95vw;background:#fff;border-radius:50%;transition:transform .15s}
+[aria-checked=true]>.screen-care-toggle-track{background:#9a4dff}
+[aria-checked=true]>.screen-care-toggle-track>span{transform:translateX(1.15vw)}
+.screen-care-settings .screen-care-warning{padding:.7vw .9vw;border:1px solid #9b753d;border-radius:.6vw;background:#2f2519;color:#ffe2af;font-size:.82vw;line-height:1.4}
+.theme-mobile .screen-care-settings .screen-care-warning{background:#fff4dd;color:#654200;border-color:#c3913e}
