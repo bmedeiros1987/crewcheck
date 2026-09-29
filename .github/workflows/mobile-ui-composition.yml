@@ -1,0 +1,73 @@
+name: Mobile UI composition
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/mobile-ui-composition.yml'
+      - '.github/workflows/roster-layout-preferences.yml'
+      - 'client/src/components/v1391/**'
+      - 'client/src/lib/homeLayoutPreference.ts'
+      - 'client/src/lib/menuPreference.ts'
+      - 'client/src/lib/rosterChangeAwareness.ts'
+      - 'client/src/lib/rosterLayoutPreference.ts'
+      - 'scripts/p1-566-departure-program-context/**'
+      - 'scripts/p1-home-layout/**'
+      - 'scripts/p1-menu-5s/**'
+      - 'scripts/regression-home-layout-preference.mjs'
+      - 'scripts/regression-menu-5s.mjs'
+      - 'scripts/regression-p1-566-departure-program-context.mjs'
+      - 'scripts/regression-roster-change-awareness.mjs'
+      - 'scripts/regression-roster-layout-preference.mjs'
+      - 'scripts/v139/apply.mjs'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-ui-composition-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compose-pulse-and-layout:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PULSE_HEAD: e94d04648e8e747f2d76dd38a8de89f7e9f52178
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - name: Compose immutable Pulse owner
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'CrewCheck Mobile composition'
+          git config user.email 'actions@crewcheck.invalid'
+          git fetch --no-tags origin "${PULSE_HEAD}"
+          git merge --no-ff --no-edit "${PULSE_HEAD}"
+          test -z "$(git diff --name-only --diff-filter=U)"
+          test "$(git show -s --format=%P HEAD | wc -w)" -ge 2
+      - run: npm ci --ignore-scripts
+      - name: Prepare canonical composed runtime
+        run: node scripts/v139/apply.mjs
+      - name: Validate Pulse owner contract
+        run: |
+          node scripts/regression-p1-546-pulse-foundation.mjs
+          node scripts/regression-p1-546-pulse-live.mjs
+      - name: Validate layout, acknowledgement and context
+        run: |
+          node scripts/regression-roster-layout-preference.mjs
+          node scripts/regression-roster-change-awareness.mjs
+          node scripts/regression-home-layout-preference.mjs
+          node scripts/regression-menu-5s.mjs
+          node scripts/regression-p1-566-departure-program-context.mjs
+      - name: Validate TypeScript and web bundle
+        run: |
+          npx tsc --noEmit
+          npx vite build
