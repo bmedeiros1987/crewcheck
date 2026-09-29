@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { CrewRoster } from './pdfParser';
-import type { ComplianceResult, GymRecommendation } from './complianceEngine';
+import { isActionableComplianceAlert, type ComplianceResult, type GymRecommendation } from './complianceEngine';
 import { CREWCHECK_BRAND } from './brand';
 
 export type CrewCheckPdfExportResult = {
@@ -279,8 +279,9 @@ export function exportReport(
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
   const pageWidth = doc.internal.pageSize.getWidth();
 
-  const irregularities = compliance.alerts.filter((alert) => alert.severity === 'error');
-  const warnings = compliance.alerts.filter((alert) => alert.severity === 'warning');
+  const actionableAlerts = compliance.alerts.filter(isActionableComplianceAlert);
+  const irregularities = actionableAlerts.filter((alert) => alert.severity === 'error');
+  const warnings = actionableAlerts.filter((alert) => alert.severity === 'warning');
 
   drawMainHeader(doc, pageWidth, roster, 'Relatório Premium de Conformidade da Escala');
 
