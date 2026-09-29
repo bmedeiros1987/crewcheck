@@ -22,7 +22,7 @@ jobs:
     env:
       ROSTER_LAYOUT_HEAD: 769790144977bc0cc56eb04d2e919287e553b152
       STARTUP_PROGRESS_HEAD: bf7a085558284791ebf6b8ee7e6f08ce9abe9b42
-      EXPECTED_PARENT: 892d630a5c40039e2b544aa64186f912ee3ba243
+      EXPECTED_PARENT: a110a6a9f6e898597ef3b5040bdfc11216b65ece
       VERSION_CODE: '144153'
       VERSION_NAME: '14.4.11'
       KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 }}
@@ -79,10 +79,13 @@ jobs:
           const path = 'scripts/v139/apply.mjs';
           let source = fs.readFileSync(path, 'utf8');
           const home = "await import('../p1-home-layout/apply.mjs');";
+          const menu5s = "await import('../p1-menu-5s/apply.mjs');";
           const durable = "await import('../p0-shared-pdf-durable/apply.mjs');";
           if (!source.includes(durable)) throw new Error('Durable PDF finalizer missing');
           if (!source.includes(home)) source = source.replace(durable, home + '\n' + durable);
-          if (source.indexOf(home) > source.indexOf(durable)) throw new Error('Home must precede durable PDF consumer');
+          if (!source.includes(menu5s)) source = source.replace(durable, menu5s + '\n' + durable);
+          if (source.indexOf(home) > source.indexOf(menu5s)) throw new Error('Home must precede Menu 5S');
+          if (source.indexOf(menu5s) > source.indexOf(durable)) throw new Error('Menu 5S must precede durable PDF consumer');
           fs.writeFileSync(path, source);
           NODE
             git add scripts/v139/apply.mjs
