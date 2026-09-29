@@ -178,4 +178,5 @@ await import('../android-play/prepare.mjs');
 await import('../android-play/layout.mjs');
 await import('../p1-546-pulse-live/finalize.mjs');
 await import('../p1-home-layout/apply.mjs');
+await import('../p1-menu-5s/apply.mjs');
 await import('../ci/sync-canonical-manual.mjs');
