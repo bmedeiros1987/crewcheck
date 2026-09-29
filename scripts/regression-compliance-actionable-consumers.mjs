@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-const engineSource = fs.readFileSync('client/src/lib/complianceEngine.ts', 'utf8');
-assert.match(engineSource, /export function isActionableComplianceAlert\(/, 'helper canônico precisa ser exportado pelo Compliance Engine');
-assert.match(engineSource, /alert\.actionable === false/, 'actionable=false deve ser não acionável');
-assert.match(engineSource, /alert\.classification === 'dados_insuficientes'/, 'dados insuficientes devem ser informativos');
-assert.match(engineSource, /alert\.severity === 'error' \|\| alert\.severity === 'warning'/, 'somente error/warning podem ser acionáveis');
+const semanticsSource = fs.readFileSync('client/src/lib/complianceAlertSemantics.ts', 'utf8');
+assert.match(semanticsSource, /export function isActionableComplianceAlert\(/, 'helper canônico de consumo precisa ser exportado');
+assert.match(semanticsSource, /alert\.actionable === false/, 'actionable=false deve ser não acionável');
+assert.match(semanticsSource, /alert\.classification === 'dados_insuficientes'/, 'dados insuficientes devem ser informativos');
+assert.match(semanticsSource, /alert\.severity === 'error' \|\| alert\.severity === 'warning'/, 'somente error/warning podem ser acionáveis');
 
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 assert.match(home, /isActionableComplianceAlert/);
