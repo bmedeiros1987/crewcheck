@@ -24,9 +24,13 @@ assert.equal(home.readHomeLayout(storage, 'A').mode, 'standard');
 values.clear();
 const incomplete28 = {
   severity: 'warning',
-  title: visibility.INCOMPLETE_28_DAY_TITLE,
+  title: 'Texto humano pode mudar sem alterar a semântica',
   description: 'Histórico insuficiente para completar a janela.',
   legalReference: 'ACT',
+  classification: 'dados_insuficientes',
+  code: 'ROLLING_28D_DATA_GAP',
+  actionable: false,
+  coverage: { windowDays: 28, missingDates: ['2026-08-30'] },
 };
 const warning = {
   severity: 'warning',
