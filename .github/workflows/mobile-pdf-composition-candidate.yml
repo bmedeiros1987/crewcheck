@@ -139,9 +139,9 @@ jobs:
           "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify --verbose --print-certs "${APK}"
           jarsigner -verify "${AAB}"
           "${ANDROID_HOME}/build-tools/35.0.0/aapt" dump badging "${APK}" | tee "${RUNNER_TEMP}/phone-badging.txt"
-          rg "package: name='com.crewcheck.app'.*versionCode='${MOBILE_CANDIDATE_VERSION_CODE}'.*versionName='${MOBILE_CANDIDATE_VERSION_NAME}'" "${RUNNER_TEMP}/phone-badging.txt"
+          grep -E "package: name='com\.crewcheck\.app'.*versionCode='${MOBILE_CANDIDATE_VERSION_CODE}'.*versionName='${MOBILE_CANDIDATE_VERSION_NAME}'" "${RUNNER_TEMP}/phone-badging.txt"
           "${ANDROID_HOME}/build-tools/35.0.0/aapt" dump permissions "${APK}" | tee "${RUNNER_TEMP}/phone-permissions.txt"
-          if rg -i 'android\.permission\.health\.' "${RUNNER_TEMP}/phone-permissions.txt"; then
+          if grep -Eiq 'android\.permission\.health\.' "${RUNNER_TEMP}/phone-permissions.txt"; then
             echo '::error::Phone candidate must remain Health-Connect-free.'
             exit 1
           fi
