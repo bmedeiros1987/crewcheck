@@ -1,0 +1,167 @@
+name: Mobile PDF composition candidate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/mobile-pdf-composition-candidate.yml'
+      - 'android-wrapper/app/**'
+      - 'client/**'
+      - 'scripts/p0-shared-pdf-durable/**'
+      - 'scripts/regression-v14-3-68-android-share-import.mjs'
+      - 'scripts/regression-p0-pwa-share-target-pdf.mjs'
+      - 'scripts/v139/apply.mjs'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: mobile-pdf-composition-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compose-and-build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ROSTER_LAYOUT_HEAD: 6d96e4fcafe54f0320a85f3152a315ec17d1b604
+      STARTUP_PROGRESS_HEAD: bf7a085558284791ebf6b8ee7e6f08ce9abe9b42
+      MOBILE_CANDIDATE_VERSION_CODE: '144152'
+      MOBILE_CANDIDATE_VERSION_NAME: 14.4.11-pdf-rc1
+      KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 }}
+      STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD }}
+      CREWCHECK_STORE_FILE: ${{ github.workspace }}/android-wrapper/crewcheck-release.jks
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+      - name: Compose immutable Mobile heads
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'CrewCheck Mobile composition'
+          git config user.email 'actions@crewcheck.invalid'
+          git fetch --no-tags origin "${ROSTER_LAYOUT_HEAD}" "${STARTUP_PROGRESS_HEAD}"
+
+          if ! git merge --no-ff --no-edit "${ROSTER_LAYOUT_HEAD}"; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            if [ "${conflicts}" != 'scripts/v139/apply.mjs' ]; then
+              echo "::error::Unexpected #857 composition conflicts: ${conflicts}"
+              exit 1
+            fi
+            git checkout --ours scripts/v139/apply.mjs
+            node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path = 'scripts/v139/apply.mjs';
+          let source = fs.readFileSync(path, 'utf8');
+          const home = "await import('../p1-home-layout/apply.mjs');";
+          const durable = "await import('../p0-shared-pdf-durable/apply.mjs');";
+          if (!source.includes(durable)) throw new Error('Durable PDF finalizer missing from #825');
+          if (!source.includes(home)) source = source.replace(durable, home + '\n' + durable);
+          if (source.indexOf(home) > source.indexOf(durable)) throw new Error('Home must materialize before the durable PDF consumer');
+          fs.writeFileSync(path, source);
+          NODE
+            git add scripts/v139/apply.mjs
+            git commit --no-edit
+          fi
+
+          git merge --no-ff --no-edit "${STARTUP_PROGRESS_HEAD}"
+          test -z "$(git diff --name-only --diff-filter=U)"
+          test "$(git show -s --format=%P HEAD | wc -w)" -ge 2
+      - run: npm ci
+      - name: Prepare and validate composed Mobile runtime
+        run: |
+          set -euo pipefail
+          node scripts/v139/apply.mjs
+          node scripts/regression-v14-3-68-android-share-import.mjs
+          node scripts/regression-p0-pwa-share-target-pdf.mjs
+          node scripts/regression-roster-layout-preference.mjs
+          node scripts/regression-roster-change-awareness.mjs
+          node scripts/regression-home-layout-preference.mjs
+          node scripts/regression-startup-progress.mjs
+          npx tsc --noEmit
+          npx vite build
+      - name: Set isolated phone candidate identity
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path = 'android-wrapper/app/build.gradle';
+          let source = fs.readFileSync(path, 'utf8');
+          source = source
+            .replace(/versionCode\s+\d+/, 'versionCode ' + process.env.MOBILE_CANDIDATE_VERSION_CODE)
+            .replace(/versionName\s+['"][^'"]+['"]/, "versionName '" + process.env.MOBILE_CANDIDATE_VERSION_NAME + "'");
+          fs.writeFileSync(path, source);
+          NODE
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - name: Restore existing phone signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KEYSTORE_BASE64}" && test -n "${STORE_PASSWORD}" && test -n "${KEY_ALIAS}" && test -n "${KEY_PASSWORD}"
+          umask 077
+          printf '%s' "${KEYSTORE_BASE64#base64:}" | tr -d '\r\n ' | base64 --decode > "${CREWCHECK_STORE_FILE}"
+      - name: Build signed phone-only APK and AAB
+        env:
+          CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
+          CREWCHECK_KEY_ALIAS: ${{ env.KEY_ALIAS }}
+          CREWCHECK_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
+        run: gradle -p android-wrapper --no-daemon --console=plain :app:assembleRelease :app:bundleRelease
+      - name: Audit final phone manifest and signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='android-wrapper/app/build/outputs/apk/release/app-release.apk'
+          AAB='android-wrapper/app/build/outputs/bundle/release/app-release.aab'
+          test -s "${APK}" && test -s "${AAB}"
+          apksigner verify --verbose --print-certs "${APK}"
+          jarsigner -verify -strict "${AAB}"
+          aapt dump badging "${APK}" | tee "${RUNNER_TEMP}/phone-badging.txt"
+          rg "package: name='com.crewcheck.app'.*versionCode='${MOBILE_CANDIDATE_VERSION_CODE}'.*versionName='${MOBILE_CANDIDATE_VERSION_NAME}'" "${RUNNER_TEMP}/phone-badging.txt"
+          aapt dump permissions "${APK}" | tee "${RUNNER_TEMP}/phone-permissions.txt"
+          if rg -i 'android\.permission\.health\.' "${RUNNER_TEMP}/phone-permissions.txt"; then
+            echo '::error::Phone candidate must remain Health-Connect-free.'
+            exit 1
+          fi
+      - name: Stage exact composition candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/crewcheck-mobile-candidate"
+          cp android-wrapper/app/build/outputs/apk/release/app-release.apk "${RUNNER_TEMP}/crewcheck-mobile-candidate/CrewCheck-Mobile-14.4.11-pdf-rc1-144152.apk"
+          cp android-wrapper/app/build/outputs/bundle/release/app-release.aab "${RUNNER_TEMP}/crewcheck-mobile-candidate/CrewCheck-Mobile-14.4.11-pdf-rc1-144152.aab"
+          cp "${RUNNER_TEMP}/phone-badging.txt" "${RUNNER_TEMP}/crewcheck-mobile-candidate/"
+          cp "${RUNNER_TEMP}/phone-permissions.txt" "${RUNNER_TEMP}/crewcheck-mobile-candidate/"
+          printf '%s\n' \
+            "PDF_HEAD=${{ github.event.pull_request.head.sha || github.sha }}" \
+            "ROSTER_LAYOUT_HEAD=${ROSTER_LAYOUT_HEAD}" \
+            "STARTUP_PROGRESS_HEAD=${STARTUP_PROGRESS_HEAD}" \
+            "VERSION_CODE=${MOBILE_CANDIDATE_VERSION_CODE}" \
+            "VERSION_NAME=${MOBILE_CANDIDATE_VERSION_NAME}" \
+            'PLAY_UPLOAD=none' \
+            > "${RUNNER_TEMP}/crewcheck-mobile-candidate/composition.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-Mobile-PDF-composition-144152
+          path: ${{ runner.temp }}/crewcheck-mobile-candidate/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove temporary signing material
+        if: always()
+        run: rm -f "${CREWCHECK_STORE_FILE}"
