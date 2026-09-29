@@ -1,0 +1,283 @@
+name: CrewCheck Mobile production 14.4.11
+
+on:
+  push:
+    branches:
+      - fix/p0-mobile-shared-pdf-mainline-v2
+    paths:
+      - '.github/workflows/mobile-production-144153.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crewcheck-mobile-production-144153
+  cancel-in-progress: false
+
+jobs:
+  publish-phone-production:
+    if: contains(github.event.head_commit.message, '[release 144153]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ROSTER_LAYOUT_HEAD: 769790144977bc0cc56eb04d2e919287e553b152
+      STARTUP_PROGRESS_HEAD: bf7a085558284791ebf6b8ee7e6f08ce9abe9b42
+      EXPECTED_PARENT: 892d630a5c40039e2b544aa64186f912ee3ba243
+      VERSION_CODE: '144153'
+      VERSION_NAME: '14.4.11'
+      KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 }}
+      STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD }}
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+      CREWCHECK_STORE_FILE: ${{ github.workspace }}/android-wrapper/crewcheck-release.jks
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Pin one-shot release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test -n "$PLAY_SERVICE_ACCOUNT_JSON"
+          test -n "$KEYSTORE_BASE64"
+          test -n "$STORE_PASSWORD"
+          test -n "$KEY_ALIAS"
+          test -n "$KEY_PASSWORD"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+
+      - name: Compose exact Mobile heads
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'CrewCheck Mobile production'
+          git config user.email 'actions@crewcheck.invalid'
+          git fetch --no-tags origin "$ROSTER_LAYOUT_HEAD" "$STARTUP_PROGRESS_HEAD"
+
+          if ! git merge --no-ff --no-edit "$ROSTER_LAYOUT_HEAD"; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            if [ "$conflicts" != 'scripts/v139/apply.mjs' ]; then
+              echo "::error::Unexpected #857 conflicts: $conflicts"
+              exit 1
+            fi
+            git checkout --ours scripts/v139/apply.mjs
+            node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path = 'scripts/v139/apply.mjs';
+          let source = fs.readFileSync(path, 'utf8');
+          const home = "await import('../p1-home-layout/apply.mjs');";
+          const durable = "await import('../p0-shared-pdf-durable/apply.mjs');";
+          if (!source.includes(durable)) throw new Error('Durable PDF finalizer missing');
+          if (!source.includes(home)) source = source.replace(durable, home + '\n' + durable);
+          if (source.indexOf(home) > source.indexOf(durable)) throw new Error('Home must precede durable PDF consumer');
+          fs.writeFileSync(path, source);
+          NODE
+            git add scripts/v139/apply.mjs
+            git commit --no-edit
+          fi
+
+          git merge --no-ff --no-edit "$STARTUP_PROGRESS_HEAD"
+          test -z "$(git diff --name-only --diff-filter=U)"
+
+      - run: npm ci
+
+      - name: Prepare and run Mobile release gates
+        run: |
+          set -euo pipefail
+          node scripts/v139/apply.mjs
+          node scripts/regression-v14-3-68-android-share-import.mjs
+          node scripts/regression-p0-pwa-share-target-pdf.mjs
+          node scripts/regression-roster-layout-preference.mjs
+          node scripts/regression-roster-change-awareness.mjs
+          node scripts/regression-home-layout-preference.mjs
+          node scripts/regression-menu-5s.mjs
+          node scripts/regression-startup-progress.mjs
+          npx tsc --noEmit
+          npx vite build
+
+      - name: Set production candidate identity
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path = 'android-wrapper/app/build.gradle';
+          let source = fs.readFileSync(path, 'utf8');
+          source = source
+            .replace(/versionCode\s+\d+/, 'versionCode ' + process.env.VERSION_CODE)
+            .replace(/versionName\s+['"][^'"]+['"]/, "versionName '" + process.env.VERSION_NAME + "'");
+          fs.writeFileSync(path, source);
+          NODE
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+
+      - name: Restore existing phone signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "${KEYSTORE_BASE64#base64:}" | tr -d '\r\n ' | base64 --decode > "$CREWCHECK_STORE_FILE"
+
+      - name: Build signed phone APK and AAB
+        env:
+          CREWCHECK_STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
+          CREWCHECK_KEY_ALIAS: ${{ env.KEY_ALIAS }}
+          CREWCHECK_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
+        run: gradle -p android-wrapper --no-daemon --console=plain :app:assembleRelease :app:bundleRelease
+
+      - name: Audit exact phone artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='android-wrapper/app/build/outputs/apk/release/app-release.apk'
+          AAB='android-wrapper/app/build/outputs/bundle/release/app-release.aab'
+          test -s "$APK" && test -s "$AAB"
+          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          jarsigner -verify "$AAB"
+          "${ANDROID_HOME}/build-tools/35.0.0/aapt" dump badging "$APK" | tee "$RUNNER_TEMP/badging.txt"
+          grep -E "package: name='com\.crewcheck\.app'.*versionCode='${VERSION_CODE}'.*versionName='${VERSION_NAME}'" "$RUNNER_TEMP/badging.txt"
+          grep -E "targetSdkVersion:'36'" "$RUNNER_TEMP/badging.txt"
+          "${ANDROID_HOME}/build-tools/35.0.0/aapt" dump permissions "$APK" | tee "$RUNNER_TEMP/permissions.txt"
+          if grep -Eiq 'android\.permission\.health\.' "$RUNNER_TEMP/permissions.txt"; then
+            echo '::error::Production phone artifact contains Health Connect permissions.'
+            exit 1
+          fi
+          sha256sum "$AAB" "$APK"
+
+      - name: Install Android Publisher client
+        run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
+
+      - name: Upload phone bundle to Production and send for review
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from urllib.parse import quote
+          import google.auth.transport.requests
+          from google.oauth2 import service_account
+          import requests
+
+          package = 'com.crewcheck.app'
+          version_code = int(os.environ['VERSION_CODE'])
+          version_name = os.environ['VERSION_NAME']
+          bundle_path = Path('android-wrapper/app/build/outputs/bundle/release/app-release.aab')
+
+          raw = os.environ['PLAY_SERVICE_ACCOUNT_JSON'].strip()
+          if raw.startswith('base64:'):
+              import base64
+              raw = base64.b64decode(raw[7:]).decode()
+          account = json.loads(raw)
+          credentials = service_account.Credentials.from_service_account_info(
+              account,
+              scopes=['https://www.googleapis.com/auth/androidpublisher'],
+          )
+          session = google.auth.transport.requests.AuthorizedSession(credentials)
+
+          def api(method, url, **kwargs):
+              response = session.request(method, url, timeout=300, **kwargs)
+              if not response.ok:
+                  text = (response.text or '')[:1200]
+                  raise RuntimeError(f'Play API {response.status_code}: {text}')
+              return response.json() if response.content else {}
+
+          edits = f'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{package}/edits'
+          edit_id = api('POST', edits, json={})['id']
+          edit = f'{edits}/{edit_id}'
+          committed = False
+          try:
+              tracks = api('GET', edit + '/tracks').get('tracks', [])
+              bundles = api('GET', edit + '/bundles').get('bundles', [])
+              codes = [int(b['versionCode']) for b in bundles]
+              codes += [
+                  int(v)
+                  for track in tracks
+                  for release in track.get('releases', [])
+                  for v in release.get('versionCodes', [])
+              ]
+              live_max = max(codes or [0])
+              if version_code <= live_max:
+                  raise RuntimeError(f'versionCode {version_code} must be greater than Play max {live_max}')
+
+              production = [t for t in tracks if t.get('track') == 'production']
+              if len(production) != 1:
+                  raise RuntimeError('Production track missing or ambiguous')
+
+              upload_url = (
+                  f'https://androidpublisher.googleapis.com/upload/androidpublisher/v3/'
+                  f'applications/{package}/edits/{edit_id}/bundles?uploadType=media'
+              )
+              with bundle_path.open('rb') as fh:
+                  uploaded = api(
+                      'POST',
+                      upload_url,
+                      data=fh,
+                      headers={'Content-Type': 'application/octet-stream'},
+                  )
+              if int(uploaded['versionCode']) != version_code:
+                  raise RuntimeError('Play returned a different uploaded versionCode')
+
+              api(
+                  'PUT',
+                  edit + '/tracks/' + quote('production', safe=''),
+                  json={
+                      'track': 'production',
+                      'releases': [{
+                          'name': version_name,
+                          'versionCodes': [str(version_code)],
+                          'status': 'completed',
+                          'releaseNotes': [{
+                              'language': 'pt-BR',
+                              'text': (
+                                  'Atualização CrewCheck Mobile: importação de PDF compartilhado mais robusta, '
+                                  'novas visualizações da escala, Home personalizável, Menu 5S e abertura com '
+                                  'progresso e recuperação aprimorada.'
+                              ),
+                          }],
+                      }],
+                  },
+              )
+
+              api('POST', edit + ':validate')
+              api('POST', edit + ':commit')
+              committed = True
+              print(
+                  f'PLAY_PRODUCTION_SUBMITTED package={package} '
+                  f'versionName={version_name} versionCode={version_code}'
+              )
+          finally:
+              if not committed:
+                  try:
+                      session.delete(edit, timeout=30)
+                  except Exception:
+                      pass
+          PY
+
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-Mobile-production-144153-evidence
+          path: |
+            ${{ runner.temp }}/badging.txt
+            ${{ runner.temp }}/permissions.txt
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$CREWCHECK_STORE_FILE"
