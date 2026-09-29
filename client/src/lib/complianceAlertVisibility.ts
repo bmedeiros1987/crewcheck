@@ -79,6 +79,7 @@ export function readComplianceAlertDismissals(
   accountId: string | null | undefined,
   rosterRevision: string,
 ): ComplianceAlertDismissal[] {
+  if (!clean(accountId)) return [];
   try {
     const parsed = JSON.parse(storage.getItem(complianceAlertVisibilityKey(accountId)) || 'null') as ComplianceAlertDismissalState | null;
     if (!parsed || parsed.version !== DISMISSAL_VERSION || parsed.rosterRevision !== clean(rosterRevision)) return [];
@@ -110,6 +111,7 @@ export function dismissComplianceAlertUntilRosterUpdate(
   alert: ComplianceAlertLike,
   now = new Date(),
 ): boolean {
+  if (!clean(accountId)) return false;
   if (clean(alert.severity).toLowerCase() !== 'warning') return false;
   const revision = clean(rosterRevision);
   if (!revision) return false;
@@ -135,6 +137,7 @@ export function resetComplianceAlertDismissals(
   storage: AlertVisibilityStorage,
   accountId: string | null | undefined,
 ): void {
+  if (!clean(accountId)) return;
   try {
     storage.removeItem(complianceAlertVisibilityKey(accountId));
   } catch {}
