@@ -8,7 +8,7 @@ let source = fs.readFileSync(HOME, 'utf8');
 
 function removePulseBlockByIdPrefix(prefix) {
   const pattern = new RegExp(
-    String.raw`\n\s*publishCrewCheckNotice\(\{\n\s*id: \`${prefix}[\\s\\S]*?\n\s*\}\);\n`,
+    String.raw`\n\s*publishCrewCheckNotice\(\{\n\s*id: \`${prefix}[\s\S]*?\n\s*\}\);\n`,
     'g',
   );
   source = source.replace(pattern, '\n');
