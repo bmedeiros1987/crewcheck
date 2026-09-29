@@ -12,6 +12,9 @@ assert.equal(read(storage,'B'), 'cards');
 assert.equal(save(storage,'A','aims'), true);
 assert.equal(read(storage,'A'), 'aims');
 assert.equal(read(storage,'B'), 'cards');
+assert.equal(save(storage,'A','calendar'), true);
+assert.equal(read(storage,'A'), 'calendar');
+assert.equal(read(storage,'B'), 'cards');
 assert.equal(save(storage,null,'list'), false);
 assert.equal(read(storage,null), 'cards');
 for (const raw of ['invalid', '{"version":2,"layout":"list"}', '{"version":1,"layout":"unknown"}']) {
@@ -27,7 +30,9 @@ assert.ok(prepared.includes('data-roster-layout={layout}'), 'selector must survi
 assert.ok(prepared.includes('aria-pressed={layout === \'cards\'}'), 'cards option must expose selected state');
 assert.ok(prepared.includes('aria-pressed={layout === \'list\'}'), 'list option must expose selected state');
 assert.ok(prepared.includes('aria-pressed={layout === \'aims\'}'), 'AIMS option must expose selected state');
+assert.ok(prepared.includes('aria-pressed={layout === \'calendar\'}'), 'calendar option must expose selected state');
 assert.ok(prepared.includes('<AimsRosterTable events={ordered}/>'), 'AIMS must use its own renderer');
+assert.ok(prepared.includes('<CalendarRosterView events={ordered} month={selectedMonth}/>'), 'calendar must use its own renderer');
 assert.ok(!prepared.includes('<select value={layout}'), 'layout must not fall back to the raw select control');
 assert.ok(prepared.includes('data-roster-iso={group.iso}'), 'date navigation remains reachable');
 const aimsTable = fs.readFileSync('client/src/components/v1391/AimsRosterTable.tsx', 'utf8');
@@ -37,7 +42,14 @@ for (const heading of ['Data', 'Código / atividade', 'Apresentação', 'Origem'
 assert.ok(aimsTable.includes('<table>'), 'AIMS must be a semantic table, not compacted cards');
 assert.ok(aimsTable.includes('data-roster-iso={iso}'), 'AIMS rows must preserve date navigation');
 assert.doesNotMatch(aimsTable, /finance|salary|perDiem|parser/i, 'AIMS renderer must not invent finance or parser logic');
+const calendar = fs.readFileSync('client/src/components/v1391/CalendarRosterView.tsx', 'utf8');
+assert.ok(calendar.includes('<table>'), 'calendar must be a semantic monthly table');
+assert.ok(calendar.includes("const weekDays = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']"), 'calendar must keep the full Monday-to-Sunday week');
+assert.ok(calendar.includes('data-roster-iso={iso}'), 'calendar cells must preserve date navigation');
+assert.ok(calendar.includes('dayEvents.map((event)'), 'calendar must render every event in each day');
+assert.doesNotMatch(calendar, /dayEvents\.slice\(0,\s*\d+\)/, 'calendar must not hide valid events behind an arbitrary cap');
+assert.doesNotMatch(calendar, /finance|salary|perDiem|parser/i, 'calendar renderer must not invent finance or parser logic');
 const layoutCss = fs.readFileSync('client/src/components/v1391/roster-layout.css', 'utf8');
 assert.match(layoutCss, /data-roster-layout="list"[\s\S]*display: flex !important;/, 'list mode must win the premium stylesheet cascade');
 assert.match(layoutCss, /\.cc-roster-layout-reset[\s\S]*min-height: 44px;/, 'reset action must keep the mobile touch target');
-console.log('PASS: account isolation, reload, reset, accessible Cards/List/AIMS picker, semantic AIMS table and prepared integration');
+console.log('PASS: account isolation, reload, reset, accessible Cards/List/AIMS/Calendar picker, complete calendar and prepared integration');
