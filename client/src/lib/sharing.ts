@@ -1,5 +1,5 @@
 import type { CrewRoster } from './pdfParser';
-import type { ComplianceResult } from './complianceEngine';
+import { isActionableComplianceAlert, type ComplianceResult } from './complianceEngine';
 import { CREWCHECK_BRAND } from './brand';
 
 /**
@@ -20,8 +20,9 @@ export function generateShareMessage(
       ? '⚠️ PONTOS DE ATENÇÃO'
       : '✅ ESCALA CONFORME';
 
-  const errors = compliance.alerts.filter((alert) => alert.severity === 'error').length;
-  const warnings = compliance.alerts.filter((alert) => alert.severity === 'warning').length;
+  const actionable = compliance.alerts.filter(isActionableComplianceAlert);
+  const errors = actionable.filter((alert) => alert.severity === 'error').length;
+  const warnings = actionable.filter((alert) => alert.severity === 'warning').length;
   const totalFlightHours = roster.days.reduce((sum, day) => sum + (day.flyingHours || 0), 0);
   const flightCount = roster.days.filter((day) => day.type === 'VOO').length;
 
