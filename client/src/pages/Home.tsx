@@ -2439,7 +2439,7 @@ function Alerts({ compliance, roster }: { compliance: ComplianceResult | null; r
 
   function ignoreUntilRosterUpdate(alert: any) {
     if (!store || !dismissComplianceAlertUntilRosterUpdate(store, accountId, rosterRevision, alert)) return;
-    const pulse = currentCrewCheckPulseState().message;
+    const pulse = currentCrewCheckPulseState().message as ({ category?: string } | null);
     if (pulse?.category === 'compliance') dismissCrewCheckPulse();
     setDispositionRevision((value) => value + 1);
     toast.success('Alerta ocultado até a próxima atualização da escala.', {
