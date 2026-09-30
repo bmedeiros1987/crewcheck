@@ -1,0 +1,40 @@
+name: Per diem effective period
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/lib/financialAmounts.ts'
+      - 'client/src/lib/financialStatementLearning.ts'
+      - 'client/src/lib/financialRules.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-p1-demonstrated-per-diem-effective-period.mjs'
+      - '.github/workflows/per-diem-effective-period.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Validate demonstrated rate period
+        run: node scripts/regression-p1-demonstrated-per-diem-effective-period.mjs
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Revalidate after preparation
+        run: node scripts/regression-p1-demonstrated-per-diem-effective-period.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Web build
+        run: npx vite build
