@@ -26,7 +26,7 @@ const v14343Index = chain.indexOf("await import('../v14343/apply.mjs');");
 const v14344Index = chain.indexOf("await import('../v14344/apply.mjs');");
 assert.ok(v14343Index >= 0, 'v14.3.43 deve participar da preparação canônica');
 assert.ok(v14344Index > v14343Index, 'v14.3.44 deve suceder a estabilidade v14.3.43 sem removê-la');
-assert.ok(before.home.includes("const DEFAULT_VERSION = '14.4.08';"), 'a preparação final deve anunciar v14.4.08');
+assert.ok(before.home.includes("const DEFAULT_VERSION = '14.4.11';"), 'a preparação final deve anunciar v14.4.08');
 assert.ok(before.home.includes('data-layout-v14343="premium-contained"'), 'shell deve preservar o layout contido v14.3.43');
 assert.ok(before.home.includes('data-layout-v14344="web-icon-menu"'), 'shell deve registrar o refinamento final v14.3.44');
 
@@ -94,7 +94,7 @@ for (const marker of [
   "location: locationState === 'granted' ? true",
 ]) assert.ok(before.runtime.includes(marker), `runtime de permissão ausente: ${marker}`);
 
-assert.ok(before.release.includes('14.4.08'), 'release final deve anunciar 14.4.08');
+assert.ok(before.release.includes('14.4.11'), 'release final deve anunciar 14.4.08');
 assert.ok(before.release.includes('automatic-safe'), 'política de atualização segura deve permanecer registrada');
 
 for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser.mjs', 'client/src/lib/canonicalRoster.ts', 'client/src/lib/financialRules.ts']) {
