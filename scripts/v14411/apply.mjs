@@ -94,6 +94,9 @@ update('client/src/pages/AuthPage.tsx', (source) => source
   .replace(/crewcheck_last_loaded_version',\s*'[^']+'/g, `crewcheck_last_loaded_version', '${VERSION}'`)
   .replace(/data-version="[^"]+"/g, `data-version="${VERSION}"`), { optional: true });
 
+update('client/src/lib/crewcheckPremiumRuntime.ts', (source) => source
+  .replace(/version:\s*'\d+\.\d+\.\d+'/g, `version: '${VERSION}'`), { optional: true });
+
 update('client/public/manifest.json', (source) => {
   const manifest = JSON.parse(source);
   manifest.version = VERSION;
