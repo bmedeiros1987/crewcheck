@@ -104,6 +104,8 @@ for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser
 assert.ok(applySource.includes("next = patchBlock(next, 'function MenuDrawer('") || applySource.includes("patchBlock(next, 'function MenuDrawer('"), 'v14.3.43 deve continuar contendo a base do controle de localização');
 const finalApply = spawnSync(process.execPath, [path.join(root, 'scripts/v14408/apply.mjs')], { cwd: root, encoding: 'utf8' });
 assert.equal(finalApply.status, 0, finalApply.stderr || finalApply.stdout || 'reaplicação final v14.4.08 falhou');
+const terminalV14411 = spawnSync(process.execPath, [path.join(root, 'scripts/v14411/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(terminalV14411.status, 0, terminalV14411.stderr || terminalV14411.stdout || 'reaplicação terminal v14.4.11 falhou');
 for (const [key, relative] of Object.entries(paths)) {
   assert.equal(read(relative), before[key], `estado final v14.4.08 deve preservar a estabilidade v14.3.43 em ${relative}`);
 }
