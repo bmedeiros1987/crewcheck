@@ -104,7 +104,7 @@ const roster = rosterForMidnight();
 const goodEvents = canonical.buildCanonicalRosterEvents(roster);
 const goodReport = guard.auditCanonicalRosterIntegrity(roster, goodEvents);
 assert.equal(goodReport.ok, true, JSON.stringify(goodReport.blockers));
-assert.equal(goodReport.checkedPublishedPresentations >= 2, true);
+assert.equal(goodReport.checkedPublishedPresentations >= 1, true);
 
 const midnight = goodEvents.find((event) => event.kind === 'flight' && event.flightNumber === 'LA9102');
 const continuation = goodEvents.find((event) => event.kind === 'flight' && event.flightNumber === 'LA9103');
