@@ -88,7 +88,7 @@ assert.ok(!before.index.includes('crewcheck-release-watch-v14343') && !before.in
 assert.ok(!before.app.includes('caches.delete('), 'inicialização não pode apagar caches ativos');
 
 for (const marker of [
-  "version: '14.4.08'",
+  "version: '14.4.11'",
   "localStorage.setItem('crewcheck_location_permission', 'granted')",
   "window.dispatchEvent(new CustomEvent('crewcheck:location-updated'",
   "location: locationState === 'granted' ? true",
