@@ -19,7 +19,7 @@ type FormState = {
 type ComplianceLike = {
   score?: number;
   summary?: string;
-  alerts?: Array<{ title?: string; description?: string; severity?: string; classification?: string }>;
+  alerts?: Array<{ title?: string; description?: string; severity?: string; classification?: string; actionable?: boolean }>;
 };
 
 const STORAGE_KEY = 'crewcheck:manual-regulation:v1392';
@@ -129,7 +129,7 @@ export default function ManualRegulationView({ compliance }: { compliance?: Comp
     };
   }, [form]);
 
-  const alerts = (compliance?.alerts || []).filter((item) => item.classification !== 'informativa').slice(0, 4);
+  const alerts = (compliance?.alerts || []).filter((item) => item.actionable !== false && item.classification !== 'dados_insuficientes' && item.classification !== 'informativa').slice(0, 4);
   const actName = form.role === 'pilot' ? 'ACT Pilotos 2025–2027' : 'ACT Comissários 2025–2027';
   const activityLabel = form.dutyOrigin === 'reserve-activation' ? 'início da reserva acionada' : form.dutyOrigin === 'standby-activation' ? 'início operacional após acionamento do sobreaviso' : 'apresentação';
 

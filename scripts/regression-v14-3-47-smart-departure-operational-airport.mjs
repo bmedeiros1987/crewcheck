@@ -40,8 +40,9 @@ assert.ok(v14347Index > v14346Index, 'v14.3.47 deve suceder a correção de loca
 assert.ok(v14348Index > v14347Index, 'v14.3.48 deve suceder o aeroporto operacional sem sobrescrevê-lo');
 assert.ok(latestPreparation, 'a preparação canônica deve possuir uma etapa final aplicável');
 assert.ok((latestPreparation?.index ?? -1) > v14348Index, 'a preparação atual deve preservar e suceder as garantias da v14.3.48');
-assert.ok(androidLayoutFinalizerIndex > (latestPreparation?.index ?? -1), 'o finalizador Android deve suceder a última etapa funcional');
+assert.ok(androidLayoutFinalizerIndex > v14348Index, 'o finalizador Android deve permanecer depois da base funcional protegida pela v14.3.48');
 assert.ok(transportFinalizerIndex > androidLayoutFinalizerIndex, 'o transporte PDF durável deve ser reaplicado após os finalizadores Android');
+assert.ok(transportFinalizerIndex > (latestPreparation?.index ?? -1), 'o transporte PDF durável deve ser reafirmado depois da etapa funcional mais recente, inclusive guards tardios como v14.4.11');
 assert.ok(manualFinalizerIndex > transportFinalizerIndex, 'o finalizador documental deve suceder o transporte PDF durável');
 assert.ok(chain.trimEnd().endsWith(manualFinalizer), 'o finalizador documental deve encerrar a preparação canônica');
 assert.ok(clientParser.includes("(day as any).operationalAirport = match[2].toUpperCase();"), 'cliente deve guardar o aeroporto operacional da MCK');

@@ -30,8 +30,11 @@ assert "run.get('event') != 'push'" in source
 payload_tracks = re.findall(r"\['([^']+)'\]", source)
 assert "production" not in payload_tracks
 
-print('[android-play] internal auto-release policy OK')
+print('[android-play] internal manual-release policy OK')
 
-assert "github.event_name == 'push'" in workflow
-assert "vars.PLAY_INTERNAL_AUTO_PUBLISH" not in workflow
+publish_job = workflow.split('publish-internal-drafts:', 1)[1].split('runs-on:', 1)[0]
+assert "github.event_name == 'workflow_dispatch'" in publish_job
+assert "inputs.publish_internal_drafts" in publish_job
+assert "github.event_name == 'push'" not in publish_job
+assert "default: false" in workflow
 assert "PLAY_SERVICE_ACCOUNT_JSON" in workflow

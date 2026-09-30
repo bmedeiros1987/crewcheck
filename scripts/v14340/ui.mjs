@@ -23,11 +23,12 @@ function replaceBlock(source, startMarker, endMarker, replacement, label) {
 const brandBlock = String.raw`function CrewCheckMark({ className = 'cz-logo', size = 26 }: { className?: string; size?: number }) {
   return <span className={className} data-crewcheck-brand="canonical" aria-label="CrewCheck"><img src="/icons/crewcheck-icon-v3.png?v=14340" width={size} height={size} alt="" /></span>;
 }
-function Brand({ back, onMenu }: { back?: boolean; onMenu?: () => void }) {
+function Brand({ back, onMenu, pulse = false }: { back?: boolean; onMenu?: () => void; pulse?: boolean }) {
   const click = onMenu || (back ? (() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' }))) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));
+  const lockup = <div className="cz-brand-lockup"><CrewCheckMark/><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>;
   return <header className="cz-brand-row">
     <button className="cz-menu-btn" onClick={click} aria-label={back ? 'Voltar ao FlyDeck' : 'Menu'}>{back ? '←' : <Menu size={28}/>}</button>
-    <div className="cz-brand-lockup"><CrewCheckMark/><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>
+    {pulse ? <CrewCheckPulse compact fallback={lockup}/> : lockup}
   </header>;
 }`;
 

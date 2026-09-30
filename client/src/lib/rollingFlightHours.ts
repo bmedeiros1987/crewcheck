@@ -108,8 +108,8 @@ export function assessFlightHoursRolling28Days(
   observations: FlightHoursObservation[],
   month: number,
   year: number,
-): { maxHours: number; complete: boolean } {
-  if (!competenceKey(month, year)) return { maxHours: 0, complete: false };
+): { maxHours: number; complete: boolean; missingDates: string[] } {
+  if (!competenceKey(month, year)) return { maxHours: 0, complete: false, missingDates: [] };
   const start = Date.UTC(year, month - 1, 1);
   const end = Date.UTC(year, month, 1);
   const firstRequired = start - 27 * DAY_MS;
@@ -127,13 +127,17 @@ export function assessFlightHoursRolling28Days(
   // bound at the first active date, but cannot establish complete coverage.
   const last = lastActive ?? start;
   let complete = lastActive !== null;
+  const missingDates: string[] = [];
   let sum = 0;
   let best = 0;
   for (let epoch = firstRequired; epoch <= last; epoch += DAY_MS) {
-    if (!byDay.has(epoch)) complete = false;
+    if (!byDay.has(epoch)) {
+      complete = false;
+      missingDates.push(new Date(epoch).toISOString().slice(0, 10));
+    }
     sum += byDay.get(epoch) || 0;
     sum -= byDay.get(epoch - ROLLING_28_DAYS_MS) || 0;
     if (epoch >= start) best = Math.max(best, sum);
   }
-  return { maxHours: round1(best), complete };
+  return { maxHours: round1(best), complete, missingDates };
 }

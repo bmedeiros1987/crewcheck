@@ -15,7 +15,7 @@ const databaseBefore = fs.readFileSync(databasePath, 'utf8');
 const cssBefore = fs.readFileSync(cssPath, 'utf8');
 
 assert.ok(chain.includes("await import('../v14339/apply.mjs');"), 'v14.3.39 deve encerrar a preparação canônica');
-assert.ok(homeBefore.includes("const DEFAULT_VERSION = '14.4.08';"), 'versão Web/PWA final 14.4.08 ausente');
+assert.ok(homeBefore.includes("const DEFAULT_VERSION = '14.4.11';"), 'versão Web/PWA final 14.4.08 ausente');
 
 const databaseViewStart = homeBefore.indexOf('function historyPeriodLabel(');
 const databaseViewEnd = homeBefore.indexOf('function CrewToolsView(', databaseViewStart);
@@ -72,6 +72,8 @@ for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser
 
 const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14408/apply.mjs')], { cwd: root, encoding: 'utf8' });
 assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.4.08 falhou');
+const terminal = spawnSync(process.execPath, [path.join(root, 'scripts/v14411/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(terminal.status, 0, terminal.stderr || terminal.stdout || 'reaplicação terminal v14.4.11 falhou');
 assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'preparação final deve preservar o histórico no Home');
 assert.equal(fs.readFileSync(databasePath, 'utf8'), databaseBefore, 'preparação final deve preservar o cliente do banco');
 assert.equal(fs.readFileSync(cssPath, 'utf8'), cssBefore, 'preparação final deve preservar o CSS do histórico');

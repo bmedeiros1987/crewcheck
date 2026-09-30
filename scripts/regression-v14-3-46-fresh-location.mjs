@@ -44,7 +44,7 @@ for (const marker of [
 assert.ok(!/-16\.(?:6|7)|-49\.(?:2|3)/.test(freshSnippet), 'captura atual não pode conter fallback geográfico de Goiânia');
 
 for (const marker of [
-  "const DEFAULT_VERSION = '14.4.08';",
+  "const DEFAULT_VERSION = '14.4.11';",
   'function loadFreshCurrentGeo(',
   'const saved = loadFreshCurrentGeo();',
   "source: 'browser-watch'",
@@ -93,10 +93,10 @@ for (const fixture of [legacyDispatchFixture, preparedDispatchFixture, preparedD
 }
 
 assert.ok(applySource.includes("const VERSION = '14.3.46';"), 'patch de localização deve permanecer versionado como v14.3.46');
-assert.ok(before.runtime.includes("version: '14.4.08'"), 'runtime final deve anunciar v14.4.08');
+assert.ok(before.runtime.includes("version: '14.4.11'"), 'runtime final deve anunciar v14.4.11');
 assert.ok(before.runtime.includes("localStorage.setItem('crewcheck_last_geo_meta'"), 'runtime deve registrar horário e precisão da posição');
-assert.ok(before.release.includes('14.4.08'), 'release final deve anunciar v14.4.08');
-assert.equal(JSON.parse(before.pkg).version, '14.4.08', 'package final deve anunciar v14.4.08');
+assert.ok(before.release.includes('14.4.11'), 'release final deve anunciar v14.4.08');
+assert.equal(JSON.parse(before.pkg).version, '14.4.11', 'package final deve anunciar v14.4.11');
 
 for (const protectedPath of [
   'client/src/lib/pdfParser.ts',
@@ -108,6 +108,8 @@ for (const protectedPath of [
 
 const second = spawnSync(process.execPath, [path.join(root, 'scripts/v14408/apply.mjs')], { cwd: root, encoding: 'utf8' });
 assert.equal(second.status, 0, second.stderr || second.stdout || 'reaplicação final v14.4.08 após v14.3.46 falhou');
+const terminal = spawnSync(process.execPath, [path.join(root, 'scripts/v14411/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(terminal.status, 0, terminal.stderr || terminal.stdout || 'reaplicação terminal v14.4.11 falhou');
 for (const [key, relative] of Object.entries(paths)) {
   assert.equal(read(relative), before[key], `preparação canônica deve ser idempotente em ${relative}`);
 }

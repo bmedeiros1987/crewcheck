@@ -1,0 +1,67 @@
+name: CrewCheck Roster Integrity Guard
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/rosterContinuity.ts'
+      - 'client/src/lib/rosterIntegrityGuard.ts'
+      - 'client/src/lib/aimsParser.ts'
+      - 'client/src/lib/pdfParser.ts'
+      - 'server/rosterParser.mjs'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14411/**'
+      - 'scripts/v14330/**'
+      - 'scripts/v14374/**'
+      - 'scripts/v14375/**'
+      - 'scripts/v14377/**'
+      - 'scripts/p0-530-*/**'
+      - 'scripts/p0-580-*/**'
+      - 'scripts/regression-p0-canonical-midnight-presentation.mjs'
+      - 'scripts/regression-v14-4-11-roster-integrity-guard.mjs'
+      - 'scripts/android-play/release-policy.json'
+      - '.github/workflows/roster-integrity-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  roster-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Prepare exact canonical runtime
+        run: node scripts/v139/apply.mjs
+
+      - name: Roster Integrity Guard
+        run: node scripts/regression-v14-4-11-roster-integrity-guard.mjs
+
+      - name: Midnight APZ continuity
+        run: node scripts/regression-p0-canonical-midnight-presentation.mjs
+
+      - name: AIMS segmentation and journey identity
+        run: |
+          node scripts/regression-p1-server-510-aims-duty-segmentation.mjs
+          node scripts/regression-p1-journey-identity-440-512.mjs
+          node scripts/regression-p1-journey-identity-client-parity.mjs
+          node scripts/regression-p1-night-ops-journey-identity.mjs
+
+      - name: Canonical date and corpus safeguards
+        run: |
+          node scripts/regression-p0-canonical-surface-metrics.mjs
+          node scripts/regression-p0-preview-reference-month.mjs
+          node scripts/regression-p0-roster-date-integrity.mjs
+          node scripts/regression-p0-527-real-sanitized-corpus.mjs
+
+      - name: TypeScript and web bundle
+        run: |
+          npx tsc --noEmit
+          npx vite build
