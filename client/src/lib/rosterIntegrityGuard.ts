@@ -162,9 +162,11 @@ function issue(
  * would make CrewCheck display a different APZ/date/journey than the published
  * roster are allowed to block activation.
  */
-export function auditRosterIntegrity(roster: CrewRoster): RosterIntegrityReport {
+export function auditCanonicalRosterIntegrity(
+  roster: CrewRoster,
+  canonical: CanonicalRosterEvent[],
+): RosterIntegrityReport {
   const normalized = normalizeRosterDays(roster);
-  const canonical = buildCanonicalRosterEvents(normalized);
   const flights = canonical.filter((event) => event.kind === 'flight' && event.leg);
   const bySignature = new Map<string, CanonicalRosterEvent[]>();
   for (const event of flights) {
@@ -298,6 +300,11 @@ export function auditRosterIntegrity(roster: CrewRoster): RosterIntegrityReport 
     checkedFlights: flights.length,
     checkedPublishedPresentations,
   };
+}
+
+export function auditRosterIntegrity(roster: CrewRoster): RosterIntegrityReport {
+  const normalized = normalizeRosterDays(roster);
+  return auditCanonicalRosterIntegrity(normalized, buildCanonicalRosterEvents(normalized));
 }
 
 export function rosterIntegrityBlockingSummary(report: RosterIntegrityReport): string {
