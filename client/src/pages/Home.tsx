@@ -73,6 +73,7 @@ import { isSmartDepartureEligible, publishedPresentationOf } from '@/lib/schedul
 import { resolveActFinancialRules, resolvePerDiemRule, type AirportPerDiemOverrides, type PerDiemCurrency, type PerDiemRateKey } from '@/lib/financialRules';
 import FinancialStatementImporter from '@/components/finance/FinancialStatementImporter';
 import { confirmedRateValueAt } from '@/lib/financialStatementLearning';
+import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import { classifyAllowanceWindows, freeDayPostponementIndemnity, observedStatementCycle } from '@/lib/compensationPolicy';
 import { financialJourneyGroupKey, rowsForNominalFinancialCompetence } from '@/lib/financialJourneyGrouping';
@@ -3393,10 +3394,20 @@ function perDiemConfig(roster: CrewRoster) {
     ?? confirmedRateValueAt('per_diem.dinner', effectiveDate)
     ?? confirmedRateValueAt('per_diem.supper', effectiveDate);
   const learnedBreakfast = confirmedRateValueAt('per_diem.breakfast', effectiveDate);
+  const domesticRule = act.perDiem.find((rule) => rule.key === 'domestic');
+  const domesticOverride = readOptionalNumberSetting('crewcheck_perdiem_rate_domestic');
+  const domestic = resolveDomesticPerDiemRate({
+    effectiveDate,
+    actMainMeal: domesticRule?.mainMeal || 0,
+    manualOverride: domesticOverride,
+    learnedMainMeal: learnedMeal,
+    learnedBreakfast,
+    breakfastPercent: act.breakfastPercent,
+  });
   const rates = Object.fromEntries(act.perDiem.map((rule) => {
+    if (rule.key === 'domestic') return [rule.key, { ...rule, mainMeal: domestic.mainMeal }];
     const override = readOptionalNumberSetting('crewcheck_perdiem_rate_' + rule.key);
-    const calibrated = rule.key === 'domestic' ? learnedMeal : null;
-    return [rule.key, { ...rule, mainMeal: override ?? calibrated ?? rule.mainMeal }];
+    return [rule.key, { ...rule, mainMeal: override ?? rule.mainMeal }];
   })) as Record<PerDiemRateKey, { key: PerDiemRateKey; label: string; currency: PerDiemCurrency; mainMeal: number }>;
   const exchangeRates: Record<PerDiemCurrency, number> = {
     BRL: 1,
@@ -3404,14 +3415,20 @@ function perDiemConfig(roster: CrewRoster) {
     EUR: readNumberSetting('crewcheck_fx_eur_brl', 0),
     GBP: readNumberSetting('crewcheck_fx_gbp_brl', 0),
   };
+  const demonstratedSource = domestic.source === 'demonstrated'
+    ? ' · demonstrativo nacional confirmado no período'
+    : '';
   return {
     act,
     rates,
     exchangeRates,
     breakfastPercent: act.breakfastPercent,
-    learnedBreakfast,
+    domesticBreakfast: domestic.breakfast,
+    domesticMainMealSource: domestic.source,
     airportOverrides: loadAirportPerDiemOverrides(),
-    source: act.profileLabel + ' · ' + act.legalReference + (learnedMeal || learnedBreakfast ? ' · demonstrativo confirmado pelo Admin' : ''),
+    source: act.profileLabel + ' · ' + act.legalReference
+      + (learnedMeal || learnedBreakfast ? ' · demonstrativo confirmado pelo Admin' : '')
+      + demonstratedSource,
   };
 }
 function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
@@ -3431,9 +3448,9 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
     seen.add(key);
     usedRateKeys.add(classification.rateKey);
     const rate = cfg.rates[classification.rateKey];
-    const value = slot === 'breakfast' && rate.currency === 'BRL' && cfg.learnedBreakfast !== null
-      ? cfg.learnedBreakfast
-      : slot === 'breakfast' ? rate.mainMeal * cfg.breakfastPercent : rate.mainMeal;
+    const value = slot === 'breakfast' && classification.rateKey === 'domestic'
+      ? cfg.domesticBreakfast
+      : perDiemSlotAmount(rate.mainMeal, slot, cfg.breakfastPercent);
     const fx = cfg.exchangeRates[rate.currency];
     rows.push({
       eventId: event.id,
