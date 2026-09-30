@@ -79,19 +79,26 @@ const byFlight = (number) => flights.find((event) => event.flightNumber === numb
 const first = byFlight('LA9101');
 const midnight = byFlight('LA9102');
 const continuation = byFlight('LA9103');
-const rest = events.find((event) => event.kind === 'journey-rest' && event.origin === 'CCC');
+const rest = events.find((event) =>
+  (event.kind === 'journey-rest' || event.kind === 'stay')
+  && event.origin === 'CCC'
+  && new Date(event.endDateTime).getTime() > new Date(event.startDateTime).getTime()
+);
 
 check('as três pernas permanecem na timeline', flights.length === 3, JSON.stringify(flights));
 check('APZ 23:18 é preservada; não vira STD 00:05', midnight?.presentation === '23:18', JSON.stringify(midnight));
 check('decolagem 00:05 é ancorada no dia civil seguinte', midnight?.startDateTime === '2026-10-05T03:05:00.000Z', String(midnight?.startDateTime));
 check('etapa pós-meia-noite é marcada como +1 em relação ao dia publicado', midnight?.isNextDay === true, JSON.stringify(midnight));
-check('repouso 06:25 → 23:18 permanece 16h53', rest?.restMinutes === 16 * 60 + 53, JSON.stringify(rest));
+const restDurationMinutes = rest
+  ? Math.round((new Date(rest.endDateTime).getTime() - new Date(rest.startDateTime).getTime()) / 60_000)
+  : null;
+check('repouso 06:25 → 23:18 permanece 16h53', restDurationMinutes === 16 * 60 + 53, JSON.stringify(rest));
 check('segunda perna 04:20 continua a jornada 23:18', continuation?.journeyId === midnight?.journeyId, JSON.stringify({ midnight, continuation }));
 check('segunda perna não inventa nova apresentação', continuation?.showPresentation === false && continuation?.journeyBoundary === null, JSON.stringify(continuation));
 check('solo entre as pernas é 60 min, não um repouso de 24h+', continuation?.groundBeforeMinutes === 60, JSON.stringify(continuation));
 
 const chronological = events
-  .filter((event) => event.kind === 'flight' || event.kind === 'journey-rest')
+  .filter((event) => event.kind === 'flight' || event.kind === 'journey-rest' || event.kind === 'stay')
   .map((event) => event.kind === 'flight' ? event.flightNumber : 'REST');
 check(
   'ordem canônica não coloca 00:05 antes da jornada da manhã anterior',
