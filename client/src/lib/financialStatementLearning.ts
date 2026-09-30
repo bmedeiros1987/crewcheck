@@ -51,9 +51,22 @@ function rate(
   effectiveFrom: string,
   sourceDocument: string,
   sourceFingerprint: string,
-  confidence: LearningConfidence = 'high'
+  confidence: LearningConfidence = 'high',
+  effectiveTo?: string,
 ): LearnedRate {
-  return { key, label, value, unit, currency: 'BRL', effectiveFrom, sourceDocument, sourceFingerprint, confidence, confirmed: false };
+  return {
+    key,
+    label,
+    value,
+    unit,
+    currency: 'BRL',
+    effectiveFrom,
+    ...(effectiveTo ? { effectiveTo } : {}),
+    sourceDocument,
+    sourceFingerprint,
+    confidence,
+    confirmed: false,
+  };
 }
 
 export function detectFinancialStatement(text: string): StatementKind | null {
@@ -67,6 +80,7 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
   const period = text.match(/De\s+(\d{4}-\d{2}-\d{2})\s+at[eé]\s+(\d{4}-\d{2}-\d{2})/i);
   const payment = text.match(/Pagamento\s+em\s+(\d{4}-\d{2}-\d{2})/i);
   const start = period?.[1] || '';
+  const end = period?.[2] || '';
   const fp = fingerprint(text);
   const observations = new Map<string, number[]>();
   const aliases: Record<string, string> = { CAFE: 'breakfast', ALMOCO: 'lunch', JANTAR: 'dinner', CEIA: 'supper' };
@@ -82,7 +96,17 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
     const counts = new Map<number, number>();
     values.forEach((value) => counts.set(value, (counts.get(value) || 0) + 1));
     const selected = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-    if (Number.isFinite(selected)) rates.push(rate(`per_diem.${key}`, key, selected, 'meal', start, sourceDocument, fp));
+    if (Number.isFinite(selected)) rates.push(rate(
+      `per_diem.${key}`,
+      key,
+      selected,
+      'meal',
+      start,
+      sourceDocument,
+      fp,
+      'high',
+      end || undefined,
+    ));
   }
   const total = [...text.matchAll(/Total\s+depositado[^\n\r]*?R\$\s*([\d.]+,\d{2})/gi)].at(-1);
   const warnings: string[] = [];

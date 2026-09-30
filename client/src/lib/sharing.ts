@@ -1,5 +1,6 @@
 import type { CrewRoster } from './pdfParser';
 import type { ComplianceResult } from './complianceEngine';
+import { isActionableComplianceAlert } from './complianceAlertSemantics';
 import { CREWCHECK_BRAND } from './brand';
 
 /**
@@ -14,14 +15,17 @@ export function generateShareMessage(
     'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
   ];
 
+  const actionable = compliance.alerts.filter(isActionableComplianceAlert);
+  const errors = actionable.filter((alert) => alert.severity === 'error').length;
+  const warnings = actionable.filter((alert) => alert.severity === 'warning').length;
+  const incomplete = compliance.alerts.some((alert) => alert.actionable === false || alert.classification === 'dados_insuficientes');
   const statusText = compliance.overallStatus === 'violation'
     ? '🚨 IRREGULARIDADES ENCONTRADAS'
-    : compliance.overallStatus === 'warning'
+    : warnings > 0
       ? '⚠️ PONTOS DE ATENÇÃO'
-      : '✅ ESCALA CONFORME';
-
-  const errors = compliance.alerts.filter((alert) => alert.severity === 'error').length;
-  const warnings = compliance.alerts.filter((alert) => alert.severity === 'warning').length;
+      : incomplete
+        ? '⚠️ ANÁLISE INCOMPLETA · HISTÓRICO NECESSÁRIO'
+        : '✅ ESCALA CONFORME';
   const totalFlightHours = roster.days.reduce((sum, day) => sum + (day.flyingHours || 0), 0);
   const flightCount = roster.days.filter((day) => day.type === 'VOO').length;
 

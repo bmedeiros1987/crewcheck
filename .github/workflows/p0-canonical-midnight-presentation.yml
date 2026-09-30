@@ -1,0 +1,38 @@
+name: P0 canonical midnight presentation
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/rosterContinuity.ts'
+      - 'scripts/regression-p0-canonical-midnight-presentation.mjs'
+      - '.github/workflows/p0-canonical-midnight-presentation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-midnight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Prepare canonical sources
+        run: node scripts/v139/apply.mjs
+      - name: Midnight APZ regression
+        run: node scripts/regression-p0-canonical-midnight-presentation.mjs
+      - name: Journey identity regressions
+        run: |
+          node scripts/regression-p0-530-journey-rest-cleanroom.mjs
+          node scripts/regression-p1-night-ops-journey-identity.mjs
+          node scripts/regression-p1-journey-identity-client-parity.mjs
+      - name: TypeScript and web
+        run: |
+          npx tsc --noEmit
+          npx vite build

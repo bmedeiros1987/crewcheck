@@ -1,0 +1,38 @@
+name: P0 client AIMS APZ parity
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/lib/aimsParser.ts'
+      - 'scripts/lib/ts-module-harness.mjs'
+      - 'scripts/regression-p0-510-client-aims-parity-current.mjs'
+      - '.github/workflows/p0-510-client-aims-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  client-aims-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Validate client AIMS parity before preparation
+        run: node scripts/regression-p0-510-client-aims-parity-current.mjs
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Validate client AIMS parity after preparation
+        run: node scripts/regression-p0-510-client-aims-parity-current.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Web build
+        run: npx vite build

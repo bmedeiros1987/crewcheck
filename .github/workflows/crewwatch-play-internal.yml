@@ -6,17 +6,20 @@ on:
       - 'android-wrapper/wear/**'
       - 'scripts/android-play/crewwatch_internal.py'
       - '.github/workflows/crewwatch-play-internal.yml'
+      - 'scripts/regression-play-manual-publication-gates.mjs'
   push:
     branches: [main]
     paths:
       - 'android-wrapper/wear/**'
       - 'client/public/icons/crewcheck-icon-v2.png'
+      - '.github/workflows/crewwatch-play-internal.yml'
+      - 'scripts/regression-play-manual-publication-gates.mjs'
   workflow_dispatch:
     inputs:
       publish_internal:
         description: 'Publicar somente CrewWatch no teste interno da Play'
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -84,7 +87,9 @@ jobs:
           print('changed_count=' + str(len(changed)))
           PY
       - name: Validate dedicated CrewWatch release policy
-        run: python3 scripts/android-play/crewwatch_internal.py self-test
+        run: |
+          python3 scripts/android-play/crewwatch_internal.py self-test
+          node scripts/regression-play-manual-publication-gates.mjs
       - name: Prepare canonical source
         run: node scripts/v139/apply.mjs
       - name: CrewWatch regression
@@ -97,7 +102,7 @@ jobs:
 
   publish-wear-internal:
     needs: preflight
-    if: github.ref == 'refs/heads/main' && ((github.event_name == 'push' && needs.preflight.outputs.wear_only == 'true') || (github.event_name == 'workflow_dispatch' && inputs.publish_internal))
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.publish_internal
     concurrency:
       group: crewcheck-play-release
       cancel-in-progress: false
