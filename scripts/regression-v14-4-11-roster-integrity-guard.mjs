@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { loadClientModules, TYPE_ONLY_PDF_PARSER_STUB } from './lib/ts-module-harness.mjs';
 
 const harness = loadClientModules({
@@ -161,7 +164,35 @@ assert.equal(continuation.groundBeforeMinutes, 60);
   assert.equal(codes(report).has('GROUND_INTERVAL_MISMATCH'), true);
 }
 
-// 8) Gate arquitetural: importação final deve usar fail-closed e v14.4.11.
+// 8) Corpus real sanitizado: casos PASS existentes não podem virar falso blocker.
+{
+  const corpus = JSON.parse(fs.readFileSync('scripts/fixtures/p0-527/aims-real-sanitized-aug2026.json', 'utf8'));
+  const serverSource = fs.readFileSync('server/rosterParser.mjs', 'utf8');
+  const tmp = path.join(os.tmpdir(), 'crewcheck-v14411-server-' + process.pid + '.mjs');
+  fs.writeFileSync(tmp, serverSource + '\nexport { parseAimsTokensIntoEventsV3 };\n', 'utf8');
+  const server = await import(pathToFileURL(tmp).href + '?v=' + Date.now());
+  fs.unlinkSync(tmp);
+
+  for (const item of corpus.cases.filter((entry) => entry.status === 'PASS')) {
+    const sourceDay = Number(String(item.tokens?.[0] || '').match(/^(\d{1,2})/)?.[1] || 0);
+    const days = server.parseAimsTokensIntoEventsV3(item.tokens, sourceDay, item.month, item.year, corpus.provenance.base);
+    const parsedRoster = {
+      crewName: 'Sanitized crew',
+      crewId: 'sanitized',
+      base: corpus.provenance.base,
+      rank: 'CCM',
+      airline: 'LATAM',
+      month: item.month,
+      year: item.year,
+      rawText: '',
+      days,
+    };
+    const report = guard.auditRosterIntegrity(parsedRoster);
+    assert.equal(report.ok, true, item.id + ': corpus PASS gerou blocker ' + JSON.stringify(report.blockers));
+  }
+}
+
+// 9) Gate arquitetural: importação final deve usar fail-closed e v14.4.11.
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 const loader = fs.readFileSync('scripts/v139/apply.mjs', 'utf8');
 const policy = JSON.parse(fs.readFileSync('scripts/android-play/release-policy.json', 'utf8'));
