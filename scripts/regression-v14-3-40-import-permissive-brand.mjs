@@ -28,7 +28,7 @@ assert.ok(home.includes("const DEFAULT_VERSION = '14.4.11';"), 'versão Web/PWA 
 assert.ok(home.includes('const confirmed = await requestCrewCheckImportConfirmation(decision)') && home.includes('return { ...decision, ok: confirmed }'), 'guardião deve permitir a decisão explícita do usuário');
 assert.ok(home.includes('/icons/crewcheck-icon-v3.png?v=14340'), 'cabeçalho deve usar a marca canônica v3');
 assert.ok(brand.includes('/icons/crewcheck-icon-v3.png'), 'PDF e compartilhamento devem usar a marca v3');
-assert.ok(manifest.includes('/icons/crewcheck-icon-v3.png?v=14340'), 'PWA deve usar a marca v3');
+assert.ok(manifest.includes('/icons/crewcheck-icon-v3.png?v='), 'PWA deve usar a marca v3 sem congelar o cache-buster da release');
 assert.ok(android.includes('crewcheck-icon-v3.png'), 'Android deve copiar a marca v3');
 assert.ok(release.includes('14.4.11'), 'release final 14.4.08 ausente');
 
