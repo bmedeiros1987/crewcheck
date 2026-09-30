@@ -210,16 +210,72 @@ function buildAimsHumanFlightDays(tokens: string[], context: { date: string; day
   });
 }
 
+const AIMS_MAX_DEBRIEF_AFTER_ARRIVAL_MINUTES = 120;
+const AIMS_MAX_PRESENTATION_LEAD_MINUTES = 180;
+
+function isAimsHumanClockToken(value: string | null | undefined): boolean {
+  return /^\d{1,2}:\d{2}(?:\(\+1\))?$/.test(String(value || '').trim());
+}
+
+function aimsForwardClockMinutes(from: string, to: string): number {
+  let diff = minutesOfDay(normalizeSimpleTime(to)) - minutesOfDay(normalizeSimpleTime(from));
+  if (diff < 0) diff += 1440;
+  return diff;
+}
+
+function isPlausibleAimsPresentationCandidate(previousArrival: string | null, candidate: string, departure: string): boolean {
+  if (!isAimsHumanClockToken(candidate) || !isAimsHumanClockToken(departure)) return false;
+  const presentationLead = aimsForwardClockMinutes(candidate, departure);
+  if (presentationLead <= 0 || presentationLead > AIMS_MAX_PRESENTATION_LEAD_MINUTES) return false;
+  if (!previousArrival || !isAimsHumanClockToken(previousArrival)) return true;
+  return aimsForwardClockMinutes(previousArrival, candidate) > AIMS_MAX_DEBRIEF_AFTER_ARRIVAL_MINUTES;
+}
+
+function previousUnconsumedAimsClockIndex(tokens: string[], flightIdx: number, floor = 0): number {
+  let idx = flightIdx - 1;
+  while (idx >= floor && isExtraAimsMarker(tokens[idx])) idx -= 1;
+  return idx >= floor && isAimsHumanClockToken(tokens[idx]) ? idx : -1;
+}
+
+function hasExplicitAimsActivityBoundary(tokens: string[], start: number, end: number): boolean {
+  for (let idx = Math.max(0, start); idx < end; idx += 1) {
+    const token = String(tokens[idx] || '').toUpperCase();
+    if (!token || isExtraAimsMarker(token)) continue;
+    if (isAimsVisualStandaloneBoundaryToken(token) && !isAimsHumanAirport(token, '')) return true;
+  }
+  return false;
+}
+
+function safeAimsLeadingPresentationIndex(
+  tokens: string[],
+  flightIdx: number,
+  floor: number,
+  previousFlightIdx: number,
+  previousArrival: string | null,
+  departure: string,
+): number {
+  const idx = previousUnconsumedAimsClockIndex(tokens, flightIdx, floor);
+  if (idx < 0) return -1;
+  const boundaryStart = previousFlightIdx >= 0 ? previousFlightIdx + 2 : floor;
+  if (hasExplicitAimsActivityBoundary(tokens, boundaryStart, idx)) return -1;
+  return isPlausibleAimsPresentationCandidate(previousArrival, tokens[idx], departure) ? idx : -1;
+}
+
 function parseAimsHumanLegs(tokens: string[], homeBase: string): AimsHumanLeg[] {
   const source = tokens.map((token) => String(token || '').trim()).filter(Boolean);
   const legs: AimsHumanLeg[] = [];
   let pendingWorkType: string | null = null;
+  let previousArrival: string | null = null;
+  let previousFlightIdx = -1;
+
   for (let i = 0; i < source.length; i += 1) {
     if (isExtraAimsMarker(source[i])) {
       pendingWorkType = 'PS';
       continue;
     }
     if (source[i].toUpperCase() !== 'LA' || !/^\d{3,4}$/.test(source[i + 1] || '')) continue;
+
+    const flightIdx = i;
     const flightNumber = `LA${source[i + 1]}`;
     i += 2;
     const legTokens: string[] = [];
@@ -229,9 +285,34 @@ function parseAimsHumanLegs(tokens: string[], homeBase: string): AimsHumanLeg[] 
       legTokens.push(source[i]);
       i += 1;
     }
-    const parsed = parseOneAimsHumanLeg(flightNumber, legTokens, pendingWorkType, homeBase);
+
+    const baseParsed = parseOneAimsHumanLeg(flightNumber, legTokens, pendingWorkType, homeBase);
+    let parsed = baseParsed;
+    if (baseParsed) {
+      const leadingIdx = safeAimsLeadingPresentationIndex(
+        source,
+        flightIdx,
+        0,
+        previousFlightIdx,
+        previousArrival,
+        baseParsed.leg.departureTime,
+      );
+      if (leadingIdx >= 0) {
+        parsed = parseOneAimsHumanLeg(
+          flightNumber,
+          [source[leadingIdx], ...legTokens],
+          pendingWorkType,
+          homeBase,
+        ) || baseParsed;
+      }
+    }
+
     pendingWorkType = null;
-    if (parsed) legs.push(parsed);
+    if (parsed) {
+      legs.push(parsed);
+      previousArrival = parsed.leg.arrivalTime;
+      previousFlightIdx = flightIdx;
+    }
   }
   return legs;
 }
@@ -259,7 +340,10 @@ function parseOneAimsHumanLeg(flightNumber: string, tokens: string[], forcedWork
   const departureTime = beforeOrigin[beforeOrigin.length - 1];
   const reportTime = beforeOrigin.length >= 2 ? beforeOrigin[0] : departureTime;
   const arrivalTime = afterDest[0];
-  const debriefTime = afterDest.length >= 2 ? afterDest[afterDest.length - 1] : addClockMinutes(arrivalTime, 30);
+  const debriefTime = afterDest.slice(1).find((candidate) => {
+    const elapsed = aimsForwardClockMinutes(arrivalTime, candidate);
+    return elapsed > 0 && elapsed <= AIMS_MAX_DEBRIEF_AFTER_ARRIVAL_MINUTES;
+  }) || addClockMinutes(arrivalTime, 30);
   const duration = diffHours(departureTime, arrivalTime);
   if (!Number.isFinite(duration) || duration < 0.15 || duration > 8.5) return null;
 
@@ -1069,12 +1153,30 @@ function isIncompleteAimsFlightSegment(segment: string[], fullTokens: string[]):
 }
 
 function findAimsContinuationPrefixEnd(tokens: string[]): number {
+  const AIRPORTS_BEFORE_ARRIVAL_IN_CONTINUATION = 1;
+  const CLOCKS_IN_CONTINUATION = 2;
   let end = 0;
+  let airportsSeen = 0;
+  const clocks: string[] = [];
+
   for (let i = 0; i < tokens.length; i += 1) {
     const token = String(tokens[i] || '').toUpperCase();
     const next = String(tokens[i + 1] || '').toUpperCase();
     if (token === 'LA' && /^\d{3,4}$/.test(next)) break;
-    if (i > 0 && isAimsVisualStandaloneBoundaryToken(token)) break;
+
+    const isAirportToken = /^[A-Z]{3}$/.test(token) && isAimsHumanAirport(tokens[i], '');
+    if (i > 0 && isAimsVisualStandaloneBoundaryToken(token)
+      && !(isAirportToken && airportsSeen < AIRPORTS_BEFORE_ARRIVAL_IN_CONTINUATION)) break;
+
+    if (isAimsHumanClockToken(tokens[i])) {
+      if (clocks.length >= CLOCKS_IN_CONTINUATION) break;
+      const clock = normalizeSimpleTime(String(tokens[i]).trim());
+      if (clocks.length === 1
+        && aimsForwardClockMinutes(clocks[0], clock) > AIMS_MAX_DEBRIEF_AFTER_ARRIVAL_MINUTES) break;
+      clocks.push(clock);
+    }
+
+    if (isAirportToken) airportsSeen += 1;
     end = i + 1;
   }
   return end;
@@ -1100,13 +1202,15 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
 
   const output: RosterDay[] = [];
   let i = 0;
+  let consumedEnd = 0;
   while (i < source.length) {
     const token = String(source[i] || '').toUpperCase();
     const next = String(source[i + 1] || '').toUpperCase();
 
     if (token === 'LA' && /^\d{3,4}$/.test(next)) {
       const end = findAimsVisualFlightBlockEnd(source, i);
-      const segment = source.slice(i, end);
+      const leadingIdx = previousUnconsumedAimsClockIndex(source, i, consumedEnd);
+      const segment = source.slice(leadingIdx >= 0 ? leadingIdx : i, end);
       // v11.1.100: o bloco visual de uma coluna pode conter duas jornadas no mesmo dia
       // separadas por pernoite diurno/solo >=12h. parseFlightDay consolidava tudo em
       // um único ParsedDay e perdia a segunda perna quando a chegada estava costurada
@@ -1117,17 +1221,20 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
         if (parsedDay.legs?.length) output.push(parsedDay);
       }
       i = Math.max(end, i + 2);
+      consumedEnd = i;
       continue;
     }
 
     if (isExtraAimsMarker(token) && source[i + 1]?.toUpperCase() === 'LA') {
       const end = findAimsVisualFlightBlockEnd(source, i);
-      const segment = source.slice(i, end);
+      const leadingIdx = previousUnconsumedAimsClockIndex(source, i, consumedEnd);
+      const segment = source.slice(leadingIdx >= 0 ? leadingIdx : i, end);
       const parsedDays = buildAimsHumanFlightDays(segment, context);
       for (const parsedDay of parsedDays) {
         if (parsedDay.legs?.length) output.push(parsedDay);
       }
       i = Math.max(end, i + 2);
+      consumedEnd = i;
       continue;
     }
 
@@ -1136,6 +1243,7 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
       const segment = source.slice(i, end);
       output.push(makeAimsHumanRosterDay(context, parseASB(segment), segment.join(' ')));
       i = Math.max(end, i + 1);
+      consumedEnd = i;
       continue;
     }
 
@@ -1144,6 +1252,7 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
       const segment = source.slice(i, end);
       output.push(makeAimsHumanRosterDay(context, parseStandby(segment, token === 'HSBE' ? 'HSBE' : 'HSB'), segment.join(' ')));
       i = Math.max(end, i + 1);
+      consumedEnd = i;
       continue;
     }
 
@@ -1155,6 +1264,7 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
         : parseGroundActivity(segment, token);
       output.push(makeAimsHumanRosterDay(context, parsed, segment.join(' ')));
       i = Math.max(end, i + 1);
+      consumedEnd = i;
       continue;
     }
 
@@ -1163,6 +1273,7 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
       const type = code === 'DOF' ? 'DOF' : code === 'DR' ? 'DR' : code === 'OFF' ? 'OFF' : 'DO';
       output.push(makeAimsHumanRosterDay(context, { type, pairingCode: code, dutyReport: null, dutyDebrief: null, legs: [], dutyHours: 0, flyingHours: 0, isNextDay: false, hotel: null }, code));
       i += 1;
+      consumedEnd = i;
       continue;
     }
 
@@ -1187,14 +1298,26 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
 
 function findAimsVisualFlightBlockEnd(tokens: string[], start: number): number {
   let i = start + 1;
+  let airportsSeenInLeg = 0;
+
   while (i < tokens.length) {
     const token = String(tokens[i] || '').toUpperCase();
     const next = String(tokens[i + 1] || '').toUpperCase();
-    if (i > start && isAimsVisualStandaloneBoundaryToken(token)) break;
-    if ((token === 'LA' && /^\d{3,4}$/.test(next)) || isExtraAimsMarker(token) || token === '(...)') {
+
+    if (token === 'LA' && /^\d{3,4}$/.test(next)) {
+      airportsSeenInLeg = 0;
+      i += 2;
+      continue;
+    }
+    if (isExtraAimsMarker(token) || token === '(...)') {
       i += 1;
       continue;
     }
+
+    const isAirportToken = /^[A-Z]{3}$/.test(token) && isAimsHumanAirport(tokens[i], '');
+    if (i > start && isAimsVisualStandaloneBoundaryToken(token)
+      && !(isAirportToken && airportsSeenInLeg < 2)) break;
+    if (isAirportToken) airportsSeenInLeg += 1;
     i += 1;
   }
   return i;
