@@ -93,10 +93,10 @@ for (const fixture of [legacyDispatchFixture, preparedDispatchFixture, preparedD
 }
 
 assert.ok(applySource.includes("const VERSION = '14.3.46';"), 'patch de localização deve permanecer versionado como v14.3.46');
-assert.ok(before.runtime.includes("version: '14.4.08'"), 'runtime final deve anunciar v14.4.08');
+assert.ok(before.runtime.includes("version: '14.4.11'"), 'runtime final deve anunciar v14.4.11');
 assert.ok(before.runtime.includes("localStorage.setItem('crewcheck_last_geo_meta'"), 'runtime deve registrar horário e precisão da posição');
 assert.ok(before.release.includes('14.4.11'), 'release final deve anunciar v14.4.08');
-assert.equal(JSON.parse(before.pkg).version, '14.4.08', 'package final deve anunciar v14.4.08');
+assert.equal(JSON.parse(before.pkg).version, '14.4.11', 'package final deve anunciar v14.4.11');
 
 for (const protectedPath of [
   'client/src/lib/pdfParser.ts',
