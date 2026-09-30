@@ -20,7 +20,7 @@ const cssSource = read('scripts/v14344/web-menu.css');
 const workflow = read('.github/workflows/crewcheck-v13-8-validation.yml');
 
 assert.ok(chain.trimEnd().endsWith("await import('../ci/sync-canonical-manual.mjs');"), 'v14.4.08 deve encerrar a preparação canônica');
-assert.ok(before.home.includes("const DEFAULT_VERSION = '14.4.08';"), 'Home deve anunciar a versão final v14.4.08');
+assert.ok(before.home.includes("const DEFAULT_VERSION = '14.4.11';"), 'Home deve anunciar a versão final v14.4.08');
 assert.ok(before.home.includes('data-layout-v14344="web-icon-menu"'), 'shell deve identificar o menu Web icon-first');
 
 const menuStart = before.home.indexOf('function MenuDrawer(');
@@ -133,7 +133,7 @@ assert.equal(applyModule.installWebMenuCss(upgradedCss), upgradedCss, 'substitui
 assert.ok(!/^(?:<<<<<<<|=======|>>>>>>>)/m.test(workflow), 'workflow não pode conter marcadores de conflito Git');
 assert.ok(workflow.includes('Validate menu icons, Settings location and end-positioned search'), 'workflow deve executar a regressão v14.3.44');
 assert.ok(workflow.includes('menu-location-search-regression.log'), 'diagnóstico v14.3.44 deve ser publicado em caso de falha');
-assert.ok(before.release.includes('14.4.08'), 'release.json deve anunciar a versão final v14.4.08');
+assert.ok(before.release.includes('14.4.11'), 'release.json deve anunciar a versão final v14.4.08');
 
 for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser.mjs', 'client/src/lib/canonicalRoster.ts', 'client/src/lib/financialRules.ts']) {
   assert.ok(!applySource.includes(`update('${protectedPath}'`), `patch visual não pode alterar motor protegido: ${protectedPath}`);
@@ -141,6 +141,8 @@ for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser
 
 const apply = spawnSync(process.execPath, [path.join(root, 'scripts/v14408/apply.mjs')], { cwd: root, encoding: 'utf8' });
 assert.equal(apply.status, 0, apply.stderr || apply.stdout || 'segunda preparação canônica v14.4.08 falhou');
+const terminalV14411 = spawnSync(process.execPath, [path.join(root, 'scripts/v14411/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(terminalV14411.status, 0, terminalV14411.stderr || terminalV14411.stdout || 'reaplicação terminal v14.4.11 falhou');
 for (const [key, relative] of Object.entries(paths)) {
   assert.equal(read(relative), before[key], `preparação final v14.4.08 deve preservar v14.3.44 em ${relative}`);
 }

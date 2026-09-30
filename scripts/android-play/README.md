@@ -1,5 +1,7 @@
 # Android store release
 
+Current correction release: **14.4.11** — P0 Roster Integrity Guard / midnight APZ continuity.
+
 The terminal canonical preparation step applies `release-policy.json` after all legacy patches.
 The web version is independent of Android store version codes. Increment all applicable codes
 before each new upload; codes are unique across phone and Wear because they share a package.
@@ -7,9 +9,9 @@ Known floors are a conservative snapshot, not a substitute for live Play validat
 
 | Artifact | Package | Code | Track |
 | --- | --- | --- | --- |
-| Mobile | com.crewcheck.app | 144100 | qa (internal testing) |
-| CrewWatch | com.crewcheck.app | 144101 | wear:qa |
-| Watch face (WFF 1) | com.crewcheck.watch.app | 144102 | wear:qa |
+| Mobile | com.crewcheck.app | 144110 | qa (internal testing) |
+| CrewWatch | com.crewcheck.app | 144111 | wear:qa |
+| Watch face (WFF 1) | com.crewcheck.watch.app | 144112 | wear:qa |
 
 All target API 36. Minimum APIs remain 26/30/33. The resource-only WFF 1 face requires
 Wear OS 4; the companion remains compatible with Wear OS 3. The phone and companion

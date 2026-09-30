@@ -72,12 +72,19 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
   const category: CrewCheckPulseCategory = message.category || 'general';
   const Icon = category !== 'general' ? CATEGORY_ICON[category] : (TONE_ICON[tone] || Info);
   const act = () => {
-    if (!message.action?.view) return;
+    if (!message.action?.view) {
+      setExpanded((value) => !value);
+      return;
+    }
     try {
       window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: message.action.view }));
     } catch {}
-    dismiss();
+    // Abrir o destino não equivale a dispensar o alerta. Mantemos o Pulse vivo
+    // até o ciclo normal da mensagem ou uma dispensa explícita do usuário.
+    setExpanded(false);
   };
+
+  const toggleDetails = () => setExpanded((value) => !value);
 
   if (compact) {
     return (
@@ -93,13 +100,20 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
         <button
           type="button"
           className="cc-pulse-compact-trigger"
-          onClick={() => setExpanded((value) => !value)}
-          aria-expanded={expanded}
-          aria-label={expanded ? 'Recolher alerta CrewCheck' : 'Abrir detalhes do alerta CrewCheck'}
+          onClick={act}
+          aria-label={message.action?.view ? `${message.action.label}: ${message.title}` : (expanded ? 'Recolher alerta CrewCheck' : 'Abrir detalhes do alerta CrewCheck')}
         >
           <span className="cc-pulse-compact-icon" aria-hidden="true"><Icon size={17}/><i/></span>
           <strong>{message.title}</strong>
           {queued > 0 && <span className="cc-pulse-queue" aria-label={`${queued} aviso(s) aguardando`}>+{queued}</span>}
+        </button>
+        <button
+          type="button"
+          className="cc-pulse-compact-details"
+          onClick={toggleDetails}
+          aria-expanded={expanded}
+          aria-label={expanded ? 'Recolher detalhes do alerta CrewCheck' : 'Abrir detalhes do alerta CrewCheck'}
+        >
           <ChevronDown className="cc-pulse-compact-chevron" size={16} aria-hidden="true"/>
         </button>
         {expanded && (

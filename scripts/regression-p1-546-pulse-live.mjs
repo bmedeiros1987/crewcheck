@@ -6,6 +6,7 @@ const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 const runtime = fs.readFileSync('client/src/components/pulse/pulseRuntime.ts', 'utf8');
 const component = fs.readFileSync('client/src/components/pulse/CrewCheckPulse.tsx', 'utf8');
 const css = fs.readFileSync('client/src/components/pulse/crewcheck-pulse.css', 'utf8');
+const headerCss = fs.readFileSync('client/src/styles/internal-global-header.css', 'utf8');
 
 // Integração real depois da preparação canônica.
 for (const marker of [
@@ -55,6 +56,30 @@ for (const marker of ['cc-pulse-compact', 'cc-pulse-popover', 'cc-pulse-controls
   assert.ok(component.includes(marker) || css.includes(marker), 'UI do Slice 2 ausente: ' + marker);
 }
 assert.ok(component.includes("crewcheck:set-view"), 'ação do Pulse deve usar a navegação já existente');
+
+// Interação compacta: o alerta inteiro navega direto; a seta é o único controle
+// dedicado a expandir detalhes. Navegar não equivale a dispensar a mensagem.
+const compactStart = component.indexOf('if (compact)');
+const compactEnd = component.indexOf('return (', compactStart + 20);
+const compactBlock = component.slice(compactStart, compactEnd > compactStart ? compactEnd : component.length);
+assert.ok(compactBlock.includes('onClick={act}'), 'toque no alerta compacto deve executar sua ação contextual');
+assert.ok(compactBlock.includes('className="cc-pulse-compact-details"') && compactBlock.includes('onClick={toggleDetails}'),
+  'detalhes do Pulse devem ter controle separado da navegação');
+const actStart = component.indexOf('const act = () => {');
+const actEnd = component.indexOf('const toggleDetails', actStart);
+const actBlock = component.slice(actStart, actEnd);
+assert.ok(actStart >= 0 && actEnd > actStart, 'handler contextual do Pulse não localizado');
+assert.ok(!actBlock.includes('dismiss();'), 'abrir o destino não pode dispensar automaticamente o alerta');
+
+const triggerCssStart = css.indexOf('.cc-pulse-compact-trigger {');
+const triggerCssEnd = css.indexOf('}', triggerCssStart);
+const triggerCss = css.slice(triggerCssStart, triggerCssEnd + 1);
+assert.ok(triggerCss.includes('border: 0;') && triggerCss.includes('background: transparent;'),
+  'Pulse compacto não deve desenhar uma segunda moldura dentro do header');
+assert.ok(css.includes('.cc-pulse-compact-details'), 'seta de detalhes precisa manter alvo de toque próprio');
+assert.ok(headerCss.includes('position: fixed !important'),
+  'Pulse compacto deve continuar dentro do header global fixo durante o scroll');
+
 assert.ok(css.includes('cc-pulse-beat 2.4s ease-in-out 2'), 'microinteração do Pulse não pode pulsar infinitamente');
 assert.ok(css.includes('prefers-reduced-motion'), 'movimento reduzido deve continuar respeitado');
 
