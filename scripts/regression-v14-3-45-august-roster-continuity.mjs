@@ -131,6 +131,8 @@ const tracked = [
 const before = new Map(tracked.map((relative) => [relative, read(relative)]));
 const apply = spawnSync(process.execPath, [path.join(root, 'scripts/v14408/apply.mjs')], { cwd: root, encoding: 'utf8' });
 assert.equal(apply.status, 0, apply.stderr || apply.stdout || 'reaplicação final v14.4.08 após v14.3.45 falhou');
+const terminalV14411 = spawnSync(process.execPath, [path.join(root, 'scripts/v14411/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(terminalV14411.status, 0, terminalV14411.stderr || terminalV14411.stdout || 'reaplicação terminal v14.4.11 falhou');
 for (const relative of tracked) assert.equal(read(relative), before.get(relative), `preparação canônica deve ser idempotente em ${relative}`);
 
 console.log('v14.3.45 August CrewRoster: previous-month continuation, explicit +1/+2/+3 dates, two MCK activities, malformed-original replacement, HSB/DR preservation, 46 flights, no teleports, FH/DH order and idempotency validated.');

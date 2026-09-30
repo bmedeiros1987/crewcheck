@@ -100,10 +100,19 @@ function dateAt(day: RosterDay, time: string | null, fallbackHour: number) {
   ));
 }
 
-function presentationIsUnsafe(presentation: string | null, departure: string | null) {
+function presentationLeadMinutes(presentation: string | null, departure: string | null): number | null {
   const p = minutes(presentation);
   const d = minutes(departure);
-  return p != null && d != null && p > d + 180;
+  if (p == null || d == null) return null;
+  // Relógios publicados não carregam a data civil. A apresentação 23:18 para
+  // uma decolagem 00:05 é 47 min ANTES, não 23h13 depois. O módulo canônico
+  // precisa comparar em janela circular de 24h para não descartar APZ válida.
+  return (d - p + 1440) % 1440;
+}
+
+function presentationIsUnsafe(presentation: string | null, departure: string | null) {
+  const lead = presentationLeadMinutes(presentation, departure);
+  return lead != null && lead > 180;
 }
 
 function cloneDay(day: RosterDay): RosterDay {
@@ -611,10 +620,33 @@ export function buildCanonicalRosterEvents(roster: CrewRoster): CanonicalRosterE
       legs.forEach((leg, index) => {
         const departure = normalizeTime(leg.departureTime) || '00:00';
         const arrival = normalizeTime(leg.arrivalTime) || departure;
-        const start = dateAt(day, departure, 0);
-        const end = dateAt(day, arrival, 23);
         const departureMinute = minutes(departure) || 0;
         const arrivalMinute = minutes(arrival) || 0;
+
+        // A data do RosterDay é a data publicada da programação/jornada. Quando
+        // a primeira etapa apresenta antes da meia-noite e decola depois dela
+        // (ex.: APZ 23:18, STD 00:05), a decolagem pertence ao dia civil +1.
+        // Sem este deslocamento, a etapa volta 24h no tempo, o repouso some e a
+        // perna seguinte parece uma nova jornada com APZ inventada.
+        if (index === 0) {
+          const publishedPresentation = normalizeTime(leg.presentationTime)
+            || (dayReportIsPublished(day) ? normalizeTime(day.dutyReport) : null);
+          const presentationMinute = minutes(publishedPresentation);
+          const lead = presentationLeadMinutes(publishedPresentation, departure);
+          if (
+            publishedPresentation
+            && presentationMinute != null
+            && presentationMinute > departureMinute
+            && lead != null
+            && lead > 0
+            && lead <= 180
+          ) {
+            physicalDayOffset = 1;
+          }
+        }
+
+        const start = dateAt(day, departure, 0);
+        const end = dateAt(day, arrival, 23);
         while (previousArrivalAbsolute != null && departureMinute + physicalDayOffset * 1440 < previousArrivalAbsolute) physicalDayOffset += 1;
         start.setUTCDate(start.getUTCDate() + physicalDayOffset);
         const arrivalOffset = physicalDayOffset + (legCrossesNextDay(leg) || arrivalMinute < departureMinute ? 1 : 0);

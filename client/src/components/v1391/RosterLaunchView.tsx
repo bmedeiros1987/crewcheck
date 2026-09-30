@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { consumePendingRosterFocus } from '@/lib/rosterFocus';
 import {
   Banknote,
   BedDouble,
@@ -11,19 +12,27 @@ import {
   GraduationCap,
   Home,
   Hotel,
+  LayoutGrid,
+  List,
   MapPin,
   Moon,
   Plane,
+  RotateCcw,
   Route,
   ShieldCheck,
   Sparkles,
+  Table2,
   Utensils,
   WalletCards,
 } from 'lucide-react';
 import { V139Header } from '@/components/v139/Shell';
+import { AimsRosterTable } from './AimsRosterTable';
+import { CalendarRosterView } from './CalendarRosterView';
 import '@/components/v139/v139.css';
 import '@/launch-v13-9-1.css';
 import '@/components/v1397/roster-premium.css';
+import { useRosterLayout } from './useRosterLayout';
+import './roster-layout.css';
 
 type RosterEvent = {
   id: string;
@@ -87,9 +96,12 @@ function dateOf(event: RosterEvent) {
   return Number.isFinite(date.getTime()) ? date : new Date();
 }
 
-function isoOf(event: RosterEvent) {
-  const value = dateOf(event);
+function isoFromDate(value: Date) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+}
+
+function isoOf(event: RosterEvent) {
+  return isoFromDate(dateOf(event));
 }
 
 function monthOf(event: RosterEvent) {
@@ -220,15 +232,47 @@ function publishedProgramWindow(event: RosterEvent) {
 }
 
 export default function RosterLaunchView({ events, finance, setView }: { events: RosterEvent[]; finance?: RosterFinance; setView: (view: any) => void }) {
+  const { layout, choose, message } = useRosterLayout();
   const allOrdered = useMemo(() => [...events]
     .filter((event) => !event.id?.includes('placeholder'))
     .sort((a, b) => dateOf(a).getTime() - dateOf(b).getTime() || String(a.id).localeCompare(String(b.id))), [events]);
   const months = useMemo(() => Array.from(new Set(allOrdered.map(monthOf))).sort(), [allOrdered]);
   const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
   const [selectedMonth, setSelectedMonth] = useState(() => months.includes(currentMonth) ? currentMonth : months[0] || currentMonth);
+  const [pendingRosterFocusIso, setPendingRosterFocusIso] = useState<string | null>(null);
+  const [rosterFocusStatus, setRosterFocusStatus] = useState('');
   useEffect(() => {
     if (months.length && !months.includes(selectedMonth)) setSelectedMonth(months.includes(currentMonth) ? currentMonth : months[0]);
   }, [months.join('|'), selectedMonth, currentMonth]);
+  useEffect(() => {
+    const focus = consumePendingRosterFocus();
+    if (!focus) return;
+    const iso = isoFromDate(focus);
+    const month = iso.slice(0, 7);
+    if (!months.includes(month)) {
+      setRosterFocusStatus('A programação aberta no FlightDeck não está mais neste período da escala.');
+      return;
+    }
+    setPendingRosterFocusIso(iso);
+    if (selectedMonth !== month) setSelectedMonth(month);
+  }, []);
+  useEffect(() => {
+    if (!pendingRosterFocusIso || selectedMonth !== pendingRosterFocusIso.slice(0, 7)) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.querySelector<HTMLElement>(`[data-roster-iso="${pendingRosterFocusIso}"]`);
+      if (!target) {
+        setRosterFocusStatus('A data da programação não está mais disponível nesta escala.');
+        setPendingRosterFocusIso(null);
+        return;
+      }
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (target.tabIndex >= 0) target.focus({ preventScroll: true });
+      const [year, month, day] = pendingRosterFocusIso.split('-');
+      setRosterFocusStatus(`Programação localizada em ${day}/${month}/${year}.`);
+      setPendingRosterFocusIso(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [pendingRosterFocusIso, selectedMonth, layout]);
   const ordered = useMemo(() => allOrdered.filter((event) => monthOf(event) === selectedMonth), [allOrdered, selectedMonth]);
   const groups = Array.from(ordered.reduce((map, event) => {
     const iso = isoOf(event);
@@ -263,6 +307,32 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
 
   return <div className="cc-roster-premium-v1397">
     <V139Header title="Escala inteligente" detail="Programações organizadas por dia, leitura operacional imediata e ganhos estimados com as regras já configuradas no CrewCheck."/>
+
+    <section className="cc-roster-layout-picker" aria-labelledby="cc-roster-layout-title">
+      <div className="cc-roster-layout-copy">
+        <small>FORMATO DA ESCALA</small>
+        <h2 id="cc-roster-layout-title">Escolha sua visualização</h2>
+        <p>O formato muda. Programações, alertas, horários e valores continuam completos.</p>
+      </div>
+      <div className="cc-roster-layout-options" role="group" aria-label="Escolher formato da escala">
+        <button type="button" aria-pressed={layout === 'cards'} data-active={layout === 'cards' ? 'true' : 'false'} onClick={() => choose('cards')}>
+          <LayoutGrid aria-hidden="true"/><span><b>Cards</b><small>Leitura visual por programação</small></span>
+        </button>
+        <button type="button" aria-pressed={layout === 'list'} data-active={layout === 'list' ? 'true' : 'false'} onClick={() => choose('list')}>
+          <List aria-hidden="true"/><span><b>Lista</b><small>Sequência contínua por dia</small></span>
+        </button>
+        <button type="button" aria-pressed={layout === 'aims'} data-active={layout === 'aims' ? 'true' : 'false'} onClick={() => choose('aims')}>
+          <Table2 aria-hidden="true"/><span><b>AIMS</b><small>Tabela fiel à escala publicada</small></span>
+        </button>
+        <button type="button" aria-pressed={layout === 'calendar'} data-active={layout === 'calendar' ? 'true' : 'false'} onClick={() => choose('calendar')}>
+          <CalendarDays aria-hidden="true"/><span><b>Calendário</b><small>Mês completo por dia</small></span>
+        </button>
+      </div>
+      <button className="cc-roster-layout-reset" type="button" onClick={() => choose('cards')} disabled={layout === 'cards'}>
+        <RotateCcw aria-hidden="true"/> Restaurar padrão CrewCheck
+      </button>
+      <p className="cc-roster-layout-status" role="status" aria-live="polite">{rosterFocusStatus || message}</p>
+    </section>
 
     <section className="cc-roster-period-v1399" aria-label="Período da escala">
       <div><small>PERÍODO EXIBIDO</small><strong>{monthLabel(selectedMonth)}</strong><span>Totais financeiros e horas isolados por mês.</span></div>
@@ -302,7 +372,11 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
       )}
     </section>
 
-    <section className="cc-roster-days-v1397">
+    {layout === 'aims' && ordered.length
+      ? <AimsRosterTable events={ordered}/>
+      : layout === 'calendar' && ordered.length
+        ? <CalendarRosterView events={ordered} month={selectedMonth}/>
+        : <section className="cc-roster-days-v1397" data-roster-layout={layout}>
       {groups.map((group) => {
         const groupPerDiems = group.events.flatMap(perDiemForEvent);
         const groupEarnings = group.events.map((event) => salaryByEvent.get(event.id)).filter(Boolean) as FlightEarningItem[];
@@ -388,7 +462,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
       })}
 
       {!ordered.length && <article className="cc-roster-empty-v1397"><CalendarDays/><h2>Nenhuma escala carregada</h2><p>Importe o PDF ou sincronize o calendário autorizado do iFlight.</p></article>}
-    </section>
+    </section>}
 
     {ordered.length > 0 && <footer className="cc-roster-estimate-note-v1397"><ShieldCheck/><p><strong>Estimativa conferível.</strong> Diárias e produção por KM usam as regras ACT, tarifas administrativas e dados aprendidos já configurados no CrewCheck. Não substituem o demonstrativo oficial.</p></footer>}
   </div>;

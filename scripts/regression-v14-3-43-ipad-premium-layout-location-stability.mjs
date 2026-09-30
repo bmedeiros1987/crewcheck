@@ -26,7 +26,7 @@ const v14343Index = chain.indexOf("await import('../v14343/apply.mjs');");
 const v14344Index = chain.indexOf("await import('../v14344/apply.mjs');");
 assert.ok(v14343Index >= 0, 'v14.3.43 deve participar da preparação canônica');
 assert.ok(v14344Index > v14343Index, 'v14.3.44 deve suceder a estabilidade v14.3.43 sem removê-la');
-assert.ok(before.home.includes("const DEFAULT_VERSION = '14.4.08';"), 'a preparação final deve anunciar v14.4.08');
+assert.ok(before.home.includes("const DEFAULT_VERSION = '14.4.11';"), 'a preparação final deve anunciar v14.4.08');
 assert.ok(before.home.includes('data-layout-v14343="premium-contained"'), 'shell deve preservar o layout contido v14.3.43');
 assert.ok(before.home.includes('data-layout-v14344="web-icon-menu"'), 'shell deve registrar o refinamento final v14.3.44');
 
@@ -88,13 +88,13 @@ assert.ok(!before.index.includes('crewcheck-release-watch-v14343') && !before.in
 assert.ok(!before.app.includes('caches.delete('), 'inicialização não pode apagar caches ativos');
 
 for (const marker of [
-  "version: '14.4.08'",
+  "version: '14.4.11'",
   "localStorage.setItem('crewcheck_location_permission', 'granted')",
   "window.dispatchEvent(new CustomEvent('crewcheck:location-updated'",
   "location: locationState === 'granted' ? true",
 ]) assert.ok(before.runtime.includes(marker), `runtime de permissão ausente: ${marker}`);
 
-assert.ok(before.release.includes('14.4.08'), 'release final deve anunciar 14.4.08');
+assert.ok(before.release.includes('14.4.11'), 'release final deve anunciar 14.4.08');
 assert.ok(before.release.includes('automatic-safe'), 'política de atualização segura deve permanecer registrada');
 
 for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser.mjs', 'client/src/lib/canonicalRoster.ts', 'client/src/lib/financialRules.ts']) {
@@ -104,6 +104,8 @@ for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser
 assert.ok(applySource.includes("next = patchBlock(next, 'function MenuDrawer('") || applySource.includes("patchBlock(next, 'function MenuDrawer('"), 'v14.3.43 deve continuar contendo a base do controle de localização');
 const finalApply = spawnSync(process.execPath, [path.join(root, 'scripts/v14408/apply.mjs')], { cwd: root, encoding: 'utf8' });
 assert.equal(finalApply.status, 0, finalApply.stderr || finalApply.stdout || 'reaplicação final v14.4.08 falhou');
+const terminalV14411 = spawnSync(process.execPath, [path.join(root, 'scripts/v14411/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(terminalV14411.status, 0, terminalV14411.stderr || terminalV14411.stdout || 'reaplicação terminal v14.4.11 falhou');
 for (const [key, relative] of Object.entries(paths)) {
   assert.equal(read(relative), before[key], `estado final v14.4.08 deve preservar a estabilidade v14.3.43 em ${relative}`);
 }

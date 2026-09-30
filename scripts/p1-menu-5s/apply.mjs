@@ -1,0 +1,110 @@
+import fs from 'node:fs';
+
+const path = 'client/src/pages/Home.tsx';
+if (!fs.existsSync(path)) throw new Error(`[p1-menu-5s] arquivo ausente: ${path}`);
+let source = fs.readFileSync(path, 'utf8');
+
+const preferenceImport = "import { MENU_FAVORITES_LIMIT, menuEntryMatches, readMenuFavorites, saveMenuFavorites } from '@/lib/menuPreference';";
+const cssImport = "import '@/components/v1391/menu-5s.css';";
+if (!source.includes(preferenceImport)) {
+  const typeAnchor = '\ntype ZeroView =';
+  if (!source.includes(typeAnchor)) throw new Error('[p1-menu-5s] limite estrutural dos imports não localizado');
+  source = source.replace(typeAnchor, `\n${preferenceImport}\n${cssImport}\n${typeAnchor.slice(1)}`);
+}
+
+const menuStart = source.indexOf('function MenuDrawer(');
+const menuEnd = source.indexOf('\nfunction ', menuStart + 'function MenuDrawer('.length);
+if (menuStart < 0 || menuEnd < 0) throw new Error('[p1-menu-5s] limite exato do MenuDrawer preparado não localizado');
+
+const allowedDeclaration = `const MENU_5S_ALLOWED_IDS: ZeroView[] = [
+  'cockpit','roster','compare','departure','wakeup','weather','presentation','mycar',
+  'radar','alerts','regulation','load','emergency','import','iflight','bids','map','database','crewlocker',
+  'perdiem','salary','crew','concierge','hotels','gyms','routine','community','life',
+  'reports','calendar','exports','plans','settings','manual','guardian','support','crewlock',
+  'updates','maintenance','admin',
+];
+
+`;
+if (!source.includes('const MENU_5S_ALLOWED_IDS:')) {
+  source = source.slice(0, menuStart) + allowedDeclaration + source.slice(menuStart);
+}
+
+let nextMenuStart = source.indexOf('function MenuDrawer(');
+let nextMenuEnd = source.indexOf('\nfunction ', nextMenuStart + 'function MenuDrawer('.length);
+let block = source.slice(nextMenuStart, nextMenuEnd);
+
+if (!block.includes('const [menuQuery,')) {
+  const stateAnchor = "  const [profileAvatar] = useState(() => storage.get('crewcheck_profile_avatar', ''));";
+  if (!block.includes(stateAnchor)) throw new Error('[p1-menu-5s] estado do perfil no menu não localizado');
+  const states = `
+  const accountId = storedUser?.id || null;
+  const [menuQuery, setMenuQuery] = useState('');
+  const [menuStatus, setMenuStatus] = useState('');
+  const [menuFavorites, setMenuFavorites] = useState(() => readMenuFavorites(window.localStorage, accountId, MENU_5S_ALLOWED_IDS));
+  useEffect(() => {
+    setMenuFavorites(readMenuFavorites(window.localStorage, accountId, MENU_5S_ALLOWED_IDS));
+    setMenuQuery('');
+    setMenuStatus('');
+  }, [accountId]);`;
+  block = block.replace(stateAnchor, stateAnchor + states);
+}
+
+if (!block.includes('const filteredGroups =')) {
+  const jumpAnchor = "  const jump = (v: ZeroView) => { setView(v); close(); };";
+  if (!block.includes(jumpAnchor)) throw new Error('[p1-menu-5s] salto do menu não localizado');
+  const behavior = `
+  const allMenuItems = groups.flatMap((group) => group.items);
+  const favoriteItems = menuFavorites
+    .map((id) => allMenuItems.find(([viewId]) => viewId === id))
+    .filter((item): item is MenuItem => Boolean(item));
+  const filteredGroups = groups
+    .map((group) => ({ ...group, items: group.items.filter(([, label, desc]) => menuEntryMatches(menuQuery, label, desc, group.title)) }))
+    .filter((group) => group.items.length > 0);
+  const toggleMenuFavorite = (target: ZeroView) => {
+    if (!accountId) {
+      setMenuStatus('Entre na sua conta para salvar favoritos.');
+      return;
+    }
+    const exists = menuFavorites.includes(target);
+    if (!exists && menuFavorites.length >= MENU_FAVORITES_LIMIT) {
+      setMenuStatus('Escolha até ' + MENU_FAVORITES_LIMIT + ' favoritos.');
+      return;
+    }
+    const next = exists ? menuFavorites.filter((item) => item !== target) : [...menuFavorites, target];
+    if (!saveMenuFavorites(window.localStorage, accountId, MENU_5S_ALLOWED_IDS, next)) {
+      setMenuStatus('Não foi possível salvar os favoritos neste dispositivo.');
+      return;
+    }
+    setMenuFavorites(next);
+    setMenuStatus(exists ? 'Favorito removido.' : 'Favorito adicionado.');
+  };
+`;
+  block = block.replace(jumpAnchor, behavior + jumpAnchor);
+}
+
+if (!block.includes('className="cc-menu-search"')) {
+  const listStart = block.indexOf('        {groups.map((group) => <section className="cz-menu-section cz-menu-group"');
+  const listEnd = block.indexOf('\n      </div>', listStart);
+  if (listStart < 0 || listEnd < 0) throw new Error('[p1-menu-5s] renderização agrupada preparada não localizada');
+  const enhanced = `        <section className="cc-menu-search">
+          <label><span className="sr-only">Buscar função</span><input value={menuQuery} onChange={(event) => setMenuQuery(event.target.value)} placeholder="Buscar função" inputMode="search" autoComplete="off"/><Search aria-hidden="true"/></label>
+        </section>
+        <p className="cc-menu-status" role="status" aria-live="polite">{menuStatus}</p>
+        {!menuQuery && favoriteItems.length > 0 && <section className="cc-menu-favorites" aria-label="Favoritos do menu">
+          <h3>Favoritos</h3>
+          <div>{favoriteItems.map(([v, label, , Icon]) => <button key={v} type="button" className="cc-menu-favorite-chip" onClick={() => jump(v)}><Icon aria-hidden="true"/><span>{label}</span></button>)}</div>
+        </section>}
+        {filteredGroups.map((group) => <section className="cz-menu-section cz-menu-group cc-menu-index-group" data-menu-group={group.title} key={group.title}><h3>{group.title}</h3>{group.items.map(([v, label, desc, Icon]) => {
+          const favorite = menuFavorites.includes(v);
+          return <div className="cc-menu-index-row" key={v}>
+            <button type="button" className={\`cc-menu-destination \${view === v ? 'active' : ''}\`} onClick={() => jump(v)} aria-label={label} title={label + ' — ' + desc} data-menu-label={label} data-menu-description={desc}><Icon aria-hidden="true"/><span><strong>{label}</strong><small>{desc}</small></span><ChevronRight aria-hidden="true"/></button>
+            <button type="button" className="cc-menu-favorite" aria-label={favorite ? 'Remover ' + label + ' dos favoritos' : 'Adicionar ' + label + ' aos favoritos'} aria-pressed={favorite} onClick={() => toggleMenuFavorite(v)}>{favorite ? '★' : '☆'}</button>
+          </div>;
+        })}</section>)}
+        {filteredGroups.length === 0 && <p className="cc-menu-empty">Nenhuma função encontrada. Tente outro termo.</p>}`;
+  block = block.slice(0, listStart) + enhanced + block.slice(listEnd);
+}
+
+source = source.slice(0, nextMenuStart) + block + source.slice(nextMenuEnd);
+fs.writeFileSync(path, source, 'utf8');
+console.log('[p1-menu-5s] favoritos por conta e busca adicionados ao menu agrupado canônico, sem remover destinos.');

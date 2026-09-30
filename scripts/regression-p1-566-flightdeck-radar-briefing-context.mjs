@@ -8,7 +8,7 @@ const css = read('client/src/components/navigation/flight-context.css');
 const navigation = read('client/src/lib/navigationContext.ts');
 
 // FlightDeck deposits explicit, reviewable identifiers only. No parser/compliance work here.
-assert.match(home, /function openFlightSurface\(targetView: 'radar' \| 'weather'\)/, 'FlightDeck deve ter uma única ponte para Radar/Meteorologia');
+assert.match(home, /function openFlightSurface\(targetView: 'radar' \| 'weather' \| 'departure'\)/, 'FlightDeck deve ter uma única ponte para Radar, Meteorologia e Saída Inteligente');
 for (const marker of [
   "sourceView: 'cockpit'",
   'dateEpochMs: eventStartDateTime(event).getTime()',
