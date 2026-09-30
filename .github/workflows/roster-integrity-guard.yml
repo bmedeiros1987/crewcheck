@@ -56,8 +56,8 @@ jobs:
 
       - name: Canonical date and corpus safeguards
         run: |
-          node scripts/regression-canonical-roster.mjs
-          node scripts/regression-canonical-no-past-fallback.mjs
+          node scripts/regression-p0-canonical-surface-metrics.mjs
+          node scripts/regression-p0-preview-reference-month.mjs
           node scripts/regression-p0-roster-date-integrity.mjs
           node scripts/regression-p0-527-real-sanitized-corpus.mjs
 
