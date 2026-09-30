@@ -141,6 +141,8 @@ for (const protectedPath of ['client/src/lib/pdfParser.ts', 'server/rosterParser
 
 const apply = spawnSync(process.execPath, [path.join(root, 'scripts/v14408/apply.mjs')], { cwd: root, encoding: 'utf8' });
 assert.equal(apply.status, 0, apply.stderr || apply.stdout || 'segunda preparação canônica v14.4.08 falhou');
+const terminalV14411 = spawnSync(process.execPath, [path.join(root, 'scripts/v14411/apply.mjs')], { cwd: root, encoding: 'utf8' });
+assert.equal(terminalV14411.status, 0, terminalV14411.stderr || terminalV14411.stdout || 'reaplicação terminal v14.4.11 falhou');
 for (const [key, relative] of Object.entries(paths)) {
   assert.equal(read(relative), before[key], `preparação final v14.4.08 deve preservar v14.3.44 em ${relative}`);
 }
