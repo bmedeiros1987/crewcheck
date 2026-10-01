@@ -4,6 +4,7 @@ import { readFile, unlink } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 const out = path.resolve('.tv-brand-test-tmp.mjs');
+const sessionOut = path.resolve('.tv-session-test-tmp.mjs');
 try {
   await build({ entryPoints:['apps/tv-player/src/presentation.ts'], outfile:out, bundle:true, platform:'node', format:'esm' });
   const {weatherArt, formatTvTime, formatMonth, activityLabel} = await import(pathToFileURL(out).href);
@@ -44,6 +45,15 @@ try {
   assert.ok(css.includes('[data-motion=off]')); assert.ok(css.includes('prefers-reduced-motion')); assert.ok(css.includes('[data-paused=true]'));
   assert.doesNotMatch(css,/display:\s*grid\b/); assert.doesNotMatch(css,/(?:^|[;{])\s*gap\s*:/);
   assert.ok(main.includes("if (demo) { clear(); return; }"));
+  await build({ entryPoints:['packages/tv-core/src/session.ts'], outfile:sessionOut, bundle:true, platform:'node', format:'esm' });
+  const {TvSession}=await import(pathToFileURL(sessionOut).href);
+  const memory=new Map();
+  const storage={getItem:key=>memory.has(key)?memory.get(key):null,setItem:(key,value)=>memory.set(key,String(value)),removeItem:key=>memory.delete(key)};
+  const invalidSession=new TvSession(storage,fetch,'http://192.168.1.10');
+  await assert.rejects(()=>invalidSession.call('pair'),/invalid_origin/);
+  const diagnostics=await readFile('apps/tv-player/src/PairingDiagnostics.tsx','utf8');
+  assert.ok(diagnostics.includes("TV-ORIGIN-01"));
+  assert.ok(main.includes("pairingFailure(error).message"));
   assert.doesNotMatch(main+panels+(home||''),/departureTime|dutyReport|parsePDF/);
   console.log('TV brand: 18 weather cases + time/month/labels + active rendering source/brand/motion/scope guards passed');
-} finally { await unlink(out).catch(()=>{}); }
+} finally { await unlink(out).catch(()=>{}); await unlink(sessionOut).catch(()=>{}); }
