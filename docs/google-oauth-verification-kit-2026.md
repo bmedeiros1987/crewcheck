@@ -14,9 +14,9 @@ Feature under review: export and synchronize the user's imported crew roster wit
 | Terms of service | `https://crewcheck.online/terms` |
 | Account deletion | `https://crewcheck.online/delete-account` |
 | Authorized domain | `crewcheck.online` |
-| Requested scopes | `https://www.googleapis.com/auth/calendar.events.owned` and `https://www.googleapis.com/auth/calendar.calendarlist.readonly` |
+| Requested scopes | `https://www.googleapis.com/auth/calendar.events.owned`, `https://www.googleapis.com/auth/calendar.calendarlist.readonly` and `https://www.googleapis.com/auth/calendar.app.created` |
 
-Remove the legacy broad scopes `calendar.events` and `calendar`. The least-privilege implementation writes events only on calendars owned by the user (`calendar.events.owned`) and reads the calendar list (`calendar.calendarlist.readonly`) only so the user can choose which of their own calendars receives the roster — for example the primary calendar or a secondary calendar they own. The server proxy accepts only the calendar list (GET) and the events collection of one validated calendar ID whose `accessRole` is `owner`.
+Remove the legacy broad scopes `calendar.events` and `calendar`. The least-privilege implementation writes events only on calendars owned by the user (`calendar.events.owned`) and reads the calendar list (`calendar.calendarlist.readonly`) only so the user can choose which of their own calendars receives the roster — for example the primary calendar or a secondary calendar they own. `calendar.app.created` is used only to create CrewCheck's own secondary calendar (for example "Academia", where the optional wellness planner places suggested workout windows) when it does not exist yet; it grants no access to the user's other calendars. The server proxy accepts only the calendar list (GET), calendar creation with name/description/time zone only, and the events collection of one validated calendar ID whose `accessRole` is `owner`.
 
 ## Scope justification — English
 
@@ -119,7 +119,7 @@ Open `/delete-account` without deleting the reusable reviewer account.
 - [ ] Homepage is public and is not only a login screen.
 - [ ] Privacy Policy and Terms are public without authentication.
 - [ ] Consent screen is in English and all services are expanded.
-- [ ] Only `calendar.events.owned` and `calendar.calendarlist.readonly` appear.
+- [ ] Only `calendar.events.owned`, `calendar.calendarlist.readonly` and `calendar.app.created` appear.
 - [ ] The same exact scope is configured in Cloud Console and source code.
 - [ ] Creation, replacement and deletion are visible in the source Google Calendar account.
 - [ ] An unrelated event remains unchanged.

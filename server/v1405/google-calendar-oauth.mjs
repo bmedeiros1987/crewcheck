@@ -6,7 +6,10 @@ const GOOGLE_EVENTS_OWNED_SCOPE = 'https://www.googleapis.com/auth/calendar.even
 const GOOGLE_CALENDARLIST_READONLY_SCOPE = 'https://www.googleapis.com/auth/calendar.calendarlist.readonly';
 // Menor privilégio: eventos somente em calendários pertencentes ao usuário + leitura da lista
 // de calendários para o usuário escolher o destino (ex.: um calendário secundário próprio).
-const GOOGLE_SCOPE = [GOOGLE_EVENTS_OWNED_SCOPE, GOOGLE_CALENDARLIST_READONLY_SCOPE].join(' ');
+// calendar.app.created: só calendários criados pelo próprio CrewCheck (ex.: "Academia") — não dá
+// acesso aos demais calendários do usuário.
+const GOOGLE_APP_CREATED_CALENDARS_SCOPE = 'https://www.googleapis.com/auth/calendar.app.created';
+const GOOGLE_SCOPE = [GOOGLE_EVENTS_OWNED_SCOPE, GOOGLE_CALENDARLIST_READONLY_SCOPE, GOOGLE_APP_CREATED_CALENDARS_SCOPE].join(' ');
 const OWNER_CACHE_TTL_MS = 5 * 60 * 1000;
 const ownerCalendarCache = new Map();
 const GOOGLE_API = 'https://www.googleapis.com/calendar/v3';
@@ -323,6 +326,24 @@ export function normalizeGoogleCalendarId(value) {
   return raw;
 }
 
+/** Corpo aceito para criar calendário: só nome, descrição e fuso — nada de ACL, compartilhamento ou outras chaves. */
+export function sanitizeCalendarCreateBody(value) {
+  let parsed = value;
+  if (typeof value === 'string') {
+    try { parsed = JSON.parse(value); } catch { return null; }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const keys = Object.keys(parsed);
+  if (keys.some((key) => !['summary', 'description', 'timeZone'].includes(key))) return null;
+  const summary = String(parsed.summary || '').trim();
+  if (!summary || summary.length > 100 || /[\u0000-\u001f\u007f]/.test(summary)) return null;
+  const description = parsed.description == null ? '' : String(parsed.description);
+  if (description.length > 500) return null;
+  const timeZone = parsed.timeZone == null ? '' : String(parsed.timeZone);
+  if (timeZone && !/^[A-Za-z]+(?:\/[A-Za-z0-9_+-]+){1,2}$/.test(timeZone)) return null;
+  return { summary, ...(description ? { description } : {}), ...(timeZone ? { timeZone } : {}) };
+}
+
 function parseQuery(query, allowedKeys) {
   if (!query) return { ok: true, search: '' };
   if (/[#\s]/.test(query)) return { ok: false };
@@ -357,6 +378,12 @@ export function validateGoogleCalendarProxyRequest(pathValue, methodValue = 'GET
     const calendarId = normalizeGoogleCalendarId(decoded);
     if (!calendarId || encodeURIComponent(calendarId) !== segments[3]) return blocked('calendar');
     return { ok: true, kind: 'calendar-list-entry', calendarId, path: `/users/me/calendarList/${encodeURIComponent(calendarId)}${parsed.search}` };
+  }
+
+  // Criação de um calendário próprio do CrewCheck (ex.: "Academia"): só POST /calendars sem query.
+  if (segments.length === 1 && segments[0] === 'calendars') {
+    if (method !== 'POST' || query) return blocked('method');
+    return { ok: true, kind: 'calendar-create', calendarId: '', path: '/calendars' };
   }
 
   if (segments[0] !== 'calendars' || segments[2] !== 'events' || segments.length < 3 || segments.length > 4) return blocked('path');
@@ -535,10 +562,16 @@ async function handleProxy(req, res, context) {
     if ((route.kind === 'events' || route.kind === 'event') && !(await assertOwnedCalendar(auth.userKey, route.calendarId, token.access_token))) {
       return sendJson(res, 403, { ok: false, code: 'GOOGLE_CALENDAR_NOT_OWNED', message: 'Escolha um calendário Google do qual você é proprietário.' });
     }
+    let forwardedBody = method === 'GET' || method === 'DELETE' ? undefined : (typeof body.body === 'string' ? body.body : JSON.stringify(body.body || {}));
+    if (route.kind === 'calendar-create') {
+      const createBody = sanitizeCalendarCreateBody(body.body);
+      if (!createBody) return sendJson(res, 400, { ok: false, code: 'GOOGLE_CALENDAR_CREATE_INVALID', message: 'Pedido de criação de calendário inválido.' });
+      forwardedBody = JSON.stringify(createBody);
+    }
     const requestOptions = {
       method,
       headers: { authorization: `Bearer ${token.access_token}`, accept: 'application/json', ...(method === 'GET' || method === 'DELETE' ? {} : { 'content-type': 'application/json' }) },
-      body: method === 'GET' || method === 'DELETE' ? undefined : (typeof body.body === 'string' ? body.body : JSON.stringify(body.body || {})),
+      body: forwardedBody,
     };
     let response = await fetch(`${GOOGLE_API}${googlePath}`, requestOptions);
     if (response.status === 401) {

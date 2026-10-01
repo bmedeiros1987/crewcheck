@@ -2,10 +2,11 @@ name: CrewCheck web validation
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/wellness-scheduler-academia]
   push:
     branches:
       - main
+      - fix/wellness-privacy-daily-evidence
       - agent/v14-premium-system-audit
       - agent/v14-0-1-telegram-voice-policy
       - agent/v14-0-2-google-oauth-legal
@@ -89,6 +90,8 @@ jobs:
         run: node scripts/regression-v14-3-42-google-maps-budget-fallback.mjs 2>&1 | tee "$RUNNER_TEMP/google-maps-budget-regression.log"
       - name: Validate Google Calendar operational detailed sync
         run: node scripts/regression-calendar-operational-detailed.mjs 2>&1 | tee "$RUNNER_TEMP/google-calendar-operational-regression.log"
+      - name: Validate Wellness Scheduler and Academia calendar sync
+        run: node scripts/regression-wellness-scheduler.mjs 2>&1 | tee "$RUNNER_TEMP/wellness-scheduler-regression.log"
       - name: Validate iPad premium layout, location and reload stability
         run: node scripts/regression-v14-3-43-ipad-premium-layout-location-stability.mjs 2>&1 | tee "$RUNNER_TEMP/ipad-premium-stability-regression.log"
       - name: Validate menu icons, Settings location and end-positioned search

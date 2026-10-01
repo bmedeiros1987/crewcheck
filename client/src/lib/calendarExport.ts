@@ -948,6 +948,66 @@ function buildDayTimeline(day: RosterDay, strictTimeZones = false): DayTimeline 
   return { startOffset: 0, endOffset, startTimeZone, endTimeZone, legs: result };
 }
 
+export type RosterDayKind = 'flight' | 'standby-home' | 'standby-airport' | 'duty' | 'rest' | 'vacation' | 'layover' | 'unknown';
+
+/** Programação do dia em UTC real (fuso de cada aeroporto), para planejadores como o Wellness Scheduler. */
+export interface RosterDutyInterval {
+  date: string; // YYYY-MM-DD
+  kind: RosterDayKind;
+  code: string;
+  /** Apresentação (C/I) e liberação (C/O) em epoch UTC; null quando a escala não publica horário. */
+  startUtcMs: number | null;
+  endUtcMs: number | null;
+  startLocal: string | null;
+  endLocal: string | null;
+  endDayOffset: number;
+  startTimeZone: string;
+  endTimeZone: string;
+  startAirport: string;
+  endAirport: string;
+  legsCount: number;
+  route: string;
+}
+
+export function rosterDutyIntervals(roster: CrewRoster, strictTimeZones = false): RosterDutyInterval[] {
+  return (roster.days || []).map((day): RosterDutyInterval => {
+    const code = publishedDayCode(day);
+    const legs = day.legs || [];
+    const base = String(day.base || roster.base || '').toUpperCase();
+    const date = isoDateKey(day.date);
+    const kind: RosterDayKind = legs.length
+      ? 'flight'
+      : isVacationDay(day) ? 'vacation'
+        : day.type === 'LAYOVER' ? 'layover'
+          : isRestDay(day) ? 'rest'
+            : /^HSBE?$/.test(code) || day.type === 'HSB' || day.type === 'HSBE' ? 'standby-home'
+              : code === 'ASB' || day.type === 'ASB' ? 'standby-airport'
+                : day.dutyReport || code ? 'duty' : 'unknown';
+    const timed = Boolean(legs.length || (day.dutyReport && day.dutyDebrief && !isUnreliableZeroDuty(day)));
+    const timeline = buildDayTimeline(day, strictTimeZones);
+    const startAirport = legs[0]?.origin || base;
+    const endAirport = legs[legs.length - 1]?.destination || base;
+    const startLocal = timed ? (day.dutyReport || legs[0]?.departureTime || null) : null;
+    const endLocal = timed ? (day.dutyDebrief || legs[legs.length - 1]?.arrivalTime || null) : null;
+    return {
+      date,
+      kind,
+      code,
+      startUtcMs: startLocal ? zonedLocalTimeToUtcMs(day.date, startLocal, 0, timeline.startTimeZone) : null,
+      endUtcMs: endLocal ? zonedLocalTimeToUtcMs(day.date, endLocal, timeline.endOffset, timeline.endTimeZone) : null,
+      startLocal,
+      endLocal,
+      endDayOffset: timeline.endOffset,
+      startTimeZone: timeline.startTimeZone,
+      endTimeZone: timeline.endTimeZone,
+      startAirport,
+      endAirport,
+      legsCount: legs.length,
+      route: legs.length ? pairingRoute(day) : code,
+    };
+  });
+}
+
 function normalizeFlightNumber(value: string): string {
   return String(value || '').replace(/\s+/g, '').toUpperCase();
 }

@@ -4,6 +4,7 @@ import { useLocation } from 'wouter';
 const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/calendar.events.owned',
   'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
+  'https://www.googleapis.com/auth/calendar.app.created',
 ];
 
 const steps = [
@@ -68,7 +69,7 @@ export default function OAuthVerificationPage() {
 
         <section className="mt-5 rounded-3xl border border-white/10 bg-white/[0.06] p-6 md:p-8">
           <h2 className="text-2xl font-black">Permissão solicitada</h2>
-          <p className="mt-3 text-sm leading-7 text-slate-200/90">O CrewCheck solicita duas permissões de menor privilégio: eventos somente em calendários pertencentes ao usuário e a lista de calendários em modo somente leitura, para o usuário escolher o calendário de destino:</p>
+          <p className="mt-3 text-sm leading-7 text-slate-200/90">O CrewCheck solicita três permissões de menor privilégio: eventos somente em calendários pertencentes ao usuário, a lista de calendários em modo somente leitura (para o usuário escolher o destino) e a criação de calendários próprios do CrewCheck, como "Academia", sem acesso aos demais calendários:</p>
           <code className="mt-4 block overflow-x-auto whitespace-pre rounded-2xl border border-cyan-200/15 bg-[#030A13] p-4 text-xs leading-6 text-cyan-100 md:text-sm">{GOOGLE_SCOPES.join('\n')}</code>
           <p className="mt-4 text-sm leading-7 text-slate-200/90">Uma permissão somente de leitura de eventos não seria suficiente porque o recurso solicitado pelo usuário precisa criar, atualizar e remover os eventos da escala. A lista de calendários é apenas lida para exibir os calendários próprios; o CrewCheck não altera calendários, compartilhamentos ou eventos de calendários de terceiros e não solicita o escopo amplo do Google Calendar nem outros produtos Google.</p>
         </section>

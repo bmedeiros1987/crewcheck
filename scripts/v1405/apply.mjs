@@ -4,8 +4,9 @@ const VERSION = '14.0.5';
 const VERSION_CODE = '140005';
 const OWNED_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned';
 const CALENDARLIST_READONLY_SCOPE = 'https://www.googleapis.com/auth/calendar.calendarlist.readonly';
-const CANONICAL_SCOPES = `const GOOGLE_SCOPES = [\n  '${OWNED_SCOPE}',\n  '${CALENDARLIST_READONLY_SCOPE}',\n].join(' ');`;
-const DISCLOSURE_KEY_LINE = "const GOOGLE_SCOPE_DISCLOSURE_KEY = 'crewcheck_google_calendar_owned_events_disclosure_v2';";
+const APP_CREATED_CALENDARS_SCOPE = 'https://www.googleapis.com/auth/calendar.app.created';
+const CANONICAL_SCOPES = `const GOOGLE_SCOPES = [\n  '${OWNED_SCOPE}',\n  '${CALENDARLIST_READONLY_SCOPE}',\n  '${APP_CREATED_CALENDARS_SCOPE}',\n].join(' ');`;
+const DISCLOSURE_KEY_LINE = "const GOOGLE_SCOPE_DISCLOSURE_KEY = 'crewcheck_google_calendar_owned_events_disclosure_v3';";
 const read = (file) => fs.readFileSync(file, 'utf8');
 const write = (file, content) => fs.writeFileSync(file, content, 'utf8');
 
