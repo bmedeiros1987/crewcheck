@@ -17,6 +17,7 @@ export function pairingFailure(error:unknown): {code:string;message:string} {
   // Never put raw network/server strings, credentials or user identifiers on screen.
   const message=error instanceof Error?error.message:'';
   if(/Illegal invocation|incompatible receiver/i.test(message)) return {code:'TV-NET-01',message:'Falha de compatibilidade na chamada de rede.'};
+  if(message==='invalid_origin') return {code:'TV-ORIGIN-01',message:'A origem configurada para a TV é inválida ou exige HTTPS. Revise a configuração do dispositivo.'};
   if(message==='request_timeout') return {code:'TV-NET-02',message:'O servidor não respondeu a tempo. Tente novamente.'};
   if(message==='pair_again') return {code:'TV-AUTH-01',message:'Solicitação recusada. Confira a autorização do piloto.'};
   if(message==='invalid_pairing_response') return {code:'TV-PAIR-01',message:'O servidor retornou um código de vínculo inválido.'};
