@@ -409,12 +409,29 @@ export async function syncRosterToGoogleCalendar(roster: CrewRoster, settings = 
   return { ...counts, total: googleEvents.length, calendarId, feedUrl };
 }
 
-type CrewCheckSyncIdentity = { crew: string; scope: string; legacyPrefix: string };
+type CrewCheckSyncIdentity = {
+  crew: string;
+  scope: string;
+  legacyPrefix: string;
+  legacyCrew: string;
+  legacyScope: string;
+  legacyNamePrefix: string;
+};
 
 function buildSyncIdentity(roster: CrewRoster): CrewCheckSyncIdentity {
-  const crew = crewSlug(roster);
+  const legacyCrew = crewSlug(roster);
+  const rawCrewId = String(roster.crewId || '').trim();
+  // O identificador publicado no Google é pseudônimo e estável: nunca expõe matrícula/BP em claro.
+  const crew = rawCrewId ? `id-${stableEventKey([rawCrewId]).slice(3)}` : legacyCrew;
   const month = `${roster.year}-${String(roster.month).padStart(2, '0')}`;
-  return { crew, scope: `crewcheck:${crew}:${month}`, legacyPrefix: `crewcheck:${crew}:${month}:` };
+  return {
+    crew,
+    scope: `crewcheck:${crew}:${month}`,
+    legacyPrefix: `crewcheck:${crew}:${month}:`,
+    legacyCrew,
+    legacyScope: `crewcheck:${legacyCrew}:${month}`,
+    legacyNamePrefix: `crewcheck:${legacyCrew}:${month}:`,
+  };
 }
 
 /**
@@ -455,9 +472,17 @@ async function upsertCrewCheckEvents(calendarId: string, roster: CrewRoster, ide
     const props = event.extendedProperties?.private || {};
     if (!event.id || props.crewcheck !== 'true') continue; // defesa extra: só eventos CrewCheck.
     const legacyPeriod = String(props.crewcheckPeriodKey || '');
-    const sameCrew = props.crewcheckCrew === identity.crew || legacyPeriod.startsWith(`crewcheck:${identity.crew}:`);
+    const sameCrew = props.crewcheckCrew === identity.crew
+      || props.crewcheckCrew === identity.legacyCrew
+      || legacyPeriod.startsWith(`crewcheck:${identity.crew}:`)
+      || legacyPeriod.startsWith(`crewcheck:${identity.legacyCrew}:`);
     if (!sameCrew) continue; // outro tripulante: não tocar.
-    const sameScope = props.crewcheckScope === identity.scope || legacyPeriod === identity.scope || legacyPeriod.startsWith(identity.legacyPrefix);
+    const sameScope = props.crewcheckScope === identity.scope
+      || props.crewcheckScope === identity.legacyScope
+      || legacyPeriod === identity.scope
+      || legacyPeriod === identity.legacyScope
+      || legacyPeriod.startsWith(identity.legacyPrefix)
+      || legacyPeriod.startsWith(identity.legacyNamePrefix);
     const key = props.crewcheckKeyVersion === SYNC_KEY_VERSION ? String(props.crewcheckEventKey || '') : '';
     if (key && desiredByKey.has(key) && !matched.has(key)) {
       matched.set(key, event);
