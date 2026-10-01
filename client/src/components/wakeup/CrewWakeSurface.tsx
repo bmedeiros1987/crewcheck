@@ -106,6 +106,17 @@ export function CrewWakeRuntimeBridge() {
     window.addEventListener('crewcheck:wake-ack', onWakeAck as EventListener);
 
     const bridge = nativeBridge();
+    try {
+      const nativeStatus = bridge?.myCrewCareStatus?.();
+      if (nativeStatus && typeof nativeStatus === 'object') {
+        const snapshot = writeMyCrewCareSnapshot({
+          ...readMyCrewCareSnapshot(),
+          connected: nativeStatus.connected === true || nativeStatus.status === 'connected',
+          syncedAt: new Date().toISOString(),
+        });
+        window.dispatchEvent(new CustomEvent('crewcheck:mycrewcare-state', { detail: snapshot }));
+      }
+    } catch {}
     if (bridge?.syncMyCrewCare && myCrewCareConnectionStatus() === 'connected') {
       try { bridge.syncMyCrewCare(); } catch {}
     }
@@ -175,7 +186,17 @@ export function CrewWakePremiumPanel({ event }: { event: CrewWakeEvent }) {
   }, []);
 
   function patch(patchValue: Parameters<typeof writeCrewWakeState>[1]) {
-    writeCrewWakeState(event, patchValue);
+    const affectsSchedule = 'manualPickup' in patchValue || 'automatic' in patchValue || 'wakeLeadMinutes' in patchValue;
+    const nextPatch = { ...patchValue };
+    if (state.active && affectsSchedule) {
+      try { nativeBridge()?.cancelWakeAlarm?.(wakeKey); } catch {}
+      const fallbackKey = state.fallbackJobKey || (pwa ? `wake-pwa:${wakeKey}` : `wake-fallback:${wakeKey}`);
+      if (fallbackKey) void cancelPhoneWake(fallbackKey).catch(() => undefined);
+      nextPatch.active = false;
+      nextPatch.scheduledWakeAt = undefined;
+      nextPatch.fallbackJobKey = undefined;
+    }
+    writeCrewWakeState(event, nextPatch);
     setRevision((value) => value + 1);
     notifyWakeChanged();
   }
@@ -204,7 +225,7 @@ export function CrewWakePremiumPanel({ event }: { event: CrewWakeEvent }) {
       }
 
       if (native && state.mirrorSystemAlarm && bridge?.syncSystemAlarm) {
-        try { bridge.syncSystemAlarm(String(wakeAt.getTime()), 'CrewCheck'); } catch {}
+        try { bridge.syncSystemAlarm(String(wakeAt.getTime()), `CrewCheck · ${wakeKey}`); } catch {}
       }
 
       let fallbackJobKey = '';
@@ -301,7 +322,12 @@ function packingText(weather: WeatherSnapshot[]): string {
 export function CrewTripBriefingCard({ events }: { events: CrewWakeEvent[] }) {
   const [lead, setLead] = useState(() => briefingLeadHours());
   const [weather, setWeather] = useState<Record<string, WeatherSnapshot>>({});
-  const briefing = useMemo(() => nextTripBriefing(events, new Date(), lead), [events, lead]);
+  const [clockTick, setClockTick] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockTick((value) => value + 1), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const briefing = useMemo(() => nextTripBriefing(events, new Date(), lead), [events, lead, clockTick]);
 
   const airports = useMemo(() => {
     if (!briefing) return [];
@@ -332,6 +358,7 @@ export function CrewTripBriefingCard({ events }: { events: CrewWakeEvent[] }) {
   }, [briefing?.startsAt?.getTime(), lead]);
 
   if (!briefing) return null;
+  if (briefing.startsAt.getTime() - Date.now() > 72 * 60 * 60_000) return null;
   const weatherList = Object.values(weather);
   const untilHours = Math.max(0, Math.ceil((briefing.briefingAt.getTime() - Date.now()) / 36e5));
 
