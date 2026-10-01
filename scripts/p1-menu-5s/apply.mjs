@@ -40,11 +40,48 @@ if (!block.includes('const [menuQuery,')) {
   const accountId = storedUser?.id || null;
   const [menuQuery, setMenuQuery] = useState('');
   const [menuStatus, setMenuStatus] = useState('');
+  const [editingFavorites, setEditingFavorites] = useState(false);
+  const menuPanelRef = useRef<HTMLElement | null>(null);
+  const closeMenuRef = useRef(close);
+  closeMenuRef.current = close;
+  useEffect(() => {
+    setEditingFavorites(false);
+    if (!open) return;
+    const previousFocus = document.activeElement;
+    const panel = menuPanelRef.current;
+    panel?.querySelector<HTMLButtonElement>('.cz-menu-close')?.focus({ preventScroll: true });
+    const onMenuKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        closeMenuRef.current();
+      } else if (event.key === 'Tab' && panel) {
+        const controls = Array.from(panel.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), [tabindex="0"]'))
+          .filter((control) => control.getClientRects().length > 0);
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault(); last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault(); first?.focus();
+        }
+      }
+    };
+    document.addEventListener('keydown', onMenuKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onMenuKeyDown);
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected
+          && (document.activeElement === document.body || panel?.contains(document.activeElement))) {
+        previousFocus.focus({ preventScroll: true });
+      }
+    };
+  }, [open]);
   const [menuFavorites, setMenuFavorites] = useState(() => readMenuFavorites(window.localStorage, accountId, MENU_5S_ALLOWED_IDS));
   useEffect(() => {
     setMenuFavorites(readMenuFavorites(window.localStorage, accountId, MENU_5S_ALLOWED_IDS));
     setMenuQuery('');
     setMenuStatus('');
+    setEditingFavorites(false);
   }, [accountId]);`;
   block = block.replace(stateAnchor, stateAnchor + states);
 }
@@ -60,6 +97,11 @@ if (!block.includes('const filteredGroups =')) {
   const filteredGroups = groups
     .map((group) => ({ ...group, items: group.items.filter(([, label, desc]) => menuEntryMatches(menuQuery, label, desc, group.title)) }))
     .filter((group) => group.items.length > 0);
+  const catalogGroups = menuQuery
+    ? filteredGroups
+    : filteredGroups
+      .map((group) => ({ ...group, items: group.items.filter(([viewId]) => !menuFavorites.includes(viewId)) }))
+      .filter((group) => group.items.length > 0);
   const toggleMenuFavorite = (target: ZeroView) => {
     if (!accountId) {
       setMenuStatus('Entre na sua conta para salvar favoritos.');
@@ -90,20 +132,29 @@ if (!block.includes('className="cc-menu-search"')) {
           <label><span className="sr-only">Buscar função</span><input value={menuQuery} onChange={(event) => setMenuQuery(event.target.value)} placeholder="Buscar função" inputMode="search" autoComplete="off"/><Search aria-hidden="true"/></label>
         </section>
         <p className="cc-menu-status" role="status" aria-live="polite">{menuStatus}</p>
-        {!menuQuery && favoriteItems.length > 0 && <section className="cc-menu-favorites" aria-label="Favoritos do menu">
-          <h3>Favoritos</h3>
-          <div>{favoriteItems.map(([v, label, , Icon]) => <button key={v} type="button" className="cc-menu-favorite-chip" onClick={() => jump(v)}><Icon aria-hidden="true"/><span>{label}</span></button>)}</div>
+        {!menuQuery && accountId && <section className="cc-menu-favorites" aria-label="Favoritos do menu">
+          <div className="cc-menu-favorites-head">
+            <h3>Favoritos</h3>
+            <button type="button" className="cc-menu-edit-favorites" aria-pressed={editingFavorites} onClick={() => { setEditingFavorites((current) => !current); setMenuStatus(''); }}>{editingFavorites ? 'Concluir' : 'Editar favoritos'}</button>
+          </div>
+          {favoriteItems.length === 0 && <p className="cc-menu-favorites-empty">{editingFavorites ? 'Toque em ☆ para escolher até ' + MENU_FAVORITES_LIMIT + ' favoritos.' : 'Nenhum favorito. Use Editar favoritos para escolher.'}</p>}
+          <div>{favoriteItems.map(([v, label, , Icon]) => <div className="cc-menu-favorite-slot" data-editing={editingFavorites ? 'true' : 'false'} key={v}>
+            <button type="button" className="cc-menu-favorite-chip" data-menu-label={label} onClick={() => jump(v)}><Icon aria-hidden="true"/><span>{label}</span></button>
+            {editingFavorites && <button type="button" className="cc-menu-favorite" aria-label={'Remover ' + label + ' dos favoritos'} aria-pressed={true} onClick={() => toggleMenuFavorite(v)}><span className="cc-menu-favorite-glyph" aria-hidden="true">★</span></button>}
+          </div>)}</div>
         </section>}
-        {filteredGroups.map((group) => <section className="cz-menu-section cz-menu-group cc-menu-index-group" data-menu-group={group.title} key={group.title}><h3>{group.title}</h3>{group.items.map(([v, label, desc, Icon]) => {
+        {catalogGroups.map((group) => <section className="cz-menu-section cz-menu-group cc-menu-index-group" data-menu-group={group.title} key={group.title}><h3>{group.title}</h3>{group.items.map(([v, label, desc, Icon]) => {
           const favorite = menuFavorites.includes(v);
-          return <div className="cc-menu-index-row" key={v}>
+          return <div className="cc-menu-index-row" data-editing={editingFavorites ? 'true' : 'false'} key={v}>
             <button type="button" className={\`cc-menu-destination \${view === v ? 'active' : ''}\`} onClick={() => jump(v)} aria-label={label} title={label + ' — ' + desc} data-menu-label={label} data-menu-description={desc}><Icon aria-hidden="true"/><span><strong>{label}</strong><small>{desc}</small></span><ChevronRight aria-hidden="true"/></button>
-            <button type="button" className="cc-menu-favorite" aria-label={favorite ? 'Remover ' + label + ' dos favoritos' : 'Adicionar ' + label + ' aos favoritos'} aria-pressed={favorite} onClick={() => toggleMenuFavorite(v)}><span className="cc-menu-favorite-glyph" aria-hidden="true">{favorite ? '★' : '☆'}</span></button>
+            {editingFavorites && <button type="button" className="cc-menu-favorite" aria-label={favorite ? 'Remover ' + label + ' dos favoritos' : 'Adicionar ' + label + ' aos favoritos'} aria-pressed={favorite} onClick={() => toggleMenuFavorite(v)}><span className="cc-menu-favorite-glyph" aria-hidden="true">{favorite ? '★' : '☆'}</span></button>}
           </div>;
         })}</section>)}
-        {filteredGroups.length === 0 && <p className="cc-menu-empty">Nenhuma função encontrada. Tente outro termo.</p>}`;
+        {catalogGroups.length === 0 && (menuQuery || favoriteItems.length === 0) && <p className="cc-menu-empty">Nenhuma função encontrada. Tente outro termo.</p>}`;
   block = block.slice(0, listStart) + enhanced + block.slice(listEnd);
 }
+
+block = block.replace('<aside className="cz-menu-panel"', '<aside ref={menuPanelRef} className="cz-menu-panel"');
 
 source = source.slice(0, nextMenuStart) + block + source.slice(nextMenuEnd);
 fs.writeFileSync(path, source, 'utf8');

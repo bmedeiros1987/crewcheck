@@ -110,6 +110,7 @@ const require = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || import.meta
 const { chromium } = require('playwright');
 const browser = await chromium.launch({ headless: true });
 const matrix = [
+  { name: 'phone-small', width: 320, height: 740, touch: true },
   { name: 'phone-portrait', width: 360, height: 800, touch: true },
   { name: 'phone-landscape-small', width: 667, height: 375, touch: true },
   { name: 'phone-landscape', width: 844, height: 390, touch: true },
@@ -164,6 +165,8 @@ async function inspect(page, label) {
       logout: box(document.querySelector('.cz-menu-logout')),
       profile: box(document.querySelector('.cz-menu-profile')),
       count: buttons.length,
+      chipCount: document.querySelectorAll('.cc-menu-favorite-chip[data-menu-label]').length,
+      editButton: document.querySelector('.cc-menu-edit-favorites')?.textContent || '',
       favoriteCount: favorites.length,
       favorites: favorites.map(b => {
         const glyph = b.querySelector('.cc-menu-favorite-glyph');
@@ -216,8 +219,10 @@ async function inspect(page, label) {
   if (metrics.scroll.height < 100) failures.push('No useful scrolling area');
   if (metrics.scroll.scrollWidth > metrics.scroll.clientWidth + 1) failures.push('Horizontal overflow in menu list');
   if (metrics.columns !== metrics.expectedColumns) failures.push('Wrong navigation column count');
-  if (metrics.count !== 40) failures.push(`Expected 40 canonical destinations; got ${metrics.count}`);
-  if (metrics.favoriteCount !== metrics.count) failures.push(`Expected one favorite control per destination; got ${metrics.favoriteCount}`);
+  if (metrics.count + metrics.chipCount !== 40) failures.push(`Expected 40 canonical destinations once each (catalog + favorites); got ${metrics.count} + ${metrics.chipCount}`);
+  if (metrics.chipCount !== 3) failures.push(`Expected the 3 default favorites above the catalog; got ${metrics.chipCount}`);
+  if (metrics.editButton !== 'Editar favoritos') failures.push('Edit favorites action missing');
+  if (metrics.favoriteCount !== 0) failures.push(`Favorite stars must be hidden outside edit mode; got ${metrics.favoriteCount}`);
   for (const favorite of metrics.favorites) {
     if (!favorite.glyph || favorite.glyph.width < 20 || favorite.glyph.height < 20) failures.push('Favorite glyph is missing or clipped');
     if (!['☆', '★'].includes(favorite.text)) failures.push('Favorite glyph text is missing');

@@ -2,11 +2,15 @@ name: Mobile menu responsive browser
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/roster-layout-preferences]
     paths:
       - 'client/src/styles/**'
+      - 'client/src/components/v1391/menu-5s.css'
       - 'client/src/pages/Home.tsx'
       - 'scripts/p1-menu-premium/**'
+      - 'scripts/p1-menu-5s/**'
+      - 'scripts/regression-menu-5s.mjs'
+      - 'scripts/regression-menu-favorites-interaction.mjs'
       - 'scripts/v14344/**'
       - 'scripts/v14394/**'
       - 'scripts/regression-menu-responsive-browser.mjs'
@@ -56,6 +60,10 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
         run: node scripts/regression-menu-responsive-browser.mjs
+      - name: Exercise favorites, editing and keyboard interactions
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-menu-favorites-interaction.mjs
       - name: Render canonical footer and content clearance in Chromium and WebKit
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
@@ -65,6 +73,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CrewCheck-menu-responsive-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/menu-responsive
+          path: |
+            artifacts/menu-responsive
+            artifacts/menu-interaction
           if-no-files-found: warn
           retention-days: 7
