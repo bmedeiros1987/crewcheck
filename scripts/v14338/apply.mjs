@@ -45,7 +45,7 @@ function localRosterHistorySummary(item: LocalHistoryItem): SavedRosterSummary {
     sourceFileName: item.sourceFileName || null,
     score: Number(item.compliance?.score ?? 0),
     intensityScore: Number(item.compliance?.loadAnalysis?.intensityScore ?? 0),
-    alertsCount: Array.isArray(item.compliance?.alerts) ? item.compliance.alerts.length : 0,
+    alertsCount: Array.isArray(item.compliance?.alerts) ? item.compliance.alerts.filter((alert: any) => alert?.actionable !== false && alert?.classification !== 'dados_insuficientes').length : 0,
     criticalAlertsCount: Array.isArray(item.compliance?.alerts) ? item.compliance.alerts.filter((alert: any) => alert?.severity === 'error').length : 0,
     checksum: item.checksum,
     isActive: false,

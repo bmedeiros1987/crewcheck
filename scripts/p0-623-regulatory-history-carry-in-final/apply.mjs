@@ -93,7 +93,10 @@ function previousRosterPeriod(roster: Pick<CrewRoster, 'year' | 'month'>): { yea
 }
 
 function complianceHasIncompleteRollingHistory(result: ComplianceResult): boolean {
-  return (result.alerts || []).some((alert) => /28 dias.*incompleta/i.test(String(alert?.title || '')));
+  return (result.alerts || []).some((alert) =>
+    alert?.code === 'ROLLING_28D_DATA_GAP'
+    && alert?.classification === 'dados_insuficientes'
+    && alert?.actionable === false);
 }
 
 function regulatoryRosterSignature(roster: CrewRoster): unknown {

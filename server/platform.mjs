@@ -1573,6 +1573,7 @@ function meaningfulComplianceAlerts(compliance = {}) {
   const values = [...(Array.isArray(compliance?.alerts) ? compliance.alerts : []), ...(Array.isArray(compliance?.warnings) ? compliance.warnings : [])];
   const seen = new Set();
   return values.filter((item) => {
+    if (item?.actionable === false || item?.classification === 'dados_insuficientes') return false;
     const title = normalizeText(item?.title || item?.rule || item?.code, 160);
     const description = normalizeText(item?.description || item?.message || item?.detail, 400);
     const severity = normalizeText(item?.severity || item?.level, 30).toLowerCase();

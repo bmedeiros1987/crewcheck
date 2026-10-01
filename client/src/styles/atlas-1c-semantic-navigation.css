@@ -216,3 +216,65 @@ html[data-crew-theme='light'] body > .cz-bottom-nav > button.active {
     transform: none !important;
   }
 }
+
+
+/* Concierge premium refinement — scoped to the Concierge view only. */
+.cz-app[data-view='concierge'] .cz-panel-head {
+  max-width: 880px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.cz-app[data-view='concierge'] .cz-panel-head h1 {
+  letter-spacing: -.03em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+.cz-app[data-view='concierge'] .cz-panel-head p {
+  max-width: 68ch;
+  line-height: 1.6;
+}
+.cz-app[data-view='concierge'] .cz-finance-grid {
+  gap: 12px !important;
+}
+.cz-app[data-view='concierge'] .cz-toolbox {
+  border-radius: 22px !important;
+  box-shadow: var(--cc-shadow-soft) !important;
+}
+.cz-app[data-view='concierge'] .cz-toolbox h2 {
+  font-size: clamp(1.05rem, 2vw, 1.25rem);
+  line-height: 1.2;
+  letter-spacing: -.015em;
+}
+.cz-app[data-view='concierge'] .cz-toolbox > p {
+  max-width: 76ch;
+  line-height: 1.6;
+}
+.cz-app[data-view='concierge'] .cz-tool-actions button {
+  min-height: 44px !important;
+  border-radius: 12px !important;
+}
+.cz-app[data-view='concierge'] .cz-update-textarea {
+  min-height: 120px !important;
+  padding: 14px !important;
+  border-radius: 14px !important;
+  line-height: 1.55;
+}
+.cz-app[data-view='concierge'] .cz-roster-card {
+  border-radius: 18px !important;
+}
+.cz-app[data-view='concierge'] .cz-routine-strip {
+  gap: 6px !important;
+}
+
+@media (max-width: 640px) {
+  .cz-app[data-view='concierge'] .cz-panel-head {
+    max-width: none;
+  }
+  .cz-app[data-view='concierge'] .cz-tool-actions {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+  }
+  .cz-app[data-view='concierge'] .cz-tool-actions button {
+    width: 100% !important;
+  }
+}

@@ -6,23 +6,38 @@ const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 const runtime = fs.readFileSync('client/src/components/pulse/pulseRuntime.ts', 'utf8');
 const component = fs.readFileSync('client/src/components/pulse/CrewCheckPulse.tsx', 'utf8');
 const css = fs.readFileSync('client/src/components/pulse/crewcheck-pulse.css', 'utf8');
+const headerCss = fs.readFileSync('client/src/styles/internal-global-header.css', 'utf8');
 
 // Integração real depois da preparação canônica.
 for (const marker of [
   "from '@/components/pulse/pulseRuntime'",
   "label=\"CrewCheck Pulse\"",
   'function NotificationPermissionSetting()',
-  "title: 'Escala importada com sucesso'",
   "title: 'Escala atualizada'",
-  "title: 'Apresentação atualizada'",
-  "title: 'Apresentação restaurada'",
-  "title: 'Escala sincronizada'",
   "title: 'Escala sem programação futura'",
+  "category: 'gate'",
+  "category: 'weather'",
+  "category: 'compliance'",
   "systemNotification: 'background'",
   "action: { label: 'Revisar', view: 'alerts' }",
 ]) {
   assert.ok(home.includes(marker), 'integração Pulse ausente após prepare: ' + marker);
 }
+
+// O Pulse do header é attention-only: confirmações rotineiras ficam em toast e
+// próxima programação continua no conteúdo principal.
+for (const forbidden of [
+  'id: `next:${event.id}',
+  'id: `active-roster:',
+  'id: `roster-import:${roster.year}',
+  'id: `presentation:${event.id}',
+  'id: `presentation-reset:${event.id}',
+]) {
+  assert.ok(!home.includes(forbidden), 'aviso rotineiro voltou a ocupar o Pulse: ' + forbidden);
+}
+assert.ok(home.includes("Portão alterado"), 'mudança confirmada de portão precisa alimentar o Pulse');
+assert.ok(home.includes("Meteorologia crítica") && home.includes("Meteorologia requer atenção"), 'severidade meteorológica existente precisa alimentar o Pulse');
+assert.ok(home.includes("Bloqueio ou ocorrência crítica na rota"), 'ocorrência crítica de trânsito precisa alimentar o Pulse');
 
 // A publicação normal nunca pede permissão de notificação por conta própria.
 const publishStart = runtime.indexOf('export function publishCrewCheckNotice');
@@ -37,10 +52,34 @@ assert.ok(runtime.includes("pulseCooldownMs"), 'runtime precisa deduplicar conte
 assert.ok(runtime.includes("notificationCooldownMs"), 'runtime precisa deduplicar notificações de sistema');
 
 // UI da fila / ação contextual.
-for (const marker of ['cc-pulse-controls', 'cc-pulse-queue', 'cc-pulse-action', 'data-priority']) {
+for (const marker of ['cc-pulse-compact', 'cc-pulse-popover', 'cc-pulse-controls', 'cc-pulse-queue', 'cc-pulse-action', 'data-priority']) {
   assert.ok(component.includes(marker) || css.includes(marker), 'UI do Slice 2 ausente: ' + marker);
 }
 assert.ok(component.includes("crewcheck:set-view"), 'ação do Pulse deve usar a navegação já existente');
+
+// Interação compacta: o alerta inteiro navega direto; a seta é o único controle
+// dedicado a expandir detalhes. Navegar não equivale a dispensar a mensagem.
+const compactStart = component.indexOf('if (compact)');
+const compactEnd = component.indexOf('return (', compactStart + 20);
+const compactBlock = component.slice(compactStart, compactEnd > compactStart ? compactEnd : component.length);
+assert.ok(compactBlock.includes('onClick={act}'), 'toque no alerta compacto deve executar sua ação contextual');
+assert.ok(compactBlock.includes('className="cc-pulse-compact-details"') && compactBlock.includes('onClick={toggleDetails}'),
+  'detalhes do Pulse devem ter controle separado da navegação');
+const actStart = component.indexOf('const act = () => {');
+const actEnd = component.indexOf('const toggleDetails', actStart);
+const actBlock = component.slice(actStart, actEnd);
+assert.ok(actStart >= 0 && actEnd > actStart, 'handler contextual do Pulse não localizado');
+assert.ok(!actBlock.includes('dismiss();'), 'abrir o destino não pode dispensar automaticamente o alerta');
+
+const triggerCssStart = css.indexOf('.cc-pulse-compact-trigger {');
+const triggerCssEnd = css.indexOf('}', triggerCssStart);
+const triggerCss = css.slice(triggerCssStart, triggerCssEnd + 1);
+assert.ok(triggerCss.includes('border: 0;') && triggerCss.includes('background: transparent;'),
+  'Pulse compacto não deve desenhar uma segunda moldura dentro do header');
+assert.ok(css.includes('.cc-pulse-compact-details'), 'seta de detalhes precisa manter alvo de toque próprio');
+assert.ok(headerCss.includes('position: fixed !important'),
+  'Pulse compacto deve continuar dentro do header global fixo durante o scroll');
+
 assert.ok(css.includes('cc-pulse-beat 2.4s ease-in-out 2'), 'microinteração do Pulse não pode pulsar infinitamente');
 assert.ok(css.includes('prefers-reduced-motion'), 'movimento reduzido deve continuar respeitado');
 
@@ -154,4 +193,4 @@ for (const protectedToken of ['pdfParser', 'canonicalRoster', 'financialRules', 
   cleanup();
 }
 
-console.log('[p1-546-live] Pulse Slice 2: fila/prioridade/dedupe/auto-dismiss, eventos reais, ação contextual e notificações locais opt-in validados.');
+console.log('[p1-546-live] Pulse attention-only: header compacto, portão/meteo/trânsito/escala/compliance, fila/prioridade/dedupe e notificações opt-in validados.');
