@@ -215,6 +215,17 @@ for (const event of [personal, otherCrew, legacy, legacyNovCovered, legacyNovOth
 
 const first = await calendar.syncRosterToGoogleCalendar(buildRoster(), settings);
 
+await check('Identidade de sync usa crewId pseudônimo e preserva migração por nome', async () => {
+  const own = crewcheckEvents();
+  assert.ok(own.length > 0);
+  const crewKeys = new Set(own.map((event) => event.extendedProperties?.private?.crewcheckCrew));
+  assert.equal(crewKeys.size, 1);
+  const [crewKey] = [...crewKeys];
+  assert.match(String(crewKey), /^id-/);
+  assert.notEqual(String(crewKey), 'bruno-medeiros');
+  assert.ok(!String(crewKey).includes('123456'), 'matrícula/BP não pode aparecer em claro no Google');
+});
+
 await check('Jornada (C/I→C/O) + etapas individuais', async () => {
   const pairing = bySummary('BSB-VCP-BSB-OPS-BSB');
   assert.deepEqual(pairing.start, { dateTime: '2026-10-26T08:35:00', timeZone: 'America/Sao_Paulo' });
@@ -448,5 +459,5 @@ async function callRoute(pathname, method, body) {
 }
 
 fs.rmSync(scratch, { recursive: true, force: true });
-assert.equal(results.length, 14);
-console.log(`Calendar Operational Detailed: ${results.length}/14 cenários OK.`);
+assert.equal(results.length, 15);
+console.log(`Calendar Operational Detailed: ${results.length}/15 cenários OK.`);
