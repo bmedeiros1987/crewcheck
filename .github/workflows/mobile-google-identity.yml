@@ -1,5 +1,7 @@
 name: Mobile Google identity contract
 
+# Stacked PR composition refresh: validate against current #857 merge-ref (2026-10-01).
+
 on:
   pull_request:
     paths:
