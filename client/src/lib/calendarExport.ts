@@ -88,13 +88,45 @@ const AIRPORT_META: Record<string, { city: string; airport?: string; timezone?: 
   NVT: { city: 'Navegantes', airport: 'Navegantes', timezone: 'America/Sao_Paulo' },
   JOI: { city: 'Joinville', airport: 'Joinville', timezone: 'America/Sao_Paulo' },
   UDI: { city: 'Uberlândia', airport: 'Uberlândia', timezone: 'America/Sao_Paulo' },
+  AEP: { city: 'Buenos Aires / Aeroparque', airport: 'Aeroparque', timezone: 'America/Argentina/Buenos_Aires' },
+  COR: { city: 'Córdoba', airport: 'Córdoba', timezone: 'America/Argentina/Cordoba' },
+  MVD: { city: 'Montevidéu', airport: 'Carrasco', timezone: 'America/Montevideo' },
+  ASU: { city: 'Assunção', airport: 'Silvio Pettirossi', timezone: 'America/Asuncion' },
+  SCL: { city: 'Santiago', airport: 'Santiago', timezone: 'America/Santiago' },
+  LIM: { city: 'Lima', airport: 'Jorge Chávez', timezone: 'America/Lima' },
+  BOG: { city: 'Bogotá', airport: 'El Dorado', timezone: 'America/Bogota' },
+  MDE: { city: 'Medellín', airport: 'José María Córdova', timezone: 'America/Bogota' },
+  UIO: { city: 'Quito', airport: 'Mariscal Sucre', timezone: 'America/Guayaquil' },
+  GYE: { city: 'Guayaquil', airport: 'José Joaquín de Olmedo', timezone: 'America/Guayaquil' },
+  LPB: { city: 'La Paz', airport: 'El Alto', timezone: 'America/La_Paz' },
+  VVI: { city: 'Santa Cruz de la Sierra', airport: 'Viru Viru', timezone: 'America/La_Paz' },
+  MIA: { city: 'Miami', airport: 'Miami', timezone: 'America/New_York' },
+  MCO: { city: 'Orlando', airport: 'Orlando', timezone: 'America/New_York' },
+  JFK: { city: 'Nova York', airport: 'John F. Kennedy', timezone: 'America/New_York' },
+  LAX: { city: 'Los Angeles', airport: 'Los Angeles', timezone: 'America/Los_Angeles' },
+  CUN: { city: 'Cancún', airport: 'Cancún', timezone: 'America/Cancun' },
+  MEX: { city: 'Cidade do México', airport: 'Benito Juárez', timezone: 'America/Mexico_City' },
+  PTY: { city: 'Cidade do Panamá', airport: 'Tocumen', timezone: 'America/Panama' },
+  LIS: { city: 'Lisboa', airport: 'Humberto Delgado', timezone: 'Europe/Lisbon' },
+  MAD: { city: 'Madri', airport: 'Adolfo Suárez Madrid-Barajas', timezone: 'Europe/Madrid' },
+  BCN: { city: 'Barcelona', airport: 'Barcelona-El Prat', timezone: 'Europe/Madrid' },
+  CDG: { city: 'Paris', airport: 'Charles de Gaulle', timezone: 'Europe/Paris' },
+  LHR: { city: 'Londres', airport: 'Heathrow', timezone: 'Europe/London' },
+  FCO: { city: 'Roma', airport: 'Fiumicino', timezone: 'Europe/Rome' },
+  FRA: { city: 'Frankfurt', airport: 'Frankfurt', timezone: 'Europe/Berlin' },
 };
 
 const DEFAULT_CALENDAR_TIME_ZONE = 'America/Sao_Paulo';
 
 /** Fuso IANA do aeroporto; desconhecido → horário de Brasília (padrão operacional). */
-export function airportTimeZone(code?: string | null): string {
-  return AIRPORT_META[String(code || '').trim().toUpperCase()]?.timezone || DEFAULT_CALENDAR_TIME_ZONE;
+export function airportTimeZone(code?: string | null, strict = false): string {
+  const airport = String(code || '').trim().toUpperCase();
+  const zone = AIRPORT_META[airport]?.timezone;
+  if (zone) return zone;
+  if (strict && airport) {
+    throw new Error(`Fuso horário desconhecido para o aeroporto ${airport}. Atualize o CrewCheck antes de sincronizar esta escala com o Google Calendar.`);
+  }
+  return DEFAULT_CALENDAR_TIME_ZONE;
 }
 
 const CREWCONNECT_COLORS = {
@@ -234,7 +266,7 @@ export function generateICalendar(roster: CrewRoster, gymRecommendations?: GymRe
     const isoDate = isoDateKey(day.date);
     if (shouldExportFlights(cfg.mode) && day.legs && day.legs.length > 0) {
       const pairingUid = `${uidBase}-pairing-${dayIndex}`;
-      const timeline = buildDayTimeline(day);
+      const timeline = buildDayTimeline(day, operational);
       const pairingEndNextDay = timeline.endOffset > 0;
       const allPositioning = day.legs.every((leg) => isPositioningLeg(leg));
       const pairingColor = operational
@@ -268,8 +300,8 @@ export function generateICalendar(roster: CrewRoster, gymRecommendations?: GymRe
           now,
           start: formatDateTimeForIcal(day.date, leg.departureTime, legTimes.departureOffset),
           end: formatDateTimeForIcal(day.date, leg.arrivalTime, legTimes.arrivalOffset),
-          startTimeZone: airportTimeZone(leg.origin),
-          endTimeZone: airportTimeZone(leg.destination),
+          startTimeZone: airportTimeZone(leg.origin, operational),
+          endTimeZone: airportTimeZone(leg.destination, operational),
           summary: operational ? buildOperationalLegSummary(leg) : buildFlightSummary(leg, cfg.titleFormat, legIndex === 0 ? pairingStartTime(day) : ''),
           description: buildFlightDescription(roster, day, leg, endNextDay, legTimes) + financialCalendarNote(day, cfg.includeFinancialNotes),
           location: buildFlightLocation(leg),
@@ -304,7 +336,7 @@ export function generateICalendar(roster: CrewRoster, gymRecommendations?: GymRe
     if (shouldExportDuties(cfg.mode, cfg.calendarStyle) && day.dutyReport && day.dutyDebrief && !isUnreliableZeroDuty(day) && !isRestDay(day) && (!day.legs || day.legs.length === 0)) {
       const uid = `${uidBase}-duty-${dayIndex}`;
       const endNextDay = Boolean(day.isNextDay) || arrivesNextDay(day.dutyReport, day.dutyDebrief);
-      const dutyTimeZone = airportTimeZone(day.base || roster.base);
+      const dutyTimeZone = airportTimeZone(day.base || roster.base, operational);
       ical += buildEvent({
         uid,
         key: uniqueKey(`duty|${isoDate}`),
@@ -890,19 +922,19 @@ type DayTimeline = { startOffset: number; endOffset: number; startTimeZone: stri
  * Etapas consecutivas partem do aeroporto onde a anterior chegou (mesmo fuso), então a virada
  * do dia é detectada comparando horários locais do mesmo aeroporto; partida→chegada usa UTC real.
  */
-function buildDayTimeline(day: RosterDay): DayTimeline {
+function buildDayTimeline(day: RosterDay, strictTimeZones = false): DayTimeline {
   const legs = day.legs || [];
-  const startTimeZone = airportTimeZone(legs[0]?.origin || day.base);
-  const endTimeZone = airportTimeZone(legs[legs.length - 1]?.destination || day.base);
+  const startTimeZone = airportTimeZone(legs[0]?.origin || day.base, strictTimeZones);
+  const endTimeZone = airportTimeZone(legs[legs.length - 1]?.destination || day.base, strictTimeZones);
   const report = day.dutyReport || legs[0]?.departureTime || '00:00';
   const result: LegTimeline[] = [];
   let previousTime = report;
   let previousOffset = 0;
   for (const leg of legs) {
     const departureOffset = previousOffset + (minutesOfDay(leg.departureTime) < minutesOfDay(previousTime) ? 1 : 0);
-    const departureUtc = zonedLocalTimeToUtcMs(day.date, leg.departureTime, departureOffset, airportTimeZone(leg.origin));
+    const departureUtc = zonedLocalTimeToUtcMs(day.date, leg.departureTime, departureOffset, airportTimeZone(leg.origin, strictTimeZones));
     let arrivalOffset = departureOffset;
-    while (arrivalOffset < departureOffset + 2 && zonedLocalTimeToUtcMs(day.date, leg.arrivalTime, arrivalOffset, airportTimeZone(leg.destination)) <= departureUtc) arrivalOffset += 1;
+    while (arrivalOffset < departureOffset + 2 && zonedLocalTimeToUtcMs(day.date, leg.arrivalTime, arrivalOffset, airportTimeZone(leg.destination, strictTimeZones)) <= departureUtc) arrivalOffset += 1;
     if (leg.isNextDay && arrivalOffset === 0) arrivalOffset = 1;
     result.push({ departureOffset, arrivalOffset });
     previousTime = leg.arrivalTime;
