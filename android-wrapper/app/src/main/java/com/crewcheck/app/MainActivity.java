@@ -96,6 +96,8 @@ public class MainActivity extends Activity {
     private String pendingNativeLocationCallbackId;
     private CrewCheckBillingBridge billingBridge;
     private BroadcastReceiver watchSyncRequestReceiver;
+    private CrewCheckMyCrewCarePortal myCrewCarePortal;
+    private String pendingWakeAckKey;
 
     private boolean hasCrewCheckLocationPermission() {
         try {
@@ -154,6 +156,8 @@ public class MainActivity extends Activity {
         billingBridge = new CrewCheckBillingBridge(this, webView);
         webView.addJavascriptInterface(billingBridge, "AndroidCrewCheckBilling");
         registerWatchSyncRequestReceiver();
+        myCrewCarePortal = new CrewCheckMyCrewCarePortal(this, rootLayout, webView);
+        captureWakeAckIntent(getIntent());
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -172,6 +176,8 @@ public class MainActivity extends Activity {
                 super.onPageFinished(view, url);
                 if (!isCrewCheckWebUrl(url)) return;
                 injectCrewCheckBridge();
+                dispatchMyCrewCareStatus();
+                dispatchPendingWakeAck();
                 dispatchPendingSharedPdf();
                 syncLifeCompanionToCrewCheckAndWatch("page-finished");
                 view.postDelayed(() -> requestCrewCheckWatchSnapshotFromWeb("page-finished"), 700);
@@ -232,6 +238,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (myCrewCarePortal != null) myCrewCarePortal.syncIfConnected();
         resumeLifeCompanionMigrationIfNeeded();
         syncLifeCompanionToCrewCheckAndWatch("resume-cached");
         requestLifeCompanionRefresh();
@@ -682,7 +689,7 @@ public class MainActivity extends Activity {
                 "try{AndroidCrewCheckIFlight.openPortalAndImport(String(url),JSON.stringify(options||{}),id);}catch(e){resolve({ok:false,error:String(e&&e.message||e)});}" +
                 "});" +
                 "}};" +
-                "window.CrewCheckNative={openExternal:function(url){try{return AndroidCrewCheckNative.openExternal(String(url));}catch(e){return false;}},requestLocation:function(){try{return AndroidCrewCheckNative.requestLocation();}catch(e){return false;}},requestCurrentLocation:function(callbackId){try{return AndroidCrewCheckNative.requestCurrentLocation(String(callbackId||''));}catch(e){return false;}},requestNotifications:function(){try{return AndroidCrewCheckNative.requestNotifications();}catch(e){return false;}},requestBackgroundMode:function(){try{return AndroidCrewCheckNative.requestBackgroundMode();}catch(e){return false;}},openPowerSettings:function(){try{return AndroidCrewCheckNative.openPowerSettings();}catch(e){return false;}},permissionStatus:function(){try{return JSON.parse(AndroidCrewCheckNative.permissionStatus());}catch(e){return {location:false,notifications:false};}},watchSyncAvailable:function(){try{return AndroidCrewCheckNative.watchSyncAvailable();}catch(e){return false;}},syncWatchSnapshot:function(snapshot){try{var raw=(typeof snapshot==='string')?snapshot:JSON.stringify(snapshot||{});return AndroidCrewCheckNative.syncWatchSnapshot(String(raw));}catch(e){return false;}},requestWatchSnapshot:function(){try{return AndroidCrewCheckNative.requestWatchSnapshot();}catch(e){return false;}},notify:function(title,body){try{return AndroidCrewCheckNative.notify(String(title||'CrewCheck'),String(body||''));}catch(e){return false;}},scheduleNotification:function(title,body,epochMillis){try{return AndroidCrewCheckNative.scheduleNotification(String(title||'CrewCheck'),String(body||''),String(epochMillis||Date.now()));}catch(e){return false;}}};" +
+                "window.CrewCheckNative={openExternal:function(url){try{return AndroidCrewCheckNative.openExternal(String(url));}catch(e){return false;}},requestLocation:function(){try{return AndroidCrewCheckNative.requestLocation();}catch(e){return false;}},requestCurrentLocation:function(callbackId){try{return AndroidCrewCheckNative.requestCurrentLocation(String(callbackId||''));}catch(e){return false;}},requestNotifications:function(){try{return AndroidCrewCheckNative.requestNotifications();}catch(e){return false;}},requestBackgroundMode:function(){try{return AndroidCrewCheckNative.requestBackgroundMode();}catch(e){return false;}},openPowerSettings:function(){try{return AndroidCrewCheckNative.openPowerSettings();}catch(e){return false;}},permissionStatus:function(){try{return JSON.parse(AndroidCrewCheckNative.permissionStatus());}catch(e){return {location:false,notifications:false};}},watchSyncAvailable:function(){try{return AndroidCrewCheckNative.watchSyncAvailable();}catch(e){return false;}},syncWatchSnapshot:function(snapshot){try{var raw=(typeof snapshot==='string')?snapshot:JSON.stringify(snapshot||{});return AndroidCrewCheckNative.syncWatchSnapshot(String(raw));}catch(e){return false;}},requestWatchSnapshot:function(){try{return AndroidCrewCheckNative.requestWatchSnapshot();}catch(e){return false;}},notify:function(title,body){try{return AndroidCrewCheckNative.notify(String(title||'CrewCheck'),String(body||''));}catch(e){return false;}},scheduleNotification:function(title,body,epochMillis){try{return AndroidCrewCheckNative.scheduleNotification(String(title||'CrewCheck'),String(body||''),String(epochMillis||Date.now()));}catch(e){return false;}},openMyCrewCare:function(){try{return AndroidCrewCheckNative.openMyCrewCare();}catch(e){return false;}},syncMyCrewCare:function(){try{return AndroidCrewCheckNative.syncMyCrewCare();}catch(e){return false;}},myCrewCareStatus:function(){try{return JSON.parse(AndroidCrewCheckNative.myCrewCareStatus());}catch(e){return {connected:false,status:'disconnected'};}},scheduleWakeAlarm:function(key,epochMillis,label){try{return AndroidCrewCheckNative.scheduleWakeAlarm(String(key||''),String(epochMillis||''),String(label||'CrewCheck'));}catch(e){return false;}},cancelWakeAlarm:function(key){try{return AndroidCrewCheckNative.cancelWakeAlarm(String(key||''));}catch(e){return false;}},syncSystemAlarm:function(epochMillis,label){try{return AndroidCrewCheckNative.syncSystemAlarm(String(epochMillis||''),String(label||'CrewCheck'));}catch(e){return false;}}};" +
                 "if(!window.__crewcheckWatchSnapshotListener){window.__crewcheckWatchSnapshotListener=true;window.addEventListener(\'crewcheck:watch-snapshot\',function(event){try{window.CrewCheckNative.syncWatchSnapshot(event&&event.detail?event.detail:{});}catch(e){}});}" +
                 "window.CrewCheckPremium=window.CrewCheckNative;" +
                 "try{window.dispatchEvent(new CustomEvent('crewcheck:native-ready',{detail:window.CrewCheckNative.permissionStatus()}));}catch(e){}" +
@@ -731,6 +738,37 @@ public class MainActivity extends Activity {
                 startActivity(intent);
             } catch (Exception ignored) {}
         }
+    }
+
+    private void captureWakeAckIntent(Intent intent) {
+        if (intent == null) return;
+        String key = intent.getStringExtra("crewcheckWakeAckKey");
+        if (key != null && !key.trim().isEmpty()) pendingWakeAckKey = key.trim();
+    }
+
+    private void dispatchPendingWakeAck() {
+        if (webView == null || pendingWakeAckKey == null || pendingWakeAckKey.isEmpty()) return;
+        try {
+            JSONObject detail = new JSONObject();
+            detail.put("wakeKey", pendingWakeAckKey);
+            detail.put("acknowledgedAt", System.currentTimeMillis());
+            final String js = "(function(){try{var detail=" + detail.toString() + ";" +
+                    "window.dispatchEvent(new CustomEvent('crewcheck:wake-ack',{detail:detail}));" +
+                    "}catch(e){}})();";
+            webView.evaluateJavascript(js, null);
+            pendingWakeAckKey = null;
+        } catch (Exception ignored) {}
+    }
+
+    private void dispatchMyCrewCareStatus() {
+        if (webView == null || myCrewCarePortal == null) return;
+        try {
+            final String status = myCrewCarePortal.statusJson();
+            final String js = "(function(){try{var detail=" + status + ";" +
+                    "window.dispatchEvent(new CustomEvent('crewcheck:mycrewcare-status',{detail:detail}));" +
+                    "}catch(e){}})();";
+            webView.evaluateJavascript(js, null);
+        } catch (Exception ignored) {}
     }
 
     private void registerWatchSyncRequestReceiver() {
@@ -1190,6 +1228,77 @@ public class MainActivity extends Activity {
         public boolean requestWatchSnapshot() {
             requestCrewCheckWatchSnapshotFromWeb("watch-request");
             return true;
+        }
+
+        @JavascriptInterface
+        public boolean openMyCrewCare() {
+            if (myCrewCarePortal == null) return false;
+            myCrewCarePortal.open();
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean syncMyCrewCare() {
+            if (myCrewCarePortal == null) return false;
+            myCrewCarePortal.syncIfConnected();
+            return true;
+        }
+
+        @JavascriptInterface
+        public String myCrewCareStatus() {
+            return myCrewCarePortal == null
+                    ? "{\"connected\":false,\"status\":\"disconnected\"}"
+                    : myCrewCarePortal.statusJson();
+        }
+
+        @JavascriptInterface
+        public boolean scheduleWakeAlarm(final String wakeKey, final String epochMillis, final String label) {
+            long when;
+            try { when = Long.parseLong(epochMillis); }
+            catch (Exception ignored) { return false; }
+
+            boolean scheduled = CrewCheckWakeScheduler.schedule(MainActivity.this, wakeKey, when, label);
+            if (!scheduled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !CrewCheckWakeScheduler.canScheduleExact(MainActivity.this)) {
+                runOnUiThread(() -> {
+                    try {
+                        Intent intent = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
+                        intent.setData(Uri.parse("package:" + getPackageName()));
+                        startActivity(intent);
+                        Toast.makeText(MainActivity.this, "Libere alarmes exatos para o CrewCheck Wake e toque em Ativar novamente.", Toast.LENGTH_LONG).show();
+                    } catch (Exception ignored2) {}
+                });
+            }
+            return scheduled;
+        }
+
+        @JavascriptInterface
+        public boolean cancelWakeAlarm(final String wakeKey) {
+            CrewCheckWakeScheduler.cancel(MainActivity.this, wakeKey);
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean syncSystemAlarm(final String epochMillis, final String label) {
+            long when;
+            try { when = Long.parseLong(epochMillis); }
+            catch (Exception ignored) { return false; }
+            long delta = when - System.currentTimeMillis();
+            if (delta <= 0L || delta > 24L * 60L * 60L * 1000L) return false;
+
+            try {
+                java.util.Calendar calendar = java.util.Calendar.getInstance();
+                calendar.setTimeInMillis(when);
+                Intent intent = new Intent(android.provider.AlarmClock.ACTION_SET_ALARM);
+                intent.putExtra(android.provider.AlarmClock.EXTRA_HOUR, calendar.get(java.util.Calendar.HOUR_OF_DAY));
+                intent.putExtra(android.provider.AlarmClock.EXTRA_MINUTES, calendar.get(java.util.Calendar.MINUTE));
+                intent.putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, label == null ? "CrewCheck" : label);
+                intent.putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+                return true;
+            } catch (Exception ignored) {
+                return false;
+            }
         }
 
         @JavascriptInterface
@@ -2664,6 +2773,8 @@ try{
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        captureWakeAckIntent(intent);
+        dispatchPendingWakeAck();
         handleIncomingPdfIntent(intent);
     }
 
@@ -2707,6 +2818,10 @@ try{
 
     @Override
     public void onBackPressed() {
+        if (myCrewCarePortal != null && myCrewCarePortal.isVisible()) {
+            myCrewCarePortal.closeVisible();
+            return;
+        }
         if (portalWebView != null) {
             if (portalWebView.canGoBack()) portalWebView.goBack();
             else finishIFlightWithError("Portal iFlight fechado pelo usuário antes do download do PDF.");
@@ -2719,6 +2834,10 @@ try{
     @Override
     protected void onDestroy() {
         closePortalOnly();
+        if (myCrewCarePortal != null) {
+            myCrewCarePortal.destroy();
+            myCrewCarePortal = null;
+        }
         if (billingBridge != null) {
             billingBridge.destroy();
             billingBridge = null;
