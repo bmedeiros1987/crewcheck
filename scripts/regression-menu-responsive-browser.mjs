@@ -140,6 +140,7 @@ async function inspect(page, label) {
     const panel = document.querySelector('.cz-menu-panel');
     const scroll = document.querySelector('.cz-menu-scroll');
     const buttons = [...document.querySelectorAll('.cc-menu-destination[data-menu-label]')];
+    const favorites = [...document.querySelectorAll('.cc-menu-favorite')];
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
     const context = canvas.getContext('2d', { willReadFrequently: true });
     const rgba = color => {
@@ -163,6 +164,27 @@ async function inspect(page, label) {
       logout: box(document.querySelector('.cz-menu-logout')),
       profile: box(document.querySelector('.cz-menu-profile')),
       count: buttons.length,
+      favoriteCount: favorites.length,
+      favorites: favorites.map(b => {
+        const glyph = b.querySelector('.cc-menu-favorite-glyph');
+        const buttonStyle = getComputedStyle(b);
+        const glyphStyle = glyph ? getComputedStyle(glyph) : null;
+        const background = buttonStyle.backgroundColor;
+        const color = glyphStyle?.color || buttonStyle.color;
+        return {
+          pressed: b.getAttribute('aria-pressed'),
+          text: glyph?.textContent || '',
+          button: box(b),
+          glyph: glyph ? box(glyph) : null,
+          display: buttonStyle.display,
+          overflow: buttonStyle.overflow,
+          visibility: glyphStyle?.visibility,
+          opacity: glyphStyle?.opacity,
+          color,
+          background,
+          contrast: contrast(color, background),
+        };
+      }),
       rows: buttons.map(b => {
         const copy = b.querySelector(':scope > span');
         const style = getComputedStyle(copy);
@@ -195,6 +217,16 @@ async function inspect(page, label) {
   if (metrics.scroll.scrollWidth > metrics.scroll.clientWidth + 1) failures.push('Horizontal overflow in menu list');
   if (metrics.columns !== metrics.expectedColumns) failures.push('Wrong navigation column count');
   if (metrics.count !== 40) failures.push(`Expected 40 canonical destinations; got ${metrics.count}`);
+  if (metrics.favoriteCount !== metrics.count) failures.push(`Expected one favorite control per destination; got ${metrics.favoriteCount}`);
+  for (const favorite of metrics.favorites) {
+    if (!favorite.glyph || favorite.glyph.width < 20 || favorite.glyph.height < 20) failures.push('Favorite glyph is missing or clipped');
+    if (!['☆', '★'].includes(favorite.text)) failures.push('Favorite glyph text is missing');
+    if (favorite.button.width < 44 || favorite.button.height < 44) failures.push('Favorite touch target below 44 CSS px');
+    if (favorite.display !== 'flex' && favorite.display !== 'inline-flex') failures.push('Favorite control inherited legacy menu grid');
+    if (favorite.visibility !== 'visible' || Number(favorite.opacity) < .99) failures.push('Favorite glyph is visually hidden');
+    if (favorite.overflow === 'hidden') failures.push('Favorite glyph can be clipped by overflow');
+    if (!(favorite.contrast >= 3)) failures.push('Favorite glyph contrast below 3:1');
+  }
   for (const row of metrics.rows) {
     if (row.visibility !== 'visible' || Number(row.opacity) < 0.99 || row.position === 'absolute') failures.push(`${row.name}: label depends on hover`);
     if (row.button.width < 200 || row.button.height < 44) failures.push(`${row.name}: collapsed navigation row`);
