@@ -780,20 +780,35 @@ async function handleAirportWeather(req, res, url) {
   const point = WEATHER_AIRPORT_POINTS[airport];
   if (!point) return sendJson(res, 200, { ok: false, airport, message: 'Previsão indisponível para este aeroporto.' });
   try {
-    const api = `https://api.open-meteo.com/v1/forecast?latitude=${point.lat}&longitude=${point.lon}&current_weather=true&daily=precipitation_probability_max,temperature_2m_max,temperature_2m_min&forecast_days=2&timezone=auto`;
+    const api = `https://api.open-meteo.com/v1/forecast?latitude=${point.lat}&longitude=${point.lon}&current_weather=true&daily=weather_code,precipitation_probability_max,temperature_2m_max,temperature_2m_min&forecast_days=7&timezone=auto`;
     const response = await fetch(api, { headers: { accept: 'application/json' } });
     const payload = await response.json().catch(() => null);
     if (!response.ok) return sendJson(res, 200, { ok: false, airport, city: point.city, message: 'Previsão local indisponível agora.' });
     const current = payload?.current_weather || {};
-    const rain = Array.isArray(payload?.daily?.precipitation_probability_max) ? payload.daily.precipitation_probability_max[0] : undefined;
+    const daily = payload?.daily || {};
+    const times = Array.isArray(daily.time) ? daily.time : [];
+    const rainValues = Array.isArray(daily.precipitation_probability_max) ? daily.precipitation_probability_max : [];
+    const maxValues = Array.isArray(daily.temperature_2m_max) ? daily.temperature_2m_max : [];
+    const minValues = Array.isArray(daily.temperature_2m_min) ? daily.temperature_2m_min : [];
+    const codeValues = Array.isArray(daily.weather_code) ? daily.weather_code : [];
+    const forecastDays = times.slice(0, 7).map((date, index) => ({
+      date,
+      rainChance: rainValues[index],
+      maxTemperature: maxValues[index],
+      minTemperature: minValues[index],
+      condition: weatherCodeLabel(codeValues[index]),
+    }));
     return sendJson(res, 200, {
       ok: true,
       airport,
       city: point.city,
       temperature: current.temperature,
+      minTemperature: minValues[0],
+      maxTemperature: maxValues[0],
       wind: current.windspeed,
-      rainChance: rain,
+      rainChance: rainValues[0],
       condition: weatherCodeLabel(current.weathercode),
+      forecastDays,
       updatedAt: current.time || new Date().toISOString(),
       message: 'Previsão atualizada.',
     });
