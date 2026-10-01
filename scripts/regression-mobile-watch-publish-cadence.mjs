@@ -31,7 +31,7 @@ const start = home.indexOf("    let lastSignature = '';");
 const end = home.indexOf('\n    publishWatchSnapshot(true);', start);
 assert.ok(start >= 0 && end > start, 'Find the transferred Home publishing closure');
 const closure = ts.transpileModule(home.slice(start, end) + '\nthis.publish = publishWatchSnapshot;', { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-let now = 1000000, current = { ...snapshot }, published = [];
+let now = 24 * 60 * 60 * 1000, current = { ...snapshot }, published = [];
 let radar = null;
 const baseEvent = { id: 'demo-flight', kind: 'flight', flightNumber: 'LA9001', gate: '', placeholder: false };
 const env = { watchSnapshotContentSignature: signature, WATCH_UNCHANGED_REPUBLISH_MS: interval,
