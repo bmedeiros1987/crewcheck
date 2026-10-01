@@ -178,4 +178,6 @@ await import('../android-play/prepare.mjs');
 await import('../android-play/layout.mjs');
 await import('../p1-546-pulse-live/finalize.mjs');
 await import('../v14411/apply.mjs');
+// Durable shared-PDF handoff runs after every functional/UI materializer.
+await import('../p0-shared-pdf-durable/apply.mjs');
 await import('../ci/sync-canonical-manual.mjs');

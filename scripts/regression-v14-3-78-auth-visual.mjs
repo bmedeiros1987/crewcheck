@@ -12,7 +12,9 @@ const v14378Index = chain.indexOf("await import('../v14378/apply.mjs');");
 const preparationImports = Array.from(chain.matchAll(/await import\('\.\.\/(v\d+)\/apply\.mjs'\);/g));
 const latestPreparation = preparationImports.at(-1);
 const manualFinalizer = "await import('../ci/sync-canonical-manual.mjs');";
+const transportFinalizer = "await import('../p0-shared-pdf-durable/apply.mjs');";
 const manualFinalizerIndex = chain.indexOf(manualFinalizer);
+const transportFinalizerIndex = chain.indexOf(transportFinalizer);
 
 assert.ok(auth.includes("import './auth-premium.css';"), 'AuthPage deve importar o CSS premium');
 assert.ok(auth.includes('cc-auth-premium'), 'AuthPage deve usar a classe premium');
@@ -29,7 +31,8 @@ assert.match(css, /html\[data-crew-theme="dark"\]/, 'layout deve possuir modo es
 assert.ok(v14378Index >= 0, 'v14.3.78 deve participar da preparação canônica');
 assert.ok(latestPreparation, 'a preparação canônica deve possuir uma etapa funcional final');
 assert.ok((latestPreparation?.index ?? -1) >= v14378Index, 'versões posteriores devem preservar a autenticação premium da v14.3.78');
-assert.ok(manualFinalizerIndex > (latestPreparation?.index ?? -1), 'o finalizador documental deve rodar depois da release funcional mais recente');
+assert.ok(transportFinalizerIndex > (latestPreparation?.index ?? -1), 'o handoff de transporte deve ser reafirmado apenas depois das etapas funcionais que podem materializar a UI');
+assert.ok(manualFinalizerIndex > transportFinalizerIndex, 'o finalizador documental deve suceder o transporte PDF durável sem reversionar a UI');
 assert.ok(chain.trimEnd().endsWith(manualFinalizer), 'o finalizador documental deve encerrar a preparação canônica');
 
-console.log('[v14.3.78-auth-visual] OK — login/cadastro padronizados, tema acessível e olho contido no campo.');
+console.log('[v14.3.78-auth-visual] OK — login/cadastro padronizados; transporte PDF é reafirmado após a UI e o sync documental permanece terminal.');

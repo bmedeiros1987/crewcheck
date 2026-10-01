@@ -58,9 +58,16 @@ expectAll('abrir escala ativa deve continuar substituindo somente o bundle opera
   'setBundle({ roster: active.roster',
 ]);
 
-// Android ACTION_SEND must enter the exact same handleFile pipeline as PWA.
+// Android ACTION_SEND, PWA share target and the manual picker must converge on
+// one importer. The transport can change, but no channel may create a parallel
+// parser or bypass the same guarded persistence path.
 assert.match(home, /window\.addEventListener\('crewcheck:native-pdf'/);
-assert.match(home, /await handleFile\(\{ target: \{ files: \[file\] \} \}/);
+assert.match(home, /const imported = await processRosterFile\(file\);/);
+const manualImport = nearby(home, 'async function handleFile(inputEvent: ChangeEvent<HTMLInputElement>)', 700);
+expectAll('picker manual deve reutilizar o mesmo processRosterFile do share Android/PWA', manualImport, [
+  'const file = inputEvent.target.files?.[0];',
+  'await processRosterFile(file);',
+]);
 assert.match(android, /acknowledgeSharedPdf/);
 
 // Telegram must parse, then persist only a linked account through the same
