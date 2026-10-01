@@ -1,0 +1,43 @@
+name: CrewCheck Wake MyCrewCare Briefing
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/crewWake.ts'
+      - 'client/src/components/wakeup/**'
+      - 'client/src/pages/Home.tsx'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCarePortal.java'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWake*.java'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
+      - 'android-wrapper/app/src/main/AndroidManifest.xml'
+      - 'server.mjs'
+      - 'scripts/regression-wake-briefing-mycrewcare-v1.mjs'
+      - '.github/workflows/wake-briefing-mycrewcare-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Materialize canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Wake / MyCrewCare regression
+        run: node scripts/regression-wake-briefing-mycrewcare-v1.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Web build
+        run: npx vite build
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - name: Android debug build
+        run: gradle -p android-wrapper --no-daemon --console=plain :app:assembleDebug
