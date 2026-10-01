@@ -28,12 +28,14 @@ function functionBlock(source, startMarker, endMarker) {
   let source = read(path);
 
   const importLine = "import { CrewTripBriefingCard, CrewWakePremiumPanel, CrewWakeRuntimeBridge } from '@/components/wakeup/CrewWakeSurface';";
+  const typeAnchor = '\ntype ZeroView =';
   if (!source.includes(importLine)) {
-    const typeAnchor = '\ntype ZeroView =';
     if (!source.includes(typeAnchor)) throw new Error(`[${MARKER}] limite dos imports de Home ausente`);
-    source = source.replace(typeAnchor, `\n${importLine}\nimport StayNavigationContext from '@/components/navigation/StayNavigationContext';\n${typeAnchor.slice(1)}`);
-  } else if (!source.includes("from '@/components/navigation/StayNavigationContext'")) {
-    source = source.replace(importLine, importLine + "\nimport StayNavigationContext from '@/components/navigation/StayNavigationContext';");
+    source = source.replace(typeAnchor, `\n${importLine}\n${typeAnchor.slice(1)}`);
+  }
+  if (!source.includes("from '@/components/navigation/StayNavigationContext'")) {
+    if (!source.includes(typeAnchor)) throw new Error(`[${MARKER}] limite dos imports de Home ausente para StayNavigationContext`);
+    source = source.replace(typeAnchor, "\nimport StayNavigationContext from '@/components/navigation/StayNavigationContext';\n" + typeAnchor.slice(1));
   }
 
   if (!source.includes('peekPendingNavigationContext')) {
@@ -141,11 +143,16 @@ function functionBlock(source, startMarker, endMarker) {
   const path = 'client/src/components/v1391/RosterLaunchView.tsx';
   let source = read(path);
 
+  const rosterTypeAnchor = '\ntype RosterEvent =';
   if (!source.includes("from '@/components/wakeup/CrewWakeSurface'")) {
-    const typeAnchor = '\ntype RosterEvent =';
-    if (!source.includes(typeAnchor)) throw new Error(`[${MARKER}] limite de imports da Escala ausente`);
-    source = source.replace(typeAnchor,
-      "\nimport { StayWakeStrip } from '@/components/wakeup/CrewWakeSurface';\nimport { setPendingNavigationContext } from '@/lib/navigationContext';\n" + typeAnchor.slice(1));
+    if (!source.includes(rosterTypeAnchor)) throw new Error(`[${MARKER}] limite de imports da Escala ausente`);
+    source = source.replace(rosterTypeAnchor,
+      "\nimport { StayWakeStrip } from '@/components/wakeup/CrewWakeSurface';\n" + rosterTypeAnchor.slice(1));
+  }
+  if (!source.includes("from '@/lib/navigationContext'")) {
+    if (!source.includes(rosterTypeAnchor)) throw new Error(`[${MARKER}] limite de imports da Escala ausente para Navigation Context`);
+    source = source.replace(rosterTypeAnchor,
+      "\nimport { setPendingNavigationContext } from '@/lib/navigationContext';\n" + rosterTypeAnchor.slice(1));
   }
 
   if (!source.includes('function openWakeForStay(event: RosterEvent)')) {

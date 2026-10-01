@@ -41,8 +41,8 @@ assert.doesNotMatch(portal, /addJavascriptInterface/, 'Portal externo não pode 
 assert.match(portal, /api2\.apicrewcare\.com/, 'Portal deve limitar o domínio MyCrewCare');
 assert.match(portal, /login\.microsoftonline\.com/, 'SSO Microsoft deve ser permitido');
 assert.match(portal, /isMyCrewCareUrl\(url\)[\s\S]*extractTransportation/, 'Extração só deve ocorrer depois do retorno ao MyCrewCare');
-assert.match(portal, /Transportation\\s\+To\\s\+Airport/, 'Parser deve reconhecer transporte ao aeroporto');
-assert.match(portal, /Pick\[- \]\?up\[- \]\?time/, 'Parser deve reconhecer pickup time');
+assert.ok(portal.includes('Transportation\\\\s+To\\\\s+Airport'), 'Parser deve reconhecer transporte ao aeroporto');
+assert.ok(portal.includes('Pick[- ]?up[- ]?time'), 'Parser deve reconhecer pickup time');
 assert.doesNotMatch(portal, /raw:text\.slice/, 'Payload MyCrewCare deve conter apenas campos mínimos');
 assert.match(portal, /dispatchEmptySnapshot\(\)/, 'Sync MyCrewCare deve limpar transporte anterior antes de extrair');
 const statusMethod = portal.match(/private void dispatchStatus\(boolean connected\) \{([\s\S]*?)\n    \}/)?.[1] || '';

@@ -228,7 +228,7 @@ public final class CrewCheckMyCrewCarePortal {
                 dispatchStatus(false);
                 destroyPortal();
             } else if (statusText != null) {
-                statusText.setText("Login corporativo · conclua a autenticação e o MFA normalmente.");
+                statusText.setText("Autenticação externa · conclua a autenticação e o MFA normalmente.");
             }
             return;
         }

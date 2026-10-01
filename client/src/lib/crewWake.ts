@@ -8,7 +8,7 @@ export type CrewWakeCanonical = {
 export type CrewWakeEvent = {
   id: string;
   date?: Date | string;
-  day?: { date?: string; base?: string; pairingCode?: string; type?: string; [key: string]: unknown };
+  day?: { date?: string; base?: string; pairingCode?: string; type?: string };
   kind?: string;
   hotel?: string;
   origin?: string;
