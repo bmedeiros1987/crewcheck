@@ -1,0 +1,42 @@
+name: Garmin Connect IQ contract
+
+on:
+  pull_request:
+    paths:
+      - 'peripherals/contracts/**'
+      - 'peripherals/garmin/**'
+      - 'scripts/regression-garmin-connect-iq-contract.mjs'
+      - 'scripts/test-garmin-device-discovery.mjs'
+      - '.github/workflows/garmin-connect-iq-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  garmin-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Ownership fence
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "${GITHUB_BASE_REF}"
+          forbidden="$(git diff --name-only "origin/${GITHUB_BASE_REF}"...HEAD | grep -E '^(android-wrapper/app/|client/)' || true)"
+          if [ -n "$forbidden" ]; then
+            echo 'Garmin peripheral PR contains Mobile-owned files:' >&2
+            echo "$forbidden" >&2
+            exit 1
+          fi
+      - name: Validate portable contract and compact Garmin payload
+        run: node scripts/regression-garmin-connect-iq-contract.mjs
+      - name: Validate exact SDK device discovery
+        run: node scripts/test-garmin-device-discovery.mjs
