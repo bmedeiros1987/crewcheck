@@ -197,7 +197,10 @@ function buildRoster(overrides = {}) {
 
 const settings = { selectedCalendarId: 'primary', selectedCalendarName: 'Calendário principal', autoSync: true, exportMode: 'flights-rest', includeFinancialNotes: false };
 const events = (id = 'primary') => [...calendars.get(id).events.values()];
-const crewcheckEvents = (id = 'primary') => events(id).filter((e) => e.extendedProperties?.private?.crewcheck === 'true' && e.extendedProperties.private.crewcheckCrew === 'bruno-medeiros');
+const crewcheckEvents = (id = 'primary') => events(id).filter((e) => {
+  const props = e.extendedProperties?.private || {};
+  return props.crewcheck === 'true' && /^id-/.test(String(props.crewcheckCrew || ''));
+});
 const bySummary = (summary, id = 'primary') => {
   const found = crewcheckEvents(id).filter((e) => e.summary === summary);
   assert.equal(found.length, 1, `evento único esperado: ${summary} (achou ${found.length})`);
