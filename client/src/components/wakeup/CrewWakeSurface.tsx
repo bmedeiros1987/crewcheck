@@ -6,6 +6,7 @@ import {
   briefingLeadHours,
   crewWakeEventKey,
   effectivePickup,
+  eventStart,
   formatClock,
   formatDuration,
   isNativeCrewCheck,
@@ -33,6 +34,13 @@ type WeatherSnapshot = {
   wind?: number;
   rainChance?: number;
   condition?: string;
+  forecastDays?: Array<{
+    date?: string;
+    rainChance?: number;
+    minTemperature?: number;
+    maxTemperature?: number;
+    condition?: string;
+  }>;
 };
 
 function nativeBridge(): any {
@@ -305,6 +313,23 @@ async function fetchForecast(airport: string): Promise<WeatherSnapshot | null> {
   }
 }
 
+function stayForecast(weather: WeatherSnapshot | undefined, stay: CrewWakeEvent): WeatherSnapshot | undefined {
+  if (!weather) return undefined;
+  const start = eventStart(stay);
+  const key = start
+    ? [start.getFullYear(), String(start.getMonth() + 1).padStart(2, '0'), String(start.getDate()).padStart(2, '0')].join('-')
+    : '';
+  const daily = key ? weather.forecastDays?.find((item) => item.date === key) : null;
+  if (!daily) return weather;
+  return {
+    ...weather,
+    minTemperature: daily.minTemperature,
+    maxTemperature: daily.maxTemperature,
+    rainChance: daily.rainChance,
+    condition: daily.condition || weather.condition,
+  };
+}
+
 function packingText(weather: WeatherSnapshot[]): string {
   if (!weather.length) return 'Confira a previsão antes de fechar a mala.';
   const temps = weather.flatMap((item) => [item.minTemperature, item.temperature, item.maxTemperature]).map(Number).filter(Number.isFinite);
@@ -359,7 +384,9 @@ export function CrewTripBriefingCard({ events }: { events: CrewWakeEvent[] }) {
 
   if (!briefing) return null;
   if (briefing.startsAt.getTime() - Date.now() > 72 * 60 * 60_000) return null;
-  const weatherList = Object.values(weather);
+  const weatherList = briefing.stays
+    .map((stay) => stayForecast(weather[String(stay.destination || stay.origin || '').toUpperCase()], stay))
+    .filter((item): item is WeatherSnapshot => Boolean(item));
   const untilHours = Math.max(0, Math.ceil((briefing.briefingAt.getTime() - Date.now()) / 36e5));
 
   return <section className={briefing.available ? 'cc-trip-briefing ready' : 'cc-trip-briefing'}>
@@ -373,10 +400,10 @@ export function CrewTripBriefingCard({ events }: { events: CrewWakeEvent[] }) {
       <div className="cc-briefing-stays">
         {briefing.stays.length ? briefing.stays.map((stay) => {
           const airport = String(stay.destination || stay.origin || '').toUpperCase();
-          const forecast = weather[airport];
+          const forecast = stayForecast(weather[airport], stay);
           return <article key={stay.id}>
             <Hotel/>
-            <div><b>{airport || 'Pernoite'} · {String(stay.hotel || 'Hotel a confirmar')}</b><small>{forecast?.city || airport} · {Number.isFinite(Number(forecast?.temperature)) ? `${Math.round(Number(forecast?.temperature))}°C` : 'temperatura a confirmar'} · {Number.isFinite(Number(forecast?.rainChance)) ? `${Math.round(Number(forecast?.rainChance))}% chuva` : 'chuva a confirmar'}</small></div>
+            <div><b>{airport || 'Pernoite'} · {String(stay.hotel || 'Hotel a confirmar')}</b><small>{forecast?.city || airport} · {Number.isFinite(Number(forecast?.minTemperature)) && Number.isFinite(Number(forecast?.maxTemperature)) ? `${Math.round(Number(forecast?.minTemperature))}–${Math.round(Number(forecast?.maxTemperature))}°C` : Number.isFinite(Number(forecast?.temperature)) ? `${Math.round(Number(forecast?.temperature))}°C` : 'temperatura a confirmar'} · {Number.isFinite(Number(forecast?.rainChance)) ? `${Math.round(Number(forecast?.rainChance))}% chuva` : 'chuva a confirmar'}</small></div>
             {Number(forecast?.rainChance || 0) >= 40 ? <CloudRain/> : <CloudSun/>}
           </article>;
         }) : <article><Hotel/><div><b>Sem pernoite previsto</b><small>A próxima chave não possui pernoite detectado na escala atual.</small></div><ShieldCheck/></article>}
