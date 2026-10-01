@@ -92,6 +92,7 @@ const GOOGLE_CLIENT_ID_FALLBACK = '777637106343-1s0tejmffsrl6253hl6qp03idfu1mphf
 const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/calendar.events.owned',
   'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
+  'https://www.googleapis.com/auth/calendar.app.created',
 ].join(' ');
 const GOOGLE_API = 'https://www.googleapis.com/calendar/v3';
 const TIME_ZONE = 'America/Sao_Paulo';
@@ -374,6 +375,19 @@ export async function getCalendarFeedInfo(): Promise<CalendarFeedInfo> {
   };
 }
 
+/**
+ * Acesso à API do Google Calendar para outros módulos CrewCheck (ex.: Wellness/Academia).
+ * Passa pela mesma ponte segura do servidor (allowlist de caminhos) ou pelo token do navegador.
+ */
+export function crewcheckGoogleCalendarRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return googleFetch<T>(path, init);
+}
+
+/** Identidade pseudônima do tripulante usada nas propriedades privadas dos eventos CrewCheck. */
+export function crewcheckSyncCrewKey(roster: CrewRoster): string {
+  return buildSyncIdentity(roster).crew;
+}
+
 export async function syncRosterToGoogleCalendar(roster: CrewRoster, settings = loadGoogleCalendarSettings(), extras: GoogleCalendarSyncExtras = {}): Promise<GoogleSyncResult> {
   const calendarId = normalizeGoogleCalendarId(settings.selectedCalendarId) || 'primary';
   const mode = normalizeExportMode(settings.exportMode || 'flights-rest');
@@ -471,6 +485,7 @@ async function upsertCrewCheckEvents(calendarId: string, roster: CrewRoster, ide
   for (const event of existing) {
     const props = event.extendedProperties?.private || {};
     if (!event.id || props.crewcheck !== 'true') continue; // defesa extra: só eventos CrewCheck.
+    if (props.crewcheckDomain && props.crewcheckDomain !== 'schedule') continue; // ex.: wellness/Academia tem sync próprio.
     const legacyPeriod = String(props.crewcheckPeriodKey || '');
     const sameCrew = props.crewcheckCrew === identity.crew
       || props.crewcheckCrew === identity.legacyCrew
@@ -570,6 +585,7 @@ function blockToGoogleEvent(block: string, periodKey: string, identity: CrewChec
     extendedProperties: {
       private: {
         crewcheck: 'true',
+        crewcheckDomain: 'schedule',
         crewcheckCrew: identity.crew,
         crewcheckScope: identity.scope,
         crewcheckPeriodKey: periodKey,

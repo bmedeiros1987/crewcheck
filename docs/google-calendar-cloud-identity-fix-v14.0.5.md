@@ -65,8 +65,10 @@ Não use curingas, barra final adicional ou `http`.
 ```text
 https://www.googleapis.com/auth/calendar.events.owned
 https://www.googleapis.com/auth/calendar.calendarlist.readonly
+https://www.googleapis.com/auth/calendar.app.created
 ```
 
+- `calendar.app.created` só permite criar calendários próprios do CrewCheck (ex.: "Academia", usado pelo Wellness Scheduler) e gerenciar eventos neles; não dá acesso aos demais calendários.
 - Remova da configuração e da submissão os escopos amplos antigos:
 
 ```text
@@ -121,7 +123,7 @@ O retorno esperado após configurar o Render é:
 {
   "ok": true,
   "configured": true,
-  "scope": "https://www.googleapis.com/auth/calendar.events.owned https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+  "scope": "https://www.googleapis.com/auth/calendar.events.owned https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.app.created",
   "redirectUri": "https://crewcheck.online/api/google-calendar/oauth/callback"
 }
 ```
@@ -134,5 +136,5 @@ Esse erro vem do Google, não do código: o app OAuth está com status de public
 
 1. Google Cloud Console → projeto `sonic-charmer-399015` → **Google Auth Platform → Audience**.
 2. Enquanto estiver em *Testing*: **Test users → Add users** e inclua cada Conta Google que vai conectar (até 100). Em *Testing* (público externo), o refresh token expira em 7 dias: reconectar semanalmente é esperado até a publicação.
-3. **Data Access**: confirme exatamente os dois escopos acima, e nenhum outro de Calendar.
+3. **Data Access**: confirme exatamente os três escopos acima, e nenhum outro de Calendar.
 4. Para sair de *Testing*: **Audience → Publish app**. Como os dois escopos são *sensíveis*, o Google exige verificação: homepage pública (`/about`), Política de Privacidade e Termos públicos no domínio verificado (`crewcheck.online` no Search Console), justificativa de escopo e vídeo de demonstração (roteiro em `docs/google-oauth-verification-kit-2026.md`). Até a aprovação, usuários fora da lista de teste veem a tela de app não verificado ou são bloqueados.

@@ -1,3 +1,4 @@
+import WellnessRecoveryCard from '@/components/wellness/WellnessRecoveryCard';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
@@ -552,6 +553,8 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
         <li>A orientação é uma sugestão de rotina e não substitui avaliação pessoal ou canal oficial de fadiga.</li>
       </ul>}
     </section>
+
+    <WellnessRecoveryCard/>
 
     {automaticSamsung && <section className="cc-life-auto-source">
       <div><small>FONTE AUTOMÁTICA</small><strong>Samsung Health</strong><span>Sincronizado pelo CrewLife Companion</span></div>

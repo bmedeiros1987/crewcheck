@@ -6,8 +6,9 @@ const OWNED_EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owne
 const CALENDARLIST_READONLY_SCOPE = 'https://www.googleapis.com/auth/calendar.calendarlist.readonly';
 // Menor privilégio vigente: eventos só em calendários próprios + leitura da lista de calendários
 // para o usuário escolher o destino (calendário principal ou secundário próprio).
-const CANONICAL_SCOPES = `const GOOGLE_SCOPES = [\n  '${OWNED_EVENTS_SCOPE}',\n  '${CALENDARLIST_READONLY_SCOPE}',\n].join(' ');`;
-const DISCLOSURE_KEY_LINE = "const GOOGLE_SCOPE_DISCLOSURE_KEY = 'crewcheck_google_calendar_owned_events_disclosure_v2';";
+const APP_CREATED_CALENDARS_SCOPE = 'https://www.googleapis.com/auth/calendar.app.created';
+const CANONICAL_SCOPES = `const GOOGLE_SCOPES = [\n  '${OWNED_EVENTS_SCOPE}',\n  '${CALENDARLIST_READONLY_SCOPE}',\n  '${APP_CREATED_CALENDARS_SCOPE}',\n].join(' ');`;
+const DISCLOSURE_KEY_LINE = "const GOOGLE_SCOPE_DISCLOSURE_KEY = 'crewcheck_google_calendar_owned_events_disclosure_v3';";
 
 const read = (path) => fs.readFileSync(path, 'utf8');
 const write = (path, content) => fs.writeFileSync(path, content, 'utf8');
@@ -33,7 +34,7 @@ if (!calendar.includes('function confirmGoogleCalendarOwnedEventsDisclosure()'))
   if (!calendar.includes(connectMarker)) throw new Error(`CrewCheck v${VERSION}: entrada de conexão Google não localizada.`);
   calendar = calendar.replace(
     connectMarker,
-    `function confirmGoogleCalendarOwnedEventsDisclosure(): void {\n  try {\n    if (localStorage.getItem(GOOGLE_SCOPE_DISCLOSURE_KEY) === 'accepted') return;\n  } catch {}\n  const accepted = window.confirm([\n    'Conectar o Google Calendar?',\n    '',\n    'O CrewCheck usará duas permissões: criar, consultar, atualizar e excluir somente eventos nos calendários Google que pertencem a você, e ver (somente leitura) a lista dos seus calendários para você escolher o destino da escala.',\n    '',\n    'A sincronização usa apenas o período da escala e remove somente eventos identificados como CrewCheck. Seus e-mails, arquivos, contatos e eventos pessoais sem a marca CrewCheck não são acessados para esta funcionalidade.',\n    '',\n    'Você poderá revogar a autorização a qualquer momento.'\n  ].join('\\n'));\n  if (!accepted) throw new Error('Conexão com Google Calendar cancelada pelo usuário.');\n  try { localStorage.setItem(GOOGLE_SCOPE_DISCLOSURE_KEY, 'accepted'); } catch {}\n}\n\nexport async function connectGoogleCalendar(prompt = 'consent select_account'): Promise<void> {\n  if (/consent|select_account/i.test(prompt)) confirmGoogleCalendarOwnedEventsDisclosure();`,
+    `function confirmGoogleCalendarOwnedEventsDisclosure(): void {\n  try {\n    if (localStorage.getItem(GOOGLE_SCOPE_DISCLOSURE_KEY) === 'accepted') return;\n  } catch {}\n  const accepted = window.confirm([\n    'Conectar o Google Calendar?',\n    '',\n    'O CrewCheck usará três permissões: criar, consultar, atualizar e excluir somente eventos nos calendários Google que pertencem a você; ver (somente leitura) a lista dos seus calendários para você escolher o destino; e criar um calendário próprio do CrewCheck (ex.: Academia), sem acesso aos seus outros calendários.',\n    '',\n    'A sincronização usa apenas o período da escala e remove somente eventos identificados como CrewCheck. Seus e-mails, arquivos, contatos e eventos pessoais sem a marca CrewCheck não são acessados para esta funcionalidade.',\n    '',\n    'Você poderá revogar a autorização a qualquer momento.'\n  ].join('\\n'));\n  if (!accepted) throw new Error('Conexão com Google Calendar cancelada pelo usuário.');\n  try { localStorage.setItem(GOOGLE_SCOPE_DISCLOSURE_KEY, 'accepted'); } catch {}\n}\n\nexport async function connectGoogleCalendar(prompt = 'consent select_account'): Promise<void> {\n  if (/consent|select_account/i.test(prompt)) confirmGoogleCalendarOwnedEventsDisclosure();`,
   );
 }
 

@@ -442,7 +442,7 @@ await check('OAuth no APK/WebView abre o navegador externo (callback HTTPS)', as
   const start = await callRoute('/api/google-calendar/oauth/start', 'POST', {});
   const auth = new URL(start.payload.authUrl);
   assert.equal(auth.searchParams.get('redirect_uri'), 'https://crewcheck.online/api/google-calendar/oauth/callback');
-  assert.equal(auth.searchParams.get('scope'), 'https://www.googleapis.com/auth/calendar.events.owned https://www.googleapis.com/auth/calendar.calendarlist.readonly');
+  assert.equal(auth.searchParams.get('scope'), 'https://www.googleapis.com/auth/calendar.events.owned https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.app.created');
   assert.equal(auth.searchParams.get('code_challenge_method'), 'S256');
   assert.equal(auth.searchParams.get('access_type'), 'offline');
   const activity = fs.readFileSync(path.join(root, 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'), 'utf8');
