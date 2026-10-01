@@ -96,7 +96,7 @@
   padding: 0 !important;
   overflow: visible !important;
   text-align: center !important;
-  color: color-mix(in srgb, currentColor 78%, transparent) !important;
+  color: var(--cc-text, currentColor) !important;
 }
 .cz-menu-section .cc-menu-favorite-glyph {
   display: inline-grid !important;
@@ -123,7 +123,7 @@
   outline-offset: 2px !important;
 }
 .cz-menu-section .cc-menu-favorite[aria-pressed="true"] {
-  color: #ffd24a !important;
+  color: var(--cc-violet, #8657f4) !important;
 }
 .cc-menu-empty {
   margin: 10px 16px 18px;
