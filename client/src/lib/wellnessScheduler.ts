@@ -83,11 +83,14 @@ export interface WellnessBusyInterval {
 
 export interface WellnessHealthDay {
   date: string; // YYYY-MM-DD (dia a que o resumo se refere)
+  capturedAt?: string;
+  summaryPeriodDays?: number;
   sleepMinutes?: number;
   restingHeartRate?: number;
   steps?: number;
   activityMinutes?: number;
   exerciseMinutes?: number;
+  provenance?: Partial<Record<'sleepMinutes' | 'restingHeartRate' | 'steps' | 'activityMinutes', { start: string; end: string; periodDays: number }>>;
 }
 
 export interface WellnessPlanInput {
@@ -219,6 +222,18 @@ function subtract(segments: Segment[], block: Segment): Segment[] {
   return out;
 }
 
+// Only timestamped daily evidence participates; capture time is not measurement time.
+function dailyValue(day: WellnessHealthDay, metric: 'sleepMinutes' | 'restingHeartRate' | 'steps' | 'activityMinutes', timeZone: string): number | undefined {
+  const value = day[metric];
+  const source = day.provenance?.[metric];
+  const start = Date.parse(source?.start || '');
+  const end = Date.parse(source?.end || '');
+  if (!Number.isFinite(value) || !value || value <= 0 || !source || source.periodDays !== 1 ||
+      !Number.isFinite(start) || !Number.isFinite(end) || end <= start || end - start > 24 * HOUR ||
+      localParts(end, timeZone).date !== day.date) return undefined;
+  return value;
+}
+
 // ---------- motor ----------
 export function planWellness(input: WellnessPlanInput): WellnessDayPlan[] {
   const prefs = normalizeWellnessPreferences(input.preferences);
@@ -281,12 +296,14 @@ export function planWellness(input: WellnessPlanInput): WellnessDayPlan[] {
     else if (dayKinds.includes('standby-home')) { level = Math.max(level, 3); limits.push('HSB: fique próximo de casa (mobilidade/caminhada leve)'); }
 
     // Relógio (somente se autorizado e disponível): comparação com a linha de base pessoal.
-    const today = prefs.useHealthData ? health.get(date) : undefined;
-    const history = (input.health || []).filter((item) => item.date < date);
-    const sleepBaseline = median(history.map((item) => item.sleepMinutes || 0));
-    const rhrBaseline = median(history.map((item) => item.restingHeartRate || 0));
+    const rawToday = prefs.useHealthData ? health.get(date) : undefined;
+    const today = rawToday ? { ...rawToday, sleepMinutes: dailyValue(rawToday, 'sleepMinutes', timeZone), restingHeartRate: dailyValue(rawToday, 'restingHeartRate', timeZone), steps: dailyValue(rawToday, 'steps', timeZone), activityMinutes: dailyValue(rawToday, 'activityMinutes', timeZone) } : undefined;
+    const history = (input.health || []).filter((item) => item.date < date && item.date >= addDaysIso(date, -30));
+    const sleepBaseline = median(history.map((item) => dailyValue(item, 'sleepMinutes', timeZone) || 0));
+    const rhrBaseline = median(history.map((item) => dailyValue(item, 'restingHeartRate', timeZone) || 0));
+    const recoveryKnown = Boolean(today?.sleepMinutes && sleepBaseline && today?.restingHeartRate && rhrBaseline);
     let healthDriven = false;
-    const healthView = { available: Boolean(today), sleep: 'Dado não disponível', restingHeartRate: 'Dado não disponível', activity: 'Dado não disponível', recovery: 'Dado não disponível' };
+    const healthView = { available: Boolean(today?.sleepMinutes || today?.restingHeartRate || today?.steps || today?.activityMinutes), sleep: 'Dado não disponível', restingHeartRate: 'Dado não disponível', activity: 'Dado não disponível', recovery: 'Dado não disponível' };
     if (today) {
       if (today.sleepMinutes) {
         healthView.sleep = `${hoursLabel(today.sleepMinutes / 60)}${sleepBaseline ? ` (sua média ${hoursLabel(sleepBaseline / 60)})` : ' (linha de base em formação)'}`;
@@ -308,7 +325,7 @@ export function planWellness(input: WellnessPlanInput): WellnessDayPlan[] {
         }
       }
       if (today.activityMinutes || today.steps) healthView.activity = [today.activityMinutes ? `${Math.round(today.activityMinutes)} min de atividade` : '', today.steps ? `${Math.round(today.steps).toLocaleString('pt-BR')} passos` : ''].filter(Boolean).join(' · ');
-      healthView.recovery = healthDriven ? 'Intermediária: reduzir carga' : sleepBaseline || rhrBaseline ? 'Dentro do seu padrão' : 'Linha de base em formação';
+      healthView.recovery = healthDriven ? 'Intermediária: reduzir carga' : recoveryKnown ? 'Dentro do seu padrão' : 'Dado não disponível';
     }
     const yesterday = health.get(addDaysIso(date, -1));
     if (prefs.useHealthData && yesterday?.exerciseMinutes && yesterday.exerciseMinutes >= 60 && level === 0) {
@@ -364,15 +381,15 @@ export function planWellness(input: WellnessPlanInput): WellnessDayPlan[] {
     if (sincePrior != null) factors.push({ ok: sincePrior >= prefs.minimumRecoveryBeforeWorkoutHours, text: `${hoursLabel(sincePrior)} desde a última jornada` });
     if (untilNext != null) factors.push({ ok: untilNext >= prefs.minimumBufferBeforeDutyHours, text: `Próxima apresentação em ${hoursLabel(untilNext)}` });
     for (const text of limits) factors.push({ ok: false, text });
-    if (!today) factors.push({ ok: false, text: 'Relógio: dado não disponível' });
+    if (!healthView.available) factors.push({ ok: false, text: 'Relógio: dado não disponível' });
 
     const spec = LEVELS[chosenLevel];
-    const confidence: WellnessConfidence = today && (sleepBaseline || rhrBaseline) ? 'alta' : reference || today ? 'média' : 'baixa';
+    const confidence: WellnessConfidence = recoveryKnown ? 'alta' : reference ? 'média' : 'baixa';
     const reason = chosenLevel === REST_LEVEL
       ? (limits[limits.length - 1] || 'Sem janela adequada hoje')
       : limits.length
         ? `Janela operacional possível, com ressalvas: ${limits.join('; ')}.`
-        : 'Janela operacional adequada e recuperação dentro do seu padrão.';
+        : recoveryKnown ? 'Janela operacional adequada e recuperação dentro do seu padrão.' : 'Janela operacional possível; recuperação desconhecida. Sugestão baseada apenas na escala.';
     let adjustmentNote = '';
     let adjusted = false;
     if (reference) {
@@ -412,28 +429,9 @@ export function wellnessDecisionLabel(plan: Pick<WellnessDayPlan, 'decision' | '
   return 'DESCANSO';
 }
 
-/** Descrição curta do evento: explica o porquê sem expor dados pessoais desnecessários. */
+/** External text is deliberately independent of health, confidence and reasoning. */
 export function wellnessEventDescription(plan: WellnessDayPlan): string {
-  return [
-    'CrewCheck Wellness',
-    `Status: ${wellnessDecisionLabel(plan)} · confiança ${plan.confidence}`,
-    '',
-    'Escala:',
-    `C/O anterior: ${plan.context.previousRelease || 'sem jornada anterior na escala'}`,
-    `Próxima apresentação: ${plan.context.nextReport || 'sem apresentação na escala'}`,
-    plan.context.restHoursSincePrevious != null ? `Repouso disponível: ${hoursLabel(plan.context.restHoursSincePrevious)}` : '',
-    '',
-    'Relógio:',
-    `Sono: ${plan.health.sleep}`,
-    `FC repouso: ${plan.health.restingHeartRate}`,
-    `Recuperação: ${plan.health.recovery}`,
-    `Atividade recente: ${plan.health.activity}`,
-    '',
-    `Motivo: ${plan.reason}`,
-    plan.adjustmentNote ? `Ajuste: ${plan.adjustmentNote}` : '',
-    '',
-    'Sugestão de bem-estar pessoal; não é diagnóstico nem avaliação de aptidão.',
-    '#CREWCHECK',
-    '#WELLNESS',
-  ].filter((line, index, all) => line !== '' || all[index - 1] !== '').join('\n');
+  return plan.window
+    ? `Atividade pessoal · ${plan.window.startLocal}–${plan.window.endLocal}\n#CREWCHECK\n#WELLNESS`
+    : 'Reserva pessoal de dia inteiro\n#CREWCHECK\n#WELLNESS';
 }

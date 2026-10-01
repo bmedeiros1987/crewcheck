@@ -107,20 +107,24 @@ export function readAuthorizedHealthDays(timeZone: string): WellnessHealthDay[] 
   const snapshots = readJson<any[]>(HEALTH_HISTORY_KEY, []);
   const events = readJson<any[]>(LIFE_EVENTS_KEY, []);
   const byDate = new Map<string, WellnessHealthDay>();
-  for (const item of Array.isArray(snapshots) ? snapshots : []) {
+  for (const item of (Array.isArray(snapshots) ? [...snapshots] : []).sort((a, b) => Date.parse(b?.capturedAt || '') - Date.parse(a?.capturedAt || ''))) {
     const at = Date.parse(String(item?.capturedAt || ''));
     if (!Number.isFinite(at)) continue;
-    const date = localIsoDate(at, timeZone);
-    if (byDate.has(date)) continue; // histórico já vem do mais recente para o mais antigo
-    const number = (value: unknown) => (Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : undefined);
+    // NativeSleep is the last session in the query window, never the capture day.
+    const start = Date.parse(String(item.sleepStart || ''));
+    const end = Date.parse(String(item.sleepEnd || ''));
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || end > at || end - start > 86_400_000) continue;
+    const date = localIsoDate(end, timeZone);
+    const minutes = Number(item.sleepMinutes);
+    if (!Number.isFinite(minutes) || minutes <= 0 || byDate.has(date)) continue;
     byDate.set(date, {
-      date,
-      sleepMinutes: number(item.sleepMinutes),
-      restingHeartRate: number(item.restingHeartRateAverage),
-      steps: number(item.steps),
-      activityMinutes: number(item.activityMinutes),
+      date, sleepMinutes: minutes, capturedAt: item.capturedAt, summaryPeriodDays: item.periodDays,
+      provenance: { sleepMinutes: { start: item.sleepStart, end: item.sleepEnd, periodDays: 1 } },
     });
+    // RHR, steps and activity summaries have no daily measurement timestamps.
+    // Keep them in local history; do not manufacture daily observations.
   }
+
   for (const event of Array.isArray(events) ? events : []) {
     if (event?.type !== 'exercise' || event?.status !== 'completed') continue;
     const at = Date.parse(String(event.occurredAt || ''));
@@ -174,9 +178,13 @@ export async function ensureOwnedCalendar(name: string, options: { createIfMissi
   const existing = calendars.find((item) => calendarName(item) === target);
   if (existing) return { id: existing.primary ? 'primary' : existing.id, created: false };
   if (!options.createIfMissing) throw new Error(`Calendário "${target}" não encontrado entre os calendários próprios.`);
+  return createOwnedCalendar(target, options.timeZone);
+}
+
+async function createOwnedCalendar(target: string, timeZone: string): Promise<{ id: string; created: boolean }> {
   const created = await crewcheckGoogleCalendarRequest<{ id?: string }>('/calendars', {
     method: 'POST',
-    body: JSON.stringify({ summary: target, timeZone: options.timeZone, description: 'Calendário gerenciado pelo CrewCheck (bem-estar). Você pode editar ou remover eventos; o CrewCheck só altera eventos que ele criou.' }),
+    body: JSON.stringify({ summary: target, timeZone, description: 'Calendário gerenciado pelo CrewCheck (bem-estar). Você pode editar ou remover eventos; o CrewCheck só altera eventos que ele criou.' }),
   });
   const id = normalizeGoogleCalendarId(created?.id);
   if (!id) throw new Error(`Não foi possível criar o calendário "${target}". Crie-o no Google Calendar e sincronize de novo.`);
@@ -206,7 +214,6 @@ export function busyIntervalsFromEvents(events: ApiEvent[]): WellnessBusyInterva
     .filter((item) => Number.isFinite(item.startUtcMs) && Number.isFinite(item.endUtcMs) && item.endUtcMs > item.startUtcMs);
 }
 
-const INTENSITY_COLOR: Record<WellnessDayPlan['intensity'], string> = { complete: '10', moderate: '2', light: '7', recovery: '3', rest: '8' };
 
 function contentHash(value: unknown): string {
   const input = JSON.stringify(value);
@@ -228,18 +235,18 @@ function addDaysIso(isoDate: string, days: number): string {
 export function wellnessPlanToEvent(plan: WellnessDayPlan, crew: string): ApiEvent {
   const body: ApiEvent = plan.window
     ? {
-      summary: plan.title,
+      summary: plan.window ? 'Academia · Atividade pessoal' : 'Academia · Reserva pessoal',
       description: wellnessEventDescription(plan),
-      colorId: INTENSITY_COLOR[plan.intensity],
+      colorId: '2',
       transparency: 'opaque',
       start: { dateTime: `${plan.date}T${plan.window.startLocal}:00`, timeZone: plan.timeZone },
       end: { dateTime: `${localEndDate(plan)}T${plan.window.endLocal}:00`, timeZone: plan.timeZone },
       reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 30 }] },
     }
     : {
-      summary: plan.title,
+      summary: plan.window ? 'Academia · Atividade pessoal' : 'Academia · Reserva pessoal',
       description: wellnessEventDescription(plan),
-      colorId: INTENSITY_COLOR.rest,
+      colorId: '2',
       transparency: 'transparent',
       start: { date: plan.date },
       end: { date: addDaysIso(plan.date, 1) },
@@ -279,7 +286,8 @@ export async function syncWellnessToGoogleCalendar(roster: CrewRoster, options: 
   const homeTimeZone = airportTimeZone(roster.base);
   const now = options.now ?? Date.now();
   const fromDate = localIsoDate(now, homeTimeZone);
-  const academia = await ensureOwnedCalendar(prefs.academiaCalendarName, { createIfMissing: true, timeZone: homeTimeZone });
+  const existingAcademia = (await listOwnedCalendars()).find((item) => calendarName(item) === prefs.academiaCalendarName);
+  const existingAcademiaId = existingAcademia ? (existingAcademia.primary ? 'primary' : existingAcademia.id) : null;
 
   const intervals = rosterDutyIntervals(roster);
   const rosterDates = intervals.map((item) => item.date).sort();
@@ -289,13 +297,16 @@ export async function syncWellnessToGoogleCalendar(roster: CrewRoster, options: 
 
   // Compromissos pessoais: calendário principal, calendário da escala e o próprio Academia (eventos do usuário).
   const scheduleSettings = loadGoogleCalendarSettings();
-  const busyCalendars = Array.from(new Set(['primary', normalizeGoogleCalendarId(scheduleSettings.selectedCalendarId) || 'primary', academia.id]));
+  const busyCalendars = Array.from(new Set(['primary', normalizeGoogleCalendarId(scheduleSettings.selectedCalendarId) || 'primary', ...(existingAcademiaId ? [existingAcademiaId] : [])]));
   const busy: WellnessBusyInterval[] = [];
   for (const id of busyCalendars) {
     try { busy.push(...busyIntervalsFromEvents(await listEvents(id, { timeMin, timeMax }))); }
-    catch { /* calendário sem acesso: não bloqueia o plano, mas também não é alterado */ }
+    catch { throw new Error('Disponibilidade da agenda não verificada. Sincronização de Academia interrompida sem alterar eventos.'); }
   }
 
+  // All required availability reads succeeded before the first external mutation.
+  const academia = existingAcademiaId ? { id: existingAcademiaId, created: false }
+    : await createOwnedCalendar(prefs.academiaCalendarName, homeTimeZone);
   const health = prefs.useHealthData ? (options.health ?? readAuthorizedHealthDays(homeTimeZone)) : [];
   const plans = buildWellnessPlan(roster, { preferences: prefs, busy, health, references: options.references, fromDate });
   const crew = crewcheckSyncCrewKey(roster);
