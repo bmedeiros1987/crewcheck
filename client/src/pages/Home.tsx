@@ -4854,9 +4854,25 @@ export default function Home() {
     let lastPublishedAt = 0;
     const publishWatchSnapshot = (force: boolean) => {
       try {
-        const snapshot = buildCrewCheckWatchSnapshot(events, event);
-        const signature = watchSnapshotContentSignature(snapshot);
         const now = Date.now();
+        // Radar enriches only the device projection. The canonical roster remains untouched.
+        const radar = readRadarSnapshot(event);
+        const radarUpdatedAt = Number(radar?.updatedAt || 0);
+        const radarExpiresAt = radarUpdatedAt + RADAR_CARD_CACHE_TTL_MS;
+        const radarGate = radar?.ok === true
+          && radarUpdatedAt > 0
+          && radarUpdatedAt <= now
+          && radarExpiresAt > now
+          ? confirmedRadarGate(radar.gate)
+          : '';
+        const watchEvent = radarGate ? { ...event, gate: radarGate } : event;
+        const watchEvents = radarGate
+          ? events.map((candidate) => candidate.id === event.id ? watchEvent : candidate)
+          : events;
+        const snapshot = buildCrewCheckWatchSnapshot(watchEvents, watchEvent);
+        // A cached Radar gate can never make a device snapshot look fresh longer than Radar itself.
+        if (radarGate) snapshot.validUntilEpochMs = Math.min(snapshot.validUntilEpochMs, radarExpiresAt);
+        const signature = watchSnapshotContentSignature(snapshot);
         if (!force && signature === lastSignature && now - lastPublishedAt < WATCH_UNCHANGED_REPUBLISH_MS) return;
         lastSignature = signature;
         lastPublishedAt = now;
@@ -4868,10 +4884,13 @@ export default function Home() {
 
     publishWatchSnapshot(true);
     const onRequest = () => publishWatchSnapshot(true);
+    const onRadar = () => publishWatchSnapshot(false);
+    window.addEventListener('crewcheck:radar-updated', onRadar);
     window.addEventListener('crewcheck:watch-snapshot-request', onRequest);
     window.addEventListener('crewcheck:native-ready', onRequest);
     const timer = window.setInterval(() => publishWatchSnapshot(false), 60_000);
     return () => {
+      window.removeEventListener('crewcheck:radar-updated', onRadar);
       window.removeEventListener('crewcheck:watch-snapshot-request', onRequest);
       window.removeEventListener('crewcheck:native-ready', onRequest);
       window.clearInterval(timer);
