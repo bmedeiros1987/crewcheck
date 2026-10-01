@@ -365,8 +365,8 @@ ${returnAnchor}`);
   if (!source.includes('myCrewCarePortal.destroy();')) {
     source = required(
       source,
-      '    protected void onDestroy() {\n        closePortalOnly();',
-      '    protected void onDestroy() {\n        closePortalOnly();\n        if (myCrewCarePortal != null) {\n            myCrewCarePortal.destroy();\n            myCrewCarePortal = null;\n        }',
+      '    protected void onDestroy() {',
+      '    protected void onDestroy() {\n        if (myCrewCarePortal != null) {\n            myCrewCarePortal.destroy();\n            myCrewCarePortal = null;\n        }',
       'destroy MyCrewCare',
     );
   }

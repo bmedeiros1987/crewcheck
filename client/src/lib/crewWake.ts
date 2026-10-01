@@ -28,7 +28,6 @@ export type MyCrewCareTransport = {
   pairingId?: string;
   airport?: string;
   hotel?: string;
-  raw?: string;
 };
 
 export type MyCrewCareSnapshot = {
@@ -58,6 +57,8 @@ export type EffectivePickup = {
 const WAKE_PREFIX = 'crewcheck:wake:v2:';
 const MYCREWCARE_KEY = 'crewcheck:mycrewcare:snapshot:v1';
 const MYCREWCARE_STATUS_KEY = 'crewcheck:mycrewcare:status';
+const MYCREWCARE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const MYCREWCARE_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const BRIEFING_LEAD_KEY = 'crewcheck:briefing:lead-hours';
 
 function storageGet(key: string, fallback = ''): string {
@@ -65,6 +66,26 @@ function storageGet(key: string, fallback = ''): string {
 }
 function storageSet(key: string, value: string): void {
   try { localStorage.setItem(key, value); } catch {}
+}
+
+function sanitizeMyCrewCareRecords(records: unknown): MyCrewCareTransport[] {
+  if (!Array.isArray(records)) return [];
+  return records.slice(0, 20).flatMap((value: any) => {
+    if (!value || typeof value !== 'object') return [];
+    const rawDirection = String(value.direction || '').trim();
+    const direction: MyCrewCareTransport['direction'] =
+      rawDirection === 'to_airport' || rawDirection === 'to_hotel' ? rawDirection : 'unknown';
+    const transit = Number(value.transitMinutes);
+    return [{
+      direction,
+      date: String(value.date || '').trim() || undefined,
+      time: String(value.time || '').trim() || undefined,
+      transitMinutes: Number.isFinite(transit) ? transit : null,
+      pairingId: String(value.pairingId || '').trim() || undefined,
+      airport: String(value.airport || '').trim().toUpperCase() || undefined,
+      hotel: String(value.hotel || '').trim() || undefined,
+    }];
+  });
 }
 
 export function crewWakeEventKey(event: CrewWakeEvent): string {
@@ -115,7 +136,7 @@ export function readMyCrewCareSnapshot(): MyCrewCareSnapshot {
     return {
       connected: storageGet(MYCREWCARE_STATUS_KEY, parsed?.connected ? 'connected' : 'disconnected') === 'connected',
       syncedAt: String(parsed?.syncedAt || ''),
-      records: Array.isArray(parsed?.records) ? parsed.records : [],
+      records: sanitizeMyCrewCareRecords(parsed?.records),
     };
   } catch {
     return { connected: storageGet(MYCREWCARE_STATUS_KEY, 'disconnected') === 'connected', records: [] };
@@ -125,14 +146,23 @@ export function readMyCrewCareSnapshot(): MyCrewCareSnapshot {
 export function writeMyCrewCareSnapshot(input: Partial<MyCrewCareSnapshot> | null | undefined): MyCrewCareSnapshot {
   const previous = readMyCrewCareSnapshot();
   const connected = Boolean(input?.connected);
+  const hasRecords = Array.isArray(input?.records);
   const next: MyCrewCareSnapshot = {
     connected,
-    syncedAt: String(input?.syncedAt || new Date().toISOString()),
-    records: Array.isArray(input?.records) && input!.records!.length ? input!.records! : previous.records,
+    syncedAt: connected ? String(input?.syncedAt ?? previous.syncedAt ?? '') : '',
+    records: connected ? (hasRecords ? sanitizeMyCrewCareRecords(input?.records) : previous.records) : [],
   };
   storageSet(MYCREWCARE_KEY, JSON.stringify(next));
   storageSet(MYCREWCARE_STATUS_KEY, connected ? 'connected' : 'disconnected');
   return next;
+}
+
+export function isFreshMyCrewCareSnapshot(snapshot: MyCrewCareSnapshot, now = Date.now()): boolean {
+  if (!snapshot.connected) return false;
+  const syncedAt = Date.parse(String(snapshot.syncedAt || ''));
+  if (!Number.isFinite(syncedAt)) return false;
+  if (syncedAt > now + MYCREWCARE_FUTURE_SKEW_MS) return false;
+  return now - syncedAt <= MYCREWCARE_MAX_AGE_MS;
 }
 
 export function myCrewCareConnectionStatus(): 'connected' | 'disconnected' {
@@ -204,6 +234,7 @@ function eventDateKeys(event: CrewWakeEvent): Set<string> {
 }
 
 export function matchMyCrewCarePickup(event: CrewWakeEvent, snapshot = readMyCrewCareSnapshot()): MyCrewCareTransport | null {
+  if (!isFreshMyCrewCareSnapshot(snapshot)) return null;
   const airport = String(event.destination || event.origin || '').trim().toUpperCase();
   const dates = eventDateKeys(event);
   const candidates = (snapshot.records || []).filter((record) => record?.direction === 'to_airport' && /^\d{1,2}:\d{2}$/.test(String(record?.time || '')));

@@ -235,6 +235,7 @@ public final class CrewCheckMyCrewCarePortal {
 
         setConnected(true);
         dispatchStatus(true);
+        dispatchEmptySnapshot();
         if (statusText != null) statusText.setText("Conectado · sincronizando transporte…");
         extractTransportation();
     }
@@ -249,7 +250,7 @@ public final class CrewCheckMyCrewCarePortal {
                 "var esc=function(v){return String(v||'').replace(/[-/\\\\^$*+?.()|[\\]{}]/g,'\\\\$&');};" +
                 "var val=function(label,text){var r=new RegExp(esc(label)+'\\\\s*[:\\-]?\\\\s*([^\\\\n]+)','i');var m=clean(text).match(r);return m?clean(m[1]).split('  ')[0].trim():'';};" +
                 "var normDir=function(t){return /Transportation\\s+To\\s+Airport/i.test(t)?'to_airport':(/Transportation\\s+To\\s+Hotel/i.test(t)?'to_hotel':'unknown');};" +
-                "var parse=function(text){text=clean(text);var tm=text.match(/Pick[- ]?up[- ]?time\\s*[:\\-]?\\s*(\\d{1,2}:\\d{2})/i);var dt=text.match(/Pick[- ]?up[- ]?date\\s*[:\\-]?\\s*(\\d{1,2}[\\/-]\\d{1,2}[\\/-]\\d{4})/i);var mins=text.match(/(?:Transit|Travel)[^\\n]{0,30}?(\\d{1,3})\\s*(?:min|minutes)/i);var ap=text.match(/(?:Airport|Station)\\s*[:\\-]?\\s*([A-Z]{3})\\b/i);return {direction:normDir(text),date:dt?dt[1]:'',time:tm?tm[1]:'',transitMinutes:mins?Number(mins[1]):null,pairingId:val('Pairing ID',text),airport:ap?ap[1]:'',hotel:val('Hotel',text),raw:text.slice(0,700)};};" +
+                "var parse=function(text){text=clean(text);var tm=text.match(/Pick[- ]?up[- ]?time\\s*[:\\-]?\\s*(\\d{1,2}:\\d{2})/i);var dt=text.match(/Pick[- ]?up[- ]?date\\s*[:\\-]?\\s*(\\d{1,2}[\\/-]\\d{1,2}[\\/-]\\d{4})/i);var mins=text.match(/(?:Transit|Travel)[^\\n]{0,30}?(\\d{1,3})\\s*(?:min|minutes)/i);var ap=text.match(/(?:Airport|Station)\\s*[:\\-]?\\s*([A-Z]{3})\\b/i);return {direction:normDir(text),date:dt?dt[1]:'',time:tm?tm[1]:'',transitMinutes:mins?Number(mins[1]):null,pairingId:val('Pairing ID',text),airport:ap?ap[1]:'',hotel:val('Hotel',text)};};" +
                 "var records=[];var seen={};" +
                 "Array.prototype.slice.call(document.querySelectorAll('article,section,.card,.panel,.row,li,div')).forEach(function(el){var t=clean(el.innerText||'');if(t.length<35||t.length>4500||!/Transportation\\s+To\\s+(Airport|Hotel)/i.test(t)||!/Pick[- ]?up[- ]?time/i.test(t))return;var rec=parse(t);var k=[rec.direction,rec.date,rec.time,rec.pairingId].join('|');if(rec.time&&!seen[k]){seen[k]=1;records.push(rec);}});" +
                 "if(!records.length){var body=clean(document.body&&document.body.innerText||'');var re=/Transportation\\s+To\\s+(?:Airport|Hotel)/ig;var m;while((m=re.exec(body))&&records.length<12){var rec=parse(body.slice(m.index,m.index+2200));var k=[rec.direction,rec.date,rec.time,rec.pairingId].join('|');if(rec.time&&!seen[k]){seen[k]=1;records.push(rec);}}}" +
@@ -273,6 +274,7 @@ public final class CrewCheckMyCrewCarePortal {
                 }
             } catch (Exception error) {
                 dispatchStatus(true);
+                dispatchEmptySnapshot();
                 if (!visible) destroyPortal();
             }
         });
@@ -290,8 +292,17 @@ public final class CrewCheckMyCrewCarePortal {
             JSONObject detail = new JSONObject();
             detail.put("connected", connected);
             detail.put("status", connected ? "connected" : "disconnected");
-            detail.put("syncedAt", new java.util.Date().toInstant().toString());
             dispatch("crewcheck:mycrewcare-status", detail);
+        } catch (Exception ignored) {}
+    }
+
+    private void dispatchEmptySnapshot() {
+        try {
+            JSONObject detail = new JSONObject();
+            detail.put("connected", true);
+            detail.put("syncedAt", new java.util.Date().toInstant().toString());
+            detail.put("records", new JSONArray());
+            dispatchSnapshot(detail);
         } catch (Exception ignored) {}
     }
 

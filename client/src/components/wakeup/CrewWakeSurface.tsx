@@ -96,11 +96,8 @@ export function CrewWakeRuntimeBridge() {
     };
     const onMyCrewCareStatus = (event: Event) => {
       const detail = (event as CustomEvent)?.detail || {};
-      const snapshot = writeMyCrewCareSnapshot({
-        ...readMyCrewCareSnapshot(),
-        connected: detail.connected === true || detail.status === 'connected',
-        syncedAt: detail.syncedAt || new Date().toISOString(),
-      });
+      const connected = detail.connected === true || detail.status === 'connected';
+      const snapshot = writeMyCrewCareSnapshot({ connected });
       window.dispatchEvent(new CustomEvent('crewcheck:mycrewcare-state', { detail: snapshot }));
     };
     const onWakeAck = (event: Event) => {
@@ -117,11 +114,8 @@ export function CrewWakeRuntimeBridge() {
     try {
       const nativeStatus = bridge?.myCrewCareStatus?.();
       if (nativeStatus && typeof nativeStatus === 'object') {
-        const snapshot = writeMyCrewCareSnapshot({
-          ...readMyCrewCareSnapshot(),
-          connected: nativeStatus.connected === true || nativeStatus.status === 'connected',
-          syncedAt: new Date().toISOString(),
-        });
+        const connected = nativeStatus.connected === true || nativeStatus.status === 'connected';
+        const snapshot = writeMyCrewCareSnapshot({ connected });
         window.dispatchEvent(new CustomEvent('crewcheck:mycrewcare-state', { detail: snapshot }));
       }
     } catch {}
