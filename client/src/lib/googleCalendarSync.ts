@@ -34,6 +34,8 @@ export interface GoogleSyncResult {
   created: number;
   updated: number;
   deleted: number;
+  /** Eventos CrewCheck já idênticos no Google (sem PATCH). */
+  unchanged: number;
   total: number;
   calendarId: string;
   feedUrl?: string;
@@ -84,8 +86,11 @@ const SETTINGS_KEY = 'crewcheck_google_calendar_settings';
 const CLIENT_ID_OVERRIDE_KEY = 'crewcheck_google_client_id_override';
 const TOKEN_KEY = 'crewcheck_google_calendar_token';
 const GOOGLE_CLIENT_ID_FALLBACK = '777637106343-1s0tejmffsrl6253hl6qp03idfu1mphf.apps.googleusercontent.com';
+// Menor privilégio: eventos apenas em calendários do próprio usuário (events.owned) e leitura da
+// lista de calendários (calendarlist.readonly) para o usuário escolher o destino, ex. um calendário
+// secundário próprio. Nunca o escopo amplo .../auth/calendar.
 const GOOGLE_SCOPES = [
-  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/calendar.events.owned',
   'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
 ].join(' ');
 const GOOGLE_API = 'https://www.googleapis.com/calendar/v3';
@@ -111,7 +116,7 @@ function defaultGoogleCalendarSettings(): GoogleCalendarSettings {
 export function googleCalendarIntegrationDiagnostics(): { label: string; value: string; tone: 'ok' | 'warn' | 'info' }[] {
   return [
     { label: 'Conexão Google', value: isGoogleCalendarConfigured() ? 'Configurada' : 'Aguardando configuração', tone: isGoogleCalendarConfigured() ? 'ok' : 'warn' },
-    { label: 'Permissões', value: 'Eventos e lista de calendários autorizados pelo usuário', tone: 'info' },
+    { label: 'Permissões', value: 'Eventos em calendários próprios e lista de calendários (somente leitura)', tone: 'info' },
     { label: 'Calendário de destino', value: loadGoogleCalendarSettings().selectedCalendarName || 'Calendário principal', tone: 'ok' },
     { label: 'Sincronização', value: 'Reconexão assistida quando a autorização expira.', tone: 'ok' },
   ];
@@ -313,20 +318,42 @@ export function loadGoogleCalendarSettings(): GoogleCalendarSettings {
   }
 }
 
+export function normalizeGoogleCalendarId(value: string | null | undefined): string {
+  const raw = String(value || '').trim();
+  if (!raw || raw.length > 254) return '';
+  if (raw === 'primary') return 'primary';
+  if (/[\s\/\\?#%]|\.\./.test(raw) || /[\u0000-\u001f\u007f]/.test(raw)) return '';
+  if (!/^[A-Za-z0-9._+-]{1,128}@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(raw)) return '';
+  return raw;
+}
+
 export function saveGoogleCalendarSettings(settings: GoogleCalendarSettings): GoogleCalendarSettings {
-  const saved: GoogleCalendarSettings = { ...defaultGoogleCalendarSettings(), ...settings };
+  const selectedCalendarId = normalizeGoogleCalendarId(settings?.selectedCalendarId) || 'primary';
+  const saved: GoogleCalendarSettings = {
+    ...defaultGoogleCalendarSettings(),
+    ...settings,
+    selectedCalendarId,
+    selectedCalendarName: selectedCalendarId === 'primary' && !settings?.selectedCalendarName ? 'Calendário principal' : settings?.selectedCalendarName || selectedCalendarId,
+  };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(saved));
   return saved;
 }
 
 export async function listGoogleCalendars(): Promise<GoogleCalendarOption[]> {
-  const payload = await googleFetch<{ items?: Array<{ id: string; summary: string; primary?: boolean; accessRole?: string; backgroundColor?: string }> }>(
-    '/users/me/calendarList?minAccessRole=writer&showHidden=false'
-  );
+  // Somente calendários dos quais o usuário é proprietário: o escopo events.owned não grava nos demais.
+  const primaryOption: GoogleCalendarOption = { id: 'primary', summary: 'Calendário principal', primary: true, accessRole: 'owner' };
+  let payload: { items?: Array<{ id: string; summary: string; summaryOverride?: string; primary?: boolean; accessRole?: string; backgroundColor?: string }> };
+  try {
+    payload = await googleFetch('/users/me/calendarList?minAccessRole=owner&showHidden=false');
+  } catch (error) {
+    // Autorização antiga (sem calendarlist.readonly): mantém o calendário principal disponível.
+    console.warn('[CrewCheck] Lista de calendários indisponível; reconecte o Google Calendar para escolher outro calendário.', error);
+    return [primaryOption];
+  }
   const items: GoogleCalendarOption[] = (payload.items || [])
-    .filter((item) => item.id && item.summary)
-    .map((item) => ({ id: item.id, summary: item.summary, primary: item.primary, accessRole: item.accessRole, backgroundColor: item.backgroundColor }));
-  if (!items.some((item) => item.id === 'primary')) items.unshift({ id: 'primary', summary: 'Calendário principal', primary: true, accessRole: 'owner' });
+    .filter((item) => item.id && normalizeGoogleCalendarId(item.id) && item.accessRole === 'owner')
+    .map((item) => ({ id: item.primary ? 'primary' : item.id, summary: item.summaryOverride || item.summary || item.id, primary: item.primary, accessRole: item.accessRole, backgroundColor: item.backgroundColor }));
+  if (!items.some((item) => item.id === 'primary')) items.unshift(primaryOption);
   return items;
 }
 
@@ -348,11 +375,12 @@ export async function getCalendarFeedInfo(): Promise<CalendarFeedInfo> {
 }
 
 export async function syncRosterToGoogleCalendar(roster: CrewRoster, settings = loadGoogleCalendarSettings(), extras: GoogleCalendarSyncExtras = {}): Promise<GoogleSyncResult> {
-  const calendarId = settings.selectedCalendarId || 'primary';
+  const calendarId = normalizeGoogleCalendarId(settings.selectedCalendarId) || 'primary';
   const mode = normalizeExportMode(settings.exportMode || 'flights-rest');
   const ical = generateICalendar(roster, extras.gymRecommendations, {
     mode,
     titleFormat: 'route-flight',
+    calendarStyle: 'operational-detailed',
     includeReminders: true,
     flightReminderMinutes: [120, 30],
     dutyReminderMinutes: [120, 30],
@@ -362,16 +390,9 @@ export async function syncRosterToGoogleCalendar(roster: CrewRoster, settings = 
     includeFinancialNotes: Boolean(settings.includeFinancialNotes),
   });
   const periodKey = buildPeriodKey(roster, mode);
-  const googleEvents = parseIcalEvents(ical, periodKey);
-  const deleted = await deleteExistingCrewCheckEvents(calendarId, periodKey, roster);
-  let created = 0;
-  for (const event of googleEvents) {
-    await googleFetch<GoogleCalendarApiEvent>(`/calendars/${encodeURIComponent(calendarId)}/events`, {
-      method: 'POST',
-      body: JSON.stringify(event),
-    });
-    created += 1;
-  }
+  const identity = buildSyncIdentity(roster);
+  const googleEvents = parseIcalEvents(ical, periodKey, identity);
+  const counts = await upsertCrewCheckEvents(calendarId, roster, identity, googleEvents);
   let feedUrl = '';
   try {
     const feedResponse = await fetch('/api/calendar-feed', {
@@ -385,60 +406,112 @@ export async function syncRosterToGoogleCalendar(roster: CrewRoster, settings = 
   } catch {
     // Google sync não deve falhar se a assinatura iCal não puder ser atualizada.
   }
-  return { created, updated: 0, deleted, total: googleEvents.length, calendarId, feedUrl };
+  return { ...counts, total: googleEvents.length, calendarId, feedUrl };
 }
 
-async function deleteExistingCrewCheckEvents(calendarId: string, periodKey: string, roster: CrewRoster): Promise<number> {
-  const { timeMin, timeMax } = rosterPeriodBounds(roster);
-  const seen = new Set<string>();
-  let deleted = 0;
+type CrewCheckSyncIdentity = { crew: string; scope: string; legacyPrefix: string };
 
-  async function collectAndDelete(query: URLSearchParams) {
-    let pageToken = '';
-    do {
-      if (pageToken) query.set('pageToken', pageToken);
-      const payload = await googleFetch<{ items?: GoogleCalendarApiEvent[]; nextPageToken?: string }>(`/calendars/${encodeURIComponent(calendarId)}/events?${query.toString()}`);
-      for (const event of payload.items || []) {
-        if (!event.id || seen.has(event.id)) continue;
-        const privateProps = event.extendedProperties?.private || {};
-        const description = String(event.description || '');
-        const summary = String(event.summary || '');
-        const isCrewCheck = privateProps.crewcheck === 'true'
-          || privateProps.crewcheckPeriodKey === periodKey
-          || description.includes('#CREWCHECK')
-          || summary.startsWith('Check-in escala');
-        if (!isCrewCheck) continue;
-        seen.add(event.id);
-        await googleFetch<void>(`/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(event.id)}`, { method: 'DELETE' });
-        deleted += 1;
-      }
-      pageToken = payload.nextPageToken || '';
-    } while (pageToken);
+function buildSyncIdentity(roster: CrewRoster): CrewCheckSyncIdentity {
+  const crew = crewSlug(roster);
+  const month = `${roster.year}-${String(roster.month).padStart(2, '0')}`;
+  return { crew, scope: `crewcheck:${crew}:${month}`, legacyPrefix: `crewcheck:${crew}:${month}:` };
+}
+
+/**
+ * Upsert idempotente: identifica eventos CrewCheck SOMENTE pela propriedade privada crewcheck=true
+ * (nunca por texto da descrição), casa pela chave operacional estável e:
+ *  - PATCH quando o conteúdo mudou; nada quando é idêntico;
+ *  - POST para o que falta;
+ *  - DELETE apenas de eventos CrewCheck do mesmo tripulante/mês que saíram da escala, e duplicatas.
+ * Eventos pessoais (sem a propriedade privada) nunca são lidos para alteração nem removidos.
+ */
+async function upsertCrewCheckEvents(calendarId: string, roster: CrewRoster, identity: CrewCheckSyncIdentity, desired: GoogleCalendarApiEvent[]): Promise<{ created: number; updated: number; deleted: number; unchanged: number }> {
+  const { timeMin, timeMax } = rosterPeriodBounds(roster);
+  const eventsPath = `/calendars/${encodeURIComponent(calendarId)}/events`;
+  const existing: GoogleCalendarApiEvent[] = [];
+  let pageToken = '';
+  do {
+    const query = new URLSearchParams({
+      maxResults: '2500', singleEvents: 'true', showDeleted: 'false', timeMin, timeMax,
+      privateExtendedProperty: 'crewcheck=true',
+    });
+    if (pageToken) query.set('pageToken', pageToken);
+    const payload = await googleFetch<{ items?: GoogleCalendarApiEvent[]; nextPageToken?: string }>(`${eventsPath}?${query.toString()}`);
+    existing.push(...(payload.items || []));
+    pageToken = payload.nextPageToken || '';
+  } while (pageToken);
+
+  // Datas cobertas por esta escala (inclui continuações após a virada do mês).
+  const coveredDates = new Set(roster.days.map((day) => {
+    const date = parseRosterDateSafe(day.date, new Date(roster.year, roster.month - 1, 1, 12));
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }));
+  const desiredByKey = new Map<string, GoogleCalendarApiEvent>();
+  for (const event of desired) desiredByKey.set(String(event.extendedProperties?.private?.crewcheckEventKey || ''), event);
+  const matched = new Map<string, GoogleCalendarApiEvent>();
+  const toDelete: string[] = [];
+
+  for (const event of existing) {
+    const props = event.extendedProperties?.private || {};
+    if (!event.id || props.crewcheck !== 'true') continue; // defesa extra: só eventos CrewCheck.
+    const legacyPeriod = String(props.crewcheckPeriodKey || '');
+    const sameCrew = props.crewcheckCrew === identity.crew || legacyPeriod.startsWith(`crewcheck:${identity.crew}:`);
+    if (!sameCrew) continue; // outro tripulante: não tocar.
+    const sameScope = props.crewcheckScope === identity.scope || legacyPeriod === identity.scope || legacyPeriod.startsWith(identity.legacyPrefix);
+    const key = props.crewcheckKeyVersion === SYNC_KEY_VERSION ? String(props.crewcheckEventKey || '') : '';
+    if (key && desiredByKey.has(key) && !matched.has(key)) {
+      matched.set(key, event);
+      continue;
+    }
+    // Chave fora da escala atual (ou duplicata) — remove só se pertencer a este mês. Evento legado
+    // (formato antigo, sem chave operacional) do mesmo tripulante numa data coberta por esta escala
+    // é substituído pela versão nova, evitando duplicar continuações entre meses.
+    const legacyCovered = !key && coveredDates.has(String(event.start?.date || event.start?.dateTime || '').slice(0, 10));
+    if (sameScope || legacyCovered || (key && matched.has(key))) toDelete.push(event.id);
   }
 
-  // 1) Eventos novos com chave privada do período.
-  await collectAndDelete(new URLSearchParams({
-    maxResults: '2500', singleEvents: 'true', showDeleted: 'false', timeMin, timeMax,
-    privateExtendedProperty: `crewcheckPeriodKey=${periodKey}`,
-  }));
-
-  // 2) Eventos legados ou importados anteriormente pelo CrewCheck no mesmo intervalo.
-  await collectAndDelete(new URLSearchParams({
-    maxResults: '2500', singleEvents: 'true', showDeleted: 'false', timeMin, timeMax, q: '#CREWCHECK',
-  }));
-
-  // 3) Segurança: não varrer o calendário inteiro para não tocar eventos pessoais.
-  // O CrewCheck remove apenas eventos com propriedade privada própria ou #CREWCHECK.
-
-  return deleted;
+  let created = 0;
+  let updated = 0;
+  let unchanged = 0;
+  for (const [key, event] of desiredByKey) {
+    const current = matched.get(key);
+    if (!current) {
+      await googleFetch<GoogleCalendarApiEvent>(eventsPath, { method: 'POST', body: JSON.stringify(event) });
+      created += 1;
+    } else if (current.extendedProperties?.private?.crewcheckHash !== event.extendedProperties?.private?.crewcheckHash) {
+      await googleFetch<GoogleCalendarApiEvent>(`${eventsPath}/${encodeURIComponent(String(current.id))}`, { method: 'PATCH', body: JSON.stringify(event) });
+      updated += 1;
+    } else {
+      unchanged += 1;
+    }
+  }
+  let deleted = 0;
+  for (const id of toDelete) {
+    await googleFetch<void>(`${eventsPath}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    deleted += 1;
+  }
+  return { created, updated, deleted, unchanged };
 }
 
-function parseIcalEvents(ical: string, periodKey: string): GoogleCalendarApiEvent[] {
+const SYNC_KEY_VERSION = '2';
+
+function parseIcalEvents(ical: string, periodKey: string, identity: CrewCheckSyncIdentity): GoogleCalendarApiEvent[] {
   const blocks = ical.match(/BEGIN:VEVENT[\s\S]*?END:VEVENT/g) || [];
-  return blocks.map((block, index) => blockToGoogleEvent(block, periodKey, index)).filter(Boolean) as GoogleCalendarApiEvent[];
+  const seen = new Map<string, number>();
+  const events: GoogleCalendarApiEvent[] = [];
+  blocks.forEach((block, index) => {
+    const event = blockToGoogleEvent(block, periodKey, identity, index);
+    if (!event) return;
+    const props = event.extendedProperties!.private!;
+    const count = seen.get(props.crewcheckEventKey) || 0;
+    seen.set(props.crewcheckEventKey, count + 1);
+    if (count) props.crewcheckEventKey = `${props.crewcheckEventKey}#${count + 1}`;
+    events.push(event);
+  });
+  return events;
 }
 
-function blockToGoogleEvent(block: string, periodKey: string, index: number): GoogleCalendarApiEvent | null {
+function blockToGoogleEvent(block: string, periodKey: string, identity: CrewCheckSyncIdentity, index: number): GoogleCalendarApiEvent | null {
   const lines = unfoldIcal(block);
   const summary = getIcalValue(lines, 'SUMMARY') || 'CrewCheck';
   const description = getIcalValue(lines, 'DESCRIPTION') || '';
@@ -452,9 +525,11 @@ function blockToGoogleEvent(block: string, periodKey: string, index: number): Go
   const start = parseIcalDateLine(startLine);
   const end = parseIcalDateLine(endLine);
   if (!start || !end) return null;
-  const eventKey = stableEventKey([periodKey, summary, location, start.dateTime || start.date || '', end.dateTime || end.date || '', categories]);
+  // Identidade operacional estável (data/voo/rota) gerada pelo exportador; nunca o texto da descrição.
+  const operationalKey = getIcalValue(lines, 'X-CREWCHECK-KEY')
+    || `${categories.split(',').slice(0, 2).join('/')}|${start.dateTime || start.date || ''}|${index}`;
   const alarms = parseAlarms(block);
-  return {
+  const body: GoogleCalendarApiEvent = {
     summary,
     description,
     location,
@@ -462,13 +537,20 @@ function blockToGoogleEvent(block: string, periodKey: string, index: number): Go
     end,
     colorId: googleColorIdFromCrewCheck(colorHex, categories),
     transparency,
-    reminders: alarms.length ? { useDefault: false, overrides: alarms.map((minutes) => ({ method: 'popup' as const, minutes })) } : { useDefault: true },
+    // Sem alarmes no iCal (etapas/folgas) = sem notificação extra; não herda o padrão da agenda.
+    reminders: alarms.length ? { useDefault: false, overrides: alarms.map((minutes) => ({ method: 'popup' as const, minutes })) } : { useDefault: false },
+  };
+  return {
+    ...body,
     extendedProperties: {
       private: {
         crewcheck: 'true',
+        crewcheckCrew: identity.crew,
+        crewcheckScope: identity.scope,
         crewcheckPeriodKey: periodKey,
-        crewcheckEventKey: eventKey,
-        crewcheckIndex: String(index),
+        crewcheckKeyVersion: SYNC_KEY_VERSION,
+        crewcheckEventKey: operationalKey,
+        crewcheckHash: stableEventKey([JSON.stringify(body)]),
       },
     },
   };
@@ -477,6 +559,7 @@ function blockToGoogleEvent(block: string, periodKey: string, index: number): Go
 function googleColorIdFromCrewCheck(colorHex: string, categories: string): string | undefined {
   const source = `${colorHex || ''} ${categories || ''}`.toLowerCase();
   if (source.includes('positioning') || source.includes('#858585') || source.includes('#64748b')) return '8';
+  if (source.includes('vacation') || source.includes('#0b8043')) return '10';
   if (source.includes('pairing') || source.includes('#6f72c9')) return '9';
   if (source.includes('flight') || source.includes('#9aa5df')) return '1';
   if (source.includes('reserve') || source.includes('standby') || source.includes('#ea5038') || source.includes('#e74f37')) return '11';
@@ -570,16 +653,25 @@ function rosterPeriodBounds(roster: CrewRoster): { timeMin: string; timeMax: str
   return { timeMin: min.toISOString(), timeMax: max.toISOString() };
 }
 
-function buildPeriodKey(roster: CrewRoster, mode: CalendarExportMode): string {
-  const crew = String(roster.crewName || 'tripulante').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'tripulante';
-  return `crewcheck:${crew}:${roster.year}-${String(roster.month).padStart(2, '0')}:${mode}`;
+function crewSlug(roster: CrewRoster): string {
+  return String(roster.crewName || 'tripulante').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'tripulante';
 }
 
+function buildPeriodKey(roster: CrewRoster, mode: CalendarExportMode): string {
+  return `crewcheck:${crewSlug(roster)}:${roster.year}-${String(roster.month).padStart(2, '0')}:${mode}`;
+}
+
+/** Hash de conteúdo (FNV-1a 64 bits em duas metades) — detecta mudança para decidir PATCH. */
 function stableEventKey(parts: string[]): string {
-  let hash = 0;
   const input = parts.join('|');
-  for (let i = 0; i < input.length; i += 1) hash = ((hash << 5) - hash + input.charCodeAt(i)) | 0;
-  return `cc-${Math.abs(hash).toString(36)}`;
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193 ^ input.length;
+  for (let i = 0; i < input.length; i += 1) {
+    const code = input.charCodeAt(i);
+    h1 = Math.imul(h1 ^ code, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 ^ code, 0x5bd1e995) >>> 0;
+  }
+  return `cc-${h1.toString(36)}${h2.toString(36)}`;
 }
 
 function normalizeExportMode(mode: GoogleCalendarSyncMode): CalendarExportMode {
@@ -591,7 +683,7 @@ function normalizeExportMode(mode: GoogleCalendarSyncMode): CalendarExportMode {
 }
 
 export function explainCalendarFeed(): string {
-  return 'Google Calendar direto via API: o CrewCheck pede autorização pelo Google Identity Services, lista seus calendários editáveis e sincroniza a escala sem duplicar eventos antigos do mesmo período.';
+  return 'Google Calendar direto via API: o CrewCheck pede autorização pelo Google, lista seus calendários próprios e sincroniza a escala sem duplicar eventos, atualizando apenas eventos CrewCheck.';
 }
 
 export function googleCalendarSimpleLabel(): string {

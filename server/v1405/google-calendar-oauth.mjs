@@ -2,7 +2,13 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned';
+const GOOGLE_EVENTS_OWNED_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned';
+const GOOGLE_CALENDARLIST_READONLY_SCOPE = 'https://www.googleapis.com/auth/calendar.calendarlist.readonly';
+// Menor privilégio: eventos somente em calendários pertencentes ao usuário + leitura da lista
+// de calendários para o usuário escolher o destino (ex.: um calendário secundário próprio).
+const GOOGLE_SCOPE = [GOOGLE_EVENTS_OWNED_SCOPE, GOOGLE_CALENDARLIST_READONLY_SCOPE].join(' ');
+const OWNER_CACHE_TTL_MS = 5 * 60 * 1000;
+const ownerCalendarCache = new Map();
 const GOOGLE_API = 'https://www.googleapis.com/calendar/v3';
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -303,9 +309,85 @@ async function validToken(userKey, forceRefresh = false) {
   return refreshAccessToken(userKey, token, cfg);
 }
 
-function allowedGooglePath(value) {
-  const pathValue = String(value || '');
-  return /^\/calendars\/primary\/events(?:\/[A-Za-z0-9_-]+)?(?:\?[A-Za-z0-9%_.~!$&'()*+,;=:@/?-]*)?$/.test(pathValue);
+const EVENT_QUERY_KEYS = new Set(['timeMin', 'timeMax', 'singleEvents', 'maxResults', 'pageToken', 'privateExtendedProperty', 'showDeleted', 'orderBy', 'sendUpdates']);
+const CALENDAR_LIST_QUERY_KEYS = new Set(['minAccessRole', 'maxResults', 'pageToken', 'showHidden']);
+
+// calendarId aceito: 'primary' ou um identificador de calendário Google (formato e-mail,
+// ex.: usuario@gmail.com ou abc123@group.calendar.google.com). Nada de barras, '..' ou controle.
+export function normalizeGoogleCalendarId(value) {
+  const raw = String(value || '').trim();
+  if (!raw || raw.length > 254) return '';
+  if (raw === 'primary') return 'primary';
+  if (/[\s\/\\?#%]|\.\./.test(raw) || /[\u0000-\u001f\u007f]/.test(raw)) return '';
+  if (!/^[A-Za-z0-9._+-]{1,128}@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(raw)) return '';
+  return raw;
+}
+
+function parseQuery(query, allowedKeys) {
+  if (!query) return { ok: true, search: '' };
+  if (/[#\s]/.test(query)) return { ok: false };
+  let params;
+  try { params = new URLSearchParams(query); } catch { return { ok: false }; }
+  for (const key of params.keys()) {
+    if (!allowedKeys.has(key)) return { ok: false };
+  }
+  return { ok: true, search: `?${params.toString()}` };
+}
+
+// Allowlist estrita do proxy. Retorna o caminho canônico a ser chamado no Google ou um bloqueio.
+// Permitido: GET /users/me/calendarList[/{calendarId}] e eventos de UM calendário validado.
+export function validateGoogleCalendarProxyRequest(pathValue, methodValue = 'GET') {
+  const value = String(pathValue || '');
+  const method = String(methodValue || 'GET').toUpperCase();
+  const blocked = (reason) => ({ ok: false, reason });
+  if (!value.startsWith('/') || value.length > 4096 || /[\u0000-\u001f\u007f\\#]/.test(value)) return blocked('path');
+  const [pathname, query = '', ...rest] = value.split('?');
+  if (rest.length) return blocked('query');
+  const segments = pathname.split('/').slice(1);
+  if (segments.some((segment) => !segment || segment === '.' || segment === '..')) return blocked('path');
+
+  if (segments[0] === 'users' && segments[1] === 'me' && segments[2] === 'calendarList') {
+    if (method !== 'GET') return blocked('method');
+    const parsed = parseQuery(query, CALENDAR_LIST_QUERY_KEYS);
+    if (!parsed.ok) return blocked('query');
+    if (segments.length === 3) return { ok: true, kind: 'calendar-list', calendarId: '', path: `/users/me/calendarList${parsed.search}` };
+    if (segments.length !== 4) return blocked('path');
+    let decoded = '';
+    try { decoded = decodeURIComponent(segments[3]); } catch { return blocked('calendar'); }
+    const calendarId = normalizeGoogleCalendarId(decoded);
+    if (!calendarId || encodeURIComponent(calendarId) !== segments[3]) return blocked('calendar');
+    return { ok: true, kind: 'calendar-list-entry', calendarId, path: `/users/me/calendarList/${encodeURIComponent(calendarId)}${parsed.search}` };
+  }
+
+  if (segments[0] !== 'calendars' || segments[2] !== 'events' || segments.length < 3 || segments.length > 4) return blocked('path');
+  let decodedCalendar = '';
+  try { decodedCalendar = decodeURIComponent(segments[1]); } catch { return blocked('calendar'); }
+  const calendarId = normalizeGoogleCalendarId(decodedCalendar);
+  if (!calendarId || encodeURIComponent(calendarId) !== segments[1]) return blocked('calendar');
+  const eventId = segments[3] || '';
+  if (eventId && !/^[A-Za-z0-9_-]{1,1024}$/.test(eventId)) return blocked('event');
+  const allowedMethods = eventId ? ['GET', 'PATCH', 'DELETE'] : ['GET', 'POST'];
+  if (!allowedMethods.includes(method)) return blocked('method');
+  const parsed = parseQuery(query, EVENT_QUERY_KEYS);
+  if (!parsed.ok) return blocked('query');
+  const base = `/calendars/${encodeURIComponent(calendarId)}/events${eventId ? `/${eventId}` : ''}`;
+  return { ok: true, kind: eventId ? 'event' : 'events', calendarId, path: `${base}${parsed.search}` };
+}
+
+// Escrita/leitura de eventos só em calendários dos quais o usuário é proprietário (accessRole=owner).
+export async function assertOwnedCalendar(userKey, calendarId, accessToken, fetchImpl = fetch) {
+  if (calendarId === 'primary') return true;
+  const cacheKey = `${userKey}:${calendarId}`;
+  const cached = ownerCalendarCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.owner;
+  const response = await fetchImpl(`${GOOGLE_API}/users/me/calendarList/${encodeURIComponent(calendarId)}`, {
+    method: 'GET',
+    headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+  });
+  const payload = await response.json().catch(() => null);
+  const owner = Boolean(response.ok && payload?.accessRole === 'owner');
+  ownerCalendarCache.set(cacheKey, { owner, expiresAt: Date.now() + OWNER_CACHE_TTL_MS });
+  return owner;
 }
 
 async function handleHealth(_req, res) {
@@ -430,6 +512,7 @@ async function handleStatus(_req, res, url, context) {
     state: stateRecord?.status || (connected ? 'connected' : 'idle'),
     error: stateRecord?.error || '',
     scope: token?.scope || GOOGLE_SCOPE,
+    calendarListGranted: String(token?.scope || '').includes(GOOGLE_CALENDARLIST_READONLY_SCOPE),
     updatedAt: token?.obtained_at || token?.updated_at || null,
     message: connected ? 'Google Calendar conectado.' : stateRecord?.status === 'failed' ? stateRecord.error : 'Aguardando autorização do Google Calendar.',
   });
@@ -440,12 +523,18 @@ async function handleProxy(req, res, context) {
   if (!auth) return;
   if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'Use POST para sincronizar o Google Calendar.' });
   const body = await readJson(req);
-  const googlePath = String(body.path || '');
   const method = String(body.method || 'GET').toUpperCase();
-  if (!allowedGooglePath(googlePath)) return sendJson(res, 403, { ok: false, code: 'GOOGLE_PATH_BLOCKED', message: 'O CrewCheck permite somente eventos do calendário principal.' });
   if (!['GET', 'POST', 'PATCH', 'DELETE'].includes(method)) return sendJson(res, 405, { ok: false, message: 'Operação não permitida no Google Calendar.' });
+  const route = validateGoogleCalendarProxyRequest(String(body.path || ''), method);
+  if (!route.ok) {
+    return sendJson(res, 403, { ok: false, code: 'GOOGLE_PATH_BLOCKED', message: 'O CrewCheck permite somente a lista de calendários e eventos do calendário escolhido pelo usuário.' });
+  }
+  const googlePath = route.path;
   try {
     let token = await validToken(auth.userKey);
+    if ((route.kind === 'events' || route.kind === 'event') && !(await assertOwnedCalendar(auth.userKey, route.calendarId, token.access_token))) {
+      return sendJson(res, 403, { ok: false, code: 'GOOGLE_CALENDAR_NOT_OWNED', message: 'Escolha um calendário Google do qual você é proprietário.' });
+    }
     const requestOptions = {
       method,
       headers: { authorization: `Bearer ${token.access_token}`, accept: 'application/json', ...(method === 'GET' || method === 'DELETE' ? {} : { 'content-type': 'application/json' }) },
