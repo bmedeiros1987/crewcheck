@@ -62,6 +62,7 @@ export class TvSession {
   credential: DeviceCredential | null = null;
   snapshot: TvSnapshot | null = null;
   private lastServerNow: number | null = null;
+  private originError: string | null = null;
 
   constructor(
     private storage: TvStorage,
@@ -69,13 +70,16 @@ export class TvSession {
     private origin: string,
     private persistentStorage: TvStorage | null = null,
   ) {
-    const url = new URL(origin);
-    if (
-      url.protocol !== "https:" &&
-      url.hostname !== "localhost" &&
-      url.hostname !== "127.0.0.1"
-    )
-      throw new Error("HTTPS required");
+    try {
+      const url = new URL(origin);
+      if (
+        url.protocol !== "https:" &&
+        url.hostname !== "localhost" &&
+        url.hostname !== "127.0.0.1"
+      ) this.originError = "invalid_origin";
+    } catch {
+      this.originError = "invalid_origin";
+    }
     this.restoreTrusted();
   }
 
@@ -133,6 +137,7 @@ export class TvSession {
   }
 
   async call(path: string, body?: unknown) {
+    if (this.originError) throw new Error(this.originError);
     const Controller =
       typeof AbortController === "function" ? AbortController : null;
     const controller = Controller ? new Controller() : null;
