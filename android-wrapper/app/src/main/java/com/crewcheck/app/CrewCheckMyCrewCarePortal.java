@@ -87,6 +87,15 @@ public final class CrewCheckMyCrewCarePortal {
         activity.runOnUiThread(this::destroyPortal);
     }
 
+    public boolean isVisible() {
+        return visible && container != null;
+    }
+
+    public void closeVisible() {
+        if (!visible) return;
+        activity.runOnUiThread(this::destroyPortal);
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     private void createAndLoad(boolean show) {
         destroyPortal();
