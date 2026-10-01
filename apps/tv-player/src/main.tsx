@@ -15,6 +15,7 @@ import { useTvDisplayPreferences, TvDisplaySettings, effectiveTvDisplayPreferenc
 import { calendarProgramSummary, isVisitorPresentation } from './programming';
 import { HomeEssentials } from './HomeEssentials';
 import { CalendarProgramPreview } from './CalendarProgramPreview';
+import { pairingFailure } from './PairingDiagnostics';
 
 const config = import.meta.env;
 const demo = config.VITE_TV_DEMO === 'true';
@@ -67,8 +68,8 @@ function App() {
       if (run !== generation.current) return;
       setQr(image); setPairing({ ...p, deadline: Date.now() + p.expiresIn * 1000 });
       setStatus('Confirme no celular');
-    } catch {
-      if (run === generation.current) setStatus('Pareamento indisponível. Tente novamente mais tarde.');
+    } catch (error) {
+      if (run === generation.current) setStatus(pairingFailure(error).message);
     }
   }
   useEffect(() => {
