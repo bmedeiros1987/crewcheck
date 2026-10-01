@@ -181,5 +181,5 @@ await import('../v14411/apply.mjs');
 await import('../p1-home-layout/apply.mjs');
 await import('../p1-menu-5s/apply.mjs');
 await import('../p1-566-departure-program-context/apply.mjs');
-await import('../ci/sync-canonical-manual.mjs');
 await import('../wake-v1/apply.mjs');
+await import('../ci/sync-canonical-manual.mjs');
