@@ -1,0 +1,46 @@
+name: Garmin watch snapshot encoder
+
+on:
+  pull_request:
+    paths:
+      - 'peripherals/contracts/watchSnapshotV1.schema.json'
+      - 'peripherals/garmin/**'
+      - 'scripts/test-garmin-watch-snapshot-encoder.mjs'
+      - '.github/workflows/garmin-snapshot-encoder.yml'
+  push:
+    branches:
+      - 'feat/800-garmin-connect-iq-mvp'
+    paths:
+      - 'peripherals/contracts/watchSnapshotV1.schema.json'
+      - 'peripherals/garmin/**'
+      - 'scripts/test-garmin-watch-snapshot-encoder.mjs'
+      - '.github/workflows/garmin-snapshot-encoder.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  encoder-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Ownership fence
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "${GITHUB_BASE_REF}"
+          forbidden="$(git diff --name-only "origin/${GITHUB_BASE_REF}"...HEAD | grep -E '^(android-wrapper/app/|client/)' || true)"
+          if [ -n "$forbidden" ]; then
+            echo 'Garmin peripheral PR contains Mobile-owned files:' >&2
+            echo "$forbidden" >&2
+            exit 1
+          fi
+      - name: Verify canonical to Garmin compact encoder
+        run: node scripts/test-garmin-watch-snapshot-encoder.mjs
