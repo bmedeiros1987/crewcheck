@@ -3,6 +3,7 @@ import { useLocation } from 'wouter';
 import { toast } from 'sonner';
 import { BriefcaseBusiness, Eye, EyeOff, Lock, Mail, Monitor, Moon, Plane, ShieldCheck, Sparkles, Sun } from 'lucide-react';
 import { confirmPasswordReset, login, register, requestPasswordReset } from '@/lib/authClient';
+import { loginWithGoogle } from '@/lib/googleIdentityAuth';
 import { acceptCurrentTerms, getCurrentTerms, type CrewCheckTerms } from '@/lib/termsClient';
 
 type Mode = 'login' | 'register' | 'recover' | 'reset';
@@ -136,6 +137,19 @@ export default function AuthPage() {
     }
   }
 
+  async function submitGoogle() {
+    setBusy(true);
+    try {
+      const session = await loginWithGoogle();
+      if (isCrewFunction(session.user.rank)) saveProfileRank(session.user.email, session.user.rank);
+      else activateStoredProfileRank(session.user.email);
+      toast.success('Bem-vindo ao CrewCheck.');
+      setLocation('/');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Falha no login Google.');
+    } finally { setBusy(false); }
+  }
+
   function demo() {
     localStorage.setItem('crewcheck_demo_mode_seen', '1');
     sessionStorage.setItem('crewcheck_demo_active', '1');
@@ -172,6 +186,7 @@ export default function AuthPage() {
       {(mode === 'login' || mode === 'register' || mode === 'reset') && <label><Lock/> {mode === 'reset' ? 'Nova senha' : 'Senha'} *<div className="cz-password-field"><input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="mínimo 8 caracteres" autoComplete={mode === 'login' ? 'current-password' : 'new-password'}/><button type="button" className="cz-password-toggle" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? 'Ocultar senha' : 'Exibir senha'} aria-pressed={showPassword}>{showPassword ? <EyeOff/> : <Eye/>}</button></div></label>}
       {mode === 'register' && <label className="cz-auth-terms"><input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)}/><span>Li, compreendi e aceito os <a href="/terms" target="_blank" rel="noreferrer">Termos de Uso</a> e a <a href="/privacy" target="_blank" rel="noreferrer">Política de Privacidade</a>{terms ? `, versão ${terms.version}` : ''}. As integrações opcionais, como Google Calendar e localização, serão solicitadas separadamente quando eu decidir utilizá-las.</span></label>}
       <button type="button" className="cz-primary" onClick={submit} disabled={busy || (mode === 'register' && !termsAccepted)}>{busy ? 'Aguarde...' : mode === 'login' ? 'Entrar no CrewCheck' : mode === 'register' ? 'Criar cadastro' : mode === 'recover' ? 'Enviar código temporário' : 'Atualizar senha'} <span>→</span></button>
+      {mode === 'login' && <button type="button" className="cz-secondary" onClick={submitGoogle} disabled={busy}><ShieldCheck/> {busy ? 'Aguardando Google…' : 'Entrar com Google'}</button>}
       {mode === 'login' && <button type="button" className="cz-secondary" onClick={demo}><Sparkles/> Ver modo demonstração</button>}
       <footer><button type="button" className="cz-auth-link" onClick={() => changeMode('recover')}>Esqueci minha senha</button><button type="button" className="cz-auth-link" onClick={() => changeMode(mode === 'login' ? 'register' : 'login')}>{mode === 'login' ? 'Criar conta' : 'Voltar ao login'}</button></footer>
     </section>
