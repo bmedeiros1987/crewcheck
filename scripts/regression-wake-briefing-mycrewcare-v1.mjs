@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 const read = (path) => fs.readFileSync(path, 'utf8');
 const home = read('client/src/pages/Home.tsx');
+const roster = read('client/src/components/v1391/RosterLaunchView.tsx');
 const wake = read('client/src/components/wakeup/CrewWakeSurface.tsx');
 const engine = read('client/src/lib/crewWake.ts');
 const portal = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCarePortal.java');
@@ -12,10 +13,11 @@ const alarm = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewChec
 const manifest = read('android-wrapper/app/src/main/AndroidManifest.xml');
 const server = read('server.mjs');
 
-assert.match(home, /<StayWakeStrip event=\{e\}/, 'Pernoite da escala deve mostrar início/fim/pickup/despertar');
-assert.match(home, /openWakeForStay/, 'Pernoite da escala deve abrir o CrewCheck Wake');
+assert.match(roster, /<StayWakeStrip event=\{event\}/, 'Pernoite da escala deve mostrar início/fim/pickup/despertar');
+assert.match(roster, /openWakeForStay/, 'Pernoite da escala deve abrir o CrewCheck Wake');
 assert.match(home, /<CrewWakePremiumPanel event=\{event\}/, 'Despertador deve usar a superfície premium');
 assert.match(home, /<CrewTripBriefingCard events=\{events\}/, 'Cockpit deve mostrar briefing pré-chave');
+assert.match(home, /wakeupSurfaceContext/, 'Wake deve resolver o pernoite explicitamente selecionado');
 
 assert.match(engine, /state\.manualPickup[\s\S]*source: 'manual'/, 'Override manual deve ter prioridade');
 assert.match(engine, /state\.automatic[\s\S]*matchMyCrewCarePickup/, 'MyCrewCare só deve ser consultado no modo automático');
