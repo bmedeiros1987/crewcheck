@@ -98,7 +98,7 @@ if (!block.includes('className="cc-menu-search"')) {
           const favorite = menuFavorites.includes(v);
           return <div className="cc-menu-index-row" key={v}>
             <button type="button" className={\`cc-menu-destination \${view === v ? 'active' : ''}\`} onClick={() => jump(v)} aria-label={label} title={label + ' — ' + desc} data-menu-label={label} data-menu-description={desc}><Icon aria-hidden="true"/><span><strong>{label}</strong><small>{desc}</small></span><ChevronRight aria-hidden="true"/></button>
-            <button type="button" className="cc-menu-favorite" aria-label={favorite ? 'Remover ' + label + ' dos favoritos' : 'Adicionar ' + label + ' aos favoritos'} aria-pressed={favorite} onClick={() => toggleMenuFavorite(v)}>{favorite ? '★' : '☆'}</button>
+            <button type="button" className="cc-menu-favorite" aria-label={favorite ? 'Remover ' + label + ' dos favoritos' : 'Adicionar ' + label + ' aos favoritos'} aria-pressed={favorite} onClick={() => toggleMenuFavorite(v)}><span className="cc-menu-favorite-glyph" aria-hidden="true">{favorite ? '★' : '☆'}</span></button>
           </div>;
         })}</section>)}
         {filteredGroups.length === 0 && <p className="cc-menu-empty">Nenhuma função encontrada. Tente outro termo.</p>}`;
