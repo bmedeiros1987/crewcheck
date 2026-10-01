@@ -32,7 +32,7 @@ await build({
     contents: [
       "export { rosterDutyIntervals } from './client/src/lib/calendarExport.ts';",
       "export { planWellness, normalizeWellnessPreferences, wellnessEventDescription } from './client/src/lib/wellnessScheduler.ts';",
-      "export { buildWellnessPlan, syncWellnessToGoogleCalendar, ensureOwnedCalendar, busyIntervalsFromEvents, saveWellnessPreferences, loadWellnessPreferences, maybeAutoOrganize } from './client/src/lib/wellnessCalendarSync.ts';",
+      "export { buildWellnessPlan, syncWellnessToGoogleCalendar, ensureOwnedCalendar, busyIntervalsFromEvents, saveWellnessPreferences, loadWellnessPreferences, maybeAutoOrganize, readAuthorizedHealthDays } from './client/src/lib/wellnessCalendarSync.ts';",
       "export { syncRosterToGoogleCalendar, saveGoogleCalendarSettings } from './client/src/lib/googleCalendarSync.ts';",
     ].join('\n'),
     resolveDir: root,
@@ -68,6 +68,8 @@ const calendars = new Map([
 ]);
 const ops = { POST: 0, PATCH: 0, DELETE: 0, createCalendar: 0, createBodies: [] };
 let nextId = 1;
+let failBusy = '';
+const writes = [];
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
 function zonedToUtc(dateTime, timeZone) {
@@ -93,6 +95,8 @@ async function ownerFetch(url) {
   return { ok: Boolean(cal), json: async () => (cal ? cal.entry : null) };
 }
 async function fakeGoogle(pathValue, method, body) {
+  if (failBusy && method === 'GET' && pathValue.startsWith(`/calendars/${encodeURIComponent(failBusy)}/events`)) return [503, { ok: false }];
+  if (['POST', 'PATCH'].includes(method) && /events/.test(pathValue)) writes.push({ method, body: JSON.parse(body) });
   const route = server.validateGoogleCalendarProxyRequest(pathValue, method);
   if (!route.ok) return [403, { ok: false, code: 'GOOGLE_PATH_BLOCKED' }];
   if (route.kind === 'calendar-list') return [200, { ok: true, data: { items: [...calendars.values()].map((c) => c.entry) } }];
@@ -230,7 +234,7 @@ await check('Conflito com compromisso pessoal desloca a janela', async () => {
   assert.ok(p.factors.some((f) => /compromisso pessoal/.test(f.text)));
 });
 
-const baseline = (date, sleep, rhr) => ({ date, sleepMinutes: sleep, restingHeartRate: rhr });
+const baseline = (date, sleep, rhr) => ({ date, sleepMinutes: sleep, restingHeartRate: rhr, provenance: Object.fromEntries(['sleepMinutes', 'restingHeartRate'].map(k => [k, { start: `${date}T03:00:00Z`, end: `${date}T10:00:00Z`, periodDays: 1 }])) });
 const history = ['2026-10-15', '2026-10-16', '2026-10-17', '2026-10-18', '2026-10-19'].map((d) => baseline(d, 420, 58));
 
 await check('Sono insuficiente (vs. linha de base pessoal) reduz a carga', async () => {
@@ -267,7 +271,7 @@ await check('Fuso OPS: pernoite em Sinop planeja em America/Cuiaba', async () =>
   const p = byDate(plan(r, { references: [{ date: '2026-10-30', start: '09:30', end: '10:30', availability: 'good' }] }), '2026-10-30');
   assert.equal(p.timeZone, 'America/Cuiaba');
   assert.equal(`${p.window.startLocal}–${p.window.endLocal}`, '09:30–10:30');
-  assert.match(w.wellnessEventDescription(p), /C\/O anterior: 15:50 de 29\/10 \(OPS\)/);
+  assert.doesNotMatch(w.wellnessEventDescription(p), /C\/O|OPS|Sono/);
 });
 
 // ---------- Google: Academia separado, idempotência, pessoais preservados ----------
@@ -319,8 +323,8 @@ await check('Academia separado de "Bruno & Marina"', async () => {
   assert.ok(schedule.created > 0);
   assert.equal(calendars.get(academiaId()).events.size, academia.length, 'sync da escala não toca a Academia');
   const titles = academia.map((e) => e.summary);
-  assert.ok(titles.includes('🧘 Recuperação · Mobilidade / caminhada'));
-  assert.ok(titles.some((t) => t.startsWith('🏋️ Academia')));
+  assert.ok(titles.every(t => /Atividade pessoal|Reserva pessoal/.test(t)));
+  assert.ok(titles.some((t) => t.startsWith('Academia')));
 });
 
 await check('Treino após C/O respeita 8h e jantar pessoal é evitado', async () => {
@@ -333,8 +337,8 @@ await check('Treino após C/O respeita 8h e jantar pessoal é evitado', async ()
   assert.ok(e <= ps || s >= pe, 'não cruza o jantar pessoal 18:15–20:00');
   const oct26 = events.find((ev) => ev.extendedProperties.private.crewcheckEventKey === 'wellness|2026-10-26');
   assert.ok(oct26.start.date, '26/10: referência 20:00 cai antes de C/O 19:20 + 8h → descanso');
-  assert.equal(oct26.summary, '😴 Descanso recomendado');
-  assert.match(oct26.description, /Ajuste: Relatório: 20:00–20:25; motor: removido/);
+  assert.equal(oct26.summary, 'Academia · Reserva pessoal');
+  assert.doesNotMatch(oct26.description, /Ajuste|Relatório|recuperação/i);
 });
 
 await check('Idempotência: 2ª sincronização sem mudança = 0/0/0', async () => {
@@ -393,6 +397,89 @@ await check('Preferências editáveis com padrões 8h/4h', async () => {
   assert.equal(w.loadWellnessPreferences().autoOrganize, true);
   w.saveWellnessPreferences({ minimumRecoveryBeforeWorkoutHours: 99 });
   assert.equal(w.loadWellnessPreferences().minimumRecoveryBeforeWorkoutHours, 8, 'valor inválido volta ao padrão');
+});
+
+await check('Missing, exercise-only, stale and aggregate evidence never imply recovery', async () => {
+  const r = roster([day('22/10/2026', { type: 'DO', pairingCode: 'DO' })]);
+  for (const today of [{ date: '2026-10-22' }, { date: '2026-10-22', exerciseMinutes: 90 }, { ...baseline('2026-10-22', 420, 58), provenance: { restingHeartRate: { start: '2026-10-15T10:00:00Z', end: '2026-10-22T10:00:00Z', periodDays: 7 } } }, { ...baseline('2026-10-22', 420, 58), provenance: {} }, { ...baseline('2026-10-22', 420, 58), provenance: { sleepMinutes: { start: '2026-10-20T03:00:00Z', end: '2026-10-20T10:00:00Z', periodDays: 1 } } }]) {
+    const p = byDate(plan(r, { health: [...history, today] }), '2026-10-22');
+    assert.equal(p.health.recovery, 'Dado não disponível');
+    assert.notEqual(p.confidence, 'alta');
+    assert.doesNotMatch(p.reason, /recuperação dentro/);
+  }
+  const invalidHistory = history.map(h => ({ ...h, provenance: {} }));
+  const p = byDate(plan(r, { health: [...invalidHistory, baseline('2026-10-22', 420, 58)] }), '2026-10-22');
+  assert.notEqual(p.confidence, 'alta');
+  assert.equal(p.health.recovery, 'Dado não disponível');
+  for (const weak of [history.slice(0, 2), ['2026-08-01', '2026-08-02', '2026-08-03'].map(d => baseline(d, 420, 58))]) {
+    const unknown = byDate(plan(r, { health: [...weak, baseline('2026-10-22', 420, 58)] }), '2026-10-22');
+    assert.equal(unknown.health.recovery, 'Dado não disponível');
+    assert.notEqual(unknown.confidence, 'alta');
+  }
+});
+
+await check('Fresh capture preserves old sleep date, dedupes session and excludes multi-day RHR', async () => {
+  const session = { sleepStart: '2026-10-19T19:00:00Z', sleepEnd: '2026-10-20T02:00:00Z', sleepMinutes: 420, restingHeartRateAverage: 58, steps: 7777, activityMinutes: 70, periodDays: 7 };
+  localStorage.setItem('crewcheck:life:health-history:v1', JSON.stringify([{ ...session, capturedAt: '2026-10-22T12:00:00Z' }, { ...session, capturedAt: '2026-10-21T12:00:00Z' }]));
+  const days = w.readAuthorizedHealthDays('America/Sao_Paulo');
+  assert.equal(days.length, 1);
+  assert.equal(days[0].date, '2026-10-19');
+  assert.equal(days[0].provenance.sleepMinutes.end, session.sleepEnd);
+  assert.equal(days[0].restingHeartRate, undefined);
+  assert.equal(days[0].steps, undefined);
+  assert.equal(w.readAuthorizedHealthDays('Etc/UTC')[0].date, '2026-10-20');
+  localStorage.removeItem('crewcheck:life:health-history:v1');
+});
+
+await check('POST and PATCH exclude health and derived reasons, including health-derived REST', async () => {
+  writes.length = 0;
+  const r = roster([day('22/10/2026', { type: 'DO', pairingCode: 'DO' })]);
+  const opts = { now: NOW, references: [], health: [...history, baseline('2026-10-22', 100, 90)], preferences: { academiaCalendarName: 'Synthetic privacy' } };
+  await w.syncWellnessToGoogleCalendar(r, opts);
+  const cal = [...calendars.values()].find(c => c.entry.summary === 'Synthetic privacy');
+  for (const e of cal.events.values()) { e.description = 'legacy health'; e.extendedProperties.private.crewcheckHash = 'legacy'; }
+  await w.syncWellnessToGoogleCalendar(r, opts);
+  assert.ok(writes.some(w => w.method === 'POST'));
+  assert.ok(writes.some(w => w.method === 'PATCH'));
+  for (const { body } of writes) {
+    assert.doesNotMatch(JSON.stringify(body), /bpm|sono|repouso|baseline|passos|recupera|motivo|confiança|percent|90|100/i);
+    assert.equal(body.colorId, '2');
+    assert.equal(body.location, undefined);
+    assert.deepEqual(Object.keys(body.extendedProperties.private).sort(), ['crewcheck', 'crewcheckCrew', 'crewcheckDomain', 'crewcheckEventKey', 'crewcheckHash', 'crewcheckKeyVersion']);
+    assert.match(body.extendedProperties.private.crewcheckEventKey, /^wellness\|2026-10-22$/);
+    assert.equal(body.extendedProperties.private.crewcheck, 'true');
+    assert.equal(body.extendedProperties.private.crewcheckDomain, 'wellness');
+  }
+  const identities = [...cal.events.keys()];
+  const before = [ops.POST, ops.PATCH, ops.DELETE, ops.createCalendar];
+  for (let i = 0; i < 2; i++) {
+    const repeat = await w.syncWellnessToGoogleCalendar(r, opts);
+    assert.deepEqual([repeat.created, repeat.updated, repeat.deleted], [0, 0, 0]);
+  }
+  assert.deepEqual([...cal.events.keys()], identities);
+  assert.deepEqual([ops.POST, ops.PATCH, ops.DELETE, ops.createCalendar], before);
+});
+
+await check('Busy read failure aborts without event mutations or personal deletion', async () => {
+  const before = [ops.POST, ops.PATCH, ops.DELETE, ops.createCalendar];
+  for (const calendarId of ['primary', SCHEDULE_CAL, academiaId()]) {
+    failBusy = calendarId;
+    await assert.rejects(w.syncWellnessToGoogleCalendar(octRoster, { now: NOW, references: octRefs, health: [] }), /Disponibilidade.*não verificada/);
+    assert.deepEqual([ops.POST, ops.PATCH, ops.DELETE, ops.createCalendar], before);
+  }
+  // Missing target: busy-read failure must not even create a calendar.
+  failBusy = 'primary';
+  await assert.rejects(w.syncWellnessToGoogleCalendar(octRoster, { now: NOW, preferences: { academiaCalendarName: 'Must not be created' }, references: octRefs, health: [] }), /Disponibilidade.*não verificada/);
+  assert.deepEqual([ops.POST, ops.PATCH, ops.DELETE, ops.createCalendar], before);
+  assert.ok(![...calendars.values()].some(c => c.entry.summary === 'Must not be created'));
+  failBusy = '';
+  assert.deepEqual(calendars.get('primary').events.get('personalprimary'), personalPrimary);
+});
+
+await check('Today card requires exact date and labels unverified availability', async () => {
+  const source = fs.readFileSync(path.join(root, 'client/src/components/wellness/WellnessRecoveryCard.tsx'), 'utf8');
+  assert.doesNotMatch(source, /plans\[0\]/);
+  assert.match(source, /AGENDA NÃO VERIFICADA/);
 });
 
 fs.rmSync(scratch, { recursive: true, force: true });

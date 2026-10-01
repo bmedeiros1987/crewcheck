@@ -2,10 +2,11 @@ name: CrewCheck web validation
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/wellness-scheduler-academia]
   push:
     branches:
       - main
+      - fix/wellness-privacy-daily-evidence
       - agent/v14-premium-system-audit
       - agent/v14-0-1-telegram-voice-policy
       - agent/v14-0-2-google-oauth-legal

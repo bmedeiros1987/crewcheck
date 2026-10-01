@@ -39,15 +39,9 @@ Isso **não** é repouso regulamentar aeronáutico. É organização pessoal de 
 
 Saída por dia: decisão (`TRAIN`/`TRAIN_LIGHT`/`RECOVERY`/`REST`), intensidade, confiança, fatores ✓/⚠, janela, duração e motivo legível.
 
-Títulos no calendário:
+No calendário, títulos e descrições são genéricos: atividade pessoal com horário ou reserva pessoal de dia inteiro. Não incluem intensidade, recuperação, confiança, motivos ou métricas.
 
-| Decisão | Título |
-|---|---|
-| Treino completo | 🏋️ Academia · Treino completo |
-| Treino moderado | 🏋️ Academia · Treino moderado |
-| Treino leve | 🚶 Academia · Treino leve |
-| Recuperação | 🧘 Recuperação · Mobilidade / caminhada |
-| Descanso | 😴 Descanso recomendado (dia inteiro, transparente) |
+Resumos multidiários de FC/atividade não são observações diárias. Sono usa início/fim reais da última sessão, sem replicá-la no dia da captura. Evidência diária sem timestamps válidos ou linha de base válida deixa recuperação desconhecida; a janela operacional não comprova recuperação.
 
 ## Google Calendar
 
@@ -74,7 +68,9 @@ Isso roda **no aparelho do usuário**. Não há job no servidor, porque os dados
 ## Privacidade
 
 - Dados de saúde: leitura opcional, só do que o usuário já autorizou, guardados localmente.
-- No Google vai apenas um resumo legível do motivo (por exemplo, "Sono abaixo do seu habitual").
+- No Google vão apenas texto genérico e horário escolhido; dados e justificativas de saúde permanecem locais. O horário pode refletir o planejamento local.
+- `calendar.app.created` é combinado com `calendar.events.owned`: a autorização também permite acesso aos calendários próprios, não apenas aos criados pelo app.
+- Falha na leitura de disponibilidade interrompe a publicação sem alterar eventos. O card local exige a data exata e informa que a agenda ainda não foi verificada.
 - Não há diagnóstico médico, avaliação de aptidão nem uso trabalhista ou envio a empregador.
 
 ## Passos manuais

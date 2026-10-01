@@ -9,7 +9,7 @@ import {
   readAuthorizedHealthDays,
   saveWellnessPreferences,
 } from '@/lib/wellnessCalendarSync';
-import { wellnessDecisionLabel, type WellnessDayPlan, type WellnessPreferences } from '@/lib/wellnessScheduler';
+import { type WellnessDayPlan, type WellnessPreferences } from '@/lib/wellnessScheduler';
 import type { CrewRoster } from '@/lib/pdfParser';
 
 function readActiveRoster(): CrewRoster | null {
@@ -51,7 +51,7 @@ export default function WellnessRecoveryCard() {
       const timeZone = airportTimeZone(roster.base);
       const today = todayIn(timeZone);
       const plans = buildWellnessPlan(roster, { preferences: prefs, health: prefs.useHealthData ? readAuthorizedHealthDays(timeZone) : [], fromDate: today });
-      return plans.find((item) => item.date === today) || plans[0] || null;
+      return plans.find((item) => item.date === today) || null;
     } catch {
       return null;
     }
@@ -91,15 +91,11 @@ export default function WellnessRecoveryCard() {
   }
 
   if (!roster) return null;
-  const rest = plan?.decision === 'REST' || plan?.decision === 'RECOVERY';
   return <section className="cc-life-block cc-wellness-card" aria-labelledby="cc-wellness-title">
-    <header><div><small>{rest ? 'HOJE É MELHOR RECUPERAR' : 'RECUPERAÇÃO HOJE'}</small><h2 id="cc-wellness-title">{plan ? wellnessDecisionLabel(plan) : 'Sem plano para hoje'}</h2></div></header>
+    <header><div><small>{'RECUPERAÇÃO LOCAL DE HOJE'}</small><h2 id="cc-wellness-title">{plan ? plan.health.recovery : 'Sem dados para hoje'}</h2></div></header>
     {plan && <>
-      <ul className="cc-wellness-factors">
-        {plan.factors.slice(0, 5).map((factor) => <li key={factor.text}>{factor.ok ? '✓' : '⚠'} {factor.text}</li>)}
-      </ul>
-      <p><strong>{plan.window ? `Melhor janela: ${plan.window.startLocal}–${plan.window.endLocal}` : 'Sugestão: mobilidade + caminhada leve ou descanso completo.'}</strong></p>
-      <p><small>{plan.reason} Confiança {plan.confidence}. Sugestão de bem-estar, não diagnóstico.</small></p>
+      <p>Sono: {plan.health.sleep}. FC de repouso: {plan.health.restingHeartRate}.</p>
+      <p><small>AGENDA NÃO VERIFICADA. Organizar agora verifica os compromissos antes de publicar uma janela. Sugestão de bem-estar, não diagnóstico.</small></p>
     </>}
     <div className="cc-tool-actions">
       <button onClick={organizeNow} disabled={busy}>{busy ? 'Organizando…' : 'Organizar agora no Google Calendar'}</button>
