@@ -1,9 +1,9 @@
 // Calendar Operational Detailed — regressão ponta a ponta da integração Google Calendar.
 // Empacota calendarExport.ts + googleCalendarSync.ts reais (após a cadeia v139), roda a
 // sincronização contra um Google Calendar simulado atrás da allowlist REAL do proxy do servidor
-// e cobre: jornada + etapas, OP×PS, cores, VC≠DO, +1, OPS/America/Cuiaba, 31/10 até 00:05,
-// continuação 02/11, upsert idempotente, evento pessoal intacto, calendário secundário,
-// bloqueio de caminho malicioso e OAuth fora da WebView.
+// e cobre: jornada + etapas, OP×PS, cores, VC≠DO, +1, OPS/America/Cuiaba, fusos internacionais
+// e fail-closed para IATA desconhecido, 31/10 até 00:05, continuação 02/11, upsert idempotente,
+// evento pessoal intacto, calendário secundário, bloqueio de caminho malicioso e OAuth fora da WebView.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -292,6 +292,38 @@ await check('OPS em America/Cuiaba (exibição em Brasília: 16:20 e 17:00)', as
   assert.equal(tokyo, saoPaulo, 'saída não pode depender do fuso do aparelho');
 });
 
+await check('Fusos internacionais conhecidos e IATA desconhecido falha fechado', async () => {
+  assert.equal(calendar.airportTimeZone('SCL'), 'America/Santiago');
+  assert.equal(calendar.airportTimeZone('MIA'), 'America/New_York');
+  const intlRoster = {
+    crewName: 'BRUNO MEDEIROS', crewId: '123456', base: 'GRU', rank: 'CCM', month: 10, year: 2026, rawText: '',
+    days: [day('28/10/2026', {
+      base: 'GRU',
+      dutyReport: '07:00',
+      dutyDebrief: '16:00',
+      legs: [leg('LA750', 'GRU', 'SCL', '08:00', '12:15'), leg('LA751', 'SCL', 'GRU', '13:30', '16:00')],
+    })],
+  };
+  const intlIcal = calendar.generateICalendar(intlRoster, [], { mode: 'flights-rest', calendarStyle: 'operational-detailed' });
+  assert.match(intlIcal, /DTEND;TZID=America\/Santiago:20261028T121500/);
+  assert.match(intlIcal, /DTSTART;TZID=America\/Santiago:20261028T133000/);
+
+  const unknownRoster = {
+    ...intlRoster,
+    days: [day('29/10/2026', {
+      base: 'GRU',
+      dutyReport: '07:00',
+      dutyDebrief: '12:00',
+      legs: [leg('LA9999', 'GRU', 'ZZZ', '08:00', '11:00')],
+    })],
+  };
+  assert.throws(
+    () => calendar.generateICalendar(unknownRoster, [], { mode: 'flights-rest', calendarStyle: 'operational-detailed' }),
+    /Fuso horário desconhecido para o aeroporto ZZZ/,
+    'modo operacional não pode assumir Brasília para aeroporto desconhecido',
+  );
+});
+
 await check('31/10 forma BSB-AJU-BSB-SLZ até 00:05 (+1)', async () => {
   const pairing = bySummary('BSB-AJU-BSB-SLZ');
   assert.deepEqual(pairing.start, { dateTime: '2026-10-31T13:50:00', timeZone: 'America/Sao_Paulo' });
@@ -416,5 +448,5 @@ async function callRoute(pathname, method, body) {
 }
 
 fs.rmSync(scratch, { recursive: true, force: true });
-assert.equal(results.length, 13);
-console.log(`Calendar Operational Detailed: ${results.length}/13 cenários OK.`);
+assert.equal(results.length, 14);
+console.log(`Calendar Operational Detailed: ${results.length}/14 cenários OK.`);
