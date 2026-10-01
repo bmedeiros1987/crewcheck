@@ -24,18 +24,20 @@ function stayContext(
   context: CrewCheckNavigationContext | null,
   targetView: StayContextTarget,
 ): context is CrewCheckNavigationContext {
+  const fromHotels = Boolean(context && context.sourceView === 'hotels' && context.returnView === 'hotels');
+  const fromRoster = Boolean(context && context.sourceView === 'roster' && context.returnView === 'roster');
   return Boolean(
     context
       && context.targetView === targetView
-      && context.sourceView === 'hotels'
-      && context.returnView === 'hotels'
+      && (fromHotels || fromRoster)
       && context.stayId,
   );
 }
 
-function returnToStay() {
+function returnToStay(context: CrewCheckNavigationContext) {
   clearPendingNavigationContext();
-  window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'hotels' }));
+  const target = context.returnView === 'roster' ? 'roster' : 'hotels';
+  window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: target }));
 }
 
 /**
@@ -52,7 +54,7 @@ export default function StayNavigationContext({ targetView }: { targetView: Stay
   const detail = [airport ? `pernoite em ${airport}` : '', date].filter(Boolean).join(' · ');
 
   return <section className="cc-stay-context-return cc-readable-surface" aria-label="Contexto aberto pelo Pernoite">
-    <button type="button" onClick={returnToStay}>
+    <button type="button" onClick={() => returnToStay(context)}>
       <span aria-hidden="true">←</span>
       {context.returnLabel || 'Voltar ao Pernoite'}
     </button>
