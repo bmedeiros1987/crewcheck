@@ -92,4 +92,43 @@ assert.equal(
   'semântica deve depender do contrato, nunca do texto exibido',
 );
 
+
+const pulseStorage = memoryStorage();
+assert.equal(
+  visibility.dismissComplianceAlertUntilRosterUpdate(pulseStorage, accountId, revisionA, actionable),
+  true,
+  'warning acionável pode ser dispensado na revisão atual',
+);
+assert.deepEqual(
+  visibility.activeComplianceAlerts([actionable, confirmed], pulseStorage, accountId, revisionA).map((alert) => alert.code),
+  ['CONFIRMED_EXAMPLE'],
+  'dispensar um warning não pode ocultar uma irregularidade confirmada remanescente',
+);
+
+const informationalPulseStorage = memoryStorage();
+assert.equal(
+  visibility.dismissComplianceAlertUntilRosterUpdate(informationalPulseStorage, accountId, revisionA, dataGap),
+  true,
+  'análise informativa pode ser dispensada sem alterar alertas acionáveis',
+);
+assert.deepEqual(
+  visibility.activeComplianceAlerts([dataGap, actionable], informationalPulseStorage, accountId, revisionA).map((alert) => alert.code),
+  ['SOME_ACTIONABLE_WARNING'],
+  'dispensar informação não pode retirar um warning acionável do Pulse',
+);
+
+const soloPulseStorage = memoryStorage();
+visibility.dismissComplianceAlertUntilRosterUpdate(soloPulseStorage, accountId, revisionA, actionable);
+assert.equal(
+  visibility.activeComplianceAlerts([actionable], soloPulseStorage, accountId, revisionA).length,
+  0,
+  'Pulse de compliance só pode ser dispensado quando nenhum alerta acionável permanecer',
+);
+
+const homeLayoutMaterializer = fs.readFileSync(new URL('./p1-home-layout/apply.mjs', import.meta.url), 'utf8');
+assert.ok(
+  homeLayoutMaterializer.includes("remainingActionable.length === 0"),
+  'materializador da Home deve preservar o Pulse enquanto houver alerta acionável remanescente',
+);
+
 console.log('compliance alert visibility contract: PASS');
