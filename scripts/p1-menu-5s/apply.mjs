@@ -109,9 +109,7 @@ if (!block.includes('const filteredGroups =')) {
   if (!block.includes(jumpAnchor)) throw new Error('[p1-menu-5s] salto do menu não localizado');
   const behavior = `
   const allMenuItems = groups.flatMap((group) => group.items);
-  const allowedFavoriteIds = allMenuItems.map(([viewId]) => viewId);
-  const validMenuFavorites = menuFavorites.filter((id) => allowedFavoriteIds.includes(id as ZeroView));
-  const favoriteItems = validMenuFavorites
+  const favoriteItems = menuFavorites
     .map((id) => allMenuItems.find(([viewId]) => viewId === id))
     .filter((item): item is MenuItem => Boolean(item));
   const filteredGroups = groups
@@ -120,21 +118,20 @@ if (!block.includes('const filteredGroups =')) {
   const catalogGroups = menuQuery
     ? filteredGroups
     : filteredGroups
-      .map((group) => ({ ...group, items: group.items.filter(([viewId]) => !validMenuFavorites.includes(viewId)) }))
+      .map((group) => ({ ...group, items: group.items.filter(([viewId]) => !menuFavorites.includes(viewId)) }))
       .filter((group) => group.items.length > 0);
   const toggleMenuFavorite = (target: ZeroView) => {
     if (!accountId) {
       setMenuStatus('Entre na sua conta para salvar favoritos.');
       return;
     }
-    if (!allowedFavoriteIds.includes(target)) return;
-    const exists = validMenuFavorites.includes(target);
-    if (!exists && validMenuFavorites.length >= MENU_FAVORITES_LIMIT) {
+    const exists = menuFavorites.includes(target);
+    if (!exists && menuFavorites.length >= MENU_FAVORITES_LIMIT) {
       setMenuStatus('Escolha até ' + MENU_FAVORITES_LIMIT + ' favoritos.');
       return;
     }
-    const next = exists ? validMenuFavorites.filter((item) => item !== target) : [...validMenuFavorites, target];
-    if (!saveMenuFavorites(window.localStorage, accountId, allowedFavoriteIds, next)) {
+    const next = exists ? menuFavorites.filter((item) => item !== target) : [...menuFavorites, target];
+    if (!saveMenuFavorites(window.localStorage, accountId, MENU_5S_ALLOWED_IDS, next)) {
       setMenuStatus('Não foi possível salvar os favoritos neste dispositivo.');
       return;
     }
@@ -169,7 +166,7 @@ if (!block.includes('className="cc-menu-search"')) {
           </div>)}</div>
         </section>}
         {catalogGroups.map((group) => <section className="cz-menu-section cz-menu-group cc-menu-index-group" data-menu-group={group.title} key={group.title}><h3>{group.title}</h3>{group.items.map(([v, label, desc, Icon]) => {
-          const favorite = validMenuFavorites.includes(v);
+          const favorite = menuFavorites.includes(v);
           return <div className="cc-menu-index-row" data-editing={editingFavorites ? 'true' : 'false'} key={v}>
             <button type="button" className={\`cc-menu-destination \${view === v ? 'active' : ''}\`} onClick={() => jump(v)} aria-label={label} title={label + ' — ' + desc} data-menu-label={label} data-menu-description={desc}><Icon aria-hidden="true"/><span><strong>{label}</strong><small>{desc}</small></span><ChevronRight aria-hidden="true"/></button>
             {editingFavorites && <button type="button" className="cc-menu-favorite" data-menu-favorite-id={v} aria-label={favorite ? 'Remover ' + label + ' dos favoritos' : 'Adicionar ' + label + ' aos favoritos'} aria-pressed={favorite} onClick={() => toggleMenuFavorite(v)}><span className="cc-menu-favorite-glyph" aria-hidden="true">{favorite ? '★' : '☆'}</span></button>}
