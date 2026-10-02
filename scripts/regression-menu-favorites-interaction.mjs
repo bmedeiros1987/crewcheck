@@ -102,6 +102,8 @@ const matrix = [
   { name: 'phone-small', width: 320, height: 740, touch: true },
   { name: 'phone-portrait', width: 360, height: 800, touch: true },
   { name: 'phone-landscape', width: 844, height: 390, touch: true },
+  { name: 'ipad-portrait', width: 768, height: 1024, touch: true },
+  { name: 'ipad-landscape', width: 1024, height: 768, touch: true },
   { name: 'desktop', width: 1440, height: 900, touch: false },
 ];
 const themedMatrix = matrix.flatMap(device => ['dark', 'light'].map(theme => ({ ...device, name: device.name + '-' + theme, theme })));
@@ -130,6 +132,22 @@ try {
     const stars = () => page.locator('.cc-menu-favorite').count();
     const snap = (name) => page.screenshot({ path: path.join(output, `${device.name}-${name}.png`), animations: 'disabled' });
     const readableFavorites = async () => {
+      // Exercise shipped semantic CSS through the actual 5S row wrapper and chips.
+      const semantic = await page.locator('.cc-menu-destination, .cc-menu-favorite-chip').evaluateAll(els => {
+        const expected = { 'FlightDeck': '--cz-pink', 'Escala oficial': '--event-flight', 'Meteorologia': '--event-flight', 'Planejado x atual': '--event-reserve', 'Saída Inteligente': '--event-conforme', 'Despertador': '--event-layover', 'Emergência': '--event-alert', 'Configurações': '--cz-purple' };
+        return els.map(e => {
+          const icon = e.querySelector('svg'), style = getComputedStyle(icon);
+          const probe = document.createElement('i'); probe.style.color = `var(${expected[e.dataset.menuLabel] || '--cc-atlas-tone'})`; e.append(probe);
+          const color = getComputedStyle(probe).color; probe.remove();
+          return { label: e.dataset.menuLabel, color: style.color, expected: color,
+            tone: getComputedStyle(e).getPropertyValue('--cc-atlas-tone').trim(),
+            badge: icon.getBoundingClientRect().width,
+            wrapped: !e.classList.contains('cc-menu-destination') || e.parentElement.classList.contains('cc-menu-index-row') };
+        });
+      });
+      check(semantic.every(e => e.wrapped), label('canonical 5S destination row wrapper missing'));
+      check(semantic.every(e => e.tone && e.color === e.expected && e.badge >= 38), label('semantic icon tone/badge lost: ' + semantic.filter(e => !e.tone || e.color !== e.expected || e.badge < 38).map(e => e.label).join(', ')));
+      if (semantic.length === 40) check(new Set(semantic.map(e => e.color)).size === 7, label('seven semantic tones must remain across catalog and favorites'));
       const clipped = await page.locator('.cc-menu-favorite-chip span').evaluateAll(els => els.filter(el => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1).map(el => el.textContent));
       check(clipped.length === 0, label('favorite labels clipped: ' + clipped.join(', ')));
       const undersized = await page.locator('.cc-menu-favorite').evaluateAll(els => els.some(el => { const r=el.getBoundingClientRect(); return r.width < 44 || r.height < 44; }));
@@ -146,6 +164,14 @@ try {
     check(new Set([...initialChips, ...initialRows]).size === 40, label('every destination exactly once'));
     check(!initialRows.some((r) => initialChips.includes(r)), label('catalog repeats a favorite'));
     check(await stars() === 0, label('stars visible outside edit mode'));
+    const searchInput = page.locator('.cc-menu-search input');
+    await searchInput.focus();
+    if (device.theme === 'light') {
+      const field = await searchInput.evaluate(e => { const s = getComputedStyle(e), outer = getComputedStyle(e.closest('label')); return { border: s.borderWidth, background: s.backgroundColor, image: s.backgroundImage, shadow: s.boxShadow, innerFocus: s.outlineWidth, focus: outer.outlineWidth, style: outer.outlineStyle }; });
+      check(field.border === '0px' && field.background === 'rgba(0, 0, 0, 0)' && field.image === 'none' && field.shadow === 'none', label('light search must have one outer surface'));
+      check(field.innerFocus === '0px' && field.focus === '2px' && field.style === 'solid', label('light search must have one visible outer focus ring'));
+    }
+    await page.locator('.cz-menu-close').focus();
     await readableFavorites();
     check(await page.locator('.cz-menu-brandmark img').evaluateAll(els => els.every(el => el.complete && el.naturalWidth > 0)), label('brand image loaded'));
     await snap('1-default');
