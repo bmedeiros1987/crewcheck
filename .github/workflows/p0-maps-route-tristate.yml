@@ -6,6 +6,17 @@ on:
     paths:
       - 'client/src/pages/Home.tsx'
       - 'server.mjs'
+      - 'server/telegram-fast-ack.mjs'
+      - 'shared/routeIncidentAssociation*'
+      - 'client/src/lib/departureRouteState.ts'
+      - 'client/src/components/v1391/useRosterLayout.ts'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/p1-departure-route-state/**'
+      - 'scripts/p1-incident-association/**'
+      - 'scripts/regression-departure-route-*.mjs'
+      - 'scripts/regression-incident-association.mjs'
+      - 'scripts/regression-route-incident-refresh.mjs'
+      - 'scripts/regression-roster-layout-session-browser.mjs'
       - 'scripts/v14387d/**'
       - 'scripts/p0-maps-route-tristate/**'
       - 'scripts/regression-p0-maps-route-tristate.mjs'
@@ -40,7 +51,34 @@ jobs:
         run: node scripts/regression-p0-maps-active-first-alert.mjs
       - name: Validate embedded route preview fallback
         run: node scripts/regression-p0-maps-embed-preview.mjs
+      - name: Route sessions, incident provenance and async races (offline)
+        run: |
+          node scripts/regression-route-incident-refresh.mjs
+          node scripts/regression-incident-association.mjs
+          node scripts/regression-departure-route-state.mjs
+          node scripts/regression-departure-route-effects.mjs
+          node scripts/regression-v14-3-34-positioning-radar-cache.mjs
       - name: TypeScript check
         run: npx tsc --noEmit
       - name: Vite production build
         run: npx vite build
+      - name: Install isolated Chromium test dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/route-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/route-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Roster session and departure browser fixtures (offline)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/route-browser/package.json
+          DEPARTURE_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/route-browser/package.json
+          DEPARTURE_TEST_ORIGIN: http://127.0.0.1:4197
+          DEPARTURE_EVIDENCE_FILE: ${{ runner.temp }}/departure-route-state.json
+        run: |
+          node scripts/regression-roster-layout-session-browser.mjs
+          node node_modules/vite/bin/vite.js preview --host 127.0.0.1 --port 4197 --strictPort > "$RUNNER_TEMP/route-preview.log" 2>&1 &
+          route_preview_pid=$!
+          trap 'kill "$route_preview_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:4197/app > /dev/null; then break; fi
+            sleep 1
+          done
+          node scripts/regression-departure-route-state-browser.mjs
