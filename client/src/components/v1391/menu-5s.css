@@ -165,3 +165,18 @@
     transition: none !important;
   }
 }
+
+/* The search label owns the field surface; generic light-theme input styles
+   must not draw a second field inside it. Keep keyboard focus on that surface. */
+html[data-crew-theme="light"] .cz-menu-panel .cc-menu-search input {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: 0 !important;
+  padding: 0 !important;
+}
+html[data-crew-theme="light"] .cz-menu-panel .cc-menu-search label:focus-within {
+  outline: 2px solid var(--event-flight);
+  outline-offset: 2px;
+}
