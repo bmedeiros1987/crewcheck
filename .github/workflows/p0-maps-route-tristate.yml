@@ -6,15 +6,11 @@ on:
     paths:
       - 'client/src/pages/Home.tsx'
       - 'server.mjs'
-      - 'server/telegram-fast-ack.mjs'
-      - 'shared/routeIncidentAssociation*'
       - 'client/src/lib/departureRouteState.ts'
       - 'client/src/components/v1391/useRosterLayout.ts'
       - 'scripts/v139/apply.mjs'
       - 'scripts/p1-departure-route-state/**'
-      - 'scripts/p1-incident-association/**'
       - 'scripts/regression-departure-route-*.mjs'
-      - 'scripts/regression-incident-association.mjs'
       - 'scripts/regression-route-incident-refresh.mjs'
       - 'scripts/regression-roster-layout-session-browser.mjs'
       - 'scripts/v14387d/**'
@@ -51,10 +47,9 @@ jobs:
         run: node scripts/regression-p0-maps-active-first-alert.mjs
       - name: Validate embedded route preview fallback
         run: node scripts/regression-p0-maps-embed-preview.mjs
-      - name: Route sessions, incident provenance and async races (offline)
+      - name: Route sessions, alert dedupe and async races (offline)
         run: |
           node scripts/regression-route-incident-refresh.mjs
-          node scripts/regression-incident-association.mjs
           node scripts/regression-departure-route-state.mjs
           node scripts/regression-departure-route-effects.mjs
           node scripts/regression-v14-3-34-positioning-radar-cache.mjs

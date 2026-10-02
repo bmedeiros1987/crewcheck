@@ -1,4 +1,3 @@
-import { hasConfirmedRouteClosure, incidentHeading, prioritizeIncidents } from './shared/routeIncidentAssociation.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -435,7 +434,7 @@ function tomtomTrafficEvents(route = {}) {
     const label = `${section.sectionType || ''} ${section.simpleCategory || ''}`;
     return /traffic|road.clos|accident|jam|road.work|incident|block/i.test(label) || Number(section.magnitudeOfDelay || 0) > 0;
   });
-  return prioritizeIncidents(sections.map((section, index) => {
+  return sections.slice(0, 12).map((section, index) => {
     const category = String(section.simpleCategory || section.sectionType || 'TRAFFIC').toUpperCase();
     const delaySeconds = Math.max(0, Number(section.delayInSeconds || 0));
     const roadClosure = Number(section.magnitudeOfDelay || 0) >= 4 || /CLOS|BLOCK|IMPASS/i.test(category);
@@ -448,13 +447,10 @@ function tomtomTrafficEvents(route = {}) {
       delayText: delaySeconds ? formatDuration(`${delaySeconds}s`) : '',
       severity: roadClosure ? 'critical' : delaySeconds >= 600 ? 'warning' : 'info',
       roadClosure,
-      association: 'on_route',
-      source: 'tomtom_route_section',
-      observedAt: new Date().toISOString(),
       startPointIndex: Number(section.startPointIndex || 0),
       endPointIndex: Number(section.endPointIndex || 0),
     };
-  })).slice(0, 12);
+  });
 }
 function routePointDistanceMeters(left, right) {
   const radians = (value) => Number(value) * Math.PI / 180;
@@ -513,11 +509,8 @@ async function tomtomIncidentDetails(route, key) {
     const delaySeconds = Math.max(0, Number(properties.delay || 0));
     return [{
       id: String(properties.id || `${meta.category}-${properties.from || ''}-${properties.to || ''}`),
-      association: 'near_route',
-      source: 'tomtom_incident_details',
-      observedAt: new Date(now).toISOString(),
       category: meta.category,
-      title: description || meta.title.replace(' na rota', ''),
+      title: description || meta.title,
       delaySeconds,
       delayText: delaySeconds ? formatDuration(`${delaySeconds}s`) : '',
       severity: meta.severity,
@@ -552,7 +545,7 @@ async function tomtomRoutePreview(origin, destination, key) {
   const trafficDelaySeconds = Number(summary.trafficDelayInSeconds || Math.max(0, durationSeconds - baselineDurationSeconds) || 0);
   const routeEvents = tomtomTrafficEvents(route);
   const detailedEvents = await tomtomIncidentDetails(route, key).catch(() => []);
-  const incidents = prioritizeIncidents([...new Map([...detailedEvents, ...routeEvents].map((incident) => [incident.id || `${incident.category}:${incident.title}`, incident])).values()]).slice(0, 12);
+  const incidents = [...new Map([...detailedEvents, ...routeEvents].map((incident) => [incident.id || `${incident.category}:${incident.title}`, incident])).values()].slice(0, 12);
   return {
     ok: true,
     configured: true,
@@ -568,10 +561,10 @@ async function tomtomRoutePreview(origin, destination, key) {
     trafficDelaySeconds,
     trafficDelayText: trafficDelaySeconds ? formatDuration(`${trafficDelaySeconds}s`) : 'Sem atraso relevante',
     incidents,
-    hasRoadClosure: hasConfirmedRouteClosure(incidents),
+    hasRoadClosure: incidents.some((incident) => incident.roadClosure),
     updatedAt: new Date().toISOString(),
     refreshAfterSeconds: 60,
-    message: incidents.length ? incidentHeading(incidents) : 'Trânsito ao vivo atualizado pela TomTom.',
+    message: incidents.length ? 'Trânsito ao vivo atualizado; há ocorrências no trajeto.' : 'Trânsito ao vivo atualizado pela TomTom.',
   };
 }
 async function googleRoutePreview(origin, destination, requestedMode, key) {

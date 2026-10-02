@@ -1,4 +1,3 @@
-import { incidentHeading, incidentDetail } from '../shared/routeIncidentAssociation.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
@@ -8,16 +7,16 @@ const anchor = home.indexOf('const incidents = route?.incidents || [];');
 const start = home.lastIndexOf('useEffect(() => {', anchor) + 'useEffect(() => {'.length;
 const end = home.indexOf('}, [route?.updatedAt, event.id]);', anchor);
 assert(anchor >= 0 && start > 0 && end > start, 'canonical route incident effect');
-const run = new Function('route', 'event', 'storage', 'lastAlertedIncidentFingerprintRef', 'notifyCrewCheck', 'toast', 'incidentHeading', 'incidentDetail', home.slice(start, end));
+const run = new Function('route', 'event', 'storage', 'lastAlertedIncidentFingerprintRef', 'notifyCrewCheck', 'toast', home.slice(start, end));
 const data = new Map();
 const storage = { get: (k, fallback) => data.get(k) ?? fallback, set: (k, v) => data.set(k, v) };
 let ref = { current: null };
 const notices = [], toasts = [];
 let tick = 0;
-const refresh = (incidents, ok = true) => run({ ok, incidents, updatedAt: new Date(1790938800000 + tick++ * 60000).toISOString() }, { id: 'fictional-duty' }, storage, ref, (...args) => notices.push(args), { warning: (...args) => toasts.push(args) }, incidentHeading, incidentDetail);
+const refresh = (incidents, ok = true) => run({ ok, incidents, updatedAt: new Date(1790938800000 + tick++ * 60000).toISOString() }, { id: 'fictional-duty' }, storage, ref, (...args) => notices.push(args), { warning: (...args) => toasts.push(args) });
 const critical = { id: 'fixture-road', title: 'Interdição fictícia', category: 'road_closure', severity: 'critical', roadClosure: true, delaySeconds: 240 };
 const traffic = { id: 'fixture-traffic', title: 'Retenção fictícia', category: 'traffic', severity: 'info', roadClosure: false, delaySeconds: 240 };
-run(null, { id: 'fictional-duty' }, storage, ref, (...args) => notices.push(args), { warning: (...args) => toasts.push(args) }, incidentHeading, incidentDetail);
+run(null, { id: 'fictional-duty' }, storage, ref, (...args) => notices.push(args), { warning: (...args) => toasts.push(args) });
 refresh([traffic]);
 assert.equal(notices.length, 0, 'pending and initial 4-minute retention do not emit critical notice');
 refresh([critical, traffic]);
