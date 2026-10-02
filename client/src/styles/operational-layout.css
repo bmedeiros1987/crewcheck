@@ -106,7 +106,7 @@ html:has(.cz-app:is([data-view="departure"],[data-view="roster"],[data-view="pre
   scroll-padding-bottom:calc(var(--cc-operational-nav-clearance,100px) + 24px);
 }
 body:has(.cz-app:is([data-view="departure"],[data-view="roster"],[data-view="presentation"])) .cz-bottom-nav {
-  height:auto!important; min-height:76px!important; padding-bottom:max(8px,env(safe-area-inset-bottom))!important;
+  height:auto!important; min-height:var(--cc-canonical-nav-height,80px)!important; padding-bottom:max(8px,env(safe-area-inset-bottom))!important;
 }
 @media(max-width:600px) {
   html body .cz-app[data-version] .cc-roster-premium-v1397 .cc-roster-flight-grid-v1397 > span:first-child {grid-column:1 / -1!important}
