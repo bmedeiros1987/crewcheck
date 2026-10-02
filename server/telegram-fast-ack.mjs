@@ -1,3 +1,4 @@
+import { hasConfirmedRouteClosure, incidentHeading, incidentDetail, prioritizeIncidents } from '../shared/routeIncidentAssociation.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { URL } from 'node:url';
@@ -242,7 +243,7 @@ async function fetchLiveCommuteRoute(monitor) {
 function incidentFingerprint(route = {}) {
   const incidents = Array.isArray(route.incidents) ? route.incidents : [];
   if (!incidents.length) return '';
-  return crypto.createHash('sha256').update(JSON.stringify(incidents.map((item) => [item.id, item.category, item.severity, item.delaySeconds]))).digest('hex').slice(0, 64);
+  return crypto.createHash('sha256').update(JSON.stringify(incidents.map((item) => [item.id, item.category, item.association, item.severity, item.delaySeconds]))).digest('hex').slice(0, 64);
 }
 
 function nextCommuteCheckMinutes(presentationAt) {
@@ -262,13 +263,13 @@ function commuteAlertMessage(monitor, route, learning, reason) {
   const durationSeconds = Number(route.durationSeconds || 0);
   const delaySeconds = Number(route.trafficDelaySeconds || 0);
   const leaveAt = new Date(new Date(monitor.presentation_at).getTime() - durationSeconds * 1000 - Number(monitor.margin_minutes || 25) * 60_000);
-  const incidents = (Array.isArray(route.incidents) ? route.incidents : []).slice(0, 3);
-  const incidentLines = incidents.map((item) => `• ${item.title || 'Ocorrência na rota'}${item.delayText ? ` · ${item.delayText}` : ''}`);
+  const incidents = prioritizeIncidents(Array.isArray(route.incidents) ? route.incidents : []).slice(0, 3);
+  const incidentLines = incidents.map((item) => `• ${incidentDetail(item)}`);
   const trend = learning.samples >= 3 && learning.averageSeconds
     ? `Tendência aprendida (${learning.samples} amostras): ${Math.round(learning.averageSeconds / 60)} min neste dia/horário.`
     : 'O histórico desta rota ainda está sendo aprendido.';
   return [
-    reason === 'closure' ? '🚧 ALERTA DE BLOQUEIO NA ROTA' : reason === 'incident' ? '⚠️ NOVA OCORRÊNCIA NA ROTA' : '🚗 TRÂNSITO MUDOU',
+    reason === 'closure' || reason === 'incident' ? `⚠️ ${incidentHeading(route.incidents || [])}` : '🚗 TRÂNSITO MUDOU',
     '',
     `${monitor.origin} → ${monitor.destination}`,
     `Tempo atual: ${Math.max(1, Math.round(durationSeconds / 60))} min${delaySeconds ? ` · atraso ${Math.round(delaySeconds / 60)} min` : ''}`,
@@ -301,7 +302,7 @@ async function runCommuteMonitorCycle(db) {
         const learning = await learnedCommuteBaseline(db, monitor);
         const fingerprint = incidentFingerprint(route);
         const newIncident = Boolean(fingerprint && fingerprint !== String(monitor.last_incident_hash || ''));
-        const closure = Boolean(route.hasRoadClosure || incidents.some((item) => item.roadClosure));
+        const closure = hasConfirmedRouteClosure(incidents);
         const previousDelay = Number(monitor.last_delay_seconds || 0);
         const learnedDelta = learning.samples >= 3 ? durationSeconds - learning.averageSeconds : 0;
         const materialDelay = delaySeconds >= 10 * 60 && delaySeconds >= previousDelay + 5 * 60;

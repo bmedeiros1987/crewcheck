@@ -1,0 +1,18 @@
+import { createRequire } from 'node:module';
+const { chromium } = createRequire(process.env.DEPARTURE_PLAYWRIGHT_PACKAGE || import.meta.url)('playwright');
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const origin=process.env.DEPARTURE_TEST_ORIGIN || 'http://127.0.0.1:4193';const browser=await chromium.launch({...(process.env.DEPARTURE_CHROMIUM_EXECUTABLE ? { executablePath: process.env.DEPARTURE_CHROMIUM_EXECUTABLE } : {})});
+const context=await browser.newContext({serviceWorkers:'block',timezoneId:'America/Sao_Paulo'});
+const calls=[],snapshots=[];let routePhase='pending',boardPhase='pending';const pendingRoutes=[],pendingBoards=[];
+const replyRoute = r => r.fulfill({contentType:'application/json',body:JSON.stringify(routePhase==='error'?{ok:false,message:'Falha simulada de consulta'}:{ok:true,provider:'Fixture offline',distanceMeters:500000,distanceText:'500 km',durationSeconds:18000,durationText:'5 h',updatedAt:new Date().toISOString(),incidents:[]})});
+await context.route('**/*',async r=>{const u=new URL(r.request().url());if(u.origin!==origin)return r.abort();
+ if(u.pathname.startsWith('/api/')){calls.push(u.pathname);
+ if(u.pathname==='/api/maps/route-preview'){if(routePhase==='pending')return pendingRoutes.push(r);return replyRoute(r);}
+ if(u.pathname.includes('flight')||u.pathname.includes('airport-board')){if(boardPhase==='pending')return pendingBoards.push(r);}
+ return r.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,enabled:false,items:[],flights:[],notices:[],data:[],user:null})});}
+ return r.continue();});
+await context.addInitScript(()=>{localStorage.setItem('crewcheck_demo_mode_seen','1');localStorage.setItem('crewcheck:first-access-tour:v1434:disabled','1');localStorage.setItem('crewcheck_manual_route_origin','-23.43,-46.47');sessionStorage.setItem('crewcheck_demo_active','1');sessionStorage.setItem('crewcheck_initial_view','departure');});
+const page=await context.newPage();await page.clock.install();
+const snapshot=async state=>{await page.waitForTimeout(300);const text=await page.locator('body').innerText();snapshots.push({state,lines:text.split('\n').filter(l=>/anterior|CONSULT|Consult|CALCUL|Calcul|indispon|Falha simulada|VOO|VOO|trânsito|Trânsito/.test(l))});};
+try{await page.goto(origin+'/app');await page.waitForTimeout(1000);await snapshot('route pending');routePhase='ready';await Promise.all(pendingRoutes.splice(0).map(replyRoute));await snapshot('500km route, radar pending');assert.equal(await page.getByText('planeje o deslocamento aéreo no dia anterior.',{exact:false}).count(),0,'pending Radar cannot conclude previous day');boardPhase='ready';await Promise.all(pendingBoards.splice(0).map(r=>r.fulfill({contentType:'application/json',body:'{"ok":true,"flights":[],"items":[]}'})));await snapshot('radar returned no candidates');routePhase='error';await page.clock.fastForward(65000);await page.waitForFunction(() => document.body.innerText.includes('Consulta falhou.'));await snapshot('route refresh failed');assert.equal(await page.locator('[data-departure-route-state=stale]').count(),1);assert.ok((await page.locator('body').innerText()).includes('500 km'));assert.ok((await page.locator('body').innerText()).includes('Dia anterior'));assert.ok((await page.locator('body').innerText()).includes('Consulta falhou.'));fs.writeFileSync(process.env.DEPARTURE_EVIDENCE_FILE || '/tmp/departure-state-after.json',JSON.stringify({scope:'Full patched main app; synthetic origin and 500km response; all APIs offline and external requests blocked; accelerated minute interval',snapshots,calls},null,2));console.log(JSON.stringify(snapshots,null,2));}finally{await browser.close();}

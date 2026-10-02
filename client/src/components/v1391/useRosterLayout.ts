@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getStoredUser } from '@/lib/authClient';
-import { readRosterLayout, readRosterZoom, saveRosterLayout, type RosterLayout, type RosterZoom } from '@/lib/rosterLayoutPreference';
+import { readRosterLayout, readRosterZoom, rosterLayoutKey, saveRosterLayout, type RosterLayout, type RosterZoom } from '@/lib/rosterLayoutPreference';
 
 function accountId() {
   try { return getStoredUser()?.id || null; } catch { return null; }
@@ -20,11 +20,18 @@ export function useRosterLayout() {
       setSelection({ owner: nextOwner, ...load(nextOwner) });
       setMessage('');
     };
+    const onStorage = (event: StorageEvent) => {
+      const nextOwner = accountId();
+      const preferenceKey = rosterLayoutKey(nextOwner);
+      // Other tabs update unrelated caches too. Keep the in-memory selection
+      // unless the account, its preference, or the whole storage was reset.
+      if (nextOwner !== owner || event.key === null || (preferenceKey !== null && event.key === preferenceKey)) refresh();
+    };
     refresh();
-    window.addEventListener('storage', refresh);
+    window.addEventListener('storage', onStorage);
     window.addEventListener('crewcheck:auth-expired', refresh);
     return () => {
-      window.removeEventListener('storage', refresh);
+      window.removeEventListener('storage', onStorage);
       window.removeEventListener('crewcheck:auth-expired', refresh);
     };
   }, [owner]);

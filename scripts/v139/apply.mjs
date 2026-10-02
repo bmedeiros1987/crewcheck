@@ -186,3 +186,6 @@ await import('../ipad-header-recovery.mjs');
 await import('../finalize-theme-runtime.mjs');
 await import('../finalize-operational-layout.mjs');
 await import('../ci/sync-canonical-manual.mjs');
+await import('../p1-departure-route-state/apply.mjs');
+
+await import('../p1-incident-association/apply.mjs');

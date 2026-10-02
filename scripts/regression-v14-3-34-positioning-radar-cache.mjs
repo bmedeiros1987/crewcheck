@@ -23,7 +23,7 @@ for (const marker of [
   "status: 'none'",
   'Mantido o posicionamento no dia anterior.',
   'discoverSameDayPositioningFlight(event, plan.originAirport.code',
-  "'CONSULTANDO CACHE DO RADAR'",
+  "'POSICIONAMENTO A CONFIRMAR'",
   'data-departure-v14334="true"',
 ]) assert.ok(before.includes(marker), `marcador obrigatório ausente: ${marker}`);
 

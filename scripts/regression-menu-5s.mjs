@@ -50,7 +50,7 @@ assert.match(preparedMenu, /Editar favoritos/);
 assert.match(preparedMenu, /catalogGroups\.map/, 'catalog must render the favorites-excluded groups');
 assert.match(preparedMenu, /\{editingFavorites && <button type="button" className="cc-menu-favorite"/, 'stars only render in edit mode');
 assert.match(preparedMenu, /menuQuery\s*\?\s*filteredGroups/, 'search must list every destination once');
-assert.match(preparedMenu, /!menuFavorites\.includes\(viewId\)/, 'catalog must not repeat favorites');
+assert.match(preparedMenu, /!validMenuFavorites\.includes\(viewId\)/, 'catalog must not repeat favorites');
 assert.doesNotMatch(preparedMenu, /\{filteredGroups\.map/, 'catalog must not bypass the favorites exclusion');
 assert.match(preparedMenu, /storedUser\?\.id \|\| null/);
 assert.match(preparedMenu, /data-menu-label=\{label\}/);

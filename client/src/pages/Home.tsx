@@ -1,3 +1,4 @@
+import { hasConfirmedRouteClosure, incidentHeading, incidentDetail, prioritizeIncidents } from '../../../shared/routeIncidentAssociation.mjs';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useLocation } from 'wouter';
 import JSZip from 'jszip';
@@ -435,7 +436,7 @@ type RoutePreviewInfo = {
   trafficDelaySeconds?: number;
   trafficDelayText?: string;
   trafficAware?: boolean;
-  incidents?: Array<{ id?: string; category?: string; title?: string; delaySeconds?: number; delayText?: string; severity?: string; roadClosure?: boolean; timeValidity?: string; startTime?: string; endTime?: string }>;
+  incidents?: Array<{ association?: 'on_route' | 'near_route'; source?: string; observedAt?: string; lastReportTime?: string; id?: string; category?: string; title?: string; delaySeconds?: number; delayText?: string; severity?: string; roadClosure?: boolean; timeValidity?: string; startTime?: string; endTime?: string }>;
   hasRoadClosure?: boolean;
   updatedAt?: string;
   refreshAfterSeconds?: number;
@@ -1385,8 +1386,12 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', margin = 25, onRoute,
     return () => { alive = false; };
   }, [event.id, event.presentation, origin, destination, mapsMode, margin]);
   useEffect(() => {
+    // Pending/failed responses do not establish a new traffic incident.
+    if (!route?.ok) return;
     const incidents = route?.incidents || [];
-    const fingerprint = incidents.map((item) => `${item.id || item.title}:${item.severity}:${item.delaySeconds || 0}`).join('|');
+    // Arrival delay is refreshed independently; a few seconds or a different
+    // provider ordering do not turn the same incident into a new alert.
+    const fingerprint = incidents.map((item) => JSON.stringify([item.id || item.title, item.category, item.association, item.severity, Boolean(item.roadClosure)])).sort().join('|');
     if (!fingerprint) return;
     // Persisted across mounts/reloads (not just component-scoped) so a remount of the
     // same still-active incident does not re-alert; only a genuine fingerprint change does.
@@ -1399,8 +1404,8 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', margin = 25, onRoute,
     storage.set(signatureKey, fingerprint);
     const critical = incidents.find((item) => item.roadClosure || item.severity === 'critical');
     if (!previous && !critical) return;
-    const title = critical ? 'Bloqueio ou ocorrência crítica na rota' : 'Nova ocorrência na rota';
-    const body = (critical || incidents[0])?.title || 'Revise o trajeto antes de sair.';
+    const title = incidentHeading(incidents);
+    const body = incidentDetail(critical || incidents[0]);
     notifyCrewCheck(title, body);
     toast.warning(title, { description: body });
   }, [route?.updatedAt, event.id]);
@@ -1464,7 +1469,7 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', margin = 25, onRoute,
       <div><small>Última leitura</small><strong>{updatedLabel}</strong></div>
       {mode.includes('uber') && <div><small>Uber/99 estimado</small><strong>{uberReference || 'Calcular rota'}</strong></div>}
     </div>
-    {!!route?.incidents?.length && <section className={`cc-route-incidents ${route.hasRoadClosure ? 'critical' : ''}`}><AlertTriangle/><div><strong>{route.hasRoadClosure ? 'Bloqueio detectado no trajeto' : `${route.incidents.length} ocorrência(s) no trajeto`}</strong>{route.incidents.slice(0, 3).map((incident) => <span key={incident.id || incident.title}>{incident.title}{incident.delayText ? ` · ${incident.delayText}` : ''}</span>)}</div></section>}
+    {!!route?.incidents?.length && <section className={`cc-route-incidents ${hasConfirmedRouteClosure(route.incidents) ? 'critical' : ''}`}><AlertTriangle/><div><strong>{incidentHeading(route.incidents)}</strong>{prioritizeIncidents(route.incidents).slice(0, 3).map((incident) => <span key={incident.id || incident.title}>{incidentDetail(incident)}</span>)}</div></section>}
     {monitor && <section className="cc-route-monitor"><Bell/><div><strong>{monitor.telegramLinked ? 'Monitoramento em segundo plano ativo' : 'Monitoramento do servidor ativo'}</strong><span>{monitor.message}</span>{Number(monitor.learning?.samples || 0) >= 3 && <small>Tendência aprendida: cerca de {monitor.learning?.expectedMinutes} min neste dia e horário.</small>}</div></section>}
     <div className="cz-google-map-preview">
       {route?.ok && embedUrl ? <iframe title="Prévia da rota pelo Google Maps" loading="lazy" src={embedUrl} referrerPolicy="strict-origin-when-cross-origin"/> : route?.ok && staticRouteUrl ? <img className="cz-static-map-img" src={staticRouteUrl} alt="Mapa estático da rota" loading="lazy"/> : <div className="cz-map-fallback"><MapIcon/><strong>Mapa estático aguardando configuração.</strong><span>Abra a rota no Google Maps para visualizar caminho e trânsito pelo Maps.</span></div>}
