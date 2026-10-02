@@ -1,0 +1,148 @@
+/* The official brand and operational notice have separate, quiet surfaces.
+   Normal flow is intentional: neither follows scrolling and no spacer is needed. */
+html body .cz-app[data-version] > .cz-global-header {
+  position: relative !important;
+  inset: auto !important;
+  transform: none !important;
+  display: grid !important;
+  gap: 12px !important;
+  width: 100% !important;
+  height: auto !important;
+  max-height: none !important;
+  margin: 0 0 18px !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+html body .cz-app[data-version] > .cz-global-header > .cz-brand-row {
+  height: auto !important;
+  min-height: 64px !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 10px 14px !important;
+  display: flex !important;
+  gap: 14px !important;
+  align-items: center !important;
+  overflow: visible !important;
+  border: 1px solid var(--cc-border) !important;
+  border-radius: 18px !important;
+  background: var(--cc-surface) !important;
+  box-shadow: none !important;
+}
+.cz-global-header .cc-pulse-compact {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: start;
+  gap: 8px;
+  padding: 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--cc-border);
+  border-inline-start: 3px solid var(--cc-pulse-accent);
+  border-radius: 16px;
+  background: var(--cc-surface);
+  box-shadow: none;
+}
+.cz-global-header .cc-pulse-compact-details { width: 44px; min-height: 44px; }
+.cz-global-header .cc-pulse-compact-trigger { min-height: 44px; }
+.cz-global-header .cc-pulse-popover {
+  position: static;
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  max-height: none;
+  overflow: visible;
+  margin: 0;
+  padding: 12px 0 0;
+  border: 0;
+  border-top: 1px solid var(--cc-border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.cz-global-header .cc-pulse-popover-copy :is(strong, small) { overflow-wrap: anywhere; }
+
+/* Theme-aware final surfaces. Semantic event tokens are unchanged. */
+html body .cz-app[data-version] {
+  --cc-review-bg:#0b1220; --cc-review-surface:#111c2b; --cc-review-subtle:#172436;
+  --cc-review-text:#e8edf5; --cc-review-muted:#acbace; --cc-review-border:#2b3a4f;
+  background:var(--cc-review-bg)!important; background-image:none!important;
+}
+html[data-crew-theme="light"] body .cz-app[data-version] {
+  --cc-review-bg:#f4f6f8; --cc-review-surface:#fff; --cc-review-subtle:#f7f9fb;
+  --cc-review-text:#172b3e; --cc-review-muted:#526579; --cc-review-border:#dbe2ea;
+}
+html[data-crew-theme="light"],html[data-crew-theme="light"] body {background:#f4f6f8!important}
+html[data-crew-theme="dark"],html[data-crew-theme="dark"] body {background:#0b1220!important}
+html body .cz-app[data-version]>.cz-wallpaper {display:none!important}
+html body .cz-app[data-version]::before,html body .cz-app[data-version]::after,
+html body:has(.cz-app[data-version])::before,html body:has(.cz-app[data-version])::after {content:none!important;background:none!important}
+html body:has(.cz-app[data-version]) #root {background:transparent!important}
+html body .cz-app[data-version]>.cz-global-header {max-width:1180px!important;margin:0 auto 16px!important}
+html body .cz-app[data-version]>.cz-global-header>.cz-brand-row {
+  min-height:60px!important;padding:0 0 10px!important;gap:12px!important;
+  border:0!important;border-bottom:1px solid var(--cc-review-border)!important;
+  border-radius:0!important;background:transparent!important;
+}
+html body .cz-app[data-version]>.cz-global-header .cz-brand-lockup {order:0!important;flex:0 1 auto!important;justify-content:flex-start!important;gap:10px!important}
+html body .cz-app[data-version]>.cz-global-header .cz-brand-lockup :is(.cz-logo,img) {width:36px!important;height:36px!important;min-width:36px!important}
+html body .cz-app[data-version]>.cz-global-header .cz-brand-lockup .cz-logo {background:transparent!important;box-shadow:none!important;border-radius:10px!important}
+html body .cz-app[data-version]>.cz-global-header .cz-brand-lockup strong {font-size:22px!important;line-height:1.1!important;color:var(--cc-review-text)!important}
+html body .cz-app[data-version]>.cz-global-header .cz-brand-lockup small {display:block!important;font-size:9px!important;line-height:1.5!important;letter-spacing:.12em!important;color:var(--cc-review-muted)!important}
+html body .cz-app[data-version]>.cz-global-header .cz-menu-btn {order:2!important;margin:0 0 0 auto!important;flex:0 0 44px!important;width:44px!important;height:44px!important;min-height:44px!important;padding:0!important;border:1px solid var(--cc-review-border)!important;border-radius:10px!important;background:var(--cc-review-surface)!important;box-shadow:none!important;color:var(--cc-review-text)!important}
+html body .cz-app[data-version]>.cz-global-header .cz-menu-btn svg {width:22px!important;height:22px!important}
+html body .cz-app[data-version]>.cz-global-header .cc-pulse-compact {gap:0 6px;padding:4px 8px;border-radius:12px;background:var(--cc-review-surface);border-color:var(--cc-review-border);border-inline-start-color:var(--cc-pulse-accent);color:var(--cc-review-text)}
+html body .cz-app[data-version]>.cz-global-header :is(.cc-pulse-compact-trigger,.cc-pulse-compact-details) {min-height:44px!important;height:auto!important;padding:4px!important;border:0!important;border-radius:8px!important;background:transparent!important;box-shadow:none!important;color:var(--cc-review-text)!important}
+html body .cz-app[data-version]>.cz-global-header .cc-pulse-compact-details {width:44px!important}
+html body .cz-app[data-version]>.cz-global-header .cc-pulse-queue {display:inline-flex!important;min-width:24px!important;height:24px!important}
+html body .cz-app[data-version]>.cz-global-header .cc-pulse-compact-trigger>strong {font-size:14px!important;line-height:1.4!important;color:var(--cc-review-text)!important}
+html body .cz-app[data-version]>.cz-global-header .cc-pulse-compact:is([data-expanded="true"],[data-priority="critica"]) .cc-pulse-compact-trigger>strong {white-space:normal!important;overflow:visible!important;overflow-wrap:anywhere}
+html body .cz-app[data-version]>.cz-global-header .cc-pulse-popover {position:static!important;display:grid!important;grid-template-columns:minmax(0,1fr) 44px!important;align-items:start!important;gap:8px!important;width:100%!important;padding:8px 4px 4px!important;border:0!important;border-top:1px solid var(--cc-review-border)!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
+html body .cz-app[data-version]>.cz-global-header .cc-pulse-popover-copy small {color:var(--cc-review-muted)!important;font-size:13px!important;line-height:1.5!important;overflow-wrap:anywhere}
+html body .cz-app[data-version]>.cz-global-header .cc-pulse-popover-copy {grid-column:1!important;grid-row:1!important}
+html body .cz-app[data-version]>.cz-global-header .cc-pulse-popover .cc-pulse-controls {grid-column:2!important;grid-row:1!important;align-self:start!important;width:auto!important;gap:0!important;margin:0!important;padding:0!important}
+html body .cz-app[data-version]>.cz-global-header .cc-pulse-dismiss {width:44px!important;height:44px!important;min-height:44px!important;padding:0!important;border:0!important;border-radius:8px!important;background:transparent!important;box-shadow:none!important;color:var(--cc-review-muted)!important}
+html body .cz-app[data-version]>.cz-global-header .cc-pulse-action {justify-self:start;min-height:44px!important;margin-top:4px;padding:8px 12px!important;border-radius:8px!important}
+
+/* The existing analysis is on Alerts, never a fabricated Home metric. */
+html body .cz-app[data-version] .cc-reliability-alive {width:100%!important;max-width:1180px!important;min-width:0!important;box-sizing:border-box;background:var(--cc-review-surface)!important;color:var(--cc-review-text)!important;border:1px solid var(--cc-review-border)!important;border-radius:12px!important;padding:16px!important;box-shadow:none!important;overflow-wrap:anywhere}
+html body .cz-app[data-version] .cc-reliability-alive header>span {min-width:0;grid-template-columns:auto minmax(0,1fr)}
+html body .cz-app[data-version] .cc-reliability-alive header>b {flex-shrink:0}
+html body .cz-app[data-version] .cc-reliability-alive .cc-reliability-grid article small {font-size:10px!important;line-height:1.4!important}
+html body .cz-app[data-version] .cc-reliability-alive .cc-reliability-grid article>span {font-size:12px!important;line-height:1.5!important}
+html body .cz-app[data-version] .cc-reliability-alive :is(h2,strong,svg) {color:var(--cc-review-text)!important}
+html body .cz-app[data-version] .cc-reliability-alive h2 {font-size:18px!important}
+html body .cz-app[data-version] .cc-reliability-alive :is(small,p,article>span) {color:var(--cc-review-muted)!important}
+html body .cz-app[data-version] .cc-reliability-alive .cc-reliability-grid {gap:8px!important;grid-template-columns:repeat(4,minmax(0,1fr))!important}
+html body .cz-app[data-version] .cc-reliability-alive .cc-reliability-grid article {background:var(--cc-review-subtle)!important;border:1px solid var(--cc-review-border)!important;border-radius:8px!important;padding:12px!important}
+html body .cz-app[data-version] .cc-reliability-alive .cc-reliability-grid strong {font-size:22px!important}
+html body .cz-app[data-version] .cc-reliability-alive header>b {color:#74dca6!important;background:#133329!important;border-color:#285642!important}
+html[data-crew-theme="light"] body .cz-app[data-version] .cc-reliability-alive header>b {color:#116844!important;background:#e7f6ed!important;border-color:#b9dfc7!important}
+
+/* The actual canonical briefing retains program data and critical alert actions. */
+html body .cz-app[data-version] .cc-home-layout {gap:12px}
+html body .cz-app[data-version] .cc-home-layout-heading strong {font-size:14px!important;color:var(--cc-review-text)!important}
+html body .cz-app[data-version] .cc-home-layout-heading :is(small,span) {color:var(--cc-review-muted)!important}
+html body .cz-app[data-version] .cc-home-layout-heading>button {min-height:44px!important;padding:8px 10px!important;border-radius:8px!important;background:var(--cc-review-surface)!important;border-color:var(--cc-review-border)!important;color:var(--cc-review-text)!important;font-size:12px!important;box-shadow:none!important}
+html body .cz-app[data-version] .cc-home-layout-status:empty {display:none}
+html body .cz-app[data-version] .cc-home-layout-content>.cz-brand-row {display:none!important}
+html body .cz-app[data-version] .cc-flydeck-premium-v14353 {padding:0!important;background:transparent!important}
+html body .cz-app[data-version] :is(.cc-flydeck-briefing,.cc-flydeck-empty,.cc-flydeck-official-note) {background:var(--cc-review-surface)!important;border:1px solid var(--cc-review-border)!important;border-radius:12px!important;box-shadow:none!important}
+html body .cz-app[data-version] :is(.cc-flydeck-topline h1,.cc-flydeck-program h2,.cc-flydeck-program p,.cc-flydeck-facts strong) {color:var(--cc-review-text)!important}
+html body .cz-app[data-version] :is(.cc-flydeck-topline small,.cc-flydeck-program small,.cc-flydeck-facts span,.cc-flydeck-official-note p) {color:var(--cc-review-muted)!important}
+html body .cz-app[data-version] .cc-flydeck-topline h1 {font-size:20px!important}
+html body .cz-app[data-version] .cc-flydeck-phase {background:var(--cc-review-subtle)!important;border-color:var(--cc-review-border)!important}
+html body .cz-app[data-version] .cc-flydeck-phase span {background:transparent!important;color:var(--cc-review-muted)!important;border:0!important;border-radius:0!important}
+html body .cz-app[data-version] .cc-flydeck-phase strong {color:var(--cc-review-text)!important}
+html body .cz-app[data-version] .cc-flydeck-facts>div {background:var(--cc-review-subtle)!important;border-color:var(--cc-review-border)!important}
+html body .cz-app[data-version] .cc-flydeck-roster-link,
+html body .cz-app[data-version] .cc-flydeck-actions button:not(.primary):not(.warning) {background:var(--cc-review-subtle)!important;border-color:var(--cc-review-border)!important;color:var(--cc-review-text)!important;border-radius:8px!important;box-shadow:none!important}
+html body .cz-app[data-version] .cc-flydeck-actions button.primary {background:#215bb7!important;color:#fff!important;border-color:#215bb7!important;border-radius:8px!important;box-shadow:none!important}
+html body .cz-app[data-version] .cc-flydeck-actions button.warning {background:#33221e!important;color:#ffa99a!important;border-color:#7d4438!important;border-radius:8px!important;box-shadow:none!important}
+html[data-crew-theme="light"] body .cz-app[data-version] .cc-flydeck-actions button.warning {background:#fff1ec!important;color:#b42318!important;border-color:#edbbaf!important}
+@media(max-width:600px) {html body .cz-app[data-version] .cc-reliability-alive .cc-reliability-grid {grid-template-columns:repeat(2,minmax(0,1fr))!important}}

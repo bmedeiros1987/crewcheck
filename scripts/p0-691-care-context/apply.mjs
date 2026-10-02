@@ -297,10 +297,12 @@ rosterLaunch = replaceRequired(
               const hours = duration(event);`,
   'Roster calcula apresentação Care por card',
 );
+const rosterCardDate = rosterLaunch.includes('formatDate(rosterLabelDate(event))')
+  ? 'rosterLabelDate(event)' : 'dateOf(event)';
 rosterLaunch = replaceRequired(
   rosterLaunch,
-  `<div><small>{meta.label} · {formatDate(dateOf(event))}</small><h3>{cardTitle(event, mode)}</h3></div>`,
-  `<div><small>{carePresentation?.label || meta.label} · {formatDate(dateOf(event))}</small><h3>{cardTitle(event, mode)}</h3></div>`,
+  `<div><small>{meta.label} · {formatDate(${rosterCardDate})}</small><h3>{cardTitle(event, mode)}</h3></div>`,
+  `<div><small>{carePresentation?.label || meta.label} · {formatDate(${rosterCardDate})}</small><h3>{cardTitle(event, mode)}</h3></div>`,
   'Roster exibe rótulo Care',
 );
 write(rosterLaunchPath, rosterLaunch);

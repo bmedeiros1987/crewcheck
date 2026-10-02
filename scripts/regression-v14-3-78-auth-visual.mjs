@@ -17,10 +17,18 @@ const manualFinalizerIndex = chain.indexOf(manualFinalizer);
 assert.ok(auth.includes("import './auth-premium.css';"), 'AuthPage deve importar o CSS premium');
 assert.ok(auth.includes('cc-auth-premium'), 'AuthPage deve usar a classe premium');
 assert.ok(auth.includes('className="cz-auth-theme-switch"'), 'Login deve oferecer seletor claro/escuro/sistema');
-assert.ok(auth.includes("setThemeMode('light')"), 'modo claro deve ser selecionável');
-assert.ok(auth.includes("setThemeMode('dark')"), 'modo escuro deve ser selecionável');
-assert.ok(auth.includes("setThemeMode('system')"), 'modo do dispositivo deve ser selecionável');
-assert.ok(auth.includes('aria-pressed={themeMode'), 'seletor de tema deve expor estado acessível');
+// The prepared login persists through the shared runtime before updating React.
+// A direct setThemeMode-only handler would bypass aliases and other screens.
+const chooser = auth.match(/function chooseCrewTheme\(next: 'light' \| 'dark' \| 'system'\)\s*\{([^}]+)\}/)?.[1];
+assert.ok(chooser?.includes('setCrewCheckThemePreference(next);'), 'o seletor deve persistir no runtime unificado');
+assert.ok(chooser?.includes('setThemeMode(next);'), 'o seletor deve atualizar o estado React acessível');
+assert.ok(auth.includes('useState(getCrewCheckThemePreference)'), 'login deve carregar a preferência persistida');
+for (const mode of ['light', 'dark', 'system']) {
+  assert.ok(auth.includes(`onClick={() => chooseCrewTheme('${mode}')}`), `modo ${mode} deve ser selecionável pelo runtime`);
+  assert.ok(auth.includes(`aria-pressed={themeMode === '${mode}'}`), `modo ${mode} deve expor estado acessível`);
+}
+assert.ok(auth.includes("window.addEventListener('crewcheck:theme-change', refresh)"), 'login deve acompanhar mudanças do runtime');
+assert.ok(auth.includes('applyCrewCheckTheme(); setThemeMode(getCrewCheckThemePreference());'), 'sincronização deve aplicar tema e estado selecionado');
 
 assert.match(css, /\.cc-auth-premium \.cz-login-card\s*\{[\s\S]*min-height:\s*610px;/, 'login e cadastro devem compartilhar altura visual desktop');
 assert.match(css, /\.cc-auth-premium \.cz-password-toggle\s*\{[\s\S]*position:\s*absolute[\s\S]*top:\s*50%[\s\S]*right:\s*5px/, 'ícone do olho deve permanecer dentro do campo');
