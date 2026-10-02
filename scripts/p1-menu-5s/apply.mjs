@@ -178,6 +178,46 @@ if (!block.includes('className="cc-menu-search"')) {
 
 block = block.replace('<aside className="cz-menu-panel"', '<aside ref={menuPanelRef} className="cz-menu-panel"');
 
+// Upgrade both freshly generated and already prepared menus, idempotently.
+// The role-filtered catalog is authoritative; no auth rules or storage keys change.
+if (!block.includes('const menuAllowedIds =')) {
+  const replaceOnce = (before, after) => {
+    if (block.split(before).length !== 2) {
+      throw new Error('[p1-menu-5s] âncora de favoritos por perfil ausente ou ambígua');
+    }
+    block = block.replace(before, after);
+  };
+  replaceOnce(
+    '  const [menuFavorites, setMenuFavorites] = useState(() => readMenuFavorites(window.localStorage, accountId, MENU_5S_ALLOWED_IDS));',
+    '  const [menuFavoritesRevision, setMenuFavoritesRevision] = useState(0);',
+  );
+  replaceOnce('    setMenuFavorites(readMenuFavorites(window.localStorage, accountId, MENU_5S_ALLOWED_IDS));\n', '');
+  replaceOnce('  }, [accountId]);', '  }, [accountId, admin]);');
+  replaceOnce(
+    '  }, [open, menuFavorites, menuQuery, editingFavorites, accountId]);',
+    '  }, [open, menuFavoritesRevision, menuQuery, editingFavorites, accountId, admin]);',
+  );
+  replaceOnce(
+    '  const allMenuItems = groups.flatMap((group) => group.items);',
+    `  const allMenuItems = groups.flatMap((group) => group.items);
+  const menuAllowedIds = allMenuItems.map(([id]) => id).filter((id) => MENU_5S_ALLOWED_IDS.includes(id));
+  const menuFavorites = readMenuFavorites(window.localStorage, accountId, menuAllowedIds);`,
+  );
+  replaceOnce(
+    '    const exists = menuFavorites.includes(target);',
+    `    if (!menuAllowedIds.includes(target)) {
+      setMenuStatus('Esta função está indisponível no seu perfil.');
+      return;
+    }
+    const exists = menuFavorites.includes(target);`,
+  );
+  replaceOnce(
+    'saveMenuFavorites(window.localStorage, accountId, MENU_5S_ALLOWED_IDS, next)',
+    'saveMenuFavorites(window.localStorage, accountId, menuAllowedIds, next)',
+  );
+  replaceOnce('    setMenuFavorites(next);', '    setMenuFavoritesRevision((current) => current + 1);');
+}
+
 source = source.slice(0, nextMenuStart) + block + source.slice(nextMenuEnd);
 fs.writeFileSync(path, source, 'utf8');
 console.log('[p1-menu-5s] favoritos por conta e busca adicionados ao menu agrupado canônico, sem remover destinos.');
