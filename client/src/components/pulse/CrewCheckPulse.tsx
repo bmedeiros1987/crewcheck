@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -54,6 +54,9 @@ type CrewCheckPulseProps = {
 export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPulseProps = {}) {
   const [state, setState] = useState(() => currentCrewCheckPulseState());
   const [expanded, setExpanded] = useState(false);
+  const detailsRef = useRef<HTMLButtonElement>(null);
+  const compactRef = useRef<HTMLDivElement>(null);
+  const detailsId = useId();
 
   useEffect(() => subscribeCrewCheckPulse(setState), []);
   const { message, leaving, queued } = state;
@@ -62,9 +65,13 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
   useEffect(() => setExpanded(false), [messageKey]);
 
   const dismiss = useCallback(() => {
+    if (compact && compactRef.current?.contains(document.activeElement)) {
+      const target = queued > 0 ? detailsRef.current : compactRef.current.closest('.cz-global-header')?.querySelector<HTMLButtonElement>('.cz-brand-row button');
+      target?.focus();
+    }
     setExpanded(false);
     dismissCrewCheckPulse();
-  }, []);
+  }, [compact, queued]);
 
   if (!message) return compact ? <>{fallback}</> : null;
 
@@ -76,6 +83,7 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
       setExpanded((value) => !value);
       return;
     }
+    if (compact && compactRef.current?.contains(document.activeElement)) detailsRef.current?.focus();
     try {
       window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: message.action.view }));
     } catch {}
@@ -89,8 +97,17 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
   if (compact) {
     return (
       <div
+        ref={compactRef}
         className="cc-pulse-compact"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && expanded) {
+            event.preventDefault();
+            setExpanded(false);
+            detailsRef.current?.focus();
+          }
+        }}
         data-tone={tone}
+        data-expanded={expanded ? 'true' : 'false'}
         data-category={category}
         data-priority={message.priority || 'normal'}
         data-leaving={leaving ? 'true' : 'false'}
@@ -109,7 +126,9 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
         </button>
         <button
           type="button"
+          ref={detailsRef}
           className="cc-pulse-compact-details"
+          aria-controls={expanded ? detailsId : undefined}
           onClick={toggleDetails}
           aria-expanded={expanded}
           aria-label={expanded ? 'Recolher detalhes do alerta CrewCheck' : 'Abrir detalhes do alerta CrewCheck'}
@@ -117,13 +136,12 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
           <ChevronDown className="cc-pulse-compact-chevron" size={16} aria-hidden="true"/>
         </button>
         {expanded && (
-          <div className="cc-pulse-popover">
+          <div id={detailsId} className="cc-pulse-popover">
             <div className="cc-pulse-popover-copy">
-              <strong>{message.title}</strong>
               {message.detail && <small>{message.detail}</small>}
+              {message.action?.view && <button type="button" className="cc-pulse-action" onClick={act}>{message.action.label}</button>}
             </div>
             <div className="cc-pulse-controls">
-              {message.action?.view && <button type="button" className="cc-pulse-action" onClick={act}>{message.action.label}</button>}
               {message.dismissible !== false && (
                 <button type="button" className="cc-pulse-dismiss" onClick={dismiss} aria-label="Dispensar aviso">
                   <X size={16}/>

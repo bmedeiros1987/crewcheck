@@ -18,8 +18,11 @@ const dist = path.resolve('dist');
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 const source = ts.createSourceFile('Home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const names = ['CrewCheckMark', 'MenuDrawer'];
-const declarations = source.statements.filter(n => ts.isFunctionDeclaration(n) && names.includes(n.name?.text));
-assert.equal(declarations.length, names.length, 'Prepared MenuDrawer/brand must exist');
+const declarations = source.statements.filter(n =>
+  (ts.isFunctionDeclaration(n) && names.includes(n.name?.text))
+  || (ts.isVariableStatement(n) && n.declarationList.declarations.some((entry) => entry.name.getText(source) === 'MENU_5S_ALLOWED_IDS')),
+);
+assert.equal(declarations.length, names.length + 1, 'Prepared MenuDrawer/brand and its canonical 5S allowlist must exist');
 let rootTag;
 const rootProps = { className: 'cz-app', 'data-view': 'roster', 'data-menu-open': 'true' };
 function collectRoot(node) {
@@ -44,10 +47,21 @@ assert.equal(rootProps['data-ipad-layout-v14394'], 'contained');
 const code = ts.transpileModule(declarations.map(n => n.getText(source)).join('\n'), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.React },
 }).outputText;
+const menuPreferenceCode = ts.transpileModule(fs.readFileSync('client/src/lib/menuPreference.ts', 'utf8'), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
+}).outputText;
+const menuPreference = await import(`data:text/javascript;base64,${Buffer.from(menuPreferenceCode).toString('base64')}`);
+const storedMenuValues = new Map();
+const localStorage = {
+  getItem: (key) => storedMenuValues.get(key) ?? null,
+  setItem: (key, value) => storedMenuValues.set(key, String(value)),
+  removeItem: (key) => storedMenuValues.delete(key),
+};
 const scope = {
-  React, ...React, ...icons, HomeIcon: icons.Home, MapIcon: icons.Map,
+  React, ...React, ...icons, ...menuPreference, HomeIcon: icons.Home, MapIcon: icons.Map,
+  window: { localStorage },
   storage: { get: (_key, fallback) => fallback, set: () => {} },
-  getStoredUser: () => ({ name: 'Tripulante de demonstração com nome longo', email: 'demo@example.invalid' }),
+  getStoredUser: () => ({ id: 'menu-browser-account', name: 'Tripulante de demonstração com nome longo', email: 'demo@example.invalid' }),
   isAdmin: () => true,
 };
 vm.runInNewContext(code + '\nthis.RenderMenu = MenuDrawer;', scope, { timeout: 1000 });
@@ -63,18 +77,8 @@ assert.ok(links, 'Use CSS linked by the real Vite build');
 const themeSource = fs.readFileSync('client/src/lib/themeRuntime.ts', 'utf8');
 const moduleOptions = { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 };
 fs.writeFileSync(path.join(output, 'theme-runtime.js'), ts.transpileModule(themeSource, { compilerOptions: moduleOptions }).outputText);
-// Preparation rewrites themeRuntime; the effective data-crew-theme is applied by
-// App's effect. Include those exact prepared functions, not fabricated attributes.
-const appText = fs.readFileSync('client/src/App.tsx', 'utf8');
-const appSource = ts.createSourceFile('App.tsx', appText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-const themeNames = ['getEffectiveCrewTheme', 'applyCrewThemeMode'];
-const appTheme = appSource.statements.filter(n => ts.isFunctionDeclaration(n) && themeNames.includes(n.name?.text));
-assert.equal(appTheme.length, 2, 'Locate actual effective-theme functions in the prepared App');
-fs.writeFileSync(path.join(output, 'app-theme.js'), ts.transpileModule(
-  appTheme.map(n => n.getText(appSource)).join('\n') + '\nexport { applyCrewThemeMode };',
-  { compilerOptions: moduleOptions },
-).outputText);
-const fixture = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">${links}</head><body><div id="root">${markup}</div><script type="module">import { applyCrewCheckTheme } from './theme-runtime.js'; import { applyCrewThemeMode } from './app-theme.js'; window.applyMenuTestTheme = mode => { applyCrewCheckTheme(mode); applyCrewThemeMode(mode); };</script></body></html>`;
+// Use the composed canonical setter; do not synchronize two independent writers.
+const fixture = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">${links}</head><body><div id="root">${markup}</div><script type="module">import { setCrewCheckThemePreference } from './theme-runtime.js'; window.applyMenuTestTheme = mode => setCrewCheckThemePreference(mode);</script></body></html>`;
 fs.writeFileSync(path.join(output, 'menu.html'), fixture);
 fs.writeFileSync(path.join(output, 'prepared-menu.tsx'), declarations.map(n => n.getText(source)).join('\n'));
 fs.cpSync(path.join(dist, 'assets'), path.join(output, 'assets'), { recursive: true });
@@ -96,6 +100,7 @@ const require = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || import.meta
 const { chromium } = require('playwright');
 const browser = await chromium.launch({ headless: true });
 const matrix = [
+  { name: 'phone-small', width: 320, height: 740, touch: true },
   { name: 'phone-portrait', width: 360, height: 800, touch: true },
   { name: 'phone-landscape-small', width: 667, height: 375, touch: true },
   { name: 'phone-landscape', width: 844, height: 390, touch: true },
@@ -125,7 +130,8 @@ async function inspect(page, label) {
     const box = e => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; };
     const panel = document.querySelector('.cz-menu-panel');
     const scroll = document.querySelector('.cz-menu-scroll');
-    const buttons = [...document.querySelectorAll('.cz-menu-group > button')];
+    const buttons = [...document.querySelectorAll('.cc-menu-destination[data-menu-label]')];
+    const favorites = [...document.querySelectorAll('.cc-menu-favorite')];
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
     const context = canvas.getContext('2d', { willReadFrequently: true });
     const rgba = color => {
@@ -149,6 +155,29 @@ async function inspect(page, label) {
       logout: box(document.querySelector('.cz-menu-logout')),
       profile: box(document.querySelector('.cz-menu-profile')),
       count: buttons.length,
+      chipCount: document.querySelectorAll('.cc-menu-favorite-chip[data-menu-label]').length,
+      editButton: document.querySelector('.cc-menu-edit-favorites')?.textContent || '',
+      favoriteCount: favorites.length,
+      favorites: favorites.map(b => {
+        const glyph = b.querySelector('.cc-menu-favorite-glyph');
+        const buttonStyle = getComputedStyle(b);
+        const glyphStyle = glyph ? getComputedStyle(glyph) : null;
+        const background = buttonStyle.backgroundColor;
+        const color = glyphStyle?.color || buttonStyle.color;
+        return {
+          pressed: b.getAttribute('aria-pressed'),
+          text: glyph?.textContent || '',
+          button: box(b),
+          glyph: glyph ? box(glyph) : null,
+          display: buttonStyle.display,
+          overflow: buttonStyle.overflow,
+          visibility: glyphStyle?.visibility,
+          opacity: glyphStyle?.opacity,
+          color,
+          background,
+          contrast: contrast(color, background),
+        };
+      }),
       rows: buttons.map(b => {
         const copy = b.querySelector(':scope > span');
         const style = getComputedStyle(copy);
@@ -180,7 +209,19 @@ async function inspect(page, label) {
   if (metrics.scroll.height < 100) failures.push('No useful scrolling area');
   if (metrics.scroll.scrollWidth > metrics.scroll.clientWidth + 1) failures.push('Horizontal overflow in menu list');
   if (metrics.columns !== metrics.expectedColumns) failures.push('Wrong navigation column count');
-  if (metrics.count !== 40) failures.push(`Expected 40 canonical destinations; got ${metrics.count}`);
+  if (metrics.count + metrics.chipCount !== 40) failures.push(`Expected 40 canonical destinations once each (catalog + favorites); got ${metrics.count} + ${metrics.chipCount}`);
+  if (metrics.chipCount !== 3) failures.push(`Expected the 3 default favorites above the catalog; got ${metrics.chipCount}`);
+  if (metrics.editButton !== 'Editar favoritos') failures.push('Edit favorites action missing');
+  if (metrics.favoriteCount !== 0) failures.push(`Favorite stars must be hidden outside edit mode; got ${metrics.favoriteCount}`);
+  for (const favorite of metrics.favorites) {
+    if (!favorite.glyph || favorite.glyph.width < 20 || favorite.glyph.height < 20) failures.push('Favorite glyph is missing or clipped');
+    if (!['☆', '★'].includes(favorite.text)) failures.push('Favorite glyph text is missing');
+    if (favorite.button.width < 44 || favorite.button.height < 44) failures.push('Favorite touch target below 44 CSS px');
+    if (favorite.display !== 'flex' && favorite.display !== 'inline-flex') failures.push('Favorite control inherited legacy menu grid');
+    if (favorite.visibility !== 'visible' || Number(favorite.opacity) < .99) failures.push('Favorite glyph is visually hidden');
+    if (favorite.overflow === 'hidden') failures.push('Favorite glyph can be clipped by overflow');
+    if (!(favorite.contrast >= 3)) failures.push('Favorite glyph contrast below 3:1');
+  }
   for (const row of metrics.rows) {
     if (row.visibility !== 'visible' || Number(row.opacity) < 0.99 || row.position === 'absolute') failures.push(`${row.name}: label depends on hover`);
     if (row.button.width < 200 || row.button.height < 44) failures.push(`${row.name}: collapsed navigation row`);
@@ -193,7 +234,7 @@ async function inspect(page, label) {
   await settle(page);
   const end = await page.evaluate(() => {
     const scroll = document.querySelector('.cz-menu-scroll').getBoundingClientRect();
-    const last = [...document.querySelectorAll('.cz-menu-group > button')].at(-1).getBoundingClientRect();
+    const last = [...document.querySelectorAll('.cc-menu-destination[data-menu-label]')].at(-1).getBoundingClientRect();
     return { scrollTop: scroll.top, scrollBottom: scroll.bottom, top: last.top, bottom: last.bottom };
   });
   if (end.top < end.scrollTop - 1 || end.bottom > Math.min(end.scrollBottom, metrics.viewport.height) + 1) failures.push('Last destination unreachable');

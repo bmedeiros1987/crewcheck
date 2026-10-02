@@ -29,7 +29,8 @@ assert.match(block, /Retorno suave/, 'vacation preferences must expose optional 
 assert.doesNotMatch(block, /Voyage|roteiro turístico|restaurante|passeio/i, 'CrewCheck vacation slice must stay work-first and not become a travel planner');
 
 assert.match(home, /const vacationContextV14738 = vacationContextForEventsV14738\(events, nowMs\);/, 'FlyDeck must derive active vacation from the loaded roster');
-const vacationReturn = home.indexOf('if (vacationContextV14738) return <VacationModeCardV14738');
+const vacationReturn = home.indexOf('if (vacationContextV14738) return <');
+assert.match(home.slice(vacationReturn, home.indexOf(';',vacationReturn)), /VacationModeCardV14738/, 'vacation card must remain in the canonical early return, including a presentation wrapper');
 const emptyState = home.indexOf('if (!loaded || event.placeholder)', vacationReturn);
 assert.ok(vacationReturn >= 0 && emptyState > vacationReturn, 'vacation mode must win before roster-empty/reimport semantics');
 
