@@ -233,7 +233,7 @@ function publishedProgramWindow(event: RosterEvent) {
   };
 }
 
-export default function RosterLaunchView({ events, finance, setView }: { events: RosterEvent[]; finance?: RosterFinance; setView: (view: any) => void }) {
+export default function RosterLaunchView({ events, finance, financeMonth, setView }: { events: RosterEvent[]; finance?: RosterFinance; financeMonth?: string; setView: (view: any) => void }) {
   const { layout, zoom, choose, chooseZoom, message } = useRosterLayout();
   const allOrdered = useMemo(() => [...events]
     .filter((event) => !event.id?.includes('placeholder'))
@@ -280,6 +280,8 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
     return () => window.cancelAnimationFrame(frame);
   }, [pendingRosterFocusIso, selectedMonth, layout, zoom]);
   const ordered = useMemo(() => allOrdered.filter((event) => monthOf(event) === selectedMonth), [allOrdered, selectedMonth]);
+  const financeAvailable = !financeMonth || selectedMonth === financeMonth;
+  const scopedFinance = financeAvailable ? finance : undefined;
   const unconfirmed = allOrdered.filter(event => !isoOf(event));
   const groups = Array.from(ordered.reduce((map, event) => {
     const iso = isoOf(event);
@@ -304,8 +306,8 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
     setSelectedDay(iso);
     chooseZoom('day');
   }
-  const salaryRows = finance?.salary?.rows || [];
-  const perDiemRows = finance?.perdiem?.rows || [];
+  const salaryRows = scopedFinance?.salary?.rows || [];
+  const perDiemRows = scopedFinance?.perdiem?.rows || [];
   const selectedEventIds = new Set(ordered.map((event) => event.id));
   const selectedSalaryRows = salaryRows.filter((row) => selectedEventIds.has(row.id));
   const selectedPerDiemRows = perDiemRows.filter((row) => String(row.iso || '').startsWith(`${selectedMonth}-`));
@@ -340,7 +342,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
     </section>
 
     <section className="cc-roster-period-v1399" aria-label="Período da escala">
-      
+
       <label><CalendarDays/><span>Mês</span><select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>{months.map((month) => <option key={month} value={month}>{monthLabel(month)}</option>)}</select></label>
       <button type="button" onClick={goToday}><Clock/> Hoje</button>
     </section>
@@ -370,13 +372,13 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
       <div className="cc-roster-money-overview-v1397">
         <button type="button" onClick={() => setView('perdiem')}>
           <span><Utensils/> Diárias previstas</span>
-          <strong>{money(perDiemTotal)}</strong>
-          <small>{pendingCurrencies.length ? `Câmbio pendente: ${pendingCurrencies.join(', ')}` : 'Café e refeições elegíveis'}</small>
+          <strong>{financeAvailable ? money(perDiemTotal) : 'Indisponível'}</strong>
+          <small>{financeAvailable ? (pendingCurrencies.length ? `Câmbio pendente: ${pendingCurrencies.join(', ')}` : 'Café e refeições elegíveis') : 'Financeiro disponível somente para a competência operacional ativa'}</small>
         </button>
         <button type="button" onClick={() => setView('salary')}>
           <span><Route/> Produção por KM</span>
-          <strong>{finance?.salary?.configured ? money(production) : 'Calibrar tarifa'}</strong>
-          <small>{totalKm.toLocaleString('pt-BR')} km estimados no mês</small>
+          <strong>{financeAvailable ? (scopedFinance?.salary?.configured ? money(production) : 'Calibrar tarifa') : 'Indisponível'}</strong>
+          <small>{financeAvailable ? `${totalKm.toLocaleString('pt-BR')} km estimados no mês` : 'Selecione a competência operacional ativa para ver a memória financeira'}</small>
         </button>
       </div>
     </section>
@@ -406,7 +408,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
             <div><small>{new Intl.DateTimeFormat('pt-BR', { timeZone: ROSTER_DISPLAY_TIME_ZONE, weekday: 'long' }).format(group.date!)}</small><h2>{group.events.length} {group.events.length === 1 ? 'programação' : 'programações'}</h2></div>
             {(groupPerDiems.length > 0 || groupEarnings.length > 0) && <div className="cc-roster-day-money-v1397">
               {groupPerDiems.length > 0 && <span><Utensils/><small>Diárias</small><b>{groupPendingCurrencies.length ? `${groupPendingCurrencies.join('/')} pendente` : money(groupPerDiemTotal)}</b></span>}
-              {groupEarnings.length > 0 && <span><Route/><small>{groupKm} km</small><b>{finance?.salary?.configured ? money(groupProduction) : 'A calibrar'}</b></span>}
+              {groupEarnings.length > 0 && <span><Route/><small>{groupKm} km</small><b>{scopedFinance?.salary?.configured ? money(groupProduction) : 'A calibrar'}</b></span>}
             </div>}
           </header>
 
@@ -453,7 +455,7 @@ export default function RosterLaunchView({ events, finance, setView }: { events:
                   </div>}
                   {earning && <div className="cc-roster-km-gain-v1397">
                     <small><Route/> Ganho por KM</small>
-                    <strong>{finance?.salary?.configured ? money(earning.total) : 'Tarifa pendente'}</strong>
+                    <strong>{scopedFinance?.salary?.configured ? money(earning.total) : 'Tarifa pendente'}</strong>
                     <p>{earning.km} km · {earning.dayKm} diurnos × {money(earning.dayRateApplied)}/km · {earning.nightKm} noturnos × {money(earning.nightRateApplied)}/km</p>
                     {earning.payRule && <em>{earning.payRule}</em>}
                   </div>}

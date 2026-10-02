@@ -22,33 +22,33 @@ const css = fs.readFileSync('client/src/components/pulse/crewcheck-pulse.css', '
 // começar com asterisco, e o "#546" casa como cor hexadecimal.
 const cssRules = css.replace(/\/\*[\s\S]*?\*\//g, '');
 const tsx = fs.readFileSync('client/src/components/pulse/CrewCheckPulse.tsx', 'utf8');
+const frame = fs.readFileSync('client/src/components/navigation/InternalHeaderFrame.tsx', 'utf8');
+const finalCss = fs.readFileSync('client/src/styles/ipad-header-recovery.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+const main = fs.readFileSync('client/src/main.tsx', 'utf8');
 
-// 1. O Pulse vive no header global em modo compacto e a marca é o fallback
-//    quando não existe alerta. Não existe uma segunda barra permanente.
-assert.match(
-  home,
-  /<CrewCheckPulse compact fallback=\{lockup\}\/>/,
-  'o Brand precisa montar o Pulse compacto com a identidade como fallback',
-);
-assert.match(
-  home,
-  /<Brand pulse back=/,
-  'o header global precisa ativar o modo Pulse',
-);
+// 1. A marca e o aviso têm superfícies separadas no mesmo header em fluxo.
+//    Brand conserva navegação mesmo sem aviso; só o frame monta o Pulse ativo.
+assert.match(home, /<InternalHeaderFrame>\s*<Brand back=\{view !== 'cockpit'\} onMenu=\{view === 'cockpit' \? \(\) => setDrawer\(true\) : undefined\}\/>\s*<\/InternalHeaderFrame>/,
+  'o header deve montar marca navegável e frame de avisos');
+assert.equal((home.match(/<InternalHeaderFrame>/g) || []).length, 1, 'a aplicação deve montar um único header global');
+assert.match(frame, /className="cz-global-header" data-global-internal-header="true">\{children\}<CrewCheckPulse compact\/>/,
+  'o frame deve preservar a marca e montar um único Pulse compacto');
+assert.equal((frame.match(/<CrewCheckPulse\b/g) || []).length, 1, 'não duplicar a superfície de aviso');
+assert.ok(!/<Brand pulse(?:\s|=)/.test(home), 'Brand não deve montar outro Pulse além do frame');
 assert.ok(
   !home.includes('<CrewCheckPulse/>'),
   'não pode existir uma segunda superfície Pulse abaixo do header',
 );
 
-// 2. Sem mensagem importante, o header volta à identidade normal.
+// 2. Sem mensagem importante, Pulse retorna null no frame e mantém a marca.
 assert.match(
   tsx,
   /if \(!message\) return compact \? <>\{fallback\}<\/> : null;/,
   'sem alerta, o Pulse compacto precisa devolver a identidade do header',
 );
 
-// 3. O resumo é uma linha só. Detalhes aparecem somente quando o usuário expande,
-//    em popover absoluto que não aumenta a altura do shell nem empurra o conteúdo.
+// 3. O resumo compacto preserva toque/ellipsis. Detalhes expandidos ficam no
+//    fluxo e mostram todo o texto; avisos críticos não podem ser truncados.
 assert.match(
   cssRules,
   /\.cc-pulse-compact-trigger \{[^}]*min-height: 44px;/,
@@ -59,11 +59,13 @@ assert.match(
   /\.cc-pulse-compact-trigger > strong \{[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/,
   'o título do Pulse compacto precisa permanecer em uma linha',
 );
-assert.match(
-  cssRules,
-  /\.cc-pulse-popover \{[^}]*position: absolute;/,
-  'os detalhes precisam abrir em popover absoluto sem empurrar o conteúdo',
-);
+assert.match(finalCss, /\.cz-global-header \.cc-pulse-popover\s*\{[^}]*position:\s*static;[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/,
+  'detalhes precisam ficar no fluxo e continuar inteiros');
+assert.match(finalCss, /\.cz-app\[data-version\] > \.cz-global-header\s*\{[^}]*position:\s*relative !important;/,
+  'o header final deve acompanhar o fluxo da página');
+assert.match(finalCss, /data-priority="critica"[\s\S]*?white-space:normal!important;overflow:visible!important;overflow-wrap:anywhere/,
+  'aviso crítico deve mostrar o título completo');
+assert.ok(main.trimEnd().endsWith('import "./styles/ipad-header-recovery.css";'), 'CSS do header deve fechar a precedência visual');
 assert.ok(
   !/--cc-header-clearance|ResizeObserver/.test(css + home),
   'o Pulse não pode voltar a controlar dinamicamente a geometria do header',
@@ -218,4 +220,4 @@ assert.ok(
   'o componente precisa assinar o runtime singleton do Pulse para a fila sobreviver a remontagens',
 );
 
-console.log('[p1-546] Pulse: resumo compacto no header, marca como fallback, detalhes em popover sem empurrar o shell, sem !important/cores literais; fila e dispensa continuam seguras.');
+console.log('[p1-546] Pulse: header único com marca navegável, aviso compacto e detalhes em fluxo completos; tokens/foco/fila/dispensa continuam seguros.');
