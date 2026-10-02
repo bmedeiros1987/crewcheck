@@ -11,6 +11,8 @@ on:
       - 'scripts/v139/apply.mjs'
       - 'scripts/p1-departure-route-state/**'
       - 'scripts/regression-departure-route-*.mjs'
+      - 'scripts/regression-departure-positioning-terminal.mjs'
+      - 'scripts/regression-positioning-terminal-error-browser.mjs'
       - 'scripts/regression-route-incident-refresh.mjs'
       - 'scripts/regression-roster-layout-session-browser.mjs'
       - 'scripts/v14387d/**'
@@ -52,6 +54,7 @@ jobs:
           node scripts/regression-route-incident-refresh.mjs
           node scripts/regression-departure-route-state.mjs
           node scripts/regression-departure-route-effects.mjs
+          node scripts/regression-departure-positioning-terminal.mjs
           node scripts/regression-v14-3-34-positioning-radar-cache.mjs
       - name: TypeScript check
         run: npx tsc --noEmit
@@ -77,3 +80,4 @@ jobs:
             sleep 1
           done
           node scripts/regression-departure-route-state-browser.mjs
+          node scripts/regression-positioning-terminal-error-browser.mjs

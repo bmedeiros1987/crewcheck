@@ -7,7 +7,7 @@ else {
     if (!source.includes(before)) throw new Error('[departure-route-state] missing anchor: ' + before.slice(0, 100));
     source = source.replace(before, after);
   }
-  source = "import { createDepartureRouteSession, type DepartureRouteState } from '@/lib/departureRouteState';\n" + source;
+  source = "import { createDepartureRouteSession, isPositioningSearchPending, type DepartureRouteState } from '@/lib/departureRouteState';\n" + source;
   replace('type RoutePreviewInfo = {', `type RoutePreviewInfo = {
   clientRouteState?: DepartureRouteState;
   clientRouteError?: string;
@@ -57,7 +57,7 @@ else {
   replace("if (liveMinutes > 0) saveDepartureTravelMinutes(event, liveMinutes);", "if (liveMinutes > 0 && route?.clientRouteState !== 'stale') saveDepartureTravelMinutes(event, liveMinutes);");
   replace("if (minutes) saveDepartureTravelMinutes(event, minutes);", "if (minutes && next?.clientRouteState === 'valid') saveDepartureTravelMinutes(event, minutes);");
   replace("setRoutePending(false); const minutes", "setRoutePending(next?.clientRouteState === 'pending'); const minutes");
-  replace("  const leaveDayLabel = positioningPlan.requiresFlight && !positioningPlan.sameDayConfirmed", "  const positioningUnresolved = positioningPlan.requiresFlight && !positioningPlan.sameDayConfirmed && (positioningBusy || positioningSearch?.status !== 'none');\n  const leaveDayLabel = positioningPlan.requiresFlight && !positioningPlan.sameDayConfirmed && !positioningUnresolved");
+  replace("  const leaveDayLabel = positioningPlan.requiresFlight && !positioningPlan.sameDayConfirmed", "  const positioningUnresolved = positioningPlan.requiresFlight && !positioningPlan.sameDayConfirmed && isPositioningSearchPending(positioningSearch);\n  const leaveDayLabel = positioningPlan.requiresFlight && !positioningPlan.sameDayConfirmed && !positioningUnresolved");
   replace("positioningPlan.requiresFlight ? (positioningBusy ? 'Consultando voo' : 'Dia anterior')", "positioningPlan.requiresFlight ? (positioningUnresolved ? (positioningBusy || positioningSearch?.status === 'checking' ? 'Consultando voo' : 'Confirmar posicionamento') : 'Dia anterior')");
   replace("(positioningBusy ? 'CONSULTANDO CACHE DO RADAR' : positioningPlan.sameDayConfirmed", "(positioningUnresolved ? 'POSICIONAMENTO A CONFIRMAR' : positioningPlan.sameDayConfirmed");
   replace('{positioningPlan.requiresFlight && !positioningPlan.sameDayConfirmed && <p className="cz-depart-warning">A base', '{positioningPlan.requiresFlight && !positioningPlan.sameDayConfirmed && !positioningUnresolved && <p className="cz-depart-warning">A base');
@@ -65,6 +65,6 @@ else {
       {positioningPlan.requiresFlight && positioningPlan.sameDayConfirmed && <p`);
   replace('<span>Sair em {leaveDayLabel}</span>', "<span>{positioningUnresolved ? 'Apresentação em' : 'Sair em'} {leaveDayLabel}</span>");
   replace("{positioningPlan.requiresFlight && !positioningPlan.sameDayConfirmed ? 'Posicionar em' : 'Sair em'}", "{positioningUnresolved ? 'Apresentação em' : positioningPlan.requiresFlight && !positioningPlan.sameDayConfirmed ? 'Posicionar em' : 'Sair em'}");
-  replace("positioningPlan.requiresFlight ? 'Dia anterior' : estimate.leaveLabel;", "positioningPlan.requiresFlight ? (readPositioningSearch(event)?.status === 'none' ? 'Dia anterior' : 'Confirmar posicionamento') : estimate.leaveLabel;");
+  replace("positioningPlan.requiresFlight ? 'Dia anterior' : estimate.leaveLabel;", "positioningPlan.requiresFlight ? (isPositioningSearchPending(readPositioningSearch(event)) ? 'Confirmar posicionamento' : 'Dia anterior') : estimate.leaveLabel;");
   fs.writeFileSync(file, source);
 }

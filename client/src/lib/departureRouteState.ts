@@ -32,3 +32,8 @@ export function createDepartureRouteSession<T extends DepartureRouteObservation>
     dispose() { active = false; ++request; },
   };
 }
+
+/** Terminal lookup errors keep the conservative positioning fallback. */
+export function isPositioningSearchPending(search: { status: string } | null | undefined): boolean {
+  return !search || search.status === 'checking';
+}

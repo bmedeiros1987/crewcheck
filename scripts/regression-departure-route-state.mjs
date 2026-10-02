@@ -42,4 +42,4 @@ console.log('PASS pending/valid/stale/error, same-route retention, reverse respo
 
 const preparedHome = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 const card = preparedHome.slice(preparedHome.indexOf('function SmartCard('), preparedHome.indexOf('function UpdateCenterView('));
-assert.ok(card.includes("readPositioningSearch(event)?.status === 'none' ? 'Dia anterior' : 'Confirmar posicionamento'"), 'Home card must not conclude previous day before completed empty search');
+assert.ok(card.includes("isPositioningSearchPending(readPositioningSearch(event)) ? 'Confirmar posicionamento' : 'Dia anterior'"), 'Home card must distinguish pending search from terminal positioning fallback');
