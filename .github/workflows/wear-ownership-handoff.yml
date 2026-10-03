@@ -1,0 +1,28 @@
+name: Wear ownership handoff
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+permissions:
+  contents: read
+jobs:
+  peripheral-diff:
+    if: github.event.pull_request.number == 836 || github.event.pull_request.number == 837 || github.event.pull_request.number == 838
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Assert no phone-owned diff in this peripheral PR
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'PY'
+          import os, subprocess
+          paths = subprocess.check_output(['git', 'diff', '--name-only', os.environ['BASE_SHA'] + '...' + os.environ['HEAD_SHA']], text=True).splitlines()
+          forbidden = [p for p in paths if p.startswith(('client/', 'android-wrapper/app/', 'android-wrapper/mobile-core/'))]
+          assert not forbidden, 'Mobile Core handoff required: ' + ', '.join(forbidden)
+          print('PASS: peripheral diff has no phone-owned files')
+          PY

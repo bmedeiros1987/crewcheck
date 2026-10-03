@@ -42,6 +42,15 @@ public final class WellbeingStore {
         this.preferences = this.context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
+    /** Avisa a tela aberta quando o serviço de dados grava ou revoga algo neste cache. */
+    public void registerChangeListener(SharedPreferences.OnSharedPreferenceChangeListener listener) {
+        preferences.registerOnSharedPreferenceChangeListener(listener);
+    }
+
+    public void unregisterChangeListener(SharedPreferences.OnSharedPreferenceChangeListener listener) {
+        preferences.unregisterOnSharedPreferenceChangeListener(listener);
+    }
+
     public synchronized CrewLifeSnapshot saveCrewLife(String rawJson) {
         CrewLifeSnapshot snapshot = CrewLifeSnapshot.fromJson(rawJson);
         try {
