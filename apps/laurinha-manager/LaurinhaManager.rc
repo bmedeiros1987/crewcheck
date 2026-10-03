@@ -1,0 +1,127 @@
+﻿/* LaurinhaManager.rc - icone, manifesto DPI, VERSIONINFO e dialogos */
+
+#include <windows.h>
+#include <commctrl.h>
+#include "resource.h"
+
+/* Este arquivo esta em UTF-8 (com BOM); o pragma garante que rc.exe e
+   windres leiam os acentos corretamente. */
+#pragma code_page(65001)
+
+#ifndef CREATEPROCESS_MANIFEST_RESOURCE_ID
+#define CREATEPROCESS_MANIFEST_RESOURCE_ID 1
+#endif
+#ifndef RT_MANIFEST
+#define RT_MANIFEST 24
+#endif
+
+/* -------------------------------------------------------------------------
+ * Icone e manifesto
+ * ------------------------------------------------------------------------- */
+IDI_APPICON ICON "laurinha.ico"
+
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "LaurinhaManager.exe.manifest"
+
+/* -------------------------------------------------------------------------
+ * VERSIONINFO
+ * ------------------------------------------------------------------------- */
+VS_VERSION_INFO VERSIONINFO
+  FILEVERSION     5,0,0,0
+  PRODUCTVERSION  5,0,0,0
+  FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+  FILEFLAGS       VS_FF_DEBUG
+#else
+  FILEFLAGS       0x0L
+#endif
+  FILEOS          VOS_NT_WINDOWS32
+  FILETYPE        VFT_APP
+  FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        /* 0416 = Portugues (Brasil), 04B0 = Unicode */
+        BLOCK "041604B0"
+        BEGIN
+            VALUE "CompanyName",      "CrewCheck"
+            VALUE "FileDescription",  "Laurinha Manager - gerenciador da biblioteca da TV"
+            VALUE "FileVersion",      "5.0.0.0"
+            VALUE "InternalName",     "LaurinhaManager"
+            VALUE "LegalCopyright",   "Copyright (C) 2026 CrewCheck"
+            VALUE "OriginalFilename", "LaurinhaManager.exe"
+            VALUE "ProductName",      "Laurinha Manager"
+            VALUE "ProductVersion",   "5.0.0.0"
+            VALUE "Comments",         "Cataloga músicas e fotos e publica o manifesto JSON do Hub. Não embute mídia no pacote da TV."
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x416, 1200
+    END
+END
+
+/* -------------------------------------------------------------------------
+ * Dialogos
+ * ------------------------------------------------------------------------- */
+IDD_TEXTINPUT DIALOGEX 0, 0, 286, 78
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP |
+      WS_CAPTION | WS_SYSMENU
+CAPTION "Laurinha Manager"
+FONT 9, "Segoe UI", 400, 0, 0x1
+BEGIN
+    LTEXT           "", IDC_TEXT_PROMPT, 12, 12, 262, 10
+    EDITTEXT        IDC_TEXT_EDIT, 12, 26, 262, 14, ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "OK", IDOK, 166, 52, 52, 16
+    PUSHBUTTON      "Cancelar", IDCANCEL, 222, 52, 52, 16
+END
+
+IDD_PICKER DIALOGEX 0, 0, 300, 214
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP |
+      WS_CAPTION | WS_SYSMENU
+CAPTION "Laurinha Manager"
+FONT 9, "Segoe UI", 400, 0, 0x1
+BEGIN
+    LTEXT           "", IDC_PICK_PROMPT, 12, 10, 276, 10
+    LISTBOX         IDC_PICK_LIST, 12, 24, 276, 154,
+                    LBS_EXTENDEDSEL | LBS_NOINTEGRALHEIGHT | LBS_NOTIFY |
+                    WS_VSCROLL | WS_TABSTOP | WS_BORDER
+    PUSHBUTTON      "Selecionar tudo", IDC_PICK_ALL, 12, 186, 66, 16
+    PUSHBUTTON      "Limpar", IDC_PICK_NONE, 82, 186, 46, 16
+    DEFPUSHBUTTON   "Adicionar", IDOK, 176, 186, 54, 16
+    PUSHBUTTON      "Cancelar", IDCANCEL, 234, 186, 54, 16
+END
+
+IDD_SETTINGS DIALOGEX 0, 0, 340, 226
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP |
+      WS_CAPTION | WS_SYSMENU
+CAPTION "Configurações - Laurinha Manager"
+FONT 9, "Segoe UI", 400, 0, 0x1
+BEGIN
+    LTEXT           "Pasta raiz da biblioteca (contém MINHAS_MUSICAS e FOTOS_LAURINHA):",
+                    -1, 12, 10, 316, 10
+    EDITTEXT        IDC_SET_ROOT, 12, 22, 258, 14, ES_AUTOHSCROLL
+    PUSHBUTTON      "Procurar...", IDC_SET_ROOT_BROWSE, 274, 22, 54, 14
+
+    LTEXT           "URL do Connected Hub:", -1, 12, 44, 316, 10
+    EDITTEXT        IDC_SET_HUBURL, 12, 56, 316, 14, ES_AUTOHSCROLL
+
+    LTEXT           "Device da LG (ares-setup-device):", -1, 12, 78, 154, 10
+    EDITTEXT        IDC_SET_LGDEVICE, 12, 90, 154, 14, ES_AUTOHSCROLL
+    LTEXT           "IP da TV (opcional):", -1, 174, 78, 154, 10
+    EDITTEXT        IDC_SET_LGIP, 174, 90, 154, 14, ES_AUTOHSCROLL
+
+    LTEXT           "Pacote .ipk do app da TV (não contém mídia):", -1,
+                    12, 112, 316, 10
+    EDITTEXT        IDC_SET_IPK, 12, 124, 258, 14, ES_AUTOHSCROLL
+    PUSHBUTTON      "Procurar...", IDC_SET_IPK_BROWSE, 274, 124, 54, 14
+
+    LTEXT           "Comando ares-install:", -1, 12, 146, 316, 10
+    EDITTEXT        IDC_SET_ARES, 12, 158, 316, 14, ES_AUTOHSCROLL
+
+    LTEXT           "URL base do Home Assistant (o token vem de LAURINHA_HA_TOKEN):",
+                    -1, 12, 180, 316, 10
+    EDITTEXT        IDC_SET_HAURL, 12, 192, 316, 14, ES_AUTOHSCROLL
+
+    DEFPUSHBUTTON   "Salvar", IDOK, 216, 204, 54, 16
+    PUSHBUTTON      "Cancelar", IDCANCEL, 274, 204, 54, 16
+END
