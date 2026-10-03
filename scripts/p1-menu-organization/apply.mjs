@@ -37,7 +37,7 @@ if(!source.includes("from '@/lib/menuUsagePreference'")) {
   };
   const jump = (v: ZeroView)`);
  replace('        <p className="cc-menu-status"', `        <MenuPersonalization catalog={allMenuItems.map(([id,label])=>({id,label}))} onChange={()=>setMenuFavorites(readMenuFavorites(localStorage,accountId,MENU_5S_ALLOWED_IDS))}/>
-        {nestedResults.length > 0 && <section className="cc-menu-nested-results" aria-label="Configurações encontradas"><h3>Dentro dos menus</h3>{nestedResults.map(item=><button type="button" key={item.id} onClick={()=>jumpNested(item)}><Settings aria-hidden="true"/><span><strong>{item.label}</strong><small>{item.path}</small></span><ChevronRight aria-hidden="true"/></button>)}</section>}
+        {nestedResults.length > 0 && <section className="cc-menu-nested-results" aria-label="Configurações encontradas"><h3>Dentro dos menus</h3>{nestedResults.map(item=><button type="button" key={item.id} data-sharing-target={item.view === 'community' ? 'true' : undefined} onClick={()=>jumpNested(item)}><Settings aria-hidden="true"/><span><strong>{item.label}</strong><small>{item.path}</small></span><ChevronRight aria-hidden="true"/></button>)}</section>}
         <p className="cc-menu-status"`);
  replace('<span className="cc-menu-favorite-glyph" aria-hidden="true">★</span>', `<span className="cc-menu-favorite-glyph" aria-hidden="true">{menuFavorites.includes(v) ? '★' : '☆'}</span>`);
  replace('<h3>Favoritos</h3>', '<h3>Fixados e mais usados</h3>');

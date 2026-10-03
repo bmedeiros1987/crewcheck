@@ -1,5 +1,9 @@
 import { foldMenuSearch } from './menuPreference';
 export const MENU_SEARCH_TARGETS = [
+  {id:'share-roster',view:'community',label:'Compartilhar escala',path:'Pessoas e visitantes › Compartilhar',terms:'compartilhar compartilhamento escala link qr pessoas visitantes amigo amiga colega'},
+  {id:'share-colleague',view:'community',label:'Adicionar colega ou amigo',path:'Pessoas e visitantes › Colegas e chat',terms:'adicionar convidar colega amigo amiga pessoas conectar comparação escala'},
+  {id:'share-compare',view:'community',label:'Comparar escalas de colegas',path:'Pessoas e visitantes › Colegas e chat',terms:'escalas compartilhadas recebidas comparação disponibilidade conexões aceitas'},
+  {id:'share-visitor',view:'community',label:'Convidar visitante',path:'Pessoas e visitantes › Visitantes',terms:'adicionar convidar visitantes visitante familiar esposa marido pessoas compartilhar escala'},
   {id:'home-personalization',view:'cockpit',label:'Início e atalhos',path:'Menu › Personalização',terms:'home tela inicial escala pura atalhos combinar favoritos fixar reordenar'},
   {id:'theme',view:'settings',label:'Tema claro ou escuro',path:'Configurações › Aparência',terms:'tema claro escuro cores aparência modo premium'},
   {id:'location',view:'settings',label:'Acesso à localização',path:'Configurações › Localização',terms:'gps localização permissões mapa acesso'},

@@ -337,6 +337,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
   return <div className="cc-roster-premium-v1397">
     <V139Header title="Escala inteligente" detail="Programações e horários publicados."/>
 
+    <div className="cz-roster-actions cc-share-entry"><button type="button" onClick={() => { setPendingNavigationContext({sourceView:'roster',targetView:'community',programId:'share-roster',returnView:'roster',policy:'once'}); setView('community'); }}>Compartilhar escala</button></div>
     <section className="cc-roster-layout-picker cc-roster-compact-picker" aria-label="Formato da escala">
       <label>Formato<select aria-label="Formato da escala" value={layout} onChange={event => choose(event.target.value as typeof layout)}>
         <option value="cards">Cards</option><option value="list">Lista</option><option value="aims">AIMS</option><option value="calendar">Calendário</option>

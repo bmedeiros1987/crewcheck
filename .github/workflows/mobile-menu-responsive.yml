@@ -8,6 +8,11 @@ on:
       - 'client/src/pages/Home.tsx'
       - 'client/src/components/v1391/menu-5s.css'
       - 'client/src/lib/menuPreference.ts'
+      - 'client/src/lib/menuNestedSearch.ts'
+      - 'client/src/components/platform/PlatformCenter.tsx'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'scripts/p1-menu-organization/**'
+      - 'scripts/regression-share-discovery-browser.cjs'
       - 'client/src/lib/rosterPublication*.ts'
       - 'client/src/components/v1391/AimsRosterTable.tsx'
       - 'scripts/regression-publication-import-flow.cjs'
@@ -81,6 +86,10 @@ jobs:
         run: |
           node scripts/regression-roster-publication-review.mjs
           node scripts/regression-publication-import-flow.cjs
+      - name: Validate sharing discovery without real invitations
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-share-discovery-browser.cjs
       - name: Save actual viewport evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -90,5 +99,6 @@ jobs:
             artifacts/menu-responsive
             artifacts/menu-interaction
             artifacts/publication-import-flow
+            artifacts/share-discovery
           if-no-files-found: warn
           retention-days: 7
