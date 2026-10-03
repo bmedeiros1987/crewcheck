@@ -1,3 +1,4 @@
+import ChatInbox from './components/platform/ChatInbox';
 import { useEffect, useState, type ReactNode } from "react";
 import { Toaster } from "sonner";
 import { Route, Switch, useLocation } from "wouter";
@@ -95,7 +96,7 @@ function Protected({ children }: { children: ReactNode }) {
   }, [setLocation]);
   if (!isAuthenticated() && !(window.localStorage.getItem('crewcheck_demo_mode_seen') === '1' || window.sessionStorage.getItem('crewcheck_demo_active') === '1')) return null;
   if (!ready) return <CrewCheckOpeningSplash label="CrewCheck Premium" />;
-  return <TermsGate>{children}</TermsGate>;
+  return <TermsGate><ChatInbox />{children}</TermsGate>;
 }
 
 function AdminOnly({ children }: { children: ReactNode }) {

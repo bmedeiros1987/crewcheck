@@ -1,0 +1,48 @@
+name: Chat inbox authorization and browser
+on:
+  pull_request:
+    branches: [main, assistant/chat-receive-reconnect]
+    paths:
+      - 'server/platform.mjs'
+      - 'server/platform-chat-inbox.mjs'
+      - 'client/src/components/platform/ChatInbox.tsx'
+      - 'client/src/lib/chatInboxState.ts'
+      - 'client/src/App.tsx'
+      - 'client/src/hooks/useLiveChat.ts'
+      - 'client/src/components/platform/PlatformCenter.tsx'
+      - 'client/src/pages/VisitorAccessPage.tsx'
+      - 'client/src/lib/platformClient.ts'
+      - 'scripts/regression-chat-inbox-browser.cjs'
+      - 'scripts/regression-chat-inbox.mjs'
+      - '.github/workflows/chat-inbox.yml'
+permissions:
+  contents: read
+concurrency:
+  group: chat-inbox-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check && node scripts/regression-chat-inbox.mjs && npx vite build
+      - run: |
+          npm install --prefix "$RUNNER_TEMP/chat-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/chat-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - run: node scripts/regression-chat-inbox-browser.cjs
+        env:
+          CHAT_PLAYWRIGHT_MODULE: ${{ runner.temp }}/chat-browser/node_modules/playwright
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chat-inbox-${{ github.event.pull_request.head.sha }}
+          path: artifacts/chat-inbox
