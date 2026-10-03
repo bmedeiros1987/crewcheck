@@ -66,10 +66,10 @@ jobs:
           gradle-version: '8.13'
       - run: npm ci
       - name: Install Play API client for version allocation
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
         run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
       - name: Allocate live Play version codes
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: python3 scripts/android-play/allocate_versions.py
