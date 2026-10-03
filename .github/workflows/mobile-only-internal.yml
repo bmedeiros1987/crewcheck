@@ -1,0 +1,115 @@
+name: CrewCheck reviewed mobile internal
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_mobile_internal:
+        description: 'Publish only reviewed PR882 phone AAB to internal testing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: crewcheck-play-release
+  cancel-in-progress: false
+
+jobs:
+  reviewed-mobile:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: source
+    steps:
+      - name: Checkout release controller
+        uses: actions/checkout@v6
+        with:
+          path: control
+          persist-credentials: false
+      - name: Checkout immutable reviewed phone source
+        uses: actions/checkout@v6
+        with:
+          ref: 253abd79eb80ed4b0ded4ffbe8425ede9e8d5327
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+          cache-dependency-path: source/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+      - name: Install existing Play API client versions
+        run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
+      - name: Controller offline negative tests and exact source CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 ../control/scripts/android-play/test_mobile_internal.py
+          python3 ../control/scripts/android-play/mobile_internal.py check-ci
+      - name: Allocate only phone version from live package tracks and bundles
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: python3 ../control/scripts/android-play/mobile_internal.py allocate
+      - name: Prepare and test reviewed source
+        run: |
+          npm ci
+          node scripts/v139/apply.mjs
+          node scripts/regression-mobile-watch-publish-cadence.mjs
+          node scripts/regression-mobile-watch-gate-contract.mjs
+          TZ=UTC node scripts/regression-mobile-watch-gate-identity.cjs
+          npx tsc --noEmit
+          npx vite build
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - name: Restore existing upload signing and derive public certificate
+        env:
+          KEYSTORE_BASE64: ${{ secrets.CREWCHECK_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$KEYSTORE_BASE64" && test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS"
+          printf '%s' "${KEYSTORE_BASE64#base64:}" | tr -d '\r\n ' | base64 --decode > "$RUNNER_TEMP/crewcheck-mobile-upload.jks"
+          keytool -exportcert -keystore "$RUNNER_TEMP/crewcheck-mobile-upload.jks" -storepass:env STORE_PASSWORD -alias "$KEY_ALIAS" -file "$RUNNER_TEMP/mobile-upload-cert.der"
+          echo "EXPECTED_UPLOAD_CERT_SHA256=$(sha256sum "$RUNNER_TEMP/mobile-upload-cert.der" | cut -d ' ' -f1)" >> "$GITHUB_ENV"
+      - name: Build only phone release bundle
+        env:
+          CREWCHECK_STORE_FILE: ${{ runner.temp }}/crewcheck-mobile-upload.jks
+          CREWCHECK_STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD }}
+          CREWCHECK_KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS }}
+          CREWCHECK_KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD }}
+        run: gradle -p android-wrapper --no-daemon --console=plain :app:bundleRelease
+      - name: Validate actual phone AAB and immutable provenance
+        run: |
+          curl --fail --location --retry 3 https://github.com/google/bundletool/releases/download/1.18.2/bundletool-all-1.18.2.jar -o "$RUNNER_TEMP/mobile-bundletool.jar"
+          python3 ../control/scripts/android-play/mobile_internal.py validate --bundletool "$RUNNER_TEMP/mobile-bundletool.jar" --output "$RUNNER_TEMP/mobile-verified"
+      - name: Publish phone internal only with retained packages and post-commit verification
+        if: inputs.publish_mobile_internal == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          PUBLISH_MOBILE_INTERNAL: 'true'
+        run: python3 ../control/scripts/android-play/mobile_internal.py publish --output "$RUNNER_TEMP/mobile-verified"
+      - name: Preserve mobile artifact and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-reviewed-mobile-${{ github.run_id }}
+          path: ${{ runner.temp }}/mobile-verified/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Remove temporary signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/crewcheck-mobile-upload.jks" "$RUNNER_TEMP/mobile-upload-cert.der"
