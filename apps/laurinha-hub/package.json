@@ -1,0 +1,14 @@
+{
+  "name": "laurinha-hub",
+  "version": "5.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Laurinha Connected Hub: ponte entre a TV LG e o Home Assistant, sem token de HA na TV.",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}
