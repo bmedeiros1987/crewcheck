@@ -82,7 +82,7 @@ import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatfo
 import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient';
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
-import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
+import { buildCrewCheckWatchSnapshot, watchSnapshotContentSignature, WATCH_UNCHANGED_REPUBLISH_MS } from '@/lib/watchContext';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import { crewCheckNotificationPermission, publishCrewCheckNotice, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
@@ -4852,21 +4852,54 @@ export default function Home() {
   }, [compliance]);
 
   useEffect(() => {
-    const publishWatchSnapshot = () => {
+    // O tick de 1 min só existe para pegar viradas de estado e contagens contextuais.
+    // Sem mudança de conteúdo ele não publica; pedidos explícitos sempre publicam.
+    let lastSignature = '';
+    let lastPublishedAt = 0;
+    let lastPublishedValidUntil = 0;
+    const publishWatchSnapshot = (force: boolean) => {
       try {
-        const snapshot = buildCrewCheckWatchSnapshot(events, event);
+        const now = Date.now();
+        // Radar enriches only the device projection. The canonical roster remains untouched.
+        const radar = readRadarSnapshot(event);
+        const radarUpdatedAt = Number(radar?.updatedAt || 0);
+        const radarExpiresAt = radarUpdatedAt + RADAR_CARD_CACHE_TTL_MS;
+        const radarGate = radar?.ok === true
+          && radarUpdatedAt > 0
+          && radarUpdatedAt <= now
+          && radarExpiresAt > now
+          ? confirmedRadarGate(radar.gate)
+          : '';
+        const watchEvent = radarGate ? { ...event, gate: radarGate } : event;
+        const watchEvents = radarGate
+          ? events.map((candidate) => candidate.id === event.id ? watchEvent : candidate)
+          : events;
+        const snapshot = buildCrewCheckWatchSnapshot(watchEvents, watchEvent);
+        // A cached Radar gate can never make a device snapshot look fresh longer than Radar itself.
+        if (radarGate) snapshot.validUntilEpochMs = Math.min(snapshot.validUntilEpochMs, radarExpiresAt);
+        const signature = watchSnapshotContentSignature(snapshot);
+        // A renewed Radar reading must reach the watch before its prior snapshot expires.
+        const freshnessExtended = Boolean(radarGate) && snapshot.validUntilEpochMs > lastPublishedValidUntil
+          && lastPublishedValidUntil < now + WATCH_UNCHANGED_REPUBLISH_MS;
+        if (!force && !freshnessExtended && signature === lastSignature && now - lastPublishedAt < WATCH_UNCHANGED_REPUBLISH_MS) return;
+        lastSignature = signature;
+        lastPublishedAt = now;
+        lastPublishedValidUntil = snapshot.validUntilEpochMs;
         window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: snapshot }));
       } catch {
         // Watch sync is auxiliary. Never interfere with roster rendering.
       }
     };
 
-    publishWatchSnapshot();
-    const onRequest = () => publishWatchSnapshot();
+    publishWatchSnapshot(true);
+    const onRequest = () => publishWatchSnapshot(true);
+    const onRadar = () => publishWatchSnapshot(false);
+    window.addEventListener('crewcheck:radar-updated', onRadar);
     window.addEventListener('crewcheck:watch-snapshot-request', onRequest);
     window.addEventListener('crewcheck:native-ready', onRequest);
-    const timer = window.setInterval(publishWatchSnapshot, 60_000);
+    const timer = window.setInterval(() => publishWatchSnapshot(false), 60_000);
     return () => {
+      window.removeEventListener('crewcheck:radar-updated', onRadar);
       window.removeEventListener('crewcheck:watch-snapshot-request', onRequest);
       window.removeEventListener('crewcheck:native-ready', onRequest);
       window.clearInterval(timer);
