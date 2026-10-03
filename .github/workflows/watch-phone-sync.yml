@@ -6,6 +6,8 @@ on:
       - 'android-wrapper/app/**'
       - 'client/src/lib/watchContext.ts'
       - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-mobile-watch-*.mjs'
+      - 'scripts/regression-mobile-watch-*.cjs'
       - '.github/workflows/watch-phone-sync.yml'
   workflow_dispatch:
 
@@ -40,8 +42,20 @@ jobs:
       - name: Install web dependencies
         run: npm ci
 
+      - name: Validate selective Radar to Watch projection
+        run: |
+          node scripts/regression-mobile-watch-publish-cadence.mjs
+          node scripts/regression-mobile-watch-gate-contract.mjs
+          TZ=UTC node scripts/regression-mobile-watch-gate-identity.cjs
+
       - name: Prepare CrewCheck sources
         run: node scripts/v139/apply.mjs
+
+      - name: Validate prepared Radar to Watch projection
+        run: |
+          node scripts/regression-mobile-watch-publish-cadence.mjs
+          node scripts/regression-mobile-watch-gate-contract.mjs
+          TZ=UTC node scripts/regression-mobile-watch-gate-identity.cjs
 
       - name: TypeScript check
         run: npx tsc --noEmit
@@ -61,3 +75,27 @@ jobs:
 
       - name: Compile phone companion
         run: gradle -p android-wrapper --no-daemon --console=plain :app:assembleDebug
+
+      - name: Inspect Android test artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk='android-wrapper/app/build/outputs/apk/debug/app-debug.apk'
+          test -s "$apk"
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          out="$RUNNER_TEMP/watch-gate-test"
+          mkdir -p "$out"
+          cp "$apk" "$out/CrewCheck-gate-test-debug.apk"
+          "$tools/aapt" dump badging "$apk" > "$out/package.txt"
+          "$tools/apksigner" verify --verbose --print-certs "$apk" > "$out/signature.txt"
+          git rev-parse HEAD > "$out/source-sha.txt"
+          (cd "$out" && sha256sum *.apk > SHA256SUMS.txt)
+          printf '%s\n' 'DEBUG TEST ARTIFACT: not a Play update. Verify installed package, versionCode and certificate before any installation; do not uninstall or clear data.' > "$out/INSTALLATION-NOT-APPROVED.txt"
+
+      - name: Preserve Android test artifact and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-gate-test-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/watch-gate-test/
+          if-no-files-found: error
+          retention-days: 7
