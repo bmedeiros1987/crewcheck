@@ -133,18 +133,18 @@ context.phoneNumberId=()=>'';
 await context.handleInboundMessage(message('123456'));
 assert.equal(sent.length,0); assert.equal(calls.length,0);
 context.phoneNumberId=()=> 'synthetic-receiver';
-assert.ok(inbound.indexOf('message?.phoneNumberId !== expectedPhoneId') < inbound.indexOf('tryCompleteLink'), 'receiver check must precede even account linking');
-// OFF/invalid values execute the original path: one engine call and one
-// existing response, with no new menu, extra link read or callback action.
+assert.ok(inbound.indexOf('message?.phoneNumberId !== expectedPhoneNumberId') < inbound.indexOf('tryCompleteLink'), 'receiver check must precede even account linking');
+// OFF/invalid values execute the PR890 protected path: one engine call and one
+// response, with the existing authorization recheck and receiver validation.
 const enabledDelivery=context.deliverWhatsAppMenuMessage;
 context.deliverWhatsAppMenuMessage=()=>{throw Error('OFF must not invoke new adapter');};
-context.phoneNumberId=()=>{throw Error('OFF must not introduce receiver checks');};
+context.phoneNumberId=()=> 'synthetic-receiver';
 for (const value of [undefined, '', 'false', 'TRUE', '1', 'invalid']) {
   environment={CREWCHECK_WHATSAPP_MENU_ENABLED:value};
   reset();let linkReads=0;
   context.findActiveLinkByPhone=async phone=>{linkReads++;return deps.findLink(phone);};
   await context.handleInboundMessage(message('menu'));
-  assert.equal(linkReads,1);assert.equal(calls.length,1);assert.equal(calls[0].text,'menu');
+  assert.equal(linkReads,2);assert.equal(calls.length,1);assert.equal(calls[0].text,'menu');
   assert.equal(sent.length,1);assert.notEqual(sent[0].text,WHATSAPP_MENU);
   assert.match(sent[0].text,/15:40 BRT/);
 }
@@ -163,6 +163,40 @@ context.phoneNumberId=()=> 'synthetic-receiver';
 context.deliverWhatsAppMenuMessage=enabledDelivery;
 reset();await context.handleInboundMessage(message('menu'));
 assert.equal(calls.length,0);assert.equal(sent.length,1);assert.equal(sent[0].text,WHATSAPP_MENU);
+assert.equal(sent[0].options.expectedPhoneNumberId,'synthetic-receiver','delegated menu must capture the validated sender');
+// Execute the real transport together with the prepared handler and menu.
+let network=[];let configured='synthetic-receiver';let linkingCalls=0;
+Object.assign(context,{
+  phoneNumberId:()=>configured,accessToken:()=> 'synthetic-token',graphVersion:()=> 'v26.0',
+  AbortController,setTimeout,clearTimeout,console:{info:()=>{},warn:()=>{},error:()=>{}},
+  tryCompleteLink:async()=>{linkingCalls++;return {linked:true};},
+  fetch:async(url,options)=>{network.push({url,options});return {ok:true,json:async()=>({messages:[{id:'synthetic-out'}]})};},
+});
+const transport=source.slice(source.indexOf('export async function sendWhatsAppText('),source.indexOf('async function findActiveLinkByPhone('));
+vm.runInContext(transport.replace('export ',''),context);
+for (const flag of [undefined,'true']) {
+  environment={CREWCHECK_WHATSAPP_MENU_ENABLED:flag};
+  reset();network=[];configured='synthetic-receiver';linkingCalls=0;
+  for(const phoneNumberId of ['',undefined,'other-receiver']) {
+    await context.handleInboundMessage({...message('123456'),phoneNumberId});
+    await context.handleInboundMessage({...message('menu'),phoneNumberId});
+  }
+  assert.equal(network.length+calls.length+linkingCalls,0,'OFF and ON reject unauthorized receivers before linking');
+  await context.handleInboundMessage(message('menu'));
+  assert.equal(network.length,1);assert.match(network[0].url,/\/synthetic-receiver\/messages$/);
+  if(flag==='true') assert.equal(JSON.parse(network[0].options.body).text.body,WHATSAPP_MENU);
+  reset();network=[];
+  handler=async()=>{configured='changed-during-await';return 'private answer';};
+  await context.handleInboundMessage(message('hoje'));
+  assert.equal(network.length,0,'OFF and ON prevent sender drift after engine await');
+  for(const mutation of [()=>links.delete(A),()=>links.set(A,binding('other@example.invalid')),()=>links.set(A,{...binding('a@example.invalid'),consent_concierge:0})]) {
+    reset();network=[];configured='synthetic-receiver';handler=async()=>{mutation();return 'stale answer';};
+    await context.handleInboundMessage(message('hoje'));assert.equal(network.length,0,'combined binding guard suppresses stale answers');
+  }
+  reset();network=[];configured='synthetic-receiver';
+  await context.handleInboundMessage(message('arbitrary',A,'interactive'));
+  assert.equal(calls.length,0);assert.equal(network.length,1,'callback cannot dispatch facts in either mode');
+}
 assert.doesNotMatch(fs.readFileSync('server/concierge/whatsapp-menu.mjs','utf8'),/console\.(?:log|info|warn|error)/);
 assert.match(source,/WHERE phone_hash=\? AND revoked_at IS NULL/);
 assert.match(source,/if \(acceptedMessageIds.has\(message.id\)\) await handleInboundMessage\(message\)/);

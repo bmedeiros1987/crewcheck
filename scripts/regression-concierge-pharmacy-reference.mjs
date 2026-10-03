@@ -47,8 +47,41 @@ reset();await ask('/farmacias');const ref=snapshot.preferences.pharmacySearchRef
 reset();candidates=[{...hotel,city:'',address:'Rua Guarulhos, Curitiba',location:{latitude:-25.4,longitude:-49.2}}];result=await ask('/farmacias');assert.match(result.reply,/1\. Hotel Sintético/);assert.equal(searches.length,0,'address substrings cannot establish city');
 reset();stays=[{...stay,day:{date:'2026-10-03'}}];result=await ask('/farmacias');assert.match(result.reply,/GPS é opcional/);assert.equal(lookups.length,0,'missing published stay times must not use all-day fallback');
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
+// A linked app profile carries the same chatId as Telegram: origin must still isolate choices.
+const appLinked={...profile,channel:'app',chatId:'123456'};
+const telegramLinked={...profile,channel:'telegram',chatId:'123456'};
+for (const [from,to] of [[appLinked,telegramLinked],[telegramLinked,appLinked]]) {
+ reset();await ask('referência: Hotel Sintético, Guarulhos',from);
+ const before=structuredClone(snapshot);const writeCount=saves.length;
+ result=await ask('1',to);assert.equal(result.handled,false,'linked app and Telegram must not consume each other’s options');
+ assert.equal(searches.length,0);assert.equal(saves.length,writeCount);assert.deepEqual(snapshot,before);
+ result=await ask('1',from);assert.match(result.reply,/Farmácia Sintética/);assert.equal(searches.length,1);
+ reset();await ask('referência: Hotel Sintético, Guarulhos',from);
+ result=await ask('1',from,new Date(now.getTime()+600000));assert.equal(result.handled,false,'exact expiry cannot select');
+}
 reset();let a=deferred(),b=deferred();const lookup=deps.lookup;deps.lookup=q=>q.includes('Alpha')?a.promise:b.promise;
 const old=ask('referência: Alpha, Guarulhos');const recent=ask('referência: Beta, Guarulhos');b.resolve([{...hotel,name:'Beta'}]);await recent;a.resolve([{...hotel,name:'Alpha'}]);result=await old;assert.match(result.reply,/substituída/);assert.equal(snapshot.preferences.pharmacySearchReference.options[0].name,'Beta','late request cannot overwrite newer reference');deps.lookup=lookup;
+for (const [from,to] of [[appLinked,telegramLinked],[telegramLinked,appLinked]]) {
+ reset();a=deferred();b=deferred();deps.lookup=q=>q.includes('Alpha')?a.promise:b.promise;
+ const slow=ask('referência: Alpha, Guarulhos',from);
+ const fast=ask('referência: Beta, Guarulhos',to);
+ b.resolve([{...hotel,name:'Beta'}]);await fast;a.resolve([{...hotel,name:'Alpha'}]);
+ assert.match((await slow).reply,/substituída/);
+ assert.equal(snapshot.preferences.pharmacySearchReference.options[0].name,'Beta');
+ assert.equal((await ask('1',from)).handled,false,'superseded channel cannot select latest options');
+ assert.match((await ask('1',to)).reply,/Beta/);assert.equal(searches.length,1);
+ deps.lookup=lookup;
+ reset();a=deferred();deps.lookup=()=>a.promise;
+ const cancelled=ask('referência: Alpha, Guarulhos',from);
+ assert.equal((await ask('farmácia perto de mim',to)).handled,false);
+ a.resolve([hotel]);assert.match((await cancelled).reply,/substituída/);
+ assert.equal(snapshot.preferences.pharmacySearchReference,null,'explicit GPS cancels older pending reference');
+ assert.equal(searches.length,0);deps.lookup=lookup;
+}
+reset();await ask('referência: Hotel Sintético, Guarulhos',telegramLinked);
+snapshot.preferences.pharmacySearchReference.request.chatId=telegramLinked.chatId;
+assert.equal((await ask('1',telegramLinked)).handled,false,'pre-fix unscoped record is not reusable');
+assert.equal((await ask('1',appLinked)).handled,false);assert.equal(searches.length,0);
 reset();a=deferred();deps.lookup=()=>a.promise;const changing=ask('/farmacias');snapshot={...snapshot,roster:{days:[]}};a.resolve([hotel]);result=await changing;assert.match(result.reply,/validade/);assert.equal(saves.length,0,'roster changes during provider await prevent save');deps.lookup=lookup;
 reset();a=deferred();deps.lookup=()=>a.promise;deps.now=()=>new Date(now.getTime()+600001);const expired=ask('/farmacias');a.resolve([hotel]);result=await expired;assert.match(result.reply,/validade/);assert.equal(saves.length,0);deps.lookup=lookup;delete deps.now;
 reset();a=deferred();const nearby=deps.nearby;deps.nearby=()=>a.promise;const delayed=ask('/farmacias');await new Promise(r=>setImmediate(r));snapshot={...snapshot,roster:{days:[]}};a.resolve([{name:'Old pharmacy'}]);result=await delayed;assert.match(result.reply,/validade/);assert.doesNotMatch(result.reply,/Old pharmacy/);deps.nearby=nearby;
@@ -59,6 +92,19 @@ for(const query of ['academia perto do hotel','farmácia','quanto recebo de diá
 const formal=normalizeConciergePreferences({mode:'formal'},{mode:'comic'},{});assert.equal(decorateConciergeReply('Farmácia: horário não informado.',{preferences:formal}).humorApplied,false);
 assert.equal(decorateConciergeReply('Emergência: procure o serviço oficial.',{preferences:{mode:'comic'},random:()=>0}).humorApplied,false);
 const source=fs.readFileSync('server.mjs','utf8');assert.match(source,/const poi = await pharmacyReferenceReply/);assert.match(source,/conciergeSearchNearbyHealthPlacesAtReference\(\['pharmacy'\], point, 6\)/);assert.match(source,/locationRestriction/);
+// Execute the actual app endpoint: linked identity must not override trusted origin.
+let appRequestProfile;
+const appEndpoint=source.slice(source.indexOf('async function handleTelegramConciergeAsk('),source.indexOf('function telegramMessagePdfDocument('));
+const appContext=vm.createContext({
+ readJsonBody:async()=>({text:'1',channel:'telegram'}),
+ telegramRequestUser:()=>({email:profile.email,channel:'telegram'}),
+ telegramAppRequestAllowed:()=>true,telegramLinkedRecordForEmail:async()=>({chatId:'123456'}),
+ conciergeAccessMatches:()=>true,conciergeLoadSnapshot:async()=>snapshot,
+ buildTelegramConciergeReply:async(_text,who)=>{appRequestProfile=who;return 'offline';},
+ conciergePreferencesV14336:()=>({}),conciergeVoiceOptionsV14336:()=>[],sendJson:()=>({ok:true}),
+});
+vm.runInContext(appEndpoint,appContext);await appContext.handleTelegramConciergeAsk({method:'POST'},{});
+assert.equal(appRequestProfile.channel,'app');assert.equal(appRequestProfile.chatId,'123456');
 console.log('PASS pharmacy hotel/GPS, explicit selection, A/B/channel isolation, TTL/date/stay invalidation, ambiguous/missing coordinates, factual language; zero real APIs');
 
 // Execute the canonical prepared query implementation with a fake transport.
