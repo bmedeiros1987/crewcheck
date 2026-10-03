@@ -130,7 +130,8 @@ function patchWhatsApp(source) {
 
   const oldTypeGate = `  if (message?.type !== 'text') {\n    await sendWhatsAppText(from, 'Recebi sua mensagem. Nesta primeira etapa do WhatsApp, fale comigo por texto. Áudio, localização e PDF serão liberados separadamente.', { replyToMessageId: message.id });\n    return;\n  }\n  if (!text) return;`;
   const newTypeGate = `  if (!['text', 'location'].includes(message?.type)) {\n    await sendWhatsAppText(from, 'Recebi sua mensagem. Por enquanto o Concierge aceita texto e localização pelo WhatsApp; áudio e PDF serão liberados separadamente.', { replyToMessageId: message.id });\n    return;\n  }\n  if (message?.type === 'text' && !text) return;`;
-  next = replaceRequired(next, oldTypeGate, newTypeGate, 'gate de tipos do WhatsApp');
+  const senderBoundTypeGate = newTypeGate.replace('{ replyToMessageId: message.id }', '{ replyToMessageId: message.id, expectedPhoneNumberId }');
+  if (!next.includes(senderBoundTypeGate)) next = replaceRequired(next, oldTypeGate, newTypeGate, 'gate de tipos do WhatsApp');
 
   const oldCall = "    const result = await whatsappConciergeHandler({ email: String(link.email), text, messageId: message.id });";
   const newCall = "    const result = await whatsappConciergeHandler({ email: String(link.email), text, location: message.location || null, messageType: message.type, messageId: message.id });";
