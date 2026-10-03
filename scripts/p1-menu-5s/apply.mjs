@@ -16,17 +16,21 @@ const menuStart = source.indexOf('function MenuDrawer(');
 const menuEnd = source.indexOf('\nfunction ', menuStart + 'function MenuDrawer('.length);
 if (menuStart < 0 || menuEnd < 0) throw new Error('[p1-menu-5s] limite exato do MenuDrawer preparado não localizado');
 
-const allowedDeclaration = `const MENU_5S_ALLOWED_IDS: ZeroView[] = [
-  'cockpit','roster','compare','departure','wakeup','weather','presentation','mycar',
-  'radar','alerts','regulation','load','emergency','import','iflight','bids','map','database','crewlocker',
-  'perdiem','salary','crew','concierge','hotels','gyms','routine','community','life',
-  'reports','calendar','exports','plans','settings','manual','guardian','support','crewlock',
-  'updates','maintenance','admin',
-];
+// Keep this declaration name stable for the existing browser harness, but derive
+// IDs from the already role-filtered groups instead of duplicating their policy.
+const allowedDeclaration = `const MENU_5S_ALLOWED_IDS: (groups: ReadonlyArray<{ items: ReadonlyArray<readonly [ZeroView, string, string, unknown]> }>) => ZeroView[] =
+  (groups) => groups.flatMap((group) => group.items.map(([viewId]) => viewId));
 
 `;
-if (!source.includes('const MENU_5S_ALLOWED_IDS:')) {
+const oldAllowedStart = source.indexOf('const MENU_5S_ALLOWED_IDS: ZeroView[] = [');
+if (oldAllowedStart >= 0) {
+  const oldAllowedEnd = source.indexOf('\n];\n\n', oldAllowedStart);
+  if (oldAllowedEnd < 0 || oldAllowedEnd >= menuStart) throw new Error('[p1-menu-5s] allowlist legada não reconhecida');
+  source = source.slice(0, oldAllowedStart) + allowedDeclaration + source.slice(oldAllowedEnd + '\n];\n\n'.length);
+} else if (!source.includes('const MENU_5S_ALLOWED_IDS:')) {
   source = source.slice(0, menuStart) + allowedDeclaration + source.slice(menuStart);
+} else if (!source.includes(allowedDeclaration.trim())) {
+  throw new Error('[p1-menu-5s] seletor de destinos divergente: reconciliar antes de preparar');
 }
 
 let nextMenuStart = source.indexOf('function MenuDrawer(');
@@ -79,13 +83,12 @@ if (!block.includes('const [menuQuery,')) {
       }
     };
   }, [open]);
-  const [menuFavorites, setMenuFavorites] = useState(() => readMenuFavorites(window.localStorage, accountId, MENU_5S_ALLOWED_IDS));
+  const [menuFavoritesRevision, bumpMenuFavoritesRevision] = useState(0);
   useEffect(() => {
-    setMenuFavorites(readMenuFavorites(window.localStorage, accountId, MENU_5S_ALLOWED_IDS));
     setMenuQuery('');
     setMenuStatus('');
     setEditingFavorites(false);
-  }, [accountId]);
+  }, [accountId, admin]);
   useEffect(() => {
     if (!open) return;
     const panel = menuPanelRef.current;
@@ -100,7 +103,7 @@ if (!block.includes('const [menuQuery,')) {
     if (!panel.contains(document.activeElement)) {
       panel.querySelector<HTMLInputElement>('.cc-menu-search input')?.focus({ preventScroll: true });
     }
-  }, [open, menuFavorites, menuQuery, editingFavorites, accountId]);`;
+  }, [open, menuFavoritesRevision, menuQuery, editingFavorites, accountId, admin]);`;
   block = block.replace(stateAnchor, stateAnchor + states);
 }
 
@@ -109,6 +112,8 @@ if (!block.includes('const filteredGroups =')) {
   if (!block.includes(jumpAnchor)) throw new Error('[p1-menu-5s] salto do menu não localizado');
   const behavior = `
   const allMenuItems = groups.flatMap((group) => group.items);
+  const menuAllowedIds = MENU_5S_ALLOWED_IDS(groups);
+  const menuFavorites = readMenuFavorites(window.localStorage, accountId, menuAllowedIds);
   const favoriteItems = menuFavorites
     .map((id) => allMenuItems.find(([viewId]) => viewId === id))
     .filter((item): item is MenuItem => Boolean(item));
@@ -125,13 +130,17 @@ if (!block.includes('const filteredGroups =')) {
       setMenuStatus('Entre na sua conta para salvar favoritos.');
       return;
     }
+    if (!menuAllowedIds.includes(target)) {
+      setMenuStatus('Esta função não está disponível no menu atual.');
+      return;
+    }
     const exists = menuFavorites.includes(target);
     if (!exists && menuFavorites.length >= MENU_FAVORITES_LIMIT) {
       setMenuStatus('Escolha até ' + MENU_FAVORITES_LIMIT + ' favoritos.');
       return;
     }
     const next = exists ? menuFavorites.filter((item) => item !== target) : [...menuFavorites, target];
-    if (!saveMenuFavorites(window.localStorage, accountId, MENU_5S_ALLOWED_IDS, next)) {
+    if (!saveMenuFavorites(window.localStorage, accountId, menuAllowedIds, next)) {
       setMenuStatus('Não foi possível salvar os favoritos neste dispositivo.');
       return;
     }
@@ -139,7 +148,7 @@ if (!block.includes('const filteredGroups =')) {
     if (focused instanceof HTMLElement && focused.dataset.menuFavoriteId === target) {
       pendingFavoriteFocus.current = target;
     }
-    setMenuFavorites(next);
+    bumpMenuFavoritesRevision((revision) => revision + 1);
     setMenuStatus(exists ? 'Favorito removido.' : 'Favorito adicionado.');
   };
 `;
@@ -174,6 +183,28 @@ if (!block.includes('className="cc-menu-search"')) {
         })}</section>)}
         {catalogGroups.length === 0 && (menuQuery || favoriteItems.length === 0) && <p className="cc-menu-empty">Nenhuma função encontrada. Tente outro termo.</p>}`;
   block = block.slice(0, listStart) + enhanced + block.slice(listEnd);
+}
+
+// Upgrade an already prepared pre-fix menu, preserving every unrelated byte.
+if (block.includes('const [menuFavorites, setMenuFavorites]')) {
+  const upgrades = [
+    ["  const [menuFavorites, setMenuFavorites] = useState(() => readMenuFavorites(window.localStorage, accountId, MENU_5S_ALLOWED_IDS));", "  const [menuFavoritesRevision, bumpMenuFavoritesRevision] = useState(0);"],
+    ["    setMenuFavorites(readMenuFavorites(window.localStorage, accountId, MENU_5S_ALLOWED_IDS));\n", ""],
+    ["  }, [accountId]);", "  }, [accountId, admin]);"],
+    ["  }, [open, menuFavorites, menuQuery, editingFavorites, accountId]);", "  }, [open, menuFavoritesRevision, menuQuery, editingFavorites, accountId, admin]);"],
+    ["  const allMenuItems = groups.flatMap((group) => group.items);", "  const allMenuItems = groups.flatMap((group) => group.items);\n  const menuAllowedIds = MENU_5S_ALLOWED_IDS(groups);\n  const menuFavorites = readMenuFavorites(window.localStorage, accountId, menuAllowedIds);"],
+    ["    const exists = menuFavorites.includes(target);", "    if (!menuAllowedIds.includes(target)) {\n      setMenuStatus('Esta função não está disponível no menu atual.');\n      return;\n    }\n    const exists = menuFavorites.includes(target);"],
+    ["saveMenuFavorites(window.localStorage, accountId, MENU_5S_ALLOWED_IDS, next)", "saveMenuFavorites(window.localStorage, accountId, menuAllowedIds, next)"],
+    ["    setMenuFavorites(next);", "    bumpMenuFavoritesRevision((revision) => revision + 1);"],
+  ];
+  for (const [before, after] of upgrades) {
+    if (block.split(before).length !== 2) throw new Error('[p1-menu-5s] âncora de migração de favoritos divergente');
+    block = block.replace(before, after);
+  }
+}
+if (!block.includes('const menuAllowedIds = MENU_5S_ALLOWED_IDS(groups);')
+    || block.includes('setMenuFavorites(')) {
+  throw new Error('[p1-menu-5s] favoritos não reconciliados com os grupos atuais');
 }
 
 block = block.replace('<aside className="cz-menu-panel"', '<aside ref={menuPanelRef} className="cz-menu-panel"');

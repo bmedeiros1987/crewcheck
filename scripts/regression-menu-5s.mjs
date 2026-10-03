@@ -75,4 +75,6 @@ for (const id of ['salary', 'perdiem', 'crew']) {
   assert.equal(inventory.surfaces.find((surface) => surface.id === id)?.owner, 'financeiro');
 }
 
+await import('./regression-menu-role-favorites.mjs');
+
 console.log('PASS: canonical grouped Menu gained account favorites and search without losing routes, brand or 5S ownership');
