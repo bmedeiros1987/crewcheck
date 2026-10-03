@@ -9,7 +9,7 @@
   --cc-atlas-violet: var(--event-reserve);
 }
 
-.cz-menu-section > button,
+:is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip),
 .cz-bottom-nav > button {
   --cc-atlas-tone: var(--cc-atlas-brand);
 }
@@ -22,21 +22,23 @@
 .cz-bottom-nav > button:has(> .lucide-bell) { --cc-atlas-tone: var(--cc-atlas-alert); }
 .cz-bottom-nav > button:has(> .lucide-briefcase-business) { --cc-atlas-tone: var(--cc-atlas-attention); }
 
+/* Menu 5S nests destinations in rows; favorites reuse the same label/tone map.
+   Keep the legacy direct-child path for unprepared menus. */
 /* Prepared menu labels are semantic anchors; the unprepared single list has a guarded fallback. */
-.cz-menu-section > button:is([data-menu-label='Planejado x atual'], [data-menu-label='BIDS / PBS'], [data-menu-label='Regulamentação'], [data-menu-label='Assinaturas'], [data-menu-label='Concierge'], [data-menu-label='Apresentação'], [data-menu-label='Hotéis'], [data-menu-label='Relatórios'], [data-menu-label='Histórico'], [data-menu-label='Crew Locker'], [data-menu-label='CrewLock'], [data-menu-label='Guardian']) {
+:is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip):is([data-menu-label='Planejado x atual'], [data-menu-label='BIDS / PBS'], [data-menu-label='Regulamentação'], [data-menu-label='Assinaturas'], [data-menu-label='Concierge'], [data-menu-label='Apresentação'], [data-menu-label='Hotéis'], [data-menu-label='Relatórios'], [data-menu-label='Histórico'], [data-menu-label='Crew Locker'], [data-menu-label='CrewLock'], [data-menu-label='Guardian']) {
   --cc-atlas-tone: var(--cc-atlas-violet);
 }
-.cz-menu-section > button:is([data-menu-label='Saída Inteligente'], [data-menu-label='Meu carro'], [data-menu-label='Radar de voos'], [data-menu-label='Locais próximos'], [data-menu-label='Rotina'], [data-menu-label='Tripulação e função'], [data-menu-label='Pessoas e visitantes'], [data-menu-label='CrewCheck Life']) {
+:is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip):is([data-menu-label='Saída Inteligente'], [data-menu-label='Meu carro'], [data-menu-label='Radar de voos'], [data-menu-label='Locais próximos'], [data-menu-label='Rotina'], [data-menu-label='Tripulação e função'], [data-menu-label='Pessoas e visitantes'], [data-menu-label='CrewCheck Life']) {
   --cc-atlas-tone: var(--cc-atlas-positive);
 }
-.cz-menu-section > button:is([data-menu-label='Escala oficial'], [data-menu-label='Push iFlight'], [data-menu-label='Meteorologia'], [data-menu-label='Calendário'], [data-menu-label='Exportar'], [data-menu-label='Atualizações'], [data-menu-label='Importar escala'], [data-menu-label='Mapa do mês']) {
+:is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip):is([data-menu-label='Escala oficial'], [data-menu-label='Push iFlight'], [data-menu-label='Meteorologia'], [data-menu-label='Calendário'], [data-menu-label='Exportar'], [data-menu-label='Atualizações'], [data-menu-label='Importar escala'], [data-menu-label='Mapa do mês']) {
   --cc-atlas-tone: var(--cc-atlas-flight);
 }
-.cz-menu-section > button:is([data-menu-label='Carga de trabalho'], [data-menu-label='Despertador'], [data-menu-label='Diárias'], [data-menu-label='Salário'], [data-menu-label='Manutenção']) {
+:is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip):is([data-menu-label='Carga de trabalho'], [data-menu-label='Despertador'], [data-menu-label='Diárias'], [data-menu-label='Salário'], [data-menu-label='Manutenção']) {
   --cc-atlas-tone: var(--cc-atlas-attention);
 }
-.cz-menu-section > button:is([data-menu-label='Irregularidades'], [data-menu-label='Emergência'], [data-menu-label='Admin']) { --cc-atlas-tone: var(--cc-atlas-alert); }
-.cz-menu-section > button:is([data-menu-label='Configurações'], [data-menu-label='Manual CrewCheck'], [data-menu-label='Suporte']) { --cc-atlas-tone: var(--cc-atlas-brand-2); }
+:is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip):is([data-menu-label='Irregularidades'], [data-menu-label='Emergência'], [data-menu-label='Admin']) { --cc-atlas-tone: var(--cc-atlas-alert); }
+:is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip):is([data-menu-label='Configurações'], [data-menu-label='Manual CrewCheck'], [data-menu-label='Suporte']) { --cc-atlas-tone: var(--cc-atlas-brand-2); }
 
 .cz-menu-section:not(.cz-menu-group) > button:is(:nth-of-type(3), :nth-of-type(4), :nth-of-type(6), :nth-of-type(8), :nth-of-type(13), :nth-of-type(17), :nth-of-type(18), :nth-of-type(22), :nth-of-type(27)) { --cc-atlas-tone: var(--cc-atlas-violet); }
 .cz-menu-section:not(.cz-menu-group) > button:is(:nth-of-type(9), :nth-of-type(10), :nth-of-type(11), :nth-of-type(14), :nth-of-type(19), :nth-of-type(23), :nth-of-type(24)) { --cc-atlas-tone: var(--cc-atlas-positive); }
@@ -69,7 +71,7 @@
   grid-column: 1 / -1;
 }
 
-.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button,
+.cz-menu-panel .cz-menu-scroll :is(.cz-menu-section.cz-menu-group[data-menu-group] > button, .cz-menu-section.cz-menu-group[data-menu-group] > .cc-menu-index-row > .cc-menu-destination),
 .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button {
   min-width: 0 !important;
   grid-template-columns: 40px minmax(0, 1fr) 18px !important;
@@ -80,7 +82,8 @@
   transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
-.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button > svg:first-child,
+.cz-menu-panel .cz-menu-scroll :is(.cz-menu-section.cz-menu-group[data-menu-group] > button, .cz-menu-section.cz-menu-group[data-menu-group] > .cc-menu-index-row > .cc-menu-destination) > svg:first-child,
+.cz-menu-panel .cz-menu-scroll .cc-menu-favorite-chip > svg:first-child,
 .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button > svg:first-child {
   /* The global border-box !important rule otherwise leaves only a 6px glyph
      after 14px padding and 2px border inside the nominal 22px icon. */
@@ -94,12 +97,12 @@
   color: var(--cc-atlas-tone) !important;
 }
 
-.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button > svg:last-child,
+.cz-menu-panel .cz-menu-scroll :is(.cz-menu-section.cz-menu-group[data-menu-group] > button, .cz-menu-section.cz-menu-group[data-menu-group] > .cc-menu-index-row > .cc-menu-destination) > svg:last-child,
 .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button > svg:last-child {
   color: color-mix(in srgb, var(--cc-atlas-tone) 58%, var(--foreground-muted)) !important;
 }
 
-.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button > span strong,
+.cz-menu-panel .cz-menu-scroll :is(.cz-menu-section.cz-menu-group[data-menu-group] > button, .cz-menu-section.cz-menu-group[data-menu-group] > .cc-menu-index-row > .cc-menu-destination) > span strong,
 .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button > span strong {
   white-space: normal !important;
   overflow-wrap: normal !important;
@@ -108,14 +111,14 @@
   text-wrap: balance;
 }
 
-.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button > span small,
+.cz-menu-panel .cz-menu-scroll :is(.cz-menu-section.cz-menu-group[data-menu-group] > button, .cz-menu-section.cz-menu-group[data-menu-group] > .cc-menu-index-row > .cc-menu-destination) > span small,
 .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button > span small {
   color: var(--cc1515-dark-muted) !important;
   opacity: 1 !important;
 }
 
-.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button.active,
-.cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button:focus-visible,
+.cz-menu-panel .cz-menu-scroll :is(.cz-menu-section.cz-menu-group[data-menu-group] > button, .cz-menu-section.cz-menu-group[data-menu-group] > .cc-menu-index-row > .cc-menu-destination).active,
+.cz-menu-panel .cz-menu-scroll :is(.cz-menu-section.cz-menu-group[data-menu-group] > button, .cz-menu-section.cz-menu-group[data-menu-group] > .cc-menu-index-row > .cc-menu-destination):focus-visible,
 .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button.active,
 .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button:focus-visible {
   background: color-mix(in srgb, var(--cc-atlas-tone) 14%, var(--cc1515-dark-surface)) !important;
@@ -123,19 +126,19 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cc-atlas-tone) 18%, transparent), var(--cc-shadow-soft) !important;
 }
 
-[data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button,
+[data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll :is(.cz-menu-section.cz-menu-group[data-menu-group] > button, .cz-menu-section.cz-menu-group[data-menu-group] > .cc-menu-index-row > .cc-menu-destination),
 [data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button {
   background: var(--cc1515-light-surface) !important;
   border-color: color-mix(in srgb, var(--cc-atlas-tone) 24%, var(--cc1515-light-line)) !important;
 }
 
-[data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button > span small,
+[data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll :is(.cz-menu-section.cz-menu-group[data-menu-group] > button, .cz-menu-section.cz-menu-group[data-menu-group] > .cc-menu-index-row > .cc-menu-destination) > span small,
 [data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button > span small {
   color: var(--cc1515-light-muted) !important;
 }
 
-[data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button.active,
-[data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button:focus-visible,
+[data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll :is(.cz-menu-section.cz-menu-group[data-menu-group] > button, .cz-menu-section.cz-menu-group[data-menu-group] > .cc-menu-index-row > .cc-menu-destination).active,
+[data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll :is(.cz-menu-section.cz-menu-group[data-menu-group] > button, .cz-menu-section.cz-menu-group[data-menu-group] > .cc-menu-index-row > .cc-menu-destination):focus-visible,
 [data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button.active,
 [data-crew-theme='light'] .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button:focus-visible {
   background: color-mix(in srgb, var(--cc-atlas-tone) 10%, var(--cc1515-light-surface)) !important;
@@ -202,14 +205,14 @@ html[data-crew-theme='light'] body > .cz-bottom-nav > button.active {
 }
 
 @media (max-width: 360px) {
-  .cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button,
+  .cz-menu-panel .cz-menu-scroll :is(.cz-menu-section.cz-menu-group[data-menu-group] > button, .cz-menu-section.cz-menu-group[data-menu-group] > .cc-menu-index-row > .cc-menu-destination),
   .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button {
     grid-template-columns: 38px minmax(0, 1fr) 16px !important;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cz-menu-panel .cz-menu-scroll .cz-menu-section.cz-menu-group[data-menu-group] > button,
+  .cz-menu-panel .cz-menu-scroll :is(.cz-menu-section.cz-menu-group[data-menu-group] > button, .cz-menu-section.cz-menu-group[data-menu-group] > .cc-menu-index-row > .cc-menu-destination),
   .cz-menu-panel .cz-menu-scroll .cz-menu-section:not(.cz-menu-group) > button,
   .cz-bottom-nav > button {
     transition: none !important;

@@ -1,3 +1,5 @@
+@import './light-surface-system.css';
+
 /* The official brand and operational notice have separate, quiet surfaces.
    Normal flow is intentional: neither follows scrolling and no spacer is needed. */
 html body .cz-app[data-version] > .cz-global-header {

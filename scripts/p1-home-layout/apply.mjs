@@ -3,6 +3,7 @@ import fs from 'node:fs';
 const path = 'client/src/pages/Home.tsx';
 if (!fs.existsSync(path)) throw new Error(`[p1-home-layout] arquivo ausente: ${path}`);
 let source = fs.readFileSync(path, 'utf8');
+if (!source.includes("from '@/components/v1391/HomeRosterPreview'")) source = "import { HomeRosterPreview } from '@/components/v1391/HomeRosterPreview';\n" + source;
 
 const importLine = "import { HomeLayoutShell, type HomeLayoutSlot } from '@/components/v1391/HomeLayoutShell';";
 if (!source.includes(importLine)) {
@@ -82,7 +83,7 @@ if (!source.includes('function PersonalizedCockpit(')) {
     },
   ];
 
-  return <HomeLayoutShell slots={slots} standardContent={canonicalContent} shortcuts={<HomeFavoriteShortcuts setView={setView} openMenu={openMenu}/>}/>;
+  return <HomeLayoutShell slots={slots} quickRoster={<HomeRosterPreview events={events} onNavigate={setView}/>} standardContent={canonicalContent} shortcuts={<HomeFavoriteShortcuts setView={setView} openMenu={openMenu}/>}/>;
 }
 `;
   const wrapperAnchor = source.indexOf('\nfunction rosterCode', start);

@@ -1,0 +1,32 @@
+.cz-app[data-version] .cc-home-roster{padding:16px;border:1px solid var(--cc-review-border,#294258);border-radius:16px;background:var(--cc-review-surface,#111c2b);color:var(--cc-review-text,#edf4fb);display:grid;gap:14px}
+.cz-app[data-version] .cc-home-roster :is(h2,h3,p){margin:0;line-height:1.4;color:inherit}
+.cz-app[data-version] .cc-home-roster h2{font-size:1.2rem!important}
+.cz-app[data-version] .cc-home-roster h3{font-size:1rem!important}
+.cz-app[data-version] .cc-home-roster small,.cz-app[data-version] .cc-home-roster footer{font-size:.78rem;line-height:1.4;color:var(--cc-review-muted,#a8b8cb)}
+.cz-app[data-version] .cc-home-roster header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.cz-app[data-version] .cc-home-roster button{min-height:44px!important;height:auto!important;border:1px solid var(--cc-review-border,#294258)!important;border-radius:10px!important;background:var(--cc-review-subtle,#172537)!important;color:var(--cc-review-text,#edf4fb)!important;padding:8px!important;box-shadow:none!important;transform:none!important;white-space:normal!important}
+.cz-app[data-version] .cc-home-roster button:focus-visible{outline:3px solid #61b6ff!important;outline-offset:2px!important}
+html[data-crew-theme="light"] .cz-app[data-version] .cc-home-roster button:focus-visible{outline-color:#0b65c2!important}
+.cc-home-roster header button,.cc-home-roster-period{display:flex;align-items:center;gap:8px}
+.cc-home-roster-period strong{flex:1;text-align:center;font-size:.9rem}
+.cz-app[data-version] .cc-home-roster-period button{min-width:44px}
+.cc-home-roster-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.cz-app[data-version] .cc-home-roster-days button{display:grid;place-items:center;gap:2px;padding:6px 2px!important;min-width:0}
+.cz-app[data-version] .cc-home-roster-days button[aria-pressed="true"]{border:2px solid #3b9bed!important}
+.cc-home-roster-days button>span{height:8px;line-height:8px;color:#3b9bed}
+.cc-home-roster-list{display:grid;gap:8px}
+.cz-app[data-version] .cc-home-roster-list>button{display:grid;grid-template-columns:28px minmax(0,1fr) auto 16px;align-items:center;gap:9px;text-align:left;width:100%;min-width:0}
+.cc-home-roster-copy,.cc-home-roster-clock{display:grid;gap:2px;min-width:0}
+.cc-home-roster-copy strong{font-size:.94rem;overflow-wrap:anywhere}
+.cc-home-roster-copy>span{font-size:.85rem}
+.cc-home-roster-clock{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.cc-home-roster-clock strong{font-size:.98rem}
+.cc-home-roster-icon{color:#3b9bed}
+.cc-home-roster-list>button[data-activity="FOLGA"] .cc-home-roster-icon{color:#21a578}
+.cc-home-roster-empty{display:grid;gap:10px;justify-items:start;padding:12px 0}
+.cc-home-roster footer{border-top:1px solid var(--cc-review-border,#294258);padding-top:12px}
+@media(prefers-reduced-motion:reduce){.cc-home-roster *{transition:none!important;animation:none!important}}
+html[data-crew-theme="light"] .cz-app[data-version] .cc-home-roster{--cc-review-surface:#fff;--cc-review-subtle:#f1f5f9;--cc-review-border:#cbd5e1;--cc-review-text:#10243a;--cc-review-muted:#475569}
+
+.cz-app[data-version] .cc-home-roster .cc-home-roster-icon svg{color:#268fe0!important}
+.cz-app[data-version] .cc-home-roster [data-activity="FOLGA"] .cc-home-roster-icon svg{color:#168657!important}

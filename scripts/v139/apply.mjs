@@ -185,4 +185,7 @@ await import('../p1-home-layout/apply.mjs');
 await import('../ipad-header-recovery.mjs');
 await import('../finalize-theme-runtime.mjs');
 await import('../finalize-operational-layout.mjs');
+await import('../p1-departure-route-state/apply.mjs');
+await import('../p1-publication-review/apply.mjs');
+await import('../p1-menu-organization/apply.mjs');
 await import('../ci/sync-canonical-manual.mjs');

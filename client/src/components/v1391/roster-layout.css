@@ -626,3 +626,15 @@ html:not([data-crew-theme="light"]) .cc-aims-change-badge {
 .cc-roster-premium-v1397 .cc-roster-period-v1399 > button { padding:0 10px !important; }
 .cc-roster-premium-v1397 .cc-aims-roster > header, .cc-roster-premium-v1397 .cc-calendar-roster > header { padding:8px 12px; }
 .cc-roster-premium-v1397 .cc-roster-period-v1399 label > span, .cc-roster-premium-v1397 .cc-roster-period-v1399 label > svg { flex-shrink:0; white-space:nowrap; }
+
+/* Personal reading state; removing data-change-status restores existing semantic styling. */
+.cc-publication-history { padding:16px; }
+.cc-publication-history > div { margin:8px 0; padding:8px; border:1px solid var(--ccr-line); border-radius:12px; }
+.cc-publication-history > div[data-change-status="unread"] { background:#fef3c7; color:#422006; }
+.cc-publication-history button,.cc-publication-change button { min-height:44px; padding:8px 12px; white-space:normal; text-align:left; }
+.cc-publication-change { padding:12px; border:1px solid currentColor; border-radius:12px; }
+.cc-publication-change dl > div { display:grid; grid-template-columns:minmax(80px,1fr) minmax(0,2fr); gap:8px; padding:6px 0; }
+.cc-publication-change dd { margin:0; overflow-wrap:anywhere; }
+.cc-publication-change dd span { display:block; }
+.cc-publication-change p { white-space:normal; }
+.cc-publication-change { box-sizing:border-box; max-width:min(680px,calc(100vw - 80px)); }

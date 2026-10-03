@@ -23,6 +23,9 @@ export type HomeLayoutSlot = {
 };
 
 const modeCopy: Record<HomeMode, { label: string; detail: string }> = {
+  roster: { label: 'Escala rápida', detail: 'Consulte o dia e abra a atividade na escala detalhada.' },
+  shortcuts: { label: 'Atalhos', detail: 'Seus atalhos fixados e mais usados, com alertas essenciais.' },
+  'roster-mixed': { label: 'Escala e atalhos', detail: 'Consulta rápida da escala e seus atalhos na mesma tela.' },
   standard: { label: 'Padrão CrewCheck', detail: 'Resumo e ações na ordem recomendada.' },
   personalized: { label: 'Personalizada', detail: 'Seus atalhos primeiro, com a programação e os alertas.' },
   mixed: { label: 'Mista', detail: 'Essenciais CrewCheck com seus favoritos.' },
@@ -32,22 +35,23 @@ function copyPreference(value: HomeLayoutPreference): HomeLayoutPreference {
   return { ...value, order: [...value.order], visible: [...value.visible] };
 }
 
-export function HomeLayoutShell({ slots, standardContent, shortcuts }: { slots: HomeLayoutSlot[]; standardContent?: ReactNode; shortcuts?: ReactNode }) {
+export function HomeLayoutShell({ slots, standardContent, shortcuts, quickRoster, editorOnly = false }: { slots: HomeLayoutSlot[]; standardContent?: ReactNode; shortcuts?: ReactNode; quickRoster?: ReactNode; editorOnly?: boolean }) {
   const accountId = (() => { try { return getStoredUser()?.id || null; } catch { return null; } })();
   const [saved, setSaved] = useState(() => readHomeLayout(window.localStorage, accountId));
   const [draft, setDraft] = useState(() => copyPreference(saved));
   const wasEditingRef = useRef(false);
   const personalizeRef = useRef<HTMLButtonElement>(null);
   const radioRefs = useRef<Partial<Record<HomeMode, HTMLButtonElement>>>({});
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(editorOnly);
   const [status, setStatus] = useState('');
   const slotById = useMemo(() => new Map(slots.map((slot) => [slot.id, slot])), [slots]);
   const preference = editing ? draft : saved;
   const rendered = visibleHomeSlots(preference, slots.map((slot) => slot.id));
   useEffect(() => {
     const next = readHomeLayout(window.localStorage, accountId);
-    setSaved(next); setDraft(copyPreference(next)); setEditing(false); setStatus('');
-  }, [accountId]);
+    setSaved(next); setDraft(copyPreference(next)); setEditing(editorOnly); setStatus('');
+  }, [accountId, editorOnly]);
+  useEffect(() => { const refresh = () => { if (!editorOnly) { const next = readHomeLayout(window.localStorage, accountId); setSaved(next); setDraft(copyPreference(next)); } }; window.addEventListener("crewcheck:personalization", refresh); return () => window.removeEventListener("crewcheck:personalization", refresh); }, [accountId, editorOnly]);
 
   useEffect(() => {
     if (editing) radioRefs.current[draft.mode]?.focus();
@@ -55,7 +59,7 @@ export function HomeLayoutShell({ slots, standardContent, shortcuts }: { slots: 
     wasEditingRef.current = editing;
   }, [editing]);
 
-  function cancel() { setEditing(false); }
+  function cancel() { setDraft(copyPreference(saved)); if (!editorOnly) setEditing(false); }
 
   function selectWithKeyboard(event: React.KeyboardEvent<HTMLButtonElement>, mode: HomeMode) {
     const modes = Object.keys(modeCopy) as HomeMode[];
@@ -72,6 +76,7 @@ export function HomeLayoutShell({ slots, standardContent, shortcuts }: { slots: 
   }
 
   function beginEdit() {
+    if (!editorOnly) { window.dispatchEvent(new CustomEvent("crewcheck:open-menu", {detail:{personalize:true}})); return; }
     setDraft(copyPreference(saved));
     setStatus('');
     setEditing(true);
@@ -105,7 +110,8 @@ export function HomeLayoutShell({ slots, standardContent, shortcuts }: { slots: 
       return;
     }
     setSaved(next);
-    setEditing(false);
+    setEditing(editorOnly);
+    window.dispatchEvent(new Event("crewcheck:personalization"));
     setStatus('Preferência salva nesta conta e neste dispositivo.');
   }
 
@@ -117,7 +123,8 @@ export function HomeLayoutShell({ slots, standardContent, shortcuts }: { slots: 
     }
     setSaved(next);
     setDraft(copyPreference(next));
-    setEditing(false);
+    setEditing(editorOnly);
+    window.dispatchEvent(new Event("crewcheck:personalization"));
     setStatus('Padrão CrewCheck restaurado.');
   }
 
@@ -128,7 +135,7 @@ export function HomeLayoutShell({ slots, standardContent, shortcuts }: { slots: 
     </header>
 
     {editing && <section className="cc-home-layout-editor" aria-labelledby="cc-home-layout-editor-title">
-      <header><div><small>PRÉVIA E PREFERÊNCIAS</small><h2 id="cc-home-layout-editor-title">Como você quer começar?</h2></div><button type="button" className="icon" onClick={cancel} aria-label="Cancelar personalização"><X/></button></header>
+      <header><div><small>PRÉVIA E PREFERÊNCIAS</small><h2 id="cc-home-layout-editor-title">Como você quer começar?</h2></div>{!editorOnly && <button type="button" className="icon" onClick={cancel} aria-label="Cancelar personalização"><X/></button>}</header>
       <div className="cc-home-mode-options" role="radiogroup" aria-label="Modo da tela inicial">
         {(Object.keys(modeCopy) as HomeMode[]).map((mode) => <button key={mode} type="button" role="radio" ref={(element) => { if (element) radioRefs.current[mode] = element; }} tabIndex={draft.mode === mode ? 0 : -1} onKeyDown={(event) => selectWithKeyboard(event, mode)} aria-checked={draft.mode === mode} data-active={draft.mode === mode ? 'true' : 'false'} onClick={() => setDraft((current) => ({ ...current, mode }))}>
           <span>{draft.mode === mode && <Check aria-hidden="true"/>}</span><b>{modeCopy[mode].label}</b><small>{modeCopy[mode].detail}</small>
@@ -151,11 +158,14 @@ export function HomeLayoutShell({ slots, standardContent, shortcuts }: { slots: 
 
     <p className="cc-home-layout-status" role="status" aria-live="polite">{status}</p>
     <div className="cc-home-layout-content">
-      {preference.mode === 'personalized' && shortcuts}
-      {(preference.mode === 'standard' || preference.mode === 'mixed') && standardContent
+      {(preference.mode === 'personalized' || preference.mode === 'shortcuts') && shortcuts}
+      {preference.mode === 'shortcuts' ? <>{['summary', 'limits'].map(id => <div key={id} data-home-slot={id}>{slotById.get(id as HomeSlotId)?.content}</div>)}</>
+        : (preference.mode === 'roster' || preference.mode === 'roster-mixed') && quickRoster
+        ? <><div data-home-slot="next">{quickRoster}</div>{['summary', 'limits'].map(id => <div key={id} data-home-slot={id}>{slotById.get(id as HomeSlotId)?.content}</div>)}</>
+        : (preference.mode === 'standard' || preference.mode === 'mixed' || preference.mode === 'roster') && standardContent
         ? standardContent
         : rendered.map((id) => <div key={id} data-home-slot={id}>{slotById.get(id)?.content}</div>)}
-      {preference.mode === 'mixed' && shortcuts}
+      {(preference.mode === 'mixed' || preference.mode === 'roster-mixed') && shortcuts}
     </div>
   </section>;
 }

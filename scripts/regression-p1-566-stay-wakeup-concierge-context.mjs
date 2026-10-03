@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import ts from 'typescript';
 
 const read = (path) => fs.readFileSync(path, 'utf8');
 const home = read('client/src/pages/Home.tsx');
@@ -39,7 +40,22 @@ const navigationRuntime = navigation.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\
 assert.doesNotMatch(navigationRuntime, /localStorage|sessionStorage/, 'Navigation Context deve continuar somente em memória');
 
 // Privacy: the context carries the stay id/date/airport, not room, hotel payload, tokens or raw roster.
-const contextCall = home.match(/setPendingNavigationContext\(\{[\s\S]*?policy: 'persistent-until-return',[\s\S]*?\}\);/)?.[0] || '';
+const ast = ts.createSourceFile('Home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+let stayFunction;
+function findStay(node) {
+  if (ts.isFunctionDeclaration(node) && node.name?.text === 'openStaySurface') stayFunction = node;
+  ts.forEachChild(node, findStay);
+}
+findStay(ast);
+assert.ok(stayFunction, 'função de navegação do pernoite ausente');
+const calls = [];
+function collectContext(node) {
+  if (ts.isCallExpression(node) && node.expression.getText(ast) === 'setPendingNavigationContext') calls.push(node);
+  ts.forEachChild(node, collectContext);
+}
+collectContext(stayFunction);
+assert.equal(calls.length, 1, 'pernoite deve publicar exatamente um contexto');
+const contextCall = calls[0].getText(ast);
 assert.ok(contextCall, 'depósito de Navigation Context do pernoite não localizado');
 assert.doesNotMatch(contextCall, /room|hotelName|address|token|email|cpf|rawText|roster:/i, 'contexto de navegação não deve transportar dado sensível ou payload canônico');
 

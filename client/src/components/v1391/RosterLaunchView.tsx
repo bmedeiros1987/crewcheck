@@ -1,5 +1,6 @@
 import { rosterDisplayCompare, rosterDisplayIso, rosterInstantIso, rosterLabelDate, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { useEffect, useMemo, useState } from 'react';
+import { peekPendingNavigationContext } from '@/lib/navigationContext';
 import { consumePendingRosterFocus } from '@/lib/rosterFocus';
 import {
   Banknote,
@@ -242,15 +243,18 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
   const currentMonth = isoFromDate(new Date()).slice(0, 7);
   const [selectedMonth, setSelectedMonth] = useState(() => months.includes(currentMonth) ? currentMonth : months[0] || currentMonth);
   const [selectedDay, setSelectedDay] = useState('');
+  const [focusedEventId,setFocusedEventId] = useState<string>();
   const [pendingRosterFocusIso, setPendingRosterFocusIso] = useState<string | null>(null);
   const [rosterFocusStatus, setRosterFocusStatus] = useState('');
   useEffect(() => {
     if (months.length && !months.includes(selectedMonth)) setSelectedMonth(months.includes(currentMonth) ? currentMonth : months[0]);
   }, [months.join('|'), selectedMonth, currentMonth]);
   useEffect(() => {
+    const context = peekPendingNavigationContext('roster');
     const focus = consumePendingRosterFocus();
-    if (!focus) return;
-    const focusedEvent = allOrdered.find(event => dateOf(event).getTime() === focus.getTime());
+    if (!focus && !context?.programId) return;
+    const focusedEvent = context?.programId ? allOrdered.find(event => event.id === context.programId) : allOrdered.find(event => dateOf(event).getTime() === focus?.getTime());
+    if (context?.sourceView === 'home-roster') { choose('aims', 'day'); setFocusedEventId(focusedEvent?.id); }
     const iso = focusedEvent ? isoOf(focusedEvent) : '';
     if (!iso) { setRosterFocusStatus('A data operacional da programação não está confirmada. Consulte os itens com data não confirmada.'); return; }
     const month = iso.slice(0, 7);
@@ -387,11 +391,11 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
     {unconfirmed.length > 0 && <section className="cc-roster-unconfirmed" aria-label="Programações com data não confirmada">
       <h2>Data não confirmada</h2>
       <p>{unconfirmed.length} programações não puderam ser posicionadas no mês ou dia. Os dados e detalhes permanecem disponíveis abaixo; confirme a data na fonte.</p>
-      <AimsRosterTable events={unconfirmed} dayView title="Programações com data não confirmada"/>
+      <AimsRosterTable events={unconfirmed} showHistory={false} focusEventId={focusedEventId} dayView title="Programações com data não confirmada"/>
     </section>}
 
     {layout === 'aims' && timedEvents.length
-      ? <AimsRosterTable events={timedEvents} dayView={zoom === 'day'}/>
+      ? <AimsRosterTable events={timedEvents} focusEventId={focusedEventId} dayView={zoom === 'day'}/>
       : layout === 'calendar' && ordered.length
         ? <CalendarRosterView events={ordered} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>
         : <section className="cc-roster-days-v1397" data-roster-layout={layout}>
@@ -483,7 +487,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
     {layout !== 'calendar' && civilOnlyEvents.length > 0 && <section className="cc-roster-unconfirmed" aria-label="Programações sem instante confirmado">
       <h2>Data publicada, horário a confirmar</h2>
       <p>Estas programações têm data confirmada, mas não têm um instante confirmado para posicioná-las na sequência das jornadas. Estão listadas por data publicada.</p>
-      <AimsRosterTable events={civilOnlyEvents} dayView={zoom === 'day'} title="Programações sem instante confirmado"/>
+      <AimsRosterTable events={civilOnlyEvents} showHistory={false} focusEventId={focusedEventId} dayView={zoom === 'day'} title="Programações sem instante confirmado"/>
     </section>}
 
     <details className="cc-roster-compact-legend"><summary>Legenda das programações</summary>
