@@ -56,11 +56,16 @@ import * as icons from 'lucide-react';
 import { setCrewCheckThemePreference } from '${path.join(output, 'theme-runtime.js')}';
 window.applyMenuTestTheme = mode => setCrewCheckThemePreference(mode);
 import * as menuPreference from '${path.resolve('client/src/lib/menuPreference.ts').replace(/\\/g, '/')}';
+import * as menuUsage from '${path.resolve('client/src/lib/menuUsagePreference.ts')}';
+import * as menuNested from '${path.resolve('client/src/lib/menuNestedSearch.ts')}';
+import { MenuPersonalization } from '${path.resolve('client/src/components/v1391/MenuPersonalization.tsx')}';
+import { setPendingNavigationContext } from '${path.resolve('client/src/lib/navigationContext.ts')}';
 const code = ${JSON.stringify(menuCode)};
 window.__account = 'account-a';
+localStorage.setItem('crewcheck_auth_user', JSON.stringify({id:'account-a',role:'admin'}));
 window.__nav = [];
 const scope = {
-  React, ...React, ...icons, ...menuPreference, HomeIcon: icons.Home, MapIcon: icons.Map,
+  React, ...React, ...icons, ...menuPreference, ...menuUsage, ...menuNested, MenuPersonalization, setPendingNavigationContext, HomeIcon: icons.Home, MapIcon: icons.Map,
   storage: { get: (_k, f) => f, set: () => {} },
   getStoredUser: () => window.__account ? { id: window.__account, name: 'Tripulante ' + window.__account, email: 'demo@example.invalid' } : null,
   isAdmin: () => true,
@@ -71,14 +76,14 @@ function Harness() {
   const [account, setAccount] = React.useState('account-a');
   const [view, setView] = React.useState('roster');
   const [open, setOpen] = React.useState(false);
-  window.__setAccount = (id) => { window.__account = id; setAccount(id); };
+  window.__setAccount = (id) => { window.__account = id; if(id) localStorage.setItem('crewcheck_auth_user',JSON.stringify({id,role:'admin'})); else localStorage.removeItem('crewcheck_auth_user'); setAccount(id); };
   return React.createElement('${rootTag}', { ...${JSON.stringify(rootProps)}, 'data-view': view, 'data-menu-open': String(open), 'data-account': account },
     React.createElement('button', { className: 'menu-trigger', onClick: () => setOpen(true) }, 'Abrir menu'),
     React.createElement(MenuDrawer, { open, close: () => { window.__nav.push('close'); setOpen(false); }, view, setView: (v) => { window.__nav.push(v); setView(v); }, actions: { logout: () => {} } }));
 }
 createRoot(document.getElementById('root')).render(React.createElement(Harness));
 `;
-await build({ stdin: { contents: entry, resolveDir: path.resolve('.'), loader: 'jsx' }, bundle: true, format: 'iife', outfile: path.join(output, 'menu-app.js'), define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'error' });
+await build({ stdin: { contents: entry, resolveDir: path.resolve('.'), loader: 'jsx' }, bundle: true, jsx: 'automatic', format: 'iife', outfile: path.join(output, 'menu-app.js'), define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'error' });
 const index = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
 const links = [...index.matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/g)].map((m) => m[0]).join('\n');
 fs.writeFileSync(path.join(output, 'menu.html'), `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">${links}</head><body><div id="root"></div><script src="./menu-app.js"></script></body></html>`);
@@ -96,12 +101,14 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const url = `http://127.0.0.1:${server.address().port}`;
 const require = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || import.meta.url);
 const { chromium } = require('playwright');
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? {executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE} : {}) });
 
 const matrix = [
   { name: 'phone-small', width: 320, height: 740, touch: true },
   { name: 'phone-portrait', width: 360, height: 800, touch: true },
   { name: 'phone-landscape', width: 844, height: 390, touch: true },
+  { name: 'ipad-portrait', width: 768, height: 1024, touch: true },
+  { name: 'ipad-landscape', width: 1024, height: 768, touch: true },
   { name: 'desktop', width: 1440, height: 900, touch: false },
 ];
 const themedMatrix = matrix.flatMap(device => ['dark', 'light'].map(theme => ({ ...device, name: device.name + '-' + theme, theme })));
@@ -113,7 +120,7 @@ try {
     await context.route('**/*', (route) => route.request().url().startsWith(url) ? route.continue() : route.abort());
     const page = await context.newPage();
     const errors = [];
-    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('pageerror', (e) => { errors.push(e.message); console.error('Menu harness:', e.message); });
     page.on('response', response => { if (response.status() >= 400) errors.push('HTTP ' + response.status() + ' ' + new URL(response.url()).pathname); });
     await page.goto(url, { waitUntil: 'networkidle' });
     await page.waitForFunction(() => typeof window.applyMenuTestTheme === 'function');
@@ -130,6 +137,22 @@ try {
     const stars = () => page.locator('.cc-menu-favorite').count();
     const snap = (name) => page.screenshot({ path: path.join(output, `${device.name}-${name}.png`), animations: 'disabled' });
     const readableFavorites = async () => {
+      // Exercise shipped semantic CSS through the actual 5S row wrapper and chips.
+      const semantic = await page.locator('.cc-menu-destination, .cc-menu-favorite-chip').evaluateAll(els => {
+        const expected = { 'FlightDeck': '--cz-pink', 'Escala oficial': '--event-flight', 'Meteorologia': '--event-flight', 'Planejado x atual': '--event-reserve', 'Saída Inteligente': '--event-conforme', 'Despertador': '--event-layover', 'Emergência': '--event-alert', 'Configurações': '--cz-purple' };
+        return els.map(e => {
+          const icon = e.querySelector('svg'), style = getComputedStyle(icon);
+          const probe = document.createElement('i'); probe.style.color = `var(${expected[e.dataset.menuLabel] || '--cc-atlas-tone'})`; e.append(probe);
+          const color = getComputedStyle(probe).color; probe.remove();
+          return { label: e.dataset.menuLabel, color: style.color, expected: color,
+            tone: getComputedStyle(e).getPropertyValue('--cc-atlas-tone').trim(),
+            badge: icon.getBoundingClientRect().width,
+            wrapped: !e.classList.contains('cc-menu-destination') || e.parentElement.classList.contains('cc-menu-index-row') };
+        });
+      });
+      check(semantic.every(e => e.wrapped), label('canonical 5S destination row wrapper missing'));
+      check(semantic.every(e => e.tone && e.color === e.expected && e.badge >= 38), label('semantic icon tone/badge lost: ' + semantic.filter(e => !e.tone || e.color !== e.expected || e.badge < 38).map(e => e.label).join(', ')));
+      if (semantic.length === 40) check(new Set(semantic.map(e => e.color)).size === 7, label('seven semantic tones must remain across catalog and favorites'));
       const clipped = await page.locator('.cc-menu-favorite-chip span').evaluateAll(els => els.filter(el => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1).map(el => el.textContent));
       check(clipped.length === 0, label('favorite labels clipped: ' + clipped.join(', ')));
       const undersized = await page.locator('.cc-menu-favorite').evaluateAll(els => els.some(el => { const r=el.getBoundingClientRect(); return r.width < 44 || r.height < 44; }));
@@ -146,6 +169,14 @@ try {
     check(new Set([...initialChips, ...initialRows]).size === 40, label('every destination exactly once'));
     check(!initialRows.some((r) => initialChips.includes(r)), label('catalog repeats a favorite'));
     check(await stars() === 0, label('stars visible outside edit mode'));
+    const searchInput = page.locator('.cc-menu-search input');
+    await searchInput.focus();
+    if (device.theme === 'light') {
+      const field = await searchInput.evaluate(e => { const s = getComputedStyle(e), outer = getComputedStyle(e.closest('label')); return { border: s.borderWidth, background: s.backgroundColor, image: s.backgroundImage, shadow: s.boxShadow, innerFocus: s.outlineWidth, focus: outer.outlineWidth, style: outer.outlineStyle }; });
+      check(field.border === '0px' && field.background === 'rgba(0, 0, 0, 0)' && field.image === 'none' && field.shadow === 'none', label('light search must have one outer surface'));
+      check(field.innerFocus === '0px' && field.focus === '2px' && field.style === 'solid', label('light search must have one visible outer focus ring'));
+    }
+    await page.locator('.cz-menu-close').focus();
     await readableFavorites();
     check(await page.locator('.cz-menu-brandmark img').evaluateAll(els => els.every(el => el.complete && el.naturalWidth > 0)), label('brand image loaded'));
     await snap('1-default');

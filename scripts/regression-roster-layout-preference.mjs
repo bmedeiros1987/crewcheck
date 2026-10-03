@@ -29,7 +29,7 @@ const prepared = fs.readFileSync('client/src/components/v1391/RosterLaunchView.t
 assert.ok(prepared.includes('data-roster-layout={layout}'), 'selector must survive canonical preparation');
 assert.match(prepared, /<select aria-label="Formato da escala" value=\{layout\}/, 'native picker exposes current value and accessible name');
 for (const layout of ['cards','list','aims','calendar']) assert.ok(prepared.includes(`<option value="${layout}">`), `missing native option ${layout}`);
-assert.ok(prepared.includes("<AimsRosterTable events={timedEvents} dayView={zoom === 'day'}/>"), 'AIMS must use its own renderer');
+assert.match(prepared, /<AimsRosterTable events=\{timedEvents\}[^>]*dayView=\{zoom === 'day'\}/, 'AIMS must use its own renderer and preserve day zoom');
 assert.ok(prepared.includes('<CalendarRosterView events={ordered} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>'), 'calendar must use its own renderer');
 
 assert.ok(prepared.includes('data-roster-iso={group.iso}'), 'date navigation remains reachable');

@@ -7,7 +7,7 @@ assert.ok(home.includes('const routeDistanceMeters = Number(route?.distanceMeter
 assert.ok(home.includes('const hasValidRouteDistance = Number.isFinite(routeDistanceMeters) && routeDistanceMeters > 0;'), 'rota válida exige distância finita e positiva');
 assert.ok(home.includes('const distanceKm = hasValidRouteDistance ? routeDistanceMeters / 1000 : null;'), 'ausência de rota da Saída Inteligente deve virar null');
 assert.ok(home.includes("route ? 'Rota indisponível' : 'Calculando rota'"), 'UI deve distinguir carregando de indisponível');
-assert.ok(home.includes("const trafficText = !route"), 'trânsito deve possuir estado de carregamento explícito');
+assert.ok(home.includes("routeState === 'pending' || !route"), 'trânsito deve possuir estado de carregamento explícito');
 assert.ok(home.includes("'Trânsito indisponível'"), 'falha de trânsito deve ser apresentada sem inventar ETA');
 
 const protectedBlockStart = home.indexOf('const routeDistanceMeters = Number(route?.distanceMeters);');

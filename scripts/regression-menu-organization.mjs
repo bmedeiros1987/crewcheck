@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+async function load(file){const result=await build({entryPoints:[file],bundle:true,write:false,format:'esm',platform:'node'});return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);}
+const usage=await load('client/src/lib/menuUsagePreference.ts');
+const preferences=await load('client/src/lib/menuPreference.ts');
+const home=await load('client/src/lib/homeLayoutPreference.ts');
+const search=await load('client/src/lib/menuNestedSearch.ts');
+const stay=await load('client/src/lib/stayDisplayOrder.ts');
+const values=new Map(),storage={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
+const allowed=['roster','radar','departure','hotels','settings'];
+assert.equal(usage.recordMenuUse(storage,null,'hotels',allowed),false);
+assert.equal(usage.recordMenuUse(storage,'A','admin',allowed),false);
+usage.recordMenuUse(storage,'A','hotels',allowed);usage.recordMenuUse(storage,'A','hotels',allowed);usage.recordMenuUse(storage,'A','settings',allowed);
+assert.deepEqual(usage.suggestedMenuShortcuts(storage,'A',allowed),['roster','radar','departure','hotels','settings']);
+assert.deepEqual(usage.readMenuUsage(storage,'B',allowed),{});
+preferences.saveMenuFavorites(storage,'A',allowed,['hotels','roster']);
+assert.deepEqual(usage.suggestedMenuShortcuts(storage,'A',allowed),['hotels','roster','settings']);
+assert.equal(usage.suggestedMenuShortcuts(storage,'A',['roster']).includes('hotels'),false);
+assert.equal(usage.resetMenuUsage(storage,'A'),true);assert.deepEqual(preferences.readMenuFavorites(storage,'A',allowed),['hotels','roster']);
+values.set(usage.menuUsageKey('A'),'{bad');assert.deepEqual(usage.readMenuUsage(storage,'A',allowed),{});
+for(const mode of ['roster','shortcuts','roster-mixed']){assert.equal(home.saveHomeLayout(storage,'A',{...home.DEFAULT_HOME_LAYOUT,mode}),true);assert.equal(home.readHomeLayout(storage,'A').mode,mode);assert.equal(home.readHomeLayout(storage,'B').mode,'standard');}
+assert.equal(search.searchMenuTargets('telefone despertador',['settings'])[0].id,'wakeup-phone');
+assert.equal(search.searchMenuTargets('configuracoes localizacao',['settings'])[0].id,'location');
+assert.equal(search.searchMenuTargets('claro',[]).length,0);assert.equal(search.searchMenuTargets('admin',['settings']).length,0);
+const event=(id,start,end,kind='stay')=>({id,kind,canonical:{startDateTime:start,endDateTime:end}});
+const now=Date.parse('2026-11-01T02:00:00Z');
+const current=event('current','2026-10-31T23:00:00Z','2026-11-01T04:00:00Z');
+const next=event('next','2026-11-01T05:00:00Z','2026-11-01T11:00:00Z');
+const old=event('old','2026-10-31T04:00:00Z','2026-10-31T12:00:00Z');
+const unknown=event('unknown','2026-11-01T01:00:00','2026-11-01T07:00:00');
+const input=Object.freeze([next,unknown,old,current]);const ordered=stay.orderStayDisplay(input,now);
+assert.deepEqual(ordered.events.map(e=>e.id),['current','next','old','unknown']);assert.equal(ordered.recommended,current);assert.equal(input[0],next);
+assert.equal(stay.orderStayDisplay(input,Date.parse('2026-11-01T04:00:00Z')).recommended,next,'end exclusive, no invented +8h');
+const overlap=stay.orderStayDisplay([...input,event('overlap','2026-11-01T01:00:00Z','2026-11-01T03:00:00Z')],now);assert.equal(overlap.ambiguous,true);assert.equal(overlap.recommended,null);
+assert.equal(stay.orderStayDisplay([event('flight','2026-10-31T23:00:00Z','2026-11-01T04:00:00Z','flight')],now).recommended,null);
+assert.equal(stay.orderStayDisplay([unknown,old],now).recommended,null);assert.match(ordered.label('unknown'),/não confirmado/);
+const futureOverlap=stay.orderStayDisplay([next,event('next2','2026-11-01T05:00:00Z','2026-11-01T12:00:00Z')],now);assert.equal(futureOverlap.recommended,null);assert.equal(futureOverlap.ambiguous,true);
+console.log('PASS: account-local fixed/usage shortcuts, permissions, preference modes, nested search, canonical current/next stays, ambiguity and midnight/month boundary');

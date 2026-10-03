@@ -70,9 +70,35 @@
 .cc-weather-alert-policy h2 { color: var(--cc-text); }
 
 .cc-weather-station > header small { color: var(--cc-text-muted); }
-.cc-weather-status { color: var(--cc-success); background: color-mix(in srgb, var(--cc-success) 12%, var(--cc-surface-raised)); }
-.severity-2 .cc-weather-status { color: #92400e; background: #fef3c7; }
-.severity-3 .cc-weather-status { color: #991b1b; background: #fee2e2; }
+/* Keep each compact alert's foreground/background together. The legacy dark
+   theme applies `color: inherit` to every .cz-app descendant; component scope
+   must outrank that rule without recoloring the station's ordinary content.
+   Opaque pairs also remain readable on nested cards in either theme. */
+html .cz-app .cc-weather-station {
+  --cc-weather-alert-ink: #065f46;
+  --cc-weather-alert-fill: #d1fae5;
+}
+html .cz-app .cc-weather-station.severity-1 {
+  --cc-weather-alert-ink: #075985;
+  --cc-weather-alert-fill: #e0f2fe;
+}
+html .cz-app .cc-weather-station.severity-2 {
+  --cc-weather-alert-ink: #92400e;
+  --cc-weather-alert-fill: #fef3c7;
+}
+html .cz-app .cc-weather-station.severity-3 {
+  --cc-weather-alert-ink: #991b1b;
+  --cc-weather-alert-fill: #fee2e2;
+}
+html .cz-app .cc-weather-station .cc-weather-status {
+  color: var(--cc-weather-alert-ink);
+  background: var(--cc-weather-alert-fill);
+}
+html .cz-app .cc-weather-station .cc-weather-hazards > span {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
 
 .cc-weather-report { border-top-color: var(--cc-border); }
 .cc-weather-report pre {

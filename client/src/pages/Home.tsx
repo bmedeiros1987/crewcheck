@@ -1385,8 +1385,12 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', margin = 25, onRoute,
     return () => { alive = false; };
   }, [event.id, event.presentation, origin, destination, mapsMode, margin]);
   useEffect(() => {
+    // Pending/failed responses do not establish a new traffic incident.
+    if (!route?.ok) return;
     const incidents = route?.incidents || [];
-    const fingerprint = incidents.map((item) => `${item.id || item.title}:${item.severity}:${item.delaySeconds || 0}`).join('|');
+    // Arrival delay is refreshed independently; a few seconds or a different
+    // provider ordering do not turn the same incident into a new alert.
+    const fingerprint = incidents.map((item) => JSON.stringify([item.id || item.title, item.category, item.severity, Boolean(item.roadClosure)])).sort().join('|');
     if (!fingerprint) return;
     // Persisted across mounts/reloads (not just component-scoped) so a remount of the
     // same still-active incident does not re-alert; only a genuine fingerprint change does.
