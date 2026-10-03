@@ -132,11 +132,25 @@ def validate(bundletool, output):
     print('PASS: actual signed mobile AAB, manifest, upload certificate and provenance')
 
 
+def write_receipt(path, receipt, initial=False):
+    # Flush intent before the network boundary; updates are atomic on this runner.
+    target = path if initial else path.with_suffix('.tmp')
+    with target.open('x' if initial else 'w') as stream:
+        json.dump(receipt, stream, indent=2)
+        stream.write('\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+    if not initial:
+        target.replace(path)
+
+
 def publish(root):
     guard()
     assert os.environ.get('PUBLISH_MOBILE_INTERNAL') == 'true', 'Explicit publication opt-in required'
     check_ci()
     out = Path(root)
+    receipt_path = out / 'mobile-commit-receipt.json'
+    assert not receipt_path.exists(), 'Prior commit intent exists; reconcile it before any retry'
     evidence = json.loads((out / 'mobile-release.json').read_text())
     policy = json.loads((out / 'resolved-release-policy.json').read_text())
     spec = policy['artifacts']['app']
@@ -151,7 +165,8 @@ def publish(root):
     session = play_session()
     base = f'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{PACKAGE}/edits'
     edit = api(session, 'POST', base, json={})['id']
-    url, committed = base + '/' + edit, False
+    url, commit_attempted = base + '/' + edit, False
+    commit_error = None
     try:
         tracks, codes = collect_live_codes(session, url)
         assert evidence['versionCode'] > max(codes + [policy['knownMaxVersionCode'][PACKAGE]]), 'Version raced another release; rebuild with fresh allocation'
@@ -166,26 +181,66 @@ def publish(root):
         staged = api(session, 'GET', url + '/tracks')['tracks']
         assert other_tracks(staged, track['track']) == other_tracks(tracks, track['track']), 'Non-mobile track changed'
         assert {str(v) for r in select_track(staged)['releases'] for v in r['versionCodes']} == set(payload['releases'][0]['versionCodes']), 'Retained versions mismatch'
-        # Never fall back to automatic review submission. A required review-mode change needs coordination.
-        api(session, 'POST', url + ':commit', params={'changesNotSentForReview': 'true'})
-        committed = True
-        (out / 'mobile-commit-receipt.json').write_text(json.dumps({'sourceSha': SOURCE_SHA, 'versionCode': evidence['versionCode'], 'track': track['track'], 'committed': True, 'verified': False}, indent=2) + '\n')
+        # Preserve both in-review work and ambiguous commit outcomes. Never retry
+        # commit, switch review mode, or delete the release edit after this boundary.
+        receipt = dict(sourceSha=SOURCE_SHA, package=PACKAGE, editId=edit,
+            versionCode=evidence['versionCode'], sha256=evidence['sha256'],
+            track=track['track'], expectedTrack=payload,
+            otherTracksBefore=other_tracks(tracks, track['track']),
+            committed=None, acknowledged=False, verified=False, state='pending')
+        write_receipt(receipt_path, receipt, initial=True)
+        commit_attempted = True
+        try:
+            api(session, 'POST', url + ':commit', params={
+                'changesNotSentForReview': 'true',
+                'changesInReviewBehavior': 'ERROR_IF_IN_REVIEW',
+            })
+        except Exception as error:
+            commit_error = error
+            receipt.update(state='unknown', errorType=type(error).__name__)
+        else:
+            receipt.update(committed=True, acknowledged=True, state='acknowledged')
+        write_receipt(receipt_path, receipt)
     finally:
-        if not committed:
+        if not commit_attempted:
             api(session, 'DELETE', url)
-    # A commit acknowledgement alone is not proof of the final track state.
-    verify_id = api(session, 'POST', base, json={})['id']
-    verify_url = base + '/' + verify_id
+    if commit_error is not None:
+        # Opening another edit would invalidate an uncommitted original edit.
+        # Collect only read-only release summaries; their bounded listing is
+        # evidence for reconciliation, not proof of complete live track parity.
+        receipt['releaseSummaries'] = {}
+        for known_track in tracks:
+            name = known_track['track']
+            releases_url = f'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{PACKAGE}/tracks/{quote(name, safe="")}/releases'
+            try:
+                receipt['releaseSummaries'][name] = api(session, 'GET', releases_url)
+            except Exception as error:
+                receipt['releaseSummaries'][name] = {'readErrorType': type(error).__name__}
+        receipt.update(state='reconciliation_required', verified=False)
+        write_receipt(receipt_path, receipt)
+        raise RuntimeError('Commit response uncertain; read-only evidence saved. Coordinate reconciliation before retry; original edit was not replaced or deleted') from commit_error
+    # Acknowledgement permits a new edit to verify the complete track snapshot.
+    verify_url = None
     try:
+        verify_id = api(session, 'POST', base, json={})['id']
+        verify_url = base + '/' + verify_id
         final = api(session, 'GET', verify_url + '/tracks')['tracks']
-        assert other_tracks(final, track['track']) == other_tracks(tracks, track['track']), 'Post-commit other-track drift; report, never rollback automatically'
+        receipt['observedTracks'] = final
+        assert other_tracks(final, track['track']) == other_tracks(tracks, track['track']), 'Post-commit other-track drift'
         current = select_track(final)
-        assert {str(v) for r in current['releases'] for v in r['versionCodes']} == set(payload['releases'][0]['versionCodes'])
-        result = dict(evidence, committed=True, verifiedTrack=track['track'], retainedVersionCodes=payload['releases'][0]['versionCodes'], testUrl='https://play.google.com/apps/testing/' + PACKAGE, testerEligibility='Not verified; existing tester access only')
+        assert {str(v) for r in current['releases'] for v in r['versionCodes']} == set(payload['releases'][0]['versionCodes']), 'Target track not reconciled'
+        receipt.update(committed=True, verified=True, state='reconciled')
+        write_receipt(receipt_path, receipt)
+        result = dict(evidence, committed=True, commitAcknowledged=receipt['acknowledged'], verifiedTrack=track['track'], retainedVersionCodes=payload['releases'][0]['versionCodes'], testUrl='https://play.google.com/apps/testing/' + PACKAGE, testerEligibility='Not verified; existing tester access only')
         (out / 'mobile-internal-result.json').write_text(json.dumps(result, indent=2) + '\n')
         print(json.dumps(result))
+    except Exception as error:
+        receipt.update(state='reconciliation_required', verified=False, reconciliationErrorType=type(error).__name__)
+        write_receipt(receipt_path, receipt)
+        raise RuntimeError('Commit outcome requires coordination; preserve evidence, do not retry or roll back automatically') from (commit_error or error)
     finally:
-        api(session, 'DELETE', verify_url)
+        if verify_url:
+            api(session, 'DELETE', verify_url)
 
 
 def main():
