@@ -298,9 +298,13 @@ export async function listConnections() {
   return authFetch<any>('/api/platform/connections');
 }
 
-export async function requestConnection(identifier: string) {
+export async function requestConnection(identifier: string, reinvite = false) {
   const value = String(identifier || '').trim();
-  return authFetch<any>('/api/platform/connections', { method: 'POST', body: JSON.stringify(value.includes('@') ? { email: value, chat: true } : { publicId: value, chat: true }) });
+  return authFetch<any>('/api/platform/connections', { method: 'POST', body: JSON.stringify(value.includes('@') ? { email: value, chat: true, reinvite } : { publicId: value, chat: true, reinvite }) });
+}
+
+export async function revokeConnection(id: string) {
+  return authFetch<any>('/api/platform/connections', { method: 'PATCH', body: JSON.stringify({ id, status: 'revoked' }) });
 }
 
 export async function answerConnection(id: string, accepted: boolean) {

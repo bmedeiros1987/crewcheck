@@ -1,11 +1,12 @@
 import { consumePendingNavigationContext } from '@/lib/navigationContext';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { AlertTriangle, ArrowLeft, Check, Copy, Crown, KeyRound, Link2, Loader2, Lock, Mail, MessageCircle, QrCode, RefreshCcw, Send, ShieldCheck, Smartphone, UserPlus, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import '../../platform-v13-8.css';
 import {
   answerConnection,
+  revokeConnection,
   acknowledgeGooglePlayPurchase,
   cancelSubscription,
   compareRoster,
@@ -322,7 +323,7 @@ function VisitorsPanel() {
     setBusy(true); setFallback(null);
     try {
       const result = await createVisitor({ email, displayName: name, telegram, permissions });
-      if (!result.emailSent) setFallback(result);
+      if (result.created !== false && !result.emailSent) setFallback(result);
       setEmail(''); setName(''); setTelegram(''); await load();
       toast.success(result.message || 'Convite criado.');
     } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui convidar.'); }
@@ -351,14 +352,17 @@ function ConnectionsPanel() {
   const [busy, setBusy] = useState('');
   async function load() { try { setConnections((await listConnections()).connections || []); } catch {} }
   useEffect(() => { load(); }, []);
-  async function connect() { setBusy('connect'); try { await requestConnection(publicId); setPublicId(''); await load(); toast.success('Solicitação enviada. O outro usuário precisa aceitar.'); } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui enviar.'); } finally { setBusy(''); } }
+  const connecting = useRef(false);
+  async function connect() { if (connecting.current || !publicId.trim()) return; connecting.current = true; setBusy('connect'); try { const result = await requestConnection(publicId.trim()); setPublicId(''); await load(); toast.info(result.message || 'Solicitação verificada.'); } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui enviar.'); } finally { connecting.current = false; setBusy(''); } }
+  async function disconnect(id: string) { setBusy('connection'); try { await revokeConnection(id); setChatState(null); setChatId(''); await load(); toast.success('Conexão revogada.'); } catch { toast.error('Não consegui revogar a conexão.'); } finally { setBusy(''); } }
+  async function reinvite(id: string) { if (connecting.current) return; connecting.current = true; setBusy('connection'); try { const result = await requestConnection(id, true); await load(); toast.info(result.message || 'Novo convite enviado.'); } catch { toast.error('Não consegui renovar o convite.'); } finally { connecting.current = false; setBusy(''); } }
   async function answer(id: string, accepted: boolean) { try { await answerConnection(id, accepted); await load(); toast.success(accepted ? 'Conexão aceita.' : 'Solicitação recusada.'); } catch { toast.error('Não consegui responder.'); } }
   async function compare(id: string) { setBusy('compare'); try { setComparison(await compareRoster(id)); } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui comparar.'); } finally { setBusy(''); } }
   async function openChat(id: string) { setChatId(id); try { setChatState(await loadChat(id)); } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui abrir o chat.'); } }
   async function send() { if (!message.trim() || !chatId) return; setBusy('chat'); try { setChatState(await sendChat(chatId, message)); setMessage(''); } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui enviar.'); } finally { setBusy(''); } }
   return <div className="cp-stack">
     <article className="cp-box"><header><div><Users/><span><h2>Adicionar colega ou amigo</h2><p>Após o aceite dos dois usuários, compare disponibilidade e folgas. A comparação não abre a escala completa. O hotel só coincide quando ambos autorizam o compartilhamento de presença.</p></span></div></header><div className="cp-inline-form"><input value={publicId} onChange={(event) => setPublicId(event.target.value.includes('@') ? event.target.value : event.target.value.toUpperCase())} aria-label="ID ou e-mail do colega" placeholder="CC-ABCD-2345 ou pessoa@email.com"/><button className="cp-primary" onClick={connect} disabled={!publicId || Boolean(busy)}>{busy === 'connect' ? <Loader2 className="cp-spin"/> : <UserPlus/>} Conectar</button></div></article>
-    <article className="cp-box"><h2>Conexões</h2>{connections.length ? <div className="cp-list cp-connections">{connections.map((connection) => <div key={connection.id}><span><strong>{connection.person.displayName}</strong><small>{connection.person.publicId} · {connection.direction === 'incoming' ? 'Recebida' : 'Enviada'} · {connection.status}</small></span><aside>{connection.direction === 'incoming' && connection.status === 'pending' && <><button onClick={() => answer(connection.id, true)}><Check/> Aceitar</button><button onClick={() => answer(connection.id, false)}><X/> Recusar</button></>}{connection.status === 'accepted' && <><button onClick={() => compare(connection.person.publicId)}><Users/> Comparar</button><button onClick={() => openChat(connection.person.publicId)}><MessageCircle/> Chat</button></>}</aside></div>)}</div> : <p>Nenhuma conexão ainda.</p>}</article>
+    <article className="cp-box"><h2>Conexões</h2>{connections.length ? <div className="cp-list cp-connections">{connections.map((connection) => <div key={connection.id}><span><strong>{connection.person.displayName}</strong><small>{connection.person.publicId} · {connection.direction === 'incoming' ? 'Recebida' : 'Enviada'} · {connection.status}</small></span><aside>{connection.direction === 'incoming' && connection.status === 'pending' && <><button onClick={() => answer(connection.id, true)}><Check/> Aceitar</button><button onClick={() => answer(connection.id, false)}><X/> Recusar</button></>}{connection.status === 'accepted' && <><button onClick={() => compare(connection.person.publicId)}><Users/> Comparar</button><button onClick={() => openChat(connection.person.publicId)}><MessageCircle/> Chat</button></>}{['accepted', 'pending'].includes(connection.status) && <button className="danger" disabled={Boolean(busy)} onClick={() => disconnect(connection.id)}>Desconectar</button>}{['revoked', 'declined'].includes(connection.status) && <button disabled={Boolean(busy)} onClick={() => reinvite(connection.person.publicId)}>Convidar novamente</button>}</aside></div>)}</div> : <p>Nenhuma conexão ainda.</p>}</article>
     {comparison && <article className="cp-box"><h2>Comparação com {comparison.colleague?.displayName}</h2><div className="cp-summary"><span><b>{comparison.summary.daysCompared}</b> dias</span><span><b>{comparison.summary.bothFree}</b> folgas em comum</span><span><b>{comparison.summary.sameHotel}</b> mesmo hotel</span></div><div className="cp-compare"><header><span>Data</span><span>Você</span><span>Colega</span></header>{comparison.rows.slice(0, 62).map((row: any) => <div key={row.date} className={row.bothFree || row.sameHotel ? 'match' : ''}><span>{row.date}</span><span>{row.mine}</span><span>{row.colleague}{row.sameHotel ? ' · mesmo hotel' : ''}</span></div>)}</div></article>}
     {chat && <article className="cp-box cp-chat"><header><div><MessageCircle/><span><h2>{chat.person?.displayName}</h2><p>Chat interno CrewCheck</p></span></div><button onClick={() => { setChatState(null); setChatId(''); }}><X/></button></header><div className="cp-messages">{chat.messages?.map((item: any) => <p className={item.mine ? 'mine' : ''} key={item.id}><span>{item.body}</span><small>{new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short', dateStyle: 'short' }).format(new Date(item.createdAt))}</small></p>)}</div><div className="cp-inline-form"><input value={message} onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && send()} placeholder="Digite uma mensagem"/><button className="cp-primary" onClick={send} disabled={!message.trim() || busy === 'chat'}><Send/></button></div></article>}
   </div>;

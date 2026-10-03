@@ -1,3 +1,4 @@
+import { withProfileLocks, requestPeerConnection, answerPeerConnection, canonicalConnections, publicRosterProjection } from './platform-sharing.mjs';
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { diagnoseCirium, diagnoseCiriumFlight } from './cirium-diagnostic.mjs';
@@ -696,39 +697,7 @@ function stripSharedCoworkerFields(value) {
 
 function rosterForPermissions(roster, permissions = {}) {
   if (!roster) return null;
-  const allowed = allowedPermissions(permissions);
-  if (!allowed.roster) return {
-    year: roster.year, month: roster.month, base: roster.base, days: [],
-  };
-  const copy = stripSharedCoworkerFields(sanitizeRoster(roster));
-  copy.days = copy.days.map((day) => {
-    const next = { ...day };
-    if (!allowed.hotels) {
-      delete next.hotel;
-      delete next.hotelName;
-      delete next.accommodation;
-    }
-    if (!allowed.presentation) {
-      delete next.presentation;
-      delete next.hotelPresentation;
-      delete next.reportTime;
-      delete next.dutyReport;
-    }
-    if (!allowed.radar) {
-      delete next.gate;
-      delete next.terminal;
-      delete next.status;
-      next.legs = Array.isArray(next.legs) ? next.legs.map((leg) => {
-        const clean = { ...leg };
-        delete clean.gate;
-        delete clean.terminal;
-        delete clean.status;
-        return clean;
-      }) : [];
-    }
-    return next;
-  });
-  return copy;
+  return publicRosterProjection(stripSharedCoworkerFields(sanitizeRoster(roster)), allowedPermissions(permissions));
 }
 
 function rosterKey(roster) {
@@ -1787,7 +1756,8 @@ async function handleVisitors(req, res) {
   const body = req.method === 'POST' ? await readBody(req, 500_000) : {};
   const context = await requireMain(req, res, body);
   if (!context) return;
-  if (!await requirePremium(context, res, 'Modo visitante')) return;
+  const billing = await subscriptionStatus(context.db, context.profile);
+  const limits = planOperationalLimits(context.profile, billing);
   if (req.method === 'POST') {
     const email = safeEmail(body.email);
     if (!email) return sendJson(res, 400, { ok: false, message: 'Informe o e-mail do visitante.' });
@@ -1798,7 +1768,12 @@ async function handleVisitors(req, res) {
     const permissions = allowedPermissions(body.permissions);
     const displayName = normalizeText(body.displayName || email.split('@')[0], 120);
     const telegram = normalizeText(body.telegram, 80).replace(/^@/, '');
-    await context.db.query(`
+    const creation = await withProfileLocks(context.db, [context.identity.email], async (client) => {
+      const existing = await client.query('SELECT id,status FROM crewcheck_platform_visitors WHERE owner_email=$1 AND email=$2 FOR UPDATE', [context.identity.email, email]);
+      if (existing.rows[0] && existing.rows[0].status !== 'revoked') return { existing: existing.rows[0] };
+      const countResult = await client.query("SELECT COUNT(*) count FROM crewcheck_platform_visitors WHERE owner_email=$1 AND status<>'revoked'", [context.identity.email]);
+      if (Number(countResult.rows[0]?.count || 0) >= limits.guestLimit) return { limit: true };
+    await client.query(`
       INSERT INTO crewcheck_platform_visitors(id,owner_email,email,display_name,telegram,password_hash,invite_token_hash,telegram_token_hash,permissions,status,must_change_password)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'invited',TRUE)
       ON DUPLICATE KEY UPDATE
@@ -1807,7 +1782,10 @@ async function handleVisitors(req, res) {
         telegram_token_hash=VALUES(telegram_token_hash),permissions=VALUES(permissions),
         status='invited',must_change_password=TRUE,updated_at=NOW()`,
     [id, context.identity.email, email, displayName, telegram, passwordHash(password), sha256(token), sha256(telegramToken), JSON.stringify(permissions)]);
-    const saved = await context.db.query('SELECT id FROM crewcheck_platform_visitors WHERE owner_email=$1 AND email=$2 LIMIT 1', [context.identity.email, email]);
+      return { created: true };
+    });
+    if (creation.existing) return sendJson(res, 200, { ok: true, created: false, id: creation.existing.id, status: creation.existing.status, message: creation.existing.status === 'active' ? 'Este visitante já possui acesso. Suas permissões e senha foram preservadas.' : 'Este visitante já foi convidado. Use Reenviar convite se precisar renovar o convite.' });
+    if (creation.limit) return sendJson(res, 402, { ok: false, code: 'VISITOR_LIMIT_REACHED', limit: limits.guestLimit, message: `Seu plano permite até ${limits.guestLimit} convidados ativos. Revogue um acesso antes de criar outro.` });
     const link = `${publicBaseUrl(req)}/visitor?token=${encodeURIComponent(token)}`;
     const bot = env('TELEGRAM_BOT_USERNAME', env('CREWCHECK_TELEGRAM_BOT_USERNAME', 'crewchecknotify_bot')).replace(/^@/, '');
     const telegramLink = `https://t.me/${bot}?start=visitor_${telegramToken}`;
@@ -1821,7 +1799,7 @@ async function handleVisitors(req, res) {
       text: `Você recebeu acesso de visitante ao CrewCheck.\n\nLink: ${link}\nSenha temporária: ${password}\n\nNo primeiro acesso, defina uma nova senha. O titular controla e pode revogar todas as permissões.\nTelegram: ${telegramLink}`,
       html: `<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;padding:24px"><h1>Convite CrewCheck</h1><p><b>${safeOwnerName}</b> convidou você para acompanhar informações selecionadas da escala.</p><p><a href="${safeLink}" style="display:inline-block;padding:14px 20px;border-radius:12px;background:#0b5678;color:#fff;text-decoration:none;font-weight:bold">Aceitar convite</a></p><p>Senha temporária: <b>${safePassword}</b></p><p>Você deverá criar outra senha no primeiro acesso.</p><p><a href="${safeTelegramLink}">Vincular Telegram</a></p></div>`,
     });
-    return sendJson(res, 200, { ok: true, id: saved.rows[0]?.id || id, emailSent: mail.ok, link: mail.ok ? undefined : link, temporaryPassword: mail.ok ? undefined : password, telegramLink, permissions, message: mail.ok ? 'Convite enviado pelo CrewCheck.' : 'Convite criado. O e-mail não está configurado; compartilhe o link e a senha temporária exibidos agora.' });
+    return sendJson(res, 200, { ok: true, created: true, id, emailSent: mail.ok, link: mail.ok ? undefined : link, temporaryPassword: mail.ok ? undefined : password, telegramLink, permissions, message: mail.ok ? 'Convite enviado pelo CrewCheck.' : 'Convite criado. O e-mail não está configurado; compartilhe o link e a senha temporária exibidos agora.' });
   }
   const result = await context.db.query('SELECT id,email,display_name,telegram,permissions,status,must_change_password,last_login_at,created_at FROM crewcheck_platform_visitors WHERE owner_email=$1 ORDER BY created_at DESC', [context.identity.email]);
   return sendJson(res, 200, { ok: true, visitors: result.rows });
@@ -1880,7 +1858,8 @@ async function handleVisitorAccept(req, res) {
     return sendJson(res, 401, { ok: false, message: 'Convite, e-mail ou senha temporária inválidos.' });
   }
   await clearAuthFailures(db, throttleId);
-  await db.query("UPDATE crewcheck_platform_visitors SET password_hash=$2,invite_token_hash=$3,status='active',must_change_password=FALSE,last_login_at=NOW(),updated_at=NOW() WHERE id=$1", [visitor.id, passwordHash(nextPassword), retiredTokenHash()]);
+  const claimed = await db.query("UPDATE crewcheck_platform_visitors SET password_hash=$2,invite_token_hash=$3,status='active',must_change_password=FALSE,last_login_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='invited' AND invite_token_hash=$4", [visitor.id, passwordHash(nextPassword), retiredTokenHash(), sha256(token)]);
+  if (!claimed.rowCount) return sendJson(res, 409, { ok: false, message: 'Este convite já foi utilizado, renovado ou revogado.' });
   const jwt = issueVisitorJwt(visitor);
   const secure = env('NODE_ENV').toLowerCase() === 'production' ? '; Secure' : '';
   res.setHeader('Set-Cookie', `crewcheck_visitor_token=${encodeURIComponent(jwt)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`);
@@ -2134,6 +2113,7 @@ async function handleConnections(req, res) {
   const context = await requireMain(req, res, body);
   if (!context) return;
   if (!await requirePremium(context, res, 'Comparação de escala')) return;
+  let requestResult = null;
   if (req.method === 'POST') {
     const targetEmail = safeEmail(body.email || body.publicId);
     const targetId = normalizeText(body.publicId, 20).toUpperCase();
@@ -2141,20 +2121,14 @@ async function handleConnections(req, res) {
       ? await context.db.query('SELECT email,display_name,public_id FROM crewcheck_platform_profiles WHERE email=$1 LIMIT 1', [targetEmail])
       : await context.db.query('SELECT email,display_name,public_id FROM crewcheck_platform_profiles WHERE public_id=$1 LIMIT 1', [targetId]);
     if (!target.rows[0] || target.rows[0].email === context.identity.email) return sendJson(res, 404, { ok: false, message: 'ID CrewCheck não localizado.' });
-    await context.db.query(
-      `INSERT INTO crewcheck_platform_connections(id,requester_email,target_email,status,permissions)
-       VALUES($1,$2,$3,'pending',$4)
-       ON DUPLICATE KEY UPDATE status='pending',permissions=VALUES(permissions),updated_at=NOW()`,
-      [crypto.randomUUID(), context.identity.email, target.rows[0].email, JSON.stringify({ compareRoster: true, chat: Boolean(body.chat !== false) })],
-    );
+    requestResult = await requestPeerConnection(context.db, context.identity.email, target.rows[0].email, { compareRoster: true, chat: body.chat !== false }, body.reinvite === true);
   }
   if (req.method === 'PATCH') {
     const id = normalizeText(body.id, 80);
-    const status = body.status === 'accepted' ? 'accepted' : 'declined';
-    await context.db.query('UPDATE crewcheck_platform_connections SET status=$3,updated_at=NOW() WHERE id=$1 AND target_email=$2', [id, context.identity.email, status]);
+    await answerPeerConnection(context.db, context.identity.email, id, body.status);
   }
   const result = await context.db.query(`SELECT c.*,pr.display_name requester_name,pr.public_id requester_id,pt.display_name target_name,pt.public_id target_id FROM crewcheck_platform_connections c JOIN crewcheck_platform_profiles pr ON pr.email=c.requester_email JOIN crewcheck_platform_profiles pt ON pt.email=c.target_email WHERE c.requester_email=$1 OR c.target_email=$1 ORDER BY c.updated_at DESC`, [context.identity.email]);
-  return sendJson(res, 200, { ok: true, connections: result.rows.map((row) => ({ id: row.id, direction: row.requester_email === context.identity.email ? 'outgoing' : 'incoming', status: row.status, person: row.requester_email === context.identity.email ? { displayName: row.target_name, publicId: row.target_id } : { displayName: row.requester_name, publicId: row.requester_id }, permissions: row.permissions })) });
+  return sendJson(res, 200, { ok: true, requestResult, message: !requestResult ? undefined : requestResult.created ? 'Solicitação enviada. O outro usuário precisa aceitar.' : requestResult.status === 'accepted' ? 'Vocês já estão conectados.' : requestResult.status === 'pending' ? (requestResult.direction === 'incoming' ? 'Você já recebeu um convite desta pessoa. Responda na lista abaixo.' : 'Seu convite já está pendente; não foi duplicado.') : 'Esta conexão está encerrada. O acesso não foi reativado.', connections: canonicalConnections(result.rows).map((row) => ({ id: row.id, direction: row.requester_email === context.identity.email ? 'outgoing' : 'incoming', status: row.status, person: row.requester_email === context.identity.email ? { displayName: row.target_name, publicId: row.target_id } : { displayName: row.requester_name, publicId: row.requester_id }, permissions: row.permissions })) });
 }
 async function handleCompare(req, res, url) {
   const context = await requireMain(req, res);

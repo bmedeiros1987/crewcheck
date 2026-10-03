@@ -1,0 +1,63 @@
+name: Sharing idempotency and privacy
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/platform.mjs'
+      - 'server/platform-sharing.mjs'
+      - 'client/src/components/platform/PlatformCenter.tsx'
+      - 'client/src/lib/platformClient.ts'
+      - 'scripts/regression-sharing-idempotency.mjs'
+      - 'scripts/regression-sharing-browser.cjs'
+      - '.github/workflows/sharing-idempotency.yml'
+permissions:
+  contents: read
+concurrency:
+  group: sharing-idempotency-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  local-mysql-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check && npx vite build
+      - name: Start isolated synthetic MySQL without network or published ports
+        run: |
+          mkdir -p /tmp/crewcheck-sharing-qa-socket
+          docker run --detach --rm --name crewcheck-sharing-qa --network none --mount type=bind,source=/tmp/crewcheck-sharing-qa-socket,target=/var/run/mysqld --env MYSQL_ALLOW_EMPTY_PASSWORD=yes --env MYSQL_DATABASE=crewcheck_sharing_qa mysql:8.4
+          for attempt in $(seq 1 60); do
+            if docker exec crewcheck-sharing-qa mysqladmin ping --silent; then break; fi
+            sleep 1
+          done
+          docker exec crewcheck-sharing-qa mysqladmin ping --silent
+          docker exec crewcheck-sharing-qa chmod 755 /var/run/mysqld
+      - name: Real local SQL concurrency and synthetic authorization tests
+        run: |
+          mkdir -p artifacts/sharing-idempotency
+          node scripts/regression-sharing-idempotency.mjs > artifacts/sharing-idempotency/mysql-report.json
+          node scripts/regression-v14-3-32-visitor-active-roster-scope.mjs
+        env:
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-sharing-qa-socket/mysqld.sock
+      - run: |
+          npm install --prefix "$RUNNER_TEMP/sharing-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/sharing-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - run: node scripts/regression-sharing-browser.cjs
+        env:
+          SHARING_PLAYWRIGHT_MODULE: ${{ runner.temp }}/sharing-browser/node_modules/playwright
+      - name: Remove only the synthetic test database container
+        if: always()
+        run: docker rm -f crewcheck-sharing-qa || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sharing-idempotency-${{ github.event.pull_request.head.sha }}
+          path: artifacts/sharing-idempotency
