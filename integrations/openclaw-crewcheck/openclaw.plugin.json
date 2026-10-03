@@ -1,0 +1,14 @@
+{
+  "id": "crewcheck-concierge",
+  "name": "CrewCheck Concierge",
+  "description": "Read-only channel adapter to the existing CrewCheck Concierge API.",
+  "version": "0.1.0",
+  "contracts": {
+    "tools": ["crewcheck_concierge_read"]
+  },
+  "toolMetadata": {
+    "crewcheck_concierge_read": {
+      "optional": true
+    }
+  }
+}
