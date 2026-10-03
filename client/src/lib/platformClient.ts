@@ -300,7 +300,7 @@ export async function listConnections() {
 
 export async function requestConnection(identifier: string, reinvite = false) {
   const value = String(identifier || '').trim();
-  return authFetch<any>('/api/platform/connections', { method: 'POST', body: JSON.stringify(value.includes('@') ? { email: value, chat: true, reinvite } : { publicId: value, chat: true, reinvite }) });
+  return authFetch<any>('/api/platform/connections', { method: 'POST', body: JSON.stringify(value.includes('@') ? { email: value, chat: true, ...(reinvite ? { reinvite: true } : {}) } : { publicId: value, chat: true, ...(reinvite ? { reinvite: true } : {}) }) });
 }
 
 export async function revokeConnection(id: string) {
