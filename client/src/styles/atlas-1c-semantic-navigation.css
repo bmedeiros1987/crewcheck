@@ -281,3 +281,11 @@ html[data-crew-theme='light'] body > .cz-bottom-nav > button.active {
     width: 100% !important;
   }
 }
+
+/* Sharing keeps the existing positive green used by Pessoas e visitantes. */
+.cc-share-entry > button,
+.cz-app[data-version] .cc-menu-nested-results > button[data-sharing-target="true"] { border-inline-start: 3px solid var(--cc-atlas-positive) !important; }
+.cc-sharing-center .cp-tabs > button.active,
+.cc-sharing-center .cp-id-card { border-color: var(--cc-atlas-positive); }
+
+.cz-app[data-version] .cc-menu-nested-results > button[data-sharing-target="true"] > svg { color: var(--cc-atlas-positive) !important; }

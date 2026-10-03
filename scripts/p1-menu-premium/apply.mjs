@@ -76,7 +76,7 @@ const OVERRIDES = {
   hotels: ['Hotéis', 'Pernoite e entorno', 'Hotel'],
   gyms: ['Locais próximos', 'Academias, saúde e serviços', 'MapPin'],
   concierge: ['Concierge', 'Perguntas sobre a escala', 'MessageCircle'],
-  community: ['Pessoas e visitantes', 'Compartilhamento e contatos', 'UserPlus'],
+  community: ['Pessoas e visitantes', 'Compartilhar escala, adicionar colegas e visitantes', 'UserPlus'],
 
   // Crew Locker e CrewLock são telas diferentes com nomes quase iguais, e estavam em
   // grupos distantes um do outro. Ficam lado a lado, e a descrição diz qual é qual.

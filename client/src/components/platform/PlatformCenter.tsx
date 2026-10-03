@@ -1,3 +1,4 @@
+import { consumePendingNavigationContext } from '@/lib/navigationContext';
 import { useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
 import { AlertTriangle, ArrowLeft, Check, Copy, Crown, KeyRound, Link2, Loader2, Lock, Mail, MessageCircle, QrCode, RefreshCcw, Send, ShieldCheck, Smartphone, UserPlus, Users, X } from 'lucide-react';
@@ -356,7 +357,7 @@ function ConnectionsPanel() {
   async function openChat(id: string) { setChatId(id); try { setChatState(await loadChat(id)); } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui abrir o chat.'); } }
   async function send() { if (!message.trim() || !chatId) return; setBusy('chat'); try { setChatState(await sendChat(chatId, message)); setMessage(''); } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui enviar.'); } finally { setBusy(''); } }
   return <div className="cp-stack">
-    <article className="cp-box"><header><div><Users/><span><h2>Comparar por ID, QR ou e-mail</h2><p>Os dois usuários precisam aceitar. O hotel só coincide quando ambos ativam o compartilhamento de presença.</p></span></div></header><div className="cp-inline-form"><input value={publicId} onChange={(event) => setPublicId(event.target.value.includes('@') ? event.target.value : event.target.value.toUpperCase())} placeholder="CC-ABCD-2345 ou pessoa@email.com"/><button className="cp-primary" onClick={connect} disabled={!publicId || Boolean(busy)}>{busy === 'connect' ? <Loader2 className="cp-spin"/> : <UserPlus/>} Conectar</button></div></article>
+    <article className="cp-box"><header><div><Users/><span><h2>Adicionar colega ou amigo</h2><p>Após o aceite dos dois usuários, compare disponibilidade e folgas. A comparação não abre a escala completa. O hotel só coincide quando ambos autorizam o compartilhamento de presença.</p></span></div></header><div className="cp-inline-form"><input value={publicId} onChange={(event) => setPublicId(event.target.value.includes('@') ? event.target.value : event.target.value.toUpperCase())} aria-label="ID ou e-mail do colega" placeholder="CC-ABCD-2345 ou pessoa@email.com"/><button className="cp-primary" onClick={connect} disabled={!publicId || Boolean(busy)}>{busy === 'connect' ? <Loader2 className="cp-spin"/> : <UserPlus/>} Conectar</button></div></article>
     <article className="cp-box"><h2>Conexões</h2>{connections.length ? <div className="cp-list cp-connections">{connections.map((connection) => <div key={connection.id}><span><strong>{connection.person.displayName}</strong><small>{connection.person.publicId} · {connection.direction === 'incoming' ? 'Recebida' : 'Enviada'} · {connection.status}</small></span><aside>{connection.direction === 'incoming' && connection.status === 'pending' && <><button onClick={() => answer(connection.id, true)}><Check/> Aceitar</button><button onClick={() => answer(connection.id, false)}><X/> Recusar</button></>}{connection.status === 'accepted' && <><button onClick={() => compare(connection.person.publicId)}><Users/> Comparar</button><button onClick={() => openChat(connection.person.publicId)}><MessageCircle/> Chat</button></>}</aside></div>)}</div> : <p>Nenhuma conexão ainda.</p>}</article>
     {comparison && <article className="cp-box"><h2>Comparação com {comparison.colleague?.displayName}</h2><div className="cp-summary"><span><b>{comparison.summary.daysCompared}</b> dias</span><span><b>{comparison.summary.bothFree}</b> folgas em comum</span><span><b>{comparison.summary.sameHotel}</b> mesmo hotel</span></div><div className="cp-compare"><header><span>Data</span><span>Você</span><span>Colega</span></header>{comparison.rows.slice(0, 62).map((row: any) => <div key={row.date} className={row.bothFree || row.sameHotel ? 'match' : ''}><span>{row.date}</span><span>{row.mine}</span><span>{row.colleague}{row.sameHotel ? ' · mesmo hotel' : ''}</span></div>)}</div></article>}
     {chat && <article className="cp-box cp-chat"><header><div><MessageCircle/><span><h2>{chat.person?.displayName}</h2><p>Chat interno CrewCheck</p></span></div><button onClick={() => { setChatState(null); setChatId(''); }}><X/></button></header><div className="cp-messages">{chat.messages?.map((item: any) => <p className={item.mine ? 'mine' : ''} key={item.id}><span>{item.body}</span><small>{new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short', dateStyle: 'short' }).format(new Date(item.createdAt))}</small></p>)}</div><div className="cp-inline-form"><input value={message} onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && send()} placeholder="Digite uma mensagem"/><button className="cp-primary" onClick={send} disabled={!message.trim() || busy === 'chat'}><Send/></button></div></article>}
@@ -365,6 +366,19 @@ function ConnectionsPanel() {
 
 export function CommunityCenter({ rosterKey, onBack, onEmailPdf }: Omit<Props, 'mode'>) {
   const [tab, setTab] = useState<'share' | 'visitors' | 'people'>(() => new URLSearchParams(window.location.search).has('connect') ? 'people' : 'share');
+  const [returnToRoster, setReturnToRoster] = useState(false);
+  useEffect(() => {
+    const focus = () => {
+      const context = consumePendingNavigationContext('community');
+      const target = context?.programId;
+      if (target === 'share-roster') setTab('share');
+      if (target === 'share-colleague' || target === 'share-compare') setTab('people');
+      if (target === 'share-visitor') setTab('visitors');
+      if (context) setReturnToRoster(context.sourceView === 'roster' && context.returnView === 'roster');
+    };
+    focus(); window.addEventListener('crewcheck:menu-setting-focus', focus);
+    return () => window.removeEventListener('crewcheck:menu-setting-focus', focus);
+  }, []);
   const [profile, setProfile] = useState<PlatformProfile | null>(null);
   const [error, setError] = useState('');
   const [idQr, setIdQr] = useState('');
@@ -373,8 +387,8 @@ export function CommunityCenter({ rosterKey, onBack, onEmailPdf }: Omit<Props, '
   useEffect(() => { if (profile?.publicId) QRCode.toDataURL(`${window.location.origin}/app?connect=${encodeURIComponent(profile.publicId)}`, { width: 240, margin: 2, errorCorrectionLevel: 'M' }).then(setIdQr).catch(() => setIdQr('')); }, [profile?.publicId]);
   const rosterLabel = useMemo(() => rosterKey && !/^0-00$/.test(rosterKey) ? rosterKey : 'escala ativa', [rosterKey]);
   async function copyId() { if (!profile) return; try { await navigator.clipboard.writeText(profile.publicId); toast.success('Seu ID CrewCheck foi copiado.'); } catch { toast.error('Não consegui copiar.'); } }
-  return <section className="cp-center">
-    <PageHead onBack={onBack} title="Pessoas e compartilhamento" subtitle={`Compartilhe ${rosterLabel} com controle, prazo, consentimento e revogação.`}/>
+  return <section className="cp-center cc-sharing-center">
+    <PageHead onBack={() => returnToRoster ? window.dispatchEvent(new CustomEvent('crewcheck:set-view', {detail:'roster'})) : onBack()} title="Compartilhar escala" subtitle={`Compartilhe ${rosterLabel} com controle, prazo, consentimento e revogação.`}/>
     {error ? <ErrorCard message={error} retry={() => window.location.reload()}/> : !profile ? <LoadingCard/> : <>
       <article className="cp-id-card"><div><span><KeyRound/></span><div><small>Seu ID CrewCheck</small><h2>{profile.publicId}</h2><p>{profile.displayName} · compartilhe o ID, o QR ou seu e-mail de login.</p></div></div>{idQr && <button className="cp-id-qr-trigger" onClick={() => setIdQrExpanded(true)} aria-label="Ampliar QR code do seu ID"><img className="cp-id-qr" src={idQr} alt="QR code para solicitar comparação de escala"/><small>Ampliar</small></button>}<div className="cp-id-actions"><button onClick={copyId}><Copy/> Copiar ID</button><button className="cp-whatsapp" onClick={() => openWhatsAppShare(`${window.location.origin}/app?connect=${encodeURIComponent(profile.publicId)}`, `Conecte-se comigo no CrewCheck · ${profile.publicId}`)}><MessageCircle/> WhatsApp</button></div></article>
       <QrPreviewModal open={idQrExpanded} image={idQr} value={`${window.location.origin}/app?connect=${encodeURIComponent(profile.publicId)}`} title={`ID CrewCheck ${profile.publicId}`} onClose={() => setIdQrExpanded(false)}/>
