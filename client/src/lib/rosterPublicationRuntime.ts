@@ -5,7 +5,11 @@ let failure: { owner: string; message: string } | null = null;
 export function publicationReviewStatus() {
   const owner = publicationOwner();
   if (!navigator.locks?.request) return 'Acompanhamento de leitura indisponível neste navegador. Nenhuma leitura será registrada.';
-  return owner && failure?.owner === owner ? failure.message : '';
+  if (owner && failure?.owner === owner) return failure.message;
+  const review = currentPublicationReview();
+  return review && review.publication.completeDates.length === 0
+    ? 'A fonte desta leitura não comprova todos os eventos de cada data. Mesmo um PDF do mês inteiro não permite confirmar inclusões ou remoções; confira a escala oficial.'
+    : '';
 }
 function unavailable(owner: string) { failure = { owner, message: 'Não foi possível salvar o acompanhamento local. A leitura permanece pendente.' }; window.dispatchEvent(new Event(notification)); return false; }
 export function publicationOwner(): string | null {
