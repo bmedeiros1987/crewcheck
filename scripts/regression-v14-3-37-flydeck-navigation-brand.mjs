@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import ts from 'typescript';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -47,7 +48,19 @@ for (const preservedView of ['life','manual','guardian','support','crewlock','em
 const menuStart = homeBefore.indexOf('function MenuDrawer(');
 const menuEnd = homeBefore.indexOf('function Cockpit(', menuStart);
 assert.ok(menuStart >= 0 && menuEnd > menuStart, 'bloco do menu não localizado');
-const menuBlock = homeBefore.slice(menuStart, menuEnd);
+const ast = ts.createSourceFile('Home.tsx', homeBefore, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const menuNode = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'MenuDrawer');
+assert.ok(menuNode?.body, 'função real do menu ausente');
+const menuBlock = menuNode.body.getText(ast);
+const catalogNodes = [];
+function collectCatalog(node) {
+  if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'groups' && node.initializer) catalogNodes.push(node.initializer.getText(ast));
+  if (ts.isCallExpression(node) && node.expression.getText(ast) === 'groups.push') catalogNodes.push(...node.arguments.map(arg => arg.getText(ast)));
+  ts.forEachChild(node, collectCatalog);
+}
+collectCatalog(menuNode);
+assert.ok(catalogNodes.length, 'catálogo real do menu ausente');
+const menuCatalog = catalogNodes.join('\n');
 const groupTitles = ['Hoje', 'Preparação', 'Em operação', 'Escala e planejamento', 'Financeiro', 'Rotina e apoio', 'Documentos', 'Conta, ajuda e segurança', 'Administração'];
 for (const title of groupTitles) assert.ok(menuBlock.includes(`title: '${title}'`), `grupo de menu ausente: ${title}`);
 
@@ -59,7 +72,7 @@ const expectedRoutes = [
   'updates','maintenance','admin',
 ];
 for (const route of expectedRoutes) {
-  const count = (menuBlock.match(new RegExp(`\\['${route}',`, 'g')) || []).length;
+  const count = (menuCatalog.match(new RegExp(`\\['${route}',`, 'g')) || []).length;
   assert.equal(count, 1, `rota ${route} deve aparecer exatamente uma vez no menu agrupado`);
 }
 const groupItemCounts = [...menuBlock.matchAll(/\{ title: '([^']+)', items: \[([\s\S]*?)\n\s*\] \}/g)]

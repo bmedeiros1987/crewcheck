@@ -9,6 +9,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import * as icons from 'lucide-react';
 import ts from 'typescript';
+import { buildSync } from 'esbuild';
 
 // Actual prepared MenuDrawer + shipped CSS + unmodified theme functions.
 // Synthetic account only. This component test is not full-app/device acceptance.
@@ -51,14 +52,30 @@ const menuPreferenceCode = ts.transpileModule(fs.readFileSync('client/src/lib/me
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
 const menuPreference = await import(`data:text/javascript;base64,${Buffer.from(menuPreferenceCode).toString('base64')}`);
+// Bundle the real helpers/components referenced by the extracted MenuDrawer.
+// Keep React external so hooks use the same renderer instance as this harness.
+const menuDependenciesFile = path.join(output, 'menu-dependencies.cjs');
+buildSync({ stdin: { contents: `
+export * from './client/src/lib/menuUsagePreference';
+export * from './client/src/lib/menuNestedSearch';
+export { MenuPersonalization } from './client/src/components/v1391/MenuPersonalization';
+export { setPendingNavigationContext } from './client/src/lib/navigationContext';
+`, resolveDir: process.cwd(), loader: 'ts' }, bundle: true, platform: 'node', format: 'cjs', jsx: 'automatic',
+  external: ['react', 'react-dom', 'lucide-react'], loader: { '.css': 'empty' },
+  tsconfig: path.resolve('tsconfig.json'), outfile: menuDependenciesFile });
+const dependencyModule = { exports: {} };
 const storedMenuValues = new Map();
 const localStorage = {
   getItem: (key) => storedMenuValues.get(key) ?? null,
   setItem: (key, value) => storedMenuValues.set(key, String(value)),
   removeItem: (key) => storedMenuValues.delete(key),
 };
+
+localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'menu-browser-account', role: 'admin' }));
+vm.runInNewContext(fs.readFileSync(menuDependenciesFile, 'utf8'), { module: dependencyModule, exports: dependencyModule.exports, require: createRequire(import.meta.url), localStorage, window: { localStorage } }, { timeout: 1000 });
+const menuDependencies = dependencyModule.exports;
 const scope = {
-  React, ...React, ...icons, ...menuPreference, HomeIcon: icons.Home, MapIcon: icons.Map,
+  React, ...React, ...icons, ...menuPreference, ...menuDependencies, localStorage, HomeIcon: icons.Home, MapIcon: icons.Map,
   window: { localStorage },
   storage: { get: (_key, fallback) => fallback, set: () => {} },
   getStoredUser: () => ({ id: 'menu-browser-account', name: 'Tripulante de demonstração com nome longo', email: 'demo@example.invalid' }),
