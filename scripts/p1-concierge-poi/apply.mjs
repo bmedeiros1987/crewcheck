@@ -1,6 +1,14 @@
 import fs from 'node:fs';
 const path = 'server.mjs';
 let source = fs.readFileSync(path, 'utf8');
+// The app endpoint loads the linked Telegram chatId for account storage. Stamp
+// origin at the trusted call site instead of inferring it from that stored link.
+const appCall = "buildTelegramConciergeReply(String(body.text || body.message || ''), profile, snapshot)";
+const scopedAppCall = "buildTelegramConciergeReply(String(body.text || body.message || ''), { ...profile, channel: 'app' }, snapshot)";
+if (!source.includes(scopedAppCall)) {
+  if (!source.includes(appCall)) throw new Error('[concierge-poi] app reply origin call missing');
+  source = source.replace(appCall, scopedAppCall);
+}
 if (!source.includes("from './server/concierge/pharmacy-reference.mjs'")) {
   source = "import { pharmacyReferenceReply } from './server/concierge/pharmacy-reference.mjs';\n" + source;
 }
