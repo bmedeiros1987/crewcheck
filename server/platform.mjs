@@ -1883,7 +1883,7 @@ async function handleVisitorAccept(req, res) {
   await db.query("UPDATE crewcheck_platform_visitors SET password_hash=$2,invite_token_hash=$3,status='active',must_change_password=FALSE,last_login_at=NOW(),updated_at=NOW() WHERE id=$1", [visitor.id, passwordHash(nextPassword), retiredTokenHash()]);
   const jwt = issueVisitorJwt(visitor);
   const secure = env('NODE_ENV').toLowerCase() === 'production' ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `crewcheck_visitor_token=${encodeURIComponent(jwt)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`);
+  res.setHeader('Set-Cookie', [`crewcheck_visitor_token=${encodeURIComponent(jwt)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`, `crewcheck_visitor_session=${sha256(jwt)}; Path=/; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`]);
   return sendJson(res, 200, { ok: true, message: 'Convite aceito. Sua senha foi definida.' });
 }
 
@@ -1918,7 +1918,7 @@ async function handleVisitorLogin(req, res) {
   await db.query('UPDATE crewcheck_platform_visitors SET last_login_at=NOW() WHERE id=$1', [visitor.id]);
   const jwt = issueVisitorJwt(visitor);
   const secure = env('NODE_ENV').toLowerCase() === 'production' ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `crewcheck_visitor_token=${encodeURIComponent(jwt)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`);
+  res.setHeader('Set-Cookie', [`crewcheck_visitor_token=${encodeURIComponent(jwt)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`, `crewcheck_visitor_session=${sha256(jwt)}; Path=/; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`]);
   return sendJson(res, 200, { ok: true, message: 'Acesso de visitante liberado.' });
 }
 
@@ -1945,7 +1945,7 @@ async function handleVisitorData(req, res) {
 
 async function handleVisitorLogout(req, res) {
   const secure = env('NODE_ENV').toLowerCase() === 'production' ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `crewcheck_visitor_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`);
+  res.setHeader('Set-Cookie', [`crewcheck_visitor_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`, `crewcheck_visitor_session=; Path=/; SameSite=Lax; Max-Age=0${secure}`]);
   return sendJson(res, 200, { ok: true, message: 'Sessão de visitante encerrada.' });
 }
 

@@ -1,3 +1,4 @@
+import { chatSessionFingerprint, invalidateVisitorChatSession } from '@/lib/chatSession';
 import { useLiveChat } from '@/hooks/useLiveChat';
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Building2, CalendarDays, KeyRound, LifeBuoy, Loader2, LogOut, Map, MessageCircle, Plane, Send, ShieldCheck } from 'lucide-react';
@@ -53,7 +54,7 @@ export default function VisitorAccessPage() {
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'roster' | 'hotels' | 'map' | 'chat' | 'emergency'>('roster');
   const [helpMessage, setHelpMessage] = useState('');
-  const { chat, status: chatStatus, send: sendLiveChat, retry: retryChat } = useLiveChat(mode === 'portal' && tab === 'chat' && data?.visitor.permissions.chat ? 'visitor-chat' : '', (signal) => visitorRequest('/api/platform/visitor/chat', { signal }));
+  const { chat, status: chatStatus, send: sendLiveChat, retry: retryChat } = useLiveChat(mode === 'portal' && tab === 'chat' && data?.visitor.permissions.chat ? 'visitor-chat' : '', (signal) => visitorRequest('/api/platform/visitor/chat', { signal }), 'visitor');
   const [chatMessage, setChatMessage] = useState('');
   const t = copy[browserLocale()];
 
@@ -81,12 +82,25 @@ export default function VisitorAccessPage() {
     });
   }, [token]);
 
+  useEffect(() => {
+    if (mode !== 'portal') return;
+    const expected = chatSessionFingerprint('visitor');
+    const check = () => {
+      if (chatSessionFingerprint('visitor') !== expected) { setData(null); setMode('login'); setError('Sessão alterada. Entre novamente.'); }
+    };
+    window.addEventListener('storage', check);
+    window.addEventListener('crewcheck:visitor-session-change', check);
+    const timer = setInterval(check, 1000);
+    return () => { clearInterval(timer); window.removeEventListener('storage', check); window.removeEventListener('crewcheck:visitor-session-change', check); };
+  }, [mode]);
+
   async function accept() {
     if (newPassword.length < 10) { setError('A nova senha precisa ter pelo menos 10 caracteres.'); return; }
     setBusy(true); setError('');
     try {
+      invalidateVisitorChatSession();
       await visitorRequest('/api/platform/visitor/accept', { method: 'POST', body: JSON.stringify({ token, email, temporaryPassword, newPassword }) });
-      await loadPortal();
+      window.location.reload();
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível aceitar o convite.'); }
     finally { setBusy(false); }
   }
@@ -94,8 +108,9 @@ export default function VisitorAccessPage() {
   async function login() {
     setBusy(true); setError('');
     try {
+      invalidateVisitorChatSession();
       await visitorRequest('/api/platform/visitor/login', { method: 'POST', body: JSON.stringify({ email, password, ownerPublicId }) });
-      await loadPortal();
+      window.location.reload();
     } catch (reason: any) {
       if (reason?.payload?.code === 'OWNER_SELECTION_REQUIRED') setOwners(reason.payload.owners || []);
       setError(reason instanceof Error ? reason.message : 'Não foi possível entrar.');
@@ -103,6 +118,7 @@ export default function VisitorAccessPage() {
   }
 
   async function logout() {
+    invalidateVisitorChatSession();
     await visitorRequest('/api/platform/visitor/logout', { method: 'POST', body: '{}' }).catch(() => undefined);
     setData(null); setMode('login');
   }

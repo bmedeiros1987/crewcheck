@@ -4,6 +4,9 @@ on:
     branches: [main]
     paths:
       - 'client/src/hooks/useLiveChat.ts'
+      - 'client/src/lib/chatSession.ts'
+      - 'server/platform.mjs'
+      - 'scripts/regression-chat-session-browser.cjs'
       - 'client/src/components/platform/PlatformCenter.tsx'
       - 'client/src/pages/VisitorAccessPage.tsx'
       - 'client/src/lib/platformClient.ts'
@@ -32,11 +35,13 @@ jobs:
       - run: |
           npm install --prefix "$RUNNER_TEMP/chat-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/chat-browser/node_modules/playwright/cli.js" install --with-deps chromium
-      - run: node scripts/regression-chat-receive-browser.cjs
+      - run: node scripts/regression-chat-receive-browser.cjs && node scripts/regression-chat-session-browser.cjs
         env:
           CHAT_PLAYWRIGHT_MODULE: ${{ runner.temp }}/chat-browser/node_modules/playwright
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: chat-receive-${{ github.event.pull_request.head.sha }}
-          path: artifacts/chat-receive
+          path: |
+            artifacts/chat-receive
+            artifacts/chat-session
