@@ -1,6 +1,6 @@
 import { rosterDisplayCompare, rosterDisplayIso, rosterInstantIso, rosterLabelDate, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { useEffect, useMemo, useState } from 'react';
-import { peekPendingNavigationContext } from '@/lib/navigationContext';
+import { peekPendingNavigationContext, setPendingNavigationContext } from '@/lib/navigationContext';
 import { consumePendingRosterFocus } from '@/lib/rosterFocus';
 import {
   Banknote,
