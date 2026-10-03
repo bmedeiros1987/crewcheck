@@ -82,7 +82,7 @@ import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatfo
 import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient';
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
-import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
+import { buildCrewCheckWatchSnapshot, watchSnapshotContentSignature, WATCH_UNCHANGED_REPUBLISH_MS } from '@/lib/watchContext';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import { crewCheckNotificationPermission, publishCrewCheckNotice, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
@@ -4852,20 +4852,29 @@ export default function Home() {
   }, [compliance]);
 
   useEffect(() => {
-    const publishWatchSnapshot = () => {
+    // O tick de 1 min só existe para pegar viradas de estado e contagens contextuais.
+    // Sem mudança de conteúdo ele não publica; pedidos explícitos sempre publicam.
+    let lastSignature = '';
+    let lastPublishedAt = 0;
+    const publishWatchSnapshot = (force: boolean) => {
       try {
         const snapshot = buildCrewCheckWatchSnapshot(events, event);
+        const signature = watchSnapshotContentSignature(snapshot);
+        const now = Date.now();
+        if (!force && signature === lastSignature && now - lastPublishedAt < WATCH_UNCHANGED_REPUBLISH_MS) return;
+        lastSignature = signature;
+        lastPublishedAt = now;
         window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: snapshot }));
       } catch {
         // Watch sync is auxiliary. Never interfere with roster rendering.
       }
     };
 
-    publishWatchSnapshot();
-    const onRequest = () => publishWatchSnapshot();
+    publishWatchSnapshot(true);
+    const onRequest = () => publishWatchSnapshot(true);
     window.addEventListener('crewcheck:watch-snapshot-request', onRequest);
     window.addEventListener('crewcheck:native-ready', onRequest);
-    const timer = window.setInterval(publishWatchSnapshot, 60_000);
+    const timer = window.setInterval(() => publishWatchSnapshot(false), 60_000);
     return () => {
       window.removeEventListener('crewcheck:watch-snapshot-request', onRequest);
       window.removeEventListener('crewcheck:native-ready', onRequest);
