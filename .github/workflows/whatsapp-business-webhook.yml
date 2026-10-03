@@ -8,6 +8,8 @@ on:
       - 'scripts/v14382/**'
       - 'scripts/v139/apply.mjs'
       - 'scripts/regression-whatsapp-business-webhook.mjs'
+      - 'scripts/p1-whatsapp-sender/**'
+      - 'scripts/regression-whatsapp-sender.mjs'
       - 'render.yaml'
       - '.env.example'
       - '.github/workflows/whatsapp-business-webhook.yml'
@@ -19,6 +21,8 @@ on:
       - 'scripts/v14382/**'
       - 'scripts/v139/apply.mjs'
       - 'scripts/regression-whatsapp-business-webhook.mjs'
+      - 'scripts/p1-whatsapp-sender/**'
+      - 'scripts/regression-whatsapp-sender.mjs'
       - 'render.yaml'
       - '.env.example'
       - '.github/workflows/whatsapp-business-webhook.yml'
@@ -42,3 +46,17 @@ jobs:
           node --check scripts/regression-whatsapp-business-webhook.mjs
       - name: Run official WhatsApp webhook regression
         run: node scripts/regression-whatsapp-business-webhook.mjs
+  sender-binding:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.13.0
+      - name: Prepare canonical adapter
+        run: node scripts/v139/apply.mjs
+      - name: Test receiver and sender binding with fake transport
+        run: |
+          node --check server/whatsapp.mjs
+          node scripts/regression-whatsapp-sender.mjs
