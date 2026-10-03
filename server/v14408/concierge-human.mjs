@@ -45,7 +45,7 @@ function isLongRosterNotice(line = '') {
 
 function cleanDisplayLine(line = '') {
   const raw = String(line || '').trim();
-  if (/^(?:Contexto usado|Contexto do pernoite|Qualidade da consulta):/i.test(raw)) return '';
+  if (/^Qualidade da consulta:/i.test(raw)) return '';
   return raw
     .replace(/^\s*Nota leve:\s*/i, '')
     .replace(/^\s*Resposta operacional(?: contextual)?(?: gerada)?[.:]?\s*/i, '')
@@ -120,7 +120,7 @@ export function conciergeHumanizeReplyV14408(reply = '', query = '', options = {
     result = `${result}\n\n${COMPACT_ROSTER_NOTICE}`.trim();
   }
 
-  if (options.suggest !== false) {
+  if (options.suggest === true) {
     const followUp = followUpFor(query, result);
     if (followUp && !plain(result).includes(plain(followUp))) result = `${result}\n\n${followUp}`;
   }

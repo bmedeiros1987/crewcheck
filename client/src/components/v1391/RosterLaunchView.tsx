@@ -32,6 +32,7 @@ import { AimsRosterTable } from './AimsRosterTable';
 import { CalendarRosterView } from './CalendarRosterView';
 import '@/components/v139/v139.css';
 import '@/launch-v13-9-1.css';
+import { setPendingNavigationContext } from '@/lib/navigationContext';
 import '@/components/v1397/roster-premium.css';
 import { useRosterLayout } from './useRosterLayout';
 import './roster-layout.css';
