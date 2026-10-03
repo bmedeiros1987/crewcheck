@@ -1,7 +1,10 @@
+import { chatSessionFingerprint, type ChatSessionKind } from '@/lib/chatSession';
 import { useEffect, useRef, useState } from 'react';
 
 /** Refresh an authorized conversation while its view is mounted. This is not push. */
-export function useLiveChat(key: string, load: (signal: AbortSignal) => Promise<any>) {
+export function useLiveChat(key: string, load: (signal: AbortSignal) => Promise<any>, kind: ChatSessionKind = 'main') {
+  const account = useRef(chatSessionFingerprint(kind));
+  const sessionMatches = () => account.current === chatSessionFingerprint(kind);
   const loader = useRef(load);
   loader.current = load;
   const generation = useRef(0);
@@ -19,20 +22,35 @@ export function useLiveChat(key: string, load: (signal: AbortSignal) => Promise<
     let running = false;
     let pending = false;
     let failures = 0;
+    let lastRequestAt = 0;
+    let invalidated = false;
     let timer: ReturnType<typeof setTimeout>;
     let request: AbortController | null = null;
     setSnapshot({ key, data: null });
     setStatus(key ? 'Carregando conversa…' : '');
     if (!key) return;
-    const current = () => !disposed && generation.current === session;
+    const invalidate = () => {
+      if (sessionMatches() || invalidated) return;
+      invalidated = true;
+      blocked = true; request?.abort(); clearTimeout(timer);
+      setSnapshot({ key, data: null });
+      setStatus('Sessão alterada. Reabra o aplicativo para continuar.');
+    };
+    const current = () => {
+      if (!disposed && !sessionMatches()) invalidate();
+      return !disposed && generation.current === session && sessionMatches();
+    };
     const poll = async () => {
       clearTimeout(timer);
-      if (!current() || !key || blocked) return;
+      if (!current() || !key || blocked || document.hidden) return;
       if (running) { pending = true; return; }
       if (!navigator.onLine) {
         setStatus('Sem conexão. A conversa será atualizada ao reconectar.');
         return;
       }
+      const cooldown = 1000 - (Date.now() - lastRequestAt);
+      if (cooldown > 0) { timer = setTimeout(poll, cooldown); return; }
+      lastRequestAt = Date.now();
       running = true;
       const started = revision.current;
       request = new AbortController();
@@ -55,7 +73,7 @@ export function useLiveChat(key: string, load: (signal: AbortSignal) => Promise<
       } finally {
         clearTimeout(timeout);
         running = false;
-        if (current() && !blocked) {
+        if (current() && !blocked && !document.hidden) {
           const delay = pending ? 0 : Math.min(60_000, Math.max(document.hidden ? 30_000 : 4_000, failures ? 4_000 * 2 ** Math.min(failures, 4) : 0));
           pending = false;
           timer = setTimeout(poll, delay);
@@ -67,12 +85,20 @@ export function useLiveChat(key: string, load: (signal: AbortSignal) => Promise<
     refresh.current = () => { void poll(); };
     retry.current = () => { blocked = false; void poll(); };
     void poll();
+    const sessionTimer = setInterval(invalidate, 1000);
+    window.addEventListener('storage', invalidate);
+    window.addEventListener('crewcheck:auth-expired', invalidate);
+    window.addEventListener('crewcheck:visitor-session-change', invalidate);
     window.addEventListener('online', resume);
     window.addEventListener('offline', offline);
     window.addEventListener('focus', resume);
     document.addEventListener('visibilitychange', resume);
     return () => {
       disposed = true;
+      clearInterval(sessionTimer);
+      window.removeEventListener('storage', invalidate);
+      window.removeEventListener('crewcheck:auth-expired', invalidate);
+      window.removeEventListener('crewcheck:visitor-session-change', invalidate);
       generation.current += 1;
       request?.abort();
       clearTimeout(timer);
@@ -85,6 +111,7 @@ export function useLiveChat(key: string, load: (signal: AbortSignal) => Promise<
 
   // A send invalidates any older GET. Its completion cannot overwrite another chat.
   async function send(action: () => Promise<any>) {
+    if (!sessionMatches()) throw new Error('Sessão alterada. Reabra o aplicativo.');
     if (sending.current) throw new Error('Aguarde o envio da mensagem.');
     const session = generation.current;
     sending.current = true;
@@ -93,11 +120,11 @@ export function useLiveChat(key: string, load: (signal: AbortSignal) => Promise<
       await action();
     } finally {
       sending.current = false;
-      if (session === generation.current) {
+      if (session === generation.current && sessionMatches()) {
         revision.current += 1;
         refresh.current();
       }
     }
   }
-  return { chat: snapshot.key === key ? snapshot.data : null, status, send, retry: () => retry.current() };
+  return { chat: sessionMatches() && snapshot.key === key ? snapshot.data : null, status, send, retry: () => retry.current() };
 }

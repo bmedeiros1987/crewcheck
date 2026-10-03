@@ -1,3 +1,4 @@
+import { chatSessionFingerprint } from '@/lib/chatSession';
 import { useEffect, useRef, useState } from 'react';
 import { authFetch, getToken } from '@/lib/authClient';
 import { reconcileChatInbox, type ChatInboxState, type ChatInboxItem } from '@/lib/chatInboxState';
@@ -16,7 +17,8 @@ export default function ChatInbox({ visitor = false, onOpen }: Props) {
     let recipient = '';
     let memory: ChatInboxState | null = null;
     const credential = visitor ? '' : getToken();
-    const validSession = () => !disposed && (visitor || Boolean(credential && getToken() === credential));
+    const sessionFingerprint = chatSessionFingerprint(visitor ? 'visitor' : 'main');
+    const validSession = () => !disposed && sessionFingerprint === chatSessionFingerprint(visitor ? 'visitor' : 'main') && (visitor || Boolean(credential && getToken() === credential));
     const storageKey = () => `crewcheck:chat-inbox:v1:${recipient}`;
     const read = (): ChatInboxState | null => {
       try { const value = JSON.parse(localStorage.getItem(storageKey()) || 'null'); return value?.initialized && Array.isArray(value.seen) && Array.isArray(value.unread) ? value : memory; } catch { return memory; }
@@ -54,7 +56,7 @@ export default function ChatInbox({ visitor = false, onOpen }: Props) {
         if (recipient !== payload.recipient) memory = null;
         recipient = payload.recipient;
         await locked(() => {
-          const { fresh, state } = reconcileChatInbox(read(), payload.items);
+          const { fresh, state } = reconcileChatInbox(read(), payload.items, payload.snapshotVersion);
           const persisted = save(state);
           if (fresh.length) {
             const key = `chat:${recipient}:${fresh[0].id}`;
@@ -85,6 +87,7 @@ export default function ChatInbox({ visitor = false, onOpen }: Props) {
     window.addEventListener('focus', resume);
     window.addEventListener('storage', sync);
     window.addEventListener('crewcheck:auth-expired', sync);
+    window.addEventListener('crewcheck:visitor-session-change', sync);
     window.addEventListener('crewcheck:chat-read', readMessages);
     document.addEventListener('visibilitychange', resume);
     void poll();
@@ -94,6 +97,7 @@ export default function ChatInbox({ visitor = false, onOpen }: Props) {
       window.removeEventListener('focus', resume);
       window.removeEventListener('storage', sync);
       window.removeEventListener('crewcheck:auth-expired', sync);
+      window.removeEventListener('crewcheck:visitor-session-change', sync);
       window.removeEventListener('crewcheck:chat-read', readMessages);
       document.removeEventListener('visibilitychange', resume);
     };
