@@ -11,6 +11,7 @@ let configured=BR, calls=[], links=0, completes=0, sends=[], current;
 const active={email:'a@example.invalid',linked_at:'2026-10-03 16:00:00.001',consent_concierge:1};
 let engine=async ({email})=>`private:${email}`;
 const context=vm.createContext({
+ whatsappMenuEnabled:()=>false,
  phoneNumberId:()=>configured, normalizePhone:v=>String(v||''),
  findActiveLinkByPhone:async()=>{links++;return current;},
  tryCompleteLink:async()=>{completes++;return {linked:true};},
