@@ -1,6 +1,6 @@
 import { rosterDisplayCompare, rosterDisplayIso, rosterInstantIso, rosterLabelDate, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { useEffect, useMemo, useState } from 'react';
-import { peekPendingNavigationContext, setPendingNavigationContext } from '@/lib/navigationContext';
+import { peekPendingNavigationContext } from '@/lib/navigationContext';
 import { consumePendingRosterFocus } from '@/lib/rosterFocus';
 import {
   Banknote,
@@ -32,6 +32,7 @@ import { AimsRosterTable } from './AimsRosterTable';
 import { CalendarRosterView } from './CalendarRosterView';
 import '@/components/v139/v139.css';
 import '@/launch-v13-9-1.css';
+import { setPendingNavigationContext } from '@/lib/navigationContext';
 import '@/components/v1397/roster-premium.css';
 import { useRosterLayout } from './useRosterLayout';
 import './roster-layout.css';
