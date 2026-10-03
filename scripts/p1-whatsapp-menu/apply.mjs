@@ -2,23 +2,35 @@ import fs from 'node:fs';
 const path = 'server/whatsapp.mjs';
 let source = fs.readFileSync(path, 'utf8');
 const marker = 'await deliverWhatsAppMenuMessage(message,';
-if (!source.includes(marker)) {
-  const start = source.indexOf('  const link = await findActiveLinkByPhone(from);', source.indexOf('async function handleInboundMessage(message)'));
-  const end = source.indexOf('\n}\n\nasync function processWhatsAppPayload', start);
-  if (start < 0 || end < 0) throw new Error('[whatsapp-menu] prepared inbound adapter missing');
-  source = source.slice(0, start) + `  await deliverWhatsAppMenuMessage(message, {
-    findLink: findActiveLinkByPhone,
-    handler: whatsappConciergeHandler,
-    send: sendWhatsAppText,
-  });` + source.slice(end);
+const gateMarker = 'const menuEnabled = whatsappMenuEnabled();';
+if (source.includes(marker) && !source.includes(gateMarker)) {
+  throw new Error('[whatsapp-menu] rebuild clean source to replace the ungated preview');
 }
-const receiverGuard = "  const expectedPhoneId = phoneNumberId();\n  if (!expectedPhoneId || message?.phoneNumberId !== expectedPhoneId) return;";
-if (!source.includes(receiverGuard)) {
+if (!source.includes(gateMarker)) {
   const anchor = 'async function handleInboundMessage(message) {';
-  if (!source.includes(anchor)) throw new Error('[whatsapp-menu] inbound boundary missing');
-  source = source.replace(anchor, anchor + '\n' + receiverGuard);
+  const start = source.indexOf(anchor);
+  const insertion = source.indexOf('  const link = await findActiveLinkByPhone(from);', start);
+  if (start < 0 || insertion < 0) throw new Error('[whatsapp-menu] prepared inbound adapter missing');
+  // Keep the original branch intact: OFF must execute the same old handler,
+  // including account linking, provider calls and message count.
+  source = source.slice(0, insertion) + `  if (menuEnabled) {
+    await deliverWhatsAppMenuMessage(message, {
+      findLink: findActiveLinkByPhone,
+      handler: whatsappConciergeHandler,
+      send: sendWhatsAppText,
+    });
+    return;
+  }
+
+` + source.slice(insertion);
+  source = source.replace(anchor, `${anchor}
+  const menuEnabled = whatsappMenuEnabled();
+  if (menuEnabled) {
+    const expectedPhoneId = phoneNumberId();
+    if (!expectedPhoneId || message?.phoneNumberId !== expectedPhoneId) return;
+  }`);
 }
-const importLine = "import { deliverWhatsAppMenuMessage } from './concierge/whatsapp-menu.mjs';";
+const importLine = "import { deliverWhatsAppMenuMessage, whatsappMenuEnabled } from './concierge/whatsapp-menu.mjs';";
 if (!source.includes(importLine)) source = importLine + '\n' + source;
 fs.writeFileSync(path, source);
-console.log('[whatsapp-menu] deterministic text menu and post-query account authorization');
+console.log('[whatsapp-menu] opt-in text menu; default OFF preserves the existing handler');

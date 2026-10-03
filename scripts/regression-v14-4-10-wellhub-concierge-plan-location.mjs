@@ -130,10 +130,7 @@ assert.match(materializedServer, /Não tenho uma cidade\/UF confirmada para pesq
 assert.match(materializedServer, /configureWhatsAppConcierge\(async \(\{ email, text, location \}\)/);
 assert.match(materializedServer, /source: 'whatsapp'/);
 assert.match(materializedWhatsApp, /message\?\.type === 'location'/);
-const locationForwarder = materializedWhatsApp.includes('await deliverWhatsAppMenuMessage(message,')
-  ? fs.readFileSync('server/concierge/whatsapp-menu.mjs', 'utf8')
-  : materializedWhatsApp;
-assert.match(locationForwarder, /location: message\.location \|\| null/);
+assert.match(materializedWhatsApp, /location: message\.location \|\| null/);
 assert.match(materializedWhatsApp, /conciergeLocation: true/);
 
 console.log('CrewCheck v14.4.10 Wellhub plan/activity + geo fail-closed + WhatsApp location parity: PASS');

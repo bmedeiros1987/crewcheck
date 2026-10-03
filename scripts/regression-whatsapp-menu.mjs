@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { deliverWhatsAppMenuMessage, WHATSAPP_MENU } from '../server/concierge/whatsapp-menu.mjs';
+import { deliverWhatsAppMenuMessage, WHATSAPP_MENU, whatsappMenuEnabled } from '../server/concierge/whatsapp-menu.mjs';
+
+for (const value of [undefined, '', 'false', '0', '1', 'TRUE', ' true ', 'yes', true, 1]) {
+  assert.equal(whatsappMenuEnabled({CREWCHECK_WHATSAPP_MENU_ENABLED:value}),false);
+}
+assert.equal(whatsappMenuEnabled({}),false);
+assert.equal(whatsappMenuEnabled({CREWCHECK_WHATSAPP_MENU_ENABLED:'true'}),true);
 
 const A = '5511000000001', B = '5511000000002';
 const binding = email => ({ email, consent_concierge: 1, linked_at: '2026-10-03T10:00:00Z' });
@@ -101,7 +107,10 @@ const source = fs.readFileSync('server/whatsapp.mjs','utf8');
 const inbound = source.slice(source.indexOf('async function handleInboundMessage(message)'),source.indexOf('async function processWhatsAppPayload'));
 assert.match(inbound,/await deliverWhatsAppMenuMessage/);
 assert.match(inbound,/tryCompleteLink/);
+let environment={CREWCHECK_WHATSAPP_MENU_ENABLED:'true'};
 const context=vm.createContext({
+  whatsappMenuEnabled:()=>whatsappMenuEnabled(environment),
+  console:{error:()=>{}},
   phoneNumberId:()=> 'synthetic-receiver',
   normalizePhone:value=>String(value).replace(/\D/g,''),
   tryCompleteLink:async()=>{throw Error('linking was not requested');},
@@ -125,7 +134,36 @@ await context.handleInboundMessage(message('123456'));
 assert.equal(sent.length,0); assert.equal(calls.length,0);
 context.phoneNumberId=()=> 'synthetic-receiver';
 assert.ok(inbound.indexOf('message?.phoneNumberId !== expectedPhoneId') < inbound.indexOf('tryCompleteLink'), 'receiver check must precede even account linking');
+// OFF/invalid values execute the original path: one engine call and one
+// existing response, with no new menu, extra link read or callback action.
+const enabledDelivery=context.deliverWhatsAppMenuMessage;
+context.deliverWhatsAppMenuMessage=()=>{throw Error('OFF must not invoke new adapter');};
+context.phoneNumberId=()=>{throw Error('OFF must not introduce receiver checks');};
+for (const value of [undefined, '', 'false', 'TRUE', '1', 'invalid']) {
+  environment={CREWCHECK_WHATSAPP_MENU_ENABLED:value};
+  reset();let linkReads=0;
+  context.findActiveLinkByPhone=async phone=>{linkReads++;return deps.findLink(phone);};
+  await context.handleInboundMessage(message('menu'));
+  assert.equal(linkReads,1);assert.equal(calls.length,1);assert.equal(calls[0].text,'menu');
+  assert.equal(sent.length,1);assert.notEqual(sent[0].text,WHATSAPP_MENU);
+  assert.match(sent[0].text,/15:40 BRT/);
+}
+reset();links.delete(A);
+await context.handleInboundMessage(message('menu'));
+assert.equal(calls.length,0);assert.equal(sent.length,1);assert.match(sent[0].text,/conecte este WhatsApp/);
+reset();
+await context.handleInboundMessage(message('arbitrary',A,'interactive'));
+assert.equal(calls.length,0);assert.equal(sent.length,1);assert.match(sent[0].text,/aceita texto e localização/);
+reset();
+context.tryCompleteLink=async()=>({linked:true});
+await context.handleInboundMessage(message('123456'));
+assert.equal(calls.length,0);assert.equal(sent.length,1);assert.match(sent[0].text,/WhatsApp conectado/);
+environment={CREWCHECK_WHATSAPP_MENU_ENABLED:'true'};
+context.phoneNumberId=()=> 'synthetic-receiver';
+context.deliverWhatsAppMenuMessage=enabledDelivery;
+reset();await context.handleInboundMessage(message('menu'));
+assert.equal(calls.length,0);assert.equal(sent.length,1);assert.equal(sent[0].text,WHATSAPP_MENU);
 assert.doesNotMatch(fs.readFileSync('server/concierge/whatsapp-menu.mjs','utf8'),/console\.(?:log|info|warn|error)/);
 assert.match(source,/WHERE phone_hash=\? AND revoked_at IS NULL/);
 assert.match(source,/if \(acceptedMessageIds.has\(message.id\)\) await handleInboundMessage\(message\)/);
-console.log('PASS deterministic WhatsApp menu, same-channel factual replies, A/B isolation, revocation/relink, invalid callback, location and prepared adapter; zero real APIs');
+console.log('PASS default-OFF original behavior, invalid flag values, simulated ON; deterministic WhatsApp menu, same-channel factual replies, A/B isolation, revocation/relink, invalid callback, location and prepared adapter; zero real APIs');

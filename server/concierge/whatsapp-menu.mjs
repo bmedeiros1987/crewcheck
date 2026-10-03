@@ -1,3 +1,7 @@
+export function whatsappMenuEnabled(environment = process.env) {
+  return environment.CREWCHECK_WHATSAPP_MENU_ENABLED === 'true';
+}
+
 // Channel adapter only: facts remain owned by the existing Concierge engine.
 export const WHATSAPP_MENU = [
   'CrewCheck — o que você quer consultar?',
