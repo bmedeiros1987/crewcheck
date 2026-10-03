@@ -8,7 +8,8 @@ export type PublishedEvent = {
 type Item = Record<string, string>;
 export type Publication = { items: Item[]; completeDates: string[]; revision: string };
 export type Change = { id: number; version: number; kind: 'changed' | 'added' | 'removed'; before?: Item; after?: Item; seen: boolean };
-export type ReviewState = { schema: 1; owner: string; version: number; publication: Publication; baseline: Publication; history: Change[]; unknown: boolean };
+export type UnconfirmedDifference = { kind: 'newly-observed' | 'not-observed' | 'ambiguous'; item: Item };
+export type ReviewState = { schema: 1; owner: string; version: number; publication: Publication; baseline: Publication; history: Change[]; unknown: boolean; unconfirmed?: UnconfirmedDifference[] };
 type Storage = { getItem(key: string): string | null; setItem(key: string, value: string): void };
 const clean = (value: unknown) => String(value ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
 const encode = (value: unknown) => JSON.stringify(value);
@@ -58,6 +59,8 @@ export function observePublication(owner: string, previous: ReviewState | null, 
   }
   const history = previous.history.slice(), version = previous.version + 1;
   let unknown = next.completeDates.length === 0;
+  // Observations only: absence in a partial source is never a confirmed removal.
+  const unconfirmed: UnconfirmedDifference[] = [];
   function add(kind: Change['kind'], a?: Item, b?: Item) {
     history.push({ id: (history.at(-1)?.id ?? 0) + 1, version, kind, before: a, after: b, seen: false });
   }
@@ -72,20 +75,20 @@ export function observePublication(owner: string, previous: ReviewState | null, 
   }
   const ambiguous = new Set([...before, ...after].filter(item => (item.code || item.pairing) && before.some(a => anchor(a) === anchor(item)) && after.some(a => anchor(a) === anchor(item))).map(anchor));
   for (const item of before) {
-    if (ambiguous.has(anchor(item))) { unknown = true; continue; }
+    if (ambiguous.has(anchor(item))) { unknown = true; unconfirmed.push({ kind: 'ambiguous', item }); continue; }
     if (baseline.completeDates.includes(item.date) && next.completeDates.includes(item.date)) add('removed', item);
-    else unknown = true;
+    else { unknown = true; unconfirmed.push({ kind: 'not-observed', item }); }
   }
   for (const item of after) {
-    if (ambiguous.has(anchor(item))) { unknown = true; continue; }
+    if (ambiguous.has(anchor(item))) { unknown = true; unconfirmed.push({ kind: 'ambiguous', item }); continue; }
     if (baseline.completeDates.includes(item.date) && next.completeDates.includes(item.date)) add('added', undefined, item);
-    else unknown = true;
+    else { unknown = true; unconfirmed.push({ kind: 'newly-observed', item }); }
   }
   // A partial observation cannot erase last known occurrences needed by a later complete publication.
   const retained = before.filter(item => !next.completeDates.includes(item.date) || ambiguous.has(anchor(item)));
   const baselineItems = [...next.items.filter(item => !ambiguous.has(anchor(item))), ...retained].sort((a, b) => encode(a).localeCompare(encode(b)));
   const updatedBaseline = { items: baselineItems, completeDates: [...new Set([...baseline.completeDates, ...next.completeDates])].sort(), revision: encode(baselineItems) };
-  return { schema: 1, owner, version, publication: next, baseline: updatedBaseline, history, unknown };
+  return { schema: 1, owner, version, publication: next, baseline: updatedBaseline, history, unknown, unconfirmed };
 }
 /** Call only after that exact before/after detail is actually consulted. */
 export function consultedChange(state: ReviewState, owner: string, id: number, version: number): ReviewState {
@@ -101,6 +104,7 @@ export function readReview(storage: Storage, owner: string): ReviewState | null 
     const validItem = (item: unknown) => Boolean(item && typeof item === 'object' && !Array.isArray(item) && ['kind','date','code','origin','destination','presentation','departure','arrival','start','end','nextDay','workType','dayType','pairing','hotel'].every(key => typeof (item as Item)[key] === 'string'));
     const validPublication = (value: Publication) => Boolean(value && Array.isArray(value.items) && value.items.every(validItem) && Array.isArray(value.completeDates) && value.completeDates.every(date => typeof date === 'string') && value.revision === encode(value.items));
     if (!state || state.schema !== 1 || state.owner !== owner || !owner.trim() || !Number.isSafeInteger(state.version) || state.version < 1 || typeof state.unknown !== 'boolean' || !Array.isArray(state.history) || !validPublication(state.publication) || !validPublication(state.baseline)) return null;
+    if (state.unconfirmed !== undefined && (!Array.isArray(state.unconfirmed) || !state.unconfirmed.every((entry: UnconfirmedDifference) => entry && ['newly-observed','not-observed','ambiguous'].includes(entry.kind) && validItem(entry.item)))) return null;
     let lastId = 0;
     if (!state.history.every((change: Change) => {
       if (!Number.isSafeInteger(change.id) || change.id <= lastId || !Number.isSafeInteger(change.version) || change.version < 2 || change.version > state.version || typeof change.seen !== 'boolean') return false;

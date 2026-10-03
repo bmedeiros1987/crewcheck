@@ -156,8 +156,15 @@ export function AimsRosterTable({ events, title = 'Escala publicada em tabela', 
     {showHistory && <aside className="cc-publication-history" aria-label="Histórico de alterações">
       <h3>Alterações da escala</h3>
       {runtimeStatus && <p role="status">{runtimeStatus}</p>}
-      <p>{!review ? 'Sem referência pessoal confirmada. A primeira publicação cria a referência; não indica mudanças.' : review.unknown ? 'Comparação parcial ou ambígua. Inclusões e remoções não são inferidas sem cobertura comprovada.' : 'Comparação com a última referência pessoal conhecida.'}</p>
+      <p>{!review ? 'Sem referência pessoal confirmada. A primeira publicação cria a referência; não indica mudanças.' : review.version === 1 ? 'Primeira leitura registrada como referência pessoal. Ainda não há comparação com uma versão anterior.' : review.unknown ? 'Comparação parcial ou ambígua. Inclusões e remoções não são inferidas sem cobertura comprovada.' : 'Comparação com a última referência pessoal conhecida.'}</p>
       <p>Amarelo indica alteração ainda não vista. Abrir esta tela não confirma leitura nem aceite da companhia.</p>
+      {Boolean(review?.unconfirmed?.length) && <details>
+        <summary>Diferenças sem confirmação nesta comparação · {review!.unconfirmed!.length}</summary>
+        <p>Versão local {review!.version}. Estes registros não confirmam alteração da programação e não recebem marca de leitura. Confira as duas fontes oficiais.</p>
+        <ul>{review!.unconfirmed!.map((entry, index) => <li key={index}>
+          {entry.item.code || entry.item.pairing || 'Programação'} · {entry.item.date} · {entry.item.origin} → {entry.item.destination}: {entry.kind === 'not-observed' ? 'Não encontrada nesta leitura; remoção não confirmada.' : entry.kind === 'newly-observed' ? 'Observada nesta leitura e ausente da referência anterior; inclusão não confirmada.' : 'Correspondência ambígua; alteração não confirmada.'}
+        </li>)}</ul>
+      </details>}
       {review?.history.map(change => <div key={`${review.owner}:${change.id}`} data-change-status={change.seen ? 'seen' : 'unread'}>
         <button type="button" aria-expanded={historyOpen === change.id} onClick={()=>setHistoryOpen(historyOpen === change.id ? null : change.id)}>{change.seen ? 'Vista' : 'Não vista'} · {(change.after || change.before)?.code || 'Programação'} · {(change.after || change.before)?.date} · versão {change.version}{change.kind === 'removed' ? ' · Removida' : ''}</button>
         {historyOpen === change.id && review.version === observedVersion.current && <PublicationChangeDetail owner={review.owner} change={change}/>}

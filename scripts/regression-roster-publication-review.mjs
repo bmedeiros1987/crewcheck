@@ -51,3 +51,25 @@ assert.equal(readReview({getItem:()=>JSON.stringify(malformed)},'A'),null);
 const formats = {...flight,presentation:'07:00'};
 assert.equal(p([formats]).revision, p([{...formats,date:'2026-10-31',presentation:'7:00',startDateTime:'2026-11-01T03:05:00.000Z'}]).revision);
 console.log('PASS: publication deltas, APZ/date/+1, multileg order, partial coverage, history, per-version consultation, reload/account isolation and storage failure');
+
+// Unconfirmed observations are useful evidence, never confirmed history/read receipts.
+const uncertain = observe('A', observe('A', null, p(legs)), p(legs.slice(0,3)));
+assert.equal(uncertain.history.length, 0);
+assert.equal(uncertain.unconfirmed.length, 1);
+assert.equal(uncertain.unconfirmed[0].kind, 'not-observed');
+assert.equal(uncertain.unconfirmed[0].item.code, '3');
+assert.equal(observe('A', uncertain, uncertain.publication), uncertain);
+const uncertainAdded = observe('A', observe('A', null, p(legs.slice(0,3))), p(legs));
+assert.equal(uncertainAdded.unconfirmed[0].kind, 'newly-observed');
+assert.deepEqual(seen(uncertainAdded, 'A', 1, 2).unconfirmed, uncertainAdded.unconfirmed);
+assert.deepEqual(complete.unconfirmed, []);
+writeReview(storage, uncertain);
+assert.equal(readReview(storage, 'A').unconfirmed[0].kind, 'not-observed');
+assert.equal(readReview(storage, 'B'), null);
+for (const invalid of [null, {}, [{kind:'removed',item:uncertain.unconfirmed[0].item}], [{kind:'not-observed',item:{code:'3'}}]]) {
+ assert.equal(readReview({getItem:()=>JSON.stringify({...uncertain,unconfirmed:invalid})}, 'A'), null);
+}
+const legacy = {...uncertain}; delete legacy.unconfirmed;
+assert.ok(readReview({getItem:()=>JSON.stringify(legacy)}, 'A'));
+assert.equal(observe('A', legacy, legacy.publication), legacy, 'No fabricated backfill from an unchanged legacy snapshot');
+console.log('PASS: unconfirmed observations separate from history/seen, persisted safely, legacy and repeated snapshots preserved');

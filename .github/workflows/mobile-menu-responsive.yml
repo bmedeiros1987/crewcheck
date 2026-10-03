@@ -8,6 +8,10 @@ on:
       - 'client/src/pages/Home.tsx'
       - 'client/src/components/v1391/menu-5s.css'
       - 'client/src/lib/menuPreference.ts'
+      - 'client/src/lib/rosterPublication*.ts'
+      - 'client/src/components/v1391/AimsRosterTable.tsx'
+      - 'scripts/regression-publication-import-flow.cjs'
+      - 'scripts/regression-roster-publication-review.mjs'
       - 'scripts/p1-menu-premium/**'
       - 'scripts/p1-menu-5s/**'
       - 'scripts/v14344/**'
@@ -71,6 +75,12 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
         run: node scripts/regression-shell-navigation-browser.mjs
+      - name: Validate publication import to history with synthetic PDFs
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: |
+          node scripts/regression-roster-publication-review.mjs
+          node scripts/regression-publication-import-flow.cjs
       - name: Save actual viewport evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -79,5 +89,6 @@ jobs:
           path: |
             artifacts/menu-responsive
             artifacts/menu-interaction
+            artifacts/publication-import-flow
           if-no-files-found: warn
           retention-days: 7
