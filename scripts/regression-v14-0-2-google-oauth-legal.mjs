@@ -20,13 +20,13 @@ assert.match(android, /versionCode 140002\b/);
 assert.match(android, /versionName '14\.0\.2'/);
 
 assert.match(calendar, /https:\/\/www\.googleapis\.com\/auth\/calendar\.events\.owned/);
-assert.doesNotMatch(calendar, /calendar\.calendarlist\.readonly/);
-assert.doesNotMatch(calendar, /https:\/\/www\.googleapis\.com\/auth\/calendar\.events['"\s]/);
+assert.match(calendar, /https:\/\/www\.googleapis\.com\/auth\/calendar\.calendarlist\.readonly/);
+assert.doesNotMatch(calendar, /https:\/\/www\.googleapis\.com\/auth\/calendar(?:\.events|\.calendarlist)?['"\s]/);
 assert.match(calendar, /include_granted_scopes: false/);
-assert.match(calendar, /return \[\{ id: 'primary'/);
+assert.match(calendar, /\/users\/me\/calendarList\?minAccessRole=owner/);
 assert.match(calendar, /confirmGoogleCalendarOwnedEventsDisclosure/);
 assert.match(calendar, /remove somente eventos identificados como CrewCheck/);
-assert.match(calendar, /const calendarId = 'primary'/);
+assert.match(calendar, /const calendarId = normalizeGoogleCalendarId\(settings\.selectedCalendarId\) \|\| 'primary'/);
 
 assert.match(legal, /Política de Privacidade/);
 assert.match(legal, /Google API Services User Data Policy/);
@@ -38,6 +38,7 @@ assert.match(legal, /Última atualização: \$\{LAST_UPDATED\}/);
 
 assert.match(about, /CrewCheck \+ Google Calendar/);
 assert.match(about, /calendar\.events\.owned/);
+assert.match(about, /calendar\.calendarlist\.readonly/);
 assert.match(about, /Não lê e-mails, arquivos do Drive, contatos, fotos/);
 assert.match(about, /Limited Use/);
 assert.match(app, /path="\/about"/);

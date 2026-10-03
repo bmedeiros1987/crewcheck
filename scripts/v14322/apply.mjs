@@ -51,20 +51,26 @@ function buildScaleVerificationDescription(roster: CrewRoster, day: RosterDay): 
 ${helperAnchor}`;
   source = replaceOnce(source, helperAnchor, helpers, 'helpers de verificação da escala');
 
+  // Âncoras atualizadas no formato operacional do Google Calendar: o lembrete separado
+  // "Verificar escala oficial" não entra no estilo 'operational-detailed' (sem eventos auxiliares)
+  // e, nos demais estilos, usa o fuso do aeroporto de liberação.
   const flightClose = `      }
     }
 
-    if (shouldExportDuties(cfg.mode)`;
+    if (shouldExportDuties(cfg.mode, cfg.calendarStyle)`;
   const flightReminder = `      }
 
-      if (shouldVerifyScaleAfterProgram(roster, day, dayIndex)) {
+      if (!operational && shouldVerifyScaleAfterProgram(roster, day, dayIndex)) {
         const verificationStart = pairingEndTime(day);
         const verificationNextDay = pairingArrivesNextDay(day);
         ical += buildEvent({
           uid: \`\${uidBase}-verify-scale-flight-\${dayIndex}\`,
+          key: uniqueKey(\`verify|\${isoDate}\`),
           now,
           start: formatDateTimeForIcal(day.date, verificationStart, verificationNextDay ? 1 : 0),
           end: formatDateTimeForIcal(day.date, addDisplayMinutes(verificationStart, 15), verificationNextDay ? 1 : 0),
+          startTimeZone: timeline.endTimeZone,
+          endTimeZone: timeline.endTimeZone,
           summary: 'Verificar escala oficial',
           description: buildScaleVerificationDescription(roster, day),
           location: 'Escala oficial · canal da empresa',
@@ -76,21 +82,24 @@ ${helperAnchor}`;
       }
     }
 
-    if (shouldExportDuties(cfg.mode)`;
+    if (shouldExportDuties(cfg.mode, cfg.calendarStyle)`;
   source = replaceOnce(source, flightClose, flightReminder, 'lembrete após voo');
 
   const dutyClose = `      }
     }
 
-    if (shouldExportRest(cfg.mode)`;
+    // Formato operacional: HSB/ASB`;
   const dutyReminder = `      }
 
-      if (shouldVerifyScaleAfterProgram(roster, day, dayIndex)) {
+      if (!operational && shouldVerifyScaleAfterProgram(roster, day, dayIndex)) {
         ical += buildEvent({
           uid: \`\${uidBase}-verify-scale-duty-\${dayIndex}\`,
+          key: uniqueKey(\`verify|\${isoDate}\`),
           now,
           start: formatDateTimeForIcal(day.date, day.dutyDebrief, endNextDay ? 1 : 0),
           end: formatDateTimeForIcal(day.date, addDisplayMinutes(day.dutyDebrief, 15), endNextDay ? 1 : 0),
+          startTimeZone: dutyTimeZone,
+          endTimeZone: dutyTimeZone,
           summary: 'Verificar escala oficial',
           description: buildScaleVerificationDescription(roster, day),
           location: 'Escala oficial · canal da empresa',
@@ -102,7 +111,7 @@ ${helperAnchor}`;
       }
     }
 
-    if (shouldExportRest(cfg.mode)`;
+    // Formato operacional: HSB/ASB`;
   source = replaceOnce(source, dutyClose, dutyReminder, 'lembrete após atividade sem pernas');
   return source;
 });
