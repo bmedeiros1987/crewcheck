@@ -40,7 +40,11 @@ export async function pharmacyReferenceReply(text, profile, snapshot, deps, now 
       new Date(stay.start) <= time && new Date(stay.end) > time;
   });
   const fingerprint = (data, time) => createHash('sha256').update(JSON.stringify({ roster: data?.roster || null, stays: active(data, time).map(stay => [stay.hotel, stay.location, stay.start, stay.end]) })).digest('hex');
-  const scope = { userId: owner, chatId: clean(profile.chatId || profile.channel || 'app', 96), now };
+  // App profiles may carry a linked Telegram chatId. Only the request channel
+  // determines its origin; version the scope to reject older ambiguous records.
+  const channel = clean(profile.channel || (profile.chatId ? 'telegram' : 'app'), 32).toLowerCase();
+  const chatScope = channel === 'telegram' ? `telegram:${clean(profile.chatId, 48)}` : channel;
+  const scope = { userId: owner, chatId: `v2:${chatScope}`, now };
   const activeStays = active(snapshot, now);
   const binding = fingerprint(snapshot, now);
   const previous = snapshot?.preferences?.[KEY];
