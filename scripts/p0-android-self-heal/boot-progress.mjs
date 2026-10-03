@@ -75,6 +75,18 @@ const premiumOverlayMethods = `    private void showCrewCheckBootStatus(final St
                     LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(dp(156), dp(4));
                     overlay.addView(progress, progressParams);
 
+                    TextView status = new TextView(MainActivity.this);
+                    status.setTextColor(Color.parseColor("#CBD5E1"));
+                    status.setTextSize(15);
+                    status.setGravity(Gravity.CENTER);
+                    status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+                    LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                    statusParams.setMargins(0, dp(20), 0, 0);
+                    overlay.addView(status, statusParams);
+                    crewCheckBootStatusText = status;
+
+
                     FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                             FrameLayout.LayoutParams.MATCH_PARENT,
                             FrameLayout.LayoutParams.MATCH_PARENT
@@ -84,6 +96,7 @@ const premiumOverlayMethods = `    private void showCrewCheckBootStatus(final St
                     crewCheckBootProgress = progress;
                 }
 
+                if (crewCheckBootStatusText != null) crewCheckBootStatusText.setText(message);
                 crewCheckBootOverlay.setVisibility(View.VISIBLE);
                 crewCheckBootOverlay.bringToFront();
                 if (crewCheckBootProgress != null) {
