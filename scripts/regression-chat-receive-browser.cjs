@@ -24,6 +24,7 @@ const dist=path.resolve('dist'),out=path.resolve('artifacts/chat-receive'); fs.m
  await b.page.reload();await b.page.getByText('Durante offline',{exact:true}).waitFor();assert.deepEqual(await b.page.locator('.cv-messages p span').allTextContents(),['Mensagem sintética A para B','Durante offline']);tests.push('Reload preserves server order');
  await b.page.screenshot({path:out+'/visitor-receive.png'});
  revoked=true;await b.page.evaluate(()=>window.dispatchEvent(new Event('focus')));await b.page.getByRole('status').filter({hasText:'Acesso revogado.'}).waitFor();assert.equal(await b.page.locator('.cv-messages').count(),0);const before=gets;await b.page.waitForTimeout(4500);assert.equal(gets,before);tests.push('Revocation clears messages and stops polling');
+ revoked=false;await b.page.getByRole('button',{name:'Chat',exact:true}).first().click();await b.page.getByText('Durante offline',{exact:true}).waitFor();tests.push('Explicit reopening retries after authorization is restored');
  assert.deepEqual(errors,[]);fs.writeFileSync(out+'/browser-report.json',JSON.stringify({tests,errors,note:'Synthetic API fixture shared by two isolated browser contexts. No production requests; not physical push validation.'},null,2));console.log(tests);
  }finally{if(browser)await browser.close();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -53,7 +53,7 @@ export default function VisitorAccessPage() {
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'roster' | 'hotels' | 'map' | 'chat' | 'emergency'>('roster');
   const [helpMessage, setHelpMessage] = useState('');
-  const { chat, status: chatStatus, send: sendLiveChat } = useLiveChat(mode === 'portal' && tab === 'chat' && data?.visitor.permissions.chat ? 'visitor-chat' : '', (signal) => visitorRequest('/api/platform/visitor/chat', { signal }));
+  const { chat, status: chatStatus, send: sendLiveChat, retry: retryChat } = useLiveChat(mode === 'portal' && tab === 'chat' && data?.visitor.permissions.chat ? 'visitor-chat' : '', (signal) => visitorRequest('/api/platform/visitor/chat', { signal }));
   const [chatMessage, setChatMessage] = useState('');
   const t = copy[browserLocale()];
 
@@ -122,7 +122,7 @@ export default function VisitorAccessPage() {
   }
 
   async function openChat() {
-    setTab('chat');
+    if (tab === 'chat') retryChat(); else setTab('chat');
 
   }
 

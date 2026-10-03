@@ -312,7 +312,7 @@ function VisitorsPanel() {
   const [permissions, setPermissions] = useState<PlatformPermissions>(defaultVisitorPermissions);
   const [fallback, setFallback] = useState<any>(null);
   const [chatVisitorId, setChatVisitorId] = useState('');
-  const { chat, status: chatStatus, send: sendLiveChat } = useLiveChat(chatVisitorId, (signal) => loadVisitorChat(chatVisitorId, signal));
+  const { chat, status: chatStatus, send: sendLiveChat, retry: retryChat } = useLiveChat(chatVisitorId, (signal) => loadVisitorChat(chatVisitorId, signal));
   const [message, setMessage] = useState('');
   const [editingVisitorId, setEditingVisitorId] = useState('');
   const [editingPermissions, setEditingPermissions] = useState<PlatformPermissions>(defaultVisitorPermissions);
@@ -332,7 +332,7 @@ function VisitorsPanel() {
   async function remove(id: string) { try { await revokeVisitor(id); await load(); toast.success('Visitante revogado.'); } catch { toast.error('Não consegui revogar.'); } }
   function edit(visitor: any) { setEditingVisitorId(visitor.id); setEditingPermissions({ ...defaultVisitorPermissions, ...(visitor.permissions || {}) }); }
   async function savePermissions() { if (!editingVisitorId) return; setBusy(true); try { await updateVisitorPermissions(editingVisitorId, editingPermissions); setEditingVisitorId(''); await load(); toast.success('Permissões atualizadas imediatamente.'); } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui atualizar as permissões.'); } finally { setBusy(false); } }
-  function openChat(id: string) { setMessage(''); setChatVisitorId(id); }
+  function openChat(id: string) { setMessage(''); if (id === chatVisitorId) retryChat(); else setChatVisitorId(id); }
   async function send() { if (!message.trim() || !chatVisitorId) return; setBusy(true); try { await sendLiveChat(() => sendVisitorChat(chatVisitorId, message)); setMessage(''); } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui enviar.'); } finally { setBusy(false); } }
   return <div className="cp-stack">
     <article className="cp-box"><header><div><UserPlus/><span><h2>Novo visitante</h2><p>O convite usa e-mail interno, senha temporária e troca obrigatória no primeiro acesso.</p></span></div></header><div className="cp-form"><label><span>Nome</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Familiar ou amigo"/></label><label><span>E-mail</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="pessoa@email.com"/></label><label><span>Telegram</span><input value={telegram} onChange={(event) => setTelegram(event.target.value)} placeholder="@usuario (opcional)"/></label></div><PermissionEditor value={permissions} onChange={setPermissions}/><button className="cp-primary" onClick={invite} disabled={busy || !email}>{busy ? <Loader2 className="cp-spin"/> : <Mail/>} Enviar convite pelo CrewCheck</button></article>
@@ -348,7 +348,7 @@ function ConnectionsPanel() {
   const [connections, setConnections] = useState<any[]>([]);
   const [comparison, setComparison] = useState<any>(null);
   const [chatId, setChatId] = useState('');
-  const { chat, status: chatStatus, send: sendLiveChat } = useLiveChat(chatId, (signal) => loadChat(chatId, signal));
+  const { chat, status: chatStatus, send: sendLiveChat, retry: retryChat } = useLiveChat(chatId, (signal) => loadChat(chatId, signal));
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState('');
   async function load() { try { setConnections((await listConnections()).connections || []); } catch {} }
@@ -356,7 +356,7 @@ function ConnectionsPanel() {
   async function connect() { setBusy('connect'); try { await requestConnection(publicId); setPublicId(''); await load(); toast.success('Solicitação enviada. O outro usuário precisa aceitar.'); } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui enviar.'); } finally { setBusy(''); } }
   async function answer(id: string, accepted: boolean) { try { await answerConnection(id, accepted); await load(); toast.success(accepted ? 'Conexão aceita.' : 'Solicitação recusada.'); } catch { toast.error('Não consegui responder.'); } }
   async function compare(id: string) { setBusy('compare'); try { setComparison(await compareRoster(id)); } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui comparar.'); } finally { setBusy(''); } }
-  function openChat(id: string) { setMessage(''); setChatId(id); }
+  function openChat(id: string) { setMessage(''); if (id === chatId) retryChat(); else setChatId(id); }
   async function send() { if (!message.trim() || !chatId) return; setBusy('chat'); try { await sendLiveChat(() => sendChat(chatId, message)); setMessage(''); } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui enviar.'); } finally { setBusy(''); } }
   return <div className="cp-stack">
     <article className="cp-box"><header><div><Users/><span><h2>Adicionar colega ou amigo</h2><p>Após o aceite dos dois usuários, compare disponibilidade e folgas. A comparação não abre a escala completa. O hotel só coincide quando ambos autorizam o compartilhamento de presença.</p></span></div></header><div className="cp-inline-form"><input value={publicId} onChange={(event) => setPublicId(event.target.value.includes('@') ? event.target.value : event.target.value.toUpperCase())} aria-label="ID ou e-mail do colega" placeholder="CC-ABCD-2345 ou pessoa@email.com"/><button className="cp-primary" onClick={connect} disabled={!publicId || Boolean(busy)}>{busy === 'connect' ? <Loader2 className="cp-spin"/> : <UserPlus/>} Conectar</button></div></article>

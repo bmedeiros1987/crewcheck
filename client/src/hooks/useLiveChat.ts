@@ -10,6 +10,7 @@ export function useLiveChat(key: string, load: (signal: AbortSignal) => Promise<
   const [snapshot, setSnapshot] = useState<{ key: string; data: any }>({ key: '', data: null });
   const [status, setStatus] = useState('');
   const refresh = useRef<() => void>(() => {});
+  const retry = useRef<() => void>(() => {});
 
   useEffect(() => {
     const session = ++generation.current;
@@ -61,6 +62,7 @@ export function useLiveChat(key: string, load: (signal: AbortSignal) => Promise<
     const resume = () => { if (!document.hidden) void poll(); };
     const offline = () => { clearTimeout(timer); setStatus('Sem conexão. A conversa será atualizada ao reconectar.'); };
     refresh.current = () => { void poll(); };
+    retry.current = () => { blocked = false; void poll(); };
     void poll();
     window.addEventListener('online', resume);
     window.addEventListener('offline', offline);
@@ -94,5 +96,5 @@ export function useLiveChat(key: string, load: (signal: AbortSignal) => Promise<
       }
     }
   }
-  return { chat: snapshot.key === key ? snapshot.data : null, status, send };
+  return { chat: snapshot.key === key ? snapshot.data : null, status, send, retry: () => retry.current() };
 }
