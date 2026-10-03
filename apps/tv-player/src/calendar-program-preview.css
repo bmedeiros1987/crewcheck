@@ -1,0 +1,26 @@
+/* Full-program preview inside month/week cells. Chromium 53 safe. */
+.calendar-program-preview{display:flex;flex-direction:column;width:100%;min-width:0;margin-top:.45vh}
+.calendar-program-line,.calendar-program-more{display:flex;align-items:center;min-width:0;margin-top:.28vh;padding:.26vw .35vw;border:1px solid #2a415a;border-radius:.38vw;background:rgba(6,22,41,.52);text-align:left}
+.calendar-program-line:first-child{margin-top:0}
+.calendar-program-line>i,.calendar-program-more>svg{display:flex;align-items:center;justify-content:center;flex:0 0 .86vw;width:.86vw;height:.86vw;margin-right:.32vw;color:#45d3e9}
+.calendar-program-line>i svg,.calendar-program-more>svg{width:.68vw;height:.68vw}
+.calendar-program-line>b,.calendar-program-more>b{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.52vw;color:#dce9f5}
+.calendar-program-line>small,.calendar-program-more>small{flex:0 0 auto;margin-left:.3vw;font-size:.43vw;color:#7189a1;text-transform:uppercase}
+.calendar-program-line.program-stay{border-color:#5f4d87;background:rgba(58,35,82,.36)}
+.calendar-program-line.program-stay>i{color:#c8a3ff}
+.calendar-program-line.program-rest{border-color:#315879;background:rgba(20,52,78,.36)}
+.calendar-program-line.program-rest>i{color:#72cafa}
+.calendar-program-line.program-duty{border-color:#635b39;background:rgba(73,63,30,.25)}
+.calendar-program-line.program-duty>i{color:#f0c96b}
+.calendar-program-more{border-style:dashed;background:rgba(8,24,42,.24)}
+.theme-mobile .calendar-program-line,.theme-mobile .calendar-program-more{background:#fff;border-color:#d8e2ea}
+.theme-mobile .calendar-program-line>b,.theme-mobile .calendar-program-more>b{color:#11283e}
+
+.calendar-day-head{display:flex;align-items:center;justify-content:space-between;width:100%;min-width:0;margin-bottom:.45vh}
+.calendar-day-head>b{font-size:1.05vw!important;color:#f3f8ff!important}
+.calendar-day-head>span{margin-left:.4vw;font-size:.45vw!important;color:#7f96ac!important;font-weight:700!important;text-align:right}
+.week-view .calendar-day-head>b{font-size:1.35vw!important}
+.week-view .calendar-program-line{padding:.34vw .42vw}
+.week-view .calendar-program-line>b{font-size:.62vw}
+.week-view .calendar-program-line>small{font-size:.48vw}
+.theme-mobile .calendar-day-head>b{color:#10263a!important}
