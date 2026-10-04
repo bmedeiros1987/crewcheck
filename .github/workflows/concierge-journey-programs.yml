@@ -1,0 +1,64 @@
+name: CrewCheck Concierge canonical journeys
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/concierge/journey-programs.mjs'
+      - 'server/v1404/**'
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/rosterContinuity.ts'
+      - 'scripts/p1-concierge-journey/**'
+      - 'scripts/regression-concierge-journey-programs.mjs'
+      - 'scripts/v139/**'
+      - 'package.json'
+      - '.github/workflows/concierge-journey-programs.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'server/concierge/journey-programs.mjs'
+      - 'server/v1404/**'
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/rosterContinuity.ts'
+      - 'scripts/p1-concierge-journey/**'
+      - 'scripts/regression-concierge-journey-programs.mjs'
+      - 'scripts/v139/**'
+      - 'package.json'
+      - '.github/workflows/concierge-journey-programs.yml'
+permissions:
+  contents: read
+jobs:
+  canonical-journeys:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Raw consumer and unchanged canonical midnight regression
+        env:
+          CREWCHECK_CANONICAL_PARITY: '1'
+        run: |
+          node scripts/regression-concierge-journey-programs.mjs
+          node scripts/regression-p0-canonical-midnight-presentation.mjs
+      - name: Build from committed sources with the production package entry
+        run: npm run build
+      - name: Prepared real callsites and canonical parity
+        env:
+          CREWCHECK_CANONICAL_PARITY: '1'
+        run: |
+          node --check server.mjs
+          node scripts/regression-concierge-journey-programs.mjs
+          node scripts/regression-p0-canonical-midnight-presentation.mjs
+          node scripts/regression-p0-530-journey-rest-cleanroom.mjs
+          node scripts/regression-concierge-clock-format.mjs
+          node scripts/regression-concierge-natural-language.mjs
+      - name: Idempotent consumer preparation
+        run: |
+          cp server.mjs /tmp/concierge-prepared-server.mjs
+          node scripts/p1-concierge-journey/apply.mjs
+          cmp server.mjs /tmp/concierge-prepared-server.mjs
+      - name: Typecheck prepared sources
+        run: npx tsc --noEmit
