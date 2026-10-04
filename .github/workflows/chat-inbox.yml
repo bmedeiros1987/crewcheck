@@ -7,12 +7,16 @@ on:
       - 'server/platform-chat-inbox.mjs'
       - 'client/src/components/platform/ChatInbox.tsx'
       - 'client/src/lib/chatInboxState.ts'
-      - 'client/src/App.tsx'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/components/pulse/CrewCheckPulse.tsx'
+      - 'client/src/components/pulse/pulseTypes.ts'
       - 'client/src/hooks/useLiveChat.ts'
       - 'client/src/components/platform/PlatformCenter.tsx'
       - 'client/src/pages/VisitorAccessPage.tsx'
       - 'client/src/lib/platformClient.ts'
       - 'scripts/regression-chat-inbox-browser.cjs'
+      - 'scripts/regression-chat-pulse-navigation.cjs'
+      - 'scripts/regression-inbox-reconcile-browser.cjs'
       - 'scripts/regression-chat-inbox.mjs'
       - '.github/workflows/chat-inbox.yml'
 permissions:
@@ -38,11 +42,17 @@ jobs:
       - run: |
           npm install --prefix "$RUNNER_TEMP/chat-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/chat-browser/node_modules/playwright/cli.js" install --with-deps chromium
-      - run: node scripts/regression-chat-inbox-browser.cjs
+      - run: |
+          node scripts/regression-chat-inbox-browser.cjs
+          node scripts/regression-chat-pulse-navigation.cjs
+          node scripts/regression-inbox-reconcile-browser.cjs
         env:
           CHAT_PLAYWRIGHT_MODULE: ${{ runner.temp }}/chat-browser/node_modules/playwright
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: chat-inbox-${{ github.event.pull_request.head.sha }}
-          path: artifacts/chat-inbox
+          path: |
+            artifacts/chat-inbox
+            artifacts/chat-pulse-navigation
+            artifacts/inbox-reconcile

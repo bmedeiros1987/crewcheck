@@ -1,15 +1,14 @@
 import { chatSessionFingerprint } from '@/lib/chatSession';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { authFetch, getToken } from '@/lib/authClient';
 import { reconcileChatInbox, type ChatInboxState, type ChatInboxItem } from '@/lib/chatInboxState';
 import { publishCrewCheckNotice } from '@/components/pulse/pulseRuntime';
-import { setPendingNavigationContext } from '@/lib/navigationContext';
 
-type Props = { visitor?: boolean; onOpen?: () => void };
+type Props = { visitor?: boolean; onUnreadChange?: (count: number) => void };
 /** Local polling + existing notification runtime. No remote push or permission requests. */
-export default function ChatInbox({ visitor = false, onOpen }: Props) {
-  const [unread, setUnread] = useState<ChatInboxItem[]>([]);
-  const open = useRef(onOpen); open.current = onOpen;
+export default function ChatInbox({ visitor = false, onUnreadChange }: Props) {
+  const report = useRef(onUnreadChange); report.current = onUnreadChange;
+  const setUnread = (items: ChatInboxItem[]) => report.current?.(items.length);
   useEffect(() => {
     let disposed = false, running = false, blocked = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -62,7 +61,7 @@ export default function ChatInbox({ visitor = false, onOpen }: Props) {
             const key = `chat:${recipient}:${fresh[0].id}`;
             publishCrewCheckNotice({ id: key, dedupeKey: key, tone: 'informativo', category: 'general',
               title: 'Nova mensagem no CrewCheck', detail: 'Abra Mensagens para consultar sua conversa privada.',
-              dismissible: true, notificationTag: key, systemNotification: navigator.locks && persisted ? 'background' : 'never' });
+              dismissible: true, ...(visitor ? {} : { action: { label: 'Abrir Mensagens', view: 'community', navigationContext: { targetView: 'community', programId: fresh[0].kind === 'visitor' ? 'share-visitor' : 'share-colleague', policy: 'once' as const } } }), notificationTag: key, systemNotification: navigator.locks && persisted ? 'background' : 'never' });
           }
         });
       } catch (error: any) {
@@ -102,16 +101,5 @@ export default function ChatInbox({ visitor = false, onOpen }: Props) {
       document.removeEventListener('visibilitychange', resume);
     };
   }, [visitor]);
-  if (!unread.length) return null;
-  const show = () => {
-    if (visitor) { open.current?.(); return; }
-    const item = unread[0];
-    setPendingNavigationContext({ targetView: 'community', programId: item.kind === 'visitor' ? 'share-visitor' : 'share-colleague', policy: 'once' });
-    window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'community' }));
-    window.dispatchEvent(new Event('crewcheck:menu-setting-focus'));
-  };
-  return <aside aria-label="Mensagens do CrewCheck" style={{ padding: '8px 12px', background: 'var(--background, #122033)', color: 'var(--foreground, #fff)' }}>
-    <button type="button" onClick={show} style={{ minHeight: 44 }}>Mensagens · {unread.length}</button>
-    <small> Recentes neste dispositivo · últimos 7 dias</small>
-  </aside>;
+  return null;
 }

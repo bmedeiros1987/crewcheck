@@ -1,3 +1,4 @@
+import type { CrewCheckNavigationContext } from '@/lib/navigationContext';
 /** Tipos compartilhados entre o componente, a fila e o runtime do Pulse. */
 
 export type CrewCheckPulseTone =
@@ -25,6 +26,8 @@ export type CrewCheckPulseAction = {
   label: string;
   /** Destino já existente do shell; o Pulse apenas dispara crewcheck:set-view. */
   view: string;
+  /** Transient context deposited only when the user activates this action. */
+  navigationContext?: CrewCheckNavigationContext;
 };
 
 export type CrewCheckPulseMessage = {
