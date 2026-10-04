@@ -39,6 +39,21 @@ reply=await pharmacyReferenceReply('hospitais',profile,snapshot,deps,now);assert
 reply=await pharmacyReferenceReply('hospitais',profile,snapshot,deps,new Date(now.getTime()+600001));assert.match(reply.reply,/GPS é opcional/);assert.equal(queries.length,3);
 reset();stays=[];gps={fresh:true,label:'Guarulhos',location:hotel.location};reply=await pharmacyReferenceReply('farmácia perto de mim',profile,snapshot,deps,now);assert.match(reply.reply,/Localização compartilhada: Guarulhos/);assert.equal(reply.placeResults.places.length,3);
 reset();stays=[];await pharmacyReferenceReply('farmácia veterinária',profile,snapshot,deps,now);await pharmacyReferenceReply('perto de Hotel Sintético, Guarulhos',profile,snapshot,deps,now);reply=await pharmacyReferenceReply('1',profile,snapshot,deps,now);assert.equal(reply.placeResults.title,'Farmácias veterinárias');
+// A fresh voluntary GPS search must not return a now-stale/different origin after provider delay.
+reset();stays=[];gps={fresh:true,label:'Guarulhos',location:hotel.location};
+const originalNearby=deps.nearby;let resolveNearby;deps.nearby=()=>new Promise(resolve=>{resolveNearby=resolve;});
+const delayedGps=pharmacyReferenceReply('farmácia perto de mim',profile,snapshot,deps,now);
+await new Promise(resolve=>setImmediate(resolve));gps={fresh:false};resolveNearby(sample);
+assert.match((await delayedGps).reply,/perdeu a validade/);deps.nearby=originalNearby;
+// Questions may contain private health details: persist normalized filters only.
+reset();stays=[];await pharmacyReferenceReply('farmácia de manipulação para medicamento particular',profile,snapshot,deps,now);
+assert.equal(snapshot.preferences.pharmacySearchReference.pharmacyCategory,'compounding');
+assert.doesNotMatch(JSON.stringify(snapshot.preferences.pharmacySearchReference),/medicamento|particular|searchText/);
+let foreign=await pharmacyReferenceReply('perto de Hotel Sintético, Guarulhos',{...profile,channel:'app'},snapshot,deps,now);
+assert.match(foreign.reply,/Qual local/);assert.equal(snapshot.preferences.pharmacySearchReference.pharmacyCategory,'ordinary','foreign channel cannot inherit specialization');
+reset();stays=[];await pharmacyReferenceReply('hospitais',profile,snapshot,deps,now);
+await pharmacyReferenceReply('perto de Hotel Sintético, Guarulhos',profile,snapshot,deps,new Date(now.getTime()+600001));
+assert.equal(snapshot.preferences.pharmacySearchReference.searchType,'pharmacy','expired intent is not inherited');
 console.log('PASS result relevance, 3/6 choices, per-place plain routes, honest hours/distances, hospital/reference continuity, expiry, GPS and channel isolation');
 if(process.argv.includes('--prepared')) {
  const source=fs.readFileSync('server.mjs','utf8');
@@ -52,6 +67,19 @@ if(process.argv.includes('--prepared')) {
  const endpoint=source.slice(source.indexOf('async function handleTelegramConciergeAsk('),source.indexOf('function telegramMessagePdfDocument('));
  let response;const ctx=vm.createContext({readJsonBody:async()=>({text:'farmácias'}),telegramRequestUser:()=>({email:profile.email}),telegramAppRequestAllowed:()=>true,telegramLinkedRecordForEmail:async()=>({chatId:'123'}),conciergeAccessMatches:()=>true,conciergeLoadSnapshot:async()=>snapshot,buildTelegramConciergeReply:async()=>({reply:'plain',placeResults:{title:'Farmácias'}}),conciergePreferencesV14336:()=>({}),conciergeVoiceOptionsV14336:()=>[],sendJson:(_r,_s,p)=>{response=p;}});
  vm.runInContext(endpoint,ctx);await ctx.handleTelegramConciergeAsk({method:'POST'},{});assert.equal(response.reply,'plain');assert.equal(response.placeResults.title,'Farmácias');
+ // Execute the real early Telegram entry, including its canonical-health bypass.
+ const index=fs.readFileSync('server/v139/index.mjs','utf8');
+ const normalize=index.slice(index.indexOf('function normalizeTelegramIntentText'),index.indexOf('export async function handleV139Route'));
+ const handler=index.slice(index.indexOf('export async function handleV139Telegram'),index.indexOf('export const crewCheckV139')).replace('export async function','async function');
+ let emergencyCalls=0;const transport=vm.createContext({handleEmergencyTelegram:async()=>{emergencyCalls++;return true;},handleCrewLockTelegram:async()=>false});
+ vm.runInContext(normalize+'\n'+handler,transport);
+ for(const text of ['🏥 Hospitais','💊 Farmácias','farmácia','hospital','/farmacias@crewcheck_bot','/hospitais@crewcheck_bot','/farmacias perto de Hotel Exemplo, Guarulhos']) {
+  emergencyCalls=0;assert.equal(await transport.handleV139Telegram({message:{text,chat:{id:123}}},()=>{}),false);assert.equal(emergencyCalls,0,`canonical search reached legacy emergency: ${text}`);
+ }
+ for(const text of ['/emergencia','/plano S450','/prontoatendimento','usar hotel/pernoite']) {
+  emergencyCalls=0;assert.equal(await transport.handleV139Telegram({message:{text,chat:{id:123}}},()=>{}),true);assert.equal(emergencyCalls,1,`emergency intent bypassed: ${text}`);
+ }
+ emergencyCalls=0;await transport.handleV139Telegram({callback_query:{data:'cc_emergency_confirm:medical',message:{text:'Hospitais',chat:{id:123}}}},()=>{});assert.equal(emergencyCalls,1);
  const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');assert.match(home,/<ConciergePlaceResults results=\{placeResults\}/);assert.match(home,/setPlaceResults\(isConciergePlaceResults\(payload\.placeResults\)/);
  console.log('PASS prepared provider projection, actual channel adapter, API response and app renderer wiring');
 }

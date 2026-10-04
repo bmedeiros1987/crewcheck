@@ -93,3 +93,19 @@ if (!home.includes('<ConciergePlaceResults results={placeResults}')) {
   home = home.replace(oldAnswer, newAnswer);
 }
 fs.writeFileSync(homePath, home);
+
+// Route explicit pharmacy/hospital aliases to the same guarded reply on Telegram.
+// Emergency confirmation, plan commands and urgent-care actions keep their own handler.
+const telegramIndexPath = 'server/v139/index.mjs';
+let telegramIndex = fs.readFileSync(telegramIndexPath, 'utf8');
+const healthStart = telegramIndex.indexOf('function isCanonicalHealthPlacesIntent(');
+const healthEnd = telegramIndex.indexOf('\nexport async function handleV139Route(', healthStart);
+if (healthStart < 0 || healthEnd < 0) throw new Error('[concierge-poi] canonical Telegram health gate missing');
+const canonicalHealth = String.raw`function isCanonicalHealthPlacesIntent(message = {}) {
+  const raw = String(message?.text || message?.caption || '').replace(/^(\/[^\s@]+)@\w+(?=\s|$)/, '$1');
+  const text = normalizeTelegramIntentText(raw);
+  return /^(?:\/?(?:farmacias|hospitais|farmacia|hospital))(?:\s|$)/.test(text);
+}
+`;
+telegramIndex = telegramIndex.slice(0, healthStart) + canonicalHealth + telegramIndex.slice(healthEnd);
+fs.writeFileSync(telegramIndexPath, telegramIndex);

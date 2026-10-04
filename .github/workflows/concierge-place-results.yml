@@ -42,11 +42,12 @@ jobs:
       - run: npm ci
       - run: node scripts/v139/apply.mjs
       - run: node --check server.mjs
+      - run: node scripts/regression-v14-3-66-telegram-health-routing.mjs
       - run: node scripts/regression-concierge-pharmacy-reference.mjs
       - run: node scripts/regression-concierge-place-results.mjs --prepared
       - name: Repeat scoped materialization safely
         run: |
-          sha256sum server.mjs client/src/pages/Home.tsx > "$RUNNER_TEMP/concierge-place-prepared.sha"
+          sha256sum server.mjs server/v139/index.mjs client/src/pages/Home.tsx > "$RUNNER_TEMP/concierge-place-prepared.sha"
           node scripts/p1-concierge-poi/apply.mjs
           sha256sum -c "$RUNNER_TEMP/concierge-place-prepared.sha"
       - run: npx tsc --noEmit

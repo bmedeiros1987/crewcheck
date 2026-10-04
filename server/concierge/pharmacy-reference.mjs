@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createPendingGeographicIntent, pendingGeographicIntentState } from '../v14369/pending-geographic-intent.mjs';
 
-import { pharmacyPlaceResults, pharmacyResultsText } from './place-results.mjs';
+import { pharmacyPlaceResults, pharmacyResultsText, pharmacyRequestKind } from './place-results.mjs';
 
 const KEY = 'pharmacySearchReference';
 const inFlight = new Map();
@@ -24,8 +24,6 @@ export async function pharmacyReferenceReply(text, profile, snapshot, deps, now 
   const owner = clean(profile?.email || (profile?.chatId ? `telegram:${profile.chatId}` : ''), 240).toLowerCase();
   const snapshotOwner = clean(snapshot?.email || snapshot?.key, 240).toLowerCase();
   const command = pharmacy(value) || hospital(value);
-  const searchText = command ? value : snapshot?.preferences?.[KEY]?.searchText || value;
-  const searchType = hospital(value) ? 'hospital' : pharmacy(value) ? 'pharmacy' : snapshot?.preferences?.[KEY]?.searchType || 'pharmacy';
   const manual = value.match(/^(?:\/referencia\s+|refer[eê]ncia\s*:\s*)(.{3,180})$/i)
     || (!/perto de mim/i.test(value) && value.match(/^(?:(?:farm[aá]cias?|drogarias?|hospita(?:l|is))\s+)?perto d[aeo]\s+(.{3,180})$/i));
   const selection = /^\d{1,2}$/.test(value) ? Number(value) : null;
@@ -56,6 +54,11 @@ export async function pharmacyReferenceReply(text, profile, snapshot, deps, now 
   const previous = snapshot?.preferences?.[KEY];
   const state = pendingGeographicIntentState(previous?.request, scope);
   const usable = state.usable && new Date(state.intent.createdAt) <= now && new Date(state.intent.expiresAt) > now && state.intent.filters.binding === binding;
+  // Only inherit normalized filters from this validated account/channel/reference.
+  // Raw questions can contain medication or symptom details and are never persisted here.
+  const searchType = hospital(value) ? 'hospital' : pharmacy(value) ? 'pharmacy' : usable && previous.searchType === 'hospital' ? 'hospital' : 'pharmacy';
+  const pharmacyCategory = command ? pharmacyRequestKind(value) : usable && ['ordinary', 'veterinary', 'compounding'].includes(previous.pharmacyCategory) ? previous.pharmacyCategory : 'ordinary';
+  const expanded = command ? /\bmais\b/i.test(value) : usable && previous.expanded === true;
   if (selection !== null && (!usable || !Array.isArray(previous.options))) return { handled: false };
   const key = createHash('sha256').update(owner).digest('hex');
   const transaction = inFlight.get(key) || { tail: Promise.resolve() };
@@ -63,9 +66,14 @@ export async function pharmacyReferenceReply(text, profile, snapshot, deps, now 
   transaction.token = token;
   inFlight.set(key, transaction);
   const expiresAt = usable && !manual ? new Date(previous.request.expiresAt) : new Date(now.getTime() + 600000);
+  let activeGps = null;
   const guard = async () => {
     const latest = await deps.load(profile);
     const time = clock();
+    if (activeGps) {
+      const currentGps = deps.gps?.(latest);
+      if (!currentGps?.fresh || !point(currentGps.location) || currentGps.location.latitude !== activeGps.latitude || currentGps.location.longitude !== activeGps.longitude || currentGps.location.updatedAt !== activeGps.updatedAt) throw STALE;
+    }
     if (transaction.token !== token || time >= expiresAt || time < now ||
       clean(latest?.email || latest?.key, 240).toLowerCase() !== owner ||
       (latest?.key && clean(latest.key, 240).toLowerCase() !== owner) || fingerprint(latest, time) !== binding) throw STALE;
@@ -76,21 +84,22 @@ export async function pharmacyReferenceReply(text, profile, snapshot, deps, now 
     await write;
     await guard();
   };
-  const pending = details => ({ request: createPendingGeographicIntent(searchType === 'hospital' ? 'hospitais' : 'farmacias', { ...scope, filters: { binding, purpose: 'search-reference-only' } }), searchType, searchText, ...details });
+  const pending = details => ({ request: createPendingGeographicIntent(searchType === 'hospital' ? 'hospitais' : 'farmacias', { ...scope, filters: { binding, purpose: 'search-reference-only' } }), searchType, pharmacyCategory, expanded, ...details });
   try {
   const respond = async (reference) => {
+    activeGps = reference.gps ? reference.location : null;
     await guard();
     const places = await deps.nearby(reference.location, searchType);
     await guard();
     const label = `${reference.gps ? 'Localização compartilhada' : 'Referência de busca'}: ${reference.name}${reference.city ? ` · ${reference.city}` : ''}`;
-    const placeResults = pharmacyPlaceResults(places, { reference: label, text: searchText, searchType });
+    const placeResults = pharmacyPlaceResults(places, { reference: label, searchType, pharmacyCategory, expanded });
     return { handled: true, reply: pharmacyResultsText(placeResults), placeResults };
   };
   if (selection !== null) {
     if (!usable || !Array.isArray(previous.options)) return { handled: false };
     const chosen = candidate(previous.options[selection - 1]);
     if (!chosen) return { handled: true, reply: `Escolha de 1 a ${previous.options.length}, ou diga “perto de outro hotel, cidade”.` };
-    const next = { ...previous, options: undefined, selected: chosen };
+    const next = { request: previous.request, selected: chosen, searchType, pharmacyCategory, expanded };
     await save(next); // explicit selection; original expiry is not extended
     return await respond(chosen);
   }
@@ -102,7 +111,7 @@ export async function pharmacyReferenceReply(text, profile, snapshot, deps, now 
     return { handled: false };
   }
   if (command && !manual && usable && candidate(previous.selected)) {
-    if (previous.searchType !== searchType || previous.searchText !== searchText) await save({ ...previous, searchType, searchText });
+    if (previous.searchType !== searchType || previous.pharmacyCategory !== pharmacyCategory || previous.expanded !== expanded) await save({ request: previous.request, selected: candidate(previous.selected), searchType, pharmacyCategory, expanded });
     return await respond(candidate(previous.selected));
   }
   if (previous && !usable) await save(null);

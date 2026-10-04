@@ -25,8 +25,8 @@ function routeUrl(place) {
   return `https://www.google.com/maps/dir/?api=1&destination=${point.latitude},${point.longitude}`;
 }
 
-export function pharmacyPlaceResults(places, { reference = '', text = '', searchType = 'pharmacy' } = {}) {
-  const kind = searchType === 'hospital' ? 'hospital' : pharmacyRequestKind(text);
+export function pharmacyPlaceResults(places, { reference = '', text = '', searchType = 'pharmacy', pharmacyCategory = null, expanded = null } = {}) {
+  const kind = searchType === 'hospital' ? 'hospital' : ['ordinary', 'veterinary', 'compounding'].includes(pharmacyCategory) ? pharmacyCategory : pharmacyRequestKind(text);
   const seen = new Set();
   const candidates = (Array.isArray(places) ? places : []).filter(place => {
     if (!clean(place?.name) || place?.businessStatus === 'CLOSED_PERMANENTLY' || place?.businessStatus === 'CLOSED_TEMPORARILY') return false;
@@ -43,7 +43,7 @@ export function pharmacyPlaceResults(places, { reference = '', text = '', search
   }
   const rank = place => place.openNow === true ? 0 : place.openNow === false ? 2 : 1;
   chosen.sort((a, b) => rank(a) - rank(b) || (numeric(a.distanceKm) ? a.distanceKm : Infinity) - (numeric(b.distanceKm) ? b.distanceKm : Infinity));
-  const limit = /\bmais\b/.test(fold(text)) ? 6 : 3;
+  const limit = (typeof expanded === 'boolean' ? expanded : /\bmais\b/.test(fold(text))) ? 6 : 3;
   const moreQuery = kind === 'hospital' ? 'mais hospitais' : `mais farmácias${kind === 'veterinary' ? ' veterinárias' : kind === 'compounding' ? ' de manipulação' : ''}`;
   const result = {
     title: kind === 'hospital' ? 'Hospitais' : kind === 'veterinary' ? 'Farmácias veterinárias' : kind === 'compounding' ? 'Farmácias de manipulação' : 'Farmácias',

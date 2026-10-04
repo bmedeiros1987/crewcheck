@@ -12,7 +12,7 @@ The shared Concierge reference resolver now supplies a small result model alongs
 
 ## Context boundary
 
-A hotel is only a search reference. The existing account/channel scope, ten-minute reference expiry, roster fingerprint, published stay boundaries, ambiguous selection, superseded-request and late-response guards remain in place. A current valid reference can carry from pharmacy to hospital searches even if separate GPS data is stale. Explicit “perto de mim” still requires fresh voluntarily shared GPS. “Perto de hotel/endereço, cidade” works without the rigid `referência:` prefix, which remains backward compatible.
+A hotel is only a search reference. Only normalized search category/count flags are retained, never the raw question or medication/symptom detail. Filters are inherited only from a valid same-channel reference. The existing account/channel scope, ten-minute reference expiry, roster fingerprint, published stay boundaries, ambiguous selection, superseded-request and late-response guards remain in place. A current valid reference can carry from pharmacy to hospital searches even if separate GPS data is stale. Explicit “perto de mim” still requires fresh voluntarily shared GPS. “Perto de hotel/endereço, cidade” works without the rigid `referência:` prefix, which remains backward compatible.
 
 A published active roster stay or a recently selected reference is required. This change does **not** bridge the separate hotel-stays database or reinterpret historical hotel records as a current stay. With no guarded reference, the response asks for a hotel/address and city; GPS is optional.
 
