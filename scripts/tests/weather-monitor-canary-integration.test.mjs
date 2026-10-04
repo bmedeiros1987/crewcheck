@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -13,19 +13,36 @@ const section = (start, end) => {
   return source.slice(begin, finish);
 };
 const NOW = Date.parse('2026-10-04T17:00:00Z');
+// The actual transactional writer validates age using the production Date.now.
+// Keep that clock deterministic in this synthetic-only test process.
+test.before(() => mock.method(Date, 'now', () => NOW));
+test.after(() => mock.restoreAll());
 const EMAIL = 'synthetic@example.test';
 const CHAT = '123456789';
 const HASH = policy.weatherCanaryRecipientHash(EMAIL, CHAT);
 function fixture() {
   const link = { email: EMAIL, chatId: CHAT, linkedAt: '2026-10-04T12:00:00Z', code: 'synthetic-only' };
-  const profile = { email: EMAIL, chatId: CHAT, linked: true, weatherCommandSequence: 100 };
+  const profile = { email: EMAIL, chatId: CHAT, linked: true, weatherCommandSequence: 100, weatherCommandDate: NOW / 1000 - 2 };
   const preferences = policy.weatherCanaryConsent({ enabled: true, profile, linkByEmail: link, linkByChat: link, now: NOW - 1000 });
   const snapshot = { key: EMAIL, email: EMAIL, chatId: CHAT, roster: { days: [{ date: '2026-10-04', legs: [] }] }, preferences, updatedAt: '2026-10-04T16:59:00Z' };
   const other = { ...structuredClone(snapshot), key: 'other@example.test', email: 'other@example.test', chatId: '987654321' };
   const records = new Map([[`weather-consent:${EMAIL}`, { ...structuredClone(preferences), commandSequence: 50, commandChatId: CHAT, channel: 'telegram' }], [`snapshot:${EMAIL}`, snapshot], [`link-email:${EMAIL}`, structuredClone(link)], [`link-chat:${CHAT}`, structuredClone(link)]]);
   const env = { TELEGRAM_WEBHOOK_SECRET: 'synthetic-only', CREWCHECK_WEATHER_MONITOR_CANARY_ENABLED: 'true', CREWCHECK_WEATHER_MONITOR_CANARY_RECIPIENT_SHA256: HASH };
   const sent = [], timers = [];
-  let reports = 0, reads = 0, localReads = 0;
+  let reports = 0, reads = 0, localReads = 0, genericStateReads = 0, genericStateWrites = 0;
+  const lease = {
+    held: true,
+    isHeld: async () => lease.held,
+    async readState(key) {
+      if (!lease.held) throw new Error('Synthetic lost lease');
+      return structuredClone(records.get(key) || null);
+    },
+    async writeState(key, value) {
+      if (!lease.held) throw new Error('Synthetic lost lease');
+      records.set(key, structuredClone(value));
+      return true;
+    },
+  };
   const context = {
     ...policy,
     createWeatherCanaryPolicy: input => policy.createWeatherCanaryPolicy({ ...input, now: () => NOW }),
@@ -33,8 +50,8 @@ function fixture() {
     process: { env },
     envAny: keys => keys.map(key => env[key]).find(Boolean) || '',
     conciergeSafeKey: value => String(value || '').trim().toLowerCase(),
-    conciergeDbGet: async key => { reads++; return structuredClone(records.get(key) || null); },
-    conciergeDbPut: async (key, value) => { records.set(key, structuredClone(value)); return true; },
+    conciergeDbGet: async key => { reads++; if (key.startsWith('weather:')) genericStateReads++; return structuredClone(records.get(key) || null); },
+    conciergeDbPut: async (key, value) => { if (key.startsWith('weather:')) genericStateWrites++; records.set(key, structuredClone(value)); return true; },
     conciergeDbListSnapshots: async () => [structuredClone(snapshot), structuredClone(other)],
     conciergeDbPool: async () => ({ query: async () => [[{ payload: structuredClone(snapshot) }]], getConnection: async () => ({
       async query(sql, values) {
@@ -63,12 +80,13 @@ function fixture() {
   };
   vm.createContext(context);
   vm.runInContext(section('function criticalWeatherMonitorSettings()', 'const WEATHER_MONITOR_HEARTBEAT_KEY'), context);
-  return { link, profile, snapshot, other, records, env, sent, timers, context,
-    get reports() { return reports; }, get reads() { return reads; }, get localReads() { return localReads; } };
+  return { link, profile, snapshot, other, records, env, sent, timers, context, lease,
+    get reports() { return reports; }, get reads() { return reads; }, get localReads() { return localReads; },
+    get genericStateReads() { return genericStateReads; }, get genericStateWrites() { return genericStateWrites; } };
 }
-function cycle(f) {
+function cycle(f, lease = f.lease) {
   vm.runInContext(section('async function runCriticalWeatherMonitorCycle(', 'async function handleCriticalWeatherMonitor('), f.context);
-  return f.context.runCriticalWeatherMonitorCycle(new Date(NOW), () => NOW, { isHeld: async () => true });
+  return f.context.runCriticalWeatherMonitorCycle(new Date(NOW), () => NOW, lease);
 }
 
 test('actual cycle sends only the allowlisted canary, using current server weather evaluator', async () => {
@@ -227,7 +245,7 @@ test('canary status does not claim active delivery when no dedicated consent exi
   assert.match(reply, /DESATIVADA/); assert.match(reply, /não comprova entrega/); assert.doesNotMatch(reply, /ATIVOS/);
 });
 test('observation state persistence failure suppresses canary transmission', async () => {
-  const f = fixture(); f.context.conciergeDbPut = async () => false;
+  const f = fixture(); f.lease.writeState = async () => { throw new Error('Synthetic DB write failure'); };
   const summary = await cycle(f); assert.equal(summary.failures, 1); assert.equal(f.sent.length, 0);
 });
 test('missing or lost durable lease suppresses canary transmission', async () => {
@@ -235,7 +253,7 @@ test('missing or lost durable lease suppresses canary transmission', async () =>
   vm.runInContext(section('async function runCriticalWeatherMonitorCycle(', 'async function handleCriticalWeatherMonitor('), f.context);
   assert.equal((await f.context.runCriticalWeatherMonitorCycle(new Date(NOW), () => NOW)).blocked, true);
   let leaseChecks = 0;
-  const summary = await f.context.runCriticalWeatherMonitorCycle(new Date(NOW), () => NOW, { isHeld: async () => ++leaseChecks === 1 });
+  const summary = await f.context.runCriticalWeatherMonitorCycle(new Date(NOW), () => NOW, { ...f.lease, isHeld: async () => ++leaseChecks === 1 });
   assert.equal(summary.skipped, 1); assert.equal(f.sent.length, 0);
 });
 test('explicit opt-out remains authoritative while webhook secret is absent and after restoration', async () => {
@@ -285,8 +303,8 @@ test('new canary consent cannot be minted without trusted Telegram message order
   assert.match(reply, /Não consegui confirmar a preferência/);
 });
 test('successful send followed by delivered-state write failure does not replay after restart', async () => {
-  const f = fixture(); const originalPut = f.context.conciergeDbPut;
-  f.context.conciergeDbPut = async (key, value) => value.lastSentAt ? false : originalPut(key, value);
+  const f = fixture(); const originalPut = f.lease.writeState;
+  f.lease.writeState = async (key, value) => { if (value.lastSentAt) throw new Error('Synthetic final write failure'); return originalPut(key, value); };
   const first = await cycle(f);
   assert.equal(first.alerts, 1); assert.equal(first.failures, 1); assert.equal(f.sent.length, 1);
   f.context.criticalWeatherMonitorMemory.clear();
@@ -327,4 +345,117 @@ test('removing canary configuration does not prevent explicit revocation of its 
   vm.runInContext(section('async function conciergeWeatherAlertsReply(', 'function conciergeHaversineKm('), f.context);
   await f.context.conciergeWeatherAlertsReply('/alertameteo off', f.profile, f.snapshot);
   assert.equal(f.records.get(`weather-consent:${EMAIL}`).weatherCriticalAlerts, false);
+});
+
+test('delayed pre-relink command cannot mint fresh consent for the replacement link', async () => {
+  const f = fixture(); f.records.delete(`weather-consent:${EMAIL}`);
+  let reached, release;
+  const paused = new Promise(resolve => { reached = resolve; });
+  const wait = new Promise(resolve => { release = resolve; });
+  const originalRead = f.context.conciergeDbGet;
+  f.context.conciergeDbGet = async key => { if (key === `link-email:${EMAIL}`) { reached(); await wait; } return originalRead(key); };
+  f.context.conciergeSaveSnapshotAsync = async () => { throw new Error('pre-relink command must not save'); };
+  vm.runInContext(section('async function conciergeWeatherAlertsReply(', 'function conciergeHaversineKm('), f.context);
+  const pending = f.context.conciergeWeatherAlertsReply('/alertameteo on', f.profile, f.snapshot);
+  await paused;
+  const replacement = { ...f.link, linkedAt: new Date(NOW - 1000).toISOString(), code: 'replacement-after-command' };
+  f.records.set(`link-email:${EMAIL}`, structuredClone(replacement));
+  f.records.set(`link-chat:${CHAT}`, structuredClone(replacement));
+  release(); const reply = await pending;
+  assert.doesNotMatch(reply, /Preferência.*ATIVADA/);
+  assert.equal(f.records.has(`weather-consent:${EMAIL}`), false);
+});
+for (const [name, weatherCommandDate] of [
+  ['missing', undefined], ['string', String(NOW / 1000 - 2)], ['fractional', NOW / 1000 - 1.5],
+  ['future', NOW / 1000 + 1], ['stale', NOW / 1000 - 301],
+]) {
+  test(`actual opt-in handler rejects ${name} trusted message date`, async () => {
+    const f = fixture(); f.records.delete(`weather-consent:${EMAIL}`);
+    f.context.conciergeSaveSnapshotAsync = async () => { throw new Error('invalid-date command must not save'); };
+    vm.runInContext(section('async function conciergeWeatherAlertsReply(', 'function conciergeHaversineKm('), f.context);
+    const reply = await f.context.conciergeWeatherAlertsReply('/alertameteo on', { ...f.profile, weatherCommandDate }, f.snapshot);
+    assert.doesNotMatch(reply, /Preferência.*ATIVADA/);
+    assert.equal(f.records.has(`weather-consent:${EMAIL}`), false);
+  });
+}
+test('actual opt-out handler still persists revocation without any message date', async () => {
+  const f = fixture(); delete f.env.TELEGRAM_WEBHOOK_SECRET;
+  f.context.conciergeSaveSnapshotAsync = async (_profile, _roster, metadata) => { Object.assign(f.snapshot.preferences, metadata.preferences); return structuredClone(f.snapshot); };
+  vm.runInContext(section('async function conciergeWeatherAlertsReply(', 'function conciergeHaversineKm('), f.context);
+  const reply = await f.context.conciergeWeatherAlertsReply('/alertameteo off', { ...f.profile, weatherCommandDate: undefined }, f.snapshot);
+  assert.match(reply, /DESATIVADA/);
+  assert.equal(f.records.get(`weather-consent:${EMAIL}`).weatherCriticalAlerts, false);
+});
+test('actual Telegram text path carries message.date as the trusted command date', async () => {
+  const f = fixture(); let received;
+  Object.assign(f.context, {
+    handleTelegramWeatherCallback: async () => false, handleTelegramCallCallback: async () => false,
+    handlePlatformVisitorTelegram: async () => false, telegramTryBindFromWebhook: async () => false,
+    telegramMessagePdfDocument: () => null, telegramProfileForChatAsync: async () => ({ email: EMAIL, chatId: CHAT, linked: true }),
+    conciergeLoadSnapshot: async () => f.snapshot, normalizeConciergeButtonText: text => text,
+    sendTelegramChatAction: async () => {}, buildTelegramConciergeReply: async (_text, profile) => { received = profile; return 'Synthetic reply'; },
+    conciergeNextProgram: () => null, airportIcao: () => '', conciergeKeyboard: {},
+  });
+  vm.runInContext(section('async function processTelegramUpdate(', 'async function handleTelegramWebhook('), f.context);
+  await f.context.processTelegramUpdate({ message: { message_id: 123, date: NOW / 1000 - 2, chat: { id: Number(CHAT), type: 'private' }, text: '/alertameteo on' } });
+  assert.equal(received.weatherCommandSequence, 123);
+  assert.equal(received.weatherCommandDate, NOW / 1000 - 2);
+});
+
+const STATE_KEY = `weather:${EMAIL}:synthetic-flight`;
+test('canary state exclusively uses lease methods and never reads the memory fallback', async () => {
+  const f = fixture();
+  f.context.criticalWeatherMonitorMemory = {
+    get() { throw new Error('canary must not read process memory'); },
+    set() { throw new Error('canary must not write process memory'); },
+  };
+  await cycle(f);
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.genericStateReads, 0); assert.equal(f.genericStateWrites, 0);
+  assert.equal(f.records.get(STATE_KEY).canaryDispatchState, 'submitted');
+});
+test('caught state DB read failure after restart cannot resend or erase durable submitted intent', async () => {
+  const f = fixture(); await cycle(f);
+  assert.equal(f.sent.length, 1);
+  const submitted = structuredClone(f.records.get(STATE_KEY));
+  f.context.criticalWeatherMonitorMemory.clear();
+  f.lease.readState = async () => { throw new Error('Synthetic connection lost during state read'); };
+  // Model the old helper swallowing the same DB error. The canary must not use it.
+  const read = f.context.conciergeDbGet;
+  f.context.conciergeDbGet = async key => key === STATE_KEY ? null : read(key);
+  const summary = await cycle(f);
+  assert.equal(summary.failures, 1); assert.equal(f.sent.length, 1);
+  assert.deepEqual(f.records.get(STATE_KEY), submitted);
+  assert.equal(f.genericStateWrites, 0);
+});
+test('lease loss during provider fetch cannot overwrite the successor submitted intent', async () => {
+  const f = fixture(); const fetch = f.context.fetchAviationWeatherReport;
+  const successor = { canaryDispatchState: 'submitted', pendingDelivery: false, successor: true, fingerprint: 'successor-risk', canaryConsentSequence: 999 };
+  f.context.fetchAviationWeatherReport = async () => {
+    const report = await fetch(); f.lease.held = false; f.records.set(STATE_KEY, structuredClone(successor)); return report;
+  };
+  await cycle(f);
+  assert.equal(f.sent.length, 0); assert.deepEqual(f.records.get(STATE_KEY), successor);
+  assert.equal(f.genericStateWrites, 0);
+});
+test('lease loss during observation write cannot erase successor submitted intent', async () => {
+  const f = fixture();
+  const successor = { canaryDispatchState: 'submitted', pendingDelivery: false, successor: true, fingerprint: 'successor-risk', canaryConsentSequence: 999 };
+  f.lease.writeState = async () => {
+    f.lease.held = false; f.records.set(STATE_KEY, structuredClone(successor));
+    throw new Error('Synthetic leased connection died while writing');
+  };
+  const summary = await cycle(f);
+  assert.equal(summary.failures, 1); assert.equal(f.sent.length, 0);
+  assert.deepEqual(f.records.get(STATE_KEY), successor); assert.equal(f.genericStateWrites, 0);
+});
+test('lease loss during final write preserves successor intent without a generic fallback', async () => {
+  const f = fixture();
+  const successor = { canaryDispatchState: 'submitted', pendingDelivery: false, successor: true, fingerprint: 'successor-risk', canaryConsentSequence: 999 };
+  f.context.sendTelegramMessage = async (chatId, text) => {
+    f.sent.push({ chatId, text }); f.lease.held = false; f.records.set(STATE_KEY, structuredClone(successor)); return { ok: true };
+  };
+  const summary = await cycle(f);
+  assert.equal(summary.alerts, 1); assert.equal(summary.failures, 1); assert.equal(f.sent.length, 1);
+  assert.deepEqual(f.records.get(STATE_KEY), successor); assert.equal(f.genericStateWrites, 0);
 });

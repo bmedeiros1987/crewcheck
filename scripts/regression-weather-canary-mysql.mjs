@@ -36,7 +36,7 @@ const put = async (key, payload) => {
 async function reset() {
   await pool.query('TRUNCATE TABLE crewcheck_telegram_state');
   const link = { email: EMAIL, chatId: CHAT, linkedAt: new Date(NOW - 3_600_000).toISOString(), code: 'synthetic-link' };
-  const profile = { email: EMAIL, chatId: CHAT, linked: true, weatherCommandSequence: 100 };
+  const profile = { email: EMAIL, chatId: CHAT, linked: true, weatherCommandSequence: 100, weatherCommandDate: Math.floor((NOW - 2000) / 1000) };
   const preference = policy.weatherCanaryConsent({ enabled: true, profile, linkByEmail: link, linkByChat: link, now: NOW - 1000 });
   const snapshot = { key: EMAIL, email: EMAIL, chatId: CHAT, updatedAt: new Date(NOW - 1000).toISOString(), preferences: { weatherCriticalAlerts: true }, roster: { days: [{ date: new Date(NOW).toISOString().slice(0, 10) }] } };
   await put(`link-email:${EMAIL}`, link); await put(`link-chat:${CHAT}`, link); await put(`snapshot:${EMAIL}`, snapshot);
@@ -105,6 +105,33 @@ try {
     assert.equal((await read(`weather-consent:${EMAIL}`)).weatherCriticalAlerts, false);
   });
 
+  await run('delayed on from before relink is rejected despite a larger message sequence', async () => {
+    const f = await reset();
+    const relink = { ...f.link, code: 'replacement-link', linkedAt: new Date(NOW - 1000).toISOString() };
+    await put(`link-email:${EMAIL}`, relink); await put(`link-chat:${CHAT}`, relink);
+    assert.equal(policy.weatherCanaryConsent({ enabled: true, profile: f.profile, linkByEmail: relink, linkByChat: relink, now: NOW }), null);
+    const env = { CREWCHECK_WEATHER_MONITOR_CANARY_ENABLED: 'true', CREWCHECK_WEATHER_MONITOR_CANARY_RECIPIENT_SHA256: HASH, TELEGRAM_WEBHOOK_SECRET: 'synthetic-only' };
+    const context = { ...policy, process: { env }, envAny: keys => keys.map(key => env[key]).find(Boolean) || '',
+      conciergeSafeKey: value => String(value || '').trim().toLowerCase(), conciergeDbPool: async () => pool, conciergeDbGet: read,
+      conciergeSaveSnapshotAsync: async () => { throw new Error('Stale on must never save snapshot'); }, Date, Map };
+    vm.createContext(context);
+    vm.runInContext(section('function criticalWeatherMonitorSettings()', 'const WEATHER_MONITOR_HEARTBEAT_KEY'), context);
+    vm.runInContext(section('async function conciergeWeatherAlertsReply(', 'function conciergeHaversineKm('), context);
+    const reply = await context.conciergeWeatherAlertsReply('/alertameteo on', { ...f.profile, weatherCommandSequence: 899 }, f.snapshot);
+    assert.match(reply, /comando recente/);
+    assert.equal((await read(`weather-consent:${EMAIL}`)).commandSequence, 50);
+    // A command assembled before a concurrent relink is checked again under row locks.
+    assert.equal(await policy.writeWeatherCanaryConsent(pool, EMAIL, CHAT, f.preference, 900), null);
+    // Replacing the revision cannot turn a command sent in the former epoch into consent.
+    const fresh = policy.weatherCanaryConsent({ enabled: true, profile: { ...f.profile, weatherCommandDate: Math.floor(NOW / 1000) }, linkByEmail: relink, linkByChat: relink, now: NOW });
+    assert(fresh);
+    const stale = { ...fresh, weatherCriticalAlertsConsent: { ...fresh.weatherCriticalAlertsConsent, commandDate: f.profile.weatherCommandDate } };
+    assert.equal(await policy.writeWeatherCanaryConsent(pool, EMAIL, CHAT, stale, 901), null);
+    assert.equal((await read(`weather-consent:${EMAIL}`)).commandSequence, 50);
+    assert(await policy.writeWeatherCanaryConsent(pool, EMAIL, CHAT, policy.weatherCanaryConsent({ enabled: false }), 902));
+    assert.equal((await read(`weather-consent:${EMAIL}`)).weatherCriticalAlerts, false);
+  });
+
   await run('independent MySQL sessions cannot hold the same canary lease', async () => {
     const first = await policy.acquireWeatherCanaryLease(pool, HASH); assert(first);
     try { assert.equal(await first.isHeld(), true); assert.equal(await policy.acquireWeatherCanaryLease(pool, HASH), null); }
@@ -124,6 +151,46 @@ try {
     }
     assert(replacement, 'lock released after terminated connection');
     await replacement.release(); assert.equal(await first.isHeld(), false); await first.release();
+  });
+
+  await run('lost lease cannot erase a successor durable intent', async () => {
+    await reset(); let connection;
+    const first = await policy.acquireWeatherCanaryLease({ getConnection: async () => { connection = await pool.getConnection(); return connection; } }, HASH);
+    assert(first); const key = 'weather-alert:lease-race';
+    assert.equal(await first.readState(key), null);
+    connection.destroy();
+    let next; const deadline = Date.now() + 5000;
+    while (!next && Date.now() < deadline) { next = await policy.acquireWeatherCanaryLease(pool, HASH); if (!next) await new Promise(resolve => setTimeout(resolve, 20)); }
+    assert(next);
+    try {
+      const submitted = { fingerprint: 'successor-intent', canaryDispatchState: 'submitted' };
+      await next.writeState(key, submitted);
+      await assert.rejects(first.writeState(key, { pendingDelivery: true }));
+      await assert.rejects(first.readState(key));
+      assert.deepEqual(await next.readState(key), submitted);
+    } finally { await first.release(); await next.release(); }
+  });
+
+  await run('release waits for in-flight state writes before returning the connection', async () => {
+    await reset(); let reached, resume, returned = false;
+    const started = new Promise(resolve => { reached = resolve; }); const wait = new Promise(resolve => { resume = resolve; });
+    const leasedPool = { getConnection: async () => {
+      const connection = await pool.getConnection();
+      return { query: async (sql, values) => {
+        const result = await connection.query(sql, values);
+        if (sql.sql?.startsWith('INSERT INTO')) { reached(); await wait; }
+        return result;
+      }, release: () => { returned = true; connection.release(); }, destroy: () => connection.destroy() };
+    } };
+    const first = await policy.acquireWeatherCanaryLease(leasedPool, HASH); assert(first);
+    const writing = first.writeState('weather-alert:release-race', { pendingDelivery: true });
+    await started; const releasing = first.release();
+    assert.equal(returned, false); assert.equal(await policy.acquireWeatherCanaryLease(pool, HASH), null);
+    await assert.rejects(first.writeState('weather-alert:release-race', { forbidden: true }));
+    resume(); await writing; await releasing; assert.equal(returned, true);
+    const next = await policy.acquireWeatherCanaryLease(pool, HASH); assert(next);
+    try { assert.deepEqual(await next.readState('weather-alert:release-race'), { pendingDelivery: true }); }
+    finally { await next.release(); }
   });
 
   await run('deletion after concurrent grant removes consent atomically', async () => {
@@ -185,10 +252,59 @@ try {
     vm.createContext(context);
     vm.runInContext(section('function criticalWeatherMonitorSettings()', 'const WEATHER_MONITOR_HEARTBEAT_KEY'), context);
     vm.runInContext(section('async function runCriticalWeatherMonitorCycle(', 'async function handleCriticalWeatherMonitor('), context);
-    const execute = async () => { const lease = await policy.acquireWeatherCanaryLease(pool, HASH); assert(lease); try { return await context.runCriticalWeatherMonitorCycle(new Date(NOW), () => NOW, lease); } finally { await lease.release(); } };
+    const execute = async (leasedPool = pool) => {
+      const lease = await policy.acquireWeatherCanaryLease(leasedPool, HASH); assert(lease);
+      const adapter = { ...lease, writeState: async (key, value) => {
+        if (value.lastSentAt) throw new Error('Synthetic final-write failure');
+        return lease.writeState(key, value);
+      } };
+      try { return await context.runCriticalWeatherMonitorCycle(new Date(NOW), () => NOW, adapter); }
+      finally { await lease.release(); }
+    };
     const first = await execute(); assert.equal(first.alerts, 1); assert.equal(first.failures, 1);
-    context.criticalWeatherMonitorMemory.clear(); await execute(); assert.equal(sent.length, 1);
+    context.criticalWeatherMonitorMemory.clear();
+    // The legacy getter deliberately collapses errors to null. Canary state must
+    // never use it, even after restart and despite successful consent/link reads.
+    context.conciergeDbGet = async key => key.startsWith('weather-alert:') ? null : read(key);
+    let failedReads = 0;
+    const faultPool = { getConnection: async () => {
+      const connection = await pool.getConnection();
+      return { query: async (sql, values) => {
+        if (sql.sql?.startsWith('SELECT payload FROM') && sql.values?.[0] === 'weather-alert:synthetic') {
+          failedReads++; throw new Error('Synthetic state-read failure');
+        }
+        return connection.query(sql, values);
+      }, release: () => connection.release(), destroy: () => connection.destroy() };
+    } };
+    const failed = await execute(faultPool);
+    assert.equal(failedReads, 1); assert.equal(failed.failures, 1); assert.equal(sent.length, 1);
+    await execute(); assert.equal(sent.length, 1);
     assert.equal((await read('weather-alert:synthetic')).canaryDispatchState, 'submitted');
+
+    // A loses its connection immediately after reading an absent state; B sends
+    // while A is paused. A must not overwrite B's intent through the pool.
+    await pool.query('DELETE FROM crewcheck_telegram_state WHERE state_key=?', ['weather-alert:synthetic']);
+    let successorSent = false;
+    const stalePool = { getConnection: async () => {
+      const connection = await pool.getConnection();
+      return { query: async (sql, values) => {
+        const result = await connection.query(sql, values);
+        if (sql.sql?.startsWith('SELECT payload FROM') && sql.values?.[0] === 'weather-alert:synthetic') {
+          connection.destroy();
+          let successor; const deadline = Date.now() + 5000;
+          while (!successor && Date.now() < deadline) { successor = await policy.acquireWeatherCanaryLease(pool, HASH); if (!successor) await new Promise(resolve => setTimeout(resolve, 20)); }
+          assert(successor);
+          try { const report = await context.runCriticalWeatherMonitorCycle(new Date(NOW), () => NOW, successor); assert.equal(report.alerts, 1); successorSent = true; }
+          finally { await successor.release(); }
+        }
+        return result;
+      }, release: () => connection.release(), destroy: () => connection.destroy() };
+    } };
+    const stale = await execute(stalePool);
+    assert.equal(successorSent, true); assert.equal(stale.failures, 1); assert.equal(sent.length, 2);
+    const successorState = await read('weather-alert:synthetic');
+    assert.equal(successorState.canaryDispatchState, 'submitted'); assert(successorState.lastSentAt);
+    await execute(); assert.equal(sent.length, 2);
   });
 
   console.log(JSON.stringify({ ok: true, database: 'isolated-mysql-8.4', count: passed.length, passed, realExternalSends: 0 }, null, 2));

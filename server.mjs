@@ -2457,7 +2457,7 @@ async function conciergeWeatherAlertsReply(text, profile, snapshot) {
       const consent = weatherCanaryConsent({ enabled: exactCommand === 'on', profile,
         linkByEmail: enabled ? await conciergeDbGet(`link-email:${conciergeSafeKey(profile.email)}`) : null,
         linkByChat: enabled ? await conciergeDbGet(`link-chat:${String(profile.chatId || '')}`) : null });
-      if (canaryRecipient && enabled && !consent) return 'Não consegui confirmar o vínculo atual do Telegram. Refaça o vínculo antes de ativar os alertas.';
+      if (canaryRecipient && enabled && !consent) return 'Não consegui confirmar um comando recente após o vínculo atual. Envie /alertameteo on novamente.';
       if (consent) {
         const consentKey = `weather-consent:${conciergeSafeKey(profile.email)}`;
         const persisted = await writeWeatherCanaryConsent(await conciergeDbPool(), profile.email, profile.chatId, consent, profile.weatherCommandSequence);
@@ -3343,6 +3343,7 @@ async function processTelegramUpdate(update = {}) {
     const profile = await telegramProfileForChatAsync(message);
     // Telegram per-chat ordering is trusted only through the existing verified webhook.
     profile.weatherCommandSequence = Number(message?.message_id);
+    profile.weatherCommandDate = message?.date;
     const snapshot = await conciergeLoadSnapshot(profile);
     const normalizedText = normalizeConciergeButtonText(text);
     if (/^\/ligacao(?:@\S+)?\b/i.test(normalizedText)) {
@@ -3503,7 +3504,9 @@ async function runCriticalWeatherMonitorCycle(now = new Date(), observationNow =
         if (!report?.raw) { summary.failures += 1; continue; }
         summary.reports += 1;
         const stateKey = weatherAlertStateKey(snapshot, candidate);
-        const previous = await conciergeDbGet(stateKey) || criticalWeatherMonitorMemory.get(stateKey) || {};
+        const previous = canary
+          ? await canaryLease.readState(stateKey) || {}
+          : await conciergeDbGet(stateKey) || criticalWeatherMonitorMemory.get(stateKey) || {};
         const change = criticalWeatherChange(previous.raw || '', report.raw);
         const delivery = evaluateCriticalWeatherDelivery({ report, station: candidate.station, previous, change, now: observationNow() });
         if (!delivery.accepted) { summary.failures += 1; continue; }
@@ -3515,8 +3518,10 @@ async function runCriticalWeatherMonitorCycle(now = new Date(), observationNow =
         const shouldSend = delivery.shouldSend;
         const alertReasons = change.reasons.length ? change.reasons : Array.isArray(previous.reasons) ? previous.reasons : ['condição crítica no boletim'];
         const nextState = { raw: report.raw, fingerprint: change.fingerprint, severity: change.severity, reasons: alertReasons, pendingDelivery: shouldSend, observedAt: report.observedAt || '', checkedAt: now.toISOString(), lastSentAt: previous.lastSentAt || '', source: report.source || '' };
-        criticalWeatherMonitorMemory.set(stateKey, nextState);
-        const observationPersisted = await conciergeDbPut(stateKey, nextState);
+        if (!canary) criticalWeatherMonitorMemory.set(stateKey, nextState);
+        const observationPersisted = canary
+          ? await canaryLease.writeState(stateKey, nextState)
+          : await conciergeDbPut(stateKey, nextState);
         if (canary && !observationPersisted) { summary.failures += 1; continue; }
         if (!shouldSend) continue;
         messages.push({ stateKey, nextState, text: [
@@ -3535,9 +3540,10 @@ async function runCriticalWeatherMonitorCycle(now = new Date(), observationNow =
         let reserved = true;
         for (const message of messages.slice(0, 3)) {
           const submitted = { ...message.nextState, pendingDelivery: false, canaryDispatchState: 'submitted', canaryConsentSequence: selection.commandSequence };
-          if (!await conciergeDbPut(message.stateKey, submitted)) { reserved = false; break; }
+          try {
+            if (!await canaryLease.writeState(message.stateKey, submitted)) { reserved = false; break; }
+          } catch { reserved = false; break; }
           message.nextState = submitted;
-          criticalWeatherMonitorMemory.set(message.stateKey, submitted);
         }
         if (!reserved) { summary.failures += 1; continue; }
         // Recheck after durable intent writes. A later revocation can still race transport.
@@ -3555,8 +3561,13 @@ async function runCriticalWeatherMonitorCycle(now = new Date(), observationNow =
         summary.alerts += Math.min(3, messages.length);
         for (const message of messages.slice(0, 3)) {
           const deliveredState = { ...message.nextState, pendingDelivery: false, lastSentAt: now.toISOString() };
-          criticalWeatherMonitorMemory.set(message.stateKey, deliveredState);
-          if (!await conciergeDbPut(message.stateKey, deliveredState) && canary) summary.failures += 1;
+          if (canary) {
+            try { if (!await canaryLease.writeState(message.stateKey, deliveredState)) summary.failures += 1; }
+            catch { summary.failures += 1; }
+          } else {
+            criticalWeatherMonitorMemory.set(message.stateKey, deliveredState);
+            await conciergeDbPut(message.stateKey, deliveredState);
+          }
         }
       } else summary.failures += 1;
     }

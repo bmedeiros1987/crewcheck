@@ -27,7 +27,12 @@ export function weatherConsentCommand(text) {
 function consentFields(value) {
   if (!object(value)) return null;
   return { version: value.version, chatId: value.chatId, linkedAt: value.linkedAt,
-    bindingRevision: value.bindingRevision, grantedAt: value.grantedAt };
+    bindingRevision: value.bindingRevision, grantedAt: value.grantedAt, commandDate: value.commandDate };
+}
+function grantCommandInBinding(commandDate, linkedAt, now) {
+  return Number.isSafeInteger(commandDate) && commandDate > 0 &&
+    commandDate * 1000 > time(linkedAt) && commandDate * 1000 <= now &&
+    now - commandDate * 1000 <= 5 * MINUTE;
 }
 export function sameWeatherCanaryConsent(left, right) {
   if (!object(left) || !object(right)) return false;
@@ -63,7 +68,8 @@ export async function writeWeatherCanaryConsent(pool, email, chatId, preference,
     const liveContext = currentBinding && snapshot?.key === key && account(snapshot.email) === key && snapshot.chatId === chatId;
     const consent = preference.weatherCriticalAlertsConsent;
     const allowed = preference.weatherCriticalAlerts
-      ? liveContext && consent?.linkedAt === currentBinding.linkedAt && consent?.bindingRevision === currentBinding.revision && consent?.chatId === chatId
+      ? liveContext && consent?.linkedAt === currentBinding.linkedAt && consent?.bindingRevision === currentBinding.revision && consent?.chatId === chatId &&
+        grantCommandInBinding(consent.commandDate, currentBinding.linkedAt, Date.now())
       : liveContext || records.has(`weather-consent:${key}`);
     if (!allowed) { await connection.query('ROLLBACK'); transaction = false; return null; }
     await connection.query(`INSERT INTO crewcheck_telegram_state (state_key, payload, updated_at) VALUES (?, ?, NOW())
@@ -104,26 +110,60 @@ export async function acquireWeatherCanaryLease(pool, recipientHash) {
   if (!pool || !/^[a-f0-9]{64}$/.test(recipientHash)) return null;
   const lockName = `cc-wx-${recipientHash.slice(0, 58)}`;
   let connection;
-  let released = false;
+  let closing = false, destroyed = false, pending = Promise.resolve(), releasePromise;
+  const destroy = () => { if (!destroyed) { destroyed = true; connection.destroy(); } };
+  const owned = async () => {
+    if (destroyed) throw new Error('Weather canary lease unavailable');
+    const [current] = await connection.query({ sql: 'SELECT IS_USED_LOCK(?) = CONNECTION_ID() AS owned', values: [lockName], timeout: 3500 });
+    if (Number(current?.[0]?.owned) !== 1) throw new Error('Weather canary lease lost');
+  };
+  // Queue every lease operation, including release. No in-flight state write can
+  // outlive its leased connection or run after it returns to the pool.
+  const execute = (operation) => {
+    if (closing) return Promise.reject(new Error('Weather canary lease closed'));
+    const result = pending.then(async () => {
+      try { await owned(); return await operation(); }
+      catch (error) { destroy(); throw error; }
+    });
+    pending = result.catch(() => {});
+    return result;
+  };
   try {
     connection = await pool.getConnection();
     const [rows] = await connection.query({ sql: 'SELECT GET_LOCK(?, 0) AS acquired', values: [lockName], timeout: 3500 });
     if (Number(rows?.[0]?.acquired) !== 1) { connection.release(); return null; }
     return Object.freeze({
       async isHeld() {
-        if (released) return false;
-        try {
-          const [current] = await connection.query({ sql: 'SELECT IS_USED_LOCK(?) = CONNECTION_ID() AS owned', values: [lockName], timeout: 3500 });
-          return Number(current?.[0]?.owned) === 1;
-        } catch { return false; }
+        try { return await execute(async () => true); } catch { return false; }
+      },
+      async readState(key) {
+        return execute(async () => {
+          const [rows] = await connection.query({ sql: 'SELECT payload FROM crewcheck_telegram_state WHERE state_key=?', values: [key], timeout: 3500 });
+          if (!Array.isArray(rows) || rows.length > 1) throw new Error('Weather state unreadable');
+          if (!rows.length) return null; // Only a confirmed absent row is empty.
+          const value = typeof rows[0].payload === 'string' ? JSON.parse(rows[0].payload) : rows[0].payload;
+          if (!object(value)) throw new Error('Weather state unreadable');
+          return value;
+        });
+      },
+      async writeState(key, value) {
+        return execute(async () => {
+          if (!object(value)) throw new Error('Weather state invalid');
+          await connection.query({ sql: 'INSERT INTO crewcheck_telegram_state (state_key,payload,updated_at) VALUES (?,?,NOW()) ON DUPLICATE KEY UPDATE payload=VALUES(payload),updated_at=NOW()', values: [key, JSON.stringify(value)], timeout: 3500 });
+          return true;
+        });
       },
       async release() {
-        if (released) return;
-        released = true;
-        try {
-          await connection.query({ sql: 'SELECT RELEASE_LOCK(?) AS released', values: [lockName], timeout: 3500 });
-          connection.release();
-        } catch { connection.destroy(); }
+        if (releasePromise) return releasePromise;
+        closing = true;
+        releasePromise = pending.then(async () => {
+          if (destroyed) return;
+          try {
+            await connection.query({ sql: 'SELECT RELEASE_LOCK(?) AS released', values: [lockName], timeout: 3500 });
+            connection.release();
+          } catch { destroy(); }
+        });
+        return releasePromise;
       },
     });
   } catch {
@@ -190,10 +230,12 @@ export function weatherCanaryConsent({ enabled, profile, linkByEmail, linkByChat
   const chatId = profile?.chatId;
   if (enabled !== true || profile?.linked !== true || !Number.isFinite(now)) return null;
   const current = binding(email, chatId, linkByEmail, linkByChat, now);
-  if (!current) return null;
+  // Telegram message.date is trusted only from the verified webhook, never the
+  // processing clock. Same-second linkage is ambiguous, so request a fresh on.
+  if (!current || !grantCommandInBinding(profile.weatherCommandDate, current.linkedAt, now)) return null;
   return { weatherCriticalAlerts: true, weatherCriticalAlertsConsent: {
     version: 1, chatId, linkedAt: current.linkedAt, bindingRevision: current.revision,
-    grantedAt: new Date(now).toISOString(),
+    grantedAt: new Date(now).toISOString(), commandDate: profile.weatherCommandDate,
   } };
 }
 
@@ -224,7 +266,7 @@ export function createWeatherCanaryPolicy({ enabled = false, recipientHash = '',
       if (!currentBinding || weatherPreference?.weatherCriticalAlerts !== true || !object(consent) ||
           weatherPreference.channel !== 'telegram' || weatherPreference.commandChatId !== chatId || !Number.isSafeInteger(weatherPreference.commandSequence) || weatherPreference.commandSequence <= 0) return null;
       const grantedAt = time(consent.grantedAt);
-      if (consent.version !== 1 || consent.chatId !== chatId || consent.linkedAt !== currentBinding.linkedAt || consent.bindingRevision !== currentBinding.revision || !Number.isFinite(grantedAt) || grantedAt < time(currentBinding.linkedAt) || grantedAt > checkedAt) return null;
+      if (consent.version !== 1 || consent.chatId !== chatId || consent.linkedAt !== currentBinding.linkedAt || consent.bindingRevision !== currentBinding.revision || !Number.isFinite(grantedAt) || grantedAt > checkedAt || !grantCommandInBinding(consent.commandDate, currentBinding.linkedAt, grantedAt)) return null;
       if (!object(snapshot.roster) || !Array.isArray(snapshot.roster.days) || !snapshot.roster.days.length) return null;
       const rosterUpdatedAt = time(snapshot.updatedAt);
       if (!Number.isFinite(rosterUpdatedAt) || rosterUpdatedAt > checkedAt || checkedAt - rosterUpdatedAt > 45 * 24 * 60 * MINUTE) return null;

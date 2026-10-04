@@ -9,7 +9,7 @@ const CHAT = '123456789';
 const HASH = weatherCanaryRecipientHash(EMAIL, CHAT);
 function fixture() {
   const link = { email: EMAIL, chatId: CHAT, linkedAt: '2026-10-04T12:00:00Z', code: 'synthetic-link-only' };
-  const consent = weatherCanaryConsent({ enabled: true, profile: { email: EMAIL, chatId: CHAT, linked: true }, linkByEmail: link, linkByChat: link, now: NOW - 1000 });
+  const consent = weatherCanaryConsent({ enabled: true, profile: { email: EMAIL, chatId: CHAT, linked: true, weatherCommandDate: NOW / 1000 - 2 }, linkByEmail: link, linkByChat: link, now: NOW - 1000 });
   const snapshot = { key: EMAIL, email: EMAIL, chatId: CHAT, roster: { days: [{ date: '2026-10-04', legs: [] }] }, preferences: consent, updatedAt: '2026-10-04T16:59:00Z' };
   const records = new Map([[`weather-consent:${EMAIL}`, { ...structuredClone(consent), commandSequence: 50, commandChatId: CHAT, channel: 'telegram' }], [`snapshot:${EMAIL}`, snapshot], [`link-email:${EMAIL}`, structuredClone(link)], [`link-chat:${CHAT}`, structuredClone(link)]]);
   let reads = 0;
@@ -277,4 +277,190 @@ test('invalid or absent command ordering never writes consent', async () => {
 });
 test('consent SQL failure produces no claim of durable success', async () => {
   assert.equal(await writeWeatherCanaryConsent({ query: async () => { throw new Error('DB failure'); } }, EMAIL, CHAT, weatherCanaryConsent({ enabled: false }), 101), null);
+});
+
+test('fresh trusted Telegram command date is persisted with the grant', () => {
+  const f = fixture();
+  assert.equal(f.records.get(`weather-consent:${EMAIL}`).weatherCriticalAlertsConsent.commandDate, NOW / 1000 - 2);
+});
+for (const [name, commandDate] of [
+  ['missing', undefined], ['null', null], ['string', String(NOW / 1000 - 2)],
+  ['fractional', NOW / 1000 - 1.5], ['negative', -1], ['zero', 0],
+  ['NaN', NaN], ['infinite', Infinity], ['milliseconds instead of seconds', NOW - 2000],
+  ['future', NOW / 1000 + 1], ['older than five minutes', NOW / 1000 - 301],
+]) {
+  test(`grant rejects ${name} Telegram message date`, () => {
+    const f = fixture();
+    assert.equal(weatherCanaryConsent({ enabled: true,
+      profile: { email: EMAIL, chatId: CHAT, linked: true, weatherCommandDate: commandDate },
+      linkByEmail: f.link, linkByChat: f.link, now: NOW }), null);
+  });
+}
+test('command must follow linkage strictly, including same-second ambiguity', () => {
+  const f = fixture();
+  const commandDate = NOW / 1000 - 2;
+  for (const linkedAt of [new Date(commandDate * 1000).toISOString(), new Date(commandDate * 1000 + 250).toISOString(), new Date(commandDate * 1000 + 1000).toISOString()]) {
+    const link = { ...f.link, linkedAt, code: 'fresh-relink' };
+    assert.equal(weatherCanaryConsent({ enabled: true,
+      profile: { email: EMAIL, chatId: CHAT, linked: true, weatherCommandDate: commandDate },
+      linkByEmail: link, linkByChat: link, now: NOW }), null);
+  }
+});
+test('five-minute boundary is inclusive and one second after linkage can grant', () => {
+  const f = fixture();
+  for (const commandDate of [NOW / 1000 - 300, NOW / 1000]) {
+    assert(weatherCanaryConsent({ enabled: true,
+      profile: { email: EMAIL, chatId: CHAT, linked: true, weatherCommandDate: commandDate },
+      linkByEmail: f.link, linkByChat: f.link, now: NOW }));
+  }
+  const link = { ...f.link, linkedAt: new Date(NOW - 1000).toISOString() };
+  assert(weatherCanaryConsent({ enabled: true,
+    profile: { email: EMAIL, chatId: CHAT, linked: true, weatherCommandDate: NOW / 1000 },
+    linkByEmail: link, linkByChat: link, now: NOW }));
+});
+test('opt-out does not require a Telegram message date', () => {
+  for (const weatherCommandDate of [undefined, null, 'invalid', NOW / 1000 + 99]) {
+    assert.deepEqual(weatherCanaryConsent({ enabled: false, profile: { weatherCommandDate } }),
+      { weatherCriticalAlerts: false, weatherCriticalAlertsConsent: null });
+  }
+});
+test('historical consent does not expire just because its command becomes five minutes old', async () => {
+  const f = fixture();
+  assert(await f.make({ now: () => NOW + 600_000 }).select(f.snapshot));
+});
+test('stored consent must retain a trusted date after linkage and no later than its grant', async () => {
+  for (const commandDate of [undefined, 'invalid', NOW / 1000, Date.parse('2026-10-04T12:00:00Z') / 1000]) {
+    const f = fixture();
+    f.records.get(`weather-consent:${EMAIL}`).weatherCriticalAlertsConsent.commandDate = commandDate;
+    assert.equal(await f.make().select(f.snapshot), null);
+  }
+});
+test('transaction revalidates command date and freshness before its grant write', async t => {
+  t.mock.method(Date, 'now', () => NOW);
+  for (const commandDate of [undefined, String(NOW / 1000 - 2), NOW / 1000 + 1, NOW / 1000 - 301]) {
+    const f = fixture(); const preference = structuredClone(f.records.get(`weather-consent:${EMAIL}`));
+    preference.weatherCriticalAlertsConsent.commandDate = commandDate;
+    const statements = [];
+    const pool = { getConnection: async () => ({
+      query: async (sql, values) => { statements.push(sql); return sql.startsWith('SELECT state_key,payload')
+        ? [[...f.records].filter(([key]) => values.includes(key)).map(([state_key, payload]) => ({ state_key, payload }))]
+        : [{ affectedRows: 1 }]; }, release() {}, destroy() {},
+    }) };
+    assert.equal(await writeWeatherCanaryConsent(pool, EMAIL, CHAT, preference, 101), null);
+    assert.equal(statements.some(sql => sql.startsWith('INSERT')), false);
+    assert.equal(statements.at(-1), 'ROLLBACK');
+  }
+});
+test('transaction rejects pre-link and same-second dates even with the current binding revision', async t => {
+  t.mock.method(Date, 'now', () => NOW);
+  const f = fixture();
+  const link = { ...f.link, linkedAt: new Date(NOW - 2000).toISOString(), code: 'current-relink' };
+  f.records.set(`link-email:${EMAIL}`, link); f.records.set(`link-chat:${CHAT}`, link);
+  const preference = weatherCanaryConsent({ enabled: true,
+    profile: { email: EMAIL, chatId: CHAT, linked: true, weatherCommandDate: NOW / 1000 - 1 },
+    linkByEmail: link, linkByChat: link, now: NOW });
+  assert(preference);
+  for (const commandDate of [NOW / 1000 - 3, NOW / 1000 - 2]) {
+    const candidate = structuredClone(preference); candidate.weatherCriticalAlertsConsent.commandDate = commandDate;
+    let inserts = 0;
+    const pool = { getConnection: async () => ({
+      query: async (sql, values) => {
+        if (sql.startsWith('SELECT state_key,payload')) return [[...f.records].filter(([key]) => values.includes(key)).map(([state_key, payload]) => ({ state_key, payload }))];
+        if (sql.startsWith('INSERT')) inserts++;
+        return [{ affectedRows: 1 }];
+      }, release() {}, destroy() {},
+    }) };
+    assert.equal(await writeWeatherCanaryConsent(pool, EMAIL, CHAT, candidate, 101), null);
+    assert.equal(inserts, 0);
+  }
+});
+
+function stateLeasePool() {
+  const records = new Map();
+  const calls = [];
+  const controls = { owner: 1, readError: false, writeError: false, rows: undefined, beforeWrite: null, released: 0, destroyed: 0 };
+  const connection = {
+    async query(input) {
+      const { sql, values } = input; calls.push({ sql, values, connection: 1 });
+      if (sql.includes('GET_LOCK')) return [[{ acquired: 1 }]];
+      if (sql.includes('IS_USED_LOCK')) return [[{ owned: controls.owner === 1 ? 1 : 0 }]];
+      if (sql.includes('RELEASE_LOCK')) { controls.owner = null; return [[{ released: 1 }]]; }
+      if (sql.startsWith('SELECT payload')) {
+        if (controls.readError) throw new Error('Synthetic state read failed');
+        if (controls.rows !== undefined) return [controls.rows];
+        return [records.has(values[0]) ? [{ payload: JSON.stringify(records.get(values[0])) }] : []];
+      }
+      if (sql.startsWith('INSERT')) {
+        if (controls.beforeWrite) await controls.beforeWrite();
+        if (controls.writeError) throw new Error('Synthetic state write failed');
+        records.set(values[0], JSON.parse(values[1])); return [{ affectedRows: 1 }];
+      }
+      throw new Error('Unexpected synthetic state SQL');
+    },
+    release() { controls.released++; },
+    destroy() { controls.destroyed++; if (controls.owner === 1) controls.owner = null; },
+  };
+  return { pool: { getConnection: async () => connection }, records, calls, controls };
+}
+test('lease state uses its owning connection and returns null only for a confirmed missing row', async () => {
+  const f = stateLeasePool(); const lease = await acquireWeatherCanaryLease(f.pool, HASH);
+  try {
+    assert.equal(await lease.readState('weather:missing'), null);
+    assert.equal(await lease.writeState('weather:sample', { canaryDispatchState: 'submitted' }), true);
+    assert.deepEqual(await lease.readState('weather:sample'), { canaryDispatchState: 'submitted' });
+    assert(f.calls.every(call => call.connection === 1));
+  } finally { await lease.release(); }
+});
+test('lease state read errors are rejected rather than converted into an absent baseline', async () => {
+  const f = stateLeasePool(); const lease = await acquireWeatherCanaryLease(f.pool, HASH);
+  f.controls.readError = true;
+  await assert.rejects(lease.readState('weather:sample'));
+  assert.equal(f.controls.destroyed, 1);
+  await assert.rejects(lease.writeState('weather:sample', {}));
+  await lease.release(); assert.equal(f.controls.released, 0);
+});
+for (const [name, rows] of [
+  ['invalid JSON', [{ payload: '{' }]], ['null payload', [{ payload: null }]],
+  ['array payload', [{ payload: [] }]], ['non-row result', null],
+  ['ambiguous rows', [{ payload: {} }, { payload: {} }]],
+]) {
+  test(`lease rejects unreadable state: ${name}`, async () => {
+    const f = stateLeasePool(); const lease = await acquireWeatherCanaryLease(f.pool, HASH);
+    f.controls.rows = rows;
+    await assert.rejects(lease.readState('weather:sample'));
+    assert.equal(f.controls.destroyed, 1); await lease.release();
+  });
+}
+test('lost lease cannot read or overwrite successor submitted intent', async () => {
+  const f = stateLeasePool(); const lease = await acquireWeatherCanaryLease(f.pool, HASH);
+  const successor = { canaryDispatchState: 'submitted', successor: true };
+  f.controls.owner = 2; f.records.set('weather:sample', successor);
+  await assert.rejects(lease.readState('weather:sample'));
+  await assert.rejects(lease.writeState('weather:sample', { pendingDelivery: true }));
+  assert.deepEqual(f.records.get('weather:sample'), successor);
+  assert.equal(f.calls.some(call => call.sql.startsWith('INSERT')), false);
+  await lease.release(); assert.equal(f.controls.owner, 2);
+});
+test('lease write error is rejected and poisons the lost connection', async () => {
+  const f = stateLeasePool(); const lease = await acquireWeatherCanaryLease(f.pool, HASH);
+  f.controls.writeError = true;
+  await assert.rejects(lease.writeState('weather:sample', { pendingDelivery: true }));
+  assert.equal(f.controls.destroyed, 1); assert.equal(f.records.size, 0);
+  assert.equal(await lease.isHeld(), false); await lease.release();
+});
+test('lease release waits for an in-flight state write and rejects later operations', async () => {
+  const f = stateLeasePool(); const lease = await acquireWeatherCanaryLease(f.pool, HASH);
+  let reached, finish;
+  const started = new Promise(resolve => { reached = resolve; });
+  const blocked = new Promise(resolve => { finish = resolve; });
+  f.controls.beforeWrite = async () => { reached(); await blocked; };
+  const write = lease.writeState('weather:sample', { canaryDispatchState: 'submitted' });
+  await started;
+  const release = lease.release();
+  assert.equal(f.controls.released, 0);
+  assert.equal(f.calls.some(call => call.sql.includes('RELEASE_LOCK')), false);
+  await assert.rejects(lease.readState('weather:sample'));
+  finish(); assert.equal(await write, true); await release;
+  assert.equal(f.controls.released, 1);
+  assert.equal(f.calls.at(-1).sql.includes('RELEASE_LOCK'), true);
 });
