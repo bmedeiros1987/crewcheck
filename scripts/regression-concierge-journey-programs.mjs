@@ -149,14 +149,24 @@ if (source.includes("from './server/concierge/journey-programs.mjs'")) {
   const start = source.indexOf('function conciergeNextProgram('); const end = source.indexOf('\n}', start) + 2;
   assert.match(source.slice(start, end), /const records = conciergeProgramRecords\(roster\)/);
   const namesForRuntime = ['conciergeRosterDayParts', 'conciergeTime', 'conciergeProgramDate', 'conciergeProgramRecords', 'conciergeNextProgram', 'conciergePresentationTime', 'conciergeDateKey', 'conciergeRecordDateKey', 'conciergeDateLabel', 'conciergeProgramTitle', 'conciergeFormatProgram', 'conciergePremiumScheduleReply', 'conciergeScheduleReply', 'conciergeRegulationReply'];
-  for (const name of ['conciergeCareCode', 'conciergeCareState']) {
-    if (source.includes(`function ${name}(`)) namesForRuntime.push(name);
-  }
-  const code = namesForRuntime.map((name) => {
-    const match = new RegExp(`(?:async )?function ${name}\\(`).exec(source);
+  // Resolve real prepared helper declarations transitively, so materialized
+  // Care/operational reminders are exercised rather than replaced by stubs.
+  const externallyBound = new Set(['conciergeNextJourneyProgram', 'conciergeJourneyProgramRecords', 'conciergeJourneyEndText', 'conciergeRegulationForRecord']);
+  const bodies = new Map();
+  for (let index = 0; index < namesForRuntime.length; index++) {
+    const name = namesForRuntime[index];
+    if (bodies.has(name)) continue;
+    const match = new RegExp(`^(?:async )?function ${name}\\(`, 'm').exec(source);
     assert.ok(match, name); const end = source.indexOf('\n}', match.index) + 2;
-    return source.slice(match.index, end);
-  }).join('\n');
+    const body = source.slice(match.index, end);
+    bodies.set(name, body);
+    for (const call of body.matchAll(/\b(concierge[A-Za-z0-9_]+)\s*\(/g)) {
+      const dependency = call[1];
+      if (!externallyBound.has(dependency) && !bodies.has(dependency)
+        && new RegExp(`^(?:async )?function ${dependency}\\(`, 'm').test(source)) namesForRuntime.push(dependency);
+    }
+  }
+  const code = [...bodies.values()].join('\n');
   let runtimeAt = at;
   class TestDate extends Date { constructor(...args) { super(...(args.length ? args : [runtimeAt.getTime()])); } static now() { return runtimeAt.getTime(); } }
   const { conciergeJourneyEndText } = await import('../server/concierge/journey-programs.mjs');
