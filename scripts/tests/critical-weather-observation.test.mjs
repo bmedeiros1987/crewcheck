@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import vm from 'node:vm';
 import { evaluateCriticalWeatherDelivery, WEATHER_OBSERVATION_MAX_AGE_MS } from '../../server/weather/critical-observation.mjs';
@@ -188,4 +191,19 @@ test('no source change grants notifications or alters scheduler authorization/wi
   assert.match(functionSource('scheduleCriticalWeatherMonitor'), /CREWCHECK_WEATHER_MONITOR_ENABLED/);
   assert.match(functionSource('handleCriticalWeatherMonitorHealth'), /weatherAlertSchedulerAuthorized\(req\)/);
   assert.doesNotMatch(functionSource('handleCriticalWeatherMonitorHealth'), /evaluateCriticalWeatherDelivery|runCriticalWeatherMonitor\(/);
+});
+test('focused CI stops on an early failing command instead of masking it with heartbeat success', () => {
+  const workflow = fs.readFileSync(new URL('../../.github/workflows/weather-observation-alert.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /shell: bash -eo pipefail \{0\}/);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-weather-ci-'));
+  try {
+    const script = path.join(dir, 'failure-probe.sh');
+    fs.writeFileSync(script, 'false\nprintf "MUST_NOT_RUN"\n');
+    const result = spawnSync('bash', ['-eo', 'pipefail', script], { encoding: 'utf8' });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 1);
+    assert.doesNotMatch(result.stdout, /MUST_NOT_RUN/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
