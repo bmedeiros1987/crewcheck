@@ -5,9 +5,11 @@ on:
     paths:
       - 'server/v14335/concierge-location.mjs'
       - 'server/v14410/**'
+      - 'server/v14407/wellhub.mjs'
       - 'scripts/v14410/**'
       - 'scripts/v139/apply.mjs'
       - 'scripts/regression-v14-4-10-wellhub-concierge-plan-location.mjs'
+      - 'scripts/regression-concierge-wellhub-plan-recognition.mjs'
       - '.github/workflows/wellhub-concierge-v14410.yml'
   workflow_dispatch:
 
@@ -26,6 +28,8 @@ jobs:
           node --check server/v14410/wellhub-concierge.mjs
           node --check scripts/v14410/apply.mjs
           node --check scripts/regression-v14-4-10-wellhub-concierge-plan-location.mjs
+      - name: Wellhub plan regression before preparation
+        run: node --test scripts/regression-concierge-wellhub-plan-recognition.mjs
       - name: Prepare canonical source
         run: node scripts/v139/apply.mjs
       - name: Materialized syntax
@@ -34,6 +38,8 @@ jobs:
           node --check server/whatsapp.mjs
       - name: Regression Silver+ geo fail-closed and WhatsApp
         run: node scripts/regression-v14-4-10-wellhub-concierge-plan-location.mjs
+      - name: Wellhub plan regression after preparation
+        run: node scripts/regression-concierge-wellhub-plan-recognition.mjs --materialized
       - name: Verify materialized server
         run: |
           grep -F "cc-v14410:concierge-gyms-plan-location" server.mjs
