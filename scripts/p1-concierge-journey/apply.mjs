@@ -31,6 +31,8 @@ patchFunction('conciergeRegulationReply', (body) => {
   const after = 'const records = conciergeJourneyProgramRecords(roster, conciergeProgramRecords(roster)).filter(';
   if (!body.includes(before) && !body.includes(after)) throw new Error('[concierge-journey] missing regulation selection');
   body = body.replace(before, after);
+  body = body.replace('const todayKey = conciergeDateKey(new Date());', 'const now = new Date();\n  const todayKey = conciergeDateKey(now);');
+  body = body.replace('.filter((record) => conciergeRecordDateKey(record) === todayKey);', '.filter((record) => conciergeRecordDateKey(record) === todayKey || (record.start <= now && record.end >= now));');
   body = body.replace('`Fim da jornada: ${result.dutyEndTime} (30 min após o corte)`,', '`Fim limite calculado: ${result.dutyEndTime} (30 min após o corte)`,\n      conciergeJourneyEndText(record),');
   return body;
 });

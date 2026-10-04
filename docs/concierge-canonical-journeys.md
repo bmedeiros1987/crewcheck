@@ -23,14 +23,14 @@ saved stay IDs. Existing nonflight Concierge records remain independent.
 The first canonical presentation is anchored to its existing departure instant.
 The final debrief is used only when the group's last event owns the published
 day's last leg; otherwise only final arrival is exposed and the unconfirmed
-journey end is explicitly labeled. No arrival +30 minute debrief is invented.
+journey end is explicitly labeled. Arrival-equal fallback clocks and endpoints that cross the next canonical boundary are not accepted as proof. A debrief clock wrapping midnight requires the canonical rest/stay endpoint to prove that occurrence. No arrival +30 minute debrief is invented.
 
 ## Scope
 
 Only next/summary schedule callsites and the Concierge regulation record input
 use this projection. Existing radar, smart-departure, weather, location, hotel
 and other `conciergeNextProgram` consumers are unchanged. Today/tomorrow schedule
-views retain their pre-existing civil-day behavior. Regulation labels now
+views retain their pre-existing civil-day behavior. Regulation keeps an active overnight journey visible after the civil-date change; its labels now
 separate the calculated maximum from the published program end. Its B.1 table,
 assumptions and formula are unchanged; passing software tests does not validate
 legal applicability or confirm the user's live active roster.
