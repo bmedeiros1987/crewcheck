@@ -5,6 +5,9 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   const detectedActivity = detectWellhubActivityFromText(text);
   const planPreference = Boolean(detectedPlan && isWellhubPlanPreferenceMessage(text));
   const activityPreference = Boolean(detectedActivity && isWellhubActivityPreferenceMessage(text));
+  if (!planPreference && isWellhubPlanDeclarationMessage(text)) {
+    return 'Não reconheci o plano Wellhub informado. Não alterei seu plano. Diga, por exemplo, “meu plano Wellhub é o Silver+”, usando o nome exato do seu plano.';
+  }
   const planUpdate = planPreference ? detectedPlan : '';
   const activityUpdate = activityPreference ? detectedActivity : '';
   const provider = planPreference || activityPreference

@@ -4,7 +4,10 @@ function normalize(value = '') {
   return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-const WELLHUB_PLAN_TOKEN = '(?:digital|starter|basic(?:\\+|\\s+plus)?|silver(?:\\+|\\s+plus)?|gold(?:\\+|\\s+plus)?|platinum|diamond(?:\\+|\\s+plus)?)';
+const WELLHUB_PLAN_TOKEN = '(?:digital|starter|basic(?:\\s*\\+|\\s+plus)?|silver(?:\\s*\\+|\\s+plus)?|gold(?:\\s*\\+|\\s+plus)?|platinum|diamond(?:\\s*\\+|\\s+plus)?)';
+// A declaration prefix is shared with the clarification guard. A plan token
+// must still consume the entire message before it can update preferences.
+const WELLHUB_EXPLICIT_PLAN_PREFIX = '(?:(?:meu\\s+)?plano\\s+(?:do\\s+)?(?:wellhub|gympass)\\s*(?:(?:é|e|eh)(?:\\s+|$)|[:\\-]\\s*)|(?:wellhub|gympass)\\s*(?:plano\\s+)?(?:(?:é|e|eh)(?:\\s+|$)|[:\\-]\\s*)|(?:uso|tenho|estou\\s+no)\\s+(?:o\\s+)?(?:wellhub|gympass)\\s+)(?:o\\s+)?';
 const OTHER_PLAN_CONTEXT = /\b(?:plano\s+(?:de\s+)?(?:sa[uú]de|m[eé]dico|odontol[oó]gico|celular|telefone|telefonia|internet|dados|operadora|seguro|cart[aã]o|streaming)|amil|unimed|bradesco\s+sa[uú]de|sulamerica\s+sa[uú]de|sulamerica\s+saude)\b/i;
 const NON_GYM_ACTIVITY_CONTEXT = /\b(?:aeroporto|voo|port[aã]o|escala|sa[ií]da|hotel|uber|carro|tr[aâ]nsito)\b/i;
 
@@ -43,11 +46,13 @@ export function isWellhubPlanPreferenceMessage(text = '') {
 
   // Menção a Wellhub/Gympass, sozinha, não transforma palavras como "Gold" em
   // preferência de plano. Exige sintaxe explícita de atualização do tier.
-  const explicitProductPlan = new RegExp(
-    `^(?:(?:meu\\s+)?plano\\s+(?:do\\s+)?(?:wellhub|gympass)\\s*(?:é|e|eh|:|-)\\s*|(?:wellhub|gympass)\\s*(?:plano\\s+)?(?:é|e|eh|:|-)\\s*|(?:uso|tenho|estou\\s+no)\\s+(?:o\\s+)?(?:wellhub|gympass)\\s+)${WELLHUB_PLAN_TOKEN}[.!]?$`,
-    'i',
-  );
+  const explicitProductPlan = new RegExp(`^${WELLHUB_EXPLICIT_PLAN_PREFIX}${WELLHUB_PLAN_TOKEN}[.!]?$`, 'i');
   return explicitProductPlan.test(raw);
+}
+
+export function isWellhubPlanDeclarationMessage(text = '') {
+  const raw = String(text || '').trim();
+  return !OTHER_PLAN_CONTEXT.test(raw) && new RegExp(`^${WELLHUB_EXPLICIT_PLAN_PREFIX}`, 'i').test(raw);
 }
 
 function isRecognizedWellhubActivity(raw = '', detected = '') {
