@@ -1,3 +1,4 @@
+import { loadChatInbox } from './platform-chat-inbox.mjs';
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { diagnoseCirium, diagnoseCiriumFlight } from './cirium-diagnostic.mjs';
@@ -1015,6 +1016,7 @@ async function clearAuthFailures(db, identifier) {
 }
 
 const PLATFORM_METHOD_POLICIES = [
+  [/^\/api\/platform\/(?:visitor\/)?chat\/inbox$/, ['GET']],
   [/^\/api\/platform\/catalog$/, ['GET']],
   [/^\/api\/platform\/database\/health$/, ['GET']],
   [/^\/api\/platform\/profile$/, ['GET', 'PATCH']],
@@ -2183,6 +2185,38 @@ async function handleCompare(req, res, url) {
   });
   return sendJson(res, 200, { ok: true, colleague: { displayName: other.display_name, publicId: other.public_id }, summary: { daysCompared: rows.length, bothFree: rows.filter((row) => row.bothFree).length, sameHotel: rows.filter((row) => row.sameHotel).length }, rows, privacy: 'A comparação exibe disponibilidade agregada, não números de voo, quarto ou dados pessoais.' });
 }
+async function handleChatInbox(req, res, visitorMode = false) {
+  if (req.method !== 'GET') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+  res.setHeader('Cache-Control', 'no-store');
+  let db; let recipient; let conversations;
+  if (visitorMode) {
+    const identity = visitorIdentity(req);
+    if (!identity) return sendJson(res, 401, { ok: false, message: 'Acesso de visitante expirado.' });
+    db = await pool();
+    if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
+    const result = await db.query("SELECT * FROM crewcheck_platform_visitors WHERE id=$1 AND owner_email=$2 AND status='active' LIMIT 1", [identity.visitorId, identity.ownerEmail]);
+    const visitor = result.rows[0];
+    if (!visitor || !allowedPermissions(visitor.permissions).chat) return sendJson(res, 403, { ok: false, message: 'Chat não autorizado.' });
+    const ownerResult = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=$1 LIMIT 1', [visitor.owner_email]);
+    const owner = ownerResult.rows[0];
+    if (!owner || !(await subscriptionStatus(db, owner)).premiumAccess) return sendJson(res, 402, { ok: false, message: 'Chat indisponível.' });
+    recipient = `visitor:${visitor.id}`;
+    conversations = [{ directKey: visitorChatKey(visitor), kind: 'owner', targetId: owner.public_id }];
+  } else {
+    const context = await requireMain(req, res);
+    if (!context || !await requirePremium(context, res, 'Chat interno')) return;
+    db = context.db; recipient = context.identity.email;
+    const connections = await db.query("SELECT c.requester_email,c.target_email,c.permissions,p.public_id FROM crewcheck_platform_connections c JOIN crewcheck_platform_profiles p ON p.email=CASE WHEN c.requester_email=$1 THEN c.target_email ELSE c.requester_email END WHERE c.status='accepted' AND (c.requester_email=$1 OR c.target_email=$1)", [recipient]);
+    const visitors = await db.query("SELECT id,owner_email,permissions FROM crewcheck_platform_visitors WHERE owner_email=$1 AND status='active'", [recipient]);
+    conversations = [
+      ...connections.rows.filter((row) => row.permissions?.chat === true).map((row) => ({ directKey: [row.requester_email, row.target_email].sort().join('|'), kind: 'colleague', targetId: row.public_id })),
+      ...visitors.rows.filter((row) => allowedPermissions(row.permissions).chat).map((row) => ({ directKey: visitorChatKey(row), kind: 'visitor', targetId: row.id })),
+    ];
+  }
+  const { items, snapshotVersion } = await loadChatInbox(db, recipient, conversations);
+  return sendJson(res, 200, { ok: true, recipient: sha256(`chat-inbox:${recipient}`), items, snapshotVersion, windowDays: 7, limit: 100 });
+}
+
 async function handleChat(req, res, url) {
   const body = req.method === 'POST' ? await readBody(req, 100_000) : {};
   const context = await requireMain(req, res, body);
@@ -2631,6 +2665,8 @@ export async function handlePlatformRoute(req, res, url) {
     if (shareRevoke) { await handleShareRevoke(req, res, shareRevoke[1]); return true; }
     if (url.pathname === '/api/platform/connections') { await handleConnections(req, res); return true; }
     if (url.pathname === '/api/platform/compare') { await handleCompare(req, res, url); return true; }
+    if (url.pathname === '/api/platform/chat/inbox') { await handleChatInbox(req, res); return true; }
+    if (url.pathname === '/api/platform/visitor/chat/inbox') { await handleChatInbox(req, res, true); return true; }
     if (url.pathname === '/api/platform/chat') { await handleChat(req, res, url); return true; }
     if (url.pathname === '/api/platform/gyms/checkins') { await handleGym(req, res, url); return true; }
     if (url.pathname === '/api/platform/parking') { await handleParking(req, res); return true; }

@@ -1,3 +1,4 @@
+import { setPendingNavigationContext } from '@/lib/navigationContext';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
@@ -85,7 +86,9 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
     }
     if (compact && compactRef.current?.contains(document.activeElement)) detailsRef.current?.focus();
     try {
+      setPendingNavigationContext(message.action.navigationContext?.targetView === message.action.view ? message.action.navigationContext : null);
       window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: message.action.view }));
+      window.dispatchEvent(new Event('crewcheck:menu-setting-focus'));
     } catch {}
     // Abrir o destino não equivale a dispensar o alerta. Mantemos o Pulse vivo
     // até o ciclo normal da mensagem ou uma dispensa explícita do usuário.

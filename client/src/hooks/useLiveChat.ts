@@ -59,6 +59,9 @@ export function useLiveChat(key: string, load: (signal: AbortSignal) => Promise<
         const result = await loader.current(request.signal);
         if (!current() || started !== revision.current) return;
         setSnapshot({ key, data: result });
+        if (!document.hidden && result?.threadId && Array.isArray(result.messages)) {
+          window.dispatchEvent(new CustomEvent('crewcheck:chat-read', { detail: { threadId: result.threadId, ids: result.messages.map((message: any) => message.id) } }));
+        }
         setStatus('');
         failures = 0;
       } catch (error: any) {
