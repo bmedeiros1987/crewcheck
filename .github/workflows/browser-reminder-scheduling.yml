@@ -1,0 +1,34 @@
+name: Browser reminder scheduling
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/lib/crewcheckPremiumRuntime.ts'
+      - 'client/src/components/v14313/LifeConciergePanel.tsx'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/browser-reminder-scheduling.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: browser-reminder-scheduling-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser-reminder:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Test canonical raw reminder sources
+        run: node scripts/regression-browser-reminder-scheduling.mjs
+      - name: Prepare canonical application sources
+        run: node scripts/v139/apply.mjs
+      - name: Test prepared reminder sources
+        run: node scripts/regression-browser-reminder-scheduling.mjs
