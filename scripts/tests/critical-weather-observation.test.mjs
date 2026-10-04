@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import vm from 'node:vm';
+import { weatherMonitorSettings } from '../../server/weather/monitor-readiness.mjs';
 import { evaluateCriticalWeatherDelivery, WEATHER_OBSERVATION_MAX_AGE_MS } from '../../server/weather/critical-observation.mjs';
 
 // Public official observations retrieved 2026-10-04 17:34Z. No user/account data.
@@ -125,6 +126,8 @@ function cycleHarness({ snapshot, candidates, observation, sendOK = true, initia
   let state = initialState, fetches = 0;
   const context = {
     Map, Date, evaluateCriticalWeatherDelivery,
+    criticalWeatherMonitorSettings: () => weatherMonitorSettings({}),
+    criticalWeatherCanaryBlocked: () => false,
     telegramRostersRead: () => ({ snapshots: { test: snapshot ?? { key: 'synthetic', chatId: 'synthetic-chat', roster: {}, preferences: { weatherCriticalAlerts: true } } } }),
     conciergeDbListSnapshots: async () => [],
     conciergeWeatherCandidates: () => candidates ?? [{ station: 'SBGR', role: 'origem', key: 'synthetic-leg', flight: 'TEST1', route: 'GRU → NAT' }],
@@ -188,7 +191,8 @@ test('real monitor integration: invalid/stale data never overwrites previous sta
 test('no source change grants notifications or alters scheduler authorization/windows', () => {
   assert.match(functionSource('conciergeWeatherCandidates'), /departure\.getTime\(\) - 180 \* 60_000/);
   assert.match(functionSource('conciergeWeatherCandidates'), /arrival\.getTime\(\) - 120 \* 60_000/);
-  assert.match(functionSource('scheduleCriticalWeatherMonitor'), /CREWCHECK_WEATHER_MONITOR_ENABLED/);
+  assert.match(functionSource('criticalWeatherMonitorSettings'), /CREWCHECK_WEATHER_MONITOR_ENABLED/);
+  assert.match(functionSource('scheduleCriticalWeatherMonitor'), /criticalWeatherMonitorSettings\(\)/);
   assert.match(functionSource('handleCriticalWeatherMonitorHealth'), /weatherAlertSchedulerAuthorized\(req\)/);
   assert.doesNotMatch(functionSource('handleCriticalWeatherMonitorHealth'), /evaluateCriticalWeatherDelivery|runCriticalWeatherMonitor\(/);
 });

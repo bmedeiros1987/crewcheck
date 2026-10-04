@@ -1,3 +1,4 @@
+import { weatherCanaryRecipientHash, weatherConsentCommand, sameWeatherCanaryConsent, writeWeatherCanaryConsent, weatherMonitorSettings, weatherMonitorReadiness, weatherCanaryConsent, createWeatherCanaryPolicy, findWeatherCanarySnapshots, acquireWeatherCanaryLease } from './server/weather/monitor-readiness.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -2442,8 +2443,48 @@ async function conciergeWeatherAlertsReply(text, profile, snapshot) {
   const enabled = !/\b(off|desligar|desativar|parar|0)\b/.test(lower);
   const explicitChange = /\b(on|ligar|ativar|off|desligar|desativar|parar|0|1)\b/.test(lower);
   if (explicitChange) {
+    const settings = criticalWeatherMonitorSettings();
+    const canaryRecipient = settings.canaryConfigurationPresent &&
+      weatherCanaryRecipientHash(profile.email, profile.chatId) === settings.recipientHash;
+    const exactCommand = weatherConsentCommand(text);
+    if (canaryRecipient && !exactCommand) return 'Use /alertameteo on para ativar ou /alertameteo off para desativar os alertas.';
+    // New consent requires an exact command and the already-protected webhook.
+    // Ordinary snapshot writes cannot grant or resurrect this dedicated record.
+    const existingCanaryConsent = exactCommand === 'off' ? await conciergeDbGet(`weather-consent:${conciergeSafeKey(profile.email)}`) : null;
+    const canaryRevocation = exactCommand === 'off' && (canaryRecipient || Boolean(existingCanaryConsent));
+    const canaryGrant = canaryRecipient && settings.mode === 'canary' && exactCommand === 'on' && Boolean(envAny(['TELEGRAM_WEBHOOK_SECRET']));
+    if (canaryRevocation || canaryGrant) {
+      const consent = weatherCanaryConsent({ enabled: exactCommand === 'on', profile,
+        linkByEmail: enabled ? await conciergeDbGet(`link-email:${conciergeSafeKey(profile.email)}`) : null,
+        linkByChat: enabled ? await conciergeDbGet(`link-chat:${String(profile.chatId || '')}`) : null });
+      if (canaryRecipient && enabled && !consent) return 'Não consegui confirmar um comando recente após o vínculo atual. Envie /alertameteo on novamente.';
+      if (consent) {
+        const consentKey = `weather-consent:${conciergeSafeKey(profile.email)}`;
+        const persisted = await writeWeatherCanaryConsent(await conciergeDbPool(), profile.email, profile.chatId, consent, profile.weatherCommandSequence);
+        const verified = persisted ? await conciergeDbGet(consentKey) : null;
+        if ((canaryRecipient || canaryRevocation) && verified?.commandChatId === profile.chatId && Number.isSafeInteger(verified?.commandSequence) && verified.commandSequence > profile.weatherCommandSequence) {
+          return 'Este comando foi substituído por uma preferência mais recente.';
+        }
+        if ((canaryRecipient || canaryRevocation) && (!persisted || !sameWeatherCanaryConsent(verified, persisted))) {
+          return 'Não consegui confirmar a preferência no servidor. Tente novamente em instantes.';
+        }
+      }
+    } else if (canaryRecipient) {
+      return 'O teste meteorológico aguarda a configuração segura do Telegram. Nenhuma ativação foi feita.';
+    }
     const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { weatherCriticalAlerts: enabled } });
     if (!saved) return 'Não consegui salvar a preferência agora. Tente novamente em instantes.';
+  }
+  const settings = criticalWeatherMonitorSettings();
+  const canaryRecipient = settings.canaryConfigurationPresent &&
+    weatherCanaryRecipientHash(profile.email, profile.chatId) === settings.recipientHash;
+  if (canaryRecipient) {
+    const consent = await conciergeDbGet(`weather-consent:${conciergeSafeKey(profile.email)}`);
+    return [
+      `Preferência de alertas meteorológicos: ${consent?.weatherCriticalAlerts === true ? 'ATIVADA' : 'DESATIVADA'}.`,
+      'O monitor está em teste restrito. Ativação e recebimento precisam ser verificados; esta preferência não comprova entrega.',
+      'Para alterar: /alertameteo on ou /alertameteo off.',
+    ].join('\n');
   }
   const current = explicitChange ? enabled : snapshot?.preferences?.weatherCriticalAlerts !== false;
   return [
@@ -3300,6 +3341,9 @@ async function processTelegramUpdate(update = {}) {
   else if (chatId && message?.location) await handleTelegramLocation(message);
   else if (chatId && text) {
     const profile = await telegramProfileForChatAsync(message);
+    // Telegram per-chat ordering is trusted only through the existing verified webhook.
+    profile.weatherCommandSequence = Number(message?.message_id);
+    profile.weatherCommandDate = message?.date;
     const snapshot = await conciergeLoadSnapshot(profile);
     const normalizedText = normalizeConciergeButtonText(text);
     if (/^\/ligacao(?:@\S+)?\b/i.test(normalizedText)) {
@@ -3373,6 +3417,19 @@ function weatherAlertSchedulerAuthorized(req) {
 }
 const criticalWeatherMonitorMemory = new Map();
 let criticalWeatherMonitorRunning = false;
+let criticalWeatherCanaryRunning = false;
+function criticalWeatherMonitorSettings() {
+  return weatherMonitorSettings({
+    CREWCHECK_WEATHER_MONITOR_ENABLED: envAny(['CREWCHECK_WEATHER_MONITOR_ENABLED']),
+    CREWCHECK_WEATHER_MONITOR_INTERVAL_MINUTES: envAny(['CREWCHECK_WEATHER_MONITOR_INTERVAL_MINUTES']),
+    CREWCHECK_WEATHER_MONITOR_CANARY_ENABLED: process.env.CREWCHECK_WEATHER_MONITOR_CANARY_ENABLED,
+    CREWCHECK_WEATHER_MONITOR_CANARY_RECIPIENT_SHA256: process.env.CREWCHECK_WEATHER_MONITOR_CANARY_RECIPIENT_SHA256,
+  });
+}
+function criticalWeatherCanaryBlocked(settings) {
+  return settings.canaryConfigurationPresent &&
+    (settings.mode !== 'canary' || !envAny(['TELEGRAM_WEBHOOK_SECRET']));
+}
 const WEATHER_MONITOR_HEARTBEAT_KEY = 'scheduler:weather-monitor:heartbeat';
 // Never-run, in-progress and stuck all look identical from the outside without a
 // persisted heartbeat: nothing today records when a cycle last started/finished, so
@@ -3391,9 +3448,19 @@ async function recordWeatherMonitorHeartbeat(patch) {
   await conciergeDbPut(WEATHER_MONITOR_HEARTBEAT_KEY, { ...current, ...patch });
 }
 async function runCriticalWeatherMonitor(now = new Date()) {
-  await recordWeatherMonitorHeartbeat({ lastStartedAt: now.toISOString(), lastFinishedAt: null });
+  const settings = criticalWeatherMonitorSettings();
+  if (criticalWeatherCanaryBlocked(settings)) return { blocked: true, monitored: 0, alerts: 0, failures: 0 };
+  const canaryRun = settings.mode === 'canary';
+  if (canaryRun && criticalWeatherCanaryRunning) return { busy: true, monitored: 0, alerts: 0, failures: 0 };
+  if (canaryRun) criticalWeatherCanaryRunning = true;
+  let canaryLease;
   try {
-    const summary = await runCriticalWeatherMonitorCycle(now);
+    if (canaryRun) {
+      canaryLease = await acquireWeatherCanaryLease(await conciergeDbPool(), settings.recipientHash);
+      if (!canaryLease) return { blocked: true, monitored: 0, alerts: 0, failures: 0 };
+    }
+    await recordWeatherMonitorHeartbeat({ lastStartedAt: now.toISOString(), lastFinishedAt: null });
+    const summary = await runCriticalWeatherMonitorCycle(now, () => Date.now(), canaryLease);
     await recordWeatherMonitorHeartbeat({
       lastFinishedAt: new Date().toISOString(),
       lastStatus: 'ok',
@@ -3403,14 +3470,29 @@ async function runCriticalWeatherMonitor(now = new Date()) {
   } catch (error) {
     await recordWeatherMonitorHeartbeat({ lastFinishedAt: new Date().toISOString(), lastStatus: 'error' });
     throw error;
+  } finally {
+    await canaryLease?.release();
+    if (canaryRun) criticalWeatherCanaryRunning = false;
   }
 }
-async function runCriticalWeatherMonitorCycle(now = new Date(), observationNow = () => Date.now()) {
-  const localSnapshots = Object.values(telegramRostersRead().snapshots || {});
-  const databaseSnapshots = await conciergeDbListSnapshots(250);
+async function runCriticalWeatherMonitorCycle(now = new Date(), observationNow = () => Date.now(), canaryLease = null) {
+  const settings = criticalWeatherMonitorSettings();
+  if (criticalWeatherCanaryBlocked(settings) || (settings.mode === 'canary' && !await canaryLease?.isHeld())) {
+    return { blocked: true, snapshots: 0, monitored: 0, reports: 0, alerts: 0, skipped: 0, failures: 0 };
+  }
+  const canary = settings.mode === 'canary' ? createWeatherCanaryPolicy({
+    enabled: true, recipientHash: settings.recipientHash, readRecord: conciergeDbGet,
+  }) : null;
+  const localSnapshots = canary ? [] : Object.values(telegramRostersRead().snapshots || {});
+  const databaseSnapshots = canary
+    ? await findWeatherCanarySnapshots(await conciergeDbPool(), settings.recipientHash)
+    : await conciergeDbListSnapshots(250);
   const snapshots = [...new Map([...databaseSnapshots, ...localSnapshots].filter(Boolean).map((snapshot) => [snapshot.key || snapshot.email || snapshot.chatId, snapshot])).values()];
   const summary = { snapshots: snapshots.length, monitored: 0, reports: 0, alerts: 0, skipped: 0, failures: 0 };
-  for (const snapshot of snapshots.slice(0, 250)) {
+  for (const candidateSnapshot of snapshots.slice(0, 250)) {
+    const selection = canary ? await canary.select(candidateSnapshot) : null;
+    if (canary && !selection) { summary.skipped += 1; continue; }
+    const snapshot = canary ? selection.snapshot : candidateSnapshot;
     if (!snapshot?.chatId || !snapshot?.roster || snapshot?.preferences?.weatherCriticalAlerts === false) { summary.skipped += 1; continue; }
     const candidates = conciergeWeatherCandidates(snapshot, now);
     if (!candidates.length) continue;
@@ -3422,15 +3504,25 @@ async function runCriticalWeatherMonitorCycle(now = new Date(), observationNow =
         if (!report?.raw) { summary.failures += 1; continue; }
         summary.reports += 1;
         const stateKey = weatherAlertStateKey(snapshot, candidate);
-        const previous = await conciergeDbGet(stateKey) || criticalWeatherMonitorMemory.get(stateKey) || {};
+        const previous = canary
+          ? await canaryLease.readState(stateKey) || {}
+          : await conciergeDbGet(stateKey) || criticalWeatherMonitorMemory.get(stateKey) || {};
         const change = criticalWeatherChange(previous.raw || '', report.raw);
         const delivery = evaluateCriticalWeatherDelivery({ report, station: candidate.station, previous, change, now: observationNow() });
         if (!delivery.accepted) { summary.failures += 1; continue; }
+        if (canary && previous.canaryDispatchState === 'submitted' &&
+            previous.fingerprint === change.fingerprint && previous.canaryConsentSequence === selection.commandSequence) {
+          summary.skipped += 1;
+          continue;
+        }
         const shouldSend = delivery.shouldSend;
         const alertReasons = change.reasons.length ? change.reasons : Array.isArray(previous.reasons) ? previous.reasons : ['condição crítica no boletim'];
         const nextState = { raw: report.raw, fingerprint: change.fingerprint, severity: change.severity, reasons: alertReasons, pendingDelivery: shouldSend, observedAt: report.observedAt || '', checkedAt: now.toISOString(), lastSentAt: previous.lastSentAt || '', source: report.source || '' };
-        criticalWeatherMonitorMemory.set(stateKey, nextState);
-        await conciergeDbPut(stateKey, nextState);
+        if (!canary) criticalWeatherMonitorMemory.set(stateKey, nextState);
+        const observationPersisted = canary
+          ? await canaryLease.writeState(stateKey, nextState)
+          : await conciergeDbPut(stateKey, nextState);
+        if (canary && !observationPersisted) { summary.failures += 1; continue; }
         if (!shouldSend) continue;
         messages.push({ stateKey, nextState, text: [
           `${candidate.role === 'origem' ? 'Origem' : 'Destino'} ${candidate.station} · ${candidate.flight} · ${candidate.route}`,
@@ -3443,6 +3535,20 @@ async function runCriticalWeatherMonitorCycle(now = new Date(), observationNow =
       }
     }
     if (messages.length) {
+      if (canary && (!await canaryLease.isHeld() || !await canary.canDispatch(selection))) { summary.skipped += 1; continue; }
+      if (canary) {
+        let reserved = true;
+        for (const message of messages.slice(0, 3)) {
+          const submitted = { ...message.nextState, pendingDelivery: false, canaryDispatchState: 'submitted', canaryConsentSequence: selection.commandSequence };
+          try {
+            if (!await canaryLease.writeState(message.stateKey, submitted)) { reserved = false; break; }
+          } catch { reserved = false; break; }
+          message.nextState = submitted;
+        }
+        if (!reserved) { summary.failures += 1; continue; }
+        // Recheck after durable intent writes. A later revocation can still race transport.
+        if (!await canaryLease.isHeld() || !await canary.canDispatch(selection)) { summary.skipped += 1; continue; }
+      }
       const result = await sendTelegramMessage(snapshot.chatId, [
         '⚠️ Mudança meteorológica crítica na sua escala',
         '',
@@ -3455,8 +3561,13 @@ async function runCriticalWeatherMonitorCycle(now = new Date(), observationNow =
         summary.alerts += Math.min(3, messages.length);
         for (const message of messages.slice(0, 3)) {
           const deliveredState = { ...message.nextState, pendingDelivery: false, lastSentAt: now.toISOString() };
-          criticalWeatherMonitorMemory.set(message.stateKey, deliveredState);
-          await conciergeDbPut(message.stateKey, deliveredState);
+          if (canary) {
+            try { if (!await canaryLease.writeState(message.stateKey, deliveredState)) summary.failures += 1; }
+            catch { summary.failures += 1; }
+          } else {
+            criticalWeatherMonitorMemory.set(message.stateKey, deliveredState);
+            await conciergeDbPut(message.stateKey, deliveredState);
+          }
         }
       } else summary.failures += 1;
     }
@@ -3488,6 +3599,11 @@ async function handleCriticalWeatherMonitorHealth(req, res) {
     lastFinishedAt: heartbeat?.lastFinishedAt || null,
     lastStatus: heartbeat?.lastStatus || null,
     lastSummary: heartbeat?.lastSummary || null,
+    readiness: weatherMonitorReadiness({ settings: criticalWeatherMonitorSettings(),
+      schedulerSecretConfigured: authorization.configured,
+      telegramConfigured: telegramConfigured(),
+      telegramWebhookSecretConfigured: Boolean(envAny(['TELEGRAM_WEBHOOK_SECRET'])),
+      persistenceConfigured: Boolean(envAny(['DATABASE_URL', 'CREWCHECK_DATABASE_URL', 'MYSQL_URL'])) }),
     message: state === 'never_run'
       ? 'Monitor meteorológico ainda não executou um ciclo.'
       : state === 'stuck'
@@ -3500,9 +3616,10 @@ async function handleCriticalWeatherMonitorHealth(req, res) {
   });
 }
 function scheduleCriticalWeatherMonitor() {
-  if (String(envAny(['CREWCHECK_WEATHER_MONITOR_ENABLED']) || 'false').toLowerCase() !== 'true') return;
+  const settings = criticalWeatherMonitorSettings();
+  if (!settings.enabled || criticalWeatherCanaryBlocked(settings)) return;
   if (!envAny(['CREWCHECK_SCHEDULER_SECRET', 'WEATHER_ALERT_SCHEDULER_SECRET'])) return;
-  const minutes = Math.min(30, Math.max(5, Number(envAny(['CREWCHECK_WEATHER_MONITOR_INTERVAL_MINUTES']) || 10)));
+  const minutes = settings.intervalMinutes;
   const execute = async () => {
     if (criticalWeatherMonitorRunning) return;
     criticalWeatherMonitorRunning = true;
