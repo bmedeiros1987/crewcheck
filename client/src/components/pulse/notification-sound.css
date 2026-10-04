@@ -1,0 +1,8 @@
+.cc-notification-sound { min-width: 0; }
+.cc-notification-sound-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.cc-notification-sound-controls label { display: grid; gap: 8px; flex: 1 1 220px; min-width: 0; }
+.cc-notification-sound-controls select { width: 100%; min-width: 0; min-height: 44px; font: inherit; }
+.cc-notification-sound-controls button { min-height: 44px; padding: 8px 16px; font: inherit; }
+.cc-notification-sound-controls button:disabled { opacity: .6; cursor: not-allowed; }
+.cc-notification-sound-status { min-height: 1.5em; }
+.cc-notification-sound small { display: block; overflow-wrap: anywhere; }

@@ -1,3 +1,4 @@
+import { playCrewCheckNoticeSound, stopCrewCheckNotificationSound } from './pulseSound';
 import { createPulseSession, type PulseSessionState } from './pulseSession';
 import type {
   CrewCheckPulseMessage,
@@ -215,6 +216,7 @@ export function publishCrewCheckNotice(message: CrewCheckPulseMessage): { pulse:
   const normalized = normalizeMessage(message);
   const pulse = publishCrewCheckPulse(normalized);
   const notification = deliverSystemNotification(normalized);
+  if (pulse) playCrewCheckNoticeSound(String(normalized.notificationTag || normalized.dedupeKey || normalized.id || normalized.title));
   return { pulse, notification };
 }
 
@@ -229,16 +231,18 @@ export function currentCrewCheckPulseState(): PulseSessionState {
 }
 
 export function dismissCrewCheckPulse(): void {
+  stopCrewCheckNotificationSound();
   session.dismiss();
 }
 
 export function clearCrewCheckPulse(): void {
+  stopCrewCheckNotificationSound();
   session.clear();
 }
 
 export function setCrewCheckPulseEnabled(enabled: boolean): void {
   safeLocalSet(PULSE_ENABLED_KEY, enabled ? '1' : '0');
-  if (!enabled) session.clear();
+  if (!enabled) { stopCrewCheckNotificationSound(); session.clear(); }
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('crewcheck:pulse-preference', { detail: { enabled } }));
   }

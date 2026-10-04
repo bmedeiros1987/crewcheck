@@ -1,3 +1,4 @@
+import NotificationSoundSetting from '@/components/pulse/NotificationSoundSetting';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useLocation } from 'wouter';
 import JSZip from 'jszip';
@@ -3059,6 +3060,7 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     <h3>Notificações e concierge</h3>
     <ToggleSetting icon={Bell} label="CrewCheck Pulse" storageKey="crewcheck_pulse_enabled" detail="Banner contextual dentro do app"/>
     <NotificationPermissionSetting/>
+    <NotificationSoundSetting/>
     <ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/>
     <ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/>
     <ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/>
