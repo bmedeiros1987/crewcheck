@@ -1,0 +1,41 @@
+name: Concierge stay menu
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/concierge/stay-menu.mjs'
+      - 'scripts/p1-concierge-stay-menu/**'
+      - 'scripts/regression-concierge-stay-menu.mjs'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/concierge-stay-menu.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'server/concierge/stay-menu.mjs'
+      - 'scripts/p1-concierge-stay-menu/**'
+      - 'scripts/regression-concierge-stay-menu.mjs'
+      - '.github/workflows/concierge-stay-menu.yml'
+permissions:
+  contents: read
+concurrency:
+  group: concierge-stay-menu-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/v139/apply.mjs
+      - run: node --check server.mjs
+      - run: node scripts/regression-concierge-stay-menu.mjs
+      - run: node scripts/regression-concierge-pharmacy-reference.mjs
+      - run: node scripts/regression-v13-9-5-medical-emergency-care.mjs
+      - run: node scripts/regression-v14-4-08-concierge-human-voice.mjs
+      - run: npx tsc --noEmit
+      - run: npx vite build
