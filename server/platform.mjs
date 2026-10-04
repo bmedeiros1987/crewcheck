@@ -1,3 +1,4 @@
+import { writeChatMessage } from './platform-chat-write.mjs';
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { diagnoseCirium, diagnoseCiriumFlight } from './cirium-diagnostic.mjs';
@@ -2094,7 +2095,7 @@ async function handleShares(req, res) {
     const url = `${publicBaseUrl(req)}/share/${token}`;
     return sendJson(res, 200, { ok: true, id, url, token, expiresAt, permissions, revocable: true, message: 'Link temporário criado. O QR deve conter somente este link revogável.' });
   }
-  const result = await context.db.query('SELECT id,kind,roster_key,permissions,expires_at,revoked_at,created_at FROM crewcheck_platform_shares WHERE owner_email=$1 ORDER BY created_at DESC LIMIT 100', [context.identity.email]);
+  const result = await context.db.query('SELECT id,kind,roster_key,permissions,expires_at,revoked_at,created_at FROM crewcheck_platform_shares WHERE owner_email=$1 ORDER BY created_at DESC,id DESC LIMIT 100', [context.identity.email]);
   return sendJson(res, 200, { ok: true, shares: result.rows });
 }
 async function handleSharePublic(req, res, token) {
@@ -2205,11 +2206,9 @@ async function handleChat(req, res, url) {
   if (req.method === 'POST') {
     const message = normalizeText(body.message, 2000);
     if (!message) return sendJson(res, 400, { ok: false, message: 'Digite uma mensagem.' });
-    const recent = await context.db.query('SELECT COUNT(*) count FROM crewcheck_platform_chat_messages WHERE thread_id=$1 AND sender_email=$2 AND created_at>DATE_SUB(NOW(), INTERVAL 1 MINUTE)', [threadId, context.identity.email]);
-    if (Number(recent.rows[0]?.count || 0) >= 20) return sendJson(res, 429, { ok: false, message: 'Muitas mensagens em pouco tempo. Aguarde um minuto.' });
-    await context.db.query('INSERT INTO crewcheck_platform_chat_messages(id,thread_id,sender_email,body) VALUES($1,$2,$3,$4)', [crypto.randomUUID(), threadId, context.identity.email, message]);
+    await writeChatMessage(context.db, threadId, context.identity.email, message, body.requestId);
   }
-  const messages = await context.db.query('SELECT id,sender_email,body,created_at FROM crewcheck_platform_chat_messages WHERE thread_id=$1 ORDER BY created_at DESC LIMIT 100', [threadId]);
+  const messages = await context.db.query('SELECT id,sender_email,body,created_at FROM crewcheck_platform_chat_messages WHERE thread_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100', [threadId]);
   return sendJson(res, 200, { ok: true, threadId, person: { displayName: other.display_name, publicId: other.public_id }, messages: messages.rows.reverse().map((row) => ({ id: row.id, mine: row.sender_email === context.identity.email, body: row.body, createdAt: row.created_at })) });
 }
 
@@ -2227,16 +2226,14 @@ async function visitorChatThread(db, visitor) {
   return result.rows[0].id;
 }
 
-async function appendChatMessage(db, threadId, sender, value) {
+async function appendChatMessage(db, threadId, sender, value, requestId) {
   const message = normalizeText(value, 2000);
   if (!message) throw Object.assign(new Error('Digite uma mensagem.'), { status: 400 });
-  const recent = await db.query('SELECT COUNT(*) count FROM crewcheck_platform_chat_messages WHERE thread_id=$1 AND sender_email=$2 AND created_at>DATE_SUB(NOW(), INTERVAL 1 MINUTE)', [threadId, sender]);
-  if (Number(recent.rows[0]?.count || 0) >= 20) throw Object.assign(new Error('Muitas mensagens em pouco tempo. Aguarde um minuto.'), { status: 429 });
-  await db.query('INSERT INTO crewcheck_platform_chat_messages(id,thread_id,sender_email,body) VALUES($1,$2,$3,$4)', [crypto.randomUUID(), threadId, sender, message]);
+  return writeChatMessage(db, threadId, sender, message, requestId);
 }
 
 async function chatMessages(db, threadId, mineKey) {
-  const result = await db.query('SELECT id,sender_email,body,created_at FROM crewcheck_platform_chat_messages WHERE thread_id=$1 ORDER BY created_at DESC LIMIT 100', [threadId]);
+  const result = await db.query('SELECT id,sender_email,body,created_at FROM crewcheck_platform_chat_messages WHERE thread_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100', [threadId]);
   return result.rows.reverse().map((row) => ({ id: row.id, mine: row.sender_email === mineKey, body: row.body, createdAt: row.created_at }));
 }
 
@@ -2254,7 +2251,7 @@ async function handleVisitorChat(req, res) {
   if (!owner || !(await subscriptionStatus(db, owner)).premiumAccess) return sendJson(res, 402, { ok: false, code: 'OWNER_PREMIUM_REQUIRED', message: 'O chat está pausado porque o plano Premium do titular não está ativo.' });
   const threadId = await visitorChatThread(db, visitor);
   const sender = `visitor:${visitor.id}`;
-  if (req.method === 'POST') await appendChatMessage(db, threadId, sender, body.message);
+  if (req.method === 'POST') await appendChatMessage(db, threadId, sender, body.message, body.requestId);
   return sendJson(res, 200, { ok: true, threadId, person: { displayName: owner.display_name, publicId: owner.public_id }, messages: await chatMessages(db, threadId, sender) });
 }
 
@@ -2268,7 +2265,7 @@ async function handleOwnerVisitorChat(req, res, visitorId) {
   if (!visitor) return sendJson(res, 404, { ok: false, message: 'Visitante ativo não localizado.' });
   if (!allowedPermissions(visitor.permissions).chat) return sendJson(res, 403, { ok: false, message: 'Habilite a permissão de chat para este visitante.' });
   const threadId = await visitorChatThread(context.db, visitor);
-  if (req.method === 'POST') await appendChatMessage(context.db, threadId, context.identity.email, body.message);
+  if (req.method === 'POST') await appendChatMessage(context.db, threadId, context.identity.email, body.message, body.requestId);
   return sendJson(res, 200, { ok: true, threadId, person: { displayName: visitor.display_name, visitorId: visitor.id }, messages: await chatMessages(context.db, threadId, context.identity.email) });
 }
 

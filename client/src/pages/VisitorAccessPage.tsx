@@ -1,3 +1,4 @@
+import { sendChatOperation } from '@/lib/chatSend';
 import { chatSessionFingerprint, invalidateVisitorChatSession } from '@/lib/chatSession';
 import { useLiveChat } from '@/hooks/useLiveChat';
 import { useEffect, useMemo, useState } from 'react';
@@ -146,7 +147,7 @@ export default function VisitorAccessPage() {
     if (!chatMessage.trim()) return;
     setBusy(true);
     try {
-      await sendLiveChat(() => visitorRequest('/api/platform/visitor/chat', { method: 'POST', body: JSON.stringify({ message: chatMessage }) }));
+      await sendLiveChat(() => sendChatOperation('visitor', 'owner', chatMessage, (requestId) => visitorRequest('/api/platform/visitor/chat', { method: 'POST', body: JSON.stringify({ message: chatMessage, requestId }) })));
       setChatMessage('');
     } catch (reason) { toast.error(reason instanceof Error ? reason.message : 'Não foi possível enviar.'); }
     finally { setBusy(false); }
