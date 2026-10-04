@@ -259,4 +259,3 @@ if (typeof window !== 'undefined' && !window.__crewcheckPulseEventBridgeV2) {
     if (detail?.title) publishCrewCheckPulse(detail);
   });
 }
-

@@ -19,7 +19,7 @@ await build({stdin:{contents:entry,resolveDir:path.resolve('.'),loader:'tsx'},bu
 fs.writeFileSync(path.join(out,'base.css'),fs.readFileSync('client/src/index.css','utf8').replace(/@import\s+[^;]+;/g,''));
 const server = http.createServer((req,res)=>{
   const url = new URL(req.url,'http://localhost');
-  if(url.pathname==='/') {res.setHeader('content-type','text/html');res.end('<!doctype html><html lang="pt-BR"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/base.css"><link rel="stylesheet" href="/app.css"><style>body{margin:0}.cz-app{max-width:980px;margin:auto;padding:20px}.cz-settings{min-width:0}.cc-notification-sound select{max-width:100%}</style><div id="root"></div><script src="/app.js"></script>');return;}
+  if(url.pathname==='/') {res.setHeader('content-type','text/html');res.end('<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/base.css"><link rel="stylesheet" href="/app.css"><style>body{margin:0}.cz-app{max-width:980px;margin:auto;padding:20px}.cz-settings{min-width:0}.cc-notification-sound select{max-width:100%}</style><div id="root"></div><script src="/app.js"></script>');return;}
   const p = url.pathname.startsWith('/assets/') ? path.join('client/public',url.pathname) : path.join(out,url.pathname);
   if(!fs.existsSync(p)||!fs.statSync(p).isFile()){res.statusCode=404;res.end();return;}
   res.setHeader('content-type',p.endsWith('.js')?'text/javascript':p.endsWith('.css')?'text/css':p.endsWith('.mp3')?'audio/mpeg':'application/octet-stream');res.end(fs.readFileSync(p));
@@ -37,7 +37,7 @@ await page.addInitScript(()=>{
 });
 try {
   await page.goto(base);
-  const select=page.getByLabel('Som de notificação',{exact:true});
+  const select=page.getByRole('combobox',{name:'Som de notificação',exact:true});
   await select.waitFor();assert.equal(await select.inputValue(),'off');assert.equal(await page.evaluate(()=>window.__audio.length),0);
   assert(await page.getByRole('button',{name:'Ouvir prévia',exact:true}).isDisabled());
   await select.selectOption('a320-interphone');assert.equal(await page.evaluate(()=>window.__audio.length),0);
@@ -75,4 +75,9 @@ try {
   assert.deepEqual(errors,[]);
   fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({ok:true,metadata:meta,cases:['silent default','no play on select','real MP3 decode/play','stop','mute','unmount','back event','app navigation','reload preference/no autoplay','Pulse integration and burst','hidden cleanup','blocked playback and retry','6 responsive/theme screenshots','no permissions or page errors'],scope:'Actual settings component and actual Pulse runtime in synthetic local harness; not live delivery'},null,2));
   console.log('PASS browser notification sound: actual MP3, UI flows, interruptions, failure handling, and six responsive/theme screenshots');
+} catch (error) {
+  await page.screenshot({path:path.join(out,'failure.png'),fullPage:true}).catch(()=>{});
+  fs.writeFileSync(path.join(out,'failure.html'),await page.content().catch(()=>''));
+  fs.writeFileSync(path.join(out,'failure.json'),JSON.stringify({error:String(error),pageErrors:errors},null,2));
+  throw error;
 } finally {await browser.close();await new Promise(resolve=>server.close(resolve));}

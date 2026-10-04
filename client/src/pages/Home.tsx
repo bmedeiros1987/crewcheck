@@ -5060,4 +5060,3 @@ export default function Home() {
     <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)} alertCount={actionableComplianceAlerts(compliance).length} alertSignature={complianceAlertSignature(compliance)}/>
   </main>;
 }
-
