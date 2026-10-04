@@ -37,7 +37,7 @@ function isRawWeather(query = '', reply = '') {
 
 function isLongRosterNotice(line = '') {
   const normalized = plain(line);
-  return normalized.includes('confirme sempre a escala oficial e as comunicacoes da empresa')
+  return normalized === 'confirme sempre a escala oficial e as comunicacoes da empresa. em caso de divergencia, a fonte oficial prevalece.'
     || normalized === 'confirme sempre a escala oficial antes da programacao.'
     || normalized === 'confirme sempre a escala oficial antes da programacao'
     || normalized === plain(COMPACT_ROSTER_NOTICE);
@@ -49,30 +49,30 @@ function cleanDisplayLine(line = '') {
   return raw
     .replace(/^\s*Nota leve:\s*/i, '')
     .replace(/^\s*Resposta operacional(?: contextual)?(?: gerada)?[.:]?\s*/i, '')
-    .replace(/O horário pode mudar conforme a operação;\s*confirme no Radar e na escala oficial\.?/gi, 'O horário pode mudar conforme a operação.')
     .replace(/[ \t]+/g, ' ')
     .trim();
 }
 
-function conversationalReplacement(value = '') {
-  return String(value || '')
-    .replace(/Ainda não tenho uma escala ativa\. Envie o PDF oficial ou sincronize a escala pelo app\./gi, 'Ainda não encontrei uma escala ativa aqui. Envie o PDF oficial ou sincronize a escala pelo app e eu continuo daqui.')
-    .replace(/Não identifiquei qual detalhe você quer continuar\. Diga apenas o dado:/gi, 'Não peguei qual detalhe você quer. Pode responder só com:')
-    .replace(/Não encontrei uma programação para consultar a apresentação\./gi, 'Não achei uma programação confirmada para consultar a apresentação.')
-    .replace(/Não encontrei outra programação depois dessa no período publicado\./gi, 'Depois dessa, não achei outra programação no período publicado.')
-    .replace(/nenhuma programação publicada foi encontrada na escala ativa\./gi, 'não encontrei programação publicada na escala ativa.')
-    .replace(/ElevenLabs aguardando configuração\./gi, 'O áudio está temporariamente indisponível.');
+function withoutRoutineGreeting(value = '', query = '') {
+  // Keep a greeting only when the user is actually opening the conversation.
+  // Never remove text inside a quote, a name field, a link or an operational line.
+  const greetingQuery = /^(?:oi|ola|bom dia|boa tarde|boa noite|\/(?:start|ajuda|help|menu)(?:@\S+)?)[!.?,\s]*$/.test(plain(query));
+  if (greetingQuery) return value;
+  const greeting = /^(?:(?:Olá|Oi)(?:, [\p{L}\p{M}][\p{L}\p{M} '’-]{0,47}?)?|Fala, (?:chefe |comandante |copiloto |piloto |tripulante )?[\p{L}\p{M}][\p{L}\p{M} '’-]{0,47})\.\s+(?=\S)/u;
+  const match = value.match(greeting);
+  if (!match || /(?:, |\s)(?:\p{L}|Dr|Dra|Prof|Profa)\.\s+$/iu.test(match[0])) return value;
+  return value.slice(match[0].length).replace(/^(?:hoje|amanhã|você|sua|saia)\b/u, (word) => word[0].toLocaleUpperCase('pt-BR') + word.slice(1));
 }
 
-function dedupeLines(lines = []) {
-  const seen = new Set();
-  return lines.filter((line) => {
-    const key = plain(line).replace(/[.!?]+$/g, '');
-    if (!key) return false;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+function conversationalReplacement(value = '') {
+  // Only known template wording is changed; values and free-form facts are left alone.
+  return String(value || '')
+    .replace(/^Ainda não tenho uma escala ativa\. Envie o PDF oficial ou sincronize a escala pelo app\./gm, 'Ainda não encontrei uma escala ativa. Envie o PDF oficial ou sincronize a escala pelo app para eu consultar.')
+    .replace(/^Não identifiquei qual detalhe você quer continuar\. Diga apenas o dado: apresentação, saída, portão, hotel, meteorologia ou próxima programação\.$/gm, 'Qual detalhe você quer consultar?')
+    .replace(/^Não entendi exatamente o que você quer consultar\. Você pode perguntar, por exemplo: “o que tenho para hoje\?”, “qual é meu próximo voo\?”, “que horas devo sair de casa\?” ou “qual é o portão do meu voo\?”\.$/gm, 'O que você quer consultar? Pode perguntar sobre a escala, voos ou lugares.')
+    .replace(/^Não encontrei uma programação para consultar a apresentação\./gm, 'Não encontrei uma programação para conferir a apresentação.')
+    .replace(/^nenhuma programação publicada foi encontrada na escala ativa\./gm, 'Não encontrei programação publicada na escala ativa.')
+    .replace(/^ElevenLabs aguardando configuração\.$/gm, 'O áudio ainda não está configurado.');
 }
 
 function followUpFor(query = '', reply = '') {
@@ -108,13 +108,13 @@ export function conciergeHumanizeReplyV14408(reply = '', query = '', options = {
     return cleanDisplayLine(line);
   });
 
-  let result = dedupeLines(lines)
-    .join('\n')
+  // Repeated rows may belong to different flights or days; do not deduplicate facts.
+  let result = lines.join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .replace(/\n\s*\n(?=[,.!?])/g, '\n')
     .trim();
 
-  result = conversationalReplacement(result);
+  result = conversationalReplacement(withoutRoutineGreeting(result, query));
   const needsNotice = rosterNotice || isOperationalQuery(query);
   if (needsNotice && !plain(result).includes(plain(COMPACT_ROSTER_NOTICE))) {
     result = `${result}\n\n${COMPACT_ROSTER_NOTICE}`.trim();
