@@ -165,4 +165,3 @@ export function conciergeElevenLabsVoiceSettingsV14408(environment = process.env
 
 export const CONCIERGE_COMPACT_ROSTER_NOTICE_V14408 = COMPACT_ROSTER_NOTICE;
 export const CONCIERGE_MAX_VOICE_CHARS_V14408 = MAX_VOICE_CHARS;
-

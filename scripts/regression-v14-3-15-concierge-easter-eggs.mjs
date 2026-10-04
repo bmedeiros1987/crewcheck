@@ -79,4 +79,3 @@ if (!source.includes('const easterEgg = conciergeEasterEggReply(value, profile, 
 }
 
 console.log('[v14.3.15] CrewDNA Easter Eggs: identidade virtual, linguagem natural, limites operacionais e guardas OK.');
-

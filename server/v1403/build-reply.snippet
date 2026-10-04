@@ -186,4 +186,3 @@ async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = n
   if (/onde.*(estou|localiza)|perto de mim/i.test(lower)) return snapshot?.preferences?.location ? 'Localização recebida. Diga o que você procura perto de você.' : 'Envie sua localização pelo clipe do Telegram para ativar a busca próxima e a Saída Inteligente.';
   return 'Não entendi exatamente o que você quer consultar. Você pode perguntar, por exemplo: “o que tenho para hoje?”, “qual é meu próximo voo?”, “que horas devo sair de casa?” ou “qual é o portão do meu voo?”.';
 }
-

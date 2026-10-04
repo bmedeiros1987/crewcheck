@@ -225,4 +225,3 @@ export function premiumVoicePolicy(replyText = '', transcript = '', maxCharacter
   if (reply.length > maxCharacters || reply.split(/\n+/).filter(Boolean).length > 7) return { allowed: false, reason: 'long-reply' };
   return { allowed: true, reason: 'natural-operational-answer' };
 }
-

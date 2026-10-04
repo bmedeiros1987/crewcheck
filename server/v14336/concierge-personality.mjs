@@ -109,4 +109,3 @@ export function decorateConciergeReply(reply, { preferences = {}, roster = {}, n
 }
 
 export const CONCIERGE_HUMOR_COOLDOWN_MS = HUMOR_COOLDOWN_MS;
-
