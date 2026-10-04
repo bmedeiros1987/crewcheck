@@ -1,0 +1,51 @@
+name: CrewCheck Concierge clock format
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/v14354/concierge-language.mjs'
+      - 'server/v1404/**'
+      - 'server/v1403/**'
+      - 'server/v14408/**'
+      - 'scripts/v139/**'
+      - 'scripts/v14314/**'
+      - 'scripts/regression-concierge-clock-format.mjs'
+      - '.github/workflows/concierge-clock-format.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'server/v14354/concierge-language.mjs'
+      - 'server/v1404/**'
+      - 'server/v1403/**'
+      - 'server/v14408/**'
+      - 'scripts/v139/**'
+      - 'scripts/v14314/**'
+      - 'scripts/regression-concierge-clock-format.mjs'
+      - '.github/workflows/concierge-clock-format.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: concierge-clock-format-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clock-format:
+    name: Preserve clocks before and after canonical preparation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Validate source clocks and voice round trips
+        run: node --test scripts/regression-concierge-clock-format.mjs
+      - name: Prepare canonical CrewCheck sources
+        run: node scripts/v139/apply.mjs
+      - name: Validate prepared clocks and voice round trips
+        run: node --test scripts/regression-concierge-clock-format.mjs
