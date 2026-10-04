@@ -1,3 +1,4 @@
+import { sendChatOperation } from './chatSend';
 import { authFetch, getStoredUser } from './authClient';
 
 export type CrewCheckLocale = 'pt-BR' | 'en-US' | 'es-ES';
@@ -316,7 +317,7 @@ export async function loadChat(publicId: string, signal?: AbortSignal) {
 }
 
 export async function sendChat(publicId: string, message: string) {
-  return authFetch<any>('/api/platform/chat', { method: 'POST', body: JSON.stringify({ publicId, message }) });
+  return sendChatOperation('main', `peer:${publicId}`, message, (requestId) => authFetch<any>('/api/platform/chat', { method: 'POST', body: JSON.stringify({ publicId, message, requestId }) }));
 }
 
 export async function loadVisitorChat(visitorId: string, signal?: AbortSignal) {
@@ -324,7 +325,7 @@ export async function loadVisitorChat(visitorId: string, signal?: AbortSignal) {
 }
 
 export async function sendVisitorChat(visitorId: string, message: string) {
-  return authFetch<any>(`/api/platform/visitors/${encodeURIComponent(visitorId)}/chat`, { method: 'POST', body: JSON.stringify({ message }) });
+  return sendChatOperation('main', `visitor:${visitorId}`, message, (requestId) => authFetch<any>(`/api/platform/visitors/${encodeURIComponent(visitorId)}/chat`, { method: 'POST', body: JSON.stringify({ message, requestId }) }));
 }
 
 export async function gymCheckIn(payload: { gymName: string; chainName?: string; location?: string; sharePresence: boolean; durationMinutes?: number }) {
