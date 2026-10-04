@@ -925,6 +925,19 @@ async function handleDatabaseHealth(req, res) {
   });
 }
 
+function planOperationalLimits(profile = {}, billing = {}) {
+  const plan = String(profile?.plan || billing?.plan || 'free').toLowerCase();
+  const premium = Boolean(billing?.premiumAccess || /premium|unlimited|partner|admin/.test(plan));
+  return {
+    premium,
+    guestLimit: premium ? 5 : 1,
+    meteoFavorites: premium ? 20 : 2,
+    meteoFollowHours: premium ? 24 : 3,
+    backgroundTrafficAlerts: premium,
+    backgroundMeteoAlerts: premium,
+  };
+}
+
 async function requirePremium(context, res, feature = 'Este recurso') {
   const billing = await subscriptionStatus(context.db, context.profile);
   if (!billing.premiumAccess) {

@@ -8,6 +8,8 @@ on:
       - 'client/src/components/platform/PlatformCenter.tsx'
       - 'client/src/lib/platformClient.ts'
       - 'scripts/regression-sharing-idempotency.mjs'
+      - 'scripts/regression-sharing-module.mjs'
+      - 'scripts/v1431/apply.mjs'
       - 'scripts/regression-sharing-browser.cjs'
       - '.github/workflows/sharing-idempotency.yml'
 permissions:
@@ -29,7 +31,11 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Real platform module before preparation (no helper stub)
+        run: node --experimental-vm-modules scripts/regression-sharing-module.mjs
       - run: npm run check && npx vite build
+      - name: Real platform module after preparation (no helper stub)
+        run: node --experimental-vm-modules scripts/regression-sharing-module.mjs
       - name: Start isolated synthetic MySQL without network or published ports
         run: |
           mkdir -p /tmp/crewcheck-sharing-qa-socket
