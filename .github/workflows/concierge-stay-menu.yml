@@ -31,11 +31,13 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Legacy medical/emergency source contract
+        run: node scripts/regression-v13-9-5-medical-emergency-care.mjs
       - run: node scripts/v139/apply.mjs
       - run: node --check server.mjs
       - run: node scripts/regression-concierge-stay-menu.mjs
       - run: node scripts/regression-concierge-pharmacy-reference.mjs
-      - run: node scripts/regression-v13-9-5-medical-emergency-care.mjs
+      - run: node scripts/regression-v14-3-65-canonical-health-location.mjs
       - run: node scripts/regression-v14-4-08-concierge-human-voice.mjs
       - run: npx tsc --noEmit
       - run: npx vite build

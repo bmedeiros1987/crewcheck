@@ -192,4 +192,3 @@ await import('../p1-concierge-poi/apply.mjs');
 await import('../p1-whatsapp-sender/apply.mjs');
 await import('../p1-concierge-stay-menu/apply.mjs');
 await import('../ci/sync-canonical-manual.mjs');
-
