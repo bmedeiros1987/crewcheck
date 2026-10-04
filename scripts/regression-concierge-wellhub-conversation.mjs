@@ -5,7 +5,13 @@ import path from 'node:path';
 import vm from 'node:vm';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
-import * as semantic from '../server/v14338/concierge-semantic.mjs';
+import {
+  normalizeConciergeNaturalTextV14341 as normalizeConciergeNaturalTextV14338,
+  interpretConciergeNaturalTextV14341 as interpretConciergeNaturalTextV14338,
+  buildConciergeContextV14341 as buildConciergeContextV14338,
+  isConciergeContextFreshV14341 as isConciergeContextFreshV14338,
+} from '../server/v14341/concierge-semantic.mjs';
+import { stayMenuReply } from '../server/concierge/stay-menu.mjs';
 import * as wellhub from '../server/v14407/wellhub.mjs';
 import * as preferences from '../server/v14410/wellhub-concierge.mjs';
 import * as personality from '../server/v14336/concierge-personality.mjs';
@@ -33,6 +39,10 @@ if (!materialized) {
   const semanticHelpers = read('scripts/v14338/reply-wrapper.snippet').split('async function buildTelegramConciergeReply(')[0];
   source = source.replace(extract(source, 'buildTelegramConciergeReply'), [semanticHelpers, read('scripts/v14336/server-preferences.snippet'), read('scripts/v14408/reply-wrapper.snippet'), core].join('\n'));
   source = source.replace(extract(source, 'handleTelegramConciergeAsk'), read('scripts/v14336/concierge-ask.snippet'));
+  const appFinalizer = read('scripts/p1-concierge-poi/apply.mjs');
+  const appCall = appFinalizer.match(/const appCall = "([^"\n]+)";/)[1];
+  const scopedAppCall = appFinalizer.match(/const scopedAppCall = "([^"\n]+)";/)[1];
+  source = source.replace(appCall, scopedAppCall);
   source += '\n' + extract(read('server/v1403/premium-helpers.snippet'), 'conciergeIdentityFlow');
   const wellhubImport = read('scripts/v14410/apply.mjs').match(/const wellhubImport = "([^"\n]+)";/)[1];
   source = wellhubImport + '\n' + source;
@@ -50,6 +60,12 @@ if (!materialized) {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
+if (materialized) {
+  assert.match(source, /from '\.\/server\/v14341\/concierge-semantic\.mjs'/, 'test uses the same semantic module as production');
+  assert.match(source, /stayMenuReply\(text, profile\)/, 'compiled outer adapter remains in the tested path');
+  assert.match(source, /pharmacyReferenceReply\(text, profile, currentSnapshot/, 'compiled pharmacy adapter remains in the tested path');
+}
+
 const clone = x => JSON.parse(JSON.stringify(x));
 function harness() {
   const profile = { email: 'route-a@example.invalid', name: 'Synthetic A', chatId: '9001', linked: true, authenticated: true };
@@ -62,12 +78,13 @@ function harness() {
   const partner = { id: 'synthetic', name: 'Synthetic gym', city: 'Guarulhos', state: 'SP', minimumPlan: 'basic', activities: ['Pilates'], openingHours: [], sourceUrl: 'https://example.invalid/synthetic' };
   let appResponse;
   const context = vm.createContext({
-    ...semantic, ...wellhub, ...preferences, ...language, ...human, ...premium, ...intents,
+    normalizeConciergeNaturalTextV14338, interpretConciergeNaturalTextV14338, buildConciergeContextV14338, isConciergeContextFreshV14338,
+    ...wellhub, ...preferences, ...language, ...human, ...premium, ...intents,
     normalizeConciergePreferencesV14336: personality.normalizeConciergePreferences,
     publicConciergeVoiceCatalogV14336: personality.publicConciergeVoiceCatalog,
     normalizeConciergeVoiceProfileV14336: personality.normalizeConciergeVoiceProfile,
     decorateConciergeReplyV14336: personality.decorateConciergeReply,
-    pharmacyReferenceReply,
+    pharmacyReferenceReply, stayMenuReply,
     process: { env: {} }, console,
     telegramRostersRead: () => clone(local),
     telegramRostersWrite: value => { local = clone(value); return true; },
@@ -84,7 +101,7 @@ function harness() {
     telegramTryBindFromWebhook: async () => false, telegramMessagePdfDocument: () => null,
     telegramProfileForChatAsync: async () => activeProfile,
     sendTelegramChatAction: async () => {}, sendTelegramMessage: async (_chat, reply) => { trace.output.push(reply); },
-    conciergeKeyboard: {}, airportIcao: () => '',
+    conciergeKeyboard: {}, conciergeFunctionKeyboard: {}, conciergeSettingsKeyboard: {}, airportIcao: () => '',
     readJsonBody: async req => req.body, telegramRequestUser: () => activeProfile,
     telegramAppRequestAllowed: () => true, conciergeAccessMatches: () => true,
     telegramLinkedRecordForEmail: async () => ({ chatId: activeProfile.chatId }),
@@ -102,6 +119,9 @@ function harness() {
     'conciergeIdentityFlow', 'conciergeEasterEggNormalize', 'conciergeEasterEggPick', 'conciergeEasterEggReply',
     'conciergeGymsReply', 'buildTelegramConciergeReplyCore', 'buildTelegramConciergeReply', 'processTelegramUpdate', 'handleTelegramConciergeAsk',
   ];
+  for (const name of ['normalizeCrewCheckNaturalLanguage', 'conciergeCareCode', 'conciergeCareState', 'conciergeCarePresentation', 'conciergeDateKey', 'conciergeDayForKey', 'conciergeReplyKeyboard', 'conciergeContextualRoutineReply']) {
+    if (source.includes(`function ${name}(`)) functions.push(name);
+  }
   for (const name of functions) vm.runInContext(extract(source, name), context);
   for (const [name, events] of [['buildTelegramConciergeReplyCore', 'core'], ['conciergeGymsReply', 'gyms']]) {
     const actual = context[name];
@@ -151,10 +171,11 @@ for (const channel of ['telegram', 'whatsapp', 'app']) {
     }
   });
 
-  test(`${channel}: migrated Wellhub context and /wellhub support footer replies without leaking to another account`, async () => {
+  test(`${channel}: legacy context requires product naming; /wellhub establishes account-scoped footer context`, async () => {
     const legacy = harness();
     legacy.seed({ conciergeConversation: { lastIntent: 'gym', updatedAt: new Date().toISOString() } });
-    assert.match(await legacy.send(channel, 'Meu plano é silver+'), /Plano Wellhub atualizado para Silver\+/);
+    assert.match(await legacy.send(channel, 'Meu plano é silver+'), /Você está falando do Wellhub/);
+    assert.equal((await legacy.load()).preferences.wellhubPlan, 'basic');
     const h = harness();
     await h.send(channel, '/wellhub');
     assert.match(await h.send(channel, 'Meu plano é silver+', h.other), /Você está falando do Wellhub/);
@@ -198,8 +219,30 @@ test('preserving gym text also preserves location and prevents negated/third-par
   const h = harness();
   await h.send('app', 'academia em Guarulhos/SP');
   assert.equal(h.trace.gyms.at(-1), 'academia em Guarulhos/SP');
-  for (const phrase of ['Wellhub não quero Pilates', 'Wellhub quero Pilates para meu amigo', 'Meu amigo disse Wellhub quero Pilates']) {
+  for (const phrase of ['Wellhub não quero Pilates', 'Wellhub quero Pilates para meu amigo', 'Meu amigo disse Wellhub quero Pilates', 'Wellhub modalidade Pilates para meu amigo', 'Wellhub modalidade Pilates quando eu puder']) {
     await h.send('app', phrase);
     assert.equal((await h.load()).preferences.gymActivity, undefined);
   }
+});
+
+
+test('fresh Wellhub context is bound to the trusted account and originating channel', async () => {
+  for (const from of ['app', 'telegram', 'whatsapp']) {
+    for (const to of ['app', 'telegram', 'whatsapp'].filter(value => value !== from)) {
+      const h = harness();
+      await h.send(from, '/academias');
+      const context = (await h.load()).preferences.conciergeConversation;
+      assert.equal(context.gymContextChannel, from);
+      assert.equal(context.gymContextOwner, h.profile.email);
+      assert.match(await h.send(to, 'Meu plano é silver+'), /Você está falando do Wellhub/);
+      assert.equal((await h.load()).preferences.wellhubPlan, 'basic');
+      assert.match(await h.send(to, 'Meu plano Wellhub é Silver+'), /Plano Wellhub atualizado para Silver\+/);
+    }
+  }
+  const h = harness();
+  await h.send('app', '/academias');
+  const forged = (await h.load()).preferences.conciergeConversation;
+  h.seed({ conciergeConversation: { ...forged, gymContextOwner: h.other.email } });
+  assert.match(await h.send('app', 'Meu plano é silver+'), /Você está falando do Wellhub/);
+  assert.equal((await h.load()).preferences.wellhubPlan, 'basic');
 });

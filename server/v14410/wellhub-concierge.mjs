@@ -99,7 +99,11 @@ export function isWellhubActivityPreferenceMessage(text = '') {
   // não é evidência suficiente para persistir preferência.
   const recognizedActivity = isRecognizedWellhubActivity(raw, detected);
   const explicitProductActivity = /^(?:(?:wellhub|gympass)\s+(?:modalidade|atividade|aula|treino)\s*(?:é|e|eh|:|-)?\s*|(?:minha\s+)?(?:modalidade|atividade)\s+(?:do\s+)?(?:wellhub|gympass)\s*(?:é|e|eh|:|-)\s*)[\p{L}0-9 +&-]{2,60}[.!]?$/iu;
-  if (explicitProductActivity.test(raw)) return true;
+  if (explicitProductActivity.test(raw)) {
+    // A custom activity field is not permission to save a condition or another
+    // person's request as this user's preference.
+    return !/\b(?:para|pra|pro|quando|se|talvez|nao|dele|dela|amigo|amiga|esposa|marido|filho|filha)\b/.test(normalize(detected));
+  }
   if (!recognizedActivity) return false;
 
   if (/^(?:modalidade|atividade|aula|treino)\s+[\p{L}0-9 +&-]{2,60}[.!]?$/iu.test(raw)) return true;

@@ -6,6 +6,9 @@ on:
       - 'server/v14335/concierge-location.mjs'
       - 'server/v14410/**'
       - 'server/v14338/**'
+      - 'server/v14341/**'
+      - 'scripts/p1-concierge-poi/**'
+      - 'scripts/p1-concierge-stay-menu/**'
       - 'scripts/v14408/reply-wrapper.snippet'
       - 'scripts/v14338/reply-wrapper.snippet'
       - 'server/whatsapp.mjs'
@@ -56,7 +59,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wellhub-compiled-routing
-          path: server.mjs
+          path: |
+            server.mjs
+            server/whatsapp.mjs
       - name: Verify materialized server
         run: |
           grep -F "cc-v14410:concierge-gyms-plan-location" server.mjs

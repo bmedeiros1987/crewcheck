@@ -12,10 +12,14 @@ async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = n
   const explicitWellhub = /\b(?:wellhub|gympass)\b/i.test(String(text || ''));
   const gymPreference = isWellhubPlanPreferenceMessage(text)
     || isWellhubPlanDeclarationMessage(text) || isWellhubActivityPreferenceMessage(text);
-  const freshWellhubContext = isConciergeContextFreshV14338(inputContext)
-    && inputContext?.lastIntent === 'gym'
-    && (inputContext.gymProvider === 'wellhub'
-      || (!Object.prototype.hasOwnProperty.call(inputContext, 'gymProvider') && currentSnapshot?.preferences?.gymPlan === 'wellhub'));
+  const gymContextOwner = conciergeSafeKey(profile.email || (profile.chatId ? `telegram:${profile.chatId}` : ''));
+  const gymContextChannel = ['app', 'whatsapp', 'telegram'].includes(profile.channel)
+    ? profile.channel : profile.chatId ? 'telegram' : '';
+  const freshWellhubContext = Boolean(gymContextOwner && gymContextChannel)
+    && isConciergeContextFreshV14338(inputContext)
+    && inputContext?.lastIntent === 'gym' && inputContext.gymProvider === 'wellhub'
+    && inputContext.gymContextOwner === gymContextOwner
+    && inputContext.gymContextChannel === gymContextChannel;
   if (gymPreference && !explicitWellhub && !freshWellhubContext) {
     return 'Você está falando do Wellhub? Inclua Wellhub ou Gympass na mensagem, por exemplo: “meu plano Wellhub é Silver+” ou “Wellhub quero Pilates”.';
   }
@@ -37,6 +41,7 @@ async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = n
     ...buildConciergeContextV14338({ ...semantic, intent: contextIntent }, inputContext, new Date(), extra),
     origin: extra.origin || String(inputContext?.origin || ''),
     destination: extra.destination || String(inputContext?.destination || ''),
+    gymContextOwner, gymContextChannel,
     gymProvider: differentPlanScope || contextIntent !== 'gym' ? ''
       : gymPreference || /^Wellhub verificado\b/.test(String(rawReply || '')) ? 'wellhub'
         : /Smart Fit direta/i.test(String(rawReply || '')) ? 'smartfit'
