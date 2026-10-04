@@ -31,7 +31,7 @@ export default function NotificationSoundSetting() {
   return <section className="cz-toolbox cc-notification-sound" aria-labelledby={`${id}-title`}>
     <h3 id={`${id}-title`}>Som dos avisos no app</h3>
     <p id={`${id}-detail`}>Opcional neste navegador, com o app aberto e em foco. O som das notificações do aparelho continua sendo definido pelo sistema.</p>
-    <div className="cc-notification-sound-controls">
+    <div className="cz-tool-actions cc-notification-sound-controls">
       <label htmlFor={`${id}-select`}>Som de notificação
         <select id={`${id}-select`} value={sound} aria-describedby={`${id}-detail`} onChange={(event) => change(event.target.value as NotificationSound)}>
           <option value="off">Sem som adicional (padrão)</option>
