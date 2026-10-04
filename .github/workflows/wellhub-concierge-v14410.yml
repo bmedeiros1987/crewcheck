@@ -5,11 +5,17 @@ on:
     paths:
       - 'server/v14335/concierge-location.mjs'
       - 'server/v14410/**'
+      - 'server/v14338/**'
+      - 'scripts/v14408/reply-wrapper.snippet'
+      - 'scripts/v14338/reply-wrapper.snippet'
+      - 'server/whatsapp.mjs'
+      - 'server.mjs'
       - 'server/v14407/wellhub.mjs'
       - 'scripts/v14410/**'
       - 'scripts/v139/apply.mjs'
       - 'scripts/regression-v14-4-10-wellhub-concierge-plan-location.mjs'
       - 'scripts/regression-concierge-wellhub-plan-recognition.mjs'
+      - 'scripts/regression-concierge-wellhub-conversation.mjs'
       - '.github/workflows/wellhub-concierge-v14410.yml'
   workflow_dispatch:
 
@@ -30,8 +36,11 @@ jobs:
           node --check scripts/regression-v14-4-10-wellhub-concierge-plan-location.mjs
       - name: Wellhub plan regression before preparation
         run: node --test scripts/regression-concierge-wellhub-plan-recognition.mjs
-      - name: Prepare canonical source
-        run: node scripts/v139/apply.mjs
+      - name: Raw conversation sequence and channel entrypoints
+        run: node --test scripts/regression-concierge-wellhub-conversation.mjs
+      - run: npm ci
+      - name: Build canonical production source
+        run: npm run build
       - name: Materialized syntax
         run: |
           node --check server.mjs
@@ -40,6 +49,14 @@ jobs:
         run: node scripts/regression-v14-4-10-wellhub-concierge-plan-location.mjs
       - name: Wellhub plan regression after preparation
         run: node scripts/regression-concierge-wellhub-plan-recognition.mjs --materialized
+      - name: Compiled conversation sequence and channel entrypoints
+        run: node scripts/regression-concierge-wellhub-conversation.mjs --materialized
+      - name: Preserve compiled routing evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wellhub-compiled-routing
+          path: server.mjs
       - name: Verify materialized server
         run: |
           grep -F "cc-v14410:concierge-gyms-plan-location" server.mjs

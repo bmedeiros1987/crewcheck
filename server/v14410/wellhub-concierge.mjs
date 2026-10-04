@@ -86,6 +86,7 @@ export function isWellhubActivityPreferenceMessage(text = '') {
   const raw = String(text || '').trim();
   const detected = detectWellhubActivityFromText(raw);
   if (!detected || NON_GYM_ACTIVITY_CONTEXT.test(raw)) return false;
+  if (/\b(?:nao|se|talvez)\b/.test(normalize(raw))) return false;
   if (/smart\s*fit/i.test(raw) && !/\b(wellhub|gympass)\b/i.test(raw)) return false;
 
   // O detector aceita atividade/modalidade customizada. Para não transformar
@@ -102,8 +103,8 @@ export function isWellhubActivityPreferenceMessage(text = '') {
   if (!recognizedActivity) return false;
 
   if (/^(?:modalidade|atividade|aula|treino)\s+[\p{L}0-9 +&-]{2,60}[.!]?$/iu.test(raw)) return true;
-  if (/\b(wellhub|gympass)\b/i.test(raw) && /\b(aula|treino|quero|prefiro|fa[cç]o|pratico|praticar|modalidade|atividade)\b/i.test(raw)) return true;
-  return /^(?:quero|prefiro|fa[cç]o|pratico|praticar)\s+[\p{L}0-9 +&-]{2,40}[.!]?$/iu.test(raw);
+  const direct = raw.match(/^(?:(?:wellhub|gympass)\s+)?(?:quero|prefiro|fa[cç]o|pratico|praticar)\s+([\p{L}0-9 +&-]{2,60}?)(?:\s+(?:no|do)\s+(?:wellhub|gympass))?[.!]?$/iu);
+  return Boolean(direct && WELLHUB_ACTIVITY_ALIAS_PHRASES.some((alias) => normalize(alias) === normalize(direct[1])));
 }
 
 export function extractWellhubLocationHintFromText(text = '') {
