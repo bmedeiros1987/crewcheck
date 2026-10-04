@@ -394,7 +394,7 @@ test('actual Telegram text path carries message.date as the trusted command date
     telegramMessagePdfDocument: () => null, telegramProfileForChatAsync: async () => ({ email: EMAIL, chatId: CHAT, linked: true }),
     conciergeLoadSnapshot: async () => f.snapshot, normalizeConciergeButtonText: text => text,
     sendTelegramChatAction: async () => {}, buildTelegramConciergeReply: async (_text, profile) => { received = profile; return 'Synthetic reply'; },
-    conciergeNextProgram: () => null, airportIcao: () => '', conciergeKeyboard: {},
+    conciergeNextProgram: () => null, airportIcao: () => '', conciergeKeyboard: {}, conciergeReplyKeyboard: () => ({}),
   });
   vm.runInContext(section('async function processTelegramUpdate(', 'async function handleTelegramWebhook('), f.context);
   await f.context.processTelegramUpdate({ message: { message_id: 123, date: NOW / 1000 - 2, chat: { id: Number(CHAT), type: 'private' }, text: '/alertameteo on' } });
