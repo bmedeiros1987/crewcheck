@@ -28,7 +28,11 @@ jobs:
       - run: npm ci
       - name: Test canonical raw reminder sources
         run: node scripts/regression-browser-reminder-scheduling.mjs
+      - name: Test canonical raw concierge clocks
+        run: node --test scripts/regression-concierge-clock-format.mjs
       - name: Prepare canonical application sources
         run: node scripts/v139/apply.mjs
       - name: Test prepared reminder sources
         run: node scripts/regression-browser-reminder-scheduling.mjs
+      - name: Test prepared concierge clocks
+        run: node --test scripts/regression-concierge-clock-format.mjs
