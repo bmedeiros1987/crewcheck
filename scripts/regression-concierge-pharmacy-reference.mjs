@@ -23,7 +23,7 @@ const deps={
  placeLines:places=>places.map(p=>p.name+' · '+p.address).join('\n'),routeLines:()=>''
 };
 const ask=(text,who=profile,time=now,snap=snapshot)=>pharmacyReferenceReply(text,who,snap,deps,time);
-reset();let result=await ask('/farmacias');assert.equal(result.handled,true);assert.match(result.reply,/Hotel Sintético/);assert.match(result.reply,/Não confirma sua presença/);assert.doesNotMatch(result.reply,/aberto agora|Envie sua localização/);assert.deepEqual(searches,[hotel.location]);assert.equal(lookups.length,1);assert.equal(snapshot.preferences.location,undefined);
+reset();let result=await ask('/farmacias');assert.equal(result.handled,true);assert.match(result.reply,/Hotel Sintético/);assert.match(result.reply,/Referência de busca/);assert.doesNotMatch(result.reply,/aberto agora|Envie sua localização/);assert.deepEqual(searches,[hotel.location]);assert.equal(lookups.length,1);assert.equal(snapshot.preferences.location,undefined);
 await ask('farmácia');assert.equal(lookups.length,1,'reuse only within TTL');
 const savedA=structuredClone(snapshot);result=await ask('/farmacias',{email:'b@example.invalid',channel:'whatsapp'});assert.match(result.reply,/confirmar a conta/);assert.deepEqual(snapshot,savedA);assert.equal(searches.length,2);
 await ask('/farmacias',profile,new Date(now.getTime()+600001));assert.equal(lookups.length,2,'expired references must be resolved again');
@@ -37,7 +37,7 @@ result=await ask('9');assert.match(result.reply,/1 a 2/);assert.equal(searches.l
 result=await ask('1',{...profile,channel:'app'});assert.equal(result.handled,false);assert.equal(searches.length,0,'channel context isolation');
 result=await ask('1',profile,new Date(now.getTime()+600001));assert.equal(result.handled,false);assert.equal(searches.length,0,'expired callback cannot choose');
 snapshot.roster.days[0].date='2026-10-04';result=await ask('1');assert.equal(result.handled,false);assert.equal(searches.length,0,'changed stay/date invalidates pending choice');
-snapshot=pending;result=await ask('2');assert.match(result.reply,/Outra rua/);assert.equal(searches.length,1);
+snapshot=pending;result=await ask('2');assert.equal(snapshot.preferences.pharmacySearchReference.selected.address,'Outra rua, Guarulhos');assert.equal(searches.length,1);
 reset();candidates=[{...hotel,address:'Outra cidade',city:''}, {...hotel,location:{latitude:null,longitude:null}}];result=await ask('/farmacias');assert.match(result.reply,/1\. Hotel Sintético/);assert.equal(searches.length,0);
 reset();stays=[stay,{...stay,hotel:'Outro'}];result=await ask('/farmacias');assert.match(result.reply,/mais de um pernoite/);assert.equal(lookups.length,0,'ambiguous active stay must not silently choose');
 reset();gps=true;result=await ask('farmácia perto de mim');assert.equal(result.handled,false,'explicit voluntary GPS keeps existing handler');assert.equal(lookups.length,0);
@@ -91,7 +91,7 @@ for(const query of ['academia perto do hotel','farmácia','quanto recebo de diá
 }
 const formal=normalizeConciergePreferences({mode:'formal'},{mode:'comic'},{});assert.equal(decorateConciergeReply('Farmácia: horário não informado.',{preferences:formal}).humorApplied,false);
 assert.equal(decorateConciergeReply('Emergência: procure o serviço oficial.',{preferences:{mode:'comic'},random:()=>0}).humorApplied,false);
-const source=fs.readFileSync('server.mjs','utf8');assert.match(source,/const poi = await pharmacyReferenceReply/);assert.match(source,/conciergeSearchNearbyHealthPlacesAtReference\(\['pharmacy'\], point, 6\)/);assert.match(source,/locationRestriction/);
+const source=fs.readFileSync('server.mjs','utf8');assert.match(source,/const poi = await pharmacyReferenceReply/);assert.match(source,/conciergeSearchNearbyHealthPlacesAtReference\(\[kind === 'hospital' \? 'hospital' : 'pharmacy'\], point, 20\)/);assert.match(source,/locationRestriction/);
 // Execute the actual app endpoint: linked identity must not override trusted origin.
 let appRequestProfile;
 const appEndpoint=source.slice(source.indexOf('async function handleTelegramConciergeAsk('),source.indexOf('function telegramMessagePdfDocument('));
@@ -134,7 +134,7 @@ console.log('PASS canonical Nearby runtime: voluntary GPS guard, numeric coordin
 
 // Execute the emitted adapter so a missing dependency fails before release.
 reset();stays=[];
-const adapter=source.slice(source.indexOf('const poi = await pharmacyReferenceReply'),source.indexOf('if (poi.handled) return conciergeHumanizeReplyV14408'));
+const adapter=source.slice(source.indexOf('const poi = await pharmacyReferenceReply'),source.indexOf('if (poi.handled) return'));
 assert.match(adapter,/load: conciergeLoadSnapshot/);
 const adapterContext=vm.createContext({pharmacyReferenceReply,text:'/farmacias',profile,currentSnapshot:snapshot,
  conciergeSaveSnapshotAsync:async(who,_roster,metadata)=>deps.save(who,metadata.preferences),
@@ -146,3 +146,4 @@ const adapterContext=vm.createContext({pharmacyReferenceReply,text:'/farmacias',
 const adapted=await vm.runInContext('(async()=>{'+adapter+'return poi;})()',adapterContext);
 assert.match(adapted.reply,/GPS é opcional/);assert.equal(saves.length,1);
 console.log('PASS emitted adapter dependency wiring and missing-reference reply');
+
