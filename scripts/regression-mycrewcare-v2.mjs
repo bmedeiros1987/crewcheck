@@ -253,3 +253,27 @@ test('ownership: reviewed Wake-only consumer can use sole v2 entrypoint without 
     'client/src/components/wakeup/CrewWakeSurface.tsx': "import { createMyCrewCareSession } from '@/lib/myCrewCare';" };
   assert.deepEqual(myCrewCareOwnershipViolations(sources), []);
 });
+
+test('ownership: even a mixed v2 portal cannot dispatch legacy events', () => {
+  const file = 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCarePortal.java';
+  const mixed = ownershipBaseline[file] + '\n dispatch("crewcheck:mycrewcare-update", detail);';
+  assert.ok(myCrewCareOwnershipViolations({ ...ownershipBaseline, [file]: mixed }).length > 0);
+});
+for (const [file, legacy] of [
+  ['android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 'public boolean openMyCrewCare () { myCrewCarePortal.open(); return true; }'],
+  ['android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 'myCrewCarePortal . syncIfConnected ();'],
+  ['scripts/wake-v1/apply.mjs', 'openMyCrewCare : function () { return oldBridge(); }'],
+  ['client/src/pages/Home.tsx', "window.addEventListener('crewcheck:mycrewcare-update', acceptGlobalSnapshot);"],
+  ['client/src/components/v1391/RosterLaunchView.tsx', "localStorage.getItem('crewcheck:mycrewcare:status');"],
+  ['scripts/v139/apply.mjs', "import '../wake-v1/apply.mjs';"],
+]) test(`ownership: whitespace/materialized writer cannot bypass gate in ${file}`, () => {
+  assert.ok(myCrewCareOwnershipViolations({ ...ownershipBaseline, [file]: legacy }).length > 0);
+});
+
+for (const [file, legacy] of [
+  ['client/src/components/wakeup/CrewWakeSurface.tsx', "window.dispatchEvent(new CustomEvent('crewcheck:mycrewcare-state', { detail: snapshot }));"],
+  ['client/src/lib/crewWake.ts', 'export function writeMyCrewCareSnapshot(input) { return input; }'],
+  ['scripts/v139/apply.mjs', "await import(new URL('../wake-v1/apply.mjs', import.meta.url));"],
+]) test(`ownership: full legacy snapshot lifecycle rejected in ${file}`, () => {
+  assert.ok(myCrewCareOwnershipViolations({ ...ownershipBaseline, [file]: legacy }).length > 0);
+});

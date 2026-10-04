@@ -5,6 +5,8 @@ on:
     paths:
       - 'shared/myCrewCare*'
       - 'client/src/lib/myCrewCare.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCarePortal.java'
       - 'android-wrapper/app/src/main/assets/mycrewcare-transport-v2.js'
       - 'scripts/regression-mycrewcare-v2.mjs'

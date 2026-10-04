@@ -6,6 +6,8 @@ export const MYCREWCARE_OWNED_PATHS = [
   'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCarePortal.java',
   'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java',
   'client/src/lib/myCrewCare.ts',
+  'client/src/pages/Home.tsx',
+  'client/src/components/v1391/RosterLaunchView.tsx',
   'client/src/lib/crewWake.ts',
   'client/src/components/wakeup/CrewWakeSurface.tsx',
   'scripts/wake-v1/apply.mjs',
@@ -28,14 +30,21 @@ export function myCrewCareOwnershipViolations(sources) {
   }
   const entry = sources['client/src/lib/myCrewCare.ts'] || '';
   if (!entry.includes('shared/myCrewCare.mjs') || !entry.includes('shared/myCrewCareNativeAdapter.mjs')) errors.push('Missing sole exported MyCrewCare v2 client entrypoint');
-  for (const file of MYCREWCARE_OWNED_PATHS.slice(1)) {
+  const legacyPatterns = [
+    ['legacy v1 snapshot/status event or storage', /crewcheck:mycrewcare(?:-(?:update|status|state)\b|:(?:snapshot:v1|status)\b)/],
+    ['legacy global snapshot helpers', /\b(?:readMyCrewCareSnapshot|writeMyCrewCareSnapshot|myCrewCareConnectionStatus|matchMyCrewCarePickup|sanitizeMyCrewCareRecords|MYCREWCARE_KEY)\b/],
+    ['legacy parameterless native facade', /\b(?:openMyCrewCare|syncMyCrewCare|myCrewCareStatus)\s*:\s*function\s*\(\s*\)/],
+    ['legacy parameterless bridge method', /\bpublic\s+boolean\s+openMyCrewCare\s*\(\s*\)/],
+    ['legacy automatic onResume sync', /\bmyCrewCarePortal\s*\.\s*syncIfConnected\s*\(/],
+  ];
+  for (const file of MYCREWCARE_OWNED_PATHS) {
     const source = sources[file] || '';
-    for (const marker of ['crewcheck:mycrewcare-update', 'crewcheck:mycrewcare-status', 'crewcheck:mycrewcare:snapshot:v1', 'crewcheck:mycrewcare:status', 'openMyCrewCare:function()', 'public boolean openMyCrewCare()', 'myCrewCarePortal.syncIfConnected()']) {
-      if (source.includes(marker)) errors.push(`${file}: legacy #872 MyCrewCare writer/bridge ${marker}`);
+    for (const [label, pattern] of legacyPatterns) {
+      if (pattern.test(source)) errors.push(`${file}: legacy #872 MyCrewCare writer/bridge ${label}`);
     }
   }
   const preparation = sources['scripts/v139/apply.mjs'] || '';
-  if (/import\s*\(\s*['"]\.\.\/wake-v1\/apply\.mjs['"]\s*\)/.test(preparation)) errors.push('Legacy #872 wake-v1 materializer must not be composed into v2; port reviewed Wake-only delta instead');
+  if (/['"`]\.\.\/wake-v1\/apply\.mjs['"`]/.test(preparation)) errors.push('Legacy #872 wake-v1 materializer must not be composed into v2; port reviewed Wake-only delta instead');
   return errors;
 }
 
