@@ -71,13 +71,13 @@ if(process.argv.includes('--prepared')) {
  const index=fs.readFileSync('server/v139/index.mjs','utf8');
  const normalize=index.slice(index.indexOf('function normalizeTelegramIntentText'),index.indexOf('export async function handleV139Route'));
  const handler=index.slice(index.indexOf('export async function handleV139Telegram'),index.indexOf('export const crewCheckV139')).replace('export async function','async function');
- let emergencyCalls=0;const transport=vm.createContext({handleEmergencyTelegram:async()=>{emergencyCalls++;return true;},handleCrewLockTelegram:async()=>false});
+ let emergencyCalls=0,crewLockCalls=0;const transport=vm.createContext({handleTelegramLocationAndPlaces:async()=>false,handleEmergencyTelegram:async()=>{emergencyCalls++;return true;},handleCrewLockTelegram:async()=>{crewLockCalls++;return false;}});
  vm.runInContext(normalize+'\n'+handler,transport);
  for(const text of ['🏥 Hospitais','💊 Farmácias','farmácia','hospital','/farmacias@crewcheck_bot','/hospitais@crewcheck_bot','/farmacias perto de Hotel Exemplo, Guarulhos']) {
-  emergencyCalls=0;assert.equal(await transport.handleV139Telegram({message:{text,chat:{id:123}}},()=>{}),false);assert.equal(emergencyCalls,0,`canonical search reached legacy emergency: ${text}`);
+  emergencyCalls=0;crewLockCalls=0;assert.equal(await transport.handleV139Telegram({message:{text,chat:{id:123}}},()=>{}),false);assert.equal(crewLockCalls,1,`canonical routing must reach downstream handler, not a caught error: ${text}`);assert.equal(emergencyCalls,0,`canonical search reached legacy emergency: ${text}`);
  }
  for(const text of ['/emergencia','/plano S450','/prontoatendimento','usar hotel/pernoite']) {
-  emergencyCalls=0;assert.equal(await transport.handleV139Telegram({message:{text,chat:{id:123}}},()=>{}),true);assert.equal(emergencyCalls,1,`emergency intent bypassed: ${text}`);
+  emergencyCalls=0;assert.equal(await transport.handleV139Telegram({message:{text,chat:{id:123}}},()=>{}),true,`emergency route failed: ${text}`);assert.equal(emergencyCalls,1,`emergency intent bypassed: ${text}`);
  }
  emergencyCalls=0;await transport.handleV139Telegram({callback_query:{data:'cc_emergency_confirm:medical',message:{text:'Hospitais',chat:{id:123}}}},()=>{});assert.equal(emergencyCalls,1);
  const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');assert.match(home,/<ConciergePlaceResults results=\{placeResults\}/);assert.match(home,/setPlaceResults\(isConciergePlaceResults\(payload\.placeResults\)/);
