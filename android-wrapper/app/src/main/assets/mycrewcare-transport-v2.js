@@ -1,6 +1,6 @@
 /* PR #872 transport-only extraction, tightened for review; not authentication proof.
  * The LATAM date contract must be physically verified as DMY before release.
- * Native verifies origin + authenticated provider subject separately.
+ * Native verifies origin + provider identity within the verifier-owned atomic snapshot.
  */
 (function (verifiedCardSelector) {
   'use strict';
