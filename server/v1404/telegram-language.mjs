@@ -218,9 +218,12 @@ export function buildProgramSummary({ profile = {}, snapshot = {}, record = null
   const count = legs.length;
   const finalDestination = shortAirportName(legs.at(-1)?.destination);
   const opening = `${greeting}${lead ? `${lead} ` : ''}você tem ${count} perna${count === 1 ? '' : 's'}. Sua apresentação é às ${presentation}, e a chave termina em ${finalDestination} às ${end}.`;
+  const programOpening = record.endKind === 'arrival'
+    ? `${greeting}${lead ? `${lead} ` : ''}você tem ${count} perna${count === 1 ? '' : 's'}. Sua apresentação é às ${presentation}. A última chegada prevista é em ${finalDestination} às ${end}; o fim publicado da jornada não está confirmado.`
+    : opening;
   const details = legs.slice(0, 4).map((leg, index) => legSentence(leg, index, index === 0 ? radar : null));
   const remaining = count > 4 ? `As outras ${count - 4} pernas ficam detalhadas no texto da escala.` : '';
-  return [opening, ...details, remaining].filter(Boolean).join('\n');
+  return [programOpening, ...details, remaining].filter(Boolean).join('\n');
 }
 
 export function trafficLevel(route = {}) {
@@ -276,3 +279,4 @@ export function premiumVoiceText(text = '') {
   if (value.length > 700) value = `${value.slice(0, 680).replace(/\s+\S*$/, '')}. Os demais detalhes ficam no texto.`;
   return value;
 }
+

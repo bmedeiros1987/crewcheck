@@ -191,3 +191,6 @@ await import('../p1-menu-organization/apply.mjs');
 await import('../p1-concierge-poi/apply.mjs');
 await import('../p1-whatsapp-sender/apply.mjs');
 await import('../ci/sync-canonical-manual.mjs');
+
+// Read-only Concierge projection after canonical source preparation.
+await import('../p1-concierge-journey/apply.mjs');
