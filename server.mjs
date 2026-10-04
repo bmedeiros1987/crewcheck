@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { evaluateCriticalWeatherDelivery } from './server/weather/critical-observation.mjs';
 import './server/telegram-fast-ack.mjs';
 import { parsePdfOnServer } from './server/rosterParser.mjs';
 import { handlePlatformRoute, consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';
@@ -3404,7 +3405,7 @@ async function runCriticalWeatherMonitor(now = new Date()) {
     throw error;
   }
 }
-async function runCriticalWeatherMonitorCycle(now = new Date()) {
+async function runCriticalWeatherMonitorCycle(now = new Date(), observationNow = () => Date.now()) {
   const localSnapshots = Object.values(telegramRostersRead().snapshots || {});
   const databaseSnapshots = await conciergeDbListSnapshots(250);
   const snapshots = [...new Map([...databaseSnapshots, ...localSnapshots].filter(Boolean).map((snapshot) => [snapshot.key || snapshot.email || snapshot.chatId, snapshot])).values()];
@@ -3423,11 +3424,9 @@ async function runCriticalWeatherMonitorCycle(now = new Date()) {
         const stateKey = weatherAlertStateKey(snapshot, candidate);
         const previous = await conciergeDbGet(stateKey) || criticalWeatherMonitorMemory.get(stateKey) || {};
         const change = criticalWeatherChange(previous.raw || '', report.raw);
-        const lastSentAt = new Date(previous.lastSentAt || 0).getTime();
-        const cooldownActive = Number.isFinite(lastSentAt) && now.getTime() - lastSentAt < 90 * 60_000;
-        const severityIncreased = change.severity > Number(previous.severity || 0);
-        const duplicate = previous.fingerprint === change.fingerprint;
-        const shouldSend = Boolean(previous.pendingDelivery && change.severity >= 2) || (change.critical && !duplicate && (!cooldownActive || severityIncreased));
+        const delivery = evaluateCriticalWeatherDelivery({ report, station: candidate.station, previous, change, now: observationNow() });
+        if (!delivery.accepted) { summary.failures += 1; continue; }
+        const shouldSend = delivery.shouldSend;
         const alertReasons = change.reasons.length ? change.reasons : Array.isArray(previous.reasons) ? previous.reasons : ['condição crítica no boletim'];
         const nextState = { raw: report.raw, fingerprint: change.fingerprint, severity: change.severity, reasons: alertReasons, pendingDelivery: shouldSend, observedAt: report.observedAt || '', checkedAt: now.toISOString(), lastSentAt: previous.lastSentAt || '', source: report.source || '' };
         criticalWeatherMonitorMemory.set(stateKey, nextState);
