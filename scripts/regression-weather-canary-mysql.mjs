@@ -252,8 +252,18 @@ try {
     vm.createContext(context);
     vm.runInContext(section('function criticalWeatherMonitorSettings()', 'const WEATHER_MONITOR_HEARTBEAT_KEY'), context);
     vm.runInContext(section('async function runCriticalWeatherMonitorCycle(', 'async function handleCriticalWeatherMonitor('), context);
-    const execute = async (leasedPool = pool) => {
-      const lease = await policy.acquireWeatherCanaryLease(leasedPool, HASH); assert(lease);
+    const execute = async (leasedPool = pool, waitForDisconnect = false) => {
+      let lease = await policy.acquireWeatherCanaryLease(leasedPool, HASH);
+      // Only the explicit disconnect fixture waits for MySQL to observe socket
+      // termination. Production GET_LOCK(0) remains fail-closed and nonblocking.
+      if (waitForDisconnect) {
+        const deadline = Date.now() + 5000;
+        while (!lease && Date.now() < deadline) {
+          await new Promise(resolve => setTimeout(resolve, 20));
+          lease = await policy.acquireWeatherCanaryLease(leasedPool, HASH);
+        }
+      }
+      assert(lease);
       const adapter = { ...lease, writeState: async (key, value) => {
         if (value.lastSentAt) throw new Error('Synthetic final-write failure');
         return lease.writeState(key, value);
@@ -278,7 +288,7 @@ try {
     } };
     const failed = await execute(faultPool);
     assert.equal(failedReads, 1); assert.equal(failed.failures, 1); assert.equal(sent.length, 1);
-    await execute(); assert.equal(sent.length, 1);
+    await execute(pool, true); assert.equal(sent.length, 1);
     assert.equal((await read('weather-alert:synthetic')).canaryDispatchState, 'submitted');
 
     // A loses its connection immediately after reading an absent state; B sends
