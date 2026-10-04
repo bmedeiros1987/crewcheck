@@ -29,6 +29,9 @@ try {
   const health = await healthResponse.json();
   assert.equal(health.ok, true);
   assert.equal(health.release, '5ea80bdec55ab95c592139869dc9c08cfa0efb17');
+  // Use a public JSON page to establish the deployed origin without mounting the app.
+  // The asset correctly has Cross-Origin-Resource-Policy: same-origin.
+  await page.goto('https://crewcheck.onrender.com/assets/sounds/ATTRIBUTION.json');
   // No app/account UI, stored preference, notification permission or notification is used.
   // A muted isolated player loads the exact public URL under its real response MIME.
   await page.setContent(`<!doctype html><html lang="pt-BR"><meta charset="utf-8"><h1>Verificação isolada do áudio público</h1><p>Som silenciado nesta verificação. Nenhuma conta ou configuração de usuário.</p><audio id="sound" controls muted preload="none" src="${url}"></audio><button id="play">Reproduzir teste silenciado</button><button id="stop">Parar teste</button><script>document.getElementById('play').onclick=()=>document.getElementById('sound').play().catch(error=>window.__playError=String(error));document.getElementById('stop').onclick=()=>document.getElementById('sound').pause();</script></html>`);
