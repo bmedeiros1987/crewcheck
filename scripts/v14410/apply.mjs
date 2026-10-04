@@ -70,6 +70,16 @@ function patchServer(source) {
   const dispatch = "  if (/^\\/(?:academias?|wellhub)(?:@\\S+)?\\b/i.test(value) || /\\b(academia|wellhub|gympass|smart fit|treino perto)\\b/i.test(lower) || isWellhubPlanPreferenceMessage(value) || isWellhubActivityPreferenceMessage(value)) return conciergeGymsReply(snapshot, value, profile);";
   next = replaceAllGymDispatchers(next, dispatch);
 
+  // Restoring original gym text must not let an interrupted name-onboarding
+  // prompt consume a clear gym request as the user's or Concierge's new name.
+  // Other intents retain the existing identity flow and dispatcher ordering.
+  if (next.includes('async function buildTelegramConciergeReplyCore(')) {
+    next = replaceRequired(next,
+      '  const identity = await conciergeIdentityFlow(value, profile, snapshot);',
+      "  const nameRequest = /^\\/(?:meunome|nomeconcierge|configuracoes)(?:@\\S+)?(?:\\s|$)|^(?:me chama de|pode me chamar de|nome do concierge)(?:\\s|$)/i.test(value);\n  const gymRequest = !nameRequest && (/\\b(?:academia|academias|wellhub|gympass|smart fit|treino perto)\\b/i.test(value) || isWellhubPlanPreferenceMessage(value) || isWellhubActivityPreferenceMessage(value));\n  const identity = gymRequest ? { handled: false, snapshot } : await conciergeIdentityFlow(value, profile, snapshot);",
+      'gym request precedence over pending name capture');
+  }
+
   const whatsappBindingPattern = /configureWhatsAppConcierge\(async \(\{ email, text(?:, location)? \}\) => \{[\s\S]*?\n\}\);\n(?=\nhttp\.createServer)/;
   const whatsappBinding = `configureWhatsAppConcierge(async ({ email, text, location }) => {
   const profile = { email: String(email || '').trim().toLowerCase(), name: '', linked: true, channel: 'whatsapp' };

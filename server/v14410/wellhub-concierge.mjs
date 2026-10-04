@@ -100,9 +100,12 @@ export function isWellhubActivityPreferenceMessage(text = '') {
   const recognizedActivity = isRecognizedWellhubActivity(raw, detected);
   const explicitProductActivity = /^(?:(?:wellhub|gympass)\s+(?:modalidade|atividade|aula|treino)\s*(?:é|e|eh|:|-)?\s*|(?:minha\s+)?(?:modalidade|atividade)\s+(?:do\s+)?(?:wellhub|gympass)\s*(?:é|e|eh|:|-)\s*)[\p{L}0-9 +&-]{2,60}[.!]?$/iu;
   if (explicitProductActivity.test(raw)) {
-    // A custom activity field is not permission to save a condition or another
-    // person's request as this user's preference.
-    return !/\b(?:para|pra|pro|quando|se|talvez|nao|dele|dela|amigo|amiga|esposa|marido|filho|filha)\b/.test(normalize(detected));
+    // Store a name, not an unrestricted sentence tail. Known multiword names
+    // remain valid; legacy custom names such as Aquagym stay single-token.
+    const activityName = normalize(detected);
+    if (WELLHUB_ACTIVITY_ALIAS_PHRASES.some(alias => normalize(alias) === activityName)) return true;
+    return /^[\p{L}][\p{L}0-9-]{1,39}$/u.test(String(detected).trim())
+      && !/^(?:nao|se|talvez|quando|caso|dele|dela)$/i.test(activityName);
   }
   if (!recognizedActivity) return false;
 

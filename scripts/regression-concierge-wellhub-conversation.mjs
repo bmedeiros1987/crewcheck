@@ -219,7 +219,7 @@ test('preserving gym text also preserves location and prevents negated/third-par
   const h = harness();
   await h.send('app', 'academia em Guarulhos/SP');
   assert.equal(h.trace.gyms.at(-1), 'academia em Guarulhos/SP');
-  for (const phrase of ['Wellhub não quero Pilates', 'Wellhub quero Pilates para meu amigo', 'Meu amigo disse Wellhub quero Pilates', 'Wellhub modalidade Pilates para meu amigo', 'Wellhub modalidade Pilates quando eu puder']) {
+  for (const phrase of ['Wellhub não quero Pilates', 'Wellhub quero Pilates para meu amigo', 'Meu amigo disse Wellhub quero Pilates', 'Wellhub modalidade Pilates para meu amigo', 'Wellhub modalidade Pilates quando eu puder', 'Wellhub modalidade Pilates do João', 'Wellhub atividade da minha irmã', 'Wellhub modalidade Pilates caso eu possa']) {
     await h.send('app', phrase);
     assert.equal((await h.load()).preferences.gymActivity, undefined);
   }
@@ -245,4 +245,75 @@ test('fresh Wellhub context is bound to the trusted account and originating chan
   h.seed({ conciergeConversation: { ...forged, gymContextOwner: h.other.email } });
   assert.match(await h.send('app', 'Meu plano é silver+'), /Você está falando do Wellhub/);
   assert.equal((await h.load()).preferences.wellhubPlan, 'basic');
+});
+
+
+test('neutral replies cannot revalidate expired, legacy, foreign-owner or cross-channel Wellhub context', async () => {
+  for (const neutral of ['Obrigado', 'Certo', 'Hmm']) {
+    for (const from of ['app', 'telegram', 'whatsapp']) {
+      for (const to of ['app', 'telegram', 'whatsapp'].filter(value => value !== from)) {
+        const h = harness(); await h.send(from, '/academias');
+        await h.send(to, neutral);
+        assert.match(await h.send(to, 'Meu plano é silver+'), /Você está falando do Wellhub/);
+        assert.equal((await h.load()).preferences.wellhubPlan, 'basic');
+      }
+    }
+    for (const invalid of ['expired', 'owner', 'legacy']) {
+      const h = harness(); await h.send('app', '/academias');
+      const previous = (await h.load()).preferences.conciergeConversation;
+      if (invalid === 'expired') previous.updatedAt = '2000-01-01';
+      if (invalid === 'owner') previous.gymContextOwner = h.other.email;
+      if (invalid === 'legacy') { delete previous.gymContextOwner; delete previous.gymContextChannel; }
+      h.seed({ conciergeConversation: previous });
+      await h.send('app', neutral);
+      assert.match(await h.send('app', 'Meu plano é silver+'), /Você está falando do Wellhub/);
+      assert.equal((await h.load()).preferences.wellhubPlan, 'basic');
+    }
+  }
+});
+
+test('known multiword and legacy single-token activity names remain valid without accepting clauses', async () => {
+  for (const [phrase, expected] of [['Wellhub modalidade dança de salão', 'Dança de salão'], ['Wellhub modalidade artes marciais', 'Artes marciais'], ['Wellhub modalidade Aquagym', 'Aquagym']]) {
+    const h = harness();
+    const reply = await h.send('app', phrase);
+    assert.match(reply, /Modalidade Wellhub atualizada/);
+    assert.equal((await h.load()).preferences.gymActivity, expected);
+  }
+  const h = harness(); await h.send('app', '/academias');
+  await h.send('app', 'meu plano Netflix é Gold');
+  assert.match(await h.send('app', 'Meu plano é silver+'), /Você está falando do Wellhub/);
+  assert.equal((await h.load()).preferences.wellhubPlan, 'basic');
+});
+
+
+test('interrupted name onboarding cannot consume explicit or contextual Wellhub preferences', async () => {
+  for (const channel of ['telegram', 'whatsapp', 'app']) {
+    for (const onboardingStep of ['ask-user-name', 'ask-concierge-name']) {
+      const h = harness(); h.seed({ onboardingStep, premiumAccess: true, conciergeName: 'Synthetic Concierge' });
+      await h.send(channel, '/academias');
+      assert.match(await h.send(channel, 'Meu plano é silver+'), /Plano Wellhub atualizado para Silver\+/);
+      const saved = (await h.load()).preferences;
+      assert.equal(saved.wellhubPlan, 'silver-plus');
+      assert.equal(saved.preferredName, 'Synthetic A');
+      assert.equal(saved.conciergeName, 'Synthetic Concierge');
+      assert.equal(saved.onboardingStep, onboardingStep);
+      assert.match(await h.send(channel, 'Meu plano Wellhub é Gold'), /Plano Wellhub atualizado para Gold/);
+      assert.equal((await h.load()).preferences.preferredName, 'Synthetic A');
+      assert.match(await h.send(channel, 'Meu plano Wellhub é Premium'), /Não reconheci o plano Wellhub informado/);
+      assert.equal((await h.load()).preferences.preferredName, 'Synthetic A');
+      assert.equal((await h.load()).preferences.conciergeName, 'Synthetic Concierge');
+      await h.send(channel, '/meunome Academia');
+      assert.equal((await h.load()).preferences.preferredName, 'Academia', 'explicit name commands retain identity precedence');
+    }
+  }
+});
+
+
+test('unrelated name replies still use the pending identity flow', async () => {
+  for (const [onboardingStep, phrase, field] of [['ask-user-name', 'Alex', 'preferredName'], ['ask-concierge-name', 'Aurora', 'conciergeName']]) {
+    const h = harness(); h.seed({ onboardingStep, premiumAccess: true });
+    await h.send('app', phrase);
+    assert.equal((await h.load()).preferences[field], phrase);
+    assert.equal((await h.load()).preferences.wellhubPlan, 'basic');
+  }
 });
