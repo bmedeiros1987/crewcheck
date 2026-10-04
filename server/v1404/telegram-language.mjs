@@ -279,4 +279,3 @@ export function premiumVoiceText(text = '') {
   if (value.length > 700) value = `${value.slice(0, 680).replace(/\s+\S*$/, '')}. Os demais detalhes ficam no texto.`;
   return value;
 }
-

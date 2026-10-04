@@ -1,7 +1,4 @@
 import fs from 'node:fs';
-import { prepareConciergeCanonicalBridge } from './bridge.mjs';
-
-prepareConciergeCanonicalBridge();
 const file = 'server.mjs';
 let source = fs.readFileSync(file, 'utf8');
 const importLine = "import { conciergeNextJourneyProgram, conciergeJourneyProgramRecords, conciergeJourneyEndText } from './server/concierge/journey-programs.mjs';";

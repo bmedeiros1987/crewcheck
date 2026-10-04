@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import os from 'node:os';
+import path from 'node:path';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { prepareConciergeCanonicalBridge } from './p1-concierge-journey/bridge.mjs';
 
@@ -8,6 +11,21 @@ const hashes = prepareConciergeCanonicalBridge();
 for (const [name, hash] of Object.entries(hashes)) {
   assert.equal(hash, createHash('sha256').update(fs.readFileSync(`client/src/lib/${name}`)).digest('hex'));
 }
+const packageSource = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+for (const name of ['build', 'start', 'serve']) assert.match(packageSource.scripts[name], /scripts\/v139\/apply\.mjs && node scripts\/p1-concierge-journey\/compile\.mjs/);
+const generated = 'server/concierge/generated';
+const metadata = () => fs.readdirSync(generated).map((name) => [name, fs.statSync(path.join(generated, name)).mtimeMs]);
+const beforeImports = metadata();
+for (let restart = 0; restart < 2; restart++) execFileSync(process.execPath, ['--input-type=module', '-e', "await import('./server/concierge/journey-programs.mjs')"], { cwd: process.cwd() });
+assert.deepEqual(metadata(), beforeImports, 'runtime/restart imports never regenerate or write artifacts');
+const missingBuild = fs.mkdtempSync(path.join(os.tmpdir(), 'concierge-missing-build-'));
+try {
+  fs.copyFileSync('server/concierge/journey-programs.mjs', path.join(missingBuild, 'journey-programs.mjs'));
+  const result = spawnSync(process.execPath, [path.join(missingBuild, 'journey-programs.mjs')], { encoding: 'utf8' });
+  assert.notEqual(result.status, 0, 'missing generated engine fails startup rather than silently using day fragments');
+  assert.match(result.stderr, /ERR_MODULE_NOT_FOUND/);
+  assert.equal(fs.existsSync(path.join(missingBuild, 'generated')), false);
+} finally { fs.rmSync(missingBuild, { recursive: true, force: true }); }
 const { buildCanonicalRosterEvents } = await import('../server/concierge/generated/canonicalRoster.mjs');
 const { conciergeJourneyProgramRecords: records, conciergeNextJourneyProgram: next, projectConciergeJourneyPrograms: project } = await import('../server/concierge/journey-programs.mjs');
 const { buildProgramSummary } = await import('../server/v1404/telegram-language.mjs');
@@ -131,6 +149,9 @@ if (source.includes("from './server/concierge/journey-programs.mjs'")) {
   const start = source.indexOf('function conciergeNextProgram('); const end = source.indexOf('\n}', start) + 2;
   assert.match(source.slice(start, end), /const records = conciergeProgramRecords\(roster\)/);
   const namesForRuntime = ['conciergeRosterDayParts', 'conciergeTime', 'conciergeProgramDate', 'conciergeProgramRecords', 'conciergeNextProgram', 'conciergePresentationTime', 'conciergeDateKey', 'conciergeRecordDateKey', 'conciergeDateLabel', 'conciergeProgramTitle', 'conciergeFormatProgram', 'conciergePremiumScheduleReply', 'conciergeScheduleReply', 'conciergeRegulationReply'];
+  for (const name of ['conciergeCareCode', 'conciergeCareState']) {
+    if (source.includes(`function ${name}(`)) namesForRuntime.push(name);
+  }
   const code = namesForRuntime.map((name) => {
     const match = new RegExp(`(?:async )?function ${name}\\(`).exec(source);
     assert.ok(match, name); const end = source.indexOf('\n}', match.index) + 2;

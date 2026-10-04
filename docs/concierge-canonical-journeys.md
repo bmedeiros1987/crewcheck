@@ -9,11 +9,7 @@ flights under one `journeyId`. The reply formatter did not lose the second leg.
 
 `client/src/lib/canonicalRoster.ts` remains the sole journey authority.
 `rosterContinuity.ts`, parser, APZ rules, compliance and regulatory formulas are
-unchanged. The new preparation bridge strips TypeScript types from those exact
-prepared sources into disposable `server/concierge/generated/*.mjs`, recursively
-including relative runtime dependencies. It records source hashes. It uses
-Node's built-in API, supported by the existing Node >=22.13.0 requirement, with
-no new package or credential. Generated files must never be maintained by hand.
+unchanged. The build-time bridge compiles those exact prepared sources into disposable `server/concierge/generated/*.mjs`, recursively including relative runtime dependencies and recording source hashes. It prefers the repository's existing TypeScript compiler; minimal supported Node >=22.13.0 builds can use Node's built-in parser without a new package. General preparation-only workflows require no compiler. The existing build/start/serve scripts compile after canonical preparation. Production direct startup reads only generated JavaScript and performs no compilation or filesystem write. There is no new package or credential. Generated files must never be maintained by hand.
 
 `server/concierge/journey-programs.mjs` groups existing canonical flight events
 by `journeyId`. It does not classify new boundaries, join adjacent dates, mutate

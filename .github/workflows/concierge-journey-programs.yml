@@ -10,6 +10,7 @@ on:
       - 'scripts/p1-concierge-journey/**'
       - 'scripts/regression-concierge-journey-programs.mjs'
       - 'scripts/v139/**'
+      - 'package.json'
       - '.github/workflows/concierge-journey-programs.yml'
   push:
     branches: [main]
@@ -21,6 +22,7 @@ on:
       - 'scripts/p1-concierge-journey/**'
       - 'scripts/regression-concierge-journey-programs.mjs'
       - 'scripts/v139/**'
+      - 'package.json'
       - '.github/workflows/concierge-journey-programs.yml'
 permissions:
   contents: read
@@ -61,4 +63,4 @@ jobs:
       - name: Typecheck and web build
         run: |
           npx tsc --noEmit
-          npx vite build
+          npm run build
