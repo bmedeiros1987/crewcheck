@@ -2531,7 +2531,7 @@ async function handleAccountDeletion(req, res) {
     }
     await client.query('DELETE FROM crewcheck_platform_subscriptions WHERE email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_platform_profiles WHERE email=$1', [context.identity.email]);
-    await client.query('DELETE FROM crewcheck_telegram_state WHERE state_key IN ($1,$2) OR state_key=$3', [`link-email:${context.identity.email}`, `snapshot:${context.identity.email}`, `profile:${context.identity.email}`]);
+    await client.query('DELETE FROM crewcheck_telegram_state WHERE state_key IN ($1,$2,$3,$4)', [`link-email:${context.identity.email}`, `snapshot:${context.identity.email}`, `profile:${context.identity.email}`, `weather-consent:${context.identity.email}`]);
     // Perfil médico de emergência, preferências, sessões com localização, alertas e cartões
     // Guardian são dados de saúde do titular: a exclusão da conta precisa alcançá-los.
     for (const [sql, params] of accountHealthDeletionStatements(context.identity.email)) {
