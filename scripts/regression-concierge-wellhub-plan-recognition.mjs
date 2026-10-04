@@ -27,12 +27,12 @@ if (materialized) {
 }
 
 const clone = value => JSON.parse(JSON.stringify(value));
-function harness(initialPlan = 'basic', gymPlan = 'wellhub') {
+function harness(initialPlan = 'basic', gymPlan = 'wellhub', io = {}) {
   const profile = { email: 'wellhub-a@example.invalid', name: 'Synthetic A' };
   const other = { email: 'wellhub-b@example.invalid', name: 'Synthetic B' };
   const initial = p => ({ key: p.email, email: p.email, roster: { base: 'GRU', days: [] }, preferences: { gymPlan, wellhubPlan: initialPlan, unrelated: 'keep' } });
   let local = { snapshots: { [profile.email]: initial(profile), [other.email]: initial(other) } };
-  const database = new Map();
+  const database = new Map(Object.values(local.snapshots).map(value => [`snapshot:${value.key}`, clone(value)]));
   const writes = [], searches = [];
   const partners = [
     { id: 'synthetic-basic', name: 'Synthetic Basic gym', city: 'Guarulhos', state: 'SP', minimumPlan: 'basic', activities: [], openingHours: [], sourceUrl: 'https://example.invalid/synthetic-basic' },
@@ -43,9 +43,22 @@ function harness(initialPlan = 'basic', gymPlan = 'wellhub') {
     ...preferences, detectWellhubActivityFromText, detectWellhubPlanFromText,
     isWellhubPlanServer, wellhubPlanLabelServer,
     telegramRostersRead: () => clone(local),
-    telegramRostersWrite: data => { local = clone(data); return true; },
-    conciergeDbPut: async (key, value) => { writes.push({ key, value: clone(value) }); database.set(key, clone(value)); return true; },
-    conciergeDbGet: async key => database.has(key) ? clone(database.get(key)) : null,
+    telegramRostersWrite: data => {
+      if (io.localWrite === 'throw') throw new Error('synthetic local write failure');
+      if (io.localWrite === false) return false;
+      local = clone(data); return true;
+    },
+    conciergeDbPut: async (key, value) => {
+      writes.push({ key, value: clone(value) });
+      if (io.dbWrite === 'throw') throw new Error('synthetic database write failure');
+      if (io.dbWrite === false) return false;
+      database.set(key, clone(value)); return true;
+    },
+    conciergeDbGet: async key => {
+      if (io.dbRead === 'throw') throw new Error('synthetic database read failure');
+      if (io.dbRead === false) return null;
+      return database.has(key) ? clone(database.get(key)) : null;
+    },
     conciergeCurrentStay: () => null,
     conciergeNextProgram: () => null,
     conciergeLocationContextV14335: () => ({ fresh: true, location: { city: 'Guarulhos', state: 'SP' } }),
@@ -286,9 +299,42 @@ test('a plan update is not confirmed when no profile or saved snapshot is availa
     if (mode === 'null-snapshot') h.context.conciergeSaveSnapshotAsync = async () => null;
     if (mode === 'old-snapshot') h.context.conciergeSaveSnapshotAsync = async () => ({ preferences: { wellhubPlan: 'basic' } });
     const reply = await h.context.conciergeGymsReply(await h.load(), phrase, mode === 'no-profile' ? {} : h.profile);
-    assert.match(reply, /Não consegui salvar seu plano Wellhub no CrewCheck/);
+    assert.match(reply, /Não consegui confirmar que seu plano Wellhub ficou salvo no CrewCheck/);
     assert.doesNotMatch(reply, /atualizado|✓/);
     assert.equal((await h.load()).preferences.wellhubPlan, 'basic');
     assert.equal(h.searches.length, 0);
   }
+});
+
+
+test('real save functions cannot acknowledge success when storage fails or local and durable tiers disagree', async () => {
+  const phrase = 'Gostaria de alterar meu plano Wellhub para Silver+';
+  for (const io of [
+    { localWrite: false, dbWrite: false },
+    { localWrite: true, dbWrite: false },
+    { localWrite: false, dbWrite: true },
+    { localWrite: 'throw' },
+    { dbWrite: 'throw' },
+    { dbRead: false },
+    { dbRead: 'throw' },
+  ]) {
+    const h = harness('basic', 'wellhub', io);
+    const reply = await h.send(phrase);
+    assert.match(reply, /Não consegui confirmar que seu plano Wellhub ficou salvo no CrewCheck/, JSON.stringify(io));
+    assert.doesNotMatch(reply, /atualizado|✓|Wellhub verificado/);
+    assert.equal(h.searches.length, 0);
+    if (io.dbWrite === false) {
+      h.restart();
+      assert.equal((await h.load()).preferences.wellhubPlan, 'basic', 'a stale durable Basic must never be reported as saved Silver+');
+    }
+  }
+});
+
+
+test('read-back evidence must belong to the same trusted profile key', async () => {
+  const h = harness();
+  h.context.conciergeDbGet = async () => ({ key: h.other.email, preferences: { wellhubPlan: 'silver-plus' } });
+  const reply = await h.send('Gostaria de alterar meu plano Wellhub para Silver+');
+  assert.match(reply, /Não consegui confirmar que seu plano Wellhub ficou salvo no CrewCheck/);
+  assert.doesNotMatch(reply, /atualizado|✓/);
 });
