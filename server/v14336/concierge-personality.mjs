@@ -61,8 +61,8 @@ export function conciergeFrequentDestination(roster = {}) {
 
 export function conciergeHumorEligible(reply = '') {
   const text = String(reply || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  if (!text.trim()) return false;
-  return !/(emergencia|hospital|pronto atendimento|farmacia|medic|rbac|regulament|irregular|conformidade|seguranca|cancelad|desviad|atrasad|portao|status|radar|metar|taf|tempo severo|saida|rota|localizacao|expirou|nao encontrei|nao consegui|indisponivel|confirme imediatamente)/i.test(text);
+  if (!text.trim() || text.includes('?')) return false;
+  return !/(alerta|critico|procediment|portas|nao posso|nao tenho acesso|nao consigo|sem dados|falha|erro|emergencia|hospital|pronto atendimento|farmacia|medic|rbac|regulament|irregular|conformidade|seguranca|cancelad|desviad|atrasad|portao|status|radar|metar|taf|tempo severo|saida|rota|localizacao|expirou|nao encontrei|nao consegui|indisponivel|confirme imediatamente)/i.test(text);
 }
 
 function humorVariants(destination) {
@@ -109,3 +109,4 @@ export function decorateConciergeReply(reply, { preferences = {}, roster = {}, n
 }
 
 export const CONCIERGE_HUMOR_COOLDOWN_MS = HUMOR_COOLDOWN_MS;
+

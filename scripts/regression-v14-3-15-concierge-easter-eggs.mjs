@@ -45,22 +45,22 @@ function expectEmpty(input) {
 
 expectMatch('Quem é você?', /Bruno Saraiva|Concierge do CrewCheck/);
 expectMatch('Qual é seu nome?', /Bruno Saraiva|Concierge do CrewCheck/);
-expectMatch('Você é um bot?', /tecnologia|humanidade|colega confiável/i);
+expectMatch('Você é um bot?', /assistente virtual/i);
 expectMatch('Qual é sua missão?', /cuida|cuidar|operação sozinho|reduzir sua carga mental/i);
 expectMatch('Qual é seu lema?', /sozinho|cuida|cuidar/i);
 expectMatch('Quem te criou?', /tripulante/i);
-expectMatch('Você é casado?', /Marina Alves/);
-expectMatch('Você tem filhos?', /Laura/);
+expectMatch('Você é casado?', /não tenho.*família/i);
+expectMatch('Você tem filhos?', /não tenho (?:filhos|família)/i);
 expectMatch('Você dorme?', /descanso|dormir|poupar sua atenção/i);
 expectMatch('Você fica cansado?', /cansado|descanso|atenção/i);
 expectMatch('Você sonha?', /tranquil|CrewCheck/i);
 expectMatch('Você sente saudade?', /saudade|casa|família/i);
 expectMatch('Você conhece terráqueos?', /horários|fim de semana/i);
 expectMatch('Estou de bolinha?', /oficialmente de bolinha/i, { roster: { notes: 'Troca de tripulação / bolinha' } });
-expectMatch('Partiu!', /CrewCheck|missão|operação/i);
-expectMatch('Obrigado!', /junto|cuidar|conte comigo/i);
-expectMatch('Tripulação, portas em automático, CrewCheck e confirmar', /automático|CrewCheck|confirmado/i);
-expectMatch('Tripulação, portas em manual, CrewCheck e confirmar', /manual|CrewCheck|casa|jornada/i);
+expectMatch('Partiu!', /CrewCheck|escala|operação/i);
+expectMatch('Obrigado!', /por nada|de nada|conte comigo/i);
+expectMatch('Tripulação, portas em automático, CrewCheck e confirmar', /(?:não consigo|não tenho acesso|não posso).*portas/i);
+expectMatch('Tripulação, portas em manual, CrewCheck e confirmar', /(?:não consigo|não tenho acesso|não posso).*portas/i);
 
 // Guardas: perguntas operacionais ou menções incidentais não podem cair nos Easter Eggs.
 expectEmpty('Quem é o comandante do meu voo?');
@@ -78,4 +78,5 @@ if (!source.includes('const easterEgg = conciergeEasterEggReply(value, profile, 
   throw new Error('[v14.3.15] Easter Eggs não estão conectados ao fluxo do Concierge.');
 }
 
-console.log('[v14.3.15] CrewDNA Easter Eggs: identidade, família, humor, chamadas operacionais e guardas OK.');
+console.log('[v14.3.15] CrewDNA Easter Eggs: identidade virtual, linguagem natural, limites operacionais e guardas OK.');
+

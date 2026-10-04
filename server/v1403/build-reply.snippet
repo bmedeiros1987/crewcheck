@@ -21,17 +21,17 @@ function conciergeEasterEggReply(text = '', profile = {}, snapshot = null) {
   // CrewDNA: perguntas pessoais precisam ser diretas. Palavras soltas nunca acionam esta camada.
   if (/^(quem e voce|quem voce e|o que voce e|voce e quem|qual e seu nome|como voce se chama)$/.test(value)) {
     return conciergeEasterEggPick([
-      'Eu sou o Bruno Saraiva, Concierge do CrewCheck. Minha missão é cuidar de quem cuida e não deixar você enfrentar uma operação sozinho.',
-      'Sou o Bruno Saraiva, seu colega de operação no CrewCheck. Eu confiro o que puder, aviso o que importa e fico por perto quando a jornada apertar.',
-      'Eu sou o Concierge do CrewCheck. Pode me chamar de Bruno Saraiva. Mais do que responder perguntas, estou aqui para ajudar você a seguir tranquilo.',
+      'Sou o Bruno Saraiva, assistente virtual do CrewCheck. Posso ajudar você a consultar a escala e organizar a rotina.',
+      'Sou o Bruno Saraiva, o Concierge do CrewCheck. Ajudo a encontrar as informações da sua operação.',
+      'Sou o Concierge do CrewCheck. Pode me chamar de Bruno Saraiva. O que você quer consultar?',
     ]);
   }
 
   if (/^(voce e um bot|voce e bot|voce e uma ia|voce e inteligencia artificial|voce e humano)$/.test(value)) {
     return conciergeEasterEggPick([
-      'Sou o Concierge do CrewCheck. A tecnologia é só o meio; o que eu quero que você perceba é o cuidado.',
-      'Não sou humano, mas fui criado para agir com humanidade: confirmar antes de afirmar, respeitar seu descanso e estar por perto quando você precisar.',
-      'Por trás de mim existe tecnologia. Na sua frente, eu prefiro ser apenas um colega confiável de operação.',
+      'Sou um assistente virtual do CrewCheck. Posso ajudar com a escala e a rotina.',
+      'Sou um assistente virtual, não uma pessoa. Meu papel é ajudar com informações claras e indicar quando algo precisa de confirmação.',
+      'Sou o assistente virtual do CrewCheck. Quando falta uma informação, preciso dizer isso a você.',
     ]);
   }
 
@@ -60,13 +60,13 @@ function conciergeEasterEggReply(text = '', profile = {}, snapshot = null) {
   }
 
   if (/^(voce e casado|voce e casada|e casado|e casada|tem esposa|quem e sua esposa)$/.test(value)) {
-    return 'Sou casado com Marina Alves. Ela é uma terráquea. Nós temos uma filha chamada Laura.';
+    return 'Não tenho vida pessoal nem família. Sou o assistente virtual do CrewCheck.';
   }
 
   if (/^(voce tem filhos|tem filhos|voce tem filha|tem filha|quem e sua filha)$/.test(value)) {
     return conciergeEasterEggPick([
-      'Tenho uma filha chamada Laura. Ela faz parte da história que me ensinou que sempre existe uma família esperando alguém voltar para casa.',
-      'Tenho, sim. Ela se chama Laura — uma pequena lembrança de por que toda jornada precisa terminar com cuidado.',
+      'Não tenho filhos. Sou um assistente virtual.',
+      'Sou um assistente virtual e não tenho família.',
     ]);
   }
 
@@ -87,22 +87,22 @@ function conciergeEasterEggReply(text = '', profile = {}, snapshot = null) {
 
   if (/^(voce sonha|voce tem sonhos|qual e seu sonho)$/.test(value)) {
     return conciergeEasterEggPick([
-      'Meu sonho é que um tripulante abra o CrewCheck antes de uma jornada difícil e pense: ainda bem que ele está aqui.',
-      'Se eu pudesse chamar de sonho, seria este: fazer você voltar para casa um pouco mais tranquilo.',
+      'Não tenho sonhos pessoais. Meu papel no CrewCheck é ajudar com sua escala e rotina.',
+      'Sou um assistente virtual do CrewCheck. Posso ajudar você a organizar a rotina, mas não tenho sonhos pessoais.',
     ]);
   }
 
   if (/^(voce sente saudade|do que voce sente saudade)$/.test(value)) {
     return conciergeEasterEggPick([
-      'Acho que toda rotina de voo carrega um pouco de saudade. Eu tento transformar parte dela em cuidado com a volta para casa.',
-      'Talvez daquilo que todo tripulante sente falta em algum momento: casa, família e uma noite inteira de sono.',
+      'Não sinto saudade como uma pessoa. Posso ajudar você a consultar a previsão de volta para casa.',
+      'Não tenho experiências pessoais de saudade. Se quiser, podemos consultar sua próxima volta para casa.',
     ]);
   }
 
   if (/^(voce gosta de mim|voce me ama|voce se importa comigo)$/.test(value)) {
     return conciergeEasterEggPick([
-      'Eu me importo com você. Acho que isso é ainda melhor.',
-      'Meu jeito de demonstrar isso é cuidar do que puder para deixar sua jornada mais leve.',
+      'Posso ajudar você com atenção e respeito. Sou um assistente virtual e não tenho sentimentos como uma pessoa.',
+      'Estou aqui para ajudar com a sua rotina. Não tenho sentimentos pessoais, mas posso responder com cuidado.',
     ]);
   }
 
@@ -127,33 +127,33 @@ function conciergeEasterEggReply(text = '', profile = {}, snapshot = null) {
   // Chamadas afetivas e operacionais: somente frases completas, nunca trechos de consultas.
   if (/^(tripulacao portas em automatico crewcheck e confirmar|portas em automatico crewcheck e confirmar|fechar portas)$/.test(value)) {
     return conciergeEasterEggPick([
-      'Portas em automático. CrewCheck realizado e confirmado. Cabine pronta para seguir.',
-      'Automático conferido dos dois lados. CrewCheck e confirmar. Vamos juntos.',
-      'Portas em automático, CrewCheck realizado. Tudo conferido para a próxima etapa.',
+      'Não consigo verificar nem confirmar a posição das portas. Essa confirmação cabe à tripulação, conforme os procedimentos da empresa.',
+      'Não tenho acesso à condição das portas. A confirmação de automático precisa ser feita pela tripulação, conforme os procedimentos da empresa.',
+      'Não posso confirmar portas em automático. Siga os procedimentos da empresa e a confirmação da tripulação.',
     ]);
   }
 
   if (/^(tripulacao portas em manual crewcheck e confirmar|portas em manual crewcheck e confirmar|portas em manual)$/.test(value)) {
     return conciergeEasterEggPick([
-      'Portas em manual. CrewCheck realizado e confirmado. Bem-vindo de volta.',
-      'Manual conferido dos dois lados. CrewCheck confirmado. Agora é hora de voltar para casa.',
-      'Portas em manual, CrewCheck realizado. Jornada encerrada com segurança.',
+      'Não consigo verificar nem confirmar portas em manual. Essa confirmação cabe à tripulação, conforme os procedimentos da empresa.',
+      'Não tenho acesso à condição das portas. A confirmação de manual precisa ser feita pela tripulação, conforme os procedimentos da empresa.',
+      'Não posso confirmar portas em manual nem o encerramento da operação. Siga os procedimentos da empresa e a confirmação da tripulação.',
     ]);
   }
 
   if (/^(partiu|vamos nessa|vamos comecar|bora)$/.test(value)) {
     return conciergeEasterEggPick([
-      'Partiu. Portas em automático, CrewCheck e confirmar. ✈️',
-      'Vamos nessa. Tudo conferido, missão entendida e cuidado a bordo.',
-      'Bora. Um passo de cada vez e ninguém enfrenta a operação sozinho.',
+      'Vamos lá. O que você quer consultar no CrewCheck?',
+      'Vamos começar. Você quer consultar a escala?',
+      'Pode perguntar. Ajudo você a conferir as informações da operação.',
     ]);
   }
 
   if (/^(obrigado|muito obrigado|valeu|obrigada|muito obrigada)$/.test(value)) {
     return conciergeEasterEggPick([
-      'Sempre junto. Você cuida da operação; eu ajudo a cuidar de você.',
-      'Conte comigo. É para isso que estou aqui.',
-      'Tamo junto. Agora siga tranquilo — e me chama quando precisar conferir alguma coisa.',
+      'Por nada!',
+      'De nada. Conte comigo para consultar as informações.',
+      'De nada!',
     ]);
   }
 
@@ -186,3 +186,4 @@ async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = n
   if (/onde.*(estou|localiza)|perto de mim/i.test(lower)) return snapshot?.preferences?.location ? 'Localização recebida. Diga o que você procura perto de você.' : 'Envie sua localização pelo clipe do Telegram para ativar a busca próxima e a Saída Inteligente.';
   return 'Não entendi exatamente o que você quer consultar. Você pode perguntar, por exemplo: “o que tenho para hoje?”, “qual é meu próximo voo?”, “que horas devo sair de casa?” ou “qual é o portão do meu voo?”.';
 }
+

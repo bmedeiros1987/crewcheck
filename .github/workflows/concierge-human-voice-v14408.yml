@@ -9,6 +9,11 @@ on:
       - 'server/v14348/**'
       - 'server/v14405/**'
       - 'server/v14408/**'
+      - 'server/v1403/telegram-human.mjs'
+      - 'server/v1403/build-reply.snippet'
+      - 'scripts/regression-concierge-natural-language.mjs'
+      - 'scripts/regression-concierge-clock-format.mjs'
+      - 'scripts/regression-v14-3-15-concierge-easter-eggs.mjs'
       - 'server/concierge/pharmacy-reference.mjs'
       - 'scripts/p1-concierge-poi/**'
       - 'scripts/regression-concierge-pharmacy-reference.mjs'
@@ -21,12 +26,20 @@ on:
     branches: [main]
     paths:
       - 'server/v14408/**'
+      - 'server/v1403/telegram-human.mjs'
+      - 'server/v1403/build-reply.snippet'
+      - 'scripts/regression-concierge-natural-language.mjs'
+      - 'scripts/regression-concierge-clock-format.mjs'
+      - 'scripts/regression-v14-3-15-concierge-easter-eggs.mjs'
       - 'server/concierge/pharmacy-reference.mjs'
       - 'scripts/p1-concierge-poi/**'
       - 'scripts/regression-concierge-pharmacy-reference.mjs'
       - 'scripts/v14408/**'
       - 'scripts/v139/**'
       - '.github/workflows/concierge-human-voice-v14408.yml'
+
+permissions:
+  contents: read
 
 jobs:
   concierge-human-voice:
@@ -37,10 +50,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Validate natural language before preparation
+        run: |
+          node scripts/regression-concierge-natural-language.mjs
+          node scripts/regression-concierge-clock-format.mjs
+          node scripts/regression-v14-3-15-concierge-easter-eggs.mjs
       - name: Prepare canonical source
         run: node scripts/v139/apply.mjs
+      - name: Validate natural language after preparation
+        env:
+          CREWCHECK_TEST_PREPARED: '1'
+        run: |
+          node scripts/regression-concierge-natural-language.mjs
+          node scripts/regression-concierge-clock-format.mjs
+          node scripts/regression-v14-3-15-concierge-easter-eggs.mjs
       - name: Validate contextual text and audio policy
         run: node scripts/regression-v14-4-08-concierge-human-voice.mjs
 
       - name: Validate scoped pharmacy references without live APIs
         run: node scripts/regression-concierge-pharmacy-reference.mjs
+
