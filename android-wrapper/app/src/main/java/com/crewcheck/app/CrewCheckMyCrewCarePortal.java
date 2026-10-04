@@ -260,6 +260,7 @@ public final class CrewCheckMyCrewCarePortal {
             try { mainWebView.evaluateJavascript(js, null); } catch (Exception ignored) { }
         });
     }
+    // Provisional validation container only; approved app UI is a release gate.
     private void attachVisiblePortal() {
         LinearLayout box = new LinearLayout(activity);
         box.setOrientation(LinearLayout.VERTICAL);

@@ -8,6 +8,11 @@ on:
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCarePortal.java'
       - 'android-wrapper/app/src/main/assets/mycrewcare-transport-v2.js'
       - 'scripts/regression-mycrewcare-v2.mjs'
+      - 'scripts/assert-mycrewcare-v2-ownership.mjs'
+      - 'client/src/lib/crewWake.ts'
+      - 'client/src/components/wakeup/**'
+      - 'scripts/wake-v1/**'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
       - 'docs/mycrewcare-v2-safety-candidate.md'
       - '.github/workflows/mycrewcare-v2-safety.yml'
       - 'scripts/v139/**'
@@ -30,6 +35,7 @@ jobs:
       - run: npm ci
       - name: Synthetic behavior before preparation
         run: |
+          node scripts/assert-mycrewcare-v2-ownership.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node --test scripts/regression-mycrewcare-v2.mjs
           done
@@ -37,6 +43,7 @@ jobs:
         run: node scripts/v139/apply.mjs
       - name: Synthetic behavior after preparation
         run: |
+          node scripts/assert-mycrewcare-v2-ownership.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node --test scripts/regression-mycrewcare-v2.mjs
           done

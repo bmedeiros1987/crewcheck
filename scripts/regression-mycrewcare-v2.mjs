@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { createMyCrewCareSession, isMyCrewCareTravelUrl, myCrewCareLocalInstant, MYCREWCARE_MAX_AGE_MS } from '../shared/myCrewCare.mjs';
 import { createMyCrewCareNativeAdapter } from '../shared/myCrewCareNativeAdapter.mjs';
+import { assertMyCrewCareOwnership, myCrewCareOwnershipViolations } from './assert-mycrewcare-v2-ownership.mjs';
 
 // Synthetic only. The exact asset executed by the Android portal is the parser under test.
 const assetPath = 'android-wrapper/app/src/main/assets/mycrewcare-transport-v2.js';
@@ -230,4 +231,25 @@ test('review: cancelled/historical heading variants are rejected by the real ass
 });
 test('review: empty records need an explicit verified empty-state proof', async () => {
   const { session } = setup({ records: [], emptyConfirmed: false }); assert.equal(await session.sync(), false);
+});
+
+const ownershipBaseline = assertMyCrewCareOwnership(new URL('..', import.meta.url).pathname);
+test('ownership: current tree has a single v2 MyCrewCare implementation', () => {
+  assert.deepEqual(myCrewCareOwnershipViolations(ownershipBaseline), []);
+});
+for (const [file, legacy] of [
+  ['android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCarePortal.java', 'public final class CrewCheckMyCrewCarePortal { private static final String PREFS = "crewcheck_mycrewcare"; void save() { getSharedPreferences(PREFS, 0); } }'],
+  ['client/src/lib/crewWake.ts', "const MYCREWCARE_KEY = 'crewcheck:mycrewcare:snapshot:v1';"],
+  ['client/src/components/wakeup/CrewWakeSurface.tsx', "window.addEventListener('crewcheck:mycrewcare-update', onMyCrewCare);"],
+  ['android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 'public boolean openMyCrewCare() { myCrewCarePortal.open(); return true; }'],
+  ['android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java', 'super.onResume(); if (myCrewCarePortal != null) myCrewCarePortal.syncIfConnected();'],
+  ['scripts/wake-v1/apply.mjs', 'const nativeMethods = "openMyCrewCare:function(){ return AndroidCrewCheckNative.openMyCrewCare(); }";'],
+  ['scripts/v139/apply.mjs', "await import('../wake-v1/apply.mjs');\nawait import('../ci/sync-canonical-manual.mjs');"],
+]) test(`ownership: reject legacy #872 source/materialized overwrite in ${file}`, () => {
+  assert.ok(myCrewCareOwnershipViolations({ ...ownershipBaseline, [file]: legacy }).length > 0);
+});
+test('ownership: reviewed Wake-only consumer can use sole v2 entrypoint without duplicate portal', () => {
+  const sources = { ...ownershipBaseline, 'client/src/lib/crewWake.ts': 'export function manualWakeAt() {}',
+    'client/src/components/wakeup/CrewWakeSurface.tsx': "import { createMyCrewCareSession } from '@/lib/myCrewCare';" };
+  assert.deepEqual(myCrewCareOwnershipViolations(sources), []);
 });

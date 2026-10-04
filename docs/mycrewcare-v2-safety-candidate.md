@@ -97,3 +97,29 @@ Timezone-independent tests run under UTC, America/Sao_Paulo and Pacific/Auckland
 The dedicated CI runs these before and after the complete canonical materializer,
 then TypeScript, Vite and Android compilation. Native source assertions are only
 guard checks; they do not replace runtime/physical Android validation.
+
+## Single-owner composition with #872
+
+[#907](https://github.com/bmedeiros1987/crewcheck/pull/907) is the sole replacement
+candidate for the **MyCrewCare portion** of
+[#872](https://github.com/bmedeiros1987/crewcheck/pull/872). Mobile Core owns one
+portal/session implementation. #872 retains its remaining Wake/briefing work and
+history; it must consume the v2 entrypoint after its Wake-only reconciliation.
+Do not replay the old portal, global snapshot runtime, parameterless native bridge
+or `scripts/wake-v1/apply.mjs` onto this candidate. That old materializer would
+reinstall v1 MainActivity/Home wiring even if the Java portal file were kept.
+
+`scripts/assert-mycrewcare-v2-ownership.mjs` enforces this boundary in CI before
+and after canonical preparation. Behavioral composition regressions inject the
+old portal, old global key/event listener, old bridge/onResume sync and old
+materializer import independently; each must fail. A Wake-only consumer importing
+`client/src/lib/myCrewCare.ts` passes. Workflow path filters include all the old
+writer surfaces so a future composition attempt cannot silently skip the gate.
+A future deliberately reviewed activation must update this gate alongside its
+provider/physical/UI evidence; do not remove it merely to turn CI green.
+
+The current native `LinearLayout` is a **provisional validation container**, not
+final/premium UI. Mobile Core must reconcile the actual approved app design,
+accessibility, spacing, close/back/retry/error states, and return navigation before
+activation. UI approval is an additional release gate, not implied by compilation.
+Neither PR is ready for merge or activation on CI evidence alone.
