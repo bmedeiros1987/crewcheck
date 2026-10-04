@@ -76,6 +76,10 @@ test('missing details and errors use one specific request without inventing data
   assert.equal(result, 'O que você quer consultar? Pode perguntar sobre a escala, voos ou lugares.');
   assert.equal((result.match(/\?/g) || []).length, 1);
   assert.equal(premiumVoicePolicy(missing, 'o que tenho hoje?').allowed, false, 'missing data remains text-only');
+  for (const mode of ['formal', 'comic']) {
+    assert.equal(render('Não identifiquei qual detalhe você quer continuar. Diga apenas o dado: apresentação, saída, portão, hotel, meteorologia ou próxima programação.', 'e aquilo?', mode), 'Qual detalhe você quer consultar?');
+    assert.equal(render('ElevenLabs aguardando configuração.', '', mode), 'O áudio ainda não está configurado.');
+  }
 });
 
 test('formal and light modes keep operational facts and do not add humor to questions or warnings', () => {

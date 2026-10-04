@@ -62,7 +62,7 @@ export function conciergeFrequentDestination(roster = {}) {
 export function conciergeHumorEligible(reply = '') {
   const text = String(reply || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   if (!text.trim() || text.includes('?')) return false;
-  return !/(alerta|critico|procediment|portas|nao posso|nao tenho acesso|nao consigo|sem dados|falha|erro|emergencia|hospital|pronto atendimento|farmacia|medic|rbac|regulament|irregular|conformidade|seguranca|cancelad|desviad|atrasad|portao|status|radar|metar|taf|tempo severo|saida|rota|localizacao|expirou|nao encontrei|nao consegui|indisponivel|confirme imediatamente)/i.test(text);
+  return !/(nao identifiquei|nao entendi|aguardando configuracao|nenhuma programacao|alerta|critico|procediment|portas|nao posso|nao tenho acesso|nao consigo|sem dados|falha|erro|emergencia|hospital|pronto atendimento|farmacia|medic|rbac|regulament|irregular|conformidade|seguranca|cancelad|desviad|atrasad|portao|status|radar|metar|taf|tempo severo|saida|rota|localizacao|expirou|nao encontrei|nao consegui|indisponivel|confirme imediatamente)/i.test(text);
 }
 
 function humorVariants(destination) {
