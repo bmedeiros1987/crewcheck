@@ -1,0 +1,63 @@
+name: Concierge nearby place results
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/concierge/pharmacy-reference.mjs'
+      - 'server/concierge/place-results.mjs'
+      - 'scripts/p1-concierge-poi/**'
+      - 'scripts/regression-concierge-pharmacy-reference.mjs'
+      - 'scripts/regression-concierge-place-results.mjs'
+      - 'scripts/qa-concierge-place-results.mjs'
+      - 'client/src/components/concierge/**'
+      - '.github/workflows/concierge-place-results.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'server/concierge/**'
+      - 'scripts/p1-concierge-poi/**'
+      - 'client/src/components/concierge/**'
+      - '.github/workflows/concierge-place-results.yml'
+permissions:
+  contents: read
+concurrency:
+  group: concierge-places-${{ github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: bash -o pipefail {0}
+jobs:
+  validate:
+    name: Nearby relevance, reference safety and rendered cards
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/v139/apply.mjs
+      - run: node --check server.mjs
+      - run: node scripts/regression-concierge-pharmacy-reference.mjs
+      - run: node scripts/regression-concierge-place-results.mjs --prepared
+      - name: Repeat scoped materialization safely
+        run: |
+          sha256sum server.mjs client/src/pages/Home.tsx > "$RUNNER_TEMP/concierge-place-prepared.sha"
+          node scripts/p1-concierge-poi/apply.mjs
+          sha256sum -c "$RUNNER_TEMP/concierge-place-prepared.sha"
+      - run: npx tsc --noEmit
+      - run: npx vite build
+      - name: Actual component browser checks and screenshots
+        run: node scripts/qa-concierge-place-results.mjs
+      - name: Preserve rendered evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: concierge-place-results-${{ github.sha }}
+          path: .artifacts/concierge-place-results/
+          if-no-files-found: warn
+          retention-days: 7
