@@ -86,6 +86,7 @@ export function isWellhubActivityPreferenceMessage(text = '') {
   const raw = String(text || '').trim();
   const detected = detectWellhubActivityFromText(raw);
   if (!detected || NON_GYM_ACTIVITY_CONTEXT.test(raw)) return false;
+  if (/\b(?:nao|se|talvez)\b/.test(normalize(raw))) return false;
   if (/smart\s*fit/i.test(raw) && !/\b(wellhub|gympass)\b/i.test(raw)) return false;
 
   // O detector aceita atividade/modalidade customizada. Para não transformar
@@ -98,12 +99,19 @@ export function isWellhubActivityPreferenceMessage(text = '') {
   // não é evidência suficiente para persistir preferência.
   const recognizedActivity = isRecognizedWellhubActivity(raw, detected);
   const explicitProductActivity = /^(?:(?:wellhub|gympass)\s+(?:modalidade|atividade|aula|treino)\s*(?:é|e|eh|:|-)?\s*|(?:minha\s+)?(?:modalidade|atividade)\s+(?:do\s+)?(?:wellhub|gympass)\s*(?:é|e|eh|:|-)\s*)[\p{L}0-9 +&-]{2,60}[.!]?$/iu;
-  if (explicitProductActivity.test(raw)) return true;
+  if (explicitProductActivity.test(raw)) {
+    // Store a name, not an unrestricted sentence tail. Known multiword names
+    // remain valid; legacy custom names such as Aquagym stay single-token.
+    const activityName = normalize(detected);
+    if (WELLHUB_ACTIVITY_ALIAS_PHRASES.some(alias => normalize(alias) === activityName)) return true;
+    return /^[\p{L}][\p{L}0-9-]{1,39}$/u.test(String(detected).trim())
+      && !/^(?:nao|se|talvez|quando|caso|dele|dela)$/i.test(activityName);
+  }
   if (!recognizedActivity) return false;
 
   if (/^(?:modalidade|atividade|aula|treino)\s+[\p{L}0-9 +&-]{2,60}[.!]?$/iu.test(raw)) return true;
-  if (/\b(wellhub|gympass)\b/i.test(raw) && /\b(aula|treino|quero|prefiro|fa[cç]o|pratico|praticar|modalidade|atividade)\b/i.test(raw)) return true;
-  return /^(?:quero|prefiro|fa[cç]o|pratico|praticar)\s+[\p{L}0-9 +&-]{2,40}[.!]?$/iu.test(raw);
+  const direct = raw.match(/^(?:(?:wellhub|gympass)\s+)?(?:quero|prefiro|fa[cç]o|pratico|praticar)\s+([\p{L}0-9 +&-]{2,60}?)(?:\s+(?:no|do)\s+(?:wellhub|gympass))?[.!]?$/iu);
+  return Boolean(direct && WELLHUB_ACTIVITY_ALIAS_PHRASES.some((alias) => normalize(alias) === normalize(direct[1])));
 }
 
 export function extractWellhubLocationHintFromText(text = '') {

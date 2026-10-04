@@ -7,6 +7,30 @@ async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = n
   let currentSnapshot = command.snapshot || snapshot;
   const inputContext = conciergeSemanticInputContextV14338(text, currentSnapshot);
   const semantic = interpretConciergeNaturalTextV14338(text, inputContext);
+  // Preference replies must reach the gym handler with the original tier/activity.
+  // Generic short-follow-up resolution and /academias rewriting otherwise discard them.
+  const explicitWellhub = /\b(?:wellhub|gympass)\b/i.test(String(text || ''));
+  const gymPreference = isWellhubPlanPreferenceMessage(text)
+    || isWellhubPlanDeclarationMessage(text) || isWellhubActivityPreferenceMessage(text);
+  const gymContextOwner = conciergeSafeKey(profile.email || (profile.chatId ? `telegram:${profile.chatId}` : ''));
+  const gymContextChannel = ['app', 'whatsapp', 'telegram'].includes(profile.channel)
+    ? profile.channel : profile.chatId ? 'telegram' : '';
+  const freshWellhubContext = Boolean(gymContextOwner && gymContextChannel)
+    && isConciergeContextFreshV14338(inputContext)
+    && inputContext?.lastIntent === 'gym' && inputContext.gymProvider === 'wellhub'
+    && inputContext.gymContextOwner === gymContextOwner
+    && inputContext.gymContextChannel === gymContextChannel;
+  if (gymPreference && !explicitWellhub && !freshWellhubContext) {
+    return 'Você está falando do Wellhub? Inclua Wellhub ou Gympass na mensagem, por exemplo: “meu plano Wellhub é Silver+” ou “Wellhub quero Pilates”.';
+  }
+  if (gymPreference || semantic.intent === 'gym' || /^\/wellhub(?:@\S+)?\b/i.test(String(text || ''))) {
+    semantic.intent = 'gym';
+    semantic.rewrite = String(text || '').trim();
+  }
+  const normalizedScope = normalizeConciergeNaturalTextV14338(text);
+  const differentPlanScope = !explicitWellhub
+    && (/\b(?:crewcheck|assinatura|mensalidade|cobranca)\b/i.test(normalizedScope)
+      || (!gymPreference && /\bplano\b/.test(normalizedScope)));
   if (semantic.intent === 'explicit_command') semantic.intent = conciergeSemanticCommandIntentV14338(text);
   const resolved = await conciergeSemanticResolveV14338(semantic, profile, currentSnapshot, inputContext);
   const rawReply = resolved.handled
@@ -20,6 +44,11 @@ async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = n
     ...buildConciergeContextV14338({ ...semantic, intent: contextIntent }, inputContext, new Date(), extra),
     origin: extra.origin || String(inputContext?.origin || ''),
     destination: extra.destination || String(inputContext?.destination || ''),
+    gymContextOwner, gymContextChannel,
+    gymProvider: differentPlanScope || contextIntent !== 'gym' ? ''
+      : gymPreference || /^Wellhub verificado\b/.test(String(rawReply || '')) ? 'wellhub'
+        : /Smart Fit direta/i.test(String(rawReply || '')) ? 'smartfit'
+          : freshWellhubContext ? 'wellhub' : '',
   };
   if (profile?.email || profile?.chatId) {
     currentSnapshot = await conciergeSaveSnapshotAsync(profile, null, { preferences: { conciergeConversation: conversation } }) || currentSnapshot;
