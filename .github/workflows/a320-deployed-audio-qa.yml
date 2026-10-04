@@ -1,0 +1,28 @@
+name: Deployed A320 audio read-only QA
+on:
+  push:
+    branches: ['qa/a320-deployed-audio-readonly']
+permissions:
+  contents: read
+jobs:
+  deployed-audio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install isolated browser test dependency
+        run: |
+          npm install --prefix .audio-qa --no-package-lock --no-audit --no-fund playwright@1.62.1
+          ./.audio-qa/node_modules/.bin/playwright install --with-deps chromium
+      - name: Verify public bytes and current production MIME playback without account access
+        run: node scripts/qa-deployed-notification-audio.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: deployed-audio-readonly
+          path: artifacts/deployed-audio/
