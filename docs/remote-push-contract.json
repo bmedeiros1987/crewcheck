@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "status": "PROPOSED CONTRACT; CORE IMPLEMENTED, ADAPTERS NOT IMPLEMENTED; NOT CONNECTED OR ENABLED",
+  "ownership": [
+    {
+      "area": "PWA service worker",
+      "files": [
+        "client/public/sw.js"
+      ],
+      "owner": "Mobile Core, PR825",
+      "evidence": "https://github.com/bmedeiros1987/crewcheck/pull/825#issuecomment-5951485324",
+      "verifiableContact": "GitHub author bmedeiros1987 in linked ownership discussion; no separate executor identity verified",
+      "acceptance": "PENDING explicit acceptance of this push contract. No owner has been contacted by this patch."
+    },
+    {
+      "area": "Android transport, token/session binding, receiver and notification click",
+      "files": [
+        "android-wrapper/app/**"
+      ],
+      "owner": "Mobile Core, PR824",
+      "evidence": "https://github.com/bmedeiros1987/crewcheck/pull/824#issuecomment-5898715117",
+      "verifiableContact": "GitHub author bmedeiros1987 in linked Mobile Core handoff; no separate executor identity verified",
+      "acceptance": "PENDING push-specific owner acceptance; existing watch handoff is not acceptance of push."
+    },
+    {
+      "area": "Wake local exact alarm, Acordei and optional fallback",
+      "files": [
+        "client/src/lib/crewWake.ts",
+        "android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckWakeScheduler.java"
+      ],
+      "owner": "Mobile Core/Wake, PR872",
+      "evidence": "https://github.com/bmedeiros1987/crewcheck/pull/872#issuecomment-5951483097",
+      "verifiableContact": "GitHub author bmedeiros1987; linked comment explicitly requires one writer per file",
+      "acceptance": "PENDING boundary acknowledgement: chat-update push never schedules/replaces critical Wake alarms."
+    },
+    {
+      "area": "Server chat write and transaction integration",
+      "files": [
+        "server/platform.mjs",
+        "server/platform-chat-write.mjs"
+      ],
+      "owner": "Current chat integrator, PR894 / approved composition",
+      "acceptance": "PENDING reviewed transaction refactor and durable repository adapter. This patch changes neither file."
+    }
+  ],
+  "implemented": [
+    "Explicit boolean enabled=true required; default false does not invoke register/enqueue/send adapters",
+    "No startup import, scheduler, route, credentials, environment variables, migration or provider SDK",
+    "One-job worker policy with 30-second leased claim, max 3 attempts, 5-second send timeout, 24-hour TTL, Retry-After and exponential jitter",
+    "Current session/conversation authorization plus binding revision/consent check before send; atomic final repository check",
+    "Minimal generic envelope with opaque binding/event tags; no account/email/chat body/roster/health/finance fields",
+    "Revoke remains available when sender disabled; repository must match authenticated principal/session and optional installation"
+  ],
+  "coreAPI": {
+    "factory": "createPushOutbox({repository,authorize,send,enabled=false,now,random,sendTimeoutMs<=5000})",
+    "trustedIdentity": "principalId + sessionId are opaque server-resolved IDs, not email, raw JWT, request-body ownership claims or push endpoints. HTTP adapters MUST authenticate and construct this object. Core has no HTTP endpoint.",
+    "subscribe": "Validate explicit consent, server-issued/proven installationId, opaque targetRef and transport webpush|fcm. Authorize current authenticated session, then atomic repository.bind. Ownership of installation and provider target must be proven by future adapter; arbitrary client-chosen refs are not authority.",
+    "revoke": "Trusted server logout/consent/revocation integration calls revoke(actor, optional installationId); actor is constructed from verified session or trusted server revocation event, never raw body. No new permission request.",
+    "enqueueInTransaction": "After authorized chat write, pass SAME database transaction; event={messageId,threadId,recipientIds,occurredAt}. Use stable persisted message ID from PR894 and original persisted occurrence time. Derive recipients from server relationships, not request body. No earlier message backfill after new consent.",
+    "runOne": "Caller provides bounded scheduling/concurrency only after separate activation review. No timers or background scheduler start at import/factory."
+  },
+  "repositoryContract": {
+    "durability": "Future durable transactional adapter is required. Test fixture in scripts/tests/fixtures is memory-only and must never be used in production. Its passing tests are not evidence of real SQL isolation, crash persistence, provider behavior or physical delivery.",
+    "bind": "Atomically maintain one active owner+session per installation and uniqueness of active transport target. Reject takeover of any active installation/target. Duplicate identical registration preserves revision/bindingTag/consentAt. Rotation/re-consent increments revision, creates new opaque bindingTag and invalidates old queued deliveries. Account switch must revoke old binding before new registration.",
+    "revoke": "Atomically match principal+session; optionally installation. Disable consent, increment revision and cancel pending deliveries or make claim/check reject them. Trusted account deletion/visitor revocation must cover all relevant sessions, not just the browser currently open.",
+    "enqueue": "In the SAME message transaction insert only currently active, consenting authorized-recipient bindings at event occurrence time; unique (messageId,principalId,installationId,revision). Stable opaque eventId stored with winner, not regenerated per retry. Store metadata only; raw target credentials live in a separate protected registry referenced by targetRef. Rollback of message write must roll back delivery insertion.",
+    "claim": "Atomically select due nonterminal row; expired leases recover after restart. Increment attempts when claiming; refuse >=3 attempts and expired TTL even after crash. Set unique token+leaseUntil and return immutable snapshot. Bound query/batch sizes and retention; no infinite retry.",
+    "loadBinding": "Read current trusted installation binding, revision, session, consent and targetRef.",
+    "canDispatch": "Atomic final recheck of exact lease token, live lease, expiry, active binding, same principal/session/revision/tag and consent. Return false on lost lease/revocation. Provider submission after this check can still race revocation; already submitted notifications cannot be reliably recalled.",
+    "settle": "Compare-and-set by deliveryId+current unexpired lease token. Stale worker must not overwrite another attempt. Terminal state sent/failed/expired/cancelled/exhausted; retry stores nextAt and clears lease. Recover errors without logging secrets.",
+    "disableBinding": "Compare installationId+revision before disabling expired provider target; late failure from an old revision must not disable a new registration."
+  },
+  "authorizationContract": {
+    "subscribe": "Return literal true only for current authorized session and device registration consent.",
+    "deliver": "Immediately before dispatch validate current session, recipient account, current colleague/visitor relation, visitor status, chat permission and message/thread access. Deleted/revoked account, expired JWT/session, revoked invitation, opt-out or denied relationship returns false. Outage throws -> bounded retry with no send."
+  },
+  "providerContract": {
+    "send": "Injected only after review. Receives {transport,targetRef,payload,ttlSeconds,signal}. Resolve targetRef via trusted registry; implement real Web Push encryption/VAPID or FCM OAuth outside this patch. Never fetch arbitrary user URL. Validate provider endpoints, DNS/IP destinations and redirect policy before permitting outbound requests.",
+    "result": "Normalized {status: integer, retryAfter?: HTTP Retry-After string, expired?: boolean}. Only map known provider expired subscription errors to expired=true with 404/410. Provider auth/config failure is terminal for this attempt, not an unlimited retry loop.",
+    "abort": "Adapter must honor AbortSignal and transport-level timeout. A timeout after provider acceptance is ambiguous; retry reuses same eventId. No exactly-once delivery guarantee.",
+    "secrets": "No values inspected or generated. VAPID pair/contact and approved FCM project/app+delivery identity remain unverified and require separate approval if missing. No new grants/service account/signing key."
+  },
+  "clientHandoff": {
+    "envelope": {
+      "v": 1,
+      "type": "chat-update",
+      "eventId": "opaque-stable-per-delivery",
+      "bindingTag": "opaque-current-binding-revision",
+      "title": "CrewCheck",
+      "body": "Há uma atualização. Abra o CrewCheck para consultar.",
+      "url": "/"
+    },
+    "receiver": "Mobile Core validates version/type/size and exact current bindingTag from origin-private/native private state before showing generic notification. Unknown/stale binding or no active session must be discarded; never broadcast account data. Durable bounded dedup keyed by bindingTag+eventId with TTL; stable OS tag is supplementary, not exactly-once proof.",
+    "logout": "Clear/invalidate local bindingTag first, revoke registration on server, cancel local matching notifications where supported and stop old-token routing. Offline logout must immediately prevent local display and queue server revocation for next authenticated opportunity; process death/race limitations need explicit physical tests.",
+    "click": "Fixed origin-relative app entry only. Reauthenticate and fetch authorized inbox after opening; no payload-provided URL/thread/account authority and no implicit read acknowledgement. If login changed, drop old binding intent.",
+    "PWA": "Preserve #825 PDF cache/share handling; add push/notificationclick only through owner-reviewed composition. Browser permission/subscription requires explicit user action/consent. This core does not subscribe devices.",
+    "Android": "Owner implements token rotation, registration and receiver lifecycle with existing notification consent/channel policy. No additional OS permission proposed. Compatible approved signing/version and physical tests required; do not use incompatible old AAB.",
+    "Wake": "Chat update transport is best effort and never substitutes local exact alarms or promises force-stop/reboot alarm delivery."
+  },
+  "acceptance": [
+    "Named owners explicitly accept envelope, lifecycle and files before writing their surfaces; reviewer posts approval against exact SHA.",
+    "Implement durable repository + SQL concurrency/crash/rollback tests, authorized registration and revocation routes, and PR894 same-transaction integration.",
+    "Implement reviewed provider adapters with SSRF/target binding tests and approved credentials; keep activation false until specific approval.",
+    "Client contract tests: binding mismatch/account switch/logout/revocation, replay, duplicate/out-of-order arrival, token rotation, stale click and offline logout.",
+    "Consented synthetic accounts/devices only: foreground/background/locked/closed/force-stop, denied permission, opt-out, reconnect/reboot. Real delivery evidence required before describing app-closed notifications as resolved."
+  ],
+  "configurationEvidence": {
+    "trackedSource": "Scoped tracked source search found no VAPID/FCM/WebPush registration configuration. Absence in source does not establish absence in provider secret stores.",
+    "render": "Read-only metadata identified existing CrewCheck web service/main. No names-only environment reader exposed; no secret values inspected.",
+    "spend": "No new service, migration, external send, paid API call or secret/config/permission change. Existing CI only; no claim that future transport is guaranteed zero-cost."
+  }
+}

@@ -1,0 +1,30 @@
+name: Remote push core (synthetic only)
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/push/**'
+      - 'scripts/tests/push-outbox-core.test.mjs'
+      - 'scripts/tests/fixtures/push-repository.mjs'
+      - 'docs/remote-push-contract.json'
+      - '.github/workflows/remote-push-core.yml'
+permissions:
+  contents: read
+concurrency:
+  group: remote-push-core-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  synthetic-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Test default-off core with synthetic adapters only
+        run: node --test scripts/tests/push-outbox-core.test.mjs
+      - name: Validate contract JSON
+        run: node -e "JSON.parse(require('node:fs').readFileSync('docs/remote-push-contract.json', 'utf8'))"
