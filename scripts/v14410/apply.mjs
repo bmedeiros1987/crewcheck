@@ -47,10 +47,13 @@ function replaceAllGymDispatchers(source, canonicalDispatch) {
 function patchServer(source) {
   const wellhubImport = "import { buildWellhubRoutineSuggestion, detectWellhubActivityFromText, detectWellhubPlanFromText, handleWellhubRoutineRoute, handleWellhubSearchRoute, isWellhubPlanServer, searchVerifiedWellhub, wellhubPlanLabelServer } from './server/v14407/wellhub.mjs';";
   const previousConciergeImport = "import { extractWellhubLocationHintFromText, filterWellhubPartnersForLocation, isWellhubActivityPreferenceMessage, isWellhubPlanPreferenceMessage } from './server/v14410/wellhub-concierge.mjs';";
-  const conciergeImport = "import { extractWellhubLocationHintFromText, filterWellhubPartnersForLocation, isWellhubActivityPreferenceMessage, isWellhubPlanDeclarationMessage, isWellhubPlanPreferenceMessage } from './server/v14410/wellhub-concierge.mjs';";
+  const declarationConciergeImport = "import { extractWellhubLocationHintFromText, filterWellhubPartnersForLocation, isWellhubActivityPreferenceMessage, isWellhubPlanDeclarationMessage, isWellhubPlanPreferenceMessage } from './server/v14410/wellhub-concierge.mjs';";
+  const conciergeImport = "import { detectWellhubPlanPreferenceFromText, extractWellhubLocationHintFromText, filterWellhubPartnersForLocation, isWellhubActivityPreferenceMessage, isWellhubPlanDeclarationMessage, isWellhubPlanPreferenceMessage } from './server/v14410/wellhub-concierge.mjs';";
   let next = source.includes(previousConciergeImport)
     ? source.replace(previousConciergeImport, conciergeImport)
-    : insertAfterRequired(source, wellhubImport, conciergeImport, 'import Wellhub v14.4.07');
+    : source.includes(declarationConciergeImport)
+      ? source.replace(declarationConciergeImport, conciergeImport)
+      : insertAfterRequired(source, wellhubImport, conciergeImport, 'import Wellhub v14.4.07');
 
   const conciergeTag = '// cc-v14410:concierge-gyms-plan-location';
   const legacyTag = '// cc-v14409:concierge-gyms-plan-location';

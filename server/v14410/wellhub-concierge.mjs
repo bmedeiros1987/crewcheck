@@ -30,29 +30,47 @@ function containsWholeNormalizedPhrase(text = '', phrase = '') {
   return Boolean(needle && haystack.includes(` ${needle} `));
 }
 
-export function isWellhubPlanPreferenceMessage(text = '') {
-  const raw = String(text || '').trim();
-  const detected = detectWellhubPlanFromText(raw);
-  if (!detected || OTHER_PLAN_CONTEXT.test(raw)) return false;
+// Capture the requested destination tier, rather than scanning every plan word
+// in the sentence ("de Gold para Basic" must save Basic). Only direct requests
+// about the speaker's own or unqualified Wellhub/Gympass plan are accepted.
+const WELLHUB_PLAN_CHANGE_PREFIX = `(?:por\\s+favor\\s*,?\\s*)?(?:(?:eu\\s+)?(?:quero|gostaria\\s+de|preciso(?:\\s+de)?|(?:voce\\s+)?(?:pode|poderia))\\s+)?(?:alterar|altere|altera|mudar|mude|muda|atualizar|atualize|atualiza|trocar|troque|troca)\\s+(?:(?:o\\s+)?meu\\s+plano|(?:o\\s+)?plano)\\s+(?:do\\s+)?(?:wellhub|gympass)(?=\\s|$)`;
+const WELLHUB_PLAN_CHANGE_SUFFIX = '(?:\\s*,?\\s*por\\s+favor)?\\s*[.!?]*';
 
-  const planOnly = new RegExp(`^${WELLHUB_PLAN_TOKEN}[.!]?$`, 'i');
-  if (planOnly.test(raw)) return true;
+function parseWellhubPlanPreference(text = '') {
+  const raw = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  if (!raw || OTHER_PLAN_CONTEXT.test(raw)) return { plan: '', declaration: false };
 
-  const natural = new RegExp(
-    `^(?:meu\\s+plano\\s+(?:é|e|eh)\\s+(?:o\\s+)?|uso\\s+(?:(?:o\\s+)?plano\\s+)?|tenho\\s+(?:(?:o\\s+)?plano\\s+)?|estou\\s+no\\s+plano\\s+)${WELLHUB_PLAN_TOKEN}[.!]?$`,
+  const change = raw.match(new RegExp(`^${WELLHUB_PLAN_CHANGE_PREFIX}([\\s\\S]*)$`, 'i'));
+  if (change) {
+    const target = change[1].match(new RegExp(`^(?:\\s+no\\s+crewcheck)?(?:\\s+de\\s+${WELLHUB_PLAN_TOKEN})?\\s+para\\s+(?:o\\s+)?(?:plano\\s+)?(${WELLHUB_PLAN_TOKEN})${WELLHUB_PLAN_CHANGE_SUFFIX}$`, 'i'));
+    return { plan: target ? detectWellhubPlanFromText(target[1]) : '', declaration: true };
+  }
+
+  const planOnly = raw.match(new RegExp(`^(${WELLHUB_PLAN_TOKEN})[.!]?$`, 'i'));
+  if (planOnly) return { plan: detectWellhubPlanFromText(planOnly[1]), declaration: false };
+
+  const natural = raw.match(new RegExp(
+    `^(?:meu\\s+plano\\s+(?:e|eh)\\s+(?:o\\s+)?|uso\\s+(?:(?:o\\s+)?plano\\s+)?|tenho\\s+(?:(?:o\\s+)?plano\\s+)?|estou\\s+no\\s+plano\\s+)(${WELLHUB_PLAN_TOKEN})[.!]?$`,
     'i',
-  );
-  if (natural.test(raw)) return true;
+  ));
+  if (natural) return { plan: detectWellhubPlanFromText(natural[1]), declaration: false };
 
-  // Menção a Wellhub/Gympass, sozinha, não transforma palavras como "Gold" em
-  // preferência de plano. Exige sintaxe explícita de atualização do tier.
-  const explicitProductPlan = new RegExp(`^${WELLHUB_EXPLICIT_PLAN_PREFIX}${WELLHUB_PLAN_TOKEN}[.!]?$`, 'i');
-  return explicitProductPlan.test(raw);
+  const declaration = raw.match(new RegExp(`^${WELLHUB_EXPLICIT_PLAN_PREFIX}([\\s\\S]*)$`, 'i'));
+  if (!declaration) return { plan: '', declaration: false };
+  const target = declaration[1].match(new RegExp(`^(${WELLHUB_PLAN_TOKEN})[.!]?$`, 'i'));
+  return { plan: target ? detectWellhubPlanFromText(target[1]) : '', declaration: true };
+}
+
+export function detectWellhubPlanPreferenceFromText(text = '') {
+  return parseWellhubPlanPreference(text).plan;
+}
+
+export function isWellhubPlanPreferenceMessage(text = '') {
+  return Boolean(detectWellhubPlanPreferenceFromText(text));
 }
 
 export function isWellhubPlanDeclarationMessage(text = '') {
-  const raw = String(text || '').trim();
-  return !OTHER_PLAN_CONTEXT.test(raw) && new RegExp(`^${WELLHUB_EXPLICIT_PLAN_PREFIX}`, 'i').test(raw);
+  return parseWellhubPlanPreference(text).declaration;
 }
 
 function isRecognizedWellhubActivity(raw = '', detected = '') {
