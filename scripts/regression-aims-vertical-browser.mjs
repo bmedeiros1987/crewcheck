@@ -65,14 +65,17 @@ try{
  assert.match(await page.locator('[data-roster-event-id="flight-1"] .cc-aims-source-details').innerText(),/Detalhes sintéticos publicados QA1001/,'published details remain visible without opening history');
  for(const width of [320,390,844,1024,1440])for(const theme of ['dark','light'])for(const font of [16,32]){
   await page.setViewportSize({width,height:900});await page.evaluate(({theme,font})=>{window.setAimsTheme(theme);document.documentElement.style.setProperty('font-size',font+'px','important');},{theme,font});
+  await page.evaluate(async()=>{await Promise.all(document.getAnimations().filter(a=>Number.isFinite(a.effect?.getComputedTiming().endTime)).map(a=>a.finished.catch(()=>{})));});
   assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).fontSize),font+'px','actual root text scale');
   const dims=await page.locator('.cc-aims-vertical').evaluate(root=>({overflow:root.scrollWidth>root.clientWidth+1,bodyOverflow:document.documentElement.scrollWidth>innerWidth+1,clipped:[...root.querySelectorAll('.cc-aims-activity-toggle,.cc-aims-published-fields dd,.cc-aims-date')].filter(e=>e.scrollWidth>e.clientWidth+1).length,vertical:[...root.querySelectorAll('.cc-aims-published-fields')].every(dl=>{const boxes=[...dl.children].map(e=>e.getBoundingClientRect());return boxes.every((b,i)=>!i||b.top>=boxes[i-1].bottom);}),touch:[...root.querySelectorAll('.cc-aims-activity-toggle')].every(e=>e.getBoundingClientRect().height>=44)}));
   assert.deepEqual(dims,{overflow:false,bodyOverflow:false,clipped:0,vertical:true,touch:true},JSON.stringify({width,theme,font,dims}));
   const colors=await page.locator('.cc-aims-activity-toggle').first().evaluate(e=>({background:getComputedStyle(e).backgroundColor,text:getComputedStyle(e.querySelector('strong')).color,label:getComputedStyle(e.querySelector('small')).color}));
   const lum=c=>{const a=c.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4});return a[0]*.2126+a[1]*.7152+a[2]*.0722;};
   const ratio=(a,b)=>(Math.max(lum(a),lum(b))+.05)/(Math.min(lum(a),lum(b))+.05);
-  assert.ok(ratio(colors.text,colors.background)>=4.5,JSON.stringify(colors));assert.ok(ratio(colors.label,colors.background)>=4.5,JSON.stringify(colors));
-  await page.screenshot({path:path.join(output,`${width}-${theme}-${font}.png`),fullPage:width<=390});results.push({width,theme,font,...dims,colors});
+  await page.screenshot({path:path.join(output,`${width}-${theme}-${font}.png`),fullPage:width<=390,animations:'disabled'});
+  fs.writeFileSync(path.join(output,'last-case.json'),JSON.stringify({width,theme,font,...dims,colors},null,2));
+  assert.ok(ratio(colors.text,colors.background)>=4.5,JSON.stringify({width,theme,font,colors}));assert.ok(ratio(colors.label,colors.background)>=4.5,JSON.stringify({width,theme,font,colors}));
+  results.push({width,theme,font,...dims,colors});
  }
  await page.setViewportSize({width:390,height:844});await page.evaluate(()=>document.documentElement.style.fontSize='16px');
  const duplicateButtons=page.locator('[data-roster-event-id="duplicate"] .cc-aims-activity-toggle');
