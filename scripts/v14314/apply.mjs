@@ -57,7 +57,7 @@ const DIGIT_WORDS =`);
   return minute ? hourText + ' e ' + minute + ' ' + (minute === 1 ? 'minuto' : 'minutos') : hourText;
 }`);
   next = next.replace(/function shortAirportName\(code = ''\) \{[\s\S]*?\n\}/, `function shortAirportName(code = '') {
-  return translatedAirportName(code);
+  return translatedAirportName(code)\n    .replace(/^aeroporto\\s+(?:d[aeo]\\s+)?/i, '')\n    .trim();
 }`);
   next = next.replace("const activity = String(record.code || 'atividade').toLowerCase();", "const activity = translatedActivityLabel(record.code || 'atividade');");
   next = next.replace('e a chave termina em', 'e a programação termina em');
@@ -142,3 +142,4 @@ update('android-wrapper/app/build.gradle', (source) => source.replace(/versionCo
 update('package.json', (source) => { const data = JSON.parse(source); data.version = VERSION; data.description = `CrewCheck v${VERSION} - tradução aeronáutica e Concierge Familiar Premium`; data.scripts ||= {}; data.scripts['regression:v14.3.14'] = 'node scripts/v139/apply.mjs && node scripts/regression-v14-3-14-aviation-family.mjs'; return `${JSON.stringify(data, null, 2)}\n`; });
 
 console.log(`[v14314] CrewCheck ${VERSION}: tradução IATA/ICAO, atividades em linguagem simples e Concierge Familiar Premium.`);
+
