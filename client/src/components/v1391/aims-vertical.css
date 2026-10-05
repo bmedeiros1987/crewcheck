@@ -82,3 +82,15 @@
 html[data-crew-theme="light"] .cc-aims-vertical .cc-aims-activity[data-change-status="unread"] { background: #fef3c7; color: #422006; }
 html[data-crew-theme="light"] .cc-aims-vertical .cc-aims-activity[data-change-status="unread"] .cc-aims-published-fields dd { color: #92400e; }
 html[data-crew-theme="light"] .cc-aims-vertical .cc-aims-activity[data-change-status="unread"] .cc-aims-published-fields dt { color: #422006; }
+.cc-aims-vertical .cc-aims-published-fields .cc-aims-source-details dd { font-weight: 400; font-size: .875rem; line-height: 1.5; }
+/* Keep generic legacy button palettes from overriding these AIMS controls. */
+.cc-aims-vertical button.cc-aims-activity-toggle {
+  background: var(--ccr-panel-strong) !important;
+  color: var(--ccr-title) !important;
+  border: 1px solid var(--ccr-line) !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+.cc-aims-vertical button.cc-aims-activity-toggle small,
+.cc-aims-vertical button.cc-aims-activity-toggle .cc-aims-detail-label { color: var(--ccr-muted) !important; }
+.cc-aims-vertical button.cc-aims-activity-toggle strong { color: var(--ccr-title) !important; }

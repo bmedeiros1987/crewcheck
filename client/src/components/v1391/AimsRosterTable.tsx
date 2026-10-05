@@ -135,6 +135,7 @@ export function AimsRosterTable({ events, title = 'Escala publicada por dia', da
                 <div><dt>Origem</dt><dd>{event.origin || '—'}</dd></div>
                 <div><dt>Destino</dt><dd>{event.destination || '—'}</dd></div>
                 <div><dt>Chegada / fim</dt><dd>{publishedClock(event.kind === 'flight' ? event.arrival : event.day?.dutyDebrief || event.day?.endTime || event.arrival)}</dd></div>
+                <div className="cc-aims-source-details"><dt>Detalhes publicados</dt><dd>{details(event)}</dd></div>
               </dl>
               {expanded && <div id={detailId} className="cc-aims-activity-detail">
                 <strong>Detalhes publicados</strong>
