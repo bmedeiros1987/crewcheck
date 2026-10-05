@@ -19,6 +19,12 @@ html body .cz-app[data-version] .cc-meteo-follow header > span {
 html body .cz-app[data-version] .cc-meteo-follow :is(h2,strong,em) {
   color:var(--cc-review-text,var(--cc-text))!important;
 }
+html body .cz-app[data-version] .cc-meteo-follow header > span {
+  flex:0 0 auto;
+  width:max-content;
+  max-width:100%;
+  white-space:nowrap;
+}
 html body .cz-app[data-version] .cc-meteo-follow :is(p,small) {
   color:var(--cc-review-muted,var(--cc-muted))!important;
 }

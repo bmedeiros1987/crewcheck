@@ -259,6 +259,8 @@ async function inspect(page, name, preference, effective, favoriteCount, session
   assert.equal(metrics.texts.filter(item => item.tag === 'EM').length, empty ? 0 : 1, 'Seeded active-status text is covered without starting a follow');
   if (empty) assert.ok(metrics.texts.some(item => item.text === 'Importe uma escala para carregar origem e destino automaticamente.'), 'Actual no-event empty state is rendered');
   assert.ok(metrics.texts.some(item => item.tag === 'H2') && metrics.texts.some(item => item.tag === 'P') && metrics.texts.some(item => item.tag === 'SMALL') && metrics.texts.some(item => item.tag === 'SPAN' && item.text === 'Premium'), 'Heading, paragraph, small text and Premium badge are measured');
+  const premiumBadge = metrics.texts.find(item => item.tag === 'SPAN' && item.text === 'Premium');
+  check(premiumBadge?.textRects.length === 1, 'Premium badge must remain one unbroken word');
   for (const item of metrics.texts) {
     check(item.minimumContrast >= 4.5, `contrast ${item.minimumContrast.toFixed(2)} < 4.5: ${item.tag} ${item.text}`);
     check(item.textFits, `Clipped text: ${item.tag} ${item.text}`);
