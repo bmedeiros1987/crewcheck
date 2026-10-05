@@ -1,6 +1,15 @@
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { diagnoseCirium, diagnoseCiriumFlight } from './cirium-diagnostic.mjs';
+import { readExistingMainIdentity } from './v139/common.mjs';
+import { readOperationalBriefingPreview } from './concierge/operational-briefing-source.mjs';
+
+async function handleOperationalBriefingPreview(req, res) {
+  const context = await readExistingMainIdentity(req);
+  if (!context.ok) return sendJson(res, context.status, { ok: false, code: context.code, message: context.message });
+  const result = await readOperationalBriefingPreview(context);
+  return sendJson(res, result.status, result.body);
+}
 
 const APP_VERSION = '13.8.8';
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
@@ -1026,6 +1035,7 @@ const PLATFORM_METHOD_POLICIES = [
   [/^\/api\/platform\/billing\/cancel$/, ['POST']],
   [/^\/api\/platform\/rosters\/sync$/, ['POST']],
   [/^\/api\/platform\/rosters\/active$/, ['GET']],
+  [/^\/api\/platform\/operational-briefing\/preview$/, ['GET']],
   [/^\/api\/platform\/hotels\/stays$/, ['GET', 'POST', 'PATCH']],
   [/^\/api\/platform\/hotels\/companions$/, ['GET']],
   [/^\/api\/platform\/visitors$/, ['GET', 'POST']],
@@ -2608,6 +2618,7 @@ export async function handlePlatformRoute(req, res, url) {
     if (url.pathname === '/api/platform/billing/cancel') { await handleBillingCancel(req, res); return true; }
     if (url.pathname === '/api/platform/rosters/sync') { await handleRosterSync(req, res); return true; }
     if (url.pathname === '/api/platform/rosters/active') { await handleRosterActive(req, res); return true; }
+    if (url.pathname === '/api/platform/operational-briefing/preview') { await handleOperationalBriefingPreview(req, res); return true; }
     if (url.pathname === '/api/platform/hotels/stays') { await handleStays(req, res); return true; }
     if (url.pathname === '/api/platform/hotels/companions') { await handleSameHotel(req, res, url); return true; }
     if (url.pathname === '/api/platform/visitors') { await handleVisitors(req, res); return true; }
