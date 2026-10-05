@@ -26,6 +26,9 @@ const prepared = [
   '}',
 ].join('\n');
 const raw = `async function processTelegramUpdate() {\n${anchor}\n}\n`;
+const readUpdate = '  const update = await readJsonBody(req);';
+const deduplicationGate = "  if (!crewcheckTelegramUpdateClaim(update)) return sendJson(res, 200, { ok: true, duplicate: true, message: 'Evento já processado.' });";
+const deduplicated = prepared.replace(readUpdate, `${readUpdate}\n${deduplicationGate}`);
 const fails = source => assert.throws(() => prepareTelegramCrewLock(source), /âncora não encontrada em Telegram CrewLock/);
 
 test('legacy source receives the original exact route once and stays byte-identical on rerun', () => {
@@ -37,6 +40,31 @@ test('legacy source receives the original exact route once and stays byte-identi
 test('known prepared webhook stays byte-identical on repeated preparation', () => {
   assert.equal(prepareTelegramCrewLock(prepared), prepared);
   assert.equal(prepareTelegramCrewLock(prepareTelegramCrewLock(prepared)), prepared);
+});
+
+test('parsing never resolves imports or executes server top-level code', () => {
+  const source = "import 'crewcheck-deliberately-missing-test-module';\nthrow new Error('Server code must not execute');\n" + prepared;
+  assert.equal(prepareTelegramCrewLock(source), source);
+});
+
+test('inherited Node preload options are not executed by syntax probes', () => {
+  const previous = process.env.NODE_OPTIONS;
+  process.env.NODE_OPTIONS = '--require /crewcheck-deliberately-missing-preload.cjs';
+  try { assert.equal(prepareTelegramCrewLock(prepared), prepared); }
+  finally {
+    if (previous === undefined) delete process.env.NODE_OPTIONS;
+    else process.env.NODE_OPTIONS = previous;
+  }
+});
+
+test('the exact subsequent v1424 deduplication gate is preserved byte-for-byte', () => {
+  assert.equal(prepareTelegramCrewLock(deduplicated), deduplicated);
+  assert.equal(prepareTelegramCrewLock(prepareTelegramCrewLock(deduplicated)), deduplicated);
+  fails(deduplicated.replace('!crewcheckTelegramUpdateClaim(update)', 'crewcheckTelegramUpdateClaim(update)'));
+  fails(deduplicated.replace('duplicate: true', 'duplicate: false'));
+  fails(deduplicated.replace(deduplicationGate, `  /* ${deduplicationGate.trim()} */`));
+  fails('const decoy = `\n' + deduplicated + '\n`;');
+  fails(`/*\n${deduplicated}\n*/`);
 });
 
 test('actual tracked or prepared server is untouched by the Telegram-only patch', () => {
@@ -106,7 +134,7 @@ test('dispatch hidden in a template or nested condition is rejected', () => {
 });
 
 test('duplicate full prepared declarations fail closed', () => {
-  fails(`${prepared}\n${prepared}`);
+  assert.throws(() => prepareTelegramCrewLock(`${prepared}\n${prepared}`), { code: 'CREWCHECK_INVALID_MODULE_SYNTAX' });
 });
 
 test('a commented legacy anchor cannot receive a fake successful patch', () => {
@@ -114,5 +142,5 @@ test('a commented legacy anchor cannot receive a fake successful patch', () => {
 });
 
 test('malformed source cannot use an unrelated syntax error as evidence', () => {
-  assert.throws(() => prepareTelegramCrewLock(`${prepared}\nconst =;`), { code: 'ERR_INVALID_TYPESCRIPT_SYNTAX' });
+  assert.throws(() => prepareTelegramCrewLock(`${prepared}\nconst =;`), { code: 'CREWCHECK_INVALID_MODULE_SYNTAX' });
 });
