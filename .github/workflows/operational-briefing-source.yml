@@ -32,6 +32,8 @@ jobs:
           cache: npm
       - name: Validate tracked authenticated preview and existing auth semantics
         run: |
+          node --check server.mjs
+          node --test scripts/tests/v139-telegram-crewlock-preparation.test.mjs
           node scripts/p1-concierge-journey/compile.mjs
           node --check server/v139/common.mjs
           node --check server/platform.mjs
@@ -64,6 +66,8 @@ jobs:
       - name: Prepare production sources and repeat auth/briefing contracts
         run: |
           node scripts/v139/apply.mjs
+          node --check server.mjs
+          node --test scripts/tests/v139-telegram-crewlock-preparation.test.mjs
           node scripts/p1-concierge-journey/compile.mjs
           for zone in UTC America/Sao_Paulo Pacific/Honolulu; do
             TZ="$zone" node --test scripts/tests/operational-briefing.test.mjs scripts/tests/operational-briefing-source.test.mjs
@@ -99,13 +103,25 @@ jobs:
       - name: Repeat preparation as at build and startup
         run: |
           node scripts/v139/apply.mjs
+          node --check server.mjs
+          node --test scripts/tests/v139-telegram-crewlock-preparation.test.mjs
           node scripts/p1-concierge-journey/compile.mjs
           node --check server/platform.mjs
           node --check server/v139/common.mjs
           node --check server/concierge/operational-briefing-source.mjs
-          TZ=UTC node --test scripts/tests/operational-briefing.test.mjs scripts/tests/operational-briefing-source.test.mjs
+          for zone in UTC America/Sao_Paulo Pacific/Honolulu; do
+            TZ="$zone" node --test scripts/tests/operational-briefing.test.mjs scripts/tests/operational-briefing-source.test.mjs
+          done
           node scripts/regression-v139-requireidentity-backend-unavailable.mjs
           node scripts/regression-platform-requiremain-backend-unavailable.mjs
+      - name: Validate twice-prepared source against isolated MySQL
+        run: |
+          for zone in UTC America/Sao_Paulo Pacific/Honolulu; do
+            TZ="$zone" node scripts/regression-operational-briefing-source-mysql.mjs > "artifacts/briefing-source/twice-prepared-${zone//\//_}.json"
+          done
+        env:
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-briefing-preview-qa-socket/mysqld.sock
+          CREWCHECK_BRIEFING_QA: isolated-mysql
       - name: Remove only the isolated test container
         if: always()
         run: docker rm -f crewcheck-briefing-preview-qa || true
