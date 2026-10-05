@@ -29,7 +29,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
-      - run: node --test scripts/tests/v139-telegram-crewlock-preparation.test.mjs
+      - run: node --test scripts/tests/v139-telegram-crewlock-preparation.test.mjs scripts/tests/v1392-home-regulation-preparation.test.mjs
   read_only:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -45,7 +45,7 @@ jobs:
       - name: Validate tracked authenticated preview and existing auth semantics
         run: |
           node --check server.mjs
-          node --test scripts/tests/v139-telegram-crewlock-preparation.test.mjs
+          node --test scripts/tests/v139-telegram-crewlock-preparation.test.mjs scripts/tests/v1392-home-regulation-preparation.test.mjs
           node scripts/p1-concierge-journey/compile.mjs
           node --check server/v139/common.mjs
           node --check server/platform.mjs
@@ -79,8 +79,9 @@ jobs:
         run: |
           node scripts/v139/apply.mjs
           cp server.mjs artifacts/briefing-source/prepared-server.mjs
+          cp client/src/pages/Home.tsx artifacts/briefing-source/prepared-Home.tsx
           node --check server.mjs
-          node --test scripts/tests/v139-telegram-crewlock-preparation.test.mjs
+          node --test scripts/tests/v139-telegram-crewlock-preparation.test.mjs scripts/tests/v1392-home-regulation-preparation.test.mjs
           node scripts/p1-concierge-journey/compile.mjs
           for zone in UTC America/Sao_Paulo Pacific/Honolulu; do
             TZ="$zone" node --test scripts/tests/operational-briefing.test.mjs scripts/tests/operational-briefing-source.test.mjs
@@ -106,6 +107,7 @@ jobs:
         working-directory: baseline-preparation-check
         run: |
           node scripts/v139/apply.mjs > ../artifacts/briefing-source/baseline-first-prepare.log 2>&1
+          cp client/src/pages/Home.tsx ../artifacts/briefing-source/baseline-first-prepared-Home.tsx
           if node scripts/v139/apply.mjs > ../artifacts/briefing-source/baseline-second-prepare.log 2>&1; then
             printf '%s\n' 'baseline second preparation succeeded' > ../artifacts/briefing-source/baseline-rerun-status.txt
           else
@@ -116,7 +118,9 @@ jobs:
       - name: Record baseline rerun with only the generator correction
         run: |
           cmp server.mjs baseline-preparation-check/server.mjs
+          cmp artifacts/briefing-source/prepared-Home.tsx artifacts/briefing-source/baseline-first-prepared-Home.tsx
           cp scripts/v139/apply-core.mjs scripts/v139/telegram-crewlock-patch.mjs baseline-preparation-check/scripts/v139/
+          cp scripts/v1392/apply.mjs scripts/v1392/home-regulation-marker.mjs baseline-preparation-check/scripts/v1392/
           if (cd baseline-preparation-check && node scripts/v139/apply.mjs) > artifacts/briefing-source/baseline-generator-fixed-rerun.log 2>&1; then
             printf '%s\n' 'generator-corrected baseline second preparation succeeded' > artifacts/briefing-source/baseline-generator-fixed-status.txt
           else
@@ -128,7 +132,7 @@ jobs:
         run: |
           node scripts/v139/apply.mjs
           node --check server.mjs
-          node --test scripts/tests/v139-telegram-crewlock-preparation.test.mjs
+          node --test scripts/tests/v139-telegram-crewlock-preparation.test.mjs scripts/tests/v1392-home-regulation-preparation.test.mjs
           node scripts/p1-concierge-journey/compile.mjs
           node --check server/platform.mjs
           node --check server/v139/common.mjs
@@ -138,6 +142,12 @@ jobs:
           done
           node scripts/regression-v139-requireidentity-backend-unavailable.mjs
           node scripts/regression-platform-requiremain-backend-unavailable.mjs
+      - name: Verify repeated preparation preserves runtime and Home bytes
+        run: |
+          cmp artifacts/briefing-source/prepared-server.mjs server.mjs
+          cmp artifacts/briefing-source/prepared-Home.tsx client/src/pages/Home.tsx
+          npx tsc --noEmit
+          npx vite build
       - name: Validate twice-prepared source against isolated MySQL
         run: |
           for zone in UTC America/Sao_Paulo Pacific/Honolulu; do

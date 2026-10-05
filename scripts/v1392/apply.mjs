@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { requireHomeRegulationMarker } from './home-regulation-marker.mjs';
 
 const VERSION = '13.9.2';
 const NAME = 'crewcheck-v13-9-2-telegram-atis-regulation';
@@ -50,7 +51,7 @@ if (fs.existsSync('android-wrapper/app/build.gradle')) {
 requireMarker('server.mjs', "telegramApiUrl('sendVoice')");
 requireMarker('server.mjs', 'buildCrewCheckAtis');
 requireMarker('server.mjs', "allowed_updates: ['message', 'edited_message', 'callback_query']");
-requireMarker('client/src/pages/Home.tsx', "@/components/v1392/ManualRegulationView");
+requireHomeRegulationMarker(read('client/src/pages/Home.tsx'));
 requireMarker('client/src/components/v1392/ManualRegulationView.tsx', 'Extensão condicionada');
 requireMarker('server/v1391/emergency.mjs', 'emerg[êe]ncia');
 
