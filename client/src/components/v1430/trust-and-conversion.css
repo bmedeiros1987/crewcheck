@@ -61,3 +61,14 @@ html body .cz-app[data-version][data-view="weather"] {
 html:has(.cz-app[data-view="weather"]) {
   scroll-padding-bottom:calc(var(--cc-operational-nav-clearance,104px) + 24px);
 }
+
+/* The prepared mobile search row has no left inset. Match its right inset
+   and remove the legacy submit bleed so the input and action share a center. */
+@media (max-width:520px) {
+  html body .cz-app[data-version][data-view="weather"] .cc-weather-search label > .cc-weather-search-row-v14344 {
+    padding-right:0!important;
+  }
+  html body .cz-app[data-version][data-view="weather"] .cc-weather-search-row-v14344 > button[type="submit"] {
+    margin-inline:0;
+  }
+}
