@@ -56,6 +56,27 @@ const declarations = ast.statements.filter(node =>
   || (ts.isVariableStatement(node) && node.declarationList.declarations.some(decl => decl.name.getText(ast) === 'storage')));
 for (const name of names) assert.equal(declarations.filter(node => ts.isFunctionDeclaration(node) && node.name?.text === name).length, 1, `Actual prepared ${name} is required`);
 assert.ok(declarations.some(node => ts.isVariableStatement(node)), 'Use the actual local storage adapter');
+// Exercise the actual canonically prepared search form and its submit handler.
+// Deliberately omit WeatherView's data-fetching effects: loading and response
+// state are local fixtures, so this layout regression cannot contact an API.
+const weatherView = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'WeatherView');
+assert.ok(weatherView?.body, 'Actual prepared WeatherView is required');
+const searchDeclarations = weatherView.body.statements.filter(node => ts.isVariableStatement(node)
+  && node.declarationList.declarations.some(declaration => ['scheduled', '[query, setQuery]', '[activeQuery, setActiveQuery]', '[loading, setLoading]', 'search'].includes(declaration.name.getText(ast))));
+assert.equal(searchDeclarations.length, 5, 'Retain the real query state, loading state and submit handler');
+let searchForm;
+function collectSearchForm(node) {
+  if (ts.isJsxElement(node) && node.openingElement.tagName.getText(ast) === 'form'
+    && node.openingElement.attributes.properties.some(attribute => ts.isJsxAttribute(attribute) && attribute.name.text === 'className' && attribute.initializer?.text === 'cc-weather-search')) {
+    assert.ok(!searchForm, 'Only one weather search form is expected');
+    searchForm = node.getText(ast);
+  }
+  ts.forEachChild(node, collectSearchForm);
+}
+collectSearchForm(weatherView);
+assert.ok(searchForm?.includes('cc-weather-search-row-v14344'), 'Run canonical search-field preparation first');
+const searchSource = searchDeclarations.map(node => node.getText(ast)).join('\n');
+fs.writeFileSync(path.join(output, 'prepared-search-form.tsx'), searchSource + '\n' + searchForm);
 const componentSource = declarations.map(node => node.getText(ast)).join('\n');
 const iconImports = ast.statements.filter(node => ts.isImportDeclaration(node) && node.moduleSpecifier.text === 'lucide-react').map(node => node.getText(ast)).join('\n');
 assert.ok(iconImports, 'Use actual Home icon imports');
@@ -101,7 +122,7 @@ import {InternalHeaderFrame} from '@/components/navigation/InternalHeaderFrame';
 import {OperationalLayoutSafety} from '@/components/navigation/OperationalLayoutSafety';
 import {setCrewCheckThemePreference,getCrewCheckThemePreference,getEffectiveCrewCheckTheme} from '@/lib/themeRuntime';
 const getStoredUser = () => Object.freeze({id:'synthetic-weather-theme',plan:'premium',premium:true});
-const toast = {info:message=>window.weatherThemeToasts.push({type:'info',message}),success:message=>window.weatherThemeToasts.push({type:'success',message})};
+const toast = {error:message=>window.weatherThemeToasts.push({type:'error',message}),info:message=>window.weatherThemeToasts.push({type:'info',message}),success:message=>window.weatherThemeToasts.push({type:'success',message})};
 ${componentSource}
 const event = new URLSearchParams(location.search).has('empty') ? undefined : {id:'synthetic-weather-flight',kind:'flight',origin:'AAA',destination:'BBB'};
 window.weatherThemeToasts=[];
@@ -112,7 +133,13 @@ window.addEventListener('crewcheck:set-view',e=>window.weatherThemeNavigation.pu
 window.addEventListener('crewcheck:meteo-follow-updated',e=>window.weatherThemeFollowEvents.push(e.detail));
 window.applyWeatherTheme=setCrewCheckThemePreference;
 window.readWeatherTheme=()=>({preference:getCrewCheckThemePreference(),effective:getEffectiveCrewCheckTheme()});
-function App(){return <><main {...${JSON.stringify(rootProps)}}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back/></InternalHeaderFrame><MeteoFollowPanel event={event}/></main><BottomNav view="weather" setView={view=>window.weatherThemeNavigation.push(view)} openMenu={()=>window.weatherThemeNavigation.push('menu')}/></>}
+function WeatherSearchFixture(){
+  const event = {id:'synthetic-weather-search',origin:'AAA',destination:'BBB'};
+  ${searchSource}
+  useEffect(()=>{window.weatherSearchState={query,activeQuery,loading};window.weatherSearchSetLoading=setLoading;},[query,activeQuery,loading]);
+  return <section className="cc-weather-console">${searchForm}</section>;
+}
+function App(){return <><main {...${JSON.stringify(rootProps)}}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back/></InternalHeaderFrame><WeatherSearchFixture/><MeteoFollowPanel event={event}/></main><BottomNav view="weather" setView={view=>window.weatherThemeNavigation.push(view)} openMenu={()=>window.weatherThemeNavigation.push('menu')}/></>}
 createRoot(document.getElementById('root')).render(<App/>);
 `;
 await build({
@@ -147,6 +174,33 @@ const settle = async page => page.evaluate(async () => {
   await Promise.all(finite.map(animation => animation.finished.catch(() => {})));
   await frames();
 });
+
+async function inspectSearch(page, name, state = 'idle') {
+  const metrics = await page.locator('.cc-weather-search').evaluate(form => {
+    const row = form.querySelector('.cc-weather-search-row-v14344');
+    const input = form.querySelector('input'), button = form.querySelector('button[type="submit"]');
+    const bounds = element => { const r = element.getBoundingClientRect(); return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height,center:r.x+r.width/2}; };
+    const range = document.createRange(); range.selectNodeContents(button);
+    const label = range.getBoundingClientRect();
+    return {row:bounds(row),input:bounds(input),button:bounds(button),label:{x:label.x,right:label.right,y:label.y,bottom:label.bottom},stacked:matchMedia('(max-width:520px)').matches,
+      buttonText:button.textContent,disabled:button.disabled,focused:document.activeElement===button,
+      buttonOverflow:button.scrollWidth>button.clientWidth+1 || button.scrollHeight>button.clientHeight+1,
+      pageOverflow:document.documentElement.scrollWidth>innerWidth+1};
+  });
+  const issues = [];
+  if (metrics.stacked && Math.abs(metrics.button.center-metrics.row.center)>1) issues.push('Search submit is not centered in its row');
+  if (metrics.stacked && Math.abs(metrics.button.center-metrics.input.center)>1) issues.push('Search input and submit do not share a center');
+  for (const control of [metrics.input,metrics.button]) {
+    if (control.x<metrics.row.x-1 || control.right>metrics.row.right+1) issues.push('Search control outside row');
+    if (control.width<43.5 || control.height<43.5) issues.push('Search touch target below 44px');
+  }
+  if (metrics.stacked && metrics.button.y<metrics.input.bottom-1) issues.push('Search input and submit overlap');
+  if (metrics.label.x<metrics.button.x-1 || metrics.label.right>metrics.button.right+1 || metrics.label.y<metrics.button.y-1 || metrics.label.bottom>metrics.button.bottom+1 || metrics.buttonOverflow) issues.push('Search submit label clipped');
+  if (metrics.pageOverflow) issues.push('Search page overflow');
+  fs.writeFileSync(path.join(output, `${name}-search-${state}.json`), JSON.stringify({...metrics,issues},null,2));
+  failures.push(...issues.map(issue=>`${name} ${state}: ${issue}`));
+  return metrics;
+}
 
 async function inspect(page, name, preference, effective, favoriteCount, session, empty) {
   await page.waitForFunction(({ preference, effective }) => {
@@ -251,6 +305,7 @@ async function inspect(page, name, preference, effective, favoriteCount, session
     probe.remove();
     return { effective, session: window.weatherThemeSession, preference: window.readWeatherTheme(), texts, surfaces, tabs, controls, panel: rect(panel), nav: rect(nav), navOverflow: nav.scrollWidth > nav.clientWidth + 1, pageOverflow: document.documentElement.scrollWidth > innerWidth + 1, expectedSurface, actualSurface: getComputedStyle(panel).backgroundColor, panelImage: getComputedStyle(panel).backgroundImage, overrideRules: rules, selectedHours: [...panel.querySelectorAll('select')].map(element => element.value), favoriteStorage: localStorage.getItem('crewcheck_meteo_favorites_v1'), followStorage: localStorage.getItem('crewcheck_meteo_follow_v1') };
   }, { effective, publicFontStylesheets });
+  const searchMetrics = await inspectSearch(page, name);
   const issues = [];
   const check = (condition, message) => { if (!condition) issues.push(message); };
   assert.equal(metrics.session, session, `${name}: theme changes must retain the same document/session`);
@@ -277,6 +332,8 @@ async function inspect(page, name, preference, effective, favoriteCount, session
     check(control.height >= 43.5 && control.width >= 43.5, `Touch target below 44px: ${control.text} (${control.width.toFixed(1)}×${control.height.toFixed(1)})`);
     check(control.x >= metrics.panel.x - 1 && control.right <= metrics.panel.right + 1, `Control outside panel: ${control.text}`);
   }
+  await page.locator('.cc-weather-search').screenshot({path:path.join(output, `${name}-search.png`),animations:'disabled'});
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: path.join(output, `${name}.png`), animations: 'disabled', fullPage: true });
   await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight));
   await settle(page);
@@ -286,7 +343,7 @@ async function inspect(page, name, preference, effective, favoriteCount, session
   check(Boolean(last && bottomNav && last.y >= 0 && last.y + last.height <= bottomNav.y - 4 && last.y + last.height <= scroll.height), 'Last follow control cannot scroll clear of actual fixed bottom navigation');
   metrics.footer = { lastAction: last, bottomNav, scroll };
   if (scroll.y > 0 || issues.length) await page.screenshot({ path: path.join(output, `${name}-scrolled.png`), animations: 'disabled' });
-  fs.writeFileSync(path.join(output, `${name}-metrics.json`), JSON.stringify({ ...metrics, issues }, null, 2));
+  fs.writeFileSync(path.join(output, `${name}-metrics.json`), JSON.stringify({ ...metrics, searchMetrics, issues }, null, 2));
   if (issues.length) fs.writeFileSync(path.join(output, `${name}.html`), await page.content());
   results.push({ name, preference, effective, favoriteCount, empty: Boolean(empty), minimumContrast: Math.min(...metrics.texts.map(item => item.minimumContrast)), issues, metricsFile: `${name}-metrics.json` });
   failures.push(...issues.map(issue => `${name}: ${issue}`));
@@ -372,6 +429,34 @@ try {
           await inspect(page, `${name}-system-dark`, 'system', 'dark', favoriteCount, session, viewport.empty);
           await page.emulateMedia({ colorScheme: 'light' });
           await inspect(page, `${name}-system-light-return`, 'system', 'light', favoriteCount, session, viewport.empty);
+          const searchInput = page.locator('.cc-weather-search input');
+          const searchButton = page.locator('.cc-weather-search button[type="submit"]');
+          await searchInput.focus();
+          await page.keyboard.press('Tab');
+          assert.ok(await searchButton.evaluate(button=>document.activeElement===button), `${name}: search submit is keyboard reachable`);
+          await inspectSearch(page,name,'focused');
+          await searchInput.fill('ccc;ddd');
+          await searchButton.click();
+          await page.waitForFunction(()=>window.weatherSearchState?.activeQuery==='CCC, DDD');
+          assert.equal(await searchInput.inputValue(),'CCC, DDD','Actual submit handler normalizes the query');
+          await searchButton.click();
+          assert.equal(await page.evaluate(()=>window.weatherSearchState.activeQuery),'CCC, DDD','Repeated submit retains query');
+          await page.evaluate(()=>window.weatherSearchSetLoading(true));
+          await page.waitForFunction(()=>document.querySelector('.cc-weather-search button[type="submit"]')?.textContent==='Consultando…');
+          assert.ok(await searchButton.isDisabled(),'Actual loading state disables submit');
+          await inspectSearch(page,name,'loading');
+          await page.evaluate(()=>window.weatherSearchSetLoading(false));
+          await page.waitForFunction(()=>document.querySelector('.cc-weather-search button[type="submit"]')?.textContent==='Pesquisar');
+          await searchButton.scrollIntoViewIfNeeded();
+          const searchBox=await searchButton.boundingBox();
+          await page.mouse.move(searchBox.x+searchBox.width/2,searchBox.y+searchBox.height/2);
+          await page.mouse.down();
+          await inspectSearch(page,name,'pressed');
+          await page.mouse.up();
+          await searchInput.fill('eee');
+          await searchInput.press('Enter');
+          await page.waitForFunction(()=>window.weatherSearchState?.activeQuery==='EEE');
+          assert.equal(await searchInput.inputValue(),'EEE','Enter submits the actual form');
           if (favoriteCount === 0 && !viewport.empty) {
             const first = page.locator('.cc-meteo-airports article').first();
             await first.getByRole('button', { name: '☆ Favoritar', exact: true }).click();
@@ -404,7 +489,7 @@ try {
   }
   assert.equal(results.length, expectedCases, 'Complete Chromium/WebKit, viewport, favorite count, theme-transition matrix');
   assert.equal(interactions.length, 2 * viewports.filter(viewport => !viewport.empty).length, 'Favorite add/remove exercised in both engines at every populated viewport');
-  if (baseline) assert.ok(failures.some(failure => /contrast |mixed .* surface|Clipped tab|Horizontal page\/tab overflow/.test(failure)), 'Baseline must reproduce a real visual regression, not just lack the new CSS rule');
+  if (baseline) assert.ok(failures.some(failure => /contrast |mixed .* surface|Clipped tab|Horizontal page\/tab overflow|Search submit is not centered|Search input and submit do not share a center/.test(failure)), 'Baseline must reproduce a real visual regression, not just lack the new CSS rule');
   else assert.deepEqual(failures, [], 'Production weather theme/layout regression');
 } catch (error) {
   executionError = error.stack || String(error);
@@ -416,7 +501,7 @@ try {
     mode: baseline ? 'baseline-negative-control' : 'production-candidate', commit,
     status: executionError ? 'failed' : baseline ? 'expected-regression-observed' : 'passed',
     executionError, expectedCases, completedCases: results.length,
-    scope: 'Actual prepared MeteoFollowPanel/crewcheckPlanExperience/storage/Brand/BottomNav, actual themeRuntime and full linked Vite CSS. Synthetic premium account, AAA/BBB event, prior active status, and local-only favorites. Count-20 repeats synthetic codes solely to test the tab label. Includes 320px with all rendered computed font sizes doubled, and no-event empty state. No follow activation, backend or notification delivery. Only the exact existing Google Fonts Inter stylesheet and its fonts.gstatic.com/s/inter/vN/*.woff2 assets may be read externally; font reads are recorded. CSS gradient contrast uses conservative stop/intermediate samples; candidate panel must use a solid theme surface. Physical devices, nonzero safe-area insets and full-page WeatherView/API integration are not claimed.',
+    scope: 'Actual prepared MeteoFollowPanel/crewcheckPlanExperience/storage/Brand/BottomNav, actual themeRuntime and full linked Vite CSS. Synthetic premium account, AAA/BBB event, prior active status, and local-only favorites. Count-20 repeats synthetic codes solely to test the tab label. Includes 320px with all rendered computed font sizes doubled, and no-event empty state. No follow activation, backend or notification delivery. Only the exact existing Google Fonts Inter stylesheet and its fonts.gstatic.com/s/inter/vN/*.woff2 assets may be read externally; font reads are recorded. CSS gradient contrast uses conservative stop/intermediate samples; candidate panel must use a solid theme surface. The actual prepared WeatherView search form, query/loading state and submit handler are rendered in the existing weather console wrapper before the follow panel, with a synthetic event and controlled loading; WeatherView fetch effects are intentionally omitted. Search geometry is measured in every theme plus keyboard focus, press and loading states; click, repeat and Enter use its real submit handler. Physical devices, nonzero safe-area insets and full-page WeatherView/API integration are not claimed.',
     preparedComponentsSha256: createHash('sha256').update(componentSource).digest('hex'),
     stylesheetAssets: cssFiles.map(file => ({ path: path.relative(dist, file), sha256: createHash('sha256').update(fs.readFileSync(file)).digest('hex') })),
     results, interactions, safety, failures,
