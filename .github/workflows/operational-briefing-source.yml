@@ -97,6 +97,64 @@ jobs:
         env:
           CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-briefing-preview-qa-socket/mysqld.sock
           CREWCHECK_BRIEFING_QA: isolated-mysql
+      - name: Repeat only preview-affecting finalizers and canonical compilation
+        run: |
+          sha256sum server.mjs server/platform.mjs server/v139/common.mjs server/concierge/operational-briefing.mjs server/concierge/operational-briefing-source.mjs server/concierge/journey-programs.mjs client/src/pages/Home.tsx client/src/lib/canonicalRoster.ts client/src/lib/rosterContinuity.ts client/src/lib/rosterPublicationReview.ts > artifacts/briefing-source/scoped-before.sha
+          find server/concierge/generated -type f -print0 | sort -z | xargs -0 sha256sum >> artifacts/briefing-source/scoped-before.sha
+          for attempt in 1 2; do
+            node scripts/p0-active-roster-server/apply.mjs
+            node scripts/p1-concierge-journey/apply.mjs
+            node scripts/p1-concierge-journey/compile.mjs
+            sha256sum -c artifacts/briefing-source/scoped-before.sha > "artifacts/briefing-source/scoped-repeat-${attempt}.log"
+          done
+          node --check server.mjs
+          node --test scripts/tests/v139-telegram-crewlock-preparation.test.mjs scripts/tests/v1392-home-regulation-preparation.test.mjs
+          for zone in UTC America/Sao_Paulo Pacific/Honolulu; do
+            TZ="$zone" node --test scripts/tests/operational-briefing.test.mjs scripts/tests/operational-briefing-source.test.mjs
+          done
+          node scripts/regression-v139-requireidentity-backend-unavailable.mjs
+          node scripts/regression-platform-requiremain-backend-unavailable.mjs
+          node scripts/regression-concierge-journey-programs.mjs
+      - name: Validate scoped-repeat source and repeat reads against isolated MySQL
+        run: |
+          for zone in UTC America/Sao_Paulo Pacific/Honolulu; do
+            TZ="$zone" node scripts/regression-operational-briefing-source-mysql.mjs > "artifacts/briefing-source/scoped-repeat-${zone//\//_}.json"
+          done
+        env:
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-briefing-preview-qa-socket/mysqld.sock
+          CREWCHECK_BRIEFING_QA: isolated-mysql
+      - name: Typecheck and build the validated prepared sources
+        run: |
+          npx tsc --noEmit
+          npx vite build
+      - name: Remove only the isolated test container
+        if: always()
+        run: docker rm -f crewcheck-briefing-preview-qa || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: briefing-source-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/briefing-source
+  full_lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare the clean candidate once for package-lifecycle diagnosis
+        run: |
+          mkdir -p artifacts/briefing-source
+          node scripts/v139/apply.mjs
+          node scripts/p1-concierge-journey/compile.mjs
+          cp server.mjs artifacts/briefing-source/prepared-server.mjs
+          cp client/src/pages/Home.tsx artifacts/briefing-source/prepared-Home.tsx
       - name: Read unchanged main baseline for preparation diagnosis
         uses: actions/checkout@v6
         with:
@@ -128,9 +186,9 @@ jobs:
             printf '%s\n' "generator-corrected baseline second preparation exited $baseline_status" > artifacts/briefing-source/baseline-generator-fixed-status.txt
             cat artifacts/briefing-source/baseline-generator-fixed-rerun.log
           fi
-      - name: Repeat preparation as at build and startup
+      - name: Full-chain repeat required by npm build followed by npm start
         run: |
-          node scripts/v139/apply.mjs
+          node scripts/v139/apply.mjs 2>&1 | tee artifacts/briefing-source/candidate-second-prepare.log
           node --check server.mjs
           node --test scripts/tests/v139-telegram-crewlock-preparation.test.mjs scripts/tests/v1392-home-regulation-preparation.test.mjs
           node scripts/p1-concierge-journey/compile.mjs
@@ -148,6 +206,16 @@ jobs:
           cmp artifacts/briefing-source/prepared-Home.tsx client/src/pages/Home.tsx
           npx tsc --noEmit
           npx vite build
+      - name: Start isolated synthetic MySQL without network or ports
+        run: |
+          mkdir -p /tmp/crewcheck-briefing-preview-qa-socket
+          docker run --detach --rm --name crewcheck-briefing-preview-qa --network none --mount type=bind,source=/tmp/crewcheck-briefing-preview-qa-socket,target=/var/run/mysqld --env MYSQL_ALLOW_EMPTY_PASSWORD=yes --env MYSQL_DATABASE=crewcheck_briefing_preview_qa mysql:8.4
+          for attempt in $(seq 1 60); do
+            if docker logs crewcheck-briefing-preview-qa 2>&1 | grep -q 'MySQL init process done' && docker exec crewcheck-briefing-preview-qa mysql --database=crewcheck_briefing_preview_qa --execute='SELECT 1'; then break; fi
+            sleep 1
+          done
+          docker exec crewcheck-briefing-preview-qa mysql --database=crewcheck_briefing_preview_qa --execute='SELECT 1'
+          docker exec crewcheck-briefing-preview-qa chmod 755 /var/run/mysqld
       - name: Validate twice-prepared source against isolated MySQL
         run: |
           for zone in UTC America/Sao_Paulo Pacific/Honolulu; do
@@ -162,5 +230,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: briefing-source-${{ github.event.pull_request.head.sha || github.sha }}
+          name: briefing-lifecycle-${{ github.event.pull_request.head.sha || github.sha }}
           path: artifacts/briefing-source

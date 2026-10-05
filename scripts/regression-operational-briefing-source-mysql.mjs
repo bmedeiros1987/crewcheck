@@ -19,6 +19,9 @@ const roster = { year: 2099, month: 10, base: 'AAA', rank: 'CCM', rawText: '', d
   dutyReport: '05:00', dutyDebrief: '08:35', legs: [{ flightNumber: 'SYNTH-ONE', origin: 'AAA', destination: 'BBB', departureTime: '06:00', arrivalTime: '08:00', workType: 'OP' }],
 }] };
 const passed = [], queries = [];
+const externalAttempts = [];
+const previousFetch = globalThis.fetch;
+globalThis.fetch = async () => { externalAttempts.push('fetch'); throw new Error('External requests are forbidden in isolated briefing QA'); };
 const readOnlyDb = { query: async (sql, values) => {
   assert.equal(typeof sql, 'string'); assert.match(sql, /^SELECT\s/); queries.push({ sql, values });
   return pool.query(sql, values);
@@ -49,6 +52,27 @@ try {
     assert.equal(queries.length, 2); assert(queries.every(item => /^SELECT\s/.test(item.sql)));
     assert(!JSON.stringify(result.body).includes(EMAIL)); assert(!JSON.stringify(result.body).includes(ID));
     assert.equal(result.body.briefing.weather.every(item => item.state === 'unavailable'), true);
+  });
+  await run('repeated authenticated previews are identical and leave the same database state unchanged', async () => {
+    await reset();
+    const snapshot = async () => {
+      const [profiles] = await pool.query('SELECT * FROM crewcheck_platform_profiles ORDER BY email');
+      const [rosters] = await pool.query('SELECT * FROM crewcheck_platform_rosters ORDER BY id');
+      return JSON.stringify({ profiles, rosters });
+    };
+    const before = await snapshot();
+    const first = await read();
+    assert.equal(first.status, 200); assert.equal(queries.length, 2);
+    const firstQueries = queries.slice();
+    // Do not reset, change the clock, or reuse the already-authenticated context.
+    const second = await read();
+    assert.deepEqual(second, first);
+    assert.deepEqual(second.body.source.contentDigest, first.body.source.contentDigest);
+    assert.equal(queries.length, 4);
+    assert.deepEqual(queries.slice(2), firstQueries);
+    assert(queries.every(item => /^SELECT\s/.test(item.sql)));
+    assert.equal(await snapshot(), before);
+    assert.deepEqual(externalAttempts, []);
   });
   await run('full-content digest survives real JSON key normalization and changes beyond legacy fingerprint fields', async () => {
     await reset(); const first = await read();
@@ -93,5 +117,6 @@ try {
     const result = await read(context); assert.equal(result.status, 503); assert.equal(result.body.code, 'DATABASE_OFFLINE');
     assert(!JSON.stringify(result.body).includes('ER_NO_SUCH_TABLE'));
   });
-  console.log(JSON.stringify({ ok: true, database: 'isolated-mysql-8.4', timezone: process.env.TZ || 'default', count: passed.length, passed, realExternalSends: 0, productionDatabaseAccess: false }, null, 2));
-} finally { await pool.end(); }
+  assert.deepEqual(externalAttempts, []);
+  console.log(JSON.stringify({ ok: true, database: 'isolated-mysql-8.4', timezone: process.env.TZ || 'default', count: passed.length, passed, realExternalSends: 0, externalRequestAttempts: externalAttempts.length, productionDatabaseAccess: false }, null, 2));
+} finally { globalThis.fetch = previousFetch; await pool.end(); }
