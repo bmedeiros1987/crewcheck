@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
 import { decorateConciergeReply as decorate, conciergeHumorContext, conciergeHumorSensitive } from '../server/v14336/concierge-personality.mjs';
+import { conciergeFormatTextV14354 as numeric } from '../server/v14354/concierge-language.mjs';
 import { buildProgramSummary } from '../server/v1404/telegram-language.mjs';
 
 // Synthetic itineraries only. No account, network, notification or TTS request.
@@ -46,9 +47,9 @@ test('missing, conflicting, stale-account and ambiguous route context stays neut
   for (const date of ['2026-10-07', '07/10/2026', '07/10']) assert.equal(conciergeHumorContext(`${date}\n${render(record)}`, { roster: { base: 'BSB' }, records: [record] }), null);
   for (const date of ['2026-10-05', '05/10/2026', '05/10']) assert.equal(conciergeHumorContext(`${date}\n${render(record)}`, { roster: { base: 'BSB' }, records: [record] }).kind, 'return');
   const reordered = program(['GRU', 'BSB', 'CNF']);
-  const wrongClocks = render(reordered).replace('23 horas', '2 horas').replace('1 hora.', '3 horas.');
+  const wrongClocks = numeric(render(reordered)).replace('23:00', '02:00').replace('01:00', '03:00');
   assert.equal(conciergeHumorContext(wrongClocks, { roster: { base: 'BSB' }, records: [reordered] }), null, 'times elsewhere cannot support a leg');
-  const swapped = render(record).replace('23 horas', 'TEMP').replace('1 hora.', '23 horas.').replace('TEMP', '1 hora');
+  const swapped = numeric(render(record)).replace('23:00', 'TEMP').replace('01:00', '23:00').replace('TEMP', '01:00');
   assert.equal(conciergeHumorContext(swapped, { roster: { base: 'BSB' }, records: [record] }), null, 'departure and arrival roles cannot be swapped');
   const gol = program(); gol.legs[0].flightNumber = 'G30012';
   assert.equal(run(gol).humorApplied, true, 'two-character airline identifiers can include digits');
@@ -81,6 +82,8 @@ async function runtime({ days = [], query = '/proximo', dateKey = '', care = tru
   const saved = [];
   const context = {
     Date: class extends Date { constructor(...args) { super(...(args.length ? args : [clock])); } }, Intl,
+    pharmacyReferenceReply: async () => ({ handled: false }),
+    conciergeLoadSnapshot: () => null, conciergeStayRecords: () => [], conciergeLocationContextV14335: () => ({ fresh: false }),
     conciergePreferenceCommandV14336: async () => ({ handled: false }),
     conciergeSemanticInputContextV14338: () => null,
     interpretConciergeNaturalTextV14338: () => ({ intent: 'next', dateKey }),
@@ -106,7 +109,11 @@ async function runtime({ days = [], query = '/proximo', dateKey = '', care = tru
     vm.runInContext(`${declaration}\nthis.careSource = serverCareFunctions;`, context);
     vm.runInContext(context.careSource, context);
   }
-  vm.runInContext(`${wrapper}\nthis.run = buildTelegramConciergeReply;`, context);
+  const start = serverSource.indexOf('async function buildTelegramConciergeReply(');
+  const end = serverSource.indexOf('async function buildTelegramConciergeReplyCore(', start);
+  const actualWrapper = process.env.CREWCHECK_TEST_PREPARED === '1' ? serverSource.slice(start, end) : wrapper;
+  assert.ok(actualWrapper.includes('records: conciergeProgramRecords'), 'execute final contextual wrapper');
+  vm.runInContext(`${actualWrapper}\nthis.run = buildTelegramConciergeReply;`, context);
   const result = await context.run(query, { email: 'synthetic@example.invalid', channel: 'app' }, { roster: { base, days } });
   return { result, options, saved };
 }
@@ -146,6 +153,11 @@ test('canonical wrapper owner keeps contextual arguments, and prepared actual se
   assert.equal(prepare(first), first, 'exact existing wrapper materializer is byte-idempotent');
   if (process.env.CREWCHECK_TEST_PREPARED === '1') {
     const server = fs.readFileSync('server.mjs', 'utf8');
-    assert.ok(server.includes(wrapper.trim()), 'final prepared runtime must preserve the exact owner wrapper');
+    const contextualBlock = wrapper.slice(wrapper.indexOf('  const decorated ='), wrapper.indexOf('  if (decorated.humorApplied)'));
+    assert.ok(contextualBlock.includes('suppressHumor:'));
+    assert.ok(server.includes(contextualBlock), 'final prepared runtime must preserve the exact contextual authority block');
+    // The existing POI materializer legitimately adds an early lookup to this
+    // wrapper. Its surrounding composition is exercised by runtime() above.
+    assert.match(server, /const poi = await pharmacyReferenceReply/);
   }
 });

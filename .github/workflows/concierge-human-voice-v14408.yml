@@ -50,12 +50,20 @@ permissions:
 jobs:
   concierge-human-voice:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Install test dependencies
+        run: npm ci
+      - name: Validate canonical journey before preparation
+        env:
+          CREWCHECK_CANONICAL_PARITY: '1'
+        run: node scripts/regression-concierge-journey-programs.mjs
       - name: Validate natural language before preparation
         run: |
           node scripts/regression-concierge-program-wording.mjs
@@ -63,8 +71,8 @@ jobs:
           node scripts/regression-concierge-contextual-humor.mjs
           node scripts/regression-concierge-clock-format.mjs
           node scripts/regression-v14-3-15-concierge-easter-eggs.mjs
-      - name: Prepare canonical source
-        run: node scripts/v139/apply.mjs
+      - name: Build and prepare canonical source
+        run: npm run build
       - name: Validate natural language after preparation
         env:
           CREWCHECK_TEST_PREPARED: '1'
@@ -80,3 +88,12 @@ jobs:
       - name: Validate scoped pharmacy references without live APIs
         run: node scripts/regression-concierge-pharmacy-reference.mjs
 
+
+      - name: Validate prepared journey and TypeScript
+        env:
+          CREWCHECK_CANONICAL_PARITY: '1'
+        run: |
+          node scripts/regression-concierge-journey-programs.mjs
+          node scripts/regression-p0-canonical-midnight-presentation.mjs
+          node scripts/regression-p0-530-journey-rest-cleanroom.mjs
+          npx tsc --noEmit

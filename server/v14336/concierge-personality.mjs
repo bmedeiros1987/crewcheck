@@ -1,4 +1,4 @@
-import { airportName } from '../v1403/telegram-human.mjs';
+import { buildProgramSummary } from '../v1404/telegram-language.mjs';
 import { conciergeFormatTextV14354 } from '../v14354/concierge-language.mjs';
 import {
   normalizeElevenLabsVoiceProfileV14348,
@@ -86,13 +86,14 @@ export function conciergeHumorContext(reply = '', { roster = {}, records = [] } 
     return legs.every((leg, index) => {
       const flight = String(leg?.flightNumber || '').trim().toUpperCase().replace(/\s+/g, '');
       const line = String(reply).split('\n').find((value) => value.includes(`${flight}:`) || value.includes(`${flight} ·`)) || '';
-      const place = (code) => airportName(code).replace(/^aeroporto\s+(?:d[aeo]\s+)?/i, '').trim();
-      const originPhrase = leg.origin === 'REC' ? `do ${place(leg.origin)}` : `de ${place(leg.origin)}`;
+      // Reuse the current renderer: canonical preparation can expand airport
+      // names (e.g. Guarulhos to São Paulo — Guarulhos). No parallel catalog.
+      const expectedLine = buildProgramSummary({ record: { ...record, legs: [leg] }, includeGreeting: false }).split('\n').at(-1);
       const numericLine = conciergeFormatTextV14354(line);
       const departureIndex = numericLine.indexOf(String(leg.departureTime));
       const arrivalIndex = numericLine.indexOf(String(leg.arrivalTime), departureIndex + String(leg.departureTime).length);
       const routeMatches = (line.includes(`${leg.origin} → ${leg.destination}`) && departureIndex >= 0 && arrivalIndex > departureIndex)
-        || numericLine.includes(`saída ${originPhrase} às ${leg.departureTime}; chegada em ${place(leg.destination)} às ${leg.arrivalTime}`);
+        || numericLine === conciergeFormatTextV14354(expectedLine);
       return routeMatches && flight === flights[index]
         && /^[A-Z]{3}$/.test(String(leg.origin || '')) && /^[A-Z]{3}$/.test(String(leg.destination || ''))
         && (!index || legs[index - 1].destination === leg.origin)
