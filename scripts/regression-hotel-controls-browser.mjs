@@ -84,7 +84,9 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 async function settle(page) { await page.evaluate(async () => { await document.fonts.ready; await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); }); }
 async function inspect(page, name) {
-  const select = page.getByLabel('Pernoite que deseja atualizar', { exact: true });
+  await page.screenshot({ path: path.join(output, `${name}-before-selection.png`), animations: 'disabled' });
+  fs.writeFileSync(path.join(output, `${name}-before-selection.html`), await page.content());
+  const select = page.getByRole('combobox', { name: 'Pernoite que deseja atualizar', exact: true });
   await select.selectOption('manual');
   await select.evaluate(el => el.scrollIntoView({ block: 'center' }));
   await select.focus();
