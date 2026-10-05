@@ -1,0 +1,70 @@
+name: Weather theme browser
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/components/v1430/trust-and-conversion.css'
+      - 'client/src/styles/**'
+      - 'client/src/theme-v14-3-17.css'
+      - 'client/src/lib/themeRuntime.ts'
+      - 'client/src/main.tsx'
+      - 'client/src/components/navigation/OperationalLayoutSafety.tsx'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v1430/**'
+      - 'scripts/finalize-theme-runtime.mjs'
+      - 'scripts/regression-weather-theme-browser.mjs'
+      - '.github/workflows/weather-theme-browser.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weather-theme-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  weather-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Check raw TypeScript
+        run: npx tsc --noEmit
+      - name: Prepare once and preserve the weather stylesheet
+        run: |
+          sha256sum client/src/components/v1430/trust-and-conversion.css > "$RUNNER_TEMP/weather-css.sha256"
+          node scripts/v139/apply.mjs
+          sha256sum -c "$RUNNER_TEMP/weather-css.sha256"
+      - name: Check prepared theme and build shipping CSS
+        run: |
+          node scripts/regression-p1-theme-runtime-unification.mjs
+          npx tsc --noEmit
+          node scripts/p1-concierge-journey/compile.mjs
+          npx vite build
+      - name: Install isolated browser test dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/weather-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/weather-browser/node_modules/playwright/cli.js" install --with-deps chromium webkit
+      - name: Verify weather contrast, theme changes and mobile controls
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/weather-browser/package.json
+        run: node scripts/regression-weather-theme-browser.mjs
+      - name: Save synthetic weather viewport evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-weather-theme-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/weather-theme
+          if-no-files-found: warn
+          retention-days: 7
