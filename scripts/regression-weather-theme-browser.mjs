@@ -11,7 +11,7 @@ import { build } from 'esbuild';
 // Run after canonical preparation AND the production Vite build, from repo root.
 // This renders the actual prepared declarations, navigation and shipped CSS.
 // Only account/event/local preference fixtures and toast reporting are synthetic.
-// No follow control is clicked; network/API/notification attempts are forbidden.
+// No follow control is clicked; backend/API/notification attempts are forbidden; public Inter font reads are allowlisted.
 // --baseline runs the same assertions against an unfixed production build and
 // succeeds only if a visual regression is observed. It never certifies a fix.
 // WEATHER_THEME_DIST can select an existing baseline dist without injecting CSS.
@@ -65,13 +65,25 @@ fs.copyFileSync(sourceCss, path.join(output, 'source.css'));
 const productionIndex = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
 const stylesheetTags = [...productionIndex.matchAll(/<link\b[^>]*>/gi)].map(match => match[0]).filter(tag => /\brel=["']stylesheet["']/i.test(tag));
 assert.ok(stylesheetTags.length, 'Use real production stylesheets, not a hand-authored test stylesheet');
-const cssFiles = stylesheetTags.map(tag => {
-  const href = tag.match(/\bhref=["']([^"']+)["']/i)?.[1];
-  assert.ok(href && !/^(?:https?:)?\/\//.test(href), 'Production CSS must be a local build artifact');
+const publicFontStylesheets = [];
+const cssFiles = stylesheetTags.flatMap(tag => {
+  const href = tag.match(/\bhref=["']([^"']+)["']/i)?.[1]?.replaceAll('&amp;', '&');
+  assert.ok(href, 'Production stylesheet href is required');
+  if (/^(?:https?:)?\/\//.test(href)) {
+    const url = new URL(href);
+    assert.equal(url.origin, 'https://fonts.googleapis.com', 'Only the existing public font stylesheet may be external');
+    assert.equal(url.pathname, '/css2');
+    assert.equal(url.searchParams.get('family'), 'Inter:wght@400;500;600;700;800;900');
+    assert.equal(url.searchParams.get('display'), 'swap');
+    assert.deepEqual([...url.searchParams.keys()].sort(), ['display', 'family']);
+    publicFontStylesheets.push(url.href);
+    return [];
+  }
   const file = path.resolve(dist, href.split(/[?#]/)[0].replace(/^\//, ''));
   assert.ok(file.startsWith(dist + path.sep) && fs.existsSync(file), `Production stylesheet exists: ${href}`);
-  return file;
+  return [file];
 });
+assert.ok(cssFiles.length, 'Require linked local application CSS');
 const shippedCss = cssFiles.map(file => fs.readFileSync(file, 'utf8')).join('\n');
 const overridePattern = /html\s+body\s+\.cz-app\[data-version\]\s+\.cc-meteo-follow\s*\{[^}]*background(?:-color)?\s*:\s*var\(--cc-review-surface\s*[,)]/;
 if (!baseline) {
@@ -138,7 +150,7 @@ async function inspect(page, name, preference, effective, favoriteCount, session
   }, { preference, effective });
   await page.evaluate(() => window.scrollTo(0, 0));
   await settle(page);
-  const metrics = await page.locator('.cc-meteo-follow').evaluate((panel, { effective }) => {
+  const metrics = await page.locator('.cc-meteo-follow').evaluate((panel, { effective, publicFontStylesheets }) => {
     const context = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
     if (!context) throw new Error('Canvas color parser is unavailable');
     const rgba = value => {
@@ -209,14 +221,18 @@ async function inspect(page, name, preference, effective, favoriteCount, session
     const controls = [...panel.querySelectorAll('button,select')].filter(visible).map(element => ({ text: element.getAttribute('aria-label') || text(element), clientWidth: element.clientWidth, scrollWidth: element.scrollWidth, clientHeight: element.clientHeight, scrollHeight: element.scrollHeight, ...rect(element) }));
     const rules = [];
     const scanRules = list => { for (const rule of list) { if (rule.cssRules) scanRules(rule.cssRules); if (rule.selectorText && /html\s+body\s+\.cz-app\[data-version\]\s+\.cc-meteo-follow(?:\s*,|$)/.test(rule.selectorText) && /var\(--cc-review-surface\s*[,)]/.test(rule.style?.getPropertyValue('background') || rule.style?.getPropertyValue('background-color') || '')) rules.push(rule.cssText); } };
-    for (const sheet of document.styleSheets) scanRules(sheet.cssRules);
+    for (const sheet of document.styleSheets) {
+      try { scanRules(sheet.cssRules); } catch (error) {
+        if (error.name !== 'SecurityError' || !publicFontStylesheets.includes(sheet.href)) throw error;
+      }
+    }
     const probe = document.createElement('i');
     probe.style.cssText = 'display:none;background:var(--cc-review-surface,var(--cc-surface));';
     panel.appendChild(probe);
     const expectedSurface = getComputedStyle(probe).backgroundColor;
     probe.remove();
     return { effective, session: window.weatherThemeSession, preference: window.readWeatherTheme(), texts, surfaces, tabs, controls, panel: rect(panel), nav: rect(nav), navOverflow: nav.scrollWidth > nav.clientWidth + 1, pageOverflow: document.documentElement.scrollWidth > innerWidth + 1, expectedSurface, actualSurface: getComputedStyle(panel).backgroundColor, panelImage: getComputedStyle(panel).backgroundImage, overrideRules: rules, selectedHours: [...panel.querySelectorAll('select')].map(element => element.value), favoriteStorage: localStorage.getItem('crewcheck_meteo_favorites_v1'), followStorage: localStorage.getItem('crewcheck_meteo_follow_v1') };
-  }, { effective });
+  }, { effective, publicFontStylesheets });
   const issues = [];
   const check = (condition, message) => { if (!condition) issues.push(message); };
   assert.equal(metrics.session, session, `${name}: theme changes must retain the same document/session`);
@@ -266,7 +282,7 @@ try {
       for (const viewport of viewports) for (const favoriteCount of viewport.empty ? [0] : [0, 20]) {
         const name = `${engine}-${viewport.width}x${viewport.height}-favorites-${favoriteCount}${viewport.textScale ? '-text-200' : ''}${viewport.empty ? '-empty' : ''}`;
         const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, isMobile: viewport.width <= 430, hasTouch: viewport.width <= 768, colorScheme: 'dark', reducedMotion: 'reduce', serviceWorkers: 'block' });
-        const pageErrors = [], forbiddenRequests = [];
+        const pageErrors = [], forbiddenRequests = [], publicFontRequests = [];
         let page;
         try {
           await context.addInitScript(({ favoriteCount }) => {
@@ -294,6 +310,9 @@ try {
           }, { favoriteCount });
           await context.route('**/*', route => {
             const request = route.request(), url = new URL(request.url());
+            const fontRead = request.method() === 'GET' && (publicFontStylesheets.includes(url.href)
+              || (url.origin === 'https://fonts.gstatic.com' && /^\/s\/inter\/v\d+\/[A-Za-z0-9_-]+\.woff2$/.test(url.pathname) && !url.search));
+            if (fontRead) { publicFontRequests.push(url.href); return route.continue(); }
             if (url.origin !== origin || url.pathname.startsWith('/api/') || request.method() !== 'GET') {
               forbiddenRequests.push({ url: request.url(), method: request.method() });
               return route.abort('blockedbyclient');
@@ -311,6 +330,12 @@ try {
             const sizes = [...document.querySelectorAll('body,body *')].filter(element => element instanceof HTMLElement && !['SCRIPT', 'STYLE'].includes(element.tagName)).map(element => [element, parseFloat(getComputedStyle(element).fontSize)]);
             for (const [element, size] of sizes) if (Number.isFinite(size)) element.style.setProperty('font-size', `${size * scale}px`, 'important');
           }, viewport.textScale);
+          const loadedFonts = await page.evaluate(async () => {
+            await document.fonts.load('400 16px Inter');
+            await document.fonts.ready;
+            return [...document.fonts].filter(face => face.family.replace(/["']/g, '') === 'Inter' && face.status === 'loaded').map(face => ({family:face.family,weight:face.weight,status:face.status}));
+          });
+          assert.ok(loadedFonts.length, `${name}: require the actual loaded Inter FontFace, not an implicit fallback`);
           const session = await page.evaluate(() => window.weatherThemeSession);
           const initialFollow = await page.evaluate(() => localStorage.getItem('crewcheck_meteo_follow_v1'));
           if (!viewport.empty) await page.getByRole('combobox', { name: 'Tempo para seguir AAA', exact: true }).selectOption('24');
@@ -343,11 +368,11 @@ try {
           assert.deepEqual(sideEffects.events, [], `${name}: no follow activation event`);
           assert.deepEqual(sideEffects.notifications, [], `${name}: no notification or permission attempt`);
           assert.deepEqual(sideEffects.toasts, [], `${name}: no follow/plan-limit toast`);
-          assert.deepEqual(forbiddenRequests, [], `${name}: no external request or API access`);
+          assert.deepEqual(forbiddenRequests, [], `${name}: no non-font external request or API access`);
           assert.deepEqual(pageErrors, [], `${name}: no browser exception`);
-          safety.push({ name, forbiddenRequests, pageErrors, followUnchanged: true, followEvents: sideEffects.events, notificationAttempts: sideEffects.notifications });
+          safety.push({ name, forbiddenRequests, publicFontRequests, loadedFonts, pageErrors, followUnchanged: true, followEvents: sideEffects.events, notificationAttempts: sideEffects.notifications });
         } catch (error) {
-          safety.push({ name, forbiddenRequests, pageErrors, aborted: true });
+          safety.push({ name, forbiddenRequests, publicFontRequests, pageErrors, aborted: true });
           if (page) {
             await page.screenshot({ path: path.join(output, `${name}-error.png`), animations: 'disabled' }).catch(() => {});
             fs.writeFileSync(path.join(output, `${name}-error.html`), await page.content().catch(() => 'Page content unavailable'));
@@ -371,11 +396,11 @@ try {
     mode: baseline ? 'baseline-negative-control' : 'production-candidate', commit,
     status: executionError ? 'failed' : baseline ? 'expected-regression-observed' : 'passed',
     executionError, expectedCases, completedCases: results.length,
-    scope: 'Actual prepared MeteoFollowPanel/crewcheckPlanExperience/storage/Brand/BottomNav, actual themeRuntime and full linked Vite CSS. Synthetic premium account, AAA/BBB event, prior active status, and local-only favorites. Count-20 repeats synthetic codes solely to test the tab label. Includes 320px with all rendered computed font sizes doubled, and no-event empty state. No follow activation, backend or notification delivery. CSS gradient contrast uses conservative stop/intermediate samples; candidate panel must use a solid theme surface. Physical devices, nonzero safe-area insets and full-page WeatherView/API integration are not claimed.',
+    scope: 'Actual prepared MeteoFollowPanel/crewcheckPlanExperience/storage/Brand/BottomNav, actual themeRuntime and full linked Vite CSS. Synthetic premium account, AAA/BBB event, prior active status, and local-only favorites. Count-20 repeats synthetic codes solely to test the tab label. Includes 320px with all rendered computed font sizes doubled, and no-event empty state. No follow activation, backend or notification delivery. Only the exact existing Google Fonts Inter stylesheet and its fonts.gstatic.com/s/inter/vN/*.woff2 assets may be read externally; font reads are recorded. CSS gradient contrast uses conservative stop/intermediate samples; candidate panel must use a solid theme surface. Physical devices, nonzero safe-area insets and full-page WeatherView/API integration are not claimed.',
     preparedComponentsSha256: createHash('sha256').update(componentSource).digest('hex'),
     stylesheetAssets: cssFiles.map(file => ({ path: path.relative(dist, file), sha256: createHash('sha256').update(fs.readFileSync(file)).digest('hex') })),
     results, interactions, safety, failures,
   }, null, 2));
   if (server.listening) await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
 }
-console.log(baseline ? `EXPECTED REGRESSION: ${failures.length} visual failures recorded across ${results.length} baseline cases` : `PASS: ${results.length} prepared weather theme/layout cases, local interactions and no notification/network side effects`);
+console.log(baseline ? `EXPECTED REGRESSION: ${failures.length} visual failures recorded across ${results.length} baseline cases` : `PASS: ${results.length} prepared weather theme/layout cases, local interactions and no notification/API side effects`);
