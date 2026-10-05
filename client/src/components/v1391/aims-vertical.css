@@ -1,0 +1,84 @@
+/* AIMS only: published days are columns, each activity reads top to bottom. */
+.cc-aims-vertical { min-width: 0; }
+.cc-aims-vertical > header { flex-wrap: wrap; }
+.cc-aims-vertical > header > div { min-width: 0; flex: 1 1 14rem; }
+.cc-aims-vertical > header h2, .cc-aims-vertical > header p { overflow-wrap: anywhere; }
+.cc-aims-vertical .cc-aims-days,
+.cc-aims-vertical .cc-aims-activities { list-style: none; margin: 0; padding: 0; }
+.cc-aims-vertical .cc-aims-days {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  align-items: start;
+  gap: 12px;
+  padding: 12px;
+}
+.cc-aims-vertical .cc-aims-day {
+  min-width: 0;
+  border: 1px solid var(--ccr-line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--ccr-panel-soft);
+}
+.cc-aims-vertical .cc-aims-date {
+  margin: 0;
+  padding: 12px;
+  border-bottom: 2px solid var(--ccr-cyan);
+  background: var(--ccr-panel-strong);
+  color: var(--ccr-title);
+  font-size: 1rem;
+  line-height: 1.5;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.cc-aims-vertical .cc-aims-activity {
+  min-width: 0;
+  padding: 12px;
+  color: var(--ccr-text);
+  font-size: .875rem;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+.cc-aims-vertical .cc-aims-activity + .cc-aims-activity { border-top: 2px solid var(--ccr-line); }
+.cc-aims-vertical .cc-aims-activity-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0 0 10px;
+  padding: 8px;
+  border: 1px solid var(--ccr-line);
+  border-radius: 8px;
+  background: var(--ccr-panel);
+  color: var(--ccr-title);
+  font: inherit;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.cc-aims-vertical .cc-aims-activity-toggle:focus-visible { outline: 3px solid var(--ccr-cyan); outline-offset: 2px; }
+.cc-aims-vertical .cc-aims-activity-toggle small,
+.cc-aims-vertical .cc-aims-detail-label { font-size: .75rem; color: var(--ccr-muted); }
+.cc-aims-vertical .cc-aims-activity-toggle strong { font-size: 1rem; }
+.cc-aims-vertical .cc-aims-published-fields { margin: 0; text-align: center; }
+.cc-aims-vertical .cc-aims-published-fields > div + div { margin-top: 10px; }
+.cc-aims-vertical .cc-aims-published-fields dt { font-size: .75rem; color: var(--ccr-muted); }
+.cc-aims-vertical .cc-aims-published-fields dd { margin: 0; font-weight: 800; color: var(--ccr-title); overflow-wrap: anywhere; }
+.cc-aims-vertical .cc-aims-published-fields > div:nth-child(1) dd,
+.cc-aims-vertical .cc-aims-published-fields > div:nth-child(2) dd,
+.cc-aims-vertical .cc-aims-published-fields > div:nth-child(5) dd { color: var(--ccr-cyan); }
+.cc-aims-vertical .cc-aims-activity-detail { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--ccr-line); overflow-wrap: anywhere; }
+.cc-aims-vertical .cc-aims-activity-detail p { margin: 6px 0 0; }
+.cc-aims-vertical .cc-aims-unconfirmed-date { overflow-wrap: anywhere; }
+.cc-aims-vertical .cc-aims-empty { padding: 12px; color: var(--ccr-text); }
+.cc-aims-vertical .cc-aims-activity-detail .cc-publication-change { max-width: 100%; margin-top: 12px; }
+.cc-aims-vertical .cc-aims-activity-detail .cc-publication-change dl > div { display: block; }
+.cc-aims-vertical .cc-aims-activity[data-change-status="unread"] { background: #4a3508; color: #fff7c2; }
+.cc-aims-vertical .cc-aims-activity[data-change-status="unread"] .cc-aims-published-fields dd { color: #fde047; }
+.cc-aims-vertical .cc-aims-activity[data-change-status="unread"] .cc-aims-published-fields dt { color: #fff7c2; }
+html[data-crew-theme="light"] .cc-aims-vertical .cc-aims-activity[data-change-status="unread"] { background: #fef3c7; color: #422006; }
+html[data-crew-theme="light"] .cc-aims-vertical .cc-aims-activity[data-change-status="unread"] .cc-aims-published-fields dd { color: #92400e; }
+html[data-crew-theme="light"] .cc-aims-vertical .cc-aims-activity[data-change-status="unread"] .cc-aims-published-fields dt { color: #422006; }
