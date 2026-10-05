@@ -71,6 +71,31 @@ jobs:
           node scripts/regression-v139-requireidentity-backend-unavailable.mjs
           node scripts/regression-platform-requiremain-backend-unavailable.mjs
           node scripts/regression-concierge-journey-programs.mjs
+      - name: Validate prepared source against isolated MySQL
+        run: |
+          for zone in UTC America/Sao_Paulo Pacific/Honolulu; do
+            TZ="$zone" node scripts/regression-operational-briefing-source-mysql.mjs > "artifacts/briefing-source/prepared-${zone//\//_}.json"
+          done
+        env:
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-briefing-preview-qa-socket/mysqld.sock
+          CREWCHECK_BRIEFING_QA: isolated-mysql
+      - name: Read unchanged main baseline for preparation diagnosis
+        uses: actions/checkout@v6
+        with:
+          ref: 5ea80bdec55ab95c592139869dc9c08cfa0efb17
+          path: baseline-preparation-check
+          persist-credentials: false
+      - name: Record unchanged baseline preparation rerun result
+        working-directory: baseline-preparation-check
+        run: |
+          node scripts/v139/apply.mjs > ../artifacts/briefing-source/baseline-first-prepare.log 2>&1
+          if node scripts/v139/apply.mjs > ../artifacts/briefing-source/baseline-second-prepare.log 2>&1; then
+            printf '%s\n' 'baseline second preparation succeeded' > ../artifacts/briefing-source/baseline-rerun-status.txt
+          else
+            baseline_status=$?
+            printf '%s\n' "baseline second preparation exited $baseline_status" > ../artifacts/briefing-source/baseline-rerun-status.txt
+            cat ../artifacts/briefing-source/baseline-second-prepare.log
+          fi
       - name: Repeat preparation as at build and startup
         run: |
           node scripts/v139/apply.mjs
@@ -81,14 +106,6 @@ jobs:
           TZ=UTC node --test scripts/tests/operational-briefing.test.mjs scripts/tests/operational-briefing-source.test.mjs
           node scripts/regression-v139-requireidentity-backend-unavailable.mjs
           node scripts/regression-platform-requiremain-backend-unavailable.mjs
-      - name: Validate prepared source against isolated MySQL
-        run: |
-          for zone in UTC America/Sao_Paulo Pacific/Honolulu; do
-            TZ="$zone" node scripts/regression-operational-briefing-source-mysql.mjs > "artifacts/briefing-source/prepared-${zone//\//_}.json"
-          done
-        env:
-          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-briefing-preview-qa-socket/mysqld.sock
-          CREWCHECK_BRIEFING_QA: isolated-mysql
       - name: Remove only the isolated test container
         if: always()
         run: docker rm -f crewcheck-briefing-preview-qa || true
