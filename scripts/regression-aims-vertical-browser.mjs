@@ -4,10 +4,25 @@ import path from 'node:path';
 import http from 'node:http';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
+import ts from 'typescript';
 const { chromium } = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || import.meta.url)('playwright');
 const output = path.resolve(process.env.AIMS_EVIDENCE_DIR || 'artifacts/aims-vertical');
 const dist = path.resolve(process.env.AIMS_CSS_DIST || 'dist');
 fs.mkdirSync(output, { recursive: true });
+const home = ts.createSourceFile('Home.tsx', fs.readFileSync('client/src/pages/Home.tsx', 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const shellProps = { className: 'cz-app', 'data-view': 'roster' };
+let rootTag;
+function readShell(node) {
+ if(ts.isVariableDeclaration(node) && node.name.getText(home)==='DEFAULT_VERSION' && node.initializer && ts.isStringLiteral(node.initializer)) shellProps['data-version']=node.initializer.text;
+ if((ts.isJsxOpeningElement(node)||ts.isJsxSelfClosingElement(node)) && node.attributes.properties.some(a=>ts.isJsxAttribute(a)&&a.name.text==='data-ipad-layout-v14394')) {
+  rootTag=node.tagName.getText(home);
+  for(const a of node.attributes.properties) if(ts.isJsxAttribute(a)&&a.name.text.startsWith('data-')&&a.initializer&&ts.isStringLiteral(a.initializer))shellProps[a.name.text]=a.initializer.text;
+ }
+ ts.forEachChild(node,readShell);
+}
+readShell(home);
+assert.equal(rootTag,'main');assert.ok(shellProps['data-version']);assert.equal(shellProps['data-ipad-layout-v14394'],'contained');
+
 // Synthetic events only. Render the actual component, publication runtime, and
 // shipping stylesheet. The harness supplies props, never replaces renderer logic.
 const entry = `
@@ -27,7 +42,7 @@ window.readReview = currentPublicationReview;
 window.publishChanged = async () => {await recordPublication('aims-test-a',[canonical('07:55')]);await recordPublication('aims-test-a',[canonical('08:00')]);};
 function App(){const [events,setEvents]=useState(fixtures),[visible,setVisible]=useState(true),[dayView,setDayView]=useState(false),[focus,setFocus]=useState(undefined);
 window.setAimsTest = patch => {if(patch.events==='empty')setEvents([]);if(patch.events==='default')setEvents(fixtures);if(patch.events==='other')setEvents([flight('other','QA9000','2026-11-01')]);if(patch.visible!==undefined)setVisible(patch.visible);if(patch.dayView!==undefined){setDayView(patch.dayView);setEvents(patch.dayView?fixtures.slice(0,3):fixtures);}if(patch.focus!==undefined)setFocus(patch.focus);};
-return <main className="cz-app" data-view="roster" data-ipad-layout-v14394="contained"><div className="cc-roster-premium-v1397" style={{maxWidth:1100,margin:'0 auto',padding:12}}>{visible&&<AimsRosterTable events={events} dayView={dayView} focusEventId={focus}/>}</div></main>}
+return <main {...${JSON.stringify(shellProps)}}><div className="cc-roster-premium-v1397" style={{maxWidth:1100,margin:'0 auto',padding:12}}>{visible&&<AimsRosterTable events={events} dayView={dayView} focusEventId={focus}/>}</div></main>}
 createRoot(document.getElementById('root')).render(<App/>);
 `;
 await build({stdin:{contents:entry,resolveDir:process.cwd(),loader:'tsx'},bundle:true,jsx:'automatic',format:'iife',outfile:path.join(output,'app.js'),tsconfig:'tsconfig.json',define:{'process.env.NODE_ENV':'"production"'},logLevel:'error'});
