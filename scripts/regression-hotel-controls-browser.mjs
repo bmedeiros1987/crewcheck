@@ -29,8 +29,10 @@ function collect(node) {
 collect(ast);
 assert.equal(rootTag, 'main');
 assert.ok(rootProps['data-version']);
-const declarations = ast.statements.filter(n => ts.isFunctionDeclaration(n) && ['HotelsView', 'Brand', 'BottomNav'].includes(n.name?.text));
-assert.equal(declarations.length, 3);
+const functionNames = ['HotelsView', 'Brand', 'CrewCheckMark', 'BottomNav', 'pad2', 'safe', 'city', 'dateChip', 'rosterDayIso', 'hotelSearchLocation', 'openNearbyPlaces', 'searchCrewHotels', 'normalizedSearch', 'explicitStayReportLocation'];
+const declarations = ast.statements.filter(n => (ts.isFunctionDeclaration(n) && functionNames.includes(n.name?.text))
+  || (ts.isVariableStatement(n) && n.declarationList.declarations.some(d => d.name.getText(ast) === 'storage')));
+assert.equal(declarations.length, functionNames.length + 1, 'Use exact prepared components and their real local helpers');
 fs.writeFileSync(path.join(output, 'prepared-components.tsx'), declarations.map(n => n.getText(ast)).join('\n'));
 const cssPath = 'client/src/components/v1391/menu-personalization.css';
 fs.copyFileSync(cssPath, path.join(output, 'source.css'));
@@ -38,21 +40,32 @@ const index = fs.readFileSync('dist/index.html', 'utf8');
 const links = [...index.matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/g)].map(m => m[0]).join('\n');
 assert.ok(links, 'Use actual prepared production CSS, not a mock stylesheet');
 const entry = `
-import React from 'react';
+import React, {useState,useEffect,useMemo} from 'react';
+import {createPortal} from 'react-dom';
+import {Search,Hotel,LocateFixed,Plus,Check,MapPin,X,Save,ChevronRight,UserRound,Dumbbell,WashingMachine,Pill,Bell,Send,Menu,Home as HomeIcon,CalendarDays,Navigation} from 'lucide-react';
+import {toast} from 'sonner';
+import {airportCity} from '@/lib/airports';
+import {orderStayDisplay} from '@/lib/stayDisplayOrder';
+import {listPlatformStays,updatePlatformStay,findHotelCompanions} from '@/lib/platformClient';
+import {CREW_HOTEL_CATALOG} from '@/data/crewHotels';
+import {saveNearbyPlacesOrigin} from '@/lib/nearbyPlacesOrigin';
+import {setPendingNavigationContext} from '@/lib/navigationContext';
+import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
+import {InternalHeaderFrame} from '@/components/navigation/InternalHeaderFrame';
+import {OperationalLayoutSafety} from '@/components/navigation/OperationalLayoutSafety';
 import {createRoot} from 'react-dom/client';
-import {__hotelControlsTest} from ${JSON.stringify(homePath)};
 import {setCrewCheckThemePreference} from '@/lib/themeRuntime';
-const {HotelsView,BottomNav}=__hotelControlsTest;
+${declarations.map(n => n.getText(ast)).join('\n')}
 const now=Date.now();
 const event=(id,hours,airport,hotel,presentation)=>{const start=new Date(now+hours*3600000),end=new Date(start.getTime()+12*3600000);return {id,kind:'stay',date:start,origin:airport,destination:airport,hotel,presentation,day:{date:start.toISOString().slice(0,10)},canonical:{startDateTime:start.toISOString(),endDateTime:end.toISOString()}}};
 const events=[event('next',24,'BSB','Hotel sintético em Brasília','14:00'),event('manual',96,'JDO','','00:40'),event('long',160,'GRU','Hotel com nome longo para verificar o limite do seletor em uma tela estreita','09:00')];
 window.hotelNavigation=[];
 window.addEventListener('crewcheck:set-view',e=>window.hotelNavigation.push(e.detail));
 window.applyHotelTheme=setCrewCheckThemePreference;
-function App(){return <><main {...${JSON.stringify(rootProps)}}><HotelsView events={events}/></main><BottomNav view="hotels" setView={view=>window.hotelNavigation.push(view)} openMenu={()=>window.hotelNavigation.push('menu')}/></>}
+function App(){return <><main {...${JSON.stringify(rootProps)}}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back/></InternalHeaderFrame><HotelsView events={events}/></main><BottomNav view="hotels" setView={view=>window.hotelNavigation.push(view)} openMenu={()=>window.hotelNavigation.push('menu')}/></>}
 createRoot(document.getElementById('root')).render(<App/>);
 `;
-await build({ stdin: { contents: entry, loader: 'tsx', resolveDir: process.cwd() }, bundle: true, platform: 'browser', format: 'esm', jsx: 'automatic', tsconfig: 'tsconfig.json', outfile: path.join(output, 'harness.js'), loader: { '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"test"', 'import.meta.env': JSON.stringify({ DEV: false, PROD: true, MODE: 'test', BASE_URL: '/' }) }, plugins: [{ name: 'actual-prepared-hotels', setup(builder) { builder.onLoad({ filter: /\/pages\/Home\.tsx$/ }, args => ({ contents: fs.readFileSync(args.path, 'utf8') + '\nexport const __hotelControlsTest={HotelsView,BottomNav};\n', loader: 'tsx', resolveDir: path.dirname(args.path) })); } }] });
+await build({ stdin: { contents: entry, loader: 'tsx', resolveDir: process.cwd() }, bundle: true, platform: 'browser', format: 'esm', jsx: 'automatic', tsconfig: 'tsconfig.json', outfile: path.join(output, 'harness.js'), loader: { '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"test"', 'import.meta.env': JSON.stringify({ DEV: false, PROD: true, MODE: 'test', BASE_URL: '/' }) } });
 fs.writeFileSync(path.join(output, 'index.html'), `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">${links}</head><body><div id="root"></div><script type="module" src="/harness.js"></script></body></html>`);
 fs.cpSync('dist/assets', path.join(output, 'assets'), { recursive: true });
 if (fs.existsSync('dist/icons')) fs.cpSync('dist/icons', path.join(output, 'icons'), { recursive: true });
@@ -90,7 +103,6 @@ async function inspect(page, name) {
   assert.ok(metrics.select.height >= 44 && metrics.button.height >= 44, `${name}: 44px touch targets`);
   assert.ok(metrics.button.x >= metrics.panel.x && metrics.button.right <= metrics.panel.right, `${name}: reset stays inside panel`);
   assert.ok(metrics.textFits && !metrics.pageOverflow, `${name}: no clipped text or horizontal overflow`);
-  await page.screenshot({ path: path.join(output, `${name}-selector-focused.png`), animations: 'disabled' });
   await select.press('Tab');
   assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Voltar à sugestão da escala', 'Keyboard reaches reset after selector');
   await page.keyboard.press('Enter');
@@ -99,6 +111,14 @@ async function inspect(page, name) {
   await select.selectOption('long');
   await settle(page);
   assert.equal(await select.inputValue(), 'long', 'Long option remains selectable');
+  const longOption = await page.locator('.cz-stay-context').evaluate(panel => {
+    const select = panel.querySelector('select'), button = panel.querySelector(':scope > button');
+    const p = panel.getBoundingClientRect(), s = select.getBoundingClientRect(), b = button.getBoundingClientRect();
+    return { contained: s.left >= p.left && s.right <= p.right && b.left >= p.left && b.right <= p.right,
+      gap: b.top - s.bottom, pageOverflow: document.documentElement.scrollWidth > innerWidth + 1,
+      resetTextFits: button.scrollWidth <= button.clientWidth + 1 && button.scrollHeight <= button.clientHeight + 1 };
+  });
+  assert.ok(longOption.contained && longOption.resetTextFits && !longOption.pageOverflow && longOption.gap >= 11.5, `${name}: long option does not push controls outside the panel`);
   await page.getByRole('button', { name: 'Voltar à sugestão da escala', exact: true }).click();
   for (let i = 0; i < 2; i++) {
     const disclosure = page.locator('.cc-hotel-catalog-disclosure > summary');
@@ -120,7 +140,7 @@ async function inspect(page, name) {
   await page.locator('.cc-stay-more > summary').last().click();
   await page.getByRole('button', { name: 'Voltar ao FlightDeck', exact: true }).click();
   assert.equal(await page.evaluate(() => window.hotelNavigation.at(-1)), 'cockpit', 'Actual Brand retains Back event');
-  results.push({ name, metrics, checks: ['spacing', 'focus clearance', 'keyboard reset', 'long option', 'repeated manual edit/cancel/close', 'footer scroll clearance', 'Brand Back event'] });
+  results.push({ name, metrics, longOption, checks: ['spacing', 'focus clearance', 'keyboard reset', 'long option', 'repeated manual edit/cancel/close', 'footer scroll clearance', 'Brand Back event'] });
 }
 try {
   for (const engine of ['chromium', 'webkit']) {
