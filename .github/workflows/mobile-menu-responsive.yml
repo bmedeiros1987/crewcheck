@@ -7,6 +7,8 @@ on:
       - 'client/src/styles/**'
       - 'client/src/pages/Home.tsx'
       - 'client/src/components/v1391/menu-5s.css'
+      - 'client/src/components/v1391/menu-personalization.css'
+      - 'scripts/regression-hotel-controls-browser.mjs'
       - 'client/src/lib/menuPreference.ts'
       - 'client/src/lib/menuNestedSearch.ts'
       - 'client/src/components/platform/PlatformCenter.tsx'
@@ -51,9 +53,13 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Record canonical hotel stylesheet before preparation
+        run: sha256sum client/src/components/v1391/menu-personalization.css > "$RUNNER_TEMP/hotel-controls-css.sha256"
       # This regression prepares the full chain itself. Do not prepare twice.
       - name: Prepare once through the iPad source regression
         run: node scripts/regression-v14-3-94-ipad-menu-layout.mjs
+      - name: Verify hotel stylesheet survives canonical preparation
+        run: sha256sum -c "$RUNNER_TEMP/hotel-controls-css.sha256"
       - name: Preserve navigation inventory and source contracts
         run: |
           node scripts/regression-p1-menu-premium.mjs
@@ -68,6 +74,10 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/menu-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/menu-browser/node_modules/playwright/cli.js" install --with-deps chromium webkit
+      - name: Validate hotel selector and reset spacing with actual prepared components
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-hotel-controls-browser.mjs
       - name: Render menu in desktop, tablet and rotating phone viewports
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
@@ -96,9 +106,11 @@ jobs:
         with:
           name: CrewCheck-menu-responsive-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
+            artifacts/hotel-controls
             artifacts/menu-responsive
             artifacts/menu-interaction
             artifacts/publication-import-flow
             artifacts/share-discovery
           if-no-files-found: warn
           retention-days: 7
+
