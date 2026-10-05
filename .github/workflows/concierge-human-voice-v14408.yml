@@ -12,6 +12,7 @@ on:
       - 'server/v1403/telegram-human.mjs'
       - 'server/v1403/build-reply.snippet'
       - 'scripts/regression-concierge-natural-language.mjs'
+      - 'scripts/regression-concierge-contextual-humor.mjs'
       - 'scripts/regression-concierge-program-wording.mjs'
       - 'scripts/v14314/**'
       - 'scripts/regression-concierge-clock-format.mjs'
@@ -31,6 +32,7 @@ on:
       - 'server/v1403/telegram-human.mjs'
       - 'server/v1403/build-reply.snippet'
       - 'scripts/regression-concierge-natural-language.mjs'
+      - 'scripts/regression-concierge-contextual-humor.mjs'
       - 'scripts/regression-concierge-program-wording.mjs'
       - 'scripts/v14314/**'
       - 'scripts/regression-concierge-clock-format.mjs'
@@ -58,6 +60,7 @@ jobs:
         run: |
           node scripts/regression-concierge-program-wording.mjs
           node scripts/regression-concierge-natural-language.mjs
+          node scripts/regression-concierge-contextual-humor.mjs
           node scripts/regression-concierge-clock-format.mjs
           node scripts/regression-v14-3-15-concierge-easter-eggs.mjs
       - name: Prepare canonical source
@@ -68,6 +71,7 @@ jobs:
         run: |
           node scripts/regression-concierge-program-wording.mjs
           node scripts/regression-concierge-natural-language.mjs
+          node scripts/regression-concierge-contextual-humor.mjs
           node scripts/regression-concierge-clock-format.mjs
           node scripts/regression-v14-3-15-concierge-easter-eggs.mjs
       - name: Validate contextual text and audio policy

@@ -10,10 +10,11 @@ import { decorateConciergeReply, conciergeHumorEligible } from '../server/v14336
 
 // All identities, dates, flights, values and locations below are synthetic.
 const profile = { name: 'ANA EXEMPLO', role: 'CCM' };
-const roster = { days: [{ legs: [{ destination: 'MAB' }, { destination: 'MAB' }] }] };
+const roster = { base: 'GRU', days: [] };
+const records = [{ start: '2026-09-01T12:00:00Z', end: '2026-09-01T16:00:00Z', legs: [{ flightNumber: 'AD0012', origin: 'GRU', destination: 'MAB', departureTime: '10:00', arrivalTime: '12:00' }] }];
 const now = new Date('2026-09-01T12:00:00Z');
 const render = (reply, query, mode = 'formal') => humanize(finalize(decorateConciergeReply(reply, {
-  preferences: { mode }, roster, now, random: () => 0,
+  preferences: { mode }, roster, records, query, intent: 'next', now, random: () => 0,
 }).reply, query), query);
 
 function easterEggReplies(source, query) {
@@ -83,9 +84,9 @@ test('missing details and errors use one specific request without inventing data
 });
 
 test('formal and light modes keep operational facts and do not add humor to questions or warnings', () => {
-  const safe = 'Próxima programação: AD0012 · GRU → MAB · apresentação 09:25.';
-  assert.doesNotMatch(render(safe, '/proximo', 'formal'), /Marabá|Marabalas/);
-  assert.match(render(safe, '/proximo', 'comic'), /Marabá|Marabalas/);
+  const safe = 'Próxima programação: AD0012 · GRU → MAB · apresentação 09:25 · 10:00 · 12:00.';
+  assert.doesNotMatch(render(safe, '/proximo', 'formal'), /créditos de abertura/);
+  assert.match(render(safe, '/proximo', 'comic'), /créditos de abertura/);
   assert.ok(render(safe, '/proximo', 'comic').startsWith(safe));
   for (const text of [
     'Alerta crítico: não embarque. Confirme imediatamente com a operação.',
@@ -163,3 +164,4 @@ test('every personal and cabin-procedure reply is truthful, including after cano
     for (const query of ['minha esposa quer saber quando volto', 'portas em automático e qual é o status do voo?', 'obrigado por verificar meu portão']) assert.deepEqual(easterEggReplies(source, query), ['']);
   }
 });
+
