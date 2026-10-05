@@ -360,6 +360,7 @@ try {
         const name = `${engine}-${viewport.width}x${viewport.height}-favorites-${favoriteCount}${viewport.textScale ? '-text-200' : ''}${viewport.empty ? '-empty' : ''}`;
         const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, isMobile: viewport.width <= 430, hasTouch: viewport.width <= 768, colorScheme: 'dark', reducedMotion: 'reduce', serviceWorkers: 'block' });
         const pageErrors = [], forbiddenRequests = [], publicFontRequests = [];
+        const declaredFontUrls = new Set();
         let page;
         try {
           await context.addInitScript(({ favoriteCount }) => {
@@ -385,11 +386,28 @@ try {
               ServiceWorkerRegistration.prototype.showNotification = async () => { window.weatherThemeNotificationAttempts.push('showNotification'); throw new Error('Notifications forbidden in theme regression'); };
             }
           }, { favoriteCount });
-          await context.route('**/*', route => {
+          await context.route('**/*', async route => {
             const request = route.request(), url = new URL(request.url());
-            const fontRead = request.method() === 'GET' && (publicFontStylesheets.includes(url.href)
-              || (url.origin === 'https://fonts.gstatic.com' && /^\/s\/inter\/v\d+\/[A-Za-z0-9_-]+\.woff2$/.test(url.pathname) && !url.search));
-            if (fontRead) { publicFontRequests.push(url.href); return route.continue(); }
+            if (request.method() === 'GET' && publicFontStylesheets.includes(url.href)) {
+              publicFontRequests.push(url.href);
+              const response = await route.fetch({ maxRedirects: 0 });
+              assert.equal(response.url(), url.href, 'The approved Inter stylesheet must not redirect');
+              assert.ok(response.ok(), 'The approved Inter stylesheet must load successfully');
+              const css = await response.text();
+              // Google may serve Inter via /s/inter/... or /l/font?... . Allow
+              // only the exact URLs declared by this existing Inter stylesheet,
+              // never an arbitrary gstatic request or an unrelated font family.
+              for (const match of css.matchAll(/url\(\s*['"]?([^)'"\s]+)['"]?\s*\)/g)) {
+                const font = new URL(match[1], url.href);
+                assert.equal(font.origin, 'https://fonts.gstatic.com', 'Only official font assets are allowed');
+                assert.ok(!font.username && !font.password && !font.hash, 'Font assets must not include credentials or fragments');
+                assert.ok(/^\/s\/inter\/v\d+\/[A-Za-z0-9_-]+\.woff2$/.test(font.pathname) || font.pathname === '/l/font', 'Only Inter font asset endpoints are allowed');
+                declaredFontUrls.add(font.href);
+              }
+              assert.ok(declaredFontUrls.size, 'Require actual font assets in the Inter stylesheet');
+              return route.fulfill({ response, body: css });
+            }
+            if (request.method() === 'GET' && declaredFontUrls.has(url.href)) { publicFontRequests.push(url.href); return route.continue(); }
             if (url.origin !== origin || url.pathname.startsWith('/api/') || request.method() !== 'GET') {
               forbiddenRequests.push({ url: request.url(), method: request.method() });
               return route.abort('blockedbyclient');
@@ -501,7 +519,7 @@ try {
     mode: baseline ? 'baseline-negative-control' : 'production-candidate', commit,
     status: executionError ? 'failed' : baseline ? 'expected-regression-observed' : 'passed',
     executionError, expectedCases, completedCases: results.length,
-    scope: 'Actual prepared MeteoFollowPanel/crewcheckPlanExperience/storage/Brand/BottomNav, actual themeRuntime and full linked Vite CSS. Synthetic premium account, AAA/BBB event, prior active status, and local-only favorites. Count-20 repeats synthetic codes solely to test the tab label. Includes 320px with all rendered computed font sizes doubled, and no-event empty state. No follow activation, backend or notification delivery. Only the exact existing Google Fonts Inter stylesheet and its fonts.gstatic.com/s/inter/vN/*.woff2 assets may be read externally; font reads are recorded. CSS gradient contrast uses conservative stop/intermediate samples; candidate panel must use a solid theme surface. The actual prepared WeatherView search form, query/loading state and submit handler are rendered in the existing weather console wrapper before the follow panel, with a synthetic event and controlled loading; WeatherView fetch effects are intentionally omitted. Search geometry is measured in every theme plus keyboard focus, press and loading states; click, repeat and Enter use its real submit handler. Physical devices, nonzero safe-area insets and full-page WeatherView/API integration are not claimed.',
+    scope: 'Actual prepared MeteoFollowPanel/crewcheckPlanExperience/storage/Brand/BottomNav, actual themeRuntime and full linked Vite CSS. Synthetic premium account, AAA/BBB event, prior active status, and local-only favorites. Count-20 repeats synthetic codes solely to test the tab label. Includes 320px with all rendered computed font sizes doubled, and no-event empty state. No follow activation, backend or notification delivery. Only the exact existing Google Fonts Inter stylesheet and the official gstatic font URLs it declares may be read externally; font reads are recorded. CSS gradient contrast uses conservative stop/intermediate samples; candidate panel must use a solid theme surface. The actual prepared WeatherView search form, query/loading state and submit handler are rendered in the existing weather console wrapper before the follow panel, with a synthetic event and controlled loading; WeatherView fetch effects are intentionally omitted. Search geometry is measured in every theme plus keyboard focus, press and loading states; click, repeat and Enter use its real submit handler. Physical devices, nonzero safe-area insets and full-page WeatherView/API integration are not claimed.',
     preparedComponentsSha256: createHash('sha256').update(componentSource).digest('hex'),
     stylesheetAssets: cssFiles.map(file => ({ path: path.relative(dist, file), sha256: createHash('sha256').update(fs.readFileSync(file)).digest('hex') })),
     results, interactions, safety, failures,
