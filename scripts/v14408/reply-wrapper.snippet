@@ -57,6 +57,17 @@ async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = n
   const decorated = decorateConciergeReplyV14336(rawReply, {
     preferences: conciergePreferencesV14336(currentSnapshot),
     roster: currentSnapshot?.roster || {},
+    records: conciergeProgramRecords(currentSnapshot?.roster || {}),
+    query: text,
+    intent: semantic.intent,
+    // Use the existing Care authority; never interpret arbitrary roster notes.
+    // Missing Care materialization fails closed for humor only.
+    suppressHumor: typeof conciergeCareState !== 'function' || (currentSnapshot?.roster?.days || []).some((day) => {
+      const parts = conciergeRosterDayParts(day);
+      const key = `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+      return (key === today || key === semantic.dateKey) && conciergeCareState(day) === 'LUTO';
+    }),
   });
   if (decorated.humorApplied) {
     await conciergeSaveSnapshotAsync(profile, null, {

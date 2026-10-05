@@ -39,23 +39,25 @@ assert.equal(normalized.mode, 'comic');
 assert.equal(normalized.voiceProfile, 'default');
 
 const roster = {
+  base: 'BSB',
   days: [
     { legs: [{ destination: 'MAB' }, { destination: 'BSB' }] },
     { legs: [{ destination: 'MAB' }, { destination: 'MAB' }] },
   ],
 };
 assert.equal(conciergeFrequentDestination(roster), 'MAB');
-const operational = 'Próxima programação: LA1234 · BSB → MAB · apresentação 12:00.';
+const records = [{ start: '2026-07-27T15:00:00Z', end: '2026-07-27T18:00:00Z', legs: [{ flightNumber: 'LA1234', origin: 'BSB', destination: 'MAB', departureTime: '13:00', arrivalTime: '14:00' }] }];
+const operational = 'Próxima programação: LA1234 · BSB → MAB · apresentação 12:00 · 13:00 · 14:00.';
 const comic = decorateConciergeReply(operational, {
   preferences: { mode: 'comic' },
-  roster,
+  roster, records, intent: 'next', query: '/proximo',
   now: new Date('2026-07-27T12:00:00-03:00'),
   random: (() => { const values = [0.1, 0.1]; return () => values.shift() ?? 0; })(),
 });
 assert.equal(comic.humorApplied, true);
 assert.ok(comic.reply.startsWith(operational), 'texto operacional deve permanecer intacto no início');
 assert.match(comic.reply, /Nota leve:/);
-assert.match(comic.reply, /Marabalas|Marabá/);
+assert.match(comic.reply, /créditos de abertura/);
 
 const formal = decorateConciergeReply(operational, { preferences: { mode: 'formal' }, roster, random: () => 0 });
 assert.equal(formal.reply, operational, 'modo formal não pode receber apelidos');
@@ -73,7 +75,7 @@ for (const reply of safetyReplies) {
 }
 const cooldown = decorateConciergeReply(operational, {
   preferences: { mode: 'comic', lastHumorAt: '2026-07-27T06:00:00-03:00' },
-  roster,
+  roster, records, intent: 'next', query: '/proximo',
   now: new Date('2026-07-27T12:00:00-03:00'),
   random: () => 0,
 });
@@ -118,3 +120,4 @@ assert.equal(fs.readFileSync(homePath, 'utf8'), homeBefore, 'preparação final 
 assert.ok(fs.readFileSync(path.join(root, 'client/public/release.json'), 'utf8').includes('14.4.11'));
 
 console.log('v14.3.36 Concierge personality/voice: formal mode, safe comic cooldown, protected voice catalog and UI preferences validated.');
+
