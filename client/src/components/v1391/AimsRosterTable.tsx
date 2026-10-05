@@ -1,8 +1,9 @@
 import { rosterDisplayIso, rosterLabelDate, rosterUnconfirmedDateText, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
-import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { currentPublicationReview, publicationOwner, publicationReviewStatus, subscribePublicationReview } from '@/lib/rosterPublicationRuntime';
 import { publication, type PublishedEvent } from '@/lib/rosterPublicationReview';
 import { PublicationChangeDetail } from './PublicationChangeDetail';
+import './aims-vertical.css';
 type AimsRosterEvent = {
   id: string;
   operationalTimeZone?: string;
@@ -47,7 +48,7 @@ function details(event: AimsRosterEvent) {
   return String(event.subtitle || event.hotel || event.title || event.kind || '—');
 }
 
-export function AimsRosterTable({ events, title = 'Escala publicada em tabela', dayView = false, showHistory = true, focusEventId }: { focusEventId?: string; showHistory?: boolean; events: AimsRosterEvent[]; title?: string; dayView?: boolean }) {
+export function AimsRosterTable({ events, title = 'Escala publicada por dia', dayView = false, showHistory = true, focusEventId }: { focusEventId?: string; showHistory?: boolean; events: AimsRosterEvent[]; title?: string; dayView?: boolean }) {
   const [storedReview,setReview] = useState(currentPublicationReview);
   const review = storedReview?.owner === publicationOwner() ? storedReview : null;
   const [runtimeStatus,setRuntimeStatus] = useState(publicationReviewStatus);
@@ -66,6 +67,19 @@ export function AimsRosterTable({ events, title = 'Escala publicada em tabela', 
       return `${base}#${ordinal}`;
     });
   }, [events]);
+  // Group only for presentation. Keep every event and its original order within
+  // the published day; never infer dates, times or additional activities here.
+  const days = useMemo(() => {
+    const groups = new Map<string, { iso: string; events: { event: AimsRosterEvent; renderKey: string }[] }>();
+    events.forEach((event, index) => {
+      const iso = isoOf(event);
+      // Unknown dates are deliberately not presented as one confirmed day.
+      const key = iso || `unconfirmed-${index}`;
+      if (!groups.has(key)) groups.set(key, { iso, events: [] });
+      groups.get(key)!.events.push({ event, renderKey: eventRenderKeys[index] });
+    });
+    return Array.from(groups.entries());
+  }, [events, eventRenderKeys]);
   const consumedFocus = useRef<string>();
   useEffect(() => {
     if (!focusEventId || consumedFocus.current === focusEventId) return;
@@ -78,81 +92,61 @@ export function AimsRosterTable({ events, title = 'Escala publicada em tabela', 
     if (review?.version !== observedVersion.current) { setExpandedKey(null); setHistoryOpen(null); observedVersion.current = review?.version; }
   }, [review?.version]);
   function openDetails(key: string) { setExpandedKey(current => current === key ? null : key); }
-  function keyboardOpen(event: React.KeyboardEvent, key: string) {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault(); openDetails(key);
-  }
 
-  return <section className="cc-aims-roster" data-day-view={dayView} aria-labelledby={titleId}>
+  return <section className="cc-aims-roster cc-aims-vertical" data-day-view={dayView} aria-labelledby={titleId}>
     <header>
       <div>
         <small>FORMATO AIMS</small>
         <h2 id={titleId}>{title}</h2>
-        <p>Horários publicados.</p>
+        <p>Dias em colunas, com as atividades na vertical. Horários publicados.</p>
       </div>
-      <span>{events.length} {events.length === 1 ? 'linha' : 'linhas'}</span>
+      <span>{events.length} {events.length === 1 ? 'atividade' : 'atividades'}</span>
     </header>
-    <div className="cc-aims-roster-scroll" tabIndex={0} aria-label="Tabela AIMS; deslize horizontalmente para ver todas as colunas">
-      <table>
-        <caption>Programações publicadas no período selecionado</caption>
-        <thead>
-          <tr>
-            <th scope="col">Data</th>
-            <th scope="col">Código / atividade</th>
-            <th scope="col">Apresentação</th>
-            <th scope="col">Origem</th>
-            <th scope="col">Partida</th>
-            <th scope="col">Destino</th>
-            <th scope="col">Chegada</th>
-            <th scope="col">Detalhes publicados</th>
-          </tr>
-        </thead>
-        <tbody>
-          {events.map((event, index) => {
+    {events.length === 0 && <p className="cc-aims-empty" role="status">Nenhuma programação no período selecionado.</p>}
+    <ol className="cc-aims-days" aria-label="Programações publicadas por dia">
+      {days.map(([dayKey, group]) => <li className="cc-aims-day" key={dayKey} data-roster-iso={group.iso}>
+        <h3 className="cc-aims-date">
+          {group.iso ? <time dateTime={group.iso}>{dateLabel(group.events[0].event)}</time> : 'Data não confirmada'}
+        </h3>
+        <ol className="cc-aims-activities" aria-label={`Atividades de ${dateLabel(group.events[0].event)}`}>
+          {group.events.map(({ event, renderKey }) => {
             const iso = isoOf(event);
-            const previousIso = index > 0 ? isoOf(events[index - 1]) : null;
-            const renderKey = eventRenderKeys[index];
             const expanded = expandedKey === renderKey && review?.version === observedVersion.current;
             const item = event.canonical ? publication([event.canonical as PublishedEvent]).items[0] : null;
             const changes = item && review ? review.history.filter(change => change.after && JSON.stringify(change.after) === JSON.stringify(item)) : [];
             const unread = changes.some(change => !change.seen);
-            return <Fragment key={renderKey}>
-              <tr
-                data-change-status={unread ? "unread" : undefined}
-                data-roster-iso={iso}
-                data-roster-event-id={event.id}
-                data-new-day={iso !== previousIso ? 'true' : 'false'}
-                tabIndex={0}
-                role="button"
-                aria-expanded={expanded}
-                aria-label={`${activityCode(event)} em ${dateLabel(event)}. Abrir detalhes`}
-                onClick={() => openDetails(renderKey)}
-                onKeyDown={(keyboardEvent) => keyboardOpen(keyboardEvent, renderKey)}
-              >
-                <th scope="row">{iso ? <time dateTime={iso}>{dateLabel(event)}</time> : <><span>Data não confirmada</span><small>{rosterUnconfirmedDateText(event)}</small></>}</th>
-                <td><strong>{activityCode(event)}</strong>{unread && <span className="cc-aims-change-badge">Alteração não vista</span>}</td>
-                <td>{event.presentation && event.presentation !== 'Conexão/Solo' ? publishedClock(event.presentation) : '—'}</td>
-                <td>{event.origin || '—'}</td>
-                <td>{publishedClock(event.kind === 'flight' ? event.departure : event.day?.dutyReport || event.day?.startTime || event.departure)}</td>
-                <td>{event.destination || '—'}</td>
-                <td>{publishedClock(event.kind === 'flight' ? event.arrival : event.day?.dutyDebrief || event.day?.endTime || event.arrival)}</td>
-                <td>{details(event)}</td>
-              </tr>
-              {expanded && <tr className="cc-aims-detail-row">
-                <td colSpan={8}>
-                  <div>
-                    <strong>Detalhes da programação</strong>
-                    <p>{details(event)}</p>
-                    {review && changes.map(change => <PublicationChangeDetail key={`${review.owner}:${change.id}`} owner={review.owner} change={change}/>)}
-
-                  </div>
-                </td>
-              </tr>}
-            </Fragment>;
+            const detailId = `${titleId}-detail-${eventRenderKeys.indexOf(renderKey)}`;
+            return <li key={renderKey} className="cc-aims-activity"
+              data-change-status={unread ? 'unread' : undefined}
+              data-roster-iso={iso} data-roster-event-id={event.id}>
+              <button type="button" className="cc-aims-activity-toggle"
+                aria-expanded={expanded} aria-controls={expanded ? detailId : undefined}
+                aria-label={`${activityCode(event)} em ${dateLabel(event)}. ${expanded ? 'Fechar' : 'Abrir'} detalhes`}
+                onClick={() => openDetails(renderKey)}>
+                <small>Código / atividade</small>
+                <strong>{activityCode(event)}</strong>
+                {unread && <span className="cc-aims-change-badge">Alteração não vista</span>}
+                <span className="cc-aims-detail-label">{expanded ? 'Fechar detalhes −' : 'Ver detalhes +'}</span>
+              </button>
+              {!iso && <p className="cc-aims-unconfirmed-date">{rosterUnconfirmedDateText(event)}</p>}
+              <dl className="cc-aims-published-fields">
+                <div><dt>Apresentação</dt><dd>{event.presentation && event.presentation !== 'Conexão/Solo' ? publishedClock(event.presentation) : '—'}</dd></div>
+                <div><dt>Partida / início</dt><dd>{publishedClock(event.kind === 'flight' ? event.departure : event.day?.dutyReport || event.day?.startTime || event.departure)}</dd></div>
+                <div><dt>Origem</dt><dd>{event.origin || '—'}</dd></div>
+                <div><dt>Destino</dt><dd>{event.destination || '—'}</dd></div>
+                <div><dt>Chegada / fim</dt><dd>{publishedClock(event.kind === 'flight' ? event.arrival : event.day?.dutyDebrief || event.day?.endTime || event.arrival)}</dd></div>
+                <div className="cc-aims-source-details"><dt>Detalhes publicados</dt><dd>{details(event)}</dd></div>
+              </dl>
+              {expanded && <div id={detailId} className="cc-aims-activity-detail">
+                <strong>Detalhes publicados</strong>
+                <p>{details(event)}</p>
+                {review && changes.map(change => <PublicationChangeDetail key={`${review.owner}:${change.id}`} owner={review.owner} change={change}/>)}
+              </div>}
+            </li>;
           })}
-        </tbody>
-      </table>
-    </div>
+        </ol>
+      </li>)}
+    </ol>
     {showHistory && <aside className="cc-publication-history" aria-label="Histórico de alterações">
       <h3>Alterações da escala</h3>
       {runtimeStatus && <p role="status">{runtimeStatus}</p>}
@@ -172,3 +166,4 @@ export function AimsRosterTable({ events, title = 'Escala publicada em tabela', 
     </aside>}
   </section>;
 }
+
