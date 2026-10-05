@@ -60,7 +60,7 @@ const canonical = buildCanonicalRosterEvents(midnight).filter((event) => event.k
 assert.deepEqual(chosen.canonicalEventIds, canonical.filter((event) => event.journeyId === chosen.journeyId).map((event) => event.id));
 const summary = buildProgramSummary({ record: chosen, label: 'A próxima programação', presentationTime: chosen.startTime, includeGreeting: false });
 assert.match(summary, /2 pernas/);
-assert.match(summary, /Na perna 2/);
+assert.match(summary, /SYNTH-CONTINUATION:/);
 assert.match(summary, /AAA/);
 
 // Existing canonical boundaries must remain authoritative: new APZ, real rest,
@@ -178,7 +178,7 @@ if (source.includes("from './server/concierge/journey-programs.mjs'")) {
     premiumGreeting: () => 'Olá.', normalizeFlightRaw: (value) => String(value),
   });
   const actualPremium = await runtime.premium({ roster: midnight }, 'next', {});
-  assert.match(actualPremium, /2 pernas/); assert.match(actualPremium, /Na perna 2/);
+  assert.match(actualPremium, /2 pernas/); assert.match(actualPremium, /SYNTH-CONTINUATION:/);
   const actualBasic = runtime.basic({ roster: midnight }, 'next');
   assert.match(actualBasic, /SYNTH-CONTINUATION/); assert.match(actualBasic, /07:35/);
   const actualRegulation = runtime.regulation({ roster: midnight });
@@ -201,3 +201,4 @@ if (process.env.CREWCHECK_CANONICAL_PARITY === '1') {
   try { assert.deepEqual(buildCanonicalRosterEvents(midnight), harness.load('canonicalRoster').buildCanonicalRosterEvents(midnight)); } finally { harness.cleanup(); }
 }
 console.log('PASS canonical Concierge journey projection, boundaries, end provenance, nonflight independence, and unchanged regulation formula.');
+

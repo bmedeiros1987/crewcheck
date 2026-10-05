@@ -194,14 +194,15 @@ function scheduleLead(label = '') {
   return label ? `${String(label).replace(/[,.:;]+$/, '')},` : '';
 }
 
-function legSentence(leg = {}, index = 0, radar = null) {
-  const flight = spokenFlightNumber(leg.flightNumber || `etapa ${index + 1}`);
+function legSentence(leg = {}, index = 0) {
+  // Visible text keeps the published identifier; premiumVoiceText owns pronunciation.
+  const flight = String(leg.flightNumber || '').trim().toUpperCase().replace(/\s+/g, '') || `Voo ${index + 1} a confirmar`;
   const departure = spokenTime(leg.departureTime);
   const arrival = spokenTime(leg.arrivalTime);
   const destination = shortAirportName(leg.destination);
-  const gate = radar?.gate || leg.gate;
-  const sequence = index === 0 ? 'Na primeira perna' : `Na perna ${index + 1}`;
-  return `${sequence}, você segue no ${flight}, saindo ${originDeparturePhrase(leg.origin)} às ${departure} e chegando a ${destination} às ${arrival}${gate ? `, pelo portão ${gate}` : ''}.`;
+  // Legacy leg.gate / radar.gate do not carry a verified occurrence here.
+  // Leave gate reporting to the canonical Radar surface; never attach it to arrival.
+  return `${flight}: saída ${originDeparturePhrase(leg.origin)} às ${departure}; chegada em ${destination} às ${arrival}.`;
 }
 
 export function buildProgramSummary({ profile = {}, snapshot = {}, record = null, label = '', presentationTime = '', radar = null, includeGreeting = true } = {}) {
@@ -217,11 +218,11 @@ export function buildProgramSummary({ profile = {}, snapshot = {}, record = null
   }
   const count = legs.length;
   const finalDestination = shortAirportName(legs.at(-1)?.destination);
-  const opening = `${greeting}${lead ? `${lead} ` : ''}você tem ${count} perna${count === 1 ? '' : 's'}. Sua apresentação é às ${presentation}, e a chave termina em ${finalDestination} às ${end}.`;
+  const opening = `${greeting}${lead ? `${lead} ` : ''}você tem ${count} perna${count === 1 ? '' : 's'}. Apresentação às ${presentation}. Fim da jornada em ${finalDestination} às ${end}.`;
   const programOpening = record.endKind === 'arrival'
     ? `${greeting}${lead ? `${lead} ` : ''}você tem ${count} perna${count === 1 ? '' : 's'}. Sua apresentação é às ${presentation}. A última chegada prevista é em ${finalDestination} às ${end}; o fim publicado da jornada não está confirmado.`
     : opening;
-  const details = legs.slice(0, 4).map((leg, index) => legSentence(leg, index, index === 0 ? radar : null));
+  const details = legs.slice(0, 4).map((leg, index) => legSentence(leg, index));
   const remaining = count > 4 ? `As outras ${count - 4} pernas ficam detalhadas no texto da escala.` : '';
   return [programOpening, ...details, remaining].filter(Boolean).join('\n');
 }
@@ -279,3 +280,4 @@ export function premiumVoiceText(text = '') {
   if (value.length > 700) value = `${value.slice(0, 680).replace(/\s+\S*$/, '')}. Os demais detalhes ficam no texto.`;
   return value;
 }
+
