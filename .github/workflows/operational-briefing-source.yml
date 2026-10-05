@@ -1,0 +1,89 @@
+name: Authenticated briefing preview
+on:
+  pull_request:
+    paths:
+      - 'server/platform.mjs'
+      - 'server/v139/common.mjs'
+      - 'server/concierge/**'
+      - 'server/weather/critical-observation.mjs'
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/rosterContinuity.ts'
+      - 'client/src/lib/rosterPublicationReview.ts'
+      - 'scripts/**'
+      - '.github/workflows/operational-briefing-source.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+jobs:
+  read_only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Validate tracked authenticated preview and existing auth semantics
+        run: |
+          node scripts/p1-concierge-journey/compile.mjs
+          node --check server/v139/common.mjs
+          node --check server/platform.mjs
+          node --check server/concierge/operational-briefing-source.mjs
+          for zone in UTC America/Sao_Paulo Pacific/Honolulu; do
+            TZ="$zone" node --test scripts/tests/operational-briefing.test.mjs scripts/tests/operational-briefing-source.test.mjs
+          done
+          node scripts/regression-v139-requireidentity-backend-unavailable.mjs
+          node scripts/regression-platform-requiremain-backend-unavailable.mjs
+      - run: npm ci
+      - name: Start isolated synthetic MySQL without network or ports
+        run: |
+          mkdir -p /tmp/crewcheck-briefing-preview-qa-socket
+          docker run --detach --rm --name crewcheck-briefing-preview-qa --network none --mount type=bind,source=/tmp/crewcheck-briefing-preview-qa-socket,target=/var/run/mysqld --env MYSQL_ALLOW_EMPTY_PASSWORD=yes --env MYSQL_DATABASE=crewcheck_briefing_preview_qa mysql:8.4
+          for attempt in $(seq 1 60); do
+            if docker logs crewcheck-briefing-preview-qa 2>&1 | grep -q 'MySQL init process done' && docker exec crewcheck-briefing-preview-qa mysql --database=crewcheck_briefing_preview_qa --execute='SELECT 1'; then break; fi
+            sleep 1
+          done
+          docker exec crewcheck-briefing-preview-qa mysql --database=crewcheck_briefing_preview_qa --execute='SELECT 1'
+          docker exec crewcheck-briefing-preview-qa chmod 755 /var/run/mysqld
+      - name: Validate tracked source against isolated MySQL
+        run: |
+          mkdir -p artifacts/briefing-source
+          for zone in UTC America/Sao_Paulo Pacific/Honolulu; do
+            TZ="$zone" node scripts/regression-operational-briefing-source-mysql.mjs > "artifacts/briefing-source/raw-${zone//\//_}.json"
+          done
+        env:
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-briefing-preview-qa-socket/mysqld.sock
+          CREWCHECK_BRIEFING_QA: isolated-mysql
+      - name: Prepare production sources and repeat auth/briefing contracts
+        run: |
+          node scripts/v139/apply.mjs
+          node scripts/p1-concierge-journey/compile.mjs
+          for zone in UTC America/Sao_Paulo Pacific/Honolulu; do
+            TZ="$zone" node --test scripts/tests/operational-briefing.test.mjs scripts/tests/operational-briefing-source.test.mjs
+          done
+          node scripts/regression-v139-requireidentity-backend-unavailable.mjs
+          node scripts/regression-platform-requiremain-backend-unavailable.mjs
+          node scripts/regression-concierge-journey-programs.mjs
+      - name: Validate prepared source against isolated MySQL
+        run: |
+          for zone in UTC America/Sao_Paulo Pacific/Honolulu; do
+            TZ="$zone" node scripts/regression-operational-briefing-source-mysql.mjs > "artifacts/briefing-source/prepared-${zone//\//_}.json"
+          done
+        env:
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-briefing-preview-qa-socket/mysqld.sock
+          CREWCHECK_BRIEFING_QA: isolated-mysql
+      - name: Remove only the isolated test container
+        if: always()
+        run: docker rm -f crewcheck-briefing-preview-qa || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: briefing-source-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/briefing-source

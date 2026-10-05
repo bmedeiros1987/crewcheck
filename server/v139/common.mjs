@@ -299,3 +299,35 @@ export async function requireIdentity(req, res) {
   const profile = await ensureProfile(db, email, payload?.name);
   return { db, email, profile, admin: Boolean(payload?.admin || isAdminEmail(email)), payload };
 }
+
+// Read-only existing-main-account context. This reuses the canonical verifier
+// and token extraction; it never creates a profile, issues a token or falls back
+// to email headers/body. Dependencies are server-internal, not request options.
+export async function readExistingMainIdentity(req, { getDb = dbPool, now = Date.now } = {}) {
+  const failure = (status, code, message) => ({ ok: false, status, code, message });
+  let payload;
+  try { payload = verifyJwt(requestToken(req)); }
+  catch { return failure(503, 'AUTH_UNAVAILABLE', 'Autenticação temporariamente indisponível.'); }
+  let db;
+  try { db = await getDb(); }
+  catch { return failure(503, 'DATABASE_OFFLINE', 'Sincronização temporariamente indisponível.'); }
+  if (!db) return failure(503, 'DATABASE_OFFLINE', 'Sincronização temporariamente indisponível.');
+  const clock = now(), email = safeEmail(payload?.email);
+  if (!Number.isFinite(clock) || !email || payload?.iss !== 'crewcheck' || payload?.aud !== 'crewcheck-web' ||
+      payload?.role === 'visitor' || payload?.visitorId !== undefined || payload?.ownerEmail !== undefined ||
+      typeof payload?.sub !== 'string' || !payload.sub ||
+      !Number.isSafeInteger(payload?.iat) || payload.iat > Math.floor(clock / 1000) ||
+      !Number.isSafeInteger(payload?.exp) || payload.exp <= Math.floor(clock / 1000)) {
+    return failure(401, 'AUTH_REQUIRED', 'Faça login para consultar seu briefing.');
+  }
+  if (payload.mustChangePassword === true) return failure(403, 'PASSWORD_CHANGE_REQUIRED', 'Conclua a atualização de senha da sua conta.');
+  try {
+    const [rows] = await db.query('SELECT email,public_id FROM crewcheck_platform_profiles WHERE email=? LIMIT 2', [email]);
+    if (!Array.isArray(rows) || rows.length > 1) return failure(503, 'ACCOUNT_UNAVAILABLE', 'Não foi possível confirmar sua conta agora.');
+    const profile = rows[0];
+    if (!profile || safeEmail(profile.email) !== email || typeof profile.public_id !== 'string' || profile.public_id !== payload.sub) {
+      return failure(401, 'AUTH_REQUIRED', 'Faça login para consultar seu briefing.');
+    }
+    return { ok: true, db, email, publicId: profile.public_id };
+  } catch { return failure(503, 'DATABASE_OFFLINE', 'Sincronização temporariamente indisponível.'); }
+}
