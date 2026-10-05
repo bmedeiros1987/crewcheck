@@ -71,6 +71,16 @@ jobs:
           node scripts/regression-v139-requireidentity-backend-unavailable.mjs
           node scripts/regression-platform-requiremain-backend-unavailable.mjs
           node scripts/regression-concierge-journey-programs.mjs
+      - name: Repeat preparation as at build and startup
+        run: |
+          node scripts/v139/apply.mjs
+          node scripts/p1-concierge-journey/compile.mjs
+          node --check server/platform.mjs
+          node --check server/v139/common.mjs
+          node --check server/concierge/operational-briefing-source.mjs
+          TZ=UTC node --test scripts/tests/operational-briefing.test.mjs scripts/tests/operational-briefing-source.test.mjs
+          node scripts/regression-v139-requireidentity-backend-unavailable.mjs
+          node scripts/regression-platform-requiremain-backend-unavailable.mjs
       - name: Validate prepared source against isolated MySQL
         run: |
           for zone in UTC America/Sao_Paulo Pacific/Honolulu; do

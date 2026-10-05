@@ -4,6 +4,13 @@ import { diagnoseCirium, diagnoseCiriumFlight } from './cirium-diagnostic.mjs';
 import { readExistingMainIdentity } from './v139/common.mjs';
 import { readOperationalBriefingPreview } from './concierge/operational-briefing-source.mjs';
 
+async function handleOperationalBriefingPreview(req, res) {
+  const context = await readExistingMainIdentity(req);
+  if (!context.ok) return sendJson(res, context.status, { ok: false, code: context.code, message: context.message });
+  const result = await readOperationalBriefingPreview(context);
+  return sendJson(res, result.status, result.body);
+}
+
 const APP_VERSION = '13.8.8';
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 const SUPPORTED_LOCALES = new Set(['pt-BR', 'en-US', 'es-ES']);
@@ -1726,13 +1733,6 @@ async function handleRosterActive(req, res) {
   if (!context) return;
   const result = await context.db.query('SELECT id,roster_key,roster,compliance,gym,source_name,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE ORDER BY updated_at DESC LIMIT 1', [context.identity.email]);
   return sendJson(res, 200, { ok: true, roster: result.rows[0] || null, databasePrimary: true });
-}
-
-async function handleOperationalBriefingPreview(req, res) {
-  const context = await readExistingMainIdentity(req);
-  if (!context.ok) return sendJson(res, context.status, { ok: false, code: context.code, message: context.message });
-  const result = await readOperationalBriefingPreview(context);
-  return sendJson(res, result.status, result.body);
 }
 
 async function handleStays(req, res) {

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import test from 'node:test';
@@ -183,6 +185,40 @@ test('existing requireIdentity and requireMain remain byte-identical to draft909
   const declaration = (source, name) => source.match(new RegExp(`^(?:export )?(?:async )?function ${name}\\([^]*?^}`, 'm'))?.[0];
   assert.equal(hash(declaration(COMMON, 'requireIdentity')), '8470d011ee2cecdc04bff1b1e920e37f45487d22b8801c9eed25d0405ddce019');
   assert.equal(hash(declaration(PLATFORM, 'requireMain')), '26654396670a1b60163180bdefd6aae0b37924a221770322ce66d3e9b6aeb230');
+});
+
+test('actual active-roster preparation preserves the briefing handler, policy and route and is idempotent', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'crewcheck-briefing-preparation-'));
+  const script = fileURLToPath(new URL('../p0-active-roster-server/apply.mjs', import.meta.url));
+  const filename = join(directory, 'server/platform.mjs');
+  try {
+    mkdirSync(join(directory, 'server'));
+    const activeHandler = functionSource(PLATFORM, 'handleRosterActive');
+    // In prepared CI, make only the disposable fixture need the real handler
+    // replacement again. Raw production input already needs that replacement.
+    const legacyHandler = activeHandler.replace('roster: rosterSummary(row)', 'roster: row');
+    assert.equal(legacyHandler.includes('roster: rosterSummary(row)'), false);
+    writeFileSync(filename, PLATFORM.replace(activeHandler, legacyHandler), 'utf8');
+    const prepare = () => {
+      const result = spawnSync(process.execPath, [script], {
+        cwd: directory, encoding: 'utf8', timeout: 10_000, env: { PATH: '/usr/bin:/bin', TZ: 'UTC' },
+      });
+      assert.equal(result.status, 0, result.stderr || result.error?.message);
+      return readFileSync(filename, 'utf8');
+    };
+    const first = prepare();
+    assert.match(functionSource(first, 'handleRosterActive'), /roster: rosterSummary\(row\)/, 'actual replacement path ran');
+    assert.equal(functionSource(first, 'handleOperationalBriefingPreview'), functionSource(PLATFORM, 'handleOperationalBriefingPreview'));
+    assert.equal(first.slice(first.indexOf('const PLATFORM_METHOD_POLICIES = ['), first.indexOf('\nfunction enforcePlatformMethod')), policySource);
+    assert.equal(functionSource(first, 'enforcePlatformMethod'), functionSource(PLATFORM, 'enforcePlatformMethod'));
+    assert.equal(functionSource(first, 'handlePlatformRoute'), functionSource(PLATFORM, 'handlePlatformRoute'));
+    assert.equal((first.match(/^async function handleOperationalBriefingPreview\(/gm) || []).length, 1);
+    assert.ok(first.includes("import { readExistingMainIdentity } from './v139/common.mjs';"));
+    assert.ok(first.includes("import { readOperationalBriefingPreview } from './concierge/operational-briefing-source.mjs';"));
+    assert.equal(prepare(), first, 'second actual preparation run is byte-identical');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test('canonical main-account issuer, verifier and extractor accept bearer and main cookie only', async () => {
