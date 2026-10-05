@@ -136,7 +136,17 @@ const require = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || import.meta
 const engines = require('playwright');
 const results = [], interactions = [], safety = [], failures = [];
 let origin;
-const settle = async page => page.evaluate(async () => { await document.fonts.ready; await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); });
+const settle = async page => page.evaluate(async () => {
+  await document.fonts.ready;
+  const frames = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  await frames();
+  // Measure the settled effective theme, retaining real shipping transitions.
+  // Infinite decorative animations are not a settling condition.
+  const finite = document.getAnimations().filter(animation =>
+    Number.isFinite(animation.effect?.getComputedTiming().endTime) && animation.playState !== 'finished');
+  await Promise.all(finite.map(animation => animation.finished.catch(() => {})));
+  await frames();
+});
 
 async function inspect(page, name, preference, effective, favoriteCount, session, empty) {
   await page.waitForFunction(({ preference, effective }) => {
@@ -204,9 +214,17 @@ async function inspect(page, name, preference, effective, favoriteCount, session
       // Native select popups/options are outside DOM text layout. The closed
       // control still has its dimensions, client/scroll sizes and contrast tested.
       const textRects = element.tagName === 'SELECT' ? [] : [...range.getClientRects()].map(r => ({ x: r.x, y: r.y, right: r.right, bottom: r.bottom }));
+      const verticalClips = [];
+      for (let ancestor = element; ancestor && panel.contains(ancestor); ancestor = ancestor.parentElement) {
+        const overflow = getComputedStyle(ancestor).overflowY;
+        if (['hidden', 'clip', 'auto', 'scroll'].includes(overflow) || (ancestor === element && element.tagName === 'BUTTON')) verticalClips.push(rect(ancestor));
+      }
+      // Font ascenders may extend beyond an overflow-visible line box. They
+      // are clipped only by an actual clipping ancestor (or control boundary).
       const textFits = element.scrollWidth <= element.clientWidth + 1 && element.scrollHeight <= element.clientHeight + 1
-        && textRects.every(r => r.x >= bounds.x - 1.5 && r.right <= bounds.right + 1.5 && r.y >= bounds.y - 1.5 && r.bottom <= bounds.bottom + 1.5);
-      return { tag: element.tagName, text: element.tagName === 'SELECT' ? element.selectedOptions[0]?.textContent : text(element), color: style.color, background: style.backgroundColor, image: style.backgroundImage, minimumContrast: Math.min(...options.map(value => contrast(value.foreground, value.background))), rect: bounds, clientWidth: element.clientWidth, scrollWidth: element.scrollWidth, clientHeight: element.clientHeight, scrollHeight: element.scrollHeight, textRects, textFits };
+        && textRects.every(r => r.x >= bounds.x - 1.5 && r.right <= bounds.right + 1.5
+          && verticalClips.every(clip => r.y >= clip.y - 1.5 && r.bottom <= clip.bottom + 1.5));
+      return { tag: element.tagName, text: element.tagName === 'SELECT' ? element.selectedOptions[0]?.textContent : text(element), color: style.color, background: style.backgroundColor, image: style.backgroundImage, minimumContrast: Math.min(...options.map(value => contrast(value.foreground, value.background))), rect: bounds, clientWidth: element.clientWidth, scrollWidth: element.scrollWidth, clientHeight: element.clientHeight, scrollHeight: element.scrollHeight, textRects, verticalClips, textFits };
     });
     const surfaces = [panel, ...panel.querySelectorAll('.cc-meteo-airports article')].map(element => {
       const values = paints(element).map(value => luminance(value.background));
