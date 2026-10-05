@@ -82,6 +82,7 @@ async function runtime({ days = [], query = '/proximo', dateKey = '', care = tru
   const saved = [];
   const context = {
     Date: class extends Date { constructor(...args) { super(...(args.length ? args : [clock])); } }, Intl,
+    stayMenuReply: async () => ({ handled: false }),
     pharmacyReferenceReply: async () => ({ handled: false }),
     conciergeLoadSnapshot: () => null, conciergeStayRecords: () => [], conciergeLocationContextV14335: () => ({ fresh: false }),
     conciergePreferenceCommandV14336: async () => ({ handled: false }),
