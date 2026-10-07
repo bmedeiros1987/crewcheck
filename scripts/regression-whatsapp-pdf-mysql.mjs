@@ -60,15 +60,37 @@ try {
   await pool.query('CREATE TABLE crewcheck_platform_visitors (id VARCHAR(191) PRIMARY KEY,owner_email VARCHAR(191),status VARCHAR(20)) ENGINE=InnoDB');
   const visitor = { id: 'fictional-visitor', owner_email: email, status: 'active' };
   await pool.query('INSERT INTO crewcheck_platform_visitors VALUES(?,?,?)', [visitor.id, email, 'active']);
-  const adapter = native => ({ async query(sql, params = []) {
-    const values = []; const statement = sql.replace(/\$(\d+)/g, (_match, index) => { values.push(params[Number(index)-1]); return '?'; });
-    const [result] = await native.query(statement, values);
-    return Array.isArray(result) ? { rows: result, rowCount: result.length } : { rows: [], rowCount: result.affectedRows };
-  }, async connect() { return adapter(await native.getConnection()); }, release() { native.release?.(); } });
-  const visitorDb = adapter(pool);
+  const platform = fs.readFileSync(new URL('../server/platform.mjs', import.meta.url), 'utf8');
+  assert.ok(platform.includes('VISITOR_PRIVATE_DELIVERY_V2'), 'prepare canonical sources before isolated MySQL test');
+  const section = (a,b) => { const start = platform.indexOf(a); assert.ok(start >= 0); const end = platform.indexOf(b,start); assert.ok(end > start); return platform.slice(start,end).replaceAll('export async function','async function'); };
+  // Exact production normalization, placeholder/JSON conversion and connection/release adapter.
+  const production = vm.createContext({ crypto, Buffer, Date, Intl, process: { env: {
+    CREWCHECK_DATA_ENCRYPTION_KEY: 'fictional-native-test-key',
+    CREWCHECK_AUTH_SECRET: 'fictional-native-test-auth',
+    CREWCHECK_TRUST_LEGACY_PREMIUM_PROFILE: 'false',
+  } } });
+  vm.runInContext(section('const DEFAULT_TIMEZONE =', 'const GOOGLE_PLAY_PRODUCTS =') +
+    section('const PLAN_CATALOG =', 'function sendJson(') +
+    section('function normalizeText(', 'function safeEqual(') +
+    section('const MYSQL_JSON_COLUMNS =', 'function mysqlPoolOptions(') +
+    section('function normalizeTimezone(', 'function normalizeLocale(') +
+    section('function planCatalog(', 'export async function consumePlatformUsage(') +
+    section('function authSecret(', 'function verifyJwt(') +
+    section('function encryptionKey(', 'function hotelKey(') +
+    section('function parseDateOnly(', 'function temporaryPassword('), production);
+  const visitorDb = production.mysqlAdapter(pool);
+  await pool.query('CREATE TABLE crewcheck_platform_profiles (email VARCHAR(191) PRIMARY KEY,plan VARCHAR(40),timezone VARCHAR(80)) ENGINE=InnoDB');
+  await pool.query('CREATE TABLE crewcheck_platform_subscriptions (email VARCHAR(191) PRIMARY KEY,plan VARCHAR(40),status VARCHAR(20),current_period_end DATETIME,cancel_at_period_end INT,provider VARCHAR(40),product_id VARCHAR(80)) ENGINE=InnoDB');
+  await pool.query('CREATE TABLE crewcheck_platform_usage (email VARCHAR(191),month_key VARCHAR(7),usage_kind VARCHAR(40),used INT) ENGINE=InnoDB');
+  await pool.query('INSERT INTO crewcheck_platform_profiles VALUES(?,?,?)', [email,'premium_monthly','America/Sao_Paulo']);
+  await pool.query('INSERT INTO crewcheck_platform_subscriptions VALUES(?,?,?,?,?,?,?)', [email,'premium_monthly','active','2099-12-31 00:00:00',0,'fictional',null]);
+  const authorized = async (database, candidate) => {
+    const profile = await database.query('SELECT * FROM crewcheck_platform_profiles WHERE email=$1', [candidate.owner_email]);
+    return Boolean(profile.rows[0] && (await production.subscriptionStatus(database, profile.rows[0])).premiumAccess);
+  };
   const issued = await createVisitorCode(visitorDb, visitor, receiver);
   const code = issued.code.slice('visitante_'.length);
-  const binds = await Promise.all([completeVisitorCode(visitorDb, '5511999990002', code, receiver, { authorized: async () => true }), completeVisitorCode(visitorDb, '5511999990002', code, receiver, { authorized: async () => true })]);
+  const binds = await Promise.all([completeVisitorCode(visitorDb, '5511999990002', code, receiver, { authorized }), completeVisitorCode(visitorDb, '5511999990002', code, receiver, { authorized })]);
   assert.equal(binds.filter(result => result.linked).length, 1);
   const bound = await findVisitorBinding(visitorDb, '5511999990002', receiver);
   assert.equal(bound.visitorId, visitor.id);
@@ -76,26 +98,25 @@ try {
   assert.equal(await claimVisitorMessage(visitorDb, '5511999990002', bound, { id: 'fictional-visitor-message', phoneNumberId: receiver }), false);
   const retired = await createVisitorCode(visitorDb, visitor, receiver);
   await pool.query("UPDATE crewcheck_platform_visitors SET status='revoked' WHERE id=?", [visitor.id]);
-  assert.equal((await completeVisitorCode(visitorDb, '5511999990003', retired.code.slice('visitante_'.length), receiver, { authorized: async () => true })).linked, false);
+  assert.equal((await completeVisitorCode(visitorDb, '5511999990003', retired.code.slice('visitante_'.length), receiver, { authorized })).linked, false);
   // Actual materialized private delivery guard, with native MySQL locks and fictitious metadata.
-  const platform = fs.readFileSync(new URL('../server/platform.mjs', import.meta.url), 'utf8');
-  assert.ok(platform.includes('VISITOR_PRIVATE_DELIVERY_V2'), 'prepare canonical sources before isolated MySQL test');
   await pool.query('ALTER TABLE crewcheck_platform_visitors ADD permissions JSON');
   await pool.query("UPDATE crewcheck_platform_visitors SET status='active',permissions=? WHERE id=?", [JSON.stringify({ hotels: true, room: true, presentation: true }), visitor.id]);
-  await pool.query('CREATE TABLE crewcheck_platform_profiles (email VARCHAR(191) PRIMARY KEY,premium INT) ENGINE=InnoDB');
-  await pool.query('CREATE TABLE crewcheck_platform_subscriptions (email VARCHAR(191) PRIMARY KEY) ENGINE=InnoDB');
   await pool.query('CREATE TABLE crewcheck_platform_stays (id VARCHAR(191) PRIMARY KEY,owner_email VARCHAR(191),stay_date DATE,hotel_name VARCHAR(191),room_cipher TEXT,presentation_time VARCHAR(20),share_with_visitors INT,updated_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),KEY owner_idx(owner_email,stay_date)) ENGINE=InnoDB');
-  await pool.query('INSERT INTO crewcheck_platform_profiles VALUES(?,1)', [email]);
-  await pool.query('INSERT INTO crewcheck_platform_subscriptions VALUES(?)', [email]);
-  await pool.query('INSERT INTO crewcheck_platform_stays(id,owner_email,stay_date,hotel_name,room_cipher,presentation_time,share_with_visitors) VALUES(?,?,?, ?,?,?,1)', ['fixture-stay',email,'2099-10-07','Fictional hotel','fictional-room-cipher','10:00']);
-  const section = (a,b) => { const start = platform.indexOf(a); assert.ok(start >= 0); const end = platform.indexOf(b,start); assert.ok(end > start); return platform.slice(start,end).replaceAll('export async function','async function'); };
-  const canonical = vm.createContext({ crypto, withVisitorPhoneLock, visitorPhoneHash, visitorRevision, whatsappVisitorEnabled: () => true, pool: async () => visitorDb,
-    subscriptionStatus: async (_db, profile) => ({ premiumAccess: profile.premium === 1 }), parseDateOnly: value => String(value || '').slice(0,10), normalizeText: String, decryptPrivate: () => 'fictional-room', Date });
+  await pool.query('INSERT INTO crewcheck_platform_stays(id,owner_email,stay_date,hotel_name,room_cipher,presentation_time,share_with_visitors) VALUES(?,?,?, ?,?,?,1)', ['fixture-stay',email,'2099-10-07','Fictional hotel',production.encryptPrivate('fictional-room'),'10:00']);
+  const canonical = production;
+  Object.assign(canonical, { withVisitorPhoneLock, visitorPhoneHash, visitorRevision, whatsappVisitorEnabled: () => true, pool: async () => visitorDb });
   vm.runInContext(section('function allowedPermissions(', 'function publicProfile(') + section('export async function platformVisitorReadReply(', 'export async function platformWhatsAppVisitorBinding(') + section('function visitorDaySummary(', 'export async function handlePlatformVisitorTelegram('), canonical);
   const liveBinding = await findVisitorBinding(visitorDb,'5511999990002',receiver);
   const context = await canonical.platformWhatsAppVisitorContext(liveBinding);
   const rendered = await canonical.platformWhatsAppVisitorReply(liveBinding,'/hotel');
   let attempts = 0;
+  assert.ok(context, 'actual production subscriptionStatus recognizes active fictional subscription');
+  await pool.query("UPDATE crewcheck_platform_subscriptions SET status='canceled' WHERE email=?", [email]);
+  assert.equal((await canonical.platformWhatsAppVisitorContext(liveBinding)).premium, false, 'production Premium helper denies canceled subscription');
+  const noPremium = await canonical.platformWhatsAppVisitorDeliver('5511999990002', liveBinding, context.revision, rendered, async () => { attempts++; return { ok: true }; });
+  assert.equal(noPremium.code, 'VISITOR_AUTHORIZATION_CHANGED'); assert.equal(attempts, 0);
+  await pool.query("UPDATE crewcheck_platform_subscriptions SET status='active' WHERE email=?", [email]);
   await pool.query('UPDATE crewcheck_platform_stays SET share_with_visitors=0 WHERE id=?', ['fixture-stay']);
   const denied = await canonical.platformWhatsAppVisitorDeliver('5511999990002', liveBinding, context.revision, rendered, async () => { attempts++; return { ok: true }; });
   assert.equal(denied.code,'VISITOR_RESOURCE_CHANGED'); assert.equal(attempts,0);
