@@ -7,6 +7,15 @@ export function startupOwner(): string {
   return getToken() ? String(user?.id || user?.email || '').trim().toLowerCase() : '';
 }
 export function startupKey(): string { return `crewcheck_roster_choice_v1_${encodeURIComponent(startupOwner())}`; }
+function clearEpochKey(): string { return startupKey() + '_clear_epoch'; }
+function clearEpoch(): string { return localStorage.getItem(clearEpochKey()) || ''; }
+export function markStartupCleared(): void {
+  if (!startupOwner()) return;
+  choiceEpoch += 1;
+  localStorage.setItem(clearEpochKey(), crypto.randomUUID());
+  localStorage.setItem(startupKey(), JSON.stringify({ owner: startupOwner(), cleared: true }));
+  window.dispatchEvent(new CustomEvent('crewcheck:roster-cleared'));
+}
 export function startupCleared(): boolean {
   try { return JSON.parse(localStorage.getItem(startupKey()) || 'null')?.cleared === true; } catch { return false; }
 }
@@ -34,7 +43,7 @@ export async function restoreLatestImport(): Promise<{ roster: CrewRoster; sourc
 
 let choiceEpoch = 0;
 export function beginRosterChoice(): () => boolean {
-  const epoch = ++choiceEpoch, owner = startupOwner(), token = getToken();
+  const epoch = ++choiceEpoch, owner = startupOwner(), token = getToken(), clearRevision = clearEpoch();
   window.dispatchEvent(new CustomEvent('crewcheck:roster-choice-start'));
-  return () => epoch === choiceEpoch && owner === startupOwner() && token === getToken();
+  return () => epoch === choiceEpoch && owner === startupOwner() && token === getToken() && clearRevision === clearEpoch();
 }

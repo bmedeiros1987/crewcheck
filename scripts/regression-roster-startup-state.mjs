@@ -20,6 +20,7 @@ assert.equal(pastRosterPeriod({ year: 2026, month: 7 }, new Date('2026-10-07')),
 assert.equal(pastRosterPeriod({ year: 2026, month: 10 }, new Date('2026-10-07')), false);
 let user = { id: 'user-a' }, token = 'session-a', responses = [], calls = [];
 const local = new Map();
+let syntheticClearId = 0;
 const auth = { getStoredUser: () => user, getToken: () => token, authFetch: async url => {
   calls.push(url);
   const response = responses.shift();
@@ -29,7 +30,7 @@ const auth = { getStoredUser: () => user, getToken: () => token, authFetch: asyn
 } };
 const exports = {};
 const source = ts.transpileModule(fs.readFileSync('client/src/lib/rosterStartup.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
-vm.runInNewContext(source, { exports, require: name => name === './authClient' ? auth : { newestImports }, localStorage: { getItem: key => local.get(key) }, window: { dispatchEvent() {} }, CustomEvent: class {} });
+vm.runInNewContext(source, { exports, require: name => name === './authClient' ? auth : { newestImports }, localStorage: { getItem: key => local.get(key), setItem: (key, value) => local.set(key, value) }, crypto: { randomUUID: () => 'synthetic-clear-' + (++syntheticClearId) }, window: { dispatchEvent() {} }, CustomEvent: class {} });
 responses = [{ ok: true, rosters: imports }, { ok: true, data: { roster: { days: [{}], month: 7, year: 2026 } } }];
 assert.equal((await exports.restoreLatestImport()).roster.month, 7);
 assert.equal(calls.at(-1), '/api/rosters/latest-v2');
@@ -49,6 +50,20 @@ assert.equal(exports.startupCleared(), true);
 user = { id: 'user-b' }; assert.notEqual(exports.startupKey(), a); assert.equal(exports.startupCleared(), false);
 user = { id: 'user-a' }; const firstChoice = exports.beginRosterChoice(); const secondChoice = exports.beginRosterChoice();
 assert.equal(firstChoice(), false); assert.equal(secondChoice(), true); token = null; assert.equal(secondChoice(), false);
+token = 'session-a';
+const beforeClear = exports.beginRosterChoice();
+exports.markStartupCleared();
+assert.equal(beforeClear(), false, 'clear invalidates a pending same-account, same-token choice');
+assert.equal(exports.startupCleared(), true);
+const afterClear = exports.beginRosterChoice();
+assert.equal(afterClear(), true, 'a new explicit choice after clear is allowed');
+local.set(a, JSON.stringify({ owner: 'user-a', roster: { days: [{}] } }));
+assert.equal(afterClear(), true, 'saving the new explicit choice must not invalidate itself');
+local.set(a + '_clear_epoch', 'synthetic-other-tab-clear');
+assert.equal(afterClear(), false, 'clear in another tab invalidates a pending choice before rerender');
+const repeatedClear = exports.beginRosterChoice();
+exports.markStartupCleared();
+assert.equal(repeatedClear(), false, 'repeated clear must have a fresh revision');
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 assert.match(home, /if \(!primary.days\?\.length\) return;/);
 assert.match(home, /function currentCompliance[^\n]+bundle.roster.days\?\.length/);
