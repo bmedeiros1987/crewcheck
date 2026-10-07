@@ -56,4 +56,6 @@ assert.match(home, /payload.owner !== startupOwner\(\)/);
 assert.match(home, /view === 'alerts' && !bundle.roster.days\?\.length/);
 assert.match(home, /view === 'salary' && !bundle.roster.days\?\.length/);
 assert.match(home, /historyError \? <article/);
+assert.match(home, /rosterWindowPrimaryRef.current === bundle.roster/);
+assert.match(home, /openActive: \(\) => \{ const canCommit = beginRosterChoice\(\)/);
 console.log('PASS: startup ordering, empty/loading/error gates, session and choice races, clear intent, stale period; synthetic data only.');

@@ -78,6 +78,24 @@ if (!home.includes(marker)) {
   home = home.replaceAll("{list.length ? 'Ativo' : 'Aguardando escala'}", "{'An\u00e1lise conclu\u00edda'}");
   if (!home.includes("<h2>An\u00e1lise ativa e atualizada</h2>")) throw new Error('Roster truth anchor missing');
   home = home.replaceAll("<h2>An\u00e1lise ativa e atualizada</h2>", "<h2>{pastRosterPeriod(bundle.roster) ? 'An\u00e1lise de per\u00edodo passado' : 'An\u00e1lise da escala carregada'}</h2>");
+  if (!home.includes("  const [rosterWindow, setRosterWindow] = useState<CrewRoster>(() => bundle.roster);")) throw new Error('Display session anchor missing');
+  home = home.replaceAll("  const [rosterWindow, setRosterWindow] = useState<CrewRoster>(() => bundle.roster);", "  const [rosterWindow, setRosterWindow] = useState<CrewRoster>(() => bundle.roster);\n  const rosterWindowPrimaryRef = useRef(bundle.roster);");
+  if (!home.includes("      const requestId = ++rosterWindowRequestRef.current;")) throw new Error('Display session anchor missing');
+  home = home.replaceAll("      const requestId = ++rosterWindowRequestRef.current;", "      const requestId = ++rosterWindowRequestRef.current;\n      const owner = startupOwner(), token = getToken();");
+  if (!home.includes("if (alive && requestId === rosterWindowRequestRef.current) setRosterWindow(windowRoster);")) throw new Error('Display session anchor missing');
+  home = home.replaceAll("if (alive && requestId === rosterWindowRequestRef.current) setRosterWindow(windowRoster);", "if (alive && requestId === rosterWindowRequestRef.current && owner === startupOwner() && token === getToken()) { rosterWindowPrimaryRef.current = primary; setRosterWindow(windowRoster); }");
+  if (!home.includes("if (alive && requestId === rosterWindowRequestRef.current) setRosterWindow(primary);")) throw new Error('Display session anchor missing');
+  home = home.replaceAll("if (alive && requestId === rosterWindowRequestRef.current) setRosterWindow(primary);", "if (alive && requestId === rosterWindowRequestRef.current && owner === startupOwner() && token === getToken()) { rosterWindowPrimaryRef.current = primary; setRosterWindow(primary); }");
+  if (!home.includes("const rosterEvents = useMemo(() => buildLegs(rosterWindow), [rosterWindow]);")) throw new Error('Display session anchor missing');
+  home = home.replaceAll("const rosterEvents = useMemo(() => buildLegs(rosterWindow), [rosterWindow]);", "const rosterEvents = useMemo(() => buildLegs(rosterWindowPrimaryRef.current === bundle.roster ? rosterWindow : bundle.roster), [rosterWindow, bundle.roster]);");
+  if (!home.includes("openActive: () => { openActiveRoster().then(async active =>")) throw new Error('Display session anchor missing');
+  home = home.replaceAll("openActive: () => { openActiveRoster().then(async active =>", "openActive: () => { const canCommit = beginRosterChoice(); openActiveRoster().then(async active =>");
+  if (!home.includes("const c = (await recomputeComplianceWithRegulatoryHistory(active.roster)).compliance; setBundle")) throw new Error('Display session anchor missing');
+  home = home.replaceAll("const c = (await recomputeComplianceWithRegulatoryHistory(active.roster)).compliance; setBundle", "const c = (await recomputeComplianceWithRegulatoryHistory(active.roster)).compliance; if (!canCommit()) return; setBundle");
+  if (!home.includes("  async function importFromTelegram() {\n")) throw new Error('Telegram choice anchor missing');
+  home = home.replaceAll("  async function importFromTelegram() {\n", "  async function importFromTelegram() {\n    const canCommit = beginRosterChoice();\n");
+  if (!home.includes("      const compliance = saveRoster(roster, source);\n      setBundle({ roster, compliance, source });")) throw new Error('Telegram choice anchor missing');
+  home = home.replaceAll("      const compliance = saveRoster(roster, source);\n      setBundle({ roster, compliance, source });", "      if (!canCommit()) return;\n      const compliance = saveRoster(roster, source);\n      setBundle({ roster, compliance, source });");
   fs.writeFileSync('client/src/pages/Home.tsx', marker + '\n' + home);
 }
 
