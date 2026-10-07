@@ -197,6 +197,7 @@ await import('../p1-concierge-stay-menu/apply.mjs');
 await import('../p1-concierge-journey/apply.mjs');
 await import('../p1-notification-sound/apply.mjs');
 await import('../roster-startup/apply.mjs');
+await import('../home-standby-departure/apply.mjs');
 
 }
 
