@@ -211,6 +211,12 @@ export function extractWhatsAppInboundMessages(payload = {}) {
           phoneNumberId: phoneId,
           type: String(message?.type || 'unknown').slice(0, 32),
           text: String(message?.text?.body || '').trim().slice(0, 4000),
+          document: message?.type === 'document' ? {
+            id: String(message.document?.id || '').slice(0, 80),
+            mime_type: String(message.document?.mime_type || '').slice(0, 120),
+            filename: String(message.document?.filename || '').slice(0, 160),
+            sha256: String(message.document?.sha256 || '').slice(0, 100),
+          } : null,
         });
       }
     }

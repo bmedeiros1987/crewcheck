@@ -12,6 +12,8 @@ on:
       - 'scripts/p1-whatsapp-menu/**'
       - 'scripts/regression-whatsapp-menu.mjs'
       - 'scripts/regression-whatsapp-payload-dedup.mjs'
+      - 'server/concierge/whatsapp-pdf*.mjs'
+      - 'scripts/regression-whatsapp-pdf*.mjs'
       - 'scripts/p1-whatsapp-sender/**'
       - 'scripts/regression-whatsapp-sender.mjs'
       - 'render.yaml'
@@ -29,6 +31,8 @@ on:
       - 'scripts/p1-whatsapp-menu/**'
       - 'scripts/regression-whatsapp-menu.mjs'
       - 'scripts/regression-whatsapp-payload-dedup.mjs'
+      - 'server/concierge/whatsapp-pdf*.mjs'
+      - 'scripts/regression-whatsapp-pdf*.mjs'
       - 'scripts/p1-whatsapp-sender/**'
       - 'scripts/regression-whatsapp-sender.mjs'
       - 'render.yaml'
@@ -70,3 +74,17 @@ jobs:
           node scripts/regression-whatsapp-sender.mjs
           node scripts/regression-whatsapp-menu.mjs
           node scripts/regression-whatsapp-payload-dedup.mjs
+          node scripts/regression-whatsapp-pdf.mjs
+
+  pdf-canonical-parser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-whatsapp-pdf-canonical-parser.mjs
