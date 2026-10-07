@@ -54,15 +54,19 @@ jobs:
       - name: Install isolated footer browser dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/footer-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
-          node "$RUNNER_TEMP/footer-browser/node_modules/playwright/cli.js" install --with-deps chromium
+          # Use the officially installed Chrome and its existing sandbox setup.
+          # Downloaded Chromium cannot use Ubuntu 24's AppArmor user namespaces.
+          google-chrome --version
       - name: Validate footer geometry in the built application
         env:
           FOOTER_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/footer-browser/package.json
           FOOTER_QA_OUTPUT: ${{ runner.temp }}/footer-geometry
           FOOTER_QA_URL: http://127.0.0.1:4173
+          FOOTER_BROWSER_CHANNEL: chrome
         run: |
           mkdir -p "$FOOTER_QA_OUTPUT"
           git rev-parse HEAD > "$FOOTER_QA_OUTPUT/tested-sha.txt"
+          google-chrome --version > "$FOOTER_QA_OUTPUT/browser-version.txt"
           npx vite preview --host 127.0.0.1 --port 4173 --strictPort > "$FOOTER_QA_OUTPUT/preview.log" 2>&1 &
           footer_preview_pid=$!
           trap 'kill "$footer_preview_pid" 2>/dev/null || true' EXIT

@@ -13,7 +13,11 @@ const baseline = process.argv.includes('--baseline');
 const output = path.resolve(process.env.FOOTER_QA_OUTPUT || '/tmp/crewcheck-footer-qa');
 fs.mkdirSync(output, { recursive: true });
 const sizes = [[320,740],[360,800],[390,844],[430,932],[768,1024],[1440,1000],[844,390]];
-const browser = await chromium.launch({ headless: true, chromiumSandbox: true });
+// Ubuntu's system Chrome has its supported sandbox installation. CI selects it
+// explicitly instead of weakening AppArmor or disabling Chromium's sandbox.
+const channel=process.env.FOOTER_BROWSER_CHANNEL;
+assert.ok(channel===undefined || channel==='chrome','Only default Chromium or installed Chrome');
+const browser = await chromium.launch({ headless: true, chromiumSandbox: true, channel });
 const results = [], regressions = [];
 let activeCase;
 const navSelector = 'body > nav.cz-bottom-nav[aria-label="Navegação principal"]';
@@ -126,7 +130,7 @@ try {
   throw error;
 } finally {
   await browser.close();
-  fs.writeFileSync(path.join(output,'measurements.json'),JSON.stringify({baseline,results,regressions},null,2));
+  fs.writeFileSync(path.join(output,'measurements.json'),JSON.stringify({baseline,browser:browser.version(),channel:channel || 'chromium',results,regressions},null,2));
 }
 if(baseline) assert.ok(regressions.length>0,'Baseline must reproduce regression');
 console.log(`${baseline?'BASELINE REPRODUCED':'PASS'}: ${results.length} cases; ${results.reduce((n,r)=>n+r.snapshots.length,0)} snapshots; ${regressions.length} geometry differences`);
