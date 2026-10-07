@@ -196,6 +196,7 @@ await import('../p1-concierge-stay-menu/apply.mjs');
 // Read-only Concierge projection after canonical rule preparation.
 await import('../p1-concierge-journey/apply.mjs');
 await import('../p1-notification-sound/apply.mjs');
+await import('../roster-startup/apply.mjs');
 
 }
 

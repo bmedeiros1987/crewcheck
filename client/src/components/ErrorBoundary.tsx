@@ -1,3 +1,4 @@
+import { startupKey, startupOwner } from '@/lib/rosterStartup';
 import { cn } from "@/lib/utils";
 import { AlertTriangle, RotateCcw, Trash2 } from "lucide-react";
 import { Component, ReactNode } from "react";
@@ -51,6 +52,7 @@ async function resetAndGoHome() {
   try {
     const keepKeys = new Set([
       'crewcheck_auth_token',
+      'crewcheck_auth_user',
       'crewcheck_user',
       'crewcheck_theme_mode',
       'crewcheck_language',
@@ -65,6 +67,7 @@ async function resetAndGoHome() {
       const key = localStorage.key(i);
       if (key && key.startsWith('crewcheck_') && !keepKeys.has(key)) localStorage.removeItem(key);
     }
+    if (startupOwner()) localStorage.setItem(startupKey(), JSON.stringify({ owner: startupOwner(), cleared: true }));
     sessionStorage.clear();
     sessionStorage.setItem('crewcheck_force_view_once', 'diagnostics');
   } catch {
