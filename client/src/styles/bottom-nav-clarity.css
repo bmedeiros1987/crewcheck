@@ -140,6 +140,9 @@ body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button {
   padding: 4px 2px !important;
   box-sizing: border-box !important;
   border-radius: 14px !important;
+  /* State is conveyed by colour/rings, without moving the tap target. */
+  transform: none !important;
+  font-family: inherit !important;
 }
 
 body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button > svg {
@@ -147,6 +150,9 @@ body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button > svg {
   height: 22px !important;
   min-width: 22px !important;
   flex: 0 0 22px !important;
+  /* Legacy active confirmation scales the icon during every navigation. */
+  animation: none !important;
+  transform: none !important;
 }
 
 body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button > span {
@@ -159,6 +165,9 @@ body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button > span {
   white-space: normal !important;
   overflow-wrap: anywhere !important;
   text-align: center !important;
+  /* Reserve the entire column so label bounds do not depend on text weight. */
+  width: 100% !important;
+  font-family: inherit !important;
 }
 
 body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button > em {
