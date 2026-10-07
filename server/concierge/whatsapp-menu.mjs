@@ -6,6 +6,9 @@ export function whatsappMenuEnabled(environment = process.env) {
 export const WHATSAPP_MENU = [
   'CrewCheck — o que você quer consultar?',
   'Hoje — programação de hoje',
+  'Amanhã — programação de amanhã',
+  'Escala — resumo da escala ativa',
+  'Diárias — valores calculados da escala',
   'Próxima programação — próximo compromisso publicado',
   'Pernoite — hotel e descanso publicados',
   'Farmácias — locais e rotas',
@@ -14,6 +17,8 @@ export const WHATSAPP_MENU = [
 
 const normalize = value => String(value || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const commands = new Map([
+  ['amanha', '/amanha'], ['escala', '/escala'], ['minha escala', '/escala'],
+  ['diarias', '/diarias'],
   ['hoje', '/hoje'], ['minha programacao', '/hoje'],
   ['proxima programacao', '/proximo'], ['proximo', '/proximo'],
   ['pernoite', '/pernoite'], ['farmacias', '/farmacias'], ['farmacia', '/farmacias'],
@@ -43,7 +48,9 @@ export async function deliverWhatsAppMenuMessage(message, { findLink, handler, s
     return { sent: Boolean(result?.ok), reason: result?.ok ? 'sent' : 'delivery_failed' };
   };
   if (!['text', 'location'].includes(message?.type)) {
-    return deliver(message?.type === 'interactive' || message?.type === 'button'
+    return deliver(message?.type === 'document'
+      ? 'O recebimento de PDF pelo WhatsApp ainda não está disponível. Importe sua escala pelo CrewCheck; depois consulte “escala” ou “diárias” aqui.'
+      : message?.type === 'interactive' || message?.type === 'button'
       ? 'Esse botão não está disponível neste menu. Digite “menu” ou sua pergunta por aqui.'
       : 'Por aqui, envie texto ou localização. Digite “menu” para ver as consultas disponíveis.');
   }

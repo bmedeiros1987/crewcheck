@@ -34,10 +34,12 @@ assert.ok(prepared.includes('<CalendarRosterView events={ordered} month={selecte
 
 assert.ok(prepared.includes('data-roster-iso={group.iso}'), 'date navigation remains reachable');
 const aimsTable = fs.readFileSync('client/src/components/v1391/AimsRosterTable.tsx', 'utf8');
-for (const heading of ['Data', 'Código / atividade', 'Apresentação', 'Origem', 'Partida', 'Destino', 'Chegada', 'Detalhes publicados']) {
-  assert.ok(aimsTable.includes(`<th scope="col">${heading}</th>`), `missing AIMS column: ${heading}`);
+for (const heading of ['Código / atividade', 'Apresentação', 'Origem', 'Partida / início', 'Destino', 'Chegada / fim', 'Detalhes publicados']) {
+  assert.ok(aimsTable.includes(heading), `missing published AIMS field: ${heading}`);
 }
-assert.ok(aimsTable.includes('<table>'), 'AIMS must be a semantic table, not compacted cards');
+assert.ok(aimsTable.includes('className="cc-aims-days"'), 'AIMS must group each published day in a vertical column');
+assert.ok(aimsTable.includes('<dl className="cc-aims-published-fields">'), 'published values need semantic labels');
+assert.doesNotMatch(aimsTable, /cc-aims-roster-scroll|<table>/, 'AIMS must not require horizontal field scrolling');
 assert.ok(aimsTable.includes('data-roster-iso={iso}'), 'AIMS rows must preserve date navigation');
 assert.doesNotMatch(aimsTable, /finance|salary|perDiem|parser/i, 'AIMS renderer must not invent finance or parser logic');
 const calendar = fs.readFileSync('client/src/components/v1391/CalendarRosterView.tsx', 'utf8');
@@ -64,3 +66,4 @@ assert.equal(zoom(blocked, 'A'), 'month');
 assert.equal(save(storage, null, 'aims', 'day'), false);
 assert.equal(save(storage, 'A', 'aims', 'week'), false);
 console.log('PASS: backward-compatible month/day preference, reload, reset, account isolation and blocked storage');
+

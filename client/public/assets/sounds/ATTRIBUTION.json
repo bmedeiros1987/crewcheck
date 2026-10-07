@@ -1,0 +1,21 @@
+{
+  "a320-interphone-cc0.mp3": {
+    "title": "chime.wav",
+    "creator": "Shamrock132",
+    "sourceUrl": "https://freesound.org/people/Shamrock132/sounds/245851/",
+    "downloadUrl": "https://cdn.freesound.org/previews/245/245851_1420423-hq.mp3",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "verifiedDate": "2026-10-04",
+    "sourceDescription": "The uploader describes an Airbus A320 interphone recording with a handset click at the end.",
+    "provenanceLimit": "Uploader-supplied field recording description; not an authenticated manufacturer asset and no endorsement is implied.",
+    "fileVariant": "Freesound high-quality MP3 preview, not the original WAV download",
+    "modifications": "None; preview bytes preserved, including the final handset click. Playback volume is limited in the app.",
+    "bytes": 107690,
+    "sha256": "ae418dc21f3aa73ee49888601db666051a2f549fbc8394b1daef280d6761c2e6",
+    "encodedDurationSeconds": 4.571429,
+    "sourceDurationSeconds": 4.526,
+    "channels": 1,
+    "sampleRateHz": 44100
+  }
+}

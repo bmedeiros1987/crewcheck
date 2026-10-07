@@ -29,7 +29,7 @@ await run(message('menu'));
 assert.equal(sent[0].text, WHATSAPP_MENU);
 assert.equal(calls.length, 0, 'menu must not invoke model/provider/fact engine');
 assert.doesNotMatch(sent[0].text, /https?:|abra o app|gratuit/i);
-for (const [text, command] of [['Hoje','/hoje'],['Próxima programação','/proximo'],['Pernoite','/pernoite'],['Farmácias','/farmacias']]) {
+for (const [text, command] of [['Amanhã','/amanha'],['Escala','/escala'],['Diárias','/diarias'],['Hoje','/hoje'],['Próxima programação','/proximo'],['Pernoite','/pernoite'],['Farmácias','/farmacias']]) {
   await run(message(text));
   assert.equal(calls.at(-1).text, command);
   assert.match(sent.at(-1).text, /15:40 BRT/);
@@ -75,6 +75,10 @@ for (const type of ['interactive','button']) {
   assert.equal(calls.length, 0, 'unvalidated callbacks/title must never dispatch commands');
   assert.match(sent[0].text, /botão não está disponível/);
 }
+reset();
+await run(message('', A, 'document'));
+assert.equal(calls.length, 0);
+assert.match(sent[0].text, /PDF.*ainda não está disponível/);
 reset();
 const location = {latitude:-23.4,longitude:-46.4};
 await run({...message('', A, 'location'), location});
@@ -199,5 +203,5 @@ for (const flag of [undefined,'true']) {
 }
 assert.doesNotMatch(fs.readFileSync('server/concierge/whatsapp-menu.mjs','utf8'),/console\.(?:log|info|warn|error)/);
 assert.match(source,/WHERE phone_hash=\? AND revoked_at IS NULL/);
-assert.match(source,/if \(acceptedMessageIds.has\(message.id\)\) await handleInboundMessage\(message\)/);
+assert.match(source,/acceptedMessageIds.delete\(message.id\)/);
 console.log('PASS default-OFF original behavior, invalid flag values, simulated ON; deterministic WhatsApp menu, same-channel factual replies, A/B isolation, revocation/relink, invalid callback, location and prepared adapter; zero real APIs');

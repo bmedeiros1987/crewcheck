@@ -61,12 +61,20 @@ export function preferredConciergeName(snapshot = {}) {
   return cleanDisplayName(snapshot?.preferences?.conciergeName, DEFAULT_CONCIERGE_NAME);
 }
 
+function greetingName(profile = {}, snapshot = {}) {
+  // An explicitly chosen name/alias wins. Only imported full names are shortened.
+  const chosen = cleanDisplayName(snapshot?.preferences?.preferredName, '');
+  const imported = cleanDisplayName(snapshot?.roster?.crewName || snapshot?.name || profile?.name, '');
+  const name = chosen || imported.split(/\s+/)[0];
+  if (!name) return '';
+  // Normalize shouting from roster imports without changing mixed-case aliases.
+  if (name !== name.toLocaleUpperCase('pt-BR')) return name;
+  return name.toLocaleLowerCase('pt-BR').replace(/(^|[\s'’-])\p{L}/gu, (letter) => letter.toLocaleUpperCase('pt-BR'));
+}
+
 export function premiumGreeting(profile = {}, snapshot = {}) {
-  const role = roleLabel(
-    snapshot?.preferences?.userRole || snapshot?.roster?.rank || snapshot?.roster?.role || profile?.rank || profile?.role,
-  );
-  const name = preferredUserName(profile, snapshot);
-  return `Fala, ${role ? `${role} ` : ''}${name}.`;
+  const name = greetingName(profile, snapshot);
+  return name ? `Olá, ${name}.` : 'Olá.';
 }
 
 export function airportName(code = '') {

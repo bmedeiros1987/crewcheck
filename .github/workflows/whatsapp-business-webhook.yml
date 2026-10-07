@@ -11,6 +11,7 @@ on:
       - 'server/concierge/whatsapp-menu.mjs'
       - 'scripts/p1-whatsapp-menu/**'
       - 'scripts/regression-whatsapp-menu.mjs'
+      - 'scripts/regression-whatsapp-payload-dedup.mjs'
       - 'scripts/p1-whatsapp-sender/**'
       - 'scripts/regression-whatsapp-sender.mjs'
       - 'render.yaml'
@@ -27,6 +28,7 @@ on:
       - 'server/concierge/whatsapp-menu.mjs'
       - 'scripts/p1-whatsapp-menu/**'
       - 'scripts/regression-whatsapp-menu.mjs'
+      - 'scripts/regression-whatsapp-payload-dedup.mjs'
       - 'scripts/p1-whatsapp-sender/**'
       - 'scripts/regression-whatsapp-sender.mjs'
       - 'render.yaml'
@@ -67,3 +69,4 @@ jobs:
           node --check server/whatsapp.mjs
           node scripts/regression-whatsapp-sender.mjs
           node scripts/regression-whatsapp-menu.mjs
+          node scripts/regression-whatsapp-payload-dedup.mjs

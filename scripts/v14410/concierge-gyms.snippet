@@ -1,10 +1,13 @@
 // cc-v14410:concierge-gyms-plan-location
 async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   const preferences = snapshot?.preferences || {};
-  const detectedPlan = detectWellhubPlanFromText(text);
+  const detectedPlan = detectWellhubPlanPreferenceFromText(text);
   const detectedActivity = detectWellhubActivityFromText(text);
   const planPreference = Boolean(detectedPlan && isWellhubPlanPreferenceMessage(text));
   const activityPreference = Boolean(detectedActivity && isWellhubActivityPreferenceMessage(text));
+  if (!planPreference && isWellhubPlanDeclarationMessage(text)) {
+    return 'Não reconheci o plano Wellhub informado. Não alterei sua preferência no CrewCheck. Diga, por exemplo, “meu plano Wellhub é o Silver+”, usando o nome exato do seu plano.';
+  }
   const planUpdate = planPreference ? detectedPlan : '';
   const activityUpdate = activityPreference ? detectedActivity : '';
   const provider = planPreference || activityPreference
@@ -17,17 +20,41 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   const wellhubPlan = planUpdate || (isWellhubPlanServer(preferences.wellhubPlan) ? preferences.wellhubPlan : 'basic');
   const activity = detectedActivity || String(preferences.gymActivity || '').trim();
 
+  const planSaveUnconfirmed = 'Não consegui confirmar que seu plano Wellhub ficou salvo no CrewCheck. Tente novamente em instantes.';
+  let planSaved = false;
   if ((planUpdate || activityUpdate || provider !== preferences.gymPlan) && profile?.email) {
-    const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: {
-      gymPlan: provider,
-      ...(planUpdate ? { wellhubPlan: planUpdate } : {}),
-      ...(activityUpdate ? { gymActivity: activityUpdate } : {}),
-    } });
+    let saved;
+    try {
+      saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: {
+        gymPlan: provider,
+        ...(planUpdate ? { wellhubPlan: planUpdate } : {}),
+        ...(activityUpdate ? { gymActivity: activityUpdate } : {}),
+      } });
+    } catch (error) {
+      if (planUpdate) return planSaveUnconfirmed;
+      throw error;
+    }
     if (saved) snapshot = saved;
+    const planOwnerKey = conciergeSafeKey(profile.email);
+    if (planUpdate && planOwnerKey && saved?.key === planOwnerKey) {
+      // The shared save returns a constructed snapshot even when an I/O write
+      // fails. Confirm only when both the next request and durable DB read-back
+      // recover this plan. No second write or shared persistence changes.
+      try {
+        const current = await conciergeLoadSnapshot(profile);
+        const persisted = await conciergeDbGet(`snapshot:${planOwnerKey}`);
+        planSaved = current?.key === planOwnerKey && persisted?.key === planOwnerKey
+          && current?.preferences?.wellhubPlan === planUpdate
+          && persisted?.preferences?.wellhubPlan === planUpdate;
+      } catch { planSaved = false; }
+    }
   }
 
   const planPreferenceOnly = planPreference && !/\b(academia|academias|treino|modalidade|rede|perto|pr[oó]xima|onde)\b/i.test(String(text || ''));
-  if (planPreferenceOnly) return `Plano Wellhub atualizado para ${wellhubPlanLabelServer(wellhubPlan)} ✓`;
+  if (planPreferenceOnly) {
+    if (!planSaved) return planSaveUnconfirmed;
+    return `Plano Wellhub atualizado para ${wellhubPlanLabelServer(wellhubPlan)} no CrewCheck ✓\nEssa é a preferência usada nas buscas. Sua assinatura no Wellhub não foi alterada.`;
+  }
   const activityPreferenceOnly = activityPreference && !/\b(academia|academias|rede|perto|pr[oó]xima|onde|hoje|agora)\b/i.test(String(text || ''));
   if (activityPreferenceOnly) return `Modalidade Wellhub atualizada para ${activityUpdate} ✓`;
 

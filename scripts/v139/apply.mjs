@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { prepareSourcesOnce } from './preparation-cache.mjs';
 
 function persistPreparationFailure(error) {
   const message = error instanceof Error ? `${error.stack || error.message}` : String(error || 'Erro desconhecido na preparação canônica.');
@@ -15,6 +16,7 @@ function persistPreparationFailure(error) {
 process.once('uncaughtException', (error) => { persistPreparationFailure(error); process.exitCode = 1; });
 process.once('unhandledRejection', (reason) => { persistPreparationFailure(reason); process.exitCode = 1; });
 
+async function prepareSources() {
 const authClientPath = 'client/src/lib/authClient.ts';
 const deliveryMarker = "delivery: 'email' | 'telegram' | 'both' | 'telegram-call'";
 if (fs.existsSync(authClientPath)) {
@@ -191,4 +193,16 @@ await import('../p1-menu-organization/apply.mjs');
 await import('../p1-concierge-poi/apply.mjs');
 await import('../p1-whatsapp-sender/apply.mjs');
 await import('../p1-whatsapp-menu/apply.mjs');
+await import('../p1-concierge-stay-menu/apply.mjs');
+// Read-only Concierge projection after canonical rule preparation.
+await import('../p1-concierge-journey/apply.mjs');
+await import('../p1-notification-sound/apply.mjs');
+
+}
+
+// ESM evaluates this finalizer once per invocation, before the cache snapshot.
+// The terminal import also preserves the canonical-chain ordering contract.
+const finalizeSources = () => import('../ci/sync-canonical-manual.mjs');
+await prepareSourcesOnce(prepareSources, '.', { finalize: finalizeSources });
+
 await import('../ci/sync-canonical-manual.mjs');

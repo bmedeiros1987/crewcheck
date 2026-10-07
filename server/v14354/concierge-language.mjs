@@ -68,27 +68,46 @@ function compactCount(number, unit = '') {
 }
 
 function normalizeSpokenClocks(value) {
-  let next = value
-    .replace(/(^|[\s(])(?:a|as|às)\s+meio[- ]?dia\b/giu, '$1às 12:00')
-    .replace(/(^|[\s(])(?:a|as|às)\s+meia[- ]?noite\b/giu, '$1às 00:00');
+  const number = `(?:\\d+|${PT_NUMBER_EXPRESSION})`;
+  const specialHour = '(?:meio[- ]?dia|meia[- ]?noite)';
+  const unit = '(?:horas?|h|minutos?|min|dias?|voos?|etapas?|alertas?|fontes?|pontos?)';
+  // Consume the whole clock phrase before interpreting it. In particular,
+  // "vinte e uma horas" must not backtrack into "vinte e uma" = 20:01.
+  const phrase = new RegExp(`(^|[\\s(])(?:a|as|às)\\s+((?:${specialHour}|${number})(?:\\s*${unit})?(?:\\s+e\\s+${number}(?:\\s*${unit})?)*)\\b`, 'gimu');
+  const explicit = new RegExp(`^(${number})\\s*(?:horas?|h)(?:\\s+e\\s+(${number})\\s+(?:minutos?|min))?$`, 'iu');
+  const named = new RegExp(`^(${specialHour})(?:\\s+e\\s+(${number})\\s+(?:minutos?|min))?$`, 'iu');
+  const shorthand = new RegExp(`^(${number})\\s+e\\s+(${number})(?:\\s+(?:minutos?|min))?$`, 'iu');
+  const parseNumber = (word) => /^\d+$/.test(word) ? Number(word) : parseConciergePtNumberV14354(word);
+  const clock = (hour, minute) => Number.isInteger(hour) && hour >= 0 && hour <= 23
+    && Number.isInteger(minute) && minute >= 0 && minute <= 59
+    ? `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}` : null;
 
-  const hourMinute = new RegExp(`(^|[\\s(])(?:a|as|às)\\s+(${PT_NUMBER_EXPRESSION})\\s+e\\s+(${PT_NUMBER_EXPRESSION})\\b`, 'gimu');
-  next = next.replace(hourMinute, (match, leading, hourWord, minuteWord) => {
-    const hour = parseConciergePtNumberV14354(hourWord);
-    const minute = parseConciergePtNumberV14354(minuteWord);
-    if (hour === null || minute === null || hour > 23 || minute > 59) return match;
-    return `${leading}às ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  const next = value.replace(phrase, (match, leading, words) => {
+    let parsed = words.match(named);
+    let hour;
+    let minute;
+    if (parsed) {
+      hour = /^meio/i.test(parsed[1]) ? 12 : 0;
+      minute = parsed[2] === undefined ? 0 : parseNumber(parsed[2]);
+    } else {
+      parsed = words.match(explicit);
+      if (!parsed) {
+        // "às vinte e uma" can mean 21:00 or 20:01. Keep it unchanged.
+        if (parseConciergePtNumberV14354(words) !== null) return match;
+        parsed = words.match(shorthand);
+      }
+      if (!parsed) return match;
+      hour = parseNumber(parsed[1]);
+      minute = parsed[2] === undefined ? 0 : parseNumber(parsed[2]);
+    }
+    const formatted = clock(hour, minute);
+    return formatted === null ? match : `${leading}às ${formatted}`;
   });
 
-  const exactHour = new RegExp(`(^|[\\s(])(?:a|as|às)\\s+(${PT_NUMBER_EXPRESSION})\\s+horas?\\b`, 'gimu');
-  next = next.replace(exactHour, (match, leading, hourWord) => {
-    const hour = parseConciergePtNumberV14354(hourWord);
-    return hour !== null && hour <= 23 ? `${leading}às ${String(hour).padStart(2, '0')}:00` : match;
+  return next.replace(/(^|[\s(])(?:a|as|às)\s+(\d+):(\d+)\b(?!:\d)/gimu, (match, leading, hour, minute) => {
+    const formatted = minute.length === 2 ? clock(Number(hour), Number(minute)) : null;
+    return formatted === null ? match : `${leading}às ${formatted}`;
   });
-
-  return next
-    .replace(/(^|[\s(])(?:a|as)\s+(\d{1,2}):(\d{2})\b/gimu, (_, leading, hour, minute) => `${leading}às ${String(Number(hour)).padStart(2, '0')}:${minute}`)
-    .replace(/(^|[\s(])(?:a|as)\s+(\d{1,2})\s*h(?:oras?)?\b/gimu, (_, leading, hour) => `${leading}às ${String(Number(hour)).padStart(2, '0')}:00`);
 }
 
 function normalizeCallsignDigits(value) {

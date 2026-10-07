@@ -4,7 +4,10 @@ function normalize(value = '') {
   return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-const WELLHUB_PLAN_TOKEN = '(?:digital|starter|basic(?:\\+|\\s+plus)?|silver(?:\\+|\\s+plus)?|gold(?:\\+|\\s+plus)?|platinum|diamond(?:\\+|\\s+plus)?)';
+const WELLHUB_PLAN_TOKEN = '(?:digital|starter|basic(?:\\s*\\+|\\s+plus)?|silver(?:\\s*\\+|\\s+plus)?|gold(?:\\s*\\+|\\s+plus)?|platinum|diamond(?:\\s*\\+|\\s+plus)?)';
+// A declaration prefix is shared with the clarification guard. A plan token
+// must still consume the entire message before it can update preferences.
+const WELLHUB_EXPLICIT_PLAN_PREFIX = '(?:(?:meu\\s+)?plano\\s+(?:do\\s+)?(?:wellhub|gympass)\\s*(?:(?:é|e|eh)(?:\\s+|$)|[:\\-]\\s*)|(?:wellhub|gympass)\\s*(?:plano\\s+)?(?:(?:é|e|eh)(?:\\s+|$)|[:\\-]\\s*)|(?:uso|tenho|estou\\s+no)\\s+(?:o\\s+)?(?:wellhub|gympass)\\s+)(?:o\\s+)?';
 const OTHER_PLAN_CONTEXT = /\b(?:plano\s+(?:de\s+)?(?:sa[uú]de|m[eé]dico|odontol[oó]gico|celular|telefone|telefonia|internet|dados|operadora|seguro|cart[aã]o|streaming)|amil|unimed|bradesco\s+sa[uú]de|sulamerica\s+sa[uú]de|sulamerica\s+saude)\b/i;
 const NON_GYM_ACTIVITY_CONTEXT = /\b(?:aeroporto|voo|port[aã]o|escala|sa[ií]da|hotel|uber|carro|tr[aâ]nsito)\b/i;
 
@@ -27,27 +30,47 @@ function containsWholeNormalizedPhrase(text = '', phrase = '') {
   return Boolean(needle && haystack.includes(` ${needle} `));
 }
 
+// Capture the requested destination tier, rather than scanning every plan word
+// in the sentence ("de Gold para Basic" must save Basic). Only direct requests
+// about the speaker's own or unqualified Wellhub/Gympass plan are accepted.
+const WELLHUB_PLAN_CHANGE_PREFIX = `(?:por\\s+favor\\s*,?\\s*)?(?:(?:eu\\s+)?(?:quero|gostaria\\s+de|preciso(?:\\s+de)?|(?:voce\\s+)?(?:pode|poderia))\\s+)?(?:alterar|altere|altera|mudar|mude|muda|atualizar|atualize|atualiza|trocar|troque|troca)\\s+(?:(?:o\\s+)?meu\\s+plano|(?:o\\s+)?plano)\\s+(?:do\\s+)?(?:wellhub|gympass)(?=\\s|$)`;
+const WELLHUB_PLAN_CHANGE_SUFFIX = '(?:\\s*,?\\s*por\\s+favor)?\\s*[.!?]*';
+
+function parseWellhubPlanPreference(text = '') {
+  const raw = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  if (!raw || OTHER_PLAN_CONTEXT.test(raw)) return { plan: '', declaration: false };
+
+  const change = raw.match(new RegExp(`^${WELLHUB_PLAN_CHANGE_PREFIX}([\\s\\S]*)$`, 'i'));
+  if (change) {
+    const target = change[1].match(new RegExp(`^(?:\\s+no\\s+crewcheck)?(?:\\s+de\\s+${WELLHUB_PLAN_TOKEN})?\\s+para\\s+(?:o\\s+)?(?:plano\\s+)?(${WELLHUB_PLAN_TOKEN})${WELLHUB_PLAN_CHANGE_SUFFIX}$`, 'i'));
+    return { plan: target ? detectWellhubPlanFromText(target[1]) : '', declaration: true };
+  }
+
+  const planOnly = raw.match(new RegExp(`^(${WELLHUB_PLAN_TOKEN})[.!]?$`, 'i'));
+  if (planOnly) return { plan: detectWellhubPlanFromText(planOnly[1]), declaration: false };
+
+  const natural = raw.match(new RegExp(
+    `^(?:meu\\s+plano\\s+(?:e|eh)\\s+(?:o\\s+)?|uso\\s+(?:(?:o\\s+)?plano\\s+)?|tenho\\s+(?:(?:o\\s+)?plano\\s+)?|estou\\s+no\\s+plano\\s+)(${WELLHUB_PLAN_TOKEN})[.!]?$`,
+    'i',
+  ));
+  if (natural) return { plan: detectWellhubPlanFromText(natural[1]), declaration: false };
+
+  const declaration = raw.match(new RegExp(`^${WELLHUB_EXPLICIT_PLAN_PREFIX}([\\s\\S]*)$`, 'i'));
+  if (!declaration) return { plan: '', declaration: false };
+  const target = declaration[1].match(new RegExp(`^(${WELLHUB_PLAN_TOKEN})[.!]?$`, 'i'));
+  return { plan: target ? detectWellhubPlanFromText(target[1]) : '', declaration: true };
+}
+
+export function detectWellhubPlanPreferenceFromText(text = '') {
+  return parseWellhubPlanPreference(text).plan;
+}
+
 export function isWellhubPlanPreferenceMessage(text = '') {
-  const raw = String(text || '').trim();
-  const detected = detectWellhubPlanFromText(raw);
-  if (!detected || OTHER_PLAN_CONTEXT.test(raw)) return false;
+  return Boolean(detectWellhubPlanPreferenceFromText(text));
+}
 
-  const planOnly = new RegExp(`^${WELLHUB_PLAN_TOKEN}[.!]?$`, 'i');
-  if (planOnly.test(raw)) return true;
-
-  const natural = new RegExp(
-    `^(?:meu\\s+plano\\s+(?:é|e|eh)\\s+(?:o\\s+)?|uso\\s+(?:(?:o\\s+)?plano\\s+)?|tenho\\s+(?:(?:o\\s+)?plano\\s+)?|estou\\s+no\\s+plano\\s+)${WELLHUB_PLAN_TOKEN}[.!]?$`,
-    'i',
-  );
-  if (natural.test(raw)) return true;
-
-  // Menção a Wellhub/Gympass, sozinha, não transforma palavras como "Gold" em
-  // preferência de plano. Exige sintaxe explícita de atualização do tier.
-  const explicitProductPlan = new RegExp(
-    `^(?:(?:meu\\s+)?plano\\s+(?:do\\s+)?(?:wellhub|gympass)\\s*(?:é|e|eh|:|-)\\s*|(?:wellhub|gympass)\\s*(?:plano\\s+)?(?:é|e|eh|:|-)\\s*|(?:uso|tenho|estou\\s+no)\\s+(?:o\\s+)?(?:wellhub|gympass)\\s+)${WELLHUB_PLAN_TOKEN}[.!]?$`,
-    'i',
-  );
-  return explicitProductPlan.test(raw);
+export function isWellhubPlanDeclarationMessage(text = '') {
+  return parseWellhubPlanPreference(text).declaration;
 }
 
 function isRecognizedWellhubActivity(raw = '', detected = '') {
@@ -63,6 +86,7 @@ export function isWellhubActivityPreferenceMessage(text = '') {
   const raw = String(text || '').trim();
   const detected = detectWellhubActivityFromText(raw);
   if (!detected || NON_GYM_ACTIVITY_CONTEXT.test(raw)) return false;
+  if (/\b(?:nao|se|talvez)\b/.test(normalize(raw))) return false;
   if (/smart\s*fit/i.test(raw) && !/\b(wellhub|gympass)\b/i.test(raw)) return false;
 
   // O detector aceita atividade/modalidade customizada. Para não transformar
@@ -75,12 +99,19 @@ export function isWellhubActivityPreferenceMessage(text = '') {
   // não é evidência suficiente para persistir preferência.
   const recognizedActivity = isRecognizedWellhubActivity(raw, detected);
   const explicitProductActivity = /^(?:(?:wellhub|gympass)\s+(?:modalidade|atividade|aula|treino)\s*(?:é|e|eh|:|-)?\s*|(?:minha\s+)?(?:modalidade|atividade)\s+(?:do\s+)?(?:wellhub|gympass)\s*(?:é|e|eh|:|-)\s*)[\p{L}0-9 +&-]{2,60}[.!]?$/iu;
-  if (explicitProductActivity.test(raw)) return true;
+  if (explicitProductActivity.test(raw)) {
+    // Store a name, not an unrestricted sentence tail. Known multiword names
+    // remain valid; legacy custom names such as Aquagym stay single-token.
+    const activityName = normalize(detected);
+    if (WELLHUB_ACTIVITY_ALIAS_PHRASES.some(alias => normalize(alias) === activityName)) return true;
+    return /^[\p{L}][\p{L}0-9-]{1,39}$/u.test(String(detected).trim())
+      && !/^(?:nao|se|talvez|quando|caso|dele|dela)$/i.test(activityName);
+  }
   if (!recognizedActivity) return false;
 
   if (/^(?:modalidade|atividade|aula|treino)\s+[\p{L}0-9 +&-]{2,60}[.!]?$/iu.test(raw)) return true;
-  if (/\b(wellhub|gympass)\b/i.test(raw) && /\b(aula|treino|quero|prefiro|fa[cç]o|pratico|praticar|modalidade|atividade)\b/i.test(raw)) return true;
-  return /^(?:quero|prefiro|fa[cç]o|pratico|praticar)\s+[\p{L}0-9 +&-]{2,40}[.!]?$/iu.test(raw);
+  const direct = raw.match(/^(?:(?:wellhub|gympass)\s+)?(?:quero|prefiro|fa[cç]o|pratico|praticar)\s+([\p{L}0-9 +&-]{2,60}?)(?:\s+(?:no|do)\s+(?:wellhub|gympass))?[.!]?$/iu);
+  return Boolean(direct && WELLHUB_ACTIVITY_ALIAS_PHRASES.some((alias) => normalize(alias) === normalize(direct[1])));
 }
 
 export function extractWellhubLocationHintFromText(text = '') {

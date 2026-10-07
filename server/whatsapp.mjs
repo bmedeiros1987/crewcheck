@@ -457,7 +457,10 @@ async function processWhatsAppPayload(payload, rawBody) {
     } else duplicates += 1;
   }
   for (const message of inbound) {
-    if (acceptedMessageIds.has(message.id)) await handleInboundMessage(message);
+    if (acceptedMessageIds.has(message.id)) {
+      acceptedMessageIds.delete(message.id);
+      await handleInboundMessage(message);
+    }
   }
   console.info('[crewcheck:whatsapp:webhook]', JSON.stringify({ accepted, duplicates, total: events.length, inbound: inbound.length }));
 }

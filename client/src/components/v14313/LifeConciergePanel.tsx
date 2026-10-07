@@ -158,8 +158,24 @@ export default function LifeConciergePanel({ nextProgram, healthSummary, profile
 
   function scheduleReminders() {
     const count = scheduleLifeRemindersForToday();
-    if (count) toast.success(`${count} lembrete${count > 1 ? 's' : ''} discreto${count > 1 ? 's' : ''} programado${count > 1 ? 's' : ''} para hoje.`);
-    else toast.info(preferences.remindersEnabled ? 'Nenhum lembrete adicional foi necessário agora.' : 'Ative os lembretes nas preferências primeiro.');
+    const native = (window as any).CrewCheckNative || (window as any).AndroidCrewCheckNative;
+    if (typeof native?.scheduleNotification === 'function') {
+      if (count) toast.success(`${count} lembrete${count > 1 ? 's' : ''} discreto${count > 1 ? 's' : ''} programado${count > 1 ? 's' : ''} para hoje.`);
+      else toast.info(preferences.remindersEnabled ? 'Nenhum lembrete foi programado. Pode não haver horários elegíveis ou o agendador estar indisponível.' : 'Ative os lembretes nas preferências primeiro.');
+      return;
+    }
+    if (!preferences.remindersEnabled) {
+      toast.info('Ative os lembretes nas preferências primeiro.');
+      return;
+    }
+    if (typeof Notification !== 'function' || Notification.permission !== 'granted') {
+      toast.info('Nenhum lembrete foi programado. As notificações precisam estar disponíveis e permitidas nas configurações do navegador.');
+      return;
+    }
+    const limitation = 'Mantenha esta aba aberta. O navegador pode suspender os lembretes; eles não são um alarme em segundo plano e são perdidos ao fechar ou recarregar a página.';
+    toast.info(count
+      ? `${count} lembrete${count > 1 ? 's' : ''} preparado${count > 1 ? 's' : ''} nesta aba. ${limitation}`
+      : `Nenhum lembrete foi programado. Pode não haver horários elegíveis ou o agendador estar indisponível. ${limitation}`);
   }
 
   function runPrimaryAction() {
