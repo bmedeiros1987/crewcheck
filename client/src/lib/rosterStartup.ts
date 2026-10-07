@@ -42,8 +42,17 @@ export async function restoreLatestImport(): Promise<{ roster: CrewRoster; sourc
 }
 
 let choiceEpoch = 0;
-export function beginRosterChoice(): () => boolean {
+export function invalidateRosterChoices(): void { choiceEpoch += 1; }
+export type RosterChoiceGuard = (() => boolean) & { finish(): void };
+export function beginRosterChoice(): RosterChoiceGuard {
   const epoch = ++choiceEpoch, owner = startupOwner(), token = getToken(), clearRevision = clearEpoch();
+  const intentKey = startupKey() + '_intent_epoch';
+  const intentRevision = crypto.randomUUID();
+  localStorage.setItem(intentKey, intentRevision);
   window.dispatchEvent(new CustomEvent('crewcheck:roster-choice-start'));
-  return () => epoch === choiceEpoch && owner === startupOwner() && token === getToken() && clearRevision === clearEpoch();
+  const canCommit = () => epoch === choiceEpoch && owner === startupOwner() && token === getToken()
+    && clearRevision === clearEpoch() && localStorage.getItem(intentKey) === intentRevision;
+  return Object.assign(canCommit, { finish() {
+    if (canCommit()) window.dispatchEvent(new CustomEvent('crewcheck:roster-choice-finished'));
+  } });
 }

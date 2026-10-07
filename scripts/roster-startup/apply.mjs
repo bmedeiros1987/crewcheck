@@ -96,12 +96,38 @@ if (!home.includes(marker)) {
   home = home.replaceAll("  async function importFromTelegram() {\n", "  async function importFromTelegram() {\n    const canCommit = beginRosterChoice();\n");
   if (!home.includes("      const compliance = saveRoster(roster, source);\n      setBundle({ roster, compliance, source });")) throw new Error('Telegram choice anchor missing');
   home = home.replaceAll("      const compliance = saveRoster(roster, source);\n      setBundle({ roster, compliance, source });", "      if (!canCommit()) return;\n      const compliance = saveRoster(roster, source);\n      setBundle({ roster, compliance, source });");
+  if (!home.includes("startupCleared, beginRosterChoice } from")) throw new Error('Choice settlement anchor missing');
+  home = home.replaceAll("startupCleared, beginRosterChoice } from", "startupCleared, beginRosterChoice, invalidateRosterChoices } from");
+  if (!home.includes("'crewcheck_auth_token', 'crewcheck_auth_user', startupKey()")) throw new Error('Choice settlement anchor missing');
+  home = home.replaceAll("'crewcheck_auth_token', 'crewcheck_auth_user', startupKey()", "'crewcheck_auth_token', 'crewcheck_auth_user', startupKey(), startupKey() + '_clear_epoch', startupKey() + '_intent_epoch'");
+  if (!home.includes("      choiceRevision.current += 1;\n      const next = loadRoster();")) throw new Error('Choice settlement anchor missing');
+  home = home.replaceAll("      choiceRevision.current += 1;\n      const next = loadRoster();", "      invalidateRosterChoices();\n      choiceRevision.current += 1;\n      const next = loadRoster();");
+  if (!home.includes("    const onChoice = () => { choiceRevision.current += 1; };")) throw new Error('Choice settlement anchor missing');
+  home = home.replaceAll("    const onChoice = () => { choiceRevision.current += 1; };", "    const onChoice = () => { choiceRevision.current += 1; };\n    const onChoiceFinished = () => { void restore(); };\n    window.addEventListener('crewcheck:roster-choice-finished', onChoiceFinished);");
+  if (!home.includes("      window.removeEventListener('crewcheck:roster-choice-start', onChoice);")) throw new Error('Choice settlement anchor missing');
+  home = home.replaceAll("      window.removeEventListener('crewcheck:roster-choice-start', onChoice);", "      window.removeEventListener('crewcheck:roster-choice-start', onChoice);\n      window.removeEventListener('crewcheck:roster-choice-finished', onChoiceFinished);");
+  if (!home.includes("    } catch (error) {\n      toast.error(error instanceof Error ? error.message : 'N\u00e3o consegui abrir esta escala do hist\u00f3rico.');\n    }\n  }")) throw new Error('Choice settlement anchor missing');
+  home = home.replaceAll("    } catch (error) {\n      toast.error(error instanceof Error ? error.message : 'N\u00e3o consegui abrir esta escala do hist\u00f3rico.');\n    }\n  }", "    } catch (error) {\n      if (canCommit()) toast.error(error instanceof Error ? error.message : 'N\u00e3o consegui abrir esta escala do hist\u00f3rico.');\n    } finally {\n      canCommit.finish();\n    }\n  }");
+  if (!home.includes("}).catch(()=>{ toast.error('N\u00e3o encontrei escala ativa sincronizada.'); setView('import'); }); },")) throw new Error('Choice settlement anchor missing');
+  home = home.replaceAll("}).catch(()=>{ toast.error('N\u00e3o encontrei escala ativa sincronizada.'); setView('import'); }); },", "}).catch(()=>{ if (!canCommit()) return; toast.error('N\u00e3o encontrei escala ativa sincronizada.'); setView('import'); }).finally(() => canCommit.finish()); },");
+  for (const [start, end] of [
+    ['  async function importFromTelegram() {', '  async function ask('],
+    ['  async function handleFile(inputEvent:', '  async function copyCurrentSummarySilently('],
+  ]) {
+    const first = home.indexOf(start), last = home.indexOf(end, first);
+    if (first < 0 || last < 0) throw new Error('Choice finally boundary missing');
+    const segment = home.slice(first, last);
+    if (!segment.includes('    } finally {')) throw new Error('Choice finally missing');
+    home = home.slice(0, first) + segment.replace('    } finally {', '    } finally { canCommit.finish();') + home.slice(last);
+  }
   fs.writeFileSync('client/src/pages/Home.tsx', marker + '\n' + home);
 }
 
 let database = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');
 if (!database.includes('strictHistory = false')) {
   database = database.replace('listSavedRosters(limit = 72)', 'listSavedRosters(limit = 72, strictHistory = false)');
+  database = database.replace('    let online = payload.rosters || [];', "    if (strictHistory && (!payload.ok || !Array.isArray(payload.rosters))) throw new Error('Resposta de histórico inválida.');\n    let online = payload.rosters || [];");
+  database = database.replace('    if (!online.some((item) => item.isActive)) {', '    if (!strictHistory && !online.some((item) => item.isActive)) {');
   database = database.replace('  } catch {\n    return normalizeSingleActiveSummary(local);\n  }\n}', '  } catch (error) {\n    if (strictHistory) throw error;\n    return normalizeSingleActiveSummary(local);\n  }\n}');
   fs.writeFileSync('client/src/lib/databaseClient.ts', database);
 }
