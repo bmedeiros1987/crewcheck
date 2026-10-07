@@ -78,7 +78,7 @@ export default function EmergencyCenterView() {
   const preferences = configurationReady ? storedPreferences : DEFAULT_PREFS;
   const profile = configurationReady ? storedProfile : DEFAULT_PROFILE;
   const consentMedicalShare = configurationReady && storedConsent;
-  const closing = useRef(false);
+  const closing = useRef(0);
   const reportScope = useRef(active.scope);
   const visibleReport = reportScope.current === active.scope ? deliveryReport : null;
 
@@ -86,6 +86,7 @@ export default function EmergencyCenterView() {
     let current = true;
     const scope = active.scope;
     ++operation.current;
+    closing.current = 0;
     setBusy('');
     setLoadedScope('');
     setDeliveryReport(null);
@@ -196,32 +197,34 @@ export default function EmergencyCenterView() {
   }
 
   async function closeActiveAlert(alertId: string, action: 'cancel' | 'assisted') {
-    if (closing.current || active.loading || active.scope !== emergencyAccountScope()) return;
-    closing.current = true;
-    setBusy('close');
     const scope = active.scope;
+    const token = getToken();
+    if (closing.current || active.loading || !scope || !token || scope !== emergencyAccountScope()) return;
+    const request = ++operation.current;
+    const current = () => request === operation.current && scope === emergencyAccountScope();
+    closing.current = request;
+    setBusy('close');
     try {
       const alerts = await loadActiveEmergencyAlerts();
-      if (scope !== emergencyAccountScope()) return;
+      if (!current()) return;
       const alert = alerts.find(item => item.alertId === alertId);
       if (!alert) { toast.info('Este alerta já foi encerrado ou não está disponível nesta conta.'); await active.refresh(); return; }
       const names = alert.recipients.filter(recipient => recipient.ok).map(recipient => recipient.name).join(', ') || 'Nenhum';
       if (!window.confirm(`Encerrar alerta ${alert.alertId}${action === 'assisted' ? ' como assistido' : ''}?\nData: ${new Date(alert.createdAt).toLocaleString('pt-BR')}\nDestinatários que serão avisados: ${names}`)) return;
-      if (scope !== emergencyAccountScope()) return;
-      const token = getToken();
+      if (!current()) return;
       const endpoint = action === 'assisted' ? '/api/platform/emergency/assisted' : '/api/platform/emergency/cancel';
-      const payload = await v139Api(endpoint, { method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ alertId, confirmed: true }) });
-      if (scope !== emergencyAccountScope()) return;
+      const payload = await v139Api(endpoint, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ alertId, confirmed: true }) });
+      if (!current()) return;
       if (payload[action === 'cancel' ? 'cancelled' : 'assisted']) {
         if (deliveryReport?.alertId === alertId) setDeliveryReport(null);
         toast.success(payload.message || 'Alerta selecionado encerrado.');
       } else toast.info('Este alerta já foi encerrado ou não está disponível nesta conta.');
       await active.refresh();
     } catch {
-      if (scope === emergencyAccountScope()) { toast.error('Não consegui confirmar o encerramento. Atualize os alertas antes de tentar novamente.'); await active.refresh(); }
+      if (current()) { toast.error('Não consegui confirmar o encerramento. Atualize os alertas antes de tentar novamente.'); await active.refresh(); }
     } finally {
-      closing.current = false;
-      setBusy('');
+      if (closing.current === request) closing.current = 0;
+      if (current()) setBusy('');
     }
   }
 

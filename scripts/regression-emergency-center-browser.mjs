@@ -39,6 +39,8 @@ const medical = { A: { allergies: 'Synthetic A', healthPlanProvider: 'Amil', hea
 const savedPreferences = { A: { includeLocation: false }, B: { includeLocation: false } };
 const writes = [];
 let holdWrite = '', writeStarted, releaseWrite;
+let delayedClose, delayedB, allowSyntheticSend = false;
+const syntheticSends = [];
 try {
   browser = await chromium.launch({ ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}), args: ['--no-sandbox'] });
   const context = await browser.newContext({ serviceWorkers: 'block' });
@@ -51,6 +53,12 @@ try {
     const cookie = request.headers().cookie?.match(/crewcheck_auth_token=([^;]+)/)?.[1];
     const token = bearer || cookie; // Match requestToken: Bearer takes precedence.
     const ok = payload => route.fulfill({ contentType: 'application/json', body: JSON.stringify(payload) });
+    for (const gate of [delayedClose, delayedB]) {
+      if (gate && !gate.used && gate.token === token && gate.path === url.pathname && gate.method === request.method()) {
+        gate.used = true; gate.started(); await new Promise(resolve => { gate.resume = resolve; });
+        if (gate.fail) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ ok: false, message: 'Synthetic delayed failure' }) });
+      }
+    }
     if (url.pathname.endsWith('/active')) {
       gets.push(token);
       const snapshot = structuredClone(accounts[token] || []);
@@ -70,7 +78,12 @@ try {
       }
       return ok({ ok: true, [resource]: resource === 'profile' ? medical[token] : savedPreferences[token], consentMedicalShare: false });
     }
-    assert.match(url.pathname, /\/(cancel|assisted)$/, 'fixture must never send an SOS');
+    if (url.pathname.endsWith('/send')) {
+      assert.ok(allowSyntheticSend && token === 'B', 'only explicit in-memory B send fixture is permitted');
+      syntheticSends.push({ token, body: request.postDataJSON() });
+      return ok({ ok: true, alertId: 'synthetic-send-B', sent: 1, failed: 0, recipients: [{ name: 'Synthetic B recipient', source: 'saved-contact', ok: true }] });
+    }
+    assert.match(url.pathname, /\/(cancel|assisted)$/, 'all closure calls must stay in the fixture');
     const body = request.postDataJSON(); posts.push({ token, path: url.pathname, body });
     assert.equal(body.confirmed, true); assert.ok(body.alertId);
     if (failClose) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ ok: false, message: 'PRIVATE CLOSE DETAIL' }) });
@@ -188,6 +201,47 @@ try {
     await page.evaluate(() => window.pendingLocations.shift().success({ coords: { latitude: 3, longitude: 4 } }));
     await page.waitForFunction(() => document.querySelector('input[placeholder="Link do mapa, opcional"]')?.value.includes('3,4'));
   }
+  // Hold A closure at revalidation or POST, switch to B and start a different
+  // pending operation. A's success/error/finally must not unlock or update B.
+  const gate = (token, resource, method, fail = false) => {
+    const record = { token, path: '/api/platform/emergency/' + resource, method, fail };
+    record.wait = new Promise(resolve => { record.started = resolve; }); return record;
+  };
+  closeAlready = false;
+  for (const phase of ['revalidate', 'post']) for (const fail of [false, true]) for (const next of ['send', 'save', 'location', 'close']) {
+    accounts.A = [fixtureAlert('race-A', 'Recipient A race')]; accounts.B = [fixtureAlert('race-B', 'Recipient B race')];
+    await switchAccount('A'); await card('race-A').waitFor();
+    delayedClose = gate('A', phase === 'post' ? 'cancel' : 'active', phase === 'post' ? 'POST' : 'GET', fail);
+    if (phase === 'post') page.once('dialog', dialog => dialog.accept());
+    await card('race-A').getByRole('button', { name: 'Estou bem / encerrar este alerta' }).click(); await delayedClose.wait;
+    await switchAccount('B'); await card('race-B').waitFor();
+    await page.waitForFunction(() => document.querySelector('input[placeholder="Nenhuma ou descreva"]')?.value === 'Synthetic B');
+    await page.getByRole('button', { name: 'Segurança ou violência', exact: true }).click();
+    const resource = next === 'send' ? 'send' : next === 'save' ? 'profile' : 'active';
+    delayedB = next === 'location' ? null : gate('B', resource, next === 'close' ? 'GET' : 'POST');
+    const pendingLabel = next === 'send' ? 'Enviando alerta…' : next === 'save' ? 'Salvando…' : next === 'location' ? 'Localizando…' : 'Atualizar alertas';
+    allowSyntheticSend = next === 'send';
+    if (next === 'send') { page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: 'Confirmar e enviar alerta' }).click(); }
+    else if (next === 'save') await save().click();
+    else if (next === 'location') await page.getByRole('button', { name: 'Usar localização atual' }).click();
+    else await card('race-B').getByRole('button', { name: 'Estou bem / encerrar este alerta' }).click();
+    if (delayedB) await delayedB.wait; else await page.waitForFunction(() => window.pendingLocations.length === 1);
+    await page.evaluate(() => { window.toasts = []; });
+    const bSendsBefore = syntheticSends.length;
+    delayedClose.resume(); await page.waitForTimeout(100);
+    const label = `${phase}/${fail ? 'failure' : 'success'} → B ${next}`;
+    const sendButton = page.locator('button.danger');
+    assert.equal(await sendButton.isDisabled(), true, label + ': send remains disabled while B is pending');
+    assert.equal(await page.getByRole('button', { name: pendingLabel, exact: true }).isDisabled(), true, label + ': stale finally must keep B busy');
+    await sendButton.evaluate(button => button.click()); assert.equal(syntheticSends.length, bSendsBefore, label + ': no duplicate send');
+    assert.deepEqual(await page.evaluate(() => window.toasts), [], label + ': no stale A notification');
+    if (next === 'close') page.once('dialog', dialog => dialog.dismiss());
+    if (delayedB) delayedB.resume(); else await page.evaluate(() => window.pendingLocations.shift().success({ coords: { latitude: 5, longitude: 6 } }));
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Usar localização atual')?.disabled === false);
+    assert.equal(await page.getByRole('button', { name: 'Confirmar e enviar alerta' }).isDisabled(), false, label + ': B completion owns the cleanup');
+    assert.equal(syntheticSends.length - bSendsBefore, next === 'send' ? 1 : 0, label + ': only one explicit synthetic send');
+    delayedClose = null; delayedB = null; allowSyntheticSend = false;
+  }
   accounts.B = [fixtureAlert('logout-B', 'Recipient B')];
   await page.getByRole('button', { name: 'Atualizar alertas' }).click(); await card('logout-B').waitFor();
   const requestsBeforeLogout = gets.length;
@@ -195,7 +249,7 @@ try {
   await page.getByRole('alert').waitFor(); assert.equal(await page.locator('[data-alert-id]').count(), 0);
   assert.doesNotMatch(await page.locator('body').innerText(), /Recipient B/);
   assert.equal(gets.length, requestsBeforeLogout, 'expired local session never falls back to a retained cookie');
-  console.log('PASS: actual EmergencyCenter reload/navigation, exact ID closure and prior failures; Bearer A/cookie B writes, account switch during each save stage, stale geolocation success/failure and busy isolation; local fixtures only');
+  console.log('PASS: prior SOS/reload/auth/write/location safety; 16 cross-operation closure races (preflight/POST, success/error, B send/save/location/close) preserve B busy, prevent duplicate send and suppress stale A updates; local fixtures only');
 } finally {
-  releaseHeld?.(); releaseWrite?.(); await browser?.close(); await new Promise(resolve => server.close(resolve));
+  releaseHeld?.(); releaseWrite?.(); delayedClose?.resume?.(); delayedB?.resume?.(); await browser?.close(); await new Promise(resolve => server.close(resolve));
 }
