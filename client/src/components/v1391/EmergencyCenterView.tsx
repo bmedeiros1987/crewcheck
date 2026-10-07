@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Bell, CheckCircle2, Flame, HeartPulse, LocateFixed, MapPin, Save, ShieldAlert, ShieldCheck, Siren, UsersRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { v139Api } from '@/components/v139/api';
 import { V139Header } from '@/components/v139/Shell';
+import { getToken } from '@/lib/authClient';
+import { emergencyAccountScope, loadActiveEmergencyAlerts, useActiveEmergencyAlerts } from './useActiveEmergencyAlerts';
 import '@/components/v139/v139.css';
 import '@/components/v1395/v1395.css';
 
@@ -69,17 +71,33 @@ export default function EmergencyCenterView() {
   const [consentMedicalShare, setConsentMedicalShare] = useState(false);
   const [deliveryReport, setDeliveryReport] = useState<DeliveryReport | null>(null);
   const [busy, setBusy] = useState('');
+  const active = useActiveEmergencyAlerts();
+  const closing = useRef(false);
+  const reportScope = useRef(active.scope);
+  const visibleReport = reportScope.current === active.scope ? deliveryReport : null;
 
   useEffect(() => {
+    let current = true;
+    const scope = active.scope;
+    setDeliveryReport(null);
+    setProfile(DEFAULT_PROFILE);
+    setPreferences(DEFAULT_PREFS);
+    setConsentMedicalShare(false);
+    setKind(''); setDetails(''); setLocationUrl('');
+    const token = getToken();
+    if (!token) return () => { current = false; };
+    const options: RequestInit = { headers: token ? { authorization: `Bearer ${token}` } : {} };
     Promise.all([
-      v139Api('/api/platform/emergency/preferences'),
-      v139Api('/api/platform/emergency/profile'),
+      v139Api('/api/platform/emergency/preferences', options),
+      v139Api('/api/platform/emergency/profile', options),
     ]).then(([preferencePayload, profilePayload]) => {
+      if (!current || scope !== emergencyAccountScope()) return;
       setPreferences({ ...DEFAULT_PREFS, ...(preferencePayload.preferences || {}) });
       setProfile({ ...DEFAULT_PROFILE, ...(profilePayload.profile || {}) });
       setConsentMedicalShare(Boolean(profilePayload.consentMedicalShare));
-    }).catch((error) => toast.error(error instanceof Error ? error.message : 'Não consegui carregar a Central de Emergência.'));
-  }, []);
+    }).catch(() => { if (current && scope === emergencyAccountScope()) toast.error('Não consegui carregar a Central de Emergência.'); });
+    return () => { current = false; };
+  }, [active.scope]);
 
   async function locate() {
     setBusy('location');
@@ -118,22 +136,30 @@ export default function EmergencyCenterView() {
   }
 
   async function sendAlert() {
+    const scope = active.scope;
+    if (!scope || scope !== emergencyAccountScope()) return;
     if (!kind) return toast.info('Escolha o tipo de emergência.');
     const selected = TYPES.find((item) => item.id === kind);
     const confirmed = confirm(`CONFIRMAR ALERTA: ${selected?.label || kind}\n\nO CrewCheck tentará avisar os contatos salvos em Compartilhar e colegas que autorizaram presença no mesmo hotel. O número do quarto não será enviado.`);
     if (!confirmed) return;
+    if (scope !== emergencyAccountScope()) return;
     setBusy('send');
     try {
       let effectiveLocation = locationUrl;
       if (preferences.includeLocation && !effectiveLocation) {
         try { effectiveLocation = await currentLocationUrl(); setLocationUrl(effectiveLocation); } catch {}
       }
+      if (scope !== emergencyAccountScope()) return;
+      const token = getToken();
       const payload = await v139Api('/api/platform/emergency/send', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ kind, details, locationUrl: effectiveLocation }),
       });
+      if (scope !== emergencyAccountScope()) return;
+      reportScope.current = scope;
       setDeliveryReport({ alertId: String(payload.alertId || ''), sent: Number(payload.sent || 0), failed: Number(payload.failed || 0), recipients: Array.isArray(payload.recipients) ? payload.recipients : [] });
+      void active.refresh();
       toast.success(payload.message || 'Alerta enviado.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não consegui enviar o alerta. Acione o serviço público/local de emergência.');
@@ -142,25 +168,33 @@ export default function EmergencyCenterView() {
     }
   }
 
-  async function cancelAlert() {
-    if (!deliveryReport?.alertId || !window.confirm(`Encerrar alerta ${deliveryReport.alertId}? Os destinatários serão avisados.`)) return;
+  async function closeActiveAlert(alertId: string, action: 'cancel' | 'assisted') {
+    if (closing.current || active.loading || active.scope !== emergencyAccountScope()) return;
+    closing.current = true;
+    setBusy('close');
+    const scope = active.scope;
     try {
-      const payload = await v139Api('/api/platform/emergency/cancel', { method: 'POST', body: JSON.stringify({ alertId: deliveryReport.alertId, confirmed: true }) });
-      if (payload.cancelled) setDeliveryReport(null);
-      toast.success(payload.message || 'Alerta cancelado.');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Não consegui cancelar.');
-    }
-  }
-
-  async function markAssisted() {
-    if (!deliveryReport?.alertId || !window.confirm(`Encerrar alerta ${deliveryReport.alertId} como assistido? Os destinatários serão avisados.`)) return;
-    try {
-      const payload = await v139Api('/api/platform/emergency/assisted', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ alertId: deliveryReport?.alertId || '', confirmed: true }) });
-      if (payload.assisted) setDeliveryReport(null);
-      toast.success(payload.message || 'Situação atualizada.');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Não consegui avisar que você já está sendo assistido.');
+      const alerts = await loadActiveEmergencyAlerts();
+      if (scope !== emergencyAccountScope()) return;
+      const alert = alerts.find(item => item.alertId === alertId);
+      if (!alert) { toast.info('Este alerta já foi encerrado ou não está disponível nesta conta.'); await active.refresh(); return; }
+      const names = alert.recipients.filter(recipient => recipient.ok).map(recipient => recipient.name).join(', ') || 'Nenhum';
+      if (!window.confirm(`Encerrar alerta ${alert.alertId}${action === 'assisted' ? ' como assistido' : ''}?\nData: ${new Date(alert.createdAt).toLocaleString('pt-BR')}\nDestinatários que serão avisados: ${names}`)) return;
+      if (scope !== emergencyAccountScope()) return;
+      const token = getToken();
+      const endpoint = action === 'assisted' ? '/api/platform/emergency/assisted' : '/api/platform/emergency/cancel';
+      const payload = await v139Api(endpoint, { method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ alertId, confirmed: true }) });
+      if (scope !== emergencyAccountScope()) return;
+      if (payload[action === 'cancel' ? 'cancelled' : 'assisted']) {
+        if (deliveryReport?.alertId === alertId) setDeliveryReport(null);
+        toast.success(payload.message || 'Alerta selecionado encerrado.');
+      } else toast.info('Este alerta já foi encerrado ou não está disponível nesta conta.');
+      await active.refresh();
+    } catch {
+      if (scope === emergencyAccountScope()) { toast.error('Não consegui confirmar o encerramento. Atualize os alertas antes de tentar novamente.'); await active.refresh(); }
+    } finally {
+      closing.current = false;
+      setBusy('');
     }
   }
 
@@ -191,9 +225,22 @@ export default function EmergencyCenterView() {
       <div className="cc139-actions">
         <button onClick={locate} disabled={Boolean(busy)}><LocateFixed/> {busy === 'location' ? 'Localizando…' : 'Usar localização atual'}</button>
         <button className="danger" onClick={sendAlert} disabled={!kind || Boolean(busy)}><Siren/> {busy === 'send' ? 'Enviando alerta…' : 'Confirmar e enviar alerta'}</button>
-        <button onClick={cancelAlert}><CheckCircle2/> Estou bem / cancelar alerta</button>
       </div>
-      {deliveryReport && <div className="cc139-delivery-report" role="status"><strong>Alerta entregue a {deliveryReport.sent} contato(s)</strong><ul>{deliveryReport.recipients.map((recipient, index) => <li key={`${recipient.name}-${index}`} className={recipient.ok ? 'ok' : 'failed'}>{recipient.ok ? '✓' : '×'} {recipient.name} · {recipient.source === 'same-hotel' ? 'mesmo hotel' : 'Compartilhar'}</li>)}</ul><button className="primary" onClick={markAssisted}><ShieldCheck/> Já estou sendo assistido</button><small>Ao confirmar, todos que receberam o alerta serão avisados para não se deslocarem.</small></div>}
+      {visibleReport && <div className="cc139-delivery-report" role="status"><strong>Alerta entregue a {visibleReport.sent} contato(s)</strong><ul>{visibleReport.recipients.map((recipient, index) => <li key={`${recipient.name}-${index}`} className={recipient.ok ? 'ok' : 'failed'}>{recipient.ok ? '✓' : '×'} {recipient.name} · {recipient.source === 'same-hotel' ? 'mesmo hotel' : 'Compartilhar'}</li>)}</ul></div>}
+    </section>
+    <section className="cc139-card" aria-label="Alertas ativos">
+      <h2>Alertas ativos</h2>
+      <button onClick={() => void active.refresh()} disabled={active.loading || Boolean(busy)}>Atualizar alertas</button>
+      {active.loading ? <p role="status">Carregando alertas ativos…</p> : active.error ? <p role="alert">{active.error}</p> : !active.alerts.length ? <p>Nenhum alerta ativo nesta conta.</p> : active.alerts.map(alert => <article key={alert.alertId} data-alert-id={alert.alertId}>
+        <h3>{TYPES.find(type => type.id === alert.kind)?.label || 'Emergência'} · {alert.alertId}</h3>
+        <p>Data: {new Date(alert.createdAt).toLocaleString('pt-BR')}</p>
+        <p>Destinatários que serão avisados: {alert.recipients.filter(recipient => recipient.ok).map(recipient => recipient.name).join(', ') || 'Nenhum'}</p>
+        <div className="cc139-actions">
+          <button onClick={() => void closeActiveAlert(alert.alertId, 'cancel')} disabled={Boolean(busy)}><CheckCircle2/> Estou bem / encerrar este alerta</button>
+          <button onClick={() => void closeActiveAlert(alert.alertId, 'assisted')} disabled={Boolean(busy)}><ShieldCheck/> Já estou sendo assistido</button>
+        </div>
+        <small>O encerramento exige confirmação e avisa somente quem recebeu este alerta.</small>
+      </article>)}
     </section>
     <section className="cc139-card">
       <h2>2. Quem pode receber</h2>
