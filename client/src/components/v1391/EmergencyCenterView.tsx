@@ -143,8 +143,9 @@ export default function EmergencyCenterView() {
   }
 
   async function cancelAlert() {
+    if (!deliveryReport?.alertId || !window.confirm(`Encerrar alerta ${deliveryReport.alertId}? Os destinatários serão avisados.`)) return;
     try {
-      const payload = await v139Api('/api/platform/emergency/cancel', { method: 'POST', body: '{}' });
+      const payload = await v139Api('/api/platform/emergency/cancel', { method: 'POST', body: JSON.stringify({ alertId: deliveryReport.alertId, confirmed: true }) });
       if (payload.cancelled) setDeliveryReport(null);
       toast.success(payload.message || 'Alerta cancelado.');
     } catch (error) {
@@ -153,8 +154,9 @@ export default function EmergencyCenterView() {
   }
 
   async function markAssisted() {
+    if (!deliveryReport?.alertId || !window.confirm(`Encerrar alerta ${deliveryReport.alertId} como assistido? Os destinatários serão avisados.`)) return;
     try {
-      const payload = await v139Api('/api/platform/emergency/assisted', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ alertId: deliveryReport?.alertId || '' }) });
+      const payload = await v139Api('/api/platform/emergency/assisted', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ alertId: deliveryReport?.alertId || '', confirmed: true }) });
       if (payload.assisted) setDeliveryReport(null);
       toast.success(payload.message || 'Situação atualizada.');
     } catch (error) {

@@ -53,7 +53,12 @@ try {
   };
   for (const layout of ['aims', 'calendar']) {
     await picker.selectOption(layout);
-    if (layout === 'aims') assert.equal(await page.locator('tbody tr').count(), 9, 'real demo AIMS rows');
+    if (layout === 'aims') {
+      // Canonical AIMS uses vertical activity lists, not the legacy table.
+      const activities = page.locator('.cc-aims-roster .cc-aims-activity');
+      await activities.nth(8).waitFor();
+      assert.equal(await activities.count(), 9, 'real demo AIMS activities');
+    }
     await page.clock.fastForward(1500);
     await peer.evaluate(() => localStorage.setItem('fixture:unrelated-refresh', String(Date.now())));
     await expectLayout(layout, `guest ${layout}: unrelated cross-tab storage preserves selection`);

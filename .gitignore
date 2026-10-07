@@ -5,3 +5,7 @@ dist/
 
 # Samsung Health Data SDK is downloaded under Samsung's terms; do not commit the AAR.
 android-wrapper/lifecompanion/libs/*.aar
+
+# Verified local result of the legacy source preparation pipeline.
+.crewcheck-source-preparation.json
+.crewcheck-source-preparation.json.tmp
