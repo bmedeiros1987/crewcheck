@@ -16,6 +16,15 @@ export function markStartupCleared(): void {
   localStorage.setItem(startupKey(), JSON.stringify({ owner: startupOwner(), cleared: true }));
   window.dispatchEvent(new CustomEvent('crewcheck:roster-cleared'));
 }
+export function startupIntentRevision(): string { return localStorage.getItem(startupKey() + '_intent_epoch') || ''; }
+export function isAutomaticRosterNotification(event: Pick<StorageEvent, 'key' | 'newValue'>): boolean {
+  const owner = startupOwner();
+  if (!owner || event.key !== startupKey()) return false;
+  try {
+    const payload = JSON.parse(event.newValue || 'null');
+    return payload?.owner === owner && payload?.selection === 'automatic' && !payload?.cleared;
+  } catch { return false; }
+}
 export function startupCleared(): boolean {
   try { return JSON.parse(localStorage.getItem(startupKey()) || 'null')?.cleared === true; } catch { return false; }
 }

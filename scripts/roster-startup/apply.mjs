@@ -120,6 +120,14 @@ if (!home.includes(marker)) {
     if (!segment.includes('    } finally {')) throw new Error('Choice finally missing');
     home = home.slice(0, first) + segment.replace('    } finally {', '    } finally { canCommit.finish();') + home.slice(last);
   }
+  if (!home.includes("beginRosterChoice, invalidateRosterChoices } from")) throw new Error('Automatic notification anchor missing');
+  home = home.replaceAll("beginRosterChoice, invalidateRosterChoices } from", "beginRosterChoice, invalidateRosterChoices, isAutomaticRosterNotification, startupIntentRevision } from");
+  if (!home.includes("    const onSession = (event?: Event) => {\n")) throw new Error('Automatic notification anchor missing');
+  home = home.replaceAll("    const onSession = (event?: Event) => {\n", "    const onSession = (event?: Event) => {\n      // Automatic bootstrap persistence is not a new explicit choice. Each tab bootstraps its own account.\n      if (event instanceof StorageEvent && isAutomaticRosterNotification(event)) return;\n");
+  if (!home.includes("const start = { owner: startupOwner(), token: getToken(), revision: choiceRevision.current };")) throw new Error('Automatic notification anchor missing');
+  home = home.replaceAll("const start = { owner: startupOwner(), token: getToken(), revision: choiceRevision.current };", "const start = { owner: startupOwner(), token: getToken(), revision: choiceRevision.current, intentRevision: startupIntentRevision() };");
+  if (!home.includes("cleared: startupCleared() });")) throw new Error('Automatic notification anchor missing');
+  home = home.replaceAll("cleared: startupCleared() });", "cleared: startupCleared() }) && start.intentRevision === startupIntentRevision();");
   fs.writeFileSync('client/src/pages/Home.tsx', marker + '\n' + home);
 }
 
