@@ -6,6 +6,7 @@ const processSource = source.slice(source.indexOf('async function processWhatsAp
 const dispatched = [], claimed = new Set();
 const context = vm.createContext({
   extractWhatsAppStatusDiagnostics: () => [], persistWhatsAppStatusDiagnostic: async () => {},
+  whatsappPdfEnabled:()=>false,whatsappPdfConfiguration:null,
   Set, console: { info() {} }, payloadHash: () => 'synthetic-hash',
   extractWhatsAppEvents: payload => payload.events,
   extractWhatsAppInboundMessages: payload => payload.messages,

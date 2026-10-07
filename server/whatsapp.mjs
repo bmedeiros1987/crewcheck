@@ -210,6 +210,7 @@ export function extractWhatsAppInboundMessages(payload = {}) {
           from,
           phoneNumberId: phoneId,
           type: String(message?.type || 'unknown').slice(0, 32),
+          timestamp: String(message?.timestamp || '').slice(0, 16),
           text: String(message?.text?.body || '').trim().slice(0, 4000),
           document: message?.type === 'document' ? {
             id: String(message.document?.id || '').slice(0, 80),

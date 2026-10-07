@@ -88,6 +88,7 @@ export async function importWhatsAppPdf(message, deps) {
   if (!receiver || message?.phoneNumberId !== receiver || message?.type !== 'document' || !message.id || !/^\d{8,16}$/.test(String(message.from || ''))) return { ok: false, reason: 'invalid_envelope' };
   const link = await deps.findLink(message.from);
   if (!active(link)) return { ok: false, reason: 'not_authorized' };
+  if (message.expectedBinding && bindingOf(link) !== message.expectedBinding) return { ok: false, reason: 'binding_changed' };
   if (typeof deps.commit !== 'function') return { ok: false, reason: 'import_not_configured' };
   const current = async () => {
     const linked = await deps.findLink(message.from);
@@ -100,9 +101,9 @@ export async function importWhatsAppPdf(message, deps) {
     if (!parsed?.roster?.days?.length) return { ok: false, reason: 'roster_empty' };
     if (!await current()) return { ok: false, reason: 'binding_changed' };
     const key = `whatsapp-pdf:${hash(JSON.stringify([emailOf(link), receiver, String(message.id)]))}`;
-    const committed = await deps.commit({ key, link, phone: message.from, receiver, mediaDigest: media.digest, parsed, filename: media.filename, current });
+    const committed = await deps.commit({ key, link, phone: message.from, receiver, mediaDigest: media.digest, parsed, filename: media.filename, receivedAt: message.receivedAt, sentAt: message.timestamp, current });
     return committed?.ok === true ? { ok: true, duplicate: Boolean(committed.duplicate) } : { ok: false, reason: 'commit_unconfirmed' };
-  } catch { return { ok: false, reason: 'import_failed' }; }
+  } catch (error) { return { ok: false, reason: error?.code === 'STALE_DOCUMENT' ? 'stale_document' : 'import_failed' }; }
 }
 
 /** Same InnoDB transaction for receipt + snapshot. No DDL, file or DB fallback. */
@@ -117,8 +118,17 @@ export async function commitWhatsAppPdf(pool, input, { phoneHash, buildSnapshot,
     const [claim] = await connection.query('INSERT IGNORE INTO crewcheck_telegram_state(state_key,payload) VALUES(?,?)', [input.key, JSON.stringify({ source: 'whatsapp-pdf', digest: input.mediaDigest, completed: true })]);
     if (!Number(claim.affectedRows)) { await connection.rollback(); return { ok: true, duplicate: true }; }
     const snapshotKey = `snapshot:${emailOf(linked)}`;
+    await connection.query('INSERT IGNORE INTO crewcheck_telegram_state(state_key,payload) VALUES(?,?)', [snapshotKey, '{}']);
     const [rows] = await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE', [snapshotKey]);
     const value = rows[0]?.payload; const previous = typeof value === 'string' ? JSON.parse(value) : value || {};
+    const incomingAt = Date.parse(input.receivedAt || '');
+    const previousAt = Date.parse(previous.source === 'whatsapp-pdf' ? previous.whatsappPdfImport?.receivedAt || previous.rosterUpdatedAt || previous.updatedAt || '' : previous.rosterUpdatedAt || previous.updatedAt || '');
+    const providerTime = (value, receivedAt) => /^\d{10,11}$/.test(String(value || '')) && Number(value) * 1000 <= receivedAt + 60000 ? Number(value) * 1000 : NaN;
+    const incomingProvider = providerTime(input.sentAt, incomingAt);
+    const previousProvider = providerTime(previous.whatsappPdfImport?.sentAt, Date.parse(previous.whatsappPdfImport?.receivedAt || ''));
+    const providerOrdered = previous.source === 'whatsapp-pdf' && Number.isFinite(incomingProvider) && Number.isFinite(previousProvider);
+    if (providerOrdered ? previousProvider > incomingProvider || (previousProvider === incomingProvider && previousAt > incomingAt)
+      : Number.isFinite(previousAt) && previousAt > (Number.isFinite(incomingProvider) ? incomingProvider : incomingAt)) fail('STALE_DOCUMENT');
     const snapshot = buildSnapshot(previous, input);
     if (!snapshot || snapshot.email !== emailOf(linked) || !snapshot.roster?.days?.length) fail('SNAPSHOT_REJECTED');
     if (receiver() !== input.receiver) fail('RECEIVER_CHANGED');

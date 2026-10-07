@@ -10,6 +10,8 @@ on:
       - 'scripts/regression-whatsapp-business-webhook.mjs'
       - 'server/concierge/whatsapp-menu.mjs'
       - 'scripts/p1-whatsapp-menu/**'
+      - 'scripts/p1-whatsapp-pdf/**'
+      - 'scripts/regression-whatsapp-query-parity.mjs'
       - 'scripts/regression-whatsapp-menu.mjs'
       - 'scripts/regression-whatsapp-payload-dedup.mjs'
       - 'server/concierge/whatsapp-pdf*.mjs'
@@ -29,6 +31,8 @@ on:
       - 'scripts/regression-whatsapp-business-webhook.mjs'
       - 'server/concierge/whatsapp-menu.mjs'
       - 'scripts/p1-whatsapp-menu/**'
+      - 'scripts/p1-whatsapp-pdf/**'
+      - 'scripts/regression-whatsapp-query-parity.mjs'
       - 'scripts/regression-whatsapp-menu.mjs'
       - 'scripts/regression-whatsapp-payload-dedup.mjs'
       - 'server/concierge/whatsapp-pdf*.mjs'
@@ -75,6 +79,8 @@ jobs:
           node scripts/regression-whatsapp-menu.mjs
           node scripts/regression-whatsapp-payload-dedup.mjs
           node scripts/regression-whatsapp-pdf.mjs
+          node scripts/regression-whatsapp-pdf-integration.mjs
+          node scripts/regression-whatsapp-query-parity.mjs
 
   pdf-canonical-parser:
     runs-on: ubuntu-24.04

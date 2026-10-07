@@ -15,27 +15,26 @@ PR 888 permanece draft, sem merge, deploy, alteração de configuração, consul
 | Capacidade | Estado verificável |
 | --- | --- |
 | Escala/hoje/amanhã/próximo | Adaptador compartilha o motor e snapshot de conta; menu usa comandos canônicos |
-| Financeiro | Diárias disponíveis pelo motor existente; equivalência completa de holerite/auditoria não demonstrada |
-| PDF recebido | Não implementado: exige transporte de mídia limitado, validação de PDF e importação autenticada idempotente |
+| Financeiro | Diárias operacionais (pernoites) pelo motor existente; sem valores monetários inventados; holerite/auditoria não implementados |
+| PDF recebido | Integrado localmente atrás de gate independente default OFF; fila, validação, parser canônico e commit transacional testados com fixtures |
 | Identidade | Remetente empresarial validado antes do vínculo; email/vínculo/consentimento rechecados antes de resposta privada |
 | Isolamento | A/B, troca/revogação/novo vínculo, canal e remetente durante await cobertos por mocks |
 | Deduplicação | Memória e INSERT IGNORE; corrigida repetição dentro do payload |
-| Idempotência durável | Lacuna: banco ausente/erro retorna aceitação, e claim precede execução; não há fila transacional/retry durável |
+| Idempotência durável | PDF agora usa fila antes do ACK, lease/retry e recibo + snapshot na mesma transação; a dedup do texto mantém seu comportamento existente |
 | SOS/GPS | Testes atuais de SOS e GPS voluntário comuns passam; funcionalidades SOS WhatsApp não são anunciadas |
 
 ## Evidência sintética e limitações
 
-Preparação canônica executada sobre fontes limpas. Testes menu e sender cobrem OFF/ON, receiver incorreto/ausente, binding, mudança de configuração, callbacks e A/B sem APIs reais. Teste novo cobre payload duplicado e replay. Webhook oficial, diagnósticos 130497, SOS (incluindo encerramento exato) e farmácia/GPS passam. Wellhub: 17/18; falha de onboarding de nome captura “Meu plano é silver+”, também reproduzida na main isolada (17/18). Não foi corrigida nesta revisão de transporte.
+Preparação canônica executada sobre fontes limpas. Testes menu e sender cobrem OFF/ON, receiver incorreto/ausente, binding, mudança de configuração, callbacks e A/B sem APIs reais. Teste novo cobre payload duplicado e replay. Webhook oficial, diagnósticos 130497, SOS (incluindo encerramento exato) e farmácia/GPS passam. Wellhub materializado: 18/18; harness montado: 17/18, reproduzindo a mesma divergência de montagem na main isolada. Nenhuma regressão nova observada.
 
 Node local v24.21.0; CI usa Node22.13.0. Resultado CI do novo patch precisa ser acompanhado após publicação. Não se presume que todas as suítes ou fluxos de produto estejam verdes.
 
-## Plano antes de ativar
+## Plano atualizado antes de ativar as funções novas
 
-1. Revisar o draft atualizado e CI; tratar falha existente Wellhub separadamente.
-2. Projetar fila/outbox com claim e conclusão duráveis, retry de consulta seguro e chave de importação por conta/canal/mensagem. Revalidar binding antes de qualquer escrita, além do envio.
-3. Implementar PDF atrás de gate próprio: aceitar application/pdf com limites de tamanho, tempo e conteúdo; buscar mídia somente em endpoints permitidos, sem URLs fornecidas pelo usuário; usar parser/importador canônico sem alterar fórmulas; testar replay, troca de conta, parser inválido e recuperação de falhas com fixtures fictícias.
-4. Ampliar testes de conteúdo financeiro/escala usando snapshots fictícios de limites mensais, ausência de dados e comparação de resultados Telegram/WhatsApp. Não inventar valores.
-5. Com autorização específica, comprovar associação do número BR/UK, phone_number_id/WABA/token/env no ambiente alvo sem expor segredos. Resolver restrição Meta130497 com evidência própria de elegibilidade e entrega, não apenas relatório de aprovação.
-6. Só depois de nova autorização realizar validação controlada com destinatário de teste e decidir ativação/rollout. Esta etapa não foi executada.
+1. Revisar o patch local e publicar na PR888 quando existir autenticação Git suportada, sem novas credenciais neste executor. A PR permanece draft no head remoto anterior.
+2. Homologar a fila e as transações em MySQL isolado e revisar concorrência/retention. Os testes atuais usam banco simulado; parser e consultas são reais com fixtures fictícias.
+3. Planejar rollout/rollback do modo durável de snapshots: preservar migração somente da própria conta e evitar retorno a cache antigo após novas importações. Gates de PDF/menu não foram alterados no ambiente real.
+4. Manter Diárias como consulta operacional; ampliar valores/holerite somente reutilizando produtores financeiros canônicos existentes, sem fórmulas novas nesta fase.
+5. A liberação Meta e o envio estão confirmados pelo relato do usuário (13:12 UTC), não são bloqueio. Não solicitar repetição dessa confirmação. Um teste de UMA mensagem foi autorizado posteriormente, mas não foi tentado por falta de caminho suportado com remetente e janela gratuita verificáveis neste executor.
 
-Bloqueios reais: identidade Meta/ambiente não comprovada, restrição de envio sem comprovação de desbloqueio, importação PDF ausente, idempotência durável incompleta e falha Wellhub preexistente. Nenhuma funcionalidade ativa foi prometida.
+Bloqueios restantes: publicação Git; homologação MySQL real isolada; rollout/rollback do cache; acesso suportado para o teste avulso autorizado. Sem merge, deploy, credenciais novas, mensagens reais ou ativação. Detalhes da implementação e testes: `whatsapp-pdf-design-2026-10-07.md`.

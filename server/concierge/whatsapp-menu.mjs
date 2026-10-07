@@ -8,7 +8,7 @@ export const WHATSAPP_MENU = [
   'Hoje — programação de hoje',
   'Amanhã — programação de amanhã',
   'Escala — resumo da escala ativa',
-  'Diárias — valores calculados da escala',
+  'Diárias — pernoites detectados na escala',
   'Próxima programação — próximo compromisso publicado',
   'Pernoite — hotel e descanso publicados',
   'Farmácias — locais e rotas',

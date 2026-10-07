@@ -107,6 +107,7 @@ function harness() {
     telegramAppRequestAllowed: () => true, conciergeAccessMatches: () => true,
     telegramLinkedRecordForEmail: async () => ({ chatId: activeProfile.chatId }),
     sendJson: (_res, status, body) => { appResponse = { status, body }; },
+    whatsappPdfEnabled: () => false, whatsappPdfConfiguration: null,
     whatsappMenuEnabled: () => whatsappMenuEnabled({}),
     normalizePhone: value => String(value || ''), phoneNumberId: () => 'synthetic-receiver',
     findActiveLinkByPhone: async () => ({ email: activeProfile.email, consent_concierge: 1, linked_at: '2026-01-01' }),

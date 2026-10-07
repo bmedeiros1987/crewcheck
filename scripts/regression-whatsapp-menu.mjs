@@ -113,6 +113,7 @@ assert.match(inbound,/await deliverWhatsAppMenuMessage/);
 assert.match(inbound,/tryCompleteLink/);
 let environment={CREWCHECK_WHATSAPP_MENU_ENABLED:'true'};
 const context=vm.createContext({
+  whatsappPdfEnabled:()=>false,whatsappPdfConfiguration:null,
   whatsappMenuEnabled:()=>whatsappMenuEnabled(environment),
   console:{error:()=>{}},
   phoneNumberId:()=> 'synthetic-receiver',
