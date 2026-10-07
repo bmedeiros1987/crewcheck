@@ -5,6 +5,8 @@ on:
     paths:
       - 'server/concierge/pharmacy-reference.mjs'
       - 'server/concierge/place-results.mjs'
+      - 'server/concierge/telegram-place-links.mjs'
+      - 'scripts/regression-telegram-place-links.mjs'
       - 'scripts/p1-concierge-poi/**'
       - 'scripts/regression-concierge-pharmacy-reference.mjs'
       - 'scripts/regression-concierge-place-results.mjs'
@@ -44,6 +46,8 @@ jobs:
       - run: node --check server.mjs
       - run: node scripts/regression-v14-3-66-telegram-health-routing.mjs
       - run: node scripts/regression-concierge-pharmacy-reference.mjs
+      - run: node scripts/regression-telegram-place-links.mjs
+      - run: node --experimental-vm-modules scripts/regression-emergency-intent.mjs
       - run: node scripts/regression-concierge-place-results.mjs --prepared
       - name: Repeat scoped materialization safely
         run: |

@@ -9,6 +9,7 @@ if (!source.includes(scopedAppCall)) {
   if (!source.includes(appCall)) throw new Error('[concierge-poi] app reply origin call missing');
   source = source.replace(appCall, scopedAppCall);
 }
+if (!source.includes("from './server/concierge/telegram-place-links.mjs'")) source = "import { telegramPlaceReply } from './server/concierge/telegram-place-links.mjs';\n" + source;
 if (!source.includes("from './server/concierge/pharmacy-reference.mjs'")) {
   source = "import { pharmacyReferenceReply } from './server/concierge/pharmacy-reference.mjs';\n" + source;
 }
@@ -32,7 +33,7 @@ if (!source.includes('const poi = await pharmacyReferenceReply')) {
     lookup: query => conciergeSearchPlaces(query, '', null, 4),
     nearby: (point, kind) => conciergeSearchNearbyHealthPlacesAtReference([kind === 'hospital' ? 'hospital' : 'pharmacy'], point, 20),
   });
-  if (poi.handled) return profile.channel === 'app' && poi.placeResults ? { reply: poi.reply, placeResults: poi.placeResults } : conciergeHumanizeReplyV14408(poi.reply, text);`);
+  if (poi.handled) return profile.channel === 'app' && poi.placeResults ? { reply: poi.reply, placeResults: poi.placeResults } : poi.placeResults && (profile.channel === 'telegram' || (!profile.channel && profile.chatId)) ? telegramPlaceReply(poi.placeResults, value => conciergeHumanizeReplyV14408(value, text)) : conciergeHumanizeReplyV14408(poi.reply, text);`);
 }
 if (!source.includes('async function conciergeSearchNearbyHealthPlacesAtReference(')) {
   // Reuse the same restricted Nearby query, without disguising a hotel as GPS.
@@ -65,6 +66,11 @@ if (!source.includes(structuredResponse)) {
   if (!appResponse.test(source)) throw new Error('[concierge-poi] app response boundary missing');
   source = source.replace(appResponse, structuredResponse);
 }
+source = source.replace("if (poi.handled) return profile.channel === 'app' && poi.placeResults ? { reply: poi.reply, placeResults: poi.placeResults } : conciergeHumanizeReplyV14408(poi.reply, text);", "if (poi.handled) return profile.channel === 'app' && poi.placeResults ? { reply: poi.reply, placeResults: poi.placeResults } : poi.placeResults && (profile.channel === 'telegram' || (!profile.channel && profile.chatId)) ? telegramPlaceReply(poi.placeResults, value => conciergeHumanizeReplyV14408(value, text)) : conciergeHumanizeReplyV14408(poi.reply, text);");
+const plainPayload = "const payload = { chat_id: chatId, text: String(text || '').slice(0, 3900), disable_web_page_preview: true, ...extra };";
+source = source.replace(plainPayload, "const payload = { chat_id: chatId, text: String(text?.reply ?? text ?? '').slice(0, 3900), disable_web_page_preview: true, ...extra, ...(Array.isArray(text?.entities) ? { entities: text.entities } : {}) };");
+const voiceBoundary = '    const humanAudioSent = await sendHumanTelegramVoiceReply(chatId, reply, transcript, snapshot);';
+if (!source.includes('if (Array.isArray(reply?.entities))')) source = source.replace(voiceBoundary, '    if (Array.isArray(reply?.entities)) { await sendTelegramMessage(chatId, reply, { reply_markup: conciergeKeyboard }); return true; }\n' + voiceBoundary);
 fs.writeFileSync(path, source);
 console.log('[concierge-poi] scoped hotel search reference; GPS and health query restrictions preserved');
 
