@@ -35,14 +35,21 @@ const fixtureAlert = (alertId, name) => ({ alertId, kind: 'security', createdAt:
 const accounts = { A: [fixtureAlert('old-A', 'Recipient A old'), fixtureAlert('recent-A', 'Recipient A recent')], B: [fixtureAlert('only-B', 'Recipient B')] };
 let failList = false, malformed = false, failClose = false, closeAlready = false, holdNext = false, held, releaseHeld;
 const posts = [], gets = [];
+const medical = { A: { allergies: 'Synthetic A', healthPlanProvider: 'Amil', healthPlanCode: 'S450' }, B: { allergies: 'Synthetic B' } };
+const savedPreferences = { A: { includeLocation: false }, B: { includeLocation: false } };
+const writes = [];
+let holdWrite = '', writeStarted, releaseWrite;
 try {
   browser = await chromium.launch({ ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}), args: ['--no-sandbox'] });
   const context = await browser.newContext({ serviceWorkers: 'block' });
+  await context.addCookies([{ name: 'crewcheck_auth_token', value: 'B', url: origin }]);
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== origin) return route.abort();
     if (!url.pathname.startsWith('/api/')) return route.continue();
-    const token = request.headers().authorization?.replace('Bearer ', '');
+    const bearer = request.headers().authorization?.replace('Bearer ', '');
+    const cookie = request.headers().cookie?.match(/crewcheck_auth_token=([^;]+)/)?.[1];
+    const token = bearer || cookie; // Match requestToken: Bearer takes precedence.
     const ok = payload => route.fulfill({ contentType: 'application/json', body: JSON.stringify(payload) });
     if (url.pathname.endsWith('/active')) {
       gets.push(token);
@@ -51,8 +58,18 @@ try {
       if (failList) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ ok: false, message: 'PRIVATE DATABASE DETAIL' }) });
       return ok({ ok: true, alerts: malformed ? 'invalid' : snapshot });
     }
-    if (url.pathname.endsWith('/profile')) return ok({ ok: true, profile: {}, consentMedicalShare: false });
-    if (url.pathname.endsWith('/preferences')) return ok({ ok: true, preferences: { includeLocation: false } });
+    if (url.pathname.endsWith('/profile') || url.pathname.endsWith('/preferences')) {
+      const resource = url.pathname.endsWith('/profile') ? 'profile' : 'preferences';
+      if (request.method() === 'POST') {
+        const body = request.postDataJSON(); writes.push({ token, bearer, cookie, resource, body });
+        assert.ok(bearer, 'writes must never fall back to cookie identity');
+        if (resource === 'profile') medical[token] = { ...body }; else savedPreferences[token] = { ...body };
+        const snapshot = structuredClone(resource === 'profile' ? medical[token] : savedPreferences[token]);
+        if (holdWrite === resource) { holdWrite = ''; writeStarted?.(); await new Promise(resolve => { releaseWrite = resolve; }); }
+        return ok({ ok: true, saved: true, [resource]: snapshot, consentMedicalShare: Boolean(snapshot.consentMedicalShare) });
+      }
+      return ok({ ok: true, [resource]: resource === 'profile' ? medical[token] : savedPreferences[token], consentMedicalShare: false });
+    }
     assert.match(url.pathname, /\/(cancel|assisted)$/, 'fixture must never send an SOS');
     const body = request.postDataJSON(); posts.push({ token, path: url.pathname, body });
     assert.equal(body.confirmed, true); assert.ok(body.alertId);
@@ -84,6 +101,14 @@ try {
     } catch (error) { reject(error); }
   }));
   await page.goto(origin); await card('old-A').waitFor(); await card('recent-A').waitFor();
+  const allergies = page.getByRole('textbox', { name: 'Alergias', exact: true });
+  const save = () => page.getByRole('button', { name: 'Salvar proteção e preferências', exact: true });
+  await page.waitForFunction(() => document.querySelector('input[placeholder="Nenhuma ou descreva"]')?.value === 'Synthetic A');
+  await save().click();
+  await page.waitForFunction(() => window.toasts?.some(t => t.text === 'Preferências e perfil médico protegidos.'));
+  assert.equal(writes.length, 2);
+  assert.ok(writes.every(write => write.bearer === 'A' && write.cookie === 'B' && write.token === 'A'));
+  assert.equal(medical.B.allergies, 'Synthetic B', 'Bearer A/cookie B must not write medical data to B');
   await page.reload(); await card('old-A').waitFor(); assert.equal(await page.locator('[data-alert-id]').count(), 2, 'reload restores both, no implicit newest');
   const declined = expectDialog('old-A', 'Recipient A old', false);
   await card('old-A').getByRole('button', { name: 'Estou bem / encerrar este alerta' }).click();
@@ -128,6 +153,41 @@ try {
   assert.equal(await page.evaluate(() => window.toasts.filter(t => t.type === 'success').length), successes, 'race closure never claims a new notification');
   assert.ok(gets.includes('A') && gets.includes('B'), 'requests pin synthetic account authorization');
   assert.equal(posts.length, 4); assert.equal(posts[2].body.alertId, 'only-B'); assert.equal(posts[3].body.alertId, 'only-B');
+  // Switch during either write: the already submitted write stays on A; its
+  // response must not update B, start a second write, emit toast, or update Amil.
+  for (const phase of ['profile', 'preferences']) {
+    await switchAccount('A'); await page.waitForFunction(() => document.querySelector('input[placeholder="Nenhuma ou descreva"]')?.value.startsWith('Synthetic A'));
+    await allergies.fill('Synthetic A ' + phase);
+    await page.evaluate(() => { window.toasts = []; localStorage.setItem('crewcheck:amil-plan', 'B-marker'); });
+    const before = writes.length; const unchangedB = structuredClone(medical.B);
+    holdWrite = phase; const pendingSave = new Promise(resolve => { writeStarted = resolve; });
+    await save().click(); await pendingSave;
+    await switchAccount('B'); await page.waitForFunction(() => document.querySelector('input[placeholder="Nenhuma ou descreva"]')?.value === 'Synthetic B');
+    releaseWrite(); await page.waitForTimeout(100);
+    assert.equal(await allergies.inputValue(), 'Synthetic B'); assert.deepEqual(medical.B, unchangedB);
+    assert.equal(writes.length - before, phase === 'profile' ? 1 : 2);
+    assert.ok(writes.slice(before).every(write => write.token === 'A' && write.bearer === 'A'));
+    assert.equal(await page.evaluate(() => localStorage.getItem('crewcheck:amil-plan')), 'B-marker');
+    assert.deepEqual(await page.evaluate(() => window.toasts), []);
+  }
+  // A stale geolocation success or failure cannot alter B or clear B's busy state.
+  await page.evaluate(() => {
+    window.pendingLocations = [];
+    Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition(success, failure) { window.pendingLocations.push({ success, failure }); } } });
+  });
+  const locationInput = page.getByRole('textbox', { name: 'Localização', exact: true });
+  for (const outcome of ['success', 'failure']) {
+    await switchAccount('A'); await page.waitForFunction(() => document.querySelector('input[placeholder="Nenhuma ou descreva"]')?.value.startsWith('Synthetic A'));
+    await page.getByRole('button', { name: 'Usar localização atual' }).click();
+    await switchAccount('B'); await page.waitForFunction(() => document.querySelector('input[placeholder="Nenhuma ou descreva"]')?.value === 'Synthetic B');
+    await page.getByRole('button', { name: 'Usar localização atual' }).click();
+    await page.evaluate(outcome => { window.toasts = []; const old = window.pendingLocations.shift(); outcome === 'success' ? old.success({ coords: { latitude: 1, longitude: 2 } }) : old.failure({}); }, outcome);
+    await page.waitForTimeout(100); assert.equal(await locationInput.inputValue(), '');
+    assert.equal(await page.getByRole('button', { name: 'Localizando…' }).isDisabled(), true);
+    assert.deepEqual(await page.evaluate(() => window.toasts), []);
+    await page.evaluate(() => window.pendingLocations.shift().success({ coords: { latitude: 3, longitude: 4 } }));
+    await page.waitForFunction(() => document.querySelector('input[placeholder="Link do mapa, opcional"]')?.value.includes('3,4'));
+  }
   accounts.B = [fixtureAlert('logout-B', 'Recipient B')];
   await page.getByRole('button', { name: 'Atualizar alertas' }).click(); await card('logout-B').waitFor();
   const requestsBeforeLogout = gets.length;
@@ -135,7 +195,7 @@ try {
   await page.getByRole('alert').waitFor(); assert.equal(await page.locator('[data-alert-id]').count(), 0);
   assert.doesNotMatch(await page.locator('body').innerText(), /Recipient B/);
   assert.equal(gets.length, requestsBeforeLogout, 'expired local session never falls back to a retained cookie');
-  console.log('PASS: actual EmergencyCenter reload/navigation, multiple/none, reject/confirm exact ID/date/recipients, closed alert, account switch and stale responses, API/malformed/closure failures; local fixtures only');
+  console.log('PASS: actual EmergencyCenter reload/navigation, exact ID closure and prior failures; Bearer A/cookie B writes, account switch during each save stage, stale geolocation success/failure and busy isolation; local fixtures only');
 } finally {
-  releaseHeld?.(); await browser?.close(); await new Promise(resolve => server.close(resolve));
+  releaseHeld?.(); releaseWrite?.(); await browser?.close(); await new Promise(resolve => server.close(resolve));
 }

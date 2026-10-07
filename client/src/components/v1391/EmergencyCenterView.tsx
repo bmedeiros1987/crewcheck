@@ -66,12 +66,18 @@ export default function EmergencyCenterView() {
   const [kind, setKind] = useState('');
   const [details, setDetails] = useState('');
   const [locationUrl, setLocationUrl] = useState('');
-  const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFS);
-  const [profile, setProfile] = useState<MedicalProfile>(DEFAULT_PROFILE);
-  const [consentMedicalShare, setConsentMedicalShare] = useState(false);
+  const [storedPreferences, setPreferences] = useState<Preferences>(DEFAULT_PREFS);
+  const [storedProfile, setProfile] = useState<MedicalProfile>(DEFAULT_PROFILE);
+  const [storedConsent, setConsentMedicalShare] = useState(false);
+  const [loadedScope, setLoadedScope] = useState('');
   const [deliveryReport, setDeliveryReport] = useState<DeliveryReport | null>(null);
   const [busy, setBusy] = useState('');
   const active = useActiveEmergencyAlerts();
+  const operation = useRef(0);
+  const configurationReady = loadedScope === active.scope && Boolean(active.scope);
+  const preferences = configurationReady ? storedPreferences : DEFAULT_PREFS;
+  const profile = configurationReady ? storedProfile : DEFAULT_PROFILE;
+  const consentMedicalShare = configurationReady && storedConsent;
   const closing = useRef(false);
   const reportScope = useRef(active.scope);
   const visibleReport = reportScope.current === active.scope ? deliveryReport : null;
@@ -79,6 +85,9 @@ export default function EmergencyCenterView() {
   useEffect(() => {
     let current = true;
     const scope = active.scope;
+    ++operation.current;
+    setBusy('');
+    setLoadedScope('');
     setDeliveryReport(null);
     setProfile(DEFAULT_PROFILE);
     setPreferences(DEFAULT_PREFS);
@@ -95,33 +104,49 @@ export default function EmergencyCenterView() {
       setPreferences({ ...DEFAULT_PREFS, ...(preferencePayload.preferences || {}) });
       setProfile({ ...DEFAULT_PROFILE, ...(profilePayload.profile || {}) });
       setConsentMedicalShare(Boolean(profilePayload.consentMedicalShare));
+      setLoadedScope(scope);
     }).catch(() => { if (current && scope === emergencyAccountScope()) toast.error('Não consegui carregar a Central de Emergência.'); });
-    return () => { current = false; };
+    return () => { current = false; ++operation.current; };
   }, [active.scope]);
 
   async function locate() {
+    const scope = active.scope;
+    if (!scope || scope !== emergencyAccountScope()) return;
+    const request = ++operation.current;
+    const current = () => request === operation.current && scope === emergencyAccountScope();
     setBusy('location');
     try {
       const url = await currentLocationUrl();
+      if (!current()) return;
       setLocationUrl(url);
       toast.success('Localização pronta para o alerta.');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Localização indisponível.');
+      if (current()) toast.error(error instanceof Error ? error.message : 'Localização indisponível.');
     } finally {
-      setBusy('');
+      if (current()) setBusy('');
     }
   }
 
   async function savePreferences() {
+    const scope = active.scope;
+    const token = getToken();
+    if (!configurationReady || !token || scope !== emergencyAccountScope()) return;
+    const request = ++operation.current;
+    const current = () => request === operation.current && scope === emergencyAccountScope();
+    const headers = { 'content-type': 'application/json', authorization: `Bearer ${token}` };
+    const profileInput = { ...profile, consentMedicalShare };
+    const preferenceInput = { ...preferences };
     setBusy('save');
     try {
       const profilePayload = await v139Api('/api/platform/emergency/profile', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...profile, consentMedicalShare }),
+        method: 'POST', headers, body: JSON.stringify(profileInput),
       });
+      if (!current()) return;
       if (!profilePayload?.ok || !profilePayload?.saved) throw new Error(profilePayload?.message || 'O banco não confirmou o perfil médico.');
       await v139Api('/api/platform/emergency/preferences', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(preferences),
+        method: 'POST', headers, body: JSON.stringify(preferenceInput),
       });
+      if (!current()) return;
       if (profile.healthPlanProvider === 'Amil' && ['S450', 'S750'].includes(profile.healthPlanCode)) {
         try { localStorage.setItem('crewcheck:amil-plan', profile.healthPlanCode); } catch {}
       }
@@ -129,42 +154,44 @@ export default function EmergencyCenterView() {
       setConsentMedicalShare(Boolean(profilePayload.consentMedicalShare));
       toast.success(profilePayload.message || 'Preferências e perfil médico protegidos.');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Não consegui salvar.');
+      if (current()) toast.error(error instanceof Error ? error.message : 'Não consegui salvar.');
     } finally {
-      setBusy('');
+      if (current()) setBusy('');
     }
   }
 
   async function sendAlert() {
     const scope = active.scope;
-    if (!scope || scope !== emergencyAccountScope()) return;
+    const token = getToken();
+    if (!token || !scope || scope !== emergencyAccountScope()) return;
     if (!kind) return toast.info('Escolha o tipo de emergência.');
     const selected = TYPES.find((item) => item.id === kind);
     const confirmed = confirm(`CONFIRMAR ALERTA: ${selected?.label || kind}\n\nO CrewCheck tentará avisar os contatos salvos em Compartilhar e colegas que autorizaram presença no mesmo hotel. O número do quarto não será enviado.`);
     if (!confirmed) return;
     if (scope !== emergencyAccountScope()) return;
+    const request = ++operation.current;
+    const current = () => request === operation.current && scope === emergencyAccountScope();
     setBusy('send');
     try {
       let effectiveLocation = locationUrl;
       if (preferences.includeLocation && !effectiveLocation) {
-        try { effectiveLocation = await currentLocationUrl(); setLocationUrl(effectiveLocation); } catch {}
+        try { effectiveLocation = await currentLocationUrl(); if (current()) setLocationUrl(effectiveLocation); } catch {}
       }
-      if (scope !== emergencyAccountScope()) return;
-      const token = getToken();
+      if (!current()) return;
       const payload = await v139Api('/api/platform/emergency/send', {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ kind, details, locationUrl: effectiveLocation }),
       });
-      if (scope !== emergencyAccountScope()) return;
+      if (!current()) return;
       reportScope.current = scope;
       setDeliveryReport({ alertId: String(payload.alertId || ''), sent: Number(payload.sent || 0), failed: Number(payload.failed || 0), recipients: Array.isArray(payload.recipients) ? payload.recipients : [] });
       void active.refresh();
       toast.success(payload.message || 'Alerta enviado.');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Não consegui enviar o alerta. Acione o serviço público/local de emergência.');
+      if (current()) toast.error(error instanceof Error ? error.message : 'Não consegui enviar o alerta. Acione o serviço público/local de emergência.');
     } finally {
-      setBusy('');
+      if (current()) setBusy('');
     }
   }
 
@@ -264,7 +291,7 @@ export default function EmergencyCenterView() {
         <label>Plano/rede{profile.healthPlanProvider === 'Amil' ? <select value={profile.healthPlanCode} onChange={(event) => setProfile({ ...profile, healthPlanCode: event.target.value })}><option value="">Selecione</option><option value="S450">S450</option><option value="S750">S750</option></select> : <input value={profile.healthPlanCode} onChange={(event) => setProfile({ ...profile, healthPlanCode: event.target.value })} placeholder="Nome ou código da rede"/>}</label>
         <label className="wide"><input type="checkbox" checked={consentMedicalShare} onChange={(event) => setConsentMedicalShare(event.target.checked)}/> Autorizo o envio desses dados em uma emergência médica confirmada.</label>
       </div>
-      <div className="cc139-actions"><button className="primary" onClick={savePreferences} disabled={Boolean(busy)}><Save/> {busy === 'save' ? 'Salvando…' : 'Salvar proteção e preferências'}</button></div>
+      <div className="cc139-actions"><button className="primary" onClick={savePreferences} disabled={!configurationReady || Boolean(busy)}><Save/> {busy === 'save' ? 'Salvando…' : 'Salvar proteção e preferências'}</button></div>
     </section>
     <section className="cc139-card"><Bell/><h2>Telegram</h2><p>Depois de vincular o bot, envie <b>/emergencia</b>. O bot mostrará botões por tipo e solicitará confirmação antes do disparo.</p></section>
   </>;
