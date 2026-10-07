@@ -6,5 +6,6 @@
   "isolatedDatabaseAttestation": "",
   "liveEnabled": false,
   "allowedRecipients": [],
-  "guestFictionalContextOnly": true
+  "ownerMode": "authenticated_existing_link",
+  "visitorMode": "existing_linked_visitor"
 }

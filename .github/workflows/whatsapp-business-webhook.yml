@@ -11,6 +11,10 @@ on:
       - 'server/concierge/whatsapp-menu.mjs'
       - 'scripts/p1-whatsapp-menu/**'
       - 'scripts/p1-whatsapp-pdf/**'
+      - 'scripts/p1-whatsapp-visitor/**'
+      - 'server/concierge/whatsapp-visitor.mjs'
+      - 'scripts/regression-whatsapp-linked-visitor.mjs'
+      - 'scripts/regression-whatsapp-visitor-portal.mjs'
       - 'scripts/regression-whatsapp-query-parity.mjs'
       - 'scripts/regression-whatsapp-menu.mjs'
       - 'scripts/regression-whatsapp-payload-dedup.mjs'
@@ -32,6 +36,10 @@ on:
       - 'server/concierge/whatsapp-menu.mjs'
       - 'scripts/p1-whatsapp-menu/**'
       - 'scripts/p1-whatsapp-pdf/**'
+      - 'scripts/p1-whatsapp-visitor/**'
+      - 'server/concierge/whatsapp-visitor.mjs'
+      - 'scripts/regression-whatsapp-linked-visitor.mjs'
+      - 'scripts/regression-whatsapp-visitor-portal.mjs'
       - 'scripts/regression-whatsapp-query-parity.mjs'
       - 'scripts/regression-whatsapp-menu.mjs'
       - 'scripts/regression-whatsapp-payload-dedup.mjs'
@@ -81,6 +89,7 @@ jobs:
           node scripts/regression-whatsapp-pdf.mjs
           node scripts/regression-whatsapp-pdf-integration.mjs
           node scripts/regression-whatsapp-query-parity.mjs
+          node scripts/regression-whatsapp-linked-visitor.mjs
 
   pdf-canonical-parser:
     runs-on: ubuntu-24.04
@@ -94,3 +103,4 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: node scripts/v139/apply.mjs
       - run: node scripts/regression-whatsapp-pdf-canonical-parser.mjs
+      - run: node scripts/regression-whatsapp-visitor-portal.mjs

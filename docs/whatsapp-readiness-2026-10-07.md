@@ -11,6 +11,7 @@ Reviewed against main 81ec0bcd and local consolidation 6a3a6b22. Remote PR888 re
 | Snapshot ordering and legacy cache reconciliation | Synthetic concurrent/newer/foreign-account cases PASS | MySQL lock/CAS semantics pending |
 | Cache rollback after imports | Design warning exists | Do not switch OFF after imports until cache synchronization or durable-read retention has been designed and validated |
 | Production Meta delivery | Parent reports Render error 130497 at 15:01–15:02 UTC | External resolution; no retry or exposed-token use |
+| Linked visitor reads/binding | Synthetic actual Telegram/WhatsApp parity PASS | Visitor gate OFF; portal/helper syntax PASS; browser/SOS effects and real MySQL pending |
 | Independent review and exact-code remote CI | Not completed for this local consolidation | Required before claiming activation-ready |
 | Nightlife during Floripa overnight | Acceptance scenario below | Scope recorded; no new provider or behavior claimed |
 

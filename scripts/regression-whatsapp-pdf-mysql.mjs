@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { commitWhatsAppPdf } from '../server/concierge/whatsapp-pdf.mjs';
+import { createVisitorCode, completeVisitorCode, findVisitorBinding, claimVisitorMessage } from '../server/concierge/whatsapp-visitor.mjs';
 import { enqueuePdfJob, runPdfJobs, readDurableSnapshot, seedDurableSnapshot, writeDurableSnapshot } from '../server/concierge/whatsapp-pdf-queue.mjs';
 
 // Deliberately never reads application DB variables. Explicit isolated local test only.
@@ -52,6 +53,29 @@ try {
   const [[completed]] = await pool.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?', [queued[0].key]);
   const record = typeof completed.payload === 'string' ? JSON.parse(completed.payload) : completed.payload;
   assert.equal(record.stage, 'completed'); assert.equal(record.phoneCipher, undefined); assert.equal(record.message, undefined);
+  // Same existing JSON table, real transaction/row locks for linked visitors.
+  process.env.CREWCHECK_WHATSAPP_AUDIT_SALT = 'fictional-mysql-visitor-test';
+  await pool.query('CREATE TABLE crewcheck_platform_visitors (id VARCHAR(191) PRIMARY KEY,owner_email VARCHAR(191),status VARCHAR(20)) ENGINE=InnoDB');
+  const visitor = { id: 'fictional-visitor', owner_email: email, status: 'active' };
+  await pool.query('INSERT INTO crewcheck_platform_visitors VALUES(?,?,?)', [visitor.id, email, 'active']);
+  const adapter = native => ({ async query(sql, params = []) {
+    const values = []; const statement = sql.replace(/\$(\d+)/g, (_match, index) => { values.push(params[Number(index)-1]); return '?'; });
+    const [result] = await native.query(statement, values);
+    return Array.isArray(result) ? { rows: result, rowCount: result.length } : { rows: [], rowCount: result.affectedRows };
+  }, async connect() { return adapter(await native.getConnection()); }, release() { native.release?.(); } });
+  const visitorDb = adapter(pool);
+  const issued = await createVisitorCode(visitorDb, visitor, receiver);
+  const code = issued.code.slice('visitante_'.length);
+  const binds = await Promise.all([completeVisitorCode(visitorDb, '5511999990002', code, receiver, { authorized: async () => true }), completeVisitorCode(visitorDb, '5511999990002', code, receiver, { authorized: async () => true })]);
+  assert.equal(binds.filter(result => result.linked).length, 1);
+  const bound = await findVisitorBinding(visitorDb, '5511999990002', receiver);
+  assert.equal(bound.visitorId, visitor.id);
+  assert.equal(await claimVisitorMessage(visitorDb, '5511999990002', bound, { id: 'fictional-visitor-message', phoneNumberId: receiver }), true);
+  assert.equal(await claimVisitorMessage(visitorDb, '5511999990002', bound, { id: 'fictional-visitor-message', phoneNumberId: receiver }), false);
+  const retired = await createVisitorCode(visitorDb, visitor, receiver);
+  await pool.query("UPDATE crewcheck_platform_visitors SET status='revoked' WHERE id=?", [visitor.id]);
+  assert.equal((await completeVisitorCode(visitorDb, '5511999990003', retired.code.slice('visitante_'.length), receiver, { authorized: async () => true })).linked, false);
+  console.log('PASS: linked visitor MySQL one-use handoff, reservation, receipt and revocation; fictional data only');
   console.log('PASS: MySQL 8 InnoDB atomic receipt/snapshot rollback, contention, staleness, snapshot locks, legacy isolation and JSON queue CAS; fictional data only');
 } finally {
   if (pool) await pool.end();
