@@ -181,10 +181,11 @@ async function telegramApi(method, payload = {}) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const data = await response.json().catch(() => ({}));
-    return { ok: Boolean(response.ok && data.ok !== false), data };
+    const data = await response.json();
+    // Only a parsed explicit rejection proves that a retry cannot duplicate delivery.
+    return { ok: Boolean(response.ok && data.ok === true), uncertain: !(response.ok && data.ok === true) && data.ok !== false, data };
   } catch {
-    return { ok: false };
+    return { ok: false, uncertain: true };
   }
 }
 
@@ -257,18 +258,23 @@ async function readTelegramIntent(db, scope) {
   const record = parseJsonColumn(rows[0]?.payload, null);
   return consumePendingGeographicIntent(record, scope).intent;
 }
-async function writeTelegramIntent(db, scope, filters) {
+async function writeTelegramIntent(db, scope, filters, { onlyIfMissing = false } = {}) {
   const record = createPendingGeographicIntent('hospitais', { ...scope, filters: { ...filters, token: crypto.randomBytes(8).toString('hex') } });
-  await db.query(`INSERT INTO crewcheck_telegram_state(state_key,payload) VALUES(?,?)
-    ON DUPLICATE KEY UPDATE payload=VALUES(payload),updated_at=CURRENT_TIMESTAMP(3)`, [scope.key, JSON.stringify(record)]);
-  return record;
+  const [result] = await db.query(onlyIfMissing
+    ? 'INSERT IGNORE INTO crewcheck_telegram_state(state_key,payload) VALUES(?,?)'
+    : `INSERT INTO crewcheck_telegram_state(state_key,payload) VALUES(?,?)
+       ON DUPLICATE KEY UPDATE payload=VALUES(payload),updated_at=CURRENT_TIMESTAMP(3)`, [scope.key, JSON.stringify(record)]);
+  return onlyIfMissing && result.affectedRows !== 1 ? null : record;
 }
 async function consumeTelegramIntent(db, scope, record) {
   if (!record || !consumePendingGeographicIntent(record, scope).consumed) return false;
   const [result] = await db.query('DELETE FROM crewcheck_telegram_state WHERE state_key=? AND payload=CAST(? AS JSON)', [scope.key, JSON.stringify(record)]);
   return result.affectedRows === 1;
 }
-const draftMenuKeyboard = { inline_keyboard: [[{ text: 'Voltar ao menu', callback_data: 'cc_emergency_abort' }]] };
+const conciergeMenuKeyboard = { inline_keyboard: [[{ text: 'Menu Concierge', callback_data: 'cc_nav:menu' }]] };
+function abortButton(token) {
+  return { text: 'Voltar ao menu', callback_data: `cc_emergency_abort:${token}` };
+}
 
 async function emergencySession(db, email) {
   const [rows] = await db.query('SELECT * FROM crewcheck_platform_emergency_sessions WHERE owner_email=? LIMIT 1', [email]);
@@ -658,10 +664,10 @@ async function sendAlert(db, identity, input) {
       ],
     ].filter((row) => row.length) };
     const result = await sendTelegramRich(recipient.chatId, message, { reply_markup: replyMarkup });
-    results.push({ ...recipient, ok: Boolean(result.ok) });
+    results.push({ ...recipient, ok: Boolean(result.ok), uncertain: Boolean(result.uncertain) });
   }
   const successful = results.filter((item) => item.ok);
-  if (!successful.length) throw Object.assign(new Error('Os contatos foram encontrados, mas o Telegram não aceitou o alerta agora.'), { status: 502 });
+  if (!successful.length) throw Object.assign(new Error('Os contatos foram encontrados, mas o Telegram não aceitou o alerta agora.'), { status: 502, retrySafe: results.every(result => !result.uncertain) });
   const persistedRecipients = results.map(({ chatId, name, source, ok }) => ({
     chatIdHash: crypto.createHash('sha256').update(String(chatId)).digest('hex'),
     chatIdCipher: encryptPrivateText(String(chatId)),
@@ -838,7 +844,7 @@ const emergencyKeyboard = {
 function confirmationKeyboard(kind, token) {
   return { inline_keyboard: [[
     { text: '🚨 CONFIRMAR ENVIO', callback_data: `cc_emergency_confirm:${kind}:${token}` },
-    { text: 'Voltar ao menu', callback_data: 'cc_emergency_abort' },
+    abortButton(token),
   ]] };
 }
 
@@ -1014,7 +1020,7 @@ export async function handleEmergencyTelegram(update = {}, sendTelegramMessage) 
     if (!alert) { await sendTelegramMessage(chatId, 'Este alerta já foi encerrado ou não pertence a você.'); return true; }
     const pending = await writeTelegramIntent(db, scope, { stage: 'close', alertId, status: data.startsWith('cc_emergency_ok:') ? 'assisted' : 'cancelled' });
     const names = (parseJsonColumn(alert.recipients, []) || []).filter(r => r.ok).map(r => r.name).join(', ');
-    await sendTelegramMessage(chatId, `Encerrar alerta ${alert.id}\nData: ${alert.created_at}\nDestinatários que serão avisados: ${names}`, { reply_markup: { inline_keyboard: [[{ text: 'Confirmar encerramento e aviso', callback_data: `cc_emergency_finish:${pending.filters.token}` }], [{ text: 'Voltar ao menu', callback_data: 'cc_emergency_abort' }]] } });
+    await sendTelegramMessage(chatId, `Encerrar alerta ${alert.id}\nData: ${alert.created_at}\nDestinatários que serão avisados: ${names}`, { reply_markup: { inline_keyboard: [[{ text: 'Confirmar encerramento e aviso', callback_data: `cc_emergency_finish:${pending.filters.token}` }], [abortButton(pending.filters.token)]] } });
     return true;
   }
   if (data.startsWith('cc_emergency_finish:')) {
@@ -1022,21 +1028,24 @@ export async function handleEmergencyTelegram(update = {}, sendTelegramMessage) 
       await sendTelegramMessage(chatId, 'Confirmação vencida ou já utilizada.'); return true;
     }
     const result = await closeAlert(db, linked.email, intent.filters.status, intent.filters.alertId);
-    await sendTelegramMessage(chatId, result.changed ? 'Alerta encerrado. Destinatários avisados.' : 'Este alerta já estava encerrado.', { reply_markup: draftMenuKeyboard });
+    await sendTelegramMessage(chatId, result.changed ? 'Alerta encerrado. Destinatários avisados.' : 'Este alerta já estava encerrado.', { reply_markup: conciergeMenuKeyboard });
     return true;
   }
 
-  if (data === 'cc_emergency_abort') {
-    if (intent) await consumeTelegramIntent(db, scope, intent);
+  if (data === 'cc_emergency_abort' || data.startsWith('cc_emergency_abort:')) {
+    if (!intent || data.split(':')[1] !== intent.filters.token || !await consumeTelegramIntent(db, scope, intent)) {
+      await answerEmergencyCallback(callback?.id, 'Este botão expirou ou já foi utilizado.');
+      return true;
+    }
     await saveEmergencySession(db, linked.email, { pendingKind: '', pendingAction: '' });
-    await answerEmergencyCallback(callback?.id, 'Envio cancelado.');
-    await sendTelegramMessage(chatId, 'Rascunho descartado. Nenhum contato foi notificado e nenhum alerta foi encerrado.', { reply_markup: { inline_keyboard: [[{ text: 'Menu Concierge', callback_data: 'cc_nav:menu' }]] } });
+    await answerEmergencyCallback(callback?.id, 'Rascunho descartado.');
+    await sendTelegramMessage(chatId, 'Rascunho descartado. Alertas já enviados permanecem inalterados.', { reply_markup: conciergeMenuKeyboard });
     return true;
   }
 
   if (emergencyCommand) {
     const menu = await writeTelegramIntent(db, scope, { stage: 'menu' });
-    const scopedKeyboard = { inline_keyboard: emergencyKeyboard.inline_keyboard.map(row => row.map(button => button.callback_data.startsWith('cc_emergency:') ? { ...button, callback_data: `${button.callback_data}:${menu.filters.token}` } : button)) };
+    const scopedKeyboard = { inline_keyboard: emergencyKeyboard.inline_keyboard.map(row => row.map(button => button.callback_data.startsWith('cc_emergency:') ? { ...button, callback_data: `${button.callback_data}:${menu.filters.token}` } : button.callback_data === 'cc_emergency_abort' ? abortButton(menu.filters.token) : button)) };
     await sendTelegramMessage(chatId, 'Escolha a emergência. O CrewCheck pedirá localização e confirmação antes de avisar contatos e colegas de hotel.', { reply_markup: scopedKeyboard });
     return true;
   }
@@ -1066,14 +1075,19 @@ export async function handleEmergencyTelegram(update = {}, sendTelegramMessage) 
       const result = await sendAlert(db, { email: linked.email, profile: profiles[0] || {}, payload: linked.payload }, { kind, locationUrl: origin?.locationUrl || '', requesterChatId: chatId, requesterUsername: callback?.from?.username || linked.payload?.username || '' });
       const delivered = result.recipients.filter((recipient) => recipient.ok).map((recipient) => `• ${recipient.name}`).join('\n');
       await saveEmergencySession(db, linked.email, { pendingKind: '', pendingAction: kind === 'medical' && !origin ? 'hospital' : '' });
-      await sendTelegramMessage(chatId, [`🚨 Alerta confirmado e entregue a ${result.sent} contato(s):`, delivered, '', 'Você receberá uma confirmação quando alguém tocar em “Vou ajudar”.', 'Quando houver assistência, toque no botão abaixo para evitar deslocamentos duplicados.', '', 'Em risco imediato, acione também o serviço público/local de emergência.'].join('\n'), { reply_markup: alertStatusKeyboard(result.alertId) });
+      await sendTelegramMessage(chatId, [`🚨 Alerta confirmado e entregue a ${result.sent} contato(s):`, delivered, ...(result.failed ? [`Entrega parcial: ${result.failed} contato(s) sem confirmação de entrega. Não reenviarei automaticamente.`] : []), '', 'Você receberá uma confirmação quando alguém tocar em “Vou ajudar”.', 'Quando houver assistência, toque no botão abaixo para evitar deslocamentos duplicados.', '', 'Em risco imediato, acione também o serviço público/local de emergência.'].join('\n'), { reply_markup: alertStatusKeyboard(result.alertId) });
       if (kind === 'medical') {
         if (!origin) await writeTelegramIntent(db, scope, { stage: 'care', action: 'hospital' });
         if (origin) await sendOpenCareResults(db, linked.email, chatId, 'hospital', origin, sendTelegramMessage);
         else await sendTelegramMessage(chatId, 'Compartilhe a localização para eu procurar hospitais e pronto-atendimentos abertos agora, filtrados pelo seu plano quando disponível.', { reply_markup: locationRequestKeyboard() });
       }
     } catch (error) {
-      await sendTelegramMessage(chatId, `Não consegui concluir o alerta: ${cleanText(error?.message || 'falha temporária', 220)}\n\nAcione imediatamente o serviço público/local de emergência.`, { reply_markup: emergencyKeyboard });
+      // Never restore the consumed token or overwrite a newer draft. Unknown outcomes
+      // (timeouts, malformed replies, persistence errors) require checking delivery first.
+      const retry = error?.retrySafe === true
+        ? await writeTelegramIntent(db, scope, { stage: 'draft', kind }, { onlyIfMissing: true })
+        : null;
+      await sendTelegramMessage(chatId, `Não consegui concluir o alerta: ${cleanText(error?.message || 'falha temporária', 220)}\n\n${retry ? 'O Telegram recusou todas as entregas. Para tentar novamente, confirme no novo botão abaixo.' : 'A entrega pode ter ocorrido. Verifique com os contatos antes de iniciar outro alerta; não reenviarei automaticamente.'}\n\nAcione imediatamente o serviço público/local de emergência.`, { reply_markup: retry ? confirmationKeyboard(kind, retry.filters.token) : conciergeMenuKeyboard });
     }
     return true;
   }
