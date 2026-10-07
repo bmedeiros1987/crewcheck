@@ -27,6 +27,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  emergency-browser:
+    name: SOS authenticated recovery browser fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Install isolated browser test runner
+        run: |
+          npm install --prefix "$RUNNER_TEMP/emergency-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/emergency-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Test actual EmergencyCenter with fictional accounts before preparation
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
+        run: node scripts/regression-emergency-center-browser.mjs
+      - name: Prepare canonical application sources
+        run: node scripts/v139/apply.mjs
+      - name: Test actual EmergencyCenter after source preparation
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
+        run: node scripts/regression-emergency-center-browser.mjs
   web-and-server:
     name: Web, TypeScript and server
     runs-on: ubuntu-latest

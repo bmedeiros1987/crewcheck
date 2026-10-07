@@ -271,6 +271,23 @@ async function consumeTelegramIntent(db, scope, record) {
   const [result] = await db.query('DELETE FROM crewcheck_telegram_state WHERE state_key=? AND payload=CAST(? AS JSON)', [scope.key, JSON.stringify(record)]);
   return result.affectedRows === 1;
 }
+async function closeTelegramIntent(db, scope, filters) {
+  const [rows] = await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? LIMIT 1', [scope.key]);
+  const previous = parseJsonColumn(rows[0]?.payload, null);
+  const matches = record => record?.filters.stage === 'close' && record.filters.alertId === filters.alertId && record.filters.status === filters.status;
+  const usable = consumePendingGeographicIntent(previous, scope).intent;
+  // Repeated taps reuse the same deadline and confirmation, including concurrent taps.
+  if (matches(usable)) return usable;
+  const next = createPendingGeographicIntent('hospitais', { ...scope, filters: { ...filters, token: crypto.randomBytes(8).toString('hex') } });
+  const [result] = await db.query(previous
+    ? 'UPDATE crewcheck_telegram_state SET payload=CAST(? AS JSON),updated_at=CURRENT_TIMESTAMP(3) WHERE state_key=? AND payload=CAST(? AS JSON)'
+    : 'INSERT IGNORE INTO crewcheck_telegram_state(state_key,payload) VALUES(?,?)',
+  previous ? [JSON.stringify(next), scope.key, JSON.stringify(previous)] : [scope.key, JSON.stringify(next)]);
+  if (result.affectedRows === 1) return next;
+  const current = await readTelegramIntent(db, scope);
+  // A concurrent different action wins; never overwrite its newer intent.
+  return matches(current) ? current : null;
+}
 const conciergeMenuKeyboard = { inline_keyboard: [[{ text: 'Menu Concierge', callback_data: 'cc_nav:menu' }]] };
 function abortButton(token) {
   return { text: 'Voltar ao menu', callback_data: `cc_emergency_abort:${token}` };
@@ -707,6 +724,21 @@ async function closeAlert(db, email, status = 'cancelled', alertId = '') {
   return { changed: true, alertId: selected };
 }
 
+async function activeAlerts(db, email) {
+  const [rows] = await db.query(`SELECT id,emergency_kind,created_at,recipients
+    FROM crewcheck_platform_emergency_alerts WHERE owner_email=? AND status='active'
+    ORDER BY created_at DESC,id`, [email]);
+  return rows.map(row => {
+    const stored = parseJsonColumn(row.recipients, []);
+    const recipients = (Array.isArray(stored) ? stored : []).map(recipient => ({
+      name: cleanText(recipient.name, 160), source: recipient.source === 'same-hotel' ? 'same-hotel' : 'saved-contact', ok: recipient.ok === true,
+    }));
+    // No medical text, location, owner, contact addresses, hashes or encrypted IDs.
+    return { alertId: row.id, kind: emergencyKind(row.emergency_kind), createdAt: row.created_at,
+      sent: recipients.filter(recipient => recipient.ok).length, failed: recipients.filter(recipient => !recipient.ok).length, recipients };
+  });
+}
+
 async function acknowledgeEmergencyHelp(db, alertId, callback = {}) {
   const chatId = String(callback?.message?.chat?.id || callback?.from?.id || '');
   const chatHash = crypto.createHash('sha256').update(chatId).digest('hex');
@@ -795,6 +827,7 @@ async function handlePreferences(req, res, context) {
 
 export async function handleEmergencyRoute(req, res, url) {
   if (!url.pathname.startsWith('/api/platform/emergency')) return false;
+  if (url.pathname === '/api/platform/emergency/active') res.setHeader('Cache-Control', 'no-store');
   if (!flag('CREWCHECK_EMERGENCY_ENABLED', true)) {
     sendJson(res, 404, { ok: false, message: 'Central de emergência desativada.' });
     return true;
@@ -802,6 +835,11 @@ export async function handleEmergencyRoute(req, res, url) {
   const context = await requireIdentity(req, res);
   if (!context) return true;
   await ensureEmergencySchema(context.db);
+  if (url.pathname === '/api/platform/emergency/active' && req.method === 'GET') {
+    try { sendJson(res, 200, { ok: true, alerts: await activeAlerts(context.db, context.email) }); }
+    catch { sendJson(res, 503, { ok: false, message: 'Não consegui carregar os alertas ativos. Tente novamente.' }); }
+    return true;
+  }
   if (url.pathname === '/api/platform/emergency/profile') {
     await handleProfile(req, res, context);
     return true;
@@ -813,7 +851,7 @@ export async function handleEmergencyRoute(req, res, url) {
   if (url.pathname === '/api/platform/emergency/cancel' && req.method === 'POST') {
     const body = await readBody(req, 100_000);
     const cancelled = body.confirmed === true ? await closeAlert(context.db, context.email, 'cancelled', cleanText(body.alertId, 64)) : { changed: false, alertId: '' };
-    sendJson(res, 200, { ok: true, cancelled: cancelled.changed, alertId: cancelled.alertId, message: cancelled.changed ? 'Último alerta cancelado; os destinatários foram avisados.' : 'Nenhum alerta ativo encontrado.' });
+    sendJson(res, 200, { ok: true, cancelled: cancelled.changed, alertId: cancelled.alertId, message: cancelled.changed ? 'Alerta selecionado cancelado; os destinatários foram avisados.' : 'O alerta selecionado não está ativo ou não pertence a você.' });
     return true;
   }
   if (url.pathname === '/api/platform/emergency/assisted' && req.method === 'POST') {
@@ -893,6 +931,15 @@ async function registeredHotelOrigin(db, email) {
 }
 
 export async function handleEmergencyTelegram(update = {}, sendTelegramMessage) {
+  const callback = update?.callback_query;
+  if (/^cc_emergency_(?:ok|close|finish):/.test(String(callback?.data || ''))) {
+    // Acknowledge before DB/auth/transport work, including failures and stale buttons.
+    await answerEmergencyCallback(callback.id, 'Solicitação recebida. Verifique a mensagem na conversa.');
+  }
+  return handleEmergencyTelegramUpdate(update, sendTelegramMessage);
+}
+
+async function handleEmergencyTelegramUpdate(update = {}, sendTelegramMessage) {
   if (!flag('CREWCHECK_EMERGENCY_ENABLED', true)) return false;
   const callback = update?.callback_query;
   const message = callback?.message || update?.message || update?.edited_message || {};
@@ -1018,7 +1065,8 @@ export async function handleEmergencyTelegram(update = {}, sendTelegramMessage) 
     const [rows] = await db.query("SELECT id,created_at,recipients FROM crewcheck_platform_emergency_alerts WHERE id=? AND owner_email=? AND status='active' LIMIT 1", [alertId, linked.email]);
     const alert = rows[0];
     if (!alert) { await sendTelegramMessage(chatId, 'Este alerta já foi encerrado ou não pertence a você.'); return true; }
-    const pending = await writeTelegramIntent(db, scope, { stage: 'close', alertId, status: data.startsWith('cc_emergency_ok:') ? 'assisted' : 'cancelled' });
+    const pending = await closeTelegramIntent(db, scope, { stage: 'close', alertId, status: data.startsWith('cc_emergency_ok:') ? 'assisted' : 'cancelled' });
+    if (!pending) { await sendTelegramMessage(chatId, 'Outra ação foi iniciada. Use a confirmação mais recente.'); return true; }
     const names = (parseJsonColumn(alert.recipients, []) || []).filter(r => r.ok).map(r => r.name).join(', ');
     await sendTelegramMessage(chatId, `Encerrar alerta ${alert.id}\nData: ${alert.created_at}\nDestinatários que serão avisados: ${names}`, { reply_markup: { inline_keyboard: [[{ text: 'Confirmar encerramento e aviso', callback_data: `cc_emergency_finish:${pending.filters.token}` }], [abortButton(pending.filters.token)]] } });
     return true;
