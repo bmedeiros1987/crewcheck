@@ -3,40 +3,49 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 
 const stampPath = '.crewcheck-source-preparation.json';
-const sourceRoots = ['scripts', 'server', 'client', 'android-wrapper', 'server.mjs', 'package.json', 'package-lock.json', '.env.example'];
-const ignored = new Set(['node_modules', 'dist', 'build', '.gradle', '.git']);
+// Walk the entire project, not a whitelist of historical patch inputs. Never read
+// dependencies, Vite output, compiler output, Git internals or local private files.
+const ignoredNames = new Set(['node_modules', '.git', '.aws', '.codex', '.agents', stampPath, `${stampPath}.tmp`]);
+const ignoredPaths = new Set(['dist', 'server/concierge/generated']);
 
 export function preparationFingerprint(root = '.') {
   const hash = crypto.createHash('sha256');
   function visit(relative) {
-    if (relative === 'server/concierge/generated') return; // compile.mjs output, not preparation input
+    const name = path.basename(relative);
+    if (ignoredNames.has(name) || ignoredPaths.has(relative) || name.endsWith('.tsbuildinfo')) return;
+    if (name.startsWith('.env') && name !== '.env.example') return;
     const absolute = path.join(root, relative);
-    if (!fs.existsSync(absolute)) { hash.update(`missing:${relative}\0`); return; }
     const stat = fs.lstatSync(absolute);
     if (stat.isSymbolicLink()) throw new Error(`Preparation input cannot be a symlink: ${relative}`);
     if (stat.isDirectory()) {
-      for (const name of fs.readdirSync(absolute).sort()) if (!ignored.has(name)) visit(`${relative}/${name}`);
+      for (const entry of fs.readdirSync(absolute).sort()) visit(relative ? `${relative}/${entry}` : entry);
     } else if (stat.isFile()) {
       hash.update(relative).update('\0').update(fs.readFileSync(absolute)).update('\0');
     }
   }
-  sourceRoots.forEach(visit);
+  visit('');
   return hash.digest('hex');
 }
 
-export async function prepareSourcesOnce(prepare, root = '.') {
+export async function prepareSourcesOnce(prepare, root = '.', { finalize = async () => {}, env = process.env } = {}) {
   const stamp = path.join(root, stampPath);
+  // Even a cached tree must not hide a change to the partial-preparation context.
+  const skipFlags = Object.keys(env).filter(name => /^CREWCHECK_.*_SKIP_APPLY$/.test(name) && String(env[name] || '') !== '').sort();
   let previous;
   try { previous = JSON.parse(fs.readFileSync(stamp, 'utf8')); } catch {}
-  if (previous?.version === 1 && previous.fingerprint === preparationFingerprint(root)) {
-    console.log('[crewcheck:source-prepare] unchanged prepared sources; skipping legacy patch replay');
-    return false;
-  }
-  // A failed or modified source tree is never certified as prepared.
+  const cached = skipFlags.length === 0 && previous?.version === 2 && previous.fingerprint === preparationFingerprint(root);
   fs.rmSync(stamp, { force: true });
-  await prepare();
-  const next = { version: 1, fingerprint: preparationFingerprint(root) };
+  if (cached) console.log('[crewcheck:source-prepare] unchanged prepared sources; skipping legacy patch replay');
+  else await prepare();
+  // The canonical finalizer runs on both hits and misses; snapshot only its final
+  // result. A preparation/finalization failure never leaves a valid certificate.
+  await finalize();
+  if (skipFlags.length) {
+    console.log(`[crewcheck:source-prepare] partial context (${skipFlags.join(', ')}); no cache certificate`);
+    return !cached;
+  }
+  const next = { version: 2, fingerprint: preparationFingerprint(root) };
   fs.writeFileSync(`${stamp}.tmp`, `${JSON.stringify(next)}\n`);
   fs.renameSync(`${stamp}.tmp`, stamp);
-  return true;
+  return !cached;
 }

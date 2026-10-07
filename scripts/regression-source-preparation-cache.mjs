@@ -20,6 +20,8 @@ try {
   fs.mkdirSync(path.join(root, 'server/concierge/generated'), { recursive: true });
   fs.writeFileSync(path.join(root, 'server/concierge/generated/runtime.mjs'), 'compiled output');
   assert.equal(await prepareSourcesOnce(prepare, root), false);
+  fs.writeFileSync(path.join(root, '.tsbuildinfo'), 'TypeScript incremental compiler output');
+  assert.equal(await prepareSourcesOnce(prepare, root), false);
   fs.writeFileSync(path.join(root, 'scripts/changed-patch.mjs'), 'new patch');
   assert.equal(await prepareSourcesOnce(prepare, root), true);
   assert.equal(calls, 2);
@@ -30,5 +32,38 @@ try {
   assert.equal(calls, 3);
   fs.writeFileSync(path.join(root, '.crewcheck-source-preparation.json'), '{broken');
   assert.equal(await prepareSourcesOnce(prepare, root), true);
-  console.log('PASS: repeated preparation, compiled-output exclusion, source/patch invalidation, corrupt stamp and failed preparation never cached');
+  // Inputs outside the old whitelist: Render processing and required OAuth files.
+  fs.writeFileSync(path.join(root, 'render.yaml'), 'AUTO_MIGRATE: false');
+  const canonicalRender = fs.readFileSync(path.join(root, 'render.yaml'), 'utf8');
+  await prepareSourcesOnce(prepare, root);
+  const beforeRender = calls;
+  fs.writeFileSync(path.join(root, 'render.yaml'), 'AUTO_MIGRATE: true');
+  assert.equal(await prepareSourcesOnce(prepare, root), true);
+  assert.equal(calls, beforeRender + 1);
+  fs.writeFileSync(path.join(root, 'render.yaml'), canonicalRender);
+  assert.equal(await prepareSourcesOnce(prepare, root), true, 'restoring render.yaml must invalidate a changed certificate');
+  for (const file of ['docs/google-oauth-verification-kit-2026.md', 'migrations/20260719_009_google_oauth_legal_utf8.sql', 'shared/fixture.ts', 'config/fixture.json', 'new-root-input.txt']) {
+    fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    fs.writeFileSync(path.join(root, file), 'required input');
+    assert.equal(await prepareSourcesOnce(prepare, root), true, `${file}: adding input invalidates`);
+    fs.rmSync(path.join(root, file));
+    assert.equal(await prepareSourcesOnce(prepare, root), true, `${file}: removing input invalidates`);
+  }
+  // Partial contexts neither consume a cached success nor certify partial output.
+  for (const flag of ['CREWCHECK_MANUAL_SYNC_SKIP_APPLY', 'CREWCHECK_V14356_SKIP_APPLY', 'CREWCHECK_V14380_SKIP_APPLY']) {
+    const beforeSkip = calls;
+    await prepareSourcesOnce(prepare, root, { env: { [flag]: '1' } });
+    assert.equal(calls, beforeSkip + 1, `${flag}: must not reuse complete stamp`);
+    assert.equal(fs.existsSync(path.join(root, '.crewcheck-source-preparation.json')), false, `${flag}: must not certify partial output`);
+    assert.equal(await prepareSourcesOnce(prepare, root, { env: {} }), true, `${flag}: removing flag requires preparation`);
+    assert.equal(await prepareSourcesOnce(prepare, root, { env: {} }), false);
+  }
+  let finalized = 0;
+  const finalize = async () => { finalized++; fs.writeFileSync(path.join(root, 'manual.html'), 'canonical final output'); };
+  await prepareSourcesOnce(prepare, root, { finalize });
+  assert.equal(await prepareSourcesOnce(prepare, root, { finalize }), false);
+  assert.equal(finalized, 2, 'finalizer runs once on each invocation, including cache hits');
+  await assert.rejects(prepareSourcesOnce(prepare, root, { finalize: async () => { throw new Error('finalization failure'); } }), /finalization failure/);
+  assert.equal(fs.existsSync(path.join(root, '.crewcheck-source-preparation.json')), false);
+  console.log('PASS: repeated preparation, compiled-output exclusion, source/patch invalidation, corrupt stamp, failed preparation/finalization, render/docs/migrations coverage, skip flags never cached and canonical finalization on cache hits');
 } finally { fs.rmSync(root, { recursive: true, force: true }); }

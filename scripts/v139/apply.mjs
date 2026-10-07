@@ -196,8 +196,11 @@ await import('../p1-concierge-stay-menu/apply.mjs');
 // Read-only Concierge projection after canonical rule preparation.
 await import('../p1-concierge-journey/apply.mjs');
 await import('../p1-notification-sound/apply.mjs');
-await import('../ci/sync-canonical-manual.mjs');
 
 }
 
-await prepareSourcesOnce(prepareSources);
+// ESM evaluates this finalizer once per invocation, before the cache snapshot.
+// The terminal import also preserves the canonical-chain ordering contract.
+const finalizeSources = () => import('../ci/sync-canonical-manual.mjs');
+await prepareSourcesOnce(prepareSources, '.', { finalize: finalizeSources });
+await import('../ci/sync-canonical-manual.mjs');
