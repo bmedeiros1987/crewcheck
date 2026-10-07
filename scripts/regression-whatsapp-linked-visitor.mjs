@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import vm from 'node:vm';
 import { createVisitorCode, completeVisitorCode, findVisitorBinding, handleVisitorMessage, claimVisitorMessage, unlinkVisitor, visitorPhoneHash, visitorRevision, whatsappVisitorEnabled, withVisitorPhoneLock } from '../server/concierge/whatsapp-visitor.mjs';
 import { extractWhatsAppEvents, extractWhatsAppInboundMessages, extractWhatsAppStatusDiagnostics } from '../server/whatsapp.mjs';
@@ -12,6 +13,7 @@ try {
   const other = { id: 'visitor-fictional-b', owner_email: 'owner-b@example.invalid', status: 'active', permissions: { roster: true } };
   const visitors = new Map([[visitor.id, visitor], [other.id, other]]);
   const owners = new Map();
+  let stayShared = true, stayExists = true, stayRevision = 'revision-1', stayName = 'Fictional hotel';
   let state = new Map(), tail = Promise.resolve(), now = Date.parse('2026-10-07T20:00:00Z'), premium = true, calls = [], sends = [];
   const parse = value => typeof value === 'string' ? JSON.parse(value) : value;
   function query(target, sql, args = []) {
@@ -22,6 +24,7 @@ try {
       return { rows: item && item.owner_email === args[1] && item.status === 'active' ? [structuredClone(item)] : [] };
     }
     if (sql.includes('FROM crewcheck_whatsapp_links')) return { rows: owners.has(args[0]) ? [{ email: owners.get(args[0]) }] : [] };
+    if (sql.includes('FROM crewcheck_platform_subscriptions')) return { rows: [{ email: args[0], status: 'active' }] };
     if (sql.includes('FROM crewcheck_platform_profiles')) return { rows: [{ email: args[0], premium }] };
     if (sql.includes('FROM crewcheck_platform_rosters')) {
       assert.equal(args[0], visitor.owner_email, 'canonical read stays in bound owner scope'); calls.push('roster');
@@ -29,7 +32,7 @@ try {
     }
     if (sql.includes('FROM crewcheck_platform_stays')) {
       assert.match(sql, /share_with_visitors=TRUE/); assert.equal(args[0], visitor.owner_email); calls.push('hotel');
-      return { rows: [{ stay_date: '2099-10-07', hotel_name: 'Fictional hotel', room_cipher: 'PRIVATE-ROOM', presentation_time: 'PRIVATE-PRESENTATION' }] };
+      return { rows: stayShared && stayExists ? [{ id: 'fixture-stay', share_with_visitors: true, updated_at: stayRevision, stay_date: '2099-10-07', hotel_name: stayName, room_cipher: 'PRIVATE-ROOM', presentation_time: 'PRIVATE-PRESENTATION' }] : [] };
     }
     if (sql.startsWith('INSERT')) {
       if (target.has(args[0])) return { rows: [], rowCount: 0 };
@@ -73,7 +76,7 @@ try {
   // Execute the shared producers from actual prepared platform source.
   const platform = fs.readFileSync('server/platform.mjs', 'utf8');
   const section = (source, start, end) => { const from = source.indexOf(start); assert.ok(from >= 0); const to = source.indexOf(end, from); assert.ok(to > from); return source.slice(from, to).replaceAll('export async function', 'async function'); };
-  const canonical = vm.createContext({ pool: async () => db, subscriptionStatus: async (_db, profile) => ({ premiumAccess: profile.premium }), visitorRevision,
+  const canonical = vm.createContext({ crypto, withVisitorPhoneLock, visitorPhoneHash, pool: async () => db, subscriptionStatus: async (_db, profile) => ({ premiumAccess: profile.premium }), visitorRevision,
     parseDateOnly: value => /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value : '', normalizeText: value => String(value || ''), decryptPrivate: () => 'PRIVATE-ROOM', Date });
   vm.runInContext(section(platform, 'function allowedPermissions(', 'function publicProfile(') + section(platform, 'export async function platformVisitorReadReply(', 'export async function platformWhatsAppVisitorBinding(') + section(platform, 'function visitorDaySummary(', 'export async function handlePlatformVisitorTelegram('), canonical);
   canonical.whatsappVisitorEnabled = () => true; canonical.visitorIdentity = req => req.identity; canonical.readBody = async req => req.body || {};
@@ -91,7 +94,7 @@ try {
   const contextOf = item => canonical.platformWhatsAppVisitorContext(item);
   const reply = (item, command) => canonical.platformWhatsAppVisitorReply(item, command);
   const deps = { enabled: () => true, receiver: () => receiver, now: () => now, findBinding: (phone, id) => findVisitorBinding(db, phone, id), context: contextOf,
-    claim: (phone, item, message) => claimVisitorMessage(db, phone, item, message), reply, send: async (...args) => { sends.push(args); return { ok: true }; } };
+    claim: (phone, item, message) => claimVisitorMessage(db, phone, item, message), reply, deliver: (phone, item, revision, prepared, send) => canonical.platformWhatsAppVisitorDeliver(phone, item, revision, prepared, send), send: async (...args) => { sends.push(args); return { ok: true }; } };
   let sequence = 0;
   const message = (text = 'escala', override = {}) => ({ id: 'fictional-message-' + ++sequence, from: visitorPhone, phoneNumberId: receiver, timestamp: String(now / 1000), type: 'text', text, ...override });
   await handleVisitorMessage(message('hotel'), deps);
@@ -127,14 +130,47 @@ try {
   visitor.telegram_chat_id = 'fictional-telegram';
   canonical.sha256 = () => 'unused'; canonical.retiredTokenHash = () => 'unused'; canonical.notifyOwnerEmergency = async () => { throw Error('SOS not requested'); }; canonical.sendTelegramDirect = async () => { throw Error('real transport forbidden'); };
   vm.runInContext(section(platform, 'export async function handlePlatformVisitorTelegram(', 'async function handleShares('), canonical);
-  for (const command of ['/escala','/proximo','/hotel']) { let telegramReply; await canonical.handlePlatformVisitorTelegram({ chat: { id: visitor.telegram_chat_id } }, command, async (_id, text) => { telegramReply = text; }); assert.equal(telegramReply, await reply(binding, command)); }
+  for (const command of ['/escala','/proximo','/hotel']) { let telegramReply; await canonical.handlePlatformVisitorTelegram({ chat: { id: visitor.telegram_chat_id } }, command, async (_id, text) => { telegramReply = text; }); assert.equal(telegramReply, (await reply(binding, command)).text); }
   assert.match(platform, /await platformVisitorReadReply\(db, visitor, permissions, command\)/, 'Telegram uses the same producer');
+
+  const privacyFailures = [];
+  for (const mutation of ['unshare', 'delete', 'update']) {
+    stayShared = true; stayExists = true; stayRevision = 'revision-1'; stayName = 'Fictional hotel'; visitor.permissions.hotels = true; visitor.permissions.room = true; visitor.permissions.presentation = true;
+    const count = sends.length;
+    await handleVisitorMessage(message('hotel'), { ...deps, reply: async (item, command) => {
+      const rendered = await reply(item, command);
+      if (mutation === 'unshare') stayShared = false; else if (mutation === 'delete') stayExists = false; else { stayRevision = 'revision-2'; stayName = 'Updated fictional hotel'; }
+      return rendered;
+    } });
+    if (sends.length !== count) privacyFailures.push('stay_' + mutation + '_after_render');
+  }
+  stayShared = true; stayExists = true; stayRevision = 'revision-1'; stayName = 'Fictional hotel';
+  const countBeforeUnlink = sends.length;
+  let contextLookups = 0;
+  await handleVisitorMessage(message('escala'), { ...deps, context: async item => {
+    const context = await contextOf(item);
+    if (++contextLookups === 2) state.delete('whatsapp-role:' + visitorPhoneHash(visitorPhone));
+    return context;
+  } });
+  if (sends.length !== countBeforeUnlink) privacyFailures.push('unlink_during_final_context');
+  state.set('whatsapp-role:' + visitorPhoneHash(visitorPhone), binding);
+  visitor.permissions.room = false; visitor.permissions.presentation = false;
+  const countBeforeLateUnlink = sends.length;
+  await handleVisitorMessage(message('escala'), { ...deps, deliver: async (...args) => {
+    state.delete('whatsapp-role:' + visitorPhoneHash(visitorPhone));
+    return deps.deliver(...args);
+  } });
+  if (sends.length !== countBeforeLateUnlink) privacyFailures.push('unlink_before_locked_delivery');
+  state.set('whatsapp-role:' + visitorPhoneHash(visitorPhone), binding);
+  const guardedCount = sends.length; await handleVisitorMessage(message(), { ...deps, deliver: undefined }); assert.equal(sends.length, guardedCount, 'missing coherent guard fails closed');
+  assert.deepEqual(privacyFailures, [], 'private delivery races must not send stale resource/binding data');
 
   // Actual prepared dispatch and inbound adapter, including duplicate webhook path and separate owner flow.
   const source = fs.readFileSync('server/whatsapp.mjs', 'utf8');
   let ownerEngine = 0;
   const inbound = vm.createContext({ whatsappVisitorEnabled: () => true, phoneNumberId: () => receiver, normalizePhone: value => String(value),
     platformWhatsAppVisitorBinding: deps.findBinding, platformWhatsAppVisitorContext: deps.context, platformWhatsAppVisitorReply: deps.reply, platformWhatsAppVisitorClaim: deps.claim,
+    platformWhatsAppVisitorDeliver: deps.deliver,
     platformWhatsAppVisitorComplete: (phone, code, id) => completeVisitorCode(db, phone, code, id, { now: () => now, authorized }),
     platformWhatsAppOwnerRoleLock: async (phone, operation) => withVisitorPhoneLock(db, phone, async (_conn, record) => record.visitorId ? { conflict: true } : operation()),
     handleVisitorMessage, sendWhatsAppText: deps.send, Date: class extends Date { static now() { return now; } }, whatsappPdfEnabled: () => false, whatsappPdfConfiguration: null, whatsappMenuEnabled: () => false,

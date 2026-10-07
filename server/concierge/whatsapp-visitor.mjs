@@ -99,15 +99,19 @@ export async function handleVisitorMessage(message, deps) {
   const context = await deps.context(binding);
   if (!context?.active || !context.premium || context.visitorId !== binding.visitorId || context.ownerEmail !== binding.ownerEmail) return { handled: true, reason: 'not_authorized' };
   if (!await deps.claim(message.from, binding, message)) return { handled: true, reason: 'duplicate' };
-  let text;
+  let text, prepared = null;
   const command = commandOf(message.text);
   if (message.type !== 'text') text = 'Neste acesso de visitante, envie apenas texto. Localização, PDF e áudio não acionam consultas ou pedidos de ajuda.';
   else if (['/emergencia','/ajuda_agora','/sos'].includes(command)) text = 'Pedidos de ajuda pelo WhatsApp não estão habilitados nesta fase. Use o canal já autorizado pelo titular.';
   else if (!['/ajuda','/start','/escala','/proximo','/hotel'].includes(command)) text = 'Comando não disponível para visitante. Digite “menu”.';
-  else text = await deps.reply(binding, command);
-  const currentBinding = await deps.findBinding(message.from, receiver);
+  else { prepared = await deps.reply(binding, command); text = typeof prepared === 'string' ? prepared : prepared?.text; }
   const current = await deps.context(binding);
+  const currentBinding = await deps.findBinding(message.from, receiver);
   if (!deps.enabled() || deps.receiver() !== receiver || currentBinding?.blocked || currentBinding?.bindingId !== binding.bindingId || !current?.active || !current.premium || current.revision !== context.revision || !inWindow()) return { handled: true, reason: 'authorization_changed' };
-  const result = await deps.send(message.from, text, { replyToMessageId: message.id, expectedPhoneNumberId: receiver });
+  if (typeof text !== 'string' || !text.trim() || typeof deps.deliver !== 'function' || (prepared && typeof prepared !== 'object')) return { handled: true, reason: 'delivery_guard_unavailable' };
+  const result = await deps.deliver(message.from, binding, context.revision, prepared, async () => {
+    if (!deps.enabled() || deps.receiver() !== receiver || !inWindow()) return { ok: false, code: 'VISITOR_DELIVERY_DISABLED' };
+    return deps.send(message.from, text, { replyToMessageId: message.id, expectedPhoneNumberId: receiver });
+  });
   return { handled: true, sent: Boolean(result?.ok) };
 }

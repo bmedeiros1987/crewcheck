@@ -149,3 +149,55 @@ if (!client.includes('async function linkVisitorWhatsApp')) {
   client = replace(client, "</nav>{tab === 'roster'", `</nav>{data?.whatsappAvailable && <section className="cv-section"><h2>WhatsApp de visitante</h2><p>Ao vincular, você autoriza consultas pelo WhatsApp somente com as permissões que o titular já compartilhou neste acesso.</p><button type="button" onClick={linkVisitorWhatsApp} disabled={busy}>Vincular WhatsApp</button><button type="button" onClick={unlinkVisitorWhatsApp} disabled={busy}>Desvincular WhatsApp</button>{whatsappLink && <div><p>Envie este código pelo seu WhatsApp em até {whatsappLink.expiresInMinutes} minutos. Não compartilhe o código.</p><code>{whatsappLink.code}</code>{whatsappLink.openUrl.startsWith('https://wa.me/') && <a href={whatsappLink.openUrl} target="_blank" rel="noopener noreferrer">Abrir WhatsApp com o código</a>}</div>}</section>}{tab === 'roster'`);
   fs.writeFileSync('client/src/pages/VisitorAccessPage.tsx', client);
 }
+
+// Review hardening: authorize the rendered resources and binding in one DB lock scope.
+let protectedPlatform = fs.readFileSync('server/platform.mjs', 'utf8');
+if (!protectedPlatform.includes('// VISITOR_PRIVATE_DELIVERY_V2')) {
+  protectedPlatform = replace(protectedPlatform, 'visitorOwnerHash }', 'visitorOwnerHash, visitorPhoneHash }');
+  protectedPlatform = replace(protectedPlatform, 'platformVisitorReadReply(db, visitor, permissions, command) {', 'platformVisitorReadReply(db, visitor, permissions, command, evidence = null) {');
+  const staysQuery = "const stays = await db.query('SELECT * FROM crewcheck_platform_stays WHERE owner_email=$1 AND share_with_visitors=TRUE AND stay_date>=CURRENT_DATE ORDER BY stay_date LIMIT 3', [visitor.owner_email]);";
+  protectedPlatform = replace(protectedPlatform, staysQuery, `const stays = await db.query('SELECT * FROM crewcheck_platform_stays WHERE owner_email=$1 AND share_with_visitors=TRUE AND stay_date>=CURRENT_DATE ORDER BY stay_date,id LIMIT 3' + (evidence?.lock ? ' FOR UPDATE' : ''), [visitor.owner_email]);
+    if (evidence) Object.assign(evidence, { kind: 'stays', ids: stays.rows.map(row => row.id), version: crypto.createHash('sha256').update(JSON.stringify(stays.rows)).digest('hex') });`);
+  const rosterQuery = "const rosterResult = await db.query('SELECT roster FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE ORDER BY updated_at DESC LIMIT 1', [visitor.owner_email]);";
+  protectedPlatform = replace(protectedPlatform, rosterQuery, `const rosterResult = await db.query('SELECT id,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE ORDER BY updated_at DESC,id DESC LIMIT 1' + (evidence?.lock ? ' FOR UPDATE' : ''), [visitor.owner_email]);
+    if (evidence) Object.assign(evidence, { kind: 'roster', ids: rosterResult.rows.map(row => row.id), version: crypto.createHash('sha256').update(JSON.stringify(rosterResult.rows)).digest('hex') });`);
+  protectedPlatform = replace(protectedPlatform, 'platformWhatsAppVisitorContext(binding) {\n  const db = await pool();', 'platformWhatsAppVisitorContext(binding, database = null, lock = false) {\n  const db = database || await pool();');
+  const contextStart = protectedPlatform.indexOf('export async function platformWhatsAppVisitorContext(');
+  const contextEnd = protectedPlatform.indexOf('export async function platformWhatsAppVisitorReply(', contextStart);
+  let context = protectedPlatform.slice(contextStart, contextEnd);
+  context = replace(context, "WHERE id=$1 AND owner_email=$2 AND status='active' LIMIT 1\", [binding.visitorId, binding.ownerEmail]);", "WHERE id=$1 AND owner_email=$2 AND status='active' LIMIT 1\" + (lock ? ' FOR UPDATE' : ''), [binding.visitorId, binding.ownerEmail]);");
+  context = replace(context, "const profile = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=$1', [visitor.owner_email]);", "const profile = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=$1' + (lock ? ' FOR UPDATE' : ''), [visitor.owner_email]);\n  if (lock) await db.query('SELECT email FROM crewcheck_platform_subscriptions WHERE email=$1 FOR UPDATE', [visitor.owner_email]);");
+  protectedPlatform = protectedPlatform.slice(0, contextStart) + context + protectedPlatform.slice(contextEnd);
+  protectedPlatform = replace(protectedPlatform, 'platformWhatsAppVisitorReply(binding, command) {\n  const context = await platformWhatsAppVisitorContext(binding);', 'platformWhatsAppVisitorReply(binding, command, database = null, lock = false) {\n  const context = await platformWhatsAppVisitorContext(binding, database, lock);');
+  protectedPlatform = replace(protectedPlatform, "  const db = await pool();\n  // WhatsApp help intentionally omits", "  const db = database || await pool();\n  const scope = { kind: 'none', ids: [], version: crypto.createHash('sha256').update('[]').digest('hex'), lock };\n  // WhatsApp help intentionally omits");
+  protectedPlatform = replace(protectedPlatform, "if (command === '/ajuda' || command === '/start') return ['/escala — próximos dias permitidos', '/proximo — próxima programação', '/hotel — pernoite compartilhado'].join('\\n');\n  return platformVisitorReadReply(db, { id: binding.visitorId, owner_email: binding.ownerEmail }, context.permissions, command);", "if (command === '/ajuda' || command === '/start') return { text: ['/escala — próximos dias permitidos', '/proximo — próxima programação', '/hotel — pernoite compartilhado'].join('\\n'), command, scope };\n  const text = await platformVisitorReadReply(db, { id: binding.visitorId, owner_email: binding.ownerEmail }, context.permissions, command, scope);\n  return { text, command, scope };");
+  const guardedDelivery = `
+// VISITOR_PRIVATE_DELIVERY_V2: DB authorization locks span the single outbound attempt.
+// This is not an atomic DB/provider transaction and cannot retract accepted messages.
+export async function platformWhatsAppVisitorDeliver(phone, binding, revision, prepared, send) {
+  if (!whatsappVisitorEnabled()) return { ok: false, code: 'VISITOR_DISABLED' };
+  return withVisitorPhoneLock(await pool(), phone, async (connection, current) => {
+    if (current.bindingId !== binding.bindingId || current.visitorId !== binding.visitorId || current.ownerEmail !== binding.ownerEmail || current.receiver !== binding.receiver) return { ok: false, code: 'VISITOR_BINDING_CHANGED' };
+    const owners = await connection.query('SELECT email FROM crewcheck_whatsapp_links WHERE phone_hash=$1 AND revoked_at IS NULL FOR UPDATE', [visitorPhoneHash(phone)]);
+    if (owners.rows[0]) return { ok: false, code: 'VISITOR_ROLE_CONFLICT' };
+    const context = await platformWhatsAppVisitorContext(binding, connection, true);
+    if (!context?.active || !context.premium || context.revision !== revision) return { ok: false, code: 'VISITOR_AUTHORIZATION_CHANGED' };
+    if (prepared) {
+      if (!['/ajuda','/start','/escala','/proximo','/hotel'].includes(prepared.command) || !prepared.scope?.version) return { ok: false, code: 'VISITOR_RESOURCE_UNCONFIRMED' };
+      const refreshed = await platformWhatsAppVisitorReply(binding, prepared.command, connection, true);
+      if (refreshed.scope.kind !== prepared.scope.kind || refreshed.scope.version !== prepared.scope.version || JSON.stringify(refreshed.scope.ids) !== JSON.stringify(prepared.scope.ids) || refreshed.text !== prepared.text) return { ok: false, code: 'VISITOR_RESOURCE_CHANGED' };
+    }
+    if (!whatsappVisitorEnabled()) return { ok: false, code: 'VISITOR_DISABLED' };
+    return send();
+  });
+}
+`;
+  protectedPlatform = replace(protectedPlatform, 'export async function platformWhatsAppVisitorBinding(', guardedDelivery + '\nexport async function platformWhatsAppVisitorBinding(');
+  fs.writeFileSync('server/platform.mjs', protectedPlatform);
+}
+let protectedWhatsApp = fs.readFileSync('server/whatsapp.mjs', 'utf8');
+if (!protectedWhatsApp.includes('deliver: platformWhatsAppVisitorDeliver')) {
+  protectedWhatsApp = replace(protectedWhatsApp, 'platformWhatsAppVisitorComplete, platformWhatsAppOwnerRoleLock }', 'platformWhatsAppVisitorComplete, platformWhatsAppOwnerRoleLock, platformWhatsAppVisitorDeliver }');
+  protectedWhatsApp = protectedWhatsApp.replaceAll('reply: platformWhatsAppVisitorReply, send: sendWhatsAppText', 'reply: platformWhatsAppVisitorReply, deliver: platformWhatsAppVisitorDeliver, send: sendWhatsAppText');
+  fs.writeFileSync('server/whatsapp.mjs', protectedWhatsApp);
+}

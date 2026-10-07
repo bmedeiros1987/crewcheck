@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import vm from 'node:vm';
 import { commitWhatsAppPdf } from '../server/concierge/whatsapp-pdf.mjs';
-import { createVisitorCode, completeVisitorCode, findVisitorBinding, claimVisitorMessage } from '../server/concierge/whatsapp-visitor.mjs';
+import { createVisitorCode, completeVisitorCode, findVisitorBinding, claimVisitorMessage, withVisitorPhoneLock, visitorPhoneHash, visitorRevision } from '../server/concierge/whatsapp-visitor.mjs';
 import { enqueuePdfJob, runPdfJobs, readDurableSnapshot, seedDurableSnapshot, writeDurableSnapshot } from '../server/concierge/whatsapp-pdf-queue.mjs';
 
 // Deliberately never reads application DB variables. Explicit isolated local test only.
@@ -75,6 +77,43 @@ try {
   const retired = await createVisitorCode(visitorDb, visitor, receiver);
   await pool.query("UPDATE crewcheck_platform_visitors SET status='revoked' WHERE id=?", [visitor.id]);
   assert.equal((await completeVisitorCode(visitorDb, '5511999990003', retired.code.slice('visitante_'.length), receiver, { authorized: async () => true })).linked, false);
+  // Actual materialized private delivery guard, with native MySQL locks and fictitious metadata.
+  const platform = fs.readFileSync(new URL('../server/platform.mjs', import.meta.url), 'utf8');
+  assert.ok(platform.includes('VISITOR_PRIVATE_DELIVERY_V2'), 'prepare canonical sources before isolated MySQL test');
+  await pool.query('ALTER TABLE crewcheck_platform_visitors ADD permissions JSON');
+  await pool.query("UPDATE crewcheck_platform_visitors SET status='active',permissions=? WHERE id=?", [JSON.stringify({ hotels: true, room: true, presentation: true }), visitor.id]);
+  await pool.query('CREATE TABLE crewcheck_platform_profiles (email VARCHAR(191) PRIMARY KEY,premium INT) ENGINE=InnoDB');
+  await pool.query('CREATE TABLE crewcheck_platform_subscriptions (email VARCHAR(191) PRIMARY KEY) ENGINE=InnoDB');
+  await pool.query('CREATE TABLE crewcheck_platform_stays (id VARCHAR(191) PRIMARY KEY,owner_email VARCHAR(191),stay_date DATE,hotel_name VARCHAR(191),room_cipher TEXT,presentation_time VARCHAR(20),share_with_visitors INT,updated_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),KEY owner_idx(owner_email,stay_date)) ENGINE=InnoDB');
+  await pool.query('INSERT INTO crewcheck_platform_profiles VALUES(?,1)', [email]);
+  await pool.query('INSERT INTO crewcheck_platform_subscriptions VALUES(?)', [email]);
+  await pool.query('INSERT INTO crewcheck_platform_stays(id,owner_email,stay_date,hotel_name,room_cipher,presentation_time,share_with_visitors) VALUES(?,?,?, ?,?,?,1)', ['fixture-stay',email,'2099-10-07','Fictional hotel','fictional-room-cipher','10:00']);
+  const section = (a,b) => { const start = platform.indexOf(a); assert.ok(start >= 0); const end = platform.indexOf(b,start); assert.ok(end > start); return platform.slice(start,end).replaceAll('export async function','async function'); };
+  const canonical = vm.createContext({ crypto, withVisitorPhoneLock, visitorPhoneHash, visitorRevision, whatsappVisitorEnabled: () => true, pool: async () => visitorDb,
+    subscriptionStatus: async (_db, profile) => ({ premiumAccess: profile.premium === 1 }), parseDateOnly: value => String(value || '').slice(0,10), normalizeText: String, decryptPrivate: () => 'fictional-room', Date });
+  vm.runInContext(section('function allowedPermissions(', 'function publicProfile(') + section('export async function platformVisitorReadReply(', 'export async function platformWhatsAppVisitorBinding(') + section('function visitorDaySummary(', 'export async function handlePlatformVisitorTelegram('), canonical);
+  const liveBinding = await findVisitorBinding(visitorDb,'5511999990002',receiver);
+  const context = await canonical.platformWhatsAppVisitorContext(liveBinding);
+  const rendered = await canonical.platformWhatsAppVisitorReply(liveBinding,'/hotel');
+  let attempts = 0;
+  await pool.query('UPDATE crewcheck_platform_stays SET share_with_visitors=0 WHERE id=?', ['fixture-stay']);
+  const denied = await canonical.platformWhatsAppVisitorDeliver('5511999990002', liveBinding, context.revision, rendered, async () => { attempts++; return { ok: true }; });
+  assert.equal(denied.code,'VISITOR_RESOURCE_CHANGED'); assert.equal(attempts,0);
+  await pool.query('UPDATE crewcheck_platform_stays SET share_with_visitors=1 WHERE id=?', ['fixture-stay']);
+  const fresh = await canonical.platformWhatsAppVisitorReply(liveBinding,'/hotel');
+  const held = await canonical.platformWhatsAppVisitorDeliver('5511999990002', liveBinding, context.revision, fresh, async () => {
+    const contender = await pool.getConnection();
+    try {
+      await contender.query('SET SESSION innodb_lock_wait_timeout=1');
+      await assert.rejects(contender.query('UPDATE crewcheck_platform_stays SET share_with_visitors=0 WHERE id=?', ['fixture-stay']), error => error.code === 'ER_LOCK_WAIT_TIMEOUT');
+    } finally { contender.release(); }
+    attempts++; return { ok: true }; // Fake provider acceptance only.
+  });
+  assert.equal(held.ok,true); assert.equal(attempts,1);
+  await pool.query("DELETE FROM crewcheck_telegram_state WHERE state_key=?", ['whatsapp-role:'+visitorPhoneHash('5511999990002')]);
+  const unlinked = await canonical.platformWhatsAppVisitorDeliver('5511999990002', liveBinding, context.revision, fresh, async () => { attempts++; return { ok: true }; });
+  assert.equal(unlinked.code,'VISITOR_BINDING_CHANGED'); assert.equal(attempts,1);
+  console.log('PASS: actual materialized visitor guard rejects committed unshare/unlink; real InnoDB stay lock spans fake outbound attempt; no real provider');
   console.log('PASS: linked visitor MySQL one-use handoff, reservation, receipt and revocation; fictional data only');
   console.log('PASS: MySQL 8 InnoDB atomic receipt/snapshot rollback, contention, staleness, snapshot locks, legacy isolation and JSON queue CAS; fictional data only');
 } finally {
