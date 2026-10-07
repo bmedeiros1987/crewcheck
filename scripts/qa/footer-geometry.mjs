@@ -15,6 +15,7 @@ fs.mkdirSync(output, { recursive: true });
 const sizes = [[320,740],[360,800],[390,844],[430,932],[768,1024],[1440,1000],[844,390]];
 const browser = await chromium.launch({ headless: true, chromiumSandbox: true });
 const results = [], regressions = [];
+let activeCase;
 const navSelector = 'body > nav.cz-bottom-nav[aria-label="Navegação principal"]';
 function compare(actual, expected, context) {
   for (const key of ['x','y','width','height']) {
@@ -53,6 +54,7 @@ try {
       localStorage.setItem('crewcheck_theme_mode',theme);
     },theme);
     const page=await context.newPage();
+    activeCase={id,page,snapshots:[]};
     const errors=[]; page.on('pageerror',e=>errors.push(e.message));
     await page.goto(`${base}/app`);
     const nav=page.locator(navSelector), buttons=nav.locator(':scope > button');
@@ -62,7 +64,7 @@ try {
     const reference=await measure(page);
     assert.equal(reference.theme,theme);
     assert.equal(reference.buttons.length,5);
-    const snapshots=[];
+    const snapshots=activeCase.snapshots;
     async function capture(state) {
       const m=await measure(page);
       compare(m.nav,reference.nav,`${id}/${state}/nav`);
@@ -110,7 +112,18 @@ try {
     results.push({id,apiStubs,blocked,snapshots});
     console.log(`${id}: ${snapshots.length} snapshots`);
     await context.close();
+    activeCase=undefined;
   }
+} catch (error) {
+  // Keep the failing state and partial measurements without masking the assertion
+  // or its nonzero exit code; CI uploads this directory even when the step fails.
+  if(activeCase) {
+    const {id,page,snapshots}=activeCase;
+    const measurement=await measure(page).catch(()=>null);
+    await page.screenshot({path:path.join(output,`${id}-failure.png`)}).catch(()=>{});
+    fs.writeFileSync(path.join(output,'failure.json'),JSON.stringify({id,error:String(error),measurement,snapshots},null,2));
+  }
+  throw error;
 } finally {
   await browser.close();
   fs.writeFileSync(path.join(output,'measurements.json'),JSON.stringify({baseline,results,regressions},null,2));
