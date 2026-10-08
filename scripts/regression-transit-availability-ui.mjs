@@ -44,3 +44,6 @@ for(const mode of ['transit','transit-flight'])for(const state of ['pending','va
 }
 const driving=render('driving',{clientRouteState:'valid',clientTravelMode:'driving',durationMinutes:40});assert.ok(text(driving.node).includes('TRÂNSITO ATUALIZADO'));assert.ok(text(driving.node).includes('Sair em'));assert.equal(driving.saved.length,1,'positive driving estimate still saves its route');
 console.log('PASS actual hero/estimate render across states and positioning: transit unconfirmed, driving preserved.');
+
+const switched=render('driving',{clientRouteState:'valid',clientTravelMode:'transit',durationMinutes:40});assert.deepEqual(switched.saved,[],'previous transit response cannot become driving cache after mode switch');assert.ok(!text(switched.node).includes('TRÂNSITO ATUALIZADO'));
+for(const name of ['fetchNearbyPlaces','fetchAmilProviders']){const unrelated=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert.ok(!unrelated.getText(ast).includes('clientTravelMode'),'travel metadata stays inside route fetch, not '+name);}

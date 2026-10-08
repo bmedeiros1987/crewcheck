@@ -22,13 +22,14 @@ if (!source.includes('data-transit-presentation=')) {
   replace("  const mapsMode = mode.includes('transit') ? 'transit' : 'driving';", "  const mapsMode = mode.includes('transit') ? 'transit' : 'driving';\n  const transitPresentation = transitDeparturePresentation(mapsMode);");
   replace('{evaluateTransitAvailability().label}', '{transitPresentation?.availability.label}');
   replace('type RoutePreviewInfo = {', "type RoutePreviewInfo = {\n  clientTravelMode?: 'driving' | 'transit';");
-  const start = source.indexOf('async function fetchRoutePreviewInfo('), end = source.indexOf('\nfunction ', start);
-  if (start < 0 || end < 0) throw new Error('[transit-presentation] Missing route fetch');
+  const start = source.indexOf('async function fetchRoutePreviewInfo('), end = Math.min(...[source.indexOf('\nfunction ', start), source.indexOf('\nasync function ', start)].filter(index => index > start));
+  if (start < 0 || !Number.isFinite(end)) throw new Error('[transit-presentation] Missing route fetch');
   let fetcher = source.slice(start, end);
   fetcher = fetcher.replace('return payload;', 'return { ...payload, clientTravelMode: mode };').replaceAll('configured: false,', 'configured: false,\n      clientTravelMode: mode,');
   source = source.slice(0, start) + fetcher + source.slice(end);
-  replace('function smartDepartureEstimate(event: ZeroLeg, route: RoutePreviewInfo | null, margin: number): SmartDepartureEstimate {', "function smartDepartureEstimate(event: ZeroLeg, route: RoutePreviewInfo | null, margin: number, mode = route?.clientTravelMode || 'driving'): SmartDepartureEstimate {\n  const transitPresentation = transitDeparturePresentation(mode);");
-  replace("if (liveMinutes > 0 && route?.clientRouteState !== 'stale') saveDepartureTravelMinutes(event, liveMinutes);", "if (!transitPresentation && liveMinutes > 0 && route?.clientRouteState !== 'stale') saveDepartureTravelMinutes(event, liveMinutes);");
+  replace('function smartDepartureEstimate(event: ZeroLeg, route: RoutePreviewInfo | null, margin: number): SmartDepartureEstimate {', "function smartDepartureEstimate(event: ZeroLeg, route: RoutePreviewInfo | null, margin: number, mode: string = route?.clientTravelMode || 'driving'): SmartDepartureEstimate {\n  const transitPresentation = transitDeparturePresentation(mode);");
+  replace("if (liveMinutes > 0 && route?.clientRouteState !== 'stale') saveDepartureTravelMinutes(event, liveMinutes);", "if (!transitPresentation && route?.clientTravelMode !== 'transit' && liveMinutes > 0 && route?.clientRouteState !== 'stale') saveDepartureTravelMinutes(event, liveMinutes);");
+  replace('  const rawLiveMinutes = routeMismatch ? 0 : routeDurationMinutes(route);', "  const rawLiveMinutes = routeMismatch || (route?.clientTravelMode === 'transit' && !transitPresentation) ? 0 : routeDurationMinutes(route);");
   replace('    leaveLabel: formatTime(leaveDate),', "    leaveLabel: transitPresentation && !transitPresentation.showDepartureTime ? 'A confirmar' : formatTime(leaveDate),");
   replace("    sourceLabel: source === 'live'", "    sourceLabel: transitPresentation ? transitPresentation.availability.label : source === 'live'");
   const airportStart = source.indexOf('function AirportDeparture('), airportEnd = source.indexOf('\nfunction MonthlyMapView(', airportStart);
@@ -36,6 +37,7 @@ if (!source.includes('data-transit-presentation=')) {
   let airport = source.slice(airportStart, airportEnd);
   const edit = (before, after) => { if (!airport.includes(before)) throw new Error('[transit-presentation] Airport anchor: ' + before); airport = airport.replace(before, after); };
   edit('  const estimate = smartDepartureEstimate(event, route, margin);', '  const transitPresentation = transitDeparturePresentation(mode);\n  const estimate = smartDepartureEstimate(event, route, margin, mode);');
+  edit('  const rawLiveMinutes = routeMismatch ? 0 : routeDurationMinutes(route);', "  const rawLiveMinutes = routeMismatch || (route?.clientTravelMode === 'transit' && !transitPresentation) ? 0 : routeDurationMinutes(route);");
   edit('const primaryDepartureLabel = positioningPlan.requiresFlight', "const primaryDepartureLabel = transitPresentation && !transitPresentation.showDepartureTime ? 'A confirmar' : positioningPlan.requiresFlight");
   edit('const statusLabel = positioningPlan.requiresFlight', 'const statusLabel = transitPresentation?.statusLabel || (positioningPlan.requiresFlight');
   edit(": 'ESTIMATIVA PROTEGIDA';", ": 'ESTIMATIVA PROTEGIDA');");
