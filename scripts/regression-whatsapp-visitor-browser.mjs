@@ -53,7 +53,7 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname.endsWith('/link/start')) {
         const body = await canonical.readBody(req);
         assert.equal(body.consentConcierge, true); linkCalls++;
-        return canonical.sendJson(res, 200, { code: 'visitante_fictional-browser-code', openUrl: 'https://wa.me/15550000000?text=fictional', expiresInMinutes: 10 });
+        return canonical.sendJson(res, 200, { ok: true, code: 'visitante_fictional-browser-code', openUrl: 'https://wa.me/15550000000?text=fictional', expiresInMinutes: 10 });
       }
       if (url.pathname.endsWith('/link/unlink')) { unlinkCalls++; return canonical.sendJson(res, 200, { ok: true }); }
       return canonical.sendJson(res, 404, {});

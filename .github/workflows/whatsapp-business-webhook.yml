@@ -141,6 +141,7 @@ jobs:
           CREWCHECK_TEST_MYSQL_ISOLATED: 'true'
           CREWCHECK_TEST_MYSQL_SOCKET: /tmp/crewcheck-whatsapp-qa-socket/mysqld.sock
         run: |
+          set -o pipefail
           mkdir -p artifacts/whatsapp-mysql
           node scripts/regression-whatsapp-pdf-mysql.mjs 2>&1 | tee artifacts/whatsapp-mysql/result.txt
           grep -q 'PASS: actual materialized visitor guard' artifacts/whatsapp-mysql/result.txt
@@ -177,6 +178,7 @@ jobs:
       - name: Test built visitor UI and canonical login, JWT and logout with fictional data
         shell: bash -eo pipefail {0}
         run: |
+          set -o pipefail
           mkdir -p artifacts/whatsapp-browser
           env -i PATH="$PATH" HOME="$HOME" TMPDIR=/tmp LANG=C MENU_PLAYWRIGHT_PACKAGE="$RUNNER_TEMP/whatsapp-browser/package.json" node scripts/regression-whatsapp-visitor-browser.mjs 2>&1 | tee artifacts/whatsapp-browser/result.txt
           grep -q 'PASS built full app visitor page' artifacts/whatsapp-browser/result.txt
