@@ -11,7 +11,7 @@ function codes(activity: AirportActivity): string {
     .filter(Boolean).join(' ').toUpperCase();
 }
 export function isHomeStandby(activity: AirportActivity): boolean {
-  return /\bHSB(?:\d|[_-]ADM|D|E)?\b|\bSOBREAVISO\b/.test(codes(activity));
+  return /\bHSB(?:\d|[_-]ADM|D|E)?\b|\bSA\b|\bSOBREAVISO\b/.test(codes(activity));
 }
 export function isAirportDepartureEligible(activity: AirportActivity): boolean {
   const code = codes(activity);

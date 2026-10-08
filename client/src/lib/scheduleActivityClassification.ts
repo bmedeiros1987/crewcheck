@@ -117,6 +117,7 @@ const OVERNIGHT_CODES = new Set([
 ]);
 
 const STANDBY_CODES = new Set([
+  'SA',
   'HSB',
   'HSB1',
   'HSB2',
