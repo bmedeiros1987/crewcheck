@@ -77,7 +77,7 @@ export function evaluateTransitAvailability(input = {}) {
       if (applicable.some(e => e.state === 'suspended')) return 'suspended';
       if (applicable.some(e => e.state === 'disrupted')) return 'disrupted';
       // A current normal observation never confirms an upcoming trip.
-      return departure <= now && applicable.some(e => e.state === 'normal' && contains(e, from, to)) ? 'normal' : 'unknown';
+      return departure <= now && from <= now && applicable.some(e => e.state === 'normal' && contains(e, from, to)) ? 'normal' : 'unknown';
     });
     operational = states.includes('suspended') ? 'suspended' : states.includes('disrupted') ? 'disrupted' : states.every(s => s === 'normal') ? 'normal' : 'unknown';
   }

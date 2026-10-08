@@ -11,6 +11,7 @@ assert.equal(evaluate({...trip,operations:[],incidents:[]}).operational,'unknown
 assert.equal(evaluate({...trip,operations:[]}).recommendation,'unconfirmed');
 assert.equal(evaluate({...trip,schedules:[]}).schedule,'unknown');
 const future=clone(trip);future.departureAt='2026-10-08T10:00:00-03:00';future.legs[0].boardAt=future.departureAt;future.legs[0].alightAt='2026-10-08T10:30:00-03:00';assert.equal(evaluate(future).operational,'unknown','normal now cannot guarantee a future trip');
+const futureBoard=clone(trip);futureBoard.legs[0].boardAt='2026-10-08T08:10:00-03:00';assert.equal(evaluate(futureBoard).operational,'unknown','walking started now cannot make later boarding operationally confirmed');
 for(const state of ['disrupted','suspended']) {
  const x=clone(future);x.operations[0].state=state;assert.equal(evaluate(x).operational,state);assert.equal(evaluate(x).recommendation,state==='suspended'?'blocked':'alternative-required');
  x.operations[0].validUntil='2026-10-08T09:30:00-03:00';assert.equal(evaluate(x).operational,'unknown','past disruption cannot apply outside active period');
