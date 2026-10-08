@@ -76,7 +76,8 @@ import FinancialStatementImporter from '@/components/finance/FinancialStatementI
 import { confirmedRateValueAt } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
-import { classifyAllowanceWindows, freeDayPostponementIndemnity, observedStatementCycle } from '@/lib/compensationPolicy';
+import { classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
+import { observedAllowancePeriods, rowsInObservedCycle, summarizeForecastRows, summarizeNativeForecastRows, nativeForecastDelta, forecastSummaryValue } from '@/lib/financialForecastPeriods';
 import { financialJourneyGroupKey, rowsForNominalFinancialCompetence } from '@/lib/financialJourneyGrouping';
 import PlatformCenter from '@/components/platform/PlatformCenter';
 import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, getParkingPosition, saveParkingPosition, deleteParkingPosition, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
@@ -2360,7 +2361,7 @@ function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroL
     requestAnimationFrame(() => document.querySelector(`[data-roster-day="${todayKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
 
-  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>{finance.perdiem.currencyCount > 1 ? finance.perdiem.currencyCount + ' moedas' : finance.perdiem.currencySummary || 'Sem previsão'}</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>{moneyBRL(finance.salary.gross)}</strong></div></section><section className="cz-roster-actions"><button onClick={openToday}><CalendarDays/> Hoje</button><button onClick={() => setView('compare')}><GitCompareArrows/> Comparar</button><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('map')}><MapIcon/> Mapa do mês</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group cz-day-linked" data-roster-day={dateChip(d)} key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <div className="cz-roster-expand-wrap" key={e.id}><article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''} ${e.kind === 'flight' ? flightWorkClass(e) : ''} ${timelineStateClass(e)} ${expandedId === e.id ? 'expanded' : ''}`} onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div><RosterEventChips event={e}/><LayoverWeatherBadge event={e}/></article>{expandedId === e.id && <RosterInlineDetails event={e} setView={setView}/>}</div>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} data-roster-day={dateChip(d)} onClick={() => dayEvents[0] && setExpandedId(expandedId === dayEvents[0].id ? null : dayEvents[0].id)}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}</>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>{!finance.perdiem.nativeSummary.complete ? finance.perdiem.currencySummary : finance.perdiem.currencyCount > 1 ? finance.perdiem.currencyCount + ' moedas' : finance.perdiem.currencySummary}</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>{moneyBRL(finance.salary.gross)}</strong></div></section><section className="cz-roster-actions"><button onClick={openToday}><CalendarDays/> Hoje</button><button onClick={() => setView('compare')}><GitCompareArrows/> Comparar</button><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('map')}><MapIcon/> Mapa do mês</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group cz-day-linked" data-roster-day={dateChip(d)} key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <div className="cz-roster-expand-wrap" key={e.id}><article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''} ${e.kind === 'flight' ? flightWorkClass(e) : ''} ${timelineStateClass(e)} ${expandedId === e.id ? 'expanded' : ''}`} onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div><RosterEventChips event={e}/><LayoverWeatherBadge event={e}/></article>{expandedId === e.id && <RosterInlineDetails event={e} setView={setView}/>}</div>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} data-roster-day={dateChip(d)} onClick={() => dayEvents[0] && setExpandedId(expandedId === dayEvents[0].id ? null : dayEvents[0].id)}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}</>;
 }
 
 function comparisonEventSummary(event: ComparableRosterEvent | null): string {
@@ -2401,17 +2402,7 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
       + before.salary.chief + before.salary.instructorPay;
     const afterVariable = after.salary.production + after.salary.reserve + after.salary.standby
       + after.salary.chief + after.salary.instructorPay;
-    const currencies = Array.from(new Set([
-      ...Object.keys(before.perdiem.totalsByCurrency),
-      ...Object.keys(after.perdiem.totalsByCurrency),
-    ])) as PerDiemCurrency[];
-    const perDiemDelta = currencies
-      .map((currency) => ({
-        currency,
-        value: Number(after.perdiem.totalsByCurrency[currency] || 0)
-          - Number(before.perdiem.totalsByCurrency[currency] || 0),
-      }))
-      .filter((item) => Math.abs(item.value) >= 0.005);
+    const perDiemDelta = nativeForecastDelta(before.perdiem.nativeSummary, after.perdiem.nativeSummary);
     return {
       variableDelta: afterVariable - beforeVariable,
       plannedVariable: beforeVariable,
@@ -2453,8 +2444,8 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
   const capturedAt = Number.isFinite(capturedDate.getTime())
     ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(capturedDate)
     : 'data não informada';
-  const perDiemDeltaText = financial?.perDiemDelta.length
-    ? financial.perDiemDelta.map((item) => moneyCurrency(item.value, item.currency)).join(' · ')
+  const perDiemDeltaText = !financial || financial.perDiemDelta === null ? 'Não calculável' : financial.perDiemDelta.length
+    ? financial.perDiemDelta.map((item) => moneyCurrency(item.value, item.currency as PerDiemCurrency)).join(' · ')
     : 'Sem diferença';
   const freeDayIndemnity = freeDayPostponementIndemnity(freeDayDelay, exceptionalNeed);
 
@@ -3393,9 +3384,8 @@ function flightDistanceKmFromEvent(event: ZeroLeg): number {
   if (!from || !to) return 0;
   return Math.round(routeDistanceKm(from, to));
 }
-function perDiemConfig(roster: CrewRoster) {
+function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
   const act = resolveActFinancialRules(roster);
-  const effectiveDate = rosterFinancialDate(roster);
   const learnedMeal = confirmedRateValueAt('per_diem.lunch', effectiveDate)
     ?? confirmedRateValueAt('per_diem.dinner', effectiveDate)
     ?? confirmedRateValueAt('per_diem.supper', effectiveDate);
@@ -3404,7 +3394,7 @@ function perDiemConfig(roster: CrewRoster) {
   const domesticOverride = readOptionalNumberSetting('crewcheck_perdiem_rate_domestic');
   const domestic = resolveDomesticPerDiemRate({
     effectiveDate,
-    actMainMeal: domesticRule?.mainMeal || 0,
+    actMainMeal: domesticRule?.mainMeal ?? NaN,
     manualOverride: domesticOverride,
     learnedMainMeal: learnedMeal,
     learnedBreakfast,
@@ -3437,36 +3427,49 @@ function perDiemConfig(roster: CrewRoster) {
       + demonstratedSource,
   };
 }
-function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
-  const cfg = perDiemConfig(roster);
+function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date()) {
+  const airportOverrides = loadAirportPerDiemOverrides();
   const rows: PerDiemRow[] = [];
   const seen = new Set<string>();
   const pendingAirports = new Set<string>();
+  const unclassifiedItems: Array<{ iso: string; airport: string }> = [];
   const usedRateKeys = new Set<PerDiemRateKey>();
   const add = (event: ZeroLeg, iso: string, slot: string, label: string, source: string) => {
-    const classification = resolvePerDiemRule(event.origin, event.destination, cfg.airportOverrides);
+    const classification = resolvePerDiemRule(event.origin, event.destination, airportOverrides);
     if (!classification.rateKey) {
       if (classification.airport) pendingAirports.add(classification.airport);
+      unclassifiedItems.push({ iso, airport: classification.airport });
       return;
     }
     const key = iso + '-' + slot;
     if (seen.has(key)) return;
     seen.add(key);
     usedRateKeys.add(classification.rateKey);
+    const cfg = perDiemConfig(roster, iso);
     const rate = cfg.rates[classification.rateKey];
+    if (!rate) {
+      pendingAirports.add(classification.airport);
+      unclassifiedItems.push({ iso, airport: classification.airport });
+      return;
+    }
     const value = slot === 'breakfast' && classification.rateKey === 'domestic'
       ? cfg.domesticBreakfast
       : perDiemSlotAmount(rate.mainMeal, slot, cfg.breakfastPercent);
+    if (!Number.isFinite(value) || value < 0) {
+      pendingAirports.add(classification.airport);
+      unclassifiedItems.push({ iso, airport: classification.airport });
+      return;
+    }
     const fx = cfg.exchangeRates[rate.currency];
     rows.push({
       eventId: event.id,
-      date: dateChip(event.date),
+      date: dateChip(new Date(iso + 'T12:00:00')),
       iso,
       label,
       value,
       currency: rate.currency,
       convertedBRL: rate.currency === 'BRL' ? value : fx > 0 ? value * fx : null,
-      source: source + ' · ' + rate.label + ' · ' + classification.reason,
+      source: source + ' · ' + rate.label + ' · ' + classification.reason + ' · ' + cfg.source + ' · vigência consultada em ' + iso,
       airport: classification.airport,
       rateKey: classification.rateKey,
     });
@@ -3541,37 +3544,42 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
     }
   }
   const monthlyRows = rowsForNominalFinancialCompetence(rows, roster);
-  const totalsByCurrency = monthlyRows.reduce((totals, row) => {
-    totals[row.currency] = (totals[row.currency] || 0) + row.value;
-    return totals;
-  }, {} as Partial<Record<PerDiemCurrency, number>>);
-  const pendingCurrencies = (Object.keys(totalsByCurrency) as PerDiemCurrency[])
-    .filter((currency) => currency !== 'BRL' && totalsByCurrency[currency] && cfg.exchangeRates[currency] <= 0);
-  const convertedTotalBRL = monthlyRows.reduce((sum, row) => sum + (row.convertedBRL || 0), 0);
-  const cycle = observedStatementCycle(new Date());
-  const weekly = rows.filter((row) => {
-    const date = new Date(row.iso + 'T12:00:00');
-    return date >= cycle.start && date <= cycle.end;
-  }).reduce((sum, row) => sum + (row.convertedBRL || 0), 0);
-  const currencySummary = (Object.entries(totalsByCurrency) as Array<[PerDiemCurrency, number]>)
-    .filter(([, value]) => value > 0)
+  const nativeSummary = summarizeNativeForecastRows(monthlyRows, rowsForNominalFinancialCompetence(unclassifiedItems, roster));
+  const totalsByCurrency = nativeSummary.totalsByCurrency as Partial<Record<PerDiemCurrency, number>>;
+  const monthlySummary = summarizeForecastRows(monthlyRows, rowsForNominalFinancialCompetence(unclassifiedItems, roster));
+  const pendingCurrencies = monthlySummary.pendingCurrencies;
+  const convertedTotalBRL = monthlySummary.convertedTotalBRL;
+  const periods = observedAllowancePeriods(now);
+  const cycle = periods.accumulation;
+  const weeklyRows = rowsInObservedCycle(rows, cycle);
+  const weeklySummary = summarizeForecastRows(weeklyRows, rowsInObservedCycle(unclassifiedItems, cycle));
+  const weekly = weeklySummary.convertedTotalBRL;
+  const previousWeeklyRows = rowsInObservedCycle(rows, periods.previous);
+  const previousWeeklySummary = summarizeForecastRows(previousWeeklyRows, rowsInObservedCycle(unclassifiedItems, periods.previous));
+  const currencySummary = !nativeSummary.complete ? (nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável') : (Object.entries(totalsByCurrency) as Array<[PerDiemCurrency, number]>)
     .map(([currency, value]) => moneyCurrency(value, currency))
     .join(' · ');
   return {
     rows,
     monthlyRows,
     monthly: convertedTotalBRL,
+    monthlySummary,
+    nativeSummary,
     weekly,
+    weeklyRows,
+    weeklySummary,
+    previousWeeklyRows,
+    previousWeeklySummary,
+    periods,
     totalsByCurrency,
     currencySummary,
     currencyCount: Object.keys(totalsByCurrency).length,
     pendingCurrencies,
     pendingAirports: Array.from(pendingAirports).sort(),
     usedRateKeys: Array.from(usedRateKeys),
-    convertedComplete: pendingCurrencies.length === 0,
+    convertedComplete: monthlySummary.convertedComplete,
     cycle,
-    config: cfg,
-    configured: true,
+    configured: rows.length > 0,
   };
 }
 function nightHoursInsideWindow(start: Date, end: Date): number {
@@ -3740,12 +3748,13 @@ function PerDiemView({ bundle }: { bundle: BundleState }) {
   return <><Brand back/>
     <section className="cz-panel-head cz-panel-head-compact">
       <h1>Diárias</h1>
-      <p>Valores previstos por janela e moeda.</p>
+      <p>Previsões por janela e moeda, ainda não homologadas com a empresa. Não confirmam pagamento.</p>
     </section>
+    <p className="cz-mini-status">Ciclo previsto: quarta-feira a terça-feira, com pagamento na quinta-feira seguinte. Ceia registrada a partir de 00:00 de quarta-feira pertence ao ciclo seguinte.</p>
     <section className="cz-finance-grid">
-      <KpiCard icon={BriefcaseBusiness} title="Totais por moeda" value={String(forecast.currencyCount)} detail={forecast.currencySummary || 'Sem itens previstos'}/>
-      <KpiCard icon={CalendarDays} title="Convertido previsto" value={forecast.pendingCurrencies.length ? 'Câmbio pendente' : moneyBRL(forecast.monthly)} detail={forecast.pendingCurrencies.length ? 'Informe ' + forecast.pendingCurrencies.join(', ') : 'Conversão conferível'}/>
-      <KpiCard icon={Plane} title="Ciclo do demonstrativo" value={moneyBRL(forecast.weekly)} detail={`${dateChip(forecast.cycle.start)}–${dateChip(forecast.cycle.end)} · paga ${dateChip(forecast.cycle.payment)}`}/>
+      <KpiCard icon={BriefcaseBusiness} title="Totais por moeda" value={forecast.nativeSummary.complete ? String(forecast.currencyCount) : forecast.nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável'} detail={forecast.currencySummary || 'Sem itens previstos'}/>
+      <KpiCard icon={CalendarDays} title="Convertido previsto no mês" value={forecastSummaryValue(forecast.monthlySummary, moneyBRL)} detail={forecast.pendingCurrencies.length ? 'Informe ' + forecast.pendingCurrencies.join(', ') : 'Previsão da competência selecionada'}/>
+      <KpiCard icon={Plane} title="Semana em acumulação" value={forecastSummaryValue(forecast.weeklySummary, moneyBRL)} detail={`${dateChip(forecast.cycle.start)}–${dateChip(forecast.cycle.end)} · ciclo legado estimado; não confirma pagamento`}/>
     </section>
     {forecast.pendingCurrencies.length > 0 && <section className="cz-toolbox cz-finance-attention">
       <h2>Câmbio necessário</h2>
@@ -3753,9 +3762,14 @@ function PerDiemView({ bundle }: { bundle: BundleState }) {
       <div className="cz-tool-actions"><button onClick={configureExchange}><DollarSign/> Informar câmbio</button></div>
     </section>}
     {forecast.pendingAirports.length > 0 && <section className="cz-toolbox cz-finance-attention">
-      <h2>Classificação pendente</h2>
+      <h2>Dados financeiros pendentes</h2>
       <p>{forecast.pendingAirports.join(' · ')}. O valor permanece fora do total até a calibração administrativa.</p>
     </section>}
+    <details className="cz-toolbox"><summary>Semana anterior e origem</summary>
+      <p>{dateChip(forecast.periods.previous.start)}–{dateChip(forecast.periods.previous.end)}: {forecastSummaryValue(forecast.previousWeeklySummary, moneyBRL)} (previsão).</p>
+      <p>O ciclo legado é uma referência de calendário. Sem demonstrativo oficial ou registro de liquidação, não há pagamento confirmado.</p>
+      {forecast.weeklySummary.pendingCurrencies.length > 0 && <p>Câmbio pendente nesta semana: {forecast.weeklySummary.pendingCurrencies.join(', ')}.</p>}
+    </details>
     <section className="cz-finance-table">
       <h2>Itens previstos</h2>
       {forecast.rows.length ? forecast.rows.slice(0, 40).map((row, index) =>
@@ -3765,7 +3779,7 @@ function PerDiemView({ bundle }: { bundle: BundleState }) {
           <small>{row.source}{row.convertedBRL === null ? ' · câmbio pendente' : ''}</small>
           <b>{moneyCurrency(row.value, row.currency)}</b>
         </div>
-      ) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem diárias confirmadas</h2><p>Carregue uma escala com voos, reservas ou pernoites.</p></article>}
+      ) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem itens previstos</h2><p>Carregue uma escala com voos, reservas ou pernoites. A escala não confirma pagamento.</p></article>}
     </section>
   </>;
 }

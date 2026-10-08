@@ -1,0 +1,41 @@
+name: Financial history foundation
+on:
+  pull_request:
+    paths:
+      - 'shared/financialReadModel.mjs'
+      - 'client/src/lib/financialStatementLearning.ts'
+      - 'client/src/lib/financialForecastPeriods.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'scripts/regression-financial-*.mjs'
+      - '.github/workflows/financial-history-foundation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-finance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-financial-read-model.mjs
+      - run: node scripts/regression-financial-statement-totals.mjs
+      - run: node --test scripts/regression-financial-review-negative.mjs
+      - run: node scripts/regression-financial-callers.mjs
+        env:
+          TZ: UTC
+      - run: node scripts/regression-financial-callers.mjs
+        env:
+          TZ: America/Sao_Paulo
+      - run: node scripts/regression-financial-callers.mjs
+        env:
+          TZ: America/New_York
+      - run: node scripts/regression-p0-530-finance-canonical-journey.mjs
+      - run: node scripts/regression-p2-530-adjacent-fallback-finance.mjs
+      - run: npx tsc --noEmit
+      - run: npx vite build

@@ -16,6 +16,8 @@ on:
       - 'scripts/p1-menu-organization/**'
       - 'scripts/regression-share-discovery-browser.cjs'
       - 'client/src/lib/rosterPublication*.ts'
+      - 'client/src/lib/rosterStartup.ts'
+      - 'scripts/roster-startup/**'
       - 'client/src/components/v1391/AimsRosterTable.tsx'
       - 'scripts/regression-publication-import-flow.cjs'
       - 'scripts/regression-roster-publication-review.mjs'
