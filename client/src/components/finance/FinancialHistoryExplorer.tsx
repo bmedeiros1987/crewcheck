@@ -17,47 +17,50 @@ function session() {
 export default function FinancialHistoryExplorer<S>({ roster, calculate, metric, rangeMetric, mode, weeks, render }: {
   roster: CrewRoster; calculate: (roster: CrewRoster) => S; metric: (snapshot: S) => Record<string, number>;
   rangeMetric?: (snapshot: S, range: FinancialRange) => Record<string, number>;
-  mode: 'allowance' | 'salary'; render: (state: { snapshots: Array<{ roster: CrewRoster; snapshot: S; source: string }>; range: FinancialRange; missing: string[]; controls: ReactNode; graph: ReactNode }) => ReactNode;
+  mode: 'allowance' | 'salary'; render: (state: { snapshots: Array<{ roster: CrewRoster; snapshot: S; source: string }>; range: FinancialRange; missing: string[]; controls: ReactNode; graph: ReactNode; coverageReady: boolean; requestRange: (range:FinancialRange)=>void }) => ReactNode;
   weeks?: (snapshots: S[], range: FinancialRange) => Array<{ range: FinancialRange; value: string }>;
 }) {
   const owner = session(), initialMonth = monthOf(roster), crew = financialRosterCrewIdentity(roster);
-  const [authRevision, setAuthRevision] = useState(0);
+  const [authRevision, setAuthRevision] = useState(0), [calculationRevision,setCalculationRevision] = useState(0);
   const [kind, setKind] = useState<FinancialRange['kind']>('month');
   const [month, setMonth] = useState(initialMonth), [day,setDay] = useState(initialMonth + '-01');
   const [from,setFrom] = useState(initialMonth + '-01'), [to,setTo] = useState(initialMonth + '-01');
   const [inventory,setInventory] = useState<SavedRosterSummary[]>([]), [conflicts,setConflicts] = useState<string[]>([]);
   const [loaded,setLoaded] = useState<Array<{roster:CrewRoster;source:string}>>([]);
+  const [coverageReady,setCoverageReady]=useState(false);
+  const [requestedPeriods,setRequestedPeriods]=useState<string[]>([]);
   const [busy,setBusy] = useState(false), [notice,setNotice] = useState(''), [expanded,setExpanded] = useState(false), [currency,setCurrency] = useState('BRL');
   const epoch = useRef(0), fetching = useRef(new Set<string>());
   const account = String(getStoredUser()?.id || getStoredUser()?.email || '');
   const bound = useRef({ account, roster });
   if (roster !== bound.current.roster) bound.current = { account, roster };
   const range = useMemo(()=>financialRange(kind,month,day,from,to),[kind,month,day,from,to]);
-  const current = useMemo(()=>({roster, snapshot:calculate(roster), source:'Escala selecionada'}),[roster,calculate,authRevision]);
-  const snapshots = useMemo(()=>[current,...loaded.filter(item=>monthOf(item.roster)!==initialMonth).map(item=>({...item,snapshot:calculate(item.roster)}))],[current,loaded,initialMonth,calculate,authRevision]);
+  const current = useMemo(()=>({roster, snapshot:calculate(roster), source:'Escala selecionada'}),[roster,calculate,authRevision,calculationRevision]);
+  const snapshots = useMemo(()=>[...(!conflicts.includes(initialMonth)&&!inventory.some(item=>`${item.year}-${String(item.month).padStart(2,'0')}`===initialMonth)?[current]:[]),...loaded.filter(item=>!conflicts.includes(monthOf(item.roster))).map(item=>({...item,snapshot:calculate(item.roster)}))],[current,loaded,initialMonth,calculate,authRevision,calculationRevision,inventory,conflicts]);
   const months = [...new Set([initialMonth,...inventory.map(item=>`${item.year}-${String(item.month).padStart(2,'0')}`)])].filter(value=>validFinancialDay(value+'-01')).sort();
   const missing = financialMonths(range).filter(period=>!snapshots.some(item=>monthOf(item.roster)===period));
+  useEffect(()=>{const refresh=()=>setCalculationRevision(value=>value+1);window.addEventListener('crewcheck:financial-config-changed',refresh);return()=>window.removeEventListener('crewcheck:financial-config-changed',refresh);},[]);
   useEffect(()=>{
-    const changed=()=>{epoch.current++;fetching.current.clear();setLoaded([]);setInventory([]);setConflicts([]);setNotice('Sessão alterada; histórico financeiro atualizado.');setAuthRevision(value=>value+1);};
+    const changed=()=>{epoch.current++;fetching.current.clear();setLoaded([]);setInventory([]);setConflicts([]);setCoverageReady(false);setNotice('Sessão alterada; histórico financeiro atualizado.');setAuthRevision(value=>value+1);};
     window.addEventListener('crewcheck:auth-changed',changed);window.addEventListener('crewcheck:auth-expired',changed);
     const storage=(event:StorageEvent)=>{if(['crewcheck_auth_user','crewcheck_auth_token'].includes(event.key || ''))changed();};window.addEventListener('storage',storage);
     return ()=>{epoch.current++;window.removeEventListener('crewcheck:auth-changed',changed);window.removeEventListener('crewcheck:auth-expired',changed);window.removeEventListener('storage',storage);};
   },[]);
   useEffect(()=>{
-    const version=++epoch.current;setLoaded([]);fetching.current.clear();setInventory([]);setConflicts([]);setMonth(initialMonth);setDay(initialMonth+'-01');
+    const version=++epoch.current;setLoaded([]);fetching.current.clear();setInventory([]);setConflicts([]);setCoverageReady(false);setMonth(initialMonth);setDay(initialMonth+'-01');
     if(!owner||!crew)return;
     setBusy(true);setNotice('');
-    listSavedRosters(72).then(items=>{
+    listSavedRosters(72,false,{preserveRevisions:true}).then(items=>{
       if(version!==epoch.current||session()!==owner)return;
-      const latest=latestFinancialPeriods(items,crew,financialRosterCrewIdentity);setInventory(latest.items);setConflicts(latest.conflicts);
+      const latest=latestFinancialPeriods(items,crew,financialRosterCrewIdentity);setInventory(latest.items);setConflicts(latest.conflicts);setCoverageReady(true);
       if(items.length>=72)setNotice('Histórico limitado às 72 escalas retornadas; não representa todos os períodos da conta.');
     }).catch(()=>{if(version===epoch.current&&session()===owner)setNotice('Não foi possível consultar outros meses. A escala selecionada continua disponível.');})
       .finally(()=>{if(version===epoch.current&&session()===owner)setBusy(false);});
   },[owner,crew,initialMonth,roster,authRevision]);
   useEffect(()=>{
     if(!owner||!crew)return;
-    const wanted=expanded?months:financialMonths(range), version=epoch.current;
-    const requests=inventory.filter(item=>wanted.includes(`${item.year}-${String(item.month).padStart(2,'0')}`)&&`${item.year}-${String(item.month).padStart(2,'0')}`!==initialMonth&&!loaded.some(entry=>monthOf(entry.roster)===`${item.year}-${String(item.month).padStart(2,'0')}`)&&!fetching.current.has(item.id));
+    const wanted=[...financialMonths(range),...requestedPeriods], version=epoch.current;
+    const requests=inventory.filter(item=>wanted.includes(`${item.year}-${String(item.month).padStart(2,'0')}`)&&!loaded.some(entry=>monthOf(entry.roster)===`${item.year}-${String(item.month).padStart(2,'0')}`)&&!fetching.current.has(item.id));
     if(!requests.length)return;
     for(const item of requests)fetching.current.add(item.id);
     setBusy(true);
@@ -68,7 +71,7 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
       setLoaded(previous=>[...previous,...accepted]);
       if(results.some(result=>result.status==='rejected'))setNotice('Algumas escalas não estão disponíveis. Seus totais não foram presumidos.');
     }).finally(()=>{if(version===epoch.current&&session()===owner)setBusy(false);});
-  },[owner,crew,inventory,expanded,kind,month,day,from,to,initialMonth,loaded]);
+  },[owner,crew,inventory,expanded,kind,month,day,from,to,initialMonth,loaded,requestedPeriods]);
   if(!owner || account !== bound.current.account)return <section className="cz-empty-real"><h1>Financeiro da sua conta</h1><p>Entre na conta proprietária e carregue sua escala para consultar valores. Visitantes não têm acesso financeiro.</p></section>;
   if(!validFinancialDay(initialMonth+'-01'))return <section className="cz-empty-real"><h1>Competência não informada</h1><p>Uma escala com mês e ano válidos é necessária.</p></section>;
   if(!crew)return <section className="cz-empty-real"><h1>Identificação da escala pendente</h1><p>Não foi possível vincular o histórico ao tripulante da escala selecionada.</p></section>;
@@ -81,7 +84,7 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   const controls=<>
     <section className="cc-roster-period-v1399 cc-financial-period" aria-label="Período financeiro">
       <label><CalendarDays aria-hidden="true"/><span>Competência de referência</span><select aria-label="Competência de referência" value={month} onChange={event=>{setMonth(event.target.value);setDay(event.target.value+'-01');}}>{months.map(value=><option key={value} value={value}>{label(value)}</option>)}</select></label>
-      <label>Filtro<select aria-label="Filtro financeiro" value={kind} onChange={event=>setKind(event.target.value as FinancialRange['kind'])}><option value="week">Semana</option><option value="month">Mês</option><option value="year">Ano</option><option value="custom">Período personalizado</option></select></label>
+      <label><span>Filtro</span><select aria-label="Filtro financeiro" value={kind} onChange={event=>setKind(event.target.value as FinancialRange['kind'])}><option value="week">Semana</option><option value="month">Mês</option><option value="year">Ano</option><option value="custom">Período personalizado</option></select></label>
     </section>
     <section className="cc-roster-zoom cc-financial-range" aria-label="Datas financeiras">
       {kind==='week'&&<label>Dia da semana de trabalho<input type="date" aria-label="Dia da semana de trabalho" value={day} onChange={event=>setDay(event.target.value)}/></label>}
@@ -104,5 +107,5 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     <p>{mode==='salary'?'Salário-base e descontos são mensais; nenhuma parcela mensal é distribuída artificialmente por semana.':'Escolha um mês para abrir suas semanas de trabalho. O filtro Semana também está disponível acima.'}</p>
     {kind==='month'&&weeks&&<section className="cc-financial-week-list" aria-label="Semanas da competência"><h3>Semanas da competência</h3><p>Recortes de trabalho dentro do mês, sem atribuir datas de pagamento.</p>{weeks(snapshots.map(item=>item.snapshot),range).map(item=><button type="button" key={item.range.start} onClick={()=>{setKind('custom');setFrom(item.range.start);setTo(item.range.end);}}>{item.range.start} até {item.range.end} · {item.value}</button>)}</section>}
   </details>;
-  return <>{render({snapshots,range,missing,controls,graph})}</>;
+  return <>{render({snapshots,range,missing,controls,graph,coverageReady,requestRange:range=>setRequestedPeriods(financialMonths(range))})}</>;
 }

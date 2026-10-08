@@ -3777,13 +3777,14 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
       if (value !== null) storage.set(key, value.replace(',', '.'));
     });
     setRevision((value) => value + 1);
+    window.dispatchEvent(new CustomEvent('crewcheck:financial-config-changed'));
     toast.success('Câmbio atualizado para esta previsão.');
   }
 
   return <><Brand back/><section className="cc-per-diem-content" aria-label="Previsão de diárias">
     <section className="cz-panel-head cz-panel-head-compact">
       <h1>Diárias</h1>
-      <p className="cc-per-diem-competence">Competência: {competence}</p>
+      {!controls && <p className="cc-per-diem-competence">Competência: {competence}</p>}
       {rangeLabel && !controls && <p>{rangeLabel}</p>}
       <p>Previsão por moeda, sem confirmação de pagamento.</p>
     </section>
@@ -3804,7 +3805,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
     <details className="cz-toolbox cc-per-diem-periods">
       <summary>{forecastOverride ? 'Conversão da previsão' : 'Conversão e semanas de referência'}</summary>
       <section className="cz-finance-grid" aria-label="Previsões convertidas">
-        <KpiCard icon={CalendarDays} title={forecastOverride ? 'Convertido em reais no período' : 'Convertido em reais no mês'} value={forecastSummaryValue(forecast.monthlySummary, moneyBRL)} detail={forecast.pendingCurrencies.length ? 'Cotação pendente: ' + forecast.pendingCurrencies.join(', ') : 'Competência: ' + competence}/>
+        <KpiCard icon={CalendarDays} title={forecastOverride ? 'Convertido em reais no período' : 'Convertido em reais no mês'} value={forecastSummaryValue(forecast.monthlySummary, moneyBRL)} detail={forecast.pendingCurrencies.length ? 'Cotação pendente: ' + forecast.pendingCurrencies.join(', ') : forecastOverride ? (rangeLabel || 'Intervalo selecionado') : 'Competência: ' + competence}/>
         {!forecastOverride && <KpiCard icon={Plane} title="Semana em andamento" value={forecastSummaryValue(forecast.weeklySummary, moneyBRL)} detail={`${dateChip(forecast.cycle.start)}–${dateChip(forecast.cycle.end)}`}/>}
       </section>
       <p>{forecastOverride ? 'Conversão com as cotações configuradas nesta consulta; não comprova câmbio histórico ou pagamento.' : 'A semana vai de quarta a terça e pode cruzar o mês selecionado.'}</p>
@@ -3827,7 +3828,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
 }
 
 function scopedFinancialForecast(snapshots: ReturnType<typeof financeSnapshot>[], range: FinancialRange, missing: string[]) {
-  const base = snapshots[0].perdiem;
+  const base = snapshots[0]?.perdiem || {};
   const rows = financialRowsInRange(snapshots.flatMap(snapshot => snapshot.perdiem.monthlyRows), range);
   const unclassifiedItems = financialRowsInRange(snapshots.flatMap(snapshot => snapshot.perdiem.monthlyUnclassifiedItems), range);
   const native = summarizeNativeForecastRows(rows, unclassifiedItems), converted = summarizeForecastRows(rows, unclassifiedItems);
@@ -3840,12 +3841,12 @@ function scopedFinancialForecast(snapshots: ReturnType<typeof financeSnapshot>[]
 function PerDiemView({ bundle }: { bundle: BundleState }) {
   return <FinancialHistoryExplorer roster={bundle.roster} calculate={financeSnapshot} mode="allowance" metric={snapshot=>snapshot.perdiem.nativeSummary.totalsByCurrency} rangeMetric={(snapshot,range)=>scopedFinancialForecast([snapshot],range,[]).nativeSummary.totalsByCurrency}
     weeks={(snapshots,range)=>financialWeeks(range).map(week=>({range:week,value:scopedFinancialForecast(snapshots,week,[]).currencySummary}))}
-    render={({snapshots,range,missing,controls,graph})=>{
+    render={({snapshots,range,missing,controls,graph,coverageReady,requestRange})=>{
       const forecast = scopedFinancialForecast(snapshots.map(item=>item.snapshot),range,missing);
-      const selected = snapshots.find(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`===range.start.slice(0,7)) || snapshots[0];
+      const selected = snapshots.find(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`===range.start.slice(0,7)) || {roster:bundle.roster,source:bundle.source};
       const knownPeriods = new Set(snapshots.map(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`));
-      const auditRows = [...snapshots.flatMap(item=>item.snapshot.perdiem.monthlyRows), ...snapshots[0].snapshot.perdiem.rows.filter(row=>!knownPeriods.has(row.iso.slice(0,7)))];
-      return <PerDiemMonthView bundle={{...bundle,roster:selected.roster,source:selected.source}} forecastOverride={forecast} rangeLabel={`Trabalho: ${range.start} até ${range.end}`} controls={controls} graph={<>{graph}<FinancialStatementReconciliation rows={auditRows} unclassified={snapshots.flatMap(item=>item.snapshot.perdiem.unclassifiedItems)}/></>}/>;
+      const auditRows = snapshots.flatMap(item=>item.snapshot.perdiem.monthlyRows);
+      return <PerDiemMonthView bundle={{...bundle,roster:selected.roster,source:selected.source}} forecastOverride={forecast} rangeLabel={`Trabalho: ${range.start} até ${range.end}`} controls={controls} graph={<>{graph}<FinancialStatementReconciliation requestRange={requestRange} coveredMonths={coverageReady?[...knownPeriods]:[]} rows={auditRows} unclassified={snapshots.flatMap(item=>item.snapshot.perdiem.unclassifiedItems)}/></>}/>;
     }}/>
 }
 function SalaryReliableView({ bundle }: { bundle: BundleState }) {
@@ -3861,7 +3862,7 @@ function SalaryReliableView({ bundle }: { bundle: BundleState }) {
         {controls}<section className="cz-finance-grid cc-per-diem-summary"><KpiCard icon={DollarSign} title="Bruto previsto no período" value={gross===null?'Não calculável':moneyBRL(gross)} detail={fullMonths?'Salário-base exige fonte ou calibração; somente competências completas são somadas.':'A fonte mensal não permite distribuir salário-base e descontos por semana.'}/></section>
         {graph}
         <details className="cz-toolbox"><summary>Composição mensal e descontos informados</summary>{selected.length?selected.map(item=>{const salary=item.snapshot.salary;return <article key={`${item.roster.year}-${item.roster.month}`}><h2>{item.roster.month}/{item.roster.year}</h2><p>Fonte operacional: {item.source}. {salary.config.source}</p><p>Salário-base: {salary.config.baseConfigured?moneyBRL(salary.config.basePay):'Não informado'}. Fixos informados: {moneyBRL(salary.config.fixedAdditions)}.</p><p>Variáveis: voos {moneyBRL(salary.production)}, chefe/instrutor {moneyBRL(salary.chief+salary.instructorPay)}, reserva {moneyBRL(salary.reserve)}, sobreaviso {moneyBRL(salary.standby)}.</p><p>Descontos informados: INSS {moneyBRL(salary.inss)}, IRRF {moneyBRL(salary.irrf)}, outros {moneyBRL(salary.otherDeductions)}. Líquido simulado da competência: {salary.config.baseConfigured?moneyBRL(salary.net):'Não calculável'}.</p><p>Valores integrais da competência, sem rateio pelo filtro de dias.</p></article>}):<p>Nenhuma competência disponível.</p>}</details>
-        <details className="cz-finance-table cc-per-diem-items"><summary>Componentes por voo no intervalo · {rows.length} itens</summary><p className="finance-learning-notice warning" data-km-source="operational-estimate">KM estimado pela distância entre aeroportos; não é quilometragem remunerável homologada da folha. Confira a tabela corporativa ou o extrato/AIMS.</p><p>Somente as parcelas com vínculo a um voo. Salário-base, reserva, sobreaviso e descontos mensais não são rateados.</p>{rows.length?rows.map(row=><div className="cz-finance-row" key={row.id}><span>{row.iso}</span><strong>{row.flight} · {row.route}</strong><b>{moneyBRL(row.total)}</b><details className="cc-per-diem-source"><summary>Origem e regra</summary><small>{row.dayKm} km diurno × {moneyBRL(row.dayRateApplied)} · {row.nightKm} km noturno × {moneyBRL(row.nightRateApplied)} · {row.payRule} · {row.source}</small></details></div>):<p>Sem parcelas por voo disponíveis no intervalo.</p>}</details>
+        <details className="cz-finance-table cc-per-diem-items"><summary>Componentes por voo no intervalo · {rows.length} itens</summary><p className="finance-learning-notice warning" data-km-source="operational-estimate">KM exibido nesta previsão é uma estimativa operacional pela distância entre aeroportos. A quilometragem remunerável da folha pode usar a tabela corporativa por trecho; confira o extrato/AIMS.</p><p>Somente as parcelas com vínculo a um voo. Salário-base, reserva, sobreaviso e descontos mensais não são rateados.</p>{rows.length?rows.map(row=><div className="cz-finance-row" key={row.id}><span>{row.iso}</span><strong>{row.flight} · {row.route}</strong><b>{moneyBRL(row.total)}</b><details className="cc-per-diem-source"><summary>Origem e regra</summary><small>{row.dayKm} km diurno × {moneyBRL(row.dayRateApplied)} · {row.nightKm} km noturno × {moneyBRL(row.nightRateApplied)} · {row.payRule} · {row.source}</small></details></div>):<p>Sem parcelas por voo disponíveis no intervalo.</p>}</details>
       </section></>;
     }}/>
 }

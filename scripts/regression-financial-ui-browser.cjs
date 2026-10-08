@@ -120,7 +120,7 @@ async function contrast(page) {
    if(label==='desktop'&&kind==='domestic') {
     for(const month of [1,3]){
      await page.evaluate(payload=>{const value=JSON.stringify({owner:'financial-ui-qa',roster:payload,selection:'explicit',cacheSchema:'p0-operational-date-anchor-v2',sourceFileName:'Synthetic selected period'});localStorage.setItem('crewcheck_roster_choice_v1_financial-ui-qa',value);window.dispatchEvent(new StorageEvent('storage',{key:'crewcheck_roster_choice_v1_financial-ui-qa',newValue:value}));},roster('domestic',month));
-     await page.waitForFunction(m=>document.querySelector('.cc-per-diem-competence')?.textContent.includes(m===1?'janeiro':'março'),month);
+     await page.waitForFunction(m=>document.querySelector('[aria-label="Competência de referência"]')?.value==='2032-'+String(m).padStart(2,'0'),month);
      await page.waitForFunction(prefix=>Array.from(document.querySelectorAll('[data-financial-iso]')).length>0&&Array.from(document.querySelectorAll('[data-financial-iso]')).every(e=>e.dataset.financialIso.startsWith(prefix)),'2032-'+String(month).padStart(2,'0'));
      assert.equal(await rows.count(),2,'actual owner selection updates visible monthly items');
     }
@@ -132,6 +132,7 @@ async function contrast(page) {
   const objects=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 300] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>','<< /Length '+Buffer.byteLength(commands)+' >>\nstream\n'+commands+'\nendstream','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
   let pdf='%PDF-1.4\n',offsets=[0];for(let index=0;index<objects.length;index++){offsets.push(Buffer.byteLength(pdf));pdf+=(index+1)+' 0 obj\n'+objects[index]+'\nendobj\n';}const xref=Buffer.byteLength(pdf);pdf+='xref\n0 6\n0000000000 65535 f \n'+offsets.slice(1).map(value=>String(value).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<< /Root 1 0 R /Size 6 >>\nstartxref\n'+xref+'\n%%EOF';
   const syntheticPdf=path.join(out,'synthetic-reconciliation.pdf');fs.writeFileSync(syntheticPdf,pdf);
+  const partialPdf=path.join(out,'synthetic-partial-coincidence.pdf');fs.writeFileSync(partialPdf,pdf.replaceAll('850','600'));
   const historyResults=[];
   for(const theme of ['light','dark'])for(const width of [1440,390]) {
    const context=await browser.newContext({viewport:{width,height:900},timezoneId:'America/Sao_Paulo',serviceWorkers:'block'});
@@ -143,6 +144,9 @@ async function contrast(page) {
    const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'perdiem'})));await page.locator('.cc-per-diem-content').waitFor();await settle(page);
    const selector=page.getByLabel('Competência de referência',{exact:true});await page.waitForFunction(()=>document.querySelector('[aria-label="Competência de referência"]')?.options.length===3);
    assert.doesNotMatch(await selector.innerText(),/abril/,'foreign crew history excluded');
+   const readability=await page.locator('.cc-financial-period').evaluate(root=>Array.from(root.querySelectorAll('label')).map(label=>{const select=label.querySelector('select'),caption=label.querySelector('span'),style=getComputedStyle(select),captionStyle=getComputedStyle(caption),canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');ctx.font=style.font;return {width:select.getBoundingClientRect().width,needed:ctx.measureText(select.selectedOptions[0].textContent).width+parseFloat(style.paddingLeft)+parseFloat(style.paddingRight)+20,captionHeight:caption.getBoundingClientRect().height,lineHeight:parseFloat(captionStyle.lineHeight)};}));
+   for(const control of readability){assert.ok(control.width>=control.needed,'selected month/year and filter must be legible at actual font width');assert.ok(control.captionHeight<=control.lineHeight*2+1,'label must not wrap letter by letter');}
+
    await page.locator('.cc-financial-graph > summary').click();await page.getByRole('button',{name:'Comparar meses do ano'}).click();await page.waitForFunction(()=>document.querySelectorAll('.cc-financial-bars>button').length===3);await settle(page);
    assert.match(await page.locator('.cc-financial-graph').innerText(),/Maior previsão: fevereiro/);assert.match(await page.locator('.cc-per-diem-summary').innerText(),/Não calculável/,'missing months do not become a full-year total');
    await page.screenshot({path:path.join(out,theme+'-history-'+width+'-year.png')});
@@ -162,10 +166,24 @@ async function contrast(page) {
    assert.match(await page.locator('.cc-per-diem-summary').innerText(),/900,00/);await page.getByLabel('Filtro financeiro',{exact:true}).selectOption('week');await settle(page);
    assert.match(await page.locator('.cc-per-diem-summary').innerText(),/Não calculável/,'monthly salary is not prorated into a week');
    await page.screenshot({path:path.join(out,theme+'-history-'+width+'-salary-week.png')});
+   assert.equal(await page.locator('.cc-per-diem-competence').count(),0,'reference competence must not masquerade as the selected work interval');
    await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'foreign-owner',name:'FOREIGN SYNTHETIC',role:'user'}));localStorage.setItem('crewcheck_auth_token','foreign-synthetic-token');window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));});await settle(page);
    assert.equal(await page.locator('.cc-per-diem-summary').count(),0,'account switch hides prior owner financial view');
    await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'financial-ui-qa',name:'SYNTHETIC',role:'visitor'}));window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'perdiem'}));});await settle(page);assert.equal(await page.locator('.cc-per-diem-summary').count(),0,'visitor has no financial access');
    historyResults.push({theme,width,checks:['latest revision','foreign crew excluded','year incomplete','month drilldown','cross-month week','custom sync','salary no weekly proration','account switch','visitor denied','private read-only document reconciliation','repeated total dedup'],synthetic:true});await context.close();
+  }
+  for(const scenario of ['newer-current','conflicting-current','missing-document-month','fx-refresh']) {
+   const context=await browser.newContext({viewport:{width:390,height:900},timezoneId:'America/Sao_Paulo',serviceWorkers:'block'});
+   await context.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(url.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[]}'});return route.continue();});
+   const newer={...roster('domestic'),days:[day('02/02/2032')]};
+   const history=scenario==='newer-current'||scenario==='conflicting-current'?[{id:'local-current-new',checksum:'new',createdAt:'2032-02-03T00:00:00Z',roster:newer,sourceFileName:'Synthetic latest current'},...(scenario==='conflicting-current'?[{id:'local-current-conflict',checksum:'conflict',createdAt:'2032-02-03T00:00:00Z',roster:{...newer,days:[day('03/02/2032')]},sourceFileName:'Synthetic conflicting current'}]:[])]:[];
+   const payload=scenario==='fx-refresh'?{...roster('domestic'),days:[day('02/02/2032','JFK')]}:roster('domestic');
+   await context.addInitScript(seed,{theme:'light',kind:payload,amount:100,history});const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'perdiem'})));await page.locator('.cc-per-diem-content').waitFor();await settle(page);
+   if(scenario==='newer-current'){await page.waitForFunction(()=>document.querySelector('.cc-per-diem-summary')?.textContent.includes('200,00'));assert.equal(await page.locator('[data-financial-iso]').count(),2,'current month uses newest saved revision');}
+   if(scenario==='conflicting-current'){await page.getByText(/Revisões ambíguas/).waitFor();assert.match(await page.locator('.cc-per-diem-summary').innerText(),/Não calculável/);assert.equal(await page.locator('[data-financial-iso]').count(),0,'current month conflict rejects the selected roster too');}
+   if(scenario==='missing-document-month'){await page.locator('.cc-financial-reconciliation>summary').click();await page.locator('.cc-financial-reconciliation input[type=file]').setInputFiles(partialPdf);const panel=page.getByLabel('Conciliação de diárias',{exact:true});await panel.waitFor();assert.match(await panel.innerText(),/Cobertura incompleta.*2032-01/);assert.doesNotMatch(await panel.innerText(),/Diferença a conferir:/,'missing month cannot produce an apparent exact comparison');}
+   if(scenario==='fx-refresh'){page.on('dialog',dialog=>dialog.accept('5'));await page.getByRole('button',{name:'Informar câmbio'}).click();await page.locator('.cc-per-diem-periods>summary').click();await page.waitForFunction(()=>document.querySelector('.cc-per-diem-converted')?.textContent.includes('1.000,00')||Array.from(document.querySelectorAll('.cz-finance-grid')).some(element=>element.textContent.includes('1.000,00')));await page.locator('.cc-financial-graph>summary').click();assert.match(await page.locator('.cc-financial-bars').innerText(),/200,00/,'native USD graph remains native after BRL conversion');}
+   await page.screenshot({path:path.join(out,scenario+'.png')});historyResults.push({scenario,synthetic:true});await context.close();
   }
   fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({synthetic:true,methods:{cssZoom:'CSS zoom stress; not native browser zoom',responsive200:'Half CSS viewport with device scale2; not native browser zoom',devices:'Desktop Chromium emulation; no physical-device certification'},results,historyResults},null,2));
   console.log('PASS actual compiled Diárias: themes, scopes, >40 rows, owner period changes, large money glyph bounds, contrast, navigation clearance');

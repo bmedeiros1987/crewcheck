@@ -119,13 +119,14 @@ function normalizeSingleActiveSummary(items: SavedRosterSummary[]): SavedRosterS
   });
 }
 
-export async function listSavedRosters(limit = 72): Promise<SavedRosterSummary[]> {
-  const local = getLocalRosterSummaries(limit);
+export async function listSavedRosters(limit = 72, strictHistory = false, options: { preserveRevisions?: boolean } = {}): Promise<SavedRosterSummary[]> {
+  const local = getLocalRosterSummaries(limit, options.preserveRevisions);
   if (!hasCrewCheckAuthToken()) return normalizeSingleActiveSummary(local);
   try {
     const payload = await jsonFetch<{ ok: boolean; rosters: SavedRosterSummary[] }>(`/api/rosters?limit=${limit}&manager=1`);
+    if (strictHistory && (!payload.ok || !Array.isArray(payload.rosters))) throw new Error('Resposta de histórico inválida.');
     let online = payload.rosters || [];
-    if (!online.some((item) => item.isActive)) {
+    if (!strictHistory && !online.some((item) => item.isActive)) {
       try {
         const active = await jsonFetch<{ ok: boolean; roster?: SavedRosterSummary | null }>(`/api/rosters/active`, { cache: 'no-store' });
         if (active?.roster?.id) online = [active.roster, ...online];
@@ -143,7 +144,8 @@ export async function listSavedRosters(limit = 72): Promise<SavedRosterSummary[]
     }
     const sorted = merged.sort((a, b) => Number(Boolean(b.isActive)) - Number(Boolean(a.isActive)) || String(b.year || 0).localeCompare(String(a.year || 0)) || Number(b.month || 0) - Number(a.month || 0) || String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, limit);
     return normalizeSingleActiveSummary(sorted);
-  } catch {
+  } catch (error) {
+    if (strictHistory) throw error;
     return normalizeSingleActiveSummary(local);
   }
 }
@@ -722,12 +724,12 @@ function readLocalActiveRosterSnapshot(): LocalHistoryItem | null {
   return readLocalActiveRosterSnapshots()[0] || null;
 }
 
-function getLocalRosterSummaries(limit: number): SavedRosterSummary[] {
+function getLocalRosterSummaries(limit: number, preserveRevisions = false): SavedRosterSummary[] {
   const seen = new Set<string>();
   const activeSnapshots = readLocalActiveRosterSnapshots();
-  const sourceItems = [...activeSnapshots, ...readLocalHistory()];
+  const sourceItems = preserveRevisions ? readLocalHistory() : [...activeSnapshots, ...readLocalHistory()];
   const unique = sourceItems.filter((item) => {
-    const key = periodHistoryKey(item);
+    const key = preserveRevisions ? item.checksum || item.id : periodHistoryKey(item);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
