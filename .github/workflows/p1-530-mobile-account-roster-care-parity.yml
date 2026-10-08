@@ -5,6 +5,9 @@ on:
       - 'client/src/pages/Home.tsx'
       - 'client/src/components/v1391/RosterLaunchView.tsx'
       - 'scripts/regression-p1-530-mobile-account-roster-care-parity.mjs'
+      - 'scripts/roster-startup/**'
+      - 'client/src/lib/rosterStartup.ts'
+      - 'client/src/lib/rosterPublicationRuntime.ts'
       - '.github/workflows/p1-530-mobile-account-roster-care-parity.yml'
 permissions:
   contents: read
@@ -23,6 +26,7 @@ jobs:
         run: node scripts/v139/apply.mjs
       - name: Reproduce mobile stale-cache and Care parity contract
         run: node scripts/regression-p1-530-mobile-account-roster-care-parity.mjs
+      - run: node scripts/regression-account-active-reconciliation.mjs
       - name: TypeScript
         run: npx tsc --noEmit
       - name: Production build of already prepared runtime
