@@ -56,3 +56,11 @@ html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cc-pe
 }
 
 html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content :is(.cz-panel-head, .cz-finance-grid, .cz-kpi, .cz-toolbox, .cz-finance-table, .cz-panel-head p) { opacity: 1 !important; }
+
+/* Reset legacy placement: named areas own all row children. */
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row { container-type: inline-size; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row > * { grid-column: auto !important; grid-row: auto !important; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row > span { grid-area: date !important; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row > strong { grid-area: label !important; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row > b { grid-area: amount !important; white-space: nowrap !important; overflow-wrap: normal !important; font-size: clamp(.75rem, 6cqi, 1.03rem) !important; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row > .cc-per-diem-source { grid-area: source !important; }

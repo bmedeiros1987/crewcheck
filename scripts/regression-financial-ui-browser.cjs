@@ -42,7 +42,7 @@ async function settle(page) {
 }
 async function measureMoney(page) {
  return page.evaluate(()=>{
-  const violations=[],amounts=[];
+  const violations=[],amounts=[],intersections=[],splitAmounts=[];
   for(const element of document.querySelectorAll('.cc-per-diem-content .cz-kpi strong, .cc-per-diem-content .cz-finance-row b')) {
    if(!element.getClientRects().length)continue;
    const box=element.closest('.cz-kpi,.cz-finance-row').getBoundingClientRect();
@@ -54,7 +54,14 @@ async function measureMoney(page) {
    }
    amounts.push(element.textContent);
   }
-  return {violations,amounts};
+  for(const row of document.querySelectorAll('.cc-per-diem-content .cz-finance-row')) {
+   const value=row.querySelector('b'), label=row.querySelector('strong');
+   const rectangles=element=>{const range=document.createRange();range.selectNodeContents(element);return Array.from(range.getClientRects());};
+   const vr=rectangles(value),lr=rectangles(label);
+   if(vr.some(a=>lr.some(b=>Math.min(a.right,b.right)>Math.max(a.left,b.left)+1&&Math.min(a.bottom,b.bottom)>Math.max(a.top,b.top)+1)))intersections.push({value:value.textContent,label:label.textContent});
+   if(new Set(vr.map(r=>Math.round(r.top))).size!==1)splitAmounts.push(value.textContent);
+  }
+  return {violations,amounts,intersections,splitAmounts};
  });
 }
 async function contrast(page) {
@@ -99,7 +106,7 @@ async function contrast(page) {
    if(!['empty','single','unknown'].includes(kind))assert.ok(count>40,'monthly list contains all canonical rows beyond forty');
    assert.ok(await rows.evaluateAll(elements=>elements.every(e=>e.dataset.financialIso.startsWith('2032-02-'))),'adjacent months excluded');
    if(count){await rows.first().locator('summary').click();await rows.first().scrollIntoViewIfNeeded();await settle(page);await page.screenshot({path:path.join(out,name+'-origin.png')});}
-   const money=await measureMoney(page);assert.deepEqual(money.violations,[],'each money glyph remains inside its own card/row');
+   const money=await measureMoney(page);assert.deepEqual(money.violations,[],'each money glyph remains inside its own card/row');assert.deepEqual(money.intersections,[],'amount and description never intersect');assert.deepEqual(money.splitAmounts,[],'currency amount and cents remain on one line');
    const colors=await contrast(page);assert.ok(colors.every(c=>Number(c.opacity)===1&&c.ratio>=4.5),'readable muted/source text in each theme');
    if(kind==='multi')assert.equal(new Set(await rows.evaluateAll(es=>es.map(e=>e.dataset.financialCurrency))).size,4);
    if(kind==='single')assert.match(await page.locator('.cc-per-diem-summary').innerText(),/1 item · 1 moeda/);
