@@ -28,6 +28,7 @@ public class CrewCheckNotificationReceiver extends BroadcastReceiver {
         PendingIntent pi = PendingIntent.getActivity(context, 10837, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? new Notification.Builder(context, CHANNEL_ID) : new Notification.Builder(context);
         builder.setContentTitle(title)
+                .setVisibility(Notification.VISIBILITY_PRIVATE)
                 .setContentText(body)
                 .setStyle(new Notification.BigTextStyle().bigText(body))
                 .setSmallIcon(android.R.drawable.ic_dialog_info)

@@ -59,6 +59,8 @@ function initialForm(instructor: boolean) {
     opensAt: localInput(official?.opensAt || fallbackOpen),
     closesAt: localInput(official?.closesAt || fallbackClose),
     providerUrl: '',
+    notifyOpen: false,
+    notifyLastDay: false,
   };
 }
 
@@ -119,7 +121,7 @@ export default function BidsWindowsView() {
       const payload = await v139Api('/api/platform/bids', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ...form, opensAt: opensAt.toISOString(), closesAt: closesAt.toISOString(), notifyOpen: true, notifyLastDay: true }),
+        body: JSON.stringify({ ...form, opensAt: opensAt.toISOString(), closesAt: closesAt.toISOString() }),
       });
       setWindows(payload.windows || []);
       toast.success('Janela de BIDS salva.');
@@ -178,6 +180,8 @@ export default function BidsWindowsView() {
         <label>Abertura<input type="datetime-local" value={form.opensAt} onChange={(event) => setForm({ ...form, opensAt: event.target.value })}/></label>
         <label>Encerramento<input type="datetime-local" value={form.closesAt} onChange={(event) => setForm({ ...form, closesAt: event.target.value })}/></label>
         <label className="wide">Link do sistema oficial<input value={form.providerUrl} onChange={(event) => setForm({ ...form, providerUrl: event.target.value })} placeholder="Opcional"/></label>
+        <label className="wide"><input type="checkbox" checked={form.notifyOpen} onChange={(event) => setForm({ ...form, notifyOpen: event.target.checked })}/> Solicitar alerta de abertura no Telegram vinculado</label>
+        <label className="wide"><input type="checkbox" checked={form.notifyLastDay} onChange={(event) => setForm({ ...form, notifyLastDay: event.target.checked })}/> Solicitar alerta do último dia no Telegram vinculado</label>
       </div>
       {selectedOfficial && <p><CalendarCheck2/> Período sugerido: {selectedOfficial.label}, dias {instructor ? selectedOfficial.instructorStart : selectedOfficial.generalStart} a {instructor ? selectedOfficial.instructorEnd : selectedOfficial.generalEnd}. Como o informativo não define horário, o CrewCheck usa 00:00 na abertura e 23:59 no encerramento, ambos editáveis.</p>}
       <div className="cc139-actions">
@@ -191,11 +195,12 @@ export default function BidsWindowsView() {
         <header><span><strong>{item.title}</strong><small>Mês {item.targetMonth}</small></span><b>{status(item)}</b></header>
         <p>Abertura: {formatDate(item.opensAt)}<br/>Encerramento: {formatDate(item.closesAt)}</p>
         <div className="cc139-badges">
-          <span>{item.openNotifiedAt ? 'Abertura notificada' : 'Alerta de abertura pendente'}</span>
-          <span>{item.lastDayNotifiedAt ? 'Último dia notificado' : 'Alerta do último dia pendente'}</span>
+          <span>{item.openNotifiedAt ? 'Abertura registrada; entrega não confirmada' : item.notifyOpen ? 'Alerta de abertura pendente' : 'Alerta de abertura desativado'}</span>
+          <span>{item.lastDayNotifiedAt ? 'Último dia registrado; entrega não confirmada' : item.notifyLastDay ? 'Alerta do último dia pendente' : 'Alerta do último dia desativado'}</span>
         </div>
         <div className="cc139-actions">
           {item.providerUrl && <button onClick={() => window.open(item.providerUrl, '_blank', 'noopener,noreferrer')}><ExternalLink/> Sistema oficial</button>}
+          <button onClick={() => setForm({ title: item.title, targetMonth: item.targetMonth, opensAt: localInput(new Date(item.opensAt)), closesAt: localInput(new Date(item.closesAt)), providerUrl: item.providerUrl || '', notifyOpen: item.notifyOpen, notifyLastDay: item.notifyLastDay })}><Bell/> Alterar alertas / janela</button>
           <button className="danger" onClick={() => remove(item.id)}><Trash2/> Remover</button>
         </div>
       </article>)}

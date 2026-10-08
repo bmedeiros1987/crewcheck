@@ -6,34 +6,36 @@ function parseDate(value) {
   return Number.isFinite(date.getTime()) ? date : null;
 }
 
-function dueKind(row, now = new Date()) {
+export function dueKind(row, now = new Date()) {
   const opens = parseDate(row.opens_at);
   const closes = parseDate(row.closes_at);
-  if (!opens || !closes || now > closes) return '';
-  const today = now.toISOString().slice(0, 10);
-  if (row.notify_last_day && !row.last_day_notified_at && closes.toISOString().slice(0, 10) === today) return 'last-day';
+  if (!opens || !closes || closes <= opens || now < opens || now >= closes) return '';
+  const day = (date) => date.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  if (row.notify_last_day && !row.last_day_notified_at && day(closes) === day(now)) return 'last-day';
   if (row.notify_open && !row.open_notified_at && now >= opens) return 'open';
   return '';
 }
 
-export async function notifyBidRows(db, rows) {
+export async function notifyBidRows(db, rows, { now = new Date(), findLink = telegramLink, send = sendTelegram } = {}) {
   const notices = [];
   for (const row of rows) {
-    const kind = dueKind(row);
+    const kind = dueKind(row, now);
     if (!kind) continue;
-    const link = await telegramLink(db, row.owner_email);
+    const link = await findLink(db, row.owner_email);
     const closes = parseDate(row.closes_at);
     const text = kind === 'open'
       ? [`BIDS aberto — ${row.title}`, `Mês alvo: ${row.target_month}`, `Encerramento: ${closes?.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) || 'a confirmar'}`].join('\n')
       : [`Último dia de BIDS — ${row.title}`, 'A janela encerra hoje.', 'Confira sua solicitação no sistema oficial.'].join('\n');
-    await sendTelegram(link?.chatId, text);
+    const result = await send(link?.chatId, text);
+    // Provider acceptance is not a delivery/read receipt. Failed attempts stay pending.
+    if (!result?.ok) continue;
     await db.query(
       kind === 'open'
         ? 'UPDATE crewcheck_platform_bid_windows SET open_notified_at=CURRENT_TIMESTAMP(3) WHERE id=?'
         : 'UPDATE crewcheck_platform_bid_windows SET last_day_notified_at=CURRENT_TIMESTAMP(3) WHERE id=?',
       [row.id],
     );
-    notices.push({ id: row.id, kind, title: row.title, message: text });
+    notices.push({ id: row.id, kind, title: row.title, message: text, channel: 'telegram', status: 'accepted', delivered: null });
   }
   return notices;
 }

@@ -34,10 +34,13 @@ function setup({ permission = 'granted', supported = true, throws = false, nativ
 for (const epoch of [NaN, Infinity, -Infinity, 1000 + 2147483648]) {
   check(`reject invalid/out-of-range epoch ${epoch}`, () => { const s = setup(); assert.equal(s.schedule(epoch), false); assert.equal(s.timers.length, 0); });
 }
-for (const delay of [0, 1, 2147483647]) {
+for (const delay of [1, 2147483647]) {
   check(`accept supported timer boundary ${delay}`, () => { const s = setup(); assert.equal(s.schedule(1000 + delay), true); assert.equal(s.timers.length, 1); assert.equal(s.timers[0].delay, delay); });
 }
-check('past timestamp retains immediate behavior', () => { const s = setup(); assert.equal(s.schedule(900), true); assert.equal(s.timers[0].delay, 0); });
+for (const epoch of [900, 1000]) {
+  check(`expired timestamp ${epoch} cannot replay immediately`, () => { const s = setup(); assert.equal(s.schedule(epoch), false); assert.equal(s.timers.length, 0); });
+  check(`expired timestamp ${epoch} never reaches native bridge`, () => { const s = setup({ native: { scheduleNotification() { throw new Error('expired bridge call'); } } }); assert.equal(s.schedule(epoch), false); });
+}
 for (const options of [{ permission: 'denied' }, { permission: 'default' }, { supported: false }, { throws: true }]) {
   check(`reject unavailable delivery/timer ${JSON.stringify(options)}`, () => { const s = setup(options); assert.equal(s.schedule(2000), false); assert.equal(s.timers.length, 0); });
 }

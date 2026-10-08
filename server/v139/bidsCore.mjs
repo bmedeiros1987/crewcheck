@@ -1,6 +1,5 @@
 import crypto from 'node:crypto';
 import { cleanText, readBody, requireIdentity, sendJson } from './common.mjs';
-import { notifyBidRows } from './bidsNotify.mjs';
 
 function parseDate(value) {
   const date = new Date(String(value || ''));
@@ -53,9 +52,11 @@ export async function handleBidsCore(req, res, url) {
     if (existing[0]?.id) {
       await context.db.query(
         `UPDATE crewcheck_platform_bid_windows
-         SET opens_at=?,closes_at=?,provider_url=?,notify_open=?,notify_last_day=?,open_notified_at=NULL,last_day_notified_at=NULL
+         SET open_notified_at=IF(opens_at=? AND closes_at=?,open_notified_at,NULL),
+             last_day_notified_at=IF(opens_at=? AND closes_at=?,last_day_notified_at,NULL),
+             opens_at=?,closes_at=?,provider_url=?,notify_open=?,notify_last_day=?
          WHERE id=? AND owner_email=?`,
-        [opens, closes, cleanText(body.providerUrl, 800) || null, body.notifyOpen === false ? 0 : 1, body.notifyLastDay === false ? 0 : 1, existing[0].id, context.email],
+        [opens, closes, opens, closes, opens, closes, cleanText(body.providerUrl, 800) || null, body.notifyOpen === false ? 0 : 1, body.notifyLastDay === false ? 0 : 1, existing[0].id, context.email],
       );
     } else {
       await context.db.query(
@@ -69,8 +70,7 @@ export async function handleBidsCore(req, res, url) {
   }
 
   const [rows] = await context.db.query('SELECT * FROM crewcheck_platform_bid_windows WHERE owner_email=? ORDER BY opens_at DESC LIMIT 80', [context.email]);
-  const notifications = await notifyBidRows(context.db, rows);
-  const [updated] = await context.db.query('SELECT * FROM crewcheck_platform_bid_windows WHERE owner_email=? ORDER BY opens_at DESC LIMIT 80', [context.email]);
-  sendJson(res, 200, { ok: true, windows: updated.map(clientRow), notifications });
+  // Viewing/saving a window must not send an external message as a side effect.
+  sendJson(res, 200, { ok: true, windows: rows.map(clientRow), notifications: [] });
   return true;
 }
