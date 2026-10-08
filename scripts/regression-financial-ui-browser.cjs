@@ -4,13 +4,15 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), path = re
 const out = path.resolve(process.env.FINANCIAL_UI_EVIDENCE_DIR || 'artifacts/financial-ui');
 fs.mkdirSync(out, { recursive: true });
 const dist = path.resolve('dist');
-const server = http.createServer((req, res) => {
-  const pathname = new URL(req.url, 'http://localhost').pathname;
-  const file = pathname === '/app' || pathname === '/' ? path.join(dist, 'index.html') : path.join(dist, pathname);
-  if (!file.startsWith(dist + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return res.writeHead(404).end();
-  res.setHeader('Content-Type', (file.endsWith('.js') || file.endsWith('.mjs')) ? 'application/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.html') ? 'text/html' : file.endsWith('.png') ? 'image/png' : file.endsWith('.svg') ? 'image/svg+xml' : 'application/octet-stream');
-  res.end(fs.readFileSync(file));
-});
+// Exercise the production static responder rather than a test-only MIME table.
+const vm = require('node:vm');
+const serverSource=fs.readFileSync(path.resolve('server.mjs'),'utf8');
+const staticStart=serverSource.indexOf('function serveStatic(req, res, url) {');
+const staticEnd=serverSource.indexOf('http.createServer(',staticStart);
+assert.ok(staticStart>=0&&staticEnd>staticStart,'production static handler must exist');
+const staticContext=vm.createContext({fs,path,distDir:dist,sendJson:(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}});
+vm.runInContext(serverSource.slice(staticStart,staticEnd)+'\nglobalThis.respond=serveStatic;',staticContext);
+const server=http.createServer((req,res)=>staticContext.respond(req,res,new URL(req.url,'http://localhost')));
 const day = (date, airport = 'BSB', short = false) => ({date, dayOfWeek:'SYN', type:'CRM', pairingCode:'CRM', dutyReport:short?'11:00':'05:00', dutyDebrief:short?'11:15':'21:00', legs:[], dutyHours:short ? 0.25 : 16, flyingHours:0, isNextDay:false, hotel:null, base:airport, rawText:'SYNTHETIC UI QA ONLY'});
 function roster(kind, month=2) {
   const airports = kind === 'multi' ? ['BSB','JFK','MAD','LHR'] : ['BSB'];

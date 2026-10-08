@@ -9,6 +9,8 @@ on:
       - 'client/src/components/v1391/RosterLaunchView.tsx'
       - 'scripts/regression-financial-*.mjs'
       - 'scripts/regression-financial-ui-browser.cjs'
+      - 'scripts/regression-static-module-mime.mjs'
+      - 'server.mjs'
       - 'client/src/styles/per-diem-content.css'
       - 'client/src/components/finance/**'
       - 'client/src/lib/financialHistoryPeriods.ts'
@@ -28,6 +30,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-static-module-mime.mjs
       - run: node scripts/regression-financial-read-model.mjs
       - run: node scripts/regression-financial-statement-totals.mjs
       - run: node --test scripts/regression-financial-review-negative.mjs
