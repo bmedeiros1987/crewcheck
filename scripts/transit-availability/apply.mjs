@@ -30,6 +30,17 @@ if (!source.includes('data-transit-presentation=')) {
   replace('function smartDepartureEstimate(event: ZeroLeg, route: RoutePreviewInfo | null, margin: number): SmartDepartureEstimate {', "function smartDepartureEstimate(event: ZeroLeg, route: RoutePreviewInfo | null, margin: number, mode: string = route?.clientTravelMode || 'driving'): SmartDepartureEstimate {\n  const transitPresentation = transitDeparturePresentation(mode);");
   replace("if (liveMinutes > 0 && route?.clientRouteState !== 'stale') saveDepartureTravelMinutes(event, liveMinutes);", "if (!transitPresentation && route?.clientTravelMode !== 'transit' && liveMinutes > 0 && route?.clientRouteState !== 'stale') saveDepartureTravelMinutes(event, liveMinutes);");
   replace('  const rawLiveMinutes = routeMismatch ? 0 : routeDurationMinutes(route);', "  const rawLiveMinutes = routeMismatch || (route?.clientTravelMode === 'transit' && !transitPresentation) ? 0 : routeDurationMinutes(route);");
+  replace('  const cachedMinutes = readDepartureTravelMinutes(event);\n  const travelMinutes = liveMinutes || cachedMinutes || defaultDepartureTravelMinutes();', `  const transitMinutes = transitPresentation && route?.ok === true && route?.clientTravelMode === 'transit' && route.clientRouteState === 'valid' && !routeMismatch ? liveMinutes : 0;
+  const cachedMinutes = transitPresentation ? 0 : readDepartureTravelMinutes(event);
+  const travelMinutes = transitPresentation ? transitMinutes : liveMinutes || cachedMinutes || defaultDepartureTravelMinutes();`);
+  replace("const source: SmartDepartureEstimate['source'] = liveMinutes ? 'live' : cachedMinutes ? 'cached' : 'estimated';", "const source: SmartDepartureEstimate['source'] = transitPresentation ? (transitMinutes ? 'live' : 'estimated') : liveMinutes ? 'live' : cachedMinutes ? 'cached' : 'estimated';");
+  replace('  leaveDate: Date;', '  leaveDate: Date | null;');
+  replace('  travelMinutes: number;', '  travelMinutes: number | null;');
+  replace('  leadMinutes: number;', '  leadMinutes: number | null;');
+  replace('    leaveDate,', '    leaveDate: transitPresentation && !transitPresentation.showDepartureTime ? null : leaveDate,');
+  replace('    travelMinutes,', '    travelMinutes: transitPresentation && !transitMinutes ? null : travelMinutes,');
+  replace('    leadMinutes,', '    leadMinutes: transitPresentation && !transitPresentation.showDepartureTime ? null : leadMinutes,');
+  replace('    travelLabel: travelMinutes >= 60', "    travelLabel: transitPresentation && !transitMinutes ? 'Duração não confirmada' : travelMinutes >= 60");
   replace('    leaveLabel: formatTime(leaveDate),', "    leaveLabel: transitPresentation && !transitPresentation.showDepartureTime ? 'A confirmar' : formatTime(leaveDate),");
   replace("    sourceLabel: source === 'live'", "    sourceLabel: transitPresentation ? transitPresentation.availability.label : source === 'live'");
   const airportStart = source.indexOf('function AirportDeparture('), airportEnd = source.indexOf('\nfunction MonthlyMapView(', airportStart);
