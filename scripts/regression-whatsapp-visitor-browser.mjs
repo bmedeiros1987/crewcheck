@@ -70,9 +70,16 @@ const { chromium } = require('playwright');
 let browser;
 try {
   browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ locale: 'pt-BR' });
-  let external = 0;
-  await context.route('**/*', route => route.request().url().startsWith(origin + '/') ? route.continue() : (external++, route.abort()));
+  const context = await browser.newContext({ locale: 'pt-BR', serviceWorkers: 'block' });
+  let messagingAttempts = 0;
+  const blockedOrigins = new Set();
+  await context.route('**/*', route => {
+    const target = new URL(route.request().url());
+    if (target.origin === origin) return route.continue();
+    blockedOrigins.add(target.origin); // Origins only; no tokens, payloads or query strings.
+    if (target.hostname === 'wa.me' || /(?:^|\.)(?:whatsapp|facebook)\.com$/.test(target.hostname)) messagingAttempts++;
+    return route.abort();
+  });
   const page = await context.newPage();
   await page.goto(origin + '/visitor');
   await page.locator('input[type=email]').fill(visitor.email);
@@ -87,7 +94,8 @@ try {
   assert.equal(canonical.verifyJwt(decodeURIComponent(cookie.value)).ownerEmail, visitor.owner_email);
   await page.getByRole('button', { name: 'Vincular WhatsApp', exact: true }).click();
   await page.getByText('visitante_fictional-browser-code', { exact: true }).waitFor();
-  assert.equal(linkCalls, 1); assert.equal(external, 0, 'handoff does not send or open external URL');
+  assert.equal(linkCalls, 1); assert.equal(messagingAttempts, 0, 'handoff does not send or open WhatsApp/Meta');
+  assert.equal(context.pages().length, 1, 'handoff does not open a popup');
   await page.getByRole('button', { name: 'Desvincular WhatsApp', exact: true }).click();
   await page.waitForFunction(() => !document.body.textContent.includes('visitante_fictional-browser-code'));
   assert.equal(unlinkCalls, 1);
@@ -101,8 +109,8 @@ try {
   await page.request.post(origin + '/api/platform/visitor/logout');
   await page.reload(); await page.locator('input[type=email]').waitFor();
   assert.equal((await context.cookies()).some(c => c.name === 'crewcheck_visitor_token'), false);
-  assert.equal(external, 0);
-  console.log(`PASS ${componentOnly ? 'actual visitor component harness (full app build unproved)' : 'built full app visitor page'}: wrong/correct password through canonical login/JWT, HttpOnly cookie, consent/handoff/unlink, gate OFF, revoked fixture and logout; fictional DB/data API and throttle; no external requests, native DB/full server unproved`);
+  assert.equal(messagingAttempts, 0);
+  console.log(`PASS ${componentOnly ? 'actual visitor component harness (full app build unproved)' : 'built full app visitor page'}: wrong/correct password through canonical login/JWT, HttpOnly cookie, consent/handoff/unlink, gate OFF, revoked fixture and logout; fictional DB/data API and throttle; all external requests aborted, zero WhatsApp/Meta attempts; native DB/full server unproved; blocked page resource origins=${JSON.stringify([...blockedOrigins])}`);
 } finally {
   await browser?.close();
   await new Promise(resolve => server.close(resolve));
