@@ -1,3 +1,4 @@
+import '@/styles/per-diem-content.css';
 import NotificationSoundSetting from '@/components/pulse/NotificationSoundSetting';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useLocation } from 'wouter';
@@ -3734,6 +3735,14 @@ function PerDiemView({ bundle }: { bundle: BundleState }) {
   const [revision, setRevision] = useState(0);
   const forecast = useMemo(() => calculatePerDiem(events, bundle.roster), [bundle.roster, revision]);
 
+  const itemCount = forecast.monthlyRows.length;
+  const itemLabel = `${itemCount} ${itemCount === 1 ? 'item' : 'itens'}`;
+  const currencyLabel = `${forecast.currencyCount} ${forecast.currencyCount === 1 ? 'moeda' : 'moedas'}`;
+  const year = Number(bundle.roster.year), month = Number(bundle.roster.month);
+  const competence = Number.isInteger(year) && year >= 2000 && Number.isInteger(month) && month >= 1 && month <= 12
+    ? new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month - 1, 1)))
+    : 'não informada';
+
   function configureExchange() {
     const currencies = (Object.keys(forecast.totalsByCurrency) as PerDiemCurrency[]).filter((currency) => currency !== 'BRL');
     currencies.forEach((currency) => {
@@ -3745,43 +3754,47 @@ function PerDiemView({ bundle }: { bundle: BundleState }) {
     toast.success('Câmbio atualizado para esta previsão.');
   }
 
-  return <><Brand back/>
+  return <><Brand back/><section className="cc-per-diem-content" aria-label="Previsão de diárias">
     <section className="cz-panel-head cz-panel-head-compact">
       <h1>Diárias</h1>
-      <p>Previsões por janela e moeda, ainda não homologadas com a empresa. Não confirmam pagamento.</p>
+      <p className="cc-per-diem-competence">Competência: {competence}</p>
+      <p>Previsão por moeda, sem confirmação de pagamento.</p>
     </section>
-    <p className="cz-mini-status">Ciclo previsto: quarta-feira a terça-feira, com pagamento na quinta-feira seguinte. Ceia registrada a partir de 00:00 de quarta-feira pertence ao ciclo seguinte.</p>
-    <section className="cz-finance-grid">
-      <KpiCard icon={BriefcaseBusiness} title="Totais por moeda" value={forecast.nativeSummary.complete ? String(forecast.currencyCount) : forecast.nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável'} detail={forecast.currencySummary || 'Sem itens previstos'}/>
-      <KpiCard icon={CalendarDays} title="Convertido previsto no mês" value={forecastSummaryValue(forecast.monthlySummary, moneyBRL)} detail={forecast.pendingCurrencies.length ? 'Informe ' + forecast.pendingCurrencies.join(', ') : 'Previsão da competência selecionada'}/>
-      <KpiCard icon={Plane} title="Semana em acumulação" value={forecastSummaryValue(forecast.weeklySummary, moneyBRL)} detail={`${dateChip(forecast.cycle.start)}–${dateChip(forecast.cycle.end)} · ciclo legado estimado; não confirma pagamento`}/>
+    <section className="cz-finance-grid cc-per-diem-summary" aria-label="Resumo da competência">
+      <KpiCard icon={BriefcaseBusiness} title="Previsão do mês" value={forecast.currencySummary || 'Sem itens previstos'} detail={forecast.nativeSummary.complete ? `${itemLabel} · ${currencyLabel} · valores na moeda original` : forecast.nativeSummary.state === 'no_data' ? 'Não há diárias previstas nesta competência' : 'Há dados financeiros pendentes nesta competência'}/>
     </section>
     {forecast.pendingCurrencies.length > 0 && <section className="cz-toolbox cz-finance-attention">
       <h2>Câmbio necessário</h2>
-      <p>Informe a cotação para converter {forecast.pendingCurrencies.join(', ')} sem somar moedas diferentes.</p>
-      <div className="cz-tool-actions"><button onClick={configureExchange}><DollarSign/> Informar câmbio</button></div>
+      <p>A conversão em reais depende da cotação de {forecast.pendingCurrencies.join(', ')}.</p>
+      <div className="cz-tool-actions"><button onClick={configureExchange} disabled={!forecast.nativeSummary.complete}><DollarSign/> Informar câmbio</button></div>
     </section>}
-    {forecast.pendingAirports.length > 0 && <section className="cz-toolbox cz-finance-attention">
+    {!forecast.nativeSummary.complete && forecast.nativeSummary.state !== 'no_data' && <section className="cz-toolbox cz-finance-attention">
       <h2>Dados financeiros pendentes</h2>
-      <p>{forecast.pendingAirports.join(' · ')}. O valor permanece fora do total até a calibração administrativa.</p>
+      <p>Há itens sem classificação ou valores válidos. Confira a origem antes de usar o total.</p>
     </section>}
-    <details className="cz-toolbox"><summary>Semana anterior e origem</summary>
-      <p>{dateChip(forecast.periods.previous.start)}–{dateChip(forecast.periods.previous.end)}: {forecastSummaryValue(forecast.previousWeeklySummary, moneyBRL)} (previsão).</p>
-      <p>O ciclo legado é uma referência de calendário. Sem demonstrativo oficial ou registro de liquidação, não há pagamento confirmado.</p>
-      {forecast.weeklySummary.pendingCurrencies.length > 0 && <p>Câmbio pendente nesta semana: {forecast.weeklySummary.pendingCurrencies.join(', ')}.</p>}
+    <details className="cz-toolbox cc-per-diem-periods">
+      <summary>Conversão e semanas de referência</summary>
+      <section className="cz-finance-grid" aria-label="Previsões convertidas">
+        <KpiCard icon={CalendarDays} title="Convertido em reais no mês" value={forecastSummaryValue(forecast.monthlySummary, moneyBRL)} detail={forecast.pendingCurrencies.length ? 'Cotação pendente: ' + forecast.pendingCurrencies.join(', ') : 'Competência: ' + competence}/>
+        <KpiCard icon={Plane} title="Semana em andamento" value={forecastSummaryValue(forecast.weeklySummary, moneyBRL)} detail={`${dateChip(forecast.cycle.start)}–${dateChip(forecast.cycle.end)}`}/>
+      </section>
+      <p>A semana vai de quarta a terça e pode cruzar o mês selecionado.</p>
+      <p>Semana anterior ({dateChip(forecast.periods.previous.start)}–{dateChip(forecast.periods.previous.end)}): {forecastSummaryValue(forecast.previousWeeklySummary, moneyBRL)}.</p>
+      {forecast.weeklySummary.pendingCurrencies.length > 0 && <p>Cotação pendente na semana: {forecast.weeklySummary.pendingCurrencies.join(', ')}.</p>}
     </details>
-    <section className="cz-finance-table">
-      <h2>Itens previstos</h2>
-      {forecast.rows.length ? forecast.rows.slice(0, 40).map((row, index) =>
-        <div className="cz-finance-row" key={row.iso + '-' + row.label + '-' + index}>
+    <details className="cz-finance-table cc-per-diem-items">
+      <summary><h2>Itens previstos</h2><span>{itemLabel}</span></summary>
+      <p className="cc-per-diem-scope">Competência: {competence}. Os itens abaixo pertencem ao mês selecionado.</p>
+      {forecast.monthlyRows.length ? forecast.monthlyRows.map((row, index) =>
+        <div className="cz-finance-row" data-financial-iso={row.iso} data-financial-currency={row.currency} key={row.iso + '-' + row.label + '-' + index}>
           <span>{row.date}</span>
           <strong>{row.label} · {row.airport}</strong>
-          <small>{row.source}{row.convertedBRL === null ? ' · câmbio pendente' : ''}</small>
           <b>{moneyCurrency(row.value, row.currency)}</b>
+          <details className="cc-per-diem-source"><summary>Origem e regra{row.convertedBRL === null ? ' · cotação pendente' : ''}</summary><small>{row.source}</small></details>
         </div>
-      ) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem itens previstos</h2><p>Carregue uma escala com voos, reservas ou pernoites. A escala não confirma pagamento.</p></article>}
-    </section>
-  </>;
+      ) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem itens previstos</h2><p>A escala selecionada não contém diárias previstas nesta competência.</p></article>}
+    </details>
+  </section></>;
 }
 
 function SalaryReliableView({ bundle }: { bundle: BundleState }) {

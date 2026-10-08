@@ -146,10 +146,33 @@ try {
   for(const candidate of [mixed,invalidRate,empty,foreign]) {
     assert.equal(vm.runInNewContext(compactExpression,{finance:{perdiem:candidate}}),candidate.currencySummary);
   }
+  // Actual detailed consumer must show every row of the selected competence,
+  // including after changing the selected roster month. Adjacent rows stay out.
+  activeEvents = [event('2032-01-31', 'INT'), ...Array.from({length:24},(_,i)=>{
+    const day='2032-02-'+String(i+1).padStart(2,'0');
+    return {...event(day),start:day+'T05:00:00',end:day+'T21:00:00'};
+  }),event('2032-03-01')];
+  const many=calculatePerDiem(activeEvents,roster(2032,2));
+  assert.ok(many.monthlyRows.length>40,'synthetic canonical windows produce more than forty monthly items');
+  const manyHtml=renderToStaticMarkup(React.createElement(PerDiemView,{bundle:{roster:roster(2032,2)}}));
+  assert.equal((manyHtml.match(/class="cz-finance-row"/g)||[]).length,many.monthlyRows.length,'selected monthly items must not be truncated or borrowed from adjacent months');
+  assert.ok([...manyHtml.matchAll(/data-financial-iso="([^"]+)"/g)].every(match=>match[1].startsWith('2032-02-')));
+  assert.doesNotMatch(manyHtml,/<details[^>]*\bopen/,'details start folded');
+  assert.match(manyHtml,/Competência: fevereiro de 2032/);
+  for(const month of [1,3]) {
+    const selected=calculatePerDiem(activeEvents,roster(2032,month));
+    const selectedHtml=renderToStaticMarkup(React.createElement(PerDiemView,{bundle:{roster:roster(2032,month)}}));
+    assert.equal((selectedHtml.match(/class="cz-finance-row"/g)||[]).length,selected.monthlyRows.length);
+    assert.equal(selected.monthlyRows.length,1);
+    assert.match(selectedHtml,/1 item · 1 moeda/,'singular item/currency labels');
+    const dates=[...selectedHtml.matchAll(/data-financial-iso="([^"]+)"/g)].map(match=>match[1]);
+    assert.deepEqual(dates,[month===1?'2032-01-31':'2032-03-01']);
+  }
+
   activeEvents = mixedEvents;
   const mixedHtml = renderToStaticMarkup(React.createElement(PerDiemView,{bundle:{roster:roster(2032,2)}}));
-  assert.match(mixedHtml,/Totais por moeda: Não calculável/);
-  assert.doesNotMatch(mixedHtml,/Totais por moeda: [^<]*R\$ 100,00/);
+  assert.match(mixedHtml,/Previsão do mês: Não calculável/);
+  assert.doesNotMatch(mixedHtml,/Previsão do mês: [^<]*R\$ 100,00/);
 
   const october = periods.observedAllowancePeriods(new Date('2026-10-08T12:00:00'));
   assert.equal(iso(october.accumulation.start), '2026-10-07');
@@ -160,17 +183,17 @@ try {
   assert.equal(periods.observedAllowancePeriods(new Date('2026-10-09T12:00:00')).paymentReferenceToday, null);
   activeEvents = [];
   const html = renderToStaticMarkup(React.createElement(PerDiemView, { bundle: { roster: roster(2032, 2) } }));
-  assert.match(html, /Semana em acumulação/);
+  assert.match(html, /Semana em andamento/);
   assert.match(html, /Sem itens previstos/);
   assert.doesNotMatch(html, /R\$ 0,00|· paga|Ciclo do demonstrativo|Sem diárias confirmadas/);
-  assert.match(html, /não há pagamento confirmado/);
-  assert.match(html, /ainda não homologadas com a empresa/);
+  assert.match(html, /sem confirmação de pagamento/);
+  assert.match(html, /Competência: fevereiro de 2032/);
   context.Date = class extends Date { constructor(...args) { super(...(args.length ? args : ['2032-02-02T12:00:00'])); } };
   activeEvents = [event('2032-01-31', 'INT'), event('2032-02-01')];
   const pendingHtml = renderToStaticMarkup(React.createElement(PerDiemView, { bundle: { roster: roster(2032, 2) } }));
-  assert.match(pendingHtml, /Convertido previsto no mês: R\$ 100,00/);
-  assert.match(pendingHtml, /Semana em acumulação: Câmbio pendente/);
-  assert.match(pendingHtml, /Câmbio pendente nesta semana: USD/);
+  assert.match(pendingHtml, /Convertido em reais no mês: R\$ 100,00/);
+  assert.match(pendingHtml, /Semana em andamento: Câmbio pendente/);
+  assert.match(pendingHtml, /Cotação pendente na semana: USD/);
   assert.doesNotMatch(pendingHtml, /<details[^>]*\bopen/);
   assert.equal(periods.summarizeForecastRows([{ iso: '2032-02-01', currency: 'BRL', value: Infinity, convertedBRL: Infinity }]).convertedTotalBRL, null);
   assert.equal(periods.summarizeForecastRows([{ iso: '2032-02-01', currency: 'BRL', value: 1e308, convertedBRL: 1e308 }, { iso: '2032-02-01', currency: 'BRL', value: 1e308, convertedBRL: 1e308 }]).convertedTotalBRL, null);
