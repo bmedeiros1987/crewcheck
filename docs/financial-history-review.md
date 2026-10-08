@@ -15,9 +15,33 @@ Isolated branch: `feat/finance-statement-history`. Existing dirty checkout and W
 
 `shared/financialReadModel.mjs` is a side-effect-free query contract for the future authenticated producer. It separates forecast, company-statement-reported, and settlement-confirmed states; enforces owner scope; preserves explicit competence, currency, timezone, source ID, rule version and revision history; separates advances; rejects conflicting duplicates; never prorates statement totals. Amounts use integer minor units, with no rounding or exchange conversion. Missing amounts keep the aggregate unknown.
 
+The contract now requires `aggregationLevel` on every record (`item`, `day`,
+`week`); the query selects one level (default `week`) and never adds the others.
+Multiple day/week aggregates for the same exact document/currency/period/status/
+category scope with different IDs are ambiguous and excluded. Item identity is
+still a producer responsibility; different documents and overlapping periods
+must not be represented as independent earnings without verified identity.
+
+Latest revision is resolved before validation. Invalid/unorderable latest data
+quarantines the ID; it cannot silently resurrect an earlier value or payment.
+Invalid distinct records and conflicts make the collection `incomplete`, set
+`publishable: false`, and null all totals, including otherwise valid groups.
+Unambiguous valid historical revisions remain for review. A subsequent valid,
+ordered correction can replace an invalid older revision, whose rejected history
+is still counted separately. Evidence kind/reference participates in duplicate
+identity before private reference projection; structural equality does not
+authenticate a bank receipt. Reconciliation provenance requires nonempty typed
+strings and normalizes their whitespace.
+
 Reconciliation compares already-grouped canonical amounts at item/day/week level. It returns exact differences and requires source and rule version; it does not infer rates or adjust predictions. Stable record IDs must be supplied by the producer: document/page/footer occurrences are not distinct financial records. Corrections retain the same logical ID and increment revision.
 
 The existing PDF rate learner now leaves missing/conflicting declared totals unavailable and deduplicates identical repeated totals. It still returns existing numeric values for compatibility and is not a ledger or exact-money calculation engine.
+
+Every declared-total marker is inspected with a strict positive Brazilian money
+token and exact two decimal digits. Extra decimals, malformed thousands groups,
+negative/missing tokens and numeric overflow force mandatory review and remove
+the total even when another page had a valid positive amount. Explicit zero is
+retained as an actual declared value. Payroll learning is outside this change.
 
 ## Integration contract for parent / #888
 
@@ -27,6 +51,9 @@ The existing PDF rate learner now leaves missing/conflicting declared totals una
 - Forecast records require a rule version, source and timezone; they must come from the existing canonical engine only after sufficient inputs and approved rules. No homologation flag is inferred here.
 - Select full competence periods explicitly. `no_data` has no fabricated zero totals or alerts. Cross-currency totals remain separate. Advances are not subtracted implicitly.
 - `history` retains previous revisions, including periods corrected outside the current query. Conflicting same-revision records are excluded and counted for review.
+- Use `state`/`publishable` before rendering any aggregate. `no_data` and
+  `incomplete` are distinct; the latter has rejection diagnostics and no numeric
+  total suitable for UI/export/chat. Do not replace it with older history.
 
 ## Blocking gaps / next gates
 
@@ -43,6 +70,7 @@ Independent review must verify trusted identity/provenance at future wiring, rev
 ```
 node scripts/regression-financial-read-model.mjs
 node scripts/regression-financial-statement-totals.mjs
+node --test scripts/regression-financial-review-negative.mjs
 npm run check
 npm run build
 ```

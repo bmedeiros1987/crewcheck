@@ -22,5 +22,6 @@ jobs:
       - run: node scripts/v139/apply.mjs
       - run: node scripts/regression-financial-read-model.mjs
       - run: node scripts/regression-financial-statement-totals.mjs
+      - run: node --test scripts/regression-financial-review-negative.mjs
       - run: npx tsc --noEmit
       - run: npx vite build
