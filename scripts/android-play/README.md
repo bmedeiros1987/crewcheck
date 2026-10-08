@@ -65,3 +65,38 @@ the publisher.
 
 References: https://developer.android.com/health-and-fitness/health-connect/publish
 and https://developers.google.com/android-publisher/tracks.
+
+## Mobile-only release preparation (operator decision pending)
+
+`mobile-only-internal.yml` accepts a full reviewed merge SHA and its merged PR number.
+The controller checks that it is current main and requires successful existing Android and web CI on that exact main SHA, plus the
+PR-only phone/watch bridge gate on the exact merged PR head. Missing CI blocks dispatch; do not start or
+repeat paid builds merely to satisfy this gate without operator authorization. The
+controller itself must also receive independent review before it is merged or used.
+
+The single Gradle invocation builds only `:app:assembleRelease :app:bundleRelease`.
+Both actual manifests and signatures must match package, policy and existing upload
+certificate; exported evidence records checksums, source PR/SHA and controller/run IDs.
+An APK signed by the upload key is NOT established as compatible with an installation
+from Play App Signing. Compare its signer with the public Play app-signing certificate,
+and test an in-place update retaining login/local data before distributing it as an
+update. If the certificates differ, use Play-delivered testing updates or an authorized
+Play-signed APK download; do not rotate keys, clear app data or change package IDs.
+
+Before any execution, confirm with Bruno: testing track versus production, approved
+source SHA/controller, versionName, one build's cost, intended APK distribution and
+certificate/update evidence. This controller supports internal testing only; production
+requires a separately reviewed route and explicit approval. The versionCode must be
+allocated later from ALL current tracks and bundles of `com.crewcheck.app` (phone and
+Wear share that namespace), never from the stale 144110 policy or an earlier run.
+Allocation opens/deletes a Play edit and can invalidate another operator's edit: coordinate
+first; even a build-only dispatch is not a purely read-only Play action. No code is
+reserved by this patch. The target code is rechecked before publication; a race blocks.
+
+After authorization, run once with publish=false, retain both verified artifacts/evidence,
+check tester access and data-preserving update, then obtain publication approval for those
+exact bytes. The current combined workflow rebuilds on a later publish=true dispatch;
+therefore do not use a second dispatch to publish the already-reviewed artifacts. A
+separate artifact-consumer dispatch with run/hash provenance remains required before
+that two-stage procedure is executable. Do not use android.yml's three-module publisher
+for a phone-only release. Watch tracks and the watch-face package remain outside this path.
