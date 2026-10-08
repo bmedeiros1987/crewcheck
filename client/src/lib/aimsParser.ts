@@ -640,11 +640,13 @@ function makeAimsPhysicalFlightDay(group: { legs: AimsPhysicalLeg[]; startAbs: n
 }
 
 function aimsPhysicalDaySerial(date: Date): number {
-  return Math.floor(new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime() / 86400000);
+  // This is a civil calendar ordinal, not an instant in the host timezone.
+  return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000);
 }
 
 function dateFromAimsPhysicalAbs(absMinutes: number): Date {
-  return new Date(Math.floor(absMinutes / 1440) * 86400000);
+  const civil = new Date(Math.floor(absMinutes / 1440) * 86400000);
+  return new Date(civil.getUTCFullYear(), civil.getUTCMonth(), civil.getUTCDate());
 }
 
 function compareAimsOperationalDays(a: RosterDay, b: RosterDay): number {
