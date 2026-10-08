@@ -8,7 +8,10 @@ export function startupOwner(): string {
 }
 export function startupKey(): string { return `crewcheck_roster_choice_v1_${encodeURIComponent(startupOwner())}`; }
 function clearEpochKey(): string { return startupKey() + '_clear_epoch'; }
-function clearEpoch(): string { return localStorage.getItem(clearEpochKey()) || ''; }
+function readChoiceRevision(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function clearEpoch(): string { return readChoiceRevision(clearEpochKey()) || ''; }
 export function markStartupCleared(): void {
   if (!startupOwner()) return;
   choiceEpoch += 1;
@@ -16,7 +19,7 @@ export function markStartupCleared(): void {
   localStorage.setItem(startupKey(), JSON.stringify({ owner: startupOwner(), cleared: true }));
   window.dispatchEvent(new CustomEvent('crewcheck:roster-cleared'));
 }
-export function startupIntentRevision(): string { return localStorage.getItem(startupKey() + '_intent_epoch') || ''; }
+export function startupIntentRevision(): string { return readChoiceRevision(startupKey() + '_intent_epoch') || ''; }
 export function isAutomaticRosterNotification(event: Pick<StorageEvent, 'key' | 'newValue'>): boolean {
   const owner = startupOwner();
   if (!owner || event.key !== startupKey()) return false;
@@ -57,10 +60,13 @@ export function beginRosterChoice(): RosterChoiceGuard {
   const epoch = ++choiceEpoch, owner = startupOwner(), token = getToken(), clearRevision = clearEpoch();
   const intentKey = startupKey() + '_intent_epoch';
   const intentRevision = crypto.randomUUID();
-  localStorage.setItem(intentKey, intentRevision);
+  // The in-memory epoch still orders choices when storage is full/restricted.
+  // Retain the prior shared revision so a later foreign-tab write invalidates us.
+  let expectedSharedIntent = readChoiceRevision(intentKey);
+  try { localStorage.setItem(intentKey, intentRevision); expectedSharedIntent = intentRevision; } catch { /* best effort */ }
   window.dispatchEvent(new CustomEvent('crewcheck:roster-choice-start'));
   const canCommit = () => epoch === choiceEpoch && owner === startupOwner() && token === getToken()
-    && clearRevision === clearEpoch() && localStorage.getItem(intentKey) === intentRevision;
+    && clearRevision === clearEpoch() && readChoiceRevision(intentKey) === expectedSharedIntent;
   return Object.assign(canCommit, { finish() {
     if (canCommit()) window.dispatchEvent(new CustomEvent('crewcheck:roster-choice-finished'));
   } });

@@ -90,6 +90,8 @@ if (!home.includes(marker)) {
   home = home.replaceAll("const rosterEvents = useMemo(() => buildLegs(rosterWindow), [rosterWindow]);", "const rosterEvents = useMemo(() => buildLegs(rosterWindowPrimaryRef.current === bundle.roster ? rosterWindow : bundle.roster), [rosterWindow, bundle.roster]);");
   if (!home.includes("openActive: () => { openActiveRoster().then(async active =>")) throw new Error('Display session anchor missing');
   home = home.replaceAll("openActive: () => { openActiveRoster().then(async active =>", "openActive: () => { const canCommit = beginRosterChoice(); openActiveRoster().then(async active =>");
+  if (!home.includes("openActiveRoster().then(async active => { if (active?.roster)")) throw new Error('Active empty-result guard anchor missing');
+  home = home.replaceAll("openActiveRoster().then(async active => { if (active?.roster)", "openActiveRoster().then(async active => { if (!canCommit()) return; if (active?.roster)");
   if (!home.includes("const c = (await recomputeComplianceWithRegulatoryHistory(active.roster)).compliance; setBundle")) throw new Error('Display session anchor missing');
   home = home.replaceAll("const c = (await recomputeComplianceWithRegulatoryHistory(active.roster)).compliance; setBundle", "const c = (await recomputeComplianceWithRegulatoryHistory(active.roster)).compliance; if (!canCommit()) return; setBundle");
   if (!home.includes("  async function importFromTelegram() {\n")) throw new Error('Telegram choice anchor missing');
