@@ -27,6 +27,7 @@ POST_NOTIFICATIONS, but granting it alone cannot produce remote push.
 
 - BIDS acknowledged `*_notified_at` irrespective of sendTelegram result. Now only
   provider acceptance records a marker. Failed/offline/unlinked attempts stay pending.
+  The Telegram helper requires an explicit `ok:true`, rejecting malformed success bodies.
   Returned status is `accepted`, delivered is unknown; old markers are historical
   and cannot prove acceptance or delivery. They are not cleared/replayed automatically.
 - GET and save of BIDS sent external messages. Now those operations only return
@@ -137,7 +138,9 @@ Direct Vite build is blocked by the bundled Node macOS library-validation restri
 when loading the existing Rollup native module (different signing Team IDs), not an
 application diagnostic. No signing/security setting was changed. Android compilation,
 physical delivery, production scheduler/configuration and source verification remain
-unproven; full materializer replay still needs validation. Do not deploy/merge on
+unproven. Full source preparation and unchanged second replay passed in a separate
+task-4 validation checkout; all three new/changed regressions also passed after
+the first preparation. Do not deploy/merge on
 these results alone.
 
 Smallest next step for Bruno: identify whether he opens the installed Android app

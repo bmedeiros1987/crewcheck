@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { dueKind, notifyBidRows } from '../server/v139/bidsNotify.mjs';
 import { buildBidsCalendar } from '../server/v139/bidsCalendar.mjs';
+import { sendTelegram } from '../server/v139/delivery.mjs';
 
 // No credentials, provider, database or recipient: all delivery is injected.
 globalThis.fetch = () => { throw new Error('Real network forbidden in this test'); };
@@ -41,4 +42,11 @@ assert.ok(calendar.includes('DTSTART:20261011T100000Z'));
 assert.ok(calendar.includes('DTEND:20261015T200000Z'));
 assert.ok(!buildBidsCalendar([{ ...row, notify_open: 0, notify_last_day: 0 }], now).includes('VALARM'));
 assert.ok(buildBidsCalendar([{ ...row, title: 'Text\nURL:injected' }], now).includes('Text\\nURL:injected'));
+// Synthetic credentials in this disposable test process; fetch is always fake.
+process.env.TELEGRAM_BOT_TOKEN = 'fake-token-never-sent';
+for (const payload of [{}, { ok: false }, { ok: true }]) {
+  globalThis.fetch = async () => ({ ok: true, json: async () => payload });
+  assert.equal((await sendTelegram('fake-recipient', 'fixture')).ok, payload.ok === true);
+}
+globalThis.fetch = () => { throw new Error('Real network forbidden in this test'); };
 console.log('BIDS delivery regression passed: failures/reconnection, expiry, preferences, owner, dedup, timezone and calendar.');
