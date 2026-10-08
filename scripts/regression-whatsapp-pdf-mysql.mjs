@@ -15,6 +15,10 @@ const mysql = (await import('mysql2/promise')).default;
 const database = `crewcheck_test_whatsapp_${crypto.randomBytes(8).toString('hex')}`;
 const config = { host: '127.0.0.1', port: Number(process.env.CREWCHECK_TEST_MYSQL_PORT || 3306), user: 'crewcheck_fixture', password: process.env.CREWCHECK_TEST_MYSQL_PASSWORD || 'fixture-only', connectionLimit: 8 };
 assert.ok(Number.isInteger(config.port) && config.port > 0 && config.port <= 65535);
+if (process.env.CREWCHECK_TEST_MYSQL_SOCKET) {
+  assert.equal(process.env.CREWCHECK_TEST_MYSQL_SOCKET, '/tmp/crewcheck-whatsapp-qa-socket/mysqld.sock', 'only the disposable CI fixture socket is allowed');
+  config.socketPath = process.env.CREWCHECK_TEST_MYSQL_SOCKET;
+}
 const admin = await mysql.createConnection(config);
 let pool;
 try {
