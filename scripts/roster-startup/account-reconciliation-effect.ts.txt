@@ -1,0 +1,62 @@
+  useEffect(() => {
+    // Account-active refresh is separate from latest-import bootstrap.
+    // Stable lifecycle: automatic cache notifications never restart this reader.
+    let alive = true;
+    let syncing = false;
+    const reconcileActiveRoster = async (reason: 'mount' | 'focus' | 'visible' | 'online' | 'interval') => {
+      if (!alive || syncing || !bundleRef.current.roster.days?.length) return;
+      const guard = captureAutomaticRosterGuard();
+      const bundle = bundleRef.current;
+      const reviewOwner = publicationOwner();
+      const reviewReference = currentPublicationReview()?.publication.revision ?? null;
+      const canCommit = () => alive && guard() && reviewOwner !== null
+        && reviewOwner === publicationOwner() && bundle.roster === bundleRef.current.roster;
+      if (!canCommit()) return;
+      syncing = true;
+      const adopt = async (active: Awaited<ReturnType<typeof openActiveRoster>>) => {
+        if (!canCommit() || !active?.roster?.days?.length) return;
+        assertAutomaticRosterScope(active.roster, bundle.roster, active.summary);
+        // Prepare all async analysis before the fenced local publication/cache commit.
+        const compliance = active.compliance || (await recomputeComplianceWithRegulatoryHistory(active.roster)).compliance;
+        if (!canCommit()) return;
+        const serverRevision = rosterFingerprint(active.roster);
+        const localRevision = rosterFingerprint(bundle.roster);
+        const publishedRevision = publicationSnapshot(buildCanonicalRosterEvents(normalizeRosterDays(active.roster))).revision;
+        const localPublishedRevision = publicationSnapshot(buildCanonicalRosterEvents(normalizeRosterDays(bundle.roster))).revision;
+        const recorded = await recordPublication(reviewOwner, buildCanonicalRosterEvents(normalizeRosterDays(active.roster)), reviewReference, canCommit);
+        if (!recorded || !canCommit() || (serverRevision === localRevision && publishedRevision === localPublishedRevision)) return;
+        preservePlannedRosterBeforeImport(bundle, active.roster);
+        if (!canCommit()) return;
+        saveRoster(active.roster, 'Escala ativa sincronizada', 'automatic');
+        if (!canCommit()) return;
+        setBundle({ roster: active.roster, compliance, source: 'Escala ativa sincronizada' });
+      };
+      try {
+        const active = await openActiveRoster({ requireRemote: true });
+        await adopt(active);
+      } catch (error: any) {
+        const code = String(error?.code || '').toUpperCase();
+        const remote = code === 'ACTIVE_ROSTER_CONFLICT' ? error?.remoteCandidate : null;
+        // Only the already body/period-verified same-period remote candidate can
+        // adjudicate this conflict. API failure/local fallback never reaches here.
+        if (canCommit() && remote?.roster?.days?.length) {
+          try { await adopt(remote); } catch { /* fail closed; retain current choice */ }
+        }
+      } finally { syncing = false; }
+    };
+    void reconcileActiveRoster('mount');
+    const onFocus = () => { void reconcileActiveRoster('focus'); };
+    const onOnline = () => { void reconcileActiveRoster('online'); };
+    const onVisibility = () => { if (document.visibilityState === 'visible') void reconcileActiveRoster('visible'); };
+    const intervalId = window.setInterval(() => { void reconcileActiveRoster('interval'); }, 60000);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('online', onOnline);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      alive = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('online', onOnline);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);

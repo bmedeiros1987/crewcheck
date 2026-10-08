@@ -20,13 +20,13 @@ export function currentPublicationReview(): ReviewState | null {
   return owner ? readReview(localStorage, owner) : null;
 }
 /** Serialize read/modify/write across tabs. Unsupported/blocked storage fails closed. */
-async function mutate(owner: string | null, update: (state: ReviewState | null) => ReviewState | null): Promise<boolean> {
-  if (!owner || owner !== publicationOwner() || !navigator.locks?.request) return false;
+async function mutate(owner: string | null, update: (state: ReviewState | null) => ReviewState | null, canCommit: () => boolean = () => true): Promise<boolean> {
+  if (!owner || owner !== publicationOwner() || !canCommit() || !navigator.locks?.request) return false;
   try {
     return await navigator.locks.request(reviewKey(owner), () => {
-      if (owner !== publicationOwner()) return false;
+      if (owner !== publicationOwner() || !canCommit()) return false;
       const next = update(readReview(localStorage, owner));
-      if (!next) return false;
+      if (!next || !canCommit()) return false;
       if (!writeReview(localStorage, next)) return unavailable(owner);
       failure = null;
       window.dispatchEvent(new Event(notification));
@@ -35,7 +35,7 @@ async function mutate(owner: string | null, update: (state: ReviewState | null) 
   } catch { return unavailable(owner); }
 }
 /** Only confirmed imports or authenticated account publications may call this. Never cache rendering. */
-export function recordPublication(owner: string | null, events: PublishedEvent[], expectedRevision?: string | null) {
+export function recordPublication(owner: string | null, events: PublishedEvent[], expectedRevision?: string | null, canCommit: () => boolean = () => true) {
   const incoming = publication(events);
   return mutate(owner, state => {
     if (expectedRevision !== undefined && (state?.publication.revision ?? null) !== expectedRevision && state?.publication.revision !== incoming.revision) {
@@ -44,7 +44,7 @@ export function recordPublication(owner: string | null, events: PublishedEvent[]
       return null;
     }
     return observePublication(owner!, state, incoming);
-  });
+  }, canCommit);
 }
 export function consultPublicationChange(owner: string, id: number, version: number) {
   return mutate(owner, state => state ? consultedChange(state, owner, id, version) : null);
