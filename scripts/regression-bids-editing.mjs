@@ -8,6 +8,7 @@ async function request(body, { id = '', existing = null, method = 'POST' } = {})
   const db = { query: async (sql, args) => {
     calls.push({ sql, args });
     if (sql.startsWith('SELECT id')) return [existing ? [{ id: existing }] : []];
+    if (sql.startsWith('DELETE')) return [{ affectedRows: 1 }];
     if (sql.startsWith('INSERT')) inserted = { title: args[2], target_month: args[3], open_epoch: args[4], close_epoch: args[5], notify_open: args[7], notify_last_day: args[8] };
     if (sql.startsWith('SELECT title')) return [[inserted]];
     return [[]];
