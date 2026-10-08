@@ -20,7 +20,8 @@ try {
     ? execFileSync('git', ['show', process.env.FINANCIAL_BASELINE_SHA + ':client/src/pages/Home.tsx'], { encoding: 'utf8' })
     : fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
   const ast = ts.createSourceFile('Home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const names = ['rosterFinancialDate', 'perDiemConfig', 'calculatePerDiem', 'PerDiemView', 'moneyBRL', 'moneyCurrency'];
+  const monthlyViewName = home.includes('function PerDiemMonthView(') ? 'PerDiemMonthView' : 'PerDiemView';
+  const names = ['rosterFinancialDate', 'perDiemConfig', 'calculatePerDiem', monthlyViewName, 'moneyBRL', 'moneyCurrency'];
   const functions = ast.statements.filter(statement => ts.isFunctionDeclaration(statement) && names.includes(statement.name?.text));
   assert.equal(functions.length, names.length, 'extract actual production caller functions');
   const learned = ['lunch', 'breakfast'].map((slot, i) => ({ key: 'per_diem.' + slot,
@@ -51,7 +52,7 @@ try {
     BriefcaseBusiness: () => null, CalendarDays: () => null, Plane: () => null, DollarSign: () => null,
   });
   const compiled = ts.transpileModule(functions.map(node => node.getText(ast)).join('\n')
-    + '\nglobalThis.subject = { perDiemConfig, calculatePerDiem, PerDiemView };',
+    + `\nglobalThis.subject = { perDiemConfig, calculatePerDiem, PerDiemView: ${monthlyViewName} };`,
   { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText;
   vm.runInContext(compiled, context);
   const { calculatePerDiem, PerDiemView } = context.subject;

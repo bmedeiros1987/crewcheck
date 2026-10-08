@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import '@/styles/per-diem-content.css';
 import NotificationSoundSetting from '@/components/pulse/NotificationSoundSetting';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
@@ -74,12 +75,16 @@ import { isOperationalCanonicalEvent } from '@/lib/canonicalRoster';
 import { isSmartDepartureEligible, publishedPresentationOf } from '@/lib/scheduleActivityClassification';
 import { resolveActFinancialRules, resolvePerDiemRule, type AirportPerDiemOverrides, type PerDiemCurrency, type PerDiemRateKey } from '@/lib/financialRules';
 import FinancialStatementImporter from '@/components/finance/FinancialStatementImporter';
+import FinancialHistoryExplorer from '@/components/finance/FinancialHistoryExplorer';
+import FinancialStatementReconciliation from '@/components/finance/FinancialStatementReconciliation';
+import { financialRowsInRange, financialWeeks, financialRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
+import { rosterDisplayIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { confirmedRateValueAt } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import { classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
 import { observedAllowancePeriods, rowsInObservedCycle, summarizeForecastRows, summarizeNativeForecastRows, nativeForecastDelta, forecastSummaryValue } from '@/lib/financialForecastPeriods';
-import { financialJourneyGroupKey, rowsForNominalFinancialCompetence } from '@/lib/financialJourneyGrouping';
+import { financialJourneyGroupKey, rowsForNominalFinancialCompetence, nominalFinancialCompetencePrefix } from '@/lib/financialJourneyGrouping';
 import PlatformCenter from '@/components/platform/PlatformCenter';
 import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, getParkingPosition, saveParkingPosition, deleteParkingPosition, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
 import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient';
@@ -2189,7 +2194,7 @@ function financeSnapshot(roster: CrewRoster) {
   const events = buildLegs(roster);
   const perdiem = calculatePerDiem(events, roster);
   const salary = calculateSalary(events, roster);
-  return { perdiem, salary };
+  return { roster, perdiem, salary };
 }
 function notifyCrewCheck(title: string, body: string) {
   const reminder = /despertador|soneca/i.test(title);
@@ -3227,6 +3232,7 @@ type ActCompensationConfig = {
   instructorPerSector: number;
   nightHourMetric: number;
   basePay: number;
+  baseConfigured: boolean;
   fixedAdditions: number;
   inssDeduction: number;
   irrfDeduction: number;
@@ -3237,6 +3243,7 @@ type ActCompensationConfig = {
   requiresManualFunction: boolean;
 };
 type FlightEarningRow = {
+  iso: string;
   id: string;
   date: string;
   flight: string;
@@ -3271,6 +3278,11 @@ type PerDiemRow = {
   source: string;
   airport: string;
   rateKey: PerDiemRateKey;
+  rateSource: string;
+  rateVersion: string;
+  exchangeRate: number | null;
+  calculationStart: string;
+  calculationEnd: string;
 };
 function readNumberSetting(key: string, fallback = 0): number {
   const raw = storage.get(key, String(fallback)).replace(',', '.');
@@ -3348,6 +3360,7 @@ function loadActCompensationConfig(roster: CrewRoster): ActCompensationConfig {
     instructorPerSector,
     nightHourMetric: 0,
     basePay,
+    baseConfigured: readOptionalNumberSetting('crewcheck_salary_base_brl') !== null || learnedBase !== null,
     fixedAdditions,
     inssDeduction,
     irrfDeduction,
@@ -3422,6 +3435,7 @@ function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
     breakfastPercent: act.breakfastPercent,
     domesticBreakfast: domestic.breakfast,
     domesticMainMealSource: domestic.source,
+    domesticBreakfastSource: learnedBreakfast !== null ? 'learned' : domestic.source,
     airportOverrides: loadAirportPerDiemOverrides(),
     source: act.profileLabel + ' · ' + act.legalReference
       + (learnedMeal || learnedBreakfast ? ' · demonstrativo confirmado pelo Admin' : '')
@@ -3435,7 +3449,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
   const pendingAirports = new Set<string>();
   const unclassifiedItems: Array<{ iso: string; airport: string }> = [];
   const usedRateKeys = new Set<PerDiemRateKey>();
-  const add = (event: ZeroLeg, iso: string, slot: string, label: string, source: string) => {
+  const add = (event: ZeroLeg, iso: string, slot: string, label: string, source: string, calculationStart: Date, calculationEnd: Date) => {
     const classification = resolvePerDiemRule(event.origin, event.destination, airportOverrides);
     if (!classification.rateKey) {
       if (classification.airport) pendingAirports.add(classification.airport);
@@ -3473,6 +3487,11 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       source: source + ' · ' + rate.label + ' · ' + classification.reason + ' · ' + cfg.source + ' · vigência consultada em ' + iso,
       airport: classification.airport,
       rateKey: classification.rateKey,
+      rateSource: classification.rateKey === 'domestic' ? (slot === 'breakfast' ? cfg.domesticBreakfastSource : cfg.domesticMainMealSource) : (readOptionalNumberSetting('crewcheck_perdiem_rate_' + classification.rateKey) !== null ? 'manual' : 'act'),
+      rateVersion: cfg.act.version,
+      exchangeRate: rate.currency === 'BRL' ? 1 : fx > 0 ? fx : null,
+      calculationStart: calculationStart.toISOString(),
+      calculationEnd: calculationEnd.toISOString(),
     });
   };
   const operational = events.filter(isOperationalEvent);
@@ -3541,13 +3560,14 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
         const candidateEnd = eventEndDateTime(candidate).getTime() + (index === dutyFlights.length - 1 ? 30 * 60_000 : 0);
         return candidateStart <= windowEnd.getTime() && candidateEnd >= windowStart.getTime();
       }) || (occurrence.slot === 'breakfast' && dutyFlights.at(-1)?.destination?.toUpperCase() === String(roster.base || '').toUpperCase() ? dutyFlights.at(-1)! : representative);
-      add(occurrenceEvent, occurrence.iso, occurrence.slot, labels[occurrence.slot], `${source} · ${occurrence.window}`);
+      add(occurrenceEvent, occurrence.iso, occurrence.slot, labels[occurrence.slot], `${source} · ${occurrence.window}`, start, end);
     }
   }
   const monthlyRows = rowsForNominalFinancialCompetence(rows, roster);
-  const nativeSummary = summarizeNativeForecastRows(monthlyRows, rowsForNominalFinancialCompetence(unclassifiedItems, roster));
+  const monthlyUnclassifiedItems = rowsForNominalFinancialCompetence(unclassifiedItems, roster);
+  const nativeSummary = summarizeNativeForecastRows(monthlyRows, monthlyUnclassifiedItems);
   const totalsByCurrency = nativeSummary.totalsByCurrency as Partial<Record<PerDiemCurrency, number>>;
-  const monthlySummary = summarizeForecastRows(monthlyRows, rowsForNominalFinancialCompetence(unclassifiedItems, roster));
+  const monthlySummary = summarizeForecastRows(monthlyRows, monthlyUnclassifiedItems);
   const pendingCurrencies = monthlySummary.pendingCurrencies;
   const convertedTotalBRL = monthlySummary.convertedTotalBRL;
   const periods = observedAllowancePeriods(now);
@@ -3562,6 +3582,8 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     .join(' · ');
   return {
     rows,
+    unclassifiedItems,
+    monthlyUnclassifiedItems,
     monthlyRows,
     monthly: convertedTotalBRL,
     monthlySummary,
@@ -3630,6 +3652,8 @@ function isSundayOrConfiguredHoliday(event: ZeroLeg): boolean {
 }
 
 function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
+  const competencePrefix = nominalFinancialCompetencePrefix(roster);
+  events = events.filter(event => Boolean(competencePrefix && rosterDisplayIso({ ...event, operationalTimeZone: (event as any).operationalTimeZone || ROSTER_DISPLAY_TIME_ZONE })?.startsWith(competencePrefix + '-')));
   const cfg = loadActCompensationConfig(roster);
   const flightEvents = dedupeProjectedLegs(events.filter((event) => event.kind === 'flight' && !event.placeholder));
   const instructor = storage.get('crewcheck_instructor', '0') !== '0';
@@ -3654,6 +3678,7 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
     return {
       id: event.id,
       date: dateChip(event.date),
+      iso: rosterDisplayIso({ ...event, operationalTimeZone: (event as any).operationalTimeZone || ROSTER_DISPLAY_TIME_ZONE }) || '',
       flight: safe(event.flightNumber, 'Voo'),
       route: safe(event.origin, '—') + ' → ' + safe(event.destination, '—'),
       workType,
@@ -3730,10 +3755,11 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
     configured: cfg.configured,
   };
 }
-function PerDiemView({ bundle }: { bundle: BundleState }) {
+function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabel }: { bundle: BundleState; forecastOverride?: ReturnType<typeof calculatePerDiem> & { scopeIncomplete?: boolean }; controls?: ReactNode; graph?: ReactNode; rangeLabel?: string }) {
   const events = buildLegs(bundle.roster);
   const [revision, setRevision] = useState(0);
-  const forecast = useMemo(() => calculatePerDiem(events, bundle.roster), [bundle.roster, revision]);
+  const calculated = useMemo(() => calculatePerDiem(events, bundle.roster), [bundle.roster, revision]);
+  const forecast = forecastOverride || calculated;
 
   const itemCount = forecast.monthlyRows.length;
   const itemLabel = `${itemCount} ${itemCount === 1 ? 'item' : 'itens'}`;
@@ -3751,17 +3777,20 @@ function PerDiemView({ bundle }: { bundle: BundleState }) {
       if (value !== null) storage.set(key, value.replace(',', '.'));
     });
     setRevision((value) => value + 1);
+    window.dispatchEvent(new CustomEvent('crewcheck:financial-config-changed'));
     toast.success('Câmbio atualizado para esta previsão.');
   }
 
   return <><Brand back/><section className="cc-per-diem-content" aria-label="Previsão de diárias">
     <section className="cz-panel-head cz-panel-head-compact">
       <h1>Diárias</h1>
-      <p className="cc-per-diem-competence">Competência: {competence}</p>
+      {!controls && <p className="cc-per-diem-competence">Competência: {competence}</p>}
+      {rangeLabel && !controls && <p>{rangeLabel}</p>}
       <p>Previsão por moeda, sem confirmação de pagamento.</p>
     </section>
+    {controls}
     <section className="cz-finance-grid cc-per-diem-summary" aria-label="Resumo da competência">
-      <KpiCard icon={BriefcaseBusiness} title="Previsão do mês" value={forecast.currencySummary || 'Sem itens previstos'} detail={forecast.nativeSummary.complete ? `${itemLabel} · ${currencyLabel} · valores na moeda original` : forecast.nativeSummary.state === 'no_data' ? 'Não há diárias previstas nesta competência' : 'Há dados financeiros pendentes nesta competência'}/>
+      <KpiCard icon={BriefcaseBusiness} title={rangeLabel ? 'Previsão do período' : 'Previsão do mês'} value={forecast.currencySummary || 'Sem itens previstos'} detail={forecast.nativeSummary.complete ? `${itemLabel} · ${currencyLabel} · valores na moeda original` : forecast.nativeSummary.state === 'no_data' ? 'Não há diárias previstas nesta competência' : 'Há dados financeiros pendentes nesta competência'}/>
     </section>
     {forecast.pendingCurrencies.length > 0 && <section className="cz-toolbox cz-finance-attention">
       <h2>Câmbio necessário</h2>
@@ -3770,21 +3799,22 @@ function PerDiemView({ bundle }: { bundle: BundleState }) {
     </section>}
     {!forecast.nativeSummary.complete && forecast.nativeSummary.state !== 'no_data' && <section className="cz-toolbox cz-finance-attention">
       <h2>Dados financeiros pendentes</h2>
-      <p>Há itens sem classificação ou valores válidos. Confira a origem antes de usar o total.</p>
+      <p>{forecastOverride?.scopeIncomplete ? 'Há períodos sem escala disponível ou datas inválidas. O total não foi presumido.' : 'Há itens sem classificação ou valores válidos. Confira a origem antes de usar o total.'}</p>
     </section>}
+    {graph}
     <details className="cz-toolbox cc-per-diem-periods">
-      <summary>Conversão e semanas de referência</summary>
+      <summary>{forecastOverride ? 'Conversão da previsão' : 'Conversão e semanas de referência'}</summary>
       <section className="cz-finance-grid" aria-label="Previsões convertidas">
-        <KpiCard icon={CalendarDays} title="Convertido em reais no mês" value={forecastSummaryValue(forecast.monthlySummary, moneyBRL)} detail={forecast.pendingCurrencies.length ? 'Cotação pendente: ' + forecast.pendingCurrencies.join(', ') : 'Competência: ' + competence}/>
-        <KpiCard icon={Plane} title="Semana em andamento" value={forecastSummaryValue(forecast.weeklySummary, moneyBRL)} detail={`${dateChip(forecast.cycle.start)}–${dateChip(forecast.cycle.end)}`}/>
+        <KpiCard icon={CalendarDays} title={forecastOverride ? 'Convertido em reais no período' : 'Convertido em reais no mês'} value={forecastSummaryValue(forecast.monthlySummary, moneyBRL)} detail={forecast.pendingCurrencies.length ? 'Cotação pendente: ' + forecast.pendingCurrencies.join(', ') : forecastOverride ? (rangeLabel || 'Intervalo selecionado') : 'Competência: ' + competence}/>
+        {!forecastOverride && <KpiCard icon={Plane} title="Semana em andamento" value={forecastSummaryValue(forecast.weeklySummary, moneyBRL)} detail={`${dateChip(forecast.cycle.start)}–${dateChip(forecast.cycle.end)}`}/>}
       </section>
-      <p>A semana vai de quarta a terça e pode cruzar o mês selecionado.</p>
-      <p>Semana anterior ({dateChip(forecast.periods.previous.start)}–{dateChip(forecast.periods.previous.end)}): {forecastSummaryValue(forecast.previousWeeklySummary, moneyBRL)}.</p>
-      {forecast.weeklySummary.pendingCurrencies.length > 0 && <p>Cotação pendente na semana: {forecast.weeklySummary.pendingCurrencies.join(', ')}.</p>}
+      <p>{forecastOverride ? 'Conversão com as cotações configuradas nesta consulta; não comprova câmbio histórico ou pagamento.' : 'A semana vai de quarta a terça e pode cruzar o mês selecionado.'}</p>
+      {!forecastOverride && <p>Semana anterior ({dateChip(forecast.periods.previous.start)}–{dateChip(forecast.periods.previous.end)}): {forecastSummaryValue(forecast.previousWeeklySummary, moneyBRL)}.</p>}
+      {!forecastOverride && forecast.weeklySummary.pendingCurrencies.length > 0 && <p>Cotação pendente na semana: {forecast.weeklySummary.pendingCurrencies.join(', ')}.</p>}
     </details>
     <details className="cz-finance-table cc-per-diem-items">
       <summary><h2>Itens previstos</h2><span>{itemLabel}</span></summary>
-      <p className="cc-per-diem-scope">Competência: {competence}. Os itens abaixo pertencem ao mês selecionado.</p>
+      <p className="cc-per-diem-scope">{rangeLabel || `Competência: ${competence}. Os itens abaixo pertencem ao mês selecionado.`}</p>
       {forecast.monthlyRows.length ? forecast.monthlyRows.map((row, index) =>
         <div className="cz-finance-row" data-financial-iso={row.iso} data-financial-currency={row.currency} key={row.iso + '-' + row.label + '-' + index}>
           <span>{row.date}</span>
@@ -3797,58 +3827,45 @@ function PerDiemView({ bundle }: { bundle: BundleState }) {
   </section></>;
 }
 
-function SalaryReliableView({ bundle }: { bundle: BundleState }) {
-  const events = buildLegs(bundle.roster);
-  const compliance = currentCompliance(bundle);
-  const salary = useMemo(() => calculateSalary(events, bundle.roster), [bundle.roster]);
-  const variable = salary.production + salary.chief + salary.instructorPay + salary.reserve + salary.standby;
-  const deductions = salary.inss + salary.irrf + salary.otherDeductions;
-
-  return <><Brand back/>
-    <section className="cz-panel-head cz-panel-head-compact">
-      <h1>Salário</h1>
-      <p>Previsão auditável por voo e função.</p>
-    </section>
-    <section className="cz-finance-grid">
-      <KpiCard icon={DollarSign} title="Bruto previsto" value={salary.configured ? moneyBRL(salary.gross) : 'Calibração pendente'} detail={salary.kmTotal + ' km · ' + salary.sectors + ' setores'}/>
-      <KpiCard icon={DollarSign} title="Líquido previsto" value={salary.configured ? moneyBRL(salary.net) : 'Calibração pendente'} detail={moneyBRL(deductions) + ' em descontos informados'}/>
-      <KpiCard icon={Plane} title="Parcela variável" value={moneyBRL(variable)} detail="voos + reserva + sobreaviso + adicionais"/>
-    </section>
-    {salary.config.requiresManualFunction && <section className="cz-toolbox cz-finance-attention"><h2>Função pendente</h2><p>Confirme Comandante/Copiloto e aeronave nas configurações administrativas antes de usar a previsão.</p></section>}
-    <section className="cz-finance-table">
-      <h2>Ganhos variáveis por voo</h2>
-      {salary.rows.length ? salary.rows.slice(0, 40).map((row) =>
-        <div className={'cz-finance-row ' + (row.workType === 'PS' ? 'work-ps' : row.workType === 'OP' ? 'work-op' : '')} key={row.id}>
-          <span>{row.date}</span>
-          <strong>{row.flight} · {workTypeLabel(row.workType)} · {row.route}</strong>
-          <small>{row.dayKm + ' km diurno × ' + moneyBRL(row.dayRateApplied)
-            + '/km · ' + row.nightKm + ' km noturno × ' + moneyBRL(row.nightRateApplied)
-            + '/km · ' + row.payRule
-            + ' · ' + (row.chiefEligible ? '1º CCM identificado' : 'sem adicional de chefe')}</small>
-          <b>{moneyBRL(row.total)}</b>
-        </div>
-      ) : <article className="cz-empty-real"><DollarSign/><h2>Sem voos detectados</h2><p>Importe a escala oficial para relacionar os setores aos valores vigentes.</p></article>}
-    </section>
-    <section className="cz-finance-table">
-      <h2>Composição rastreável</h2>
-      <div className="cz-finance-row"><span>Salário-base</span><strong>Calibrado</strong><small>valor confirmado pelo administrador</small><b>{moneyBRL(salary.config.basePay)}</b></div>
-      <div className="cz-finance-row"><span>Adicionais fixos</span><strong>Calibrados</strong><small>valor vigente</small><b>{moneyBRL(salary.config.fixedAdditions)}</b></div>
-      <div className="cz-finance-row"><span>Produtividade diurna</span><strong>{salary.dayKmTotal} km</strong><small>cada KM classificado uma única vez</small><b>{moneyBRL(salary.dayProduction)}</b></div>
-      <div className="cz-finance-row"><span>Produtividade noturna</span><strong>{salary.nightKmTotal} km</strong><small>janela local 22:00–05:00</small><b>{moneyBRL(salary.nightProduction)}</b></div>
-      <div className="cz-finance-row"><span>Reserva</span><strong>{salary.reserveHours.toFixed(1)} h</strong><small>{moneyBRL(salary.config.reserveHourMetric)}/h · sem dobra</small><b>{moneyBRL(salary.reserve)}</b></div>
-      <div className="cz-finance-row"><span>Sobreaviso</span><strong>{salary.standbyHours.toFixed(1)} h</strong><small>{moneyBRL(salary.config.standbyHourMetric)}/h · sem dobra</small><b>{moneyBRL(salary.standby)}</b></div>
-      <div className="cz-finance-row"><span>Chefe / instrutor</span><strong>{salary.chiefSectors} setor(es)</strong><small>atividade em solo não recebe dobra de KM</small><b>{moneyBRL(salary.chief + salary.instructorPay)}</b></div>
-      <div className="cz-finance-row muted"><span>INSS</span><strong>Informado</strong><small>não calculado por tabela presumida</small><b>-{moneyBRL(salary.inss)}</b></div>
-      <div className="cz-finance-row muted"><span>IRRF</span><strong>Informado</strong><small>não calculado por tabela presumida</small><b>-{moneyBRL(salary.irrf)}</b></div>
-      <div className="cz-finance-row muted"><span>Outros descontos</span><strong>Informados</strong><small>benefícios, consignados ou ajustes</small><b>-{moneyBRL(salary.otherDeductions)}</b></div>
-      {salary.config.fgtsRate > 0 && <div className="cz-finance-row"><span>FGTS</span><strong>{salary.config.fgtsRate}%</strong><small>informativo; não descontado do líquido</small><b>{moneyBRL(salary.fgts)}</b></div>}
-    </section>
-    <section className="cz-toolbox cz-finance-reliability">
-      <ShieldCheck/><div><h2>Conferência</h2><p>{actionableComplianceAlerts(compliance).length} alerta(s) operacional(is). Reserva e sobreaviso permanecem em valor simples. Voo extra/DFS ou acionado usa a tarifa superior uma única vez, sem redobrar o trecho noturno.</p></div>
-    </section>
-  </>;
+function scopedFinancialForecast(snapshots: ReturnType<typeof financeSnapshot>[], range: FinancialRange, missing: string[]) {
+  const base = snapshots[0]?.perdiem || {};
+  const rows = financialRowsInRange(snapshots.flatMap(snapshot => snapshot.perdiem.monthlyRows), range);
+  const unclassifiedItems = financialRowsInRange(snapshots.flatMap(snapshot => snapshot.perdiem.monthlyUnclassifiedItems), range);
+  const native = summarizeNativeForecastRows(rows, unclassifiedItems), converted = summarizeForecastRows(rows, unclassifiedItems);
+  const scopeIncomplete = !range.valid || missing.length > 0;
+  const nativeSummary = scopeIncomplete ? { ...native, complete:false, totalsByCurrency:{}, state:'unclassified' } : native;
+  const monthlySummary = scopeIncomplete ? { ...converted, convertedComplete:false, convertedTotalBRL:null, state:'invalid_amount' } : converted;
+  const currencySummary = !nativeSummary.complete ? (nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável') : Object.entries(nativeSummary.totalsByCurrency).map(([currency,value])=>moneyCurrency(value,currency as PerDiemCurrency)).join(' · ');
+  return { ...base, rows, monthlyRows:rows, unclassifiedItems, monthlyUnclassifiedItems:unclassifiedItems, nativeSummary, monthlySummary, monthly:monthlySummary.convertedTotalBRL, currencySummary, totalsByCurrency:nativeSummary.totalsByCurrency, currencyCount:Object.keys(nativeSummary.totalsByCurrency).length, pendingCurrencies:monthlySummary.pendingCurrencies, convertedComplete:monthlySummary.convertedComplete, scopeIncomplete } as ReturnType<typeof calculatePerDiem> & { scopeIncomplete:boolean };
 }
-
+function PerDiemView({ bundle }: { bundle: BundleState }) {
+  return <FinancialHistoryExplorer roster={bundle.roster} calculate={financeSnapshot} mode="allowance" metric={snapshot=>snapshot.perdiem.nativeSummary.totalsByCurrency} rangeMetric={(snapshot,range)=>scopedFinancialForecast([snapshot],range,[]).nativeSummary.totalsByCurrency}
+    weeks={(snapshots,range)=>financialWeeks(range).map(week=>({range:week,value:scopedFinancialForecast(snapshots,week,[]).currencySummary}))}
+    render={({snapshots,range,missing,controls,graph,coverageReady,requestRange})=>{
+      const forecast = scopedFinancialForecast(snapshots.map(item=>item.snapshot),range,missing);
+      const selected = snapshots.find(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`===range.start.slice(0,7)) || {roster:bundle.roster,source:bundle.source};
+      const knownPeriods = new Set(snapshots.map(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`));
+      const auditRows = snapshots.flatMap(item=>item.snapshot.perdiem.monthlyRows);
+      return <PerDiemMonthView bundle={{...bundle,roster:selected.roster,source:selected.source}} forecastOverride={forecast} rangeLabel={`Trabalho: ${range.start} até ${range.end}`} controls={controls} graph={<>{graph}<FinancialStatementReconciliation requestRange={requestRange} coveredMonths={coverageReady?[...knownPeriods]:[]} rows={auditRows} unclassified={snapshots.flatMap(item=>item.snapshot.perdiem.unclassifiedItems)}/></>}/>;
+    }}/>
+}
+function SalaryReliableView({ bundle }: { bundle: BundleState }) {
+  return <FinancialHistoryExplorer roster={bundle.roster} calculate={financeSnapshot} mode="salary" rangeMetric={(snapshot,range):Record<string,number>=>range.valid&&range.start.endsWith('-01')&&range.end===financialRange('month',range.end.slice(0,7),'','','').end&&snapshot.roster.days.length>0&&snapshot.salary.configured&&snapshot.salary.config.baseConfigured?{BRL:snapshot.salary.gross}:{}} metric={(snapshot): Record<string, number> => snapshot.roster.days.length>0 && snapshot.salary.configured && snapshot.salary.config.baseConfigured ? {BRL:snapshot.salary.gross} : {}}
+    render={({snapshots,range,missing,controls,graph})=>{
+      const fullMonths = range.valid && range.start.endsWith('-01') && range.end===financialRange('month',range.end.slice(0,7),'','','').end;
+      const selected = snapshots.filter(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`>=range.start.slice(0,7)&&`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`<=range.end.slice(0,7));
+      const available = fullMonths && !missing.length && selected.length>0 && selected.every(item=>item.snapshot.salary.configured&&item.snapshot.salary.config.baseConfigured&&item.roster.days.length>0);
+      const gross = available ? selected.reduce((sum,item)=>sum+item.snapshot.salary.gross,0) : null;
+      const rows = financialRowsInRange(snapshots.flatMap(item=>item.snapshot.salary.rows),range);
+      return <><Brand back/><section className="cc-per-diem-content cc-salary-history" aria-label="Previsão salarial">
+        <section className="cz-panel-head cz-panel-head-compact"><h1>Salário</h1><p>Trabalho: {range.start} até {range.end}. Previsão por competência, sem confirmação de pagamento.</p></section>
+        {controls}<section className="cz-finance-grid cc-per-diem-summary"><KpiCard icon={DollarSign} title="Bruto previsto no período" value={gross===null?'Não calculável':moneyBRL(gross)} detail={fullMonths?'Salário-base exige fonte ou calibração; somente competências completas são somadas.':'A fonte mensal não permite distribuir salário-base e descontos por semana.'}/></section>
+        {graph}
+        <details className="cz-toolbox"><summary>Composição mensal e descontos informados</summary>{selected.length?selected.map(item=>{const salary=item.snapshot.salary;return <article key={`${item.roster.year}-${item.roster.month}`}><h2>{item.roster.month}/{item.roster.year}</h2><p>Fonte operacional: {item.source}. {salary.config.source}</p><p>Salário-base: {salary.config.baseConfigured?moneyBRL(salary.config.basePay):'Não informado'}. Fixos informados: {moneyBRL(salary.config.fixedAdditions)}.</p><p>Variáveis: voos {moneyBRL(salary.production)}, chefe/instrutor {moneyBRL(salary.chief+salary.instructorPay)}, reserva {moneyBRL(salary.reserve)}, sobreaviso {moneyBRL(salary.standby)}.</p><p>Descontos informados: INSS {moneyBRL(salary.inss)}, IRRF {moneyBRL(salary.irrf)}, outros {moneyBRL(salary.otherDeductions)}. Líquido simulado da competência: {salary.config.baseConfigured?moneyBRL(salary.net):'Não calculável'}.</p><p>Valores integrais da competência, sem rateio pelo filtro de dias.</p></article>}):<p>Nenhuma competência disponível.</p>}</details>
+        <details className="cz-finance-table cc-per-diem-items"><summary>Componentes por voo no intervalo · {rows.length} itens</summary><p className="finance-learning-notice warning" data-km-source="operational-estimate">KM exibido nesta previsão é uma estimativa operacional pela distância entre aeroportos. A quilometragem remunerável da folha pode usar a tabela corporativa por trecho; confira o extrato/AIMS.</p><p>Somente as parcelas com vínculo a um voo. Salário-base, reserva, sobreaviso e descontos mensais não são rateados.</p>{rows.length?rows.map(row=><div className="cz-finance-row" key={row.id}><span>{row.iso}</span><strong>{row.flight} · {row.route}</strong><b>{moneyBRL(row.total)}</b><details className="cc-per-diem-source"><summary>Origem e regra</summary><small>{row.dayKm} km diurno × {moneyBRL(row.dayRateApplied)} · {row.nightKm} km noturno × {moneyBRL(row.nightRateApplied)} · {row.payRule} · {row.source}</small></details></div>):<p>Sem parcelas por voo disponíveis no intervalo.</p>}</details>
+      </section></>;
+    }}/>
+}
 function ReportsView({ bundle }: { bundle: BundleState }) {
   const compliance = currentCompliance(bundle);
   return <><Brand back/><section className="cz-panel-head"><h1>Relatórios</h1><p>Indicadores premium de jornada, repouso, horas, carga, academia, rotina e alertas.</p></section><section className="cz-report-grid"><article><h2>Conformidade</h2><strong>{(compliance as any).score ?? '—'}/100</strong><p>{(compliance as any).summary || 'Resumo indisponível'}</p></article><article><h2>Carga</h2><strong>{(compliance as any).loadAnalysis?.intensityScore ?? '—'}</strong><p>Índice de intensidade da escala.</p></article><article><h2>Alertas</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Itens confirmados e para revisão.</p></article></section></>;

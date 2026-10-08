@@ -19,6 +19,8 @@ export interface StatementLearningResult {
   kind: StatementKind;
   competence: string;
   paymentDate?: string;
+  periodStart?: string;
+  periodEnd?: string;
   employeeName?: string;
   rates: LearnedRate[];
   totals: Record<string, number>;
@@ -126,7 +128,7 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
   if (invalidDepositedTotal) warnings.push('Total depositado com formato inválido; revisão obrigatória.');
   if (!depositedTotals.size) warnings.push('Total depositado não identificado.');
   const deposited = !invalidDepositedTotal && depositedTotals.size === 1 ? [...depositedTotals][0] / 100 : undefined;
-  return { kind: 'per_diem', competence: start.slice(0, 7), paymentDate: payment?.[1], rates, totals: deposited === undefined ? {} : { deposited }, warnings };
+  return { kind: 'per_diem', competence: start.slice(0, 7), periodStart: start || undefined, periodEnd: end || undefined, paymentDate: payment?.[1], rates, totals: deposited === undefined ? {} : { deposited }, warnings };
 }
 
 const PAYROLL_KEYS: Array<[RegExp, string, string, LearnedRate['unit']]> = [

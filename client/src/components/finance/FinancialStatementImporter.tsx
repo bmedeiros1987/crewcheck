@@ -10,7 +10,7 @@ import {
   type StatementLearningResult,
 } from '@/lib/financialStatementLearning';
 
-async function extractPdfText(file: File): Promise<string> {
+export async function extractPdfText(file: File): Promise<string> {
   const module: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const pdfjs = module.default || module;
   if (pdfjs.GlobalWorkerOptions) pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
