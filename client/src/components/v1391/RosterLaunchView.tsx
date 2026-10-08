@@ -1,5 +1,6 @@
 import { rosterDisplayCompare, rosterDisplayIso, rosterInstantIso, rosterLabelDate, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { useEffect, useMemo, useState } from 'react';
+import { summarizeForecastRows } from '@/lib/financialForecastPeriods';
 import { peekPendingNavigationContext } from '@/lib/navigationContext';
 import { consumePendingRosterFocus } from '@/lib/rosterFocus';
 import {
@@ -83,7 +84,8 @@ type FlightEarningItem = {
 type RosterFinance = {
   perdiem?: {
     rows?: PerDiemItem[];
-    monthly?: number;
+    monthly?: number | null;
+    monthlySummary?: ReturnType<typeof summarizeForecastRows>;
     currencySummary?: string;
     pendingCurrencies?: string[];
   };
@@ -203,8 +205,9 @@ function mealIcon(label: string) {
   return <Utensils/>;
 }
 
-function money(value: number) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
+function money(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return 'Não calculável';
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 }
 
 function currencyMoney(value: number, currency = 'BRL') {
@@ -324,8 +327,9 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
   const stays = ordered.filter((event) => workMode(event) === 'stay').length;
   const production = selectedSalaryRows.reduce((sum, row) => sum + Number(row.total || 0), 0);
   const totalKm = selectedSalaryRows.reduce((sum, row) => sum + Number(row.km || 0), 0);
-  const perDiemTotal = selectedPerDiemRows.reduce((sum, row) => sum + Number(row.convertedBRL || 0), 0);
-  const pendingCurrencies = Array.from(new Set(selectedPerDiemRows.filter((row) => row.convertedBRL === null).map((row) => row.currency)));
+  const perDiemSummary = scopedFinance?.perdiem?.monthlySummary ?? summarizeForecastRows(selectedPerDiemRows);
+  const perDiemTotal = perDiemSummary.convertedTotalBRL;
+  const pendingCurrencies = perDiemSummary.pendingCurrencies;
   const dutyHours = ordered.filter((event) => !['stay', 'rest', 'journey-rest'].includes(workMode(event))).reduce((sum, event) => sum + duration(event), 0);
   const todayIso = isoFromDate(new Date());
 

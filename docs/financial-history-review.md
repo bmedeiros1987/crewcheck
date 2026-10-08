@@ -37,6 +37,35 @@ Reconciliation compares already-grouped canonical amounts at item/day/week level
 
 The existing PDF rate learner now leaves missing/conflicting declared totals unavailable and deduplicates identical repeated totals. It still returns existing numeric values for compatibility and is not a ledger or exact-money calculation engine.
 
+## Forecast caller corrections
+
+`perDiemConfig` now requires the occurrence date, and `calculatePerDiem` invokes
+it inside the item producer. Rate learning and the existing date-aware resolver
+are reused unchanged; no new tariff or ACT is introduced. A month-first anchor
+can no longer skip an in-month effective period or extend it after expiry.
+After-midnight meal occurrences consult and display their own civil date. Row
+provenance includes the actual consulted date and existing rule/rate source.
+
+`financialForecastPeriods.ts` summarizes each period's own selected rows and
+unclassified items. A week's FX completeness no longer comes from nominal-month
+rows. Empty, unclassified, invalid and missing-exchange totals are unavailable,
+never sums with missing values coerced to zero. The existing numerical/FX money
+policy is retained; this correction does not certify company rounding rules.
+
+The legacy observed calendar returns accumulating and previous weeks separately;
+its optional payment-date reference never establishes settlement. Existing
+Diárias UI now labels the accumulating week as an estimated legacy cycle,
+displays missing data/FX honestly, and keeps previous week/origin under closed
+details. Forecasts are explicitly not company-homologated. There is no official
+payment-today amount or confirmed financial history without a trusted source.
+No new home card, chart, official export or CrewCierge activation is included.
+
+The existing roster finance summary accepts nullable totals and consumes the
+same month summary (including unknown classifications). Its fallback uses the
+same period helper, and its formatter no longer turns unavailable totals into
+zero or renders the sum of only converted rows. Existing adjacent-competence
+guards remain intact; roster layout/styles/navigation are unchanged.
+
 Every declared-total marker is inspected with a strict positive Brazilian money
 token and exact two decimal digits. Extra decimals, malformed thousands groups,
 negative/missing tokens and numeric overflow force mandatory review and remove
@@ -50,14 +79,16 @@ retained as an actual declared value. Payroll learning is outside this change.
 - UI, export and CrewCierge should consume the same result and `financialStatusLabel`; deny visitors before retrieving data and revalidate owner/binding before sending. No transport changes are included here.
 - Forecast records require a rule version, source and timezone; they must come from the existing canonical engine only after sufficient inputs and approved rules. No homologation flag is inferred here.
 - Select full competence periods explicitly. `no_data` has no fabricated zero totals or alerts. Cross-currency totals remain separate. Advances are not subtracted implicitly.
-- `history` retains previous revisions, including periods corrected outside the current query. Conflicting same-revision records are excluded and counted for review.
+- Valid historical revisions in the requested scope remain reviewable even when
+  current data is quarantined. The trusted repository retains complete correction
+  history; this scoped response does not replace that archive.
 - Use `state`/`publishable` before rendering any aggregate. `no_data` and
   `incomplete` are distinct; the latter has rejection diagnostics and no numeric
   total suitable for UI/export/chat. Do not replace it with older history.
 
 ## Blocking gaps / next gates
 
-No authenticated ingestion, persistence, history UI, export, chart, or live CrewCierge financial integration was implemented. A source of actual company statements/settlements and ownership must be established first. No migrations, production writes, new rates or ACT changes were made.
+No authenticated ingestion, persistence, official history UI, export, chart, or live CrewCierge financial integration was implemented. A source of actual company statements/settlements and ownership must be established first. Only existing forecast UI labels and folded previous-week details changed. No migrations, production writes, new rates or ACT changes were made.
 
 The Library resolved the reference filename, but its current official materialization transfer returned HTTP 403, so no PDF bytes or pixels were inspected locally. Visual adaptation is blocked; parent observations are context only. No private document or financial data is included in this repository. Tests use synthetic 2032 data.
 
@@ -71,6 +102,10 @@ Independent review must verify trusted identity/provenance at future wiring, rev
 node scripts/regression-financial-read-model.mjs
 node scripts/regression-financial-statement-totals.mjs
 node --test scripts/regression-financial-review-negative.mjs
+TZ=UTC node scripts/regression-financial-callers.mjs
+TZ=America/Sao_Paulo node scripts/regression-financial-callers.mjs
+TZ=America/New_York node scripts/regression-financial-callers.mjs
+node scripts/regression-p0-530-finance-canonical-journey.mjs
 npm run check
 npm run build
 ```
@@ -83,3 +118,12 @@ large-chunk warning). Local dependencies were reused read-only from the existing
 checkout and may differ from the lockfile; CI `npm ci` remains the exact dependency
 gate. Vite used `--configLoader runner` to avoid writing into shared dependencies.
 No mobile/desktop feature QA or independent approval is claimed.
+
+The new caller regression extracts and executes actual production TSX functions
+using synthetic rule/storage/event boundaries and the real date-aware resolver,
+rate selector, allowance windows and period helpers. It fails against the base
+caller before the correction and covers effective-date boundaries, midnight,
+both directions of month crossing, missing FX outside/inside the week, no data,
+unclassified rows and rendered forecast component text. Three TZ runs test
+calendar stability, not full provider/timezone homologation. Static component
+rendering does not replace responsive browser/device QA.
