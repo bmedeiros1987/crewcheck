@@ -1,3 +1,4 @@
+import * as testSendPolicy from '../server/concierge/whatsapp-test-send-policy.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -79,7 +80,7 @@ function harness() {
   const trace = { input: [], core: [], gyms: [], saves: [], search: [], output: [] };
   const partner = { id: 'synthetic', name: 'Synthetic gym', city: 'Guarulhos', state: 'SP', minimumPlan: 'basic', activities: ['Pilates'], openingHours: [], sourceUrl: 'https://example.invalid/synthetic' };
   let appResponse;
-  const context = vm.createContext({
+  const context = vm.createContext({ ...testSendPolicy,
     normalizeConciergeNaturalTextV14338, interpretConciergeNaturalTextV14338, buildConciergeContextV14338, isConciergeContextFreshV14338,
     ...wellhub, ...preferences, ...language, ...human, ...premium, ...intents,
     normalizeConciergePreferencesV14336: personality.normalizeConciergePreferences,

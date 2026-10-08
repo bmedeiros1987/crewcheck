@@ -14,10 +14,11 @@ if (!source.includes(gateMarker)) {
   // Keep the original branch intact: OFF must execute the same protected handler,
   // including account linking, provider calls and message count.
   source = source.slice(0, insertion) + `  if (menuEnabled) {
+    if (!whatsappTestMenuCommandAllowed(message)) return;
     await deliverWhatsAppMenuMessage(message, {
       findLink: findActiveLinkByPhone,
       handler: whatsappConciergeHandler,
-      send: (to, text, options) => sendWhatsAppText(to, text, { ...options, expectedPhoneNumberId }),
+      send: (to, text, options) => sendWhatsAppText(to, text, { ...options, expectedPhoneNumberId, testReplyPath: 'menu' }),
     });
     return;
   }

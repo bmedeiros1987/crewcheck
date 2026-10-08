@@ -1,3 +1,4 @@
+import * as testSendPolicy from '../server/concierge/whatsapp-test-send-policy.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -119,7 +120,7 @@ const whatsapp = fs.readFileSync('server/whatsapp.mjs', 'utf8');
 const runtime = whatsapp.slice(whatsapp.indexOf('let whatsappPdfConfiguration'), whatsapp.indexOf('\nfunction envAny('));
 const notification = whatsapp.slice(whatsapp.indexOf('async function handleNotification('), whatsapp.indexOf('\nasync function handleLinkStart('));
 let configuredEnabled = true, scheduled = [], acknowledgements = [], raw, poolUnavailable = false;
-const context = vm.createContext({ console: { warn() {}, error() {} }, crypto, Buffer,
+const context = vm.createContext({ ...testSendPolicy, console: { warn() {}, error() {} }, crypto, Buffer,
   whatsappPdfEnabled: () => configuredEnabled, enqueuePdfJob, runPdfJobs,
   extractWhatsAppInboundMessages, phoneNumberId: () => '200', privateHash: enqueueDeps.phoneHash, encryptPhone: enqueueDeps.encryptPhone,
   setInterval: () => ({ unref() {} }), phoneEncryptionKey: () => null,
@@ -148,7 +149,7 @@ assert.equal(acknowledgements.at(-1).status, 200); assert.equal(state.size, 0);
 
 const processSource = whatsapp.slice(whatsapp.indexOf('async function processWhatsAppPayload('), whatsapp.indexOf('function webhookHealth('));
 let ordinaryClaims = 0, ordinaryDispatch = 0;
-const processing = vm.createContext({ whatsappPdfEnabled: () => true, whatsappPdfConfiguration: {},
+const processing = vm.createContext({ ...testSendPolicy, whatsappPdfEnabled: () => true, whatsappPdfConfiguration: {},
   extractWhatsAppInboundMessages, extractWhatsAppEvents, extractWhatsAppStatusDiagnostics,
   payloadHash: () => 'fixture-hash', claimInMemory: () => { ordinaryClaims++; return true; }, claimPersistentEvent: async () => true,
   handleInboundMessage: async () => { ordinaryDispatch++; }, console: { info() {}, warn() {} },
@@ -162,7 +163,7 @@ assert.equal(ordinaryClaims, 0); assert.equal(ordinaryDispatch, 0, 'PDF must not
 const server = fs.readFileSync('server.mjs', 'utf8');
 const helper = server.slice(server.indexOf('function buildCanonicalWhatsAppPdfSnapshot('), server.indexOf('async function conciergeMergeChatSnapshot('));
 let localCalls = 0;
-const canonical = vm.createContext({ whatsappPdfEnabled: () => true, readDurableSnapshot, writeDurableSnapshot, seedDurableSnapshot,
+const canonical = vm.createContext({ ...testSendPolicy, whatsappPdfEnabled: () => true, readDurableSnapshot, writeDurableSnapshot, seedDurableSnapshot,
   conciergeDbPool: async () => pool, conciergeSafeKey: value => String(value || '').trim().toLowerCase(),
   conciergeSnapshotForProfile: () => { localCalls++; return { roster: { days: [{ date: 'OLD-CACHE' }] } }; },
   conciergeSaveSnapshot: () => { localCalls++; throw Error('File fallback must not run in PDF mode'); },

@@ -36,12 +36,12 @@ async function drainWhatsAppPdfJobs() {
         download: (document, receiver) => downloadWhatsAppPdf(document, { token: accessToken(), receiver, version: graphVersion() }),
         commit: input => commitWhatsAppPdf(pool, input, { phoneHash: privateHash, receiver: phoneNumberId, buildSnapshot: whatsappPdfConfiguration.buildSnapshot }),
       }),
-      confirm: (phone, id, receiver, result) => sendWhatsAppText(phone, result.ok
+      confirm: (phone, id, receiver, result, metadata) => withWhatsAppTestReply({ from: phone, id, phoneNumberId: receiver, timestamp: metadata?.timestamp, testProfileStamp: metadata?.testProfileStamp }, 'pdf', () => sendWhatsAppText(phone, result.ok
         ? 'Escala importada no Concierge. Consulte “escala”, “hoje”, “próxima programação” ou “diárias” por aqui.'
         : result.reason === 'stale_document'
           ? 'Uma escala mais recente foi preservada. Envie novamente o PDF se quiser substituí-la.'
           : 'Não consegui importar este PDF com segurança. Envie o arquivo oficial novamente, sem senha e com até 20 MB.',
-        { replyToMessageId: id, expectedPhoneNumberId: receiver }),
+        { replyToMessageId: id, expectedPhoneNumberId: receiver })),
     });
   } catch { console.warn('[crewcheck:whatsapp:pdf]', 'QUEUE_UNAVAILABLE'); }
   finally { pdfQueueBusy = false; }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import vm from 'node:vm';
+import * as testSendPolicy from '../server/concierge/whatsapp-test-send-policy.mjs';
 import { createVisitorCode, completeVisitorCode, findVisitorBinding, handleVisitorMessage, claimVisitorMessage, unlinkVisitor, visitorPhoneHash, visitorRevision, whatsappVisitorEnabled, withVisitorPhoneLock } from '../server/concierge/whatsapp-visitor.mjs';
 import { extractWhatsAppEvents, extractWhatsAppInboundMessages, extractWhatsAppStatusDiagnostics } from '../server/whatsapp.mjs';
 const saved = process.env.CREWCHECK_WHATSAPP_AUDIT_SALT;
@@ -168,7 +169,7 @@ try {
   // Actual prepared dispatch and inbound adapter, including duplicate webhook path and separate owner flow.
   const source = fs.readFileSync('server/whatsapp.mjs', 'utf8');
   let ownerEngine = 0;
-  const inbound = vm.createContext({ whatsappVisitorEnabled: () => true, phoneNumberId: () => receiver, normalizePhone: value => String(value),
+  const inbound = vm.createContext({ ...testSendPolicy, whatsappVisitorEnabled: () => true, phoneNumberId: () => receiver, normalizePhone: value => String(value),
     platformWhatsAppVisitorBinding: deps.findBinding, platformWhatsAppVisitorContext: deps.context, platformWhatsAppVisitorReply: deps.reply, platformWhatsAppVisitorClaim: deps.claim,
     platformWhatsAppVisitorDeliver: deps.deliver,
     platformWhatsAppVisitorComplete: (phone, code, id) => completeVisitorCode(db, phone, code, id, { now: () => now, authorized }),

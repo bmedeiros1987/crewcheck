@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'server/whatsapp.mjs'
+      - 'server/concierge/whatsapp-test-send-policy.mjs'
+      - 'scripts/regression-whatsapp-test-send-policy.mjs'
       - 'server.mjs'
       - 'scripts/v14382/**'
       - 'scripts/v139/apply.mjs'
@@ -30,6 +32,8 @@ on:
     branches: [main]
     paths:
       - 'server/whatsapp.mjs'
+      - 'server/concierge/whatsapp-test-send-policy.mjs'
+      - 'scripts/regression-whatsapp-test-send-policy.mjs'
       - 'server.mjs'
       - 'scripts/v14382/**'
       - 'scripts/v139/apply.mjs'
@@ -85,6 +89,7 @@ jobs:
       - name: Test receiver and sender binding with fake transport
         run: |
           node --check server/whatsapp.mjs
+          node scripts/regression-whatsapp-test-send-policy.mjs
           node scripts/regression-whatsapp-sender.mjs
           node scripts/regression-whatsapp-menu.mjs
           node scripts/regression-whatsapp-payload-dedup.mjs

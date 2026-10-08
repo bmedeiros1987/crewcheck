@@ -1,3 +1,4 @@
+import * as testSendPolicy from '../server/concierge/whatsapp-test-send-policy.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -112,7 +113,7 @@ const inbound = source.slice(source.indexOf('async function handleInboundMessage
 assert.match(inbound,/await deliverWhatsAppMenuMessage/);
 assert.match(inbound,/tryCompleteLink/);
 let environment={CREWCHECK_WHATSAPP_MENU_ENABLED:'true'};
-const context=vm.createContext({
+const context=vm.createContext({ ...testSendPolicy,
   dispatchWhatsAppVisitor:async()=>false,whatsappVisitorEnabled:()=>false,whatsappPdfEnabled:()=>false,whatsappPdfConfiguration:null,
   whatsappMenuEnabled:()=>whatsappMenuEnabled(environment),
   console:{error:()=>{}},

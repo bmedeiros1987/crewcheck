@@ -1,10 +1,11 @@
+import * as testSendPolicy from '../server/concierge/whatsapp-test-send-policy.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const source = fs.readFileSync('server/whatsapp.mjs', 'utf8');
 const processSource = source.slice(source.indexOf('async function processWhatsAppPayload('), source.indexOf('function webhookHealth('));
 const dispatched = [], claimed = new Set();
-const context = vm.createContext({
+const context = vm.createContext({ ...testSendPolicy,
   extractWhatsAppStatusDiagnostics: () => [], persistWhatsAppStatusDiagnostic: async () => {},
   whatsappPdfEnabled:()=>false,whatsappPdfConfiguration:null,
   Set, console: { info() {} }, payloadHash: () => 'synthetic-hash',

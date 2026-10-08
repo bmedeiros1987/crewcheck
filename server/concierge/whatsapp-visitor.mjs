@@ -111,7 +111,7 @@ export async function handleVisitorMessage(message, deps) {
   if (typeof text !== 'string' || !text.trim() || typeof deps.deliver !== 'function' || (prepared && typeof prepared !== 'object')) return { handled: true, reason: 'delivery_guard_unavailable' };
   const result = await deps.deliver(message.from, binding, context.revision, prepared, async () => {
     if (!deps.enabled() || deps.receiver() !== receiver || !inWindow()) return { ok: false, code: 'VISITOR_DELIVERY_DISABLED' };
-    return deps.send(message.from, text, { replyToMessageId: message.id, expectedPhoneNumberId: receiver });
+    return deps.send(message.from, text, { replyToMessageId: message.id, expectedPhoneNumberId: receiver, testReplyPath: 'visitor' });
   });
   return { handled: true, sent: Boolean(result?.ok) };
 }

@@ -12,8 +12,10 @@ if (!source.includes('export function extractWhatsAppStatusDiagnostics(payload =
   source = source.replace(inboundAnchor, `${diagnosticHelper}${inboundAnchor}`);
 }
 
-const processAnchor = `  const events = extractWhatsAppEvents(payload, rawBody);\n  const inbound = extractWhatsAppInboundMessages(payload);`;
-const processReplacement = `  const events = extractWhatsAppEvents(payload, rawBody);\n  const inbound = extractWhatsAppInboundMessages(payload);\n  const statusDiagnostics = extractWhatsAppStatusDiagnostics(payload);\n  for (const diagnostic of statusDiagnostics) {\n    const safe = JSON.stringify(diagnostic);\n    if (diagnostic.status === 'failed') console.warn('[crewcheck:whatsapp:status]', safe);\n    else console.info('[crewcheck:whatsapp:status]', safe);\n  }`;
+const inboundExpression = source.includes('const inbound = extractWhatsAppInboundMessages(payload).filter(whatsappTestInboundAllowed);')
+  ? 'extractWhatsAppInboundMessages(payload).filter(whatsappTestInboundAllowed)' : 'extractWhatsAppInboundMessages(payload)';
+const processAnchor = `  const events = extractWhatsAppEvents(payload, rawBody);\n  const inbound = ${inboundExpression};`;
+const processReplacement = `${processAnchor}\n  const statusDiagnostics = extractWhatsAppStatusDiagnostics(payload);\n  for (const diagnostic of statusDiagnostics) {\n    const safe = JSON.stringify(diagnostic);\n    if (diagnostic.status === 'failed') console.warn('[crewcheck:whatsapp:status]', safe);\n    else console.info('[crewcheck:whatsapp:status]', safe);\n  }`;
 if (!source.includes('const statusDiagnostics = extractWhatsAppStatusDiagnostics(payload);')) {
   if (!source.includes(processAnchor)) throw new Error('[v14387c] âncora de processamento não encontrada.');
   source = source.replace(processAnchor, processReplacement);
