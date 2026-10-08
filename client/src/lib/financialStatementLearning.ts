@@ -108,11 +108,14 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
       end || undefined,
     ));
   }
-  const total = [...text.matchAll(/Total\s+depositado[^\n\r]*?R\$\s*([\d.]+,\d{2})/gi)].at(-1);
+  const depositedTotals = new Set([...text.matchAll(/Total\s+depositado[^\n\r]*?R\$\s*([\d.]+,\d{2})/gi)].map(match => money(match[1])));
   const warnings: string[] = [];
   if (!start) warnings.push('Período não identificado; revisão obrigatória.');
   if (!rates.length) warnings.push('Nenhuma tarifa de alimentação identificada.');
-  return { kind: 'per_diem', competence: start.slice(0, 7), paymentDate: payment?.[1], rates, totals: { deposited: total ? money(total[1]) : 0 }, warnings };
+  if (depositedTotals.size > 1) warnings.push('Totais depositados divergentes; revisão obrigatória.');
+  if (!depositedTotals.size) warnings.push('Total depositado não identificado.');
+  const deposited = depositedTotals.size === 1 ? [...depositedTotals][0] : undefined;
+  return { kind: 'per_diem', competence: start.slice(0, 7), paymentDate: payment?.[1], rates, totals: deposited === undefined ? {} : { deposited }, warnings };
 }
 
 const PAYROLL_KEYS: Array<[RegExp, string, string, LearnedRate['unit']]> = [
