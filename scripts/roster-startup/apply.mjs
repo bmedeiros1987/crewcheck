@@ -169,5 +169,10 @@ html body #root .cz-app[data-view="alerts"] > .cz-stack-list,
 `;
 fs.writeFileSync('client/src/styles/roster-startup.css', css);
 let main = fs.readFileSync('client/src/main.tsx', 'utf8');
-if (!main.includes("import './styles/roster-startup.css';")) fs.writeFileSync('client/src/main.tsx', main + "\nimport './styles/roster-startup.css';\n");
+main = main.replace(/\n?import ['"]\.\/styles\/roster-startup\.css['"];\n?/g, '\n');
+const finalHeaderImport = 'import "./styles/ipad-header-recovery.css";';
+if (!main.includes(finalHeaderImport)) throw new Error('Missing final header stylesheet anchor');
+fs.writeFileSync('client/src/main.tsx', main.replace(finalHeaderImport, "import './styles/roster-startup.css';\n" + finalHeaderImport));
 fs.writeFileSync('scripts/regression-v14-3-82-active-roster-bootstrap.mjs', fs.readFileSync('scripts/roster-startup/bootstrap-regression.mjs'));
+
+await import("./regression-contracts.mjs");

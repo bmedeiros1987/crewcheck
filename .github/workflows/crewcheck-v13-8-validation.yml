@@ -74,6 +74,18 @@ jobs:
         run: node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/crewcheck-prepare.log"
       - name: TypeScript check
         run: npx tsc --noEmit 2>&1 | tee "$RUNNER_TEMP/typescript.log"
+      - name: Validate account roster startup and concurrent explicit choices
+        run: |
+          node scripts/regression-roster-startup-state.mjs
+          node scripts/regression-roster-choice-settlement.mjs
+          node scripts/regression-roster-history-strict.mjs
+          node scripts/regression-roster-two-tab-bootstrap.mjs
+          node scripts/regression-v14-3-82-active-roster-bootstrap.mjs
+          node scripts/regression-home-standby-departure.mjs
+          node scripts/regression-p1-ownerless-legacy-history-fail-closed.mjs
+          node scripts/regression-p1-offline-history-identity-scope.mjs
+          node scripts/regression-active-roster-runtime.mjs
+          node scripts/regression-roster-contract-forward-compatibility.mjs
       - name: Build web client
         run: npx vite build 2>&1 | tee "$RUNNER_TEMP/vite-build.log"
       - name: Validate SOS after source preparation
