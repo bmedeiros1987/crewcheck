@@ -1,0 +1,13 @@
+.cc-financial-period,.cc-financial-range { width:100%!important;max-width:none!important;box-sizing:border-box;min-width:0; }
+.cc-financial-period { display:flex!important;flex-wrap:wrap;gap:12px!important;padding:12px!important; }
+.cc-financial-period label,.cc-financial-range label { display:flex;flex:1 1 140px;gap:6px;flex-direction:column;min-width:0; }
+.cc-financial-period select,.cc-financial-range input,.cc-financial-graph select { width:100%;min-width:0;min-height:44px;font:inherit; }
+.cc-financial-range { display:flex;flex-wrap:wrap;gap:12px;padding:12px; }
+.cc-financial-range p { flex-basis:100%;margin:0;line-height:1.5; }
+.cc-financial-bars { display:grid;gap:12px;margin-block:16px; }
+.cc-financial-bars>button { display:grid;grid-template-columns:minmax(0,1fr);gap:6px;min-height:44px;text-align:left;padding:12px;border:1px solid var(--cc-review-border);border-radius:12px;background:var(--cc-review-surface);color:var(--cc-review-text); }
+.cc-financial-bar-track { display:block;background:var(--cc-review-border);height:12px;border-radius:6px;overflow:hidden; }
+.cc-financial-bar-track>span { display:block;height:100%;background:var(--cc-review-text); }
+.cc-financial-bars strong { white-space:normal;overflow-wrap:anywhere; }
+.cc-financial-week-list { display:grid;gap:8px; }
+.cc-financial-week-list>button { min-height:44px;padding:12px;text-align:left;font:inherit;white-space:normal; }

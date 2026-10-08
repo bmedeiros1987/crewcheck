@@ -10,6 +10,9 @@ on:
       - 'scripts/regression-financial-*.mjs'
       - 'scripts/regression-financial-ui-browser.cjs'
       - 'client/src/styles/per-diem-content.css'
+      - 'client/src/components/finance/**'
+      - 'client/src/lib/financialHistoryPeriods.ts'
+      - 'client/src/lib/databaseClient.ts'
       - '.github/workflows/financial-history-foundation.yml'
   workflow_dispatch:
 permissions:
@@ -35,6 +38,15 @@ jobs:
         env:
           TZ: America/Sao_Paulo
       - run: node scripts/regression-financial-callers.mjs
+        env:
+          TZ: America/New_York
+      - run: node scripts/regression-financial-history-periods.mjs
+        env:
+          TZ: UTC
+      - run: node scripts/regression-financial-history-periods.mjs
+        env:
+          TZ: America/Sao_Paulo
+      - run: node scripts/regression-financial-history-periods.mjs
         env:
           TZ: America/New_York
       - run: node scripts/regression-p0-530-finance-canonical-journey.mjs

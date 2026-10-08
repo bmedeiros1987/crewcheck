@@ -794,6 +794,8 @@ function crewIdentityToken(source: CrewIdentitySource | null | undefined): strin
   return name ? `NAME:${name}` : '';
 }
 
+export { crewIdentityToken as financialRosterCrewIdentity };
+
 function periodHistoryKey(item: LocalHistoryItem): string {
   // P0_580_HISTORY_CREW_IDENTITY_GUARD: a placeholder crewId must never collapse
   // different crew members into the same nominal-period history slot. Prefer a
