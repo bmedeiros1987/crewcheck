@@ -137,7 +137,7 @@ export async function listSavedRosters(limit = 72, strictHistory = false, option
     const seen = new Set<string>();
     const merged: SavedRosterSummary[] = [];
     for (const item of [...online, ...local]) {
-      const key = item.checksum || `${item.year || ''}:${item.month || ''}:${item.crewId || item.crewName || item.id}`;
+      const key = options.preserveRevisions ? `${item.id}:${item.createdAt}:${item.checksum || ''}` : item.checksum || `${item.year || ''}:${item.month || ''}:${item.crewId || item.crewName || item.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
       merged.push(item);
@@ -585,7 +585,7 @@ function normalizeLocalHistoryItem(raw: any, index = 0): LocalHistoryItem | null
   };
 }
 
-function readLocalHistory(): LocalHistoryItem[] {
+function readLocalHistory(preserveRevisions = false, requireTimestamps = false): LocalHistoryItem[] {
   const seen = new Set<string>();
   const items: LocalHistoryItem[] = [];
   for (const key of localHistoryKeys()) {
@@ -595,9 +595,10 @@ function readLocalHistory(): LocalHistoryItem[] {
       const parsed = JSON.parse(raw);
       const list = Array.isArray(parsed) ? parsed : [parsed];
       list.forEach((entry, index) => {
+        if (requireTimestamps && !Number.isFinite(Date.parse(entry?.createdAt || entry?.updatedAt || ''))) return;
         const item = normalizeLocalHistoryItem(entry, index);
         if (!item) return;
-        const dedupe = item.checksum || periodHistoryKey(item);
+        const dedupe = preserveRevisions ? `${item.id}:${item.createdAt}` : item.checksum || periodHistoryKey(item);
         if (seen.has(dedupe)) return;
         seen.add(dedupe);
         items.push(item);
@@ -615,7 +616,7 @@ function readLocalHistory(): LocalHistoryItem[] {
 // caller actually asked for, and fail closed when it is not there: returning "some
 // entry with that id" is how one crew member's roster reached another's session.
 function localRosterCandidates(id: string): LocalHistoryItem[] {
-  return readLocalHistory().filter((item) => item.id === id || item.checksum === id);
+  return readLocalHistory(true).filter((item) => item.id === id || item.checksum === id);
 }
 
 function findLocalRoster(id: string, expected?: Pick<SavedRosterSummary, 'crewId' | 'crewName'> | null): LocalHistoryItem | null {
@@ -727,9 +728,9 @@ function readLocalActiveRosterSnapshot(): LocalHistoryItem | null {
 function getLocalRosterSummaries(limit: number, preserveRevisions = false): SavedRosterSummary[] {
   const seen = new Set<string>();
   const activeSnapshots = readLocalActiveRosterSnapshots();
-  const sourceItems = preserveRevisions ? readLocalHistory() : [...activeSnapshots, ...readLocalHistory()];
+  const sourceItems = preserveRevisions ? readLocalHistory(true, true) : [...activeSnapshots, ...readLocalHistory()];
   const unique = sourceItems.filter((item) => {
-    const key = preserveRevisions ? item.checksum || item.id : periodHistoryKey(item);
+    const key = preserveRevisions ? `${item.id}:${item.createdAt}` : periodHistoryKey(item);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

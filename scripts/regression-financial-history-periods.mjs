@@ -39,7 +39,8 @@ try {
     const unknown=context.subject.scopedFinancialForecast([{perdiem:{rows:[],monthlyRows:[],monthlyUnclassifiedItems:[{iso:'2032-02-02',airport:'ZZZ'}]}}],month,[]);assert.equal(unknown.nativeSummary.complete,false,'unknown-only month is not a zero');
     const absent=context.subject.scopedFinancialForecast([snapshot([row('2032-02-02','BRL',120,120)])],week,['2032-01']);assert.equal(absent.monthly,null,'missing monthly source prevents a cross-month total');
   }
-  const db=ts.createSourceFile('databaseClient.ts',fs.readFileSync('client/src/lib/databaseClient.ts','utf8'),ts.ScriptTarget.Latest,true);
+  const databaseSource=process.env.FINANCIAL_COMPOSITION_BASELINE_SHA?execFileSync('git',['show',process.env.FINANCIAL_COMPOSITION_BASELINE_SHA+':client/src/lib/databaseClient.ts'],{encoding:'utf8'}):fs.readFileSync('client/src/lib/databaseClient.ts','utf8');
+  const db=ts.createSourceFile('databaseClient.ts',databaseSource,ts.ScriptTarget.Latest,true);
   const identityFunctions=db.statements.filter(n=>ts.isFunctionDeclaration(n)&&['normalizeRosterCrewId','normalizeRosterCrewName','crewIdentityToken'].includes(n.name?.text));
   const identityContext=vm.createContext({});vm.runInContext(ts.transpileModule(identityFunctions.map(n=>n.getText(db)).join('\n')+'\nglobalThis.identify=crewIdentityToken;',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,identityContext);
   const identify=identityContext.identify,crew=identify({crewId:'SYN01'}),item=(id,stamp,crewId='SYN01')=>({id,year:2032,month:2,createdAt:stamp,crewId});
@@ -48,5 +49,17 @@ try {
   assert.equal(latestFinancialPeriods([item('a','not-a-date')],crew,identify).items.length,0);
   assert.equal(identify({crewId:'UNKNOWN7',crewName:'Tripulante2'}),'','reuse canonical identity sentinel guard');
   assert.equal(latestFinancialPeriods([item('a','2032-02-02T00:00:00Z')],'',identify).items.length,0);
+  const readNames=['listSavedRosters','readLocalHistory','normalizeLocalHistoryItem'];
+  const readFunctions=db.statements.filter(n=>ts.isFunctionDeclaration(n)&&readNames.includes(n.name?.text));
+  let online=[],local=[],expectedPreserve=false;
+  const readerContext=vm.createContext({exports:{},localStorage:{getItem:()=>JSON.stringify(local)},localHistoryKeys:()=>['synthetic-owned-history'],periodHistoryKey:source=>String(source.roster?.year)+':'+String(source.roster?.month),getLocalRosterSummaries:(limit,preserve)=>{assert.equal(Boolean(preserve),expectedPreserve);return local;},hasCrewCheckAuthToken:()=>true,normalizeSingleActiveSummary:items=>items,jsonFetch:async()=>({ok:true,rosters:online})});
+  vm.runInContext(ts.transpileModule(readFunctions.map(n=>n.getText(db)).join('\n')+'\nglobalThis.readers={listSavedRosters,readLocalHistory};',{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,readerContext);
+  const revision=(id,date)=>({...item(id,date),checksum:null,isActive:true});
+  online=[revision('online-old','2032-02-01T00:00:00Z'),revision('online-new','2032-02-02T00:00:00Z')];expectedPreserve=true;
+  let combined=await readerContext.readers.listSavedRosters(72,false,{preserveRevisions:true});assert.equal(combined.length,2,'online revisions without checksums must reach selection');assert.equal(latestFinancialPeriods(combined,crew,identify).items[0].id,'online-new');
+  online=[revision('online-a','2032-02-02T00:00:00Z'),revision('online-b','2032-02-02T00:00:00Z')];combined=await readerContext.readers.listSavedRosters(72,false,{preserveRevisions:true});assert.equal(latestFinancialPeriods(combined,crew,identify).conflicts.length,1,'online same-time conflict cannot be erased by checksum-null dedup');
+  local=[revision('local-conflict','2032-02-02T00:00:00Z')];online=[revision('online-conflict','2032-02-02T00:00:00Z')];combined=await readerContext.readers.listSavedRosters(72,false,{preserveRevisions:true});assert.equal(latestFinancialPeriods(combined,crew,identify).conflicts.length,1,'online/local conflict survives composition');
+  local=[];expectedPreserve=false;online=[revision('old','2032-02-01T00:00:00Z'),revision('new','2032-02-02T00:00:00Z')];assert.equal((await readerContext.readers.listSavedRosters(72)).length,1,'legacy consumers retain original composition behavior');
+  const syntheticRoster={crewId:'SYN01',year:2032,month:2,days:[{date:'02/02/2032'}]};local=[{id:'local-old',createdAt:'2032-02-01T00:00:00Z',roster:syntheticRoster},{id:'local-new',createdAt:'2032-02-02T00:00:00Z',roster:syntheticRoster},{id:'missing-stamp',roster:syntheticRoster}];assert.equal(readerContext.readers.readLocalHistory(true,true).length,2,'finance local revisions survive fabricated period checksums; missing revision timestamps are not invented');assert.equal(readerContext.readers.readLocalHistory().length,1,'other local consumers retain their original dedup');
   console.log('PASS financial history: civil periods, leap days, scope completeness, native currencies, canonical salary competence, owner identity, revision dedup/conflicts — TZ='+process.env.TZ);
 }finally{modules.cleanup();}
