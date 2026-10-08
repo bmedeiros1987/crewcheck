@@ -70,6 +70,7 @@ function persistSession(session: AuthSession) {
   } catch {}
   localStorage.setItem(TOKEN_KEY, session.token);
   localStorage.setItem(USER_KEY, JSON.stringify(session.user));
+  window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));
 }
 
 /**
@@ -85,6 +86,7 @@ export function expireSession() {
 export function clearSession() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));
   try {
     sessionStorage.removeItem('crewcheck_roster');
     sessionStorage.removeItem('crewcheck_compliance');

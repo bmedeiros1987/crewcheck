@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
+const startup = fs.readFileSync('client/src/lib/rosterStartup.ts', 'utf8');
+const server = fs.readFileSync('server/platform.mjs', 'utf8');
+assert.ok(home.includes('A escala ativa pertence à conta, não ao cache deste dispositivo.'));
+assert.match(home, /bundleRef.current.roster.days\?\.length \|\| startupCleared\(\)/, 'explicit selection and clear intent survive restoration');
+assert.match(home, /startupCanCommit\(start/, 'pending reads must revalidate account, session and user choice');
+assert.match(home, /restoreLatestImport\(\)/, 'restore upload chronology rather than arbitrary active period');
+const effect = home.slice(home.indexOf('// A escala ativa pertence'), home.indexOf('// A escala ativa pertence') + 2500);
+assert.doesNotMatch(effect, /syncPendingRosters|saveRosterAnalysis|recordPublication/, 'startup is read-only on the server');
+assert.match(startup, /newestImports\(history.rosters\)/);
+assert.match(startup, /cache: 'no-store'/);
+assert.match(server, /WHERE owner_email=\$1 ORDER BY active DESC,updated_at DESC/);
+assert.match(server, /WHERE id=\$1 AND owner_email=\$2 LIMIT 1/);
+console.log('[bootstrap] PASS — account-only latest valid import, no server writes, session and choice guards.');
