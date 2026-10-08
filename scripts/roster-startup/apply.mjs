@@ -178,3 +178,5 @@ fs.writeFileSync('client/src/main.tsx', main.replace(finalHeaderImport, "import 
 fs.writeFileSync('scripts/regression-v14-3-82-active-roster-bootstrap.mjs', fs.readFileSync('scripts/roster-startup/bootstrap-regression.mjs'));
 
 await import("./regression-contracts.mjs");
+
+await import("./account-reconciliation.mjs");

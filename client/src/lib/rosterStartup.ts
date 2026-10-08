@@ -54,10 +54,12 @@ export async function restoreLatestImport(): Promise<{ roster: CrewRoster; sourc
 }
 
 let choiceEpoch = 0;
-export function invalidateRosterChoices(): void { choiceEpoch += 1; }
+let pendingChoiceEpoch: number | null = null;
+export function invalidateRosterChoices(): void { choiceEpoch += 1; pendingChoiceEpoch = null; }
 export type RosterChoiceGuard = (() => boolean) & { finish(): void };
 export function beginRosterChoice(): RosterChoiceGuard {
   const epoch = ++choiceEpoch;
+  pendingChoiceEpoch = null;
   const denied = () => Object.assign(() => false, { finish() {} });
   let owner: string, token: string | null, clearRevision: string, intentKey: string;
   try {
@@ -65,6 +67,7 @@ export function beginRosterChoice(): RosterChoiceGuard {
     intentKey = startupKey() + '_intent_epoch';
   } catch { return denied(); }
   if (!owner || !token) return denied();
+  pendingChoiceEpoch = epoch;
   const intentRevision = crypto.randomUUID();
   // The in-memory epoch still orders choices when storage is full/restricted.
   // Retain the prior shared revision so a later foreign-tab write invalidates us.
@@ -78,6 +81,33 @@ export function beginRosterChoice(): RosterChoiceGuard {
     } catch { return false; }
   };
   return Object.assign(canCommit, { finish() {
+    if (pendingChoiceEpoch === epoch) pendingChoiceEpoch = null;
     if (canCommit()) window.dispatchEvent(new CustomEvent('crewcheck:roster-choice-finished'));
   } });
+}
+
+// Capture a read fence without publishing a new explicit intent. Every await and
+// lock/cache commit must recheck it; a pending manual selection has priority.
+export function captureAutomaticRosterGuard(): () => boolean {
+  try {
+    const epoch = choiceEpoch, owner = startupOwner(), token = getToken();
+    const key = startupKey(), clearKey = clearEpochKey(), intentKey = key + '_intent_epoch';
+    // Strict reads here: blocked storage is not an absent shared intent.
+    const clearRevision = localStorage.getItem(clearKey), intentRevision = localStorage.getItem(intentKey);
+    const explicitChoice = () => {
+      const raw = localStorage.getItem(key);
+      const value = raw ? JSON.parse(raw) : null;
+      return value?.owner === owner && value?.roster && value.selection !== 'automatic' && !value.cleared ? raw : null;
+    };
+    const choiceSnapshot = explicitChoice();
+    if (!owner || !token || startupCleared() || pendingChoiceEpoch !== null) return () => false;
+    return () => {
+      try {
+        return epoch === choiceEpoch && pendingChoiceEpoch === null
+          && owner === startupOwner() && token === getToken() && !startupCleared()
+          && clearRevision === localStorage.getItem(clearKey) && intentRevision === localStorage.getItem(intentKey)
+          && (explicitChoice() === null || explicitChoice() === choiceSnapshot);
+      } catch { return false; }
+    };
+  } catch { return () => false; }
 }
