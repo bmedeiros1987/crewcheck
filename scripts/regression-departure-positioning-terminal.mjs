@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
+import { transitDeparturePresentation } from '../shared/transitAvailability.mjs';
 const compile = code => ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
 const lib = { exports: {} };
 new Function('exports', compile(fs.readFileSync('client/src/lib/departureRouteState.ts', 'utf8')))(lib.exports);
@@ -22,15 +23,17 @@ const runtime = new Function('storage', 'departureConfirmedSameDayPositioning', 
   storage, event => Boolean(event.confirmed), () => new Date('2026-10-03T12:00:00Z'), () => null, () => 'synthetic-origin',
 );
 // Execute the actual component decision expressions, including their confirmed-record precedence.
-const evaluate = new Function('runtime', 'event', 'route', 'positioningBusy', 'isPositioningSearchPending', compile(`
+const departureFunction = functions.has('AirportDeparture') ? 'AirportDeparture' : 'Departure';
+const evaluate = new Function('runtime', 'event', 'route', 'positioningBusy', 'isPositioningSearchPending', 'transitDeparturePresentation', 'mode', compile(`
 const { readPositioningSearch, departurePositioningPlan } = runtime;
 const positioningPlan = departurePositioningPlan(event, route);
 const positioningSearch = readPositioningSearch(event);
 const positioningRecord = event.confirmed ? { flightNumber: 'FIX101' } : null;
 const estimate = { leaveLabel: '09:00' };
 const routeMismatch = false;
-const positioningUnresolved = ${expression('Departure', 'positioningUnresolved')};
-const detail = ${expression('Departure', 'primaryDepartureLabel')};
+const transitPresentation = ${expression(departureFunction, 'transitPresentation')};
+const positioningUnresolved = ${expression(departureFunction, 'positioningUnresolved')};
+const detail = ${expression(departureFunction, 'primaryDepartureLabel')};
 const card = ${expression('SmartCard', 'departurePrimaryLabel')};
 `) + ';return {detail,card,positioningUnresolved};');
 const failures = [];
@@ -41,7 +44,7 @@ Date.now = () => now;
 try {
   const event = { id: 'event-A', origin: 'BSB', confirmed: false };
   const far = { ok: true, distanceMeters: 500000 };
-  const see = (route = far, busy = false, target = event) => evaluate(runtime, target, route, busy, lib.exports.isPositioningSearchPending);
+  const see = (route = far, busy = false, target = event, mode = 'driving') => evaluate(runtime, target, route, busy, lib.exports.isPositioningSearchPending, transitDeparturePresentation, mode);
   assert.equal(runtime.POSITIONING_ERROR_CACHE_MS, 30 * 60_000);
   for (const status of ['error', 'none', 'checking', 'found']) {
     const started = now;
@@ -72,6 +75,8 @@ try {
   const nextAccount = lib.exports.createDepartureRouteSession(value => snapshots.push(value));
   nextAccount.begin();
   check(!snapshots.at(-1).distanceMeters && see(snapshots.at(-1)).detail === '09:00', 'new route/account context cannot inherit far-route fallback');
+  check(see(far, false, event, 'transit').detail === 'A confirmar', 'unverified transit overrides far positioning departure time');
+  check(see({ok:true,distanceMeters:12000}, false, event, 'transit-flight').detail === 'A confirmar', 'unverified transit overrides near departure time');
 } finally { Date.now = originalNow; }
 if (process.env.DEPARTURE_TERMINAL_EVIDENCE) fs.writeFileSync(process.env.DEPARTURE_TERMINAL_EVIDENCE, JSON.stringify({ scope:'Actual prepared cache helpers and component expressions; synthetic storage/time/routes; no network', failures }, null, 2));
 assert.deepEqual(failures, []);
