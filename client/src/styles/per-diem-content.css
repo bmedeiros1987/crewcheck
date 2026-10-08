@@ -1,0 +1,66 @@
+/* Diárias uses the existing surfaces and content width. Navigation is unchanged. */
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content {
+  width: 100%; max-width: 1180px; min-width: 0; margin-inline: auto;
+  padding-bottom: var(--cc-canonical-nav-clearance, 150px); box-sizing: border-box;
+  color: var(--cc-review-text);
+}
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content > :is(.cz-panel-head, .cz-finance-grid, .cz-toolbox, .cz-finance-table) {
+  width: 100% !important; max-width: none !important; min-width: 0; margin: 0 0 12px !important; box-sizing: border-box;
+  background: var(--cc-review-surface) !important; border: 1px solid var(--cc-review-border); border-radius: 16px; box-shadow: none !important;
+}
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-panel-head { padding: 16px !important; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-panel-head h1 { font-size: clamp(1.5rem, 2.5vw, 2rem) !important; line-height: 1.25 !important; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-panel-head p { margin: 8px 0 0 !important; line-height: 1.5; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cc-per-diem-competence { color: var(--cc-review-text) !important; font-weight: 600; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cc-per-diem-summary { background: transparent !important; border: 0; grid-template-columns: minmax(0, 1fr) !important; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-kpi {
+  display: grid !important; grid-template-columns: 32px minmax(0, 1fr) !important; gap: 12px !important;
+  height: auto !important; min-height: 0 !important; max-height: none !important; padding: 16px !important;
+  overflow: visible !important; box-sizing: border-box; background: var(--cc-review-surface) !important;
+  border: 1px solid var(--cc-review-border); border-radius: 16px; box-shadow: none !important;
+}
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-kpi > span { width: 32px !important; height: 32px !important; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-kpi > div { min-width: 0; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content :is(.cz-kpi strong, .cz-finance-row b) {
+  display: block !important; height: auto !important; max-height: none !important; min-width: 0;
+  white-space: normal !important; overflow-wrap: anywhere; word-break: normal;
+  overflow: visible !important; text-overflow: clip !important; -webkit-line-clamp: unset !important;
+  line-height: 1.4 !important; font-variant-numeric: tabular-nums; color: var(--cc-review-text) !important;
+}
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-kpi strong { font-size: clamp(1.25rem, 2.2vw, 1.65rem) !important; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content :is(.cz-toolbox, .cz-finance-table) { padding: 16px !important; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content :is(.cz-toolbox, .cz-finance-table) > summary {
+  min-height: 44px; align-content: center; line-height: 1.5; font-weight: 600; cursor: pointer; overflow-wrap: anywhere; color: var(--cc-review-text);
+}
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cc-per-diem-periods .cz-finance-grid { margin: 12px 0 !important; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cc-per-diem-items > summary h2 { display: inline; margin: 0 8px 0 0; font-size: 1rem; color: inherit; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content :is(.cc-per-diem-scope, .cz-kpi p, .cz-kpi small, .cc-per-diem-source small) { color: var(--cc-review-muted) !important; opacity: 1 !important; line-height: 1.5; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row {
+  display: grid !important; grid-template-columns: minmax(70px, .35fr) minmax(0, 1fr) minmax(100px, .7fr) !important;
+  grid-template-areas: 'date label amount' 'source source source'; align-items: start !important; gap: 6px 12px !important;
+  width: 100%; min-width: 0; height: auto !important; min-height: 0 !important; max-height: none !important;
+  margin: 0 !important; padding: 12px 0 !important; border-bottom: 1px solid var(--cc-review-border); border-radius: 0 !important; box-sizing: border-box;
+}
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row > * { min-width: 0; overflow-wrap: anywhere; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row > span { grid-area: date; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row > strong { grid-area: label; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row > b { grid-area: amount; text-align: right; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cc-per-diem-source { grid-area: source; color: var(--cc-review-muted); }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cc-per-diem-source summary { padding-block: 4px; line-height: 1.5; cursor: pointer; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cc-per-diem-source small { display: block; font-size: .875rem; opacity: 1 !important; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row {
+    grid-template-columns: minmax(0, 1fr) !important; grid-template-areas: 'date' 'label' 'amount' 'source';
+  }
+  html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row > b { text-align: left; }
+}
+
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content :is(.cz-panel-head, .cz-finance-grid, .cz-kpi, .cz-toolbox, .cz-finance-table, .cz-panel-head p) { opacity: 1 !important; }
+
+/* Reset legacy placement: named areas own all row children. */
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row { container-type: inline-size; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row > * { grid-column: auto !important; grid-row: auto !important; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row > span { grid-area: date !important; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row > strong { grid-area: label !important; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row > b { grid-area: amount !important; white-space: nowrap !important; overflow-wrap: normal !important; font-size: clamp(.75rem, 6cqi, 1.03rem) !important; }
+html body .cz-app[data-version][data-view="perdiem"] .cc-per-diem-content .cz-finance-row > .cc-per-diem-source { grid-area: source !important; }

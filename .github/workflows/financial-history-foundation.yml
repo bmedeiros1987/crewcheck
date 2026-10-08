@@ -8,6 +8,8 @@ on:
       - 'client/src/pages/Home.tsx'
       - 'client/src/components/v1391/RosterLaunchView.tsx'
       - 'scripts/regression-financial-*.mjs'
+      - 'scripts/regression-financial-ui-browser.cjs'
+      - 'client/src/styles/per-diem-content.css'
       - '.github/workflows/financial-history-foundation.yml'
   workflow_dispatch:
 permissions:
@@ -39,3 +41,18 @@ jobs:
       - run: node scripts/regression-p2-530-adjacent-fallback-finance.mjs
       - run: npx tsc --noEmit
       - run: npx vite build
+      - name: Install isolated UI browser dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/financial-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/financial-ui/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify actual compiled financial UI with synthetic owner fixtures
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-financial-ui-browser.cjs
+      - name: Save synthetic UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: financial-ui-synthetic
+          path: artifacts/financial-ui/
+          if-no-files-found: ignore
