@@ -87,8 +87,8 @@ permission, blocked channel, reboot, logout/account switch and cancellation.
 No events were created. `pbsWindows.ts` contains recurring month/day suggestions
 without verified year/source URI, effective period or official time zone. These
 must not be treated as the promised official announcement; year-end leave has no
-verified source in this investigation. Existing 00:00/23:59 suggestions are UI
-defaults, not confirmed official hours.
+verified source in this investigation. New forms start with empty opening/closing fields. The reference button may
+apply explicitly unverified 00:00/23:59 conventions, never confirmed official hours.
 
 Before an authorized plan, collect: source document/link + verification time,
 event type, effective year, source revision/hash, exact opening/closing instants,
@@ -146,13 +146,13 @@ message or location-as-SOS behavior is introduced.
 Local synthetic PASS: regression-bids-delivery, regression-browser-reminder-scheduling
 (23 cases), regression-briefing-preferences and existing scheduler-heartbeat-health.
 TypeScript `tsc --noEmit` PASS. All test delivery is fake; no real notification.
-Direct Vite build is blocked by the bundled Node macOS library-validation restriction
-when loading the existing Rollup native module (different signing Team IDs), not an
-application diagnostic. No signing/security setting was changed. Android compilation,
-physical delivery, production scheduler/configuration and source verification remain
-unproven. Full source preparation and unchanged second replay passed in a separate
-task-4 validation checkout; all three new/changed regressions also passed after
-the first preparation. Do not deploy/merge on
+The signed-app Node first failed loading Rollup due to mismatched signing Team IDs.
+This was resolved with a temporary official, checksum-verified Node 22.13.0 runtime.
+Locked-dependency raw and canonically prepared Vite builds and TypeScript checks
+passed, with existing CSS/chunk warnings. Source preparation and unchanged second
+replay also passed. No signing/security setting was changed. Android compilation,
+physical delivery, production scheduler/configuration, actual MySQL race tests and
+source verification remain unproven. Do not deploy/merge on
 these results alone.
 
 Bruno confirmed the installed Android app; its version is still pending. Inspect

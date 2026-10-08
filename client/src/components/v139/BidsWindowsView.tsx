@@ -39,27 +39,23 @@ function formatDate(value: string): string {
     : 'A confirmar';
 }
 
-function status(item: BidWindow): 'Agendada' | 'Aberta' | 'Encerrada' {
+function status(item: BidWindow): 'Futura' | 'Aberta' | 'Encerrada' {
   const now = Date.now();
   const opens = new Date(item.opensAt).getTime();
   const closes = new Date(item.closesAt).getTime();
-  if (now < opens) return 'Agendada';
+  if (now < opens) return 'Futura';
   return now <= closes ? 'Aberta' : 'Encerrada';
 }
 
 function initialForm(instructor: boolean) {
   const targetMonth = nextWindowMonthKey();
-  const [year, month] = targetMonth.split('-').map(Number);
-  const official = pbsWindowDates(year, month, instructor);
-  const fallbackOpen = new Date(year, month - 1, 1, 0, 0);
-  const fallbackClose = new Date(year, month - 1, 5, 23, 59);
   return {
     id: '',
     creationKey: String(crypto.randomUUID()),
-    title: `PBS · ${official?.official.label || 'Janela manual'}`,
+    title: 'Janela de BIDS',
     targetMonth,
-    opensAt: localInput(official?.opensAt || fallbackOpen),
-    closesAt: localInput(official?.closesAt || fallbackClose),
+    opensAt: '',
+    closesAt: '',
     providerUrl: '',
     notifyOpen: false,
     notifyLastDay: false,
@@ -91,7 +87,7 @@ export default function BidsWindowsView() {
     const [year, month] = targetMonth.split('-').map(Number);
     const official = pbsWindowDates(year, month, nextInstructor);
     if (!official) {
-      toast.info('Janeiro não consta no informativo recebido. Cadastre essa janela manualmente quando houver confirmação oficial.');
+      toast.info('Este mês não consta na referência cadastrada. Use as datas do comunicado vigente.');
       setForm((current) => ({ ...current, targetMonth, title: 'PBS · Janeiro · cadastro manual' }));
       return;
     }
@@ -102,7 +98,7 @@ export default function BidsWindowsView() {
       opensAt: localInput(official.opensAt),
       closesAt: localInput(official.closesAt),
     }));
-    toast.success(`Janela oficial aplicada: ${official.official.label}, dias ${nextInstructor ? official.official.instructorStart : official.official.generalStart} a ${nextInstructor ? official.official.instructorEnd : official.official.generalEnd}.`);
+    toast.info(`Referência aplicada: ${official.official.label}, dias ${nextInstructor ? official.official.instructorStart : official.official.generalStart} a ${nextInstructor ? official.official.instructorEnd : official.official.generalEnd}. Confirme ano, horários e fuso no comunicado vigente.`);
   }
 
   function toggleInstructor(value: boolean) {
@@ -173,7 +169,7 @@ export default function BidsWindowsView() {
       <div className="cc139-badges">
         {PBS_OFFICIAL_WINDOWS.map((item) => <span key={item.month}><b>{item.label}</b> · geral {item.generalStart}-{item.generalEnd} · instrutor {item.instructorStart}-{item.instructorEnd}{item.exception ? ' · exceção' : ''}</span>)}
       </div>
-      <p>Janeiro não aparece no informativo recebido e permanece manual até nova confirmação.</p>
+      <p>Janeiro não aparece nesta referência. As datas oficiais vigentes ainda precisam ser confirmadas.</p>
     </section>
     <section className="cc139-card">
       <h2>{form.id ? 'Editar janela' : 'Nova janela'}</h2>
@@ -187,7 +183,7 @@ export default function BidsWindowsView() {
         <label className="wide"><input type="checkbox" checked={form.notifyOpen} onChange={(event) => setForm({ ...form, notifyOpen: event.target.checked })}/> Solicitar alerta de abertura no Telegram vinculado</label>
         <label className="wide"><input type="checkbox" checked={form.notifyLastDay} onChange={(event) => setForm({ ...form, notifyLastDay: event.target.checked })}/> Solicitar alerta do último dia no Telegram vinculado</label>
       </div>
-      {selectedOfficial && <p><CalendarCheck2/> Período sugerido: {selectedOfficial.label}, dias {instructor ? selectedOfficial.instructorStart : selectedOfficial.generalStart} a {instructor ? selectedOfficial.instructorEnd : selectedOfficial.generalEnd}. Como o informativo não define horário, o CrewCheck usa 00:00 na abertura e 23:59 no encerramento, ambos editáveis.</p>}
+      {selectedOfficial && <p><CalendarCheck2/> Referência: {selectedOfficial.label}, dias {instructor ? selectedOfficial.instructorStart : selectedOfficial.generalStart} a {instructor ? selectedOfficial.instructorEnd : selectedOfficial.generalEnd}. Os horários 00:00 e 23:59 são convenções editáveis; não são horários oficiais verificados.</p>}
       <div className="cc139-actions">
         <button onClick={() => applyOfficial()}><CalendarCheck2/> Aplicar referência de datas</button>
         <button className="primary" onClick={save} disabled={busy}><Save/> {busy ? 'Salvando…' : 'Salvar janela'}</button>
