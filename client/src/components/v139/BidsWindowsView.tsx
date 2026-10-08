@@ -54,6 +54,8 @@ function initialForm(instructor: boolean) {
   const fallbackOpen = new Date(year, month - 1, 1, 0, 0);
   const fallbackClose = new Date(year, month - 1, 5, 23, 59);
   return {
+    id: '',
+    creationKey: String(crypto.randomUUID()),
     title: `PBS · ${official?.official.label || 'Janela manual'}`,
     targetMonth,
     opensAt: localInput(official?.opensAt || fallbackOpen),
@@ -118,13 +120,14 @@ export default function BidsWindowsView() {
     }
     setBusy(true);
     try {
-      const payload = await v139Api('/api/platform/bids', {
+      const payload = await v139Api(form.id ? `/api/platform/bids/${encodeURIComponent(form.id)}` : '/api/platform/bids', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ ...form, opensAt: opensAt.toISOString(), closesAt: closesAt.toISOString() }),
       });
       setWindows(payload.windows || []);
       toast.success('Janela de BIDS salva.');
+      setForm(initialForm(instructor));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não consegui salvar a janela.');
     } finally {
@@ -137,6 +140,7 @@ export default function BidsWindowsView() {
     try {
       await v139Api(`/api/platform/bids/${encodeURIComponent(id)}`, { method: 'DELETE' });
       setWindows((current) => current.filter((item) => item.id !== id));
+      if (form.id === id) setForm(initialForm(instructor));
       toast.success('Janela removida.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não consegui remover.');
@@ -157,22 +161,22 @@ export default function BidsWindowsView() {
   const selectedOfficial = officialPbsWindow(Number(form.targetMonth.split('-')[1]));
 
   return <>
-    <V139Header title="BIDS / PBS" detail="Janelas oficiais, calendário e alertas no sistema e Telegram."/>
+    <V139Header title="BIDS / PBS" detail="Janelas cadastradas e calendário. Envio externo depende de vínculo e agendador validado."/>
     <section className="cc139-grid">
       <article><CalendarDays/><span>Janelas salvas</span><strong>{windows.length}</strong></article>
       <article><Bell/><span>Abertas agora</span><strong>{openCount}</strong></article>
       <article><GraduationCap/><span>Perfil da janela</span><strong>{instructor ? 'Instrutor' : 'Geral'}</strong></article>
     </section>
     <section className="cc139-card">
-      <h2>Calendário oficial informado</h2>
-      <p>NB e WB usam as mesmas datas. A janela geral vale para todos; instrutores possuem uma janela ideal que pode terminar antes.</p>
+      <h2>Referência de datas cadastrada</h2>
+      <p>Esta referência não contém ano, fonte verificável ou fuso oficial. Confirme o comunicado vigente antes de cadastrar datas; salvar não comprova envio de alertas.</p>
       <div className="cc139-badges">
         {PBS_OFFICIAL_WINDOWS.map((item) => <span key={item.month}><b>{item.label}</b> · geral {item.generalStart}-{item.generalEnd} · instrutor {item.instructorStart}-{item.instructorEnd}{item.exception ? ' · exceção' : ''}</span>)}
       </div>
       <p>Janeiro não aparece no informativo recebido e permanece manual até nova confirmação.</p>
     </section>
     <section className="cc139-card">
-      <h2>Nova janela</h2>
+      <h2>{form.id ? 'Editar janela' : 'Nova janela'}</h2>
       <div className="cc139-form">
         <label className="wide"><input type="checkbox" checked={instructor} onChange={(event) => toggleInstructor(event.target.checked)}/> Sou instrutor: usar a janela ideal</label>
         <label>Título<input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })}/></label>
@@ -185,7 +189,7 @@ export default function BidsWindowsView() {
       </div>
       {selectedOfficial && <p><CalendarCheck2/> Período sugerido: {selectedOfficial.label}, dias {instructor ? selectedOfficial.instructorStart : selectedOfficial.generalStart} a {instructor ? selectedOfficial.instructorEnd : selectedOfficial.generalEnd}. Como o informativo não define horário, o CrewCheck usa 00:00 na abertura e 23:59 no encerramento, ambos editáveis.</p>}
       <div className="cc139-actions">
-        <button onClick={() => applyOfficial()}><CalendarCheck2/> Aplicar janela oficial</button>
+        <button onClick={() => applyOfficial()}><CalendarCheck2/> Aplicar referência de datas</button>
         <button className="primary" onClick={save} disabled={busy}><Save/> {busy ? 'Salvando…' : 'Salvar janela'}</button>
         <button onClick={exportCalendar}><Download/> Exportar calendário</button>
       </div>
@@ -200,11 +204,11 @@ export default function BidsWindowsView() {
         </div>
         <div className="cc139-actions">
           {item.providerUrl && <button onClick={() => window.open(item.providerUrl, '_blank', 'noopener,noreferrer')}><ExternalLink/> Sistema oficial</button>}
-          <button onClick={() => setForm({ title: item.title, targetMonth: item.targetMonth, opensAt: localInput(new Date(item.opensAt)), closesAt: localInput(new Date(item.closesAt)), providerUrl: item.providerUrl || '', notifyOpen: item.notifyOpen, notifyLastDay: item.notifyLastDay })}><Bell/> Alterar alertas / janela</button>
+          <button onClick={() => setForm({ id: item.id, creationKey: '', title: item.title, targetMonth: item.targetMonth, opensAt: localInput(new Date(item.opensAt)), closesAt: localInput(new Date(item.closesAt)), providerUrl: item.providerUrl || '', notifyOpen: item.notifyOpen, notifyLastDay: item.notifyLastDay })}><Bell/> Alterar alertas / janela</button>
           <button className="danger" onClick={() => remove(item.id)}><Trash2/> Remover</button>
         </div>
       </article>)}
-      {!windows.length && <article className="cc139-card cc139-empty"><Clock/><h2>Nenhuma janela cadastrada</h2><p>Aplique a janela oficial do mês e salve para receber os alertas.</p></article>}
+      {!windows.length && <article className="cc139-card cc139-empty"><Clock/><h2>Nenhuma janela cadastrada</h2><p>Cadastre apenas datas confirmadas no comunicado vigente. Alertas no Telegram dependem de vínculo e agendador validado; salvar não confirma entrega.</p></article>}
     </section>
   </>;
 }

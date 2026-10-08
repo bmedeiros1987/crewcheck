@@ -7,8 +7,8 @@ function parseDate(value) {
 }
 
 export function dueKind(row, now = new Date()) {
-  const opens = parseDate(row.opens_at);
-  const closes = parseDate(row.closes_at);
+  const opens = parseDate(row.open_epoch != null ? Number(row.open_epoch) : row.opens_at);
+  const closes = parseDate(row.close_epoch != null ? Number(row.close_epoch) : row.closes_at);
   if (!opens || !closes || closes <= opens || now < opens || now >= closes) return '';
   const day = (date) => date.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
   if (row.notify_last_day && !row.last_day_notified_at && day(closes) === day(now)) return 'last-day';
@@ -22,7 +22,7 @@ export async function notifyBidRows(db, rows, { now = new Date(), findLink = tel
     const kind = dueKind(row, now);
     if (!kind) continue;
     const link = await findLink(db, row.owner_email);
-    const closes = parseDate(row.closes_at);
+    const closes = parseDate(row.close_epoch != null ? Number(row.close_epoch) : row.closes_at);
     const text = kind === 'open'
       ? [`BIDS aberto — ${row.title}`, `Mês alvo: ${row.target_month}`, `Encerramento: ${closes?.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) || 'a confirmar'}`].join('\n')
       : [`Último dia de BIDS — ${row.title}`, 'A janela encerra hoje.', 'Confira sua solicitação no sistema oficial.'].join('\n');
@@ -53,7 +53,7 @@ export async function handleBidsScheduler(req, res, url) {
     sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
     return true;
   }
-  const [rows] = await db.query('SELECT * FROM crewcheck_platform_bid_windows WHERE closes_at>=CURRENT_TIMESTAMP(3) ORDER BY owner_email,opens_at');
+  const [rows] = await db.query('SELECT *,ROUND(UNIX_TIMESTAMP(opens_at)*1000) AS open_epoch,ROUND(UNIX_TIMESTAMP(closes_at)*1000) AS close_epoch FROM crewcheck_platform_bid_windows WHERE closes_at>=CURRENT_TIMESTAMP(3) ORDER BY owner_email,opens_at');
   const notifications = await notifyBidRows(db, rows);
   sendJson(res, 200, { ok: true, notifications: notifications.length, message: 'Janelas de BIDS verificadas.' });
   return true;

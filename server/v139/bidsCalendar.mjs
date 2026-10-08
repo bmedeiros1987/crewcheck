@@ -19,8 +19,8 @@ export function buildBidsCalendar(rows, now = new Date()) {
     'BEGIN:VEVENT',
     `UID:${row.id}@crewcheck.online`,
     `DTSTAMP:${icsDate(now)}`,
-    `DTSTART:${icsDate(row.opens_at)}`,
-    `DTEND:${icsDate(row.closes_at)}`,
+    `DTSTART:${icsDate(row.open_epoch != null ? Number(row.open_epoch) : row.opens_at)}`,
+    `DTEND:${icsDate(row.close_epoch != null ? Number(row.close_epoch) : row.closes_at)}`,
     `SUMMARY:${escapeIcs(`BIDS — ${row.title}`)}`,
     `DESCRIPTION:${escapeIcs(`Janela de solicitação para ${row.target_month}.`)}`,
     row.provider_url ? `URL:${escapeIcs(row.provider_url)}` : '',
@@ -43,7 +43,7 @@ export async function handleBidsCalendar(req, res, url) {
   if (url.pathname !== '/api/platform/bids/calendar') return false;
   const context = await requireIdentity(req, res);
   if (!context) return true;
-  const [rows] = await context.db.query('SELECT * FROM crewcheck_platform_bid_windows WHERE owner_email=? ORDER BY opens_at', [context.email]);
+  const [rows] = await context.db.query('SELECT *,ROUND(UNIX_TIMESTAMP(opens_at)*1000) AS open_epoch,ROUND(UNIX_TIMESTAMP(closes_at)*1000) AS close_epoch FROM crewcheck_platform_bid_windows WHERE owner_email=? ORDER BY opens_at', [context.email]);
   const calendar = buildBidsCalendar(rows);
   res.writeHead(200, {
     'content-type': 'text/calendar; charset=utf-8',

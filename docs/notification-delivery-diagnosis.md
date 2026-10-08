@@ -38,9 +38,12 @@ POST_NOTIFICATIONS, but granting it alone cannot produce remote push.
   uses the existing Brazil policy (America/Sao_Paulo), requires an open, valid,
   unexpired window and respects per-window switches.
 - Repeated save reset acknowledged markers. Identical dates retain them; changed
-  dates reset them. Users can edit opening/last-day switches in the existing form.
-  New form alerts default off. Concurrent duplicate POST creation remains a
-  separate database uniqueness gap; no migration or production cleanup is run.
+  dates reset them. Edits now retain ID+owner even if title/month changes; missing
+  IDs on the item endpoint return 404 instead of creating another window. Server
+  switches require boolean true; omitted/null/numeric/string values remain off.
+  New creation uses an owner-bound creation request key (legacy callers use
+  owner/month/title), with atomic primary-key no-op on duplicate and payload
+  conflict checks; concurrent retries cannot overwrite a renamed original. Legacy rows are not cleaned up.
 - ICS last-day reminder incorrectly used DTSTART minus one day. It now uses
   RELATED=END and honors each switch. Export is a file snapshot, not a managed
   calendar subscription: removing/updating the DB does not cancel old imported
@@ -56,11 +59,20 @@ POST_NOTIFICATIONS, but granting it alone cannot produce remote push.
 BIDS has no atomic multi-worker claim, provider idempotency key or unknown-outcome
 ledger. Timeout after provider acceptance / crash before DB acknowledgement can
 duplicate on retry; deletion/edit can race an already selected send. This candidate
-does not claim exactly-once or activate BIDS scheduling. Existing general jobs have
-an atomic status claim but cancellation after claim, old chat bindings after account
-changes, 24-hour backlog delivery, and retry-after-unknown-outcome require review
-before connecting a new operational topic. `sent` there means provider accepted,
-not device delivered/read. No delivery telemetry for Bruno's device was accessed,
+does not claim exactly-once or activate BIDS scheduling. The general queue now
+rechecks the current account incarnation and Telegram recipient, rejects client
+recipient overrides, refreshes claimed rows, blocks old triggers after 120 seconds,
+and uses a dispatching CAS as the cancellation cutoff. Cancellation after that cutoff
+returns 409/inFlight, not success. Identical requests preserve terminal states;
+changes to claimed/terminal jobs return conflict rather than reactivating them.
+Stale claims and unknown outcomes are held as uncertain rather than retried;
+partially accepted combinations are held as partial. Explicit known rejection can
+retry at most three attempts. SQL epoch conversions avoid host-zone parsing of
+unqualified MySQL DATETIME values. Telegram requests have a 10-second deadline.
+No new provider, queue, migration or paid-channel activation is introduced.
+These are fake-DB/provider tests, not actual MySQL/physical acceptance. Binding
+revocation after dispatch starts cannot retract an in-flight provider request.
+`sent` means provider accepted, not device delivered/read. No delivery telemetry for Bruno's device was accessed,
 so the actual individual blocker (permission, channel, battery, build, account link)
 cannot be inferred from code alone.
 
@@ -107,8 +119,8 @@ returns `submissionAllowed:false`. It prepares:
   cannot be interpreted as an airport departure alert;
 - two labels for the future preference UI: **Bem-humorado** (`humorous`, absent
   preference default) / **Profissional** (`professional`). Explicit saved choices
-  are preserved. Timing question: “Quando prefere receber: no despertador (ou
-  90 min antes da APZ), com outra antecedência, em horário personalizado ou desativado?”;
+  are preserved. The defined alarm/APZ−90 timing default is preserved; future configuration may
+  offer lead/custom time or disable without another timing question;
 - generic external text with authoritative details in the authenticated in-app
   preview. Same factual content in both tones; arrival is labelled planned rather
   than inventing a confirmed end. No financial/roster details on the lock screen;
@@ -143,9 +155,47 @@ task-4 validation checkout; all three new/changed regressions also passed after
 the first preparation. Do not deploy/merge on
 these results alone.
 
-Smallest next step for Bruno: identify whether he opens the installed Android app
-or PWA/browser, note its version, then inspect (without changing) the existing
+Bruno confirmed the installed Android app; its version is still pending. Inspect
+(without changing) the existing
 notification permission/channel and account/Telegram link status. For closed-app
 remote push, permission alone is insufficient: this baseline has no app transport.
 After independent review, coordinate one recipient/content/channel with the parent
 before any physical test. No request to disable battery protections or buy a service.
+
+## Follow-up validation and delivery plan
+
+The Vite runtime blocker was resolved without changing signatures/security settings:
+the official Node 22.13.0 darwin-arm64 archive from nodejs.org was verified against
+its official SHA256 (`bc1e374e7393e2f4b20e5bbc157d02e9b1fb2c634b2f992136b38fb8ca2023b7`)
+and run temporarily under /tmp. Direct Vite build passed with existing CSS/chunk
+warnings. The earlier signed-app Node/Rollup failure is historical, not a remaining
+application build error. Locked-dependency canonical preparation/build is checked
+separately; no ad-hoc signing or OS protection change is used.
+
+Rechecked e3373d17: no workflow runs/status checks. Commits intentionally use skip-ci
+because ordinary PR synchronization also triggers signed Android bundle workflows.
+Absence of CI is not green CI. Independent review remains HOLD; no merge/deploy.
+Source-preparation finalizer preserves the queue wrappers after legacy v1414
+materialization. Fake regression suite now includes BIDS editing and queue races.
+
+Minimum existing outside-app path: current user's already linked/authorized Telegram
+channel, reviewed trigger and current binding, existing queue, generic concise message
+with authenticated app detail. Do not activate BIDS/briefing until source and queue
+gates are accepted. Local Android reminders can run after the app is closed only if
+the OS alarm was actually scheduled; reboot/account cancellation remain unproven.
+WebView loads crewcheck.online?app=1, so reviewed server/web changes can reach that
+surface. Java receiver/bridge/permission fixes require a new reviewed APK; web
+publication approval does not authorize APK/Play distribution.
+
+Real Android remote push would require a native receiver/SDK, configured push project,
+matching app identifier/config, existing-or-approved server sender credentials, token
+registration/rotation/revocation bound to current account, preference/topic policy,
+runtime notification permission and enabled channel, expiry/collapse policy and
+delivery diagnostics. PWA additionally needs PushManager subscriptions, worker push
+handling and VAPID/sender configuration. These are requirements only: no project,
+credential, service, permission or cost was created/activated.
+
+Briefing timing remains the defined alarm/APZ−90 default; users may later edit it in
+configuration. Do not ask the timing question again. Tone/templates are a prepared
+contract only; do not announce them as delivered until UI, persistence and sending
+are integrated and independently reviewed.
