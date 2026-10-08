@@ -48,7 +48,7 @@ const server = http.createServer(async (req, res) => {
       const identity = canonical.visitorIdentity(req);
       if (!identity) return canonical.sendJson(res, 401, { message: 'Acesso de visitante expirado.' });
       if (revoked) return canonical.sendJson(res, 403, { message: 'Acesso revogado.' });
-      if (url.pathname.endsWith('/data')) return canonical.sendJson(res, 200, { whatsappAvailable: gate,
+      if (url.pathname.endsWith('/data')) return canonical.sendJson(res, 200, { ok: true, whatsappAvailable: gate,
         visitor: { displayName: 'Visitante fictício', permissions: { roster: true } }, owner: { display_name: 'Titular fictício' }, roster: { days: [] }, stays: [] });
       if (url.pathname.endsWith('/link/start')) {
         const body = await canonical.readBody(req);

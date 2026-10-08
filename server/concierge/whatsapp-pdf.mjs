@@ -118,7 +118,7 @@ export async function commitWhatsAppPdf(pool, input, { phoneHash, buildSnapshot,
     const [claim] = await connection.query('INSERT IGNORE INTO crewcheck_telegram_state(state_key,payload) VALUES(?,?)', [input.key, JSON.stringify({ source: 'whatsapp-pdf', digest: input.mediaDigest, completed: true })]);
     if (!Number(claim.affectedRows)) { await connection.rollback(); return { ok: true, duplicate: true }; }
     const snapshotKey = `snapshot:${emailOf(linked)}`;
-    await connection.query('INSERT IGNORE INTO crewcheck_telegram_state(state_key,payload) VALUES(?,?)', [snapshotKey, '{}']);
+    await connection.query('INSERT INTO crewcheck_telegram_state(state_key,payload) VALUES(?,?) ON DUPLICATE KEY UPDATE state_key=state_key', [snapshotKey, '{}']);
     const [rows] = await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE', [snapshotKey]);
     const value = rows[0]?.payload; const previous = typeof value === 'string' ? JSON.parse(value) : value || {};
     const incomingAt = Date.parse(input.receivedAt || '');

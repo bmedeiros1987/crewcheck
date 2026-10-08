@@ -76,8 +76,9 @@ export async function writeDurableSnapshot(pool, key, builder) {
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    // Establish a common lock even when the snapshot has never existed.
-    await connection.query('INSERT IGNORE INTO crewcheck_telegram_state(state_key,payload) VALUES(?,?)', [`snapshot:${key}`, '{}']);
+    // Acquire an exclusive row lock directly. INSERT IGNORE takes a shared duplicate
+    // lock and concurrent SELECT FOR UPDATE upgrades can deadlock.
+    await connection.query('INSERT INTO crewcheck_telegram_state(state_key,payload) VALUES(?,?) ON DUPLICATE KEY UPDATE state_key=state_key', [`snapshot:${key}`, '{}']);
     const [rows] = await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE', [`snapshot:${key}`]);
     const snapshot = builder(parse(rows[0]?.payload) || {});
     await connection.query('UPDATE crewcheck_telegram_state SET payload=CAST(? AS JSON),updated_at=CURRENT_TIMESTAMP(3) WHERE state_key=?', [JSON.stringify(snapshot), `snapshot:${key}`]);

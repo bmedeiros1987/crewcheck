@@ -18,7 +18,7 @@ function execute(target, sql, args = []) {
   if (sql.startsWith('INSERT IGNORE')) { if (target.has(args[0])) return [{ affectedRows: 0 }]; target.set(args[0], parse(args[1])); return [{ affectedRows: 1 }]; }
   if (sql.startsWith('SELECT payload')) return [[...(target.has(args[0]) ? [{ payload: copy(target.get(args[0])) }] : [])]];
   if (sql.startsWith('SELECT state_key')) return [[...target].filter(([key, value]) => key.startsWith('whatsapp-pdf-job:') && ['queued','processing'].includes(value.stage)).map(([state_key, payload]) => ({ state_key, payload: copy(payload) }))];
-  if (sql.startsWith('INSERT INTO')) { target.set(args[0], parse(args[1])); return [{ affectedRows: 1 }]; }
+  if (sql.startsWith('INSERT INTO')) { if (sql.endsWith('state_key=state_key') && target.has(args[0])) return [{ affectedRows: 0 }]; target.set(args[0], parse(args[1])); return [{ affectedRows: 1 }]; }
   if (sql.startsWith('UPDATE')) {
     const [next, key, expected] = args;
     if (expected != null && JSON.stringify(target.get(key)) !== JSON.stringify(parse(expected))) return [{ affectedRows: 0 }];

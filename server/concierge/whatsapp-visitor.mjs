@@ -22,7 +22,7 @@ export async function withVisitorPhoneLock(db, phone, work) {
   if (!visitorPhoneHash(phone)) throw failure('VISITOR_IDENTITY_UNAVAILABLE');
   return transaction(db, async connection => {
     const key = roleKey(phone);
-    await connection.query('INSERT IGNORE INTO crewcheck_telegram_state(state_key,payload) VALUES($1,$2)', [key, '{}']);
+    await connection.query('INSERT INTO crewcheck_telegram_state(state_key,payload) VALUES($1,$2) ON DUPLICATE KEY UPDATE state_key=state_key', [key, '{}']);
     const record = await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=$1 FOR UPDATE', [key]);
     return work(connection, parse(record.rows[0]?.payload) || {}, key);
   });

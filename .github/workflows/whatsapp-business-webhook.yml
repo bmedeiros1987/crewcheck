@@ -136,12 +136,15 @@ jobs:
           FIXTURE_SQL
           docker exec crewcheck-whatsapp-qa chmod 755 /var/run/mysqld
       - name: Exercise production adapter, authorization, transactions and delivery locks
+        shell: bash -eo pipefail {0}
         env:
           CREWCHECK_TEST_MYSQL_ISOLATED: 'true'
           CREWCHECK_TEST_MYSQL_SOCKET: /tmp/crewcheck-whatsapp-qa-socket/mysqld.sock
         run: |
           mkdir -p artifacts/whatsapp-mysql
-          node scripts/regression-whatsapp-pdf-mysql.mjs | tee artifacts/whatsapp-mysql/result.txt
+          node scripts/regression-whatsapp-pdf-mysql.mjs 2>&1 | tee artifacts/whatsapp-mysql/result.txt
+          grep -q 'PASS: actual materialized visitor guard' artifacts/whatsapp-mysql/result.txt
+          grep -q 'PASS: MySQL 8 InnoDB' artifacts/whatsapp-mysql/result.txt
       - name: Remove only the disposable fixture container
         if: always()
         run: docker rm -f crewcheck-whatsapp-qa || true
@@ -172,9 +175,11 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/whatsapp-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/whatsapp-browser/node_modules/playwright/cli.js" install --with-deps chromium
       - name: Test built visitor UI and canonical login, JWT and logout with fictional data
+        shell: bash -eo pipefail {0}
         run: |
           mkdir -p artifacts/whatsapp-browser
-          env -i PATH="$PATH" HOME="$HOME" TMPDIR=/tmp LANG=C MENU_PLAYWRIGHT_PACKAGE="$RUNNER_TEMP/whatsapp-browser/package.json" node scripts/regression-whatsapp-visitor-browser.mjs | tee artifacts/whatsapp-browser/result.txt
+          env -i PATH="$PATH" HOME="$HOME" TMPDIR=/tmp LANG=C MENU_PLAYWRIGHT_PACKAGE="$RUNNER_TEMP/whatsapp-browser/package.json" node scripts/regression-whatsapp-visitor-browser.mjs 2>&1 | tee artifacts/whatsapp-browser/result.txt
+          grep -q 'PASS built full app visitor page' artifacts/whatsapp-browser/result.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -90,7 +90,7 @@ const pool = { getConnection: async () => {
       if (sql.startsWith('SELECT email')) return [[structuredClone(savedLink)]];
       if (sql.startsWith('INSERT IGNORE')) { if (staged.has(args[0])) return [{ affectedRows: 0 }]; staged.set(args[0], args[1]); return [{ affectedRows: 1 }]; }
       if (sql.startsWith('SELECT payload')) return [[...(staged.has(args[0]) ? [{ payload: staged.get(args[0]) }] : [])]];
-      if (sql.startsWith('INSERT INTO')) { if (failure === 'snapshot') throw Error('synthetic write failure'); staged.set(args[0], args[1]); return [{ affectedRows: 1 }]; }
+      if (sql.startsWith('INSERT INTO')) { if (failure === 'snapshot') throw Error('synthetic write failure'); if (sql.endsWith('state_key=state_key') && staged.has(args[0])) return [{ affectedRows: 0 }]; staged.set(args[0], args[1]); return [{ affectedRows: 1 }]; }
       throw Error('Unexpected fixture SQL');
     },
     async commit() { if (failure === 'commit') throw Error('synthetic commit failure'); state = staged; unlock(); unlock = null; },
