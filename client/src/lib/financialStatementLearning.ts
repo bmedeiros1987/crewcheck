@@ -108,11 +108,25 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
       end || undefined,
     ));
   }
-  const total = [...text.matchAll(/Total\s+depositado[^\n\r]*?R\$\s*([\d.]+,\d{2})/gi)].at(-1);
+  const depositedTotals = new Set<number>();
+  let invalidDepositedTotal = false;
+  for (const marker of text.matchAll(/Total\s+depositado\b/gi)) {
+    const tail = text.slice(marker.index! + marker[0].length);
+    const candidate = tail.match(/^\s*:?\s*R\$\s*([+-]?\s*[\d.,]+)(?=$|\s|[;:()])/);
+    const token = candidate?.[1] || '';
+    const strict = /^(?:\d+|\d{1,3}(?:\.\d{3})+),\d{2}$/.test(token);
+    const cents = strict ? Number(token.replace(/\./g, '').replace(',', '')) : NaN;
+    if (!strict || !Number.isSafeInteger(cents) || cents < 0) invalidDepositedTotal = true;
+    else depositedTotals.add(cents);
+  }
   const warnings: string[] = [];
   if (!start) warnings.push('Período não identificado; revisão obrigatória.');
   if (!rates.length) warnings.push('Nenhuma tarifa de alimentação identificada.');
-  return { kind: 'per_diem', competence: start.slice(0, 7), paymentDate: payment?.[1], rates, totals: { deposited: total ? money(total[1]) : 0 }, warnings };
+  if (depositedTotals.size > 1) warnings.push('Totais depositados divergentes; revisão obrigatória.');
+  if (invalidDepositedTotal) warnings.push('Total depositado com formato inválido; revisão obrigatória.');
+  if (!depositedTotals.size) warnings.push('Total depositado não identificado.');
+  const deposited = !invalidDepositedTotal && depositedTotals.size === 1 ? [...depositedTotals][0] / 100 : undefined;
+  return { kind: 'per_diem', competence: start.slice(0, 7), paymentDate: payment?.[1], rates, totals: deposited === undefined ? {} : { deposited }, warnings };
 }
 
 const PAYROLL_KEYS: Array<[RegExp, string, string, LearnedRate['unit']]> = [
