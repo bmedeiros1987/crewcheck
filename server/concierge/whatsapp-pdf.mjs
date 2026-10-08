@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { Worker } from 'node:worker_threads';
+import { whatsappTestJobAllowed, whatsappTestProfileStamp } from './whatsapp-test-send-policy.mjs';
 
 export const MAX_WHATSAPP_PDF_BYTES = 20 * 1024 * 1024;
 export const whatsappPdfEnabled = (environment = process.env) => environment.CREWCHECK_WHATSAPP_PDF_ENABLED === 'true';
@@ -83,16 +84,20 @@ export function parseCanonicalWhatsAppPdf(input) {
 
 /** Dependency boundary permits synthetic tests and prevents fallback local writes. */
 export async function importWhatsAppPdf(message, deps) {
+  const stamp = Object.hasOwn(message, 'testProfileStamp') ? message.testProfileStamp : whatsappTestProfileStamp();
+  const profileCurrent = () => whatsappTestJobAllowed(message, stamp);
+  if (!profileCurrent()) return { ok: false, reason: 'test_profile_changed' };
   if (!whatsappPdfEnabled(deps.environment)) return { ok: false, reason: 'disabled' };
   const receiver = deps.receiver();
   if (!receiver || message?.phoneNumberId !== receiver || message?.type !== 'document' || !message.id || !/^\d{8,16}$/.test(String(message.from || ''))) return { ok: false, reason: 'invalid_envelope' };
   const link = await deps.findLink(message.from);
+  if (!profileCurrent()) return { ok: false, reason: 'test_profile_changed' };
   if (!active(link)) return { ok: false, reason: 'not_authorized' };
   if (message.expectedBinding && bindingOf(link) !== message.expectedBinding) return { ok: false, reason: 'binding_changed' };
   if (typeof deps.commit !== 'function') return { ok: false, reason: 'import_not_configured' };
   const current = async () => {
     const linked = await deps.findLink(message.from);
-    return receiver === deps.receiver() && active(linked) && bindingOf(linked) === bindingOf(link);
+    return profileCurrent() && receiver === deps.receiver() && active(linked) && bindingOf(linked) === bindingOf(link);
   };
   try {
     const media = await deps.download(message.document, receiver);
@@ -101,7 +106,7 @@ export async function importWhatsAppPdf(message, deps) {
     if (!parsed?.roster?.days?.length) return { ok: false, reason: 'roster_empty' };
     if (!await current()) return { ok: false, reason: 'binding_changed' };
     const key = `whatsapp-pdf:${hash(JSON.stringify([emailOf(link), receiver, String(message.id)]))}`;
-    const committed = await deps.commit({ key, link, phone: message.from, receiver, mediaDigest: media.digest, parsed, filename: media.filename, receivedAt: message.receivedAt, sentAt: message.timestamp, current });
+    const committed = await deps.commit({ key, link, phone: message.from, receiver, mediaDigest: media.digest, parsed, filename: media.filename, receivedAt: message.receivedAt, sentAt: message.timestamp, current, profileCurrent });
     return committed?.ok === true ? { ok: true, duplicate: Boolean(committed.duplicate) } : { ok: false, reason: 'commit_unconfirmed' };
   } catch (error) { return { ok: false, reason: error?.code === 'STALE_DOCUMENT' ? 'stale_document' : 'import_failed' }; }
 }
@@ -113,6 +118,7 @@ export async function commitWhatsAppPdf(pool, input, { phoneHash, buildSnapshot,
   try {
     await connection.beginTransaction();
     const [links] = await connection.query('SELECT email,linked_at,revoked_at,consent_concierge FROM crewcheck_whatsapp_links WHERE phone_hash=? FOR UPDATE', [phoneHash(input.phone)]);
+    if (input.profileCurrent && !input.profileCurrent()) fail('TEST_PROFILE_CHANGED');
     const linked = links[0];
     if (!active(linked) || bindingOf(linked) !== bindingOf(input.link) || receiver() !== input.receiver) fail('BINDING_CHANGED');
     const [claim] = await connection.query('INSERT IGNORE INTO crewcheck_telegram_state(state_key,payload) VALUES(?,?)', [input.key, JSON.stringify({ source: 'whatsapp-pdf', digest: input.mediaDigest, completed: true })]);
@@ -130,10 +136,12 @@ export async function commitWhatsAppPdf(pool, input, { phoneHash, buildSnapshot,
     if (providerOrdered ? previousProvider > incomingProvider || (previousProvider === incomingProvider && previousAt > incomingAt)
       : Number.isFinite(previousAt) && previousAt > (Number.isFinite(incomingProvider) ? incomingProvider : incomingAt)) fail('STALE_DOCUMENT');
     const snapshot = buildSnapshot(previous, input);
+    if (input.profileCurrent && !input.profileCurrent()) fail('TEST_PROFILE_CHANGED');
     if (!snapshot || snapshot.email !== emailOf(linked) || !snapshot.roster?.days?.length) fail('SNAPSHOT_REJECTED');
     if (receiver() !== input.receiver) fail('RECEIVER_CHANGED');
     await connection.query('INSERT INTO crewcheck_telegram_state(state_key,payload) VALUES(?,?) ON DUPLICATE KEY UPDATE payload=VALUES(payload),updated_at=CURRENT_TIMESTAMP(3)', [snapshotKey, JSON.stringify(snapshot)]);
     if (receiver() !== input.receiver) fail('RECEIVER_CHANGED');
+    if (input.profileCurrent && !input.profileCurrent()) fail('TEST_PROFILE_CHANGED');
     await connection.commit();
     return { ok: true, duplicate: false, snapshot };
   } catch (error) { await connection.rollback().catch(() => {}); throw error; }

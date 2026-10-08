@@ -32,12 +32,19 @@ function envelopeDecision(message, cfg, now = Date.now()) {
 }
 export const whatsappTestProfileStamp = () => configuration().stamp ?? null;
 export const whatsappTestInboundAllowed = message => envelopeDecision(message, configuration()).allowed === true;
+export function whatsappTestJobAllowed(message, stamp) {
+  const cfg = configuration();
+  if (stamp !== undefined && stamp !== '' && typeof stamp !== 'string') return false;
+  if ((stamp || '') !== cfg.stamp) return false;
+  return envelopeDecision(message, cfg).allowed === true;
+}
 export function whatsappTestMenuCommandAllowed(message) {
   if (!whatsappTestProfileActive()) return true;
   return message?.type === 'text' && /^(?:menu|\/menu|\/escala|\/proximo|\/resumo|\/diarias|\/financeiro)$/i.test(String(message.text || '').trim());
 }
 export async function withWhatsAppTestReply(message, path, work) {
   const cfg = configuration();
+  if (path === 'pdf' && !whatsappTestJobAllowed(message, message?.testProfileStamp)) return { ok: false, code: 'WHATSAPP_TEST_PROFILE_CHANGED' };
   const decision = envelopeDecision(message, cfg);
   if (!decision.allowed) return { ok: false, code: decision.code };
   if (cfg.active && !['inbound','pdf'].includes(path)) return { ok: false, code: 'WHATSAPP_TEST_PATH_UNPROVED' };
