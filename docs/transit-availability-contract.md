@@ -29,3 +29,11 @@ Synthetic contract tests cover no-evidence/empty incidents, observed future unce
 GTFS service-time semantics verified in the primary reference: https://gtfs.org/documentation/schedule/reference/#field-types (Time and Service day). Synthetic DST fixtures cover spring transition and both occurrences of the repeated fall hour.
 
 SEMOB GeoServer WFS references supplied by parent are bus positions/stops, not Metrô-DF operational evidence. Endpoint availability/access/licence is unverified; no query, integration or GPL code reuse is added.
+
+## Independent review corrections
+
+Scope is a discriminated union: explicit `kind: line` with no station field, or `kind: station` with nonempty string line/station IDs. Empty/null/number/boolean IDs are rejected; malformed entries invalidate the evidence rather than expanding it to all stations. Source URLs require HTTP(S) without embedded credentials; only valid evidence provenance is returned.
+
+Every leg identifies origin, destination, intermediate stations and `stationCoverageComplete: true`. Missing/incomplete identity stays unknown. Schedule/normal require all relevant stations or explicit line-wide coverage. An alert at any endpoint/intermediate station overrides normal origin; every transfer leg remains required.
+
+Hero, departure time, status class, KPI, estimate source/leaveLabel and card use transitDeparturePresentation. Unknown transit displays “Horário a confirmar”/“A confirmar”, never ready/protected departure; durations do not populate driving cache. Transit messages cannot claim automatic departure or Telegram monitoring. Actual AirportDeparture/estimate are rendered in tests across route states and positioning, with positive driving control.

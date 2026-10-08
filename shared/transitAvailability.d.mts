@@ -7,7 +7,7 @@ export interface TransitEvidence {
   timeZone: string;
   validFrom: string;
   validUntil: string;
-  coverage: Array<{ lineId: string; stationId?: string }>;
+  coverage: Array<{ kind: 'line'; lineId: string; stationId?: never } | { kind: 'station'; lineId: string; stationId: string }>;
 }
 export interface TransitSchedule extends TransitEvidence {
   serviceDate: string;
@@ -16,7 +16,7 @@ export interface TransitSchedule extends TransitEvidence {
   windows: Array<{ opensAtSeconds: number; closesAtSeconds: number; lastBoardAtSeconds: number }>;
 }
 export interface TransitOperation extends TransitEvidence { state: 'normal' | 'disrupted' | 'suspended' | 'unknown' }
-export interface TransitLeg { lineId: string; stationId: string; serviceDate: string; boardAt: string; alightAt: string }
+export interface TransitLeg { lineId: string; originStationId: string; destinationStationId: string; intermediateStationIds: string[]; stationCoverageComplete: boolean; serviceDate: string; boardAt: string; alightAt: string }
 export interface TransitAvailabilityInput { now: string; departureAt: string; timeZone: string; legs: TransitLeg[]; schedules?: TransitSchedule[]; operations?: TransitOperation[] }
 export interface TransitAvailabilityResult {
   schedule: 'available' | 'unavailable' | 'unknown';
@@ -29,3 +29,5 @@ export interface TransitAvailabilityResult {
 }
 export function transitServiceSeconds(at: string, serviceDate: string, timeZone: string): number | null;
 export function evaluateTransitAvailability(input?: Partial<TransitAvailabilityInput>): TransitAvailabilityResult;
+
+export function transitDeparturePresentation(mode: string, input?: Partial<TransitAvailabilityInput>): { availability: TransitAvailabilityResult; showDepartureTime: boolean; statusLabel: string; whenLabel: string } | null;
