@@ -55,7 +55,7 @@ if (!process.argv.includes('--sa') && !process.argv.includes('--storage')) {
     if (invalidation === 'foreign-tab') helper.invalidateRosterChoices();
     result.resolve(null); await new Promise(setImmediate); assert.deepEqual(result.navigated, [], 'stale empty active result must not redirect after ' + invalidation); assert.deepEqual(result.notifications, []);
   }
-  owner = 'synthetic-a'; const empty = run(); empty.resolve(null); await new Promise(setImmediate); assert.deepEqual(empty.navigated, ['import'], 'current genuine empty result keeps import navigation');
+  owner = 'synthetic-a'; token = 'synthetic-token'; const empty = run(); empty.resolve(null); await new Promise(setImmediate); assert.deepEqual(empty.navigated, ['import'], 'current genuine empty result keeps import navigation');
   const delayed = run(); delayed.resolve({ roster: { days: [{ id: 'synthetic' }] } }); await new Promise(setImmediate); helper.beginRosterChoice(); delayed.resolveCompliance({ compliance: {} }); await new Promise(setImmediate); assert.deepEqual(delayed.bundles, []); assert.deepEqual(delayed.navigated, [], 'retain post-compliance race guard');
   const success = run(); success.resolve({ roster: { days: [{ id: 'synthetic' }] } }); success.resolveCompliance({ compliance: {} }); await new Promise(setImmediate); assert.equal(success.bundles.length, 1); assert.deepEqual(success.navigated, ['cockpit']);
 }

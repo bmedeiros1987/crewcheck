@@ -87,6 +87,7 @@ jobs:
           node scripts/regression-active-roster-runtime.mjs
           node scripts/regression-roster-contract-forward-compatibility.mjs
           node scripts/regression-roster-followup-guards.mjs
+          node scripts/regression-roster-auth-storage.mjs
       - name: Build web client
         run: npx vite build 2>&1 | tee "$RUNNER_TEMP/vite-build.log"
       - name: Validate SOS after source preparation

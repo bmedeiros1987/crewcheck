@@ -57,16 +57,26 @@ let choiceEpoch = 0;
 export function invalidateRosterChoices(): void { choiceEpoch += 1; }
 export type RosterChoiceGuard = (() => boolean) & { finish(): void };
 export function beginRosterChoice(): RosterChoiceGuard {
-  const epoch = ++choiceEpoch, owner = startupOwner(), token = getToken(), clearRevision = clearEpoch();
-  const intentKey = startupKey() + '_intent_epoch';
+  const epoch = ++choiceEpoch;
+  const denied = () => Object.assign(() => false, { finish() {} });
+  let owner: string, token: string | null, clearRevision: string, intentKey: string;
+  try {
+    owner = startupOwner(); token = getToken(); clearRevision = clearEpoch();
+    intentKey = startupKey() + '_intent_epoch';
+  } catch { return denied(); }
+  if (!owner || !token) return denied();
   const intentRevision = crypto.randomUUID();
   // The in-memory epoch still orders choices when storage is full/restricted.
   // Retain the prior shared revision so a later foreign-tab write invalidates us.
   let expectedSharedIntent = readChoiceRevision(intentKey);
   try { localStorage.setItem(intentKey, intentRevision); expectedSharedIntent = intentRevision; } catch { /* best effort */ }
   window.dispatchEvent(new CustomEvent('crewcheck:roster-choice-start'));
-  const canCommit = () => epoch === choiceEpoch && owner === startupOwner() && token === getToken()
-    && clearRevision === clearEpoch() && readChoiceRevision(intentKey) === expectedSharedIntent;
+  const canCommit = () => {
+    try {
+      return epoch === choiceEpoch && owner === startupOwner() && token === getToken()
+        && clearRevision === clearEpoch() && readChoiceRevision(intentKey) === expectedSharedIntent;
+    } catch { return false; }
+  };
   return Object.assign(canCommit, { finish() {
     if (canCommit()) window.dispatchEvent(new CustomEvent('crewcheck:roster-choice-finished'));
   } });
