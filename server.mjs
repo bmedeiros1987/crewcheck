@@ -4021,7 +4021,7 @@ function serveStatic(req, res, url) {
       return;
     }
     const ext = path.extname(filePath).toLowerCase();
-    const type = ext === '.js' ? 'text/javascript; charset=utf-8' : ext === '.css' ? 'text/css; charset=utf-8' : ext === '.html' ? 'text/html; charset=utf-8' : ext === '.json' ? 'application/json; charset=utf-8' : 'application/octet-stream';
+    const type = (ext === '.js' || ext === '.mjs') ? 'text/javascript; charset=utf-8' : ext === '.css' ? 'text/css; charset=utf-8' : ext === '.html' ? 'text/html; charset=utf-8' : ext === '.json' ? 'application/json; charset=utf-8' : 'application/octet-stream';
     res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store, no-cache, must-revalidate' });
     res.end(data);
   });
