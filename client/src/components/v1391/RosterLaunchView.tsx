@@ -1,6 +1,6 @@
 import { rosterDisplayCompare, rosterDisplayIso, rosterInstantIso, rosterLabelDate, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { useEffect, useMemo, useState } from 'react';
-import { summarizeForecastRows } from '@/lib/financialForecastPeriods';
+import { summarizeForecastRows, summarizeNativeForecastRows } from '@/lib/financialForecastPeriods';
 import { peekPendingNavigationContext } from '@/lib/navigationContext';
 import { consumePendingRosterFocus } from '@/lib/rosterFocus';
 import {
@@ -86,6 +86,7 @@ type RosterFinance = {
     rows?: PerDiemItem[];
     monthly?: number | null;
     monthlySummary?: ReturnType<typeof summarizeForecastRows>;
+    nativeSummary?: ReturnType<typeof summarizeNativeForecastRows>;
     currencySummary?: string;
     pendingCurrencies?: string[];
   };
@@ -408,7 +409,8 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       {visibleGroups.map((group) => {
         const groupPerDiems = group.events.flatMap(perDiemForEvent);
         const groupEarnings = group.events.map((event) => salaryByEvent.get(event.id)).filter(Boolean) as FlightEarningItem[];
-        const groupPerDiemTotal = groupPerDiems.reduce((sum, row) => sum + Number(row.convertedBRL || 0), 0);
+        const groupPerDiemTotal = scopedFinance?.perdiem?.nativeSummary?.complete === false
+          ? null : summarizeForecastRows(groupPerDiems).convertedTotalBRL;
         const groupPendingCurrencies = Array.from(new Set(groupPerDiems.filter(row => row.convertedBRL === null).map(row => row.currency)));
         const groupProduction = groupEarnings.reduce((sum, row) => sum + Number(row.total || 0), 0);
         const groupKm = groupEarnings.reduce((sum, row) => sum + Number(row.km || 0), 0);
@@ -417,7 +419,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
             <time dateTime={group.iso}><b>{group.iso.slice(8).padStart(2, '0')}</b><span>{new Intl.DateTimeFormat('pt-BR', { timeZone: ROSTER_DISPLAY_TIME_ZONE, month: 'short' }).format(group.date!)}</span></time>
             <div><small>{new Intl.DateTimeFormat('pt-BR', { timeZone: ROSTER_DISPLAY_TIME_ZONE, weekday: 'long' }).format(group.date!)}</small><h2>{group.events.length} {group.events.length === 1 ? 'programação' : 'programações'}</h2></div>
             {(groupPerDiems.length > 0 || groupEarnings.length > 0) && <div className="cc-roster-day-money-v1397">
-              {groupPerDiems.length > 0 && <span><Utensils/><small>Diárias</small><b>{groupPendingCurrencies.length ? `${groupPendingCurrencies.join('/')} pendente` : money(groupPerDiemTotal)}</b></span>}
+              {groupPerDiems.length > 0 && <span><Utensils/><small>Diárias</small><b>{groupPerDiemTotal === null ? 'Não calculável' : groupPendingCurrencies.length ? `${groupPendingCurrencies.join('/')} pendente` : money(groupPerDiemTotal)}</b></span>}
               {groupEarnings.length > 0 && <span><Route/><small>{groupKm} km</small><b>{scopedFinance?.salary?.configured ? money(groupProduction) : 'A calibrar'}</b></span>}
             </div>}
           </header>

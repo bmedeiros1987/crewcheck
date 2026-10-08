@@ -21,5 +21,8 @@ try {
   assert.deepEqual(conflict.totals, {});
   assert.ok(conflict.warnings.some(warning => warning.includes('divergentes')));
   assert.equal(learnPerDiemStatement(header + 'Total depositado R$ 0,00', 'synthetic.pdf').totals.deposited, 0);
+  const largeConflict = learnPerDiemStatement(header + 'Total depositado R$ 90071992547408,93\nTotal depositado R$ 90071992547408,94', 'synthetic.pdf');
+  assert.deepEqual(largeConflict.totals, {});
+  assert.ok(largeConflict.warnings.some(warning => warning.includes('divergentes')), 'compare integer cents before lossy major-unit conversion');
   console.log('PASS synthetic statement totals: missing, repeated pages, conflict, explicit zero, no payment confirmation');
 } finally { rmSync(outDir, { recursive: true, force: true }); }

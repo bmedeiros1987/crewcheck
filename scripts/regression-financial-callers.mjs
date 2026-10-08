@@ -103,6 +103,54 @@ try {
   assert.equal(empty.weekly, null);
   assert.equal(empty.configured, false);
 
+  const mixedEvents = [event('2032-02-01'), event('2032-02-02', 'UNKNOWN')];
+  const mixed = calculatePerDiem(mixedEvents, roster(2032, 2), new Date('2032-02-02T12:00:00'));
+  assert.equal(mixed.monthly, null);
+  assert.equal(mixed.currencySummary, 'Não calculável');
+  assert.deepEqual(Object.keys(mixed.totalsByCurrency), []);
+  assert.equal(mixed.nativeSummary.complete, false);
+  const originalRate = context.readOptionalNumberSetting;
+  context.readOptionalNumberSetting = key => key === 'crewcheck_perdiem_rate_other_international' ? NaN : null;
+  const invalidRate = calculatePerDiem([event('2032-02-01'), event('2032-02-02', 'INT')], roster(2032, 2));
+  assert.equal(invalidRate.nativeSummary.complete, false);
+  assert.equal(invalidRate.currencySummary, 'Não calculável');
+  context.readOptionalNumberSetting = originalRate;
+  const foreign = calculatePerDiem([event('2032-02-01', 'INT')], roster(2032, 2));
+  assert.equal(foreign.monthly, null);
+  assert.equal(foreign.nativeSummary.complete, true, 'missing FX does not suppress valid native total');
+  assert.match(foreign.currencySummary, /20/);
+  const native = periods.summarizeNativeForecastRows;
+  assert.equal(native([{iso:'2032-02-01',currency:'BRL',value:Infinity,convertedBRL:null}]).complete, false);
+  const compareFunction = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'CompareRosterView');
+  const actualCompareStatements = [];
+  function findCompare(node) {
+    if (ts.isVariableStatement(node) && node.declarationList.declarations.some(decl => ['financial', 'perDiemDeltaText'].includes(decl.name.getText(ast)))) actualCompareStatements.push(node.getText(ast));
+    ts.forEachChild(node, findCompare);
+  }
+  findCompare(compareFunction);
+  assert.equal(actualCompareStatements.length, 2);
+  const comparisonCode = ts.transpileModule(actualCompareStatements.join('\n') + '\nglobalThis.comparisonText = perDiemDeltaText;', {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+  const salary = {production:0,reserve:0,standby:0,chief:0,instructorPay:0,config:{requiresManualFunction:false}};
+  for (const [before, after, expected] of [[mixed, foreign, 'Não calculável'], [foreign, invalidRate, 'Não calculável'], [empty, foreign, 'Não calculável'], [foreign, foreign, 'Sem diferença']]) {
+    const c = vm.createContext({...periods, useMemo: f=>f(), planned:{roster:'before'},bundle:{roster:'after'},comparison:{summary:{periodMatches:true}},financeSnapshot:r=>({salary,perdiem:r==='before'?before:after}),moneyCurrency:()=>{throw Error('unavailable delta must never be formatted as a monetary total');}});
+    vm.runInContext(comparisonCode,c); assert.equal(c.comparisonText,expected);
+  }
+  // Compact roster and detailed view share the completeness-aware display string.
+  const rosterFunction = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'Roster');
+  let compactExpression;
+  function findCompact(node) {
+    if (ts.isJsxExpression(node) && node.expression?.getText(ast).includes('finance.perdiem.currencySummary')) compactExpression=node.expression.getText(ast);
+    ts.forEachChild(node,findCompact);
+  }
+  findCompact(rosterFunction); assert.ok(compactExpression);
+  for(const candidate of [mixed,invalidRate,empty,foreign]) {
+    assert.equal(vm.runInNewContext(compactExpression,{finance:{perdiem:candidate}}),candidate.currencySummary);
+  }
+  activeEvents = mixedEvents;
+  const mixedHtml = renderToStaticMarkup(React.createElement(PerDiemView,{bundle:{roster:roster(2032,2)}}));
+  assert.match(mixedHtml,/Totais por moeda: Não calculável/);
+  assert.doesNotMatch(mixedHtml,/Totais por moeda: [^<]*R\$ 100,00/);
+
   const october = periods.observedAllowancePeriods(new Date('2026-10-08T12:00:00'));
   assert.equal(iso(october.accumulation.start), '2026-10-07');
   assert.equal(iso(october.accumulation.end), '2026-10-13');
@@ -145,6 +193,16 @@ try {
       scopedFinance: parentSummary ? { perdiem: { monthlySummary: parentSummary } } : undefined });
     vm.runInContext(rosterCode, rosterContext);
     assert.equal(rosterContext.rosterValue, 'Não calculável', 'roster must not render partial or invented zero total');
+  }
+  let actualGroupTotal;
+  function findGroupTotal(node) {
+    if (ts.isVariableStatement(node) && node.declarationList.declarations.some(decl => decl.name.getText(rosterAst) === 'groupPerDiemTotal')) actualGroupTotal=node.getText(rosterAst);
+    ts.forEachChild(node,findGroupTotal);
+  }
+  findGroupTotal(rosterAst); assert.ok(actualGroupTotal);
+  const groupCode=ts.transpileModule(actualGroupTotal+'\nglobalThis.value=groupPerDiemTotal;',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+  for (const [groupPerDiems,complete,expected] of [[missingFxRows,true,null],[missingFxRows.slice(0,1),false,null],[missingFxRows.slice(0,1),true,100]]) {
+    const c=vm.createContext({...periods,groupPerDiems,scopedFinance:{perdiem:{nativeSummary:{complete}}}});vm.runInContext(groupCode,c);assert.equal(c.value,expected,'day grouping must not show a partial total');
   }
   console.log('PASS production financial callers: per-item dates, expiry/night, cross-month currency completeness, no-data UI and separate observed periods — TZ=' + (process.env.TZ || 'device'));
 } finally { modules.cleanup(); }

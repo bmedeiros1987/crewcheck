@@ -117,7 +117,7 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
     const strict = /^(?:\d+|\d{1,3}(?:\.\d{3})+),\d{2}$/.test(token);
     const cents = strict ? Number(token.replace(/\./g, '').replace(',', '')) : NaN;
     if (!strict || !Number.isSafeInteger(cents) || cents < 0) invalidDepositedTotal = true;
-    else depositedTotals.add(cents / 100);
+    else depositedTotals.add(cents);
   }
   const warnings: string[] = [];
   if (!start) warnings.push('Período não identificado; revisão obrigatória.');
@@ -125,7 +125,7 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
   if (depositedTotals.size > 1) warnings.push('Totais depositados divergentes; revisão obrigatória.');
   if (invalidDepositedTotal) warnings.push('Total depositado com formato inválido; revisão obrigatória.');
   if (!depositedTotals.size) warnings.push('Total depositado não identificado.');
-  const deposited = !invalidDepositedTotal && depositedTotals.size === 1 ? [...depositedTotals][0] : undefined;
+  const deposited = !invalidDepositedTotal && depositedTotals.size === 1 ? [...depositedTotals][0] / 100 : undefined;
   return { kind: 'per_diem', competence: start.slice(0, 7), paymentDate: payment?.[1], rates, totals: deposited === undefined ? {} : { deposited }, warnings };
 }
 

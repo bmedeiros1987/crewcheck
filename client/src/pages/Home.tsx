@@ -77,7 +77,7 @@ import { confirmedRateValueAt } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import { classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
-import { observedAllowancePeriods, rowsInObservedCycle, summarizeForecastRows, forecastSummaryValue } from '@/lib/financialForecastPeriods';
+import { observedAllowancePeriods, rowsInObservedCycle, summarizeForecastRows, summarizeNativeForecastRows, nativeForecastDelta, forecastSummaryValue } from '@/lib/financialForecastPeriods';
 import { financialJourneyGroupKey, rowsForNominalFinancialCompetence } from '@/lib/financialJourneyGrouping';
 import PlatformCenter from '@/components/platform/PlatformCenter';
 import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, getParkingPosition, saveParkingPosition, deleteParkingPosition, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
@@ -2361,7 +2361,7 @@ function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroL
     requestAnimationFrame(() => document.querySelector(`[data-roster-day="${todayKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
 
-  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>{finance.perdiem.currencyCount > 1 ? finance.perdiem.currencyCount + ' moedas' : finance.perdiem.currencySummary || 'Sem previsão'}</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>{moneyBRL(finance.salary.gross)}</strong></div></section><section className="cz-roster-actions"><button onClick={openToday}><CalendarDays/> Hoje</button><button onClick={() => setView('compare')}><GitCompareArrows/> Comparar</button><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('map')}><MapIcon/> Mapa do mês</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group cz-day-linked" data-roster-day={dateChip(d)} key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <div className="cz-roster-expand-wrap" key={e.id}><article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''} ${e.kind === 'flight' ? flightWorkClass(e) : ''} ${timelineStateClass(e)} ${expandedId === e.id ? 'expanded' : ''}`} onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div><RosterEventChips event={e}/><LayoverWeatherBadge event={e}/></article>{expandedId === e.id && <RosterInlineDetails event={e} setView={setView}/>}</div>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} data-roster-day={dateChip(d)} onClick={() => dayEvents[0] && setExpandedId(expandedId === dayEvents[0].id ? null : dayEvents[0].id)}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}</>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>{!finance.perdiem.nativeSummary.complete ? finance.perdiem.currencySummary : finance.perdiem.currencyCount > 1 ? finance.perdiem.currencyCount + ' moedas' : finance.perdiem.currencySummary}</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>{moneyBRL(finance.salary.gross)}</strong></div></section><section className="cz-roster-actions"><button onClick={openToday}><CalendarDays/> Hoje</button><button onClick={() => setView('compare')}><GitCompareArrows/> Comparar</button><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('map')}><MapIcon/> Mapa do mês</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group cz-day-linked" data-roster-day={dateChip(d)} key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <div className="cz-roster-expand-wrap" key={e.id}><article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''} ${e.kind === 'flight' ? flightWorkClass(e) : ''} ${timelineStateClass(e)} ${expandedId === e.id ? 'expanded' : ''}`} onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div><RosterEventChips event={e}/><LayoverWeatherBadge event={e}/></article>{expandedId === e.id && <RosterInlineDetails event={e} setView={setView}/>}</div>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} data-roster-day={dateChip(d)} onClick={() => dayEvents[0] && setExpandedId(expandedId === dayEvents[0].id ? null : dayEvents[0].id)}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}</>;
 }
 
 function comparisonEventSummary(event: ComparableRosterEvent | null): string {
@@ -2402,17 +2402,7 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
       + before.salary.chief + before.salary.instructorPay;
     const afterVariable = after.salary.production + after.salary.reserve + after.salary.standby
       + after.salary.chief + after.salary.instructorPay;
-    const currencies = Array.from(new Set([
-      ...Object.keys(before.perdiem.totalsByCurrency),
-      ...Object.keys(after.perdiem.totalsByCurrency),
-    ])) as PerDiemCurrency[];
-    const perDiemDelta = currencies
-      .map((currency) => ({
-        currency,
-        value: Number(after.perdiem.totalsByCurrency[currency] || 0)
-          - Number(before.perdiem.totalsByCurrency[currency] || 0),
-      }))
-      .filter((item) => Math.abs(item.value) >= 0.005);
+    const perDiemDelta = nativeForecastDelta(before.perdiem.nativeSummary, after.perdiem.nativeSummary);
     return {
       variableDelta: afterVariable - beforeVariable,
       plannedVariable: beforeVariable,
@@ -2454,8 +2444,8 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
   const capturedAt = Number.isFinite(capturedDate.getTime())
     ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(capturedDate)
     : 'data não informada';
-  const perDiemDeltaText = financial?.perDiemDelta.length
-    ? financial.perDiemDelta.map((item) => moneyCurrency(item.value, item.currency)).join(' · ')
+  const perDiemDeltaText = !financial || financial.perDiemDelta === null ? 'Não calculável' : financial.perDiemDelta.length
+    ? financial.perDiemDelta.map((item) => moneyCurrency(item.value, item.currency as PerDiemCurrency)).join(' · ')
     : 'Sem diferença';
   const freeDayIndemnity = freeDayPostponementIndemnity(freeDayDelay, exceptionalNeed);
 
@@ -3554,10 +3544,8 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     }
   }
   const monthlyRows = rowsForNominalFinancialCompetence(rows, roster);
-  const totalsByCurrency = monthlyRows.reduce((totals, row) => {
-    totals[row.currency] = (totals[row.currency] || 0) + row.value;
-    return totals;
-  }, {} as Partial<Record<PerDiemCurrency, number>>);
+  const nativeSummary = summarizeNativeForecastRows(monthlyRows, rowsForNominalFinancialCompetence(unclassifiedItems, roster));
+  const totalsByCurrency = nativeSummary.totalsByCurrency as Partial<Record<PerDiemCurrency, number>>;
   const monthlySummary = summarizeForecastRows(monthlyRows, rowsForNominalFinancialCompetence(unclassifiedItems, roster));
   const pendingCurrencies = monthlySummary.pendingCurrencies;
   const convertedTotalBRL = monthlySummary.convertedTotalBRL;
@@ -3568,8 +3556,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
   const weekly = weeklySummary.convertedTotalBRL;
   const previousWeeklyRows = rowsInObservedCycle(rows, periods.previous);
   const previousWeeklySummary = summarizeForecastRows(previousWeeklyRows, rowsInObservedCycle(unclassifiedItems, periods.previous));
-  const currencySummary = (Object.entries(totalsByCurrency) as Array<[PerDiemCurrency, number]>)
-    .filter(([, value]) => value > 0)
+  const currencySummary = !nativeSummary.complete ? (nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável') : (Object.entries(totalsByCurrency) as Array<[PerDiemCurrency, number]>)
     .map(([currency, value]) => moneyCurrency(value, currency))
     .join(' · ');
   return {
@@ -3577,6 +3564,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     monthlyRows,
     monthly: convertedTotalBRL,
     monthlySummary,
+    nativeSummary,
     weekly,
     weeklyRows,
     weeklySummary,
@@ -3764,7 +3752,7 @@ function PerDiemView({ bundle }: { bundle: BundleState }) {
     </section>
     <p className="cz-mini-status">Ciclo previsto: quarta-feira a terça-feira, com pagamento na quinta-feira seguinte. Ceia registrada a partir de 00:00 de quarta-feira pertence ao ciclo seguinte.</p>
     <section className="cz-finance-grid">
-      <KpiCard icon={BriefcaseBusiness} title="Totais por moeda" value={String(forecast.currencyCount)} detail={forecast.currencySummary || 'Sem itens previstos'}/>
+      <KpiCard icon={BriefcaseBusiness} title="Totais por moeda" value={forecast.nativeSummary.complete ? String(forecast.currencyCount) : forecast.nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável'} detail={forecast.currencySummary || 'Sem itens previstos'}/>
       <KpiCard icon={CalendarDays} title="Convertido previsto no mês" value={forecastSummaryValue(forecast.monthlySummary, moneyBRL)} detail={forecast.pendingCurrencies.length ? 'Informe ' + forecast.pendingCurrencies.join(', ') : 'Previsão da competência selecionada'}/>
       <KpiCard icon={Plane} title="Semana em acumulação" value={forecastSummaryValue(forecast.weeklySummary, moneyBRL)} detail={`${dateChip(forecast.cycle.start)}–${dateChip(forecast.cycle.end)} · ciclo legado estimado; não confirma pagamento`}/>
     </section>

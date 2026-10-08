@@ -2,6 +2,25 @@ import { observedStatementCycle, type AllowanceStatementCycle } from './compensa
 
 type ForecastRow = { iso: string; currency: string; value: number; convertedBRL: number | null };
 type UnclassifiedItem = { iso: string; airport: string };
+// Native totals do not need FX, but do require every item in this scope to have
+// a known classification, rule and finite amount. Empty is not a known zero.
+export function summarizeNativeForecastRows(rows: readonly ForecastRow[], unclassified: readonly UnclassifiedItem[] = []) {
+  const totals: Record<string, number> = {};
+  let invalid = false;
+  for (const row of rows) {
+    if (!Number.isFinite(row.value) || row.value < 0 || !row.currency) { invalid = true; continue; }
+    totals[row.currency] = (totals[row.currency] ?? 0) + row.value;
+    if (!Number.isFinite(totals[row.currency])) invalid = true;
+  }
+  const state = unclassified.length ? 'unclassified' : invalid ? 'invalid_amount' : !rows.length ? 'no_data' : 'available';
+  return { state, complete: state === 'available', totalsByCurrency: state === 'available' ? totals : {} };
+}
+export function nativeForecastDelta(before: ReturnType<typeof summarizeNativeForecastRows>, after: ReturnType<typeof summarizeNativeForecastRows>) {
+  if (!before.complete || !after.complete) return null;
+  return [...new Set([...Object.keys(before.totalsByCurrency), ...Object.keys(after.totalsByCurrency)])]
+    .map(currency => ({ currency, value: (after.totalsByCurrency[currency] ?? 0) - (before.totalsByCurrency[currency] ?? 0) }))
+    .filter(item => Math.abs(item.value) >= 0.005);
+}
 export function rowsInObservedCycle<T extends { iso: string }>(rows: readonly T[], cycle: AllowanceStatementCycle): T[] {
   const civil = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   const start = civil(cycle.start);
