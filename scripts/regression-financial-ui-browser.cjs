@@ -5,13 +5,13 @@ const out = path.resolve(process.env.FINANCIAL_UI_EVIDENCE_DIR || 'artifacts/fin
 fs.mkdirSync(out, { recursive: true });
 const dist = path.resolve('dist');
 // Exercise the production static responder rather than a test-only MIME table.
-const vm = require('node:vm');
+const vm = require('node:vm'), ts = require('typescript');
 const serverSource=fs.readFileSync(path.resolve('server.mjs'),'utf8');
-const staticStart=serverSource.indexOf('function serveStatic(req, res, url) {');
-const staticEnd=serverSource.indexOf('http.createServer(',staticStart);
-assert.ok(staticStart>=0&&staticEnd>staticStart,'production static handler must exist');
-const staticContext=vm.createContext({fs,path,distDir:dist,sendJson:(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}});
-vm.runInContext(serverSource.slice(staticStart,staticEnd)+'\nglobalThis.respond=serveStatic;',staticContext);
+const staticAst=ts.createSourceFile('server.mjs',serverSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
+const staticFunctions=staticAst.statements.filter(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='serveStatic');
+assert.equal(staticFunctions.length,1,'exactly one production static handler must exist');
+const staticContext=vm.createContext({fs,path,Buffer,distDir:dist,sendJson:(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}});
+vm.runInContext(staticFunctions[0].getText(staticAst)+'\nglobalThis.respond=serveStatic;',staticContext);
 const server=http.createServer((req,res)=>staticContext.respond(req,res,new URL(req.url,'http://localhost')));
 const day = (date, airport = 'BSB', short = false) => ({date, dayOfWeek:'SYN', type:'CRM', pairingCode:'CRM', dutyReport:short?'11:00':'05:00', dutyDebrief:short?'11:15':'21:00', legs:[], dutyHours:short ? 0.25 : 16, flyingHours:0, isNextDay:false, hotel:null, base:airport, rawText:'SYNTHETIC UI QA ONLY'});
 function roster(kind, month=2) {
