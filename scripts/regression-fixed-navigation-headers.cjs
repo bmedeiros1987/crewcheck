@@ -95,6 +95,8 @@ async function visibleTextBounds(page, selector) {
       const box=async selector=>page.locator(selector).boundingBox();
       const stable=(before,after,label)=>{assert.ok(before&&after);assert.ok(Math.abs(before.y-after.y)<=1&&Math.abs(before.height-after.height)<=1,label+JSON.stringify({before,after}));};
       const header=await box('.cz-global-header');
+      assert.ok(header.height <= 96, 'Essential fixed navigation must preserve canvas at 200%: '+JSON.stringify(header));
+      assert.equal(await page.locator('.cz-brand-lockup small').evaluateAll(es => es.every(e => !e.getClientRects().length)),true,'Decorative tagline must not consume fixed canvas');
       for(const top of [900,0,160]) {await page.evaluate(top=>window.scrollTo({top,behavior:'instant'}),top);await settle(page);stable(header,await box('.cz-global-header'),'Page header moved');}
       assert.deepEqual(await visibleTextBounds(page,'.cz-global-header'),[]);
       const before=await page.evaluate(()=>window.scrollY);
