@@ -5,6 +5,12 @@ on:
     branches: [main]
     paths:
       - 'client/src/styles/**'
+      - 'client/src/lib/textSizePreference.ts'
+      - 'client/src/lib/overlayLifecycle.ts'
+      - 'client/src/components/TextSizeSetting.tsx'
+      - 'scripts/regression-ui-reading-overlays.cjs'
+      - 'scripts/v14387d/apply.mjs'
+      - 'scripts/p1-home-layout/apply.mjs'
       - 'client/src/pages/Home.tsx'
       - 'client/src/components/v1391/menu-5s.css'
       - 'client/src/components/v1391/menu-personalization.css'
@@ -92,6 +98,10 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
         run: node scripts/regression-shell-navigation-browser.mjs
+      - name: Exercise reading preference and overlay scroll recovery with synthetic accounts
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-ui-reading-overlays.cjs
       - name: Validate publication import to history with synthetic PDFs
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
@@ -111,6 +121,7 @@ jobs:
             artifacts/hotel-controls
             artifacts/menu-responsive
             artifacts/menu-interaction
+            artifacts/ui-reading-overlays
             artifacts/publication-import-flow
             artifacts/share-discovery
           if-no-files-found: warn

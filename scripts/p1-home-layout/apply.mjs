@@ -45,7 +45,7 @@ if (!source.includes('function PersonalizedCockpit(')) {
       id: 'summary',
       label: 'Resumo operacional',
       description: 'Alertas operacionais e acesso ao painel completo.',
-      content: <button className="cz-mini-status" onClick={() => setView('alerts')}><Bell/><strong>Alertas operacionais</strong><span>{alertCount ? alertCount + ' confirmado(s)' : 'Nenhum alerta confirmado'}</span><ChevronRight/></button>,
+      content: <button className="cz-mini-status cc-operational-alert-link" onClick={() => setView('alerts')}><Bell/><strong>Alertas operacionais</strong><span>{alertCount ? alertCount + ' confirmado(s)' : 'Nenhum alerta confirmado'}</span><ChevronRight/></button>,
     },
     {
       id: 'finance',

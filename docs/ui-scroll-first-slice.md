@@ -1,25 +1,15 @@
-# Menu scroll and compact controls: first review slice
+# Compact navigation, reading preference and overlay recovery
 
-Base: main `1f8e9efee877837605a086bc11c3887167ba4918`.
-Concurrent PR #933 (`fix/push-readiness`) is outside this change.
+Base main: `1f8e9efee877837605a086bc11c3887167ba4918`. PR933 and financial calculation rules are outside this change.
 
-## Diagnosis
+The app already had a fixed bottom navigation and menu overlay, but competing CSS made menu scrolling and favorites inconsistent. The import confirmation could orphan a pending promise when another confirmation opened. No account-scoped reading-size preference existed.
 
-The canonical source already creates a fixed menu overlay with a dedicated `.cz-menu-scroll`, keyboard Escape, a focus trap, focus restoration and body-class cleanup. Several older CSS layers also describe the entire panel as scrollable. Favorites have their own two-column chip layout rather than the menu's icon-and-label rows. No reusable user text-size preference was found in the inspected TypeScript source; existing appearance settings select themes.
+This change adds local account-scoped 100/150/200% reading preferences in Settings, wraps essential text, and preserves the approved bottom navigation. The menu has one content scroller with its header retained. Favorites keep their semantic badge, with the icon left of its label. The Home operational-alert link is compact and retains a 44px touch target.
 
-## This slice
+A shared overlay lifecycle restores body locks, original scroll and focus on Escape, browser Back, backdrop and cancellation. Nested dialogs keep the parent locked; duplicate import requests decline without deleting the active confirmation. Menu keyboard handling yields to an active child dialog.
 
-Explicitly keep the menu panel non-scrollable and its content independently scrollable, preserving the header and bottom safe-area clearance. Favorites form one column with an icon at the left and an 8px gap before wrapping text. Alert action buttons retain at least 44px height while using compact padding. Alert data, classification and handler behavior are unchanged. The approved bottom navigation and financial engine are unchanged.
+QA uses synthetic fixtures only: actual app Settings/menu and financial views, the actual generated import-confirmation component, menu component interaction and responsive shell. It does not activate an import or exercise the complete PDF pipeline. Safe-area checks include a deterministic emulated bottom inset, not physical-device certification. Final reports accompany the private review package.
 
-## Verification
+Independent review is required before merge/deploy. Reference images 112742.jpg, 112743.jpg and 112744.jpg resolved through official Library metadata, but all supported transfers returned HTTP403. No bytes or pixels were available on this Mac, so reference comparison remains blocked. The top brand/header remains in page flow; the fixed menu header and approved fixed bottom navigation are preserved. No real documents or account data are committed.
 
-Canonical preparation, TypeScript and Vite build passed. Chromium component/CSS QA passed 56 cases: nine viewport modes, light/dark themes, root text sizes 100/150/200%, plus two rotation cases. Assertions cover containment, touch targets, label contrast, favorite alignment, header position during scroll, one menu scroller, and the last destination being reachable. Fixtures use synthetic account data; no production APIs or records are used. The harness renders the real prepared MenuDrawer with shipped styles. It does not establish full-app or physical-device acceptance.
-
-## Outstanding before completing the broader UI request
-
-- Add and validate a user-facing text-size preference across essential app content; root-size QA of the menu alone is not that feature.
-- Exercise interactive full-app keyboard/back/cancel/dismiss and modal/body-lock recovery, plus the approved bottom navigation with last-item clearance and safe areas.
-- Independently review the draft and screenshots before merging or publishing.
-- Reference images `112742.jpg`, `112743.jpg`, `112744.jpg` were resolved with official Library metadata, but all three official transfers returned HTTP 403. No image bytes were materialized or pixels inspected on this Mac. Visual comparison with those references remains blocked.
-
-Real allowance reconciliation is a separate task. The supplied statements alone do not establish the cause of the app's different amount or bank settlement. No real documents, personal values or screenshots are committed here.
+Real financial reconciliation and updated values remain separate. Statement deposit dates are not bank confirmation.

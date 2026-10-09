@@ -166,7 +166,7 @@ async function inspect(page, label) {
     return {
       viewport: { width: innerWidth, height: innerHeight },
       theme: document.documentElement.dataset.crewTheme,
-      expectedColumns: matchMedia('(pointer: coarse) and (min-width: 821px)').matches ? 2 : 1,
+      expectedColumns: document.documentElement.dataset.crewTextSize !== '100' ? 1 : matchMedia('(pointer: coarse) and (min-width: 821px)').matches ? 2 : 1,
       columns: getComputedStyle(document.querySelector('.cz-menu-group')).gridTemplateColumns.split(' ').length,
       panel: box(panel), scroll: { ...box(scroll), scrollWidth: scroll.scrollWidth, clientWidth: scroll.clientWidth },
       panelOverflow: getComputedStyle(panel).overflowY,
@@ -281,10 +281,13 @@ try {
     for (const theme of ['dark', 'light']) {
       await page.evaluate(theme => window.applyMenuTestTheme(theme), theme);
       for (const scale of [100, 150, 200]) {
-        await page.evaluate(scale => { document.documentElement.style.fontSize = `${scale}%`; }, scale);
+        await page.evaluate(scale => {
+          document.documentElement.dataset.crewTextSize = String(scale);
+          document.documentElement.style.setProperty('--cc-text-scale', String(scale / 100));
+        }, scale);
         await inspect(page, `${device.name}-${theme}-text-${scale}`);
       }
-      await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+      await page.evaluate(() => { document.documentElement.dataset.crewTextSize = '100'; document.documentElement.style.setProperty('--cc-text-scale', '1'); });
     }
     if (device.name === 'phone-portrait') {
       await page.setViewportSize({ width: 844, height: 390 });

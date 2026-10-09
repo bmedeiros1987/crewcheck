@@ -1,6 +1,9 @@
 import type { ReactNode } from 'react';
 import '@/styles/per-diem-content.css';
 import '@/styles/compact-navigation.css';
+import TextSizeSetting from '@/components/TextSizeSetting';
+import { initializeCrewTextSize } from '@/lib/textSizePreference';
+import { acquireOverlayLifecycle } from '@/lib/overlayLifecycle';
 import NotificationSoundSetting from '@/components/pulse/NotificationSoundSetting';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useLocation } from 'wouter';
@@ -3058,6 +3061,7 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     <h3>Notificações e concierge</h3>
     <ToggleSetting icon={Bell} label="CrewCheck Pulse" storageKey="crewcheck_pulse_enabled" detail="Banner contextual dentro do app"/>
     <NotificationPermissionSetting/>
+    <TextSizeSetting/>
     <NotificationSoundSetting/>
     <ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/>
     <ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/>
@@ -4862,12 +4866,22 @@ body.crewcheck-menu-open {
 `;
 
 export default function Home() {
+  useEffect(initializeCrewTextSize, []);
   const [, setLocation] = useLocation();
   const fileRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<ZeroView>(() => new URLSearchParams(window.location.search).has('connect') ? 'community' : normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
   const [bundle, setBundle] = useState<BundleState>(loadRoster());
   const [busy, setBusy] = useState(false);
-  const [drawer, setDrawer] = useState(false);
+  const [drawer, setDrawerState] = useState(false);
+  const menuScrollRef = useRef(0);
+  const menuOpenerRef = useRef<HTMLElement | null>(null);
+  const setDrawer = (open: boolean) => {
+    if (open) {
+      menuScrollRef.current = window.scrollY;
+      menuOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    }
+    setDrawerState(open);
+  };
   const [showIntro, setShowIntro] = useState(false);
   const [presentationRevision, setPresentationRevision] = useState(0);
   const events = useMemo(() => buildLegs(bundle.roster), [bundle.roster, presentationRevision]);
@@ -4963,6 +4977,9 @@ export default function Home() {
 
 
   useEffect(() => {
+    if (!drawer) return;
+    const originalView = document.querySelector('.cz-app')?.getAttribute('data-view');
+    const release = acquireOverlayLifecycle(() => setDrawer(false), () => document.querySelector('.cz-app')?.getAttribute('data-view') === originalView, menuScrollRef.current, menuOpenerRef.current);
     try {
       document.documentElement.classList.toggle('crewcheck-menu-open', drawer);
       document.body.classList.toggle('crewcheck-menu-open', drawer);
@@ -4972,6 +4989,7 @@ export default function Home() {
         document.documentElement.classList.remove('crewcheck-menu-open');
         document.body.classList.remove('crewcheck-menu-open');
       } catch {}
+      release();
     };
   }, [drawer]);
 
