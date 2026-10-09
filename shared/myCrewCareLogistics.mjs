@@ -1,9 +1,8 @@
 /**
  * Provider-neutral, source-aware logistics facts for MyCrewCare.
  *
- * This module never mutates roster, APZ, presentation, duty/rest or alarms. It only
- * validates provider observations and reconciles them against an authenticated,
- * persisted stay registry supplied by CrewCheck Mobile Core.
+ * This module never mutates roster, APZ, presentation, duty/rest or alarms. It
+ * validates provider observations against an authenticated persisted-stay registry.
  */
 export const MYCREWCARE_LOGISTICS_SCHEMA = 1;
 export const MYCREWCARE_SOURCE = 'mycrewcare';
@@ -139,6 +138,10 @@ export function myCrewCareLocalInstant(date, time, timeZone) {
   return matches.length === 1 ? matches[0] : null;
 }
 
+function optionalText(value, max = TEXT_LIMIT) {
+  return value == null || value === '' ? null : (text(value, max) || null);
+}
+
 export function normalizeMyCrewCareStays(values, contextValue) {
   const context = normalizeMyCrewCareContext(contextValue);
   if (!context || !Array.isArray(values) || values.length > MYCREWCARE_MAX_STAYS) return [];
@@ -150,7 +153,7 @@ export function normalizeMyCrewCareStays(values, contextValue) {
     const rosterEventId = opaque(value?.rosterEventId);
     const airport = text(value?.airport, 3).toUpperCase();
     const pairingId = opaque(value?.pairingId);
-    const hotelName = normalizeOptionalText(value?.hotelName);
+    const hotelName = optionalText(value?.hotelName);
     const timeZone = text(value?.timeZone, 80);
     const start = myCrewCareInstant(value?.startAt);
     const end = myCrewCareInstant(value?.endAt);
@@ -196,10 +199,6 @@ export function normalizeMyCrewCareStays(values, contextValue) {
   return Object.freeze(stays.sort((left, right) => left.id.localeCompare(right.id)));
 }
 
-function normalizeOptionalText(value, max = TEXT_LIMIT) {
-  return value == null || value === '' ? null : (text(value, max) || null);
-}
-
 export function normalizeMyCrewCareRecord(value) {
   if (!value || value.direction !== 'to_airport') return null;
   const date = validDay(value.date);
@@ -207,16 +206,21 @@ export function normalizeMyCrewCareRecord(value) {
   const airport = text(value.airport, 3).toUpperCase();
   const pairingId = opaque(value.pairingId);
   const hotelName = text(value.hotelName ?? value.hotel);
-  const providerRecordId = normalizeOptionalText(value.providerRecordId, 180);
-  const hotelAddress = normalizeOptionalText(value.hotelAddress, 320);
-  const hotelPhone = normalizeOptionalText(value.hotelPhone, 80);
-  const reservationStartAt = value.reservationStartAt == null || value.reservationStartAt === '' ? null : myCrewCareInstant(value.reservationStartAt);
-  const reservationEndAt = value.reservationEndAt == null || value.reservationEndAt === '' ? null : myCrewCareInstant(value.reservationEndAt);
-  const pickupLocation = normalizeOptionalText(value.pickupLocation, 240);
-  const transportProvider = normalizeOptionalText(value.transportProvider, 180);
-  const transportPhone = normalizeOptionalText(value.transportPhone, 80);
-  const status = value.status == null || value.status === '' ? 'published' : text(value.status, 40).toLocaleLowerCase('en-US');
-  const allowedStatus = new Set(['published', 'changed', 'cancelled']);
+  const providerRecordId = optionalText(value.providerRecordId, 180);
+  const hotelAddress = optionalText(value.hotelAddress, 320);
+  const hotelPhone = optionalText(value.hotelPhone, 80);
+  const reservationStart = value.reservationStartAt == null || value.reservationStartAt === ''
+    ? null
+    : myCrewCareInstant(value.reservationStartAt);
+  const reservationEnd = value.reservationEndAt == null || value.reservationEndAt === ''
+    ? null
+    : myCrewCareInstant(value.reservationEndAt);
+  const pickupLocation = optionalText(value.pickupLocation, 240);
+  const transportProvider = optionalText(value.transportProvider, 180);
+  const transportPhone = optionalText(value.transportPhone, 80);
+  const status = value.status == null || value.status === ''
+    ? 'published'
+    : text(value.status, 40).toLocaleLowerCase('en-US');
   const transitMinutes = Number.isInteger(value.transitMinutes)
     && value.transitMinutes >= 0
     && value.transitMinutes <= 360
@@ -227,10 +231,10 @@ export function normalizeMyCrewCareRecord(value) {
     || !/^[A-Z]{3}$/.test(airport)
     || !pairingId
     || !hotelName
-    || (reservationStartAt !== null && !Number.isFinite(reservationStartAt))
-    || (reservationEndAt !== null && !Number.isFinite(reservationEndAt))
-    || (reservationStartAt !== null && reservationEndAt !== null && reservationEndAt <= reservationStartAt)
-    || !allowedStatus.has(status)) return null;
+    || (reservationStart !== null && !Number.isFinite(reservationStart))
+    || (reservationEnd !== null && !Number.isFinite(reservationEnd))
+    || (reservationStart !== null && reservationEnd !== null && reservationEnd <= reservationStart)
+    || !new Set(['published', 'changed', 'cancelled']).has(status)) return null;
   return Object.freeze({
     direction: 'to_airport',
     date,
@@ -241,8 +245,8 @@ export function normalizeMyCrewCareRecord(value) {
     providerRecordId,
     hotelAddress,
     hotelPhone,
-    reservationStartAt: reservationStartAt === null ? null : new Date(reservationStartAt).toISOString(),
-    reservationEndAt: reservationEndAt === null ? null : new Date(reservationEndAt).toISOString(),
+    reservationStartAt: reservationStart === null ? null : new Date(reservationStart).toISOString(),
+    reservationEndAt: reservationEnd === null ? null : new Date(reservationEnd).toISOString(),
     pickupLocation,
     transportProvider,
     transportPhone,
@@ -252,7 +256,7 @@ export function normalizeMyCrewCareRecord(value) {
 }
 
 function factIdentity(fact) {
-  return `${fact.stayId}:${fact.kind}`;
+  return `${fact.accountId}:${fact.rosterId}:${fact.rosterRevision}:${fact.stayId}:${fact.kind}`;
 }
 
 function createFacts(context, stay, record, observedAt, pickupEpoch) {
@@ -265,7 +269,7 @@ function createFacts(context, stay, record, observedAt, pickupEpoch) {
     airport: stay.airport,
     pairingId: stay.pairingId,
   };
-  const hotelMaterial = {
+  const materials = [{
     ...common,
     kind: 'hotel',
     hotelName: record.hotelName,
@@ -273,8 +277,7 @@ function createFacts(context, stay, record, observedAt, pickupEpoch) {
     hotelPhone: record.hotelPhone,
     reservationStartAt: record.reservationStartAt,
     reservationEndAt: record.reservationEndAt,
-  };
-  const pickupMaterial = {
+  }, {
     ...common,
     kind: 'pickup',
     hotelName: record.hotelName,
@@ -284,8 +287,8 @@ function createFacts(context, stay, record, observedAt, pickupEpoch) {
     transportProvider: record.transportProvider,
     transportPhone: record.transportPhone,
     transitMinutes: record.transitMinutes,
-  };
-  return Object.freeze([hotelMaterial, pickupMaterial].map((material) => Object.freeze({
+  }];
+  return Object.freeze(materials.map((material) => Object.freeze({
     schemaVersion: MYCREWCARE_LOGISTICS_SCHEMA,
     accountId: context.accountId,
     rosterId: context.rosterId,
@@ -296,17 +299,13 @@ function createFacts(context, stay, record, observedAt, pickupEpoch) {
   })));
 }
 
-/**
- * Reconcile one complete, authenticated provider snapshot. Any invalid record or
- * ambiguity fails the snapshot as a whole. Unmatched records are reported but do
- * not get attached to a stay.
- */
+/** Any invalid, conflicting, ambiguous or unmatched provider record fails closed. */
 export function reconcileMyCrewCareLogistics({ context: contextValue, stays: stayValues, snapshot, now = Date.now() } = {}) {
   const context = normalizeMyCrewCareContext(contextValue);
   const stays = normalizeMyCrewCareStays(stayValues, context);
   const observedAt = myCrewCareInstant(snapshot?.observedAt ?? snapshot?.syncedAt);
   const recordsValue = snapshot?.records;
-  const resultBase = {
+  const base = {
     accepted: false,
     facts: Object.freeze([]),
     unmatched: Object.freeze([]),
@@ -314,7 +313,7 @@ export function reconcileMyCrewCareLogistics({ context: contextValue, stays: sta
     error: null,
   };
   if (!context || stays.length !== (Array.isArray(stayValues) ? stayValues.length : -1)) {
-    return Object.freeze({ ...resultBase, error: 'invalid-scope' });
+    return Object.freeze({ ...base, error: 'invalid-scope' });
   }
   if (!Number.isFinite(now)
     || !Number.isFinite(observedAt)
@@ -323,18 +322,14 @@ export function reconcileMyCrewCareLogistics({ context: contextValue, stays: sta
     || !Array.isArray(recordsValue)
     || recordsValue.length > MYCREWCARE_MAX_RECORDS
     || (recordsValue.length === 0 && snapshot?.emptyConfirmed !== true)) {
-    return Object.freeze({ ...resultBase, error: 'invalid-snapshot' });
+    return Object.freeze({ ...base, error: 'invalid-snapshot' });
   }
-
   const records = recordsValue.map(normalizeMyCrewCareRecord);
-  if (records.some((record) => record === null)) {
-    return Object.freeze({ ...resultBase, error: 'invalid-record' });
-  }
+  if (records.some((record) => record === null)) return Object.freeze({ ...base, error: 'invalid-record' });
 
-  const facts = [];
   const unmatched = [];
   const conflicts = [];
-  const byStay = new Map();
+  const factsByIdentity = new Map();
   for (const record of records) {
     const owners = stays.flatMap((stay) => {
       if (record.airport !== stay.airport
@@ -350,37 +345,52 @@ export function reconcileMyCrewCareLogistics({ context: contextValue, stays: sta
       continue;
     }
     if (owners.length !== 1) {
-      conflicts.push(Object.freeze({ reason: 'ambiguous-stay', record, stayIds: owners.map(({ stay }) => stay.id).sort() }));
+      conflicts.push(Object.freeze({
+        reason: 'ambiguous-stay',
+        record,
+        stayIds: owners.map(({ stay }) => stay.id).sort(),
+      }));
       continue;
     }
     const recordFacts = createFacts(context, owners[0].stay, record, observedAt, owners[0].pickupEpoch);
-    let recordConflict = false;
+    let conflicting = false;
     for (const fact of recordFacts) {
-      const identity = factIdentity(fact);
-      const previous = byStay.get(identity);
+      const previous = factsByIdentity.get(factIdentity(fact));
       if (previous && previous.contentFingerprint !== fact.contentFingerprint) {
-        conflicts.push(Object.freeze({ reason: 'conflicting-records', record, stayIds: [fact.stayId], kind: fact.kind }));
-        recordConflict = true;
+        conflicts.push(Object.freeze({
+          reason: 'conflicting-records',
+          record,
+          stayIds: [fact.stayId],
+          kind: fact.kind,
+        }));
+        conflicting = true;
       }
     }
-    if (recordConflict) continue;
-    for (const fact of recordFacts) byStay.set(factIdentity(fact), fact);
+    if (!conflicting) {
+      for (const fact of recordFacts) factsByIdentity.set(factIdentity(fact), fact);
+    }
   }
-
   if (conflicts.length > 0) {
     return Object.freeze({
-      ...resultBase,
+      ...base,
       unmatched: Object.freeze(unmatched),
       conflicts: Object.freeze(conflicts),
       error: 'ambiguous-provider-data',
     });
   }
-  for (const fact of byStay.values()) facts.push(fact);
-  facts.sort((left, right) => left.stayId.localeCompare(right.stayId) || left.kind.localeCompare(right.kind));
+  if (unmatched.length > 0) {
+    return Object.freeze({
+      ...base,
+      unmatched: Object.freeze(unmatched),
+      error: 'unmatched-provider-data',
+    });
+  }
+  const facts = [...factsByIdentity.values()]
+    .sort((left, right) => left.stayId.localeCompare(right.stayId) || left.kind.localeCompare(right.kind));
   return Object.freeze({
     accepted: true,
     facts: Object.freeze(facts),
-    unmatched: Object.freeze(unmatched),
+    unmatched: Object.freeze([]),
     conflicts: Object.freeze([]),
     error: null,
   });
@@ -410,38 +420,30 @@ export function diffMyCrewCareFacts(previousValues, nextValues) {
   });
 }
 
-export function selectMyCrewCareHotel(facts, stayId, { now = Date.now(), freshForMs = 15 * 60_000, includeCancelled = false } = {}) {
+function selectFact(facts, stayId, kind, { now = Date.now(), freshForMs = 15 * 60_000, includeCancelled = false } = {}) {
   const id = opaque(stayId);
-  if (!id || !Array.isArray(facts)) return null;
+  if (!id || !Array.isArray(facts) || !Number.isFinite(now)) return null;
   const candidates = facts.filter((fact) => fact?.schemaVersion === MYCREWCARE_LOGISTICS_SCHEMA
     && fact?.source === MYCREWCARE_SOURCE
-    && fact?.kind === 'hotel'
+    && fact?.kind === kind
     && fact?.stayId === id);
   if (candidates.length !== 1) return null;
   const fact = candidates[0];
   if (fact.status === 'cancelled' && includeCancelled !== true) return null;
   const observedAt = myCrewCareInstant(fact.observedAt);
-  if (!Number.isFinite(observedAt) || !Number.isFinite(now) || now - observedAt > MYCREWCARE_CACHE_MAX_AGE_MS) return null;
+  if (!Number.isFinite(observedAt)
+    || observedAt > now + 30_000
+    || now - observedAt > MYCREWCARE_CACHE_MAX_AGE_MS) return null;
   return Object.freeze({
     ...fact,
-    dataState: now - observedAt <= freshForMs && observedAt <= now + 30_000 ? 'fresh' : 'cached',
+    dataState: Math.max(0, now - observedAt) <= freshForMs ? 'fresh' : 'cached',
   });
 }
 
-export function selectMyCrewCarePickup(facts, stayId, { now = Date.now(), freshForMs = 15 * 60_000, includeCancelled = false } = {}) {
-  const id = opaque(stayId);
-  if (!id || !Array.isArray(facts)) return null;
-  const candidates = facts.filter((fact) => fact?.schemaVersion === MYCREWCARE_LOGISTICS_SCHEMA
-    && fact?.source === MYCREWCARE_SOURCE
-    && fact?.kind === 'pickup'
-    && fact?.stayId === id);
-  if (candidates.length !== 1) return null;
-  const fact = candidates[0];
-  if (fact.status === 'cancelled' && includeCancelled !== true) return null;
-  const observedAt = myCrewCareInstant(fact.observedAt);
-  if (!Number.isFinite(observedAt) || !Number.isFinite(now) || now - observedAt > MYCREWCARE_CACHE_MAX_AGE_MS) return null;
-  return Object.freeze({
-    ...fact,
-    dataState: now - observedAt <= freshForMs && observedAt <= now + 30_000 ? 'fresh' : 'cached',
-  });
+export function selectMyCrewCareHotel(facts, stayId, options = {}) {
+  return selectFact(facts, stayId, 'hotel', options);
+}
+
+export function selectMyCrewCarePickup(facts, stayId, options = {}) {
+  return selectFact(facts, stayId, 'pickup', options);
 }

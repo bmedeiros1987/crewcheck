@@ -10,7 +10,7 @@ Esta entrega prepara a base para o comportamento aprovado — conectar uma vez, 
 
 `shared/myCrewCareLogistics.mjs` representa hotel e pickup como fatos diferentes. Cada fato contém fonte, estado publicado/alterado/cancelado, `stayId`, `rosterEventId`, revisão da escala, instante de observação e fingerprint de conteúdo.
 
-A associação exige conta, escala/revisão, aeroporto, pairing, fuso, limites temporais e uma única estadia candidata. Sobreposição ou registros conflitantes falham de forma conservadora. Esses fatos não modificam APZ, apresentação, jornada, repouso, parser, financeiro ou alarmes.
+A associação exige conta, escala/revisão, aeroporto, pairing, fuso, limites temporais e uma única estadia candidata. Sobreposição, registros conflitantes ou qualquer registro válido que não encontre vínculo inequívoco fazem a sincronização falhar fechada. Esses fatos não modificam APZ, apresentação, jornada, repouso, parser, financeiro ou alarmes.
 
 ### Sessão local-first
 
@@ -34,7 +34,7 @@ Uma aquisição que dependa de tela interativa sempre resulta em `defer-to-foreg
 
 `CrewCheckMyCrewCareProfile` usa múltiplos perfis do AndroidX WebKit. O nome do perfil é derivado do identificador interno por SHA-256, sem expor o valor original. A limpeza é limitada ao perfil escolhido e não utiliza o gerenciador global do WebView.
 
-`CrewCheckMyCrewCareSecureStore` mantém apenas o envelope normalizado em cache cifrado AES-GCM com chave do Android Keystore e vínculo criptográfico ao identificador derivado da conta. O validador atual restringe tamanho, escopo, fonte, conta, `stayId` e tipo de fato. A allowlist completa de campos e os testes Android instrumentados continuam como gate de ativação.
+`CrewCheckMyCrewCareSecureStore` mantém somente o envelope normalizado em cache cifrado AES-GCM com chave do Android Keystore e vínculo criptográfico ao identificador derivado da conta. A validação usa allowlists exatas e distintas para fatos de hotel e pickup, rejeitando chaves extras, tipos inesperados, escopo divergente, horários inválidos e payloads acima dos limites. Testes Android instrumentados continuam como gate antes da ativação.
 
 ### Fronteira nativa desativada
 
@@ -60,7 +60,7 @@ A slice não modifica `Home.tsx`, `MainActivity.java`, `scripts/v139/apply.mjs`,
 - SSO/MFA físico, expiração, cancelamento, troca de conta e restauração;
 - persistência após fechar o app e reiniciar o aparelho;
 - limpeza por conta sem afetar outras sessões;
-- allowlist Android completa do payload e testes instrumentados do cache;
+- testes Android instrumentados de cifragem, corrupção e limpeza do cache;
 - dois pernoites na mesma data, sobreposição, virada de mês e fusos;
 - vazio, cancelamento, alteração, offline e limitação de requisições;
 - wiring e UX finais sob Mobile Core;
@@ -70,4 +70,4 @@ A slice não modifica `Home.tsx`, `MainActivity.java`, `scripts/v139/apply.mjs`,
 
 `node --test scripts/regression-mycrewcare-v3.mjs` cobre 12 contratos em UTC, Brasília e Auckland: URL exata, hotel/pickup separados, vínculo sem hotel prévio, ambiguidade, cancelamento, diff, persistência, restauração, cache offline, vazio verificado, troca de revisão, logout e política foreground/background.
 
-`node scripts/assert-mycrewcare-v3-ownership.mjs` protege a lista de arquivos, impede writers compartilhados, exige release desativado, perfil isolado, armazenamento cifrado e proíbe ativação indireta do portal.
+`node scripts/assert-mycrewcare-v3-ownership.mjs` protege a lista de arquivos, impede writers compartilhados, exige release desativado, perfil isolado, armazenamento cifrado, allowlists exatas e recusa dinâmica de registros sem vínculo. O workflow executa esses gates antes e depois da preparação canônica, além de TypeScript, Vite e `assembleDebug`.
