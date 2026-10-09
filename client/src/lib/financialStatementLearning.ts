@@ -161,10 +161,11 @@ export function learnPayrollStatement(text: string, sourceDocument: string): Sta
     const statedRate = unit === 'km' ? decimal(m[2]) : 0;
     const derivedRate = unit === 'km' && quantity > 0 ? Number((money(m[3]) / quantity).toFixed(6)) : NaN;
     const statedRateMatchesTotal = Number.isFinite(derivedRate) && Math.abs(statedRate - derivedRate) <= Math.max(0.0001, derivedRate * 0.02);
+    const usePrintedRate = unit !== 'km' || (Number.isFinite(statedRate) && statedRate > 0 && statedRate <= 5 && statedRateMatchesTotal);
     const value = unit === 'km'
-      ? Number.isFinite(statedRate) && statedRate > 0 && statedRate <= 5 && statedRateMatchesTotal ? statedRate : derivedRate
+      ? usePrintedRate ? statedRate : derivedRate
       : money(m[1]);
-    if (Number.isFinite(value) && value >= 0 && (unit !== 'km' || value <= 5)) rates.push({ ...rate(key, label, value, unit, effectiveFrom, sourceDocument, fp, unit === 'km' && !statedRateMatchesTotal ? 'review' : 'high'), valueOrigin: unit === 'km' && !statedRateMatchesTotal ? 'derived' : 'printed' });
+    if (Number.isFinite(value) && value >= 0 && (unit !== 'km' || value <= 5)) rates.push({ ...rate(key, label, value, unit, effectiveFrom, sourceDocument, fp, !usePrintedRate ? 'review' : 'high'), valueOrigin: !usePrintedRate ? 'derived' : 'printed' });
   }
   for (const [pattern, key, label] of [
     [/([\d.,]+)\s+Horas Reserva - CMS\s+([\d.]+,\d{2})/i, 'salary.reserveHour', 'Hora de reserva'],
@@ -204,8 +205,10 @@ export function mergeConfirmedRates(current: LearnedRate[], incoming: LearnedRat
   return result.sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom) || a.key.localeCompare(b.key) || (a.revision || 1) - (b.revision || 1));
 }
 export function rateAt(rates: LearnedRate[], key: string, date: string, currency?: LearnedRate['currency']): LearnedRate | null {
-  return rates.filter(entry => entry.confirmed && entry.key === key && (currency === undefined || entry.currency === currency) && entry.effectiveFrom <= date && entry.effectiveTo && entry.effectiveTo >= date)
-    .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom) || (a.revision || 1) - (b.revision || 1)).at(-1) || null;
+  // Select the revision first. A shortened correction must not resurrect a superseded tariff.
+  const latest = rates.filter(entry => entry.confirmed && entry.key === key && (currency === undefined || entry.currency === currency) && entry.effectiveFrom <= date)
+    .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom) || (b.revision || 1) - (a.revision || 1))[0];
+  return latest?.effectiveTo && latest.effectiveTo >= date ? latest : null;
 }
 
 // Legacy values remain untouched, but their unknown owner is never inferred or migrated.
@@ -303,10 +306,4 @@ export function reviewedPayrollCycleForOperationalMonth(month: string) {
   if (!latest) return null;
   const cycle = payrollCompetences(latest.payrollCompetence!, PAYROLL_CYCLE_SOURCE);
   return cycle?.operationalVariableMonth === month ? { ...cycle, sourceFingerprint: latest.sourceFingerprint } : null;
-}
-export function confirmedFixedSalaryForOperationalMonth(month: string): number | null {
-  const cycle = reviewedPayrollCycleForOperationalMonth(month);
-  if (!cycle) return null;
-  const rate = rateAt(readConfirmedFinancialRates().filter(item => item.sourceFingerprint === cycle.sourceFingerprint), 'salary.base', cycle.fixedMonth + '-01', 'BRL');
-  return rate?.value ?? null;
 }

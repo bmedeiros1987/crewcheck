@@ -18,3 +18,7 @@ All new fixtures are synthetic, with unrelated identities, periods and amounts. 
 The original private document cannot be materialized here: the official Library helper returned HTTP 403. No document bytes or private identities are included in this branch. No trusted settlement producer or live CrewCierge financial wiring exists in this slice. Reuse `shared/financialReadModel.mjs` through the separately coordinated bridge; this branch contains no messaging/transport changes. The reported app total discrepancy cannot be reconciled without its underlying items.
 
 Draft review only. No merge, deployment, production mutation, credential change or destructive migration.
+
+
+## Independent review corrections
+Four negative cases use real production functions and synthetic data: a single March fixed base is not copied into February operational variables; the original session is captured before the FX prompt and revalidated on write (account/token changes and cancel cannot report success); a rejected printed KM rate cannot label its derived replacement as printed; a shortened correction remains the latest revision and prevents the old tariff resurfacing after its new end. Historical revisions remain intact. Fixed base is selected only by its own fixed competence, separate from operational variable rates.
