@@ -13,7 +13,7 @@ export function amilCoverage(provider, selection = {}, now = new Date()) {
   const unknown = reason => ({ status: 'unknown', reason });
   if (!amilPlanFamily(selection.planCode)) return unknown('missing_plan_details');
   if (!selection.productCode || !selection.networkCode) return unknown('ambiguous_plan');
-  if (!selection.state || !selection.city || !selection.serviceCode) return unknown('service/unit_unverified');
+  if (!selection.state || !selection.city || !selection.serviceCode || !selection.specialty) return unknown('service/unit_unverified');
   if (selection.query && !fold(selection.query).split(/\s+/).every(word => fold(provider?.name).includes(word))) return unknown('service/unit_unverified');
   const evidence = provider?.coverageEvidence;
   if (!evidence || !officialAmilSource(evidence.sourceUrl)) return unknown('source_unavailable');
@@ -22,7 +22,7 @@ export function amilCoverage(provider, selection = {}, now = new Date()) {
   if (evidence.planCode !== selection.planCode || evidence.productCode !== selection.productCode || evidence.networkCode !== selection.networkCode) return unknown('ambiguous_plan');
   if (!provider.id || !provider.name || !evidence.unitName || !provider.address || evidence.unitId !== provider.id || fold(evidence.unitName) !== fold(provider.name) || fold(evidence.unitAddress) !== fold(provider.address)) return unknown('service/unit_unverified');
   if (fold(evidence.city) !== fold(selection.city) || fold(provider.city) !== fold(selection.city) || fold(evidence.state) !== fold(selection.state) || fold(provider.state) !== fold(selection.state)) return unknown('service/unit_unverified');
-  if (evidence.serviceCode !== selection.serviceCode) return unknown('service/unit_unverified');
+  if (evidence.serviceCode !== selection.serviceCode || fold(evidence.specialty) !== fold(selection.specialty)) return unknown('service/unit_unverified');
   if (evidence.decision === 'excluded') return { status: 'confirmed_excluded', reason: 'official_exclusion', evidence };
   if (evidence.decision === 'included') return { status: 'confirmed_in_network', reason: 'official_unit_product_service', evidence };
   return unknown('service/unit_unverified');

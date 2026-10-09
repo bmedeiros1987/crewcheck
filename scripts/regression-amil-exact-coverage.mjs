@@ -5,10 +5,10 @@ import { amilCoverage, amilConfirmedProviders, amilUnknownMessage } from '../sha
 import { pharmacyReferenceReply } from '../server/concierge/pharmacy-reference.mjs';
 const now = new Date('2026-10-09T12:00:00Z');
 // Synthetic evidence exercises the contract; these are not real accredited units.
-const selection = { planCode: 'S450', productCode: 'fixture-QP', networkCode: 'fixture-network', serviceCode: 'PS', city: 'Santa Maria', state: 'DF' };
+const selection = { planCode: 'S450', productCode: 'fixture-QP', networkCode: 'fixture-network', serviceCode: 'PS', specialty: 'PRONTO SOCORRO ADULTO', city: 'Santa Maria', state: 'DF' };
 const unit = { id: 'fixture-unit-1', name: 'Hospital Fixture Unidade Sul', address: 'Rua Fixture 1', city: 'Santa Maria', state: 'DF', coverageEvidence: { ...selection, unitId: 'fixture-unit-1', unitName: 'Hospital Fixture Unidade Sul', unitAddress: 'Rua Fixture 1', sourceUrl: 'https://amil.com.br/fixture-only', verifiedAt: '2026-10-09', decision: 'included' } };
 assert.equal(amilCoverage(unit, selection, now).status, 'confirmed_in_network');
-for (const changed of [{ planCode: 'S750' }, { productCode: 'fixture-QC' }, { networkCode: 'other-network' }, { serviceCode: 'M' }, { state: 'RS' }, { city: 'Santa Maria do Sul' }]) {
+for (const changed of [{ planCode: 'S750' }, { productCode: 'fixture-QC' }, { networkCode: 'other-network' }, { serviceCode: 'M' }, { specialty: 'PRONTO SOCORRO INFANTIL' }, { specialty: '' }, { state: 'RS' }, { city: 'Santa Maria do Sul' }]) {
   assert.equal(amilCoverage(unit, { ...selection, ...changed }, now).status, 'unknown');
 }
 for (const change of [{ id: 'fixture-unit-2' }, { name: 'Hospital Fixture Unidade Norte' }, { address: 'Rua Fixture 2' }]) assert.equal(amilCoverage({ ...unit, ...change }, selection, now).status, 'unknown');
@@ -25,6 +25,13 @@ assert.match(amilUnknownMessage('S750'), /não significa ausência de cobertura/
 assert.equal(amilCoverage({ ...unit, name: '', coverageEvidence: { ...unit.coverageEvidence, unitName: '' } }, selection, now).status, 'unknown');
 for (const verifiedAt of ['', '2026-10-10']) assert.equal(amilCoverage({ ...unit, coverageEvidence: { ...unit.coverageEvidence, verifiedAt } }, selection, now).reason, 'stale');
 assert.equal(amilCoverage({ ...unit, coverageEvidence: { ...unit.coverageEvidence, planCode: 'S750' } }, { ...selection, planCode: 'S750' }, now).status, 'confirmed_in_network');
+for (const [planCode, productCode, networkCode] of [['S450', 'Amil S450 QP', 'AMIL S450 COPART ADM'], ['S750', 'Amil S750 QP', 'Amil S750 COLAB']]) {
+  const variant = { ...selection, planCode, productCode, networkCode: productCode };
+  const provider = { ...unit, coverageEvidence: { ...unit.coverageEvidence, ...variant } };
+  assert.equal(amilCoverage(provider, variant, now).status, 'confirmed_in_network');
+  assert.equal(amilCoverage(provider, { ...variant, networkCode }, now).status, 'unknown');
+  assert.equal(amilCoverage(provider, { ...variant, productCode: networkCode }, now).status, 'unknown');
+}
 const snapshot = { email: 'fixture@example.invalid', roster: [] };
 const profile = { email: snapshot.email, channel: 'app' };
 let lookups = 0, writes = 0;
@@ -59,7 +66,7 @@ if (process.argv.includes('--prepared')) {
     const sequence = { current: 0 }, key = { current: 'fixture-original' };
     const searchContext = vm.createContext({ category: 'hospital', location: '', locationMode: 'layover', coordinates: null, amilSearchSequence: sequence, amilSelectionRef: key,
       setLoading: () => {}, searchTerm: '', setPlaces: () => {}, setSelected: () => {}, fetchAmilProviders: () => deferred,
-      amilPlan: 'S450', amilProduct: 'fixture-QP', amilNetwork: 'fixture-network', amilService: 'PS', amilState: 'DF', amilCity: 'Santa Maria', amilQuery: '', amilCare: 'adult_emergency',
+      amilPlan: 'S450', amilProduct: 'fixture-QP', amilNetwork: 'fixture-network', amilService: 'PS', amilSpecialty: 'PRONTO SOCORRO ADULTO', amilState: 'DF', amilCity: 'Santa Maria', amilQuery: '', amilCare: 'adult_emergency',
       setAmilProviders: () => { applied++; }, setAmilMessage: () => {}, setAmilTotal: () => {}, setAmilSourcePage: () => {}, toast: { message: () => {} }, categoryMeta: { plural: 'Hospitais' } });
     vm.runInContext(searchBlock, searchContext);
     const pending = searchContext.search();
@@ -68,7 +75,7 @@ if (process.argv.includes('--prepared')) {
     await pending; assert.equal(applied, 0, reason);
   }
   const server = fs.readFileSync('server.mjs', 'utf8');
-  const fallback = server.slice(server.indexOf('async function conciergeHospitalsReply('), server.indexOf('function conciergeStayReply(', server.indexOf('async function conciergeHospitalsReply(')));
+  const fallback = server.slice(server.indexOf('async function conciergeHospitalsReply('), server.indexOf('\n}\n', server.indexOf('async function conciergeHospitalsReply(')) + 3);
   assert.match(fallback, /return amilUnknownMessage/); assert.doesNotMatch(fallback, /SearchNearby|SearchPlaces/);
 }
 console.log('PASS Amil exact product/network/unit/service/region, freshness, unknown, no Maps promotion, account and emergency fixtures');

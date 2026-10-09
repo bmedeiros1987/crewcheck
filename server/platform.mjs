@@ -1274,7 +1274,7 @@ function amilServiceLabel(codes = []) {
 }
 
 function amilSelection(url) {
-  return Object.fromEntries(['planCode', 'productCode', 'networkCode', 'serviceCode', 'city', 'state', 'query'].map(key => [key, String(url.searchParams.get(key) || '').trim()]));
+  return Object.fromEntries(['planCode', 'productCode', 'networkCode', 'serviceCode', 'specialty', 'city', 'state', 'query'].map(key => [key, String(url.searchParams.get(key) || '').trim()]));
 }
 function amilSnapshotSearch(url) {
   const selection = amilSelection(url);
@@ -1312,7 +1312,7 @@ async function handleAmilSearch(req, res, url) {
   if (!context) return;
   const config = amilConfiguration();
   const selection = amilSelection(url);
-  if (!selection.productCode || !selection.networkCode || !selection.state || !selection.city || !selection.serviceCode || !amilPlanFamily(selection.planCode)) return sendJson(res, 200, { ok: true, providers: [], count: 0, total: 0, coverageStatus: 'unknown', reason: amilPlanFamily(selection.planCode) ? 'ambiguous_plan' : 'missing_plan_details', sourcePage: AMIL_GUIDE_URL, disclaimer: amilUnknownMessage(selection.planCode) });
+  if (!selection.productCode || !selection.networkCode || !selection.state || !selection.city || !selection.serviceCode || !selection.specialty || !amilPlanFamily(selection.planCode)) return sendJson(res, 200, { ok: true, providers: [], count: 0, total: 0, coverageStatus: 'unknown', reason: amilPlanFamily(selection.planCode) ? 'ambiguous_plan' : 'missing_plan_details', sourcePage: AMIL_GUIDE_URL, disclaimer: amilUnknownMessage(selection.planCode) });
   if (!config.configured) {
     const snapshot = amilSnapshotSearch(url);
     if (!snapshot.ok) return sendJson(res, snapshot.status || 400, { ...snapshot, configured: true, source: 'published-pdf-snapshot' });
@@ -1327,7 +1327,7 @@ async function handleAmilSearch(req, res, url) {
     });
   }
   const params = new URLSearchParams();
-  for (const key of ['city', 'state', 'serviceType', 'planCode', 'productCode', 'networkCode', 'serviceCode', 'care', 'query']) {
+  for (const key of ['city', 'state', 'serviceType', 'planCode', 'productCode', 'networkCode', 'serviceCode', 'specialty', 'care', 'query']) {
     const value = normalizeText(url.searchParams.get(key), 120);
     if (value) params.set(key, value);
   }

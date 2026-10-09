@@ -29,14 +29,17 @@ let snapshot,stays,queries,gps;
 const reset=()=>{snapshot={email:profile.email,key:profile.email,roster:{days:[{date:'2026-10-04',hotel:hotel.name}]},preferences:{location:{updatedAt:'2026-10-03T01:00:00Z'}}};stays=[stay];queries=[];gps={fresh:false};};
 const deps={load:async()=>snapshot,save:async(_p,preferences)=>{snapshot={...snapshot,preferences:{...snapshot.preferences,...preferences}};},stays:()=>stays,city:()=>hotel.city,gpsFresh:()=>gps.fresh,gps:()=>gps,lookup:async()=>[hotel],nearby:async(point,kind)=>{queries.push({point,kind});return kind==='hospital'?[place('Hospital Sintético')]:sample;}};
 reset();let reply=await pharmacyReferenceReply('farmácias',profile,snapshot,deps,now);assert.equal(reply.handled,true);assert.ok(reply.placeResults);assert.match(reply.reply,/Referência de busca: Hotel Sintético · Guarulhos/);assert.doesNotMatch(reply.reply,/Avenida longa|Não confirma sua presença|referência: hotel/);assert.ok(reply.reply.length<1800);
-reply=await pharmacyReferenceReply('🏥 Hospitais',profile,snapshot,deps,now);assert.equal(reply.handled,true);assert.equal(queries.at(-1).kind,'hospital');assert.deepEqual(queries.at(-1).point,hotel.location);assert.doesNotMatch(reply.reply,/expirou|Compartilhe novamente/);assert.equal(snapshot.preferences.location.updatedAt,'2026-10-03T01:00:00Z');
-reset();stays=[];reply=await pharmacyReferenceReply('hospitais',profile,snapshot,deps,now);assert.match(reply.reply,/GPS é opcional/);assert.equal(queries.length,0);
+const previousQueries = queries.length;
+reply=await pharmacyReferenceReply('🏥 Hospitais',profile,snapshot,deps,now);assert.equal(reply.handled,true);assert.match(reply.reply,/Não há confirmação atual/);assert.equal(reply.placeResults,undefined);assert.equal(queries.length,previousQueries);assert.equal(snapshot.preferences.location.updatedAt,'2026-10-03T01:00:00Z');
+reset();stays=[];reply=await pharmacyReferenceReply('hospitais',profile,snapshot,deps,now);assert.match(reply.reply,/Guia Amil/);assert.equal(queries.length,0);assert.equal(snapshot.preferences.pharmacySearchReference,undefined);
+// Pharmacy reference continuity still uses explicit selection and channel scope.
+reply=await pharmacyReferenceReply('farmácias',profile,snapshot,deps,now);assert.match(reply.reply,/GPS é opcional/);
 reply=await pharmacyReferenceReply('perto de Hotel Sintético, Guarulhos',profile,snapshot,deps,now);assert.match(reply.reply,/1\. Hotel Sintético/);
 const before=structuredClone(snapshot);reply=await pharmacyReferenceReply('1',{...profile,channel:'app'},snapshot,deps,now);assert.equal(reply.handled,false);assert.deepEqual(snapshot,before);
-reply=await pharmacyReferenceReply('1',profile,snapshot,deps,now);assert.equal(reply.placeResults.title,'Hospitais');
-reply=await pharmacyReferenceReply('farmácias',profile,snapshot,deps,now);assert.equal(reply.placeResults.title,'Farmácias');
-reply=await pharmacyReferenceReply('hospitais',profile,snapshot,deps,now);assert.equal(reply.placeResults.title,'Hospitais');assert.deepEqual(queries.at(-1).point,hotel.location);
-reply=await pharmacyReferenceReply('hospitais',profile,snapshot,deps,new Date(now.getTime()+600001));assert.match(reply.reply,/GPS é opcional/);assert.equal(queries.length,3);
+reply=await pharmacyReferenceReply('1',profile,snapshot,deps,now);assert.equal(reply.placeResults.title,'Farmácias');
+const previousHospitalQueries=queries.length;
+reply=await pharmacyReferenceReply('hospitais',profile,snapshot,deps,now);assert.match(reply.reply,/Não há confirmação atual/);assert.equal(queries.length,previousHospitalQueries);
+reply=await pharmacyReferenceReply('hospitais',profile,snapshot,deps,new Date(now.getTime()+600001));assert.match(reply.reply,/Guia Amil/);assert.equal(queries.length,previousHospitalQueries);
 reset();stays=[];gps={fresh:true,label:'Guarulhos',location:hotel.location};reply=await pharmacyReferenceReply('farmácia perto de mim',profile,snapshot,deps,now);assert.match(reply.reply,/Localização compartilhada: Guarulhos/);assert.equal(reply.placeResults.places.length,3);
 reset();stays=[];await pharmacyReferenceReply('farmácia veterinária',profile,snapshot,deps,now);await pharmacyReferenceReply('perto de Hotel Sintético, Guarulhos',profile,snapshot,deps,now);reply=await pharmacyReferenceReply('1',profile,snapshot,deps,now);assert.equal(reply.placeResults.title,'Farmácias veterinárias');
 // A fresh voluntary GPS search must not return a now-stale/different origin after provider delay.

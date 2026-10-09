@@ -16,7 +16,7 @@ A tela de locais próximos exibia hospitais Maps/manuais junto da seção Amil. 
 
 ## Contrato e limites
 
-`confirmed_in_network` exige evidência oficial HTTPS Amil, data de confirmação, produto/rede exatos, identificação/endereço da unidade, serviço específico e município/UF coincidentes. Não existe hierarquia S750 → S450 nem equivalência entre unidades da mesma rede. Apenas negação oficial específica permite `confirmed_excluded`. Ausência/ambiguidade/fonte indisponível/vencida/unidade ou serviço não verificados são `unknown`, fora da lista de compatíveis. Zero resultados não significa ausência de cobertura.
+`confirmed_in_network` exige evidência oficial HTTPS Amil, data de confirmação, produto/rede exatos, identificação/endereço da unidade, serviço e especialidade específicos e município/UF coincidentes. Não existe hierarquia S750 → S450 nem equivalência entre unidades da mesma rede. Apenas negação oficial específica permite `confirmed_excluded`. Ausência/ambiguidade/fonte indisponível/vencida/unidade ou serviço não verificados são `unknown`, fora da lista de compatíveis. Zero resultados não significa ausência de cobertura.
 
 Janela conservadora local: 30 dias; nova consulta falhada não atualiza a data. Não se usa a geração do snapshot para renovar fontes antigas. O contrato de evidência é exercitado somente com fixtures fictícios. O adaptador de API exige os mesmos campos de evidência, sem presumir uma estrutura pública que não foi verificada.
 
@@ -27,3 +27,11 @@ Referência Library `libfile_6a88ebcba558819196129459c4c86ce8`: helper oficial r
 ## Validação
 
 Build canônico e TypeScript PASS. Regressão Amil raw/prepared PASS, incluindo resposta tardia após troca de variante, serviço e conta, confirmação específica S450 e S750 independentes, datas ausentes/futuras/vencidas, nomes vazios, unidades da mesma rede, município homônimo, fallback e visitantes. Revisão independente aprovada. Regressão Wellhub DF PASS. CI do PR é gate antes de publicar.
+
+Transcrição não identificadora fornecida em 09/10/2026: seletor AMIL S450 COPART ADM diverge do resumo Amil S450 QP; Amil S750 COLAB e Amil S750 QP são opções distintas. Local DF/BRASILIA/TODOS OS BAIRROS; serviço PRONTO-SOCORRO 24H parcialmente visível, especialidade PRONTO SOCORRO ADULTO. Nenhum resultado hospitalar foi mostrado. Essas variantes não são equiparadas e nenhum identificador pessoal foi copiado.
+
+## Atualização futura (sem conector ativado)
+
+A integração futura deve consultar apenas a chave produto/rede exatos + município/UF + serviço/especialidade, deduplicar requisições simultâneas e conservar a evidência/proveniência/data original por unidade. Falha ou cache antigo nunca renova validade nem promove candidatos a compatíveis; mudança de chave invalida a projeção. Não foi configurado scraping, agendamento ou endpoint suposto.
+
+Pesquisa preliminar aponta a base nacional [Produtos e Prestadores Hospitalares da ANS](https://dadosabertos.ans.gov.br/FTP/PDA/produtos_e_prestadores_hospitalares/) como possível fonte de candidatos por vínculo plano/estabelecimento, com CNES/CNPJ e datas. Não comprova sozinha a especialidade PS adulto/pediátrico nem resolve as variantes S450/S750. A ingestão, licença/dicionário e mapeamento de produtos exigem avaliação separada; nenhuma base grande foi baixada e nenhum job foi criado. Não é necessário pedir coleta manual de cada estado.
