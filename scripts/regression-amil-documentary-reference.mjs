@@ -13,6 +13,8 @@ assert.ok(units.every(unit => unit.covered === false && unit.coverageStatus === 
 assert.equal(capture.provenance.receivedAt, '2026-10-09T09:38:00Z');
 assert.equal(capture.provenance.observedAt, null);
 assert.equal(capture.provenance.originalQueryDateKnown, false);
+assert.doesNotMatch(JSON.stringify(capture), /libfile_|referenceId|userId|email|CPF|carteirinha/);
+assert.doesNotMatch(JSON.stringify(units), /libfile_|referenceId|userId|email/);
 assert.match(AMIL_DOCUMENTARY_NOTICE, /data original da consulta não aparece/);
 assert.match(AMIL_DOCUMENTARY_NOTICE, /não confirma rede atual/);
 for (const unit of units) {

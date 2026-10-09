@@ -22,7 +22,7 @@ const rows = [
 export const AMIL_DOCUMENTARY_CAPTURE = {
   query: AMIL_DOCUMENTARY_QUERY,
   provenance: { sourceKind: 'user_presented_official_query', sourceUrl: AMIL_GUIDE_URL,
-    referenceId: 'libfile_d769ee27a41c819199ea2a95b4315589', receivedAt: '2026-10-09T09:38:00Z',
+    receivedAt: '2026-10-09T09:38:00Z',
     observedAt: null, originalQueryDateKnown: false, selectorAndSummaryAgree: true,
     review: { status: 'reviewed', method: 'independent_visual_transcriptions', date: '2026-10-09' } },
   units: rows.map(([name, address, neighborhood, postalCode, phones], index) => ({
