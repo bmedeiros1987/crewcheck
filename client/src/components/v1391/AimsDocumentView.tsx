@@ -55,14 +55,14 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
       target.focus({ preventScroll: true });
       target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
       const ensureClearance = () => {
-        if (!target.isConnected) return;
+        if (!target.isConnected || document.activeElement !== target) return;
         const rect = target.getBoundingClientRect();
         const header = document.querySelector('.cz-global-header')?.getBoundingClientRect();
         const footer = document.querySelector('body > nav.cz-bottom-nav')?.getBoundingClientRect();
         const top = Math.max(0, header?.bottom || 0) + 12;
         const bottom = Math.min(window.innerHeight, footer?.top ?? window.innerHeight) - 12;
         const delta = rect.top < top || rect.height > bottom - top ? rect.top - top : rect.bottom > bottom ? rect.bottom - bottom : 0;
-        if (delta) window.scrollBy({ top: delta, behavior: 'instant' });
+        if (delta) window.scrollBy({ top: delta < 0 ? Math.floor(delta) : Math.ceil(delta), behavior: 'instant' });
       };
       requestAnimationFrame(ensureClearance);
       // Ancestor entrance animations can move the opener after the first
