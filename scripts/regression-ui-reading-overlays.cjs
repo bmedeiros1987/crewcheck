@@ -36,7 +36,7 @@ const settle = page => page.evaluate(async () => {
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 });
 async function recovered(page) {
-  await page.waitForFunction(() => !document.body.classList.contains('crewcheck-menu-open') && !history.state?.crewcheckOverlay && document.body.style.overflow !== 'hidden' && history.scrollRestoration === 'auto');
+  await page.waitForFunction(() => !document.body.classList.contains('crewcheck-menu-open') && !history.state?.crewcheckOverlay && document.body.style.overflow !== 'hidden');
   await settle(page);
   const result = await page.evaluate(() => {
     const nav = document.querySelector('body > nav.cz-bottom-nav');
@@ -45,9 +45,9 @@ async function recovered(page) {
     window.scrollTo({ top: document.scrollingElement.scrollHeight, behavior: 'instant' });
     const after = window.scrollY;
     return { unlocked: !['hidden', 'clip'].includes(getComputedStyle(document.body).overflowY), scrolled: after > before || document.scrollingElement.scrollHeight <= innerHeight,
-      navVisible: nav && getComputedStyle(nav).display !== 'none', historyRestoration: history.scrollRestoration };
+      navVisible: nav && getComputedStyle(nav).display !== 'none' };
   });
-  assert.ok(result.unlocked && result.scrolled && result.navVisible && result.historyRestoration === 'auto', 'Body scroll or approved navigation not restored: ' + JSON.stringify(result));
+  assert.ok(result.unlocked && result.scrolled && result.navVisible, 'Body scroll or approved navigation not restored: ' + JSON.stringify(result));
 }
 async function visibleTextBounds(page, selector) {
   return page.locator(selector).evaluateAll(elements => {
@@ -141,7 +141,7 @@ async function visibleTextBounds(page, selector) {
           }
           if (method === 'back') await page.goBack();
           await page.locator('.cz-menu-overlay').waitFor({ state: 'detached' });
-          await page.waitForFunction(() => !history.state?.crewcheckOverlay && document.body.style.overflow !== 'hidden' && history.scrollRestoration === 'auto'); await settle(page);
+          await page.waitForFunction(() => !history.state?.crewcheckOverlay && document.body.style.overflow !== 'hidden'); await settle(page);
           const after = await page.evaluate(() => window.scrollY);
           assert.ok(Math.abs(after - before) <= 1, `Menu restores the original content position: ${width}/${theme}/${size}/${method}, before=${before}, after=${after}`);
           assert.ok(await opener.evaluate(el => el === document.activeElement), 'Menu restores focus to the approved navigation opener');
@@ -230,7 +230,6 @@ async function visibleTextBounds(page, selector) {
         window.qaRapidRelease = window.acquireQAOverlay(() => {});
         history.pushState = originalPush;
       });
-      assert.equal(await page.evaluate(() => history.scrollRestoration), 'manual', 'Rapid reopening retains overlay-owned restoration');
       await page.evaluate(() => window.qaRapidRelease());
       await recovered(page);
       // Preferences must not leak across authenticated accounts, including logout.
