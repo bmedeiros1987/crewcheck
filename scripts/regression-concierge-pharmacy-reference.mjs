@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { radarReadReply } from '../server/concierge/radar-readonly.mjs';
 import { conciergeLocationState, conciergeLocationDistanceKm, filterConciergePlacesByLocation } from '../server/v14335/concierge-location.mjs';
 import { pharmacyReferenceReply } from '../server/concierge/pharmacy-reference.mjs';
 import { conciergeHumanizeReplyV14408 } from '../server/v14408/concierge-human.mjs';
@@ -95,7 +96,7 @@ const source=fs.readFileSync('server.mjs','utf8');assert.match(source,/const poi
 // Execute the actual app endpoint: linked identity must not override trusted origin.
 let appRequestProfile;
 const appEndpoint=source.slice(source.indexOf('async function handleTelegramConciergeAsk('),source.indexOf('function telegramMessagePdfDocument('));
-const appContext=vm.createContext({
+const appContext=vm.createContext({radarReadReply,
  readJsonBody:async()=>({text:'1',channel:'telegram'}),
  telegramRequestUser:()=>({email:profile.email,channel:'telegram'}),
  telegramAppRequestAllowed:()=>true,telegramLinkedRecordForEmail:async()=>({chatId:'123456'}),

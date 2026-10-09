@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { radarReadReply } from '../server/concierge/radar-readonly.mjs';
 import { pharmacyPlaceResults, pharmacyResultsText, pharmacyKind } from '../server/concierge/place-results.mjs';
 import { pharmacyReferenceReply } from '../server/concierge/pharmacy-reference.mjs';
 const place = (name, extra = {}) => ({ name, address: 'Rua Exemplo, 12, Guarulhos', location: { latitude: -23.46, longitude: -46.53 }, distanceKm: 0.4, ...extra });
@@ -65,7 +66,7 @@ if(process.argv.includes('--prepared')) {
   const output=await vm.runInContext(`(async()=>{${adapter}})()`,ctx);assert.equal(typeof output,channel==='app'?'object':'string');if(channel==='app')assert.equal(output.placeResults.places.length,3);
  }
  const endpoint=source.slice(source.indexOf('async function handleTelegramConciergeAsk('),source.indexOf('function telegramMessagePdfDocument('));
- let response;const ctx=vm.createContext({readJsonBody:async()=>({text:'farmácias'}),telegramRequestUser:()=>({email:profile.email}),telegramAppRequestAllowed:()=>true,telegramLinkedRecordForEmail:async()=>({chatId:'123'}),conciergeAccessMatches:()=>true,conciergeLoadSnapshot:async()=>snapshot,buildTelegramConciergeReply:async()=>({reply:'plain',placeResults:{title:'Farmácias'}}),conciergePreferencesV14336:()=>({}),conciergeVoiceOptionsV14336:()=>[],sendJson:(_r,_s,p)=>{response=p;}});
+ let response;const ctx=vm.createContext({radarReadReply,readJsonBody:async()=>({text:'farmácias'}),telegramRequestUser:()=>({email:profile.email}),telegramAppRequestAllowed:()=>true,telegramLinkedRecordForEmail:async()=>({chatId:'123'}),conciergeAccessMatches:()=>true,conciergeLoadSnapshot:async()=>snapshot,buildTelegramConciergeReply:async()=>({reply:'plain',placeResults:{title:'Farmácias'}}),conciergePreferencesV14336:()=>({}),conciergeVoiceOptionsV14336:()=>[],sendJson:(_r,_s,p)=>{response=p;}});
  vm.runInContext(endpoint,ctx);await ctx.handleTelegramConciergeAsk({method:'POST'},{});assert.equal(response.reply,'plain');assert.equal(response.placeResults.title,'Farmácias');
  // Execute the real early Telegram entry, including its canonical-health bypass.
  const index=fs.readFileSync('server/v139/index.mjs','utf8');

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { radarReadReply } from '../server/concierge/radar-readonly.mjs';
+const companyTransportAdapters = fs.existsSync('server/concierge/company-transport.mjs') ? await import('../server/concierge/company-transport.mjs') : {};
 import test from 'node:test';
 import { decorateConciergeReply as decorate, conciergeHumorContext, conciergeHumorSensitive } from '../server/v14336/concierge-personality.mjs';
 import { conciergeFormatTextV14354 as numeric } from '../server/v14354/concierge-language.mjs';
@@ -83,6 +85,7 @@ async function runtime({ days = [], query = '/proximo', dateKey = '', care = tru
   const context = {
     Date: class extends Date { constructor(...args) { super(...(args.length ? args : [clock])); } }, Intl,
     stayMenuReply: async () => ({ handled: false }),
+    radarReadReply, ...companyTransportAdapters,
     pharmacyReferenceReply: async () => ({ handled: false }),
     conciergeLoadSnapshot: () => null, conciergeStayRecords: () => [], conciergeLocationContextV14335: () => ({ fresh: false }),
     conciergePreferenceCommandV14336: async () => ({ handled: false }),
