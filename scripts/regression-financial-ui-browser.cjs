@@ -32,9 +32,9 @@ function seed({theme,kind,amount,history,salaryBase}) {
   localStorage.setItem('crewcheck_theme_mode',theme);localStorage.setItem('crewcheck:appearance:v1',theme);
   // Synthetic numbers exercise the existing local manual-configuration path;
   // they are not ACT rules, copied statement figures or a production tariff.
-  for(const key of ['domestic','north_america','mexico','south_america_caribbean','argentina','chile','england','europe','africa','other_international'])localStorage.setItem('crewcheck_perdiem_rate_'+key,String(amount));
+  for(const key of ['domestic','north_america','mexico','south_america_caribbean','argentina','chile','england','europe','africa','other_international'])localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_perdiem_rate_'+key,String(amount));
   if(history)localStorage.setItem('crewcheck_local_history_v11_financial-ui-qa',JSON.stringify(history));
-  if(salaryBase!==undefined)localStorage.setItem('crewcheck_salary_base_brl',String(salaryBase));
+  if(salaryBase!==undefined)localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_salary_base_brl',String(salaryBase));
   localStorage.setItem('crewcheck_roster_choice_v1_financial-ui-qa',JSON.stringify({owner:'financial-ui-qa',roster:kind,selection:'explicit',cacheSchema:'p0-operational-date-anchor-v2',sourceFileName:'Synthetic finance UI QA'}));
 }
 async function settle(page) {
@@ -198,6 +198,50 @@ async function contrast(page) {
    if(scenario==='missing-document-month'){await page.locator('.cc-financial-reconciliation>summary').click();await page.locator('.cc-financial-reconciliation input[type=file]').setInputFiles(partialPdf);const panel=page.getByLabel('Conciliação de diárias',{exact:true});await panel.waitFor();assert.match(await panel.innerText(),/Cobertura incompleta.*2032-01/);assert.doesNotMatch(await panel.innerText(),/Diferença a conferir:/,'missing month cannot produce an apparent exact comparison');}
    if(scenario==='fx-refresh'){page.on('dialog',dialog=>dialog.accept('5'));await page.getByRole('button',{name:'Informar câmbio'}).click();await page.locator('.cc-per-diem-periods>summary').click();await page.waitForFunction(()=>document.querySelector('.cc-per-diem-converted')?.textContent.includes('1.000,00')||Array.from(document.querySelectorAll('.cz-finance-grid')).some(element=>element.textContent.includes('1.000,00')));await page.locator('.cc-financial-graph>summary').click();assert.match(await page.locator('.cc-financial-bars').innerText(),/200,00/,'native USD graph remains native after BRL conversion');}
    await page.screenshot({path:path.join(out,scenario+'.png')});historyResults.push({scenario,synthetic:true});await context.close();
+  }
+  for (const width of [390,1440]) {
+   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:'block'});
+   await context.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(url.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[]}'});return route.continue();});
+   await context.addInitScript(seed,{theme:'light',kind:roster('domestic'),amount:100});
+   await context.addInitScript(()=>localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'financial-ui-qa',name:'SYNTHETIC ADMIN',role:'admin'})));
+   const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'admin'})));
+   const importer=page.getByLabel('Importar demonstrativo de diárias',{exact:true});await importer.waitFor();
+   await importer.locator('input[type=file]').setInputFiles(syntheticPdf);await importer.locator('.finance-learning-review').waitFor();
+   assert.match(await importer.locator('.finance-learning-review').innerText(),/2032-01-28 até 2032-02-03/);
+   assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isDisabled(),true,'document review requires owner confirmation');
+   await importer.locator('input[type=checkbox]').check();await importer.getByRole('button',{name:'Confirmar valores',exact:true}).click();await importer.locator('.finance-learning-review').waitFor({state:'hidden'});
+   const stored=await page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_financial_learned_rates_v2:financial-ui-qa')));
+   assert.equal(stored.ownerId,'financial-ui-qa');assert.equal(stored.rates.length,1);assert.equal(stored.rates[0].effectiveTo,'2032-02-03');
+   await importer.locator('input[type=file]').setInputFiles(syntheticPdf);await importer.locator('.finance-learning-review').waitFor();await importer.locator('input[type=checkbox]').check();await importer.getByRole('button',{name:'Confirmar valores',exact:true}).click();await importer.locator('.finance-learning-review').waitFor({state:'hidden'});
+   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_financial_learned_rates_v2:financial-ui-qa')).rates.length),1,'actual repeat import deduplicates');
+   await importer.locator('input[type=file]').setInputFiles(syntheticPdf);await importer.locator('.finance-learning-review').waitFor();
+   await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'different-admin',name:'OTHER SYNTHETIC',role:'admin'}));localStorage.setItem('crewcheck_auth_token','other-synthetic');window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));});await settle(page);
+   assert.equal(await page.locator('.finance-learning-review').count(),0,'account change clears pending document review');
+   assert.equal(await page.evaluate(()=>localStorage.getItem('crewcheck_financial_learned_rates_v2:different-admin')),null,'no document is written to the other account');
+   historyResults.push({scenario:'actual-owner-document-review',width,synthetic:true,checks:['bounded review dates','explicit owner consent','owner-scoped write','repeat PDF dedup','account switch clears review']});await context.close();
+  }
+  for (const width of [390,1440]) {
+   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:'block'});
+   await context.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(url.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[]}'});return route.continue();});
+   const march={...roster('domestic',3),days:[day('01/03/2032')]};
+   await context.addInitScript(seed,{theme:'light',kind:roster('domestic'),amount:100,history:[{id:'local-fixed-march',checksum:'synthetic-fixed-march',createdAt:'2032-03-02T00:00:00Z',roster:march,sourceFileName:'Synthetic March'}]});
+   await context.addInitScript(()=>{const source={ownerId:'financial-ui-qa',currency:'BRL',sourceDocument:'synthetic-payroll.pdf',sourceFingerprint:'synthetic-separated-competences',confidence:'high',valueOrigin:'printed',confirmed:true,revision:1,payrollCompetence:'2032-03',cycleSource:'user-reported-absa-tam'};localStorage.setItem('crewcheck_financial_learned_rates_v2:financial-ui-qa',JSON.stringify({version:2,ownerId:'financial-ui-qa',rates:[{...source,key:'salary.base',label:'Synthetic base',unit:'month',value:2400,effectiveFrom:'2032-03-01',effectiveTo:'2032-03-31'},{...source,key:'salary.dayKm',label:'Synthetic variable',unit:'km',value:.07,effectiveFrom:'2032-02-01',effectiveTo:'2032-02-29'}]}));});
+   const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));await page.locator('.cc-salary-history').waitFor();await page.waitForFunction(()=>document.querySelector('[aria-label="Competência de referência"]')?.options.length===2);
+   assert.match(await page.locator('.cc-per-diem-summary').innerText(),/Não calculável/,'February operational variables cannot consume the March fixed base');
+   const details=page.locator('.cc-salary-history details').filter({has:page.locator('summary').filter({hasText:'Composição mensal'})});await details.locator(':scope>summary').click();assert.match(await details.innerText(),/Salário-base: Não informado/);assert.match(await details.innerText(),/Variáveis operacionais:2032-02|Variáveis operacionais: 2032-02/);
+   await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-03');await page.waitForFunction(()=>document.querySelector('.cc-per-diem-summary')?.textContent.includes('2.400,00'));assert.match(await details.innerText(),/Salário-base: R\$\s*2\.400,00/);
+   await page.screenshot({path:path.join(out,'fixed-base-once-'+width+'.png')});historyResults.push({scenario:'one-fixed-base-separated-from-operational-variables',width,synthetic:true});await context.close();
+  }
+  for (const width of [320,1440]) for(const theme of ['light','dark']) for(const size of [150,200]) {
+   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:'block'});
+   await context.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(url.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[]}'});return route.continue();});
+   const flight={...roster('domestic'),days:[{...day('10/02/2032'),type:'FLIGHT',pairingCode:'SYN',legs:[{flightNumber:'SYN001',origin:'BSB',destination:'GRU',departureTime:'08:00',arrivalTime:'09:45',workType:'OP',duration:105,aircraftType:'SYNTHETIC'}]}]};
+   await context.addInitScript(seed,{theme,kind:flight,amount:100,salaryBase:2400});
+   await context.addInitScript(size=>{localStorage.setItem('crewcheck:text-size:v1:financial-ui-qa',String(size));for(const key of ['day','night'])localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_act_'+key+'_km_metric_brl','1234567.89');},size);
+   const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));await page.locator('.cc-salary-history').waitFor();await page.waitForFunction(size=>document.documentElement.dataset.crewTextSize===String(size),size);
+   await page.locator('.cc-per-diem-items>summary').click();const row=page.locator('.cc-salary-history .cz-finance-row');await row.waitFor();assert.equal(await row.count(),1);await row.scrollIntoViewIfNeeded();await settle(page);assert.match(await row.locator('b').innerText(),/R\$.*[0-9.]{9,},[0-9]{2}/,'actual salary row has large synthetic amount');
+   const measured=await measureMoney(page);assert.deepEqual(measured.violations,[]);assert.deepEqual(measured.intersections,[]);assert.deepEqual(measured.splitAmounts,[]);assert.deepEqual(measured.splitCurrencyTokens,[]);const colors=await contrast(page);assert.ok(colors.every(item=>Number(item.opacity)===1&&item.ratio>=4.5));
+   await page.screenshot({path:path.join(out,'combined-salary-'+width+'-'+theme+'-'+size+'.png')});historyResults.push({scenario:'combined-large-salary-money',width,theme,size,money:measured,colors,synthetic:true});await context.close();
   }
   fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({synthetic:true,methods:{cssZoom:'CSS zoom stress; not native browser zoom',responsive200:'Half CSS viewport with device scale2; not native browser zoom',devices:'Desktop Chromium emulation; no physical-device certification'},results,historyResults},null,2));
   console.log('PASS actual compiled Diárias: themes, scopes, >40 rows, owner period changes, large money glyph bounds, contrast, navigation clearance');

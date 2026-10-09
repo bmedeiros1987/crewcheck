@@ -19,6 +19,7 @@ export function perDiemSlotAmount(
   return roundCurrencyAmount(slot === 'breakfast' ? mainMeal * breakfastPercent : mainMeal);
 }
 
+/** Legacy inspection only. Production resolution never assigns this ownerless sample. */
 export function demonstratedDomesticPerDiemAt(date: string): { mainMeal: number; breakfast: number } | null {
   const value = String(date || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
@@ -41,7 +42,8 @@ export function resolveDomesticPerDiemRate(args: {
   breakfast: number;
   source: DomesticPerDiemRateSource;
 } {
-  const demonstrated = demonstratedDomesticPerDiemAt(args.effectiveDate);
+  // A legacy device-wide sample is not an authenticated owner reference.
+  // Document values enter through the owner-bound, reviewed learned-rate path only.
   const breakfastPercent = Number.isFinite(args.breakfastPercent)
     ? Number(args.breakfastPercent)
     : BREAKFAST_PERCENT;
@@ -55,16 +57,12 @@ export function resolveDomesticPerDiemRate(args: {
   } else if (args.learnedMainMeal !== null && Number.isFinite(args.learnedMainMeal)) {
     source = 'learned';
     mainMeal = Number(args.learnedMainMeal);
-  } else if (demonstrated) {
-    source = 'demonstrated';
-    mainMeal = demonstrated.mainMeal;
+
   }
 
   const breakfast = args.learnedBreakfast !== null && Number.isFinite(args.learnedBreakfast)
     ? roundCurrencyAmount(Number(args.learnedBreakfast))
-    : source === 'demonstrated' && demonstrated
-      ? demonstrated.breakfast
-      : perDiemSlotAmount(mainMeal, 'breakfast', breakfastPercent);
+    : perDiemSlotAmount(mainMeal, 'breakfast', breakfastPercent);
 
   return {
     mainMeal: roundCurrencyAmount(mainMeal),

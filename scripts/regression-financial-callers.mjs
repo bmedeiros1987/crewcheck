@@ -77,7 +77,7 @@ try {
   const inheritedEnd = amounts.DEMONSTRATED_DOMESTIC_EFFECTIVE_TO;
   // Existing demonstrated resolver is exercised at its real boundaries without
   // copying private money figures into a new fixture or creating a tariff.
-  assert.equal(context.subject.perDiemConfig(roster(2026, 8), inherited).domesticMainMealSource, 'demonstrated');
+  assert.equal(context.subject.perDiemConfig(roster(2026, 8), inherited).domesticMainMealSource, 'act');
   const after = new Date(inheritedEnd + 'T12:00:00'); after.setDate(after.getDate() + 1);
   assert.equal(context.subject.perDiemConfig(roster(2026, 9), iso(after)).domesticMainMealSource, 'act');
   const night = { ...event('2032-09-01'), kind: 'flight', presentation: '23:50',

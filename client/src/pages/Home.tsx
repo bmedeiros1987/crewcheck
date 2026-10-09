@@ -1,3 +1,4 @@
+import { isFinancialSetting, readFinancialSetting, writeFinancialSetting } from '@/lib/financialSettingStore';
 import type { ReactNode } from 'react';
 import '@/styles/per-diem-content.css';
 import '@/styles/compact-navigation.css';
@@ -84,7 +85,7 @@ import FinancialHistoryExplorer from '@/components/finance/FinancialHistoryExplo
 import FinancialStatementReconciliation from '@/components/finance/FinancialStatementReconciliation';
 import { financialRowsInRange, financialWeeks, financialRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { rosterDisplayIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
-import { confirmedRateValueAt } from '@/lib/financialStatementLearning';
+import { confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import { classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
@@ -163,10 +164,12 @@ const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
   get(key: string, fallback = '') {
+    if (isFinancialSetting(key)) return readFinancialSetting(key, fallback);
     try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
   },
   set(key: string, value: string) {
-    try { localStorage.setItem(key, value); } catch {}
+    if (isFinancialSetting(key)) return writeFinancialSetting(key, value);
+    try { localStorage.setItem(key, value); return true; } catch { return false; }
   },
 };
 
@@ -2804,7 +2807,8 @@ function NotificationPermissionSetting() {
 }
 function FieldSetting({ icon: Icon, label, storageKey, placeholder }: { icon: any; label: string; storageKey: string; placeholder: string }) {
   const [value, setValue] = useState(() => storage.get(storageKey, ''));
-  return <label className="cz-setting cz-field-setting"><Icon/><div><strong>{label}</strong><input value={value} onChange={(event) => { setValue(event.target.value); storage.set(storageKey, event.target.value); }} placeholder={placeholder}/></div><ChevronRight/></label>;
+  useEffect(() => { const sync = () => setValue(storage.get(storageKey, '')); window.addEventListener('crewcheck:auth-changed', sync); window.addEventListener('crewcheck:auth-expired', sync); window.addEventListener('storage', sync); return () => { window.removeEventListener('crewcheck:auth-changed', sync); window.removeEventListener('crewcheck:auth-expired', sync); window.removeEventListener('storage', sync); }; }, [storageKey]);
+  return <label className="cz-setting cz-field-setting"><Icon/><div><strong>{label}</strong><input value={value} onChange={(event) => { if (storage.set(storageKey, event.target.value)) setValue(event.target.value); else toast.error('Não foi possível salvar a configuração nesta conta.'); }} placeholder={placeholder}/></div><ChevronRight/></label>;
 }
 
 function PlatformPreferences() {
@@ -3776,15 +3780,19 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
     : 'não informada';
 
   function configureExchange() {
+    const session = financialRateSession();
+    if (!session) return;
     const currencies = (Object.keys(forecast.totalsByCurrency) as PerDiemCurrency[]).filter((currency) => currency !== 'BRL');
-    currencies.forEach((currency) => {
+    let changed = false;
+    for (const currency of currencies) {
+      if (session !== financialRateSession()) { toast.error('A sessão mudou. O câmbio não foi aplicado à outra conta.'); return; }
       const key = 'crewcheck_fx_' + currency.toLowerCase() + '_brl';
       const value = prompt('Cotação informada: 1 ' + currency + ' em BRL', storage.get(key, ''));
-      if (value !== null) storage.set(key, value.replace(',', '.'));
-    });
-    setRevision((value) => value + 1);
-    window.dispatchEvent(new CustomEvent('crewcheck:financial-config-changed'));
-    toast.success('Câmbio atualizado para esta previsão.');
+      if (value === null) continue;
+      if (!writeFinancialSetting(key, value.replace(',', '.'), session)) { toast.error('Não foi possível salvar o câmbio na sessão que abriu a revisão.'); return; }
+      changed = true;
+    }
+    if (changed) { setRevision((value) => value + 1); toast.success('Câmbio atualizado para esta previsão.'); }
   }
 
   return <><Brand back/><section className="cc-per-diem-content" aria-label="Previsão de diárias">
@@ -3867,7 +3875,7 @@ function SalaryReliableView({ bundle }: { bundle: BundleState }) {
         <section className="cz-panel-head cz-panel-head-compact"><h1>Salário</h1><p>Trabalho: {range.start} até {range.end}. Previsão por competência, sem confirmação de pagamento.</p></section>
         {controls}<section className="cz-finance-grid cc-per-diem-summary"><KpiCard icon={DollarSign} title="Bruto previsto no período" value={gross===null?'Não calculável':moneyBRL(gross)} detail={fullMonths?'Salário-base exige fonte ou calibração; somente competências completas são somadas.':'A fonte mensal não permite distribuir salário-base e descontos por semana.'}/></section>
         {graph}
-        <details className="cz-toolbox"><summary>Composição mensal e descontos informados</summary>{selected.length?selected.map(item=>{const salary=item.snapshot.salary;return <article key={`${item.roster.year}-${item.roster.month}`}><h2>{item.roster.month}/{item.roster.year}</h2><p>Fonte operacional: {item.source}. {salary.config.source}</p><p>Salário-base: {salary.config.baseConfigured?moneyBRL(salary.config.basePay):'Não informado'}. Fixos informados: {moneyBRL(salary.config.fixedAdditions)}.</p><p>Variáveis: voos {moneyBRL(salary.production)}, chefe/instrutor {moneyBRL(salary.chief+salary.instructorPay)}, reserva {moneyBRL(salary.reserve)}, sobreaviso {moneyBRL(salary.standby)}.</p><p>Descontos informados: INSS {moneyBRL(salary.inss)}, IRRF {moneyBRL(salary.irrf)}, outros {moneyBRL(salary.otherDeductions)}. Líquido simulado da competência: {salary.config.baseConfigured?moneyBRL(salary.net):'Não calculável'}.</p><p>Valores integrais da competência, sem rateio pelo filtro de dias.</p></article>}):<p>Nenhuma competência disponível.</p>}</details>
+        <details className="cz-toolbox"><summary>Composição mensal e descontos informados</summary>{selected.length?selected.map(item=>{const salary=item.snapshot.salary, cycle=reviewedPayrollCycleForOperationalMonth(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`);return <article key={`${item.roster.year}-${item.roster.month}`}><h2>{item.roster.month}/{item.roster.year}</h2>{cycle && <p data-payroll-competences="reviewed-company-cycle">Variáveis operacionais: {cycle.operationalVariableMonth}. Fixos e competência da folha: {cycle.fixedMonth}. Mês esperado de crédito: {cycle.expectedCreditMonth}; data exata e liquidação não confirmadas. Origem: orientação empresarial fornecida pelo usuário e revisada nesta conta.</p>}<p>Fonte operacional: {item.source}. {salary.config.source}</p><p>Salário-base: {salary.config.baseConfigured?moneyBRL(salary.config.basePay):'Não informado'}. Fixos informados: {moneyBRL(salary.config.fixedAdditions)}.</p><p>Variáveis: voos {moneyBRL(salary.production)}, chefe/instrutor {moneyBRL(salary.chief+salary.instructorPay)}, reserva {moneyBRL(salary.reserve)}, sobreaviso {moneyBRL(salary.standby)}.</p><p>Descontos informados: INSS {moneyBRL(salary.inss)}, IRRF {moneyBRL(salary.irrf)}, outros {moneyBRL(salary.otherDeductions)}. Líquido simulado da competência: {salary.config.baseConfigured?moneyBRL(salary.net):'Não calculável'}.</p><p>Valores integrais da competência, sem rateio pelo filtro de dias.</p></article>}):<p>Nenhuma competência disponível.</p>}</details>
         <details className="cz-finance-table cc-per-diem-items"><summary>Componentes por voo no intervalo · {rows.length} itens</summary><p className="finance-learning-notice warning" data-km-source="operational-estimate">KM exibido nesta previsão é uma estimativa operacional pela distância entre aeroportos. A quilometragem remunerável da folha pode usar a tabela corporativa por trecho; confira o extrato/AIMS.</p><p>Somente as parcelas com vínculo a um voo. Salário-base, reserva, sobreaviso e descontos mensais não são rateados.</p>{rows.length?rows.map(row=><div className="cz-finance-row" key={row.id}><span>{row.iso}</span><strong>{row.flight} · {row.route}</strong><b><MoneyText value={moneyBRL(row.total)}/></b><details className="cc-per-diem-source"><summary>Origem e regra</summary><small>{row.dayKm} km diurno × {moneyBRL(row.dayRateApplied)} · {row.nightKm} km noturno × {moneyBRL(row.nightRateApplied)} · {row.payRule} · {row.source}</small></details></div>):<p>Sem parcelas por voo disponíveis no intervalo.</p>}</details>
       </section></>;
     }}/>
