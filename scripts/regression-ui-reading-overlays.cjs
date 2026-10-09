@@ -28,6 +28,7 @@ const confirmation = homeAst.statements.filter(n => ts.isFunctionDeclaration(n) 
 assert.equal(confirmation.length, 1);
 const modalBundle = buildSync({ stdin: { contents: `import { acquireOverlayLifecycle } from './client/src/lib/overlayLifecycle';\n${confirmation[0].getText(homeAst)}\nwindow.openQAImport=requestCrewCheckImportConfirmation; window.acquireQAOverlay=acquireOverlayLifecycle;`, resolveDir: process.cwd(), loader: 'ts' }, bundle: true, platform: 'browser', format: 'iife', write: false }).outputFiles[0].text;
 const results = [];
+const testedCommit = require('node:child_process').execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const widths = (process.env.UI_READING_WIDTHS || '320,360,390,1440').split(',').map(Number);
 assert.ok(widths.every(width => [320, 360, 390, 1440].includes(width)));
 const settle = page => page.evaluate(async () => {
@@ -238,7 +239,7 @@ async function visibleTextBounds(page, selector) {
       await context.close();
     }
   } finally {
-    fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ commit: require('node:child_process').execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), scope: 'Actual built app for settings/menu; actual prepared import confirmation component with shipped CSS; synthetic accounts; all API/external traffic intercepted', results }, null, 2));
+    fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ commit: testedCommit, scope: 'Actual built app for settings/menu; actual prepared import confirmation component with shipped CSS; synthetic accounts; all API/external traffic intercepted', results }, null, 2));
     await browser.close(); await new Promise(resolve => server.close(resolve));
   }
   assert.equal(results.length, widths.length * 6);

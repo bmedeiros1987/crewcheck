@@ -1,6 +1,6 @@
 # Compact navigation, reading preference and overlay recovery
 
-Base main: `1f8e9efee877837605a086bc11c3887167ba4918`. PR933 and financial calculation rules are outside this change.
+Base main: `5fb5cf746c1a0cbf4af08634513b917b519435a5`. PR933 has been incorporated from main; its notification/BIDS changes and financial calculation rules are outside the authored UI change.
 
 The app already had a fixed bottom navigation and menu overlay, but competing CSS made menu scrolling and favorites inconsistent. The import confirmation could orphan a pending promise when another confirmation opened. No account-scoped reading-size preference existed.
 
