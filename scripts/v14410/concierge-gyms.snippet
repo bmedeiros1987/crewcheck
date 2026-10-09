@@ -120,7 +120,7 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
       partner.eligibilityStatus === 'included'
         ? `   Acesso: ✓ incluído no seu ${userPlanLabel} · mínimo da unidade: ${minimumPlanLabel} (snapshot público)`
         : `   Acesso: não confirmado para seu ${userPlanLabel}; confira a fonte oficial · mínimo publicado: ${minimumPlanLabel}`,
-      `   Endereço: ${partner.address}`,
+      `   Endereço: ${partner.address || 'endereço não confirmado — consulte a fonte oficial'}`,
       ...(partner.accessConditions ? [`   Condições: ${partner.accessConditions}`] : []),
       ...(partner.accessNote ? [`   Observação: ${partner.accessNote}`] : []),
       `   Horário: ${(partner.openingHours || []).join(' | ') || 'não publicado no snapshot'}`,
