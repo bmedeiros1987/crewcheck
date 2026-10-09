@@ -85,8 +85,8 @@ async function contrast(page) {
   const rgb=value=>(value.match(/[\d.]+/g)||[]).slice(0,3).map(Number);
   const lum=c=>c.map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);
   const results=[];
-  for(const selector of ['.cz-kpi p','.cc-per-diem-source small','.cc-per-diem-scope']) {
-   const element=document.querySelector('.cc-per-diem-content '+selector);if(!element||!element.getClientRects().length)continue;
+  for(const selector of ['.cz-kpi p','.cc-per-diem-source small','.cc-per-diem-scope','.cz-kpi .cc-money-token','.cz-finance-row .cc-money-token']) for(const element of document.querySelectorAll('.cc-per-diem-content '+selector)) {
+   if(!element.getClientRects().length)continue;
    const fg=getComputedStyle(element);let ancestor=element,bg,opacity=1;for(let e=element;e&&e.closest('.cc-per-diem-content');e=e.parentElement)opacity*=Number(getComputedStyle(e).opacity);
    while(ancestor){const color=getComputedStyle(ancestor).backgroundColor;if(!color.includes('rgba')&&color!=='transparent'){bg=color;break;}ancestor=ancestor.parentElement;}
    if(!bg)throw Error('No solid background for contrast');

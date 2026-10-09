@@ -17,3 +17,7 @@ Real financial reconciliation and updated values remain separate. Statement depo
 
 ### Review corrections: account select and large monetary groups
 The mounted reading selector listens to account/session changes and resets to the current account preference. Whole currency/number/cents groups use nonbreaking spans; separate currencies may flow independently. At 150/200%, finance rows stack and amounts fit their available card width. Synthetic browser coverage now uses 1,234,567.89 in multiple currencies, measures glyph lines for complete currency tokens in cards and rows, and checks both the root preference and the mounted selector after switching accounts.
+
+
+### Monetary contrast review correction
+MoneyText introduces spans, so each token explicitly inherits its b/strong foreground instead of a global muted span color. Contrast checks now measure every actual money token in summary cards and finance rows, including real100/150/200 preferences, in both themes. The minimum required ratio is4.5:1; surrounding muted text checks alone are insufficient.

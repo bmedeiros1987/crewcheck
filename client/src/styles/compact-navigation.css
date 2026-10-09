@@ -156,6 +156,7 @@ html body #root .cz-app[data-version] .cz-menu-panel .cz-menu-header .cz-menu-cl
 
 html body #root .cz-app[data-version] .cc-money-token {
   display: inline-block !important;
+  color: inherit !important;
   white-space: nowrap !important;
   overflow-wrap: normal !important;
   word-break: normal !important;
