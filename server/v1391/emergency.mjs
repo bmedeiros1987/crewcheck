@@ -1,3 +1,5 @@
+import { stayMenuIntent } from '../concierge/stay-menu.mjs';
+import { amilUnknownMessage } from '../../shared/amil-coverage.mjs';
 import crypto from 'node:crypto';
 import { createPendingGeographicIntent, consumePendingGeographicIntent } from '../v14369/pending-geographic-intent.mjs';
 import { readFileSync } from 'node:fs';
@@ -470,35 +472,6 @@ function healthPlan(profile = {}) {
   };
 }
 
-function coveredAmilProviders(planCode, careKind = 'hospital') {
-  const emergencyCodes = new Set(['PA', 'PS', 'PS CARD', 'PSO']);
-  const hospitalCodes = new Set(['H', 'H CARD', 'H ORT', 'HD']);
-  return (AMIL_NETWORK_SNAPSHOT.providers || []).filter((provider) => {
-    const codes = Array.isArray(provider?.plans?.[planCode]) ? provider.plans[planCode] : [];
-    if (!codes.length) return false;
-    if (careKind === 'clinic') return provider.category === 'diagnostic' || codes.includes('DIAGNOSTICO');
-    return codes.some((code) => emergencyCodes.has(code) || hospitalCodes.has(code));
-  });
-}
-
-function providerNameMatches(placeName, providerName) {
-  const ignored = new Set(['HOSPITAL', 'CLINICA', 'CLINICAS', 'CENTRO', 'MEDICO', 'MEDICA', 'PRONTO', 'SOCORRO', 'UNIDADE', 'SA', 'LTDA', 'DA', 'DE', 'DO', 'DAS', 'DOS']);
-  const left = normalizeSearch(placeName).split(' ').filter((token) => token.length >= 3 && !ignored.has(token));
-  const right = normalizeSearch(providerName).split(' ').filter((token) => token.length >= 3 && !ignored.has(token));
-  if (!left.length || !right.length) return normalizeSearch(placeName) === normalizeSearch(providerName);
-  const overlap = left.filter((token) => right.includes(token)).length;
-  return overlap / Math.min(left.length, right.length) >= 0.66;
-}
-
-function amilCoverageMatch(place, providers) {
-  return providers.find((provider) => {
-    if (!providerNameMatches(place.name, provider.name)) return false;
-    const address = normalizeSearch(place.address);
-    const addressTokens = address.split(' ');
-    return !provider.city || !address || address.includes(normalizeSearch(provider.city)) || addressTokens.includes(normalizeSearch(provider.state));
-  }) || null;
-}
-
 async function openNearbyPlaces(kind, origin, maxResultCount = 6) {
   const key = mapsKey();
   if (!key || !origin) return [];
@@ -567,18 +540,15 @@ function carePlaceKeyboard(place) {
 }
 
 async function sendOpenCareResults(db, email, chatId, kind, origin, sendMessage = sendTelegramRich) {
+  if (kind === 'hospital') {
+    await sendMessage(chatId, amilUnknownMessage());
+    return { count: 0, coverageStatus: 'unknown' };
+  }
   const medical = await emergencyMedical(db, email);
   const plan = healthPlan(medical.data || {});
   let places = await openNearbyPlaces(kind, origin, 6);
   let coverageLabel = '';
-  if (kind === 'hospital' && plan.amil) {
-    const covered = coveredAmilProviders(plan.code, 'hospital');
-    places = places.map((place) => ({ ...place, coveredProvider: amilCoverageMatch(place, covered) })).filter((place) => place.coveredProvider).slice(0, 6);
-    coverageLabel = `Rede publicada Amil ${plan.code}`;
-  } else {
-    places = places.slice(0, 6);
-    if (kind === 'hospital' && plan.provider) coverageLabel = `Plano informado: ${plan.provider} ${plan.code} · rede não importada; cobertura não filtrada`.trim();
-  }
+  places = places.slice(0, 6);
   const categoryLabel = kind === 'hospital' ? 'hospitais e pronto-atendimentos' : 'farmácias';
   if (!places.length) {
     const coverageMessage = kind === 'hospital' && plan.amil
@@ -945,6 +915,7 @@ async function handleEmergencyTelegramUpdate(update = {}, sendTelegramMessage) {
   const message = callback?.message || update?.message || update?.edited_message || {};
   const chatId = String(message?.chat?.id || '');
   const text = String(message?.text || message?.caption || '').trim();
+  if (stayMenuIntent(text)) return false;
   const data = String(callback?.data || '').trim();
   const emergencyCommand = /^\/emergencia(?:@\S+)?\b/i.test(text) || /^🚨?\s*emerg[êe]ncia\b/i.test(text);
   const hospitalCommand = /^\/(?:hospitais?|prontoatendimento)(?:@\S+)?\b/i.test(text) || /^(?:🏥\s*)?(?:hospitais?|pronto[- ]?(?:socorro|atendimento))$/i.test(text);
@@ -1009,10 +980,10 @@ async function handleEmergencyTelegramUpdate(update = {}, sendTelegramMessage) {
     const match = text.toUpperCase().match(/S\s*(450|750)/);
     if (match) {
       const plan = await updateHealthPlan(db, linked.email, 'Amil', `S${match[1]}`);
-      await sendTelegramMessage(chatId, `Plano salvo com criptografia: ${plan.provider} ${plan.code}. As buscas de hospitais passam a exibir somente correspondências da rede publicada para esse plano.`);
+      await sendTelegramMessage(chatId, `Plano salvo com criptografia: ${plan.provider} ${plan.code}. Esta abreviação não confirma a variante/rede nem cobertura por unidade. Consulte o Guia Amil; só uma confirmação oficial atual pode entrar na lista de compatíveis.`);
     } else if (/nenhum|remover|limpar/i.test(text)) {
       await updateHealthPlan(db, linked.email, '', '');
-      await sendTelegramMessage(chatId, 'Preferência de plano removida. As buscas voltarão a mostrar locais abertos sem filtro de cobertura.');
+      await sendTelegramMessage(chatId, 'Preferência de plano removida. Hospitais sem confirmação oficial não entram na lista de compatíveis.');
     } else {
       const medical = await emergencyMedical(db, linked.email);
       const plan = healthPlan(medical.data || {});
@@ -1021,7 +992,13 @@ async function handleEmergencyTelegramUpdate(update = {}, sendTelegramMessage) {
     return true;
   }
 
-  if (hospitalCommand || pharmacyCommand) {
+  if (hospitalCommand) {
+    if (intent) await consumeTelegramIntent(db, scope, intent);
+    await sendTelegramMessage(chatId, amilUnknownMessage());
+    return true;
+  }
+
+  if (pharmacyCommand) {
     if (intent) await consumeTelegramIntent(db, scope, intent);
     const kind = hospitalCommand ? 'hospital' : 'pharmacy';
     const origin = await emergencyOrigin(db, linked.email);
@@ -1122,13 +1099,9 @@ async function handleEmergencyTelegramUpdate(update = {}, sendTelegramMessage) {
       const origin = await emergencyOrigin(db, linked.email);
       const result = await sendAlert(db, { email: linked.email, profile: profiles[0] || {}, payload: linked.payload }, { kind, locationUrl: origin?.locationUrl || '', requesterChatId: chatId, requesterUsername: callback?.from?.username || linked.payload?.username || '' });
       const delivered = result.recipients.filter((recipient) => recipient.ok).map((recipient) => `• ${recipient.name}`).join('\n');
-      await saveEmergencySession(db, linked.email, { pendingKind: '', pendingAction: kind === 'medical' && !origin ? 'hospital' : '' });
+      await saveEmergencySession(db, linked.email, { pendingKind: '', pendingAction: '' });
       await sendTelegramMessage(chatId, [`🚨 Alerta confirmado e entregue a ${result.sent} contato(s):`, delivered, ...(result.failed ? [`Entrega parcial: ${result.failed} contato(s) sem confirmação de entrega. Não reenviarei automaticamente.`] : []), '', 'Você receberá uma confirmação quando alguém tocar em “Vou ajudar”.', 'Quando houver assistência, toque no botão abaixo para evitar deslocamentos duplicados.', '', 'Em risco imediato, acione também o serviço público/local de emergência.'].join('\n'), { reply_markup: alertStatusKeyboard(result.alertId) });
-      if (kind === 'medical') {
-        if (!origin) await writeTelegramIntent(db, scope, { stage: 'care', action: 'hospital' });
-        if (origin) await sendOpenCareResults(db, linked.email, chatId, 'hospital', origin, sendTelegramMessage);
-        else await sendTelegramMessage(chatId, 'Compartilhe a localização para eu procurar hospitais e pronto-atendimentos abertos agora, filtrados pelo seu plano quando disponível.', { reply_markup: locationRequestKeyboard() });
-      }
+      if (kind === 'medical') await sendTelegramMessage(chatId, amilUnknownMessage());
     } catch (error) {
       // Never restore the consumed token or overwrite a newer draft. Unknown outcomes
       // (timeouts, malformed replies, persistence errors) require checking delivery first.
