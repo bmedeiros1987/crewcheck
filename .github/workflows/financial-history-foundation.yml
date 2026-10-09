@@ -71,6 +71,8 @@ jobs:
       - run: node scripts/regression-financial-callers.mjs
         env:
           TZ: America/New_York
+      - name: Verify actual allowance caller in operational BRT across device timezones
+        run: node scripts/regression-operational-finance-clock.mjs
       - run: node scripts/regression-financial-comparison-periods.mjs
       - run: node scripts/regression-financial-history-periods.mjs
         env:
