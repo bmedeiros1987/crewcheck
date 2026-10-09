@@ -63,7 +63,7 @@ function harness(initialPlan = 'basic', gymPlan = 'wellhub', io = {}) {
     conciergeNextProgram: () => null,
     conciergeLocationContextV14335: () => ({ fresh: true, location: { city: 'Guarulhos', state: 'SP' } }),
     WEATHER_AIRPORT_POINTS: { GRU: { city: 'Guarulhos' } },
-    searchVerifiedWellhub: async input => { searches.push(clone(input)); return partners.filter(p => wellhubPlanAllows(input.plan, p.minimumPlan)); },
+    searchVerifiedWellhub: async input => { searches.push(clone(input)); return partners.filter(p => wellhubPlanAllows(input.plan, p.minimumPlan)).map(p => ({ ...p, eligibilityStatus: io.eligibilityStatus || 'included', address: 'Endereço sintético de teste', verifiedAt: '2026-10-09' })); },
     fetch: () => { throw new Error('No real network is permitted by this regression'); },
   });
   for (const name of ['conciergeSafeKey', 'conciergeSnapshotForProfile', 'conciergeMinimizeRoster', 'conciergeRosterDiagnostics', 'conciergeSaveSnapshot', 'conciergeSaveSnapshotAsync', 'conciergeLoadSnapshot']) {
@@ -142,6 +142,16 @@ test('explicit unknown or malformed plan asks for clarification without falling 
     assert.equal(h.writes.length, 0);
     assert.equal(h.searches.length, 0);
   }
+});
+
+test('unknown access from the search contract is not formatted as included', async () => {
+  const h = harness('silver-plus', 'wellhub', { eligibilityStatus: 'unknown' });
+  const reply = await h.send('academia em Guarulhos/SP');
+  assert.match(reply, /Acesso: não confirmado para seu Silver\+/);
+  assert.doesNotMatch(reply, /Acesso: ✓/);
+  assert.match(reply, /https:\/\/example.invalid\/synthetic-basic/);
+  assert.equal((await h.load()).preferences.wellhubPlan, 'silver-plus');
+  assert.equal(h.writes.length, 0);
 });
 
 test('wellhub gym names and unit tier text leave the persisted user plan untouched', async () => {
