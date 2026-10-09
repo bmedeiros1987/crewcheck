@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import '@/styles/per-diem-content.css';
+import '@/styles/compact-navigation.css';
 import NotificationSoundSetting from '@/components/pulse/NotificationSoundSetting';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useLocation } from 'wouter';
