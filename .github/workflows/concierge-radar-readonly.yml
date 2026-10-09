@@ -1,0 +1,23 @@
+name: Concierge saved Radar read-only
+on:
+  pull_request:
+    paths:
+      - 'server/concierge/radar-readonly.mjs'
+      - 'scripts/concierge-radar-readonly/**'
+      - 'scripts/regression-concierge-radar-readonly*.mjs'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/concierge-radar-readonly.yml'
+permissions:
+  contents: read
+jobs:
+  saved-radar:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.13.0
+      - run: node scripts/v139/apply.mjs
+      - run: node --check server.mjs
+      - run: node scripts/regression-concierge-radar-readonly.mjs
+      - run: node scripts/regression-concierge-radar-readonly-integration.mjs
