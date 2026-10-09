@@ -12,7 +12,7 @@ export function officialAmilSource(value) {
 export function amilCoverage(provider, selection = {}, now = new Date()) {
   const unknown = reason => ({ status: 'unknown', reason });
   if (!amilPlanFamily(selection.planCode)) return unknown('missing_plan_details');
-  if (!selection.productCode || !selection.networkCode) return unknown('ambiguous_plan');
+  if (!String(selection.productCode || '').trim() || !String(selection.networkCode || '').trim() || [selection.productCode, selection.networkCode].some(value => /^(?:amil\s*)?s\s*(?:450|750)$/i.test(String(value).trim()))) return unknown('ambiguous_plan');
   if (!selection.state || !selection.city || !selection.serviceCode || !selection.specialty) return unknown('service/unit_unverified');
   if (selection.query && !fold(selection.query).split(/\s+/).every(word => fold(provider?.name).includes(word))) return unknown('service/unit_unverified');
   const evidence = provider?.coverageEvidence;
@@ -30,7 +30,7 @@ export function amilCoverage(provider, selection = {}, now = new Date()) {
 export function amilConfirmedProviders(providers, selection, now = new Date()) {
   return (Array.isArray(providers) ? providers : []).flatMap(provider => {
     const result = amilCoverage(provider, selection, now);
-    return result.status === 'confirmed_in_network' ? [{ ...provider, covered: true, coverageStatus: result.status, coverageEvidence: result.evidence, sourceUrl: result.evidence.sourceUrl, sourceVerifiedAt: result.evidence.verifiedAt, planCode: selection.planCode }] : [];
+    return result.status === 'confirmed_in_network' ? [{ ...provider, mapsQuery: [provider.name, provider.address, provider.city, provider.state].join(', '), covered: true, coverageStatus: result.status, coverageEvidence: result.evidence, sourceUrl: result.evidence.sourceUrl, sourceVerifiedAt: result.evidence.verifiedAt, planCode: selection.planCode }] : [];
   });
 }
 export function amilUnknownMessage(planCode = '') {
