@@ -1,0 +1,7 @@
+# Isolated finance/UI composition
+
+Source heads: PR934 454d4bda740cc496faa5b91f572a6255241c0923 and PR939 472335243cce51ed7bc39e24eb0fed0c8bd69893. Stable main:5fb5cf746c1a0cbf4af08634513b917b519435a5.
+
+Separate branch/worktree based on PR934, with PR939 applied using three-way patching. Original source branches unchanged. Sole content conflict: adjacent salary details/rows in Home.tsx. Preserve reviewed payroll competence text from PR939 and MoneyText totals from PR934. Other overlapping caller/browser changes applied cleanly. No new calculation, tariff, payment evidence or transport behavior.
+
+Source PR independent reviews pending. This is a review candidate, no main merge/deploy. No real values updated; discrepancy remains unresolved without app source items. Combined QA: actual150/200 preferences with large currencies, mounted selector/account changes, owner references, historical filters and forecast states.

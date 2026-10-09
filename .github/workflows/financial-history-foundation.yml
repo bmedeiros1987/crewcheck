@@ -4,6 +4,9 @@ on:
     paths:
       - 'shared/financialReadModel.mjs'
       - 'client/src/lib/financialStatementLearning.ts'
+      - 'client/src/lib/financialPayrollPeriods.ts'
+      - 'client/src/lib/financialSettingStore.ts'
+      - 'client/src/lib/financialAmounts.ts'
       - 'client/src/lib/financialForecastPeriods.ts'
       - 'client/src/pages/Home.tsx'
       - 'client/src/components/v1391/RosterLaunchView.tsx'
@@ -31,6 +34,15 @@ jobs:
       - run: npm ci
       - run: node scripts/v139/apply.mjs
       - run: node scripts/regression-static-module-mime.mjs
+      - run: node scripts/regression-financial-owner-periods.mjs
+        env:
+          TZ: UTC
+      - run: node scripts/regression-financial-owner-periods.mjs
+        env:
+          TZ: America/Sao_Paulo
+      - run: node scripts/regression-financial-owner-periods.mjs
+        env:
+          TZ: America/New_York
       - run: node scripts/regression-financial-read-model.mjs
       - run: node scripts/regression-financial-statement-totals.mjs
       - run: node --test scripts/regression-financial-review-negative.mjs
