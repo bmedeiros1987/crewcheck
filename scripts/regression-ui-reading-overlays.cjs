@@ -44,9 +44,9 @@ async function recovered(page) {
     window.scrollTo({ top: document.scrollingElement.scrollHeight, behavior: 'instant' });
     const after = window.scrollY;
     return { unlocked: !['hidden', 'clip'].includes(getComputedStyle(document.body).overflowY), scrolled: after > before || document.scrollingElement.scrollHeight <= innerHeight,
-      navVisible: nav && getComputedStyle(nav).display !== 'none' };
+      navVisible: nav && getComputedStyle(nav).display !== 'none', historyRestoration: history.scrollRestoration };
   });
-  assert.ok(result.unlocked && result.scrolled && result.navVisible, 'Body scroll or approved navigation not restored: ' + JSON.stringify(result));
+  assert.ok(result.unlocked && result.scrolled && result.navVisible && result.historyRestoration === 'auto', 'Body scroll or approved navigation not restored: ' + JSON.stringify(result));
 }
 async function visibleTextBounds(page, selector) {
   return page.locator(selector).evaluateAll(elements => {
@@ -217,6 +217,14 @@ async function visibleTextBounds(page, selector) {
       await page.waitForFunction(() => history.state?.crewcheckOverlay === window.qaParentToken);
       assert.equal(await page.locator('body').evaluate(el => el.style.overflow), 'hidden', 'Closing child overlay keeps the parent lock');
       await page.evaluate(() => window.qaReleaseParent());
+      await recovered(page);
+      await page.evaluate(() => {
+        const first = window.acquireQAOverlay(() => {});
+        first();
+        window.qaRapidRelease = window.acquireQAOverlay(() => {});
+      });
+      assert.equal(await page.evaluate(() => history.scrollRestoration), 'manual', 'Rapid reopening retains overlay-owned restoration');
+      await page.evaluate(() => window.qaRapidRelease());
       await recovered(page);
       // Preferences must not leak across authenticated accounts, including logout.
       await page.evaluate(() => { localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'other-synthetic-account', name: 'OTHER', role: 'user' })); window.dispatchEvent(new Event('crewcheck:auth-changed')); });
