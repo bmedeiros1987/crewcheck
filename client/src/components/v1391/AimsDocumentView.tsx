@@ -18,7 +18,7 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
   events: Event[]; month: string; day?: string; describe: (event: Event) => Description; focusEventId?: string;
 }) {
   const id = useId(), viewport = useRef<HTMLDivElement>(null), sheet = useRef<HTMLDivElement>(null);
-  const detail = useRef<HTMLDivElement>(null), opener = useRef<HTMLButtonElement | null>(null);
+  const detail = useRef<HTMLDivElement>(null), opener = useRef<HTMLButtonElement | HTMLSelectElement | null>(null);
   const [zoom, setZoom] = useState(1), [size, setSize] = useState({ width: 3744, height: 0 });
   const [selection, setSelection] = useState<{ event: Event; owner: string | null } | null>(null);
   const owner = getStoredUser()?.id || null;
@@ -64,7 +64,7 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
       <button type="button" onClick={() => { changeZoom(1); if (viewport.current) viewport.current.scrollLeft = 0; }}>100%</button>
     </div>
     <p id={`${id}-help`} className="cc-doc-help">Arraste lateralmente para percorrer os dias; deslize na vertical para continuar a página. Use dois dedos ou +/− para ampliar. Ajustar mostra o mês inteiro. Amplie para ler; os detalhes também podem ser abertos pelo seletor abaixo.</p>
-    <label className="cc-doc-picker">Abrir programação publicada<select aria-label="Abrir programação publicada" value="" onChange={e=>{const index=Number(e.target.value);if(e.target.value!==''&&events[index])open(events[index]);}}><option value="">Escolher programação</option>{events.map((event,index)=><option key={index} value={index}>{rosterDisplayIso(event) || 'Data não informada'} · {describe(event).label} · {code(event)}</option>)}</select></label>
+    <label className="cc-doc-picker">Abrir programação publicada<select aria-label="Abrir programação publicada" value="" onChange={e=>{const index=Number(e.target.value);if(e.target.value!==''&&events[index]){opener.current=e.currentTarget;open(events[index]);}}}><option value="">Escolher programação</option>{events.map((event,index)=><option key={index} value={index}>{rosterDisplayIso(event) || 'Data não informada'} · {describe(event).label} · {code(event)}</option>)}</select></label>
     {!events.length && <p role="status">Nenhuma programação informada no período selecionado.</p>}
     <div ref={viewport} className="cc-doc-viewport" tabIndex={0} role="region" aria-label="Dias do documento; rolagem horizontal" aria-describedby={`${id}-help`}
       onKeyDown={event => { if (event.target !== event.currentTarget) return; if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') { event.preventDefault(); event.currentTarget.scrollLeft += event.key === 'ArrowRight' ? 160 : -160; } if (event.key === 'Home') { event.preventDefault(); event.currentTarget.scrollLeft = 0; } if (event.key === 'End') { event.preventDefault(); event.currentTarget.scrollLeft = event.currentTarget.scrollWidth; } }}
