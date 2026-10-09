@@ -1,4 +1,4 @@
-import { requireIdentity } from './common.mjs';
+import { requireIdentity, sendJson } from './common.mjs';
 
 function dateValue(value) {
   const date = new Date(value);
@@ -14,33 +14,40 @@ function escapeIcs(value = '') {
   return String(value).replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
 }
 
+export function buildBidsCalendar(rows, now = new Date()) {
+  const events = rows.map((row) => [
+    'BEGIN:VEVENT',
+    `UID:${row.id}@crewcheck.online`,
+    `DTSTAMP:${icsDate(now)}`,
+    `DTSTART:${icsDate(row.open_epoch != null ? Number(row.open_epoch) : row.opens_at)}`,
+    `DTEND:${icsDate(row.close_epoch != null ? Number(row.close_epoch) : row.closes_at)}`,
+    `SUMMARY:${escapeIcs(`BIDS — ${row.title}`)}`,
+    `DESCRIPTION:${escapeIcs(`Janela de solicitação para ${row.target_month}.`)}`,
+    row.provider_url ? `URL:${escapeIcs(row.provider_url)}` : '',
+    ...(row.notify_open ? ['BEGIN:VALARM',
+    'TRIGGER:PT0M',
+    'ACTION:DISPLAY',
+    'DESCRIPTION:A janela de BIDS abriu.',
+    'END:VALARM'] : []),
+    ...(row.notify_last_day ? ['BEGIN:VALARM',
+    'TRIGGER;RELATED=END:-P1D',
+    'ACTION:DISPLAY',
+    'DESCRIPTION:Último dia da janela de BIDS amanhã.',
+    'END:VALARM'] : []),
+    'END:VEVENT',
+  ].filter(Boolean).join('\r\n')).join('\r\n');
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//CrewCheck//BIDS//PT-BR', 'CALSCALE:GREGORIAN', events, 'END:VCALENDAR'].join('\r\n');
+}
+
 export async function handleBidsCalendar(req, res, url) {
   if (url.pathname !== '/api/platform/bids/calendar') return false;
   const context = await requireIdentity(req, res);
   if (!context) return true;
-  const [rows] = await context.db.query('SELECT * FROM crewcheck_platform_bid_windows WHERE owner_email=? ORDER BY opens_at', [context.email]);
-  const events = rows.map((row) => [
-    'BEGIN:VEVENT',
-    `UID:${row.id}@crewcheck.online`,
-    `DTSTAMP:${icsDate(new Date())}`,
-    `DTSTART:${icsDate(row.opens_at)}`,
-    `DTEND:${icsDate(row.closes_at)}`,
-    `SUMMARY:${escapeIcs(`BIDS — ${row.title}`)}`,
-    `DESCRIPTION:${escapeIcs(`Janela de solicitação para ${row.target_month}.`)}`,
-    row.provider_url ? `URL:${escapeIcs(row.provider_url)}` : '',
-    'BEGIN:VALARM',
-    'TRIGGER:PT0M',
-    'ACTION:DISPLAY',
-    'DESCRIPTION:A janela de BIDS abriu.',
-    'END:VALARM',
-    'BEGIN:VALARM',
-    'TRIGGER:-P1D',
-    'ACTION:DISPLAY',
-    'DESCRIPTION:Último dia da janela de BIDS amanhã.',
-    'END:VALARM',
-    'END:VEVENT',
-  ].filter(Boolean).join('\r\n')).join('\r\n');
-  const calendar = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//CrewCheck//BIDS//PT-BR', 'CALSCALE:GREGORIAN', events, 'END:VCALENDAR'].join('\r\n');
+  if (!context.payload?.sub || String(context.profile?.public_id) !== String(context.payload.sub)) {
+    sendJson(res, 401, { ok: false, message: 'Sessão da conta não é mais válida.' }); return true;
+  }
+  const [rows] = await context.db.query('SELECT *,ROUND(UNIX_TIMESTAMP(opens_at)*1000) AS open_epoch,ROUND(UNIX_TIMESTAMP(closes_at)*1000) AS close_epoch FROM crewcheck_platform_bid_windows WHERE owner_email=? ORDER BY opens_at', [context.email]);
+  const calendar = buildBidsCalendar(rows);
   res.writeHead(200, {
     'content-type': 'text/calendar; charset=utf-8',
     'content-disposition': 'attachment; filename="crewcheck-bids.ics"',
