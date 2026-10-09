@@ -5,3 +5,6 @@ Source heads: PR934 454d4bda740cc496faa5b91f572a6255241c0923 and PR939 472335243
 Separate branch/worktree based on PR934, with PR939 applied using three-way patching. Original source branches unchanged. Sole content conflict: adjacent salary details/rows in Home.tsx. Preserve reviewed payroll competence text from PR939 and MoneyText totals from PR934. Other overlapping caller/browser changes applied cleanly. No new calculation, tariff, payment evidence or transport behavior.
 
 Source PR independent reviews pending. This is a review candidate, no main merge/deploy. No real values updated; discrepancy remains unresolved without app source items. Combined QA: actual150/200 preferences with large currencies, mounted selector/account changes, owner references, historical filters and forecast states.
+
+
+Independent review fixes are explicitly included: monetary token foreground inheritance/full opacity with actual-token contrast checks; fixed base selected only in fixed competence; FX prompt writes bound to its original session; parser derived replacement never printed; shortened latest revision prevents old tariff resurfacing. Source review branches remain separate.

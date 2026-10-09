@@ -51,11 +51,12 @@ try {
  const mapped=learning.applyReviewedPayrollCycle(draft).map(item=>({...item,confirmed:true}));
  assert.equal(mapped[0].effectiveFrom,'2032-02-01');assert.equal(mapped[0].effectiveTo,'2032-02-29');assert.equal(mapped[1].effectiveFrom,'2032-03-01');
  assert.equal(learning.saveConfirmedFinancialRates(mapped),true);
- assert.equal(learning.confirmedFixedSalaryForOperationalMonth('2032-02'),2400);
- assert.equal(learning.confirmedFixedSalaryForOperationalMonth('2032-03'),null,'separate monthly coverage is not extended');
+ assert.equal(learning.confirmedRateValueAt('salary.base','2032-02-01'),null,'base is not included in the operational variable month');
+ assert.equal(learning.confirmedRateValueAt('salary.base','2032-03-01'),2400,'base only belongs to fixed payroll competence');
  assert.equal(learning.reviewedPayrollCycleForOperationalMonth('2032-02').expectedCreditMonth,'2032-04');
  const document=learning.learnPayrollStatement('DEMONSTRATIVO DE PAGAMENTO RUBRICA\nCompetência 03/2032\n1.000,00 0.070000 KM V CMS - D 70,00\n24 Horas Sobre Aviso - CMS 400,00','synthetic-payroll.pdf');
  assert.equal(document.rates.find(rate=>rate.key==='salary.standbyHour').valueOrigin,'derived');
  assert.equal(document.rates.find(rate=>rate.key==='salary.dayKm').valueOrigin,'printed');
+ login('derived-rejected');const rejected=learning.learnPayrollStatement('DEMONSTRATIVO DE PAGAMENTO RUBRICA\nCompetência 03/2032\n100,00 5.01 KM V CMS - D 499,00','synthetic-derived-rejected.pdf');const quotient=rejected.rates.find(rate=>rate.key==='salary.dayKm');assert.equal(quotient.value,4.99);assert.equal(quotient.valueOrigin,'derived');assert.equal(quotient.confidence,'review');assert.equal(learning.saveConfirmedFinancialRates(learning.applyReviewedPayrollCycle(rejected).map(item=>({...item,confirmed:true}))),false,'rejected printed tariff cannot disguise a derived quotient');
  console.log('PASS owner financial references: A/B/guest/logout/stale session, bounded dates/currency, corrections/dedup, scoped manual settings, printed versus derived, three competences/year/leap coverage.');
 } finally { modules.cleanup();globalThis.localStorage=previous.localStorage;globalThis.window=previous.window; }

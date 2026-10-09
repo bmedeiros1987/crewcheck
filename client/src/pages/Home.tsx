@@ -85,7 +85,7 @@ import FinancialHistoryExplorer from '@/components/finance/FinancialHistoryExplo
 import FinancialStatementReconciliation from '@/components/finance/FinancialStatementReconciliation';
 import { financialRowsInRange, financialWeeks, financialRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { rosterDisplayIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
-import { confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, confirmedFixedSalaryForOperationalMonth } from '@/lib/financialStatementLearning';
+import { confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import { classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
@@ -3342,8 +3342,7 @@ function loadActCompensationConfig(roster: CrewRoster): ActCompensationConfig {
   const learnedNight = confirmedRateValueAt('salary.nightKm', effectiveDate);
   const learnedReserve = confirmedRateValueAt('salary.reserveHour', effectiveDate);
   const learnedStandby = confirmedRateValueAt('salary.standbyHour', effectiveDate);
-  const cycle = reviewedPayrollCycleForOperationalMonth(effectiveDate.slice(0, 7));
-  const learnedBase = cycle ? confirmedFixedSalaryForOperationalMonth(effectiveDate.slice(0, 7)) : confirmedRateValueAt('salary.base', effectiveDate);
+  const learnedBase = confirmedRateValueAt('salary.base', effectiveDate);
   const dayKmMetric = dayOverride ?? legacyMetric ?? learnedDay ?? act.salary.dayKm;
   const nightKmMetric = nightOverride ?? learnedNight ?? act.salary.nightKm;
   const reserveHourMetric = reserveOverride ?? learnedReserve ?? act.salary.reserveHour;
@@ -3781,15 +3780,19 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
     : 'não informada';
 
   function configureExchange() {
+    const session = financialRateSession();
+    if (!session) return;
     const currencies = (Object.keys(forecast.totalsByCurrency) as PerDiemCurrency[]).filter((currency) => currency !== 'BRL');
-    currencies.forEach((currency) => {
+    let changed = false;
+    for (const currency of currencies) {
+      if (session !== financialRateSession()) { toast.error('A sessão mudou. O câmbio não foi aplicado à outra conta.'); return; }
       const key = 'crewcheck_fx_' + currency.toLowerCase() + '_brl';
       const value = prompt('Cotação informada: 1 ' + currency + ' em BRL', storage.get(key, ''));
-      if (value !== null) storage.set(key, value.replace(',', '.'));
-    });
-    setRevision((value) => value + 1);
-    window.dispatchEvent(new CustomEvent('crewcheck:financial-config-changed'));
-    toast.success('Câmbio atualizado para esta previsão.');
+      if (value === null) continue;
+      if (!writeFinancialSetting(key, value.replace(',', '.'), session)) { toast.error('Não foi possível salvar o câmbio na sessão que abriu a revisão.'); return; }
+      changed = true;
+    }
+    if (changed) { setRevision((value) => value + 1); toast.success('Câmbio atualizado para esta previsão.'); }
   }
 
   return <><Brand back/><section className="cc-per-diem-content" aria-label="Previsão de diárias">

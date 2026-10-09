@@ -34,6 +34,15 @@ jobs:
       - run: npm ci
       - run: node scripts/v139/apply.mjs
       - run: node scripts/regression-static-module-mime.mjs
+      - run: node scripts/regression-financial-review-owner-negative.mjs
+        env:
+          TZ: UTC
+      - run: node scripts/regression-financial-review-owner-negative.mjs
+        env:
+          TZ: America/Sao_Paulo
+      - run: node scripts/regression-financial-review-owner-negative.mjs
+        env:
+          TZ: America/New_York
       - run: node scripts/regression-financial-owner-periods.mjs
         env:
           TZ: UTC

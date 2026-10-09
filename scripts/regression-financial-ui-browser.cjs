@@ -85,8 +85,8 @@ async function contrast(page) {
   const rgb=value=>(value.match(/[\d.]+/g)||[]).slice(0,3).map(Number);
   const lum=c=>c.map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);
   const results=[];
-  for(const selector of ['.cz-kpi p','.cc-per-diem-source small','.cc-per-diem-scope']) {
-   const element=document.querySelector('.cc-per-diem-content '+selector);if(!element||!element.getClientRects().length)continue;
+  for(const selector of ['.cz-kpi p','.cc-per-diem-source small','.cc-per-diem-scope','.cz-kpi .cc-money-token','.cz-finance-row .cc-money-token']) for(const element of document.querySelectorAll('.cc-per-diem-content '+selector)) {
+   if(!element.getClientRects().length)continue;
    const fg=getComputedStyle(element);let ancestor=element,bg,opacity=1;for(let e=element;e&&e.closest('.cc-per-diem-content');e=e.parentElement)opacity*=Number(getComputedStyle(e).opacity);
    while(ancestor){const color=getComputedStyle(ancestor).backgroundColor;if(!color.includes('rgba')&&color!=='transparent'){bg=color;break;}ancestor=ancestor.parentElement;}
    if(!bg)throw Error('No solid background for contrast');
@@ -219,6 +219,18 @@ async function contrast(page) {
    assert.equal(await page.locator('.finance-learning-review').count(),0,'account change clears pending document review');
    assert.equal(await page.evaluate(()=>localStorage.getItem('crewcheck_financial_learned_rates_v2:different-admin')),null,'no document is written to the other account');
    historyResults.push({scenario:'actual-owner-document-review',width,synthetic:true,checks:['bounded review dates','explicit owner consent','owner-scoped write','repeat PDF dedup','account switch clears review']});await context.close();
+  }
+  for (const width of [390,1440]) {
+   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:'block'});
+   await context.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(url.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[]}'});return route.continue();});
+   const march={...roster('domestic',3),days:[day('01/03/2032')]};
+   await context.addInitScript(seed,{theme:'light',kind:roster('domestic'),amount:100,history:[{id:'local-fixed-march',checksum:'synthetic-fixed-march',createdAt:'2032-03-02T00:00:00Z',roster:march,sourceFileName:'Synthetic March'}]});
+   await context.addInitScript(()=>{const source={ownerId:'financial-ui-qa',currency:'BRL',sourceDocument:'synthetic-payroll.pdf',sourceFingerprint:'synthetic-separated-competences',confidence:'high',valueOrigin:'printed',confirmed:true,revision:1,payrollCompetence:'2032-03',cycleSource:'user-reported-absa-tam'};localStorage.setItem('crewcheck_financial_learned_rates_v2:financial-ui-qa',JSON.stringify({version:2,ownerId:'financial-ui-qa',rates:[{...source,key:'salary.base',label:'Synthetic base',unit:'month',value:2400,effectiveFrom:'2032-03-01',effectiveTo:'2032-03-31'},{...source,key:'salary.dayKm',label:'Synthetic variable',unit:'km',value:.07,effectiveFrom:'2032-02-01',effectiveTo:'2032-02-29'}]}));});
+   const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));await page.locator('.cc-salary-history').waitFor();await page.waitForFunction(()=>document.querySelector('[aria-label="Competência de referência"]')?.options.length===2);
+   assert.match(await page.locator('.cc-per-diem-summary').innerText(),/Não calculável/,'February operational variables cannot consume the March fixed base');
+   const details=page.locator('.cc-salary-history details').filter({has:page.locator('summary').filter({hasText:'Composição mensal'})});await details.locator(':scope>summary').click();assert.match(await details.innerText(),/Salário-base: Não informado/);assert.match(await details.innerText(),/Variáveis operacionais:2032-02|Variáveis operacionais: 2032-02/);
+   await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-03');await page.waitForFunction(()=>document.querySelector('.cc-per-diem-summary')?.textContent.includes('2.400,00'));assert.match(await details.innerText(),/Salário-base: R\$\s*2\.400,00/);
+   await page.screenshot({path:path.join(out,'fixed-base-once-'+width+'.png')});historyResults.push({scenario:'one-fixed-base-separated-from-operational-variables',width,synthetic:true});await context.close();
   }
   fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({synthetic:true,methods:{cssZoom:'CSS zoom stress; not native browser zoom',responsive200:'Half CSS viewport with device scale2; not native browser zoom',devices:'Desktop Chromium emulation; no physical-device certification'},results,historyResults},null,2));
   console.log('PASS actual compiled Diárias: themes, scopes, >40 rows, owner period changes, large money glyph bounds, contrast, navigation clearance');

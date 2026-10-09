@@ -17,11 +17,11 @@ const server = http.createServer((req, res) => staticScope.respond(req, res, new
 // Reuse the existing synthetic roster seed; never read production data or user profiles.
 const financeSource = fs.readFileSync('scripts/regression-financial-ui-browser.cjs', 'utf8');
 const financeAst = ts.createSourceFile('finance.cjs', financeSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-const fixtures = financeAst.statements.filter(n => ts.isFunctionDeclaration(n) && ['roster', 'seed', 'measureMoney'].includes(n.name?.text)
+const fixtures = financeAst.statements.filter(n => ts.isFunctionDeclaration(n) && ['roster', 'seed', 'measureMoney', 'contrast'].includes(n.name?.text)
   || ts.isVariableStatement(n) && n.declarationList.declarations.some(d => d.name.getText(financeAst) === 'day'));
-assert.equal(fixtures.length, 4);
+assert.equal(fixtures.length, 5);
 const fixtureScope = vm.createContext({});
-vm.runInContext(fixtures.map(n => n.getText(financeAst)).join('\n') + '\nglobalThis.qaRoster=roster; globalThis.qaSeed=seed; globalThis.qaMoney=measureMoney;', fixtureScope);
+vm.runInContext(fixtures.map(n => n.getText(financeAst)).join('\n') + '\nglobalThis.qaRoster=roster; globalThis.qaSeed=seed; globalThis.qaMoney=measureMoney; globalThis.qaContrast=contrast;', fixtureScope);
 const homeSource = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 const homeAst = ts.createSourceFile('Home.tsx', homeSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const confirmation = homeAst.statements.filter(n => ts.isFunctionDeclaration(n) && n.name?.text === 'requestCrewCheckImportConfirmation');
@@ -173,6 +173,9 @@ async function visibleTextBounds(page, selector) {
         assert.deepEqual(money.intersections, [], 'Financial labels and amounts do not overlap');
         assert.deepEqual(money.splitAmounts, [], 'Keep complete row amounts and cents together');
         assert.deepEqual(money.splitCurrencyTokens, [], 'Every currency/number/cents group stays together in rows and multi-currency summary cards');
+        const tokenContrast = await fixtureScope.qaContrast(page);
+        assert.ok(tokenContrast.some(item => item.selector.includes('cc-money-token')), 'Measure real money tokens, not only surrounding text');
+        assert.ok(tokenContrast.every(item => Number(item.opacity) === 1 && item.ratio >= 4.5), 'Every monetary token and source label meets contrast at actual reading preference: ' + JSON.stringify(tokenContrast.filter(item => item.ratio < 4.5 || Number(item.opacity) !== 1)));
         await page.screenshot({ path: path.join(output, `${width}-${theme}-${size}-finance.png`) });
         if (size === 200) {
           // Deterministic inset emulation exercises real footer measurement; this is not a physical-device claim.
@@ -188,7 +191,7 @@ async function visibleTextBounds(page, selector) {
           await page.locator('body > nav.cz-bottom-nav').evaluate(el => el.style.removeProperty('bottom'));
           await page.evaluate(() => window.dispatchEvent(new Event('resize'))); await settle(page);
         }
-        results.push({ width, theme, size, actualFont, rootFont, alertHeight: alertBounds.height, menuDismissals: menuMethods.length, fullscreenMenu: width < 500, importDismissals: 4 });
+        results.push({ width, theme, size, actualFont, rootFont, tokenContrast, alertHeight: alertBounds.height, menuDismissals: menuMethods.length, fullscreenMenu: width < 500, importDismissals: 4 });
         console.log(`PASS ${width}-${theme}-${size}: actual text, preference persistence, menu and import dismissal/scroll recovery`);
       }
       await page.evaluate(() => {
