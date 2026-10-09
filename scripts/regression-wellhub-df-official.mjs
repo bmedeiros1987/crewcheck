@@ -89,4 +89,9 @@ const unconfirmed = await context.reply(snapshotPilates, 'academia Ultra na cida
 assert.match(unconfirmed, /modalidade não confirmada/);
 assert.match(unconfirmed, /Acesso: não confirmado/);
 assert.doesNotMatch(unconfirmed, /modalidade confirmada na página oficial/);
+
+for (const plan of ['basic-plus', 'silver-plus', 'gold']) {
+  assert.equal((await search({ query: 'Ultra Noroeste', plan, activity: 'Cycle', locationText: 'DF' }))[0]?.eligibilityStatus, 'included');
+  assert.equal((await search({ query: 'Ultra Noroeste', plan, activity: 'Power Bike', locationText: 'DF' }))[0]?.eligibilityStatus, 'unknown');
+}
 console.log('Wellhub DF official catalog, cumulative hierarchy, geography, conditions, unknown/stale and honest fallback: PASS');
