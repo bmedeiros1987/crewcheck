@@ -8,3 +8,6 @@ Source PR independent reviews pending. This is a review candidate, no main merge
 
 
 Independent review fixes are explicitly included: monetary token foreground inheritance/full opacity with actual-token contrast checks; fixed base selected only in fixed competence; FX prompt writes bound to its original session; parser derived replacement never printed; shortened latest revision prevents old tariff resurfacing. Source review branches remain separate.
+
+
+Composition-only browser coverage additionally exercises actual salary flight rows with large synthetic money at150/200%,320/1440 widths and light/dark, with glyph bounds, label intersection, whole currency groups and monetary-token contrast. This extra QA is not silently copied back to the source branches.

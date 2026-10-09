@@ -232,6 +232,17 @@ async function contrast(page) {
    await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-03');await page.waitForFunction(()=>document.querySelector('.cc-per-diem-summary')?.textContent.includes('2.400,00'));assert.match(await details.innerText(),/Salário-base: R\$\s*2\.400,00/);
    await page.screenshot({path:path.join(out,'fixed-base-once-'+width+'.png')});historyResults.push({scenario:'one-fixed-base-separated-from-operational-variables',width,synthetic:true});await context.close();
   }
+  for (const width of [320,1440]) for(const theme of ['light','dark']) for(const size of [150,200]) {
+   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:'block'});
+   await context.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(url.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[]}'});return route.continue();});
+   const flight={...roster('domestic'),days:[{...day('10/02/2032'),type:'FLIGHT',pairingCode:'SYN',legs:[{flightNumber:'SYN001',origin:'BSB',destination:'GRU',departureTime:'08:00',arrivalTime:'09:45',workType:'OP',duration:105,aircraftType:'SYNTHETIC'}]}]};
+   await context.addInitScript(seed,{theme,kind:flight,amount:100,salaryBase:2400});
+   await context.addInitScript(size=>{localStorage.setItem('crewcheck:text-size:v1:financial-ui-qa',String(size));for(const key of ['day','night'])localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_act_'+key+'_km_metric_brl','1234567.89');},size);
+   const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));await page.locator('.cc-salary-history').waitFor();await page.waitForFunction(size=>document.documentElement.dataset.crewTextSize===String(size),size);
+   await page.locator('.cc-per-diem-items>summary').click();const row=page.locator('.cc-salary-history .cz-finance-row');await row.waitFor();assert.equal(await row.count(),1);await row.scrollIntoViewIfNeeded();await settle(page);assert.match(await row.locator('b').innerText(),/R\$.*[0-9.]{9,},[0-9]{2}/,'actual salary row has large synthetic amount');
+   const measured=await measureMoney(page);assert.deepEqual(measured.violations,[]);assert.deepEqual(measured.intersections,[]);assert.deepEqual(measured.splitAmounts,[]);assert.deepEqual(measured.splitCurrencyTokens,[]);const colors=await contrast(page);assert.ok(colors.every(item=>Number(item.opacity)===1&&item.ratio>=4.5));
+   await page.screenshot({path:path.join(out,'combined-salary-'+width+'-'+theme+'-'+size+'.png')});historyResults.push({scenario:'combined-large-salary-money',width,theme,size,money:measured,colors,synthetic:true});await context.close();
+  }
   fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({synthetic:true,methods:{cssZoom:'CSS zoom stress; not native browser zoom',responsive200:'Half CSS viewport with device scale2; not native browser zoom',devices:'Desktop Chromium emulation; no physical-device certification'},results,historyResults},null,2));
   console.log('PASS actual compiled Diárias: themes, scopes, >40 rows, owner period changes, large money glyph bounds, contrast, navigation clearance');
  }finally{await browser.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
