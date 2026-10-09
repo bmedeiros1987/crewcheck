@@ -26,6 +26,7 @@ export function dueKind(row, now = new Date()) {
 
 const instant = (row, name) => Number(row[name === 'opens_at' ? 'open_epoch' : 'close_epoch'] ?? new Date(row[name]).getTime());
 const revision = row => JSON.stringify([row.id, row.owner_email, row.title, row.target_month, instant(row, 'opens_at'), instant(row, 'closes_at'), row.provider_url || '', Boolean(row.notify_open), Boolean(row.notify_last_day)]);
+export const bidClaimKey = (row, kind) => `bids-claim:${crypto.createHash('sha256').update(JSON.stringify([row.id, row.owner_email, kind, instant(row, 'opens_at'), instant(row, 'closes_at')])).digest('hex')}`;
 
 export async function claimBid(db, selected, now, { findLink = bidTelegramLink, expectedLink } = {}) {
   const connection = await db.getConnection();
@@ -38,7 +39,7 @@ export async function claimBid(db, selected, now, { findLink = bidTelegramLink, 
     if (!owners[0]?.public_id) { await connection.rollback(); return null; }
     const currentLink = await findLink(connection, row.owner_email);
     if (!currentLink?.chatId || (expectedLink && binding(currentLink) !== binding(expectedLink))) { await connection.rollback(); return null; }
-    const key = `bids-claim:${crypto.createHash('sha256').update(JSON.stringify([row.id, row.owner_email, kind, instant(row, 'opens_at'), instant(row, 'closes_at')])).digest('hex')}`;
+    const key = bidClaimKey(row, kind);
     await connection.query('INSERT INTO crewcheck_telegram_state (state_key,payload,updated_at) VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE state_key=state_key', [key, JSON.stringify({ email: row.owner_email, id: row.id, status: 'pending' })]);
     const [states] = await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE', [key]);
     const state = parseJsonColumn(states[0]?.payload, {});

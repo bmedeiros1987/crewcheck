@@ -28,7 +28,7 @@ try{
   const request=route.request(),url=new URL(request.url());
   if(url.origin!==origin)return route.abort();
   if(!url.pathname.startsWith('/api/'))return route.continue();
-  if(url.pathname==='/api/platform/bids')return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,windows:[],notifications:[]})});
+  if(url.pathname==='/api/platform/bids')return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,windows:[{id:'fictional',title:'Fictional status fixture',targetMonth:'2026-10',opensAt:'2026-10-11T10:00:00Z',closesAt:'2026-10-15T20:00:00Z',notifyOpen:true,notifyLastDay:true,openDispatchStatus:'uncertain',lastDayDispatchStatus:'accepted'}],notifications:[]})});
   assert.equal(url.pathname,'/api/platform/notification-cycles/year-end-leave-2026-2027-cabine');
   const token=request.headers().authorization?.replace('Bearer ','');assert(['A','B'].includes(token));
   if(request.method()==='POST'){
@@ -45,6 +45,8 @@ try{
  const button=()=>page.getByRole('button',{name:'Já solicitei',exact:true});
  await button().waitFor();await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='Já solicitei'&&!b.disabled));
  assert(await page.getByRole('button',{name:'Lembrar depois',exact:true}).isDisabled());
+ assert(await page.getByText('Abertura: Resultado desconhecido; repetição automática suspensa').isVisible());
+ assert(await page.getByText('Último dia: Provedor aceitou; entrega não confirmada').isVisible());
  assert.deepEqual(await page.locator('input[type=datetime-local]').evaluateAll(inputs=>inputs.map(input=>input.value)),['','']);
  await page.locator('input[type=month]').fill('2026-12');
  assert.deepEqual(await page.locator('input[type=datetime-local]').evaluateAll(inputs=>inputs.map(input=>input.value)),['','']);

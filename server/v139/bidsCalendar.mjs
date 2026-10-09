@@ -1,4 +1,4 @@
-import { requireIdentity } from './common.mjs';
+import { requireIdentity, sendJson } from './common.mjs';
 
 function dateValue(value) {
   const date = new Date(value);
@@ -43,6 +43,9 @@ export async function handleBidsCalendar(req, res, url) {
   if (url.pathname !== '/api/platform/bids/calendar') return false;
   const context = await requireIdentity(req, res);
   if (!context) return true;
+  if (!context.payload?.sub || String(context.profile?.public_id) !== String(context.payload.sub)) {
+    sendJson(res, 401, { ok: false, message: 'Sessão da conta não é mais válida.' }); return true;
+  }
   const [rows] = await context.db.query('SELECT *,ROUND(UNIX_TIMESTAMP(opens_at)*1000) AS open_epoch,ROUND(UNIX_TIMESTAMP(closes_at)*1000) AS close_epoch FROM crewcheck_platform_bid_windows WHERE owner_email=? ORDER BY opens_at', [context.email]);
   const calendar = buildBidsCalendar(rows);
   res.writeHead(200, {

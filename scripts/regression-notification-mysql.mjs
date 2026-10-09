@@ -64,6 +64,8 @@ try {
     await request({...base,creationKey:'unknown'});const rows=await list();let sends=0;
     const options={now:new Date('2026-10-11T12:00:00Z'),findLink:async()=>({chatId:'fictional'}),send:async()=>{sends++;throw new Error('fictional timeout')}};
     await notifyBidRows(db,rows,options);await notifyBidRows(db,rows,options);assert.equal(sends,1);
+    const response=await request({},'', 'GET');
+    assert.equal(response.body.windows.find(window=>window.id===rows[0].id).openDispatchStatus,'uncertain');
   });
   await run('BIDS requires canonical current-owner link and checks revocation before claim',async()=>{
     await request({...base,creationKey:'binding',title:'Binding fixture'});
@@ -74,6 +76,8 @@ try {
     assert.equal(await claimBid(db,row,options.now,{expectedLink:{chatId:'old'},findLink:async()=>({chatId:'new'})}),null);
     await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',[`link-email:${email}`,JSON.stringify({email,chatId:'canonical-fictional',linkedAt:'2026-10-01T00:00:00Z',code:'fictional'})]);
     await notifyBidRows(db,[row],options);assert.equal(sends,1);
+    const response=await request({},'', 'GET');
+    assert.equal(response.body.windows.find(window=>window.id===row.id).openDispatchStatus,'accepted');
   });
   await run('confirmation is persistent, idempotent and cancels every server channel only for owner/cycle',async()=>{
     const prefix=cycleJobPrefix(LEAVE_CYCLE), now=new Date();

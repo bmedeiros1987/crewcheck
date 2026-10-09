@@ -7,6 +7,14 @@ import { V139Header } from './Shell';
 import { authFetch, getToken } from '@/lib/authClient';
 import './v139.css';
 
+async function accountApi(path: string, options: RequestInit = {}) {
+  const token = getToken();
+  if (!token) throw new Error('Faça login para continuar.');
+  const headers = new Headers(options.headers);
+  headers.set('authorization', `Bearer ${token}`);
+  return v139Api(path, { ...options, headers });
+}
+
 type BidWindow = {
   id: string;
   title: string;
@@ -18,7 +26,18 @@ type BidWindow = {
   notifyLastDay: boolean;
   openNotifiedAt?: string | null;
   lastDayNotifiedAt?: string | null;
+  openDispatchStatus?: string;
+  lastDayDispatchStatus?: string;
 };
+
+function dispatchLabel(enabled: boolean, state?: string, historical?: string | null): string {
+  if (state === 'accepted') return 'Provedor aceitou; entrega não confirmada';
+  if (state === 'uncertain') return 'Resultado desconhecido; repetição automática suspensa';
+  if (state === 'dispatching') return 'Envio iniciou; resultado ainda não confirmado';
+  if (historical) return 'Registro histórico; aceitação e entrega não comprovadas';
+  if (!enabled) return 'Alerta desativado';
+  return state === 'pending' ? 'Provedor recusou; tentativa permanece pendente' : 'Sem aceitação registrada; entrega desconhecida';
+}
 
 function localInput(date: Date): string {
   const offset = date.getTimezoneOffset() * 60_000;
@@ -77,7 +96,7 @@ export default function BidsWindowsView() {
 
   async function load() {
     const epoch = identityEpoch.current;
-    const payload = await v139Api('/api/platform/bids');
+    const payload = await accountApi('/api/platform/bids');
     if (identityEpoch.current !== epoch) return;
     setWindows(payload.windows || []);
     for (const notice of payload.notifications || []) {
@@ -95,7 +114,7 @@ export default function BidsWindowsView() {
       authFetch<LeaveResponse>(leavePath, { cache: 'no-store' }).then(payload => { if (identityEpoch.current === version) setLeaveSubmitted(payload.submitted === true); }).catch(() => { if (identityEpoch.current === version) setLeaveSubmitted(null); });
     };
     refresh(epoch);
-    const changed = () => { identityEpoch.current++; setLeaveSubmitted(null); setLeaveBusy(false); setWindows([]); setForm(initialForm(instructor)); refresh(); };
+    const changed = () => { identityEpoch.current++; setLeaveSubmitted(null); setLeaveBusy(false); setBusy(false); setWindows([]); setForm(initialForm(instructor)); refresh(); };
     window.addEventListener('crewcheck:auth-changed', changed);
     window.addEventListener('crewcheck:auth-expired', changed);
     const storage = (event: StorageEvent) => { if (['crewcheck_auth_user', 'crewcheck_auth_token'].includes(event.key || '')) changed(); };
@@ -133,7 +152,7 @@ export default function BidsWindowsView() {
     }
     setBusy(true);
     try {
-      const payload = await v139Api(form.id ? `/api/platform/bids/${encodeURIComponent(form.id)}` : '/api/platform/bids', {
+      const payload = await accountApi(form.id ? `/api/platform/bids/${encodeURIComponent(form.id)}` : '/api/platform/bids', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ ...form, opensAt: opensAt.toISOString(), closesAt: closesAt.toISOString() }),
@@ -143,32 +162,36 @@ export default function BidsWindowsView() {
       toast.success('Janela de BIDS salva.');
       setForm(initialForm(instructor));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Não consegui salvar a janela.');
+      if (identityEpoch.current === epoch) toast.error(error instanceof Error ? error.message : 'Não consegui salvar a janela.');
     } finally {
-      setBusy(false);
+      if (identityEpoch.current === epoch) setBusy(false);
     }
   }
 
   async function remove(id: string) {
+    const epoch = identityEpoch.current;
     if (!confirm('Remover esta janela de BIDS?')) return;
     try {
-      await v139Api(`/api/platform/bids/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await accountApi(`/api/platform/bids/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (identityEpoch.current !== epoch) return;
       setWindows((current) => current.filter((item) => item.id !== id));
       if (form.id === id) setForm(initialForm(instructor));
       toast.success('Janela removida.');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Não consegui remover.');
+      if (identityEpoch.current === epoch) toast.error(error instanceof Error ? error.message : 'Não consegui remover.');
     }
   }
 
   async function exportCalendar() {
+    const epoch = identityEpoch.current;
     try {
-      const response = await fetch('/api/platform/bids/calendar', { credentials: 'include', cache: 'no-store' });
-      if (!response.ok) throw new Error('Não consegui gerar o calendário.');
-      downloadBlob(await response.blob(), 'crewcheck-bids.ics');
+      const response = await accountApi('/api/platform/bids/calendar');
+      const blob = await response.blob();
+      if (identityEpoch.current !== epoch) return;
+      downloadBlob(blob, 'crewcheck-bids.ics');
       toast.success('Calendário de BIDS gerado.');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Não consegui gerar o calendário.');
+      if (identityEpoch.current === epoch) toast.error(error instanceof Error ? error.message : 'Não consegui gerar o calendário.');
     }
   }
 
@@ -224,8 +247,8 @@ export default function BidsWindowsView() {
         <header><span><strong>{item.title}</strong><small>Mês {item.targetMonth}</small></span><b>{status(item)}</b></header>
         <p>Abertura: {formatDate(item.opensAt)}<br/>Encerramento: {formatDate(item.closesAt)}</p>
         <div className="cc139-badges">
-          <span>{item.openNotifiedAt ? 'Abertura registrada; entrega não confirmada' : item.notifyOpen ? 'Alerta de abertura pendente' : 'Alerta de abertura desativado'}</span>
-          <span>{item.lastDayNotifiedAt ? 'Último dia registrado; entrega não confirmada' : item.notifyLastDay ? 'Alerta do último dia pendente' : 'Alerta do último dia desativado'}</span>
+          <span>Abertura: {dispatchLabel(item.notifyOpen, item.openDispatchStatus, item.openNotifiedAt)}</span>
+          <span>Último dia: {dispatchLabel(item.notifyLastDay, item.lastDayDispatchStatus, item.lastDayNotifiedAt)}</span>
         </div>
         <div className="cc139-actions">
           {item.providerUrl && <button onClick={() => window.open(item.providerUrl, '_blank', 'noopener,noreferrer')}><ExternalLink/> Sistema oficial</button>}

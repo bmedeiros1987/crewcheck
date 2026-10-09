@@ -1,13 +1,14 @@
 import crypto from 'node:crypto';
-import { cleanText, readBody, requireIdentity, sendJson } from './common.mjs';
+import { cleanText, parseJsonColumn, readBody, requireIdentity, sendJson } from './common.mjs';
 import { withBidsCreation } from './bidsCreation.mjs';
+import { bidClaimKey } from './bidsNotify.mjs';
 
 function parseDate(value) {
   const date = new Date(String(value || ''));
   return Number.isFinite(date.getTime()) ? date : null;
 }
 
-function clientRow(row) {
+function clientRow(row, states) {
   const iso = (value) => parseDate(value)?.toISOString() || null;
   return {
     id: row.id,
@@ -20,6 +21,8 @@ function clientRow(row) {
     notifyLastDay: Boolean(row.notify_last_day),
     openNotifiedAt: iso(row.open_notified_at),
     lastDayNotifiedAt: iso(row.last_day_notified_at),
+    openDispatchStatus: states.get(bidClaimKey(row, 'open')) || 'unknown',
+    lastDayDispatchStatus: states.get(bidClaimKey(row, 'last-day')) || 'unknown',
     createdAt: iso(row.created_at),
   };
 }
@@ -97,7 +100,16 @@ export async function handleBidsCore(req, res, url, { identify = requireIdentity
   }
 
   const [rows] = await context.db.query('SELECT *,ROUND(UNIX_TIMESTAMP(opens_at)*1000) AS open_epoch,ROUND(UNIX_TIMESTAMP(closes_at)*1000) AS close_epoch FROM crewcheck_platform_bid_windows WHERE owner_email=? ORDER BY opens_at DESC LIMIT 80', [context.email]);
+  const keys = rows.flatMap(row => [bidClaimKey(row, 'open'), bidClaimKey(row, 'last-day')]);
+  const states = new Map();
+  if (keys.length) {
+    const [claims] = await context.db.query(`SELECT state_key,payload FROM crewcheck_telegram_state WHERE state_key IN (${keys.map(() => '?').join(',')})`, keys);
+    for (const claim of claims) {
+      const state = parseJsonColumn(claim.payload, {});
+      if (state.email === context.email && ['pending', 'dispatching', 'uncertain', 'accepted'].includes(state.status)) states.set(claim.state_key, state.status);
+    }
+  }
   // Viewing/saving a window must not send an external message as a side effect.
-  sendJson(res, 200, { ok: true, windows: rows.map(clientRow), notifications: [] });
+  sendJson(res, 200, { ok: true, windows: rows.map(row => clientRow(row, states)), notifications: [] });
   return true;
 }
