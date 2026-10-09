@@ -112,11 +112,12 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     <p>Comparação: {comparisonRange.start} até {comparisonRange.end}. Moeda original: {displayedCurrency}. {comparison==='week'?'Semanas de quarta a terça; recortes parciais identificados.':''}</p>
     {currencies.length>1&&<label>Moeda do gráfico<select aria-label="Moeda do gráfico" value={displayedCurrency} onChange={event=>setCurrency(event.target.value)}>{currencies.map(value=><option key={value}>{value}</option>)}</select></label>}
     {numeric.length<2&&<p>São necessários dois períodos completos com total nesta moeda para comparar barras e variações.</p>}
+    <p>Períodos sem escala não podem ser abertos. O clique preserva as datas do valor exibido.</p>
     <div className="cc-financial-bars" aria-label="Comparativo de previsões por período">
       {rows.map((item,index)=>{
         const value=item.values[displayedCurrency],previous=rows[index-1];
         const delta=item.fullWeek&&previous?.fullWeek&&Number.isFinite(value)&&Number.isFinite(previous.values[displayedCurrency])?value-previous.values[displayedCurrency]:null;
-        return <button type="button" key={item.range.start} aria-label={`Abrir ${item.title}`} onClick={()=>{setMonth(item.range.start.slice(0,7));setDay(item.range.start);if(comparison==='month')setKind('month');else{setKind('custom');setFrom(item.range.start);setTo(item.range.end);}}}>
+        return <button type="button" key={item.range.start} disabled={item.absent.length>0} title={item.absent.length?'Sem escala disponível para abrir este período.':undefined} aria-label={`Abrir ${item.title}`} onClick={()=>{if(item.absent.length)return;setMonth(item.range.start.slice(0,7));setDay(item.range.start);if(comparison==='month'&&item.fullWeek)setKind('month');else{setKind('custom');setFrom(item.range.start);setTo(item.range.end);}}}>
           <span>{item.title}{!item.fullWeek?' · recorte parcial':''}</span>
           {max!==null&&max>0&&item.fullWeek&&Number.isFinite(value)&&<span className="cc-financial-bar-track" aria-hidden="true"><span style={{width:`${Math.max(0,value/max*100)}%`}}/></span>}
           <strong>{item.absent.length?'Ausente · sem escala':Number.isFinite(value)?`Previsto · ${money(value,displayedCurrency)}`:'Total indisponível'}</strong>
