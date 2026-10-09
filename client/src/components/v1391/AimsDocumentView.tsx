@@ -54,7 +54,7 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
       const target = opener.current; if (!target?.isConnected) return;
       target.focus({ preventScroll: true });
       target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
-      requestAnimationFrame(() => {
+      const ensureClearance = () => {
         if (!target.isConnected) return;
         const rect = target.getBoundingClientRect();
         const header = document.querySelector('.cz-global-header')?.getBoundingClientRect();
@@ -63,7 +63,18 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
         const bottom = Math.min(window.innerHeight, footer?.top ?? window.innerHeight) - 12;
         const delta = rect.top < top || rect.height > bottom - top ? rect.top - top : rect.bottom > bottom ? rect.bottom - bottom : 0;
         if (delta) window.scrollBy({ top: delta, behavior: 'instant' });
-      });
+      };
+      requestAnimationFrame(ensureClearance);
+      // Ancestor entrance animations can move the opener after the first
+      // measurement. Recheck its actual position when finite animations finish.
+      const animations = new Set<Animation>();
+      for (let ancestor: Element | null = target; ancestor; ancestor = ancestor.parentElement) {
+        for (const animation of ancestor.getAnimations()) {
+          if (Number.isFinite(animation.effect?.getComputedTiming().endTime)) animations.add(animation);
+        }
+      }
+      void Promise.allSettled([...animations].map(animation => animation.finished))
+        .then(() => requestAnimationFrame(ensureClearance));
     });
   }
   function changeZoom(value: number, anchorX?: number, centerX?: number) {
