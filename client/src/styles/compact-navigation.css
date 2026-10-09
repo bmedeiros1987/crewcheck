@@ -146,3 +146,10 @@ html body .cz-app[data-version] .cc-operational-alert-link > * {
   justify-content: flex-start !important;
   text-align: left !important;
 }
+html body #root .cz-app[data-version] .cz-menu-panel .cz-menu-header .cz-menu-logout,
+html body #root .cz-app[data-version] .cz-menu-panel .cz-menu-header .cz-menu-close {
+  flex: 0 0 44px !important;
+  width: 44px !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
+}
