@@ -61,8 +61,8 @@ assert.match(
 );
 assert.match(finalCss, /\.cz-global-header \.cc-pulse-popover\s*\{[^}]*position:\s*static;[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/,
   'detalhes precisam ficar no fluxo e continuar inteiros');
-assert.match(finalCss, /\.cz-app\[data-version\] > \.cz-global-header\s*\{[^}]*position:\s*relative !important;/,
-  'o header final deve acompanhar o fluxo da página');
+assert.match(finalCss, /\.cz-app\[data-version\] > \.cz-global-header\s*\{[^}]*position:\s*fixed !important;/,
+  'o header final deve manter a posição explicitamente solicitada durante o scroll');
 assert.match(finalCss, /data-priority="critica"[\s\S]*?white-space:normal!important;overflow:visible!important;overflow-wrap:anywhere/,
   'aviso crítico deve mostrar o título completo');
 assert.ok(main.trimEnd().endsWith('import "./styles/ipad-header-recovery.css";'), 'CSS do header deve fechar a precedência visual');

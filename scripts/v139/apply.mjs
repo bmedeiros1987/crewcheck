@@ -200,6 +200,7 @@ await import('../roster-startup/apply.mjs');
 await import('../home-standby-departure/apply.mjs');
 await import('../transit-availability/apply.mjs');
 await import('../notification-safety/apply.mjs');
+await import('../fixed-navigation-headers.mjs');
 
 }
 
@@ -208,5 +209,3 @@ await import('../notification-safety/apply.mjs');
 const finalizeSources = () => import('../ci/sync-canonical-manual.mjs');
 await prepareSourcesOnce(prepareSources, '.', { finalize: finalizeSources });
 await import('../ci/sync-canonical-manual.mjs');
-
-await import('../fixed-navigation-headers.mjs');
