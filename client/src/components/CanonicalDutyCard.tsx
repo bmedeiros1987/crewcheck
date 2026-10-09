@@ -5,8 +5,8 @@ import { canonicalDutyDurationLabel, type CanonicalDutyMeasurement } from '@/lib
 import './canonical-duty-card.css';
 
 export function CanonicalDutyCard({ measurement, onOpen }: { measurement: CanonicalDutyMeasurement | null; onOpen: () => void }) {
-  if (!measurement) return null;
-  return <button type="button" className="cc-canonical-duty-card" onClick={onOpen} aria-label={`Ver jornada: ${measurement.date} ${measurement.program} ${measurement.base}`}>
+  if (!measurement) return <aside className="cc-canonical-duty-card" role="status"><ShieldCheck aria-hidden="true" className="cc-canonical-duty-icon"/><span className="cc-canonical-duty-copy"><strong>Jornada · Dados pendentes</strong><small>Programação ou identidade da jornada não comprovada.</small><small>Limite pendente: composição e condições aplicáveis não comprovadas.</small></span></aside>;
+  return <button type="button" className="cc-canonical-duty-card" onClick={onOpen}>
     <ShieldCheck aria-hidden="true" className="cc-canonical-duty-icon"/>
     <span className="cc-canonical-duty-copy">
       <strong>{measurement.label} · {canonicalDutyDurationLabel(measurement.minutes)}</strong>

@@ -458,6 +458,9 @@ function getDutyHours(day: RosterDay): number {
 
 export function getCanonicalWorkHoursTotal(roster: CrewRoster): number | null {
   const events = buildCanonicalRosterEvents(roster);
+  // An elapsed published-flight subtotal does not establish integral work
+  // hours when separate reserve/standby programs still need validated credit.
+  if (roster.days.some(day => !day.legs.length && /\b(?:HSB|HSBE|ASB|RES|RESERVA|RSV)\b/.test(`${day.type} ${day.pairingCode}`.toUpperCase()))) return null;
   const groups = new Map<string, typeof events[number]>();
   for (const event of events) {
     if (event.kind !== 'flight' && event.kind !== 'duty') continue;
@@ -471,11 +474,17 @@ export function getCanonicalWorkHoursTotal(roster: CrewRoster): number | null {
   let minutes = 0, touched = false;
   for (const event of groups.values()) {
     const group = events.filter(candidate => candidate.journeyId === event.journeyId && candidate.kind === event.kind);
-    const touchesMonth = group.some(candidate => { const start = Date.parse(candidate.startDateTime), end = Date.parse(candidate.endDateTime); return !Number.isFinite(start) || !Number.isFinite(end) || start < monthEnd && end >= monthStart; });
-    if (!touchesMonth) continue;
-    touched = true;
     const measurement = measureCanonicalDuty(events, event.id);
-    if (measurement?.state !== 'available' || !measurement.start || !measurement.end) return null;
+    if (measurement?.state !== 'available' || !measurement.start || !measurement.end) {
+      // Missing boundaries can reach an adjacent competence; never silently
+      // omit them because only the flight timestamps fall outside the month.
+      const nearMonth = group.some(candidate => { const start = Date.parse(candidate.startDateTime), end = Date.parse(candidate.endDateTime); return !Number.isFinite(start) || !Number.isFinite(end) || start < monthEnd + 24 * 60 * 60_000 && end >= monthStart - 24 * 60 * 60_000; });
+      if (nearMonth) return null;
+      continue;
+    }
+    const start = Date.parse(measurement.start), end = Date.parse(measurement.end);
+    if (start >= monthEnd || end <= monthStart) continue;
+    touched = true;
     minutes += Math.max(0, Math.min(Date.parse(measurement.end), monthEnd) - Math.max(Date.parse(measurement.start), monthStart)) / 60_000;
   }
   return touched ? round1(minutes / 60) : null;

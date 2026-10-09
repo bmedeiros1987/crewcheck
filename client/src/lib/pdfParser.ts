@@ -62,6 +62,9 @@ export interface RosterDay {
   pairingCode: string;
   dutyReport: string | null; // HH:MM
   dutyDebrief: string | null; // HH:MM
+  /** Clock origin survives parsing/cache; unknown legacy clocks are never publication proof. */
+  dutyReportSource?: 'published' | 'estimated' | 'absent' | 'unknown';
+  dutyDebriefSource?: 'published' | 'estimated' | 'absent' | 'unknown';
   legs: FlightLeg[];
   dutyHours: number | null;
   flyingHours: number | null;
@@ -430,7 +433,9 @@ function parseTransposedFlightGroup(items: VisualItem[], text: string, currentDa
   day.type = 'VOO';
   day.pairingCode = flightNumber;
   day.dutyReport = reportRaw ? cleanTime(reportRaw) : departureTime;
+  day.dutyReportSource = reportRaw ? 'published' : 'estimated';
   day.dutyDebrief = debriefRaw ? cleanTime(debriefRaw) : arrivalTime;
+  day.dutyDebriefSource = debriefRaw ? 'published' : 'estimated';
   day.isNextDay = isNextDay || offset > 0;
   day.legs = [{ flightNumber, origin, destination, departureTime, arrivalTime, workType, aircraftType, isNextDay, duration: diffHours(departureTime, arrivalTime, isNextDay) }];
   finalizeRosterDay(day);
@@ -1163,9 +1168,9 @@ function parseColumnarFlightLegsIntoDay(day: RosterDay, rowText: string): void {
       });
     }
 
-    if (reportTime && !day.dutyReport) day.dutyReport = cleanTime(reportTime);
+    if (reportTime && !day.dutyReport) { day.dutyReport = cleanTime(reportTime); day.dutyReportSource = 'published'; }
     const debrief = maybeColumnarDebriefBeforeRoute(prefix);
-    if (debrief) day.dutyDebrief = debrief;
+    if (debrief) { day.dutyDebrief = debrief; day.dutyDebriefSource = 'published'; }
     if (isNextDay || /\(\+\d+\)/.test(prefix)) day.isNextDay = true;
   }
 
@@ -1193,7 +1198,7 @@ function parseColumnarFlightLegsIntoDay(day: RosterDay, rowText: string): void {
       });
     }
 
-    if (rawDebrief) day.dutyDebrief = cleanTime(rawDebrief);
+    if (rawDebrief) { day.dutyDebrief = cleanTime(rawDebrief); day.dutyDebriefSource = 'published'; }
     if (isNextDay || /\(\+\d+\)/.test(prefix)) day.isNextDay = true;
   }
 
@@ -1405,6 +1410,7 @@ function parseActivityTimesIntoDay(day: RosterDay, text: string): void {
     if (stationWindow) {
       day.dutyReport = stationWindow.start;
       day.dutyDebrief = stationWindow.end;
+      day.dutyReportSource = 'published'; day.dutyDebriefSource = 'published';
       day.isNextDay = stationWindow.isNextDay;
       day.dutyHours = round2(diffHours(day.dutyReport, day.dutyDebrief, stationWindow.isNextDay));
       return;
@@ -1414,6 +1420,7 @@ function parseActivityTimesIntoDay(day: RosterDay, text: string): void {
     if (timeWindow) {
       day.dutyReport = timeWindow.start;
       day.dutyDebrief = timeWindow.end;
+      day.dutyReportSource = 'published'; day.dutyDebriefSource = 'published';
       day.isNextDay = timeWindow.isNextDay;
       day.dutyHours = round2(diffHours(day.dutyReport, day.dutyDebrief, timeWindow.isNextDay));
       return;
@@ -1435,9 +1442,14 @@ function parseActivityTimesIntoDay(day: RosterDay, text: string): void {
     const firstLeg = day.legs[0];
     if (!day.dutyReport) {
       day.dutyReport = extractDutyReportBeforeFirstFlight(text, firstLeg.flightNumber) || null;
+      day.dutyReportSource = day.dutyReport ? 'published' : 'absent';
     }
     const lastLeg = day.legs[day.legs.length - 1];
-    day.dutyDebrief = day.dutyDebrief || findColumnarDebriefForLastLeg(day.rawText || '', lastLeg) || addMinutes(lastLeg.arrivalTime, 30);
+    const publishedDebrief = findColumnarDebriefForLastLeg(day.rawText || '', lastLeg);
+    if (!day.dutyDebrief) {
+      day.dutyDebrief = publishedDebrief || addMinutes(lastLeg.arrivalTime, 30);
+      day.dutyDebriefSource = publishedDebrief ? 'published' : 'estimated';
+    }
     const dutyStartForCalc = day.dutyReport || firstLeg.departureTime;
     day.isNextDay = day.isNextDay || Boolean(lastLeg.isNextDay) || timeToMinutes(day.dutyDebrief) < timeToMinutes(dutyStartForCalc);
     day.dutyHours = round2(diffHours(dutyStartForCalc, day.dutyDebrief, day.isNextDay));
@@ -1445,12 +1457,16 @@ function parseActivityTimesIntoDay(day: RosterDay, text: string): void {
 }
 
 function finalizeRosterDay(day: RosterDay): void {
+  day.dutyReportSource ||= day.dutyReport ? 'unknown' : 'absent';
+  day.dutyDebriefSource ||= day.dutyDebrief ? 'unknown' : 'absent';
   if (day.legs.length > 0) {
     day.type = 'VOO';
     const firstLeg = day.legs[0];
     const lastLeg = day.legs[day.legs.length - 1];
     day.dutyReport = day.dutyReport || null;
-    day.dutyDebrief = findColumnarDebriefForLastLeg(day.rawText || '', lastLeg) || day.dutyDebrief || addMinutes(lastLeg.arrivalTime, 30);
+    const publishedDebrief = findColumnarDebriefForLastLeg(day.rawText || '', lastLeg);
+    if (publishedDebrief) { day.dutyDebrief = publishedDebrief; day.dutyDebriefSource = 'published'; }
+    else if (!day.dutyDebrief) { day.dutyDebrief = addMinutes(lastLeg.arrivalTime, 30); day.dutyDebriefSource = 'estimated'; }
     const dutyStartForCalc = day.dutyReport || firstLeg.departureTime;
     day.isNextDay = day.isNextDay || Boolean(lastLeg.isNextDay) || timeToMinutes(day.dutyDebrief) < timeToMinutes(dutyStartForCalc);
     day.dutyHours = round2(diffHours(dutyStartForCalc, day.dutyDebrief, day.isNextDay));
@@ -1729,7 +1745,7 @@ function rescueSplitFlightLegsIntoDay(day: RosterDay, text: string): void {
     });
 
     if (isNextDay) day.isNextDay = true;
-    if (rawDebriefTime) day.dutyDebrief = cleanTime(rawDebriefTime);
+    if (rawDebriefTime) { day.dutyDebrief = cleanTime(rawDebriefTime); day.dutyDebriefSource = 'published'; }
     changed = true;
   }
 

@@ -14,6 +14,8 @@ export type CanonicalDutyMeasurement = {
   reasons: string[];
   source: 'canonical_published_roster';
   limitConfirmed: false;
+  reportSource: 'published' | 'estimated' | 'absent' | 'unknown';
+  debriefSource: 'published' | 'estimated' | 'absent' | 'unknown';
 };
 
 function clock(value: string | null | undefined): string | null {
@@ -35,8 +37,8 @@ function clockNear(reference: number, value: string, direction: 'before' | 'afte
 export function measureCanonicalDuty(events: readonly CanonicalRosterEvent[], selectedId: string): CanonicalDutyMeasurement | null {
   const selected = events.find(e => e.id === selectedId);
   if (!selected || !['flight', 'duty'].includes(selected.kind)) return null;
-  const code = `${selected.publishedDay.type || ''} ${selected.publishedDay.pairingCode || ''}`.toUpperCase();
-  const reserveDeclared = /\b(?:ASB|RES|RESERVA|RSV)\b/.test(code);
+  let code = `${selected.publishedDay.type || ''} ${selected.publishedDay.pairingCode || ''}`.toUpperCase();
+  let reserveDeclared = /\b(?:ASB|RES|RESERVA|RSV)\b/.test(code);
   const result: CanonicalDutyMeasurement = {
     state: 'incomplete', journeyId: selected.journeyId, date: selected.date,
     program: selected.flightNumber || selected.publishedDay.pairingCode || code,
@@ -44,6 +46,8 @@ export function measureCanonicalDuty(events: readonly CanonicalRosterEvent[], se
     label: selected.kind === 'flight' ? 'Jornada publicada' : /HSB|SOBREAVISO/.test(code) ? 'Sobreaviso publicado' : /ASB|RES/.test(code) ? 'Reserva publicada' : 'Programação publicada',
     minutes: null, groundMinutes: null, start: null, end: null, reasons: [],
     source: 'canonical_published_roster', limitConfirmed: false,
+    reportSource: selected.publishedDay.dutyReportSource || (selected.publishedDay.dutyReport ? 'unknown' : 'absent'),
+    debriefSource: selected.publishedDay.dutyDebriefSource || (selected.publishedDay.dutyDebrief ? 'unknown' : 'absent'),
   };
   if (!selected.journeyId) { result.reasons.push('Identidade da jornada ausente.'); return result; }
   const unique = new Map<string, CanonicalRosterEvent>();
@@ -53,18 +57,22 @@ export function measureCanonicalDuty(events: readonly CanonicalRosterEvent[], se
   }
   const group = [...unique.values()].sort((a,b) => Date.parse(a.startDateTime)-Date.parse(b.startDateTime));
   const first = group[0], last = group.at(-1)!;
+  code = group.map(e => `${e.publishedDay.type || ''} ${e.publishedDay.pairingCode || ''}`).join(' ').toUpperCase();
+  reserveDeclared = /\b(?:ASB|RES|RESERVA|RSV)\b/.test(code);
+  result.reportSource = first.leg?.presentationTime ? 'published' : first.publishedDay.dutyReportSource || (first.publishedDay.dutyReport ? 'unknown' : 'absent');
+  result.debriefSource = last.publishedDay.dutyDebriefSource || (last.publishedDay.dutyDebrief ? 'unknown' : 'absent');
   if (group.some(e => !Number.isFinite(Date.parse(e.startDateTime)) || !Number.isFinite(Date.parse(e.endDateTime)) || Date.parse(e.endDateTime) < Date.parse(e.startDateTime))) {
     result.reasons.push('Horários canônicos incompletos ou intervalo inválido.'); return result;
   }
   let start = Date.parse(first.startDateTime), end = Date.parse(last.endDateTime);
   let groundMinutes = 0;
   if (selected.kind === 'flight') {
-    const presentation = reserveDeclared && first.legIndex === 0 ? clock(first.publishedDay.dutyReport) : clock(first.presentation);
+    const presentation = clock(first.leg?.presentationTime) || (first.legIndex === 0 ? clock(first.publishedDay.dutyReport) : null);
     const explicitPresentation = clock(first.leg?.presentationTime) === presentation && presentation !== clock(first.departure)
       || first.legIndex === 0 && clock(first.publishedDay.dutyReport) === presentation && presentation !== clock(first.departure);
     const debrief = clock(last.publishedDay.dutyDebrief);
-    if (!presentation || !explicitPresentation || first.sourceConfidence === 'baixa') result.reasons.push('Apresentação publicada não comprovada.');
-    if (!debrief || last.legIndex !== last.legCount - 1 || debrief === clock(last.arrival)) result.reasons.push('Liberação publicada não comprovada; corte estimado não confirma jornada.');
+    if (!presentation || !explicitPresentation || result.reportSource !== 'published') result.reasons.push('Apresentação publicada não comprovada.');
+    if (!debrief || result.debriefSource !== 'published' || last.legIndex !== last.legCount - 1) result.reasons.push('Liberação publicada não comprovada; corte estimado não confirma jornada.');
     if (result.reasons.length) return result;
     start = clockNear(start, presentation!, 'before');
     end = clockNear(end, debrief!, 'after');
@@ -87,7 +95,7 @@ export function measureCanonicalDuty(events: readonly CanonicalRosterEvent[], se
     if (/HSB|SOBREAVISO/.test(code)) {
       result.reasons.push('Acionamento/composição e regra de sobreaviso pendentes.'); return result;
     }
-  } else if (!clock(first.publishedDay.dutyReport) || !clock(last.publishedDay.dutyDebrief)) {
+  } else if (!clock(first.publishedDay.dutyReport) || !clock(last.publishedDay.dutyDebrief) || result.reportSource !== 'published' || result.debriefSource !== 'published') {
     result.reasons.push('Início/fim da programação não comprovados.'); return result;
   }
   if (end < start) { result.reasons.push('Intervalo de jornada inválido.'); return result; }
