@@ -1,3 +1,5 @@
+import { CanonicalDutyCard, openCanonicalDutyDetails } from '@/components/CanonicalDutyCard';
+import { measureCanonicalDuty } from '@/lib/canonicalDutyMeasurement';
 import { NotificationReadiness } from '@/components/notifications/NotificationReadiness';
 import { isFinancialSetting, readFinancialSetting, writeFinancialSetting } from '@/lib/financialSettingStore';
 import type { ReactNode } from 'react';
@@ -66,7 +68,7 @@ import {
   Plus,
   Search,
 } from 'lucide-react';
-import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getPublishedDutyLimitSummary, type ComplianceResult } from '@/lib/complianceEngine';
+import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getCanonicalWorkHoursTotal, getPublishedDutyLimitSummary, type ComplianceResult } from '@/lib/complianceEngine';
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
 import { authFetch, getStoredUser, logout } from '@/lib/authClient';
 import { exportReport } from '@/lib/pdfExport';
@@ -1943,7 +1945,7 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
   const event = nextFlight(events);
   const loaded = events.some((event) => !event.placeholder);
   const alertCount = actionableComplianceAlerts(compliance).length;
-  const dutyLimit = event.kind === 'flight' && !event.placeholder ? getPublishedDutyLimitSummary(event.day, compliance?.legalProfile) : null;
+  const dutyMeasurement = !event.placeholder && event.canonical ? measureCanonicalDuty(events.flatMap(item => item.canonical ? [item.canonical] : []), event.canonical.id) : null;
   const counters = loaded && events[0]?.day ? {
     days: new Set(events.map((e) => e.day.date)).size,
     flights: events.filter((e) => e.kind === 'flight').length,
@@ -1951,7 +1953,7 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
     rest: events.filter((e) => e.canonical?.kind === 'rest').length,
   } : { days: 0, flights: 0, activities: 0, rest: 0 };
 
-  return <><Brand onMenu={openMenu}/><section className="cz-title"><small>Cockpit</small><i/></section><section className="cz-kpi-row"><KpiCard icon={CalendarDays} title="Dias publicados" value={String(counters.days)} detail="Datas reais"/><KpiCard icon={Plane} title="Voos" value={String(counters.flights)} detail="Pernas detectadas" tone="blue"/><KpiCard icon={BriefcaseBusiness} title="Atividades" value={String(counters.activities)} detail={`Folgas ${counters.rest}`} tone="blue"/><KpiCard icon={Bell} title="Alertas" value={String(alertCount)} detail="Confirmados" tone="pink"/></section><section className="cz-money-row"><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>Abrir</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>Financeiro</strong></div></section><section className="cz-section-head"><h2>Próxima Programação</h2><button onClick={() => setView(loaded ? 'roster' : 'import')}>{loaded ? 'Ver todas' : 'Importar'} <ChevronRight size={18}/></button></section>{loaded && !event.placeholder ? <FlightCard event={event}/> : <article className="cz-empty-real"><Upload/><h2>{loaded ? 'Nenhuma programação futura' : 'Nenhuma escala real carregada'}</h2><p>{loaded ? 'A escala foi carregada, mas não há evento operacional futuro após agora. Confira se o período importado está correto.' : 'Suba o PDF oficial para ativar a escala completa e os recursos operacionais com dados reais.'}</p><button onClick={onUpload}>Importar PDF agora</button></article>}{dutyLimit && <button className="cz-mini-status" onClick={() => setView('regulation')}><ShieldCheck/><strong>Limite desta jornada</strong><span>{dutyLimit.usedHours.toFixed(1).replace('.', ',')} h de {dutyLimit.maxDutyHours.toFixed(1).replace('.', ',')} h · margem {Math.max(0, dutyLimit.remainingHours).toFixed(1).replace('.', ',')} h</span><ChevronRight/></button>}<SmartCard event={event} setView={setView}/></>;
+  return <><Brand onMenu={openMenu}/><section className="cz-title"><small>Cockpit</small><i/></section><section className="cz-kpi-row"><KpiCard icon={CalendarDays} title="Dias publicados" value={String(counters.days)} detail="Datas reais"/><KpiCard icon={Plane} title="Voos" value={String(counters.flights)} detail="Pernas detectadas" tone="blue"/><KpiCard icon={BriefcaseBusiness} title="Atividades" value={String(counters.activities)} detail={`Folgas ${counters.rest}`} tone="blue"/><KpiCard icon={Bell} title="Alertas" value={String(alertCount)} detail="Confirmados" tone="pink"/></section><section className="cz-money-row"><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>Abrir</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>Financeiro</strong></div></section><section className="cz-section-head"><h2>Próxima Programação</h2><button onClick={() => setView(loaded ? 'roster' : 'import')}>{loaded ? 'Ver todas' : 'Importar'} <ChevronRight size={18}/></button></section>{loaded && !event.placeholder ? <FlightCard event={event}/> : <article className="cz-empty-real"><Upload/><h2>{loaded ? 'Nenhuma programação futura' : 'Nenhuma escala real carregada'}</h2><p>{loaded ? 'A escala foi carregada, mas não há evento operacional futuro após agora. Confira se o período importado está correto.' : 'Suba o PDF oficial para ativar a escala completa e os recursos operacionais com dados reais.'}</p><button onClick={onUpload}>Importar PDF agora</button></article>}{dutyMeasurement && <CanonicalDutyCard measurement={dutyMeasurement} onOpen={() => openCanonicalDutyDetails(event.canonical, setView)}/>}<SmartCard event={event} setView={setView}/></>;
 }
 
 function rosterCode(day?: RosterDay): string {
@@ -2716,7 +2718,8 @@ function rosterDayIso(day: RosterDay): string {
   return raw.slice(0, 10);
 }
 
-function HourLimitBar({ title, used, limit, detail }: { title: string; used: number; limit: number; detail: string }) {
+function HourLimitBar({ title, used, limit, detail }: { title: string; used: number | null; limit: number; detail: string }) {
+  if (used === null) return <article className="cz-hour-limit"><header><strong>{title}</strong><b>Dados pendentes</b></header><p>Intervalos incompletos não permitem calcular este total ou uma margem.</p></article>;
   const ratio = limit > 0 ? used / limit : 0;
   const tone = ratio >= 1 ? 'danger' : ratio >= .85 ? 'warn' : 'ok';
   return <article className={`cz-hour-limit ${tone}`}><header><span><strong>{title}</strong><small>{detail}</small></span><b>{used.toFixed(1).replace('.', ',')} h / {limit.toFixed(1).replace('.', ',')} h</b></header><div><i style={{ width: `${Math.min(100, Math.max(2, ratio * 100))}%` }}/></div><footer>{ratio >= 1 ? 'Limite de referência alcançado; revise a análise regulatória.' : `${Math.max(0, limit - used).toFixed(1).replace('.', ',')} h de margem na referência configurada.`}</footer></article>;
@@ -2726,35 +2729,32 @@ function LoadView({ bundle }: { bundle: BundleState }) {
   const [limitRevision, setLimitRevision] = useState(0);
   void limitRevision;
   const compliance = currentCompliance(bundle) as any;
-  const days = Array.isArray(bundle.roster.days) ? bundle.roster.days : [];
-  const auditedDays = Array.isArray(compliance.loadAnalysis?.days) ? compliance.loadAnalysis.days : [];
-  const auditedDayByDate = new Map(auditedDays.map((item: any) => [String(item.date || ''), item]));
-  const rows = days.map((day) => {
-    const audited = auditedDayByDate.get(String((day as any).date || '')) as any;
-    return {
-      day,
-      date: rosterDayIso(day),
-      hours: Number.isFinite(Number(audited?.dutyHours)) ? Number(audited.dutyHours) : dutyHoursForRosterDay(day),
-      sectors: Array.isArray((day as any).legs) ? (day as any).legs.length : 0,
-    };
-  }).filter((row) => row.date);
+  const canonicalEvents = buildCanonicalRosterEvents(bundle.roster);
+  const journeys = new Map<string, CanonicalRosterEvent>();
+  for (const event of canonicalEvents) {
+    if (event.kind !== 'flight' && event.kind !== 'duty') continue;
+    if (event.kind === 'duty' && /\b(?:HSB|HSBE|ASB|RES|RESERVA|RSV)\b/.test(`${event.publishedDay.type} ${event.publishedDay.pairingCode}`.toUpperCase())) continue;
+    if (!journeys.has(event.journeyId)) journeys.set(event.journeyId, event);
+  }
+  const measurements = [...journeys.values()].map(event => ({ event, measurement: measureCanonicalDuty(canonicalEvents, event.id) }));
+  const measurementComplete = measurements.length > 0 && measurements.every(item => item.measurement?.state === 'available');
+  const rows = measurements.flatMap(({ event, measurement }) => measurement?.minutes !== null && measurement?.state === 'available'
+    ? [{ date: rosterDayIso(event.publishedDay), hours: measurement.minutes / 60, sectors: canonicalEvents.filter(item => item.kind === 'flight' && item.journeyId === event.journeyId).length, journeyId: event.journeyId }] : []);
   const dailyLimit = readNumberSetting('crewcheck_limit_daily_hours', 11);
   const weeklyLimit = readNumberSetting('crewcheck_limit_weekly_hours', 44);
   const monthlyLimit = readNumberSetting('crewcheck_limit_monthly_hours', 176);
   const heaviest = [...rows].sort((a, b) => (b.hours + b.sectors * .35) - (a.hours + a.sectors * .35)).slice(0, 6);
   const peakDay = heaviest[0] || { hours: 0, date: '—', sectors: 0 };
   let peakWeek = { hours: 0, from: '—', to: '—' };
-  rows.forEach((row, index) => { const start = new Date(`${row.date}T12:00:00`); const windowRows = rows.filter((candidate) => { const date = new Date(`${candidate.date}T12:00:00`); const diff = (date.getTime() - start.getTime()) / 86400000; return diff >= 0 && diff < 7; }); const hours = windowRows.reduce((sum, item) => sum + item.hours, 0); if (hours > peakWeek.hours) peakWeek = { hours, from: row.date, to: windowRows.at(-1)?.date || row.date }; });
-  const monthlyHours = Number.isFinite(Number(compliance.metrics?.totalDutyHours))
-    ? Number(compliance.metrics.totalDutyHours)
-    : rows.reduce((sum, row) => sum + row.hours, 0);
+  rows.forEach((row, index) => { const start = new Date(`${row.date}T12:00:00Z`); const windowRows = rows.filter((candidate) => { const date = new Date(`${candidate.date}T12:00:00Z`); const diff = (date.getTime() - start.getTime()) / 86400000; return diff >= 0 && diff < 7; }); const hours = windowRows.reduce((sum, item) => sum + item.hours, 0); if (hours > peakWeek.hours) peakWeek = { hours, from: row.date, to: windowRows.at(-1)?.date || row.date }; });
+  const monthlyHours = getCanonicalWorkHoursTotal(bundle.roster);
   function configure() {
     const daily = prompt('Referência diária de jornada (horas)', String(dailyLimit)); if (daily !== null) storage.set('crewcheck_limit_daily_hours', daily.replace(',', '.'));
     const weekly = prompt('Referência semanal de jornada (horas)', String(weeklyLimit)); if (weekly !== null) storage.set('crewcheck_limit_weekly_hours', weekly.replace(',', '.'));
     const monthly = prompt('Referência mensal de jornada (horas)', String(monthlyLimit)); if (monthly !== null) storage.set('crewcheck_limit_monthly_hours', monthly.replace(',', '.'));
     setLimitRevision((value) => value + 1);
   }
-  return <><Brand back/><section className="cz-panel-head"><h1>Carga e limites</h1><p>Relação direta de horas usadas x limite de referência, sem substituir a análise contextual de RBAC 117, ACT e escala oficial.</p></section><section className="cz-hour-limits"><HourLimitBar title="Jornada diária mais alta" used={peakDay.hours} limit={dailyLimit} detail={`${peakDay.date} · ${peakDay.sectors} trecho(s)`}/><HourLimitBar title="Pico em 7 dias" used={peakWeek.hours} limit={weeklyLimit} detail={`${peakWeek.from} a ${peakWeek.to}`}/><HourLimitBar title="Total mensal" used={monthlyHours} limit={monthlyLimit} detail={`${rows.length} dia(s) com dados de jornada`}/></section><section className="cz-toolbox"><h2>Referências e confiabilidade</h2><p>Os valores acima são referências configuráveis para visualização. Uma extrapolação visual não vira irregularidade sozinha: composição, horário, tripulação, operação, repouso, ACT e RBAC continuam sendo avaliados no motor de conformidade.</p><div className="cz-tool-actions"><button onClick={configure}><Settings/> Configurar limites de referência</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'alerts' }))}><AlertTriangle/> Abrir análise regulatória</button></div></section><section className="cz-finance-table"><h2>Dias mais puxados da escala</h2>{heaviest.length ? heaviest.map((row, index) => <div className="cz-finance-row" key={`${row.date}-${index}`}><span>#{index + 1}</span><strong>{row.date}</strong><small>{row.hours.toFixed(1).replace('.', ',')} h de jornada · {row.sectors} trecho(s){row.hours >= dailyLimit ? ' · acima da referência diária' : ''}</small><b>{row.hours.toFixed(1).replace('.', ',')} h / {dailyLimit.toFixed(1).replace('.', ',')} h</b></div>) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem jornada calculável</h2><p>Importe uma escala com apresentação e término para calcular as relações de horas.</p></article>}</section><section className="cz-report-grid"><article><h2>Score de conformidade</h2><strong>{compliance.score ?? '—'}</strong><p>{compliance.summary || 'Aguardando análise.'}</p></article><article><h2>Alertas válidos</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Sem contadores antigos ou duplicados.</p></article><article><h2>Fonte</h2><strong>Escala ativa</strong><p>Todos os cálculos usam o mesmo motor canônico.</p></article><article><h2>Solo entre etapas</h2><strong>{Number(compliance.metrics?.totalGroundHours || 0).toFixed(1).replace('.', ',')} h</strong><p>Maior intervalo: {Number(compliance.metrics?.maxGroundIntervalMinutes || 0)} min · {Number(compliance.metrics?.groundLimitExceedances || 0)} acima do ACT. Solo não entra na jornada.</p></article></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Carga e limites</h1><p>Relação direta de horas usadas x limite de referência, sem substituir a análise contextual de RBAC 117, ACT e escala oficial.</p></section><section className="cz-hour-limits"><HourLimitBar title="Jornada publicada mais alta" used={measurementComplete ? peakDay.hours : null} limit={dailyLimit} detail={`${peakDay.date} · ${peakDay.sectors} trecho(s)`}/><HourLimitBar title="Pico em 7 dias" used={measurementComplete ? peakWeek.hours : null} limit={weeklyLimit} detail={`${peakWeek.from} a ${peakWeek.to}`}/><HourLimitBar title="Total mensal" used={monthlyHours} limit={monthlyLimit} detail={`${rows.length} dia(s) com dados de jornada`}/></section><section className="cz-toolbox"><h2>Referências e confiabilidade</h2><p>Os valores acima são referências configuráveis para visualização. Uma extrapolação visual não vira irregularidade sozinha: composição, horário, tripulação, operação, repouso, ACT e RBAC continuam sendo avaliados no motor de conformidade.</p><div className="cz-tool-actions"><button onClick={configure}><Settings/> Configurar limites de referência</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'alerts' }))}><AlertTriangle/> Abrir análise regulatória</button></div></section><section className="cz-finance-table"><h2>Dias mais puxados da escala</h2>{measurementComplete && heaviest.length ? heaviest.map((row, index) => <div className="cz-finance-row" key={`${row.journeyId}-${index}`}><span>#{index + 1}</span><strong>{row.date}</strong><small>{row.hours.toFixed(1).replace('.', ',')} h de jornada · {row.sectors} trecho(s){row.hours >= dailyLimit ? ' · acima da referência diária' : ''}</small><b>{row.hours.toFixed(1).replace('.', ',')} h / {dailyLimit.toFixed(1).replace('.', ',')} h</b></div>) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem jornada calculável</h2><p>Importe uma escala com apresentação e término para calcular as relações de horas.</p></article>}</section><section className="cz-report-grid"><article><h2>Score de conformidade</h2><strong>{compliance.score ?? '—'}</strong><p>{compliance.summary || 'Aguardando análise.'}</p></article><article><h2>Alertas válidos</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Sem contadores antigos ou duplicados.</p></article><article><h2>Fonte</h2><strong>Escala ativa</strong><p>Todos os cálculos usam o mesmo motor canônico.</p></article><article><h2>Solo entre etapas</h2><strong>{Number(compliance.metrics?.totalGroundHours || 0).toFixed(1).replace('.', ',')} h</strong><p>Maior intervalo: {Number(compliance.metrics?.maxGroundIntervalMinutes || 0)} min · {Number(compliance.metrics?.groundLimitExceedances || 0)} acima do ACT. Solo permanece dentro da jornada, sem somar novamente.</p></article></section></>;
 }
 
 function ToggleSetting({ icon: Icon, label, storageKey, defaultOn = true, detail }: { icon: any; label: string; storageKey: string; defaultOn?: boolean; detail?: string }) {

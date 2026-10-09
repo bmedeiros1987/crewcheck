@@ -86,6 +86,10 @@ jobs:
         env:
           TZ: America/New_York
       - run: node scripts/regression-p0-530-finance-canonical-journey.mjs
+      - name: Verify published canonical duty measurement
+        run: |
+          node scripts/regression-canonical-duty-measurement.mjs
+          node scripts/regression-canonical-duty-load.mjs
       - run: node scripts/regression-p2-530-adjacent-fallback-finance.mjs
       - run: npx tsc --noEmit
       - run: npx vite build
@@ -101,6 +105,10 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
         run: node scripts/regression-salary-prerequisites-browser.cjs
+      - name: Verify compact canonical duty card with synthetic fixtures
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-canonical-duty-card-browser.mjs
       - name: Save salary diagnostic evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -113,5 +121,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: financial-ui-synthetic
-          path: artifacts/financial-ui/
+          path: |
+            artifacts/financial-ui/
+            artifacts/canonical-duty-measurement/
+            artifacts/canonical-duty-card/
           if-no-files-found: ignore
