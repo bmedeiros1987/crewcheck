@@ -95,8 +95,13 @@ async function visibleTextBounds(page, selector) {
       const box=async selector=>page.locator(selector).boundingBox();
       const stable=(before,after,label)=>{assert.ok(before&&after);assert.ok(Math.abs(before.y-after.y)<=1&&Math.abs(before.height-after.height)<=1,label+JSON.stringify({before,after}));};
       const header=await box('.cz-global-header');
-      assert.ok(header.height <= 96, 'Essential fixed navigation must preserve canvas at 200%: '+JSON.stringify(header));
-      assert.equal(await page.locator('.cz-brand-lockup small').evaluateAll(es => es.every(e => !e.getClientRects().length)),true,'Decorative tagline must not consume fixed canvas');
+      assert.equal(await page.locator('.cz-global-header').evaluate(el=>getComputedStyle(el).position),'fixed','Only scroll behavior stays pinned');
+      assert.equal(await page.locator('.cz-global-header').evaluate(el=>Boolean(el.closest('.cz-menu-scroll'))),false,'Header remains outside the scroll container');
+      assert.equal(await page.locator('.cz-brand-lockup .cz-logo').isVisible(),true,'Restore the previous brand at mobile widths');
+      assert.equal(await page.locator('.cz-brand-lockup small').isVisible(),true,'Restore the previous subtitle in portrait/desktop');
+      const spacer=await box('.cc-fixed-header-space');assert.ok(spacer.height>=header.y+header.height,'Measured spacer follows the restored header size');
+      await page.locator('.cz-global-header button').last().focus();assert.equal(await page.locator('.cz-global-header button').last().evaluate(el=>el===document.activeElement),true,'Header actions retain keyboard focus');
+      await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-restored-header.png`)});
       for(const top of [900,0,160]) {await page.evaluate(top=>window.scrollTo({top,behavior:'instant'}),top);await settle(page);stable(header,await box('.cz-global-header'),'Page header moved');}
       assert.deepEqual(await visibleTextBounds(page,'.cz-global-header'),[]);
       const before=await page.evaluate(()=>window.scrollY);

@@ -95,13 +95,3 @@ html body #root .cz-app[data-version] .cc-header-notice .cc-pulse-popover-copy s
   html body #root .cz-app[data-version] > .cz-global-header .cz-brand-lockup small { display: none !important; }
 }
 html body #root .cz-app[data-version] > .cc-header-notice:empty { display: none; margin: 0; }
-
-/* Essential fixed navigation: decorative identity copy belongs outside chrome.
-   Keep the full accessible brand name and all 44px navigation actions. */
-html body #root .cz-app[data-version] > .cz-global-header .cz-brand-lockup small { display: none !important; }
-html body #root .cz-app[data-version] > .cz-global-header .cz-brand-row { padding-block: 4px !important; min-height: 44px !important; }
-html body #root .cz-app[data-version] > .cz-global-header .cz-brand-lockup { gap: 8px !important; }
-html body #root .cz-app[data-version] > .cz-global-header .cz-brand-lockup strong { line-height: 1.2 !important; }
-@media (max-width: 420px) {
-  html body #root .cz-app[data-version] > .cz-global-header .cz-brand-lockup .cz-logo { display: none !important; }
-}
