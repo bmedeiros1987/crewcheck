@@ -3831,10 +3831,10 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
       <summary>{forecastOverride ? 'Conversão da previsão' : 'Conversão e semanas de referência'}</summary>
       <section className="cz-finance-grid" aria-label="Previsões convertidas">
         <KpiCard icon={CalendarDays} title={forecastOverride ? 'Convertido em reais no período' : 'Convertido em reais no mês'} value={forecastSummaryValue(forecast.monthlySummary, moneyBRL)} detail={forecast.pendingCurrencies.length ? 'Cotação pendente: ' + forecast.pendingCurrencies.join(', ') : forecastOverride ? (rangeLabel || 'Intervalo selecionado') : 'Competência: ' + competence}/>
-        {!forecastOverride && <KpiCard icon={Plane} title="Semana em andamento" value={forecastSummaryValue(forecast.weeklySummary, moneyBRL)} detail={`${dateChip(forecast.cycle.start)}–${dateChip(forecast.cycle.end)}`}/>}
+        {!forecastOverride && <KpiCard icon={Plane} title="Semana em andamento" value={forecastSummaryValue(forecast.weeklySummary, moneyBRL)} detail={`${dateChip(new Date(rosterOperationalIso(forecast.cycle.start) + 'T12:00:00'))}–${dateChip(new Date(rosterOperationalIso(forecast.cycle.end) + 'T12:00:00'))}`}/>}
       </section>
       <p>{forecastOverride ? 'Conversão com as cotações configuradas nesta consulta; não comprova câmbio histórico ou pagamento.' : 'A semana vai de quarta a terça e pode cruzar o mês selecionado.'}</p>
-      {!forecastOverride && <p>Semana anterior ({dateChip(forecast.periods.previous.start)}–{dateChip(forecast.periods.previous.end)}): {forecastSummaryValue(forecast.previousWeeklySummary, moneyBRL)}.</p>}
+      {!forecastOverride && <p>Semana anterior ({dateChip(new Date(rosterOperationalIso(forecast.periods.previous.start) + 'T12:00:00'))}–{dateChip(new Date(rosterOperationalIso(forecast.periods.previous.end) + 'T12:00:00'))}): {forecastSummaryValue(forecast.previousWeeklySummary, moneyBRL)}.</p>}
       {!forecastOverride && forecast.weeklySummary.pendingCurrencies.length > 0 && <p>Cotação pendente na semana: {forecast.weeklySummary.pendingCurrencies.join(', ')}.</p>}
     </details>
     <details className="cz-finance-table cc-per-diem-items">
