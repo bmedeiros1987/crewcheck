@@ -20,7 +20,7 @@ try {
   });
   vm.runInContext(ts.transpileModule(functions.map(n => n.getText(ast)).join('\n') + '\nglobalThis.calculate=calculatePerDiem;', { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
   const event = (id, start, end, report, kind = 'flight', origin = 'BSB') => ({ id, kind, origin, destination: 'BSB', presentation: report, day: { date: '05/10/2032', type: kind === 'flight' ? 'VOO' : 'ASB', dutyReport: report }, canonical: { kind, journeyId: id, startDateTime: start, endDateTime: end } });
-  process.env.TZ = 'America/Sao_Paulo';
+  process.env.TZ = process.env.BREAKFAST_DEVICE_TZ || 'America/Sao_Paulo';
   const roster = { year: 2032, month: 10, base: 'BSB' };
   const instant = clock => `2032-10-05T${clock}:00-03:00`;
   const flight = (id, origin, destination, departure, arrival, report='04:05') => ({ ...event(id,instant(departure),instant(arrival),report), origin, destination, day:{type:'VOO',dutyReport:report}, canonical:{kind:'flight',journeyId:'SYN-DUTY',startDateTime:instant(departure),endDateTime:instant(arrival)} });
