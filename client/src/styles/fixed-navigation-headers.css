@@ -1,0 +1,64 @@
+/* Last in the prepared cascade: navigation stays in place at every text size. */
+html body #root .cz-app[data-version] > .cz-global-header {
+  position: fixed !important;
+  top: var(--cc-safe-area-top, env(safe-area-inset-top, 0px)) !important;
+  left: 50% !important;
+  right: auto !important;
+  width: min(calc(100% - 24px), 1180px) !important;
+  transform: translateX(-50%) !important;
+  margin: 0 !important;
+  z-index: 1200 !important;
+  background: var(--cc-review-surface) !important;
+}
+.cc-fixed-header-space { flex: 0 0 auto; }
+html body #root .cz-app[data-version] .cz-menu-panel {
+  overflow: hidden !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+}
+html body #root .cz-app[data-version] .cz-menu-panel > :is(.cz-menu-header, #cc-menu-fixed-heading) {
+  flex: 0 0 auto !important;
+  position: relative !important;
+  overflow: visible !important;
+}
+#cc-menu-fixed-heading:empty { display: none; }
+#cc-menu-fixed-heading { background: var(--cc-review-surface); padding: 8px 14px; border-bottom: 1px solid var(--cc-review-border); }
+#cc-menu-fixed-heading .cc-home-editor-fixed-heading { margin: 0; padding: 0; }
+#cc-menu-fixed-heading h2 { margin: 0; font-size: 1rem; line-height: 1.35; overflow-wrap: anywhere; }
+#cc-menu-fixed-heading small { display: none; }
+html body #root .cz-app[data-version] .cz-menu-scroll {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  padding-bottom: calc(32px + var(--cc-safe-area-bottom, env(safe-area-inset-bottom, 0px))) !important;
+}
+
+html body #root .cz-app[data-version] .cz-menu-panel > .cz-menu-header { padding-top: max(12px, var(--cc-safe-area-top, env(safe-area-inset-top, 0px))) !important; }
+/* Import uses the same neutral surfaces/text as the current roster preview. */
+html body #root .cz-app[data-version] .cz-import {
+  background: var(--cc-review-surface) !important;
+  color: var(--cc-review-text) !important;
+  border: 1px solid var(--cc-review-border) !important;
+  border-radius: 16px !important;
+  box-shadow: none !important;
+  min-width: 0 !important;
+}
+html body #root .cz-app[data-version] .cz-import :is(h1, p, small, span) {
+  color: var(--cc-review-text) !important;
+  opacity: 1 !important;
+  line-height: 1.4 !important;
+  overflow-wrap: anywhere !important;
+}
+html body #root .cz-app[data-version] .cz-import :is(.cz-import-icon, button) {
+  background: var(--cc-review-subtle) !important;
+  color: var(--cc-review-text) !important;
+  border: 1px solid var(--cc-review-border) !important;
+  box-shadow: none !important;
+  border-radius: 12px !important;
+}
+html body #root .cz-app[data-version] .cz-import button.primary {
+  background: var(--cc-review-text) !important;
+  color: var(--cc-review-surface) !important;
+}
+html body #root .cz-app[data-version] .cz-import button.primary :is(span, svg) { color: inherit !important; }
+html body #root .cz-app[data-version] .cz-import button { height: auto !important; min-height: 44px !important; white-space: normal !important; }
