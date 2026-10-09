@@ -102,6 +102,10 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
         run: node scripts/regression-menu-favorites-interaction.mjs
+      - name: Verify favorite editor in actual app and reading sizes
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-favorite-editor-app.cjs
       - name: Render canonical footer and content clearance in Chromium and WebKit
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
@@ -137,6 +141,7 @@ jobs:
             artifacts/hotel-controls
             artifacts/menu-responsive
             artifacts/menu-interaction
+            artifacts/favorite-editor-app
             artifacts/ui-reading-overlays
             artifacts/fixed-headers
             artifacts/pulse-content-space
