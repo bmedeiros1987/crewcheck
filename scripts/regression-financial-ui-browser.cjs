@@ -39,6 +39,7 @@ function seed({theme,kind,amount,history,salaryBase}) {
 }
 async function settle(page) {
  await page.evaluate(async()=>{
+  await document.fonts.ready;
   const finite=document.getAnimations().filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime));
   await Promise.allSettled(finite.map(animation=>animation.finished));
   await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
@@ -113,11 +114,10 @@ async function contrast(page) {
    assert.equal(await page.locator('html').getAttribute('data-theme'),theme);
    assert.equal(await page.locator('.cc-per-diem-content details[open]').count(),0);
    assert.equal(await page.locator('.cc-per-diem-summary .cz-kpi').count(),1);
-   const alignment=await page.evaluate(()=>{const a=document.querySelector('.cz-global-header').getBoundingClientRect(),b=document.querySelector('.cc-per-diem-content').getBoundingClientRect();const panels=Array.from(document.querySelector('.cc-per-diem-content').children).map(e=>{const r=e.getBoundingClientRect();return{className:e.className,x:r.x,width:r.width}});return{header:{x:a.x,width:a.width},content:{x:b.x,width:b.width},panels};});
-   // Fixed navigation is viewport-relative; at CSS zoom the flow content keeps
-   // its shell padding. Require the same center and containment, not equal widths.
-   assert.ok(Math.abs((alignment.header.x+alignment.header.width/2)-(alignment.content.x+alignment.content.width/2))<=1&&alignment.content.width<=alignment.header.width+1,'content centered within fixed navigation: '+JSON.stringify(alignment));
-   assert.ok(alignment.panels.every(panel=>Math.abs(panel.x-alignment.content.x)<=1&&Math.abs(panel.width-alignment.content.width)<=1),'visible panels align with actual content frame after animations settle: '+JSON.stringify(alignment));
+   const alignment=await page.evaluate(()=>{const a=document.querySelector('.cz-global-header').getBoundingClientRect(),b=document.querySelector('.cc-per-diem-content').getBoundingClientRect();const panels=Array.from(document.querySelector('.cc-per-diem-content').children).map(e=>{const r=e.getBoundingClientRect();return{className:e.className,x:r.x,width:r.width}});const style=e=>{const s=getComputedStyle(e);return{width:s.width,maxWidth:s.maxWidth,padding:s.padding,boxSizing:s.boxSizing,position:s.position,transform:s.transform,font:s.fontFamily,fontSize:s.fontSize}};return{header:{x:a.x,width:a.width},content:{x:b.x,width:b.width},panels,environment:{innerWidth,clientWidth:document.documentElement.clientWidth,devicePixelRatio,bodyZoom:getComputedStyle(document.body).zoom,fontStatus:document.fonts.status,fonts:Array.from(document.fonts).map(f=>({family:f.family,status:f.status})),headerStyle:style(document.querySelector('.cz-global-header')),contentStyle:style(document.querySelector('.cc-per-diem-content')),appStyle:style(document.querySelector('.cz-app')),viewport:window.visualViewport?{width:visualViewport.width,scale:visualViewport.scale}:null,animations:document.getAnimations().map(a=>({state:a.playState,timing:a.effect?.getComputedTiming()}))}};});
+   fs.writeFileSync(path.join(out,theme+'-'+label+'-alignment.json'),JSON.stringify({case:{theme,label,width,height,zoom,scale,kind},userAgent:await page.evaluate(()=>navigator.userAgent),alignment},null,2));
+   assert.ok(Math.abs(alignment.header.x-alignment.content.x)<=1&&Math.abs(alignment.header.width-alignment.content.width)<=1,'content aligns with actual global header: '+JSON.stringify({theme,label,alignment}));
+   assert.ok(alignment.panels.every(panel=>Math.abs(panel.x-alignment.header.x)<=1&&Math.abs(panel.width-alignment.header.width)<=1),'visible panels align with actual header after animations settle: '+JSON.stringify(alignment));
    const name=theme+'-'+label;await page.screenshot({path:path.join(out,name+'-summary.png')});
    await page.locator('.cc-per-diem-periods > summary').click();await page.locator('.cc-per-diem-items > summary').click();await settle(page);
    const rows=page.locator('.cc-per-diem-content .cz-finance-row'),count=await rows.count();
