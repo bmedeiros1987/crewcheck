@@ -27,7 +27,7 @@ export async function claimBid(db, selected, now) {
     const [rows] = await connection.query('SELECT *,ROUND(UNIX_TIMESTAMP(opens_at)*1000) AS open_epoch,ROUND(UNIX_TIMESTAMP(closes_at)*1000) AS close_epoch FROM crewcheck_platform_bid_windows WHERE id=? AND owner_email=? FOR UPDATE', [selected.id, selected.owner_email]);
     const row = rows[0], kind = row && dueKind(row, now);
     if (!kind || revision(row) !== revision(selected)) { await connection.rollback(); return null; }
-    const [owners] = await connection.query('SELECT p.public_id FROM crewcheck_platform_profiles p JOIN crewcheck_platform_bid_windows b ON b.owner_email=p.email WHERE b.id=? AND p.email=? AND p.created_at<=b.created_at', [row.id, row.owner_email]);
+    const [owners] = await connection.query('SELECT p.public_id FROM crewcheck_platform_profiles p JOIN crewcheck_platform_bid_windows b ON BINARY b.owner_email=BINARY p.email WHERE b.id=? AND p.email=? AND p.created_at<=b.created_at', [row.id, row.owner_email]);
     if (!owners[0]?.public_id) { await connection.rollback(); return null; }
     const key = `bids-claim:${crypto.createHash('sha256').update(JSON.stringify([row.id, row.owner_email, kind, instant(row, 'opens_at'), instant(row, 'closes_at')])).digest('hex')}`;
     await connection.query('INSERT INTO crewcheck_telegram_state (state_key,payload,updated_at) VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE state_key=state_key', [key, JSON.stringify({ email: row.owner_email, id: row.id, status: 'pending' })]);

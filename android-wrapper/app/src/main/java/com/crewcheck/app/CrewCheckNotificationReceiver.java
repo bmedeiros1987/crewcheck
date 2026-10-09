@@ -18,6 +18,7 @@ public class CrewCheckNotificationReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         if (context == null) return;
         if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
+        if (intent == null || !NotificationTiming.shouldAttempt(intent.getLongExtra("scheduledAt", 0L), System.currentTimeMillis(), true)) return;
         ensureChannel(context);
         String title = intent == null ? "CrewCheck" : intent.getStringExtra("title");
         String body = intent == null ? "" : intent.getStringExtra("body");

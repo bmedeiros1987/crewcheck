@@ -33,6 +33,8 @@ Claims BIDS também passam por lock de janela e registro JSON durável antes do 
 
 A garantia de cancelamento cobre somente trabalhos **vinculados** ao ciclo na fila do servidor, em todos os seus canais. Não cobre alarmes locais legados Android nem ICS já importado. Envios em voo/aceitos não podem ser recolhidos: a resposta informa esse limite. Não habilitar lembretes reais antes de integrar cancelamento local, verificar fonte/ano/fuso e revisar testes reais MySQL/Android.
 
-O novo teste CI usa MySQL 8.4 descartável por UNIX socket sem rede, reutilizando o padrão QA existente. Provedores, destinatários e contas são fictícios. O host macOS não dispõe de Docker/MySQL/SDK Android; sucesso desse gate ainda precisa ser confirmado no CI. A limpeza de novos registros JSON no fluxo de exclusão de conta precisa de integração/revisão antes de ativar a funcionalidade em produção.
+O novo teste CI usa MySQL 8.4 descartável por UNIX socket sem rede, reutilizando o padrão QA existente. Provedores, destinatários e contas são fictícios. O host macOS não dispõe de Docker/MySQL/SDK Android; sucesso desse gate ainda precisa ser confirmado no CI. A limpeza de decisões, tombstones, claims e trabalhos na exclusão de conta foi integrada ao finalizador de fontes e tem caso de teste MySQL; precisa de resultado verde/revisão antes de ativar em produção.
 
 Sem notificações reais, novas permissões, custos ou publicação de loja.
+
+O receiver Android usa o mesmo limite de tolerância de 120 segundos da fila para rejeitar alarmes sem instante conhecido, futuros ou expirados. O teste Java usa a classe de produção, sem tocar permissões/aparelho; não simula AlarmManager, restauração após boot ou cancelamento por conta. Alarmes aproximados atrasados além desse limite são descartados, sem entrega garantida.

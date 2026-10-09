@@ -84,6 +84,11 @@ jobs:
           python3 scripts/android-play/test_allocate_versions.py
           python3 scripts/android-play/test_play_error.py
           node scripts/regression-play-manual-publication-gates.mjs
+      - name: Test actual native receiver timing boundary without a device
+        run: |
+          mkdir -p "$RUNNER_TEMP/notification-timing"
+          javac -d "$RUNNER_TEMP/notification-timing" android-wrapper/app/src/main/java/com/crewcheck/app/NotificationTiming.java scripts/fixtures/NotificationTimingFixture.java
+          java -cp "$RUNNER_TEMP/notification-timing" NotificationTimingFixture
       - name: Web and privacy validation
         run: |
           npx tsc --noEmit

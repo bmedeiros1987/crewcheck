@@ -5,6 +5,7 @@ import { handleBidsCore } from '../server/v139/bidsCore.mjs';
 import { notifyBidRows, claimBid } from '../server/v139/bidsNotify.mjs';
 import { confirmCycle, cycleJobPrefix, cycleStateKey, LEAVE_CYCLE } from '../server/v139/notificationCycles.mjs';
 import { dispatchClaimedJob } from '../server/notification-job-safety.mjs';
+import { notificationStateDeletionStatements } from '../server/v139/notificationStateDeletion.mjs';
 
 // Only the disposable UNIX socket: no DATABASE_URL, TCP, provider or credentials.
 globalThis.fetch = () => { throw new Error('External network forbidden'); };
@@ -84,6 +85,13 @@ try {
     const [dispatch,confirmation]=await Promise.all([dispatchClaimedJob(db,job,{now,findLink:async()=>({chatId:'fictional'}),deliver:async()=>{sends++;return {ok:true,uncertain:false}}}),confirmCycle(db,email,owner,LEAVE_CYCLE)]);
     if(sends){assert.equal(dispatch.status,'sent');assert.equal(confirmation.inFlight,true);}else assert(['cancelled','skipped'].includes(dispatch.status));
     assert.equal((await db.query('SELECT status FROM crewcheck_notification_jobs WHERE id=?',[job.id]))[0][0].status,sends?'sent':'cancelled');
+  });
+  await run('account deletion removes owned cycle decisions, tombstones, claims and jobs',async()=>{
+    await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',['notification-cycle:other',JSON.stringify({email:'other@example.test'})]);
+    for(const [sql,args] of notificationStateDeletionStatements(email)) await db.query(sql.replace(/\$1/g,'?'),args);
+    assert.equal((await db.query("SELECT COUNT(*) AS n FROM crewcheck_telegram_state WHERE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.email'))=?",[email]))[0][0].n,0);
+    assert.equal((await db.query('SELECT COUNT(*) AS n FROM crewcheck_notification_jobs WHERE email=?',[email]))[0][0].n,0);
+    assert.equal((await db.query('SELECT COUNT(*) AS n FROM crewcheck_telegram_state WHERE state_key=?',['notification-cycle:other']))[0][0].n,1);
   });
   console.log(JSON.stringify({database:'disposable mysql8.4',passed},null,2));
 } finally { await db.end(); }

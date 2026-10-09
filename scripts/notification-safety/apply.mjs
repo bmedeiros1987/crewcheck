@@ -16,3 +16,14 @@ replace('cancelJob', 'registerCommuteMonitor', `async function cancelJob(req, re
 }`);
 if (!source.includes('dispatchClaimedJob(db, job') || !source.includes("status IN ('processing','dispatching')")) throw new Error('Notification dispatch safety lost during preparation');
 fs.writeFileSync(path, source);
+
+const platformPath = 'server/platform.mjs';
+let platform = fs.readFileSync(platformPath, 'utf8');
+const declaration = "import { notificationStateDeletionStatements } from './v139/notificationStateDeletion.mjs';";
+if (!platform.includes(declaration)) platform = declaration + '\n' + platform;
+if (!platform.includes('for (const [sql, params] of notificationStateDeletionStatements(')) {
+  const anchor = "    await client.query('DELETE FROM crewcheck_platform_profiles WHERE email=$1', [context.identity.email]);";
+  if (!platform.includes(anchor)) throw new Error('Notification state deletion: canonical account deletion anchor missing');
+  platform = platform.replace(anchor, anchor + '\n    for (const [sql, params] of notificationStateDeletionStatements(context.identity.email)) {\n      await deleteIfTableExists(client, sql, params);\n    }');
+}
+fs.writeFileSync(platformPath, platform);

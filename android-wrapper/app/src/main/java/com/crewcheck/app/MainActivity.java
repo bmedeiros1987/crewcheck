@@ -561,6 +561,7 @@ public class MainActivity extends Activity {
             Intent intent = new Intent(this, CrewCheckNotificationReceiver.class);
             intent.putExtra("title", title == null || title.trim().isEmpty() ? "CrewCheck" : title);
             intent.putExtra("body", body == null ? "" : body);
+            intent.putExtra("scheduledAt", epochMillis);
             int requestCode = (int)(Math.abs((String.valueOf(title) + String.valueOf(body) + epochMillis).hashCode()) % 100000);
             PendingIntent pendingIntent = PendingIntent.getBroadcast(this, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             android.app.AlarmManager alarm = (android.app.AlarmManager) getSystemService(Context.ALARM_SERVICE);
