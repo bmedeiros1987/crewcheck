@@ -49,8 +49,23 @@ const independent={...asb,id:'next-day-independent',date:'10/10/2030',journeyId:
 assert.equal(project({events:[{...hsb,journeyId:undefined},independent]}).rows.length,1,'missing journey IDs never equate independent dates');
 assert.equal(project({anchorId:'removed-by-new-version'}).rows.length,0);
 assert.equal(project({revision:'new-version',confirmation:{contextId:result.contextId,sourceId:'fixture',activationConfirmed:true}}).activation,'possible');
-assert.equal(project({anchorId:asb.id,confirmation:{contextId:result.contextId,sourceId:'fixture',activationConfirmed:true}}).activation,'unconfirmed','journey swap rejects stale confirmation');
+assert.equal(project({anchorId:asb.id,confirmation:{contextId:result.contextId,sourceId:'fixture',activationConfirmed:true}}).activation,'possible','advancing anchor rejects stale confirmation while preserving published sequence');
 const flight={...asb,id:'fixture-flight',kind:'flight',flightNumber:'QA123',startDateTime:asb.endDateTime,endDateTime:'2030-10-09T09:00:00Z'};
 assert.equal(project({events:[hsb,asb,flight]}).rows.length,3);
 assert.equal(project({events:[hsb,asb,flight]}).activation,'possible');
 console.log('PASS rest/independent boundaries, gaps, overlap, absent anchor, stale version/journey confirmation, HSB-reserve-flight');
+
+const evolution=[hsb,asb,flight];
+const evolving=now=>{const selected=canonical.selectNextRosterEvent(evolution,new Date(now));return selected ? sequenceEvidence({...input,events:evolution,anchorId:selected.id}) : {rows:[]};};
+const inHsb=evolving('2030-10-09T05:10:00Z'),inReserve=evolving('2030-10-09T05:41:00Z'),inFlight=evolving('2030-10-09T07:01:00Z');
+for(const state of [inHsb,inReserve,inFlight]) {assert.deepEqual(state.rows.map(row=>row.id),[hsb.id,asb.id,flight.id]);assert.equal(state.sequenceId,inHsb.sequenceId);}
+assert.equal(evolving('2030-10-09T09:01:00Z').rows.length,0,'completed sequence has no future active anchor');
+const later={...asb,id:'independent-later',startDateTime:'2030-10-09T12:00:00Z',endDateTime:'2030-10-09T13:00:00Z',journeyId:'independent'};
+assert.deepEqual(sequenceEvidence({...input,events:[...evolution,later],anchorId:later.id}).rows.map(row=>row.id),[later.id],'later independent anchor never inherits prefix');
+assert.deepEqual(sequenceEvidence({...input,events:[hsb,rest,later],anchorId:later.id}).rows.map(row=>row.id),[later.id],'rest prevents prefix carry-in');
+console.log('PASS clock progression HSB 02:10 -> reserve 02:41 -> flight -> completion; stable canonical IDs/sequence and independent/rest separation');
+
+assert.deepEqual(sequenceEvidence({...input,events:[...evolution,later],anchorId:hsb.id}).rows.map(row=>row.id),[hsb.id,asb.id,flight.id],'future independent programming stays outside available sequence');
+
+const earlierFlight={...flight,id:'prior-independent-flight',startDateTime:'2030-10-09T04:00:00Z',endDateTime:hsb.startDateTime};
+assert.deepEqual(sequenceEvidence({...input,events:[earlierFlight,...evolution],anchorId:flight.id}).rows.map(row=>row.id),[hsb.id,asb.id,flight.id],'HSB root stops carry-in from earlier adjacent flight');

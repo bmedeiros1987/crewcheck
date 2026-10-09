@@ -15,7 +15,7 @@ A fixture real do motor demonstra 40 minutos publicados de HSB e 80 de reserva. 
 - **Confirmado:** não há produtor de acionamento com origem verificável no contrato atual. A UI declara ausência de confirmação. O projetor aceita confirmação somente com contexto exato conta/versão/evento e fonte explícita, mas nenhum chamador de produção fornece essa evidência. Não há botão que invente confirmação, nem interpretação de um voo futuro como prova de realização.
 - **Encurtado entre versões:** apenas uma mudança observada exata do evento, no histórico da conta, na revisão e versão atuais. Data e início precisam corresponder; o fim anterior deve ser posterior. Histórico antigo, outra conta ou correspondência ambígua não entram na UI. Motivo permanece desconhecido.
 
-Descanso/estadia encerra a projeção. Outra data exige journeyId não vazio compartilhado ou horários publicados exatamente adjacentes; isso apenas permite mostrar a sequência, não constitui vínculo jurídico. Eventos no mesmo dia com intervalo são mostrados com vínculo não confirmado. Horários incompletos e sobreposições são explícitos. Nada altera elegibilidade de rota/acionamento HSB, motores regulatórios, remuneração, importador ou cadastro de hotéis.
+Descanso/estadia encerra a projeção. Outra data exige journeyId não vazio compartilhado ou horários publicados exatamente adjacentes; isso apenas permite mostrar a sequência, não constitui vínculo jurídico. Intervalos/sobreposições para outra identidade de jornada encerram a projeção com vínculo não confirmado; uma identidade compartilhada pode manter as etapas com ressalva explícita. Horários incompletos e sobreposições são explícitos. Nada altera elegibilidade de rota/acionamento HSB, motores regulatórios, remuneração, importador ou cadastro de hotéis.
 
 ## Validação
 
@@ -48,3 +48,11 @@ As referências JPEG Library anteriormente fornecidas receberam403; nenhum pixel
 Possíveis conflitos: `scripts/v139/apply.mjs` e Home gerada (âncoras `FlightCard`, briefing e `OperationalDayTimeline`). O novo finalizador roda depois de `fixed-navigation-headers.mjs`; CSS restrito ao novo painel. Não sobrescreve catálogo #943 nem finalizadores #942. `client/src/lib/publishedSequence.ts` é gerado; a fonte revisável é `scripts/standby-sequence-card/evidence.mjs`.
 
 Draft precisa de revisão independente e CI antes de publicação. Novo APK não é necessário para o wrapper Android que carrega a aplicação remota; conteúdo só chegará após publicação web aprovada e atualização da WebView. Versões com conteúdo embarcado exigiriam distribuição nova; não foram verificadas. Nenhum APK, loja ou deploy foi executado.
+
+## Correções da revisão independente
+
+1. O relógio canônico representa BRT fixo (UTC−03), conforme `canonicalRoster.dateAt`. A exibição agora usa `Etc/GMT+3` explícito (sinal invertido por contrato IANA), sem depender do fuso do dispositivo ou DST histórico de São Paulo. Datas dos endpoints são calculadas nesse mesmo fuso; 23:40 → 00:20 mostra a data seguinte explicitamente.
+2. Ao avançar o evento ativo, o projetor busca um prefixo publicado ininterrupto HSB/reserva/voo por horários exatamente adjacentes. Mantém os IDs canônicos e `sequenceId` da raiz em 02:10 → 02:41 → voo. Descanso e programação independente não são incorporados; após o encerramento sem evento ativo/futuro o painel sai. O contexto da confirmação continua exigindo a âncora selecionada exata; prefixo não autoriza confirmação antiga.
+3. A mensagem de encurtamento de sobreaviso exige raiz HSB. ASB/RES/RSV/RESERVA encurtada não ganha essa mensagem ou acionamento inferido por esse motivo.
+
+Regressão do React real executada em UTC, America/Sao_Paulo e Asia/Tokyo: 02:00 → 02:40 invariável; passagem 09/10/2030 23:40 → 10/10/2030 00:20 e reserva do dia seguinte; avanço de âncora preserva HSB e seu encurtamento durante reserva e voo; encerramento remove painel; reserva encurtada não recebe texto HSB. Motor real valida seleção por relógio e fronteiras independentes. Não houve mudança regulatória.
