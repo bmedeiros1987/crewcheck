@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { URL } from 'node:url';
 import { dbPool, requestToken, safeEmail, verifyJwt } from './v139/common.mjs';
 import { sendTelegram, callTelegram } from './v139/delivery.mjs';
+import { safeScheduleJob, safeCancelJob, dispatchClaimedJob } from './notification-job-safety.mjs';
 import { buildInfobipTtsRequest, infobipPublicStatus } from './v1396/infobip.mjs';
 
 const originalCreateServer = http.createServer.bind(http);
@@ -43,7 +44,7 @@ function identity(req) {
   try {
     const payload = verifyJwt(requestToken(req));
     const email = safeEmail(payload?.email);
-    return payload && email ? { email, admin: Boolean(payload.admin) } : null;
+    return payload && email && payload.iss === 'crewcheck' && payload.aud === 'crewcheck-web' && payload.sub && Number.isFinite(Number(payload.exp)) && Number(payload.exp) > Date.now() / 1000 && !payload.mustChangePassword ? { email, id: payload.sub, admin: Boolean(payload.admin) } : null;
   } catch { return null; }
 }
 
@@ -348,23 +349,16 @@ async function runSchedulerCycle() {
     if (!db) throw new Error('Banco indisponível para notificações.');
     await recordSchedulerHeartbeat(db, { lastStartedAt: summary.startedAt, lastFinishedAt: null });
     await ensureNotificationTable(db);
-    await db.query("UPDATE crewcheck_notification_jobs SET status='pending',locked_at=NULL WHERE status='processing' AND locked_at < DATE_SUB(NOW(3), INTERVAL 5 MINUTE)");
-    const [rows] = await db.query("SELECT * FROM crewcheck_notification_jobs WHERE status='pending' AND scheduled_at <= NOW(3) AND scheduled_at >= DATE_SUB(NOW(3), INTERVAL 24 HOUR) ORDER BY scheduled_at ASC LIMIT 50");
+    await db.query("UPDATE crewcheck_notification_jobs SET status='uncertain',locked_at=NULL WHERE status IN ('processing','dispatching') AND locked_at < DATE_SUB(NOW(3), INTERVAL 5 MINUTE)");
+    await db.query("UPDATE crewcheck_notification_jobs SET status='expired' WHERE status='pending' AND scheduled_at < DATE_SUB(NOW(3), INTERVAL 120 SECOND)");
+    const [rows] = await db.query("SELECT * FROM crewcheck_notification_jobs WHERE status='pending' AND scheduled_at <= NOW(3) AND scheduled_at >= DATE_SUB(NOW(3), INTERVAL 120 SECOND) ORDER BY scheduled_at ASC LIMIT 50");
     summary.selected = rows.length;
     for (const job of rows) {
       const [claim] = await db.query("UPDATE crewcheck_notification_jobs SET status='processing',locked_at=NOW(3),attempts=attempts+1 WHERE id=? AND status='pending'", [job.id]);
       if (!claim.affectedRows) continue;
-      let result;
-      try { result = await deliverJob(job); }
-      catch (error) { result = { ok: false, raw: String(error?.message || error) }; }
-      if (result?.ok) {
-        summary.sent += 1;
-        await db.query("UPDATE crewcheck_notification_jobs SET status='sent',sent_at=NOW(3),last_error=NULL WHERE id=?", [job.id]);
-      } else {
-        summary.failed += 1;
-        const retry = Number(job.attempts || 0) + 1 < 3;
-        await db.query("UPDATE crewcheck_notification_jobs SET status=?,locked_at=NULL,last_error=? WHERE id=?", [retry ? 'pending' : 'failed', String(result?.raw || result?.message || 'Falha no envio').slice(0, 500), job.id]);
-      }
+      const outcome = await dispatchClaimedJob(db, job, { deliver: deliverJob, findLink: linkedTelegramRecord });
+      if (outcome.accepted) summary.sent += 1;
+      else if (!['skipped', 'pending'].includes(outcome.status)) summary.failed += 1;
     }
     summary.commute = await runCommuteMonitorCycle(db);
   } catch (error) {
@@ -403,26 +397,7 @@ async function repairTelegramWebhook() {
 }
 
 async function scheduleJob(req, res) {
-  const user = identity(req);
-  if (!user) return sendJson(res, 401, { ok: false, message: 'Sessão expirada.' });
-  const body = await readJson(req);
-  const scheduledAt = new Date(body.scheduledAt || body.scheduled_at || '');
-  if (Number.isNaN(scheduledAt.getTime())) return sendJson(res, 400, { ok: false, message: 'Informe data e hora válidas.' });
-  if (scheduledAt.getTime() < Date.now() - 60_000) return sendJson(res, 400, { ok: false, message: 'O horário do despertador já passou.' });
-  const channel = String(body.channel || 'telegram').toLowerCase();
-  const jobKey = String(body.jobKey || body.job_key || `manual:${scheduledAt.toISOString()}:${channel}`).slice(0, 220);
-  const message = String(body.message || 'Despertador CrewCheck: está na hora de iniciar sua preparação para a próxima programação.').trim().slice(0, 1000);
-  const db = await dbPool();
-  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
-  await ensureNotificationTable(db);
-  const telegramLink = await linkedTelegramRecord(db, user.email);
-  const chatId = String(body.chatId || telegramLink?.chatId || '');
-  const telegramUsername = String(body.telegramUsername || telegramLink?.username || '').replace(/^@/, '');
-  await db.query(`INSERT INTO crewcheck_notification_jobs (email,job_key,scheduled_at,channel,chat_id,telegram_username,phone,message,status)
-    VALUES(?,?,?,?,?,?,?,?, 'pending')
-    ON DUPLICATE KEY UPDATE scheduled_at=VALUES(scheduled_at),channel=VALUES(channel),chat_id=VALUES(chat_id),telegram_username=VALUES(telegram_username),phone=VALUES(phone),message=VALUES(message),status='pending',attempts=0,locked_at=NULL,sent_at=NULL,last_error=NULL`,
-    [user.email, jobKey, scheduledAt, channel, chatId, telegramUsername, String(body.phone || ''), message]);
-  return sendJson(res, 200, { ok: true, scheduledAt: scheduledAt.toISOString(), channel, jobKey, telegramLinked: Boolean(chatId || telegramUsername), message: 'Despertador agendado no servidor.' });
+  return safeScheduleJob({ req, res, identity, readJson, dbPool, ensureNotificationTable, linkedTelegramRecord, sendJson });
 }
 
 async function listJobs(req, res) {
@@ -430,19 +405,15 @@ async function listJobs(req, res) {
   if (!user) return sendJson(res, 401, { ok: false, message: 'Sessão expirada.' });
   const db = await dbPool();
   if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
+  const [owners] = await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? LIMIT 1', [user.email]);
+  if (String(owners[0]?.public_id || '') !== String(user.id)) return sendJson(res, 401, { ok: false, message: 'Sessão da conta não é mais válida.' });
   await ensureNotificationTable(db);
   const [rows] = await db.query('SELECT id,job_key AS jobKey,scheduled_at AS scheduledAt,channel,status,attempts,sent_at AS sentAt,last_error AS lastError FROM crewcheck_notification_jobs WHERE email=? ORDER BY scheduled_at DESC LIMIT 100', [user.email]);
   return sendJson(res, 200, { ok: true, jobs: rows });
 }
 
 async function cancelJob(req, res) {
-  const user = identity(req);
-  if (!user) return sendJson(res, 401, { ok: false, message: 'Sessão expirada.' });
-  const body = await readJson(req);
-  const db = await dbPool();
-  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
-  const [result] = await db.query("UPDATE crewcheck_notification_jobs SET status='cancelled',locked_at=NULL WHERE email=? AND (id=? OR job_key=?) AND status IN ('pending','processing')", [user.email, Number(body.id || 0), String(body.jobKey || '')]);
-  return sendJson(res, 200, { ok: true, cancelled: result.affectedRows });
+  return safeCancelJob({ req, res, identity, readJson, dbPool, sendJson });
 }
 
 async function registerCommuteMonitor(req, res) {

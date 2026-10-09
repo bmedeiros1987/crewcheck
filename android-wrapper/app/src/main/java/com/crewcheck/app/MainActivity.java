@@ -373,6 +373,7 @@ public class MainActivity extends Activity {
                     ? new Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
                     : new Notification.Builder(this);
             builder.setContentTitle(title == null || title.trim().isEmpty() ? "CrewCheck" : title)
+                    .setVisibility(Notification.VISIBILITY_PRIVATE)
                     .setContentText(body == null ? "" : body)
                     .setSmallIcon(android.R.drawable.ic_dialog_info)
                     .setContentIntent(pendingIntent)
@@ -555,30 +556,23 @@ public class MainActivity extends Activity {
 
     private void scheduleCrewCheckNotification(String title, String body, long epochMillis) {
         try {
-            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                requestNotificationPermissionIfNeeded();
-                return;
-            }
+            if (epochMillis <= System.currentTimeMillis() || !hasCrewCheckNotificationPermission()) return;
             ensureCrewCheckNotificationChannel();
             Intent intent = new Intent(this, CrewCheckNotificationReceiver.class);
             intent.putExtra("title", title == null || title.trim().isEmpty() ? "CrewCheck" : title);
             intent.putExtra("body", body == null ? "" : body);
+            intent.putExtra("scheduledAt", epochMillis);
             int requestCode = (int)(Math.abs((String.valueOf(title) + String.valueOf(body) + epochMillis).hashCode()) % 100000);
             PendingIntent pendingIntent = PendingIntent.getBroadcast(this, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             android.app.AlarmManager alarm = (android.app.AlarmManager) getSystemService(Context.ALARM_SERVICE);
-            long when = Math.max(System.currentTimeMillis() + 1000L, epochMillis);
-            if (alarm == null) {
-                showCrewCheckNotification(title, body);
-                return;
-            }
+            long when = epochMillis;
+            if (alarm == null) return;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 alarm.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
             } else {
                 alarm.set(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
             }
-        } catch (Exception ex) {
-            showCrewCheckNotification(title, body);
-        }
+        } catch (Exception ignored) {}
     }
 
     private boolean isExternalSupportUrl(String url) {
@@ -1194,11 +1188,10 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public boolean scheduleNotification(final String title, final String body, final String epochMillis) {
-            runOnUiThread(() -> {
-                long when;
-                try { when = Long.parseLong(epochMillis); } catch (Exception ex) { when = System.currentTimeMillis() + 1000L; }
-                scheduleCrewCheckNotification(title, body, when);
-            });
+            final long when;
+            try { when = Long.parseLong(epochMillis); } catch (Exception ex) { return false; }
+            if (when <= System.currentTimeMillis() || !hasCrewCheckNotificationPermission()) return false;
+            runOnUiThread(() -> scheduleCrewCheckNotification(title, body, when));
             return true;
         }
 

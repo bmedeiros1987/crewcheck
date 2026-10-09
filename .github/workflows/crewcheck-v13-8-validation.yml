@@ -27,6 +27,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  notification-mysql:
+    name: Notification concurrency in disposable MySQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Start existing MySQL QA pattern without network or published ports
+        run: |
+          mkdir -p /tmp/crewcheck-notification-qa-socket
+          docker run --detach --rm --name crewcheck-notification-qa --network none --mount type=bind,source=/tmp/crewcheck-notification-qa-socket,target=/var/run/mysqld --env MYSQL_ALLOW_EMPTY_PASSWORD=yes --env MYSQL_DATABASE=crewcheck_notification_qa mysql:8.4
+          for attempt in $(seq 1 60); do
+            if docker logs crewcheck-notification-qa 2>&1 | grep -q 'MySQL init process done' && docker exec crewcheck-notification-qa mysql --database=crewcheck_notification_qa --execute='SELECT 1'; then break; fi
+            sleep 1
+          done
+          docker exec crewcheck-notification-qa mysql --database=crewcheck_notification_qa --execute='SELECT 1'
+          docker exec crewcheck-notification-qa chmod 755 /var/run/mysqld
+      - name: Test real SQL before and after canonical preparation
+        env:
+          CREWCHECK_NOTIFICATION_QA: isolated-mysql
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
+        run: |
+          node scripts/regression-notification-mysql.mjs
+          node scripts/v139/apply.mjs
+          node scripts/regression-notification-mysql.mjs
+      - name: Remove disposable database
+        if: always()
+        run: docker stop crewcheck-notification-qa || true
   emergency-browser:
     name: SOS authenticated recovery browser fixtures
     runs-on: ubuntu-latest
@@ -45,13 +77,17 @@ jobs:
       - name: Test actual EmergencyCenter with fictional accounts before preparation
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
-        run: node scripts/regression-emergency-center-browser.mjs
+        run: |
+          node scripts/regression-emergency-center-browser.mjs
+          node scripts/regression-leave-confirmation-browser.mjs
       - name: Prepare canonical application sources
         run: node scripts/v139/apply.mjs
       - name: Test actual EmergencyCenter after source preparation
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
-        run: node scripts/regression-emergency-center-browser.mjs
+        run: |
+          node scripts/regression-emergency-center-browser.mjs
+          node scripts/regression-leave-confirmation-browser.mjs
   web-and-server:
     name: Web, TypeScript and server
     runs-on: ubuntu-latest
@@ -65,6 +101,13 @@ jobs:
       - run: npm ci
       - name: Validate CI pipeline exit propagation
         run: node scripts/ci/check-workflow-pipefail.mjs
+      - name: Validate notification safety with fictional recipients before preparation
+        run: |
+          node scripts/regression-bids-delivery.mjs
+          node scripts/regression-bids-editing.mjs
+          node scripts/regression-notification-job-safety.mjs
+          node scripts/regression-briefing-preferences.mjs
+          node scripts/regression-browser-reminder-scheduling.mjs
       - name: Validate SOS intention and recovery with mocked Telegram
         run: node --experimental-vm-modules scripts/regression-emergency-intent.mjs
       - name: Validate source preparation cache invalidation
@@ -74,6 +117,13 @@ jobs:
         run: node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/crewcheck-prepare.log"
       - name: TypeScript check
         run: npx tsc --noEmit 2>&1 | tee "$RUNNER_TEMP/typescript.log"
+      - name: Validate notification safety after source preparation
+        run: |
+          node scripts/regression-bids-delivery.mjs
+          node scripts/regression-bids-editing.mjs
+          node scripts/regression-notification-job-safety.mjs
+          node scripts/regression-briefing-preferences.mjs
+          node scripts/regression-browser-reminder-scheduling.mjs
       - name: Validate account roster startup and concurrent explicit choices
         run: |
           node scripts/regression-roster-startup-state.mjs

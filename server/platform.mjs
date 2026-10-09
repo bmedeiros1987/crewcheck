@@ -1,3 +1,4 @@
+import { notificationStateDeletionStatements } from './v139/notificationStateDeletion.mjs';
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { diagnoseCirium, diagnoseCiriumFlight } from './cirium-diagnostic.mjs';
@@ -2531,6 +2532,9 @@ async function handleAccountDeletion(req, res) {
     }
     await client.query('DELETE FROM crewcheck_platform_subscriptions WHERE email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_platform_profiles WHERE email=$1', [context.identity.email]);
+    for (const [sql, params] of notificationStateDeletionStatements(context.identity.email)) {
+      await deleteIfTableExists(client, sql, params);
+    }
     await client.query('DELETE FROM crewcheck_telegram_state WHERE state_key IN ($1,$2,$3,$4)', [`link-email:${context.identity.email}`, `snapshot:${context.identity.email}`, `profile:${context.identity.email}`, `weather-consent:${context.identity.email}`]);
     // Perfil médico de emergência, preferências, sessões com localização, alertas e cartões
     // Guardian são dados de saúde do titular: a exclusão da conta precisa alcançá-los.
