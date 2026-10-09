@@ -114,6 +114,7 @@ if (!baseline) {
 
 const entry = `
 import React, {useState,useEffect,useMemo,useRef,useCallback} from 'react';
+import {isFinancialSetting,readFinancialSetting,writeFinancialSetting} from '@/lib/financialSettingStore';
 import {createPortal} from 'react-dom';
 import {createRoot} from 'react-dom/client';
 ${iconImports}
