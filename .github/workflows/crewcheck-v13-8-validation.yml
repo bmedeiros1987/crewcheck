@@ -92,6 +92,7 @@ jobs:
           node scripts/regression-emergency-center-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-readiness-browser.mjs
+          node scripts/regression-wakeup-session-browser.mjs
   web-and-server:
     name: Web, TypeScript and server
     runs-on: ubuntu-latest

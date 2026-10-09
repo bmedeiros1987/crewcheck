@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { guardWakeupSession } from './wakeup-session.mjs';
 const path = 'server/telegram-fast-ack.mjs';
 let source = fs.readFileSync(path, 'utf8');
 function replace(name, nextName, body) {
@@ -31,6 +32,7 @@ fs.writeFileSync(platformPath, platform);
 // Materialize only the existing wakeup panel; roster/APZ/regulation stay untouched.
 const homePath = 'client/src/pages/Home.tsx';
 let home = fs.readFileSync(homePath, 'utf8');
+home = home.replace("{ authFetch, getStoredUser, logout }", "{ authFetch, getToken, getStoredUser, logout }");
 const readinessImport = "import { NotificationReadiness } from '@/components/notifications/NotificationReadiness';";
 if (!home.includes(readinessImport)) home = readinessImport + '\n' + home;
 const wakeStart = home.indexOf('function WakeupView(');
@@ -50,5 +52,6 @@ wake = wake.replace(/message: `Despertador CrewCheck: prepare-se para[^\n]+/, "m
 wake = wake.replace(/      if \(typeof Notification[^\n]+Notification\.requestPermission\(\)[^\n]+\n/g, '');
 // Server registration must not also arm an unscoped page timer for a duplicate notice.
 wake = wake.replace(/      window\.setTimeout\(\(\) => notifyCrewCheck[^\n]+\n/g, '');
+wake = guardWakeupSession(wake);
 home = home.slice(0, wakeStart) + wake + home.slice(wakeEnd);
 fs.writeFileSync(homePath, home);

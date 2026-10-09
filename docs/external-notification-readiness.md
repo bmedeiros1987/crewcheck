@@ -90,3 +90,13 @@ visible without sensitive error text. Private GET fixture: owner identity and
 canonical binding, old/deleted incarnation and unauthenticated access denied.
 Existing queue, BIDS and 23 browser-reminder safety cases remain passing locally.
 CI runs disposable MySQL and browser/heartbeat tests before/after canonical prep.
+
+## Revisão após main 1435afd4
+
+A preparação canônica recria `WakeupView` via `scripts/v1411/apply.mjs`. O finalizador agora protege a tela hospedeira completa: sessão + proprietário atual, respostas concorrentes, limpeza em troca/expiração de conta, desconexão distinta de lista vazia e callbacks tardios de operações. A fixture monta a função preparada inteira com contas e eventos fictícios, não apenas o cartão filho. Nenhuma API externa de envio é acessada.
+
+Android nativo já dispõe de alarmes locais por AlarmManager e BroadcastReceiver, que podem executar com a página fechada. São aproximados (`setAndAllowWhileIdle`); a proteção de validade descarta execução mais de dois minutos atrasada. Não há inventário persistido/restauração após reinício nem confirmação de entrega. O bridge confirma enfileiramento de trabalho na UI, não entrega. A permissão POST_NOTIFICATIONS não comprova que o canal esteja habilitado. PWA usa timer da página e precisa dela viva. O servidor atual não possui transporte direto Android/FCM ou Web Push para mudanças remotas. Corrigir isso exigiria decisão separada, não novas credenciais nesta PR.
+
+Menor passo Android: verificar manualmente, pelo usuário, a versão instalada e o estado do canal CrewCheck nas configurações existentes; não alterar permissões automaticamente. Um lembrete local futuro só deve ser validado após coordenar destinatário e conteúdo. A sessão web disponível não informa a versão instalada, permissões ou inventário de alarmes do aparelho. Nenhuma data BIDS/folga foi inventada ou agendada.
+
+O gate financeiro anterior falhou duas vezes no alinhamento com cabeçalho. A mesma matriz passou localmente; isso não dispensa o CI. A fixture conserva todas as assertions e tolerâncias, aguarda fontes carregadas e registra geometria, viewport, estilos e animações por caso antes da assertion para reprodução em Linux.

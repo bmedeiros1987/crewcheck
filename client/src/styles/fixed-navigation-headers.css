@@ -1,0 +1,97 @@
+/* Last in the prepared cascade: navigation stays in place at every text size. */
+html body #root .cz-app[data-version] > .cz-global-header {
+  position: fixed !important;
+  top: var(--cc-safe-area-top, env(safe-area-inset-top, 0px)) !important;
+  left: 50% !important;
+  right: auto !important;
+  width: min(calc(100% - 24px), 1180px) !important;
+  transform: translateX(-50%) !important;
+  margin: 0 !important;
+  z-index: 1200 !important;
+  background: var(--cc-review-surface) !important;
+}
+.cc-fixed-header-space { flex: 0 0 auto; }
+html body #root .cz-app[data-version] .cz-menu-panel {
+  overflow: hidden !important;
+}
+html body #root .cz-app[data-version] .cz-menu-panel > :is(.cz-menu-header, #cc-menu-fixed-heading) {
+  flex: 0 0 auto !important;
+  position: relative !important;
+  overflow: visible !important;
+}
+#cc-menu-fixed-heading:empty { display: none; }
+#cc-menu-fixed-heading { background: var(--cc-review-surface); padding: 8px 14px; border-bottom: 1px solid var(--cc-review-border); }
+#cc-menu-fixed-heading .cc-home-editor-fixed-heading { margin: 0; padding: 0; }
+#cc-menu-fixed-heading h2 { margin: 0; font-size: 1rem; line-height: 1.35; overflow-wrap: anywhere; }
+#cc-menu-fixed-heading small { display: none; }
+html body #root .cz-app[data-version] .cz-menu-scroll {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  padding-bottom: calc(32px + var(--cc-safe-area-bottom, env(safe-area-inset-bottom, 0px))) !important;
+}
+
+html body #root .cz-app[data-version] .cz-menu-panel > .cz-menu-header { padding-top: max(12px, var(--cc-safe-area-top, env(safe-area-inset-top, 0px))) !important; }
+/* Import uses the same neutral surfaces/text as the current roster preview. */
+html body #root .cz-app[data-version] .cz-import {
+  background: var(--cc-review-surface) !important;
+  color: var(--cc-review-text) !important;
+  border: 1px solid var(--cc-review-border) !important;
+  border-radius: 16px !important;
+  box-shadow: none !important;
+  min-width: 0 !important;
+}
+html body #root .cz-app[data-version] .cz-import :is(h1, p, small, span) {
+  color: var(--cc-review-text) !important;
+  opacity: 1 !important;
+  line-height: 1.4 !important;
+  overflow-wrap: anywhere !important;
+}
+html body #root .cz-app[data-version] .cz-import :is(.cz-import-icon, button) {
+  background: var(--cc-review-subtle) !important;
+  color: var(--cc-review-text) !important;
+  border: 1px solid var(--cc-review-border) !important;
+  box-shadow: none !important;
+  border-radius: 12px !important;
+}
+html body #root .cz-app[data-version] .cz-import button.primary {
+  background: var(--cc-review-text) !important;
+  color: var(--cc-review-surface) !important;
+}
+html body #root .cz-app[data-version] .cz-import button.primary :is(span, svg) { color: inherit !important; }
+html body #root .cz-app[data-version] .cz-import button { height: auto !important; min-height: 44px !important; white-space: normal !important; }
+
+/* Notices are document content, so long critical copy never grows fixed chrome. */
+html body #root .cz-app[data-version] > .cc-header-notice { width: 100%; min-width: 0; margin-bottom: 14px; }
+html body #root .cz-app[data-version] .cc-header-notice .cc-pulse-compact {
+  display: grid !important; grid-template-columns: minmax(0, 1fr) 44px !important;
+  align-items: start !important; gap: 8px !important; padding: 12px !important;
+  border: 1px solid var(--cc-review-border) !important; border-inline-start: 3px solid var(--cc-pulse-accent) !important;
+  border-radius: 12px !important; background: var(--cc-review-surface) !important; color: var(--cc-review-text) !important;
+  overflow: visible !important; box-shadow: none !important;
+}
+html body #root .cz-app[data-version] .cc-header-notice :is(button, .cc-pulse-popover-copy) {
+  scroll-margin-top: calc(var(--cc-fixed-header-height, 64px) + var(--cc-safe-area-top, env(safe-area-inset-top, 0px)) + 12px);
+}
+html body #root .cz-app[data-version] .cc-header-notice :is(.cc-pulse-compact-trigger, .cc-pulse-compact-details, .cc-pulse-collapse, .cc-pulse-dismiss) {
+  min-height: 44px !important; height: auto !important; padding: 4px !important;
+  background: transparent !important; color: var(--cc-review-text) !important; box-shadow: none !important;
+}
+html body #root .cz-app[data-version] .cc-header-notice :is(.cc-pulse-compact-details, .cc-pulse-collapse, .cc-pulse-dismiss) { width: 44px !important; min-width: 44px !important; }
+html body #root .cz-app[data-version] .cc-header-notice .cc-pulse-compact-trigger > strong { white-space: normal !important; overflow: visible !important; overflow-wrap: anywhere !important; }
+html body #root .cz-app[data-version] .cc-header-notice .cc-pulse-popover {
+  position: static !important; grid-column: 1 / -1 !important; display: grid !important; grid-template-columns: minmax(0, 1fr) !important;
+  width: 100% !important; max-width: 100% !important; max-height: none !important; overflow: visible !important;
+  margin: 0 !important; padding: 8px 0 0 !important; border: 0 !important; border-top: 1px solid var(--cc-review-border) !important;
+  border-radius: 0 !important; background: transparent !important; color: var(--cc-review-text) !important; box-shadow: none !important;
+}
+html body #root .cz-app[data-version] .cc-header-notice .cc-pulse-controls { grid-column: 1 !important; grid-row: 1 !important; padding: 0 !important; justify-content: flex-end !important; }
+html body #root .cz-app[data-version] .cc-header-notice .cc-pulse-popover-copy { grid-column: 1 !important; grid-row: 2 !important; }
+html body #root .cz-app[data-version] .cc-header-notice .cc-pulse-popover-copy small { color: var(--cc-review-text) !important; opacity: 1 !important; white-space: normal !important; overflow-wrap: anywhere !important; }
+.cc-pulse-collapse svg { transform: rotate(180deg); }
+
+/* Short landscape/keyboard layouts keep the brand name; omit decorative tagline. */
+@media (max-height: 480px) {
+  html body #root .cz-app[data-version] > .cz-global-header .cz-brand-lockup small { display: none !important; }
+}
+html body #root .cz-app[data-version] > .cc-header-notice:empty { display: none; margin: 0; }
