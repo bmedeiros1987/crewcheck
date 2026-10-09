@@ -4,6 +4,7 @@ export type AllowanceOccurrence = {
   slot: AllowanceSlot;
   iso: string;
   window: string;
+  eventId?: string;
 };
 
 export type AllowanceActivity = {
@@ -15,6 +16,8 @@ export type AllowanceActivity = {
   activated?: boolean;
   breakfastIncluded?: boolean;
   enginesOff?: Date | null;
+  /** User-reported operational criterion, not a validated ACT rule. */
+  breakfastBasePresence?: Array<{ start: Date; end: Date; eventId: string }>;
 };
 
 export type AllowanceStatementCycle = {
@@ -77,13 +80,17 @@ export function classifyAllowanceWindows(activity: AllowanceActivity): Allowance
   } else if (activity.kind === 'reserve') {
     allowed.push('breakfast', 'lunch', 'dinner', 'supper');
   } else if (activity.kind === 'flight') {
-    if ((activity.originAtContractualBase || activity.destinationAtContractualBase) && !activity.breakfastIncluded) allowed.push('breakfast');
+    if ((activity.breakfastBasePresence !== undefined || activity.originAtContractualBase || activity.destinationAtContractualBase) && !activity.breakfastIncluded) allowed.push('breakfast');
     allowed.push('lunch', 'dinner', 'supper');
   } else if (activity.kind === 'training' || activity.kind === 'other') {
     allowed.push('lunch', 'dinner', 'supper');
   }
 
-  return allowed.flatMap(slot => mealWindowOccurrences(start, end, slot));
+  return allowed.flatMap(slot => mealWindowOccurrences(start, end, slot)).flatMap(occurrence => {
+    if (occurrence.slot !== 'breakfast' || activity.breakfastBasePresence === undefined) return [occurrence];
+    const presence = activity.breakfastBasePresence.find(item => mealWindowOccurrences(item.start, item.end, 'breakfast').some(window => window.iso === occurrence.iso));
+    return presence ? [{ ...occurrence, eventId: presence.eventId }] : [];
+  });
 }
 
 export function isNonPayableRosterCode(value: string): boolean {
