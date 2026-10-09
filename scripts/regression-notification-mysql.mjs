@@ -65,6 +65,16 @@ try {
     const options={now:new Date('2026-10-11T12:00:00Z'),findLink:async()=>({chatId:'fictional'}),send:async()=>{sends++;throw new Error('fictional timeout')}};
     await notifyBidRows(db,rows,options);await notifyBidRows(db,rows,options);assert.equal(sends,1);
   });
+  await run('BIDS requires canonical current-owner link and checks revocation before claim',async()=>{
+    await request({...base,creationKey:'binding',title:'Binding fixture'});
+    const row=(await list()).find(r=>r.title==='Binding fixture');let sends=0;
+    const options={now:new Date('2026-10-11T12:00:00Z'),send:async()=>{sends++;return {ok:true}}};
+    await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',[`profile:${email}`,JSON.stringify({email,chatId:'legacy-fictional'})]);
+    await notifyBidRows(db,[row],options);assert.equal(sends,0,'legacy profile is not a canonical binding');
+    assert.equal(await claimBid(db,row,options.now,{expectedLink:{chatId:'old'},findLink:async()=>({chatId:'new'})}),null);
+    await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',[`link-email:${email}`,JSON.stringify({email,chatId:'canonical-fictional',linkedAt:'2026-10-01T00:00:00Z',code:'fictional'})]);
+    await notifyBidRows(db,[row],options);assert.equal(sends,1);
+  });
   await run('confirmation is persistent, idempotent and cancels every server channel only for owner/cycle',async()=>{
     const prefix=cycleJobPrefix(LEAVE_CYCLE), now=new Date();
     for(const channel of ['telegram','telegram-call','phone-call','telegram+phone-call']) await db.query("INSERT INTO crewcheck_notification_jobs(email,job_key,scheduled_at,channel,message,status) VALUES(?,?,?,?,'fictional','pending')",[email,prefix+channel,now,channel]);
@@ -89,6 +99,8 @@ try {
   await run('account deletion removes owned cycle decisions, tombstones, claims and jobs',async()=>{
     await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',['notification-cycle:other',JSON.stringify({email:'other@example.test'})]);
     for(const [sql,args] of notificationStateDeletionStatements(email)) await db.query(sql.replace(/\$1/g,'?'),args);
+    // Existing canonical account deletion already removes these ordinary link/profile keys.
+    await db.query('DELETE FROM crewcheck_telegram_state WHERE state_key IN (?,?)',[`link-email:${email}`,`profile:${email}`]);
     assert.equal((await db.query("SELECT COUNT(*) AS n FROM crewcheck_telegram_state WHERE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.email'))=?",[email]))[0][0].n,0);
     assert.equal((await db.query('SELECT COUNT(*) AS n FROM crewcheck_notification_jobs WHERE email=?',[email]))[0][0].n,0);
     assert.equal((await db.query('SELECT COUNT(*) AS n FROM crewcheck_telegram_state WHERE state_key=?',['notification-cycle:other']))[0][0].n,1);

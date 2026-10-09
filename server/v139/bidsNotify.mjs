@@ -1,6 +1,13 @@
 import crypto from 'node:crypto';
 import { dbPool, env, parseJsonColumn, secureCompare, sendJson } from './common.mjs';
-import { sendTelegram, telegramLink } from './delivery.mjs';
+import { sendTelegram } from './delivery.mjs';
+
+export async function bidTelegramLink(db, email) {
+  const [rows] = await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE', [`link-email:${email}`]);
+  const link = parseJsonColumn(rows[0]?.payload, null);
+  return link?.chatId && link.email === email ? link : null;
+}
+const binding = link => JSON.stringify([link?.chatId, link?.linkedAt, link?.code]);
 
 function parseDate(value) {
   const date = new Date(value);
@@ -20,7 +27,7 @@ export function dueKind(row, now = new Date()) {
 const instant = (row, name) => Number(row[name === 'opens_at' ? 'open_epoch' : 'close_epoch'] ?? new Date(row[name]).getTime());
 const revision = row => JSON.stringify([row.id, row.owner_email, row.title, row.target_month, instant(row, 'opens_at'), instant(row, 'closes_at'), row.provider_url || '', Boolean(row.notify_open), Boolean(row.notify_last_day)]);
 
-export async function claimBid(db, selected, now) {
+export async function claimBid(db, selected, now, { findLink = bidTelegramLink, expectedLink } = {}) {
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
@@ -29,6 +36,8 @@ export async function claimBid(db, selected, now) {
     if (!kind || revision(row) !== revision(selected)) { await connection.rollback(); return null; }
     const [owners] = await connection.query('SELECT p.public_id FROM crewcheck_platform_profiles p JOIN crewcheck_platform_bid_windows b ON BINARY b.owner_email=BINARY p.email WHERE b.id=? AND p.email=? AND p.created_at<=b.created_at', [row.id, row.owner_email]);
     if (!owners[0]?.public_id) { await connection.rollback(); return null; }
+    const currentLink = await findLink(connection, row.owner_email);
+    if (!currentLink?.chatId || (expectedLink && binding(currentLink) !== binding(expectedLink))) { await connection.rollback(); return null; }
     const key = `bids-claim:${crypto.createHash('sha256').update(JSON.stringify([row.id, row.owner_email, kind, instant(row, 'opens_at'), instant(row, 'closes_at')])).digest('hex')}`;
     await connection.query('INSERT INTO crewcheck_telegram_state (state_key,payload,updated_at) VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE state_key=state_key', [key, JSON.stringify({ email: row.owner_email, id: row.id, status: 'pending' })]);
     const [states] = await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE', [key]);
@@ -37,18 +46,18 @@ export async function claimBid(db, selected, now) {
     const token = crypto.randomUUID();
     await connection.query('UPDATE crewcheck_telegram_state SET payload=?,updated_at=NOW(3) WHERE state_key=?', [JSON.stringify({ ...state, token, status: 'dispatching' }), key]);
     await connection.commit();
-    return { row, kind, key, token };
+    return { row, kind, key, token, link: currentLink };
   } catch (error) { await connection.rollback(); throw error; }
   finally { connection.release(); }
 }
 
-export async function notifyBidRows(db, rows, { now = new Date(), findLink = telegramLink, send = sendTelegram } = {}) {
+export async function notifyBidRows(db, rows, { now = new Date(), findLink = bidTelegramLink, send = sendTelegram } = {}) {
   const notices = [];
   for (const row of rows) {
     if (!dueKind(row, now)) continue;
     const link = await findLink(db, row.owner_email);
     if (!link?.chatId) continue;
-    const claim = await claimBid(db, row, now);
+    const claim = await claimBid(db, row, now, { findLink, expectedLink: link });
     if (!claim) continue;
     const { kind } = claim;
     const closes = parseDate(row.close_epoch != null ? Number(row.close_epoch) : row.closes_at);
