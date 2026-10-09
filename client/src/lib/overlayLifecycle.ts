@@ -1,13 +1,18 @@
 let sequence = 0;
 const bodyOwners = new Set<number>();
 let previousOverflow = '';
+let previousHistoryRestoration: ScrollRestoration = 'auto';
 
 /** Own only this overlay's lock/history entry; closing a nested overlay keeps its parent locked. */
 export function acquireOverlayLifecycle(dismiss: () => void, restoreScroll: () => boolean = () => true, originalScrollY?: number, originalFocus?: HTMLElement | null): () => void {
   const id = ++sequence;
   const token = `${id}-${Math.random().toString(36).slice(2)}`;
   const y = originalScrollY ?? window.scrollY;
-  if (!bodyOwners.size) previousOverflow = document.body.style.overflow;
+  if (!bodyOwners.size) {
+    previousOverflow = document.body.style.overflow;
+    previousHistoryRestoration = window.history.scrollRestoration;
+    window.history.scrollRestoration = 'manual';
+  }
   bodyOwners.add(id);
   document.body.style.overflow = 'hidden';
   let ownsHistory = false;
@@ -30,9 +35,13 @@ export function acquireOverlayLifecycle(dismiss: () => void, restoreScroll: () =
     window.removeEventListener('pagehide', onPageHide);
     bodyOwners.delete(id);
     const restorePosition = () => {
-      if (!bodyOwners.size && restoreScroll()) requestAnimationFrame(() => {
-        window.scrollTo({ top: y, left: 0, behavior: 'instant' });
-        if (originalFocus?.isConnected) originalFocus.focus({ preventScroll: true });
+      if (!bodyOwners.size) requestAnimationFrame(() => {
+        if (bodyOwners.size) return;
+        if (restoreScroll()) {
+          window.scrollTo({ top: y, left: 0, behavior: 'instant' });
+          if (originalFocus?.isConnected) originalFocus.focus({ preventScroll: true });
+        }
+        window.history.scrollRestoration = previousHistoryRestoration;
       });
     };
     if (!bodyOwners.size) {
