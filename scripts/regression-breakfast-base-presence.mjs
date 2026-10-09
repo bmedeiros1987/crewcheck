@@ -41,7 +41,7 @@ try {
   const onward = flight('SYN-ONWARD','BSB','GRU','08:15','10:10');
   check('intermediate arrival at base',[intermediate,onward],true,'SYN-INTERMEDIATE');
   check('duplicate canonical flight identity',[intermediate,{...intermediate,id:'SYN-DUPLICATE'},onward],true,'SYN-INTERMEDIATE');
-  const reserve = (id,origin,type) => ({...event(id,instant('04:10'),instant('10:10'),'04:10','duty',origin),day:{type},origin,destination:origin});
+  const reserve = (id,origin,type) => ({...event(id,instant('04:10'),instant('10:10'),'04:10','duty',origin),day:{type,dutyReport:'04:10',dutyDebrief:'10:10',dutyReportSource:'published',dutyDebriefSource:'published'},origin,destination:origin});
   check('ASB physically at base',[reserve('SYN-ASB','BSB','ASB')],true);
   check('ASB outside base',[reserve('SYN-ASB-OTHER','JPA','ASB')],false);
   check('HSB is not physical base presence',[reserve('SYN-HSB','BSB','HSB')],false);
