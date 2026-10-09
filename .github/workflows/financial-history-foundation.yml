@@ -19,6 +19,7 @@ on:
       - 'client/src/lib/financialHistoryPeriods.ts'
       - 'client/src/lib/salaryCalculationDiagnostic.ts'
       - 'scripts/regression-salary-prerequisite-diagnostic.mjs'
+      - 'scripts/regression-salary-review-callers.mjs'
       - 'scripts/regression-salary-prerequisites-browser.cjs'
       - 'client/src/lib/databaseClient.ts'
       - '.github/workflows/financial-history-foundation.yml'
@@ -56,6 +57,7 @@ jobs:
         env:
           TZ: America/New_York
       - run: node scripts/regression-salary-prerequisite-diagnostic.mjs
+      - run: node scripts/regression-salary-review-callers.mjs
       - run: node scripts/regression-financial-read-model.mjs
       - run: node scripts/regression-financial-statement-totals.mjs
       - run: node --test scripts/regression-financial-review-negative.mjs
