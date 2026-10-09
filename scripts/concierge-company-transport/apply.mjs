@@ -14,12 +14,13 @@ update('server.mjs', source => {
   source = replace(source, anchor, anchor + '\n  const companyTransport = await companyTransportReply(text, profile);\n  if (companyTransport.handled) return companyTransport.reply;');
   source = replace(source, "    [{ text: '🗓 Minha escala' }, { text: '🧘 Rotina' }],", "    [{ text: '🗓 Minha escala' }, { text: '🧘 Rotina' }],\n    [{ text: 'Ônibus e vans da empresa' }],");
   source = replace(source, "    '/saida — Planejador de Saída',", "    '/saida — Planejador de Saída',\n    '/transporte_empresa — Ônibus e vans da empresa (referência prevista)',");
+  source = replace(source, "'/radar','/saida','/metar'", "'/radar','/saida','/transporte_empresa','/metar'");
   source = replace(source, "{ command: 'hoteis', description: 'Meu pernoite e registros salvos' }", "{ command: 'transporte_empresa', description: 'Ônibus e vans da empresa' },\n    { command: 'hoteis', description: 'Meu pernoite e registros salvos' }");
   const start = source.indexOf('async function handleTelegramConciergeAsk('), end = source.indexOf('\nfunction ', start);
   if (start < 0 || end < 0) throw new Error('[concierge-company-transport] Missing app request handler');
   const request = source.slice(start, end);
-  let scopedRequest = replace(request, "  if (body.location && typeof body.location === 'object') {", "  if (!companyTransportIntent(body.text || body.message || '') && body.location && typeof body.location === 'object') {");
-  scopedRequest = replace(scopedRequest, "  if (body.location && typeof body.location === 'object') snapshot =", "  if (!companyTransportIntent(body.text || body.message || '') && body.location && typeof body.location === 'object') snapshot =");
+  let scopedRequest = replace(request, "  if (body.location && typeof body.location === 'object') {", "  if (body.location && typeof body.location === 'object' && !companyTransportIntent(body.text || body.message || '')) {");
+  scopedRequest = replace(scopedRequest, "  if (body.location && typeof body.location === 'object') snapshot =", "  if (body.location && typeof body.location === 'object' && !companyTransportIntent(body.text || body.message || '')) snapshot =");
   source = source.slice(0, start) + scopedRequest + source.slice(end);
   return source;
 });
