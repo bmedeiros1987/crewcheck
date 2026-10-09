@@ -118,9 +118,11 @@ async function visibleTextBounds(page, selector) {
         const menuMethods = width < 500 ? ['escape', 'close', 'back'] : ['escape', 'close', 'backdrop', 'back'];
         for (const method of menuMethods) {
           await page.evaluate(() => window.scrollTo({ top: 160, behavior: 'instant' }));
-          const before = await page.evaluate(() => window.scrollY);
+          await settle(page);
+          await page.evaluate(() => document.addEventListener('pointerdown', () => { window.qaScrollBeforeOpen = window.scrollY; }, { once: true }));
           const opener = page.locator('body > nav.cz-bottom-nav > button').last();
           await opener.click();
+          const before = await page.evaluate(() => window.qaScrollBeforeOpen);
           await page.locator('.cz-menu-overlay').waitFor(); await settle(page);
           assert.equal(await page.locator('body').evaluate(el => el.style.overflow), 'hidden');
           await page.locator('.cz-menu-scroll').evaluate(el => { el.scrollTop = el.scrollHeight; });
@@ -138,7 +140,7 @@ async function visibleTextBounds(page, selector) {
           }
           if (method === 'back') await page.goBack();
           await page.locator('.cz-menu-overlay').waitFor({ state: 'detached' });
-          await page.waitForFunction(() => !history.state?.crewcheckOverlay && document.body.style.overflow !== 'hidden'); await settle(page);
+          await page.waitForFunction(() => !history.state?.crewcheckOverlay && document.body.style.overflow !== 'hidden' && history.scrollRestoration === 'auto'); await settle(page);
           const after = await page.evaluate(() => window.scrollY);
           assert.ok(Math.abs(after - before) <= 1, `Menu restores the original content position: ${width}/${theme}/${size}/${method}, before=${before}, after=${after}`);
           assert.ok(await opener.evaluate(el => el === document.activeElement), 'Menu restores focus to the approved navigation opener');
