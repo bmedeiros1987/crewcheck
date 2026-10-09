@@ -12,11 +12,11 @@ assert(begin>=0&&end>begin);const wake=home.slice(begin,end);
 assert(wake.includes('const wakeSession = useRef'),'run canonical preparation before host UI regression');
 const hostPrelude=`import React,{useState,useRef,useEffect} from 'react';import{getToken,authFetch}from'./client/src/lib/authClient';
 const storage={get:(key,fallback)=>localStorage.getItem(key)||fallback,set:(key,value)=>localStorage.setItem(key,value)};
-const toast={success:()=>{},error:()=>{},info:()=>{},message:()=>{}};
+const toast=Object.fromEntries(['success','error','info','message'].map(name=>[name,(message)=>{(window.fixtureToasts ||= []).push(message);} ]));
 const isAdmin=()=>false,wakeupLeadMinutes=()=>90,wakeupChannel=()=> 'telegram',safe=(v,f)=>v||f,city=v=>v;
 const publishedPresentationOf=()=> '10:00',programDateLabel=()=> 'SYN',rosterEventTitle=()=> 'Synthetic',wakeupChannelLabel=v=>v,wakeupDateLabel=v=>v?String(v):'SYN';
 const eventStartDateTime=()=>new Date('2032-02-01T10:00:00Z'),wakeupDateForEvent=eventStartDateTime;
-const getPlatformBilling=async()=>null,postCrewCheckJson=async()=>{throw Error('No sends allowed');};
+const getPlatformBilling=async()=>null,postCrewCheckJson=(...args)=>window.fixturePost(...args);
 const openTelegramBinding=()=>{},openWhatsAppBinding=()=>{};
 const Brand=()=>null,StayNavigationContext=()=>null,KpiCard=()=>null;
 const Clock=()=>null,Bell=()=>null,Hotel=()=>null,Save=()=>null,Send=()=>null,Phone=()=>null,X=()=>null,ChevronRight=()=>null;
@@ -24,7 +24,7 @@ const Clock=()=>null,Bell=()=>null,Hotel=()=>null,Save=()=>null,Send=()=>null,Ph
 const bundle=await build({stdin:{contents:`${hostPrelude}import{createRoot}from'react-dom/client';import{NotificationReadiness}from'./client/src/components/notifications/NotificationReadiness';${wake}createRoot(document.getElementById('root')).render(<WakeupView event={{id:'synthetic',placeholder:false,origin:'SYN',destination:'SYN'}}/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'iife',jsx:'automatic',define:{'process.env.NODE_ENV':'"test"'},plugins:[{name:'alias',setup(b){b.onResolve({filter:/^@\//},({path:p})=>({path:path.resolve('client/src',p.slice(2)+'.ts')}));}}]});
 const server=http.createServer((req,res)=>{res.setHeader('content-type',req.url==='/fixture.js'?'text/javascript':'text/html');res.end(req.url==='/fixture.js'?bundle.outputFiles[0].text:'<div id="root"></div><script src="/fixture.js"></script>');});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${server.address().port}`;
-let browser,offline=false,hold=false,resume,signal;const reads=[];
+let browser,offline=false,hold=false,resume,signal;const reads=[];let holdAllToken='',held=[],allHeld;
 try{
  browser=await chromium.launch({args:['--no-sandbox'],...process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}});
  const context=await browser.newContext({serviceWorkers:'block'});
@@ -36,6 +36,7 @@ try{
   assert.equal(url.pathname,'/api/alarm/scheduled');assert.equal(req.method(),'GET');
   const token=req.headers().authorization?.replace('Bearer ','');assert(['A','B'].includes(token));reads.push(token);
   if(offline)return route.abort();
+  if(token===holdAllToken){await new Promise(r=>{held.push(r);if(held.length===2)allHeld();});}
   if(hold&&token==='B'){hold=false;signal();await new Promise(r=>resume=r);}
   return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,readiness:{telegramConfigured:true,telegramLinked:token==='A'},jobs:token==='A'?[{id:1,status:'pending',channel:'OWNER_A_FIXTURE',scheduledAt:'2032-02-01T10:00:00Z'},{id:2,status:'sent'},{id:3,status:'uncertain'},{id:4,status:'expired'},{id:5,status:'cancelled'}]:[]})});
  });
@@ -54,6 +55,23 @@ try{
  await page.waitForTimeout(100);assert.equal(await page.getByText('Esta conta não tem vínculo Telegram válido.',{exact:false}).count(),0);
  await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.getByText('Esta conta não tem vínculo Telegram válido.',{exact:true}).waitFor();await page.getByText('Nenhum despertador gravado no servidor.',{exact:true}).waitFor();assert.equal(await page.getByText('OWNER_A_FIXTURE',{exact:false}).count(),0);
  await page.evaluate(()=>{localStorage.removeItem('crewcheck_auth_token');window.dispatchEvent(new Event('crewcheck:auth-expired'));});await page.getByText('Disponibilidade não verificada.',{exact:false}).waitFor();await page.getByRole('alert').filter({hasText:'Não foi possível consultar'}).waitFor();assert.equal(await page.getByText('Nenhum despertador gravado no servidor.',{exact:true}).count(),0);
+ // Both child and host requests from A are held; B must keep an empty list
+ // after every late A response has been released.
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','A');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
+ await page.getByText('OWNER_A_FIXTURE',{exact:false}).waitFor();
+ const bothHeld=new Promise(r=>allHeld=r);holdAllToken='A';
+ await page.evaluate(()=>window.dispatchEvent(new Event('online')));await bothHeld;
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
+ await page.getByText('Nenhum despertador gravado no servidor.',{exact:true}).waitFor();
+ holdAllToken='';held.splice(0).forEach(r=>r());await page.waitForTimeout(100);
+ assert.equal(await page.getByText('OWNER_A_FIXTURE',{exact:false}).count(),0);
+ // A cancellation returns after a switch: no A success/error toast in B.
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','A');window.dispatchEvent(new Event('crewcheck:auth-changed'));window.fixtureToasts=[];window.fixturePost=()=>new Promise(resolve=>window.resolveFixturePost=resolve);});
+ await page.getByRole('button',{name:'Cancelar',exact:true}).waitFor();await page.getByRole('button',{name:'Cancelar',exact:true}).click();
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
+ await page.getByText('Nenhum despertador gravado no servidor.',{exact:true}).waitFor();
+ await page.evaluate(()=>window.resolveFixturePost({ok:true,cancelled:true}));await page.waitForTimeout(100);
+ assert.deepEqual(await page.evaluate(()=>window.fixtureToasts),[]);
  assert.equal(await page.evaluate(()=>window.permissionsRequested),0);assert(reads.includes('A')&&reads.includes('B'));
  console.log('Complete prepared WakeupView UI PASS: current bearer, offline/reconnect, cleared account state, discarded late responses, acceptance/unknown/expiry/cancel labels, zero sends or permission requests.');
-}finally{resume?.();await browser?.close();await new Promise(r=>server.close(r));}
+}finally{held.forEach(r=>r());resume?.();await browser?.close();await new Promise(r=>server.close(r));}
