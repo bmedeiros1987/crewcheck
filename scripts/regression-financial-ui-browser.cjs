@@ -187,6 +187,27 @@ async function contrast(page) {
    if(scenario==='fx-refresh'){page.on('dialog',dialog=>dialog.accept('5'));await page.getByRole('button',{name:'Informar câmbio'}).click();await page.locator('.cc-per-diem-periods>summary').click();await page.waitForFunction(()=>document.querySelector('.cc-per-diem-converted')?.textContent.includes('1.000,00')||Array.from(document.querySelectorAll('.cz-finance-grid')).some(element=>element.textContent.includes('1.000,00')));await page.locator('.cc-financial-graph>summary').click();assert.match(await page.locator('.cc-financial-bars').innerText(),/200,00/,'native USD graph remains native after BRL conversion');}
    await page.screenshot({path:path.join(out,scenario+'.png')});historyResults.push({scenario,synthetic:true});await context.close();
   }
+  for (const width of [390,1440]) {
+   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:'block'});
+   await context.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(url.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[]}'});return route.continue();});
+   await context.addInitScript(seed,{theme:'light',kind:roster('domestic'),amount:100});
+   await context.addInitScript(()=>localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'financial-ui-qa',name:'SYNTHETIC ADMIN',role:'admin'})));
+   const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'admin'})));
+   const importer=page.getByLabel('Importar demonstrativo de diárias',{exact:true});await importer.waitFor();
+   await importer.locator('input[type=file]').setInputFiles(syntheticPdf);await importer.locator('.finance-learning-review').waitFor();
+   assert.match(await importer.locator('.finance-learning-review').innerText(),/2032-01-28 até 2032-02-03/);
+   assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isDisabled(),true,'document review requires owner confirmation');
+   await importer.locator('input[type=checkbox]').check();await importer.getByRole('button',{name:'Confirmar valores',exact:true}).click();await importer.locator('.finance-learning-review').waitFor({state:'hidden'});
+   const stored=await page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_financial_learned_rates_v2:financial-ui-qa')));
+   assert.equal(stored.ownerId,'financial-ui-qa');assert.equal(stored.rates.length,1);assert.equal(stored.rates[0].effectiveTo,'2032-02-03');
+   await importer.locator('input[type=file]').setInputFiles(syntheticPdf);await importer.locator('.finance-learning-review').waitFor();await importer.locator('input[type=checkbox]').check();await importer.getByRole('button',{name:'Confirmar valores',exact:true}).click();await importer.locator('.finance-learning-review').waitFor({state:'hidden'});
+   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_financial_learned_rates_v2:financial-ui-qa')).rates.length),1,'actual repeat import deduplicates');
+   await importer.locator('input[type=file]').setInputFiles(syntheticPdf);await importer.locator('.finance-learning-review').waitFor();
+   await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'different-admin',name:'OTHER SYNTHETIC',role:'admin'}));localStorage.setItem('crewcheck_auth_token','other-synthetic');window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));});await settle(page);
+   assert.equal(await page.locator('.finance-learning-review').count(),0,'account change clears pending document review');
+   assert.equal(await page.evaluate(()=>localStorage.getItem('crewcheck_financial_learned_rates_v2:different-admin')),null,'no document is written to the other account');
+   historyResults.push({scenario:'actual-owner-document-review',width,synthetic:true,checks:['bounded review dates','explicit owner consent','owner-scoped write','repeat PDF dedup','account switch clears review']});await context.close();
+  }
   fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({synthetic:true,methods:{cssZoom:'CSS zoom stress; not native browser zoom',responsive200:'Half CSS viewport with device scale2; not native browser zoom',devices:'Desktop Chromium emulation; no physical-device certification'},results,historyResults},null,2));
   console.log('PASS actual compiled Diárias: themes, scopes, >40 rows, owner period changes, large money glyph bounds, contrast, navigation clearance');
  }finally{await browser.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
