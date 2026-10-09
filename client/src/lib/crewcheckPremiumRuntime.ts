@@ -84,13 +84,13 @@ function notify(title: string, body: string): boolean {
 }
 
 function scheduleNotification(title: string, body: string, epochMillis: number): boolean {
+  const timestamp = Number(epochMillis);
+  if (!Number.isFinite(timestamp) || timestamp <= Date.now()) return false;
   const native = bridge();
   try {
     if (native?.scheduleNotification) return Boolean(native.scheduleNotification(title, body, String(Math.round(epochMillis))));
   } catch {}
-  const timestamp = Number(epochMillis);
-  if (!Number.isFinite(timestamp)) return false;
-  const delay = Math.max(0, timestamp - Date.now());
+  const delay = timestamp - Date.now();
   if (!Number.isFinite(delay) || delay > 2147483647) return false;
   // This is only an in-page timer, not a background alarm or remote push.
   try {

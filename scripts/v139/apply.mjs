@@ -200,6 +200,7 @@ await import('../roster-startup/apply.mjs');
 await import('../home-standby-departure/apply.mjs');
 await import('../transit-availability/apply.mjs');
 await import('../company-transport/apply.mjs');
+await import('../notification-safety/apply.mjs');
 
 }
 
