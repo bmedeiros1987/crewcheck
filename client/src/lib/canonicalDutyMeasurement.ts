@@ -64,6 +64,10 @@ export function measureCanonicalDuty(events: readonly CanonicalRosterEvent[], se
   if (group.some(e => !Number.isFinite(Date.parse(e.startDateTime)) || !Number.isFinite(Date.parse(e.endDateTime)) || Date.parse(e.endDateTime) < Date.parse(e.startDateTime))) {
     result.reasons.push('Horários canônicos incompletos ou intervalo inválido.'); return result;
   }
+  if (selected.kind === 'flight' && group.some(e => !clock(e.leg?.departureTime) || !clock(e.leg?.arrivalTime)
+    || ((e.publishedDay as any).publishedClockEvidence?.legs || e.publishedDay.legs).some((leg: any) => !clock(leg.departureTime) || !clock(leg.arrivalTime)))) {
+    result.reasons.push('Partida/chegada publicada incompleta; instante canônico de fallback não comprova a etapa.'); return result;
+  }
   let start = Date.parse(first.startDateTime), end = Date.parse(last.endDateTime);
   let groundMinutes = 0;
   if (selected.kind === 'flight') {
