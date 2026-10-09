@@ -157,7 +157,7 @@ try {
   // including after changing the selected roster month. Adjacent rows stay out.
   activeEvents = [event('2032-01-31', 'INT'), ...Array.from({length:24},(_,i)=>{
     const day='2032-02-'+String(i+1).padStart(2,'0');
-    return {...event(day),start:day+'T05:00:00',end:day+'T21:00:00'};
+    return {...event(day),start:day+'T05:00:00-03:00',end:day+'T21:00:00-03:00'};
   }),event('2032-03-01')];
   const many=calculatePerDiem(activeEvents,roster(2032,2));
   assert.ok(many.monthlyRows.length>40,'synthetic canonical windows produce more than forty monthly items');
