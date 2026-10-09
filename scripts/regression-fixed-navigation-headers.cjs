@@ -3,7 +3,7 @@ const { createRequire } = require('node:module');
 const ts = require('typescript');
 const { chromium } = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || __filename)('playwright');
 const { buildSync } = createRequire(process.env.MENU_ESBUILD_PACKAGE || __filename)('esbuild');
-const output = path.resolve(process.env.UI_READING_EVIDENCE_DIR || 'artifacts/ui-reading-overlays');
+const output = path.resolve(process.env.UI_READING_EVIDENCE_DIR || 'artifacts/fixed-headers');
 fs.mkdirSync(output, { recursive: true });
 const dist = path.resolve('dist');
 const serverSource = fs.readFileSync('server.mjs', 'utf8');
