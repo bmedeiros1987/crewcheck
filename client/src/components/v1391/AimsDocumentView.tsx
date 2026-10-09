@@ -34,7 +34,7 @@ export function AimsDocumentView({ events, month, describe, focusEventId }: {
   }, [month]);
   const groups = useMemo(() => dates.map(iso => ({ iso, entries: events.map((event, index) => ({ event, index })).filter(({ event }) => rosterDisplayIso(event) === iso) })), [dates, events]);
   const outside = events.filter(event => !dates.includes(rosterDisplayIso(event) || ''));
-  useEffect(() => { setSelection(null); setZoom(1); setFit(false); if (viewport.current) viewport.current.scrollLeft = 0; }, [owner, month, events]);
+  useEffect(() => { setSelection(null); setZoom(1); setFit(false); if (viewport.current) viewport.current.scrollLeft = 0; }, [owner, month]);
   useEffect(() => {
     const el = sheet.current, frame = viewport.current;
     if (!el || !frame) return;
