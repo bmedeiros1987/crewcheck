@@ -35,7 +35,7 @@ const settle = page => page.evaluate(async () => {
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 });
 async function recovered(page) {
-  await page.waitForFunction(() => !document.body.classList.contains('crewcheck-menu-open') && !history.state?.crewcheckOverlay && document.body.style.overflow !== 'hidden');
+  await page.waitForFunction(() => !document.body.classList.contains('crewcheck-menu-open') && !history.state?.crewcheckOverlay && document.body.style.overflow !== 'hidden' && history.scrollRestoration === 'auto');
   await settle(page);
   const result = await page.evaluate(() => {
     const nav = document.querySelector('body > nav.cz-bottom-nav');
