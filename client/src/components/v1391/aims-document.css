@@ -30,3 +30,5 @@
 /* A filtered day must not label the other days as missing programming. */
 .cc-aims-document[data-document-scope="day"] .cc-doc-sheet { width:320px !important; }
 .cc-aims-document[data-document-scope="day"] .cc-doc-strip { grid-template-columns:minmax(0,1fr); }
+/* The app's important neutral button border must not erase the official accent. */
+html body #root .cz-app[data-version] .cc-aims-document .cc-doc-token button { border-left:5px solid var(--legend-accent) !important; }
