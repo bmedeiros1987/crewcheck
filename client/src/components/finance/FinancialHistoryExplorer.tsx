@@ -106,6 +106,8 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   const graph=<details className="cz-toolbox cc-financial-graph" onToggle={event=>setExpanded(event.currentTarget.open)}>
     <summary>Demonstrativo e gráficos · previsões</summary>
     <p>Reprocessado pelo motor atual. Previsto não significa recebido. Sem fonte de confirmação de pagamentos; demonstrativos oficiais permanecem separados.</p>
+    {kind==='month'&&<button type="button" onClick={()=>setKind('year')}>Comparar meses do ano</button>}
+    {numeric.length>=2&&<p>Maior previsão: {numeric.filter(item=>item.values[displayedCurrency]===max).map(item=>item.title).join(', ')}. Comparação apenas entre períodos completos disponíveis em {displayedCurrency}.</p>}
     <label>Comparar por<select aria-label="Agrupamento do gráfico" value={comparison} onChange={event=>setComparison(event.target.value as 'month'|'week')}><option value="month">Mês</option>{mode==='allowance'&&periodMetric&&<option value="week">Semana</option>}</select></label>
     <p>Comparação: {comparisonRange.start} até {comparisonRange.end}. Moeda original: {displayedCurrency}. {comparison==='week'?'Semanas de quarta a terça; recortes parciais identificados.':''}</p>
     {currencies.length>1&&<label>Moeda do gráfico<select aria-label="Moeda do gráfico" value={displayedCurrency} onChange={event=>setCurrency(event.target.value)}>{currencies.map(value=><option key={value}>{value}</option>)}</select></label>}
