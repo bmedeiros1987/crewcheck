@@ -114,8 +114,10 @@ async function contrast(page) {
    assert.equal(await page.locator('.cc-per-diem-content details[open]').count(),0);
    assert.equal(await page.locator('.cc-per-diem-summary .cz-kpi').count(),1);
    const alignment=await page.evaluate(()=>{const a=document.querySelector('.cz-global-header').getBoundingClientRect(),b=document.querySelector('.cc-per-diem-content').getBoundingClientRect();const panels=Array.from(document.querySelector('.cc-per-diem-content').children).map(e=>{const r=e.getBoundingClientRect();return{className:e.className,x:r.x,width:r.width}});return{header:{x:a.x,width:a.width},content:{x:b.x,width:b.width},panels};});
-   assert.ok(Math.abs(alignment.header.x-alignment.content.x)<=1&&Math.abs(alignment.header.width-alignment.content.width)<=1,'content aligns with actual global header');
-   assert.ok(alignment.panels.every(panel=>Math.abs(panel.x-alignment.header.x)<=1&&Math.abs(panel.width-alignment.header.width)<=1),'visible panels align with actual header after animations settle: '+JSON.stringify(alignment));
+   // Fixed navigation is viewport-relative; at CSS zoom the flow content keeps
+   // its shell padding. Require the same center and containment, not equal widths.
+   assert.ok(Math.abs((alignment.header.x+alignment.header.width/2)-(alignment.content.x+alignment.content.width/2))<=1&&alignment.content.width<=alignment.header.width+1,'content centered within fixed navigation: '+JSON.stringify(alignment));
+   assert.ok(alignment.panels.every(panel=>Math.abs(panel.x-alignment.content.x)<=1&&Math.abs(panel.width-alignment.content.width)<=1),'visible panels align with actual content frame after animations settle: '+JSON.stringify(alignment));
    const name=theme+'-'+label;await page.screenshot({path:path.join(out,name+'-summary.png')});
    await page.locator('.cc-per-diem-periods > summary').click();await page.locator('.cc-per-diem-items > summary').click();await settle(page);
    const rows=page.locator('.cc-per-diem-content .cz-finance-row'),count=await rows.count();
