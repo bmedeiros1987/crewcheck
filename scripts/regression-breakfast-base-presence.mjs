@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { loadClientModules } from './lib/ts-module-harness.mjs';
 
-const modules = loadClientModules({ files: ['client/src/lib/compensationPolicy.ts', 'client/src/lib/financialJourneyGrouping.ts', 'client/src/lib/financialForecastPeriods.ts', 'client/src/lib/financialAmounts.ts'], prefix: 'synthetic-operational-clock-' });
+const modules = loadClientModules({ files: ['client/src/lib/financialIntervalEvidence.ts', 'client/src/lib/compensationPolicy.ts', 'client/src/lib/financialJourneyGrouping.ts', 'client/src/lib/financialForecastPeriods.ts', 'client/src/lib/financialAmounts.ts'], prefix: 'synthetic-operational-clock-' });
 try {
   const policy = modules.load('compensationPolicy');
   const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
@@ -12,18 +12,18 @@ try {
   const names = ['eventStartDateTime', 'eventEndDateTime', 'calculatePerDiem'];
   const functions = ast.statements.filter(n => ts.isFunctionDeclaration(n) && names.includes(n.name?.text));
   assert.equal(functions.length, names.length);
-  const context = vm.createContext({ ...policy, ...modules.load('financialJourneyGrouping'), ...modules.load('financialForecastPeriods'), ...modules.load('financialAmounts'),
+  const context = vm.createContext({ ...(fs.existsSync('client/src/lib/financialIntervalEvidence.ts') ? modules.load('financialIntervalEvidence') : {}), ...policy, ...modules.load('financialJourneyGrouping'), ...modules.load('financialForecastPeriods'), ...modules.load('financialAmounts'),
     perDiemConfig: () => ({ rates: { domestic: { mainMeal: 100, currency: 'BRL', label: 'SYNTHETIC' }, foreign: { mainMeal: 20, currency: 'USD', label: 'SYNTHETIC' } }, domesticBreakfast: 25, domesticMainMealSource: 'synthetic', domesticBreakfastSource: 'synthetic', breakfastPercent: .25, exchangeRates: { BRL: 1 }, source: 'SYNTHETIC — not a tariff', act: { version: 'SYNTHETIC' } }),
     loadAirportPerDiemOverrides: () => ({}), resolvePerDiemRule: origin => ({ rateKey: origin === 'INT' ? 'foreign' : 'domestic', airport: origin, reason: 'synthetic fixture' }),
     isOperationalEvent: () => true, financialEventCode: e => e.day.type, readOptionalNumberSetting: () => null,
     dateChip: d => d.toISOString().slice(0, 10), moneyCurrency: (v, c) => `${c} ${v}`,
   });
   vm.runInContext(ts.transpileModule(functions.map(n => n.getText(ast)).join('\n') + '\nglobalThis.calculate=calculatePerDiem;', { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
-  const event = (id, start, end, report, kind = 'flight', origin = 'BSB') => ({ id, kind, origin, destination: 'BSB', presentation: report, day: { date: '05/10/2032', type: kind === 'flight' ? 'VOO' : 'ASB', dutyReport: report }, canonical: { kind, journeyId: id, startDateTime: start, endDateTime: end } });
+  const event = (id, start, end, report, kind = 'flight', origin = 'BSB') => ({ id, kind, origin, destination: 'BSB', presentation: report, day: { date: '05/10/2032', type: kind === 'flight' ? 'VOO' : 'ASB', dutyReport: report,dutyDebrief:end.slice(11,16),dutyReportSource:'published',dutyDebriefSource:'published' }, canonical: { kind, journeyId: id, startDateTime: start, endDateTime: end,leg:kind==='flight'?{departureTime:start.slice(11,16),arrivalTime:end.slice(11,16)}:undefined } });
   process.env.TZ = process.env.BREAKFAST_DEVICE_TZ || 'America/Sao_Paulo';
   const roster = { year: 2032, month: 10, base: 'BSB' };
   const instant = clock => `2032-10-05T${clock}:00-03:00`;
-  const flight = (id, origin, destination, departure, arrival, report='04:05') => ({ ...event(id,instant(departure),instant(arrival),report), origin, destination, day:{type:'VOO',dutyReport:report}, canonical:{kind:'flight',journeyId:'SYN-DUTY',startDateTime:instant(departure),endDateTime:instant(arrival)} });
+  const flight = (id, origin, destination, departure, arrival, report='04:05') => ({ ...event(id,instant(departure),instant(arrival),report), origin, destination, day:{type:'VOO',dutyReport:report,dutyReportSource:'published'}, canonical:{kind:'flight',journeyId:'SYN-DUTY',startDateTime:instant(departure),endDateTime:instant(arrival),leg:{departureTime:departure,arrivalTime:arrival}} });
   const run = events => context.calculate(events, roster, new Date('2032-10-06T12:00:00-03:00'));
   const evidence = [];
   const check = (name, events, expected, evidenceId) => {
