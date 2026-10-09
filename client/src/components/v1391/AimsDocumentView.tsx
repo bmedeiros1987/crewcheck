@@ -48,7 +48,24 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
   useEffect(() => { if (selected && detail.current) { detail.current.focus({ preventScroll: true }); detail.current.scrollIntoView({ block: 'start', behavior: 'instant' }); } }, [selected]);
   const consumed = useRef<string>();
   useEffect(() => { if (focusEventId && consumed.current !== focusEventId) { const event = events.find(e => e.id === focusEventId); if (event) { consumed.current = focusEventId; open(event); } } }, [focusEventId, events]);
-  function close() { setSelection(null); requestAnimationFrame(() => opener.current?.focus()); }
+  function close() {
+    setSelection(null);
+    requestAnimationFrame(() => {
+      const target = opener.current; if (!target?.isConnected) return;
+      target.focus({ preventScroll: true });
+      target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+      requestAnimationFrame(() => {
+        if (!target.isConnected) return;
+        const rect = target.getBoundingClientRect();
+        const header = document.querySelector('.cz-global-header')?.getBoundingClientRect();
+        const footer = document.querySelector('body > nav.cz-bottom-nav')?.getBoundingClientRect();
+        const top = Math.max(0, header?.bottom || 0) + 12;
+        const bottom = Math.min(window.innerHeight, footer?.top ?? window.innerHeight) - 12;
+        const delta = rect.top < top || rect.height > bottom - top ? rect.top - top : rect.bottom > bottom ? rect.bottom - bottom : 0;
+        if (delta) window.scrollBy({ top: delta, behavior: 'instant' });
+      });
+    });
+  }
   function changeZoom(value: number, anchorX?: number, centerX?: number) {
     const frame = viewport.current; const next = bounded(value); setZoom(next); setFit(false);
     if (frame) { const center = centerX ?? frame.clientWidth / 2; const anchor = anchorX ?? (frame.scrollLeft + center) / zoom; requestAnimationFrame(() => { frame.scrollLeft = anchor * next - center; }); }
