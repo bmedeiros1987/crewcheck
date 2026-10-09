@@ -1,0 +1,11 @@
+# Company transport reference adapter (draft)
+
+This change adds an explicit reference-only company transport choice to Smart Departure. It does not connect a provider or publish an operating timetable. The default catalogue is empty. No source table, passenger eligibility or base coverage is embedded in the repository, application bundle or CI.
+
+`shared/companyTransport.mjs` accepts a caller-owned catalogue with versioned records: operator, direction, ordered boarding points, service weekdays (0=Sunday), dated exceptions, IANA timezone, validity, provenance and eligibility. Trip values are service-day local seconds, including next-day values; they are displayed as planned times, never converted into a feasible route, live status, journey duration or departure from home. Repeated physical stops require separate occurrence IDs. The caller must explicitly select reference, service date, origin and later destination. Unknown scope, reverse direction, ambiguous IDs or malformed records produce no reference. Calendar exclusions and out-of-validity dates produce no planned departures.
+
+Even confirmed calendar validity and eligibility leave operation `unknown` and recommendation `unconfirmed`. Company mode bypasses route preview, location refresh and flight-positioning discovery; it does not expose stop notification controls or borrow car/public-transit duration. Existing outer home-standby eligibility remains intact.
+
+Activation requires an authorized private, user-scoped source delivery path and confirmed publication scope, origin/date, effective dates, eligible companies/bases, reservation rules, boarding details and holiday exceptions. The UI accepts explicit catalogue/query props as an integration seam; the current application supplies neither. No storage, endpoint, notification delivery, dependency, permission or paid service is added. Source access and operating confirmation require separate reviewed work.
+
+Validation uses fictional operators, stops, times and calendars only. The UI regression executes the actual company-mode effects and component/estimator, checking no route/location/positioning calls, no route preview, no departure/duration, no stop-alert control and no driving cache write. Existing transit, standby and route race contracts remain enabled.

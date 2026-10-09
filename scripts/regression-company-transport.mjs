@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+import vm from 'node:vm';
+import { companyTransportPresentation } from '../shared/companyTransport.mjs';
+const reference = { schemaVersion: 1, id: 'synthetic', operator: 'Fictional shuttle', direction: 'Alpha → Beta', timeZone: 'America/Sao_Paulo', provenance: { label: 'Synthetic fixture' }, validity: { status: 'unknown' }, eligibility: { status: 'unknown', description: 'Verify fictional access' }, days: [1,2,3,4,5], exceptions: [{date:'2026-10-12',runs:false,note:'Fictional holiday'}], stops: [{id:'a',label:'Alpha',boardingPoint:'Fictional gate A'},{id:'b',label:'Beta',boardingPoint:'Fictional gate B'}], trips: [[28800,30600],[90000,91800]] };
+const query={referenceId:'synthetic',serviceDate:'2026-10-09',originStopId:'a',destinationStopId:'b'};
+const evaluate=(item=reference,q=query)=>companyTransportPresentation([item],q);
+for (const catalogue of [[], [reference]]) {
+  const missingQuery = companyTransportPresentation(catalogue, null);
+  assert.equal(missingQuery.operational, 'unknown');
+  assert.equal(missingQuery.recommendation, 'unconfirmed');
+  assert.equal(missingQuery.leaveAt, null);
+  assert.equal(missingQuery.travelMinutes, null);
+  assert.deepEqual(missingQuery.references, []);
+}
+assert.equal(evaluate().references[0].plannedTimes.length,2);
+assert.equal(evaluate().recommendation,'unconfirmed');assert.equal(evaluate().operational,'unknown');assert.equal(evaluate().leaveAt,null);assert.equal(evaluate().travelMinutes,null);
+assert.equal(evaluate(reference,{...query,originStopId:'home'}).references.length,0);
+assert.equal(evaluate(reference,{...query,originStopId:'b',destinationStopId:'a'}).references.length,0);
+assert.equal(evaluate(reference,{...query,serviceDate:'2026-10-10'}).references[0].plannedTimes.length,0);
+assert.equal(evaluate(reference,{...query,serviceDate:'2026-10-12'}).references[0].plannedTimes.length,0);
+assert.equal(evaluate({...reference,exceptions:[{date:'2026-10-10',runs:true,note:'Fictional extra day'}]},{...query,serviceDate:'2026-10-10'}).references[0].plannedTimes.length,2);
+for(const item of [null,{}, {...reference,timeZone:'Invalid/Zone'},{...reference,trips:[[30600,28800]]},{...reference,trips:[[28800]]},{...reference,trips:[[-1,1]]},{...reference,days:[7]},{...reference,exceptions:[{date:'2026-02-30',runs:true,note:'bad'}]},{...reference,validity:{status:'confirmed',from:'2026-11-01',until:'2026-10-01'}}])assert.equal(evaluate(item).references.length,0);
+assert.equal(evaluate(reference,{...query,serviceDate:'nonsense'}).references.length,0);
+assert.equal(evaluate(reference,{...query,serviceDate:'2026-02-30'}).references.length,0);
+assert.equal(companyTransportPresentation([reference,reference],query).references.length,0);
+const confirmed={...reference,validity:{status:'confirmed',from:'2026-10-01',until:'2026-10-09'},eligibility:{status:'confirmed',description:'Fictional verified access'}};
+assert.equal(evaluate(confirmed).recommendation,'unconfirmed','calendar/access never confirm operation');
+assert.equal(evaluate(confirmed,{...query,serviceDate:'2026-10-13'}).references[0].plannedTimes.length,0);
+// Render the real component, without network or catalogue persistence.
+const source=fs.readFileSync('client/src/components/CompanyTransportReference.tsx','utf8');
+const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
+const exports={};const react={createElement:(type,props,...children)=>({type,props,children})};
+vm.runInNewContext(compiled,{exports,require:name=>name==='react'?react:{companyTransportPresentation}});
+const flatten=node=>node==null?'':Array.isArray(node)?node.map(flatten).join(' '):typeof node==='object'?flatten(node.children):String(node);
+const rendered=flatten(exports.default({catalogue:[reference],query}));
+for(const phrase of ['Synthetic fixture','não confirmada','Fictional gate A','America/Sao_Paulo','(+1 dia)','2026-10-12','funcionamento não confirmado'])assert.ok(rendered.includes(phrase),phrase);
+assert.ok(flatten(exports.default({})).includes('ainda não habilitados'));
+console.log('PASS synthetic company catalogue, calendar/exceptions, explicit stops/direction, validity, overnight, malformed inputs, unknown gate and real reference UI.');
