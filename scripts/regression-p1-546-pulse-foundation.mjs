@@ -31,9 +31,10 @@ const main = fs.readFileSync('client/src/main.tsx', 'utf8');
 assert.match(home, /<InternalHeaderFrame>\s*<Brand back=\{view !== 'cockpit'\} onMenu=\{view === 'cockpit' \? \(\) => setDrawer\(true\) : undefined\}\/>\s*<\/InternalHeaderFrame>/,
   'o header deve montar marca navegável e frame de avisos');
 assert.equal((home.match(/<InternalHeaderFrame>/g) || []).length, 1, 'a aplicação deve montar um único header global');
-assert.match(frame, /className="cz-global-header" data-global-internal-header="true">\{children\}<CrewCheckPulse compact\/>/,
-  'o frame deve preservar a marca e montar um único Pulse compacto');
+assert.match(frame, /className="cc-header-notice"><CrewCheckPulse compact\/>/,
+  'o frame deve montar um único Pulse fora da navegação fixa');
 assert.equal((frame.match(/<CrewCheckPulse\b/g) || []).length, 1, 'não duplicar a superfície de aviso');
+assert.match(frame, /className="cz-global-header" data-global-internal-header="true">\{children\}<\/div>/, 'somente navegação pertence ao header fixo');
 assert.ok(!/<Brand pulse(?:\s|=)/.test(home), 'Brand não deve montar outro Pulse além do frame');
 assert.ok(
   !home.includes('<CrewCheckPulse/>'),

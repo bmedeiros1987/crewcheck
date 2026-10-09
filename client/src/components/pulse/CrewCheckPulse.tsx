@@ -66,8 +66,8 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
 
   const dismiss = useCallback(() => {
     if (compact && compactRef.current?.contains(document.activeElement)) {
-      const target = queued > 0 ? detailsRef.current : compactRef.current.closest('.cz-global-header')?.querySelector<HTMLButtonElement>('.cz-brand-row button');
-      target?.focus();
+      const target = queued > 0 ? detailsRef.current : compactRef.current.closest('.cz-app')?.querySelector<HTMLButtonElement>('.cz-global-header .cz-brand-row button');
+      target?.focus({ preventScroll: true });
     }
     setExpanded(false);
     dismissCrewCheckPulse();
@@ -92,7 +92,14 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
     setExpanded(false);
   };
 
-  const toggleDetails = () => setExpanded((value) => !value);
+  const collapseDetails = () => {
+    setExpanded(false);
+    requestAnimationFrame(() => {
+      detailsRef.current?.focus({ preventScroll: true });
+      detailsRef.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
+    });
+  };
+  const toggleDetails = () => expanded ? collapseDetails() : setExpanded(true);
 
   if (compact) {
     return (
@@ -102,8 +109,7 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
         onKeyDown={(event) => {
           if (event.key === 'Escape' && expanded) {
             event.preventDefault();
-            setExpanded(false);
-            detailsRef.current?.focus();
+            collapseDetails();
           }
         }}
         data-tone={tone}
@@ -137,11 +143,12 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
         </button>
         {expanded && (
           <div id={detailsId} className="cc-pulse-popover">
-            <div className="cc-pulse-popover-copy">
+            <div className="cc-pulse-popover-copy" tabIndex={0} role="region" aria-label="Detalhes do alerta CrewCheck">
               {message.detail && <small>{message.detail}</small>}
               {message.action?.view && <button type="button" className="cc-pulse-action" onClick={act}>{message.action.label}</button>}
             </div>
             <div className="cc-pulse-controls">
+              <button type="button" className="cc-pulse-collapse" onClick={collapseDetails} aria-label="Recolher detalhes do aviso"><ChevronDown size={16} aria-hidden="true"/></button>
               {message.dismissible !== false && (
                 <button type="button" className="cc-pulse-dismiss" onClick={dismiss} aria-label="Dispensar aviso">
                   <X size={16}/>
