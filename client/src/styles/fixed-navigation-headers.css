@@ -13,8 +13,6 @@ html body #root .cz-app[data-version] > .cz-global-header {
 .cc-fixed-header-space { flex: 0 0 auto; }
 html body #root .cz-app[data-version] .cz-menu-panel {
   overflow: hidden !important;
-  height: 100dvh !important;
-  max-height: 100dvh !important;
 }
 html body #root .cz-app[data-version] .cz-menu-panel > :is(.cz-menu-header, #cc-menu-fixed-heading) {
   flex: 0 0 auto !important;
