@@ -9,7 +9,7 @@
 .cc-doc-viewport:focus-visible, .cc-doc-toolbar button:focus-visible, .cc-doc-token button:focus-visible, .cc-doc-detail:focus { outline:3px solid var(--ccr-cyan); outline-offset:2px; }
 .cc-doc-scaled { position:relative; }
 .cc-doc-sheet { position:absolute; top:0; left:0; width:1120px; transform-origin:top left; padding:12px; box-sizing:border-box; background:var(--ccr-panel); }
-.cc-doc-strip { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); align-items:stretch; border-bottom:2px solid var(--ccr-line); }
+.cc-doc-strip { display:grid; grid-template-columns:repeat(var(--doc-days),minmax(0,1fr)); align-items:stretch; border-bottom:2px solid var(--ccr-line); }
 .cc-doc-day { min-width:0; border-right:1px solid var(--ccr-line); padding:6px; }
 .cc-doc-day h3 { font-size:1rem; margin:0 0 8px; padding:6px; text-align:center; color:var(--ccr-title); border-bottom:1px solid var(--ccr-line); }
 .cc-doc-day h3 small { display:block; font-size:.875rem; }
@@ -24,11 +24,14 @@
 .cc-doc-detail { margin:1rem 0; padding:8px; scroll-margin-top:calc(var(--cc-fixed-header-height,90px) + var(--cc-safe-area-top, env(safe-area-inset-top, 0px)) + 12px); }
 @media (prefers-reduced-motion:reduce) { .cc-doc-viewport { scroll-behavior:auto; } }
 /* The document owns its canvas width; responsive shell max-width rules must
-   constrain the viewport, not squeeze the seven published day columns. */
-.cc-aims-document .cc-doc-sheet { width:1120px !important; max-width:none !important; }
+   constrain the viewport, not squeeze the published day columns. */
+.cc-aims-document .cc-doc-sheet { width:var(--doc-width) !important; max-width:none !important; }
 
 /* A filtered day must not label the other days as missing programming. */
 .cc-aims-document[data-document-scope="day"] .cc-doc-sheet { width:320px !important; }
 .cc-aims-document[data-document-scope="day"] .cc-doc-strip { grid-template-columns:minmax(0,1fr); }
 /* The app's important neutral button border must not erase the official accent. */
 html body #root .cz-app[data-version] .cc-aims-document .cc-doc-token button { border-left:5px solid var(--legend-accent) !important; }
+
+.cc-doc-picker { display:block; margin:.5rem 0; }
+.cc-doc-picker select { display:block; width:100%; min-height:44px; font:inherit; color:var(--ccr-title); background:var(--ccr-panel); }

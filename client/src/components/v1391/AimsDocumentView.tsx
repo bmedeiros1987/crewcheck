@@ -6,7 +6,7 @@ import './aims-document.css';
 
 type Event = ComponentProps<typeof AimsRosterTable>['events'][number];
 type Description = { mode: string; label: string };
-const MIN_ZOOM = .75, MAX_ZOOM = 2;
+const MIN_ZOOM = .01, MAX_ZOOM = 2;
 const bounded = (value: number) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value));
 const code = (event: Event) => event.flightNumber || event.day?.pairingCode || event.day?.type || event.title || 'Programação';
 // Keep source clocks intact: suffixes such as (+1) and explicit unknowns matter.
@@ -19,14 +19,14 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
 }) {
   const id = useId(), viewport = useRef<HTMLDivElement>(null), sheet = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLDivElement>(null), opener = useRef<HTMLButtonElement | null>(null);
-  const [zoom, setZoom] = useState(1), [size, setSize] = useState({ width: 1120, height: 0 });
+  const [zoom, setZoom] = useState(1), [size, setSize] = useState({ width: 3744, height: 0 });
   const [selection, setSelection] = useState<{ event: Event; owner: string | null } | null>(null);
   const owner = getStoredUser()?.id || null;
   const selected = selection?.owner === owner && events.includes(selection.event) ? selection.event : null;
   const suppressUntil = useRef(0), mouse = useRef<{ x: number; scroll: number; moved: boolean } | null>(null);
   const pinch = useRef<{ distance: number; zoom: number; anchor: number; center: number } | null>(null);
   const touch = useRef<{ x: number; y: number } | null>(null);
-  const [fit, setFit] = useState(false);
+  const [fit, setFit] = useState(true);
   const dates = useMemo(() => {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return [];
     const [year, m] = month.split('-').map(Number);
@@ -35,7 +35,7 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
   }, [month, day]);
   const groups = useMemo(() => dates.map(iso => ({ iso, entries: events.map((event, index) => ({ event, index })).filter(({ event }) => rosterDisplayIso(event) === iso) })), [dates, events]);
   const outside = events.filter(event => !dates.includes(rosterDisplayIso(event) || ''));
-  useEffect(() => { setSelection(null); setZoom(1); setFit(false); if (viewport.current) viewport.current.scrollLeft = 0; }, [owner, month, day]);
+  useEffect(() => { setSelection(null); setZoom(1); setFit(true); if (viewport.current) viewport.current.scrollLeft = 0; }, [owner, month, day]);
   useEffect(() => {
     const el = sheet.current, frame = viewport.current;
     if (!el || !frame) return;
@@ -55,7 +55,7 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
   }
   function touchDistance(list: React.TouchList) { return Math.hypot(list[0].clientX - list[1].clientX, list[0].clientY - list[1].clientY); }
   return <section className="cc-aims-document" data-document-scope={day ? 'day' : 'month'} aria-label="Documento interativo da escala">
-    <header><h2>Escala em documento</h2><p>Dias publicados em faixas. Toque numa programação para abrir os mesmos detalhes do AIMS.</p></header>
+    <header><h2>Escala em documento</h2><p>Mês inteiro em colunas contínuas. Toque numa programação para abrir os mesmos detalhes do AIMS.</p></header>
     <div className="cc-doc-toolbar" role="group" aria-label="Ampliar documento">
       <button type="button" aria-label="Diminuir documento" disabled={zoom <= MIN_ZOOM} onClick={() => changeZoom(zoom - .25)}>−</button>
       <output aria-live="polite">{Math.round(zoom * 100)}%</output>
@@ -63,7 +63,8 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
       <button type="button" onClick={() => { setFit(true); if (viewport.current) { setZoom(bounded(viewport.current.clientWidth / size.width)); viewport.current.scrollLeft = 0; } }}>Ajustar</button>
       <button type="button" onClick={() => { changeZoom(1); if (viewport.current) viewport.current.scrollLeft = 0; }}>100%</button>
     </div>
-    <p id={`${id}-help`} className="cc-doc-help">Arraste lateralmente para percorrer os dias; deslize na vertical para continuar a página. Use dois dedos ou +/− para ampliar. O ajuste mantém texto e alvos legíveis; em telas pequenas, percorra a faixa lateralmente.</p>
+    <p id={`${id}-help`} className="cc-doc-help">Arraste lateralmente para percorrer os dias; deslize na vertical para continuar a página. Use dois dedos ou +/− para ampliar. Ajustar mostra o mês inteiro. Amplie para ler; os detalhes também podem ser abertos pelo seletor abaixo.</p>
+    <label className="cc-doc-picker">Abrir programação publicada<select aria-label="Abrir programação publicada" value="" onChange={e=>{const index=Number(e.target.value);if(e.target.value!==''&&events[index])open(events[index]);}}><option value="">Escolher programação</option>{events.map((event,index)=><option key={index} value={index}>{rosterDisplayIso(event) || 'Data não informada'} · {describe(event).label} · {code(event)}</option>)}</select></label>
     {!events.length && <p role="status">Nenhuma programação informada no período selecionado.</p>}
     <div ref={viewport} className="cc-doc-viewport" tabIndex={0} role="region" aria-label="Dias do documento; rolagem horizontal" aria-describedby={`${id}-help`}
       onKeyDown={event => { if (event.target !== event.currentTarget) return; if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') { event.preventDefault(); event.currentTarget.scrollLeft += event.key === 'ArrowRight' ? 160 : -160; } if (event.key === 'Home') { event.preventDefault(); event.currentTarget.scrollLeft = 0; } if (event.key === 'End') { event.preventDefault(); event.currentTarget.scrollLeft = event.currentTarget.scrollWidth; } }}
@@ -75,9 +76,9 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
       onTouchMove={event => { const list = event.touches; if (list.length === 2 && pinch.current) { const start = pinch.current; changeZoom(start.zoom * touchDistance(list) / Math.max(1, start.distance), start.anchor, start.center); suppressUntil.current = performance.now() + 1000; } else if (list.length === 1 && touch.current && Math.hypot(list[0].clientX - touch.current.x, list[0].clientY - touch.current.y) > 8) suppressUntil.current = performance.now() + 350; }}
       onTouchEnd={() => { if (pinch.current) suppressUntil.current = performance.now() + 350; pinch.current = null; touch.current = null; }} onTouchCancel={() => { pinch.current = null; touch.current = null; suppressUntil.current = performance.now() + 350; }}>
       <div className="cc-doc-scaled" style={{ width: size.width * zoom, height: size.height * zoom }}>
-        <div ref={sheet} className="cc-doc-sheet" style={{ transform: `scale(${zoom})` }}>
-          {Array.from({ length: Math.ceil(groups.length / 7) }, (_, week) => <div className="cc-doc-strip" key={week}>
-            {groups.slice(week * 7, week * 7 + 7).map(group => <section key={group.iso} className="cc-doc-day" data-roster-iso={group.iso} aria-label={`Dia ${group.iso}`}>
+        <div ref={sheet} className="cc-doc-sheet" style={{ transform: `scale(${zoom})`, '--doc-width': `${groups.length * 120 + 24}px`, '--doc-days':groups.length } as React.CSSProperties}>
+          {<div className="cc-doc-strip">
+            {groups.map(group => <section key={group.iso} className="cc-doc-day" data-roster-iso={group.iso} aria-label={`Dia ${group.iso}`}>
               <h3><time dateTime={group.iso}>{group.iso.slice(8)}/{group.iso.slice(5, 7)}</time><small>{new Intl.DateTimeFormat('pt-BR', { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${group.iso}T12:00:00Z`))}</small></h3>
               {group.entries.map(({ event, index }) => { const meta = describe(event); return <div className="cc-doc-entry cc-roster-legend-v1397" key={index}>
                 <span data-mode={meta.mode} className="cc-doc-token"><button type="button" data-roster-event-id={event.id} data-event-index={index} aria-label={`${meta.label}: ${code(event)}, dia ${group.iso}. Abrir detalhes publicados`} aria-expanded={selected === event} onClick={e => open(event, e.currentTarget)}>
@@ -89,7 +90,7 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
               </div>; })}
               {!group.entries.length && <p className="cc-doc-empty">Sem programação informada</p>}
             </section>)}
-          </div>)}
+          </div>}
         </div>
       </div>
     </div>
