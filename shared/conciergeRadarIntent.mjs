@@ -10,6 +10,7 @@ export function radarCivilDate(value) {
 export function radarReadIntent(text = '') {
   const normalized = fold(text), original = clean(text, 600);
   // Gate/terminal words in corporate ground transport are not flight queries.
+  if (/^\/transporte_empresa(?:@\w+)?(?:\s|$)/.test(normalized)) return null;
   const radarCommand = /^\/(?:radar|portao|portão)(?:@\w+)?(?:\s|$)/.test(normalized);
   if (!radarCommand && /\b(?:onibus|van|vans|transporte)\b/.test(normalized) && /\b(?:empresa|latam|intersites|corporativo|corporativa)\b/.test(normalized)) return null;
   if (/^(?:\/voos_seguidos(?:@\w+)?|(?:meus )?voos (?:seguidos|que sigo)|voo que (?:eu )?sigo)[?.!]*$/.test(normalized)) return { kind: 'followed' };

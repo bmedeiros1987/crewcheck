@@ -57,7 +57,7 @@ assert.equal(response.status,200);assert.match(response.payload.reply,/Não há 
 assert.equal(normalizations,0);assert.equal(writes,0);
 assert.equal(wrapperInputs.length,0,'Radar returns before generic wrapper and effects');
 const beforeCorporateReads=reads;
-for(const text of ['van da LATAM no portão B12 em 2026-10-09','ônibus LATAM no terminal C3 em 2026-10-09','van intersites no portão B12 em 2026-10-09','transporte intersites no terminal C3 em 2026-10-09']) {
+for(const text of ['van da LATAM no portão B12 em 2026-10-09','ônibus LATAM no terminal C3 em 2026-10-09','van intersites no portão B12 em 2026-10-09','transporte intersites no terminal C3 em 2026-10-09','/transporte_empresa@fixture_bot portão B12 em 2026-10-09']) {
   endpointBody={text,...(transportModule ? {location:{latitude:-23,longitude:-46}} : {})};
   await endpoint.handleTelegramConciergeAsk({method:'POST'},{});
   assert.equal(response.status,200);assert.equal(wrapperInputs.at(-1),text);

@@ -10,6 +10,7 @@ assert.equal(radarReadIntent('Como pegar o ônibus?'),null);
 for (const text of ['ônibus da empresa do terminal 1 para terminal 2 em 2026-10-09', 'van da empresa no portão 2', 'ônibus da empresa no gate G31234', 'qual terminal do hotel?', 'portão do ônibus']) assert.equal(radarReadIntent(text),null);
 assert.equal(radarReadIntent('terminal do voo LA1234 em 2026-10-09').flight,'LA1234');
 for (const text of ['van da LATAM no portão B12 em 2026-10-09','ônibus LATAM no terminal C3 em 2026-10-09','van intersites no portão B12 em 2026-10-09','transporte intersites no terminal C3']) assert.equal(radarReadIntent(text),null);
+assert.equal(radarReadIntent('/transporte_empresa@fixture_bot portão B12 em 2026-10-09'),null);
 assert.equal(radarReadIntent('status do voo LATAM LA1234 em 2026-10-09').flight,'LA1234');
 for (const text of ['status do meu plano','informações do hotel','qual a próxima programação','meu próximo voo','horário da van']) assert.equal(radarReadIntent(text),null);
 assert.equal(radarReadIntent('status do voo 1234').flight,'','never infer LATAM');
