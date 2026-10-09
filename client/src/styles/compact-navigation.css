@@ -160,11 +160,12 @@ html body #root .cz-app[data-version] .cc-money-token {
   overflow-wrap: normal !important;
   word-break: normal !important;
 }
-html:is([data-crew-text-size="150"], [data-crew-text-size="200"]) body #root .cz-app[data-version] .cc-per-diem-content .cz-kpi > div {
+html body #root .cz-app[data-version] .cc-per-diem-content .cz-kpi > div,
+html body #root .cz-app[data-version] .cc-per-diem-content .cz-finance-row b {
   container-type: inline-size;
 }
-html:is([data-crew-text-size="150"], [data-crew-text-size="200"]) body #root .cz-app[data-version] .cc-per-diem-content .cc-money-token {
-  font-size: min(calc(1rem * var(--cc-text-scale)), calc(150cqi / var(--cc-money-chars))) !important;
+html body #root .cz-app[data-version] .cc-per-diem-content .cc-money-token {
+  font-size: min(1em, calc(150cqi / var(--cc-money-chars))) !important;
 }
 html:is([data-crew-text-size="150"], [data-crew-text-size="200"]) body #root .cz-app[data-version] .cc-per-diem-content .cz-finance-row {
   grid-template-columns: minmax(0, 1fr) !important;

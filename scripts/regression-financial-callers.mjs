@@ -51,6 +51,11 @@ try {
     KpiCard: props => React.createElement('article', null, props.title, ': ', props.value, ' — ', props.detail),
     BriefcaseBusiness: () => null, CalendarDays: () => null, Plane: () => null, DollarSign: () => null,
   });
+  // Include the real monetary presentation component used by the extracted caller.
+  if (home.includes('MoneyText')) {
+    const source = fs.readFileSync('client/src/components/MoneyText.tsx', 'utf8').replace(/^import.*$/gm, '').replace('export default function', 'function');
+    vm.runInContext(ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText, context);
+  }
   const compiled = ts.transpileModule(functions.map(node => node.getText(ast)).join('\n')
     + `\nglobalThis.subject = { perDiemConfig, calculatePerDiem, PerDiemView: ${monthlyViewName} };`,
   { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText;
