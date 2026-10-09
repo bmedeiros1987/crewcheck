@@ -46,7 +46,7 @@ export function rosterOperationalDateAt(iso: string, hour: number, minute = 0): 
   return new Date(`${iso}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00-03:00`);
 }
 export function rosterPresentationBeforeDeparture(departure: Date, clock: string): Date | null {
-  const match = String(clock || '').match(/^(\d{1,2}):(\d{2})$/);
+  const match = String(clock || '').match(/^(\d{1,2}):(\d{2})(?:\(\+\d+\))?$/);
   if (!match || !Number.isFinite(departure.getTime())) return null;
   const start = rosterOperationalDateAt(rosterOperationalIso(departure), Number(match[1]), Number(match[2]));
   if (!Number.isFinite(start.getTime())) return null;

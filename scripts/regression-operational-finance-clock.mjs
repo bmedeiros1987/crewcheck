@@ -67,6 +67,13 @@ try {
       {...rawDay,legs:[{...rawDay.legs[0],arrivalTime:''}]},
       {...rawDay,legs:[rawDay.legs[0],{flightNumber:'QA-BAD',origin:'GRU',destination:'BSB',departureTime:'08:00',arrivalTime:'99:99',duration:1}]},
     ];
+
+    const incompleteDuplicate={...rawDay,legs:[rawDay.legs[0],{flightNumber:'QA-INVALID-DUPLICATE',origin:'GRU',destination:'BSB',departureTime:'08:00',arrivalTime:'99:99',duration:1}]};
+    for(const days of [[rawDay,incompleteDuplicate],[incompleteDuplicate,rawDay]]) {
+      const normal=canonical.normalizeRosterDays({...roster,days});const e=canonical.buildCanonicalRosterEvents(normal).filter(e=>e.kind==='flight').map(e=>({...e,canonical:e,day:e.publishedDay}));const f=context.calculate(e,normal,now);assert.equal(f.monthly,null);assert.equal(f.monthlySummary.convertedComplete,false);assert.equal(f.rows.length,0,'dedup uncertainty preserved in both input orders');
+    }
+    const offsetDay={...rawDay,dutyReport:'21:10',dutyDebrief:'01:00(+1)',legs:[{flightNumber:'QA-OFFSET',origin:'GRU',destination:'BSB',departureTime:'22:00',arrivalTime:'00:30(+1)',duration:2.5,isNextDay:true}]};
+    const offsetRoster={...roster,days:[offsetDay]};const offsets=canonical.buildCanonicalRosterEvents(offsetRoster).filter(e=>e.kind==='flight').map(e=>({...e,canonical:e,day:e.publishedDay}));const of=context.calculate(offsets,offsetRoster,now);assert.equal(of.monthlySummary.convertedComplete,true);assert.equal(of.rows.some(row=>row.label==='Ceia'),true,'published(+1) arrival preserves supper eligibility');assert.equal(offsets[0].day.publishedClockEvidence.legs[0].arrivalTime,'00:30(+1)','offset source remains intact');
     for(const raw of cases) {
       const actualRoster={...roster,days:[raw]};
       const normalized=canonical.normalizeRosterDays(actualRoster);
