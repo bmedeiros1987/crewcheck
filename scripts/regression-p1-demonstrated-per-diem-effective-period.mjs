@@ -46,8 +46,8 @@ try {
     learnedBreakfast: null,
     breakfastPercent: 0.25,
   });
-  check('período confirmado usa os valores exatos do demonstrativo',
-    demonstrated.source === 'demonstrated' && demonstrated.mainMeal === 109.44 && demonstrated.breakfast === 27.36,
+  check('amostra legada sem owner não é aplicada globalmente',
+    demonstrated.source === 'act' && demonstrated.mainMeal === actBefore.mainMeal && demonstrated.breakfast === actBefore.breakfast,
     JSON.stringify(demonstrated));
 
   const manual = amounts.resolveDomesticPerDiemRate({
@@ -89,32 +89,32 @@ try {
   const total = amounts.roundCurrencyAmount(
     32 * demonstrated.mainMeal + 3 * demonstrated.breakfast,
   );
-  check('fechamento do demonstrativo permanece 3.584,16', total === 3584.16, String(total));
+  check('fallback não fabrica confirmação do documento', total === amounts.roundCurrencyAmount(32 * actBefore.mainMeal + 3 * actBefore.breakfast), String(total));
 
   const statement = [
     'DEMONSTRATIVO DE DIÁRIAS',
-    'De 2026-08-05 até 2026-09-01',
-    'Pagamento em 2026-09-05',
-    'ALMOCO R$ 109,44',
-    'JANTAR R$ 109,44',
-    'CAFE R$ 27,36',
-    'Total depositado R$ 3.584,16',
+    'De 2032-08-05 até 2032-09-01',
+    'Pagamento em 2032-09-05',
+    'ALMOCO R$ 100,00',
+    'JANTAR R$ 100,00',
+    'CAFE R$ 25,00',
+    'Total depositado R$ 3.275,00',
   ].join('\n');
   const learnedStatement = learning.learnPerDiemStatement(statement, 'statement.pdf');
   const lunch = learnedStatement.rates.find((rate) => rate.key === 'per_diem.lunch');
   const breakfast = learnedStatement.rates.find((rate) => rate.key === 'per_diem.breakfast');
   check('aprendizado grava início e fim do período',
-    lunch?.effectiveFrom === '2026-08-05' && lunch?.effectiveTo === '2026-09-01'
-      && breakfast?.effectiveFrom === '2026-08-05' && breakfast?.effectiveTo === '2026-09-01',
+    lunch?.effectiveFrom === '2032-08-05' && lunch?.effectiveTo === '2032-09-01'
+      && breakfast?.effectiveFrom === '2032-08-05' && breakfast?.effectiveTo === '2032-09-01',
     JSON.stringify(learnedStatement.rates));
 
   const confirmed = learnedStatement.rates.map((rate) => ({ ...rate, confirmed: true }));
   check('rateAt encontra tarifa dentro do período',
-    learning.rateAt(confirmed, 'per_diem.lunch', '2026-08-20')?.value === 109.44);
+    learning.rateAt(confirmed, 'per_diem.lunch', '2032-08-20')?.value === 100);
   check('rateAt não vaza tarifa para data posterior',
-    learning.rateAt(confirmed, 'per_diem.lunch', '2026-09-02') === null);
+    learning.rateAt(confirmed, 'per_diem.lunch', '2032-09-02') === null);
   check('rateAt não retroage tarifa para data anterior',
-    learning.rateAt(confirmed, 'per_diem.lunch', '2026-08-04') === null);
+    learning.rateAt(confirmed, 'per_diem.lunch', '2032-08-04') === null);
 
   const financialRules = fs.readFileSync('client/src/lib/financialRules.ts', 'utf8');
   const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
