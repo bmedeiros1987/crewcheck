@@ -1,0 +1,29 @@
+name: Wellhub DF official catalog
+on:
+  pull_request:
+    paths:
+      - 'shared/wellhub-*'
+      - 'client/src/lib/wellhub*'
+      - 'server/v14407/wellhub.mjs'
+      - 'server/v14410/wellhub-concierge.mjs'
+      - 'scripts/v14406/**'
+      - 'scripts/v14407/**'
+      - 'scripts/v14410/**'
+      - 'scripts/regression-wellhub-df-official.mjs'
+      - '.github/workflows/wellhub-df-official.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  official-catalog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: node scripts/regression-wellhub-df-official.mjs
+      - run: npm run build
+      - run: npm run check
+      - run: node scripts/regression-v14-4-10-wellhub-concierge-plan-location.mjs

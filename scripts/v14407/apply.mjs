@@ -36,7 +36,7 @@ function replaceBetween(source, startMarker, endMarker, replacement, label) {
   return `${source.slice(0, start)}${replacement.trimEnd()}\n${source.slice(end)}`;
 }
 
-const staticImport = "import { WELLHUB_PLAN_OPTIONS, isWellhubPlan, searchVerifiedWellhubPartners, verifiedWellhubPartnerFromPlaceId, wellhubPlanLabel, type WellhubPlan } from '@/lib/wellhubVerifiedCatalog';";
+const staticImport = "import { WELLHUB_PLAN_OPTIONS, isWellhubPlan, searchVerifiedWellhubPartners, verifiedWellhubPartnerFromPlaceId, wellhubPlanLabel, wellhubPartnerAccessLabel, type WellhubPlan } from '@/lib/wellhubVerifiedCatalog';";
 const liveImport = "import { fetchWellhubRoutineSuggestion, fetchWellhubVerifiedSearch, type WellhubRoutineSuggestion } from '@/lib/wellhubLive';";
 
 const staticSearch = [
@@ -84,7 +84,7 @@ const liveSearch = [
   "        });",
   "        found = (payload.partners || []).map((partner) => ({",
   "          id: 'wellhub:' + partner.id,",
-  "          name: partner.name,",
+  "          name: partner.name + (partner.eligibilityStatus === 'unknown' ? ' · acesso não confirmado' : ''),",
   "          category: 'gym',",
   "          address: partner.address,",
   "          openingHours: partner.openingHours,",
@@ -137,7 +137,7 @@ function patchHome(source) {
   next = insertAfterRequired(next, staticImport, liveImport, 'import do Wellhub live');
   if (!next.includes('wellhubActivities?: string[];')) next = replaceRequired(next,
     "  openingHours?: string[];\n  manual?: boolean;",
-    "  openingHours?: string[];\n  wellhubActivities?: string[];\n  wellhubMinimumPlan?: WellhubPlan;\n  wellhubSourceUrl?: string;\n  wellhubVerifiedAt?: string;\n  manual?: boolean;",
+    "  openingHours?: string[];\n  wellhubActivities?: string[];\n  wellhubMinimumPlan?: WellhubPlan | 'unknown';\n  wellhubSourceUrl?: string;\n  wellhubVerifiedAt?: string;\n  manual?: boolean;",
     'metadados Wellhub em NearbyPlace');
   next = insertAfterRequired(next,
     "  const [wellhubPlan, setWellhubPlan] = useState<WellhubPlan>(() => { const saved = storage.get('crewcheck:wellhub-plan', 'basic'); return isWellhubPlan(saved) ? saved : 'basic'; });",
@@ -152,7 +152,7 @@ function patchHome(source) {
     "  useEffect(() => { search(); }, [location, category, plan, wellhubPlan, amilPlan, amilCare, amilState]);",
     "  useEffect(() => { search(); }, [location, category, plan, wellhubPlan, wellhubActivity, amilPlan, amilCare, amilState]);");
 
-  const planControl = `<label><span>Seu plano Wellhub</span><select value={wellhubPlan} onChange={(event) => chooseWellhubPlan(event.target.value)}>{WELLHUB_PLAN_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><p className="cz-mini-status"><ShieldCheck/> Snapshot verificado em fonte oficial. A unidade só entra na lista quando o plano mínimo está publicado pelo próprio Wellhub.</p>`;
+  const planControl = `<label><span>Seu plano Wellhub</span><select value={wellhubPlan} onChange={(event) => chooseWellhubPlan(event.target.value)}>{WELLHUB_PLAN_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><p className="cz-mini-status"><ShieldCheck/> Snapshot verificado em fonte oficial. Plano não confirmado, condições e snapshot expirado exigem conferência na fonte oficial.</p>`;
   const activityControl = `<label><span>Seu plano Wellhub</span><select value={wellhubPlan} onChange={(event) => chooseWellhubPlan(event.target.value)}>{WELLHUB_PLAN_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><label><span>Modalidade desejada</span><input value={wellhubActivity} onChange={(event) => chooseWellhubActivity(event.target.value)} placeholder="Ex.: musculação, Pilates, HIIT, dança, Power Bike"/></label><p className="cz-mini-status"><ShieldCheck/> Plano, modalidade e horários são cruzados somente com páginas oficiais verificadas do Wellhub. Você pode escrever qualquer modalidade; quando a fonte não confirmar, o CrewCheck não inventa.</p>`;
   if (!next.includes('Modalidade desejada</span>')) next = replaceRequired(next, planControl, activityControl, 'campo de modalidade');
 
@@ -168,6 +168,7 @@ function patchHome(source) {
     const routineAfter = `<button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'presentation' }))}><Clock/> Ver apresentação</button></div></section><WellhubRoutineCard next={next}/><section className="cz-stack-list">`;
     next = replaceRequired(next, routineAnchor, routineAfter, 'integracao Rotina + horario de academia');
   }
+  next = next.replace('wellhubPartnerAccessLabel(selectedWellhub, wellhubPlan)', 'wellhubPartnerAccessLabel(selectedWellhub, wellhubPlan, wellhubActivity)');
   return next;
 }
 

@@ -7,7 +7,10 @@ export type WellhubLivePartner = {
   city: string;
   state: string;
   address: string;
-  minimumPlan: WellhubPlan;
+  minimumPlan: WellhubPlan | 'unknown';
+  eligibilityStatus?: 'included' | 'excluded' | 'unknown';
+  accessConditions?: string;
+  activityPlans?: string[];
   rating?: number;
   reviewCount?: number;
   openingHours: string[];
