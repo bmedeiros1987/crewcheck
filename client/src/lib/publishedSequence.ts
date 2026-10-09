@@ -1,7 +1,8 @@
 /** Read-only published sequence. No roster mutation or regulatory calculation. */
-const code = event => String(event.publishedDay?.type || event.flightNumber || '').toUpperCase();
-const standby = event => /^(HSB\d?|HSBE|HSBD|HSB[_-]ADM|SA)$/.test(code(event));
-const reserve = event => /^(ASB|RES|RSV|RESERVA)$/.test(code(event));
+export const publishedSequenceCode = event => String(event.kind === 'flight' ? event.flightNumber || '' : event.publishedDay?.type || event.flightNumber || '').toUpperCase();
+const code = publishedSequenceCode;
+const standby = event => event.kind !== 'flight' && /^(HSB\d?|HSBE|HSBD|HSB[_-]ADM|SA)$/.test(code(event));
+const reserve = event => event.kind !== 'flight' && /^(ASB|RES|RSV|RESERVA)$/.test(code(event));
 const rest = event => ['rest','journey-rest','stay'].includes(event.kind);
 const valid = value => typeof value === 'string' && /T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value));
 function windowOf(event) {
@@ -33,7 +34,7 @@ export function sequenceEvidence({ owner, revision, events, anchorId, previous, 
   const root = sorted[from], available: any[] = [];
   const boundaryGaps: string[] = [];
   for (const event of sorted.slice(from)) {
-    if (rest(event)) break;
+    if (rest(event) || !operational(event)) break;
     const previousEvent = available.at(-1);
     if (previousEvent) {
       const priorEnd = windowOf(previousEvent).end, currentStart = windowOf(event).start;

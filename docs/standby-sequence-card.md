@@ -60,3 +60,9 @@ Regressão do React real executada em UTC, America/Sao_Paulo e Asia/Tokyo: 02:00
 ## Disponibilidade no checkout limpo
 
 CI de clima e consistência executa TypeScript antes do preparo completo. O projetor agora é fonte TypeScript versionada em `client/src/lib/publishedSequence.ts`, sem geração nem cópia paralela `.mjs`. A regressão do motor transpila essa mesma fonte importada pela UI. Não foram alterados ou dispensados checks/workflows. Validar checkout sem preparo (incluindo preparo seletivo v14395 usado por consistency) e depois preparo completo, TypeScript, regressões e build.
+
+## Achados GitHub posteriores à autorização de integração
+
+A revisão automatizada do HEAD19471e3a encontrou duas ressalvas antes do merge: uma perna canônica de voo podia herdar o tipo HSB/ASB do dia, e CRM/reunião exatamente adjacente podia entrar na sequência. A fonte compartilhada agora prioriza o número do voo para `kind: flight`, exclui voos dos predicados HSB/reserva e encerra a sequência antes de qualquer atividade não operacional. A guarda do React usa o mesmo classificador e não abre painel de sobreaviso para um voo isolado. Fixtures do motor real com pernas em dias HSB e ASB e testes React cobrem os dois achados. Não mudou importação, jornada jurídica ou elegibilidade de acionamento.
+
+A composição deve preservar main60cbb256 (#945). Novo HEAD requer CI e reavaliação independente antes da publicação; a autorização anterior nomeava19471e3a.

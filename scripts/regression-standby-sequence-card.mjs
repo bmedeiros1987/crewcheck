@@ -71,3 +71,16 @@ assert.deepEqual(sequenceEvidence({...input,events:[...evolution,later],anchorId
 
 const earlierFlight={...flight,id:'prior-independent-flight',startDateTime:'2030-10-09T04:00:00Z',endDateTime:hsb.startDateTime};
 assert.deepEqual(sequenceEvidence({...input,events:[earlierFlight,...evolution],anchorId:flight.id}).rows.map(row=>row.id),[hsb.id,asb.id,flight.id],'HSB root stops carry-in from earlier adjacent flight');
+
+for (const type of ['HSB','ASB']) {
+  const activated=canonical.buildCanonicalRosterEvents({...roster,days:[{...day(type,'02:40','04:00'),legs:[{flightNumber:'QA456',origin:'BSB',destination:'GRU',departureTime:'02:40',arrivalTime:'04:00'}]}]});
+  const leg=activated.find(event=>event.kind==='flight');assert(leg);assert.equal(leg.publishedDay.type,type);
+  const isolated=sequenceEvidence({...input,events:activated,anchorId:leg.id});
+  assert.equal(isolated.rows[0].code,'QA456');assert.equal(isolated.publishedMinutes.standby,0);assert.equal(isolated.publishedMinutes.reserve,0);assert.equal(isolated.publishedMinutes.flight,80);
+  const connected=sequenceEvidence({...input,events:[hsb,leg],anchorId:leg.id});assert.deepEqual(connected.rows.map(row=>row.code),['HSB','QA456']);assert.equal(connected.publishedMinutes.standby,40);
+}
+for(const type of ['CRM','MEETING']) {
+ const unrelated={...asb,id:'unrelated-'+type,flightNumber:type,publishedDay:{...asb.publishedDay,type},startDateTime:hsb.endDateTime};
+ const stopped=sequenceEvidence({...input,events:[hsb,unrelated],anchorId:hsb.id});assert.deepEqual(stopped.rows.map(row=>row.id),[hsb.id]);assert.equal(stopped.activation,'unconfirmed');
+}
+console.log('PASS real canonical activation HSB/ASB legs remain flights; exact-boundary CRM/meeting excluded');

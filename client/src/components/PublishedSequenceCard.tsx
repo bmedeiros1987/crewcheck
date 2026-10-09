@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { CanonicalRosterEvent } from '@/lib/canonicalRoster';
-import { sequenceEvidence } from '@/lib/publishedSequence';
+import { sequenceEvidence, publishedSequenceCode } from '@/lib/publishedSequence';
 import { publication } from '@/lib/rosterPublicationReview';
 import { currentPublicationReview, publicationOwner, subscribePublicationReview } from '@/lib/rosterPublicationRuntime';
 import './PublishedSequenceCard.css';
@@ -27,10 +27,10 @@ export function PublishedSequenceCard({ events, anchorId }: { events: CanonicalR
   const owner = publicationOwner(), snapshot = publication(events), review = currentPublicationReview();
   const result = sequenceEvidence({ owner, revision: snapshot.revision, events, anchorId });
   const anchor = events.find(event => event.id === result.rows[0]?.id);
-  if (!anchor || !/^(HSB\d?|HSBE|HSBD|HSB[_-]ADM|SA|ASB|RES|RSV|RESERVA)$/.test(String(anchor.publishedDay?.type || anchor.flightNumber).toUpperCase())) return null;
+  if (!anchor || anchor.kind === 'flight' || !/^(HSB\d?|HSBE|HSBD|HSB[_-]ADM|SA|ASB|RES|RSV|RESERVA)$/.test(publishedSequenceCode(anchor))) return null;
   // A unique exact changed occurrence proves only a shortened published window.
   const current = publication([anchor]).items[0];
-  const standbyRoot = /^(HSB\d?|HSBE|HSBD|HSB[_-]ADM|SA)$/.test(String(anchor.publishedDay?.type || anchor.flightNumber).toUpperCase());
+  const standbyRoot = /^(HSB\d?|HSBE|HSBD|HSB[_-]ADM|SA)$/.test(publishedSequenceCode(anchor));
   const shortened = standbyRoot && owner && review?.owner === owner && review.publication.revision === snapshot.revision && review.history.filter(change => change.version === review.version && change.kind === 'changed' && change.after && JSON.stringify(change.after) === JSON.stringify(current) && change.before?.start === current.start && Number.isFinite(Date.parse(change.before.end)) && Date.parse(change.before.end) > Date.parse(current.end));
   const shortening = Array.isArray(shortened) && shortened.length === 1;
   return <article className="cc-published-sequence" data-published-sequence="true">
