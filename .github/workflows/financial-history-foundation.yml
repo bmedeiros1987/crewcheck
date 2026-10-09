@@ -17,6 +17,9 @@ on:
       - 'client/src/styles/per-diem-content.css'
       - 'client/src/components/finance/**'
       - 'client/src/lib/financialHistoryPeriods.ts'
+      - 'client/src/lib/salaryCalculationDiagnostic.ts'
+      - 'scripts/regression-salary-prerequisite-diagnostic.mjs'
+      - 'scripts/regression-salary-prerequisites-browser.cjs'
       - 'client/src/lib/databaseClient.ts'
       - '.github/workflows/financial-history-foundation.yml'
   workflow_dispatch:
@@ -52,6 +55,7 @@ jobs:
       - run: node scripts/regression-financial-owner-periods.mjs
         env:
           TZ: America/New_York
+      - run: node scripts/regression-salary-prerequisite-diagnostic.mjs
       - run: node scripts/regression-financial-read-model.mjs
       - run: node scripts/regression-financial-statement-totals.mjs
       - run: node --test scripts/regression-financial-review-negative.mjs
@@ -85,6 +89,17 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
         run: node scripts/regression-financial-ui-browser.cjs
+      - name: Verify salary prerequisites with synthetic owner fixtures
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-salary-prerequisites-browser.cjs
+      - name: Save salary diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: salary-prerequisites-synthetic
+          path: artifacts/salary-prerequisites/
+          if-no-files-found: ignore
       - name: Save synthetic UI evidence
         if: always()
         uses: actions/upload-artifact@v4

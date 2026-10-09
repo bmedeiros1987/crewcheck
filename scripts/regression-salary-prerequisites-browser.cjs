@@ -1,0 +1,44 @@
+const { createRequire } = require('node:module');
+const { chromium } = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || __filename)('playwright');
+const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), http = require('node:http');
+const out = path.resolve(process.env.FINANCIAL_UI_EVIDENCE_DIR || 'artifacts/salary-prerequisites');
+fs.mkdirSync(out, { recursive: true });
+const dist = path.resolve('dist');
+// Exercise the production static responder rather than a test-only MIME table.
+const vm = require('node:vm'), ts = require('typescript');
+const serverSource=fs.readFileSync(path.resolve('server.mjs'),'utf8');
+const staticAst=ts.createSourceFile('server.mjs',serverSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
+const staticFunctions=staticAst.statements.filter(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='serveStatic');
+assert.equal(staticFunctions.length,1,'exactly one production static handler must exist');
+const staticContext=vm.createContext({fs,path,Buffer,distDir:dist,sendJson:(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}});
+vm.runInContext(staticFunctions[0].getText(staticAst)+'\nglobalThis.respond=serveStatic;',staticContext);
+const server=http.createServer((req,res)=>staticContext.respond(req,res,new URL(req.url,'http://localhost')));
+const day = (date, airport = 'BSB', short = false) => ({date, dayOfWeek:'SYN', type:'CRM', pairingCode:'CRM', dutyReport:short?'11:00':'05:00', dutyDebrief:short?'11:15':'21:00', legs:[], dutyHours:short ? 0.25 : 16, flyingHours:0, isNextDay:false, hotel:null, base:airport, rawText:'SYNTHETIC UI QA ONLY'});
+function roster(kind, month=2) {
+  const airports = kind === 'multi' ? ['BSB','JFK','MAD','LHR'] : ['BSB'];
+  const days = kind === 'empty' ? [{...day('01/02/2032'),type:'DO',pairingCode:'DO',dutyReport:null,dutyDebrief:null,dutyHours:0}]
+    : kind === 'single' ? [day('01/02/2032','BSB',true)]
+    : [day('31/01/2032','JFK'), ...Array.from({length:24},(_,i)=>day(String(i+1).padStart(2,'0')+'/02/2032',airports[i%airports.length])),day('01/03/2032')];
+  if(kind==='unknown')days[2]={...days[2],base:'ZZZ'};
+  return {crewName:'SYNTHETIC UI QA',crewId:'900001',base:'BSB',rank:'CC',airline:'LA',month,year:2032,days,rawText:'SYNTHETIC — NO REAL ROSTER OR TARIFF'};
+}
+function seed({theme,kind,amount,history,salaryBase}) {
+  const NativeDate=Date,instant=Date.parse('2032-02-02T15:00:00Z');
+  globalThis.Date=class extends NativeDate {constructor(...args){super(...(args.length?args:[instant]));}static now(){return instant;}};
+  localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'financial-ui-qa',name:'SYNTHETIC UI QA',role:'user'}));
+  localStorage.setItem('crewcheck_auth_token','synthetic-local-only');
+  localStorage.setItem('crewcheck:first-access-tour:v1434:disabled','1');sessionStorage.setItem('crewcheck:first-access-tour:v1434:session-seen','1');
+  localStorage.setItem('crewcheck_demo_mode_seen','1');
+  localStorage.setItem('crewcheck_theme_mode',theme);localStorage.setItem('crewcheck:appearance:v1',theme);
+  // Synthetic numbers exercise the existing local manual-configuration path;
+  // they are not ACT rules, copied statement figures or a production tariff.
+  for(const key of ['domestic','north_america','mexico','south_america_caribbean','argentina','chile','england','europe','africa','other_international'])localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_perdiem_rate_'+key,String(amount));
+  if(history)localStorage.setItem('crewcheck_local_history_v11_financial-ui-qa',JSON.stringify(history));
+  if(salaryBase!==undefined)localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_salary_base_brl',String(salaryBase));
+  localStorage.setItem('crewcheck_roster_choice_v1_financial-ui-qa',JSON.stringify({owner:'financial-ui-qa',roster:kind,selection:'explicit',cacheSchema:'p0-operational-date-anchor-v2',sourceFileName:'Synthetic finance UI QA'}));
+}
+
+(async()=>{await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE});const results=[],errors=[];
+try{for(const width of [320,390,1440])for(const theme of ['light','dark'])for(const font of [16,32]){const context=await browser.newContext({viewport:{width,height:844},isMobile:width<500,hasTouch:width<500,serviceWorkers:'block'});await context.route('**/*',r=>{const url=new URL(r.request().url());return url.origin!==origin?r.abort():url.pathname.startsWith('/api/')?r.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[]}'}):r.continue();});await context.addInitScript(seed,{theme,kind:roster('multi'),amount:123});const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();await page.evaluate(font=>{document.documentElement.style.setProperty('font-size',font+'px','important');window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'}));},font);await page.getByRole('region',{name:'Condições do cálculo salarial'}).waitFor();assert.match(await page.locator('.cc-salary-prerequisites').innerText(),/falta salário-base/);assert.match(await page.locator('.cc-per-diem-summary').innerText(),/Não calculável/);assert.equal(await page.locator('[data-salary-variable="available"]').count(),1,'canonical variable portion remains accessible without unbound fixed pay');assert.match(await page.locator('[data-salary-variable]').innerText(),/Não inclui salário-base[\s\S]*não representa salário líquido/);await page.getByText('Revisar referência salarial desta conta',{exact:true}).click();await page.getByRole('button',{name:'Selecionar PDF',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Selecionar PDF',exact:true}).isEnabled(),true,'owner user can use existing reviewed importer');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'diagnostic must not widen page');await page.screenshot({path:path.join(out,`${width}-${theme}-${font}.png`),fullPage:false});results.push({width,theme,font,unknownGross:true,canonicalVariables:true,ownerReview:true});
+if(width===390&&theme==='light'&&font===16){await page.getByLabel('Filtro financeiro').selectOption('week');await page.waitForFunction(()=>!document.querySelector('[data-salary-variable]'));assert.match(await page.locator('.cc-salary-prerequisites').innerText(),/competências mensais completas/);await page.getByLabel('Filtro financeiro').selectOption('year');await page.waitForFunction(()=>document.querySelector('.cc-salary-prerequisites').textContent.includes('Falta escala para'));assert.equal(await page.locator('[data-salary-variable]').count(),0);await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-visitor',role:'visitor'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.waitForFunction(()=>!document.querySelector('.cc-salary-prerequisites'));assert.equal(await page.locator('[data-salary-variable]').count(),0,'visitor gets no salary');}
+await context.close();}assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({head:require('node:child_process').execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),cases:results,checks:['real canonical caller without base','partial variables separated from gross/net','owner review accessible','week/full-month and missing-history reasons','visitor/account reset','theme/font200/mobile/desktop'],realAPIRequests:0,errors},null,2));console.log('PASS salary prerequisites:12 real app cases, owner review, partial variable/read-only periods/visitor');}finally{await browser.close();server.close();}})();
