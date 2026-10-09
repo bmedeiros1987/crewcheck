@@ -52,6 +52,8 @@ if (!block.includes('const [menuQuery,')) {
     const panel = menuPanelRef.current;
     panel?.querySelector<HTMLButtonElement>('.cz-menu-close')?.focus({ preventScroll: true });
     const onMenuKeyDown = (event: KeyboardEvent) => {
+      if (panel && Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).some(dialog =>
+        dialog !== panel.closest('[role="dialog"]') && !panel.contains(dialog) && dialog.getClientRects().length > 0)) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();

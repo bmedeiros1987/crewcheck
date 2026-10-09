@@ -46,7 +46,7 @@ async function settle(page) {
 }
 async function measureMoney(page) {
  return page.evaluate(()=>{
-  const violations=[],amounts=[],intersections=[],splitAmounts=[];
+  const violations=[],amounts=[],intersections=[],splitAmounts=[],splitCurrencyTokens=[];
   for(const element of document.querySelectorAll('.cc-per-diem-content .cz-kpi strong, .cc-per-diem-content .cz-finance-row b')) {
    if(!element.getClientRects().length)continue;
    const box=element.closest('.cz-kpi,.cz-finance-row').getBoundingClientRect();
@@ -57,15 +57,27 @@ async function measureMoney(page) {
     for(const rect of range.getClientRects())if(rect.left<box.left-1||rect.right>box.right+1||rect.top<box.top-1||rect.bottom>box.bottom+1)violations.push({value:element.textContent,char:node.textContent[i],rect:{left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom},box:{left:box.left,right:box.right,top:box.top,bottom:box.bottom}});
    }
    amounts.push(element.textContent);
+   const textNodes=[],tw=document.createTreeWalker(element,NodeFilter.SHOW_TEXT);let tn,offset=0;
+   while(tn=tw.nextNode()){textNodes.push({node:tn,start:offset,end:offset+tn.textContent.length});offset+=tn.textContent.length;}
+   const text=textNodes.map(item=>item.node.textContent).join('');
+   for(const match of text.matchAll(/[−-]?(?:[A-Z]{1,3}\$|[€£])\s*[−-]?[0-9][0-9.]*,[0-9]{2}/g)) {
+    const tops=new Set();
+    for(const item of textNodes)for(let at=Math.max(match.index,item.start);at<Math.min(match.index+match[0].length,item.end);at++) {
+     const pos=at-item.start;if(/\s/.test(item.node.textContent[pos]))continue;
+     const range=document.createRange();range.setStart(item.node,pos);range.setEnd(item.node,pos+1);
+     for(const rect of range.getClientRects())tops.add(Math.round(rect.top));
+    }
+    if(tops.size>1)splitCurrencyTokens.push(match[0]);
+   }
   }
   for(const row of document.querySelectorAll('.cc-per-diem-content .cz-finance-row')) {
    const value=row.querySelector('b'), label=row.querySelector('strong');
-   const rectangles=element=>{const range=document.createRange();range.selectNodeContents(element);return Array.from(range.getClientRects());};
+   const rectangles=element=>{const rects=[],walker=document.createTreeWalker(element,NodeFilter.SHOW_TEXT);let node;while(node=walker.nextNode()){const range=document.createRange();range.selectNodeContents(node);rects.push(...range.getClientRects());}return rects;};
    const vr=rectangles(value),lr=rectangles(label);
    if(vr.some(a=>lr.some(b=>Math.min(a.right,b.right)>Math.max(a.left,b.left)+1&&Math.min(a.bottom,b.bottom)>Math.max(a.top,b.top)+1)))intersections.push({value:value.textContent,label:label.textContent});
    if(new Set(vr.map(r=>Math.round(r.top))).size!==1)splitAmounts.push(value.textContent);
   }
-  return {violations,amounts,intersections,splitAmounts};
+  return {violations,amounts,intersections,splitAmounts,splitCurrencyTokens};
  });
 }
 async function contrast(page) {
@@ -73,8 +85,8 @@ async function contrast(page) {
   const rgb=value=>(value.match(/[\d.]+/g)||[]).slice(0,3).map(Number);
   const lum=c=>c.map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);
   const results=[];
-  for(const selector of ['.cz-kpi p','.cc-per-diem-source small','.cc-per-diem-scope']) {
-   const element=document.querySelector('.cc-per-diem-content '+selector);if(!element||!element.getClientRects().length)continue;
+  for(const selector of ['.cz-kpi p','.cc-per-diem-source small','.cc-per-diem-scope','.cz-kpi .cc-money-token','.cz-finance-row .cc-money-token']) for(const element of document.querySelectorAll('.cc-per-diem-content '+selector)) {
+   if(!element.getClientRects().length)continue;
    const fg=getComputedStyle(element);let ancestor=element,bg,opacity=1;for(let e=element;e&&e.closest('.cc-per-diem-content');e=e.parentElement)opacity*=Number(getComputedStyle(e).opacity);
    while(ancestor){const color=getComputedStyle(ancestor).backgroundColor;if(!color.includes('rgba')&&color!=='transparent'){bg=color;break;}ancestor=ancestor.parentElement;}
    if(!bg)throw Error('No solid background for contrast');
@@ -219,6 +231,17 @@ async function contrast(page) {
    const details=page.locator('.cc-salary-history details').filter({has:page.locator('summary').filter({hasText:'Composição mensal'})});await details.locator(':scope>summary').click();assert.match(await details.innerText(),/Salário-base: Não informado/);assert.match(await details.innerText(),/Variáveis operacionais:2032-02|Variáveis operacionais: 2032-02/);
    await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-03');await page.waitForFunction(()=>document.querySelector('.cc-per-diem-summary')?.textContent.includes('2.400,00'));assert.match(await details.innerText(),/Salário-base: R\$\s*2\.400,00/);
    await page.screenshot({path:path.join(out,'fixed-base-once-'+width+'.png')});historyResults.push({scenario:'one-fixed-base-separated-from-operational-variables',width,synthetic:true});await context.close();
+  }
+  for (const width of [320,1440]) for(const theme of ['light','dark']) for(const size of [150,200]) {
+   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:'block'});
+   await context.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(url.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[]}'});return route.continue();});
+   const flight={...roster('domestic'),days:[{...day('10/02/2032'),type:'FLIGHT',pairingCode:'SYN',legs:[{flightNumber:'SYN001',origin:'BSB',destination:'GRU',departureTime:'08:00',arrivalTime:'09:45',workType:'OP',duration:105,aircraftType:'SYNTHETIC'}]}]};
+   await context.addInitScript(seed,{theme,kind:flight,amount:100,salaryBase:2400});
+   await context.addInitScript(size=>{localStorage.setItem('crewcheck:text-size:v1:financial-ui-qa',String(size));for(const key of ['day','night'])localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_act_'+key+'_km_metric_brl','1234567.89');},size);
+   const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));await page.locator('.cc-salary-history').waitFor();await page.waitForFunction(size=>document.documentElement.dataset.crewTextSize===String(size),size);
+   await page.locator('.cc-per-diem-items>summary').click();const row=page.locator('.cc-salary-history .cz-finance-row');await row.waitFor();assert.equal(await row.count(),1);await row.scrollIntoViewIfNeeded();await settle(page);assert.match(await row.locator('b').innerText(),/R\$.*[0-9.]{9,},[0-9]{2}/,'actual salary row has large synthetic amount');
+   const measured=await measureMoney(page);assert.deepEqual(measured.violations,[]);assert.deepEqual(measured.intersections,[]);assert.deepEqual(measured.splitAmounts,[]);assert.deepEqual(measured.splitCurrencyTokens,[]);const colors=await contrast(page);assert.ok(colors.every(item=>Number(item.opacity)===1&&item.ratio>=4.5));
+   await page.screenshot({path:path.join(out,'combined-salary-'+width+'-'+theme+'-'+size+'.png')});historyResults.push({scenario:'combined-large-salary-money',width,theme,size,money:measured,colors,synthetic:true});await context.close();
   }
   fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({synthetic:true,methods:{cssZoom:'CSS zoom stress; not native browser zoom',responsive200:'Half CSS viewport with device scale2; not native browser zoom',devices:'Desktop Chromium emulation; no physical-device certification'},results,historyResults},null,2));
   console.log('PASS actual compiled Diárias: themes, scopes, >40 rows, owner period changes, large money glyph bounds, contrast, navigation clearance');

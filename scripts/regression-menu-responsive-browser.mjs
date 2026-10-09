@@ -9,7 +9,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import * as icons from 'lucide-react';
 import ts from 'typescript';
-import { buildSync } from 'esbuild';
+const { buildSync } = createRequire(process.env.MENU_ESBUILD_PACKAGE || import.meta.url)('esbuild');
 
 // Actual prepared MenuDrawer + shipped CSS + unmodified theme functions.
 // Synthetic account only. This component test is not full-app/device acceptance.
@@ -115,10 +115,11 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const url = `http://127.0.0.1:${server.address().port}`;
 const require = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || import.meta.url);
 const { chromium } = require('playwright');
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined });
 const matrix = [
   { name: 'phone-small', width: 320, height: 740, touch: true },
   { name: 'phone-portrait', width: 360, height: 800, touch: true },
+  { name: 'phone-390', width: 390, height: 844, touch: true },
   { name: 'phone-landscape-small', width: 667, height: 375, touch: true },
   { name: 'phone-landscape', width: 844, height: 390, touch: true },
   { name: 'phone-landscape-wide', width: 932, height: 430, touch: true },
@@ -165,9 +166,14 @@ async function inspect(page, label) {
     return {
       viewport: { width: innerWidth, height: innerHeight },
       theme: document.documentElement.dataset.crewTheme,
-      expectedColumns: matchMedia('(pointer: coarse) and (min-width: 821px)').matches ? 2 : 1,
+      expectedColumns: document.documentElement.dataset.crewTextSize !== '100' ? 1 : matchMedia('(pointer: coarse) and (min-width: 821px)').matches ? 2 : 1,
       columns: getComputedStyle(document.querySelector('.cz-menu-group')).gridTemplateColumns.split(' ').length,
       panel: box(panel), scroll: { ...box(scroll), scrollWidth: scroll.scrollWidth, clientWidth: scroll.clientWidth },
+      panelOverflow: getComputedStyle(panel).overflowY,
+      header: box(document.querySelector('.cz-menu-header')),
+      chips: [...document.querySelectorAll('.cc-menu-favorite-chip')].map(button => ({
+        button: box(button), icon: box(button.querySelector('svg')), copy: box(button.querySelector('span')),
+      })),
       close: box(document.querySelector('.cz-menu-close')),
       logout: box(document.querySelector('.cz-menu-logout')),
       profile: box(document.querySelector('.cz-menu-profile')),
@@ -225,6 +231,11 @@ async function inspect(page, label) {
   if (overlap(metrics.close, metrics.logout) || overlap(metrics.profile, metrics.logout) || overlap(metrics.profile, metrics.close)) failures.push('Header actions overlap');
   if (metrics.scroll.height < 100) failures.push('No useful scrolling area');
   if (metrics.scroll.scrollWidth > metrics.scroll.clientWidth + 1) failures.push('Horizontal overflow in menu list');
+  if (metrics.panelOverflow !== 'hidden') failures.push('Panel competes with the content scroller');
+  for (const chip of metrics.chips) {
+    if (chip.button.height < 44 || !inside(chip.copy, chip.button)) failures.push('Favorite label escapes its touch target');
+    if (chip.copy.x < chip.icon.right || chip.copy.x - chip.icon.right > 12) failures.push('Favorite icon and text are not aligned with a compact gap');
+  }
   if (metrics.columns !== metrics.expectedColumns) failures.push('Wrong navigation column count');
   if (metrics.count + metrics.chipCount !== 40) failures.push(`Expected 40 canonical destinations once each (catalog + favorites); got ${metrics.count} + ${metrics.chipCount}`);
   if (metrics.chipCount !== 3) failures.push(`Expected the 3 default favorites above the catalog; got ${metrics.chipCount}`);
@@ -252,8 +263,10 @@ async function inspect(page, label) {
   const end = await page.evaluate(() => {
     const scroll = document.querySelector('.cz-menu-scroll').getBoundingClientRect();
     const last = [...document.querySelectorAll('.cc-menu-destination[data-menu-label]')].at(-1).getBoundingClientRect();
-    return { scrollTop: scroll.top, scrollBottom: scroll.bottom, top: last.top, bottom: last.bottom };
+    return { scrollTop: scroll.top, scrollBottom: scroll.bottom, top: last.top, bottom: last.bottom,
+      headerTop: document.querySelector('.cz-menu-header').getBoundingClientRect().top };
   });
+  if (Math.abs(end.headerTop - metrics.header.y) > 1) failures.push('Menu navigation header moved while content scrolled');
   if (end.top < end.scrollTop - 1 || end.bottom > Math.min(end.scrollBottom, metrics.viewport.height) + 1) failures.push('Last destination unreachable');
   results.push({ label, failures, metrics });
   console.log(`${failures.length ? 'FAIL' : 'PASS'} ${label}: ${failures.join('; ') || 'contained, readable, scrollable'}`);
@@ -267,7 +280,14 @@ try {
     await page.waitForFunction(() => typeof window.applyMenuTestTheme === 'function');
     for (const theme of ['dark', 'light']) {
       await page.evaluate(theme => window.applyMenuTestTheme(theme), theme);
-      await inspect(page, `${device.name}-${theme}`);
+      for (const scale of [100, 150, 200]) {
+        await page.evaluate(scale => {
+          document.documentElement.dataset.crewTextSize = String(scale);
+          document.documentElement.style.setProperty('--cc-text-scale', String(scale / 100));
+        }, scale);
+        await inspect(page, `${device.name}-${theme}-text-${scale}`);
+      }
+      await page.evaluate(() => { document.documentElement.dataset.crewTextSize = '100'; document.documentElement.style.setProperty('--cc-text-scale', '1'); });
     }
     if (device.name === 'phone-portrait') {
       await page.setViewportSize({ width: 844, height: 390 });
