@@ -2,6 +2,7 @@ let sequence = 0;
 const bodyOwners = new Set<number>();
 let previousOverflow = '';
 let previousHistoryRestoration: ScrollRestoration = 'auto';
+let ownsHistoryRestoration = false;
 
 /** Own only this overlay's lock/history entry; closing a nested overlay keeps its parent locked. */
 export function acquireOverlayLifecycle(dismiss: () => void, restoreScroll: () => boolean = () => true, originalScrollY?: number, originalFocus?: HTMLElement | null): () => void {
@@ -10,7 +11,8 @@ export function acquireOverlayLifecycle(dismiss: () => void, restoreScroll: () =
   const y = originalScrollY ?? window.scrollY;
   if (!bodyOwners.size) {
     previousOverflow = document.body.style.overflow;
-    previousHistoryRestoration = window.history.scrollRestoration;
+    if (!ownsHistoryRestoration) previousHistoryRestoration = window.history.scrollRestoration;
+    ownsHistoryRestoration = true;
     window.history.scrollRestoration = 'manual';
   }
   bodyOwners.add(id);
@@ -42,6 +44,7 @@ export function acquireOverlayLifecycle(dismiss: () => void, restoreScroll: () =
           if (originalFocus?.isConnected) originalFocus.focus({ preventScroll: true });
         }
         window.history.scrollRestoration = previousHistoryRestoration;
+        ownsHistoryRestoration = false;
       });
     };
     if (!bodyOwners.size) {
