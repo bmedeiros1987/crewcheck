@@ -61,8 +61,9 @@ try {
   { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText;
   vm.runInContext(compiled, context);
   const { calculatePerDiem, PerDiemView } = context.subject;
+  // Match production canonical BRT instants, rather than naive device-local clocks.
   const event = (date, origin = 'BRL') => ({ id: 'synthetic-' + date + '-' + origin,
-    date: new Date(date + 'T11:00:00'), start: date + 'T11:00:00', end: date + 'T11:15:00',
+    date: new Date(date + 'T11:00:00-03:00'), start: date + 'T11:00:00-03:00', end: date + 'T11:15:00-03:00',
     kind: 'training', origin, destination: origin, day: {} });
   const roster = (year, month) => ({ year, month, base: 'TEST' });
 
@@ -81,7 +82,7 @@ try {
   const after = new Date(inheritedEnd + 'T12:00:00'); after.setDate(after.getDate() + 1);
   assert.equal(context.subject.perDiemConfig(roster(2026, 9), iso(after)).domesticMainMealSource, 'act');
   const night = { ...event('2032-09-01'), kind: 'flight', presentation: '23:50',
-    start: '2032-09-01T23:50:00', end: '2032-09-02T00:30:00', canonical: { journeyId: 'synthetic-night' } };
+    start: '2032-09-01T23:50:00-03:00', end: '2032-09-02T00:30:00-03:00', canonical: { journeyId: 'synthetic-night' } };
   const nightResult = calculatePerDiem([night], roster(2032, 9), new Date('2032-09-02T12:00:00'));
   assert.equal(nightResult.rows[0].iso, '2032-09-02');
   assert.equal(nightResult.rows[0].date, '2032-09-02', 'visible date follows occurrence date after midnight');
@@ -156,7 +157,7 @@ try {
   // including after changing the selected roster month. Adjacent rows stay out.
   activeEvents = [event('2032-01-31', 'INT'), ...Array.from({length:24},(_,i)=>{
     const day='2032-02-'+String(i+1).padStart(2,'0');
-    return {...event(day),start:day+'T05:00:00',end:day+'T21:00:00'};
+    return {...event(day),start:day+'T05:00:00-03:00',end:day+'T21:00:00-03:00'};
   }),event('2032-03-01')];
   const many=calculatePerDiem(activeEvents,roster(2032,2));
   assert.ok(many.monthlyRows.length>40,'synthetic canonical windows produce more than forty monthly items');
