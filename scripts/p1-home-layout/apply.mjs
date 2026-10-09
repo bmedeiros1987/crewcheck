@@ -39,7 +39,7 @@ if (!source.includes('function PersonalizedCockpit(')) {
   const event = nextFlight(events);
   const loaded = events.some((event) => !event.placeholder);
   const alertCount = actionableComplianceAlerts(compliance).length;
-  const dutyLimit = event.kind === 'flight' && !event.placeholder ? getPublishedDutyLimitSummary(event.day, compliance?.legalProfile) : null;
+  const dutyMeasurement = !event.placeholder && event.canonical ? measureCanonicalDuty(events.flatMap(item => item.canonical ? [item.canonical] : []), event.canonical.id) : null;
   const slots: HomeLayoutSlot[] = [
     {
       id: 'summary',
@@ -71,8 +71,8 @@ if (!source.includes('function PersonalizedCockpit(')) {
       id: 'limits',
       label: 'Alertas e limites',
       description: 'Alertas operacionais não podem ser ocultados.',
-      content: !contextOnly && dutyLimit
-        ? <button className="cz-mini-status" onClick={() => setView('regulation')}><ShieldCheck/><strong>Limite desta jornada</strong><span>{dutyLimit.usedHours.toFixed(1).replace('.', ',')} h de {dutyLimit.maxDutyHours.toFixed(1).replace('.', ',')} h · margem {Math.max(0, dutyLimit.remainingHours).toFixed(1).replace('.', ',')} h</span><ChevronRight/></button>
+      content: !contextOnly && dutyMeasurement
+        ? <CanonicalDutyCard measurement={dutyMeasurement} onOpen={() => openCanonicalDutyDetails(event.canonical, setView)}/>
         : null,
     },
     {

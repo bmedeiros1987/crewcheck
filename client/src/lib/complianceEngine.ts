@@ -2,6 +2,7 @@ import type { CrewRoster, RosterDay, FlightLeg } from './pdfParser';
 import { getActRulesForProfile, getLegalProfile, type CrewRoleSelection, type LegalProfileSummary } from './actRules';
 import { getRosterCodeDefinition } from './rosterCodes';
 import { buildCanonicalRosterEvents } from './canonicalRoster';
+import { measureCanonicalDuty } from './canonicalDutyMeasurement';
 import {
   // Importado sob alias de propósito: no estado preparado, o passo v14.3.95
   // injeta dentro de `analyzeCompliance` um `const competenceKey` que é uma
@@ -48,7 +49,7 @@ export interface Metrics {
    * elegível a histórico de competência adjacente.
    */
   maxFlightHoursRolling28Days: number;
-  totalDutyHours: number;
+  totalDutyHours: number | null;
   maxDutyHoursMonth: number;
   totalDaysOff: number;
   minDaysOffRequired: number;
@@ -307,7 +308,7 @@ function isLikelyParserMergedDutyWindow(day: RosterDay, dutyWindowHours: number,
   return false;
 }
 
-function getRegulatoryDutyBreakdown(day: RosterDay): { dutyWindowHours: number; groundHours: number; dutyHours: number; mode: 'liquida_sem_solo' | 'janela' | 'estimada_parser' | 'indisponivel' } {
+function getRegulatoryDutyBreakdown(day: RosterDay): { dutyWindowHours: number; groundHours: number; dutyHours: number; mode: 'canonico_publicado' | 'liquida_sem_solo' | 'janela' | 'estimada_parser' | 'indisponivel' } {
   if (isRecoveryDay(day) || isNonOperationalAbsence(day) || isEmptyCalendarDay(day)) {
     return { dutyWindowHours: 0, groundHours: 0, dutyHours: 0, mode: 'indisponivel' };
   }
@@ -315,12 +316,9 @@ function getRegulatoryDutyBreakdown(day: RosterDay): { dutyWindowHours: number; 
   const dutyWindowHours = getDutyWindowHours(day);
   const legs = day.legs || [];
 
-  // v12.5.17 — regra canônica de conformidade:
-  // jornada regulatória/CLT/RBAC não é "tempo em que existe algum horário no PDF".
-  // Reserva, sobreaviso, pernoite/estadia e solo longo têm métricas próprias e não
-  // entram no total de jornada. Quando há voo acionado em reserva/sobreaviso, a
-  // jornada analisada é apenas o bloco operacional de voo: apresentação plausível +
-  // voos + corte plausível, sem somar espera de reserva/sobreaviso nem hotel.
+  // Published flight journeys include the full interval and intra-journey
+  // ground. Availability without a proved flight block stays separate; unknown
+  // presentation/liberation must not become an estimated regulatory margin.
   if (isStandby(day) && !hasStandbyActivationCombination(day)) {
     return { dutyWindowHours: 0, groundHours: 0, dutyHours: 0, mode: 'indisponivel' };
   }
@@ -330,19 +328,15 @@ function getRegulatoryDutyBreakdown(day: RosterDay): { dutyWindowHours: number; 
   }
 
   if (legs.length > 0) {
+    const events = buildCanonicalRosterEvents({ days: [day], year: Number(day.year) || Number(day.date.split('/')[2]), month: Number(day.month) || Number(day.date.split('/')[1]), base: day.base } as CrewRoster);
+    const journeys = [...new Set(events.filter(event => event.kind === 'flight').map(event => event.journeyId))];
+    const measures = journeys.map(id => measureCanonicalDuty(events, events.find(event => event.kind === 'flight' && event.journeyId === id)!.id));
     const groundHours = getGroundIntervalHours(day);
-    const flightHours = getFlightHours(day);
-    const noGroundDuty = getDutyMarginsWithoutGround(day).sectorDutyHours;
-
-    if (isLikelyParserMergedDutyWindow(day, dutyWindowHours, groundHours, flightHours)) {
-      return { dutyWindowHours: round1(dutyWindowHours), groundHours: round1(groundHours), dutyHours: round1(noGroundDuty), mode: 'estimada_parser' };
+    if (!measures.length || measures.some(measure => measure?.state !== 'available')) {
+      return { dutyWindowHours: round1(dutyWindowHours), groundHours: round1(groundHours), dutyHours: 0, mode: 'indisponivel' };
     }
-
-    // Tempo de solo entre etapas é remunerável em alguns contextos, mas não pode
-    // inflar a régua B.1 nem as métricas de jornada do app. A métrica operacional
-    // segura é voo + apresentação/corte plausíveis.
-    const netDuty = Math.max(flightHours, noGroundDuty);
-    return { dutyWindowHours: round1(dutyWindowHours), groundHours: round1(groundHours), dutyHours: round1(netDuty), mode: 'liquida_sem_solo' };
+    const elapsed = measures.reduce((sum, measure) => sum + measure!.minutes! / 60, 0);
+    return { dutyWindowHours: round1(dutyWindowHours), groundHours: round1(groundHours), dutyHours: round1(elapsed), mode: 'canonico_publicado' };
   }
 
   if (typeof day.dutyHours === 'number' && day.dutyHours > 0 && !isStandby(day) && !isReserve(day)) {
@@ -460,6 +454,31 @@ function getPrimaryBlockingWindow(day: RosterDay): BlockingWindow | null {
 
 function getDutyHours(day: RosterDay): number {
   return getRegulatoryDutyBreakdown(day).dutyHours;
+}
+
+export function getCanonicalWorkHoursTotal(roster: CrewRoster): number | null {
+  const events = buildCanonicalRosterEvents(roster);
+  const groups = new Map<string, typeof events[number]>();
+  for (const event of events) {
+    if (event.kind !== 'flight' && event.kind !== 'duty') continue;
+    if (event.kind === 'duty' && /\b(?:HSB|HSBE|ASB|RES|RESERVA|RSV)\b/.test(`${event.publishedDay.type} ${event.publishedDay.pairingCode}`.toUpperCase())) continue;
+    if (!groups.has(event.journeyId)) groups.set(event.journeyId, event);
+  }
+  if (!groups.size) return null;
+  const month = Number(roster.month), year = Number(roster.year);
+  const monthStart = Date.UTC(year, month - 1, 1, 3), monthEnd = Date.UTC(year, month, 1, 3);
+  if (!Number.isFinite(monthStart) || month < 1 || month > 12) return null;
+  let minutes = 0, touched = false;
+  for (const event of groups.values()) {
+    const group = events.filter(candidate => candidate.journeyId === event.journeyId && candidate.kind === event.kind);
+    const touchesMonth = group.some(candidate => { const start = Date.parse(candidate.startDateTime), end = Date.parse(candidate.endDateTime); return !Number.isFinite(start) || !Number.isFinite(end) || start < monthEnd && end >= monthStart; });
+    if (!touchesMonth) continue;
+    touched = true;
+    const measurement = measureCanonicalDuty(events, event.id);
+    if (measurement?.state !== 'available' || !measurement.start || !measurement.end) return null;
+    minutes += Math.max(0, Math.min(Date.parse(measurement.end), monthEnd) - Math.max(Date.parse(measurement.start), monthStart)) / 60_000;
+  }
+  return touched ? round1(minutes / 60) : null;
 }
 
 function getEffectiveStandbyHours(day: RosterDay): number {
@@ -1278,7 +1297,9 @@ export function getPublishedDutyLimitSummary(day: RosterDay, profile?: LegalProf
   const sectors = Math.max(1, day.legs?.length || 1);
   const limit = applyMostRestrictiveDutyLimit(getRbac117B1SimpleDutyLimit(startTime, sectors), profile);
   if (!limit) return null;
-  const usedHours = round1(getDutyHours(day));
+  const breakdown = getRegulatoryDutyBreakdown(day);
+  if (breakdown.mode === 'indisponivel') return null;
+  const usedHours = round1(breakdown.dutyHours);
   return {
     usedHours,
     maxDutyHours: limit.maxDutyHours,
@@ -1732,7 +1753,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
 
     metrics.totalFlightHours += flightHours;
     flightHoursObservations.push({ date: String(day.date || ''), hours: flightHours });
-    metrics.totalDutyHours += getRegulatoryWorkHoursForTotals(day);
+    metrics.totalDutyHours = (metrics.totalDutyHours ?? 0) + getRegulatoryWorkHoursForTotals(day);
     metrics.totalGroundHours += groundIntervals.reduce((sum, interval) => sum + interval.minutes, 0) / 60;
 
     groundIntervals.forEach((interval) => {
@@ -1748,7 +1769,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
         description: day.date + ': ' + interval.minutes + ' min em ' + interval.location
           + ' entre ' + interval.previousFlight + ' e ' + interval.nextFlight
           + '; limite ' + interval.period + ': ' + limitMinutes + ' min.',
-        details: 'O tempo em solo é exibido e auditado em métrica própria. Ele não foi somado à jornada regulatória do CrewCheck.',
+        details: 'O tempo em solo é exibido e auditado em métrica própria. Ele permanece dentro do intervalo da jornada publicada, sem ser somado uma segunda vez.',
         legalReference: actRules.groundBetweenLegs.legalReference,
         date: day.date,
         confidence: 'alta',
@@ -2158,7 +2179,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     metrics: {
       ...metrics,
       totalFlightHours: round1(metrics.totalFlightHours),
-      totalDutyHours: round1(metrics.totalDutyHours),
+      totalDutyHours: getCanonicalWorkHoursTotal(roster),
       totalGroundHours: round1(metrics.totalGroundHours),
       averageTurnaround: round1(metrics.averageTurnaround),
     },
