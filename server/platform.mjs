@@ -1,3 +1,4 @@
+import { amilDocumentaryReferences, AMIL_DOCUMENTARY_NOTICE } from '../shared/amil-documentary-reference.mjs';
 import { amilPlanFamily, amilConfirmedProviders, amilUnknownMessage, AMIL_GUIDE_URL } from '../shared/amil-coverage.mjs';
 import { notificationStateDeletionStatements } from './v139/notificationStateDeletion.mjs';
 import crypto from 'node:crypto';
@@ -1274,7 +1275,7 @@ function amilServiceLabel(codes = []) {
 }
 
 function amilSelection(url) {
-  return Object.fromEntries(['planCode', 'productCode', 'networkCode', 'serviceCode', 'specialty', 'city', 'state', 'query'].map(key => [key, String(url.searchParams.get(key) || '').trim()]));
+  return Object.fromEntries(['identityKind', 'productLabel', 'planCode', 'productCode', 'networkCode', 'serviceCode', 'specialty', 'city', 'state', 'query'].map(key => [key, String(url.searchParams.get(key) || '').trim()]));
 }
 function amilSnapshotSearch(url) {
   const selection = amilSelection(url);
@@ -1310,8 +1311,12 @@ async function handleAmilHealth(req, res) {
 async function handleAmilSearch(req, res, url) {
   const context = await requireMain(req, res);
   if (!context) return;
-  const config = amilConfiguration();
   const selection = amilSelection(url);
+  if (selection.identityKind === 'official_query_product_label') {
+    const references = amilDocumentaryReferences(selection);
+    return sendJson(res, 200, { ok: true, providers: [], count: 0, total: 0, referenceProviders: references, referenceCount: references.length, coverageStatus: 'unknown', source: 'user_presented_official_query', originalQueryDateKnown: false, sourcePage: AMIL_GUIDE_URL, disclaimer: AMIL_DOCUMENTARY_NOTICE });
+  }
+  const config = amilConfiguration();
   if (!selection.productCode || !selection.networkCode || !selection.state || !selection.city || !selection.serviceCode || !selection.specialty || !amilPlanFamily(selection.planCode)) return sendJson(res, 200, { ok: true, providers: [], count: 0, total: 0, coverageStatus: 'unknown', reason: amilPlanFamily(selection.planCode) ? 'ambiguous_plan' : 'missing_plan_details', sourcePage: AMIL_GUIDE_URL, disclaimer: amilUnknownMessage(selection.planCode) });
   if (!config.configured) {
     const snapshot = amilSnapshotSearch(url);

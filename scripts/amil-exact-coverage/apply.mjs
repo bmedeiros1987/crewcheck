@@ -7,7 +7,7 @@ function replace(source, before, after) {
 const path = 'client/src/pages/Home.tsx';
 let source = fs.readFileSync(path, 'utf8');
 if (!source.includes('cc-amil-exact-coverage')) {
-  source = "// cc-amil-exact-coverage\nimport { amilConfirmedProviders, amilUnknownMessage, AMIL_GUIDE_URL } from '../../../shared/amil-coverage.mjs';\n" + source;
+  source = "// cc-amil-exact-coverage\nimport AmilDocumentaryReference from '@/components/health/AmilDocumentaryReference';\nimport { amilConfirmedProviders, amilUnknownMessage, AMIL_GUIDE_URL } from '../../../shared/amil-coverage.mjs';\n" + source;
   source = replace(source, "planCode: 'S450' | 'S750'; state?: string; city?: string; query?: string; care: string", "planCode: 'S450' | 'S750'; productCode: string; networkCode: string; serviceCode: string; specialty: string; state?: string; city?: string; query?: string; care: string");
   source = replace(source, "    if (options.coordinates) { params.set('latitude', String(options.coordinates.lat)); params.set('longitude', String(options.coordinates.lon)); }", "    for (const key of ['productCode', 'networkCode', 'serviceCode', 'specialty'] as const) params.set(key, options[key]);");
   source = replace(source, 'providers: Array.isArray(response.providers) ? response.providers : []', 'providers: amilConfirmedProviders(response.providers, options)');
@@ -36,7 +36,7 @@ if (!source.includes('cc-amil-exact-coverage')) {
   source = replace(source, '<span><ShieldCheck/> Coberto no {provider.planCode || amilPlan}</span>', '<span><ShieldCheck/> Rede confirmada: {provider.planCode} · produto {amilProduct} · rede {amilNetwork} · serviço {amilService} · {amilSpecialty}</span><a href={provider.sourceUrl} target="_blank" rel="noreferrer">Fonte oficial da unidade</a>');
   source = replace(source, "amilMessage || 'Escolha a UF e o tipo de atendimento para ver somente prestadores publicados para o plano selecionado.'", 'amilMessage || amilUnknownMessage(amilPlan)');
   source = replace(source, 'Snapshot informativo extraído dos PDFs publicados.', 'A lista inclui apenas evidência oficial atual para o produto, rede, unidade, serviço e região selecionados; não garante autorização individual.');
-  source = replace(source, '  </section> : null;\n\n  return <><Brand back/>{amilResultsSection}', '    <a href={AMIL_GUIDE_URL} target="_blank" rel="noreferrer">Conferir no Guia Amil</a>\n  </section> : null;\n\n  return <><Brand back/>{amilResultsSection}');
+  source = replace(source, '  </section> : null;\n\n  return <><Brand back/>{amilResultsSection}', '    <AmilDocumentaryReference planCode={amilPlan} productCode={amilProduct} networkCode={amilNetwork} query={amilQuery} state={amilState} city={amilCity} serviceCode={amilService} specialty={amilSpecialty}/>\n    <a href={AMIL_GUIDE_URL} target="_blank" rel="noreferrer">Conferir no Guia Amil</a>\n  </section> : null;\n\n  return <><Brand back/>{amilResultsSection}');
   source = replace(source, "{!(category === 'gym' && plan === 'wellhub') && <button onClick={() => openPlacesInGoogleMaps", "{category !== 'hospital' && !(category === 'gym' && plan === 'wellhub') && <button onClick={() => openPlacesInGoogleMaps");
   source = replace(source, '<section className="cz-stack-list cz-places-results">', "{category !== 'hospital' && <section className=\"cz-stack-list cz-places-results\">");
   source = replace(source, '</div></article>}</section>\n  </>;\n}', '</div></article>}</section>}\n  </>;\n}');
