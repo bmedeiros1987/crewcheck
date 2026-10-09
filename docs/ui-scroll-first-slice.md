@@ -20,4 +20,4 @@ The mounted reading selector listens to account/session changes and resets to th
 
 
 ### Monetary contrast review correction
-MoneyText introduces spans, so each token explicitly inherits its b/strong foreground instead of a global muted span color. Contrast checks now measure every actual money token in summary cards and finance rows, including real100/150/200 preferences, in both themes. The minimum required ratio is4.5:1; surrounding muted text checks alone are insufficient.
+MoneyText introduces spans, so each token explicitly inherits its b/strong foreground instead of a global muted span color, and uses full opacity instead of the global translucent span style. Contrast checks now measure every actual money token in summary cards and finance rows, including real100/150/200 preferences, in both themes. The minimum required ratio is4.5:1; surrounding muted text checks alone are insufficient.

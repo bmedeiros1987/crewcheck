@@ -175,7 +175,7 @@ async function visibleTextBounds(page, selector) {
         assert.deepEqual(money.splitCurrencyTokens, [], 'Every currency/number/cents group stays together in rows and multi-currency summary cards');
         const tokenContrast = await fixtureScope.qaContrast(page);
         assert.ok(tokenContrast.some(item => item.selector.includes('cc-money-token')), 'Measure real money tokens, not only surrounding text');
-        assert.ok(tokenContrast.every(item => Number(item.opacity) === 1 && item.ratio >= 4.5), 'Every monetary token and source label meets contrast at actual reading preference: ' + JSON.stringify(tokenContrast.filter(item => item.ratio < 4.5))); 
+        assert.ok(tokenContrast.every(item => Number(item.opacity) === 1 && item.ratio >= 4.5), 'Every monetary token and source label meets contrast at actual reading preference: ' + JSON.stringify(tokenContrast.filter(item => item.ratio < 4.5 || Number(item.opacity) !== 1)));
         await page.screenshot({ path: path.join(output, `${width}-${theme}-${size}-finance.png`) });
         if (size === 200) {
           // Deterministic inset emulation exercises real footer measurement; this is not a physical-device claim.
