@@ -1,3 +1,6 @@
+import { CanonicalDutyCard, openCanonicalDutyDetails } from '@/components/CanonicalDutyCard';
+import { measureCanonicalDuty } from '@/lib/canonicalDutyMeasurement';
+import { financialIntervalEvidenceIssue } from '@/lib/financialIntervalEvidence';
 import { NotificationReadiness } from '@/components/notifications/NotificationReadiness';
 import { isFinancialSetting, readFinancialSetting, writeFinancialSetting } from '@/lib/financialSettingStore';
 import type { ReactNode } from 'react';
@@ -66,7 +69,7 @@ import {
   Plus,
   Search,
 } from 'lucide-react';
-import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getPublishedDutyLimitSummary, type ComplianceResult } from '@/lib/complianceEngine';
+import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getCanonicalWorkHoursTotal, getPublishedDutyLimitSummary, type ComplianceResult } from '@/lib/complianceEngine';
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
 import { authFetch, getStoredUser, logout } from '@/lib/authClient';
 import { exportReport } from '@/lib/pdfExport';
@@ -91,7 +94,7 @@ import { rosterDisplayIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayD
 import { confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
-import { classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
+import { allowanceIntervalState, rosterOperationalIso, rosterOperationalDateAt, rosterPresentationBeforeDeparture, classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
 import { observedAllowancePeriods, rowsInObservedCycle, summarizeForecastRows, summarizeNativeForecastRows, nativeForecastDelta, forecastSummaryValue } from '@/lib/financialForecastPeriods';
 import { financialJourneyGroupKey, rowsForNominalFinancialCompetence, nominalFinancialCompetencePrefix } from '@/lib/financialJourneyGrouping';
 import PlatformCenter from '@/components/platform/PlatformCenter';
@@ -1943,7 +1946,7 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
   const event = nextFlight(events);
   const loaded = events.some((event) => !event.placeholder);
   const alertCount = actionableComplianceAlerts(compliance).length;
-  const dutyLimit = event.kind === 'flight' && !event.placeholder ? getPublishedDutyLimitSummary(event.day, compliance?.legalProfile) : null;
+  const dutyMeasurement = !event.placeholder && event.canonical ? measureCanonicalDuty(events.flatMap(item => item.canonical ? [item.canonical] : []), event.canonical.id) : null;
   const counters = loaded && events[0]?.day ? {
     days: new Set(events.map((e) => e.day.date)).size,
     flights: events.filter((e) => e.kind === 'flight').length,
@@ -1951,7 +1954,7 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
     rest: events.filter((e) => e.canonical?.kind === 'rest').length,
   } : { days: 0, flights: 0, activities: 0, rest: 0 };
 
-  return <><Brand onMenu={openMenu}/><section className="cz-title"><small>Cockpit</small><i/></section><section className="cz-kpi-row"><KpiCard icon={CalendarDays} title="Dias publicados" value={String(counters.days)} detail="Datas reais"/><KpiCard icon={Plane} title="Voos" value={String(counters.flights)} detail="Pernas detectadas" tone="blue"/><KpiCard icon={BriefcaseBusiness} title="Atividades" value={String(counters.activities)} detail={`Folgas ${counters.rest}`} tone="blue"/><KpiCard icon={Bell} title="Alertas" value={String(alertCount)} detail="Confirmados" tone="pink"/></section><section className="cz-money-row"><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>Abrir</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>Financeiro</strong></div></section><section className="cz-section-head"><h2>Próxima Programação</h2><button onClick={() => setView(loaded ? 'roster' : 'import')}>{loaded ? 'Ver todas' : 'Importar'} <ChevronRight size={18}/></button></section>{loaded && !event.placeholder ? <FlightCard event={event}/> : <article className="cz-empty-real"><Upload/><h2>{loaded ? 'Nenhuma programação futura' : 'Nenhuma escala real carregada'}</h2><p>{loaded ? 'A escala foi carregada, mas não há evento operacional futuro após agora. Confira se o período importado está correto.' : 'Suba o PDF oficial para ativar a escala completa e os recursos operacionais com dados reais.'}</p><button onClick={onUpload}>Importar PDF agora</button></article>}{dutyLimit && <button className="cz-mini-status" onClick={() => setView('regulation')}><ShieldCheck/><strong>Limite desta jornada</strong><span>{dutyLimit.usedHours.toFixed(1).replace('.', ',')} h de {dutyLimit.maxDutyHours.toFixed(1).replace('.', ',')} h · margem {Math.max(0, dutyLimit.remainingHours).toFixed(1).replace('.', ',')} h</span><ChevronRight/></button>}<SmartCard event={event} setView={setView}/></>;
+  return <><Brand onMenu={openMenu}/><section className="cz-title"><small>Cockpit</small><i/></section><section className="cz-kpi-row"><KpiCard icon={CalendarDays} title="Dias publicados" value={String(counters.days)} detail="Datas reais"/><KpiCard icon={Plane} title="Voos" value={String(counters.flights)} detail="Pernas detectadas" tone="blue"/><KpiCard icon={BriefcaseBusiness} title="Atividades" value={String(counters.activities)} detail={`Folgas ${counters.rest}`} tone="blue"/><KpiCard icon={Bell} title="Alertas" value={String(alertCount)} detail="Confirmados" tone="pink"/></section><section className="cz-money-row"><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>Abrir</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>Financeiro</strong></div></section><section className="cz-section-head"><h2>Próxima Programação</h2><button onClick={() => setView(loaded ? 'roster' : 'import')}>{loaded ? 'Ver todas' : 'Importar'} <ChevronRight size={18}/></button></section>{loaded && !event.placeholder ? <FlightCard event={event}/> : <article className="cz-empty-real"><Upload/><h2>{loaded ? 'Nenhuma programação futura' : 'Nenhuma escala real carregada'}</h2><p>{loaded ? 'A escala foi carregada, mas não há evento operacional futuro após agora. Confira se o período importado está correto.' : 'Suba o PDF oficial para ativar a escala completa e os recursos operacionais com dados reais.'}</p><button onClick={onUpload}>Importar PDF agora</button></article>}{loaded && !event.placeholder && <CanonicalDutyCard measurement={dutyMeasurement} onOpen={() => openCanonicalDutyDetails(event.canonical, setView)}/>}<SmartCard event={event} setView={setView}/></>;
 }
 
 function rosterCode(day?: RosterDay): string {
@@ -2716,7 +2719,8 @@ function rosterDayIso(day: RosterDay): string {
   return raw.slice(0, 10);
 }
 
-function HourLimitBar({ title, used, limit, detail }: { title: string; used: number; limit: number; detail: string }) {
+function HourLimitBar({ title, used, limit, detail }: { title: string; used: number | null; limit: number; detail: string }) {
+  if (used === null) return <article className="cz-hour-limit"><header><strong>{title}</strong><b>Dados pendentes</b></header><p>{detail || 'Intervalos incompletos não permitem calcular este total ou uma margem.'}</p></article>;
   const ratio = limit > 0 ? used / limit : 0;
   const tone = ratio >= 1 ? 'danger' : ratio >= .85 ? 'warn' : 'ok';
   return <article className={`cz-hour-limit ${tone}`}><header><span><strong>{title}</strong><small>{detail}</small></span><b>{used.toFixed(1).replace('.', ',')} h / {limit.toFixed(1).replace('.', ',')} h</b></header><div><i style={{ width: `${Math.min(100, Math.max(2, ratio * 100))}%` }}/></div><footer>{ratio >= 1 ? 'Limite de referência alcançado; revise a análise regulatória.' : `${Math.max(0, limit - used).toFixed(1).replace('.', ',')} h de margem na referência configurada.`}</footer></article>;
@@ -2726,35 +2730,33 @@ function LoadView({ bundle }: { bundle: BundleState }) {
   const [limitRevision, setLimitRevision] = useState(0);
   void limitRevision;
   const compliance = currentCompliance(bundle) as any;
-  const days = Array.isArray(bundle.roster.days) ? bundle.roster.days : [];
-  const auditedDays = Array.isArray(compliance.loadAnalysis?.days) ? compliance.loadAnalysis.days : [];
-  const auditedDayByDate = new Map(auditedDays.map((item: any) => [String(item.date || ''), item]));
-  const rows = days.map((day) => {
-    const audited = auditedDayByDate.get(String((day as any).date || '')) as any;
-    return {
-      day,
-      date: rosterDayIso(day),
-      hours: Number.isFinite(Number(audited?.dutyHours)) ? Number(audited.dutyHours) : dutyHoursForRosterDay(day),
-      sectors: Array.isArray((day as any).legs) ? (day as any).legs.length : 0,
-    };
-  }).filter((row) => row.date);
+  const canonicalEvents = buildCanonicalRosterEvents(bundle.roster);
+  const journeys = new Map<string, CanonicalRosterEvent>();
+  for (const event of canonicalEvents) {
+    if (event.kind !== 'flight' && event.kind !== 'duty') continue;
+    if (event.kind === 'duty' && /\b(?:HSB|HSBE|ASB|RES|RESERVA|RSV)\b/.test(`${event.publishedDay.type} ${event.publishedDay.pairingCode}`.toUpperCase())) continue;
+    if (!journeys.has(event.journeyId)) journeys.set(event.journeyId, event);
+  }
+  const measurements = [...journeys.values()].map(event => ({ event, measurement: measureCanonicalDuty(canonicalEvents, event.id) }));
+  const measurementComplete = measurements.length > 0 && measurements.every(item => item.measurement?.state === 'available');
+  const rows = measurements.flatMap(({ event, measurement }) => measurement?.minutes !== null && measurement?.state === 'available'
+    ? [{ date: rosterDayIso(event.publishedDay), hours: measurement.minutes / 60, sectors: canonicalEvents.filter(item => item.kind === 'flight' && item.journeyId === event.journeyId).length, journeyId: event.journeyId }] : []);
+  const weeklyComplete = measurementComplete && !canonicalEvents.some(event => event.kind === 'duty' && /\b(?:HSB|HSBE|ASB|RES|RESERVA|RSV)\b/.test(`${event.publishedDay.type} ${event.publishedDay.pairingCode}`.toUpperCase()));
   const dailyLimit = readNumberSetting('crewcheck_limit_daily_hours', 11);
   const weeklyLimit = readNumberSetting('crewcheck_limit_weekly_hours', 44);
   const monthlyLimit = readNumberSetting('crewcheck_limit_monthly_hours', 176);
   const heaviest = [...rows].sort((a, b) => (b.hours + b.sectors * .35) - (a.hours + a.sectors * .35)).slice(0, 6);
   const peakDay = heaviest[0] || { hours: 0, date: '—', sectors: 0 };
   let peakWeek = { hours: 0, from: '—', to: '—' };
-  rows.forEach((row, index) => { const start = new Date(`${row.date}T12:00:00`); const windowRows = rows.filter((candidate) => { const date = new Date(`${candidate.date}T12:00:00`); const diff = (date.getTime() - start.getTime()) / 86400000; return diff >= 0 && diff < 7; }); const hours = windowRows.reduce((sum, item) => sum + item.hours, 0); if (hours > peakWeek.hours) peakWeek = { hours, from: row.date, to: windowRows.at(-1)?.date || row.date }; });
-  const monthlyHours = Number.isFinite(Number(compliance.metrics?.totalDutyHours))
-    ? Number(compliance.metrics.totalDutyHours)
-    : rows.reduce((sum, row) => sum + row.hours, 0);
+  rows.forEach((row, index) => { const start = new Date(`${row.date}T12:00:00Z`); const windowRows = rows.filter((candidate) => { const date = new Date(`${candidate.date}T12:00:00Z`); const diff = (date.getTime() - start.getTime()) / 86400000; return diff >= 0 && diff < 7; }); const hours = windowRows.reduce((sum, item) => sum + item.hours, 0); if (hours > peakWeek.hours) peakWeek = { hours, from: row.date, to: windowRows.at(-1)?.date || row.date }; });
+  const monthlyHours = getCanonicalWorkHoursTotal(bundle.roster);
   function configure() {
     const daily = prompt('Referência diária de jornada (horas)', String(dailyLimit)); if (daily !== null) storage.set('crewcheck_limit_daily_hours', daily.replace(',', '.'));
     const weekly = prompt('Referência semanal de jornada (horas)', String(weeklyLimit)); if (weekly !== null) storage.set('crewcheck_limit_weekly_hours', weekly.replace(',', '.'));
     const monthly = prompt('Referência mensal de jornada (horas)', String(monthlyLimit)); if (monthly !== null) storage.set('crewcheck_limit_monthly_hours', monthly.replace(',', '.'));
     setLimitRevision((value) => value + 1);
   }
-  return <><Brand back/><section className="cz-panel-head"><h1>Carga e limites</h1><p>Relação direta de horas usadas x limite de referência, sem substituir a análise contextual de RBAC 117, ACT e escala oficial.</p></section><section className="cz-hour-limits"><HourLimitBar title="Jornada diária mais alta" used={peakDay.hours} limit={dailyLimit} detail={`${peakDay.date} · ${peakDay.sectors} trecho(s)`}/><HourLimitBar title="Pico em 7 dias" used={peakWeek.hours} limit={weeklyLimit} detail={`${peakWeek.from} a ${peakWeek.to}`}/><HourLimitBar title="Total mensal" used={monthlyHours} limit={monthlyLimit} detail={`${rows.length} dia(s) com dados de jornada`}/></section><section className="cz-toolbox"><h2>Referências e confiabilidade</h2><p>Os valores acima são referências configuráveis para visualização. Uma extrapolação visual não vira irregularidade sozinha: composição, horário, tripulação, operação, repouso, ACT e RBAC continuam sendo avaliados no motor de conformidade.</p><div className="cz-tool-actions"><button onClick={configure}><Settings/> Configurar limites de referência</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'alerts' }))}><AlertTriangle/> Abrir análise regulatória</button></div></section><section className="cz-finance-table"><h2>Dias mais puxados da escala</h2>{heaviest.length ? heaviest.map((row, index) => <div className="cz-finance-row" key={`${row.date}-${index}`}><span>#{index + 1}</span><strong>{row.date}</strong><small>{row.hours.toFixed(1).replace('.', ',')} h de jornada · {row.sectors} trecho(s){row.hours >= dailyLimit ? ' · acima da referência diária' : ''}</small><b>{row.hours.toFixed(1).replace('.', ',')} h / {dailyLimit.toFixed(1).replace('.', ',')} h</b></div>) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem jornada calculável</h2><p>Importe uma escala com apresentação e término para calcular as relações de horas.</p></article>}</section><section className="cz-report-grid"><article><h2>Score de conformidade</h2><strong>{compliance.score ?? '—'}</strong><p>{compliance.summary || 'Aguardando análise.'}</p></article><article><h2>Alertas válidos</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Sem contadores antigos ou duplicados.</p></article><article><h2>Fonte</h2><strong>Escala ativa</strong><p>Todos os cálculos usam o mesmo motor canônico.</p></article><article><h2>Solo entre etapas</h2><strong>{Number(compliance.metrics?.totalGroundHours || 0).toFixed(1).replace('.', ',')} h</strong><p>Maior intervalo: {Number(compliance.metrics?.maxGroundIntervalMinutes || 0)} min · {Number(compliance.metrics?.groundLimitExceedances || 0)} acima do ACT. Solo não entra na jornada.</p></article></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Carga e limites</h1><p>Relação direta de horas usadas x limite de referência, sem substituir a análise contextual de RBAC 117, ACT e escala oficial.</p></section><section className="cz-hour-limits"><HourLimitBar title="Jornada publicada mais alta" used={measurementComplete ? peakDay.hours : null} limit={dailyLimit} detail={`${peakDay.date} · ${peakDay.sectors} trecho(s)`}/><HourLimitBar title="Pico em 7 dias" used={weeklyComplete ? peakWeek.hours : null} limit={weeklyLimit} detail={weeklyComplete ? `${peakWeek.from} a ${peakWeek.to}` : 'Acumulado semanal pendente: intervalos ou créditos de reserva/sobreaviso não comprovados.'}/><HourLimitBar title="Horas de trabalho no mês" used={null} limit={monthlyLimit} detail={monthlyHours === null ? 'Acumulado integral pendente; reserva/sobreaviso e demais créditos precisam de validação.' : `${monthlyHours.toFixed(1).replace('.', ',')} h de jornadas publicadas · subtotal; acumulado integral de trabalho pendente.`}/></section><section className="cz-toolbox"><h2>Referências e confiabilidade</h2><p>Os valores acima são referências configuráveis para visualização. Uma extrapolação visual não vira irregularidade sozinha: composição, horário, tripulação, operação, repouso, ACT e RBAC continuam sendo avaliados no motor de conformidade.</p><div className="cz-tool-actions"><button onClick={configure}><Settings/> Configurar limites de referência</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'alerts' }))}><AlertTriangle/> Abrir análise regulatória</button></div></section><section className="cz-finance-table"><h2>Dias mais puxados da escala</h2>{measurementComplete && heaviest.length ? heaviest.map((row, index) => <div className="cz-finance-row" key={`${row.journeyId}-${index}`}><span>#{index + 1}</span><strong>{row.date}</strong><small>{row.hours.toFixed(1).replace('.', ',')} h de jornada · {row.sectors} trecho(s){row.hours >= dailyLimit ? ' · acima da referência diária' : ''}</small><b>{row.hours.toFixed(1).replace('.', ',')} h / {dailyLimit.toFixed(1).replace('.', ',')} h</b></div>) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem jornada calculável</h2><p>Importe uma escala com apresentação e término para calcular as relações de horas.</p></article>}</section><section className="cz-report-grid"><article><h2>Score de conformidade</h2><strong>{compliance.score ?? '—'}</strong><p>{compliance.summary || 'Aguardando análise.'}</p></article><article><h2>Alertas válidos</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Sem contadores antigos ou duplicados.</p></article><article><h2>Fonte</h2><strong>Escala ativa</strong><p>Todos os cálculos usam o mesmo motor canônico.</p></article><article><h2>Solo entre etapas</h2><strong>{Number(compliance.metrics?.totalGroundHours || 0).toFixed(1).replace('.', ',')} h</strong><p>Maior intervalo: {Number(compliance.metrics?.maxGroundIntervalMinutes || 0)} min · {Number(compliance.metrics?.groundLimitExceedances || 0)} acima do ACT. Solo permanece dentro da jornada, sem somar novamente.</p></article></section></>;
 }
 
 function ToggleSetting({ icon: Icon, label, storageKey, defaultOn = true, detail }: { icon: any; label: string; storageKey: string; defaultOn?: boolean; detail?: string }) {
@@ -3461,7 +3463,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
   const rows: PerDiemRow[] = [];
   const seen = new Set<string>();
   const pendingAirports = new Set<string>();
-  const unclassifiedItems: Array<{ iso: string; airport: string }> = [];
+  const unclassifiedItems: Array<{ iso: string; airport: string; reason?: string }> = [];
   const usedRateKeys = new Set<PerDiemRateKey>();
   const add = (event: ZeroLeg, iso: string, slot: string, label: string, source: string, calculationStart: Date, calculationEnd: Date) => {
     const classification = resolvePerDiemRule(event.origin, event.destination, airportOverrides);
@@ -3498,7 +3500,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       value,
       currency: rate.currency,
       convertedBRL: rate.currency === 'BRL' ? value : fx > 0 ? value * fx : null,
-      source: source + ' · ' + rate.label + ' · ' + classification.reason + ' · ' + cfg.source + ' · vigência consultada em ' + iso,
+      source: source + ' · relógio da escala BRT (UTC-03) · ' + rate.label + ' · ' + classification.reason + ' · ' + cfg.source + ' · vigência consultada em ' + iso,
       airport: classification.airport,
       rateKey: classification.rateKey,
       rateSource: classification.rateKey === 'domestic' ? (slot === 'breakfast' ? cfg.domesticBreakfastSource : cfg.domesticMainMealSource) : (readOptionalNumberSetting('crewcheck_perdiem_rate_' + classification.rateKey) !== null ? 'manual' : 'act'),
@@ -3529,8 +3531,8 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       representative = dutyFlights[0] || event;
       const last = dutyFlights[dutyFlights.length - 1] || event;
       start = eventStartDateTime(representative);
-      const report = String((event.day as any)?.dutyReport || representative.presentation || '').match(/(\d{1,2}):(\d{2})/);
-      if (report) start.setHours(Number(report[1]), Number(report[2]), 0, 0);
+      const report = String(representative.canonical?.leg?.presentationTime || (representative.day as any)?.dutyReport || '').trim();
+      start = rosterPresentationBeforeDeparture(start, report) || new Date(NaN);
       enginesOff = eventEndDateTime(last);
       end = enginesOff;
       activityKind = 'flight';
@@ -3546,16 +3548,38 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       activityKind = 'training';
     }
 
+    const evidenceIssue = financialIntervalEvidenceIssue(dutyFlights);
+    if (evidenceIssue || allowanceIntervalState(start, end) !== 'available') {
+      const iso = rosterOperationalIso(eventStartDateTime(representative));
+      unclassifiedItems.push({ iso, airport: String(representative.origin || ''), reason: `Intervalo operacional incompleto: ${evidenceIssue || 'apresentação ou fim inválido'}. Relógio da escala BRT (UTC-03).` });
+      continue;
+    }
+
+    const atContractualBase = (airport: string) => Boolean(roster.base) && String(airport || '').toUpperCase() === String(roster.base).toUpperCase();
+    // Presence evidence, including intermediate base arrivals. Destination alone
+    // does not establish presence during the breakfast window.
+    const breakfastBasePresence: Array<{ start: Date; end: Date; eventId: string }> = [];
+    if (activityKind === 'reserve' && atContractualBase(representative.origin)) breakfastBasePresence.push({ start, end, eventId: representative.id });
+    if (activityKind === 'flight') {
+      if (atContractualBase(representative.origin)) breakfastBasePresence.push({ start, end: eventStartDateTime(representative), eventId: representative.id });
+      for (const flight of dutyFlights) if (atContractualBase(flight.destination)) {
+        const arrival = eventEndDateTime(flight);
+        breakfastBasePresence.push({ start: arrival, end: arrival, eventId: flight.id });
+      }
+    }
+
     const breakfastIncluded = Boolean((event.day as any)?.breakfastIncluded || (event.day as any)?.hotelBreakfastIncluded || (event as any)?.breakfastIncluded);
     const occurrences = classifyAllowanceWindows({
       start,
       end,
+      clockBasis: 'roster_brt',
       enginesOff,
       kind: activityKind,
       activated: event.kind === 'flight',
       originAtContractualBase: String(representative.origin || '').toUpperCase() === String(roster.base || '').toUpperCase(),
       destinationAtContractualBase: String((dutyFlights.at(-1) || representative).destination || '').toUpperCase() === String(roster.base || '').toUpperCase(),
       breakfastIncluded,
+      breakfastBasePresence,
     });
     const source = activityKind === 'stay_external' ? 'Pernoite fora da base'
       : activityKind === 'reserve' ? 'Reserva no aeroporto'
@@ -3565,32 +3589,30 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       const labels: Record<string, string> = { breakfast: 'Café', lunch: 'Almoço', dinner: 'Jantar', supper: 'Ceia' };
       const slotHours: Record<string, [number, number]> = { breakfast: [5, 8], lunch: [11, 13], dinner: [19, 20], supper: [0, 1] };
       const [windowStartHour, windowEndHour] = slotHours[occurrence.slot] || [0, 23];
-      const windowStart = new Date(`${occurrence.iso}T00:00:00`);
-      windowStart.setHours(windowStartHour, 0, 0, 0);
-      const windowEnd = new Date(`${occurrence.iso}T00:00:00`);
-      windowEnd.setHours(windowEndHour, 0, 0, 0);
-      const occurrenceEvent = dutyFlights.find((candidate, index) => {
+      const windowStart = rosterOperationalDateAt(occurrence.iso, windowStartHour);
+      const windowEnd = rosterOperationalDateAt(occurrence.iso, windowEndHour);
+      const occurrenceEvent = (occurrence.slot === 'breakfast' && occurrence.eventId ? dutyFlights.find(candidate => candidate.id === occurrence.eventId) : null) || dutyFlights.find((candidate, index) => {
         const candidateStart = eventStartDateTime(candidate).getTime();
         const candidateEnd = eventEndDateTime(candidate).getTime() + (index === dutyFlights.length - 1 ? 30 * 60_000 : 0);
         return candidateStart <= windowEnd.getTime() && candidateEnd >= windowStart.getTime();
       }) || (occurrence.slot === 'breakfast' && dutyFlights.at(-1)?.destination?.toUpperCase() === String(roster.base || '').toUpperCase() ? dutyFlights.at(-1)! : representative);
-      add(occurrenceEvent, occurrence.iso, occurrence.slot, labels[occurrence.slot], `${source} · ${occurrence.window}`, start, end);
+      add(occurrenceEvent, occurrence.iso, occurrence.slot, labels[occurrence.slot], `${source} · ${occurrence.window}${occurrence.slot === 'breakfast' ? ' · Critério operacional informado pelo usuário: presença na base na janela do café; sem homologação ACT' : ''}`, start, end);
     }
   }
   const monthlyRows = rowsForNominalFinancialCompetence(rows, roster);
-  const monthlyUnclassifiedItems = rowsForNominalFinancialCompetence(unclassifiedItems, roster);
+  const monthlyUnclassifiedItems = [...rowsForNominalFinancialCompetence(unclassifiedItems, roster), ...unclassifiedItems.filter(item => !item.iso)];
   const nativeSummary = summarizeNativeForecastRows(monthlyRows, monthlyUnclassifiedItems);
   const totalsByCurrency = nativeSummary.totalsByCurrency as Partial<Record<PerDiemCurrency, number>>;
   const monthlySummary = summarizeForecastRows(monthlyRows, monthlyUnclassifiedItems);
   const pendingCurrencies = monthlySummary.pendingCurrencies;
   const convertedTotalBRL = monthlySummary.convertedTotalBRL;
-  const periods = observedAllowancePeriods(now);
+  const periods = observedAllowancePeriods(now, 'roster_brt');
   const cycle = periods.accumulation;
   const weeklyRows = rowsInObservedCycle(rows, cycle);
-  const weeklySummary = summarizeForecastRows(weeklyRows, rowsInObservedCycle(unclassifiedItems, cycle));
+  const weeklySummary = summarizeForecastRows(weeklyRows, [...rowsInObservedCycle(unclassifiedItems, cycle), ...unclassifiedItems.filter(item => !item.iso)]);
   const weekly = weeklySummary.convertedTotalBRL;
   const previousWeeklyRows = rowsInObservedCycle(rows, periods.previous);
-  const previousWeeklySummary = summarizeForecastRows(previousWeeklyRows, rowsInObservedCycle(unclassifiedItems, periods.previous));
+  const previousWeeklySummary = summarizeForecastRows(previousWeeklyRows, [...rowsInObservedCycle(unclassifiedItems, periods.previous), ...unclassifiedItems.filter(item => !item.iso)]);
   const currencySummary = !nativeSummary.complete ? (nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável') : (Object.entries(totalsByCurrency) as Array<[PerDiemCurrency, number]>)
     .map(([currency, value]) => moneyCurrency(value, currency))
     .join(' · ');
@@ -3819,16 +3841,17 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
     {!forecast.nativeSummary.complete && forecast.nativeSummary.state !== 'no_data' && <section className="cz-toolbox cz-finance-attention">
       <h2>Dados financeiros pendentes</h2>
       <p>{forecastOverride?.scopeIncomplete ? 'Há períodos sem escala disponível ou datas inválidas. O total não foi presumido.' : 'Há itens sem classificação ou valores válidos. Confira a origem antes de usar o total.'}</p>
+      {[...new Set(forecast.monthlyUnclassifiedItems.map(item => item.reason).filter(Boolean))].map(reason => <p key={reason}>{reason}</p>)}
     </section>}
     {graph}
     <details className="cz-toolbox cc-per-diem-periods">
       <summary>{forecastOverride ? 'Conversão da previsão' : 'Conversão e semanas de referência'}</summary>
       <section className="cz-finance-grid" aria-label="Previsões convertidas">
         <KpiCard icon={CalendarDays} title={forecastOverride ? 'Convertido em reais no período' : 'Convertido em reais no mês'} value={forecastSummaryValue(forecast.monthlySummary, moneyBRL)} detail={forecast.pendingCurrencies.length ? 'Cotação pendente: ' + forecast.pendingCurrencies.join(', ') : forecastOverride ? (rangeLabel || 'Intervalo selecionado') : 'Competência: ' + competence}/>
-        {!forecastOverride && <KpiCard icon={Plane} title="Semana em andamento" value={forecastSummaryValue(forecast.weeklySummary, moneyBRL)} detail={`${dateChip(forecast.cycle.start)}–${dateChip(forecast.cycle.end)}`}/>}
+        {!forecastOverride && <KpiCard icon={Plane} title="Semana em andamento" value={forecastSummaryValue(forecast.weeklySummary, moneyBRL)} detail={`${dateChip(new Date(rosterOperationalIso(forecast.cycle.start) + 'T12:00:00'))}–${dateChip(new Date(rosterOperationalIso(forecast.cycle.end) + 'T12:00:00'))}`}/>}
       </section>
       <p>{forecastOverride ? 'Conversão com as cotações configuradas nesta consulta; não comprova câmbio histórico ou pagamento.' : 'A semana vai de quarta a terça e pode cruzar o mês selecionado.'}</p>
-      {!forecastOverride && <p>Semana anterior ({dateChip(forecast.periods.previous.start)}–{dateChip(forecast.periods.previous.end)}): {forecastSummaryValue(forecast.previousWeeklySummary, moneyBRL)}.</p>}
+      {!forecastOverride && <p>Semana anterior ({dateChip(new Date(rosterOperationalIso(forecast.periods.previous.start) + 'T12:00:00'))}–{dateChip(new Date(rosterOperationalIso(forecast.periods.previous.end) + 'T12:00:00'))}): {forecastSummaryValue(forecast.previousWeeklySummary, moneyBRL)}.</p>}
       {!forecastOverride && forecast.weeklySummary.pendingCurrencies.length > 0 && <p>Cotação pendente na semana: {forecast.weeklySummary.pendingCurrencies.join(', ')}.</p>}
     </details>
     <details className="cz-finance-table cc-per-diem-items">
@@ -3841,7 +3864,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
           <b><MoneyText value={moneyCurrency(row.value, row.currency)}/></b>
           <details className="cc-per-diem-source"><summary>Origem e regra{row.convertedBRL === null ? ' · cotação pendente' : ''}</summary><small>{row.source}</small></details>
         </div>
-      ) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem itens previstos</h2><p>A escala selecionada não contém diárias previstas nesta competência.</p></article>}
+      ) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>{forecast.nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Previsão pendente'}</h2><p>{forecast.nativeSummary.state === 'no_data' ? 'A escala selecionada não contém diárias previstas nesta competência.' : 'Os dados incompletos não foram tratados como ausência de diárias.'}</p></article>}
     </details>
   </section></>;
 }
@@ -3849,7 +3872,8 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
 function scopedFinancialForecast(snapshots: ReturnType<typeof financeSnapshot>[], range: FinancialRange, missing: string[]) {
   const base = snapshots[0]?.perdiem || {};
   const rows = financialRowsInRange(snapshots.flatMap(snapshot => snapshot.perdiem.monthlyRows), range);
-  const unclassifiedItems = financialRowsInRange(snapshots.flatMap(snapshot => snapshot.perdiem.monthlyUnclassifiedItems), range);
+  const pending = snapshots.flatMap(snapshot => snapshot.perdiem.monthlyUnclassifiedItems);
+  const unclassifiedItems = [...financialRowsInRange(pending, range), ...pending.filter(item => !item.iso)];
   const native = summarizeNativeForecastRows(rows, unclassifiedItems), converted = summarizeForecastRows(rows, unclassifiedItems);
   const scopeIncomplete = !range.valid || missing.length > 0;
   const nativeSummary = scopeIncomplete ? { ...native, complete:false, totalsByCurrency:{}, state:'unclassified' } : native;

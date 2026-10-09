@@ -48,8 +48,8 @@ expect(roster.includes('<strong>{rosterSurfaceCounts.days}</strong>'), 'KPI de d
 expect(roster.includes('<strong>{rosterSurfaceCounts.flights}</strong>'), 'KPI de voos da Escala não usa contador canônico.');
 
 expect(
-  home.includes('HourLimitBar title="Jornada regulatória mensal" used={monthlyHours}'),
-  'Carga/Limites precisa rotular totalDutyHours como jornada regulatória, não como programação genérica.',
+  home.includes('HourLimitBar title="Horas de trabalho no mês" used={null}') && home.includes('subtotal; acumulado integral de trabalho pendente.'),
+  'Carga/Limites deve explicar o subtotal publicado e manter horas integrais/margem mensal pendentes.',
 );
 
 expect(

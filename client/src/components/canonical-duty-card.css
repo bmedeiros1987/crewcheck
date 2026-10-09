@@ -1,0 +1,6 @@
+.cc-canonical-duty-card{display:flex;width:100%;align-items:flex-start;gap:10px;text-align:left;min-height:44px;padding:12px;border:1px solid var(--cz-border,#d5e0e9);border-radius:14px;background:var(--cz-card,#fff);color:var(--cz-text,#17354a);}
+.cc-canonical-duty-card>.cc-canonical-duty-icon{width:20px;height:20px;min-width:20px;flex:0 0 20px;padding:0;}
+.cc-canonical-duty-card>.cc-canonical-duty-copy{display:grid;gap:4px;flex:1 1 auto;min-width:0;overflow-wrap:anywhere;}
+.cc-canonical-duty-copy>strong,.cc-canonical-duty-copy>span,.cc-canonical-duty-copy>small{min-width:0;}
+.cc-canonical-duty-copy>small{font-size:.875em;line-height:1.4;color:var(--cz-text-muted,#536b7e);}
+.cc-canonical-duty-card:focus-visible{outline:2px solid var(--cz-accent,#167aa5);outline-offset:3px;}

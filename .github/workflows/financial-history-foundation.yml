@@ -61,6 +61,8 @@ jobs:
       - run: node scripts/regression-salary-review-callers.mjs
       - run: node scripts/regression-financial-read-model.mjs
       - run: node scripts/regression-financial-statement-totals.mjs
+      - name: Verify reported breakfast criterion with base/time evidence
+        run: node scripts/regression-breakfast-base-presence.mjs
       - run: node --test scripts/regression-financial-review-negative.mjs
       - run: node scripts/regression-financial-callers.mjs
         env:
@@ -71,6 +73,8 @@ jobs:
       - run: node scripts/regression-financial-callers.mjs
         env:
           TZ: America/New_York
+      - name: Verify actual allowance caller in operational BRT across device timezones
+        run: node scripts/regression-operational-finance-clock.mjs
       - run: node scripts/regression-financial-comparison-periods.mjs
       - run: node scripts/regression-financial-history-periods.mjs
         env:
@@ -82,6 +86,11 @@ jobs:
         env:
           TZ: America/New_York
       - run: node scripts/regression-p0-530-finance-canonical-journey.mjs
+      - name: Verify published canonical duty measurement
+        run: |
+          node scripts/regression-duty-boundary-source.mjs
+          node scripts/regression-canonical-duty-measurement.mjs
+          node scripts/regression-canonical-duty-load.mjs
       - run: node scripts/regression-p2-530-adjacent-fallback-finance.mjs
       - run: npx tsc --noEmit
       - run: npx vite build
@@ -97,6 +106,12 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
         run: node scripts/regression-salary-prerequisites-browser.cjs
+      - name: Verify compact canonical duty card with synthetic fixtures
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: |
+          node scripts/regression-canonical-duty-card-browser.mjs
+          node scripts/regression-canonical-duty-home-browser.cjs
       - name: Save salary diagnostic evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -109,5 +124,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: financial-ui-synthetic
-          path: artifacts/financial-ui/
+          path: |
+            artifacts/financial-ui/
+            artifacts/canonical-duty-measurement/
+            artifacts/canonical-duty-card/
+            artifacts/canonical-duty-home/
           if-no-files-found: ignore

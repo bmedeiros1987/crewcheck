@@ -538,7 +538,12 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
   for (const sourceDay of Array.isArray(roster.days) ? roster.days : []) {
     const parsed = parseRosterDate(sourceDay.date, sourceDay.month || defaultMonth, sourceDay.year || defaultYear);
     const date = formatDate(parsed.day, parsed.month, parsed.year);
-    const day = cloneDay({ ...sourceDay, date, dayNumber: parsed.day, month: parsed.month, year: parsed.year });
+    const publishedClockEvidence = (sourceDay as any).publishedClockEvidence || {
+      dutyReport: sourceDay.dutyReport, dutyDebrief: sourceDay.dutyDebrief,
+      dutyReportSource: (sourceDay as any).dutyReportSource, dutyDebriefSource: (sourceDay as any).dutyDebriefSource,
+      legs: (sourceDay.legs || []).map(leg => ({ departureTime: leg.departureTime, arrivalTime: leg.arrivalTime, presentationTime: leg.presentationTime })),
+    };
+    const day = cloneDay({ ...sourceDay, publishedClockEvidence, date, dayNumber: parsed.day, month: parsed.month, year: parsed.year } as RosterDay);
     day.legs = selectPhysicalLegSequence(sortLegs(day.legs || [], day.dutyReport));
 
     const activityKey = day.legs?.length
@@ -566,6 +571,17 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
       }
     }
 
+    const previousEvidence = (current as any).publishedClockEvidence;
+    const incomingEvidence = (day as any).publishedClockEvidence;
+    if (previousEvidence && incomingEvidence) {
+      // Keep every original record before dedup/physical selection. A valid
+      // duplicate must not erase uncertainty from an invalid duplicate.
+      (current as any).publishedClockEvidence = {
+        ...previousEvidence,
+        records: [...(previousEvidence.records || [previousEvidence]), ...(incomingEvidence.records || [incomingEvidence])],
+        legs: [...(previousEvidence.legs || []), ...(incomingEvidence.legs || [])],
+      };
+    }
     current.legs = selectPhysicalLegSequence(sortLegs(current.legs || [], current.dutyReport));
     current.rawText = [current.rawText, day.rawText].filter(Boolean).join(' ');
     current.type = current.legs.length ? 'VOO' : current.type;
