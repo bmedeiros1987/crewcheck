@@ -1,4 +1,5 @@
 // Safety boundary for the existing SQL notification queue. No new provider/queue.
+import { LEAVE_CYCLE, cycleJobPrefix, lockCycle } from './v139/notificationCycles.mjs';
 export const JOB_GRACE_SECONDS = 120;
 const aliases = { both: 'telegram+phone-call', phone: 'phone-call', infobip: 'phone-call', all: 'telegram+telegram-call+phone-call' };
 const allowed = new Set(['telegram', 'telegram-call', 'phone-call', 'telegram+telegram-call', 'telegram+phone-call', 'telegram-call+phone-call', 'telegram+telegram-call+phone-call']);
@@ -34,6 +35,7 @@ export async function safeScheduleJob({ req, res, identity, readJson, dbPool, en
   const phone = String(body.phone || body.mobile || '').trim();
   if ((channels.includes('telegram') && !chatId) || (channels.includes('telegram-call') && !username) || (channels.includes('phone-call') && !phone)) return sendJson(res, 400, { ok: false, message: 'Vínculo ou destinatário indisponível.' });
   const jobKey = String(body.jobKey || body.job_key || `manual:${scheduledAt.toISOString()}:${channel}`).slice(0, 220);
+  if (jobKey.startsWith('cycle:')) return sendJson(res, 409, { ok: false, message: 'Alertas por ciclo exigem fonte e agendamento verificados no servidor.' });
   const job = { email: user.email, job_key: jobKey, scheduled_at: scheduledAt, channel, chat_id: chatId, telegram_username: username, phone,
     message: String(body.message || 'Despertador CrewCheck: confira sua preparação no aplicativo.').trim().slice(0, 1000) };
   const [existing] = await db.query('SELECT *,ROUND(UNIX_TIMESTAMP(scheduled_at)*1000) AS scheduled_epoch,ROUND(UNIX_TIMESTAMP(created_at)*1000) AS created_epoch FROM crewcheck_notification_jobs WHERE email=? AND job_key=? LIMIT 1', [user.email, jobKey]);
@@ -94,7 +96,25 @@ export async function dispatchClaimedJob(db, selected, { deliver, findLink, now 
     }
   }
   // Atomic cancellation cutoff. Cancellation cannot report success after dispatch starts.
-  const [claim] = await db.query("UPDATE crewcheck_notification_jobs SET status='dispatching' WHERE id=? AND status='processing' AND locked_at=?", [job.id, job.locked_at]);
+  const claimSql = "UPDATE crewcheck_notification_jobs SET status='dispatching' WHERE id=? AND status='processing' AND locked_at=?";
+  let claim;
+  if (String(job.job_key).startsWith('cycle:')) {
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [current] = await connection.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE', [job.email]);
+      const supported = String(job.job_key).startsWith(cycleJobPrefix(LEAVE_CYCLE));
+      const scope = supported && current[0]?.public_id ? await lockCycle(connection, job.email, current[0].public_id, LEAVE_CYCLE) : null;
+      if (!scope || scope.state.submitted === true || scope.state.schedulingAllowed !== true) {
+        await connection.query("UPDATE crewcheck_notification_jobs SET status='cancelled',locked_at=NULL WHERE id=? AND status='processing' AND locked_at=?", [job.id, job.locked_at]);
+        await connection.commit();
+        return { status: 'cancelled' };
+      }
+      [claim] = await connection.query(claimSql, [job.id, job.locked_at]);
+      await connection.commit();
+    } catch (error) { await connection.rollback(); throw error; }
+    finally { connection.release(); }
+  } else [claim] = await db.query(claimSql, [job.id, job.locked_at]);
   if (!claim.affectedRows) return { status: 'skipped' };
   let result;
   try { result = await deliver(job); } catch { result = { ok: false, uncertain: true }; }

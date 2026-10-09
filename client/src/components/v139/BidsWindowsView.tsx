@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, CalendarCheck2, CalendarDays, Clock, Download, ExternalLink, GraduationCap, Save, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { PBS_OFFICIAL_WINDOWS, officialPbsWindow, pbsWindowDates } from '@/data/pbsWindows';
@@ -63,6 +63,10 @@ function initialForm(instructor: boolean) {
 }
 
 export default function BidsWindowsView() {
+  const [leaveSubmitted, setLeaveSubmitted] = useState<boolean | null>(null);
+  const [leaveBusy, setLeaveBusy] = useState(false);
+  const identityEpoch = useRef(0);
+  const leavePath = '/api/platform/notification-cycles/year-end-leave-2026-2027-cabine';
   const [instructor, setInstructor] = useState(() => localStorage.getItem('crewcheck_instructor') === '1');
   const [windows, setWindows] = useState<BidWindow[]>([]);
   const [busy, setBusy] = useState(false);
@@ -70,7 +74,9 @@ export default function BidsWindowsView() {
   const openCount = useMemo(() => windows.filter((item) => status(item) === 'Aberta').length, [windows]);
 
   async function load() {
+    const epoch = identityEpoch.current;
     const payload = await v139Api('/api/platform/bids');
+    if (identityEpoch.current !== epoch) return;
     setWindows(payload.windows || []);
     for (const notice of payload.notifications || []) {
       const title = notice.kind === 'open' ? 'A janela de BIDS abriu' : 'Último dia da janela de BIDS';
@@ -80,8 +86,28 @@ export default function BidsWindowsView() {
   }
 
   useEffect(() => {
+    const epoch = identityEpoch.current;
     load().catch((error) => toast.error(error instanceof Error ? error.message : 'Não consegui carregar BIDS.'));
+    v139Api(leavePath).then(payload => { if (identityEpoch.current === epoch) setLeaveSubmitted(payload.submitted === true); }).catch(() => { if (identityEpoch.current === epoch) setLeaveSubmitted(null); });
+    const changed = () => { identityEpoch.current++; setLeaveSubmitted(null); setLeaveBusy(false); setWindows([]); setForm(initialForm(instructor)); };
+    window.addEventListener('crewcheck:auth-changed', changed);
+    window.addEventListener('crewcheck:auth-expired', changed);
+    const storage = (event: StorageEvent) => { if (['crewcheck_auth_user', 'crewcheck_auth_token'].includes(event.key || '')) changed(); };
+    window.addEventListener('storage', storage);
+    return () => { identityEpoch.current++; window.removeEventListener('crewcheck:auth-changed', changed); window.removeEventListener('crewcheck:auth-expired', changed); window.removeEventListener('storage', storage); };
   }, []);
+
+  async function confirmLeave() {
+    const epoch = identityEpoch.current;
+    setLeaveBusy(true);
+    try {
+      const result = await v139Api(leavePath, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'submitted' }) });
+      if (identityEpoch.current !== epoch) return;
+      setLeaveSubmitted(result.submitted === true);
+      toast.message(result.message);
+    } catch (error) { if (identityEpoch.current === epoch) toast.error(error instanceof Error ? error.message : 'Confirmação não salva. Tente novamente ao reconectar.'); }
+    finally { if (identityEpoch.current === epoch) setLeaveBusy(false); }
+  }
 
   function applyOfficial(targetMonth = form.targetMonth, nextInstructor = instructor) {
     const [year, month] = targetMonth.split('-').map(Number);
@@ -108,6 +134,7 @@ export default function BidsWindowsView() {
   }
 
   async function save() {
+    const epoch = identityEpoch.current;
     const opensAt = new Date(form.opensAt);
     const closesAt = new Date(form.closesAt);
     if (!Number.isFinite(opensAt.getTime()) || !Number.isFinite(closesAt.getTime()) || closesAt <= opensAt) {
@@ -121,6 +148,7 @@ export default function BidsWindowsView() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ ...form, opensAt: opensAt.toISOString(), closesAt: closesAt.toISOString() }),
       });
+      if (identityEpoch.current !== epoch) return;
       setWindows(payload.windows || []);
       toast.success('Janela de BIDS salva.');
       setForm(initialForm(instructor));
@@ -169,6 +197,10 @@ export default function BidsWindowsView() {
       <p>Solicitação pelo Portal SAB, com conta @latam. Preencher não significa aprovação. O e-mail confirma recebimento e permite editar até o encerramento. Análises em 10/11; escala em 25/11.</p>
       <a href="https://docs.google.com/forms/d/e/1FAIpQLSehDGJW8pRXXb5j5HbMw0-NSF5Q8nVS7Yb9EwzTqOBhhBllXA/viewform?usp=dialog" target="_blank" rel="noopener noreferrer">Abrir formulário do comunicado</a>
       <p>Fonte: Folga de Fim de Ano_2026_2027_Cabine.pdf, página 1. O fuso ainda precisa ser confirmado antes de agendar.</p>
+      <p>{leaveSubmitted === true ? 'Você declarou que já enviou a solicitação neste ciclo. Isso não confirma concessão da folga.' : 'Já solicitou sua folga de fim de ano?'}</p>
+      <button type="button" disabled={leaveBusy || leaveSubmitted === true} onClick={confirmLeave}>{leaveBusy ? 'Salvando…' : leaveSubmitted === true ? 'Solicitação declarada como enviada' : 'Já solicitei'}</button>
+      <button type="button" disabled title="Fuso e instante ainda precisam ser confirmados">Lembrar depois</button>
+      <p>Pendentes vinculados a este ciclo no servidor são cancelados ao confirmar. Envios iniciados não podem ser recolhidos. Alarmes locais e calendários importados ainda não têm cancelamento integrado.</p>
     </section>
     <section className="cc139-card">
       <h2>Referência de datas cadastrada</h2>

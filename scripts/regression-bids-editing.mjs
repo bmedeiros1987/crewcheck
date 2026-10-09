@@ -9,25 +9,26 @@ async function request(body, { id = '', existing = null, method = 'POST' } = {})
     calls.push({ sql, args });
     if (sql.startsWith('SELECT id')) return [existing ? [{ id: existing }] : []];
     if (sql.startsWith('DELETE')) return [{ affectedRows: 1 }];
-    if (sql.startsWith('INSERT')) inserted = { title: args[2], target_month: args[3], open_epoch: args[4], close_epoch: args[5], notify_open: args[7], notify_last_day: args[8] };
+    if (sql.startsWith('INSERT INTO crewcheck_platform_bid_windows')) inserted = { title: args[2], target_month: args[3], open_epoch: args[4], close_epoch: args[5], notify_open: args[7], notify_last_day: args[8] };
     if (sql.startsWith('SELECT title')) return [[inserted]];
     return [[]];
   } };
+  db.getConnection = async () => ({ query: db.query, beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release() {} });
   const res = { writeHead(status) { this.status = status; }, end(text) { this.body = JSON.parse(text); } };
   await handleBidsCore({ method }, res, new URL(`https://fixture.invalid/api/platform/bids${id ? '/' + id : ''}`), {
-    identify: async () => ({ email: owner, db }), read: async () => body,
+    identify: async () => ({ email: owner, db, profile: { public_id: 'fictional-owner' }, payload: { sub: 'fictional-owner' } }), read: async () => body,
   });
   return { calls, res };
 }
 for (const value of [undefined, false, 'true', 1]) {
   const { calls } = await request({ ...base, notifyOpen: value, notifyLastDay: value });
-  const insert = calls.find(c => c.sql.startsWith('INSERT'));
+  const insert = calls.find(c => c.sql.startsWith('INSERT INTO crewcheck_platform_bid_windows'));
   assert.deepEqual(insert.args.slice(-2), [0, 0]);
 }
-assert.deepEqual((await request({ ...base, notifyOpen: true, notifyLastDay: true })).calls.find(c => c.sql.startsWith('INSERT')).args.slice(-2), [1, 1]);
+assert.deepEqual((await request({ ...base, notifyOpen: true, notifyLastDay: true })).calls.find(c => c.sql.startsWith('INSERT INTO crewcheck_platform_bid_windows')).args.slice(-2), [1, 1]);
 const [first, retry] = await Promise.all([request(base), request(base)]);
-assert.equal(first.calls.find(c => c.sql.startsWith('INSERT')).args[0], retry.calls.find(c => c.sql.startsWith('INSERT')).args[0]);
-assert.match(first.calls.find(c => c.sql.startsWith('INSERT')).sql, /ON DUPLICATE KEY UPDATE/);
+assert.equal(first.calls.find(c => c.sql.startsWith('INSERT INTO crewcheck_platform_bid_windows')).args[0], retry.calls.find(c => c.sql.startsWith('INSERT INTO crewcheck_platform_bid_windows')).args[0]);
+assert.match(first.calls.find(c => c.sql.startsWith('INSERT INTO crewcheck_platform_bid_windows')).sql, /ON DUPLICATE KEY UPDATE/);
 const edit = await request({ ...base, title: 'Renamed', targetMonth: '2026-11' }, { id: 'stable-id', existing: 'stable-id' });
 assert.equal(edit.res.status, 200);
 assert.ok(!edit.calls.some(c => c.sql.startsWith('INSERT')));
@@ -39,5 +40,5 @@ const foreign = await request(base, { id: 'another-owner-id' });
 assert.equal(foreign.res.status, 404);
 assert.equal(foreign.calls.length, 1);
 const deleted = await request({}, { id: 'stable-id', method: 'DELETE' });
-assert.deepEqual(deleted.calls[0].args, ['stable-id', owner]);
+assert.deepEqual(deleted.calls.find(c => c.sql.startsWith('DELETE')).args, ['stable-id', owner]);
 console.log('BIDS editing: explicit opt-in, stable identity, owner isolation and concurrent create key passed.');

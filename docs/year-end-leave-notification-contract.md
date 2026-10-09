@@ -13,7 +13,7 @@ Fonte inspecionada pelo analista do parent: Library `libfile_d373259b27688191bf0
 
 ## Pedido do Bruno e contrato para revisão
 
-Mensagem: **Já solicitou sua folga de fim de ano?** Ações **Já solicitei** e **Lembrar depois**. 00:00 foi solicitado pelo Bruno, não é horário de abertura declarado pelo PDF e não define cadência. O menor dado necessário para um instante seguro é o fuso aplicável; o ano ainda deve conservar seu grau de evidência.
+Mensagem: **Já solicitou sua folga de fim de ano?** Ações **Já solicitei** e **Lembrar depois**. Nenhum horário de início foi solicitado. 00:00 não consta como abertura no PDF e não será usado por convenção. O menor dado necessário para um instante seguro é o fuso aplicável; o ano ainda deve conservar seu grau de evidência.
 
 Confirmação significa declaração do usuário de que enviou a solicitação; jamais `aprovada`. Estado deve persistir no servidor por usuário e edição anual, com janela estável, revisão da fonte e operação idempotente. Atualizar título/link/data da mesma edição não deve apagar confirmação. Nova edição exige identidade explícita nova e começa sem confirmação; duplicar uma edição não pode criar alertas independentes.
 
@@ -21,10 +21,18 @@ Na confirmação, a transação deve gravar estado e cancelar todos os trabalhos
 
 `Lembrar depois` precisa persistir escolha explícita com instante futuro dentro da janela e fuso validado; não inventar intervalo. Confirmação posterior cancela essa escolha também. Conta trocada nunca pode reaproveitar decisões ou alarmes do usuário anterior.
 
+## Fatia implementada para revisão
+
+`Já solicitei` chama rota autenticada, confere `sub` contra o perfil atual e grava declaração no armazenamento JSON existente. Transação serializa perfil, estado do ciclo e cancelamento de todos os canais da fila existente com prefixo exato de ciclo/usuário. A repetição conserva `submittedAt`. Uma conta recriada não herda declaração antiga. O despachante de trabalhos de ciclo toma os mesmos locks antes do corte de envio. Chaves `cycle:` não podem ser criadas pela rota genérica de agendamento. Nenhum instante desta janela é autorizado: `schedulingAllowed` permanece falso.
+
+A tela só mostra confirmação após resposta do servidor; falha/offline mantém estado sem sucesso inventado. Respostas anteriores à troca de sessão são descartadas. `Lembrar depois` está desabilitado e a rota rejeita esse comando até existir fuso/instante explícito. A confirmação não significa concessão da folga.
+
+Claims BIDS também passam por lock de janela e registro JSON durável antes do envio. Seleções alteradas/removidas são rejeitadas; resultado desconhecido é retido sem nova tentativa automática. Repetição de criação jamais faz edição implícita; exclusão grava tombstone contra recriação pela chave antiga.
+
 ## HOLD: ainda não entregue
 
-Este PR exibe informação e link, mas **não implementa** estas duas ações, persistência de confirmação por edição, snooze nem cancelamento em todos os canais. Não mostrar botão que alegue confirmar/cancelar sem essa integração.
+A garantia de cancelamento cobre somente trabalhos **vinculados** ao ciclo na fila do servidor, em todos os seus canais. Não cobre alarmes locais legados Android nem ICS já importado. Envios em voo/aceitos não podem ser recolhidos: a resposta informa esse limite. Não habilitar lembretes reais antes de integrar cancelamento local, verificar fonte/ano/fuso e revisar testes reais MySQL/Android.
 
-O caminho BIDS atual ainda envia diretamente pelo Telegram e não tem claim transacional ligado à edição. O wrapper Android não tem cancelamento de alarmes por janela/usuário nem restauração segura após reinício. ICS é exportação estática: não é possível cancelar automaticamente alarmes já importados. Trabalhos já aceitos pelo provedor ou em voo não podem ser recolhidos; a interface deve informar esse limite sem afirmar cancelamento universal concluído. A fila geral tem corte explícito `dispatching` e resposta de envio em andamento, mas não identifica ainda janela anual de folga.
+O novo teste CI usa MySQL 8.4 descartável por UNIX socket sem rede, reutilizando o padrão QA existente. Provedores, destinatários e contas são fictícios. O host macOS não dispõe de Docker/MySQL/SDK Android; sucesso desse gate ainda precisa ser confirmado no CI. A limpeza de novos registros JSON no fluxo de exclusão de conta precisa de integração/revisão antes de ativar a funcionalidade em produção.
 
-Não ativar esta janela até integrar estado/claim/cancelamento, revisar os canais realmente suportados e testar em ambiente isolado. Sem notificações reais, novas permissões, custos ou publicação de loja.
+Sem notificações reais, novas permissões, custos ou publicação de loja.

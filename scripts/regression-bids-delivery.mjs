@@ -15,25 +15,27 @@ assert.equal(dueKind({ ...row, notify_open: 0, notify_last_day: 0 }, now), '');
 // UTC is already next day, but Sao Paulo is still the closing day.
 assert.equal(dueKind({ ...row, closes_at: '2026-10-16T02:00:00Z' }, new Date('2026-10-16T01:00:00Z')), 'last-day');
 
-const writes = [];
-const db = { query: async (...args) => { writes.push(args); return [{ affectedRows: 1 }]; } };
-const findLink = async (_db, email) => {
-  assert.equal(email, row.owner_email, 'only the row owner is resolved');
-  return { chatId: 'fake-recipient' };
-};
-const failed = await notifyBidRows(db, [row], { now, findLink, send: async () => ({ ok: false }) });
-assert.deepEqual(failed, []);
-assert.equal(writes.length, 0, 'offline/provider rejection cannot acknowledge delivery');
-let recipients = [];
-const accepted = await notifyBidRows(db, [row], { now, findLink, send: async (recipient) => { recipients.push(recipient); return { ok: true }; } });
-assert.deepEqual(recipients, ['fake-recipient']);
-assert.equal(writes.length, 1, 'reconnection acceptance acknowledges once');
-assert.equal(accepted[0].status, 'accepted');
-assert.equal(accepted[0].delivered, null);
-await notifyBidRows(db, [{ ...row, open_notified_at: now }], { now, findLink, send: async () => { throw new Error('duplicate send'); } });
-assert.equal(writes.length, 1);
-await notifyBidRows(db, [row], { now, findLink: async () => null, send: async (recipient) => ({ ok: Boolean(recipient) }) });
-assert.equal(writes.length, 1, 'unlinked account stays pending');
+const writes = []; const states = new Map(); let current = { ...row };
+const db = { query: async (sql, args) => {
+  writes.push([sql,args]);
+  if (sql.startsWith('SELECT *,ROUND')) return [[current]];
+  if (sql.startsWith('SELECT p.public_id')) return [[{public_id:'fictional-owner'}]];
+  if (sql.startsWith('INSERT INTO crewcheck_telegram_state')) { if (!states.has(args[0])) states.set(args[0],JSON.parse(args[1])); return [{affectedRows:1}]; }
+  if (sql.startsWith('SELECT payload')) return [[{payload:states.get(args[0])}]];
+  if (sql.startsWith('UPDATE crewcheck_telegram_state')) { states.set(args[1],JSON.parse(args[0])); return [{affectedRows:1}]; }
+  if (sql.startsWith('UPDATE crewcheck_platform_bid_windows')) current.open_notified_at=now;
+  return [{affectedRows:1}];
+} };
+db.getConnection=async()=>({query:db.query,beginTransaction:async()=>{},commit:async()=>{},rollback:async()=>{},release(){}});
+const findLink = async (_db, email) => { assert.equal(email,row.owner_email); return {chatId:'fake-recipient'}; };
+assert.deepEqual(await notifyBidRows(db,[row],{now,findLink,send:async()=>({ok:false,uncertain:false})}),[]);
+assert.equal(current.open_notified_at,undefined,'explicit rejection cannot acknowledge');
+let recipients=[];
+const accepted=await notifyBidRows(db,[row],{now,findLink,send:async recipient=>{recipients.push(recipient);return {ok:true}}});
+assert.deepEqual(recipients,['fake-recipient']); assert.equal(accepted[0].status,'accepted'); assert.equal(accepted[0].delivered,null);
+await notifyBidRows(db,[row],{now,findLink,send:async()=>{throw new Error('duplicate send')}});
+assert.equal(recipients.length,1);
+await notifyBidRows(db,[row],{now,findLink:async()=>null,send:async()=>{throw new Error('unlinked send')}});
 assert.equal(dueKind({ ...row, owner_email: 'another@example.invalid', open_notified_at: now }, now), '');
 
 const calendar = buildBidsCalendar([row], now);
