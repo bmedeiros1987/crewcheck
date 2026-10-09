@@ -49,7 +49,12 @@ assert.equal(wellhubSnapshotAccess(df.find(p => p.minimumPlan === 'unknown'), 's
 const expired = await search({ locationText: 'DF', now: new Date('2027-02-01T00:00:00Z') });
 assert.ok(expired.every(p => p.eligibilityStatus === 'unknown'));
 assert.equal((await search({ query: 'Ultra Asa Norte', activity: 'musculação', locationText: 'DF' }))[0]?.eligibilityStatus, 'included');
-assert.equal((await search({ query: 'Ultra Asa Norte', activity: 'Power Bike', locationText: 'DF' })).length, 0);
+assert.equal((await search({ query: 'Ultra Asa Norte', activity: 'Power Bike', locationText: 'DF' }))[0]?.eligibilityStatus, 'unknown');
+assert.equal((await search({ query: 'Ultra Asa Norte', activity: 'Cycle', locationText: 'DF' }))[0]?.eligibilityStatus, 'included');
+assert.equal((await search({ query: 'Estação Saúde', locationText: 'Taguatinga Norte DF' })).length, 0);
+assert.equal((await search({ query: 'Estação Saúde', locationText: 'Taguatinga Sul DF' })).length, 1);
+assert.equal((await search({ query: 'Corpo e Saúde', locationText: 'Guará I DF' })).length, 0);
+assert.equal((await search({ query: 'Corpo e Saúde', locationText: 'Guará II DF' })).length, 1);
 assert.equal((await search({ query: 'Ultra Asa Norte', activity: 'Pilates', locationText: 'DF' }))[0]?.eligibilityStatus, 'unknown');
 assert.equal((await search({ query: 'Ultra Noroeste', plan: 'basic-plus', activity: 'musculação', locationText: 'DF' })).length, 0);
 assert.equal((await search({ query: 'Ultra Noroeste', plan: 'basic-plus', activity: 'Yoga', locationText: 'DF' }))[0]?.eligibilityStatus, 'included');

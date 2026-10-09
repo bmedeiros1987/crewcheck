@@ -2,7 +2,7 @@ export function normalizeWellhubLocation(value = '') {
   return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ').replace(/\bsetor de industria e abastecimento\b/g, 'sia');
 }
 
-const DF_REGIONS = ['aguas claras', 'taguatinga', 'ceilandia', 'guara', 'gama', 'sobradinho', 'samambaia', 'planaltina', 'brazlandia', 'recanto das emas', 'santa maria', 'sao sebastiao', 'riacho fundo', 'nucleo bandeirante', 'candangolandia', 'paranoa', 'itapoa', 'sia', 'vicente pires', 'arniqueira', 'asa norte', 'asa sul', 'sudoeste', 'noroeste', 'park sul', 'lago norte', 'lago sul', 'cruzeiro', 'octogonal', 'plano piloto'];
+const DF_REGIONS = ['taguatinga norte', 'taguatinga sul', 'guara ii', 'guara i', 'aguas claras', 'taguatinga', 'ceilandia', 'guara', 'gama', 'sobradinho', 'samambaia', 'planaltina', 'brazlandia', 'recanto das emas', 'santa maria', 'sao sebastiao', 'riacho fundo', 'nucleo bandeirante', 'candangolandia', 'paranoa', 'itapoa', 'sia', 'vicente pires', 'arniqueira', 'asa norte', 'asa sul', 'sudoeste', 'noroeste', 'park sul', 'lago norte', 'lago sul', 'cruzeiro', 'octogonal', 'plano piloto'];
 const hasPhrase = (text, phrase) => (` ${text} `).includes(` ${phrase} `);
 
 export function wellhubLocationMatches(partner, { city = '', state = '' } = {}) {

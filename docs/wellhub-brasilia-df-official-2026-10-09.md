@@ -34,7 +34,7 @@ Fonte ausente, data inválida/futura ou snapshot com mais de 90 dias produzem es
 
 ## Condições preservadas
 
-- Ultra Asa Norte: musculação/aeróbico Silver; bike/funcional indicados Gold; outras atividades desconhecidas quando seu mínimo não foi comprovado.
+- Ultra Asa Norte: a página oficial reaberta em 2026-10-09 mostra Musculação e Cycle incluídos em Silver. A captura anterior agrupava bike/funcional em Gold. Power Bike e funcional ficam desconhecidos e requerem conferência; Cycle não foi equiparado automaticamente a Power Bike. A unidade exige agendamento para participar das atividades, conforme texto oficial.
 - Ultra Pátio Brasil: condicionamento corporal Silver, abdômen e braço Gold. Não oferece confirmação genérica de todas as modalidades.
 - Ultra Noroeste: cabeçalho Basic+; balé/cycle/dança/yoga Basic+, musculação/abd Silver.
 - Bodytech Sudoeste: cabeçalho Silver acompanhado de Student Plan restrito a 12–25 anos, 10h–16h; atividades indicadas Diamond. Não se infere qual modalidade/condição o usuário satisfaz e não se consulta idade privada.
