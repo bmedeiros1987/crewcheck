@@ -203,6 +203,7 @@ await import('../notification-safety/apply.mjs');
 await import('../departure-location-consistency/apply.mjs');
 await import('../departure-location-consistency/positioning-session.mjs');
 await import('../fixed-navigation-headers.mjs');
+await import('../standby-sequence-card/apply.mjs');
 
 }
 

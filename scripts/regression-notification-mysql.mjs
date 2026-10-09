@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import mysql from 'mysql2/promise';
+import os from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { handleBidsCore } from '../server/v139/bidsCore.mjs';
 import { notifyBidRows, claimBid } from '../server/v139/bidsNotify.mjs';
 import { confirmCycle, cycleJobPrefix, cycleStateKey, LEAVE_CYCLE } from '../server/v139/notificationCycles.mjs';
@@ -35,6 +38,26 @@ try {
   await db.query(queue.match(/await db\.query\(`(CREATE TABLE IF NOT EXISTS crewcheck_notification_jobs[\s\S]*?)`\)/)[1]);
   await db.query('INSERT INTO crewcheck_platform_profiles VALUES(?,?,?)',[email,owner,new Date('2020-01-01T00:00:00Z')]);
 
+  await run('strict MySQL reproduces rejected ISO heartbeat and persists corrected writer across restart/timezone',async()=>{
+    const source=fs.readFileSync('server/telegram-fast-ack.mjs','utf8');
+    const table=source.match(/await db\.query\(`(CREATE TABLE IF NOT EXISTS crewcheck_scheduler_heartbeat[\s\S]*?)`\)/)[1];
+    await db.query(table);await db.query('DELETE FROM crewcheck_scheduler_heartbeat');
+    await assert.rejects(db.query("INSERT INTO crewcheck_scheduler_heartbeat(scheduler_key,last_started_at)VALUES('old',?)",['2026-10-09T06:24:45.799Z']),error=>error.code==='ER_TRUNCATED_WRONG_VALUE');
+    const begin=source.indexOf('async function recordSchedulerHeartbeat('),end=source.indexOf('\nasync function sendInfobipPhone',begin);
+    const file=path.join(os.tmpdir(),`crewcheck-mysql-heartbeat-${process.pid}.mjs`);
+    try{
+      fs.writeFileSync(file,`let lastHeartbeatWrite;async function ensureSchedulerHeartbeatTable(db){await db.query(${JSON.stringify(table)});} ${source.slice(begin,end)};export{recordSchedulerHeartbeat};`);
+      const {recordSchedulerHeartbeat}=await import(pathToFileURL(file).href);
+      const conn=await db.getConnection();
+      try{
+        await conn.query("SET time_zone='+03:00'");
+        await recordSchedulerHeartbeat(conn,{lastStartedAt:'2026-10-09T06:24:45.799Z',lastFinishedAt:null});
+        await recordSchedulerHeartbeat(conn,{lastFinishedAt:'2026-10-09T06:24:46.824Z',lastStatus:'ok',lastSummary:{selected:0}});
+        const [rows]=await conn.query("SELECT ROUND(UNIX_TIMESTAMP(last_started_at)*1000) AS started,ROUND(UNIX_TIMESTAMP(last_finished_at)*1000) AS finished,last_status FROM crewcheck_scheduler_heartbeat WHERE scheduler_key='notifications'");
+        assert.equal(Number(rows[0].started),Date.parse('2026-10-09T06:24:45.799Z'));assert.equal(Number(rows[0].finished),Date.parse('2026-10-09T06:24:46.824Z'));assert.equal(rows[0].last_status,'ok');
+      }finally{await conn.query("SET time_zone='+00:00'");conn.release();}
+    }finally{fs.rmSync(file,{force:true});}
+  });
   await run('create replay cannot overwrite later opt-out or rename',async()=>{
     assert.equal((await request(base)).status,200);const id=(await list())[0].id;
     assert.equal((await request({...base,notifyOpen:false,notifyLastDay:false},id)).status,200);
