@@ -1,0 +1,19 @@
+name: Amil exact coverage
+on:
+  pull_request:
+    paths: ['shared/amil-coverage*', 'server/platform.mjs', 'server/v1391/emergency.mjs', 'server/concierge/pharmacy-reference.mjs', 'scripts/amil-exact-coverage/**', 'scripts/regression-amil-exact-coverage.mjs', 'scripts/v139/apply.mjs', '.github/workflows/amil-exact-coverage.yml']
+  workflow_dispatch:
+jobs:
+  exact-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/regression-amil-exact-coverage.mjs
+      - run: npm run build
+      - run: npm run check
+      - run: node scripts/regression-amil-exact-coverage.mjs --prepared
