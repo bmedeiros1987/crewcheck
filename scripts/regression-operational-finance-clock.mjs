@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { loadClientModules } from './lib/ts-module-harness.mjs';
 
-const modules = loadClientModules({ files: ['client/src/lib/compensationPolicy.ts', 'client/src/lib/financialJourneyGrouping.ts', 'client/src/lib/financialForecastPeriods.ts', 'client/src/lib/financialAmounts.ts'], prefix: 'synthetic-operational-clock-' });
+const modules = loadClientModules({ files: ['client/src/lib/canonicalRoster.ts', 'client/src/lib/financialIntervalEvidence.ts', 'client/src/lib/compensationPolicy.ts', 'client/src/lib/financialJourneyGrouping.ts', 'client/src/lib/financialForecastPeriods.ts', 'client/src/lib/financialAmounts.ts'], prefix: 'synthetic-operational-clock-' });
 try {
   const policy = modules.load('compensationPolicy');
   const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
@@ -12,14 +12,14 @@ try {
   const names = ['eventStartDateTime', 'eventEndDateTime', 'calculatePerDiem'];
   const functions = ast.statements.filter(n => ts.isFunctionDeclaration(n) && names.includes(n.name?.text));
   assert.equal(functions.length, names.length);
-  const context = vm.createContext({ ...policy, ...modules.load('financialJourneyGrouping'), ...modules.load('financialForecastPeriods'), ...modules.load('financialAmounts'),
+  const context = vm.createContext({ ...modules.load('financialIntervalEvidence'), ...policy, ...modules.load('financialJourneyGrouping'), ...modules.load('financialForecastPeriods'), ...modules.load('financialAmounts'),
     perDiemConfig: () => ({ rates: { domestic: { mainMeal: 100, currency: 'BRL', label: 'SYNTHETIC' }, foreign: { mainMeal: 20, currency: 'USD', label: 'SYNTHETIC' } }, domesticBreakfast: 25, domesticMainMealSource: 'synthetic', domesticBreakfastSource: 'synthetic', breakfastPercent: .25, exchangeRates: { BRL: 1 }, source: 'SYNTHETIC — not a tariff', act: { version: 'SYNTHETIC' } }),
     loadAirportPerDiemOverrides: () => ({}), resolvePerDiemRule: origin => ({ rateKey: origin === 'INT' ? 'foreign' : 'domestic', airport: origin, reason: 'synthetic fixture' }),
     isOperationalEvent: () => true, financialEventCode: e => e.day.type, readOptionalNumberSetting: () => null,
     dateChip: d => d.toISOString().slice(0, 10), moneyCurrency: (v, c) => `${c} ${v}`,
   });
   vm.runInContext(ts.transpileModule(functions.map(n => n.getText(ast)).join('\n') + '\nglobalThis.calculate=calculatePerDiem;', { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
-  const event = (id, start, end, report, kind = 'flight', origin = 'BSB') => ({ id, kind, origin, destination: 'BSB', presentation: report, day: { date: '05/10/2032', type: kind === 'flight' ? 'VOO' : 'ASB', dutyReport: report }, canonical: { kind, journeyId: id, startDateTime: start, endDateTime: end } });
+  const event = (id, start, end, report, kind = 'flight', origin = 'BSB') => ({ id, kind, origin, destination: 'BSB', presentation: report, day: { date: '05/10/2032', type: kind === 'flight' ? 'VOO' : 'ASB', dutyReport: report, dutyDebrief: end.slice(11,16), dutyReportSource:'published', dutyDebriefSource:'published' }, canonical: { kind, journeyId: id, startDateTime: start, endDateTime: end, leg:kind === 'flight' ? {departureTime:start.slice(11,16),arrivalTime:end.slice(11,16)} : undefined } });
   const roster = { year: 2032, month: 10, base: 'BSB' };
   const now = new Date('2032-10-08T00:30:00-03:00');
   const evidence = [];
@@ -54,6 +54,26 @@ try {
     if (expected) assert.deepEqual({ ...result, timezone: null }, expected);
     else expected = { ...result, timezone: null };
     evidence.push(result);
+  }
+
+  const canonical = modules.load('canonicalRoster');
+  const rawDay = {date:'05/10/2032',year:2032,month:10,type:'VOO',pairingCode:'SYN',base:'BSB',dutyReport:'04:10',dutyDebrief:'10:10',dutyReportSource:'published',dutyDebriefSource:'published',legs:[{flightNumber:'QA1',origin:'BSB',destination:'GRU',departureTime:'05:05',arrivalTime:'07:00',duration:115/60}],rawText:'SYNTHETIC'};
+  for (const timezone of ['America/Sao_Paulo','UTC','Asia/Tokyo']) {
+    process.env.TZ=timezone;
+    const cases=[
+      {...rawDay,dutyReport:null,dutyReportSource:'absent'},
+      {...rawDay,type:'ASB',pairingCode:'ASB',legs:[],dutyReport:null,dutyReportSource:'absent'},
+      {...rawDay,type:'ASB',pairingCode:'ASB',legs:[],dutyDebrief:null,dutyDebriefSource:'absent'},
+      {...rawDay,legs:[{...rawDay.legs[0],arrivalTime:''}]},
+      {...rawDay,legs:[rawDay.legs[0],{flightNumber:'QA-BAD',origin:'GRU',destination:'BSB',departureTime:'08:00',arrivalTime:'99:99',duration:1}]},
+    ];
+    for(const raw of cases) {
+      const actualRoster={...roster,days:[raw]};
+      const normalized=canonical.normalizeRosterDays(actualRoster);
+      const e=canonical.buildCanonicalRosterEvents(normalized).filter(e=>['flight','duty'].includes(e.kind)).map(e=>({...e,canonical:e,day:e.publishedDay}));
+      assert.ok(e.length,'real canonical chain produces a finite fallback program');
+      const f=context.calculate(e,normalized,now);assert.equal(f.monthly,null);assert.equal(f.monthlySummary.convertedComplete,false);assert.ok(f.unclassifiedItems.length);assert.equal(f.rows.length,0,'fallback clocks never create allowance rows');
+    }
   }
   assert.equal(policy.rosterPresentationBeforeDeparture(new Date('2032-10-05T00:05:00-03:00'), '23:18').toISOString(), '2032-10-05T02:18:00.000Z');
   assert.equal(policy.rosterPresentationBeforeDeparture(new Date('2032-10-05T12:00:00-03:00'), '01:00'), null);
