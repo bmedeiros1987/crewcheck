@@ -21,7 +21,7 @@
 .cc-doc-token button small { font-size:.875rem; font-weight:600; }
 .cc-doc-detail-hint { text-decoration:underline; }
 .cc-doc-empty { font-size:.875rem; color:var(--ccr-muted); }
-.cc-doc-detail { margin:1rem 0; padding:8px; scroll-margin-top:calc(var(--cc-fixed-header-height,90px) + 12px); }
+.cc-doc-detail { margin:1rem 0; padding:8px; scroll-margin-top:calc(var(--cc-fixed-header-height,90px) + var(--cc-safe-area-top, env(safe-area-inset-top, 0px)) + 12px); }
 @media (prefers-reduced-motion:reduce) { .cc-doc-viewport { scroll-behavior:auto; } }
 /* The document owns its canvas width; responsive shell max-width rules must
    constrain the viewport, not squeeze the seven published day columns. */

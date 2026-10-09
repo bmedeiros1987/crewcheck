@@ -7,6 +7,7 @@ on:
       - 'client/src/components/v1391/**'
       - 'client/src/lib/rosterLayoutPreference.ts'
       - 'scripts/regression-aims-document-browser.mjs'
+      - 'scripts/regression-aims-document-app.cjs'
       - 'scripts/regression-roster-layout-preference.mjs'
       - '.github/workflows/aims-document-browser.yml'
   workflow_dispatch:
@@ -46,12 +47,16 @@ jobs:
       - name: Verify synthetic document zoom, gestures, exact events and accessibility
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/aims-browser/package.json
-        run: node scripts/regression-aims-document-browser.mjs
+        run: |
+          node scripts/regression-aims-document-browser.mjs
+          node scripts/regression-aims-document-app.cjs
       - name: Save synthetic document evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: AIMS-document-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/aims-document
+          path: |
+            artifacts/aims-document
+            artifacts/aims-document-app
           if-no-files-found: warn
           retention-days: 7
