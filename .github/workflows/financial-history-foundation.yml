@@ -83,7 +83,9 @@ jobs:
           TZ: America/New_York
       - run: node scripts/regression-p0-530-finance-canonical-journey.mjs
       - name: Verify published canonical duty measurement
-        run: node scripts/regression-canonical-duty-measurement.mjs
+        run: |
+          node scripts/regression-canonical-duty-measurement.mjs
+          node scripts/regression-canonical-duty-load.mjs
       - run: node scripts/regression-p2-530-adjacent-fallback-finance.mjs
       - run: npx tsc --noEmit
       - run: npx vite build
