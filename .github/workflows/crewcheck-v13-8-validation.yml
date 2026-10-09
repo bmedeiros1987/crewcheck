@@ -89,6 +89,7 @@ jobs:
           node scripts/regression-roster-followup-guards.mjs
           node scripts/regression-roster-auth-storage.mjs
           node scripts/regression-transit-availability.mjs
+          node scripts/regression-company-transport.mjs
           node scripts/regression-transit-availability-ui.mjs
           node scripts/regression-transit-review-blockers.mjs
       - name: Build web client
