@@ -200,6 +200,8 @@ await import('../roster-startup/apply.mjs');
 await import('../home-standby-departure/apply.mjs');
 await import('../transit-availability/apply.mjs');
 await import('../notification-safety/apply.mjs');
+await import('../departure-location-consistency/apply.mjs');
+await import('../departure-location-consistency/positioning-session.mjs');
 await import('../fixed-navigation-headers.mjs');
 
 }

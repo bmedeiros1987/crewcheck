@@ -14,8 +14,8 @@ for (const marker of [
   'type PositioningFlightRecord = {',
   'const POSITIONING_SEARCH_WINDOW_MS = 72 * 60 * 60 * 1000;',
   'const POSITIONING_MAX_STATUS_LOOKUPS = 4;',
-  'crewcheck_positioning_flight:${event.id}',
-  'crewcheck_positioning_search:${event.id}',
+  "return 'crewcheck_positioning_flight:' + contextId;",
+  "return 'crewcheck_positioning_search:' + contextId;",
   "if (eventId && eventId !== String(event.id || '')) return false;",
   "if (destination && destination !== String(event.origin || '').trim().toUpperCase()) return false;",
   '/api/airport-board?',
@@ -81,3 +81,5 @@ assert.equal(shouldSearch(new Date(2026, 7, 14, 14, 0), presentationAt), true, '
 assert.equal(shouldSearch(new Date(2026, 7, 14, 13, 59), presentationAt), false, 'consulta antecipada além de 72 horas deve ser evitada');
 
 console.log('v14.3.34 positioning radar cache: event scope, 72h window, four lookups, safe arrival and day-before fallback validated.');
+
+await import('./regression-positioning-session-isolation.mjs');
