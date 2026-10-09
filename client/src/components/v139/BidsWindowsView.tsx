@@ -108,18 +108,22 @@ export default function BidsWindowsView() {
 
   useEffect(() => {
     const epoch = identityEpoch.current;
-    load().catch((error) => toast.error(error instanceof Error ? error.message : 'Não consegui carregar BIDS.'));
+    const refreshBids = (version = identityEpoch.current) => {
+      if (!getToken()) return;
+      load().catch((error) => { if (identityEpoch.current === version) toast.error(error instanceof Error ? error.message : 'Não consegui carregar BIDS.'); });
+    };
+    refreshBids(epoch);
     const refresh = (version = identityEpoch.current) => {
       if (!getToken()) return;
       authFetch<LeaveResponse>(leavePath, { cache: 'no-store' }).then(payload => { if (identityEpoch.current === version) setLeaveSubmitted(payload.submitted === true); }).catch(() => { if (identityEpoch.current === version) setLeaveSubmitted(null); });
     };
     refresh(epoch);
-    const changed = () => { identityEpoch.current++; setLeaveSubmitted(null); setLeaveBusy(false); setBusy(false); setWindows([]); setForm(initialForm(instructor)); refresh(); };
+    const changed = () => { identityEpoch.current++; setLeaveSubmitted(null); setLeaveBusy(false); setBusy(false); setWindows([]); setForm(initialForm(instructor)); refresh(); refreshBids(); };
     window.addEventListener('crewcheck:auth-changed', changed);
     window.addEventListener('crewcheck:auth-expired', changed);
     const storage = (event: StorageEvent) => { if (['crewcheck_auth_user', 'crewcheck_auth_token'].includes(event.key || '')) changed(); };
     window.addEventListener('storage', storage);
-    const online = () => refresh();
+    const online = () => { refresh(); refreshBids(); };
     window.addEventListener('online', online);
     return () => { identityEpoch.current++; window.removeEventListener('crewcheck:auth-changed', changed); window.removeEventListener('crewcheck:auth-expired', changed); window.removeEventListener('storage', storage); window.removeEventListener('online', online); };
   }, []);

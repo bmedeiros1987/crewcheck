@@ -18,6 +18,7 @@ const server=http.createServer((req,res)=>{if(req.url==='/fixture.js'){res.setHe
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const origin=`http://127.0.0.1:${server.address().port}`;
 let browser,offline=false,hold=false,resume,started;
+let holdBids=false,bidsStarted,bidsResume;
 const states={A:false,B:false},writes=[];
 try{
  browser=await chromium.launch({...process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{},args:['--no-sandbox']});
@@ -28,9 +29,12 @@ try{
   const request=route.request(),url=new URL(request.url());
   if(url.origin!==origin)return route.abort();
   if(!url.pathname.startsWith('/api/'))return route.continue();
-  if(url.pathname==='/api/platform/bids')return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,windows:[{id:'fictional',title:'Fictional status fixture',targetMonth:'2026-10',opensAt:'2026-10-11T10:00:00Z',closesAt:'2026-10-15T20:00:00Z',notifyOpen:true,notifyLastDay:true,openDispatchStatus:'uncertain',lastDayDispatchStatus:'accepted'}],notifications:[]})});
-  assert.equal(url.pathname,'/api/platform/notification-cycles/year-end-leave-2026-2027-cabine');
   const token=request.headers().authorization?.replace('Bearer ','');assert(['A','B'].includes(token));
+  if(url.pathname==='/api/platform/bids'){
+   if(holdBids&&token==='B'){holdBids=false;bidsStarted();await new Promise(resolve=>{bidsResume=resolve});}
+   return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,windows:[{id:'fictional-'+token,title:'Fictional BIDS '+token,targetMonth:'2026-10',opensAt:'2026-10-11T10:00:00Z',closesAt:'2026-10-15T20:00:00Z',notifyOpen:true,notifyLastDay:true,openDispatchStatus:'uncertain',lastDayDispatchStatus:'accepted'}],notifications:[]})});
+  }
+  assert.equal(url.pathname,'/api/platform/notification-cycles/year-end-leave-2026-2027-cabine');
   if(request.method()==='POST'){
    assert.deepEqual(request.postDataJSON(),{action:'submitted'});writes.push(token);
    if(offline)return route.abort();
@@ -44,6 +48,7 @@ try{
  await page.goto(origin);
  const button=()=>page.getByRole('button',{name:'Já solicitei',exact:true});
  await button().waitFor();await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='Já solicitei'&&!b.disabled));
+ await page.getByText('Fictional BIDS A',{exact:true}).waitFor();
  assert(await page.getByRole('button',{name:'Lembrar depois',exact:true}).isDisabled());
  assert(await page.getByText('Abertura: Resultado desconhecido; repetição automática suspensa').isVisible());
  assert(await page.getByText('Último dia: Provedor aceitou; entrega não confirmada').isVisible());
@@ -58,12 +63,19 @@ try{
  await page.evaluate(()=>window.remount());await page.getByRole('button',{name:'Solicitação declarada como enviada',exact:true}).waitFor();assert.equal(states.A,true);
  await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'B',email:'B@example.test'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});
  await button().waitFor();await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='Já solicitei'&&!b.disabled));
+ await page.getByText('Fictional BIDS B',{exact:true}).waitFor();
+ assert.equal(await page.getByText('Fictional BIDS A',{exact:true}).count(),0);
  let signal;const began=new Promise(resolve=>{signal=resolve});started=signal;hold=true;
  await button().click();await began;
+ const bidsBegan=new Promise(resolve=>{bidsStarted=resolve});holdBids=true;
+ await page.evaluate(()=>window.dispatchEvent(new Event('crewcheck:auth-changed')));await bidsBegan;
  await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'A',email:'A@example.test'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});
  await page.getByRole('button',{name:'Solicitação declarada como enviada',exact:true}).waitFor();
- resume();await page.waitForTimeout(100);
+ await page.getByText('Fictional BIDS A',{exact:true}).waitFor();
+ bidsResume();resume();await page.waitForTimeout(100);
+ assert.equal(await page.getByText('Fictional BIDS B',{exact:true}).count(),0);
+ assert(await page.getByText('Fictional BIDS A',{exact:true}).isVisible());
  assert.deepEqual(writes,['A','A','B']);
  assert(await page.getByRole('button',{name:'Solicitação declarada como enviada',exact:true}).isDisabled());
- console.log('Actual leave UI PASS: offline failure, reconnect, persistence/remount, explicit owner bearer over stale cookie, late account response, source/link and disabled unsafe snooze.');
+ console.log('Actual leave/BIDS UI PASS: offline/reconnect, persistence, current bearer over stale cookie, account-change BIDS reload without remount, stale BIDS/leave responses discarded, source/link and disabled unsafe snooze.');
 }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}
