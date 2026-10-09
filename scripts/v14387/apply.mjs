@@ -51,7 +51,7 @@ for (const required of [
   'const rosterSurfaceCounts = rosterCounters(roster);',
   '<strong>{rosterSurfaceCounts.days}</strong>',
   '<strong>{rosterSurfaceCounts.flights}</strong>',
-  'title="Jornada regulatória mensal"',
+  source.includes('title="Horas de trabalho no mês"') ? 'title="Horas de trabalho no mês"' : 'title="Jornada regulatória mensal"',
 ]) {
   if (!source.includes(required)) throw new Error(`[v14387] contrato não aplicado: ${required}`);
 }

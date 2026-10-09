@@ -71,7 +71,7 @@ if (!source.includes('function PersonalizedCockpit(')) {
       id: 'limits',
       label: 'Alertas e limites',
       description: 'Alertas operacionais não podem ser ocultados.',
-      content: !contextOnly && dutyMeasurement
+      content: !contextOnly && loaded && !event.placeholder
         ? <CanonicalDutyCard measurement={dutyMeasurement} onOpen={() => openCanonicalDutyDetails(event.canonical, setView)}/>
         : null,
     },
