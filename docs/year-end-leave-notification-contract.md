@@ -33,8 +33,10 @@ Claims BIDS também passam por lock de janela e registro JSON durável antes do 
 
 A garantia de cancelamento cobre somente trabalhos **vinculados** ao ciclo na fila do servidor, em todos os seus canais. Não cobre alarmes locais legados Android nem ICS já importado. Envios em voo/aceitos não podem ser recolhidos: a resposta informa esse limite. Não habilitar lembretes reais antes de integrar cancelamento local, verificar fonte/ano/fuso e revisar testes reais MySQL/Android.
 
-O novo teste CI usa MySQL 8.4 descartável por UNIX socket sem rede, reutilizando o padrão QA existente. Provedores, destinatários e contas são fictícios. O host macOS não dispõe de Docker/MySQL/SDK Android; sucesso desse gate ainda precisa ser confirmado no CI. A limpeza de decisões, tombstones, claims e trabalhos na exclusão de conta foi integrada ao finalizador de fontes e tem caso de teste MySQL; precisa de resultado verde/revisão antes de ativar em produção.
+O novo teste CI usa MySQL 8.4 descartável por UNIX socket sem rede, reutilizando o padrão QA existente. Provedores, destinatários e contas são fictícios. O host macOS não dispõe de Docker/MySQL/SDK Android; o gate passou em 79f22bff antes/depois da preparação, inclusive collation mista, replay e exclusão de conta. HEADs posteriores exigem nova validação. A limpeza de decisões, tombstones, claims e trabalhos na exclusão de conta foi integrada ao finalizador de fontes e passou no teste MySQL de 79f22bff; precisa de revisão antes de ativar em produção.
 
 Sem notificações reais, novas permissões, custos ou publicação de loja.
 
 O receiver Android usa o mesmo limite de tolerância de 120 segundos da fila para rejeitar alarmes sem instante conhecido, futuros ou expirados. O teste Java usa a classe de produção, sem tocar permissões/aparelho; não simula AlarmManager, restauração após boot ou cancelamento por conta. Alarmes aproximados atrasados além desse limite são descartados, sem entrega garantida.
+
+Em 79f22bff, Android signed store bundles passou incluindo o teste Java da classe real e compilação. Não houve publicação Play nem teste físico de AlarmManager, boot, cancelamento ou entrega. A confirmação por ciclo usa o bearer atual, rejeita ausência de token e descarta resposta de sessão antiga; o novo teste browser cobre offline/reconexão, persistência após remount e cookie antigo.

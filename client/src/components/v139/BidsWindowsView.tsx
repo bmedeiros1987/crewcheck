@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, CalendarCheck2, CalendarDays, Clock, Download, ExternalLink, GraduationCap, Save, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { PBS_OFFICIAL_WINDOWS, officialPbsWindow, pbsWindowDates } from '@/data/pbsWindows';
+import { PBS_OFFICIAL_WINDOWS, officialPbsWindow } from '@/data/pbsWindows';
 import { downloadBlob, notifyLocal, v139Api } from './api';
 import { V139Header } from './Shell';
 import { authFetch, getToken } from '@/lib/authClient';
@@ -118,28 +118,9 @@ export default function BidsWindowsView() {
     finally { if (identityEpoch.current === epoch) setLeaveBusy(false); }
   }
 
-  function applyOfficial(targetMonth = form.targetMonth, nextInstructor = instructor) {
-    const [year, month] = targetMonth.split('-').map(Number);
-    const official = pbsWindowDates(year, month, nextInstructor);
-    if (!official) {
-      toast.info('Este mês não consta na referência cadastrada. Use as datas do comunicado vigente.');
-      setForm((current) => ({ ...current, targetMonth, title: 'PBS · Janeiro · cadastro manual' }));
-      return;
-    }
-    setForm((current) => ({
-      ...current,
-      targetMonth,
-      title: `PBS · ${official.official.label}${nextInstructor ? ' · Instrutor' : ''}`,
-      opensAt: localInput(official.opensAt),
-      closesAt: localInput(official.closesAt),
-    }));
-    toast.info(`Referência aplicada: ${official.official.label}, dias ${nextInstructor ? official.official.instructorStart : official.official.generalStart} a ${nextInstructor ? official.official.instructorEnd : official.official.generalEnd}. Confirme ano, horários e fuso no comunicado vigente.`);
-  }
-
   function toggleInstructor(value: boolean) {
     setInstructor(value);
     localStorage.setItem('crewcheck_instructor', value ? '1' : '0');
-    applyOfficial(form.targetMonth, value);
   }
 
   async function save() {
@@ -222,18 +203,18 @@ export default function BidsWindowsView() {
     <section className="cc139-card">
       <h2>{form.id ? 'Editar janela' : 'Nova janela'}</h2>
       <div className="cc139-form">
-        <label className="wide"><input type="checkbox" checked={instructor} onChange={(event) => toggleInstructor(event.target.checked)}/> Sou instrutor: usar a janela ideal</label>
+        <label className="wide"><input type="checkbox" checked={instructor} onChange={(event) => toggleInstructor(event.target.checked)}/> Sou instrutor: consultar referência</label>
         <label>Título<input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })}/></label>
-        <label>Mês da janela<input type="month" value={form.targetMonth} onChange={(event) => { const targetMonth = event.target.value; setForm({ ...form, targetMonth }); setTimeout(() => applyOfficial(targetMonth, instructor), 0); }}/></label>
+        <label>Mês da janela<input type="month" value={form.targetMonth} onChange={(event) => setForm({ ...form, targetMonth: event.target.value })}/></label>
         <label>Abertura<input type="datetime-local" value={form.opensAt} onChange={(event) => setForm({ ...form, opensAt: event.target.value })}/></label>
         <label>Encerramento<input type="datetime-local" value={form.closesAt} onChange={(event) => setForm({ ...form, closesAt: event.target.value })}/></label>
         <label className="wide">Link do sistema oficial<input value={form.providerUrl} onChange={(event) => setForm({ ...form, providerUrl: event.target.value })} placeholder="Opcional"/></label>
         <label className="wide"><input type="checkbox" checked={form.notifyOpen} onChange={(event) => setForm({ ...form, notifyOpen: event.target.checked })}/> Solicitar alerta de abertura no Telegram vinculado</label>
         <label className="wide"><input type="checkbox" checked={form.notifyLastDay} onChange={(event) => setForm({ ...form, notifyLastDay: event.target.checked })}/> Solicitar alerta do último dia no Telegram vinculado</label>
       </div>
-      {selectedOfficial && <p><CalendarCheck2/> Referência: {selectedOfficial.label}, dias {instructor ? selectedOfficial.instructorStart : selectedOfficial.generalStart} a {instructor ? selectedOfficial.instructorEnd : selectedOfficial.generalEnd}. Os horários 00:00 e 23:59 são convenções editáveis; não são horários oficiais verificados.</p>}
+      {selectedOfficial && <p><CalendarCheck2/> Referência: {selectedOfficial.label}, dias {instructor ? selectedOfficial.instructorStart : selectedOfficial.generalStart} a {instructor ? selectedOfficial.instructorEnd : selectedOfficial.generalEnd}. Esta referência não define horários oficiais verificados. Informe os dados do comunicado vigente.</p>}
       <div className="cc139-actions">
-        <button onClick={() => applyOfficial()}><CalendarCheck2/> Aplicar referência de datas</button>
+        <button disabled title="Fonte, ano, horários e fuso precisam ser confirmados"><CalendarCheck2/> Referência sem fonte verificada</button>
         <button className="primary" onClick={save} disabled={busy}><Save/> {busy ? 'Salvando…' : 'Salvar janela'}</button>
         <button onClick={exportCalendar}><Download/> Exportar calendário</button>
       </div>

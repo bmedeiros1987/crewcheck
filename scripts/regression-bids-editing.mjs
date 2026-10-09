@@ -39,6 +39,8 @@ assert.deepEqual(update.args.slice(-2), ['stable-id', owner]);
 const foreign = await request(base, { id: 'another-owner-id' });
 assert.equal(foreign.res.status, 404);
 assert.equal(foreign.calls.length, 1);
+assert.equal((await request({ ...base, opensAt: '2026-10-11T12:00:00' })).res.status, 400);
+assert.equal((await request({ ...base, targetMonth: '2026-99' })).res.status, 400);
 const deleted = await request({}, { id: 'stable-id', method: 'DELETE' });
 assert.deepEqual(deleted.calls.find(c => c.sql.startsWith('DELETE')).args, ['stable-id', owner]);
 console.log('BIDS editing: explicit opt-in, stable identity, owner isolation and concurrent create key passed.');

@@ -45,6 +45,9 @@ try{
  const button=()=>page.getByRole('button',{name:'Já solicitei',exact:true});
  await button().waitFor();await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='Já solicitei'&&!b.disabled));
  assert(await page.getByRole('button',{name:'Lembrar depois',exact:true}).isDisabled());
+ assert.deepEqual(await page.locator('input[type=datetime-local]').evaluateAll(inputs=>inputs.map(input=>input.value)),['','']);
+ await page.locator('input[type=month]').fill('2026-12');
+ assert.deepEqual(await page.locator('input[type=datetime-local]').evaluateAll(inputs=>inputs.map(input=>input.value)),['','']);
  const link=page.getByRole('link',{name:'Abrir formulário do comunicado'});
  assert.equal(await link.getAttribute('href'),'https://docs.google.com/forms/d/e/1FAIpQLSehDGJW8pRXXb5j5HbMw0-NSF5Q8nVS7Yb9EwzTqOBhhBllXA/viewform?usp=dialog');
  offline=true;await button().click();await page.waitForFunction(()=>window.toasts?.some(t=>t.type==='error'));

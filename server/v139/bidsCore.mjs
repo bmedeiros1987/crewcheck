@@ -48,8 +48,9 @@ export async function handleBidsCore(req, res, url, { identify = requireIdentity
     const closes = parseDate(body.closesAt);
     const targetMonth = String(body.targetMonth || '').slice(0, 7);
     const title = cleanText(body.title || 'Janela de BIDS', 180);
-    if (!opens || !closes || closes <= opens || !/^\d{4}-\d{2}$/.test(targetMonth)) {
-      sendJson(res, 400, { ok: false, message: 'Confira mês, abertura e encerramento.' });
+    const zoned = value => /(?:Z|[+-]\d{2}:\d{2})$/.test(String(value || ''));
+    if (!opens || !closes || closes <= opens || !/^\d{4}-(?:0[1-9]|1[0-2])$/.test(targetMonth) || !zoned(body.opensAt) || !zoned(body.closesAt)) {
+      sendJson(res, 400, { ok: false, message: 'Confira mês, abertura e encerramento com fuso explícito.' });
       return true;
     }
     const requestedId = item?.[1] || cleanText(body.id, 64);

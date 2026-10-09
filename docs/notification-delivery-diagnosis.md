@@ -56,10 +56,13 @@ POST_NOTIFICATIONS, but granting it alone cannot produce remote push.
 
 ## Remaining delivery gates
 
-BIDS has no atomic multi-worker claim, provider idempotency key or unknown-outcome
-ledger. Timeout after provider acceptance / crash before DB acknowledgement can
-duplicate on retry; deletion/edit can race an already selected send. This candidate
-does not claim exactly-once or activate BIDS scheduling. The general queue now
+BIDS now locks the current window and claims a durable JSON record before dispatch.
+A selected row edited/deleted before that cutoff cannot send. A second worker skips
+the claimed event; timeout/crash/unknown acceptance stays held rather than retried.
+Creation requests never edit implicitly and deletion retains an owner-bound tombstone.
+There is no provider idempotency key or exactly-once guarantee. Edits/deletions after
+dispatch cannot retract accepted/in-flight requests. This candidate does not activate
+BIDS scheduling. The general queue now
 rechecks the current account incarnation and Telegram recipient, rejects client
 recipient overrides, refreshes claimed rows, blocks old triggers after 120 seconds,
 and uses a dispatching CAS as the cancellation cutoff. Cancellation after that cutoff
@@ -70,7 +73,7 @@ partially accepted combinations are held as partial. Explicit known rejection ca
 retry at most three attempts. SQL epoch conversions avoid host-zone parsing of
 unqualified MySQL DATETIME values. Telegram requests have a 10-second deadline.
 No new provider, queue, migration or paid-channel activation is introduced.
-These are fake-DB/provider tests, not actual MySQL/physical acceptance. Binding
+MySQL 8.4 disposable socket tests passed on 79f22bff before and after source preparation; providers remain fake. Physical acceptance is unverified. Binding
 revocation after dispatch starts cannot retract an in-flight provider request.
 `sent` means provider accepted, not device delivered/read. No delivery telemetry for Bruno's device was accessed,
 so the actual individual blocker (permission, channel, battery, build, account link)
@@ -88,7 +91,7 @@ No events were created. `pbsWindows.ts` contains recurring month/day suggestions
 without verified year/source URI, effective period or official time zone. These
 must not be treated as the promised official announcement; year-end leave has no
 verified source in this investigation. New forms start with empty opening/closing fields. The reference button may
-apply explicitly unverified 00:00/23:59 conventions, never confirmed official hours.
+do not apply 00:00/23:59 conventions or autofill from the unverified legacy table.
 
 Before an authorized plan, collect: source document/link + verification time,
 event type, effective year, source revision/hash, exact opening/closing instants,
@@ -151,8 +154,8 @@ This was resolved with a temporary official, checksum-verified Node 22.13.0 runt
 Locked-dependency raw and canonically prepared Vite builds and TypeScript checks
 passed, with existing CSS/chunk warnings. Source preparation and unchanged second
 replay also passed. No signing/security setting was changed. Android compilation,
-physical delivery, production scheduler/configuration, actual MySQL race tests and
-source verification remain unproven. Do not deploy/merge on
+physical delivery, production scheduler/configuration and source instants remain unproven.
+Actual MySQL concurrency is now tested in CI using a disposable socket without network. Do not deploy/merge on
 these results alone.
 
 Bruno confirmed the installed Android app; its version is still pending. Inspect
@@ -172,11 +175,21 @@ warnings. The earlier signed-app Node/Rollup failure is historical, not a remain
 application build error. Locked-dependency canonical preparation/build is checked
 separately; no ad-hoc signing or OS protection change is used.
 
-Rechecked e3373d17: no workflow runs/status checks. Commits intentionally use skip-ci
-because ordinary PR synchronization also triggers signed Android bundle workflows.
-Absence of CI is not green CI. Independent review remains HOLD; no merge/deploy.
-Source-preparation finalizer preserves the queue wrappers after legacy v1414
-materialization. Fake regression suite now includes BIDS editing and queue races.
+Earlier skip-ci commits are historical. The coordinator authorized normal PR CI;
+subsequent commits run the existing web/Android pipelines without enabling store
+publication. At 79f22bff, web including real MySQL concurrency passed. Exact newer
+HEAD must independently pass; previous-head green is not transferable. Independent
+review remains HOLD. Source-preparation finalizer preserves queue wrappers and
+account-state deletion after materialization.
+
+Folga de fim de ano uses the supplied Cabine PDF p1 with exact form link, stated
+closing time, inferred year and absent timezone/opening-hour warnings. No instant
+or recurrence is invented. Authenticated Já solicitei persists owner/cycle declaration
+and cancels linked pending server jobs across all their channels in one transaction.
+The dispatch cutoff uses the same locks. This does not mean leave was approved.
+Unsafe snooze stays disabled; generic APIs cannot schedule reserved cycle jobs.
+The user action is server/UI integrated but still review gated. Local Android/ICS
+cancellation is not integrated, so universal all-channel cancellation is not promised.
 
 Minimum existing outside-app path: current user's already linked/authorized Telegram
 channel, reviewed trigger and current binding, existing queue, generic concise message
