@@ -3552,6 +3552,19 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       continue;
     }
 
+    const atContractualBase = (airport: string) => Boolean(roster.base) && String(airport || '').toUpperCase() === String(roster.base).toUpperCase();
+    // Presence evidence, including intermediate base arrivals. Destination alone
+    // does not establish presence during the breakfast window.
+    const breakfastBasePresence: Array<{ start: Date; end: Date; eventId: string }> = [];
+    if (activityKind === 'reserve' && atContractualBase(representative.origin)) breakfastBasePresence.push({ start, end, eventId: representative.id });
+    if (activityKind === 'flight') {
+      if (atContractualBase(representative.origin)) breakfastBasePresence.push({ start, end: eventStartDateTime(representative), eventId: representative.id });
+      for (const flight of dutyFlights) if (atContractualBase(flight.destination)) {
+        const arrival = eventEndDateTime(flight);
+        breakfastBasePresence.push({ start: arrival, end: arrival, eventId: flight.id });
+      }
+    }
+
     const breakfastIncluded = Boolean((event.day as any)?.breakfastIncluded || (event.day as any)?.hotelBreakfastIncluded || (event as any)?.breakfastIncluded);
     const occurrences = classifyAllowanceWindows({
       start,
@@ -3563,6 +3576,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       originAtContractualBase: String(representative.origin || '').toUpperCase() === String(roster.base || '').toUpperCase(),
       destinationAtContractualBase: String((dutyFlights.at(-1) || representative).destination || '').toUpperCase() === String(roster.base || '').toUpperCase(),
       breakfastIncluded,
+      breakfastBasePresence,
     });
     const source = activityKind === 'stay_external' ? 'Pernoite fora da base'
       : activityKind === 'reserve' ? 'Reserva no aeroporto'
@@ -3574,12 +3588,12 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       const [windowStartHour, windowEndHour] = slotHours[occurrence.slot] || [0, 23];
       const windowStart = rosterOperationalDateAt(occurrence.iso, windowStartHour);
       const windowEnd = rosterOperationalDateAt(occurrence.iso, windowEndHour);
-      const occurrenceEvent = dutyFlights.find((candidate, index) => {
+      const occurrenceEvent = (occurrence.slot === 'breakfast' && occurrence.eventId ? dutyFlights.find(candidate => candidate.id === occurrence.eventId) : null) || dutyFlights.find((candidate, index) => {
         const candidateStart = eventStartDateTime(candidate).getTime();
         const candidateEnd = eventEndDateTime(candidate).getTime() + (index === dutyFlights.length - 1 ? 30 * 60_000 : 0);
         return candidateStart <= windowEnd.getTime() && candidateEnd >= windowStart.getTime();
       }) || (occurrence.slot === 'breakfast' && dutyFlights.at(-1)?.destination?.toUpperCase() === String(roster.base || '').toUpperCase() ? dutyFlights.at(-1)! : representative);
-      add(occurrenceEvent, occurrence.iso, occurrence.slot, labels[occurrence.slot], `${source} · ${occurrence.window}`, start, end);
+      add(occurrenceEvent, occurrence.iso, occurrence.slot, labels[occurrence.slot], `${source} · ${occurrence.window}${occurrence.slot === 'breakfast' ? ' · Critério operacional informado pelo usuário: presença na base na janela do café; sem homologação ACT' : ''}`, start, end);
     }
   }
   const monthlyRows = rowsForNominalFinancialCompetence(rows, roster);
