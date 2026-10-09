@@ -219,9 +219,13 @@ async function visibleTextBounds(page, selector) {
       await page.evaluate(() => window.qaReleaseParent());
       await recovered(page);
       await page.evaluate(() => {
+        const originalPush = history.pushState;
+        // Exercise the documented fallback where the browser refuses overlay history entries.
+        history.pushState = () => { throw new Error('Synthetic history unavailable'); };
         const first = window.acquireQAOverlay(() => {});
         first();
         window.qaRapidRelease = window.acquireQAOverlay(() => {});
+        history.pushState = originalPush;
       });
       assert.equal(await page.evaluate(() => history.scrollRestoration), 'manual', 'Rapid reopening retains overlay-owned restoration');
       await page.evaluate(() => window.qaRapidRelease());
