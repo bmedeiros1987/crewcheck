@@ -35,9 +35,11 @@ function actualFunction(name) {
   return source.slice(start,source.indexOf('\n}',start)+2);
 }
 let response, normalizations=0, writes=0;
+let endpointBody={text:'/radar LA1234 2026-10-09',location:{latitude:-23,longitude:-46},preferences:{location:{latitude:-23,longitude:-46},gymPlan:'wellhub'}};
+const wrapperInputs=[];
 const snapshot={email:profile.email,roster:{days:[]}};
 const endpoint=vm.createContext({
-  readJsonBody:async()=>({text:'/radar LA1234 2026-10-09',location:{latitude:-23,longitude:-46},preferences:{location:{latitude:-23,longitude:-46},gymPlan:'wellhub'}}),
+  readJsonBody:async()=>endpointBody,
   telegramRequestUser:()=>profile,telegramAppRequestAllowed:()=>true,
   telegramLinkedRecordForEmail:async()=>null,conciergeAccessMatches:()=>true,conciergeLoadSnapshot:async()=>snapshot,
   radarReadReply:context.radarReadReply,
@@ -45,13 +47,24 @@ const endpoint=vm.createContext({
   normalizeConciergeLocationV14335:()=>{normalizations++;throw Error('GPS_NORMALIZATION_FORBIDDEN');},
   WEATHER_AIRPORT_POINTS:{},
   conciergeSaveSnapshotAsync:()=>{writes++;throw Error('WRITE_FORBIDDEN');},
-  buildTelegramConciergeReply:()=>{throw Error('LATE_WRAPPER_FORBIDDEN');},
+  buildTelegramConciergeReply:async(text,p,s)=>{wrapperInputs.push(text);return transportModule ? context.reply(text,p,s) : 'FIXTURE_CORPORATE_PATH';},
   conciergePreferencesV14336:()=>({}),conciergeVoiceOptionsV14336:()=>[],
   sendJson:(_res,status,payload)=>{response={status,payload};},
 });
 vm.runInContext(actualFunction('handleTelegramConciergeAsk'),endpoint);
 await endpoint.handleTelegramConciergeAsk({method:'POST'},{});
 assert.equal(response.status,200);assert.match(response.payload.reply,/Não há informação salva/);
+assert.equal(normalizations,0);assert.equal(writes,0);
+assert.equal(wrapperInputs.length,0,'Radar returns before generic wrapper and effects');
+const beforeCorporateReads=reads;
+for(const text of ['van da LATAM no portão B12 em 2026-10-09','ônibus LATAM no terminal C3 em 2026-10-09','van intersites no portão B12 em 2026-10-09','transporte intersites no terminal C3 em 2026-10-09']) {
+  endpointBody={text,...(transportModule ? {location:{latitude:-23,longitude:-46}} : {})};
+  await endpoint.handleTelegramConciergeAsk({method:'POST'},{});
+  assert.equal(response.status,200);assert.equal(wrapperInputs.at(-1),text);
+  assert.equal(reads,beforeCorporateReads,'gate code in corporate request must never reach Radar DB');
+  assert.match(response.payload.reply,transportModule ? /origem|destino|transporte|empresa/i : /FIXTURE_CORPORATE_PATH/);
+  assert.doesNotMatch(response.payload.reply,/companhia e o número|Não há informação salva confirmada/);
+}
 assert.equal(normalizations,0);assert.equal(writes,0);
 
 // Run the prepared app helper. Radar must return before any GPS/cache getter.
