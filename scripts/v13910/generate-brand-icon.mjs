@@ -4,6 +4,9 @@ import zlib from 'node:zlib';
 
 const SIZE = 512;
 const OUTPUT = path.resolve('client/public/icons/crewcheck-icon-v2.png');
+// Marca oficial 2026 (arte entregue pelo produto). Quando presente, substitui o
+// desenho procedural abaixo; v14340 copia este arquivo para crewcheck-icon-v3.png.
+const OFFICIAL_ICON = path.resolve('client/public/assets/brand/crewcheck-app-icon-2026.png');
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 const mix = (a, b, amount) => a + (b - a) * amount;
@@ -122,4 +125,10 @@ function render() {
   console.log(`CrewCheck: ícone oficial gerado em ${SIZE}x${SIZE} (${Math.round(png.length / 1024)} KB).`);
 }
 
-render();
+if (fs.existsSync(OFFICIAL_ICON)) {
+  fs.mkdirSync(path.dirname(OUTPUT), { recursive: true });
+  fs.copyFileSync(OFFICIAL_ICON, OUTPUT);
+  console.log(`CrewCheck: ícone oficial copiado de ${path.relative(process.cwd(), OFFICIAL_ICON)}.`);
+} else {
+  render();
+}
