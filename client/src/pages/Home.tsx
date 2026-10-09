@@ -4031,7 +4031,6 @@ function WakeupView({ event }: { event: ZeroLeg }) {
         jobKey: `wakeup:${event.id}:${scheduled.toISOString()}:${serverChannel}`,
         message: 'Despertador CrewCheck: confira sua preparação no aplicativo.',
       });
-      window.setTimeout(() => notifyCrewCheck('Despertador CrewCheck', `Hora de se preparar para ${rosterEventTitle(event)}. Apresentação ${presentation}.`), Math.min(delay, 2147483647));
       window.dispatchEvent(new Event('crewcheck:notification-jobs-changed'));
       toast.success(payload?.message || 'Solicitação registrada no servidor; entrega não confirmada.');
     } catch (error) {
@@ -4049,7 +4048,6 @@ function WakeupView({ event }: { event: ZeroLeg }) {
         jobKey: `snooze:${event.id}:${next.toISOString()}`,
         message: 'Soneca CrewCheck encerrada. Confira sua apresentação e o Planejador de Saída.',
       });
-      window.setTimeout(() => notifyCrewCheck('Soneca CrewCheck', 'Soneca encerrada. Confira sua apresentação.'), 10 * 60000);
       toast.success(`Soneca no servidor ativada até ${wakeupDateLabel(next)}.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não consegui ativar a soneca.');

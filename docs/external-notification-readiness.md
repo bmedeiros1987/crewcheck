@@ -36,8 +36,7 @@ The heartbeat writer binds ISO strings ending Z directly into MySQL DATETIME and
 silently swallows errors. The patch uses numeric epoch parameters with
 FROM_UNIXTIME, partial atomic updates, epoch read aliases and sanitized write-error
 visibility. The disposable MySQL fixture reproduces the old strict-DATETIME error
-and exercises the real corrected writer under +03:00. Local synthetic writer tests
-pass; real MySQL result must be read from exact-head CI, not assumed.
+and exercises the real corrected writer under +03:00. Real MySQL gate at 28ec5fbb passed before/after preparation; later heads must pass independently.
 Completed but old heartbeat is now `stale`, invalid time `unknown`, rather than
 permanently healthy. No queue cadence/selection/send policy changed.
 
@@ -50,7 +49,7 @@ refreshes on reconnection/queue changes. The API returns only boolean configurat
 and canonical owner-binding readiness, not chat IDs/phone/token. Last 100 jobs are
 summarized as pending, accepted, unknown, expired or cancelled. `sent` means provider
 accepted, not delivered/read. No remote push or guaranteed delivery is claimed.
-Saving a server job no longer implicitly requests browser notification permission.
+Own job timestamps now use SQL epoch conversion and explicit ISO instants rather than unqualified DATETIME strings interpreted in the device timezone. Saving a server job no longer implicitly requests browser notification permission or adds a duplicate, unscoped page timer.
 New wakeup messages omit roster/airport/presentation details; historical pending
 payloads are not rewritten. Existing paid choices and explicit test buttons are
 unchanged and were not clicked. No new channel is automatically opted in.

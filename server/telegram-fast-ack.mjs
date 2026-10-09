@@ -418,11 +418,15 @@ async function listJobs(req, res) {
   const [owners] = await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? LIMIT 1', [user.email]);
   if (String(owners[0]?.public_id || '') !== String(user.id)) return sendJson(res, 401, { ok: false, message: 'Sessão da conta não é mais válida.' });
   await ensureNotificationTable(db);
-  const [rows] = await db.query('SELECT id,job_key AS jobKey,scheduled_at AS scheduledAt,channel,status,attempts,sent_at AS sentAt,last_error AS lastError FROM crewcheck_notification_jobs WHERE email=? ORDER BY scheduled_at DESC LIMIT 100', [user.email]);
+  const [rows] = await db.query('SELECT id,job_key AS jobKey,ROUND(UNIX_TIMESTAMP(scheduled_at)*1000) AS scheduledEpoch,channel,status,attempts,ROUND(UNIX_TIMESTAMP(sent_at)*1000) AS sentEpoch,last_error AS lastError FROM crewcheck_notification_jobs WHERE email=? ORDER BY scheduled_at DESC LIMIT 100', [user.email]);
   const linked = await linkedTelegramRecord(db, user.email);
   const telegramConfigured = Boolean(String(process.env.TELEGRAM_BOT_TOKEN || process.env.CREWCHECK_TELEGRAM_BOT_TOKEN || '').trim());
   const telegramLinked = Boolean(linked?.chatId && safeEmail(linked.email) === user.email);
-  return sendJson(res, 200, { ok: true, jobs: rows, readiness: { telegramConfigured, telegramLinked, remoteAndroidPush: false, webPush: false } });
+  const jobs = rows.map(({ scheduledEpoch, sentEpoch, ...job }) => ({ ...job,
+    scheduledAt: scheduledEpoch == null ? null : new Date(Number(scheduledEpoch)).toISOString(),
+    sentAt: sentEpoch == null ? null : new Date(Number(sentEpoch)).toISOString(),
+  }));
+  return sendJson(res, 200, { ok: true, jobs, readiness: { telegramConfigured, telegramLinked, remoteAndroidPush: false, webPush: false } });
 }
 
 async function cancelJob(req, res) {

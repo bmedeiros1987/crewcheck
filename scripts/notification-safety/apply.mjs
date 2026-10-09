@@ -48,5 +48,7 @@ wake = wake.replace(/message: 'Despertador CrewCheck: hora de se preparar para '
 wake = wake.replace(/message: `Despertador CrewCheck: prepare-se para[^\n]+/, "message: 'Despertador CrewCheck: confira sua preparação no aplicativo.',");
 // Saving a server job must not request device/browser permission implicitly.
 wake = wake.replace(/      if \(typeof Notification[^\n]+Notification\.requestPermission\(\)[^\n]+\n/g, '');
+// Server registration must not also arm an unscoped page timer for a duplicate notice.
+wake = wake.replace(/      window\.setTimeout\(\(\) => notifyCrewCheck[^\n]+\n/g, '');
 home = home.slice(0, wakeStart) + wake + home.slice(wakeEnd);
 fs.writeFileSync(homePath, home);
