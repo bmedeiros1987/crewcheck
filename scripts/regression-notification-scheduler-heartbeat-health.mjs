@@ -76,6 +76,10 @@ try {
     'novo ciclo iniciado após o término do anterior deve voltar a running',
   );
 
+  assert.equal(schedulerHealthState({last_started_at:'x', started_epoch:now-600000, finished_epoch:now-590000, last_status:'ok'},now),'stale');
+  assert.equal(schedulerHealthState({last_started_at:'invalid'},now),'unknown');
+  // SQL epoch aliases remain correct even under a different process timezone.
+  assert.equal(schedulerHealthState({last_started_at:'x', started_epoch:now-1000, finished_epoch:now, last_status:'ok'},now),'completed');
   console.log('schedulerHealthState regression: ok');
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true });
@@ -202,3 +206,38 @@ const routeRegistered = source.includes("if (path === '/api/notifications/runtim
 assert.equal(routeRegistered, true, 'rota /api/notifications/runtime-health deve continuar registrada (endpoint pré-existente, sem rota nova)');
 
 console.log('Notification scheduler heartbeat/health regression: ok');
+
+// Execute the production writer with strict parameter checks and forced failures.
+const writerStart = source.indexOf('async function recordSchedulerHeartbeat(');
+const writerEnd = source.indexOf('\nasync function sendInfobipPhone', writerStart);
+const writer = source.slice(writerStart, writerEnd);
+const writerFile = path.join(os.tmpdir(), `crewcheck-heartbeat-writer-${process.pid}.mjs`);
+try {
+  fs.writeFileSync(writerFile, `export let lastHeartbeatWrite=null;async function ensureSchedulerHeartbeatTable(){};${writer};export{recordSchedulerHeartbeat};`);
+  const mod = await import(pathToFileURL(writerFile).href);
+  let params;
+  const db={query:async(sql,values)=>{assert(sql.includes('FROM_UNIXTIME'));params=values;}};
+  const start='2026-10-09T06:24:45.799Z',end='2026-10-09T06:24:46.824Z';
+  await mod.recordSchedulerHeartbeat(db,{lastStartedAt:start,lastFinishedAt:null});
+  assert.equal(params[0],Date.parse(start));assert.equal(params[1],null);assert.deepEqual(params.slice(4),[true,true,false,false]);assert.equal(mod.lastHeartbeatWrite.ok,true);
+  await mod.recordSchedulerHeartbeat(db,{lastFinishedAt:end,lastStatus:'ok',lastSummary:{selected:0}});
+  assert.deepEqual(params.slice(4),[false,true,true,true]);assert.equal(params[1],Date.parse(end));
+  await mod.recordSchedulerHeartbeat({query:async()=>{throw Object.assign(new Error('sensitive SQL/credentials'),{code:'ER_TRUNCATED_WRONG_VALUE'});}},{});
+  assert.equal(mod.lastHeartbeatWrite.ok,false);assert.equal(mod.lastHeartbeatWrite.code,'ER_TRUNCATED_WRONG_VALUE');assert(!JSON.stringify(mod.lastHeartbeatWrite).includes('sensitive'));
+  await mod.recordSchedulerHeartbeat(db,{lastStartedAt:'invalid'});assert.equal(mod.lastHeartbeatWrite.code,'INVALID_INSTANT');
+  console.log('Production heartbeat writer: epoch parameters, partial updates and failure visibility PASS');
+} finally {fs.rmSync(writerFile,{force:true});}
+
+// Private readiness GET uses the current owner and canonical binding without sending.
+const listStart=source.indexOf('async function listJobs('),listEnd=source.indexOf('\nasync function cancelJob',listStart);
+const listFile=path.join(os.tmpdir(),`crewcheck-readiness-api-${process.pid}.mjs`);
+try{
+ fs.writeFileSync(listFile,`export let user={email:'a@example.test',id:'A'};export let owner='A',link={email:'a@example.test',chatId:'fictional'};export function state(u,o,l){user=u;owner=o;link=l;}function identity(){return user;}async function dbPool(){return{query:async sql=>[sql.includes('SELECT public_id')?[{public_id:owner}]:[{id:1,status:'sent',scheduledEpoch:1791527085799,sentEpoch:1791527086824}]]};}async function ensureNotificationTable(){}async function linkedTelegramRecord(){return link;}function safeEmail(x){return String(x||'').trim().toLowerCase();}function sendJson(res,status,body){Object.assign(res,{status,body});}${source.slice(listStart,listEnd)};export{listJobs};`);
+ const mod=await import(pathToFileURL(listFile).href);const ask=async()=>{const res={};await mod.listJobs({},res);return res;};
+ assert.equal((await ask()).body.readiness.telegramLinked,true);
+ const job=(await ask()).body.jobs[0];assert.equal(job.scheduledAt,new Date(1791527085799).toISOString());assert.equal(job.sentAt,new Date(1791527086824).toISOString());assert(!('scheduledEpoch' in job));
+ mod.state({email:'a@example.test',id:'A'},'A',{email:'b@example.test',chatId:'fictional'});assert.equal((await ask()).body.readiness.telegramLinked,false);
+ mod.state({email:'a@example.test',id:'old'},'A',{});assert.equal((await ask()).status,401);
+ mod.state(null,'A',{});assert.equal((await ask()).status,401);
+ console.log('Private readiness GET: canonical owner binding and stale/absent account denied PASS');
+}finally{fs.rmSync(listFile,{force:true});}
