@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import { createRequire } from 'node:module';
-import { build } from 'esbuild';
+const { build } = createRequire(process.env.MENU_ESBUILD_PACKAGE || import.meta.url)('esbuild');
 import ts from 'typescript';
 
 // Real prepared MenuDrawer + shipped CSS, rendered client-side so clicks, state and

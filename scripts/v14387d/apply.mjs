@@ -21,8 +21,8 @@ if (!source.includes(cssImport)) {
 
 const confirmationBlock = `function requestCrewCheckImportConfirmation(decision: ImportGuardianDecision): Promise<boolean> {
   if (typeof document === 'undefined') return Promise.resolve(false);
+  if (document.querySelector('[data-crewcheck-import-confirm="true"]')) return Promise.resolve(false);
   return new Promise((resolve) => {
-    document.querySelector('[data-crewcheck-import-confirm="true"]')?.remove();
 
     const overlay = document.createElement('div');
     overlay.className = 'cc-import-confirm-overlay';
@@ -67,20 +67,25 @@ const confirmationBlock = `function requestCrewCheckImportConfirmation(decision:
     dialog.append(header, summary, note, actions);
     overlay.append(dialog);
 
-    const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement;
+    let releaseOverlay = () => {};
     let settled = false;
     const finish = (accepted: boolean) => {
       if (settled) return;
       settled = true;
       document.removeEventListener('keydown', onKeyDown);
       overlay.remove();
-      document.body.style.overflow = previousOverflow;
+      releaseOverlay();
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
       resolve(accepted);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
         finish(false);
+      } else if (event.key === 'Tab') {
+        event.preventDefault();
+        (document.activeElement === cancel ? activate : cancel).focus();
       }
     };
 
@@ -88,7 +93,7 @@ const confirmationBlock = `function requestCrewCheckImportConfirmation(decision:
     activate.addEventListener('click', () => finish(true));
     overlay.addEventListener('click', (event) => { if (event.target === overlay) finish(false); });
     document.addEventListener('keydown', onKeyDown);
-    document.body.style.overflow = 'hidden';
+    releaseOverlay = acquireOverlayLifecycle(() => finish(false));
     document.body.append(overlay);
     queueMicrotask(() => activate.focus());
   });
