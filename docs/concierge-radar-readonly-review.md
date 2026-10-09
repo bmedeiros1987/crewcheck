@@ -11,3 +11,9 @@ The existing Radar races configured external providers (potentially billed), and
 An existing account-owned `lastRadar` snapshot is accepted only with explicit matching operationalDate and flight identity. Legacy snapshots without occurrence dates are not treated as a match. No universal coverage is claimed.
 
 Remaining blockers: approved cost conditions for live queries; proving provider occurrence identity consistently (currently only FlightAware gets published departure in the prepared adapter); an approved existing producer for app flight follows. No new provider/key/plan/transport or WhatsApp activation is included. Coordination leaves semantic/menu files to the bus/van task; only one append-only registration in scripts/v139/apply.mjs is shared.
+
+Review corrections: the authenticated app endpoint now handles saved Radar before normalizing supplied location or saving any preferences. The prepared client uses the same pure intent matcher and sends identity/text only, before reading cached GPS or gym preferences. Telegram Radar button aliases use exact labels so flight/date arguments survive the actual process entry. Corporate bus/van gate/terminal queries do not become flight queries.
+
+Local composition with PR938 head `6920dbcb` runs the real saved-Radar and corporate transport adapters together. Radar integration, materialized Wellhub (18 cases) and humor (6 cases) pass. The transport-only VM fixture at that head requires injecting `radarReadIntent` and `radarReadReply` for the composed client/endpoint; its unmodified harness currently raises ReferenceError. This is a test-contract coordination blocker, not permission to merge either draft.
+
+The transport VM contract was also tested with these two imports injected **only in the disposable composed checkout**: its full actual client/endpoint suite then passes. Alternating both finalizers preserves server/client content and one instance of each adapter. PR938 itself was not modified.

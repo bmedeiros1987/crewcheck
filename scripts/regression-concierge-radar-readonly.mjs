@@ -7,6 +7,8 @@ let reads=0;
 const deps = {read:async(email,intent)=>{reads++;assert.equal(email,owner.email);return [row];}};
 assert.equal(radarCivilDate('2026-02-30'),'');
 assert.equal(radarReadIntent('Como pegar o ônibus?'),null);
+for (const text of ['ônibus da empresa do terminal 1 para terminal 2 em 2026-10-09', 'van da empresa no portão 2', 'ônibus da empresa no gate G31234', 'qual terminal do hotel?', 'portão do ônibus']) assert.equal(radarReadIntent(text),null);
+assert.equal(radarReadIntent('terminal do voo LA1234 em 2026-10-09').flight,'LA1234');
 for (const text of ['status do meu plano','informações do hotel','qual a próxima programação','meu próximo voo','horário da van']) assert.equal(radarReadIntent(text),null);
 assert.equal(radarReadIntent('status do voo 1234').flight,'','never infer LATAM');
 assert.equal(radarReadIntent('/radar LAN1234 09/10/2026').flight,'LA1234');

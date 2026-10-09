@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'server/concierge/radar-readonly.mjs'
+      - 'shared/conciergeRadarIntent.*'
       - 'scripts/concierge-radar-readonly/**'
       - 'scripts/regression-concierge-radar-readonly*.mjs'
       - 'scripts/v139/apply.mjs'
