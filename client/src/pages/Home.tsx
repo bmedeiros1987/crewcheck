@@ -68,7 +68,7 @@ import {
   Plus,
   Search,
 } from 'lucide-react';
-import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getPublishedDutyLimitSummary, type ComplianceResult } from '@/lib/complianceEngine';
+import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getCanonicalWorkHoursTotal, getPublishedDutyLimitSummary, type ComplianceResult } from '@/lib/complianceEngine';
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
 import { authFetch, getStoredUser, logout } from '@/lib/authClient';
 import { exportReport } from '@/lib/pdfExport';
@@ -2729,35 +2729,32 @@ function LoadView({ bundle }: { bundle: BundleState }) {
   const [limitRevision, setLimitRevision] = useState(0);
   void limitRevision;
   const compliance = currentCompliance(bundle) as any;
-  const days = Array.isArray(bundle.roster.days) ? bundle.roster.days : [];
-  const auditedDays = Array.isArray(compliance.loadAnalysis?.days) ? compliance.loadAnalysis.days : [];
-  const auditedDayByDate = new Map(auditedDays.map((item: any) => [String(item.date || ''), item]));
-  const rows = days.map((day) => {
-    const audited = auditedDayByDate.get(String((day as any).date || '')) as any;
-    return {
-      day,
-      date: rosterDayIso(day),
-      hours: Number.isFinite(Number(audited?.dutyHours)) ? Number(audited.dutyHours) : dutyHoursForRosterDay(day),
-      sectors: Array.isArray((day as any).legs) ? (day as any).legs.length : 0,
-    };
-  }).filter((row) => row.date);
+  const canonicalEvents = buildCanonicalRosterEvents(bundle.roster);
+  const journeys = new Map<string, CanonicalRosterEvent>();
+  for (const event of canonicalEvents) {
+    if (event.kind !== 'flight' && event.kind !== 'duty') continue;
+    if (event.kind === 'duty' && /\b(?:HSB|HSBE|ASB|RES|RESERVA|RSV)\b/.test(`${event.publishedDay.type} ${event.publishedDay.pairingCode}`.toUpperCase())) continue;
+    if (!journeys.has(event.journeyId)) journeys.set(event.journeyId, event);
+  }
+  const measurements = [...journeys.values()].map(event => ({ event, measurement: measureCanonicalDuty(canonicalEvents, event.id) }));
+  const measurementComplete = measurements.length > 0 && measurements.every(item => item.measurement?.state === 'available');
+  const rows = measurements.flatMap(({ event, measurement }) => measurement?.minutes !== null && measurement?.state === 'available'
+    ? [{ date: rosterDayIso(event.publishedDay), hours: measurement.minutes / 60, sectors: canonicalEvents.filter(item => item.kind === 'flight' && item.journeyId === event.journeyId).length, journeyId: event.journeyId }] : []);
   const dailyLimit = readNumberSetting('crewcheck_limit_daily_hours', 11);
   const weeklyLimit = readNumberSetting('crewcheck_limit_weekly_hours', 44);
   const monthlyLimit = readNumberSetting('crewcheck_limit_monthly_hours', 176);
   const heaviest = [...rows].sort((a, b) => (b.hours + b.sectors * .35) - (a.hours + a.sectors * .35)).slice(0, 6);
   const peakDay = heaviest[0] || { hours: 0, date: '—', sectors: 0 };
   let peakWeek = { hours: 0, from: '—', to: '—' };
-  rows.forEach((row, index) => { const start = new Date(`${row.date}T12:00:00`); const windowRows = rows.filter((candidate) => { const date = new Date(`${candidate.date}T12:00:00`); const diff = (date.getTime() - start.getTime()) / 86400000; return diff >= 0 && diff < 7; }); const hours = windowRows.reduce((sum, item) => sum + item.hours, 0); if (hours > peakWeek.hours) peakWeek = { hours, from: row.date, to: windowRows.at(-1)?.date || row.date }; });
-  const monthlyHours = compliance.metrics?.totalDutyHours === null ? null : Number.isFinite(Number(compliance.metrics?.totalDutyHours))
-    ? Number(compliance.metrics.totalDutyHours)
-    : rows.reduce((sum, row) => sum + row.hours, 0);
+  rows.forEach((row, index) => { const start = new Date(`${row.date}T12:00:00Z`); const windowRows = rows.filter((candidate) => { const date = new Date(`${candidate.date}T12:00:00Z`); const diff = (date.getTime() - start.getTime()) / 86400000; return diff >= 0 && diff < 7; }); const hours = windowRows.reduce((sum, item) => sum + item.hours, 0); if (hours > peakWeek.hours) peakWeek = { hours, from: row.date, to: windowRows.at(-1)?.date || row.date }; });
+  const monthlyHours = getCanonicalWorkHoursTotal(bundle.roster);
   function configure() {
     const daily = prompt('Referência diária de jornada (horas)', String(dailyLimit)); if (daily !== null) storage.set('crewcheck_limit_daily_hours', daily.replace(',', '.'));
     const weekly = prompt('Referência semanal de jornada (horas)', String(weeklyLimit)); if (weekly !== null) storage.set('crewcheck_limit_weekly_hours', weekly.replace(',', '.'));
     const monthly = prompt('Referência mensal de jornada (horas)', String(monthlyLimit)); if (monthly !== null) storage.set('crewcheck_limit_monthly_hours', monthly.replace(',', '.'));
     setLimitRevision((value) => value + 1);
   }
-  return <><Brand back/><section className="cz-panel-head"><h1>Carga e limites</h1><p>Relação direta de horas usadas x limite de referência, sem substituir a análise contextual de RBAC 117, ACT e escala oficial.</p></section><section className="cz-hour-limits"><HourLimitBar title="Jornada diária mais alta" used={peakDay.hours} limit={dailyLimit} detail={`${peakDay.date} · ${peakDay.sectors} trecho(s)`}/><HourLimitBar title="Pico em 7 dias" used={peakWeek.hours} limit={weeklyLimit} detail={`${peakWeek.from} a ${peakWeek.to}`}/><HourLimitBar title="Total mensal" used={monthlyHours} limit={monthlyLimit} detail={`${rows.length} dia(s) com dados de jornada`}/></section><section className="cz-toolbox"><h2>Referências e confiabilidade</h2><p>Os valores acima são referências configuráveis para visualização. Uma extrapolação visual não vira irregularidade sozinha: composição, horário, tripulação, operação, repouso, ACT e RBAC continuam sendo avaliados no motor de conformidade.</p><div className="cz-tool-actions"><button onClick={configure}><Settings/> Configurar limites de referência</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'alerts' }))}><AlertTriangle/> Abrir análise regulatória</button></div></section><section className="cz-finance-table"><h2>Dias mais puxados da escala</h2>{heaviest.length ? heaviest.map((row, index) => <div className="cz-finance-row" key={`${row.date}-${index}`}><span>#{index + 1}</span><strong>{row.date}</strong><small>{row.hours.toFixed(1).replace('.', ',')} h de jornada · {row.sectors} trecho(s){row.hours >= dailyLimit ? ' · acima da referência diária' : ''}</small><b>{row.hours.toFixed(1).replace('.', ',')} h / {dailyLimit.toFixed(1).replace('.', ',')} h</b></div>) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem jornada calculável</h2><p>Importe uma escala com apresentação e término para calcular as relações de horas.</p></article>}</section><section className="cz-report-grid"><article><h2>Score de conformidade</h2><strong>{compliance.score ?? '—'}</strong><p>{compliance.summary || 'Aguardando análise.'}</p></article><article><h2>Alertas válidos</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Sem contadores antigos ou duplicados.</p></article><article><h2>Fonte</h2><strong>Escala ativa</strong><p>Todos os cálculos usam o mesmo motor canônico.</p></article><article><h2>Solo entre etapas</h2><strong>{Number(compliance.metrics?.totalGroundHours || 0).toFixed(1).replace('.', ',')} h</strong><p>Maior intervalo: {Number(compliance.metrics?.maxGroundIntervalMinutes || 0)} min · {Number(compliance.metrics?.groundLimitExceedances || 0)} acima do ACT. Solo permanece dentro da jornada, sem somar novamente.</p></article></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Carga e limites</h1><p>Relação direta de horas usadas x limite de referência, sem substituir a análise contextual de RBAC 117, ACT e escala oficial.</p></section><section className="cz-hour-limits"><HourLimitBar title="Jornada publicada mais alta" used={measurementComplete ? peakDay.hours : null} limit={dailyLimit} detail={`${peakDay.date} · ${peakDay.sectors} trecho(s)`}/><HourLimitBar title="Pico em 7 dias" used={measurementComplete ? peakWeek.hours : null} limit={weeklyLimit} detail={`${peakWeek.from} a ${peakWeek.to}`}/><HourLimitBar title="Total mensal" used={monthlyHours} limit={monthlyLimit} detail={`${rows.length} dia(s) com dados de jornada`}/></section><section className="cz-toolbox"><h2>Referências e confiabilidade</h2><p>Os valores acima são referências configuráveis para visualização. Uma extrapolação visual não vira irregularidade sozinha: composição, horário, tripulação, operação, repouso, ACT e RBAC continuam sendo avaliados no motor de conformidade.</p><div className="cz-tool-actions"><button onClick={configure}><Settings/> Configurar limites de referência</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'alerts' }))}><AlertTriangle/> Abrir análise regulatória</button></div></section><section className="cz-finance-table"><h2>Dias mais puxados da escala</h2>{measurementComplete && heaviest.length ? heaviest.map((row, index) => <div className="cz-finance-row" key={`${row.journeyId}-${index}`}><span>#{index + 1}</span><strong>{row.date}</strong><small>{row.hours.toFixed(1).replace('.', ',')} h de jornada · {row.sectors} trecho(s){row.hours >= dailyLimit ? ' · acima da referência diária' : ''}</small><b>{row.hours.toFixed(1).replace('.', ',')} h / {dailyLimit.toFixed(1).replace('.', ',')} h</b></div>) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem jornada calculável</h2><p>Importe uma escala com apresentação e término para calcular as relações de horas.</p></article>}</section><section className="cz-report-grid"><article><h2>Score de conformidade</h2><strong>{compliance.score ?? '—'}</strong><p>{compliance.summary || 'Aguardando análise.'}</p></article><article><h2>Alertas válidos</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Sem contadores antigos ou duplicados.</p></article><article><h2>Fonte</h2><strong>Escala ativa</strong><p>Todos os cálculos usam o mesmo motor canônico.</p></article><article><h2>Solo entre etapas</h2><strong>{Number(compliance.metrics?.totalGroundHours || 0).toFixed(1).replace('.', ',')} h</strong><p>Maior intervalo: {Number(compliance.metrics?.maxGroundIntervalMinutes || 0)} min · {Number(compliance.metrics?.groundLimitExceedances || 0)} acima do ACT. Solo permanece dentro da jornada, sem somar novamente.</p></article></section></>;
 }
 
 function ToggleSetting({ icon: Icon, label, storageKey, defaultOn = true, detail }: { icon: any; label: string; storageKey: string; defaultOn?: boolean; detail?: string }) {
