@@ -5,6 +5,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { execFileSync } from 'node:child_process';
 import { stayMenuIntent, privateStayMenuOwner, readStayMenuHistory, stayMenuReply } from '../server/concierge/stay-menu.mjs';
+import { companyTransportReply } from '../server/concierge/company-transport.mjs';
 
 for (const text of ['🏨 Hotéis', '🏨 Meu pernoite', '/hoteis', '/hoteis@CrewCheckBot', '/hotel teste', 'meu pernoite']) assert.equal(stayMenuIntent(text)?.kind, 'menu');
 for (const text of ['Informar hotel', 'registrar o pernoite', '/registrar_pernoite']) assert.equal(stayMenuIntent(text)?.kind, 'hotel');
@@ -92,7 +93,7 @@ try {
   assert.match(once,/text: '🏨 Meu pernoite'/);
   assert.match(once,/\{ \.\.\.profile, channel: 'app' \}, snapshot\)/);
   const wrapper=once.slice(once.indexOf("async function buildTelegramConciergeReply(text = ''"),once.indexOf('\nasync function ',once.indexOf("async function buildTelegramConciergeReply(text = ''")+10));
-  const context=vm.createContext({stayMenuReply,conciergePreferenceCommandV14336:()=>assert.fail('exact stay menu must dispatch first')});
+  const context=vm.createContext({companyTransportReply,stayMenuReply,conciergePreferenceCommandV14336:()=>assert.fail('exact stay menu must dispatch first')});
   vm.runInContext(`${wrapper}\nglobalThis.run=buildTelegramConciergeReply;`,context);
   assert.match(await context.run('Meu pernoite',telegram),/Meu pernoite/);
   assert.match(await context.run('Informar hotel',telegram),/cadastro por esta conversa/);
