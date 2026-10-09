@@ -1,3 +1,4 @@
+import { financialIntervalEvidenceIssue } from '@/lib/financialIntervalEvidence';
 import { NotificationReadiness } from '@/components/notifications/NotificationReadiness';
 import { isFinancialSetting, readFinancialSetting, writeFinancialSetting } from '@/lib/financialSettingStore';
 import type { ReactNode } from 'react';
@@ -3529,7 +3530,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       representative = dutyFlights[0] || event;
       const last = dutyFlights[dutyFlights.length - 1] || event;
       start = eventStartDateTime(representative);
-      const report = String((representative.day as any)?.dutyReport || representative.presentation || '').trim();
+      const report = String(representative.canonical?.leg?.presentationTime || (representative.day as any)?.dutyReport || '').trim();
       start = rosterPresentationBeforeDeparture(start, report) || new Date(NaN);
       enginesOff = eventEndDateTime(last);
       end = enginesOff;
@@ -3546,9 +3547,10 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       activityKind = 'training';
     }
 
-    if (allowanceIntervalState(start, end) !== 'available') {
+    const evidenceIssue = financialIntervalEvidenceIssue(dutyFlights);
+    if (evidenceIssue || allowanceIntervalState(start, end) !== 'available') {
       const iso = rosterOperationalIso(eventStartDateTime(representative));
-      unclassifiedItems.push({ iso, airport: String(representative.origin || ''), reason: 'Intervalo operacional incompleto: apresentação ou fim inválido. Relógio da escala BRT (UTC-03).' });
+      unclassifiedItems.push({ iso, airport: String(representative.origin || ''), reason: `Intervalo operacional incompleto: ${evidenceIssue || 'apresentação ou fim inválido'}. Relógio da escala BRT (UTC-03).` });
       continue;
     }
 
@@ -3592,10 +3594,10 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
   const periods = observedAllowancePeriods(now, 'roster_brt');
   const cycle = periods.accumulation;
   const weeklyRows = rowsInObservedCycle(rows, cycle);
-  const weeklySummary = summarizeForecastRows(weeklyRows, rowsInObservedCycle(unclassifiedItems, cycle));
+  const weeklySummary = summarizeForecastRows(weeklyRows, [...rowsInObservedCycle(unclassifiedItems, cycle), ...unclassifiedItems.filter(item => !item.iso)]);
   const weekly = weeklySummary.convertedTotalBRL;
   const previousWeeklyRows = rowsInObservedCycle(rows, periods.previous);
-  const previousWeeklySummary = summarizeForecastRows(previousWeeklyRows, rowsInObservedCycle(unclassifiedItems, periods.previous));
+  const previousWeeklySummary = summarizeForecastRows(previousWeeklyRows, [...rowsInObservedCycle(unclassifiedItems, periods.previous), ...unclassifiedItems.filter(item => !item.iso)]);
   const currencySummary = !nativeSummary.complete ? (nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável') : (Object.entries(totalsByCurrency) as Array<[PerDiemCurrency, number]>)
     .map(([currency, value]) => moneyCurrency(value, currency))
     .join(' · ');

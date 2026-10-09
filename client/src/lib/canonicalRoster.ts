@@ -538,7 +538,12 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
   for (const sourceDay of Array.isArray(roster.days) ? roster.days : []) {
     const parsed = parseRosterDate(sourceDay.date, sourceDay.month || defaultMonth, sourceDay.year || defaultYear);
     const date = formatDate(parsed.day, parsed.month, parsed.year);
-    const day = cloneDay({ ...sourceDay, date, dayNumber: parsed.day, month: parsed.month, year: parsed.year });
+    const publishedClockEvidence = (sourceDay as any).publishedClockEvidence || {
+      dutyReport: sourceDay.dutyReport, dutyDebrief: sourceDay.dutyDebrief,
+      dutyReportSource: (sourceDay as any).dutyReportSource, dutyDebriefSource: (sourceDay as any).dutyDebriefSource,
+      legs: (sourceDay.legs || []).map(leg => ({ departureTime: leg.departureTime, arrivalTime: leg.arrivalTime, presentationTime: leg.presentationTime })),
+    };
+    const day = cloneDay({ ...sourceDay, publishedClockEvidence, date, dayNumber: parsed.day, month: parsed.month, year: parsed.year } as RosterDay);
     day.legs = selectPhysicalLegSequence(sortLegs(day.legs || [], day.dutyReport));
 
     const activityKey = day.legs?.length
