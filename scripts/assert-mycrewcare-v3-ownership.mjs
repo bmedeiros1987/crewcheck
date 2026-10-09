@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { reconcileMyCrewCareLogistics } from '../shared/myCrewCareLogistics.mjs';
+import { createMyCrewCarePersistentSession } from '../shared/myCrewCarePersistentSession.mjs';
 
 const read = (path) => readFileSync(path, 'utf8');
 const allowed = [
@@ -66,25 +67,24 @@ const asset = read('android-wrapper/app/src/main/assets/mycrewcare-transport-v3.
 const policy = read('shared/myCrewCareSyncPolicy.mjs');
 const adapter = read('shared/myCrewCareNativeAdapter.mjs');
 const logistics = read('shared/myCrewCareLogistics.mjs');
+const sessionSource = read('shared/myCrewCarePersistentSession.mjs');
 const build = read('android-wrapper/app/build.gradle');
 
 assert.match(portal, /RELEASE_ENABLED = false/);
 assert.match(portal, /Release-disabled boundary/);
 assert.match(portal, /public boolean open[\s\S]*?return false/);
 assert.doesNotMatch(portal, /addJavascriptInterface|CookieManager\.getInstance|loadUrl|evaluateJavascript/);
-
 assert.match(profile, /setProfile\((?:name|profileName\(accountId\))\)/);
 assert.match(profile, /restrictJavaScriptInterfaces\(\)/);
 assert.match(profile, /profile\.getCookieManager\(\)/);
 assert.doesNotMatch(profile, /CookieManager\.getInstance/);
-
 assert.match(store, /AES\/GCM\/NoPadding/);
 assert.match(store, /AndroidKeyStore/);
 assert.match(store, /HOTEL_FACT_KEYS/);
 assert.match(store, /PICKUP_FACT_KEYS/);
 assert.match(store, /onlyKeys\(fact, expected\)/);
 assert.match(store, /object\.length\(\) != allowed\.size\(\)/);
-
+assert.match(store, /exactInteger/);
 assert.match(runtime, /Unwired Mobile Core facade/);
 assert.doesNotMatch(runtime, /@JavascriptInterface/);
 assert.match(asset, /contract\.recordSelector/);
@@ -96,6 +96,9 @@ assert.doesNotMatch(policy, /WorkManager|setInterval/);
 assert.match(adapter, /crewcheck:mycrewcare-v3/);
 assert.doesNotMatch(adapter, /mycrewcare-v2|mycrewcare-v1/);
 assert.match(logistics, /unmatched-provider-data/);
+assert.match(sessionSource, /secure-random-unavailable/);
+assert.doesNotMatch(sessionSource, /Math\.random/);
+assert.match(sessionSource, /cleanup-error/);
 assert.match(build, /androidx\.webkit:webkit:1\.17\.1/);
 
 const context = {
@@ -140,8 +143,64 @@ assert.equal(unmatched.error, 'unmatched-provider-data');
 assert.equal(unmatched.facts.length, 0);
 assert.equal(unmatched.unmatched.length, 1);
 
+const tamperedPayload = JSON.stringify({
+  schemaVersion: 1,
+  scope: context,
+  syncedAt: '2026-10-09T12:00:00Z',
+  emptyConfirmed: false,
+  facts: [{
+    schemaVersion: 1,
+    accountId: context.accountId,
+    rosterId: context.rosterId,
+    rosterRevision: context.rosterRevision,
+    observedAt: '2026-10-09T12:00:00Z',
+    source: 'mycrewcare',
+    status: 'published',
+    providerRecordId: null,
+    stayId: stay.id,
+    rosterEventId: stay.rosterEventId,
+    airport: stay.airport,
+    pairingId: stay.pairingId,
+    kind: 'pickup',
+    hotelName: 'Hotel de teste',
+    timeZone: stay.timeZone,
+    pickupAt: '2026-10-10T08:10:00Z',
+    pickupLocation: null,
+    transportProvider: null,
+    transportPhone: null,
+    transitMinutes: null,
+    contentFingerprint: '0123456789abcdef',
+    unexpected: 'must-be-rejected',
+  }],
+});
+let clearedTampered = false;
+const tamperedSession = createMyCrewCarePersistentSession({
+  adapter: {},
+  storage: {
+    read: () => tamperedPayload,
+    clear: () => { clearedTampered = true; },
+  },
+  now: () => Date.parse('2026-10-09T12:00:00Z'),
+});
+tamperedSession.setContext(context, [stay]);
+tamperedSession.setAutomatic(true);
+assert.equal(await tamperedSession.restore(), false);
+assert.equal(clearedTampered, true);
+assert.equal(tamperedSession.state().hasCachedData, false);
+
+const cleanupSession = createMyCrewCarePersistentSession({
+  adapter: { disconnect: async () => { throw new Error('profile cleanup failed'); } },
+  storage: { clear: async () => { throw new Error('cache cleanup failed'); } },
+});
+cleanupSession.setContext(context, [stay]);
+cleanupSession.setAutomatic(true);
+await assert.rejects(cleanupSession.logout(), /profile-disconnect-failed|cache-clear-failed/);
+assert.equal(cleanupSession.state().status, 'cleanup-error');
+assert.equal(cleanupSession.state().automatic, false);
+assert.equal(cleanupSession.state().hasCachedData, false);
+
 console.log(JSON.stringify({
   status: 'PASS',
-  scope: 'MyCrewCare v3 isolated ownership, exact cache allowlist and fail-closed association',
+  scope: 'MyCrewCare v3 isolated ownership, strict cache schema and fail-closed lifecycle',
   changed,
 }));

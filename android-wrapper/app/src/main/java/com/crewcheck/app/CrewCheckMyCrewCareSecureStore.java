@@ -12,6 +12,8 @@ import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.security.MessageDigest;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
@@ -113,8 +115,8 @@ public final class CrewCheckMyCrewCareSecureStore {
         try {
             JSONObject root = new JSONObject(rawJson);
             if (!onlyKeys(root, ROOT_KEYS)
-                    || root.optInt("schemaVersion", -1) != 1
-                    || !instant(root.optString("syncedAt"))
+                    || !exactInteger(root, "schemaVersion", 1)
+                    || !instant(root.opt("syncedAt"))
                     || !(root.opt("emptyConfirmed") instanceof Boolean)) return false;
 
             JSONObject scope = root.optJSONObject("scope");
@@ -141,13 +143,13 @@ public final class CrewCheckMyCrewCareSecureStore {
 
     private static boolean validFact(JSONObject fact, String account, String roster, String revision) {
         if (fact == null) return false;
-        String kind = fact.optString("kind");
+        String kind = requiredText(fact, "kind", 16);
         Set<String> expected = "hotel".equals(kind) ? HOTEL_FACT_KEYS
                 : ("pickup".equals(kind) ? PICKUP_FACT_KEYS : null);
         if (expected == null || !onlyKeys(fact, expected)
-                || fact.optInt("schemaVersion", -1) != 1
-                || !"mycrewcare".equals(fact.optString("source"))
-                || !validStatus(fact.optString("status"))
+                || !exactInteger(fact, "schemaVersion", 1)
+                || !"mycrewcare".equals(requiredText(fact, "source", 32))
+                || !validStatus(requiredText(fact, "status", 32))
                 || !account.equals(requiredText(fact, "accountId", MAX_TEXT))
                 || !roster.equals(requiredText(fact, "rosterId", MAX_TEXT))
                 || !revision.equals(requiredText(fact, "rosterRevision", MAX_TEXT))
@@ -156,7 +158,7 @@ public final class CrewCheckMyCrewCareSecureStore {
                 || !requiredText(fact, "airport", 3).matches("[A-Z]{3}")
                 || requiredText(fact, "pairingId", MAX_TEXT).isEmpty()
                 || requiredText(fact, "hotelName", 240).isEmpty()
-                || !instant(fact.optString("observedAt"))
+                || !instant(fact.opt("observedAt"))
                 || !requiredText(fact, "contentFingerprint", 128).matches("[0-9a-f]{16,128}")
                 || !nullableText(fact, "providerRecordId", 180)) return false;
 
@@ -167,11 +169,18 @@ public final class CrewCheckMyCrewCareSecureStore {
                     && nullableInstant(fact, "reservationEndAt");
         }
         return !requiredText(fact, "timeZone", 100).isEmpty()
-                && instant(fact.optString("pickupAt"))
+                && instant(fact.opt("pickupAt"))
                 && nullableText(fact, "pickupLocation", 240)
                 && nullableText(fact, "transportProvider", 180)
                 && nullableText(fact, "transportPhone", 80)
                 && nullableMinutes(fact.opt("transitMinutes"));
+    }
+
+    private static boolean exactInteger(JSONObject object, String key, int expected) {
+        Object value = object.opt(key);
+        if (!(value instanceof Number)) return false;
+        double number = ((Number) value).doubleValue();
+        return number == expected && number == Math.rint(number);
     }
 
     private static boolean validStatus(String value) {
@@ -187,12 +196,13 @@ public final class CrewCheckMyCrewCareSecureStore {
 
     private static boolean nullableInstant(JSONObject object, String key) {
         Object value = object.opt(key);
-        return value == null || value == JSONObject.NULL || instant(String.valueOf(value));
+        return value == null || value == JSONObject.NULL || instant(value);
     }
 
     private static boolean nullableText(JSONObject object, String key, int max) {
         Object value = object.opt(key);
-        return value == null || value == JSONObject.NULL || validText(String.valueOf(value), max);
+        return value == null || value == JSONObject.NULL
+                || (value instanceof String && validText(((String) value).trim(), max));
     }
 
     private static String requiredText(JSONObject object, String key, int max) {
@@ -218,10 +228,18 @@ public final class CrewCheckMyCrewCareSecureStore {
         return true;
     }
 
-    private static boolean instant(String value) {
-        return value != null && value.matches(
+    private static boolean instant(Object value) {
+        if (!(value instanceof String)) return false;
+        String raw = ((String) value).trim();
+        if (!raw.matches(
                 "\\d{4}-\\d{2}-\\d{2}T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})"
-        );
+        )) return false;
+        try {
+            OffsetDateTime.parse(raw);
+            return true;
+        } catch (DateTimeParseException error) {
+            return false;
+        }
     }
 
     private SecretKey key() throws Exception {

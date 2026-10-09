@@ -15,8 +15,80 @@ export const MYCREWCARE_PERSISTENCE_SCHEMA = 1;
 export const MYCREWCARE_LIVE_MAX_AGE_MS = 15 * 60_000;
 const MAX_PERSISTED_BYTES = 256 * 1024;
 
+const ROOT_KEYS = new Set(['schemaVersion', 'scope', 'syncedAt', 'emptyConfirmed', 'facts']);
+const SCOPE_KEYS = new Set(['accountId', 'rosterId', 'rosterRevision', 'providerSubject']);
+const HOTEL_FACT_KEYS = new Set([
+  'schemaVersion', 'accountId', 'rosterId', 'rosterRevision', 'observedAt',
+  'source', 'status', 'providerRecordId', 'stayId', 'rosterEventId', 'airport',
+  'pairingId', 'kind', 'hotelName', 'hotelAddress', 'hotelPhone',
+  'reservationStartAt', 'reservationEndAt', 'contentFingerprint',
+]);
+const PICKUP_FACT_KEYS = new Set([
+  'schemaVersion', 'accountId', 'rosterId', 'rosterRevision', 'observedAt',
+  'source', 'status', 'providerRecordId', 'stayId', 'rosterEventId', 'airport',
+  'pairingId', 'kind', 'hotelName', 'timeZone', 'pickupAt', 'pickupLocation',
+  'transportProvider', 'transportPhone', 'transitMinutes', 'contentFingerprint',
+]);
+
 function same(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function exactKeys(value, expected) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  return keys.length === expected.size && keys.every((key) => expected.has(key));
+}
+
+function safeString(value, max = 512) {
+  return typeof value === 'string'
+    && value.trim().length > 0
+    && value.trim().length <= max
+    && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+function nullableString(value, max) {
+  return value === null || safeString(value, max);
+}
+
+function validStatus(value) {
+  return value === 'published' || value === 'changed' || value === 'cancelled';
+}
+
+function validStoredFact(fact, context) {
+  const expected = fact?.kind === 'hotel'
+    ? HOTEL_FACT_KEYS
+    : (fact?.kind === 'pickup' ? PICKUP_FACT_KEYS : null);
+  if (!expected
+    || !exactKeys(fact, expected)
+    || fact.schemaVersion !== 1
+    || fact.source !== 'mycrewcare'
+    || !validStatus(fact.status)
+    || fact.accountId !== context.accountId
+    || fact.rosterId !== context.rosterId
+    || fact.rosterRevision !== context.rosterRevision
+    || !safeString(fact.stayId)
+    || !safeString(fact.rosterEventId)
+    || !/^[A-Z]{3}$/.test(fact.airport)
+    || !safeString(fact.pairingId)
+    || !safeString(fact.hotelName, 240)
+    || !Number.isFinite(myCrewCareInstant(fact.observedAt))
+    || !/^[0-9a-f]{16,128}$/.test(fact.contentFingerprint)
+    || !nullableString(fact.providerRecordId, 180)) return false;
+
+  if (fact.kind === 'hotel') {
+    return nullableString(fact.hotelAddress, 320)
+      && nullableString(fact.hotelPhone, 80)
+      && (fact.reservationStartAt === null || Number.isFinite(myCrewCareInstant(fact.reservationStartAt)))
+      && (fact.reservationEndAt === null || Number.isFinite(myCrewCareInstant(fact.reservationEndAt)));
+  }
+  return safeString(fact.timeZone, 100)
+    && Number.isFinite(myCrewCareInstant(fact.pickupAt))
+    && nullableString(fact.pickupLocation, 240)
+    && nullableString(fact.transportProvider, 180)
+    && nullableString(fact.transportPhone, 80)
+    && (fact.transitMinutes === null
+      || (Number.isInteger(fact.transitMinutes) && fact.transitMinutes >= 0 && fact.transitMinutes <= 360));
 }
 
 function persistenceScope(context) {
@@ -30,7 +102,9 @@ function persistenceScope(context) {
 
 function safeJson(value) {
   const json = JSON.stringify(value);
-  if (new TextEncoder().encode(json).byteLength > MAX_PERSISTED_BYTES) throw new Error('cache-too-large');
+  if (new TextEncoder().encode(json).byteLength > MAX_PERSISTED_BYTES) {
+    throw Object.assign(new Error('cache-too-large'), { code: 'cache-write-failed' });
+  }
   return json;
 }
 
@@ -38,21 +112,22 @@ function parseStored(value, context, now) {
   if (typeof value !== 'string' || !value) return null;
   try {
     const payload = JSON.parse(value);
-    if (payload?.schemaVersion !== MYCREWCARE_PERSISTENCE_SCHEMA
-      || !same(payload?.scope, persistenceScope(context))
-      || !Array.isArray(payload?.facts)) return null;
+    if (!exactKeys(payload, ROOT_KEYS)
+      || payload.schemaVersion !== MYCREWCARE_PERSISTENCE_SCHEMA
+      || !exactKeys(payload.scope, SCOPE_KEYS)
+      || !same(payload.scope, persistenceScope(context))
+      || typeof payload.emptyConfirmed !== 'boolean'
+      || !Array.isArray(payload.facts)) return null;
     const syncedAt = myCrewCareInstant(payload.syncedAt);
     if (!Number.isFinite(syncedAt)
       || syncedAt > now + 30_000
-      || now - syncedAt > MYCREWCARE_CACHE_MAX_AGE_MS) return null;
-    const facts = payload.facts.filter((fact) => fact
-      && fact.schemaVersion === 1
-      && fact.source === 'mycrewcare'
-      && fact.accountId === context.accountId
-      && fact.rosterId === context.rosterId
-      && fact.rosterRevision === context.rosterRevision);
-    if (facts.length !== payload.facts.length) return null;
-    return Object.freeze({ syncedAt, facts: Object.freeze(facts), emptyConfirmed: payload.emptyConfirmed === true });
+      || now - syncedAt > MYCREWCARE_CACHE_MAX_AGE_MS
+      || !payload.facts.every((fact) => validStoredFact(fact, context))) return null;
+    return Object.freeze({
+      syncedAt,
+      facts: Object.freeze(payload.facts.map((fact) => Object.freeze({ ...fact }))),
+      emptyConfirmed: payload.emptyConfirmed,
+    });
   } catch {
     return null;
   }
@@ -89,17 +164,28 @@ function errorCode(error) {
   return 'sync-error';
 }
 
+function secureSessionId() {
+  const crypto = globalThis.crypto;
+  if (typeof crypto?.randomUUID === 'function') return crypto.randomUUID();
+  if (typeof crypto?.getRandomValues === 'function') {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    return [...bytes].map((value) => value.toString(16).padStart(2, '0')).join('');
+  }
+  throw Object.assign(new Error('secure-random-unavailable'), { code: 'secure-random-unavailable' });
+}
+
+function safeReason(value) {
+  return typeof value === 'string' && /^[a-z0-9-]{1,40}$/i.test(value) ? value : 'automatic';
+}
+
 /**
  * Persistent, local-first MyCrewCare session controller.
  *
  * The native profile owns provider cookies. The storage adapter receives only the
- * normalized logistics cache and metadata; raw HTML, cookies, tokens, passwords,
- * MFA codes and room data are never accepted here.
+ * normalized logistics cache and metadata; raw portal content is never accepted.
  */
 export function createMyCrewCarePersistentSession({ adapter, storage, now = Date.now, timeoutMs = 30_000 } = {}) {
-  const randomUUID = globalThis.crypto?.randomUUID?.bind(globalThis.crypto)
-    || (() => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`);
-  const sessionId = randomUUID();
+  const sessionId = secureSessionId();
   let context = null;
   let stays = [];
   let automatic = false;
@@ -109,7 +195,12 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
   let status = 'disconnected';
   let lastAttemptAt = null;
   let lastError = null;
-  let changes = Object.freeze({ added: Object.freeze([]), changed: Object.freeze([]), removed: Object.freeze([]), hasChanges: false });
+  let changes = Object.freeze({
+    added: Object.freeze([]),
+    changed: Object.freeze([]),
+    removed: Object.freeze([]),
+    hasChanges: false,
+  });
 
   const invalidateRequest = () => {
     generation += 1;
@@ -118,33 +209,72 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
   };
 
   const setStatusFromCache = () => {
-    if (!cached) status = automatic ? 'disconnected' : 'off';
-    else status = automatic ? 'cached' : 'off';
+    status = cached ? (automatic ? 'cached' : 'off') : (automatic ? 'disconnected' : 'off');
   };
 
   async function storageRead(accountId) {
     if (typeof storage?.read !== 'function') return null;
-    return await storage.read(accountId);
+    try {
+      return await storage.read(accountId);
+    } catch (cause) {
+      throw Object.assign(new Error('cache-read-failed'), { code: 'cache-read-failed', cause });
+    }
   }
 
   async function storageWrite(accountId, payload) {
     if (typeof storage?.write !== 'function') return;
-    await storage.write(accountId, safeJson(payload));
+    try {
+      await storage.write(accountId, safeJson(payload));
+    } catch (cause) {
+      throw Object.assign(new Error('cache-write-failed'), { code: 'cache-write-failed', cause });
+    }
   }
 
   async function storageClear(accountId) {
     if (typeof storage?.clear !== 'function') return;
-    await storage.clear(accountId);
+    try {
+      await storage.clear(accountId);
+    } catch (cause) {
+      throw Object.assign(new Error('cache-clear-failed'), { code: 'cache-clear-failed', cause });
+    }
   }
 
-  function persistencePayload(snapshot) {
+  function persistencePayload(snapshot, scopeContext) {
     return Object.freeze({
       schemaVersion: MYCREWCARE_PERSISTENCE_SCHEMA,
-      scope: persistenceScope(context),
+      scope: persistenceScope(scopeContext),
       syncedAt: new Date(snapshot.syncedAt).toISOString(),
       emptyConfirmed: snapshot.emptyConfirmed === true,
       facts: snapshot.facts,
     });
+  }
+
+  async function clearConnection({ forgetData, clearContext }) {
+    const accountId = context?.accountId ?? null;
+    automatic = false;
+    invalidateRequest();
+    let cleanupError = null;
+    try {
+      await adapter?.disconnect?.(accountId, forgetData);
+    } catch {
+      cleanupError = 'profile-disconnect-failed';
+    }
+    if (forgetData && accountId) {
+      try {
+        await storageClear(accountId);
+      } catch {
+        cleanupError ||= 'cache-clear-failed';
+      }
+    }
+    if (forgetData) cached = null;
+    if (clearContext) {
+      context = null;
+      stays = [];
+      cached = null;
+    }
+    status = cleanupError ? 'cleanup-error' : (cached ? 'off' : 'disconnected');
+    lastError = cleanupError;
+    if (cleanupError) throw Object.assign(new Error(cleanupError), { code: cleanupError });
   }
 
   return Object.freeze({
@@ -157,7 +287,12 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
       stays = nextStays;
       cached = null;
       lastError = null;
-      changes = Object.freeze({ added: Object.freeze([]), changed: Object.freeze([]), removed: Object.freeze([]), hasChanges: false });
+      changes = Object.freeze({
+        added: Object.freeze([]),
+        changed: Object.freeze([]),
+        removed: Object.freeze([]),
+        hasChanges: false,
+      });
       if (!context || stays.length !== (Array.isArray(persistedStays) ? persistedStays.length : -1)) {
         automatic = false;
         status = 'invalid-context';
@@ -179,15 +314,34 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
         status = 'invalid-context';
         return false;
       }
-      const raw = await storageRead(context.accountId);
+      let raw;
+      try {
+        raw = await storageRead(context.accountId);
+      } catch (error) {
+        cached = null;
+        status = 'storage-error';
+        lastError = errorCode(error);
+        return false;
+      }
       const restored = parseStored(raw, context, now());
       if (!restored) {
-        if (raw) await storageClear(context.accountId);
+        if (raw) {
+          try {
+            await storageClear(context.accountId);
+          } catch (error) {
+            cached = null;
+            status = 'cleanup-error';
+            lastError = errorCode(error);
+            return false;
+          }
+        }
         cached = null;
+        lastError = null;
         setStatusFromCache();
         return false;
       }
       cached = restored;
+      lastError = null;
       status = automatic ? 'cached' : 'off';
       return true;
     },
@@ -212,17 +366,21 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
 
     hotel(stayId, options = {}) {
       if (!cached) return null;
-      const hotel = selectMyCrewCareHotel(cached.facts, stayId, { now: now(), freshForMs: MYCREWCARE_LIVE_MAX_AGE_MS });
-      if (!hotel) return null;
-      if (hotel.dataState === 'cached' && options.allowCached === false) return null;
+      const hotel = selectMyCrewCareHotel(cached.facts, stayId, {
+        now: now(),
+        freshForMs: MYCREWCARE_LIVE_MAX_AGE_MS,
+      });
+      if (!hotel || (hotel.dataState === 'cached' && options.allowCached === false)) return null;
       return hotel;
     },
 
     pickup(stayId, options = {}) {
       if (!cached) return null;
-      const pickup = selectMyCrewCarePickup(cached.facts, stayId, { now: now(), freshForMs: MYCREWCARE_LIVE_MAX_AGE_MS });
-      if (!pickup) return null;
-      if (pickup.dataState === 'cached' && options.allowCached === false) return null;
+      const pickup = selectMyCrewCarePickup(cached.facts, stayId, {
+        now: now(),
+        freshForMs: MYCREWCARE_LIVE_MAX_AGE_MS,
+      });
+      if (!pickup || (pickup.dataState === 'cached' && options.allowCached === false)) return null;
       return pickup;
     },
 
@@ -235,25 +393,25 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
       const token = generation;
       const capturedContext = context;
       const capturedStays = stays;
-      const requestId = `${sessionId}:${token}:${reason}`;
+      const requestId = `${sessionId}:${token}:${safeReason(reason)}`;
       const abort = new AbortController();
       pending = abort;
       let timer;
       try {
         const deadline = new Promise((_, reject) => {
           timer = setTimeout(() => {
-            const error = new Error('timeout');
-            error.code = 'temporary-error';
-            reject(error);
+            reject(Object.assign(new Error('timeout'), { code: 'temporary-error' }));
           }, Math.max(1, Math.min(30_000, timeoutMs)));
         });
         const cancelled = new Promise((_, reject) => abort.signal.addEventListener('abort', () => {
-          const error = new Error('cancelled');
-          error.code = 'cancelled';
-          reject(error);
+          reject(Object.assign(new Error('cancelled'), { code: 'cancelled' }));
         }, { once: true }));
         const raw = await Promise.race([
-          adapter.read({ schemaVersion: MYCREWCARE_PROTOCOL, requestId, context: { ...capturedContext } }, abort.signal),
+          adapter.read({
+            schemaVersion: MYCREWCARE_PROTOCOL,
+            requestId,
+            context: { ...capturedContext },
+          }, abort.signal),
           deadline,
           cancelled,
         ]);
@@ -272,17 +430,22 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
           now: now(),
         });
         if (!reconciled.accepted) {
-          throw Object.assign(new Error(reconciled.error || 'ambiguous-provider-data'), { code: reconciled.error || 'ambiguous-provider-data' });
+          const code = reconciled.error || 'ambiguous-provider-data';
+          throw Object.assign(new Error(code), { code });
         }
-        const previousFacts = cached?.facts ?? [];
-        changes = diffMyCrewCareFacts(previousFacts, reconciled.facts);
-        cached = Object.freeze({
+        const nextCached = Object.freeze({
           syncedAt: myCrewCareInstant(envelope.observedAt),
           facts: reconciled.facts,
           emptyConfirmed: envelope.emptyConfirmed,
         });
-        await storageWrite(capturedContext.accountId, persistencePayload(cached));
-        if (token !== generation || context !== capturedContext || !automatic) return false;
+        const nextChanges = diffMyCrewCareFacts(cached?.facts ?? [], nextCached.facts);
+        await storageWrite(
+          capturedContext.accountId,
+          persistencePayload(nextCached, capturedContext),
+        );
+        if (token !== generation || context !== capturedContext || stays !== capturedStays || !automatic) return false;
+        cached = nextCached;
+        changes = nextChanges;
         pending = null;
         status = 'connected';
         lastError = null;
@@ -294,7 +457,8 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
         pending = null;
         if (code === 'cancelled') setStatusFromCache();
         else if (code === 'session-expired' || code === 'identity-mismatch') status = 'reconnect-required';
-        else if (code === 'ambiguous-provider-data') status = 'ambiguous-data';
+        else if (code === 'ambiguous-provider-data' || code === 'unmatched-provider-data') status = 'ambiguous-data';
+        else if (code === 'cache-write-failed') status = cached ? 'offline-cache' : 'storage-error';
         else status = cached ? 'offline-cache' : 'sync-error';
         return false;
       } finally {
@@ -303,27 +467,11 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
     },
 
     async disconnect({ forgetData = true } = {}) {
-      const accountId = context?.accountId ?? null;
-      automatic = false;
-      invalidateRequest();
-      try { await adapter?.disconnect?.(accountId, forgetData); } catch { /* fail closed locally */ }
-      if (forgetData && accountId) await storageClear(accountId);
-      cached = null;
-      status = 'disconnected';
-      lastError = null;
+      await clearConnection({ forgetData: forgetData === true, clearContext: false });
     },
 
     async logout() {
-      const accountId = context?.accountId ?? null;
-      automatic = false;
-      invalidateRequest();
-      try { await adapter?.disconnect?.(accountId, true); } catch { /* continue local erasure */ }
-      if (accountId) await storageClear(accountId);
-      context = null;
-      stays = [];
-      cached = null;
-      status = 'disconnected';
-      lastError = null;
+      await clearConnection({ forgetData: true, clearContext: true });
     },
   });
 }
