@@ -164,6 +164,13 @@ export default function BidsWindowsView() {
       <article><GraduationCap/><span>Perfil da janela</span><strong>{instructor ? 'Instrutor' : 'Geral'}</strong></article>
     </section>
     <section className="cc139-card">
+      <h2>Folga de fim de ano · Cabine</h2>
+      <p>Comunicado: 15/09 a 20/10, encerramento às 23:59, improrrogável. Ciclo 2026/2027 indicado no nome do arquivo; o ano da janela é inferido. Horário de abertura e fuso não constam no PDF. Nenhum lembrete desta janela foi programado.</p>
+      <p>Solicitação pelo Portal SAB, com conta @latam. Preencher não significa aprovação. O e-mail confirma recebimento e permite editar até o encerramento. Análises em 10/11; escala em 25/11.</p>
+      <a href="https://docs.google.com/forms/d/e/1FAIpQLSehDGJW8pRXXb5j5HbMw0-NSF5Q8nVS7Yb9EwzTqOBhhBllXA/viewform?usp=dialog" target="_blank" rel="noopener noreferrer">Abrir formulário do comunicado</a>
+      <p>Fonte: Folga de Fim de Ano_2026_2027_Cabine.pdf, página 1. O fuso ainda precisa ser confirmado antes de agendar.</p>
+    </section>
+    <section className="cc139-card">
       <h2>Referência de datas cadastrada</h2>
       <p>Esta referência não contém ano, fonte verificável ou fuso oficial. Confirme o comunicado vigente antes de cadastrar datas; salvar não comprova envio de alertas.</p>
       <div className="cc139-badges">
