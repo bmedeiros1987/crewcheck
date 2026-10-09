@@ -48,7 +48,24 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
   useEffect(() => { if (selected && detail.current) { detail.current.focus({ preventScroll: true }); detail.current.scrollIntoView({ block: 'start', behavior: 'instant' }); } }, [selected]);
   const consumed = useRef<string>();
   useEffect(() => { if (focusEventId && consumed.current !== focusEventId) { const event = events.find(e => e.id === focusEventId); if (event) { consumed.current = focusEventId; open(event); } } }, [focusEventId, events]);
-  function close() { setSelection(null); requestAnimationFrame(() => opener.current?.focus()); }
+  function close() {
+    setSelection(null);
+    requestAnimationFrame(() => {
+      const target = opener.current; if (!target?.isConnected) return;
+      target.focus({ preventScroll: true });
+      target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+      requestAnimationFrame(() => {
+        if (!target.isConnected) return;
+        const rect = target.getBoundingClientRect();
+        const header = document.querySelector('.cz-global-header')?.getBoundingClientRect();
+        const footer = document.querySelector('body > nav.cz-bottom-nav')?.getBoundingClientRect();
+        const top = Math.max(0, header?.bottom || 0) + 12;
+        const bottom = Math.min(window.innerHeight, footer?.top ?? window.innerHeight) - 12;
+        const delta = rect.top < top || rect.height > bottom - top ? rect.top - top : rect.bottom > bottom ? rect.bottom - bottom : 0;
+        if (delta) window.scrollBy({ top: delta, behavior: 'instant' });
+      });
+    });
+  }
   function changeZoom(value: number, anchorX?: number, centerX?: number) {
     const frame = viewport.current; const next = bounded(value); setZoom(next); setFit(false);
     if (frame) { const center = centerX ?? frame.clientWidth / 2; const anchor = anchorX ?? (frame.scrollLeft + center) / zoom; requestAnimationFrame(() => { frame.scrollLeft = anchor * next - center; }); }
@@ -76,7 +93,7 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
       onTouchMove={event => { const list = event.touches; if (list.length === 2 && pinch.current) { const start = pinch.current; changeZoom(start.zoom * touchDistance(list) / Math.max(1, start.distance), start.anchor, start.center); suppressUntil.current = performance.now() + 1000; } else if (list.length === 1 && touch.current && Math.hypot(list[0].clientX - touch.current.x, list[0].clientY - touch.current.y) > 8) suppressUntil.current = performance.now() + 350; }}
       onTouchEnd={() => { if (pinch.current) suppressUntil.current = performance.now() + 350; pinch.current = null; touch.current = null; }} onTouchCancel={() => { pinch.current = null; touch.current = null; suppressUntil.current = performance.now() + 350; }}>
       <div className="cc-doc-scaled" style={{ width: size.width * zoom, height: size.height * zoom }}>
-        <div ref={sheet} className="cc-doc-sheet" style={{ transform: `scale(${zoom})`, '--doc-width': `${groups.length * 120 + 24}px`, '--doc-days':groups.length } as React.CSSProperties}>
+        <div ref={sheet} className="cc-doc-sheet" style={{ transform: `scale(${zoom})`, '--doc-width': `calc(${groups.length} * 7.5rem * var(--cc-text-scale, 1) + 24px)`, '--doc-days':groups.length } as React.CSSProperties}>
           {<div className="cc-doc-strip">
             {groups.map(group => <section key={group.iso} className="cc-doc-day" data-roster-iso={group.iso} aria-label={`Dia ${group.iso}`}>
               <h3><time dateTime={group.iso}>{group.iso.slice(8)}/{group.iso.slice(5, 7)}</time><small>{new Intl.DateTimeFormat('pt-BR', { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${group.iso}T12:00:00Z`))}</small></h3>
