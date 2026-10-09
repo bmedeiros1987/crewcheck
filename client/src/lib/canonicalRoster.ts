@@ -571,6 +571,17 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
       }
     }
 
+    const previousEvidence = (current as any).publishedClockEvidence;
+    const incomingEvidence = (day as any).publishedClockEvidence;
+    if (previousEvidence && incomingEvidence) {
+      // Keep every original record before dedup/physical selection. A valid
+      // duplicate must not erase uncertainty from an invalid duplicate.
+      (current as any).publishedClockEvidence = {
+        ...previousEvidence,
+        records: [...(previousEvidence.records || [previousEvidence]), ...(incomingEvidence.records || [incomingEvidence])],
+        legs: [...(previousEvidence.legs || []), ...(incomingEvidence.legs || [])],
+      };
+    }
     current.legs = selectPhysicalLegSequence(sortLegs(current.legs || [], current.dutyReport));
     current.rawText = [current.rawText, day.rawText].filter(Boolean).join(' ');
     current.type = current.legs.length ? 'VOO' : current.type;
