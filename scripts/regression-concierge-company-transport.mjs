@@ -7,6 +7,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { companyTransportIntent } from '../shared/companyTransportIntent.mjs';
 import { companyTransportReply, companyTransportOwner } from '../server/concierge/company-transport.mjs';
+import { stayMenuReply } from '../server/concierge/stay-menu.mjs';
 globalThis.fetch = () => assert.fail('No network');
 const owner='fixture-owner@example.invalid';
 const profile={email:owner,authenticated:true,channel:'app'};
@@ -47,7 +48,7 @@ const home=fs.readFileSync(process.env.COMPANY_CONCIERGE_CLIENT_SOURCE || 'clien
 assert.ok(server.includes("text: 'Ônibus e vans da empresa'"));assert.ok(home.includes("['/transporte_empresa', 'Ônibus e vans da empresa']"));
 const extract=(source,name,tsx=false)=>{const ast=ts.createSourceFile('source',source,ts.ScriptTarget.Latest,true,tsx?ts.ScriptKind.TSX:ts.ScriptKind.JS);const node=ast.statements.find(item=>ts.isFunctionDeclaration(item)&&item.name?.text===name);assert.ok(node,name);return ts.transpileModule(node.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;};
 const context={companyTransportReply,companyTransportIntent,console,
- conciergePreferenceCommandV14336:()=>assert.fail('Corporate intent must dispatch before general planner'),stayMenuReply:()=>assert.fail('Corporate intent must dispatch first'),
+ conciergePreferenceCommandV14336:()=>assert.fail('Corporate intent must dispatch before general planner'),stayMenuReply,
  loadFreshNearbyCurrentGeo:()=>assert.fail('Corporate query must not read cached GPS'),storage:{get:(_key,fallback)=>fallback},telegramConciergeIdentity:()=>({email:owner}),
  fetch:async(_url,options)=>{context.sent=JSON.parse(options.body);return {ok:true,json:async()=>({ok:true,reply:'fictional'})};},
  readJsonBody:async req=>req.body,telegramRequestUser:()=>profile,telegramAppRequestAllowed:()=>true,telegramLinkedRecordForEmail:async()=>null,

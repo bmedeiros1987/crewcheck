@@ -10,7 +10,7 @@ function replace(source, before, after) {
 }
 update('server.mjs', source => {
   if (!source.includes("from './server/concierge/company-transport.mjs'")) source = "import { companyTransportReply } from './server/concierge/company-transport.mjs';\nimport { companyTransportIntent } from './shared/companyTransportIntent.mjs';\n" + source;
-  const anchor = "async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = null) {";
+  const anchor = '  if (stayMenu.handled) return stayMenu.reply;';
   source = replace(source, anchor, anchor + '\n  const companyTransport = await companyTransportReply(text, profile);\n  if (companyTransport.handled) return companyTransport.reply;');
   source = replace(source, "    [{ text: '🗓 Minha escala' }, { text: '🧘 Rotina' }],", "    [{ text: '🗓 Minha escala' }, { text: '🧘 Rotina' }],\n    [{ text: 'Ônibus e vans da empresa' }],");
   source = replace(source, "    '/saida — Planejador de Saída',", "    '/saida — Planejador de Saída',\n    '/transporte_empresa — Ônibus e vans da empresa (referência prevista)',");
