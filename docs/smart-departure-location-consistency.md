@@ -11,3 +11,9 @@ Validation: clean preparation from main, TypeScript, synthetic helper regression
 Library references libfile_81f7df8aaa948191aab9fe4cc8bb0868, libfile_545c36c984ac8191a36441c09ef27bae, libfile_77d9f7a752fc8191900a481de44832b0: materialization denied HTTP403 for all three; no local JPEG or pixel inspection, no bypass.
 
 Potential conflicts: scripts/v139/apply.mjs registration and generated client/src/pages/Home.tsx. PR commits only authored patch/test/docs plus chain registration; legacy generated preparation artifacts excluded. No blocked PR publication or deployment attempted.
+
+## Independent review follow-up
+
+The reviewer reproduced a legacy global positioning record crossing account/origin and an async search writing its terminal status into the new context. Removed global reads/writes, required context provenance on records, captured account/event/time/origin cache identity before awaiting providers, revalidated at every terminal path and event publication, and cleared only the original request's own checking entry on cancellation. Exact prepared helper tests reproduce account/origin changes, component disposal and rejection during the pending request; no new-context negative cache or event is produced.
+
+CI failure on ff8a3cef was an obsolete cache-key marker in regression-v14-3-34-positioning-radar-cache. Updated legacy key, distance and TTL contracts while adding executable current-helper coverage. Updated route-effects, terminal, transit and iPad-location harness dependencies; stale route evidence remains visible but does not establish a fresh flight requirement. The original Library review ZIP remains immutable at ff8a3cef; a new package is required for the follow-up SHA.

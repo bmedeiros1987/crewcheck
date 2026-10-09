@@ -52,7 +52,7 @@ assert.match(server, new RegExp(`url\\.pathname === '/api/health'[^\\r\\n]*versi
 assert.ok(runtime.includes("version: '14.3.48'"), 'runtime premium deve preservar a política de voz consolidada na v14.3.48');
 for (const marker of [
   'function loadFreshCurrentGeo(',
-  'CURRENT_GEO_MAX_AGE_MS = 30 * 60_000',
+  'CURRENT_GEO_MAX_AGE_MS = 75_000',
 ]) assert.ok(home.includes(marker), `v14.3.47 deve preservar a localização Web recente: ${marker}`);
 for (const marker of [
   'const snapshotHandled = await handleTelegramLocation(',
@@ -161,3 +161,5 @@ assert.equal(apply.status, 0, apply.stderr || apply.stdout || `reaplicação fin
 for (const relative of tracked) assert.equal(read(relative), before.get(relative), `preparação build→start deve ser idempotente em ${relative}`);
 
 console.log(`v14.3.47 Smart Departure handoff preservado na versão ${currentVersion}: MCK CGH, base BSB, matriz de aeroportos, exclusões de descanso, metadados e idempotência validados.`);
+
+await import('./regression-departure-location-consistency.mjs');
