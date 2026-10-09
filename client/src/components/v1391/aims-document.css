@@ -26,3 +26,7 @@
 /* The document owns its canvas width; responsive shell max-width rules must
    constrain the viewport, not squeeze the seven published day columns. */
 .cc-aims-document .cc-doc-sheet { width:1120px !important; max-width:none !important; }
+
+/* A filtered day must not label the other days as missing programming. */
+.cc-aims-document[data-document-scope="day"] .cc-doc-sheet { width:320px !important; }
+.cc-aims-document[data-document-scope="day"] .cc-doc-strip { grid-template-columns:minmax(0,1fr); }

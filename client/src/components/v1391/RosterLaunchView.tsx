@@ -403,7 +403,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
     </section>}
 
     {layout === 'document'
-      ? <AimsDocumentView events={visibleEvents} month={selectedMonth} focusEventId={focusedEventId} describe={event => { const mode = workMode(event); return { mode, label: modeMeta[mode].label }; }}/>
+      ? <AimsDocumentView events={visibleEvents} month={selectedMonth} day={zoom === 'day' ? activeDay : undefined} focusEventId={focusedEventId} describe={event => { const mode = workMode(event); return { mode, label: modeMeta[mode].label }; }}/>
       : layout === 'aims' && timedEvents.length
       ? <AimsRosterTable events={timedEvents} focusEventId={focusedEventId} dayView={zoom === 'day'}/>
       : layout === 'calendar' && ordered.length

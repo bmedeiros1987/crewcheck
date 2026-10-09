@@ -1,0 +1,57 @@
+name: AIMS document browser
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/components/v1391/**'
+      - 'client/src/lib/rosterLayoutPreference.ts'
+      - 'scripts/regression-aims-document-browser.mjs'
+      - 'scripts/regression-roster-layout-preference.mjs'
+      - '.github/workflows/aims-document-browser.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aims-document-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  document-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare once and build the shipping app
+        run: |
+          node scripts/v139/apply.mjs
+          npx tsc --noEmit
+          node scripts/p1-concierge-journey/compile.mjs
+          npx vite build
+      - name: Verify account-scoped mode and existing layouts
+        run: node scripts/regression-roster-layout-preference.mjs
+      - name: Install isolated browser runtime
+        run: |
+          npm install --prefix "$RUNNER_TEMP/aims-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/aims-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify synthetic document zoom, gestures, exact events and accessibility
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/aims-browser/package.json
+        run: node scripts/regression-aims-document-browser.mjs
+      - name: Save synthetic document evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIMS-document-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/aims-document
+          if-no-files-found: warn
+          retention-days: 7

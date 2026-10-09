@@ -14,8 +14,8 @@ const clock = (value?: string) => String(value || '').trim() || '—';
 
 /** Read-only document projection. Array positions identify duplicate IDs without
  * guessing a match, creating events, or using coordinates from a private PDF. */
-export function AimsDocumentView({ events, month, describe, focusEventId }: {
-  events: Event[]; month: string; describe: (event: Event) => Description; focusEventId?: string;
+export function AimsDocumentView({ events, month, day, describe, focusEventId }: {
+  events: Event[]; month: string; day?: string; describe: (event: Event) => Description; focusEventId?: string;
 }) {
   const id = useId(), viewport = useRef<HTMLDivElement>(null), sheet = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLDivElement>(null), opener = useRef<HTMLButtonElement | null>(null);
@@ -30,11 +30,12 @@ export function AimsDocumentView({ events, month, describe, focusEventId }: {
   const dates = useMemo(() => {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return [];
     const [year, m] = month.split('-').map(Number);
-    return Array.from({ length: new Date(Date.UTC(year, m, 0)).getUTCDate() }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
-  }, [month]);
+    const all = Array.from({ length: new Date(Date.UTC(year, m, 0)).getUTCDate() }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
+    return day ? (all.includes(day) ? [day] : []) : all;
+  }, [month, day]);
   const groups = useMemo(() => dates.map(iso => ({ iso, entries: events.map((event, index) => ({ event, index })).filter(({ event }) => rosterDisplayIso(event) === iso) })), [dates, events]);
   const outside = events.filter(event => !dates.includes(rosterDisplayIso(event) || ''));
-  useEffect(() => { setSelection(null); setZoom(1); setFit(false); if (viewport.current) viewport.current.scrollLeft = 0; }, [owner, month]);
+  useEffect(() => { setSelection(null); setZoom(1); setFit(false); if (viewport.current) viewport.current.scrollLeft = 0; }, [owner, month, day]);
   useEffect(() => {
     const el = sheet.current, frame = viewport.current;
     if (!el || !frame) return;
@@ -53,7 +54,7 @@ export function AimsDocumentView({ events, month, describe, focusEventId }: {
     if (frame) { const center = centerX ?? frame.clientWidth / 2; const anchor = anchorX ?? (frame.scrollLeft + center) / zoom; requestAnimationFrame(() => { frame.scrollLeft = anchor * next - center; }); }
   }
   function touchDistance(list: React.TouchList) { return Math.hypot(list[0].clientX - list[1].clientX, list[0].clientY - list[1].clientY); }
-  return <section className="cc-aims-document" aria-label="Documento interativo da escala">
+  return <section className="cc-aims-document" data-document-scope={day ? 'day' : 'month'} aria-label="Documento interativo da escala">
     <header><h2>Escala em documento</h2><p>Dias publicados em faixas. Toque numa programação para abrir os mesmos detalhes do AIMS.</p></header>
     <div className="cc-doc-toolbar" role="group" aria-label="Ampliar documento">
       <button type="button" aria-label="Diminuir documento" disabled={zoom <= MIN_ZOOM} onClick={() => changeZoom(zoom - .25)}>−</button>
