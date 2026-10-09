@@ -19,7 +19,7 @@ export type CanonicalDutyMeasurement = {
 };
 
 function clock(value: string | null | undefined): string | null {
-  const m = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+  const m = String(value || '').match(/^(\d{1,2}):(\d{2})(?:\(\+\d+\))?$/);
   return m && Number(m[1]) < 24 && Number(m[2]) < 60 ? `${m[1].padStart(2, '0')}:${m[2]}` : null;
 }
 function clockNear(reference: number, value: string, direction: 'before' | 'after'): number {
