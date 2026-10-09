@@ -8,6 +8,8 @@ on:
       - 'client/src/lib/textSizePreference.ts'
       - 'client/src/lib/overlayLifecycle.ts'
       - 'client/src/components/TextSizeSetting.tsx'
+      - 'client/src/components/MoneyText.tsx'
+      - 'scripts/regression-financial-ui-browser.cjs'
       - 'scripts/regression-ui-reading-overlays.cjs'
       - 'scripts/v14387d/apply.mjs'
       - 'scripts/p1-home-layout/apply.mjs'

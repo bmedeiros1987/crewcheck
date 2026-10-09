@@ -86,7 +86,7 @@ async function visibleTextBounds(page, selector) {
         if (url.pathname.startsWith('/api/')) return route.fulfill({ status: 503, contentType: 'application/json', body: '{"ok":false,"items":[],"data":[],"enabled":false}' });
         return route.continue();
       });
-      await context.addInitScript(fixtureScope.qaSeed, { theme, kind: fixtureScope.qaRoster('domestic'), amount: 100 });
+      await context.addInitScript(fixtureScope.qaSeed, { theme, kind: fixtureScope.qaRoster('multi'), amount: 1234567.89 });
       await context.addInitScript(() => localStorage.setItem('crewcheck:home-layout:v1:financial-ui-qa', JSON.stringify({ version: 1, mode: 'personalized', order: ['summary', 'finance', 'next', 'limits', 'smart'], visible: ['summary', 'next', 'limits'] })));
       const page = await context.newPage();
       await page.goto(origin + '/app'); await page.locator('.cz-app').waitFor();
@@ -167,9 +167,12 @@ async function visibleTextBounds(page, selector) {
         await page.locator('.cc-per-diem-content').waitFor();
         await page.locator('.cc-per-diem-items > summary').click(); await settle(page);
         const money = await fixtureScope.qaMoney(page);
+        assert.ok(money.amounts.some(value => value.includes('1.234.567,89')), 'Exercise actual large synthetic currency amount');
+        assert.ok(money.amounts.some(value => value.includes('US$') || value.includes('€') || value.includes('£')), 'Exercise actual multiple currencies');
         assert.deepEqual(money.violations, [], 'Financial amounts stay inside their containers');
         assert.deepEqual(money.intersections, [], 'Financial labels and amounts do not overlap');
-        assert.deepEqual(money.splitAmounts, [], 'Keep complete currency amounts and cents together');
+        assert.deepEqual(money.splitAmounts, [], 'Keep complete row amounts and cents together');
+        assert.deepEqual(money.splitCurrencyTokens, [], 'Every currency/number/cents group stays together in rows and multi-currency summary cards');
         await page.screenshot({ path: path.join(output, `${width}-${theme}-${size}-finance.png`) });
         if (size === 200) {
           // Deterministic inset emulation exercises real footer measurement; this is not a physical-device claim.
@@ -232,9 +235,12 @@ async function visibleTextBounds(page, selector) {
       });
       await page.evaluate(() => window.qaRapidRelease());
       await recovered(page);
-      // Preferences must not leak across authenticated accounts, including logout.
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'settings' })));
+      await page.locator('#cc-text-size').selectOption('200');
+      // Preferences must not leak across authenticated accounts, including logout; the mounted select must sync too.
       await page.evaluate(() => { localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'other-synthetic-account', name: 'OTHER', role: 'user' })); window.dispatchEvent(new Event('crewcheck:auth-changed')); });
       await page.waitForFunction(() => document.documentElement.dataset.crewTextSize === '100');
+      assert.equal(await page.locator('#cc-text-size').inputValue(), '100', 'Mounted selector follows the new account preference');
       await context.close();
     }
   } finally {

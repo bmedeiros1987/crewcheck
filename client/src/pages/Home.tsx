@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import '@/styles/per-diem-content.css';
 import '@/styles/compact-navigation.css';
 import TextSizeSetting from '@/components/TextSizeSetting';
+import MoneyText from '@/components/MoneyText';
 import { initializeCrewTextSize } from '@/lib/textSizePreference';
 import { acquireOverlayLifecycle } from '@/lib/overlayLifecycle';
 import NotificationSoundSetting from '@/components/pulse/NotificationSoundSetting';
@@ -1609,7 +1610,7 @@ function BottomNav({ view, setView, openMenu, alertCount = 0, alertSignature = '
   })}</nav>;
 }
 function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; title: string; value: string; detail: string; tone?: string }) {
-  return <article className={`cz-kpi ${tone}`}><span><Icon size={24}/></span><div><small>{title}</small><strong>{value}</strong><p>{detail}</p></div></article>;
+  return <article className={`cz-kpi ${tone}`}><span><Icon size={24}/></span><div><small>{title}</small><strong><MoneyText value={value}/></strong><p>{detail}</p></div></article>;
 }
 type RadarSnapshot = {
   ok?: boolean;
@@ -3824,7 +3825,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
         <div className="cz-finance-row" data-financial-iso={row.iso} data-financial-currency={row.currency} key={row.iso + '-' + row.label + '-' + index}>
           <span>{row.date}</span>
           <strong>{row.label} · {row.airport}</strong>
-          <b>{moneyCurrency(row.value, row.currency)}</b>
+          <b><MoneyText value={moneyCurrency(row.value, row.currency)}/></b>
           <details className="cc-per-diem-source"><summary>Origem e regra{row.convertedBRL === null ? ' · cotação pendente' : ''}</summary><small>{row.source}</small></details>
         </div>
       ) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem itens previstos</h2><p>A escala selecionada não contém diárias previstas nesta competência.</p></article>}
@@ -3867,7 +3868,7 @@ function SalaryReliableView({ bundle }: { bundle: BundleState }) {
         {controls}<section className="cz-finance-grid cc-per-diem-summary"><KpiCard icon={DollarSign} title="Bruto previsto no período" value={gross===null?'Não calculável':moneyBRL(gross)} detail={fullMonths?'Salário-base exige fonte ou calibração; somente competências completas são somadas.':'A fonte mensal não permite distribuir salário-base e descontos por semana.'}/></section>
         {graph}
         <details className="cz-toolbox"><summary>Composição mensal e descontos informados</summary>{selected.length?selected.map(item=>{const salary=item.snapshot.salary;return <article key={`${item.roster.year}-${item.roster.month}`}><h2>{item.roster.month}/{item.roster.year}</h2><p>Fonte operacional: {item.source}. {salary.config.source}</p><p>Salário-base: {salary.config.baseConfigured?moneyBRL(salary.config.basePay):'Não informado'}. Fixos informados: {moneyBRL(salary.config.fixedAdditions)}.</p><p>Variáveis: voos {moneyBRL(salary.production)}, chefe/instrutor {moneyBRL(salary.chief+salary.instructorPay)}, reserva {moneyBRL(salary.reserve)}, sobreaviso {moneyBRL(salary.standby)}.</p><p>Descontos informados: INSS {moneyBRL(salary.inss)}, IRRF {moneyBRL(salary.irrf)}, outros {moneyBRL(salary.otherDeductions)}. Líquido simulado da competência: {salary.config.baseConfigured?moneyBRL(salary.net):'Não calculável'}.</p><p>Valores integrais da competência, sem rateio pelo filtro de dias.</p></article>}):<p>Nenhuma competência disponível.</p>}</details>
-        <details className="cz-finance-table cc-per-diem-items"><summary>Componentes por voo no intervalo · {rows.length} itens</summary><p className="finance-learning-notice warning" data-km-source="operational-estimate">KM exibido nesta previsão é uma estimativa operacional pela distância entre aeroportos. A quilometragem remunerável da folha pode usar a tabela corporativa por trecho; confira o extrato/AIMS.</p><p>Somente as parcelas com vínculo a um voo. Salário-base, reserva, sobreaviso e descontos mensais não são rateados.</p>{rows.length?rows.map(row=><div className="cz-finance-row" key={row.id}><span>{row.iso}</span><strong>{row.flight} · {row.route}</strong><b>{moneyBRL(row.total)}</b><details className="cc-per-diem-source"><summary>Origem e regra</summary><small>{row.dayKm} km diurno × {moneyBRL(row.dayRateApplied)} · {row.nightKm} km noturno × {moneyBRL(row.nightRateApplied)} · {row.payRule} · {row.source}</small></details></div>):<p>Sem parcelas por voo disponíveis no intervalo.</p>}</details>
+        <details className="cz-finance-table cc-per-diem-items"><summary>Componentes por voo no intervalo · {rows.length} itens</summary><p className="finance-learning-notice warning" data-km-source="operational-estimate">KM exibido nesta previsão é uma estimativa operacional pela distância entre aeroportos. A quilometragem remunerável da folha pode usar a tabela corporativa por trecho; confira o extrato/AIMS.</p><p>Somente as parcelas com vínculo a um voo. Salário-base, reserva, sobreaviso e descontos mensais não são rateados.</p>{rows.length?rows.map(row=><div className="cz-finance-row" key={row.id}><span>{row.iso}</span><strong>{row.flight} · {row.route}</strong><b><MoneyText value={moneyBRL(row.total)}/></b><details className="cc-per-diem-source"><summary>Origem e regra</summary><small>{row.dayKm} km diurno × {moneyBRL(row.dayRateApplied)} · {row.nightKm} km noturno × {moneyBRL(row.nightRateApplied)} · {row.payRule} · {row.source}</small></details></div>):<p>Sem parcelas por voo disponíveis no intervalo.</p>}</details>
       </section></>;
     }}/>
 }

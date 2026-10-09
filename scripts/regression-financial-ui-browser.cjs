@@ -46,7 +46,7 @@ async function settle(page) {
 }
 async function measureMoney(page) {
  return page.evaluate(()=>{
-  const violations=[],amounts=[],intersections=[],splitAmounts=[];
+  const violations=[],amounts=[],intersections=[],splitAmounts=[],splitCurrencyTokens=[];
   for(const element of document.querySelectorAll('.cc-per-diem-content .cz-kpi strong, .cc-per-diem-content .cz-finance-row b')) {
    if(!element.getClientRects().length)continue;
    const box=element.closest('.cz-kpi,.cz-finance-row').getBoundingClientRect();
@@ -57,15 +57,27 @@ async function measureMoney(page) {
     for(const rect of range.getClientRects())if(rect.left<box.left-1||rect.right>box.right+1||rect.top<box.top-1||rect.bottom>box.bottom+1)violations.push({value:element.textContent,char:node.textContent[i],rect:{left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom},box:{left:box.left,right:box.right,top:box.top,bottom:box.bottom}});
    }
    amounts.push(element.textContent);
+   const textNodes=[],tw=document.createTreeWalker(element,NodeFilter.SHOW_TEXT);let tn,offset=0;
+   while(tn=tw.nextNode()){textNodes.push({node:tn,start:offset,end:offset+tn.textContent.length});offset+=tn.textContent.length;}
+   const text=textNodes.map(item=>item.node.textContent).join('');
+   for(const match of text.matchAll(/[−-]?(?:[A-Z]{1,3}\$|[€£])\s*[−-]?[0-9][0-9.]*,[0-9]{2}/g)) {
+    const tops=new Set();
+    for(const item of textNodes)for(let at=Math.max(match.index,item.start);at<Math.min(match.index+match[0].length,item.end);at++) {
+     const pos=at-item.start;if(/\s/.test(item.node.textContent[pos]))continue;
+     const range=document.createRange();range.setStart(item.node,pos);range.setEnd(item.node,pos+1);
+     for(const rect of range.getClientRects())tops.add(Math.round(rect.top));
+    }
+    if(tops.size>1)splitCurrencyTokens.push(match[0]);
+   }
   }
   for(const row of document.querySelectorAll('.cc-per-diem-content .cz-finance-row')) {
    const value=row.querySelector('b'), label=row.querySelector('strong');
-   const rectangles=element=>{const range=document.createRange();range.selectNodeContents(element);return Array.from(range.getClientRects());};
+   const rectangles=element=>{const rects=[],walker=document.createTreeWalker(element,NodeFilter.SHOW_TEXT);let node;while(node=walker.nextNode()){const range=document.createRange();range.selectNodeContents(node);rects.push(...range.getClientRects());}return rects;};
    const vr=rectangles(value),lr=rectangles(label);
    if(vr.some(a=>lr.some(b=>Math.min(a.right,b.right)>Math.max(a.left,b.left)+1&&Math.min(a.bottom,b.bottom)>Math.max(a.top,b.top)+1)))intersections.push({value:value.textContent,label:label.textContent});
    if(new Set(vr.map(r=>Math.round(r.top))).size!==1)splitAmounts.push(value.textContent);
   }
-  return {violations,amounts,intersections,splitAmounts};
+  return {violations,amounts,intersections,splitAmounts,splitCurrencyTokens};
  });
 }
 async function contrast(page) {

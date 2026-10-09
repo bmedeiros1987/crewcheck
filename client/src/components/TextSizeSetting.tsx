@@ -1,9 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { readCrewTextSize, saveCrewTextSize, type CrewTextSize } from '@/lib/textSizePreference';
 
 export default function TextSizeSetting() {
   const [value, setValue] = useState(readCrewTextSize);
   const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const sync = () => { setValue(readCrewTextSize()); setFailed(false); };
+    const events = ['crewcheck:text-size-changed', 'crewcheck:auth-changed', 'crewcheck:auth-expired', 'storage'];
+    events.forEach(name => window.addEventListener(name, sync));
+    return () => events.forEach(name => window.removeEventListener(name, sync));
+  }, []);
   return <section className="cz-toolbox cc-text-size-setting" aria-labelledby="cc-text-size-title">
     <h3 id="cc-text-size-title">Tamanho do texto</h3>
     <p id="cc-text-size-help">Escolha a leitura normal ou ampliada. A preferência fica nesta conta, neste navegador.</p>

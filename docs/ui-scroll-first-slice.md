@@ -13,3 +13,7 @@ QA uses synthetic fixtures only: actual app Settings/menu and financial views, t
 Independent review is required before merge/deploy. Reference images 112742.jpg, 112743.jpg and 112744.jpg resolved through official Library metadata, but all supported transfers returned HTTP403. No bytes or pixels were available on this Mac, so reference comparison remains blocked. The top brand/header remains in page flow; the fixed menu header and approved fixed bottom navigation are preserved. No real documents or account data are committed.
 
 Real financial reconciliation and updated values remain separate. Statement deposit dates are not bank confirmation.
+
+
+### Review corrections: account select and large monetary groups
+The mounted reading selector listens to account/session changes and resets to the current account preference. Whole currency/number/cents groups use nonbreaking spans; separate currencies may flow independently. At 150/200%, finance rows stack and amounts fit their available card width. Synthetic browser coverage now uses 1,234,567.89 in multiple currencies, measures glyph lines for complete currency tokens in cards and rows, and checks both the root preference and the mounted selector after switching accounts.
