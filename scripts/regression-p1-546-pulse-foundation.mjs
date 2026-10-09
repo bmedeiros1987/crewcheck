@@ -31,9 +31,10 @@ const main = fs.readFileSync('client/src/main.tsx', 'utf8');
 assert.match(home, /<InternalHeaderFrame>\s*<Brand back=\{view !== 'cockpit'\} onMenu=\{view === 'cockpit' \? \(\) => setDrawer\(true\) : undefined\}\/>\s*<\/InternalHeaderFrame>/,
   'o header deve montar marca navegável e frame de avisos');
 assert.equal((home.match(/<InternalHeaderFrame>/g) || []).length, 1, 'a aplicação deve montar um único header global');
-assert.match(frame, /className="cz-global-header" data-global-internal-header="true">\{children\}<CrewCheckPulse compact\/>/,
-  'o frame deve preservar a marca e montar um único Pulse compacto');
+assert.match(frame, /className="cc-header-notice"><CrewCheckPulse compact\/>/,
+  'o frame deve montar um único Pulse fora da navegação fixa');
 assert.equal((frame.match(/<CrewCheckPulse\b/g) || []).length, 1, 'não duplicar a superfície de aviso');
+assert.match(frame, /className="cz-global-header" data-global-internal-header="true">\{children\}<\/div>/, 'somente navegação pertence ao header fixo');
 assert.ok(!/<Brand pulse(?:\s|=)/.test(home), 'Brand não deve montar outro Pulse além do frame');
 assert.ok(
   !home.includes('<CrewCheckPulse/>'),
@@ -61,8 +62,8 @@ assert.match(
 );
 assert.match(finalCss, /\.cz-global-header \.cc-pulse-popover\s*\{[^}]*position:\s*static;[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/,
   'detalhes precisam ficar no fluxo e continuar inteiros');
-assert.match(finalCss, /\.cz-app\[data-version\] > \.cz-global-header\s*\{[^}]*position:\s*relative !important;/,
-  'o header final deve acompanhar o fluxo da página');
+assert.match(finalCss, /\.cz-app\[data-version\] > \.cz-global-header\s*\{[^}]*position:\s*fixed !important;/,
+  'o header final deve manter a posição explicitamente solicitada durante o scroll');
 assert.match(finalCss, /data-priority="critica"[\s\S]*?white-space:normal!important;overflow:visible!important;overflow-wrap:anywhere/,
   'aviso crítico deve mostrar o título completo');
 assert.ok(main.trimEnd().endsWith('import "./styles/ipad-header-recovery.css";'), 'CSS do header deve fechar a precedência visual');

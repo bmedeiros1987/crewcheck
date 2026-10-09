@@ -11,6 +11,12 @@ on:
       - 'client/src/components/MoneyText.tsx'
       - 'scripts/regression-financial-ui-browser.cjs'
       - 'scripts/regression-ui-reading-overlays.cjs'
+      - 'scripts/regression-fixed-navigation-headers.cjs'
+      - 'scripts/regression-pulse-content-space.cjs'
+      - 'scripts/fixed-navigation-headers.mjs'
+      - 'client/src/components/navigation/InternalHeaderFrame.tsx'
+      - 'client/src/components/v1391/HomeLayoutShell.tsx'
+      - 'client/src/components/v1391/MenuPersonalization.tsx'
       - 'scripts/v14387d/apply.mjs'
       - 'scripts/p1-home-layout/apply.mjs'
       - 'client/src/pages/Home.tsx'
@@ -104,6 +110,14 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
         run: node scripts/regression-ui-reading-overlays.cjs
+      - name: Verify pinned navigation and import theme with actual app
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-fixed-navigation-headers.cjs
+      - name: Verify normal content canvas with long expanded Pulse
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-pulse-content-space.cjs
       - name: Validate publication import to history with synthetic PDFs
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
@@ -124,6 +138,8 @@ jobs:
             artifacts/menu-responsive
             artifacts/menu-interaction
             artifacts/ui-reading-overlays
+            artifacts/fixed-headers
+            artifacts/pulse-content-space
             artifacts/publication-import-flow
             artifacts/share-discovery
           if-no-files-found: warn

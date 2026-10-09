@@ -34,7 +34,7 @@ for (const marker of [
   'function CrewLocationAccess(',
   "window.addEventListener('crewcheck:location-updated'",
   'setLocationRevision((value) => value + 1)',
-  '[event.id, origin, destination, mapsMode, routeAccountId]',
+  '[event.id, event.origin, event.presentation, event.departure, origin, destination, mapsMode, routeAccountId]',
   'routeLocationRevisionRef.current !== locationRevision',
   "storage.set('crewcheck_location_permission', 'granted')",
   'Serviços de Localização → Sites do Safari',
@@ -114,4 +114,6 @@ for (const [key, relative] of Object.entries(paths)) {
 console.log('v14.3.43 iPad premium stability preserved under final v14.4.08: contained touch layout, explicit Settings location, bearer-aware route preview, safe release reload, preserved service worker and protected engines validated.');
 
 // Preserve explicit GPS refresh without duplicating requests across context changes.
+await import('./regression-departure-route-effects.mjs');
+
 await import('./regression-departure-route-effects.mjs');
