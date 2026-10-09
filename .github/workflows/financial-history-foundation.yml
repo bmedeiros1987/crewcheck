@@ -17,6 +17,7 @@ on:
       - 'client/src/styles/per-diem-content.css'
       - 'client/src/components/finance/**'
       - 'client/src/lib/financialHistoryPeriods.ts'
+      - 'client/src/lib/financialComparisonPeriods.ts'
       - 'client/src/lib/salaryCalculationDiagnostic.ts'
       - 'scripts/regression-salary-prerequisite-diagnostic.mjs'
       - 'scripts/regression-salary-review-callers.mjs'
@@ -70,6 +71,7 @@ jobs:
       - run: node scripts/regression-financial-callers.mjs
         env:
           TZ: America/New_York
+      - run: node scripts/regression-financial-comparison-periods.mjs
       - run: node scripts/regression-financial-history-periods.mjs
         env:
           TZ: UTC
