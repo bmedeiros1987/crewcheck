@@ -1,3 +1,6 @@
+import { wellhubLocationTextMatches } from '@shared/wellhub-location.mjs';
+import { wellhubSnapshotAccess } from '@shared/wellhub-access.mjs';
+
 export type WellhubPlan =
   | 'digital'
   | 'starter'
@@ -19,7 +22,10 @@ export type WellhubVerifiedPartner = {
   state: string;
   country: 'BR';
   address: string;
-  minimumPlan: WellhubPlan;
+  minimumPlan: WellhubPlan | 'unknown';
+  region?: string;
+  activityPlans?: string[];
+  accessConditions?: string;
   rating?: number;
   reviewCount?: number;
   openingHours: string[];
@@ -50,6 +56,243 @@ const VERIFIED_AT = '2026-08-25';
 // Snapshot inicial composto exclusivamente por páginas públicas oficiais do Wellhub.
 // Não use Google Maps, nome da rede ou proximidade para inferir parceria ou plano.
 export const WELLHUB_VERIFIED_PARTNERS: WellhubVerifiedPartner[] = [
+  {
+    id: 'estacao-saude-taguatinga-sul-df',
+    name: 'Estação Saúde Academia - Taguatinga Sul',
+    chain: 'Estação Saúde',
+    city: 'Brasília',
+    state: 'DF',
+    country: 'BR',
+    region: 'Taguatinga Sul',
+    address: 'Av. Comercial - St. A Sul QSA 2 - Taguatinga, Brasília - DF, 72015-020, Brasil',
+    minimumPlan: 'basic-plus',
+    openingHours: ['Seg-Sex 06:00-23:00', 'Sáb 08:00-14:00', 'Dom 09:00-13:00'],
+    source: 'wellhub-public-directory',
+    sourceUrl: 'https://wellhub.com/pt-br/search/partners/estacao-saude-academia-taguatinga-sul-setor-a-sul-brasilia/',
+    verifiedAt: '2026-10-09',
+  },
+  {
+    id: 'corpo-saude-guara-ii-df',
+    name: 'Corpo e Saúde - Guará II',
+    chain: 'Corpo e Saúde',
+    city: 'Brasília',
+    state: 'DF',
+    country: 'BR',
+    region: 'Guará II',
+    address: 'Edifício Consei - Sria II Qe 34 Eq 32/34 Qi 31 Conjunto S, 33 - Guará, Brasília - DF, 71065-315, Brasil',
+    minimumPlan: 'basic',
+    openingHours: ['Seg-Sex 06:00-23:00', 'Sáb 08:00-14:00'],
+    source: 'wellhub-public-directory',
+    sourceUrl: 'https://wellhub.com/pt-br/search/partners/corpo-e-saude-guara-ii/',
+    verifiedAt: '2026-10-09',
+  },
+  {
+    id: 'corpo-saude-acacias-df',
+    name: 'Corpo e Saúde - Águas Claras Acácias',
+    chain: 'Corpo e Saúde',
+    city: 'Brasília',
+    state: 'DF',
+    country: 'BR',
+    region: 'Águas Claras',
+    address: 'Alameda das Acácias, 1 - Q. 107 - Águas Claras, Brasília - DF, 71928-720, Brasil',
+    minimumPlan: 'basic',
+    openingHours: ['Seg-Sex 06:00-23:00', 'Sáb 08:00-16:00', 'Dom 09:00-14:00'],
+    source: 'wellhub-public-directory',
+    sourceUrl: 'https://wellhub.com/pt-br/search/partners/corpo-e-saude-aguas-claras-acacias-aguas-claras/',
+    verifiedAt: '2026-10-09',
+  },
+  {
+    id: 'corpo-saude-aguas-claras-df',
+    name: 'Corpo E Saúde - Águas Claras',
+    chain: 'Corpo e Saúde',
+    city: 'Brasília',
+    state: 'DF',
+    country: 'BR',
+    region: 'Águas Claras',
+    address: '162 - Q. 301 - Águas Claras, Brasília - DF, 71930-000, Brasil',
+    minimumPlan: 'unknown',
+    openingHours: [],
+    accessNote: 'Plano não confirmado: versões públicas consultadas divergem entre Basic e Basic+. Confira a página oficial da unidade.',
+    source: 'wellhub-public-directory',
+    sourceUrl: 'https://wellhub.com/pt-br/search/partners/567719d2-0b12-4484-bb18-c8dab8360630/',
+    verifiedAt: '2026-10-09',
+  },
+  {
+    id: 'corpo-saude-ceilandia-qnn-df',
+    name: 'Corpo E Saúde - Ceilândia (QNN)',
+    chain: 'Corpo e Saúde',
+    city: 'Brasília',
+    state: 'DF',
+    country: 'BR',
+    region: 'Ceilândia',
+    address: 'St. N QNN 7 lote b 41 a - Ceilândia, Brasília - DF, 72225-072, Brasil',
+    minimumPlan: 'basic',
+    openingHours: ['Seg-Sex 06:00-23:00', 'Sáb 08:00-16:00', 'Dom 09:00-14:00'],
+    source: 'wellhub-public-directory',
+    sourceUrl: 'https://wellhub.com/pt-br/search/partners/corpo-e-saude-ceilandia-qnn/',
+    verifiedAt: '2026-10-09',
+  },
+  {
+    id: 'bluefit-502-sul-df',
+    name: 'BlueFit - 502 Sul',
+    chain: 'Bluefit',
+    city: 'Brasília',
+    state: 'DF',
+    country: 'BR',
+    region: 'Asa Sul',
+    address: 'SHCS EQS 502/503 - Asa Sul, Brasília - DF, 70330-550, Brasil',
+    minimumPlan: 'silver-plus',
+    openingHours: ['Seg-Sex 05:00-23:59', 'Sáb-Dom 07:00-19:00'],
+    source: 'wellhub-public-directory',
+    sourceUrl: 'https://wellhub.com/pt-br/search/partners/bluefit-502-sul-asa-sul/',
+    verifiedAt: '2026-10-09',
+  },
+  {
+    id: 'bluefit-asa-norte-df',
+    name: 'BlueFit - Asa Norte',
+    chain: 'Bluefit',
+    city: 'Brasília',
+    state: 'DF',
+    country: 'BR',
+    region: 'Asa Norte',
+    address: '0 - Setor Comercial Norte Q 2 - St. Comercial, Brasília - DF, 70702-908, Brasil',
+    minimumPlan: 'silver-plus',
+    openingHours: ['Seg-Sex 05:00-23:00', 'Sáb-Dom 08:00-14:00'],
+    source: 'wellhub-public-directory',
+    sourceUrl: 'https://wellhub.com/pt-br/search/partners/bluefit-asa-norte-asa-sul/',
+    verifiedAt: '2026-10-09',
+  },
+  {
+    id: 'bluefit-516-norte-df',
+    name: 'BlueFit - Asa Norte 516',
+    chain: 'Bluefit',
+    city: 'Brasília',
+    state: 'DF',
+    country: 'BR',
+    region: 'Asa Norte',
+    address: 'Carlton Center - Via W2 Norte, 516 - Asa Norte, Brasília - DF, 70770-522, Brasil',
+    minimumPlan: 'silver-plus',
+    openingHours: ['Seg-Sex 05:00-23:59', 'Sáb-Dom 07:00-19:00'],
+    source: 'wellhub-public-directory',
+    sourceUrl: 'https://wellhub.com/pt-br/search/partners/academia-bluefit-asa-norte-516/',
+    verifiedAt: '2026-10-09',
+  },
+  {
+    id: 'bluefit-sudoeste-df',
+    name: 'BlueFit 24h - Sudoeste',
+    chain: 'Bluefit',
+    city: 'Brasília',
+    state: 'DF',
+    country: 'BR',
+    region: 'Sudoeste',
+    address: 'Cruzeiro / Sudoeste / Octogonal, Brasília - DF, 70610-480, Brasil',
+    minimumPlan: 'silver-plus',
+    openingHours: ['Seg-Dom 05:00-23:59'],
+    accessNote: 'Nome oficial contém 24h, mas horários publicados são 05h–23h59; não presume funcionamento contínuo. Endereço público sem logradouro/número.',
+    source: 'wellhub-public-directory',
+    sourceUrl: 'https://wellhub.com/pt-br/search/partners/academia-bluefit-sudoeste-setor-de-industrias-graficas-brasilia/',
+    verifiedAt: '2026-10-09',
+  },
+  {
+    id: 'bluefit-gama-df',
+    name: 'BlueFit - Gama',
+    chain: 'Bluefit',
+    city: 'Brasília',
+    state: 'DF',
+    country: 'BR',
+    region: 'Gama',
+    address: 'Sind Qi 2, 1 - Gama, Brasília - DF, 72426-095, Brasil',
+    minimumPlan: 'silver',
+    openingHours: ['Seg-Sex 05:00-23:59', 'Sáb-Dom 07:00-19:00'],
+    source: 'wellhub-public-directory',
+    sourceUrl: 'https://wellhub.com/pt-br/search/partners/bluefit-gama/',
+    verifiedAt: '2026-10-09',
+  },
+  {
+    id: 'ultra-asa-norte-df',
+    name: 'Ultra Academia - Asa Norte',
+    chain: 'Ultra',
+    city: 'Brasília',
+    state: 'DF',
+    country: 'BR',
+    region: 'Asa Norte',
+    address: 'SHCGN CRN 706/707 Bloco D Loja 36/50 - Asa Norte, Brasília - DF, 70740-640, Brasil',
+    minimumPlan: 'silver',
+    openingHours: ['Seg-Sex 05:30-22:00', 'Sáb-Dom 08:00-14:00'],
+    activityPlans: ['Treino de força|silver', 'Cardio|silver', 'Power Bike|gold', 'Treino funcional|gold'],
+    accessNote: 'Musculação e aeróbico: Silver. Bike, funcional e atividades indicadas: Gold; outras modalidades precisam de conferência.',
+    source: 'wellhub-public-directory',
+    sourceUrl: 'https://wellhub.com/pt-br/search/partners/ultra-academia-asa-norte-setor-de-habitacoes-coletivas-e-geminadas-norte-brasilia/',
+    verifiedAt: '2026-10-09',
+  },
+  {
+    id: 'ultra-patio-brasil-df',
+    name: 'Ultra Academia Pátio Brasil',
+    chain: 'Ultra',
+    city: 'Brasília',
+    state: 'DF',
+    country: 'BR',
+    region: 'Asa Sul',
+    address: 'SCS Q. 7 BL A - Asa Sul, Brasília - DF, 70307-902, Brasil',
+    minimumPlan: 'silver',
+    openingHours: ['Seg-Sex 06:00-22:00', 'Sáb-Dom 08:00-14:00'],
+    activityPlans: ['Condicionamento corporal|silver', 'Abdominal|gold'],
+    accessNote: 'Condicionamento corporal: Silver. Abdômen e braço e demais atividades indicadas: Gold.',
+    source: 'wellhub-public-directory',
+    sourceUrl: 'https://wellhub.com/pt-br/search/partners/ultra-academia-patio-brasil-asa-sul/',
+    verifiedAt: '2026-10-09',
+  },
+  {
+    id: 'ultra-noroeste-df',
+    name: 'Ultra Academia Noroeste',
+    chain: 'Ultra',
+    city: 'Brasília',
+    state: 'DF',
+    country: 'BR',
+    region: 'Noroeste',
+    address: 'CRNW 509 Bloco B Lote 2 Ed. Plaza 509 - 1º andar - Setor Noroeste, Brasília - DF, 70688-030, Brasil',
+    minimumPlan: 'basic-plus',
+    openingHours: ['Seg-Sex 05:30-22:00', 'Sáb 08:00-16:00', 'Dom 08:00-14:00'],
+    activityPlans: ['Yoga|basic-plus', 'Dança|basic-plus', 'Power Bike|basic-plus', 'Treino de força|silver', 'Abdominal|silver'],
+    accessNote: 'Cabeçalho Basic+ cobre balé, cycle, dança e yoga; musculação/abd exigem Silver. Confira a atividade.',
+    source: 'wellhub-public-directory',
+    sourceUrl: 'https://wellhub.com/pt-br/search/partners/ultra-academia-noroeste-setor-noroeste/',
+    verifiedAt: '2026-10-09',
+  },
+  {
+    id: 'gavioes-gama-df',
+    name: 'Academia Gaviões 24h - Gama',
+    chain: 'Academia Gaviões',
+    city: 'Brasília',
+    state: 'DF',
+    country: 'BR',
+    region: 'Gama',
+    address: 'Sind Praça 1 Qi 3 Qi 2 - Gama, Brasília - DF, 72445-010, Brasil',
+    minimumPlan: 'basic-plus',
+    openingHours: ['Seg-Dom 00:00-23:59'],
+    is24Hours: true,
+    source: 'wellhub-public-directory',
+    sourceUrl: 'https://wellhub.com/pt-br/search/partners/TJu24QgLv62vOMLV3CUMUMINu5g_i0uRA4g6ums8wHSvjRETm3rxxX4SRiUZ8hnJ/',
+    verifiedAt: '2026-10-09',
+  },
+  {
+    id: 'bodytech-sudoeste-df',
+    name: 'Bodytech - Sudoeste',
+    chain: 'Bodytech',
+    city: 'Brasília',
+    state: 'DF',
+    country: 'BR',
+    region: 'Sudoeste',
+    address: 'SQSW 302 Bloco D - Brasília, DF, 70297-400, Brasil',
+    minimumPlan: 'silver',
+    openingHours: [],
+    accessConditions: 'A página informa Student Plan restrito a 12–25 anos, das 10h às 16h; não confirma acesso irrestrito para Silver+.',
+    activityPlans: ['Fisiculturismo|silver', 'Abdominal|diamond', 'Alongamento|diamond', 'Fitness dance|diamond'],
+    accessNote: 'Mínimo anunciado Silver com condições Student Plan; atividades específicas exigem Diamond. Confirme a condição de acesso diretamente na fonte oficial.',
+    source: 'wellhub-public-directory',
+    sourceUrl: 'https://wellhub.com/pt-br/search/partners/bodytech-sudoeste-setor-sudoeste-brasilia/',
+    verifiedAt: '2026-10-09',
+  },
   {
     id: 'gavioes-vila-augusta-guarulhos',
     name: 'Academia Gaviões 24h - Vila Augusta',
@@ -368,12 +611,17 @@ export function isWellhubPlan(value: unknown): value is WellhubPlan {
   return PLAN_RANK.has(String(value || '') as WellhubPlan);
 }
 
-export function wellhubPlanLabel(plan: WellhubPlan): string {
-  return WELLHUB_PLAN_OPTIONS.find((item) => item.value === plan)?.label || plan;
+export function wellhubPlanLabel(plan: WellhubPlan | 'unknown'): string {
+  return plan === 'unknown' ? 'plano não confirmado' : WELLHUB_PLAN_OPTIONS.find((item) => item.value === plan)?.label || plan;
 }
 
-export function isWellhubPartnerEligible(minimumPlan: WellhubPlan, userPlan: WellhubPlan): boolean {
-  return (PLAN_RANK.get(userPlan) ?? -1) >= (PLAN_RANK.get(minimumPlan) ?? Number.MAX_SAFE_INTEGER);
+export function isWellhubPartnerEligible(minimumPlan: WellhubPlan | 'unknown', userPlan: WellhubPlan): boolean {
+  return minimumPlan !== 'unknown' && (PLAN_RANK.get(userPlan) ?? -1) >= (PLAN_RANK.get(minimumPlan) ?? Number.MAX_SAFE_INTEGER);
+}
+
+export function wellhubPartnerAccessLabel(partner: WellhubVerifiedPartner, userPlan: WellhubPlan, activity = ''): string {
+  const status = wellhubSnapshotAccess(partner, userPlan, activity);
+  return status === 'included' ? 'Incluído no snapshot público' : status === 'excluded' ? 'Plano abaixo do mínimo publicado' : 'Acesso não confirmado — confira a fonte oficial';
 }
 
 function localityScore(partner: WellhubVerifiedPartner, locationText: string): number {
@@ -399,7 +647,8 @@ export function searchVerifiedWellhubPartners(options: {
   const query = normalize(options.query);
   const limit = Math.max(1, Math.min(100, Number(options.limit || 50)));
   return WELLHUB_VERIFIED_PARTNERS
-    .filter((partner) => isWellhubPartnerEligible(partner.minimumPlan, options.userPlan))
+    .filter((partner) => wellhubSnapshotAccess(partner, options.userPlan) !== 'excluded')
+    .filter((partner) => Boolean(options.locationText?.trim()) && wellhubLocationTextMatches(partner, options.locationText))
     .filter((partner) => {
       if (!query) return true;
       const haystack = normalize([partner.name, partner.chain, partner.city, partner.state, partner.address].join(' '));

@@ -105,21 +105,27 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
     const place = locationCity ? ` em ${locationCity}${locationState ? `/${locationState}` : ''}` : locationState ? ` em ${locationState}` : '';
     return [
       'Wellhub verificado · seu plano ' + wellhubPlanLabelServer(wellhubPlan) + (activity ? ' · ' + activity : ''),
-      `Não encontrei unidade verificada compatível com seu filtro${place} no catálogo oficial atual.`,
+      `Não há dados suficientes no catálogo consultado para confirmar uma unidade com seu filtro${place}. Isso não significa que não exista parceria ou acesso.`,
+      'Confira unidades e condições na busca oficial: https://wellhub.com/pt-br/search/',
       'Não vou sugerir unidade de outra cidade/estado como se fosse próxima. Posso tentar outra cidade, rede ou modalidade.',
     ].join('\n');
   }
 
   const lines = partners.map((partner, index) => {
-    const activities = partner.activities?.length ? partner.activities.slice(0, 6).join(', ') : activity ? 'modalidade confirmada na página oficial' : 'consulte a página oficial para modalidades';
+    const activities = partner.activities?.length ? partner.activities.slice(0, 6).join(', ') : activity ? 'modalidade não confirmada — consulte a fonte oficial' : 'consulte a página oficial para modalidades';
     const userPlanLabel = wellhubPlanLabelServer(wellhubPlan);
     const minimumPlanLabel = wellhubPlanLabelServer(partner.minimumPlan);
     return [
       `${index + 1}. ${partner.name} · ${partner.city}/${partner.state}`,
-      `   Acesso: ✓ incluído no seu ${userPlanLabel} · mínimo da unidade: ${minimumPlanLabel}`,
+      partner.eligibilityStatus === 'included'
+        ? `   Acesso: ✓ incluído no seu ${userPlanLabel} · mínimo da unidade: ${minimumPlanLabel} (snapshot público)`
+        : `   Acesso: não confirmado para seu ${userPlanLabel}; confira a fonte oficial · mínimo publicado: ${minimumPlanLabel}`,
+      `   Endereço: ${partner.address}`,
+      ...(partner.accessConditions ? [`   Condições: ${partner.accessConditions}`] : []),
+      ...(partner.accessNote ? [`   Observação: ${partner.accessNote}`] : []),
       `   Horário: ${(partner.openingHours || []).join(' | ') || 'não publicado no snapshot'}`,
       `   Modalidades: ${activities}`,
-      `   Wellhub verificado ✓ ${partner.sourceUrl}`,
+      `   Fonte oficial consultada em ${partner.verifiedAt || 'data desconhecida'}; planos e condições podem mudar: ${partner.sourceUrl}`,
     ].join('\n');
   });
   return [
