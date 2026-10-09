@@ -1,5 +1,14 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+
+// Execute the same semantic dependency used by prepared databaseClient.ts.
+// A missing harness import must not hide the account-isolation assertions.
+const semantics = {};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('client/src/lib/complianceAlertSemantics.ts', 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS },
+}).outputText, { exports: semantics });
 
 // Root cause this fixes (#440 / #303, "cache vencer a escala ativa do servidor"):
 // client/src/lib/databaseClient.ts's readLocalActiveRosterSnapshots() and
@@ -162,8 +171,8 @@ class LocalStorageMock {
 
 function buildHarness(localStorage, getStoredUser) {
   // eslint-disable-next-line no-new-func
-  const factory = new Function('localStorage', 'getStoredUser', harnessSource);
-  return factory(localStorage, getStoredUser);
+  const factory = new Function('localStorage', 'getStoredUser', 'isActionableComplianceAlert', harnessSource);
+  return factory(localStorage, getStoredUser, semantics.isActionableComplianceAlert);
 }
 
 function activeSnapshot(crewName, year, month) {
