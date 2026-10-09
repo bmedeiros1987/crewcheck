@@ -6,6 +6,14 @@ import { companyTransportPresentation } from '../shared/companyTransport.mjs';
 const reference = { schemaVersion: 1, id: 'synthetic', operator: 'Fictional shuttle', direction: 'Alpha → Beta', timeZone: 'America/Sao_Paulo', provenance: { label: 'Synthetic fixture' }, validity: { status: 'unknown' }, eligibility: { status: 'unknown', description: 'Verify fictional access' }, days: [1,2,3,4,5], exceptions: [{date:'2026-10-12',runs:false,note:'Fictional holiday'}], stops: [{id:'a',label:'Alpha',boardingPoint:'Fictional gate A'},{id:'b',label:'Beta',boardingPoint:'Fictional gate B'}], trips: [[28800,30600],[90000,91800]] };
 const query={referenceId:'synthetic',serviceDate:'2026-10-09',originStopId:'a',destinationStopId:'b'};
 const evaluate=(item=reference,q=query)=>companyTransportPresentation([item],q);
+for (const catalogue of [[], [reference]]) {
+  const missingQuery = companyTransportPresentation(catalogue, null);
+  assert.equal(missingQuery.operational, 'unknown');
+  assert.equal(missingQuery.recommendation, 'unconfirmed');
+  assert.equal(missingQuery.leaveAt, null);
+  assert.equal(missingQuery.travelMinutes, null);
+  assert.deepEqual(missingQuery.references, []);
+}
 assert.equal(evaluate().references[0].plannedTimes.length,2);
 assert.equal(evaluate().recommendation,'unconfirmed');assert.equal(evaluate().operational,'unknown');assert.equal(evaluate().leaveAt,null);assert.equal(evaluate().travelMinutes,null);
 assert.equal(evaluate(reference,{...query,originStopId:'home'}).references.length,0);

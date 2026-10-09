@@ -19,6 +19,7 @@ function valid(reference) {
   } catch { return false; }
 }
 export function companyTransportPresentation(catalogue = [], query = {}) {
+  query = query ?? {};
   const result = { operational: 'unknown', recommendation: 'unconfirmed', leaveAt: null, travelMinutes: null,
     label: 'Transporte da empresa · a confirmar', references: [] };
   if (!Array.isArray(catalogue) || !date(query.serviceDate) || !text(query.referenceId) || !text(query.originStopId) || !text(query.destinationStopId)) return result;

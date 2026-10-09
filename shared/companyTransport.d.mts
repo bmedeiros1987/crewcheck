@@ -8,7 +8,7 @@ export interface CompanyTransportReference {
   trips: number[][];
 }
 export interface CompanyTransportQuery { referenceId?: string; serviceDate?: string; originStopId?: string; destinationStopId?: string }
-export function companyTransportPresentation(catalogue?: CompanyTransportReference[], query?: CompanyTransportQuery): {
+export function companyTransportPresentation(catalogue?: CompanyTransportReference[], query?: CompanyTransportQuery | null): {
   operational: 'unknown'; recommendation: 'unconfirmed'; leaveAt: null; travelMinutes: null; label: string;
   references: Array<CompanyTransportReference & { serviceDate: string; originStopId: string; destinationStopId: string; calendarRuns: boolean; outsideValidity: boolean; plannedTimes: Array<{ boardAtSeconds: number; alightAtSeconds: number }>; verificationRequired: true }>;
 };
