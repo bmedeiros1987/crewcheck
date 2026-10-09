@@ -45,7 +45,7 @@ As referências JPEG Library anteriormente fornecidas receberam403; nenhum pixel
 
 ## Revisão e implantação
 
-Possíveis conflitos: `scripts/v139/apply.mjs` e Home gerada (âncoras `FlightCard`, briefing e `OperationalDayTimeline`). O novo finalizador roda depois de `fixed-navigation-headers.mjs`; CSS restrito ao novo painel. Não sobrescreve catálogo #943 nem finalizadores #942. `client/src/lib/publishedSequence.ts` é gerado; a fonte revisável é `scripts/standby-sequence-card/evidence.mjs`.
+Possíveis conflitos: `scripts/v139/apply.mjs` e Home gerada (âncoras `FlightCard`, briefing e `OperationalDayTimeline`). O novo finalizador roda depois de `fixed-navigation-headers.mjs`; CSS restrito ao novo painel. Não sobrescreve catálogo #943 nem finalizadores #942. `client/src/lib/publishedSequence.ts` é a fonte única versionada, disponível também no checkout limpo. O teste do projetor transpila esse mesmo módulo; o finalizador só compõe a Home.
 
 Draft precisa de revisão independente e CI antes de publicação. Novo APK não é necessário para o wrapper Android que carrega a aplicação remota; conteúdo só chegará após publicação web aprovada e atualização da WebView. Versões com conteúdo embarcado exigiriam distribuição nova; não foram verificadas. Nenhum APK, loja ou deploy foi executado.
 
@@ -56,3 +56,7 @@ Draft precisa de revisão independente e CI antes de publicação. Novo APK não
 3. A mensagem de encurtamento de sobreaviso exige raiz HSB. ASB/RES/RSV/RESERVA encurtada não ganha essa mensagem ou acionamento inferido por esse motivo.
 
 Regressão do React real executada em UTC, America/Sao_Paulo e Asia/Tokyo: 02:00 → 02:40 invariável; passagem 09/10/2030 23:40 → 10/10/2030 00:20 e reserva do dia seguinte; avanço de âncora preserva HSB e seu encurtamento durante reserva e voo; encerramento remove painel; reserva encurtada não recebe texto HSB. Motor real valida seleção por relógio e fronteiras independentes. Não houve mudança regulatória.
+
+## Disponibilidade no checkout limpo
+
+CI de clima e consistência executa TypeScript antes do preparo completo. O projetor agora é fonte TypeScript versionada em `client/src/lib/publishedSequence.ts`, sem geração nem cópia paralela `.mjs`. A regressão do motor transpila essa mesma fonte importada pela UI. Não foram alterados ou dispensados checks/workflows. Validar checkout sem preparo (incluindo preparo seletivo v14395 usado por consistency) e depois preparo completo, TypeScript, regressões e build.

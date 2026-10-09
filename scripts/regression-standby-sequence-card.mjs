@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
-import {sequenceEvidence} from './standby-sequence-card/evidence.mjs';
+// Exercise the same checked-in TypeScript module imported by production React.
+const projector = ts.transpileModule(fs.readFileSync('client/src/lib/publishedSequence.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const {sequenceEvidence} = await import('data:text/javascript;base64,' + Buffer.from(projector).toString('base64'));
 const compile = source => ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
 const continuity={},canonical={};
 vm.runInNewContext(compile(fs.readFileSync('client/src/lib/rosterContinuity.ts','utf8')),{exports:continuity});

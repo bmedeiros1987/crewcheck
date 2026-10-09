@@ -11,7 +11,7 @@ function windowOf(event) {
   const end = published && valid(event.endDateTime) ? event.endDateTime : null;
   return { start, end, minutes: start && end && Date.parse(end) >= Date.parse(start) ? (Date.parse(end)-Date.parse(start))/60000 : null };
 }
-export function sequenceEvidence({ owner, revision, events, anchorId, previous, confirmation }) {
+export function sequenceEvidence({ owner, revision, events, anchorId, previous, confirmation }: { owner: string | null; revision: string; events: any[]; anchorId: string; previous?: any; confirmation?: any }) {
   const anchor = events.find(event => event.id === anchorId);
   if (!anchor) return { rows: [], gaps: ['Programação selecionada não está nesta versão.'], activation: 'unconfirmed' };
   const contextId = JSON.stringify([owner,revision,anchorId]);
@@ -30,8 +30,8 @@ export function sequenceEvidence({ owner, revision, events, anchorId, previous, 
     const reserveIndex = sorted.findIndex((event, index) => index >= from && index <= sorted.indexOf(anchor) && reserve(event));
     from = reserveIndex >= 0 ? reserveIndex : sorted.indexOf(anchor);
   }
-  const root = sorted[from], available = [];
-  const boundaryGaps = [];
+  const root = sorted[from], available: any[] = [];
+  const boundaryGaps: string[] = [];
   for (const event of sorted.slice(from)) {
     if (rest(event)) break;
     const previousEvent = available.at(-1);
@@ -52,7 +52,7 @@ export function sequenceEvidence({ owner, revision, events, anchorId, previous, 
     const airportAssigned = event.kind==='flight' || event.airportAssignment===true || event.publishedDay?.airportAssignment===true || event.publishedDay?.reportLocation==='airport';
     return { id:event.id, code:code(event), kind:event.kind, date:event.date, published:windowOf(event), airportPresentation:!standby(event) && airportAssigned && event.showPresentation ? event.presentation || null : null, status:'published' };
   });
-  const gaps = [...boundaryGaps], evidence = [], next = available[1];
+  const gaps: string[] = [...boundaryGaps], evidence: {kind: string; successorId?: string; text: string; beforeEnd?: string; afterEnd?: string}[] = [], next = available[1];
   const anchorWindow = windowOf(root), nextWindow = next && windowOf(next);
   for (let i=0;i<rows.length;i++) {
     if (!rows[i].published.start || !rows[i].published.end) gaps.push(`Horário publicado incompleto: ${rows[i].id}.`);
