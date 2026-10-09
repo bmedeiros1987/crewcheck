@@ -42,6 +42,16 @@ for (const code of ['S450', 'S750', 'Amil S450', ' AMIL S750 ', 's 450', '   '])
 }
 const located = amilConfirmedProviders([{ ...unit, mapsQuery: 'Wrong northern branch RS' }], selection, now)[0];
 assert.equal(located.mapsQuery, 'Hospital Fixture Unidade Sul, Rua Fixture 1, Santa Maria, DF');
+// A general adult request cannot inherit specialty-only emergency coverage.
+for (const specialty of ['PRONTO SOCORRO OFTALMOLOGICO', 'PRONTO SOCORRO INFANTIL']) {
+  const specialtyOnly = { ...unit, coverageEvidence: { ...unit.coverageEvidence, specialty } };
+  assert.equal(amilCoverage(specialtyOnly, selection, now).status, 'unknown');
+  assert.deepEqual(amilConfirmedProviders([specialtyOnly], selection, now), []);
+}
+// Same chain does not authorize a different branch or an unverified renamed unit.
+for (const branch of [{ id: 'fixture-north', name: 'Hospital Fixture Unidade Norte', address: 'Rua Fixture 2' }, { name: 'Hospital Fixture Nome Novo' }]) {
+  assert.deepEqual(amilConfirmedProviders([{ ...unit, ...branch }], selection, now), []);
+}
 const snapshot = { email: 'fixture@example.invalid', roster: [] };
 const profile = { email: snapshot.email, channel: 'app' };
 let lookups = 0, writes = 0;
