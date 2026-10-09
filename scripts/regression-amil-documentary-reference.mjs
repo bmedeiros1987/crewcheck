@@ -48,7 +48,7 @@ await c.handleAmilSearch({}, {}, url);
 assert.equal(configReads,0); assert.equal(replies[0].body.referenceCount,11); assert.equal(replies[0].body.providers.length,0); assert.equal(replies[0].body.coverageStatus,'unknown');
 authenticated=false; await c.handleAmilSearch({}, {}, url); assert.equal(replies.length,1);
 if(process.argv.includes('--prepared')){
- const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');assert.match(home,/import AmilDocumentaryReference/);assert.match(home,/<AmilDocumentaryReference planCode=\{amilPlan\}/);
+ const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');assert.match(home,/<h2>Consulta da rede Amil<\/h2>/);assert.doesNotMatch(home,/<h2>Compatibilidade confirmada pela fonte oficial<\/h2>/);assert.match(home,/import AmilDocumentaryReference/);assert.match(home,/<AmilDocumentaryReference planCode=\{amilPlan\}/);
 }
 const component=fs.readFileSync('client/src/components/health/AmilDocumentaryReference.tsx','utf8');
 assert.match(component,/Referência documental apresentada pelo usuário/);assert.match(component,/cobertura atual desconhecida/);assert.match(component,/data original desconhecida/);assert.match(component,/crewcheck:auth-changed/);assert.match(component,/\[planCode, productCode, networkCode, query, state, city, serviceCode, specialty\]/);
