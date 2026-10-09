@@ -97,8 +97,8 @@ async function visibleTextBounds(page, selector) {
       const header=await box('.cz-global-header');
       assert.equal(await page.locator('.cz-global-header').evaluate(el=>getComputedStyle(el).position),'fixed','Only scroll behavior stays pinned');
       assert.equal(await page.locator('.cz-global-header').evaluate(el=>Boolean(el.closest('.cz-menu-scroll'))),false,'Header remains outside the scroll container');
-      assert.equal(await page.locator('.cz-brand-lockup .cz-logo').isVisible(),true,'Restore the previous brand at mobile widths');
-      assert.equal(await page.locator('.cz-brand-lockup small').isVisible(),true,'Restore the previous subtitle in portrait/desktop');
+      assert.equal(await page.locator('.cz-global-header .cz-brand-lockup .cz-logo').isVisible(),true,'Restore the previous brand at mobile widths');
+      assert.equal(await page.locator('.cz-global-header .cz-brand-lockup small').isVisible(),true,'Restore the previous subtitle in portrait/desktop');
       const spacer=await box('.cc-fixed-header-space');assert.ok(spacer.height>=header.y+header.height,'Measured spacer follows the restored header size');
       await page.locator('.cz-global-header button').last().focus();assert.equal(await page.locator('.cz-global-header button').last().evaluate(el=>el===document.activeElement),true,'Header actions retain keyboard focus');
       await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-restored-header.png`)});
