@@ -15,6 +15,9 @@ assert.equal(read(storage,'B'), 'cards');
 assert.equal(save(storage,'A','calendar'), true);
 assert.equal(read(storage,'A'), 'calendar');
 assert.equal(read(storage,'B'), 'cards');
+assert.equal(save(storage,'A','document'), true);
+assert.equal(read(storage,'A'),'document');
+assert.equal(read(storage,'B'),'cards');
 assert.equal(save(storage,null,'list'), false);
 assert.equal(read(storage,null), 'cards');
 for (const raw of ['invalid', '{"version":2,"layout":"list"}', '{"version":1,"layout":"unknown"}']) {
@@ -28,7 +31,7 @@ assert.equal(read(storage,'A'), 'cards');
 const prepared = fs.readFileSync('client/src/components/v1391/RosterLaunchView.tsx','utf8');
 assert.ok(prepared.includes('data-roster-layout={layout}'), 'selector must survive canonical preparation');
 assert.match(prepared, /<select aria-label="Formato da escala" value=\{layout\}/, 'native picker exposes current value and accessible name');
-for (const layout of ['cards','list','aims','calendar']) assert.ok(prepared.includes(`<option value="${layout}">`), `missing native option ${layout}`);
+for (const layout of ['cards','list','aims','calendar','document']) assert.ok(prepared.includes(`<option value="${layout}">`), `missing native option ${layout}`);
 assert.match(prepared, /<AimsRosterTable events=\{timedEvents\}[^>]*dayView=\{zoom === 'day'\}/, 'AIMS must use its own renderer and preserve day zoom');
 assert.ok(prepared.includes('<CalendarRosterView events={ordered} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>'), 'calendar must use its own renderer');
 
