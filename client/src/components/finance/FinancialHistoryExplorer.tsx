@@ -3,7 +3,8 @@ import { CalendarDays } from 'lucide-react';
 import { getStoredUser, getToken } from '@/lib/authClient';
 import { listSavedRosters, openSavedRoster, financialRosterCrewIdentity, type SavedRosterSummary } from '@/lib/databaseClient';
 import type { CrewRoster } from '@/lib/pdfParser';
-import { financialMonths, financialWeeks, financialRange, latestFinancialPeriods, validFinancialDay, type FinancialRange } from '@/lib/financialHistoryPeriods';
+import { financialMonths, financialRange, latestFinancialPeriods, validFinancialDay, type FinancialRange } from '@/lib/financialHistoryPeriods';
+import { financialComparisonPeriods } from '@/lib/financialComparisonPeriods';
 import './financial-history.css';
 
 const monthOf = (roster: CrewRoster) => `${roster.year}-${String(roster.month).padStart(2,'0')}`;
@@ -32,12 +33,12 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   const [requestedPeriods,setRequestedPeriods]=useState<string[]>([]);
   const [busy,setBusy] = useState(false), [notice,setNotice] = useState(''), [expanded,setExpanded] = useState(false), [currency,setCurrency] = useState('BRL');
   const [comparison,setComparison]=useState<'month'|'week'>('month');
-  const comparisonRange=useMemo(()=>kind==='year'||kind==='custom'?range:financialRange(comparison==='month'?'year':'month',month,'','',''),[kind,range,comparison,month]);
   const epoch = useRef(0), fetching = useRef(new Set<string>());
   const account = String(getStoredUser()?.id || getStoredUser()?.email || '');
   const bound = useRef({ account, roster });
   if (roster !== bound.current.roster) bound.current = { account, roster };
   const range = useMemo(()=>financialRange(kind,month,day,from,to),[kind,month,day,from,to]);
+  const comparisonRange=useMemo(()=>kind==='year'||kind==='custom'?range:financialRange(comparison==='month'?'year':'month',month,'','',''),[kind,range,comparison,month]);
   const current = useMemo(()=>({roster, snapshot:calculate(roster), source:'Escala selecionada'}),[roster,calculate,authRevision,calculationRevision]);
   const snapshots = useMemo(()=>[...(!conflicts.includes(initialMonth)&&!inventory.some(item=>`${item.year}-${String(item.month).padStart(2,'0')}`===initialMonth)?[current]:[]),...loaded.filter(item=>!conflicts.includes(monthOf(item.roster))).map(item=>({...item,snapshot:calculate(item.roster)}))],[current,loaded,initialMonth,calculate,authRevision,calculationRevision,inventory,conflicts]);
   const months = [...new Set([initialMonth,...inventory.map(item=>`${item.year}-${String(item.month).padStart(2,'0')}`)])].filter(value=>validFinancialDay(value+'-01')).sort();
@@ -78,13 +79,12 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   if(!owner || account !== bound.current.account)return <section className="cz-empty-real"><h1>Financeiro da sua conta</h1><p>Entre na conta proprietária e carregue sua escala para consultar valores. Visitantes não têm acesso financeiro.</p></section>;
   if(!validFinancialDay(initialMonth+'-01'))return <section className="cz-empty-real"><h1>Competência não informada</h1><p>Uma escala com mês e ano válidos é necessária.</p></section>;
   if(!crew)return <section className="cz-empty-real"><h1>Identificação da escala pendente</h1><p>Não foi possível vincular o histórico ao tripulante da escala selecionada.</p></section>;
-  const periods=comparison==='week'?financialWeeks(comparisonRange):financialMonths(comparisonRange).map(value=>financialRange('month',value,'','',''));
-  const rows=periods.map(period=>{
+  const periods=financialComparisonPeriods(comparisonRange,comparison);
+  const rows=periods.map(({range:period,complete})=>{
     const needed=financialMonths(period), selected=snapshots.filter(item=>needed.includes(monthOf(item.roster)));
     const absent=needed.filter(value=>!selected.some(item=>monthOf(item.roster)===value));
     const values=absent.length?{}:periodMetric?periodMetric(selected.map(item=>item.snapshot),period,absent):comparison==='month'&&selected.length===1?(rangeMetric?rangeMetric(selected[0].snapshot,period):metric(selected[0].snapshot)):{};
-    const fullWeek=comparison!=='week'||financialRange('week','',period.start,'','').start===period.start&&financialRange('week','',period.start,'','').end===period.end;
-    return {range:period,values,absent,fullWeek,title:comparison==='month'?label(period.start.slice(0,7)):`${period.start} até ${period.end}`};
+    return {range:period,values,absent,fullWeek:complete,title:comparison==='month'?label(period.start.slice(0,7))+(!complete?` (${period.start} até ${period.end})`:''):`${period.start} até ${period.end}`};
   });
   const currencies=[...new Set(rows.flatMap(item=>Object.keys(item.values)))].sort();
   const displayedCurrency=currencies.includes(currency)?currency:currencies[0] || 'BRL';
