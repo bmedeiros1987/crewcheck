@@ -77,13 +77,17 @@ jobs:
       - name: Test actual EmergencyCenter with fictional accounts before preparation
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
-        run: node scripts/regression-emergency-center-browser.mjs
+        run: |
+          node scripts/regression-emergency-center-browser.mjs
+          node scripts/regression-leave-confirmation-browser.mjs
       - name: Prepare canonical application sources
         run: node scripts/v139/apply.mjs
       - name: Test actual EmergencyCenter after source preparation
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
-        run: node scripts/regression-emergency-center-browser.mjs
+        run: |
+          node scripts/regression-emergency-center-browser.mjs
+          node scripts/regression-leave-confirmation-browser.mjs
   web-and-server:
     name: Web, TypeScript and server
     runs-on: ubuntu-latest

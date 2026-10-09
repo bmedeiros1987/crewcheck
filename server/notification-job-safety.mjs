@@ -35,7 +35,7 @@ export async function safeScheduleJob({ req, res, identity, readJson, dbPool, en
   const phone = String(body.phone || body.mobile || '').trim();
   if ((channels.includes('telegram') && !chatId) || (channels.includes('telegram-call') && !username) || (channels.includes('phone-call') && !phone)) return sendJson(res, 400, { ok: false, message: 'Vínculo ou destinatário indisponível.' });
   const jobKey = String(body.jobKey || body.job_key || `manual:${scheduledAt.toISOString()}:${channel}`).slice(0, 220);
-  if (jobKey.startsWith('cycle:')) return sendJson(res, 409, { ok: false, message: 'Alertas por ciclo exigem fonte e agendamento verificados no servidor.' });
+  if (/^cycle:/i.test(jobKey)) return sendJson(res, 409, { ok: false, message: 'Alertas por ciclo exigem fonte e agendamento verificados no servidor.' });
   const job = { email: user.email, job_key: jobKey, scheduled_at: scheduledAt, channel, chat_id: chatId, telegram_username: username, phone,
     message: String(body.message || 'Despertador CrewCheck: confira sua preparação no aplicativo.').trim().slice(0, 1000) };
   const [existing] = await db.query('SELECT *,ROUND(UNIX_TIMESTAMP(scheduled_at)*1000) AS scheduled_epoch,ROUND(UNIX_TIMESTAMP(created_at)*1000) AS created_epoch FROM crewcheck_notification_jobs WHERE email=? AND job_key=? LIMIT 1', [user.email, jobKey]);
@@ -98,7 +98,7 @@ export async function dispatchClaimedJob(db, selected, { deliver, findLink, now 
   // Atomic cancellation cutoff. Cancellation cannot report success after dispatch starts.
   const claimSql = "UPDATE crewcheck_notification_jobs SET status='dispatching' WHERE id=? AND status='processing' AND locked_at=?";
   let claim;
-  if (String(job.job_key).startsWith('cycle:')) {
+  if (/^cycle:/i.test(String(job.job_key))) {
     const connection = await db.getConnection();
     try {
       await connection.beginTransaction();

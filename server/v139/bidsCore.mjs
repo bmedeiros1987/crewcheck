@@ -35,7 +35,7 @@ export async function handleBidsCore(req, res, url, { identify = requireIdentity
 
   if (item && req.method === 'DELETE') {
     const result = await withBidsCreation(context.db, context.email, item[1], 'delete', async connection => {
-      const [deleted] = await connection.query('DELETE FROM crewcheck_platform_bid_windows WHERE id=? AND owner_email=?', [item[1], context.email]);
+      const [deleted] = await connection.query('DELETE FROM crewcheck_platform_bid_windows WHERE BINARY id=BINARY ? AND owner_email=?', [item[1], context.email]);
       return deleted;
     });
     sendJson(res, result.affectedRows ? 200 : 404, { ok: Boolean(result.affectedRows), message: result.affectedRows ? 'Janela removida. Envios já iniciados não podem ser recolhidos.' : 'Janela não encontrada nesta conta.' });

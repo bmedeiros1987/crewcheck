@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { PBS_OFFICIAL_WINDOWS, officialPbsWindow, pbsWindowDates } from '@/data/pbsWindows';
 import { downloadBlob, notifyLocal, v139Api } from './api';
 import { V139Header } from './Shell';
+import { authFetch, getToken } from '@/lib/authClient';
 import './v139.css';
 
 type BidWindow = {
@@ -67,6 +68,7 @@ export default function BidsWindowsView() {
   const [leaveBusy, setLeaveBusy] = useState(false);
   const identityEpoch = useRef(0);
   const leavePath = '/api/platform/notification-cycles/year-end-leave-2026-2027-cabine';
+  type LeaveResponse = { submitted: boolean; message: string };
   const [instructor, setInstructor] = useState(() => localStorage.getItem('crewcheck_instructor') === '1');
   const [windows, setWindows] = useState<BidWindow[]>([]);
   const [busy, setBusy] = useState(false);
@@ -88,20 +90,27 @@ export default function BidsWindowsView() {
   useEffect(() => {
     const epoch = identityEpoch.current;
     load().catch((error) => toast.error(error instanceof Error ? error.message : 'Não consegui carregar BIDS.'));
-    v139Api(leavePath).then(payload => { if (identityEpoch.current === epoch) setLeaveSubmitted(payload.submitted === true); }).catch(() => { if (identityEpoch.current === epoch) setLeaveSubmitted(null); });
-    const changed = () => { identityEpoch.current++; setLeaveSubmitted(null); setLeaveBusy(false); setWindows([]); setForm(initialForm(instructor)); };
+    const refresh = (version = identityEpoch.current) => {
+      if (!getToken()) return;
+      authFetch<LeaveResponse>(leavePath, { cache: 'no-store' }).then(payload => { if (identityEpoch.current === version) setLeaveSubmitted(payload.submitted === true); }).catch(() => { if (identityEpoch.current === version) setLeaveSubmitted(null); });
+    };
+    refresh(epoch);
+    const changed = () => { identityEpoch.current++; setLeaveSubmitted(null); setLeaveBusy(false); setWindows([]); setForm(initialForm(instructor)); refresh(); };
     window.addEventListener('crewcheck:auth-changed', changed);
     window.addEventListener('crewcheck:auth-expired', changed);
     const storage = (event: StorageEvent) => { if (['crewcheck_auth_user', 'crewcheck_auth_token'].includes(event.key || '')) changed(); };
     window.addEventListener('storage', storage);
-    return () => { identityEpoch.current++; window.removeEventListener('crewcheck:auth-changed', changed); window.removeEventListener('crewcheck:auth-expired', changed); window.removeEventListener('storage', storage); };
+    const online = () => refresh();
+    window.addEventListener('online', online);
+    return () => { identityEpoch.current++; window.removeEventListener('crewcheck:auth-changed', changed); window.removeEventListener('crewcheck:auth-expired', changed); window.removeEventListener('storage', storage); window.removeEventListener('online', online); };
   }, []);
 
   async function confirmLeave() {
     const epoch = identityEpoch.current;
+    if (!getToken()) { toast.error('Faça login para registrar sua declaração.'); return; }
     setLeaveBusy(true);
     try {
-      const result = await v139Api(leavePath, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'submitted' }) });
+      const result = await authFetch<LeaveResponse>(leavePath, { method: 'POST', body: JSON.stringify({ action: 'submitted' }) });
       if (identityEpoch.current !== epoch) return;
       setLeaveSubmitted(result.submitted === true);
       toast.message(result.message);
@@ -198,7 +207,7 @@ export default function BidsWindowsView() {
       <a href="https://docs.google.com/forms/d/e/1FAIpQLSehDGJW8pRXXb5j5HbMw0-NSF5Q8nVS7Yb9EwzTqOBhhBllXA/viewform?usp=dialog" target="_blank" rel="noopener noreferrer">Abrir formulário do comunicado</a>
       <p>Fonte: Folga de Fim de Ano_2026_2027_Cabine.pdf, página 1. O fuso ainda precisa ser confirmado antes de agendar.</p>
       <p>{leaveSubmitted === true ? 'Você declarou que já enviou a solicitação neste ciclo. Isso não confirma concessão da folga.' : 'Já solicitou sua folga de fim de ano?'}</p>
-      <button type="button" disabled={leaveBusy || leaveSubmitted === true} onClick={confirmLeave}>{leaveBusy ? 'Salvando…' : leaveSubmitted === true ? 'Solicitação declarada como enviada' : 'Já solicitei'}</button>
+      <button type="button" disabled={leaveBusy || leaveSubmitted === true || leaveSubmitted === null} onClick={confirmLeave}>{leaveBusy ? 'Salvando…' : leaveSubmitted === true ? 'Solicitação declarada como enviada' : 'Já solicitei'}</button>
       <button type="button" disabled title="Fuso e instante ainda precisam ser confirmados">Lembrar depois</button>
       <p>Pendentes vinculados a este ciclo no servidor são cancelados ao confirmar. Envios iniciados não podem ser recolhidos. Alarmes locais e calendários importados ainda não têm cancelamento integrado.</p>
     </section>
