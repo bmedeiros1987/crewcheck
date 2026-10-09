@@ -24,7 +24,10 @@ export function sequenceEvidence({ owner, revision, events, anchorId, previous, 
     if (event.date !== anchor.date && event.journeyId !== anchor.journeyId && !adjacentAcrossDate) break;
     available.push(event);
   }
-  const rows = available.map(event => ({ id:event.id, code:code(event), kind:event.kind, date:event.date, published:windowOf(event), airportPresentation:standby(event) ? null : event.showPresentation ? event.presentation || null : null, status:'published' }));
+  const rows = available.map(event => {
+    const airportAssigned = event.kind==='flight' || event.airportAssignment===true || event.publishedDay?.airportAssignment===true || event.publishedDay?.reportLocation==='airport';
+    return { id:event.id, code:code(event), kind:event.kind, date:event.date, published:windowOf(event), airportPresentation:!standby(event) && airportAssigned && event.showPresentation ? event.presentation || null : null, status:'published' };
+  });
   const gaps = [], evidence = [], next = available[1];
   const anchorWindow = windowOf(anchor), nextWindow = next && windowOf(next);
   for (let i=0;i<rows.length;i++) {

@@ -18,6 +18,7 @@ const prior=canonical.buildCanonicalRosterEvents({...roster,days:[day('HSB','02:
 const result=sequenceEvidence({...input,previous:{owner:input.owner,revision:'revision-1',completeDates:[selected.date],events:prior}});
 assert.equal(result.rows.length,2);assert.equal(result.activation,'possible');
 assert.equal(result.rows[0].airportPresentation,null);assert.equal(result.dutyStartedAt,null);assert.equal(result.performed,false);
+assert.equal(result.rows[1].airportPresentation,null,'reserve start/base alone do not prove airport assignment');
 assert.equal(result.publishedMinutes.standby,40);assert.equal(result.publishedMinutes.reserve,80);assert.equal(result.legalCutoff,null);assert.equal(result.combinedDutyLimit,null);
 assert.ok(result.evidence.some(item=>item.kind==='standby-shortened-in-publication'));
 assert.equal(sequenceEvidence({...input,previous:{owner:'synthetic-B',revision:'revision-1',completeDates:[selected.date],events:prior}}).evidence.some(item=>item.kind==='standby-shortened-in-publication'),false);
