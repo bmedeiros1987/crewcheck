@@ -90,3 +90,10 @@ application (Vite reports the existing large-chunk size warning). Synthetic
 reports and screenshots are saved under artifacts/crewlocker-validity and in the
 Library review package; they are not committed as user data. CI and independent
 review verdicts are still required; no merge or deployment performed.
+
+CI follow-up: the initial run passed raw and prepared engine/UI/typecheck but
+failed the build because new prepared evidence changed the canonical preparation
+fingerprint, forcing a non-idempotent legacy patch replay. The workflow now runs
+the standard build immediately after canonical preparation, before prepared
+regressions write new evidence. No preparation, Telegram or application code was
+changed by this CI ordering correction.

@@ -34,8 +34,12 @@ jobs:
           node scripts/regression-crewlocker-validity.mjs
           node scripts/regression-crewlocker-validity-browser.mjs
           npx tsc --noEmit
-      - name: Prepare canonical application
-        run: node scripts/v139/apply.mjs
+      - name: Prepare and build canonical application
+        # Evidence files affect the canonical preparation fingerprint. Build before
+        # prepared regressions write new evidence, so legacy patches are not replayed.
+        run: |
+          node scripts/v139/apply.mjs
+          npm run build
       - name: Verify prepared production modules and UI
         env:
           CREWLOCKER_TEST_PACKAGE: ${{ runner.temp }}/locker-test/package.json
@@ -44,7 +48,6 @@ jobs:
           node scripts/regression-crewlocker-validity.mjs
           node scripts/regression-crewlocker-validity-browser.mjs
           npx tsc --noEmit
-          npm run build
       - uses: actions/upload-artifact@v4
         if: always()
         with:
