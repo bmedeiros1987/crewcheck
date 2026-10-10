@@ -734,7 +734,8 @@ function attachFreeDayCandidateEvidence(roster: CrewRoster, ...candidates: (Crew
     const evidence = matching.map(item => item.freeDayStartEvidence
       || capturePublishedFreeDayStart(String(item.rawText || '').trim().split(/\s+/), item.date))
       .filter((item): item is NonNullable<RosterDay['freeDayStartEvidence']> => item?.clockSource === 'published');
-    if (!evidence.length || evidence.some(item => item.clock !== evidence[0].clock || item.code !== evidence[0].code)) return day;
+    if (!evidence.length) return day;
+    if (evidence.some(item => item.clock !== evidence[0].clock || item.code !== evidence[0].code)) return { ...day, freeDayStartEvidence: undefined };
     return { ...day, freeDayStartEvidence: evidence[0] };
   }) };
 }
