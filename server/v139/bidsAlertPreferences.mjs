@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { parseJsonColumn, readBody, requireIdentity, sendJson } from './common.mjs';
+import { parseJsonColumn, readBody, requireExistingIdentity, sendJson } from './common.mjs';
 import { DEFAULT_BIDS_ALERT_PREFERENCES, bidsAlertContextKey, bidsCampaignPending, planBidsAlert, validateBidsPreferences } from './bidsAlertPolicy.mjs';
 import { notificationChannelProjection } from '../../shared/notificationChannelPreferences.mjs';
 
@@ -27,8 +27,12 @@ function publicState(state, campaign, eligibility, now) {
   };
 }
 
+function validDeclaration(campaign, eligibility, ownerId, body, now) {
+  return bidsCampaignPending(campaign).length === 0 && eligibility?.verified === true && eligibility?.eligible === true && eligibility.ownerId === ownerId && eligibility.campaignId === campaign.id && eligibility.campaignRevision === campaign.revision && Number.isFinite(now) && now >= Date.parse(campaign.opensAt) && now < Date.parse(campaign.closesAt) && body.confirmed === true && body.contextKey === bidsAlertContextKey(ownerId, campaign);
+}
+
 export async function handleBidsAlertPreferences(req, res, url, {
-  identify = requireIdentity, read = readBody,
+  identify = requireExistingIdentity, read = readBody,
   getCampaign = () => CURRENT_BIDS_ALERT_CAMPAIGN,
   resolveEligibility = () => ({ verified: false, eligible: false }),
   clock = () => Date.now(),
@@ -54,9 +58,9 @@ export async function handleBidsAlertPreferences(req, res, url, {
     sendJson(res, 400, { ok: false, message: 'Confira ação e versão das preferências.' }); return true;
   }
   const preferences = body.action === 'save-preferences' ? validateBidsPreferences(body.preferences) : null;
-  const campaign = getCampaign(), eligibility = await resolveEligibility(context, campaign);
+  let campaign = getCampaign(), eligibility = await resolveEligibility(context, campaign);
   // Incomplete source, forged client metadata or unknown audience cannot create a receipt.
-  if (body.action === 'already-did' && (bidsCampaignPending(campaign).length || eligibility?.verified !== true || eligibility?.eligible !== true || eligibility.ownerId !== ownerId || eligibility.campaignId !== campaign.id || eligibility.campaignRevision !== campaign.revision || !Number.isFinite(clock()) || clock() < Date.parse(campaign.opensAt) || clock() >= Date.parse(campaign.closesAt) || body.confirmed !== true || body.contextKey !== bidsAlertContextKey(ownerId, campaign))) {
+  if (body.action === 'already-did' && !validDeclaration(campaign, eligibility, ownerId, body, clock())) {
     sendJson(res, 409, { ok: false, message: 'Janela, público ou confirmação ainda não validados. Nada foi enviado ou confirmado.' }); return true;
   }
   const connection = await context.db.getConnection();
@@ -70,8 +74,16 @@ export async function handleBidsAlertPreferences(req, res, url, {
     const fingerprint = crypto.createHash('sha256').update(JSON.stringify([body.action, preferences, body.contextKey || ''])).digest('hex');
     const duplicate = state.requestId === body.requestId && state.fingerprint === fingerprint;
     if (!duplicate && state.revision !== body.expectedRevision) throw Object.assign(new Error('As preferências mudaram. Recarregue antes de salvar.'), { status: 409 });
+    let submittedAt;
+    if (body.action === 'already-did' && !duplicate) {
+      campaign = getCampaign();
+      eligibility = await resolveEligibility(context, campaign);
+      const writeNow = clock();
+      if (!validDeclaration(campaign, eligibility, ownerId, body, writeNow)) throw Object.assign(new Error('A janela ou o vínculo mudou enquanto a confirmação aguardava. Nada foi confirmado.'), { status: 409 });
+      submittedAt = new Date(writeNow).toISOString();
+    }
     const next = duplicate ? state : { ...state, revision: state.revision + 1, requestId: body.requestId, fingerprint,
-      ...(preferences ? { preferences } : { receipt: { ownerId, contextKey: body.contextKey, submitted: true, submittedAt: new Date(clock()).toISOString() } }),
+      ...(preferences ? { preferences } : { receipt: { ownerId, contextKey: body.contextKey, submitted: true, submittedAt } }),
     };
     if (!duplicate) await connection.query('UPDATE crewcheck_telegram_state SET payload=?,updated_at=NOW(3) WHERE state_key=?', [JSON.stringify(next), key]);
     await connection.commit();

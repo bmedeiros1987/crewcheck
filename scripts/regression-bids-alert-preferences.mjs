@@ -4,7 +4,7 @@ import { handleBidsAlertPreferences, bidsAlertStateKey } from '../server/v139/bi
 import { bidsAlertContextKey } from '../server/v139/bidsAlertPolicy.mjs';
 
 const states = new Map(), owners = new Map([['A', 'owner-A'], ['B', 'owner-B']]), calls = [];
-let queue = Promise.resolve(), campaign = null;
+let queue = Promise.resolve(), campaign = null, afterConnection = null;
 const query = (store, sql, values) => {
   calls.push(sql);
   if (sql.startsWith('SELECT p.public_id')) { const current = owners.get(values[1].split('@')[0]); return [current === values[2] ? [{ public_id: current, payload: store.get(values[0]) }] : []]; }
@@ -15,6 +15,7 @@ const query = (store, sql, values) => {
   throw Error(`Unexpected SQL: ${sql}`);
 };
 const db = { query: async (sql, values) => query(states, sql, values), getConnection: async () => {
+  afterConnection?.();
   let local, releaseLock, previous, finished = false;
   return {
     async beginTransaction() { previous = queue; queue = new Promise(resolve => releaseLock = resolve); await previous; local = new Map(states); },
@@ -69,6 +70,14 @@ try {
     assert.equal((await request('A', receipt)).status, 409, 'declaration outside official window is rejected');
     assert.equal(JSON.stringify([...states]), savedStates, 'rejected declaration makes no write'); now = savedNow;
   }
+  const savedNow = now, savedStates = JSON.stringify([...states]);
+  now = Date.parse(source.closesAt) - 1; afterConnection = () => { now += 1000; };
+  assert.equal((await request('A', receipt)).status, 409, 'closing while waiting for connection/locks rejects declaration');
+  assert.equal(JSON.stringify([...states]), savedStates, 'late declaration transaction rolls back');
+  afterConnection = null; now = savedNow;
+  afterConnection = () => { campaign = { ...source, revision: 'changed-during-lock' }; };
+  assert.equal((await request('A', receipt)).status, 409, 'source revision changed while waiting rejects old context');
+  assert.equal(JSON.stringify([...states]), savedStates); afterConnection = null; campaign = source;
   const result = await request('A', receipt); assert.equal(result.status, 200); assert.equal(result.data.alreadyDid, true); assert.equal(result.data.plan.reason, 'already_did');
   assert.equal((await request('A', receipt)).data.revision, result.data.revision, 'receipt replay does not increment revision');
   campaign = { ...source, revision: 'v2' };
