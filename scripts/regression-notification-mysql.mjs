@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { handleBidsCore } from '../server/v139/bidsCore.mjs';
 import { notifyBidRows, claimBid } from '../server/v139/bidsNotify.mjs';
 import { confirmCycle, cycleJobPrefix, cycleStateKey, LEAVE_CYCLE } from '../server/v139/notificationCycles.mjs';
+import { FREE_DAY_SCOPE, mutateFreeDayHeld, readFreeDayHeldState } from '../server/free-day-held.mjs';
 import { dispatchClaimedJob } from '../server/notification-job-safety.mjs';
 import { notificationStateDeletionStatements } from '../server/v139/notificationStateDeletion.mjs';
 
@@ -123,7 +124,28 @@ try {
     if(sends){assert.equal(dispatch.status,'sent');assert.equal(confirmation.inFlight,true);}else assert(['cancelled','skipped'].includes(dispatch.status));
     assert.equal((await db.query('SELECT status FROM crewcheck_notification_jobs WHERE id=?',[job.id]))[0][0].status,sends?'sent':'cancelled');
   });
-  await run('account deletion removes owned cycle decisions, tombstones, claims and jobs',async()=>{
+  await run('held free-day SQL persists consent/reference, serializes duplicates and revocation, never dispatches',async()=>{
+    await db.query('CREATE TABLE IF NOT EXISTS crewcheck_platform_rosters(id VARCHAR(80) PRIMARY KEY,owner_email VARCHAR(190),roster JSON NOT NULL,active BOOLEAN NOT NULL) ENGINE=InnoDB');
+    await db.query('DELETE FROM crewcheck_platform_rosters');
+    const roster=clock=>({year:2026,month:8,crewId:'900001',base:'BSB',days:[12,13].map(n=>({date:n+'/08/2026',type:n===12?'DO':'DR',legs:[],freeDayStartEvidence:{date:n+'/08/2026',code:n===12?'DO':'DR',clock,clockSource:'published',timeZoneSource:'published',utcOffsetMinutes:-180,origin:'AIMS published rest tokens',tokenExcerpt:(n===12?'DO':'DR')+' '+clock+' BSB'}}))});
+    await db.query('INSERT INTO crewcheck_platform_rosters VALUES(?,?,?,TRUE)',['held-source',email,JSON.stringify(roster('01:46'))]);
+    await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE payload=VALUES(payload)',['link-email:'+email,JSON.stringify({email,chatId:'fictional-held-chat',linkedAt:new Date().toISOString(),code:'synthetic-code'})]);
+    const user={email,id:owner},now=Date.now(),request=(action,expectedRevision,extra={})=>mutateFreeDayHeld(db,user,{scope:FREE_DAY_SCOPE,action,expectedRevision,...extra},{now,configured:true});
+    assert.equal((await request('grant',0)).revision,1);
+    assert.equal((await readFreeDayHeldState(db,user,{now,configured:true})).consent,true);
+    assert.equal((await request('reference',1,{sourceId:'held-source'})).revision,2);
+    await db.query('UPDATE crewcheck_platform_rosters SET roster=? WHERE id=?',[JSON.stringify(roster('08:30')),'held-source']);
+    const held=await Promise.all(Array.from({length:8},()=>request('prepare',2,{sourceId:'held-source',sequenceDate:'2026-08-12'})));
+    assert.equal(new Set(held.map(x=>x.jobKey)).size,1);assert.equal(held.filter(x=>!x.duplicate).length,1);assert.equal(held[0].delayMinutes,404);assert.equal(held[0].sourceVerified,false);
+    const [rows]=await db.query('SELECT * FROM crewcheck_notification_jobs WHERE email=? AND job_key=?',[email,held[0].jobKey]);assert.equal(rows.length,1);assert.equal(rows[0].status,'held');assert.equal(rows[0].chat_id,null);
+    assert.equal((await db.query("SELECT COUNT(*) AS n FROM crewcheck_notification_jobs WHERE job_key=? AND status='pending'",[held[0].jobKey]))[0][0].n,0);
+    await db.query("UPDATE crewcheck_notification_jobs SET status='processing',locked_at=NOW(3) WHERE job_key=?",[held[0].jobKey]);let deliveries=0;
+    assert.equal((await dispatchClaimedJob(db,rows[0],{deliver:async()=>{deliveries++;return{ok:true};}})).status,'cancelled');assert.equal(deliveries,0);
+    const [revocation,replay]=await Promise.allSettled([request('revoke',2),request('prepare',2,{sourceId:'held-source',sequenceDate:'2026-08-12'})]);
+    assert.equal(revocation.status,'fulfilled');if(replay.status==='fulfilled')assert.equal(replay.value.status,'cancelled');else assert.equal(replay.reason.code,'CONSENT_REVISION_CHANGED');
+    assert.equal((await readFreeDayHeldState(db,user,{now})).consent,false);
+  });
+  await run('account deletion removes owned cycle/free-day decisions, tombstones, claims and jobs',async()=>{
     await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',['notification-cycle:other',JSON.stringify({email:'other@example.test'})]);
     for(const [sql,args] of notificationStateDeletionStatements(email)) await db.query(sql.replace(/\$1/g,'?'),args);
     // Existing canonical account deletion already removes these ordinary link/profile keys.
