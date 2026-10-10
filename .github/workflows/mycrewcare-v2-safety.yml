@@ -1,0 +1,70 @@
+name: MyCrewCare v2 safety candidate
+
+on:
+  pull_request:
+    paths:
+      - 'shared/myCrewCare*'
+      - 'client/src/lib/myCrewCare.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCarePortal.java'
+      - 'android-wrapper/app/src/main/assets/mycrewcare-transport-v2.js'
+      - 'scripts/regression-mycrewcare-v2.mjs'
+      - 'scripts/assert-mycrewcare-v2-ownership.mjs'
+      - 'client/src/lib/crewWake.ts'
+      - 'client/src/components/wakeup/**'
+      - 'scripts/wake-v1/**'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
+      - 'docs/mycrewcare-v2-safety-candidate.md'
+      - '.github/workflows/mycrewcare-v2-safety.yml'
+      - 'scripts/v139/**'
+      - 'scripts/ci/sync-canonical-manual.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Synthetic behavior before preparation
+        run: |
+          node scripts/assert-mycrewcare-v2-ownership.mjs
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" node --test scripts/regression-mycrewcare-v2.mjs
+          done
+      - name: Complete canonical preparation
+        run: node scripts/v139/apply.mjs
+      - name: Synthetic behavior after preparation
+        run: |
+          node scripts/assert-mycrewcare-v2-ownership.mjs
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" node --test scripts/regression-mycrewcare-v2.mjs
+          done
+          node scripts/regression-p0-525-stay-physical-association.mjs
+          node scripts/regression-p1-566-stay-wakeup-concierge-context.mjs
+          node scripts/regression-concierge-stay-menu.mjs
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Web build
+        run: npx vite build
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - name: Android debug compilation only
+        run: gradle -p android-wrapper --no-daemon --console=plain :app:assembleDebug
