@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { CalendarProvenanceError, stampCreatedEvent, assertEventProvenance, preservePatchProvenance } from './calendar-event-provenance.mjs';
 
 const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned';
 const GOOGLE_API = 'https://www.googleapis.com/calendar/v3';
@@ -288,6 +289,8 @@ async function refreshAccessToken(userKey, token, cfg) {
     ...token,
     ...payload,
     refresh_token: payload.refresh_token || token.refresh_token,
+    // The token endpoint establishes that this access token belongs to this grant.
+    calendar_provenance_grant_verified: true,
     expires_at: Date.now() + Math.max(60, Number(payload.expires_in || 3600)) * 1000,
     updated_at: new Date().toISOString(),
   };
@@ -391,10 +394,10 @@ async function handleCallback(_req, res, url) {
   }
   try {
     const exchanged = await exchangeAuthorizationCode(code, record.verifier, cfg);
-    const existing = await storeGet(tokenStoreKey(record.userKey));
     const token = {
       access_token: exchanged.access_token,
-      refresh_token: exchanged.refresh_token || existing?.refresh_token || '',
+      // Never combine a newly selected Google account with a previous account's grant.
+      refresh_token: exchanged.refresh_token || '',
       token_type: exchanged.token_type || 'Bearer',
       scope: exchanged.scope || GOOGLE_SCOPE,
       expires_at: Date.now() + Math.max(60, Number(exchanged.expires_in || 3600)) * 1000,
@@ -444,15 +447,50 @@ async function handleProxy(req, res, context) {
   const method = String(body.method || 'GET').toUpperCase();
   if (!allowedGooglePath(googlePath)) return sendJson(res, 403, { ok: false, code: 'GOOGLE_PATH_BLOCKED', message: 'O CrewCheck permite somente eventos do calendário principal.' });
   if (!['GET', 'POST', 'PATCH', 'DELETE'].includes(method)) return sendJson(res, 405, { ok: false, message: 'Operação não permitida no Google Calendar.' });
+  const mutation = method !== 'GET';
+  const [pathname, query = ''] = googlePath.split('?');
+  const eventId = pathname.match(/^\/calendars\/primary\/events\/([A-Za-z0-9_-]+)$/)?.[1];
+  if (mutation) {
+    // Mutations require a real authenticated session, even in local auth-optional mode.
+    if (!auth.identity) return sendJson(res, 401, { ok: false, code: 'AUTH_REQUIRED', message: 'Entre no CrewCheck para sincronizar.' });
+    if ((method === 'POST' && pathname !== '/calendars/primary/events') || (method !== 'POST' && !eventId)
+      || [...new URLSearchParams(query)].some(([key, value]) => key !== 'sendUpdates' || value !== 'none')) {
+      return sendJson(res, 403, { ok: false, code: 'GOOGLE_PATH_BLOCKED', message: 'Caminho de alteração não permitido.' });
+    }
+  }
   try {
     let token = await validToken(auth.userKey);
+    if (mutation && !token.calendar_provenance_grant_verified) token = await validToken(auth.userKey, true);
+    let eventBody = body.body;
+    if (mutation && method !== 'DELETE') {
+      try { eventBody = typeof eventBody === 'string' ? JSON.parse(eventBody) : eventBody; }
+      catch { eventBody = null; }
+      if (!eventBody || typeof eventBody !== 'object' || Array.isArray(eventBody)) {
+        return sendJson(res, 400, { ok: false, code: 'GOOGLE_EVENT_BODY_INVALID', message: 'Evento inválido.' });
+      }
+    }
+    const binding = { userKey: auth.userKey, refreshToken: token.refresh_token,
+      secret: oauthConfig().encryptionSecret, calendarId: 'primary' };
+    let etag;
+    if (method === 'POST') eventBody = stampCreatedEvent(eventBody, binding);
+    if (method === 'PATCH' || method === 'DELETE') {
+      // Never use fields/other request query parameters for the authorization read.
+      const current = await fetch(`${GOOGLE_API}${pathname}`, {
+        method: 'GET', headers: { authorization: `Bearer ${token.access_token}`, accept: 'application/json' },
+      });
+      if (!current.ok) return sendJson(res, current.status, { ok: false, code: 'GOOGLE_EVENT_CHECK_FAILED', message: 'Não foi possível verificar o evento. Nenhuma alteração foi feita.' });
+      const event = await current.json().catch(() => null);
+      assertEventProvenance(event, eventId, binding);
+      etag = event.etag;
+      if (method === 'PATCH') eventBody = preservePatchProvenance(eventBody, event);
+    }
     const requestOptions = {
       method,
-      headers: { authorization: `Bearer ${token.access_token}`, accept: 'application/json', ...(method === 'GET' || method === 'DELETE' ? {} : { 'content-type': 'application/json' }) },
-      body: method === 'GET' || method === 'DELETE' ? undefined : (typeof body.body === 'string' ? body.body : JSON.stringify(body.body || {})),
+      headers: { authorization: `Bearer ${token.access_token}`, accept: 'application/json', ...(etag ? { 'If-Match': etag } : {}), ...(method === 'GET' || method === 'DELETE' ? {} : { 'content-type': 'application/json' }) },
+      body: method === 'GET' || method === 'DELETE' ? undefined : JSON.stringify(eventBody),
     };
     let response = await fetch(`${GOOGLE_API}${googlePath}`, requestOptions);
-    if (response.status === 401) {
+    if (response.status === 401 && !mutation) {
       token = await validToken(auth.userKey, true);
       response = await fetch(`${GOOGLE_API}${googlePath}`, { ...requestOptions, headers: { ...requestOptions.headers, authorization: `Bearer ${token.access_token}` } });
     }
@@ -465,6 +503,7 @@ async function handleProxy(req, res, context) {
     }
     return sendJson(res, 200, { ok: true, status: response.status, data: payload });
   } catch (error) {
+    if (error instanceof CalendarProvenanceError) return sendJson(res, error.status, { ok: false, code: error.code, message: error.message });
     return sendJson(res, 401, { ok: false, code: 'GOOGLE_RECONNECT_REQUIRED', message: safeMessage(error instanceof Error ? error.message : error) });
   }
 }
