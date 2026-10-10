@@ -6,7 +6,7 @@ import {createServer} from 'vite';
 const {chromium}=createRequire(process.env.CREWLOCKER_TEST_PACKAGE || import.meta.url)('playwright');
 const state=process.env.CREWLOCKER_STATE || 'raw';
 const out=path.resolve('artifacts/crewlocker-validity');fs.mkdirSync(out,{recursive:true});
-const html=`<!doctype html><html lang="pt-BR"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0"><div id="root"></div><script type="module">
+const html=`<!doctype html><html lang="pt-BR"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;font-family:system-ui,sans-serif"><div id="root"></div><script type="module">
 import React from 'react';
 import {createRoot} from 'react-dom/client';
 import CrewLockerView from '/src/components/v1435/CrewLockerView.tsx';

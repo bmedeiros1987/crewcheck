@@ -78,3 +78,15 @@ transactional reservation/concurrent edits, PIN create races, session/logout and
 owner isolation; compiled manual UI at 320/390/1440, light/dark, focus and labels.
 Synthetic files use different dates/classes and no real document or identifiers.
 Independent review and CI verdict remain mandatory before merge/deploy.
+
+## Local validation outcome
+
+Raw and prepared production-module regressions passed. The compiled CrewLocker
+component passed six browser combinations per state (320/390/1440, light/dark),
+including visible keyboard focus, manual confirmation, renewal, reload, logout
+and account switching. No external request or notification permission prompt.
+TypeScript passed raw and prepared. Standard npm run build passed in the prepared
+application (Vite reports the existing large-chunk size warning). Synthetic
+reports and screenshots are saved under artifacts/crewlocker-validity and in the
+Library review package; they are not committed as user data. CI and independent
+review verdicts are still required; no merge or deployment performed.
