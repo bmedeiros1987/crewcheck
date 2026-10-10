@@ -67,7 +67,7 @@ if (materialized) {
 }
 
 const clone = x => JSON.parse(JSON.stringify(x));
-function harness() {
+function harness({ realFortalezaCatalog = false } = {}) {
   const profile = { email: 'route-a@example.invalid', name: 'Synthetic A', chatId: '9001', linked: true, authenticated: true };
   const other = { ...profile, email: 'route-b@example.invalid', name: 'Synthetic B', chatId: '9002' };
   let activeProfile = profile;
@@ -93,9 +93,12 @@ function harness() {
     conciergeCurrentStay: () => null, conciergeStayRecords: () => [],
     conciergeProgramRecords: () => [], conciergeNextProgram: () => null,
     conciergeNextJourneyProgram: () => null, conciergeJourneyProgramRecords: () => [],
-    conciergeLocationContextV14335: () => ({ fresh: true, location: { city: 'Guarulhos', state: 'SP' } }),
+    conciergeLocationContextV14335: () => ({ fresh: true, location: realFortalezaCatalog ? { city: 'Fortaleza', state: 'CE' } : { city: 'Guarulhos', state: 'SP' } }),
     WEATHER_AIRPORT_POINTS: { GRU: { city: 'Guarulhos' } },
-    searchVerifiedWellhub: async input => { trace.search.push(clone(input)); return [partner]; },
+    searchVerifiedWellhub: async input => {
+      trace.search.push(clone(input));
+      return realFortalezaCatalog ? wellhub.searchVerifiedWellhub({ ...input, live: false, now: new Date('2026-10-10T18:05:00Z') }) : [partner];
+    },
     handleTelegramWeatherCallback: async () => false, handleTelegramCallCallback: async () => false,
     handleV139Telegram: async () => false, handlePlatformVisitorTelegram: async () => false,
     telegramTryBindFromWebhook: async () => false, telegramMessagePdfDocument: () => null,
@@ -315,5 +318,22 @@ test('unrelated name replies still use the pending identity flow', async () => {
     await h.send('app', phrase);
     assert.equal((await h.load()).preferences[field], phrase);
     assert.equal((await h.load()).preferences.wellhubPlan, 'basic');
+  }
+});
+
+test('Fortaleza official catalog through actual Telegram, WhatsApp and app routing', async () => {
+  for (const channel of ['telegram', 'whatsapp', 'app']) {
+    const h = harness({ realFortalezaCatalog: true });
+    h.seed({ wellhubPlan: 'silver-plus' });
+    for (const text of ['/academias', 'academia em Fortaleza/CE', 'academia Greenlife']) {
+      const reply = await h.send(channel, text);
+      assert.match(reply, /seu plano Silver\+/);
+      assert.equal((reply.match(/Acesso: ✓/g) || []).length, text.endsWith('Greenlife') ? 2 : 4);
+      assert.match(reply, /Fortaleza\/CE/);
+      assert.doesNotMatch(reply, /Brasília|\/DF|\/SP/);
+      assert.equal(h.trace.gyms.at(-1), text);
+      assert.equal(h.trace.search.at(-1).locationText, 'Fortaleza CE');
+      assert.equal(h.trace.search.at(-1).plan, 'silver-plus');
+    }
   }
 });
