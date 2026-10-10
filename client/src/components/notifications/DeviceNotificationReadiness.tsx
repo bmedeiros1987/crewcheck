@@ -11,6 +11,7 @@ function readStatus(): { native: boolean; status: Status } {
       return { native: true, status: parsed && typeof parsed === 'object' ? parsed : {} };
     }
   } catch { return { native: Boolean(native), status: {} }; }
+  if (native) return { native: true, status: {} };
   return { native: false, status: { notifications: 'Notification' in window ? Notification.permission === 'granted' : undefined } };
 }
 
@@ -29,7 +30,7 @@ export function DeviceNotificationReadiness() {
     : status.notifications !== true ? 'Permissão neste aparelho não verificada.'
     : native && status.notificationAppEnabled === false ? 'Notificações do app bloqueadas nas configurações do Android.'
     : native && status.notificationChannelEnabled === false ? 'Canal Alertas CrewCheck bloqueado nas configurações do Android.'
-    : native && (status.notificationAppEnabled !== true || status.notificationChannelEnabled == null) ? 'Permissão concedida; disponibilidade do canal ainda não verificada.'
+    : native && (status.notificationAppEnabled !== true || status.notificationChannelEnabled !== true) ? 'Permissão concedida; disponibilidade do canal ainda não verificada.'
     : 'Permissão disponível neste aparelho. Isso não comprova envio ou recebimento de um aviso.';
   async function request() {
     if (requesting) return;

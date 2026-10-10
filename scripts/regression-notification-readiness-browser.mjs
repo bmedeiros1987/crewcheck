@@ -48,6 +48,13 @@ try{
  await page.getByText('Canal Alertas CrewCheck bloqueado', {exact:false}).waitFor();
  await page.evaluate(()=>{window.nativeStatus={notifications:true};window.dispatchEvent(new Event('focus'));});
  await page.getByText('disponibilidade do canal ainda não verificada', {exact:false}).waitFor();
+ await page.evaluate(()=>{window.nativeStatus={notifications:true,notificationAppEnabled:true,notificationChannelEnabled:'false'};window.dispatchEvent(new Event('focus'));});
+ await page.getByText('disponibilidade do canal ainda não verificada', {exact:false}).waitFor();
+ assert.equal(await page.getByText('Permissão disponível neste aparelho.', {exact:false}).count(),0);
+ await page.evaluate(()=>{window.savedNativeBridge=window.CrewCheckNative;window.CrewCheckNative={};window.Notification.permission='granted';window.dispatchEvent(new Event('crewcheck:native-ready'));});
+ await page.getByText('Permissão neste aparelho não verificada.', {exact:true}).waitFor();
+ assert.equal(await page.getByText('Permissão disponível neste aparelho.', {exact:false}).count(),0);
+ await page.evaluate(()=>{window.CrewCheckNative=window.savedNativeBridge;window.Notification.permission='denied';});
  await page.evaluate(()=>{window.nativeStatus=null;window.dispatchEvent(new Event('focus'));});
  await page.getByText('Permissão neste aparelho não verificada.', {exact:true}).waitFor();
  await page.evaluate(()=>{window.nativeStatus={notifications:false};window.dispatchEvent(new Event('crewcheck:permissions-updated'));});
