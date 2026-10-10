@@ -52,6 +52,9 @@ import {listPlatformStays,updatePlatformStay,findHotelCompanions} from '@/lib/pl
 import {CREW_HOTEL_CATALOG} from '@/data/crewHotels';
 import {saveNearbyPlacesOrigin} from '@/lib/nearbyPlacesOrigin';
 import {setPendingNavigationContext} from '@/lib/navigationContext';
+import {openStayProgramEditor,consumeStayEditorReturn,readStayEditorIntent,returnFromStayProgramEditor} from '@/lib/stayEditorNavigation';
+import {savedStayEditorEvent} from '@/lib/stayEditorStore';
+import {getToken} from '@/lib/authClient';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import {InternalHeaderFrame} from '@/components/navigation/InternalHeaderFrame';
 import {OperationalLayoutSafety} from '@/components/navigation/OperationalLayoutSafety';
