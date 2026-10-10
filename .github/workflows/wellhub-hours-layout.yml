@@ -36,7 +36,8 @@ jobs:
       - run: node scripts/regression-concierge-wellhub-plan-recognition.mjs --materialized
       - run: npm install --prefix /tmp/wellhub-browser playwright@1.64.0 --ignore-scripts --no-audit --no-fund
       - run: /tmp/wellhub-browser/node_modules/.bin/playwright install --with-deps chromium
-      - run: MENU_PLAYWRIGHT_PACKAGE=/tmp/wellhub-browser/package.json node scripts/regression-wellhub-cards-browser.mjs
+      - name: Validate materialized cards, fixed-navigation clearance and reduced keyboard viewport
+        run: MENU_PLAYWRIGHT_PACKAGE=/tmp/wellhub-browser/package.json node scripts/regression-wellhub-cards-browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
