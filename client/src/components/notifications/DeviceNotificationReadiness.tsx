@@ -7,7 +7,8 @@ function readStatus(): { native: boolean; status: Status } {
   try {
     if (native?.permissionStatus) {
       const value = native.permissionStatus();
-      return { native: true, status: typeof value === 'string' ? JSON.parse(value) : value || {} };
+      const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+      return { native: true, status: parsed && typeof parsed === 'object' ? parsed : {} };
     }
   } catch { return { native: Boolean(native), status: {} }; }
   return { native: false, status: { notifications: 'Notification' in window ? Notification.permission === 'granted' : undefined } };
