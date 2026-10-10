@@ -152,6 +152,7 @@ jobs:
           node scripts/regression-free-day-sources-browser.mjs
           node scripts/regression-free-day-source-queue-browser.mjs
           node scripts/regression-free-day-personal-consent-browser.mjs
+          node scripts/regression-free-day-simulated-worker-browser.mjs
           node scripts/regression-free-day-browser.cjs
       - name: Save synthetic free-day alert evidence
         if: always()
@@ -165,6 +166,7 @@ jobs:
             artifacts/free-day-sources/
             artifacts/free-day-source-queue/
             artifacts/free-day-personal-consent/
+            artifacts/free-day-simulated-worker/
           if-no-files-found: ignore
       - name: Verify planned comparison with synthetic account switching
         env:
