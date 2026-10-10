@@ -1,3 +1,4 @@
+import { handlePersonalConsent } from './free-day-personal-consent.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { URL } from 'node:url';
@@ -538,6 +539,7 @@ http.createServer = function patchedCreateServer(...args) {
     const path = pathname(req);
     try {
       if (path === '/api/notifications/runtime-health') return runtimeHealth(req, res);
+      if (path === '/api/notifications/free-day-personal-consent') return handlePersonalConsent(req, res, { identity, readJson, dbPool, sendJson });
       if (path === '/api/notifications/free-day-source-queue') return handleSourceQueue(req, res, { identity, readJson, dbPool, sendJson, configured: Boolean(String(process.env.TELEGRAM_BOT_TOKEN || process.env.CREWCHECK_TELEGRAM_BOT_TOKEN || '').trim()) });
       if (path === '/api/notifications/free-day-sources') return handleVoluntarySources(req, res, { identity, readJson, dbPool, sendJson });
       if (path === '/api/notifications/free-day-held') return handleFreeDayHeld(req, res, { identity, readJson, dbPool, sendJson, configured: Boolean(String(process.env.TELEGRAM_BOT_TOKEN || process.env.CREWCHECK_TELEGRAM_BOT_TOKEN || '').trim()) });

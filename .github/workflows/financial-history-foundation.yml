@@ -23,6 +23,7 @@ on:
       - 'client/src/components/FreeDayPostponementAlerts.tsx'
       - 'client/src/components/FreeDaySourceConsent.tsx'
       - 'client/src/components/FreeDaySourceQueue.tsx'
+      - 'client/src/components/FreeDayPersonalConsent.tsx'
       - 'server/free-day-sources.mjs'
       - 'server/free-day-source-*.mjs'
       - 'scripts/fixtures/free-day-source-*'
@@ -150,6 +151,7 @@ jobs:
           node scripts/regression-free-day-physical.mjs
           node scripts/regression-free-day-sources-browser.mjs
           node scripts/regression-free-day-source-queue-browser.mjs
+          node scripts/regression-free-day-personal-consent-browser.mjs
           node scripts/regression-free-day-browser.cjs
       - name: Save synthetic free-day alert evidence
         if: always()
@@ -162,6 +164,7 @@ jobs:
             artifacts/free-day-ui/
             artifacts/free-day-sources/
             artifacts/free-day-source-queue/
+            artifacts/free-day-personal-consent/
           if-no-files-found: ignore
       - name: Verify planned comparison with synthetic account switching
         env:

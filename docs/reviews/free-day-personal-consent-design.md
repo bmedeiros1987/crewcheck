@@ -1,6 +1,6 @@
 # Consentimento pessoal e ativação restrita — desenho para revisão
 
-Estado: proposta; não implementa consentimento, ativação, permissões ou envios.
+Estado: draft com UI/API de autorização pessoal implementadas; oferta desligada por padrão, sem ativação de despacho, concessão em produção ou envios.
 Base: main 2f6a0265ec927c62748c1615150526309d404ade. PR977 permanece inerte.
 
 ## Fluxo publicado confirmado
@@ -34,7 +34,7 @@ a proposta abaixo reduz a apresentação a canal e destino mascarado.
    capacidade de despacho restrita à mesma conta. A chave global isoladamente
    jamais autoriza qualquer conta, nem libera o backlog.
 
-Esta PR executa somente o desenho da etapa 1. Não altera configuração Render,
+Esta PR implementa UI/API da etapa 1. Não altera configuração Render,
 não preenche allowlist, não identifica titular, não coleta novas credenciais.
 
 ## Contrato proposto da UI/API
@@ -116,6 +116,29 @@ condições financeiras verificadas separadamente.
 `client/src/components/FreeDaySourceQueue.tsx`: controle real desabilitado.
 `server/free-day-source-queue.mjs` e `server/notification-job-safety.mjs`: bloqueios.
 
-Limite desta entrega: desenho reviewable. Não existe novo fluxo de consentimento
-implementado por esta PR; nenhuma instrução para consentir deve ser enviada ao
-titular até a implementação correspondente estar publicada e disponível.
+Limite desta entrega: UI/API reviewable, ainda draft e sem despacho real. Nenhuma
+instrução para consentir deve ser enviada ao titular até publicação, oferta restrita
+explicitamente habilitada e disponibilidade confirmada para sua conta.
+
+## Implementação deste draft
+
+`/api/notifications/free-day-personal-consent` oferece GET e POST grant/revoke.
+`CREWCHECK_FREE_DAY_PERSONAL_CONSENT_OFFER` exige literal `true` e
+`CREWCHECK_FREE_DAY_PERSONAL_CONSENT_OWNER_IDS` exige ID público exato; defaults false/[];
+nenhuma variável de produção foi alterada. Revogar continua possível quando a oferta
+é desligada. O consentimento é persistido na metadata já existente do job held, com
+contexto opaco ligado ao perfil/recibos/vínculo, revisão própria CAS, texto v1 e TTL
+limitado pela preparação. Repetição da mesma operação é idempotente; concessão velha
+não ressuscita autorização revogada. Substituição/expiração da preparação ou mudança
+do vínculo cancelam jobs e removem sua metadata, incluindo autorização pessoal.
+Revogação pessoal remove a autorização efetiva, preservando apenas a reserva held
+para simulação e o registro mínimo de revogação; não libera/recria jobs.
+Não há implementação de transição para pending ou dispatcher real neste draft.
+A futura etapa de despacho deve revisar cancelamento de jobs ativos e rechecagem
+imediata do consentimento antes do provider, conforme o desenho acima.
+
+A UI está separada em `FreeDayPersonalConsent.tsx`, na seção da fila existente.
+Só envia grant após checkbox e clique pessoal; sessão, revisão, bloqueio por troca
+de arquivo e respostas atrasadas invalidam a confirmação local. Exibe destino
+mascarado sem username. O rótulo da fila simulada legado permanece como publicado.
+Testes unitários, browser e MySQL usam somente contas e vínculos sintéticos.

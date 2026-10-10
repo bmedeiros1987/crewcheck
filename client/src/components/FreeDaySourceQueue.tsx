@@ -1,3 +1,4 @@
+import {FreeDayPersonalConsent} from './FreeDayPersonalConsent';
 import {useEffect,useRef,useState} from 'react';
 import {getToken,getStoredUser} from '@/lib/authClient';
 const scope='free-day-source-simulation-v1';
@@ -32,7 +33,7 @@ export function FreeDaySourceQueue({session,revision,blocked}:{session:string;re
   <p data-existing-destination>{state?.destination?`Destino existente validado no servidor: ${state.destination.label}`:'Nenhum destino existente validado. Nenhum destinatário será presumido.'}</p>
   {state && <p>Configuração existente do canal: {state.telegramConfigured?'presente':'pendente'}. Nenhuma configuração será criada nesta simulação.</p>}
   <p>Entrega real globalmente desabilitada. A fila e o transporte local podem ser simulados com os recibos confirmados; nenhum documento ou conteúdo será compartilhado.</p>
-  <label><input type="checkbox" disabled checked={false} aria-label="Consentimento para envio real indisponível" />Quando a entrega for ativada, preciso consentir especificamente com avisos reais neste destino, segundo as versões que enviei. A autorização de preparação não ativa envios.</label>
+  <FreeDayPersonalConsent session={session} revision={revision} blocked={blocked || busy} />
   <button type="button" disabled={busy || blocked} onClick={()=>void request()}>Atualizar vínculo existente</button>
   <button type="button" disabled={busy || blocked || !eligible || Boolean(state?.job)} onClick={()=>void request('prepare')}>Preparar fila simulada</button>
   <button type="button" disabled={busy || blocked || !eligible || state?.job?.status!=='held'} onClick={()=>void request('simulate')}>Simular transporte local</button>
