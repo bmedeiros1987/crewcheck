@@ -24,3 +24,7 @@ A Library confirmou `113584.jpg`, JPEG, 333583 bytes, enviado em 2026-10-10T17:1
 - Sessão/preferências: convidado, timers, storage entre abas, reset, troca de conta e logout. Espera pelo estado real substitui atraso fixo frágil no teste.
 
 Screenshots públicos usam somente fixtures sintéticas; APIs externas foram interceptadas. Chromium emulado no cloud não substitui QA físico Android. Relatórios JSON e screenshots acompanham o pacote Library, com HEAD/diff/estado de CI. Nenhum merge ou deploy executado. A referência visual indisponível e a revisão independente permanecem gates antes de integração.
+
+## Cobertura de animação após revisão
+
+O teste anterior de ancestral artificialmente animado verificava reposicionamento automático do opener. O contrato agora restaura exatamente os offsets e o zoom anteriores. O cenário translateY(0→−20px), 120 ms, foi restaurado no teste do app compilado em 320 px, tema claro, fonte 200%, tanto em Ajustar quanto em 100%. Depois da animação, verifica offsets/zoom iguais, foco no opener, botão inteiramente entre cabeçalho e rodapé com 12 px de folga, e cabeçalho imóvel. Somente teste/documentação mudam neste follow-up; código de produção permanece idêntico ao HEAD revisado 94332ab2491b11ff0bceb5b68abb42e259d345f6.
