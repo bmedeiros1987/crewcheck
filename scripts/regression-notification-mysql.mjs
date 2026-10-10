@@ -166,7 +166,17 @@ try {
     assert.equal((await voluntarySources(db,user)).review.before.starts[0].clock,'01:46');
     const [revoked,replay]=await Promise.allSettled([voluntarySources(db,user,{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:1}),voluntarySources(db,user,{...body,expectedRevision:1})]);
     assert.equal(revoked.status,'fulfilled');assert.equal(replay.status,'rejected');assert.equal((await voluntarySources(db,user)).review,null);
-    await voluntarySources(db,user,{...body,expectedRevision:2});
+    const ttlSaved=await voluntarySources(db,user,{...body,expectedRevision:2});
+    const expiredNow=Date.parse(ttlSaved.expiresAt)+1;
+    await assert.rejects(voluntarySources(db,user,{...body,expectedRevision:3},{now:expiredNow}),error=>error.code==='SOURCE_REVISION_CHANGED');
+    const readPersisted=async()=>{const payload=(await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[sourceKey(user)]))[0][0].payload;return typeof payload==='string'?JSON.parse(payload):payload;};
+    let persisted=await readPersisted();
+    assert.equal(persisted.revision,4);assert.equal(persisted.consent,false);assert.equal(persisted.review,undefined);
+    const ttlAgain=await voluntarySources(db,user,{...body,expectedRevision:4},{now:expiredNow});
+    const revokedExpired=await voluntarySources(db,user,{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:5},{now:Date.parse(ttlAgain.expiresAt)+1});
+    assert.equal(revokedExpired.alreadyRevoked,true);assert.equal(revokedExpired.revision,6);assert.equal(revokedExpired.consent,false);
+    persisted=await readPersisted();
+    assert.equal(persisted.review,undefined);assert.equal(persisted.consent,false);
     assert.equal((await counts())[0][0].n,beforeCount,'voluntary source flow never writes queue');
     assert.equal((await db.query('SELECT COUNT(*) AS n FROM crewcheck_telegram_state WHERE state_key=?',[sourceKey(user)]))[0][0].n,1);
   });

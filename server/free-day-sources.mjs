@@ -40,6 +40,7 @@ export async function voluntarySources(db,user,body=null,{now=Date.now()}={}) {
   if (!user?.email || !user?.id) fail(401,'SESSION_REQUIRED');
   if (body && (!only(body,['scope','action','expectedRevision','before','after','sequenceDate','confirmed','consent']) || body.scope!==SOURCE_SCOPE)) fail(400,'CLIENT_AUTHORITY_REJECTED');
   const c=await db.getConnection();
+  let committed=false;
   try {
     await c.beginTransaction();
     const [owners]=await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',[user.email]);
@@ -49,7 +50,18 @@ export async function voluntarySources(db,user,body=null,{now=Date.now()}={}) {
     const stored=parse(rows[0]?.payload);
     let state=stored.ownerId===user.id && stored.scope===SOURCE_SCOPE?stored:{email:user.email,ownerId:user.id,scope:SOURCE_SCOPE,revision:0,consent:false};
     // Physical receipt expiry is enforced on the next authenticated access, without a background job.
-    if (state.review && !(Date.parse(state.expiresAt)>now)) { state={email:user.email,ownerId:user.id,scope:SOURCE_SCOPE,revision:state.revision+1,consent:false}; await save(c,key,state); }
+    if (state.review && !(Date.parse(state.expiresAt)>now)) {
+      const expiredRevision=state.revision;
+      state={email:user.email,ownerId:user.id,scope:SOURCE_SCOPE,revision:expiredRevision+1,consent:false};
+      await save(c,key,state);
+      // Commit retention cleanup while holding the owner lock. A stale POST
+      // must not roll it back, and no subsequent mutation uses the released lock.
+      await c.commit(); committed=true;
+      if (!body) return publicState(state,now);
+      if (body.action==='revoke' && only(body,['scope','action','expectedRevision']) && body.expectedRevision===expiredRevision)
+        return {...publicState(state,now),expired:true,alreadyRevoked:true};
+      fail(409,'SOURCE_REVISION_CHANGED');
+    }
     if (body) {
       if (!Number.isInteger(body.expectedRevision) || body.expectedRevision!==state.revision) fail(409,'SOURCE_REVISION_CHANGED');
       if (body.action==='revoke') {
@@ -72,7 +84,7 @@ export async function voluntarySources(db,user,body=null,{now=Date.now()}={}) {
       await save(c,key,state);
     }
     await c.commit(); return publicState(state,now);
-  } catch(error) { await c.rollback(); throw error; } finally { c.release(); }
+  } catch(error) { if (!committed) await c.rollback(); throw error; } finally { c.release(); }
 }
 async function save(c,key,state) { await c.query('INSERT INTO crewcheck_telegram_state (state_key,payload,updated_at) VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE payload=VALUES(payload),updated_at=NOW(3)',[key,JSON.stringify(state)]); }
 export async function handleVoluntarySources(req,res,{identity,dbPool,readJson,sendJson}) {

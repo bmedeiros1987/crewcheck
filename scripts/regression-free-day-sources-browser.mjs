@@ -47,6 +47,35 @@ try {
   assert.equal(await save.isDisabled(),true);assert.equal(await page.locator('ul').count(),0);assert.equal(posts.length,2);
   assert.deepEqual(errors,[]);await context.close();
  }
- fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({synthetic:true,timezones:['UTC','America/Sao_Paulo','Asia/Tokyo'],physicalPdf:true,delayMinutes:404,receiptOnly:true,officialVerified:false,queueWrites:0,delivered:false,checks:['voluntaryLocalPDF','explicitTwoCheckboxes','authenticatedHTTP','minimalReceipt','revokeDeletes','accountSwitchClears']},null,2));
+ // Hold physical file reads to reproduce user review of stale receipts and
+ // multiple selections resolving out of order. No parser/provenance flags are injected.
+ {
+  db.state.rows.clear();posts=[];
+  const context=await browser.newContext({serviceWorkers:'block'});
+  await context.route('**/*',route=>new URL(route.request().url()).origin===origin?route.continue():route.abort());
+  await context.addInitScript(user=>{
+   localStorage.setItem('crewcheck_auth_token','synthetic-only');localStorage.setItem('crewcheck_auth_user',JSON.stringify(user));
+   const original=File.prototype.arrayBuffer,held=new Set();globalThis.syntheticFileGates={};
+   const digest=crypto.subtle.digest.bind(crypto.subtle);globalThis.syntheticLogoutDigests=0;crypto.subtle.digest=async(...args)=>{const result=await digest(...args);if(globalThis.syntheticLogoutStarted)globalThis.syntheticLogoutDigests++;return result;};
+   File.prototype.arrayBuffer=async function(){if(this.name.startsWith('slow-') && !held.has(this.name)){held.add(this.name);await new Promise(resolve=>globalThis.syntheticFileGates[this.name]=resolve);}return original.call(this);};
+  },user);
+  const page=await context.newPage();await page.goto(origin+'/__source_probe');await page.locator('summary').click();
+  const inputs=page.locator('input[type=file]'),checkboxes=page.locator('input[type=checkbox]'),save=page.getByRole('button',{name:'Salvar revisão simulada'});
+  await inputs.nth(0).setInputFiles({name:'synthetic-before.pdf',mimeType:'application/pdf',buffer:pdfBytes(lines('01:46'))});await page.waitForFunction(()=>document.querySelectorAll('ul').length===1);
+  await inputs.nth(1).setInputFiles({name:'synthetic-after.pdf',mimeType:'application/pdf',buffer:pdfBytes(lines('08:30'))});await page.waitForFunction(()=>document.querySelectorAll('ul').length===2);
+  await page.locator('input[type=date]').fill('2026-08-12');await checkboxes.nth(0).check();await checkboxes.nth(1).check();assert.equal(await save.isDisabled(),false);
+  await inputs.nth(1).setInputFiles({name:'slow-first.pdf',mimeType:'application/pdf',buffer:pdfBytes(lines('09:30'))});await page.waitForFunction(()=>Boolean(globalThis.syntheticFileGates['slow-first.pdf']));
+  assert.equal(await page.locator('ul').count(),1,'old receipt removed at selection');assert.equal(await checkboxes.nth(0).isDisabled(),true);assert.equal(await checkboxes.nth(1).isDisabled(),true);assert.equal(await checkboxes.nth(0).isChecked(),false);assert.equal(await save.isDisabled(),true);
+  // setInputFiles can force the second change while the control is disabled;
+  // only the latest extraction for that slot may publish a receipt.
+  await inputs.nth(1).setInputFiles({name:'slow-latest.pdf',mimeType:'application/pdf',buffer:pdfBytes(lines('10:30'))});await page.waitForFunction(()=>Boolean(globalThis.syntheticFileGates['slow-latest.pdf']));
+  await page.evaluate(()=>globalThis.syntheticFileGates['slow-latest.pdf']());await page.getByText('2026-08-12: 10:30',{exact:false}).waitFor();assert.equal(await checkboxes.nth(0).isDisabled(),true,'older parse still pending');
+  await page.evaluate(()=>globalThis.syntheticFileGates['slow-first.pdf']());await page.waitForFunction(()=>!document.querySelector('input[type=checkbox]').disabled);
+  assert.equal(await page.getByText('2026-08-12: 09:30',{exact:false}).count(),0);assert.equal(await checkboxes.nth(0).isChecked(),false);assert.equal(await checkboxes.nth(1).isChecked(),false);assert.equal(await save.isDisabled(),true);assert.equal(posts.length,0);
+  await inputs.nth(1).setInputFiles({name:'slow-logout.pdf',mimeType:'application/pdf',buffer:pdfBytes(lines('11:30'))});await page.waitForFunction(()=>Boolean(globalThis.syntheticFileGates['slow-logout.pdf']));
+  await page.evaluate(()=>{localStorage.removeItem('crewcheck_auth_token');localStorage.removeItem('crewcheck_auth_user');window.dispatchEvent(new Event('crewcheck:auth-changed'));globalThis.syntheticLogoutStarted=true;globalThis.syntheticFileGates['slow-logout.pdf']();});
+  await page.waitForFunction(()=>globalThis.syntheticLogoutDigests>=2);assert.equal(await page.locator('ul').count(),0);assert.equal(await save.isDisabled(),true);assert.equal(posts.length,0);await context.close();
+ }
+ fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({synthetic:true,timezones:['UTC','America/Sao_Paulo','Asia/Tokyo'],physicalPdf:true,delayMinutes:404,receiptOnly:true,officialVerified:false,queueWrites:0,delivered:false,checks:['voluntaryLocalPDF','explicitTwoCheckboxes','authenticatedHTTP','minimalReceipt','revokeDeletes','accountSwitchClears','delayedParseClearsReceipt','confirmationBoundToReceiptIdentity','latestExtractionWins','logoutDuringParse']},null,2));
  console.log('PASS physical PDF → consent UI → authenticated receipt API →404min → revoke/account switch,3TZ, zero raw text/file transfer and zero sends');
 }finally{await browser.close();await server.close();fs.rmSync(harness,{force:true});}
