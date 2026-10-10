@@ -74,7 +74,8 @@ export default function PresentationStayManagerView({ events, initialStayId, emb
       const nav = document.querySelector('.cz-bottom-nav')?.getBoundingClientRect();
       const header = document.querySelector('.cz-global-header')?.getBoundingClientRect();
       const top = Math.max(frame.top, (header?.bottom ?? 0) + 8);
-      Object.assign(root.style, { position: 'fixed', top: `${top}px`, left: `${frame.left}px`, width: `${frame.width}px`, height: `${Math.max(120, (nav?.top ?? window.visualViewport?.height ?? window.innerHeight) - top - 16)}px` });
+      const visibleBottom = Math.min(nav?.top ?? window.innerHeight, window.visualViewport ? window.visualViewport.offsetTop + window.visualViewport.height : window.innerHeight);
+      Object.assign(root.style, { position: 'fixed', top: `${top}px`, left: `${frame.left}px`, width: `${frame.width}px`, height: `${Math.max(0, visibleBottom - top - 16)}px` });
     };
     measure(); const observer = new ResizeObserver(measure);
     for (const element of [editorAnchor.current, document.querySelector('.cz-bottom-nav'), document.querySelector('.cz-global-header'), document.querySelector('.cc-header-notice')]) if(element) observer.observe(element);

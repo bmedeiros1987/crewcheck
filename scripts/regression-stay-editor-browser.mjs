@@ -88,7 +88,7 @@ try {
   await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel salvo sintético');
   assert.equal(await apz.inputValue(),'05:30');
   const layout=[];
-  for (const scenario of [{theme:'light',font:100,height:900},{theme:'dark',font:150,height:600}]) {
+  for (const scenario of [{theme:'light',font:100,height:900},{theme:'dark',font:150,height:600},{theme:'dark',font:150,height:400}]) {
     await page.setViewportSize({width,height:scenario.height});
     await page.evaluate(s=>{document.documentElement.style.setProperty('--cc-safe-area-top','24px');document.documentElement.style.setProperty('--cc-safe-area-bottom','28px');window.applyStayTheme(s.theme);document.documentElement.style.fontSize=`${16*s.font/100}px`},scenario);
     const header=page.locator('.cc-stay-editor-header'), content=page.locator('.cc-stay-editor-content');
@@ -121,7 +121,7 @@ try {
     }
     assert.ok(await content.evaluate(el=>el.scrollHeight>el.clientHeight),'Actual content scrolls');
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'No horizontal clipping');
-    await page.screenshot({path:path.join(output,`layout-${width}-${scenario.theme}-${scenario.font}.png`)});
+    await page.screenshot({path:path.join(output,`layout-${width}-${scenario.theme}-${scenario.font}-${scenario.height}.png`)});
     layout.push(scenario);
   }
   // Reproduce the previous document-scroll layout: header must move, proving
