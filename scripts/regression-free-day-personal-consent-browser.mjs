@@ -55,7 +55,7 @@ try{
  await page.getByRole('button',{name:'Revogar e remover recibos'}).click();await page.getByRole('status').filter({hasText:'revogado'}).waitFor();assert.equal(db.state.jobs.get(key).status,'cancelled');assert.equal(db.state.rows.has(sourceJobStateKey(user,key)),false);
  const afterRevoke=await fetch(url,{method:'POST',headers,body:JSON.stringify({scope:SOURCE_JOB_SCOPE,action:'simulate',expectedRevision:1,jobKey:key})});assert.equal(afterRevoke.status,409);
  // Restore a separately confirmed fixture review for the late-response test.
- const sourceBody=posts.find(x=>!x.queue).body;sourceBody.expectedRevision=2;await fetch(origin+'/api/notifications/free-day-sources',{method:'POST',headers,body:JSON.stringify(sourceBody)});
+ const sourceBody=posts.find(x=>!x.queue).body;sourceBody.expectedRevision=2;sourceBody.after.documentHash='c'.repeat(64);await fetch(origin+'/api/notifications/free-day-sources',{method:'POST',headers,body:JSON.stringify(sourceBody)});
  await page.reload();await page.locator('summary').click();await page.locator('[data-existing-destination]').filter({hasText:'@synthetic_crew'}).waitFor();
  let started;const begin=new Promise(resolve=>started=resolve);replyStarted=started;delayPersonal=true;await page.getByRole('button',{name:'Atualizar autorização e destino'}).click();await begin;
  await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','other-account-token');window.dispatchEvent(new Event('crewcheck:auth-changed'));});heldReply();
