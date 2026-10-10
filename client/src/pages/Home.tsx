@@ -90,7 +90,7 @@ import FinancialStatementImporter from '@/components/finance/FinancialStatementI
 import FinancialHistoryExplorer from '@/components/finance/FinancialHistoryExplorer';
 import FinancialStatementReconciliation from '@/components/finance/FinancialStatementReconciliation';
 import { financialRowsInRange, financialWeeks, financialRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
-import { rosterDisplayIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
+import { rosterDisplayIso, rosterStrictInstant, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
@@ -117,6 +117,7 @@ type ZeroView =
 
 type ZeroLeg = {
   id: string;
+  salaryClockKnown?: boolean;
   day: RosterDay;
   leg?: FlightLeg;
   kind: 'flight' | 'stay' | 'duty' | 'journey-rest';
@@ -1079,7 +1080,15 @@ function currentCompliance(bundle: BundleState) { return bundle.compliance || an
 function currentGym(bundle: BundleState) { try { return getGymRecommendations(bundle.roster); } catch { return []; } }
 
 function buildLegs(roster: CrewRoster): ZeroLeg[] {
-  const normalized = normalizeRosterDays(roster);
+  // Capture salary clock evidence before canonical midnight/arrival fallbacks.
+  // This financial-only annotation never changes regulatory normalization.
+  const clock = (value: unknown) => /^(?:[01]?\d|2[0-3]):[0-5]\d(?:\(\+\d+\))?$/.test(String(value || ''));
+  const clockSourceRoster = { ...roster, days: roster.days.map(day => ({ ...day,
+    legs: (day.legs || []).map(leg => ({ ...leg,
+      salaryClockKnown: clock(leg.departureTime) && clock(leg.arrivalTime),
+    })),
+  })) };
+  const normalized = normalizeRosterDays(clockSourceRoster);
   const canonicalEvents = buildCanonicalRosterEvents(normalized);
 
   const legs = canonicalEvents.map((event): ZeroLeg => {
@@ -1104,6 +1113,7 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
         day,
         leg,
         kind: 'flight',
+        salaryClockKnown: anyLeg.salaryClockKnown === true,
         date: d,
         title,
         subtitle,
@@ -2423,13 +2433,17 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
     const afterVariable = after.salary.production + after.salary.reserve + after.salary.standby
       + after.salary.chief + after.salary.instructorPay;
     const perDiemDelta = nativeForecastDelta(before.perdiem.nativeSummary, after.perdiem.nativeSummary);
+    const salaryReady = before.salary.configured && after.salary.configured
+      && !before.salary.config.requiresManualFunction && !after.salary.config.requiresManualFunction
+      && Number.isFinite(beforeVariable) && Number.isFinite(afterVariable)
+      && [...(before.salary.rows || []), ...(after.salary.rows || [])].every(row => row.timeKnown === true && row.distanceKnown === true && Number.isFinite(row.total));
     return {
-      variableDelta: afterVariable - beforeVariable,
-      plannedVariable: beforeVariable,
-      currentVariable: afterVariable,
-      plannedGuaranteeReview: afterVariable + 0.005 < beforeVariable,
+      variableDelta: salaryReady ? afterVariable - beforeVariable : null,
+      plannedVariable: salaryReady ? beforeVariable : null,
+      currentVariable: salaryReady ? afterVariable : null,
+      plannedGuaranteeReview: salaryReady ? afterVariable + 0.005 < beforeVariable : null,
       perDiemDelta,
-      salaryReady: !before.salary.config.requiresManualFunction && !after.salary.config.requiresManualFunction,
+      salaryReady,
     };
   }, [planned, bundle.roster, comparison?.summary.periodMatches]);
 
@@ -2497,8 +2511,8 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
       </section>}
       <section className="cz-finance-table cz-compare-financial">
         <h2>Possível impacto financeiro</h2>
-        <div className="cz-finance-row"><span>Parcela variável</span><strong>Diferença prevista</strong><small>KM diurno/noturno, reserva, sobreaviso e adicionais com as regras atuais</small><b>{financial?.salaryReady ? moneyBRL(financial.variableDelta) : 'Função pendente'}</b></div>
-        <div className="cz-finance-row"><span>Garantia da planejada</span><strong>{financial?.plannedGuaranteeReview ? 'Revisão necessária' : 'Sem redução detectada'}</strong><small>Quando a perda decorrer de motivo alheio ao tripulante e não houver programação equivalente, conferir o piso variável da escala inicialmente publicada</small><b>{financial?.plannedGuaranteeReview ? moneyBRL(financial.plannedVariable) : '—'}</b></div>
+        <div className="cz-finance-row"><span>Parcela variável</span><strong>Diferença prevista</strong><small>KM diurno/noturno, reserva, sobreaviso e adicionais com as regras atuais</small><b>{financial?.salaryReady ? moneyBRL(financial.variableDelta) : 'Não calculável · dados pendentes'}</b></div>
+        <div className="cz-finance-row"><span>Garantia da planejada</span><strong>{!financial?.salaryReady ? 'Comparação financeira pendente' : financial.plannedGuaranteeReview ? 'Revisão necessária' : 'Sem redução detectada'}</strong><small>Quando a perda decorrer de motivo alheio ao tripulante e não houver programação equivalente, conferir o piso variável da escala inicialmente publicada</small><b>{financial?.plannedGuaranteeReview ? moneyBRL(financial.plannedVariable) : '—'}</b></div>
         <div className="cz-finance-row"><span>Diárias</span><strong>Diferença por moeda</strong><small>Sem somar moedas diferentes e sem presumir câmbio</small><b>{perDiemDeltaText}</b></div>
         <div className="cz-finance-row"><span>Início da folga</span><strong>{freeDayDelay.toFixed(2).replace('.', ',')} h de postergação</strong><small>{exceptionalNeed ? 'Exceção operacional comprovada: limite de 12 h' : 'Regra geral do ACT: acima de 4 h'} · uma indenização por sequência agrupada</small><b>{moneyBRL(freeDayIndemnity)}</b></div>
       </section>
@@ -3222,8 +3236,9 @@ function WeatherView({ event }: { event: ZeroLeg }) {
     <p className="cc-weather-disclaimer">A decodificação é apoio de leitura e não substitui METAR/SPECI, TAF, ATIS, despacho, NOTAM nem orientação operacional oficial.</p>
   </>;
 }
-function moneyBRL(value: number) {
-  return `R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function moneyBRL(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'Não calculável';
+  return `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 function durationHours(event: ZeroLeg) {
   const start = eventStartDateTime(event).getTime();
@@ -3266,6 +3281,7 @@ type FlightEarningRow = {
   workType: string;
   km: number;
   distanceKnown: boolean;
+  timeKnown: boolean;
   dayKm: number;
   nightKm: number;
   metric: number;
@@ -3641,22 +3657,22 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     configured: rows.length > 0,
   };
 }
-function nightHoursInsideWindow(start: Date, end: Date): number {
-  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return 0;
-  const anchor = new Date(start);
-  anchor.setDate(anchor.getDate() - 1);
-  anchor.setHours(22, 0, 0, 0);
-  let total = 0;
-  while (anchor < end) {
-    const windowEnd = new Date(anchor);
-    windowEnd.setDate(windowEnd.getDate() + 1);
-    windowEnd.setHours(5, 0, 0, 0);
-    const overlapStart = Math.max(start.getTime(), anchor.getTime());
-    const overlapEnd = Math.min(end.getTime(), windowEnd.getTime());
-    if (overlapEnd > overlapStart) total += (overlapEnd - overlapStart) / 36e5;
-    anchor.setDate(anchor.getDate() + 1);
+function nightHoursInsideWindow(start: Date | string, end: Date | string, operationalTimeZone = ROSTER_DISPLAY_TIME_ZONE): number {
+  const from = rosterStrictInstant(start), until = rosterStrictInstant(end);
+  if (!from || !until || until < from || !operationalTimeZone) return NaN;
+  let clock: Intl.DateTimeFormat;
+  try { clock = new Intl.DateTimeFormat('en-GB', { timeZone: operationalTimeZone, hour: '2-digit', hourCycle: 'h23' }); }
+  catch { return NaN; }
+  // Canonical instants retain elapsed time through DST folds/gaps. Classify
+  // each minute in the explicitly supplied operational clock, never device TZ.
+  let cursor = from.getTime(), total = 0;
+  while (cursor < until.getTime()) {
+    const hour = Number(clock.formatToParts(new Date(cursor)).find(part => part.type === 'hour')?.value);
+    const next = Math.min(until.getTime(), (Math.floor(cursor / 60000) + 1) * 60000);
+    if (hour >= 22 || hour < 5) total += next - cursor;
+    cursor = next;
   }
-  return total;
+  return total / 36e5;
 }
 
 function financialEventCode(event: ZeroLeg): string {
@@ -3679,10 +3695,10 @@ function financialFlightRule(event: ZeroLeg): { extra: boolean; reason: string }
     : 'tarifa regular' };
 }
 
-function isSundayOrConfiguredHoliday(event: ZeroLeg): boolean {
-  const date = eventStartDateTime(event);
-  if (date.getDay() === 0) return true;
-  const iso = `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+function isSundayOrConfiguredHoliday(event: ZeroLeg): boolean | null {
+  const iso = rosterInstantIso(event.canonical ? event.canonical.startDateTime : eventStartDateTime(event), (event as any).operationalTimeZone === undefined ? ROSTER_DISPLAY_TIME_ZONE : (event as any).operationalTimeZone);
+  if (!iso) return null;
+  if (new Date(iso + 'T00:00:00Z').getUTCDay() === 0) return true;
   const configured = storage.get('crewcheck_local_holiday_dates', '').split(',').map(value => value.trim()).filter(Boolean);
   return configured.includes(iso);
 }
@@ -3696,17 +3712,19 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
   const rows: FlightEarningRow[] = flightEvents.map((event) => {
     const km = event.origin && event.destination && event.origin !== event.destination ? flightDistanceKmFromEvent(event) : 0;
     const block = Math.max(0, durationHours(event));
-    const nightHours = nightHoursInsideWindow(eventStartDateTime(event), eventEndDateTime(event));
+    const nightHours = event.salaryClockKnown === false ? NaN : nightHoursInsideWindow(event.canonical ? event.canonical.startDateTime : eventStartDateTime(event), event.canonical ? event.canonical.endDateTime : eventEndDateTime(event), (event as any).operationalTimeZone === undefined ? ROSTER_DISPLAY_TIME_ZONE : (event as any).operationalTimeZone);
     const nightFraction = block > 0 ? Math.min(1, nightHours / block) : 0;
     const payRule = financialFlightRule(event);
-    const premiumAllKm = payRule.extra || isSundayOrConfiguredHoliday(event);
+    const holiday = isSundayOrConfiguredHoliday(event);
+    const timeKnown = event.salaryClockKnown !== false && Number.isFinite(nightHours) && holiday !== null;
+    const premiumAllKm = payRule.extra || holiday === true;
     const nightKm = premiumAllKm ? km : Math.min(km, Math.max(0, Math.round(km * nightFraction)));
     const dayKm = Math.max(0, km - nightKm);
     const dayRateApplied = payRule.extra ? cfg.nightKmMetric : cfg.dayKmMetric;
     const nightRateApplied = cfg.nightKmMetric;
     const dayProduction = dayKm * dayRateApplied;
     const nightProduction = nightKm * nightRateApplied;
-    const production = dayProduction + nightProduction;
+    const production = timeKnown ? dayProduction + nightProduction : NaN;
     const chiefEligible = userIsFirstCcm(event, roster);
     const chief = chiefEligible ? cfg.chiefPerSector : 0;
     const instructorPay = instructor ? cfg.instructorPerSector : 0;
@@ -3720,6 +3738,7 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
       workType,
       km,
       distanceKnown: Number.isFinite(km) && km > 0,
+      timeKnown,
       dayKm,
       nightKm,
       metric: km > 0 ? production / km : 0,
@@ -3751,10 +3770,10 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
   const nightKmTotal = rows.reduce((sum, row) => sum + row.nightKm, 0);
   const blockHours = flightEvents.reduce((sum, event) => sum + durationHours(event), 0);
   const chiefSectors = rows.filter((row) => row.chiefEligible).length;
-  const nightHours = flightEvents.reduce((sum, event) => sum + nightHoursInsideWindow(eventStartDateTime(event), eventEndDateTime(event)), 0);
+  const nightHours = flightEvents.reduce((sum, event) => sum + (event.salaryClockKnown === false ? NaN : nightHoursInsideWindow(event.canonical ? event.canonical.startDateTime : eventStartDateTime(event), event.canonical ? event.canonical.endDateTime : eventEndDateTime(event), (event as any).operationalTimeZone === undefined ? ROSTER_DISPLAY_TIME_ZONE : (event as any).operationalTimeZone)), 0);
   const dayProduction = rows.reduce((sum, row) => sum + row.dayProduction, 0);
   const nightProduction = rows.reduce((sum, row) => sum + row.nightProduction, 0);
-  const production = dayProduction + nightProduction;
+  const production = rows.reduce((sum, row) => sum + row.production, 0);
   const chief = rows.reduce((sum, row) => sum + row.chief, 0);
   const instructorPay = rows.reduce((sum, row) => sum + row.instructor, 0);
   const gross = cfg.basePay + cfg.fixedAdditions + production + chief + instructorPay + reserve + standby;
@@ -3915,14 +3934,14 @@ function SalaryReliableView({ bundle }: { bundle: BundleState }) {
       const available = diagnostic.ready;
       const gross = available ? selected.reduce((sum,item)=>sum+item.snapshot.salary.gross,0) : null;
       const rows = financialRowsInRange(snapshots.flatMap(item=>item.snapshot.salary.rows),range);
-      const rowAvailable = (row: FlightEarningRow) => row.distanceKnown && selected.some(item=>item.snapshot.salary.rows.includes(row) && item.snapshot.salary.configured && !item.snapshot.salary.config.requiresManualFunction);
+      const rowAvailable = (row: FlightEarningRow) => row.distanceKnown && row.timeKnown && Number.isFinite(row.total) && selected.some(item=>item.snapshot.salary.rows.includes(row) && item.snapshot.salary.configured && !item.snapshot.salary.config.requiresManualFunction);
       return <><Brand back/><section className="cc-per-diem-content cc-salary-history" aria-label="Previsão salarial">
         <section className="cz-panel-head cz-panel-head-compact"><h1>Salário</h1><p>Trabalho: {range.start} até {range.end}. Previsão por competência, sem confirmação de pagamento.</p></section>
         {controls}<section className="cz-finance-grid cc-per-diem-summary"><KpiCard icon={DollarSign} title="Bruto previsto no período" value={gross===null?'Não calculável':moneyBRL(gross)} detail={fullMonths?'Salário-base exige fonte ou calibração; somente competências completas são somadas.':'A fonte mensal não permite distribuir salário-base e descontos por semana.'}/></section>
         <SalaryCalculationStatus items={diagnosticItems} range={range} missing={missing}/>
         {graph}
         <details className="cz-toolbox"><summary>Composição mensal e descontos informados</summary>{selected.length?selected.map(item=>{const salary=item.snapshot.salary, itemDiagnostic=salaryCalculationDiagnostic([salaryDiagnosticItem(item.snapshot)],financialRange('month',`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,'','',''),[]), cycle=reviewedPayrollCycleForOperationalMonth(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`);return <article key={`${item.roster.year}-${item.roster.month}`}><h2>{item.roster.month}/{item.roster.year}</h2>{cycle && <p data-payroll-competences="reviewed-company-cycle">Variáveis operacionais: {cycle.operationalVariableMonth}. Fixos e competência da folha: {cycle.fixedMonth}. Mês esperado de crédito: {cycle.expectedCreditMonth}; data exata e liquidação não confirmadas. Origem: orientação empresarial fornecida pelo usuário e revisada nesta conta.</p>}<p>Fonte operacional: {item.source}. {salary.config.source}</p><p>Salário-base: {salary.config.baseConfigured?moneyBRL(salary.config.basePay):'Não informado'}. Fixos informados: {moneyBRL(salary.config.fixedAdditions)}.</p>{itemDiagnostic.variable===null?<p>Variáveis: não calculáveis; há dados ou função profissional pendentes.</p>:<p>Variáveis: voos {moneyBRL(salary.production)}, chefe/instrutor {moneyBRL(salary.chief+salary.instructorPay)}, reserva {moneyBRL(salary.reserve)}, sobreaviso {moneyBRL(salary.standby)}.</p>}<p>Descontos informados: INSS {moneyBRL(salary.inss)}, IRRF {moneyBRL(salary.irrf)}, outros {moneyBRL(salary.otherDeductions)}. Líquido simulado da competência: {itemDiagnostic.ready?moneyBRL(salary.net):'Não calculável'}.</p><p>Valores integrais da competência, sem rateio pelo filtro de dias.</p></article>}):<p>Nenhuma competência disponível.</p>}</details>
-        <details className="cz-finance-table cc-per-diem-items"><summary>Componentes por voo no intervalo · {rows.length} itens</summary><p className="finance-learning-notice warning" data-km-source="operational-estimate">KM exibido nesta previsão é uma estimativa operacional pela distância entre aeroportos. A quilometragem remunerável da folha pode usar a tabela corporativa por trecho; confira o extrato/AIMS.</p><p>Somente as parcelas com vínculo a um voo. Salário-base, reserva, sobreaviso e descontos mensais não são rateados.</p>{rows.length?rows.map(row=><div className="cz-finance-row" key={row.id}><span>{row.iso}</span><strong>{row.flight} · {row.route}</strong><b><MoneyText value={rowAvailable(row)?moneyBRL(row.total):'Não calculável'}/></b><details className="cc-per-diem-source"><summary>Origem e regra</summary><small>{!row.distanceKnown?'Distância operacional desconhecida; os zeros internos do motor não são valores confirmados. ':''}{rowAvailable(row)?`${row.dayKm} km diurno × ${moneyBRL(row.dayRateApplied)} · ${row.nightKm} km noturno × ${moneyBRL(row.nightRateApplied)}`:'Parcela indisponível; distância, tarifas ou função profissional pendentes.'} · {row.payRule} · {row.source}</small></details></div>):<p>Sem parcelas por voo disponíveis no intervalo.</p>}</details>
+        <details className="cz-finance-table cc-per-diem-items"><summary>Componentes por voo no intervalo · {rows.length} itens</summary><p className="finance-learning-notice warning" data-km-source="operational-estimate">KM exibido nesta previsão é uma estimativa operacional pela distância entre aeroportos. A quilometragem remunerável da folha pode usar a tabela corporativa por trecho; confira o extrato/AIMS.</p><p>Somente as parcelas com vínculo a um voo. Salário-base, reserva, sobreaviso e descontos mensais não são rateados.</p>{rows.length?rows.map(row=><div className="cz-finance-row" key={row.id}><span>{row.iso}</span><strong>{row.flight} · {row.route}</strong><b><MoneyText value={rowAvailable(row)?moneyBRL(row.total):'Não calculável'}/></b><details className="cc-per-diem-source"><summary>Origem e regra</summary><small>{!row.timeKnown?'Horários ou fuso operacional ausentes ou ambíguos; parcela não calculável. ':''}{!row.distanceKnown?'Distância operacional desconhecida; os zeros internos do motor não são valores confirmados. ':''}{rowAvailable(row)?`${row.dayKm} km diurno × ${moneyBRL(row.dayRateApplied)} · ${row.nightKm} km noturno × ${moneyBRL(row.nightRateApplied)}`:'Parcela indisponível; distância, tarifas ou função profissional pendentes.'} · {row.payRule} · {row.source}</small></details></div>):<p>Sem parcelas por voo disponíveis no intervalo.</p>}</details>
       </section></>;
     }}/>
 }
