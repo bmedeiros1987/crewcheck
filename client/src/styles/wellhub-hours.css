@@ -92,3 +92,22 @@
 .cc-wellhub-card-access { font-size: .825rem; line-height: 1.5; }
 .cc-wellhub-card-access summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .cc-wellhub-card-access p { margin: 6px 0; overflow-wrap: anywhere; }
+
+/* Override generic card-child columns: access copy occupies the full width. */
+.cc-wellhub-results .cz-place-result-card > .cc-wellhub-card-access {
+ display: block !important; grid-template-columns: none !important;
+ width: 100% !important; min-width: 0 !important; position: static !important;
+}
+.cc-wellhub-results .cc-wellhub-card-access small { display: block !important; width: 100% !important; word-break: normal !important; overflow-wrap: normal !important; }
+.cc-wellhub-results :is(small,p), .cc-wellhub-traceability { word-break: normal !important; overflow-wrap: break-word !important; }
+.cc-wellhub-traceability { padding: 12px 0; font-size: .875rem; line-height: 1.5; }
+.cc-wellhub-traceability summary { min-height: 44px; cursor: pointer; display: flex; align-items: center; }
+.cc-wellhub-traceability p { margin: 8px 0; }
+
+.cc-wellhub-detail > header { display: grid !important; align-items: start !important; }
+.cc-wellhub-detail > header > .cz-card-icon, .cc-wellhub-detail > header > button {
+ position: static !important; width: 36px !important; height: 36px !important; margin: 0 !important;
+}
+.cc-wellhub-results .cz-tool-actions, .cc-wellhub-detail .cz-tool-actions {
+ max-height: none !important; overflow: visible !important;
+}

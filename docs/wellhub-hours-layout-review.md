@@ -137,3 +137,17 @@ que todas as faixas 24h concordem e cubram sete dias; faixa overnight carrega
 a incerteza do feriado da data local de origem. Reprodutores e controles
 positivos (24h dividido/coerente, overnight comum) acrescentados. O pacote
 Library do cd5cbd03 é histórico e não é alvo de aprovação após a correção.
+
+
+### Follow-up da revisão visual
+O bloco de plano/condições ocupa toda a largura, sem herdar as colunas genéricas
+dos filhos do cartão. Palavras comuns usam quebra entre palavras, evitando
+“cadast/ro”. O painel Mais detalhes agora contém expansor com plano mínimo,
+data da verificação, link da fonte oficial e condições/notas completas.
+A fixture extrai também esse painel da Home materializada. Em cada combinação
+320/390/768, fonte 100%/150%, claro/escuro, gera `card-whole-*`,
+`card-expanded-*` e `detail-expanded-*`. As capturas de elemento incluem sua
+altura inteira; a altura do viewport aumenta temporariamente para conter o elemento inteiro; barras sintéticas e sobreposições decorativas são ocultadas e limites de overflow/altura dos ancestrais são liberados somente nessas capturas para
+não cobrir o conteúdo. As capturas de viewport e as verificações de alcance
+continuam com barras fixas visíveis. Não são imagens privadas nem uma sessão
+real autenticada do app.
