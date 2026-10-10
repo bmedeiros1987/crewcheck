@@ -5,9 +5,10 @@ import { validateSubscription } from './installationRegistry.mjs';
 export function publicPushAddress(address) {
   if (net.isIP(address) === 4) {
     const p = address.split('.').map(Number);
-    return p[0] > 0 && p[0] < 224 && p[0] !== 10 && p[0] !== 127 && !(p[0] === 169 && p[1] === 254) && !(p[0] === 172 && p[1] >= 16 && p[1] <= 31) && !(p[0] === 192 && [0,168].includes(p[1])) && !(p[0] === 100 && p[1] >= 64 && p[1] <= 127) && !(p[0] === 198 && [18,19,51].includes(p[1])) && !(p[0] === 203 && p[1] === 0 && p[2] === 113);
+    return p[0] > 0 && p[0] < 224 && p[0] !== 10 && p[0] !== 127 && !(p[0] === 169 && p[1] === 254) && !(p[0] === 172 && p[1] >= 16 && p[1] <= 31) && !(p[0] === 192 && ([0,168].includes(p[1])||(p[1]===88&&p[2]===99))) && !(p[0] === 100 && p[1] >= 64 && p[1] <= 127) && !(p[0] === 198 && [18,19,51].includes(p[1])) && !(p[0] === 203 && p[1] === 0 && p[2] === 113);
   }
-  return net.isIP(address) === 6 && /^2[0-9a-f]{3}:/i.test(address) && !/^2001:(?:db8|0:)/i.test(address);
+  if(net.isIP(address)!==6)return false;const normalized=new URL(`http://[${address}]/`).hostname.slice(1,-1);
+  return /^2[0-9a-f]{3}:/i.test(normalized)&&!/^2002:/i.test(normalized)&&!/^2001:(?:db8:|:|10:|20:)/i.test(normalized);
 }
 export function guardedLookup(host, options, callback, lookup = dns.lookup) {
   lookup(host, { all: true, verbatim: true }, (error, addresses) => {

@@ -53,7 +53,7 @@ export async function reconcilePushReceipts(db, identity, reports) {
     for(const report of reports){if(!validPushEnvelope(report.envelope)||report.envelope.ownerId!==identity.ownerId||!['display_api_resolved','uncertain','clicked'].includes(report.status))continue;const key=outboxKey(report.envelope),job=await lockState(connection,key);if(!job||job.email!==identity.email||job.ownerId!==identity.ownerId||['schema','ownerId','installationId','consentRevision','eventKey','expiresAt','route'].some(field=>job.envelope[field]!==report.envelope[field])||!['accepted_unconfirmed','dispatching','uncertain'].includes(job.status))continue;
       // Authenticated device report is evidence of an API/click attempt, never proof
       // of delivery/read. No client report can change BIDS completion or scheduling.
-      const receipt={status:report.status,received:null};if(job.deviceReport?.status!==receipt.status||job.deviceReport?.received!==null){await save(connection,key,{...job,deviceReport:receipt,received:null});reconciled++;}}
+      const receipt={status:report.status,received:null};if(job.deviceReport?.status==='clicked'&&report.status!=='clicked')continue;if(job.deviceReport?.status!==receipt.status||job.deviceReport?.received!==null){await save(connection,key,{...job,deviceReport:receipt,received:null});reconciled++;}}
     await connection.commit();return{reconciled,received:null};
   }catch(error){await connection.rollback();throw error;}finally{connection.release();}
 }

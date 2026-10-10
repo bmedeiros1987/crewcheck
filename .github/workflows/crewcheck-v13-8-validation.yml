@@ -97,6 +97,7 @@ jobs:
           node scripts/regression-notification-readiness-browser.mjs
           node scripts/regression-bids-alert-preferences-browser.mjs
           node scripts/regression-web-push-worker-browser.mjs
+          node scripts/regression-web-push-device-browser.mjs
       - name: Prepare canonical application sources
         run: node scripts/v139/apply.mjs
       - name: Test actual EmergencyCenter after source preparation
@@ -108,6 +109,7 @@ jobs:
           node scripts/regression-notification-readiness-browser.mjs
           node scripts/regression-bids-alert-preferences-browser.mjs
           node scripts/regression-web-push-worker-browser.mjs
+          node scripts/regression-web-push-device-browser.mjs
           node scripts/regression-wakeup-session-browser.mjs
   web-and-server:
     name: Web, TypeScript and server
