@@ -89,7 +89,7 @@ export default function Home() {`,
   );
 
   next = next.replace(
-`      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster);`,
+`      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster, plannedImport.session);`,
 `      if (auditImport) {
         const auditCompliance = analyzeSafe(roster);
         try {
@@ -105,7 +105,7 @@ export default function Home() {`,
         toast.success(\`Escala de ${'${crewcheckAuditRosterName(roster)}'} aberta em modo auditoria.\`);
         return;
       }
-      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster);`,
+      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster, plannedImport.session);`,
   );
 
   if (!next.includes('cc-audit-mode-banner')) {

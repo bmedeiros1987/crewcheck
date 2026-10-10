@@ -1,3 +1,4 @@
+import { beginOwnedPlannedImport, loadOwnedPlannedRoster, saveOwnedPlannedRoster, clearOwnedPlannedRoster, isCurrentPlannedRoster, type OwnedPlannedRoster } from '@/lib/plannedRosterStore';
 import { CanonicalDutyCard, openCanonicalDutyDetails } from '@/components/CanonicalDutyCard';
 import { measureCanonicalDuty } from '@/lib/canonicalDutyMeasurement';
 import { financialIntervalEvidenceIssue } from '@/lib/financialIntervalEvidence';
@@ -1026,54 +1027,22 @@ function saveRoster(roster: CrewRoster, source: string): ComplianceResult {
   return compliance;
 }
 
-type PlannedRosterSnapshot = {
-  roster: CrewRoster;
-  source: string;
-  capturedAt: string;
-  fingerprint: string;
-};
+type PlannedRosterSnapshot = OwnedPlannedRoster;
 
-const PLANNED_ROSTER_STORAGE_KEY = 'crewcheck_planned_roster_snapshot_v1';
-
-function loadPlannedRoster(): PlannedRosterSnapshot | null {
-  try {
-    const parsed = JSON.parse(storage.get(PLANNED_ROSTER_STORAGE_KEY, 'null')) as PlannedRosterSnapshot | null;
-    if (!parsed?.roster || !Array.isArray(parsed.roster.days) || !parsed.roster.days.length) return null;
-    return {
-      ...parsed,
-      source: String(parsed.source || 'Escala planejada'),
-      capturedAt: String(parsed.capturedAt || new Date().toISOString()),
-      fingerprint: String(parsed.fingerprint || rosterFingerprint(parsed.roster)),
-    };
-  } catch {
-    return null;
-  }
+function loadPlannedRoster(): PlannedRosterSnapshot | null { return loadOwnedPlannedRoster(); }
+function savePlannedRoster(roster: CrewRoster, source: string, expectedSession = financialRateSession()): PlannedRosterSnapshot | null {
+  return saveOwnedPlannedRoster(roster, source, expectedSession);
 }
+function clearPlannedRoster(expectedSession = financialRateSession()): boolean { return clearOwnedPlannedRoster(expectedSession); }
 
-function savePlannedRoster(roster: CrewRoster, source: string): PlannedRosterSnapshot {
-  const snapshot: PlannedRosterSnapshot = {
-    roster,
-    source: source || 'Escala planejada',
-    capturedAt: new Date().toISOString(),
-    fingerprint: rosterFingerprint(roster),
-  };
-  storage.set(PLANNED_ROSTER_STORAGE_KEY, JSON.stringify(snapshot));
-  window.dispatchEvent(new CustomEvent('crewcheck:planned-roster-updated', { detail: snapshot }));
-  return snapshot;
-}
-
-function clearPlannedRoster(): void {
-  try { localStorage.removeItem(PLANNED_ROSTER_STORAGE_KEY); } catch {}
-  window.dispatchEvent(new CustomEvent('crewcheck:planned-roster-updated'));
-}
-
-function preservePlannedRosterBeforeImport(current: BundleState, incoming: CrewRoster): PlannedRosterSnapshot | null {
+function preservePlannedRosterBeforeImport(current: BundleState, incoming: CrewRoster, expectedSession: string | null = null): PlannedRosterSnapshot | null {
+  if (!expectedSession || expectedSession !== financialRateSession()) return null;
   const currentHasDays = Array.isArray(current.roster.days) && current.roster.days.length > 0;
   if (!currentHasDays || !sameRosterPeriod(current.roster, incoming)) return loadPlannedRoster();
   if (rosterFingerprint(current.roster) === rosterFingerprint(incoming)) return loadPlannedRoster();
   const existing = loadPlannedRoster();
   if (existing && sameRosterPeriod(existing.roster, incoming)) return existing;
-  return savePlannedRoster(current.roster, current.source);
+  return savePlannedRoster(current.roster, current.source, expectedSession);
 }
 
 function currentCompliance(bundle: BundleState) { return bundle.compliance || analyzeSafe(bundle.roster); }
@@ -2415,10 +2384,29 @@ function comparisonChangeLabel(change: RosterChange): string {
 }
 
 function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload: () => void }) {
-  const [planned, setPlanned] = useState<PlannedRosterSnapshot | null>(() => loadPlannedRoster());
+  const [storedPlanned, setPlanned] = useState<PlannedRosterSnapshot | null>(() => loadPlannedRoster());
+  const [plannedSession, setPlannedSession] = useState(() => financialRateSession());
+  const liveSession = financialRateSession();
+  const planned = plannedSession && plannedSession === liveSession && isCurrentPlannedRoster(storedPlanned) ? storedPlanned : null;
   const [filter, setFilter] = useState<'all' | 'financial' | 'days_off'>('all');
   const [freeDayDelay, setFreeDayDelay] = useState(() => readNumberSetting('crewcheck_free_day_delay_hours', 0));
   const [exceptionalNeed, setExceptionalNeed] = useState(() => storage.get('crewcheck_free_day_exceptional_need', '0') === '1');
+  useEffect(() => {
+    const sync = () => {
+      setPlannedSession(financialRateSession());
+      setPlanned(loadPlannedRoster());
+      setFilter('all');
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || ['crewcheck_auth_user', 'crewcheck_auth_token'].includes(event.key) || event.key.startsWith('crewcheck_planned_roster_snapshot_v2:')) sync();
+    };
+    for (const name of ['crewcheck:auth-changed', 'crewcheck:auth-expired', 'crewcheck:planned-roster-updated']) window.addEventListener(name, sync);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      for (const name of ['crewcheck:auth-changed', 'crewcheck:auth-expired', 'crewcheck:planned-roster-updated']) window.removeEventListener(name, sync);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
   const hasCurrent = Array.isArray(bundle.roster.days) && bundle.roster.days.length > 0;
   const comparison = useMemo(
     () => planned && hasCurrent ? compareRosters(planned.roster, bundle.roster) : null,
@@ -2449,24 +2437,27 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
 
   function markCurrentAsPlanned() {
     if (!hasCurrent) return;
-    const snapshot = savePlannedRoster(bundle.roster, bundle.source);
+    const snapshot = savePlannedRoster(bundle.roster, bundle.source, plannedSession);
+    if (!snapshot) return;
     setPlanned(snapshot);
     toast.success('Escala atual marcada como planejada. Importe a próxima versão para comparar.');
   }
 
   function resetPlanned() {
-    if (!window.confirm('Remover a referência planejada deste dispositivo? A escala atual continuará ativa.')) return;
-    clearPlannedRoster();
+    if (!window.confirm('Remover a referência planejada desta conta neste dispositivo? A escala atual continuará ativa.')) return;
+    if (!clearPlannedRoster(plannedSession)) return;
     setPlanned(null);
     toast.success('Referência planejada removida.');
   }
+
+  if (!liveSession) return <><Brand back/><section className="cz-empty-real"><h2>Acesse sua conta para comparar escalas</h2></section></>;
 
   if (!hasCurrent) {
     return <><Brand back/><section className="cz-panel-head"><h1>Planejado x atual</h1><p>Compare versões da mesma escala sem misturar períodos.</p></section><article className="cz-empty-real"><GitCompareArrows/><h2>Importe a primeira escala</h2><p>Ela poderá ser marcada como planejada antes da próxima publicação.</p><button onClick={onUpload}>Importar PDF</button></article></>;
   }
 
   if (!planned) {
-    return <><Brand back/><section className="cz-panel-head"><h1>Planejado x atual</h1><p>Guarde uma referência e compare a próxima publicação do mesmo mês.</p></section><section className="cz-toolbox"><h2>Definir a referência planejada</h2><p>A escala ativa {rosterPeriodLabel(bundle.roster)} será guardada neste dispositivo. Na próxima importação do mesmo período, o CrewCheck mostrará mudanças de horários, voos, OP/PS, atividades e folgas.</p><div className="cz-tool-actions"><button onClick={markCurrentAsPlanned}><Save/> Marcar atual como planejada</button><button onClick={onUpload}><Upload/> Importar nova versão</button></div></section></>;
+    return <><Brand back/><section className="cz-panel-head"><h1>Planejado x atual</h1><p>Guarde uma referência e compare a próxima publicação do mesmo mês.</p></section><section className="cz-toolbox"><h2>Definir a referência planejada</h2><p>A escala ativa {rosterPeriodLabel(bundle.roster)} será guardada para esta conta neste dispositivo. Na próxima importação do mesmo período, o CrewCheck mostrará mudanças de horários, voos, OP/PS, atividades e folgas.</p><div className="cz-tool-actions"><button onClick={markCurrentAsPlanned}><Save/> Marcar atual como planejada</button><button onClick={onUpload}><Upload/> Importar nova versão</button></div></section></>;
   }
 
   const filteredChanges = (comparison?.changes || []).filter((change) => {
@@ -5068,18 +5059,22 @@ export default function Home() {
   useEffect(() => { loadCrewCheckRuntimePatch(); }, []);
 
   async function handleFile(inputEvent: ChangeEvent<HTMLInputElement>) {
+    const plannedImport = beginOwnedPlannedImport();
+    if (!plannedImport.canCommit()) return;
     const file = inputEvent.target.files?.[0];
     if (!file) return;
     setBusy(true);
     try {
       const parsed = await parsePDFResilient(file);
+      if (!plannedImport.canCommit()) return;
       const roster = parsed.roster;
       const decision = confirmRosterImport(roster, file.name);
       if (!decision.ok) {
         toast.message(decision.toastText || 'Importação cancelada.');
         return;
       }
-      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster);
+      if (!plannedImport.canCommit()) return;
+      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster, plannedImport.session);
       const importComparison = plannedSnapshot && sameRosterPeriod(plannedSnapshot.roster, roster)
         ? compareRosters(plannedSnapshot.roster, roster)
         : null;
@@ -5124,7 +5119,7 @@ export default function Home() {
       if (!decision.hasFuture) toast.error('A escala importada não possui programação futura após agora.');
       setLocation('/result');
     } catch (error) {
-      toast.error(sanitizePdfImportError(error));
+      if (plannedImport.canCommit()) toast.error(sanitizePdfImportError(error));
     } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
   }
 
