@@ -101,7 +101,7 @@ assert.ok(snippet.includes('“academia em Canoas”'), 'mensagem de recuperaç�
 assert.ok(snippet.includes('Não vou sugerir unidade de outra cidade/estado'), 'falha geográfica deve ser explícita e fail-closed');
 assert.ok(snippet.includes('Plano Wellhub atualizado para'), 'mudança de plano deve ser confirmada ao usuário');
 assert.ok(snippet.includes('Modalidade Wellhub atualizada para'), 'mudança de modalidade deve ser confirmada ao usuário');
-assert.ok(snippet.includes('Acesso: ✓ incluído no seu ${userPlanLabel} · mínimo da unidade: ${minimumPlanLabel}'), 'resultado deve separar plano do usuário do plano mínimo da unidade');
+assert.ok(snippet.includes('Plano mínimo: ${minimumPlanLabel} · compatível com ${userPlanLabel} pelo cadastro'), 'resultado deve separar plano do usuário do plano mínimo da unidade');
 assert.ok(loader.includes("../v14410/apply.mjs"), 'preparação canônica precisa aplicar v14.4.10');
 assert.ok(!loader.includes("../v14409/apply.mjs"), 'slice Wellhub não pode disputar o namespace v14.4.09');
 
