@@ -20,9 +20,9 @@
     return {
       binding: () => transaction((store, done) => { const req = store.get('binding'); req.onsuccess = () => done(req.result || null); }),
       setBinding: binding => transaction((store, done) => { store.put(binding, 'binding'); done(null); }),
-      begin: () => transaction((store, done) => { const req=store.get('generation');req.onsuccess=()=>{const generation=(req.result||0)+1;store.put(generation,'generation');store.put(null,'binding');done(generation);}; }),
-      bind: (binding,generation) => transaction((store,done)=>{const req=store.get('generation');req.onsuccess=()=>{if(req.result!==generation)return done(false);store.put(binding,'binding');done(true);};}),
-      cancel: generation => transaction((store,done)=>{const req=store.get('generation');req.onsuccess=()=>{if(generation!==undefined&&req.result!==generation)return done(false);store.put((req.result||0)+1,'generation');store.put(null,'binding');done(true);};}),
+      begin: ownerId => transaction((store, done) => { const req=store.get('generation');req.onsuccess=()=>{const generation=(req.result||0)+1;store.put(generation,'generation');store.put(ownerId,'candidateOwner');store.put(null,'binding');done(generation);}; }),
+      bind: (binding,generation) => transaction((store,done)=>{const req=store.get('generation');req.onsuccess=()=>{if(req.result!==generation)return done(false);const candidate=store.get('candidateOwner');candidate.onsuccess=()=>{if(candidate.result!==binding.ownerId)return done(false);store.put(binding,'binding');done(true);};};}),
+      cancel: (generation,ownerId) => transaction((store,done)=>{const req=store.get('generation');req.onsuccess=()=>{if(generation!==undefined&&req.result!==generation)return done(false);const finish=()=>{store.put((req.result||0)+1,'generation');store.put(null,'candidateOwner');store.put(null,'binding');done(true);};if(!ownerId)return finish();const binding=store.get('binding'),candidate=store.get('candidateOwner');candidate.onsuccess=()=>{if(binding.result?.ownerId!==ownerId&&candidate.result!==ownerId)return done(false);finish();};};}),
       prune: now => transaction((store,done)=>{let count=0,visited=0;const req=store.openCursor();req.onsuccess=()=>{const cursor=req.result;if(!cursor)return done(count);if(String(cursor.key).startsWith('event:')&&Date.parse(cursor.value.expiresAt)<=now){cursor.delete();count++;}if(count<100&&++visited<200)cursor.continue();else done(count);};}),
       claim: (key, envelope) => transaction((store, done) => {
         const binding = store.get('binding'); binding.onsuccess = () => {
@@ -69,9 +69,9 @@
 if(typeof ServiceWorkerGlobalScope!=='undefined'&&self instanceof ServiceWorkerGlobalScope){
  const store=self.CrewCheckPushOffline.indexedStore(self.indexedDB);
  self.addEventListener('message',event=>{if(!event.data?.crewcheckPush)return;event.waitUntil((async()=>{let result={ok:false};try{const source=event.source;if(!source||new URL(source.url).origin!==self.location.origin||source.type!=='window')return;const v=event.data;
- if(v.action==='begin')result={ok:true,generation:await store.begin()};
+ if(v.action==='begin'&&/^[a-zA-Z0-9_-]{8,160}$/.test(v.ownerId||''))result={ok:true,generation:await store.begin(v.ownerId)};
  else if(v.action==='bind'&&v.binding&&Number.isSafeInteger(v.generation)&&/^[a-zA-Z0-9_-]{8,160}$/.test(v.binding.ownerId||'')&&/^[a-zA-Z0-9_-]{8,160}$/.test(v.binding.installationId||'')&&Number.isSafeInteger(v.binding.consentRevision)&&v.binding.consentRevision>0)result={ok:await store.bind(v.binding,v.generation)};
- else if(v.action==='cancel'){result={ok:await store.cancel(v.generation)};if(result.ok){for(const item of await self.registration.getNotifications())item.close();}}
+ else if(v.action==='cancel'){result={ok:await store.cancel(v.generation,v.ownerId)};if(result.ok){for(const item of await self.registration.getNotifications())item.close();}}
  else if(v.action==='reports')result={ok:true,reports:await store.reports()};
  else if(v.action==='acknowledge'&&Array.isArray(v.keys)&&v.keys.length<=50){await store.acknowledge(v.keys.filter(key=>typeof key==='string'&&key.startsWith('event:')));result={ok:true};}
  }catch{}finally{event.ports[0]?.postMessage(result);}})());});
