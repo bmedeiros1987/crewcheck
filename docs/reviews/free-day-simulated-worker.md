@@ -75,3 +75,23 @@ grants e ativação de produção exigem revisão e autorização específicas. 
 provider externo precisará revisar cutoff, revogação em voo, idempotência do
 provider e reconciliação de resultados incertos. Nunca liberar backlog em massa.
 Origem oficial permanece não verificada e indenização não é presumida.
+
+## Correções da revisão independente (P2)
+
+O relógio de produção é consultado após obter todos os locks e novamente sem
+await imediatamente antes do provedor. TTL de fonte, consentimento pessoal e
+cutoff são reavaliados com tempo fresco, incluindo esperas por conexão/locks e
+commit do claim. `now` fixo é apenas compatibilidade de fixtures; `clock` injetado
+permite testes determinísticos de avanço durante esperas. Nenhum clock é aceito
+por HTTP. Respostas também recalculam elegibilidade ao serem montadas.
+
+Antes do commit do cutoff, `claimState` passa a `unknown`; só o ACK confirmado
+permite `persisted`. Erro preserva a marca antes de rollback e não é substituído
+por falha de rollback/release. HTTP responde `claimPersisted:null` para ACK perdido,
+`true` para cutoff confirmado e `false` para cutoff não iniciado, com `claimState`
+e `rollbackFailed`. Não afirmar ausência de cutoff diante de resultado desconhecido.
+
+Regressões reproduzem expiração de fonte/consentimento durante conexão, primeiro
+ou segundo lock, commit e último gate; cutoff expirado antes do transporte; erro
+original mais rollback perdido; ACK perdido no claim e na auditoria final, com
+contagem independente de invocações e confirmação de ausência de replay.

@@ -50,6 +50,45 @@ for(const phase of ['pending','accepted_unconfirmed']){
  const result=await simulatedWorker(d,user,null,{...options,now:now+WORKER_CUTOFF_MS});assert.equal(result.phase,phase==='pending'?'held':'uncertain');
  if(phase!=='pending'){await simulatedWorker(d,user,request(state,'run'),options);assert.equal(localProviderStats.calls-count,1);}
 }
+// Wall-clock regressions: advance time while acquiring the connection/locks,
+// at durable claim commit, and at the last synchronous provider gate.
+for(const stage of ['connection','first-lock','second-lock','claim-commit','pre-provider'])for(const ttl of ['personal','source']) {
+ const d=await seed(),pending=await ready(d),job=[...d.state.jobs.values()][0],metadataKey=sourceJobStateKey(user,job.job_key),metadata=JSON.parse(d.state.rows.get(metadataKey));
+ let current=now,calls=0;const expires=ttl==='personal'?now+1000:Date.parse(metadata.expiresAt);
+ if(ttl==='personal'){metadata.personalConsent.expiresAt=new Date(expires).toISOString();d.state.rows.set(metadataKey,JSON.stringify(metadata));}
+ const connect=d.getConnection;d.getConnection=async()=>{const c=await connect();if(stage==='connection')current=expires;let transaction=0;const begin=c.beginTransaction,q=c.query,commit=c.commit;
+ c.beginTransaction=async()=>{transaction++;return begin();};
+ c.query=async(sql,args)=>{const result=await q(sql,args);if(sql.startsWith('SELECT public_id') && ((stage==='first-lock' && transaction===1)||(stage==='second-lock' && transaction===2)))current=expires;return result;};
+ c.commit=async()=>{await commit();if(stage==='claim-commit' && transaction===1)current=expires;};return c;};
+ const count=localProviderStats.calls,clock=()=>{calls++;if(stage==='pre-provider' && calls===6)current=expires;return current;};
+ let result;try{result=await simulatedWorker(d,user,request(pending,'run'),{configuration,clock});}catch(e){assert.ok(['WORKER_CONTEXT_CHANGED','WORKER_AUTHORIZATION_CHANGED'].includes(e.code));}
+ assert.equal(localProviderStats.calls,count,stage+'/'+ttl+' must not invoke expired authorization');if(result)assert.equal(result.eligible,false);
+}
+for(const stage of ['claim-commit','second-lock','pre-provider']) {
+ const d=await seed(),pending=await ready(d);let current=now,calls=0;const connect=d.getConnection;
+ d.getConnection=async()=>{const c=await connect(),begin=c.beginTransaction,q=c.query,commit=c.commit;let transaction=0;c.beginTransaction=async()=>{transaction++;return begin();};c.query=async(sql,args)=>{const result=await q(sql,args);if(stage==='second-lock' && transaction===2 && sql.startsWith('SELECT public_id'))current=now+WORKER_CUTOFF_MS;return result;};c.commit=async()=>{await commit();if(stage==='claim-commit' && transaction===1)current=now+WORKER_CUTOFF_MS;};return c;};
+ const count=localProviderStats.calls,result=await simulatedWorker(d,user,request(pending,'run'),{configuration,clock:()=>{calls++;if(stage==='pre-provider' && calls===6)current=now+WORKER_CUTOFF_MS;return current;}});assert.equal(result.phase,'uncertain');assert.equal(localProviderStats.calls,count,'expired claim '+stage+' is never invoked');
+}
+// Exact independent-review repro, using the default production Date.now clock.
+const repro=await seed(),rp=await ready(repro),rk=sourceJobStateKey(user,[...repro.state.jobs.values()][0].job_key),rm=JSON.parse(repro.state.rows.get(rk));rm.personalConsent.expiresAt=new Date(now+1000).toISOString();repro.state.rows.set(rk,JSON.stringify(rm));const rc=repro.getConnection;let current=now;repro.getConnection=async()=>{const c=await rc(),commit=c.commit;let commits=0;c.commit=async()=>{await commit();if(++commits===1)current=now+2000;};return c;};const originalDateNow=Date.now,count=localProviderStats.calls;try{Date.now=()=>current;const result=await simulatedWorker(repro,user,request(rp,'run'),{configuration});assert.equal(result.eligible,false);assert.equal(result.phase,'cancelled');assert.equal(localProviderStats.calls,count);}finally{Date.now=originalDateNow;}
+console.log('PASS fresh clock: source/personal TTL during connection and first/second locks, claim commit and immediate provider gate; cutoff expiry prevents invocation; independent-review Date.now repro fixed');
+// Double failures and lost commit ACKs must preserve original failure and
+// report persisted/unknown cutoff honestly through the actual HTTP handler.
+for(const fault of ['before-claim','after-provider-save','claim-ack','result-ack']) {
+ const d=await seed(),pending=await ready(d),connect=d.getConnection;let faultEnabled=true;
+ d.getConnection=async()=>{const c=await connect(),q=c.query,commit=c.commit,rollback=c.rollback;let commits=0;
+ const original=()=>Object.assign(new Error('synthetic original audit/commit failure'),{code:'SYNTHETIC_ORIGINAL',status:503});
+ c.query=async(sql,args)=>{if(faultEnabled && sql.startsWith('INSERT INTO crewcheck_telegram_state')){const phase=JSON.parse(args[1]).worker?.phase;if((fault==='before-claim' && phase==='dispatching')||(fault==='after-provider-save' && phase==='accepted_unconfirmed'))throw original();}return q(sql,args);};
+ c.commit=async()=>{commits++;await commit();if(faultEnabled && ((fault==='claim-ack' && commits===1)||(fault==='result-ack' && commits===2)))throw original();};
+ c.rollback=async()=>{if(faultEnabled)throw Error('synthetic connection lost during rollback');return rollback();};return c;};
+ const server=http.createServer((req,res)=>handleSimulatedWorker(req,res,{identity:r=>r.headers.authorization==='Bearer synthetic-only'?user:null,dbPool:async()=>d,configuration,clock:()=>now,readJson:async r=>{let raw='';for await(const b of r)raw+=b;return JSON.parse(raw);},sendJson:(r,status,value)=>{r.writeHead(status,{'content-type':'application/json'});r.end(JSON.stringify(value));}}));await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const before=localProviderStats.calls;
+ try{const response=await fetch('http://127.0.0.1:'+server.address().port,{method:'POST',headers:{authorization:'Bearer synthetic-only','content-type':'application/json'},body:JSON.stringify(request(pending,'run'))}),body=await response.json();assert.equal(response.status,503);assert.equal(body.code,'SYNTHETIC_ORIGINAL');assert.equal(body.rollbackFailed,true);assert.equal(body.claimState,fault==='before-claim'?'not_started':fault==='claim-ack'?'unknown':'persisted');assert.equal(body.claimPersisted,fault==='before-claim'?false:fault==='claim-ack'?null:true);assert.equal(localProviderStats.calls-before,['after-provider-save','result-ack'].includes(fault)?1:0);
+ }finally{await new Promise(r=>server.close(r));}
+ faultEnabled=false;
+ if(fault!=='before-claim'){const result=await simulatedWorker(d,user,request(pending,'run'),{...options,now:now+WORKER_CUTOFF_MS});assert.ok(['uncertain','accepted_unconfirmed'].includes(result.phase));assert.equal(localProviderStats.calls-before,['after-provider-save','result-ack'].includes(fault)?1:0,'lost ACK/rollback cannot replay provider');}
+}
+console.log('PASS HTTP double failures: original error preserved through rollback failure; cutoff not_started/persisted/unknown with claim ACK lost; audit/result ACK failures after one invocation never replay');
 const httpDb=await seed();let access=0;const server=http.createServer((req,res)=>handleSimulatedWorker(req,res,{identity:r=>r.headers.authorization==='Bearer synthetic-only'?user:null,dbPool:async()=>{access++;return httpDb;},readJson:async r=>{let text='';for await(const b of r)text+=b;return JSON.parse(text);},sendJson:(r,status,value)=>{r.writeHead(status,{'content-type':'application/json'});r.end(JSON.stringify(value));}}));await new Promise(r=>server.listen(0,'127.0.0.1',r));try{const url='http://127.0.0.1:'+server.address().port,headers={authorization:'Bearer synthetic-only','content-type':'application/json'};assert.equal((await fetch(url)).status,401);assert.equal(access,0);const state=await(await fetch(url,{headers})).json();assert.equal(state.available,false);assert.equal((await fetch(url,{method:'POST',headers,body:JSON.stringify(request(state))})).status,403);}finally{await new Promise(r=>server.close(r));}
 assert.doesNotMatch(fs.readFileSync('server/free-day-simulated-worker.mjs','utf8'),/fetch\(|setInterval\(|setTimeout\(|https:\/\/api|TELEGRAM_BOT_TOKEN|sendTelegram/);
 console.log('PASS held → eligibility → persistent server worker → fixed local provider: exact owner/allowlist/consent, dual destination/groups, TTL/revoke/CAS/8-way dedupe, durable cutoff/crash/audit rollback and uncertain no replay; real queue held NULL, zero external sends');
