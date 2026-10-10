@@ -51,9 +51,17 @@ export function wellhubOpeningStatus(partner, now = new Date()) {
   if (partner.holidayHoursUncertain || nationalHoliday(iso)) return unknown('horário de feriado ou exceção não confirmado');
   const intervals = schedule(partner);
   if (!intervals) return unknown('horário ausente ou malformado');
-  if (partner.is24Hours && !intervals.some(({days,start,end}) => days.size === 7 && start === 0 && end === 1439)) return unknown('horário 24h conflitante');
+  if (partner.is24Hours) {
+    const coveredDays = new Set(intervals.flatMap(({ days }) => [...days]));
+    if (coveredDays.size !== 7 || intervals.some(({start,end}) => start !== 0 || end !== 1439)) return unknown('horário 24h conflitante');
+  }
   const weekday = {Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6}[get('weekday')];
   const current = Number(get('hour'))*60+Number(get('minute'));
+  // A carried interval belongs to the previous local calendar date. Its
+  // holiday uncertainty survives midnight; do not reopen it by changing day.
+  const previousDate = new Date(`${iso}T12:00:00Z`);
+  previousDate.setUTCDate(previousDate.getUTCDate() - 1);
+  if (nationalHoliday(previousDate.toISOString().slice(0,10)) && intervals.some(({days,start,end}) => end < start && days.has((weekday+6)%7) && current < end)) return unknown('intervalo herdado de feriado não confirmado');
   if (!partner.is24Hours && !intervals.some(({days,start,end}) => days.has(weekday) || end < start && days.has((weekday+6)%7) && current < end)) return unknown('dia sem horário cadastrado');
   const open = partner.is24Hours === true || intervals.some(({days,start,end}) => end > start
     ? days.has(weekday) && current >= start && current < end

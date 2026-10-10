@@ -130,3 +130,10 @@ expansível para preservar a nota integral sem crescer permanentemente. A fixtur
 abre condições de agendamento e confirma que o parágrafo expandido fica antes
 das ações, sem sobreposição. Mais detalhes conserva a fonte/datamento e as notas
 já existentes do detalhe da unidade. Não há confirmação de acesso atual.
+
+Revisão independente encontrou dois falsos verdes no cd5cbd03: faixa adicional
+conflitante com 24h e overnight após 12/out herdado do feriado. Correção exige
+que todas as faixas 24h concordem e cubram sete dias; faixa overnight carrega
+a incerteza do feriado da data local de origem. Reprodutores e controles
+positivos (24h dividido/coerente, overnight comum) acrescentados. O pacote
+Library do cd5cbd03 é histórico e não é alvo de aprovação após a correção.

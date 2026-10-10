@@ -60,3 +60,12 @@ assert.match(reply,/Greenlife Messejana\n🔴 Fechada pelo horário cadastrado/)
 assert.ok(reply.length<=3900);assert.match(reply,/Horário avaliado nesta consulta, sem acompanhamento contínuo/);
 requestNow=new Date('2026-10-12T21:32:00Z');reply=await context.reply(snapshot,'/academias');assert.doesNotMatch(reply,/🟢|🔴/);assert.match(reply,/🟡 Horário cadastrado incerto/);
 console.log('CrewCierge request instant: same labels/rank, Fortaleza before BSB, holiday unknown, footer and text budget: PASS');
+
+// Independent review reproducers: all 24h intervals must agree, and a
+// holiday-origin overnight interval stays unknown past midnight.
+assert.equal(at('2026-10-11T21:00:00Z',{...unit,is24Hours:true,openingHours:['seg-dom 00:00-23:59','dom 08:00-12:00']}),'unknown');
+assert.equal(at('2026-10-13T04:00:00Z',{...unit,openingHours:['seg 22:00-02:00']}),'unknown');
+assert.equal(at('2026-10-20T04:00:00Z',{...unit,openingHours:['seg 22:00-02:00']}),'open');
+assert.equal(at('2026-10-11T21:00:00Z',{...unit,is24Hours:true,openingHours:['seg-sex 00:00-23:59','sab-dom 00:00-23:59']}),'open');
+assert.equal(at('2026-10-11T21:00:00Z',{...unit,is24Hours:true,openingHours:['seg-dom 00:00-23:59','dom 00:00-23:59']}),'open');
+console.log('Independent reproducers: contradictory 24h unknown; holiday origin survives midnight; coherent 24h/nonholiday overnight preserved: PASS');
