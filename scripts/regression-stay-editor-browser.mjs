@@ -84,6 +84,7 @@ try {
   await page.getByRole('button',{name:'Voltar ao pernoite',exact:true}).click();
   assert.equal(await page.evaluate(()=>window.stayContext('hotels').stayId),'synthetic-future');
   await page.getByRole('button',{name:'Abrir synthetic-current',exact:true}).click();
+  await page.getByRole('heading',{name:'Apresentação, hotel e descanso',exact:true}).waitFor();
   await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','another-synthetic');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
   await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='');
   assert.deepEqual(errors,[]);assert.deepEqual(writes,[],'No hotel saves or alarm requests');

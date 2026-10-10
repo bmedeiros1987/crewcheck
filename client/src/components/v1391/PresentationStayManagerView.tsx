@@ -83,7 +83,8 @@ export default function PresentationStayManagerView({ events, initialStayId }: {
   const [query, setQuery] = useState('');
   const [manual, setManual] = useState(false);
   const [busy, setBusy] = useState(false);
-  const selected = operational.find((event) => event.id === selectedId) || null;
+  const selectedMatches = operational.filter(event => event.id === selectedId);
+  const selected = selectedMatches.length === 1 ? selectedMatches[0] : null;
   const [draft, setDraft] = useState<StayDraft>({ hotelName: '', airport: '', stayDate: isoDay(), room: '', presentationTime: '', leadMinutes: '90', shareSameHotel: false });
 
   const gaps = useMemo(() => operational.slice(0, -1).map((event, index) => {
@@ -117,7 +118,8 @@ export default function PresentationStayManagerView({ events, initialStayId }: {
       v139Api('/api/platform/home-address').catch(() => ({ address: null })),
     ]);
     if (session !== editSession.current || token !== getToken()) return;
-    setStays(stayPayload.stays || []);
+    // The legacy local fallback is not account scoped: never prefill it as this account's saved stay.
+    setStays(stayPayload.localOnly ? [] : stayPayload.stays || []);
     if (addressPayload.address) {
       setHomeAddress(addressPayload.address.formattedAddress || '');
       setPostalCode(addressPayload.address.postalCode || '');
@@ -127,8 +129,11 @@ export default function PresentationStayManagerView({ events, initialStayId }: {
   useEffect(() => {
     const reset = () => { editSession.current++; owner.current = getToken(); drafts.current.clear(); dirty.current = false; previousId.current = ''; setStays([]); setHomeAddress(''); setPostalCode(''); setBusy(false); setQuery(''); setSelectedId(''); setHotelTimeZone(''); setApzDate(''); setAlarmChoice(undefined); setDefaultLead(undefined); setDefaultInput(''); setDraft({ hotelName: '', airport: '', stayDate: '', room: '', presentationTime: '', leadMinutes: '', shareSameHotel: false }); };
     window.addEventListener('crewcheck:auth-changed', reset); window.addEventListener('crewcheck:auth-expired', reset);
+    const onStorage = (event: StorageEvent) => { if (['crewcheck_auth_token', 'crewcheck_auth_user'].includes(event.key || '')) reset(); };
+    window.addEventListener('storage', onStorage);
+    if (owner.current !== getToken()) reset();
     refresh().catch(() => undefined);
-    return () => { editSession.current++; window.removeEventListener('crewcheck:auth-changed', reset); window.removeEventListener('crewcheck:auth-expired', reset); };
+    return () => { editSession.current++; window.removeEventListener('crewcheck:auth-changed', reset); window.removeEventListener('crewcheck:auth-expired', reset); window.removeEventListener('storage', onStorage); };
   }, []);
 
   useEffect(() => {
