@@ -354,7 +354,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
     <div className="cz-roster-actions cc-share-entry"><button type="button" onClick={() => { setPendingNavigationContext({sourceView:'roster',targetView:'community',programId:'share-roster',returnView:'roster',policy:'once'}); setView('community'); }}>Compartilhar escala</button></div>
     <section className="cc-roster-layout-picker cc-roster-compact-picker" aria-label="Formato da escala">
       <label>Formato<select aria-label="Formato da escala" value={layout} onChange={event => choose(event.target.value as typeof layout)}>
-        <option value="cards">Cards</option><option value="list">Lista</option><option value="aims">AIMS</option><option value="calendar">Calendário</option><option value="document">Documento</option>
+        <option value="cards">Cards</option><option value="list">Lista</option><option value="aims">CrewCheck AIMS</option><option value="calendar">Calendário</option>
       </select></label>
       <button className="cc-roster-layout-reset" type="button" onClick={() => choose('cards', 'month')} disabled={layout === 'cards' && zoom === 'month'}><RotateCcw aria-hidden="true"/> Restaurar padrão</button>
       <p className="cc-roster-layout-status" role="status" aria-live="polite">{rosterFocusStatus || message}</p>
@@ -409,10 +409,8 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       <AimsRosterTable events={unconfirmed} showHistory={false} focusEventId={focusedEventId} dayView title="Programações com data não confirmada"/>
     </section>}
 
-    {layout === 'document'
-      ? <AimsDocumentView events={visibleEvents} month={selectedMonth} day={zoom === 'day' ? activeDay : undefined} focusEventId={focusedEventId} describe={event => { const mode = workMode(event); return { mode, label: modeMeta[mode].label }; }}/>
-      : layout === 'aims' && timedEvents.length
-      ? <AimsRosterTable events={timedEvents} focusEventId={focusedEventId} dayView={zoom === 'day'}/>
+    {(layout === 'aims' || layout === 'document')
+      ? <AimsDocumentView events={visibleEvents} onReturnToMonth={() => chooseZoom('month')} month={selectedMonth} day={zoom === 'day' ? activeDay : undefined} focusEventId={focusedEventId} describe={event => { const mode = workMode(event); return { mode, label: modeMeta[mode].label }; }}/>
       : layout === 'calendar' && ordered.length
         ? <CalendarRosterView events={ordered} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>
         : <section className="cc-roster-days-v1397" data-roster-layout={layout}>
