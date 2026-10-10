@@ -21,6 +21,9 @@ export type WellhubLivePartner = {
   activities?: string[];
   liveVerified?: boolean;
   liveCheckedAt?: string;
+  refreshStatus?: 'authorization-required';
+  accessConfirmationRequired?: boolean;
+  snapshotValidUntil?: string;
 };
 
 export type WellhubRoutineSuggestion = {
@@ -51,7 +54,7 @@ export async function fetchWellhubVerifiedSearch(input: {
   activity?: string;
   location?: string;
   limit?: number;
-}): Promise<{ ok: boolean; partners: WellhubLivePartner[]; total: number; source: string; mapsUsedForEligibility: boolean }> {
+}): Promise<{ ok: boolean; partners: WellhubLivePartner[]; total: number; source: string; mapsUsedForEligibility: boolean; automaticRefresh: false; accessConfirmationRequired: true }> {
   const params = new URLSearchParams({ plan: input.plan });
   if (input.query?.trim()) params.set('query', input.query.trim());
   if (input.activity?.trim()) params.set('activity', input.activity.trim());
