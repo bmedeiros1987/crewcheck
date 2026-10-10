@@ -115,27 +115,42 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   }
 
   const lines = partners.map((partner, index) => {
-    const activities = partner.activities?.length ? partner.activities.slice(0, 6).join(', ') : activity ? 'modalidade não confirmada — consulte a fonte oficial' : 'consulte a página oficial para modalidades';
+    const activities = activity && partner.snapshotActivity
+      ? `registrada no snapshot: ${partner.snapshotActivity.name} · mínimo da modalidade: ${wellhubPlanLabelServer(partner.snapshotActivity.minimumPlan)} · disponibilidade atual não confirmada`
+      : partner.activities?.length
+        ? `registradas no snapshot: ${partner.activities.slice(0, 6).join(', ')} · disponibilidade atual não confirmada`
+        : activity ? 'modalidade não confirmada no snapshot — consulte o app Wellhub' : 'consulte o app Wellhub para modalidades e disponibilidade atual';
+    const snapshotNotice = partner.snapshotStatus === 'expired'
+      ? 'Snapshot vencido para uso no CrewCheck; acesso não confirmado.'
+      : partner.snapshotStatus === 'invalid'
+        ? 'Snapshot com data de verificação inválida ou ausente; acesso não confirmado.'
+        : partner.snapshotStatus === 'future'
+          ? 'Snapshot com data de verificação futura; acesso não confirmado.'
+          : 'Snapshot público; acesso e disponibilidade atuais não confirmados.';
     const userPlanLabel = wellhubPlanLabelServer(wellhubPlan);
     const minimumPlanLabel = wellhubPlanLabelServer(partner.minimumPlan);
+    const verificationDate = partner.snapshotStatus === 'invalid' ? 'data inválida ou ausente'
+      : partner.snapshotStatus === 'future' ? `${partner.verifiedAt} (data futura não validada)`
+        : partner.verifiedAt || 'data desconhecida';
     return [
       `${index + 1}. ${partner.name} · ${partner.city}/${partner.state}`,
       partner.eligibilityStatus === 'included'
         ? `   Acesso: ✓ incluído no seu ${userPlanLabel} · mínimo da unidade: ${minimumPlanLabel} (snapshot público)`
         : `   Acesso: não confirmado para seu ${userPlanLabel}; confira a fonte oficial · mínimo publicado: ${minimumPlanLabel}`,
+      `   ${snapshotNotice}`,
       `   Endereço: ${partner.address || 'endereço não confirmado — consulte a fonte oficial'}`,
       ...(partner.accessConditions ? [`   Condições: ${partner.accessConditions}`] : []),
       ...(partner.accessNote ? [`   Observação: ${partner.accessNote}`] : []),
       `   Horário: ${(partner.openingHours || []).join(' | ') || 'não publicado no snapshot'}`,
       `   Modalidades: ${activities}`,
-      `   Fonte oficial consultada em ${partner.verifiedAt || 'data desconhecida'}; planos e condições podem mudar: ${partner.sourceUrl}`,
+      `   Data registrada no snapshot: ${verificationDate}; fonte não consultada agora: ${partner.sourceUrl}`,
     ].join('\n');
   });
   return [
     `Wellhub verificado · seu plano ${wellhubPlanLabelServer(wellhubPlan)}${activity ? ` · modalidade ${activity}` : ''}`,
     `Contexto local: ${locationText}. Resultados fora da cidade/estado confirmado são descartados.`,
     '', ...lines,
-    '', 'Catálogo parcial, sem atualização automática. As datas de verificação estão em cada unidade. Confirme acesso e condições no app Wellhub antes de sair.',
+    '', 'Catálogo parcial, sem atualização automática. As datas de verificação estão em cada unidade. O limite técnico de 90 dias no CrewCheck não garante vigência no Wellhub. Confirme acesso e condições no app Wellhub antes de sair.',
     'Para alterar, diga naturalmente “meu plano é Silver+”, “uso Gold” ou “quero Pilates”.',
   ].join('\n');
 }

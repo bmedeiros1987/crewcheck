@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { wellhubLocationTextMatches } from '../../shared/wellhub-location.mjs';
-import { wellhubSnapshotAccess, normalizeWellhubPlan, WELLHUB_SNAPSHOT_MAX_AGE_DAYS } from '../../shared/wellhub-access.mjs';
+import { wellhubSnapshotAccess, normalizeWellhubPlan, wellhubSnapshotFreshness } from '../../shared/wellhub-access.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
@@ -163,15 +163,19 @@ export async function searchVerifiedWellhub({ plan = 'basic', query = '', activi
   // "live" flag may imply permission. Keep the argument for API compatibility;
   // an authorized source requires its own reviewed adapter before activation.
   return candidates.slice(0, Math.max(1, Number(limit) || 20)).map(partner => {
-    const checked = Date.parse(partner.verifiedAt);
+    const requested = normalize(activityCanonical(activity) || activity);
+    const rule = requested && partner.activityPlans.find(item => normalize(item.split('|')[0]) === requested);
     return {
       ...partner,
+      ...wellhubSnapshotFreshness(partner, now),
       activities: [],
+      ...(rule ? { snapshotActivity: {
+        name: rule.split('|')[0],
+        minimumPlan: isWellhubPlanServer(rule.split('|')[1]) ? normalizeWellhubPlan(rule.split('|')[1]) : 'unknown',
+      } } : {}),
       liveVerified: false,
       refreshStatus: 'authorization-required',
       accessConfirmationRequired: true,
-      snapshotValidUntil: Number.isFinite(checked)
-        ? new Date(checked + WELLHUB_SNAPSHOT_MAX_AGE_DAYS * 86400000).toISOString() : '',
     };
   });
 }

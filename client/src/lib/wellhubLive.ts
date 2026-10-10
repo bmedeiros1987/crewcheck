@@ -24,6 +24,8 @@ export type WellhubLivePartner = {
   refreshStatus?: 'authorization-required';
   accessConfirmationRequired?: boolean;
   snapshotValidUntil?: string;
+  snapshotStatus?: 'valid' | 'expired' | 'invalid' | 'future';
+  snapshotActivity?: { name: string; minimumPlan: WellhubPlan | 'unknown' };
 };
 
 export type WellhubRoutineSuggestion = {
