@@ -50,6 +50,10 @@ abstract class BaseComplicationService extends ComplicationDataSourceService {
             ComplicationRequest request,
             ComplicationRequestListener listener
     ) {
+        // The complication host is one of the few system-owned wakeups available while the
+        // CrewWatch Activity is closed. Ask the phone for a refresh, throttled centrally;
+        // return the current cache immediately so rendering never waits on Bluetooth/Wi-Fi.
+        WatchBackgroundSyncRequester.requestIfDue(this);
         try {
             listener.onComplicationData(buildData(request.getComplicationType(), false));
         } catch (RemoteException ignored) {

@@ -42,6 +42,9 @@ public final class WatchNotificationCenter {
 
     public static void postForSnapshot(Context context, WatchContextSnapshot snapshot) {
         if (context == null || snapshot == null || !isEnabled(context)) return;
+        // Um DataItem pode chegar horas depois, quando o relógio reconecta: sem isto ele
+        // vibrava "Hora de sair" para uma saída que já passou.
+        if (snapshot.isStale(System.currentTimeMillis())) return;
         if (Build.VERSION.SDK_INT >= 33
                 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) return;

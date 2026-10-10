@@ -136,9 +136,12 @@
 
         <!-- ===== Clock ===== -->
 
-        <!-- A quiet hero stage borrowed from the Mobile premium cards. -->
-        <PartDraw x="56" y="88" width="338" height="126">
-            <RoundRectangle x="0" y="0" width="338" height="126" cornerRadiusX="34" cornerRadiusY="34">
+        <!-- A quiet hero stage borrowed from the Mobile premium cards.
+             Starts 4px below the gate/battery rail (ends at y=92) and ends 8px above the
+             operational hero (starts at y=224): drawn after the rail, any overlap would run
+             its stroke across the bottom of both pills. -->
+        <PartDraw x="56" y="96" width="338" height="120">
+            <RoundRectangle x="0" y="0" width="338" height="120" cornerRadiusX="34" cornerRadiusY="34">
                 <Fill color="#220D1B2F" />
                 <Stroke thickness="1" color="#3322D3EE" />
             </RoundRectangle>
