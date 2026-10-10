@@ -1,3 +1,4 @@
+import { pendingFlightRoleDates, FLIGHT_ROLE_PENDING_MESSAGE } from './flightRoleEvidence';
 import type { CrewRoster, RosterDay, FlightLeg } from './pdfParser';
 import { getActRulesForProfile, getLegalProfile, type CrewRoleSelection, type LegalProfileSummary } from './actRules';
 import { getRosterCodeDefinition } from './rosterCodes';
@@ -13,6 +14,7 @@ import {
   assessFlightHoursRolling28Days,
   assessFlightHoursRolling365Days,
   sumFlightHoursForCompetence,
+  crewDateUtcEpoch,
   type FlightHoursObservation,
 } from './rollingFlightHours';
 
@@ -41,7 +43,8 @@ export interface ComplianceAlert {
 export interface Metrics {
   /** Horas de voo da COMPETÊNCIA ATIVA. Histórico adjacente carregado para a
    *  janela móvel não entra aqui — ver `maxFlightHoursRolling28Days`. */
-  totalFlightHours: number;
+  totalFlightHours: number | null;
+  flightHoursOriginPending?: boolean;
   maxFlightHoursMonth: number;
   /**
    * #526: maior soma OBSERVADA em qualquer janela de 28 dias civis
@@ -49,9 +52,9 @@ export interface Metrics {
    * regulatório. O cálculo vive em `rollingFlightHours.ts` e é deliberadamente
    * elegível a histórico de competência adjacente.
    */
-  maxFlightHoursRolling28Days: number;
+  maxFlightHoursRolling28Days: number | null;
   /** Observed operated hours only; missing365-day coverage is not compliance. */
-  maxFlightHoursRolling365Days?: number;
+  maxFlightHoursRolling365Days?: number | null;
   flightHoursRolling365Complete?: boolean;
   totalDutyHours: number | null;
   maxDutyHoursMonth: number;
@@ -90,7 +93,7 @@ export interface DayLoadAnalysis {
   fatigueScore: number;
   loadLabel: 'Leve' | 'Moderado' | 'Puxado' | 'Muito puxado';
   dutyHours: number;
-  flightHours: number;
+  flightHours: number | null;
   dutyStartTime: string | null;
   dutyEndTime: string | null;
   isDutyNextDay: boolean;
@@ -1700,7 +1703,7 @@ function flightHoursByRosterMonth(days: RosterDay[]): Array<{ key: string; fligh
 }
 
 
-export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSelection = 'auto'): ComplianceResult {
+export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSelection = 'auto', regulatoryHistory: CrewRoster[] = []): ComplianceResult {
   let alerts: ComplianceAlert[] = [];
   const legalProfile = getLegalProfile(roster, roleSelection);
   const actRules = getActRulesForProfile(legalProfile);
@@ -1739,7 +1742,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     });
   }
 
-  const metrics: Metrics = {
+  const metrics: Metrics & { totalFlightHours: number; maxFlightHoursRolling28Days: number; maxFlightHoursRolling365Days?: number } = {
     totalFlightHours: 0,
     maxFlightHoursMonth: limits.maxFlightHoursMonth,
     maxFlightHoursRolling28Days: 0,
@@ -2088,10 +2091,22 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
 
   // #526: o bloco de buckets acima permanece como âncora da preparação
   // v14.3.95; o enforcement usa exclusivamente a janela móvel observada.
+  const activeRoleDates = pendingFlightRoleDates(roster);
+  const activeStart = crewDateUtcEpoch('01/' + roster.month + '/' + roster.year);
+  const activeEnd = Date.UTC(Number(roster.year), Number(roster.month), 1);
+  const activeRolePending = activeRoleDates.some(date => { const epoch = crewDateUtcEpoch(date); return epoch === null || activeStart === null || (epoch >= activeStart && epoch < activeEnd); });
+  const activeEpochs = new Set((roster.days || []).map(day => crewDateUtcEpoch(day.date)));
+  const historicalRoleEpochs = [...activeRoleDates.filter(date => { const epoch = crewDateUtcEpoch(date); return epoch !== null && activeStart !== null && epoch < activeStart; }),
+    ...regulatoryHistory.flatMap(item => pendingFlightRoleDates(item)).filter(date => !activeEpochs.has(crewDateUtcEpoch(date)))]
+    .map(date => crewDateUtcEpoch(date)).filter((epoch): epoch is number => epoch !== null
+      && activeStart !== null && epoch < activeStart);
+  const rollingRolePending = activeRolePending || historicalRoleEpochs.some(epoch => activeStart! - epoch <= 27 * 86400000);
+  const annualRolePending = activeRolePending || historicalRoleEpochs.some(epoch => activeStart! - epoch <= 364 * 86400000);
+  const roleOriginPending = activeRolePending || annualRolePending;
   const rollingFlightHours = metrics.maxFlightHoursRolling28Days;
   const rollingFlightHoursImplausible = rollingFlightHours > limits.maxFlightHoursMonth * 1.35
     || rollingFlightHours > 140;
-  if (rollingFlightHoursImplausible) {
+  if (!rollingRolePending && rollingFlightHoursImplausible) {
     pushAlert(alerts, {
       severity: 'warning',
       title: 'Horas de voo: revisar base de cálculo',
@@ -2100,7 +2115,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
       confidence: 'media',
       classification: 'atencao',
     });
-  } else if (rollingFlightHours > limits.maxFlightHoursMonth) {
+  } else if (!rollingRolePending && rollingFlightHours > limits.maxFlightHoursMonth) {
     pushAlert(alerts, {
       severity: 'error',
       title: 'Limite de 28 dias de horas de voo excedido',
@@ -2109,7 +2124,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
       confidence: 'alta',
       classification: 'confirmada',
     });
-  } else if (rollingFlightHours > limits.maxFlightHoursMonth * 0.9) {
+  } else if (!rollingRolePending && rollingFlightHours > limits.maxFlightHoursMonth * 0.9) {
     pushAlert(alerts, {
       severity: 'warning',
       title: 'Horas de voo próximas do limite de 28 dias',
@@ -2195,6 +2210,8 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
 
   alerts = sanitizeComplianceAlertsForProduction(auditAlertConfidence(alerts, sortedDays));
 
+  if (roleOriginPending) pushAlert(alerts, { severity: 'warning', title: 'Reimportação necessária para horas de voo operado', description: FLIGHT_ROLE_PENDING_MESSAGE, legalReference: 'Origem do PDF importado', classification: 'dados_insuficientes', actionable: false, code: 'FLIGHT_ROLE_ORIGIN_PENDING' });
+
   const loadAnalysis = analyzeDayLoads(roster);
   const errorCount = alerts.filter(alert => alert.severity === 'error').length;
   const warningCount = alerts.filter(alert => alert.severity === 'warning' && alert.actionable !== false).length;
@@ -2208,7 +2225,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     : warningCount > 0
       ? `Sem irregularidade crítica automática, mas com ${warningCount} ponto(s) de atenção. Escala ${loadAnalysis.grade.toLowerCase()} (${loadAnalysis.intensityScore}/100 de puxada).`
       : incompleteDataCount > 0
-        ? `Sem irregularidade automática confirmada, porém ${incompleteDataCount} verificação(ões) ficaram incompletas por falta de histórico. Intensidade ${loadAnalysis.grade.toLowerCase()} (${loadAnalysis.intensityScore}/100).`
+        ? `Sem irregularidade automática confirmada, porém ${incompleteDataCount} verificação(ões) ficaram incompletas por falta de histórico ou origem dos dados. Intensidade ${loadAnalysis.grade.toLowerCase()} (${loadAnalysis.intensityScore}/100).`
         : `A escala não apresentou alertas nos parâmetros automáticos. Intensidade ${loadAnalysis.grade.toLowerCase()} (${loadAnalysis.intensityScore}/100).`;
 
   return {
@@ -2216,7 +2233,11 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     alerts,
     metrics: {
       ...metrics,
-      totalFlightHours: round1(metrics.totalFlightHours),
+      totalFlightHours: activeRolePending ? null : round1(metrics.totalFlightHours),
+      maxFlightHoursRolling28Days: rollingRolePending ? null : metrics.maxFlightHoursRolling28Days,
+      maxFlightHoursRolling365Days: annualRolePending ? null : metrics.maxFlightHoursRolling365Days,
+      flightHoursRolling365Complete: !annualRolePending && metrics.flightHoursRolling365Complete,
+      flightHoursOriginPending: roleOriginPending,
       totalDutyHours: getCanonicalWorkHoursTotal(roster),
       totalGroundHours: round1(metrics.totalGroundHours),
       averageTurnaround: round1(metrics.averageTurnaround),
@@ -2231,6 +2252,7 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
 
 export function analyzeDayLoads(roster: CrewRoster): LoadAnalysis {
   const sortedDays = sortDays(roster.days);
+  const pendingRoleDates = new Set(pendingFlightRoleDates(roster));
   const days: DayLoadAnalysis[] = sortedDays.map((day, index) => {
     const previousWorkedDay = [...sortedDays.slice(0, index)]
       .reverse()
@@ -2281,9 +2303,10 @@ export function analyzeDayLoads(roster: CrewRoster): LoadAnalysis {
     }
     if (airTravelHours > 0) {
       score += airTravelHours * 1.8;
-      if (flightHours > 0) reasons.push(`${flightHours.toFixed(1)}h de voo operado`);
+      if (pendingRoleDates.has(day.date)) reasons.push('voo operado pendente: reimporte a origem para verificar OP/PS');
+      else if (flightHours > 0) reasons.push(`${flightHours.toFixed(1)}h de voo operado`);
       const extraHours = round1(airTravelHours - flightHours);
-      if (extraHours > 0) reasons.push(`${extraHours.toFixed(1)}h de deslocamento extra a serviço`);
+      if (!pendingRoleDates.has(day.date) && extraHours > 0) reasons.push(`${extraHours.toFixed(1)}h de deslocamento extra a serviço`);
     }
     if (sectors > 0) {
       score += sectors <= 2 ? sectors * 2.5 : 5 + (sectors - 2) * 7.5;
@@ -2335,7 +2358,7 @@ export function analyzeDayLoads(roster: CrewRoster): LoadAnalysis {
       fatigueScore: score,
       loadLabel: loadLabel(score),
       dutyHours: round1(dutyHours),
-      flightHours: round1(flightHours),
+      flightHours: pendingRoleDates.has(day.date) ? null : round1(flightHours),
       dutyStartTime: getPrimaryBlockingWindow(day)?.startTime || day.dutyReport || null,
       dutyEndTime: getPrimaryBlockingWindow(day)?.endTime || day.dutyDebrief || null,
       isDutyNextDay: Boolean(getPrimaryBlockingWindow(day)?.isNextDay || day.isNextDay),

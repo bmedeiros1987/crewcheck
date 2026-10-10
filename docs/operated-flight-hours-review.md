@@ -46,3 +46,17 @@ O PDF privado foi materializado pelo helper oficial da Library, bytes verificado
 ## Gates de revisão
 
 Revisar o diff autoral e os snapshots preparados do pacote contra o SHA exato do draft. Verificar preservação de jornada/fallback gerado, parser marcador anterior versus seguinte, separação financeira e cobertura de 365 dias. Conferir logs, hashes e relatórios sintéticos; QA Chrome não certifica Android físico. Merge e deploy dependem de revisão independente e gates do parent.
+
+## Revisão de upgrade e origem
+
+A revisão posterior a `c5d994b` muda o kernel de cache de `605.1` para `operated-extra-v2`. O produtor canônico exige a versão nova; o consumidor compara essa versão e o fingerprint integral do roster antes de reutilizar o snapshot. O teste do consumidor real rejeita um snapshot antigo com 777 horas sintéticas, recalcula 50 horas da fixture e restaura a métrica observada de 365 dias. Todos os fetches desse teste são simulados, sem dados reais.
+
+Uma nova leitura AIMS marca nas pernas a origem `aims-extra-following-v1`; a leitura ticket marca `ticket-published-extra-v1`. Análise de JSON salvo não adiciona essas marcas nem altera PS/OP. Quando há extra/PS sem essa origem verificável, a métrica civil afetada e as janelas afetadas retornam **null**, com `flightHoursOriginPending`, aviso de reimportação e sem confirmação automática de limite de voo baseada naquele acumulado. Histórico incerto fora de 28 dias afeta somente a métrica anual aplicável. Jornada, solo, carga e financeiro mantêm suas entradas anteriores.
+
+Alertas/Carga exibem a necessidade de reimportação sob demanda; a home não recebe um bloco adicional. O PDF exportado apresenta pendência de origem em vez de horas precisas ou declaração de conformidade. A assertiva de preservação de carga agora compara o campo real `fatigueScore`, com verificação de seu tipo numérico.
+
+Transição: abrir uma escala recalcula com os papéis salvos; o cache anterior deixa de substituir esse resultado. **A correção de papéis acontece somente na reimportação da fonte**, também para um histórico utilizado no carry-in. Não há migração, escrita de papéis no servidor ou reparação automática por números de voo. Uma origem antiga insuficiente permanece pendente. Reimportação pode mudar a alocação à tarifa extra preexistente; tarifas e fórmula salarial permanecem intactas.
+
+Defeito anterior separado informado pelo revisor financeiro: em uma fixture sintética, o cálculo salarial noturno bruto varia entre 1800 em São Paulo/UTC e 1952 em Tóquio, dependendo do fuso do dispositivo. O código financeiro era idêntico à base na primeira revisão de 964. Esse problema foi registrado para uma correção isolada posterior; não é corrigido neste PR.
+
+O pacote novo inclui snapshots preparados de `databaseClient.ts`, `rollingFlightHours.ts`, produtor de snapshot e hardening, além dos demais módulos alterados. O trabalho Cirium concorrente não foi tocado; mudanças em Home são restritas aos estados de pendência em Alertas/Carga.

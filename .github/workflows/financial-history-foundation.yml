@@ -9,6 +9,11 @@ on:
       - 'client/src/lib/rollingFlightHours.ts'
       - 'scripts/v14395/apply.mjs'
       - 'scripts/regression-operated-flight-hours.mjs'
+      - 'scripts/regression-operated-flight-origin-browser.cjs'
+      - 'client/src/lib/flightRoleEvidence.ts'
+      - 'client/src/lib/pdfExport.ts'
+      - 'client/src/lib/pdfParser.ts'
+      - 'scripts/p0-623-regulatory-history-carry-in-final/**'
       - 'client/src/lib/financialPayrollPeriods.ts'
       - 'client/src/lib/financialSettingStore.ts'
       - 'client/src/lib/financialAmounts.ts'
@@ -45,6 +50,7 @@ jobs:
       - run: node scripts/v139/apply.mjs
       - run: node scripts/regression-static-module-mime.mjs
       - run: node scripts/regression-operated-flight-hours.mjs
+      - run: node scripts/regression-p0-623-regulatory-history-carry-in.mjs
       - run: node scripts/regression-financial-review-owner-negative.mjs
         env:
           TZ: UTC
@@ -108,6 +114,10 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
         run: node scripts/regression-financial-ui-browser.cjs
+      - name: Verify legacy flight-role origin remains pending
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-operated-flight-origin-browser.cjs
       - name: Verify salary prerequisites with synthetic owner fixtures
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
@@ -136,4 +146,5 @@ jobs:
             artifacts/canonical-duty-card/
             artifacts/canonical-duty-home/
             artifacts/operated-flight-hours/
+            artifacts/operated-flight-origin/
           if-no-files-found: ignore

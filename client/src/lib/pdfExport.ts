@@ -327,7 +327,7 @@ export function exportReport(
     y = (doc as any).lastAutoTable.finalY + 10;
   }
 
-  if (irregularities.length === 0 && warnings.length === 0) {
+  if (irregularities.length === 0 && warnings.length === 0 && !compliance.metrics.flightHoursOriginPending) {
     fill(doc, COLOR.cyanSoft);
     stroke(doc, COLOR.cyan);
     doc.roundedRect(14, y, pageWidth - 28, 18, 4, 4, 'FD');
@@ -341,7 +341,7 @@ export function exportReport(
   y = ensureSpace(doc, y, 64, pageWidth, 'Métricas regulatórias');
   y = sectionHeading(doc, y, 'Métricas regulatórias', COLOR.violet);
   const metricsData = [
-    ['Horas de voo', `${compliance.metrics.totalFlightHours.toFixed(0)}h`, `${compliance.legalProfile.flightLimit28Days}h/28d`, compliance.legalProfile.actName],
+    ['Horas de voo', compliance.metrics.totalFlightHours === null ? 'Reimporte a origem' : `${compliance.metrics.totalFlightHours.toFixed(0)}h`, `${compliance.legalProfile.flightLimit28Days}h/28d`, compliance.legalProfile.actName],
     ['Horas de trabalho', compliance.metrics.totalDutyHours === null ? 'Dados pendentes' : `${compliance.metrics.totalDutyHours.toFixed(0)}h`, '176h (máx.)', 'Art. 41 - Lei 13.475'],
     ['Folgas no mês', `${compliance.metrics.totalDaysOff} dias`, `${compliance.metrics.minDaysOffRequired} parâmetro / 9 atenção`, compliance.legalProfile.actName],
     ['Sobreavisos', `${compliance.metrics.totalStandby}`, `${compliance.metrics.maxStandbyMonth} máx.`, compliance.legalProfile.actName],

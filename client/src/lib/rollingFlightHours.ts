@@ -1,3 +1,5 @@
+export const ROLLING_FLIGHT_HOURS_KERNEL_VERSION = 'operated-extra-v2';
+
 export type FlightHoursObservation = {
   /** Civil operational date in CrewCheck's canonical DD/MM/YYYY representation. */
   date: string;

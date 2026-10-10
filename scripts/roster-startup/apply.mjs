@@ -73,9 +73,9 @@ if (!home.includes(marker)) {
   if (!home.includes("saveRoster(restored.roster, restored.source);")) throw new Error('Roster truth anchor missing');
   home = home.replaceAll("saveRoster(restored.roster, restored.source);", "saveRoster(restored.roster, restored.source, 'automatic');");
   if (!home.includes("'Carregue a escala real para que o motor regulat\u00f3rio refa\u00e7a a an\u00e1lise completa.'")) throw new Error('Roster truth anchor missing');
-  home = home.replaceAll("'Carregue a escala real para que o motor regulat\u00f3rio refa\u00e7a a an\u00e1lise completa.'", "'An\u00e1lise conclu\u00edda para a escala carregada. Nenhuma irregularidade confirmada.'");
+  home = home.replaceAll("'Carregue a escala real para que o motor regulat\u00f3rio refa\u00e7a a an\u00e1lise completa.'", "compliance?.metrics.flightHoursOriginPending ? 'Classificação de extra pendente; reimporte a escala original. Nenhuma conclusão sobre o acumulado de voo operado.' : 'An\u00e1lise conclu\u00edda para a escala carregada. Nenhuma irregularidade confirmada.'");
   if (!home.includes("{list.length ? 'Ativo' : 'Aguardando escala'}")) throw new Error('Roster truth anchor missing');
-  home = home.replaceAll("{list.length ? 'Ativo' : 'Aguardando escala'}", "{'An\u00e1lise conclu\u00edda'}");
+  home = home.replaceAll("{list.length ? 'Ativo' : 'Aguardando escala'}", "{compliance?.metrics.flightHoursOriginPending ? 'Análise parcial' : 'An\u00e1lise conclu\u00edda'}");
   if (!home.includes("<h2>An\u00e1lise ativa e atualizada</h2>")) throw new Error('Roster truth anchor missing');
   home = home.replaceAll("<h2>An\u00e1lise ativa e atualizada</h2>", "<h2>{pastRosterPeriod(bundle.roster) ? 'An\u00e1lise de per\u00edodo passado' : 'An\u00e1lise da escala carregada'}</h2>");
   if (!home.includes("  const [rosterWindow, setRosterWindow] = useState<CrewRoster>(() => bundle.roster);")) throw new Error('Display session anchor missing');

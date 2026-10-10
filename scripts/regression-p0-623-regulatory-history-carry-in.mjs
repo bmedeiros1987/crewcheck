@@ -127,6 +127,17 @@ try {
   assert.ok(String(firstSnapshot.value.fingerprint || ''), 'snapshot deve declarar fingerprint integral dos inputs regulatórios');
   const baselineFingerprint = firstSnapshot.value.fingerprint;
   const baselineKernelVersion = firstSnapshot.value.kernelVersion;
+  assert.equal(baselineKernelVersion, 'operated-extra-v2', 'upgrade changes the cache compatibility version');
+  const oldSnapshot = clone(firstSnapshot.value);
+  oldSnapshot.kernelVersion = '605.1';
+  oldSnapshot.compliance.metrics.totalFlightHours = 777;
+  delete oldSnapshot.compliance.metrics.maxFlightHoursRolling365Days;
+  localStorage.setItem(firstSnapshot.key, JSON.stringify(oldSnapshot));
+  const upgraded = await database.recomputeComplianceWithRegulatoryHistory(feb);
+  assert.equal(upgraded.compliance.metrics.totalFlightHours, 50, 'old kernel snapshot cannot replace current counters');
+  assert.equal(typeof upgraded.compliance.metrics.maxFlightHoursRolling365Days, 'number');
+  assert.equal(snapshotEntry().value.kernelVersion, 'operated-extra-v2');
+
 
   localStorage.setItem(firstSnapshot.key, JSON.stringify({ ...firstSnapshot.value, kernelVersion: 'legacy-kernel' }));
   const probesBeforeKernelRefresh = accountProbeCount;
