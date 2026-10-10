@@ -5,6 +5,7 @@
 
 import type { CrewRoster, RosterDay, FlightLeg, CrewMember } from './pdfParser';
 import { findRosterCodes, getRosterCodeDefinition, isKnownRosterCode } from './rosterCodes';
+import { AIMS_FLIGHT_ROLE_SOURCE } from './flightRoleEvidence';
 
 const MONTH_MAP: Record<string, number> = {
   'jan': 1, 'fev': 2, 'feb': 2, 'mar': 3, 'abr': 4, 'apr': 4,
@@ -484,6 +485,10 @@ function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth
       const candidate = tokens[j];
       const nextIsFlight = candidate.toUpperCase() === 'LA' && /^\d{3,4}$/.test(tokens[j + 1] || '');
       if (nextIsFlight) break;
+      // Extra belongs to the following flight. Keep its marker outside the
+      // previous segment so physical reconstruction cannot transfer PS to OP.
+      if (isExtraAimsMarker(candidate) && tokens[j + 1]?.toUpperCase() === 'LA'
+        && /^\d{3,4}$/.test(tokens[j + 2] || '')) break;
 
       const dateInside = parseAimsPhysicalDateToken(candidate, rosterMonth, rosterYear);
       if (dateInside) {
@@ -690,15 +695,21 @@ export function parseAimsRoster(fullText: string, visualRows?: AimsVisualRow[]):
   if (aimsVisualRosterLooksReliable(visualParsed)) {
     const secondary = humanTextParsed?.days?.length ? humanTextParsed : legacyParsed;
     const merged = mergeAimsParsedRosters(visualParsed as CrewRoster, secondary);
-    return humanReviewAimsRoster(merged);
+    return attachVerifiedFlightRoles(humanReviewAimsRoster(merged));
   }
 
   if (humanTextParsed && aimsHumanRosterLooksComplete(humanTextParsed)) {
-    return humanReviewAimsRoster(humanTextParsed);
+    return attachVerifiedFlightRoles(humanReviewAimsRoster(humanTextParsed));
   }
 
   const merged = visualParsed?.days?.length ? mergeAimsParsedRosters(visualParsed, legacyParsed) : legacyParsed;
-  return humanReviewAimsRoster(merged);
+  return attachVerifiedFlightRoles(humanReviewAimsRoster(merged));
+}
+
+function attachVerifiedFlightRoles(roster: CrewRoster): CrewRoster {
+  return { ...roster, days: roster.days.map(day => ({ ...day,
+    legs: day.legs.map(leg => ({ ...leg, workTypeSource: AIMS_FLIGHT_ROLE_SOURCE })),
+  })) };
 }
 
 

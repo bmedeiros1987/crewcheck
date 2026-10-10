@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build } from 'vite';
+import ts from 'typescript';
 
 const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-623-history-'));
 
@@ -127,6 +128,33 @@ try {
   assert.ok(String(firstSnapshot.value.fingerprint || ''), 'snapshot deve declarar fingerprint integral dos inputs regulatórios');
   const baselineFingerprint = firstSnapshot.value.fingerprint;
   const baselineKernelVersion = firstSnapshot.value.kernelVersion;
+  assert.equal(baselineKernelVersion, 'operated-extra-v3', 'upgrade changes the cache compatibility version');
+  const oldSnapshot = clone(firstSnapshot.value);
+  oldSnapshot.kernelVersion = '605.1';
+  oldSnapshot.compliance.metrics.totalFlightHours = 777;
+  delete oldSnapshot.compliance.metrics.maxFlightHoursRolling365Days;
+  localStorage.setItem(firstSnapshot.key, JSON.stringify(oldSnapshot));
+  const upgraded = await database.recomputeComplianceWithRegulatoryHistory(feb);
+  assert.equal(upgraded.compliance.metrics.totalFlightHours, 50, 'old kernel snapshot cannot replace current counters');
+  assert.equal(typeof upgraded.compliance.metrics.maxFlightHoursRolling365Days, 'number');
+  assert.equal(snapshotEntry().value.kernelVersion, 'operated-extra-v3');
+  const sameVersionIncomplete = clone(snapshotEntry().value);
+  sameVersionIncomplete.compliance.metrics.totalFlightHours = 777;
+  delete sameVersionIncomplete.compliance.metrics.flightHoursOriginPending;
+  localStorage.setItem(firstSnapshot.key, JSON.stringify(sameVersionIncomplete));
+  const guarded = await database.recomputeComplianceWithRegulatoryHistory(feb);
+  assert.equal(guarded.compliance.metrics.totalFlightHours, 50, 'consumer rejects cached results without origin state even with matching version');
+  assert.equal(guarded.compliance.metrics.flightHoursOriginPending, false);
+  const previousPolicy = clone(snapshotEntry().value);
+  previousPolicy.kernelVersion = 'operated-extra-v2';
+  previousPolicy.compliance.metrics.totalFlightHours = 777;
+  localStorage.setItem(firstSnapshot.key, JSON.stringify(previousPolicy));
+  const upgradedPolicy = await database.recomputeComplianceWithRegulatoryHistory(feb);
+  assert.equal(upgradedPolicy.compliance.metrics.totalFlightHours, 50, 'union policy invalidates previous v2 snapshots');
+  assert.equal(snapshotEntry().value.kernelVersion, 'operated-extra-v3');
+
+
+
 
   localStorage.setItem(firstSnapshot.key, JSON.stringify({ ...firstSnapshot.value, kernelVersion: 'legacy-kernel' }));
   const probesBeforeKernelRefresh = accountProbeCount;
@@ -200,8 +228,24 @@ try {
     'reabertura de escala salva deve recomputar compliance antes de setBundle');
   assert.doesNotMatch(home, /const compliance = data\.compliance \|\| analyzeSafe\(data\.roster\);/,
     'compliance persistido antigo não pode entrar no bundle na reabertura');
-  assert.match(home, /const compliance = \(await recomputeComplianceWithRegulatoryHistory\(active\.roster\)\)\.compliance;/,
-    'reconciliação da escala ativa deve recomputar compliance antes de setBundle');
+  const homeAst = ts.createSourceFile('Home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  function findVariable(node, name) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name) return node;
+    let found;
+    ts.forEachChild(node, child => { if (!found) found = findVariable(child, name); });
+    return found;
+  }
+  const reconciliation = findVariable(homeAst, 'reconcileActiveRoster');
+  assert.ok(reconciliation, 'exact prepared Home must expose automatic reconciliation');
+  const adopt = findVariable(reconciliation, 'adopt');
+  assert.ok(adopt, 'inspect reconciliation adoption, not an unrelated openActive shortcut');
+  const adoption = adopt.getText(homeAst);
+  assert.match(adoption, /await recomputeComplianceWithRegulatoryHistory\(active\.roster\)/,
+    'automatic adoption must recompute before publishing cached/server roster');
+  assert.doesNotMatch(adoption, /active\.compliance/,
+    'automatic adoption must not short-circuit recomputation on old persisted compliance');
+  assert.ok(adoption.indexOf('await recomputeComplianceWithRegulatoryHistory') < adoption.indexOf('recordPublication('),
+    'recomputation must precede the fenced publication/cache commit');
 
   console.log('[p0-623-regulatory-history] PASS — carry-in, fail-closed, snapshot/fingerprint, fronteira e recomputação pré-bundle estão protegidos.');
 } finally {

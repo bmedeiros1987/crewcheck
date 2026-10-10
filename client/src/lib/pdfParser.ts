@@ -36,6 +36,8 @@ export interface FlightLeg {
   departureTime: string;
   arrivalTime: string;
   workType: string; // OP, PS, DH, etc.
+  /** Parser evidence for the attachment of published Extra to this leg. */
+  workTypeSource?: string;
   duration?: number;
   aircraftType?: string;
   isNextDay?: boolean;
@@ -2032,6 +2034,7 @@ function parseTicketFlights(marker: TicketMarker, text: string, base: string): R
       departureTime: first.time,
       arrivalTime: second.time,
       workType,
+      workTypeSource: 'ticket-published-extra-v1',
       isNextDay,
       duration: diffHours(first.time, second.time, isNextDay),
     });

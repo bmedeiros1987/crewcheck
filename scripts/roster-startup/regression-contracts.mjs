@@ -25,7 +25,6 @@ update('scripts/regression-p0-roster-date-integrity.mjs', source => {
     return line;
   }).join('\n');
 });
-update('scripts/regression-p0-623-regulatory-history-carry-in.mjs', source => source.replace('const compliance = \\(await recomputeComplianceWithRegulatoryHistory\\(active\\.roster\\)\\)\\.compliance;', 'const c = \\(await recomputeComplianceWithRegulatoryHistory\\(active\\.roster\\)\\)\\.compliance;'));
 // AirportDeparture owns the existing route and vacation decisions; Departure
 // stops ineligible home standby before mounting those hooks.
 update('scripts/regression-p2-738-vacation-work-first.mjs', source => source.replace('function Departure\\(\\{ event, events, setView \\}', 'function AirportDeparture\\(\\{ event, events, setView \\}'));
