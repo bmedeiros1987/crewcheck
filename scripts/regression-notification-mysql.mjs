@@ -8,6 +8,8 @@ import { handleBidsCore } from '../server/v139/bidsCore.mjs';
 import { notifyBidRows, claimBid } from '../server/v139/bidsNotify.mjs';
 import { confirmCycle, cycleJobPrefix, cycleStateKey, LEAVE_CYCLE } from '../server/v139/notificationCycles.mjs';
 import { FREE_DAY_SCOPE, mutateFreeDayHeld, readFreeDayHeldState } from '../server/free-day-held.mjs';
+import {sourceQueue} from '../server/free-day-source-queue.mjs';
+import {SOURCE_JOB_SCOPE,sourceJobStateKey} from '../server/free-day-source-job-state.mjs';
 import { SOURCE_SCOPE, voluntarySources, sourceKey } from '../server/free-day-sources.mjs';
 import crypto from 'node:crypto';
 import { dispatchClaimedJob } from '../server/notification-job-safety.mjs';
@@ -180,10 +182,36 @@ try {
     assert.equal((await counts())[0][0].n,beforeCount,'voluntary source flow never writes queue');
     assert.equal((await db.query('SELECT COUNT(*) AS n FROM crewcheck_telegram_state WHERE state_key=?',[sourceKey(user)]))[0][0].n,1);
   });
+  await run('confirmed receipt producer and fixed local transport work without app in real SQL; TTL/revoke/link rotation cancel and delete metadata',async()=>{
+    const user={email,id:owner},now=Date.now(),digest=x=>crypto.createHash('sha256').update(JSON.stringify(x)).digest('hex');
+    await db.query('DELETE FROM crewcheck_telegram_state WHERE state_key=?',[sourceKey(user)]);
+    const receipt=clock=>({identityDigest:digest(['900001','BSB']),period:'2026-08',documentHash:digest(clock),starts:[12,13,14].map(d=>({date:`2026-08-${d}`,clock,offset:-180,literal:true}))});
+    const body={scope:SOURCE_SCOPE,action:'review',expectedRevision:0,before:receipt('01:46'),after:receipt('08:30'),sequenceDate:'2026-08-12',confirmed:true,consent:true};
+    const link={email,chatId:'9000012345',username:'synthetic_crew',linkedAt:new Date(now-1000).toISOString(),code:'synthetic-queue-link'};
+    const saveLink=async()=>{for(const key of ['link-email:'+email,'link-chat:'+link.chatId])await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE payload=VALUES(payload)',[key,JSON.stringify(link)]);};await saveLink();
+    const saved=await voluntarySources(db,user,body,{now});
+    const request={scope:SOURCE_JOB_SCOPE,action:'prepare',expectedRevision:1};
+    assert.equal(saved.queuePreparation.prepared,true,'confirmation atomically reserves held');
+    const results=await Promise.all(Array.from({length:8},()=>sourceQueue(db,user,request,{now})));assert.equal(results.filter(x=>!x.duplicate).length,0);
+    const key=results[0].job.jobKey;assert.equal(results[0].delayMinutes,404);assert.equal(results[0].destination.label,'@synthetic_crew · chat ••••2345');assert.equal(results[0].realConsent,false);assert.equal(results[0].sourceVerified,false);
+    const simulations=await Promise.all(Array.from({length:8},()=>sourceQueue(db,user,{...request,action:'simulate',jobKey:key},{now})));assert.equal(simulations.filter(x=>!x.duplicate).length,1);assert.equal(simulations[0].simulation.simulated,true);assert.equal(simulations[0].accepted,false);assert.equal(simulations[0].delivered,false);
+    const fresh=mysql.createPool({socketPath,user:'root',password:'',database:'crewcheck_notification_qa',connectionLimit:2});try{assert.equal((await sourceQueue(fresh,user,null,{now})).job.simulated,true,'persisted audit read from independent pool without a browser');}finally{await fresh.end();}
+    let rows=(await db.query('SELECT status,chat_id,telegram_username,phone,message FROM crewcheck_notification_jobs WHERE email=? AND job_key=?',[email,key]))[0];assert.equal(rows.length,1);assert.equal(rows[0].status,'held');assert.equal(rows[0].chat_id,null);assert.equal(rows[0].telegram_username,null);assert.equal(rows[0].phone,null);assert.match(rows[0].message,/Segundo as versões que você enviou/);
+    const expiry=Date.parse(saved.expiresAt)+1;await assert.rejects(sourceQueue(db,user,{...request,action:'simulate',jobKey:key},{now:expiry}),error=>error.code==='CONSENT_REQUIRED_OR_EXPIRED');
+    assert.equal((await db.query('SELECT status FROM crewcheck_notification_jobs WHERE email=? AND job_key=?',[email,key]))[0][0].status,'cancelled');assert.equal((await db.query('SELECT COUNT(*) AS n FROM crewcheck_telegram_state WHERE state_key=?',[sourceJobStateKey(user,key)]))[0][0].n,0);
+    body.expectedRevision=2;body.after=receipt('09:30');await voluntarySources(db,user,body,{now});const next=await sourceQueue(db,user,{...request,expectedRevision:3},{now});
+    const race=await Promise.allSettled([voluntarySources(db,user,{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:3},{now}),sourceQueue(db,user,{...request,action:'simulate',expectedRevision:3,jobKey:next.job.jobKey},{now})]);assert.equal(race[0].status,'fulfilled');if(race[1].status==='fulfilled')assert.equal(race[1].value.accepted,false);else assert.equal(race[1].reason.code,'SOURCE_REVISION_CHANGED');
+    assert.equal((await db.query('SELECT status FROM crewcheck_notification_jobs WHERE email=? AND job_key=?',[email,next.job.jobKey]))[0][0].status,'cancelled');
+    body.expectedRevision=4;body.after=receipt('10:30');await voluntarySources(db,user,body,{now});const rotation=await sourceQueue(db,user,{...request,expectedRevision:5},{now});link.chatId='9000099999';link.code='rotated-fixture';await saveLink();
+    await assert.rejects(sourceQueue(db,user,{...request,action:'simulate',expectedRevision:5,jobKey:rotation.job.jobKey},{now}),error=>error.code==='QUEUE_CONTEXT_CHANGED');assert.equal((await db.query('SELECT status FROM crewcheck_notification_jobs WHERE email=? AND job_key=?',[email,rotation.job.jobKey]))[0][0].status,'cancelled');
+    assert.equal((await db.query('SELECT COUNT(*) AS n FROM crewcheck_telegram_state WHERE state_key=?',[sourceJobStateKey(user,rotation.job.jobKey)]))[0][0].n,0,'rotation cancellation is committed despite409');
+    assert.equal((await db.query("SELECT COUNT(*) AS n FROM crewcheck_notification_jobs WHERE email=? AND LEFT(job_key,16)='free-day:source:' AND status IN ('pending','processing','dispatching','sent')",[email]))[0][0].n,0);
+  });
   await run('account deletion removes owned cycle/free-day decisions, tombstones, claims and jobs',async()=>{
     await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',['notification-cycle:other',JSON.stringify({email:'other@example.test'})]);
     for(const [sql,args] of notificationStateDeletionStatements(email)) await db.query(sql.replace(/\$1/g,'?'),args);
-    // Existing canonical account deletion already removes these ordinary link/profile keys.
+    // Existing canonical account deletion already removes ordinary link/profile keys.
+    await db.query('DELETE FROM crewcheck_telegram_state WHERE state_key IN (?,?)',['link-chat:9000012345','link-chat:9000099999']);
     await db.query('DELETE FROM crewcheck_telegram_state WHERE state_key IN (?,?)',[`link-email:${email}`,`profile:${email}`]);
     assert.equal((await db.query("SELECT COUNT(*) AS n FROM crewcheck_telegram_state WHERE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.email'))=?",[email]))[0][0].n,0);
     assert.equal((await db.query('SELECT COUNT(*) AS n FROM crewcheck_notification_jobs WHERE email=?',[email]))[0][0].n,0);

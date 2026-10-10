@@ -1,0 +1,54 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import {createRequire} from 'node:module';
+import {createServer} from 'vite';
+import {handleVoluntarySources} from '../server/free-day-sources.mjs';
+import {handleSourceQueue} from '../server/free-day-source-queue.mjs';
+import {syntheticSourceDatabase} from './fixtures/free-day-source-db.mjs';
+import {pdfBytes,lines} from './fixtures/free-day-source-pdf.mjs';
+import {sourceJobStateKey,SOURCE_JOB_SCOPE} from '../server/free-day-source-job-state.mjs';
+const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || import.meta.url)('playwright');
+const user={email:'synthetic-source@example.invalid',id:'synthetic-owner'},db=syntheticSourceDatabase();db.state.roster.crewId='99999999';
+const link={email:user.email,chatId:'9000012345',username:'synthetic_crew',code:'synthetic-link',linkedAt:'2026-10-01T12:00:00Z'};
+const putLink=()=>{db.state.rows.set(`link-email:${user.email}`,JSON.stringify(link));db.state.rows.set(`link-chat:${link.chatId}`,JSON.stringify(link));};
+const harness=path.resolve('client/__source-queue-probe.tsx');fs.writeFileSync(harness,`import React from 'react';import {createRoot} from 'react-dom/client';import {FreeDaySourceConsent} from './src/components/FreeDaySourceConsent';createRoot(document.getElementById('root')!).render(<FreeDaySourceConsent session="synthetic-session" bound={true} />);`);
+let posts=[],delayDestination=false,heldReply,replyStarted;
+const server=await createServer({configFile:false,root:path.resolve('client'),resolve:{alias:{'@':path.resolve('client/src'),'@shared':path.resolve('shared')}},cacheDir:path.join('/tmp',`crewcheck-source-queue-vite-${process.pid}`),esbuild:{jsx:'automatic'},optimizeDeps:{entries:[harness],include:['react','react/jsx-runtime','react/jsx-dev-runtime','react-dom/client','pdfjs-dist/legacy/build/pdf.mjs']},plugins:[{name:'queue-simulated-closed-app',configureServer(server){server.middlewares.use((req,res,next)=>{
+ const queue=req.url==='/api/notifications/free-day-source-queue',source=req.url==='/api/notifications/free-day-sources';
+ if(queue || source)return void (queue?handleSourceQueue:handleVoluntarySources)(req,res,{identity:r=>r.headers.authorization==='Bearer synthetic-only'?user:null,dbPool:async()=>db,readJson:async r=>{let text='';for await(const chunk of r)text+=chunk;const body=JSON.parse(text);posts.push({queue,body});return body;},sendJson:async(r,status,body)=>{if(queue && req.method==='GET' && delayDestination){delayDestination=false;replyStarted?.();await new Promise(resolve=>heldReply=resolve);}r.writeHead(status,{'content-type':'application/json'});r.end(JSON.stringify(body));}});
+ if(req.url==='/__queue_probe'){res.setHeader('content-type','text/html');res.end('<div id="root"></div><script type="module" src="/__source-queue-probe.tsx"></script>');return;}next();});}}],server:{host:'127.0.0.1',port:0,fs:{allow:[process.cwd(),fs.realpathSync('node_modules')]}}});await server.listen();const origin='http://127.0.0.1:'+server.httpServer.address().port;
+const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});
+const context=async()=>{const c=await browser.newContext({serviceWorkers:'block'});await c.route('**/*',r=>new URL(r.request().url()).origin===origin?r.continue():r.abort());await c.addInitScript(user=>{localStorage.setItem('crewcheck_auth_token','synthetic-only');localStorage.setItem('crewcheck_auth_user',JSON.stringify(user));globalThis.Notification=class{static requestPermission(){throw Error('No permission request allowed');}};},user);return c;};
+const out='artifacts/free-day-source-queue';fs.mkdirSync(out,{recursive:true});
+try{
+ let c=await context(),page=await c.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/__queue_probe');await page.locator('summary').click();
+ await page.locator('input[type=file]').nth(0).setInputFiles({name:'synthetic-before.pdf',mimeType:'application/pdf',buffer:pdfBytes(lines('01:46'))});await page.waitForFunction(()=>document.querySelectorAll('ul').length===1);
+ await page.locator('input[type=file]').nth(1).setInputFiles({name:'synthetic-after.pdf',mimeType:'application/pdf',buffer:pdfBytes(lines('08:30'))});await page.waitForFunction(()=>document.querySelectorAll('ul').length===2);
+ await page.locator('input[type=date]').fill('2026-08-12');await page.locator('input[type=checkbox]').nth(0).check();await page.locator('input[type=checkbox]').nth(1).check();await page.getByRole('button',{name:'Salvar revisão simulada'}).click();await page.locator('[data-source-review-result]').filter({hasText:'404 minutos'}).waitFor();
+ await page.locator('[data-existing-destination]').filter({hasText:'Nenhum destino existente validado'}).waitFor();assert.equal(await page.getByRole('button',{name:'Preparar fila simulada'}).isDisabled(),true);assert.equal(db.state.jobs.size,0);
+ putLink();await page.getByRole('button',{name:'Atualizar vínculo existente'}).click();await page.locator('[data-existing-destination]').filter({hasText:'@synthetic_crew'}).waitFor();
+ const consent=page.getByRole('checkbox',{name:'Consentimento para envio real indisponível'});assert.equal(await consent.isDisabled(),true);assert.equal(await consent.isChecked(),false);assert.equal(await page.getByRole('button',{name:'Preparar fila simulada'}).isDisabled(),false);
+ assert.equal(posts.length,1);await page.screenshot({path:path.join(out,'validated-destination-disabled-real-consent.png'),fullPage:true});
+ // Close the entire browser context before invoking the server-side producer
+ // and fixed simulated transport. Persisted receipts, not device APIs, drive it.
+ await c.close();
+ const headers={authorization:'Bearer synthetic-only','content-type':'application/json'},url=origin+'/api/notifications/free-day-source-queue';
+ const request=async body=>{const r=await fetch(url,{method:'POST',headers,body:JSON.stringify(body)});assert.equal(r.status,200);return r.json();};
+ const prepared=await request({scope:SOURCE_JOB_SCOPE,action:'prepare',expectedRevision:1});const key=prepared.job.jobKey;
+ const simulated=await request({scope:SOURCE_JOB_SCOPE,action:'simulate',expectedRevision:1,jobKey:key});assert.equal(simulated.simulation.simulated,true);assert.equal(simulated.simulation.accepted,false);assert.equal(simulated.delivered,false);assert.equal(simulated.realConsent,false);assert.equal(db.state.jobs.size,1);assert.equal(db.state.jobs.get(key).status,'held');assert.equal(db.state.jobs.get(key).chat_id,null);
+ const repeated=await request({scope:SOURCE_JOB_SCOPE,action:'simulate',expectedRevision:1,jobKey:key});assert.equal(repeated.duplicate,true);
+ c=await context();page=await c.newPage();await page.goto(origin+'/__queue_probe');await page.locator('summary').click();await page.locator('[data-source-queue-status]').filter({hasText:'Simulação registrada'}).waitFor();assert.equal(await page.getByRole('checkbox',{name:'Consentimento para envio real indisponível'}).isChecked(),false);
+ assert.ok(!JSON.stringify(posts).includes('chatId'));assert.ok(!JSON.stringify(posts).includes('realConsent'));assert.ok(!JSON.stringify(posts).includes('rawText'));
+ await page.screenshot({path:path.join(out,'app-reopened-held-simulation.png'),fullPage:true});
+ await page.getByRole('button',{name:'Revogar e remover recibos'}).click();await page.getByRole('status').filter({hasText:'revogado'}).waitFor();assert.equal(db.state.jobs.get(key).status,'cancelled');assert.equal(db.state.rows.has(sourceJobStateKey(user,key)),false);
+ const afterRevoke=await fetch(url,{method:'POST',headers,body:JSON.stringify({scope:SOURCE_JOB_SCOPE,action:'simulate',expectedRevision:1,jobKey:key})});assert.equal(afterRevoke.status,409);
+ // Restore a separately confirmed fixture review for the late-response test.
+ const sourceBody=posts.find(x=>!x.queue).body;sourceBody.expectedRevision=2;await fetch(origin+'/api/notifications/free-day-sources',{method:'POST',headers,body:JSON.stringify(sourceBody)});
+ await page.reload();await page.locator('summary').click();await page.locator('[data-existing-destination]').filter({hasText:'@synthetic_crew'}).waitFor();
+ let started;const begin=new Promise(resolve=>started=resolve);replyStarted=started;delayDestination=true;await page.getByRole('button',{name:'Atualizar vínculo existente'}).click();await begin;
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','other-account-token');window.dispatchEvent(new Event('crewcheck:auth-changed'));});heldReply();
+ await page.waitForFunction(()=>!document.querySelector('[data-free-day-source-queue]'));assert.equal(await page.getByText('@synthetic_crew',{exact:false}).count(),0);assert.deepEqual(errors,[]);await c.close();
+ fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({synthetic:true,physicalPdf:true,delayMinutes:404,appClosedBeforeProducerAndTransport:true,persistedHeldAfterReload:true,validatedExistingDestination:true,realConsent:false,sourceVerified:false,accepted:false,delivered:false,queueDestination:null,checks:['noPresumedDestination','disabledSpecificRealConsent','closedAppProducerSimulation','idempotentLocalTransport','revokeCancelsAndDeletesMetadata','lateDestinationResponseAccountSwitch']},null,2));
+ console.log('PASS physical PDFs → confirmed receipts → validated existing destination → browser closed → held producer/local transport → reopen/revoke/account isolation; no real consent/permissions/content sharing/provider/send');
+}finally{await browser.close();await server.close();fs.rmSync(harness,{force:true});}
