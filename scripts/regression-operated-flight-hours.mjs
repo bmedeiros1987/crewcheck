@@ -26,6 +26,24 @@ try {
   const presentation = vm.createContext({ analyzeSafe: r => engine.analyzeCompliance(r), neutralCompliance: () => null });
   vm.runInContext(ts.transpileModule(currentNode.getText(home) + '\nglobalThis.current=currentCompliance;', { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, presentation);
 
+  // Owner cache may contain legacy compliance without metrics. Never accept it
+  // as verified evidence, and never crash before the canonical recomputation.
+  const legacyRoster = { month: 10, year: 2032, rawText: '[extra]', days: [{
+    date: '10/10/2032', dayNumber: 10, month: 10, year: 2032,
+    type: 'FLIGHT', code: 'OP', legs: [{ workType: 'OP', duration: 1 }],
+  }] };
+  for (const compliance of [undefined, {}, { metrics: null }, { metrics: {} }, { metrics: { flightHoursOriginPending: false } },
+    { metrics: { flightHoursOriginPending: 'false', totalFlightHours: 777 } }]) {
+    const before = JSON.stringify({ roster: legacyRoster, compliance });
+    const recalculated = presentation.current({ roster: legacyRoster, compliance });
+    assert.equal(recalculated.metrics.flightHoursOriginPending, true, 'missing/incomplete evidence must recompute as pending');
+    assert.equal(recalculated.metrics.totalFlightHours, null, 'legacy result cannot assert a numeric operated total');
+    assert.equal(JSON.stringify({ roster: legacyRoster, compliance }), before, 'legacy cache is not rewritten');
+  }
+
+  const verified = engine.analyzeCompliance(legacyRoster);
+  assert.equal(presentation.current({ roster: legacyRoster, compliance: verified }), verified, 'complete canonical pending output remains accepted without inventing certainty');
+
   const payroll = vm.createContext({ financialEventCode: e => e.code || 'OP' });
   vm.runInContext(ts.transpileModule(payrollRules.map(n => n.getText(home)).join('\n') + '\nglobalThis.rule=financialFlightRule;', { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, payroll);
   const mixed = ['LA 9001 04:10 05:00 BSB CGH 06:45 (320)',
