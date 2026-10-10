@@ -115,7 +115,8 @@ jobs:
       - run: npx tsc --noEmit
       - run: npx vite build
       - name: Verify planned reference owner and session isolation
-        run: node scripts/regression-planned-roster-owner.mjs
+        run: |
+          node scripts/regression-planned-roster-owner.mjs
           node scripts/regression-planned-roster-import-race.mjs
       - name: Install isolated UI browser dependency
         run: |
