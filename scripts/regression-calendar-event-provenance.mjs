@@ -175,13 +175,14 @@ try {
   await handleGoogleCalendarOAuthRoute({ method: 'POST' }, startRes, new URL('https://synthetic.invalid/api/google-calendar/oauth/start'), { identity });
   let callbackStatus;
   const callbackRes = { writeHead(status) { callbackStatus = status; }, end() {} };
+  const tokenBeforeCallback = JSON.parse(fs.readFileSync(path.join(fixtureDir, '.crewcheck-google-oauth-store.json'), 'utf8'))[`token:${keyFor(identity)}`];
   calls = [];
   await handleGoogleCalendarOAuthRoute({}, callbackRes,
     new URL(`https://synthetic.invalid/api/google-calendar/oauth/callback?state=${startPayload.state}&code=synthetic-code`));
   assert.equal(callbackStatus, 400);
   assert.equal(calls.length, 1);
   const encryptedStore = JSON.parse(fs.readFileSync(path.join(fixtureDir, '.crewcheck-google-oauth-store.json'), 'utf8'));
-  assert.ok(encryptedStore[`token:${keyFor(identity)}`]); // Existing grant retained, not combined/replaced.
+  assert.deepEqual(encryptedStore[`token:${keyFor(identity)}`], tokenBeforeCallback); // Not combined/replaced.
   console.log('PASS: callback with no refresh token rejects mixing Google accounts');
 } finally {
   globalThis.fetch = savedFetch;
