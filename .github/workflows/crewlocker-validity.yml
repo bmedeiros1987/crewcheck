@@ -1,0 +1,56 @@
+name: CrewLocker validity review
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/crewlocker*.ts'
+      - 'client/src/components/v1435/CrewLockerView.tsx'
+      - 'client/src/components/v1435/CrewValidityEditor.tsx'
+      - 'client/src/components/v1435/crewlocker.css'
+      - 'scripts/regression-crewlocker-validity*.mjs'
+      - '.github/workflows/crewlocker-validity.yml'
+  workflow_dispatch:
+jobs:
+  validity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install isolated regression tools
+        run: |
+          npm install --prefix "$RUNNER_TEMP/locker-test" --ignore-scripts --no-audit --no-fund playwright@1.55.0 fake-indexeddb@6.2.4
+          node "$RUNNER_TEMP/locker-test/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify raw production modules and UI
+        env:
+          CREWLOCKER_TEST_PACKAGE: ${{ runner.temp }}/locker-test/package.json
+          CREWLOCKER_STATE: raw
+        run: |
+          node scripts/regression-crewlocker-validity.mjs
+          node scripts/regression-crewlocker-validity-browser.mjs
+          npx tsc --noEmit
+      - name: Prepare and build canonical application
+        # Evidence files affect the canonical preparation fingerprint. Build before
+        # prepared regressions write new evidence, so legacy patches are not replayed.
+        run: |
+          node scripts/v139/apply.mjs
+          npm run build
+      - name: Verify prepared production modules and UI
+        env:
+          CREWLOCKER_TEST_PACKAGE: ${{ runner.temp }}/locker-test/package.json
+          CREWLOCKER_STATE: prepared
+        run: |
+          node scripts/regression-crewlocker-validity.mjs
+          node scripts/regression-crewlocker-validity-browser.mjs
+          npx tsc --noEmit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: crewlocker-validity-synthetic
+          path: artifacts/crewlocker-validity/
+          if-no-files-found: error
