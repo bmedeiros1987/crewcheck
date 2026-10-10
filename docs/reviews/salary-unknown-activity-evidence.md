@@ -17,3 +17,7 @@ node scripts/regression-salary-activity-browser.cjs
 ```
 
 Independent review of the exact source/prepared tree, confirmed-hour rules and mixed-state consumers is required before merge/deploy.
+
+Independent review scope clarification: payableReserveHours is the published canonical rule from merged PR321 (26419a50e666184af8f2f22801ecef5303c60c6d), implemented in financialReserveCredits.ts and applied by scripts/v139/apply.mjs importing scripts/v14385/apply.mjs. The raw base Home has durationHours but the actual build replaces that reducer. PR970 preserves the prepared rule; it does not introduce the first-flight cut. A valid 04:10→10:10 reserve activated08:20 already credits4h10 in the prepared published base. The optional CREWCHECK_PREPARED_BASE_HOME regression compares gross, reserve, standby and hours for complete fixtures and activation, across3TZ. No ACT basis or new rate is claimed here; changing this existing rule is outside PR970.
+
+Browser fixture now supports owner-v2 snapshots using the real rosterFingerprint and explicitly requires v2 when REQUIRE_PLANNED_OWNER_V2=1. Legacy v1 is seeded with another-source poison in that composition and ignored. Standalone PR970 on the pre968 base retains the existing v1 fixture only to exercise its current comparison contract.
