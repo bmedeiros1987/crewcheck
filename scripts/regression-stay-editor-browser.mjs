@@ -108,8 +108,15 @@ try {
       assert.ok(await content.evaluate(el=>{
         const clip=el.getBoundingClientRect();
         const controls=[...el.querySelectorAll('input:not([type="checkbox"]),select,button,summary')].map(item=>item.getBoundingClientRect()).filter(r=>r.width&&r.height&&r.top>=clip.top&&r.bottom<=clip.bottom);
-        return controls.every((r,i)=>controls.slice(i+1).every(b=>r.right<=b.left+1||r.left>=b.right-1||r.bottom<=b.top+1||r.top>=b.bottom-1));
-      }),'Visible form controls do not intersect');
+        const intersects=(a,b)=>a.right>b.left+1&&a.left<b.right-1&&a.bottom>b.top+1&&a.top<b.bottom-1;
+        const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT),texts=[];
+        for(let node=walker.nextNode();node;node=walker.nextNode()) {
+          if(!node.textContent.trim()||node.parentElement.closest('button,summary,select'))continue;
+          const range=document.createRange();range.selectNodeContents(node);
+          texts.push(...[...range.getClientRects()].filter(r=>r.width&&r.height&&r.top>=clip.top&&r.bottom<=clip.bottom));
+        }
+        return controls.every((r,i)=>controls.slice(i+1).every(b=>!intersects(r,b))&&texts.every(text=>!intersects(r,text)));
+      }),'Visible text and form controls do not intersect');
 
     }
     assert.ok(await content.evaluate(el=>el.scrollHeight>el.clientHeight),'Actual content scrolls');
@@ -156,6 +163,8 @@ try {
   await mode.selectOption('relative');
   await preview.getByRole('combobox',{name:'Antecedência deste pernoite',exact:true}).selectOption('90');
   await preview.getByText('Despertar calculado: 04:00',{exact:false}).waitFor();
+  await preview.getByRole('spinbutton',{name:'Antecedência personalizada (minutos)',exact:true}).fill('0');
+  await preview.getByRole('alert').filter({hasText:'não é anterior à APZ no hotel'}).waitFor();
   await mode.selectOption('absolute');await exact.fill('2030-10-11T04:00');
   await page.getByRole('button',{name:'Salvar alterações do pernoite',exact:true}).click();
   await page.reload();
