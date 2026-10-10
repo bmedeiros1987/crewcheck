@@ -4,9 +4,22 @@ const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300
 export function normalizeWellhubPlan(value) {
   return normalize(value).replace(/\s*\+\s*$/, '-plus').replace(/[\s_]+/g, '-');
 }
+export function wellhubSnapshotFreshness(partner, now = new Date()) {
+  const raw = String(partner.verifiedAt || '').trim();
+  const calendar = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/);
+  const day = calendar ? new Date(`${calendar[1]}-${calendar[2]}-${calendar[3]}T00:00:00Z`) : null;
+  const calendarValid = calendar && Number.isFinite(day.getTime()) && day.toISOString().slice(0, 10) === calendar[0].slice(0, 10);
+  const checked = calendarValid ? Date.parse(raw) : NaN;
+  const current = now.getTime();
+  const until = new Date(checked + WELLHUB_SNAPSHOT_MAX_AGE_DAYS * 86400000);
+  if (!Number.isFinite(checked) || !Number.isFinite(current) || !Number.isFinite(until.getTime())) {
+    return { snapshotStatus: 'invalid', snapshotValidUntil: '' };
+  }
+  if (checked > current) return { snapshotStatus: 'future', snapshotValidUntil: '' };
+  return { snapshotStatus: current > until.getTime() ? 'expired' : 'valid', snapshotValidUntil: until.toISOString() };
+}
 export function wellhubSnapshotAccess(partner, userPlan, activity = '', now = new Date()) {
-  const checked = Date.parse(partner.verifiedAt);
-  if (!Number.isFinite(checked) || now.getTime() - checked > WELLHUB_SNAPSHOT_MAX_AGE_DAYS * 86400000 || checked > now.getTime()) return 'unknown';
+  if (wellhubSnapshotFreshness(partner, now).snapshotStatus !== 'valid') return 'unknown';
   const userRank = ORDER.indexOf(normalizeWellhubPlan(userPlan));
   const minimumRank = ORDER.indexOf(normalizeWellhubPlan(partner.minimumPlan));
   if (userRank < 0 || minimumRank < 0) return 'unknown';

@@ -1,0 +1,57 @@
+name: CrewCheck mobile Play read-only preflight
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/android-play/mobile_preflight.py'
+      - 'scripts/android-play/test_mobile_preflight.py'
+      - 'scripts/android-play/receipt_journal.py'
+      - 'scripts/android-play/test_receipt_journal.py'
+      - 'scripts/android-play/mobile_internal.py'
+      - 'scripts/android-play/test_mobile_internal.py'
+      - '.github/workflows/mobile-play-preflight.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crewcheck-mobile-preflight-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  offline-guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - run: python3 scripts/android-play/test_mobile_preflight.py
+      - run: python3 scripts/android-play/test_receipt_journal.py
+      - run: python3 scripts/android-play/test_mobile_internal.py
+  inspect-existing-play-access:
+    needs: offline-guards
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
+      - name: Inspect release lifecycle without opening an edit
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/android-play/mobile_preflight.py --output "$RUNNER_TEMP/mobile-play-preflight.json"
+      - name: Retain bounded read-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-mobile-play-preflight-${{ github.run_id }}
+          path: ${{ runner.temp }}/mobile-play-preflight.json
+          if-no-files-found: error
+          retention-days: 30

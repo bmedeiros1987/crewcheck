@@ -83,6 +83,12 @@ def check_ci():
 
 
 def allocate():
+    raise AssertionError('Live allocation disabled pending reviewed durable journal integration; do not open a replacement edit')
+
+
+def allocate_offline_contract():
+    # Exercised with fake APIs only. Not exposed by the CLI while durable package
+    # reservation/recovery is awaiting a reviewed production backend.
     guard()
     policy = json.loads(POLICY.read_text())
     before = copy.deepcopy(policy)
@@ -144,9 +150,11 @@ def write_receipt(path, receipt, initial=False):
         target.replace(path)
 
 
-def publish(root):
+def publish(root, journal=None):
     guard()
     assert os.environ.get('PUBLISH_MOBILE_INTERNAL') == 'true', 'Explicit publication opt-in required'
+    assert journal is not None, 'Publication disabled: reviewed durable receipt backend is not configured'
+    assert journal.package == PACKAGE, 'Journal must reserve the entire shared mobile/Wear package'
     check_ci()
     out = Path(root)
     receipt_path = out / 'mobile-commit-receipt.json'
@@ -162,12 +170,18 @@ def publish(root):
     assert Path(evidence['file']).name == evidence['file']
     aab = out / evidence['file']
     assert hashlib.sha256(aab.read_bytes()).hexdigest() == evidence['sha256']
+    # Reserve the whole shared package before opening any edit. A crash, uncertain
+    # reservation or prior owner must block every fresh runner, allocation included.
+    journal.reserve(dict(sourceSha=SOURCE_SHA, package=PACKAGE,
+        versionCode=evidence['versionCode'], sha256=evidence['sha256']))
     session = play_session()
     base = f'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{PACKAGE}/edits'
     edit = api(session, 'POST', base, json={})['id']
     url, commit_attempted = base + '/' + edit, False
     commit_error = None
     try:
+        journal.persist(dict(sourceSha=SOURCE_SHA, package=PACKAGE, editId=edit,
+                             versionCode=evidence['versionCode'], state='edit_open'))
         tracks, codes = collect_live_codes(session, url)
         assert evidence['versionCode'] > max(codes + [policy['knownMaxVersionCode'][PACKAGE]]), 'Version raced another release; rebuild with fresh allocation'
         track = select_track(tracks)
@@ -189,6 +203,7 @@ def publish(root):
             otherTracksBefore=other_tracks(tracks, track['track']),
             committed=None, acknowledged=False, verified=False, state='pending')
         write_receipt(receipt_path, receipt, initial=True)
+        journal.persist(receipt)
         commit_attempted = True
         try:
             api(session, 'POST', url + ':commit', params={
@@ -201,6 +216,7 @@ def publish(root):
         else:
             receipt.update(committed=True, acknowledged=True, state='acknowledged')
         write_receipt(receipt_path, receipt)
+        journal.persist(receipt)
     finally:
         if not commit_attempted:
             api(session, 'DELETE', url)
@@ -218,6 +234,7 @@ def publish(root):
                 receipt['releaseSummaries'][name] = {'readErrorType': type(error).__name__}
         receipt.update(state='reconciliation_required', verified=False)
         write_receipt(receipt_path, receipt)
+        journal.persist(receipt)
         raise RuntimeError('Commit response uncertain; read-only evidence saved. Coordinate reconciliation before retry; original edit was not replaced or deleted') from commit_error
     # Acknowledgement permits a new edit to verify the complete track snapshot.
     verify_url = None
@@ -231,12 +248,14 @@ def publish(root):
         assert {str(v) for r in current['releases'] for v in r['versionCodes']} == set(payload['releases'][0]['versionCodes']), 'Target track not reconciled'
         receipt.update(committed=True, verified=True, state='reconciled')
         write_receipt(receipt_path, receipt)
+        journal.persist(receipt)
         result = dict(evidence, committed=True, commitAcknowledged=receipt['acknowledged'], verifiedTrack=track['track'], retainedVersionCodes=payload['releases'][0]['versionCodes'], testUrl='https://play.google.com/apps/testing/' + PACKAGE, testerEligibility='Not verified; existing tester access only')
         (out / 'mobile-internal-result.json').write_text(json.dumps(result, indent=2) + '\n')
         print(json.dumps(result))
     except Exception as error:
         receipt.update(state='reconciliation_required', verified=False, reconciliationErrorType=type(error).__name__)
         write_receipt(receipt_path, receipt)
+        journal.persist(receipt)
         raise RuntimeError('Commit outcome requires coordination; preserve evidence, do not retry or roll back automatically') from (commit_error or error)
     finally:
         if verify_url:

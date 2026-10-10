@@ -1,3 +1,7 @@
+import { FreeDayPostponementAlerts } from '@/components/FreeDayPostponementAlerts';
+import { beginOwnedPlannedImport, loadOwnedPlannedRoster, saveOwnedPlannedRoster, clearOwnedPlannedRoster, isCurrentPlannedRoster, type OwnedPlannedRoster } from '@/lib/plannedRosterStore';
+import { payableReserveHours } from '@/lib/financialReserveCredits';
+import { assessSalaryActivities } from '@/lib/salaryActivityEvidence';
 import { CanonicalDutyCard, openCanonicalDutyDetails } from '@/components/CanonicalDutyCard';
 import { measureCanonicalDuty } from '@/lib/canonicalDutyMeasurement';
 import { financialIntervalEvidenceIssue } from '@/lib/financialIntervalEvidence';
@@ -90,7 +94,7 @@ import FinancialStatementImporter from '@/components/finance/FinancialStatementI
 import FinancialHistoryExplorer from '@/components/finance/FinancialHistoryExplorer';
 import FinancialStatementReconciliation from '@/components/finance/FinancialStatementReconciliation';
 import { financialRowsInRange, financialWeeks, financialRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
-import { rosterDisplayIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
+import { rosterDisplayIso, rosterStrictInstant, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
@@ -117,6 +121,7 @@ type ZeroView =
 
 type ZeroLeg = {
   id: string;
+  salaryClockKnown?: boolean;
   day: RosterDay;
   leg?: FlightLeg;
   kind: 'flight' | 'stay' | 'duty' | 'journey-rest';
@@ -1025,61 +1030,37 @@ function saveRoster(roster: CrewRoster, source: string): ComplianceResult {
   return compliance;
 }
 
-type PlannedRosterSnapshot = {
-  roster: CrewRoster;
-  source: string;
-  capturedAt: string;
-  fingerprint: string;
-};
+type PlannedRosterSnapshot = OwnedPlannedRoster;
 
-const PLANNED_ROSTER_STORAGE_KEY = 'crewcheck_planned_roster_snapshot_v1';
-
-function loadPlannedRoster(): PlannedRosterSnapshot | null {
-  try {
-    const parsed = JSON.parse(storage.get(PLANNED_ROSTER_STORAGE_KEY, 'null')) as PlannedRosterSnapshot | null;
-    if (!parsed?.roster || !Array.isArray(parsed.roster.days) || !parsed.roster.days.length) return null;
-    return {
-      ...parsed,
-      source: String(parsed.source || 'Escala planejada'),
-      capturedAt: String(parsed.capturedAt || new Date().toISOString()),
-      fingerprint: String(parsed.fingerprint || rosterFingerprint(parsed.roster)),
-    };
-  } catch {
-    return null;
-  }
+function loadPlannedRoster(): PlannedRosterSnapshot | null { return loadOwnedPlannedRoster(); }
+function savePlannedRoster(roster: CrewRoster, source: string, expectedSession = financialRateSession()): PlannedRosterSnapshot | null {
+  return saveOwnedPlannedRoster(roster, source, expectedSession);
 }
+function clearPlannedRoster(expectedSession = financialRateSession()): boolean { return clearOwnedPlannedRoster(expectedSession); }
 
-function savePlannedRoster(roster: CrewRoster, source: string): PlannedRosterSnapshot {
-  const snapshot: PlannedRosterSnapshot = {
-    roster,
-    source: source || 'Escala planejada',
-    capturedAt: new Date().toISOString(),
-    fingerprint: rosterFingerprint(roster),
-  };
-  storage.set(PLANNED_ROSTER_STORAGE_KEY, JSON.stringify(snapshot));
-  window.dispatchEvent(new CustomEvent('crewcheck:planned-roster-updated', { detail: snapshot }));
-  return snapshot;
-}
-
-function clearPlannedRoster(): void {
-  try { localStorage.removeItem(PLANNED_ROSTER_STORAGE_KEY); } catch {}
-  window.dispatchEvent(new CustomEvent('crewcheck:planned-roster-updated'));
-}
-
-function preservePlannedRosterBeforeImport(current: BundleState, incoming: CrewRoster): PlannedRosterSnapshot | null {
+function preservePlannedRosterBeforeImport(current: BundleState, incoming: CrewRoster, expectedSession: string | null = null): PlannedRosterSnapshot | null {
+  if (!expectedSession || expectedSession !== financialRateSession()) return null;
   const currentHasDays = Array.isArray(current.roster.days) && current.roster.days.length > 0;
   if (!currentHasDays || !sameRosterPeriod(current.roster, incoming)) return loadPlannedRoster();
   if (rosterFingerprint(current.roster) === rosterFingerprint(incoming)) return loadPlannedRoster();
   const existing = loadPlannedRoster();
   if (existing && sameRosterPeriod(existing.roster, incoming)) return existing;
-  return savePlannedRoster(current.roster, current.source);
+  return savePlannedRoster(current.roster, current.source, expectedSession);
 }
 
 function currentCompliance(bundle: BundleState) { return bundle.compliance || analyzeSafe(bundle.roster); }
 function currentGym(bundle: BundleState) { try { return getGymRecommendations(bundle.roster); } catch { return []; } }
 
 function buildLegs(roster: CrewRoster): ZeroLeg[] {
-  const normalized = normalizeRosterDays(roster);
+  // Capture salary clock evidence before canonical midnight/arrival fallbacks.
+  // This financial-only annotation never changes regulatory normalization.
+  const clock = (value: unknown) => /^(?:[01]?\d|2[0-3]):[0-5]\d(?:\(\+\d+\))?$/.test(String(value || ''));
+  const clockSourceRoster = { ...roster, days: roster.days.map(day => ({ ...day,
+    legs: (day.legs || []).map(leg => ({ ...leg,
+      salaryClockKnown: clock(leg.departureTime) && clock(leg.arrivalTime),
+    })),
+  })) };
+  const normalized = normalizeRosterDays(clockSourceRoster);
   const canonicalEvents = buildCanonicalRosterEvents(normalized);
 
   const legs = canonicalEvents.map((event): ZeroLeg => {
@@ -1104,6 +1085,7 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
         day,
         leg,
         kind: 'flight',
+        salaryClockKnown: anyLeg.salaryClockKnown === true,
         date: d,
         title,
         subtitle,
@@ -2405,10 +2387,29 @@ function comparisonChangeLabel(change: RosterChange): string {
 }
 
 function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload: () => void }) {
-  const [planned, setPlanned] = useState<PlannedRosterSnapshot | null>(() => loadPlannedRoster());
+  const [storedPlanned, setPlanned] = useState<PlannedRosterSnapshot | null>(() => loadPlannedRoster());
+  const [plannedSession, setPlannedSession] = useState(() => financialRateSession());
+  const liveSession = financialRateSession();
+  const planned = plannedSession && plannedSession === liveSession && isCurrentPlannedRoster(storedPlanned) ? storedPlanned : null;
   const [filter, setFilter] = useState<'all' | 'financial' | 'days_off'>('all');
   const [freeDayDelay, setFreeDayDelay] = useState(() => readNumberSetting('crewcheck_free_day_delay_hours', 0));
   const [exceptionalNeed, setExceptionalNeed] = useState(() => storage.get('crewcheck_free_day_exceptional_need', '0') === '1');
+  useEffect(() => {
+    const sync = () => {
+      setPlannedSession(financialRateSession());
+      setPlanned(loadPlannedRoster());
+      setFilter('all');
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || ['crewcheck_auth_user', 'crewcheck_auth_token'].includes(event.key) || event.key.startsWith('crewcheck_planned_roster_snapshot_v2:')) sync();
+    };
+    for (const name of ['crewcheck:auth-changed', 'crewcheck:auth-expired', 'crewcheck:planned-roster-updated']) window.addEventListener(name, sync);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      for (const name of ['crewcheck:auth-changed', 'crewcheck:auth-expired', 'crewcheck:planned-roster-updated']) window.removeEventListener(name, sync);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
   const hasCurrent = Array.isArray(bundle.roster.days) && bundle.roster.days.length > 0;
   const comparison = useMemo(
     () => planned && hasCurrent ? compareRosters(planned.roster, bundle.roster) : null,
@@ -2423,36 +2424,43 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
     const afterVariable = after.salary.production + after.salary.reserve + after.salary.standby
       + after.salary.chief + after.salary.instructorPay;
     const perDiemDelta = nativeForecastDelta(before.perdiem.nativeSummary, after.perdiem.nativeSummary);
+    const salaryReady = before.salary.configured && after.salary.configured
+      && !before.salary.config.requiresManualFunction && !after.salary.config.requiresManualFunction
+      && Number.isFinite(beforeVariable) && Number.isFinite(afterVariable)
+      && [...(before.salary.rows || []), ...(after.salary.rows || [])].every(row => row.timeKnown === true && row.distanceKnown === true && Number.isFinite(row.total));
     return {
-      variableDelta: afterVariable - beforeVariable,
-      plannedVariable: beforeVariable,
-      currentVariable: afterVariable,
-      plannedGuaranteeReview: afterVariable + 0.005 < beforeVariable,
+      variableDelta: salaryReady ? afterVariable - beforeVariable : null,
+      plannedVariable: salaryReady ? beforeVariable : null,
+      currentVariable: salaryReady ? afterVariable : null,
+      plannedGuaranteeReview: salaryReady ? afterVariable + 0.005 < beforeVariable : null,
       perDiemDelta,
-      salaryReady: !before.salary.config.requiresManualFunction && !after.salary.config.requiresManualFunction,
+      salaryReady,
     };
   }, [planned, bundle.roster, comparison?.summary.periodMatches]);
 
   function markCurrentAsPlanned() {
     if (!hasCurrent) return;
-    const snapshot = savePlannedRoster(bundle.roster, bundle.source);
+    const snapshot = savePlannedRoster(bundle.roster, bundle.source, plannedSession);
+    if (!snapshot) return;
     setPlanned(snapshot);
     toast.success('Escala atual marcada como planejada. Importe a próxima versão para comparar.');
   }
 
   function resetPlanned() {
-    if (!window.confirm('Remover a referência planejada deste dispositivo? A escala atual continuará ativa.')) return;
-    clearPlannedRoster();
+    if (!window.confirm('Remover a referência planejada desta conta neste dispositivo? A escala atual continuará ativa.')) return;
+    if (!clearPlannedRoster(plannedSession)) return;
     setPlanned(null);
     toast.success('Referência planejada removida.');
   }
+
+  if (!liveSession) return <><Brand back/><section className="cz-empty-real"><h2>Acesse sua conta para comparar escalas</h2></section></>;
 
   if (!hasCurrent) {
     return <><Brand back/><section className="cz-panel-head"><h1>Planejado x atual</h1><p>Compare versões da mesma escala sem misturar períodos.</p></section><article className="cz-empty-real"><GitCompareArrows/><h2>Importe a primeira escala</h2><p>Ela poderá ser marcada como planejada antes da próxima publicação.</p><button onClick={onUpload}>Importar PDF</button></article></>;
   }
 
   if (!planned) {
-    return <><Brand back/><section className="cz-panel-head"><h1>Planejado x atual</h1><p>Guarde uma referência e compare a próxima publicação do mesmo mês.</p></section><section className="cz-toolbox"><h2>Definir a referência planejada</h2><p>A escala ativa {rosterPeriodLabel(bundle.roster)} será guardada neste dispositivo. Na próxima importação do mesmo período, o CrewCheck mostrará mudanças de horários, voos, OP/PS, atividades e folgas.</p><div className="cz-tool-actions"><button onClick={markCurrentAsPlanned}><Save/> Marcar atual como planejada</button><button onClick={onUpload}><Upload/> Importar nova versão</button></div></section></>;
+    return <><Brand back/><section className="cz-panel-head"><h1>Planejado x atual</h1><p>Guarde uma referência e compare a próxima publicação do mesmo mês.</p></section><section className="cz-toolbox"><h2>Definir a referência planejada</h2><p>A escala ativa {rosterPeriodLabel(bundle.roster)} será guardada para esta conta neste dispositivo. Na próxima importação do mesmo período, o CrewCheck mostrará mudanças de horários, voos, OP/PS, atividades e folgas.</p><div className="cz-tool-actions"><button onClick={markCurrentAsPlanned}><Save/> Marcar atual como planejada</button><button onClick={onUpload}><Upload/> Importar nova versão</button></div></section></>;
   }
 
   const filteredChanges = (comparison?.changes || []).filter((change) => {
@@ -2497,8 +2505,8 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
       </section>}
       <section className="cz-finance-table cz-compare-financial">
         <h2>Possível impacto financeiro</h2>
-        <div className="cz-finance-row"><span>Parcela variável</span><strong>Diferença prevista</strong><small>KM diurno/noturno, reserva, sobreaviso e adicionais com as regras atuais</small><b>{financial?.salaryReady ? moneyBRL(financial.variableDelta) : 'Função pendente'}</b></div>
-        <div className="cz-finance-row"><span>Garantia da planejada</span><strong>{financial?.plannedGuaranteeReview ? 'Revisão necessária' : 'Sem redução detectada'}</strong><small>Quando a perda decorrer de motivo alheio ao tripulante e não houver programação equivalente, conferir o piso variável da escala inicialmente publicada</small><b>{financial?.plannedGuaranteeReview ? moneyBRL(financial.plannedVariable) : '—'}</b></div>
+        <div className="cz-finance-row"><span>Parcela variável</span><strong>Diferença prevista</strong><small>KM diurno/noturno, reserva, sobreaviso e adicionais com as regras atuais</small><b>{financial?.salaryReady ? moneyBRL(financial.variableDelta) : 'Não calculável · dados pendentes'}</b></div>
+        <div className="cz-finance-row"><span>Garantia da planejada</span><strong>{!financial?.salaryReady ? 'Comparação financeira pendente' : financial.plannedGuaranteeReview ? 'Revisão necessária' : 'Sem redução detectada'}</strong><small>Quando a perda decorrer de motivo alheio ao tripulante e não houver programação equivalente, conferir o piso variável da escala inicialmente publicada</small><b>{financial?.plannedGuaranteeReview ? moneyBRL(financial.plannedVariable) : '—'}</b></div>
         <div className="cz-finance-row"><span>Diárias</span><strong>Diferença por moeda</strong><small>Sem somar moedas diferentes e sem presumir câmbio</small><b>{perDiemDeltaText}</b></div>
         <div className="cz-finance-row"><span>Início da folga</span><strong>{freeDayDelay.toFixed(2).replace('.', ',')} h de postergação</strong><small>{exceptionalNeed ? 'Exceção operacional comprovada: limite de 12 h' : 'Regra geral do ACT: acima de 4 h'} · uma indenização por sequência agrupada</small><b>{moneyBRL(freeDayIndemnity)}</b></div>
       </section>
@@ -2550,7 +2558,7 @@ function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
     saveComplianceAlertDispositions({});
     setDispositionRevision((value) => value + 1);
   }
-  return <><Brand back/><section className="cz-panel-head"><h1>Irregularidades e alertas</h1><p>RBAC 117, ACT, repouso, jornada, sobreaviso, reserva e acionamentos. Sem alertas fictícios.</p></section>{list.length ? <section className="cz-alert-stack">{list.map((a: any, idx: number) => <article className={a.severity === 'error' ? 'danger' : 'warn'} key={`${a.title}-${idx}`}><AlertTriangle/><div><h2>{a.title}</h2><p>{a.description}</p><span>{a.severity === 'error' ? 'Confirmada' : 'Atenção'}</span><b>Confiança: {a.severity === 'error' ? 'alta' : 'média'}</b>{isGroundLimitAlert(a) && <button type="button" onClick={() => ignoreAsUserScheduleChange(a)}>Ignorar — alteração da minha programação</button>}</div><ChevronRight/></article>)}</section> : <article className="cz-empty-real"><ShieldCheck/><h2>Nenhuma irregularidade confirmada</h2><p>{ignored.length ? 'Os alertas desta análise foram classificados por você como alterações da programação.' : 'Carregue a escala real para que o motor regulatório refaça a análise completa.'}</p></article>}{ignored.length > 0 && <article className="cz-alert-detail"><h2>Alterações informadas por você <b>{ignored.length}</b></h2><div><p><strong>Tratamento</strong>Esses itens ficam fora dos alertas ativos, sem apagar a análise da escala publicada.</p><p><strong>Rastreabilidade</strong>A classificação é uma preferência do usuário e não altera o motor regulatório canônico.</p></div><footer><button onClick={restoreIgnoredAlerts}><RotateCcw/> Restaurar alertas ignorados</button></footer></article>}<article className="cz-alert-detail"><h2>Detalhes regulatórios <b>{list.length ? 'Ativo' : 'Aguardando escala'}</b></h2><div><p><strong>O que o sistema avalia</strong>Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p><p><strong>Dados usados</strong>Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p></div><footer><button>Ver base regulatória</button></footer></article></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Irregularidades e alertas</h1>{compliance?.metrics.flightHoursOriginPending && <p role="status">Origem da classificação de extra pendente. Reimporte a escala original para verificar OP/PS; o acumulado de voo operado não está confirmado.</p>}<p>RBAC 117, ACT, repouso, jornada, sobreaviso, reserva e acionamentos. Sem alertas fictícios.</p></section>{list.length ? <section className="cz-alert-stack">{list.map((a: any, idx: number) => <article className={a.severity === 'error' ? 'danger' : 'warn'} key={`${a.title}-${idx}`}><AlertTriangle/><div><h2>{a.title}</h2><p>{a.description}</p><span>{a.severity === 'error' ? 'Confirmada' : 'Atenção'}</span><b>Confiança: {a.severity === 'error' ? 'alta' : 'média'}</b>{isGroundLimitAlert(a) && <button type="button" onClick={() => ignoreAsUserScheduleChange(a)}>Ignorar — alteração da minha programação</button>}</div><ChevronRight/></article>)}</section> : <article className="cz-empty-real"><ShieldCheck/><h2>Nenhuma irregularidade confirmada</h2><p>{ignored.length ? 'Os alertas desta análise foram classificados por você como alterações da programação.' : 'Carregue a escala real para que o motor regulatório refaça a análise completa.'}</p></article>}{ignored.length > 0 && <article className="cz-alert-detail"><h2>Alterações informadas por você <b>{ignored.length}</b></h2><div><p><strong>Tratamento</strong>Esses itens ficam fora dos alertas ativos, sem apagar a análise da escala publicada.</p><p><strong>Rastreabilidade</strong>A classificação é uma preferência do usuário e não altera o motor regulatório canônico.</p></div><footer><button onClick={restoreIgnoredAlerts}><RotateCcw/> Restaurar alertas ignorados</button></footer></article>}<article className="cz-alert-detail"><h2>Detalhes regulatórios <b>{list.length ? 'Ativo' : 'Aguardando escala'}</b></h2><div><p><strong>O que o sistema avalia</strong>Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p><p><strong>Dados usados</strong>Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p></div><footer><button>Ver base regulatória</button></footer></article></>;
 }
 function routeDurationMinutes(route: RoutePreviewInfo | null): number {
   const text = String(route?.durationInTrafficText || route?.durationText || '').toLowerCase();
@@ -2756,7 +2764,7 @@ function LoadView({ bundle }: { bundle: BundleState }) {
     const monthly = prompt('Referência mensal de jornada (horas)', String(monthlyLimit)); if (monthly !== null) storage.set('crewcheck_limit_monthly_hours', monthly.replace(',', '.'));
     setLimitRevision((value) => value + 1);
   }
-  return <><Brand back/><section className="cz-panel-head"><h1>Carga e limites</h1><p>Relação direta de horas usadas x limite de referência, sem substituir a análise contextual de RBAC 117, ACT e escala oficial.</p></section><section className="cz-hour-limits"><HourLimitBar title="Jornada publicada mais alta" used={measurementComplete ? peakDay.hours : null} limit={dailyLimit} detail={`${peakDay.date} · ${peakDay.sectors} trecho(s)`}/><HourLimitBar title="Pico em 7 dias" used={weeklyComplete ? peakWeek.hours : null} limit={weeklyLimit} detail={weeklyComplete ? `${peakWeek.from} a ${peakWeek.to}` : 'Acumulado semanal pendente: intervalos ou créditos de reserva/sobreaviso não comprovados.'}/><HourLimitBar title="Horas de trabalho no mês" used={null} limit={monthlyLimit} detail={monthlyHours === null ? 'Acumulado integral pendente; reserva/sobreaviso e demais créditos precisam de validação.' : `${monthlyHours.toFixed(1).replace('.', ',')} h de jornadas publicadas · subtotal; acumulado integral de trabalho pendente.`}/></section><section className="cz-toolbox"><h2>Referências e confiabilidade</h2><p>Os valores acima são referências configuráveis para visualização. Uma extrapolação visual não vira irregularidade sozinha: composição, horário, tripulação, operação, repouso, ACT e RBAC continuam sendo avaliados no motor de conformidade.</p><div className="cz-tool-actions"><button onClick={configure}><Settings/> Configurar limites de referência</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'alerts' }))}><AlertTriangle/> Abrir análise regulatória</button></div></section><section className="cz-finance-table"><h2>Dias mais puxados da escala</h2>{measurementComplete && heaviest.length ? heaviest.map((row, index) => <div className="cz-finance-row" key={`${row.journeyId}-${index}`}><span>#{index + 1}</span><strong>{row.date}</strong><small>{row.hours.toFixed(1).replace('.', ',')} h de jornada · {row.sectors} trecho(s){row.hours >= dailyLimit ? ' · acima da referência diária' : ''}</small><b>{row.hours.toFixed(1).replace('.', ',')} h / {dailyLimit.toFixed(1).replace('.', ',')} h</b></div>) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem jornada calculável</h2><p>Importe uma escala com apresentação e término para calcular as relações de horas.</p></article>}</section><section className="cz-report-grid"><article><h2>Score de conformidade</h2><strong>{compliance.score ?? '—'}</strong><p>{compliance.summary || 'Aguardando análise.'}</p></article><article><h2>Alertas válidos</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Sem contadores antigos ou duplicados.</p></article><article><h2>Fonte</h2><strong>Escala ativa</strong><p>Todos os cálculos usam o mesmo motor canônico.</p></article><article><h2>Solo entre etapas</h2><strong>{Number(compliance.metrics?.totalGroundHours || 0).toFixed(1).replace('.', ',')} h</strong><p>Maior intervalo: {Number(compliance.metrics?.maxGroundIntervalMinutes || 0)} min · {Number(compliance.metrics?.groundLimitExceedances || 0)} acima do ACT. Solo permanece dentro da jornada, sem somar novamente.</p></article></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Carga e limites</h1><p>Relação direta de horas usadas x limite de referência, sem substituir a análise contextual de RBAC 117, ACT e escala oficial.</p></section><section className="cz-hour-limits"><HourLimitBar title="Jornada publicada mais alta" used={measurementComplete ? peakDay.hours : null} limit={dailyLimit} detail={`${peakDay.date} · ${peakDay.sectors} trecho(s)`}/><HourLimitBar title="Pico em 7 dias" used={weeklyComplete ? peakWeek.hours : null} limit={weeklyLimit} detail={weeklyComplete ? `${peakWeek.from} a ${peakWeek.to}` : 'Acumulado semanal pendente: intervalos ou créditos de reserva/sobreaviso não comprovados.'}/><HourLimitBar title="Horas de trabalho no mês" used={null} limit={monthlyLimit} detail={monthlyHours === null ? 'Acumulado integral pendente; reserva/sobreaviso e demais créditos precisam de validação.' : `${monthlyHours.toFixed(1).replace('.', ',')} h de jornadas publicadas · subtotal; acumulado integral de trabalho pendente.`}/></section><section className="cz-toolbox"><h2>Referências e confiabilidade</h2>{compliance.metrics?.flightHoursOriginPending && <p role="status">Origem da classificação de extra pendente. Reimporte a escala original para verificar OP/PS; o acumulado de voo operado não está confirmado.</p>}<p>Os valores acima são referências configuráveis para visualização. Uma extrapolação visual não vira irregularidade sozinha: composição, horário, tripulação, operação, repouso, ACT e RBAC continuam sendo avaliados no motor de conformidade.</p><div className="cz-tool-actions"><button onClick={configure}><Settings/> Configurar limites de referência</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'alerts' }))}><AlertTriangle/> Abrir análise regulatória</button></div></section><section className="cz-finance-table"><h2>Dias mais puxados da escala</h2>{measurementComplete && heaviest.length ? heaviest.map((row, index) => <div className="cz-finance-row" key={`${row.journeyId}-${index}`}><span>#{index + 1}</span><strong>{row.date}</strong><small>{row.hours.toFixed(1).replace('.', ',')} h de jornada · {row.sectors} trecho(s){row.hours >= dailyLimit ? ' · acima da referência diária' : ''}</small><b>{row.hours.toFixed(1).replace('.', ',')} h / {dailyLimit.toFixed(1).replace('.', ',')} h</b></div>) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem jornada calculável</h2><p>Importe uma escala com apresentação e término para calcular as relações de horas.</p></article>}</section><section className="cz-report-grid"><article><h2>Score de conformidade</h2><strong>{compliance.score ?? '—'}</strong><p>{compliance.summary || 'Aguardando análise.'}</p></article><article><h2>Alertas válidos</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Sem contadores antigos ou duplicados.</p></article><article><h2>Fonte</h2><strong>Escala ativa</strong><p>Todos os cálculos usam o mesmo motor canônico.</p></article><article><h2>Solo entre etapas</h2><strong>{Number(compliance.metrics?.totalGroundHours || 0).toFixed(1).replace('.', ',')} h</strong><p>Maior intervalo: {Number(compliance.metrics?.maxGroundIntervalMinutes || 0)} min · {Number(compliance.metrics?.groundLimitExceedances || 0)} acima do ACT. Solo permanece dentro da jornada, sem somar novamente.</p></article></section></>;
 }
 
 function ToggleSetting({ icon: Icon, label, storageKey, defaultOn = true, detail }: { icon: any; label: string; storageKey: string; defaultOn?: boolean; detail?: string }) {
@@ -3222,8 +3230,9 @@ function WeatherView({ event }: { event: ZeroLeg }) {
     <p className="cc-weather-disclaimer">A decodificação é apoio de leitura e não substitui METAR/SPECI, TAF, ATIS, despacho, NOTAM nem orientação operacional oficial.</p>
   </>;
 }
-function moneyBRL(value: number) {
-  return `R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function moneyBRL(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'Não calculável';
+  return `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 function durationHours(event: ZeroLeg) {
   const start = eventStartDateTime(event).getTime();
@@ -3266,6 +3275,7 @@ type FlightEarningRow = {
   workType: string;
   km: number;
   distanceKnown: boolean;
+  timeKnown: boolean;
   dayKm: number;
   nightKm: number;
   metric: number;
@@ -3641,22 +3651,22 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     configured: rows.length > 0,
   };
 }
-function nightHoursInsideWindow(start: Date, end: Date): number {
-  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return 0;
-  const anchor = new Date(start);
-  anchor.setDate(anchor.getDate() - 1);
-  anchor.setHours(22, 0, 0, 0);
-  let total = 0;
-  while (anchor < end) {
-    const windowEnd = new Date(anchor);
-    windowEnd.setDate(windowEnd.getDate() + 1);
-    windowEnd.setHours(5, 0, 0, 0);
-    const overlapStart = Math.max(start.getTime(), anchor.getTime());
-    const overlapEnd = Math.min(end.getTime(), windowEnd.getTime());
-    if (overlapEnd > overlapStart) total += (overlapEnd - overlapStart) / 36e5;
-    anchor.setDate(anchor.getDate() + 1);
+function nightHoursInsideWindow(start: Date | string, end: Date | string, operationalTimeZone = ROSTER_DISPLAY_TIME_ZONE): number {
+  const from = rosterStrictInstant(start), until = rosterStrictInstant(end);
+  if (!from || !until || until < from || !operationalTimeZone) return NaN;
+  let clock: Intl.DateTimeFormat;
+  try { clock = new Intl.DateTimeFormat('en-GB', { timeZone: operationalTimeZone, hour: '2-digit', hourCycle: 'h23' }); }
+  catch { return NaN; }
+  // Canonical instants retain elapsed time through DST folds/gaps. Classify
+  // each minute in the explicitly supplied operational clock, never device TZ.
+  let cursor = from.getTime(), total = 0;
+  while (cursor < until.getTime()) {
+    const hour = Number(clock.formatToParts(new Date(cursor)).find(part => part.type === 'hour')?.value);
+    const next = Math.min(until.getTime(), (Math.floor(cursor / 60000) + 1) * 60000);
+    if (hour >= 22 || hour < 5) total += next - cursor;
+    cursor = next;
   }
-  return total;
+  return total / 36e5;
 }
 
 function financialEventCode(event: ZeroLeg): string {
@@ -3679,10 +3689,10 @@ function financialFlightRule(event: ZeroLeg): { extra: boolean; reason: string }
     : 'tarifa regular' };
 }
 
-function isSundayOrConfiguredHoliday(event: ZeroLeg): boolean {
-  const date = eventStartDateTime(event);
-  if (date.getDay() === 0) return true;
-  const iso = `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+function isSundayOrConfiguredHoliday(event: ZeroLeg): boolean | null {
+  const iso = rosterInstantIso(event.canonical ? event.canonical.startDateTime : eventStartDateTime(event), (event as any).operationalTimeZone === undefined ? ROSTER_DISPLAY_TIME_ZONE : (event as any).operationalTimeZone);
+  if (!iso) return null;
+  if (new Date(iso + 'T00:00:00Z').getUTCDay() === 0) return true;
   const configured = storage.get('crewcheck_local_holiday_dates', '').split(',').map(value => value.trim()).filter(Boolean);
   return configured.includes(iso);
 }
@@ -3696,17 +3706,19 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
   const rows: FlightEarningRow[] = flightEvents.map((event) => {
     const km = event.origin && event.destination && event.origin !== event.destination ? flightDistanceKmFromEvent(event) : 0;
     const block = Math.max(0, durationHours(event));
-    const nightHours = nightHoursInsideWindow(eventStartDateTime(event), eventEndDateTime(event));
+    const nightHours = event.salaryClockKnown === false ? NaN : nightHoursInsideWindow(event.canonical ? event.canonical.startDateTime : eventStartDateTime(event), event.canonical ? event.canonical.endDateTime : eventEndDateTime(event), (event as any).operationalTimeZone === undefined ? ROSTER_DISPLAY_TIME_ZONE : (event as any).operationalTimeZone);
     const nightFraction = block > 0 ? Math.min(1, nightHours / block) : 0;
     const payRule = financialFlightRule(event);
-    const premiumAllKm = payRule.extra || isSundayOrConfiguredHoliday(event);
+    const holiday = isSundayOrConfiguredHoliday(event);
+    const timeKnown = event.salaryClockKnown !== false && Number.isFinite(nightHours) && holiday !== null;
+    const premiumAllKm = payRule.extra || holiday === true;
     const nightKm = premiumAllKm ? km : Math.min(km, Math.max(0, Math.round(km * nightFraction)));
     const dayKm = Math.max(0, km - nightKm);
     const dayRateApplied = payRule.extra ? cfg.nightKmMetric : cfg.dayKmMetric;
     const nightRateApplied = cfg.nightKmMetric;
     const dayProduction = dayKm * dayRateApplied;
     const nightProduction = nightKm * nightRateApplied;
-    const production = dayProduction + nightProduction;
+    const production = timeKnown ? dayProduction + nightProduction : NaN;
     const chiefEligible = userIsFirstCcm(event, roster);
     const chief = chiefEligible ? cfg.chiefPerSector : 0;
     const instructorPay = instructor ? cfg.instructorPerSector : 0;
@@ -3720,6 +3732,7 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
       workType,
       km,
       distanceKnown: Number.isFinite(km) && km > 0,
+      timeKnown,
       dayKm,
       nightKm,
       metric: km > 0 ? production / km : 0,
@@ -3741,20 +3754,23 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
   const activityEvents = events.filter((event) => event.kind !== 'flight' && isOperationalEvent(event));
   const reserveEvents = activityEvents.filter((event) => /\b(ASB|RES|RESERVA|RSV)\b/i.test(financialEventCode(event)));
   const standbyEvents = activityEvents.filter((event) => /\b(HSB|HSBE|SOBREAVISO)\b/i.test(financialEventCode(event)));
-  const reserveHours = reserveEvents.reduce((sum, event) => sum + durationHours(event), 0);
-  const standbyHours = standbyEvents.reduce((sum, event) => sum + durationHours(event), 0);
-  const reserve = reserveHours * cfg.reserveHourMetric;
-  const standby = standbyHours * cfg.standbyHourMetric;
+  const reserveFlightStarts = flightEvents.map((event) => eventStartDateTime(event));
+  const reserveAssessment = assessSalaryActivities(reserveEvents, event => payableReserveHours(eventStartDateTime(event), eventEndDateTime(event), reserveFlightStarts), cfg.reserveHourMetric);
+  const standbyAssessment = assessSalaryActivities(standbyEvents, durationHours, cfg.standbyHourMetric);
+  const reserveHours = reserveAssessment.hours;
+  const standbyHours = standbyAssessment.hours;
+  const reserve = reserveAssessment.amount;
+  const standby = standbyAssessment.amount;
   const sectors = flightEvents.length;
   const kmTotal = rows.reduce((sum, row) => sum + row.km, 0);
   const dayKmTotal = rows.reduce((sum, row) => sum + row.dayKm, 0);
   const nightKmTotal = rows.reduce((sum, row) => sum + row.nightKm, 0);
   const blockHours = flightEvents.reduce((sum, event) => sum + durationHours(event), 0);
   const chiefSectors = rows.filter((row) => row.chiefEligible).length;
-  const nightHours = flightEvents.reduce((sum, event) => sum + nightHoursInsideWindow(eventStartDateTime(event), eventEndDateTime(event)), 0);
+  const nightHours = flightEvents.reduce((sum, event) => sum + (event.salaryClockKnown === false ? NaN : nightHoursInsideWindow(event.canonical ? event.canonical.startDateTime : eventStartDateTime(event), event.canonical ? event.canonical.endDateTime : eventEndDateTime(event), (event as any).operationalTimeZone === undefined ? ROSTER_DISPLAY_TIME_ZONE : (event as any).operationalTimeZone)), 0);
   const dayProduction = rows.reduce((sum, row) => sum + row.dayProduction, 0);
   const nightProduction = rows.reduce((sum, row) => sum + row.nightProduction, 0);
-  const production = dayProduction + nightProduction;
+  const production = rows.reduce((sum, row) => sum + row.production, 0);
   const chief = rows.reduce((sum, row) => sum + row.chief, 0);
   const instructorPay = rows.reduce((sum, row) => sum + row.instructor, 0);
   const gross = cfg.basePay + cfg.fixedAdditions + production + chief + instructorPay + reserve + standby;
@@ -3774,6 +3790,8 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
     nightHours,
     reserveHours,
     standbyHours,
+    reserveAssessment,
+    standbyAssessment,
     production,
     dayProduction,
     nightProduction,
@@ -3899,6 +3917,7 @@ function salaryDiagnosticItem(snapshot: ReturnType<typeof financeSnapshot>) {
   return { month, days: roster.days.length, configured: salary.configured, baseConfigured: salary.config.baseConfigured,
     requiresManualFunction: salary.config.requiresManualFunction,
     variableComplete: salary.rows.every(row => row.distanceKnown),
+    pendingActivityCount: salary.reserveAssessment.pendingCount + salary.standbyAssessment.pendingCount,
     variable: salary.production + salary.reserve + salary.standby + salary.chief + salary.instructorPay,
     fixedMonth: reviewedPayrollCycleForOperationalMonth(month)?.fixedMonth };
 }
@@ -3915,14 +3934,14 @@ function SalaryReliableView({ bundle }: { bundle: BundleState }) {
       const available = diagnostic.ready;
       const gross = available ? selected.reduce((sum,item)=>sum+item.snapshot.salary.gross,0) : null;
       const rows = financialRowsInRange(snapshots.flatMap(item=>item.snapshot.salary.rows),range);
-      const rowAvailable = (row: FlightEarningRow) => row.distanceKnown && selected.some(item=>item.snapshot.salary.rows.includes(row) && item.snapshot.salary.configured && !item.snapshot.salary.config.requiresManualFunction);
+      const rowAvailable = (row: FlightEarningRow) => row.distanceKnown && row.timeKnown && Number.isFinite(row.total) && selected.some(item=>item.snapshot.salary.rows.includes(row) && item.snapshot.salary.configured && !item.snapshot.salary.config.requiresManualFunction);
       return <><Brand back/><section className="cc-per-diem-content cc-salary-history" aria-label="Previsão salarial">
         <section className="cz-panel-head cz-panel-head-compact"><h1>Salário</h1><p>Trabalho: {range.start} até {range.end}. Previsão por competência, sem confirmação de pagamento.</p></section>
         {controls}<section className="cz-finance-grid cc-per-diem-summary"><KpiCard icon={DollarSign} title="Bruto previsto no período" value={gross===null?'Não calculável':moneyBRL(gross)} detail={fullMonths?'Salário-base exige fonte ou calibração; somente competências completas são somadas.':'A fonte mensal não permite distribuir salário-base e descontos por semana.'}/></section>
         <SalaryCalculationStatus items={diagnosticItems} range={range} missing={missing}/>
         {graph}
-        <details className="cz-toolbox"><summary>Composição mensal e descontos informados</summary>{selected.length?selected.map(item=>{const salary=item.snapshot.salary, itemDiagnostic=salaryCalculationDiagnostic([salaryDiagnosticItem(item.snapshot)],financialRange('month',`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,'','',''),[]), cycle=reviewedPayrollCycleForOperationalMonth(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`);return <article key={`${item.roster.year}-${item.roster.month}`}><h2>{item.roster.month}/{item.roster.year}</h2>{cycle && <p data-payroll-competences="reviewed-company-cycle">Variáveis operacionais: {cycle.operationalVariableMonth}. Fixos e competência da folha: {cycle.fixedMonth}. Mês esperado de crédito: {cycle.expectedCreditMonth}; data exata e liquidação não confirmadas. Origem: orientação empresarial fornecida pelo usuário e revisada nesta conta.</p>}<p>Fonte operacional: {item.source}. {salary.config.source}</p><p>Salário-base: {salary.config.baseConfigured?moneyBRL(salary.config.basePay):'Não informado'}. Fixos informados: {moneyBRL(salary.config.fixedAdditions)}.</p>{itemDiagnostic.variable===null?<p>Variáveis: não calculáveis; há dados ou função profissional pendentes.</p>:<p>Variáveis: voos {moneyBRL(salary.production)}, chefe/instrutor {moneyBRL(salary.chief+salary.instructorPay)}, reserva {moneyBRL(salary.reserve)}, sobreaviso {moneyBRL(salary.standby)}.</p>}<p>Descontos informados: INSS {moneyBRL(salary.inss)}, IRRF {moneyBRL(salary.irrf)}, outros {moneyBRL(salary.otherDeductions)}. Líquido simulado da competência: {itemDiagnostic.ready?moneyBRL(salary.net):'Não calculável'}.</p><p>Valores integrais da competência, sem rateio pelo filtro de dias.</p></article>}):<p>Nenhuma competência disponível.</p>}</details>
-        <details className="cz-finance-table cc-per-diem-items"><summary>Componentes por voo no intervalo · {rows.length} itens</summary><p className="finance-learning-notice warning" data-km-source="operational-estimate">KM exibido nesta previsão é uma estimativa operacional pela distância entre aeroportos. A quilometragem remunerável da folha pode usar a tabela corporativa por trecho; confira o extrato/AIMS.</p><p>Somente as parcelas com vínculo a um voo. Salário-base, reserva, sobreaviso e descontos mensais não são rateados.</p>{rows.length?rows.map(row=><div className="cz-finance-row" key={row.id}><span>{row.iso}</span><strong>{row.flight} · {row.route}</strong><b><MoneyText value={rowAvailable(row)?moneyBRL(row.total):'Não calculável'}/></b><details className="cc-per-diem-source"><summary>Origem e regra</summary><small>{!row.distanceKnown?'Distância operacional desconhecida; os zeros internos do motor não são valores confirmados. ':''}{rowAvailable(row)?`${row.dayKm} km diurno × ${moneyBRL(row.dayRateApplied)} · ${row.nightKm} km noturno × ${moneyBRL(row.nightRateApplied)}`:'Parcela indisponível; distância, tarifas ou função profissional pendentes.'} · {row.payRule} · {row.source}</small></details></div>):<p>Sem parcelas por voo disponíveis no intervalo.</p>}</details>
+        <details className="cz-toolbox"><summary>Composição mensal e descontos informados</summary>{selected.length?selected.map(item=>{const salary=item.snapshot.salary, itemDiagnostic=salaryCalculationDiagnostic([salaryDiagnosticItem(item.snapshot)],financialRange('month',`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,'','',''),[]), cycle=reviewedPayrollCycleForOperationalMonth(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`);return <article key={`${item.roster.year}-${item.roster.month}`}><h2>{item.roster.month}/{item.roster.year}</h2>{cycle && <p data-payroll-competences="reviewed-company-cycle">Variáveis operacionais: {cycle.operationalVariableMonth}. Fixos e competência da folha: {cycle.fixedMonth}. Mês esperado de crédito: {cycle.expectedCreditMonth}; data exata e liquidação não confirmadas. Origem: orientação empresarial fornecida pelo usuário e revisada nesta conta.</p>}<p>Fonte operacional: {item.source}. {salary.config.source}</p><p>Salário-base: {salary.config.baseConfigured?moneyBRL(salary.config.basePay):'Não informado'}. Fixos informados: {moneyBRL(salary.config.fixedAdditions)}.</p>{itemDiagnostic.variable===null&&<p>Variáveis e total: não calculáveis; há dados ou função profissional pendentes.</p>}<p>Parcelas previstas: voos {moneyBRL(salary.production)}, chefe/instrutor {moneyBRL(salary.chief+salary.instructorPay)}, reserva {moneyBRL(salary.reserve)}, sobreaviso {moneyBRL(salary.standby)}.</p>{[salary.reserveAssessment,salary.standbyAssessment].map((assessment,index)=>assessment.pendingCount>0&&<p key={index} data-salary-activity-pending={index===0?'reserve':'standby'}>{index===0?'Reserva':'Sobreaviso'}: {assessment.knownCount>0?`subtotal com horários comprovados ${moneyBRL(assessment.knownAmount)}; `:''}{assessment.pendingCount} intervalo(s) sem horários publicados comprovados. O subtotal não representa a parcela completa.</p>)}{(salary.reserveAssessment.rows.length>0||salary.standbyAssessment.rows.length>0)&&<details className="cc-per-diem-source"><summary>Horários de reservas e sobreaviso</summary>{[...salary.reserveAssessment.rows,...salary.standbyAssessment.rows].map(row=><p key={row.id}>{row.date} · {row.code} · {row.timeKnown?moneyBRL(row.value!):'Não calculável'}<small>{row.report||'Início ausente'} até {row.release||'Fim ausente'} · {row.issue||'Intervalo publicado; previsão sem confirmação de pagamento.'}</small></p>)}</details>}<p>Descontos informados: INSS {moneyBRL(salary.inss)}, IRRF {moneyBRL(salary.irrf)}, outros {moneyBRL(salary.otherDeductions)}. Líquido simulado da competência: {itemDiagnostic.ready?moneyBRL(salary.net):'Não calculável'}.</p><p>Valores integrais da competência, sem rateio pelo filtro de dias.</p></article>}):<p>Nenhuma competência disponível.</p>}</details>
+        <details className="cz-finance-table cc-per-diem-items"><summary>Componentes por voo no intervalo · {rows.length} itens</summary><p className="finance-learning-notice warning" data-km-source="operational-estimate">KM exibido nesta previsão é uma estimativa operacional pela distância entre aeroportos. A quilometragem remunerável da folha pode usar a tabela corporativa por trecho; confira o extrato/AIMS.</p><p>Somente as parcelas com vínculo a um voo. Salário-base, reserva, sobreaviso e descontos mensais não são rateados.</p>{rows.length?rows.map(row=><div className="cz-finance-row" key={row.id}><span>{row.iso}</span><strong>{row.flight} · {row.route}</strong><b><MoneyText value={rowAvailable(row)?moneyBRL(row.total):'Não calculável'}/></b><details className="cc-per-diem-source"><summary>Origem e regra</summary><small>{!row.timeKnown?'Horários ou fuso operacional ausentes ou ambíguos; parcela não calculável. ':''}{!row.distanceKnown?'Distância operacional desconhecida; os zeros internos do motor não são valores confirmados. ':''}{rowAvailable(row)?`${row.dayKm} km diurno × ${moneyBRL(row.dayRateApplied)} · ${row.nightKm} km noturno × ${moneyBRL(row.nightRateApplied)}`:'Parcela indisponível; distância, tarifas ou função profissional pendentes.'} · {row.payRule} · {row.source}</small></details></div>):<p>Sem parcelas por voo disponíveis no intervalo.</p>}</details>
       </section></>;
     }}/>
 }
@@ -5049,18 +5068,22 @@ export default function Home() {
   useEffect(() => { loadCrewCheckRuntimePatch(); }, []);
 
   async function handleFile(inputEvent: ChangeEvent<HTMLInputElement>) {
+    const plannedImport = beginOwnedPlannedImport();
+    if (!plannedImport.canCommit()) return;
     const file = inputEvent.target.files?.[0];
     if (!file) return;
     setBusy(true);
     try {
       const parsed = await parsePDFResilient(file);
+      if (!plannedImport.canCommit()) return;
       const roster = parsed.roster;
       const decision = confirmRosterImport(roster, file.name);
       if (!decision.ok) {
         toast.message(decision.toastText || 'Importação cancelada.');
         return;
       }
-      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster);
+      if (!plannedImport.canCommit()) return;
+      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster, plannedImport.session);
       const importComparison = plannedSnapshot && sameRosterPeriod(plannedSnapshot.roster, roster)
         ? compareRosters(plannedSnapshot.roster, roster)
         : null;
@@ -5105,7 +5128,7 @@ export default function Home() {
       if (!decision.hasFuture) toast.error('A escala importada não possui programação futura após agora.');
       setLocation('/result');
     } catch (error) {
-      toast.error(sanitizePdfImportError(error));
+      if (plannedImport.canCommit()) toast.error(sanitizePdfImportError(error));
     } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
   }
 
@@ -5140,6 +5163,7 @@ export default function Home() {
     {showIntro && <OpeningVideo onDone={() => setShowIntro(false)}/>}
     <MenuDrawer open={drawer} close={() => setDrawer(false)} view={view} setView={setView} actions={actions}/>
     {view === 'cockpit' && <Cockpit events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>} 
+    <FreeDayPostponementAlerts roster={bundle.roster} source={bundle.source} view={view} onOpen={() => setView('alerts')}/>
     {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>} 
     {view === 'compare' && <CompareRosterView bundle={bundle} onUpload={actions.upload}/>} 
     {view === 'bids' && <BidsView events={events}/>} 

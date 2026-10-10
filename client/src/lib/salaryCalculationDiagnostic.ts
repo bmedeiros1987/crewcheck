@@ -2,7 +2,7 @@ import type { FinancialRange } from './financialHistoryPeriods';
 import { payrollMonthBounds } from './financialPayrollPeriods';
 export type SalaryDiagnosticItem = {
   month: string; days: number; configured: boolean; baseConfigured: boolean;
-  requiresManualFunction: boolean; variable: number; variableComplete: boolean; fixedMonth?: string;
+  requiresManualFunction: boolean; variable: number; variableComplete: boolean; fixedMonth?: string; pendingActivityCount?: number;
 };
 /** Explains caller prerequisites without changing canonical calculation, moving
  * fixed pay to an operational month, or substituting missing data with zero. */
@@ -21,7 +21,8 @@ export function salaryCalculationDiagnostic(items: SalaryDiagnosticItem[], range
       ? `${item.month}: salário-base não informado nesta competência operacional. A referência revisada vincula os fixos à folha ${item.fixedMonth}; esse valor não foi repetido aqui.`
       : `${item.month}: falta salário-base com fonte revisada ou cadastro válido nesta conta e competência.`);
     if (!item.variableComplete) reasons.push(`${item.month}: há voos sem distância operacional válida entre aeroportos; as variáveis e o total permanecem desconhecidos. Confira a quilometragem e sua origem.`);
-    if (!Number.isFinite(item.variable)) reasons.push(`${item.month}: os componentes variáveis não produziram um valor válido. Confira a escala e a origem das tarifas.`);
+    if ((item.pendingActivityCount || 0) > 0) reasons.push(`${item.month}: há ${item.pendingActivityCount} intervalo(s) de reserva/sobreaviso sem início/fim publicados comprovados. Subtotais válidos permanecem disponíveis; variáveis e total estão pendentes.`);
+    if (!Number.isFinite(item.variable) && !item.pendingActivityCount) reasons.push(`${item.month}: os componentes variáveis não produziram um valor válido. Confira a escala e a origem das tarifas.`);
   }
   const variableReady = fullMonths && !missing.length && items.length > 0 && items.every(item => item.days > 0 && item.configured && !item.requiresManualFunction && item.variableComplete && Number.isFinite(item.variable));
   return { fullMonths, reasons, ready: reasons.length === 0, variable: variableReady ? items.reduce((sum, item) => sum + item.variable, 0) : null };

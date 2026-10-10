@@ -130,7 +130,9 @@ source = source.replace(
 );
 
 const pdfStart = '      const decision = confirmRosterImport(roster, file.name);';
-const pdfEnd = '      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster);';
+const pdfEnd = source.includes('preservePlannedRosterBeforeImport(bundle, roster, plannedImport.session)')
+  ? '      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster, plannedImport.session);'
+  : '      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster);';
 if (source.includes(pdfStart)) {
   const pdfReplacement = `      const decision = await confirmRosterImport(roster, file.name);
       let auditImport = false;
@@ -143,7 +145,9 @@ if (source.includes(pdfStart)) {
         toast.message('Importação cancelada. Sua escala ativa foi preservada.');
         return;
       }`;
-  source = replaceBlock(source, pdfStart, pdfEnd, pdfReplacement, 'consentimento PDF');
+  const guardedPdfReplacement = source.includes('const plannedImport = beginOwnedPlannedImport();')
+    ? pdfReplacement + '\n      if (!plannedImport.canCommit()) return;' : pdfReplacement;
+  source = replaceBlock(source, pdfStart, pdfEnd, guardedPdfReplacement, 'consentimento PDF');
 }
 
 for (const required of [

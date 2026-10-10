@@ -22,6 +22,8 @@ visit(ast);
 assert.ok(activeBody || bootstrapBody);
 const setupCode = compile('export function setup() ' + (activeBody || bootstrapBody));
 const helperCode = compile(fs.readFileSync('client/src/lib/rosterStartup.ts', 'utf8'));
+const financialAst = ts.createSourceFile('financial.ts', fs.readFileSync('client/src/lib/financialStatementLearning.ts','utf8'),99,true,ts.ScriptKind.TS);
+const financialCode = compile(financialAst.statements.filter(n => ts.isFunctionDeclaration(n) && ['financialRateOwner','financialRateSession'].includes(n.name?.text)).map(n=>n.getText(financialAst)).join('\n'));
 const reviewCode = compile(fs.readFileSync('client/src/lib/rosterPublicationReview.ts', 'utf8'));
 const publicationCode = compile(fs.readFileSync('client/src/lib/rosterPublicationRuntime.ts', 'utf8'));
 const database = fs.readFileSync('client/src/lib/databaseClient.ts', 'utf8');
@@ -57,15 +59,16 @@ function harness(empty = false, knownCrew = true) {
   const initialRoster = roster('local'); if (!knownCrew) { initialRoster.crewId=''; initialRoster.crewName='Tripulante'; }
   const bundleRef = { current: { roster: empty ? { days: [] } : initialRoster, compliance: {}, source: 'synthetic-local' } }, choiceRevision = { current: 0 };
   remote = { roster: bundleRef.current.roster, compliance: {}, gym: [] };
-  const runtime = {};
-  const context = { ...globals, ...auth, ...helpers, ...publication, ...scope, bundleRef, choiceRevision, startupCanCommit, exports: runtime,
+  const runtime = {}, financial = {};
+  vm.runInNewContext(financialCode, { ...globals, ...auth, exports: financial });
+  const context = { ...globals, ...auth, ...helpers, ...publication, ...scope, ...financial, bundleRef, choiceRevision, startupCanCommit, exports: runtime,
     setStartupStatus() {}, restoreLatestImport: async () => null, loadRoster: () => bundleRef.current,
     analyzeSafe: () => ({}), setBundleState: next => { bundleRef.current = next; },
     openActiveRoster: async options => { assert.equal(options.requireRemote, true); counts.reads++; return typeof remote === 'function' ? remote() : remote; },
     recomputeComplianceWithRegulatoryHistory: async () => ({ compliance: {} }),
     rosterFingerprint: value => value.stamp, normalizeRosterDays: value => value, buildCanonicalRosterEvents: value => value.events,
     publicationSnapshot: review.publication,
-    preservePlannedRosterBeforeImport: () => { counts.preserve++; },
+    preservePlannedRosterBeforeImport: (_before, _after, capturedSession) => { assert.equal(capturedSession,financial.financialRateSession(),'remote preservation must carry the captured current authenticated session'); counts.preserve++; },
     saveRoster: (value, source, selection) => { assert.equal(selection, 'automatic'); counts.cache++; localStorage.setItem(helpers.startupKey(), JSON.stringify({ owner, selection, roster: value, source })); },
     setBundle: next => { choiceRevision.current++; bundleRef.current = next; },
   };
