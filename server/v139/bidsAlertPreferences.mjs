@@ -56,7 +56,7 @@ export async function handleBidsAlertPreferences(req, res, url, {
   const preferences = body.action === 'save-preferences' ? validateBidsPreferences(body.preferences) : null;
   const campaign = getCampaign(), eligibility = await resolveEligibility(context, campaign);
   // Incomplete source, forged client metadata or unknown audience cannot create a receipt.
-  if (body.action === 'already-did' && (bidsCampaignPending(campaign).length || eligibility?.verified !== true || eligibility?.eligible !== true || eligibility.ownerId !== ownerId || eligibility.campaignId !== campaign.id || eligibility.campaignRevision !== campaign.revision || body.confirmed !== true || body.contextKey !== bidsAlertContextKey(ownerId, campaign))) {
+  if (body.action === 'already-did' && (bidsCampaignPending(campaign).length || eligibility?.verified !== true || eligibility?.eligible !== true || eligibility.ownerId !== ownerId || eligibility.campaignId !== campaign.id || eligibility.campaignRevision !== campaign.revision || !Number.isFinite(clock()) || clock() < Date.parse(campaign.opensAt) || clock() >= Date.parse(campaign.closesAt) || body.confirmed !== true || body.contextKey !== bidsAlertContextKey(ownerId, campaign))) {
     sendJson(res, 409, { ok: false, message: 'Janela, público ou confirmação ainda não validados. Nada foi enviado ou confirmado.' }); return true;
   }
   const connection = await context.db.getConnection();

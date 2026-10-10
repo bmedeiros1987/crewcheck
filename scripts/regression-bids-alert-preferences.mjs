@@ -25,7 +25,7 @@ const db = { query: async (sql, values) => query(states, sql, values), getConnec
   };
 } };
 const source = { id: 'fictional', revision: 'v1', source: { verified: true, label: 'Synthetic', sha256: 'a'.repeat(64) }, targetMonth: '2026-12', timezone: 'UTC', opensAt: '2026-11-11T00:00:00Z', closesAt: '2026-11-12T20:00:00Z', audience: { verified: true, airline: 'FICTIONAL', roles: ['fictional-cabin'] } };
-const now = Date.parse('2026-11-11T08:00:00Z');
+let now = Date.parse('2026-11-11T08:00:00Z');
 const server = http.createServer(async (req, res) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '') || '';
@@ -64,6 +64,11 @@ try {
   const snapshot = (await request()).data; assert.equal(snapshot.canConfirmAlreadyDid, true);
   const receipt = { action: 'already-did', confirmed: true, expectedRevision: snapshot.revision, requestId: 'receipt_001', contextKey: bidsAlertContextKey('owner-A', source) };
   assert.equal((await request('B', receipt)).status, 409, 'receipt cannot cross accounts');
+  for (const instant of [Date.parse(source.opensAt) - 1, Date.parse(source.closesAt)]) {
+    const savedNow = now, savedStates = JSON.stringify([...states]); now = instant;
+    assert.equal((await request('A', receipt)).status, 409, 'declaration outside official window is rejected');
+    assert.equal(JSON.stringify([...states]), savedStates, 'rejected declaration makes no write'); now = savedNow;
+  }
   const result = await request('A', receipt); assert.equal(result.status, 200); assert.equal(result.data.alreadyDid, true); assert.equal(result.data.plan.reason, 'already_did');
   assert.equal((await request('A', receipt)).data.revision, result.data.revision, 'receipt replay does not increment revision');
   campaign = { ...source, revision: 'v2' };
