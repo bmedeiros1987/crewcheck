@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { prioritizeWellhubOpening } from '../../shared/wellhub-hours.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { wellhubLocationTextMatches } from '../../shared/wellhub-location.mjs';
@@ -68,7 +69,7 @@ export function loadVerifiedWellhubPartners(catalogPath = CATALOG_PATH) {
   const blocks = body.split(/\n\s*\{\n/).slice(1).map((part) => `{\n${part}`).map((part) => part.replace(/,?\n\s*\},?\s*$/, '\n}'));
   const partners = blocks.map((block) => ({
     id: stringField(block, 'id'), name: stringField(block, 'name'), chain: stringField(block, 'chain'),
-    city: stringField(block, 'city'), state: stringField(block, 'state'), country: stringField(block, 'country') || 'BR',
+    holidayHoursUncertain: boolField(block, 'holidayHoursUncertain') || false, timeZone: stringField(block, 'timeZone'), city: stringField(block, 'city'), state: stringField(block, 'state'), country: stringField(block, 'country') || 'BR',
     address: stringField(block, 'address'), minimumPlan: stringField(block, 'minimumPlan') || 'unknown', rating: numberField(block, 'rating'),
     region: stringField(block, 'region'), activityPlans: arrayField(block, 'activityPlans'), accessConditions: stringField(block, 'accessConditions'),
     reviewCount: numberField(block, 'reviewCount'), openingHours: arrayField(block, 'openingHours'), is24Hours: boolField(block, 'is24Hours') || false,
@@ -162,7 +163,7 @@ export async function searchVerifiedWellhub({ plan = 'basic', query = '', activi
   // The public site's terms restrict collection/storage. No HTML collector or
   // "live" flag may imply permission. Keep the argument for API compatibility;
   // an authorized source requires its own reviewed adapter before activation.
-  return candidates.slice(0, Math.max(1, Number(limit) || 20)).map(partner => {
+  return prioritizeWellhubOpening(candidates, now).slice(0, Math.max(1, Number(limit) || 20)).map(partner => {
     const requested = normalize(activityCanonical(activity) || activity);
     const rule = requested && partner.activityPlans.find(item => normalize(item.split('|')[0]) === requested);
     return {

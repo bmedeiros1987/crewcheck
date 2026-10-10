@@ -1,0 +1,91 @@
+/* Scope the flow repair to Wellhub cards, independent of roster/AIMS cards. */
+.cc-wellhub-results .cz-place-result-card,
+.cc-wellhub-results .cz-place-select,
+.cc-wellhub-results .cz-roster-copy,
+.cc-wellhub-detail,
+.cc-wellhub-detail > header,
+.cc-wellhub-detail > header > div {
+  position: relative !important;
+  inset: auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  min-width: 0 !important;
+  overflow: visible !important;
+}
+.cc-wellhub-results .cz-place-select { align-items: start !important; }
+.cc-wellhub-results .cz-roster-copy { display: block !important; }
+.cc-wellhub-results :is(h3,p,small),
+.cc-wellhub-detail :is(h2,p,.cz-place-facts span) {
+  position: static !important;
+  height: auto !important;
+  max-height: none !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.45 !important;
+  text-overflow: clip !important;
+  -webkit-line-clamp: unset !important;
+}
+.cc-wellhub-results .cz-tool-actions,
+.cc-wellhub-detail .cz-tool-actions {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit,minmax(min(100%,180px),1fr)) !important;
+  gap: 10px !important;
+  height: auto !important;
+  position: static !important;
+  margin-top: 12px !important;
+}
+.cc-wellhub-results .cz-tool-actions > *,
+.cc-wellhub-detail .cz-tool-actions > * {
+  position: static !important;
+  height: auto !important;
+  min-height: 44px !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.4 !important;
+}
+.cc-wellhub-detail .cz-place-facts { grid-template-columns: repeat(auto-fit,minmax(min(100%,180px),1fr)) !important; }
+.cc-wellhub-results { scroll-margin-top: 100px; padding-bottom: calc(90px + env(safe-area-inset-bottom,0px)); }
+.cc-wellhub-results .cz-place-result-card { scroll-margin-block: 100px 100px; }
+@media(max-width:420px) {
+ .cc-wellhub-results .cz-place-select { grid-template-columns: 38px minmax(0,1fr) 16px !important; gap: 8px !important; }
+ .cc-wellhub-detail > header { grid-template-columns: 38px minmax(0,1fr) 36px !important; gap: 8px !important; }
+}
+.cz-app[data-view="gyms"]:has(.cc-wellhub-results) {
+ scroll-padding-top: 100px;
+ scroll-padding-bottom: calc(100px + env(safe-area-inset-bottom,0px));
+}
+.cc-wellhub-results .cz-place-result-card { padding: 14px !important; gap: 10px !important; border-radius: 18px !important; box-shadow: 0 4px 16px #00000012 !important; }
+.cc-wellhub-results .cz-roster-copy h3 { font-size: 1.05rem !important; font-weight: 750 !important; margin-bottom: 6px !important; }
+.cc-wellhub-results .cz-roster-copy p { font-size: .875rem !important; margin-bottom: 6px !important; }
+.cc-wellhub-results .cz-roster-copy small { font-size: .825rem !important; font-weight: 650 !important; }
+.cc-wellhub-results .cz-tool-actions > * { font-size: .85rem !important; padding: 9px 12px !important; border-radius: 12px !important; }
+.cc-wellhub-results [data-wellhub-status="open"],.cc-wellhub-detail [data-wellhub-status="open"] { color: #166534 !important; }
+.cc-wellhub-results [data-wellhub-status="closed"],.cc-wellhub-detail [data-wellhub-status="closed"] { color: #991b1b !important; }
+.cc-wellhub-results [data-wellhub-status="unknown"],.cc-wellhub-detail [data-wellhub-status="unknown"] { color: #854d0e !important; }
+[data-crew-theme="dark"] :is(.cc-wellhub-results,.cc-wellhub-detail) [data-wellhub-status="open"] { color: #86efac !important; }
+[data-crew-theme="dark"] :is(.cc-wellhub-results,.cc-wellhub-detail) [data-wellhub-status="closed"] { color: #fca5a5 !important; }
+[data-crew-theme="dark"] :is(.cc-wellhub-results,.cc-wellhub-detail) [data-wellhub-status="unknown"] { color: #fde68a !important; }
+/* The copy is a span for button semantics; generic icon-span styles must not
+   turn the entire title/address/status column into a fixed decorative tile. */
+.cc-wellhub-results .cz-place-select .cz-roster-copy {
+ background: none !important; box-shadow: none !important; border: 0 !important;
+ border-radius: 0 !important; width: auto !important; padding: 0 !important;
+ color: inherit !important; transform: none !important;
+}
+.cc-wellhub-results .cz-tool-actions svg,
+.cc-wellhub-detail .cz-tool-actions svg {
+ width: 16px !important; height: 16px !important; min-width: 16px !important;
+ flex: none !important; padding: 0 !important; background: none !important; box-shadow: none !important;
+}
+.cc-wellhub-results .cz-tool-actions > *, .cc-wellhub-detail .cz-tool-actions > * { display: inline-flex !important; align-items: center !important; justify-content: center !important; gap: 8px !important; }
+.cc-wellhub-concierge-answer { line-height: 1.6; overflow-wrap: anywhere; }
+.cc-wellhub-concierge-answer a { text-decoration: underline; text-underline-offset: 3px; font-weight: 650; }
+.cc-wellhub-results .cz-place-select .cz-roster-copy { display: flex !important; flex-direction: column !important; align-items: stretch !important; gap: 4px !important; }
+.cc-wellhub-results .cz-roster-copy h3 { order: 0; }
+.cc-wellhub-results .cz-roster-copy [data-wellhub-status] { order: 1; }
+.cc-wellhub-results .cz-roster-copy .cc-wellhub-card-hours { order: 2; font-weight: 400 !important; }
+.cc-wellhub-results .cz-roster-copy p { order: 3; }
+.cc-wellhub-results .cz-tool-actions { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+.cc-wellhub-results .cz-tool-actions > a { text-decoration: none !important; border: 1px solid color-mix(in srgb,currentColor 22%,transparent) !important; background: color-mix(in srgb,currentColor 4%,transparent) !important; color: inherit !important; }
+@media(min-width:680px) { .cc-wellhub-results .cz-tool-actions { grid-template-columns: repeat(3,minmax(0,1fr)) !important; } }

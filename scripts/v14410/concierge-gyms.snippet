@@ -134,6 +134,7 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}, maxReplyCha
     const sourceUrl = /^https:\/\/[a-z0-9.-]+\/[^\s<>]*$/i.test(rawUrl) ? rawUrl : '';
     return [
       `${index + 1}. ${oneLine(partner.name)}`,
+      ...(partner.openingStatus ? [partner.openingStatus.label] : []),
       partner.eligibilityStatus === 'included'
         ? `Plano mínimo: ${minimumPlanLabel} · compatível com ${userPlanLabel} pelo cadastro`
         : `Acesso: não confirmado para seu ${userPlanLabel} · mínimo cadastrado: ${minimumPlanLabel}`,
@@ -152,7 +153,7 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}, maxReplyCha
   // smaller budget is internal/test-only; it cannot increase the transport cap.
   const budget = Math.max(600, Math.min(3900, Number.isFinite(maxReplyCharacters) ? Math.floor(maxReplyCharacters) : 3900));
   const header = `Academias · ${oneLine(locationCity)}${locationState ? `/${oneLine(locationState)}` : ''} · ${wellhubPlanLabelServer(wellhubPlan)}${activity ? ` · ${oneLine(activity)}` : ''}`;
-  const warning = 'Catálogo parcial, sem atualização automática; fontes não consultadas agora. Acesso, horários e disponibilidade de modalidades atuais não confirmados. O limite técnico de 90 dias do CrewCheck não garante vigência no Wellhub. Confirme acesso e condições no app Wellhub antes de sair.';
+  const warning = 'Horário avaliado nesta consulta, sem acompanhamento contínuo. Catálogo parcial, sem atualização automática; fontes não consultadas agora. Acesso, horários e disponibilidade de modalidades atuais não confirmados. O limite técnico de 90 dias do CrewCheck não garante vigência no Wellhub. Confirme acesso e condições no app Wellhub antes de sair.';
   const preferenceHelp = 'Para alterar: “meu plano é Silver+”, “uso Gold” ou “quero Pilates”.';
   for (let count = lines.length; count > 0; count--) {
     const result = [

@@ -1,0 +1,30 @@
+import fs from 'node:fs';
+const path='client/src/pages/Home.tsx';
+let source=fs.readFileSync(path,'utf8');
+if (!source.includes('// cc-wellhub-hours')) {
+  source="import '@/styles/wellhub-hours.css';\nimport { isOfficialWellhubUrl, WELLHUB_UBER_FALLBACK_URL } from '@shared/wellhub-links.mjs';\nimport { WellhubConciergeAnswer } from '@/components/WellhubConciergeAnswer';\nimport { wellhubOpeningStatus, type OpeningPartner } from '@shared/wellhub-hours.mjs';\nimport { useWellhubClock } from '@/lib/useWellhubClock';\n"+source;
+  source=source.replace('  wellhubVerifiedAt?: string;', '  wellhubVerifiedAt?: string;\n  wellhubHoursPartner?: OpeningPartner;');
+  const start=source.indexOf('function GymsView('), end=source.indexOf('\nfunction ',start+1);
+  if(start<0 || end<0) throw Error('GymsView hours anchor missing');
+  let view=source.slice(start,end);
+  const replace=(before,after)=>{if(!view.includes(before))throw Error('Wellhub hours missing anchor: '+before);view=view.replace(before,after);};
+  replace("  const [wellhubActivity, setWellhubActivity]", "  // cc-wellhub-hours\n  const wellhubClock = useWellhubClock(category === 'gym' && plan === 'wellhub');\n  const hourStatuses = new WeakMap<NearbyPlace, ReturnType<typeof wellhubOpeningStatus>>();\n  const currentWellhubStatus = (place: NearbyPlace) => { if (!place.wellhubHoursPartner) return null; let status = hourStatuses.get(place); if (!status) { status = wellhubOpeningStatus(place.wellhubHoursPartner, new Date(wellhubClock)); hourStatuses.set(place, status); } return status; };\n  const openingRank = (place: NearbyPlace) => ({ open: 0, unknown: 1, closed: 2 }[currentWellhubStatus(place)?.status || 'unknown']);\n  const [wellhubActivity, setWellhubActivity]");
+  replace('          openNow: partner.is24Hours ? true : undefined,','          openNow: undefined,\n          wellhubHoursPartner: partner,');
+  replace('.sort((a, b) => Number(a.distanceMeters || Infinity)', ".sort((a, b) => (category === 'gym' && plan === 'wellhub' ? openingRank(a) - openingRank(b) : 0) || Number(a.distanceMeters || Infinity)");
+  view=view.replaceAll("selected.openNow === true ? 'Aberto agora' : selected.openNow === false ? 'Fechado agora' : 'Horário a confirmar'", "currentWellhubStatus(selected)?.label || (selected.openNow === true ? 'Aberto agora' : selected.openNow === false ? 'Fechado agora' : 'Horário a confirmar')");
+  view=view.replaceAll("place.openNow === true ? 'Aberto agora' : place.openNow === false ? 'Fechado agora' : 'Horário a confirmar'", "currentWellhubStatus(place)?.label || (place.openNow === true ? 'Aberto agora' : place.openNow === false ? 'Fechado agora' : 'Horário a confirmar')");
+  view=view.replace('<section className="cz-place-detail-card">', '<section className={\"cz-place-detail-card\" + (category === \"gym\" && plan === \"wellhub\" ? \" cc-wellhub-detail\" : \"\")}>');
+  view=view.replace('<section className="cz-stack-list cz-places-results">', '<section className={\"cz-stack-list cz-places-results\" + (category === \"gym\" && plan === \"wellhub\" ? \" cc-wellhub-results\" : \"\")}>');
+  view=view.replace('<small>{currentWellhubStatus(place)?.label', '<small data-wellhub-status={currentWellhubStatus(place)?.status}>{currentWellhubStatus(place)?.label');
+  view=view.replace('<span><b>Status</b>{currentWellhubStatus(selected)?.label', '<span data-wellhub-status={currentWellhubStatus(selected)?.status}><b>Status</b>{currentWellhubStatus(selected)?.label');
+  view=view.replace('Ver no app · rota e detalhes', 'Mais detalhes');
+  const actions='{category === \"gym\" && plan === \"wellhub\" && isOfficialWellhubUrl(place.wellhubSourceUrl) && <a href={place.wellhubSourceUrl} target=\"_blank\" rel=\"noreferrer noopener\">Ver no Wellhub</a>}{category === \"gym\" && plan === \"wellhub\" && <a href={WELLHUB_UBER_FALLBACK_URL} target=\"_blank\" rel=\"noreferrer noopener\" title=\"Informe e confirme o endereço da academia na Uber; destino não preenchido automaticamente\">Abrir Uber · informar destino</a>}';
+  view=view.replace('<div className=\"cz-tool-actions\"><button className=\"primary\" onClick={() => setSelected(place)}>', '<div className=\"cz-tool-actions\">'+actions+'<button className=\"primary\" onClick={() => setSelected(place)}>');
+  replace("<p>{safe(place.address, 'Endereço a confirmar')}</p>", "<p>{safe(place.address, 'Endereço a confirmar')}</p>{category === 'gym' && plan === 'wellhub' && <small className=\"cc-wellhub-card-hours\">Horário cadastrado: {place.openingHours?.join(' | ') || 'não informado'}</small>}");
+  source=source.slice(0,start)+view+source.slice(end);
+  source=source.replace('<p style={{ whiteSpace: \"pre-wrap\" }}>{answer}</p>', '<WellhubConciergeAnswer text={answer}/>');
+  source=source.replace("<p style={{ whiteSpace: 'pre-wrap' }}>{answer}</p>", '<WellhubConciergeAnswer text={answer}/>');
+  source=source.replace('Abrir página oficial no Wellhub', 'Ver no Wellhub');
+  for (const required of ['cc-wellhub-results','cc-wellhub-card-hours','WellhubConciergeAnswer text={answer}','WELLHUB_UBER_FALLBACK_URL','wellhubHoursPartner: partner']) if (!source.includes(required)) throw Error('Incomplete Wellhub materialization: '+required);
+  fs.writeFileSync(path,source);
+}

@@ -206,6 +206,7 @@ await import('../fixed-navigation-headers.mjs');
 await import('../standby-sequence-card/apply.mjs');
 await import('../amil-exact-coverage/apply.mjs');
 await import('../finalize-duty-clock-provenance.mjs');
+await import('../wellhub-hours/apply.mjs');
 
 }
 
