@@ -16,7 +16,9 @@ export async function enqueueCrewCheckPush(db, { email, installationKey, envelop
     const installation=await lockState(connection,installationKey);
     if (owners[0]?.public_id!==envelope.ownerId || !installationMatches(installation,envelope,email) || !await verifyContext(connection,{email,envelope,sourceContext},clock())) { await connection.rollback(); return {status:'blocked',received:null}; }
     await connection.query('INSERT INTO crewcheck_telegram_state (state_key,payload,updated_at) VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE state_key=state_key',[key,JSON.stringify({email,ownerId:envelope.ownerId,installationKey,envelope,scheduledAt,sourceContext,status:'queued',received:null})]);
-    const state=await lockState(connection,key); await connection.commit(); return {status:state.status,received:null};
+    const state=await lockState(connection,key);
+    if(state.status==='queued'&&state.sourceContext?.preferencesRevision!==sourceContext?.preferencesRevision){await save(connection,key,{...state,scheduledAt,sourceContext});}
+    await connection.commit(); return {status:state.status,received:null};
   }catch(error){await connection.rollback();throw error;}finally{connection.release();}
 }
 export async function dispatchPersistentPush(db, selected, { configuration, verifyContext, clock=()=>Date.now(), send=sendCrewCheckPush }) {
@@ -48,10 +50,10 @@ export async function reconcilePushReceipts(db, identity, reports) {
   if(!Array.isArray(reports)||reports.length>50)throw Object.assign(new Error('Confirmação inválida.'),{status:400});
   const connection=await db.getConnection();let reconciled=0;
   try{await connection.beginTransaction();const[owners]=await connection.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',[identity.email]);if(owners[0]?.public_id!==identity.ownerId)throw Object.assign(new Error('Sessão inválida.'),{status:401});
-    for(const report of reports){if(!validPushEnvelope(report.envelope)||report.envelope.ownerId!==identity.ownerId||!['display_api_resolved','uncertain','clicked'].includes(report.status))continue;const key=outboxKey(report.envelope),job=await lockState(connection,key);if(!job||job.email!==identity.email||job.ownerId!==identity.ownerId||JSON.stringify(job.envelope)!==JSON.stringify(report.envelope)||!['accepted_unconfirmed','dispatching','uncertain'].includes(job.status))continue;
+    for(const report of reports){if(!validPushEnvelope(report.envelope)||report.envelope.ownerId!==identity.ownerId||!['display_api_resolved','uncertain','clicked'].includes(report.status))continue;const key=outboxKey(report.envelope),job=await lockState(connection,key);if(!job||job.email!==identity.email||job.ownerId!==identity.ownerId||['schema','ownerId','installationId','consentRevision','eventKey','expiresAt','route'].some(field=>job.envelope[field]!==report.envelope[field])||!['accepted_unconfirmed','dispatching','uncertain'].includes(job.status))continue;
       // Authenticated device report is evidence of an API/click attempt, never proof
       // of delivery/read. No client report can change BIDS completion or scheduling.
-      const receipt={status:report.status,received:null};if(JSON.stringify(job.deviceReport)!==JSON.stringify(receipt)){await save(connection,key,{...job,deviceReport:receipt,received:null});reconciled++;}}
+      const receipt={status:report.status,received:null};if(job.deviceReport?.status!==receipt.status||job.deviceReport?.received!==null){await save(connection,key,{...job,deviceReport:receipt,received:null});reconciled++;}}
     await connection.commit();return{reconciled,received:null};
   }catch(error){await connection.rollback();throw error;}finally{connection.release();}
 }

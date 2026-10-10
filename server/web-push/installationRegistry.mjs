@@ -14,6 +14,7 @@ export function validateSubscription(value) {
   decode(value?.keys?.auth, 16);
   return { endpoint: url.href, keys: { p256dh: value.keys.p256dh, auth: value.keys.auth } };
 }
+export const installationBindingKey=(ownerId,installationId)=>`crewcheck-push-binding:${crypto.createHash('sha256').update(JSON.stringify([ownerId,installationId])).digest('hex')}`;
 export const installationStateKey = endpoint => `crewcheck-push-installation:${crypto.createHash('sha256').update(endpoint).digest('hex')}`;
 function encryptionKey(key) { if (!Buffer.isBuffer(key) || key.length !== 32) fail('Proteção das inscrições ainda não configurada.', 503); return key; }
 export function sealSubscription(value, key, binding) {
@@ -46,10 +47,17 @@ export async function mutateInstallation(db, input) {
     await connection.beginTransaction();
     const [owners] = await connection.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE', [input.identity.email]);
     if (owners[0]?.public_id !== input.identity.ownerId) fail('Sessão da conta não é mais válida.', 401);
+    const bindingKey=installationBindingKey(input.identity.ownerId,input.installationId);
+    await connection.query('INSERT INTO crewcheck_telegram_state (state_key,payload,updated_at) VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE state_key=state_key',[bindingKey,'null']);
+    const[bindingRows]=await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[bindingKey]);
+    const binding=typeof bindingRows[0]?.payload==='string'?JSON.parse(bindingRows[0].payload):bindingRows[0]?.payload;
     await connection.query('INSERT INTO crewcheck_telegram_state (state_key,payload,updated_at) VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE state_key=state_key', [stateKey, 'null']);
     const [rows] = await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE', [stateKey]);
     const previous = typeof rows[0]?.payload === 'string' ? JSON.parse(rows[0].payload) : rows[0]?.payload;
-    const next = changeInstallation({ ...input, subscription: checked, previous });
+    if(previous&&(previous.ownerId!==input.identity.ownerId||previous.email!==input.identity.email||previous.installationId!==input.installationId))fail('Este vínculo pertence a outra conta ou aparelho.',409);
+    const next = changeInstallation({ ...input, subscription: checked, previous:binding });
+    if(binding?.endpointKey&&binding.endpointKey!==stateKey){const[oldRows]=await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[binding.endpointKey]);const old=typeof oldRows[0]?.payload==='string'?JSON.parse(oldRows[0].payload):oldRows[0]?.payload;if(old?.ownerId!==input.identity.ownerId||old.installationId!==input.installationId)fail('Vínculo anterior não verificado.',409);await connection.query('UPDATE crewcheck_telegram_state SET payload=?,updated_at=NOW(3) WHERE state_key=?',[JSON.stringify({...old,active:false,sealed:null}),binding.endpointKey]);}
+    await connection.query('UPDATE crewcheck_telegram_state SET payload=?,updated_at=NOW(3) WHERE state_key=?',[JSON.stringify({email:next.email,ownerId:next.ownerId,installationId:next.installationId,revision:next.revision,active:next.active,endpointKey:stateKey}),bindingKey]);
     await connection.query('UPDATE crewcheck_telegram_state SET payload=?,updated_at=NOW(3) WHERE state_key=?', [JSON.stringify(next), stateKey]);
     await connection.commit(); return { installationId: next.installationId, revision: next.revision, active: next.active, received: null };
   } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
@@ -63,6 +71,7 @@ export async function revokeAccountInstallations(db, identity, installationId, n
     await connection.beginTransaction();
     const [owners] = await connection.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE', [identity.email]);
     if (owners[0]?.public_id !== identity.ownerId) fail('Sessão da conta não é mais válida.', 401);
+    const bindingKey=installationBindingKey(identity.ownerId,installationId),[bindingRows]=await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[bindingKey]);const binding=typeof bindingRows[0]?.payload==='string'?JSON.parse(bindingRows[0].payload):bindingRows[0]?.payload;
     const [rows] = await connection.query("SELECT state_key,payload FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-push-installation:%' AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.email'))=? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.ownerId'))=? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.installationId'))=? FOR UPDATE", [identity.email, identity.ownerId, installationId]);
     let revoked = 0;
     for (const row of rows) {
@@ -71,6 +80,7 @@ export async function revokeAccountInstallations(db, identity, installationId, n
       const next = changeInstallation({ previous, identity, installationId, expectedRevision: previous.revision, action: 'revoke', now });
       await connection.query('UPDATE crewcheck_telegram_state SET payload=?,updated_at=NOW(3) WHERE state_key=?', [JSON.stringify(next), row.state_key]); revoked++;
     }
+    if(binding&&binding.ownerId===identity.ownerId&&binding.installationId===installationId&&binding.active===true)await connection.query('UPDATE crewcheck_telegram_state SET payload=?,updated_at=NOW(3) WHERE state_key=?',[JSON.stringify({...binding,active:false,revision:binding.revision+1}),bindingKey]);
     await connection.commit(); return { revoked, active: false, received: null };
   } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
 }

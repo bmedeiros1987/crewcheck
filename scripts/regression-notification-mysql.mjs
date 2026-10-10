@@ -85,7 +85,7 @@ try {
     assert.equal((await enqueueCrewCheckPush(db,jobInput,{verifyContext,clock:()=>now})).status,'queued');
     const select=async value=>(await db.query('SELECT state_key,payload FROM crewcheck_telegram_state WHERE state_key=?',[outboxKey(value)]))[0][0];
     let sends=0;const send=async()=>{sends++;return{status:'accepted_unconfirmed',received:null};};
-    const dispatches=await Promise.all([dispatchPersistentPush(db,await select(envelope),{configuration:config,verifyContext,clock:()=>now,send}),dispatchPersistentPush(db,await select(envelope),{configuration:config,verifyContext,clock:()=>now,send})]);assert.equal(sends,1);assert(dispatches.every(value=>value.status==='accepted_unconfirmed'&&value.received===null));
+    const dispatches=await Promise.all([dispatchPersistentPush(db,await select(envelope),{configuration:config,verifyContext,clock:()=>now,send}),dispatchPersistentPush(db,await select(envelope),{configuration:config,verifyContext,clock:()=>now,send})]);assert.equal(sends,1);assert(dispatches.every(value=>['dispatching','accepted_unconfirmed'].includes(value.status)&&value.received===null));assert(dispatches.some(value=>value.status==='accepted_unconfirmed'));const finalDispatch=await select(envelope);const finalJob=typeof finalDispatch.payload==='string'?JSON.parse(finalDispatch.payload):finalDispatch.payload;assert.equal(finalJob.status,'accepted_unconfirmed');assert.equal(finalJob.received,null);
     const report={envelope,status:'display_api_resolved'};assert.equal((await reconcilePushReceipts(db,input.identity,[report])).reconciled,1);assert.equal((await reconcilePushReceipts(db,input.identity,[report])).reconciled,0);
     const unknown={...envelope,eventKey:'persistent_unknown_1'};await enqueueCrewCheckPush(db,{...jobInput,envelope:unknown},{verifyContext,clock:()=>now});const unknownSelected=await select(unknown);
     const throwing=async()=>{sends++;throw Error('ambiguous mock');};assert.equal((await dispatchPersistentPush(db,unknownSelected,{configuration:config,verifyContext,clock:()=>now,send:throwing})).status,'uncertain');await dispatchPersistentPush(db,unknownSelected,{configuration:config,verifyContext,clock:()=>now,send:throwing});assert.equal(sends,2);
@@ -94,6 +94,7 @@ try {
     assert.equal((await revokeAccountInstallations(db,input.identity,input.installationId,input.now)).revoked,1);
     assert.equal((await revokeAccountInstallations(db,input.identity,input.installationId,input.now)).revoked,0);
     const [after]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[stateKey]);const state=typeof after[0].payload==='string'?JSON.parse(after[0].payload):after[0].payload;assert.equal(state.active,false);assert.equal(state.sealed,null);
+    const replacement={...subscription,endpoint:'https://fcm.googleapis.com/synthetic-replacement'};const reactivated=await mutateInstallation(db,{...input,expectedRevision:2,subscription:replacement});assert.equal(reactivated.active,true);assert.equal(reactivated.revision,3);await revokeAccountInstallations(db,input.identity,input.installationId,input.now);
   });
 
   await run('strict MySQL reproduces rejected ISO heartbeat and persists corrected writer across restart/timezone',async()=>{
