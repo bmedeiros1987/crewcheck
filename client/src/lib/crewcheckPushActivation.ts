@@ -1,6 +1,6 @@
 export type PushBinding = { ownerId: string; installationId: string; consentRevision: number };
 export type PushDependencies = {
-  enabled: boolean; currentOwner: () => string | null; registration: ServiceWorkerRegistration;
+  enabled: boolean; ownerId: string | null; currentOwner: () => string | null; registration: ServiceWorkerRegistration;
   permission: () => Promise<NotificationPermission>;
   subscribe: (registration: ServiceWorkerRegistration, key: string) => Promise<PushSubscription>;
   save: (subscription: PushSubscriptionJSON, ownerId: string) => Promise<PushBinding>;
@@ -15,9 +15,9 @@ async function exclusive<T>(run: () => Promise<T>): Promise<T> { const previous=
 export function invalidateCrewCheckPushActivation() { return ++operationGeneration; }
 export function crewCheckPushOperationGeneration() { return operationGeneration; }
 export async function activateCrewCheckPush(dependencies: PushDependencies, publicKey: string, confirmed: boolean) {
-  const ownerId = dependencies.currentOwner(), operation = ++operationGeneration;
+  const ownerId = dependencies.ownerId, operation = ++operationGeneration;
   const current = () => operation === operationGeneration && dependencies.currentOwner() === ownerId;
-  if (dependencies.enabled !== true || confirmed !== true || !ownerId || !publicKey) return { status: 'blocked', received: null };
+  if (dependencies.enabled !== true || confirmed !== true || !ownerId || !publicKey || !current()) return { status: 'blocked', received: null };
   if (await dependencies.permission() !== 'granted') return { status: 'permission_not_granted', received: null };
   if (!current()) return { status: 'account_changed', received: null };
   return exclusive(async () => {
@@ -44,14 +44,24 @@ export async function activateCrewCheckPush(dependencies: PushDependencies, publ
   });
 }
 export async function revokeCrewCheckPush(dependencies: PushDependencies) {
-  operationGeneration++;
+  const ownerId = dependencies.ownerId, operation = ++operationGeneration;
+  const current = () => !!ownerId && operation === operationGeneration && dependencies.currentOwner() === ownerId;
+  const stale = () => ({ status: 'account_changed', serverRevocationConfirmed: false });
+  if (!current()) return stale();
   return exclusive(async () => {
-  await dependencies.cancelWorker(); // Local privacy boundary first, even offline.
-  const ownerId = dependencies.currentOwner(); let serverRevocationConfirmed = false;
-  try { if (ownerId) { await dependencies.revokeInstallation(ownerId); serverRevocationConfirmed = true; } } catch {}
-  // Remote revocation occurs even if permission loss removed the subscription.
-  const subscription = await dependencies.registration.pushManager.getSubscription();
-  const unsubscribed = subscription ? await subscription.unsubscribe() : true;
-  return { status: unsubscribed ? 'inactive' : 'local_cancellation_unconfirmed', serverRevocationConfirmed };
+    if (!current()) return stale();
+    // Capture only the prior subscription before awaiting owner-scoped worker CAS.
+    const subscription = await dependencies.registration.pushManager.getSubscription();
+    if (!current()) return stale();
+    const cancelled = await dependencies.cancelWorker();
+    if (!current()) return stale();
+    if (!cancelled) return { status: 'local_cancellation_unconfirmed', serverRevocationConfirmed: false };
+    let serverRevocationConfirmed = false;
+    try { await dependencies.revokeInstallation(ownerId!); serverRevocationConfirmed = true; } catch {}
+    if (!current()) return { status: 'account_changed', serverRevocationConfirmed };
+    // Remote revocation still occurs when the old subscription is already absent.
+    const unsubscribed = subscription ? await subscription.unsubscribe() : true;
+    if (!current()) return { status: 'account_changed', serverRevocationConfirmed };
+    return { status: unsubscribed ? 'inactive' : 'local_cancellation_unconfirmed', serverRevocationConfirmed };
   });
 }
