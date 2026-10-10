@@ -51,7 +51,7 @@ const day=new Date().toISOString().slice(0,10),now=Date.parse(day+'T12:00:00Z');
 const event=(id,hours)=>({id,kind:'stay',title:'Pernoite sintético '+id,date:new Date(now),day:{date:day},origin:'FOR',destination:'FOR',hotel:'Hotel sintético '+id,presentation:'01:11',canonical:{startDateTime:new Date(now+hours*3600000).toISOString(),endDateTime:new Date(now+(hours+24)*3600000).toISOString()}});
 const fixtures=[event('synthetic-current',-1),event('synthetic-future',48)];
 window.stayFixtureDay=day;window.stayFixtureEvents=fixtures;
-window.stayNavigation=[];window.stayContext=peekPendingNavigationContext;
+window.stayNavigation=[];window.stayContext=peekPendingNavigationContext;window.stayHasOrigin=hasStoredStayEditorOrigin;
 function App(){const [view,setView]=useState(()=>hasStoredStayEditorOrigin()?'presentation':'hotels'),[events,setEvents]=useState(fixtures);
  useEffect(()=>{window.replaceStayEvents=setEvents;const navigate=e=>{window.stayNavigation.push(e.detail);if(e.detail!=='presentation')clearStoredStayEditorOrigin();setView(e.detail)};window.addEventListener('crewcheck:set-view',navigate);return()=>window.removeEventListener('crewcheck:set-view',navigate)},[]);
  return <><main {...${JSON.stringify(rootProps)}} data-view={view}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back backLabel={view==='presentation'&&readStayEditorIntent()?'Voltar ao pernoite':view==='presentation'&&hasStoredStayEditorOrigin()?'Voltar à lista de pernoites':undefined} onMenu={view==='presentation'&&(readStayEditorIntent()||hasStoredStayEditorOrigin())?returnFromStayProgramEditor:undefined}/></InternalHeaderFrame>{view==='hotels'?<HotelsView events={events}/>:<Presentation events={events} embedded/>}</main><BottomNav view={view} setView={setView} openMenu={()=>{}}/></>}
@@ -216,6 +216,7 @@ try {
   await page.getByRole('heading',{name:'Apresentação, hotel e descanso',exact:true}).waitFor();
   await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'another-account',email:'another@example.invalid'}));localStorage.setItem('crewcheck_auth_token','another-synthetic');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
   await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='');
+  assert.equal(await page.evaluate(()=>window.stayHasOrigin()),false,'Origin marker from another account cannot resume the editor');
   assert.deepEqual(errors,[]);assert.deepEqual(writes,[],'No hotel saves or alarm requests');
   results.push({width,touchIdentity:true,savedApz:true,noRosterApzFallback:true,manualPreserved:true,autoMode:true,modeAbsolute:true,liveGap:true,defaultSeparate:true,current:true,rosterChange:true,itemRemoval:true,cancelEdit:true,contextReturn:true,accountReset:true,persistenceReload:true,reloadInsideEditorDegradesToList:true,cancellationPersisted:true,layout,negativeControl:true,writes,errors});
   await context.close();
