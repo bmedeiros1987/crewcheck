@@ -117,6 +117,7 @@ type ZeroView =
 
 type ZeroLeg = {
   id: string;
+  salaryClockKnown?: boolean;
   day: RosterDay;
   leg?: FlightLeg;
   kind: 'flight' | 'stay' | 'duty' | 'journey-rest';
@@ -1079,7 +1080,15 @@ function currentCompliance(bundle: BundleState) { return bundle.compliance || an
 function currentGym(bundle: BundleState) { try { return getGymRecommendations(bundle.roster); } catch { return []; } }
 
 function buildLegs(roster: CrewRoster): ZeroLeg[] {
-  const normalized = normalizeRosterDays(roster);
+  // Capture salary clock evidence before canonical midnight/arrival fallbacks.
+  // This financial-only annotation never changes regulatory normalization.
+  const clock = (value: unknown) => /^(?:[01]?\d|2[0-3]):[0-5]\d(?:\(\+\d+\))?$/.test(String(value || ''));
+  const clockSourceRoster = { ...roster, days: roster.days.map(day => ({ ...day,
+    legs: (day.legs || []).map(leg => ({ ...leg,
+      salaryClockKnown: clock(leg.departureTime) && clock(leg.arrivalTime),
+    })),
+  })) };
+  const normalized = normalizeRosterDays(clockSourceRoster);
   const canonicalEvents = buildCanonicalRosterEvents(normalized);
 
   const legs = canonicalEvents.map((event): ZeroLeg => {
@@ -1104,6 +1113,7 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
         day,
         leg,
         kind: 'flight',
+        salaryClockKnown: anyLeg.salaryClockKnown === true,
         date: d,
         title,
         subtitle,
@@ -2423,13 +2433,17 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
     const afterVariable = after.salary.production + after.salary.reserve + after.salary.standby
       + after.salary.chief + after.salary.instructorPay;
     const perDiemDelta = nativeForecastDelta(before.perdiem.nativeSummary, after.perdiem.nativeSummary);
+    const salaryReady = before.salary.configured && after.salary.configured
+      && !before.salary.config.requiresManualFunction && !after.salary.config.requiresManualFunction
+      && Number.isFinite(beforeVariable) && Number.isFinite(afterVariable)
+      && [...(before.salary.rows || []), ...(after.salary.rows || [])].every(row => row.timeKnown === true && row.distanceKnown === true && Number.isFinite(row.total));
     return {
-      variableDelta: afterVariable - beforeVariable,
-      plannedVariable: beforeVariable,
-      currentVariable: afterVariable,
-      plannedGuaranteeReview: afterVariable + 0.005 < beforeVariable,
+      variableDelta: salaryReady ? afterVariable - beforeVariable : null,
+      plannedVariable: salaryReady ? beforeVariable : null,
+      currentVariable: salaryReady ? afterVariable : null,
+      plannedGuaranteeReview: salaryReady ? afterVariable + 0.005 < beforeVariable : null,
       perDiemDelta,
-      salaryReady: !before.salary.config.requiresManualFunction && !after.salary.config.requiresManualFunction,
+      salaryReady,
     };
   }, [planned, bundle.roster, comparison?.summary.periodMatches]);
 
@@ -2497,8 +2511,8 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
       </section>}
       <section className="cz-finance-table cz-compare-financial">
         <h2>Possível impacto financeiro</h2>
-        <div className="cz-finance-row"><span>Parcela variável</span><strong>Diferença prevista</strong><small>KM diurno/noturno, reserva, sobreaviso e adicionais com as regras atuais</small><b>{financial?.salaryReady ? moneyBRL(financial.variableDelta) : 'Função pendente'}</b></div>
-        <div className="cz-finance-row"><span>Garantia da planejada</span><strong>{financial?.plannedGuaranteeReview ? 'Revisão necessária' : 'Sem redução detectada'}</strong><small>Quando a perda decorrer de motivo alheio ao tripulante e não houver programação equivalente, conferir o piso variável da escala inicialmente publicada</small><b>{financial?.plannedGuaranteeReview ? moneyBRL(financial.plannedVariable) : '—'}</b></div>
+        <div className="cz-finance-row"><span>Parcela variável</span><strong>Diferença prevista</strong><small>KM diurno/noturno, reserva, sobreaviso e adicionais com as regras atuais</small><b>{financial?.salaryReady ? moneyBRL(financial.variableDelta) : 'Não calculável · dados pendentes'}</b></div>
+        <div className="cz-finance-row"><span>Garantia da planejada</span><strong>{!financial?.salaryReady ? 'Comparação financeira pendente' : financial.plannedGuaranteeReview ? 'Revisão necessária' : 'Sem redução detectada'}</strong><small>Quando a perda decorrer de motivo alheio ao tripulante e não houver programação equivalente, conferir o piso variável da escala inicialmente publicada</small><b>{financial?.plannedGuaranteeReview ? moneyBRL(financial.plannedVariable) : '—'}</b></div>
         <div className="cz-finance-row"><span>Diárias</span><strong>Diferença por moeda</strong><small>Sem somar moedas diferentes e sem presumir câmbio</small><b>{perDiemDeltaText}</b></div>
         <div className="cz-finance-row"><span>Início da folga</span><strong>{freeDayDelay.toFixed(2).replace('.', ',')} h de postergação</strong><small>{exceptionalNeed ? 'Exceção operacional comprovada: limite de 12 h' : 'Regra geral do ACT: acima de 4 h'} · uma indenização por sequência agrupada</small><b>{moneyBRL(freeDayIndemnity)}</b></div>
       </section>
@@ -3222,8 +3236,9 @@ function WeatherView({ event }: { event: ZeroLeg }) {
     <p className="cc-weather-disclaimer">A decodificação é apoio de leitura e não substitui METAR/SPECI, TAF, ATIS, despacho, NOTAM nem orientação operacional oficial.</p>
   </>;
 }
-function moneyBRL(value: number) {
-  return `R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function moneyBRL(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'Não calculável';
+  return `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 function durationHours(event: ZeroLeg) {
   const start = eventStartDateTime(event).getTime();
@@ -3697,11 +3712,11 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
   const rows: FlightEarningRow[] = flightEvents.map((event) => {
     const km = event.origin && event.destination && event.origin !== event.destination ? flightDistanceKmFromEvent(event) : 0;
     const block = Math.max(0, durationHours(event));
-    const nightHours = nightHoursInsideWindow(event.canonical ? event.canonical.startDateTime : eventStartDateTime(event), event.canonical ? event.canonical.endDateTime : eventEndDateTime(event), (event as any).operationalTimeZone === undefined ? ROSTER_DISPLAY_TIME_ZONE : (event as any).operationalTimeZone);
+    const nightHours = event.salaryClockKnown === false ? NaN : nightHoursInsideWindow(event.canonical ? event.canonical.startDateTime : eventStartDateTime(event), event.canonical ? event.canonical.endDateTime : eventEndDateTime(event), (event as any).operationalTimeZone === undefined ? ROSTER_DISPLAY_TIME_ZONE : (event as any).operationalTimeZone);
     const nightFraction = block > 0 ? Math.min(1, nightHours / block) : 0;
     const payRule = financialFlightRule(event);
     const holiday = isSundayOrConfiguredHoliday(event);
-    const timeKnown = Number.isFinite(nightHours) && holiday !== null;
+    const timeKnown = event.salaryClockKnown !== false && Number.isFinite(nightHours) && holiday !== null;
     const premiumAllKm = payRule.extra || holiday === true;
     const nightKm = premiumAllKm ? km : Math.min(km, Math.max(0, Math.round(km * nightFraction)));
     const dayKm = Math.max(0, km - nightKm);
@@ -3755,7 +3770,7 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
   const nightKmTotal = rows.reduce((sum, row) => sum + row.nightKm, 0);
   const blockHours = flightEvents.reduce((sum, event) => sum + durationHours(event), 0);
   const chiefSectors = rows.filter((row) => row.chiefEligible).length;
-  const nightHours = flightEvents.reduce((sum, event) => sum + nightHoursInsideWindow(event.canonical ? event.canonical.startDateTime : eventStartDateTime(event), event.canonical ? event.canonical.endDateTime : eventEndDateTime(event), (event as any).operationalTimeZone === undefined ? ROSTER_DISPLAY_TIME_ZONE : (event as any).operationalTimeZone), 0);
+  const nightHours = flightEvents.reduce((sum, event) => sum + (event.salaryClockKnown === false ? NaN : nightHoursInsideWindow(event.canonical ? event.canonical.startDateTime : eventStartDateTime(event), event.canonical ? event.canonical.endDateTime : eventEndDateTime(event), (event as any).operationalTimeZone === undefined ? ROSTER_DISPLAY_TIME_ZONE : (event as any).operationalTimeZone)), 0);
   const dayProduction = rows.reduce((sum, row) => sum + row.dayProduction, 0);
   const nightProduction = rows.reduce((sum, row) => sum + row.nightProduction, 0);
   const production = rows.reduce((sum, row) => sum + row.production, 0);

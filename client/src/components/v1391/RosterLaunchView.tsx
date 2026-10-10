@@ -73,6 +73,8 @@ type PerDiemItem = {
 
 type FlightEarningItem = {
   id: string;
+  timeKnown?: boolean;
+  distanceKnown?: boolean;
   km: number;
   dayKm: number;
   nightKm: number;
@@ -207,6 +209,11 @@ function mealIcon(label: string) {
   return <Utensils/>;
 }
 
+function salaryRowsTotal(rows: readonly FlightEarningItem[]): number | null {
+  if (!rows.length || rows.some(row => row.timeKnown !== true || row.distanceKnown !== true || !Number.isFinite(row.total))) return null;
+  return rows.reduce((sum, row) => sum + row.total, 0);
+}
+
 function money(value: number | null) {
   if (value === null || !Number.isFinite(value)) return 'Não calculável';
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -327,7 +334,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
   const uniqueDays = groups.length;
   const flights = ordered.filter((event) => ['operating', 'extra'].includes(workMode(event))).length;
   const stays = ordered.filter((event) => workMode(event) === 'stay').length;
-  const production = selectedSalaryRows.reduce((sum, row) => sum + Number(row.total || 0), 0);
+  const production = salaryRowsTotal(selectedSalaryRows);
   const totalKm = selectedSalaryRows.reduce((sum, row) => sum + Number(row.km || 0), 0);
   const perDiemSummary = scopedFinance?.perdiem?.monthlySummary ?? summarizeForecastRows(selectedPerDiemRows);
   const perDiemTotal = perDiemSummary.convertedTotalBRL;
@@ -415,7 +422,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
         const groupPerDiemTotal = scopedFinance?.perdiem?.nativeSummary?.complete === false
           ? null : summarizeForecastRows(groupPerDiems).convertedTotalBRL;
         const groupPendingCurrencies = Array.from(new Set(groupPerDiems.filter(row => row.convertedBRL === null).map(row => row.currency)));
-        const groupProduction = groupEarnings.reduce((sum, row) => sum + Number(row.total || 0), 0);
+        const groupProduction = salaryRowsTotal(groupEarnings);
         const groupKm = groupEarnings.reduce((sum, row) => sum + Number(row.km || 0), 0);
         return <section className="cc-roster-day-v1397" key={`${group.iso}:${group.events[0]?.id}`} data-roster-iso={group.iso}>
           <header className="cc-roster-day-header-v1397">
@@ -470,8 +477,8 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
                   </div>}
                   {earning && <div className="cc-roster-km-gain-v1397">
                     <small><Route/> Ganho por KM</small>
-                    <strong>{scopedFinance?.salary?.configured ? money(earning.total) : 'Tarifa pendente'}</strong>
-                    <p>{earning.km} km · {earning.dayKm} diurnos × {money(earning.dayRateApplied)}/km · {earning.nightKm} noturnos × {money(earning.nightRateApplied)}/km</p>
+                    <strong>{scopedFinance?.salary?.configured ? money(salaryRowsTotal([earning])) : 'Tarifa pendente'}</strong>
+                    {salaryRowsTotal([earning]) === null ? <p>Horários, distância ou parcelas pendentes; valor não calculável.</p> : <p>{earning.km} km · {earning.dayKm} diurnos × {money(earning.dayRateApplied)}/km · {earning.nightKm} noturnos × {money(earning.nightRateApplied)}/km</p>}
                     {earning.payRule && <em>{earning.payRule}</em>}
                   </div>}
                 </section>}

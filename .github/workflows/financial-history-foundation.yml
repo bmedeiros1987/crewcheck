@@ -33,6 +33,7 @@ on:
       - 'scripts/regression-salary-review-callers.mjs'
       - 'scripts/regression-salary-operational-clock.mjs'
       - 'scripts/fixtures/salary-night-3900-4527.json'
+      - 'scripts/fixtures/salary-clock-missing-counterproofs.json'
       - 'scripts/regression-salary-prerequisites-browser.cjs'
       - 'client/src/lib/databaseClient.ts'
       - '.github/workflows/financial-history-foundation.yml'
