@@ -179,3 +179,11 @@ test('absolute alarm preserves its own zone when hotel zone changes or is unknow
   assert.equal(changed.display.clock,'04:00'); assert.equal(changed.display.timeZone,choice.timeZone);
   assert.equal(changed.differenceMinutes,null); assert.equal(changed.eligible,false);
 });
+
+test('zero relative lead conflicts with hotel APZ and cannot propose an alarm', () => {
+  const choice = { mode: 'relative', leadMinutes: 0 };
+  const preview = calculateStayWakeup({scope,stay,hotelApz,now,choice});
+  assert.equal(preview.differenceMinutes,0); assert.equal(preview.eligible,false);
+  assert.ok(preview.warnings.includes('alarm-not-before-hotel-apz'));
+  assert.equal(planStayAlarm({...args,choice}).reason,'absolute-time-incompatible');
+});

@@ -137,8 +137,9 @@ export function calculateStayWakeup({ scope, stay, hotelApz, now, choice, defaul
     alarm = stayInstant(preference.alarmAt);
     if (alarm === null) return none('absolute-instant-invalid', { mode: preference.mode });
     if (hotel.apz === undefined) warnings.push(hotel.reason);
-    else if (alarm >= hotel.apz) warnings.push('alarm-not-before-hotel-apz');
+
   }
+  if (hotel.apz !== undefined && alarm >= hotel.apz) warnings.push('alarm-not-before-hotel-apz');
   if (alarm <= now) warnings.push('alarm-past');
   return Object.freeze({ action: 'calculated', mode: preference.mode, preferenceSource: preference.source,
     ...(preference.mode === 'relative' ? { leadMinutes: preference.leadMinutes } : {}),
