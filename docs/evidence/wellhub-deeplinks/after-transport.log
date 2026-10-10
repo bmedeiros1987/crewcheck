@@ -1,0 +1,2 @@
+[crewcheck:whatsapp:send] {"status":"accepted","graphVersion":"synthetic","messageIdReceived":false}
+PASS: actual materialized Telegram/WhatsApp payloads, UTF-16 aliases, public fiche/maps, guarded Uber destination, fresh/unit/source checks, no private pickup/template/broadcast/real network
