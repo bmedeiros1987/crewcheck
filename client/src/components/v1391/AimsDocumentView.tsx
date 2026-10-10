@@ -14,8 +14,8 @@ const clock = (value?: string) => String(value || '').trim() || '—';
 
 /** Read-only document projection. Array positions identify duplicate IDs without
  * guessing a match, creating events, or using coordinates from a private PDF. */
-export function AimsDocumentView({ events, month, day, describe, focusEventId }: {
-  events: Event[]; month: string; day?: string; describe: (event: Event) => Description; focusEventId?: string;
+export function AimsDocumentView({ events, month, day, describe, focusEventId, onReturnToMonth }: {
+  events: Event[]; month: string; day?: string; describe: (event: Event) => Description; focusEventId?: string; onReturnToMonth?: () => void;
 }) {
   const id = useId(), viewport = useRef<HTMLDivElement>(null), sheet = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLDivElement>(null), opener = useRef<HTMLButtonElement | HTMLSelectElement | null>(null);
@@ -35,8 +35,12 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
     return day ? (all.includes(day) ? [day] : []) : all;
   }, [month, day]);
   const groups = useMemo(() => dates.map(iso => ({ iso, entries: events.map((event, index) => ({ event, index })).filter(({ event }) => rosterDisplayIso(event) === iso) })), [dates, events]);
+  const zones = [...new Set(events.map(event => event.operationalTimeZone || 'não informado'))];
+  const selectedDayEvents = selected ? events.filter(event => rosterDisplayIso(event) === rosterDisplayIso(selected)) : [];
+  const sourceStart = (event: Event) => clock(event.kind === 'flight' ? event.departure : event.day?.dutyReport || event.day?.startTime || event.departure);
+  const sourceEnd = (event: Event) => clock(event.kind === 'flight' ? event.arrival : event.day?.dutyDebrief || event.day?.endTime || event.arrival);
   const outside = events.filter(event => !dates.includes(rosterDisplayIso(event) || ''));
-  useEffect(() => { setSelection(null); setZoom(1); setFit(false); if (viewport.current) viewport.current.scrollLeft = 0; }, [owner, month, day]);
+  useEffect(() => { setSelection(null); setZoom(1); setFit(false); if (viewport.current) { viewport.current.scrollLeft = 0; viewport.current.scrollTop = 0; } }, [owner, month, day]);
   useEffect(() => {
     const el = sheet.current, frame = viewport.current;
     if (!el || !frame) return;
@@ -56,6 +60,7 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
   useEffect(() => { if (focusEventId && consumed.current !== focusEventId) { const event = events.find(e => e.id === focusEventId); if (event) { consumed.current = focusEventId; open(event); } } }, [focusEventId, events]);
   function close() {
     setSelection(null);
+    if (day) onReturnToMonth?.();
     requestAnimationFrame(() => {
       const target = opener.current;
       if (target?.isConnected) target.focus({ preventScroll: true });
@@ -71,8 +76,8 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
     if (frame) { const center = centerX ?? frame.clientWidth / 2; const anchor = anchorX ?? (frame.scrollLeft + center) / zoom; requestAnimationFrame(() => { frame.scrollLeft = anchor * next - center; }); }
   }
   function touchDistance(list: React.TouchList) { return Math.hypot(list[0].clientX - list[1].clientX, list[0].clientY - list[1].clientY); }
-  return <section className="cc-aims-document" data-document-scope={day ? 'day' : 'month'} aria-label="Modo AIMS da escala">
-    <header><h2>Modo AIMS</h2></header>
+  return <section className="cc-aims-document" data-document-scope={day ? 'day' : 'month'} aria-label="CrewCheck AIMS da escala">
+    <header><h2>CrewCheck AIMS</h2><small className="cc-doc-zone">Fuso: {zones.join(', ') || 'não informado'}</small></header>
     <div hidden={!!selected} className="cc-doc-overview">
     <div className="cc-doc-toolbar" role="group" aria-label="Ampliar escala">
       <button type="button" aria-label="Diminuir escala" disabled={zoom <= MIN_ZOOM} onClick={() => changeZoom(zoom - .25)}>−</button>
@@ -81,7 +86,7 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
       <button type="button" onClick={() => { setFit(true); if (viewport.current) { setZoom(bounded(viewport.current.clientWidth / size.width)); viewport.current.scrollLeft = 0; } }}>Ajustar</button>
       <button type="button" onClick={() => { changeZoom(1, 0, 0); }}>100%</button>
     </div>
-    <p id={`${id}-help`} className="cc-doc-help">Deslize pelos dias. Use dois dedos ou +/− para ampliar. Toque para abrir o dia.</p>
+    <p id={`${id}-help`} className="cc-doc-help">Toque para ampliar o dia · deslize para percorrer · dois dedos ou +/− para zoom.</p>
     <label className="cc-doc-picker"><span className="cc-doc-picker-label">Ir para uma programação</span><select aria-label="Abrir programação publicada" value="" onChange={e=>{const index=Number(e.target.value);if(e.target.value!==''&&events[index]){opener.current=e.currentTarget;open(events[index]);}}}><option value="">Escolher programação</option>{events.map((event,index)=><option key={index} value={index}>{rosterDisplayIso(event) || 'Data não informada'} · {describe(event).label} · {code(event)}</option>)}</select></label>
     {!events.length && <p role="status">Nenhuma programação informada no período selecionado.</p>}
     <div ref={viewport} className="cc-doc-viewport" tabIndex={0} role="region" aria-label="Dias do documento; rolagem horizontal" aria-describedby={`${id}-help`}
@@ -94,18 +99,22 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
       onTouchMove={event => { const list = event.touches; if (list.length === 2 && pinch.current) { const start = pinch.current; changeZoom(start.zoom * touchDistance(list) / Math.max(1, start.distance), start.anchor, start.center); suppressUntil.current = performance.now() + 1000; } else if (list.length === 1 && touch.current && Math.hypot(list[0].clientX - touch.current.x, list[0].clientY - touch.current.y) > 8) suppressUntil.current = performance.now() + 350; }}
       onTouchEnd={() => { if (pinch.current) suppressUntil.current = performance.now() + 350; pinch.current = null; touch.current = null; }} onTouchCancel={() => { pinch.current = null; touch.current = null; suppressUntil.current = performance.now() + 350; }}>
       <div className="cc-doc-scaled" style={{ width: size.width * zoom, height: size.height * zoom }}>
-        <div ref={sheet} className="cc-doc-sheet" style={{ transform: `scale(${zoom})`, '--doc-width': `calc(${groups.length} * 11rem * var(--cc-text-scale, 1) + 24px)`, '--doc-days':groups.length } as React.CSSProperties}>
+        <div ref={sheet} className="cc-doc-sheet" style={{ transform: `scale(${zoom})`, '--doc-width': `calc(${groups.length} * 7.5rem * var(--cc-text-scale, 1) + 24px)`, '--doc-days':groups.length } as React.CSSProperties}>
           {<div className="cc-doc-strip">
             {groups.map(group => <section key={group.iso} className="cc-doc-day" data-roster-iso={group.iso} aria-label={`Dia ${group.iso}`}>
               <h3><time dateTime={group.iso}>{group.iso.slice(8)}/{group.iso.slice(5, 7)}</time><small>{new Intl.DateTimeFormat('pt-BR', { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${group.iso}T12:00:00Z`))}</small></h3>
               {group.entries.map(({ event, index }) => { const meta = describe(event); return <div className="cc-doc-entry cc-roster-legend-v1397" key={index}>
                 <span data-mode={meta.mode} className="cc-doc-token"><button type="button" data-roster-event-id={event.id} data-event-index={index} aria-label={`${meta.label}: ${code(event)}, dia ${group.iso}. Abrir detalhes publicados`} aria-expanded={selected === event} onClick={e => open(event, e.currentTarget)}>
-                  <small>{meta.mode === 'operating' ? 'Voo' : meta.mode === 'extra' ? 'Extra' : meta.mode === 'stay' ? 'Pernoite' : meta.mode === 'journey-rest' ? 'Repouso' : meta.label}</small><strong>{['stay', 'journey-rest'].includes(meta.mode) ? (event.destination || event.origin || '—') : code(event)}</strong>{!['stay', 'journey-rest'].includes(meta.mode) && <span>{event.origin || '—'}{event.destination ? ` → ${event.destination}` : ''}</span>}
-                  {event.presentation && <span>{event.presentation === 'Conexão/Solo' ? event.presentation : <><abbr title="Apresentação">APZ</abbr> {clock(event.presentation)}</>}</span>}
-                  <span>{clock(event.kind === 'flight' ? event.departure : event.day?.dutyReport || event.day?.startTime || event.departure)} → {clock(event.kind === 'flight' ? event.arrival : event.day?.dutyDebrief || event.day?.endTime || event.arrival)}</span>
+                  {meta.mode === 'stay' ? <span className="cc-doc-stay-line">{event.destination || event.origin || '—'} · {sourceStart(event)}–{sourceEnd(event)}</span> : <>
+                    <strong>{code(event)}{meta.mode === 'extra' && <small> · Extra</small>}</strong>
+                    {event.presentation && event.presentation !== 'Conexão/Solo' && <span><abbr title="Apresentação">APZ</abbr> {clock(event.presentation)}</span>}
+                    {event.presentation === 'Conexão/Solo' && <span className="cc-doc-connection">Conexão/Solo</span>}
+                    <span>{sourceStart(event)}–{sourceEnd(event)}</span>
+                    {(event.origin || event.destination) && <span>{event.origin || '—'}{event.destination ? ` → ${event.destination}` : ''}</span>}
+                  </>}
                 </button></span>
               </div>; })}
-              {!group.entries.length && <p className="cc-doc-empty">Sem programação informada</p>}
+              {!group.entries.length && <p className="cc-doc-empty" aria-label="Sem programação informada">—</p>}
             </section>)}
           </div>}
         </div>
@@ -115,7 +124,7 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId }:
     </div>
     {selected && <div className="cc-doc-detail" tabIndex={-1} ref={detail} role="region" aria-label="Dia ampliado" onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } }}>
       <button type="button" onClick={close}>← Voltar à escala inteira</button>
-      <AimsRosterTable key={events.indexOf(selected)} events={events.filter(event => rosterDisplayIso(event) === rosterDisplayIso(selected))} focusEventIndex={events.filter(event => rosterDisplayIso(event) === rosterDisplayIso(selected)).indexOf(selected)} focusEventId={selected.id} dayView title={`Dia ${rosterDisplayIso(selected)?.split('-').reverse().join('/') || 'não confirmado'}`}/>
+      <AimsRosterTable key={events.indexOf(selected)} events={selectedDayEvents} focusEventIndex={selectedDayEvents.indexOf(selected)} focusEventId={selected.id} dayView title={`Dia ${rosterDisplayIso(selected)?.split('-').reverse().join('/') || 'não confirmado'}`}/>
     </div>}
     <p className="cc-doc-help">Horários e códigos preservados da escala. Campo — indica dado não informado; nenhuma atividade é inferida para os dias vazios. As cores seguem a legenda CrewCheck; os rótulos identificam cada tipo.</p>
   </section>;
