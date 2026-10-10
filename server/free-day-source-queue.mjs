@@ -72,13 +72,6 @@ export async function sourceQueue(db,user,body=null,{now=Date.now(),configured=f
     const key=sourceKey(user),[rows]=await c.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[key]);
     let state=parse(rows[0]?.payload);
     if(state.ownerId!==user.id || state.email!==user.email || state.scope!==SOURCE_SCOPE) state={email:user.email,ownerId:user.id,scope:SOURCE_SCOPE,revision:0,consent:false};
-    if(state.review && !(Date.parse(state.expiresAt)>now)) {
-      await cancelSourceJobs(c,user);
-      state={email:user.email,ownerId:user.id,scope:SOURCE_SCOPE,revision:state.revision+1,consent:false};await save(c,key,state);
-      await c.commit();committed=true;
-      if(body) fail(409,'CONSENT_REQUIRED_OR_EXPIRED');
-      return {...flags,revision:state.revision,preparationConsent:false,expiresAt:null,destination:null,telegramConfigured:configured===true,job:null};
-    }
     const consent=state.consent===true && Date.parse(state.expiresAt)>now;
     if(body && (!Number.isInteger(body.expectedRevision) || body.expectedRevision!==state.revision)) fail(409,'SOURCE_REVISION_CHANGED');
     if(body && !consent) fail(409,'CONSENT_REQUIRED_OR_EXPIRED');
@@ -91,15 +84,13 @@ export async function sourceQueue(db,user,body=null,{now=Date.now(),configured=f
       [jobs]=await c.query('SELECT id,status FROM crewcheck_notification_jobs WHERE email=? AND job_key=? FOR UPDATE',[user.email,jobKey]);
       const [metadata]=await c.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[sourceJobStateKey(user,jobKey)]);receipt=parse(metadata[0]?.payload);
     }
-    const mismatch=jobs.length && jobs[0].status==='held' && (receipt.ownerId!==user.id || receipt.scope!==SOURCE_JOB_SCOPE || receipt.consentRevision!==state.revision || receipt.reviewDedupe!==review?.dedupe || !destination || receipt.linkVersion!==destination.version || receipt.expiresAt!==state.expiresAt);
-    if(mismatch || (!consent && jobs.length)) {
-      await cancelSourceJobs(c,user);if(jobs[0])jobs[0].status='cancelled';receipt={};
-      await c.commit();committed=true;
-      if(body) fail(409,'QUEUE_CONTEXT_CHANGED');
-    }
-    const info=()=>({...flags,revision:state.revision,preparationConsent:consent,expiresAt:consent?state.expiresAt:null,
-      destination:destination?{label:destination.label,verifiedAt:destination.verifiedAt,validated:true}:null,
-      telegramConfigured:configured===true,reviewPending,delayMinutes:review?.delayMinutes ?? null,
+    const mismatch=jobs.length && (jobs[0].status!=='held' || receipt.ownerId!==user.id || receipt.scope!==SOURCE_JOB_SCOPE || receipt.consentRevision!==state.revision || receipt.reviewDedupe!==review?.dedupe || !destination || receipt.linkVersion!==destination.version || receipt.expiresAt!==state.expiresAt);
+    // Context drift is reported, never cleaned up by GET or a rejected action.
+    // Explicit owner/CAS review or revoke performs cleanup in voluntarySources.
+    if(mismatch && body) fail(409,'QUEUE_CONTEXT_CHANGED');
+    const info=()=>({...flags,revision:state.revision,preparationConsent:consent && !mismatch,expiresAt:consent && !mismatch?state.expiresAt:null,
+      destination:consent && !mismatch && destination?{label:destination.label,verifiedAt:destination.verifiedAt,validated:true}:null,
+      eligible:Boolean(consent && review && destination && !mismatch),telegramConfigured:configured===true,reviewPending:mismatch?'QUEUE_CONTEXT_CHANGED':reviewPending,delayMinutes:!mismatch?review?.delayMinutes ?? null:null,
       job:jobs.length?{jobKey,status:jobs[0].status,simulated:receipt.simulation?.simulated===true}:null});
     if(!body){if(!committed)await c.commit();return info();}
     if(reviewPending || !review) fail(409,reviewPending || 'CONFIRMED_REVIEW_REQUIRED');

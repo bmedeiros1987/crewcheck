@@ -172,13 +172,13 @@ try {
     assert.equal(revoked.status,'fulfilled');assert.equal(replay.status,'rejected');assert.equal((await voluntarySources(db,user)).review,null);
     const ttlSaved=await voluntarySources(db,user,{...body,expectedRevision:2});
     const expiredNow=Date.parse(ttlSaved.expiresAt)+1;
-    await assert.rejects(voluntarySources(db,user,{...body,expectedRevision:3},{now:expiredNow}),error=>error.code==='SOURCE_REVISION_CHANGED');
+    await assert.rejects(voluntarySources(db,user,{...body,expectedRevision:2},{now:expiredNow}),error=>error.code==='SOURCE_REVISION_CHANGED');
     const readPersisted=async()=>{const payload=(await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[sourceKey(user)]))[0][0].payload;return typeof payload==='string'?JSON.parse(payload):payload;};
     let persisted=await readPersisted();
-    assert.equal(persisted.revision,4);assert.equal(persisted.consent,false);assert.equal(persisted.review,undefined);
-    const ttlAgain=await voluntarySources(db,user,{...body,expectedRevision:4},{now:expiredNow});
-    const revokedExpired=await voluntarySources(db,user,{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:5},{now:Date.parse(ttlAgain.expiresAt)+1});
-    assert.equal(revokedExpired.alreadyRevoked,true);assert.equal(revokedExpired.revision,6);assert.equal(revokedExpired.consent,false);
+    assert.equal(persisted.revision,3);assert.equal(persisted.consent,true);assert.ok(persisted.review);
+    const ttlAgain=await voluntarySources(db,user,{...body,expectedRevision:3},{now:expiredNow});
+    const revokedExpired=await voluntarySources(db,user,{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:4},{now:Date.parse(ttlAgain.expiresAt)+1});
+    assert.equal(revokedExpired.revision,5);assert.equal(revokedExpired.consent,false);
     persisted=await readPersisted();
     assert.equal(persisted.review,undefined);assert.equal(persisted.consent,false);
     assert.equal((await counts())[0][0].n,beforeCount,'voluntary source flow never writes queue');
@@ -206,6 +206,16 @@ try {
     const faultDb={getConnection:async()=>{const c=await db.getConnection(),query=c.query.bind(c);c.query=async(sql,args)=>{if(sql.startsWith('INSERT INTO crewcheck_telegram_state') && JSON.parse(args[1]).personalConsent)throw Error('synthetic SQL audit failure');return query(sql,args);};const release=c.release.bind(c);c.release=()=>{c.query=query;c.release=release;release();};return c;}};
     const beforeFault=await personalConsent(db,user,null,personalOptions);await assert.rejects(personalConsent(faultDb,user,{...grant,expectedRevision:beforeFault.revision},personalOptions),/SQL audit failure/);assert.equal((await personalConsent(db,user,null,personalOptions)).consent,false);
 
+    const sqlSnapshot=async()=>JSON.stringify({state:(await db.query('SELECT state_key,payload,updated_at FROM crewcheck_telegram_state ORDER BY state_key'))[0],jobs:(await db.query('SELECT * FROM crewcheck_notification_jobs ORDER BY id'))[0]});
+    for(const condition of ['expired','missing-reverse','pending','processing','cancelled','sent']) {
+      if(condition==='missing-reverse')await db.query('DELETE FROM crewcheck_telegram_state WHERE state_key=?',['link-chat:'+link.chatId]);
+      if(['pending','processing','cancelled','sent'].includes(condition))await db.query('UPDATE crewcheck_notification_jobs SET status=? WHERE email=? AND job_key=?',[condition,email,key]);
+      const observedNow=condition==='expired'?Date.parse(saved.expiresAt)+1:now,beforeRead=await sqlSnapshot();
+      const personalRead=await personalConsent(db,user,null,{now:observedNow});await voluntarySources(db,user,null,{now:observedNow});await sourceQueue(db,user,null,{now:observedNow});await simulatedWorker(db,user,null,{now:observedNow});assert.equal(personalRead.consent,false);assert.equal(personalRead.available,false);assert.equal(await sqlSnapshot(),beforeRead,'actual SQL GET preserves all rows/jobs '+condition);
+      await assert.rejects(personalConsent(db,user,{scope:PERSONAL_SCOPE,action:'grant',context:personalRead.context,expectedRevision:personalRead.revision,confirmed:true,textVersion:personalRead.textVersion},{...personalOptions,now:observedNow}),{code:'CONSENT_CONTEXT_CHANGED'});assert.equal(await sqlSnapshot(),beforeRead,'rejected grant preserves SQL '+condition);
+      if(condition==='missing-reverse')await saveLink();
+      if(['pending','processing','cancelled','sent'].includes(condition))await db.query('UPDATE crewcheck_notification_jobs SET status=? WHERE email=? AND job_key=?',['held',email,key]);
+    }
     const reoffer=await personalConsent(db,user,null,personalOptions);await personalConsent(db,user,{...grant,context:reoffer.context,expectedRevision:reoffer.revision},personalOptions);
     const workerOptions={now,configuration:{enabled:true,ownerIds:[user.id]}},workerStart=await simulatedWorker(db,user,null,workerOptions),workerRequest={scope:WORKER_SCOPE,action:'enqueue',context:workerStart.context,expectedPersonalRevision:workerStart.personalRevision,expectedWorkerRevision:workerStart.workerRevision};
     const pendingWorkers=await Promise.all(Array.from({length:8},()=>simulatedWorker(db,user,workerRequest,workerOptions)));assert.equal(pendingWorkers.filter(x=>!x.duplicate).length,1);
@@ -215,6 +225,8 @@ try {
     const fresh=mysql.createPool({socketPath,user:'root',password:'',database:'crewcheck_notification_qa',connectionLimit:2});try{assert.equal((await sourceQueue(fresh,user,null,{now})).job.simulated,true,'persisted audit read from independent pool without a browser');}finally{await fresh.end();}
     let rows=(await db.query('SELECT status,chat_id,telegram_username,phone,message FROM crewcheck_notification_jobs WHERE email=? AND job_key=?',[email,key]))[0];assert.equal(rows.length,1);assert.equal(rows[0].status,'held');assert.equal(rows[0].chat_id,null);assert.equal(rows[0].telegram_username,null);assert.equal(rows[0].phone,null);assert.match(rows[0].message,/Segundo as versões que você enviou/);
     const expiry=Date.parse(saved.expiresAt)+1;await assert.rejects(sourceQueue(db,user,{...request,action:'simulate',jobKey:key},{now:expiry}),error=>error.code==='CONSENT_REQUIRED_OR_EXPIRED');
+    assert.equal((await db.query('SELECT status FROM crewcheck_notification_jobs WHERE email=? AND job_key=?',[email,key]))[0][0].status,'held');
+    await voluntarySources(db,user,{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:1},{now:expiry});
     assert.equal((await db.query('SELECT status FROM crewcheck_notification_jobs WHERE email=? AND job_key=?',[email,key]))[0][0].status,'cancelled');assert.equal((await db.query('SELECT COUNT(*) AS n FROM crewcheck_telegram_state WHERE state_key=?',[sourceJobStateKey(user,key)]))[0][0].n,0);
     body.expectedRevision=2;body.after=receipt('09:30');await voluntarySources(db,user,body,{now});const next=await sourceQueue(db,user,{...request,expectedRevision:3},{now});
     const nextOffer=await personalConsent(db,user,null,personalOptions);await personalConsent(db,user,{scope:PERSONAL_SCOPE,action:'grant',context:nextOffer.context,expectedRevision:nextOffer.revision,confirmed:true,textVersion:nextOffer.textVersion},personalOptions);
@@ -225,8 +237,10 @@ try {
     const race=await Promise.allSettled([voluntarySources(db,user,{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:3},{now}),sourceQueue(db,user,{...request,action:'simulate',expectedRevision:3,jobKey:next.job.jobKey},{now})]);assert.equal(race[0].status,'fulfilled');if(race[1].status==='fulfilled')assert.equal(race[1].value.accepted,false);else assert.equal(race[1].reason.code,'SOURCE_REVISION_CHANGED');
     assert.equal((await db.query('SELECT status FROM crewcheck_notification_jobs WHERE email=? AND job_key=?',[email,next.job.jobKey]))[0][0].status,'cancelled');
     body.expectedRevision=4;body.after=receipt('10:30');await voluntarySources(db,user,body,{now});const rotation=await sourceQueue(db,user,{...request,expectedRevision:5},{now});link.chatId='9000099999';link.code='rotated-fixture';await saveLink();
-    await assert.rejects(sourceQueue(db,user,{...request,action:'simulate',expectedRevision:5,jobKey:rotation.job.jobKey},{now}),error=>error.code==='QUEUE_CONTEXT_CHANGED');assert.equal((await db.query('SELECT status FROM crewcheck_notification_jobs WHERE email=? AND job_key=?',[email,rotation.job.jobKey]))[0][0].status,'cancelled');
-    assert.equal((await db.query('SELECT COUNT(*) AS n FROM crewcheck_telegram_state WHERE state_key=?',[sourceJobStateKey(user,rotation.job.jobKey)]))[0][0].n,0,'rotation cancellation is committed despite409');
+    await assert.rejects(sourceQueue(db,user,{...request,action:'simulate',expectedRevision:5,jobKey:rotation.job.jobKey},{now}),error=>error.code==='QUEUE_CONTEXT_CHANGED');assert.equal((await db.query('SELECT status FROM crewcheck_notification_jobs WHERE email=? AND job_key=?',[email,rotation.job.jobKey]))[0][0].status,'held');
+    assert.equal((await db.query('SELECT COUNT(*) AS n FROM crewcheck_telegram_state WHERE state_key=?',[sourceJobStateKey(user,rotation.job.jobKey)]))[0][0].n,1);
+    await voluntarySources(db,user,{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:5},{now});
+    assert.equal((await db.query('SELECT COUNT(*) AS n FROM crewcheck_telegram_state WHERE state_key=?',[sourceJobStateKey(user,rotation.job.jobKey)]))[0][0].n,0,'explicit revoke removes drifted metadata');
     assert.equal((await db.query("SELECT COUNT(*) AS n FROM crewcheck_notification_jobs WHERE email=? AND LEFT(job_key,16)='free-day:source:' AND status IN ('pending','processing','dispatching','sent')",[email]))[0][0].n,0);
   });
   await run('account deletion removes owned cycle/free-day decisions, tombstones, claims and jobs',async()=>{

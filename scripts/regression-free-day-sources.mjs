@@ -29,27 +29,20 @@ const pending=receipt(null);assert.equal(compareSources(validateReceipt(pending,
 const shifted=receipt('08:30');shifted.starts.unshift({date:'2026-08-11',clock:'08:30',offset:-180,literal:true});assert.equal(compareSources(validateReceipt(receipt('01:46'),identityDigest),validateReceipt(shifted,identityDigest),'2026-08-12').reason,'SEQUENCE_CORRESPONDENCE_PENDING');
 const identical=receipt('08:30');assert.equal(compareSources(validateReceipt(identical,identityDigest),validateReceipt(identical,identityDigest),'2026-08-12').reason,'DISTINCT_VERSIONS_REQUIRED');
 const beforeZone=receipt('01:46');beforeZone.starts[0].offset=-120;assert.equal(compareSources(validateReceipt(beforeZone,identityDigest),validateReceipt(receipt('08:30'),identityDigest),'2026-08-12').delayMinutes,464);
-const expired=await voluntarySources(db,user,null,{now:Date.parse(first.expiresAt)+1});assert.equal(expired.review,null);assert.equal(expired.consent,false);assert.ok(!db.state.rows.get(sourceKey(user)).includes('documentHash'),'receipt physically deleted on expiry access');
-await voluntarySources(db,user,body(expired.revision));await voluntarySources(db,user,{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:expired.revision+1});assert.ok(!db.state.rows.get(sourceKey(user)).includes('documentHash'));
-// First access after TTL may be a stale POST from a still-open tab.
-for (const action of ['review','revoke','older-revoke']) {
- const ttlDb=syntheticSourceDatabase();let commits=0,rollbacks=0;
- const connect=ttlDb.getConnection;ttlDb.getConnection=async()=>{const c=await connect();const commit=c.commit,rollback=c.rollback;c.commit=async()=>{commits++;await commit();};c.rollback=async()=>{rollbacks++;await rollback();};return c;};
- const initial=await voluntarySources(ttlDb,user,body());commits=0;rollbacks=0;
- const expiredNow=Date.parse(initial.expiresAt)+1;
- const stale=action==='review'?body(1):{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:action==='revoke'?1:0};
- if(action==='revoke') {
-  const revoked=await voluntarySources(ttlDb,user,stale,{now:expiredNow});assert.equal(revoked.alreadyRevoked,true);assert.equal(revoked.consent,false);assert.equal(revoked.review,null);assert.equal(revoked.revision,2);
- } else await assert.rejects(voluntarySources(ttlDb,user,stale,{now:expiredNow}),{code:'SOURCE_REVISION_CHANGED'});
- assert.equal(commits,1,'expiry cleanup committed even when stale request rejected');assert.equal(rollbacks,0,'post-expiry CAS failure never rolls back cleanup');
- assert.ok(!ttlDb.state.rows.get(sourceKey(user)).includes('documentHash'),'expired POST physically removes receipts');
- assert.equal(JSON.parse(ttlDb.state.rows.get(sourceKey(user))).consent,false);
- await assert.rejects(voluntarySources(ttlDb,user,body(1),{now:expiredNow}),{code:'SOURCE_REVISION_CHANGED'});
- // An explicit refreshed revision can submit a new pair; an older tab cannot revoke it.
- await voluntarySources(ttlDb,user,body(2),{now:expiredNow});
- await assert.rejects(voluntarySources(ttlDb,user,{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:1},{now:expiredNow}),{code:'SOURCE_REVISION_CHANGED'});
- assert.equal((await voluntarySources(ttlDb,user,null,{now:expiredNow})).consent,true);
-}
+const expired=await voluntarySources(db,user,null,{now:Date.parse(first.expiresAt)+1});assert.equal(expired.review,null);assert.equal(expired.consent,false);assert.ok(db.state.rows.get(sourceKey(user)).includes('documentHash'),'expiry GET preserves stored receipts');
+await voluntarySources(db,user,body(expired.revision),{now:Date.parse(first.expiresAt)+1});await voluntarySources(db,user,{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:expired.revision+1});assert.ok(!db.state.rows.get(sourceKey(user)).includes('documentHash'));
+// Expiry alone never changes persisted CAS or data; stale mutations cannot
+// perform cleanup. Current explicit revocation is independently scoped.
+const ttlDb=syntheticSourceDatabase(),initial=await voluntarySources(ttlDb,user,body()),expiredNow=Date.parse(initial.expiresAt)+1;
+const beforeExpired=JSON.stringify([...ttlDb.state.rows]);
+await assert.rejects(voluntarySources(ttlDb,user,body(0),{now:expiredNow}),{code:'SOURCE_REVISION_CHANGED'});
+await assert.rejects(voluntarySources(ttlDb,user,{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:0},{now:expiredNow}),{code:'SOURCE_REVISION_CHANGED'});
+assert.equal(JSON.stringify([...ttlDb.state.rows]),beforeExpired);
+const revokedExpired=await voluntarySources(ttlDb,user,{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:1},{now:expiredNow});assert.equal(revokedExpired.revision,2);assert.equal(revokedExpired.consent,false);assert.equal(revokedExpired.review,null);
+assert.ok(!ttlDb.state.rows.get(sourceKey(user)).includes('documentHash'));
+await voluntarySources(ttlDb,user,body(2),{now:expiredNow});
+await assert.rejects(voluntarySources(ttlDb,user,{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:1},{now:expiredNow}),{code:'SOURCE_REVISION_CHANGED'});
+assert.equal((await voluntarySources(ttlDb,user,null,{now:expiredNow})).consent,true);
 const recreated=syntheticSourceDatabase();recreated.state.owner='new-account';await assert.rejects(voluntarySources(recreated,user,body()),{code:'OWNER_CHANGED'});
 assert.equal((await voluntarySources(db,{email:'other@example.invalid',id:user.id})).review,null,'owner-key isolation');
 const concurrent=syntheticSourceDatabase();const results=await Promise.allSettled(Array.from({length:8},()=>voluntarySources(concurrent,user,body())));assert.equal(results.filter(r=>r.status==='fulfilled').length,1);assert.equal(concurrent.state.rows.size,1);
@@ -68,4 +61,4 @@ await new Promise(r=>server.listen(0,'127.0.0.1',r));try {
 }finally{await new Promise(r=>server.close(r));}
 assert.match(notificationStateDeletionStatements(user.email)[1][0],/notification-free-day-sources:%/);
 assert.doesNotMatch(fs.readFileSync('server/free-day-sources.mjs','utf8'),/fetch\(|setInterval\(|setTimeout\(|sendTelegram|TELEGRAM_BOT_TOKEN|notification_jobs/);
-console.log('PASS voluntary sources: HTTP401/review404min/revoke, minimal data, account/recreation isolation, both boundaries, literal/date/timezone pendencies, consent CAS/races/rollback, monthly overwrite, expiry deletion and zero queue/provider');
+console.log('PASS voluntary sources: HTTP401/review404min/revoke, minimal data, account/recreation isolation, both boundaries, literal/date/timezone pendencies, consent CAS/races/rollback, monthly overwrite, observational expiry and explicit deletion and zero queue/provider');

@@ -129,8 +129,9 @@ nenhuma variável de produção foi alterada. Revogar continua possível quando 
 é desligada. O consentimento é persistido na metadata já existente do job held, com
 contexto opaco ligado ao perfil/recibos/vínculo, revisão própria CAS, texto v1 e TTL
 limitado pela preparação. Repetição da mesma operação é idempotente; concessão velha
-não ressuscita autorização revogada. Substituição/expiração da preparação ou mudança
-do vínculo cancelam jobs e removem sua metadata, incluindo autorização pessoal.
+não ressuscita autorização revogada. Expiração ou inconsistência do vínculo tornam a autorização ineficaz, sem
+apagar dados em GET ou grant rejeitado. Revogação/redefinição explícita com CAS
+remove a metadata conforme o escopo autenticado.
 Revogação pessoal remove a autorização efetiva, preservando apenas a reserva held
 para simulação e o registro mínimo de revogação; não libera/recria jobs.
 Não há implementação de transição para pending ou dispatcher real neste draft.
