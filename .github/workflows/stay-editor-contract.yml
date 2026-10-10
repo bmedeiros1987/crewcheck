@@ -6,6 +6,8 @@ on:
       - 'client/src/lib/stayEditorNavigation.ts'
       - 'client/src/components/v1391/PresentationStayManagerView.tsx'
       - 'client/src/components/v1391/StayHotelAlarmPreview.tsx'
+      - 'client/src/components/v1391/stay-editor.css'
+      - 'client/src/components/v139/Shell.tsx'
       - 'scripts/regression-stay-edit*.mjs'
       - '.github/workflows/stay-editor-contract.yml'
   workflow_dispatch:

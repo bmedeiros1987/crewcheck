@@ -30,7 +30,7 @@ export default function StayHotelAlarmPreview({ eventId, hotelApzIso, timeZone, 
   return <section className="cc139-card" aria-label="Prévia do despertador do pernoite">
     <h2>Despertador deste pernoite</h2>
     <p>A referência é a APZ no hotel. APZ da escala, check-in, decolagem e pickup não a substituem.</p>
-    <div className="cc139-form">
+    <details><summary>Configurar despertador</summary><div className="cc139-form">
       <label>Modo do despertador<select value={mode} onChange={event => onChoice(event.target.value === 'absolute'
         ? { mode: 'absolute', alarmAt: '' } : event.target.value === 'relative' ? { mode: 'relative' } : undefined)}>
         <option value="auto">Auto · antecedência padrão</option><option value="relative">Antecedência individual</option><option value="absolute">Horário exato</option></select></label>
@@ -47,7 +47,7 @@ export default function StayHotelAlarmPreview({ eventId, hotelApzIso, timeZone, 
       </> : <label className="wide">Data e horário exatos · {timeZone || 'confirme o fuso'}<input type="datetime-local" value={absoluteLocal}
         onChange={event => { const [day, clock] = event.target.value.split('T'); const epoch = stayLocalInstant(day, clock, timeZone);
           onChoice({ mode: 'absolute', alarmAt: epoch === null ? '' : new Date(epoch).toISOString() }); }}/></label>}
-    </div>
+    </div></details>
     <p><strong>Modo ativo: {mode === 'auto' ? 'Auto · antecedência padrão' : mode === 'absolute' ? 'horário exato' : 'antecedência individual da APZ no hotel'}</strong></p>
     {mode === 'auto' && <p>Auto calcula a partir da APZ no hotel confirmada menos o padrão configurado. Sem esses dados, informe-os ou personalize este pernoite.</p>}
     {calculated.action === 'calculated' ? <>

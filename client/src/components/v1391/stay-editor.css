@@ -1,0 +1,12 @@
+/* Local scroll owner: preserve measured shell clearance without changing Home. */
+.cc-stay-editor{height:calc(100dvh - var(--cc-fixed-header-height,0px) - var(--cc-operational-nav-clearance,0px) - 48px);min-height:240px;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box;color:inherit}
+.cc-stay-editor-header{flex:none;padding:8px 8px 0;background:inherit}
+.cc-stay-editor-header .cc139-head h1{font-size:clamp(1.2rem,4vw,2rem);line-height:1.15}
+.cc-stay-editor-header .cc139-head{margin-bottom:8px}
+.cc-stay-editor-header .cc139-head p{font-size:.8rem}
+.cc-stay-editor-content{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:8px 8px max(24px,env(safe-area-inset-bottom));scroll-padding-block:16px}
+.cc-stay-editor-content>*{box-sizing:border-box;max-width:100%}
+.cc-stay-editor-content button,.cc-stay-editor-content summary{white-space:normal;overflow-wrap:anywhere}
+.cc-stay-editor-content .cc139-choices button{flex-wrap:wrap}
+.cc-stay-editor-content .cc139-choices small{width:100%}
+.cc-stay-editor-content input,.cc-stay-editor-content select{box-sizing:border-box}

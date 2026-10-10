@@ -2,7 +2,7 @@
 
 Esta draft prepara o editor de programação e a prévia do despertador. Não programa
 alarmes, não consome MyCrewCare em produção e não altera Home ou o apply reservado
-à PR990. A base inicial é o HEAD revisado da PR991; a base de integração será seu
+à PR990. A base inicial é o HEAD revisado da PR991; a base atual foi atualizada para seu
 merge real `6209a29eeee137a00fad598859d422dbe317fafa`.
 
 ## Referência do despertador
@@ -37,6 +37,11 @@ O padrão e as novas escolhas de alarme **ainda são prévias desta sessão**. N
 persistidos como novo contrato de servidor. A edição existente de hotel/quarto/
 APZ usa a API existente e diferencia cache local de sincronização confirmada.
 Não anunciar persistência global ou programação efetiva antes do contrato abaixo.
+
+Configurações de modo/antecedência e de padrão ficam agrupadas em detalhes
+expansíveis. Horário calculado, diferença, conflitos e estado não programado
+permanecem visíveis. O editor tem uma ação principal de salvar e um único
+voltar contextual; ações secundárias de edição ficam em Mais opções.
 
 ## Identidade, edição e navegação
 
@@ -90,3 +95,5 @@ Android físico ou programação de alarmes.
 A Library resolveu o JPEG privado, mas a materialização falhou neste executor.
 Não lemos seus pixels e não afirmamos comparação visual com ele. Nenhuma captura
 privada está no Git ou nos artefatos; capturas desta draft são sintéticas.
+
+O editor tem rolagem local e cabeçalho estacionário. A regressão geométrica verifica primeiro/último item, acesso sem cobertura, ausência de clipping horizontal, claro/escuro e fonte 150% com viewport reduzida a 600px. Um controle negativo reproduz a rolagem antiga do documento e exige deslocamento do cabeçalho. Isso simula viewport reduzida, não teclado físico nem safe area real. O menu global de Home permanece fora deste harness e requer integração coordenada.

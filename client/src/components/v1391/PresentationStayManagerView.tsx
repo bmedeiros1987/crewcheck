@@ -11,6 +11,7 @@ import { listPlatformStays, updatePlatformStay } from '@/lib/platformClient';
 import { v139Api } from '@/components/v139/api';
 import { V139Header } from '@/components/v139/Shell';
 import '@/components/v139/v139.css';
+import './stay-editor.css';
 
 type RosterEvent = {
   id: string;
@@ -226,9 +227,9 @@ export default function PresentationStayManagerView({ events, initialStayId }: {
     }
   }
 
-  return <>
-    <V139Header title="Apresentação, hotel e descanso" detail="Edite o horário, informe hotel/quarto e mantenha o endereço de casa para descansos na base."/>
-    {contextId && <section className="cc139-card"><button type="button" onClick={returnFromStayProgramEditor}>Voltar ao pernoite</button></section>}
+  return <section className="cc-stay-editor">
+    <div className="cc-stay-editor-header"><V139Header title="Apresentação, hotel e descanso" detail="Edite o horário, informe hotel/quarto e mantenha o endereço de casa para descansos na base." onBack={contextId ? () => { returnFromStayProgramEditor(); } : undefined} backLabel={contextId ? 'Voltar ao pernoite' : undefined}/></div>
+    <div className="cc-stay-editor-content">
     {needsReview && <p role="alert">A programação foi atualizada. Seus ajustes manuais foram preservados; confirme a data, o fuso e a APZ no hotel.</p>}
     {removed && <p role="alert">O pernoite selecionado saiu da escala. Nenhum outro item foi selecionado automaticamente.</p>}
     <section className="cc139-grid">
@@ -252,13 +253,13 @@ export default function PresentationStayManagerView({ events, initialStayId }: {
 
         <label><input type="checkbox" checked={draft.shareSameHotel} onChange={(event) => setDraft({ ...draft, shareSameHotel: event.target.checked })}/> Autorizar colegas no mesmo hotel a me localizar em emergência</label>
       </div>
-      <div className="cc139-actions"><button className="primary" onClick={saveStay} disabled={busy || !selected}><Save/> Salvar hotel, quarto e horário</button><button onClick={() => setManual(true)}><Building2/> Hotel de contingência / manual</button><button type="button" onClick={discardEdits} disabled={!selected}>Descartar edição deste pernoite</button></div>
+      <div className="cc139-actions"><button className="primary" onClick={saveStay} disabled={busy || !selected}><Save/> Salvar hotel, quarto e horário</button><details><summary>Mais opções da edição</summary><button type="button" onClick={() => setManual(true)}><Building2/> Hotel de contingência / manual</button><button type="button" onClick={discardEdits} disabled={!selected}>Descartar edição deste pernoite</button></details></div>
     </section>
     {selected?.kind === 'stay' && <StayHotelAlarmPreview eventId={selected.id} hotelApzIso={apzEpoch === null ? '' : new Date(apzEpoch).toISOString()}
       timeZone={hotelTimeZone} choice={alarmChoice} defaultLeadMinutes={defaultLead} onChoice={choice => { dirty.current = true; setAlarmChoice(choice); }}/>}
-    <section className="cc139-card" aria-label="Antecedência padrão"><h2>Antecedência padrão</h2><p>Alterar o padrão é uma ação separada. Antecedências individuais e horários exatos são preservados. Este padrão ainda é uma prévia desta sessão.</p>
+    <section className="cc139-card" aria-label="Antecedência padrão"><details><summary>Alterar antecedência padrão</summary><p>Alterar o padrão é uma ação separada. Antecedências individuais e horários exatos são preservados. Este padrão ainda é uma prévia desta sessão.</p>
       <label>Minutos do padrão<input type="number" min="0" max="720" value={defaultInput} onChange={event => setDefaultInput(event.target.value)}/></label>
-      <button type="button" onClick={() => { const value = Number(defaultInput); if (defaultInput.trim() && Number.isInteger(value) && value >= 0 && value <= 720) setDefaultLead(value); else toast.info('Informe um padrão entre 0 e 720 minutos.'); }}>Aplicar padrão nesta sessão</button></section>
+      <button type="button" onClick={() => { const value = Number(defaultInput); if (defaultInput.trim() && Number.isInteger(value) && value >= 0 && value <= 720) setDefaultLead(value); else toast.info('Informe um padrão entre 0 e 720 minutos.'); }}>Aplicar padrão nesta sessão</button></details></section>
     <section className="cc139-card">
       <h2>Hotéis preferenciais do catálogo</h2>
       <p>Resultados do aeroporto da programação aparecem primeiro. Use cadastro manual quando a contingência levar a outro hotel.</p>
@@ -279,5 +280,6 @@ export default function PresentationStayManagerView({ events, initialStayId }: {
       {groundGaps.map((event) => <article className="cc139-card" key={`ground-${event.id}`}><header><span><strong>Tempo em solo · {event.origin || '—'}</strong><small>Antes de {event.title || 'próxima etapa'}</small></span><b>{event.canonical?.groundBeforeMinutes} min</b></header></article>)}
     </section>
     <section className="cc139-card"><ShieldCheck/><h2>Privacidade</h2><p>O quarto não aparece para visitantes nem em alertas coletivos. A presença no hotel só é usada com autorização do usuário.</p></section>
-  </>;
+    </div>
+  </section>;
 }

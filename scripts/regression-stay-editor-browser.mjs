@@ -54,12 +54,45 @@ try {
   const hotel=page.getByRole('textbox',{name:'Hotel',exact:true}),apz=page.getByLabel('APZ no hotel (manual ou salva)',{exact:true});
   await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel salvo sintético');
   assert.equal(await apz.inputValue(),'05:30');
+  const layout=[];
+  for (const scenario of [{theme:'light',font:100,height:900},{theme:'dark',font:150,height:600}]) {
+    await page.setViewportSize({width,height:scenario.height});
+    await page.evaluate(s=>{document.documentElement.dataset.crewTheme=s.theme;document.documentElement.style.fontSize=`${16*s.font/100}px`},scenario);
+    const header=page.locator('.cc-stay-editor-header'), content=page.locator('.cc-stay-editor-content');
+    const initial=await header.boundingBox();
+    const first=program,last=page.getByRole('heading',{name:'Privacidade',exact:true});
+    for(const target of [first,last]) {
+      await target.evaluate(el=>el.scrollIntoView({block:'center',behavior:'instant'}));
+      const h=await header.boundingBox(),b=await target.boundingBox(),c=await content.boundingBox();
+      assert.ok(h&&b&&c&&initial);
+      assert.ok(Math.abs(h.y-initial.y)<1,'Editor header remains fixed');
+      assert.ok(b.y>=c.y-1&&b.y+b.height<=c.y+c.height+1,'First/last content remains reachable');
+      assert.ok(await target.evaluate(el=>{const r=el.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return hit===el||el.contains(hit)}),'No header covers content');
+    }
+    assert.ok(await content.evaluate(el=>el.scrollHeight>el.clientHeight),'Actual content scrolls');
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'No horizontal clipping');
+    await page.screenshot({path:path.join(output,`layout-${width}-${scenario.theme}-${scenario.font}.png`)});
+    layout.push(scenario);
+  }
+  // Reproduce the previous document-scroll layout: header must move, proving
+  // the geometric regression detects the missing local scroll owner.
+  const broken=await page.addStyleTag({content:'.cc-stay-editor{display:block!important;overflow:visible!important;height:auto!important}.cc-stay-editor-content{overflow:visible!important}'});
+  await program.evaluate(el=>el.scrollIntoView({block:'start',behavior:'instant'}));
+  const before=await page.locator('.cc-stay-editor-header').boundingBox();
+  await page.getByRole('heading',{name:'Privacidade',exact:true}).evaluate(el=>el.scrollIntoView({block:'end',behavior:'instant'}));
+  const after=await page.locator('.cc-stay-editor-header').boundingBox();
+  assert.ok(before&&after&&Math.abs(before.y-after.y)>1,'Negative control rejects old document scrolling header');
+  await broken.evaluate(el=>el.remove());
+  await page.evaluate(()=>window.scrollTo(0,0));
+  await page.setViewportSize({width,height:900});
+  await page.evaluate(()=>document.documentElement.style.fontSize='16px');
   await hotel.fill('Hotel editado sintético');
   await page.getByRole('textbox',{name:'Fuso do hotel',exact:true}).fill('America/Fortaleza');
   const apzDate=page.getByLabel('Data da APZ no hotel',{exact:true});await apzDate.fill('2030-10-11');
   const preview=page.getByRole('region',{name:'Prévia do despertador do pernoite'});
   await preview.getByText('Despertar calculado: 04:00',{exact:false}).waitFor();
   await preview.getByText('1 h 30 min antes da APZ no hotel',{exact:true}).waitFor();
+  await preview.locator('summary').click();
   const mode=preview.getByRole('combobox',{name:'Modo do despertador',exact:true});await mode.selectOption('absolute');
   const exact=preview.getByLabel('Data e horário exatos · America/Fortaleza',{exact:true});await exact.fill('2030-10-11T04:00');
   await preview.getByText('1 h 30 min antes da APZ no hotel',{exact:true}).waitFor();
@@ -70,7 +103,7 @@ try {
   await apz.fill('');await preview.getByRole('alert').filter({hasText:'APZ no hotel ausente'}).waitFor();
   assert.equal(await preview.getByText(/antes da APZ no hotel$/).count(),0);
   await apz.fill('05:30');
-  const defaults=page.getByRole('region',{name:'Antecedência padrão'});await defaults.getByRole('spinbutton').fill('60');await defaults.getByRole('button').click();
+  const defaults=page.getByRole('region',{name:'Antecedência padrão'});await defaults.locator('summary').click();await defaults.getByRole('spinbutton').fill('60');await defaults.getByRole('button').click();
   assert.equal(await mode.inputValue(),'absolute');assert.equal(await exact.inputValue(),'2030-10-11T04:00');
   await mode.selectOption('auto');
   await preview.getByText('Modo ativo: Auto · antecedência padrão',{exact:true}).waitFor();
@@ -85,6 +118,7 @@ try {
   await page.evaluate(()=>window.replaceStayEvents(window.stayFixtureEvents.map(event=>({...event,canonical:{...event.canonical,endDateTime:'2031-01-01T00:00:00Z'}}))));
   await page.getByRole('alert').filter({hasText:'Seus ajustes manuais foram preservados'}).waitFor();assert.equal(await hotel.inputValue(),'Hotel editado sintético');
   await preview.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(output,`alarm-${width}.png`)});
+  await page.getByText('Mais opções da edição',{exact:true}).click();
   await page.getByRole('button',{name:'Descartar edição deste pernoite',exact:true}).click();await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel salvo sintético');
   await page.evaluate(()=>window.replaceStayEvents(window.stayFixtureEvents.filter(event=>event.id!=='synthetic-future')));
   await page.getByRole('alert').filter({hasText:'Nenhum outro item foi selecionado automaticamente'}).waitFor();assert.equal(await program.inputValue(),'');
@@ -95,7 +129,7 @@ try {
   await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','another-synthetic');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
   await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='');
   assert.deepEqual(errors,[]);assert.deepEqual(writes,[],'No hotel saves or alarm requests');
-  results.push({width,touchIdentity:true,savedApz:true,noRosterApzFallback:true,manualPreserved:true,autoMode:true,modeAbsolute:true,liveGap:true,defaultSeparate:true,current:true,rosterChange:true,itemRemoval:true,cancelEdit:true,contextReturn:true,accountReset:true,writes,errors});
+  results.push({width,touchIdentity:true,savedApz:true,noRosterApzFallback:true,manualPreserved:true,autoMode:true,modeAbsolute:true,liveGap:true,defaultSeparate:true,current:true,rosterChange:true,itemRemoval:true,cancelEdit:true,contextReturn:true,accountReset:true,layout,negativeControl:true,writes,errors});
   await context.close();
  }
 } finally {
