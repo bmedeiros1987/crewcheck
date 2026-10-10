@@ -49,7 +49,7 @@ Revisar o diff autoral e os snapshots preparados do pacote contra o SHA exato do
 
 ## Revisão de upgrade e origem
 
-A revisão posterior a `c5d994b` muda o kernel de cache de `605.1` para `operated-extra-v2`. O produtor canônico exige a versão nova; o consumidor compara essa versão e o fingerprint integral do roster antes de reutilizar o snapshot. O teste do consumidor real rejeita um snapshot antigo com 777 horas sintéticas, recalcula 50 horas da fixture e restaura a métrica observada de 365 dias. Todos os fetches desse teste são simulados, sem dados reais.
+A revisão posterior a `c5d994b` muda o kernel de cache de `605.1` para `operated-extra-v3`. O produtor canônico exige a versão nova; o consumidor compara essa versão e o fingerprint integral do roster antes de reutilizar o snapshot. O teste do consumidor real rejeita um snapshot antigo com 777 horas sintéticas, recalcula 50 horas da fixture e restaura a métrica observada de 365 dias. Todos os fetches desse teste são simulados, sem dados reais.
 
 O consumidor também rejeita um snapshot que não declare `flightHoursOriginPending`, mesmo com versão/fingerprint coincidentes. O produtor da tela aplica a mesma defesa em `currentCompliance`: resultados antigos do banco/cache sem o novo estado são recalculados a partir do roster salvo, antes de serem apresentados. Isso não reclassifica nem grava pernas antigas. Há regressões dos dois consumidores reais para impedir que o valor sintético obsoleto de 777 horas reapareça.
 
@@ -62,3 +62,9 @@ Transição: abrir uma escala recalcula com os papéis salvos; o cache anterior 
 Defeito anterior separado informado pelo revisor financeiro: em uma fixture sintética, o cálculo salarial noturno bruto varia entre 1800 em São Paulo/UTC e 1952 em Tóquio, dependendo do fuso do dispositivo. O código financeiro era idêntico à base na primeira revisão de 964. Esse problema foi registrado para uma correção isolada posterior; não é corrigido neste PR.
 
 O pacote novo inclui snapshots preparados de `databaseClient.ts`, `rollingFlightHours.ts`, produtor de snapshot e hardening, além dos demais módulos alterados. O trabalho Cirium concorrente não foi tocado; mudanças em Home são restritas aos estados de pendência em Alertas/Carga.
+
+## Contraexemplo de proveniência e gate preparado
+
+A revisão independente de `b7b8ebb` encontrou que a pendência explícita em 01/09 impedia o fallback do marcador global de considerar 29/09, cuja classificação e marcador diário se perderam. A correção une as duas fontes de incerteza. A regressão sintética tem PS sem fonte em 01/09, OP sem fonte em 29/09 e OP comprovado em 30/09: somente 01/09 e 29/09 ficam pendentes. Outubro permanece preciso na competência comprovada; a janela de28dias fica null. Não altera os papéis. A política nova usa `operated-extra-v3` e rejeita também snapshots v2, além de605.1.
+
+A regressão autoral executada contra o Home preparado de b7 falhou, exit1, na assertiva final de reconciliação automática. A preparação anteriormente reescrevia essa assertiva para procurar o atalho `openActive`, que podia passar sem verificar o caminho `reconcileActiveRoster/adopt`. Essa reescrita foi removida. O teste agora localiza via AST a adoção automática, exige recomputação anterior ao registro/publicação e rejeita curto-circuito por `active.compliance`. O produtor de reconciliação agora aguarda recomputação antes da adoção. A proteção de apresentação de `currentCompliance` já existia; esta divergência não foi apresentada como novo defeito visual comprovado.

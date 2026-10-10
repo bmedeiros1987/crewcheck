@@ -18,11 +18,12 @@ export function pendingFlightRoleDates(roster: CrewRoster): string[] {
   // Old reconstruction could lose the marker and all PS roles in a day.
   // The full document can establish that extra exists, but not which old leg
   // is reliable. Only a fresh parse may attach provenance to those legs.
-  if (extraMarker.test(roster.rawText || '') && !pending.length
-    && flightDays.some(day => !day.legs?.length || day.legs.some(leg => !verifiedSources.has(String(leg.workTypeSource || ''))))) {
-    return flightDays.filter(day => !day.legs?.length || day.legs.some(leg => !verifiedSources.has(String(leg.workTypeSource || '')))).map(day => day.date);
-  }
-  return pending.map(day => day.date);
+  const globallyUncertain = extraMarker.test(roster.rawText || '')
+    ? flightDays.filter(day => !day.legs?.length || day.legs.some(leg => !verifiedSources.has(String(leg.workTypeSource || ''))))
+    : [];
+  // A known old PS outside a window cannot hide an unknown role inside it.
+  // Union both sources of uncertainty; proven legs/days remain eligible.
+  return [...new Set([...pending, ...globallyUncertain].map(day => day.date))];
 }
 
 export const FLIGHT_ROLE_PENDING_MESSAGE = 'Origem da classificação de extra pendente. Reimporte a escala original para verificar OP/PS; o acumulado de voo operado não está confirmado.';

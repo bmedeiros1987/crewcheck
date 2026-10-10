@@ -17,7 +17,7 @@
         if (!canCommit() || !active?.roster?.days?.length) return;
         assertAutomaticRosterScope(active.roster, bundle.roster, active.summary);
         // Prepare all async analysis before the fenced local publication/cache commit.
-        const compliance = active.compliance || (await recomputeComplianceWithRegulatoryHistory(active.roster)).compliance;
+        const compliance = (await recomputeComplianceWithRegulatoryHistory(active.roster)).compliance;
         if (!canCommit()) return;
         const serverRevision = rosterFingerprint(active.roster);
         const localRevision = rosterFingerprint(bundle.roster);

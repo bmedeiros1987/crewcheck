@@ -6,7 +6,7 @@ import { loadClientModules } from './lib/ts-module-harness.mjs';
 
 // Synthetic identity, flight numbers and year. Never load the private PDF.
 const h = loadClientModules({
-  files: ['client/src/lib/aimsParser.ts', 'client/src/lib/complianceEngine.ts',
+  files: ['client/src/lib/flightRoleEvidence.ts', 'client/src/lib/aimsParser.ts', 'client/src/lib/complianceEngine.ts',
     'client/src/lib/rollingFlightHours.ts', 'client/src/lib/canonicalRoster.ts',
     'client/src/lib/canonicalDutyMeasurement.ts'],
   expose: { aimsParser: ['extractAimsPhysicalLegs'],
@@ -17,6 +17,7 @@ try {
   const parser = h.load('aimsParser'), engine = h.load('complianceEngine');
   const kernel = h.load('rollingFlightHours'), canonical = h.load('canonicalRoster');
   const duty = h.load('canonicalDutyMeasurement');
+  const evidence = h.load('flightRoleEvidence');
   const home = ts.createSourceFile('Home.tsx', fs.readFileSync('client/src/pages/Home.tsx', 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const payrollRules = home.statements.filter(n => ts.isFunctionDeclaration(n) && ['flightWorkType', 'financialFlightRule'].includes(n.name?.text));
   assert.equal(payrollRules.length, 2);
@@ -118,6 +119,20 @@ try {
     assert.equal(pendingHistory.metrics.maxFlightHoursRolling28Days, null);
     assert.equal(pendingHistory.metrics.maxFlightHoursRolling365Days, null);
     assert.equal(pendingHistory.metrics.flightHoursOriginPending, true);
+    const roleDay = (date, workType, proven=false) => ({ ...roster.days[0], date, dayNumber: Number(date.slice(0,2)), month: Number(date.slice(3,5)), year: Number(date.slice(6)),
+      rawText: 'SYNTHETIC: daily marker unavailable', legs: [{ ...roster.days[0].legs[0],
+        duration: 1, workType, workTypeSource: proven ? 'aims-extra-following-v1' : undefined }] });
+    const mixedOriginSeptember = { ...roster, month: 9, rawText: 'SYNTHETIC document [extra]',
+      days: [roleDay('01/09/2032', 'PS'), roleDay('29/09/2032', 'OP'), roleDay('30/09/2032', 'OP', true)] };
+    const mixedOriginBefore = JSON.stringify(mixedOriginSeptember);
+    assert.deepEqual(evidence.pendingFlightRoleDates(mixedOriginSeptember), ['01/09/2032', '29/09/2032'], 'global uncertainty unions with old PS; proven September30 remains excluded');
+    const firstOctober = { ...roster, rawText: 'SYNTHETIC verified October', days: [roleDay('01/10/2032', 'OP', true)] };
+    const mixedOriginResult = engine.analyzeCompliance(firstOctober, 'auto', [mixedOriginSeptember]);
+    assert.equal(mixedOriginResult.metrics.totalFlightHours, 1, 'verified active competence remains precise');
+    assert.equal(mixedOriginResult.metrics.maxFlightHoursRolling28Days, null, 'September1 pending outside28d cannot hide September29 lost extra inside28d');
+    assert.equal(mixedOriginResult.metrics.maxFlightHoursRolling365Days, null);
+    assert.equal(mixedOriginResult.metrics.flightHoursOriginPending, true);
+    assert.equal(JSON.stringify(mixedOriginSeptember), mixedOriginBefore, 'union never rewrites old PS/OP or provenance');
     const olderHistory = { ...oldHistory, date: '01/01/2032', month: 1 };
     const annualOnlyPending = engine.analyzeCompliance(roster, 'auto', [{ ...roster, month: 1, days: [olderHistory] }]);
     assert.equal(annualOnlyPending.metrics.totalFlightHours, 8);

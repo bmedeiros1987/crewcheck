@@ -12,9 +12,9 @@ for (const file of [compliancePath, databasePath, rollingPath, homePath]) {
 
 let rolling = fs.readFileSync(rollingPath, 'utf8');
 if (!rolling.includes('ROLLING_FLIGHT_HOURS_KERNEL_VERSION')) {
-  rolling = `export const ROLLING_FLIGHT_HOURS_KERNEL_VERSION = 'operated-extra-v2';\n\n${rolling}`;
+  rolling = `export const ROLLING_FLIGHT_HOURS_KERNEL_VERSION = 'operated-extra-v3';\n\n${rolling}`;
 }
-if (!rolling.includes("export const ROLLING_FLIGHT_HOURS_KERNEL_VERSION = 'operated-extra-v2';")) {
+if (!rolling.includes("export const ROLLING_FLIGHT_HOURS_KERNEL_VERSION = 'operated-extra-v3';")) {
   throw new Error(`[${marker}] versão do kernel rolling 28d ausente`);
 }
 fs.writeFileSync(rollingPath, rolling, 'utf8');
