@@ -5,6 +5,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import vm from 'node:vm';
 import test from 'node:test';
+import { whatsappPdfEnabled } from '../server/concierge/whatsapp-pdf.mjs';
 import {
   detectWellhubActivityFromText, detectWellhubPlanFromText,
   isWellhubPlanServer, wellhubPlanAllows, wellhubPlanLabelServer,
@@ -40,6 +41,7 @@ function harness(initialPlan = 'basic', gymPlan = 'wellhub', io = {}) {
     { id: 'synthetic-gold', name: 'Synthetic Gold gym', city: 'Guarulhos', state: 'SP', minimumPlan: 'gold', activities: [], openingHours: [], sourceUrl: 'https://example.invalid/synthetic-gold' },
   ];
   const context = vm.createContext({
+    whatsappPdfEnabled: () => whatsappPdfEnabled({}),
     ...preferences, detectWellhubActivityFromText, detectWellhubPlanFromText,
     isWellhubPlanServer, wellhubPlanLabelServer,
     telegramRostersRead: () => clone(local),

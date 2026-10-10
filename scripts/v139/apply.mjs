@@ -192,6 +192,9 @@ await import('../p1-publication-review/apply.mjs');
 await import('../p1-menu-organization/apply.mjs');
 await import('../p1-concierge-poi/apply.mjs');
 await import('../p1-whatsapp-sender/apply.mjs');
+await import('../p1-whatsapp-menu/apply.mjs');
+await import('../p1-whatsapp-pdf/apply.mjs');
+await import('../p1-whatsapp-visitor/apply.mjs');
 await import('../p1-concierge-stay-menu/apply.mjs');
 // Read-only Concierge projection after canonical rule preparation.
 await import('../p1-concierge-journey/apply.mjs');
@@ -213,4 +216,5 @@ await import('../finalize-duty-clock-provenance.mjs');
 // The terminal import also preserves the canonical-chain ordering contract.
 const finalizeSources = () => import('../ci/sync-canonical-manual.mjs');
 await prepareSourcesOnce(prepareSources, '.', { finalize: finalizeSources });
+
 await import('../ci/sync-canonical-manual.mjs');

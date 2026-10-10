@@ -1,3 +1,4 @@
+import { whatsappTestSendDecision, whatsappTestInboundAllowed, whatsappTestProfileActive, withWhatsAppTestReply, whatsappTestMenuCommandAllowed } from './concierge/whatsapp-test-send-policy.mjs';
 import crypto from 'node:crypto';
 import { dbPool, requireIdentity, secureCompare } from './v139/common.mjs';
 
@@ -210,7 +211,14 @@ export function extractWhatsAppInboundMessages(payload = {}) {
           from,
           phoneNumberId: phoneId,
           type: String(message?.type || 'unknown').slice(0, 32),
+          timestamp: String(message?.timestamp || '').slice(0, 16),
           text: String(message?.text?.body || '').trim().slice(0, 4000),
+          document: message?.type === 'document' ? {
+            id: String(message.document?.id || '').slice(0, 80),
+            mime_type: String(message.document?.mime_type || '').slice(0, 120),
+            filename: String(message.document?.filename || '').slice(0, 160),
+            sha256: String(message.document?.sha256 || '').slice(0, 100),
+          } : null,
         });
       }
     }
@@ -305,6 +313,8 @@ export function configureWhatsAppConcierge(handler) {
 }
 
 export async function sendWhatsAppText(to, text, options = {}) {
+  const testDecision = whatsappTestSendDecision(to, phoneNumberId(), options);
+  if (!testDecision.allowed) return { ok: false, code: testDecision.code };
   const token = accessToken();
   const senderId = phoneNumberId();
   const recipient = normalizePhone(to);
@@ -399,6 +409,7 @@ async function tryCompleteLink(from, code) {
 }
 
 async function handleInboundMessage(message) {
+  if (!whatsappTestInboundAllowed(message)) return;
   const from = normalizePhone(message?.from);
   if (!from) return;
   const text = String(message?.text || '').trim();
@@ -415,6 +426,7 @@ async function handleInboundMessage(message) {
   }
 
   const link = await findActiveLinkByPhone(from);
+  if (whatsappTestProfileActive()) return; // No unproved legacy/AI fallback in restricted tests.
   if (!link?.email) {
     await sendWhatsAppText(from, 'Para proteger sua escala, conecte este WhatsApp à sua conta no CrewCheck usando o botão “Vincular WhatsApp”. O código é temporário e não precisa ser compartilhado com ninguém.', { replyToMessageId: message.id });
     return;
@@ -442,7 +454,7 @@ async function handleInboundMessage(message) {
 async function processWhatsAppPayload(payload, rawBody) {
   const rawHash = payloadHash(rawBody);
   const events = extractWhatsAppEvents(payload, rawBody);
-  const inbound = extractWhatsAppInboundMessages(payload);
+  const inbound = extractWhatsAppInboundMessages(payload).filter(whatsappTestInboundAllowed);
   const acceptedMessageIds = new Set();
   let accepted = 0;
   let duplicates = 0;
@@ -457,7 +469,10 @@ async function processWhatsAppPayload(payload, rawBody) {
     } else duplicates += 1;
   }
   for (const message of inbound) {
-    if (acceptedMessageIds.has(message.id)) await handleInboundMessage(message);
+    if (acceptedMessageIds.has(message.id)) {
+      acceptedMessageIds.delete(message.id);
+      await withWhatsAppTestReply(message, 'inbound', () => handleInboundMessage(message));
+    }
   }
   console.info('[crewcheck:whatsapp:webhook]', JSON.stringify({ accepted, duplicates, total: events.length, inbound: inbound.length }));
 }
