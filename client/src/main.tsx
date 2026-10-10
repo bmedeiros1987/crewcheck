@@ -21,6 +21,8 @@ import "./styles/bottom-nav-clarity.css";
 import "./styles/opening-splash-identity.css";
 import "./styles/atlas-1c-semantic-navigation.css";
 import "./styles/light-bottom-nav-signature.css";
+import "./styles/light-flightdeck-polish.css";
+import "./styles/brand-mark-2026.css";
 
 createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>

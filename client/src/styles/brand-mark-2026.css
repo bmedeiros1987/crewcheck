@@ -1,0 +1,12 @@
+/* Marca 2026: a tela de entrada passa a exibir o mesmo ícone oficial do app
+   (crewcheck-icon-v3.png, gerado a partir de assets/brand/crewcheck-app-icon-2026.png)
+   no lugar do avião desenhado sobre gradiente. */
+html body .cz-auth .cz-auth-brand > span {
+  background: url('/icons/crewcheck-icon-v3.png') center / cover no-repeat !important;
+  border: 0 !important;
+  box-shadow: 0 6px 18px rgba(16, 24, 64, .18) !important;
+}
+
+html body .cz-auth .cz-auth-brand > span svg {
+  visibility: hidden !important;
+}

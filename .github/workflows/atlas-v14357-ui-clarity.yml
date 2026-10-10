@@ -13,6 +13,8 @@ on:
       - 'scripts/regression-p1-548-dynamic-calendar.mjs'
       - 'scripts/regression-p1-atlas-1c-semantic-themes.mjs'
       - 'scripts/regression-light-bottom-nav-signature.mjs'
+      - 'scripts/regression-brand-mark-2026.mjs'
+      - 'scripts/v13910/generate-brand-icon.mjs'
       - 'server.mjs'
       - 'server/platform.mjs'
       - 'package.json'
@@ -29,6 +31,8 @@ on:
       - 'scripts/regression-p1-548-dynamic-calendar.mjs'
       - 'scripts/regression-p1-atlas-1c-semantic-themes.mjs'
       - 'scripts/regression-light-bottom-nav-signature.mjs'
+      - 'scripts/regression-brand-mark-2026.mjs'
+      - 'scripts/v13910/generate-brand-icon.mjs'
       - 'server.mjs'
       - 'server/platform.mjs'
       - 'package.json'
@@ -72,6 +76,8 @@ jobs:
         run: node scripts/regression-p1-atlas-1c-semantic-themes.mjs 2>&1 | tee "$RUNNER_TEMP/atlas-1c-semantic-themes.log"
       - name: Validate light bottom navigation after prepare
         run: node scripts/regression-light-bottom-nav-signature.mjs 2>&1 | tee "$RUNNER_TEMP/light-bottom-nav-signature.log"
+      - name: Validate brand mark 2026 and light FlightDeck polish after prepare
+        run: BRAND_PREPARED=true node scripts/regression-brand-mark-2026.mjs
       - name: Preserve Smart Departure airport handoff
         run: node scripts/regression-v14-3-47-smart-departure-operational-airport.mjs
       - name: Preserve Daniel and Bruno voices
