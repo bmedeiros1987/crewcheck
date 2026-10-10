@@ -42,7 +42,17 @@ Uma aquisição que dependa de tela interativa sempre resulta em `defer-to-foreg
 
 O asset `mycrewcare-transport-v3.js` define um contrato estruturado e sem fallback global, mas não é executado nesta entrega. O futuro adaptador do provedor deverá ser uma proposta separada, revisada e validada fisicamente.
 
-## Limites de ownership
+### Ligação à interface (desligada)
+
+`shared/myCrewCareController.mjs` conecta a sessão por conta, o adaptador nativo e o cache cifrado a `client/src/hooks/useMyCrewCareV3.ts` e `client/src/components/mycrewcare/MyCrewCareV3Panel.tsx`.
+
+- **Duas chaves**: `MYCREWCARE_UI_ENABLED` (constante `false`) e `RELEASE_ENABLED` nativo. Com qualquer uma desligada o painel não renderiza e a ponte nativa não é tocada.
+- **Sem segundo plano**: não há timers, WorkManager nem WebView oculta. Como a sessão do provedor pode exigir SSO/MFA, somente um toque do usuário, com o app visível e online, chama o adaptador. Gatilhos automáticos (abrir o app, mudança de escala) apenas marcam `refreshSuggested`.
+- **Cache restaurado não é conexão**: após reinício o painel mostra o dado salvo com idade e rótulo "dado salvo"; `connected` só ocorre após resposta autenticada e reconciliada.
+- **Troca de conta**: `bind()` descarta da memória os fatos da conta anterior e uma sincronização em andamento é invalidada antes de qualquer escrita. O cache e o perfil de cada conta permanecem separados.
+- **Montagem**: o painel **não** está montado em `Home.tsx`; a fence de ownership agora também falha se qualquer arquivo fora desta fatia importar o painel. Montar exige alteração revisada da fence e de `Home`/`MainActivity` (bridge nativa).
+
+
 
 **CrewCheck Mobile Core** é o único owner desta fundação: sessão, perfil, cache, reconciliação, sincronização e futura UI Mobile/PWA.
 
@@ -67,6 +77,8 @@ A slice não modifica `Home.tsx`, `MainActivity.java`, `scripts/v139/apply.mjs`,
 - revisão independente e CI do SHA final.
 
 ## Validação desta slice
+
+`node --test scripts/regression-mycrewcare-controller.mjs` cobre 13 contratos da ligação à interface (desligado por padrão, duas chaves, sem sincronização automática/segundo plano, offline, expiração, reinício, troca de conta, cleanup com falha).
 
 `node --test scripts/regression-mycrewcare-v3.mjs` cobre 12 contratos em UTC, Brasília e Auckland: URL exata, hotel/pickup separados, vínculo sem hotel prévio, ambiguidade, cancelamento, diff, persistência, restauração, cache offline, vazio verificado, troca de revisão, logout e política foreground/background.
 

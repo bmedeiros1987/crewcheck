@@ -13,10 +13,16 @@ const allowed = [
   'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCareProfile.java',
   'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCareRuntimeV3.java',
   'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCareSecureStore.java',
+  'client/src/components/mycrewcare/MyCrewCareV3Panel.tsx',
+  'client/src/hooks/useMyCrewCareV3.ts',
   'client/src/lib/myCrewCareV3.ts',
+  'client/src/lib/myCrewCareV3Runtime.ts',
   'docs/mycrewcare-v3-persistent-session.md',
   'scripts/assert-mycrewcare-v3-ownership.mjs',
+  'scripts/regression-mycrewcare-controller.mjs',
   'scripts/regression-mycrewcare-v3.mjs',
+  'shared/myCrewCareController.d.mts',
+  'shared/myCrewCareController.mjs',
   'shared/myCrewCareLogistics.d.mts',
   'shared/myCrewCareLogistics.mjs',
   'shared/myCrewCareNativeAdapter.d.mts',
@@ -100,6 +106,17 @@ assert.match(sessionSource, /secure-random-unavailable/);
 assert.doesNotMatch(sessionSource, /Math\.random/);
 assert.match(sessionSource, /cleanup-error/);
 assert.match(build, /androidx\.webkit:webkit:1\.17\.1/);
+
+// Interface wiring stays off and unmounted until a separately reviewed change.
+const controllerSource = read('shared/myCrewCareController.mjs');
+assert.match(controllerSource, /export const MYCREWCARE_UI_ENABLED = false;/);
+assert.match(controllerSource, /nativeReady\(bridge\)/);
+assert.doesNotMatch(controllerSource, /setTimeout|setInterval|WorkManager/);
+const mountable = execFileSync('git', ['ls-files', 'client/src'], { encoding: 'utf8' }).trim().split('\n')
+  .filter((path) => /\.(tsx?|jsx?)$/.test(path) && !/myCrewCare|MyCrewCare/.test(path));
+for (const path of mountable) {
+  assert.doesNotMatch(read(path), /MyCrewCareV3Panel|useMyCrewCareV3|myCrewCareV3Runtime|myCrewCareController/, `${path} must not mount the disabled MyCrewCare interface`);
+}
 
 const context = {
   accountId: 'account-guard',

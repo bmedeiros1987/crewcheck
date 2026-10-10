@@ -7,6 +7,11 @@ on:
       - 'shared/myCrewCarePersistentSession*'
       - 'shared/myCrewCareSyncPolicy*'
       - 'shared/myCrewCareNativeAdapter*'
+      - 'shared/myCrewCareController*'
+      - 'client/src/components/mycrewcare/**'
+      - 'client/src/hooks/useMyCrewCareV3.ts'
+      - 'client/src/lib/myCrewCareV3Runtime.ts'
+      - 'scripts/regression-mycrewcare-controller.mjs'
       - 'client/src/lib/myCrewCareV3.ts'
       - 'android-wrapper/app/build.gradle'
       - 'android-wrapper/app/src/main/assets/mycrewcare-transport-v3.js'
@@ -40,7 +45,7 @@ jobs:
         run: |
           node scripts/assert-mycrewcare-v3-ownership.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
-            TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs
+            TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs scripts/regression-mycrewcare-controller.mjs
           done
       - name: Complete canonical preparation
         run: node scripts/v139/apply.mjs
@@ -48,7 +53,7 @@ jobs:
         run: |
           node scripts/assert-mycrewcare-v3-ownership.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
-            TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs
+            TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs scripts/regression-mycrewcare-controller.mjs
           done
           node scripts/regression-p0-525-stay-physical-association.mjs
           node scripts/regression-p1-566-stay-wakeup-concierge-context.mjs
