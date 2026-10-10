@@ -22,6 +22,8 @@ Conversões locais rejeitam datas inválidas e minutos ambíguos/inexistentes no
 
 ## Modos e preferências
 
+- Auto: opção transparente, APZ no hotel confirmada menos a antecedência padrão
+  configurada. Não contorna fonte, consentimento, permissão ou proteção desligada.
 - Relativo: antecedência padrão, individual de 90/60 min ou personalizada. Mudança
   da APZ recalcula com a mesma antecedência individual.
 - Absoluto: instante escolhido com data/fuso; mudança da APZ mantém a escolha e

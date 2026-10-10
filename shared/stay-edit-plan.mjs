@@ -109,7 +109,7 @@ function manualHotelApz(hotelApz, stay, scope) {
 export function resolveStayAlarmChoice(defaultLeadMinutes, override) {
   if (override?.mode === 'absolute') return Object.freeze({ mode: 'absolute', alarmAt: override.alarmAt, source: 'individual' });
   if (override && override.mode !== 'relative') return none('invalid-mode');
-  const individual = override && own(override, 'leadMinutes');
+  const individual = Boolean(override);
   const leadMinutes = individual ? override.leadMinutes : defaultLeadMinutes;
   if (!Number.isInteger(leadMinutes) || leadMinutes < 0 || leadMinutes > 720) return none('lead-not-configured');
   return Object.freeze({ mode: 'relative', leadMinutes, source: individual ? 'individual' : 'default' });

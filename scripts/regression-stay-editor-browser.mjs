@@ -72,6 +72,13 @@ try {
   await apz.fill('05:30');
   const defaults=page.getByRole('region',{name:'Antecedência padrão'});await defaults.getByRole('spinbutton').fill('60');await defaults.getByRole('button').click();
   assert.equal(await mode.inputValue(),'absolute');assert.equal(await exact.inputValue(),'2030-10-11T04:00');
+  await mode.selectOption('auto');
+  await preview.getByText('Modo ativo: Auto · antecedência padrão',{exact:true}).waitFor();
+  await preview.getByText('Despertar calculado: 04:30',{exact:false}).waitFor();
+  await mode.selectOption('relative');
+  await preview.getByRole('combobox',{name:'Antecedência deste pernoite',exact:true}).selectOption('90');
+  await preview.getByText('Despertar calculado: 04:00',{exact:false}).waitFor();
+  await mode.selectOption('absolute');await exact.fill('2030-10-11T04:00');
   await program.selectOption('synthetic-current');assert.equal(await apz.inputValue(),'');
   await page.getByText('Atual pela escala',{exact:true}).waitFor();
   await program.selectOption('synthetic-future');assert.equal(await hotel.inputValue(),'Hotel editado sintético');assert.equal(await exact.inputValue(),'2030-10-11T04:00');
@@ -88,7 +95,7 @@ try {
   await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','another-synthetic');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
   await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='');
   assert.deepEqual(errors,[]);assert.deepEqual(writes,[],'No hotel saves or alarm requests');
-  results.push({width,touchIdentity:true,savedApz:true,noRosterApzFallback:true,manualPreserved:true,modeAbsolute:true,liveGap:true,defaultSeparate:true,current:true,rosterChange:true,itemRemoval:true,cancelEdit:true,contextReturn:true,accountReset:true,writes,errors});
+  results.push({width,touchIdentity:true,savedApz:true,noRosterApzFallback:true,manualPreserved:true,autoMode:true,modeAbsolute:true,liveGap:true,defaultSeparate:true,current:true,rosterChange:true,itemRemoval:true,cancelEdit:true,contextReturn:true,accountReset:true,writes,errors});
   await context.close();
  }
 } finally {
