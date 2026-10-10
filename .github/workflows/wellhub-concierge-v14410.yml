@@ -19,6 +19,8 @@ on:
       - 'scripts/regression-v14-4-10-wellhub-concierge-plan-location.mjs'
       - 'scripts/regression-concierge-wellhub-plan-recognition.mjs'
       - 'scripts/regression-concierge-wellhub-conversation.mjs'
+      - 'scripts/regression-wellhub-fortaleza-official.mjs'
+      - 'client/src/lib/wellhubVerifiedCatalog.ts'
       - '.github/workflows/wellhub-concierge-v14410.yml'
   workflow_dispatch:
 
@@ -41,6 +43,8 @@ jobs:
         run: node --test scripts/regression-concierge-wellhub-plan-recognition.mjs
       - name: Raw conversation sequence and channel entrypoints
         run: node --test scripts/regression-concierge-wellhub-conversation.mjs
+      - name: Fortaleza catalog and current-location regression
+        run: node scripts/regression-wellhub-fortaleza-official.mjs
       - run: npm ci
       - name: Build canonical production source
         run: npm run build
@@ -54,6 +58,8 @@ jobs:
         run: node scripts/regression-concierge-wellhub-plan-recognition.mjs --materialized
       - name: Compiled conversation sequence and channel entrypoints
         run: node scripts/regression-concierge-wellhub-conversation.mjs --materialized
+      - name: Compiled Fortaleza catalog and current-location regression
+        run: node scripts/regression-wellhub-fortaleza-official.mjs --materialized
       - name: Preserve compiled routing evidence
         if: always()
         uses: actions/upload-artifact@v4
