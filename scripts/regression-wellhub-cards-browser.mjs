@@ -24,19 +24,24 @@ await build({stdin:{contents:entry,resolveDir:process.cwd(),loader:'tsx'},bundle
 const cssRoot=process.env.WELLHUB_CSS_DIST || 'dist';
 const baseline=process.env.WELLHUB_BASELINE==='1';
 const cssFiles=fs.readdirSync(cssRoot+'/assets').filter(f=>f.endsWith('.css'));
-const shippingCss=cssFiles.map(f=>fs.readFileSync(cssRoot+'/assets/'+f,'utf8')).join('\n') + (baseline ? '' : '\n' + fs.readFileSync('client/src/styles/wellhub-hours.css','utf8'));
+const shippingCss=cssFiles.map(f=>fs.readFileSync(cssRoot+'/assets/'+f,'utf8')).join('\n') + (baseline ? '' : '\n' + fs.readFileSync(process.env.WELLHUB_CARD_STYLE_PATH || 'client/src/styles/wellhub-hours.css','utf8'));
 const script=fs.readFileSync(path.join(output,'fixture.js'),'utf8');
 const browser=await chromium.launch({headless:true,executablePath:process.env.WELLHUB_CHROMIUM_PATH || undefined,args:['--no-sandbox']});
 try{
-for(const theme of (baseline?['light']:['light','dark']))for(const width of (baseline?[390]:[320,390,768]))for(const scale of [1,1.5]){
- const page=await browser.newPage({viewport:{width,height:844}});await page.route('**/*',r=>r.abort());
- await page.setContent(`<style>${shippingCss}\n*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}#fixture-top,#fixture-bottom{position:fixed;inset-inline:0;height:60px;background:#15243d;color:white;z-index:99;display:grid;place-items:center}#fixture-top{top:0}#fixture-bottom{bottom:0}.cz-app[data-view=gyms]{padding-top:85px!important;padding-bottom:100px!important}.cc-wellhub-results{margin:0 12px} html{font-size:${16*scale}px!important}</style><div id="root"></div><script>${script}</script>`);
+const cases=(baseline?['light']:['light','dark']).flatMap(theme=>(baseline?[390]:[320,390,768]).flatMap(width=>[1,1.5].map(scale=>({theme,width,scale,height:844,safeTop:0,safeBottom:0}))));
+if(!baseline)cases.push(...['light','dark'].map(theme=>({theme,width:320,scale:1.5,height:430,safeTop:35,safeBottom:34})));
+for(const {theme,width,scale,height,safeTop,safeBottom} of cases){
+ const headerHeight=60+safeTop,footerHeight=60+safeBottom;
+ const suffix=height===844?'':`-keyboard-${height}`;
+ const page=await browser.newPage({viewport:{width,height}});await page.route('**/*',r=>r.abort());
+ await page.setContent(`<style>${shippingCss}\n*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}#fixture-top,#fixture-bottom{position:fixed;inset-inline:0;height:60px;background:#15243d;color:white;z-index:99;display:grid;place-items:center}#fixture-top{top:0;height:${headerHeight}px;padding-top:${safeTop}px;box-sizing:border-box}#fixture-bottom{bottom:0;height:${footerHeight}px;padding-bottom:${safeBottom}px;box-sizing:border-box}.cz-app[data-view=gyms]{padding-top:${headerHeight+25}px!important;padding-bottom:${footerHeight+40}px!important;scroll-padding-top:${headerHeight+25}px!important;scroll-padding-bottom:${footerHeight+40}px!important}.cc-wellhub-results{margin:0 12px} html{font-size:${16*scale}px!important}#keyboard-focus{position:fixed;right:8px;top:60px;z-index:100;width:100px;font-size:16px}</style>${height===430?'<input id="keyboard-focus" aria-label="Entrada sintética de teclado">':''}<div id="root"></div><script>${script}</script>`);
  await page.evaluate(theme => document.documentElement.setAttribute('data-crew-theme', theme), theme);
  await page.locator('.cz-place-result-card').first().waitFor();
+ if(height===430)await page.locator('#keyboard-focus').focus();
  assert.ok(Number.parseFloat(await page.locator('.cz-place-result-card h3').first().evaluate(e=>getComputedStyle(e).fontSize))>=16*scale,'enlarged root font must actually affect the title');
- const geometry=await page.locator('.cz-place-result-card').evaluateAll(cards=>cards.map(c=>{const copy=c.querySelector('.cz-roster-copy').getBoundingClientRect(),action=c.querySelector('.cz-tool-actions').getBoundingClientRect(),card=c.getBoundingClientRect();return{copyBottom:copy.bottom,actionsTop:action.top,actionsBottom:action.bottom,cardBottom:card.bottom,accessWidth:c.querySelector('.cc-wellhub-card-access').getBoundingClientRect().width,actionOverflow:c.querySelector('.cz-tool-actions').scrollHeight-c.querySelector('.cz-tool-actions').clientHeight,cardWidth:card.width,overflow:c.scrollWidth-c.clientWidth,text:c.textContent}}));
- if(!baseline) for(const g of geometry){assert.ok(g.copyBottom<=g.actionsTop,JSON.stringify({width,scale,g}));assert.ok(g.actionsBottom<=g.cardBottom+1);assert.ok(g.overflow<=1);assert.ok(g.actionOverflow<=1,'all action rows must fit');assert.ok(g.accessWidth>=g.cardWidth-40,'access copy must occupy card width');}
- console.log(JSON.stringify({theme,width,scale,baseline,overlap:geometry.some(g=>g.copyBottom>g.actionsTop),geometry}));
+ const geometry=await page.locator('.cz-place-result-card').evaluateAll(cards=>cards.map(c=>{const copy=c.querySelector('.cz-roster-copy').getBoundingClientRect(),action=c.querySelector('.cz-tool-actions').getBoundingClientRect(),card=c.getBoundingClientRect();return{copyBottom:copy.bottom,actionsTop:action.top,actionsBottom:action.bottom,cardBottom:card.bottom,accessWidth:c.querySelector('.cc-wellhub-card-access').getBoundingClientRect().width,planWidth:c.querySelector('.cc-wellhub-card-access small').getBoundingClientRect().width,actionOverflow:c.querySelector('.cz-tool-actions').scrollHeight-c.querySelector('.cz-tool-actions').clientHeight,cardWidth:card.width,overflow:c.scrollWidth-c.clientWidth,text:c.textContent}}));
+ if(!baseline) for(const g of geometry){assert.ok(g.copyBottom<=g.actionsTop,JSON.stringify({width,scale,g}));assert.ok(g.actionsBottom<=g.cardBottom+1);assert.ok(g.overflow<=1);assert.ok(g.actionOverflow<=1,'all action rows must fit');assert.ok(g.accessWidth>=g.cardWidth-40,'access copy must occupy card width');assert.ok(g.planWidth>=g.accessWidth-2,'minimum plan must not inherit generic card columns');}
+ console.log(JSON.stringify({theme,width,height,scale,safeTop,safeBottom,baseline,overlap:geometry.some(g=>g.copyBottom>g.actionsTop),geometry}));
  assert.equal(await page.locator('.cc-wellhub-card-hours').count(),3);assert.equal(await page.locator('.cc-wellhub-card-access details').count(),3);
  await page.locator('.cc-wellhub-card-access summary').first().click();assert.ok((await page.locator('.cc-wellhub-card-access details').first().innerText()).includes('Agendamento necessário'));
  const expanded=await page.locator('.cz-place-result-card').first().evaluate(c=>({text:c.querySelector('details p').getBoundingClientRect().bottom,actions:c.querySelector('.cz-tool-actions').getBoundingClientRect().top}));assert.ok(expanded.text<=expanded.actions,'expanded access conditions must stay before actions');
@@ -44,24 +49,24 @@ for(const theme of (baseline?['light']:['light','dark']))for(const width of (bas
  const captureOverlayStyle=await page.addStyleTag({content:'.cz-app::before,.cz-app::after{display:none!important}'});
  const ancestorStyles=await page.locator('.cz-place-result-card').first().evaluate(e=>{const saved=[];for(let p=e.parentElement;p;p=p.parentElement){saved.push([p,p.getAttribute('style')]);p.style.setProperty('overflow','visible','important');p.style.setProperty('height','auto','important');p.style.setProperty('max-height','none','important');} window.__wellhubCaptureAncestors=saved;return saved.length;});
  await page.setViewportSize({width,height:Math.ceil((await page.locator('.cz-place-result-card').first().boundingBox()).height)+200});
- await page.locator('.cz-place-result-card').first().screenshot({path:path.join(output,`card-expanded-${theme}-${width}-${scale}.png`)});
+ await page.locator('.cz-place-result-card').first().screenshot({path:path.join(output,`card-expanded-${theme}-${width}-${scale}${suffix}.png`)});
  await page.locator('.cc-wellhub-card-access summary').first().click();
  await page.setViewportSize({width,height:Math.ceil((await page.locator('.cz-place-result-card').first().boundingBox()).height)+200});
- await page.locator('.cz-place-result-card').first().screenshot({path:path.join(output,`card-whole-${theme}-${width}-${scale}.png`)});
+ await page.locator('.cz-place-result-card').first().screenshot({path:path.join(output,`card-whole-${theme}-${width}-${scale}${suffix}.png`)});
  await page.locator('.cc-wellhub-traceability summary').click();
  const detailText=await page.locator('.cc-wellhub-traceability').innerText(); for(const expected of ['Plano mínimo','2026-10-10','fonte oficial','Agendamento necessário'])assert.ok(detailText.includes(expected),expected);
  await page.setViewportSize({width,height:Math.ceil((await page.locator('.cc-wellhub-detail').boundingBox()).height)+200});
- await page.locator('.cc-wellhub-detail').screenshot({path:path.join(output,`detail-expanded-${theme}-${width}-${scale}.png`)});
- await page.setViewportSize({width,height:844});
+ await page.locator('.cc-wellhub-detail').screenshot({path:path.join(output,`detail-expanded-${theme}-${width}-${scale}${suffix}.png`)});
+ await page.setViewportSize({width,height});
  await captureOverlayStyle.evaluate(e=>e.remove());
  await page.evaluate(()=>{for(const [e,s] of window.__wellhubCaptureAncestors){if(s===null)e.removeAttribute('style');else e.setAttribute('style',s);}delete window.__wellhubCaptureAncestors;});
  await page.locator('#fixture-top,#fixture-bottom').evaluateAll(es=>es.forEach(e=>e.style.visibility=''));
  assert.equal(await page.locator('#concierge-fixture a').count(),1);assert.equal(await page.locator('#concierge-fixture a').innerText(),'Ver no Wellhub');assert.equal(await page.locator('#concierge-fixture img').count(),0);assert.ok((await page.locator('#concierge-fixture').innerText()).includes('<img src=evil>'));
  assert.ok(geometry.some(g=>g.text.includes('🟢 Aberta pelo horário cadastrado')));assert.ok(geometry.some(g=>g.text.includes('🔴 Fechada pelo horário cadastrado')));assert.ok(geometry.some(g=>g.text.includes('🟡 Horário cadastrado incerto')));
- if(!baseline) for(const position of ['first','last']){const card=position==='first'?page.locator('.cz-place-result-card').first().locator('h3'):page.locator('.cz-place-result-card').last().locator('.cz-tool-actions button').last();await card.scrollIntoViewIfNeeded();await card.evaluate(e=>e.scrollIntoView({block:'center'}));const bounds=await card.boundingBox();assert.ok(bounds.y>=60&&bounds.y+bounds.height<=784,`card ${position} must clear fixed bars at ${width}/${scale}: ${JSON.stringify(bounds)}`);}
- await page.screenshot({path:path.join(output,`cards-${theme}-${width}-${scale}-last.png`)});
+ if(!baseline) for(const position of ['first','last']){const card=position==='first'?page.locator('.cz-place-result-card').first().locator('h3'):page.locator('.cz-place-result-card').last().locator('.cz-tool-actions button').last();await card.scrollIntoViewIfNeeded();await card.evaluate((e,{headerHeight,height})=>{e.scrollIntoView({block:'center'});if(height===430){const delta=e.getBoundingClientRect().top-headerHeight-12;let adjusted=false;for(let p=e.parentElement;p;p=p.parentElement){if(!['BODY','HTML'].includes(p.tagName)&&p.scrollHeight>p.clientHeight+1&&['auto','scroll'].includes(getComputedStyle(p).overflowY)){p.scrollTop+=delta;adjusted=true;break;}}if(!adjusted)window.scrollBy(0,delta);}}, {headerHeight,height});const bounds=await card.boundingBox();assert.ok(bounds.y>=headerHeight&&bounds.y+bounds.height<=height-footerHeight,`card ${position} must clear fixed bars at ${width}/${scale}/${height}: ${JSON.stringify(bounds)}`);const top=await page.locator('#fixture-top').boundingBox(),bottom=await page.locator('#fixture-bottom').boundingBox();assert.equal(top.y,0,'header stays fixed while content scrolls');assert.equal(bottom.y+bottom.height,height,'footer stays at viewport bottom');}
+ await page.screenshot({path:path.join(output,`cards-${theme}-${width}-${scale}${suffix}-last.png`)});
  await page.locator('.cz-place-result-card').first().evaluate(e=>e.scrollIntoView({block:'start'}));
- await page.screenshot({path:path.join(output,`cards-${theme}-${width}-${scale}.png`)});await page.close();
+ await page.screenshot({path:path.join(output,`cards-${theme}-${width}-${scale}${suffix}.png`)});await page.close();
 }
 }finally{await browser.close();}
-console.log(baseline ? 'Synthetic baseline geometry recorded; no positive layout assertion' : 'Actual prepared Wellhub card JSX/shipping CSS: long names/addresses, 320/390/768, enlarged font, no overlap, first/last clear fixed bars: PASS');
+console.log(baseline ? 'Synthetic baseline geometry recorded; no positive layout assertion' : 'Actual prepared Wellhub card JSX/shipping CSS: long names/addresses, 320/390/768, enlarged font, no overlap, first/last clear fixed bars, simulated keyboard/safe areas in light/dark: PASS');
