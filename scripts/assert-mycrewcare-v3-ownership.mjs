@@ -118,6 +118,19 @@ for (const path of mountable) {
   assert.doesNotMatch(read(path), /MyCrewCareV3Panel|useMyCrewCareV3|myCrewCareV3Runtime|myCrewCareController/, `${path} must not mount the disabled MyCrewCare interface`);
 }
 
+// The privacy P0 gate forbids user-facing corporate portal references. Enforce the
+// same list inside this slice so a violation cannot be discovered only in CI.
+for (const path of [
+  'client/src/components/mycrewcare/MyCrewCareV3Panel.tsx',
+  'client/src/hooks/useMyCrewCareV3.ts',
+  'client/src/lib/myCrewCareV3.ts',
+  'client/src/lib/myCrewCareV3Runtime.ts',
+  'docs/mycrewcare-v3-persistent-session.md',
+]) {
+  assert.doesNotMatch(read(path), /iFlight Admin|Calendar Sweep iFlight|conta corporativa|login corporativo/i,
+    `${path} must not carry a forbidden user-facing portal reference`);
+}
+
 const context = {
   accountId: 'account-guard',
   rosterId: 'roster-guard',

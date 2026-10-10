@@ -59,7 +59,7 @@ export default function MyCrewCareV3Panel({ context, stays }: Props) {
   return <section className="cz-toolbox cc-mycrewcare" aria-labelledby="cc-mycrewcare-title">
     <h3 id="cc-mycrewcare-title">MyCrewCare</h3>
     <p role="status">{message}{updated && snapshot.hasCachedData ? ` Última atualização ${updated}.` : ''}</p>
-    <p>A atualização acontece somente com o app aberto e pode pedir seu login corporativo. O CrewCheck não guarda sua senha nem faz consultas em segundo plano.</p>
+    <p>A atualização acontece somente com o app aberto e pode exigir que você entre novamente no portal. O CrewCheck não guarda sua senha nem faz consultas em segundo plano.</p>
     {snapshot.refreshSuggested && !snapshot.busy && <p>Há dados possivelmente desatualizados. Toque em atualizar quando quiser.</p>}
     <label>
       <input
