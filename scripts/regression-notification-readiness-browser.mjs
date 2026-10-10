@@ -48,6 +48,8 @@ try{
  await page.getByText('Canal Alertas CrewCheck bloqueado', {exact:false}).waitFor();
  await page.evaluate(()=>{window.nativeStatus={notifications:true};window.dispatchEvent(new Event('focus'));});
  await page.getByText('disponibilidade do canal ainda não verificada', {exact:false}).waitFor();
+ await page.evaluate(()=>{window.nativeStatus=null;window.dispatchEvent(new Event('focus'));});
+ await page.getByText('Permissão neste aparelho não verificada.', {exact:true}).waitFor();
  await page.evaluate(()=>{window.nativeStatus={notifications:false};window.dispatchEvent(new Event('crewcheck:permissions-updated'));});
  await page.getByRole('button',{name:'Solicitar permissão neste aparelho'}).click();
  assert.equal(await page.evaluate(()=>window.permissionsRequested),1);
