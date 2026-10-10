@@ -114,6 +114,9 @@ try {
    vm.runInContext(ts.transpileModule(compareStatements.join('\n')+'\nglobalThis.financial=financial;globalThis.labels=['+compareExpressions.join(',')+'];',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,compareContext);
    assert.equal(compareContext.financial.salaryReady,false);assert.equal(compareContext.financial.variableDelta,null);assert.equal(compareContext.financial.plannedGuaranteeReview,null);
    assert.match(compareContext.labels[0],/Não calculável/);assert.equal(compareContext.labels[1],'Comparação financeira pendente');assert.equal(compareContext.labels[2],'—');assert.doesNotMatch(compareContext.labels.join(' '),/Sem redução|R\$ 0/);
+   const validCompareContext=vm.createContext({useMemo:f=>f(),planned:{roster:'before'},bundle:{roster:'after'},comparison:{summary:{periodMatches:true}},financeSnapshot:()=>({salary:validSalary,perdiem:{nativeSummary:{}}}),nativeForecastDelta:()=>null,moneyBRL:context.subject.moneyBRL});
+   vm.runInContext(ts.transpileModule(compareStatements.join('\n')+'\nglobalThis.financial=financial;globalThis.labels=['+compareExpressions.join(',')+'];',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,validCompareContext);
+   assert.equal(validCompareContext.financial.salaryReady,true);assert.equal(validCompareContext.financial.variableDelta,0);assert.equal(validCompareContext.labels[1],'Sem redução detectada','complete unchanged amounts retain the existing valid claim');
    assert.equal(context.subject.moneyBRL(NaN),'Não calculável');assert.equal(context.subject.moneyBRL(null),'Não calculável');assert.match(context.subject.moneyBRL(0),/^R\$ 0/,'known zero remains valid');
    const previousRoles=events.map(e=>e.kind==='flight'?{...e,leg:{...e.leg,workType:['LA9001','LA9012'].includes(e.flightNumber)?'PS':'OP'}}:e);
    const beforeRoleCorrection=context.subject.calculateSalary(previousRoles,roster);
