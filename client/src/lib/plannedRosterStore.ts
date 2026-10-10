@@ -82,6 +82,6 @@ export function beginOwnedPlannedImport(): { session: string; canCommit(): boole
     });
   }
   const revision = ++importRevision;
-  const session = financialRateSession();
+  const session = financialRateSession() || '';
   return { session, canCommit: () => Boolean(session) && revision === importRevision && session === financialRateSession() };
 }
