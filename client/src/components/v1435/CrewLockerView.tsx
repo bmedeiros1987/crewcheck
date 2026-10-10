@@ -206,7 +206,7 @@ export default function CrewLockerView() {
               if (session !== crewLockerSession()) return; setEditing(null); await refresh();
             }}/>}
           </div>
-          <div className="actions"><button onClick={() => viewDocument(doc)} title="Abrir" aria-label="Abrir documento"><Eye/></button><button onClick={() => viewDocument(doc, true)} title="Baixar" aria-label="Baixar documento"><Download/></button><button onClick={() => removeDocument(doc)} title="Remover" aria-label="Remover documento"><Trash2/></button></div>
+          <div className="actions cc-locker-document-actions"><button onClick={() => viewDocument(doc)} title="Abrir" aria-label="Abrir documento"><Eye/></button><button onClick={() => viewDocument(doc, true)} title="Baixar" aria-label="Baixar documento"><Download/></button><button onClick={() => removeDocument(doc)} title="Remover" aria-label="Remover documento"><Trash2/></button></div>
         </article>;
       })}</div>}
       <p>Este acompanhamento não autoriza operação: fonte, assinatura, aptidão, treinamentos e demais requisitos operacionais exigem conferência própria. A licença de comissário é permanente; habilitações e CMA têm condições próprias. <a href="https://www.gov.br/pt-br/servicos/obter-autorizacao-para-trabalhar-como-comissario-de-voo" target="_blank" rel="noreferrer">Consultar ANAC</a>.</p>

@@ -29,6 +29,13 @@ for(const width of [320,390,1440])for(const theme of ['dark','light']){
  await page.getByLabel('Arquivo').setInputFiles({name:'synthetic.txt',mimeType:'application/octet-stream',buffer:Buffer.from('SYNTHETIC CONTENT; manual review; no personal document')});
  await page.getByRole('button',{name:'Criptografar e guardar offline'}).click();await page.getByRole('button',{name:'Revisar validades'}).click();
  const edit=page.getByRole('region',{name:'Revisão de validades'});
+ // Icon sizing must never shrink text actions; assert actual rendered text fits.
+ for(const name of ['Salvar revisão','Cancelar']) {
+  const button=edit.getByRole('button',{name,exact:true});
+  const sizing=await button.evaluate(el=>{const style=getComputedStyle(el);const canvas=document.createElement('canvas');const context=canvas.getContext('2d');context.font=style.font;const textWidth=context.measureText(el.textContent.trim()).width;const range=document.createRange();range.selectNodeContents(el);return {width:el.clientWidth,textWidth,contentWidth:el.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight),textLines:range.getClientRects().length};});
+  assert.ok(sizing.contentWidth+1>=sizing.textWidth,`${width}/${theme}: ${name} text fits button`);assert.equal(sizing.textLines,1,`${width}/${theme}: ${name} stays legible on one line`);
+ }
+
  await edit.getByLabel('Nome / tipo / classe').fill('SYNTHETIC TYPE B');await edit.getByLabel('Precisão da validade').selectOption('month');await edit.getByLabel('Mês e ano (sem inventar dia)').fill('2031-04');await edit.getByLabel('Conferi esta transcrição no documento').check();await edit.getByRole('button',{name:'Adicionar registro revisado'}).click();
  await edit.getByLabel('Categoria').selectOption('license');await edit.getByLabel('Nome / tipo / classe').fill('SYNTHETIC LICENSE');await edit.getByLabel('Precisão da validade').selectOption('permanent');await edit.getByLabel('Conferi esta transcrição no documento').check();await edit.getByRole('button',{name:'Adicionar registro revisado'}).click();
  await edit.getByLabel('Categoria').selectOption('medical');await edit.getByLabel('Nome / tipo / classe').fill('SYNTHETIC CLASS ONE');await edit.getByLabel('Precisão da validade').selectOption('exact');await edit.getByLabel('Data exata',{exact:true}).fill('2033-08-16');await edit.getByRole('button',{name:'Adicionar registro revisado'}).click();
