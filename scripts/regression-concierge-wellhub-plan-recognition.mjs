@@ -122,9 +122,9 @@ test('saved Basic is replaced by Silver+, survives reload, and remains distinct 
   assert.equal((await h.load()).preferences.wellhubPlan, 'silver-plus', 'the next request can recover the stored plan');
   const next = await h.send('academia em Guarulhos/SP');
   assert.equal(h.searches[0].plan, 'silver-plus');
-  assert.match(next, /seu plano Silver\+/);
-  assert.match(next, /incluído no seu Silver\+ · mínimo da unidade: Basic/);
-  assert.match(next, /incluído no seu Silver\+ · mínimo da unidade: Silver\+/);
+  assert.match(next, /Academias .*Silver\+/);
+  assert.match(next, /Plano mínimo: Basic · compatível com Silver\+ pelo cadastro/);
+  assert.match(next, /Plano mínimo: Silver\+ · compatível com Silver\+ pelo cadastro/);
   assert.doesNotMatch(next, /seu plano Basic|seu Basic|Synthetic Gold gym/);
   assert.equal(h.writes.length, 1, 'querying a gym must not overwrite the saved tier');
   assert.equal((await h.load()).preferences.wellhubPlan, 'silver-plus');
@@ -158,7 +158,7 @@ test('wellhub gym names and unit tier text leave the persisted user plan untouch
   const h = harness('silver-plus');
   for (const phrase of ["A Gold's Gym aceita Wellhub?", 'O mínimo da unidade Wellhub é Basic']) {
     const reply = await h.send(phrase);
-    assert.match(reply, /seu plano Silver\+/);
+    assert.match(reply, /Academias .*Silver\+/);
     assert.equal((await h.load()).preferences.wellhubPlan, 'silver-plus');
   }
   assert.equal(h.writes.length, 0);

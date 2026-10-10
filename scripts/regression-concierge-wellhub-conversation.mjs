@@ -157,7 +157,7 @@ for (const channel of ['telegram', 'whatsapp', 'app']) {
     for (const [phrase, key, wanted] of [['Meu plano é silver+', 'wellhubPlan', 'silver-plus'], ['uso Gold', 'wellhubPlan', 'gold'], ['quero Pilates', 'gymActivity', 'Pilates']]) {
       const h = harness();
       const first = await h.send(channel, '/academias');
-      assert.match(first, /seu plano Basic/);
+      assert.match(first, /Academias .*Basic/);
       assert.match(first, /meu plano é Silver\+/);
       assert.equal((await h.load()).preferences.conciergeConversation.lastIntent, 'gym');
       const reply = await h.send(channel, phrase);
@@ -327,8 +327,8 @@ test('Fortaleza official catalog through actual Telegram, WhatsApp and app routi
     h.seed({ wellhubPlan: 'silver-plus' });
     for (const text of ['/academias', 'academia em Fortaleza/CE', 'academia Greenlife']) {
       const reply = await h.send(channel, text);
-      assert.match(reply, /seu plano Silver\+/);
-      assert.equal((reply.match(/Acesso: ✓/g) || []).length, text.endsWith('Greenlife') ? 2 : 4);
+      assert.match(reply, /Academias · Fortaleza\/CE · Silver\+/);
+      assert.equal((reply.match(/compatível com Silver\+ pelo cadastro/g) || []).length, text.endsWith('Greenlife') ? 2 : 4);
       assert.match(reply, /Fortaleza\/CE/);
       assert.doesNotMatch(reply, /Brasília|\/DF|\/SP/);
       assert.equal(h.trace.gyms.at(-1), text);

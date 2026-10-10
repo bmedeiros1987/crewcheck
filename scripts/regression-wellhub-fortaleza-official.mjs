@@ -55,8 +55,8 @@ vm.runInContext(snippet + '\nthis.reply = conciergeGymsReply;', context);
 const snapshot = { roster: { base: 'BSB' }, preferences: { gymPlan: 'wellhub', wellhubPlan: 'silver-plus' } };
 for (const text of ['/academias', 'academias perto de mim', 'academia em Fortaleza/CE']) {
   const reply = await context.reply(snapshot, text);
-  assert.match(reply, /seu plano Silver\+/);
-  assert.equal((reply.match(/Acesso: ✓/g) || []).length, 4);
+  assert.match(reply, /Academias · Fortaleza\/CE · Silver\+/);
+  assert.equal((reply.match(/compatível com Silver\+ pelo cadastro/g) || []).length, 4);
   assert.match(reply, /Greenlife Messejana/);
   assert.match(reply, /Greenlife Cambeba/);
   assert.match(reply, /Porão Academia Messejana/);
