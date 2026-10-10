@@ -12,6 +12,8 @@ import {
   isConciergeContextFreshV14341 as isConciergeContextFreshV14338,
 } from '../server/v14341/concierge-semantic.mjs';
 import { stayMenuReply } from '../server/concierge/stay-menu.mjs';
+import { companyTransportReply } from '../server/concierge/company-transport.mjs';
+import { companyTransportIntent } from '../shared/companyTransportIntent.mjs';
 import * as wellhub from '../server/v14407/wellhub.mjs';
 import * as preferences from '../server/v14410/wellhub-concierge.mjs';
 import * as personality from '../server/v14336/concierge-personality.mjs';
@@ -84,7 +86,7 @@ function harness() {
     publicConciergeVoiceCatalogV14336: personality.publicConciergeVoiceCatalog,
     normalizeConciergeVoiceProfileV14336: personality.normalizeConciergeVoiceProfile,
     decorateConciergeReplyV14336: personality.decorateConciergeReply,
-    pharmacyReferenceReply, stayMenuReply,
+    pharmacyReferenceReply, stayMenuReply, companyTransportReply, companyTransportIntent,
     process: { env: {} }, console,
     telegramRostersRead: () => clone(local),
     telegramRostersWrite: value => { local = clone(value); return true; },
