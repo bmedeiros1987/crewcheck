@@ -5,6 +5,7 @@ import { PBS_OFFICIAL_WINDOWS, officialPbsWindow } from '@/data/pbsWindows';
 import { downloadBlob, notifyLocal, v139Api } from './api';
 import { V139Header } from './Shell';
 import { authFetch, getToken } from '@/lib/authClient';
+import { BidsAlertPreferences } from './BidsAlertPreferences';
 import './v139.css';
 
 async function accountApi(path: string, options: RequestInit = {}) {
@@ -203,6 +204,7 @@ export default function BidsWindowsView() {
 
   return <>
     <V139Header title="BIDS / PBS" detail="Janelas cadastradas e calendário. Envio externo depende de vínculo e agendador validado."/>
+    <BidsAlertPreferences />
     <section className="cc139-grid">
       <article><CalendarDays/><span>Janelas salvas</span><strong>{windows.length}</strong></article>
       <article><Bell/><span>Abertas agora</span><strong>{openCount}</strong></article>

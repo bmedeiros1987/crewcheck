@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 type Status = { notifications?: boolean; notificationAppEnabled?: boolean; notificationChannelEnabled?: boolean | null };
 
-function readStatus(): { native: boolean; status: Status } {
+export function readStatus(): { native: boolean; status: Status } {
   const native = window.CrewCheckNative || window.AndroidCrewCheckNative;
   try {
     if (native?.permissionStatus) {
