@@ -1,6 +1,7 @@
 import {simulatedWorker,WORKER_SCOPE,localProviderStats} from '../server/free-day-simulated-worker.mjs';
 import {personalConsent,PERSONAL_SCOPE} from '../server/free-day-personal-consent.mjs';
 import assert from 'node:assert/strict';
+import {mutateInstallation,revokeAccountInstallations,installationStateKey} from '../server/web-push/installationRegistry.mjs';
 import fs from 'node:fs';
 import mysql from 'mysql2/promise';
 import os from 'node:os';
@@ -67,6 +68,21 @@ try {
     assert.equal((await invoke()).status,401,'stale GET rejected by current SQL owner binding');
     assert.equal((await invoke({...winning,requestId:'stale_write',expectedRevision:2})).status,401);
     await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',[owner,email]);
+  });
+
+  await run('CrewCheck push registry SQL locks account/endpoint, isolates owners and revokes without browser subscription',async()=>{
+    const subscription={endpoint:'https://fcm.googleapis.com/synthetic-endpoint',keys:{p256dh:Buffer.from('046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5','hex').toString('base64url'),auth:Buffer.alloc(16,3).toString('base64url')}};
+    const input={identity:{email,ownerId:'fictional-owner'},installationId:'device_fixture_1',expectedRevision:0,action:'subscribe',consent:true,subscription,key:Buffer.alloc(32,1),now:Date.parse('2026-10-11T09:00:00Z')};
+    const [profile]=await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=?',[email]);input.identity.ownerId=profile[0].public_id;
+    const concurrent=await Promise.allSettled([mutateInstallation(db,input),mutateInstallation(db,input)]);
+    assert.equal(concurrent.filter(result=>result.status==='fulfilled').length,1);assert.equal(concurrent.find(result=>result.status==='rejected').reason.status,409);
+    const stateKey=installationStateKey(subscription.endpoint),[rows]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[stateKey]);
+    assert(!JSON.stringify(rows[0].payload).includes(subscription.endpoint));
+    await assert.rejects(mutateInstallation(db,{...input,expectedRevision:1,identity:{email,ownerId:'stale_owner'}}),error=>error.status===401);
+    assert.equal((await revokeAccountInstallations(db,input.identity,'other_device',input.now)).revoked,0);
+    assert.equal((await revokeAccountInstallations(db,input.identity,input.installationId,input.now)).revoked,1);
+    assert.equal((await revokeAccountInstallations(db,input.identity,input.installationId,input.now)).revoked,0);
+    const [after]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[stateKey]);const state=typeof after[0].payload==='string'?JSON.parse(after[0].payload):after[0].payload;assert.equal(state.active,false);assert.equal(state.sealed,null);
   });
 
   await run('strict MySQL reproduces rejected ISO heartbeat and persists corrected writer across restart/timezone',async()=>{
