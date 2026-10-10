@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { handleBidsCore } from '../server/v139/bidsCore.mjs';
+import { handleBidsAlertPreferences } from '../server/v139/bidsAlertPreferences.mjs';
 import { notifyBidRows, claimBid } from '../server/v139/bidsNotify.mjs';
 import { confirmCycle, cycleJobPrefix, cycleStateKey, LEAVE_CYCLE } from '../server/v139/notificationCycles.mjs';
 import { FREE_DAY_SCOPE, mutateFreeDayHeld, readFreeDayHeldState } from '../server/free-day-held.mjs';
@@ -44,6 +45,29 @@ try {
   const queue=fs.readFileSync('server/telegram-fast-ack.mjs','utf8');
   await db.query(queue.match(/await db\.query\(`(CREATE TABLE IF NOT EXISTS crewcheck_notification_jobs[\s\S]*?)`\)/)[1]);
   await db.query('INSERT INTO crewcheck_platform_profiles VALUES(?,?,?)',[email,owner,new Date('2020-01-01T00:00:00Z')]);
+
+  await run('BIDS channel preferences: real SQL owner lock, CAS, idempotency and observational GET without campaign or sends',async()=>{
+    const invoke=async body=>{
+      const response={status:200,setHeader(){},writeHead(status){this.status=status;},end(value){this.data=JSON.parse(value);}};
+      try{await handleBidsAlertPreferences({method:body?'POST':'GET'},response,new URL('https://fixture.invalid/api/platform/bids/alert-preferences'),{identify:async()=>({db,email,profile:{public_id:owner},payload:{sub:owner}}),read:async()=>body});}
+      catch(error){response.status=error.status||500;response.data={message:error.message};}
+      return response;
+    };
+    const [before]=await db.query('SELECT state_key,payload,updated_at FROM crewcheck_telegram_state ORDER BY state_key');
+    const firstRead=await invoke();assert.equal(firstRead.status,200);assert.equal(firstRead.data.preferences.enabled,false);assert.equal(firstRead.data.plan.reason,'official_data_pending');
+    const [after]=await db.query('SELECT state_key,payload,updated_at FROM crewcheck_telegram_state ORDER BY state_key');assert.deepEqual(after,before);
+    const preferences={enabled:true,mode:'auto',preferredTime:'10:30',quietStart:'22:00',quietEnd:'08:00',timezone:'UTC',channels:{all:true,individual:{mobilePwa:false,watch:true,crewCierge:false}}};
+    const attempts=['first_request','second_request'].map(requestId=>({action:'save-preferences',expectedRevision:0,requestId,preferences}));
+    const results=await Promise.all(attempts.map(invoke));assert.deepEqual(results.map(result=>result.status).sort(),[200,409]);
+    const winning=attempts[results.findIndex(result=>result.status===200)];assert.equal((await invoke(winning)).data.revision,1);
+    const updated=await invoke({...winning,requestId:'toggle_all_off',expectedRevision:1,preferences:{...preferences,mode:'manual',channels:{...preferences.channels,all:false}}});
+    assert.equal(updated.status,200);assert.deepEqual(updated.data.preferences.channels.individual,preferences.channels.individual);assert.equal(updated.data.preferences.preferredTime,'10:30');assert(updated.data.channelStates.every(channel=>channel.deliveryAllowed===false&&channel.received===null));
+    assert.equal((await invoke({action:'already-did',requestId:'forged_receipt',expectedRevision:2,confirmed:true,contextKey:'fake',campaign:{verified:true}})).status,409);
+    await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',['recreated-BIDS-owner',email]);
+    assert.equal((await invoke()).status,401,'stale GET rejected by current SQL owner binding');
+    assert.equal((await invoke({...winning,requestId:'stale_write',expectedRevision:2})).status,401);
+    await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',[owner,email]);
+  });
 
   await run('strict MySQL reproduces rejected ISO heartbeat and persists corrected writer across restart/timezone',async()=>{
     const source=fs.readFileSync('server/telegram-fast-ack.mjs','utf8');

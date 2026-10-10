@@ -95,6 +95,7 @@ jobs:
           node scripts/regression-emergency-center-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-readiness-browser.mjs
+          node scripts/regression-bids-alert-preferences-browser.mjs
       - name: Prepare canonical application sources
         run: node scripts/v139/apply.mjs
       - name: Test actual EmergencyCenter after source preparation
@@ -104,6 +105,7 @@ jobs:
           node scripts/regression-emergency-center-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-readiness-browser.mjs
+          node scripts/regression-bids-alert-preferences-browser.mjs
           node scripts/regression-wakeup-session-browser.mjs
   web-and-server:
     name: Web, TypeScript and server
@@ -122,6 +124,8 @@ jobs:
         run: |
           node scripts/regression-bids-delivery.mjs
           node scripts/regression-bids-editing.mjs
+          node scripts/regression-bids-alert-policy.mjs
+          node scripts/regression-bids-alert-preferences.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-free-day-held.mjs
           node scripts/regression-free-day-sources.mjs
@@ -144,6 +148,8 @@ jobs:
         run: |
           node scripts/regression-bids-delivery.mjs
           node scripts/regression-bids-editing.mjs
+          node scripts/regression-bids-alert-policy.mjs
+          node scripts/regression-bids-alert-preferences.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-free-day-held.mjs
           node scripts/regression-free-day-sources.mjs
