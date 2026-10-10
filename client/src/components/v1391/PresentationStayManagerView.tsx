@@ -112,7 +112,8 @@ export default function PresentationStayManagerView({ events }: { events: Roster
       airport: saved?.airport || selected.destination || selected.origin || '',
       stayDate: date,
       room: saved?.room || '',
-      presentationTime: saved?.presentationTime || (selected.presentation && selected.presentation !== 'Conexão/Solo' ? selected.presentation : ''),
+      // A stay's roster start/check-in is not a hotel presentation or pickup.
+      presentationTime: saved?.presentationTime || (selected.kind !== 'stay' && selected.presentation && selected.presentation !== 'Conexão/Solo' ? selected.presentation : ''),
       leadMinutes: String(saved?.leadMinutes || 90),
       shareSameHotel: Boolean(saved?.shareSameHotel),
     });
