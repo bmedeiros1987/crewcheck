@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 for (const name of [
   'CIRIUM_SKY_API_TOKEN', 'CIRIUM_SKY_SECRET', 'CIRIUM_SKY_IDENTIFIER', 'CIRIUM_SKY_BASE_URL',
-  'CIRIUM_APP_ID', 'CIRIUM_APP_KEY',
+  'CIRIUM_APP_ID', 'CIRIUM_APP_KEY', 'CIRIUM_DIAGNOSTIC_ALLOW_LEGACY_FLEX',
 ]) process.env[name] = '';
 process.env.CIRIUM_DIAGNOSTIC_ENABLED = 'true';
 
@@ -84,6 +84,9 @@ process.env.CIRIUM_SKY_SECRET = '';
 process.env.CIRIUM_SKY_IDENTIFIER = '';
 process.env.CIRIUM_APP_ID = 'test-app-id';
 process.env.CIRIUM_APP_KEY = 'test-app-key';
+assert.equal(ciriumConfiguration().mode, 'none', 'legacy Flex credentials need their own explicit opt-in');
+assert.equal(ciriumConfiguration().configured, false);
+process.env.CIRIUM_DIAGNOSTIC_ALLOW_LEGACY_FLEX = 'true';
 assert.equal(ciriumConfiguration().mode, 'flex');
 let flexUrl = '';
 const legacy = await diagnoseCirium({ fetchImpl: async (url) => {
@@ -94,6 +97,7 @@ assert.equal(legacy.provider, 'cirium-flightstats');
 assert.match(flexUrl, /appId=test-app-id/);
 assert.match(flexUrl, /appKey=test-app-key/);
 assert.equal(JSON.stringify(legacy).includes('test-app'), false);
+process.env.CIRIUM_DIAGNOSTIC_ALLOW_LEGACY_FLEX = '';
 
 const source = await (await import('node:fs/promises')).readFile(new URL('../server/platform.mjs', import.meta.url), 'utf8');
 assert.match(source, /identity\.authenticated/);

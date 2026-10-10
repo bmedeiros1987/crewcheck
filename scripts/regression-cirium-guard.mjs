@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 // Synthetic only. The offline runner supplies an empty environment and forbids real fetch.
 process.env.CIRIUM_DIAGNOSTIC_ENABLED = 'true';
 process.env.CIRIUM_SKY_API_TOKEN = 'fixture-token';
-const { diagnoseCirium, diagnoseCiriumFlight, createCiriumGuard, normalizeCiriumResult } = await import('../server/cirium-diagnostic.mjs');
+const { ciriumConfiguration, diagnoseCirium, diagnoseCiriumFlight, createCiriumGuard, normalizeCiriumResult } = await import('../server/cirium-diagnostic.mjs');
 
 const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
 const ok = (body, status = 200) => ({ status, json: async () => body });
@@ -153,6 +153,67 @@ assert.equal((await flightWith({}, 404)).ok, false);
   const src = await (await import('node:fs/promises')).readFile(new URL('../server/v1412/ciriumHealth.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(src, /['"]HEAD['"]/, 'cirium-health must not accept HEAD');
   assert.match(src, /req\.method !== 'GET'/);
+}
+
+// --- a provider 429 becomes a cooldown, never an automatic retry ------------
+{
+  let clock = 5_000_000;
+  const guard = createCiriumGuard({ maxCalls: 5, minIntervalMs: 0, cacheTtlMs: 0, now: () => clock });
+  const limited = counting(async () => ({ status: 429, headers: { get: (name) => (name === 'retry-after' ? '90' : null) }, json: async () => null }));
+  const quota = await diagnoseCiriumFlight({ carrier: 'LA', flight: '3850', date: today, fetchImpl: limited, guard });
+  assert.equal(quota.state, 'quota');
+  assert.equal(limited.calls, 1);
+
+  const cooldown = await diagnoseCiriumFlight({ carrier: 'LA', flight: '3851', date: today, fetchImpl: limited, guard });
+  assert.equal(cooldown.ok, false);
+  assert.equal(cooldown.state, 'provider_cooldown');
+  assert.equal(cooldown.upstreamCalled, false);
+  assert.equal(cooldown.retryAfterAt, new Date(clock + 90_000).toISOString());
+  assert.equal(limited.calls, 1, 'a provider 429 must not be retried automatically');
+
+  clock += 90_001;
+  const afterCooldown = await diagnoseCiriumFlight({
+    carrier: 'LA', flight: '3852', date: today, guard,
+    fetchImpl: counting(async () => ok({ flightStatuses: [row()] })),
+  });
+  assert.equal(afterCooldown.state, 'invalid_payload', 'the guard resumes only after the cooldown expires');
+}
+
+// a 429 without Retry-After still stops the diagnostic for the fallback window
+{
+  let clock = 6_000_000;
+  const guard = createCiriumGuard({ maxCalls: 5, minIntervalMs: 0, cacheTtlMs: 0, now: () => clock });
+  const limited = counting(async () => ({ status: 429, headers: { get: () => null }, json: async () => null }));
+  await diagnoseCiriumFlight({ carrier: 'LA', flight: '3850', date: today, fetchImpl: limited, guard });
+  const cooldown = await diagnoseCiriumFlight({ carrier: 'LA', flight: '3851', date: today, fetchImpl: limited, guard });
+  assert.equal(cooldown.state, 'provider_cooldown');
+  assert.equal(cooldown.retryAfterAt, new Date(clock + 60_000).toISOString());
+  assert.equal(limited.calls, 1);
+}
+
+// --- the legacy Flex probe needs its own explicit opt-in --------------------
+{
+  const previous = {
+    token: process.env.CIRIUM_SKY_API_TOKEN,
+    id: process.env.CIRIUM_APP_ID,
+    key: process.env.CIRIUM_APP_KEY,
+    flag: process.env.CIRIUM_DIAGNOSTIC_ALLOW_LEGACY_FLEX,
+  };
+  process.env.CIRIUM_SKY_API_TOKEN = '';
+  process.env.CIRIUM_APP_ID = 'fixture-id';
+  process.env.CIRIUM_APP_KEY = 'fixture-key';
+  delete process.env.CIRIUM_DIAGNOSTIC_ALLOW_LEGACY_FLEX;
+  assert.equal(ciriumConfiguration().mode, 'none', 'Flex credentials alone must not enable a probe');
+  assert.equal(ciriumConfiguration().configured, false);
+  process.env.CIRIUM_DIAGNOSTIC_ALLOW_LEGACY_FLEX = 'TRUE';
+  assert.equal(ciriumConfiguration().mode, 'none', 'the opt-in must be the exact raw value true');
+  process.env.CIRIUM_DIAGNOSTIC_ALLOW_LEGACY_FLEX = 'true';
+  assert.equal(ciriumConfiguration().mode, 'flex');
+  process.env.CIRIUM_SKY_API_TOKEN = previous.token;
+  process.env.CIRIUM_APP_ID = previous.id;
+  process.env.CIRIUM_APP_KEY = previous.key;
+  if (previous.flag === undefined) delete process.env.CIRIUM_DIAGNOSTIC_ALLOW_LEGACY_FLEX;
+  else process.env.CIRIUM_DIAGNOSTIC_ALLOW_LEGACY_FLEX = previous.flag;
 }
 
 console.log('Cirium guard/validation regression OK; no upstream calls');

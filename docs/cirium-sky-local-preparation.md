@@ -1,27 +1,34 @@
 # Cirium Sky: preparação offline
 
-Base inspecionada: main `cea3bfff835707ac08e7a842b9ebdab373f2789a`.
+Base inspecionada: main `500fb1c3` (merge da PR #986), trazido para este branch.
 Branch da proteção: `safety/cirium-diagnostic-off-by-default`.
 Nenhum AGENTS.md ou SKILL.md versionado foi encontrado no checkout.
 
 ## Pacote independente
 
-Esta proteção adiciona executor offline, regressão e opt-in explícito no diagnóstico.
-O workflow Cirium existente executa o harness offline e o teste de occurrence identity.
-Não modifica rotas, adapter, consenso Radar ou configuração de serviços.
-Não contém credenciais, não exige conta e não faz consultas Cirium.
+Esta proteção adiciona executor offline, regressões e opt-ins explícitos no
+diagnóstico. O workflow Cirium existente executa o harness offline e o teste de
+occurrence identity. Não modifica rotas de negócio, adapter canônico, consenso
+Radar ou configuração de serviços. Não contém credenciais, não exige conta e não
+faz consultas Cirium.
 
 Execute `node scripts/check-cirium-offline.mjs`. O processo filho começa com
 ambiente vazio antes de importar os módulos. Fetch real é bloqueado; os testes
 existentes utilizam valores sintéticos e mocks injetados. São reutilizadas as
-regressões diagnostic, canonical-adapter e radar-field-provenance.
-O novo teste também comprova que a configuração desligada não lê credenciais.
+regressões guard, diagnostic, canonical-adapter e radar-field-provenance.
+O teste de portão também comprova que a configuração desligada não lê credenciais.
+
+## Portão e opt-ins
 
 `CIRIUM_DIAGNOSTIC_ENABLED` precisa ser exatamente `true` para habilitar o
 diagnóstico; ausente, vazio ou qualquer outra string mantém `disabled`.
 O gate fica antes de ler tokens ou chaves e bloqueia tanto Sky quanto Flex.
-É preparação local, sem publicação: o ambiente atualmente em produção continua
-exigindo que o usuário não insira token até revisão e implantação autorizadas.
+
+O probe Flex legado tem um opt-in separado: `CIRIUM_DIAGNOSTIC_ALLOW_LEGACY_FLEX`
+precisa ser exatamente `true`. Credenciais Flex nunca são usadas como fallback
+automático do probe Sky. É preparação local, sem publicação: o ambiente
+atualmente em produção continua exigindo que o usuário não insira token até
+revisão e implantação autorizadas.
 
 ## Contratos encontrados
 
@@ -54,15 +61,18 @@ ao probe Sky atual, que consulta um voo real.
    revisará separadamente esta proteção local.
 2. Validar endpoint status, schema, janela de datas e direitos da conta com
    documentação oficial. Informação de plano gratuito não comprova cobertura.
-3. Revisar o opt-in explícito preparado neste pacote e sua regressão. Não inserir
-   token no serviço publicado até que a proteção seja implantada com autorização.
+3. Revisar os opt-ins explícitos preparados neste pacote e suas regressões. Não
+   inserir token no serviço publicado até que a proteção seja implantada com
+   autorização.
 4. ~~HEAD / orçamento~~ Implementado nesta branch (pendente de revisão):
    `/api/admin/cirium-health` aceita apenas GET; `createCiriumGuard` limita o
    processo a 6 consultas reais, intervalo mínimo de 30 s, cache de 10 min
-   (inclusive de falhas) e dedupe de consultas simultâneas idênticas. O
-   orçamento nunca é reembolsado e não há polling, retry ou fallback Flex.
-   O teto numérico é provisório: o orçamento aprovado pelo usuário ainda deve
-   ser definido antes de qualquer teste real.
+   (inclusive de falhas) e dedupe de consultas simultâneas idênticas. Um `429`
+   do provedor vira cooldown (`provider_cooldown`) a partir de `Retry-After`,
+   com fallback conservador de 60 s quando o header não vem — nunca uma nova
+   tentativa automática. O orçamento nunca é reembolsado e não há polling, retry
+   nem fallback de provedor. O teto numérico é provisório: o orçamento aprovado
+   pelo usuário ainda deve ser definido antes de qualquer teste real.
 5. ~~Resultados ambíguos~~ Implementado: 404/405 → `unverified` (não provam
    autenticação); 2xx com corpo inválido → `invalid_payload`; carrier, voo e
    data inválidos são rejeitados localmente sem consumir orçamento (sem
@@ -71,6 +81,23 @@ ao probe Sky atual, que consulta um voo real.
    contadas em `rejectedRows`; `null`/vazio/booleano numérico permanece `null`
    (nunca 0). Ainda pendente: schema oficial do endpoint Sky.
 6. Reexecutar os mocks e revisar patch antes de autorizar qualquer teste real.
+
+## Escopo do orçamento
+
+O guard vive em um processo Node: ele zera em reinício ou deploy e não é
+compartilhado entre instâncias. Ele reduz gasto acidental, mas não substitui a
+quota do provedor.
+
+## O que este pacote não faz
+
+- nenhuma consulta real, nenhum token inserido, nenhum segredo lido;
+- nenhuma alteração de `render.yaml`, `.env.example`, secrets, permissões ou custo;
+- nenhum merge, deploy ou publicação.
+
+**A proteção só passa a valer no serviço publicado depois do merge e do deploy
+desta PR.** Até lá, a revisão principal continua podendo consultar a API quando
+um token estiver presente, porque o portão ainda não está publicado. Nada neste
+pacote autoriza inserir token.
 
 ## Entrada segura futura pelo usuário
 
@@ -81,14 +108,15 @@ ausente ou `false`; somente definir `true` com autorização específica para o 
 Não copiar o segredo compartilhado
 na conversa. Não registrar valores em Git, arquivos locais, comandos, logs ou
 mensagens. Não configurar aliases ou credenciais Flex como fallback.
-O opt-in deverá permanecer desligado até a validação autorizada.
+Os opt-ins deverão permanecer desligados até a validação autorizada.
 Nenhuma ativação ou teste real está incluído neste pacote.
 
 ## Validação nesta tarefa
 
-Node 22.23.3 encontrado em `.local/node/node-v22.23.3-darwin-arm64/bin/node`.
-Harness executado com sucesso: disabled-by-default, guard/validação (`regression-cirium-guard.mjs`), diagnostic Sky/Flex,
-canonical-adapter e radar-field-provenance. Nenhuma instalação necessária,
-nenhuma consulta real, nenhum segredo herdado pelo processo filho.
+Node 22.13.0 (mesma versão fixada no workflow). Harness executado com sucesso:
+disabled-by-default, guard/validação (`regression-cirium-guard.mjs`, incluindo
+cooldown de 429 e opt-in Flex), diagnostic Sky/Flex, canonical-adapter e
+radar-field-provenance. Nenhuma instalação necessária, nenhuma consulta real,
+nenhum segredo herdado pelo processo filho.
 Os demais problemas citados acima permanecem pendentes: estes testes não
 comprovam o contrato Sky público, cobertura de conta ou custo de consultas.

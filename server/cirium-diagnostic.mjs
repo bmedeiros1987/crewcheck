@@ -41,7 +41,10 @@ export function ciriumConfiguration() {
     };
   }
 
-  if (appId && appKey) {
+  // The legacy FlightStats probe is not evidence of the Sky contract. It stays
+  // unreachable unless a separate, explicit opt-in is present; Flex credentials
+  // are never an automatic fallback for the Sky probe.
+  if (appId && appKey && process.env.CIRIUM_DIAGNOSTIC_ALLOW_LEGACY_FLEX === 'true') {
     return {
       mode: 'flex',
       provider: 'cirium-flightstats',
@@ -205,6 +208,17 @@ function skyFlightUrl(config, carrier, flight, date) {
   return url;
 }
 
+// Conservative fallback used when a 429 does not carry a usable Retry-After.
+const CIRIUM_RATE_LIMIT_FALLBACK_MS = 60_000;
+function retryAfterMs(response, fallback = CIRIUM_RATE_LIMIT_FALLBACK_MS) {
+  // A missing header must not be coerced: Number(null) is 0, which would read as
+  // "retry immediately" instead of the conservative fallback.
+  const raw = response?.headers?.get?.('retry-after');
+  if (typeof raw !== 'string' || !raw.trim()) return fallback;
+  const seconds = Number(raw);
+  return Number.isFinite(seconds) && seconds >= 0 && seconds <= 86_400 ? Math.round(seconds * 1_000) : fallback;
+}
+
 async function fetchJson(url, options, fetchImpl) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CIRIUM_TIMEOUT_MS);
@@ -237,12 +251,29 @@ export function createCiriumGuard({ maxCalls, minIntervalMs, cacheTtlMs, now = D
   const inflight = new Map();
   let calls = 0;
   let lastStartedAt = -Infinity;
+  let cooldownUntil = -Infinity;
   return {
     get calls() { return calls; },
+    /** Records a provider 429 as a cooldown so it is never retried automatically. */
+    noteRateLimit(retryAfterMs) {
+      const requested = Number(retryAfterMs);
+      const until = now() + (Number.isFinite(requested) && requested > 0 ? requested : 0);
+      if (until > cooldownUntil) cooldownUntil = until;
+      return cooldownUntil;
+    },
     async run(key, task) {
       const cached = cache.get(key);
       if (cached && now() - cached.at < limits.cacheTtlMs) return { ...cached.value, cached: true };
       if (inflight.has(key)) return inflight.get(key);
+      if (now() < cooldownUntil) {
+        return {
+          ok: false,
+          state: 'provider_cooldown',
+          reason: 'retry_after',
+          upstreamCalled: false,
+          retryAfterAt: new Date(cooldownUntil).toISOString(),
+        };
+      }
       if (calls >= limits.maxCalls) return { ok: false, state: 'budget_exhausted', reason: 'session_budget', upstreamCalled: false };
       if (now() - lastStartedAt < limits.minIntervalMs) return { ok: false, state: 'rate_limited_local', reason: 'min_interval', upstreamCalled: false };
       calls += 1;
@@ -305,6 +336,7 @@ export async function diagnoseCirium({ fetchImpl = globalThis.fetch, guard = def
           redirect: 'error',
         }, fetchImpl);
         const status = Number(response.status) || null;
+        if (status === 429) guard.noteRateLimit?.(retryAfterMs(response));
         let state = normalizeCiriumResult(status, payload);
         // A 2xx with an unusable body proves nothing about the account.
         if (state === 'available' && !(jsonObject(payload) && Array.isArray(payload.flightStatuses))) state = 'invalid_payload';
@@ -325,6 +357,7 @@ export async function diagnoseCirium({ fetchImpl = globalThis.fetch, guard = def
         method: 'GET', headers: { accept: 'application/json' }, redirect: 'error',
       }, fetchImpl);
       const status = Number(response.status) || null;
+      if (status === 429) guard.noteRateLimit?.(retryAfterMs(response));
       let state = normalizeCiriumResult(status, payload);
       if (state === 'available' && !(jsonObject(payload) && Array.isArray(payload.airlines))) state = 'invalid_payload';
       return { ok: state === 'available', provider: config.provider, state, configured: true, httpStatus: status };
@@ -370,6 +403,7 @@ export async function diagnoseCiriumFlight({ carrier, flight, date, fetchImpl = 
   return guard.run(`flight:${config.mode}:${safeCarrier}:${safeFlight}:${localDate}`, async () => {
     try {
       const { response, payload } = await fetchJson(url, { method: 'GET', headers, redirect: 'error' }, fetchImpl);
+      if (Number(response.status) === 429) guard.noteRateLimit?.(retryAfterMs(response));
       const state = normalizeCiriumResult(response.status, payload);
       if (response.status < 200 || response.status >= 300) {
         return { ok: false, provider: config.provider, state, configured: true, httpStatus: response.status };

@@ -16,6 +16,8 @@ on:
       - 'scripts/regression-cirium-canonical-adapter.mjs'
       - 'scripts/regression-radar-occurrence-identity.mjs'
       - 'scripts/regression-radar-field-provenance.mjs'
+      - 'docs/cirium-sky-local-preparation.md'
+      - 'docs/cirium-evaluation-diagnostic.md'
       - '.env.example'
       - 'render.yaml'
       - '.github/workflows/cirium-sky-trial.yml'
@@ -38,4 +40,4 @@ jobs:
       - name: Radar occurrence identity contract
         run: node scripts/regression-radar-occurrence-identity.mjs
       - name: Cirium admin route syntax
-        run: node --check server/v1412/ciriumHealth.mjs && node --check server/v139/index.mjs && node --check server/radar-occurrence-identity.mjs && node --check server/radar-field-provenance.mjs
+        run: node --check server/v1412/ciriumHealth.mjs && node --check server/v139/index.mjs && node --check server/radar-occurrence-identity.mjs && node --check server/radar-field-provenance.mjs && node --check server/cirium-diagnostic.mjs && node --check server/cirium-flight-adapter.mjs
