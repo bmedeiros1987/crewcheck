@@ -1,0 +1,210 @@
+{
+  "_comentario": [
+    "Modelo de configuracao do Laurinha Connected Hub.",
+    "Copie para um arquivo proprio e aponte LAURINHA_HUB_CONFIG para ele.",
+    "",
+    "IMPORTANTE: os entity_id abaixo marcados com TROCAR sao PLACEHOLDERS.",
+    "O Hub nao adivinha ID: enquanto uma acao nao estiver configurada com os",
+    "IDs reais da sua casa, ela responde 'action_not_configured' dizendo qual",
+    "chave falta. Isso e proposital - e melhor que acender a luz errada.",
+    "",
+    "Os media_player em 'outputs' sao os unicos IDs ja preenchidos, porque",
+    "foram informados para este projeto."
+  ],
+  "defaultOutput": "tv",
+  "outputs": [
+    {
+      "id": "tv",
+      "label": "TV",
+      "kind": "tv",
+      "entityId": null,
+      "supportsLocalMedia": true,
+      "supportsTuneIn": false
+    },
+    {
+      "id": "todo_lugar",
+      "label": "Todo lugar",
+      "kind": "alexa_group",
+      "entityId": "media_player.todo_lugar",
+      "supportsTuneIn": true
+    },
+    {
+      "id": "echo_dot_de_bruno",
+      "label": "Echo Dot do Bruno",
+      "kind": "alexa",
+      "entityId": "media_player.echo_dot_de_bruno",
+      "supportsTuneIn": true
+    },
+    {
+      "id": "segundo_echo_dot_de_bruno",
+      "label": "2o Echo Dot do Bruno",
+      "kind": "alexa",
+      "entityId": "media_player.2o_echo_dot_de_bruno",
+      "supportsTuneIn": true
+    },
+    {
+      "id": "echo_show_15_laurinha",
+      "label": "Echo Show 15 da Laurinha",
+      "kind": "alexa",
+      "entityId": "media_player.echo_show_15_laurinha",
+      "supportsTuneIn": true
+    },
+    {
+      "id": "echo_show_de_bruno",
+      "label": "Echo Show do Bruno",
+      "kind": "alexa",
+      "entityId": "media_player.echo_show_de_bruno",
+      "supportsTuneIn": true
+    }
+  ],
+  "soundScripts": {
+    "_comentario": [
+      "Opcional e DESLIGADO por padrao. Sem isto o Hub usa",
+      "media_player.media_play/media_pause/media_next_track/... que existem",
+      "para qualquer media_player - nao e ID inventado.",
+      "Para usar os seus scripts Laurinha, mova uma entrada de _exemplo para",
+      "fora dele e troque o entity_id."
+    ],
+    "_exemplo": {
+      "play": {
+        "entityId": "script.laurinha_tocar"
+      },
+      "pause": {
+        "entityId": "script.laurinha_pausar"
+      },
+      "next": {
+        "entityId": "script.laurinha_proxima"
+      },
+      "previous": {
+        "entityId": "script.laurinha_anterior"
+      },
+      "volume": {
+        "entityId": "script.laurinha_volume",
+        "variableName": "volume"
+      }
+    }
+  },
+  "musicAssistant": {
+    "_comentario": "Deixe entityId null enquanto nao existir. Fonte so aparece quando o Hub confirma a entidade no HA.",
+    "entityId": null,
+    "label": "Music Assistant"
+  },
+  "tunein": [],
+  "homeSensors": [],
+  "homeActions": {
+    "lights": {
+      "label": "Luzes",
+      "stateEntities": [
+        "light.TROCAR_sala"
+      ],
+      "steps": [
+        {
+          "label": "luzes da sala",
+          "service": "light.turn_on",
+          "target": {
+            "entity_id": "light.TROCAR_sala"
+          },
+          "params": {
+            "brightness": {
+              "to": "brightness_pct",
+              "min": 1,
+              "max": 100
+            }
+          }
+        }
+      ]
+    },
+    "sound": {
+      "label": "Som ambiente",
+      "sound": {
+        "output": "todo_lugar",
+        "volume": 25
+      },
+      "steps": []
+    },
+    "party": {
+      "label": "Modo Festa",
+      "stateEntities": [
+        "light.TROCAR_sala"
+      ],
+      "frameMode": true,
+      "sound": {
+        "output": "todo_lugar",
+        "volume": 40
+      },
+      "steps": [
+        {
+          "label": "luzes decorativas",
+          "service": "light.turn_on",
+          "target": {
+            "entity_id": "light.TROCAR_decorativa"
+          }
+        },
+        {
+          "label": "cena da festa",
+          "service": "script.turn_on",
+          "target": {
+            "entity_id": "script.TROCAR_laurinha_festa"
+          }
+        }
+      ]
+    },
+    "good_night": {
+      "label": "Boa noite",
+      "steps": [
+        {
+          "label": "rotina de dormir",
+          "service": "script.turn_on",
+          "target": {
+            "entity_id": "script.TROCAR_boa_noite"
+          }
+        }
+      ]
+    },
+    "climate": {
+      "label": "Clima",
+      "stateEntities": [
+        "climate.TROCAR_quarto"
+      ],
+      "steps": [
+        {
+          "label": "temperatura do quarto",
+          "service": "climate.set_temperature",
+          "target": {
+            "entity_id": "climate.TROCAR_quarto"
+          },
+          "params": {
+            "temperature": {
+              "to": "temperature",
+              "min": 16,
+              "max": 30
+            }
+          }
+        }
+      ]
+    },
+    "alarm": {
+      "label": "Alarme",
+      "stateEntities": [
+        "alarm_control_panel.TROCAR_casa"
+      ],
+      "steps": [
+        {
+          "label": "armar em casa",
+          "service": "alarm_control_panel.alarm_arm_home",
+          "target": {
+            "entity_id": "alarm_control_panel.TROCAR_casa"
+          }
+        }
+      ]
+    }
+  },
+  "_tunein_exemplo": [
+    {
+      "id": "radio_disney",
+      "label": "Radio Disney",
+      "contentId": "s12345",
+      "contentType": "music"
+    }
+  ]
+}

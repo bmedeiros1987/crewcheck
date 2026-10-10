@@ -1,0 +1,79 @@
+name: laurinha-connected-hub
+
+# Testa a ponte entre a TV LG e o Home Assistant. A suite nao toca em rede:
+# o Home Assistant e simulado, entao o CI nao depende da casa estar ligada.
+
+on:
+  push:
+    paths:
+      - 'apps/laurinha-hub/**'
+      - '.github/workflows/laurinha-hub.yml'
+  pull_request:
+    paths:
+      - 'apps/laurinha-hub/**'
+      - '.github/workflows/laurinha-hub.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hub:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/laurinha-hub
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+
+      - name: Testes do Hub
+        run: node --test test/*.test.mjs
+
+      - name: O Hub nao pode ganhar dependencia de runtime
+        run: |
+          if [ -f package-lock.json ] || [ -d node_modules ]; then
+            echo "O Hub deve rodar so com a biblioteca padrao do Node."
+            exit 1
+          fi
+          node -e "
+            const pkg = require('./package.json');
+            const deps = Object.keys(pkg.dependencies || {});
+            if (deps.length) { console.error('dependencias encontradas:', deps); process.exit(1); }
+            console.log('sem dependencias de runtime: ok');
+          "
+
+      - name: Nenhum segredo commitado
+        run: |
+          # .env.example so pode ter chaves vazias; nada de token real no diretorio.
+          if grep -nE '^(HA_TOKEN|LAURINHA_BRIDGE_KEY)=.+' .env.example; then
+            echo "ERRO: .env.example tem valor preenchido."
+            exit 1
+          fi
+          if grep -rIl --exclude-dir=node_modules -E 'eyJ[A-Za-z0-9_-]{20,}\.' . ; then
+            echo "ERRO: algo parecido com um JWT foi commitado."
+            exit 1
+          fi
+          echo "nenhum segredo commitado: ok"
+
+      - name: Fumaca - o Hub sobe e responde /health sem HA configurado
+        run: |
+          LAURINHA_HUB_PORT=8188 node src/server.mjs &
+          HUB_PID=$!
+          for i in $(seq 1 25); do
+            if curl -fsS http://127.0.0.1:8188/health >/dev/null 2>&1; then break; fi
+            sleep 0.2
+          done
+          BODY=$(curl -fsS http://127.0.0.1:8188/health)
+          echo "$BODY"
+          kill $HUB_PID
+          node -e "
+            const body = JSON.parse(process.argv[1]);
+            if (body.service !== 'laurinha-hub') throw new Error('health inesperado');
+            if (body.haConfigured !== false) throw new Error('sem HA_TOKEN, haConfigured deveria ser false');
+            console.log('fumaca: ok');
+          " "$BODY"
