@@ -171,9 +171,13 @@ try {
   await page.getByRole('status').filter({hasText:'Despertador cancelado nesta preferência'}).waitFor();
   await preview.locator('summary').click();
   assert.equal(await exact.inputValue(),'2030-10-11T04:00');
-  await program.selectOption('synthetic-current');assert.equal(await apz.inputValue(),'');
+  await program.selectOption('synthetic-current');
+  await page.waitForFunction(()=>document.querySelector('.cc-stay-editor input[type="time"]')?.value==='');
+  assert.equal(await apz.inputValue(),'');
   await page.getByText('Atual pela escala',{exact:true}).waitFor();
-  await program.selectOption('synthetic-future');assert.equal(await hotel.inputValue(),'Hotel editado sintético');assert.equal(await exact.inputValue(),'2030-10-11T04:00');
+  await program.selectOption('synthetic-future');
+  await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel editado sintético');
+  assert.equal(await hotel.inputValue(),'Hotel editado sintético');assert.equal(await exact.inputValue(),'2030-10-11T04:00');
   await page.evaluate(()=>window.replaceStayEvents(window.stayFixtureEvents.map(event=>({...event,canonical:{...event.canonical,endDateTime:'2031-01-01T00:00:00Z'}}))));
   await page.getByRole('alert').filter({hasText:'Seus ajustes manuais foram preservados'}).waitFor();assert.equal(await hotel.inputValue(),'Hotel editado sintético');
   await preview.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(output,`alarm-${width}.png`)});
