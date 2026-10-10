@@ -4,7 +4,7 @@ Base: main 500fb1c33370689b6c05a49c1d594a0df0b5bb35. No production endpoints, re
 
 ## Implemented
 
-- Device readiness reads existing native POST_NOTIFICATIONS permission separately from app-wide notification blocking and the `crewcheck_alerts` channel. A missing channel or older installed bridge is unknown, not ready. The read does not create a channel. Only a user tap requests the existing notification permission; a queued request is never treated as a grant. Wear permission/channel remain separate.
+- Device readiness reads existing native POST_NOTIFICATIONS permission separately from app-wide notification blocking and the `crewcheck_alerts` channel. A missing channel, malformed channel value or older installed bridge is unknown, not ready. A native bridge without permissionStatus cannot fall back to browser permission. Only literal boolean true confirms channel availability. The read does not create a channel. In this new component, only a user tap requests the existing notification permission; a queued request is never treated as a grant. The app's pre-existing onCreate permission requests are unchanged; this is not an app-wide claim that all requests require a tap. Wear permission/channel remain separate.
 - Hotel presentation editor no longer pre-fills a stay's roster presentation/check-in as a hotel APZ. Previously saved explicit hotel presentation remains available. This editor change does not publish a new hotel APZ or pickup to Wear and does not establish provenance of previously saved values.
 
 ## Existing ownership and delivery
