@@ -1773,15 +1773,16 @@ function buildAimsLegTimeline(day: RosterDay): AimsLegTimelineItem[] {
     while (items.length && depAbs < floor - 90) depAbs += 1440;
     let arrAbs = minutesOfDay(leg.arrivalTime || leg.departureTime || '00:00');
     while (arrAbs < depAbs) arrAbs += 1440;
+    const evidence = (leg as FlightLeg & { dutyClockEvidence?: AimsDutyClockEvidence }).dutyClockEvidence;
     const literalReport = findAimsReportTimeForLeg(day.rawText || '', leg);
     const reportClock = literalReport || (index === 0 ? day.dutyReport : null) || leg.departureTime;
-    const reportSource: AimsDutyClockSource = literalReport ? 'published' : index === 0 && day.dutyReport ? day.dutyReportSource || 'unknown' : 'estimated';
+    const reportSource: AimsDutyClockSource = literalReport ? evidence?.reportSource === 'published' && evidence.reportTime === literalReport ? 'published' : 'unknown' : index === 0 && day.dutyReport ? day.dutyReportSource || 'unknown' : 'estimated';
     let reportAbs = minutesOfDay(reportClock || leg.departureTime || '00:00');
     while (reportAbs > depAbs) reportAbs -= 1440;
     while (items.length && reportAbs < floor - 12 * 60) reportAbs += 1440;
     const literalDebrief = findAimsDebriefTimeForLeg(day.rawText || '', leg);
     const debriefClock = literalDebrief || (index === (day.legs || []).length - 1 ? day.dutyDebrief : null) || addClockMinutes(leg.arrivalTime, 30);
-    const debriefSource: AimsDutyClockSource = literalDebrief ? 'published' : index === day.legs.length - 1 && day.dutyDebrief ? day.dutyDebriefSource || 'unknown' : 'estimated';
+    const debriefSource: AimsDutyClockSource = literalDebrief ? evidence?.debriefSource === 'published' && evidence.debriefTime === literalDebrief ? 'published' : 'unknown' : index === day.legs.length - 1 && day.dutyDebrief ? day.dutyDebriefSource || 'unknown' : 'estimated';
     let debriefAbs = minutesOfDay(debriefClock || leg.arrivalTime || '00:00');
     while (debriefAbs < arrAbs) debriefAbs += 1440;
     const normalizedLeg: FlightLeg = {
