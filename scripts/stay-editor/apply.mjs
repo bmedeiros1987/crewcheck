@@ -43,10 +43,13 @@ if (!source.includes(marker)) {
   source = source.replace('<PresentationStayManagerView events={events}/>', '<PresentationStayManagerView events={events} embedded/>');
   const brandStart = source.indexOf('function Brand('), brandEnd = source.indexOf('\nfunction ', brandStart + 10);
   let brand = source.slice(brandStart, brandEnd);
-  const click = "  const click = onMenu || (back ? (() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' }))) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));";
-  if (!brand.includes(click)) throw new Error('Stay editor: Brand return anchor missing');
-  brand = brand.replace(click, "  const stayReturn = back && Boolean(readStayEditorIntent());\n  const click = stayReturn ? returnFromStayProgramEditor : onMenu || (back ? (() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' }))) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));");
-  brand = brand.replace("aria-label={back ? 'Voltar ao FlightDeck' : 'Menu'}", "aria-label={stayReturn ? 'Voltar ao pernoite' : back ? 'Voltar ao FlightDeck' : 'Menu'}");
+  const signature = "pulse = false }: { back?: boolean; onMenu?: () => void; pulse?: boolean }";
+  if (!brand.includes(signature)) throw new Error('Stay editor: Brand props anchor missing');
+  brand = brand.replace(signature, "pulse = false, backLabel }: { back?: boolean; onMenu?: () => void; pulse?: boolean; backLabel?: string }");
+  brand = brand.replace("aria-label={back ? 'Voltar ao FlightDeck' : 'Menu'}", "aria-label={back ? backLabel || 'Voltar ao FlightDeck' : 'Menu'}");
   source = source.slice(0, brandStart) + brand + source.slice(brandEnd);
+  const header = "<Brand back={view !== 'cockpit'} onMenu={view === 'cockpit' ? () => setDrawer(true) : undefined}/>";
+  if (!source.includes(header)) throw new Error('Stay editor: Home header owner anchor missing');
+  source = source.replace(header, "<Brand back={view !== 'cockpit'} backLabel={view === 'presentation' && readStayEditorIntent() ? 'Voltar ao pernoite' : undefined} onMenu={view === 'presentation' && readStayEditorIntent() ? returnFromStayProgramEditor : view === 'cockpit' ? () => setDrawer(true) : undefined}/>");
   fs.writeFileSync(path, source);
 }
