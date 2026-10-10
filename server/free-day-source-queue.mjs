@@ -13,12 +13,12 @@ async function lockedDestination(c,user,created,now) {
   const [rows]=await c.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[`link-email:${user.email}`]);
   const link=parse(rows[0]?.payload),chat=String(link.chatId || '');
   const time=Date.parse(link.linkedAt);
-  if(link.email!==user.email || !/^-?\d{1,20}$/.test(chat) || !/(?:Z|[+-]\d{2}:\d{2})$/.test(String(link.linkedAt || '')) || !Number.isFinite(time) || time<created || time>now) return null;
+  if(link.email!==user.email || !/^-?[1-9]\d{0,19}$/.test(chat) || !/(?:Z|[+-]\d{2}:\d{2})$/.test(String(link.linkedAt || '')) || !Number.isFinite(time) || time<created || time>now) return null;
   const [reverse]=await c.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[`link-chat:${chat}`]);
   const other=parse(reverse[0]?.payload);
   if(other.email!==user.email || String(other.chatId)!==chat || linkFingerprint(user,other)!==linkFingerprint(user,link)) return null;
   const username=/^[A-Za-z0-9_]{5,32}$/.test(String(link.username || ''))?'@'+link.username:null;
-  return {version:linkFingerprint(user,link),label:username || `Telegram existente ••••${chat.slice(-4)}`,verifiedAt:link.linkedAt};
+  return {version:linkFingerprint(user,link),label:chat.startsWith('-')?`Telegram coletivo existente · chat ••••${chat.slice(-4)}`:`${username || 'Telegram existente'} · chat ••••${chat.slice(-4)}`,verifiedAt:link.linkedAt};
 }
 function validatedReview(state,user) {
   const review=state.review;
