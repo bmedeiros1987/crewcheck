@@ -35,7 +35,7 @@ export async function safeScheduleJob({ req, res, identity, readJson, dbPool, en
   const phone = String(body.phone || body.mobile || '').trim();
   if ((channels.includes('telegram') && !chatId) || (channels.includes('telegram-call') && !username) || (channels.includes('phone-call') && !phone)) return sendJson(res, 400, { ok: false, message: 'Vínculo ou destinatário indisponível.' });
   const jobKey = String(body.jobKey || body.job_key || `manual:${scheduledAt.toISOString()}:${channel}`).slice(0, 220);
-  if (/^cycle:/i.test(jobKey)) return sendJson(res, 409, { ok: false, message: 'Alertas por ciclo exigem fonte e agendamento verificados no servidor.' });
+  if (/^(cycle:|free-day:)/i.test(jobKey)) return sendJson(res, 409, { ok: false, message: 'Alertas por ciclo exigem fonte e agendamento verificados no servidor.' });
   const job = { email: user.email, job_key: jobKey, scheduled_at: scheduledAt, channel, chat_id: chatId, telegram_username: username, phone,
     message: String(body.message || 'Despertador CrewCheck: confira sua preparação no aplicativo.').trim().slice(0, 1000) };
   const [existing] = await db.query('SELECT *,ROUND(UNIX_TIMESTAMP(scheduled_at)*1000) AS scheduled_epoch,ROUND(UNIX_TIMESTAMP(created_at)*1000) AS created_epoch FROM crewcheck_notification_jobs WHERE email=? AND job_key=? LIMIT 1', [user.email, jobKey]);
@@ -64,7 +64,7 @@ export async function safeCancelJob({ req, res, identity, readJson, dbPool, send
   if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
   if (!await currentOwner(db, user)) return sendJson(res, 401, { ok: false, message: 'Sessão da conta não é mais válida.' });
   const args = [user.email, Number(body.id || 0), String(body.jobKey || '')];
-  const [result] = await db.query("UPDATE crewcheck_notification_jobs SET status='cancelled',locked_at=NULL WHERE email=? AND (id=? OR job_key=?) AND status IN ('pending','processing')", args);
+  const [result] = await db.query("UPDATE crewcheck_notification_jobs SET status='cancelled',locked_at=NULL WHERE email=? AND (id=? OR job_key=?) AND status IN ('held','pending','processing')", args);
   const [rows] = await db.query('SELECT status FROM crewcheck_notification_jobs WHERE email=? AND (id=? OR job_key=?)', args);
   const inFlight = rows.some(row => row.status === 'dispatching');
   return sendJson(res, inFlight ? 409 : 200, { ok: !inFlight, cancelled: result.affectedRows, inFlight, message: inFlight ? 'Envio já iniciou; não foi possível confirmar cancelamento.' : 'Cancelamento verificado; mensagens já aceitas não podem ser recolhidas.' });
@@ -74,6 +74,11 @@ export async function dispatchClaimedJob(db, selected, { deliver, findLink, now 
   const [rows] = await db.query("SELECT *,ROUND(UNIX_TIMESTAMP(scheduled_at)*1000) AS scheduled_epoch,ROUND(UNIX_TIMESTAMP(created_at)*1000) AS created_epoch FROM crewcheck_notification_jobs WHERE id=? AND status='processing' LIMIT 1", [selected.id]);
   const job = rows[0];
   if (!job) return { status: 'skipped' }; // cancellation after selection/claim
+  // No activation exists for free-day preparation; reject even a forged processing claim.
+  if (/^free-day:/i.test(String(job.job_key))) {
+    await db.query("UPDATE crewcheck_notification_jobs SET status='cancelled',locked_at=NULL WHERE id=? AND status='processing' AND locked_at=?", [job.id, job.locked_at]);
+    return { status: 'cancelled', accepted: false, delivered: false };
+  }
   const when = epoch(job, 'scheduled');
   if (!Number.isFinite(when) || when < now - JOB_GRACE_SECONDS * 1000 || when > now) {
     await db.query("UPDATE crewcheck_notification_jobs SET status=?,locked_at=NULL WHERE id=? AND status='processing' AND locked_at=?", [when > now ? 'pending' : 'expired', job.id, job.locked_at]);
