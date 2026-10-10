@@ -10,3 +10,5 @@
 .cc-stay-editor-content .cc139-choices button{flex-wrap:wrap}
 .cc-stay-editor-content .cc139-choices small{width:100%}
 .cc-stay-editor-content input,.cc-stay-editor-content select{box-sizing:border-box}
+.cc-stay-editor-content [data-stay-editor-selected="true"]{outline:2px solid currentColor;outline-offset:3px}
+@media(max-height:640px){.cc-stay-editor-header .cc139-head p{display:none}.cc-stay-editor-header .cc139-brand{margin-bottom:6px}}

@@ -5,27 +5,58 @@ import http from 'node:http';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { build } from 'esbuild';
+import ts from 'typescript';
 
 const output = path.resolve(process.env.STAY_EDITOR_ARTIFACTS || 'artifacts/stay-editor');
 fs.mkdirSync(output, { recursive: true });
+const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');
+assert.ok(home.includes('// stay-editor-context-v2'),'Run after canonical preparation');
+const ast=ts.createSourceFile('Home.tsx',home,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+const functions=['HotelsView','Brand','CrewCheckMark','BottomNav','pad2','safe','city','dateChip','rosterDayIso','hotelSearchLocation','openNearbyPlaces','searchCrewHotels','normalizedSearch','explicitStayReportLocation'];
+const declarations=ast.statements.filter(n=>(ts.isFunctionDeclaration(n)&&functions.includes(n.name?.text))||(ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>d.name.getText(ast)==='storage')));
+assert.equal(declarations.length,functions.length+1);
+const rootProps={className:'cz-app','data-view':'presentation','data-menu-open':'false'};
+for(const statement of ast.statements) if(ts.isVariableStatement(statement)) for(const d of statement.declarationList.declarations) if(d.name.getText(ast)==='DEFAULT_VERSION')rootProps['data-version']=d.initializer.text;
+const cssLinks=[...fs.readFileSync('dist/index.html','utf8').matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/g)].map(m=>m[0]).join('');
+assert.ok(cssLinks,'Actual production CSS required');
+fs.cpSync('dist/assets',path.join(output,'assets'),{recursive:true});
+if(fs.existsSync('dist/icons'))fs.cpSync('dist/icons',path.join(output,'icons'),{recursive:true});
+
 await build({ stdin: { contents: `
-import React,{useState,useEffect} from 'react';
+import React,{useState,useEffect,useMemo} from 'react';
 import {createRoot} from 'react-dom/client';
 import Presentation from '@/components/v1391/PresentationStayManagerView';
-import {openStayProgramEditor} from '@/lib/stayEditorNavigation';
+import {openStayProgramEditor,consumeStayEditorReturn} from '@/lib/stayEditorNavigation';
+import {savedStayEditorEvent} from '@/lib/stayEditorStore';
+import {setPendingNavigationContext} from '@/lib/navigationContext';
+import {isFinancialSetting,readFinancialSetting,writeFinancialSetting} from '@/lib/financialSettingStore';
+import {createPortal} from 'react-dom';
+import {Search,Hotel,LocateFixed,Plus,Check,MapPin,X,Save,ChevronRight,UserRound,Dumbbell,WashingMachine,Pill,Bell,Send,Menu,Home as HomeIcon,CalendarDays,Navigation} from 'lucide-react';
+import {toast} from 'sonner';
+import {airportCity} from '@/lib/airports';
+import {orderStayDisplay} from '@/lib/stayDisplayOrder';
+import {listPlatformStays,updatePlatformStay,findHotelCompanions} from '@/lib/platformClient';
+import {CREW_HOTEL_CATALOG} from '@/data/crewHotels';
+import {saveNearbyPlacesOrigin} from '@/lib/nearbyPlacesOrigin';
+import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
+import {InternalHeaderFrame} from '@/components/navigation/InternalHeaderFrame';
+import {OperationalLayoutSafety} from '@/components/navigation/OperationalLayoutSafety';
+import {setCrewCheckThemePreference} from '@/lib/themeRuntime';
+${declarations.map(n=>n.getText(ast)).join('\n')}
+window.applyStayTheme=setCrewCheckThemePreference;
 import {peekPendingNavigationContext} from '@/lib/navigationContext';
 import '@/components/v139/v139.css';
 const now=Date.now(), day=new Date(now).toISOString().slice(0,10);
-const event=(id,hours)=>({id,kind:'stay',title:'Pernoite sintético '+id,date:new Date(now),origin:'FOR',destination:'FOR',hotel:'Hotel sintético '+id,presentation:'01:11',canonical:{startDateTime:new Date(now+hours*3600000).toISOString(),endDateTime:new Date(now+(hours+24)*3600000).toISOString()}});
+const event=(id,hours)=>({id,kind:'stay',title:'Pernoite sintético '+id,date:new Date(now),day:{date:day},origin:'FOR',destination:'FOR',hotel:'Hotel sintético '+id,presentation:'01:11',canonical:{startDateTime:new Date(now+hours*3600000).toISOString(),endDateTime:new Date(now+(hours+24)*3600000).toISOString()}});
 const fixtures=[event('synthetic-current',-1),event('synthetic-future',48)];
 window.stayFixtureDay=day;window.stayFixtureEvents=fixtures;
 window.stayNavigation=[];window.stayContext=peekPendingNavigationContext;
 function App(){const [view,setView]=useState('hotels'),[events,setEvents]=useState(fixtures);
  useEffect(()=>{window.replaceStayEvents=setEvents;const navigate=e=>{window.stayNavigation.push(e.detail);setView(e.detail)};window.addEventListener('crewcheck:set-view',navigate);return()=>window.removeEventListener('crewcheck:set-view',navigate)},[]);
- return <main className="cc139-root">{view==='hotels'?<><h1>Lançador sintético de pernoites</h1>{events.map(event=><button key={event.id} onClick={()=>openStayProgramEditor(event)}>Abrir {event.id}</button>)}</>:<Presentation events={events}/>}</main>}
+ return <><main {...${JSON.stringify(rootProps)}} data-view={view}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back/></InternalHeaderFrame>{view==='hotels'?<HotelsView events={events}/>:<Presentation events={events}/>}</main><BottomNav view={view} setView={setView} openMenu={()=>{}}/></>}
 createRoot(document.getElementById('root')).render(<App/>);
-`, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, format: 'esm', platform: 'browser', tsconfig: 'tsconfig.json', outfile: path.join(output, 'harness.js'), jsx: 'automatic', define: { 'process.env.NODE_ENV': '"test"', 'import.meta.env': JSON.stringify({ DEV: false, PROD: true, BASE_URL: '/' }) } });
-fs.writeFileSync(path.join(output, 'index.html'), '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/harness.css"></head><body><div id="root"></div><script type="module" src="/harness.js"></script></body></html>');
+`, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, format: 'esm', platform: 'browser', tsconfig: 'tsconfig.json', outfile: path.join(output, 'harness.js'), loader: { '.css': 'empty' }, jsx: 'automatic', define: { 'process.env.NODE_ENV': '"test"', 'import.meta.env': JSON.stringify({ DEV: false, PROD: true, BASE_URL: '/' }) } });
+fs.writeFileSync(path.join(output,'index.html'),`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">${cssLinks}</head><body><div id="root"></div><script type="module" src="/harness.js"></script></body></html>`);
 const server = http.createServer((req,res)=>{
   const file=path.resolve(output,'.'+(req.url==='/'?'/index.html':req.url));
   if(!file.startsWith(output+path.sep)||!fs.existsSync(file)){res.writeHead(404).end();return;}
@@ -48,7 +79,7 @@ try {
    return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,address:null,stays:[{id:'saved-future',rosterEventId:'synthetic-future',stayDate:day,airport:'FOR',hotelName:'Hotel salvo sintético',presentationTime:'05:30',leadMinutes:90}]})});
   });
   const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));await page.goto(origin);
-  await page.getByRole('button',{name:'Abrir synthetic-future',exact:true}).click();
+  await page.getByRole('button',{name:'Editar pernoite synthetic-future',exact:true}).click();
   const program=page.getByRole('combobox',{name:'Programação',exact:true});
   await program.waitFor();assert.equal(await program.inputValue(),'synthetic-future');
   const hotel=page.getByRole('textbox',{name:'Hotel',exact:true}),apz=page.getByLabel('APZ no hotel (manual ou salva)',{exact:true});
@@ -57,14 +88,18 @@ try {
   const layout=[];
   for (const scenario of [{theme:'light',font:100,height:900},{theme:'dark',font:150,height:600}]) {
     await page.setViewportSize({width,height:scenario.height});
-    await page.evaluate(s=>{document.documentElement.dataset.crewTheme=s.theme;document.documentElement.style.fontSize=`${16*s.font/100}px`},scenario);
+    await page.evaluate(s=>{document.documentElement.style.setProperty('--cc-safe-area-top','24px');document.documentElement.style.setProperty('--cc-safe-area-bottom','28px');window.applyStayTheme(s.theme);document.documentElement.style.fontSize=`${16*s.font/100}px`},scenario);
     const header=page.locator('.cc-stay-editor-header'), content=page.locator('.cc-stay-editor-content');
-    const initial=await header.boundingBox();
+    await page.waitForTimeout(100);
+    const initial=await header.boundingBox(),globalInitial=await page.locator('.cz-global-header').boundingBox(),navInitial=await page.locator('.cz-bottom-nav').boundingBox();
     const first=program,last=page.getByRole('heading',{name:'Privacidade',exact:true});
     for(const target of [first,last]) {
       await target.evaluate(el=>el.scrollIntoView({block:'center',behavior:'instant'}));
       const h=await header.boundingBox(),b=await target.boundingBox(),c=await content.boundingBox();
-      assert.ok(h&&b&&c&&initial);
+      const globalNow=await page.locator('.cz-global-header').boundingBox(),navNow=await page.locator('.cz-bottom-nav').boundingBox();
+      assert.ok(h&&b&&c&&initial&&globalInitial&&globalNow&&navInitial&&navNow);
+      assert.ok(Math.abs(globalNow.y-globalInitial.y)<1&&Math.abs(navNow.y-navInitial.y)<1,'Global header/menu stay fixed');
+      assert.ok(b.y>=globalNow.y+globalNow.height-1&&b.y+b.height<=navNow.y+1,'First/last item clears real shell navigation');
       assert.ok(Math.abs(h.y-initial.y)<1,'Editor header remains fixed');
       assert.ok(b.y>=c.y-1&&b.y+b.height<=c.y+c.height+1,'First/last content remains reachable');
       assert.ok(await target.evaluate(el=>{const r=el.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return hit===el||el.contains(hit)}),'No header covers content');
@@ -89,6 +124,8 @@ try {
   await hotel.fill('Hotel editado sintético');
   await page.getByRole('textbox',{name:'Fuso do hotel',exact:true}).fill('America/Fortaleza');
   const apzDate=page.getByLabel('Data da APZ no hotel',{exact:true});await apzDate.fill('2030-10-11');
+  const confirmApz=page.getByRole('checkbox',{name:'Confirmo esta data, horário e fuso como APZ no hotel',exact:true});
+  await confirmApz.check();
   const preview=page.getByRole('region',{name:'Prévia do despertador do pernoite'});
   await preview.getByText('Despertar calculado: 04:00',{exact:false}).waitFor();
   await preview.getByText('1 h 30 min antes da APZ no hotel',{exact:true}).waitFor();
@@ -96,13 +133,13 @@ try {
   const mode=preview.getByRole('combobox',{name:'Modo do despertador',exact:true});await mode.selectOption('absolute');
   const exact=preview.getByLabel('Data e horário exatos · America/Fortaleza',{exact:true});await exact.fill('2030-10-11T04:00');
   await preview.getByText('1 h 30 min antes da APZ no hotel',{exact:true}).waitFor();
-  await apz.fill('06:00');await preview.getByText('2 h antes da APZ no hotel',{exact:true}).waitFor();
+  await apz.fill('06:00');await confirmApz.check();await preview.getByText('2 h antes da APZ no hotel',{exact:true}).waitFor();
   assert.equal(await exact.inputValue(),'2030-10-11T04:00');
-  await apz.fill('03:00');await preview.getByRole('alert').filter({hasText:'Sua escolha foi mantida'}).waitFor();
+  await apz.fill('03:00');await confirmApz.check();await preview.getByRole('alert').filter({hasText:'Sua escolha foi mantida'}).waitFor();
   assert.equal(await exact.inputValue(),'2030-10-11T04:00');
   await apz.fill('');await preview.getByRole('alert').filter({hasText:'APZ no hotel ausente'}).waitFor();
   assert.equal(await preview.getByText(/antes da APZ no hotel$/).count(),0);
-  await apz.fill('05:30');
+  await apz.fill('05:30');await confirmApz.check();
   const defaults=page.getByRole('region',{name:'Antecedência padrão'});await defaults.locator('summary').click();await defaults.getByRole('spinbutton').fill('60');await defaults.getByRole('button').click();
   assert.equal(await mode.inputValue(),'absolute');assert.equal(await exact.inputValue(),'2030-10-11T04:00');
   await mode.selectOption('auto');
@@ -112,6 +149,20 @@ try {
   await preview.getByRole('combobox',{name:'Antecedência deste pernoite',exact:true}).selectOption('90');
   await preview.getByText('Despertar calculado: 04:00',{exact:false}).waitFor();
   await mode.selectOption('absolute');await exact.fill('2030-10-11T04:00');
+  await page.getByRole('button',{name:'Salvar alterações do pernoite',exact:true}).click();
+  await page.reload();
+  await page.getByRole('button',{name:'Editar pernoite synthetic-future',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel editado sintético');
+  await preview.locator('summary').click();
+  assert.equal(await exact.inputValue(),'2030-10-11T04:00');assert.equal(await confirmApz.isChecked(),true);
+  await preview.getByText('1 h 30 min antes da APZ no hotel',{exact:true}).waitFor();
+  await page.getByText('Mais opções da edição',{exact:true}).click();
+  await page.getByRole('button',{name:'Cancelar despertador deste pernoite',exact:true}).click();
+  await page.reload();
+  await page.getByRole('button',{name:'Editar pernoite synthetic-future',exact:true}).click();
+  await page.getByRole('status').filter({hasText:'Despertador cancelado nesta preferência'}).waitFor();
+  await preview.locator('summary').click();
+  assert.equal(await exact.inputValue(),'2030-10-11T04:00');
   await program.selectOption('synthetic-current');assert.equal(await apz.inputValue(),'');
   await page.getByText('Atual pela escala',{exact:true}).waitFor();
   await program.selectOption('synthetic-future');assert.equal(await hotel.inputValue(),'Hotel editado sintético');assert.equal(await exact.inputValue(),'2030-10-11T04:00');
@@ -119,21 +170,21 @@ try {
   await page.getByRole('alert').filter({hasText:'Seus ajustes manuais foram preservados'}).waitFor();assert.equal(await hotel.inputValue(),'Hotel editado sintético');
   await preview.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(output,`alarm-${width}.png`)});
   await page.getByText('Mais opções da edição',{exact:true}).click();
-  await page.getByRole('button',{name:'Descartar edição deste pernoite',exact:true}).click();await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel salvo sintético');
+  await page.getByRole('button',{name:'Descartar edição deste pernoite',exact:true}).click();await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel editado sintético');
   await page.evaluate(()=>window.replaceStayEvents(window.stayFixtureEvents.filter(event=>event.id!=='synthetic-future')));
   await page.getByRole('alert').filter({hasText:'Nenhum outro item foi selecionado automaticamente'}).waitFor();assert.equal(await program.inputValue(),'');
   await page.getByRole('button',{name:'Voltar ao pernoite',exact:true}).click();
-  assert.equal(await page.evaluate(()=>window.stayContext('hotels').stayId),'synthetic-future');
-  await page.getByRole('button',{name:'Abrir synthetic-current',exact:true}).click();
+  await page.getByRole('alert').filter({hasText:'O pernoite selecionado não está mais na escala'}).waitFor(); assert.equal(await page.locator('[data-stay-editor-selected="true"]').count(),0);
+  await page.getByRole('button',{name:'Editar pernoite synthetic-current',exact:true}).click();
   await page.getByRole('heading',{name:'Apresentação, hotel e descanso',exact:true}).waitFor();
-  await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','another-synthetic');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
+  await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'another-account',email:'another@example.invalid'}));localStorage.setItem('crewcheck_auth_token','another-synthetic');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
   await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='');
   assert.deepEqual(errors,[]);assert.deepEqual(writes,[],'No hotel saves or alarm requests');
-  results.push({width,touchIdentity:true,savedApz:true,noRosterApzFallback:true,manualPreserved:true,autoMode:true,modeAbsolute:true,liveGap:true,defaultSeparate:true,current:true,rosterChange:true,itemRemoval:true,cancelEdit:true,contextReturn:true,accountReset:true,layout,negativeControl:true,writes,errors});
+  results.push({width,touchIdentity:true,savedApz:true,noRosterApzFallback:true,manualPreserved:true,autoMode:true,modeAbsolute:true,liveGap:true,defaultSeparate:true,current:true,rosterChange:true,itemRemoval:true,cancelEdit:true,contextReturn:true,accountReset:true,persistenceReload:true,cancellationPersisted:true,layout,negativeControl:true,writes,errors});
   await context.close();
  }
 } finally {
  await browser.close();await new Promise(resolve=>server.close(resolve));
- fs.writeFileSync(path.join(output,'report.json'),JSON.stringify({commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),scope:'Actual PresentationStayManagerView and new preview/navigation helper with synthetic launcher, events and account/API. No Home integration, original image inspection, device alarm programming or private data.',results},null,2));
+ fs.writeFileSync(path.join(output,'report.json'),JSON.stringify({commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),scope:'Actual prepared Home HotelsView, editor, shell/menu and production CSS; synthetic events/account/API. No physical keyboard/safe area, original private image or real alarm programming.',results},null,2));
 }
 assert.equal(results.length,2);console.log('PASS: actual stay editor component, synthetic touch/return, current/removal/import/manual/modes/live-gap/account isolation; no writes');

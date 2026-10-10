@@ -29,3 +29,12 @@ export function returnFromStayProgramEditor() {
   window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'hotels' }));
   return true;
 }
+
+/** Return preserves even a removed ID; the caller must show absence, never fall back. */
+export function consumeStayEditorReturn(): string | null {
+  const context = peekPendingNavigationContext('hotels');
+  if (!binding || binding.token !== getToken() || context?.sourceView !== 'presentation' || context.stayId !== binding.eventId) return null;
+  const id = binding.eventId;
+  setPendingNavigationContext(null); binding = null;
+  return id;
+}

@@ -20,10 +20,11 @@ export default function StayHotelAlarmPreview({ eventId, hotelApzIso, timeZone, 
   const difference = calculated.differenceMinutes;
   const differenceLabel = typeof difference === 'number' && difference > 0
     ? `${Math.floor(difference / 60) ? `${Math.floor(difference / 60)} h ` : ''}${difference % 60 ? `${difference % 60} min ` : ''}antes da APZ no hotel`.trim() : null;
+  const alarmZone = choice?.mode === 'absolute' ? choice.timeZone || timeZone : timeZone;
   let absoluteLocal = '';
   try {
-    if (choice?.mode === 'absolute' && choice.alarmAt && timeZone) {
-      const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(choice.alarmAt)).filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+    if (choice?.mode === 'absolute' && choice.alarmAt && alarmZone) {
+      const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: alarmZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(choice.alarmAt)).filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
       absoluteLocal = `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
     }
   } catch {}
@@ -32,7 +33,7 @@ export default function StayHotelAlarmPreview({ eventId, hotelApzIso, timeZone, 
     <p>A referência é a APZ no hotel. APZ da escala, check-in, decolagem e pickup não a substituem.</p>
     <details><summary>Configurar despertador</summary><div className="cc139-form">
       <label>Modo do despertador<select value={mode} onChange={event => onChoice(event.target.value === 'absolute'
-        ? { mode: 'absolute', alarmAt: '' } : event.target.value === 'relative' ? { mode: 'relative' } : undefined)}>
+        ? { mode: 'absolute', alarmAt: '', timeZone } : event.target.value === 'relative' ? { mode: 'relative' } : undefined)}>
         <option value="auto">Auto · antecedência padrão</option><option value="relative">Antecedência individual</option><option value="absolute">Horário exato</option></select></label>
       {mode !== 'absolute' ? <>
         <label>Antecedência deste pernoite<select value={!choice ? 'default' : String(choice.mode === 'relative' ? choice.leadMinutes ?? '' : '')}
@@ -44,9 +45,9 @@ export default function StayHotelAlarmPreview({ eventId, hotelApzIso, timeZone, 
         </select></label>
         <label>Antecedência personalizada (minutos)<input type="number" min="0" max="720" value={choice?.mode === 'relative' && Number.isInteger(choice.leadMinutes) ? choice.leadMinutes : ''}
           onChange={event => onChoice({ mode: 'relative', leadMinutes: event.target.value === '' ? undefined : Number(event.target.value) })}/></label>
-      </> : <label className="wide">Data e horário exatos · {timeZone || 'confirme o fuso'}<input type="datetime-local" value={absoluteLocal}
-        onChange={event => { const [day, clock] = event.target.value.split('T'); const epoch = stayLocalInstant(day, clock, timeZone);
-          onChoice({ mode: 'absolute', alarmAt: epoch === null ? '' : new Date(epoch).toISOString() }); }}/></label>}
+      </> : <label className="wide">Data e horário exatos · {alarmZone || 'confirme o fuso'}<input type="datetime-local" value={absoluteLocal}
+        onChange={event => { const [day, clock] = event.target.value.split('T'); const epoch = stayLocalInstant(day, clock, alarmZone);
+          onChoice({ mode: 'absolute', alarmAt: epoch === null ? '' : new Date(epoch).toISOString(), timeZone: alarmZone }); }}/></label>}
     </div></details>
     <p><strong>Modo ativo: {mode === 'auto' ? 'Auto · antecedência padrão' : mode === 'absolute' ? 'horário exato' : 'antecedência individual da APZ no hotel'}</strong></p>
     {mode === 'auto' && <p>Auto calcula a partir da APZ no hotel confirmada menos o padrão configurado. Sem esses dados, informe-os ou personalize este pernoite.</p>}
@@ -58,6 +59,6 @@ export default function StayHotelAlarmPreview({ eventId, hotelApzIso, timeZone, 
       {!calculated.hotelReportAt && <p role="alert">APZ no hotel ausente ou não confirmada. Informe-a manualmente antes de programar.</p>}
     </> : <p role="status">{!timeZone ? 'Confirme o fuso do hotel para calcular.' : !hotelApzIso && mode !== 'absolute' ? 'APZ no hotel ausente. Informe-a manualmente.' : 'Informe data, horário e antecedência válidos.'}</p>}
     <p>Calculado; não programado no dispositivo. A substituição e o cancelamento de alarmes por pernoite ainda não estão disponíveis nesta integração.</p>
-    <p>A edição deste pernoite não altera a antecedência padrão. Dados MyCrewCare continuam desligados.</p>
+    <p>A edição deste pernoite não altera a antecedência padrão. Salve as alterações para mantê-las nesta conta e neste aparelho. Dados MyCrewCare continuam desligados.</p>
   </section>;
 }

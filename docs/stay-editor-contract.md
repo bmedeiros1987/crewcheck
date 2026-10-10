@@ -1,99 +1,75 @@
-# Edição de pernoite e despertador por APZ no hotel
+# Editor contextual de pernoites e despertador pela APZ do hotel
 
-Esta draft prepara o editor de programação e a prévia do despertador. Não programa
-alarmes, não consome MyCrewCare em produção e não altera Home ou o apply reservado
-à PR990. A base inicial é o HEAD revisado da PR991; a base atual foi atualizada para seu
-merge real `6209a29eeee137a00fad598859d422dbe317fafa`.
+Base: main 6306923d9583ceb78e768bddb0334372af48c18b, após PR990/991.
+MyCrewCare951 permanece desligada. Não houve merge, deploy ou permissão nova.
 
-## Referência do despertador
+## Fluxo materializado
 
-O único referencial relativo permitido é a APZ no hotel confirmada, com data e
-fuso explícitos, menos a antecedência. APZ da escala, decolagem, check-in/out e
-pickup não a substituem. O contrato da PR951 fornece hotel/reserva e pickup;
-ele não fornece APZ no hotel nem confirma equivalência pickup/APZ. Portanto a
-função de planejamento rejeita todo candidato de APZ do provedor nessa versão.
-Não há import do painel, hook, runtime ou controlador da PR951, nem mudança em
-suas chaves/fences desligadas.
+O finalizador `scripts/stay-editor/apply.mjs`, depois de wellhub-hours, altera
+somente HotelsView: toque/teclado no card ou ação de edição abre
+PresentationStayManagerView com ID explícito; retorno consome esse ID e foca
+seu card. Se removido/duplicado, não escolhe outro item. Nenhuma alteração na
+seção de academias, fórmulas, geração da escala ou horários publicados.
+O gerador produz a integração em Home; mudanças geradas não são gravadas
+integralmente no diff da PR.
 
-Uma APZ salva continua preenchida como solicitado. A APZ da escala não preenche
-pernoites (guarda da PR991 preservada). Data e fuso são confirmação manual para
-esta prévia. Nunca usamos o fuso do aparelho para resolver horários do hotel.
-Conversões locais rejeitam datas inválidas e minutos ambíguos/inexistentes no DST.
+## Persistência e migração
 
-## Modos e preferências
+Dados locais versionados por ID autenticado da conta, neste aparelho:
+padrão 90 minutos, hotel/quarto, APZ com data/fuso/procedência/confirmação,
+modo Auto/relativo individual/absoluto e cancelamento da preferência.
+Salvar padrão é independente de salvar o pernoite. Overrides são preservados.
+A conta não é derivada do token nem gravamos credenciais. Logout/troca de conta
+limpa a sessão do editor; somente o ID da conta ativa pode carregar/gravar seus dados.
+Falha de armazenamento é apresentada, sem alegar sucesso.
+Não há sincronização dessas novas preferências entre aparelhos ou com servidor.
 
-- Auto: opção transparente, APZ no hotel confirmada menos a antecedência padrão
-  configurada. Não contorna fonte, consentimento, permissão ou proteção desligada.
-- Relativo: antecedência padrão, individual de 90/60 min ou personalizada. Mudança
-  da APZ recalcula com a mesma antecedência individual.
-- Absoluto: instante escolhido com data/fuso; mudança da APZ mantém a escolha e
-  recalcula a diferença. Horário igual/posterior à APZ ou passado gera aviso.
-- Sem APZ: relativo exige entrada manual. Absoluto pode mostrar a escolha, mas
-  não inventa diferença e não fica apto a agendamento.
-- O horário final é exibido como calculado, com data e fuso, nunca como programado.
-- Mudar padrão é ação separada. Overrides relativos e escolhas absolutas permanecem.
+Cadastro legado é apenas candidato quando a API autenticada retorna vínculo
+único com evento ou data/local sem ambiguidade. Preservamos seu lead válido.
+Seu horário tem origem antiga desconhecida e exige confirmação explícita como
+APZ no hotel; não inferimos fuso/data nem adotamos cache offline sem conta.
+Nenhum alarme legado é importado ou reativado. Alteração do intervalo da escala
+preserva os ajustes e exige revisão/confirmacão de APZ; horário absoluto preserva
+instante e fuso originais, sem ajuste silencioso.
 
-O padrão e as novas escolhas de alarme **ainda são prévias desta sessão**. Não são
-persistidos como novo contrato de servidor. A edição existente de hotel/quarto/
-APZ usa a API existente e diferencia cache local de sincronização confirmada.
-Não anunciar persistência global ou programação efetiva antes do contrato abaixo.
+## Origem e cálculo
 
-Configurações de modo/antecedência e de padrão ficam agrupadas em detalhes
-expansíveis. Horário calculado, diferença, conflitos e estado não programado
-permanecem visíveis. O editor tem uma ação principal de salvar e um único
-voltar contextual; ações secundárias de edição ficam em Mais opções.
+APZ no hotel informada/confirmada manualmente, nunca APZ de escala, check-in,
+decolagem ou pickup. Auto aplica padrão; relativo individual aplica antecedência
+à APZ confirmada; absoluto guarda instante, data e fuso próprios. A prévia mostra
+hora/data/fuso e diferença em tempo real (04:00 para APZ05:30 = 1h30 antes).
+APZ desconhecida não inventa diferença; horário igual/posterior/passado é advertido.
+Escolher outro hotel desconfirma a APZ, sem trocar seu valor automaticamente.
 
-## Identidade, edição e navegação
+## Limite seguro de programação
 
-`openStayProgramEditor(event)` é a futura ação explícita do card de pernoite.
-Ela carrega somente IDs no Navigation Context existente e vincula sua intenção
-à sessão autenticada em memória. O editor abre o item indicado, sem selecionar
-outro silenciosamente quando o item desaparece. Seu retorno deposita o mesmo ID
-para HotelsView. Home ainda precisa chamar esse helper e consumir esse retorno;
-não alegamos o fluxo completo de Home entregue enquanto esse encaixe está reservado.
+`shared/stay-alarm-adapter.mjs` define substituição atômica e cancelamento
+confirmado por identidade conta+evento. Mocks verificam atualização sem duplicação,
+serialização com operação em andamento, cancelamento e falhas/ack inválido.
+Não está ligado a nenhum canal real. O bridge atual scheduleNotification usa
+requestCode baseado também no horário, não oferece replace/cancel por pernoite,
+e o boolean não confirma execução. O timer web de aba não prova alarme de fundo.
+Nenhuma permissão é solicitada/ampliada, nenhum alarme ou mensagem real é enviado.
+Cancelar marca a preferência local; cancelamento de alarmes antigos do aparelho
+não é alegado. Edição/importação não reativa preferência cancelada.
 
-O preenchimento prioriza associação explícita `rosterEventId`. O fallback legado
-por data só é permitido com aeroporto exato e candidato único; dois pernoites
-na mesma data/local bloqueiam salvar em vez de escolher uma linha arbitrária.
-Rascunhos individuais preservam campos manuais, inclusive vazios e escolhas
-absolutas, ao trocar item e ao atualizar a escala. Mudança de intervalo mantém
-os ajustes e pede revisão. Descartar edição é explícito. Troca de sessão limpa
-rascunhos e invalida respostas antigas; a API legada ainda tem efeitos de cache
-próprios, que não são tratados como prova de isolamento server-side nesta draft.
+## Evidências e limites de QA
 
-## Idempotência e limite do dispositivo
+Contratos puros: identidade, seleção atual/remoção, revisão, isolamento de conta,
+manual vazio, fonte pickup separada, APZ falsa bloqueada, modos, overrides,
+virada de data/fusos/DST, diferença, conflitos, capacidade/permissão/idempotência.
+Persistência: reload, contas distintas, padrão separado, legado sem confirmação,
+registro corrupto, quota e tombstone de cancelamento. Adaptador somente mocks.
 
-O plano puro utiliza identidade estável de conta/escala/item; modo, APZ e
-antecedência não criam novos IDs. Uma alteração pode propor update do mesmo job
-pendente. Jobs cancelados/terminais não são reativados; processamento em curso,
-duplicatas ou revisão obsoleta pedem resolução explícita. Não executamos nenhuma
-dessas propostas nem chamamos `/api/alarm/schedule`.
+Browser extrai HotelsView, Brand e BottomNav reais da versão preparada, usa
+PresentationStayManagerView real e CSS da build de produção. Eventos/conta/API
+são sintéticos e escritas de rede interceptadas exigem zero. Exercita toque,
+retorno contextual, edição, confirmação da origem, reload, cancelamento,
+importação e remoção. Claro/escuro, fontes 100/150%, 390/1280px, viewport reduzida,
+safe-area simulada, cabeçalhos/menu fixos e primeiro/último item acessíveis.
+Controle negativo reproduz rolagem anterior do documento e deve falhar geometricamente.
+Não equivale a aparelho físico, teclado nativo ou garantia absoluta de layout.
 
-O bridge nativo atual tem `scheduleNotification(title, body, epochMillis)`, mas
-não oferece replace/cancel por identidade nem resultado transacional verificável.
-Seu boolean pode indicar apenas postagem para a UI thread. A implementação web
-é um timer de aba e não comprova alarme em segundo plano. Não usaremos esse bridge
-para alegar idempotência ou programação efetiva. A fila Telegram é server-side e
-também não comprova programação no aparelho. É necessário um contrato revisado de
-substituição/cancelamento/resultado antes de integrar programação por pernoite.
-
-## Validação e escopo visual
-
-Testes puros em UTC, America/Sao_Paulo e Pacific/Auckland cobrem identidade,
-item atual, remoção, revisão, isolamento de conta, campos manuais vazios,
-procedência/frescor de pickup separado, bloqueio de fontes falsas de APZ, modos,
-defaults/overrides, virada de data, fusos/DST, diferença em tempo real, conflitos,
-permissão/capacidade, idempotência e cancelamento.
-
-O browser usa o componente real e um lançador sintético que chama o helper real,
-API/conta/escala fictícias e CSS do próprio componente, em 390/1280 px. Testa
-toque/seleção/retorno, APZ salva, ausência de fallback da escala, edição, modo
-absoluto, diferença, padrão separado, atualização, remoção e troca de conta.
-Intercepta todas as escritas e exige zero saves/alarmes. Isso não é teste de Home,
-Android físico ou programação de alarmes.
-
-A Library resolveu o JPEG privado, mas a materialização falhou neste executor.
-Não lemos seus pixels e não afirmamos comparação visual com ele. Nenhuma captura
-privada está no Git ou nos artefatos; capturas desta draft são sintéticas.
-
-O editor tem rolagem local e cabeçalho estacionário. A regressão geométrica verifica primeiro/último item, acesso sem cobertura, ausência de clipping horizontal, claro/escuro e fonte 150% com viewport reduzida a 600px. Um controle negativo reproduz a rolagem antiga do documento e exige deslocamento do cabeçalho. Isso simula viewport reduzida, não teclado físico nem safe area real. O menu global de Home permanece fora deste harness e requer integração coordenada.
+O JPEG privado Library não pôde ser materializado no executor anterior.
+Não afirmamos comparação visual ou leitura dos pixels. Artefatos de CI são
+exclusivamente sintéticos; a revisão Library contém texto, fontes e links.

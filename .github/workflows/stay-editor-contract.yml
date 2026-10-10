@@ -3,6 +3,11 @@ on:
   pull_request:
     paths:
       - 'shared/stay-edit-plan.*'
+      - 'shared/stay-editor-store.*'
+      - 'shared/stay-alarm-adapter.*'
+      - 'scripts/stay-editor/**'
+      - 'scripts/v139/apply.mjs'
+      - 'client/src/lib/stayEditorStore.ts'
       - 'client/src/lib/stayEditorNavigation.ts'
       - 'client/src/components/v1391/PresentationStayManagerView.tsx'
       - 'client/src/components/v1391/StayHotelAlarmPreview.tsx'
@@ -29,13 +34,14 @@ jobs:
           TZ=UTC node --test scripts/regression-stay-edit-plan.mjs
           TZ=America/Sao_Paulo node --test scripts/regression-stay-edit-plan.mjs
           TZ=Pacific/Auckland node --test scripts/regression-stay-edit-plan.mjs
+      - run: node --test scripts/regression-stay-editor-persistence.mjs
       - run: npm run check
       - run: npm run build
       - name: Install isolated browser tools
         run: |
           npm install --prefix "$RUNNER_TEMP/stay-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/stay-browser/node_modules/playwright/cli.js" install --with-deps chromium
-      - name: Synthetic component QA with no saves or alarms
+      - name: Prepared Home/editor QA, local persistence, no real alarms
         env:
           STAY_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
         run: node scripts/regression-stay-editor-browser.mjs

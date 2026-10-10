@@ -107,7 +107,7 @@ function manualHotelApz(hotelApz, stay, scope) {
 
 /** Updating the default is a separate caller action; this never mutates an override. */
 export function resolveStayAlarmChoice(defaultLeadMinutes, override) {
-  if (override?.mode === 'absolute') return Object.freeze({ mode: 'absolute', alarmAt: override.alarmAt, source: 'individual' });
+  if (override?.mode === 'absolute') return Object.freeze({ mode: 'absolute', alarmAt: override.alarmAt, timeZone: override.timeZone, source: 'individual' });
   if (override && override.mode !== 'relative') return none('invalid-mode');
   const individual = Boolean(override);
   const leadMinutes = individual ? override.leadMinutes : defaultLeadMinutes;
@@ -141,7 +141,7 @@ export function calculateStayWakeup({ scope, stay, hotelApz, now, choice, defaul
   if (alarm <= now) warnings.push('alarm-past');
   return Object.freeze({ action: 'calculated', mode: preference.mode, preferenceSource: preference.source,
     ...(preference.mode === 'relative' ? { leadMinutes: preference.leadMinutes } : {}),
-    scheduledAt: new Date(alarm).toISOString(), display: displayInstant(alarm, stay.timeZone),
+    scheduledAt: new Date(alarm).toISOString(), display: displayInstant(alarm, preference.timeZone || stay.timeZone),
     hotelReportAt: hotel.apz === undefined ? null : new Date(hotel.apz).toISOString(),
     differenceMinutes: hotel.apz === undefined ? null : (hotel.apz - alarm) / 60_000, warnings: Object.freeze(warnings),
     schedulingState: 'not-programmed', eligible: hotel.apz !== undefined && warnings.length === 0 });

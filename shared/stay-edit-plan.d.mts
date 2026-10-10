@@ -1,5 +1,5 @@
 export type StayScope = { accountId: string; rosterId: string; rosterRevision: string };
-export type StayAlarmChoice = { mode: 'relative'; leadMinutes?: number } | { mode: 'absolute'; alarmAt: string };
+export type StayAlarmChoice = { mode: 'relative'; leadMinutes?: number } | { mode: 'absolute'; alarmAt: string; timeZone?: string };
 export type StayPlanInput = Record<string, any>;
 export type StayPlanResult = Readonly<Record<string, any>>;
 export function stayInstant(value: unknown): number | null;

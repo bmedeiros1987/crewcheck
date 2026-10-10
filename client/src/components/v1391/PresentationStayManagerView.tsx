@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { loadStayEditor, persistStayEditor, stayEditorAccount } from '@/lib/stayEditorStore';
+import { createStayAlarmController } from '@shared/stay-alarm-adapter.mjs';
+import { sanitizeStayChoice } from '@shared/stay-editor-store.mjs';
 import { getToken } from '@/lib/authClient';
 import { readStayEditorIntent, returnFromStayProgramEditor } from '@/lib/stayEditorNavigation';
 import { orderStayDisplay } from '@/lib/stayDisplayOrder';
@@ -24,7 +27,7 @@ type RosterEvent = {
   presentation?: string;
   arrival?: string;
   departure?: string;
-  canonical?: { startDateTime?: string; endDateTime?: string; groundBeforeMinutes?: number };
+  canonical?: { startDateTime?: string; endDateTime?: string; groundBeforeMinutes?: number | null };
 };
 
 type StayDraft = {
@@ -61,6 +64,19 @@ function labelDate(date: Date) {
 }
 
 export default function PresentationStayManagerView({ events, initialStayId }: { events: RosterEvent[]; initialStayId?: string }) {
+  const editorRoot = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+    const measure = () => {
+      const root = editorRoot.current; if (!root) return;
+      const nav = document.querySelector('.cz-bottom-nav')?.getBoundingClientRect();
+      root.style.height = `${Math.max(120, (nav?.top ?? window.innerHeight) - root.getBoundingClientRect().top - 16)}px`;
+    };
+    measure(); const observer = new ResizeObserver(measure);
+    const nav = document.querySelector('.cz-bottom-nav'); if(nav) observer.observe(nav);
+    window.addEventListener('resize', measure); window.visualViewport?.addEventListener('resize', measure);
+    return () => { observer.disconnect(); window.removeEventListener('resize', measure); window.visualViewport?.removeEventListener('resize', measure); };
+  }, []);
   const operational = useMemo(() => events.filter((event) => !event.kind || ['flight', 'duty', 'stay'].includes(event.kind)).filter((event) => Number.isFinite(eventStart(event).getTime())).sort((a, b) => eventStart(a).getTime() - eventStart(b).getTime()), [events]);
   const [stays, setStays] = useState<any[]>([]);
   const [homeAddress, setHomeAddress] = useState('');
@@ -70,13 +86,17 @@ export default function PresentationStayManagerView({ events, initialStayId }: {
   const [selectedId, setSelectedId] = useState(() => contextId || stayDisplay.recommended?.id || operational[0]?.id || '');
   const [hotelTimeZone, setHotelTimeZone] = useState('');
   const [alarmChoice, setAlarmChoice] = useState<StayAlarmChoice | undefined>();
-  const [defaultLead, setDefaultLead] = useState<number | undefined>();
-  const [defaultInput, setDefaultInput] = useState('');
+  const [defaultLead, setDefaultLead] = useState<number | undefined>(() => loadStayEditor().defaultLeadMinutes);
+  const [apzConfirmed, setApzConfirmed] = useState(false);
+  const [apzSource, setApzSource] = useState('absent');
+  const [alarmCancelled, setAlarmCancelled] = useState(false);
+  const alarmController = useRef(createStayAlarmController());
+  const [defaultInput, setDefaultInput] = useState(() => String(loadStayEditor().defaultLeadMinutes));
   const [apzDate, setApzDate] = useState('');
   const dirty = useRef(false);
   const owner = useRef(getToken());
   const editSession = useRef(0);
-  const drafts = useRef(new Map<string, { draft: StayDraft; manual: boolean; timeZone: string; choice: StayAlarmChoice | undefined; apzDate: string }>());
+  const drafts = useRef(new Map<string, { draft: StayDraft; manual: boolean; timeZone: string; choice: StayAlarmChoice | undefined; apzDate: string; apzConfirmed: boolean; apzSource: string; alarmCancelled: boolean }>());
   const previousId = useRef('');
   const [removed, setRemoved] = useState(false);
   const [needsReview, setNeedsReview] = useState(false);
@@ -128,7 +148,7 @@ export default function PresentationStayManagerView({ events, initialStayId }: {
   }
 
   useEffect(() => {
-    const reset = () => { editSession.current++; owner.current = getToken(); drafts.current.clear(); dirty.current = false; previousId.current = ''; setStays([]); setHomeAddress(''); setPostalCode(''); setBusy(false); setQuery(''); setSelectedId(''); setHotelTimeZone(''); setApzDate(''); setAlarmChoice(undefined); setDefaultLead(undefined); setDefaultInput(''); setDraft({ hotelName: '', airport: '', stayDate: '', room: '', presentationTime: '', leadMinutes: '', shareSameHotel: false }); };
+    const reset = () => { editSession.current++; owner.current = getToken(); drafts.current.clear(); dirty.current = false; previousId.current = ''; setStays([]); setHomeAddress(''); setPostalCode(''); setBusy(false); setQuery(''); setSelectedId(''); setHotelTimeZone(''); setApzDate(''); setAlarmChoice(undefined); setDefaultLead(loadStayEditor().defaultLeadMinutes); setDefaultInput(String(loadStayEditor().defaultLeadMinutes)); setApzConfirmed(false); setApzSource('absent'); setAlarmCancelled(false); setDraft({ hotelName: '', airport: '', stayDate: '', room: '', presentationTime: '', leadMinutes: '', shareSameHotel: false }); };
     window.addEventListener('crewcheck:auth-changed', reset); window.addEventListener('crewcheck:auth-expired', reset);
     const onStorage = (event: StorageEvent) => { if (['crewcheck_auth_token', 'crewcheck_auth_user'].includes(event.key || '')) reset(); };
     window.addEventListener('storage', onStorage);
@@ -141,12 +161,19 @@ export default function PresentationStayManagerView({ events, initialStayId }: {
     setRemoved(Boolean(selectedId && !selected));
     if (!selected || owner.current !== getToken()) return;
     const signature = [selected.id, selected.canonical?.startDateTime, selected.canonical?.endDateTime, selected.origin, selected.destination].join('|');
-    if (previousId.current === selected.id && eventSignature.current && signature !== eventSignature.current) setNeedsReview(true);
+    if (previousId.current === selected.id && eventSignature.current && signature !== eventSignature.current) { setNeedsReview(true); setApzConfirmed(false); }
     eventSignature.current = signature;
     if (previousId.current === selected.id && dirty.current) return;
     previousId.current = selected.id;
     const cached = drafts.current.get(selected.id);
-    if (cached) { setDraft(cached.draft); setManual(cached.manual); setHotelTimeZone(cached.timeZone); setAlarmChoice(cached.choice); setApzDate(cached.apzDate); dirty.current = true; return; }
+    if (cached) { setDraft(cached.draft); setManual(cached.manual); setHotelTimeZone(cached.timeZone); setAlarmChoice(cached.choice); setApzDate(cached.apzDate); setApzConfirmed(cached.apzConfirmed); setApzSource(cached.apzSource); setAlarmCancelled(cached.alarmCancelled); dirty.current = true; return; }
+    const persisted = loadStayEditor().stays[selected.id];
+    if (persisted) {
+      const changed = persisted.signature !== signature;
+      setDraft(persisted.draft); setManual(true); setHotelTimeZone(persisted.timeZone); setApzDate(persisted.apzDate);
+      setAlarmChoice(persisted.choice); setApzConfirmed(persisted.apzConfirmed && !changed); setApzSource(persisted.apzSource);
+      setAlarmCancelled(persisted.alarmState === 'cancelled'); setNeedsReview(changed); return;
+    }
     const date = isoDay(selected.date || selected.canonical?.startDateTime);
     const direct = stays.filter(item => item.rosterEventId === selected.id);
     const airport = selected.destination || selected.origin || '';
@@ -158,27 +185,60 @@ export default function PresentationStayManagerView({ events, initialStayId }: {
       // PR991 guard: never promote roster stay/check-in/pickup to hotel APZ.
       presentationTime: saved?.presentationTime || (selected.kind !== 'stay' && selected.presentation && selected.presentation !== 'Conexão/Solo' ? selected.presentation : ''),
       leadMinutes: saved?.leadMinutes == null ? '' : String(saved.leadMinutes), shareSameHotel: Boolean(saved?.shareSameHotel) });
-    setApzDate(date); setHotelTimeZone('');
+    setApzDate(date); setHotelTimeZone(''); setApzConfirmed(false); setApzSource(saved?.presentationTime ? 'legacy-unconfirmed' : 'absent'); setAlarmCancelled(false);
     setAlarmChoice(saved?.leadMinutes == null ? undefined : { mode: 'relative', leadMinutes: Number(saved.leadMinutes) });
     setManual(false); dirty.current = false;
   }, [selectedId, selected, stays, operational]);
 
   function selectProgram(id: string) {
-    if (selected && dirty.current) drafts.current.set(selected.id, { draft, manual, timeZone: hotelTimeZone, choice: alarmChoice, apzDate });
+    if (selected && dirty.current) drafts.current.set(selected.id, { draft, manual, timeZone: hotelTimeZone, choice: alarmChoice, apzDate, apzConfirmed, apzSource, alarmCancelled });
     dirty.current = false; setNeedsReview(false); setSelectedId(id);
   }
   function discardEdits() { if (!selected) return; drafts.current.delete(selected.id); dirty.current = false; previousId.current = ''; setStays(items => [...items]); }
-  const apzEpoch = selected?.kind === 'stay' ? stayLocalInstant(apzDate, draft.presentationTime, hotelTimeZone) : null;
+  const apzEpoch = selected?.kind === 'stay' && apzConfirmed ? stayLocalInstant(apzDate, draft.presentationTime, hotelTimeZone) : null;
 
   function chooseHotel(hotel: (typeof CREW_HOTEL_CATALOG)[number]) {
     dirty.current = true;
     setDraft((current) => ({ ...current, hotelName: hotel.name, airport: hotel.airport || hotel.alternateAirport || current.airport }));
-    setManual(false);
+    setManual(false); setApzConfirmed(false);
     toast.success('Hotel do catálogo selecionado.');
+  }
+
+  function saveLocalStay(cancelled = alarmCancelled) {
+    const accountId = stayEditorAccount();
+    if (!selected || !accountId || owner.current !== getToken()) throw new Error('Reabra este pernoite na sua conta.');
+    if (!draft.hotelName.trim()) throw new Error('Informe o hotel.');
+    const choice = sanitizeStayChoice(alarmChoice);
+    if (choice === null) throw new Error('Confirme o horário exato ou a antecedência individual antes de salvar.');
+    const current = loadStayEditor();
+    persistStayEditor({ ...current, lastEditedEventId: selected.id, stays: { ...current.stays, [selected.id]: {
+      eventId: selected.id, signature: eventSignature.current, draft, timeZone: hotelTimeZone, apzDate,
+      apzConfirmed: apzConfirmed && apzEpoch !== null, apzSource: apzConfirmed ? 'manual' : apzSource, choice,
+      alarmState: cancelled ? 'cancelled' : 'not-programmed',
+    } } }, accountId);
+    dirty.current = false; drafts.current.delete(selected.id);
+  }
+  function applyDefault() {
+    const value = Number(defaultInput);
+    if (!defaultInput.trim() || !Number.isInteger(value) || value < 0 || value > 720) return toast.info('Informe um padrão entre 0 e 720 minutos.');
+    try { const current = loadStayEditor(); persistStayEditor({ ...current, defaultLeadMinutes: value }, stayEditorAccount()); setDefaultLead(value); toast.success('Padrão salvo para sua conta neste aparelho. Overrides individuais preservados.'); }
+    catch (error) { toast.error(error instanceof Error ? error.message : 'Não foi possível salvar o padrão.'); }
+  }
+  async function cancelStayAlarm() {
+    try {
+      saveLocalStay(true); setAlarmCancelled(true);
+      const result = await alarmController.current.cancel({ accountId: stayEditorAccount(), eventId: selected?.id });
+      toast.info(result.reason === 'capability-unavailable' ? 'Preferência cancelada. Não há programação ativa nesta integração; o cancelamento de alarmes antigos no aparelho não pode ser confirmado.' : 'Cancelamento confirmado.');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Cancelamento não confirmado.'); }
   }
 
   async function saveStay() {
     if (!selected || owner.current !== getToken()) return toast.info('Selecione a programação nesta conta.');
+    if (selected.kind === 'stay') {
+      try { saveLocalStay(); toast.success('Pernoite e preferências salvos para sua conta neste aparelho. Despertador não programado.'); }
+      catch (error) { toast.error(error instanceof Error ? error.message : 'Não foi possível salvar.'); }
+      return;
+    }
     const session = editSession.current, token = getToken();
     if (!draft.hotelName.trim()) return toast.info('Informe o hotel ou use o endereço de casa para descanso na base.');
     setBusy(true);
@@ -227,7 +287,7 @@ export default function PresentationStayManagerView({ events, initialStayId }: {
     }
   }
 
-  return <section className="cc-stay-editor">
+  return <section ref={editorRoot} className="cc-stay-editor">
     <div className="cc-stay-editor-header"><V139Header title="Apresentação, hotel e descanso" detail="Edite o horário, informe hotel/quarto e mantenha o endereço de casa para descansos na base." onBack={contextId ? () => { returnFromStayProgramEditor(); } : undefined} backLabel={contextId ? 'Voltar ao pernoite' : undefined}/></div>
     <div className="cc-stay-editor-content">
     {needsReview && <p role="alert">A programação foi atualizada. Seus ajustes manuais foram preservados; confirme a data, o fuso e a APZ no hotel.</p>}
@@ -247,24 +307,25 @@ export default function PresentationStayManagerView({ events, initialStayId }: {
         <label>Hotel<input value={draft.hotelName} onChange={(event) => { setDraft({ ...draft, hotelName: event.target.value }); setManual(true); }} placeholder="Hotel de pernoite ou contingência"/></label>
         <label>Número do quarto<input value={draft.room} onChange={(event) => setDraft({ ...draft, room: event.target.value })} placeholder="Opcional e protegido"/></label>
         <label>Aeroporto/local<input value={draft.airport} onChange={(event) => setDraft({ ...draft, airport: event.target.value.toUpperCase() })} placeholder="Ex.: FOR"/></label>
-        <label>{selected?.kind === 'stay' ? 'APZ no hotel (manual ou salva)' : 'Apresentação'}<input type="time" value={draft.presentationTime} onChange={(event) => setDraft({ ...draft, presentationTime: event.target.value })}/></label>
-        {selected?.kind === 'stay' && <><label>Data da APZ no hotel<input type="date" value={apzDate} onChange={event => setApzDate(event.target.value)}/></label>
-        <label>Fuso do hotel<input value={hotelTimeZone} onChange={event => setHotelTimeZone(event.target.value)} placeholder="Ex.: America/Fortaleza"/></label></>}
+        <label>{selected?.kind === 'stay' ? 'APZ no hotel (manual ou salva)' : 'Apresentação'}<input type="time" value={draft.presentationTime} onChange={(event) => { setDraft({ ...draft, presentationTime: event.target.value }); setApzConfirmed(false); setApzSource('manual'); }}/></label>
+        {selected?.kind === 'stay' && <><label>Data da APZ no hotel<input type="date" value={apzDate} onChange={event => { setApzDate(event.target.value); setApzConfirmed(false); }}/></label>
+        <label>Fuso do hotel<input value={hotelTimeZone} onChange={event => { setHotelTimeZone(event.target.value); setApzConfirmed(false); }} placeholder="Ex.: America/Fortaleza"/></label><label className="wide"><input type="checkbox" checked={apzConfirmed} onChange={event => { setApzConfirmed(event.target.checked); if(event.target.checked) setApzSource('manual'); }}/> Confirmo esta data, horário e fuso como APZ no hotel</label><p>Origem da APZ: {apzSource === 'legacy-unconfirmed' ? 'horário salvo antigo; origem não confirmada' : apzSource === 'manual' ? 'informada/confirmada por você' : 'não informada'}. {apzConfirmed ? 'Confirmada.' : 'Confirmação necessária; não usamos escala ou pickup.'}</p></>}
 
         <label><input type="checkbox" checked={draft.shareSameHotel} onChange={(event) => setDraft({ ...draft, shareSameHotel: event.target.checked })}/> Autorizar colegas no mesmo hotel a me localizar em emergência</label>
       </div>
-      <div className="cc139-actions"><button className="primary" onClick={saveStay} disabled={busy || !selected}><Save/> Salvar hotel, quarto e horário</button><details><summary>Mais opções da edição</summary><button type="button" onClick={() => setManual(true)}><Building2/> Hotel de contingência / manual</button><button type="button" onClick={discardEdits} disabled={!selected}>Descartar edição deste pernoite</button></details></div>
+      <div className="cc139-actions"><button className="primary" onClick={saveStay} disabled={busy || !selected}><Save/> Salvar alterações do pernoite</button><details><summary>Mais opções da edição</summary><button type="button" onClick={() => setManual(true)}><Building2/> Hotel de contingência / manual</button><button type="button" onClick={discardEdits} disabled={!selected}>Descartar edição deste pernoite</button>{selected?.kind === 'stay' && <button type="button" onClick={cancelStayAlarm}>Cancelar despertador deste pernoite</button>}</details></div>
     </section>
     {selected?.kind === 'stay' && <StayHotelAlarmPreview eventId={selected.id} hotelApzIso={apzEpoch === null ? '' : new Date(apzEpoch).toISOString()}
       timeZone={hotelTimeZone} choice={alarmChoice} defaultLeadMinutes={defaultLead} onChoice={choice => { dirty.current = true; setAlarmChoice(choice); }}/>}
-    <section className="cc139-card" aria-label="Antecedência padrão"><details><summary>Alterar antecedência padrão</summary><p>Alterar o padrão é uma ação separada. Antecedências individuais e horários exatos são preservados. Este padrão ainda é uma prévia desta sessão.</p>
+    {alarmCancelled && <p role="status">Despertador cancelado nesta preferência. Editar ou importar não o reativa.</p>}
+    <section className="cc139-card" aria-label="Antecedência padrão"><details><summary>Alterar antecedência padrão</summary><p>Alterar o padrão é uma ação separada. Antecedências individuais e horários exatos são preservados. O padrão é salvo para sua conta neste aparelho.</p>
       <label>Minutos do padrão<input type="number" min="0" max="720" value={defaultInput} onChange={event => setDefaultInput(event.target.value)}/></label>
-      <button type="button" onClick={() => { const value = Number(defaultInput); if (defaultInput.trim() && Number.isInteger(value) && value >= 0 && value <= 720) setDefaultLead(value); else toast.info('Informe um padrão entre 0 e 720 minutos.'); }}>Aplicar padrão nesta sessão</button></details></section>
+      <button type="button" onClick={applyDefault}>Salvar antecedência padrão</button></details></section>
     <section className="cc139-card">
       <h2>Hotéis preferenciais do catálogo</h2>
       <p>Resultados do aeroporto da programação aparecem primeiro. Use cadastro manual quando a contingência levar a outro hotel.</p>
       <div className="cc139-form"><label className="wide"><Search/> Buscar hotel, cidade ou aeroporto<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Prioridade: ${targetAirport || 'aeroporto da programação'}`}/></label></div>
-      <div className="cc139-choices">{catalogResults.map((hotel) => <button key={`${hotel.name}-${hotel.airport}`} className={draft.hotelName === hotel.name ? 'active' : ''} onClick={() => chooseHotel(hotel)}><Hotel/>{hotel.name}<small>{hotel.airport || hotel.alternateAirport} · {hotel.city}</small></button>)}</div>
+      <div className="cc139-choices">{catalogResults.map((hotel) => <button type="button" key={`${hotel.name}-${hotel.airport}`} className={draft.hotelName === hotel.name ? 'active' : ''} onClick={() => chooseHotel(hotel)}><Hotel/><span><strong>{hotel.name}</strong><small>{hotel.airport || hotel.alternateAirport} · {hotel.city}</small></span></button>)}</div>
     </section>
     <section className="cc139-card">
       <h2>Endereço de casa para descanso na base</h2>
