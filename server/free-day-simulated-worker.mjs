@@ -1,7 +1,7 @@
 // Explicit server-side simulation lane. The real SQL queue remains held.
 // No provider callback, network client, recipient, timer or retry scheduler.
 import {SOURCE_SCOPE,sourceKey} from './free-day-source-contract.mjs';
-import {SOURCE_JOB_SCOPE,sourceJobHash,sourceJobStateKey,cancelSourceJobs} from './free-day-source-job-state.mjs';
+import {SOURCE_JOB_SCOPE,sourceJobHash,sourceJobStateKey} from './free-day-source-job-state.mjs';
 import {lockedDestination,validatedReview,sourceQueueJobKey} from './free-day-source-queue.mjs';
 import {PERSONAL_SCOPE,PERSONAL_TEXT_VERSION,personalConsentConfiguration} from './free-day-personal-consent.mjs';
 export const WORKER_SCOPE='free-day-simulated-worker-v1';
@@ -54,15 +54,15 @@ export async function simulatedWorker(db,user,body=null,{now,clock=now===undefin
   await c.beginTransaction();inTransaction=true;
   let x=await lockContext(c,user,clock);
   const allowed=configuration.enabled===true && Array.isArray(configuration.ownerIds) && configuration.ownerIds.includes(String(user.id));
-  if(!x.valid){await cancelSourceJobs(c,user);await c.commit();inTransaction=false;if(body)fail(409,'WORKER_CONTEXT_CHANGED');return {...info(x,clock()),phase:'unavailable',eligible:false,available:false,previousAttemptUnknown:true};}
+  if(!x.valid){await c.commit();inTransaction=false;if(body)fail(409,'WORKER_CONTEXT_CHANGED');return {...info(x,clock()),phase:'unavailable',eligible:false,available:false,previousAttemptUnknown:true};}
   let worker=x.receipt.worker || {revision:0,phase:'held'};
   const changed=worker.context && (worker.context!==x.context || worker.personalRevision!==x.revision);
   if((!x.authorized || changed || !allowed) && ['pending','dispatching'].includes(worker.phase)) {
-   worker={...worker,revision:worker.revision+1,phase:worker.phase==='dispatching'?'uncertain':'cancelled'};x.receipt.worker=worker;await save(c,x.key,x.receipt);await c.commit();inTransaction=false;
+   worker={...worker,revision:worker.revision+1,phase:worker.phase==='dispatching'?'uncertain':'cancelled'};x.receipt.worker=worker;await c.commit();inTransaction=false;
    if(body)fail(409,'WORKER_AUTHORIZATION_CHANGED');return {...info(x,clock()),available:false};
   }
   if(worker.phase==='dispatching' && !(Date.parse(worker.claimedAt)+WORKER_CUTOFF_MS>x.checkedAt)) {
-   worker={...worker,revision:worker.revision+1,phase:'uncertain'};x.receipt.worker=worker;await save(c,x.key,x.receipt);await c.commit();inTransaction=false;return {...info(x,clock()),duplicate:true,available:allowed};
+   worker={...worker,revision:worker.revision+1,phase:'uncertain'};x.receipt.worker=worker;if(body)await save(c,x.key,x.receipt);await c.commit();inTransaction=false;return {...info(x,clock()),duplicate:true,available:allowed};
   }
   if(!body){await c.commit();inTransaction=false;return {...info(x,clock()),available:allowed};}
   if(!allowed)fail(403,'WORKER_SIMULATION_NOT_OFFERED');
@@ -87,13 +87,13 @@ export async function simulatedWorker(db,user,body=null,{now,clock=now===undefin
   if(interruptAfterClaim)return {...info(x,clock()),interrupted:true};
   await c.beginTransaction();inTransaction=true;
   x=await lockContext(c,user,clock);worker=x.receipt.worker;
-  if(!x.valid){await cancelSourceJobs(c,user);await c.commit();inTransaction=false;return {...info(x,clock()),phase:'cancelled',eligible:false};}
+  if(!x.valid){await c.commit();inTransaction=false;return {...info(x,clock()),phase:'cancelled',eligible:false};}
   if(!worker || worker.attempt!==attempt || worker.phase!=='dispatching'){await c.commit();inTransaction=false;return {...info(x,clock()),duplicate:true};}
   if(configuration.enabled!==true || !configuration.ownerIds.includes(String(user.id)) || !x.authorized || x.revision!==worker.personalRevision || x.context!==worker.context){x.receipt.worker={...worker,revision:worker.revision+1,phase:'cancelled'};await save(c,x.key,x.receipt);await c.commit();inTransaction=false;return info(x,clock());}
   // Final synchronous check: no await separates this fresh clock from the
   // fixed provider call. Lock/commit waits cannot extend source/consent TTL.
   refreshTime(x,clock());
-  if(!x.valid){await cancelSourceJobs(c,user);await c.commit();inTransaction=false;return {...info(x,clock()),phase:'cancelled',eligible:false};}
+  if(!x.valid){await c.commit();inTransaction=false;return {...info(x,clock()),phase:'cancelled',eligible:false};}
   const cutoffExpired=!(Date.parse(worker.claimedAt)+WORKER_CUTOFF_MS>x.checkedAt);
   if(!x.authorized || cutoffExpired){x.receipt.worker={...worker,revision:worker.revision+1,phase:cutoffExpired?'uncertain':'cancelled'};await save(c,x.key,x.receipt);await c.commit();inTransaction=false;return info(x,clock());}
   // Profile, source, link and consent remain locked through this synchronous,

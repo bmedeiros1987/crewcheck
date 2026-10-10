@@ -25,20 +25,9 @@ export async function voluntarySources(db,user,body=null,{now=Date.now()}={}) {
     const [rows]=await c.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[key]);
     const stored=parse(rows[0]?.payload);
     let state=stored.ownerId===user.id && stored.scope===SOURCE_SCOPE?stored:{email:user.email,ownerId:user.id,scope:SOURCE_SCOPE,revision:0,consent:false};
-    // Physical receipt expiry is enforced on the next authenticated access, without a background job.
-    if (state.review && !(Date.parse(state.expiresAt)>now)) {
-      const expiredRevision=state.revision;
-      await cancelSourceJobs(c,user);
-      state={email:user.email,ownerId:user.id,scope:SOURCE_SCOPE,revision:expiredRevision+1,consent:false};
-      await save(c,key,state);
-      // Commit retention cleanup while holding the owner lock. A stale POST
-      // must not roll it back, and no subsequent mutation uses the released lock.
-      await c.commit(); committed=true;
-      if (!body) return publicState(state,now);
-      if (body.action==='revoke' && only(body,['scope','action','expectedRevision']) && body.expectedRevision===expiredRevision)
-        return {...publicState(state,now),expired:true,alreadyRevoked:true};
-      fail(409,'SOURCE_REVISION_CHANGED');
-    }
+    // Reads hide expired receipts without changing stored data or revision.
+    // Rejected mutations likewise preserve rows/jobs; only an authenticated
+    // revoke or explicit review with the current CAS may replace/remove them.
     if (body) {
       if (!Number.isInteger(body.expectedRevision) || body.expectedRevision!==state.revision) fail(409,'SOURCE_REVISION_CHANGED');
       if (body.action==='revoke') {

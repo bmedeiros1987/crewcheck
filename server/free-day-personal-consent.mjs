@@ -1,6 +1,6 @@
 // Personal authorization only. Never releases held jobs or invokes a provider.
 import {SOURCE_SCOPE,sourceKey} from './free-day-source-contract.mjs';
-import {sourceJobHash,sourceJobStateKey,SOURCE_JOB_SCOPE,cancelSourceJobs} from './free-day-source-job-state.mjs';
+import {sourceJobHash,sourceJobStateKey,SOURCE_JOB_SCOPE} from './free-day-source-job-state.mjs';
 import {lockedDestination,validatedReview,sourceQueueJobKey} from './free-day-source-queue.mjs';
 export const PERSONAL_SCOPE='free-day-personal-consent-v1';
 export const PERSONAL_TEXT_VERSION='1';
@@ -30,11 +30,6 @@ export async function personalConsent(db,user,body=null,{now=Date.now(),configur
     const [rows]=metadataKey?await c.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[metadataKey]):[[]];
     let receipt=parse(rows[0]?.payload);
     const valid=prepared && review && destination && jobs[0]?.status==='held' && receipt.ownerId===user.id && receipt.email===user.email && receipt.scope===SOURCE_JOB_SCOPE && receipt.consentRevision===state.revision && receipt.reviewDedupe===review.dedupe && receipt.linkVersion===destination.version && receipt.expiresAt===state.expiresAt;
-    if(!valid && (jobs.length || (state.review && !prepared))) {
-      await cancelSourceJobs(c,user);await c.commit();committed=true;
-      if(body)fail(409,'CONSENT_CONTEXT_CHANGED');
-      receipt={};
-    }
     const context=valid?sourceJobHash([PERSONAL_SCOPE,user.id,created,state.revision,review.dedupe,destination.version,state.expiresAt]):null;
     let personal=receipt.personalConsent || {revision:0};
     const revision=Number.isInteger(personal.revision)?personal.revision:0;
