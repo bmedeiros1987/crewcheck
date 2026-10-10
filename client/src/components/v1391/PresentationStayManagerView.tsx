@@ -240,7 +240,7 @@ export default function PresentationStayManagerView({ events, initialStayId, emb
       persistStayEditor({ ...current, stays: { ...current.stays, [selected.id]: { ...record, alarmState: 'cancelled' } } }, accountId);
       setAlarmCancelled(true);
       const result = await alarmController.current.cancel({ accountId: stayEditorAccount(), eventId: selected?.id });
-      toast.info(result.reason === 'capability-unavailable' ? 'Preferência cancelada. Não há programação ativa nesta integração; o cancelamento de alarmes antigos no aparelho não pode ser confirmado.' : 'Cancelamento confirmado.');
+      toast.info(result.state === 'cancelled' ? 'Cancelamento confirmado.' : 'Preferência cancelada. O cancelamento de alarmes antigos no aparelho não pode ser confirmado por esta integração.');
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Cancelamento não confirmado.'); }
   }
 
@@ -310,7 +310,7 @@ export default function PresentationStayManagerView({ events, initialStayId, emb
       <article><MapPin/><span>Tempos em solo ≥ 60 min</span><strong>{groundGaps.length}</strong></article>
     </section>
     <section className="cc139-card">
-      <h2>Programação a editar</h2>
+      <h2>Programação a editar</h2><p>As alterações são privadas, salvas para sua conta neste aparelho. Não são sincronizadas ou compartilhadas automaticamente.</p>
       {selected?.kind === 'stay' && <p role="status">{stayDisplay.label(selected.id)}</p>}
       <div className="cc139-form" onChange={() => { dirty.current = true; }}>
         <label className="wide">Programação
