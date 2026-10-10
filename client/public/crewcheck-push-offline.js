@@ -1,5 +1,5 @@
-/* Offline preparation only. sw.js does not import this file. No production
- * listener, permission, receipt endpoint or sender is activated by this PR. */
+/* CrewCheck worker receiver. No browser subscription exists before explicit
+ * authenticated device activation; server transport is disabled by default. */
 (function (root) {
   const sameBinding = (a, b) => a && b && a.ownerId === b.ownerId && a.installationId === b.installationId && a.consentRevision === b.consentRevision;
   const valid = value => value && value.schema === 'crewcheck-notice-v1' && ['ownerId', 'installationId', 'eventKey'].every(key => typeof value[key] === 'string' && value[key].length >= 8 && value[key].length <= 160) && Number.isSafeInteger(value.consentRevision) && value.consentRevision > 0 && value.route === '/app';
@@ -20,30 +20,41 @@
     return {
       binding: () => transaction((store, done) => { const req = store.get('binding'); req.onsuccess = () => done(req.result || null); }),
       setBinding: binding => transaction((store, done) => { store.put(binding, 'binding'); done(null); }),
+      begin: () => transaction((store, done) => { const req=store.get('generation');req.onsuccess=()=>{const generation=(req.result||0)+1;store.put(generation,'generation');store.put(null,'binding');done(generation);}; }),
+      bind: (binding,generation) => transaction((store,done)=>{const req=store.get('generation');req.onsuccess=()=>{if(req.result!==generation)return done(false);store.put(binding,'binding');done(true);};}),
+      cancel: generation => transaction((store,done)=>{const req=store.get('generation');req.onsuccess=()=>{if(generation!==undefined&&req.result!==generation)return done(false);store.put((req.result||0)+1,'generation');store.put(null,'binding');done(true);};}),
+      prune: now => transaction((store,done)=>{let count=0,visited=0;const req=store.openCursor();req.onsuccess=()=>{const cursor=req.result;if(!cursor)return done(count);if(String(cursor.key).startsWith('event:')&&Date.parse(cursor.value.expiresAt)<=now){cursor.delete();count++;}if(count<100&&++visited<200)cursor.continue();else done(count);};}),
       claim: (key, envelope) => transaction((store, done) => {
         const binding = store.get('binding'); binding.onsuccess = () => {
           if (!sameBinding(binding.result, envelope)) return done(false);
-          const req = store.get('event:' + key); req.onsuccess = () => { if (req.result) return done(false); store.put({ status: 'displaying', expiresAt: envelope.expiresAt }, 'event:' + key); done(true); };
+          const count=store.count();count.onsuccess=()=>{if(count.result>=1500)return done(false);const req = store.get('event:' + key); req.onsuccess = () => { if (req.result) return done(false); store.put({ status: 'displaying', expiresAt: envelope.expiresAt }, 'event:' + key); done(true); };};
         };
       }),
-      record: (key, status) => transaction((store, done) => { store.put({ status }, 'event:' + key); done(null); }),
+      reports: () => transaction((store,done)=>{const values=[];const req=store.openCursor();req.onsuccess=()=>{const cursor=req.result;if(!cursor)return done(values);if(String(cursor.key).startsWith('event:')&&cursor.value.report&&values.length<50)values.push({key:cursor.key,...cursor.value.report});cursor.continue();};}),
+      acknowledge: keys => transaction((store,done)=>{for(const key of keys){const req=store.get(key);req.onsuccess=()=>{if(req.result)store.put({...req.result,report:null},key);};}done(null);}),
+      report: (key,envelope,status) => transaction((store,done)=>{const req=store.get('event:'+key);req.onsuccess=()=>{if(req.result)store.put({...req.result,report:{envelope,status}},'event:'+key);done(null);};}),
+      record: (key, status) => transaction((store, done) => { const req=store.get('event:'+key);req.onsuccess=()=>{store.put({...req.result,status},'event:'+key);done(null);}; }),
     };
   }
-  async function processPush({ enabled = false, envelope, store, registration, now = Date.now() }) {
+  async function processPush({ enabled = false, envelope, store, registration, now = Date.now(), clock = () => now }) {
     if (enabled !== true || !valid(envelope) || !Number.isFinite(now) || !Number.isFinite(Date.parse(envelope.expiresAt)) || Date.parse(envelope.expiresAt) <= now || !sameBinding(await store.binding(), envelope)) return { status: 'blocked', received: null };
     const key = JSON.stringify([envelope.ownerId, envelope.eventKey, envelope.installationId, envelope.consentRevision]);
     if (!await store.claim(key, envelope)) return { status: 'duplicate_or_revoked', received: null };
+    if (Date.parse(envelope.expiresAt) <= clock()) { await store.record(key, 'expired'); return { status: 'expired', received: null }; }
     // Check binding again after the persistent claim. Never show account details.
     if (!sameBinding(await store.binding(), envelope)) { await store.record(key, 'revoked'); return { status: 'revoked', received: null }; }
     try {
-      await registration.showNotification('CrewCheck', { body: 'Há uma atualização para conferir no CrewCheck.', tag: key, data: { route: '/app', binding: { ownerId: envelope.ownerId, installationId: envelope.installationId, consentRevision: envelope.consentRevision } } });
+      if (Date.parse(envelope.expiresAt) <= clock()) { await store.record(key, 'expired'); return { status: 'expired', received: null }; }
+      await registration.showNotification('CrewCheck', { body: 'Há uma atualização para conferir no CrewCheck.', tag: key, data: { route: '/app', envelope, binding: { ownerId: envelope.ownerId, installationId: envelope.installationId, consentRevision: envelope.consentRevision } } });
       await store.record(key, 'display_api_resolved');
+      if(store.report)await store.report(key,envelope,'display_api_resolved');
       return { status: 'display_api_resolved', received: null }; // Not proof the user received/read it.
     } catch { await store.record(key, 'uncertain'); return { status: 'uncertain', received: null }; }
   }
   async function processClick({ notification, store, clients, origin }) {
     notification.close();
     if (notification.data?.route !== '/app' || !sameBinding(await store.binding(), notification.data.binding)) return { opened: false };
+    if(store.report&&valid(notification.data.envelope))await store.report(JSON.stringify([notification.data.envelope.ownerId,notification.data.envelope.eventKey,notification.data.envelope.installationId,notification.data.envelope.consentRevision]),notification.data.envelope,'clicked');
     const target = new URL('/app', origin).href;
     const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true });
     const own = windows.find(client => { try { return new URL(client.url).origin === origin; } catch { return false; } });
@@ -52,3 +63,18 @@
   }
   root.CrewCheckPushOffline = { indexedStore, processPush, processClick };
 })(typeof self !== 'undefined' ? self : globalThis);
+
+// The browser has no push subscription until explicit authenticated activation.
+// Binding/control messages are restricted to same-origin WindowClients, not tokens.
+if(typeof ServiceWorkerGlobalScope!=='undefined'&&self instanceof ServiceWorkerGlobalScope){
+ const store=self.CrewCheckPushOffline.indexedStore(self.indexedDB);
+ self.addEventListener('message',event=>{if(!event.data?.crewcheckPush)return;event.waitUntil((async()=>{let result={ok:false};try{const source=event.source;if(!source||new URL(source.url).origin!==self.location.origin||source.type!=='window')return;const v=event.data;
+ if(v.action==='begin')result={ok:true,generation:await store.begin()};
+ else if(v.action==='bind'&&v.binding&&Number.isSafeInteger(v.generation)&&/^[a-zA-Z0-9_-]{8,160}$/.test(v.binding.ownerId||'')&&/^[a-zA-Z0-9_-]{8,160}$/.test(v.binding.installationId||'')&&Number.isSafeInteger(v.binding.consentRevision)&&v.binding.consentRevision>0)result={ok:await store.bind(v.binding,v.generation)};
+ else if(v.action==='cancel'){result={ok:await store.cancel(v.generation)};if(result.ok){for(const item of await self.registration.getNotifications())item.close();}}
+ else if(v.action==='reports')result={ok:true,reports:await store.reports()};
+ else if(v.action==='acknowledge'&&Array.isArray(v.keys)&&v.keys.length<=50){await store.acknowledge(v.keys.filter(key=>typeof key==='string'&&key.startsWith('event:')));result={ok:true};}
+ }catch{}finally{event.ports[0]?.postMessage(result);}})());});
+ self.addEventListener('push',event=>event.waitUntil((async()=>{try{await store.prune(Date.now());const envelope=event.data?.json();await self.CrewCheckPushOffline.processPush({enabled:true,envelope,store,registration:self.registration,clock:()=>Date.now()});}catch{}})()));
+ self.addEventListener('notificationclick',event=>event.waitUntil(self.CrewCheckPushOffline.processClick({notification:event.notification,store,clients:self.clients,origin:self.location.origin})));
+}

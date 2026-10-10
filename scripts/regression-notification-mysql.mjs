@@ -1,6 +1,7 @@
 import {simulatedWorker,WORKER_SCOPE,localProviderStats} from '../server/free-day-simulated-worker.mjs';
 import {personalConsent,PERSONAL_SCOPE} from '../server/free-day-personal-consent.mjs';
 import assert from 'node:assert/strict';
+import {enqueueCrewCheckPush,dispatchPersistentPush,reconcilePushReceipts,outboxKey} from '../server/web-push/outbox.mjs';
 import {mutateInstallation,revokeAccountInstallations,installationStateKey} from '../server/web-push/installationRegistry.mjs';
 import fs from 'node:fs';
 import mysql from 'mysql2/promise';
@@ -79,6 +80,16 @@ try {
     const stateKey=installationStateKey(subscription.endpoint),[rows]=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[stateKey]);
     assert(!JSON.stringify(rows[0].payload).includes(subscription.endpoint));
     await assert.rejects(mutateInstallation(db,{...input,expectedRevision:1,identity:{email,ownerId:'stale_owner'}}),error=>error.status===401);
+    const now=input.now,envelope={schema:'crewcheck-notice-v1',ownerId:input.identity.ownerId,installationId:input.installationId,consentRevision:1,eventKey:'persistent_fixture_1',expiresAt:new Date(now+60000).toISOString(),route:'/app'},config={enabled:true,configured:true,encryptionKey:input.key};
+    const verifyContext=async()=>true,jobInput={email,installationKey:stateKey,envelope,scheduledAt:new Date(now).toISOString(),sourceContext:{preferencesRevision:1}};
+    assert.equal((await enqueueCrewCheckPush(db,jobInput,{verifyContext,clock:()=>now})).status,'queued');
+    const select=async value=>(await db.query('SELECT state_key,payload FROM crewcheck_telegram_state WHERE state_key=?',[outboxKey(value)]))[0][0];
+    let sends=0;const send=async()=>{sends++;return{status:'accepted_unconfirmed',received:null};};
+    const dispatches=await Promise.all([dispatchPersistentPush(db,await select(envelope),{configuration:config,verifyContext,clock:()=>now,send}),dispatchPersistentPush(db,await select(envelope),{configuration:config,verifyContext,clock:()=>now,send})]);assert.equal(sends,1);assert(dispatches.every(value=>value.status==='accepted_unconfirmed'&&value.received===null));
+    const report={envelope,status:'display_api_resolved'};assert.equal((await reconcilePushReceipts(db,input.identity,[report])).reconciled,1);assert.equal((await reconcilePushReceipts(db,input.identity,[report])).reconciled,0);
+    const unknown={...envelope,eventKey:'persistent_unknown_1'};await enqueueCrewCheckPush(db,{...jobInput,envelope:unknown},{verifyContext,clock:()=>now});const unknownSelected=await select(unknown);
+    const throwing=async()=>{sends++;throw Error('ambiguous mock');};assert.equal((await dispatchPersistentPush(db,unknownSelected,{configuration:config,verifyContext,clock:()=>now,send:throwing})).status,'uncertain');await dispatchPersistentPush(db,unknownSelected,{configuration:config,verifyContext,clock:()=>now,send:throwing});assert.equal(sends,2);
+    const late={...envelope,eventKey:'persistent_late_1'};await enqueueCrewCheckPush(db,{...jobInput,envelope:late},{verifyContext,clock:()=>now});let instant=now,checks=0;const advances=async()=>{checks++;if(checks===2)instant=now+60000;return true;};assert.equal((await dispatchPersistentPush(db,await select(late),{configuration:config,verifyContext:advances,clock:()=>instant,send})).status,'cancelled');assert.equal(sends,2,'expired between persistent claim and send never sends');
     assert.equal((await revokeAccountInstallations(db,input.identity,'other_device',input.now)).revoked,0);
     assert.equal((await revokeAccountInstallations(db,input.identity,input.installationId,input.now)).revoked,1);
     assert.equal((await revokeAccountInstallations(db,input.identity,input.installationId,input.now)).revoked,0);

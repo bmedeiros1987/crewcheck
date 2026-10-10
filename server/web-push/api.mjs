@@ -1,0 +1,31 @@
+import { requireExistingIdentity, readBody, sendJson, parseJsonColumn } from '../v139/common.mjs';
+import { mutateInstallation, revokeAccountInstallations } from './installationRegistry.mjs';
+import { reconcilePushReceipts } from './outbox.mjs';
+import { pushConfiguration } from './config.mjs';
+const validId = value => typeof value==='string' && /^[a-zA-Z0-9_-]{8,160}$/.test(value);
+export async function handleCrewCheckPush(req,res,url,{identify=requireExistingIdentity,read=readBody,configuration=pushConfiguration,clock=()=>Date.now()}={}) {
+ if(url.pathname!=='/api/platform/notifications/crewcheck-installation')return false;
+ res.setHeader('Cache-Control','no-store');const identity=await identify(req,res);if(!identity)return true;
+ const ownerId=String(identity.payload?.sub||'');if(!ownerId||identity.profile?.public_id!==ownerId){sendJson(res,401,{ok:false,message:'Sessão inválida.'});return true;}
+ const config=configuration();
+ if(req.method==='GET'){
+  const installationId=url.searchParams.get('installationId');if(!validId(installationId)){sendJson(res,400,{ok:false,message:'Aparelho não identificado.'});return true;}
+  const[rows]=await identity.db.query("SELECT payload FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-push-installation:%' AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.email'))=? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.ownerId'))=? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.installationId'))=?",[identity.email,ownerId,installationId]);
+  const state=rows.map(row=>parseJsonColumn(row.payload,null)).filter(row=>row?.email===identity.email&&row.ownerId===ownerId&&row.installationId===installationId).sort((a,b)=>b.revision-a.revision)[0];
+  sendJson(res,200,{ok:true,enabled:config.enabled===true&&config.configured===true,ownerId,installationId,revision:state?.revision||0,registered:state?.active===true,publicKey:config.enabled===true&&config.configured===true?config.publicKey:null,received:null});return true;
+ }
+ if(req.method!=='POST'){sendJson(res,405,{ok:false,message:'Método não permitido.'});return true;}
+ // Cookie authentication cannot authorize a cross-origin subscription/revoke/report.
+ const expectedOrigin=config.origin||'https://crewcheck.onrender.com';
+ if(req.headers.origin!==expectedOrigin||['cross-site','same-site'].includes(req.headers['sec-fetch-site'])){sendJson(res,403,{ok:false,message:'Confirmação deve ocorrer no CrewCheck.'});return true;}
+ const body=await read(req,20000);if(!validId(body?.installationId)){sendJson(res,400,{ok:false,message:'Aparelho não identificado.'});return true;}
+ const own={email:identity.email,ownerId};
+ if(body.action==='revoke'){sendJson(res,200,{ok:true,...await revokeAccountInstallations(identity.db,own,body.installationId,clock())});return true;}
+ if(body.action==='receipts'){
+  const reports=Array.isArray(body.reports)?body.reports.filter(item=>item.envelope?.installationId===body.installationId):null;
+  sendJson(res,200,{ok:true,...await reconcilePushReceipts(identity.db,own,reports)});return true;
+ }
+ if(body.action!=='subscribe'||config.enabled!==true||config.configured!==true){sendJson(res,503,{ok:false,message:'Avisos neste aparelho ainda não estão disponíveis.'});return true;}
+ const result=await mutateInstallation(identity.db,{identity:own,installationId:body.installationId,expectedRevision:body.expectedRevision,action:'subscribe',consent:body.consent,subscription:body.subscription,key:config.encryptionKey,now:clock()});
+ sendJson(res,200,{ok:true,ownerId,installationId:result.installationId,consentRevision:result.revision,registered:result.active,received:null});return true;
+}

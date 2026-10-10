@@ -1,3 +1,4 @@
+import { CrewCheckPushDevice } from '../notifications/CrewCheckPushDevice';
 import { useEffect, useRef, useState } from 'react';
 import { authFetch, getToken } from '@/lib/authClient';
 import { readStatus as readDeviceNotificationStatus } from '../notifications/DeviceNotificationReadiness';
@@ -89,6 +90,7 @@ export function BidsAlertPreferences() {
               {NOTIFICATION_CHANNELS.map(channel => <label className="cc-bids-alert-optin" key={channel}><input type="checkbox" checked={draft.channels.all || draft.channels.individual[channel]} onChange={event => chooseChannel(channel, event.target.checked)} aria-describedby={`bids-channel-${channel}`} /> {channelNames[channel]}</label>)}
             </fieldset>
             <p id="bids-channel-mobilePwa">CrewCheck: {device.native ? device.status.notifications === false ? 'permita notificações nas configurações deste aparelho.' : device.status.notifications === true && device.status.notificationAppEnabled === true && device.status.notificationChannelEnabled === true ? 'permissão disponível neste aparelho; os avisos BIDS ainda não foram programados.' : 'permissão e disponibilidade neste aparelho ainda não verificadas.' : 'avisos com a versão instalada pelo navegador fechada ainda não estão disponíveis neste fluxo.'} {channelStateLabel(snapshot, 'mobilePwa')}</p>
+            <CrewCheckPushDevice/>
             <p id="bids-channel-watch">Relógio: conexão e permissão ainda não verificadas para estes avisos. A preferência não confirma um relógio conectado. {channelStateLabel(snapshot, 'watch')}</p>
             <p id="bids-channel-crewCierge">CrewCierge: vínculo desta conta e envio ainda não verificados para estes avisos. {channelStateLabel(snapshot, 'crewCierge')}</p>
           </fieldset>
