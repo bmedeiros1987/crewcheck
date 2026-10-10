@@ -54,6 +54,7 @@ export function createMyCrewCareController({
   let refreshSuggested = false;
   let boundAccount = null;
   let snapshot = build();
+  let snapshotSignature = JSON.stringify(snapshot);
 
   function build() {
     if (!engine) {
@@ -83,8 +84,34 @@ export function createMyCrewCareController({
   }
 
   function emit() {
-    snapshot = build();
+    const next = build();
+    const signature = JSON.stringify(next);
+    // Publish only real changes: this keeps getSnapshot referentially stable
+    // and stops a mount effect from re-triggering itself in a render loop.
+    if (signature === snapshotSignature) return;
+    snapshotSignature = signature;
+    snapshot = next;
     for (const listener of [...listeners]) listener();
+  }
+
+  /**
+   * Honest staleness. A refresh is suggested only when the policy itself says
+   * the data is due, so data that was just updated is never called stale.
+   */
+  function suggestRefresh() {
+    if (!engine) return false;
+    const state = engine.state();
+    if (!state.automatic) return false;
+    return planMyCrewCareSync({
+      now: now(),
+      automatic: true,
+      networkAvailable: isOnline(),
+      foreground: isForeground(),
+      reason: 'automatic',
+      sessionState: state.status === 'connected' ? 'validated' : 'unknown',
+      backgroundCapability: MYCREWCARE_BACKGROUND_CAPABILITY.NONE,
+      lastSuccessAt: state.lastSuccessfulSyncAt,
+    }).action === 'sync-now';
   }
 
   return Object.freeze({
@@ -103,16 +130,7 @@ export function createMyCrewCareController({
       engine.setContext(context, stays);
       const restored = await engine.restore();
       // A cached view is never proof of a live session; suggest, never auto-open.
-      refreshSuggested = engine.state().automatic && planMyCrewCareSync({
-        now: now(),
-        automatic: true,
-        networkAvailable: isOnline(),
-        foreground: isForeground(),
-        reason: 'roster-changed',
-        sessionState: engine.state().status === 'connected' ? 'validated' : 'unknown',
-        backgroundCapability: MYCREWCARE_BACKGROUND_CAPABILITY.NONE,
-        lastSuccessAt: engine.state().lastSuccessfulSyncAt,
-      }).action === 'sync-now';
+      refreshSuggested = suggestRefresh();
       emit();
       return restored;
     },
@@ -121,7 +139,7 @@ export function createMyCrewCareController({
     setAutomatic(enabled) {
       if (!engine) return;
       engine.setAutomatic(enabled === true);
-      refreshSuggested = enabled === true;
+      refreshSuggested = suggestRefresh();
       emit();
     },
 

@@ -250,3 +250,37 @@ test('no background machinery in the interface wiring', () => {
     assert.doesNotMatch(source, /password|senha:|document\.body|innerHTML|localStorage|sessionStorage/i, file);
   }
 });
+test('an unchanged state is not re-published, so a mount effect cannot loop', async () => {
+  const fake = fakeBridge();
+  const c = ctx();
+  const controller = make(fake);
+  let notifications = 0;
+  controller.subscribe(() => { notifications += 1; });
+  await controller.bind(c, [stayFor(c)]);
+  const afterFirstBind = notifications;
+  const stable = controller.getSnapshot();
+  assert.ok(afterFirstBind >= 1);
+  await controller.bind(c, [stayFor(c)]);
+  await controller.bind(c, [stayFor(c)]);
+  assert.equal(notifications, afterFirstBind, 'rebinding the same account publishes nothing');
+  assert.equal(controller.getSnapshot(), stable, 'getSnapshot stays referentially stable');
+});
+test('data that was just updated is never labelled stale', async () => {
+  const fake = fakeBridge();
+  const c = ctx();
+  const controller = make(fake);
+  await controller.bind(c, [stayFor(c)]);
+  controller.setAutomatic(true);
+  assert.equal(controller.getSnapshot().refreshSuggested, true, 'no data yet: a refresh is genuinely due');
+  assert.equal(await controller.refresh({ userInitiated: true }), true);
+  assert.equal(controller.getSnapshot().refreshSuggested, false);
+  controller.setAutomatic(false);
+  controller.setAutomatic(true);
+  assert.equal(controller.getSnapshot().refreshSuggested, false, 'just-updated data must not be called stale');
+});
+test('the panel binds on a stable identity key instead of prop identity', () => {
+  const source = readFileSync(new URL('../client/src/components/mycrewcare/MyCrewCareV3Panel.tsx', import.meta.url), 'utf8');
+  assert.match(source, /const bindKey = \[/);
+  assert.match(source, /\}, \[controller, bindKey\]\);/);
+  assert.doesNotMatch(source, /\}, \[controller, context, stays\]\);/);
+});

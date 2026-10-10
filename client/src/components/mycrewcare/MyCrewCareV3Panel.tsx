@@ -39,9 +39,16 @@ function age(ms: number | null) {
 export default function MyCrewCareV3Panel({ context, stays }: Props) {
   const { controller, snapshot } = useMyCrewCareV3();
 
+  // Bind on identity changes only: a new array or object literal on every parent
+  // render must not re-read the encrypted cache or re-bind the same account.
+  const bindKey = [
+    context?.accountId ?? '', context?.rosterId ?? '', context?.rosterRevision ?? '',
+    context?.providerSubject ?? '', ...stays.map(stay => stay.id),
+  ].join('\u0000');
   useEffect(() => {
     void controller.bind(context, stays);
-  }, [controller, context, stays]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controller, bindKey]);
 
   if (snapshot.capability !== 'available') return null;
 
