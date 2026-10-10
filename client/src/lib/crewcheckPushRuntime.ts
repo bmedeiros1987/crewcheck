@@ -2,7 +2,7 @@ import { authFetch, getStoredUser, getToken } from './authClient';
 import { activateCrewCheckPush, revokeCrewCheckPush, invalidateCrewCheckPushActivation, crewCheckPushOperationGeneration, type PushDependencies, type PushBinding } from './crewcheckPushActivation';
 const path='/api/platform/notifications/crewcheck-installation';
 function installationId(){const key='crewcheck:notification-installation:v1';let value=localStorage.getItem(key);if(!value){value=crypto.randomUUID();localStorage.setItem(key,value);}return value;}
-function owner(){return getStoredUser()?.id||null;}
+function owner(){return getToken()?getStoredUser()?.id||null:null;}
 async function worker(registration:ServiceWorkerRegistration,action:string,fields:Record<string,unknown>={}){return new Promise<any>((resolve,reject)=>{const channel=new MessageChannel(),timer=setTimeout(()=>reject(Error('Aparelho não confirmou o vínculo.')),5000);channel.port1.onmessage=event=>{clearTimeout(timer);resolve(event.data);};registration.active?.postMessage({crewcheckPush:true,action,...fields},[channel.port2]);});}
 export async function readCrewCheckPushDevice(){const id=installationId();return authFetch<{enabled:boolean;registered:boolean;revision:number;publicKey:string|null;ownerId:string;events?:Array<{status:string;deviceReport:string|null;received:null}>}>(`${path}?installationId=${encodeURIComponent(id)}`,{cache:'no-store'});}
 async function dependencies(enabled:boolean,revision:number):Promise<PushDependencies>{const registration=await navigator.serviceWorker.ready;return{
