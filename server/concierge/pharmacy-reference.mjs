@@ -1,3 +1,4 @@
+import { amilUnknownMessage } from '../../shared/amil-coverage.mjs';
 import { createHash } from 'node:crypto';
 import { createPendingGeographicIntent, pendingGeographicIntentState } from '../v14369/pending-geographic-intent.mjs';
 
@@ -57,6 +58,7 @@ export async function pharmacyReferenceReply(text, profile, snapshot, deps, now 
   // Only inherit normalized filters from this validated account/channel/reference.
   // Raw questions can contain medication or symptom details and are never persisted here.
   const searchType = hospital(value) ? 'hospital' : pharmacy(value) ? 'pharmacy' : usable && previous.searchType === 'hospital' ? 'hospital' : 'pharmacy';
+  if (searchType === 'hospital') return { handled: true, reply: amilUnknownMessage() };
   const pharmacyCategory = command ? pharmacyRequestKind(value) : usable && ['ordinary', 'veterinary', 'compounding'].includes(previous.pharmacyCategory) ? previous.pharmacyCategory : 'ordinary';
   const expanded = command ? /\bmais\b/i.test(value) : usable && previous.expanded === true;
   if (selection !== null && (!usable || !Array.isArray(previous.options))) return { handled: false };

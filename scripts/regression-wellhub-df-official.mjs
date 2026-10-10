@@ -86,7 +86,7 @@ const unknownActivity = await context.reply(snapshot, 'academia Corpo e Saúde n
 assert.match(unknownActivity, /https:\/\/wellhub.com/);
 const snapshotPilates = { preferences: { ...snapshot.preferences, gymActivity: 'Pilates' } };
 const unconfirmed = await context.reply(snapshotPilates, 'academia Ultra na cidade de Brasília/DF');
-assert.match(unconfirmed, /modalidade não confirmada/);
+assert.match(unconfirmed, /Modalidade não confirmada/);
 assert.match(unconfirmed, /Acesso: não confirmado/);
 assert.doesNotMatch(unconfirmed, /modalidade confirmada na página oficial/);
 

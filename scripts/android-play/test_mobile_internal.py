@@ -46,7 +46,7 @@ with tempfile.TemporaryDirectory() as temp:
         calls.append((method,url));return {'id':'test-edit'} if method=='POST' else {}
     tracks=[track,{'track':'production','releases':[{'status':'completed','versionCodes':['144154']}]}]
     with patch.object(m,'guard'),patch.object(m,'POLICY',path),patch.object(m,'play_session',return_value=object()),patch.object(m,'api',side_effect=fake_api),patch.object(m,'collect_live_codes',return_value=(tracks,[144150,144151,144154])):
-        m.allocate()
+        m.allocate_offline_contract()
     result=json.loads(path.read_text())
     assert result['artifacts']['app']['versionCode']==144155
     for key in ['wear','watchface']:assert result['artifacts'][key]==original['artifacts'][key]
@@ -104,14 +104,35 @@ def simulated_publish(failure=None):
                 if failure=='review-mode':raise RuntimeError('CHANGES_ALREADY_IN_REVIEW')
                 if failure in ('timeout-uncommitted','uncertain-read-unavailable'):raise TimeoutError('offline timeout before commit')
                 state['committed']=True;state['live']=copy.deepcopy(state['tracks'])
+                if failure=='runner-crash':raise SystemExit('simulated runner loss after remote commit')
                 if failure=='timeout-committed':raise TimeoutError('offline lost commit response')
                 return {}
             if method=='DELETE':return {}
             raise AssertionError('Unexpected API operation')
         codes=[144150,144151,144153,144154]+([144155] if failure=='version-race' else [])
         try:
+            from receipt_journal import DurableJournal
+            class Backend:
+                value = None
+                def create_if_absent(self, key, value):
+                    assert self.value is None
+                    self.value = copy.deepcopy(value)
+                def replace_owned(self, key, owner, value):
+                    assert self.value['journalOwner'] == owner
+                    self.value = copy.deepcopy(value)
+                def read(self, key): return copy.deepcopy(self.value)
+            backend = Backend()
+            journal = DurableJournal(backend, m.PACKAGE, 'offline-run')
             with patch.dict(os.environ,{'PUBLISH_MOBILE_INTERNAL':'false' if failure=='no-opt-in' else 'true'}),patch.object(m,'guard'),patch.object(m,'check_ci'),patch.object(m,'play_session',return_value=object()),patch.object(m,'api',side_effect=fake),patch.object(m,'collect_live_codes',return_value=(copy.deepcopy(original_tracks),codes)):
-                m.publish(root)
+                m.publish(root, journal=journal)
+        except SystemExit:
+            assert failure == 'runner-crash' and state['committed']
+            assert backend.value['state'] == 'pending' and backend.value['editId'] == 'release'
+            assert not any(method=='DELETE' and url.endswith('/release') for method,url,_ in state['calls'])
+            fresh = DurableJournal(backend, m.PACKAGE, 'replacement-run')
+            rejects(lambda: fresh.reserve({'versionCode': 144156}))
+            assert not (root/'mobile-internal-result.json').exists()
+            return
         except (AssertionError,RuntimeError):
             assert failure
             assert state['committed'] == (failure in ('postcommit-drift','verify-unavailable','timeout-committed'))
@@ -143,6 +164,12 @@ def simulated_publish(failure=None):
         assert not any(method=='DELETE' and url.endswith('/release') for method,url,_ in state['calls'])
 
 simulated_publish()
-for failure in ['hash','wrong-source','version-race','other-track','retention','review-mode','no-opt-in','postcommit-drift','timeout-committed','timeout-uncommitted','verify-unavailable','uncertain-read-unavailable','prior-intent']:
+for failure in ['hash','wrong-source','version-race','other-track','retention','review-mode','no-opt-in','postcommit-drift','timeout-committed','timeout-uncommitted','verify-unavailable','uncertain-read-unavailable','prior-intent','runner-crash']:
     simulated_publish(failure)
 print('PASS: fake publication guards existing reviews, persists intent before commit, reconciles lost responses and blocks blind retry/cleanup; zero APIs')
+with patch.dict(os.environ, {'PUBLISH_MOBILE_INTERNAL':'true'}), patch.object(m,'guard'), patch.object(m,'play_session') as session:
+    rejects(lambda: m.publish('/unused'))
+    session.assert_not_called()
+with patch.object(m,'play_session') as session:
+    rejects(m.allocate)
+    session.assert_not_called()

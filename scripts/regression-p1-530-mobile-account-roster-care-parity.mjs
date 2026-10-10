@@ -56,8 +56,8 @@ assert.match(
 );
 assert.match(
   home,
-  /preservePlannedRosterBeforeImport\(bundle, active\.roster\)/,
-  'before replacing a conflicting local publication, mobile must preserve the prior same-period version for comparison',
+  /preservePlannedRosterBeforeImport\(bundle, active\.roster, plannedSession\)/,
+  'before replacing a conflicting local publication, mobile must preserve the prior same-period version under the captured owner/session for comparison',
 );
 assert.match(
   home,

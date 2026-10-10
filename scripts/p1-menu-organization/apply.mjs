@@ -83,3 +83,7 @@ if(!source.includes('cc-hotel-catalog-disclosure')) {
  block=block.replace('</section>\n\n    {editorOpen &&','</section></details>\n\n    {editorOpen &&');
  source=source.slice(0,start)+block+source.slice(end);fs.writeFileSync(path,source);
 }
+
+// Use the existing catalog icon in the fixed-order editor as well.
+source=fs.readFileSync(path,'utf8').replaceAll('catalog={allMenuItems.map(([id,label])=>({id,label}))}', 'catalog={allMenuItems.map(([id,label,,Icon])=>({id,label,Icon}))}');
+fs.writeFileSync(path,source);

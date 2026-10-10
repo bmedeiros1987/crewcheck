@@ -204,6 +204,8 @@ await import('../departure-location-consistency/apply.mjs');
 await import('../departure-location-consistency/positioning-session.mjs');
 await import('../fixed-navigation-headers.mjs');
 await import('../standby-sequence-card/apply.mjs');
+await import('../amil-exact-coverage/apply.mjs');
+await import('../finalize-duty-clock-provenance.mjs');
 
 }
 
