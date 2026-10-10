@@ -127,13 +127,17 @@ try {
   await run('held free-day SQL persists consent/reference, serializes duplicates and revocation, never dispatches',async()=>{
     await db.query('CREATE TABLE IF NOT EXISTS crewcheck_platform_rosters(id VARCHAR(80) PRIMARY KEY,owner_email VARCHAR(190),roster JSON NOT NULL,active BOOLEAN NOT NULL) ENGINE=InnoDB');
     await db.query('DELETE FROM crewcheck_platform_rosters');
-    const roster=clock=>({year:2026,month:8,crewId:'900001',base:'BSB',days:[12,13].map(n=>({date:n+'/08/2026',type:n===12?'DO':'DR',legs:[],freeDayStartEvidence:{date:n+'/08/2026',code:n===12?'DO':'DR',clock,clockSource:'published',timeZoneSource:'published',utcOffsetMinutes:-180,origin:'AIMS published rest tokens',tokenExcerpt:(n===12?'DO':'DR')+' '+clock+' BSB'}}))});
+    const roster=clock=>({year:2026,month:8,crewId:'900001',base:'BSB',days:[12,13,14].map(n=>({date:n+'/08/2026',type:n===12?'DO':'DR',legs:[],freeDayStartEvidence:{date:n+'/08/2026',code:n===12?'DO':'DR',clock,clockSource:'published',timeZoneSource:'published',utcOffsetMinutes:-180,origin:'AIMS published rest tokens',tokenExcerpt:(n===12?'DO':'DR')+' '+clock+' BSB'}}))});
     await db.query('INSERT INTO crewcheck_platform_rosters VALUES(?,?,?,TRUE)',['held-source',email,JSON.stringify(roster('01:46'))]);
     await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE payload=VALUES(payload)',['link-email:'+email,JSON.stringify({email,chatId:'fictional-held-chat',linkedAt:new Date().toISOString(),code:'synthetic-code'})]);
     const user={email,id:owner},now=Date.now(),request=(action,expectedRevision,extra={})=>mutateFreeDayHeld(db,user,{scope:FREE_DAY_SCOPE,action,expectedRevision,...extra},{now,configured:true});
     assert.equal((await request('grant',0)).revision,1);
     assert.equal((await readFreeDayHeldState(db,user,{now,configured:true})).consent,true);
     assert.equal((await request('reference',1,{sourceId:'held-source'})).revision,2);
+    const shifted=roster('08:30');const extra=structuredClone(shifted.days[0]);extra.date='11/08/2026';extra.freeDayStartEvidence.date=extra.date;shifted.days.unshift(extra);
+    await db.query('UPDATE crewcheck_platform_rosters SET roster=? WHERE id=?',[JSON.stringify(shifted),'held-source']);
+    await assert.rejects(request('prepare',2,{sourceId:'held-source',sequenceDate:'2026-08-12'}),error=>error.code==='SEQUENCE_CORRESPONDENCE_PENDING');
+    assert.equal((await db.query("SELECT COUNT(*) AS n FROM crewcheck_notification_jobs WHERE email=? AND LEFT(job_key,9)='free-day:'",[email]))[0][0].n,0);
     await db.query('UPDATE crewcheck_platform_rosters SET roster=? WHERE id=?',[JSON.stringify(roster('08:30')),'held-source']);
     const held=await Promise.all(Array.from({length:8},()=>request('prepare',2,{sourceId:'held-source',sequenceDate:'2026-08-12'})));
     assert.equal(new Set(held.map(x=>x.jobKey)).size,1);assert.equal(held.filter(x=>!x.duplicate).length,1);assert.equal(held[0].delayMinutes,404);assert.equal(held[0].sourceVerified,false);

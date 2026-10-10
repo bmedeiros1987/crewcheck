@@ -39,9 +39,15 @@ export function heldSourceReceipt(row, ownerId) {
 }
 function sequenceDelay(before, after, date) {
   if (before.period !== after.period || before.identity !== after.identity) fail(409, 'IDENTITY_OR_PERIOD_PENDING');
-  const dates = [...new Set(before.starts.map(x => x.date))].sort();
-  const index = dates.indexOf(date);
-  if (index < 0 || (index > 0 && Date.parse(date) - Date.parse(dates[index - 1]) === DAY_MS)) fail(409, 'SEQUENCE_START_REQUIRED');
+  const isSequenceStart = receipt => {
+    const dates = [...new Set(receipt.starts.map(x => x.date))].sort();
+    const index = dates.indexOf(date);
+    return index >= 0 && (index === 0 || Date.parse(date) - Date.parse(dates[index - 1]) !== DAY_MS);
+  };
+  if (!isSequenceStart(before)) fail(409, 'SEQUENCE_START_REQUIRED');
+  // A matching rest date may now be an interior day of an earlier sequence.
+  // Compare clocks only when the requested date is the boundary in both versions.
+  if (!isSequenceStart(after)) fail(409, 'SEQUENCE_CORRESPONDENCE_PENDING');
   const boundary = receipt => {
     const starts = receipt.starts.filter(x => x.date === date);
     const first = starts[0];
