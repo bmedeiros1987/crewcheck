@@ -1,0 +1,53 @@
+name: CrewLife background resync
+
+on:
+  pull_request:
+    paths:
+      - 'android-wrapper/app/**'
+      - 'scripts/regression-crewlife-background-sync.mjs'
+      - 'scripts/fixtures/CrewLifeBackgroundSyncContract.java'
+      - 'scripts/android-play/**'
+      - '.github/workflows/crewlife-background-resync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crewlife-background-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-mobile-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Execute service and pure coordinator contracts
+        run: node scripts/regression-crewlife-background-sync.mjs
+      - run: npm ci
+      - name: Prepare canonical sources
+        run: node scripts/v139/apply.mjs
+      - name: Recheck the prepared release sources
+        run: node scripts/regression-crewlife-background-sync.mjs
+      - name: Type-check the prepared web shell
+        run: npx tsc --noEmit
+      - name: Build embedded web assets required by the Android wrapper
+        run: npx vite build
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
+      - name: Compile the real phone adapter against Android and Wear APIs
+        working-directory: android-wrapper
+        run: gradle --no-daemon --console=plain :app:assembleDebug
