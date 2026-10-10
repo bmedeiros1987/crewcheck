@@ -89,3 +89,6 @@
 .cc-wellhub-results .cz-tool-actions { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
 .cc-wellhub-results .cz-tool-actions > a { text-decoration: none !important; border: 1px solid color-mix(in srgb,currentColor 22%,transparent) !important; background: color-mix(in srgb,currentColor 4%,transparent) !important; color: inherit !important; }
 @media(min-width:680px) { .cc-wellhub-results .cz-tool-actions { grid-template-columns: repeat(3,minmax(0,1fr)) !important; } }
+.cc-wellhub-card-access { font-size: .825rem; line-height: 1.5; }
+.cc-wellhub-card-access summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.cc-wellhub-card-access p { margin: 6px 0; overflow-wrap: anywhere; }

@@ -124,3 +124,9 @@ Nota: os feriados/dias de possível exceção listados são uma proteção conse
 não cadastro legal completo de feriados. Interfaces não usam essa lista para
 confirmar abertura especial; datas locais fora da lista continuam dependentes
 de confirmação direta na unidade/Wellhub, conforme aviso do catálogo.
+
+Os cartões mostram o plano mínimo pelo cadastro e oferecem "Condições de acesso"
+expansível para preservar a nota integral sem crescer permanentemente. A fixture
+abre condições de agendamento e confirma que o parágrafo expandido fica antes
+das ações, sem sobreposição. Mais detalhes conserva a fonte/datamento e as notas
+já existentes do detalhe da unidade. Não há confirmação de acesso atual.
