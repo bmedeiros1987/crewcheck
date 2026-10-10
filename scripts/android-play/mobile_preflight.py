@@ -26,10 +26,14 @@ def inspect(session):
                f'/tracks/{quote(track, safe="")}/releases')
         try:
             response = session.request('GET', url, timeout=30)
-            if not response.ok:
+            if not 200 <= response.status_code < 300:
                 report['tracks'][track] = {'httpStatus': response.status_code, 'state': 'unverified'}
                 continue
-            releases = response.json()['releases']
+            payload = response.json()
+            assert isinstance(payload, dict) and 'error' not in payload
+            # ProtoJSON omits empty repeated fields. Default only an absent key;
+            # explicit null, invalid types and API errors must remain unverified.
+            releases = payload.get('releases', [])
             assert isinstance(releases, list) and len(releases) <= 20
             summaries = []
             for release in releases:
