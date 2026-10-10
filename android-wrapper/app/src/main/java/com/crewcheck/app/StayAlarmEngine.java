@@ -126,10 +126,10 @@ public final class StayAlarmEngine {
             } catch(Exception error) { return result(request,"unknown","native-or-journal-incomplete"); }
         }
     }
-    public Result cancel(String key,String account,String event,String operation,long expectedRevision) {
+    public Result cancel(String key,String account,String event,String operation,long expectedRevision,String ownerEpoch) {
         synchronized(LOCK) {
-            Record request=new Record(key,account,owner.epoch(),event,operation,expectedRevision+1,"",0,0,"relative","pending-cancel");
-            if (!owned(account)||event==null||event.trim().isEmpty()||!identity(account,event).equals(key)
+            Record request=new Record(key,account,ownerEpoch,event,operation,expectedRevision+1,"",0,0,"relative","pending-cancel");
+            if (!owned(request)||event==null||event.trim().isEmpty()||!identity(account,event).equals(key)
                 ||operation==null||operation.trim().isEmpty()||operation.length()>128)
                 return result(request,"not-programmed","owner-or-identity");
             try {

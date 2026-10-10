@@ -14,7 +14,7 @@ public final class StayAlarmBridge {
         JSONObject value=new JSONObject();
         try {value.put("protocol",PROTOCOL);value.put("featureEnabled",owner.enabled());
             value.put("atomicReplace",true);value.put("acknowledgedCancel",true);
-            value.put("deliveryConfirmed",false);}
+            value.put("deliveryConfirmed",false);value.put("ownerEpoch",owner.activeOwner()==null?JSONObject.NULL:owner.epoch());}
         catch(Exception ignored){}return value.toString();
     }
     private static String text(JSONObject value,String name) throws Exception {
@@ -27,27 +27,27 @@ public final class StayAlarmBridge {
         long revision=((Number)raw).longValue();if(revision<0||revision>=Long.MAX_VALUE-1)throw new IllegalArgumentException("revision");return revision;
     }
     public String transact(String payload) {
-        JSONObject response=new JSONObject();String key="",operation="";
+        JSONObject response=new JSONObject();String key="",operation="",epoch="";
         try {
             if(payload==null||payload.length()>8192)throw new IllegalArgumentException("payload");
             JSONObject request=new JSONObject(payload);
             if(!PROTOCOL.equals(text(request,"protocol")))throw new IllegalArgumentException("protocol");
             key=text(request,"key");operation=text(request,"operationId");String account=text(request,"accountId");
-            String event=text(request,"eventId"),action=text(request,"action");
+            String event=text(request,"eventId"),action=text(request,"action");epoch=text(request,"ownerEpoch");
             if(!StayAlarmEngine.identity(account,event).equals(key))throw new IllegalArgumentException("identity");
-            if(!owner.enabled()||!account.equals(owner.activeOwner()))throw new SecurityException("owner unavailable");
+            if(!owner.enabled()||!account.equals(owner.activeOwner())||!epoch.equals(owner.epoch()))throw new SecurityException("owner unavailable");
             StayAlarmEngine.Result result;
             if("inspect".equals(action)) {
                 StayAlarmEngine.Record r=engine.inspect(key,account);
                 result=new StayAlarmEngine.Result(key,operation,r==null?"not-programmed":r.state,
                     "native-state-sampled",r==null?"":r.alarmAt,r==null?0:r.revision);
             } else if("cancel".equals(action)) {
-                result=engine.cancel(key,account,event,operation,revision(request));
+                result=engine.cancel(key,account,event,operation,revision(request),epoch);
             } else if("replace".equals(action)) {
                 String alarmAt=text(request,"alarmAt"),apzAt=text(request,"hotelReportAt");
                 long alarm=StayAlarmEngine.instant(alarmAt);
                 long apz=StayAlarmEngine.instant(apzAt);
-                StayAlarmEngine.Record r=new StayAlarmEngine.Record(key,account,owner.epoch(),event,operation,1,
+                StayAlarmEngine.Record r=new StayAlarmEngine.Record(key,account,epoch,event,operation,1,
                     alarmAt,alarm,apz,text(request,"mode"),"pending-schedule");
                 result=engine.replace(r,revision(request),Boolean.TRUE.equals(request.opt("confirmed")),Boolean.TRUE.equals(request.opt("apzConfirmed")));
             } else throw new IllegalArgumentException("action");
@@ -58,7 +58,7 @@ public final class StayAlarmBridge {
             try {response.put("state","unknown");response.put("reason","native-request-rejected-or-incomplete");}catch(Exception ignored){}
         }
         try {response.put("protocol",PROTOCOL);response.put("key",key);response.put("operationId",operation);
-            response.put("deliveryConfirmed",false);}
+            response.put("deliveryConfirmed",false);response.put("ownerEpoch",epoch);}
         catch(Exception ignored){}return response.toString();
     }
 }

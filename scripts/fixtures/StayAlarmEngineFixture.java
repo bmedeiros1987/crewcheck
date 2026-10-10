@@ -36,7 +36,7 @@ public final class StayAlarmEngineFixture {
         StayAlarmEngine.Record request(String op,long delta,String mode){return new StayAlarmEngine.Record(key,owner.account,owner.epoch,"stay-1",op,1,
             Instant.ofEpochMilli(device.clock+delta).toString(),device.clock+delta,device.clock+12_600_000L,mode,"pending-schedule");}
         StayAlarmEngine.Result replace(String op,long revision,long delta,String mode){return engine.replace(request(op,delta,mode),revision,true,true);}
-        StayAlarmEngine.Result cancel(String op,long revision){return engine.cancel(key,owner.account,"stay-1",op,revision);}
+        StayAlarmEngine.Result cancel(String op,long revision){return engine.cancel(key,owner.account,"stay-1",op,revision,owner.epoch);}
     }
     public static void main(String[] args)throws Exception {
         Fixture f=new Fixture();check(f.replace("one",0,7_200_000,"relative").state.equals("scheduled"),"native completion receipt");
@@ -115,7 +115,7 @@ public final class StayAlarmEngineFixture {
         serial.device.duringReplace=()->{entered.countDown();try{release.await();}catch(Exception e){throw new RuntimeException(e);}};
         Thread schedule=new Thread(()->serial.replace("serialized",0,7_200_000,"relative"));schedule.start();entered.await();
         final StayAlarmEngine other=new StayAlarmEngine(serial.store,serial.device,serial.owner);
-        Thread cancel=new Thread(()->other.cancel(serial.key,"synthetic","stay-1","serialized-cancel",1));cancel.start();
+        Thread cancel=new Thread(()->other.cancel(serial.key,"synthetic","stay-1","serialized-cancel",1,serial.owner.epoch));cancel.start();
         release.countDown();schedule.join();cancel.join();check(serial.device.jobs.isEmpty(),"cancel waits for in-flight replace across instances");
         check(serial.store.read(serial.key).state.equals("cancelled"),"serialized terminal cancellation");
         check(StayAlarmEngine.identity("a:b ü","hotel/1").equals("stay-hotel-apz:a%3Ab%20%C3%BC:hotel%2F1"),"identity matches JS encoding");

@@ -10,6 +10,7 @@ export function createAndroidStayAlarmAdapter({ native, enabled = false, activeA
   let capabilities;
   try { capabilities = JSON.parse(native.capabilities()); } catch { return null; }
   if (capabilities?.protocol !== STAY_ANDROID_PROTOCOL || capabilities.featureEnabled !== true
+    || typeof capabilities.ownerEpoch !== 'string' || !capabilities.ownerEpoch
     || capabilities.atomicReplace !== true || capabilities.acknowledgedCancel !== true) return null;
   let sequence = 0;
   const nextOperation = operationId || (() => globalThis.crypto?.randomUUID?.() || `local-${Date.now()}-${++sequence}`);
@@ -33,11 +34,11 @@ export function createAndroidStayAlarmAdapter({ native, enabled = false, activeA
   }
   async function call(body) {
     const { session, ...payload } = body;
-    const value = await native.transact(JSON.stringify({ protocol: STAY_ANDROID_PROTOCOL, ...payload }));
+    const value = await native.transact(JSON.stringify({ protocol: STAY_ANDROID_PROTOCOL, ownerEpoch: capabilities.ownerEpoch, ...payload }));
     if (activeAccount() !== body.accountId || activeSession() !== session) throw Error('owner changed while awaiting native acknowledgement');
     const response = JSON.parse(value);
     if (response?.protocol !== STAY_ANDROID_PROTOCOL || response.key !== body.key
-      || response.operationId !== body.operationId || response.deliveryConfirmed !== false) throw Error('unmatched native receipt');
+      || response.operationId !== body.operationId || response.ownerEpoch !== capabilities.ownerEpoch || response.deliveryConfirmed !== false) throw Error('unmatched native receipt');
     return response;
   }
   async function revision(key, scope) {

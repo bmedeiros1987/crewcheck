@@ -7,7 +7,7 @@ public final class StayAlarmBridgeFixture {
     static void check(boolean value,String message){checks++;if(!value)throw new AssertionError(message);}
     static JSONObject request(StayAlarmEngineFixture.Fixture f,String action,String operation,long revision)throws Exception {
         return new JSONObject().put("protocol",StayAlarmBridge.PROTOCOL).put("key",f.key)
-            .put("accountId","synthetic").put("eventId","stay-1").put("action",action)
+            .put("ownerEpoch",f.owner.epoch).put("accountId","synthetic").put("eventId","stay-1").put("action",action)
             .put("operationId",operation).put("expectedRevision",revision).put("mode","absolute")
             .put("alarmAt",f.request("fixture",7_200_000,"absolute").alarmAt)
             .put("hotelReportAt",f.request("fixture",12_600_000,"absolute").alarmAt)
@@ -38,6 +38,12 @@ public final class StayAlarmBridgeFixture {
         bad=request(f,"replace","foreign",2).put("accountId","foreign");
         check(new JSONObject(bridge.transact(bad.toString())).getString("state").equals("unknown"),"foreign caller rejected");
         check(new JSONObject(bridge.transact("{")).getString("state").equals("unknown"),"corrupt JSON explicit unknown");
+        JSONObject oldSession=request(f,"replace","old-session",2);
+        f.owner.epoch="session-2";
+        int beforeOldRequest=f.device.replacements;
+        check(new JSONObject(bridge.transact(oldSession.toString())).getString("state").equals("unknown"),"queued request from old native epoch rejected before OS");
+        check(f.device.replacements==beforeOldRequest,"same-account reauth cannot bless old queued request with current epoch");
+        check(new JSONObject(bridge.capabilities()).getString("ownerEpoch").equals("session-2"),"opaque native epoch sampled at capability binding");
         f.owner.enabled=false;
         check(!new JSONObject(bridge.capabilities()).getBoolean("featureEnabled"),"native OFF capabilities");
         check(new JSONObject(bridge.transact(request(f,"replace","off",2).toString())).getString("state").equals("unknown"),"native OFF request rejected");

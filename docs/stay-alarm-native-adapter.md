@@ -34,7 +34,7 @@ A confirmação `native-api-and-journal-completed` significa que as chamadas
 nativas terminaram sem erro e o estado foi persistido/revalidado. Não confirma
 alarme presente em uma consulta do OS (AlarmManager não oferece esse recibo por
 job), notificação vista, som ouvido, despertar ou execução física. Respostas têm
-deliveryConfirmed:false. A factory exige protocolo/key/operationId/instante/
+deliveryConfirmed:false. Epoch nativo opaco é capturado nas capacidades e exigido em cada request/receipt; uma requisição enfileirada antes de reautenticar a mesma conta não recebe o epoch novo automaticamente. A factory exige protocolo/key/operationId/instante/
 revisão/ack correspondentes e descarta respostas após troca de conta ou sessão,
 inclusive logout/relogin na mesma conta. Token de sessão web não é serializado.
 
@@ -89,7 +89,7 @@ ou serviço de áudio e não promete comportamento de despertador audível.
 
 `node --test scripts/regression-stay-alarm-android.mjs
 scripts/regression-stay-editor-persistence.mjs scripts/regression-stay-edit-plan.mjs`
-executa37 testes JS: recibos malformados/boolean, correlação, epoch web, OFF,
+executa38 testes JS: recibos malformados/boolean, correlação, epoch web, OFF,
 confirmação, modos e serialização, além dos contratos existentes.
 
 `node scripts/regression-stay-alarm-native.mjs` compila/executa o núcleo Java
@@ -98,7 +98,7 @@ revogação, dono/epoch, receive atrasado/duplicado e corrida replace/cancel.
 
 `STAY_ANDROID_API_JAR=/path/android-all.jar node scripts/regression-stay-alarm-api.mjs`
 compila driver/receiver/endpoint reais contra classes API35 (Android15), sem APK,
-e executa o JSON endpoint real na JVM com21 assertivas e fake device, incluindo filterEquals dos Intents Android reais para identidade estável/contas distintas. O jar
+e executa o JSON endpoint real na JVM com24 assertivas e fake device, incluindo filterEquals dos Intents Android reais para identidade estável/contas distintas. O jar
 Robolectric fica temporário no runner, fixado por URL/SHA256 no workflow. Não é
 um Android runtime físico ou teste do AlarmManager real. Cloud local usa ECJ
 porque possui JRE, mas não javac; CI usa JDK17. O build Android existente valida
