@@ -1,6 +1,7 @@
 import {simulatedWorker,WORKER_SCOPE,localProviderStats} from '../server/free-day-simulated-worker.mjs';
 import {personalConsent,PERSONAL_SCOPE} from '../server/free-day-personal-consent.mjs';
 import assert from 'node:assert/strict';
+import {selectPushInstallations,selectDuePushJobs} from '../server/web-push/bidsProducer.mjs';
 import {enqueueCrewCheckPush,dispatchPersistentPush,reconcilePushReceipts,outboxKey} from '../server/web-push/outbox.mjs';
 import {mutateInstallation,revokeAccountInstallations,installationStateKey} from '../server/web-push/installationRegistry.mjs';
 import fs from 'node:fs';
@@ -47,6 +48,16 @@ try {
   const queue=fs.readFileSync('server/telegram-fast-ack.mjs','utf8');
   await db.query(queue.match(/await db\.query\(`(CREATE TABLE IF NOT EXISTS crewcheck_notification_jobs[\s\S]*?)`\)/)[1]);
   await db.query('INSERT INTO crewcheck_platform_profiles VALUES(?,?,?)',[email,owner,new Date('2020-01-01T00:00:00Z')]);
+  await run('real MySQL bounded push selection fairness',async()=>{
+    const instant=Date.parse('2026-11-11T09:00:00Z');
+    for(let index=0;index<51;index++)await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',['crewcheck-push-installation:fair_'+String(index).padStart(3,'0'),JSON.stringify({active:true})]);
+    const first=await selectPushInstallations(db),next=await selectPushInstallations(db);assert.equal(first.length,50);assert.equal(next.length,50);assert.equal(new Set([...first,...next].map(row=>row.state_key)).size,51);
+    for(let index=0;index<46;index++)await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',['crewcheck-push-outbox:fair_'+String(index).padStart(3,'0'),JSON.stringify({status:'queued',scheduledAt:new Date(instant+(index<25?60000+index:-(index-25)*1000)).toISOString()})]);
+    const due=await selectDuePushJobs(db,instant);assert.equal(due.length,20);assert(due.every(row=>Date.parse(row.payload.scheduledAt)<=instant));
+    for(const row of due)await db.query('DELETE FROM crewcheck_telegram_state WHERE state_key=?',[row.state_key]);assert.equal((await selectDuePushJobs(db,instant)).length,1);
+    await db.query("DELETE FROM crewcheck_telegram_state WHERE state_key LIKE 'crewcheck-push-installation:fair_%' OR state_key LIKE 'crewcheck-push-outbox:fair_%' OR state_key='crewcheck-push-producer-cursor:v1'");
+  });
+
 
   await run('BIDS channel preferences: real SQL owner lock, CAS, idempotency and observational GET without campaign or sends',async()=>{
     const invoke=async body=>{
