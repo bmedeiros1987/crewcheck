@@ -4,6 +4,7 @@ import { URL } from 'node:url';
 import { dbPool, requestToken, safeEmail, verifyJwt } from './v139/common.mjs';
 import { sendTelegram, callTelegram } from './v139/delivery.mjs';
 import { handleFreeDayHeld } from './free-day-held.mjs';
+import { handleVoluntarySources } from './free-day-sources.mjs';
 import { safeScheduleJob, safeCancelJob, dispatchClaimedJob } from './notification-job-safety.mjs';
 import { buildInfobipTtsRequest, infobipPublicStatus } from './v1396/infobip.mjs';
 
@@ -536,6 +537,7 @@ http.createServer = function patchedCreateServer(...args) {
     const path = pathname(req);
     try {
       if (path === '/api/notifications/runtime-health') return runtimeHealth(req, res);
+      if (path === '/api/notifications/free-day-sources') return handleVoluntarySources(req, res, { identity, readJson, dbPool, sendJson });
       if (path === '/api/notifications/free-day-held') return handleFreeDayHeld(req, res, { identity, readJson, dbPool, sendJson, configured: Boolean(String(process.env.TELEGRAM_BOT_TOKEN || process.env.CREWCHECK_TELEGRAM_BOT_TOKEN || '').trim()) });
       if (path === '/api/alarm/schedule' && req.method === 'POST') return scheduleJob(req, res);
       if (path === '/api/alarm/scheduled' && req.method === 'GET') return listJobs(req, res);

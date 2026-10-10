@@ -8,6 +8,8 @@ import { handleBidsCore } from '../server/v139/bidsCore.mjs';
 import { notifyBidRows, claimBid } from '../server/v139/bidsNotify.mjs';
 import { confirmCycle, cycleJobPrefix, cycleStateKey, LEAVE_CYCLE } from '../server/v139/notificationCycles.mjs';
 import { FREE_DAY_SCOPE, mutateFreeDayHeld, readFreeDayHeldState } from '../server/free-day-held.mjs';
+import { SOURCE_SCOPE, voluntarySources, sourceKey } from '../server/free-day-sources.mjs';
+import crypto from 'node:crypto';
 import { dispatchClaimedJob } from '../server/notification-job-safety.mjs';
 import { notificationStateDeletionStatements } from '../server/v139/notificationStateDeletion.mjs';
 
@@ -148,6 +150,25 @@ try {
     const [revocation,replay]=await Promise.allSettled([request('revoke',2),request('prepare',2,{sourceId:'held-source',sequenceDate:'2026-08-12'})]);
     assert.equal(revocation.status,'fulfilled');if(replay.status==='fulfilled')assert.equal(replay.value.status,'cancelled');else assert.equal(replay.reason.code,'CONSENT_REVISION_CHANGED');
     assert.equal((await readFreeDayHeldState(db,user,{now})).consent,false);
+  });
+  await run('voluntary two-version receipts preserve owner/consent/404min under real MySQL sync and concurrent writes',async()=>{
+    const user={email,id:owner};
+    const digest=x=>crypto.createHash('sha256').update(JSON.stringify(x)).digest('hex');
+    const receipt=clock=>({identityDigest:digest(['900001','BSB']),period:'2026-08',documentHash:digest(clock),starts:[12,13,14].map(d=>({date:`2026-08-${d}`,clock,offset:-180,literal:true}))});
+    const body={scope:SOURCE_SCOPE,action:'review',expectedRevision:0,before:receipt('01:46'),after:receipt('08:30'),sequenceDate:'2026-08-12',confirmed:true,consent:true};
+    const counts=()=>db.query('SELECT COUNT(*) AS n FROM crewcheck_notification_jobs');
+    const beforeCount=(await counts())[0][0].n;
+    const results=await Promise.allSettled(Array.from({length:8},()=>voluntarySources(db,user,body)));
+    assert.equal(results.filter(x=>x.status==='fulfilled').length,1);
+    const result=results.find(x=>x.status==='fulfilled').value;assert.equal(result.review.delayMinutes,404);assert.equal(result.review.possibleAmount,null);assert.equal(result.officialVerified,false);
+    assert.equal((await voluntarySources(db,user,{...body,expectedRevision:1})).duplicate,true);
+    await db.query('UPDATE crewcheck_platform_rosters SET roster=? WHERE owner_email=?',[JSON.stringify({crewId:'900001',base:'BSB',days:[]}),email]);
+    assert.equal((await voluntarySources(db,user)).review.before.starts[0].clock,'01:46');
+    const [revoked,replay]=await Promise.allSettled([voluntarySources(db,user,{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:1}),voluntarySources(db,user,{...body,expectedRevision:1})]);
+    assert.equal(revoked.status,'fulfilled');assert.equal(replay.status,'rejected');assert.equal((await voluntarySources(db,user)).review,null);
+    await voluntarySources(db,user,{...body,expectedRevision:2});
+    assert.equal((await counts())[0][0].n,beforeCount,'voluntary source flow never writes queue');
+    assert.equal((await db.query('SELECT COUNT(*) AS n FROM crewcheck_telegram_state WHERE state_key=?',[sourceKey(user)]))[0][0].n,1);
   });
   await run('account deletion removes owned cycle/free-day decisions, tombstones, claims and jobs',async()=>{
     await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',['notification-cycle:other',JSON.stringify({email:'other@example.test'})]);
