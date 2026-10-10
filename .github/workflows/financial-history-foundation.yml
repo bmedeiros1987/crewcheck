@@ -36,6 +36,9 @@ on:
       - 'client/src/lib/financialHistoryPeriods.ts'
       - 'client/src/lib/financialComparisonPeriods.ts'
       - 'client/src/lib/salaryCalculationDiagnostic.ts'
+      - 'client/src/lib/salaryActivityEvidence.ts'
+      - 'scripts/regression-salary-activity-evidence.mjs'
+      - 'scripts/regression-salary-activity-browser.cjs'
       - 'scripts/regression-salary-prerequisite-diagnostic.mjs'
       - 'scripts/regression-salary-review-callers.mjs'
       - 'scripts/regression-salary-operational-clock.mjs'
@@ -52,6 +55,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -144,6 +149,12 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
         run: node scripts/regression-operated-flight-origin-browser.cjs
+      - name: Verify unknown reserve and standby salary evidence
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: |
+          node scripts/regression-salary-activity-evidence.mjs
+          node scripts/regression-salary-activity-browser.cjs
       - name: Verify salary prerequisites with synthetic owner fixtures
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
@@ -170,6 +181,15 @@ jobs:
             artifacts/aims-duty-source/
             artifacts/aims-duty-source-home/
             artifacts/aims-activity-finance/
+          if-no-files-found: ignore
+      - name: Save salary activity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: salary-activity-evidence-synthetic
+          path: |
+            artifacts/salary-activity-evidence/
+            artifacts/salary-activity-ui/
           if-no-files-found: ignore
       - name: Save salary diagnostic evidence
         if: always()
