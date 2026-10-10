@@ -1,3 +1,4 @@
+import { wellhubTelegramMessage, wellhubPlainMessage } from '../shared/wellhub-unit-actions.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -45,10 +46,11 @@ assert.doesNotMatch(await context.reply(snapshot, '/academias'), /javascript:/);
 let payload;
 const start = server.indexOf('async function sendTelegramMessage(');
 const sender = server.slice(start, server.indexOf('\n}', start) + 2);
-const transport = vm.createContext({ telegramApiUrl: () => 'https://example.invalid', fetch: async (_, init) => { payload = JSON.parse(init.body); return { ok: true, status: 200, json: async () => ({ ok: true }) }; } });
+const transport = vm.createContext({ wellhubTelegramMessage, loadVerifiedWellhubPartners: wellhub.loadVerifiedWellhubPartners, telegramApiUrl: () => 'https://example.invalid', fetch: async (_, init) => { payload = JSON.parse(init.body); return { ok: true, status: 200, json: async () => ({ ok: true }) }; } });
 vm.runInContext(sender + '\nthis.send = sendTelegramMessage;', transport);
 await transport.send('synthetic', special);
-assert.equal(payload.text, special);
+assert.equal(payload.text, wellhubTelegramMessage(special, wellhub.loadVerifiedWellhubPartners()).text);
+assert.ok(payload.entities?.every(e => payload.text.slice(e.offset,e.offset+e.length) === 'Ficha e ações'));
 assert.equal(payload.parse_mode, undefined);
 assert.equal(JSON.parse(JSON.stringify({ text: special })).text, special);
 console.log('Readable Wellhub blocks, conditions, dates, special characters and synthetic payload: PASS');
@@ -59,7 +61,7 @@ const whatsappSource = fs.readFileSync('server/whatsapp.mjs', 'utf8');
 const whatsappStart = whatsappSource.indexOf('export async function sendWhatsAppText(');
 const whatsappSender = whatsappSource.slice(whatsappStart, whatsappSource.indexOf('\n}', whatsappStart) + 2).replace('export ', '');
 let whatsappPayload;
-const whatsappTransport = vm.createContext({ accessToken: () => 'synthetic', phoneNumberId: () => 'synthetic', normalizePhone: () => 'synthetic', graphVersion: () => 'synthetic', AbortController,
+const whatsappTransport = vm.createContext({ wellhubPlainMessage, loadVerifiedWellhubPartners: wellhub.loadVerifiedWellhubPartners, accessToken: () => 'synthetic', phoneNumberId: () => 'synthetic', normalizePhone: () => 'synthetic', graphVersion: () => 'synthetic', AbortController,
   setTimeout: () => 1, clearTimeout: () => {}, console,
   fetch: async (_, init) => { whatsappPayload = JSON.parse(init.body); return { ok: true, status: 200, json: async () => ({ messages: [] }) }; },
 });
@@ -93,9 +95,9 @@ for (const activity of ['Treino de força', 'Cycle']) {
       assert.ok(bounded.includes('https://wellhub.com/pt-br/search/'));
     }
     await transport.send('synthetic', bounded);
-    assert.equal(payload.text, bounded, 'Telegram must not truncate the composed output');
+    assert.equal(payload.text, wellhubTelegramMessage(bounded, wellhub.loadVerifiedWellhubPartners()).text, 'Telegram must preserve complete transformed output');
     await whatsappTransport.send('synthetic', bounded);
-    assert.equal(whatsappPayload.text.body, bounded, 'WhatsApp must not truncate the composed output');
+    assert.equal(whatsappPayload.text.body, wellhubPlainMessage(bounded, wellhub.loadVerifiedWellhubPartners()), 'WhatsApp must preserve complete transformed output');
     assert.equal(JSON.parse(JSON.stringify({ answer: bounded })).answer, bounded, 'app string payload is unchanged');
     console.log(`DF ${activity}, budget ${budget}: ${bounded.length} UTF-16 units, ${selected.length} complete gym blocks`);
   }
