@@ -1,0 +1,75 @@
+name: laurinha-manager-windows
+
+# Compila o Laurinha Manager com o Visual Studio Build Tools 2022, que e o
+# toolchain oficial do projeto. O desenvolvimento pode acontecer em outra
+# plataforma, entao esta e a verificacao que garante que o build MSVC
+# continua limpo (/W4 /WX) e que o .exe sai com icone, manifesto DPI e
+# VERSIONINFO embutidos.
+
+on:
+  push:
+    paths:
+      - 'apps/laurinha-manager/**'
+      - '.github/workflows/laurinha-manager-windows.yml'
+  pull_request:
+    paths:
+      - 'apps/laurinha-manager/**'
+      - '.github/workflows/laurinha-manager-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/laurinha-manager
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compilar (MSVC x64, /W4 /WX)
+        shell: cmd
+        env:
+          # Trava o gate: qualquer aviso do MSVC reprova o build no CI.
+          LAURINHA_STRICT: '1'
+        run: build.cmd
+
+      - name: Conferir o executavel
+        shell: pwsh
+        run: |
+          $exe = 'build\LaurinhaManager.exe'
+          if (-not (Test-Path $exe)) { throw "LaurinhaManager.exe nao foi gerado" }
+
+          # VERSIONINFO
+          $info = (Get-Item $exe).VersionInfo
+          Write-Host "ProductName   : $($info.ProductName)"
+          Write-Host "FileVersion   : $($info.FileVersion)"
+          if ($info.ProductName -ne 'Laurinha Manager') {
+            throw "VERSIONINFO ausente ou incorreto"
+          }
+
+          # Subsistema GUI (sem console)
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $exe))
+          $peOff = [BitConverter]::ToInt32($bytes, 0x3C)
+          $subsystem = [BitConverter]::ToUInt16($bytes, $peOff + 0x5C)
+          Write-Host "Subsystem     : $subsystem (2 = GUI)"
+          if ($subsystem -ne 2) { throw "O executavel nao esta em /SUBSYSTEM:WINDOWS" }
+
+          # Manifesto DPI e icone embutidos
+          $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+          if ($text -notmatch 'PerMonitorV2') { throw "Manifesto DPI nao embutido" }
+          if ($text -notmatch 'Microsoft\.Windows\.Common-Controls') {
+            throw "Dependencia do comctl32 v6 nao embutida"
+          }
+          Write-Host "Manifesto DPI : ok"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LaurinhaManager-x64
+          path: |
+            apps/laurinha-manager/build/LaurinhaManager.exe
+            apps/laurinha-manager/build/LaurinhaManager.pdb
+          if-no-files-found: error
