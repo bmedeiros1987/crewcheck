@@ -55,3 +55,10 @@ A preferência global de navegação fica fora deste diff. Seu encaixe deve ser
 um controle agrupado em Configurações/Leitura, padrão fixo, isolado por conta,
 e uma inicialização única do shell. Exige implementação/revisão próprias,
 coordenadas com o owner de pernoites.
+
+
+## Delta da revisão independente
+O gatilho do workflow inclui agora Home.tsx, main.tsx, index.css e CSS sob
+client/src (estilos globais, temas, páginas e componentes importados no build).
+Assim, uma alteração só nessas dependências da fixture dispara o teste
+materializado. Não altera permissões nem acrescenta workflow/casos.

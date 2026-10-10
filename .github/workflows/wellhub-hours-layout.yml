@@ -7,7 +7,11 @@ on:
       - 'client/src/lib/wellhub*'
       - 'client/src/lib/useWellhubClock.ts'
       - 'client/src/components/WellhubConciergeAnswer.tsx'
-      - 'client/src/styles/wellhub-hours.css'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/main.tsx'
+      - 'client/src/index.css'
+      # Shipping CSS includes global, component, page and theme styles.
+      - 'client/src/**/*.css'
       - 'scripts/wellhub-hours/**'
       - 'scripts/v139/apply.mjs'
       - 'scripts/v14410/concierge-gyms.snippet'
