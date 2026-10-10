@@ -1,0 +1,44 @@
+name: Stay editor hotel APZ contract
+on:
+  pull_request:
+    paths:
+      - 'shared/stay-edit-plan.*'
+      - 'client/src/lib/stayEditorNavigation.ts'
+      - 'client/src/components/v1391/PresentationStayManagerView.tsx'
+      - 'client/src/components/v1391/StayHotelAlarmPreview.tsx'
+      - 'scripts/regression-stay-edit*.mjs'
+      - '.github/workflows/stay-editor-contract.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Pure contracts in three timezones
+        run: |
+          TZ=UTC node --test scripts/regression-stay-edit-plan.mjs
+          TZ=America/Sao_Paulo node --test scripts/regression-stay-edit-plan.mjs
+          TZ=Pacific/Auckland node --test scripts/regression-stay-edit-plan.mjs
+      - run: npm run check
+      - run: npm run build
+      - name: Install isolated browser tools
+        run: |
+          npm install --prefix "$RUNNER_TEMP/stay-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/stay-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Synthetic component QA with no saves or alarms
+        env:
+          STAY_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
+        run: node scripts/regression-stay-editor-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stay-editor-synthetic
+          path: artifacts/stay-editor/
