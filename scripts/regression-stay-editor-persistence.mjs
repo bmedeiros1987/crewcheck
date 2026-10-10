@@ -43,3 +43,11 @@ test('boolean native result/errors never reported scheduled/cancelled',async()=>
  const adapter=mock();adapter.replace=async()=>true;adapter.cancel=async()=>{throw Error('offline')};const runner=createStayAlarmController(adapter);
  assert.equal((await runner.replace(input)).state,'unknown');assert.equal((await runner.cancel(input)).state,'unknown');
 });
+
+test('invalid now never schedules, even when an otherwise confirmed instant is in the past',async()=>{
+ const adapter=mock(),runner=createStayAlarmController(adapter);
+ for(const now of [undefined,NaN,-Infinity,Infinity]) {
+   assert.equal((await runner.replace({...input,now,alarmAt:'2000-01-01T07:00:00Z',hotelReportAt:'2000-01-01T08:30:00Z'})).state,'not-programmed');
+ }
+ assert.equal(adapter.calls.length,0);assert.equal(adapter.jobs.size,0);
+});

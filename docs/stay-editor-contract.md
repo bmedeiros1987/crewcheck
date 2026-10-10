@@ -73,3 +73,9 @@ Não equivale a aparelho físico, teclado nativo ou garantia absoluta de layout.
 O JPEG privado Library não pôde ser materializado no executor anterior.
 Não afirmamos comparação visual ou leitura dos pixels. Artefatos de CI são
 exclusivamente sintéticos; a revisão Library contém texto, fontes e links.
+
+Após reload dentro do editor, apenas um marcador de origem separado por conta
+permanece na sessão. Nenhum pernoite é selecionado automaticamente; Voltar
+retorna à lista atual. O ID em memória só restaura o retorno durante a mesma
+navegação. O adaptador exige now finito; ausência, NaN e infinitos bloqueiam
+programação antes de qualquer chamada nativa.

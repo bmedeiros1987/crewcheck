@@ -3,7 +3,7 @@ const path = 'client/src/pages/Home.tsx';
 let source = fs.readFileSync(path, 'utf8');
 const marker = '// stay-editor-context-v2';
 if (!source.includes(marker)) {
-  source = `${marker}\nimport { openStayProgramEditor, consumeStayEditorReturn, readStayEditorIntent, returnFromStayProgramEditor } from '@/lib/stayEditorNavigation';\nimport { savedStayEditorEvent } from '@/lib/stayEditorStore';\n` + source;
+  source = `${marker}\nimport { openStayProgramEditor, consumeStayEditorReturn, readStayEditorIntent, returnFromStayProgramEditor, hasStoredStayEditorOrigin, clearStoredStayEditorOrigin } from '@/lib/stayEditorNavigation';\nimport { savedStayEditorEvent } from '@/lib/stayEditorStore';\n` + source;
   const start = source.indexOf('function HotelsView('), end = source.indexOf('\nfunction ', start + 10);
   if (start < 0 || end < 0) throw new Error('Stay editor: HotelsView boundary unavailable');
   let block = source.slice(start, end);
@@ -48,8 +48,14 @@ if (!source.includes(marker)) {
   brand = brand.replace(signature, "pulse = false, backLabel }: { back?: boolean; onMenu?: () => void; pulse?: boolean; backLabel?: string }");
   brand = brand.replace("aria-label={back ? 'Voltar ao FlightDeck' : 'Menu'}", "aria-label={back ? backLabel || 'Voltar ao FlightDeck' : 'Menu'}");
   source = source.slice(0, brandStart) + brand + source.slice(brandEnd);
+  const initialView = "normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view'))";
+  if (!source.includes(initialView)) throw new Error('Stay editor: initial view anchor missing');
+  source = source.replace(initialView, "normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || (hasStoredStayEditorOrigin() ? 'presentation' : sessionStorage.getItem('crewcheck_initial_view')))");
+  const viewSetter = '  function setView(nextView: ZeroView) {';
+  if (!source.includes(viewSetter)) throw new Error('Stay editor: view setter anchor missing');
+  source = source.replace(viewSetter, viewSetter + "\n    if (nextView !== 'presentation') clearStoredStayEditorOrigin();");
   const header = "<Brand back={view !== 'cockpit'} onMenu={view === 'cockpit' ? () => setDrawer(true) : undefined}/>";
   if (!source.includes(header)) throw new Error('Stay editor: Home header owner anchor missing');
-  source = source.replace(header, "<Brand back={view !== 'cockpit'} backLabel={view === 'presentation' && readStayEditorIntent() ? 'Voltar ao pernoite' : undefined} onMenu={view === 'presentation' && readStayEditorIntent() ? returnFromStayProgramEditor : view === 'cockpit' ? () => setDrawer(true) : undefined}/>");
+  source = source.replace(header, "<Brand back={view !== 'cockpit'} backLabel={view === 'presentation' && readStayEditorIntent() ? 'Voltar ao pernoite' : view === 'presentation' && hasStoredStayEditorOrigin() ? 'Voltar à lista de pernoites' : undefined} onMenu={view === 'presentation' && (readStayEditorIntent() || hasStoredStayEditorOrigin()) ? returnFromStayProgramEditor : view === 'cockpit' ? () => setDrawer(true) : undefined}/>");
   fs.writeFileSync(path, source);
 }

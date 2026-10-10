@@ -26,7 +26,7 @@ await build({ stdin: { contents: `
 import React,{useState,useEffect,useMemo} from 'react';
 import {createRoot} from 'react-dom/client';
 import Presentation from '@/components/v1391/PresentationStayManagerView';
-import {openStayProgramEditor,consumeStayEditorReturn,readStayEditorIntent,returnFromStayProgramEditor} from '@/lib/stayEditorNavigation';
+import {openStayProgramEditor,consumeStayEditorReturn,readStayEditorIntent,returnFromStayProgramEditor,hasStoredStayEditorOrigin,clearStoredStayEditorOrigin} from '@/lib/stayEditorNavigation';
 import {savedStayEditorEvent} from '@/lib/stayEditorStore';
 import {getToken} from '@/lib/authClient';
 import {setPendingNavigationContext} from '@/lib/navigationContext';
@@ -52,9 +52,9 @@ const event=(id,hours)=>({id,kind:'stay',title:'Pernoite sintético '+id,date:ne
 const fixtures=[event('synthetic-current',-1),event('synthetic-future',48)];
 window.stayFixtureDay=day;window.stayFixtureEvents=fixtures;
 window.stayNavigation=[];window.stayContext=peekPendingNavigationContext;
-function App(){const [view,setView]=useState('hotels'),[events,setEvents]=useState(fixtures);
- useEffect(()=>{window.replaceStayEvents=setEvents;const navigate=e=>{window.stayNavigation.push(e.detail);setView(e.detail)};window.addEventListener('crewcheck:set-view',navigate);return()=>window.removeEventListener('crewcheck:set-view',navigate)},[]);
- return <><main {...${JSON.stringify(rootProps)}} data-view={view}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back backLabel={view==='presentation'&&readStayEditorIntent()?'Voltar ao pernoite':undefined} onMenu={view==='presentation'&&readStayEditorIntent()?returnFromStayProgramEditor:undefined}/></InternalHeaderFrame>{view==='hotels'?<HotelsView events={events}/>:<Presentation events={events} embedded/>}</main><BottomNav view={view} setView={setView} openMenu={()=>{}}/></>}
+function App(){const [view,setView]=useState(()=>hasStoredStayEditorOrigin()?'presentation':'hotels'),[events,setEvents]=useState(fixtures);
+ useEffect(()=>{window.replaceStayEvents=setEvents;const navigate=e=>{window.stayNavigation.push(e.detail);if(e.detail!=='presentation')clearStoredStayEditorOrigin();setView(e.detail)};window.addEventListener('crewcheck:set-view',navigate);return()=>window.removeEventListener('crewcheck:set-view',navigate)},[]);
+ return <><main {...${JSON.stringify(rootProps)}} data-view={view}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back backLabel={view==='presentation'&&readStayEditorIntent()?'Voltar ao pernoite':view==='presentation'&&hasStoredStayEditorOrigin()?'Voltar à lista de pernoites':undefined} onMenu={view==='presentation'&&(readStayEditorIntent()||hasStoredStayEditorOrigin())?returnFromStayProgramEditor:undefined}/></InternalHeaderFrame>{view==='hotels'?<HotelsView events={events}/>:<Presentation events={events} embedded/>}</main><BottomNav view={view} setView={setView} openMenu={()=>{}}/></>}
 createRoot(document.getElementById('root')).render(<App/>);
 `, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, format: 'esm', platform: 'browser', tsconfig: 'tsconfig.json', outfile: path.join(output, 'harness.js'), loader: { '.css': 'empty' }, jsx: 'automatic', define: { 'process.env.NODE_ENV': '"test"', 'import.meta.env': JSON.stringify({ DEV: false, PROD: true, BASE_URL: '/' }) } });
 fs.writeFileSync(path.join(output,'index.html'),`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">${cssLinks}</head><body><div id="root"></div><script type="module" src="/harness.js"></script></body></html>`);
@@ -168,6 +168,12 @@ try {
   await mode.selectOption('absolute');await exact.fill('2030-10-11T04:00');
   await page.getByRole('button',{name:'Salvar alterações do pernoite',exact:true}).click();
   await page.reload();
+  await page.getByRole('alert').filter({hasText:'O editor foi recarregado'}).waitFor();
+  assert.equal(await program.inputValue(),'','Reload must not guess a stay');
+  assert.deepEqual(await page.evaluate(()=>Object.entries(sessionStorage).filter(([key])=>key.startsWith('crewcheck_stay_editor_origin_v1:')).map(([,value])=>value)),['hotels']);
+  await page.getByRole('button',{name:'Voltar à lista de pernoites',exact:true}).click();
+  await page.getByRole('button',{name:'Editar pernoite synthetic-future',exact:true}).waitFor();
+  assert.equal(await page.locator('[data-stay-editor-selected="true"]').count(),0,'Reload Back returns to list without another selection');
   await page.getByRole('button',{name:'Editar pernoite synthetic-future',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel editado sintético');
   await preview.locator('summary').click();
@@ -176,6 +182,12 @@ try {
   await page.getByText('Mais opções da edição',{exact:true}).click();
   await page.getByRole('button',{name:'Cancelar despertador deste pernoite',exact:true}).click();
   await page.reload();
+  await page.getByRole('alert').filter({hasText:'O editor foi recarregado'}).waitFor();
+  assert.equal(await program.inputValue(),'','Reload must not guess a stay');
+  assert.deepEqual(await page.evaluate(()=>Object.entries(sessionStorage).filter(([key])=>key.startsWith('crewcheck_stay_editor_origin_v1:')).map(([,value])=>value)),['hotels']);
+  await page.getByRole('button',{name:'Voltar à lista de pernoites',exact:true}).click();
+  await page.getByRole('button',{name:'Editar pernoite synthetic-future',exact:true}).waitFor();
+  assert.equal(await page.locator('[data-stay-editor-selected="true"]').count(),0,'Reload Back returns to list without another selection');
   await page.getByRole('button',{name:'Editar pernoite synthetic-future',exact:true}).click();
   await page.getByRole('status').filter({hasText:'Despertador cancelado nesta preferência'}).waitFor();
   await preview.locator('summary').click();
@@ -205,7 +217,7 @@ try {
   await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'another-account',email:'another@example.invalid'}));localStorage.setItem('crewcheck_auth_token','another-synthetic');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
   await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='');
   assert.deepEqual(errors,[]);assert.deepEqual(writes,[],'No hotel saves or alarm requests');
-  results.push({width,touchIdentity:true,savedApz:true,noRosterApzFallback:true,manualPreserved:true,autoMode:true,modeAbsolute:true,liveGap:true,defaultSeparate:true,current:true,rosterChange:true,itemRemoval:true,cancelEdit:true,contextReturn:true,accountReset:true,persistenceReload:true,cancellationPersisted:true,layout,negativeControl:true,writes,errors});
+  results.push({width,touchIdentity:true,savedApz:true,noRosterApzFallback:true,manualPreserved:true,autoMode:true,modeAbsolute:true,liveGap:true,defaultSeparate:true,current:true,rosterChange:true,itemRemoval:true,cancelEdit:true,contextReturn:true,accountReset:true,persistenceReload:true,reloadInsideEditorDegradesToList:true,cancellationPersisted:true,layout,negativeControl:true,writes,errors});
   await context.close();
  }
 } finally {

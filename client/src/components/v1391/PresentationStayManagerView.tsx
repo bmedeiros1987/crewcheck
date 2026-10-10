@@ -3,7 +3,7 @@ import { loadStayEditor, persistStayEditor, stayEditorAccount } from '@/lib/stay
 import { createStayAlarmController } from '@shared/stay-alarm-adapter.mjs';
 import { sanitizeStayChoice, migrateLegacyStay } from '@shared/stay-editor-store.mjs';
 import { getToken } from '@/lib/authClient';
-import { readStayEditorIntent, returnFromStayProgramEditor } from '@/lib/stayEditorNavigation';
+import { readStayEditorIntent, returnFromStayProgramEditor, hasStoredStayEditorOrigin } from '@/lib/stayEditorNavigation';
 import { orderStayDisplay } from '@/lib/stayDisplayOrder';
 import { stayLocalInstant, type StayAlarmChoice } from '@shared/stay-edit-plan.mjs';
 import StayHotelAlarmPreview from './StayHotelAlarmPreview';
@@ -86,9 +86,10 @@ export default function PresentationStayManagerView({ events, initialStayId, emb
   const [stays, setStays] = useState<any[]>([]);
   const [homeAddress, setHomeAddress] = useState('');
   const [postalCode, setPostalCode] = useState('');
-  const [contextId] = useState(() => initialStayId || readStayEditorIntent());
+  const [entry] = useState(() => { const id = initialStayId || readStayEditorIntent(); return { id, orphaned: !id && hasStoredStayEditorOrigin() }; });
+  const contextId = entry.id;
   const stayDisplay = orderStayDisplay(events);
-  const [selectedId, setSelectedId] = useState(() => contextId || stayDisplay.recommended?.id || operational[0]?.id || '');
+  const [selectedId, setSelectedId] = useState(() => entry.orphaned ? '' : contextId || stayDisplay.recommended?.id || operational[0]?.id || '');
   const [hotelTimeZone, setHotelTimeZone] = useState('');
   const [alarmChoice, setAlarmChoice] = useState<StayAlarmChoice | undefined>();
   const [defaultLead, setDefaultLead] = useState<number | undefined>(() => loadStayEditor().defaultLeadMinutes);
@@ -301,8 +302,9 @@ export default function PresentationStayManagerView({ events, initialStayId, emb
   }
 
   return <div ref={editorAnchor} className="cc-stay-editor-anchor"><section ref={editorRoot} className="cc-stay-editor">
-    <div className="cc-stay-editor-header"><V139Header hideBrand={embedded} title="Apresentação, hotel e descanso" detail="Edite o horário, informe hotel/quarto e mantenha o endereço de casa para descansos na base." onBack={contextId ? () => { returnFromStayProgramEditor(); } : undefined} backLabel={contextId ? 'Voltar ao pernoite' : undefined}/></div>
+    <div className="cc-stay-editor-header"><V139Header hideBrand={embedded} title="Apresentação, hotel e descanso" detail="Edite o horário, informe hotel/quarto e mantenha o endereço de casa para descansos na base." onBack={contextId || entry.orphaned ? () => { returnFromStayProgramEditor(); } : undefined} backLabel={contextId ? 'Voltar ao pernoite' : entry.orphaned ? 'Voltar à lista de pernoites' : undefined}/></div>
     <div className="cc-stay-editor-content">
+    {entry.orphaned && <p role="alert">O editor foi recarregado. Nenhum pernoite foi selecionado automaticamente. Volte à lista ou selecione a programação explicitamente.</p>}
     {needsReview && <p role="alert">A programação foi atualizada. Seus ajustes manuais foram preservados; confirme a data, o fuso e a APZ no hotel.</p>}
     {removed && <p role="alert">O pernoite selecionado saiu da escala. Nenhum outro item foi selecionado automaticamente.</p>}
     <section className="cc139-grid">
