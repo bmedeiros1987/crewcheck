@@ -1,5 +1,5 @@
 // cc-v14410:concierge-gyms-plan-location
-async function conciergeGymsReply(snapshot, text = '', profile = {}) {
+async function conciergeGymsReply(snapshot, text = '', profile = {}, maxReplyCharacters = 3900) {
   const preferences = snapshot?.preferences || {};
   const detectedPlan = detectWellhubPlanPreferenceFromText(text);
   const detectedActivity = detectWellhubActivityFromText(text);
@@ -146,11 +146,28 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
       sourceUrl ? `Fonte oficial: ${sourceUrl}` : 'Link oficial indisponível; consulte o app Wellhub.',
     ].join('\n');
   });
+  // All existing channels share this string. Reserve the full footer first and
+  // use the strictest transport ceiling (Telegram 3900, WhatsApp 4000 UTF-16
+  // code units). Never slice a unit, restriction, URL or warning. The optional
+  // smaller budget is internal/test-only; it cannot increase the transport cap.
+  const budget = Math.max(600, Math.min(3900, Number.isFinite(maxReplyCharacters) ? Math.floor(maxReplyCharacters) : 3900));
+  const header = `Academias · ${oneLine(locationCity)}${locationState ? `/${oneLine(locationState)}` : ''} · ${wellhubPlanLabelServer(wellhubPlan)}${activity ? ` · ${oneLine(activity)}` : ''}`;
+  const warning = 'Catálogo parcial, sem atualização automática; fontes não consultadas agora. Acesso, horários e disponibilidade de modalidades atuais não confirmados. O limite técnico de 90 dias do CrewCheck não garante vigência no Wellhub. Confirme acesso e condições no app Wellhub antes de sair.';
+  const preferenceHelp = 'Para alterar: “meu plano é Silver+”, “uso Gold” ou “quero Pilates”.';
+  for (let count = lines.length; count > 0; count--) {
+    const result = [
+      header, '', lines.slice(0, count).join('\n\n'), '',
+      ...(dates.size === 1 ? [`Cadastro consultado em: ${[...dates][0]}.`] : []),
+      ...(count < lines.length ? [`Mostrando ${count} de ${lines.length} unidades deste resultado. Para refinar a busca, informe uma rede ou unidade.`] : []),
+      warning, preferenceHelp,
+    ].join('\n');
+    if (result.length <= budget) return result;
+  }
+  // A single unusually long unit may not fit. Do not publish a fragment or
+  // claim that no matching units exist; offer the existing search path only.
   return [
-    `Academias · ${oneLine(locationCity)}${locationState ? `/${oneLine(locationState)}` : ''} · ${wellhubPlanLabelServer(wellhubPlan)}${activity ? ` · ${oneLine(activity)}` : ''}`,
-    '', lines.join('\n\n'), '',
-    ...(dates.size === 1 ? [`Cadastro consultado em: ${[...dates][0]}.`] : []),
-    'Catálogo parcial, sem atualização automática; fontes não consultadas agora. Acesso, horários e disponibilidade de modalidades atuais não confirmados. O limite técnico de 90 dias do CrewCheck não garante vigência no Wellhub. Confirme acesso e condições no app Wellhub antes de sair.',
-    'Para alterar: “meu plano é Silver+”, “uso Gold” ou “quero Pilates”.',
+    'Academias · Wellhub', '',
+    `Nenhuma das ${lines.length} unidades deste resultado cabe completa nesta mensagem. Refine a busca por rede ou unidade.`,
+    'Busca oficial: https://wellhub.com/pt-br/search/', '', warning, preferenceHelp,
   ].join('\n');
 }

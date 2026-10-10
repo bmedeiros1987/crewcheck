@@ -68,8 +68,24 @@ em nomes, caracteres HTML/Markdown literais, restrições e avisos não duplicad
 Executa o payload Telegram existente com fetch fictício, sem parse_mode nem
 mensagem real; o teste multicanal existente executa app/Telegram/WhatsApp.
 As quatro unidades Fortaleza e rodapé cabem no limite existente de 3900 caracteres.
-Não se altera esse limite: catálogos maiores ainda podem sofrer truncamento pelo
-transporte existente; isso requer trabalho específico, fora deste formatter.
+A revisão reproduziu no HEAD inicial 0c097cac Brasília/DF + Silver+ + Treino
+de força (4318 caracteres, aviso em 3969): os limites Telegram 3900 e WhatsApp
+4000 removiam ressalvas essenciais; Cycle reproduzia. Corrigido no formatter
+compartilhado usando o teto mais estrito, 3900 unidades UTF-16, sem modificar
+transportes. Rodapé integral é reservado antes de incluir unidades. Apenas
+um prefixo de blocos completos é publicado; a mensagem diz quantas unidades
+deste resultado aparecem e pede refinar por rede/unidade. Nenhum novo envio
+ou comando de paginação fictício é ativado. Se uma unidade não cabe completa,
+a resposta explica isso e mantém busca oficial e aviso; não afirma catálogo vazio.
+
+Casos DF atuais: Treino de força 3635 e Cycle 3605 caracteres, ambos com 6 de
+8 blocos completos e aviso integral. Testes usam limites 3900/4000/1500/1000/800/600,
+comparam blocos exibidos ao formatter da mesma unidade isolada e executam os
+payloads Telegram/WhatsApp com helpers/fetch fictícios. Datas, links, condições,
+horários e mínimo por atividade não são fatiados. Nome com emoji e condição
+excepcionalmente longa valida fallback sem fragmento. O parâmetro interno
+de teste pode reduzir o limite até 600; não aumenta o teto de produção nem
+é passado pelos handlers de canal. App recebe a mesma resposta compacta.
 
 Não altera catálogo, tiers, filtros, coletor, autorização, GPS, transporte real,
 AIMS, notificações ou Play. Não comprova SHA em produção/Render. Draft para
