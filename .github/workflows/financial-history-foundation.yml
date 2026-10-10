@@ -31,6 +31,8 @@ on:
       - 'client/src/lib/salaryCalculationDiagnostic.ts'
       - 'scripts/regression-salary-prerequisite-diagnostic.mjs'
       - 'scripts/regression-salary-review-callers.mjs'
+      - 'scripts/regression-salary-operational-clock.mjs'
+      - 'scripts/fixtures/salary-night-3900-4527.json'
       - 'scripts/regression-salary-prerequisites-browser.cjs'
       - 'client/src/lib/databaseClient.ts'
       - '.github/workflows/financial-history-foundation.yml'
@@ -48,6 +50,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-salary-operational-clock.mjs
       - run: node scripts/regression-static-module-mime.mjs
       - run: node scripts/regression-operated-flight-hours.mjs
       - run: node scripts/regression-p0-623-regulatory-history-carry-in.mjs
