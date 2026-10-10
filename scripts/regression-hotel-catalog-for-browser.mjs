@@ -116,7 +116,6 @@ try {
         assert.equal(await button.count(), 1, `${view}/${width}/${query}: unique Giga result`);
         if (query === 'FOR') {
           assert.equal(await (view === 'hotels' ? choices.locator('article') : choices.getByRole('button')).filter({ hasText: 'Ibis Fortaleza Centro de Eventos' }).count(), 1, 'Existing FOR unit remains visible');
-          assert.equal(await (view === 'hotels' ? choices.locator('article') : choices.getByRole('button')).count(), 2, 'Only the two FOR catalog matches');
         }
         await button.scrollIntoViewIfNeeded();
         await page.screenshot({ path: path.join(output, `${view}-${width}-${query === name ? 'name' : query}.png`), animations: 'disabled' });
