@@ -74,12 +74,20 @@ ao probe Sky atual, que consulta um voo real.
    nem fallback de provedor. O teto numérico é provisório: o orçamento aprovado
    pelo usuário ainda deve ser definido antes de qualquer teste real.
 5. ~~Resultados ambíguos~~ Implementado: 404/405 → `unverified` (não provam
-   autenticação); 2xx com corpo inválido → `invalid_payload`; carrier, voo e
-   data inválidos são rejeitados localmente sem consumir orçamento (sem
-   fallback para LA3377); data fora de ±2 dias de hoje (janela provisória)
-   é rejeitada; linhas de outro voo/companhia ou malformadas são descartadas e
-   contadas em `rejectedRows`; `null`/vazio/booleano numérico permanece `null`
-   (nunca 0). Ainda pendente: schema oficial do endpoint Sky.
+   autenticação); 2xx com corpo inválido → `invalid_payload`, inclusive quando
+   os **elementos** do array não são registros utilizáveis
+   (`flightStatuses: [null, "garbage"]` nunca é `available`); carrier, voo e data
+   **presentes** mas vazios ou malformados recebem HTTP 400 na rota antes de
+   qualquer diagnóstico e nunca são trocados pelo padrão (parâmetro omitido usa
+   o padrão documentado); data fora de ±2 dias de hoje (janela provisória) é
+   rejeitada; a ocorrência devolvida precisa ser o trecho pedido — mesmo carrier
+   e voo, partida e chegada válidas e distintas, chegada depois da partida e
+   dentro de um dia, e dia de partida igual ao consultado (data local, ou UTC
+   dentro de um dia); linha sem data verificável é rejeitada, nunca exibida, e
+   conta em `rejectedRows`; valor numérico só é aceito como número real ou string
+   numérica simples, então `null`, vazio, booleano, array (`[]`, `[null]`, `[1]`)
+   ou objeto permanecem `null` (nunca 0). Ainda pendente: schema oficial do
+   endpoint Sky.
 6. Reexecutar os mocks e revisar patch antes de autorizar qualquer teste real.
 
 ## Escopo do orçamento

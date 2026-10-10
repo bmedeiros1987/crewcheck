@@ -23,7 +23,7 @@ While signed in as an email listed in `CREWCHECK_ADMIN_EMAILS`, request:
 
 The response never includes credentials or the upstream response body. It reports only `not_configured`, `authenticated`, `plan_pending`, `forbidden`, `quota`, `available`, `unverified`, `invalid_payload`, `error`, plus a sanitized HTTP status or transport reason where applicable.
 
-`unverified` means the response cannot prove authentication or available data: a `404`/`405`, or a `2xx` whose body is unusable. A `404` or `405` is never reported as `authenticated`. A `2xx` carrying a body that is not the expected JSON shape reports `invalid_payload` instead of `available`.
+`unverified` means the response cannot prove authentication or available data: a `404`/`405`, or a `2xx` whose body is unusable. A `404` or `405` is never reported as `authenticated`. A `2xx` carrying a body that is not the expected JSON shape reports `invalid_payload` instead of `available`, and the elements are validated too: an array of nulls, strings or non-objects is not a usable answer, so `flightStatuses: [null, 'garbage']` is never `available`.
 
 The probe requests the single LATAM (`LA`) airline reference record. This keeps the response small and tests an API included in the Evaluation Plan without invoking flight-status, airport, FIDS, or alert quotas.
 
@@ -33,7 +33,9 @@ For that isolated evaluation, an Admin can request:
 
 `GET /api/platform/admin/diagnostics/cirium/flight?carrier=LA&flight=3377&date=2026-08-09`
 
-The date is the local departure date and must be within the Flight Status API's current-data window. The response contains only normalized operational fields and presence/freshness measurements; it never returns the upstream body or credentials. Omitting parameters uses LA3377 and today's date in `America/Sao_Paulo`; a present but malformed value is rejected locally (`invalid_carrier`, `invalid_flight`, `invalid_date`) without any request, and a date outside the provisional ±2 day window reports `date_out_of_window`. Rows that answer a different flight or carrier, or that are malformed, are never displayed and are counted in `rejectedRows`; a valid response with no matching row reports `no_data`.
+The date is the local departure date and must be within the Flight Status API's current-data window. The response contains only normalized operational fields and presence/freshness measurements; it never returns the upstream body or credentials. An omitted parameter uses the documented default (LA3377, today in `America/Sao_Paulo`). A parameter that is **present** but blank or malformed is explicit invalid input: the route answers HTTP 400 before any diagnostic runs, so a blank value is never silently replaced by the default. A date outside the provisional ±2 day window reports `date_out_of_window`.
+
+A returned row is displayed only when it is a usable record of the requested occurrence: the same carrier and flight number, a coherent leg (a valid departure and a different arrival, with the scheduled arrival after the departure and within a day), and a departure day that matches the requested day. When the row carries a local departure date it must equal the requested date; UTC-only evidence is accepted only within one day of it. A row whose date cannot be verified is rejected rather than displayed. Rows for another occurrence and malformed rows both report `invalid_payload` and are counted in `rejectedRows`; a valid response with no rows at all reports `no_data`.
 
 ## Request limits
 
@@ -45,6 +47,6 @@ This state lives in one Node process: it resets on restart or deploy and is not 
 
 The laboratory adapter maps a Flight Status fixture to the existing Radar shape and measures field coverage. It deliberately uses departure gate and terminal only; arrival resources can never fill the boarding fields. The adapter is not imported by `server.mjs`, is absent from the provider race/order, and has no production enable flag.
 
-A numeric value the provider did not report stays `null` in the adapter and in the diagnostic summary; `null`, an empty string, a boolean or a non-numeric string never become a displayed `0`. `ciriumCoverage` counts delays as coverage only when a real delay value was reported.
+A numeric value the provider did not report stays `null` in the adapter and in the diagnostic summary. Only a real number or a plain numeric string (`^-?\d+(\.\d+)?$`) is accepted, so `null`, an empty string, a boolean, an array (`[]`, `[null]`, `[1]`) or an object never become a displayed `0` or a fabricated value; `Number([])` and `Number([null])` are `0`, which is exactly why they are rejected. `ciriumCoverage` counts delays as coverage only when a real delay value was reported.
 
 Activation remains blocked until a real response demonstrates the correct segment identity and acceptable coverage for status, departure gate/terminal, scheduled/estimated/actual times, and freshness. After that evidence, integration must be a separate PR with rollback flag, health isolation, cache, and existing-provider preservation.
