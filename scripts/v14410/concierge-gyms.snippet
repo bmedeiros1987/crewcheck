@@ -74,6 +74,9 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   const currentLocation = locationContext.fresh ? (locationContext.location || {}) : {};
   const informedLocation = extractWellhubLocationHintFromText(text);
   const hasInformedCity = Boolean(String(informedLocation.city || '').trim());
+  // Expired GPS does not establish the user's current city. Do not silently
+  // replace it with the roster's next airport/base; an explicit city can recover.
+  if (locationContext.status === 'stale' && !hasInformedCity) return locationContext.message;
   const airportCity = WEATHER_AIRPORT_POINTS[airport]?.city || '';
   const currentCity = String(informedLocation.city || currentLocation.city || '').trim();
   const currentState = String(hasInformedCity ? informedLocation.state || '' : currentLocation.state || '').trim();
