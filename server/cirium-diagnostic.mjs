@@ -19,6 +19,11 @@ function safeSkyBaseUrl(value) {
 }
 
 export function ciriumConfiguration() {
+  // Fail closed before accessing credentials. Setting a token is not consent
+  // to consume upstream queries, including the legacy Flex diagnostic.
+  if (process.env.CIRIUM_DIAGNOSTIC_ENABLED !== 'true') {
+    return { mode: 'disabled', provider: 'cirium-sky', configured: false };
+  }
   const skyToken = configuredValue('CIRIUM_SKY_API_TOKEN') || configuredValue('CIRIUM_SKY_SECRET');
   const skyIdentifier = configuredValue('CIRIUM_SKY_IDENTIFIER');
   const skyBaseUrl = safeSkyBaseUrl();
@@ -212,7 +217,7 @@ async function fetchJson(url, options, fetchImpl) {
 export async function diagnoseCirium({ fetchImpl = globalThis.fetch } = {}) {
   const config = ciriumConfiguration();
   if (!config.configured) {
-    return { ok: true, provider: config.provider, state: 'not_configured', configured: false };
+    return { ok: true, provider: config.provider, state: config.mode === 'disabled' ? 'disabled' : 'not_configured', configured: false };
   }
 
   try {
@@ -262,7 +267,7 @@ export async function diagnoseCirium({ fetchImpl = globalThis.fetch } = {}) {
 
 export async function diagnoseCiriumFlight({ carrier = 'LA', flight = '3377', date, fetchImpl = globalThis.fetch } = {}) {
   const config = ciriumConfiguration();
-  if (!config.configured) return { ok: false, provider: config.provider, state: 'not_configured', configured: false };
+  if (!config.configured) return { ok: false, provider: config.provider, state: config.mode === 'disabled' ? 'disabled' : 'not_configured', configured: false };
   const safeCarrier = safeCode(carrier, /^[A-Z0-9]{2,3}$/, 'LA');
   const safeFlight = safeCode(flight, /^[0-9]{1,4}[A-Z]?$/, '3377');
   const localDate = date || new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());

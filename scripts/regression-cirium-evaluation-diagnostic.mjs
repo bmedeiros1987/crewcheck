@@ -4,6 +4,7 @@ for (const name of [
   'CIRIUM_SKY_API_TOKEN', 'CIRIUM_SKY_SECRET', 'CIRIUM_SKY_IDENTIFIER', 'CIRIUM_SKY_BASE_URL',
   'CIRIUM_APP_ID', 'CIRIUM_APP_KEY',
 ]) process.env[name] = '';
+process.env.CIRIUM_DIAGNOSTIC_ENABLED = 'true';
 
 const { diagnoseCirium, diagnoseCiriumFlight, normalizeCiriumResult, ciriumConfiguration } = await import('../server/cirium-diagnostic.mjs');
 
