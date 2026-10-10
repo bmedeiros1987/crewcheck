@@ -14,13 +14,13 @@ Feature under review: export and synchronize the user's imported crew roster wit
 | Terms of service | `https://crewcheck.online/terms` |
 | Account deletion | `https://crewcheck.online/delete-account` |
 | Authorized domain | `crewcheck.online` |
-| Requested scope | `https://www.googleapis.com/auth/calendar.events.owned` |
+| Requested scopes | `https://www.googleapis.com/auth/calendar.events.owned` and `https://www.googleapis.com/auth/calendar.calendarlist.readonly` |
 
-Remove the legacy scopes `calendar.events`, `calendar.calendarlist.readonly` and `calendar`. The least-privilege implementation uses only the user's primary calendar and therefore does not need CalendarList access.
+Remove the legacy broad scopes `calendar.events` and `calendar`. The least-privilege implementation writes events only on calendars owned by the user (`calendar.events.owned`) and reads the calendar list (`calendar.calendarlist.readonly`) only so the user can choose which of their own calendars receives the roster — for example the primary calendar or a secondary calendar they own. The server proxy accepts only the calendar list (GET) and the events collection of one validated calendar ID whose `accessRole` is `owner`.
 
 ## Scope justification — English
 
-> CrewCheck uses `https://www.googleapis.com/auth/calendar.events.owned` solely for the user-facing Google Calendar synchronization feature. After a user imports their own crew roster, they may explicitly choose Calendar > Google Calendar > Connect/Sync. CrewCheck then creates roster events in the authenticated user's primary calendar, searches only the roster date range to locate events previously created by CrewCheck, and updates or deletes only events tagged with CrewCheck private extended properties or the `#CREWCHECK` marker. A read-only scope is not sufficient because the user explicitly requests creation, replacement and deletion of their roster events. The broader `calendar.events` scope is not necessary because CrewCheck does not need to modify events on shared calendars, and CalendarList scopes are not requested because the app uses only the primary calendar. Google user data is not used for advertising, credit decisions, sale, profiling or general AI/ML model training.
+> CrewCheck uses `https://www.googleapis.com/auth/calendar.events.owned` and `https://www.googleapis.com/auth/calendar.calendarlist.readonly` solely for the user-facing Google Calendar synchronization feature. After a user imports their own crew roster, they may explicitly choose Calendar > Google Calendar > Connect/Sync. CrewCheck reads the user's calendar list (read-only) to show the calendars the user owns, the user picks the destination calendar, and CrewCheck then creates roster events in that calendar, searches only the roster date range to locate events previously created by CrewCheck, and updates or deletes only events tagged with CrewCheck private extended properties. A read-only events scope is not sufficient because the user explicitly requests creation, update and deletion of their roster events. The broader `calendar.events` and `calendar` scopes are not necessary because CrewCheck never modifies calendars, sharing settings or events on calendars the user does not own. Google user data is not used for advertising, credit decisions, sale, profiling or general AI/ML model training.
 
 ## Reviewer navigation
 
@@ -30,7 +30,8 @@ Remove the legacy scopes `calendar.events`, `calendar.calendarlist.readonly` and
 4. Import the supplied synthetic roster PDF.
 5. Open **Calendário** > **Google Calendar**.
 6. Click **Conectar Google Calendar**.
-7. Authorize the single requested permission.
+7. Authorize the two requested permissions (owned-calendar events and read-only calendar list).
+7a. Choose the destination calendar (primary or a secondary calendar owned by the account).
 8. Click **Sincronizar agora**.
 9. Open the Google Calendar test account and verify the new CrewCheck events.
 10. Import a second synthetic roster version and synchronize again to demonstrate update and deletion without changing an unrelated personal event.
@@ -52,7 +53,7 @@ The review account must not be blocked by payment, telephone confirmation, corpo
 
 Show `https://crewcheck.online/about`, the CrewCheck identity and the Calendar feature.
 
-> This is CrewCheck, a roster organization application for aviation crew members. The Google Calendar integration is an optional user-facing feature that exports a roster imported by the user into that user's primary Google Calendar.
+> This is CrewCheck, a roster organization application for aviation crew members. The Google Calendar integration is an optional user-facing feature that exports a roster imported by the user into a Google Calendar owned by that user and chosen by them.
 
 ### 00:25–01:05 — Privacy, Terms and Limited Use
 
@@ -80,21 +81,21 @@ Open **Calendário**, show the Google Calendar card and click **Connect**. Show 
 
 ### 02:35–03:20 — Complete Google consent flow
 
-Select the Google test account. Show the complete consent screen in English, expand all services and keep the permission readable. The screen must show only the permission corresponding to `calendar.events.owned`.
+Select the Google test account. Show the complete consent screen in English, expand all services and keep the permission readable. The screen must show only the permissions corresponding to `calendar.events.owned` and `calendar.calendarlist.readonly`.
 
-> CrewCheck requests one narrow scope: permission to see, create, change and delete events only on Google calendars owned by the authenticated user. The scope displayed here exactly matches the scope configured in Google Cloud Console and requested by the application.
+> CrewCheck requests two narrow scopes: permission to see, create, change and delete events only on Google calendars owned by the authenticated user, and read-only access to the calendar list so the user can choose the destination calendar. The scopes displayed here exactly match the scopes configured in Google Cloud Console and requested by the application.
 
 ### 03:20–04:10 — Event creation
 
 Click **Synchronize now**, show the CrewCheck result, then open Google Calendar and show the generated events.
 
-> The authorized scope is used to create roster events in the user's primary calendar. The events contain only the schedule information selected by the user and are marked internally as CrewCheck events.
+> The calendar list is read only to show the user's own calendars; the user selects one, and the events scope is used to create roster events in that calendar. The events contain only the schedule information selected by the user and are marked internally as CrewCheck events.
 
 ### 04:10–05:05 — Update and delete impact
 
 Create one unrelated event named “Personal event — do not change.” Import the second synthetic roster version and synchronize again. Show that CrewCheck events were replaced or removed and the unrelated event remains unchanged.
 
-> CrewCheck searches only the roster period and deletes or replaces only events identified by CrewCheck private properties or the CrewCheck marker. This demonstrates the write and delete impact in the source Google account. Unrelated personal events are not modified.
+> CrewCheck searches only the roster period and updates or deletes only events identified by CrewCheck private extended properties. A second synchronization without roster changes creates, updates and deletes nothing. This demonstrates the write and delete impact in the source Google account. Unrelated personal events are not modified.
 
 ### 05:05–05:35 — Disconnect and revoke
 
@@ -110,7 +111,7 @@ Open `/delete-account` without deleting the reusable reviewer account.
 
 ### Closing
 
-> This concludes the demonstration of the single requested Google Calendar scope and all associated user-facing functionality. The scope requested by the application, the OAuth consent screen and the Google Cloud verification submission are identical.
+> This concludes the demonstration of the two requested Google Calendar scopes and all associated user-facing functionality. The scope requested by the application, the OAuth consent screen and the Google Cloud verification submission are identical.
 
 ## Final checklist
 
@@ -118,7 +119,7 @@ Open `/delete-account` without deleting the reusable reviewer account.
 - [ ] Homepage is public and is not only a login screen.
 - [ ] Privacy Policy and Terms are public without authentication.
 - [ ] Consent screen is in English and all services are expanded.
-- [ ] Only `calendar.events.owned` appears.
+- [ ] Only `calendar.events.owned` and `calendar.calendarlist.readonly` appear.
 - [ ] The same exact scope is configured in Cloud Console and source code.
 - [ ] Creation, replacement and deletion are visible in the source Google Calendar account.
 - [ ] An unrelated event remains unchanged.
@@ -136,11 +137,12 @@ Subject: `OAuth verification update — CrewCheck / sonic-charmer-399015 / 77763
 >
 > The Google Calendar feature is production ready and is initiated only when a signed-in user explicitly selects Calendar > Google Calendar > Connect/Sync after importing their own roster.
 >
-> We removed the broader `calendar.events` and `calendar.calendarlist.readonly` scopes. CrewCheck now requests only:
+> We removed the broader `calendar.events` and `calendar` scopes. CrewCheck now requests only:
 >
 > `https://www.googleapis.com/auth/calendar.events.owned`
+> `https://www.googleapis.com/auth/calendar.calendarlist.readonly`
 >
-> CrewCheck uses the user's primary calendar only. The permission is necessary to create, locate, update and delete the roster events requested by the user. A read-only scope cannot provide synchronization. CrewCheck searches only the roster date range and modifies only events tagged with CrewCheck private extended properties or the `#CREWCHECK` marker.
+> The calendar list is read only so the user can choose which of their own calendars receives the roster. The events permission is necessary to create, locate, update and delete the roster events requested by the user, and only works on calendars owned by the user. A read-only events scope cannot provide synchronization. CrewCheck searches only the roster date range and modifies only events tagged with CrewCheck private extended properties.
 >
 > Public pages:
 >

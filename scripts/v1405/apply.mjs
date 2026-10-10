@@ -3,6 +3,9 @@ import fs from 'node:fs';
 const VERSION = '14.0.5';
 const VERSION_CODE = '140005';
 const OWNED_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned';
+const CALENDARLIST_READONLY_SCOPE = 'https://www.googleapis.com/auth/calendar.calendarlist.readonly';
+const CANONICAL_SCOPES = `const GOOGLE_SCOPES = [\n  '${OWNED_SCOPE}',\n  '${CALENDARLIST_READONLY_SCOPE}',\n].join(' ');`;
+const DISCLOSURE_KEY_LINE = "const GOOGLE_SCOPE_DISCLOSURE_KEY = 'crewcheck_google_calendar_owned_events_disclosure_v2';";
 const read = (file) => fs.readFileSync(file, 'utf8');
 const write = (file, content) => fs.writeFileSync(file, content, 'utf8');
 
@@ -29,15 +32,11 @@ calendar = insertAfter(
   'import da ponte OAuth',
 );
 
-calendar = calendar.replace(
-  /const GOOGLE_SCOPES = (?:\[[\s\S]*?\]\.join\(' '\)|'https:\/\/www\.googleapis\.com\/auth\/calendar\.events\.owned');/,
-  `const GOOGLE_SCOPES = '${OWNED_SCOPE}';`,
-);
-if (!calendar.includes("const GOOGLE_SCOPE_DISCLOSURE_KEY = 'crewcheck_google_calendar_owned_events_disclosure_v1';")) {
-  calendar = calendar.replace(
-    `const GOOGLE_SCOPES = '${OWNED_SCOPE}';`,
-    `const GOOGLE_SCOPES = '${OWNED_SCOPE}';\nconst GOOGLE_SCOPE_DISCLOSURE_KEY = 'crewcheck_google_calendar_owned_events_disclosure_v1';`,
-  );
+calendar = calendar.replace(/const GOOGLE_SCOPES = (?:\[[\s\S]*?\]\.join\(' '\)|'[^']*');/, CANONICAL_SCOPES);
+if (!calendar.includes(DISCLOSURE_KEY_LINE)) {
+  calendar = calendar
+    .replace(/const GOOGLE_SCOPE_DISCLOSURE_KEY = '[^']*';\n?/g, '')
+    .replace(CANONICAL_SCOPES, `${CANONICAL_SCOPES}\n${DISCLOSURE_KEY_LINE}`);
 }
 calendar = calendar
   .replace(/const GOOGLE_ANDROID_SHA1_FINGERPRINT = [^;]+;\n?/, '')
@@ -56,7 +55,7 @@ calendar = calendar.replace(
 calendar = replaceRequired(
   calendar,
   /export function googleCalendarIntegrationDiagnostics\(\): \{ label: string; value: string; tone: 'ok' \| 'warn' \| 'info' \}\[] \{[\s\S]*?\n\}/,
-  `export function googleCalendarIntegrationDiagnostics(): { label: string; value: string; tone: 'ok' | 'warn' | 'info' }[] {\n  const origin = typeof window !== 'undefined' ? window.location.origin : 'servidor';\n  return [\n    { label: 'Conexão Google', value: hasGoogleCalendarToken() ? 'Conectada' : isGoogleCalendarConfigured() ? 'Pronta para conectar' : 'Aguardando configuração', tone: hasGoogleCalendarToken() ? 'ok' : isGoogleCalendarConfigured() ? 'info' : 'warn' },\n    { label: 'Autorização', value: serverGoogleCalendarDiagnosticLabel(), tone: 'info' },\n    { label: 'Permissão', value: 'Somente eventos no calendário principal pertencente ao usuário', tone: 'info' },\n    { label: 'Origem', value: origin, tone: 'info' },\n    { label: 'Sincronização', value: 'Reconexão segura e atualização sem duplicar eventos CrewCheck.', tone: 'ok' },\n  ];\n}`,
+  `export function googleCalendarIntegrationDiagnostics(): { label: string; value: string; tone: 'ok' | 'warn' | 'info' }[] {\n  const origin = typeof window !== 'undefined' ? window.location.origin : 'servidor';\n  return [\n    { label: 'Conexão Google', value: hasGoogleCalendarToken() ? 'Conectada' : isGoogleCalendarConfigured() ? 'Pronta para conectar' : 'Aguardando configuração', tone: hasGoogleCalendarToken() ? 'ok' : isGoogleCalendarConfigured() ? 'info' : 'warn' },\n    { label: 'Autorização', value: serverGoogleCalendarDiagnosticLabel(), tone: 'info' },\n    { label: 'Permissão', value: 'Somente eventos em calendários Google próprios; lista de calendários somente leitura', tone: 'info' },\n    { label: 'Origem', value: origin, tone: 'info' },\n    { label: 'Sincronização', value: 'Reconexão segura e atualização sem duplicar eventos CrewCheck.', tone: 'ok' },\n  ];\n}`,
   'diagnóstico Google Calendar',
 );
 
@@ -106,22 +105,12 @@ calendar = replaceRequired(
 );
 
 calendar = calendar.replace(
-  "const saved: GoogleCalendarSettings = { ...defaultGoogleCalendarSettings(), ...settings };",
-  "const saved: GoogleCalendarSettings = { ...defaultGoogleCalendarSettings(), ...settings, selectedCalendarId: 'primary', selectedCalendarName: 'Calendário principal' };",
-);
-
-calendar = calendar.replace(
-  /export async function listGoogleCalendars\(\): Promise<GoogleCalendarOption\[]> \{[\s\S]*?\n\}\n\nexport async function getCalendarFeedInfo/,
-  `export async function listGoogleCalendars(): Promise<GoogleCalendarOption[]> {\n  return [{ id: 'primary', summary: 'Calendário principal', primary: true, accessRole: 'owner' }];\n}\n\nexport async function getCalendarFeedInfo`,
-);
-calendar = calendar.replace("const calendarId = settings.selectedCalendarId || 'primary';", "const calendarId = 'primary';");
-calendar = calendar.replace(
   /export function explainCalendarFeed\(\): string \{[\s\S]*?\n\}/,
-  `export function explainCalendarFeed(): string {\n  return 'Google Calendar direto e protegido: no Android, a autorização abre no navegador seguro; no web, o CrewCheck usa a conexão disponível e sincroniza somente eventos no calendário principal.';\n}`,
+  `export function explainCalendarFeed(): string {\n  return 'Google Calendar direto e protegido: no Android, a autorização abre no navegador seguro; no web, o CrewCheck usa a conexão disponível e sincroniza somente eventos CrewCheck no calendário próprio escolhido pelo usuário.';\n}`,
 );
 
-if (calendar.includes('calendar.calendarlist.readonly')) throw new Error(`CrewCheck v${VERSION}: escopo CalendarList amplo permaneceu no cliente.`);
-if (/https:\/\/www\.googleapis\.com\/auth\/calendar\.events['"\s]/.test(calendar)) throw new Error(`CrewCheck v${VERSION}: escopo calendar.events amplo permaneceu no cliente.`);
+if (!calendar.includes(CALENDARLIST_READONLY_SCOPE)) throw new Error(`CrewCheck v${VERSION}: escopo somente leitura da lista de calendários ausente no cliente.`);
+if (/https:\/\/www\.googleapis\.com\/auth\/calendar(?:\.events|\.calendarlist)?['"\s]/.test(calendar)) throw new Error(`CrewCheck v${VERSION}: escopo Google Calendar amplo permaneceu no cliente.`);
 write(calendarPath, calendar);
 
 const serverPath = 'server.mjs';

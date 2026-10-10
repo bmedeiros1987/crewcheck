@@ -1,14 +1,17 @@
 import { ArrowLeft, CalendarCheck2, CheckCircle2, ExternalLink, FileText, LogIn, Plane, ShieldCheck, Trash2 } from 'lucide-react';
 import { useLocation } from 'wouter';
 
-const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned';
+const GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/calendar.events.owned',
+  'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
+];
 
 const steps = [
   'Entre no CrewCheck e importe a sua escala.',
   'Abra o menu Calendário e escolha Google Calendar.',
   'Toque em Conectar Google Calendar. A autorização só é solicitada nesse momento.',
   'Leia a tela de consentimento do Google e autorize a criação e o gerenciamento dos eventos de escala.',
-  'Toque em Sincronizar. O CrewCheck cria os eventos no calendário principal da conta autorizada.',
+  'Escolha o calendário de destino entre os calendários que pertencem a você (principal ou secundário) e toque em Sincronizar.',
   'Em novas sincronizações, o CrewCheck substitui somente os eventos que ele próprio identificou, evitando duplicidade.',
 ];
 
@@ -27,7 +30,7 @@ export default function OAuthVerificationPage() {
           <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-cyan-300/15 text-cyan-100"><CalendarCheck2 className="h-8 w-8" /></div>
           <p className="mt-6 text-xs font-black uppercase tracking-[0.28em] text-cyan-200">Integração opcional</p>
           <h1 className="mt-3 text-3xl font-black tracking-tight md:text-5xl">CrewCheck + Google Calendar</h1>
-          <p className="mt-5 max-w-4xl text-base leading-8 text-slate-200/90 md:text-lg">O CrewCheck transforma a escala importada pelo próprio usuário em eventos organizados no seu calendário principal. A conexão é voluntária, pode ser recusada e pode ser revogada a qualquer momento.</p>
+          <p className="mt-5 max-w-4xl text-base leading-8 text-slate-200/90 md:text-lg">O CrewCheck transforma a escala importada pelo próprio usuário em eventos organizados no calendário Google que você escolher, entre os que pertencem a você. A conexão é voluntária, pode ser recusada e pode ser revogada a qualquer momento.</p>
           <div className="mt-6 flex flex-wrap gap-3">
             <a href="/login" className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-300 to-fuchsia-300 px-5 py-3 text-sm font-black text-[#07111F] shadow-lg shadow-cyan-500/15 hover:brightness-105"><LogIn className="h-4 w-4" />Entrar no CrewCheck</a>
             <a href="/privacy" className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-[#07111F] hover:bg-cyan-100"><ShieldCheck className="h-4 w-4" />Política de Privacidade</a>
@@ -42,7 +45,7 @@ export default function OAuthVerificationPage() {
               {[
                 'Cria eventos de voos, atividades, folgas e lembretes escolhidos pelo usuário.',
                 'Consulta somente o período da escala para localizar eventos já criados pelo CrewCheck.',
-                'Atualiza ou remove somente eventos marcados com propriedades privadas CrewCheck ou #CREWCHECK.',
+                'Atualiza ou remove somente eventos marcados com a propriedade privada CrewCheck.',
                 'Evita duplicidade quando a escala é sincronizada novamente.',
                 'Permite desconectar e revogar a autorização.',
               ].map((item) => <li key={item} className="flex gap-3"><CheckCircle2 className="mt-1 h-5 w-5 shrink-0 text-emerald-300" /><span>{item}</span></li>)}
@@ -65,9 +68,9 @@ export default function OAuthVerificationPage() {
 
         <section className="mt-5 rounded-3xl border border-white/10 bg-white/[0.06] p-6 md:p-8">
           <h2 className="text-2xl font-black">Permissão solicitada</h2>
-          <p className="mt-3 text-sm leading-7 text-slate-200/90">O CrewCheck solicita uma única permissão de menor privilégio para eventos em calendários pertencentes ao usuário:</p>
-          <code className="mt-4 block overflow-x-auto rounded-2xl border border-cyan-200/15 bg-[#030A13] p-4 text-xs leading-6 text-cyan-100 md:text-sm">{GOOGLE_SCOPE}</code>
-          <p className="mt-4 text-sm leading-7 text-slate-200/90">Uma permissão somente de leitura não seria suficiente porque o recurso solicitado pelo usuário precisa criar, atualizar e remover os eventos da escala. O CrewCheck não solicita acesso à lista completa de calendários nem a outros produtos Google.</p>
+          <p className="mt-3 text-sm leading-7 text-slate-200/90">O CrewCheck solicita duas permissões de menor privilégio: eventos somente em calendários pertencentes ao usuário e a lista de calendários em modo somente leitura, para o usuário escolher o calendário de destino:</p>
+          <code className="mt-4 block overflow-x-auto whitespace-pre rounded-2xl border border-cyan-200/15 bg-[#030A13] p-4 text-xs leading-6 text-cyan-100 md:text-sm">{GOOGLE_SCOPES.join('\n')}</code>
+          <p className="mt-4 text-sm leading-7 text-slate-200/90">Uma permissão somente de leitura de eventos não seria suficiente porque o recurso solicitado pelo usuário precisa criar, atualizar e remover os eventos da escala. A lista de calendários é apenas lida para exibir os calendários próprios; o CrewCheck não altera calendários, compartilhamentos ou eventos de calendários de terceiros e não solicita o escopo amplo do Google Calendar nem outros produtos Google.</p>
         </section>
 
         <section className="mt-5 rounded-3xl border border-white/10 bg-white/[0.06] p-6 md:p-8">

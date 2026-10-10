@@ -192,6 +192,8 @@ jobs:
         run: node scripts/regression-p1-568-navigation-inventory.mjs
       - name: Validate Google Maps monthly budget and TomTom fallback
         run: node scripts/regression-v14-3-42-google-maps-budget-fallback.mjs 2>&1 | tee "$RUNNER_TEMP/google-maps-budget-regression.log"
+      - name: Validate Google Calendar operational detailed sync
+        run: node scripts/regression-calendar-operational-detailed.mjs 2>&1 | tee "$RUNNER_TEMP/google-calendar-operational-regression.log"
       - name: Validate iPad premium layout, location and reload stability
         run: node scripts/regression-v14-3-43-ipad-premium-layout-location-stability.mjs 2>&1 | tee "$RUNNER_TEMP/ipad-premium-stability-regression.log"
       - name: Validate menu icons, Settings location and end-positioned search

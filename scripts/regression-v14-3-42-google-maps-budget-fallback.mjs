@@ -187,7 +187,8 @@ for (const marker of [
 
 assert.ok(calendar.includes('VITE_GOOGLE_CLIENT_ID'), 'Calendar deve ler o Client ID incorporado no build');
 assert.ok(calendar.includes('https://www.googleapis.com/auth/calendar.events.owned'), 'escopo mínimo de eventos próprios deve permanecer');
-assert.ok(!calendar.includes('https://www.googleapis.com/auth/calendar.calendarlist.readonly'), 'escopo amplo de lista de calendários não pode reaparecer');
+assert.ok(calendar.includes('https://www.googleapis.com/auth/calendar.calendarlist.readonly'), 'lista de calendários somente leitura permite escolher calendário próprio secundário');
+assert.ok(!/https:\/\/www\.googleapis\.com\/auth\/calendar(?:\.events|\.calendarlist)?['"\s]/.test(calendar), 'escopos amplos de Calendar não podem reaparecer');
 assert.ok(viteConfig.includes('runtimeEnv.VITE_GOOGLE_CLIENT_ID'), 'Vite deve aceitar o nome público recomendado');
 assert.ok(viteConfig.includes('runtimeEnv.GOOGLE_CLIENT_ID'), 'Vite deve aceitar o nome já configurado no Render');
 assert.ok(viteConfig.includes('"import.meta.env.VITE_GOOGLE_CLIENT_ID"'), 'Client ID deve ser incorporado somente no campo público esperado pelo cliente');
