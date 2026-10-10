@@ -1,0 +1,12 @@
+CONSOLE Failed to load resource: net::ERR_FAILED
+CONSOLE Failed to load resource: net::ERR_FAILED
+PASS: real built public route light 320/1.5/430, single primary, grouped actions, fixed header, first/last reachable, no private origin or network
+CONSOLE Failed to load resource: net::ERR_FAILED
+CONSOLE Failed to load resource: net::ERR_FAILED
+PASS: real built public route light 320/2/430, single primary, grouped actions, fixed header, first/last reachable, no private origin or network
+CONSOLE Failed to load resource: net::ERR_FAILED
+CONSOLE Failed to load resource: net::ERR_FAILED
+PASS: real built public route dark 320/1.5/430, single primary, grouped actions, fixed header, first/last reachable, no private origin or network
+CONSOLE Failed to load resource: net::ERR_FAILED
+CONSOLE Failed to load resource: net::ERR_FAILED
+PASS: real built public route dark 320/2/430, single primary, grouped actions, fixed header, first/last reachable, no private origin or network
