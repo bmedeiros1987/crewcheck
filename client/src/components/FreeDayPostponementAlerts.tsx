@@ -7,6 +7,7 @@ import { verifiedCabinAct, FREE_DAY_ACT_SOURCE, FREE_DAY_ACT_URL, freeDayAlertTe
 import { publishFreeDayAlert, readFreeDayAlertHistory, type FreeDayAlertRecord } from '@/lib/freeDayAlertDelivery';
 import { clearCrewCheckPulse, crewCheckNotificationPermission, publishCrewCheckNotice } from './pulse/pulseRuntime';
 import './free-day-alerts.css';
+import { FreeDaySourceConsent } from './FreeDaySourceConsent';
 
 export function FreeDayPostponementAlerts({ roster, source, view, onOpen }: { roster: CrewRoster; source: string; view: string; onOpen(): void }) {
   const ownsPulse = useRef(false);
@@ -66,5 +67,6 @@ export function FreeDayPostponementAlerts({ roster, source, view, onOpen }: { ro
     </article>; })}
     {review.pending.length > 0 && <details><summary>Verificações pendentes ({review.pending.length})</summary>{review.pending.map(item => <p key={item.date}>{item.date.split('-').reverse().join('/')}: {item.reason}</p>)}</details>}
     {visibleRecords.length > 0 && <details><summary>Histórico destas avaliações ({visibleRecords.length})</summary><p>Versões anteriores ficam preservadas para revisão. Alertas calculados não comprovam pagamento ou entrega.</p>{visibleRecords.map(item => <p key={item.alert.id}>{item.alert.date.split('-').reverse().join('/')} · {item.alert.oldClock} → {item.alert.newClock} · {item.alert.afterVersion} · {item.external.state === 'accepted_unconfirmed' ? 'solicitação externa sem confirmação de entrega' : 'sem entrega comprovada'}</p>)}</details>}
+    <FreeDaySourceConsent key={session} session={session} bound={boundCurrent} />
   </section>;
 }

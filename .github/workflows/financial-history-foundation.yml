@@ -21,6 +21,9 @@ on:
       - 'client/src/lib/financialSettingStore.ts'
       - 'client/src/lib/freeDay*.ts'
       - 'client/src/components/FreeDayPostponementAlerts.tsx'
+      - 'client/src/components/FreeDaySourceConsent.tsx'
+      - 'server/free-day-sources.mjs'
+      - 'scripts/fixtures/free-day-source-*'
       - 'client/src/components/free-day-alerts.css'
       - 'scripts/regression-free-day*'
       - 'client/src/lib/plannedRosterStore.ts'
@@ -143,6 +146,7 @@ jobs:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
         run: |
           node scripts/regression-free-day-physical.mjs
+          node scripts/regression-free-day-sources-browser.mjs
           node scripts/regression-free-day-browser.cjs
       - name: Save synthetic free-day alert evidence
         if: always()
@@ -153,6 +157,7 @@ jobs:
             artifacts/free-day-postponement/
             artifacts/free-day-physical/
             artifacts/free-day-ui/
+            artifacts/free-day-sources/
           if-no-files-found: ignore
       - name: Verify planned comparison with synthetic account switching
         env:

@@ -54,10 +54,12 @@ jobs:
           CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
         run: |
           node scripts/regression-free-day-held.mjs
+          node scripts/regression-free-day-sources.mjs
           node scripts/regression-notification-mysql.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
           node scripts/v139/apply.mjs
           node scripts/regression-free-day-held.mjs
+          node scripts/regression-free-day-sources.mjs
           node scripts/regression-notification-mysql.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
       - name: Remove disposable database
@@ -114,6 +116,7 @@ jobs:
           node scripts/regression-bids-editing.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-free-day-held.mjs
+          node scripts/regression-free-day-sources.mjs
           node scripts/regression-briefing-preferences.mjs
           node scripts/regression-browser-reminder-scheduling.mjs
       - name: Validate SOS intention and recovery with mocked Telegram
@@ -131,6 +134,7 @@ jobs:
           node scripts/regression-bids-editing.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-free-day-held.mjs
+          node scripts/regression-free-day-sources.mjs
           node scripts/regression-briefing-preferences.mjs
           node scripts/regression-browser-reminder-scheduling.mjs
       - name: Validate account roster startup and concurrent explicit choices
