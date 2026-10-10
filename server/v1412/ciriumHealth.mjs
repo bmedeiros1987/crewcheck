@@ -23,25 +23,30 @@ export async function handleCiriumHealthRoute(req, res, url) {
     return true;
   }
 
-  const carrier = String(url.searchParams.get('carrier') || 'LA').trim().toUpperCase();
-  const flight = String(url.searchParams.get('flight') || '').trim().toUpperCase();
-  const date = String(url.searchParams.get('date') || '').trim();
+  // Absent parameters mean "default"; present-but-empty or blank ones are explicit
+  // invalid input and are rejected before any upstream query.
+  const params = url.searchParams;
+  const carrier = params.has('carrier') ? String(params.get('carrier')).trim().toUpperCase() : 'LA';
+  const flightGiven = params.has('flight');
+  const flight = flightGiven ? String(params.get('flight')).trim().toUpperCase() : '';
+  const dateGiven = params.has('date');
+  const date = dateGiven ? String(params.get('date')).trim() : '';
 
   if (!/^[A-Z0-9]{2,3}$/.test(carrier)) {
     sendJson(res, 400, { ok: false, message: 'Companhia inválida.' });
     return true;
   }
-  if (flight && !/^[0-9A-Z]{1,5}$/.test(flight)) {
+  if (flightGiven && !/^[0-9]{1,4}[A-Z]?$/.test(flight)) {
     sendJson(res, 400, { ok: false, message: 'Voo inválido.' });
     return true;
   }
-  if (date && !isValidDate(date)) {
+  if (dateGiven && !isValidDate(date)) {
     sendJson(res, 400, { ok: false, message: 'Data inválida. Use AAAA-MM-DD.' });
     return true;
   }
 
-  const result = flight
-    ? await diagnoseCiriumFlight({ carrier, flight, date: date || undefined })
+  const result = flightGiven
+    ? await diagnoseCiriumFlight({ carrier, flight, date: dateGiven ? date : undefined })
     : await diagnoseCirium();
 
   sendJson(res, result.ok ? 200 : 503, result);

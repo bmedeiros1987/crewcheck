@@ -50,7 +50,7 @@ const flightResult = await diagnoseCiriumFlight({ carrier: 'LA', flight: '3850',
     status: 200,
     json: async () => ({ flightStatuses: [{
       flightId: 123, carrierFsCode: 'LA', flightNumber: '3850', status: 'A',
-      departureAirportFsCode: 'BSB', arrivalAirportFsCode: 'THE', lastUpdatedDate: '2026-08-11T12:30:00Z',
+      departureAirportFsCode: 'BSB', arrivalAirportFsCode: 'THE', departureDate: { dateLocal: `${today}T09:20:00.000` }, lastUpdatedDate: '2026-08-11T12:30:00Z',
       airportResources: { departureTerminal: '1', departureGate: '5', arrivalTerminal: '1', arrivalGate: '2', baggage: '4' },
       operationalTimes: {
         scheduledGateDeparture: { dateUtc: '2026-08-11T12:20:00Z' },

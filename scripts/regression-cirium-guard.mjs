@@ -7,7 +7,12 @@ const { ciriumConfiguration, diagnoseCirium, diagnoseCiriumFlight, createCiriumG
 
 const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
 const ok = (body, status = 200) => ({ status, json: async () => body });
-const row = (over = {}) => ({ carrierFsCode: 'LA', flightNumber: '3850', status: 'S', departureAirportFsCode: 'BSB', arrivalAirportFsCode: 'THE', ...over });
+const row = (over = {}) => ({
+  carrierFsCode: 'LA', flightNumber: '3850', status: 'S', departureAirportFsCode: 'BSB', arrivalAirportFsCode: 'THE',
+  departureDate: { dateLocal: `${today}T09:20:00.000`, dateUtc: `${today}T12:20:00.000Z` },
+  operationalTimes: { scheduledGateDeparture: { dateUtc: `${today}T12:20:00.000Z` }, scheduledGateArrival: { dateUtc: `${today}T14:34:00.000Z` } },
+  ...over,
+});
 function counting(handler) {
   const f = async (...args) => { f.calls++; return handler(...args); };
   f.calls = 0;
@@ -144,6 +149,92 @@ assert.equal((await flightWith({}, 404)).ok, false);
   await diagnoseCirium({ fetchImpl, guard });
   await diagnoseCirium({ fetchImpl, guard });
   assert.equal(fetchImpl.calls, 1);
+}
+
+// --- review round 2: occurrence, numerics, probe elements, blank input -------
+{
+  const probe = (flightStatuses) => diagnoseCirium({ guard: createCiriumGuard({ minIntervalMs: 0 }), fetchImpl: async () => ok({ flightStatuses }) });
+  const la3377 = (over = {}) => row({ flightNumber: '3377', ...over });
+  assert.equal((await probe([la3377()])).state, 'available');
+  assert.equal((await probe([])).state, 'available');
+  for (const bad of [[null, 'garbage'], [null], ['x'], [[]], [la3377(), null], [row()], [la3377({ departureDate: { dateLocal: '2020-03-01T09:00:00.000' } })]]) {
+    assert.equal((await probe(bad)).state, 'invalid_payload', JSON.stringify(bad).slice(0, 60));
+    assert.equal((await probe(bad)).ok, false);
+  }
+
+  // stale/other-day occurrence for the requested flight and date
+  const stale = await flightWith({ flightStatuses: [row({
+    departureDate: { dateLocal: '2020-03-01T09:20:00.000', dateUtc: '2020-03-01T12:20:00.000Z' },
+    operationalTimes: { scheduledGateDeparture: { dateUtc: '2020-03-01T12:20:00.000Z' } },
+  })] });
+  assert.equal(stale.state, 'invalid_payload');
+  assert.equal(stale.ok, false);
+  assert.equal(stale.rejectedRows, 1);
+  // no verifiable date at all
+  assert.equal((await flightWith({ flightStatuses: [row({ departureDate: undefined, operationalTimes: {} })] })).state, 'invalid_payload');
+  // UTC-only evidence is accepted within one day, never beyond
+  const utcOnly = (iso) => row({ departureDate: undefined, operationalTimes: { scheduledGateDeparture: { dateUtc: iso } } });
+  assert.equal((await flightWith({ flightStatuses: [utcOnly(`${today}T23:30:00.000Z`)] })).state, 'available');
+  assert.equal((await flightWith({ flightStatuses: [utcOnly('2020-03-01T12:00:00.000Z')] })).state, 'invalid_payload');
+  // leg coherence: same airport, missing airport, arrival before departure
+  for (const over of [
+    { arrivalAirportFsCode: 'BSB' }, { arrivalAirportFsCode: undefined }, { departureAirportFsCode: '??' },
+    { operationalTimes: { scheduledGateDeparture: { dateUtc: `${today}T12:20:00.000Z` }, scheduledGateArrival: { dateUtc: `${today}T11:00:00.000Z` } } },
+  ]) assert.equal((await flightWith({ flightStatuses: [row(over)] })).state, 'invalid_payload', JSON.stringify(over).slice(0, 60));
+
+  // numerics: arrays and objects are never zero
+  const odd = await flightWith({ flightStatuses: [row({
+    flightId: [],
+    delays: { departureGateDelayMinutes: [], arrivalGateDelayMinutes: [null], departureRunwayDelayMinutes: {}, arrivalRunwayDelayMinutes: [5] },
+    flightDurations: { blockMinutes: [[]], airMinutes: '12', taxiOutMinutes: '1e3', taxiInMinutes: 'abc' },
+  })] });
+  const o = odd.flights[0];
+  assert.equal(o.flightId, null);
+  assert.equal(o.delays.departureGateMinutes, null);
+  assert.equal(o.delays.arrivalGateMinutes, null);
+  assert.equal(o.delays.departureRunwayMinutes, null);
+  assert.equal(o.delays.arrivalRunwayMinutes, null, 'single-element array is not a number');
+  assert.equal(o.durations.blockMinutes, null);
+  assert.equal(o.durations.airMinutes, 12);
+  assert.equal(o.durations.taxiOutMinutes, null);
+  assert.equal(o.durations.taxiInMinutes, null);
+  assert.equal(o.presence.delays, false);
+}
+
+// explicit blank/invalid input never reaches the network, never defaults
+{
+  const guard = createCiriumGuard({ maxCalls: 50, minIntervalMs: 0 });
+  const fetchImpl = counting(async () => ok({ flightStatuses: [] }));
+  const blanks = [
+    [{ carrier: '', flight: '3850', date: today }, 'invalid_carrier'],
+    [{ carrier: '   ', flight: '3850', date: today }, 'invalid_carrier'],
+    [{ carrier: 'LA', flight: '', date: today }, 'invalid_flight'],
+    [{ carrier: 'LA', flight: '   ', date: today }, 'invalid_flight'],
+    [{ carrier: 'LA', flight: '3850', date: '' }, 'invalid_date'],
+    [{ carrier: 'LA', flight: '3850', date: '  ' }, 'invalid_date'],
+    [{ carrier: 'LA', flight: '3850', date: 20261010 }, 'invalid_date'],
+    [{ carrier: ['LA'], flight: '3850', date: today }, 'invalid_carrier'],
+  ];
+  for (const [input, reason] of blanks) {
+    const r = await diagnoseCiriumFlight({ ...input, fetchImpl, guard });
+    assert.equal(r.reason, reason, JSON.stringify(input));
+  }
+  assert.equal(fetchImpl.calls, 0);
+  assert.equal(guard.calls, 0);
+}
+
+// HTTP boundary: present-but-blank parameters => 400 before any diagnostic
+{
+  const { handleCiriumHealthRoute } = await import('../server/v1412/ciriumHealth.mjs');
+  const common = await import('../server/v139/common.mjs');
+  assert.equal(typeof common.requireIdentity, 'function');
+  const src = await (await import('node:fs/promises')).readFile(new URL('../server/v1412/ciriumHealth.mjs', import.meta.url), 'utf8');
+  assert.match(src, /params\.has\('flight'\)/);
+  assert.match(src, /params\.has\('carrier'\)/);
+  assert.match(src, /params\.has\('date'\)/);
+  assert.doesNotMatch(src, /\|\| 'LA'/, 'blank carrier must not default to LA');
+  assert.doesNotMatch(src, /get\('date'\) \|\|/, 'blank date must not default to today');
+  assert.equal(typeof handleCiriumHealthRoute, 'function');
 }
 
 // --- HEAD never reaches the diagnostic --------------------------------------

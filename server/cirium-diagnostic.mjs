@@ -87,7 +87,8 @@ export function normalizeCiriumResult(httpStatus, payload) {
 }
 
 function safeCode(value, pattern, fallback = '') {
-  const normalized = String(value || '').trim().toUpperCase();
+  if (typeof value !== 'string' && !(typeof value === 'number' && Number.isFinite(value))) return fallback;
+  const normalized = String(value).trim().toUpperCase();
   return pattern.test(normalized) ? normalized : fallback;
 }
 
@@ -104,11 +105,11 @@ function timeValue(value) {
 }
 
 function numericOrNull(value) {
-  // Number(null) and Number('') are 0: a missing provider value must stay missing.
-  if (value === null || value === undefined || typeof value === 'boolean') return null;
-  if (typeof value === 'string' && !value.trim()) return null;
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
+  // Only real numbers or plain numeric strings. null, '', booleans, arrays and objects
+  // (Number([]) and Number([null]) are 0) stay missing.
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string' && /^-?\d+(\.\d+)?$/.test(value.trim())) return Number(value);
+  return null;
 }
 
 function flightSummary(flight) {
@@ -309,11 +310,50 @@ function dateWithinWindow(value) {
 
 // Rows that are not objects or that answer a different flight than the one
 // requested are dropped, never displayed, and only counted.
-function acceptRow(row, carrier, flight) {
+function localDateOf(value) {
+  const text = value && typeof value === 'object' ? value.dateLocal : null;
+  const match = typeof text === 'string' ? text.match(/^(\d{4}-\d{2}-\d{2})(?:$|T)/) : null;
+  return match ? match[1] : null;
+}
+
+function utcDateOf(value) {
+  const text = value && typeof value === 'object' ? value.dateUtc : null;
+  const epoch = typeof text === 'string' ? Date.parse(text) : NaN;
+  return Number.isFinite(epoch) ? new Date(epoch).toISOString().slice(0, 10) : null;
+}
+
+function epochOf(value) {
+  const text = value && typeof value === 'object' ? (value.dateUtc || value.dateLocal) : null;
+  const epoch = typeof text === 'string' ? Date.parse(text) : NaN;
+  return Number.isFinite(epoch) ? epoch : null;
+}
+
+// The occurrence must be the requested one: same flight, same departure date and a
+// coherent leg. A row whose date cannot be verified is rejected, never displayed.
+function acceptRow(row, carrier, flight, date) {
   if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
-  const rowCarrier = safeCode(row.carrierFsCode, /^[A-Z0-9]{2,3}$/);
-  const rowFlight = safeCode(row.flightNumber, /^[0-9A-Z]{1,5}$/);
-  return rowCarrier === carrier && rowFlight === flight;
+  if (safeCode(row.carrierFsCode, /^[A-Z0-9]{2,3}$/) !== carrier) return false;
+  if (safeCode(row.flightNumber, /^[0-9A-Z]{1,5}$/) !== flight) return false;
+
+  const times = row.operationalTimes && typeof row.operationalTimes === 'object' ? row.operationalTimes : {};
+  const candidates = [row.departureDate, times.scheduledGateDeparture, times.publishedDeparture].filter(Boolean);
+  const local = candidates.map(localDateOf).find(Boolean);
+  if (local) {
+    if (local !== date) return false;
+  } else {
+    const utc = candidates.map(utcDateOf).find(Boolean);
+    // UTC-only evidence can differ from the local date by at most one day.
+    if (!utc || Math.abs(Date.parse(`${utc}T12:00:00Z`) - Date.parse(`${date}T12:00:00Z`)) > 86_400_000) return false;
+  }
+
+  const departure = safeCode(row.departureAirportFsCode, /^[A-Z0-9]{3,4}$/);
+  const arrival = safeCode(row.arrivalAirportFsCode, /^[A-Z0-9]{3,4}$/);
+  if (!departure || !arrival || departure === arrival) return false;
+
+  const out = epochOf(times.scheduledGateDeparture || times.publishedDeparture);
+  const inn = epochOf(times.scheduledGateArrival || times.publishedArrival);
+  if (out !== null && inn !== null && (inn <= out || inn - out > 24 * 3_600_000)) return false;
+  return true;
 }
 
 function jsonObject(payload) {
@@ -339,7 +379,8 @@ export async function diagnoseCirium({ fetchImpl = globalThis.fetch, guard = def
         if (status === 429) guard.noteRateLimit?.(retryAfterMs(response));
         let state = normalizeCiriumResult(status, payload);
         // A 2xx with an unusable body proves nothing about the account.
-        if (state === 'available' && !(jsonObject(payload) && Array.isArray(payload.flightStatuses))) state = 'invalid_payload';
+        if (state === 'available' && !(jsonObject(payload) && Array.isArray(payload.flightStatuses)
+          && payload.flightStatuses.every((row) => acceptRow(row, 'LA', '3377', probeDate)))) state = 'invalid_payload';
         return {
           ok: state === 'available',
           provider: config.provider,
@@ -359,7 +400,8 @@ export async function diagnoseCirium({ fetchImpl = globalThis.fetch, guard = def
       const status = Number(response.status) || null;
       if (status === 429) guard.noteRateLimit?.(retryAfterMs(response));
       let state = normalizeCiriumResult(status, payload);
-      if (state === 'available' && !(jsonObject(payload) && Array.isArray(payload.airlines))) state = 'invalid_payload';
+      if (state === 'available' && !(jsonObject(payload) && Array.isArray(payload.airlines)
+        && payload.airlines.every((row) => jsonObject(row) && typeof (row.fs || row.iata) === 'string'))) state = 'invalid_payload';
       return { ok: state === 'available', provider: config.provider, state, configured: true, httpStatus: status };
     } catch (error) {
       return {
@@ -379,10 +421,11 @@ export async function diagnoseCiriumFlight({ carrier, flight, date, fetchImpl = 
 
   // Invalid input is rejected locally; it is never rewritten into another flight.
   const safeCarrier = safeCode(carrier ?? 'LA', /^[A-Z0-9]{2,3}$/);
+  if (date !== undefined && date !== null && typeof date !== 'string') return { ok: false, provider: config.provider, state: 'error', configured: true, reason: 'invalid_date' };
   const safeFlight = safeCode(flight ?? '3377', /^[0-9]{1,4}[A-Z]?$/);
   if (!safeCarrier) return { ok: false, provider: config.provider, state: 'error', configured: true, reason: 'invalid_carrier' };
   if (!safeFlight) return { ok: false, provider: config.provider, state: 'error', configured: true, reason: 'invalid_flight' };
-  const localDate = date || localToday();
+  const localDate = date ?? localToday();
   const parts = safeDateParts(localDate);
   if (!parts) return { ok: false, provider: config.provider, state: 'error', configured: true, reason: 'invalid_date' };
   if (!dateWithinWindow(localDate)) return { ok: false, provider: config.provider, state: 'error', configured: true, reason: 'date_out_of_window' };
@@ -414,7 +457,7 @@ export async function diagnoseCiriumFlight({ carrier, flight, date, fetchImpl = 
           ? [payload.flightStatus]
           : null;
       if (!rows) return { ok: false, provider: config.provider, state: 'invalid_payload', configured: true, httpStatus: response.status };
-      const accepted = rows.filter((row) => acceptRow(row, safeCarrier, safeFlight));
+      const accepted = rows.filter((row) => acceptRow(row, safeCarrier, safeFlight, localDate));
       const rejected = rows.length - accepted.length;
       if (rows.length && !accepted.length) {
         return { ok: false, provider: config.provider, state: 'invalid_payload', configured: true, httpStatus: response.status, rejectedRows: rejected };
