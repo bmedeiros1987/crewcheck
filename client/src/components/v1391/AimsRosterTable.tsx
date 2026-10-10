@@ -36,8 +36,8 @@ function dateLabel(event: AimsRosterEvent) {
 }
 
 function publishedClock(value?: string | null) {
-  const match = String(value || '').match(/(\d{1,2}):(\d{2})/);
-  return match ? `${String(Number(match[1])).padStart(2, '0')}:${match[2]}` : '—';
+  // Preserve the published suffix and unknown text; this is only a projection.
+  return String(value || '').trim() || '—';
 }
 
 function activityCode(event: AimsRosterEvent) {
@@ -48,7 +48,7 @@ function details(event: AimsRosterEvent) {
   return String(event.subtitle || event.hotel || event.title || event.kind || '—');
 }
 
-export function AimsRosterTable({ events, title = 'Escala publicada por dia', dayView = false, showHistory = true, focusEventId }: { focusEventId?: string; showHistory?: boolean; events: AimsRosterEvent[]; title?: string; dayView?: boolean }) {
+export function AimsRosterTable({ events, title = 'Escala publicada por dia', dayView = false, showHistory = true, focusEventId, focusEventIndex }: { focusEventIndex?: number; focusEventId?: string; showHistory?: boolean; events: AimsRosterEvent[]; title?: string; dayView?: boolean }) {
   const [storedReview,setReview] = useState(currentPublicationReview);
   const review = storedReview?.owner === publicationOwner() ? storedReview : null;
   const [runtimeStatus,setRuntimeStatus] = useState(publicationReviewStatus);
@@ -82,10 +82,11 @@ export function AimsRosterTable({ events, title = 'Escala publicada por dia', da
   }, [events, eventRenderKeys]);
   const consumedFocus = useRef<string>();
   useEffect(() => {
-    if (!focusEventId || consumedFocus.current === focusEventId) return;
-    const index = events.findIndex(event => event.id === focusEventId);
-    if (index >= 0) { consumedFocus.current = focusEventId; setExpandedKey(eventRenderKeys[index]); }
-  }, [focusEventId, events, eventRenderKeys]);
+    const focusKey = `${focusEventId || ''}:${focusEventIndex ?? ''}`;
+    if ((!focusEventId && focusEventIndex === undefined) || consumedFocus.current === focusKey) return;
+    const index = focusEventIndex ?? events.findIndex(event => event.id === focusEventId);
+    if (Number.isInteger(index) && index >= 0 && index < events.length) { consumedFocus.current = focusKey; setExpandedKey(eventRenderKeys[index]); }
+  }, [focusEventId, focusEventIndex, events, eventRenderKeys]);
   // A newer publication must never inherit an already open detail's consultation.
   const observedVersion = useRef(review?.version);
   useEffect(() => {

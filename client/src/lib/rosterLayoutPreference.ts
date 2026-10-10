@@ -11,7 +11,7 @@ export function readRosterLayout(storage: PreferenceStorage, accountId: string |
   if (!key) return 'cards';
   try {
     const value = JSON.parse(storage.getItem(key) || 'null');
-    return value?.version === 1 && ['cards', 'list', 'aims', 'calendar', 'document'].includes(value.layout) ? value.layout as RosterLayout : 'cards';
+    return value?.version === 1 && ['cards', 'list', 'aims', 'calendar', 'document'].includes(value.layout) ? (value.layout === 'document' ? 'aims' : value.layout) as RosterLayout : 'cards';
   } catch { return 'cards'; }
 }
 
@@ -19,7 +19,7 @@ export function saveRosterLayout(storage: PreferenceStorage, accountId: string |
   const key = rosterLayoutKey(accountId);
   if (!key || !['cards', 'list', 'aims', 'calendar', 'document'].includes(layout) || (zoom !== undefined && !['month', 'day'].includes(zoom))) return false;
   try {
-    storage.setItem(key, JSON.stringify({ version: 1, layout, zoom: zoom || readRosterZoom(storage, accountId) }));
+    storage.setItem(key, JSON.stringify({ version: 1, layout: layout === 'document' ? 'aims' : layout, zoom: zoom || readRosterZoom(storage, accountId) }));
     return true;
   } catch { return false; }
 }
