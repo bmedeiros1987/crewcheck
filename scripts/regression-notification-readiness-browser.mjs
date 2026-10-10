@@ -38,5 +38,22 @@ try{
  await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.getByText('Esta conta não tem vínculo Telegram válido.',{exact:true}).waitFor();
  await page.evaluate(()=>{localStorage.removeItem('crewcheck_auth_token');window.dispatchEvent(new Event('crewcheck:auth-expired'));});await page.getByText('Disponibilidade não verificada.',{exact:false}).waitFor();
  assert.equal(await page.evaluate(()=>window.permissionsRequested),0);assert(reads.includes('A')&&reads.includes('B'));
+ await page.evaluate(()=>{
+   window.nativeStatus={notifications:true,notificationAppEnabled:false,notificationChannelEnabled:true};
+   window.CrewCheckNative={permissionStatus:()=>JSON.stringify(window.nativeStatus),requestNotifications:()=>{window.permissionsRequested++;return false;}};
+   window.dispatchEvent(new Event('crewcheck:native-ready'));
+ });
+ await page.getByText('Notificações do app bloqueadas', {exact:false}).waitFor();
+ await page.evaluate(()=>{window.nativeStatus={notifications:true,notificationAppEnabled:true,notificationChannelEnabled:false};window.dispatchEvent(new Event('crewcheck:permissions-updated'));});
+ await page.getByText('Canal Alertas CrewCheck bloqueado', {exact:false}).waitFor();
+ await page.evaluate(()=>{window.nativeStatus={notifications:true};window.dispatchEvent(new Event('focus'));});
+ await page.getByText('disponibilidade do canal ainda não verificada', {exact:false}).waitFor();
+ await page.evaluate(()=>{window.nativeStatus={notifications:false};window.dispatchEvent(new Event('crewcheck:permissions-updated'));});
+ await page.getByRole('button',{name:'Solicitar permissão neste aparelho'}).click();
+ assert.equal(await page.evaluate(()=>window.permissionsRequested),1);
+ await page.getByText('Permissão de notificações ausente', {exact:false}).waitFor();
+ await page.evaluate(()=>{window.nativeStatus={notifications:true,notificationAppEnabled:true,notificationChannelEnabled:true};window.dispatchEvent(new Event('crewcheck:permissions-updated'));});
+ await page.getByText('Isso não comprova envio ou recebimento', {exact:false}).waitFor();
  console.log('Actual notification readiness UI PASS: current bearer, offline/reconnect, cleared account state, discarded late responses, acceptance/unknown/expiry/cancel labels, zero sends or permission requests.');
+ console.log('Device readiness PASS: app/channel blocks, legacy unknown status, explicit permission tap only, queued request never reported granted, fresh native status, zero notification sends.');
 }finally{resume?.();await browser?.close();await new Promise(r=>server.close(r));}
