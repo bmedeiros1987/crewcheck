@@ -256,6 +256,7 @@ export async function recomputeComplianceWithRegulatoryHistory(
     && cached.fingerprint === fingerprint
     && cached.previousRosterId === previousSummary.id
     && cached.compliance
+    && typeof cached.compliance.metrics?.flightHoursOriginPending === 'boolean'
   ) {
     return {
       compliance: cached.compliance,

@@ -20,6 +20,11 @@ try {
   const home = ts.createSourceFile('Home.tsx', fs.readFileSync('client/src/pages/Home.tsx', 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const payrollRules = home.statements.filter(n => ts.isFunctionDeclaration(n) && ['flightWorkType', 'financialFlightRule'].includes(n.name?.text));
   assert.equal(payrollRules.length, 2);
+  const currentNode = home.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === 'currentCompliance');
+  assert.ok(currentNode);
+  const presentation = vm.createContext({ analyzeSafe: r => engine.analyzeCompliance(r), neutralCompliance: () => null });
+  vm.runInContext(ts.transpileModule(currentNode.getText(home) + '\nglobalThis.current=currentCompliance;', { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, presentation);
+
   const payroll = vm.createContext({ financialEventCode: e => e.code || 'OP' });
   vm.runInContext(ts.transpileModule(payrollRules.map(n => n.getText(home)).join('\n') + '\nglobalThis.rule=financialFlightRule;', { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, payroll);
   const mixed = ['LA 9001 04:10 05:00 BSB CGH 06:45 (320)',
@@ -71,6 +76,7 @@ try {
     assert.ok(legacyReport.alerts.some(a => a.code === 'FLIGHT_ROLE_ORIGIN_PENDING' && a.actionable === false));
     assert.ok(legacyReport.loadAnalysis.days.every(d => d.flightHours === null));
     assert.equal(JSON.stringify(legacy), beforeLegacy, 'analysis does not rewrite old roles or real records');
+    assert.equal(presentation.current({ roster: legacy, compliance: { metrics: { totalFlightHours: 777 } } }).metrics.totalFlightHours, null, 'actual presentation consumer refuses old cached/server compliance without origin state');
     const lostRoles = { ...legacy, days: legacy.days.map(d => ({ ...d, legs: d.legs.map(l => ({ ...l, workType: 'OP' })) })) };
     assert.equal(engine.analyzeCompliance(lostRoles).metrics.totalFlightHours, null, 'raw extra marker without verified leg origin remains pending');
     const undatedLegacy = { ...legacy, days: legacy.days.map(d => ({ ...d, date: 'invalid' })) };

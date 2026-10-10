@@ -137,6 +137,14 @@ try {
   assert.equal(upgraded.compliance.metrics.totalFlightHours, 50, 'old kernel snapshot cannot replace current counters');
   assert.equal(typeof upgraded.compliance.metrics.maxFlightHoursRolling365Days, 'number');
   assert.equal(snapshotEntry().value.kernelVersion, 'operated-extra-v2');
+  const sameVersionIncomplete = clone(snapshotEntry().value);
+  sameVersionIncomplete.compliance.metrics.totalFlightHours = 777;
+  delete sameVersionIncomplete.compliance.metrics.flightHoursOriginPending;
+  localStorage.setItem(firstSnapshot.key, JSON.stringify(sameVersionIncomplete));
+  const guarded = await database.recomputeComplianceWithRegulatoryHistory(feb);
+  assert.equal(guarded.compliance.metrics.totalFlightHours, 50, 'consumer rejects cached results without origin state even with matching version');
+  assert.equal(guarded.compliance.metrics.flightHoursOriginPending, false);
+
 
 
   localStorage.setItem(firstSnapshot.key, JSON.stringify({ ...firstSnapshot.value, kernelVersion: 'legacy-kernel' }));
