@@ -6,13 +6,17 @@ on:
     paths:
       - 'scripts/android-play/mobile_preflight.py'
       - 'scripts/android-play/test_mobile_preflight.py'
+      - 'scripts/android-play/receipt_journal.py'
+      - 'scripts/android-play/test_receipt_journal.py'
+      - 'scripts/android-play/mobile_internal.py'
+      - 'scripts/android-play/test_mobile_internal.py'
       - '.github/workflows/mobile-play-preflight.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: crewcheck-play-release
+  group: crewcheck-mobile-preflight-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -24,6 +28,8 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 scripts/android-play/test_mobile_preflight.py
+      - run: python3 scripts/android-play/test_receipt_journal.py
+      - run: python3 scripts/android-play/test_mobile_internal.py
   inspect-existing-play-access:
     needs: offline-guards
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'

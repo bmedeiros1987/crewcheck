@@ -45,7 +45,22 @@ Before adapting or activating publication:
    QA only for a verified store eligibility limitation. Confirm actual lifecycle
    availability; changesNotSentForReview=true is not availability.
 
-Existing joint and PR882 publishers are intentionally unchanged and not dispatched.
-Publication and the complete controller adaptation remain blocked on these checks.
+The joint publisher is unchanged and not dispatched. The PR882 controller now
+requires a durable journal for publication and refuses live allocation at its CLI.
+Its allocation contract is exercised with fake APIs only. No production journal
+backend is configured or provisioned: this draft cannot publish. The journal
+reserves the shared package before opening an edit, persists/read-verifies pending
+intent before commit, and never auto-unlocks, even after reconciliation. Tests
+simulate runner loss immediately after remote commit; a fresh runner remains blocked.
+Actual storage durability, atomic create/CAS, recovery and permissions require
+independent review before an adapter is implemented. Exact main-source CI adaptation
+remains outstanding; the old PR882 source checks have not been weakened.
+
+Preflight concurrency uses its own group for both PR and manual runs; it cannot
+cancel pending joint/mobile publication workflows through their shared group.
+GET summaries are a temporal, non-atomic observation. A future publisher must reread
+complete state under its durable reservation before commit. OAuth token exchange
+may POST to the existing identity provider; no Play write or persistent credential
+is created. Publication and complete controller adaptation remain blocked.
 
 API reference: https://developers.google.com/android-publisher/api-ref/rest/v3/applications.tracks.releases/list
