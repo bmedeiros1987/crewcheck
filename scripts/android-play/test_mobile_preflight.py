@@ -47,7 +47,7 @@ print('PASS: GET-only mobile package inspection; uncertain, pending and publishe
 class PayloadResponse:
     def __init__(self, payload, status=200, malformed=False):
         self.payload, self.status_code, self.malformed = payload, status, malformed
-        self.ok = 200 <= status < 300
+        self.ok = status < 400  # Match requests.Response.ok, including redirects.
         self.json_calls = 0
 
     def json(self):
@@ -85,7 +85,7 @@ assert all(t == {'state': 'unverified', 'errorType': 'ValueError'}
            for t in report['tracks'].values())
 assert 'synthetic sensitive' not in str(report)
 
-for status in (400, 401, 403, 404, 429, 500):
+for status in (300, 301, 302, 307, 308, 400, 401, 403, 404, 429, 500):
     response = PayloadResponse({}, status=status, malformed=True)
     report = m.inspect(PayloadSession(response))
     assert response.json_calls == 0  # Error bodies never become empty releases.
