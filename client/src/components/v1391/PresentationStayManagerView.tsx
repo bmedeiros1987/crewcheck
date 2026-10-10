@@ -214,6 +214,7 @@ export default function PresentationStayManagerView({ events, initialStayId, emb
     const accountId = stayEditorAccount();
     if (!selected || !accountId || owner.current !== getToken()) throw new Error('Reabra este pernoite na sua conta.');
     if (!draft.hotelName.trim()) throw new Error('Informe o hotel.');
+    if (apzConfirmed && apzEpoch === null) throw new Error('Confirme uma data, horário e fuso válidos para a APZ no hotel.');
     const choice = sanitizeStayChoice(alarmChoice);
     if (choice === null) throw new Error('Confirme o horário exato ou a antecedência individual antes de salvar.');
     const current = loadStayEditor();
@@ -232,7 +233,12 @@ export default function PresentationStayManagerView({ events, initialStayId, emb
   }
   async function cancelStayAlarm() {
     try {
-      saveLocalStay(true); setAlarmCancelled(true);
+      const accountId = stayEditorAccount();
+      if (!selected || !accountId || owner.current !== getToken()) throw new Error('Reabra este pernoite na sua conta.');
+      const current = loadStayEditor();
+      const record = current.stays[selected.id] || { eventId: selected.id, signature: eventSignature.current, draft, timeZone: hotelTimeZone, apzDate, apzSource: 'absent', apzConfirmed: false };
+      persistStayEditor({ ...current, stays: { ...current.stays, [selected.id]: { ...record, alarmState: 'cancelled' } } }, accountId);
+      setAlarmCancelled(true);
       const result = await alarmController.current.cancel({ accountId: stayEditorAccount(), eventId: selected?.id });
       toast.info(result.reason === 'capability-unavailable' ? 'Preferência cancelada. Não há programação ativa nesta integração; o cancelamento de alarmes antigos no aparelho não pode ser confirmado.' : 'Cancelamento confirmado.');
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Cancelamento não confirmado.'); }

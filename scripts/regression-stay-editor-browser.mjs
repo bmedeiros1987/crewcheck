@@ -104,6 +104,12 @@ try {
       assert.ok(Math.abs(h.y-initial.y)<1,'Editor header remains fixed');
       assert.ok(b.y>=c.y-1&&b.y+b.height<=c.y+c.height+1,'First/last content remains reachable');
       assert.ok(await target.evaluate(el=>{const r=el.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return hit===el||el.contains(hit)}),'No header covers content');
+      assert.ok(await content.evaluate(el=>{
+        const clip=el.getBoundingClientRect();
+        const controls=[...el.querySelectorAll('input:not([type="checkbox"]),select,button,summary')].map(item=>item.getBoundingClientRect()).filter(r=>r.width&&r.height&&r.top>=clip.top&&r.bottom<=clip.bottom);
+        return controls.every((r,i)=>controls.slice(i+1).every(b=>r.right<=b.left+1||r.left>=b.right-1||r.bottom<=b.top+1||r.top>=b.bottom-1));
+      }),'Visible form controls do not intersect');
+
     }
     assert.ok(await content.evaluate(el=>el.scrollHeight>el.clientHeight),'Actual content scrolls');
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'No horizontal clipping');
