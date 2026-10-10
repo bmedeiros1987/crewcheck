@@ -71,7 +71,7 @@ if(typeof ServiceWorkerGlobalScope!=='undefined'&&self instanceof ServiceWorkerG
  self.addEventListener('message',event=>{if(!event.data?.crewcheckPush)return;event.waitUntil((async()=>{let result={ok:false};try{const source=event.source;if(!source||new URL(source.url).origin!==self.location.origin||source.type!=='window')return;const v=event.data;
  if(v.action==='begin'&&/^[a-zA-Z0-9_-]{8,160}$/.test(v.ownerId||''))result={ok:true,generation:await store.begin(v.ownerId)};
  else if(v.action==='bind'&&v.binding&&Number.isSafeInteger(v.generation)&&/^[a-zA-Z0-9_-]{8,160}$/.test(v.binding.ownerId||'')&&/^[a-zA-Z0-9_-]{8,160}$/.test(v.binding.installationId||'')&&Number.isSafeInteger(v.binding.consentRevision)&&v.binding.consentRevision>0)result={ok:await store.bind(v.binding,v.generation)};
- else if(v.action==='cancel'){result={ok:await store.cancel(v.generation,v.ownerId)};if(result.ok){for(const item of await self.registration.getNotifications())item.close();}}
+ else if(v.action==='cancel'&&/^[a-zA-Z0-9_-]{8,160}$/.test(v.ownerId||'')){result={ok:await store.cancel(v.generation,v.ownerId)};if(result.ok){for(const item of await self.registration.getNotifications())item.close();}}
  else if(v.action==='reports')result={ok:true,reports:await store.reports()};
  else if(v.action==='acknowledge'&&Array.isArray(v.keys)&&v.keys.length<=50){await store.acknowledge(v.keys.filter(key=>typeof key==='string'&&key.startsWith('event:')));result={ok:true};}
  }catch{}finally{event.ports[0]?.postMessage(result);}})());});

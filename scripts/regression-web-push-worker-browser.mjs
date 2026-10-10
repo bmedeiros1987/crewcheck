@@ -15,9 +15,10 @@ try{
  const rpc=async payload=>page.evaluate(async payload=>{const registration=await navigator.serviceWorker.ready;return new Promise(resolve=>{const channel=new MessageChannel();channel.port1.onmessage=event=>resolve(event.data);registration.active.postMessage(payload,[channel.port2]);});},payload);
  const firstGeneration=await rpc({crewcheckPush:true,action:'begin',ownerId:envelope.ownerId});assert.equal(firstGeneration.ok,true);
  assert.equal((await rpc({crewcheckPush:true,action:'bind',generation:firstGeneration.generation,binding:envelope})).ok,true);
- const nextGeneration=await rpc({crewcheckPush:true,action:'begin',ownerId:'owner_fixture_2'});assert.equal((await rpc({crewcheckPush:true,action:'cancel',ownerId:envelope.ownerId})).ok,false,'late A cleanup cannot cancel pending B activation');assert.equal((await rpc({crewcheckPush:true,action:'cancel',generation:firstGeneration.generation})).ok,false,'old cleanup cannot erase newer generation');
+ const nextGeneration=await rpc({crewcheckPush:true,action:'begin',ownerId:'owner_fixture_2'});assert.equal((await rpc({crewcheckPush:true,action:'cancel',ownerId:envelope.ownerId})).ok,false,'late A cleanup cannot cancel pending B activation');assert.equal((await rpc({crewcheckPush:true,action:'cancel',generation:firstGeneration.generation,ownerId:envelope.ownerId})).ok,false,'old cleanup cannot erase newer generation');
  assert.equal((await rpc({crewcheckPush:true,action:'bind',generation:firstGeneration.generation,binding:envelope})).ok,false,'late old bind rejected');
  assert.equal((await rpc({crewcheckPush:true,action:'bind',generation:nextGeneration.generation,binding:{...envelope,ownerId:'owner_fixture_2'}})).ok,true);
+ assert.equal((await rpc({crewcheckPush:true,action:'cancel'})).ok,false,'unscoped cancellation cannot erase another account binding');
  await rpc({action:'bind',binding:envelope});
  const results=await Promise.all([rpc({envelope,now}),rpc({envelope,now})]);assert.equal(Math.max(...results.map(value=>value.shown)),1);assert(results.every(value=>value.result.received===null));
  await page.close();page=await context.newPage();await page.goto(origin);assert.equal((await rpc({envelope,now})).result.status,'duplicate_or_revoked','persisted claim survives page closure');
