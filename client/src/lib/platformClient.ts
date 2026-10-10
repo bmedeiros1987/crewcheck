@@ -311,16 +311,16 @@ export async function compareRoster(publicId: string) {
   return authFetch<any>(`/api/platform/compare?publicId=${encodeURIComponent(publicId)}`);
 }
 
-export async function loadChat(publicId: string) {
-  return authFetch<any>(`/api/platform/chat?publicId=${encodeURIComponent(publicId)}`);
+export async function loadChat(publicId: string, signal?: AbortSignal) {
+  return authFetch<any>(`/api/platform/chat?publicId=${encodeURIComponent(publicId)}`, { signal, cache: 'no-store' });
 }
 
 export async function sendChat(publicId: string, message: string) {
   return authFetch<any>('/api/platform/chat', { method: 'POST', body: JSON.stringify({ publicId, message }) });
 }
 
-export async function loadVisitorChat(visitorId: string) {
-  return authFetch<any>(`/api/platform/visitors/${encodeURIComponent(visitorId)}/chat`);
+export async function loadVisitorChat(visitorId: string, signal?: AbortSignal) {
+  return authFetch<any>(`/api/platform/visitors/${encodeURIComponent(visitorId)}/chat`, { signal, cache: 'no-store' });
 }
 
 export async function sendVisitorChat(visitorId: string, message: string) {
