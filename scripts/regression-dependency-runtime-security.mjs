@@ -28,14 +28,41 @@ try {
     root.remove();
   }
   purifier.removeAllHooks();
-  const raw = window.document.createElement('style');
-  raw.textContent = '<img src=x onerror="window.pwned=1">';
-  window.document.body.append(raw);
-  let result;
-  try { result = purifier.sanitize(raw, { IN_PLACE: true }); }
-  catch (error) { assert(error instanceof TypeError); result = null; }
-  assert(!result || !result.textContent.includes('onerror'));
-  console.log('PASS DOMPurify ordinary markup, detached subtrees at both after hooks and rawtext root');
+  // GHSA-6688-9rhm-gjv2: own closing tag in rawtext is essential to reparse.
+  // jsdom uses its default runScripts setting (off); no handler is executed.
+  function rawtextReparse(sanitizer, expectVulnerable) {
+    const raw = window.document.createElement('style');
+    raw.setAttribute('onclick', 'window.syntheticProbe=1');
+    raw.textContent = '</style><img src=x onerror="window.syntheticProbe=1">';
+    window.document.body.append(raw);
+    let result;
+    let rejected = false;
+    try { result = sanitizer.sanitize(raw, { IN_PLACE: true }); }
+    catch (error) { assert(error instanceof TypeError); rejected = true; }
+    assert.equal(raw.parentNode, null, 'unsafe root must be detached');
+    assert(sanitizer.removed.some(item => item.element === raw), 'force-removal path must be exercised');
+    const probe = window.document.createElement('div');
+    probe.innerHTML = result?.outerHTML || '';
+    const armed = [...probe.querySelectorAll('img')].filter(img => img.hasAttribute('onerror'));
+    if (expectVulnerable) {
+      assert.equal(rejected, false);
+      assert.equal(result, raw, 'negative control returns the removed root');
+      assert.equal(raw.getAttribute('onclick'), null, 'attribute axis already neutralized');
+      assert.equal(armed.length, 1, 'negative control must materialize the armed image on reparse');
+    } else {
+      assert.equal(armed.length, 0, 'serialized sanitizer output must not re-create an armed image');
+      assert(rejected || !result || !/<[/\w!]/.test(result.textContent), 'root must fail closed or have neutralized rawtext');
+    }
+    assert.equal(window.syntheticProbe, undefined, 'synthetic handlers are never executed');
+  }
+  rawtextReparse(purifier, false);
+  if (process.env.CREWCHECK_QA_VULNERABLE_DOMPURIFY_PACKAGE) {
+    const oldRequire = createRequire(process.env.CREWCHECK_QA_VULNERABLE_DOMPURIFY_PACKAGE);
+    assert.equal(oldRequire('./package.json').version, '3.4.13');
+    rawtextReparse(oldRequire('dompurify')(window), true);
+    console.log('PASS rawtext negative control: DOMPurify 3.4.13 recreates one armed img without executing it');
+  }
+  console.log('PASS DOMPurify ordinary markup, detached subtrees at both after hooks and faithful rawtext serialize/reparse');
 } finally { window.close(); }
 
 const dir = await mkdtemp(path.join(os.tmpdir(), 'crewcheck-pdf-qa-'));

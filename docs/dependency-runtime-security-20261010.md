@@ -36,3 +36,15 @@ npm run build
 A suíte existente regression-notification-mysql passou os 13 cenários SQL com mysql2 3.23.1, fonte preparada e MySQL 8.4.11 descartável. Container `--network none`, sem portas publicadas, banco fictício crewcheck_notification_qa, socket /tmp/crewcheck-notification-qa-socket/mysqld.sock, sem DATABASE_URL, fetch externo proibido pelo harness. O container foi removido ao terminar. Inclui concorrência, consentimento/revogação, heartbeat estrito, isolamento e exclusão de dados fictícios. Não reproduz uma conexão comprimida maliciosa do advisory.
 
 Regressões existentes p0-pwa-share-target-pdf e v14-4-11-roster-integrity-guard passaram na fonte preparada. Arquivos produzidos pela preparação foram descartados; commit conserva apenas manifest/lockfile, teste e documento. Nenhuma migration, credencial, banco/serviço real, novo custo, Render workspace, merge ou deploy.
+
+## Correção da fixture rawtext após revisão independente
+
+A fixture inicial omitia o fechamento `</style>` e não verificava serialização/reparse. Ela foi substituída por payload sintético com fechamento da própria tag, atributo onclick e img/onerror. O teste confirma a passagem pelo registro de force-removal, detach da raiz, serialização do resultado e reparse em div comum. Na versão corrigida nenhum img armado pode reaparecer. O controle negativo opcional exige exatamente DOMPurify 3.4.13: a mesma fixture devolve a raiz removida, neutraliza onclick e materializa um img com onerror após reparse. jsdom está com execução de scripts desabilitada; nenhum handler é executado e nenhum recurso externo é carregado.
+
+Com DOMPurify 3.4.16 PASS e controle negativo 3.4.13 reproduzido, em Node 24.19.0/jsdom 30.0.1. As duas exportações PDF também passam no script revisado. Controle negativo reutilizou a instalação já existente da branch dev, sem novo acesso ao registry. Comando adicional:
+
+```sh
+CREWCHECK_QA_JSDOM_PACKAGE=/tmp/crewcheck-dom-qa/package.json CREWCHECK_QA_VULNERABLE_DOMPURIFY_PACKAGE=/caminho/isolado/node_modules/dompurify/package.json node scripts/regression-dependency-runtime-security.mjs
+```
+
+Esta é uma reprodução estrutural sintética do advisory; não comprova exploração em produção nem execução em navegador real.
