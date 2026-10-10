@@ -42,8 +42,12 @@ const AIMS_HUMAN_AIRPORTS = new Set([
   'AAX','AEP','AFL','AJU','AMS','ARU','ASU','ATL','ATM','BCN','BEL','BOG','BOS','BPS','BRA','BSB','BVB','CAC','CAW','CCS','CDG','CFB','CGB','CGH','CKS','CLO','CMG','CNF','COR','CPT','CPV','CTG','CUN','CUR','CUZ','CWB','CXJ','DFW','DOH','DXB','EPA','ERM','EWR','EZE','FCO','FEC','FEN','FLL','FLN','FOR','FRA','GIG','GPB','GRU','GVR','GYE','GYN','HAV','IAH','IGU','IMP','IOS','IPN','IST','IZA','JDO','JFK','JIA','JJD','JJG','JNB','JOI','JPA','JPR','JTC','LAS','LAX','LAZ','LDB','LEC','LGW','LHR','LIM','LIS','LPB','MAB','MAD','MAO','MCO','MCP','MCZ','MDE','MDZ','MEA','MEX','MGF','MIA','MOC','MUC','MVD','MXP','NAT','NVT','OAL','OPO','OPS','ORD','ORY','PDP','PET','PFB','PIN','PMW','PNZ','POA','PPB','PTY','PUJ','PVH','QNS','RAO','RBR','REC','RIA','ROO','ROS','RVD','SCL','SDQ','SDU','SFO','SJK','SJO','SJP','SLZ','SSA','STM','TBT','TFF','THE','UDI','UIO','URG','VCP','VDC','VIX','VVI','XAP','ZRH'
 ]);
 
+type AimsDutyClockSource = 'published' | 'estimated' | 'absent' | 'unknown';
+type AimsDutyClockEvidence = { reportTime: string; debriefTime: string; reportSource: AimsDutyClockSource; debriefSource: AimsDutyClockSource };
 type AimsHumanLeg = {
-  leg: FlightLeg;
+  leg: FlightLeg & { dutyClockEvidence?: AimsDutyClockEvidence };
+  reportSource: AimsDutyClockSource;
+  debriefSource: AimsDutyClockSource;
   reportTime: string;
   debriefTime: string;
 };
@@ -201,6 +205,8 @@ function buildAimsHumanFlightDays(tokens: string[], context: { date: string; day
       pairingCode: first.leg.flightNumber,
       dutyReport: minutesToAimsHumanClock(group.startAbs),
       dutyDebrief: minutesToAimsHumanClock(group.endAbs),
+      dutyReportSource: first.reportSource,
+      dutyDebriefSource: last.debriefSource,
       legs,
       dutyHours,
       flyingHours,
@@ -341,17 +347,23 @@ function parseOneAimsHumanLeg(flightNumber: string, tokens: string[], forcedWork
   const departureTime = beforeOrigin[beforeOrigin.length - 1];
   const reportTime = beforeOrigin.length >= 2 ? beforeOrigin[0] : departureTime;
   const arrivalTime = afterDest[0];
-  const debriefTime = afterDest.slice(1).find((candidate) => {
+  const publishedDebriefTime = afterDest.slice(1).find((candidate) => {
     const elapsed = aimsForwardClockMinutes(arrivalTime, candidate);
     return elapsed > 0 && elapsed <= AIMS_MAX_DEBRIEF_AFTER_ARRIVAL_MINUTES;
-  }) || addClockMinutes(arrivalTime, 30);
+  });
+  const debriefTime = publishedDebriefTime || addClockMinutes(arrivalTime, 30);
+  const reportSource: AimsDutyClockSource = beforeOrigin.length >= 2 ? 'published' : 'estimated';
+  const debriefSource: AimsDutyClockSource = publishedDebriefTime ? 'published' : 'estimated';
   const duration = diffHours(departureTime, arrivalTime);
   if (!Number.isFinite(duration) || duration < 0.15 || duration > 8.5) return null;
 
   return {
     reportTime,
     debriefTime,
+    reportSource,
+    debriefSource,
     leg: {
+      dutyClockEvidence: { reportTime, debriefTime, reportSource, debriefSource },
       flightNumber,
       origin,
       destination,
@@ -387,6 +399,8 @@ function makeAimsHumanRosterDay(context: { date: string; dayOfWeek: string; date
     pairingCode: parsed.pairingCode,
     dutyReport: parsed.dutyReport,
     dutyDebrief: parsed.dutyDebrief,
+    dutyReportSource: parsed.dutyReportSource || (parsed.dutyReport ? 'unknown' : 'absent'),
+    dutyDebriefSource: parsed.dutyDebriefSource || (parsed.dutyDebrief ? 'unknown' : 'absent'),
     legs: parsed.legs,
     dutyHours: parsed.dutyHours,
     flyingHours: parsed.flyingHours,
@@ -634,6 +648,8 @@ function makeAimsPhysicalFlightDay(group: { legs: AimsPhysicalLeg[]; startAbs: n
     pairingCode: first.leg.flightNumber,
     dutyReport: startClock,
     dutyDebrief: endClock,
+    dutyReportSource: first.reportSource,
+    dutyDebriefSource: last.debriefSource,
     legs: plainLegs,
     dutyHours,
     flyingHours,
@@ -1124,6 +1140,8 @@ function rescueAimsAtomicFlightsFromColumns(
           pairingCode: leg.flightNumber,
           dutyReport,
           dutyDebrief,
+          dutyReportSource: item.reportSource,
+          dutyDebriefSource: item.debriefSource,
           legs: [leg],
           dutyHours: diffHours(dutyReport, dutyDebrief),
           flyingHours: Number(leg.duration) || diffHours(leg.departureTime, leg.arrivalTime),
@@ -1600,6 +1618,8 @@ function humanReviewAimsDay(day: RosterDay, homeBase: string): RosterDay | null 
         pairingCode: reparsed.pairingCode,
         dutyReport: reparsed.dutyReport,
         dutyDebrief: reparsed.dutyDebrief,
+        dutyReportSource: reparsed.dutyReportSource || (reparsed.dutyReport ? 'unknown' : 'absent'),
+        dutyDebriefSource: reparsed.dutyDebriefSource || (reparsed.dutyDebrief ? 'unknown' : 'absent'),
         legs: reparsed.legs.filter((leg) => isCredibleAimsLeg(leg)),
         dutyHours: reparsed.dutyHours,
         flyingHours: reparsed.flyingHours,
@@ -1621,6 +1641,8 @@ function humanReviewAimsDay(day: RosterDay, homeBase: string): RosterDay | null 
         pairingCode: reparsed.pairingCode || code,
         dutyReport: reparsed.dutyReport,
         dutyDebrief: reparsed.dutyDebrief,
+        dutyReportSource: reparsed.dutyReportSource || (reparsed.dutyReport ? 'unknown' : 'absent'),
+        dutyDebriefSource: reparsed.dutyDebriefSource || (reparsed.dutyDebrief ? 'unknown' : 'absent'),
         legs: reparsed.legs.filter((leg) => isCredibleAimsLeg(leg)),
         dutyHours: reparsed.dutyHours,
         flyingHours: reparsed.flyingHours,
@@ -1682,6 +1704,8 @@ type AimsLegTimelineItem = {
   arrAbs: number;
   reportAbs: number;
   debriefAbs: number;
+  reportSource: AimsDutyClockSource;
+  debriefSource: AimsDutyClockSource;
   sourceIndex: number;
 };
 
@@ -1711,7 +1735,7 @@ function enforceAimsPhysicalDutyContinuity(days: RosterDay[], roster: CrewRoster
 
 function splitAimsDayIntoPhysicalDutyGroups(day: RosterDay): AimsDutyGroup[] {
   const baseDate = parseAimsRosterDate(day.date);
-  if (!baseDate) return [{ items: (day.legs || []).map((leg, index) => ({ leg, depAbs: minutesOfDay(leg.departureTime), arrAbs: minutesOfDay(leg.arrivalTime), reportAbs: minutesOfDay(day.dutyReport || leg.departureTime), debriefAbs: minutesOfDay(day.dutyDebrief || addClockMinutes(leg.arrivalTime, 30)), sourceIndex: index })), startAbs: minutesOfDay(day.dutyReport || day.legs?.[0]?.departureTime || '00:00'), endAbs: minutesOfDay(day.dutyDebrief || day.legs?.[day.legs.length - 1]?.arrivalTime || '00:00'), notes: [] }];
+  if (!baseDate) return [{ items: (day.legs || []).map((leg, index) => ({ leg, depAbs: minutesOfDay(leg.departureTime), arrAbs: minutesOfDay(leg.arrivalTime), reportAbs: minutesOfDay(day.dutyReport || leg.departureTime), debriefAbs: minutesOfDay(day.dutyDebrief || addClockMinutes(leg.arrivalTime, 30)), reportSource: 'unknown' as const, debriefSource: 'unknown' as const, sourceIndex: index })), startAbs: minutesOfDay(day.dutyReport || day.legs?.[0]?.departureTime || '00:00'), endAbs: minutesOfDay(day.dutyDebrief || day.legs?.[day.legs.length - 1]?.arrivalTime || '00:00'), notes: [] }];
   const timeline = buildAimsLegTimeline(day);
   if (!timeline.length) return [];
 
@@ -1753,11 +1777,16 @@ function buildAimsLegTimeline(day: RosterDay): AimsLegTimelineItem[] {
     while (items.length && depAbs < floor - 90) depAbs += 1440;
     let arrAbs = minutesOfDay(leg.arrivalTime || leg.departureTime || '00:00');
     while (arrAbs < depAbs) arrAbs += 1440;
-    const reportClock = findAimsReportTimeForLeg(day.rawText || '', leg) || (index === 0 ? day.dutyReport : null) || leg.departureTime;
+    const evidence = (leg as FlightLeg & { dutyClockEvidence?: AimsDutyClockEvidence }).dutyClockEvidence;
+    const literalReport = findAimsReportTimeForLeg(day.rawText || '', leg);
+    const reportClock = literalReport || (index === 0 ? day.dutyReport : null) || leg.departureTime;
+    const reportSource: AimsDutyClockSource = literalReport ? evidence?.reportSource === 'published' && evidence.reportTime === literalReport ? 'published' : 'unknown' : index === 0 && day.dutyReport ? day.dutyReportSource || 'unknown' : 'estimated';
     let reportAbs = minutesOfDay(reportClock || leg.departureTime || '00:00');
     while (reportAbs > depAbs) reportAbs -= 1440;
     while (items.length && reportAbs < floor - 12 * 60) reportAbs += 1440;
-    const debriefClock = findAimsDebriefTimeForLeg(day.rawText || '', leg) || (index === (day.legs || []).length - 1 ? day.dutyDebrief : null) || addClockMinutes(leg.arrivalTime, 30);
+    const literalDebrief = findAimsDebriefTimeForLeg(day.rawText || '', leg);
+    const debriefClock = literalDebrief || (index === (day.legs || []).length - 1 ? day.dutyDebrief : null) || addClockMinutes(leg.arrivalTime, 30);
+    const debriefSource: AimsDutyClockSource = literalDebrief ? evidence?.debriefSource === 'published' && evidence.debriefTime === literalDebrief ? 'published' : 'unknown' : index === day.legs.length - 1 && day.dutyDebrief ? day.dutyDebriefSource || 'unknown' : 'estimated';
     let debriefAbs = minutesOfDay(debriefClock || leg.arrivalTime || '00:00');
     while (debriefAbs < arrAbs) debriefAbs += 1440;
     const normalizedLeg: FlightLeg = {
@@ -1765,7 +1794,7 @@ function buildAimsLegTimeline(day: RosterDay): AimsLegTimelineItem[] {
       isNextDay: Math.floor(arrAbs / 1440) !== Math.floor(depAbs / 1440) || minutesOfDay(leg.arrivalTime) < minutesOfDay(leg.departureTime),
       duration: Math.round(((arrAbs - depAbs) / 60) * 100) / 100,
     };
-    items.push({ leg: normalizedLeg, depAbs, arrAbs, reportAbs, debriefAbs, sourceIndex: index });
+    items.push({ leg: normalizedLeg, depAbs, arrAbs, reportAbs, debriefAbs, reportSource, debriefSource, sourceIndex: index });
     floor = Math.max(floor, debriefAbs, arrAbs, depAbs);
   });
   return items.sort((a, b) => a.depAbs - b.depAbs || a.sourceIndex - b.sourceIndex);
@@ -1793,6 +1822,8 @@ function makeAimsDutyGroupDay(original: RosterDay, group: AimsDutyGroup | undefi
     pairingCode: first.leg.flightNumber,
     dutyReport: minutesToAimsHumanClock(group.startAbs),
     dutyDebrief: minutesToAimsHumanClock(group.endAbs),
+    dutyReportSource: first.reportSource,
+    dutyDebriefSource: group.endAbs === last.debriefAbs ? last.debriefSource : 'unknown',
     legs,
     dutyHours,
     flyingHours,
@@ -2027,6 +2058,8 @@ function parseAimsRosterLegacy(fullText: string): CrewRoster {
       pairingCode: parsed.pairingCode,
       dutyReport: parsed.dutyReport,
       dutyDebrief: parsed.dutyDebrief,
+      ...(parsed.dutyReportSource ? { dutyReportSource: parsed.dutyReportSource } : {}),
+      ...(parsed.dutyDebriefSource ? { dutyDebriefSource: parsed.dutyDebriefSource } : {}),
       legs: parsed.legs,
       dutyHours: parsed.dutyHours,
       flyingHours: parsed.flyingHours,
@@ -2059,6 +2092,8 @@ interface ParsedDay {
   pairingCode: string;
   dutyReport: string | null;
   dutyDebrief: string | null;
+  dutyReportSource?: AimsDutyClockSource;
+  dutyDebriefSource?: AimsDutyClockSource;
   legs: FlightLeg[];
   dutyHours: number | null;
   flyingHours: number | null;
@@ -2287,6 +2322,8 @@ function parseGroundActivity(lines: string[], code: string): ParsedDay {
     pairingCode: canonicalCode,
     dutyReport: startTime,
     dutyDebrief: endTime,
+    dutyReportSource: window.startSource,
+    dutyDebriefSource: window.endSource,
     legs: [],
     dutyHours,
     flyingHours: 0,
@@ -2295,7 +2332,7 @@ function parseGroundActivity(lines: string[], code: string): ParsedDay {
   };
 }
 
-function collectDutyWindow(lines: string[]): { start: string | null; end: string | null } {
+function collectDutyWindow(lines: string[]): { start: string | null; end: string | null; startSource: AimsDutyClockSource; endSource: AimsDutyClockSource } {
   const airports = new Set(['BSB','GRU','CGH','VCP','NAT','MCZ','FOR','CNF','PMW','FLN','MAB','CPV','GYN','JPA','EZE','VIX','SSA','GIG','SDU','REC','AJU','BEL','SLZ','CGB','POA','CUR']);
   const tokens = lines.map(line => String(line || '').trim()).filter(Boolean);
   const stationTimes: string[] = [];
@@ -2304,17 +2341,17 @@ function collectDutyWindow(lines: string[]): { start: string | null; end: string
       stationTimes.push(normalizeSimpleTime(tokens[i + 1]));
     }
   }
-  if (stationTimes.length >= 2) return { start: stationTimes[0], end: stationTimes[stationTimes.length - 1] };
+  if (stationTimes.length >= 2) return { start: stationTimes[0], end: stationTimes[stationTimes.length - 1], startSource: 'published', endSource: 'published' };
 
   const times = collectTimes(tokens).filter(time => !looksLikeDuration(time));
-  if (!times.length) return { start: null, end: null };
+  if (!times.length) return { start: null, end: null, startSource: 'absent', endSource: 'absent' };
   const start = times[0];
   let end = times[1] || times[0];
   for (const candidate of times.slice(1)) {
     const h = diffHours(start, candidate);
     if (h >= 0.25 && h <= 14) end = candidate;
   }
-  return { start, end };
+  return { start, end, startSource: 'published', endSource: times.length >= 2 ? 'published' : 'estimated' };
 }
 
 function collectTimes(lines: string[]): string[] {
@@ -2421,6 +2458,8 @@ function parseReserveOrStandbyActivationDay(lines: string[], activationType: 'HS
     pairingCode: activationType,
     dutyReport,
     dutyDebrief,
+    dutyReportSource: activation.dutyReport ? activation.dutyReportSource || 'unknown' : flight.dutyReportSource || 'unknown',
+    dutyDebriefSource: flight.dutyDebrief ? flight.dutyDebriefSource || 'unknown' : activation.dutyDebriefSource || 'unknown',
     dutyHours,
     flyingHours: flight.flyingHours,
     isNextDay: Boolean(flight.isNextDay || (dutyReport && dutyDebrief && minutesOfDay(dutyDebrief) <= minutesOfDay(dutyReport))),
@@ -2437,11 +2476,15 @@ function parseStandby(lines: string[], type: 'HSB' | 'HSBE'): ParsedDay {
 
   const startTime = uniqueTimes[0] || null;
   let endTime: string | null = uniqueTimes.find((time) => time !== startTime) || null;
+  let endSource: AimsDutyClockSource = endTime ? 'published' : 'absent';
 
   // Para sobreaviso, se o PDF não trouxe fim legível e existe uma próxima programação
   // no mesmo dia, usar o início dela como fim provável do HSB. Se não houver, a UI
   // ainda consegue mostrar estimativa conservadora de 3h sem afetar diárias.
-  if (startTime && !endTime) endTime = findNextActivityStartAfter(lines, type, startTime);
+  if (startTime && !endTime) {
+    endTime = findNextActivityStartAfter(lines, type, startTime);
+    if (endTime) endSource = 'estimated';
+  }
 
   let dutyHours: number | null = null;
   if (startTime && endTime) dutyHours = diffHours(startTime, endTime);
@@ -2451,6 +2494,8 @@ function parseStandby(lines: string[], type: 'HSB' | 'HSBE'): ParsedDay {
     pairingCode: '',
     dutyReport: startTime,
     dutyDebrief: endTime,
+    dutyReportSource: startTime ? 'published' : 'absent',
+    dutyDebriefSource: endSource,
     legs: [],
     dutyHours,
     flyingHours: 0,
@@ -2477,11 +2522,13 @@ function parseCRM(lines: string[]): ParsedDay {
   
   let startTime: string | null = null;
   let endTime: string | null = null;
+  let endSource: AimsDutyClockSource = 'absent';
   
   if (times.length >= 2) {
     const uniqueTimes = Array.from(new Set(times));
     startTime = uniqueTimes[0];
     endTime = uniqueTimes[1] || uniqueTimes[0];
+    endSource = uniqueTimes.length >= 2 ? 'published' : 'estimated';
     for (const candidate of uniqueTimes.slice(1)) {
       const [sh, sm] = startTime.split(':').map(Number);
       const [eh, em] = candidate.split(':').map(Number);
@@ -2505,6 +2552,8 @@ function parseCRM(lines: string[]): ParsedDay {
     pairingCode: findRosterCodes(lines.join(' '))[0] || '',
     dutyReport: startTime,
     dutyDebrief: endTime,
+    dutyReportSource: startTime ? 'published' : 'absent',
+    dutyDebriefSource: endSource,
     legs: [],
     dutyHours,
     flyingHours: 0,
@@ -2523,14 +2572,15 @@ function parseASB(lines: string[]): ParsedDay {
 
   const startTime = uniqueTimes[0] || null;
   let endTime: string | null = null;
+  let endSource: AimsDutyClockSource = 'absent';
 
   if (startTime) {
     for (const candidate of uniqueTimes.slice(1)) {
       if (candidate === startTime) continue;
       const diff = diffHours(startTime, candidate) * 60;
-      if (diff >= 30 && diff <= 12 * 60) endTime = candidate;
+      if (diff >= 30 && diff <= 12 * 60) { endTime = candidate; endSource = 'published'; }
     }
-    if (!endTime || endTime === startTime) endTime = addClockMinutes(startTime, 6 * 60);
+    if (!endTime || endTime === startTime) { endTime = addClockMinutes(startTime, 6 * 60); endSource = 'estimated'; }
   }
 
   let dutyHours: number | null = null;
@@ -2541,6 +2591,8 @@ function parseASB(lines: string[]): ParsedDay {
     pairingCode: '',
     dutyReport: startTime,
     dutyDebrief: endTime,
+    dutyReportSource: startTime ? 'published' : 'absent',
+    dutyDebriefSource: endSource,
     legs: [],
     dutyHours,
     flyingHours: 0,
