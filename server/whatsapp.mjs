@@ -210,7 +210,14 @@ export function extractWhatsAppInboundMessages(payload = {}) {
           from,
           phoneNumberId: phoneId,
           type: String(message?.type || 'unknown').slice(0, 32),
+          timestamp: String(message?.timestamp || '').slice(0, 16),
           text: String(message?.text?.body || '').trim().slice(0, 4000),
+          document: message?.type === 'document' ? {
+            id: String(message.document?.id || '').slice(0, 80),
+            mime_type: String(message.document?.mime_type || '').slice(0, 120),
+            filename: String(message.document?.filename || '').slice(0, 160),
+            sha256: String(message.document?.sha256 || '').slice(0, 100),
+          } : null,
         });
       }
     }
@@ -457,7 +464,10 @@ async function processWhatsAppPayload(payload, rawBody) {
     } else duplicates += 1;
   }
   for (const message of inbound) {
-    if (acceptedMessageIds.has(message.id)) await handleInboundMessage(message);
+    if (acceptedMessageIds.has(message.id)) {
+      acceptedMessageIds.delete(message.id);
+      await handleInboundMessage(message);
+    }
   }
   console.info('[crewcheck:whatsapp:webhook]', JSON.stringify({ accepted, duplicates, total: events.length, inbound: inbound.length }));
 }

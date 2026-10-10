@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import test from 'node:test';
+import { whatsappMenuEnabled } from '../server/concierge/whatsapp-menu.mjs';
+import { whatsappVisitorEnabled } from '../server/concierge/whatsapp-visitor.mjs';
 import { execFileSync } from 'node:child_process';
 import {
   normalizeConciergeNaturalTextV14341 as normalizeConciergeNaturalTextV14338,
@@ -106,6 +108,9 @@ function harness() {
     telegramAppRequestAllowed: () => true, conciergeAccessMatches: () => true,
     telegramLinkedRecordForEmail: async () => ({ chatId: activeProfile.chatId }),
     sendJson: (_res, status, body) => { appResponse = { status, body }; },
+    whatsappPdfEnabled: () => false, whatsappPdfConfiguration: null,
+    whatsappMenuEnabled: () => whatsappMenuEnabled({}),
+    whatsappVisitorEnabled: () => whatsappVisitorEnabled({}),
     normalizePhone: value => String(value || ''), phoneNumberId: () => 'synthetic-receiver',
     findActiveLinkByPhone: async () => ({ email: activeProfile.email, consent_concierge: 1, linked_at: '2026-01-01' }),
     sendWhatsAppText: async (_to, reply) => { trace.output.push(reply); return { ok: true }; },
@@ -132,6 +137,7 @@ function harness() {
   const binding = source.match(/configureWhatsAppConcierge\(async \(\{ email, text(?:, location)? \}\) => \{[\s\S]*?\n\}\);/);
   assert.ok(binding, 'real WhatsApp binding is present');
   vm.runInContext(binding[0], context);
+  if (whatsapp.includes('async function dispatchWhatsAppVisitor(')) vm.runInContext(extract(whatsapp, 'dispatchWhatsAppVisitor'), context);
   vm.runInContext(extract(whatsapp, 'handleInboundMessage'), context);
   return {
     trace, context, profile, other,
