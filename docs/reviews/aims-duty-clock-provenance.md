@@ -18,9 +18,18 @@ Run after canonical preparation and Vite build:
 
 ```
 node scripts/regression-aims-duty-source-browser.mjs
+node scripts/regression-aims-activity-financial-chain.mjs
 AIMS_DUTY_SOURCE_REPORT=artifacts/aims-duty-source/report.json node scripts/regression-canonical-duty-home-browser.cjs
 ```
 
 Use MENU_PLAYWRIGHT_PACKAGE for the isolated Playwright install and PLAYWRIGHT_CHROMIUM_EXECUTABLE only when a local browser path is required. Browser tests intercept APIs and block external origins. All committed fixtures and review artifacts are synthetic. Actual source PDFs and screenshots are excluded from GitHub.
 
 Independent review must verify the exact source and prepared tree, including the authorized original PDF corpus, boundary regrouping and missing-token counterproof, before merge/deploy.
+
+## Independent review correction: non-flight literal activity clocks
+
+HEAD9fd0120 passed CI but independent financial review rejected its generic unknown source for literal ASB/CRM activity clocks. Ground, reserve, standby and legacy CRM producers now attach source at the exact token/fallback branch; manual reconstruction copies it. ASB six-hour fallback, repeated single ground clock and HSB next-activity end remain estimated. Absent tokens remain absent. Numeric clocks, formulas and salary are unchanged.
+
+Extended physical PDF corpus:24PDF cases3TZ, covering17activity entries across complete/start-only/end-only/no-clock states. Actual Home buildLegs → financialIntervalEvidenceIssue → calculatePerDiem/calculateSalary validates204activities, JSON persistence, dedup, ASB Café and training Almoço; HSB does not gain eligibility. Local comparison against the prepared published base confirms all raw numerical clocks and salary gross/reserve/standby unchanged; literal eligibility retained. Use CREWCHECK_BASELINE_REPO optionally for this baseline comparison. The portable independent synthetic repro libfile_b118da5093c88191a4da48a12f49b58f was materialized and SHA-verified locally; no private source was committed.
+
+Preexisting separate finding: a missing/unsupported HSB interval can normalize to00:00–23:59 and enter salary with synthetic standby metric1 in both the published base and rejected9fd0120. This PR does not fix or attribute that behavior to clock provenance. A separate authorized salary correction will require its own isolated branch, tests and independent review.

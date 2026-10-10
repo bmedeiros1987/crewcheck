@@ -7,6 +7,7 @@ on:
       - 'client/src/lib/aimsParser.ts'
       - 'scripts/v14374/apply.mjs'
       - 'scripts/regression-aims-duty-source-browser.mjs'
+      - 'scripts/regression-aims-activity-financial-chain.mjs'
       - 'client/src/lib/complianceEngine.ts'
       - 'client/src/lib/rollingFlightHours.ts'
       - 'scripts/v14395/apply.mjs'
@@ -121,6 +122,7 @@ jobs:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
         run: |
           node scripts/regression-aims-duty-source-browser.mjs
+          node scripts/regression-aims-activity-financial-chain.mjs
           AIMS_DUTY_SOURCE_REPORT=artifacts/aims-duty-source/report.json node scripts/regression-canonical-duty-home-browser.cjs
       - name: Verify actual compiled financial UI with synthetic owner fixtures
         env:
@@ -148,6 +150,7 @@ jobs:
           path: |
             artifacts/aims-duty-source/
             artifacts/aims-duty-source-home/
+            artifacts/aims-activity-finance/
           if-no-files-found: ignore
       - name: Save salary diagnostic evidence
         if: always()
