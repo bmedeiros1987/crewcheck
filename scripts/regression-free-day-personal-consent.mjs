@@ -1,0 +1,47 @@
+import http from 'node:http';
+import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import {personalConsent,handlePersonalConsent,personalConsentConfiguration,PERSONAL_SCOPE} from '../server/free-day-personal-consent.mjs';
+import {voluntarySources,SOURCE_SCOPE} from '../server/free-day-sources.mjs';
+import {sourceQueue} from '../server/free-day-source-queue.mjs';
+import {syntheticSourceDatabase} from './fixtures/free-day-source-db.mjs';
+const user={email:'synthetic-consent@example.invalid',id:'synthetic-owner'},hash=x=>crypto.createHash('sha256').update(JSON.stringify(x)).digest('hex'),now=Date.parse('2026-10-10T12:00Z');
+const configuration={offerEnabled:true,ownerIds:[user.id]},options={now,configuration};
+const receipt=clock=>({identityDigest:hash(['900001','BSB']),period:'2026-08',documentHash:hash(clock),starts:[12,13,14].map(d=>({date:`2026-08-${d}`,clock,offset:-180,literal:true}))});
+const putLink=(db,chatId='9000012345')=>{const link={email:user.email,chatId,username:'synthetic_crew',linkedAt:'2026-10-01T12:00:00Z',code:'synthetic-link'};for(const key of [`link-email:${user.email}`,`link-chat:${chatId}`])db.state.rows.set(key,JSON.stringify(link));};
+const seed=async()=>{const db=syntheticSourceDatabase();putLink(db);await voluntarySources(db,user,{scope:SOURCE_SCOPE,action:'review',expectedRevision:0,before:receipt('01:46'),after:receipt('08:30'),sequenceDate:'2026-08-12',confirmed:true,consent:true},{now});return db;};
+const grant=s=>({scope:PERSONAL_SCOPE,action:'grant',context:s.context,expectedRevision:s.revision,confirmed:true,textVersion:s.textVersion});
+const revoke=s=>({scope:PERSONAL_SCOPE,action:'revoke',context:s.context,expectedRevision:s.revision});
+assert.deepEqual(personalConsentConfiguration({}),{offerEnabled:false,ownerIds:[]});
+const db=await seed(),initial=JSON.stringify([...db.state.rows]);
+assert.equal((await personalConsent(db,user,null,{now})).available,false);assert.equal(JSON.stringify([...db.state.rows]),initial,'GET creates no consent');
+const offered=await personalConsent(db,user,null,options);assert.equal(offered.available,true);assert.equal(offered.consent,false);assert.equal(offered.destination.label,'Telegram da sua conta · chat ••••2345');
+assert.doesNotMatch(JSON.stringify(offered),/synthetic_crew|9000012345|example.invalid|900001|01:46|08:30/);
+for(const config of [{offerEnabled:true,ownerIds:[]},{offerEnabled:false,ownerIds:[user.id]},{offerEnabled:true,ownerIds:['other-owner']}])await assert.rejects(personalConsent(db,user,grant(offered),{now,configuration:config}),{code:'CONSENT_NOT_OFFERED'});
+for(const extra of [{ownerId:user.id},{chatId:'9000012345'},{admin:true},{recipient:'other'}])await assert.rejects(personalConsent(db,user,{...grant(offered),...extra},options),{code:'CLIENT_AUTHORITY_REJECTED'});
+await assert.rejects(personalConsent(db,{...user,id:'other-owner'},null,options),{code:'OWNER_CHANGED'});
+await assert.rejects(personalConsent(db,user,{...grant(offered),confirmed:false},options),{code:'PERSONAL_CONFIRMATION_REQUIRED'});
+const grants=await Promise.all(Array.from({length:8},()=>personalConsent(db,user,grant(offered),options)));assert.equal(grants.filter(s=>!s.duplicate).length,1);const authorized=grants[0];assert.equal(authorized.consent,true);assert.equal(authorized.dispatchAllowed,false);
+assert.equal((await personalConsent(db,user,null,{now})).consent,true,'turning offer off still permits revocation');
+assert.equal((await sourceQueue(db,user,null,{now})).job.status,'held');assert.equal([...db.state.jobs.values()][0].chat_id,null);
+const revokes=await Promise.all(Array.from({length:8},()=>personalConsent(db,user,revoke(authorized),{now})));assert.equal(revokes.filter(s=>!s.duplicate).length,1);assert.equal(revokes[0].consent,false);
+await assert.rejects(personalConsent(db,user,grant(offered),options),{code:'PERSONAL_REVISION_CHANGED'});
+const reg=await personalConsent(db,user,grant(revokes[0]),options);await assert.rejects(personalConsent(db,user,revoke(authorized),options),{code:'PERSONAL_REVISION_CHANGED'});assert.equal((await personalConsent(db,user,null,options)).consent,true);
+const expiry=await personalConsent(db,user,null,{...options,now:now+31*86400000});assert.equal(expiry.consent,false);assert.equal([...db.state.jobs.values()][0].status,'cancelled');
+const rotated=await seed(),r=await personalConsent(rotated,user,null,options);await personalConsent(rotated,user,grant(r),options);putLink(rotated,'9000098765');await assert.rejects(personalConsent(rotated,user,revoke(r),options),{code:'CONSENT_CONTEXT_CHANGED'});assert.equal([...rotated.state.jobs.values()][0].status,'cancelled');assert.equal([...rotated.state.rows.keys()].some(k=>k.startsWith('notification-free-day-source-job:')),false,'invalid-context cancellation commits despite rejection');
+const group=await seed();putLink(group,'-9000012345');await sourceQueue(group,user,null,{now}); // mismatch cancels old reservation; seed group atomically instead
+const collective=syntheticSourceDatabase();putLink(collective,'-9000012345');await voluntarySources(collective,user,{scope:SOURCE_SCOPE,action:'review',expectedRevision:0,before:receipt('01:46'),after:receipt('08:30'),sequenceDate:'2026-08-12',confirmed:true,consent:true},{now});const gs=await personalConsent(collective,user,null,options);assert.equal(gs.destination.collective,true);assert.match(gs.destination.label,/coletivo/);assert.equal((await personalConsent(collective,user,grant(gs),options)).consent,true);
+const rollback=await seed(),rs=await personalConsent(rollback,user,null,options),connect=rollback.getConnection;rollback.getConnection=async()=>{const c=await connect(),query=c.query;c.query=async(sql,args)=>{if(sql.startsWith('INSERT INTO crewcheck_telegram_state')&&JSON.parse(args[1]).personalConsent)throw Error('synthetic consent audit failure');return query(sql,args);};return c;};await assert.rejects(personalConsent(rollback,user,grant(rs),options),/audit failure/);assert.equal((await personalConsent(rollback,user,null,options)).consent,false);
+const recreated=await seed();recreated.state.created=now;assert.equal((await personalConsent(recreated,user,null,options)).available,false);
+const inconsistent=await seed();inconsistent.state.rows.delete('link-chat:9000012345');assert.equal((await personalConsent(inconsistent,user,null,options)).available,false);
+console.log('PASS personal consent: defaults/allowlist, masked/group destination, explicit act, CAS/dedupe, TTL/revoke, link rotation, account isolation and rollback; zero real delivery');
+
+let accesses=0;const httpDb=await seed();
+const server=http.createServer((req,res)=>handlePersonalConsent(req,res,{identity:r=>r.headers.authorization==='Bearer synthetic-only'?user:null,dbPool:async()=>{accesses++;return httpDb;},readJson:async r=>{let raw='';for await(const x of r)raw+=x;return JSON.parse(raw);},sendJson:(r,status,value)=>{r.writeHead(status,{'content-type':'application/json'});r.end(JSON.stringify(value));}}));await new Promise(r=>server.listen(0,'127.0.0.1',r));
+try{const url='http://127.0.0.1:'+server.address().port,headers={authorization:'Bearer synthetic-only','content-type':'application/json'};
+assert.equal((await fetch(url)).status,401);assert.equal(accesses,0);
+const state=await (await fetch(url,{headers})).json();assert.equal(state.available,false);
+assert.equal((await fetch(url,{method:'POST',headers,body:JSON.stringify(grant(state))})).status,403);
+assert.equal((await fetch(url,{method:'POST',headers,body:JSON.stringify({...grant(state),ownerId:'other'})})).status,400);
+}finally{await new Promise(r=>server.close(r));}
+console.log('PASS personal consent HTTP: authenticated owner only, no unauthenticated DB access, default offer off, client authority rejected');

@@ -1,3 +1,4 @@
+import {personalConsent,PERSONAL_SCOPE} from '../server/free-day-personal-consent.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import mysql from 'mysql2/promise';
@@ -194,6 +195,16 @@ try {
     assert.equal(saved.queuePreparation.prepared,true,'confirmation atomically reserves held');
     const results=await Promise.all(Array.from({length:8},()=>sourceQueue(db,user,request,{now})));assert.equal(results.filter(x=>!x.duplicate).length,0);
     const key=results[0].job.jobKey;assert.equal(results[0].delayMinutes,404);assert.equal(results[0].destination.label,'@synthetic_crew · chat ••••2345');assert.equal(results[0].realConsent,false);assert.equal(results[0].sourceVerified,false);
+    const personalOptions={now,configuration:{offerEnabled:true,ownerIds:[user.id]}},offer=await personalConsent(db,user,null,personalOptions);
+    assert.equal(offer.available,true);assert.equal((await personalConsent(db,user,null,{now})).available,false);
+    const grant={scope:PERSONAL_SCOPE,action:'grant',context:offer.context,expectedRevision:offer.revision,confirmed:true,textVersion:offer.textVersion};
+    const grants=await Promise.all(Array.from({length:8},()=>personalConsent(db,user,grant,personalOptions)));assert.equal(grants.filter(x=>!x.duplicate).length,1);assert.equal(grants[0].consent,true);
+    const personalFresh=mysql.createPool({socketPath,user:'root',password:'',database:'crewcheck_notification_qa',connectionLimit:2});try{assert.equal((await personalConsent(personalFresh,user,null,personalOptions)).consent,true);}finally{await personalFresh.end();}
+    const revokes=await Promise.all(Array.from({length:8},()=>personalConsent(db,user,{scope:PERSONAL_SCOPE,action:'revoke',context:offer.context,expectedRevision:grants[0].revision},{now})));assert.equal(revokes.filter(x=>!x.duplicate).length,1);assert.equal(revokes[0].consent,false);
+    await assert.rejects(personalConsent(db,user,grant,personalOptions),{code:'PERSONAL_REVISION_CHANGED'});
+    const faultDb={getConnection:async()=>{const c=await db.getConnection(),query=c.query.bind(c);c.query=async(sql,args)=>{if(sql.startsWith('INSERT INTO crewcheck_telegram_state') && JSON.parse(args[1]).personalConsent)throw Error('synthetic SQL audit failure');return query(sql,args);};const release=c.release.bind(c);c.release=()=>{c.query=query;c.release=release;release();};return c;}};
+    const beforeFault=await personalConsent(db,user,null,personalOptions);await assert.rejects(personalConsent(faultDb,user,{...grant,expectedRevision:beforeFault.revision},personalOptions),/SQL audit failure/);assert.equal((await personalConsent(db,user,null,personalOptions)).consent,false);
+
     const simulations=await Promise.all(Array.from({length:8},()=>sourceQueue(db,user,{...request,action:'simulate',jobKey:key},{now})));assert.equal(simulations.filter(x=>!x.duplicate).length,1);assert.equal(simulations[0].simulation.simulated,true);assert.equal(simulations[0].accepted,false);assert.equal(simulations[0].delivered,false);
     const fresh=mysql.createPool({socketPath,user:'root',password:'',database:'crewcheck_notification_qa',connectionLimit:2});try{assert.equal((await sourceQueue(fresh,user,null,{now})).job.simulated,true,'persisted audit read from independent pool without a browser');}finally{await fresh.end();}
     let rows=(await db.query('SELECT status,chat_id,telegram_username,phone,message FROM crewcheck_notification_jobs WHERE email=? AND job_key=?',[email,key]))[0];assert.equal(rows.length,1);assert.equal(rows[0].status,'held');assert.equal(rows[0].chat_id,null);assert.equal(rows[0].telegram_username,null);assert.equal(rows[0].phone,null);assert.match(rows[0].message,/Segundo as versões que você enviou/);

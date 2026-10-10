@@ -9,7 +9,7 @@ const flags={dispatchAllowed:SOURCE_QUEUE_DISPATCH_ALLOWED,realConsent:false,rea
 const genericMessage='Segundo as versões que você enviou, há postergação do início da folga. Abra o CrewCheck para revisar. Esta simulação não confirma indenização ou entrega.';
 export function sourceQueueJobKey(user,review) {return SOURCE_JOB_PREFIX+sourceJobHash([user.id,review.sequenceDate,review.before.version,review.after.version]);}
 const linkFingerprint=(user,link)=>sourceJobHash([user.id,String(link.chatId),link.linkedAt,String(link.code || ''),String(link.username || '')]);
-async function lockedDestination(c,user,created,now) {
+export async function lockedDestination(c,user,created,now) {
   const [rows]=await c.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[`link-email:${user.email}`]);
   const link=parse(rows[0]?.payload),chat=String(link.chatId || '');
   const time=Date.parse(link.linkedAt);
@@ -20,7 +20,7 @@ async function lockedDestination(c,user,created,now) {
   const username=/^[A-Za-z0-9_]{5,32}$/.test(String(link.username || ''))?'@'+link.username:null;
   return {version:linkFingerprint(user,link),label:chat.startsWith('-')?`Telegram coletivo existente · chat ••••${chat.slice(-4)}`:`${username || 'Telegram existente'} · chat ••••${chat.slice(-4)}`,verifiedAt:link.linkedAt};
 }
-function validatedReview(state,user) {
+export function validatedReview(state,user) {
   const review=state.review;
   if(!review || !/^[a-f0-9]{64}$/.test(String(review.before?.identityDigest || '')) || review.sourceStatus!=='user-confirmed-declaration' || !Number.isFinite(Date.parse(review.confirmedAt))) fail(409,'CONFIRMED_REVIEW_REQUIRED');
   const before=validateReceipt({identityDigest:review.before?.identityDigest,period:review.before?.period,documentHash:review.before?.documentHash,starts:review.before?.starts},review.before?.identityDigest);
