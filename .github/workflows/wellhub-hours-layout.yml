@@ -1,0 +1,44 @@
+name: Wellhub hours and compact cards
+on:
+  pull_request:
+    paths:
+      - 'shared/wellhub-*'
+      - 'server/v14407/wellhub.mjs'
+      - 'client/src/lib/wellhub*'
+      - 'client/src/lib/useWellhubClock.ts'
+      - 'client/src/components/WellhubConciergeAnswer.tsx'
+      - 'client/src/styles/wellhub-hours.css'
+      - 'scripts/wellhub-hours/**'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/v14410/concierge-gyms.snippet'
+      - 'scripts/regression-wellhub-hours.mjs'
+      - 'scripts/regression-wellhub-cards-browser.mjs'
+      - '.github/workflows/wellhub-hours-layout.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  hours-layout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: TZ=UTC node scripts/regression-wellhub-hours.mjs
+      - run: TZ=Asia/Tokyo node scripts/regression-wellhub-hours.mjs
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npm run check
+      - run: node scripts/regression-wellhub-readable-replies.mjs --materialized
+      - run: node scripts/regression-concierge-wellhub-conversation.mjs --materialized
+      - run: node scripts/regression-concierge-wellhub-plan-recognition.mjs --materialized
+      - run: npm install --prefix /tmp/wellhub-browser playwright@1.64.0 --ignore-scripts --no-audit --no-fund
+      - run: /tmp/wellhub-browser/node_modules/.bin/playwright install --with-deps chromium
+      - run: MENU_PLAYWRIGHT_PACKAGE=/tmp/wellhub-browser/package.json node scripts/regression-wellhub-cards-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wellhub-hours-synthetic-cards
+          path: artifacts/wellhub-hours/
