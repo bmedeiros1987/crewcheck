@@ -55,6 +55,7 @@ export interface FlightLeg {
 }
 
 export interface RosterDay {
+  freeDayStartEvidence?: import('./freeDayStartEvidence').PublishedFreeDayStartEvidence;
   date: string; // DD/MM/YYYY
   dayOfWeek: string;
   dayNumber?: number;
