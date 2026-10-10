@@ -1,0 +1,41 @@
+name: FOR hotel catalog review
+on:
+  pull_request:
+    paths:
+      - 'client/src/data/crewHotels.ts'
+      - 'scripts/regression-hotel-catalog-for*.mjs'
+      - '.github/workflows/hotel-catalog-for.yml'
+  workflow_dispatch:
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify raw catalog and searches
+        run: node scripts/regression-hotel-catalog-for.mjs
+      - run: npm run check
+      - run: npm run build
+      - run: npm run regression:v13.8.9:mobile-hotels
+      - name: Verify prepared catalog and searches
+        run: node scripts/regression-hotel-catalog-for.mjs
+      - name: Install isolated browser tools
+        run: |
+          npm install --prefix "$RUNNER_TEMP/catalog-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/catalog-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: QA both catalog screens
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/catalog-browser/package.json
+        run: node scripts/regression-hotel-catalog-for-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hotel-catalog-for-synthetic
+          path: artifacts/hotel-catalog-for/

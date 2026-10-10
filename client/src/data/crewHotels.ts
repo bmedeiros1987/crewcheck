@@ -745,6 +745,14 @@ export const CREW_HOTEL_CATALOG: CrewHotelCatalogEntry[] = [
         "country":  "BR"
     },
     {
+        "name":  "Ibis Styles Fortaleza Giga Mall",
+        "airport":  "FOR",
+        "alternateAirport":  "",
+        "city":  "Fortaleza",
+        "region":  "Ceará",
+        "country":  "BR"
+    },
+    {
         "name":  "Ibis Styles Goiania Marista",
         "airport":  "GYN",
         "alternateAirport":  "",
