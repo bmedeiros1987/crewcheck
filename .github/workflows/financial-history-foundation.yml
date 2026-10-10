@@ -4,6 +4,11 @@ on:
     paths:
       - 'shared/financialReadModel.mjs'
       - 'client/src/lib/financialStatementLearning.ts'
+      - 'client/src/lib/aimsParser.ts'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/rollingFlightHours.ts'
+      - 'scripts/v14395/apply.mjs'
+      - 'scripts/regression-operated-flight-hours.mjs'
       - 'client/src/lib/financialPayrollPeriods.ts'
       - 'client/src/lib/financialSettingStore.ts'
       - 'client/src/lib/financialAmounts.ts'
@@ -39,6 +44,7 @@ jobs:
       - run: npm ci
       - run: node scripts/v139/apply.mjs
       - run: node scripts/regression-static-module-mime.mjs
+      - run: node scripts/regression-operated-flight-hours.mjs
       - run: node scripts/regression-financial-review-owner-negative.mjs
         env:
           TZ: UTC
@@ -129,4 +135,5 @@ jobs:
             artifacts/canonical-duty-measurement/
             artifacts/canonical-duty-card/
             artifacts/canonical-duty-home/
+            artifacts/operated-flight-hours/
           if-no-files-found: ignore

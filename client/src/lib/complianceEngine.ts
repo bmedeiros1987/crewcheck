@@ -11,6 +11,7 @@ import {
   // produção.
   competenceKey as competenceKeyFor,
   assessFlightHoursRolling28Days,
+  assessFlightHoursRolling365Days,
   sumFlightHoursForCompetence,
   type FlightHoursObservation,
 } from './rollingFlightHours';
@@ -49,6 +50,9 @@ export interface Metrics {
    * elegível a histórico de competência adjacente.
    */
   maxFlightHoursRolling28Days: number;
+  /** Observed operated hours only; missing365-day coverage is not compliance. */
+  maxFlightHoursRolling365Days?: number;
+  flightHoursRolling365Complete?: boolean;
   totalDutyHours: number | null;
   maxDutyHoursMonth: number;
   totalDaysOff: number;
@@ -195,7 +199,7 @@ function diffHours(start: string, end: string, forceNextDay = false): number {
   return diff / 60;
 }
 
-function getFlightHours(day: RosterDay): number {
+function getAirTravelHours(day: RosterDay): number {
   const legs = day.legs || [];
   if (legs.length) {
     const legSum = legs.reduce((sum, leg) => sum + getLegHours(leg), 0);
@@ -205,6 +209,23 @@ function getFlightHours(day: RosterDay): number {
     return round1(legSum);
   }
   return typeof day.flyingHours === 'number' ? round1(day.flyingHours) : 0;
+}
+
+/** PS is the structured passenger/extra role produced by the verified AIMS
+ * and ticket parsers. Do not infer it from EXTRA/DFS pairing/payroll text,
+ * flight numbers, or other unverified work-type codes (including DH). */
+function isServiceExtraLeg(leg: FlightLeg): boolean {
+  return String(leg.workType || '').trim().toUpperCase() === 'PS';
+}
+
+/** Flight-limit counters only. Travel remains in duty/work/payroll inputs. */
+function getFlightHours(day: RosterDay): number {
+  if (day.legs?.length) {
+    return round1(day.legs.reduce((sum, leg) => sum + (isServiceExtraLeg(leg) ? 0 : getLegHours(leg)), 0));
+  }
+  // Preserve the existing aggregate-only fallback; no PS role can be proved
+  // from a day-level label when the underlying legs are unavailable.
+  return getAirTravelHours(day);
 }
 
 function getLegHours(leg: FlightLeg): number {
@@ -230,7 +251,7 @@ function getLegDutyEnvelopeHours(day: RosterDay): number {
   const start = cleanClockTime(day.dutyReport) || cleanClockTime(legs[0]?.departureTime);
   const lastLeg = legs[legs.length - 1];
   const lastArrival = cleanClockTime(lastLeg?.arrivalTime);
-  if (!start || !lastArrival) return getFlightHours(day);
+  if (!start || !lastArrival) return getAirTravelHours(day);
 
   const firstDeparture = minutesOfDay(legs[0]?.departureTime);
   const lastArrivalMin = minutesOfDay(lastArrival);
@@ -244,7 +265,7 @@ function getLegDutyEnvelopeHours(day: RosterDay): number {
 
 function getDutyMarginsWithoutGround(day: RosterDay): { reportMargin: number; debriefMargin: number; sectorDutyHours: number; evidence: string } {
   const legs = day.legs || [];
-  const flightHours = getFlightHours(day);
+  const flightHours = getAirTravelHours(day);
   if (!legs.length) {
     return { reportMargin: 0, debriefMargin: 0, sectorDutyHours: round1(flightHours), evidence: 'sem pernas de voo' };
   }
@@ -1471,7 +1492,7 @@ function addReserveActivationDutyLimitAlerts(alerts: ComplianceAlert[], day: Ros
   }
 
   const sectors = Math.max(1, day.legs?.length || 1);
-  const flightHours = getFlightHours(day);
+  const flightHours = getAirTravelHours(day);
   const combinedHours = getDutyHours(day);
   const limit = applyMostRestrictiveDutyLimit(getRbac117B1SimpleDutyLimit(start, sectors), profile);
   const details = [
@@ -2008,6 +2029,14 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     flightHoursObservations, Number(roster.month), Number(roster.year),
   );
   metrics.maxFlightHoursRolling28Days = rollingAssessment.maxHours;
+  const annualAssessment = assessFlightHoursRolling365Days(
+    flightHoursObservations, Number(roster.month), Number(roster.year),
+  );
+  metrics.maxFlightHoursRolling365Days = annualAssessment.maxHours;
+  metrics.flightHoursRolling365Complete = annualAssessment.complete;
+  // No annual limit/profile changes or annual compliance claim: this is an
+  // observed counter with explicit coverage, using the same operated inputs.
+
   if (!rollingAssessment.complete) {
     const missing = rollingAssessment.missingDates;
     const missingPeriod = missing.length
@@ -2213,6 +2242,7 @@ export function analyzeDayLoads(roster: CrewRoster): LoadAnalysis {
     const restAfter = nextWorkedDay && isActiveDuty(day) ? getRestBetween(day, nextWorkedDay) : null;
     const dutyHours = getDutyHours(day);
     const flightHours = getFlightHours(day);
+    const airTravelHours = getAirTravelHours(day);
     const sectors = day.legs?.length || 0;
     const night = hasMadrugadaDuty(day) || (day.legs || []).some(isNightLeg);
     const early = startsInEarlyWindow(day);
@@ -2249,9 +2279,11 @@ export function analyzeDayLoads(roster: CrewRoster): LoadAnalysis {
       score += dutyHours * 3.0;
       reasons.push(`${dutyHours.toFixed(1)}h de jornada`);
     }
-    if (flightHours > 0) {
-      score += flightHours * 1.8;
-      reasons.push(`${flightHours.toFixed(1)}h de voo`);
+    if (airTravelHours > 0) {
+      score += airTravelHours * 1.8;
+      if (flightHours > 0) reasons.push(`${flightHours.toFixed(1)}h de voo operado`);
+      const extraHours = round1(airTravelHours - flightHours);
+      if (extraHours > 0) reasons.push(`${extraHours.toFixed(1)}h de deslocamento extra a serviço`);
     }
     if (sectors > 0) {
       score += sectors <= 2 ? sectors * 2.5 : 5 + (sectors - 2) * 7.5;

@@ -484,6 +484,10 @@ function extractAimsPhysicalLegs(fullText: string, homeBase: string, rosterMonth
       const candidate = tokens[j];
       const nextIsFlight = candidate.toUpperCase() === 'LA' && /^\d{3,4}$/.test(tokens[j + 1] || '');
       if (nextIsFlight) break;
+      // Extra belongs to the following flight. Keep its marker outside the
+      // previous segment so physical reconstruction cannot transfer PS to OP.
+      if (isExtraAimsMarker(candidate) && tokens[j + 1]?.toUpperCase() === 'LA'
+        && /^\d{3,4}$/.test(tokens[j + 2] || '')) break;
 
       const dateInside = parseAimsPhysicalDateToken(candidate, rosterMonth, rosterYear);
       if (dateInside) {
