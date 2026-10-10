@@ -1,9 +1,10 @@
 import {useEffect,useRef,useState} from 'react';
 import {parsePDF} from '@/lib/pdfParser';
+import {FreeDaySourceQueue} from './FreeDaySourceQueue';
 import {getToken,getStoredUser} from '@/lib/authClient';
 import {minimalVoluntaryReceipt,type VoluntaryReceipt} from '@/lib/freeDaySources';
 const scope='free-day-voluntary-review-v1';
-type ReviewState={revision:number;consent:boolean;expiresAt:string|null;review:{sourceStatus:string;state:string;reason:string|null;delayMinutes:number|null;possibleAmount:null}|null};
+type ReviewState={revision:number;consent:boolean;expiresAt:string|null;review:{before:{documentHash:string};after:{documentHash:string};sourceStatus:string;state:string;reason:string|null;delayMinutes:number|null;possibleAmount:null}|null};
 export function FreeDaySourceConsent({session,bound}:{session:string;bound:boolean}) {
   const [before,setBefore]=useState<VoluntaryReceipt|null>(null),[after,setAfter]=useState<VoluntaryReceipt|null>(null);
   const [state,setState]=useState<ReviewState|null>(null),[date,setDate]=useState(''),[confirmed,setConfirmed]=useState<string|null>(null),[consent,setConsent]=useState<string|null>(null);
@@ -49,7 +50,7 @@ export function FreeDaySourceConsent({session,bound}:{session:string;bound:boole
   if(!bound)return null;
   return <details data-free-day-source-consent><summary>Revisar duas publicações e consentimento para alertas</summary>
     <p>Selecione voluntariamente os PDFs anterior e revisado. A leitura ocorre neste dispositivo; serão enviados somente hashes, período, identidade pseudonimizada e datas/horários/fusos de folga. Os PDFs, nomes e texto integral não serão enviados por esta revisão.</p>
-    <p>Fonte declarada → conferida por você. Origem oficial verificada: indisponível. Telegram: vínculo não verificado; envio desabilitado, inclusive com o app fechado.</p>
+    <p>Fonte declarada → conferida por você. Origem oficial verificada: indisponível. O destino existente será conferido no servidor na seção de fila. Envio desabilitado, inclusive com o app fechado.</p>
     {(['before','after'] as const).map(side=><div key={side}><label>{side==='before'?'Publicação anterior':'Publicação revisada'}<input type="file" accept="application/pdf,.pdf" disabled={busy} onChange={e=>{void select(e.target.files?.[0],side);e.target.value='';}} /></label>
       {(side==='before'?before:after) && <div><p>Período {(side==='before'?before:after)!.period} · hash {(side==='before'?before:after)!.documentHash.slice(0,12)}</p><ul>{(side==='before'?before:after)!.starts.map(s=><li key={s.date}>{s.date}: {s.literal?`${s.clock} · UTC${s.offset!>=0?'+':''}${s.offset!/60}`:'Início literal ou fuso pendente'}</li>)}</ul></div>}</div>)}
     <label>Data de início da sequência nas duas versões<input type="date" value={date} disabled={busy} onChange={e=>{setDate(e.target.value);setConfirmed(null);setConsent(null);}} /></label>
@@ -59,6 +60,7 @@ export function FreeDaySourceConsent({session,bound}:{session:string;bound:boole
     <button type="button" disabled={busy || !state || !before || !after || !reviewKey || confirmed!==reviewKey || consent!==reviewKey} onClick={()=>void submit('review')}>Salvar revisão simulada</button>
     <button type="button" disabled={busy || !state?.consent} onClick={()=>void submit('revoke')}>Revogar e remover recibos</button>
     {state?.review && <p data-source-review-result>Fonte: conferida pelo usuário; origem oficial não verificada. {state.review.delayMinutes===null?`Pendência: ${state.review.reason}`:`Variação: ${state.review.delayMinutes} minutos (${state.review.state}).`} Valor: pendente. Entrega: não realizada.</p>}
+    {state?.review && state.consent && <FreeDaySourceQueue session={session} revision={state.revision} blocked={busy || Boolean(before && before.documentHash!==state.review.before?.documentHash) || Boolean(after && after.documentHash!==state.review.after?.documentHash)} />}
     {message && <p role="status">{message}</p>}
   </details>;
 }
