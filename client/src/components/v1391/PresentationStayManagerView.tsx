@@ -101,7 +101,7 @@ export default function PresentationStayManagerView({ events, initialStayId, emb
   const dirty = useRef(false);
   const owner = useRef(getToken());
   const editSession = useRef(0);
-  const drafts = useRef(new Map<string, { draft: StayDraft; manual: boolean; timeZone: string; choice: StayAlarmChoice | undefined; apzDate: string; apzConfirmed: boolean; apzSource: string; alarmCancelled: boolean }>());
+  const drafts = useRef(new Map<string, { draft: StayDraft; manual: boolean; timeZone: string; choice: StayAlarmChoice | undefined; apzDate: string; signature: string; apzConfirmed: boolean; apzSource: string; alarmCancelled: boolean }>());
   const previousId = useRef('');
   const [removed, setRemoved] = useState(false);
   const [needsReview, setNeedsReview] = useState(false);
@@ -171,7 +171,7 @@ export default function PresentationStayManagerView({ events, initialStayId, emb
     if (previousId.current === selected.id && dirty.current) return;
     previousId.current = selected.id;
     const cached = drafts.current.get(selected.id);
-    if (cached) { setDraft(cached.draft); setManual(cached.manual); setHotelTimeZone(cached.timeZone); setAlarmChoice(cached.choice); setApzDate(cached.apzDate); setApzConfirmed(cached.apzConfirmed); setApzSource(cached.apzSource); setAlarmCancelled(cached.alarmCancelled); dirty.current = true; return; }
+    if (cached) { setDraft(cached.draft); setManual(cached.manual); setHotelTimeZone(cached.timeZone); setAlarmChoice(cached.choice); setApzDate(cached.apzDate); setNeedsReview(cached.signature !== signature); setApzConfirmed(cached.apzConfirmed && cached.signature === signature); setApzSource(cached.apzSource); setAlarmCancelled(cached.alarmCancelled); dirty.current = true; return; }
     const persisted = loadStayEditor().stays[selected.id];
     if (persisted) {
       const changed = persisted.signature !== signature;
@@ -198,7 +198,7 @@ export default function PresentationStayManagerView({ events, initialStayId, emb
   }, [selectedId, selected, stays, operational]);
 
   function selectProgram(id: string) {
-    if (selected && dirty.current) drafts.current.set(selected.id, { draft, manual, timeZone: hotelTimeZone, choice: alarmChoice, apzDate, apzConfirmed, apzSource, alarmCancelled });
+    if (selected && dirty.current) drafts.current.set(selected.id, { draft, manual, timeZone: hotelTimeZone, choice: alarmChoice, apzDate, signature: eventSignature.current, apzConfirmed, apzSource, alarmCancelled });
     dirty.current = false; setNeedsReview(false); setSelectedId(id);
   }
   function discardEdits() { if (!selected) return; drafts.current.delete(selected.id); dirty.current = false; previousId.current = ''; setStays(items => [...items]); }
@@ -322,7 +322,7 @@ export default function PresentationStayManagerView({ events, initialStayId, emb
         <label>Aeroporto/local<input value={draft.airport} onChange={(event) => setDraft({ ...draft, airport: event.target.value.toUpperCase() })} placeholder="Ex.: FOR"/></label>
         <label>{selected?.kind === 'stay' ? 'APZ no hotel (manual ou salva)' : 'Apresentação'}<input type="time" value={draft.presentationTime} onChange={(event) => { setDraft({ ...draft, presentationTime: event.target.value }); setApzConfirmed(false); setApzSource('manual'); }}/></label>
         {selected?.kind === 'stay' && <><label>Data da APZ no hotel<input type="date" value={apzDate} onChange={event => { setApzDate(event.target.value); setApzConfirmed(false); }}/></label>
-        <label>Fuso do hotel<input value={hotelTimeZone} onChange={event => { setHotelTimeZone(event.target.value); setApzConfirmed(false); }} placeholder="Ex.: America/Fortaleza"/></label><label className="wide"><input type="checkbox" checked={apzConfirmed} onChange={event => { setApzConfirmed(event.target.checked); if(event.target.checked) setApzSource('manual'); }}/> Confirmo esta data, horário e fuso como APZ no hotel</label><p>Origem da APZ: {apzSource === 'legacy-unconfirmed' ? 'horário salvo antigo; origem não confirmada' : apzSource === 'manual' ? 'informada/confirmada por você' : 'não informada'}. {apzConfirmed ? 'Confirmada.' : 'Confirmação necessária; não usamos escala ou pickup.'}</p></>}
+        <label>Fuso do hotel<input value={hotelTimeZone} onChange={event => { setHotelTimeZone(event.target.value); setApzConfirmed(false); }} placeholder="Ex.: America/Fortaleza"/></label><label className="wide"><input type="checkbox" checked={apzConfirmed} onChange={event => { setApzConfirmed(event.target.checked); if(event.target.checked) { setApzSource('manual'); setNeedsReview(false); } }}/> Confirmo esta data, horário e fuso como APZ no hotel</label><p>Origem da APZ: {apzSource === 'legacy-unconfirmed' ? 'horário salvo antigo; origem não confirmada' : apzSource === 'manual' ? 'informada/confirmada por você' : 'não informada'}. {apzConfirmed ? 'Confirmada.' : 'Confirmação necessária; não usamos escala ou pickup.'}</p></>}
 
         <label><input type="checkbox" checked={draft.shareSameHotel} onChange={(event) => setDraft({ ...draft, shareSameHotel: event.target.checked })}/> Autorizar colegas no mesmo hotel a me localizar em emergência</label>
       </div>
