@@ -148,6 +148,35 @@ jobs:
           node scripts/regression-transit-review-blockers.mjs
       - name: Build web client
         run: npx vite build 2>&1 | tee "$RUNNER_TEMP/vite-build.log"
+      - name: Install isolated footer browser dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/footer-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          # Use the officially installed Chrome and its existing sandbox setup.
+          # Downloaded Chromium cannot use Ubuntu 24's AppArmor user namespaces.
+          google-chrome --version
+      - name: Validate footer geometry in the built application
+        env:
+          FOOTER_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/footer-browser/package.json
+          FOOTER_QA_OUTPUT: ${{ runner.temp }}/footer-geometry
+          FOOTER_QA_URL: http://127.0.0.1:4173
+          FOOTER_BROWSER_CHANNEL: chrome
+        run: |
+          mkdir -p "$FOOTER_QA_OUTPUT"
+          git rev-parse HEAD > "$FOOTER_QA_OUTPUT/tested-sha.txt"
+          google-chrome --version > "$FOOTER_QA_OUTPUT/browser-version.txt"
+          npx vite preview --host 127.0.0.1 --port 4173 --strictPort > "$FOOTER_QA_OUTPUT/preview.log" 2>&1 &
+          footer_preview_pid=$!
+          trap 'kill "$footer_preview_pid" 2>/dev/null || true' EXIT
+          node --input-type=module -e 'let ready=false; for(let i=0;i<80;i++){ try { const r=await fetch("http://127.0.0.1:4173",{signal:AbortSignal.timeout(500)}); if(r.ok){ready=true;break;} } catch {} await new Promise(r=>setTimeout(r,250)); } if(!ready) throw new Error("Footer preview did not start");'
+          node scripts/qa/footer-geometry.mjs 2>&1 | tee "$FOOTER_QA_OUTPUT/regression.log"
+      - name: Upload footer geometry evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-footer-geometry-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/footer-geometry
+          if-no-files-found: warn
+          retention-days: 14
       - name: Validate SOS after source preparation
         run: node --experimental-vm-modules scripts/regression-emergency-intent.mjs
       - name: Smoke configured Render build and start without credentials or egress
