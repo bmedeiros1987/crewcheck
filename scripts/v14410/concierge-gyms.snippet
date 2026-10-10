@@ -132,6 +132,7 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
     `Wellhub verificado · seu plano ${wellhubPlanLabelServer(wellhubPlan)}${activity ? ` · modalidade ${activity}` : ''}`,
     `Contexto local: ${locationText}. Resultados fora da cidade/estado confirmado são descartados.`,
     '', ...lines,
-    '', 'Para alterar, diga naturalmente “meu plano é Silver+”, “uso Gold” ou “quero Pilates”.',
+    '', 'Catálogo parcial, sem atualização automática. As datas de verificação estão em cada unidade. Confirme acesso e condições no app Wellhub antes de sair.',
+    'Para alterar, diga naturalmente “meu plano é Silver+”, “uso Gold” ou “quero Pilates”.',
   ].join('\n');
 }
