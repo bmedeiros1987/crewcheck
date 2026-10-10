@@ -52,6 +52,9 @@ O asset `mycrewcare-transport-v3.js` define um contrato estruturado e sem fallba
 - **Troca de conta**: `bind()` descarta da memória os fatos da conta anterior e uma sincronização em andamento é invalidada antes de qualquer escrita. O cache e o perfil de cada conta permanecem separados.
 - **Honestidade do estado**: `refreshSuggested` só é marcado quando a política de sincronização realmente considera os dados vencidos; dado recém-atualizado nunca é rotulado como desatualizado.
 - **Publicação idempotente**: o controlador publica apenas mudanças reais e mantém `getSnapshot()` estável entre renders. O painel se vincula por chave de identidade (conta + escala + revisão + estadias), não pela identidade dos props, para não reler o cache cifrado nem entrar em loop de render.
+- **Restore sem corrida**: `restore()` captura conta e época antes de ler; se a conta mudar, houver logout/desconexão ou um restore mais novo, a resposta antiga é descartada antes de limpar o storage ou publicar cache.
+- **Limpeza nativa assíncrona**: `startMyCrewCareCleanupV3(conta, esquecer, operação)` apenas inicia; `myCrewCareCleanupResultV3(conta, operação)` devolve `pending | ok | failed:código | unknown` somente para a mesma conta e operação. O adaptador aguarda (limite de 15 s, só durante a ação explícita do usuário) e propaga falha, desconhecido ou timeout. Nada devolve sucesso antes de concluir.
+- **Nova tentativa**: em `cleanup-error` a conta continua alvo da limpeza (`cleanupPending` / `canRetryCleanup`, inclusive após logout) e o painel mostra "Tentar desconectar novamente".
 - **Montagem**: o painel **não** está montado em `Home.tsx`; a fence de ownership agora também falha se qualquer arquivo fora desta fatia importar o painel. Montar exige alteração revisada da fence e de `Home`/`MainActivity` (bridge nativa).
 
 
@@ -80,10 +83,10 @@ A slice não modifica `Home.tsx`, `MainActivity.java`, `scripts/v139/apply.mjs`,
 
 ## Validação desta slice
 
-`node --test scripts/regression-mycrewcare-controller.mjs` cobre 16 contratos da ligação à interface (desligado por padrão, duas chaves, sem sincronização automática/segundo plano, offline, expiração, reinício, troca de conta, sync em voo descartada, cleanup com falha, publicação idempotente e honestidade de `refreshSuggested`).
+`node --test scripts/regression-mycrewcare-controller.mjs` cobre 18 contratos da ligação à interface (desligado por padrão, duas chaves, sem sincronização automática/segundo plano, offline, expiração, reinício, troca de conta, sync em voo descartada, cleanup com falha, publicação idempotente e honestidade de `refreshSuggested`).
 
 Esses contratos são **simulações em Node** com uma ponte falsa. Eles provam o comportamento do controlador, mas **não** substituem a validação física no Android de identidade autenticada, SSO/MFA, expiração, reinício do aparelho e troca de conta, que permanece como gate antes de qualquer ativação.
 
-`node --test scripts/regression-mycrewcare-v3.mjs` cobre 12 contratos em UTC, Brasília e Auckland: URL exata, hotel/pickup separados, vínculo sem hotel prévio, ambiguidade, cancelamento, diff, persistência, restauração, cache offline, vazio verificado, troca de revisão, logout e política foreground/background.
+`node --test scripts/regression-mycrewcare-v3.mjs` cobre 21 contratos (os 12 originais mais restore atrasado após troca/logout/ida-e-volta fora de ordem, falha de leitura obsoleta, desconexão durante restore, retry de cleanup e limpeza nativa assíncrona/timeout/escopo por operação), em em UTC, Brasília e Auckland: URL exata, hotel/pickup separados, vínculo sem hotel prévio, ambiguidade, cancelamento, diff, persistência, restauração, cache offline, vazio verificado, troca de revisão, logout e política foreground/background.
 
 `node scripts/assert-mycrewcare-v3-ownership.mjs` protege a lista de arquivos, impede writers compartilhados, exige release desativado, perfil isolado, armazenamento cifrado, allowlists exatas e recusa dinâmica de registros sem vínculo. O workflow executa esses gates antes e depois da preparação canônica, além de TypeScript, Vite e `assembleDebug`.

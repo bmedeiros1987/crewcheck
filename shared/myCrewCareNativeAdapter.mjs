@@ -4,17 +4,54 @@ function bridgeMethod(bridge, name) {
   return typeof bridge?.[name] === 'function' ? bridge[name].bind(bridge) : null;
 }
 
-/** Adapter for the gated Android portal. It never accepts legacy v1/v2 events. */
-export function createMyCrewCareNativeAdapter({ bridge, events = globalThis.window } = {}) {
+const CLEANUP_POLL_MS = 100;
+const CLEANUP_TIMEOUT_MS = 15_000;
+
+function operationId() {
+  const crypto = globalThis.crypto;
+  if (typeof crypto?.randomUUID === 'function') return `cleanup-${crypto.randomUUID()}`;
+  throw Object.assign(new Error('secure-random-unavailable'), { code: 'secure-random-unavailable' });
+}
+
+function cleanupFailure(code) {
+  return Object.assign(new Error(code), { code });
+}
+
+/**
+ * Adapter for the gated Android portal. It never accepts legacy v1/v2 events.
+ *
+ * Native cleanup is asynchronous (the WebView profile finishes on its own thread), so a
+ * disconnect starts an operation scoped to one account + one operation id and then waits
+ * for that operation's real result. A bounded wait during an explicit user action is the
+ * only waiting here; there is no recurring polling.
+ */
+export function createMyCrewCareNativeAdapter({
+  bridge,
+  events = globalThis.window,
+  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  cleanupTimeoutMs = CLEANUP_TIMEOUT_MS,
+  newOperationId = operationId,
+} = {}) {
   let cancelPending = null;
   return Object.freeze({
     async disconnect(accountId, forgetData) {
       cancelPending?.();
       cancelPending = null;
-      const method = bridgeMethod(bridge, 'disconnectMyCrewCareV3');
-      if (!method || !accountId) return;
-      const result = method(accountId, forgetData === true);
-      if (result === false) throw Object.assign(new Error('native-disconnect-failed'), { code: 'native-disconnect-failed' });
+      if (!accountId) return;
+      const start = bridgeMethod(bridge, 'startMyCrewCareCleanupV3');
+      const result = bridgeMethod(bridge, 'myCrewCareCleanupResultV3');
+      if (!start || !result) throw cleanupFailure('native-disconnect-failed');
+      const id = newOperationId();
+      if (start(accountId, forgetData === true, id) !== true) throw cleanupFailure('native-disconnect-failed');
+      const deadline = Date.now() + Math.max(1, cleanupTimeoutMs);
+      for (;;) {
+        const value = String(result(accountId, id) ?? '');
+        if (value === 'ok') return;
+        if (value.startsWith('failed')) throw cleanupFailure('native-disconnect-failed');
+        if (value !== 'pending') throw cleanupFailure('native-disconnect-failed');
+        if (Date.now() >= deadline) throw cleanupFailure('native-disconnect-timeout');
+        await wait(CLEANUP_POLL_MS);
+      }
     },
 
     read(request, signal) {

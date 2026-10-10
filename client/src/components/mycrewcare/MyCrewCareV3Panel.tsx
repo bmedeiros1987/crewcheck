@@ -82,8 +82,8 @@ export default function MyCrewCareV3Panel({ context, stays }: Props) {
         <small>Fonte: MyCrewCare · observado em {new Date((pickup ?? hotel)!.observedAt).toLocaleString('pt-BR')}</small>
       </article>;
     })}
-    {(snapshot.hasCachedData || snapshot.automatic) && <button type="button" onClick={() => { void controller.disconnect({ forgetData: true }); }}>
-      Desconectar e apagar dados deste aparelho
+    {(snapshot.hasCachedData || snapshot.automatic || snapshot.canRetryCleanup) && <button type="button" disabled={snapshot.busy} onClick={() => { void controller.disconnect({ forgetData: true }).catch(() => undefined); }}>
+      {snapshot.canRetryCleanup ? 'Tentar desconectar novamente' : 'Desconectar e apagar dados deste aparelho'}
     </button>}
   </section>;
 }

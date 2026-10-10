@@ -51,26 +51,53 @@ public final class CrewCheckMyCrewCareProfile {
         }
     }
 
-    /** Clears only the selected MyCrewCare profile data. */
-    public void clear(Activity activity, String accountId, Runnable completion) {
-        Runnable done = once(completion);
-        if (activity == null || !isSupported()) {
-            done.run();
+    /** Result of an asynchronous cleanup. {@code code} is a stable, non-sensitive token. */
+    public interface CleanupCallback {
+        void onComplete(boolean success, String code);
+    }
+
+    /**
+     * Clears only the selected MyCrewCare profile data and reports the real outcome once.
+     * Failures are never swallowed: the callback receives success=false.
+     */
+    public void clear(Activity activity, String accountId, CleanupCallback callback) {
+        CleanupCallback done = once(callback);
+        final String name;
+        try {
+            name = profileName(accountId);
+        } catch (RuntimeException error) {
+            done.onComplete(false, "invalid-account");
+            return;
+        }
+        if (!isSupported()) {
+            // Isolated profiles cannot have been created on this device: nothing to clear.
+            done.onComplete(true, "no-profile");
+            return;
+        }
+        if (activity == null) {
+            done.onComplete(false, "activity-unavailable");
             return;
         }
         activity.runOnUiThread(() -> {
             try {
-                Profile profile = ProfileStore.getInstance().getProfile(profileName(accountId));
-                if (profile == null) { done.run(); return; }
-                try { profile.getWebStorage().deleteAllData(); } catch (RuntimeException ignored) { }
-                try { profile.getGeolocationPermissions().clearAll(); } catch (RuntimeException ignored) { }
+                Profile profile = ProfileStore.getInstance().getProfile(name);
+                if (profile == null) {
+                    done.onComplete(true, "no-profile");
+                    return;
+                }
+                profile.getWebStorage().deleteAllData();
+                profile.getGeolocationPermissions().clearAll();
                 CookieManager manager = profile.getCookieManager();
                 manager.removeAllCookies(removed -> {
-                    try { manager.flush(); } catch (RuntimeException ignored) { }
-                    done.run();
+                    try {
+                        manager.flush();
+                        done.onComplete(true, "ok");
+                    } catch (RuntimeException error) {
+                        done.onComplete(false, "profile-flush-failed");
+                    }
                 });
             } catch (RuntimeException error) {
-                done.run();
+                done.onComplete(false, "profile-clear-failed");
             }
         });
     }
@@ -98,10 +125,10 @@ public final class CrewCheckMyCrewCareProfile {
         return false;
     }
 
-    private static Runnable once(Runnable completion) {
+    private static CleanupCallback once(CleanupCallback callback) {
         AtomicBoolean called = new AtomicBoolean(false);
-        return () -> {
-            if (called.compareAndSet(false, true) && completion != null) completion.run();
+        return (success, code) -> {
+            if (called.compareAndSet(false, true) && callback != null) callback.onComplete(success, code);
         };
     }
 }

@@ -190,6 +190,10 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
   let stays = [];
   let automatic = false;
   let generation = 0;
+  // Bumped on context change, cleanup and every restore: a restore that finishes after
+  // any of them is stale and must neither publish nor touch storage.
+  let restoreEpoch = 0;
+  let pendingCleanup = null;
   let pending = null;
   let cached = null;
   let status = 'disconnected';
@@ -250,8 +254,9 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
   }
 
   async function clearConnection({ forgetData, clearContext }) {
-    const accountId = context?.accountId ?? null;
+    const accountId = context?.accountId ?? pendingCleanup ?? null;
     automatic = false;
+    restoreEpoch += 1;
     invalidateRequest();
     let cleanupError = null;
     try {
@@ -272,6 +277,8 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
       stays = [];
       cached = null;
     }
+    // Keep the account until cleanup really succeeded, so "try again" can still target it.
+    pendingCleanup = cleanupError ? accountId : null;
     status = cleanupError ? 'cleanup-error' : (cached ? 'off' : 'disconnected');
     lastError = cleanupError;
     if (cleanupError) throw Object.assign(new Error(cleanupError), { code: cleanupError });
@@ -283,6 +290,7 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
       const nextStays = normalizeMyCrewCareStays(persistedStays, nextContext);
       if (same(context, nextContext) && same(stays, nextStays)) return;
       invalidateRequest();
+      restoreEpoch += 1;
       context = nextContext;
       stays = nextStays;
       cached = null;
@@ -310,30 +318,40 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
     async restore() {
       invalidateRequest();
       if (!context) {
+        restoreEpoch += 1;
         cached = null;
         status = 'invalid-context';
         return false;
       }
+      // Everything below uses the captured account/epoch, never the live `context`.
+      const epoch = restoreEpoch += 1;
+      const capturedContext = context;
+      const accountId = capturedContext.accountId;
+      const stale = () => epoch !== restoreEpoch || context !== capturedContext;
       let raw;
       try {
-        raw = await storageRead(context.accountId);
+        raw = await storageRead(accountId);
       } catch (error) {
+        if (stale()) return false;
         cached = null;
         status = 'storage-error';
         lastError = errorCode(error);
         return false;
       }
-      const restored = parseStored(raw, context, now());
+      if (stale()) return false;
+      const restored = parseStored(raw, capturedContext, now());
       if (!restored) {
         if (raw) {
           try {
-            await storageClear(context.accountId);
+            await storageClear(accountId);
           } catch (error) {
+            if (stale()) return false;
             cached = null;
             status = 'cleanup-error';
             lastError = errorCode(error);
             return false;
           }
+          if (stale()) return false;
         }
         cached = null;
         lastError = null;
@@ -355,6 +373,7 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
         connected: status === 'connected',
         automatic,
         hasCachedData: cached !== null,
+        cleanupPending: pendingCleanup !== null,
         lastSuccessfulSyncAt: syncedAt === null ? null : new Date(syncedAt).toISOString(),
         dataAgeMs: ageMs,
         live: ageMs !== null && ageMs <= MYCREWCARE_LIVE_MAX_AGE_MS,

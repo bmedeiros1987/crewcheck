@@ -41,10 +41,14 @@ public final class CrewCheckMyCrewCarePortalV3 {
         return false;
     }
 
-    public boolean disconnect(String accountId, boolean forgetProfile, Runnable completion) {
+    /**
+     * Starts an asynchronous disconnect. Returns false (without invoking the callback)
+     * only when the request itself is invalid; otherwise the callback reports the real result.
+     */
+    public boolean disconnect(String accountId, boolean forgetProfile, CrewCheckMyCrewCareProfile.CleanupCallback callback) {
         if (activity == null || profiles == null || accountId == null || accountId.trim().isEmpty()) return false;
-        if (forgetProfile) profiles.clear(activity, accountId, completion);
-        else if (completion != null) completion.run();
+        if (forgetProfile) profiles.clear(activity, accountId, callback);
+        else if (callback != null) callback.onComplete(true, "ok");
         return true;
     }
 

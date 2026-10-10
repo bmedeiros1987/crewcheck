@@ -10,6 +10,7 @@ import {
 } from '../shared/myCrewCareLogistics.mjs';
 import { createMyCrewCarePersistentSession } from '../shared/myCrewCarePersistentSession.mjs';
 import { MYCREWCARE_BACKGROUND_CAPABILITY, planMyCrewCareSync } from '../shared/myCrewCareSyncPolicy.mjs';
+import { createMyCrewCareNativeAdapter } from '../shared/myCrewCareNativeAdapter.mjs';
 
 const NOW = Date.parse('2026-10-09T12:00:00Z');
 const context = Object.freeze({
@@ -281,4 +282,208 @@ test('rate-limit retry is anchored to the last attempt, not perpetually moved fo
   });
   assert.equal(plan.action, 'idle');
   assert.equal(plan.dueAt, lastAttemptAt + 5 * 60_000);
+});
+
+// ---- review round 2: restore races and native cleanup -----------------------
+const contextB = Object.freeze({ ...context, accountId: 'account-2', providerSubject: 'provider-subject-8' });
+const stayB = Object.freeze({ ...stay, ...contextB, id: 'stay-2' });
+
+async function seed(storage, ctx, st) {
+  const session = createMyCrewCarePersistentSession({
+    adapter: { read: async (request) => envelope(request, [record], { providerSubject: ctx.providerSubject }) }, storage, now: () => NOW,
+  });
+  session.setContext(ctx, [st]);
+  session.setAutomatic(true);
+  assert.equal(await session.sync(), true);
+}
+
+// Storage whose reads are released by hand, so completion order is controlled by the test.
+class GatedStorage extends MemoryStorage {
+  constructor() { super(); this.gates = []; this.clears = []; }
+  read(accountId) {
+    const value = this.values.get(accountId) ?? null;
+    return new Promise((resolve) => this.gates.push(() => resolve(value)));
+  }
+  clear(accountId) { this.clears.push(accountId); return super.clear(accountId); }
+}
+
+test('late restore(A) after switching to B never clears or publishes into B', async () => {
+  const storage = new GatedStorage();
+  // A holds an unreadable/corrupt payload, which would trigger storage.clear(<account>).
+  storage.values.set(context.accountId, '{"corrupt":true}');
+  await seed(storage, contextB, stayB);
+  const bBefore = storage.values.get(contextB.accountId);
+  assert.ok(bBefore);
+
+  const session = createMyCrewCarePersistentSession({ adapter: {}, storage, now: () => NOW });
+  session.setContext(context, [stay]);
+  session.setAutomatic(true);
+  const lateA = session.restore();
+  session.setContext(contextB, [stayB]);
+  const restoreB = session.restore();
+  storage.gates[1](); // B finishes first
+  assert.equal(await restoreB, true);
+  storage.gates[0](); // A's read finishes after the switch
+  assert.equal(await lateA, false);
+
+  assert.deepEqual(storage.clears, [], 'stale restore must not clear anything');
+  assert.equal(storage.values.get(contextB.accountId), bBefore, "B's stored cache is untouched");
+  assert.equal(session.state().hasCachedData, true, "B's restored cache is not replaced or dropped");
+  assert.ok(session.hotel(stayB.id));
+  assert.equal(session.hotel(stay.id), null);
+});
+
+test('late restore(A) after logout cannot resurrect or clear anything', async () => {
+  const storage = new GatedStorage();
+  await seed(storage, context, stay);
+  const session = createMyCrewCarePersistentSession({ adapter: {}, storage, now: () => NOW });
+  session.setContext(context, [stay]);
+  session.setAutomatic(true);
+  const late = session.restore();
+  await session.logout();
+  const clearsAfterLogout = storage.clears.length;
+  storage.gates[0]();
+  assert.equal(await late, false);
+  assert.equal(session.state().hasCachedData, false, 'logout data must not come back');
+  assert.equal(storage.clears.length, clearsAfterLogout);
+  assert.equal(session.state().status, 'disconnected');
+});
+
+test('A -> B -> A out of order: only the newest restore may publish or clear', async () => {
+  const storage = new GatedStorage();
+  await seed(storage, context, stay);
+  const goodA = storage.values.get(context.accountId);
+  const session = createMyCrewCarePersistentSession({ adapter: {}, storage, now: () => NOW });
+  session.setContext(context, [stay]);
+  session.setAutomatic(true);
+  const first = session.restore();            // gate 0
+  session.setContext(contextB, [stayB]);
+  const second = session.restore();           // gate 1
+  session.setContext(context, [stay]);
+  const third = session.restore();            // gate 2
+  storage.gates[2]();
+  assert.equal(await third, true);
+  // Older reads finish afterwards, in the "wrong" order.
+  storage.gates[0]();
+  storage.gates[1]();
+  assert.equal(await first, false);
+  assert.equal(await second, false);
+  assert.deepEqual(storage.clears, []);
+  assert.equal(storage.values.get(context.accountId), goodA);
+  assert.ok(session.hotel(stay.id));
+});
+
+test('a stale restore that failed to read does not set storage-error on the new account', async () => {
+  let rejectA;
+  const storage = {
+    read: (accountId) => (accountId === context.accountId ? new Promise((_, reject) => { rejectA = reject; }) : null),
+    clear: () => assert.fail('nothing may be cleared'),
+    write: () => {},
+  };
+  const session = createMyCrewCarePersistentSession({ adapter: {}, storage, now: () => NOW });
+  session.setContext(context, [stay]);
+  const late = session.restore();
+  session.setContext(contextB, [stayB]);
+  await session.restore();
+  rejectA(new Error('boom'));
+  assert.equal(await late, false);
+  assert.notEqual(session.state().status, 'storage-error');
+  assert.equal(session.state().lastError, null);
+});
+
+test('disconnect during a restore keeps the data erased', async () => {
+  const storage = new GatedStorage();
+  await seed(storage, context, stay);
+  const session = createMyCrewCarePersistentSession({ adapter: {}, storage, now: () => NOW });
+  session.setContext(context, [stay]);
+  session.setAutomatic(true);
+  const late = session.restore();
+  await session.disconnect({ forgetData: true });
+  storage.gates[0]();
+  assert.equal(await late, false);
+  assert.equal(session.state().hasCachedData, false);
+});
+
+test('cleanup-error stays retryable for the same account, including after logout', async () => {
+  let fail = true;
+  const cleared = [];
+  const disconnected = [];
+  const session = createMyCrewCarePersistentSession({
+    adapter: { disconnect: async (accountId) => { disconnected.push(accountId); if (fail) throw new Error('profile'); } },
+    storage: { clear: async (accountId) => { cleared.push(accountId); }, read: () => null, write: () => {} },
+    now: () => NOW,
+  });
+  session.setContext(context, [stay]);
+  session.setAutomatic(true);
+  await assert.rejects(session.logout(), /profile-disconnect-failed/);
+  assert.equal(session.state().status, 'cleanup-error');
+  assert.equal(session.state().cleanupPending, true);
+  fail = false;
+  await session.disconnect({ forgetData: true });
+  assert.equal(session.state().cleanupPending, false);
+  assert.deepEqual(disconnected, [context.accountId, context.accountId]);
+  assert.deepEqual(cleared, [context.accountId, context.accountId]);
+});
+
+// Native bridge double whose cleanup finishes later, like the WebView profile does.
+function asyncCleanupBridge({ outcome = 'ok', completeAfterPolls = 2 } = {}) {
+  const operations = new Map();
+  const polls = [];
+  return {
+    operations, polls,
+    bridge: {
+      startMyCrewCareCleanupV3(accountId, forget, id) {
+        if (!/^[\w-]{8,80}$/.test(id) || operations.has(`${accountId}|${id}`)) return false;
+        operations.set(`${accountId}|${id}`, { polls: 0, forget });
+        return true;
+      },
+      myCrewCareCleanupResultV3(accountId, id) {
+        const op = operations.get(`${accountId}|${id}`);
+        polls.push([accountId, id]);
+        if (!op) return 'unknown';
+        op.polls += 1;
+        return op.polls > completeAfterPolls ? outcome : 'pending';
+      },
+    },
+  };
+}
+const instantWait = () => Promise.resolve();
+
+test('native cleanup is awaited until it really finishes (no early success)', async () => {
+  const fake = asyncCleanupBridge({ completeAfterPolls: 3 });
+  const adapter = createMyCrewCareNativeAdapter({ bridge: fake.bridge, wait: instantWait });
+  await adapter.disconnect('account-1', true);
+  assert.equal(fake.polls.length, 4, 'kept asking until the native result was ok');
+});
+
+test('native cleanup failures and unknown results are propagated, scoped to account + operation', async () => {
+  const failing = asyncCleanupBridge({ outcome: 'failed:profile-clear-failed', completeAfterPolls: 1 });
+  await assert.rejects(
+    createMyCrewCareNativeAdapter({ bridge: failing.bridge, wait: instantWait }).disconnect('account-1', true),
+    /native-disconnect-failed/,
+  );
+  const unknown = asyncCleanupBridge();
+  unknown.bridge.myCrewCareCleanupResultV3 = () => 'unknown';
+  await assert.rejects(
+    createMyCrewCareNativeAdapter({ bridge: unknown.bridge, wait: instantWait }).disconnect('account-1', true),
+    /native-disconnect-failed/,
+  );
+  // Two concurrent cleanups for different accounts never see each other's result.
+  const shared = asyncCleanupBridge({ completeAfterPolls: 1 });
+  let n = 0;
+  const make = () => createMyCrewCareNativeAdapter({ bridge: shared.bridge, wait: instantWait, newOperationId: () => `operation-${++n}-abcdef` });
+  await Promise.all([make().disconnect('account-1', true), make().disconnect('account-2', true)]);
+  assert.deepEqual([...shared.operations.keys()].sort(), ['account-1|operation-1-abcdef', 'account-2|operation-2-abcdef']);
+  assert.ok(shared.polls.every(([account, id]) => shared.operations.has(`${account}|${id}`)));
+});
+
+test('native cleanup that never finishes times out as a failure', async () => {
+  const stuck = asyncCleanupBridge({ completeAfterPolls: Infinity });
+  await assert.rejects(
+    createMyCrewCareNativeAdapter({ bridge: stuck.bridge, wait: () => new Promise((r) => setTimeout(r, 2)), cleanupTimeoutMs: 20 }).disconnect('account-1', true),
+    /native-disconnect-timeout/,
+  );
+  // Rejected start and a bridge without the new methods are failures too, never silent success.
+  await assert.rejects(createMyCrewCareNativeAdapter({ bridge: { startMyCrewCareCleanupV3: () => false, myCrewCareCleanupResultV3: () => 'ok' }, wait: instantWait }).disconnect('account-1', true), /native-disconnect-failed/);
+  await assert.rejects(createMyCrewCareNativeAdapter({ bridge: {}, wait: instantWait }).disconnect('account-1', true), /native-disconnect-failed/);
 });

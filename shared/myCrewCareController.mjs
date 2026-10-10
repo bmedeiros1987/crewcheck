@@ -61,7 +61,7 @@ export function createMyCrewCareController({
       return Object.freeze({
         capability: 'disabled', status: 'disabled', connected: false, automatic: false, busy: false,
         hasCachedData: false, live: false, dataAgeMs: null, lastSuccessfulSyncAt: null,
-        lastError: null, refreshSuggested: false, requiresInteraction: false, changes: null,
+        lastError: null, canRetryCleanup: false, refreshSuggested: false, requiresInteraction: false, changes: null,
       });
     }
     const state = engine.state();
@@ -76,6 +76,8 @@ export function createMyCrewCareController({
       dataAgeMs: state.dataAgeMs,
       lastSuccessfulSyncAt: state.lastSuccessfulSyncAt,
       lastError: state.lastError,
+      // After a failed cleanup the account stays targetable: "disconnect" can be tried again.
+      canRetryCleanup: state.cleanupPending === true,
       refreshSuggested,
       // Anything but a live validated session may open the provider login screen.
       requiresInteraction: !state.connected,

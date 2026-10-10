@@ -18,6 +18,8 @@ const record = {
 
 // In-memory stand-in for the Android bridge; counts every call.
 function fakeBridge({ release = true, store = new Map(), authenticated = true } = {}) {
+  const results = new Map();
+  let cleanupOk = true;
   const calls = { open: 0, disconnect: [], clear: [], save: 0 };
   const listeners = new Set();
   const events = {
@@ -43,12 +45,18 @@ function fakeBridge({ release = true, store = new Map(), authenticated = true } 
       });
       return true;
     },
-    disconnectMyCrewCareV3(accountId, forget) { calls.disconnect.push([accountId, forget]); return true; },
+    startMyCrewCareCleanupV3(accountId, forget, operationId) {
+      calls.disconnect.push([accountId, forget]);
+      results.set(`${accountId}|${operationId}`, cleanupOk ? 'ok' : 'failed:profile-clear-failed');
+      if (forget) store.delete(accountId);
+      return true;
+    },
+    myCrewCareCleanupResultV3: (accountId, operationId) => results.get(`${accountId}|${operationId}`) ?? 'unknown',
     loadMyCrewCareV3State: (accountId) => store.get(accountId) ?? null,
     saveMyCrewCareV3State(accountId, payload) { calls.save += 1; store.set(accountId, payload); return true; },
     clearMyCrewCareV3State(accountId) { calls.clear.push(accountId); store.delete(accountId); return true; },
   };
-  return { bridge, events, calls, store };
+  return { bridge, events, calls, store, setCleanupOk: (value) => { cleanupOk = value; } };
 }
 
 const make = (fake, extra = {}) => createMyCrewCareController({ bridge: fake.bridge, events: fake.events, uiEnabled: true, now: () => NOW, ...extra });
@@ -283,4 +291,39 @@ test('the panel binds on a stable identity key instead of prop identity', () => 
   assert.match(source, /const bindKey = \[/);
   assert.match(source, /\}, \[controller, bindKey\]\);/);
   assert.doesNotMatch(source, /\}, \[controller, context, stays\]\);/);
+});
+
+test('cleanup-error keeps a retry available, and the retry can really finish the cleanup', async () => {
+  const fake = fakeBridge();
+  const c = ctx();
+  const controller = make(fake);
+  await controller.bind(c, [stayFor(c)]);
+  controller.setAutomatic(true);
+  await controller.refresh({ userInitiated: true });
+
+  fake.setCleanupOk(false); // native profile cleanup fails for real
+  await assert.rejects(controller.disconnect({ forgetData: true }));
+  let snap = controller.getSnapshot();
+  assert.equal(snap.status, 'cleanup-error');
+  assert.equal(snap.canRetryCleanup, true, 'the interface must offer "try again"');
+  assert.equal(snap.automatic, false);
+
+  // Same for logout: the account must stay targetable after the context is cleared.
+  await assert.rejects(controller.logout());
+  snap = controller.getSnapshot();
+  assert.equal(snap.status, 'cleanup-error');
+  assert.equal(snap.canRetryCleanup, true);
+
+  fake.setCleanupOk(true);
+  await controller.disconnect({ forgetData: true });
+  snap = controller.getSnapshot();
+  assert.equal(snap.canRetryCleanup, false);
+  assert.notEqual(snap.status, 'cleanup-error');
+  assert.deepEqual(fake.calls.disconnect.at(-1), ['account-1', true], 'retry targeted the original account');
+});
+
+test('the panel offers the retry action in cleanup-error', () => {
+  const source = readFileSync(new URL('../client/src/components/mycrewcare/MyCrewCareV3Panel.tsx', import.meta.url), 'utf8');
+  assert.match(source, /snapshot\.canRetryCleanup/);
+  assert.match(source, /Tentar desconectar novamente/);
 });

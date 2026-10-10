@@ -14,6 +14,7 @@ export type MyCrewCareControllerSnapshot = Readonly<{
   dataAgeMs: number | null;
   lastSuccessfulSyncAt: string | null;
   lastError: string | null;
+  canRetryCleanup: boolean;
   refreshSuggested: boolean;
   requiresInteraction: boolean;
   changes: ReturnType<MyCrewCarePersistentSession['state']>['changes'] | null;

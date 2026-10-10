@@ -23,6 +23,7 @@ export type MyCrewCarePersistentSession = {
     connected: boolean;
     automatic: boolean;
     hasCachedData: boolean;
+    cleanupPending: boolean;
     lastSuccessfulSyncAt: string | null;
     dataAgeMs: number | null;
     live: boolean;
