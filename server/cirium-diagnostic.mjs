@@ -79,7 +79,7 @@ export function normalizeCiriumResult(httpStatus, payload) {
   if (httpStatus === 401 || /invalid_token/.test(hint)) return 'forbidden';
   if (httpStatus === 403) return 'forbidden';
   if (httpStatus >= 200 && httpStatus < 300) return 'available';
-  if (httpStatus === 404 || httpStatus === 405) return 'authenticated';
+  if (httpStatus === 404 || httpStatus === 405) return 'unverified';
   return 'error';
 }
 
@@ -101,6 +101,9 @@ function timeValue(value) {
 }
 
 function numericOrNull(value) {
+  // Number(null) and Number('') are 0: a missing provider value must stay missing.
+  if (value === null || value === undefined || typeof value === 'boolean') return null;
+  if (typeof value === 'string' && !value.trim()) return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
@@ -137,7 +140,7 @@ function flightSummary(flight) {
     : [];
 
   return {
-    flightId: Number(flight?.flightId) || null,
+    flightId: numericOrNull(flight?.flightId) || null,
     carrier: safeCode(flight?.carrierFsCode, /^[A-Z0-9]{2,3}$/),
     flightNumber: safeCode(flight?.flightNumber, /^[0-9A-Z]{1,5}$/),
     status: safeCode(flight?.status, /^[A-Z]{1,3}$/),
@@ -190,7 +193,7 @@ function flightSummary(flight) {
       actual: Boolean(actualDeparture || actualArrival),
       aircraft: Boolean(actualEquipment || scheduledEquipment),
       registration: Boolean(tailNumber),
-      delays: Object.values(delays).some((value) => Number.isFinite(Number(value))),
+      delays: Object.values(delays).some((value) => numericOrNull(value) !== null),
       freshness: Boolean(updatedAt),
     },
   };
@@ -214,65 +217,142 @@ async function fetchJson(url, options, fetchImpl) {
   }
 }
 
-export async function diagnoseCirium({ fetchImpl = globalThis.fetch } = {}) {
+
+// Process-wide protection against unintended or repeated upstream queries.
+// Every real attempt is counted before the request starts; failures are cached
+// too, so no caller can turn an error into a retry loop. No polling, no retries.
+export const CIRIUM_GUARD_DEFAULTS = Object.freeze({
+  maxCalls: 6,
+  minIntervalMs: 30_000,
+  cacheTtlMs: 10 * 60_000,
+});
+
+export function createCiriumGuard({ maxCalls, minIntervalMs, cacheTtlMs, now = Date.now } = {}) {
+  const limits = {
+    maxCalls: maxCalls ?? CIRIUM_GUARD_DEFAULTS.maxCalls,
+    minIntervalMs: minIntervalMs ?? CIRIUM_GUARD_DEFAULTS.minIntervalMs,
+    cacheTtlMs: cacheTtlMs ?? CIRIUM_GUARD_DEFAULTS.cacheTtlMs,
+  };
+  const cache = new Map();
+  const inflight = new Map();
+  let calls = 0;
+  let lastStartedAt = -Infinity;
+  return {
+    get calls() { return calls; },
+    async run(key, task) {
+      const cached = cache.get(key);
+      if (cached && now() - cached.at < limits.cacheTtlMs) return { ...cached.value, cached: true };
+      if (inflight.has(key)) return inflight.get(key);
+      if (calls >= limits.maxCalls) return { ok: false, state: 'budget_exhausted', reason: 'session_budget', upstreamCalled: false };
+      if (now() - lastStartedAt < limits.minIntervalMs) return { ok: false, state: 'rate_limited_local', reason: 'min_interval', upstreamCalled: false };
+      calls += 1;
+      lastStartedAt = now();
+      const pending = (async () => {
+        try {
+          const value = await task();
+          cache.set(key, { at: now(), value });
+          return value;
+        } finally {
+          inflight.delete(key);
+        }
+      })();
+      inflight.set(key, pending);
+      return pending;
+    },
+  };
+}
+
+const defaultGuard = createCiriumGuard();
+
+// Window is conservative until the official product contract is validated.
+const CIRIUM_DATE_WINDOW_DAYS = 2;
+
+function localToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+}
+
+function dateWithinWindow(value) {
+  const days = Math.abs(Date.parse(`${value}T12:00:00Z`) - Date.parse(`${localToday()}T12:00:00Z`)) / 86_400_000;
+  return days <= CIRIUM_DATE_WINDOW_DAYS;
+}
+
+// Rows that are not objects or that answer a different flight than the one
+// requested are dropped, never displayed, and only counted.
+function acceptRow(row, carrier, flight) {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+  const rowCarrier = safeCode(row.carrierFsCode, /^[A-Z0-9]{2,3}$/);
+  const rowFlight = safeCode(row.flightNumber, /^[0-9A-Z]{1,5}$/);
+  return rowCarrier === carrier && rowFlight === flight;
+}
+
+function jsonObject(payload) {
+  return payload && typeof payload === 'object' && !Array.isArray(payload);
+}
+
+export async function diagnoseCirium({ fetchImpl = globalThis.fetch, guard = defaultGuard } = {}) {
   const config = ciriumConfiguration();
   if (!config.configured) {
     return { ok: true, provider: config.provider, state: config.mode === 'disabled' ? 'disabled' : 'not_configured', configured: false };
   }
+  const probeDate = localToday();
+  return guard.run(`probe:${config.mode}:${probeDate}`, async () => {
+    try {
+      if (config.mode === 'sky') {
+        const url = skyFlightUrl(config, 'LA', '3377', probeDate);
+        const { response, payload } = await fetchJson(url, {
+          method: 'GET',
+          headers: { accept: 'application/json', authorization: config.token },
+          redirect: 'error',
+        }, fetchImpl);
+        const status = Number(response.status) || null;
+        let state = normalizeCiriumResult(status, payload);
+        // A 2xx with an unusable body proves nothing about the account.
+        if (state === 'available' && !(jsonObject(payload) && Array.isArray(payload.flightStatuses))) state = 'invalid_payload';
+        return {
+          ok: state === 'available',
+          provider: config.provider,
+          state,
+          configured: true,
+          httpStatus: status,
+          credentialIdentifierConfigured: Boolean(config.identifier),
+        };
+      }
 
-  try {
-    if (config.mode === 'sky') {
-      const localDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
-      const url = skyFlightUrl(config, 'LA', '3377', localDate);
+      const url = new URL(CIRIUM_FLEX_PROBE_URL);
+      url.searchParams.set('appId', config.appId);
+      url.searchParams.set('appKey', config.appKey);
       const { response, payload } = await fetchJson(url, {
-        method: 'GET',
-        headers: { accept: 'application/json', authorization: config.token },
-        redirect: 'error',
+        method: 'GET', headers: { accept: 'application/json' }, redirect: 'error',
       }, fetchImpl);
-      const state = normalizeCiriumResult(response.status, payload);
+      const status = Number(response.status) || null;
+      let state = normalizeCiriumResult(status, payload);
+      if (state === 'available' && !(jsonObject(payload) && Array.isArray(payload.airlines))) state = 'invalid_payload';
+      return { ok: state === 'available', provider: config.provider, state, configured: true, httpStatus: status };
+    } catch (error) {
       return {
-        ok: state === 'available' || state === 'authenticated',
+        ok: false,
         provider: config.provider,
-        state,
+        state: 'error',
         configured: true,
-        httpStatus: Number(response.status) || null,
-        credentialIdentifierConfigured: Boolean(config.identifier),
+        reason: error?.name === 'AbortError' ? 'timeout' : 'unavailable',
       };
     }
-
-    const url = new URL(CIRIUM_FLEX_PROBE_URL);
-    url.searchParams.set('appId', config.appId);
-    url.searchParams.set('appKey', config.appKey);
-    const { response, payload } = await fetchJson(url, {
-      method: 'GET', headers: { accept: 'application/json' }, redirect: 'error',
-    }, fetchImpl);
-    const state = normalizeCiriumResult(response.status, payload);
-    return {
-      ok: state === 'available' || state === 'authenticated',
-      provider: config.provider,
-      state,
-      configured: true,
-      httpStatus: Number(response.status) || null,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      provider: config.provider,
-      state: 'error',
-      configured: true,
-      reason: error?.name === 'AbortError' ? 'timeout' : 'unavailable',
-    };
-  }
+  });
 }
 
-export async function diagnoseCiriumFlight({ carrier = 'LA', flight = '3377', date, fetchImpl = globalThis.fetch } = {}) {
+export async function diagnoseCiriumFlight({ carrier, flight, date, fetchImpl = globalThis.fetch, guard = defaultGuard } = {}) {
   const config = ciriumConfiguration();
   if (!config.configured) return { ok: false, provider: config.provider, state: config.mode === 'disabled' ? 'disabled' : 'not_configured', configured: false };
-  const safeCarrier = safeCode(carrier, /^[A-Z0-9]{2,3}$/, 'LA');
-  const safeFlight = safeCode(flight, /^[0-9]{1,4}[A-Z]?$/, '3377');
-  const localDate = date || new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+
+  // Invalid input is rejected locally; it is never rewritten into another flight.
+  const safeCarrier = safeCode(carrier ?? 'LA', /^[A-Z0-9]{2,3}$/);
+  const safeFlight = safeCode(flight ?? '3377', /^[0-9]{1,4}[A-Z]?$/);
+  if (!safeCarrier) return { ok: false, provider: config.provider, state: 'error', configured: true, reason: 'invalid_carrier' };
+  if (!safeFlight) return { ok: false, provider: config.provider, state: 'error', configured: true, reason: 'invalid_flight' };
+  const localDate = date || localToday();
   const parts = safeDateParts(localDate);
   if (!parts) return { ok: false, provider: config.provider, state: 'error', configured: true, reason: 'invalid_date' };
+  if (!dateWithinWindow(localDate)) return { ok: false, provider: config.provider, state: 'error', configured: true, reason: 'date_out_of_window' };
 
   let url;
   let headers = { accept: 'application/json' };
@@ -287,29 +367,38 @@ export async function diagnoseCiriumFlight({ carrier = 'LA', flight = '3377', da
     url.searchParams.set('extendedOptions', 'useHttpErrors');
   }
 
-  try {
-    const { response, payload } = await fetchJson(url, { headers, redirect: 'error' }, fetchImpl);
-    const state = normalizeCiriumResult(response.status, payload);
-    if (response.status < 200 || response.status >= 300) {
-      return { ok: false, provider: config.provider, state, configured: true, httpStatus: response.status };
+  return guard.run(`flight:${config.mode}:${safeCarrier}:${safeFlight}:${localDate}`, async () => {
+    try {
+      const { response, payload } = await fetchJson(url, { method: 'GET', headers, redirect: 'error' }, fetchImpl);
+      const state = normalizeCiriumResult(response.status, payload);
+      if (response.status < 200 || response.status >= 300) {
+        return { ok: false, provider: config.provider, state, configured: true, httpStatus: response.status };
+      }
+      const rows = jsonObject(payload) && Array.isArray(payload.flightStatuses)
+        ? payload.flightStatuses
+        : jsonObject(payload) && jsonObject(payload.flightStatus)
+          ? [payload.flightStatus]
+          : null;
+      if (!rows) return { ok: false, provider: config.provider, state: 'invalid_payload', configured: true, httpStatus: response.status };
+      const accepted = rows.filter((row) => acceptRow(row, safeCarrier, safeFlight));
+      const rejected = rows.length - accepted.length;
+      if (rows.length && !accepted.length) {
+        return { ok: false, provider: config.provider, state: 'invalid_payload', configured: true, httpStatus: response.status, rejectedRows: rejected };
+      }
+      const flights = accepted.map(flightSummary);
+      return {
+        ok: true,
+        provider: config.provider,
+        state: flights.length ? 'available' : 'no_data',
+        configured: true,
+        httpStatus: response.status,
+        query: { carrier: safeCarrier, flight: safeFlight, date: localDate },
+        count: flights.length,
+        rejectedRows: rejected,
+        flights: flights.slice(0, 8),
+      };
+    } catch (error) {
+      return { ok: false, provider: config.provider, state: 'error', configured: true, reason: error?.name === 'AbortError' ? 'timeout' : 'unavailable' };
     }
-    const rows = Array.isArray(payload?.flightStatuses)
-      ? payload.flightStatuses
-      : payload?.flightStatus && typeof payload.flightStatus === 'object'
-        ? [payload.flightStatus]
-        : [];
-    const flights = rows.map(flightSummary);
-    return {
-      ok: true,
-      provider: config.provider,
-      state: flights.length ? 'available' : 'authenticated',
-      configured: true,
-      httpStatus: response.status,
-      query: { carrier: safeCarrier, flight: safeFlight, date: localDate },
-      count: flights.length,
-      flights: flights.slice(0, 8),
-    };
-  } catch (error) {
-    return { ok: false, provider: config.provider, state: 'error', configured: true, reason: error?.name === 'AbortError' ? 'timeout' : 'unavailable' };
-  }
+  });
 }

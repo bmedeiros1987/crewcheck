@@ -11,6 +11,7 @@ on:
       - 'server/v139/index.mjs'
       - 'scripts/regression-cirium-evaluation-diagnostic.mjs'
       - 'scripts/regression-cirium-disabled.mjs'
+      - 'scripts/regression-cirium-guard.mjs'
       - 'scripts/check-cirium-offline.mjs'
       - 'scripts/regression-cirium-canonical-adapter.mjs'
       - 'scripts/regression-radar-occurrence-identity.mjs'

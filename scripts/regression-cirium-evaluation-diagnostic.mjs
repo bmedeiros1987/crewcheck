@@ -6,7 +6,11 @@ for (const name of [
 ]) process.env[name] = '';
 process.env.CIRIUM_DIAGNOSTIC_ENABLED = 'true';
 
-const { diagnoseCirium, diagnoseCiriumFlight, normalizeCiriumResult, ciriumConfiguration } = await import('../server/cirium-diagnostic.mjs');
+const { diagnoseCirium: guardedProbe, diagnoseCiriumFlight: guardedFlight, normalizeCiriumResult, ciriumConfiguration, createCiriumGuard } = await import('../server/cirium-diagnostic.mjs');
+// Budget behavior has its own regression; here every call gets an unconstrained fresh guard.
+const open = () => createCiriumGuard({ maxCalls: 100, minIntervalMs: 0, cacheTtlMs: 0 });
+const diagnoseCirium = (o = {}) => guardedProbe({ guard: open(), ...o });
+const diagnoseCiriumFlight = (o = {}) => guardedFlight({ guard: open(), ...o });
 
 assert.deepEqual(await diagnoseCirium(), {
   ok: true, provider: 'cirium-sky', state: 'not_configured', configured: false,
@@ -37,8 +41,9 @@ assert.equal(available.credentialIdentifierConfigured, true);
 assert.equal(JSON.stringify(available).includes('test-sky-secret'), false);
 assert.equal(JSON.stringify(available).includes('test-identifier'), false);
 
-const flightResult = await diagnoseCiriumFlight({ carrier: 'LA', flight: '3850', date: '2026-08-11', fetchImpl: async (url, options) => {
-  assert.match(String(url), /\/v1\/flights\/status\/airline\/LA\/flight-number\/3850\/departure-date\/2026-08-11/);
+const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+const flightResult = await diagnoseCiriumFlight({ carrier: 'LA', flight: '3850', date: today, fetchImpl: async (url, options) => {
+  assert.ok(String(url).endsWith(`/departure-date/${today}?extendedOptions=includeDeltas%2CincludeNewFields`));
   assert.match(String(url), /extendedOptions=includeDeltas%2CincludeNewFields/);
   assert.equal(options.headers.authorization, 'test-sky-secret');
   return {

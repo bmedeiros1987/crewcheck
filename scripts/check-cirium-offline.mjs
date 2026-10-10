@@ -13,6 +13,7 @@ if (process.argv[2] !== '--worker') {
 globalThis.fetch = async () => { throw new Error('Real network forbidden in Cirium offline checks'); };
 for (const script of [
   './regression-cirium-disabled.mjs',
+  './regression-cirium-guard.mjs',
   './regression-cirium-evaluation-diagnostic.mjs',
   './regression-cirium-canonical-adapter.mjs',
   './regression-radar-field-provenance.mjs',

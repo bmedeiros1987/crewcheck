@@ -17,7 +17,8 @@ export async function handleCiriumHealthRoute(req, res, url) {
     return true;
   }
 
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
     sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
     return true;
   }

@@ -56,11 +56,20 @@ ao probe Sky atual, que consulta um voo real.
    documentação oficial. Informação de plano gratuito não comprova cobertura.
 3. Revisar o opt-in explícito preparado neste pacote e sua regressão. Não inserir
    token no serviço publicado até que a proteção seja implantada com autorização.
-4. Impedir consultas em HEAD; definir cache/dedupe e orçamento aprovado antes
-   de GET. Não adicionar polling, tentativas automáticas ou fallback Flex.
-5. Corrigir resultados ambíguos: 404/405 não comprovam autenticação; 200 com
-   JSON inválido/vazio não comprova dados disponíveis; entrada inválida não
-   deve virar LA3377 silenciosamente; null numérico não deve virar zero.
+4. ~~HEAD / orçamento~~ Implementado nesta branch (pendente de revisão):
+   `/api/admin/cirium-health` aceita apenas GET; `createCiriumGuard` limita o
+   processo a 6 consultas reais, intervalo mínimo de 30 s, cache de 10 min
+   (inclusive de falhas) e dedupe de consultas simultâneas idênticas. O
+   orçamento nunca é reembolsado e não há polling, retry ou fallback Flex.
+   O teto numérico é provisório: o orçamento aprovado pelo usuário ainda deve
+   ser definido antes de qualquer teste real.
+5. ~~Resultados ambíguos~~ Implementado: 404/405 → `unverified` (não provam
+   autenticação); 2xx com corpo inválido → `invalid_payload`; carrier, voo e
+   data inválidos são rejeitados localmente sem consumir orçamento (sem
+   fallback para LA3377); data fora de ±2 dias de hoje (janela provisória)
+   é rejeitada; linhas de outro voo/companhia ou malformadas são descartadas e
+   contadas em `rejectedRows`; `null`/vazio/booleano numérico permanece `null`
+   (nunca 0). Ainda pendente: schema oficial do endpoint Sky.
 6. Reexecutar os mocks e revisar patch antes de autorizar qualquer teste real.
 
 ## Entrada segura futura pelo usuário
@@ -78,7 +87,7 @@ Nenhuma ativação ou teste real está incluído neste pacote.
 ## Validação nesta tarefa
 
 Node 22.23.3 encontrado em `.local/node/node-v22.23.3-darwin-arm64/bin/node`.
-Harness executado com sucesso: disabled-by-default, diagnostic Sky/Flex,
+Harness executado com sucesso: disabled-by-default, guard/validação (`regression-cirium-guard.mjs`), diagnostic Sky/Flex,
 canonical-adapter e radar-field-provenance. Nenhuma instalação necessária,
 nenhuma consulta real, nenhum segredo herdado pelo processo filho.
 Os demais problemas citados acima permanecem pendentes: estes testes não
