@@ -17,3 +17,5 @@ node scripts/regression-planned-roster-owner-browser.cjs
 ```
 
 Independent review of exact source/prepared tree and account-transition race cases is required before merge/deploy.
+
+Independent review race correction: capture the import session and revision before parsing, fence the modal result before preserving/comparing, and require the explicit captured session in preservePlannedRosterBeforeImport. Missing session returns null. Concurrent older imports and auth/token changes invalidate the import; the existing guarded automatic reader passes its captured session. Actual Home/store AST regression covers the independent cross-owner counterproof plus parse, confirmation and concurrent-import windows.

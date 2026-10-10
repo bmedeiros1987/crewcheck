@@ -66,3 +66,22 @@ export function clearOwnedPlannedRoster(expectedSession = financialRateSession()
     return true;
   } catch { return false; }
 }
+
+// Capture before any asynchronous import work. An older import or auth lifecycle
+// cannot retain permission to publish under the next account or token.
+let importRevision = 0;
+let importWindow: Window | null = null;
+export function beginOwnedPlannedImport(): { session: string; canCommit(): boolean } {
+  if (typeof window !== 'undefined' && importWindow !== window) {
+    importWindow = window;
+    const invalidate = () => { importRevision += 1; };
+    window.addEventListener('crewcheck:auth-changed', invalidate);
+    window.addEventListener('crewcheck:auth-expired', invalidate);
+    window.addEventListener('storage', (event) => {
+      if (!(event as StorageEvent).key || ['crewcheck_auth_token', 'crewcheck_auth_user'].includes((event as StorageEvent).key || '')) invalidate();
+    });
+  }
+  const revision = ++importRevision;
+  const session = financialRateSession();
+  return { session, canCommit: () => Boolean(session) && revision === importRevision && session === financialRateSession() };
+}

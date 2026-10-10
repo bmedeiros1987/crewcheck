@@ -18,6 +18,7 @@ on:
       - 'client/src/lib/financialSettingStore.ts'
       - 'client/src/lib/plannedRosterStore.ts'
       - 'scripts/regression-planned-roster-owner.mjs'
+      - 'scripts/regression-planned-roster-import-race.mjs'
       - 'scripts/regression-planned-roster-owner-browser.cjs'
       - 'client/src/lib/financialAmounts.ts'
       - 'client/src/lib/financialForecastPeriods.ts'
@@ -115,6 +116,7 @@ jobs:
       - run: npx vite build
       - name: Verify planned reference owner and session isolation
         run: node scripts/regression-planned-roster-owner.mjs
+          node scripts/regression-planned-roster-import-race.mjs
       - name: Install isolated UI browser dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/financial-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0

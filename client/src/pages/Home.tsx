@@ -1,4 +1,4 @@
-import { loadOwnedPlannedRoster, saveOwnedPlannedRoster, clearOwnedPlannedRoster, isCurrentPlannedRoster, type OwnedPlannedRoster } from '@/lib/plannedRosterStore';
+import { beginOwnedPlannedImport, loadOwnedPlannedRoster, saveOwnedPlannedRoster, clearOwnedPlannedRoster, isCurrentPlannedRoster, type OwnedPlannedRoster } from '@/lib/plannedRosterStore';
 import { CanonicalDutyCard, openCanonicalDutyDetails } from '@/components/CanonicalDutyCard';
 import { measureCanonicalDuty } from '@/lib/canonicalDutyMeasurement';
 import { financialIntervalEvidenceIssue } from '@/lib/financialIntervalEvidence';
@@ -1035,13 +1035,14 @@ function savePlannedRoster(roster: CrewRoster, source: string, expectedSession =
 }
 function clearPlannedRoster(expectedSession = financialRateSession()): boolean { return clearOwnedPlannedRoster(expectedSession); }
 
-function preservePlannedRosterBeforeImport(current: BundleState, incoming: CrewRoster): PlannedRosterSnapshot | null {
+function preservePlannedRosterBeforeImport(current: BundleState, incoming: CrewRoster, expectedSession = ''): PlannedRosterSnapshot | null {
+  if (!expectedSession || expectedSession !== financialRateSession()) return null;
   const currentHasDays = Array.isArray(current.roster.days) && current.roster.days.length > 0;
   if (!currentHasDays || !sameRosterPeriod(current.roster, incoming)) return loadPlannedRoster();
   if (rosterFingerprint(current.roster) === rosterFingerprint(incoming)) return loadPlannedRoster();
   const existing = loadPlannedRoster();
   if (existing && sameRosterPeriod(existing.roster, incoming)) return existing;
-  return savePlannedRoster(current.roster, current.source);
+  return savePlannedRoster(current.roster, current.source, expectedSession);
 }
 
 function currentCompliance(bundle: BundleState) { return bundle.compliance || analyzeSafe(bundle.roster); }
@@ -5058,18 +5059,22 @@ export default function Home() {
   useEffect(() => { loadCrewCheckRuntimePatch(); }, []);
 
   async function handleFile(inputEvent: ChangeEvent<HTMLInputElement>) {
+    const plannedImport = beginOwnedPlannedImport();
+    if (!plannedImport.canCommit()) return;
     const file = inputEvent.target.files?.[0];
     if (!file) return;
     setBusy(true);
     try {
       const parsed = await parsePDFResilient(file);
+      if (!plannedImport.canCommit()) return;
       const roster = parsed.roster;
       const decision = confirmRosterImport(roster, file.name);
       if (!decision.ok) {
         toast.message(decision.toastText || 'Importação cancelada.');
         return;
       }
-      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster);
+      if (!plannedImport.canCommit()) return;
+      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster, plannedImport.session);
       const importComparison = plannedSnapshot && sameRosterPeriod(plannedSnapshot.roster, roster)
         ? compareRosters(plannedSnapshot.roster, roster)
         : null;
@@ -5114,7 +5119,7 @@ export default function Home() {
       if (!decision.hasFuture) toast.error('A escala importada não possui programação futura após agora.');
       setLocation('/result');
     } catch (error) {
-      toast.error(sanitizePdfImportError(error));
+      if (plannedImport.canCommit()) toast.error(sanitizePdfImportError(error));
     } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
   }
 

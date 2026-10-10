@@ -8,6 +8,7 @@
       const guard = captureAutomaticRosterGuard();
       const bundle = bundleRef.current;
       const reviewOwner = publicationOwner();
+      const plannedSession = financialRateSession();
       const reviewReference = currentPublicationReview()?.publication.revision ?? null;
       const canCommit = () => alive && guard() && reviewOwner !== null
         && reviewOwner === publicationOwner() && bundle.roster === bundleRef.current.roster;
@@ -25,7 +26,7 @@
         const localPublishedRevision = publicationSnapshot(buildCanonicalRosterEvents(normalizeRosterDays(bundle.roster))).revision;
         const recorded = await recordPublication(reviewOwner, buildCanonicalRosterEvents(normalizeRosterDays(active.roster)), reviewReference, canCommit);
         if (!recorded || !canCommit() || (serverRevision === localRevision && publishedRevision === localPublishedRevision)) return;
-        preservePlannedRosterBeforeImport(bundle, active.roster);
+        preservePlannedRosterBeforeImport(bundle, active.roster, plannedSession);
         if (!canCommit()) return;
         saveRoster(active.roster, 'Escala ativa sincronizada', 'automatic');
         if (!canCommit()) return;
