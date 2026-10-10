@@ -46,6 +46,7 @@ export async function personalConsent(db,user,body=null,{now=Date.now(),configur
       reason:!valid?'CONSENT_CONTEXT_CHANGED':!available?'CONSENT_NOT_OFFERED':null});
     if(!body){if(!committed)await c.commit();return info();}
     if(!valid || body.context!==context)fail(409,'CONSENT_CONTEXT_CHANGED');
+    if(body.action==='revoke' && (body.confirmed!==undefined || body.textVersion!==undefined))fail(400,'CLIENT_AUTHORITY_REJECTED');
     if(body.action==='grant' && !available)fail(403,'CONSENT_NOT_OFFERED');
     if(body.action==='grant' && active() && personal.requestRevision===body.expectedRevision && body.confirmed===true && body.textVersion===PERSONAL_TEXT_VERSION){await c.commit();return {...info(),duplicate:true};}
     if(body.action==='revoke' && personal.granted===false && personal.requestRevision===body.expectedRevision){await c.commit();return {...info(),duplicate:true};}
