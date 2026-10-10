@@ -191,7 +191,7 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.ok === false) {
     const reason = classifyAuthErrorReason(response.status, String(payload?.code || '').toUpperCase(), protectedRequest);
-    if (reason === 'session_expired') expireSession();
+    if (reason === 'session_expired' && token === getToken()) expireSession();
     throw new AuthClientError(publicApiErrorMessage(payload, response.status, reason), response.status, payload?.code, payload, reason);
   }
   return payload as T;

@@ -134,6 +134,7 @@ jobs:
           node scripts/regression-web-push-offline.mjs
           node scripts/regression-web-push-provider.mjs
           node scripts/regression-web-push-api.mjs
+          node scripts/regression-web-push-lifecycle.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-free-day-held.mjs
           node scripts/regression-free-day-sources.mjs
@@ -162,6 +163,7 @@ jobs:
           node scripts/regression-web-push-offline.mjs
           node scripts/regression-web-push-provider.mjs
           node scripts/regression-web-push-api.mjs
+          node scripts/regression-web-push-lifecycle.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-free-day-held.mjs
           node scripts/regression-free-day-sources.mjs
