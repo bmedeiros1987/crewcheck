@@ -1,0 +1,12 @@
+.cc-free-day-summary,.cc-free-day-alerts { width:100%; max-width:100%; box-sizing:border-box; padding:1rem; border:1px solid #b97923; border-radius:1rem; background:var(--cc-card-bg,transparent); color:inherit; margin:.6rem 0; text-align:left; overflow-wrap:anywhere; }
+.cc-free-day-summary { display:flex; flex-wrap:wrap; gap:.3rem 1rem; cursor:pointer; }
+.cc-free-day-summary span { font-size:.85em; }
+.cc-free-day-alerts article { padding:.7rem 0; border-top:1px solid #b9792366; }
+.cc-free-day-alerts h2,.cc-free-day-alerts h3 { margin:.2rem 0 .6rem; }
+.cc-free-day-alerts p { line-height:1.5; }
+.cc-free-day-alerts dl { display:flex; flex-wrap:wrap; gap:.7rem 1.5rem; }
+.cc-free-day-alerts dl>div { min-width:0; }
+.cc-free-day-alerts dt { font-size:.85em; }
+.cc-free-day-alerts dd { margin:0; font-weight:600; }
+.cc-free-day-alerts summary { cursor:pointer; padding:.6rem 0; }
+.cc-free-day-alerts a { color:inherit; text-decoration:underline; }

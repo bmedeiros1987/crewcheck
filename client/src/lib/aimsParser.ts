@@ -1,3 +1,4 @@
+import { capturePublishedFreeDayStart, attachPublishedFreeDayTimeZone } from './freeDayStartEvidence';
 /**
  * Parser for "Escala de Tripulante Convertida para padrão AIMS" PDF format.
  * This format has a column-per-day layout extracted as sequential text blocks.
@@ -142,7 +143,7 @@ function parseAimsHumanBlock(tokens: string[], context: { date: string; dayOfWee
   if (restIndex >= 0) {
     const code = upper[restIndex];
     const type = code === 'DOF' ? 'DOF' : code === 'DR' ? 'DR' : code === 'OFF' ? 'OFF' : 'DO';
-    return [makeAimsHumanRosterDay(context, { type, pairingCode: code, dutyReport: null, dutyDebrief: null, legs: [], dutyHours: 0, flyingHours: 0, isNextDay: false, hotel: null }, context.rawBlock)];
+    return [makeAimsHumanRosterDay(context, { type, pairingCode: code, dutyReport: null, dutyDebrief: null, legs: [], dutyHours: 0, flyingHours: 0, isNextDay: false, hotel: null, freeDayStartEvidence: capturePublishedFreeDayStart(tokens.slice(restIndex), context.date) }, context.rawBlock)];
   }
 
   return [makeAimsHumanRosterDay(context, { type: 'OTHER', pairingCode: '', dutyReport: null, dutyDebrief: null, legs: [], dutyHours: null, flyingHours: null, isNextDay: false, hotel: null }, context.rawBlock)];
@@ -408,6 +409,7 @@ function makeAimsHumanRosterDay(context: { date: string; dayOfWeek: string; date
     hotel: parsed.hotel,
     base: context.base,
     rawText,
+    ...(parsed.freeDayStartEvidence ? { freeDayStartEvidence: parsed.freeDayStartEvidence } : {}),
   };
 }
 
@@ -711,21 +713,37 @@ export function parseAimsRoster(fullText: string, visualRows?: AimsVisualRow[]):
   if (aimsVisualRosterLooksReliable(visualParsed)) {
     const secondary = humanTextParsed?.days?.length ? humanTextParsed : legacyParsed;
     const merged = mergeAimsParsedRosters(visualParsed as CrewRoster, secondary);
-    return attachVerifiedFlightRoles(humanReviewAimsRoster(merged));
+    return attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(merged), visualParsed, humanTextParsed));
   }
 
   if (humanTextParsed && aimsHumanRosterLooksComplete(humanTextParsed)) {
-    return attachVerifiedFlightRoles(humanReviewAimsRoster(humanTextParsed));
+    return attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(humanTextParsed), visualParsed, humanTextParsed));
   }
 
   const merged = visualParsed?.days?.length ? mergeAimsParsedRosters(visualParsed, legacyParsed) : legacyParsed;
-  return attachVerifiedFlightRoles(humanReviewAimsRoster(merged));
+  return attachVerifiedFlightRoles(attachFreeDayCandidateEvidence(humanReviewAimsRoster(merged), visualParsed, humanTextParsed));
+}
+
+// Enrich rest provenance without changing the selected canonical parser days.
+// An exact date/code candidate is required; conflicting published tokens stay pending.
+function attachFreeDayCandidateEvidence(roster: CrewRoster, ...candidates: (CrewRoster | null)[]): CrewRoster {
+  return { ...roster, days: roster.days.map(day => {
+    if (day.legs.length || !isAimsRestCode(day.pairingCode || day.type)) return day;
+    const matching = candidates.flatMap(candidate => candidate?.days || []).filter(item => item.date === day.date
+      && (item.pairingCode || item.type) === (day.pairingCode || day.type));
+    const evidence = matching.map(item => item.freeDayStartEvidence
+      || capturePublishedFreeDayStart(String(item.rawText || '').trim().split(/\s+/), item.date))
+      .filter((item): item is NonNullable<RosterDay['freeDayStartEvidence']> => item?.clockSource === 'published');
+    if (!evidence.length) return day;
+    if (evidence.some(item => item.clock !== evidence[0].clock || item.code !== evidence[0].code)) return { ...day, freeDayStartEvidence: undefined };
+    return { ...day, freeDayStartEvidence: evidence[0] };
+  }) };
 }
 
 function attachVerifiedFlightRoles(roster: CrewRoster): CrewRoster {
-  return { ...roster, days: roster.days.map(day => ({ ...day,
+  return attachPublishedFreeDayTimeZone({ ...roster, days: roster.days.map(day => ({ ...day,
     legs: day.legs.map(leg => ({ ...leg, workTypeSource: AIMS_FLIGHT_ROLE_SOURCE })),
-  })) };
+  })) });
 }
 
 
@@ -1302,7 +1320,7 @@ function parseAimsVisualColumnDays(tokens: string[], context: { date: string; da
     if (isAimsRestCode(token)) {
       const code = token;
       const type = code === 'DOF' ? 'DOF' : code === 'DR' ? 'DR' : code === 'OFF' ? 'OFF' : 'DO';
-      output.push(makeAimsHumanRosterDay(context, { type, pairingCode: code, dutyReport: null, dutyDebrief: null, legs: [], dutyHours: 0, flyingHours: 0, isNextDay: false, hotel: null }, code));
+      output.push(makeAimsHumanRosterDay(context, { type, pairingCode: code, dutyReport: null, dutyDebrief: null, legs: [], dutyHours: 0, flyingHours: 0, isNextDay: false, hotel: null, freeDayStartEvidence: capturePublishedFreeDayStart(source.slice(i, findAimsVisualActivityBlockEnd(source, i)), context.date) }, code));
       i += 1;
       consumedEnd = i;
       continue;
@@ -2088,6 +2106,7 @@ function parseAimsRosterLegacy(fullText: string): CrewRoster {
 }
 
 interface ParsedDay {
+  freeDayStartEvidence?: RosterDay['freeDayStartEvidence'];
   type: RosterDay['type'];
   pairingCode: string;
   dutyReport: string | null;

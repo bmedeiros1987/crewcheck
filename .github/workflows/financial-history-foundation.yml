@@ -19,6 +19,10 @@ on:
       - 'scripts/p0-623-regulatory-history-carry-in-final/**'
       - 'client/src/lib/financialPayrollPeriods.ts'
       - 'client/src/lib/financialSettingStore.ts'
+      - 'client/src/lib/freeDay*.ts'
+      - 'client/src/components/FreeDayPostponementAlerts.tsx'
+      - 'client/src/components/free-day-alerts.css'
+      - 'scripts/regression-free-day*'
       - 'client/src/lib/plannedRosterStore.ts'
       - 'scripts/regression-planned-roster-owner.mjs'
       - 'scripts/regression-planned-roster-import-race.mjs'
@@ -126,10 +130,30 @@ jobs:
         run: |
           node scripts/regression-planned-roster-owner.mjs
           node scripts/regression-planned-roster-import-race.mjs
+      - name: Verify literal free-day review and owner delivery ledger
+        run: |
+          node scripts/regression-free-day-postponement.mjs
+          node scripts/regression-free-day-telegram-preparation.mjs
       - name: Install isolated UI browser dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/financial-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/financial-ui/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify physical PDF and compiled free-day alerts
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: |
+          node scripts/regression-free-day-physical.mjs
+          node scripts/regression-free-day-browser.cjs
+      - name: Save synthetic free-day alert evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: free-day-alert-synthetic
+          path: |
+            artifacts/free-day-postponement/
+            artifacts/free-day-physical/
+            artifacts/free-day-ui/
+          if-no-files-found: ignore
       - name: Verify planned comparison with synthetic account switching
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
