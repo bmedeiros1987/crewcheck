@@ -1,0 +1,29 @@
+name: Wellhub source policy and freshness
+on:
+  pull_request:
+    paths:
+      - 'server/v14407/wellhub.mjs'
+      - 'shared/wellhub-*'
+      - 'client/src/lib/wellhubLive.ts'
+      - 'scripts/v14410/concierge-gyms.snippet'
+      - 'scripts/regression-wellhub-source-policy.mjs'
+      - '.github/workflows/wellhub-source-policy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/regression-wellhub-source-policy.mjs
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: node scripts/regression-wellhub-source-policy.mjs --materialized
+      - run: node scripts/regression-wellhub-df-official.mjs
+      - run: node scripts/regression-v14-4-10-wellhub-concierge-plan-location.mjs
+      - run: npm run check

@@ -2,14 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { wellhubLocationTextMatches } from '../../shared/wellhub-location.mjs';
-import { wellhubSnapshotAccess, normalizeWellhubPlan } from '../../shared/wellhub-access.mjs';
+import { wellhubSnapshotAccess, normalizeWellhubPlan, WELLHUB_SNAPSHOT_MAX_AGE_DAYS } from '../../shared/wellhub-access.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
 const CATALOG_PATH = path.join(ROOT, 'client/src/lib/wellhubVerifiedCatalog.ts');
-const OFFICIAL_HOST = 'wellhub.com';
-const OFFICIAL_CACHE_TTL_MS = 12 * 60 * 60_000;
-const officialPageCache = new Map();
 
 export const WELLHUB_PLAN_ORDER = [
   'digital', 'starter', 'basic', 'basic-plus', 'silver', 'silver-plus',
@@ -132,62 +129,6 @@ function activityCanonical(value = '') {
   return exact?.[1] || '';
 }
 
-function decodeHtml(value = '') {
-  return String(value)
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<\/(?:div|p|li|h\d|section|article|span)>/gi, '\n').replace(/<br\s*\/?\s*>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#39;/gi, "'")
-    .replace(/&aacute;/gi, 'á').replace(/&eacute;/gi, 'é').replace(/&iacute;/gi, 'í').replace(/&oacute;/gi, 'ó').replace(/&uacute;/gi, 'ú')
-    .replace(/&ccedil;/gi, 'ç').replace(/&atilde;/gi, 'ã').replace(/&otilde;/gi, 'õ')
-    .split('\n').map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
-}
-
-function officialActivitiesFromText(text = '') {
-  const normalizedText = normalize(text);
-  const found = [];
-  const seen = new Set();
-  for (const [alias, canonical] of ACTIVITY_ALIASES) {
-    if (!normalizedText.includes(normalize(alias))) continue;
-    if (seen.has(canonical)) continue;
-    seen.add(canonical);
-    found.push(canonical);
-  }
-  return found;
-}
-
-async function fetchOfficialPartnerPage(partner, { timeoutMs = 5500 } = {}) {
-  const cached = officialPageCache.get(partner.id);
-  if (cached && Date.now() - cached.cachedAt < OFFICIAL_CACHE_TTL_MS) return cached;
-  let parsed;
-  try {
-    const url = new URL(partner.sourceUrl);
-    if (url.protocol !== 'https:' || !(url.hostname === OFFICIAL_HOST || url.hostname.endsWith(`.${OFFICIAL_HOST}`))) throw new Error('Fonte Wellhub não oficial.');
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const response = await fetch(url, { headers: { accept: 'text/html', 'user-agent': 'CrewCheck/1.0 verified-partner-reader' }, signal: controller.signal });
-      if (!response.ok) throw new Error(`Wellhub HTTP ${response.status}`);
-      const text = decodeHtml(await response.text());
-      parsed = { ok: true, text, activities: officialActivitiesFromText(text), checkedAt: new Date().toISOString(), cachedAt: Date.now() };
-    } finally { clearTimeout(timer); }
-  } catch (error) {
-    parsed = { ok: false, text: '', activities: [], checkedAt: new Date().toISOString(), cachedAt: Date.now(), message: error instanceof Error ? error.message : 'Fonte oficial indisponível.' };
-  }
-  officialPageCache.set(partner.id, parsed);
-  return parsed;
-}
-
-function activityMatchesOfficialPage(activity, detail) {
-  if (!activity) return true;
-  if (!detail?.ok || !detail.text) return false;
-  const requested = normalize(activityCanonical(activity) || activity);
-  if (!requested) return true;
-  if (normalize(detail.text).includes(requested)) return true;
-  const aliases = ACTIVITY_ALIASES.filter(([, canonical]) => normalize(canonical) === requested).map(([alias]) => normalize(alias));
-  return aliases.some((alias) => normalize(detail.text).includes(alias));
-}
-
 function locationScore(partner, locationText = '') {
   const wanted = normalize(locationText);
   if (!wanted) return 0;
@@ -218,15 +159,21 @@ export async function searchVerifiedWellhub({ plan = 'basic', query = '', activi
     .filter((partner) => queryMatches(partner, query))
     .sort((a, b) => Number(b.eligibilityStatus === 'included') - Number(a.eligibilityStatus === 'included') || locationScore(b, locationText) - locationScore(a, locationText) || Number(b.rating || 0) - Number(a.rating || 0));
 
-  if (!activity || !live) return candidates.slice(0, Math.max(1, Number(limit) || 20)).map((partner) => ({ ...partner, activities: [], liveVerified: false }));
-
-  const enriched = await Promise.all(candidates.slice(0, 40).map(async (partner) => {
-    const detail = await fetchOfficialPartnerPage(partner);
-    // Availability or a page-wide keyword never proves activity tier eligibility.
-    const confirmed = detail.ok && activityMatchesOfficialPage(activity, detail);
-    return { ...partner, eligibilityStatus: confirmed ? partner.eligibilityStatus : 'unknown', activities: detail.activities, liveVerified: Boolean(detail.ok), liveCheckedAt: detail.checkedAt, liveMessage: detail.message || '' };
-  }));
-  return enriched.filter(Boolean).slice(0, Math.max(1, Number(limit) || 20));
+  // The public site's terms restrict collection/storage. No HTML collector or
+  // "live" flag may imply permission. Keep the argument for API compatibility;
+  // an authorized source requires its own reviewed adapter before activation.
+  return candidates.slice(0, Math.max(1, Number(limit) || 20)).map(partner => {
+    const checked = Date.parse(partner.verifiedAt);
+    return {
+      ...partner,
+      activities: [],
+      liveVerified: false,
+      refreshStatus: 'authorization-required',
+      accessConfirmationRequired: true,
+      snapshotValidUntil: Number.isFinite(checked)
+        ? new Date(checked + WELLHUB_SNAPSHOT_MAX_AGE_DAYS * 86400000).toISOString() : '',
+    };
+  });
 }
 
 const DAY_INDEX = { dom: 0, seg: 1, ter: 2, qua: 3, qui: 4, sex: 5, sab: 6 };
@@ -317,7 +264,7 @@ export async function buildWellhubRoutineSuggestion({ plan = 'basic', activity =
           bufferMinutes: buffer,
           nextAt: nextDate.toISOString(),
           message: `Janela operacional encontrada entre ${formatMinutes(start)} e ${formatMinutes(start + desired)}, preservando ${buffer} min antes da próxima programação.`,
-          caution: 'Horários vêm da fonte oficial verificada e podem mudar em feriados ou situações excepcionais. Confirme a página da unidade antes de sair.',
+          caution: `Catálogo parcial, sem atualização automática. Última verificação da unidade: ${partner.verifiedAt || 'data desconhecida'}. Confirme acesso, horários e condições no app Wellhub antes de sair.`,
         };
       }
     }
@@ -339,7 +286,7 @@ export async function handleWellhubSearchRoute(req, res, url) {
     const locationText = String(url.searchParams.get('location') || '');
     const limit = Math.min(60, Math.max(1, Number(url.searchParams.get('limit') || 20)));
     const partners = await searchVerifiedWellhub({ plan, query, activity, locationText, limit });
-    return sendJson(res, 200, { ok: true, plan: isWellhubPlanServer(plan) ? normalizeWellhubPlan(plan) : 'unknown', activity, query, total: partners.length, partners, source: 'wellhub-public-directory', mapsUsedForEligibility: false });
+    return sendJson(res, 200, { ok: true, plan: isWellhubPlanServer(plan) ? normalizeWellhubPlan(plan) : 'unknown', activity, query, total: partners.length, partners, source: 'wellhub-public-directory', mapsUsedForEligibility: false, automaticRefresh: false, accessConfirmationRequired: true });
   } catch (error) {
     return sendJson(res, 500, { ok: false, message: error instanceof Error ? error.message : 'Busca Wellhub indisponível.' });
   }
