@@ -1,6 +1,6 @@
 // Reevaluate local schedules at minute boundaries and immediately on resume.
 // No network, GPS, preferences, or persistence access.
-export function subscribeWellhubClock(onTick, windowTarget, documentTarget, clock = { now: () => Date.now(), setTimeout, clearTimeout }) {
+export function subscribeWellhubClock(onTick, windowTarget, documentTarget, clock = { now: () => Date.now(), setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: timer => clearTimeout(timer) }) {
   let timer, stopped = false;
   const tick = () => {
     if (stopped) return;
