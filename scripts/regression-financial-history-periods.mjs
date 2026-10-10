@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import { execFileSync } from 'node:child_process';
 import ts from 'typescript';
 import { loadClientModules } from './lib/ts-module-harness.mjs';
-const modules=loadClientModules({files:['client/src/lib/financialHistoryPeriods.ts','client/src/lib/financialForecastPeriods.ts','client/src/lib/rosterReferencePeriod.ts','client/src/lib/rosterDisplayDate.ts','client/src/lib/financialJourneyGrouping.ts','client/src/lib/financialReserveCredits.ts'],prefix:'synthetic-history-'});
+const modules=loadClientModules({files:['client/src/lib/salaryActivityEvidence.ts','client/src/lib/financialHistoryPeriods.ts','client/src/lib/financialForecastPeriods.ts','client/src/lib/rosterReferencePeriod.ts','client/src/lib/rosterDisplayDate.ts','client/src/lib/financialJourneyGrouping.ts','client/src/lib/financialReserveCredits.ts'],prefix:'synthetic-history-'});
 try {
   const history=modules.load('financialHistoryPeriods'),periods=modules.load('financialForecastPeriods'),scope=modules.load('rosterReferencePeriod');
   const {financialRange,financialWeeks,financialMonths,financialRowsInRange,latestFinancialPeriods}=history;
@@ -23,11 +23,11 @@ try {
   const names=['calculateSalary','nightHoursInsideWindow','scopedFinancialForecast','moneyCurrency','moneyBRL'];
   const functions=ast.statements.filter(n=>ts.isFunctionDeclaration(n)&&names.includes(n.name?.text));
   const cfg={configured:true,baseConfigured:true,basePay:900,fixedAdditions:0,dayKmMetric:1,nightKmMetric:2,chiefPerSector:0,instructorPerSector:0,reserveHourMetric:10,standbyHourMetric:5,inssDeduction:0,irrfDeduction:0,otherDeductions:0,fgtsRate:0,source:'SYNTHETIC — not a real tariff'};
-  const context=vm.createContext({...history,...periods,...scope,...modules.load('rosterDisplayDate'),...modules.load('financialJourneyGrouping'),...(fs.existsSync('client/src/lib/financialReserveCredits.ts')?modules.load('financialReserveCredits'):{}),loadActCompensationConfig:()=>cfg,storage:{get:()=> '0'},dedupeProjectedLegs:events=>events,
+  const context=vm.createContext({...modules.load('salaryActivityEvidence'),...history,...periods,...scope,...modules.load('rosterDisplayDate'),...modules.load('financialJourneyGrouping'),...(fs.existsSync('client/src/lib/financialReserveCredits.ts')?modules.load('financialReserveCredits'):{}),loadActCompensationConfig:()=>cfg,storage:{get:()=> '0'},dedupeProjectedLegs:events=>events,
     flightDistanceKmFromEvent:()=>100,durationHours:()=>2,financialFlightRule:()=>({extra:false,reason:'synthetic'}),isSundayOrConfiguredHoliday:()=>false,userIsFirstCcm:()=>false,flightWorkType:()=> 'OP',safe:(value,fallback)=>value||fallback,dateChip:date=>date.toISOString().slice(0,10),isOperationalEvent:()=>true,financialEventCode:event=>event.kind==='reserve'?'ASB':'CRM',
     eventStartDateTime:event=>new Date(event.iso+(event.kind==='reserve'?'T07:00:00':'T11:00:00')),eventEndDateTime:event=>new Date(event.iso+(event.kind==='reserve'?'T09:00:00':'T13:00:00'))});
   vm.runInContext(ts.transpileModule(functions.map(n=>n.getText(ast)).join('\n')+'\nglobalThis.subject={calculateSalary'+(functions.some(n=>n.name.text==='scopedFinancialForecast')?',scopedFinancialForecast':'')+'};',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
-  const event=(iso,kind='flight')=>({id:'synthetic-'+iso+'-'+kind,iso,date:new Date(iso+'T12:00:00'),kind,day:{date:iso.slice(8)+'/'+iso.slice(5,7)+'/'+iso.slice(0,4)},origin:'AAA',destination:'BBB',flightNumber:'SYN'});
+  const event=(iso,kind='flight')=>({id:'synthetic-'+iso+'-'+kind,iso,date:new Date(iso+'T12:00:00'),kind,day:{date:iso.slice(8)+'/'+iso.slice(5,7)+'/'+iso.slice(0,4),...(kind==='reserve'?{type:'ASB',dutyReport:'07:00',dutyDebrief:'09:00',dutyReportSource:'published',dutyDebriefSource:'published'}:{})},origin:'AAA',destination:'BBB',flightNumber:'SYN'});
   const salary=context.subject.calculateSalary([event('2032-01-31'),event('2032-02-02'),event('2032-03-01'),event('2032-01-31','reserve'),event('2032-02-02','reserve')],{year:2032,month:2});
   assert.equal(salary.rows.length,1,'monthly salary excludes adjacent-month flights');assert.equal(salary.reserveHours,2,'monthly salary excludes adjacent-month reserve');assert.equal(salary.gross,1020);
   assert.equal(salary.rows[0].iso,'2032-02-02');
