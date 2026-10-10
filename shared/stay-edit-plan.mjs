@@ -123,9 +123,10 @@ function displayInstant(epoch, timeZone) {
 /** Calculation is separate from permissions, capabilities and effective scheduling. */
 export function calculateStayWakeup({ scope, stay, hotelApz, now, choice, defaultLeadMinutes }) {
   if (!scopeEqual(stay, scope)) return none('scope-mismatch');
-  if (!validZone(stay.timeZone) || !Number.isFinite(now)) return none('time-context-invalid');
+  if (!Number.isFinite(now)) return none('time-context-invalid');
   const preference = resolveStayAlarmChoice(defaultLeadMinutes, choice);
   if (!preference.mode) return preference;
+  if (!validZone(preference.mode === 'absolute' ? preference.timeZone || stay.timeZone : stay.timeZone)) return none('time-context-invalid');
   const hotel = manualHotelApz(hotelApz, stay, scope);
   const warnings = [];
   let alarm;

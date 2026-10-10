@@ -171,3 +171,11 @@ test('module is unwired, pure, contains no scheduling/network/storage/native/pro
   const source = readFileSync(new URL('../shared/stay-edit-plan.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /\bimport\s|\bfetch\s*\(|localStorage|sessionStorage|setTimeout|setInterval|window\.|document\.|\/api\/alarm|CrewCheckNative/);
 });
+test('absolute alarm preserves its own zone when hotel zone changes or is unknown', () => {
+  const choice = { mode: 'absolute', alarmAt: '2030-10-11T07:00:00Z', timeZone: 'America/Fortaleza' };
+  const original = calculateStayWakeup({scope,stay,hotelApz:null,now,choice});
+  const changed = calculateStayWakeup({scope,stay:{...stay,timeZone:''},hotelApz:null,now,choice});
+  assert.equal(changed.action,'calculated'); assert.equal(changed.scheduledAt,original.scheduledAt);
+  assert.equal(changed.display.clock,'04:00'); assert.equal(changed.display.timeZone,choice.timeZone);
+  assert.equal(changed.differenceMinutes,null); assert.equal(changed.eligible,false);
+});

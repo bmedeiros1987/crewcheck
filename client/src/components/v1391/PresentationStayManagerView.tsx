@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { loadStayEditor, persistStayEditor, stayEditorAccount } from '@/lib/stayEditorStore';
 import { createStayAlarmController } from '@shared/stay-alarm-adapter.mjs';
-import { sanitizeStayChoice } from '@shared/stay-editor-store.mjs';
+import { sanitizeStayChoice, migrateLegacyStay } from '@shared/stay-editor-store.mjs';
 import { getToken } from '@/lib/authClient';
 import { readStayEditorIntent, returnFromStayProgramEditor } from '@/lib/stayEditorNavigation';
 import { orderStayDisplay } from '@/lib/stayDisplayOrder';
@@ -63,17 +63,21 @@ function labelDate(date: Date) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(date);
 }
 
-export default function PresentationStayManagerView({ events, initialStayId }: { events: RosterEvent[]; initialStayId?: string }) {
+export default function PresentationStayManagerView({ events, initialStayId, embedded = false }: { events: RosterEvent[]; initialStayId?: string; embedded?: boolean }) {
   const editorRoot = useRef<HTMLElement>(null);
+  const editorAnchor = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     window.scrollTo(0, 0);
     const measure = () => {
-      const root = editorRoot.current; if (!root) return;
+      const root = editorRoot.current, anchor = editorAnchor.current; if (!root || !anchor) return;
+      const frame = anchor.getBoundingClientRect();
       const nav = document.querySelector('.cz-bottom-nav')?.getBoundingClientRect();
-      root.style.height = `${Math.max(120, (nav?.top ?? window.innerHeight) - root.getBoundingClientRect().top - 16)}px`;
+      const header = document.querySelector('.cz-global-header')?.getBoundingClientRect();
+      const top = Math.max(frame.top, (header?.bottom ?? 0) + 8);
+      Object.assign(root.style, { position: 'fixed', top: `${top}px`, left: `${frame.left}px`, width: `${frame.width}px`, height: `${Math.max(120, (nav?.top ?? window.visualViewport?.height ?? window.innerHeight) - top - 16)}px` });
     };
     measure(); const observer = new ResizeObserver(measure);
-    const nav = document.querySelector('.cz-bottom-nav'); if(nav) observer.observe(nav);
+    for (const element of [editorAnchor.current, document.querySelector('.cz-bottom-nav'), document.querySelector('.cz-global-header'), document.querySelector('.cc-header-notice')]) if(element) observer.observe(element);
     window.addEventListener('resize', measure); window.visualViewport?.addEventListener('resize', measure);
     return () => { observer.disconnect(); window.removeEventListener('resize', measure); window.visualViewport?.removeEventListener('resize', measure); };
   }, []);
@@ -180,13 +184,15 @@ export default function PresentationStayManagerView({ events, initialStayId }: {
     const legacy = stays.filter(item => !item.rosterEventId && String(item.stayDate || '').slice(0, 10) === date && item.airport === airport);
     const sameDay = operational.filter(item => item.kind === 'stay' && isoDay(item.date || item.canonical?.startDateTime) === date && (item.destination || item.origin) === airport);
     const saved = direct.length === 1 ? direct[0] : direct.length === 0 && legacy.length === 1 && sameDay.length <= 1 ? legacy[0] : null;
-    setDraft({ hotelName: saved?.hotelName || selected.hotel || '', airport: saved?.airport || airport, stayDate: date,
+    const initialDraft: StayDraft = { hotelName: saved?.hotelName || selected.hotel || '', airport: saved?.airport || airport, stayDate: date,
       room: saved?.room || '',
       // PR991 guard: never promote roster stay/check-in/pickup to hotel APZ.
       presentationTime: saved?.presentationTime || (selected.kind !== 'stay' && selected.presentation && selected.presentation !== 'Conexão/Solo' ? selected.presentation : ''),
-      leadMinutes: saved?.leadMinutes == null ? '' : String(saved.leadMinutes), shareSameHotel: Boolean(saved?.shareSameHotel) });
+      leadMinutes: saved?.leadMinutes == null ? '' : String(saved.leadMinutes), shareSameHotel: Boolean(saved?.shareSameHotel) };
+    setDraft(initialDraft);
+    const migrated = migrateLegacyStay(saved, { accountId: stayEditorAccount(), eventId: selected.id, signature, draft: initialDraft });
     setApzDate(date); setHotelTimeZone(''); setApzConfirmed(false); setApzSource(saved?.presentationTime ? 'legacy-unconfirmed' : 'absent'); setAlarmCancelled(false);
-    setAlarmChoice(saved?.leadMinutes == null ? undefined : { mode: 'relative', leadMinutes: Number(saved.leadMinutes) });
+    setAlarmChoice(migrated?.choice);
     setManual(false); dirty.current = false;
   }, [selectedId, selected, stays, operational]);
 
@@ -287,8 +293,8 @@ export default function PresentationStayManagerView({ events, initialStayId }: {
     }
   }
 
-  return <section ref={editorRoot} className="cc-stay-editor">
-    <div className="cc-stay-editor-header"><V139Header title="Apresentação, hotel e descanso" detail="Edite o horário, informe hotel/quarto e mantenha o endereço de casa para descansos na base." onBack={contextId ? () => { returnFromStayProgramEditor(); } : undefined} backLabel={contextId ? 'Voltar ao pernoite' : undefined}/></div>
+  return <div ref={editorAnchor} className="cc-stay-editor-anchor"><section ref={editorRoot} className="cc-stay-editor">
+    <div className="cc-stay-editor-header"><V139Header hideBrand={embedded} title="Apresentação, hotel e descanso" detail="Edite o horário, informe hotel/quarto e mantenha o endereço de casa para descansos na base." onBack={contextId ? () => { returnFromStayProgramEditor(); } : undefined} backLabel={contextId ? 'Voltar ao pernoite' : undefined}/></div>
     <div className="cc-stay-editor-content">
     {needsReview && <p role="alert">A programação foi atualizada. Seus ajustes manuais foram preservados; confirme a data, o fuso e a APZ no hotel.</p>}
     {removed && <p role="alert">O pernoite selecionado saiu da escala. Nenhum outro item foi selecionado automaticamente.</p>}
@@ -304,7 +310,7 @@ export default function PresentationStayManagerView({ events, initialStayId }: {
         <label className="wide">Programação
           <select value={selected?.id || ''} onChange={(event) => selectProgram(event.target.value)}><option value="">Escolher programação</option>{operational.map((item) => <option key={item.id} value={item.id}>{item.kind === 'stay' ? stayDisplay.label(item.id) + ' · ' : ''}{isoDay(item.date || item.canonical?.startDateTime)} · {item.title || item.id} · {item.origin || '—'} → {item.destination || '—'}</option>)}</select>
         </label>
-        <label>Hotel<input value={draft.hotelName} onChange={(event) => { setDraft({ ...draft, hotelName: event.target.value }); setManual(true); }} placeholder="Hotel de pernoite ou contingência"/></label>
+        <label>Hotel<input value={draft.hotelName} onChange={(event) => { setDraft({ ...draft, hotelName: event.target.value }); setManual(true); setApzConfirmed(false); }} placeholder="Hotel de pernoite ou contingência"/></label>
         <label>Número do quarto<input value={draft.room} onChange={(event) => setDraft({ ...draft, room: event.target.value })} placeholder="Opcional e protegido"/></label>
         <label>Aeroporto/local<input value={draft.airport} onChange={(event) => setDraft({ ...draft, airport: event.target.value.toUpperCase() })} placeholder="Ex.: FOR"/></label>
         <label>{selected?.kind === 'stay' ? 'APZ no hotel (manual ou salva)' : 'Apresentação'}<input type="time" value={draft.presentationTime} onChange={(event) => { setDraft({ ...draft, presentationTime: event.target.value }); setApzConfirmed(false); setApzSource('manual'); }}/></label>
@@ -342,5 +348,5 @@ export default function PresentationStayManagerView({ events, initialStayId }: {
     </section>
     <section className="cc139-card"><ShieldCheck/><h2>Privacidade</h2><p>O quarto não aparece para visitantes nem em alertas coletivos. A presença no hotel só é usada com autorização do usuário.</p></section>
     </div>
-  </section>;
+  </section></div>;
 }

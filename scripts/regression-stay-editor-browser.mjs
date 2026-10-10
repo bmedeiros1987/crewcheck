@@ -26,7 +26,7 @@ await build({ stdin: { contents: `
 import React,{useState,useEffect,useMemo} from 'react';
 import {createRoot} from 'react-dom/client';
 import Presentation from '@/components/v1391/PresentationStayManagerView';
-import {openStayProgramEditor,consumeStayEditorReturn} from '@/lib/stayEditorNavigation';
+import {openStayProgramEditor,consumeStayEditorReturn,readStayEditorIntent,returnFromStayProgramEditor} from '@/lib/stayEditorNavigation';
 import {savedStayEditorEvent} from '@/lib/stayEditorStore';
 import {setPendingNavigationContext} from '@/lib/navigationContext';
 import {isFinancialSetting,readFinancialSetting,writeFinancialSetting} from '@/lib/financialSettingStore';
@@ -46,19 +46,20 @@ ${declarations.map(n=>n.getText(ast)).join('\n')}
 window.applyStayTheme=setCrewCheckThemePreference;
 import {peekPendingNavigationContext} from '@/lib/navigationContext';
 import '@/components/v139/v139.css';
-const now=Date.now(), day=new Date(now).toISOString().slice(0,10);
+const day=new Date().toISOString().slice(0,10),now=Date.parse(day+'T12:00:00Z');
 const event=(id,hours)=>({id,kind:'stay',title:'Pernoite sintético '+id,date:new Date(now),day:{date:day},origin:'FOR',destination:'FOR',hotel:'Hotel sintético '+id,presentation:'01:11',canonical:{startDateTime:new Date(now+hours*3600000).toISOString(),endDateTime:new Date(now+(hours+24)*3600000).toISOString()}});
 const fixtures=[event('synthetic-current',-1),event('synthetic-future',48)];
 window.stayFixtureDay=day;window.stayFixtureEvents=fixtures;
 window.stayNavigation=[];window.stayContext=peekPendingNavigationContext;
 function App(){const [view,setView]=useState('hotels'),[events,setEvents]=useState(fixtures);
  useEffect(()=>{window.replaceStayEvents=setEvents;const navigate=e=>{window.stayNavigation.push(e.detail);setView(e.detail)};window.addEventListener('crewcheck:set-view',navigate);return()=>window.removeEventListener('crewcheck:set-view',navigate)},[]);
- return <><main {...${JSON.stringify(rootProps)}} data-view={view}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back/></InternalHeaderFrame>{view==='hotels'?<HotelsView events={events}/>:<Presentation events={events}/>}</main><BottomNav view={view} setView={setView} openMenu={()=>{}}/></>}
+ return <><main {...${JSON.stringify(rootProps)}} data-view={view}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back/></InternalHeaderFrame>{view==='hotels'?<HotelsView events={events}/>:<Presentation events={events} embedded/>}</main><BottomNav view={view} setView={setView} openMenu={()=>{}}/></>}
 createRoot(document.getElementById('root')).render(<App/>);
 `, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, format: 'esm', platform: 'browser', tsconfig: 'tsconfig.json', outfile: path.join(output, 'harness.js'), loader: { '.css': 'empty' }, jsx: 'automatic', define: { 'process.env.NODE_ENV': '"test"', 'import.meta.env': JSON.stringify({ DEV: false, PROD: true, BASE_URL: '/' }) } });
 fs.writeFileSync(path.join(output,'index.html'),`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">${cssLinks}</head><body><div id="root"></div><script type="module" src="/harness.js"></script></body></html>`);
 const server = http.createServer((req,res)=>{
-  const file=path.resolve(output,'.'+(req.url==='/'?'/index.html':req.url));
+  const pathname=new URL(req.url,'http://localhost').pathname;
+  const file=path.resolve(output,'.'+(pathname==='/'?'/index.html':pathname));
   if(!file.startsWith(output+path.sep)||!fs.existsSync(file)){res.writeHead(404).end();return;}
   res.setHeader('Content-Type',file.endsWith('.css')?'text/css':file.endsWith('.js')?'text/javascript':'text/html');fs.createReadStream(file).pipe(res);
 });
@@ -111,7 +112,7 @@ try {
   }
   // Reproduce the previous document-scroll layout: header must move, proving
   // the geometric regression detects the missing local scroll owner.
-  const broken=await page.addStyleTag({content:'.cc-stay-editor{display:block!important;overflow:visible!important;height:auto!important}.cc-stay-editor-content{overflow:visible!important}'});
+  const broken=await page.addStyleTag({content:'.cc-stay-editor{position:static!important;display:block!important;overflow:visible!important;height:auto!important}.cc-stay-editor-content{overflow:visible!important}'});
   await program.evaluate(el=>el.scrollIntoView({block:'start',behavior:'instant'}));
   const before=await page.locator('.cc-stay-editor-header').boundingBox();
   await page.getByRole('heading',{name:'Privacidade',exact:true}).evaluate(el=>el.scrollIntoView({block:'end',behavior:'instant'}));
