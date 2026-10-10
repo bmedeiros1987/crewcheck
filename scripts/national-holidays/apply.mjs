@@ -1,0 +1,13 @@
+import fs from 'node:fs';
+const file = 'client/src/pages/Home.tsx';
+let source = fs.readFileSync(file, 'utf8');
+const imported = "import { classifyBrazilCalendarDate } from '@/lib/brazilNationalHolidays';";
+if (!source.includes(imported)) source = imported + '\n' + source;
+const before = `  if (new Date(iso + 'T00:00:00Z').getUTCDay() === 0) return true;
+  const configured = storage.get('crewcheck_local_holiday_dates', '').split(',').map(value => value.trim()).filter(Boolean);
+  return configured.includes(iso);`;
+const after = `  const configured = storage.get('crewcheck_local_holiday_dates', '').split(',').map(value => value.trim()).filter(Boolean);
+  return classifyBrazilCalendarDate(iso, configured).special;`;
+if (source.includes(before)) source = source.replace(before, after);
+else if (!source.includes(after)) throw new Error('National holiday salary integration anchor changed; review required');
+fs.writeFileSync(file, source);

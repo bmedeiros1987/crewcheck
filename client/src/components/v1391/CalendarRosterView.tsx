@@ -1,3 +1,4 @@
+import { classifyBrazilCalendarDate } from '@/lib/brazilNationalHolidays';
 import { rosterDisplayIso, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { AimsRosterTable } from './AimsRosterTable';
 import type { RosterZoom } from '@/lib/rosterLayoutPreference';
@@ -101,9 +102,11 @@ export function CalendarRosterView({ events, month, zoom = 'month', selectedDay,
               const iso = isoFromDate(date);
               const dayEvents = byDate.get(iso) || [];
               const inside = iso.startsWith(`${month}-`);
-              return <td key={iso} data-roster-iso={iso} data-outside-month={inside ? 'false' : 'true'} data-today={iso === todayIso ? 'true' : 'false'}>
+              const calendarDate = classifyBrazilCalendarDate(iso);
+              const calendarLabel = [calendarDate.sunday ? 'domingo' : '', calendarDate.nationalHoliday || ''].filter(Boolean).join(', ');
+              return <td key={iso} data-roster-iso={iso} data-calendar-special={calendarDate.special ? 'true' : 'false'} data-outside-month={inside ? 'false' : 'true'} data-today={iso === todayIso ? 'true' : 'false'}>
                 <div className="cc-calendar-day">
-                  <header><button type="button" disabled={!inside} aria-label={`Abrir dia ${iso.split('-').reverse().join('/')}, ${dayEvents.length} programações`} onClick={() => onSelectDay?.(iso)}><time dateTime={iso}>{date.getDate()}</time></button>{dayEvents.length > 0 && <span>{dayEvents.length}</span>}</header>
+                  <header><button type="button" disabled={!inside} aria-label={`Abrir dia ${iso.split('-').reverse().join('/')}, ${dayEvents.length} programações${calendarLabel ? `, ${calendarLabel}` : ''}` } aria-pressed={iso === selectedDay} aria-current={iso === todayIso ? 'date' : undefined} onClick={() => onSelectDay?.(iso)}><time dateTime={iso} title={calendarLabel || undefined}>{date.getDate()}</time></button>{dayEvents.length > 0 && <span>{dayEvents.length}</span>}</header>
                   <div>
                     {dayEvents.map((event) => <article key={event.id} data-roster-event-id={event.id}>
                       <button type="button" aria-label={`Abrir ${activityCode(event)} em ${iso}`} onClick={() => onSelectDay?.(iso)}><strong>{activityCode(event)}</strong></button>

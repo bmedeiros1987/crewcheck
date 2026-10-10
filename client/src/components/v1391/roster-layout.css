@@ -638,3 +638,16 @@ html:not([data-crew-theme="light"]) .cc-aims-change-badge {
 .cc-publication-change dd span { display:block; }
 .cc-publication-change p { white-space:normal; }
 .cc-publication-change { box-sizing:border-box; max-width:min(680px,calc(100vw - 80px)); }
+
+/* National holidays/Sundays: numeral only; existing today and focus treatments survive. */
+.cc-calendar-roster td[data-calendar-special="true"] .cc-calendar-day > header time {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 2px;
+}
+.cc-calendar-roster td[data-calendar-special="true"][data-today="false"] .cc-calendar-day > header time {
+  color: var(--ccr-cyan);
+}
+.cc-calendar-day > header button[aria-pressed="true"] {
+  border-color: var(--ccr-cyan);
+}
