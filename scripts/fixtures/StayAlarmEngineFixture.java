@@ -80,7 +80,9 @@ public final class StayAlarmEngineFixture {
         f.device.allowed=true;f.engine.recover(false);check(f.device.jobs.isEmpty(),"permission regained cannot resurrect blocked preference");
         check(f.replace("fresh-confirm",1,7_200_000,"relative").state.equals("scheduled"),"explicit fresh confirmation can rearm");
         f.engine.recover(true);check(f.device.jobs.isEmpty()&&f.store.read(f.key).state.equals("blocked"),"grant broadcast never automatically re-arms old job");
-        f=new Fixture();f.replace("owner",0,7_200_000,"relative");f.owner.epoch="session-2";f.engine.recover(false);
+        f=new Fixture();f.replace("owner",0,7_200_000,"relative");f.owner.epoch="session-2";
+        check(f.engine.cancel(f.key,"synthetic","stay-1","old-cancel",1,"session-1").state.equals("not-programmed"),"stale native cancellation epoch rejected");
+        check(f.device.cancellations==0,"stale cancellation cannot mutate OS state");f.engine.recover(false);
         check(f.device.jobs.isEmpty()&&f.store.read(f.key).state.equals("blocked"),"logout/relogin same ID invalidates old native owner epoch");
         f=new Fixture();f.owner.enabled=false;check(f.replace("off",0,7_200_000,"relative").state.equals("not-programmed"),"OFF gate");
         check(f.device.replacements==0&&f.store.commits==0,"OFF has no programming or store effects");

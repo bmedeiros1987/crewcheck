@@ -93,7 +93,7 @@ executa38 testes JS: recibos malformados/boolean, correlação, epoch web, OFF,
 confirmação, modos e serialização, além dos contratos existentes.
 
 `node scripts/regression-stay-alarm-native.mjs` compila/executa o núcleo Java
-real com55 assertivas e fake Device/Store/Owner: reboot, OS/disco, CAS, tombstones,
+real com57 assertivas e fake Device/Store/Owner: reboot, OS/disco, CAS, tombstones,
 revogação, dono/epoch, receive atrasado/duplicado e corrida replace/cancel.
 
 `STAY_ANDROID_API_JAR=/path/android-all.jar node scripts/regression-stay-alarm-api.mjs`

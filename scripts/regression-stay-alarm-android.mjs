@@ -85,7 +85,11 @@ test('existing editor/host stay disconnected and manifest requests no additional
 });
 
 test('queued same-account request cannot adopt a fresh native epoch after reauth',async()=>{
- const f=fixture(),adapter=createAndroidStayAlarmAdapter(f.options);f.setNativeEpoch('native-b');
- assert.equal((await adapter.replace({...input,key})).state,'unknown');
- assert.equal(f.jobs.size,0);assert.equal(f.calls.every(call=>call.ownerEpoch==='native-a'),true);
+ for(const stage of ['inspect','replace']){
+  const f=fixture(),original=f.native.transact;
+  f.native.transact=raw=>{if(JSON.parse(raw).action===stage)f.setNativeEpoch('native-b');return original(raw)};
+  const adapter=createAndroidStayAlarmAdapter(f.options);
+  assert.equal((await adapter.replace({...input,key})).state,'unknown');
+  assert.equal(f.jobs.size,0);assert.equal(f.calls.every(call=>call.ownerEpoch==='native-a'),true);
+ }
 });
