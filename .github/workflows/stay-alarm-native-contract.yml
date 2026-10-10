@@ -1,0 +1,37 @@
+name: Stay alarm native adapter mocks
+on:
+  pull_request:
+    paths:
+      - 'shared/stay-alarm-*'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/StayAlarm*.java'
+      - 'android-wrapper/app/src/main/AndroidManifest.xml'
+      - 'scripts/fixtures/StayAlarm*.java'
+      - 'scripts/regression-stay-alarm-*.mjs'
+      - '.github/workflows/stay-alarm-native-contract.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mock-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: JS receipt/controller and native production engine with fake device
+        run: |
+          node --test scripts/regression-stay-alarm-android.mjs scripts/regression-stay-editor-persistence.mjs scripts/regression-stay-edit-plan.mjs
+          node scripts/regression-stay-alarm-native.mjs
+      - name: Compile real API bindings and test actual JSON bridge without a device
+        env:
+          STAY_ANDROID_API_JAR: ${{ runner.temp }}/android-all.jar
+        run: |
+          curl --fail --location --silent --show-error -o "$STAY_ANDROID_API_JAR" https://repo.maven.apache.org/maven2/org/robolectric/android-all/15-robolectric-12650502/android-all-15-robolectric-12650502.jar
+          echo "6c0670454f6fcee9f1b17aa393e81d71bf26e7e6ae7c5777ed3924b062191d5b  $STAY_ANDROID_API_JAR" | sha256sum --check
+          node scripts/regression-stay-alarm-api.mjs
