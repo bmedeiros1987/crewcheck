@@ -1035,7 +1035,7 @@ function savePlannedRoster(roster: CrewRoster, source: string, expectedSession =
 }
 function clearPlannedRoster(expectedSession = financialRateSession()): boolean { return clearOwnedPlannedRoster(expectedSession); }
 
-function preservePlannedRosterBeforeImport(current: BundleState, incoming: CrewRoster, expectedSession = ''): PlannedRosterSnapshot | null {
+function preservePlannedRosterBeforeImport(current: BundleState, incoming: CrewRoster, expectedSession: string | null = null): PlannedRosterSnapshot | null {
   if (!expectedSession || expectedSession !== financialRateSession()) return null;
   const currentHasDays = Array.isArray(current.roster.days) && current.roster.days.length > 0;
   if (!currentHasDays || !sameRosterPeriod(current.roster, incoming)) return loadPlannedRoster();
