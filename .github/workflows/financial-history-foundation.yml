@@ -131,7 +131,9 @@ jobs:
           node scripts/regression-planned-roster-owner.mjs
           node scripts/regression-planned-roster-import-race.mjs
       - name: Verify literal free-day review and owner delivery ledger
-        run: node scripts/regression-free-day-postponement.mjs
+        run: |
+          node scripts/regression-free-day-postponement.mjs
+          node scripts/regression-free-day-telegram-preparation.mjs
       - name: Install isolated UI browser dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/financial-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0

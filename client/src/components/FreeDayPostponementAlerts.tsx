@@ -3,8 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CrewRoster } from '@/lib/pdfParser';
 import { financialRateOwner, financialRateSession } from '@/lib/financialStatementLearning';
 import { isCurrentPlannedRoster, loadOwnedPlannedRoster } from '@/lib/plannedRosterStore';
-import { resolveActFinancialRules } from '@/lib/financialRules';
-import { FREE_DAY_ACT_SOURCE, FREE_DAY_ACT_URL, freeDayAlertText, freeDayVersion, reviewFreeDayPostponements } from '@/lib/freeDayPostponement';
+import { verifiedCabinAct, FREE_DAY_ACT_SOURCE, FREE_DAY_ACT_URL, freeDayAlertText, freeDayVersion, reviewFreeDayPostponements } from '@/lib/freeDayPostponement';
 import { publishFreeDayAlert, readFreeDayAlertHistory, type FreeDayAlertRecord } from '@/lib/freeDayAlertDelivery';
 import { clearCrewCheckPulse, crewCheckNotificationPermission, publishCrewCheckNotice } from './pulse/pulseRuntime';
 import './free-day-alerts.css';
@@ -21,9 +20,8 @@ export function FreeDayPostponementAlerts({ roster, source, view, onOpen }: { ro
       && choice?.cacheSchema === 'p0-operational-date-anchor-v2' && choice.roster?.days?.length
       && freeDayVersion(choice.roster) === freeDayVersion(roster));
   } catch { /* Never assign an owner to an unbound current bundle. */ }
-  const act = resolveActFinancialRules(roster);
   const review = reviewFreeDayPostponements(planned && isCurrentPlannedRoster(planned) ? planned : null, roster, source,
-    boundCurrent ? owner || '' : '', act.profileLabel.startsWith('Comissário'));
+    boundCurrent ? owner || '' : '', verifiedCabinAct(roster) && Boolean(planned && verifiedCabinAct(planned.roster)));
   const visibleRecords = records.session === session ? records.items : [];
   useEffect(() => {
     let alive = true;

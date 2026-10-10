@@ -22,3 +22,15 @@ Use existing Pulse and device Notification API only. Never request permission, e
 - Raw/prepared TypeScript, canonical preparation/build, owner import race and existing salary/financial/canonical parser regressions; composition with published main and approved owner dependency before merge.
 
 Private reference files are deliberately excluded from Git, fixtures, CI outputs and review source archives. The local authorized PDF probe confirms literal01:46→08:30 inUTC−3,404minutes, without emitting identity or document contents. This remains a possible contractual indemnity; operational cause, execution, actual delivery and payment are not evidenced.
+
+## Cloud continuation 2026-10-10
+
+Composed remote PR971 cff5b2c with main 2e86fe3 (includes PR970); no changes were recovered from the Mac-only composition. Unknown/default rank and the finance profile fallback no longer prove cabin ACT eligibility. Both versions must contain a literal cabin function header matching crew ID/base/rank and LATAM identification; otherwise the measured delay remains visible with a null amount and pending ACT applicability. Unsupported header formats remain pending for independent verification.
+
+Invalid rest dates now create explicit pending entries. Identical versions still validate literal starts and published timezone before concluding there is no postponement.
+
+Telegram preparation is a pure, unconnected helper: disabled job, hashed owner/sequence/version idempotency, generic minimal message, explicit consent + verified link + verified configuration gates. No SQL writes, route, worker connection, provider or credential changes; the existing queue is not activated for free-day alerts. Current delivery remains Notification API while the app is open, acceptance never delivery confirmation.
+
+Local validation: raw/prepared TypeScript, prepared production build; synthetic404min, thresholds4h/4h01 and12h/12h01, missing/invalid/identical evidence, role pending, owner/session/storage locks; synthetic physical PDF.js in3TZ; compiled UI320/390/1440 at100/200% (verified and unverified ACT, notification mocks, account switching); PR970 salary activity evidence, operational salary clocks, planned-reference ownership/import races; physical duty provenance and204 activity financial-chain cases. Only synthetic artifacts produced.
+
+Independent review and terminal green CI remain required before merge or web publication. No real messages or deployment performed.

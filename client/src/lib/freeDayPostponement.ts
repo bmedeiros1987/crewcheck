@@ -17,6 +17,14 @@ export type FreeDayAlert = {
 export type FreeDayReview = { alerts: FreeDayAlert[]; pending: { date: string; reason: string }[]; reason: string | null };
 const REST = /^(DO|DOF|DOP|DOPR|DR|OFF)$/;
 
+// Parser rank defaults and financial profile fallbacks do not verify ACT scope.
+export function verifiedCabinAct(roster: CrewRoster): boolean {
+  const raw = String(roster.rawText || '');
+  const header = raw.match(/\|\s*(\d{6,})\s*\|\s*[A-Z0-9]+\s*\|\s*([A-Z]{3})\s*\|\s*(CCM|CCF|CCP|CC)\b/i);
+  return Boolean(header && header[1] === String(roster.crewId) && header[2].toUpperCase() === roster.base?.toUpperCase()
+    && header[3].toUpperCase() === roster.rank?.toUpperCase() && /\bLATAM\b|TAM LINHAS A[EÉ]REAS/i.test(raw));
+}
+
 export function freeDayVersion(roster: CrewRoster): string {
   const text = JSON.stringify({ year: roster.year, month: roster.month, crewId: roster.crewId,
     rawText: String(roster.rawText || '').replace(/\s+/g, ' ').trim(),
@@ -83,7 +91,11 @@ export function reviewFreeDayPostponements(planned: OwnedPlannedRoster | null, c
   if (!planned.roster.crewId || !current.crewId || String(planned.roster.crewId) !== String(current.crewId)
     || !planned.roster.base || planned.roster.base !== current.base) return { ...result, reason: 'Identidade ou base das versões não verificada.' };
   const beforeVersion = freeDayVersion(planned.roster), afterVersion = freeDayVersion(current);
-  if (beforeVersion === afterVersion) return result;
+  for (const [label, roster] of [['Referência', planned.roster], ['Atual', current]] as const) {
+    for (const day of roster.days.filter(rest)) {
+      if (!iso(day)) result.pending.push({ date: String(day.date || 'sem data'), reason: `${label}: data de folga inválida; comparação pendente.` });
+    }
+  }
   const after = new Map(sequences(current).map(group => [group.date, group]));
   for (const group of sequences(planned.roster)) {
     if (!group.date.startsWith(`${current.year}-${String(current.month).padStart(2, '0')}-`)) continue;
