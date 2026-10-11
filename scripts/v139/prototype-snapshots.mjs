@@ -16,4 +16,4 @@ export function snapshot(root,{seal=false,dependencyLink}={}){
  };walk('');return rows;
 }
 export function verifySnapshot(root,record,options){if(JSON.stringify(snapshot(root,options))!==JSON.stringify(record))fail('SNAPSHOT_CHANGED');}
-export function copyDependencies(from,to){fs.cpSync(from,to,{recursive:true,dereference:false,mode:fs.constants.COPYFILE_FICLONE});return snapshot(to,{seal:true});}
+export function copyDependencies(from,to){fs.cpSync(from,to,{recursive:true,dereference:false,verbatimSymlinks:true,mode:fs.constants.COPYFILE_FICLONE});return snapshot(to,{seal:true});}

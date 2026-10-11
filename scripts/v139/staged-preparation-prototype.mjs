@@ -55,17 +55,18 @@ export function recoverPrototype(storage,{hooks={}}={}){
  return fs.existsSync(path.join(storage,'current.json'))?resolvePreparedGeneration(storage):null;
 }
 export function preparePrototype({inputRoot,storage,proof,policy={},dependencyRoot,inputKind,worker=['scripts/v139/apply.mjs'],finalizer=['scripts/ci/sync-canonical-manual.mjs'],gates=[],hooks={},commandTimeout=180000}) {
+ if(!Number.isInteger(commandTimeout)||commandTimeout<1||commandTimeout>180000)fail('COMMAND_TIMEOUT_INVALID');
  inputRoot=physicalPath(inputRoot);storage=physicalPath(storage);
  if(storage===inputRoot||storage.startsWith(inputRoot+path.sep)||inputRoot.startsWith(storage+path.sep))fail('STORAGE_MUST_BE_OUTSIDE_SOURCE');
  if(Object.keys(process.env).some(key=>/^CREWCHECK_.*_SKIP_APPLY$/.test(key)&&process.env[key]))fail('PARTIAL_CONTEXT_FORBIDDEN');
  const before=manifest(inputRoot,policy);let previous=loadGeneration(storage);
  for(const [index,args] of [worker,finalizer,...gates].entries())if(!Array.isArray(args)||!args.length||args.some(arg=>typeof arg!=='string'||arg.includes('npm')||path.isAbsolute(arg)||arg.includes('staged-preparation-prototype')||(index>0&&arg.endsWith('scripts/v139/apply.mjs'))))fail('RECURSIVE_GATE_FORBIDDEN');
  const dependencyHash=dependencyFingerprint(dependencyRoot);
- const execution={worker,finalizer,gates,commandTimeout,dependencyHash,nodeExecutableHash:hash(fs.readFileSync(fs.realpathSync(process.execPath))),nodeVersion:process.version};const executionHash=hash(JSON.stringify(execution));
+ const execution={worker,finalizer,gates,commandTimeout,dependencyHash,nodeExecutableHash:hash(fs.readFileSync(fs.realpathSync(process.execPath))),nodeVersion:process.version};let executionHash=hash(JSON.stringify(execution));
  if(!previous&&!proof){let v2;try{v2=JSON.parse(fs.readFileSync(path.join(inputRoot,'.crewcheck-source-preparation.json')));}catch{}
   if(v2?.version===2&&v2.fingerprint===preparationFingerprint(inputRoot)){
    if(JSON.stringify(worker)!==JSON.stringify(['scripts/v139/apply.mjs'])||!before['scripts/v139/apply.mjs'])fail('V2_WORKER_UNVERIFIED');
-   const scratch=fs.mkdtempSync(path.join(path.dirname(storage),'legacy-validation-'));try{copyFiles(inputRoot,scratch,before);for(const args of [finalizer,...gates]){const run=spawnSync(process.execPath,args,{cwd:scratch,env:{PATH:process.env.PATH,NODE_OPTIONS:`--import=${path.join(scratch,'scripts/ci/smoke-deny-network.mjs')}`},encoding:'utf8',timeout:180000});if(run.status!==0)fail('STAGING_GATE_FAILED');}if(canonical(manifest(scratch,policy))!==canonical(before))fail('RAW_BASELINE_REQUIRED');if(preparationFingerprint(inputRoot)!==v2.fingerprint)fail('SOURCE_CHANGED_DURING_PREPARATION');return{status:'legacy_v2_hit',root:inputRoot};}finally{fs.rmSync(scratch,{recursive:true,force:true});}
+   const scratch=fs.mkdtempSync(path.join(path.dirname(storage),'legacy-validation-'));try{copyFiles(inputRoot,scratch,before);for(const args of [finalizer,...gates]){const run=runPrototypeNode(args,{cwd:scratch,env:{PATH:process.env.PATH,HOME:scratch,TMPDIR:scratch,NODE_OPTIONS:`--import=${path.join(scratch,'scripts/ci/smoke-deny-network.mjs')}`},timeout:commandTimeout});if(run.status!==0)fail('STAGING_GATE_FAILED');}if(canonical(manifest(scratch,policy))!==canonical(before))fail('RAW_BASELINE_REQUIRED');if(preparationFingerprint(inputRoot)!==v2.fingerprint)fail('SOURCE_CHANGED_DURING_PREPARATION');return{status:'legacy_v2_hit',root:inputRoot};}finally{fs.rmSync(scratch,{recursive:true,force:true});}
   }fail('RAW_BASELINE_REQUIRED');}
  if(!previous&&(!proofs.has(proof)||canonical(before)!==canonical(proof.files)||JSON.stringify(policy)!==JSON.stringify(proof.policy)))fail('RAW_ORIGIN_MISMATCH');
  if(previous&&JSON.stringify(previous.policy)!==JSON.stringify(policy))fail('POLICY_CHANGED');
@@ -80,7 +81,7 @@ export function preparePrototype({inputRoot,storage,proof,policy={},dependencyRo
   const nextRaw={...(kind==='raw'?before:previous.raw)};if(previous&&kind==='prepared')for(const file of new Set([...Object.keys(previous.prepared),...Object.keys(before)]))if(before[file]!==previous.prepared[file]){if(before[file])nextRaw[file]=before[file];else delete nextRaw[file];}
   for(const file of Object.keys(nextRaw)){const from=previous&&kind==='prepared'&&before[file]===previous.prepared[file]?path.join(previous.generation,'raw'):inputRoot;copyFiles(from,raw,{[file]:nextRaw[file]});}
   if(canonical(manifest(raw,policy))!==canonical(nextRaw))fail('SNAPSHOT_CHANGED');
-  const rawSnapshot=snapshot(raw,{seal:true});
+  const rawSnapshot=snapshot(raw,{seal:true});execution.sourceModes=Object.fromEntries(Object.entries(rawSnapshot).filter(([,row])=>row.type==='file').map(([file,row])=>[file,row.mode]));executionHash=hash(JSON.stringify(execution));
   copyFiles(raw,prepared,nextRaw);let dependencySnapshot=null;const dependencies=path.join(generation,'dependencies');if(dependencyRoot){if(!fs.statSync(dependencyRoot).isDirectory())fail('DEPENDENCIES_INVALID');dependencySnapshot=copyDependencies(fs.realpathSync(dependencyRoot),dependencies);fs.symlinkSync(dependencies,path.join(prepared,'node_modules'));}durable(path.join(generation,'journal.json'),JSON.stringify({state:'staging',id}));
   hooks.beforeWorker?.({generation,prepared});
   const environment={PATH:process.env.PATH,TMPDIR:path.join(generation,'scratch'),HOME:path.join(generation,'scratch'),NODE_DISABLE_COMPILE_CACHE:'1'};fs.mkdirSync(environment.TMPDIR);
