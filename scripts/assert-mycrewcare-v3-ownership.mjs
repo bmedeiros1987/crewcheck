@@ -7,6 +7,8 @@ import { createMyCrewCarePersistentSession } from '../shared/myCrewCarePersisten
 
 const read = (path) => readFileSync(path, 'utf8');
 const allowed = [
+  'shared/myCrewCareObservedCoordinator.mjs',
+  'scripts/regression-mycrewcare-observed-coordinator.mjs',
   'shared/myCrewCareObservedContract.mjs',
   'scripts/regression-mycrewcare-observed.mjs',
   'docs/mycrewcare-observed-contract-off.md',

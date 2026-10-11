@@ -9,6 +9,8 @@ on:
       - 'shared/myCrewCareNativeAdapter*'
       - 'shared/myCrewCareController*'
       - 'shared/myCrewCareObservedContract*'
+      - 'shared/myCrewCareObservedCoordinator*'
+      - 'scripts/regression-mycrewcare-observed-coordinator.mjs'
       - 'scripts/regression-mycrewcare-observed.mjs'
       - 'scripts/fixtures/mycrewcare-observed/**'
       - 'docs/mycrewcare-observed-contract-off.md'
@@ -54,7 +56,7 @@ jobs:
           node scripts/assert-mycrewcare-v3-ownership.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs scripts/regression-mycrewcare-controller.mjs
-            TZ="$zone" node --test scripts/regression-mycrewcare-observed.mjs
+            TZ="$zone" node --test scripts/regression-mycrewcare-observed.mjs scripts/regression-mycrewcare-observed-coordinator.mjs
           done
       - name: Complete canonical preparation
         run: node scripts/v139/apply.mjs
@@ -63,7 +65,7 @@ jobs:
           node scripts/assert-mycrewcare-v3-ownership.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs scripts/regression-mycrewcare-controller.mjs
-            TZ="$zone" node --test scripts/regression-mycrewcare-observed.mjs
+            TZ="$zone" node --test scripts/regression-mycrewcare-observed.mjs scripts/regression-mycrewcare-observed-coordinator.mjs
           done
           node scripts/regression-p0-525-stay-physical-association.mjs
           node scripts/regression-p1-566-stay-wakeup-concierge-context.mjs
