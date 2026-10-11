@@ -695,3 +695,31 @@ test('legacy or missing stay binding cannot restore even with the same stay', as
     assert.equal(session.hotel(stay.id), null); assert.equal(storage.read(context.accountId), null);
   }
 });
+
+
+test('late A failure remains private to A and surfaces if A returns before it settles', async () => {
+  let rejectCleanup;
+  const gate = new Promise((_resolve, reject) => { rejectCleanup = reject; });
+  const session = createMyCrewCarePersistentSession({ adapter: { disconnect: () => gate }, storage: new MemoryStorage(), now: () => NOW });
+  session.setContext(context, [stay]);
+  const cleanup = session.logout().catch(error => error);
+  await new Promise(resolve => setImmediate(resolve));
+  const b = { ...context, accountId: 'B', providerSubject: 'subject-B' };
+  session.setContext(b, [{ ...stay, ...b }]);
+  assert.equal(session.state().cleanupPending, false);
+  assert.equal(session.state().cleanupInProgress, false);
+  session.setContext(context, [stay]);
+  assert.equal(session.state().cleanupInProgress, true);
+  rejectCleanup(new Error('synthetic A profile failure'));
+  await cleanup;
+  assert.equal(session.state().status, 'cleanup-error');
+  assert.equal(session.state().cleanupPending, true);
+  assert.equal(session.state().lastError, 'profile-disconnect-failed');
+  session.setAutomatic(true);
+  assert.equal(session.state().automatic, false);
+  assert.equal(await session.restore(), false);
+  assert.equal(session.state().lastError, 'profile-disconnect-failed');
+  session.setContext(b, [{ ...stay, ...b }]);
+  assert.equal(session.state().cleanupPending, false);
+  assert.equal(session.state().lastError, null);
+});
