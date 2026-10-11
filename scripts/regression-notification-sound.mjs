@@ -101,10 +101,11 @@ try {
   runtime.publishCrewCheckNotice({id:'other',title:'New context',systemNotification:'never'}); await tick(); assert.equal(count(),beforeNotice+2);
   runtime.dismissCrewCheckPulse(); assert(audios.at(-1).pauses,'dismiss stops sound');
   now+=9_000; runtime.publishCrewCheckNotice({id:'clear',title:'Clear',systemNotification:'never'}); runtime.clearCrewCheckPulse(); assert(audios.at(-1).pauses,'clear stops sound');
-  now+=9_000; runtime.publishCrewCheckNotice({id:'disable',title:'Disable',systemNotification:'never'}); runtime.setCrewCheckPulseEnabled(false); accountPulse(false); assert(audios.at(-1).pauses,'disable stops sound');
+  now+=9_000; runtime.publishCrewCheckNotice({id:'disable',title:'Disable',systemNotification:'never'}); accountPulse(false);emit('crewcheck:notification-preferences-changed'); assert(audios.at(-1).pauses,'disable stops sound');
   const disabledCount=count(); now+=9_000; runtime.publishCrewCheckNotice({id:'disabled',title:'Disabled',systemNotification:'never'}); assert.equal(count(),disabledCount);
   runtime.setCrewCheckPulseEnabled(true);accountPulse(true);
   now+=310_000; runtime.publishCrewCheckNotice({id:'live',title:'Later same context',systemNotification:'never'}); await tick(); assert.equal(count(),disabledCount+1,'cooldown expires');
+  emit('crewcheck:auth-changed');assert(audios.at(-1).pauses,'account transition stops current sound');values.set('crewcheck_auth_user',JSON.stringify({id:'other-owner'}));values.set('crewcheck_pulse_enabled','1');assert.deepEqual(runtime.publishCrewCheckNotice({id:'foreign',title:'Foreign legacy',systemNotification:'never'}),{pulse:false,notification:false},'unowned legacy flag cannot enable another account');
   runtime.clearCrewCheckPulse();
   console.log('PASS notification sound: provenance, silent default, opt-in, foreground, dedupe, mute, interruption, failures, and actual Pulse integration');
 } finally {
