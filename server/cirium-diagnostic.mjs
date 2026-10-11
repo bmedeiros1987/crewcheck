@@ -424,6 +424,37 @@ function jsonObject(payload) {
   return payload && typeof payload === 'object' && !Array.isArray(payload);
 }
 
+// Both diagnostic paths use the same envelope contract. Dual envelopes are
+// ambiguous; a malformed plural field cannot fall back to an unrelated singular.
+function flightRows(payload) {
+  if (!jsonObject(payload)) return null;
+  const plural = Object.hasOwn(payload, 'flightStatuses');
+  const singular = Object.hasOwn(payload, 'flightStatus');
+  if (plural === singular) return null;
+  if (plural) return Array.isArray(payload.flightStatuses) ? payload.flightStatuses : null;
+  return jsonObject(payload.flightStatus) ? [payload.flightStatus] : null;
+}
+
+// Input may be ICAO/IATA/FS; rows report FS. Only this response's unambiguous
+// appendix reference resolves an alias. No guessed carrier table or extra call.
+function responseCarrier(payload, requested) {
+  const airlines = payload?.appendix?.airlines;
+  const matches = new Set();
+  if (Array.isArray(airlines)) {
+    for (const airline of airlines) {
+      if (!jsonObject(airline)) continue;
+      const ref = (field) => typeof airline[field] === 'string'
+        ? safeCode(airline[field], /^[A-Z0-9]{2,3}$/) : '';
+      if (![ref('fs'), ref('iata'), ref('icao')].includes(requested)) continue;
+      if (!ref('fs')) return null;
+      matches.add(ref('fs'));
+    }
+  }
+  if (matches.size > 1) return null;
+  // Without a reference, only the existing exact FS comparison is possible.
+  return matches.size === 1 ? [...matches][0] : requested;
+}
+
 export async function diagnoseCirium({ fetchImpl = globalThis.fetch, guard = defaultGuard } = {}) {
   const config = ciriumConfiguration();
   if (!config.configured) {
@@ -443,8 +474,10 @@ export async function diagnoseCirium({ fetchImpl = globalThis.fetch, guard = def
         if (status === 429) guard.noteRateLimit?.(retryAfterMs(response));
         let state = normalizeCiriumResult(status, payload);
         // A 2xx with an unusable body proves nothing about the account.
-        if (state === 'available' && !(jsonObject(payload) && Array.isArray(payload.flightStatuses)
-          && payload.flightStatuses.every((row) => acceptRow(row, 'LA', '3377', probeDate)))) state = 'invalid_payload';
+        const rows = flightRows(payload);
+        const carrier = responseCarrier(payload, 'LA');
+        if (state === 'available' && !(rows && carrier
+          && rows.every((row) => acceptRow(row, carrier, '3377', probeDate)))) state = 'invalid_payload';
         return {
           ok: state === 'available',
           provider: config.provider,
@@ -515,13 +548,10 @@ export async function diagnoseCiriumFlight({ carrier, flight, date, fetchImpl = 
       if (response.status < 200 || response.status >= 300) {
         return { ok: false, provider: config.provider, state, configured: true, httpStatus: response.status };
       }
-      const rows = jsonObject(payload) && Array.isArray(payload.flightStatuses)
-        ? payload.flightStatuses
-        : jsonObject(payload) && jsonObject(payload.flightStatus)
-          ? [payload.flightStatus]
-          : null;
+      const rows = flightRows(payload);
+      const resolvedCarrier = responseCarrier(payload, safeCarrier);
       if (!rows) return { ok: false, provider: config.provider, state: 'invalid_payload', configured: true, httpStatus: response.status };
-      const accepted = rows.filter((row) => acceptRow(row, safeCarrier, safeFlight, localDate));
+      const accepted = rows.filter((row) => resolvedCarrier && acceptRow(row, resolvedCarrier, safeFlight, localDate));
       const rejected = rows.length - accepted.length;
       if (rows.length && !accepted.length) {
         return { ok: false, provider: config.provider, state: 'invalid_payload', configured: true, httpStatus: response.status, rejectedRows: rejected };

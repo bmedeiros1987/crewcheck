@@ -424,3 +424,55 @@ console.log('Cirium timezone-independent chronology regression OK');
   }
 }
 console.log('Cirium displayed fallback chronology regression OK');
+
+// Response contracts only: no actual account/API behavior is established.
+{
+  const item = row({ flightNumber: '3377' });
+  const query = async (payload, carrier = 'LA') => diagnoseCiriumFlight({
+    carrier, flight: '3377', date: today, guard: createCiriumGuard(),
+    fetchImpl: async (url, options) => {
+      assert.match(String(url), new RegExp('/airline/' + carrier + '/flight-number/3377/'));
+      assert.equal(options.headers.authorization, 'fixture-token');
+      assert.equal(options.redirect, 'error');
+      return ok(payload);
+    },
+  });
+  const probe = (payload) => diagnoseCirium({ guard: createCiriumGuard(), fetchImpl: async () => ok(payload) });
+  for (const payload of [{ flightStatus: item }, { flightStatuses: [item] }]) {
+    assert.equal((await probe(payload)).state, 'available');
+    assert.equal((await query(payload)).count, 1);
+  }
+  for (const payload of [null, {}, [], { flightStatus: [] }, { flightStatus: null },
+    { flightStatuses: {} }, { flightStatuses: null, flightStatus: item },
+    { flightStatuses: [item], flightStatus: item }]) {
+    assert.equal((await probe(payload)).state, 'invalid_payload');
+    assert.equal((await query(payload)).state, 'invalid_payload');
+  }
+  assert.equal((await probe({ flightStatuses: [] })).state, 'available');
+  assert.equal((await query({ flightStatuses: [] })).state, 'no_data');
+  const mapped = (airlines, over = {}) => ({ flightStatus: { ...item, ...over }, appendix: { airlines } });
+  const airline = { fs: 'LA', iata: 'LA', icao: 'LAN' };
+  for (const airlines of [[airline], [airline, { ...airline }], [{ fs: 'LA', iata: 'ZZ', icao: 'LAN' }]]) {
+    const result = await query(mapped(airlines), 'LAN');
+    assert.equal(result.state, 'available');assert.equal(result.flights[0].carrier, 'LA');
+    assert.equal(result.query.carrier, 'LAN', 'original query is retained, never rewritten');
+  }
+  assert.equal((await query(mapped([{ fs: 'LA', iata: 'ZZ', icao: 'LAN' }]), 'ZZ')).state, 'available');
+  for (const payload of [
+    { flightStatus: item }, mapped([]), mapped({ fs: 'LA', icao: 'LAN' }),
+    mapped([{ fs: 'LA', icao: 'OTH' }]), mapped([{ icao: 'LAN' }]),
+    mapped([{ fs: {}, icao: 'LAN' }]), mapped([airline, { fs: 'XX', icao: 'LAN' }]),
+    mapped([airline, { fs: 'XX', iata: 'LAN' }]),
+    mapped([airline], { carrierFsCode: 'XX' }), mapped([airline], { flightNumber: '3378' }),
+    mapped([airline], { departureDate: { dateLocal: '2000-01-01' } }),
+  ]) {
+    const result = await query(payload, 'LAN');
+    assert.equal(result.state, 'invalid_payload');assert.equal(result.rejectedRows, 1);
+    assert.equal(result.flights, undefined);
+  }
+  const collision = mapped([airline, { fs: 'XX', iata: 'LA', icao: 'XXX' }]);
+  assert.equal((await probe(collision)).state, 'invalid_payload');
+  assert.equal((await query(collision)).state, 'invalid_payload', 'direct FS cannot bypass conflicting reference namespaces');
+  assert.equal((await query({ flightStatus: item })).state, 'available', 'exact FS comparison still works without appendix');
+}
+console.log('Cirium shared strict envelope and unambiguous response carrier reference regression OK; synthetic only');
