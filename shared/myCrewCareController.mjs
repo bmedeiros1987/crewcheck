@@ -152,7 +152,7 @@ export function createMyCrewCareController({
       emit();
       try {
         await cleanup;
-        if (epoch === bindingEpoch) logoutRecoveryKey = null;
+        if (epoch === bindingEpoch && !engine.state().cleanupInProgress && !engine.state().cleanupPending) logoutRecoveryKey = null;
         return true;
       } finally {
         emit();
@@ -258,12 +258,11 @@ export function createMyCrewCareController({
       emit();
       try {
         await cleanup;
-        if (epoch === bindingEpoch) logoutRecoveryKey = null;
+        if (epoch === bindingEpoch && !engine.state().cleanupInProgress && !engine.state().cleanupPending) logoutRecoveryKey = null;
       } finally {
-        if (epoch === bindingEpoch) {
-          refreshSuggested = false;
-          emit();
-        }
+        if (epoch === bindingEpoch) refreshSuggested = false;
+        // A stale cleanup can be the last outstanding operation. Publish current state, never its old scope.
+        emit();
       }
     },
   });

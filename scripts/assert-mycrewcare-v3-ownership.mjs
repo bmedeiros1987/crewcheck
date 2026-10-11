@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { reconcileMyCrewCareLogistics } from '../shared/myCrewCareLogistics.mjs';
+import { reconcileMyCrewCareLogistics, normalizeMyCrewCareStays } from '../shared/myCrewCareLogistics.mjs';
 import { createMyCrewCarePersistentSession } from '../shared/myCrewCarePersistentSession.mjs';
 
 const read = (path) => readFileSync(path, 'utf8');
@@ -86,6 +87,8 @@ assert.match(profile, /profile\.getCookieManager\(\)/);
 assert.doesNotMatch(profile, /CookieManager\.getInstance/);
 assert.match(store, /AES\/GCM\/NoPadding/);
 assert.match(store, /AndroidKeyStore/);
+assert.match(store, /stayFingerprint/);
+assert.match(store, /exactInteger\(root, "schemaVersion", 2\)/);
 assert.match(store, /HOTEL_FACT_KEYS/);
 assert.match(store, /PICKUP_FACT_KEYS/);
 assert.match(store, /onlyKeys\(fact, expected\)/);
@@ -180,7 +183,8 @@ assert.equal(unmatched.facts.length, 0);
 assert.equal(unmatched.unmatched.length, 1);
 
 const tamperedPayload = JSON.stringify({
-  schemaVersion: 1,
+  schemaVersion: 2,
+  stayFingerprint: createHash('sha256').update(JSON.stringify(normalizeMyCrewCareStays([stay], context))).digest('hex'),
   scope: context,
   syncedAt: '2026-10-09T12:00:00Z',
   emptyConfirmed: false,
@@ -209,6 +213,15 @@ const tamperedPayload = JSON.stringify({
     unexpected: 'must-be-rejected',
   }],
 });
+// Prove the same schema/binding is accepted before testing the extra fact key.
+const untampered = JSON.parse(tamperedPayload);
+delete untampered.facts[0].unexpected;
+const validSession = createMyCrewCarePersistentSession({
+  storage: { read: () => JSON.stringify(untampered) }, now: () => Date.parse('2026-10-09T12:00:00Z'),
+});
+validSession.setContext(context, [stay]);
+assert.equal(await validSession.restore(), true);
+
 let clearedTampered = false;
 const tamperedSession = createMyCrewCarePersistentSession({
   adapter: {},

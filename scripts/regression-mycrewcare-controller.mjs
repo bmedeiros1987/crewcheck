@@ -546,3 +546,77 @@ test('late logout success or failure never exposes owner A recovery while B is b
     assert.equal(await controller.retryLogout(null), false);
   }
 });
+
+
+test('overlapping logouts preserve recovery until every cleanup settles in either order', async () => {
+  const { createMyCrewCarePersistentSession } = await import('../shared/myCrewCarePersistentSession.mjs');
+  for (const order of [[1, 0], [0, 1]]) {
+    const completions = [];
+    const session = createMyCrewCarePersistentSession({ now: () => NOW, storage: { clear: () => {} }, adapter: {
+      disconnect: () => new Promise((resolve, reject) => completions.push({ resolve, reject })),
+    } });
+    const controller = make(fakeBridge(), { session });
+    const a = ctx('A'), stays = [stayFor(a)], panel = panelFor(controller);
+    await controller.bind(a, stays);
+    const first = controller.logout().then(() => null, error => error);
+    const second = controller.logout().then(() => null, error => error);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(controller.getSnapshot().busy, true);
+    for (const index of order) {
+      if (index === 0) completions[index].reject(new Error('synthetic old cleanup failure'));
+      else completions[index].resolve();
+      await (index === 0 ? first : second);
+    }
+    assert.equal(controller.getSnapshot().busy, false);
+    assert.equal(controller.getSnapshot().canRetryCleanup, true);
+    assert.match(renderToStaticMarkup(panel({ context: null, stays: [] })), /Tentar desconectar novamente/);
+    assert.match(renderToStaticMarkup(panel({ context: a, stays })), /Tentar desconectar novamente/);
+    assert.equal(controller.canRetryLogout(ctx('B')), false);
+    const retry = controller.retryLogout(null, controller.getLogoutRecoveryEpoch(null));
+    await new Promise(resolve => setImmediate(resolve)); completions[2].resolve();
+    assert.equal(await retry, true);
+    assert.equal(controller.getSnapshot().canRetryCleanup, false);
+  }
+});
+
+
+test('failed A cleanup cannot retarget overlapping B logouts or erase B retry', async () => {
+  const { createMyCrewCarePersistentSession } = await import('../shared/myCrewCarePersistentSession.mjs');
+  for (const order of [[2, 1], [1, 2]]) {
+    const operations = [], cleared = [];
+    const session = createMyCrewCarePersistentSession({ now: () => NOW, storage: { clear: accountId => cleared.push(accountId) }, adapter: {
+      disconnect: accountId => new Promise((resolve, reject) => operations.push({ accountId, resolve, reject })),
+    } });
+    const controller = make(fakeBridge(), { session });
+    const a = ctx('A'), b = ctx('B'), panel = panelFor(controller);
+    await controller.bind(a, [stayFor(a)]);
+    const logoutA = controller.logout().catch(error => error);
+    await new Promise(resolve => setImmediate(resolve)); operations[0].reject(new Error('synthetic A failure'));
+    await logoutA;
+    await controller.bind(b, [stayFor(b)]);
+    assert.equal(controller.getSnapshot().canRetryCleanup, false, 'B must not inherit A recovery');
+    const firstB = controller.logout().catch(error => error), secondB = controller.logout().catch(error => error);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(operations.map(item => item.accountId), ['A', 'B', 'B']);
+    assert.deepEqual(cleared, ['A', 'B', 'B']);
+    for (const index of order) {
+      if (index === 1) operations[index].reject(new Error('synthetic B failure')); else operations[index].resolve();
+      await (index === 1 ? firstB : secondB);
+    }
+    assert.equal(controller.getSnapshot().busy, false);
+    assert.equal(controller.getSnapshot().status, 'cleanup-error');
+    assert.equal(controller.getSnapshot().lastError, 'profile-disconnect-failed');
+    assert.equal(controller.getSnapshot().canRetryCleanup, true);
+    assert.match(renderToStaticMarkup(panel({ context: null, stays: [] })), /Tentar desconectar novamente/);
+    assert.equal(renderToStaticMarkup(panel({ context: a, stays: [stayFor(a)] })), '');
+    const retryB = controller.retryLogout(null, controller.getLogoutRecoveryEpoch(null));
+    await new Promise(resolve => setImmediate(resolve)); assert.equal(operations[3].accountId, 'B'); operations[3].resolve();
+    assert.equal(await retryB, true);
+    await controller.bind(a, [stayFor(a)]);
+    assert.equal(controller.getSnapshot().canRetryCleanup, true, 'A failure retained privately until A returns');
+    assert.equal(controller.getSnapshot().lastError, 'profile-disconnect-failed');
+    const retryA = controller.disconnect();
+    await new Promise(resolve => setImmediate(resolve)); assert.equal(operations[4].accountId, 'A'); operations[4].resolve(); await retryA;
+    assert.equal(controller.getSnapshot().canRetryCleanup, false);
+  }
+});

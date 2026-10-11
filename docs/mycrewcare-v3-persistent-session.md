@@ -160,3 +160,15 @@ Both negative regressions fail on 737279be before the fixes. UI/native release k
 ### Logout recovery view follow-up (2026-10-11)
 
 A failed logout keeps only its prior normalized owner identity for cleanup recovery, separate from the cleared render binding. Recovery is visible for that exact context or the logged-out null context, only while no new context is bound. This view renders only a generic cleanup error and retry button: no facts, cache age, consent or refresh controls. The null binding effect cannot erase or retarget pending cleanup. A retry checks ownership and absence of a newer binding at action time; a stale callback becomes a no-op after B binds. Successful retry drops the recovery identity. Late success/failure of A preserves B. The retained identity is memory-only; this change does not persist credentials or prove physical SSO cleanup.
+
+
+### Post-merge review: reused stays and overlapping logout completion
+
+Cache schema2 adds one SHA-256 fingerprint of the sorted, normalized persisted-stay registry. Restore requires the current registry to match exactly (including event, airport, pairing, time zone and interval), in addition to account/roster/revision/provider scope. The fingerprint contains no new raw portal fields. Legacy schema1 and missing/mismatched bindings are discarded, requiring a future explicit refresh. Native encrypted-store validation uses the same schema/strict fingerprint shape; no new store or credential persistence is introduced.
+
+Logout recovery identity remains until the entire per-account cleanup barrier completes successfully. Every completion publishes current engine state even if its own binding epoch became stale; it never restores its captured scope. An older failed operation settling after a newer success therefore clears busy and retains owner-scoped retry. Both settlement orders are covered, alongside the existing late A/new B cases. Flags stay OFF and the panel stays unmounted.
+
+
+### Follow-up: failed A followed by overlapping B logout
+
+The current binding or detached logout owns cleanup targeting. Failed cleanups are retained in a memory-only map keyed by account, not a global fallback target. Binding B neither inherits A's error nor clears it. Both overlapping B logouts target B (native and storage); any B failure remains retryable in either completion order. Returning to A surfaces its retained error until A cleanup succeeds. Late completion records that account's result, and publishes error only when that account owns the current cycle; it never reinstalls a prior context. Restore, consent and sync cannot hide a pending owner failure. No credential/data persistence is added; the map contains only stable cleanup error codes.
