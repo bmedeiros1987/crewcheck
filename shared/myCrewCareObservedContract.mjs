@@ -30,7 +30,9 @@ function lines(element) {
 function line(values, label) {
   const found = values.filter(value => value.startsWith(`${label}:`));
   if (found.length !== 1) fail();
-  return clean(found[0].slice(label.length + 1));
+  const value = clean(found[0].slice(label.length + 1));
+  if (!value) fail();
+  return value;
 }
 function wall(value) {
   const match = /^(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}) ([0-2]\d:[0-5]\d)$/.exec(value);
@@ -62,7 +64,9 @@ function transport(element) {
   const pickupWallTime = line(values, 'Pick-up time');
   const transit = /^(\d+) minutes$/.exec(line(values, 'Transit time'));
   if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(pickupWallTime) || !transit || Number(transit[1]) > 360) fail();
-  return Object.freeze({ providerName: clean(one(element, 'strong').textContent),
+  const providerName = clean(one(element, 'strong').textContent);
+  if (!providerName) fail();
+  return Object.freeze({ providerName,
     pickupWallTime, explicitPickupDate: null, transitMinutes: Number(transit[1]) });
 }
 /** The caller must supply a fresh before/after profile observation from one trusted session.
@@ -120,7 +124,8 @@ export function observeMyCrewCareCards(document, pageUrl) {
       || ref.searchParams.getAll('tripreservid').length !== 1 || ref.searchParams.getAll('dutyperiodnumber').length !== 1) fail();
     const key = JSON.stringify([providerReservationId, dutyPeriodNumber]);
     if (keys.has(key)) fail(); keys.add(key);
-    return Object.freeze({ providerReservationId, dutyPeriodNumber, airport, pairingId: pairing[1],
-      hotelName: clean(one(card, 'p.mt-stay-head a[href^="hoteldetails.aspx?"]').textContent) });
+    const hotelName = clean(one(card, 'p.mt-stay-head a[href^="hoteldetails.aspx?"]').textContent);
+    if (!hotelName) fail();
+    return Object.freeze({ providerReservationId, dutyPeriodNumber, airport, pairingId: pairing[1], hotelName });
   }));
 }

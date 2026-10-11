@@ -72,3 +72,14 @@ test('exact origin and tenant required; source feedback dates are ignored', () =
   assert.equal('date' in card, false);
   assert.equal('checkIn' in card, false);
 });
+
+test('required empty or whitespace-only visible values fail like missing nodes', () => {
+  for (const value of ['', '   ', '\t \n']) {
+    assert.throws(() => parse(fixture('reservation').replace('Confirmation: Planned', `Confirmation: ${value}`)));
+    assert.throws(() => parse(fixture('reservation').replace('Synthetic Airport Shuttle</strong>', `${value}</strong>`)));
+    assert.throws(() => parse(fixture('reservation').replace('Synthetic Return Shuttle</strong>', `${value}</strong>`)));
+    assert.throws(() => observeMyCrewCareCards(dom(fixture('mytravel').replace('Synthetic Harbor Hotel</a>', `${value}</a>`)), `${origin}mytravel.aspx`));
+  }
+  assert.deepEqual(parse(fixture('reservation').replace('Confirmation: Planned', 'Confirmation: Awaiting allocation')).status,
+    { raw: 'Awaiting allocation', display: 'Awaiting allocation' });
+});
