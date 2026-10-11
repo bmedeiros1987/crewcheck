@@ -6,6 +6,8 @@ on:
       - scripts/ci/staged-preparation-experiment.mjs
       - scripts/ci/staged-build-adapter.mjs
       - scripts/ci/staged-build-check.mjs
+      - scripts/ci/staged-concierge-job.mjs
+      - scripts/ci/capture-composition-evidence.mjs
       - scripts/regression-staged-build-adapter.mjs
       - scripts/v139/staged-preparation-prototype.mjs
       - scripts/v139/prototype-*.mjs
@@ -63,6 +65,7 @@ jobs:
           git worktree add --detach "$RUNNER_TEMP/staged-composition-${{ matrix.lane }}" "$head"
           git -C "$RUNNER_TEMP/staged-composition-${{ matrix.lane }}" -c core.hooksPath=/dev/null -c user.name='Disposable CI' -c user.email=fixture@example.invalid merge --no-ff --no-edit 647aaed4c4460f646865221b181419229ebe8e85
           composition="$(git -C "$RUNNER_TEMP/staged-composition-${{ matrix.lane }}" rev-parse HEAD)"
+          node scripts/ci/capture-composition-evidence.mjs "$RUNNER_TEMP/staged-composition-${{ matrix.lane }}" "$job/exact-1016-composition" "$composition"
           env -i PATH="$PATH" HOME="$job" node scripts/ci/staged-build-check.mjs "$RUNNER_TEMP/staged-composition-${{ matrix.lane }}" "$job" raw "$composition"
           mv "$job/adapter-results.json" "$job/adapter-composition-results.json"
           test "$(git rev-parse HEAD)" = "$head"
@@ -75,5 +78,7 @@ jobs:
             ${{ runner.temp }}/staged-preparation-${{ matrix.lane }}/results.json
             ${{ runner.temp }}/staged-preparation-${{ matrix.lane }}/adapter-*-results.json
             ${{ runner.temp }}/staged-preparation-${{ matrix.lane }}/adapter-results.json
+            ${{ runner.temp }}/staged-preparation-${{ matrix.lane }}/exact-1016-composition.bundle
+            ${{ runner.temp }}/staged-preparation-${{ matrix.lane }}/exact-1016-composition.json
           if-no-files-found: error
           retention-days: 3

@@ -62,3 +62,47 @@ This scope deliberately accepts same-UID chmod and setsid escape limitations
 only for trusted code in disposable CI. It provides no security sandbox or
 protection against hostile repository code. No runtime migration, deployment,
 credential changes, message delivery or production data access is authorized.
+
+## First build/check adoption: canonical-journeys only
+
+The Concierge canonical journeys job now calls the approved adapter through
+`scripts/ci/staged-concierge-job.mjs`. It preserves both raw gates, all five
+prepared gates, the server syntax check, consumer preparation idempotency and the
+final prepared TypeScript check. The raw Concierge gate writes bridge outputs,
+so it runs in a separate writable raw validation copy, leaving the attested raw
+input untouched. Build uses direct TypeScript/Concierge/Vite-native commands in
+an exclusive writable prepared copy. The targeted Concierge apply/cmp regression
+still runs there after build. No gate is optional or allowed to fail; errors,
+timeouts, lease contention and composition conflicts stop the job without fallback.
+
+Only this job changes consumer behavior. Runtime scripts and production package
+entries remain unchanged. Dependencies and npm cache belong exclusively to the
+job, lifecycle scripts are disabled, and no credentials or runtime .env are
+inherited. Checkout HEAD, bytes and modes must remain intact. An extra early
+TypeScript check supplements the existing final TypeScript gate. PR triggering
+also covers the reviewed stack, and source/generator/dependency/config changes
+are included for both PRs and existing main pushes; original path triggers remain.
+
+The adoption is tested against main
+`efdd999892df8330a26de15b821cd2466844535e` in a separate worktree, without
+publishing it. If that main is already an ancestor, Git records the actual
+already-containing HEAD instead of inventing a merge. `capture-composition-evidence.mjs`
+saves the exact tested commit, parents, tree, full Git mode/type/object/path
+manifest and a verifiable Git bundle with explicit prerequisites. The existing
+1016 experiment also captures its actual per-lane composition bundle/manifest.
+These artifacts are uploaded even on failure; validation reports separately
+state whether their corresponding commit passed. Capture is evidence, not approval.
+
+Evidence distinction: the earlier Library ZIP for f12cd50c contains local
+composition ad5092aa (parents 4363adf5 and 647aaed4), whose adapter modules match
+f12cd50c. It does not prove byte equality of the full CI trees ca8944d8/92de7a00.
+The next CI artifacts preserve those newly tested objects directly, rather than
+presenting an older local composition as proof of their complete trees.
+
+Dependency audit at the main above: PR1017 head
+`887aeb559fe85cda1c88ae495758e2d70af41f46` remains unmerged. All four scoped
+changes are still absent/different in main: prepared CrewLock recognition, its
+actual-block replay regression and mandatory web gate, and the Maps fixture
+clock control. Eliminating duplicate preparation in this one job does not remove
+the repeat/invalidation dependency or justify dropping another gate. The stack
+and PR1017 remain unchanged; no PR closure or runtime migration is part of adoption.
