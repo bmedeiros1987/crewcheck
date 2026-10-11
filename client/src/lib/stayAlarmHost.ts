@@ -8,7 +8,7 @@ export function preparedStayAlarmAdapter() {
   if (runtime) return runtime;
   const port = (window as any).CrewCheckStayHost;
   if (!port?.postMessage || window.top !== window || window.location.origin !== 'https://crewcheck.online') return null;
-  runtime = createStayHostRuntime({ port, readAccount: stayEditorAccount, readToken: getToken });
+  runtime = createStayHostRuntime({ port, readAccount: stayEditorAccount, readToken: getToken, onState: () => window.dispatchEvent(new Event('crewcheck:stay-host-state')) });
   const reauthenticate = () => { void runtime.authenticate().finally(() => window.dispatchEvent(new Event('crewcheck:stay-host-state'))); };
   window.addEventListener('crewcheck:auth-changed', reauthenticate);
   window.addEventListener('crewcheck:auth-expired', () => { void runtime.revoke(); });

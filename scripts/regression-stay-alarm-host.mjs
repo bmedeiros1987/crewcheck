@@ -35,3 +35,16 @@ test('wiring performs inspect/replace and edit invalidation cancels stable nativ
  const cancel=f.messages.at(-1),cancelBody=JSON.parse(cancel.payload);assert.equal(cancelBody.action,'cancel');assert.equal(cancelBody.key,key);
  f.reply(cancel,'ok',JSON.stringify({...cancelBody,state:'cancelled',revision:2,deliveryConfirmed:false,acknowledgement:'native-api-and-journal-completed'}));await invalidation;
 });
+test('edit during pending replace rejects its receipt then cancels the same native key',async()=>{
+ const f=fixture(),auth=f.runtime.authenticate();f.reply(f.messages[0],'verified',f.caps());await auth;
+ const key='stay-hotel-apz:account-a:event-race',p=f.runtime.replace({key,alarmAt:'2030-10-11T00:01:00Z',hotelReportAt:'2030-10-11T00:03:00Z',confirmed:true,apzConfirmed:true,mode:'relative'});
+ await new Promise(resolve=>setImmediate(resolve));let envelope=f.messages.at(-1),body=JSON.parse(envelope.payload);
+ f.reply(envelope,'ok',JSON.stringify({...body,state:'not-programmed',revision:0,deliveryConfirmed:false}));await new Promise(resolve=>setImmediate(resolve));
+ envelope=f.messages.at(-1);body=JSON.parse(envelope.payload);assert.equal(body.action,'replace');
+ const invalidation=f.runtime.invalidate();
+ f.reply(envelope,'ok',JSON.stringify({...body,state:'scheduled',revision:1,deliveryConfirmed:false,acknowledgement:'native-api-and-journal-completed'}));assert.equal((await p).state,'unknown');
+ await new Promise(resolve=>setImmediate(resolve));envelope=f.messages.at(-1);body=JSON.parse(envelope.payload);assert.equal(body.action,'inspect');
+ f.reply(envelope,'ok',JSON.stringify({...body,state:'scheduled',revision:1,deliveryConfirmed:false}));await new Promise(resolve=>setImmediate(resolve));
+ envelope=f.messages.at(-1);body=JSON.parse(envelope.payload);assert.equal(body.action,'cancel');assert.equal(body.key,key);
+ f.reply(envelope,'ok',JSON.stringify({...body,state:'cancelled',revision:2,deliveryConfirmed:false,acknowledgement:'native-api-and-journal-completed'}));await invalidation;
+});

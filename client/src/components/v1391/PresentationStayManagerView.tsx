@@ -212,7 +212,7 @@ export default function PresentationStayManagerView({ events, initialStayId, emb
   function discardEdits() { if (!selected) return; drafts.current.delete(selected.id); dirty.current = false; previousId.current = ''; setStays(items => [...items]); }
   const apzEpoch = selected?.kind === 'stay' && apzConfirmed ? stayLocalInstant(apzDate, draft.presentationTime, hotelTimeZone) : null;
 
-  useEffect(() => { void nativeHost.current?.invalidate(); }, [events, selectedId, apzEpoch, apzConfirmed, hotelTimeZone, alarmChoice]);
+  useEffect(() => { void nativeHost.current?.invalidate(); }, [events, selectedId, apzEpoch, apzConfirmed, hotelTimeZone, alarmChoice, defaultLead, draft.hotelName]);
 
   function chooseHotel(hotel: (typeof CREW_HOTEL_CATALOG)[number]) {
     dirty.current = true;
