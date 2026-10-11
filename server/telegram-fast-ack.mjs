@@ -1,3 +1,4 @@
+import { handleNotificationDiagnostic } from './notification-diagnostic.mjs';
 import { runCrewCheckPushQueue } from './web-push/bidsProducer.mjs';
 import { handleSimulatedWorker } from './free-day-simulated-worker.mjs';
 import { handlePersonalConsent } from './free-day-personal-consent.mjs';
@@ -542,6 +543,7 @@ http.createServer = function patchedCreateServer(...args) {
     const path = pathname(req);
     try {
       if (path === '/api/notifications/runtime-health') return runtimeHealth(req, res);
+      if (path === '/api/notifications/diagnostic') return handleNotificationDiagnostic(req, res, { schedulerHealthState });
       if (path === '/api/notifications/free-day-simulated-worker') return handleSimulatedWorker(req, res, { identity, readJson, dbPool, sendJson });
       if (path === '/api/notifications/free-day-personal-consent') return handlePersonalConsent(req, res, { identity, readJson, dbPool, sendJson });
       if (path === '/api/notifications/free-day-source-queue') return handleSourceQueue(req, res, { identity, readJson, dbPool, sendJson, configured: Boolean(String(process.env.TELEGRAM_BOT_TOKEN || process.env.CREWCHECK_TELEGRAM_BOT_TOKEN || '').trim()) });
