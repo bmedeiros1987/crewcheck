@@ -111,6 +111,7 @@ public final class StayAlarmEngine {
         Record done=pending.state("scheduled");commit(done);
         return result(done,"scheduled","native-api-and-journal-completed");
     }
+    public boolean permissionGranted(){synchronized(LOCK){return owner.enabled()&&device.permitted();}}
     public Result replace(Record request,long expectedRevision,boolean confirmed,boolean apzConfirmed) {
         synchronized(LOCK) {
             if (!valid(request)||!owned(request)||!confirmed||!apzConfirmed||!device.permitted()

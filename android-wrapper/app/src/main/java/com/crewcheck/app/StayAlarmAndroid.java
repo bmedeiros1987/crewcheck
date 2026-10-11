@@ -108,12 +108,8 @@ public final class StayAlarmAndroid implements StayAlarmEngine.Store,StayAlarmEn
     /** Only a future trusted native host may issue this lease AFTER physical
      * validation. There is no writer or JavascriptInterface for it in this PR. */
     public static StayAlarmEngine.Owner owner(Context context) {
-        SharedPreferences gate=context.getSharedPreferences("crewcheck_stay_alarm_owner_v1",Context.MODE_PRIVATE);
-        return new StayAlarmEngine.Owner() {
-            public String epoch(){return gate.getString("verifiedOwnerEpoch",null);}
-            public boolean enabled(){return gate.getBoolean("physicalValidationApproved",false);}
-            public String activeOwner(){return gate.getLong("verifiedOwnerExpiresAt",0)>System.currentTimeMillis()?gate.getString("verifiedOwnerId",null):null;}
-        };
+        // No process/session authority after restart => fail closed; reverify.
+        return StayAlarmHostAndroid.owner();
     }
     public static StayAlarmEngine engine(Context context) {StayAlarmAndroid driver=new StayAlarmAndroid(context);return new StayAlarmEngine(driver,driver,owner(context));}
 }

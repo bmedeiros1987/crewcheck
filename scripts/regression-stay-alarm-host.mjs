@@ -1,0 +1,37 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createStayHostRuntime } from '../shared/stay-alarm-host-runtime.mjs';
+function fixture(){let account='account-a',token='candidate-a';const listeners=new Set(),messages=[],timers=new Map();let timer=0;
+ const port={addEventListener:(type,fn)=>listeners.add(fn),removeEventListener:(type,fn)=>listeners.delete(fn),postMessage:raw=>messages.push(JSON.parse(raw))};
+ const runtime=createStayHostRuntime({port,readAccount:()=>account,readToken:()=>token,setTimer:fn=>{timers.set(++timer,fn);return timer;},clearTimer:id=>timers.delete(id)});
+ const reply=(request,state,payload)=>listeners.forEach(fn=>fn({data:JSON.stringify({id:request.id,state,payload})}));
+ const caps=(owner=account,epoch='epoch-1')=>JSON.stringify({protocol:'crewcheck-stay-alarm-v1',featureEnabled:true,atomicReplace:true,acknowledgedCancel:true,deliveryConfirmed:false,ownerId:owner,ownerEpoch:epoch,permissionGranted:true});
+ return {runtime,messages,reply,caps,timers,switchAccount(){account='account-b';token='candidate-b';},logout(){account=null;token=null;}};
+}
+test('OFF: absent scoped port constructs no adapter',()=>assert.equal(createStayHostRuntime({}),null));
+test('verified native identity establishes adapter; candidate token only goes to authenticate',async()=>{const f=fixture(),p=f.runtime.authenticate();assert.equal(f.runtime.ready(),false);assert.equal(f.messages[0].token,'candidate-a');f.reply(f.messages[0],'verified',f.caps());assert.equal(await p,true);assert.equal(f.runtime.permission(),true);});
+test('server rejection leaves controller unavailable',async()=>{const f=fixture(),p=f.runtime.authenticate();f.reply(f.messages[0],'rejected',null);assert.equal(await p,false);assert.equal((await f.runtime.replace({key:'k'})).state,'not-programmed');});
+test('verified owner mismatch cannot trust local account',async()=>{const f=fixture(),p=f.runtime.authenticate();f.reply(f.messages[0],'verified',f.caps('foreign'));assert.equal(await p,false);assert.equal(f.runtime.ready(),false);});
+test('logout invalidates delayed authentication before native reply',async()=>{const f=fixture(),p=f.runtime.authenticate();f.logout();const revoke=f.runtime.revoke();f.reply(f.messages[0],'verified',f.caps('account-a'));f.reply(f.messages[1],'revoked',null);await revoke;assert.equal(await p,false);assert.equal(f.runtime.ready(),false);});
+test('account switch accepts only latest verified owner/epoch',async()=>{const f=fixture(),old=f.runtime.authenticate();f.switchAccount();const current=f.runtime.authenticate();f.reply(f.messages[0],'verified',f.caps('account-a'));f.reply(f.messages[1],'verified',f.caps('account-b','epoch-2'));assert.equal(await old,false);assert.equal(await current,true);assert.match(f.runtime.session(),/epoch-2/);});
+test('same-account reauthentication invalidates pending epoch',async()=>{const f=fixture(),old=f.runtime.authenticate(),current=f.runtime.authenticate();f.reply(f.messages[0],'verified',f.caps());f.reply(f.messages[1],'verified',f.caps('account-a','new-epoch'));assert.equal(await old,false);assert.equal(await current,true);});
+test('lease expiry revokes authority instead of scheduling a web alarm',async()=>{const f=fixture(),p=f.runtime.authenticate();f.reply(f.messages[0],'verified',f.caps());await p;const expire=[...f.timers.values()][0];expire();assert.equal(f.runtime.ready(),false);assert.equal(f.messages.at(-1).action,'revoke');f.reply(f.messages.at(-1),'revoked',null);});
+test('wiring performs inspect/replace and edit invalidation cancels stable native identity',async()=>{
+ const f=fixture(),auth=f.runtime.authenticate();f.reply(f.messages[0],'verified',f.caps());await auth;
+ const key='stay-hotel-apz:account-a:event-1',input={key,alarmAt:'2030-10-11T00:01:00Z',hotelReportAt:'2030-10-11T00:03:00Z',confirmed:true,apzConfirmed:true,mode:'relative'};
+ const pending=f.runtime.replace(input);
+ await new Promise(resolve=>setImmediate(resolve));
+ const inspect=f.messages.at(-1),body=JSON.parse(inspect.payload);
+ assert.equal(body.action,'inspect');assert.equal(body.ownerEpoch,'epoch-1');assert.equal(body.token,undefined);
+ f.reply(inspect,'ok',JSON.stringify({...body,state:'not-programmed',revision:0,deliveryConfirmed:false}));
+ await new Promise(resolve=>setImmediate(resolve));
+ const replace=f.messages.at(-1),request=JSON.parse(replace.payload);assert.equal(request.action,'replace');
+ f.reply(replace,'ok',JSON.stringify({...request,state:'scheduled',revision:1,deliveryConfirmed:false,acknowledgement:'native-api-and-journal-completed'}));
+ assert.equal((await pending).state,'scheduled');
+ const invalidation=f.runtime.invalidate();await new Promise(resolve=>setImmediate(resolve));
+ const cancelInspect=f.messages.at(-1),sample=JSON.parse(cancelInspect.payload);
+ f.reply(cancelInspect,'ok',JSON.stringify({...sample,state:'scheduled',revision:1,deliveryConfirmed:false}));
+ await new Promise(resolve=>setImmediate(resolve));
+ const cancel=f.messages.at(-1),cancelBody=JSON.parse(cancel.payload);assert.equal(cancelBody.action,'cancel');assert.equal(cancelBody.key,key);
+ f.reply(cancel,'ok',JSON.stringify({...cancelBody,state:'cancelled',revision:2,deliveryConfirmed:false,acknowledgement:'native-api-and-journal-completed'}));await invalidation;
+});
