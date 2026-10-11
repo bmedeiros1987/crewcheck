@@ -127,6 +127,45 @@ public class ObservedAcquisitionHarness {
     exceptionOwner.begin(scope("A"),exceptionA,new Deadline(),(r,e)->{throw callbackFailure;});
     try {exceptionOwner.begin(scope("B"),exceptionB,exceptionTimer,exceptionBResult::done);throw new AssertionError("old callback exception hidden");}catch(RuntimeException e){check(e==callbackFailure,"original callback exception preserved");}
     check(exceptionTimer.fire!=null&&!exceptionB.pending.isEmpty(),"B timer and acquisition initialized despite A callback failure");exceptionB.drive();check(exceptionBResult.result.accountId.equals("B"),"B remains live");cases++;
+    // Cleanup continues even when the canceled operation's completion throws, preserving the error.
+    final com.crewcheck.app.CrewCheckMyCrewCareRuntimeV3 throwingCleanup=new com.crewcheck.app.CrewCheckMyCrewCareRuntimeV3(new android.app.Activity(),null,null,null);
+    Source throwingCleanupSource=new Source();RuntimeException cleanupFailure=new RuntimeException("synthetic canceled completion");
+    throwingCleanup.observeMyCrewCareV3ForReview(scope("A"),throwingCleanupSource,new Deadline(),(r,e)->{throw cleanupFailure;});
+    int storeBefore=com.crewcheck.app.CrewCheckMyCrewCareSecureStore.clearCalls,profileBefore=com.crewcheck.app.CrewCheckMyCrewCareProfile.clearCalls;
+    try {throwingCleanup.startMyCrewCareCleanupV3("A",true,"cleanup_throw");throw new AssertionError("cleanup completion error hidden");}catch(RuntimeException e){check(e==cleanupFailure,"cleanup error preserved");}
+    check(com.crewcheck.app.CrewCheckMyCrewCareSecureStore.clearCalls==storeBefore+1&&com.crewcheck.app.CrewCheckMyCrewCareProfile.clearCalls==profileBefore+1&&throwingCleanup.myCrewCareCleanupResultV3("A","cleanup_throw").equals("ok"),"actual cleanup completes despite completion failure");cases++;
+    // A's finishing operation is detached from active before source.cancel reenters cleanup.
+    final com.crewcheck.app.CrewCheckMyCrewCareRuntimeV3 terminalCleanup=new com.crewcheck.app.CrewCheckMyCrewCareRuntimeV3(new android.app.Activity(),null,null,null);
+    Source terminalCleanupSource=new Source();Capture terminalCleanupResult=new Capture();
+    terminalCleanup.observeMyCrewCareV3ForReview(scope("A"),terminalCleanupSource,new Deadline(),terminalCleanupResult::done);
+    terminalCleanupSource.cancelHook=()->check(terminalCleanup.startMyCrewCareCleanupV3("A",true,"cleanup_finish"),"reentrant terminal cleanup accepted");
+    terminalCleanupSource.drive();check(terminalCleanup.myCrewCareCleanupResultV3("A","cleanup_finish").equals("ok")&&terminalCleanupResult.count==1&&terminalCleanupResult.result==null&&terminalCleanupResult.error.equals("observed-cancelled"),"account epoch revokes detached terminal success");cases++;
+    // Pending cleanup prevents new A from replacing B; repeated callbacks cannot release a second cleanup.
+    final com.crewcheck.app.CrewCheckMyCrewCareRuntimeV3 pendingCleanup=new com.crewcheck.app.CrewCheckMyCrewCareRuntimeV3(new android.app.Activity(),null,null,null);
+    com.crewcheck.app.CrewCheckMyCrewCareProfile.defer=true;
+    pendingCleanup.startMyCrewCareCleanupV3("A",true,"cleanup_pending1");pendingCleanup.startMyCrewCareCleanupV3("A",true,"cleanup_pending2");
+    Source pendingB=new Source(),blockedA=new Source();Capture pendingBResult=new Capture(),blockedAResult=new Capture();Deadline blockedATimer=new Deadline();
+    pendingCleanup.observeMyCrewCareV3ForReview(scope("B"),pendingB,new Deadline(),pendingBResult::done);
+    check(!pendingCleanup.observeMyCrewCareV3ForReview(scope("A"),blockedA,blockedATimer,blockedAResult::done)&&blockedA.pending.isEmpty()&&blockedATimer.fire==null,"pending A cleanup blocks observation without touching B");
+    com.crewcheck.app.CrewCheckMyCrewCareProfile.CleanupCallback firstCleanup=com.crewcheck.app.CrewCheckMyCrewCareProfile.pending.remove(0);firstCleanup.onComplete(true,"ok");firstCleanup.onComplete(true,"ok");
+    check(!pendingCleanup.observeMyCrewCareV3ForReview(scope("A"),blockedA,blockedATimer,blockedAResult::done),"duplicate callback cannot release remaining account barrier");
+    pendingB.drive();check(pendingBResult.result.accountId.equals("B"),"B succeeds during A cleanup");cases++;
+    com.crewcheck.app.CrewCheckMyCrewCareProfile.pending.remove(0).onComplete(true,"ok");
+    check(pendingCleanup.observeMyCrewCareV3ForReview(scope("A"),blockedA,blockedATimer,blockedAResult::done),"completed cleanup releases A barrier");blockedA.drive();check(blockedAResult.result.accountId.equals("A"),"new A needs fresh acquisition");cases++;
+    com.crewcheck.app.CrewCheckMyCrewCareProfile.defer=false;
+    // Store/profile failure paths release the account barrier and never leave a fake pending result.
+    for(String failingPart:List.of("store","profile")) {
+      com.crewcheck.app.CrewCheckMyCrewCareRuntimeV3 failedCleanup=new com.crewcheck.app.CrewCheckMyCrewCareRuntimeV3(new android.app.Activity(),null,null,null);
+      RuntimeException failedClear=new RuntimeException("synthetic clear failure");
+      if(failingPart.equals("store")) com.crewcheck.app.CrewCheckMyCrewCareSecureStore.clearError=failedClear;
+      else com.crewcheck.app.CrewCheckMyCrewCareProfile.clearError=failedClear;
+      try {failedCleanup.startMyCrewCareCleanupV3("A",true,"cleanup_failed");check(failingPart.equals("profile"),"store failure propagated");}
+      catch(RuntimeException e) {check(failingPart.equals("store")&&e==failedClear,"original store exception visible");}
+      check(failedCleanup.myCrewCareCleanupResultV3("A","cleanup_failed").equals(failingPart.equals("store")?"failed:cache-clear-failed":"failed:disconnect-rejected"),"failure status terminal");
+      com.crewcheck.app.CrewCheckMyCrewCareSecureStore.clearError=null;com.crewcheck.app.CrewCheckMyCrewCareProfile.clearError=null;
+      Source afterFailure=new Source();Capture afterFailureResult=new Capture();
+      check(failedCleanup.observeMyCrewCareV3ForReview(scope("A"),afterFailure,new Deadline(),afterFailureResult::done),"failed cleanup releases barrier");afterFailure.drive();check(afterFailureResult.result.accountId.equals("A"),"fresh acquisition after failure");cases++;
+    }
     System.out.println("PASS native observed acquisition cases="+cases);
   }
 }

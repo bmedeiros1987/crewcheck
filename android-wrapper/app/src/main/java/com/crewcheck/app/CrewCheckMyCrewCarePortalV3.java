@@ -82,6 +82,13 @@ public final class CrewCheckMyCrewCarePortalV3 {
     public static final class ObservedAcquisition {
         private long generation;
         private Operation active;
+        private final Map<String,AccountState> accounts=new java.util.HashMap<>();
+        private static final class AccountState { long epoch; int cleanups; }
+        private AccountState account(String id) {
+            AccountState state=accounts.get(id);
+            if(state==null) { state=new AccountState(); accounts.put(id,state); }
+            return state;
+        }
         private static final Set<String> PROFILE=keys("employeeId","username");
         private static final Set<String> CARD=keys("providerReservationId","dutyPeriodNumber","airport","pairingId","hotelName");
         private static final Set<String> DETAIL=keys("providerReservationId","dutyPeriodNumber","airport","pairingId","hotelName",
@@ -91,17 +98,23 @@ public final class CrewCheckMyCrewCarePortalV3 {
         private static final class Operation {
             final ObservedScope scope; final ObservedSource source; final ObservedCompletion completion;
             final AtomicBoolean completed=new AtomicBoolean();
+            final AccountState account; final long accountEpoch;
             ObservedCancel timeout; int step; long finishedGeneration; List<Map<String,String>> cards=Collections.emptyList();
             final List<Map<String,String>> details=new ArrayList<>();
-            Operation(ObservedScope scope,ObservedSource source,ObservedCompletion completion) { this.scope=scope; this.source=source; this.completion=completion; }
+            Operation(ObservedScope scope,ObservedSource source,ObservedCompletion completion,AccountState account) {
+                this.scope=scope; this.source=source; this.completion=completion;
+                this.account=account; accountEpoch=account.epoch;
+            }
         }
         public boolean begin(ObservedScope scope,ObservedSource source,ObservedDeadline deadline,ObservedCompletion completion) {
             if(scope==null || source==null || deadline==null || completion==null) return false;
             Operation old,op;
             synchronized(this) {
+                AccountState account=account(scope.accountId);
+                if(account.cleanups>0) return false;
                 old=active;
                 ObservedScope captured=new ObservedScope(scope.accountId,scope.sessionId,scope.requestId,scope.employeeId,scope.username,++generation);
-                active=op=new Operation(captured,source,completion);
+                active=op=new Operation(captured,source,completion,account);
             }
             RuntimeException previousFailure=null;
             try { terminate(old,null,"observed-cancelled"); }
@@ -126,10 +139,23 @@ public final class CrewCheckMyCrewCarePortalV3 {
         public void cancel(String accountId) {
             Operation old;
             synchronized(this) {
-                if(active==null || accountId==null || !active.scope.accountId.equals(accountId.trim())) return;
+                if(accountId==null) return;
+                account(accountId.trim()).epoch++;
+                if(active==null || !active.scope.accountId.equals(accountId.trim())) return;
                 old=active; active=null; ++generation;
             }
             terminate(old,null,"observed-cancelled");
+        }
+        /** Barrier remains installed even if a cancellation completion throws. */
+        public void beginAccountCleanup(String accountId) {
+            synchronized(this) { account(accountId.trim()).cleanups++; }
+            cancel(accountId);
+        }
+        public synchronized void endAccountCleanup(String accountId) {
+            AccountState state=accounts.get(accountId.trim());
+            if(state==null || state.cleanups==0) return;
+            --state.cleanups;
+            if(state.cleanups==0 && (active==null || active.account!=state)) accounts.remove(accountId.trim());
         }
         private void acquire(Operation op,String kind,Map<String,String> card) {
             synchronized(this) {
@@ -200,10 +226,14 @@ public final class CrewCheckMyCrewCarePortalV3 {
             if(op.timeout!=null) { try { op.timeout.cancel(); } catch(RuntimeException ignored) {} }
             try { op.source.cancel(op.scope); } catch(RuntimeException ignored) {}
             synchronized(this) {
-                if(result!=null && (active!=null || generation!=op.finishedGeneration)) {
+                if(result!=null && (active!=null || generation!=op.finishedGeneration || op.account.epoch!=op.accountEpoch)) {
                     result=null; error="observed-cancelled";
                 }
-                op.completion.complete(result,error);
+                try { op.completion.complete(result,error); }
+                finally {
+                    if(op.account.cleanups==0 && (active==null || active.account!=op.account)
+                        && accounts.get(op.scope.accountId)==op.account) accounts.remove(op.scope.accountId);
+                }
             }
         }
     }

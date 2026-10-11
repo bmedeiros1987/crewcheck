@@ -49,8 +49,8 @@ test('actual native Java boundary compiles and passes offline callback/timeout/i
       'android/app/Activity.java': 'package android.app; public class Activity {}',
       'android/webkit/WebView.java': 'package android.webkit; public class WebView {}',
       'android/widget/FrameLayout.java': 'package android.widget; public class FrameLayout {}',
-      'com/crewcheck/app/CrewCheckMyCrewCareProfile.java': 'package com.crewcheck.app; public class CrewCheckMyCrewCareProfile { public interface CleanupCallback {void onComplete(boolean success,String code);} public static boolean defer; public static final java.util.List<CleanupCallback> pending=new java.util.ArrayList<>(); public void clear(android.app.Activity a,String id,CleanupCallback cb){if(defer) pending.add(cb);else cb.onComplete(true,"ok");} }',
-      'com/crewcheck/app/CrewCheckMyCrewCareSecureStore.java': 'package com.crewcheck.app; public class CrewCheckMyCrewCareSecureStore {public CrewCheckMyCrewCareSecureStore(android.app.Activity a){} public boolean clear(String a){return true;} public String load(String a){return null;} public boolean save(String a,String p){return true;}}',
+      'com/crewcheck/app/CrewCheckMyCrewCareProfile.java': 'package com.crewcheck.app; public class CrewCheckMyCrewCareProfile { public interface CleanupCallback {void onComplete(boolean success,String code);} public static int clearCalls; public static RuntimeException clearError; public static boolean defer; public static final java.util.List<CleanupCallback> pending=new java.util.ArrayList<>(); public void clear(android.app.Activity a,String id,CleanupCallback cb){clearCalls++;if(clearError!=null) throw clearError;if(defer) pending.add(cb);else cb.onComplete(true,"ok");} }',
+      'com/crewcheck/app/CrewCheckMyCrewCareSecureStore.java': 'package com.crewcheck.app; public class CrewCheckMyCrewCareSecureStore {public CrewCheckMyCrewCareSecureStore(android.app.Activity a){} public static int clearCalls;public static RuntimeException clearError;public boolean clear(String a){clearCalls++;if(clearError!=null)throw clearError;return true;} public String load(String a){return null;} public boolean save(String a,String p){return true;}}',
     };
     const files = [];
     for (const [name, source] of Object.entries(stubs)) { const path = join(root, name); mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, source); files.push(path); }
@@ -58,7 +58,7 @@ test('actual native Java boundary compiles and passes offline callback/timeout/i
     files.push(new URL('./fixtures/mycrewcare-native/ObservedAcquisitionHarness.java', import.meta.url).pathname);
     execFileSync(java, ['com.sun.tools.javac.Main', '-source', '17', '-target', '17', '-d', root, ...files], { encoding: 'utf8' });
     const result = execFileSync(java, ['-cp', root, 'ObservedAcquisitionHarness'], { encoding: 'utf8' });
-    assert.match(result, /PASS native observed acquisition cases=62/);
+    assert.match(result, /PASS native observed acquisition cases=68/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

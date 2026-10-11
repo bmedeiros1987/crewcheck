@@ -71,18 +71,35 @@ public final class CrewCheckMyCrewCareRuntimeV3 {
         final String key = cleanupKey(accountId, operationId);
         if (cleanups.putIfAbsent(key, PENDING) != null) return false;
 
-        observations.cancel(accountId);
-        final boolean cacheCleared = !forgetData || store.clear(accountId);
+        RuntimeException cancellationFailure = null;
+        try { observations.beginAccountCleanup(accountId); }
+        catch (RuntimeException error) { cancellationFailure = error; }
+        boolean cleared;
+        try { cleared = !forgetData || store.clear(accountId); }
+        catch (RuntimeException error) {
+            cleared = false;
+            if (cancellationFailure == null) cancellationFailure = error;
+            else if (cancellationFailure != error) cancellationFailure.addSuppressed(error);
+        }
+        final boolean cacheCleared = cleared;
+        final java.util.concurrent.atomic.AtomicBoolean finished = new java.util.concurrent.atomic.AtomicBoolean();
         boolean accepted;
         try {
             accepted = portal.disconnect(accountId, forgetData, (success, code) -> {
-                if (!cacheCleared) cleanups.put(key, "failed:cache-clear-failed");
-                else cleanups.put(key, success ? "ok" : "failed:" + safeCode(code));
+                if (!finished.compareAndSet(false, true)) return;
+                try {
+                    if (!cacheCleared) cleanups.put(key, "failed:cache-clear-failed");
+                    else cleanups.put(key, success ? "ok" : "failed:" + safeCode(code));
+                } finally { observations.endAccountCleanup(accountId); }
             });
         } catch (RuntimeException error) {
             accepted = false;
         }
-        if (!accepted) cleanups.put(key, "failed:disconnect-rejected");
+        if (!accepted && finished.compareAndSet(false, true)) {
+            try { cleanups.put(key, "failed:disconnect-rejected"); }
+            finally { observations.endAccountCleanup(accountId); }
+        }
+        if (cancellationFailure != null) throw cancellationFailure;
         return true;
     }
 
