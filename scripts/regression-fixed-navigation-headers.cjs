@@ -96,13 +96,15 @@ async function visibleTextBounds(page, selector) {
       const stable=(before,after,label)=>{assert.ok(before&&after);assert.ok(Math.abs(before.y-after.y)<=1&&Math.abs(before.height-after.height)<=1,label+JSON.stringify({before,after}));};
       const header=await box('.cz-global-header');
       assert.equal(header.y,0,'Opaque header covers the top safe area');
-      const shield=await page.locator('.cz-global-header').evaluate(el=>{const p=getComputedStyle(el,'::before'),r=el.getBoundingClientRect();return{content:p.content,left:r.x+parseFloat(p.left),right:r.right-parseFloat(p.right),viewport:innerWidth,background:p.backgroundColor};});
-      assert.equal(shield.content,'\"\"');assert.ok(shield.left<=1&&shield.right>=shield.viewport-1,'Opaque shield covers viewport while header keeps content alignment');assert.notEqual(shield.background,'rgba(0, 0, 0, 0)');
+      const shield=await page.locator('.cz-global-header').evaluate(el=>{const p=getComputedStyle(el,'::before'),r=el.getBoundingClientRect();return{content:p.content,left:r.x+parseFloat(p.left),right:r.right-parseFloat(p.right),viewport:innerWidth,background:p.backgroundColor,width:parseFloat(p.width)};});
+      assert.equal(shield.content,'\"\"');assert.ok(shield.left<=1&&shield.right>=shield.viewport-1,'Opaque shield covers viewport while header keeps content alignment');assert.notEqual(shield.background,'rgba(0, 0, 0, 0)');assert.ok(shield.width>=shield.viewport-2,'Resolved painted shield width covers both edges');
       assert.ok(await page.locator('.cz-global-header').evaluate(el=>parseFloat(getComputedStyle(el).paddingTop))>=24,'Header reserves the simulated status bar');
       assert.equal(await page.locator('.cz-global-header').evaluate(el=>getComputedStyle(el).position),'fixed','Only scroll behavior stays pinned');
       assert.equal(await page.locator('.cz-global-header').evaluate(el=>Boolean(el.closest('.cz-menu-scroll'))),false,'Header remains outside the scroll container');
       assert.equal(await page.locator('.cz-global-header .cz-brand-lockup .cz-logo').isVisible(),true,'Restore the previous brand at mobile widths');
-      assert.equal(await page.locator('.cz-global-header .cz-brand-lockup small').isVisible(),true,'Restore the previous subtitle in portrait/desktop');
+      assert.equal(await page.locator('.cz-global-header .cz-brand-lockup small').isVisible(),!(width<=600&&size>=150),'Decorative subtitle yields space at large mobile text');
+      if(width<=600)assert.ok(header.height<=110,'Mobile identity chrome stays compact with 200% text');
+      const mark=await page.locator('.cz-global-header .cz-logo').boundingBox(),markImage=await page.locator('.cz-global-header .cz-logo img').boundingBox();assert.ok(markImage.x>=mark.x-1&&markImage.x+markImage.width<=mark.x+mark.width+1,'Identity image stays fully inside its mark');
       const spacer=await box('.cc-fixed-header-space');assert.ok(spacer.height>=header.y+header.height,'Measured spacer follows the restored header size');
       await page.locator('.cz-global-header button').last().focus();assert.equal(await page.locator('.cz-global-header button').last().evaluate(el=>el===document.activeElement),true,'Header actions retain keyboard focus');
       await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-restored-header.png`)});
