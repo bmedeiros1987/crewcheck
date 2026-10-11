@@ -29,8 +29,8 @@ assert.equal(confirmation.length, 1);
 const modalBundle = buildSync({ stdin: { contents: `import { acquireOverlayLifecycle } from './client/src/lib/overlayLifecycle';\n${confirmation[0].getText(homeAst)}\nwindow.openQAImport=requestCrewCheckImportConfirmation; window.acquireQAOverlay=acquireOverlayLifecycle;`, resolveDir: process.cwd(), loader: 'ts' }, bundle: true, platform: 'browser', format: 'iife', write: false }).outputFiles[0].text;
 const results = [];
 const testedCommit = require('node:child_process').execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-const widths = (process.env.UI_READING_WIDTHS || '320,360,390,1440').split(',').map(Number);
-assert.ok(widths.every(width => [320, 360, 390, 1440].includes(width)));
+const widths = (process.env.UI_READING_WIDTHS || '320,360,390,412,430,1440').split(',').map(Number);
+assert.ok(widths.every(width => [320, 360, 390, 412, 430, 1440].includes(width)));
 const settle = page => page.evaluate(async () => {
   for (const animation of document.getAnimations()) if (Number.isFinite(animation.effect?.getComputedTiming().endTime)) try { animation.finish(); } catch {}
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -78,7 +78,7 @@ async function visibleTextBounds(page, selector) {
   const origin = `http://127.0.0.1:${server.address().port}`;
   const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined });
   try {
-    for (const width of [320,390,1440]) for (const theme of ['light','dark']) for (const size of [100,150,200]) {
+    for (const width of widths) for (const theme of ['light','dark']) for (const size of [100,150,200]) {
       const context = await browser.newContext({viewport:{width,height:844},hasTouch:width<500,isMobile:width<500,serviceWorkers:'block',timezoneId:'America/Sao_Paulo'});
       await context.route('**/*', route => {
         const url=new URL(route.request().url());
@@ -95,6 +95,8 @@ async function visibleTextBounds(page, selector) {
       const box=async selector=>page.locator(selector).boundingBox();
       const stable=(before,after,label)=>{assert.ok(before&&after);assert.ok(Math.abs(before.y-after.y)<=1&&Math.abs(before.height-after.height)<=1,label+JSON.stringify({before,after}));};
       const header=await box('.cz-global-header');
+      assert.equal(header.y,0,'Opaque header covers the top safe area');
+      assert.ok(await page.locator('.cz-global-header').evaluate(el=>parseFloat(getComputedStyle(el).paddingTop))>=24,'Header reserves the simulated status bar');
       assert.equal(await page.locator('.cz-global-header').evaluate(el=>getComputedStyle(el).position),'fixed','Only scroll behavior stays pinned');
       assert.equal(await page.locator('.cz-global-header').evaluate(el=>Boolean(el.closest('.cz-menu-scroll'))),false,'Header remains outside the scroll container');
       assert.equal(await page.locator('.cz-global-header .cz-brand-lockup .cz-logo').isVisible(),true,'Restore the previous brand at mobile widths');
