@@ -3071,6 +3071,7 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     <ToggleSetting icon={Dumbbell} label="Autocheck-in em academia" storageKey="crewcheck:gym-auto-checkin" defaultOn={false} detail="Compartilha presença por 90 min somente ao entrar no raio configurado"/>
     <ToggleSetting icon={Sun} label="Modo claro premium" storageKey="crewcheck_light_premium" defaultOn={false}/>
 
+    <section aria-label="Acessibilidade"><h3>Acessibilidade</h3><TextSizeSetting/></section>
     <h3>Perfil</h3>
     <FieldSetting icon={Globe2} label="País do telefone" storageKey="crewcheck_phone_country" placeholder="Brasil +55"/>
 

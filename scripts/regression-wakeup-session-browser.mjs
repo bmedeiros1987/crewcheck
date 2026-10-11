@@ -23,12 +23,13 @@ const Brand=()=>null,StayNavigationContext=()=>null,KpiCard=()=>null;
 const Clock=()=>null,Bell=()=>null,Hotel=()=>null,Save=()=>null,Send=()=>null,Phone=()=>null,X=()=>null,ChevronRight=()=>null;
 `;
 const bundle=await build({stdin:{contents:`${hostPrelude}import{createRoot}from'react-dom/client';import{NotificationReadiness}from'./client/src/components/notifications/NotificationReadiness';${wake}createRoot(document.getElementById('root')).render(<WakeupView event={{id:'synthetic',placeholder:false,origin:'SYN',destination:'SYN'}}/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'iife',jsx:'automatic',define:{'process.env.NODE_ENV':'"test"'},plugins:[{name:'alias',setup(b){b.onResolve({filter:/^@\//},({path:p})=>({path:path.resolve('client/src',p.slice(2)+'.ts')}));}}]});
-const server=http.createServer((req,res)=>{res.setHeader('content-type',req.url==='/fixture.js'?'text/javascript':'text/html');res.end(req.url==='/fixture.js'?bundle.outputFiles[0].text:'<div id="root"></div><script src="/fixture.js"></script>');});
+const css=fs.readdirSync('dist/assets').filter(name=>name.endsWith('.css')).map(name=>fs.readFileSync('dist/assets/'+name,'utf8')).join('\n');
+const server=http.createServer((req,res)=>{res.setHeader('content-type',req.url==='/fixture.js'?'text/javascript':'text/html');res.end(req.url==='/fixture.js'?bundle.outputFiles[0].text:`<meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}#fixture-header{position:fixed;top:0;height:80px;width:100%;z-index:999;background:#333}#fixture-footer{position:fixed;bottom:0;height:96px;width:100%;z-index:999;background:#333}#root{padding-top:96px}body{margin:0}</style><header id="fixture-header">Cabeçalho</header><main id="root" class="cz-app" data-view="wakeup"></main><footer id="fixture-footer">Menu</footer><script src="/fixture.js"></script>`);});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${server.address().port}`;
 let browser,offline=false,hold=false,resume,signal;const reads=[];let holdAllToken='',held=[],allHeld;
 try{
  browser=await chromium.launch({args:['--no-sandbox'],...process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}});
- const context=await browser.newContext({serviceWorkers:'block'});
+ const context=await browser.newContext({viewport:{width:320,height:740},serviceWorkers:'block'});
  await context.addCookies([{name:'crewcheck_auth_token',value:'stale',url:origin}]);
  await context.route('**/*',async route=>{
   const req=route.request(),url=new URL(req.url());if(url.origin!==origin)return route.abort();
@@ -39,11 +40,20 @@ try{
   if(offline)return route.abort();
   if(token===holdAllToken){await new Promise(r=>{held.push(r);if(held.length===2)allHeld();});}
   if(hold&&token==='B'){hold=false;signal();await new Promise(r=>resume=r);}
-  return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,readiness:{telegramConfigured:true,telegramLinked:token==='A'},jobs:token==='A'?[{id:1,status:'pending',channel:'OWNER_A_FIXTURE',scheduledAt:'2032-02-01T10:00:00Z'},{id:2,status:'sent'},{id:3,status:'uncertain'},{id:4,status:'expired'},{id:5,status:'cancelled'}]:[]})});
+  return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,readiness:{telegramConfigured:true,telegramLinked:token==='A'},jobs:token==='A'?[{id:1,status:'pending',channel:'OWNER_A_FIXTURE',scheduledAt:'2032-02-01T10:00:00Z'},{id:2,status:'sent',channel:'Ligação VoIP',scheduledAt:'2026-10-03T05:05:00Z',sentAt:'2026-10-03T05:05:00Z'},{id:3,status:'uncertain'},{id:4,status:'expired'},{id:5,status:'cancelled'}]:[]})});
  });
  const page=await context.newPage();
  await page.addInitScript(()=>{localStorage.setItem('crewcheck_auth_token','A');window.permissionsRequested=0;window.Notification={permission:'denied',requestPermission(){window.permissionsRequested++;throw Error('Permission must not be requested');}};});
- await page.goto(origin);await page.getByText('Telegram vinculado a esta conta.',{exact:false}).waitFor();
+ await page.goto(origin);
+ assert.equal(await page.getByRole('button',{name:'Ativar despertador',exact:true}).count(),1);
+ assert.equal(await page.getByRole('button',{name:/Testar|Vincular|Soneca|Salvar preferências|Ativar no servidor/}).count(),0,'technical/configuration actions are not simultaneous');
+ await page.locator('.cc-wakeup-history > summary').click();
+ const sent=page.locator('.cc-wakeup-history .cz-roster-card').filter({hasText:'Aceito pelo provedor; entrega não confirmada'});
+ await sent.waitFor();await sent.scrollIntoViewIfNeeded();
+ const geometry=await sent.locator('.cz-roster-copy > *').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return{top:r.top,bottom:r.bottom,height:r.height};}));
+ for(let i=1;i<geometry.length;i++)assert(geometry[i].top>=geometry[i-1].bottom-1,'status and provider timestamp occupy separate flow rows');
+ assert(geometry.every(row=>row.height>0),'status rows retain height');
+ await page.getByText('Telegram vinculado a esta conta.',{exact:false}).waitFor();
  assert((await page.getByRole('region',{name:'Entrega fora do app'}).textContent()).includes('1 aceitos pelo provedor'));
  assert((await page.getByRole('region',{name:'Entrega fora do app'}).textContent()).includes('1 com resultado desconhecido'));
  assert.equal(await page.evaluate(()=>window.permissionsRequested),0);
