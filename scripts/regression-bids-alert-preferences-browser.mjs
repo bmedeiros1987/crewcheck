@@ -19,7 +19,7 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 const defaults = { enabled: false, mode: 'auto', preferredTime: '09:00', quietStart: '22:00', quietEnd: '08:00', timezone: '', channels: { all: false, individual: { mobilePwa: true, watch: false, crewCierge: false } } };
 const states = { A: { revision: 0, preferences: { ...defaults } }, B: { revision: 0, preferences: { ...defaults } } }, writes = [], errors = [];
 let browser, offline = false, hold = false, held, resume, readyCampaign = false;
-function snapshot(token) { return { ...states[token], pending: readyCampaign ? [] : ['comunicado vigente verificado', 'fuso oficial', 'competência', 'encerramento confirmado', 'público elegível verificado'], campaign: readyCampaign ? { id: 'synthetic', targetMonth: '2026-12' } : null, alreadyDid: states[token].alreadyDid === true, canConfirmAlreadyDid: readyCampaign, plan: { candidateAt: null, contextKey: 'synthetic-' + token }, message: 'Nenhum aviso foi agendado ou enviado.', externalDelivery: false }; }
+function snapshot(token) { return { ...states[token], ownerId:token, pending: readyCampaign ? [] : ['comunicado vigente verificado', 'fuso oficial', 'competência', 'encerramento confirmado', 'público elegível verificado'], campaign: readyCampaign ? { id: 'synthetic', targetMonth: '2026-12' } : null, alreadyDid: states[token].alreadyDid === true, canConfirmAlreadyDid: readyCampaign, plan: { candidateAt: null, contextKey: 'synthetic-' + token }, message: 'Nenhum aviso foi agendado ou enviado.', externalDelivery: false }; }
 try {
   browser = await chromium.launch({ args: ['--no-sandbox'], ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) });
   const context = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 320, height: 700 } });
@@ -29,7 +29,7 @@ try {
     if (url.origin !== origin) return route.abort();
     if (!url.pathname.startsWith('/api/')) return route.continue();
     if(url.pathname==='/api/platform/notifications/crewcheck-installation')return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({enabled:false,registered:false,revision:0,ownerId:req.headers().authorization?.replace('Bearer ',''),publicKey:null})});
-    assert.equal(url.pathname, '/api/platform/bids/alert-preferences');
+    assert.equal(url.pathname, '/api/platform/notifications/preferences');
     const token = req.headers().authorization?.replace('Bearer ', ''); assert(['A', 'B'].includes(token));
     if (offline) return route.abort();
     if (req.method() === 'POST') {
@@ -75,7 +75,7 @@ try {
   for (const theme of ['light', 'dark']) for (const size of [100, 200]) {
     await page.evaluate(({ theme, size }) => { document.documentElement.dataset.crewTheme = theme; document.documentElement.style.fontSize = `${16 * size / 100}px`; document.querySelector('main').style.fontSize = `${16 * size / 100}px`; }, { theme, size });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `${theme}/${size} has no horizontal overflow`);
-    for (const target of [page.getByRole('heading', { name: 'Avisos de BIDS' }), page.getByRole('button', { name: 'Salvar preferências' })]) {
+    for (const target of [page.getByRole('heading', { name: 'O que, por onde e quando notificar' }), page.getByRole('button', { name: 'Salvar preferências' })]) {
       await target.scrollIntoViewIfNeeded(); const bounds = await target.boundingBox();
       assert(bounds.y >= header.y + header.height - 1 && bounds.y + bounds.height <= footer.y + 1, `${theme}/${size}: first/last target clear fixed navigation`);
     }

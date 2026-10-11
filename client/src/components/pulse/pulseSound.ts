@@ -1,3 +1,4 @@
+import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
 /** Optional, foreground-only audio. Device notification channels retain their own tones. */
 export const NOTIFICATION_SOUND_KEY = 'crewcheck_notification_sound_v1';
 export const A320_INTERPHONE_URL = '/assets/sounds/a320-interphone-cc0.mp3';
@@ -109,7 +110,7 @@ export function playCrewCheckNoticeSound(key: string): void {
   const now = Date.now();
   // No burst when notices arrive together; repeated context stays quiet for five minutes.
   if (now - lastNoticeAt < 8_000 || now - (recentNotices.get(key) ?? -Infinity) < 300_000) return;
-  try { if (localStorage.getItem('crewcheck_pulse_enabled') === '0') return; } catch { return; }
+  try { if (readAccountNotificationSetting('crewcheck_pulse_enabled','0') === '0') return; } catch { return; }
   lastNoticeAt = now;
   for (const [seenKey, at] of recentNotices) if (now - at >= 300_000) recentNotices.delete(seenKey);
   recentNotices.set(key, now);

@@ -1,3 +1,4 @@
+import {validateNotificationSettings} from '../../shared/notificationSettings.mjs';
 import crypto from 'node:crypto';
 import { DEFAULT_NOTIFICATION_CHANNELS, selectedNotificationChannels, validateNotificationChannels } from '../../shared/notificationChannelPreferences.mjs';
 
@@ -12,7 +13,7 @@ export function validateBidsPreferences(value) {
   if (!value || typeof value.enabled !== 'boolean' || !['auto', 'manual'].includes(value.mode) || ![value.preferredTime, value.quietStart, value.quietEnd].every(clock) || value.quietStart === value.quietEnd || (value.timezone !== '' && !validTimezone(value.timezone)) || (value.enabled && !validTimezone(value.timezone))) {
     throw Object.assign(new Error('Confira horário padrão, período de silêncio e seu fuso. Ativação exige fuso explícito.'), { status: 400 });
   }
-  return { ...Object.fromEntries(Object.keys(DEFAULT_BIDS_ALERT_PREFERENCES).map(key => [key, value[key]])), channels: validateNotificationChannels(value.channels) };
+  return { ...Object.fromEntries(Object.keys(DEFAULT_BIDS_ALERT_PREFERENCES).map(key => [key, value[key]])), channels: validateNotificationChannels(value.channels), ...(value.settings===undefined?{}:{settings:validateNotificationSettings(value.settings)}) };
 }
 const zonedEpoch = value => {
   if (typeof value !== 'string') return null;
@@ -75,3 +76,5 @@ export function planBidsAlert({ campaign, preferences = DEFAULT_BIDS_ALERT_PREFE
   }
   return blocked('no_allowed_time_before_deadline');
 }
+
+export {zonedEpoch as parseBidsInstant};

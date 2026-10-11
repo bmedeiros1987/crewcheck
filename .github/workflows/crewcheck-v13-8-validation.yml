@@ -95,6 +95,7 @@ jobs:
           node scripts/regression-emergency-center-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-readiness-browser.mjs
+          node scripts/regression-notification-center-browser.mjs
           node scripts/regression-bids-alert-preferences-browser.mjs
           node scripts/regression-web-push-worker-browser.mjs
           node scripts/regression-web-push-device-browser.mjs
@@ -107,6 +108,7 @@ jobs:
           node scripts/regression-emergency-center-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-readiness-browser.mjs
+          node scripts/regression-notification-center-browser.mjs
           node scripts/regression-bids-alert-preferences-browser.mjs
           node scripts/regression-web-push-worker-browser.mjs
           node scripts/regression-web-push-device-browser.mjs
@@ -128,6 +130,7 @@ jobs:
         run: |
           node scripts/regression-bids-delivery.mjs
           node scripts/regression-bids-editing.mjs
+          node scripts/regression-bids-default-window.mjs
           node scripts/regression-bids-alert-policy.mjs
           node scripts/regression-bids-alert-preferences.mjs
           node scripts/regression-bids-auth-boundary.mjs
@@ -157,6 +160,7 @@ jobs:
         run: |
           node scripts/regression-bids-delivery.mjs
           node scripts/regression-bids-editing.mjs
+          node scripts/regression-bids-default-window.mjs
           node scripts/regression-bids-alert-policy.mjs
           node scripts/regression-bids-alert-preferences.mjs
           node scripts/regression-bids-auth-boundary.mjs

@@ -18,7 +18,7 @@ function publicState(state, campaign, eligibility, now) {
   const plan = planBidsAlert({ campaign, preferences, ownerId: state.ownerId, eligibility, receipt: state.receipt, now });
   const visible = pending.length === 0 && Boolean(plan.contextKey);
   return {
-    ok: true, revision: state.revision, preferences, plan, pending,
+    ok: true, ownerId:state.ownerId, revision: state.revision, preferences, plan, pending,
     campaign: !visible ? null : { id: campaign.id, revision: campaign.revision, targetMonth: campaign.targetMonth, opensAt: campaign.opensAt, closesAt: campaign.closesAt, timezone: campaign.timezone, sourceLabel: campaign.source.label },
     canConfirmAlreadyDid: visible && now >= Date.parse(campaign.opensAt) && now < Date.parse(campaign.closesAt),
     alreadyDid: plan.reason === 'already_did', externalDelivery: false,
@@ -37,7 +37,7 @@ export async function handleBidsAlertPreferences(req, res, url, {
   resolveEligibility = () => ({ verified: false, eligible: false }),
   clock = () => Date.now(),
 } = {}) {
-  if (url.pathname !== '/api/platform/bids/alert-preferences') return false;
+  if (!['/api/platform/bids/alert-preferences','/api/platform/notifications/preferences'].includes(url.pathname)) return false;
   res.setHeader('Cache-Control', 'no-store');
   const context = await identify(req, res);
   if (!context) return true;
@@ -54,6 +54,7 @@ export async function handleBidsAlertPreferences(req, res, url, {
   }
   if (req.method !== 'POST') { sendJson(res, 405, { ok: false, message: 'Método não permitido.' }); return true; }
   const body = await read(req, 12000);
+  if(url.pathname==='/api/platform/notifications/preferences'&&body?.ownerId!==ownerId){sendJson(res,409,{ok:false,message:'A conta mudou. Recarregue as preferências.'});return true;}
   if (!body || !['save-preferences', 'already-did'].includes(body.action) || !Number.isSafeInteger(body.expectedRevision) || body.expectedRevision < 0 || typeof body.requestId !== 'string' || !/^[a-zA-Z0-9_-]{8,80}$/.test(body.requestId)) {
     sendJson(res, 400, { ok: false, message: 'Confira ação e versão das preferências.' }); return true;
   }
@@ -83,7 +84,7 @@ export async function handleBidsAlertPreferences(req, res, url, {
       submittedAt = new Date(writeNow).toISOString();
     }
     const next = duplicate ? state : { ...state, revision: state.revision + 1, requestId: body.requestId, fingerprint,
-      ...(preferences ? { preferences } : { receipt: { ownerId, contextKey: body.contextKey, submitted: true, submittedAt } }),
+      ...(preferences ? { preferences: {...preferences,...(preferences.settings===undefined&&state.preferences?.settings?{settings:state.preferences.settings}:{})} } : { receipt: { ownerId, contextKey: body.contextKey, submitted: true, submittedAt } }),
     };
     if (!duplicate) await connection.query('UPDATE crewcheck_telegram_state SET payload=?,updated_at=NOW(3) WHERE state_key=?', [JSON.stringify(next), key]);
     await connection.commit();

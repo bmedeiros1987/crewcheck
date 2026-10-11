@@ -1,3 +1,4 @@
+import {handleBidsDefaultWindow,functionalProfileKey} from '../server/v139/bidsDefaultWindow.mjs';
 import {simulatedWorker,WORKER_SCOPE,localProviderStats} from '../server/free-day-simulated-worker.mjs';
 import {personalConsent,PERSONAL_SCOPE} from '../server/free-day-personal-consent.mjs';
 import assert from 'node:assert/strict';
@@ -48,6 +49,15 @@ try {
   const queue=fs.readFileSync('server/telegram-fast-ack.mjs','utf8');
   await db.query(queue.match(/await db\.query\(`(CREATE TABLE IF NOT EXISTS crewcheck_notification_jobs[\s\S]*?)`\)/)[1]);
   await db.query('INSERT INTO crewcheck_platform_profiles VALUES(?,?,?)',[email,owner,new Date('2020-01-01T00:00:00Z')]);
+  await run('functional profile real SQL CAS, observational GET and stale-owner rollback',async()=>{
+    const invoke=async body=>{const res={setHeader(){},writeHead(status){this.status=status},end(value){this.data=JSON.parse(value)}};await handleBidsDefaultWindow({method:body?'POST':'GET',headers:{origin:'https://crewcheck.onrender.com'}},res,new URL('https://crewcheck.onrender.com/api/platform/bids/default-window?targetMonth=2026-10'),{identify:async()=>({db,email,profile:{public_id:owner},payload:{sub:owner}}),read:async()=>body});return res;};
+    const before=(await db.query('SELECT * FROM crewcheck_telegram_state'))[0];assert.equal((await invoke()).data.profile,null);assert.deepEqual((await db.query('SELECT * FROM crewcheck_telegram_state'))[0],before);
+    const body={ownerId:owner,confirmed:true,expectedRevision:0,airline:'LATAM',role:'cabin',instructorKind:'route'};
+    const results=await Promise.all([invoke(body),invoke(body)]);assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);assert.equal((await invoke()).data.profile.instructorKind,'route');assert.equal((await invoke()).data.resolution.window,null);
+    await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',['recreated-profile-owner',email]);assert.equal((await invoke({...body,expectedRevision:1,instructorKind:'none'})).status,401);await db.query('UPDATE crewcheck_platform_profiles SET public_id=? WHERE email=?',[owner,email]);assert.equal((await invoke()).data.profile.revision,1);
+    assert.equal((await db.query('SELECT COUNT(*) AS n FROM crewcheck_notification_jobs'))[0][0].n,0);
+    assert.equal((await db.query('SELECT COUNT(*) AS n FROM crewcheck_telegram_state WHERE state_key=?',[functionalProfileKey(email,owner)]))[0][0].n,1);
+  });
   await run('real MySQL bounded push selection fairness',async()=>{
     const instant=Date.parse('2026-11-11T09:00:00Z');
     for(let index=0;index<51;index++)await db.query('INSERT INTO crewcheck_telegram_state VALUES(?,?,NOW(3))',['crewcheck-push-installation:fair_'+String(index).padStart(3,'0'),JSON.stringify({active:true})]);

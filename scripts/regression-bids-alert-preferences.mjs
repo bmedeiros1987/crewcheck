@@ -40,8 +40,8 @@ const server = http.createServer(async (req, res) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const url = `http://127.0.0.1:${server.address().port}/api/platform/bids/alert-preferences`;
-const request = async (token = 'A', body) => {
-  const response = await fetch(url, { headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}) });
+const request = async (token = 'A', body, endpoint=url) => {
+  const response = await fetch(endpoint, { headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}) });
   return { status: response.status, data: await response.json(), headers: response.headers };
 };
 const preferences = { enabled: true, mode: 'manual', preferredTime: '10:30', quietStart: '22:00', quietEnd: '08:00', timezone: 'UTC', channels: { all: false, individual: { mobilePwa: true, watch: false, crewCierge: false } } };
@@ -87,5 +87,10 @@ try {
   assert.equal((await request('A')).status, 401, 'stale login rejected after account recreation');
   const recreated = await request('A-new'); assert.equal(recreated.data.revision, 0); assert.equal(recreated.data.alreadyDid, false); assert.equal(recreated.data.preferences.enabled, false);
   assert(calls.every(sql => !/crewcheck_notification_jobs|bid_windows/.test(sql)), 'no producer, scheduler or queue mutation');
+  const central=url.replace('/bids/alert-preferences','/notifications/preferences'),settings={crewcheck_pulse_enabled:false,crewcheck_telegram_notifications:true,crewcheck_traffic_alerts:false,crewcheck_concierge:true,crewcheck_wakeup_lead_minutes:75,crewcheck_wakeup_channel:'telegram-call',crewcheck_telegram_chat_id:'fixture-chat',crewcheck_wakeup_phone:''};
+  const oldState=await request('A-new');const centralSaved=await request('A-new',{...write,ownerId:'owner-A-new',expectedRevision:oldState.data.revision,requestId:'central_settings_001',preferences:{...preferences,settings}},central);assert.equal(centralSaved.status,200);assert.deepEqual(centralSaved.data.preferences.settings,settings);
+  assert.equal((await request('A-new')).data.revision,centralSaved.data.revision,'legacy and central aliases share exactly one account state');
+  const legacySaved=await request('A-new',{...write,expectedRevision:centralSaved.data.revision,requestId:'legacy_preserve_001'});assert.deepEqual(legacySaved.data.preferences.settings,settings,'older client cannot erase imported settings');
+  assert.equal((await request('A-new',{...write,ownerId:'owner-B',expectedRevision:legacySaved.data.revision,requestId:'wrong_owner_001'},central)).status,409,'central write binds captured owner');
   console.log('PASS actual BIDS preference HTTP handler: observational GET, source/config forgery blocked, account binding/recreation, CAS concurrency, idempotent save/Already did, receipt revision, explicit boolean preferences; zero transport or queue calls.');
 } finally { await new Promise(resolve => server.close(resolve)); }
