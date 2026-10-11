@@ -1,27 +1,7 @@
 import assert from 'node:assert/strict';
 import {createMysqlJournal,coordinatedCommit} from './mysql_journal.mjs';
 
-// Transaction-serial fixture models PK exclusivity and commit-response loss.
-// This is not a real InnoDB integration test or evidence of production access.
-function database(){
-  const rows=new Map();let tail=Promise.resolve(),loseNextCommit=false;
-  const db={rows,calls:[],engine:'InnoDB',primary:['state_key'],payloadType:'json',lose(){loseNextCommit=true;},
-    async query(sql,args){db.calls.push(sql);
-      if(sql.includes('information_schema.tables'))return [[{engine:db.engine}]];
-      if(sql.includes('information_schema.statistics'))return [db.primary.map(column_name=>({column_name}))];
-      if(sql.includes('information_schema.columns'))return [[{data_type:db.payloadType}]];
-      assert(sql.startsWith('SELECT payload'));return [[...(rows.has(args[0])?[{payload:rows.get(args[0])}]:[])]];},
-    async getConnection(){let unlock;const previous=tail;tail=new Promise(resolve=>unlock=resolve);await previous;let snapshot,committed=false,unlocked=false;
-      const finish=()=>{if(!unlocked){unlocked=true;unlock();}};
-      return {async beginTransaction(){snapshot=structuredClone(rows);},async query(sql,args){db.calls.push(sql);
-        if(sql.startsWith('SELECT payload'))return [[...(rows.has(args[0])?[{payload:rows.get(args[0])}]:[])]];
-        if(sql.startsWith('INSERT INTO')){assert(!rows.has(args[0]));rows.set(args[0],args[1]);return [{affectedRows:1}];}
-        if(sql.startsWith('UPDATE')){assert(rows.has(args[1]));rows.set(args[1],args[0]);return [{affectedRows:1}];}
-        assert.fail('Unexpected SQL');},
-        async commit(){committed=true;if(loseNextCommit){loseNextCommit=false;throw Error('synthetic secret DB diagnostic');}},
-        async rollback(){assert(!committed);rows.clear();for(const [key,value] of snapshot)rows.set(key,value);},release:finish,destroy:finish};}
-  };return db;
-}
+import {database} from './mysql_journal_fixture.mjs';
 const packageName='com.crewcheck.app',owner='run:123:1';
 const intent={sourceSha:'a'.repeat(40),controllerSha:'b'.repeat(40),artifactSha256:'c'.repeat(64),runId:'123',versionCode:144201};
 const staged={...intent,editId:'edit1',track:'qa',expectedTrackSha256:'d'.repeat(64),otherTracksBeforeSha256:'e'.repeat(64)};
