@@ -7,6 +7,15 @@ import { createMyCrewCarePersistentSession } from '../shared/myCrewCarePersisten
 
 const read = (path) => readFileSync(path, 'utf8');
 const allowed = [
+  'shared/myCrewCareObservedContract.mjs',
+  'scripts/regression-mycrewcare-observed.mjs',
+  'docs/mycrewcare-observed-contract-off.md',
+  'scripts/fixtures/mycrewcare-observed/README.md',
+  'scripts/fixtures/mycrewcare-observed/SHA256SUMS',
+  'scripts/fixtures/mycrewcare-observed/expectations.synthetic.json',
+  'scripts/fixtures/mycrewcare-observed/mytravel.synthetic.html',
+  'scripts/fixtures/mycrewcare-observed/profile.synthetic.html',
+  'scripts/fixtures/mycrewcare-observed/reservation.synthetic.html',
   '.github/workflows/mycrewcare-v3-persistence.yml',
   'android-wrapper/app/build.gradle',
   'android-wrapper/app/src/main/assets/mycrewcare-transport-v3.js',
