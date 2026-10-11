@@ -44,3 +44,5 @@ for state in ('acknowledged', 'reconciled'):
     except RuntimeError:pass
     else:raise AssertionError('Caller asserted store/reconciliation outcome')
     assert not calls and c.blocked
+
+import test_receipt_backend  # Existing offline CI step also checks receipt mapping.
