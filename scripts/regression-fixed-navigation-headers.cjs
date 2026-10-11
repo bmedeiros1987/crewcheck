@@ -29,8 +29,8 @@ assert.equal(confirmation.length, 1);
 const modalBundle = buildSync({ stdin: { contents: `import { acquireOverlayLifecycle } from './client/src/lib/overlayLifecycle';\n${confirmation[0].getText(homeAst)}\nwindow.openQAImport=requestCrewCheckImportConfirmation; window.acquireQAOverlay=acquireOverlayLifecycle;`, resolveDir: process.cwd(), loader: 'ts' }, bundle: true, platform: 'browser', format: 'iife', write: false }).outputFiles[0].text;
 const results = [];
 const testedCommit = require('node:child_process').execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-const widths = (process.env.UI_READING_WIDTHS || '320,360,390,1440').split(',').map(Number);
-assert.ok(widths.every(width => [320, 360, 390, 1440].includes(width)));
+const widths = (process.env.UI_READING_WIDTHS || '320,360,390,412,430,1440').split(',').map(Number);
+assert.ok(widths.every(width => [320, 360, 390, 412, 430, 1440].includes(width)));
 const settle = page => page.evaluate(async () => {
   for (const animation of document.getAnimations()) if (Number.isFinite(animation.effect?.getComputedTiming().endTime)) try { animation.finish(); } catch {}
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -58,7 +58,7 @@ async function visibleTextBounds(page, selector) {
       const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
       let node;
       while (node = walker.nextNode()) {
-        if (node.parentElement.closest('svg, option, [aria-hidden="true"]') || !node.parentElement.getClientRects().length) continue;
+        if (node.parentElement.closest('svg, option, [aria-hidden="true"]') || !node.parentElement.getClientRects().length || parseFloat(getComputedStyle(node.parentElement).fontSize) === 0) continue;
         for (let i = 0; i < node.textContent.length; i++) {
           if (/\s/.test(node.textContent[i])) continue;
           const range = document.createRange(); range.setStart(node, i); range.setEnd(node, i + 1);
@@ -78,7 +78,7 @@ async function visibleTextBounds(page, selector) {
   const origin = `http://127.0.0.1:${server.address().port}`;
   const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined });
   try {
-    for (const width of [320,390,1440]) for (const theme of ['light','dark']) for (const size of [100,150,200]) {
+    for (const width of widths) for (const theme of ['light','dark']) for (const size of [100,150,200]) {
       const context = await browser.newContext({viewport:{width,height:844},hasTouch:width<500,isMobile:width<500,serviceWorkers:'block',timezoneId:'America/Sao_Paulo'});
       await context.route('**/*', route => {
         const url=new URL(route.request().url());
@@ -95,10 +95,16 @@ async function visibleTextBounds(page, selector) {
       const box=async selector=>page.locator(selector).boundingBox();
       const stable=(before,after,label)=>{assert.ok(before&&after);assert.ok(Math.abs(before.y-after.y)<=1&&Math.abs(before.height-after.height)<=1,label+JSON.stringify({before,after}));};
       const header=await box('.cz-global-header');
+      assert.equal(header.y,0,'Opaque header covers the top safe area');
+      const shield=await page.locator('.cz-global-header').evaluate(el=>{const p=getComputedStyle(el,'::before'),r=el.getBoundingClientRect();return{content:p.content,left:r.x+parseFloat(p.left),right:r.right-parseFloat(p.right),viewport:innerWidth,background:p.backgroundColor,width:parseFloat(p.width)};});
+      assert.equal(shield.content,'\"\"');assert.ok(shield.left<=1&&shield.right>=shield.viewport-1,'Opaque shield covers viewport while header keeps content alignment');assert.notEqual(shield.background,'rgba(0, 0, 0, 0)');assert.ok(shield.width>=shield.viewport-2,'Resolved painted shield width covers both edges');
+      assert.ok(await page.locator('.cz-global-header').evaluate(el=>parseFloat(getComputedStyle(el).paddingTop))>=24,'Header reserves the simulated status bar');
       assert.equal(await page.locator('.cz-global-header').evaluate(el=>getComputedStyle(el).position),'fixed','Only scroll behavior stays pinned');
       assert.equal(await page.locator('.cz-global-header').evaluate(el=>Boolean(el.closest('.cz-menu-scroll'))),false,'Header remains outside the scroll container');
       assert.equal(await page.locator('.cz-global-header .cz-brand-lockup .cz-logo').isVisible(),true,'Restore the previous brand at mobile widths');
-      assert.equal(await page.locator('.cz-global-header .cz-brand-lockup small').isVisible(),true,'Restore the previous subtitle in portrait/desktop');
+      assert.equal(await page.locator('.cz-global-header .cz-brand-lockup small').isVisible(),!(width<=600&&size>=150),'Decorative subtitle yields space at large mobile text');
+      if(width<=600)assert.ok(header.height<=110,'Mobile identity chrome stays compact with 200% text');
+      const mark=await page.locator('.cz-global-header .cz-logo').boundingBox(),markImage=await page.locator('.cz-global-header .cz-logo img').boundingBox();assert.ok(markImage.x>=mark.x-1&&markImage.x+markImage.width<=mark.x+mark.width+1,'Identity image stays fully inside its mark');
       const spacer=await box('.cc-fixed-header-space');assert.ok(spacer.height>=header.y+header.height,'Measured spacer follows the restored header size');
       await page.locator('.cz-global-header button').last().focus();assert.equal(await page.locator('.cz-global-header button').last().evaluate(el=>el===document.activeElement),true,'Header actions retain keyboard focus');
       await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-restored-header.png`)});
@@ -110,6 +116,9 @@ async function visibleTextBounds(page, selector) {
       await page.locator('#cc-menu-personalization > summary').click();
       await page.locator('#cc-menu-fixed-heading h2').waitFor();await settle(page);
       const menuHead=await box('.cz-menu-header'), title=await box('#cc-menu-fixed-heading');
+      assert.deepEqual(await visibleTextBounds(page,'.cz-menu-header'),[],'Menu header action text fits');
+      await page.getByRole('button',{name:'Sair da conta',exact:true}).waitFor();
+      assert.deepEqual(await visibleTextBounds(page,'.cz-menu-header .cz-menu-logout'),[],'Logout label stays inside its action');
       assert.deepEqual(await visibleTextBounds(page,'#cc-menu-fixed-heading'),[],'Pinned start heading text fits');
       const scroll=page.locator('.cz-menu-scroll');
       for(const position of ['end','start','end']) {
