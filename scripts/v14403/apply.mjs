@@ -195,7 +195,7 @@ async function handleTelegramLinkStatus(req, res, url) {`,
   return true;
 }
 
-// CrewCheck v13.7.15`,
+// CrewCheck v13.7.15 — Telegram Voice STT Restore.`,
     `  ].join('\\n'), { reply_markup: conciergeKeyboard });
   if (data.linked[email].username) {
     await sendTelegramMessage(chatId, [
@@ -207,7 +207,7 @@ async function handleTelegramLinkStatus(req, res, url) {`,
   return true;
 }
 
-// CrewCheck v13.7.15`,
+// CrewCheck v13.7.15 — Telegram Voice STT Restore.`,
     'convite automatico para novos usuarios',
   );
 
