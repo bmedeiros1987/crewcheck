@@ -47,7 +47,7 @@ ${declarations.map(n=>n.getText(ast)).join('\n')}
 window.applyStayTheme=setCrewCheckThemePreference;
 import {peekPendingNavigationContext} from '@/lib/navigationContext';
 import '@/components/v139/v139.css';
-const day=new Date().toISOString().slice(0,10),now=Date.parse(day+'T12:00:00Z');
+const now=Date.now(),day=new Date(now).toISOString().slice(0,10);
 const event=(id,hours)=>({id,kind:'stay',title:'Pernoite sintético '+id,date:new Date(now),day:{date:day},origin:'FOR',destination:'FOR',hotel:'Hotel sintético '+id,presentation:'01:11',canonical:{startDateTime:new Date(now+hours*3600000).toISOString(),endDateTime:new Date(now+(hours+24)*3600000).toISOString()}});
 const fixtures=[event('synthetic-current',-1),event('synthetic-future',48)];
 window.stayFixtureDay=day;window.stayFixtureEvents=fixtures;
@@ -71,16 +71,19 @@ const browser=await require('playwright').chromium.launch({headless:true,...(pro
 const results=[];
 try {
  for(const width of [390,1280]){
+  // Both sides of UTC midnight previously broke the noon-based fixture.
+  // The page clock drives fixture construction AND production Date.now.
+  const fixtureClock=width===390?'2026-10-11T00:02:00Z':'2026-10-11T23:58:00Z';
   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:'block',timezoneId:'America/Fortaleza'});
   const errors=[],writes=[];
   await context.addInitScript(()=>{localStorage.setItem('crewcheck_auth_token','synthetic-token');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic',email:'test@example.invalid'}));});
   await context.route('**/*',route=>{
    const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(!url.pathname.startsWith('/api/'))return route.continue();
    if(route.request().method()!=='GET')writes.push(url.pathname);
-   const day=new Date().toISOString().slice(0,10);
+   const day=fixtureClock.slice(0,10);
    return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,address:null,stays:[{id:'saved-future',rosterEventId:'synthetic-future',stayDate:day,airport:'FOR',hotelName:'Hotel salvo sintético',presentationTime:'05:30',leadMinutes:90}]})});
   });
-  const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));await page.goto(origin);
+  const page=await context.newPage();await page.clock.setFixedTime(new Date(fixtureClock));page.on('pageerror',error=>errors.push(error.message));await page.goto(origin);
   await page.getByRole('button',{name:'Editar pernoite synthetic-future',exact:true}).click();
   const program=page.getByRole('combobox',{name:'Programação',exact:true});
   await program.waitFor();assert.equal(await program.inputValue(),'synthetic-future');
@@ -218,7 +221,7 @@ try {
   await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='');
   assert.equal(await page.evaluate(()=>window.stayHasOrigin()),false,'Origin marker from another account cannot resume the editor');
   assert.deepEqual(errors,[]);assert.deepEqual(writes,[],'No hotel saves or alarm requests');
-  results.push({width,touchIdentity:true,savedApz:true,noRosterApzFallback:true,manualPreserved:true,autoMode:true,modeAbsolute:true,liveGap:true,defaultSeparate:true,current:true,rosterChange:true,itemRemoval:true,cancelEdit:true,contextReturn:true,accountReset:true,persistenceReload:true,reloadInsideEditorDegradesToList:true,cancellationPersisted:true,layout,negativeControl:true,writes,errors});
+  results.push({width,fixtureClock,touchIdentity:true,savedApz:true,noRosterApzFallback:true,manualPreserved:true,autoMode:true,modeAbsolute:true,liveGap:true,defaultSeparate:true,current:true,rosterChange:true,itemRemoval:true,cancelEdit:true,contextReturn:true,accountReset:true,persistenceReload:true,reloadInsideEditorDegradesToList:true,cancellationPersisted:true,layout,negativeControl:true,writes,errors});
   await context.close();
  }
 } finally {
