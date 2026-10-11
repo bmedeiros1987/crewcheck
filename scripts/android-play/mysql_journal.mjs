@@ -11,14 +11,14 @@ const same=(a,b)=>assert.deepEqual(a,b,'Durable acknowledgement uncertain');
 const identity=(owner,intent)=>{
   assert(typeof owner==='string'&&/^[A-Za-z0-9:_-]{1,128}$/.test(owner));
   assert(intent && Object.getPrototypeOf(intent)===Object.prototype);
-  assert(Object.keys(intent).every(k=>['sourceSha','controllerSha','runId','artifactSha256','versionCode','editId','track','expectedTrackSha256','otherTracksBeforeSha256'].includes(k)),'Only release provenance allowed');
+  assert(Object.keys(intent).every(k=>['sourceSha','controllerSha','runId','artifactSha256','versionCode','editId','track','expectedTrackSha256','otherTracksBeforeSha256','reconciliationSha256'].includes(k)),'Only release provenance allowed');
   for(const field of ['sourceSha','controllerSha'])assert(/^[0-9a-f]{40}$/.test(intent[field]));
   assert(/^[0-9a-f]{64}$/.test(intent.artifactSha256));
   assert(/^[1-9][0-9]*$/.test(String(intent.runId)));
   assert(Number.isSafeInteger(intent.versionCode)&&intent.versionCode>0&&intent.versionCode<2100000000);
   if(intent.editId!==undefined)assert(/^[A-Za-z0-9_-]{1,128}$/.test(intent.editId));
   if(intent.track!==undefined)assert(['qa','internal'].includes(intent.track));
-  for(const field of ['expectedTrackSha256','otherTracksBeforeSha256'])if(intent[field]!==undefined)assert(/^[0-9a-f]{64}$/.test(intent[field]));
+  for(const field of ['expectedTrackSha256','otherTracksBeforeSha256','reconciliationSha256'])if(intent[field]!==undefined)assert(/^[0-9a-f]{64}$/.test(intent[field]));
 };
 
 export function createMysqlJournal(db){
@@ -39,6 +39,8 @@ export function createMysqlJournal(db){
   async function write(packageName,owner,intent,expectedRevision,nextState){
     identity(owner,intent);intent=structuredClone(intent);const stateKey=key(packageName);
     if(['pending','acknowledged','reconciled'].includes(nextState))for(const field of ['editId','track','expectedTrackSha256','otherTracksBeforeSha256'])assert(intent[field],'Staged provenance required');
+    if(nextState==='reconciled')assert(intent.reconciliationSha256,'Durable reconciliation proof required');
+    else assert(intent.reconciliationSha256===undefined,'Reconciliation proof only belongs to final state');
     if(!schemaVerified)await verifyExistingSchema();
     const connection=await db.getConnection();let commitAttempted=false,discard=false;
     let next;
