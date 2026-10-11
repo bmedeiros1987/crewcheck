@@ -50,8 +50,19 @@ if (fs.existsSync('android-wrapper/app/build.gradle')) {
 requireMarker('server.mjs', "telegramApiUrl('sendVoice')");
 requireMarker('server.mjs', 'buildCrewCheckAtis');
 requireMarker('server.mjs', "allowed_updates: ['message', 'edited_message', 'callback_query']");
-requireMarker('client/src/pages/Home.tsx', "@/components/v1392/ManualRegulationView");
-requireMarker('client/src/components/v1392/ManualRegulationView.tsx', 'Extensão condicionada');
+// A later canonical materializer replaces the legacy import with v1432.
+// Replaying after cache invalidation must validate that integration, not require
+// the retired import. Both the route and its actual component remain mandatory.
+const regulationHome = read('client/src/pages/Home.tsx');
+const regulationImports = [
+  ["import ManualRegulationView from '@/components/v1392/ManualRegulationView';", 'client/src/components/v1392/ManualRegulationView.tsx'],
+  ["import ManualRegulationView, { regulationForScheduleDay } from '@/components/v1432/ManualRegulationView';", 'client/src/components/v1432/ManualRegulationView.tsx'],
+];
+const regulationIntegration = regulationImports.find(([statement]) => regulationHome.includes(statement));
+if (!regulationIntegration || !regulationHome.includes("{view === 'regulation' && <ManualRegulationView compliance={compliance}")) {
+  throw new Error(`v${VERSION}: integração ManualRegulationView ausente ou incompleta`);
+}
+requireMarker(regulationIntegration[1], 'Extensão condicionada');
 requireMarker('server/v1391/emergency.mjs', 'emerg[êe]ncia');
 
 console.log(`CrewCheck v${VERSION} Telegram, ATIS, regulamentação e layout integrados.`);

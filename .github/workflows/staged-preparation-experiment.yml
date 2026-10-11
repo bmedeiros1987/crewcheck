@@ -1,0 +1,84 @@
+name: Disposable staged preparation experiment
+on:
+  pull_request:
+    paths:
+      - .github/workflows/staged-preparation-experiment.yml
+      - scripts/ci/staged-preparation-experiment.mjs
+      - scripts/ci/staged-build-adapter.mjs
+      - scripts/ci/staged-build-check.mjs
+      - scripts/ci/staged-concierge-job.mjs
+      - scripts/ci/capture-composition-evidence.mjs
+      - scripts/regression-staged-build-adapter.mjs
+      - scripts/v139/staged-preparation-prototype.mjs
+      - scripts/v139/prototype-*.mjs
+      - scripts/regression-staged-preparation-prototype.mjs
+      - scripts/regression-free-day-physical.mjs
+      - docs/staged-preparation-experiment.md
+permissions:
+  contents: read
+jobs:
+  isolated-experiment:
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [a, b]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install job-exclusive dependencies without lifecycle scripts or shared cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          job="$RUNNER_TEMP/staged-preparation-${{ matrix.lane }}"
+          mkdir -p "$job/dependencies"
+          cp package.json package-lock.json "$job/dependencies/"
+          env -i PATH="$PATH" HOME="$job" npm ci --prefix "$job/dependencies" --cache "$job/npm-cache" --ignore-scripts --no-audit --no-fund
+          env -i PATH="$PATH" HOME="$job" npm install --prefix "$job/dependencies" --cache "$job/npm-cache" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          env -i PATH="$PATH" HOME="$job" PLAYWRIGHT_BROWSERS_PATH="$job/browser-cache" node "$job/dependencies/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify synthetic contract
+        run: |
+          node scripts/regression-staged-preparation-prototype.mjs
+          node scripts/regression-staged-build-adapter.mjs
+      - name: Run attested real cold repeat invalidation and independent comparisons
+        shell: bash
+        run: |
+          set -euo pipefail
+          job="$RUNNER_TEMP/staged-preparation-${{ matrix.lane }}"
+          env -i PATH="$PATH" HOME="$job" node scripts/ci/staged-preparation-experiment.mjs "$GITHUB_WORKSPACE" "$job"
+      - name: Validate opt-in adapter and exact reviewed 1016 composition
+        shell: bash
+        run: |
+          set -euo pipefail
+          job="$RUNNER_TEMP/staged-preparation-${{ matrix.lane }}"
+          head="$(git rev-parse HEAD)"
+          env -i PATH="$PATH" HOME="$job" node scripts/ci/staged-build-check.mjs "$GITHUB_WORKSPACE" "$job" raw "$head"
+          mv "$job/adapter-results.json" "$job/adapter-head-results.json"
+          git fetch --no-tags origin 647aaed4c4460f646865221b181419229ebe8e85
+          git worktree add --detach "$RUNNER_TEMP/staged-composition-${{ matrix.lane }}" "$head"
+          git -C "$RUNNER_TEMP/staged-composition-${{ matrix.lane }}" -c core.hooksPath=/dev/null -c user.name='Disposable CI' -c user.email=fixture@example.invalid merge --no-ff --no-edit 647aaed4c4460f646865221b181419229ebe8e85
+          composition="$(git -C "$RUNNER_TEMP/staged-composition-${{ matrix.lane }}" rev-parse HEAD)"
+          node scripts/ci/capture-composition-evidence.mjs "$RUNNER_TEMP/staged-composition-${{ matrix.lane }}" "$job/exact-1016-composition" "$composition"
+          env -i PATH="$PATH" HOME="$job" node scripts/ci/staged-build-check.mjs "$RUNNER_TEMP/staged-composition-${{ matrix.lane }}" "$job" raw "$composition"
+          mv "$job/adapter-results.json" "$job/adapter-composition-results.json"
+          test "$(git rev-parse HEAD)" = "$head"
+          test -z "$(git status --porcelain)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: staged-preparation-${{ matrix.lane }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/staged-preparation-${{ matrix.lane }}/results.json
+            ${{ runner.temp }}/staged-preparation-${{ matrix.lane }}/adapter-*-results.json
+            ${{ runner.temp }}/staged-preparation-${{ matrix.lane }}/adapter-results.json
+            ${{ runner.temp }}/staged-preparation-${{ matrix.lane }}/exact-1016-composition.bundle
+            ${{ runner.temp }}/staged-preparation-${{ matrix.lane }}/exact-1016-composition.json
+          if-no-files-found: error
+          retention-days: 3
