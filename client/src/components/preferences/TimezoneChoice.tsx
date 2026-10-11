@@ -18,6 +18,14 @@ const labels: Record<string, string> = {
   "America/New_York": "Nova York",
   UTC: "UTC",
 };
+function normalizeSearch(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[_/\s]+/g, " ")
+    .trim()
+    .toLocaleLowerCase("pt-BR");
+}
 export function TimezoneChoice({
   value,
   onChange,
@@ -37,9 +45,9 @@ export function TimezoneChoice({
   const choices = useMemo(
     () =>
       timeZoneChoices(current).filter((zone) =>
-        `${labels[zone] || ""} ${zone}`
-          .toLocaleLowerCase("pt-BR")
-          .includes(query.toLocaleLowerCase("pt-BR")),
+        normalizeSearch(`${labels[zone] || ""} ${zone}`).includes(
+          normalizeSearch(query),
+        ),
       ),
     [current, query],
   );
@@ -64,7 +72,7 @@ export function TimezoneChoice({
           value={source}
           onChange={(e) => choose(e.target.value)}
         >
-          <option value="device">Do aparelho · {device}</option>
+          <option value="device">Usar fuso atual do aparelho · {device}</option>
           <option value="base">
             Da base{base ? ` · ${base}` : " · não confirmada"}
           </option>
@@ -120,7 +128,7 @@ export function TimezoneChoice({
         {source === "manual"
           ? "Escolha manual ou salva"
           : source === "device"
-            ? "Do aparelho"
+            ? "Aparelho · valor escolhido"
             : source === "base"
               ? "Da base"
               : "Local atual — fallback do aparelho"}
@@ -129,7 +137,8 @@ export function TimezoneChoice({
       <small>
         Preferência de apresentação e avisos pessoais. Instantes da escala e
         fuso operacional permanecem preservados. A escolha só é salva ao
-        confirmar a tela.
+        confirmar a tela. Salvar guarda o valor IANA escolhido; não acompanha
+        viagens automaticamente.
       </small>
     </fieldset>
   );

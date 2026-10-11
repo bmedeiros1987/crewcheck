@@ -27,6 +27,8 @@ export function BidsAlertPreferences() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [draft, setDraft] = useState<Preferences>({ ...defaults });
   const [busy, setBusy] = useState(false);
+  const [draftGeneration, setDraftGeneration] = useState(0);
+  function replaceDraft(value: Preferences) { setDraft(value); setDraftGeneration(generation => generation + 1); }
   const [message, setMessage] = useState('Consultando preferências desta conta…');
   const [conflict, setConflict] = useState(false);
   const [device, setDevice] = useState(readDeviceNotificationStatus);
@@ -38,12 +40,12 @@ export function BidsAlertPreferences() {
       const result = await authFetch<Snapshot>(path, { cache: 'no-store' });
       if (identity !== epoch.current || request !== ticket.current) return;
       setSnapshot(result); cacheNotificationPreferences(result.preferences,result.ownerId,result.revision);
-      if (!dirty.current) setDraft(result.preferences);
+      if (!dirty.current) replaceDraft(result.preferences);
       setMessage(result.message);
     } catch { if (identity === epoch.current && request === ticket.current) setMessage('Preferências não verificadas. Reconecte para consultar.'); }
   }
   useEffect(() => {
-    const changed = () => { epoch.current++; ticket.current++; dirty.current = false; setSnapshot(null); setDraft({ ...defaults }); setBusy(false); setConflict(false); setMessage('Consultando preferências desta conta…'); load(); };
+    const changed = () => { epoch.current++; ticket.current++; dirty.current = false; setSnapshot(null); replaceDraft({ ...defaults }); setBusy(false); setConflict(false); setMessage('Consultando preferências desta conta…'); load(); };
     const storage = (event: StorageEvent) => { if (['crewcheck_auth_token', 'crewcheck_auth_user'].includes(event.key || '')) changed(); };
     const online = () => { if (!dirty.current) load(); };
     load();
@@ -68,7 +70,7 @@ export function BidsAlertPreferences() {
     try {
       const result = await authFetch<Snapshot>(path, { method: 'POST', body: JSON.stringify({ action, ownerId:snapshot.ownerId, expectedRevision: snapshot.revision, requestId: crypto.randomUUID(), preferences: action === "save-preferences" ? {...draft,timezone:validTimeZone(draft.timezone)?draft.timezone:deviceTimeZone()} : draft, contextKey: snapshot.plan.contextKey, confirmed: action === 'already-did' }) });
       if (identity !== epoch.current) return;
-      dirty.current = false; setSnapshot(result); setDraft(result.preferences); cacheNotificationPreferences(result.preferences,result.ownerId,result.revision); setMessage(result.message); setConflict(false);
+      dirty.current = false; setSnapshot(result); replaceDraft(result.preferences); cacheNotificationPreferences(result.preferences,result.ownerId,result.revision); setMessage(result.message); setConflict(false);
     } catch (error: any) {
       if (identity === epoch.current) { setMessage(error?.message || 'Não foi possível salvar. Nenhum envio está confirmado.'); if (error?.status === 409) setConflict(true); }
     } finally { if (identity === epoch.current) setBusy(false); }
@@ -104,7 +106,7 @@ export function BidsAlertPreferences() {
           <label>Modo <select value={draft.mode} onChange={event => edit('mode', event.target.value as Preferences['mode'])}><option value="auto">Auto — sugestão transparente</option><option value="manual">Manual — meu horário</option></select></label>
           <details className="cc-notification-help"><summary>Como funciona o Auto</summary><p>Auto pode sugerir um horário fora dos compromissos conhecidos da escala. Isso não confirma sono, descanso ou disponibilidade. Seu horário manual permanece salvo ao trocar de modo.</p></details>
           <label>Horário padrão para BIDS <CivilTimeChoice label="Horário padrão para BIDS" value={draft.preferredTime} onChange={value=>edit('preferredTime',value)}/></label>
-          <TimezoneChoice key={snapshot?.ownerId || 'unverified'} value={draft.timezone} onChange={value=>edit('timezone',value)}/>
+          <TimezoneChoice key={`${snapshot?.ownerId || 'unverified'}:${draftGeneration}`} value={draft.timezone} onChange={value=>edit('timezone',value)}/>
           <p>Seu fuso é uma preferência pessoal; não confirma o fuso oficial da janela.</p>
           <label>Silêncio começa <CivilTimeChoice label="Silêncio começa" value={draft.quietStart} onChange={value=>edit('quietStart',value)}/></label>
           <label>Silêncio termina <CivilTimeChoice label="Silêncio termina" value={draft.quietEnd} onChange={value=>edit('quietEnd',value)}/></label>
