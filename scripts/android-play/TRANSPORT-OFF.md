@@ -71,7 +71,10 @@ backend cannot acquire the already reserved package. There is no retry, deletion
 unlock, timeout, generation rollover or automatic release. This is an injected
 contract adapter, not a configured backend for mobile_internal.publish. It does
 not load credentials, start subprocesses, connect or grant executor authority.
-The existing manual CLIs and workflow configurations remain byte-identical.
+The existing manual CLIs and publisher workflows remain byte-identical. The
+read-only preflight includes the receipt backend, both end-to-end test files and
+the deterministic SQL fixture in its PR path filter; source-only changes trigger
+the existing offline suite. A contract test checks each standalone changed path.
 
 Caller-provided acknowledged/reconciled/positive store outcome fields are refused.
 The older publisher's final persistence calls are therefore deliberately NOT

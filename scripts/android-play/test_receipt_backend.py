@@ -59,3 +59,24 @@ for invalid in (1.0, float('nan'), 9007199254740992, {'é':1}, '\ud800'):
     try:snapshot_digest(invalid)
     except (ValueError,UnicodeError):pass
     else:raise AssertionError('Incompatible snapshot type accepted')
+
+# Future source-only and fixture-only edits must schedule this offline suite.
+import ast
+import fnmatch
+workflow = Path(__file__).resolve().parents[2] / '.github/workflows/mobile-play-preflight.yml'
+text = workflow.read_text()
+marker = '  pull_request:\n    paths:\n'
+assert text.count(marker) == 1
+section = text.split(marker)[1].split('\n\n', 1)[0]
+patterns = []
+for line in section.splitlines():
+    assert line.startswith('      - '), 'Unexpected path-filter syntax; update contract test'
+    patterns.append(ast.literal_eval(line[len('      - '):]))
+for name in ('receipt_backend.py', 'test_receipt_backend.py', 'test_receipt_backend.mjs', 'mysql_journal_fixture.mjs'):
+    changed = 'scripts/android-play/' + name
+    assert any(fnmatch.fnmatchcase(changed, pattern) for pattern in patterns), 'Source-only edit would skip receipt CI: ' + changed
+assert not any(fnmatch.fnmatchcase('docs/unrelated.md', pattern) for pattern in patterns)
+offline = text.split('  offline-guards:\n')[1].split('  inspect-existing-play-access:\n')[0]
+assert 'run: python3 scripts/android-play/test_journal_transport.py' in offline
+assert 'import test_receipt_backend' in Path(__file__).with_name('test_journal_transport.py').read_text()
+print('PASS: each receipt backend/test/SQL fixture source-only PR path triggers the existing offline suite; unrelated documentation does not')
