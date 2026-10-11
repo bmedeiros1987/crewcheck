@@ -29,3 +29,36 @@ Every Node generator/finalizer/gate and harness validation command is launched b
 The experimental workflow installs exclusive dependencies and Chromium, executes the synthetic test, then runs `node scripts/ci/staged-preparation-experiment.mjs REPOSITORY JOB_DIRECTORY`. Its exact HEAD comes from the PR head checkout. Each cold/repeat/input/generator scenario is compared by prepared-file hash against independently Git-attested cold preparation. Report-producing fixtures and compiler/Vite/browser tooling use writable disposable validation copies; dependency snapshots remain read-only and the browser's Vite cache is outside them. The experimental Vite CLI uses its supported native config loader on Node22, avoiding .vite-temp writes into node_modules; production build commands are unchanged. TypeScript/build/browser gates are separate from the prepared source manifest comparison. No dist equality or production isolation claim.
 
 Artifacts contain only synthetic results and hashes, never sources containing runtime secrets or personal documents. Each job uploads results.json and records the exact tested commit. Review must distinguish passing experiments from authorization to migrate or merge.
+
+## Opt-in CI build/check adapter
+
+`scripts/ci/staged-build-adapter.mjs` is the single opt-in adapter for trusted,
+throwaway CI. `prepareCiValidation` requires explicit `inputKind: 'raw'`, an exact
+Git commit and re-attestation even on hits. It rejects any preparation stamp,
+including legacy v2, before preparing. It resolves and verifies the typed
+published generation and creates a unique writable validation copy; dependency
+links retain the owned read-only generation snapshot. HOME/TMPDIR use a separate
+unique scratch directory outside the package scope. Failed preparation, timeout
+or a pending lease throws; there is no stale-generation fallback or lock recovery.
+
+`checkAndBuildCiValidation` runs gates followed by direct `tsc --noEmit`, the
+Concierge compile module, and `vite build --configLoader native`. It never calls
+npm wrappers that apply generators to the checkout. A failed command ends the
+sequence. Generation verification occurs before and after successful validation.
+The checkout, runtime callers and existing production workflows remain intact.
+
+`scripts/ci/staged-build-check.mjs REPOSITORY JOB raw EXACT_SHA` exercises all
+existing raw/prepared gates, direct tools and the synthetic physical browser gate.
+The existing experiment still runs all cold/repeat/input/generator comparisons;
+its job is not replaced. Additional CI steps test both the exact PR head and a
+separate merge composition with PR1016 head
+`647aaed4c4460f646865221b181419229ebe8e85`. That composition only exercises the
+reviewed OFF synthetic fixtures in three timezones, with no real transport or
+runtime integration. Results record the actual composition SHA. A conflict or
+failure stops the job; the original checkout must remain clean at its original
+HEAD. Adoption into an existing build/check job requires subsequent review.
+
+This scope deliberately accepts same-UID chmod and setsid escape limitations
+only for trusted code in disposable CI. It provides no security sandbox or
+protection against hostile repository code. No runtime migration, deployment,
+credential changes, message delivery or production data access is authorized.
