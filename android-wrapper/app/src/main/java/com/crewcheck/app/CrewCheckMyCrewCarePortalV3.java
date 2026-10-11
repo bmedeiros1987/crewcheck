@@ -103,9 +103,11 @@ public final class CrewCheckMyCrewCarePortalV3 {
                 ObservedScope captured=new ObservedScope(scope.accountId,scope.sessionId,scope.requestId,scope.employeeId,scope.username,++generation);
                 active=op=new Operation(captured,source,completion);
             }
-            terminate(old,null,"observed-cancelled");
-            synchronized(this) { if(active!=op) return false; }
+            RuntimeException previousFailure=null;
+            try { terminate(old,null,"observed-cancelled"); }
+            catch(RuntimeException error) { previousFailure=error; }
             try {
+                synchronized(this) { if(active!=op) return false; }
                 ObservedCancel timer=deadline.schedule(30000,()->finish(op,null,"observed-timeout"));
                 boolean current;
                 synchronized(this) { current=active==op; if(current) op.timeout=timer; }
@@ -113,6 +115,7 @@ public final class CrewCheckMyCrewCarePortalV3 {
                 acquire(op,"profile-before",null);
                 return true;
             } catch(RuntimeException error) { finish(op,null,"observed-acquisition-failed"); return false; }
+            finally { if(previousFailure!=null) throw previousFailure; }
         }
         public void cancel() {
             Operation old;
@@ -129,10 +132,12 @@ public final class CrewCheckMyCrewCarePortalV3 {
             terminate(old,null,"observed-cancelled");
         }
         private void acquire(Operation op,String kind,Map<String,String> card) {
-            final int step;
-            synchronized(this) { if(active!=op) return; step=++op.step; }
-            try { op.source.acquire(new ObservedRequest(op.scope,kind,card), page->receive(op,step,kind,card,page)); }
-            catch(RuntimeException error) { finish(op,null,"observed-acquisition-failed"); }
+            synchronized(this) {
+                if(active!=op) return;
+                final int step=++op.step;
+                try { op.source.acquire(new ObservedRequest(op.scope,kind,card), page->receive(op,step,kind,card,page)); }
+                catch(RuntimeException error) { finish(op,null,"observed-acquisition-failed"); }
+            }
         }
         private void receive(Operation op,int step,String kind,Map<String,String> card,ObservedPage page) {
             synchronized(this) { if(active!=op || op.step!=step) return; ++op.step; }
@@ -198,8 +203,8 @@ public final class CrewCheckMyCrewCarePortalV3 {
                 if(result!=null && (active!=null || generation!=op.finishedGeneration)) {
                     result=null; error="observed-cancelled";
                 }
+                op.completion.complete(result,error);
             }
-            op.completion.complete(result,error);
         }
     }
 

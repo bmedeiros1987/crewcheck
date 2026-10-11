@@ -33,6 +33,9 @@ public class ObservedAcquisitionHarness {
     void drive(){int limit=100;while(!pending.isEmpty()){check(--limit>0,"finite acquisition");take().release();}}
   }
   static void advance(Source source,String phase){while(!source.pending.get(0).request.kind.equals(phase))source.take().release();}
+  static void await(java.util.concurrent.CountDownLatch latch) {try {check(latch.await(5,java.util.concurrent.TimeUnit.SECONDS),"bounded latch");}catch(InterruptedException e){throw new AssertionError(e);}}
+  static void blocked(Thread thread) {long end=System.nanoTime()+5_000_000_000L;while(thread.getState()!=Thread.State.BLOCKED&&System.nanoTime()<end) Thread.yield();check(thread.getState()==Thread.State.BLOCKED,"operation waits on ownership boundary");}
+  static void join(Thread thread) {try {thread.join(5000);check(!thread.isAlive(),"thread finished");}catch(InterruptedException e){throw new AssertionError(e);}}
   public static void main(String[] args) {
     ObservedAcquisition session=new ObservedAcquisition();Source source=new Source();Deadline timer=new Deadline();Capture result=new Capture();
     check(session.begin(scope("A"),source,timer,result::done),"start");source.drive();
@@ -103,6 +106,27 @@ public class ObservedAcquisitionHarness {
       b.drive();check(br.count==1&&br.result.accountId.equals("B"),"A cleanup start preserves current B "+phase);cases++;
     }
     com.crewcheck.app.CrewCheckMyCrewCareProfile.defer=false;
+    // Concurrent cancellation cannot return before an already reserved source dispatch finishes.
+    final ObservedAcquisition dispatchOwner=new ObservedAcquisition();
+    final java.util.concurrent.CountDownLatch dispatchEntered=new java.util.concurrent.CountDownLatch(1), dispatchRelease=new java.util.concurrent.CountDownLatch(1);
+    final java.util.concurrent.atomic.AtomicInteger dispatches=new java.util.concurrent.atomic.AtomicInteger();Capture dispatched=new Capture();
+    Source dispatchSource=new Source(){public void acquire(ObservedRequest r,ObservedPageCallback cb){dispatchEntered.countDown();await(dispatchRelease);dispatches.incrementAndGet();super.acquire(r,cb);}};
+    Thread starter=new Thread(()->dispatchOwner.begin(scope("A"),dispatchSource,new Deadline(),dispatched::done));starter.start();await(dispatchEntered);
+    Thread canceller=new Thread(dispatchOwner::cancel);canceller.start();blocked(canceller);dispatchRelease.countDown();join(starter);join(canceller);
+    check(dispatches.get()==1&&dispatched.error.equals("observed-cancelled"),"dispatch linearized before cancel");dispatchSource.drive();check(dispatched.count==1,"no post-cancel dispatch");cases++;
+    // Terminal delivery owns the boundary until completion returns; B cannot replace it mid-delivery.
+    final ObservedAcquisition deliveryOwner=new ObservedAcquisition();Source deliverySource=new Source(),deliveryB=new Source();Capture deliveryResult=new Capture(),deliveryBResult=new Capture();
+    final java.util.concurrent.CountDownLatch deliveryEntered=new java.util.concurrent.CountDownLatch(1),deliveryRelease=new java.util.concurrent.CountDownLatch(1);
+    deliveryOwner.begin(scope("A"),deliverySource,new Deadline(),(r,e)->{deliveryEntered.countDown();await(deliveryRelease);deliveryResult.done(r,e);});
+    Thread deliverer=new Thread(deliverySource::drive);deliverer.start();await(deliveryEntered);
+    Thread replacement=new Thread(()->deliveryOwner.begin(scope("B"),deliveryB,new Deadline(),deliveryBResult::done));replacement.start();blocked(replacement);deliveryRelease.countDown();join(deliverer);join(replacement);deliveryB.drive();
+    check(deliveryResult.result.accountId.equals("A")&&deliveryBResult.result.accountId.equals("B"),"delivery linearized before replacement");cases++;
+    // An old callback exception remains visible, while newly reserved B is fully started.
+    ObservedAcquisition exceptionOwner=new ObservedAcquisition();Source exceptionA=new Source(),exceptionB=new Source();Deadline exceptionTimer=new Deadline();Capture exceptionBResult=new Capture();
+    RuntimeException callbackFailure=new RuntimeException("synthetic callback failure");
+    exceptionOwner.begin(scope("A"),exceptionA,new Deadline(),(r,e)->{throw callbackFailure;});
+    try {exceptionOwner.begin(scope("B"),exceptionB,exceptionTimer,exceptionBResult::done);throw new AssertionError("old callback exception hidden");}catch(RuntimeException e){check(e==callbackFailure,"original callback exception preserved");}
+    check(exceptionTimer.fire!=null&&!exceptionB.pending.isEmpty(),"B timer and acquisition initialized despite A callback failure");exceptionB.drive();check(exceptionBResult.result.accountId.equals("B"),"B remains live");cases++;
     System.out.println("PASS native observed acquisition cases="+cases);
   }
 }

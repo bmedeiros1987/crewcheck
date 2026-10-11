@@ -58,7 +58,7 @@ test('actual native Java boundary compiles and passes offline callback/timeout/i
     files.push(new URL('./fixtures/mycrewcare-native/ObservedAcquisitionHarness.java', import.meta.url).pathname);
     execFileSync(java, ['com.sun.tools.javac.Main', '-source', '17', '-target', '17', '-d', root, ...files], { encoding: 'utf8' });
     const result = execFileSync(java, ['-cp', root, 'ObservedAcquisitionHarness'], { encoding: 'utf8' });
-    assert.match(result, /PASS native observed acquisition cases=59/);
+    assert.match(result, /PASS native observed acquisition cases=62/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
