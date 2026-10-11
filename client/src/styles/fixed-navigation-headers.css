@@ -167,3 +167,4 @@ html body #root .cz-app[data-version] .cz-menu-panel > .cz-menu-header { display
 html body #root .cz-app[data-version] .cz-menu-header .cz-menu-identity { flex:1 1 180px!important;height:auto!important;max-height:none!important; }
 html body #root .cz-app[data-version] .cz-menu-header .cz-menu-profile > span:last-child { height:auto!important;max-height:none!important;overflow:visible!important; }
 html body #root .cz-app[data-version] .cz-menu-header .cz-menu-profile :is(strong,small) { height:auto!important;max-height:none!important;line-height:1.3!important; }
+html body #root .cz-app[data-version] .cz-menu-header .cz-menu-avatar { font-size:16px!important;line-height:1!important;white-space:nowrap!important; }
