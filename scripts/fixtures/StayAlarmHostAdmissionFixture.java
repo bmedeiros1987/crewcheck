@@ -42,9 +42,12 @@ public final class StayAlarmHostAdmissionFixture {
   proof.getJSONObject("stayAlarmLease").put("stayLeaseExpiresAt",1000L+19*3_600_000L);
   boolean rejected=false;try{StayAlarmHostAndroid.verifiedResponse(proof);}catch(Exception error){rejected=true;}check(rejected);
   proof.remove("stayAlarmLease");rejected=false;try{StayAlarmHostAndroid.verifiedResponse(proof);}catch(Exception error){rejected=true;}check(rejected);
+  session.begin();boolean recoveryFailed=false;try{engine.recover(false);}catch(Exception error){recoveryFailed=true;}
+  check(recoveryFailed&&session.activeOwner()==null);
   check(session.verified(session.begin(),"verified-b","epoch-b",clock[0]+180000));
   StayAlarmHostAndroid.transactOrRevoke(new StayAlarmBridge(engine,session),session,cancel.toString());
   check("verified-b".equals(session.activeOwner()));check("epoch-b".equals(session.epoch()));
+  check(!engine.receive(key,1,alarm));check(notifications[0]==0);
   check(session.verified(session.begin(),"verified-a","epoch-new",clock[0]+180000));
   StayAlarmHostAndroid.transactOrRevoke(new StayAlarmBridge(engine,session),session,cancel.toString());
   check("epoch-new".equals(session.epoch()));

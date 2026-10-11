@@ -49,7 +49,7 @@ public final class StayAlarmHostAndroid {
                     if(!session.enabled()){reply.postMessage(response(id,"rejected",null));return;}
                     long generation=session.begin();String token=request.getString("token");
                     worker.execute(()->{try{
-                        engine.recover(false);long began=SystemClock.elapsedRealtime();Verified proof=verify(token);
+                        recover();long began=SystemClock.elapsedRealtime();Verified proof=verify(token);
                         long duration=Math.max(0,Math.min(proof.duration,PREPARED_OVERNIGHT_LEASE_ENABLED?MAX_OVERNIGHT:300_000)-(SystemClock.elapsedRealtime()-began));
                         long expiry=SystemClock.elapsedRealtime()+duration;String account=proof.account;
                         boolean accepted=session.verified(generation,account,UUID.randomUUID().toString(),expiry);
