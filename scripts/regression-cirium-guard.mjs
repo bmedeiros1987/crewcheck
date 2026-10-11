@@ -351,3 +351,54 @@ console.log('Cirium guard/validation regression OK; no upstream calls');
   assert.equal(midnight.state, 'available', 'coherent local/UTC midnight crossing remains valid');
 }
 console.log('Cirium contradictory occurrence regression OK; synthetic rows only');
+
+// Independent review: matching/adjacent calendar days do not prove matching instants.
+{
+  const nextDay = new Date(Date.parse(`${today}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+  const previousDay = new Date(Date.parse(`${today}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+  for (const [time, valid] of [
+    [{ dateLocal: `${today}T00:00:00`, dateUtc: `${nextDay}T23:00:00Z` }, false], // 47h
+    [{ dateLocal: `${today}T00:00:00-03:00`, dateUtc: `${nextDay}T03:00:00Z` }, false], // +24h contradiction
+    [{ dateLocal: `${today}T00:00:00-03:00`, dateUtc: `${today}T04:00:00Z` }, false], // same-day contradiction
+    [{ dateLocal: `${today}T00:00:00`, dateUtc: `${today}T14:00:01Z` }, false],
+    [{ dateLocal: `${today}T23:59:59`, dateUtc: `${today}T09:59:58Z` }, false],
+    [{ dateLocal: `${today}T00:00:00`, dateUtc: `${today}T14:00:00Z` }, true],
+    [{ dateLocal: `${today}T00:00:00`, dateUtc: `${previousDay}T10:00:00Z` }, true],
+    [{ dateLocal: `${today}T23:00:00`, dateUtc: `${nextDay}T02:00:00Z` }, true],
+    [{ dateLocal: `${today}T23:00:00-03:00`, dateUtc: `${nextDay}T02:00:00Z` }, true],
+    [{ dateLocal: `${today}T00:00:00+14:00`, dateUtc: `${previousDay}T10:00:00Z` }, true],
+    [{ dateLocal: `${today}T12:00:00Z`, dateUtc: `${today}T12:00:00Z` }, true],
+  ]) {
+    const item = row({ operationalTimes: { estimatedGateDeparture: time } });
+    const result = await flightWith({ flightStatuses: [item] });
+    assert.equal(result.state, valid ? 'available' : 'invalid_payload', JSON.stringify(time));
+    const probe = await diagnoseCirium({ guard: createCiriumGuard({ minIntervalMs: 0 }),
+      fetchImpl: async () => ok({ flightStatuses: [{ ...item, flightNumber: '3377' }] }) });
+    assert.equal(probe.state, valid ? 'available' : 'invalid_payload', JSON.stringify(time));
+  }
+}
+console.log('Cirium UTC/local instant consistency regression OK');
+
+// UTC fields without Z are explicitly UTC; local-only endpoints cannot establish a duration.
+{
+  const cases = [
+    [{ arrivalDate: { dateUtc: '2020-03-01T14:20:00Z' } }, false],
+    [{ arrivalDate: { dateUtc: `${today}T11:00:00Z` } }, false],
+    [{ arrivalDate: { dateUtc: `${today}T14:20:00Z` } }, true],
+    [{ operationalTimes: { actualGateDeparture: { dateUtc: `${today}T12:00:00Z` }, actualGateArrival: { dateUtc: `${today}T11:00:00Z` } } }, false],
+    [{ operationalTimes: { actualGateDeparture: { dateUtc: `${today}T12:00:00Z` }, actualRunwayArrival: { dateUtc: `${today}T11:00:00Z` } } }, false],
+    [{ operationalTimes: { estimatedGateDeparture: { dateUtc: `${today}T12:00:00Z` }, estimatedRunwayArrival: { dateUtc: `${today}T11:00:00Z` } } }, false],
+    [{ operationalTimes: { scheduledGateDeparture: { dateLocal: `${today}T12:00:00` }, scheduledGateArrival: { dateLocal: `${today}T14:00:00` } } }, false],
+    [{ operationalTimes: { scheduledGateDeparture: { dateUtc: `${today}T12:00:00` }, scheduledGateArrival: { dateUtc: `${today}T14:00:00` } } }, true],
+    [{ operationalTimes: { scheduledGateDeparture: { dateUtc: `${today}T12:00:00` }, scheduledGateArrival: { dateUtc: `${today}T11:00:00Z` } } }, false],
+    [{ operationalTimes: { actualGateDeparture: { dateLocal: `${today}T12:00:00-03:00` }, actualGateArrival: { dateLocal: `${today}T14:00:00-03:00` } } }, true],
+  ];
+  for (const [overrides, valid] of cases) {
+    const item = row(overrides);
+    assert.equal((await flightWith({ flightStatuses: [item] })).state, valid ? 'available' : 'invalid_payload', JSON.stringify(overrides));
+    assert.equal((await diagnoseCirium({ guard: createCiriumGuard({ minIntervalMs: 0 }),
+      fetchImpl: async () => ok({ flightStatuses: [{ ...item, flightNumber: '3377' }] }) })).state,
+    valid ? 'available' : 'invalid_payload', JSON.stringify(overrides));
+  }
+}
+console.log('Cirium timezone-independent chronology regression OK');

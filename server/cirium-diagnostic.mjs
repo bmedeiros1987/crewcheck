@@ -316,16 +316,31 @@ function localDateOf(value) {
   return match ? match[1] : null;
 }
 
+function hasTimeOffset(text) {
+  return typeof text === 'string' && /(?:Z|[+-]\d{2}:?\d{2})$/i.test(text);
+}
+
+function timestampEpoch(text, { utcField = false, wallClock = false } = {}) {
+  if (typeof text !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:?\d{2})?$/i.test(text)
+      || !safeDateParts(text.slice(0, 10))) return null;
+  const offset = text.match(/([+-])(\d{2}):?(\d{2})$/);
+  if (offset && (Number(offset[3]) > 59 || Number(offset[2]) * 60 + Number(offset[3]) > 14 * 60)) return null;
+  if (!hasTimeOffset(text) && !utcField && !wallClock) return null;
+  // The named dateUtc field declares UTC even when Z is omitted. A bare local
+  // clock is never converted using the machine's timezone; wallClock is only
+  // used to bound a possible UTC offset, never as an actual flight instant.
+  const epoch = Date.parse(hasTimeOffset(text) ? text : `${text}Z`);
+  return Number.isFinite(epoch) ? epoch : null;
+}
+
 function utcDateOf(value) {
-  const text = value && typeof value === 'object' ? value.dateUtc : null;
-  const epoch = typeof text === 'string' ? Date.parse(text) : NaN;
-  return Number.isFinite(epoch) ? new Date(epoch).toISOString().slice(0, 10) : null;
+  const epoch = timestampEpoch(value?.dateUtc, { utcField: true });
+  return epoch === null ? null : new Date(epoch).toISOString().slice(0, 10);
 }
 
 function epochOf(value) {
-  const text = value && typeof value === 'object' ? (value.dateUtc || value.dateLocal) : null;
-  const epoch = typeof text === 'string' ? Date.parse(text) : NaN;
-  return Number.isFinite(epoch) ? epoch : null;
+  if (value?.dateUtc != null) return timestampEpoch(value.dateUtc, { utcField: true });
+  return timestampEpoch(value?.dateLocal);
 }
 
 // The occurrence must be the requested one: same flight, same departure date and a
@@ -346,8 +361,19 @@ function acceptRow(row, carrier, flight, date) {
     const local = localDateOf(value);
     const utc = utcDateOf(value);
     if (!local && !utc) return false;
-    if (value.dateLocal != null && (!local || !safeDateParts(local) || !Number.isFinite(Date.parse(value.dateLocal)))) return false;
+    if (value.dateLocal != null && (!local || !safeDateParts(local) || (value.dateLocal !== local && timestampEpoch(value.dateLocal, { wallClock: true }) === null))) return false;
     if (value.dateUtc != null && !utc) return false;
+    // dateLocal without an offset is a wall clock, not the host's timezone.
+    // Its difference from UTC must be a plausible civil offset; no airport zone
+    // is inferred. When an explicit offset exists, both values must be the same instant.
+    const hasTime = (text) => typeof text === 'string' && /T\d{2}:\d{2}/.test(text);
+    if (hasTime(value.dateLocal) && hasTime(value.dateUtc)) {
+      const utcInstant = timestampEpoch(value.dateUtc, { utcField: true });
+      const localInstant = timestampEpoch(value.dateLocal, { wallClock: true });
+      if (utcInstant === null || localInstant === null) return false;
+      const difference = Math.abs(utcInstant - localInstant);
+      if (hasTimeOffset(value.dateLocal) ? difference !== 0 : difference > 14 * 3_600_000) return false;
+    }
     // Local and UTC may straddle midnight, but cannot describe different years/days.
     if (local && utc && Math.abs(Date.parse(`${local}T12:00:00Z`) - Date.parse(`${utc}T12:00:00Z`)) > dayMs) return false;
     for (const [day, isLocal] of [[local, true], [utc, false]]) {
@@ -361,6 +387,7 @@ function acceptRow(row, carrier, flight, date) {
     return true;
   }
   if (!plannedDepartures.every((value) => consistentTime(value, 'planned-departure'))) return false;
+  if (row.arrivalDate != null && !consistentTime(row.arrivalDate, 'arrival')) return false;
   for (const [name, value] of Object.entries(times)) {
     if (value == null || !/(Departure|Arrival)$/.test(name)) continue;
     if (!consistentTime(value, /Arrival$/.test(name) ? 'arrival' : 'departure')) return false;
@@ -370,9 +397,20 @@ function acceptRow(row, carrier, flight, date) {
   const arrival = safeCode(row.arrivalAirportFsCode, /^[A-Z0-9]{3,4}$/);
   if (!departure || !arrival || departure === arrival) return false;
 
-  const out = epochOf(times.scheduledGateDeparture || times.publishedDeparture);
-  const inn = epochOf(times.scheduledGateArrival || times.publishedArrival);
-  if (out !== null && inn !== null && (inn <= out || inn - out > 24 * 3_600_000)) return false;
+  function coherentPair(outValue, inValue) {
+    const out = epochOf(outValue), inn = epochOf(inValue);
+    // Two supplied endpoints require comparable instants. Different airports'
+    // bare local clocks cannot establish elapsed time without verified zones.
+    return out !== null && inn !== null && inn > out && inn - out <= dayMs;
+  }
+  for (const prefix of ['scheduled', 'published', 'estimated', 'actual']) {
+    const departures = Object.entries(times).filter(([name, value]) => value != null && name.startsWith(prefix) && /Departure$/.test(name));
+    const arrivals = Object.entries(times).filter(([name, value]) => value != null && name.startsWith(prefix) && /Arrival$/.test(name));
+    for (const [, out] of departures) for (const [, inn] of arrivals) {
+      if (!coherentPair(out, inn)) return false;
+    }
+  }
+  if (row.departureDate != null && row.arrivalDate != null && !coherentPair(row.departureDate, row.arrivalDate)) return false;
   return true;
 }
 

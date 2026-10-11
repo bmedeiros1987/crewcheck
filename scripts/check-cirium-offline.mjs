@@ -1,10 +1,10 @@
-// Start the worker with an empty environment: never inspect inherited credentials.
+// Start with only the requested test timezone: never inspect inherited credentials.
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 if (process.argv[2] !== '--worker') {
   const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), '--worker'], {
-    env: {}, stdio: 'inherit', cwd: fileURLToPath(new URL('../', import.meta.url)),
+    env: { TZ: process.env.TZ || 'UTC' }, stdio: 'inherit', cwd: fileURLToPath(new URL('../', import.meta.url)),
   });
   process.exit(result.status ?? 1);
 }

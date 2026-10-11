@@ -36,7 +36,10 @@ jobs:
         with:
           node-version: 22.13.0
       - name: Cirium offline contracts and disabled gate
-        run: node scripts/check-cirium-offline.mjs
+        run: |
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" node scripts/check-cirium-offline.mjs
+          done
       - name: Radar occurrence identity contract
         run: node scripts/regression-radar-occurrence-identity.mjs
       - name: Cirium admin route syntax

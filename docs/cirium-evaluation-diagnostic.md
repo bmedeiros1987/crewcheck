@@ -76,3 +76,27 @@ A preparação canônica `scripts/v139/apply.mjs` foi executada em cópia descar
 com ambiente vazio e fetch real proibido; o contrato offline passa também nessa
 cópia. Não foi identificado gerador que reescreva este módulo. Integração OFF;
 sem chamada real, rota publicada, alteração de configuração, merge ou deploy.
+
+### Revisão independente: instantes e cronologia
+
+Além do dia, UTC/local precisam representar instantes coerentes: com offset
+local explícito, devem ser o mesmo instante; sem offset local, a diferença dos
+relógios deve caber em até 14 horas, sem escolher um fuso de aeroporto. Isto é
+uma verificação de plausibilidade, não prova do fuso real. `dateUtc` sem `Z` é
+interpretado explicitamente como UTC por semântica do campo; nunca usa o fuso do
+processo. Calendários inválidos e offsets acima de 14 horas são rejeitados.
+
+`arrivalDate` de topo também é validada. Pares fornecidos de partida/chegada
+publicada, programada, estimada e real, inclusive gate/runway, precisam de
+instantes comparáveis e duração positiva de até 24 horas. Um par de relógios
+locais sem UTC/offset não demonstra duração e é rejeitado conservadoramente.
+Campos omitidos não são inventados; campos de categorias diferentes não provam
+cronologia entre si. Os limites seguem provisórios até validação do contrato.
+
+Regressões negativas/positivas incluem diferença impossível de 47 h, offset
+explícito contraditório (também no mesmo dia), limite de 14 h e um segundo além,
+meia-noite, UTC sem Z, arrivalDate antigo/invertido, real/estimado invertido e
+pares locais ambíguos. Voo e probe usam a mesma validação. Os novos casos falham
+no HEAD `0f2d9f8` e passam no código corrigido em UTC, Brasília e Auckland. O
+worker offline preserva somente TZ e usa exclusivamente dados/mocks sintéticos;
+a CI focada executa os três fusos. OFF e gates de contrato real permanecem intactos.
