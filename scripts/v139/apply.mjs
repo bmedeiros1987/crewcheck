@@ -210,6 +210,7 @@ await import('../wellhub-hours/apply.mjs');
 await import('../wellhub-deeplinks/apply.mjs');
 await import('../stay-editor/apply.mjs');
 await import('../bids-default/apply.mjs');
+await import('../bids-default/wakeup-layout.mjs');
 
 }
 
