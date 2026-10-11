@@ -131,6 +131,7 @@ jobs:
           node scripts/regression-bids-delivery.mjs
           node scripts/regression-bids-editing.mjs
           node scripts/regression-notification-preference-projection.mjs
+          node scripts/regression-wakeup-channel-selection.mjs
           node scripts/regression-bids-default-window.mjs
           node scripts/regression-bids-alert-policy.mjs
           node scripts/regression-bids-alert-preferences.mjs
@@ -162,6 +163,7 @@ jobs:
           node scripts/regression-bids-delivery.mjs
           node scripts/regression-bids-editing.mjs
           node scripts/regression-notification-preference-projection.mjs
+          node scripts/regression-wakeup-channel-selection.mjs
           node scripts/regression-bids-default-window.mjs
           node scripts/regression-bids-alert-policy.mjs
           node scripts/regression-bids-alert-preferences.mjs

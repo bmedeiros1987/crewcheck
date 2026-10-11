@@ -1,0 +1,3 @@
+let pendingSection:'phone'|null=null;
+export function openNotificationSettings(section?:unknown){pendingSection=section==='phone'?'phone':null;window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'notifications'}));window.dispatchEvent(new Event('crewcheck:notification-section'));}
+export function focusPendingNotificationSection(){if(pendingSection!=='phone')return;const target=document.getElementById('cc-notification-phone');if(!target)return;pendingSection=null;let node:HTMLElement|null=target;while(node){if(node instanceof HTMLDetailsElement)node.open=true;node=node.parentElement;}requestAnimationFrame(()=>{target.scrollIntoView({block:'center'});target.querySelector('summary')?.focus();});}
