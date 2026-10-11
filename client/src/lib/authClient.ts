@@ -60,6 +60,7 @@ function persistSession(session: AuthSession) {
     const previousKey = String(previous?.id || previous?.email || '').toLowerCase();
     const nextKey = String(session.user?.id || session.user?.email || '').toLowerCase();
     if (previousKey && nextKey && previousKey !== nextKey) {
+      window.dispatchEvent(new Event('crewcheck:auth-will-change'));
       sessionStorage.removeItem('crewcheck_roster');
       sessionStorage.removeItem('crewcheck_compliance');
       sessionStorage.removeItem('crewcheck_gym');
@@ -79,11 +80,13 @@ function persistSession(session: AuthSession) {
  * conta entrar, persistSession detecta a troca e limpa os dados operacionais.
  */
 export function expireSession() {
+  try { window.dispatchEvent(new Event('crewcheck:auth-will-change')); } catch {}
   localStorage.removeItem(TOKEN_KEY);
   try { window.dispatchEvent(new CustomEvent('crewcheck:auth-expired')); } catch {}
 }
 
 export function clearSession() {
+  window.dispatchEvent(new Event('crewcheck:auth-will-change'));
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));
@@ -188,7 +191,7 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.ok === false) {
     const reason = classifyAuthErrorReason(response.status, String(payload?.code || '').toUpperCase(), protectedRequest);
-    if (reason === 'session_expired') expireSession();
+    if (reason === 'session_expired' && token === getToken()) expireSession();
     throw new AuthClientError(publicApiErrorMessage(payload, response.status, reason), response.status, payload?.code, payload, reason);
   }
   return payload as T;

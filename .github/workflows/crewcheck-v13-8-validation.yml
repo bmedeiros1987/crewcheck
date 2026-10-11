@@ -96,6 +96,8 @@ jobs:
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-readiness-browser.mjs
           node scripts/regression-bids-alert-preferences-browser.mjs
+          node scripts/regression-web-push-worker-browser.mjs
+          node scripts/regression-web-push-device-browser.mjs
       - name: Prepare canonical application sources
         run: node scripts/v139/apply.mjs
       - name: Test actual EmergencyCenter after source preparation
@@ -106,6 +108,8 @@ jobs:
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-readiness-browser.mjs
           node scripts/regression-bids-alert-preferences-browser.mjs
+          node scripts/regression-web-push-worker-browser.mjs
+          node scripts/regression-web-push-device-browser.mjs
           node scripts/regression-wakeup-session-browser.mjs
   web-and-server:
     name: Web, TypeScript and server
@@ -127,6 +131,10 @@ jobs:
           node scripts/regression-bids-alert-policy.mjs
           node scripts/regression-bids-alert-preferences.mjs
           node scripts/regression-bids-auth-boundary.mjs
+          node scripts/regression-web-push-offline.mjs
+          node scripts/regression-web-push-provider.mjs
+          node scripts/regression-web-push-api.mjs
+          node scripts/regression-web-push-lifecycle.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-free-day-held.mjs
           node scripts/regression-free-day-sources.mjs
@@ -152,6 +160,10 @@ jobs:
           node scripts/regression-bids-alert-policy.mjs
           node scripts/regression-bids-alert-preferences.mjs
           node scripts/regression-bids-auth-boundary.mjs
+          node scripts/regression-web-push-offline.mjs
+          node scripts/regression-web-push-provider.mjs
+          node scripts/regression-web-push-api.mjs
+          node scripts/regression-web-push-lifecycle.mjs
           node scripts/regression-notification-job-safety.mjs
           node scripts/regression-free-day-held.mjs
           node scripts/regression-free-day-sources.mjs

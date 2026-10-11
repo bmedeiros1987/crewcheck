@@ -28,6 +28,7 @@ try {
     const req = route.request(), url = new URL(req.url());
     if (url.origin !== origin) return route.abort();
     if (!url.pathname.startsWith('/api/')) return route.continue();
+    if(url.pathname==='/api/platform/notifications/crewcheck-installation')return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({enabled:false,registered:false,revision:0,ownerId:req.headers().authorization?.replace('Bearer ',''),publicKey:null})});
     assert.equal(url.pathname, '/api/platform/bids/alert-preferences');
     const token = req.headers().authorization?.replace('Bearer ', ''); assert(['A', 'B'].includes(token));
     if (offline) return route.abort();

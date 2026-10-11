@@ -1,3 +1,4 @@
+import { installCrewCheckPushLifecycle } from './crewcheckPushRuntime';
 import { installPwaUpdateCoordinator } from './pwaUpdateCoordinator';
 
 type ConnectivityDetail = {
@@ -20,6 +21,7 @@ function publishConnectivityState(): void {
 export function installOfflineRuntime(): () => void {
   if (typeof window === 'undefined') return () => undefined;
 
+  const stopPushLifecycle = installCrewCheckPushLifecycle();
   publishConnectivityState();
   window.addEventListener('online', publishConnectivityState);
   window.addEventListener('offline', publishConnectivityState);
@@ -43,6 +45,7 @@ export function installOfflineRuntime(): () => void {
 
   return () => {
     disposed = true;
+    stopPushLifecycle();
     stopCoordinator();
     window.removeEventListener('online', publishConnectivityState);
     window.removeEventListener('offline', publishConnectivityState);

@@ -38,6 +38,7 @@ try{
    assert.equal(request.method(),'GET');
    return route.fulfill({contentType:'application/json',body:JSON.stringify({revision:0,preferences:{enabled:false,mode:'auto',preferredTime:'09:00',quietStart:'22:00',quietEnd:'08:00',timezone:'',channels:{all:false,individual:{mobilePwa:true,watch:false,crewCierge:false}}},pending:['comunicado vigente verificado'],plan:{candidateAt:null},campaign:null,alreadyDid:false,canConfirmAlreadyDid:false,message:'Nenhum alerta programado.'})});
   }
+  if(url.pathname==='/api/platform/notifications/crewcheck-installation')return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({enabled:false,registered:false,revision:0,publicKey:null})});
   assert.equal(url.pathname,'/api/platform/notification-cycles/year-end-leave-2026-2027-cabine');
   if(request.method()==='POST'){
    assert.deepEqual(request.postDataJSON(),{action:'submitted'});writes.push(token);
