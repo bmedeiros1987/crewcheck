@@ -102,10 +102,15 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
   const observations = new Map<string, number[]>();
   const aliases: Record<string, string> = { CAFE: 'breakfast', ALMOCO: 'lunch', JANTAR: 'dinner', CEIA: 'supper', TAXI: 'taxi' };
   const normalized = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  for (const match of normalized.matchAll(/\b(CAFE|ALMOCO|JANTAR|CEIA|TAXI)\b[^\n\r]{0,40}?R\$\s*([\d.]+,\d{2})/gi)) {
+  let invalidRate = false;
+  for (const match of normalized.matchAll(/\b(CAFE|ALMOCO|JANTAR|CEIA|TAXI)\b[^\n\r]{0,40}?R\$[^\S\n\r]*([^\s;:()]+)/gi)) {
     const key = aliases[match[1].toUpperCase()];
+    const token = match[2];
+    const strict = /^(?:\d+|\d{1,3}(?:\.\d{3})+),\d{2}$/.test(token);
+    const cents = strict ? Number(token.replace(/\./g, '').replace(',', '')) : NaN;
+    if (!strict || !Number.isSafeInteger(cents) || cents < 0) { invalidRate = true; continue; }
     const values = observations.get(key) || [];
-    values.push(money(match[2]));
+    values.push(cents / 100);
     observations.set(key, values);
   }
   const rates: LearnedRate[] = [];
@@ -151,6 +156,7 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
   const warnings: string[] = [];
   if (!start || !end || !validDay(start) || !validDay(end) || start > end) warnings.push('Período completo inválido ou não identificado; revisão obrigatória.');
   if (paymentIssue) warnings.push('Datas de pagamento divergentes ou inválidas; revisão obrigatória.');
+  if (invalidRate) warnings.push('Tarifa de diária com formato inválido; revisão obrigatória.');
   if (conflictingMeals.length) warnings.push('Tarifas de diárias divergentes; revisão obrigatória.');
   if (!rates.length) warnings.push('Nenhuma tarifa de diária identificada.');
   if (depositedTotals.size > 1) warnings.push('Totais depositados divergentes; revisão obrigatória.');

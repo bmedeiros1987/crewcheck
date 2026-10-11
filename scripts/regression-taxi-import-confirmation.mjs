@@ -48,6 +48,12 @@ try {
  assert.equal(learning.readConfirmedFinancialRates().length,2);assert.equal(learning.confirmedRateValueAt('per_diem.taxi','2032-10-01'),31.5);assert.equal(learning.confirmedRateValueAt('per_diem.breakfast','2032-10-07'),25);assert.equal(learning.confirmedRateValueAt('per_diem.taxi','2032-09-30'),null);assert.equal(learning.confirmedRateValueAt('per_diem.taxi','2032-10-08'),null);
  login('other');assert.equal(learning.confirmedRateValueAt('per_diem.taxi','2032-10-05'),null,'rates never leak between owners');
  for(const [id,lines,name] of [
+  ['invalid-rate-0', [...header.map(line=>line.startsWith('TAXI ')?'TAXI R$ 31,501':line),'Total depositado na data 2032-10-09 R$ 56,50'],'synthetic-invalid-rate-0.pdf'],
+  ['invalid-rate-1', [...header.map(line=>line.startsWith('TAXI ')?'TAXI R$ 1.2.3,45':line),'Total depositado na data 2032-10-09 R$ 56,50'],'synthetic-invalid-rate-1.pdf'],
+  ['invalid-rate-2', [...header.map(line=>line.startsWith('TAXI ')?'TAXI R$ 31,50x':line),'Total depositado na data 2032-10-09 R$ 56,50'],'synthetic-invalid-rate-2.pdf'],
+  ['invalid-rate-3', [...header.map(line=>line.startsWith('TAXI ')?'TAXI R$ -31,50':line),'Total depositado na data 2032-10-09 R$ 56,50'],'synthetic-invalid-rate-3.pdf'],
+  ['invalid-rate-4', [...header.map(line=>line.startsWith('TAXI ')?'TAXI R$ 31,5':line),'Total depositado na data 2032-10-09 R$ 56,50'],'synthetic-invalid-rate-4.pdf'],
+  ['invalid-rate-5', [...header.map(line=>line.startsWith('TAXI ')?'TAXI R$ 900719925474099,99':line),'Total depositado na data 2032-10-09 R$ 56,50'],'synthetic-invalid-rate-5.pdf'],
   ['conflicting', [...header,'Total depositado na data 2032-10-09 R$ 56,50','Total depositado na data 2032-10-09 R$ 57,50'],'synthetic-conflict.pdf'],
   ['ambiguous-payment', [...header,'Pagamento em 2032-10-10','Total depositado na data 2032-10-09 R$ 56,50'],'synthetic-payment-conflict.pdf'],
   ['ambiguous-payment-reversed', ['Pagamento em 2032-10-10',...header,'Total depositado na data 2032-10-09 R$ 56,50'],'synthetic-payment-conflict-order.pdf'],
