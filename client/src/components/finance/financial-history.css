@@ -21,3 +21,11 @@
 html body .cz-app[data-version] .cc-roster-period-v1399.cc-financial-period { display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important; }
 html body .cz-app[data-version] .cc-roster-period-v1399.cc-financial-period label>span { font-size:12px!important; }
 @media(max-width:600px) { html body .cz-app[data-version] .cc-roster-period-v1399.cc-financial-period { grid-template-columns:minmax(0,1fr)!important; } }
+
+/* Separate comparison controls and retain all diagnostic evidence on demand. */
+html body #root .cz-app[data-version] .cc-financial-graph { display:block!important; }
+html body #root .cz-app[data-version] .cc-financial-graph > button { display:block!important;min-height:44px!important;height:auto!important;padding:10px 12px!important;margin:12px 0!important;white-space:normal!important; }
+html body #root .cz-app[data-version] .cc-financial-graph > label { display:grid!important;gap:8px!important;min-width:0!important;margin:16px 0!important; }
+html body #root .cz-app[data-version] .cc-salary-diagnostic-details { margin:12px 0!important; }
+html body #root .cz-app[data-version] .cc-salary-diagnostic-details > summary { min-height:44px!important;padding:10px 0!important;white-space:normal!important; }
+@media(max-width:600px) { html body #root .cz-app[data-version] .cc-financial-graph > button { width:100%!important; } }
