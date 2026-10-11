@@ -5,13 +5,14 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {createRawLifecycle} from './ci/raw-invalidation-lifecycle.mjs';
 import {manifest} from './v139/staged-preparation-prototype.mjs';
+import {runPrototypeNode} from './v139/prototype-processes.mjs';
 
 const repository = fs.realpathSync('.');
 const commit = spawnSync('git', ['rev-parse', 'HEAD'], {encoding: 'utf8'}).stdout.trim();
 const job = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-real-invalidation-'));
 const lifecycle = createRawLifecycle({repository, commit, job});
 const policy = {allowVersionedEnvTemplate: true, strictOutputs: true};
-// Remove only this test's unused snapshots after completed synchronous calls.
+// Remove only this test's unused snapshots after supervised calls are quiescent.
 // This is not stale-lease recovery and never touches a live generation.
 function discard(target, ownedRoot) {
   assert(target.startsWith(ownedRoot + path.sep));
@@ -40,8 +41,14 @@ compact(lifecycle, repeat);
 const legacy = cold.validation;
 const input = 'server/v1396/infobip.mjs';
 fs.appendFileSync(path.join(legacy, input), '\n// synthetic invalidation input\n');
-const replay = spawnSync(process.execPath, ['scripts/v139/apply.mjs'], {cwd: legacy, encoding: 'utf8', env: {PATH: process.env.PATH, TZ: 'UTC', HOME: job, TMPDIR: job,
+// The approved runner throws if ordinary process groups cannot be quiesced.
+// No finally cleanup: runner failure or timeout preserves the test's files.
+const replay = runPrototypeNode(['scripts/v139/apply.mjs'], {cwd: legacy, timeout: 180000, env: {PATH: process.env.PATH, TZ: 'UTC', HOME: job, TMPDIR: job,
   NODE_OPTIONS: `--import=${path.join(legacy, 'scripts/ci/smoke-deny-network.mjs')}`}});
+assert.equal(replay.error, undefined, 'Supervisor error must fail before cleanup');
+assert.equal(replay.signal, null, 'Signalled execution must fail before cleanup');
+assert.notEqual(replay.status, 124, 'Deadline expiration must fail before cleanup');
+assert.equal(replay.status, 1, 'Contraprova must exit with the specific materializer failure');
 assert.notEqual(replay.status, 0);
 assert.match(replay.stderr, /v13\.9\.6: nenhum marcador compatível/);
 assert(!fs.existsSync(path.join(legacy, '.crewcheck-source-preparation.json')), 'Failed replay cannot certify the tree');
@@ -66,4 +73,4 @@ assert.deepEqual(manifest(restored.generation, policy), coldManifest); compact(l
 const restoredRepeat = lifecycle.prepare(); assert.equal(restoredRepeat.status, 'hit'); compact(lifecycle, restoredRepeat);
 assert.equal(spawnSync('git', ['status', '--porcelain'], {cwd: lifecycle.raw, encoding: 'utf8'}).stdout, '');
 console.log(JSON.stringify({status: 'PASS', commit, root: job, legacyInPlaceCounterexample: 'v1396',
-  coldRepeatInvalidationRestore: true, independentColdEqual: true, runtimeChanged: false}));
+  supervisedLegacyDeadline: true, coldRepeatInvalidationRestore: true, independentColdEqual: true, runtimeChanged: false}));
