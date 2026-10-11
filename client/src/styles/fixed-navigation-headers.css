@@ -157,3 +157,13 @@ html body #root .cz-app[data-version] > .cz-global-header .cz-brand-lockup .cz-l
   html body #root .cz-app[data-version] > .cz-global-header .cz-brand-lockup > div { min-width:0!important; }
   html:is([data-crew-text-size="150"],[data-crew-text-size="200"]) body #root .cz-app[data-version] > .cz-global-header .cz-brand-lockup small { display:none!important; }
 }
+
+/* Header actions retain their text width at enlarged font sizes. */
+html body #root .cz-app[data-version] .cz-menu-panel .cz-menu-header .cz-menu-header-actions { display:flex!important;flex:0 0 auto!important;align-items:center!important;gap:8px!important;width:auto!important;min-width:0!important; }
+html body #root .cz-app[data-version] .cz-menu-panel .cz-menu-header .cz-menu-logout { display:flex!important;flex:0 0 auto!important;width:auto!important;min-width:44px!important;height:auto!important;min-height:44px!important;gap:6px!important;white-space:nowrap!important;padding:8px!important; }
+html body #root .cz-app[data-version] .cz-menu-panel .cz-menu-header .cz-menu-logout span { flex:0 0 auto!important;width:auto!important;white-space:nowrap!important;word-break:keep-all!important;overflow-wrap:normal!important; }
+html body #root .cz-app[data-version] .cz-menu-panel .cz-menu-header .cz-menu-logout svg { flex:0 0 20px!important;width:20px!important;height:20px!important; }
+html body #root .cz-app[data-version] .cz-menu-panel > .cz-menu-header { display:flex!important;flex-wrap:wrap!important;align-items:center!important;gap:8px!important;max-height:none!important; }
+html body #root .cz-app[data-version] .cz-menu-header .cz-menu-identity { flex:1 1 180px!important;height:auto!important;max-height:none!important; }
+html body #root .cz-app[data-version] .cz-menu-header .cz-menu-profile > span:last-child { height:auto!important;max-height:none!important;overflow:visible!important; }
+html body #root .cz-app[data-version] .cz-menu-header .cz-menu-profile :is(strong,small) { height:auto!important;max-height:none!important;line-height:1.3!important; }

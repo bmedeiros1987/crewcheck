@@ -27,3 +27,9 @@ Pulse is present in the document notice slot and appears when its existing atten
 Draft/HOLD: independent review of the final HEAD and terminal CI are required before merge/publication. No deployment was triggered.
 
 Independent-review follow-up: reproduced stale source/manual memory after a409 and confirmed reload with the same revision. Every accepted draft replacement now resets the selector generation; cancelled reload retains unsaved edits. The regression covers same/advanced revision, rejected save, explicit confirm/cancel, no implicit writes, and no resurrection of discarded Lisbon. City/IANA search normalizes accents, spaces and underscores.
+
+### Independent pixel review follow-up
+
+The reviewer found the existing desktop 200% Sign out label escaping its narrow action. Header actions now retain intrinsic text width and can move to a second row; profile text also determines the header height at mobile 200%. Accessible action names and logout behavior are unchanged. The header regression checks both the whole menu header and the logout button text bounds.
+
+Directed synthetic captures cover mobile 320/390 at 100/200%, both themes, manual search/list and explicit Local atual device fallback. The earlier 256-image bundle remains an earlier-HEAD record; the directed supplement identifies its final HEAD separately. At 320/200%, the earlier Ver escala and fragmented footer labels remain recorded for a separate increment.

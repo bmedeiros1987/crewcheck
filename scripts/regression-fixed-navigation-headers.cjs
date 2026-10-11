@@ -116,6 +116,9 @@ async function visibleTextBounds(page, selector) {
       await page.locator('#cc-menu-personalization > summary').click();
       await page.locator('#cc-menu-fixed-heading h2').waitFor();await settle(page);
       const menuHead=await box('.cz-menu-header'), title=await box('#cc-menu-fixed-heading');
+      assert.deepEqual(await visibleTextBounds(page,'.cz-menu-header'),[],'Menu header action text fits');
+      await page.getByRole('button',{name:'Sair da conta',exact:true}).waitFor();
+      assert.deepEqual(await visibleTextBounds(page,'.cz-menu-header .cz-menu-logout'),[],'Logout label stays inside its action');
       assert.deepEqual(await visibleTextBounds(page,'#cc-menu-fixed-heading'),[],'Pinned start heading text fits');
       const scroll=page.locator('.cz-menu-scroll');
       for(const position of ['end','start','end']) {
