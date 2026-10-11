@@ -1,6 +1,7 @@
 name: CrewCheck Concierge canonical journeys
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
     paths:
       - 'server/concierge/journey-programs.mjs'
       - 'server/v1404/**'

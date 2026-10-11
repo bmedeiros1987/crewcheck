@@ -8,6 +8,10 @@ import {resolveConciergeEvent} from './ci/staged-concierge-event.mjs';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-event-base-'));
 const repository = 'synthetic/crewcheck', eventRepository = {full_name: repository};
 const workflow = fs.readFileSync('.github/workflows/concierge-journey-programs.yml', 'utf8');
+for (const file of ['.github/workflows/concierge-journey-programs.yml', '.github/workflows/staged-preparation-experiment.yml']) {
+  const source = fs.readFileSync(file, 'utf8');
+  assert.match(source, /pull_request:\n    types: \[opened, synchronize, reopened, edited\]/, `${file} must preserve default PR activities and cover base retarget edits`);
+}
 assert.match(workflow, /base="\$\{\{ steps\.event\.outputs\.base \}\}"/, 'Actual workflow must use event base output');
 assert.doesNotMatch(workflow, /(?:main|base)=[a-f0-9]{40}/, 'Permanent job cannot pin a historical base');
 const helper = fileURLToPath(new URL('./ci/staged-concierge-event.mjs', import.meta.url));
@@ -36,6 +40,17 @@ try {
   assert.match(git(['ls-tree', '-r', '--name-only', advancedTree]), /server\/advanced-base\.mjs/);
   const stale = resolveConciergeEvent({...context, event: pr(baseA)});
   assert.doesNotMatch(git(['ls-tree', '-r', '--name-only', git(['merge-tree', '--write-tree', stale.checkoutSha, stale.baseSha])]), /advanced-base/, 'Old fixed base misses the advanced source');
+  const retarget = {...context, event: {...pr(baseB), action: 'edited', changes: {base: {ref: {from: 'previous-base'}, sha: {from: baseA}}}}};
+  const retargetPlan = resolveConciergeEvent(retarget);
+  assert.equal(retargetPlan.checkoutSha, head, 'Retarget must preserve the unchanged PR head');
+  assert.equal(retargetPlan.baseSha, baseB, 'Retarget must use current pull_request.base.sha, never changes.base.sha.from');
+  const output = execute(retarget);
+  assert.equal(output, `head=${head}\nbase=${baseB}\nkind=pull_request\n`, 'Real CLI must emit the new base for edited events');
+  const cliInputs = Object.fromEntries(output.trim().split('\n').map(row => row.split('=')));
+  const retargetTree = git(['merge-tree', '--write-tree', cliInputs.head, cliInputs.base]);
+  assert.equal(retargetTree, advancedTree);
+  assert.match(git(['ls-tree', '-r', '--name-only', retargetTree]), /server\/advanced-base\.mjs/, 'Retarget composition includes the actual new base source');
+  assert.notEqual(retargetTree, git(['merge-tree', '--write-tree', stale.checkoutSha, stale.baseSha]), 'Old-event replay cannot prove the retarget composition');
   assert.throws(() => resolveConciergeEvent({...context, event: pr(undefined)}), /Invalid PR base/);
   assert.throws(() => resolveConciergeEvent({...context, event: {...pr(baseB), repository: {full_name: 'other/repo'}}}), /repository mismatch/);
   assert.throws(() => resolveConciergeEvent({...context, eventName: 'pull_request_target'}), /Unsupported CI event/);
@@ -48,5 +63,5 @@ try {
   assert.throws(() => resolveConciergeEvent({...push, event: {...push.event, deleted: true}}), /Deleted push/);
   assert.throws(() => resolveConciergeEvent({...push, event: {...push.event, ref: 'refs/heads/other'}}), /Unsupported push branch/);
   assert.throws(() => resolveConciergeEvent({...context, event: pr('0'.repeat(40))}), /Empty PR base/);
-  console.log(JSON.stringify({status: 'PASS', advancedBaseIncluded: true, staleBaseCounterexample: true, explicitPrAndPush: true, invalidEventsRejected: true}));
+  console.log(JSON.stringify({status: 'PASS', advancedBaseIncluded: true, staleBaseCounterexample: true, editedRetargetRealCliAndComposition: true, defaultActivitiesPreserved: true, explicitPrAndPush: true, invalidEventsRejected: true}));
 } finally {fs.rmSync(root, {recursive: true, force: true});}

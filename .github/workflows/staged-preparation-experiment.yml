@@ -1,6 +1,7 @@
 name: Disposable staged preparation experiment
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
     paths:
       - .github/workflows/staged-preparation-experiment.yml
       - scripts/ci/staged-preparation-experiment.mjs
