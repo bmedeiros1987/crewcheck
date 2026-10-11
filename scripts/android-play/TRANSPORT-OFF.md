@@ -1,4 +1,4 @@
-# Inactive executor/journal wire protocol and legacy writer fences
+# Inactive executor/journal wire protocol
 
 Base main56ef873e744da463efafd9581dfc02dba4e969a1 (merged PR1005).
 No live executor, service listener, subprocess launcher, connection URL,
@@ -31,18 +31,15 @@ contract is not yet an implementation of the older Python DurableJournal backend
 interface, nor does it connect mobile_internal.publish to Node. That adaptation
 requires reviewed receipt/state mapping and executor lifecycle coupling.
 
-Legacy joint publish.py, allocate_versions.py and CrewWatch allocate/publish now
-stop explicitly at require_coordinator BEFORE reading credentials/policy or
-creating sessions/edits. Google imports in joint publisher are moved below this
-fence. CLI flags cannot remove the fence; no runtime coordinator is configured.
-This intentionally disables those manual legacy mutation paths until separately
-reviewed producer adoption, including mobile/Wear shared package coordination.
-The joint multi-app publisher is wholly blocked; it is not enabled or converted
-into a mobile publisher. Separate com.crewcheck.life Companion remains unchanged.
-Mobile-only pipeline's existing early OFF fence remains untouched.
+Legacy joint publish.py, allocate_versions.py and CrewWatch allocate/publish are
+byte-identical to base main56ef. Their existing manual behavior is preserved.
+This protocol does not fence, wrap or coordinate those paths. Shared-package
+coordination across all writers is NOT active; this PR cannot claim global
+exclusion against manual scripts or external Console writers. No publication
+path is executed by this change. Separate com.crewcheck.life Companion remains
+unchanged. Mobile-only pipeline's existing early OFF fence remains untouched.
 
-Tests instrument poison credential/file/session/API seams on actual legacy entry
-functions; wire tests serialize Python frames through a test-only Node fixture;
+Wire tests serialize Python frames through a test-only Node fixture;
 Node negatives cover absent capability, foreign intent/owner/producer, replay,
 stale revisions, duplicates and unknown operations. Existing disposable MySQL QA
 checks this protocol against actual platform bridge/journal: a pending SQL write

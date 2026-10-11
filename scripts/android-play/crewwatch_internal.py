@@ -9,7 +9,6 @@ This helper is intentionally narrower than the full Android release:
 from __future__ import annotations
 
 import argparse
-from writer_guard import require_coordinator
 import hashlib
 import json
 import os
@@ -86,7 +85,6 @@ def collect_live_codes(session, edit_url):
 
 def allocate():
     require_main()
-    require_coordinator("wear", "allocate")
     policy = json.loads(POLICY_PATH.read_text())
     spec = policy["artifacts"][MODULE]
     assert spec["package"] == PACKAGE
@@ -201,7 +199,6 @@ def validate(bundletool, output):
 
 def publish(root):
     require_main()
-    require_coordinator("wear", "publish")
     from review_policy import commit_internal_edit
 
     path = Path(root)
