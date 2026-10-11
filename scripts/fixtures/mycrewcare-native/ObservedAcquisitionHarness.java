@@ -79,6 +79,30 @@ public class ObservedAcquisitionHarness {
     previous.cancelHook=()->{terminalOwner.begin(scope("C"),current,new Deadline(),currentResult::done);current.drive();};
     previous.drive();
     check(previousResult.result==null&&previousResult.error.equals("observed-cancelled")&&currentResult.result.accountId.equals("C"),"terminal reentrancy cannot publish old success");cases++;
+    // Runtime cleanup/logout revokes only the matching account before reporting cleanup success.
+    for(String phase:List.of("profile-before","cards","detail","profile-after")) {
+      com.crewcheck.app.CrewCheckMyCrewCareProfile.defer=false;
+      com.crewcheck.app.CrewCheckMyCrewCareRuntimeV3 runtime=new com.crewcheck.app.CrewCheckMyCrewCareRuntimeV3(new android.app.Activity(),null,null,null);
+      Source a=new Source();Capture ar=new Capture();runtime.observeMyCrewCareV3ForReview(scope("A"),a,new Deadline(),ar::done);advance(a,phase);Pending stale=a.take();
+      check(runtime.startMyCrewCareCleanupV3(" A ",false,"logout_A_001"),"cleanup accepted");
+      check(runtime.myCrewCareCleanupResultV3("A","logout_A_001").equals("ok"),"cleanup completed");
+      stale.release();a.drive();check(ar.count==1&&ar.result==null&&ar.error.equals("observed-cancelled"),"logout suppresses old success "+phase);cases++;
+      // A's deferred profile cleanup callback must not cancel B, even while B is pending.
+      runtime=new com.crewcheck.app.CrewCheckMyCrewCareRuntimeV3(new android.app.Activity(),null,null,null);
+      a=new Source();ar=new Capture();runtime.observeMyCrewCareV3ForReview(scope("A"),a,new Deadline(),ar::done);advance(a,phase);stale=a.take();
+      com.crewcheck.app.CrewCheckMyCrewCareProfile.defer=true;
+      check(runtime.startMyCrewCareCleanupV3("A",true,"logout_A_002"),"deferred cleanup accepted");
+      Source b=new Source();Capture br=new Capture();runtime.observeMyCrewCareV3ForReview(scope("B"),b,new Deadline(),br::done);advance(b,phase);
+      com.crewcheck.app.CrewCheckMyCrewCareProfile.pending.remove(0).onComplete(true,"ok");
+      stale.release();a.drive();b.drive();check(ar.result==null&&br.count==1&&br.result.accountId.equals("B"),"late A cleanup preserves B "+phase);cases++;
+      // A cleanup arriving after B is already current must leave B's generation intact.
+      runtime=new com.crewcheck.app.CrewCheckMyCrewCareRuntimeV3(new android.app.Activity(),null,null,null);
+      b=new Source();br=new Capture();runtime.observeMyCrewCareV3ForReview(scope("B"),b,new Deadline(),br::done);advance(b,phase);
+      check(runtime.startMyCrewCareCleanupV3("A",true,"logout_A_003"),"old account cleanup accepted");
+      com.crewcheck.app.CrewCheckMyCrewCareProfile.pending.remove(0).onComplete(true,"ok");
+      b.drive();check(br.count==1&&br.result.accountId.equals("B"),"A cleanup start preserves current B "+phase);cases++;
+    }
+    com.crewcheck.app.CrewCheckMyCrewCareProfile.defer=false;
     System.out.println("PASS native observed acquisition cases="+cases);
   }
 }

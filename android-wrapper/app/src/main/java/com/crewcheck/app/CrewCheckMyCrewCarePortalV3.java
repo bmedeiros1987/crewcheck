@@ -119,6 +119,15 @@ public final class CrewCheckMyCrewCarePortalV3 {
             synchronized(this) { old=active; active=null; ++generation; }
             terminate(old,null,"observed-cancelled");
         }
+        /** Account cleanup must not invalidate a newer observation owned by another account. */
+        public void cancel(String accountId) {
+            Operation old;
+            synchronized(this) {
+                if(active==null || accountId==null || !active.scope.accountId.equals(accountId.trim())) return;
+                old=active; active=null; ++generation;
+            }
+            terminate(old,null,"observed-cancelled");
+        }
         private void acquire(Operation op,String kind,Map<String,String> card) {
             final int step;
             synchronized(this) { if(active!=op) return; step=++op.step; }

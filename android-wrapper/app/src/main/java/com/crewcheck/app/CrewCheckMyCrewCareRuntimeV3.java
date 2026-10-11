@@ -71,6 +71,7 @@ public final class CrewCheckMyCrewCareRuntimeV3 {
         final String key = cleanupKey(accountId, operationId);
         if (cleanups.putIfAbsent(key, PENDING) != null) return false;
 
+        observations.cancel(accountId);
         final boolean cacheCleared = !forgetData || store.clear(accountId);
         boolean accepted;
         try {
