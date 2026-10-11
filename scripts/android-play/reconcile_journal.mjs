@@ -37,6 +37,13 @@ export async function reconcileAcknowledged(journal,expected,readCompleteState){
   assert.equal(observation.targetTrack?.track,record.intent.track);
   assert(Array.isArray(observation.targetTrack.releases));
   assert(observation.targetTrack.releases.every(r=>r.status==='completed'));
+  assert(Number.isSafeInteger(record.intent.versionCode)&&record.intent.versionCode>0&&record.intent.versionCode<2100000000);
+  const codes=observation.targetTrack.releases.flatMap(release=>{
+    assert(Array.isArray(release.versionCodes)&&release.versionCodes.length>0);
+    assert(release.versionCodes.every(code=>typeof code==='string'&&/^[1-9][0-9]*$/.test(code)&&Number.isSafeInteger(Number(code))&&Number(code)<2100000000));
+    return release.versionCodes;
+  });
+  assert(codes.includes(String(record.intent.versionCode)),'Intended version absent from complete target snapshot');
   assert(observation.otherTracks && Object.getPrototypeOf(observation.otherTracks)===Object.prototype);
   assert(!Object.hasOwn(observation.otherTracks,record.intent.track));
   assert.equal(snapshotDigest(observation.targetTrack),record.intent.expectedTrackSha256);
