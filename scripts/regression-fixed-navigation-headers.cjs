@@ -58,7 +58,7 @@ async function visibleTextBounds(page, selector) {
       const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
       let node;
       while (node = walker.nextNode()) {
-        if (node.parentElement.closest('svg, option, [aria-hidden="true"]') || !node.parentElement.getClientRects().length) continue;
+        if (node.parentElement.closest('svg, option, [aria-hidden="true"]') || !node.parentElement.getClientRects().length || parseFloat(getComputedStyle(node.parentElement).fontSize) === 0) continue;
         for (let i = 0; i < node.textContent.length; i++) {
           if (/\s/.test(node.textContent[i])) continue;
           const range = document.createRange(); range.setStart(node, i); range.setEnd(node, i + 1);
