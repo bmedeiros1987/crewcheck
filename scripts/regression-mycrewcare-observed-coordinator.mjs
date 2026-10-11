@@ -186,3 +186,57 @@ test('reentrant cancel, disconnect and account binding retain the newest transit
     assert.equal(coordinator.observation(), null);
   }
 });
+
+test('reentrant reads cannot overwrite, clear or lose newer pending ownership at any phase', async () => {
+  for (const phase of ['profile-before', 'cards', 'detail', 'profile-after']) {
+    for (const consequence of ['late-success', 'late-failure', 'pending-cancel']) {
+      let coordinator;
+      let initialId;
+      let nested;
+      let enterInitial;
+      let enterNested;
+      const initialWaiting = new Promise(resolve => { enterInitial = resolve; });
+      const nestedWaiting = new Promise(resolve => { enterNested = resolve; });
+      const gates = [];
+      const scopes = new Map();
+      coordinator = createMyCrewCareObservedCoordinator({ acquire: request => {
+        scopes.set(request.scope.requestId, request.scope);
+        initialId ??= request.scope.requestId;
+        if (request.kind !== phase) return Promise.resolve(response(request));
+        if (request.scope.requestId === initialId) {
+          request.signal.addEventListener('abort', () => { nested = coordinator.read(); }, { once: true });
+          enterInitial();
+          return new Promise(() => {});
+        }
+        return new Promise((resolve, reject) => {
+          gates.push({ request, release: () => resolve(response(request)), reject: () => reject(new Error('synthetic-late-failure')) });
+          enterNested();
+        });
+      } });
+      coordinator.bind(binding);
+      const older = coordinator.read();
+      await initialWaiting;
+      const outer = coordinator.read();
+      await nestedWaiting;
+      await new Promise(resolve => setImmediate(resolve));
+      if (consequence === 'pending-cancel') {
+        for (const gate of gates.slice(1)) gate.reject();
+        assert.equal(await outer, null);
+        coordinator.cancel();
+        assert.equal(gates[0].request.signal.aborted, true, `${phase}: nested pending must remain reachable`);
+        assert.equal(await nested, null);
+        gates[0].release();
+      } else {
+        gates[0].release();
+        const newest = await nested;
+        assert.ok(newest);
+        for (const gate of gates.slice(1)) consequence === 'late-failure' ? gate.reject() : gate.release();
+        assert.equal(await outer, null, `${phase}: superseded outer invocation must not succeed`);
+        assert.equal(coordinator.observation(), newest, `${phase}: late completion cannot replace/clear nested`);
+      }
+      assert.equal(await older, null);
+      const generations = [...scopes.values()].map(scope => scope.generation);
+      assert.equal(new Set(generations).size, generations.length, `${phase}: acquired requests own distinct generations`);
+    }
+  }
+});
