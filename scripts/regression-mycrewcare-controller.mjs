@@ -327,3 +327,37 @@ test('the panel offers the retry action in cleanup-error', () => {
   assert.match(source, /snapshot\.canRetryCleanup/);
   assert.match(source, /Tentar desconectar novamente/);
 });
+
+test('late logout completion cannot reset a newer B controller binding', async () => {
+  const { createMyCrewCarePersistentSession } = await import('../shared/myCrewCarePersistentSession.mjs');
+  let finishCleanup;
+  const cleanupGate = new Promise((resolve) => { finishCleanup = resolve; });
+  const store = new Map();
+  const engine = createMyCrewCarePersistentSession({ now: () => NOW, storage: {
+    read: (accountId) => store.get(accountId),
+    write: (accountId, payload) => store.set(accountId, payload),
+    clear: (accountId) => store.delete(accountId),
+  }, adapter: {
+    disconnect: () => cleanupGate,
+    read: async (request) => ({ schemaVersion: 3, requestId: request.requestId, context: request.context,
+      authenticated: true, providerSubject: request.context.providerSubject,
+      url: 'https://api2.apicrewcare.com/LATAM/mytravel.aspx', observedAt: new Date(NOW).toISOString(),
+      records: [record], emptyConfirmed: false }),
+  } });
+  const fake = fakeBridge();
+  const controller = make(fake, { session: engine });
+  const a = ctx('A'), b = ctx('B');
+  await controller.bind(a, [stayFor(a)]);
+  const cleanup = controller.logout();
+  await controller.bind(b, [stayFor(b)]);
+  controller.setAutomatic(true);
+  assert.equal(await controller.refresh({ userInitiated: true }), true);
+  const before = controller.getSnapshot();
+  finishCleanup();
+  await cleanup;
+  assert.equal(controller.getSnapshot(), before);
+  assert.ok(controller.hotel(stayFor(b).id));
+  // Binding B again must keep the snapshot and data, rather than treating B as unbound.
+  await controller.bind(b, [stayFor(b)]);
+  assert.ok(controller.hotel(stayFor(b).id));
+});

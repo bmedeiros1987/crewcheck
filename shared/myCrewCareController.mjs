@@ -53,6 +53,7 @@ export function createMyCrewCareController({
   let busy = false;
   let refreshSuggested = false;
   let boundAccount = null;
+  let bindingEpoch = 0;
   let snapshot = build();
   let snapshotSignature = JSON.stringify(snapshot);
 
@@ -128,9 +129,11 @@ export function createMyCrewCareController({
       if (!engine) return false;
       const accountId = context?.accountId ?? null;
       if (accountId !== boundAccount) refreshSuggested = false;
+      const epoch = ++bindingEpoch;
       boundAccount = accountId;
       engine.setContext(context, stays);
       const restored = await engine.restore();
+      if (epoch !== bindingEpoch) return false;
       // A cached view is never proof of a live session; suggest, never auto-open.
       refreshSuggested = suggestRefresh();
       emit();
@@ -194,12 +197,18 @@ export function createMyCrewCareController({
 
     async logout() {
       if (!engine) return;
+      const epoch = ++bindingEpoch;
+      boundAccount = null;
+      refreshSuggested = false;
+      const cleanup = engine.logout();
+      emit();
       try {
-        await engine.logout();
+        await cleanup;
       } finally {
-        boundAccount = null;
-        refreshSuggested = false;
-        emit();
+        if (epoch === bindingEpoch) {
+          refreshSuggested = false;
+          emit();
+        }
       }
     },
   });

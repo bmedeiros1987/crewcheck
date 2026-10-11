@@ -194,6 +194,20 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
   // any of them is stale and must neither publish nor touch storage.
   let restoreEpoch = 0;
   let pendingCleanup = null;
+  const storageQueues = new Map();
+  const cleaningAccounts = new Map();
+
+  // A clear is ordered after every write already started for this account.
+  // Failures must not break the queue: cleanup still needs to run after a failed write.
+  function queueStorage(accountId, operation) {
+    const previous = storageQueues.get(accountId) ?? Promise.resolve();
+    const result = previous.catch(() => {}).then(operation);
+    storageQueues.set(accountId, result);
+    result.finally(() => {
+      if (storageQueues.get(accountId) === result) storageQueues.delete(accountId);
+    }).catch(() => {});
+    return result;
+  }
   let pending = null;
   let cached = null;
   let status = 'disconnected';
@@ -254,33 +268,36 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
   }
 
   async function clearConnection({ forgetData, clearContext }) {
-    const accountId = context?.accountId ?? pendingCleanup ?? null;
+    const capturedContext = context;
+    const accountId = capturedContext?.accountId ?? pendingCleanup ?? null;
     automatic = false;
     restoreEpoch += 1;
     invalidateRequest();
-    let cleanupError = null;
-    try {
-      await adapter?.disconnect?.(accountId, forgetData);
-    } catch {
-      cleanupError = 'profile-disconnect-failed';
-    }
-    if (forgetData && accountId) {
-      try {
-        await storageClear(accountId);
-      } catch {
-        cleanupError ||= 'cache-clear-failed';
-      }
-    }
+    const token = generation;
     if (forgetData) cached = null;
+    // Detach synchronously. Completion of A's cleanup must never detach a later B.
     if (clearContext) {
       context = null;
       stays = [];
       cached = null;
     }
-    // Keep the account until cleanup really succeeded, so "try again" can still target it.
-    pendingCleanup = cleanupError ? accountId : null;
-    status = cleanupError ? 'cleanup-error' : (cached ? 'off' : 'disconnected');
-    lastError = cleanupError;
+    const remainingContext = context;
+    status = cached ? 'off' : 'disconnected';
+    const cleanupId = {};
+    if (accountId) cleaningAccounts.set(accountId, cleanupId);
+    const outcomes = await Promise.allSettled([
+      Promise.resolve().then(() => adapter?.disconnect?.(accountId, forgetData)),
+      forgetData && accountId ? queueStorage(accountId, () => storageClear(accountId)) : Promise.resolve(),
+    ]);
+    if (cleaningAccounts.get(accountId) === cleanupId) cleaningAccounts.delete(accountId);
+    const cleanupError = outcomes[0].status === 'rejected' ? 'profile-disconnect-failed'
+      : outcomes[1].status === 'rejected' ? 'cache-clear-failed' : null;
+    if (token === generation && context === remainingContext) {
+      // Keep a failed cleanup target retryable without overwriting a newer binding.
+      pendingCleanup = cleanupError ? accountId : null;
+      status = cleanupError ? 'cleanup-error' : (cached ? 'off' : 'disconnected');
+      lastError = cleanupError;
+    }
     if (cleanupError) throw Object.assign(new Error(cleanupError), { code: cleanupError });
   }
 
@@ -330,6 +347,9 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
       const stale = () => epoch !== restoreEpoch || context !== capturedContext;
       let raw;
       try {
+        if (cleaningAccounts.has(accountId)) return false;
+        if (storageQueues.has(accountId)) await storageQueues.get(accountId).catch(() => {});
+        if (stale()) return false;
         raw = await storageRead(accountId);
       } catch (error) {
         if (stale()) return false;
@@ -343,7 +363,7 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
       if (!restored) {
         if (raw) {
           try {
-            await storageClear(accountId);
+            await queueStorage(accountId, () => stale() ? undefined : storageClear(accountId));
           } catch (error) {
             if (stale()) return false;
             cached = null;
@@ -404,7 +424,7 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
     },
 
     async sync({ reason = 'automatic' } = {}) {
-      if (!automatic || !context || stays.length === 0 || typeof adapter?.read !== 'function') return false;
+      if (!automatic || !context || cleaningAccounts.has(context.accountId) || stays.length === 0 || typeof adapter?.read !== 'function') return false;
       invalidateRequest();
       status = 'syncing';
       lastError = null;
@@ -458,10 +478,10 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
           emptyConfirmed: envelope.emptyConfirmed,
         });
         const nextChanges = diffMyCrewCareFacts(cached?.facts ?? [], nextCached.facts);
-        await storageWrite(
-          capturedContext.accountId,
-          persistencePayload(nextCached, capturedContext),
-        );
+        await queueStorage(capturedContext.accountId, () => {
+          if (token !== generation || context !== capturedContext || !automatic) return;
+          return storageWrite(capturedContext.accountId, persistencePayload(nextCached, capturedContext));
+        });
         if (token !== generation || context !== capturedContext || stays !== capturedStays || !automatic) return false;
         cached = nextCached;
         changes = nextChanges;

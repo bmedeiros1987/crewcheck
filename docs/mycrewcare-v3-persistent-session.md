@@ -90,3 +90,39 @@ Esses contratos são **simulações em Node** com uma ponte falsa. Eles provam o
 `node --test scripts/regression-mycrewcare-v3.mjs` cobre 21 contratos (os 12 originais mais restore atrasado após troca/logout/ida-e-volta fora de ordem, falha de leitura obsoleta, desconexão durante restore, retry de cleanup e limpeza nativa assíncrona/timeout/escopo por operação), em em UTC, Brasília e Auckland: URL exata, hotel/pickup separados, vínculo sem hotel prévio, ambiguidade, cancelamento, diff, persistência, restauração, cache offline, vazio verificado, troca de revisão, logout e política foreground/background.
 
 `node scripts/assert-mycrewcare-v3-ownership.mjs` protege a lista de arquivos, impede writers compartilhados, exige release desativado, perfil isolado, armazenamento cifrado, allowlists exatas e recusa dinâmica de registros sem vínculo. O workflow executa esses gates antes e depois da preparação canônica, além de TypeScript, Vite e `assembleDebug`.
+
+### Revisão offline de 11/10/2026: escrita e logout concorrentes
+
+As operações de escrita/limpeza do cache agora são ordenadas por conta na sessão.
+Logout/desconexão aguardam uma escrita já iniciada antes da limpeza final, mesmo
+quando essa escrita falha; uma escrita ainda enfileirada revalida a geração antes
+de tocar o storage. Uma operação antiga não pode persistir dados depois que a
+limpeza foi reportada como concluída. Restore aguarda operações de storage já
+iniciadas e não restaura a conta enquanto ela está em limpeza. A conta em limpeza
+não inicia uma nova sincronização; outra conta pode prosseguir independentemente.
+
+Logout desvincula o contexto em memória antes de aguardar a limpeza. A conclusão
+captura conta/contexto/geração e não limpa nem publica estado na conta B vinculada
+posteriormente. O controlador também protege a conclusão de `bind` e `logout`
+por época de vínculo. Falhas continuam rejeitando a Promise; sem novo vínculo,
+a limpeza falha permanece disponível para nova tentativa.
+
+Regressões: escrita bem-sucedida/falha atrasada durante logout e desconexão,
+restart sem cache ressuscitado, conclusão bem-sucedida/falha de logout A depois de
+restore de B e conclusão tardia no controlador. Os seis novos casos de sessão
+falham no HEAD anterior `40056069fff006d523588557057eeb10c12e4a08` e passam após
+o reparo. Todos são simulações Node, com ponte/storage sintéticos, sem SSO real.
+
+Validação local (Node 24.19.0): 46/46 em UTC, America/Sao_Paulo e Pacific/Auckland,
+antes e depois de `scripts/v139/apply.mjs` em cópia descartável. Ownership PASS
+antes/depois, incluindo painel não montado e flags OFF. TypeScript e build Vite
+passam; os contratos de associação física de stay, wakeup/concierge e stay menu
+também passam na cópia preparada. Nenhum gerador reescreve os módulos corrigidos.
+Gradle/SDK Android indisponíveis localmente; a compilação permanece gate de CI.
+
+Limites: a ordenação é por instância de sessão JavaScript; não substitui validação
+física Android. Um storage assíncrono que nunca resolve mantém a limpeza pendente
+em vez de anunciar sucesso antes da hora. Falha tardia de A após vínculo de B é
+reportada ao chamador sem transformar B em `cleanup-error`; a interface continua
+restrita a um alvo de limpeza ativo. Os gates físicos e de aquisição real desta
+PR permanecem pendentes. Sem ativação, montagem, merge, deploy ou publicação em loja.

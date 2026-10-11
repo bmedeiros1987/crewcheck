@@ -487,3 +487,75 @@ test('native cleanup that never finishes times out as a failure', async () => {
   await assert.rejects(createMyCrewCareNativeAdapter({ bridge: { startMyCrewCareCleanupV3: () => false, myCrewCareCleanupResultV3: () => 'ok' }, wait: instantWait }).disconnect('account-1', true), /native-disconnect-failed/);
   await assert.rejects(createMyCrewCareNativeAdapter({ bridge: {}, wait: instantWait }).disconnect('account-1', true), /native-disconnect-failed/);
 });
+
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+for (const action of ['logout', 'disconnect']) {
+  for (const writeFails of [false, true]) {
+    test(`${action} drains an in-flight ${writeFails ? 'failed' : 'successful'} write before clearing A`, async () => {
+      const storage = new MemoryStorage();
+      const entered = deferred();
+      const finish = deferred();
+      const order = [];
+      storage.write = async (accountId, payload) => {
+        entered.resolve();
+        await finish.promise;
+        if (writeFails) { order.push('write-failed'); throw new Error('synthetic write failure'); }
+        storage.values.set(accountId, payload);
+        order.push('write');
+      };
+      storage.clear = (accountId) => { order.push('clear'); storage.values.delete(accountId); };
+      const session = createMyCrewCarePersistentSession({ storage, adapter: { read: async (request) => envelope(request) }, now: () => NOW });
+      session.setContext(context, [stay]);
+      session.setAutomatic(true);
+      const sync = session.sync();
+      await entered.promise;
+      let cleanupDone = false;
+      const cleanup = session[action]().then(() => { cleanupDone = true; });
+      await new Promise(setImmediate);
+      const completedBeforeWrite = cleanupDone;
+      finish.resolve();
+      assert.equal(await sync, false);
+      await cleanup;
+      assert.equal(completedBeforeWrite, false, 'cleanup cannot claim completion while a write can still persist');
+      assert.deepEqual(order, [writeFails ? 'write-failed' : 'write', 'clear']);
+      assert.equal(storage.values.has(context.accountId), false);
+      assert.equal(session.state().hasCachedData, false);
+      const restarted = createMyCrewCarePersistentSession({ storage, adapter: {}, now: () => NOW });
+      restarted.setContext(context, [stay]);
+      assert.equal(await restarted.restore(), false, 'no logged-out cache survives restart');
+    });
+  }
+}
+
+for (const fails of [false, true]) {
+  test(`late logout(A) ${fails ? 'failure' : 'success'} preserves B context, cache and consent`, async () => {
+    const storage = new MemoryStorage();
+    await seed(storage, contextB, stayB);
+    const bCache = storage.values.get(contextB.accountId);
+    const finish = deferred();
+    const session = createMyCrewCarePersistentSession({ storage, adapter: {
+      disconnect: () => finish.promise,
+      read: async (request) => envelope(request, [record], { providerSubject: request.context.providerSubject }),
+    }, now: () => NOW });
+    session.setContext(context, [stay]);
+    session.setAutomatic(true);
+    const cleanup = session.logout();
+    const observed = cleanup.then(() => null, (error) => error);
+    session.setContext(contextB, [stayB]);
+    session.setAutomatic(true);
+    assert.equal(await session.restore(), true);
+    const before = session.state();
+    if (fails) finish.reject(new Error('synthetic cleanup failure')); else finish.resolve();
+    const error = await observed;
+    assert.equal(Boolean(error), fails);
+    assert.deepEqual(session.state(), before);
+    assert.equal(storage.values.get(contextB.accountId), bCache);
+    assert.ok(session.hotel(stayB.id));
+    assert.equal(await session.sync(), true, 'B remains bound and can sync without rebinding');
+  });
+}
