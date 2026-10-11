@@ -8,7 +8,7 @@ const require=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url
 const {chromium}=require('playwright');
 const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');
 const begin=home.indexOf('function WakeupView('),end=home.indexOf('function PresentationManagerView',begin);
-assert(begin>=0&&end>begin);const wake=home.slice(begin,end);
+assert(begin>=0&&end>begin);const wake=home.slice(begin,end);const kpiBegin=home.indexOf('function KpiCard('),kpiEnd=home.indexOf('\ntype RadarSnapshot',kpiBegin);assert(kpiBegin>=0&&kpiEnd>kpiBegin);const kpi=home.slice(kpiBegin,kpiEnd);
 assert(wake.includes('const wakeSession = useRef'),'run canonical preparation before host UI regression');
 const hostPrelude=`import{setCrewCheckThemePreference}from'./client/src/lib/themeRuntime';window.fixtureTheme=setCrewCheckThemePreference;import React,{useState,useRef,useEffect} from 'react';import{getToken,authFetch,getStoredUser}from'./client/src/lib/authClient';
 const storage={get:(key,fallback)=>localStorage.getItem(key)||fallback,set:(key,value)=>localStorage.setItem(key,value)};
@@ -19,10 +19,10 @@ const eventStartDateTime=()=>new Date('2032-02-01T10:00:00Z'),wakeupDateForEvent
 const getPlatformBilling=async()=>null,postCrewCheckJson=(...args)=>window.fixturePost(...args);
 const openTelegramBinding=()=>{},openWhatsAppBinding=()=>{};
 const openNotificationSettings=()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'notifications'}));
-const Brand=()=>null,StayNavigationContext=()=>null,KpiCard=()=>null;
+const Brand=()=>null,StayNavigationContext=()=>null;
 const Clock=()=>null,Bell=()=>null,Hotel=()=>null,Save=()=>null,Send=()=>null,Phone=()=>null,X=()=>null,ChevronRight=()=>null;
 `;
-const bundle=await build({stdin:{contents:`${hostPrelude}import{createRoot}from'react-dom/client';import{NotificationReadiness}from'./client/src/components/notifications/NotificationReadiness';import{WakeupChannelSelection}from'./client/src/components/notifications/WakeupChannelSelection';${wake}function Harness(){const[id,setId]=useState('synthetic');window.fixtureAlarm=setId;return <WakeupView event={{id,placeholder:false,origin:'SYN',destination:'SYN'}}/>;}createRoot(document.getElementById('root')).render(<Harness/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,outfile:'wakeup-fixture.js',format:'iife',jsx:'automatic',define:{'process.env.NODE_ENV':'"test"'},plugins:[{name:'alias',setup(b){b.onResolve({filter:/^@\//},({path:p})=>({path:path.resolve('client/src',p.slice(2)+'.ts')}));}}]});
+const bundle=await build({stdin:{contents:`${hostPrelude}import{createRoot}from'react-dom/client';import{NotificationReadiness}from'./client/src/components/notifications/NotificationReadiness';import{WakeupChannelSelection}from'./client/src/components/notifications/WakeupChannelSelection';import MoneyText from './client/src/components/MoneyText';${kpi}${wake}function Harness(){const[id,setId]=useState('synthetic');window.fixtureAlarm=setId;return <WakeupView event={{id,placeholder:false,origin:'SYN',destination:'SYN'}}/>;}createRoot(document.getElementById('root')).render(<Harness/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,outfile:'wakeup-fixture.js',format:'iife',jsx:'automatic',define:{'process.env.NODE_ENV':'"test"'},plugins:[{name:'alias',setup(b){b.onResolve({filter:/^@\//},({path:p})=>({path:path.resolve('client/src',p.slice(2)+'.ts')}));}}]});
 const css=fs.readdirSync('dist/assets').filter(name=>name.endsWith('.css')).map(name=>fs.readFileSync('dist/assets/'+name,'utf8')).join('\n');
 const server=http.createServer((req,res)=>{res.setHeader('content-type',req.url==='/fixture.js'?'text/javascript':'text/html');res.end(req.url==='/fixture.js'?bundle.outputFiles.find(file=>file.path.endsWith('.js')).text:`<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}#fixture-header{position:fixed;top:0;height:80px;width:100%;z-index:999;background:#333}#fixture-footer{position:fixed;bottom:0;height:96px;width:100%;z-index:999;background:#333}#root{padding-top:96px}body{margin:0}</style><header id="fixture-header">Cabeçalho</header><main id="root" class="cz-app" data-view="wakeup"></main><footer id="fixture-footer">Menu</footer><script src="/fixture.js"></script>`);});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${server.address().port}`;
@@ -57,6 +57,7 @@ try{
  await call.check();await phone.check();await selection.getByRole('button',{name:'Salvar escolha deste alarme'}).click();
  assert(await primary.isDisabled());assert.equal((await page.evaluate(()=>window.fixturePosts)).length,0);assert.equal(await page.evaluate(()=>window.permissionsRequested),0);
  await selection.getByText('Seleção múltipla salva como preferência.',{exact:false}).waitFor();
+ assert.equal(await page.getByText('Mensagem Telegram + Ligação via Telegram + Ligação telefônica',{exact:true}).count(),1,'Summary names the actual selected channels');
  if(process.env.WAKEUP_SELECTION_SCREENSHOT){await page.evaluate(()=>window.fixtureTheme('dark'));await page.setViewportSize({width:390,height:844});await selection.evaluate(node=>node.scrollIntoView({block:'start',behavior:'instant'}));await selection.screenshot({path:process.env.WAKEUP_SELECTION_SCREENSHOT,animations:'disabled'});}
  const stored=await page.evaluate(()=>Object.entries(localStorage).filter(([key])=>key.startsWith('crewcheck:wakeup-selection:v1:')).map(([key,value])=>({key,value:JSON.parse(value)})));
  assert.equal(stored.length,1);assert.deepEqual(stored[0].value.channels,['telegram','telegram-call','phone-call']);assert(!JSON.stringify(stored).includes('SYN'));

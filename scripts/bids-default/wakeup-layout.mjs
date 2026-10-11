@@ -30,7 +30,7 @@ if(!block.includes('const [wakeChannelDecision,')){
  else block=block.replace("const serverChannel = channel === 'telegram-call' ? 'telegram-call' : channel === 'ligacao' ? 'phone' : channel === 'ambos' ? 'both' : 'telegram';","const serverChannel = wakeChannelDecision.channel;");
 }
 
-block=block.replace(/<KpiCard icon=\{Bell\} title="Canal"[\s\S]*?\/>/,`<KpiCard icon={Bell} title="Meios selecionados" value={wakeChannelDecision.channels.map(wakeupChannelLabel).join(' + ')||'A confirmar'} detail={wakeChannelDecision.reason}/>`);
+block=block.replace(/<KpiCard icon=\{Bell\} title="Canal"[\s\S]*?\/>/,`<KpiCard icon={Bell} title="Meios selecionados" value={wakeChannelDecision.channels.map(value=>value==='phone-call'?'Ligação telefônica':value==='telegram-call'?'Ligação via Telegram':value==='telegram'?'Mensagem Telegram':'A confirmar').join(' + ')||'A confirmar'} detail={wakeChannelDecision.reason}/>`);
 block=block.replace('Mensagens Telegram ficam disponíveis para todos; ligações via Telegram respeitam a franquia mensal do plano. O teste telefônico segue exclusivo do administrador.','Confira os meios e a disponibilidade desta conta. Salvar preferência não agenda, confirma entrega ou comprova despertar.');
 block=block.replaceAll("'Ligação Telegram disponível'","'Ligação Telegram: configuração consultada; autorização e franquia ainda pendentes'").replace('<span>Fallback local</span>','<span>Entrega não confirmada</span>');
 card=block.indexOf('<section className="cz-toolbox cz-wakeup-card">');finish=block.indexOf('</section>',card)+10;
