@@ -162,9 +162,12 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
     }
     private void loginFailed(long attempt, WebView page) {
         Login current = login;
-        if (current == null || current.token != attempt || current.page != page || current.revoked) return;
-        // Revoke only this preparation; a late worker event cannot revoke a newer attempt.
-        current.revoked = true;
+        if (current == null) return;
+        synchronized (current) {
+            if (login != current || current.token != attempt || current.page != page || current.revoked) return;
+            // Shares the handoff commit monitor; revoke only this exact preparation.
+            current.revoked = true;
+        }
         main.post(() -> { if (login == current && attempt == token && running) finish(attempt,
             "Preparação bloqueada: destino/SSO fora do escopo ou página não comprovada. Nada importado."); });
     }
@@ -176,13 +179,27 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         }
         return !stopFailed;
     }
+    private boolean handoff(Login expected) {
+        // Keep this preparation attributable through teardown. No monitor while calling WebView/UI.
+        WebView old = expected.page;
+        start.setEnabled(false);
+        try { layout.removeView(old); old.stopLoading(); } catch (RuntimeException error) { stopFailed = true; }
+        try { old.destroy(); } catch (RuntimeException error) { stopFailed = true; }
+        synchronized (expected) {
+            boolean accepted = login == expected && expected.token == token && running && !expected.revoked && !stopFailed;
+            if (login == expected) { login = null; loginView = null; preparing = false; }
+            // Native failures before this commit reject; callbacks after it belong to the old view.
+            return accepted;
+        }
+    }
     private void start() {
         if (!foreground || destroyed || !running || !preparing || cleaning || !start.isEnabled() || !loginCurrent(token, loginView)) return;
         final long attempt = token;
+        final Login expected = login;
         final ObservedScope captured = scope;
         status.setText("Verificando identidade e contrato. Nenhum dado será importado ou exibido.");
         try {
-            if (!stopLogin()) { finish(attempt, "Encerramento não confirmado. Nada importado."); return; }
+            if (!handoff(expected)) { finish(attempt, "Preparação ou encerramento não confirmado. Nada importado."); return; }
             var source = CrewCheckMyCrewCareObservedWebViewSource.prepare(this, profiles, captured);
             ObservedDeadline deadline = (milliseconds, timeout) -> {
                 main.postDelayed(timeout, milliseconds);

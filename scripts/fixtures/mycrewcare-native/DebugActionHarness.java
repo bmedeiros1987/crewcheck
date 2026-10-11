@@ -93,6 +93,17 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
    android.os.Handler.runMain(()->{if(action.equals("cancel"))s.cancel.click();else{v.client.onPageFinished(v,v.url);s.start.click();}});android.os.Handler.drain();
    check(v.destroyed&&CrewCheckMyCrewCareProfile.clearCalls==clearBefore+1&&android.webkit.WebView.instances.size()==viewsBefore&&!s.prepare.enabled&&s.status.text.contains("não confirmada"),"cleanup attempted despite teardown exception, no source/retry/success "+broken+action);s.close();count++;
   }
-  check(count==69,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
+  for(String boundary:List.of("status","stop","destroy"))for(String event:List.of("resource","http","renderer","started")) {
+   clean();Screen s=new Screen();s.ready();s.prepare();var v=view();int viewsBefore=android.webkit.WebView.instances.size();
+   android.os.Handler.runMain(()->v.client.onPageFinished(v,v.url));
+   Runnable invalidation=()->{if(event.equals("resource")){Thread worker=new Thread(()->v.client.shouldInterceptRequest(v,new android.webkit.WebResourceRequest("https://sso2.apihotels.com/asset",false)));worker.start();join(worker);}if(event.equals("http"))v.client.onReceivedHttpError(v,new android.webkit.WebResourceRequest(v.url,true),new android.webkit.WebResourceResponse("text/plain","UTF-8",new java.io.ByteArrayInputStream(new byte[0])));if(event.equals("renderer"))v.client.onRenderProcessGone(v,new android.webkit.RenderProcessGoneDetail());if(event.equals("started"))v.client.onPageStarted(v,"https://sso2.apihotels.com/",null);};
+   if(boundary.equals("status"))android.widget.TextView.hook=text->{if(text.startsWith("Verificando identidade")){android.widget.TextView.hook=null;invalidation.run();}};
+   if(boundary.equals("stop"))android.webkit.WebView.stopHook=page->{if(page==v){android.webkit.WebView.stopHook=null;invalidation.run();}};
+   if(boundary.equals("destroy"))android.webkit.WebView.destroyHook=page->{if(page==v){android.webkit.WebView.destroyHook=null;invalidation.run();}};
+   android.os.Handler.runMain(s.start::click);android.os.Handler.drain();
+   android.widget.TextView.hook=null;android.webkit.WebView.stopHook=null;android.webkit.WebView.destroyHook=null;
+   check(v.destroyed&&android.webkit.WebView.instances.size()==viewsBefore&&!s.status.text.contains("Contrato observado válido")&&s.status.text.contains("não confirmado"),"causal handoff invalidation prevents acquisition "+boundary+event);s.close();count++;
+  }
+  check(count==81,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
  }catch(Exception e){throw new AssertionError(e);}}
 }
