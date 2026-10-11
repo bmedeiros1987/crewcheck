@@ -53,6 +53,16 @@ try{
  const geometry=await sent.locator('.cz-roster-copy > *').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return{top:r.top,bottom:r.bottom,height:r.height};}));
  for(let i=1;i<geometry.length;i++)assert(geometry[i].top>=geometry[i-1].bottom-1,'status and provider timestamp occupy separate flow rows');
  assert(geometry.every(row=>row.height>0),'status rows retain height');
+ const baseSizes=await page.locator('.cc-wakeup-page *').evaluateAll(nodes=>nodes.map(node=>parseFloat(getComputedStyle(node).fontSize)));
+ for(const width of [320,390,768])for(const theme of ['light','dark'])for(const scale of [1,2]){
+  await page.setViewportSize({width,height:740});await page.evaluate(({theme,scale,sizes})=>{document.documentElement.dataset.crewTheme=theme;document.documentElement.style.colorScheme=theme;document.querySelectorAll('.cc-wakeup-page *').forEach((node,index)=>node.style.fontSize=(sizes[index]*scale)+'px');},{theme,scale,sizes:baseSizes});
+  const rows=await sent.locator('.cz-roster-copy > *').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return{top:r.top,bottom:r.bottom};}));for(let i=1;i<rows.length;i++)assert(rows[i].top>=rows[i-1].bottom-1,'status/time flow at '+width+'/'+theme+'/'+scale);
+  const primary=page.getByRole('button',{name:'Ativar despertador',exact:true});await primary.evaluate(node=>node.scrollIntoView({block:'center'}));const box=await primary.boundingBox(),header=await page.locator('#fixture-header').boundingBox(),footer=await page.locator('#fixture-footer').boundingBox();assert(box.y>=header.y+header.height&&box.y+box.height<=footer.y,'primary action clear of fixed header/footer');
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'no horizontal overflow');
+ }
+ await page.setViewportSize({width:320,height:740});await page.evaluate(sizes=>document.querySelectorAll('.cc-wakeup-page *').forEach((node,index)=>node.style.fontSize=sizes[index]+'px'),baseSizes);
+ await sent.evaluate(node=>node.scrollIntoView({block:'center'}));if(process.env.WAKEUP_SYNTHETIC_SCREENSHOT)await page.screenshot({path:process.env.WAKEUP_SYNTHETIC_SCREENSHOT});
+
  await page.getByText('Telegram vinculado a esta conta.',{exact:false}).waitFor();
  assert((await page.getByRole('region',{name:'Entrega fora do app'}).textContent()).includes('1 aceitos pelo provedor'));
  assert((await page.getByRole('region',{name:'Entrega fora do app'}).textContent()).includes('1 com resultado desconhecido'));
