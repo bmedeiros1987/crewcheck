@@ -53,4 +53,3 @@ export function mysqlAdapter(native, release = null, discard = null) {
   };
   return adapter;
 }
-
