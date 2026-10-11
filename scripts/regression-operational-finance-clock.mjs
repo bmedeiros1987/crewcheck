@@ -30,7 +30,9 @@ try {
     const reserve = event('SYN-ASB', '2032-10-09T04:10:00-03:00', '2032-10-09T10:10:00-03:00', '04:10', 'duty');
     const r = run([reserve]);
     assert.deepEqual(Array.from(r.rows, x => x.label), ['Café']);
-    assert.equal(r.monthly, 25);
+    assert.equal(r.monthly, null, 'eligible taxi has no confirmed tariff in this fixture');
+    assert.ok(r.unclassifiedItems.some(item => item.reason?.includes('Tarifa de táxi')));
+    assert.equal(r.rows.find(item => item.label === 'Café').value, 25);
     const night = event('SYN-NIGHT', '2032-10-05T00:13:00-03:00', '2032-10-05T07:05:00-03:00', '23:18');
     const n = run([night]);
     assert.equal(n.rows.find(x => x.label === 'Ceia').iso, '2032-10-05');
@@ -73,7 +75,7 @@ try {
       const normal=canonical.normalizeRosterDays({...roster,days});const e=canonical.buildCanonicalRosterEvents(normal).filter(e=>e.kind==='flight').map(e=>({...e,canonical:e,day:e.publishedDay}));const f=context.calculate(e,normal,now);assert.equal(f.monthly,null);assert.equal(f.monthlySummary.convertedComplete,false);assert.equal(f.rows.length,0,'dedup uncertainty preserved in both input orders');
     }
     const offsetDay={...rawDay,dutyReport:'21:10',dutyDebrief:'01:00(+1)',legs:[{flightNumber:'QA-OFFSET',origin:'GRU',destination:'BSB',departureTime:'22:00',arrivalTime:'00:30(+1)',duration:2.5,isNextDay:true}]};
-    const offsetRoster={...roster,days:[offsetDay]};const offsets=canonical.buildCanonicalRosterEvents(offsetRoster).filter(e=>e.kind==='flight').map(e=>({...e,canonical:e,day:e.publishedDay}));const of=context.calculate(offsets,offsetRoster,now);assert.equal(of.monthlySummary.convertedComplete,true);assert.equal(of.rows.some(row=>row.label==='Ceia'),true,'published(+1) arrival preserves supper eligibility');assert.equal(offsets[0].day.publishedClockEvidence.legs[0].arrivalTime,'00:30(+1)','offset source remains intact');
+    const offsetRoster={...roster,days:[offsetDay]};const offsets=canonical.buildCanonicalRosterEvents(offsetRoster).filter(e=>e.kind==='flight').map(e=>({...e,canonical:e,day:e.publishedDay}));const of=context.calculate(offsets,offsetRoster,now);assert.equal(of.monthlySummary.convertedComplete,false,'arrival taxi criterion is pending');assert.ok(of.unclassifiedItems.some(item=>item.reason?.includes('Táxi na chegada')));assert.equal(of.rows.some(row=>row.label==='Ceia'),true,'published(+1) arrival preserves supper eligibility');assert.equal(offsets[0].day.publishedClockEvidence.legs[0].arrivalTime,'00:30(+1)','offset source remains intact');
     for(const raw of cases) {
       const actualRoster={...roster,days:[raw]};
       const normalized=canonical.normalizeRosterDays(actualRoster);

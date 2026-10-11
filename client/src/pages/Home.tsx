@@ -100,7 +100,7 @@ import { rosterDisplayIso, rosterStrictInstant, rosterInstantIso, ROSTER_DISPLAY
 import { confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
-import { allowanceIntervalState, rosterOperationalIso, rosterOperationalDateAt, rosterPresentationBeforeDeparture, classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
+import { allowanceIntervalState, rosterOperationalIso, rosterOperationalDateAt, rosterPresentationBeforeDeparture, taxiPresentationOccurrence, classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
 import { observedAllowancePeriods, rowsInObservedCycle, summarizeForecastRows, summarizeNativeForecastRows, nativeForecastDelta, forecastSummaryValue } from '@/lib/financialForecastPeriods';
 import { financialJourneyGroupKey, rowsForNominalFinancialCompetence, nominalFinancialCompetencePrefix } from '@/lib/financialJourneyGrouping';
 import PlatformCenter from '@/components/platform/PlatformCenter';
@@ -3462,6 +3462,7 @@ function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
     exchangeRates,
     breakfastPercent: act.breakfastPercent,
     domesticBreakfast: domestic.breakfast,
+    taxiRate: confirmedRateValueAt('per_diem.taxi', effectiveDate),
     domesticMainMealSource: domestic.source,
     domesticBreakfastSource: learnedBreakfast !== null ? 'learned' : domestic.source,
     airportOverrides: loadAirportPerDiemOverrides(),
@@ -3474,6 +3475,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
   const airportOverrides = loadAirportPerDiemOverrides();
   const rows: PerDiemRow[] = [];
   const seen = new Set<string>();
+  const taxiArrivalPending = new Map<string, { iso: string; airport: string; reason: string }>();
   const pendingAirports = new Set<string>();
   const unclassifiedItems: Array<{ iso: string; airport: string; reason?: string }> = [];
   const usedRateKeys = new Set<PerDiemRateKey>();
@@ -3580,6 +3582,36 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       }
     }
 
+    // Taxi is a separate user-reported operational rule, never a meal percentage.
+    // Existing interval evidence above excludes absent/estimated APZ.
+    const taxi = (activityKind === 'flight' || activityKind === 'reserve')
+      ? taxiPresentationOccurrence(start, atContractualBase(representative.origin)) : null;
+    if (taxi && !seen.has(taxi.iso + '-taxi')) {
+      seen.add(taxi.iso + '-taxi');
+      const cfg = perDiemConfig(roster, taxi.iso);
+      const value = cfg.taxiRate;
+      const source = 'Táxi previsto · Critério operacional informado pelo usuário: APZ na base · '
+        + taxi.window + ' · relógio da escala BRT (UTC-03) · sem homologação ACT';
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+        unclassifiedItems.push({ iso: taxi.iso, airport: representative.origin, reason: source + ' · Tarifa de táxi confirmada para o período ausente.' });
+      } else {
+        rows.push({ eventId: representative.id, date: dateChip(new Date(taxi.iso + 'T12:00:00')), iso: taxi.iso,
+          label: 'Táxi', value, currency: 'BRL', convertedBRL: value,
+          source: source + ' · tarifa de táxi do demonstrativo confirmado no período; previsão não comprova pagamento',
+          airport: representative.origin, rateKey: 'domestic', rateSource: 'learned', rateVersion: 'taxi-user-reported-v1',
+          exchangeRate: 1, calculationStart: start.toISOString(), calculationEnd: end.toISOString() });
+      }
+    }
+    // A final base arrival is observable, but its qualifying clock/APZ has not
+    // been specified. Do not turn arrival or engines-off+30 into presentation.
+    const finalFlight = dutyFlights.at(-1);
+    const arrivalCandidate = activityKind === 'flight' && finalFlight
+      ? taxiPresentationOccurrence(eventEndDateTime(finalFlight), atContractualBase(finalFlight.destination)) : null;
+    if (arrivalCandidate) {
+      taxiArrivalPending.set(arrivalCandidate.iso, { iso: arrivalCandidate.iso, airport: finalFlight!.destination,
+        reason: 'Táxi na chegada à base: horário publicado na janela 00:00–05:45; critério de APZ/liberação na chegada ainda não confirmado. Sem homologação ACT; valor pendente.' });
+    }
+
     const breakfastIncluded = Boolean((event.day as any)?.breakfastIncluded || (event.day as any)?.hotelBreakfastIncluded || (event as any)?.breakfastIncluded);
     const occurrences = classifyAllowanceWindows({
       start,
@@ -3611,6 +3643,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       add(occurrenceEvent, occurrence.iso, occurrence.slot, labels[occurrence.slot], `${source} · ${occurrence.window}${occurrence.slot === 'breakfast' ? ' · Critério operacional informado pelo usuário: presença na base na janela do café; sem homologação ACT' : ''}`, start, end);
     }
   }
+  for (const [iso, pending] of taxiArrivalPending) if (!seen.has(iso + '-taxi')) unclassifiedItems.push(pending);
   const monthlyRows = rowsForNominalFinancialCompetence(rows, roster);
   const monthlyUnclassifiedItems = [...rowsForNominalFinancialCompetence(unclassifiedItems, roster), ...unclassifiedItems.filter(item => !item.iso)];
   const nativeSummary = summarizeNativeForecastRows(monthlyRows, monthlyUnclassifiedItems);

@@ -92,9 +92,9 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
   const end = period?.[2] || '';
   const fp = fingerprint(text);
   const observations = new Map<string, number[]>();
-  const aliases: Record<string, string> = { CAFE: 'breakfast', ALMOCO: 'lunch', JANTAR: 'dinner', CEIA: 'supper' };
+  const aliases: Record<string, string> = { CAFE: 'breakfast', ALMOCO: 'lunch', JANTAR: 'dinner', CEIA: 'supper', TAXI: 'taxi' };
   const normalized = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  for (const match of normalized.matchAll(/\b(CAFE|ALMOCO|JANTAR|CEIA)\b[^\n\r]{0,40}?R\$\s*([\d.]+,\d{2})/gi)) {
+  for (const match of normalized.matchAll(/\b(CAFE|ALMOCO|JANTAR|CEIA|TAXI)\b[^\n\r]{0,40}?R\$\s*([\d.]+,\d{2})/gi)) {
     const key = aliases[match[1].toUpperCase()];
     const values = observations.get(key) || [];
     values.push(money(match[2]));
@@ -111,7 +111,7 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
       `per_diem.${key}`,
       key,
       selected,
-      'meal',
+      key === 'taxi' ? 'amount' : 'meal',
       start,
       sourceDocument,
       fp,
@@ -132,8 +132,8 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
   }
   const warnings: string[] = [];
   if (!start || !end || !validDay(start) || !validDay(end) || start > end) warnings.push('Período completo inválido ou não identificado; revisão obrigatória.');
-  if (conflictingMeals.length) warnings.push('Tarifas de alimentação divergentes; revisão obrigatória.');
-  if (!rates.length) warnings.push('Nenhuma tarifa de alimentação identificada.');
+  if (conflictingMeals.length) warnings.push('Tarifas de diárias divergentes; revisão obrigatória.');
+  if (!rates.length) warnings.push('Nenhuma tarifa de diária identificada.');
   if (depositedTotals.size > 1) warnings.push('Totais depositados divergentes; revisão obrigatória.');
   if (invalidDepositedTotal) warnings.push('Total depositado com formato inválido; revisão obrigatória.');
   if (!depositedTotals.size) warnings.push('Total depositado não identificado.');
@@ -236,8 +236,8 @@ function boundedRate(item: LearnedRate): boolean {
   }
   return item?.confirmed === true && item.valueOrigin !== 'derived' && Number.isFinite(item.value) && item.value >= 0
     && ['BRL', 'USD', 'EUR', 'GBP'].includes(item.currency)
-    && item.unit === (item.key?.startsWith('per_diem.') ? 'meal' : item.key === 'salary.base' ? 'month' : ['salary.reserveHour','salary.standbyHour'].includes(item.key) ? 'hour' : 'km')
-    && ['per_diem.breakfast','per_diem.lunch','per_diem.dinner','per_diem.supper','salary.base','salary.dayKm','salary.nightKm','salary.dfsDayKm','salary.dfsNightKm','salary.reserveHour','salary.standbyHour'].includes(item.key)
+    && item.unit === (item.key === 'per_diem.taxi' ? 'amount' : item.key?.startsWith('per_diem.') ? 'meal' : item.key === 'salary.base' ? 'month' : ['salary.reserveHour','salary.standbyHour'].includes(item.key) ? 'hour' : 'km')
+    && ['per_diem.breakfast','per_diem.lunch','per_diem.dinner','per_diem.supper','per_diem.taxi','salary.base','salary.dayKm','salary.nightKm','salary.dfsDayKm','salary.dfsNightKm','salary.reserveHour','salary.standbyHour'].includes(item.key)
     && typeof item.sourceDocument === 'string' && Boolean(item.sourceDocument.trim())
     && typeof item.sourceFingerprint === 'string' && Boolean(item.sourceFingerprint.trim())
     && typeof item.effectiveFrom === 'string' && validDay(item.effectiveFrom)
