@@ -33,6 +33,8 @@ jobs:
           mkdir -p "$job/dependencies"
           cp package.json package-lock.json "$job/dependencies/"
           env -i PATH="$PATH" HOME="$job" npm ci --prefix "$job/dependencies" --cache "$job/npm-cache" --ignore-scripts --no-audit --no-fund
+          env -i PATH="$PATH" HOME="$job" npm install --prefix "$job/dependencies" --cache "$job/npm-cache" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          env -i PATH="$PATH" HOME="$job" PLAYWRIGHT_BROWSERS_PATH="$job/browser-cache" node "$job/dependencies/node_modules/playwright/cli.js" install --with-deps chromium
       - name: Verify synthetic contract
         run: node scripts/regression-staged-preparation-prototype.mjs
       - name: Run attested real cold repeat invalidation and independent comparisons

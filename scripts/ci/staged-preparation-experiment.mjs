@@ -21,7 +21,7 @@ const raw=path.join(root,'raw');fs.mkdirSync(raw);assert.equal(spawnSync('tar',[
 fs.rmSync(path.join(raw,'.env.example'),{force:true});
 const proof=attestGitRaw({repository,commit,rawRoot:raw});
 fs.symlinkSync(dependencies,path.join(raw,'node_modules'));
-const nodeGates=['regression-preparation-crewlock-replay','regression-v1392-regulation-replay','regression-source-preparation-cache','regression-free-day-postponement','regression-free-day-held','regression-free-day-physical','regression-free-day-telegram-preparation','regression-financial-read-model','regression-financial-review-owner-negative','regression-notification-diagnostic'];
+const nodeGates=['regression-preparation-crewlock-replay','regression-v1392-regulation-replay','regression-source-preparation-cache','regression-free-day-postponement','regression-free-day-held','regression-free-day-telegram-preparation','regression-financial-read-model','regression-financial-review-owner-negative','regression-notification-diagnostic'];
 const gates=[['--check','server.mjs'],...nodeGates.map(name=>['scripts/'+name+'.mjs'])];
 const common={dependencyRoot:dependencies,gates},storage=path.join(root,'store');
 const results={commit,node:process.version,scope:'disposable parallel experiment only',gates,phases:[],differences:[],productionBlockers:['fsync generations parent directory','immutable generation/dependency snapshots','process containment','stale lock ends job'],consumersChanged:false};
@@ -37,6 +37,7 @@ try{
  const prepared=JSON.parse(fs.readFileSync(path.join(storage,'current.json')));const validation=path.join(root,'validation');fs.cpSync(path.join(storage,'generations',prepared.id,'prepared'),validation,{recursive:true,dereference:false});
  // Direct tooling in a separate disposable validation copy, never production callers.
  for(const args of [['node_modules/typescript/bin/tsc','--noEmit'],['scripts/p1-concierge-journey/compile.mjs'],['node_modules/vite/bin/vite.js','build']]){run(process.execPath,args,validation,{NODE_OPTIONS:`--import=${path.join(validation,'scripts/ci/smoke-deny-network.mjs')}`});results.phases.push({phase:args[0],status:'PASS'});}
+ run(process.execPath,['scripts/regression-free-day-physical.mjs'],validation,{NODE_OPTIONS:`--import=${path.join(validation,'scripts/ci/experiment-loopback-only.mjs')}`,PLAYWRIGHT_BROWSERS_PATH:path.join(job,'browser-cache'),...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{PLAYWRIGHT_CHROMIUM_EXECUTABLE:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});results.phases.push({phase:'synthetic-physical-pdf-browser',status:'PASS'});
  results.status='PASS';
 }catch(error){results.status='FAILED';results.failure=error.message;process.exitCode=1;}
 finally{fs.writeFileSync(path.join(job,'results.json'),JSON.stringify(results,null,2)+'\n');console.log(JSON.stringify(results));}
