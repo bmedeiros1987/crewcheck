@@ -8,6 +8,12 @@ on:
       - 'shared/myCrewCareSyncPolicy*'
       - 'shared/myCrewCareNativeAdapter*'
       - 'shared/myCrewCareController*'
+      - 'shared/myCrewCareObservedContract*'
+      - 'shared/myCrewCareObservedCoordinator*'
+      - 'scripts/regression-mycrewcare-observed-coordinator.mjs'
+      - 'scripts/regression-mycrewcare-observed.mjs'
+      - 'scripts/fixtures/mycrewcare-observed/**'
+      - 'docs/mycrewcare-observed-contract-off.md'
       - 'client/src/components/mycrewcare/**'
       - 'client/src/hooks/useMyCrewCareV3.ts'
       - 'client/src/lib/myCrewCareV3Runtime.ts'
@@ -41,11 +47,16 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Isolated synthetic DOM test dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/mycrewcare-dom" --no-package-lock --ignore-scripts jsdom@22.1.0
+          echo "WAKEUP_JSDOM_PACKAGE=$RUNNER_TEMP/mycrewcare-dom/package.json" >> "$GITHUB_ENV"
       - name: Focused contracts before canonical preparation
         run: |
           node scripts/assert-mycrewcare-v3-ownership.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs scripts/regression-mycrewcare-controller.mjs
+            TZ="$zone" node --test scripts/regression-mycrewcare-observed.mjs scripts/regression-mycrewcare-observed-coordinator.mjs
           done
       - name: Complete canonical preparation
         run: node scripts/v139/apply.mjs
@@ -54,6 +65,7 @@ jobs:
           node scripts/assert-mycrewcare-v3-ownership.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs scripts/regression-mycrewcare-controller.mjs
+            TZ="$zone" node --test scripts/regression-mycrewcare-observed.mjs scripts/regression-mycrewcare-observed-coordinator.mjs
           done
           node scripts/regression-p0-525-stay-physical-association.mjs
           node scripts/regression-p1-566-stay-wakeup-concierge-context.mjs
