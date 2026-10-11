@@ -23,7 +23,7 @@ function localStamp(ms, zone) {
     hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', timeZoneName: 'longOffset' }).formatToParts(ms);
   const part = type => parts.find(item => item.type === type)?.value;
   const offset = part('timeZoneName').replace('GMT', '') || '+00:00';
-  const milliseconds = String(ms % 1000).padStart(3, '0');
+  const milliseconds = String((ms % 1000 + 1000) % 1000).padStart(3, '0');
   return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}:${part('second')}.${milliseconds}${offset}`;
 }
 

@@ -76,4 +76,10 @@ assert.equal(JSON.stringify(good).includes('synthetic-never-exposed'), false);
 // FS3 is explicit, with no implicit LA/LAN or IATA/ICAO alias resolution.
 state('available', { ...request, carrierFsCode: 'LAN' }, [{ ...row, carrierFsCode: 'LAN' }]);
 state('no_data', { ...request, carrierFsCode: 'LAN' }, [row]);
+const historical = structuredClone(row);
+historical.operationalTimes.scheduledGateDeparture.dateUtc = '1969-12-31T20:00:00.123Z';
+historical.operationalTimes.scheduledGateArrival.dateUtc = '1969-12-31T22:00:00.123Z';
+const history = run({ ...request, departureDate: '1969-12-31', scheduledDepartureUtc: '1969-12-31T20:00:00.123Z' }, [historical]);
+assert.equal(history.state, 'available');
+assert.equal(history.candidate.scheduledDeparture, '1969-12-31T17:00:00.123-03:00');
 console.log(`PASS Cirium Radar pure OFF contract: ${count} cases, TZ=${process.env.TZ}, zero network/credentials`);
