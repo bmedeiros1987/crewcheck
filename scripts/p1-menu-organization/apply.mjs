@@ -50,6 +50,7 @@ if(!source.includes("from '@/lib/menuUsagePreference'")) {
  const labels = {'theme':'Modo claro premium','pulse':'CrewCheck Pulse','wakeup-phone':'Telefone do despertador','virtual-base':'Base virtual','telegram':'Notificações via Telegram'};
  for(const [id,label] of Object.entries(labels)) {
   const pattern=new RegExp(`<((?:Toggle|Field)Setting) ([^\\n]*label="${label}"[^\\n]*?)/>`);
+  if(!pattern.test(source)&&source.includes("from '@/components/notifications/NotificationCenter'")&&['pulse','wakeup-phone','telegram'].includes(id))continue;
   if(!pattern.test(source))throw Error(`[menu-organization] unavailable nested setting ${id}`);
   source=source.replace(pattern,`<div id="cc-setting-${id}" tabIndex={-1}><$1 $2/></div>`);
  }

@@ -299,3 +299,19 @@ export async function requireIdentity(req, res) {
   const profile = await ensureProfile(db, email, payload?.name);
   return { db, email, profile, admin: Boolean(payload?.admin || isAdminEmail(email)), payload };
 }
+
+// Existing-account authentication for observational/private preference routes.
+// Never calls ensureProfile or inserts a profile after account deletion.
+export async function requireExistingIdentity(req, res) {
+  let payload;
+  try { payload = verifyJwt(requestToken(req)); }
+  catch (error) { sendJson(res, Number(error?.status || 503), { ok: false, message: error?.message || 'Autenticação indisponível.' }); return null; }
+  const db = await dbPool();
+  if (!db) { sendJson(res, 503, { ok: false, message: 'Banco Aiven indisponível.' }); return null; }
+  const email = safeEmail(payload?.email), ownerId = String(payload?.sub || '');
+  if (!email || !ownerId) { sendJson(res, 401, { ok: false, message: 'Faça login para continuar.' }); return null; }
+  const [rows] = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=? LIMIT 1', [email]);
+  const profile = rows[0];
+  if (!profile || String(profile.public_id || '') !== ownerId) { sendJson(res, 401, { ok: false, message: 'Sessão da conta não é mais válida.' }); return null; }
+  return { db, email, profile, admin: Boolean(payload?.admin || isAdminEmail(email)), payload };
+}

@@ -547,8 +547,15 @@ public class MainActivity extends Activity {
         try {
             boolean loc = hasCrewCheckLocationPermission();
             boolean notif = hasCrewCheckNotificationPermission();
+            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            boolean appEnabled = notificationManager != null && (Build.VERSION.SDK_INT < Build.VERSION_CODES.N || notificationManager.areNotificationsEnabled());
+            Boolean channelEnabled = null;
+            if (notificationManager != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationChannel channel = notificationManager.getNotificationChannel(NOTIFICATION_CHANNEL_ID);
+                if (channel != null) channelEnabled = channel.getImportance() != NotificationManager.IMPORTANCE_NONE;
+            }
             boolean unrestricted = isCrewCheckBatteryUnrestricted();
-            return "{\"location\":" + loc + ",\"notifications\":" + notif + ",\"background\":" + unrestricted + ",\"batteryUnrestricted\":" + unrestricted + "}";
+            return "{\"location\":" + loc + ",\"notifications\":" + notif + ",\"notificationAppEnabled\":" + appEnabled + ",\"notificationChannelEnabled\":" + channelEnabled + ",\"background\":" + unrestricted + ",\"batteryUnrestricted\":" + unrestricted + "}";
         } catch (Exception ex) {
             return "{\"location\":false,\"notifications\":false,\"background\":false,\"batteryUnrestricted\":false}";
         }

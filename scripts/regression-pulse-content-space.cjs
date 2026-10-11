@@ -75,7 +75,11 @@ async function visibleTextBounds(page, selector) {
   for(const width of (process.env.PULSE_SPACE_QUICK==='1'?[320]:[320,390,1440])) for(const height of (process.env.PULSE_SPACE_QUICK==='1'?[420]:[420,844])) for(const theme of (process.env.PULSE_SPACE_QUICK==='1'?['light']:['light','dark'])) for(const size of (process.env.PULSE_SPACE_QUICK==='1'?[200]:[200,150,100])) {
    const context=await browser.newContext({viewport:{width,height},hasTouch:width<500,isMobile:width<500,serviceWorkers:'block',timezoneId:'America/Sao_Paulo'});
    await context.route('**/*',route=>{const u=new URL(route.request().url());if(u.origin!==origin)return route.abort();if(u.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[],"enabled":false}'});return route.continue();});
-   await context.addInitScript(fixtureScope.qaSeed,{theme,kind:fixtureScope.qaRoster('multi'),amount:1234567.89});const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
+   await context.addInitScript(fixtureScope.qaSeed,{theme,kind:fixtureScope.qaRoster('multi'),amount:1234567.89});
+   // Explicit consent belongs to this synthetic owner. Unowned legacy flags must
+   // not enable Pulse after the notification-center migration.
+   await context.addInitScript(()=>localStorage.setItem('crewcheck:notification-preferences:v1:financial-ui-qa',JSON.stringify({ownerId:'financial-ui-qa',revision:1,preferences:{settings:{crewcheck_pulse_enabled:true}}})));
+   const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'settings'})));await page.locator('#cc-text-size').selectOption(String(size));await settle(page);
    await page.evaluate(()=>{document.documentElement.style.setProperty('--cc-safe-area-top','24px');document.documentElement.style.setProperty('--cc-safe-area-bottom','20px');document.querySelector('body > nav.cz-bottom-nav').style.setProperty('bottom','20px','important');window.dispatchEvent(new Event('resize'));});await settle(page);
    const title='QA crítico: confira toda a programação da escala oficial antes de seguir para o aeroporto';

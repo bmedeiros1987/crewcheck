@@ -1,0 +1,4 @@
+Controlled CSS rollback of published correction: shipping CSS before PR990 + Wellhub CSS from57cdc970, current materialized JSX.
+Exit1. Assertion: minimum plan must not inherit generic card columns.
+Current main6306923d CSS and proposed regression: 14 cases PASS (12 existing +2 reduced keyboard viewport), light/dark, 100/150%, widths320/390/768. Real materialized card/detail JSX, no private data/network. Fixed bars/safe areas/keyboard are simulated; does not assert complete authenticated app or real device keyboard.
+Actual prepared Wellhub card JSX/shipping CSS: long names/addresses, 320/390/768, enlarged font, no overlap, first/last clear fixed bars, simulated keyboard/safe areas in light/dark: PASS

@@ -1,0 +1,1 @@
+export function subscribeWellhubClock(onTick: (now: number) => void, windowTarget: Pick<Window, 'addEventListener' | 'removeEventListener'>, documentTarget: Pick<Document, 'addEventListener' | 'removeEventListener' | 'visibilityState'>, clock?: { now(): number; setTimeout(callback: () => void, ms: number): any; clearTimeout(id: any): void }): () => void;

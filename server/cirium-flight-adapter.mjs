@@ -7,8 +7,17 @@ function timeValue(value) {
 }
 
 function finiteNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
+  // Only real numbers and non-empty numeric strings count. A missing provider
+  // value must stay null: displaying it as 0 would assert a measured delay or
+  // duration that the provider never reported.
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 const STATUS_LABELS = {
@@ -108,9 +117,15 @@ export function normalizeCiriumFlightStatus(row = {}, context = {}) {
 export function ciriumCoverage(item = {}) {
   const fields = [
     'status', 'gate', 'terminal', 'arrivalGate', 'arrivalTerminal', 'baggage',
-    'departure', 'arrival', 'origin', 'destination', 'aircraft', 'registration', 'updatedAt',
+    'departure', 'arrival', 'origin', 'destination', 'aircraft', 'registration', 'updatedAt', 'delays',
   ];
-  const present = Object.fromEntries(fields.map((field) => [field, field === 'status' ? Boolean(item.statusProvided) : Boolean(item[field])]));
+  const present = Object.fromEntries(fields.map((field) => {
+    if (field === 'status') return [field, Boolean(item.statusProvided)];
+    if (field === 'delays') {
+      return [field, Object.values(item.delays || {}).some((value) => typeof value === 'number')];
+    }
+    return [field, Boolean(item[field])];
+  }));
   const count = Object.values(present).filter(Boolean).length;
   return { present, fields: fields.length, populated: count, percent: Math.round((count / fields.length) * 100) };
 }

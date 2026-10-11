@@ -1,0 +1,5 @@
+Wellhub hours: unit IANA, current instant, weekends, 24h, midnight, pauses, boundaries, holiday/stale unknown, stable rank after filters: PASS
+App clock: minute boundary, focus/visibility resume, cleanup and no network: PASS
+Official aliases and honest Uber fallback without coordinates/credentials: PASS
+CrewCierge request instant: same labels/rank, Fortaleza before BSB, holiday unknown, footer and text budget: PASS
+Independent reproducers: contradictory 24h unknown; holiday origin survives midnight; coherent 24h/nonholiday overnight preserved: PASS

@@ -1,0 +1,10 @@
+.cc-bids-alert-preferences { overflow-wrap: anywhere; }
+.cc-bids-alert-preferences summary { min-height: 44px; padding: 10px 0; cursor: pointer; }
+.cc-bids-alert-preferences fieldset { display: grid; gap: 14px; min-width: 0; min-inline-size: 0; margin-top: 12px; padding: 12px; border: 1px solid currentColor; }
+.cc-bids-alert-preferences label { display: grid; gap: 6px; min-width: 0; }
+.cc-bids-alert-preferences input, .cc-bids-alert-preferences select { width: 100%; min-width: 0; max-width: 100%; min-height: 44px; padding: 8px; font: inherit; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 8px; }
+.cc-bids-alert-preferences .cc-bids-alert-optin { display: flex; gap: 10px; align-items: flex-start; }
+.cc-bids-alert-preferences .cc-bids-alert-optin input { width: 24px; min-height: 24px; flex: 0 0 24px; padding: 0; }
+.cc-bids-alert-preferences button { min-height: 44px; max-width: 100%; padding: 10px 14px; font: inherit; white-space: normal; overflow-wrap: anywhere; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 8px; }
+.cc-bids-alert-preferences :focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.cc-bids-alert-preferences :is(h2,summary,input,select,button) { scroll-margin-top: calc(96px + env(safe-area-inset-top, 0px)); }

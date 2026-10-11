@@ -1,3 +1,4 @@
+import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
 import { playCrewCheckNoticeSound, stopCrewCheckNotificationSound } from './pulseSound';
 import { createPulseSession, type PulseSessionState } from './pulseSession';
 import type {
@@ -79,7 +80,7 @@ function normalizeMessage(message: CrewCheckPulseMessage): CrewCheckPulseMessage
 }
 
 function pulseEnabled(): boolean {
-  return safeLocalGet(PULSE_ENABLED_KEY, '1') !== '0';
+  return readAccountNotificationSetting(PULSE_ENABLED_KEY,'0') !== '0';
 }
 
 function deviceNotificationsEnabled(): boolean {
@@ -241,7 +242,8 @@ export function clearCrewCheckPulse(): void {
 }
 
 export function setCrewCheckPulseEnabled(enabled: boolean): void {
-  safeLocalSet(PULSE_ENABLED_KEY, enabled ? '1' : '0');
+  // Preferences are edited only in the account Notification Center.
+  if(typeof window!=='undefined')window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'notifications'}));
   if (!enabled) { stopCrewCheckNotificationSound(); session.clear(); }
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('crewcheck:pulse-preference', { detail: { enabled } }));
@@ -254,6 +256,11 @@ export function setCrewCheckDeviceNotificationsEnabled(enabled: boolean): void {
 
 if (typeof window !== 'undefined' && !window.__crewcheckPulseEventBridgeV2) {
   window.__crewcheckPulseEventBridgeV2 = true;
+  const clearDisabledPreference=()=>{if(!pulseEnabled())clearCrewCheckPulse();};
+  window.addEventListener('crewcheck:notification-preferences-changed',clearDisabledPreference);
+  window.addEventListener('crewcheck:auth-changed',clearCrewCheckPulse);
+  window.addEventListener('crewcheck:auth-expired',clearCrewCheckPulse);
+  window.addEventListener('storage',event=>{if(['crewcheck_auth_token','crewcheck_auth_user'].includes(event.key||''))clearCrewCheckPulse();else if(!event.key||event.key.startsWith('crewcheck:notification-preferences:'))clearDisabledPreference();});
   window.addEventListener(CREWCHECK_PULSE_EVENT, (event: Event) => {
     const detail = (event as CustomEvent<CrewCheckPulseMessage>).detail;
     if (detail?.title) publishCrewCheckPulse(detail);

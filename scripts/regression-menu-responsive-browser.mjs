@@ -237,7 +237,7 @@ async function inspect(page, label) {
     if (chip.copy.x < chip.icon.right || chip.copy.x - chip.icon.right > 12) failures.push('Favorite icon and text are not aligned with a compact gap');
   }
   if (metrics.columns !== metrics.expectedColumns) failures.push('Wrong navigation column count');
-  if (metrics.count + metrics.chipCount !== 40) failures.push(`Expected 40 canonical destinations once each (catalog + favorites); got ${metrics.count} + ${metrics.chipCount}`);
+  if (metrics.count + metrics.chipCount !== 41) failures.push(`Expected 41 canonical destinations once each (catalog + favorites); got ${metrics.count} + ${metrics.chipCount}`);
   if (metrics.chipCount !== 3) failures.push(`Expected the 3 default favorites above the catalog; got ${metrics.chipCount}`);
   if (metrics.editButton !== 'Editar favoritos') failures.push('Edit favorites action missing');
   if (metrics.favoriteCount !== 0) failures.push(`Favorite stars must be hidden outside edit mode; got ${metrics.favoriteCount}`);

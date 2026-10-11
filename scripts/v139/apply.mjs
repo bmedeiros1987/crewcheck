@@ -206,6 +206,11 @@ await import('../fixed-navigation-headers.mjs');
 await import('../standby-sequence-card/apply.mjs');
 await import('../amil-exact-coverage/apply.mjs');
 await import('../finalize-duty-clock-provenance.mjs');
+await import('../wellhub-hours/apply.mjs');
+await import('../wellhub-deeplinks/apply.mjs');
+await import('../stay-editor/apply.mjs');
+await import('../bids-default/apply.mjs');
+await import('../bids-default/wakeup-layout.mjs');
 
 }
 

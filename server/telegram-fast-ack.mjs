@@ -1,3 +1,4 @@
+import { runCrewCheckPushQueue } from './web-push/bidsProducer.mjs';
 import { handleSimulatedWorker } from './free-day-simulated-worker.mjs';
 import { handlePersonalConsent } from './free-day-personal-consent.mjs';
 import http from 'node:http';
@@ -375,6 +376,7 @@ async function runSchedulerCycle() {
       if (outcome.accepted) summary.sent += 1;
       else if (!['skipped', 'pending'].includes(outcome.status)) summary.failed += 1;
     }
+    summary.crewCheckPush = await runCrewCheckPushQueue(db);
     summary.commute = await runCommuteMonitorCycle(db);
   } catch (error) {
     summary.error = String(error?.message || error).slice(0, 500);

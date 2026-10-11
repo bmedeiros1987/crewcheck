@@ -28,8 +28,14 @@ const main = fs.readFileSync('client/src/main.tsx', 'utf8');
 
 // 1. A marca e o aviso têm superfícies separadas no mesmo header em fluxo.
 //    Brand conserva navegação mesmo sem aviso; só o frame monta o Pulse ativo.
-assert.match(home, /<InternalHeaderFrame>\s*<Brand back=\{view !== 'cockpit'\} onMenu=\{view === 'cockpit' \? \(\) => setDrawer\(true\) : undefined\}\/>\s*<\/InternalHeaderFrame>/,
-  'o header deve montar marca navegável e frame de avisos');
+const header = home.match(/<InternalHeaderFrame>\s*<Brand back=\{view !== 'cockpit'\}([\s\S]*?)\/>\s*<\/InternalHeaderFrame>/);
+assert.ok(header, 'o header deve montar marca navegável e frame de avisos');
+assert.match(header[1], /view === 'cockpit' \? \(\) => setDrawer\(true\) : undefined/,
+  'o menu do cockpit permanece navegável');
+if (home.includes('// stay-editor-context-v2')) {
+  assert.match(header[1], /onMenu=\{view === 'presentation' && \(readStayEditorIntent\(\) \|\| hasStoredStayEditorOrigin\(\)\) \? returnFromStayProgramEditor/,
+    'o retorno do editor pertence ao owner Home sem duplicar Pulse');
+}
 assert.equal((home.match(/<InternalHeaderFrame>/g) || []).length, 1, 'a aplicação deve montar um único header global');
 assert.match(frame, /className="cc-header-notice"><CrewCheckPulse compact\/>/,
   'o frame deve montar um único Pulse fora da navegação fixa');

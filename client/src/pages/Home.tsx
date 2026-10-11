@@ -1,3 +1,5 @@
+import {NotificationCenter,openNotificationSettings} from '@/components/notifications/NotificationCenter';
+import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
 import { FreeDayPostponementAlerts } from '@/components/FreeDayPostponementAlerts';
 import { beginOwnedPlannedImport, loadOwnedPlannedRoster, saveOwnedPlannedRoster, clearOwnedPlannedRoster, isCurrentPlannedRoster, type OwnedPlannedRoster } from '@/lib/plannedRosterStore';
 import { payableReserveHours } from '@/lib/financialReserveCredits';
@@ -116,7 +118,7 @@ import '@/components/v1394/v1394.css';
 import '@/components/v1399/premium.css';
 
 type ZeroView =
-  | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
+  | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'notifications' | 'maintenance' | 'import' | 'features'
   | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community' | 'compare' | 'regulation' | 'bids' | 'admin';
 
 type ZeroLeg = {
@@ -175,6 +177,7 @@ const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
   get(key: string, fallback = '') {
+    const preference=readAccountNotificationSetting(key,fallback);if(preference!==undefined)return preference;
     if (isFinancialSetting(key)) return readFinancialSetting(key, fallback);
     try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
   },
@@ -1596,7 +1599,7 @@ function BottomNav({ view, setView, openMenu, alertCount = 0, alertSignature = '
   const items: Array<[ZeroView, string, any]> = [['cockpit','Cockpit',HomeIcon],['roster','Escala',CalendarDays],['alerts','Alertas',Bell],['load','Carga',BriefcaseBusiness],['settings','Menu',Menu]];
   return <nav className="cz-bottom-nav" aria-label="Navegação principal">{items.map(([v, label, Icon]) => {
     const isMenu = v === 'settings';
-    const active = view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','mycar','gyms','iflight','updates','plans','community','regulation','bids','admin','maintenance'].includes(view));
+    const active = view===v || (isMenu && ['settings','notifications','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','mycar','gyms','iflight','updates','plans','community','regulation','bids','admin','maintenance'].includes(view));
     return <button key={v} className={active ? 'active' : ''} onClick={() => { if (v === 'alerts') markAlertsRead(); isMenu ? openMenu() : setView(v); }}><Icon size={23}/><span>{label}</span>{v==='alerts' && visibleAlertCount > 0 && <em aria-label={`${visibleAlertCount} alerta(s) novo(s)`}>{visibleAlertCount}</em>}</button>;
   })}</nav>;
 }
@@ -1900,7 +1903,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
     ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['compare','Planejado x atual','Mudanças e impacto financeiro',GitCompareArrows], ['bids','BIDS','Preferências para a próxima escala',CalendarDays], ['alerts','Irregularidades','Alertas confirmados',AlertTriangle], ['regulation','Regulamentação','RBAC 117, ACT e limites',ShieldCheck], ['load','Carga de trabalho','Horas usadas x limites',BriefcaseBusiness], ['plans','Assinaturas','Planos, recursos e ligações',ShieldCheck], ['community','Pessoas e compartilhar','QR, visitantes, comparação e chat',UserRound], ['departure','Planejador de Saída','Quando sair, rota e trânsito',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
     ['concierge','Concierge Telegram','PDF, comandos e voz',Send], ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF e alertas',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['gyms','Locais próximos','Academias, saúde e serviços',MapIcon], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
     ['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['crew','Crew / Chefe','Tripulação e adicional',UserRound], ['calendar','Calendário','Google/ICS',CalendarDays],
-    ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Escalas salvas',Database], ['settings','Configurações','Perfil e preferências',Settings],
+    ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Escalas salvas',Database], ['notifications','Notificações','O que, por onde e quando',Bell], ['settings','Configurações','Perfil e preferências',Settings],
   ];
   if (admin) nav.push(['updates','Atualizações','Hotfix e pacote ZIP',Upload], ['maintenance','Manutenção','Prévia administrativa',Lock], ['admin', 'Admin', 'Saúde, APIs, termos e operação', ShieldCheck]);
   const jump = (v: ZeroView) => { setView(v); close(); };
@@ -3068,22 +3071,16 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     <ToggleSetting icon={Dumbbell} label="Autocheck-in em academia" storageKey="crewcheck:gym-auto-checkin" defaultOn={false} detail="Compartilha presença por 90 min somente ao entrar no raio configurado"/>
     <ToggleSetting icon={Sun} label="Modo claro premium" storageKey="crewcheck_light_premium" defaultOn={false}/>
 
+    <section aria-label="Acessibilidade"><h3>Acessibilidade</h3><TextSizeSetting/></section>
     <h3>Perfil</h3>
     <FieldSetting icon={Globe2} label="País do telefone" storageKey="crewcheck_phone_country" placeholder="Brasil +55"/>
-    <FieldSetting icon={Phone} label="Telefone do despertador" storageKey="crewcheck_wakeup_phone" placeholder="61996071663"/>
-    <FieldSetting icon={Bell} label="Chat do Telegram" storageKey="crewcheck_telegram_chat_id" placeholder="Cole seu chat ID"/>
-    <FieldSetting icon={Bell} label="Canal do despertador" storageKey="crewcheck_wakeup_channel" placeholder="telegram | ligação | ambos"/>
+
+
+
     <FieldSetting icon={Building2} label="Base virtual" storageKey="crewcheck_virtual_base" placeholder="Ex.: BSB / CGH / GRU"/>
     <ToggleSetting icon={GraduationCap} label="Sou instrutor" storageKey="crewcheck_instructor" defaultOn={false}/>
 
-    <h3>Notificações e concierge</h3>
-    <ToggleSetting icon={Bell} label="CrewCheck Pulse" storageKey="crewcheck_pulse_enabled" detail="Banner contextual dentro do app"/>
-    <NotificationPermissionSetting/>
-    <TextSizeSetting/>
-    <NotificationSoundSetting/>
-    <ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/>
-    <ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/>
-    <ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/>
+    <h3>Notificações</h3><button onClick={openNotificationSettings}>Definir o que, por onde e quando em Notificações</button>
 
     {admin && <><h3>Administração</h3><section className="cz-settings-actions"><button onClick={() => setView('admin')}><ShieldCheck/> Abrir painel Admin</button></section></>}
 
@@ -4040,6 +4037,7 @@ function WakeupView({ event }: { event: ZeroLeg }) {
   // Continuação de jornada não tem apresentação própria; o despertador usa a
   // decolagem em vez de anunciar "Conexão/Solo" como horário (#512).
   const presentation = publishedPresentationOf(event) || safe(event.departure, 'A confirmar');
+  useEffect(()=>{const updateNotificationChoices=()=>{setLead(String(wakeupLeadMinutes()));setChannel(wakeupChannel());setChatId(storage.get('crewcheck_telegram_chat_id',''));setPhone(storage.get('crewcheck_wakeup_phone',''));};updateNotificationChoices();window.addEventListener('crewcheck:notification-preferences-changed',updateNotificationChoices);window.addEventListener('crewcheck:auth-changed',updateNotificationChoices);return()=>{window.removeEventListener('crewcheck:notification-preferences-changed',updateNotificationChoices);window.removeEventListener('crewcheck:auth-changed',updateNotificationChoices);};},[]);
 
   useEffect(() => {
     Promise.all([
@@ -4050,13 +4048,7 @@ function WakeupView({ event }: { event: ZeroLeg }) {
       .catch(() => setHealth({ ok: false, message: 'Despertador aguardando conexão.' }));
   }, []);
 
-  function savePrefs() {
-    storage.set('crewcheck_wakeup_lead_minutes', lead);
-    storage.set('crewcheck_wakeup_channel', channel);
-    storage.set('crewcheck_telegram_chat_id', chatId);
-    if (admin) storage.set('crewcheck_wakeup_phone', phone);
-    toast.success('Preferências do despertador salvas.');
-  }
+  function savePrefs() { /* Account preferences are saved exclusively in Menu → Notificações. */ }
 
   async function testAlarm(testType: 'telegram-message' | 'telegram-call' | 'phone-call') {
     savePrefs();
@@ -4118,7 +4110,7 @@ function WakeupView({ event }: { event: ZeroLeg }) {
     }
   }
 
-  return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><NotificationReadiness/><p>Mensagens Telegram ficam disponíveis para todos; ligações via Telegram respeitam a franquia mensal do plano. O teste telefônico segue exclusivo do administrador.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Horário calculado" value={wakeupDateLabel(planned)} detail={`${lead} min antes da apresentação`}/><KpiCard icon={Bell} title="Canal" value={wakeupChannelLabel(channel)} detail={(channel.includes('liga') || channel === 'ambos') ? (health?.phoneCallMessage || 'Verificando Infobip') : (health?.message || 'Verificando configuração')}/><KpiCard icon={Hotel} title="Hotel/local" value={hotel} detail={`Apresentação ${presentation}`}/></section><section className="cz-toolbox cz-wakeup-card"><h2>Configuração do despertador</h2><p>Vincule o bot para liberar mensagens e ligações via Telegram. Cada ligação via Telegram consome uma unidade da franquia mensal; mensagens e lembretes locais não consomem. O teste telefônico usa as credenciais da Infobip no servidor e só aparece para o administrador.</p><div className="cz-form-grid"><label><span>Canal preferido</span><select value={channel} onChange={(e) => setChannel(e.target.value)}><option value="telegram">Mensagem no Telegram</option><option value="telegram-call">Ligação via Telegram</option>{admin && <option value="ligacao">Ligação telefônica Premium</option>}{admin && <option value="ambos">Ligação telefônica + Telegram</option>}</select></label><label><span>Antecedência</span><select value={lead} onChange={(e) => setLead(e.target.value)}><option value="60">60 min antes</option><option value="75">75 min antes</option><option value="90">90 min antes</option><option value="120">120 min antes</option></select></label><label><span>Chat do Telegram</span><input value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="Preenchido ao vincular o bot"/></label>{admin && <label><span>Telefone do administrador com DDI</span><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+5561999999999"/></label>}</div><div className="cz-tool-actions"><button onClick={savePrefs}><Save/> Salvar preferências</button><button onClick={openTelegramBinding}><Send/> Vincular Telegram</button><button onClick={() => testAlarm('telegram-message')} disabled={Boolean(activeTest)}><Send/> {activeTest === 'telegram-message' ? 'Enviando...' : 'Testar Telegram'}</button><button onClick={() => testAlarm('telegram-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'telegram-call' ? 'Ligando...' : 'Testar ligação via Telegram'}</button>{admin && <button onClick={() => testAlarm('phone-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'phone-call' ? 'Ligando...' : 'Testar Infobip Premium'}</button>}<button onClick={activateServerReminder}><Bell/> Ativar no servidor</button><button onClick={snoozeTelegram}><Clock/> Soneca 10 min</button></div>{admin && <p><small>{health?.phoneCallMessage || 'Verificando a integração de ligação Premium…'}</small></p>}</section><section className="cz-stack-list"><article className="cz-roster-card"><div className="cz-roster-main"><span className="cz-roster-icon"><Bell/></span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · apresentação {presentation}</p><small>{event.origin} → {event.destination} · {health?.telegram ? 'Telegram configurado' : 'Telegram aguardando vínculo'} · {health?.telegramCall ? 'Ligação Telegram disponível' : 'Ligação Telegram requer usuário autorizado'} · {health?.phoneCall ? `${health?.phoneProvider?.selected === 'infobip' ? 'Infobip' : 'Ligação admin'} configurada` : (health?.phoneCallMessage || 'Ligação admin aguardando canal')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-routine-strip"><span>Telegram para todos</span><span>{health?.usage ? `${health.usage.used} / ${health.usage.limit} ligações no mês` : 'Franquia por plano'}</span><span>Teste admin protegido</span><span>Fallback local</span></div></article></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><NotificationReadiness/><p>Mensagens Telegram ficam disponíveis para todos; ligações via Telegram respeitam a franquia mensal do plano. O teste telefônico segue exclusivo do administrador.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Horário calculado" value={wakeupDateLabel(planned)} detail={`${lead} min antes da apresentação`}/><KpiCard icon={Bell} title="Canal" value={wakeupChannelLabel(channel)} detail={(channel.includes('liga') || channel === 'ambos') ? (health?.phoneCallMessage || 'Verificando Infobip') : (health?.message || 'Verificando configuração')}/><KpiCard icon={Hotel} title="Hotel/local" value={hotel} detail={`Apresentação ${presentation}`}/></section><section className="cz-toolbox cz-wakeup-card"><h2>Configuração do despertador</h2><p>Vincule o bot para liberar mensagens e ligações via Telegram. Cada ligação via Telegram consome uma unidade da franquia mensal; mensagens e lembretes locais não consomem. O teste telefônico usa as credenciais da Infobip no servidor e só aparece para o administrador.</p><p>Preferências do despertador em Menu → Notificações.</p><button onClick={openNotificationSettings}>Revisar preferências de notificação</button><div className="cz-tool-actions"><button onClick={openTelegramBinding}><Send/> Vincular Telegram</button><button onClick={() => testAlarm('telegram-message')} disabled={Boolean(activeTest)}><Send/> {activeTest === 'telegram-message' ? 'Enviando...' : 'Testar Telegram'}</button><button onClick={() => testAlarm('telegram-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'telegram-call' ? 'Ligando...' : 'Testar ligação via Telegram'}</button>{admin && <button onClick={() => testAlarm('phone-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'phone-call' ? 'Ligando...' : 'Testar Infobip Premium'}</button>}<button onClick={activateServerReminder}><Bell/> Ativar no servidor</button><button onClick={snoozeTelegram}><Clock/> Soneca 10 min</button></div>{admin && <p><small>{health?.phoneCallMessage || 'Verificando a integração de ligação Premium…'}</small></p>}</section><section className="cz-stack-list"><article className="cz-roster-card"><div className="cz-roster-main"><span className="cz-roster-icon"><Bell/></span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · apresentação {presentation}</p><small>{event.origin} → {event.destination} · {health?.telegram ? 'Telegram configurado' : 'Telegram aguardando vínculo'} · {health?.telegramCall ? 'Ligação Telegram disponível' : 'Ligação Telegram requer usuário autorizado'} · {health?.phoneCall ? `${health?.phoneProvider?.selected === 'infobip' ? 'Infobip' : 'Ligação admin'} configurada` : (health?.phoneCallMessage || 'Ligação admin aguardando canal')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-routine-strip"><span>Telegram para todos</span><span>{health?.usage ? `${health.usage.used} / ${health.usage.limit} ligações no mês` : 'Franquia por plano'}</span><span>Teste admin protegido</span><span>Fallback local</span></div></article></section></>;
 }
 
 function PresentationManagerView({ events }: { events: ZeroLeg[] }) {
@@ -4798,6 +4790,7 @@ function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'alerts' || value === 'irregularities') return 'alerts';
   if (value === 'regulation' || value === 'regulamentacao' || value === 'regulamentação') return 'regulation';
   if (value === 'manual' || value === 'departure' || value === 'smartDeparture') return 'departure';
+  if(value==='notifications')return 'notifications';
   if (value === 'settings') return 'settings';
   if (value === 'import') return 'import';
   if (value === 'features') return 'features';
@@ -5172,6 +5165,7 @@ export default function Home() {
     {view === 'departure' && <Departure event={event}/>}
     {view === 'mycar' && <CarView event={event}/>}
     {view === 'iflight' && <IFlightPushView actions={actions}/>}
+    {view === 'notifications' && <NotificationCenter deviceSettings={<><NotificationReadiness/><NotificationPermissionSetting/><NotificationSoundSetting/></>}/>}
     {view === 'settings' && <SettingsView setView={setView} actions={actions}/>}
     {view === 'admin' && <AdminControlView/>}
     {view === 'updates' && <UpdateCenterView/>}
