@@ -96,6 +96,8 @@ async function visibleTextBounds(page, selector) {
       const stable=(before,after,label)=>{assert.ok(before&&after);assert.ok(Math.abs(before.y-after.y)<=1&&Math.abs(before.height-after.height)<=1,label+JSON.stringify({before,after}));};
       const header=await box('.cz-global-header');
       assert.equal(header.y,0,'Opaque header covers the top safe area');
+      const shield=await page.locator('.cz-global-header').evaluate(el=>{const p=getComputedStyle(el,'::before'),r=el.getBoundingClientRect();return{content:p.content,left:r.x+parseFloat(p.left),right:r.right-parseFloat(p.right),viewport:innerWidth,background:p.backgroundColor};});
+      assert.equal(shield.content,'\"\"');assert.ok(shield.left<=1&&shield.right>=shield.viewport-1,'Opaque shield covers viewport while header keeps content alignment');assert.notEqual(shield.background,'rgba(0, 0, 0, 0)');
       assert.ok(await page.locator('.cz-global-header').evaluate(el=>parseFloat(getComputedStyle(el).paddingTop))>=24,'Header reserves the simulated status bar');
       assert.equal(await page.locator('.cz-global-header').evaluate(el=>getComputedStyle(el).position),'fixed','Only scroll behavior stays pinned');
       assert.equal(await page.locator('.cz-global-header').evaluate(el=>Boolean(el.closest('.cz-menu-scroll'))),false,'Header remains outside the scroll container');
