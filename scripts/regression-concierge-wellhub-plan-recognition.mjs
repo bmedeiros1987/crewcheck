@@ -63,7 +63,7 @@ function harness(initialPlan = 'basic', gymPlan = 'wellhub', io = {}) {
     conciergeNextProgram: () => null,
     conciergeLocationContextV14335: () => ({ fresh: true, location: { city: 'Guarulhos', state: 'SP' } }),
     WEATHER_AIRPORT_POINTS: { GRU: { city: 'Guarulhos' } },
-    searchVerifiedWellhub: async input => { searches.push(clone(input)); return partners.filter(p => wellhubPlanAllows(input.plan, p.minimumPlan)); },
+    searchVerifiedWellhub: async input => { searches.push(clone(input)); return partners.filter(p => wellhubPlanAllows(input.plan, p.minimumPlan)).map(p => ({ ...p, eligibilityStatus: io.eligibilityStatus || 'included', address: 'Endereço sintético de teste', verifiedAt: '2026-10-09' })); },
     fetch: () => { throw new Error('No real network is permitted by this regression'); },
   });
   for (const name of ['conciergeSafeKey', 'conciergeSnapshotForProfile', 'conciergeMinimizeRoster', 'conciergeRosterDiagnostics', 'conciergeSaveSnapshot', 'conciergeSaveSnapshotAsync', 'conciergeLoadSnapshot']) {
@@ -122,9 +122,9 @@ test('saved Basic is replaced by Silver+, survives reload, and remains distinct 
   assert.equal((await h.load()).preferences.wellhubPlan, 'silver-plus', 'the next request can recover the stored plan');
   const next = await h.send('academia em Guarulhos/SP');
   assert.equal(h.searches[0].plan, 'silver-plus');
-  assert.match(next, /seu plano Silver\+/);
-  assert.match(next, /incluído no seu Silver\+ · mínimo da unidade: Basic/);
-  assert.match(next, /incluído no seu Silver\+ · mínimo da unidade: Silver\+/);
+  assert.match(next, /Academias .*Silver\+/);
+  assert.match(next, /Plano mínimo: Basic · compatível com Silver\+ pelo cadastro/);
+  assert.match(next, /Plano mínimo: Silver\+ · compatível com Silver\+ pelo cadastro/);
   assert.doesNotMatch(next, /seu plano Basic|seu Basic|Synthetic Gold gym/);
   assert.equal(h.writes.length, 1, 'querying a gym must not overwrite the saved tier');
   assert.equal((await h.load()).preferences.wellhubPlan, 'silver-plus');
@@ -144,11 +144,21 @@ test('explicit unknown or malformed plan asks for clarification without falling 
   }
 });
 
+test('unknown access from the search contract is not formatted as included', async () => {
+  const h = harness('silver-plus', 'wellhub', { eligibilityStatus: 'unknown' });
+  const reply = await h.send('academia em Guarulhos/SP');
+  assert.match(reply, /Acesso: não confirmado para seu Silver\+/);
+  assert.doesNotMatch(reply, /Acesso: ✓/);
+  assert.match(reply, /https:\/\/example.invalid\/synthetic-basic/);
+  assert.equal((await h.load()).preferences.wellhubPlan, 'silver-plus');
+  assert.equal(h.writes.length, 0);
+});
+
 test('wellhub gym names and unit tier text leave the persisted user plan untouched', async () => {
   const h = harness('silver-plus');
   for (const phrase of ["A Gold's Gym aceita Wellhub?", 'O mínimo da unidade Wellhub é Basic']) {
     const reply = await h.send(phrase);
-    assert.match(reply, /seu plano Silver\+/);
+    assert.match(reply, /Academias .*Silver\+/);
     assert.equal((await h.load()).preferences.wellhubPlan, 'silver-plus');
   }
   assert.equal(h.writes.length, 0);

@@ -7,17 +7,28 @@ export type WellhubLivePartner = {
   city: string;
   state: string;
   address: string;
-  minimumPlan: WellhubPlan;
+  minimumPlan: WellhubPlan | 'unknown';
+  eligibilityStatus?: 'included' | 'excluded' | 'unknown';
+  accessConditions?: string;
+  activityPlans?: string[];
   rating?: number;
   reviewCount?: number;
   openingHours: string[];
   is24Hours?: boolean;
+  timeZone?: string;
+  holidayHoursUncertain?: boolean;
+  openingStatus?: import('@shared/wellhub-hours.mjs').OpeningStatus;
   accessNote?: string;
   sourceUrl: string;
   verifiedAt: string;
   activities?: string[];
   liveVerified?: boolean;
   liveCheckedAt?: string;
+  refreshStatus?: 'authorization-required';
+  accessConfirmationRequired?: boolean;
+  snapshotValidUntil?: string;
+  snapshotStatus?: 'valid' | 'expired' | 'invalid' | 'future';
+  snapshotActivity?: { name: string; minimumPlan: WellhubPlan | 'unknown' };
 };
 
 export type WellhubRoutineSuggestion = {
@@ -48,7 +59,7 @@ export async function fetchWellhubVerifiedSearch(input: {
   activity?: string;
   location?: string;
   limit?: number;
-}): Promise<{ ok: boolean; partners: WellhubLivePartner[]; total: number; source: string; mapsUsedForEligibility: boolean }> {
+}): Promise<{ ok: boolean; partners: WellhubLivePartner[]; total: number; source: string; mapsUsedForEligibility: boolean; automaticRefresh: false; accessConfirmationRequired: true }> {
   const params = new URLSearchParams({ plan: input.plan });
   if (input.query?.trim()) params.set('query', input.query.trim());
   if (input.activity?.trim()) params.set('activity', input.activity.trim());

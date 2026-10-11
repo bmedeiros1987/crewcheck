@@ -14,7 +14,7 @@ if (!source.includes(marker)) {
   source = source.replace(helperAnchor, helper + helperAnchor);
 
   const oldWindow = `  target.rawText = [target.rawText, source.rawText].filter(Boolean).join(' | ');\n  if (!target.dutyReport) target.dutyReport = source.dutyReport;\n  if (!target.dutyDebrief) target.dutyDebrief = source.dutyDebrief;`;
-  const newWindow = `  target.rawText = [target.rawText, source.rawText].filter(Boolean).join(' | ');\n  target.dutyReport = source.dutyReport || target.dutyReport;\n  target.dutyDebrief = source.dutyDebrief || target.dutyDebrief;\n  target.dutyHours = source.dutyHours ?? target.dutyHours;\n  target.flyingHours = source.flyingHours ?? target.flyingHours;\n  target.isNextDay = Boolean(target.isNextDay || source.isNextDay);\n  target.hotel = source.hotel || target.hotel;`;
+  const newWindow = `  target.rawText = [target.rawText, source.rawText].filter(Boolean).join(' | ');\n  if (source.dutyReport) target.dutyReportSource = source.dutyReportSource || 'unknown';\n  if (source.dutyDebrief) target.dutyDebriefSource = source.dutyDebriefSource || 'unknown';\n  target.dutyReport = source.dutyReport || target.dutyReport;\n  target.dutyDebrief = source.dutyDebrief || target.dutyDebrief;\n  target.dutyHours = source.dutyHours ?? target.dutyHours;\n  target.flyingHours = source.flyingHours ?? target.flyingHours;\n  target.isNextDay = Boolean(target.isNextDay || source.isNextDay);\n  target.hotel = source.hotel || target.hotel;`;
   if (!source.includes(oldWindow)) throw new Error('[v14.3.74] janela temporal do merge AIMS não encontrada.');
   source = source.replace(oldWindow, newWindow);
 

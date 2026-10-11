@@ -66,37 +66,35 @@ the publisher.
 References: https://developer.android.com/health-and-fitness/health-connect/publish
 and https://developers.google.com/android-publisher/tracks.
 
-## Mobile-only release preparation (operator decision pending)
+## Mobile-only preparation — publication remains disabled
 
-`mobile-only-internal.yml` accepts a full reviewed merge SHA and its merged PR number.
-The controller checks that it is current main and requires successful existing Android and web CI on that exact main SHA, plus the
-PR-only phone/watch bridge gate on the exact merged PR head. Missing CI blocks dispatch; do not start or
-repeat paid builds merely to satisfy this gate without operator authorization. The
-controller itself must also receive independent review before it is merged or used.
+Recovery reuses the existing PR929; see [RECOVERY-HISTORY.md](RECOVERY-HISTORY.md)
+for verified upload history, intentional safety changes and exact enablement prerequisites.
 
-The single Gradle invocation builds only `:app:assembleRelease :app:bundleRelease`.
-Both actual manifests and signatures must match package, policy and existing upload
-certificate; exported evidence records checksums, source PR/SHA and controller/run IDs.
-An APK signed by the upload key is NOT established as compatible with an installation
-from Play App Signing. Compare its signer with the public Play app-signing certificate,
-and test an in-place update retaining login/local data before distributing it as an
-update. If the certificates differ, use Play-delivered testing updates or an authorized
-Play-signed APK download; do not rotate keys, clear app data or change package IDs.
+`mobile-only-internal.yml` accepts a full reviewed current-main merge SHA and its merged
+PR number. Exact Android/web main CI and phone/watch bridge PR-head CI must pass.
+The controller and source must receive independent review before execution. The
+existing bridge workflow now includes release-controller paths, so a controller PR
+cannot silently lack its mandatory bridge evidence.
 
-Before any execution, confirm with Bruno: testing track versus production, approved
-source SHA/controller, versionName, one build's cost, intended APK distribution and
-certificate/update evidence. This controller supports internal testing only; production
-requires a separately reviewed route and explicit approval. The versionCode must be
-allocated later from ALL current tracks and bundles of `com.crewcheck.app` (phone and
-Wear share that namespace), never from the stale 144110 policy or an earlier run.
-Allocation opens/deletes a Play edit and can invalidate another operator's edit: coordinate
-first; even a build-only dispatch is not a purely read-only Play action. No code is
-reserved by this patch. The target code is rechecked before publication; a race blocks.
+With publish=false, the workflow builds only `:app:assembleRelease :app:bundleRelease`.
+It does not read a Play credential, allocate a live version or open an edit. Exported
+artifacts use the policy version for build identification only and explicitly record
+`playSubmissionAllowed=false` and policy-only allocation. Both actual manifests,
+signatures and upload certificate must pass; provenance includes source PR/SHA,
+main/bridge CI, controller/run IDs and checksums. A build label is not an unused code.
 
-After authorization, run once with publish=false, retain both verified artifacts/evidence,
-check tester access and data-preserving update, then obtain publication approval for those
-exact bytes. The current combined workflow rebuilds on a later publish=true dispatch;
-therefore do not use a second dispatch to publish the already-reviewed artifacts. A
-separate artifact-consumer dispatch with run/hash provenance remains required before
-that two-stage procedure is executable. Do not use android.yml's three-module publisher
-for a phone-only release. Watch tracks and the watch-face package remain outside this path.
+With publish=true, an initial step refuses execution before checkout or secrets.
+The CLI independently refuses live allocation and publication without a reviewed
+journal. No backend is configured and no store publication is enabled by this patch.
+A future publisher must consume approved immutable bytes instead of rebuilding on a
+second dispatch, reserve the shared package durably, allocate above all live phone/Wear
+codes and reconcile old edits/reviews before any mutation. The joint Android publisher
+is not a mobile-only shortcut. Do not remove the manual publication safety regression.
+
+An APK signed by the upload key is not established as compatible with Play App Signing
+installations. Compare the public app-signing certificate and verify an in-place update
+retains data before APK distribution. Otherwise use an authorized Play-delivered update;
+do not rotate keys, clear data or change package IDs. Production eligibility and current
+credential/lifecycle state remain unknown. The user's production/internal-fallback
+preference does not bypass code, review, durable-receipt or coordination gates.

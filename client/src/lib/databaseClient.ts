@@ -119,13 +119,14 @@ function normalizeSingleActiveSummary(items: SavedRosterSummary[]): SavedRosterS
   });
 }
 
-export async function listSavedRosters(limit = 72): Promise<SavedRosterSummary[]> {
-  const local = getLocalRosterSummaries(limit);
+export async function listSavedRosters(limit = 72, strictHistory = false, options: { preserveRevisions?: boolean } = {}): Promise<SavedRosterSummary[]> {
+  const local = getLocalRosterSummaries(limit, options.preserveRevisions);
   if (!hasCrewCheckAuthToken()) return normalizeSingleActiveSummary(local);
   try {
     const payload = await jsonFetch<{ ok: boolean; rosters: SavedRosterSummary[] }>(`/api/rosters?limit=${limit}&manager=1`);
+    if (strictHistory && (!payload.ok || !Array.isArray(payload.rosters))) throw new Error('Resposta de histórico inválida.');
     let online = payload.rosters || [];
-    if (!online.some((item) => item.isActive)) {
+    if (!strictHistory && !online.some((item) => item.isActive)) {
       try {
         const active = await jsonFetch<{ ok: boolean; roster?: SavedRosterSummary | null }>(`/api/rosters/active`, { cache: 'no-store' });
         if (active?.roster?.id) online = [active.roster, ...online];
@@ -136,14 +137,15 @@ export async function listSavedRosters(limit = 72): Promise<SavedRosterSummary[]
     const seen = new Set<string>();
     const merged: SavedRosterSummary[] = [];
     for (const item of [...online, ...local]) {
-      const key = item.checksum || `${item.year || ''}:${item.month || ''}:${item.crewId || item.crewName || item.id}`;
+      const key = options.preserveRevisions ? `${item.id}:${item.createdAt}:${item.checksum || ''}` : item.checksum || `${item.year || ''}:${item.month || ''}:${item.crewId || item.crewName || item.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
       merged.push(item);
     }
     const sorted = merged.sort((a, b) => Number(Boolean(b.isActive)) - Number(Boolean(a.isActive)) || String(b.year || 0).localeCompare(String(a.year || 0)) || Number(b.month || 0) - Number(a.month || 0) || String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, limit);
     return normalizeSingleActiveSummary(sorted);
-  } catch {
+  } catch (error) {
+    if (strictHistory) throw error;
     return normalizeSingleActiveSummary(local);
   }
 }
@@ -583,7 +585,7 @@ function normalizeLocalHistoryItem(raw: any, index = 0): LocalHistoryItem | null
   };
 }
 
-function readLocalHistory(): LocalHistoryItem[] {
+function readLocalHistory(preserveRevisions = false, requireTimestamps = false): LocalHistoryItem[] {
   const seen = new Set<string>();
   const items: LocalHistoryItem[] = [];
   for (const key of localHistoryKeys()) {
@@ -593,9 +595,10 @@ function readLocalHistory(): LocalHistoryItem[] {
       const parsed = JSON.parse(raw);
       const list = Array.isArray(parsed) ? parsed : [parsed];
       list.forEach((entry, index) => {
+        if (requireTimestamps && !Number.isFinite(Date.parse(entry?.createdAt || entry?.updatedAt || ''))) return;
         const item = normalizeLocalHistoryItem(entry, index);
         if (!item) return;
-        const dedupe = item.checksum || periodHistoryKey(item);
+        const dedupe = preserveRevisions ? `${item.id}:${item.createdAt}` : item.checksum || periodHistoryKey(item);
         if (seen.has(dedupe)) return;
         seen.add(dedupe);
         items.push(item);
@@ -613,7 +616,7 @@ function readLocalHistory(): LocalHistoryItem[] {
 // caller actually asked for, and fail closed when it is not there: returning "some
 // entry with that id" is how one crew member's roster reached another's session.
 function localRosterCandidates(id: string): LocalHistoryItem[] {
-  return readLocalHistory().filter((item) => item.id === id || item.checksum === id);
+  return readLocalHistory(true).filter((item) => item.id === id || item.checksum === id);
 }
 
 function findLocalRoster(id: string, expected?: Pick<SavedRosterSummary, 'crewId' | 'crewName'> | null): LocalHistoryItem | null {
@@ -722,12 +725,12 @@ function readLocalActiveRosterSnapshot(): LocalHistoryItem | null {
   return readLocalActiveRosterSnapshots()[0] || null;
 }
 
-function getLocalRosterSummaries(limit: number): SavedRosterSummary[] {
+function getLocalRosterSummaries(limit: number, preserveRevisions = false): SavedRosterSummary[] {
   const seen = new Set<string>();
   const activeSnapshots = readLocalActiveRosterSnapshots();
-  const sourceItems = [...activeSnapshots, ...readLocalHistory()];
+  const sourceItems = preserveRevisions ? readLocalHistory(true, true) : [...activeSnapshots, ...readLocalHistory()];
   const unique = sourceItems.filter((item) => {
-    const key = periodHistoryKey(item);
+    const key = preserveRevisions ? `${item.id}:${item.createdAt}` : periodHistoryKey(item);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -793,6 +796,8 @@ function crewIdentityToken(source: CrewIdentitySource | null | undefined): strin
   const name = normalizeRosterCrewName(source?.crewName);
   return name ? `NAME:${name}` : '';
 }
+
+export { crewIdentityToken as financialRosterCrewIdentity };
 
 function periodHistoryKey(item: LocalHistoryItem): string {
   // P0_580_HISTORY_CREW_IDENTITY_GUARD: a placeholder crewId must never collapse

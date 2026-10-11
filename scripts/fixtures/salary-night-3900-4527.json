@@ -1,0 +1,49 @@
+{
+  "synthetic": true,
+  "sourceText": "Escala de Tripulante Convertida para padr\u00e3o AIMS\nTripulante: SYNTHETIC CREW - BP: 99999999 - Base: BSB - 01/10/2032 at\u00e9 31/10/2032\n20Oct Tue\nLA 9001 04:10 05:00 BSB CGH 06:45 (320)\n[extra] LA 9002 07:30 CGH CNF 08:45 (320)\nLA 9003 09:30 CNF CGH 10:55 11:25 (328)\n21Oct Wed\nLA 9011 06:05 06:35 CGH SSA 08:55 (328)\nLA 9012 09:40 SSA GRU 12:10 (328)\n[extra] LA 9013 12:55 GRU CWB 14:00 14:30\n22Oct Thu\nLA 9022 08:00 09:00 BSB GRU 10:00 10:30\n23Oct Thu\nLA 9023 08:00 09:00 BSB GRU 10:00 10:30\n24Oct Thu\nLA 9024 08:00 09:00 BSB GRU 10:00 10:30\n25Oct Thu\nLA 9025 08:00 09:00 BSB GRU 10:00 10:30\n26Oct Thu\nDO\n27Oct Thu\nDO\n28Oct Thu\nDO\n29Oct Thu\nDO\n30Oct Thu\nDO\n31Oct Thu\nDO\nTimezone -3 : Bras\u00edlia",
+  "selectedDates": [
+    "20/10/2032",
+    "21/10/2032"
+  ],
+  "syntheticClockProvenance": {
+    "dutyReportSource": "published",
+    "dutyDebriefSource": "published"
+  },
+  "syntheticSalaryConfig": {
+    "basePay": 1000,
+    "fixedAdditions": 0,
+    "dayKmMetric": 1,
+    "nightKmMetric": 2,
+    "chiefPerSector": 0,
+    "instructorPerSector": 0,
+    "reserveHourMetric": 1,
+    "standbyHourMetric": 1,
+    "inssDeduction": 0,
+    "irrfDeduction": 0,
+    "otherDeductions": 0,
+    "fgtsRate": 0
+  },
+  "syntheticDistanceKm": {
+    "LA9001": 100,
+    "LA9002": 200,
+    "LA9003": 300,
+    "LA9011": 400,
+    "LA9012": 500,
+    "LA9013": 600
+  },
+  "expectedCorrectedGross": 3900,
+  "expectedCorrectedProduction": [
+    100,
+    400,
+    300,
+    400,
+    500,
+    1200
+  ],
+  "originalBaselineGross": {
+    "UTC": 3900,
+    "America/Sao_Paulo": 3900,
+    "Asia/Tokyo": 4527
+  },
+  "sourceLibrary": "libfile_3af4fe0d38a08191b659b164d95410eb"
+}

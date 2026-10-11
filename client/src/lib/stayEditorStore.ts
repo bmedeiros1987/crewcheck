@@ -1,0 +1,15 @@
+import { getStoredUser, getToken } from './authClient';
+import { readStayEditor, writeStayEditor } from '@shared/stay-editor-store.mjs';
+export function stayEditorAccount() { return getToken() ? getStoredUser()?.id || null : null; }
+export function loadStayEditor() { return readStayEditor(localStorage, stayEditorAccount()); }
+export function persistStayEditor(state: any, expectedAccount: string | null) {
+  if (!expectedAccount || expectedAccount !== stayEditorAccount()) throw new Error('A conta mudou. Reabra o pernoite.');
+  writeStayEditor(localStorage, expectedAccount, state);
+  window.dispatchEvent(new CustomEvent('crewcheck:stay-editor-saved', { detail: { eventId: state.lastEditedEventId } }));
+}
+export function savedStayEditorEvent(eventId: string, event?: any) {
+  const record = loadStayEditor().stays[eventId] || null;
+  if (!record || !event) return record;
+  const signature = [event.id,event.canonical?.startDateTime,event.canonical?.endDateTime,event.origin,event.destination].join('|');
+  return { ...record, apzConfirmed: record.apzConfirmed && record.signature === signature };
+}

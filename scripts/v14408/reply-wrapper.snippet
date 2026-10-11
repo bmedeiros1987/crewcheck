@@ -46,7 +46,7 @@ async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = n
     destination: extra.destination || String(inputContext?.destination || ''),
     gymContextOwner, gymContextChannel,
     gymProvider: differentPlanScope || contextIntent !== 'gym' ? ''
-      : gymPreference || /^Wellhub verificado\b/.test(String(rawReply || '')) ? 'wellhub'
+      : gymPreference || /^(?:Wellhub verificado\b|Academias ·)/.test(String(rawReply || '')) ? 'wellhub'
         : /Smart Fit direta/i.test(String(rawReply || '')) ? 'smartfit'
           : freshWellhubContext ? 'wellhub' : '',
   };

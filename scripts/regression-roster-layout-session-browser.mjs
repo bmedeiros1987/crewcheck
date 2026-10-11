@@ -47,15 +47,15 @@ try {
   await peer.goto(origin + '/fixture-peer.html');
   const sync = async () => { await page.waitForTimeout(100); };
   const expectLayout = async (expected, label) => {
-    await sync();
+    await page.waitForFunction(expected => document.querySelector('select[aria-label="Formato da escala"]')?.value === expected,expected);
     assert.equal(await picker.inputValue(), expected, label);
     results.push(label);
   };
   for (const layout of ['aims', 'calendar']) {
     await picker.selectOption(layout);
     if (layout === 'aims') {
-      // Canonical AIMS uses vertical activity lists, not the legacy table.
-      const activities = page.locator('.cc-aims-roster .cc-aims-activity');
+      // The single AIMS mode uses the document overview.
+      const activities = page.locator('.cc-doc-token button');
       await activities.nth(8).waitFor();
       assert.equal(await activities.count(), 9, 'real demo AIMS activities');
     }

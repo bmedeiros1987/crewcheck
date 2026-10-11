@@ -1,0 +1,229 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import http from 'node:http';
+import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
+import { build } from 'esbuild';
+import ts from 'typescript';
+
+const output = path.resolve(process.env.STAY_EDITOR_ARTIFACTS || 'artifacts/stay-editor');
+fs.mkdirSync(output, { recursive: true });
+const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');
+assert.ok(home.includes('// stay-editor-context-v2'),'Run after canonical preparation');
+const ast=ts.createSourceFile('Home.tsx',home,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+const functions=['HotelsView','Brand','CrewCheckMark','BottomNav','pad2','safe','city','dateChip','rosterDayIso','hotelSearchLocation','openNearbyPlaces','searchCrewHotels','normalizedSearch','explicitStayReportLocation'];
+const declarations=ast.statements.filter(n=>(ts.isFunctionDeclaration(n)&&functions.includes(n.name?.text))||(ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>d.name.getText(ast)==='storage')));
+assert.equal(declarations.length,functions.length+1);
+const rootProps={className:'cz-app','data-view':'presentation','data-menu-open':'false'};
+for(const statement of ast.statements) if(ts.isVariableStatement(statement)) for(const d of statement.declarationList.declarations) if(d.name.getText(ast)==='DEFAULT_VERSION')rootProps['data-version']=d.initializer.text;
+const cssLinks=[...fs.readFileSync('dist/index.html','utf8').matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/g)].map(m=>m[0]).join('');
+assert.ok(cssLinks,'Actual production CSS required');
+fs.cpSync('dist/assets',path.join(output,'assets'),{recursive:true});
+if(fs.existsSync('dist/icons'))fs.cpSync('dist/icons',path.join(output,'icons'),{recursive:true});
+
+await build({ stdin: { contents: `
+import React,{useState,useEffect,useMemo} from 'react';
+import {createRoot} from 'react-dom/client';
+import Presentation from '@/components/v1391/PresentationStayManagerView';
+import {openStayProgramEditor,consumeStayEditorReturn,readStayEditorIntent,returnFromStayProgramEditor,hasStoredStayEditorOrigin,clearStoredStayEditorOrigin} from '@/lib/stayEditorNavigation';
+import {savedStayEditorEvent} from '@/lib/stayEditorStore';
+import {getToken} from '@/lib/authClient';
+import {setPendingNavigationContext} from '@/lib/navigationContext';
+import {isFinancialSetting,readFinancialSetting,writeFinancialSetting} from '@/lib/financialSettingStore';
+import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
+import {createPortal} from 'react-dom';
+import {Search,Hotel,LocateFixed,Plus,Check,MapPin,X,Save,ChevronRight,UserRound,Dumbbell,WashingMachine,Pill,Bell,Send,Menu,Home as HomeIcon,CalendarDays,Navigation} from 'lucide-react';
+import {toast} from 'sonner';
+import {airportCity} from '@/lib/airports';
+import {orderStayDisplay} from '@/lib/stayDisplayOrder';
+import {listPlatformStays,updatePlatformStay,findHotelCompanions} from '@/lib/platformClient';
+import {CREW_HOTEL_CATALOG} from '@/data/crewHotels';
+import {saveNearbyPlacesOrigin} from '@/lib/nearbyPlacesOrigin';
+import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
+import {InternalHeaderFrame} from '@/components/navigation/InternalHeaderFrame';
+import {OperationalLayoutSafety} from '@/components/navigation/OperationalLayoutSafety';
+import {setCrewCheckThemePreference} from '@/lib/themeRuntime';
+${declarations.map(n=>n.getText(ast)).join('\n')}
+window.applyStayTheme=setCrewCheckThemePreference;
+import {peekPendingNavigationContext} from '@/lib/navigationContext';
+import '@/components/v139/v139.css';
+const day='2026-10-11',now=Date.parse(day+'T12:00:00Z');
+const event=(id,hours)=>({id,kind:'stay',title:'Pernoite sintético '+id,date:new Date(now),day:{date:day},origin:'FOR',destination:'FOR',hotel:'Hotel sintético '+id,presentation:'01:11',canonical:{startDateTime:new Date(now+hours*3600000).toISOString(),endDateTime:new Date(now+(hours+24)*3600000).toISOString()}});
+const fixtures=[event('synthetic-current',-1),event('synthetic-future',48)];
+window.stayFixtureDay=day;window.stayFixtureEvents=fixtures;
+window.stayNavigation=[];window.stayContext=peekPendingNavigationContext;window.stayHasOrigin=hasStoredStayEditorOrigin;
+function App(){const [view,setView]=useState(()=>hasStoredStayEditorOrigin()?'presentation':'hotels'),[events,setEvents]=useState(fixtures);
+ useEffect(()=>{window.replaceStayEvents=setEvents;const navigate=e=>{window.stayNavigation.push(e.detail);if(e.detail!=='presentation')clearStoredStayEditorOrigin();setView(e.detail)};window.addEventListener('crewcheck:set-view',navigate);return()=>window.removeEventListener('crewcheck:set-view',navigate)},[]);
+ return <><main {...${JSON.stringify(rootProps)}} data-view={view}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back backLabel={view==='presentation'&&readStayEditorIntent()?'Voltar ao pernoite':view==='presentation'&&hasStoredStayEditorOrigin()?'Voltar à lista de pernoites':undefined} onMenu={view==='presentation'&&(readStayEditorIntent()||hasStoredStayEditorOrigin())?returnFromStayProgramEditor:undefined}/></InternalHeaderFrame>{view==='hotels'?<HotelsView events={events}/>:<Presentation events={events} embedded/>}</main><BottomNav view={view} setView={setView} openMenu={()=>{}}/></>}
+createRoot(document.getElementById('root')).render(<App/>);
+`, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, format: 'esm', platform: 'browser', tsconfig: 'tsconfig.json', outfile: path.join(output, 'harness.js'), loader: { '.css': 'empty' }, jsx: 'automatic', define: { 'process.env.NODE_ENV': '"test"', 'import.meta.env': JSON.stringify({ DEV: false, PROD: true, BASE_URL: '/' }) } });
+fs.writeFileSync(path.join(output,'index.html'),`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">${cssLinks}</head><body><div id="root"></div><script type="module" src="/harness.js"></script></body></html>`);
+const server = http.createServer((req,res)=>{
+  const pathname=new URL(req.url,'http://localhost').pathname;
+  const file=path.resolve(output,'.'+(pathname==='/'?'/index.html':pathname));
+  if(!file.startsWith(output+path.sep)||!fs.existsSync(file)){res.writeHead(404).end();return;}
+  res.setHeader('Content-Type',file.endsWith('.css')?'text/css':file.endsWith('.js')?'text/javascript':'text/html');fs.createReadStream(file).pipe(res);
+});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+const origin=`http://127.0.0.1:${server.address().port}`;
+const require=createRequire(process.env.STAY_PLAYWRIGHT_PACKAGE || import.meta.url);
+const browser=await require('playwright').chromium.launch({headless:true,...(process.env.STAY_CHROMIUM_PATH?{executablePath:process.env.STAY_CHROMIUM_PATH}:{})});
+const results=[];
+try {
+ for(const width of [390,1280]){
+  const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:'block',timezoneId:'America/Fortaleza'});
+  const errors=[],writes=[];
+  await context.addInitScript(()=>{localStorage.setItem('crewcheck_auth_token','synthetic-token');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic',email:'test@example.invalid'}));});
+  await context.route('**/*',route=>{
+   const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(!url.pathname.startsWith('/api/'))return route.continue();
+   if(route.request().method()!=='GET')writes.push(url.pathname);
+   const day='2026-10-11';
+   return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,address:null,stays:[{id:'saved-future',rosterEventId:'synthetic-future',stayDate:day,airport:'FOR',hotelName:'Hotel salvo sintético',presentationTime:'05:30',leadMinutes:90}]})});
+  });
+  const page=await context.newPage();await page.clock.setFixedTime(new Date('2026-10-11T12:00:00Z'));page.on('pageerror',error=>errors.push(error.message));await page.goto(origin);
+  await page.getByRole('button',{name:'Editar pernoite synthetic-future',exact:true}).click();
+  const program=page.getByRole('combobox',{name:'Programação',exact:true});
+  await program.waitFor();assert.equal(await program.inputValue(),'synthetic-future');
+  const hotel=page.getByRole('textbox',{name:'Hotel',exact:true}),apz=page.getByLabel('APZ no hotel (manual ou salva)',{exact:true});
+  await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel salvo sintético');
+  assert.equal(await apz.inputValue(),'05:30');
+  const layout=[];
+  for (const scenario of [{theme:'light',font:100,height:900},{theme:'dark',font:150,height:600},{theme:'dark',font:150,height:400}]) {
+    await page.setViewportSize({width,height:scenario.height});
+    await page.evaluate(s=>{document.documentElement.style.setProperty('--cc-safe-area-top','24px');document.documentElement.style.setProperty('--cc-safe-area-bottom','28px');window.applyStayTheme(s.theme);document.documentElement.style.fontSize=`${16*s.font/100}px`},scenario);
+    const header=page.locator('.cc-stay-editor-header'), content=page.locator('.cc-stay-editor-content');
+    await page.waitForTimeout(100);
+    const initial=await header.boundingBox(),globalInitial=await page.locator('.cz-global-header').boundingBox(),navInitial=await page.locator('.cz-bottom-nav').boundingBox();
+    const first=program,last=page.getByRole('heading',{name:'Privacidade',exact:true});
+    for(const target of [first,last]) {
+      await target.evaluate(el=>el.scrollIntoView({block:'center',behavior:'instant'}));
+      const h=await header.boundingBox(),b=await target.boundingBox(),c=await content.boundingBox();
+      const globalNow=await page.locator('.cz-global-header').boundingBox(),navNow=await page.locator('.cz-bottom-nav').boundingBox();
+      assert.ok(h&&b&&c&&initial&&globalInitial&&globalNow&&navInitial&&navNow);
+      assert.ok(Math.abs(globalNow.y-globalInitial.y)<1&&Math.abs(navNow.y-navInitial.y)<1,'Global header/menu stay fixed');
+      assert.ok(b.y>=globalNow.y+globalNow.height-1&&b.y+b.height<=navNow.y+1,'First/last item clears real shell navigation');
+      assert.ok(Math.abs(h.y-initial.y)<1,'Editor header remains fixed');
+      assert.ok(b.y>=c.y-1&&b.y+b.height<=c.y+c.height+1,'First/last content remains reachable');
+      assert.ok(await target.evaluate(el=>{const r=el.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return hit===el||el.contains(hit)}),'No header covers content');
+      assert.ok(await content.evaluate(el=>{
+        const clip=el.getBoundingClientRect();
+        const controls=[...el.querySelectorAll('input:not([type="checkbox"]),select,button,summary')].map(item=>item.getBoundingClientRect()).filter(r=>r.width&&r.height&&r.top>=clip.top&&r.bottom<=clip.bottom);
+        const intersects=(a,b)=>a.right>b.left+1&&a.left<b.right-1&&a.bottom>b.top+1&&a.top<b.bottom-1;
+        const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT),texts=[];
+        for(let node=walker.nextNode();node;node=walker.nextNode()) {
+          if(!node.textContent.trim()||node.parentElement.closest('button,summary,select'))continue;
+          const range=document.createRange();range.selectNodeContents(node);
+          texts.push(...[...range.getClientRects()].filter(r=>r.width&&r.height&&r.top>=clip.top&&r.bottom<=clip.bottom));
+        }
+        return controls.every((r,i)=>controls.slice(i+1).every(b=>!intersects(r,b))&&texts.every(text=>!intersects(r,text)));
+      }),'Visible text and form controls do not intersect');
+
+    }
+    assert.ok(await content.evaluate(el=>el.scrollHeight>el.clientHeight),'Actual content scrolls');
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'No horizontal clipping');
+    await page.screenshot({path:path.join(output,`layout-${width}-${scenario.theme}-${scenario.font}-${scenario.height}.png`)});
+    layout.push(scenario);
+  }
+  // Reproduce the previous document-scroll layout: header must move, proving
+  // the geometric regression detects the missing local scroll owner.
+  const broken=await page.addStyleTag({content:'.cc-stay-editor{position:static!important;display:block!important;overflow:visible!important;height:auto!important}.cc-stay-editor-content{overflow:visible!important}'});
+  await program.evaluate(el=>el.scrollIntoView({block:'start',behavior:'instant'}));
+  const before=await page.locator('.cc-stay-editor-header').boundingBox();
+  await page.getByRole('heading',{name:'Privacidade',exact:true}).evaluate(el=>el.scrollIntoView({block:'end',behavior:'instant'}));
+  const after=await page.locator('.cc-stay-editor-header').boundingBox();
+  assert.ok(before&&after&&Math.abs(before.y-after.y)>1,'Negative control rejects old document scrolling header');
+  await broken.evaluate(el=>el.remove());
+  await page.evaluate(()=>window.scrollTo(0,0));
+  await page.setViewportSize({width,height:900});
+  await page.evaluate(()=>document.documentElement.style.fontSize='16px');
+  await hotel.fill('Hotel editado sintético');
+  await page.getByRole('textbox',{name:'Fuso do hotel',exact:true}).fill('America/Fortaleza');
+  const apzDate=page.getByLabel('Data da APZ no hotel',{exact:true});await apzDate.fill('2030-10-11');
+  const confirmApz=page.getByRole('checkbox',{name:'Confirmo esta data, horário e fuso como APZ no hotel',exact:true});
+  await confirmApz.check();
+  const preview=page.getByRole('region',{name:'Prévia do despertador do pernoite'});
+  await preview.getByText('Despertar calculado: 04:00',{exact:false}).waitFor();
+  await preview.getByText('1 h 30 min antes da APZ no hotel',{exact:true}).waitFor();
+  await preview.locator('summary').click();
+  const mode=preview.getByRole('combobox',{name:'Modo do despertador',exact:true});await mode.selectOption('absolute');
+  const exact=preview.getByLabel('Data e horário exatos · America/Fortaleza',{exact:true});await exact.fill('2030-10-11T04:00');
+  await preview.getByText('1 h 30 min antes da APZ no hotel',{exact:true}).waitFor();
+  await apz.fill('06:00');await confirmApz.check();await preview.getByText('2 h antes da APZ no hotel',{exact:true}).waitFor();
+  assert.equal(await exact.inputValue(),'2030-10-11T04:00');
+  await apz.fill('03:00');await confirmApz.check();await preview.getByRole('alert').filter({hasText:'Sua escolha foi mantida'}).waitFor();
+  assert.equal(await exact.inputValue(),'2030-10-11T04:00');
+  await apz.fill('');await preview.getByRole('alert').filter({hasText:'APZ no hotel ausente'}).waitFor();
+  assert.equal(await preview.getByText(/antes da APZ no hotel$/).count(),0);
+  await apz.fill('05:30');await confirmApz.check();
+  const defaults=page.getByRole('region',{name:'Antecedência padrão'});await defaults.locator('summary').click();await defaults.getByRole('spinbutton').fill('60');await defaults.getByRole('button').click();
+  assert.equal(await mode.inputValue(),'absolute');assert.equal(await exact.inputValue(),'2030-10-11T04:00');
+  await mode.selectOption('auto');
+  await preview.getByText('Modo ativo: Auto · antecedência padrão',{exact:true}).waitFor();
+  await preview.getByText('Despertar calculado: 04:30',{exact:false}).waitFor();
+  await mode.selectOption('relative');
+  await preview.getByRole('combobox',{name:'Antecedência deste pernoite',exact:true}).selectOption('90');
+  await preview.getByText('Despertar calculado: 04:00',{exact:false}).waitFor();
+  await preview.getByRole('spinbutton',{name:'Antecedência personalizada (minutos)',exact:true}).fill('0');
+  await preview.getByRole('alert').filter({hasText:'não é anterior à APZ no hotel'}).waitFor();
+  await mode.selectOption('absolute');await exact.fill('2030-10-11T04:00');
+  await page.getByRole('button',{name:'Salvar alterações do pernoite',exact:true}).click();
+  await page.reload();
+  await page.getByRole('alert').filter({hasText:'O editor foi recarregado'}).waitFor();
+  assert.equal(await program.inputValue(),'','Reload must not guess a stay');
+  assert.deepEqual(await page.evaluate(()=>Object.entries(sessionStorage).filter(([key])=>key.startsWith('crewcheck_stay_editor_origin_v1:')).map(([,value])=>value)),['hotels']);
+  await page.getByRole('button',{name:'Voltar à lista de pernoites',exact:true}).click();
+  await page.getByRole('button',{name:'Editar pernoite synthetic-future',exact:true}).waitFor();
+  assert.equal(await page.locator('[data-stay-editor-selected="true"]').count(),0,'Reload Back returns to list without another selection');
+  await page.getByRole('button',{name:'Editar pernoite synthetic-future',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel editado sintético');
+  await preview.locator('summary').click();
+  assert.equal(await exact.inputValue(),'2030-10-11T04:00');assert.equal(await confirmApz.isChecked(),true);
+  await preview.getByText('1 h 30 min antes da APZ no hotel',{exact:true}).waitFor();
+  await page.getByText('Mais opções da edição',{exact:true}).click();
+  await page.getByRole('button',{name:'Cancelar despertador deste pernoite',exact:true}).click();
+  await page.reload();
+  await page.getByRole('alert').filter({hasText:'O editor foi recarregado'}).waitFor();
+  assert.equal(await program.inputValue(),'','Reload must not guess a stay');
+  assert.deepEqual(await page.evaluate(()=>Object.entries(sessionStorage).filter(([key])=>key.startsWith('crewcheck_stay_editor_origin_v1:')).map(([,value])=>value)),['hotels']);
+  await page.getByRole('button',{name:'Voltar à lista de pernoites',exact:true}).click();
+  await page.getByRole('button',{name:'Editar pernoite synthetic-future',exact:true}).waitFor();
+  assert.equal(await page.locator('[data-stay-editor-selected="true"]').count(),0,'Reload Back returns to list without another selection');
+  await page.getByRole('button',{name:'Editar pernoite synthetic-future',exact:true}).click();
+  await page.getByRole('status').filter({hasText:'Despertador cancelado nesta preferência'}).waitFor();
+  await preview.locator('summary').click();
+  assert.equal(await exact.inputValue(),'2030-10-11T04:00');
+  await program.selectOption('synthetic-current');
+  await page.waitForFunction(()=>document.querySelector('.cc-stay-editor input[type="time"]')?.value==='');
+  assert.equal(await apz.inputValue(),'');
+  await page.getByText('Atual pela escala',{exact:true}).waitFor();
+  await page.evaluate(()=>window.replaceStayEvents(window.stayFixtureEvents.map(event=>event.id==='synthetic-future'?{...event,canonical:{...event.canonical,endDateTime:'2030-12-01T00:00:00Z'}}:event)));
+  await program.selectOption('synthetic-future');
+  await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel editado sintético');
+  assert.equal(await hotel.inputValue(),'Hotel editado sintético');assert.equal(await exact.inputValue(),'2030-10-11T04:00');
+  await page.getByRole('alert').filter({hasText:'Seus ajustes manuais foram preservados'}).waitFor();
+  assert.equal(await confirmApz.isChecked(),false,'Cached manual edit must not re-confirm APZ after an off-screen roster change');
+  await confirmApz.check();
+  await page.evaluate(()=>window.replaceStayEvents(window.stayFixtureEvents.map(event=>({...event,canonical:{...event.canonical,endDateTime:'2031-01-01T00:00:00Z'}}))));
+  await page.getByRole('alert').filter({hasText:'Seus ajustes manuais foram preservados'}).waitFor();assert.equal(await hotel.inputValue(),'Hotel editado sintético');
+  await preview.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(output,`alarm-${width}.png`)});
+  await page.getByText('Mais opções da edição',{exact:true}).click();
+  await page.getByRole('button',{name:'Descartar edição deste pernoite',exact:true}).click();await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel editado sintético');
+  await page.evaluate(()=>window.replaceStayEvents(window.stayFixtureEvents.filter(event=>event.id!=='synthetic-future')));
+  await page.getByRole('alert').filter({hasText:'Nenhum outro item foi selecionado automaticamente'}).waitFor();assert.equal(await program.inputValue(),'');
+  await page.getByRole('button',{name:'Voltar ao pernoite',exact:true}).click();
+  await page.getByRole('alert').filter({hasText:'O pernoite selecionado não está mais na escala'}).waitFor(); assert.equal(await page.locator('[data-stay-editor-selected="true"]').count(),0);
+  await page.getByRole('button',{name:'Editar pernoite synthetic-current',exact:true}).click();
+  await page.getByRole('heading',{name:'Apresentação, hotel e descanso',exact:true}).waitFor();
+  await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'another-account',email:'another@example.invalid'}));localStorage.setItem('crewcheck_auth_token','another-synthetic');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
+  await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='');
+  assert.equal(await page.evaluate(()=>window.stayHasOrigin()),false,'Origin marker from another account cannot resume the editor');
+  assert.deepEqual(errors,[]);assert.deepEqual(writes,[],'No hotel saves or alarm requests');
+  results.push({width,touchIdentity:true,savedApz:true,noRosterApzFallback:true,manualPreserved:true,autoMode:true,modeAbsolute:true,liveGap:true,defaultSeparate:true,current:true,rosterChange:true,itemRemoval:true,cancelEdit:true,contextReturn:true,accountReset:true,persistenceReload:true,reloadInsideEditorDegradesToList:true,cancellationPersisted:true,layout,negativeControl:true,writes,errors});
+  await context.close();
+ }
+} finally {
+ await browser.close();await new Promise(resolve=>server.close(resolve));
+ fs.writeFileSync(path.join(output,'report.json'),JSON.stringify({commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),scope:'Actual prepared Home HotelsView, editor, shell/menu and production CSS; synthetic events/account/API. No physical keyboard/safe area, original private image or real alarm programming.',results},null,2));
+}
+assert.equal(results.length,2);console.log('PASS: actual stay editor component, synthetic touch/return, current/removal/import/manual/modes/live-gap/account isolation; no writes');

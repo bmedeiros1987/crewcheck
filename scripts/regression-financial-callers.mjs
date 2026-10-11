@@ -9,7 +9,7 @@ import { loadClientModules } from './lib/ts-module-harness.mjs';
 
 const modules = loadClientModules({ files: ['client/src/lib/financialAmounts.ts',
   'client/src/lib/financialStatementLearning.ts', 'client/src/lib/financialJourneyGrouping.ts',
-  'client/src/lib/compensationPolicy.ts', 'client/src/lib/financialForecastPeriods.ts'], prefix: 'synthetic-finance-callers-' });
+  'client/src/lib/financialIntervalEvidence.ts', 'client/src/lib/compensationPolicy.ts', 'client/src/lib/financialForecastPeriods.ts'], prefix: 'synthetic-finance-callers-' });
 try {
   const amounts = modules.load('financialAmounts');
   const learning = modules.load('financialStatementLearning');
@@ -20,7 +20,8 @@ try {
     ? execFileSync('git', ['show', process.env.FINANCIAL_BASELINE_SHA + ':client/src/pages/Home.tsx'], { encoding: 'utf8' })
     : fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
   const ast = ts.createSourceFile('Home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const names = ['rosterFinancialDate', 'perDiemConfig', 'calculatePerDiem', 'PerDiemView', 'moneyBRL', 'moneyCurrency'];
+  const monthlyViewName = home.includes('function PerDiemMonthView(') ? 'PerDiemMonthView' : 'PerDiemView';
+  const names = ['rosterFinancialDate', 'perDiemConfig', 'calculatePerDiem', monthlyViewName, 'moneyBRL', 'moneyCurrency'];
   const functions = ast.statements.filter(statement => ts.isFunctionDeclaration(statement) && names.includes(statement.name?.text));
   assert.equal(functions.length, names.length, 'extract actual production caller functions');
   const learned = ['lunch', 'breakfast'].map((slot, i) => ({ key: 'per_diem.' + slot,
@@ -29,7 +30,7 @@ try {
   let activeEvents = [];
   let fxUSD = 0;
   const iso = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  const context = vm.createContext({ React, ...amounts, ...grouping, ...compensation, ...periods,
+  const context = vm.createContext({ React, ...modules.load('financialIntervalEvidence'), ...amounts, ...grouping, ...compensation, ...periods,
     useMemo: React.useMemo, useState: React.useState,
     resolveActFinancialRules: () => ({ profileLabel: 'Synthetic rules, not a real tariff', legalReference: 'synthetic-v1',
       breakfastPercent: 0.25, perDiem: [
@@ -50,14 +51,20 @@ try {
     KpiCard: props => React.createElement('article', null, props.title, ': ', props.value, ' — ', props.detail),
     BriefcaseBusiness: () => null, CalendarDays: () => null, Plane: () => null, DollarSign: () => null,
   });
+  // Include the real monetary presentation component used by the extracted caller.
+  if (home.includes('MoneyText')) {
+    const source = fs.readFileSync('client/src/components/MoneyText.tsx', 'utf8').replace(/^import.*$/gm, '').replace('export default function', 'function');
+    vm.runInContext(ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText, context);
+  }
   const compiled = ts.transpileModule(functions.map(node => node.getText(ast)).join('\n')
-    + '\nglobalThis.subject = { perDiemConfig, calculatePerDiem, PerDiemView };',
+    + `\nglobalThis.subject = { perDiemConfig, calculatePerDiem, PerDiemView: ${monthlyViewName} };`,
   { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText;
   vm.runInContext(compiled, context);
   const { calculatePerDiem, PerDiemView } = context.subject;
+  // Match production canonical BRT instants, rather than naive device-local clocks.
   const event = (date, origin = 'BRL') => ({ id: 'synthetic-' + date + '-' + origin,
-    date: new Date(date + 'T11:00:00'), start: date + 'T11:00:00', end: date + 'T11:15:00',
-    kind: 'training', origin, destination: origin, day: {} });
+    date: new Date(date + 'T11:00:00-03:00'), start: date + 'T11:00:00-03:00', end: date + 'T11:15:00-03:00',
+    kind: 'training', origin, destination: origin, day: { type:'CRM',dutyReport:'11:00',dutyDebrief:'11:15',dutyReportSource:'published',dutyDebriefSource:'published' } });
   const roster = (year, month) => ({ year, month, base: 'TEST' });
 
   const datedEvents = ['2032-08-02', '2032-08-05', '2032-08-31', '2032-09-01', '2032-09-02'].map(date => event(date));
@@ -71,11 +78,11 @@ try {
   const inheritedEnd = amounts.DEMONSTRATED_DOMESTIC_EFFECTIVE_TO;
   // Existing demonstrated resolver is exercised at its real boundaries without
   // copying private money figures into a new fixture or creating a tariff.
-  assert.equal(context.subject.perDiemConfig(roster(2026, 8), inherited).domesticMainMealSource, 'demonstrated');
+  assert.equal(context.subject.perDiemConfig(roster(2026, 8), inherited).domesticMainMealSource, 'act');
   const after = new Date(inheritedEnd + 'T12:00:00'); after.setDate(after.getDate() + 1);
   assert.equal(context.subject.perDiemConfig(roster(2026, 9), iso(after)).domesticMainMealSource, 'act');
   const night = { ...event('2032-09-01'), kind: 'flight', presentation: '23:50',
-    start: '2032-09-01T23:50:00', end: '2032-09-02T00:30:00', canonical: { journeyId: 'synthetic-night' } };
+    start: '2032-09-01T23:50:00-03:00', end: '2032-09-02T00:30:00-03:00', day:{type:'VOO',dutyReport:'23:50',dutyReportSource:'published'}, canonical: { journeyId: 'synthetic-night',leg:{departureTime:'23:50',arrivalTime:'00:30'} } };
   const nightResult = calculatePerDiem([night], roster(2032, 9), new Date('2032-09-02T12:00:00'));
   assert.equal(nightResult.rows[0].iso, '2032-09-02');
   assert.equal(nightResult.rows[0].date, '2032-09-02', 'visible date follows occurrence date after midnight');
@@ -146,10 +153,33 @@ try {
   for(const candidate of [mixed,invalidRate,empty,foreign]) {
     assert.equal(vm.runInNewContext(compactExpression,{finance:{perdiem:candidate}}),candidate.currencySummary);
   }
+  // Actual detailed consumer must show every row of the selected competence,
+  // including after changing the selected roster month. Adjacent rows stay out.
+  activeEvents = [event('2032-01-31', 'INT'), ...Array.from({length:24},(_,i)=>{
+    const day='2032-02-'+String(i+1).padStart(2,'0');
+    return {...event(day),start:day+'T05:00:00-03:00',end:day+'T21:00:00-03:00'};
+  }),event('2032-03-01')];
+  const many=calculatePerDiem(activeEvents,roster(2032,2));
+  assert.ok(many.monthlyRows.length>40,'synthetic canonical windows produce more than forty monthly items');
+  const manyHtml=renderToStaticMarkup(React.createElement(PerDiemView,{bundle:{roster:roster(2032,2)}}));
+  assert.equal((manyHtml.match(/class="cz-finance-row"/g)||[]).length,many.monthlyRows.length,'selected monthly items must not be truncated or borrowed from adjacent months');
+  assert.ok([...manyHtml.matchAll(/data-financial-iso="([^"]+)"/g)].every(match=>match[1].startsWith('2032-02-')));
+  assert.doesNotMatch(manyHtml,/<details[^>]*\bopen/,'details start folded');
+  assert.match(manyHtml,/Competência: fevereiro de 2032/);
+  for(const month of [1,3]) {
+    const selected=calculatePerDiem(activeEvents,roster(2032,month));
+    const selectedHtml=renderToStaticMarkup(React.createElement(PerDiemView,{bundle:{roster:roster(2032,month)}}));
+    assert.equal((selectedHtml.match(/class="cz-finance-row"/g)||[]).length,selected.monthlyRows.length);
+    assert.equal(selected.monthlyRows.length,1);
+    assert.match(selectedHtml,/1 item · 1 moeda/,'singular item/currency labels');
+    const dates=[...selectedHtml.matchAll(/data-financial-iso="([^"]+)"/g)].map(match=>match[1]);
+    assert.deepEqual(dates,[month===1?'2032-01-31':'2032-03-01']);
+  }
+
   activeEvents = mixedEvents;
   const mixedHtml = renderToStaticMarkup(React.createElement(PerDiemView,{bundle:{roster:roster(2032,2)}}));
-  assert.match(mixedHtml,/Totais por moeda: Não calculável/);
-  assert.doesNotMatch(mixedHtml,/Totais por moeda: [^<]*R\$ 100,00/);
+  assert.match(mixedHtml,/Previsão do mês: Não calculável/);
+  assert.doesNotMatch(mixedHtml,/Previsão do mês: [^<]*R\$ 100,00/);
 
   const october = periods.observedAllowancePeriods(new Date('2026-10-08T12:00:00'));
   assert.equal(iso(october.accumulation.start), '2026-10-07');
@@ -160,17 +190,17 @@ try {
   assert.equal(periods.observedAllowancePeriods(new Date('2026-10-09T12:00:00')).paymentReferenceToday, null);
   activeEvents = [];
   const html = renderToStaticMarkup(React.createElement(PerDiemView, { bundle: { roster: roster(2032, 2) } }));
-  assert.match(html, /Semana em acumulação/);
+  assert.match(html, /Semana em andamento/);
   assert.match(html, /Sem itens previstos/);
   assert.doesNotMatch(html, /R\$ 0,00|· paga|Ciclo do demonstrativo|Sem diárias confirmadas/);
-  assert.match(html, /não há pagamento confirmado/);
-  assert.match(html, /ainda não homologadas com a empresa/);
+  assert.match(html, /sem confirmação de pagamento/);
+  assert.match(html, /Competência: fevereiro de 2032/);
   context.Date = class extends Date { constructor(...args) { super(...(args.length ? args : ['2032-02-02T12:00:00'])); } };
   activeEvents = [event('2032-01-31', 'INT'), event('2032-02-01')];
   const pendingHtml = renderToStaticMarkup(React.createElement(PerDiemView, { bundle: { roster: roster(2032, 2) } }));
-  assert.match(pendingHtml, /Convertido previsto no mês: R\$ 100,00/);
-  assert.match(pendingHtml, /Semana em acumulação: Câmbio pendente/);
-  assert.match(pendingHtml, /Câmbio pendente nesta semana: USD/);
+  assert.match(pendingHtml, /Convertido em reais no mês: R\$ 100,00/);
+  assert.match(pendingHtml, /Semana em andamento: Câmbio pendente/);
+  assert.match(pendingHtml, /Cotação pendente na semana: USD/);
   assert.doesNotMatch(pendingHtml, /<details[^>]*\bopen/);
   assert.equal(periods.summarizeForecastRows([{ iso: '2032-02-01', currency: 'BRL', value: Infinity, convertedBRL: Infinity }]).convertedTotalBRL, null);
   assert.equal(periods.summarizeForecastRows([{ iso: '2032-02-01', currency: 'BRL', value: 1e308, convertedBRL: 1e308 }, { iso: '2032-02-01', currency: 'BRL', value: 1e308, convertedBRL: 1e308 }]).convertedTotalBRL, null);

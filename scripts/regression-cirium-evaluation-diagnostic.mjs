@@ -2,10 +2,15 @@ import assert from 'node:assert/strict';
 
 for (const name of [
   'CIRIUM_SKY_API_TOKEN', 'CIRIUM_SKY_SECRET', 'CIRIUM_SKY_IDENTIFIER', 'CIRIUM_SKY_BASE_URL',
-  'CIRIUM_APP_ID', 'CIRIUM_APP_KEY',
+  'CIRIUM_APP_ID', 'CIRIUM_APP_KEY', 'CIRIUM_DIAGNOSTIC_ALLOW_LEGACY_FLEX',
 ]) process.env[name] = '';
+process.env.CIRIUM_DIAGNOSTIC_ENABLED = 'true';
 
-const { diagnoseCirium, diagnoseCiriumFlight, normalizeCiriumResult, ciriumConfiguration } = await import('../server/cirium-diagnostic.mjs');
+const { diagnoseCirium: guardedProbe, diagnoseCiriumFlight: guardedFlight, normalizeCiriumResult, ciriumConfiguration, createCiriumGuard } = await import('../server/cirium-diagnostic.mjs');
+// Budget behavior has its own regression; here every call gets an unconstrained fresh guard.
+const open = () => createCiriumGuard({ maxCalls: 100, minIntervalMs: 0, cacheTtlMs: 0 });
+const diagnoseCirium = (o = {}) => guardedProbe({ guard: open(), ...o });
+const diagnoseCiriumFlight = (o = {}) => guardedFlight({ guard: open(), ...o });
 
 assert.deepEqual(await diagnoseCirium(), {
   ok: true, provider: 'cirium-sky', state: 'not_configured', configured: false,
@@ -36,22 +41,23 @@ assert.equal(available.credentialIdentifierConfigured, true);
 assert.equal(JSON.stringify(available).includes('test-sky-secret'), false);
 assert.equal(JSON.stringify(available).includes('test-identifier'), false);
 
-const flightResult = await diagnoseCiriumFlight({ carrier: 'LA', flight: '3850', date: '2026-08-11', fetchImpl: async (url, options) => {
-  assert.match(String(url), /\/v1\/flights\/status\/airline\/LA\/flight-number\/3850\/departure-date\/2026-08-11/);
+const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+const flightResult = await diagnoseCiriumFlight({ carrier: 'LA', flight: '3850', date: today, fetchImpl: async (url, options) => {
+  assert.ok(String(url).endsWith(`/departure-date/${today}?extendedOptions=includeDeltas%2CincludeNewFields`));
   assert.match(String(url), /extendedOptions=includeDeltas%2CincludeNewFields/);
   assert.equal(options.headers.authorization, 'test-sky-secret');
   return {
     status: 200,
     json: async () => ({ flightStatuses: [{
       flightId: 123, carrierFsCode: 'LA', flightNumber: '3850', status: 'A',
-      departureAirportFsCode: 'BSB', arrivalAirportFsCode: 'THE', lastUpdatedDate: '2026-08-11T12:30:00Z',
+      departureAirportFsCode: 'BSB', arrivalAirportFsCode: 'THE', departureDate: { dateLocal: `${today}T09:20:00.000` }, lastUpdatedDate: `${today}T12:30:00Z`,
       airportResources: { departureTerminal: '1', departureGate: '5', arrivalTerminal: '1', arrivalGate: '2', baggage: '4' },
       operationalTimes: {
-        scheduledGateDeparture: { dateUtc: '2026-08-11T12:20:00Z' },
-        estimatedGateDeparture: { dateUtc: '2026-08-11T12:23:00Z' },
-        actualGateDeparture: { dateUtc: '2026-08-11T12:24:00Z' },
-        scheduledGateArrival: { dateUtc: '2026-08-11T14:34:00Z' },
-        estimatedGateArrival: { dateUtc: '2026-08-11T14:31:00Z' },
+        scheduledGateDeparture: { dateUtc: `${today}T12:20:00Z` },
+        estimatedGateDeparture: { dateUtc: `${today}T12:23:00Z` },
+        actualGateDeparture: { dateUtc: `${today}T12:24:00Z` },
+        scheduledGateArrival: { dateUtc: `${today}T14:34:00Z` },
+        estimatedGateArrival: { dateUtc: `${today}T14:31:00Z` },
       },
       flightEquipment: { scheduledEquipmentIataCode: '321', actualEquipmentIataCode: '32B', tailNumber: 'PT-TEST' },
       delays: { departureGateDelayMinutes: 4, arrivalGateDelayMinutes: -3 },
@@ -78,6 +84,9 @@ process.env.CIRIUM_SKY_SECRET = '';
 process.env.CIRIUM_SKY_IDENTIFIER = '';
 process.env.CIRIUM_APP_ID = 'test-app-id';
 process.env.CIRIUM_APP_KEY = 'test-app-key';
+assert.equal(ciriumConfiguration().mode, 'none', 'legacy Flex credentials need their own explicit opt-in');
+assert.equal(ciriumConfiguration().configured, false);
+process.env.CIRIUM_DIAGNOSTIC_ALLOW_LEGACY_FLEX = 'true';
 assert.equal(ciriumConfiguration().mode, 'flex');
 let flexUrl = '';
 const legacy = await diagnoseCirium({ fetchImpl: async (url) => {
@@ -88,6 +97,7 @@ assert.equal(legacy.provider, 'cirium-flightstats');
 assert.match(flexUrl, /appId=test-app-id/);
 assert.match(flexUrl, /appKey=test-app-key/);
 assert.equal(JSON.stringify(legacy).includes('test-app'), false);
+process.env.CIRIUM_DIAGNOSTIC_ALLOW_LEGACY_FLEX = '';
 
 const source = await (await import('node:fs/promises')).readFile(new URL('../server/platform.mjs', import.meta.url), 'utf8');
 assert.match(source, /identity\.authenticated/);

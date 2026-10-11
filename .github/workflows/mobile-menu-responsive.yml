@@ -5,6 +5,20 @@ on:
     branches: [main]
     paths:
       - 'client/src/styles/**'
+      - 'client/src/lib/textSizePreference.ts'
+      - 'client/src/lib/overlayLifecycle.ts'
+      - 'client/src/components/TextSizeSetting.tsx'
+      - 'client/src/components/MoneyText.tsx'
+      - 'scripts/regression-financial-ui-browser.cjs'
+      - 'scripts/regression-ui-reading-overlays.cjs'
+      - 'scripts/regression-fixed-navigation-headers.cjs'
+      - 'scripts/regression-pulse-content-space.cjs'
+      - 'scripts/fixed-navigation-headers.mjs'
+      - 'client/src/components/navigation/InternalHeaderFrame.tsx'
+      - 'client/src/components/v1391/HomeLayoutShell.tsx'
+      - 'client/src/components/v1391/MenuPersonalization.tsx'
+      - 'scripts/v14387d/apply.mjs'
+      - 'scripts/p1-home-layout/apply.mjs'
       - 'client/src/pages/Home.tsx'
       - 'client/src/components/v1391/menu-5s.css'
       - 'client/src/components/v1391/menu-personalization.css'
@@ -88,10 +102,26 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
         run: node scripts/regression-menu-favorites-interaction.mjs
+      - name: Verify favorite editor in actual app and reading sizes
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-favorite-editor-app.cjs
       - name: Render canonical footer and content clearance in Chromium and WebKit
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
         run: node scripts/regression-shell-navigation-browser.mjs
+      - name: Exercise reading preference and overlay scroll recovery with synthetic accounts
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-ui-reading-overlays.cjs
+      - name: Verify pinned navigation and import theme with actual app
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-fixed-navigation-headers.cjs
+      - name: Verify normal content canvas with long expanded Pulse
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+        run: node scripts/regression-pulse-content-space.cjs
       - name: Validate publication import to history with synthetic PDFs
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
@@ -111,6 +141,10 @@ jobs:
             artifacts/hotel-controls
             artifacts/menu-responsive
             artifacts/menu-interaction
+            artifacts/favorite-editor-app
+            artifacts/ui-reading-overlays
+            artifacts/fixed-headers
+            artifacts/pulse-content-space
             artifacts/publication-import-flow
             artifacts/share-discovery
           if-no-files-found: warn

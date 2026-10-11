@@ -21,7 +21,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: crewcheck-play-release
+  group: crewcheck-mobile-preparation
   cancel-in-progress: false
 
 jobs:
@@ -36,6 +36,12 @@ jobs:
       run:
         working-directory: source
     steps:
+      - name: Refuse publication until durable shared-package coordination is reviewed
+        if: inputs.publish_mobile_internal == true
+        working-directory: ${{ github.workspace }}
+        run: |
+          echo '::error::Publication remains disabled: no reviewed durable journal backend or all-writer coordination is configured.'
+          exit 1
       - name: Checkout release controller
         uses: actions/checkout@v6
         with:
@@ -68,9 +74,13 @@ jobs:
           python3 ../control/scripts/android-play/test_mobile_internal.py
           python3 ../control/scripts/android-play/mobile_internal.py check-ci
       - name: Allocate only phone version from live package tracks and bundles
+        if: inputs.publish_mobile_internal == true
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: python3 ../control/scripts/android-play/mobile_internal.py allocate
+      - name: Mark build-only version as unallocated for Play submission
+        if: inputs.publish_mobile_internal != true
+        run: echo 'Build-only artifacts use the policy version; no live allocation, edit or submission is performed.'
       - name: Prepare and test reviewed source
         run: |
           npm ci

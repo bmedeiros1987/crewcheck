@@ -10,9 +10,14 @@ on:
       - 'server/v1412/ciriumHealth.mjs'
       - 'server/v139/index.mjs'
       - 'scripts/regression-cirium-evaluation-diagnostic.mjs'
+      - 'scripts/regression-cirium-disabled.mjs'
+      - 'scripts/regression-cirium-guard.mjs'
+      - 'scripts/check-cirium-offline.mjs'
       - 'scripts/regression-cirium-canonical-adapter.mjs'
       - 'scripts/regression-radar-occurrence-identity.mjs'
       - 'scripts/regression-radar-field-provenance.mjs'
+      - 'docs/cirium-sky-local-preparation.md'
+      - 'docs/cirium-evaluation-diagnostic.md'
       - '.env.example'
       - 'render.yaml'
       - '.github/workflows/cirium-sky-trial.yml'
@@ -30,13 +35,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22.13.0
-      - name: Cirium diagnostic contract
-        run: npm run regression:cirium-diagnostic
-      - name: Cirium canonical adapter contract
-        run: npm run regression:cirium-adapter
+      - name: Cirium offline contracts and disabled gate
+        run: |
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" node scripts/check-cirium-offline.mjs
+          done
       - name: Radar occurrence identity contract
         run: node scripts/regression-radar-occurrence-identity.mjs
-      - name: Radar field provenance contract
-        run: node scripts/regression-radar-field-provenance.mjs
       - name: Cirium admin route syntax
-        run: node --check server/v1412/ciriumHealth.mjs && node --check server/v139/index.mjs && node --check server/radar-occurrence-identity.mjs && node --check server/radar-field-provenance.mjs
+        run: node --check server/v1412/ciriumHealth.mjs && node --check server/v139/index.mjs && node --check server/radar-occurrence-identity.mjs && node --check server/radar-field-provenance.mjs && node --check server/cirium-diagnostic.mjs && node --check server/cirium-flight-adapter.mjs

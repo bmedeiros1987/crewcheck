@@ -1,0 +1,91 @@
+{
+  "synthetic": true,
+  "head": "6a769b2600dcabcf63704fcd37dba74157c5db4d",
+  "deviceTimeZones": [
+    "UTC",
+    "America/Sao_Paulo",
+    "Asia/Tokyo"
+  ],
+  "operationalTimeZone": "Etc/GMT+3",
+  "salaryConfig": {
+    "basePay": 1000,
+    "fixedAdditions": 0,
+    "dayKmMetric": 1,
+    "nightKmMetric": 2,
+    "chiefPerSector": 0,
+    "instructorPerSector": 0,
+    "reserveHourMetric": 1,
+    "standbyHourMetric": 1,
+    "inssDeduction": 0,
+    "irrfDeduction": 0,
+    "otherDeductions": 0,
+    "fgtsRate": 0,
+    "configured": true
+  },
+  "distanceKm": {
+    "LA9001": 100
+  },
+  "missingArrivalRoster": {
+    "year": 2032,
+    "month": 10,
+    "base": "BSB",
+    "days": [
+      {
+        "date": "20/10/2032",
+        "dayNumber": 20,
+        "month": 10,
+        "year": 2032,
+        "type": "FLIGHT",
+        "code": "OP",
+        "rawText": "SYNTHETIC incomplete flight clocks",
+        "legs": [
+          {
+            "flightNumber": "LA9001",
+            "origin": "BSB",
+            "destination": "CGH",
+            "departureTime": "05:00",
+            "arrivalTime": null,
+            "workType": "OP"
+          }
+        ]
+      }
+    ]
+  },
+  "variants": [
+    {
+      "departureTime": "05:00",
+      "arrivalTime": null,
+      "currentGross": 1100
+    },
+    {
+      "departureTime": null,
+      "arrivalTime": "06:45",
+      "currentGross": 1174
+    },
+    {
+      "departureTime": null,
+      "arrivalTime": null,
+      "currentGross": 1100
+    }
+  ],
+  "expected": "Each incomplete flight has timeKnown=false, unknown row amount, and no finite total advertised. Original fields must not be rewritten.",
+  "partialSummaryInput": [
+    {
+      "id": "valid",
+      "timeKnown": true,
+      "total": 100
+    },
+    {
+      "id": "unknown",
+      "timeKnown": false,
+      "total": null,
+      "jsonNullRepresents": "NaN in live engine; use Number.NaN when reconstructing this input"
+    }
+  ],
+  "currentPartialSummary": {
+    "month": 100,
+    "day": 100,
+    "formattedComparisonDelta": "R$ 0,00"
+  },
+  "expectedPartialSummary": "Unknown total or explicitly labeled known subtotal, with unknown coverage. No numeric delta or absence-of-reduction claim."
+}

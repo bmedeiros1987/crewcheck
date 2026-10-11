@@ -4,10 +4,58 @@ on:
     paths:
       - 'shared/financialReadModel.mjs'
       - 'client/src/lib/financialStatementLearning.ts'
+      - 'client/src/lib/aimsParser.ts'
+      - 'scripts/v14374/apply.mjs'
+      - 'scripts/regression-aims-duty-source-browser.mjs'
+      - 'scripts/regression-aims-activity-financial-chain.mjs'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/rollingFlightHours.ts'
+      - 'scripts/v14395/apply.mjs'
+      - 'scripts/regression-operated-flight-hours.mjs'
+      - 'scripts/regression-operated-flight-origin-browser.cjs'
+      - 'client/src/lib/flightRoleEvidence.ts'
+      - 'client/src/lib/pdfExport.ts'
+      - 'client/src/lib/pdfParser.ts'
+      - 'scripts/p0-623-regulatory-history-carry-in-final/**'
+      - 'client/src/lib/financialPayrollPeriods.ts'
+      - 'client/src/lib/financialSettingStore.ts'
+      - 'client/src/lib/freeDay*.ts'
+      - 'client/src/components/FreeDayPostponementAlerts.tsx'
+      - 'client/src/components/FreeDaySourceConsent.tsx'
+      - 'client/src/components/FreeDaySourceQueue.tsx'
+      - 'client/src/components/FreeDayPersonalConsent.tsx'
+      - 'server/free-day-sources.mjs'
+      - 'server/free-day-source-*.mjs'
+      - 'scripts/fixtures/free-day-source-*'
+      - 'client/src/components/free-day-alerts.css'
+      - 'scripts/regression-free-day*'
+      - 'client/src/lib/plannedRosterStore.ts'
+      - 'scripts/regression-planned-roster-owner.mjs'
+      - 'scripts/regression-planned-roster-import-race.mjs'
+      - 'scripts/regression-planned-roster-owner-browser.cjs'
+      - 'client/src/lib/financialAmounts.ts'
       - 'client/src/lib/financialForecastPeriods.ts'
       - 'client/src/pages/Home.tsx'
       - 'client/src/components/v1391/RosterLaunchView.tsx'
       - 'scripts/regression-financial-*.mjs'
+      - 'scripts/regression-financial-ui-browser.cjs'
+      - 'scripts/regression-static-module-mime.mjs'
+      - 'server.mjs'
+      - 'client/src/styles/per-diem-content.css'
+      - 'client/src/components/finance/**'
+      - 'client/src/lib/financialHistoryPeriods.ts'
+      - 'client/src/lib/financialComparisonPeriods.ts'
+      - 'client/src/lib/salaryCalculationDiagnostic.ts'
+      - 'client/src/lib/salaryActivityEvidence.ts'
+      - 'scripts/regression-salary-activity-evidence.mjs'
+      - 'scripts/regression-salary-activity-browser.cjs'
+      - 'scripts/regression-salary-prerequisite-diagnostic.mjs'
+      - 'scripts/regression-salary-review-callers.mjs'
+      - 'scripts/regression-salary-operational-clock.mjs'
+      - 'scripts/fixtures/salary-night-3900-4527.json'
+      - 'scripts/fixtures/salary-clock-missing-counterproofs.json'
+      - 'scripts/regression-salary-prerequisites-browser.cjs'
+      - 'client/src/lib/databaseClient.ts'
       - '.github/workflows/financial-history-foundation.yml'
   workflow_dispatch:
 permissions:
@@ -17,14 +65,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
       - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-salary-operational-clock.mjs
+      - run: node scripts/regression-static-module-mime.mjs
+      - run: node scripts/regression-operated-flight-hours.mjs
+      - run: node scripts/regression-p0-623-regulatory-history-carry-in.mjs
+      - run: node scripts/regression-financial-review-owner-negative.mjs
+        env:
+          TZ: UTC
+      - run: node scripts/regression-financial-review-owner-negative.mjs
+        env:
+          TZ: America/Sao_Paulo
+      - run: node scripts/regression-financial-review-owner-negative.mjs
+        env:
+          TZ: America/New_York
+      - run: node scripts/regression-financial-owner-periods.mjs
+        env:
+          TZ: UTC
+      - run: node scripts/regression-financial-owner-periods.mjs
+        env:
+          TZ: America/Sao_Paulo
+      - run: node scripts/regression-financial-owner-periods.mjs
+        env:
+          TZ: America/New_York
+      - run: node scripts/regression-salary-prerequisite-diagnostic.mjs
+      - run: node scripts/regression-salary-review-callers.mjs
       - run: node scripts/regression-financial-read-model.mjs
       - run: node scripts/regression-financial-statement-totals.mjs
+      - name: Verify reported breakfast criterion with base/time evidence
+        run: node scripts/regression-breakfast-base-presence.mjs
       - run: node --test scripts/regression-financial-review-negative.mjs
       - run: node scripts/regression-financial-callers.mjs
         env:
@@ -35,7 +111,143 @@ jobs:
       - run: node scripts/regression-financial-callers.mjs
         env:
           TZ: America/New_York
+      - name: Verify actual allowance caller in operational BRT across device timezones
+        run: node scripts/regression-operational-finance-clock.mjs
+      - run: node scripts/regression-financial-comparison-periods.mjs
+      - run: node scripts/regression-financial-history-periods.mjs
+        env:
+          TZ: UTC
+      - run: node scripts/regression-financial-history-periods.mjs
+        env:
+          TZ: America/Sao_Paulo
+      - run: node scripts/regression-financial-history-periods.mjs
+        env:
+          TZ: America/New_York
       - run: node scripts/regression-p0-530-finance-canonical-journey.mjs
+      - name: Verify published canonical duty measurement
+        run: |
+          node scripts/regression-duty-boundary-source.mjs
+          node scripts/regression-canonical-duty-measurement.mjs
+          node scripts/regression-canonical-duty-load.mjs
       - run: node scripts/regression-p2-530-adjacent-fallback-finance.mjs
       - run: npx tsc --noEmit
       - run: npx vite build
+      - name: Verify planned reference owner and session isolation
+        run: |
+          node scripts/regression-planned-roster-owner.mjs
+          node scripts/regression-planned-roster-import-race.mjs
+      - name: Verify literal free-day review and owner delivery ledger
+        run: |
+          node scripts/regression-free-day-postponement.mjs
+          node scripts/regression-free-day-telegram-preparation.mjs
+      - name: Install isolated UI browser dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/financial-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/financial-ui/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify physical PDF and compiled free-day alerts
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: |
+          node scripts/regression-free-day-physical.mjs
+          node scripts/regression-free-day-sources-browser.mjs
+          node scripts/regression-free-day-source-queue-browser.mjs
+          node scripts/regression-free-day-personal-consent-browser.mjs
+          node scripts/regression-free-day-simulated-worker-browser.mjs
+          node scripts/regression-free-day-observational-get-browser.mjs
+          node scripts/regression-free-day-browser.cjs
+      - name: Save synthetic free-day alert evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: free-day-alert-synthetic
+          path: |
+            artifacts/free-day-postponement/
+            artifacts/free-day-physical/
+            artifacts/free-day-ui/
+            artifacts/free-day-sources/
+            artifacts/free-day-source-queue/
+            artifacts/free-day-personal-consent/
+            artifacts/free-day-simulated-worker/
+            artifacts/free-day-observational-get/
+          if-no-files-found: ignore
+      - name: Verify planned comparison with synthetic account switching
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-planned-roster-owner-browser.cjs
+      - name: Verify physical PDF duty boundary provenance
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: |
+          node scripts/regression-aims-duty-source-browser.mjs
+          node scripts/regression-aims-activity-financial-chain.mjs
+          AIMS_DUTY_SOURCE_REPORT=artifacts/aims-duty-source/report.json node scripts/regression-canonical-duty-home-browser.cjs
+      - name: Verify actual compiled financial UI with synthetic owner fixtures
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-financial-ui-browser.cjs
+      - name: Verify legacy flight-role origin remains pending
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-operated-flight-origin-browser.cjs
+      - name: Verify unknown reserve and standby salary evidence
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: |
+          node scripts/regression-salary-activity-evidence.mjs
+          node scripts/regression-salary-activity-browser.cjs
+      - name: Verify salary prerequisites with synthetic owner fixtures
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-salary-prerequisites-browser.cjs
+      - name: Verify compact canonical duty card with synthetic fixtures
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: |
+          node scripts/regression-canonical-duty-card-browser.mjs
+          node scripts/regression-canonical-duty-home-browser.cjs
+      - name: Save planned reference isolation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: planned-roster-owner-synthetic
+          path: artifacts/planned-roster-owner/
+          if-no-files-found: ignore
+      - name: Save AIMS duty provenance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aims-duty-source-synthetic
+          path: |
+            artifacts/aims-duty-source/
+            artifacts/aims-duty-source-home/
+            artifacts/aims-activity-finance/
+          if-no-files-found: ignore
+      - name: Save salary activity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: salary-activity-evidence-synthetic
+          path: |
+            artifacts/salary-activity-evidence/
+            artifacts/salary-activity-ui/
+          if-no-files-found: ignore
+      - name: Save salary diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: salary-prerequisites-synthetic
+          path: artifacts/salary-prerequisites/
+          if-no-files-found: ignore
+      - name: Save synthetic UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: financial-ui-synthetic
+          path: |
+            artifacts/financial-ui/
+            artifacts/canonical-duty-measurement/
+            artifacts/canonical-duty-card/
+            artifacts/canonical-duty-home/
+            artifacts/operated-flight-hours/
+            artifacts/operated-flight-origin/
+          if-no-files-found: ignore

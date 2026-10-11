@@ -15,12 +15,12 @@ function expression(fn, name) {
   assert.ok(found, `${fn}.${name} must exist`);
   return found;
 }
-const names = ['positioningSearchKey', 'readPositioningSearch', 'writePositioningSearch', 'departurePositioningPlan'];
+const names = ['positioningContext', 'positioningSearchKey', 'readPositioningSearch', 'writePositioningSearch', 'departurePositioningPlan'];
 const constants = source.statements.filter(ts.isVariableStatement).filter(node => node.declarationList.declarations.some(decl => ['POSITIONING_ERROR_CACHE_MS', 'SMART_DEPARTURE_FLIGHT_THRESHOLD_KM'].includes(decl.name.getText(source))));
 const cached = new Map();
 const storage = { get: (key, fallback) => cached.get(key) ?? fallback, set: (key, value) => cached.set(key, value) };
-const runtime = new Function('storage', 'departureConfirmedSameDayPositioning', 'departurePresentationDateTime', 'nearestDepartureAirport', 'eventRouteOrigin', compile([...names.map(name => functions.get(name).getText(source)), ...constants.map(node => node.getText(source))].join('\n')) + '; return { readPositioningSearch, writePositioningSearch, departurePositioningPlan, POSITIONING_ERROR_CACHE_MS };')(
-  storage, event => Boolean(event.confirmed), () => new Date('2026-10-03T12:00:00Z'), () => null, () => 'synthetic-origin',
+const runtime = new Function('storage', 'getStoredUser', 'departureConfirmedSameDayPositioning', 'departurePresentationDateTime', 'nearestDepartureAirport', 'eventRouteOrigin', compile([...names.map(name => functions.get(name).getText(source)), ...constants.map(node => node.getText(source))].join('\n')) + '; return { readPositioningSearch, writePositioningSearch, departurePositioningPlan, POSITIONING_ERROR_CACHE_MS };')(
+  storage, () => ({id:'synthetic-A'}), event => Boolean(event.confirmed), () => new Date('2026-10-03T12:00:00Z'), () => null, () => 'synthetic-origin',
 );
 // Execute the actual component decision expressions, including their confirmed-record precedence.
 const departureFunction = functions.has('AirportDeparture') ? 'AirportDeparture' : 'Departure';
@@ -69,7 +69,7 @@ try {
   const session = lib.exports.createDepartureRouteSession(value => snapshots.push(value));
   session.complete(session.begin(), far);
   session.complete(session.begin(), {ok:false,message:'route refresh failed'});
-  check(snapshots.at(-1).clientRouteState === 'stale' && see(snapshots.at(-1)).detail === 'Dia anterior', 'stale far route plus cached Radar error retains fallback');
+  check(snapshots.at(-1).clientRouteState === 'stale' && !runtime.departurePositioningPlan(event, snapshots.at(-1)).requiresFlight && !see(snapshots.at(-1)).positioningUnresolved, 'stale far route is retained as stale evidence without a new flight decision');
   check(see(far, false, { ...event, id:'event-B' }).positioningUnresolved, 'event B cannot read event A terminal cache');
   session.dispose();
   const nextAccount = lib.exports.createDepartureRouteSession(value => snapshots.push(value));
