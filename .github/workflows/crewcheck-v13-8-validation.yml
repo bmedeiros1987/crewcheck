@@ -60,6 +60,7 @@ jobs:
           node scripts/regression-free-day-simulated-worker.mjs
           node scripts/regression-free-day-observational-get.mjs
           node scripts/regression-notification-mysql.mjs
+          node scripts/android-play/test_mysql_journal_isolated.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
           node scripts/v139/apply.mjs
           node scripts/regression-free-day-held.mjs

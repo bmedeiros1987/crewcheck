@@ -98,3 +98,10 @@ retains data before APK distribution. Otherwise use an authorized Play-delivered
 do not rotate keys, clear data or change package IDs. Production eligibility and current
 credential/lifecycle state remain unknown. The user's production/internal-fallback
 preference does not bypass code, review, durable-receipt or coordination gates.
+
+The follow-up in the same PR includes `artifact_consumer.py` (offline local ZIP
+verification) and `mysql_journal.mjs` (inactive existing-pool adapter and commit
+coordinator). See [EXISTING-JOURNAL-OPTIONS.md](EXISTING-JOURNAL-OPTIONS.md) for tested
+components, current wiring gaps and exact existing-access choices. Neither component
+is wired to the store publisher. The previous preparation-only approval does not
+cover this follow-up; its complete new HEAD requires independent review.

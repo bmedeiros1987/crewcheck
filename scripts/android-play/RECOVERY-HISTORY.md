@@ -79,3 +79,9 @@ was performed while preparing this patch. Upload signing continues to use existi
 CI secrets only when a separately authorized build is run. APK upload signer does
 not prove compatibility with Play-installed apps; App Signing certificate and
 data-preserving update testing remain necessary.
+
+Follow-up composition preserves main aa281eee (merged PR1002), without PR951 code.
+The same PR now adds offline immutable artifact consumption and an inactive
+existing-MySQL adapter/coordinator; prior c30eb8a9 approval does not cover this new
+HEAD. See EXISTING-JOURNAL-OPTIONS.md. Its real SQL test reuses the existing web CI
+QA socket/container and must pass before claiming InnoDB integration validation.

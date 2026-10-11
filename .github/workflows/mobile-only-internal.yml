@@ -72,6 +72,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 ../control/scripts/android-play/test_mobile_internal.py
+          python3 ../control/scripts/android-play/test_artifact_consumer.py
+          node ../control/scripts/android-play/test_mysql_journal.mjs
           python3 ../control/scripts/android-play/mobile_internal.py check-ci
       - name: Allocate only phone version from live package tracks and bundles
         if: inputs.publish_mobile_internal == true
