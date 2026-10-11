@@ -5,9 +5,14 @@ package com.crewcheck.app;
 public final class StayAlarmSessionHost implements StayAlarmEngine.Owner {
     public interface Clock { long now(); }
     public interface LeaseStore { void write(String account,String epoch,long expiresAt); }
-    private final Clock clock; private final LeaseStore store; private final boolean enabled;
+    private final Clock clock; private final LeaseStore store; private final boolean enabled;private final long maxDuration;
     private volatile long generation=0,expires=0; private volatile String account=null,epoch=null;
-    public StayAlarmSessionHost(boolean enabled,Clock clock,LeaseStore store){this.enabled=enabled;this.clock=clock;this.store=store;}
+    public StayAlarmSessionHost(boolean enabled,Clock clock,LeaseStore store){this(enabled,clock,store,300_000);}
+    public StayAlarmSessionHost(boolean enabled,Clock clock,LeaseStore store,long maxDuration){
+        if(maxDuration<=0||maxDuration>18*3_600_000L)throw new IllegalArgumentException("duration");
+        this.enabled=enabled;this.clock=clock;this.store=store;this.maxDuration=maxDuration;
+    }
+    public long remaining(){return activeOwner()==null?0:Math.max(0,expires-clock.now());}
     public boolean enabled(){return enabled;}
     public String activeOwner(){return enabled&&clock.now()<expires?account:null;}
     public String epoch(){return activeOwner()==null?null:epoch;}
@@ -18,7 +23,7 @@ public final class StayAlarmSessionHost implements StayAlarmEngine.Owner {
     public boolean verified(long requestGeneration,String verifiedId,String newEpoch,long expiry){final boolean[] accepted={false};
         StayAlarmEngine.updateTrustedOwner(()->{
             if(!enabled||requestGeneration!=generation||verifiedId==null||verifiedId.trim().isEmpty()||newEpoch==null||newEpoch.isEmpty()
-                ||expiry<=clock.now()||expiry-clock.now()>300_000)return;
+                ||expiry<=clock.now()||expiry-clock.now()>maxDuration)return;
             store.write(verifiedId,newEpoch,expiry);account=verifiedId;epoch=newEpoch;expires=expiry;accepted[0]=true;
         });return accepted[0];}
     public boolean current(long value){return enabled&&value==generation&&activeOwner()!=null;}

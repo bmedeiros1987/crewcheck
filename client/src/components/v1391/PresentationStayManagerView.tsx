@@ -339,6 +339,7 @@ export default function PresentationStayManagerView({ events, initialStayId, emb
       </div>
       <div className="cc139-actions"><button className="primary" onClick={saveStay} disabled={busy || !selected}><Save/> Salvar alterações do pernoite</button><details><summary>Mais opções da edição</summary><button type="button" onClick={() => setManual(true)}><Building2/> Hotel de contingência / manual</button><button type="button" onClick={discardEdits} disabled={!selected}>Descartar edição deste pernoite</button>{selected?.kind === 'stay' && <button type="button" onClick={cancelStayAlarm}>Cancelar despertador deste pernoite</button>}</details></div>
     </section>
+    {nativeHost.current && !hostReady && <button type="button" onClick={() => { void nativeHost.current.authenticate(); }}>Validar sessão deste aparelho</button>}
     {selected?.kind === 'stay' && <StayHotelAlarmPreview eventId={selected.id} hotelApzIso={apzEpoch === null ? '' : new Date(apzEpoch).toISOString()}
       timeZone={hotelTimeZone} choice={alarmChoice} defaultLeadMinutes={defaultLead} onChoice={choice => { dirty.current = true; void nativeHost.current?.invalidate(); setAlarmChoice(choice); }}
       nativeTestReady={hostReady} onProgram={async (alarmAt: string, hotelReportAt: string) => {

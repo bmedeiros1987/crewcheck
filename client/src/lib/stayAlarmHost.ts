@@ -1,3 +1,4 @@
+import { attachStayAlarmLifecycle } from '@shared/stay-alarm-lifecycle.mjs';
 import { createStayHostRuntime } from '@shared/stay-alarm-host-runtime.mjs';
 import { getToken } from './authClient';
 import { stayEditorAccount } from './stayEditorStore';
@@ -14,6 +15,10 @@ export function preparedStayAlarmAdapter() {
   window.addEventListener('crewcheck:auth-expired', () => { void runtime.revoke(); });
   window.addEventListener('storage', event => { if (['crewcheck_auth_token', 'crewcheck_auth_user'].includes(event.key || '')) reauthenticate(); });
   window.addEventListener('pagehide', () => { void runtime.revoke(); });
+  attachStayAlarmLifecycle(window, runtime);
   reauthenticate();
   return runtime;
 }
+
+// Main app startup installs lifecycle even when the editor has never mounted.
+if (typeof window !== 'undefined') preparedStayAlarmAdapter();

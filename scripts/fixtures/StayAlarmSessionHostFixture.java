@@ -10,6 +10,10 @@ public final class StayAlarmSessionHostFixture {
   long third=host.begin();check(!host.verified(third,"b","e",now[0]+300001));check(!host.verified(third,"b","e",now[0]));
   check(host.verified(third,"b","e",now[0]+1));now[0]++;check(host.activeOwner()==null);check(host.epoch()==null);
   StayAlarmSessionHost off=new StayAlarmSessionHost(false,()->now[0],(id,epoch,expiry)->{});check(!off.verified(off.begin(),"b","e",now[0]+1));check(!off.enabled());
+  StayAlarmSessionHost night=new StayAlarmSessionHost(true,()->now[0],(id,epoch,expiry)->{},18*3_600_000L);
+  check(night.verified(night.begin(),"verified-night","night-epoch",now[0]+8*3_600_000L));
+  check(night.remaining()==8*3_600_000L);now[0]+=8*3_600_000L;check(night.activeOwner()==null);
+  check(!night.verified(night.begin(),"night","epoch",now[0]+19*3_600_000L));
   System.out.println("PASS trusted host: "+checks+" assertions; verified result/lease/logout/account switch/stale generation/OFF; fake clock/store only");
  }
 }
