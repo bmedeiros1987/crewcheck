@@ -46,7 +46,8 @@ try{
   const bound={...staged,expectedTrackSha256:snapshotDigest(targetTrack),otherTracksBeforeSha256:snapshotDigest(otherTracks)};
   const start=await recovery.reserve(packageName,'qa-reconcile',intent);
   const opened2=await recovery.advance(packageName,start.owner,bound,start.revision,'edit_open');
-  const ack=await coordinatedCommit(recovery,opened2,async()=>{}); // synthetic callback only
+  await coordinatedCommit(recovery,opened2,async()=>{}); // synthetic callback only
+  const ack=await recovery.read(packageName); // exact durable record, no outcome-only fields
   const observation={httpStatus:200,package:packageName,editId:bound.editId,owner:ack.owner,revision:ack.revision,inventoryComplete:true,pendingReview:false,unfinishedRelease:false,unresolvedEdits:false,targetTrack,otherTracks};
   await assert.rejects(reconcileAcknowledged(recovery,ack,async()=>({...observation,pendingReview:true})));
   assert.equal((await recovery.read(packageName)).state,'acknowledged');
