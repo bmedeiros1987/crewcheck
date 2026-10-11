@@ -86,16 +86,18 @@ jobs:
       - run: npm ci
       - name: Install isolated browser test runner
         run: |
-          npm install --prefix "$RUNNER_TEMP/emergency-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          npm install --prefix "$RUNNER_TEMP/emergency-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0 jsdom@22.1.0
           node "$RUNNER_TEMP/emergency-browser/node_modules/playwright/cli.js" install --with-deps chromium
       - name: Test actual EmergencyCenter with fictional accounts before preparation
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
+          WAKEUP_JSDOM_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
         run: |
           node scripts/regression-emergency-center-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-readiness-browser.mjs
           node scripts/regression-notification-center-browser.mjs
+          node scripts/regression-wakeup-selection-react.mjs
           node scripts/regression-bids-alert-preferences-browser.mjs
           node scripts/regression-web-push-worker-browser.mjs
           node scripts/regression-web-push-device-browser.mjs
@@ -104,11 +106,13 @@ jobs:
       - name: Test actual EmergencyCenter after source preparation
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
+          WAKEUP_JSDOM_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
         run: |
           node scripts/regression-emergency-center-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-readiness-browser.mjs
           node scripts/regression-notification-center-browser.mjs
+          node scripts/regression-wakeup-selection-react.mjs
           node scripts/regression-bids-alert-preferences-browser.mjs
           node scripts/regression-web-push-worker-browser.mjs
           node scripts/regression-web-push-device-browser.mjs

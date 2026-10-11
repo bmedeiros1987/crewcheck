@@ -11,3 +11,9 @@ O atalho no Despertador abre Menu → Notificações → Ligação · número e 
 Validação local: TypeScript raw/preparado, build, modelo por conta/alarme, UI real do Despertador preparado, central, preferências BIDS (claro/escuro e texto ampliado), projeção de preferências, handlers de preferências/autenticação, segurança da fila e regressões sintéticas de folga. HTTP/transportes são simulados; zero envio real, pedido de permissão ou ativação paga. Imagens de revisão são fixtures sintéticas, não prova de aparelho, produção ou recebimento.
 
 Não modifica main.tsx, stay-alarm-host-runtime, editor de pernoite, native/Android/watch nem implementa as PR997–999. Não muda flags, credenciais, planos ou serviços. BIDS oficial continua não verificado; entrega com aplicativo fechado e entrega física continuam não comprovadas.
+
+## Correções da revisão de ae6ac2cd
+
+A troca de conta recebida por `storage` agora invalida e recarrega a escolha local, inclusive A → B → A sem remontagem. O escopo resolvido fica associado à conta, `eventId` e instante: mudar a programação não emite `ready:true` usando o escopo anterior. Um teste React 18/jsdom retém o hash para observar essa transição.
+
+O botão e o handler exigem histórico de alarmes em estado `ready`. Uma trava por referência é invalidada no início síncrono da consulta, antes da atualização React, e fica fechada em erro ou troca de conta. O teste da UI preparada mantém a consulta retida, invoca diretamente o handler, falha a consulta e depois retorna um alarme pendente com antecedência de 75 minutos para uma preferência de 90 minutos: nenhuma segunda solicitação passa. Transportes simulados; nenhuma mensagem ou chamada real.
