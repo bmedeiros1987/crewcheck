@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import mysql from 'mysql2/promise';
 import {createMysqlJournal,coordinatedCommit} from './mysql_journal.mjs';
 import {reconcileAcknowledged,snapshotDigest} from './reconcile_journal.mjs';
+import {mysqlAdapter} from '../../server/mysql-platform-adapter.mjs';
+import {createPlatformJournal} from './platform_journal.mjs';
 globalThis.fetch=()=>{throw Error('External network forbidden');};
 const socketPath='/tmp/crewcheck-notification-qa-socket/mysqld.sock';
 assert.equal(process.env.CREWCHECK_NOTIFICATION_QA,'isolated-mysql');
@@ -31,7 +33,8 @@ try{
   await assert.rejects(createMysqlJournal(db).reserve(packageName,'fresh-run',intent));
   await reset();let loseCommit=false;
   const lossy={query:(...args)=>db.query(...args),async getConnection(){const c=await db.getConnection();return {
-    query:(...args)=>c.query(...args),beginTransaction:()=>c.beginTransaction(),rollback:()=>c.rollback(),release:()=>c.release(),destroy:()=>c.destroy(),
+    async query(sql,args){const result=await c.query(sql,args);if(sql==='COMMIT'&&loseCommit){loseCommit=false;throw Error('synthetic acknowledgement lost AFTER SQL COMMIT query');}return result;},
+    beginTransaction:()=>c.beginTransaction(),rollback:()=>c.rollback(),release:()=>c.release(),destroy:()=>c.destroy(),
     async commit(){await c.commit();if(loseCommit){loseCommit=false;throw Error('synthetic acknowledgement lost AFTER SQL commit');}}
   };}};
   const recovery=createMysqlJournal(lossy),first=await recovery.reserve(packageName,'qa-owner',intent);
@@ -59,5 +62,16 @@ try{
   await assert.rejects(reconcileAcknowledged(recovery,ack,async()=>observation));
   await assert.rejects(recovery.reserve(packageName,'after-reconciled',intent));
   console.log('PASS: real existing isolated SQL reconciliation proof survives lost acknowledgement; replay and rollover blocked; no Play calls');
+  await reset();
+  const platformJournal=createPlatformJournal(mysqlAdapter(lossy));
+  const bridged=await platformJournal.reserve(packageName,'qa-platform-bridge',intent);
+  await assert.rejects(platformJournal.advance(packageName,'foreign',bound,bridged.revision,'edit_open'));
+  const bridgedEdit=await platformJournal.advance(packageName,bridged.owner,bound,bridged.revision,'edit_open');
+  loseCommit=true;let bridgeExternalCalls=0;
+  await assert.rejects(coordinatedCommit(platformJournal,bridgedEdit,async()=>bridgeExternalCalls++));
+  assert.equal(bridgeExternalCalls,0);
+  assert.equal((await createPlatformJournal(mysqlAdapter(db)).read(packageName)).state,'pending');
+  await assert.rejects(createPlatformJournal(mysqlAdapter(db)).reserve(packageName,'new-platform-owner',intent));
+  console.log('PASS: existing platform query/connect adapter and journal share real isolated SQL binds/CAS; lost pending acknowledgement blocks external callback and new owner; no Play calls');
   console.log('PASS: real existing isolated MySQL PK concurrency, owner/revision fencing and committed-but-lost pending acknowledgement; no Play calls');
 }finally{await reset();await db.end();}
