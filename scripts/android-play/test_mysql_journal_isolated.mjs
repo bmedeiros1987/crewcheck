@@ -6,6 +6,7 @@ import {createMysqlJournal,coordinatedCommit} from './mysql_journal.mjs';
 import {reconcileAcknowledged,snapshotDigest} from './reconcile_journal.mjs';
 import {mysqlAdapter} from '../../server/mysql-platform-adapter.mjs';
 import {createPlatformJournal} from './platform_journal.mjs';
+import {createJournalProtocol} from './journal_protocol.mjs';
 globalThis.fetch=()=>{throw Error('External network forbidden');};
 const socketPath='/tmp/crewcheck-notification-qa-socket/mysqld.sock';
 assert.equal(process.env.CREWCHECK_NOTIFICATION_QA,'isolated-mysql');
@@ -73,5 +74,22 @@ try{
   assert.equal((await createPlatformJournal(mysqlAdapter(db)).read(packageName)).state,'pending');
   await assert.rejects(createPlatformJournal(mysqlAdapter(db)).reserve(packageName,'new-platform-owner',intent));
   console.log('PASS: existing platform query/connect adapter and journal share real isolated SQL binds/CAS; lost pending acknowledgement blocks external callback and new owner; no Play calls');
+  await reset();
+  const wireJournal=createPlatformJournal(mysqlAdapter(lossy));
+  const binding={package:packageName,owner:'qa-wire',producer:'mobile',...intent};
+  const protocol=createJournalProtocol({journal:wireJournal,binding,authorize:async()=>true}); // fictional QA capability only
+  const canonical=v=>v&&typeof v==='object'?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}':JSON.stringify(v);
+  const frame=(id,operation,revision,state,intent)=>canonical({schema:1,id,operation,binding,revision,state,intent});
+  const reservedWire=JSON.parse(await protocol(frame('reserve','reserve',0,null,intent)));
+  assert.equal(reservedWire.status,'ok');assert.equal(reservedWire.record.revision,1);
+  const stagedWire=JSON.parse(await protocol(frame('open','advance',1,'edit_open',bound)));
+  assert.equal(stagedWire.status,'ok');assert.equal(stagedWire.record.revision,2);
+  loseCommit=true;
+  const uncertainWire=JSON.parse(await protocol(frame('pending','advance',2,'pending',bound)));
+  assert.equal(uncertainWire.status,'blocked');assert.equal(uncertainWire.retryAllowed,false);
+  assert.equal((await createPlatformJournal(mysqlAdapter(db)).read(packageName)).state,'pending');
+  assert.equal(JSON.parse(await protocol(frame('new-id','advance',2,'pending',bound))).status,'blocked');
+  await assert.rejects(createPlatformJournal(mysqlAdapter(db)).reserve(packageName,'other-wire-owner',intent));
+  console.log('PASS: serialized executor/journal protocol on existing real isolated platform SQL; lost durable reply and stale frames block without retry or Play');
   console.log('PASS: real existing isolated MySQL PK concurrency, owner/revision fencing and committed-but-lost pending acknowledgement; no Play calls');
 }finally{await reset();await db.end();}
