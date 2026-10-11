@@ -168,10 +168,8 @@ public final class CrewCheckMyCrewCarePortalV3 {
         private void receive(Operation op,int step,String kind,Map<String,String> card,ObservedPage page) {
             synchronized(this) { if(active!=op || op.step!=step) return; ++op.step; }
             try {
-                validate(op,kind,card,page);
+                validate(op.scope,kind,card,page);
                 if(kind.startsWith("profile")) {
-                    Map<String,String> profile=page.rows.get(0);
-                    if(!op.scope.employeeId.equals(profile.get("employeeId")) || !op.scope.username.equals(profile.get("username"))) throw new IllegalArgumentException();
                     if(kind.equals("profile-before")) acquire(op,"cards",null);
                     else finish(op,new ObservedResult(op.scope,op.details),null);
                 } else if(kind.equals("cards")) {
@@ -185,10 +183,10 @@ public final class CrewCheckMyCrewCarePortalV3 {
                 }
             } catch(RuntimeException error) { finish(op,null,"observed-validation-failed"); }
         }
-        private void validate(Operation op,String kind,Map<String,String> card,ObservedPage page) {
-            if(page==null || page.scope==null || page.scope.generation!=op.scope.generation
-                || !op.scope.accountId.equals(page.scope.accountId) || !op.scope.sessionId.equals(page.scope.sessionId)
-                || !op.scope.requestId.equals(page.scope.requestId)) throw new IllegalArgumentException();
+        private static void validate(ObservedScope scope,String kind,Map<String,String> card,ObservedPage page) {
+            if(page==null || page.scope==null || page.scope.generation!=scope.generation
+                || !scope.accountId.equals(page.scope.accountId) || !scope.sessionId.equals(page.scope.sessionId)
+                || !scope.requestId.equals(page.scope.requestId)) throw new IllegalArgumentException();
             URI uri=URI.create(page.url);
             String path=kind.startsWith("profile")?"userprofile.aspx":kind.equals("cards")?"mytravel.aspx":"reservation.aspx";
             if(!"https".equals(uri.getScheme()) || !"api2.apicrewcare.com".equals(uri.getHost())
@@ -199,6 +197,8 @@ public final class CrewCheckMyCrewCarePortalV3 {
             for(Map<String,String> row:page.rows) {
                 if(!row.keySet().equals(keys)) throw new IllegalArgumentException();
                 for(String value:row.values()) if(!id(value) || value.matches("(?s).*[\\x00-\\x1f\\x7f].*")) throw new IllegalArgumentException();
+                if(kind.startsWith("profile") && (!scope.employeeId.equals(row.get("employeeId"))
+                    || !scope.username.equals(row.get("username")))) throw new IllegalArgumentException();
                 if(!kind.startsWith("profile")) {
                     if(!row.get("airport").matches("[A-Z]{3}")) throw new IllegalArgumentException();
                     if(!unique.add(row.get("providerReservationId")+"|"+row.get("dutyPeriodNumber"))) throw new IllegalArgumentException();
@@ -236,6 +236,13 @@ public final class CrewCheckMyCrewCarePortalV3 {
                 }
             }
         }
+    }
+
+    /** The WebView receipt reuses the acquisition's sole typed-page validator. */
+    static ObservedPage validatedObservedPage(ObservedRequest request,String url,List<Map<String,String>> rows) {
+        ObservedPage page=new ObservedPage(request.scope,url,rows);
+        ObservedAcquisition.validate(request.scope,request.kind,request.card,page);
+        return page;
     }
 
     private final Activity activity;
