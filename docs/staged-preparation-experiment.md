@@ -106,3 +106,8 @@ actual-block replay regression and mandatory web gate, and the Maps fixture
 clock control. Eliminating duplicate preparation in this one job does not remove
 the repeat/invalidation dependency or justify dropping another gate. The stack
 and PR1017 remain unchanged; no PR closure or runtime migration is part of adoption.
+
+The adopted job pins Node22.23.3, the runtime already validated for the approved
+adapter. Retaining the previous job's Node22.13.0 fails closed at Vite's native
+loader with ERR_UNKNOWN_FILE_EXTENSION for vite.config.ts; no fallback loader or
+in-place npm build is used. This pin is part of the scoped CI behavior change.
