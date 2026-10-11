@@ -20,31 +20,34 @@ export function createMyCrewCareObservedCoordinator({ acquire } = {}) {
   let generation = 0;
   let pending = null;
   let latest = null;
-  function invalidate() {
-    generation += 1;
-    pending?.abort();
+  function invalidate(nextBinding = binding) {
+    const token = ++generation;
+    const previous = pending;
     pending = null;
     latest = null;
+    binding = nextBinding;
+    // Abort invokes arbitrary synchronous listeners. Complete this transition
+    // first, and never overwrite a newer reentrant transition afterwards.
+    previous?.abort();
+    return token;
   }
   return Object.freeze({
     bind(value) {
-      invalidate();
-      binding = null;
-      if (!value || !identifier(value.accountId) || !identifier(value.sessionId)
-        || !identifier(value.employeeId) || !/^\d+$/.test(value.employeeId) || !identifier(value.username)) return false;
+      const valid = value && identifier(value.accountId) && identifier(value.sessionId)
+        && identifier(value.employeeId) && /^\d+$/.test(value.employeeId) && identifier(value.username);
       // Captured copies, never caller-owned mutable scope or hardcoded identity.
-      binding = Object.freeze({ accountId: value.accountId, sessionId: value.sessionId,
-        employeeId: value.employeeId, username: value.username });
-      return true;
+      const next = valid ? Object.freeze({ accountId: value.accountId, sessionId: value.sessionId,
+        employeeId: value.employeeId, username: value.username }) : null;
+      invalidate(next);
+      return Boolean(valid);
     },
     cancel() { invalidate(); },
-    disconnect() { invalidate(); binding = null; },
+    disconnect() { invalidate(null); },
     observation() { return latest; },
     async read() {
-      invalidate();
-      if (!binding || typeof acquire !== 'function') return null;
+      const token = invalidate();
+      if (token !== generation || !binding || typeof acquire !== 'function') return null;
       const captured = binding;
-      const token = generation;
       const abort = new AbortController();
       pending = abort;
       const scope = Object.freeze({ ...captured, requestId: `observed-${globalThis.crypto.randomUUID()}:${token}`, generation: token });
@@ -83,7 +86,7 @@ export function createMyCrewCareObservedCoordinator({ acquire } = {}) {
         if (live()) latest = null;
         return null;
       } finally {
-        if (live()) pending = null;
+        if (pending === abort) pending = null;
       }
     },
   });

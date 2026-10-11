@@ -109,3 +109,80 @@ test('new same-account read wins over an older incomplete read', async () => {
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(coordinator.observation(), newer);
 });
+
+test('abort reentrancy gives the nested newer read sole ownership in either completion order', async () => {
+  for (const order of ['nested-first', 'outer-first']) {
+    let coordinator;
+    let nested;
+    let first = true;
+    const gates = [];
+    const coordinatorAcquire = request => {
+      if (first) {
+        first = false;
+        request.signal.addEventListener('abort', () => { nested = coordinator.read(); }, { once: true });
+        return new Promise(() => {});
+      }
+      if (request.kind === 'profile-before') return new Promise(resolve => gates.push({ request, release: () => resolve(response(request)) }));
+      return Promise.resolve(response(request));
+    };
+    coordinator = createMyCrewCareObservedCoordinator({ acquire: coordinatorAcquire });
+    coordinator.bind(binding);
+    const older = coordinator.read();
+    const outer = coordinator.read(); // abort synchronously starts nested, newer read
+    assert.ok(nested);
+    if (order === 'nested-first') {
+      gates[0].release();
+      const newest = await nested;
+      for (const gate of gates.slice(1)) gate.release();
+      await outer;
+      assert.equal(coordinator.observation(), newest);
+    } else {
+      for (const gate of gates.slice(1)) gate.release();
+      // Outer must already be invalidated, even before nested finishes.
+      assert.equal(await outer, null);
+      gates[0].release();
+      const newest = await nested;
+      assert.equal(coordinator.observation(), newest);
+    }
+    assert.equal(await older, null);
+  }
+});
+
+test('reentrant cancel, disconnect and account binding retain the newest transition', async () => {
+  for (const action of ['cancel', 'disconnect', 'bind']) {
+    let coordinator;
+    let nested;
+    let first = true;
+    let nestedSignal;
+    let release;
+    const coordinatorAcquire = request => {
+      if (first) {
+        first = false;
+        request.signal.addEventListener('abort', () => {
+          if (action === 'bind') coordinator.bind({ ...binding, accountId: 'synthetic-B', sessionId: 'session-B' });
+          nested = coordinator.read();
+        }, { once: true });
+        return new Promise(() => {});
+      }
+      if (request.kind === 'profile-before') {
+        nestedSignal = request.signal;
+        return new Promise(resolve => { release = () => resolve(response(request)); });
+      }
+      return Promise.resolve(response(request));
+    };
+    coordinator = createMyCrewCareObservedCoordinator({ acquire: coordinatorAcquire });
+    coordinator.bind(binding);
+    const older = coordinator.read();
+    if (action === 'bind') coordinator.bind({ ...binding, accountId: 'outer-B', sessionId: 'outer-session-B' });
+    else coordinator[action]();
+    assert.equal(await older, null);
+    if (action === 'disconnect') { assert.equal(await nested, null); continue; }
+    assert.equal(nestedSignal.aborted, false);
+    // A later explicit cancellation must still reach this reentrant pending read.
+    coordinator.cancel();
+    assert.equal(nestedSignal.aborted, true);
+    assert.equal(await nested, null);
+    release();
+    assert.equal(coordinator.observation(), null);
+  }
+});
