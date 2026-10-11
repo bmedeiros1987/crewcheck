@@ -120,6 +120,8 @@ test('explicit reservation bounds must overlap the persisted stay', () => {
   const valid = [
     {}, { reservationStartAt: null, reservationEndAt: '' },
     { reservationStartAt: stay.startAt, reservationEndAt: stay.endAt },
+    { reservationStartAt: '2026-10-10T11:00:00Z', reservationEndAt: '2026-10-10T13:00:00Z' },
+    { reservationStartAt: '2026-10-09T17:00:00Z', reservationEndAt: '2026-10-09T19:00:00Z' },
     { reservationStartAt: '2026-10-09T15:00:00-03:00', reservationEndAt: '2026-10-10T09:00:00-03:00' },
     { reservationStartAt: '2026-10-09T17:59:59Z' },
     { reservationEndAt: '2026-10-10T12:00:01Z' },
@@ -175,6 +177,26 @@ test('fact diff reports provider changes without mutating previous facts', () =>
   assert.equal(diff.hasChanges, true);
   assert.equal(diff.changed.length, 2);
   assert.equal(before.find((fact) => fact.kind === 'pickup').pickupAt, '2026-10-10T08:10:00.000Z');
+});
+
+test('disjoint reservation cannot sync, persist or restore as fresh hotel', async () => {
+  for (const [start, end] of [['2026-10-20T18:00:00Z', '2026-10-21T12:00:00Z'],
+    ['2026-10-01T18:00:00Z', '2026-10-02T12:00:00Z']]) {
+    const storage = new MemoryStorage();
+    const adapter = { read: async (request) => envelope(request, [{ ...record,
+      reservationStartAt: start, reservationEndAt: end }]) };
+    const session = createMyCrewCarePersistentSession({ adapter, storage, now: () => NOW });
+    session.setContext(context, [stay]);
+    session.setAutomatic(true);
+    assert.equal(await session.sync(), false);
+    assert.equal(session.hotel(stay.id), null);
+    assert.equal(storage.values.size, 0);
+    const restored = createMyCrewCarePersistentSession({ adapter, storage, now: () => NOW });
+    restored.setContext(context, [stay]);
+    restored.setAutomatic(true);
+    assert.equal(await restored.restore(), false);
+    assert.equal(restored.hotel(stay.id), null);
+  }
 });
 
 test('persistent session stores only normalized facts and restores them as cache', async () => {
