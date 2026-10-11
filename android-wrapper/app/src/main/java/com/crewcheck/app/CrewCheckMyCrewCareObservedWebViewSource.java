@@ -264,39 +264,44 @@ public final class CrewCheckMyCrewCareObservedWebViewSource implements ObservedS
     @WebViewBuilder.Experimental
     private static final class AndroidDriver implements Driver {
         final Activity activity;final CrewCheckMyCrewCareProfile profiles;final String accountId;
-        final Handler handler=new Handler(Looper.getMainLooper());WebView view;
+        final Handler handler=new Handler(Looper.getMainLooper());volatile WebView view;
         AndroidDriver(Activity activity,CrewCheckMyCrewCareProfile profiles,String accountId) {this.activity=activity;this.profiles=profiles;this.accountId=accountId;}
         public void post(Runnable task) {if(!handler.post(task))throw invalid();}
         public boolean isMainThread() {return Looper.myLooper()==Looper.getMainLooper();}
         public void navigate(String url,Navigation callback) {
             if(!isMainThread())throw invalid();
-            if(view==null) {
+            // A distinct view per page request makes late same-URL callbacks attributable.
+            // All views use the existing account profile; no session data is copied.
+            stop();
+            {
                 view=profiles.create(activity,accountId);
                 WebSettings settings=view.getSettings();settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);
                 settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setJavaScriptCanOpenWindowsAutomatically(false);settings.setSupportMultipleWindows(false);
                 view.setWebChromeClient(new WebChromeClient(){@Override public void onPermissionRequest(PermissionRequest request){request.deny();}});
             }
-            view.setDownloadListener((a,b,c,d,e)->callback.failed());
+            final WebView page=view;
+            view.setDownloadListener((a,b,c,d,e)->{if(view==page)callback.failed();});
             view.getSettings().setJavaScriptEnabled(false); // Read server-rendered DOM; provider scripts/subresources are not required.
             view.setWebViewClient(new WebViewClient() {
-                @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){if(!"GET".equals(r.getMethod())){if(r.isForMainFrame())callback.failed();return true;}return !callback.allow(r.getUrl().toString(),r.isForMainFrame());}
-                @Override public boolean shouldOverrideUrlLoading(WebView v,String next){return !callback.allow(next,true);}
+                @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){if(v!=page || view!=page)return true;if(!"GET".equals(r.getMethod())){if(r.isForMainFrame())callback.failed();return true;}return !callback.allow(r.getUrl().toString(),r.isForMainFrame());}
+                @Override public boolean shouldOverrideUrlLoading(WebView v,String next){if(v!=page || view!=page)return true;return !callback.allow(next,true);}
                 @Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){
+                    if(v!=page || view!=page)return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));
                     if(r.isForMainFrame() && "GET".equals(r.getMethod()) && callback.allow(r.getUrl().toString(),true))return null;
                     if(r.isForMainFrame() && !"GET".equals(r.getMethod()))callback.failed();
                     return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));
                 }
-                @Override public void onPageStarted(WebView v,String next,Bitmap icon){callback.started(next);}
-                @Override public void onPageFinished(WebView v,String next){callback.finished(next);}
-                @Override public void onReceivedError(WebView v,WebResourceRequest r,WebResourceError error){if(r.isForMainFrame())callback.failed();}
-                @Override public void onReceivedHttpError(WebView v,WebResourceRequest r,WebResourceResponse response){if(r.isForMainFrame())callback.failed();}
-                @Override public void onReceivedSslError(WebView v,SslErrorHandler handler,SslError error){handler.cancel();callback.failed();}
-                @Override public boolean onRenderProcessGone(WebView v,RenderProcessGoneDetail detail){callback.failed();return true;}
+                @Override public void onPageStarted(WebView v,String next,Bitmap icon){if(v==page && view==page)callback.started(next);}
+                @Override public void onPageFinished(WebView v,String next){if(v==page && view==page)callback.finished(next);}
+                @Override public void onReceivedError(WebView v,WebResourceRequest r,WebResourceError error){if(v==page && view==page && r.isForMainFrame())callback.failed();}
+                @Override public void onReceivedHttpError(WebView v,WebResourceRequest r,WebResourceResponse response){if(v==page && view==page && r.isForMainFrame())callback.failed();}
+                @Override public void onReceivedSslError(WebView v,SslErrorHandler handler,SslError error){handler.cancel();if(v==page && view==page)callback.failed();}
+                @Override public boolean onRenderProcessGone(WebView v,RenderProcessGoneDetail detail){if(v==page && view==page)callback.failed();return true;}
             });
             view.loadUrl(url);
         }
         public String url(){if(!isMainThread() || view==null)throw invalid();return view.getUrl();}
         public void evaluate(String script,Consumer<String> callback){if(!isMainThread() || view==null)throw invalid();view.getSettings().setJavaScriptEnabled(true);view.evaluateJavascript(script,callback::accept);}
-        public void stop(){if(!isMainThread())throw invalid();if(view!=null){view.stopLoading();view.destroy();view=null;}}
+        public void stop(){if(!isMainThread())throw invalid();WebView old=view;view=null;if(old!=null){try{old.stopLoading();}finally{old.destroy();}}}
     }
 }

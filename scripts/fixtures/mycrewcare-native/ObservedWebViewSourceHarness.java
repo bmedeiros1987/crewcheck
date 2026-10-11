@@ -152,7 +152,9 @@ public class ObservedWebViewSourceHarness extends ObservedAcquisitionHarness {
     ObservedSource bound=new ObservedSource(){public void acquire(ObservedRequest r,ObservedPageCallback cb){request[0]=r;source.acquire(r,cb);}public void cancel(ObservedScope s){source.cancel(s);}};
     check(owner.begin(boundScope,bound,new Deadline(),result::done),"native prepare accepted");check(android.webkit.WebView.instances.size()==viewIndex,"lazy profile creation only in main queue");
     for(int index=0;index<4;index++){
-      android.os.Handler.drain();var view=android.webkit.WebView.instances.get(viewIndex);ObservedRequest r=request[0];
+      android.os.Handler.drain();var view=android.webkit.WebView.instances.get(android.webkit.WebView.instances.size()-1);ObservedRequest r=request[0];
+      if(index>0){var old=android.webkit.WebView.instances.get(android.webkit.WebView.instances.size()-2);check(old.destroyed,"previous same-profile view destroyed before next page");
+        android.os.Handler.runMain(()->{old.client.onPageFinished(old,view.url);view.client.onPageFinished(old,view.url);old.client.onReceivedError(old,new android.webkit.WebResourceRequest(view.url,true),new android.webkit.WebResourceError());});android.os.Handler.drain();check(view.value==null,"late or wrongly attributed same-URL callback cannot evaluate new view");}
       check(view.settings.js==false,"provider scripts disabled on navigation");
       android.os.Handler.runMain(()->view.client.onPageFinished(view,view.url));android.os.Handler.drain();
       check(view.settings.js&&view.script.startsWith(asset),"actual generated asset evaluated in main");
@@ -163,15 +165,16 @@ public class ObservedWebViewSourceHarness extends ObservedAcquisitionHarness {
       final boolean[] denied=new boolean[1];android.os.Handler.runMain(()->denied[0]=view.client.shouldOverrideUrlLoading(view,new android.webkit.WebResourceRequest(view.url,false)));check(denied[0],"subframe navigation blocked");
       android.os.Handler.runMain(()->view.value.onReceiveValue(q(envelope(r))));android.os.Handler.drain();
     }
-    check(result.count==1&&result.result!=null&&android.webkit.WebView.instances.get(viewIndex).destroyed,"native driver full sequence and destroy main");
+    check(result.count==1&&result.result!=null&&android.webkit.WebView.instances.get(android.webkit.WebView.instances.size()-1).destroyed,"native driver full sequence and destroy main");
     check(profiles.createdAccounts.get(viewIndex).equals(boundScope.accountId),"existing isolated profile factory owns the exact binding only");cases++;
     }
     // Actual AndroidDriver stop precedes profile cleanup, both inline-main and worker-queued.
     for(String phase:List.of("profile-before","cards","detail","profile-after"))for(boolean onMain:List.of(false,true)) {
       int viewIndex=android.webkit.WebView.instances.size();var source=CrewCheckMyCrewCareObservedWebViewSource.prepare(new android.app.Activity(),profiles,scope("A"));var runtime=runtime();Capture result=new Capture();final ObservedRequest[] current=new ObservedRequest[1];
       ObservedSource bound=new ObservedSource(){public void acquire(ObservedRequest r,ObservedPageCallback cb){current[0]=r;source.acquire(r,cb);}public void cancel(ObservedScope s){source.cancel(s);}};
-      runtime.observeMyCrewCareV3ForReview(scope("A"),bound,new Deadline(),result::done);android.os.Handler.drain();var view=android.webkit.WebView.instances.get(viewIndex);
-      while(!current[0].kind.equals(phase)) {ObservedRequest r=current[0];android.os.Handler.runMain(()->view.client.onPageFinished(view,view.url));android.os.Handler.drain();android.os.Handler.runMain(()->view.value.onReceiveValue(q(envelope(r))));android.os.Handler.drain();}
+      runtime.observeMyCrewCareV3ForReview(scope("A"),bound,new Deadline(),result::done);android.os.Handler.drain();
+      while(!current[0].kind.equals(phase)) {ObservedRequest r=current[0];var stageView=android.webkit.WebView.instances.get(android.webkit.WebView.instances.size()-1);android.os.Handler.runMain(()->stageView.client.onPageFinished(stageView,stageView.url));android.os.Handler.drain();android.os.Handler.runMain(()->stageView.value.onReceiveValue(q(envelope(r))));android.os.Handler.drain();}
+      var view=android.webkit.WebView.instances.get(android.webkit.WebView.instances.size()-1);
       com.crewcheck.app.CrewCheckMyCrewCareProfile.requireStopped=true;
       Runnable cleanup=()->check(runtime.startMyCrewCareCleanupV3("A",true,"cleanup_thread"),"thread cleanup accepted");
       if(onMain)android.os.Handler.runMain(cleanup);else {Thread worker=new Thread(cleanup);worker.start();join(worker);}android.os.Handler.drain();
