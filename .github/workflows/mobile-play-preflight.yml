@@ -14,6 +14,10 @@ on:
       - 'scripts/android-play/test_artifact_consumer.py'
       - 'scripts/android-play/mysql_journal.mjs'
       - 'scripts/android-play/test_mysql_journal.mjs'
+      - 'scripts/android-play/consumed_validation.py'
+      - 'scripts/android-play/test_consumed_validation.py'
+      - 'scripts/android-play/reconcile_journal.mjs'
+      - 'scripts/android-play/test_reconcile_journal.mjs'
       - '.github/workflows/mobile-play-preflight.yml'
 
 permissions:
@@ -36,6 +40,8 @@ jobs:
       - run: python3 scripts/android-play/test_mobile_internal.py
       - run: python3 scripts/android-play/test_artifact_consumer.py
       - run: node scripts/android-play/test_mysql_journal.mjs
+      - run: python3 scripts/android-play/test_consumed_validation.py
+      - run: node scripts/android-play/test_reconcile_journal.mjs
   inspect-existing-play-access:
     needs: offline-guards
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'

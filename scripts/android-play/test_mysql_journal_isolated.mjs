@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import mysql from 'mysql2/promise';
 import {createMysqlJournal,coordinatedCommit} from './mysql_journal.mjs';
+import {reconcileAcknowledged,snapshotDigest} from './reconcile_journal.mjs';
 globalThis.fetch=()=>{throw Error('External network forbidden');};
 const socketPath='/tmp/crewcheck-notification-qa-socket/mysqld.sock';
 assert.equal(process.env.CREWCHECK_NOTIFICATION_QA,'isolated-mysql');
@@ -39,5 +40,24 @@ try{
   await assert.rejects(coordinatedCommit(recovery,edit,async()=>externalCalls++));
   assert.equal(externalCalls,0);assert.equal((await createMysqlJournal(db).read(packageName)).state,'pending');
   await assert.rejects(createMysqlJournal(db).reserve(packageName,'replacement-run',intent));
+  await reset();
+  const targetTrack={track:'qa',releases:[{status:'completed',versionCodes:['144201']}]};
+  const otherTracks={production:{track:'production',releases:[]}};
+  const bound={...staged,expectedTrackSha256:snapshotDigest(targetTrack),otherTracksBeforeSha256:snapshotDigest(otherTracks)};
+  const start=await recovery.reserve(packageName,'qa-reconcile',intent);
+  const opened2=await recovery.advance(packageName,start.owner,bound,start.revision,'edit_open');
+  await coordinatedCommit(recovery,opened2,async()=>{}); // synthetic callback only
+  const ack=await recovery.read(packageName); // exact durable record, no outcome-only fields
+  const observation={httpStatus:200,package:packageName,editId:bound.editId,owner:ack.owner,revision:ack.revision,inventoryComplete:true,pendingReview:false,unfinishedRelease:false,unresolvedEdits:false,targetTrack,otherTracks};
+  await assert.rejects(reconcileAcknowledged(recovery,ack,async()=>({...observation,pendingReview:true})));
+  assert.equal((await recovery.read(packageName)).state,'acknowledged');
+  loseCommit=true;
+  await assert.rejects(reconcileAcknowledged(recovery,ack,async()=>observation));
+  const durableProof=await createMysqlJournal(db).read(packageName);
+  assert.equal(durableProof.state,'reconciled');
+  assert.equal(durableProof.intent.reconciliationSha256,snapshotDigest(observation));
+  await assert.rejects(reconcileAcknowledged(recovery,ack,async()=>observation));
+  await assert.rejects(recovery.reserve(packageName,'after-reconciled',intent));
+  console.log('PASS: real existing isolated SQL reconciliation proof survives lost acknowledgement; replay and rollover blocked; no Play calls');
   console.log('PASS: real existing isolated MySQL PK concurrency, owner/revision fencing and committed-but-lost pending acknowledgement; no Play calls');
 }finally{await reset();await db.end();}

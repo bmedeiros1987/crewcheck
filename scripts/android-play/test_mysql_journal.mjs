@@ -56,7 +56,8 @@ for(const response of ['acknowledged','lost','crash']){
   await assert.rejects(coordinatedCommit(j,opened,async()=>calls++));assert.equal(calls,1);
   await assert.rejects(j.reserve(packageName,'new-run',intent));
   if(response==='acknowledged'){
-    await j.advance(packageName,owner,staged,result.revision,'reconciled');
+    await assert.rejects(j.advance(packageName,owner,staged,result.revision,'reconciled'));
+    await j.advance(packageName,owner,{...staged,reconciliationSha256:'f'.repeat(64)},result.revision,'reconciled');
     await assert.rejects(j.reserve(packageName,'new-run',intent));
   }
 }
