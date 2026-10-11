@@ -156,7 +156,7 @@ test('persistent session stores only normalized facts and restores them as cache
   const persisted = storage.read(context.accountId);
   assert.ok(persisted);
   const parsed = JSON.parse(persisted);
-  assert.deepEqual(Object.keys(parsed).sort(), ['emptyConfirmed', 'facts', 'schemaVersion', 'scope', 'syncedAt']);
+  assert.deepEqual(Object.keys(parsed).sort(), ['emptyConfirmed', 'facts', 'schemaVersion', 'scope', 'stayFingerprint', 'syncedAt']);
   assert.equal(parsed.facts.length, 2);
   for (const fact of parsed.facts) {
     assert.equal(fact.source, 'mycrewcare');
@@ -649,4 +649,49 @@ test('native timeout releases listener and permits a successful retry', async ()
   assert.notEqual(requests[0].requestId, requests[1].requestId);
   assert.equal(listeners.size, 0);
   assert.equal(session.hotel(stay.id).hotelName, record.hotelName);
+});
+
+
+test('restore rejects reused stay ids with changed persisted stay content', async () => {
+  const storage = new MemoryStorage();
+  const adapter = { read: async request => envelope(request) };
+  const original = createMyCrewCarePersistentSession({ adapter, storage, now: () => NOW });
+  original.setContext(context, [stay]); original.setAutomatic(true);
+  assert.equal(await original.sync(), true);
+  const saved = storage.read(context.accountId);
+  for (const delta of [
+    { airport: 'GIG' }, { rosterEventId: 'different-event' }, { pairingId: 'other-pairing' },
+    { startAt: '2026-10-09T17:00:00Z' }, { endAt: '2026-10-10T11:00:00Z' },
+    { timeZone: 'America/Sao_Paulo' }, { hotelName: 'Other synthetic hotel' },
+  ]) {
+    storage.write(context.accountId, saved);
+    const restored = createMyCrewCarePersistentSession({ adapter, storage, now: () => NOW });
+    restored.setContext(context, [{ ...stay, ...delta }]); restored.setAutomatic(true);
+    assert.equal(await restored.restore(), false, JSON.stringify(delta));
+    assert.equal(restored.hotel(stay.id), null); assert.equal(restored.pickup(stay.id), null);
+    assert.equal(storage.read(context.accountId), null);
+  }
+  storage.write(context.accountId, saved);
+  const unchanged = createMyCrewCarePersistentSession({ adapter, storage, now: () => NOW });
+  unchanged.setContext({ ...context }, [{ ...stay }]); unchanged.setAutomatic(true);
+  assert.equal(await unchanged.restore(), true);
+  assert.equal(unchanged.hotel(stay.id).hotelName, record.hotelName);
+});
+
+
+test('legacy or missing stay binding cannot restore even with the same stay', async () => {
+  const storage = new MemoryStorage();
+  const original = createMyCrewCarePersistentSession({ adapter: { read: async request => envelope(request) }, storage, now: () => NOW });
+  original.setContext(context, [stay]); original.setAutomatic(true); await original.sync();
+  const saved = JSON.parse(storage.read(context.accountId));
+  assert.equal(saved.schemaVersion, 2);
+  assert.match(saved.stayFingerprint, /^[0-9a-f]{64}$/);
+  for (const mutate of [payload => { payload.schemaVersion = 1; delete payload.stayFingerprint; },
+    payload => { delete payload.stayFingerprint; }, payload => { payload.stayFingerprint = '0'.repeat(64); },
+    payload => { payload.stayFingerprint = 42; }]) {
+    const payload = structuredClone(saved); mutate(payload); storage.write(context.accountId, JSON.stringify(payload));
+    const session = createMyCrewCarePersistentSession({ storage, now: () => NOW });
+    session.setContext(context, [stay]); assert.equal(await session.restore(), false);
+    assert.equal(session.hotel(stay.id), null); assert.equal(storage.read(context.accountId), null);
+  }
 });

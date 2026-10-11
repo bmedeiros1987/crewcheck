@@ -36,7 +36,7 @@ public final class CrewCheckMyCrewCareSecureStore {
     private static final int MAX_TEXT = 512;
 
     private static final Set<String> ROOT_KEYS = keys(
-            "schemaVersion", "scope", "syncedAt", "emptyConfirmed", "facts"
+            "schemaVersion", "scope", "syncedAt", "emptyConfirmed", "facts", "stayFingerprint"
     );
     private static final Set<String> SCOPE_KEYS = keys(
             "accountId", "rosterId", "rosterRevision", "providerSubject"
@@ -115,7 +115,8 @@ public final class CrewCheckMyCrewCareSecureStore {
         try {
             JSONObject root = new JSONObject(rawJson);
             if (!onlyKeys(root, ROOT_KEYS)
-                    || !exactInteger(root, "schemaVersion", 1)
+                    || !exactInteger(root, "schemaVersion", 2)
+                    || !requiredText(root, "stayFingerprint", 64).matches("[0-9a-f]{64}")
                     || !instant(root.opt("syncedAt"))
                     || !(root.opt("emptyConfirmed") instanceof Boolean)) return false;
 

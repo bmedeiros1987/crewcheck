@@ -1,7 +1,7 @@
 import type { MyCrewCareContext, MyCrewCareHotelFact, MyCrewCareLogisticsFact, MyCrewCarePersistedStay, MyCrewCarePickupFact } from './myCrewCareLogistics.mjs';
 
 export const MYCREWCARE_PROTOCOL: 3;
-export const MYCREWCARE_PERSISTENCE_SCHEMA: 1;
+export const MYCREWCARE_PERSISTENCE_SCHEMA: 2;
 export const MYCREWCARE_LIVE_MAX_AGE_MS: number;
 
 export type MyCrewCareRequest = { schemaVersion: 3; requestId: string; context: MyCrewCareContext };

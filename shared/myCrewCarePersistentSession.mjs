@@ -11,11 +11,11 @@ import {
 } from './myCrewCareLogistics.mjs';
 
 export const MYCREWCARE_PROTOCOL = 3;
-export const MYCREWCARE_PERSISTENCE_SCHEMA = 1;
+export const MYCREWCARE_PERSISTENCE_SCHEMA = 2;
 export const MYCREWCARE_LIVE_MAX_AGE_MS = 15 * 60_000;
 const MAX_PERSISTED_BYTES = 256 * 1024;
 
-const ROOT_KEYS = new Set(['schemaVersion', 'scope', 'syncedAt', 'emptyConfirmed', 'facts']);
+const ROOT_KEYS = new Set(['schemaVersion', 'scope', 'syncedAt', 'emptyConfirmed', 'facts', 'stayFingerprint']);
 const SCOPE_KEYS = new Set(['accountId', 'rosterId', 'rosterRevision', 'providerSubject']);
 const HOTEL_FACT_KEYS = new Set([
   'schemaVersion', 'accountId', 'rosterId', 'rosterRevision', 'observedAt',
@@ -108,12 +108,18 @@ function safeJson(value) {
   return json;
 }
 
-function parseStored(value, context, now) {
+async function stayFingerprint(values) {
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(values)));
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function parseStored(value, context, expectedStayFingerprint, now) {
   if (typeof value !== 'string' || !value) return null;
   try {
     const payload = JSON.parse(value);
     if (!exactKeys(payload, ROOT_KEYS)
       || payload.schemaVersion !== MYCREWCARE_PERSISTENCE_SCHEMA
+      || payload.stayFingerprint !== expectedStayFingerprint
       || !exactKeys(payload.scope, SCOPE_KEYS)
       || !same(payload.scope, persistenceScope(context))
       || typeof payload.emptyConfirmed !== 'boolean'
@@ -259,9 +265,10 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
     }
   }
 
-  function persistencePayload(snapshot, scopeContext) {
+  function persistencePayload(snapshot, scopeContext, fingerprint) {
     return Object.freeze({
       schemaVersion: MYCREWCARE_PERSISTENCE_SCHEMA,
+      stayFingerprint: fingerprint,
       scope: persistenceScope(scopeContext),
       syncedAt: new Date(snapshot.syncedAt).toISOString(),
       emptyConfirmed: snapshot.emptyConfirmed === true,
@@ -357,14 +364,17 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
       // Everything below uses the captured account/epoch, never the live `context`.
       const epoch = restoreEpoch += 1;
       const capturedContext = context;
+      const capturedStays = stays;
       const accountId = capturedContext.accountId;
       const stale = () => epoch !== restoreEpoch || context !== capturedContext;
       let raw;
+      let fingerprint;
       try {
         if (cleaningAccounts.has(accountId)) return false;
         if (storageQueues.has(accountId)) await storageQueues.get(accountId).catch(() => {});
         if (stale()) return false;
         raw = await storageRead(accountId);
+        fingerprint = await stayFingerprint(capturedStays);
       } catch (error) {
         if (stale()) return false;
         cached = null;
@@ -373,7 +383,7 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
         return false;
       }
       if (stale()) return false;
-      const restored = parseStored(raw, capturedContext, now());
+      const restored = parseStored(raw, capturedContext, fingerprint, now());
       if (!restored) {
         if (raw) {
           try {
@@ -494,10 +504,11 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
           facts: reconciled.facts,
           emptyConfirmed: envelope.emptyConfirmed,
         });
+        const fingerprint = await stayFingerprint(capturedStays);
         const nextChanges = diffMyCrewCareFacts(cached?.facts ?? [], nextCached.facts);
         await queueStorage(capturedContext.accountId, () => {
           if (token !== generation || context !== capturedContext || !automatic) return;
-          return storageWrite(capturedContext.accountId, persistencePayload(nextCached, capturedContext));
+          return storageWrite(capturedContext.accountId, persistencePayload(nextCached, capturedContext, fingerprint));
         });
         if (token !== generation || context !== capturedContext || stays !== capturedStays || !automatic) return false;
         cached = nextCached;

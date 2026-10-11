@@ -546,3 +546,35 @@ test('late logout success or failure never exposes owner A recovery while B is b
     assert.equal(await controller.retryLogout(null), false);
   }
 });
+
+
+test('overlapping logouts preserve recovery until every cleanup settles in either order', async () => {
+  const { createMyCrewCarePersistentSession } = await import('../shared/myCrewCarePersistentSession.mjs');
+  for (const order of [[1, 0], [0, 1]]) {
+    const completions = [];
+    const session = createMyCrewCarePersistentSession({ now: () => NOW, storage: { clear: () => {} }, adapter: {
+      disconnect: () => new Promise((resolve, reject) => completions.push({ resolve, reject })),
+    } });
+    const controller = make(fakeBridge(), { session });
+    const a = ctx('A'), stays = [stayFor(a)], panel = panelFor(controller);
+    await controller.bind(a, stays);
+    const first = controller.logout().then(() => null, error => error);
+    const second = controller.logout().then(() => null, error => error);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(controller.getSnapshot().busy, true);
+    for (const index of order) {
+      if (index === 0) completions[index].reject(new Error('synthetic old cleanup failure'));
+      else completions[index].resolve();
+      await (index === 0 ? first : second);
+    }
+    assert.equal(controller.getSnapshot().busy, false);
+    assert.equal(controller.getSnapshot().canRetryCleanup, true);
+    assert.match(renderToStaticMarkup(panel({ context: null, stays: [] })), /Tentar desconectar novamente/);
+    assert.match(renderToStaticMarkup(panel({ context: a, stays })), /Tentar desconectar novamente/);
+    assert.equal(controller.canRetryLogout(ctx('B')), false);
+    const retry = controller.retryLogout(null, controller.getLogoutRecoveryEpoch(null));
+    await new Promise(resolve => setImmediate(resolve)); completions[2].resolve();
+    assert.equal(await retry, true);
+    assert.equal(controller.getSnapshot().canRetryCleanup, false);
+  }
+});
