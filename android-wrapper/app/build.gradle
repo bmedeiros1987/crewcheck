@@ -78,6 +78,7 @@ android {
             }
         }
         debug {
+            applicationIdSuffix ".mcctest"
             debuggable true
         }
     }

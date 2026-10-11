@@ -1,0 +1,16 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <!-- Test package has only the explicit test entry; production shell/background entrypoints remain release-only. -->
+        <activity android:name=".MainActivity" tools:node="remove" />
+        <receiver android:name=".CrewCheckNotificationReceiver" tools:node="remove" />
+        <service android:name=".CrewCheckWatchSyncService" tools:node="remove" />
+        <!-- No intent data/extras are consumed. Navigation requires a foreground button + consent. -->
+        <activity android:name=".CrewCheckMyCrewCareDebugActivity" android:exported="true"
+            android:label="CrewCheck • teste MCC">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
