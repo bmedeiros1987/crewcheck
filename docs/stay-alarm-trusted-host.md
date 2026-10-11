@@ -9,7 +9,7 @@ Quando houver autorização específica para build físico de teste, são necess
 ambos: mudança revisada da constante e aprovação física nativa confiável já
 registrada. Essa preparação NÃO executa esses passos. Não publicar lojas.
 
-O host concreto usa WebViewCompat.addWebMessageListener (WebKit1.12.1), allowlist
+O host concreto usa WebViewCompat.addWebMessageListener (WebKit1.14.0 já fornecido pela preparação canônica), allowlist
 HTTPS exata crewcheck.online, sourceOrigin e isMainFrame, URL atual, revogação
 em onPageStarted/close e geração de sessão para rejeitar callbacks de rede
 atrasados. O portal externo não recebe listener. Não há JavascriptInterface para
@@ -59,4 +59,4 @@ MainActivity e resolução Gradle; não equivale a WebView/aparelho físico.
 
 Fontes oficiais:
 https://developer.android.com/reference/androidx/webkit/WebViewCompat
-https://developer.android.com/jetpack/androidx/releases/webkit#1.12.1
+https://developer.android.com/jetpack/androidx/releases/webkit#1.14.0

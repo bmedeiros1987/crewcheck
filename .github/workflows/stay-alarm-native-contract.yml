@@ -34,7 +34,7 @@ jobs:
         run: |
           curl --fail --location --silent --show-error -o "$STAY_ANDROID_API_JAR" https://repo.maven.apache.org/maven2/org/robolectric/android-all/15-robolectric-12650502/android-all-15-robolectric-12650502.jar
           echo "6c0670454f6fcee9f1b17aa393e81d71bf26e7e6ae7c5777ed3924b062191d5b  $STAY_ANDROID_API_JAR" | sha256sum --check
-          curl --fail --location --silent --show-error -o "$RUNNER_TEMP/webkit.aar" https://dl.google.com/dl/android/maven2/androidx/webkit/webkit/1.12.1/webkit-1.12.1.aar
-          echo "18a0a51ad129e0c8563f031d46c8a7e61169f56ae84e562a0d75686941262111  $RUNNER_TEMP/webkit.aar" | sha256sum --check
+          curl --fail --location --silent --show-error -o "$RUNNER_TEMP/webkit.aar" https://dl.google.com/dl/android/maven2/androidx/webkit/webkit/1.14.0/webkit-1.14.0.aar
+          echo "265604786ea1c9679e3f860f7f13072375c141f46db9092ed8ef5ecd599a516d  $RUNNER_TEMP/webkit.aar" | sha256sum --check
           unzip -p "$RUNNER_TEMP/webkit.aar" classes.jar > "$RUNNER_TEMP/webkit.jar"
           STAY_WEBKIT_JAR="$RUNNER_TEMP/webkit.jar" node scripts/regression-stay-alarm-api.mjs
