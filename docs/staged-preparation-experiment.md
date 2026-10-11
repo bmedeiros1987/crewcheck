@@ -111,3 +111,12 @@ The adopted job pins Node22.23.3, the runtime already validated for the approved
 adapter. Retaining the previous job's Node22.13.0 fails closed at Vite's native
 loader with ERR_UNKNOWN_FILE_EXTENSION for vite.config.ts; no fallback loader or
 in-place npm build is used. This pin is part of the scoped CI behavior change.
+
+Main advanced during validation to
+`832b3cbaa13195adc471b4d7288082d2448ee664` (reviewed MyCrewCare debug OFF
+composition). The mandatory composition step now pins that exact main. The
+previous head83b97875 completed nine successful workflows against main efdd9998;
+its captured main composition3e47f5e3/tree90a308d8 is historical evidence for that
+base. The final updated head must obtain fresh CI and exact artifacts for832b3cba.
+PR1017 remains unmerged and none of its four scoped changes was absorbed by this
+advance. No MyCrewCare implementation is changed by this adoption delta.
