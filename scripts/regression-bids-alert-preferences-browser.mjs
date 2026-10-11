@@ -11,8 +11,8 @@ const bundle = await build({ stdin: { contents: `import React from 'react';impor
   b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: '', loader: 'js' }));
   b.onResolve({ filter: /^@\// }, ({ path: name }) => ({ path: path.resolve('client/src', name.slice(2) + '.ts') }));
 } }] });
-const styles = fs.readFileSync('client/src/index.css', 'utf8') + fs.readFileSync('client/src/components/v139/v139.css', 'utf8') + fs.readFileSync('client/src/components/v139/bids-alert-preferences.css', 'utf8');
-const html = `<meta name="viewport" content="width=device-width,initial-scale=1"><style>${styles}</style><style>*{box-sizing:border-box}body{margin:0}#navigation-header{position:fixed;inset:0 0 auto;height:80px;padding:24px 12px 8px;z-index:20;background:Canvas;color:CanvasText}#navigation-footer{position:fixed;inset:auto 0 0;height:88px;padding:8px 12px 24px;z-index:20;background:Canvas;color:CanvasText}main{padding:92px 12px 100px}main fieldset{margin-inline:0}</style><header id="navigation-header">Navegação CrewCheck</header><main id="root"></main><nav id="navigation-footer">Menu</nav><script src="/fixture.js"></script>`;
+const styles = fs.readFileSync('client/src/index.css', 'utf8') + fs.readFileSync('client/src/components/v139/v139.css', 'utf8') + fs.readFileSync('client/src/components/v139/bids-alert-preferences.css', 'utf8') + fs.readFileSync('client/src/components/notifications/wakeup-selection.css', 'utf8');
+const html = `<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${styles}</style><style>*{box-sizing:border-box}body{margin:0}#navigation-header{position:fixed;inset:0 0 auto;height:80px;padding:24px 12px 8px;z-index:20;background:Canvas;color:CanvasText}#navigation-footer{position:fixed;inset:auto 0 0;height:88px;padding:8px 12px 24px;z-index:20;background:Canvas;color:CanvasText}main{padding:92px 12px 100px}main fieldset{margin-inline:0}</style><header id="navigation-header">Navegação CrewCheck</header><main id="root"></main><nav id="navigation-footer">Menu</nav><script src="/fixture.js"></script>`;
 const server = http.createServer((req, res) => { res.setHeader('content-type', req.url === '/fixture.js' ? 'text/javascript' : 'text/html'); res.end(req.url === '/fixture.js' ? bundle.outputFiles[0].text : html); });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
@@ -51,7 +51,7 @@ try {
   await page.goto(origin); await page.getByText('Janela oficial ainda não validada:', { exact: false }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Já fiz BIDS nesta janela' }).count(), 0);
   assert.equal(writes.length, 0); assert.equal(await page.getByRole('button', { name: 'Salvar preferências' }).isVisible(), false);
-  await page.locator('summary').click();
+  await page.locator('summary').first().click();
   await page.getByLabel('Modo', { exact: false }).selectOption('manual');
   await page.getByLabel('Horário padrão').fill('10:30'); await page.getByLabel('Meu fuso').fill('UTC');
   await page.getByLabel('Quero avisos BIDS', { exact: false }).check();
@@ -70,6 +70,7 @@ try {
   await page.waitForFunction(() => !document.querySelector('fieldset').disabled);
   assert.equal(writes.length, 1); assert.equal(writes[0].token, 'A'); assert.equal(states.A.preferences.preferredTime, '10:30');
   assert.deepEqual(states.A.preferences.channels, { all: true, individual: { mobilePwa: false, watch: true, crewCierge: false } });
+  await page.getByText('Ligação · número e disponibilidade',{exact:true}).click();
   const header = await page.locator('#navigation-header').boundingBox(), footer = await page.locator('#navigation-footer').boundingBox();
   const cases = [];
   for (const theme of ['light', 'dark']) for (const size of [100, 200]) {

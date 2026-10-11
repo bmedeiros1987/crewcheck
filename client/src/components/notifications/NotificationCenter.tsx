@@ -2,7 +2,8 @@ import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {authFetch,getToken} from '@/lib/authClient';
 import {BidsAlertPreferences} from '../v139/BidsAlertPreferences';
 import {V139Header} from '../v139/Shell';
-export const openNotificationSettings=()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'notifications'}));
+import {openNotificationSettings} from '@/lib/notificationNavigation';
+export {openNotificationSettings} from '@/lib/notificationNavigation';
 export function BidsNotificationSummary(){
  const[state,setState]=useState<any>(null),epoch=useRef(0);
  useEffect(()=>{const refresh=()=>{const version=++epoch.current;setState(null);if(!getToken())return;void authFetch('/api/platform/notifications/preferences',{cache:'no-store'}).then(value=>{if(epoch.current===version)setState(value);}).catch(()=>{});};refresh();window.addEventListener('crewcheck:auth-changed',refresh);window.addEventListener('crewcheck:auth-expired',refresh);const storage=(event:StorageEvent)=>{if(['crewcheck_auth_token','crewcheck_auth_user'].includes(event.key||''))refresh();};window.addEventListener('storage',storage);return()=>{epoch.current++;window.removeEventListener('crewcheck:auth-changed',refresh);window.removeEventListener('crewcheck:auth-expired',refresh);window.removeEventListener('storage',storage);};},[]);

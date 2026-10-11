@@ -1,0 +1,13 @@
+.cz-app .cc-wakeup-selection{min-width:0;max-width:100%;margin:12px 0;padding:12px;border:1px solid currentColor;border-radius:14px;display:grid;gap:12px}
+.cz-app .cc-wakeup-selection legend{white-space:normal;overflow-wrap:anywhere;max-width:100%;padding:0 6px}
+.cz-app .cc-wakeup-selection label{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:start;min-height:44px;line-height:1.45;min-width:0;text-align:left}
+.cz-app .cc-wakeup-selection input[type=checkbox]{width:22px;height:22px;margin:2px 0;flex:none}
+.cz-app .cc-wakeup-selection .cc-wakeup-medium span{display:grid;gap:6px;min-width:0}
+.cz-app .cc-wakeup-selection :is(p,small,strong){white-space:normal;overflow-wrap:anywhere;word-break:normal;min-width:0;max-width:100%;line-height:1.45}
+.cz-app .cc-wakeup-selection :is(button,.cc-wakeup-phone-link){width:100%;max-width:100%;height:auto;min-height:44px;white-space:normal;overflow-wrap:anywhere}
+.cc-notification-phone{min-width:0;max-width:100%;margin:12px 0;padding:12px;border:1px solid currentColor;border-radius:12px}
+.cc-notification-phone :is(summary,p,label,button){white-space:normal;overflow-wrap:anywhere;min-width:0;max-width:100%;line-height:1.45}
+.cc-notification-phone input{box-sizing:border-box;width:100%;max-width:100%}
+
+.cc-notification-phone button{height:auto;min-height:44px;width:100%;padding:10px;white-space:normal}
+.cc-notification-phone label{display:grid;gap:8px}
