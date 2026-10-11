@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import vm from 'node:vm';
+import { createRequire } from 'node:module';
+import ts from 'typescript';
+import { renderToStaticMarkup } from 'react-dom/server';
+import * as controllerModule from '../shared/myCrewCareController.mjs';
 import { MYCREWCARE_UI_ENABLED, createMyCrewCareController } from '../shared/myCrewCareController.mjs';
 
 const NOW = Date.parse('2026-10-09T12:00:00Z');
@@ -288,7 +293,7 @@ test('data that was just updated is never labelled stale', async () => {
 });
 test('the panel binds on a stable identity key instead of prop identity', () => {
   const source = readFileSync(new URL('../client/src/components/mycrewcare/MyCrewCareV3Panel.tsx', import.meta.url), 'utf8');
-  assert.match(source, /const bindKey = \[/);
+  assert.match(source, /const bindKey = myCrewCareBindingKey\(context, stays\)/);
   assert.match(source, /\}, \[controller, bindKey\]\);/);
   assert.doesNotMatch(source, /\}, \[controller, context, stays\]\);/);
 });
@@ -381,4 +386,49 @@ test('disconnect publishes busy immediately and preserves cleanup retry after co
   assert.equal(controller.getSnapshot().busy, false);
   assert.equal(controller.getSnapshot().status, 'cleanup-error');
   assert.equal(controller.getSnapshot().canRetryCleanup, true);
+});
+
+
+test('real panel hides prior account facts before binding effect with colliding stay ids', async () => {
+  const fake = fakeBridge();
+  const controller = make(fake);
+  const a = ctx('A');
+  const stays = [{ ...stayFor(a), id: 'shared-stay' }];
+  await controller.bind(a, stays);
+  controller.setAutomatic(true);
+  assert.equal(await controller.refresh({ userInitiated: true }), true);
+  const source = readFileSync(new URL('../client/src/components/mycrewcare/MyCrewCareV3Panel.tsx', import.meta.url), 'utf8');
+  const nativeRequire = createRequire(import.meta.url);
+  const exports = {};
+  const ui = vm.createContext({ exports, require: name => {
+    if (name === 'react') return { useEffect: () => {} }; // first render: effects have not run
+    if (name === 'react/jsx-runtime') return nativeRequire(name);
+    if (name === '@/hooks/useMyCrewCareV3') return { useMyCrewCareV3: () => ({ controller, snapshot: controller.getSnapshot() }) };
+    if (name.endsWith('myCrewCareController.mjs')) return controllerModule;
+    throw Error(`Unexpected panel import: ${name}`);
+  } });
+  vm.runInContext(ts.transpileModule(source, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
+  } }).outputText, ui);
+  const render = (context, currentStays) => renderToStaticMarkup(exports.default({ context, stays: currentStays }));
+  assert.match(render(a, stays), /Hotel Atlântico/);
+  assert.match(render(a, stays), /Pickup:/);
+  for (const changed of [ctx('B'), { ...a, rosterId: 'other-roster' }, { ...a, rosterRevision: 'rev-2' }, { ...a, providerSubject: 'other-subject' }, null]) {
+    const incoming = changed ? [{ ...stays[0], ...changed }] : [];
+    assert.equal(render(changed, incoming), '', 'incoming binding must never render the previous scope');
+  }
+  assert.equal(render(a, [{ ...stays[0], endAt: '2026-10-10T11:00:00Z' }]), '');
+  assert.match(render({ ...a }, stays.map(item => ({ ...item }))), /Hotel Atlântico/);
+  const seen = [];
+  const unsubscribe = controller.subscribe(() => seen.push(controller.getSnapshot().bindingKey));
+  const b = ctx('B');
+  const bStays = [{ ...stays[0], ...b }];
+  const binding = controller.bind(b, bStays);
+  assert.equal(seen.length, 1, 'binding publishes synchronously before restore settles');
+  unsubscribe();
+  await binding;
+  assert.doesNotMatch(render(b, bStays), /Hotel Atlântico|Pickup:/);
+  controller.setAutomatic(true);
+  assert.equal(await controller.refresh({ userInitiated: true }), true);
+  assert.match(render(b, bStays), /Hotel Atlântico/);
 });

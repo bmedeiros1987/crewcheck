@@ -1,3 +1,4 @@
+import { normalizeMyCrewCareContext, normalizeMyCrewCareStays } from './myCrewCareLogistics.mjs';
 import { MYCREWCARE_PROTOCOL, createMyCrewCarePersistentSession } from './myCrewCarePersistentSession.mjs';
 import { createMyCrewCareNativeAdapter, createMyCrewCareNativeStorage } from './myCrewCareNativeAdapter.mjs';
 import { MYCREWCARE_BACKGROUND_CAPABILITY, planMyCrewCareSync } from './myCrewCareSyncPolicy.mjs';
@@ -8,6 +9,12 @@ import { MYCREWCARE_BACKGROUND_CAPABILITY, planMyCrewCareSync } from './myCrewCa
  * RELEASE_ENABLED flag is a second, independent key: both must be true.
  */
 export const MYCREWCARE_UI_ENABLED = false;
+
+/** Semantic render/effect binding, including stay content rather than only reused ids. */
+export function myCrewCareBindingKey(context, stays = []) {
+  const normalized = normalizeMyCrewCareContext(context);
+  return normalized ? JSON.stringify([normalized, normalizeMyCrewCareStays(stays, normalized)]) : null;
+}
 
 function nativeReady(bridge) {
   try {
@@ -54,19 +61,21 @@ export function createMyCrewCareController({
   let refreshSuggested = false;
   let boundAccount = null;
   let bindingEpoch = 0;
+  let boundKey = null;
   let snapshot = build();
   let snapshotSignature = JSON.stringify(snapshot);
 
   function build() {
     if (!engine) {
       return Object.freeze({
-        capability: 'disabled', status: 'disabled', connected: false, automatic: false, busy: false,
+        bindingKey: null, capability: 'disabled', status: 'disabled', connected: false, automatic: false, busy: false,
         hasCachedData: false, live: false, dataAgeMs: null, lastSuccessfulSyncAt: null,
         lastError: null, canRetryCleanup: false, refreshSuggested: false, requiresInteraction: false, changes: null,
       });
     }
     const state = engine.state();
     return Object.freeze({
+      bindingKey: boundKey,
       capability: 'available',
       status: busy ? 'syncing' : state.status,
       connected: state.connected,
@@ -119,6 +128,10 @@ export function createMyCrewCareController({
 
   return Object.freeze({
     getSnapshot: () => snapshot,
+    isBoundTo(context, stays = []) {
+      const key = myCrewCareBindingKey(context, stays);
+      return engine !== null && key !== null && key === boundKey;
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -132,6 +145,8 @@ export function createMyCrewCareController({
       const epoch = ++bindingEpoch;
       boundAccount = accountId;
       engine.setContext(context, stays);
+      boundKey = myCrewCareBindingKey(context, stays);
+      emit();
       const restored = await engine.restore();
       if (epoch !== bindingEpoch) return false;
       // A cached view is never proof of a live session; suggest, never auto-open.
@@ -203,6 +218,7 @@ export function createMyCrewCareController({
       if (!engine) return;
       const epoch = ++bindingEpoch;
       boundAccount = null;
+      boundKey = null;
       refreshSuggested = false;
       const cleanup = engine.logout();
       emit();

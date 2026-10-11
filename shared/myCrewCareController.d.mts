@@ -4,6 +4,7 @@ import type { MyCrewCarePersistentSession } from './myCrewCarePersistentSession.
 export const MYCREWCARE_UI_ENABLED: false;
 
 export type MyCrewCareControllerSnapshot = Readonly<{
+  bindingKey: string | null;
   capability: 'disabled' | 'available';
   status: string;
   connected: boolean;
@@ -22,6 +23,7 @@ export type MyCrewCareControllerSnapshot = Readonly<{
 
 export type MyCrewCareController = Readonly<{
   getSnapshot(): MyCrewCareControllerSnapshot;
+  isBoundTo(context: MyCrewCareContext | null, stays?: readonly MyCrewCarePersistedStay[]): boolean;
   subscribe(listener: () => void): () => void;
   bind(context: MyCrewCareContext | null, stays?: readonly MyCrewCarePersistedStay[]): Promise<boolean>;
   setAutomatic(enabled: boolean): void;
@@ -41,3 +43,5 @@ export function createMyCrewCareController(options?: {
   isOnline?: () => boolean;
   session?: MyCrewCarePersistentSession;
 }): MyCrewCareController;
+
+export function myCrewCareBindingKey(context: MyCrewCareContext | null, stays?: readonly MyCrewCarePersistedStay[]): string | null;

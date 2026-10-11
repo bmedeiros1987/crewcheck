@@ -146,3 +146,12 @@ Cinco novas regressões (51 contratos ao todo) reproduzem limpeza repetida com
 sucesso/falha, consentimento on/off durante falha e publicação imediata de busy/
 retry. Falham em `6471b002`, passam nos três fusos após o reparo. Nenhuma montagem,
 flag, bridge de MainActivity, aquisição real ou generator foi alterado.
+
+
+### Review follow-up: native timeout and first render scope (2026-10-11)
+
+The session deadline settles as a temporary error and aborts its controller in the same timer callback. The v3 adapter removes its listener and pending read immediately, allowing an explicit retry; late replies are still rejected by requestId. This cancellation releases the JS read; it does not assert native portal teardown or physical SSO behavior.
+
+The unmounted panel checks a semantic binding key synchronously before rendering any status, facts or controls. The key covers normalized account/roster/revision/provider identity and full normalized stay content, not only stay ids. A mismatch renders nothing until binding, and the controller publishes binding changes synchronously before asynchronous cache restore. No render mutates the controller. The real panel regression renders before effects and covers colliding stay ids, account/roster/revision/provider changes, null context, changed stay content, equivalent object props, and valid B after binding.
+
+Both negative regressions fail on 737279be before the fixes. UI/native release keys remain OFF and the panel remains unmounted. Merge still requires direct authorization and final review/CI of the new head.

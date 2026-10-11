@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { myCrewCareBindingKey } from '../../../../shared/myCrewCareController.mjs';
 import type { MyCrewCareContext, MyCrewCarePersistedStay } from '../../../../shared/myCrewCareLogistics.mjs';
 import { useMyCrewCareV3 } from '@/hooks/useMyCrewCareV3';
 
@@ -41,16 +42,15 @@ export default function MyCrewCareV3Panel({ context, stays }: Props) {
 
   // Bind on identity changes only: a new array or object literal on every parent
   // render must not re-read the encrypted cache or re-bind the same account.
-  const bindKey = [
-    context?.accountId ?? '', context?.rosterId ?? '', context?.rosterRevision ?? '',
-    context?.providerSubject ?? '', ...stays.map(stay => stay.id),
-  ].join('\u0000');
+  const bindKey = myCrewCareBindingKey(context, stays);
   useEffect(() => {
     void controller.bind(context, stays);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controller, bindKey]);
 
   if (snapshot.capability !== 'available') return null;
+  // React renders incoming props before the binding effect. Never expose the old scope.
+  if (!controller.isBoundTo(context, stays)) return null;
 
   const stayIds = stays.map(stay => stay.id);
   const message = STATUS_TEXT[snapshot.status] ?? STATUS_TEXT['sync-error'];

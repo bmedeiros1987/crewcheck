@@ -612,3 +612,41 @@ for (const enabled of [false, true]) {
     assert.equal(session.state().cleanupPending, false);
   });
 }
+
+
+test('native timeout releases listener and permits a successful retry', async () => {
+  const listeners = new Set();
+  const requests = [];
+  const events = {
+    addEventListener: (_name, fn) => listeners.add(fn),
+    removeEventListener: (_name, fn) => listeners.delete(fn),
+  };
+  const bridge = {
+    myCrewCareProtocolVersion: () => 3,
+    myCrewCareReleaseEnabled: () => true,
+    openMyCrewCareV3(json) {
+      const request = JSON.parse(json);
+      requests.push(request);
+      if (requests.length > 1) queueMicrotask(() => {
+        // A late answer from the timed-out request must not satisfy this retry.
+        for (const fn of [...listeners]) fn({ detail: envelope(requests[0]) });
+        for (const fn of [...listeners]) fn({ detail: envelope(request) });
+      });
+      return true;
+    },
+  };
+  const session = createMyCrewCarePersistentSession({
+    adapter: createMyCrewCareNativeAdapter({ bridge, events }),
+    storage: new MemoryStorage(), now: () => NOW, timeoutMs: 10,
+  });
+  session.setContext(context, [stay]);
+  session.setAutomatic(true);
+  assert.equal(await session.sync(), false);
+  assert.equal(session.state().lastError, 'temporary-error');
+  assert.equal(listeners.size, 0, 'timed-out native listener must be removed');
+  assert.equal(await session.sync(), true);
+  assert.equal(requests.length, 2);
+  assert.notEqual(requests[0].requestId, requests[1].requestId);
+  assert.equal(listeners.size, 0);
+  assert.equal(session.hotel(stay.id).hotelName, record.hotelName);
+});

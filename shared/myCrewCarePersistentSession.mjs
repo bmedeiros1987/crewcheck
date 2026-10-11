@@ -454,7 +454,9 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
       try {
         const deadline = new Promise((_, reject) => {
           timer = setTimeout(() => {
+            // Settle the deadline first so cancellation preserves the timeout error.
             reject(Object.assign(new Error('timeout'), { code: 'temporary-error' }));
+            abort.abort();
           }, Math.max(1, Math.min(30_000, timeoutMs)));
         });
         const cancelled = new Promise((_, reject) => abort.signal.addEventListener('abort', () => {
