@@ -402,3 +402,25 @@ console.log('Cirium UTC/local instant consistency regression OK');
   }
 }
 console.log('Cirium timezone-independent chronology regression OK');
+
+// Review: the displayed scheduled/published fallback pair also needs chronology.
+{
+  for (const [operationalTimes, valid] of [
+    [{ scheduledGateDeparture: { dateUtc: `${today}T12:20:00Z` }, publishedArrival: { dateUtc: `${today}T11:20:00Z` } }, false],
+    [{ publishedDeparture: { dateUtc: `${today}T12:20:00Z` }, scheduledGateArrival: { dateUtc: `${today}T11:20:00Z` } }, false],
+    [{ scheduledGateDeparture: { dateUtc: `${today}T12:20:00Z` }, publishedArrival: { dateUtc: `${today}T14:20:00Z` } }, true],
+    [{ publishedDeparture: { dateUtc: `${today}T12:20:00Z` }, scheduledGateArrival: { dateUtc: `${today}T14:20:00Z` } }, true],
+  ]) {
+    const item = row({ operationalTimes });
+    const result = await flightWith({ flightStatuses: [item] });
+    assert.equal(result.state, valid ? 'available' : 'invalid_payload', JSON.stringify(operationalTimes));
+    if (valid) {
+      assert.equal(result.flights[0].times.scheduledDeparture, `${today}T12:20:00Z`);
+      assert.equal(result.flights[0].times.scheduledArrival, `${today}T14:20:00Z`);
+    } else assert.equal(result.flights, undefined, 'no inverted fallback summary is exposed');
+    const probe = await diagnoseCirium({ guard: createCiriumGuard({ minIntervalMs: 0 }),
+      fetchImpl: async () => ok({ flightStatuses: [{ ...item, flightNumber: '3377' }] }) });
+    assert.equal(probe.state, valid ? 'available' : 'invalid_payload', JSON.stringify(operationalTimes));
+  }
+}
+console.log('Cirium displayed fallback chronology regression OK');

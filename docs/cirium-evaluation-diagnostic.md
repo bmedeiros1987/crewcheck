@@ -100,3 +100,13 @@ pares locais ambíguos. Voo e probe usam a mesma validação. Os novos casos fal
 no HEAD `0f2d9f8` e passam no código corrigido em UTC, Brasília e Auckland. O
 worker offline preserva somente TZ e usa exclusivamente dados/mocks sintéticos;
 a CI focada executa os três fusos. OFF e gates de contrato real permanecem intactos.
+
+### Revisão: par efetivamente exibido pelo fallback
+
+A verificação por categoria não substitui a validação do par escolhido pelo
+resumo: partida `scheduledGateDeparture || publishedDeparture` e chegada
+`scheduledGateArrival || publishedArrival`. Esse par cruzado também exige
+instantes comparáveis e duração positiva até 24 h. Dois negativos reproduzem
+partida programada/chegada publicada invertidas e o inverso; dois controles
+válidos confirmam os horários efetivamente exibidos. Voo/probe passam nos três
+fusos mantendo os contratos UTC/local; os negativos falham no HEAD 79a2a177.

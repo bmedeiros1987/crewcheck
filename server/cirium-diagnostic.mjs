@@ -403,6 +403,12 @@ function acceptRow(row, carrier, flight, date) {
     // bare local clocks cannot establish elapsed time without verified zones.
     return out !== null && inn !== null && inn > out && inn - out <= dayMs;
   }
+  // flightSummary chooses scheduledGate first, then published, independently
+  // for each endpoint. That displayed pair can span two prefixes and must be
+  // coherent as well as the complete pairs supplied by the provider.
+  const displayedDeparture = times.scheduledGateDeparture || times.publishedDeparture;
+  const displayedArrival = times.scheduledGateArrival || times.publishedArrival;
+  if (displayedDeparture && displayedArrival && !coherentPair(displayedDeparture, displayedArrival)) return false;
   for (const prefix of ['scheduled', 'published', 'estimated', 'actual']) {
     const departures = Object.entries(times).filter(([name, value]) => value != null && name.startsWith(prefix) && /Departure$/.test(name));
     const arrivals = Object.entries(times).filter(([name, value]) => value != null && name.startsWith(prefix) && /Arrival$/.test(name));
