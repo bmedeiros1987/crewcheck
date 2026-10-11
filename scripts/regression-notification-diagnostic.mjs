@@ -31,5 +31,17 @@ assert.equal(value.alarms.counts.partial,2);assert.equal(value.alarms.counts.hel
 value=(await run({unavailable:true})).result.body;for(const key of ['preferences','alarms','scheduler'])assert.equal(value[key].status,'unavailable');assert(!JSON.stringify(value).includes('private token'));
 assert.equal((await run({changed:true})).result.status,401);
 assert.equal((await run({preferences:[{payload:JSON.stringify({email,ownerId:'other',revision:2})}]})).result.body.preferences.status,'unavailable');
+// Execute the existing identity helper itself: its initial profile SELECT rejects.
+const commonSource=fs.readFileSync('server/v139/common.mjs','utf8');
+const helperStart=commonSource.indexOf('export async function requireExistingIdentity(');
+const helperEnd=commonSource.indexOf('\n}\n',helperStart)+3;
+assert(helperStart>=0&&helperEnd>helperStart);
+let identityQueries=0, identityResponse;
+const profileFailureDb={query:async(sql)=>{identityQueries++;assert.match(sql,/^SELECT \* FROM crewcheck_platform_profiles/);throw new Error('SQL private fixture token');}};
+const actualIdentify=new Function('verifyJwt','requestToken','dbPool','safeEmail','sendJson','isAdminEmail',commonSource.slice(helperStart,helperEnd).replace('export ','')+'; return requireExistingIdentity;')(
+  ()=>({sub:ownerId,email,iss:'crewcheck',aud:'crewcheck-web',exp:Math.floor(Date.now()/1000)+3600}),()=> 'synthetic',async()=>profileFailureDb,value=>value,()=>assert.fail('helper must not mask failed profile read'),()=>false);
+await handleNotificationDiagnostic({method:'GET'},{setHeader:()=>{}},{identify:actualIdentify,reply:(_res,status,body)=>identityResponse={status,body}});
+assert.equal(identityQueries,1);assert.equal(identityResponse.status,503);assert.equal(identityResponse.body.code,'IDENTITY_UNAVAILABLE');assert(!JSON.stringify(identityResponse).includes('SQL private'));
+assert.match(fs.readFileSync('server/telegram-fast-ack.mjs','utf8'),/return await handleNotificationDiagnostic/);
 const source=fs.readFileSync('server/notification-diagnostic.mjs','utf8');assert.doesNotMatch(source,/ensure\w*\(|fetch\(|sendTelegram\(|VAPID_|TOKEN|phone|chat_id|message/);
 console.log('PASS observational diagnostic: authenticated owner binding/recreation, SELECT only, absent vs unavailable, saved vs scheduled, gate vs delivery, heartbeat, expiry, uncertain and unconfirmed acceptance; zero sends/secrets/DDL.');

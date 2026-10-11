@@ -9,7 +9,9 @@ export async function handleNotificationDiagnostic(req, res, {
 } = {}) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'GET') { reply(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED' }); return; }
-  const context = await identify(req, res);
+  let context;
+  try { context = await identify(req, res); }
+  catch { reply(res, 503, { ok: false, code: 'IDENTITY_UNAVAILABLE' }); return; }
   if (!context) return;
   const ownerId = String(context.payload?.sub || '');
   if (!ownerId || context.payload?.iss !== 'crewcheck' || context.payload?.aud !== 'crewcheck-web' || context.payload?.mustChangePassword || !Number.isFinite(Number(context.payload?.exp)) || Number(context.payload.exp) <= Date.now() / 1000 || context.profile?.public_id !== ownerId) { reply(res, 401, { ok: false, code: 'ACCOUNT_CHANGED' }); return; }
