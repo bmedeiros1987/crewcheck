@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import {
   diffMyCrewCareFacts,
@@ -780,4 +785,39 @@ test('late A failure remains private to A and surfaces if A returns before it se
   session.setContext(b, [{ ...stay, ...b }]);
   assert.equal(session.state().cleanupPending, false);
   assert.equal(session.state().lastError, null);
+});
+
+// Generate the cache through the actual pre-fix session/reconciler, not a hand-built blob.
+test('upgrade rejects disjoint reservation cache produced by the previous version', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'mycrewcare-old-cache-'));
+  try {
+    for (const name of ['myCrewCareLogistics.mjs', 'myCrewCarePersistentSession.mjs']) {
+      const code = execFileSync('git', ['show', `091f5bf5982bf0b38a872cf8017ab63583b325c5:shared/${name}`], { encoding: 'utf8' });
+      await writeFile(join(directory, name), code);
+    }
+    const { createMyCrewCarePersistentSession: createPrevious } = await import(pathToFileURL(join(directory, 'myCrewCarePersistentSession.mjs')).href);
+    const bounds = [
+      { reservationStartAt: '2026-10-20T18:00:00Z', reservationEndAt: '2026-10-21T12:00:00Z', valid: false },
+      { reservationStartAt: '2026-10-01T18:00:00Z', reservationEndAt: '2026-10-02T12:00:00Z', valid: false },
+      { reservationStartAt: '2026-10-09T15:00:00-03:00', reservationEndAt: '2026-10-10T09:00:00-03:00', valid: true },
+      { reservationStartAt: null, reservationEndAt: null, valid: true },
+    ];
+    for (const { valid, ...reservation } of bounds) {
+      const storage = new MemoryStorage();
+      const adapter = { read: async (request) => envelope(request, [{ ...record, ...reservation }]) };
+      const previous = createPrevious({ adapter, storage, now: () => NOW });
+      previous.setContext(context, [stay]); previous.setAutomatic(true);
+      assert.equal(await previous.sync(), true);
+      assert.equal(JSON.parse(storage.read(context.accountId)).schemaVersion, 2);
+      const upgraded = createMyCrewCarePersistentSession({ adapter, storage, now: () => NOW });
+      upgraded.setContext(context, [stay]); upgraded.setAutomatic(true);
+      assert.equal(await upgraded.restore(), valid);
+      if (valid) assert.equal(upgraded.hotel(stay.id).dataState, 'fresh');
+      else {
+        assert.equal(upgraded.hotel(stay.id), null);
+        assert.equal(upgraded.pickup(stay.id), null);
+        assert.equal(storage.read(context.accountId), null);
+      }
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
