@@ -34,6 +34,7 @@ html body .cz-app[data-version] .cc-menu-favorite-chip > span {
   min-width: 0 !important;
   white-space: normal !important;
   overflow-wrap: anywhere !important;
+  line-height: 1.4 !important;
 }
 html body .cz-app[data-version] .cc-menu-favorite-chip > svg {
   flex: 0 0 40px !important;
