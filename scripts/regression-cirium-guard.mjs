@@ -462,7 +462,8 @@ console.log('Cirium displayed fallback chronology regression OK');
     { flightStatus: item }, mapped([]), mapped({ fs: 'LA', icao: 'LAN' }),
     mapped([{ fs: 'LA', icao: 'OTH' }]), mapped([{ icao: 'LAN' }]),
     mapped([{ fs: {}, icao: 'LAN' }]), mapped([airline, { fs: 'XX', icao: 'LAN' }]),
-    mapped([airline, { fs: 'XX', iata: 'LAN' }]),
+    mapped([airline, { fs: 'LAN', iata: 'XX' }]),
+    mapped([{ fs: 'LA', iata: 'LAN' }]),
     mapped([airline], { carrierFsCode: 'XX' }), mapped([airline], { flightNumber: '3378' }),
     mapped([airline], { departureDate: { dateLocal: '2000-01-01' } }),
   ]) {
@@ -474,5 +475,7 @@ console.log('Cirium displayed fallback chronology regression OK');
   assert.equal((await probe(collision)).state, 'invalid_payload');
   assert.equal((await query(collision)).state, 'invalid_payload', 'direct FS cannot bypass conflicting reference namespaces');
   assert.equal((await query({ flightStatus: item })).state, 'available', 'exact FS comparison still works without appendix');
+  assert.equal((await query(mapped([{ fs: 'LA', icao: 'ZZ' }]), 'ZZ')).state, 'invalid_payload', 'two-character ICAO must not authorize IATA-shaped input');
+  assert.equal((await query(mapped([{ fs: 'LAN' }], { carrierFsCode: 'LAN' }), 'LAN')).state, 'available', 'three-character FS remains supported');
 }
 console.log('Cirium shared strict envelope and unambiguous response carrier reference regression OK; synthetic only');

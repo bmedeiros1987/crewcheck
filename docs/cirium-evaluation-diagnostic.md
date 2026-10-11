@@ -121,7 +121,10 @@ published singular example includes legacy by-ID material; this test does not
 establish the live Sky by-flight response shape.
 
 ICAO/IATA input may differ from the returned FS carrier. The diagnostic resolves
-only an unambiguous `appendix.airlines` reference from that same response. Missing,
+only an unambiguous `appendix.airlines` reference from that same response. Each
+field is validated in its own namespace: IATA has two alphanumeric characters,
+ICAO has three letters, FS retains the existing two/three-character contract.
+An overlong IATA or short ICAO cannot authorize a different FS carrier. Missing,
 invalid or conflicting mappings do not authorize an alias; without a reference,
 only the existing exact FS match works. Flight number, occurrence date, leg and
 chronology guards still apply. The query remains unchanged and the summary reports

@@ -443,8 +443,9 @@ function responseCarrier(payload, requested) {
   if (Array.isArray(airlines)) {
     for (const airline of airlines) {
       if (!jsonObject(airline)) continue;
+      const patterns = { fs: /^[A-Z0-9]{2,3}$/, iata: /^[A-Z0-9]{2}$/, icao: /^[A-Z]{3}$/ };
       const ref = (field) => typeof airline[field] === 'string'
-        ? safeCode(airline[field], /^[A-Z0-9]{2,3}$/) : '';
+        ? safeCode(airline[field], patterns[field]) : '';
       if (![ref('fs'), ref('iata'), ref('icao')].includes(requested)) continue;
       if (!ref('fs')) return null;
       matches.add(ref('fs'));
