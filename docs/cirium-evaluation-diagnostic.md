@@ -110,3 +110,31 @@ instantes comparáveis e duração positiva até 24 h. Dois negativos reproduzem
 partida programada/chegada publicada invertidas e o inverso; dois controles
 válidos confirmam os horários efetivamente exibidos. Voo/probe passam nos três
 fusos mantendo os contratos UTC/local; os negativos falham no HEAD 79a2a177.
+
+## Synthetic response contract correction
+
+Both diagnostic paths now share strict extraction of plural `flightStatuses` or
+singular object `flightStatus`. Dual/malformed envelopes are rejected rather than
+falling back. This fixes a reproduced synthetic inconsistency: the general probe
+previously rejected a singular row that the flight diagnostic accepted. The
+published singular example includes legacy by-ID material; this test does not
+establish the live Sky by-flight response shape.
+
+ICAO/IATA input may differ from the returned FS carrier. The diagnostic resolves
+only an unambiguous `appendix.airlines` reference from that same response. Each
+field is validated in its own namespace: IATA has two alphanumeric characters,
+ICAO has three letters, FS retains the existing two/three-character contract.
+An overlong IATA or short ICAO cannot authorize a different FS carrier. Missing,
+invalid or conflicting mappings do not authorize an alias; without a reference,
+only the existing exact FS match works. Flight number, occurrence date, leg and
+chronology guards still apply. The query remains unchanged and the summary reports
+the returned FS code; no carrier table, fallback call or request is introduced.
+
+Official contract references: [Flight Status](https://developer.cirium.com/apis/cirium-sky-api/flight-status#tag/By-Flight/operation/byFlightByDeparture),
+[authentication](https://developer.cirium.com/apis/cirium-sky-api/authentication), and
+[official Postman collection](https://developer.cirium.com/postman/cirium-sky-api.postman_collection.json).
+URL/auth, disabled gates, budgets, cache, timeout and admin fences are unchanged.
+All reproduction/verification uses the empty-environment offline runner with
+injected fetch and forbidden real network. No real API/health endpoint or secret
+was accessed. This diagnostic remains separate from Radar integration; enabling
+it would not enable Cirium in Radar.
