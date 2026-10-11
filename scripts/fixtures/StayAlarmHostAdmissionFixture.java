@@ -34,9 +34,12 @@ public final class StayAlarmHostAdmissionFixture {
   check(new org.json.JSONObject(receipt).getString("state").equals("unknown"));check(record[0].state.equals("scheduled"));
   check(session.activeOwner()==null);clock[0]=alarm;
   check(!engine.receive(key,1,alarm));check(notifications[0]==0);
+  session.begin();boolean recoveryFailed=false;try{engine.recover(false);}catch(Exception error){recoveryFailed=true;}
+  check(recoveryFailed&&session.activeOwner()==null);
   check(session.verified(session.begin(),"verified-b","epoch-b",clock[0]+180000));
   StayAlarmHostAndroid.transactOrRevoke(new StayAlarmBridge(engine,session),session,cancel.toString());
   check("verified-b".equals(session.activeOwner()));check("epoch-b".equals(session.epoch()));
+  check(!engine.receive(key,1,alarm));check(notifications[0]==0);
   check(session.verified(session.begin(),"verified-a","epoch-new",clock[0]+180000));
   StayAlarmHostAndroid.transactOrRevoke(new StayAlarmBridge(engine,session),session,cancel.toString());
   check("epoch-new".equals(session.epoch()));

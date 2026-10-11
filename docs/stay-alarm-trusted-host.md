@@ -80,3 +80,8 @@ epoch pelo host invalida a autoridade anterior e recover a reconcilia, sem
 interpretar isso como recibo de cancelamento. Resposta antiga que falha não pode
 revogar nova sessão web nem nativa: a revogação do host verifica geração/dono/epoch
 dentro do lock compartilhado.
+
+A autenticação invalida o escopo anterior antes de reconciliar. Falha de recovery
+antigo não é recibo de cancelamento e não impede validar nova identidade: novo
+epoch continua a bloquear receive dos registros antigos. Operações da nova conta
+ainda dependem de journal/API válidos para obter scheduled/cancelled.

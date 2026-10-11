@@ -46,7 +46,7 @@ public final class StayAlarmHostAndroid {
                     if(!session.enabled()){reply.postMessage(response(id,"rejected",null));return;}
                     long generation=session.begin();String token=request.getString("token");
                     worker.execute(()->{try{
-                        engine.recover(false);String account=verify(token);long expiry=System.currentTimeMillis()+300_000;
+                        recover();String account=verify(token);long expiry=System.currentTimeMillis()+300_000;
                         boolean accepted=session.verified(generation,account,UUID.randomUUID().toString(),expiry);
                         view.post(()->{if(accepted&&session.current(generation)&&allowed(view.getUrl())){
                             reply.postMessage(response(id,"verified",bridge.capabilities()));
