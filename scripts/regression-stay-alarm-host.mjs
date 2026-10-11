@@ -77,3 +77,31 @@ test('transport failure while revoking remains explicit unknown and retains key'
  const retry=f.runtime.invalidate();f.reply(f.messages.at(-1),'rejected',null);assert.equal((await retry).state,'revocation-unknown');
  assert.deepEqual(f.runtime.uncertainKeys(),[key]);
 });
+test('uncertain A job remains scoped and cannot revoke authenticated B on invalidate',async()=>{
+ const f=fixture();let auth=f.runtime.authenticate();f.reply(f.messages.at(-1),'verified',f.caps());await auth;
+ const key='stay-hotel-apz:account-a:old-job',input={key,alarmAt:'2030-10-11T00:01:00Z',hotelReportAt:'2030-10-11T00:03:00Z',confirmed:true,apzConfirmed:true,mode:'relative'};
+ const schedule=f.runtime.replace(input);await new Promise(resolve=>setImmediate(resolve));let envelope=f.messages.at(-1),body=JSON.parse(envelope.payload);
+ f.reply(envelope,'ok',JSON.stringify({...body,state:'not-programmed',revision:0,deliveryConfirmed:false}));await new Promise(resolve=>setImmediate(resolve));envelope=f.messages.at(-1);body=JSON.parse(envelope.payload);
+ f.reply(envelope,'ok',JSON.stringify({...body,state:'scheduled',revision:1,deliveryConfirmed:false,acknowledgement:'native-api-and-journal-completed'}));assert.equal((await schedule).state,'scheduled');
+ const invalidateA=f.runtime.invalidate();await new Promise(resolve=>setImmediate(resolve));envelope=f.messages.at(-1);body=JSON.parse(envelope.payload);
+ f.reply(envelope,'ok',JSON.stringify({...body,state:'scheduled',revision:1,deliveryConfirmed:false}));await new Promise(resolve=>setImmediate(resolve));envelope=f.messages.at(-1);body=JSON.parse(envelope.payload);
+ f.reply(envelope,'ok',JSON.stringify({...body,state:'unknown',revision:1,deliveryConfirmed:false}));await new Promise(resolve=>setImmediate(resolve));f.reply(f.messages.at(-1),'revoked',null);await invalidateA;
+ f.switchAccount();auth=f.runtime.authenticate();f.reply(f.messages.at(-1),'verified',f.caps('account-b','epoch-b'));assert.equal(await auth,true);
+ const count=f.messages.length;assert.equal((await f.runtime.invalidate()).state,'no-known-jobs');assert.equal(f.messages.length,count);assert.equal(f.runtime.ready(),true);
+ assert.deepEqual(f.runtime.uncertainJobs(),[{key,account:'account-a',epoch:'epoch-1'}]);
+ assert.equal((await f.runtime.cancel({key})).reason,'owner-epoch-mismatch');assert.equal(f.messages.length,count);assert.equal(f.runtime.ready(),true);
+});
+test('old epoch cancellation failure arriving after B authenticates cannot revoke B',async()=>{
+ const f=fixture();let auth=f.runtime.authenticate();f.reply(f.messages.at(-1),'verified',f.caps());await auth;
+ const key='stay-hotel-apz:account-a:pending-cancel',cancel=f.runtime.cancel({key});await new Promise(resolve=>setImmediate(resolve));const old=f.messages.at(-1);
+ f.switchAccount();auth=f.runtime.authenticate();f.reply(f.messages.at(-1),'verified',f.caps('account-b','epoch-b'));assert.equal(await auth,true);
+ const count=f.messages.length;f.reply(old,'rejected',null);assert.equal((await cancel).state,'unknown');assert.equal(f.messages.length,count);assert.equal(f.runtime.ready(),true);
+ await f.runtime.invalidate();assert.equal(f.messages.length,count);assert.deepEqual(f.runtime.uncertainJobs(),[{key,account:'account-a',epoch:'epoch-1'}]);
+});
+test('same-account new native epoch never adopts old epoch pending keys',async()=>{
+ const f=fixture();let auth=f.runtime.authenticate();f.reply(f.messages.at(-1),'verified',f.caps());await auth;
+ const key='stay-hotel-apz:account-a:old-epoch',old=f.runtime.cancel({key});await new Promise(resolve=>setImmediate(resolve));
+ auth=f.runtime.authenticate();f.reply(f.messages.at(-1),'verified',f.caps('account-a','epoch-new'));assert.equal(await auth,true);await old;
+ const count=f.messages.length;await f.runtime.invalidate();assert.equal(f.messages.length,count);assert.equal(f.runtime.ready(),true);
+ assert.deepEqual(f.runtime.uncertainJobs(),[{key,account:'account-a',epoch:'epoch-1'}]);
+});

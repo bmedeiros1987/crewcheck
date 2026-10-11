@@ -71,10 +71,15 @@ public final class StayAlarmHostAndroid {
     /** Cancellation failure revokes native authority BEFORE returning its
      * uncertain receipt, including journal failure before pending-cancel. */
     static String transactOrRevoke(StayAlarmBridge bridge,StayAlarmSessionHost session,String payload){
-        String result=bridge.transact(payload);
-        try{if("cancel".equals(new JSONObject(payload).optString("action"))
-                &&!"cancelled".equals(new JSONObject(result).optString("state")))session.revoke();}
-        catch(Exception error){session.revoke();}
+        long generation=session.generation();String result=bridge.transact(payload);
+        try{JSONObject request=new JSONObject(payload);
+            if("cancel".equals(request.optString("action"))&&!"cancelled".equals(new JSONObject(result).optString("state"))){
+                String account=request.optString("accountId"),epoch=request.optString("ownerEpoch");
+                StayAlarmEngine.updateTrustedOwner(()->{
+                    if(session.generation()==generation&&account.equals(session.activeOwner())&&epoch.equals(session.epoch()))session.revoke();
+                });
+            }
+        }catch(Exception ignored){/* malformed/stale packets do not revoke a newer owner */}
         return result;
     }
     static boolean admitted(boolean main,String source,String page){return main&&allowed(source)&&allowed(page);}

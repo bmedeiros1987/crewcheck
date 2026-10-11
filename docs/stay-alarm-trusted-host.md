@@ -72,3 +72,11 @@ de pending-cancel). Assim receive recusa o epoch antigo mesmo se o job continua
 no SO. Falha de transporte antes de qualquer operação nativa permanece
 revocation-unknown: o web não pode afirmar revogação imediata. A lease nativa
 limita essa janela; testes físicos de perda de canal permanecem necessários.
+
+Pendências web são segregadas por account+epoch nativo. Autenticação de uma nova
+conta/epoch não apaga a incerteza anterior, mas a invalidação atual só opera no
+escopo vigente. Jobs antigos continuam auditáveis em uncertainJobs; a troca de
+epoch pelo host invalida a autoridade anterior e recover a reconcilia, sem
+interpretar isso como recibo de cancelamento. Resposta antiga que falha não pode
+revogar nova sessão web nem nativa: a revogação do host verifica geração/dono/epoch
+dentro do lock compartilhado.
