@@ -5,7 +5,10 @@ on:
       - .github/workflows/staged-preparation-experiment.yml
       - scripts/ci/staged-preparation-experiment.mjs
       - scripts/v139/staged-preparation-prototype.mjs
+      - scripts/v139/prototype-*.mjs
       - scripts/regression-staged-preparation-prototype.mjs
+      - scripts/regression-free-day-physical.mjs
+      - docs/staged-preparation-experiment.md
 permissions:
   contents: read
 jobs:
