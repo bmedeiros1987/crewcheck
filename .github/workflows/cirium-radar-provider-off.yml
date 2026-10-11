@@ -1,0 +1,25 @@
+name: Cirium Radar pure OFF contract
+on:
+  pull_request:
+    paths:
+      - 'server/cirium-radar-provider.mjs'
+      - 'server/cirium-flight-adapter.mjs'
+      - 'server/radar-occurrence-identity.mjs'
+      - 'server/radar-field-provenance.mjs'
+      - 'scripts/regression-cirium-radar-provider-off.mjs'
+      - '.github/workflows/cirium-radar-provider-off.yml'
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+      - name: Pure contract in three timezones without credentials or egress
+        run: |
+          TZ=UTC node scripts/regression-cirium-radar-provider-off.mjs
+          TZ=America/Sao_Paulo node scripts/regression-cirium-radar-provider-off.mjs
+          TZ=Pacific/Auckland node scripts/regression-cirium-radar-provider-off.mjs
