@@ -559,3 +559,56 @@ for (const fails of [false, true]) {
     assert.equal(await session.sync(), true, 'B remains bound and can sync without rebinding');
   });
 }
+
+for (const firstFails of [false, true]) {
+  test(`repeated disconnect retains the barrier until the oldest cleanup settles (${firstFails ? 'failure' : 'success'})`, async () => {
+    const first = deferred(), second = deferred();
+    let cleanups = 0, reads = 0;
+    const session = createMyCrewCarePersistentSession({ now: () => NOW, storage: new MemoryStorage(), adapter: {
+      disconnect: () => (++cleanups === 1 ? first.promise : second.promise),
+      read: async (request) => { reads += 1; return envelope(request); },
+    } });
+    session.setContext(context, [stay]);
+    session.setAutomatic(true);
+    const earlier = session.disconnect();
+    const observed = earlier.then(() => null, (error) => error);
+    const later = session.disconnect();
+    second.resolve();
+    await later;
+    assert.equal(session.state().cleanupInProgress, true);
+    session.setAutomatic(true);
+    assert.equal(await session.sync(), false);
+    assert.equal(reads, 0, 'native read must not overlap any pending cleanup');
+    if (firstFails) first.reject(new Error('synthetic failure')); else first.resolve();
+    assert.equal(Boolean(await observed), firstFails);
+    assert.equal(session.state().cleanupInProgress, false);
+    assert.equal(session.state().cleanupPending, firstFails);
+    assert.equal(session.state().status, firstFails ? 'cleanup-error' : 'disconnected');
+    assert.equal(session.state().lastError, firstFails ? 'profile-disconnect-failed' : null);
+  });
+}
+
+for (const enabled of [false, true]) {
+  test(`consent ${enabled} while same-account cleanup fails cannot hide the retry target`, async () => {
+    const finish = deferred();
+    const targets = [];
+    let fail = true;
+    const session = createMyCrewCarePersistentSession({ now: () => NOW, storage: new MemoryStorage(), adapter: {
+      disconnect: (accountId) => { targets.push(accountId); return fail ? finish.promise : Promise.resolve(); },
+    } });
+    session.setContext(context, [stay]);
+    session.setAutomatic(true);
+    const cleanup = session.disconnect();
+    const observed = cleanup.then(() => null, (error) => error);
+    session.setAutomatic(enabled);
+    finish.reject(new Error('synthetic failure'));
+    assert.equal((await observed).code, 'profile-disconnect-failed');
+    assert.equal(session.state().status, 'cleanup-error');
+    assert.equal(session.state().cleanupPending, true);
+    assert.equal(session.state().lastError, 'profile-disconnect-failed');
+    fail = false;
+    await session.disconnect();
+    assert.deepEqual(targets, [context.accountId, context.accountId]);
+    assert.equal(session.state().cleanupPending, false);
+  });
+}

@@ -126,3 +126,23 @@ em vez de anunciar sucesso antes da hora. Falha tardia de A após vínculo de B 
 reportada ao chamador sem transformar B em `cleanup-error`; a interface continua
 restrita a um alvo de limpeza ativo. Os gates físicos e de aquisição real desta
 PR permanecem pendentes. Sem ativação, montagem, merge, deploy ou publicação em loja.
+
+### Revisão independente: limpezas sobrepostas e consentimento
+
+A barreira de limpeza por conta conta todas as operações nativas/storage ainda
+pendentes. Uma segunda limpeza que termina antes da primeira não libera sync
+nem restore. Erros são acumulados até a última operação terminar, evitando que
+um sucesso concorrente esconda uma falha. Consentimento não habilita aquisição
+enquanto a barreira está ativa.
+
+A publicação do resultado de limpeza usa uma época de contexto independente da
+geração de leituras: mudar consentimento na mesma conta não apaga cleanup-error
+nem o alvo de retry. Trocar o contexto ainda protege B de conclusões de A.
+`cleanupInProgress` é exposto no core e no estado busy do controlador; disconnect
+publica esse estado antes de aguardar. Os controles existentes do painel ficam
+desabilitados durante a limpeza, mas a proteção também vale para chamadas diretas.
+
+Cinco novas regressões (51 contratos ao todo) reproduzem limpeza repetida com
+sucesso/falha, consentimento on/off durante falha e publicação imediata de busy/
+retry. Falham em `6471b002`, passam nos três fusos após o reparo. Nenhuma montagem,
+flag, bridge de MainActivity, aquisição real ou generator foi alterado.

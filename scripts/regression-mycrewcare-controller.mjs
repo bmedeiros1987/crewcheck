@@ -361,3 +361,24 @@ test('late logout completion cannot reset a newer B controller binding', async (
   await controller.bind(b, [stayFor(b)]);
   assert.ok(controller.hotel(stayFor(b).id));
 });
+
+test('disconnect publishes busy immediately and preserves cleanup retry after consent changes', async () => {
+  const { createMyCrewCarePersistentSession } = await import('../shared/myCrewCarePersistentSession.mjs');
+  let rejectCleanup;
+  const gate = new Promise((_, reject) => { rejectCleanup = reject; });
+  const engine = createMyCrewCarePersistentSession({ now: () => NOW, adapter: { disconnect: () => gate } });
+  const controller = make(fakeBridge(), { session: engine });
+  const a = ctx('A');
+  await controller.bind(a, [stayFor(a)]);
+  controller.setAutomatic(true);
+  const cleanup = controller.disconnect();
+  const observed = cleanup.then(() => null, (error) => error);
+  assert.equal(controller.getSnapshot().busy, true);
+  assert.equal(controller.getSnapshot().canRetryCleanup, false);
+  controller.setAutomatic(false); // core remains safe even when called directly
+  rejectCleanup(new Error('synthetic failure'));
+  assert.equal((await observed).code, 'profile-disconnect-failed');
+  assert.equal(controller.getSnapshot().busy, false);
+  assert.equal(controller.getSnapshot().status, 'cleanup-error');
+  assert.equal(controller.getSnapshot().canRetryCleanup, true);
+});

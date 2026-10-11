@@ -193,6 +193,8 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
   // Bumped on context change, cleanup and every restore: a restore that finishes after
   // any of them is stale and must neither publish nor touch storage.
   let restoreEpoch = 0;
+  let contextEpoch = 0;
+  let activeCleanupAccount = null;
   let pendingCleanup = null;
   const storageQueues = new Map();
   const cleaningAccounts = new Map();
@@ -269,34 +271,45 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
 
   async function clearConnection({ forgetData, clearContext }) {
     const capturedContext = context;
-    const accountId = capturedContext?.accountId ?? pendingCleanup ?? null;
+    const accountId = capturedContext?.accountId ?? pendingCleanup ?? activeCleanupAccount ?? null;
     automatic = false;
     restoreEpoch += 1;
     invalidateRequest();
-    const token = generation;
     if (forgetData) cached = null;
     // Detach synchronously. Completion of A's cleanup must never detach a later B.
     if (clearContext) {
       context = null;
+      contextEpoch += 1;
       stays = [];
       cached = null;
     }
     const remainingContext = context;
     status = cached ? 'off' : 'disconnected';
-    const cleanupId = {};
-    if (accountId) cleaningAccounts.set(accountId, cleanupId);
+    // One barrier per account, retained until EVERY concurrent native/storage
+    // cleanup settles. Consent changes invalidate reads, not cleanup ownership.
+    const cleanup = cleaningAccounts.get(accountId) ?? { count: 0, error: null };
+    cleanup.count += 1;
+    cleanup.context = remainingContext;
+    cleanup.epoch = contextEpoch;
+    cleaningAccounts.set(accountId, cleanup);
+    activeCleanupAccount = accountId;
     const outcomes = await Promise.allSettled([
       Promise.resolve().then(() => adapter?.disconnect?.(accountId, forgetData)),
       forgetData && accountId ? queueStorage(accountId, () => storageClear(accountId)) : Promise.resolve(),
     ]);
-    if (cleaningAccounts.get(accountId) === cleanupId) cleaningAccounts.delete(accountId);
     const cleanupError = outcomes[0].status === 'rejected' ? 'profile-disconnect-failed'
       : outcomes[1].status === 'rejected' ? 'cache-clear-failed' : null;
-    if (token === generation && context === remainingContext) {
-      // Keep a failed cleanup target retryable without overwriting a newer binding.
-      pendingCleanup = cleanupError ? accountId : null;
-      status = cleanupError ? 'cleanup-error' : (cached ? 'off' : 'disconnected');
-      lastError = cleanupError;
+    cleanup.error ||= cleanupError;
+    cleanup.count -= 1;
+    if (cleanup.count === 0) {
+      cleaningAccounts.delete(accountId);
+      if (contextEpoch === cleanup.epoch && context === cleanup.context) {
+        // Retry remains visible even if consent changed while cleanup was pending.
+        pendingCleanup = cleanup.error ? accountId : null;
+        status = cleanup.error ? 'cleanup-error' : (cached ? 'off' : 'disconnected');
+        lastError = cleanup.error;
+      }
+      if (activeCleanupAccount === accountId) activeCleanupAccount = null;
     }
     if (cleanupError) throw Object.assign(new Error(cleanupError), { code: cleanupError });
   }
@@ -309,6 +322,7 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
       invalidateRequest();
       restoreEpoch += 1;
       context = nextContext;
+      contextEpoch += 1;
       stays = nextStays;
       cached = null;
       lastError = null;
@@ -327,7 +341,7 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
     },
 
     setAutomatic(enabled) {
-      automatic = enabled === true && context !== null && stays.length > 0;
+      automatic = enabled === true && context !== null && !cleaningAccounts.has(context.accountId) && stays.length > 0;
       invalidateRequest();
       setStatusFromCache();
     },
@@ -394,6 +408,7 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
         automatic,
         hasCachedData: cached !== null,
         cleanupPending: pendingCleanup !== null,
+        cleanupInProgress: cleaningAccounts.has(context?.accountId ?? activeCleanupAccount),
         lastSuccessfulSyncAt: syncedAt === null ? null : new Date(syncedAt).toISOString(),
         dataAgeMs: ageMs,
         live: ageMs !== null && ageMs <= MYCREWCARE_LIVE_MAX_AGE_MS,

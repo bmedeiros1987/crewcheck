@@ -71,14 +71,14 @@ export function createMyCrewCareController({
       status: busy ? 'syncing' : state.status,
       connected: state.connected,
       automatic: state.automatic,
-      busy,
+      busy: busy || state.cleanupInProgress === true,
       hasCachedData: state.hasCachedData,
       live: state.live,
       dataAgeMs: state.dataAgeMs,
       lastSuccessfulSyncAt: state.lastSuccessfulSyncAt,
       lastError: state.lastError,
       // After a failed cleanup the account stays targetable: "disconnect" can be tried again.
-      canRetryCleanup: state.cleanupPending === true,
+      canRetryCleanup: state.cleanupPending === true && state.cleanupInProgress !== true,
       refreshSuggested,
       // Anything but a live validated session may open the provider login screen.
       requiresInteraction: !state.connected,
@@ -187,10 +187,14 @@ export function createMyCrewCareController({
 
     async disconnect({ forgetData = true } = {}) {
       if (!engine) return;
+      const epoch = bindingEpoch;
+      const cleanup = engine.disconnect({ forgetData });
+      refreshSuggested = false;
+      emit();
       try {
-        await engine.disconnect({ forgetData });
+        await cleanup;
       } finally {
-        refreshSuggested = false;
+        if (epoch === bindingEpoch) refreshSuggested = false;
         emit();
       }
     },
