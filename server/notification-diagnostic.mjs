@@ -28,11 +28,11 @@ export async function handleNotificationDiagnostic(req, res, {
     SUM(j.status='pending' AND j.scheduled_at < DATE_SUB(NOW(3), INTERVAL 120 SECOND)) AS overdue
     FROM crewcheck_notification_jobs j JOIN crewcheck_platform_profiles p ON p.email=j.email
     WHERE j.email=? AND BINARY p.public_id=BINARY ? AND j.created_at>=p.created_at GROUP BY j.status`, [email, ownerId], rows => {
-    const counts = Object.fromEntries(['pending','processing','dispatching','sent','failed','expired','uncertain','cancelled'].map(key => [key, 0]));
-    let overdue = 0;
-    for (const row of rows) { if (Object.hasOwn(counts, row.status)) counts[row.status] = Number(row.total) || 0; overdue += Number(row.overdue) || 0; }
-    return { status: rows.length ? 'recorded' : 'absent', counts, pendingPastDispatchWindow: overdue, received: null,
-      sentMeaning: 'provider_accepted_unconfirmed', scope: 'alarm_jobs_only' };
+    const counts = Object.fromEntries(['pending','processing','dispatching','sent','failed','expired','uncertain','cancelled','partial','held','other'].map(key => [key, 0]));
+    let overdue = 0, total = 0;
+    for (const row of rows) { const count = Number(row.total) || 0; const key = Object.hasOwn(counts, row.status) ? row.status : 'other'; counts[key] += count; total += count; overdue += Number(row.overdue) || 0; }
+    return { status: rows.length ? 'recorded' : 'absent', counts, total, pendingPastDispatchWindow: overdue, received: null,
+      sentMeaning: 'provider_accepted_unconfirmed', scope: 'current_account_notification_job_history' };
   });
   const scheduler = await observe(`SELECT last_started_at,last_finished_at,last_status,
     ROUND(UNIX_TIMESTAMP(last_started_at)*1000) AS started_epoch,
