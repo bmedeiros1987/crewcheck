@@ -34,6 +34,14 @@ public final class StayAlarmHostAdmissionFixture {
   check(new org.json.JSONObject(receipt).getString("state").equals("unknown"));check(record[0].state.equals("scheduled"));
   check(session.activeOwner()==null);clock[0]=alarm;
   check(!engine.receive(key,1,alarm));check(notifications[0]==0);
+  org.json.JSONObject proof=new org.json.JSONObject().put("ok",true).put("authenticated",true)
+   .put("user",new org.json.JSONObject().put("id","verified-night"))
+   .put("stayAlarmLease",new org.json.JSONObject().put("serverNow",1000L).put("sessionExpiresAt",1000L+8*3_600_000L).put("stayLeaseExpiresAt",1000L+8*3_600_000L));
+  check(StayAlarmHostAndroid.verifiedResponse(proof).duration==8*3_600_000L);
+  check(!StayAlarmHostAndroid.PREPARED_OVERNIGHT_LEASE_ENABLED);
+  proof.getJSONObject("stayAlarmLease").put("stayLeaseExpiresAt",1000L+19*3_600_000L);
+  boolean rejected=false;try{StayAlarmHostAndroid.verifiedResponse(proof);}catch(Exception error){rejected=true;}check(rejected);
+  proof.remove("stayAlarmLease");rejected=false;try{StayAlarmHostAndroid.verifiedResponse(proof);}catch(Exception error){rejected=true;}check(rejected);
   System.out.println("PASS host production admission: "+checks+" assertions; exact origin/main frame/navigation/OFF; no WebView/device instantiated");
  }
 }

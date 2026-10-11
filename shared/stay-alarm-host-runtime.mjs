@@ -33,7 +33,9 @@ export function createStayHostRuntime({port,readAccount,readToken,onState=()=>{}
       const native={capabilities:()=>raw,transact:payload=>send('transact',{payload})};
       adapter=createAndroidStayAlarmAdapter({enabled:true,native,activeAccount:readAccount,activeSession:()=>session});
       if(!adapter)return false;
-      onState(true);leaseTimer=setTimer(()=>{void revoke();},300000);
+      const remaining=caps.leaseRemainingMillis ?? 300000;
+      if(!Number.isSafeInteger(remaining)||remaining<=0||remaining>18*3600000){void revoke();return false;}
+      onState(true);leaseTimer=setTimer(()=>{void revoke();},remaining);
       return true;
     }catch{if(captured===generation){adapter=null;session=null;}return false;}
   }

@@ -3,6 +3,7 @@ package com.crewcheck.app;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
+import android.os.SystemClock;
 import android.webkit.WebView;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
@@ -20,6 +21,8 @@ import java.util.concurrent.Executors;
  * credentials provisioned. Existing user's candidate token is verified server-side. */
 public final class StayAlarmHostAndroid {
     public static final boolean PREPARED_HOST_ENABLED=false;
+    public static final boolean PREPARED_OVERNIGHT_LEASE_ENABLED=false;
+    static final long MAX_OVERNIGHT=18*3_600_000L;
     private static volatile StayAlarmSessionHost activeAuthority;
     public static StayAlarmEngine.Owner owner(){
         return new StayAlarmEngine.Owner(){public boolean enabled(){return PREPARED_HOST_ENABLED&&activeAuthority!=null&&activeAuthority.enabled();}
@@ -30,9 +33,9 @@ public final class StayAlarmHostAndroid {
     private final StayAlarmBridge bridge;private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private StayAlarmHostAndroid(Context context,WebView view){
         this.view=view;SharedPreferences prefs=context.getSharedPreferences("crewcheck_stay_alarm_owner_v1",Context.MODE_PRIVATE);
-        session=new StayAlarmSessionHost(PREPARED_HOST_ENABLED&&prefs.getBoolean("physicalValidationApproved",false),System::currentTimeMillis,
+        session=new StayAlarmSessionHost(PREPARED_HOST_ENABLED&&prefs.getBoolean("physicalValidationApproved",false),SystemClock::elapsedRealtime,
             (account,epoch,expiry)->{if(!prefs.edit().putString("verifiedOwnerId",account).putString("verifiedOwnerEpoch",epoch)
-                .putLong("verifiedOwnerExpiresAt",expiry).commit())throw new IllegalStateException("lease commit failed");});
+                .putLong("verifiedOwnerExpiresAt",expiry).commit())throw new IllegalStateException("lease commit failed");},PREPARED_OVERNIGHT_LEASE_ENABLED?MAX_OVERNIGHT:300_000);
         StayAlarmAndroid driver=new StayAlarmAndroid(context);engine=new StayAlarmEngine(driver,driver,session);bridge=new StayAlarmBridge(engine,session);
         activeAuthority=session;session.revoke();
         WebViewCompat.addWebMessageListener(view,"CrewCheckStayHost",Collections.singleton(ORIGIN),(web,message,source,main,reply)->{
@@ -46,11 +49,13 @@ public final class StayAlarmHostAndroid {
                     if(!session.enabled()){reply.postMessage(response(id,"rejected",null));return;}
                     long generation=session.begin();String token=request.getString("token");
                     worker.execute(()->{try{
-                        engine.recover(false);String account=verify(token);long expiry=System.currentTimeMillis()+300_000;
+                        engine.recover(false);long began=SystemClock.elapsedRealtime();Verified proof=verify(token);
+                        long duration=Math.max(0,Math.min(proof.duration,PREPARED_OVERNIGHT_LEASE_ENABLED?MAX_OVERNIGHT:300_000)-(SystemClock.elapsedRealtime()-began));
+                        long expiry=SystemClock.elapsedRealtime()+duration;String account=proof.account;
                         boolean accepted=session.verified(generation,account,UUID.randomUUID().toString(),expiry);
                         view.post(()->{if(accepted&&session.current(generation)&&allowed(view.getUrl())){
-                            reply.postMessage(response(id,"verified",bridge.capabilities()));
-                            view.postDelayed(()->{if(session.generation()==generation){session.revoke();worker.execute(this::recover);}},300_000);
+                            reply.postMessage(response(id,"verified",capabilities()));
+                            view.postDelayed(()->{if(session.generation()==generation){session.revoke();worker.execute(this::recover);}},duration);
                         }else reply.postMessage(response(id,"rejected",null));});
                     }catch(Exception error){view.post(()->reply.postMessage(response(id,"rejected",null)));}});return;
                 }
@@ -58,7 +63,7 @@ public final class StayAlarmHostAndroid {
                 if(!session.current(generation)) {reply.postMessage(response(id,"rejected",null));return;}
                 String payload=request.optString("payload","");
                 worker.execute(()->{String value=null;
-                    if(session.current(generation))value="capabilities".equals(action)?bridge.capabilities():"transact".equals(action)?transactOrRevoke(bridge,session,payload):null;
+                    if(session.current(generation))value="capabilities".equals(action)?capabilities():"transact".equals(action)?transactOrRevoke(bridge,session,payload):null;
                     final String result=value;view.post(()->{if((session.current(generation)||(session.generation()==generation+1&&session.activeOwner()==null))&&allowed(view.getUrl()))reply.postMessage(response(id,result==null?"rejected":"ok",result));});});
             }catch(Exception ignored){} // malformed packets never acquire authority
         });
@@ -77,7 +82,17 @@ public final class StayAlarmHostAndroid {
         &&(uri.getPort()==-1||uri.getPort()==443)&&uri.getUserInfo()==null;}catch(Exception error){return false;}}
     static String response(String id,String state,String payload){try{return new JSONObject().put("id",id).put("state",state)
         .put("payload",payload==null?JSONObject.NULL:payload).toString();}catch(Exception error){return "{}";}}
-    private static String verify(String token)throws Exception{
+    static final class Verified{final String account;final long duration;Verified(String account,long duration){this.account=account;this.duration=duration;}}
+    private String capabilities(){try{return new JSONObject(bridge.capabilities()).put("leaseRemainingMillis",session.remaining()).toString();}catch(Exception error){return "{}";}}
+    static Verified verifiedResponse(JSONObject result)throws Exception{
+        if(!Boolean.TRUE.equals(result.opt("ok"))||!Boolean.TRUE.equals(result.opt("authenticated")))throw new SecurityException("verification rejected");
+        Object raw=result.getJSONObject("user").get("id");if(!(raw instanceof String)||((String)raw).trim().isEmpty())throw new SecurityException("verified ID missing");
+        JSONObject lease=result.getJSONObject("stayAlarmLease");
+        long now=lease.getLong("serverNow"),sessionExpiry=lease.getLong("sessionExpiresAt"),leaseExpiry=lease.getLong("stayLeaseExpiresAt");
+        long duration=leaseExpiry-now;if(now<=0||duration<=0||duration>MAX_OVERNIGHT||leaseExpiry>sessionExpiry)throw new SecurityException("verified expiry unavailable");
+        return new Verified((String)raw,duration);
+    }
+    private static Verified verify(String token)throws Exception{
         if(token==null||token.isEmpty()||token.length()>8192||token.contains("\r")||token.contains("\n"))throw new SecurityException("invalid candidate");
         HttpsURLConnection connection=(HttpsURLConnection)new URL(ORIGIN+"/api/auth/me").openConnection();
         try{connection.setInstanceFollowRedirects(false);connection.setConnectTimeout(5000);connection.setReadTimeout(5000);
@@ -86,9 +101,7 @@ public final class StayAlarmHostAndroid {
             java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();byte[] buffer=new byte[2048];int n;
             try(java.io.InputStream input=connection.getInputStream()){while((n=input.read(buffer))!=-1){bytes.write(buffer,0,n);if(bytes.size()>65536)throw new SecurityException("response limit");}}
             JSONObject result=new JSONObject(new String(bytes.toByteArray(),StandardCharsets.UTF_8));
-            if(!Boolean.TRUE.equals(result.opt("ok"))||!Boolean.TRUE.equals(result.opt("authenticated")))throw new SecurityException("verification rejected");
-            Object raw=result.getJSONObject("user").get("id");if(!(raw instanceof String)||((String)raw).trim().isEmpty())throw new SecurityException("verified ID missing");
-            return (String)raw;
+            return verifiedResponse(result);
         }finally{connection.disconnect();}
     }
     public static StayAlarmHostAndroid install(Context context,WebView view){

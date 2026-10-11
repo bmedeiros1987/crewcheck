@@ -26,7 +26,7 @@ jobs:
           java-version: 17
       - name: JS receipt/controller and native production engine with fake device
         run: |
-          node --test scripts/regression-stay-alarm-host.mjs scripts/regression-stay-alarm-android.mjs scripts/regression-stay-editor-persistence.mjs scripts/regression-stay-edit-plan.mjs
+          node --test scripts/regression-stay-alarm-lease-lifecycle.mjs scripts/regression-stay-alarm-host.mjs scripts/regression-stay-alarm-android.mjs scripts/regression-stay-editor-persistence.mjs scripts/regression-stay-edit-plan.mjs
           node scripts/regression-stay-alarm-native.mjs
       - name: Compile real API bindings and test actual JSON bridge without a device
         env:
