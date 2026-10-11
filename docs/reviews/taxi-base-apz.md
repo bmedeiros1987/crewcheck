@@ -1,4 +1,4 @@
-# Táxi separado das refeições — candidato bloqueado para merge
+# Táxi separado das refeições — APZ na base, uma diária por dia
 
 Base inicial: `72ca637642a5f7e6c1f40917bb21e1b2089f838f`.
 
@@ -22,17 +22,16 @@ incompletos continuam pendentes. Reserva aeroportuária na base pode fornecer
 apresentação; sobreaviso, hotel e passagem intermediária não geram deslocamento.
 Deduplica a mesma ocorrência por identidade de jornada/registro e APZ.
 Reserva+ativação comprovada no mesmo intervalo são um deslocamento, em ambas
-as ordens. Uma segunda saída independente no dia preserva a primeira linha
-conhecida e gera pendência de múltiplos trajetos; não fica silenciosamente
-descartada. Não modifica nem descarta lançamentos reais de recibos.
+as ordens. Conforme correção explícita posterior de Bruno, o teto é uma diária
+de táxi por dia operacional BRT, inclusive com várias APZ independentes.
+Seleciona a primeira ocorrência comprovada de forma determinística, sem pendência
+por segunda APZ. Não modifica lançamentos reais de recibos.
 
-Chegada final à base na janela é registrada como pendência, sem transformar
-hora de chegada ou motores cortados+30 em APZ. Falta definição explícita do
-horário de chegada/liberação aplicável. A ordem dos eventos não permite que
-essa pendência suprima uma saída comprovada na mesma data. A chegada pendente
-também não é apagada pela saída conhecida: os agregados permanecem incompletos. Sem tarifa ou com
-critério de chegada pendente, os agregados ficam incompletos, preservando as
-refeições calculadas e evitando total financeiro aparentemente confiável.
+Táxi considera somente APZ na base entre 00:00 e 05:45 inclusive. Chegada de voo
+não gera elegibilidade nem pendência, conforme instrução mais recente que substitui
+a interpretação anterior. Sem tarifa confirmada ou APZ comprovada, os gates
+financeiros existentes continuam válidos. As refeições mantêm seus próprios
+critérios de presença/chegada, sem alteração pelo táxi.
 
 Fontes públicas consultadas em 11/10/2026:
 
@@ -50,17 +49,17 @@ pessoal ou lançamento real foi incluído no repositório.
 Validação: `regression-taxi-base-apz.mjs` exercita o leitor e o caller real,
 com fixtures sintéticas: limites00:00/05:45/05:46/23:59, base/fora, overnight,
 APZ ausente/estimada, reserva/extra/sobreaviso, duplicados, café separado,
-confirmação/período e pendências monetárias/chegada. Executa em UTC, São Paulo
+confirmação/período, teto diário e chegada sem elegibilidade/pendência. Executa em UTC, São Paulo
 e Tóquio, raw e preparado. Revisão independente achou dependência da ordem
-chegada→saída, corrigida e coberta. O gate financeiro existente foi ampliado.
+chegada→saída na versão anterior; a instrução posterior remove completamente a chegada do táxi. O gate financeiro existente foi ampliado.
 As expectativas do teste de relógio mantêm café/ceia e agora exigem total
-incompleto quando o novo táxi não tem tarifa/critério confirmado.
+incompleto quando o novo táxi não tem tarifa confirmada.
 
-Bloqueios: definição da chegada e política de dois trajetos; validar formato
-textual da extração PDF real na frente documental (sem copiar dados pessoais);
-revisão do HEAD final e CI terminal. Sem merge/deploy/serviço ou alteração de
-configuração Render. Ownership limitado ao cálculo, biblioteca financeira e
-regressões; nenhuma alteração de layout, Radar, MCC ou preparação.
+Gates finais: revisão do HEAD atualizado para a regra APZ-only e CI terminal.
+Sem merge/deploy/serviço ou alteração de configuração Render. Ownership limitado
+ao cálculo, biblioteca financeira e regressões; nenhuma alteração de layout,
+Radar, MCC ou preparação. Os critérios de chegada/múltiplos trajetos deixaram
+de ser questões abertas após a instrução explícita de Bruno.
 
 Revalidação privada: leitura autenticada de texto da Library com o documento
 resolvido exercitou `learnPerDiemStatement` real e extraiu TAXI (`amount`) e
