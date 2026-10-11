@@ -42,7 +42,10 @@ test('debug source-set entry is excluded from production, isolation and OFF gate
  const gradle=readFileSync('android-wrapper/app/build.gradle','utf8');
  const source=readFileSync(activity,'utf8');
  assert.doesNotMatch(main,/CrewCheckMyCrewCareDebugActivity/);
- assert.match(debug,/CrewCheckMyCrewCareDebugActivity/);assert.doesNotMatch(debug,/uses-permission|BROWSABLE|<data/);
+ assert.match(debug,/CrewCheckMyCrewCareDebugActivity/);assert.doesNotMatch(debug,/BROWSABLE|<data/);
+ assert.deepEqual([...debug.matchAll(/<uses-permission(?:-sdk-23)?\b[^>]*android:name="([^"]+)"/g)].map(m=>m[1]),["android.permission.INTERNET"]);
+ assert.match(debug,/<uses-permission tools:node="removeAll"/);
+ assert.match(debug,/<uses-permission-sdk-23 tools:node="removeAll"/);
  assert.match(gradle,/debug\s*\{\s*applicationIdSuffix "\.mcctest"/);
  assert.doesNotMatch(gradle,/main\.(java|manifest).*debug|release\.(java|manifest).*debug|srcDirs.*debug/);
  assert.doesNotMatch(source,/getIntent|JavascriptInterface|CookieManager|SharedPreferences|saveMyCrewCare|loadMyCrewCare|loadUrl|evaluateJavascript|Log\.|println|setJavaScriptEnabled/);
