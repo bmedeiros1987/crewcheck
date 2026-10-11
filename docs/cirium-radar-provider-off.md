@@ -28,8 +28,11 @@ linha inválida ou mais de 100 linhas produzem `invalid_payload`.
 Horários estimados/reais admitidos precisam ficar a até 24h do correspondente
 publicado; seus pares e o par efetivamente exibido exigem chegada posterior,
 com duração de até 24h. A política é conservadora e não cobre atrasos maiores.
-A chave usa o horário local da origem com offset canônico, preservando o instante:
-representações UTC/offset equivalentes geram a mesma identidade e proveniência.
+A chave deste contrato conserva o prefixo local legível do helper compartilhado
+e acrescenta `UTC:<instante ISO canônico com milissegundos>`. Todas as chaves
+de proveniência recebem a mesma qualificação. Isso distingue folds de DST,
+segundos e milissegundos distintos, sem modificar o helper compartilhado.
+Representações UTC/offset equivalentes geram a mesma identidade e proveniência.
 
 Estados: `disabled`, `invalid_request`, `not_configured`, `no_data`, `ambiguous`,
 `invalid_payload`, `timeout`, `rate_limited`, `provider_error`, `available`.

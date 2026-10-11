@@ -112,5 +112,10 @@ export function evaluateCiriumRadar(request, response, options = {}) {
   candidate.updatedAt = updatedMs === null ? '' : new Date(updatedMs).toISOString();
   candidate.message = 'Candidato Cirium validado offline; integração não ativada.';
   const provenance = buildRadarFieldProvenance([candidate]);
-  return result('available', { candidate, provenance, occurrenceKey: radarOccurrenceKey(candidate) });
+  // The shared local-minute key alone collides during DST folds and within a minute.
+  // Preserve it for readability, then qualify this contract's identity by the exact instant.
+  const occurrenceKey = `${radarOccurrenceKey(candidate)}|UTC:${new Date(scheduledMs).toISOString()}`;
+  provenance.occurrenceKey = occurrenceKey;
+  for (const field of Object.values(provenance.fields)) field.occurrenceKey = occurrenceKey;
+  return result('available', { candidate, provenance, occurrenceKey });
 }

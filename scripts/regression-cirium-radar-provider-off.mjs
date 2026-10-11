@@ -27,7 +27,7 @@ assert.equal(good.provenance.fields.departureGate.value, 'A12');
 assert.equal(good.provenance.fields.departureGate.provider, 'cirium-sky');
 assert.equal(good.provenance.fields.departureGate.observedAt, row.lastUpdatedDate.replace('Z', '.000Z'));
 assert.ok(good.occurrenceKey.includes('|2026-10-11|GRU|BSB|'));
-assert.ok(good.occurrenceKey.endsWith('|22:00'));
+assert.ok(good.occurrenceKey.endsWith('|22:00|UTC:2026-10-12T01:00:00.000Z'));
 const offsetRow = structuredClone(row);
 offsetRow.operationalTimes.scheduledGateDeparture.dateUtc = '2026-10-11T22:00:00-03:00';
 const equivalent = run(request, [offsetRow]);
@@ -82,4 +82,24 @@ historical.operationalTimes.scheduledGateArrival.dateUtc = '1969-12-31T22:00:00.
 const history = run({ ...request, departureDate: '1969-12-31', scheduledDepartureUtc: '1969-12-31T20:00:00.123Z' }, [historical]);
 assert.equal(history.state, 'available');
 assert.equal(history.candidate.scheduledDeparture, '1969-12-31T17:00:00.123-03:00');
+const foldRequest = { ...request, carrierFsCode: 'AA', flightNumber: '123', origin: 'JFK', destination: 'BOS',
+  originTimeZone: 'America/New_York', departureDate: '2026-11-01' };
+function fold(departure) {
+  const item = structuredClone(row);
+  Object.assign(item, { carrierFsCode: 'AA', flightNumber: '123', departureAirportFsCode: 'JFK', arrivalAirportFsCode: 'BOS' });
+  item.operationalTimes.scheduledGateDeparture.dateUtc = departure;
+  item.operationalTimes.scheduledGateArrival.dateUtc = '2026-11-01T08:00:00Z';
+  const output = run({ ...foldRequest, scheduledDepartureUtc: departure }, [item]);
+  assert.equal(output.state, 'available');
+  assert.equal(output.provenance.occurrenceKey, output.occurrenceKey);
+  for (const field of Object.values(output.provenance.fields)) assert.equal(field.occurrenceKey, output.occurrenceKey);
+  return output;
+}
+const firstFold = fold('2026-11-01T05:30:00Z');
+const secondFold = fold('2026-11-01T06:30:00Z');
+assert.notEqual(firstFold.occurrenceKey, secondFold.occurrenceKey);
+assert.notEqual(firstFold.occurrenceKey, fold('2026-11-01T05:30:30Z').occurrenceKey);
+assert.notEqual(firstFold.occurrenceKey, fold('2026-11-01T05:30:00.001Z').occurrenceKey);
+assert.equal(firstFold.occurrenceKey, fold('2026-11-01T01:30:00-04:00').occurrenceKey);
+assert.equal(secondFold.occurrenceKey, fold('2026-11-01T01:30:00-05:00').occurrenceKey);
 console.log(`PASS Cirium Radar pure OFF contract: ${count} cases, TZ=${process.env.TZ}, zero network/credentials`);
