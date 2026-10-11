@@ -49,7 +49,7 @@ try{
  assert.equal(await page.getByRole('button',{name:/Testar|Vincular|Soneca|Salvar preferências|Ativar no servidor/}).count(),0,'technical/configuration actions are not simultaneous');
  await page.locator('.cc-wakeup-history > summary').click();
  const sent=page.locator('.cc-wakeup-history .cz-roster-card').filter({hasText:'Aceito pelo provedor; entrega não confirmada'});
- await sent.waitFor();await sent.scrollIntoViewIfNeeded();
+ await sent.waitFor();await sent.scrollIntoViewIfNeeded();assert.equal(await sent.locator('.cz-roster-icon').isVisible(),false,'history reserves width for status text');
  const geometry=await sent.locator('.cz-roster-copy > *').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return{top:r.top,bottom:r.bottom,height:r.height};}));
  for(let i=1;i<geometry.length;i++)assert(geometry[i].top>=geometry[i-1].bottom-1,'status and provider timestamp occupy separate flow rows');
  assert(geometry.every(row=>row.height>0),'status rows retain height');
