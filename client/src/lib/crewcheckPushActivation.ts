@@ -1,6 +1,7 @@
 export type PushBinding = { ownerId: string; installationId: string; consentRevision: number };
 export type PushDependencies = {
   enabled: boolean; ownerId: string | null; currentOwner: () => string | null; registration: ServiceWorkerRegistration;
+  withSubscriptionLock: <T>(run: () => Promise<T>) => Promise<T>;
   permission: () => Promise<NotificationPermission>;
   subscribe: (registration: ServiceWorkerRegistration, key: string) => Promise<PushSubscription>;
   save: (subscription: PushSubscriptionJSON, ownerId: string) => Promise<PushBinding>;
@@ -20,7 +21,7 @@ export async function activateCrewCheckPush(dependencies: PushDependencies, publ
   if (dependencies.enabled !== true || confirmed !== true || !ownerId || !publicKey || !current()) return { status: 'blocked', received: null };
   if (await dependencies.permission() !== 'granted') return { status: 'permission_not_granted', received: null };
   if (!current()) return { status: 'account_changed', received: null };
-  return exclusive(async () => {
+  return exclusive(() => dependencies.withSubscriptionLock(async () => {
   if (!current()) return { status: 'account_changed', received: null };
   const generation = await dependencies.beginWorker();
   if (!current()) { await dependencies.cancelWorker(generation); return { status: 'account_changed', received: null }; }
@@ -41,14 +42,14 @@ export async function activateCrewCheckPush(dependencies: PushDependencies, publ
     }
     return { status: 'activation_unconfirmed', received: null };
   }
-  });
+  }));
 }
 export async function revokeCrewCheckPush(dependencies: PushDependencies) {
   const ownerId = dependencies.ownerId, operation = ++operationGeneration;
   const current = () => !!ownerId && operation === operationGeneration && dependencies.currentOwner() === ownerId;
   const stale = () => ({ status: 'account_changed', serverRevocationConfirmed: false });
   if (!current()) return stale();
-  return exclusive(async () => {
+  return exclusive(() => dependencies.withSubscriptionLock(async () => {
     if (!current()) return stale();
     // Capture only the prior subscription before awaiting owner-scoped worker CAS.
     const subscription = await dependencies.registration.pushManager.getSubscription();
@@ -63,5 +64,5 @@ export async function revokeCrewCheckPush(dependencies: PushDependencies) {
     const unsubscribed = subscription ? await subscription.unsubscribe() : true;
     if (!current()) return { status: 'account_changed', serverRevocationConfirmed };
     return { status: unsubscribed ? 'inactive' : 'local_cancellation_unconfirmed', serverRevocationConfirmed };
-  });
+  }));
 }
