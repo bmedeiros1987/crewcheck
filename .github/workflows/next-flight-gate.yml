@@ -1,0 +1,29 @@
+name: Next flight gate (phone + CrewWatch)
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/nextFlightGate.ts'
+      - 'client/src/lib/nextFlightWatch.ts'
+      - 'client/src/lib/watchContext.ts'
+      - 'client/src/components/nextflight/**'
+      - 'client/src/components/v1391/HomeRosterPreview.tsx'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-next-flight-gate.mjs'
+      - '.github/workflows/next-flight-gate.yml'
+permissions:
+  contents: read
+jobs:
+  simulated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Simulated contract in three timezones (no network, no credentials)
+        run: |
+          TZ=UTC node scripts/regression-next-flight-gate.mjs
+          TZ=America/Sao_Paulo node scripts/regression-next-flight-gate.mjs
+          TZ=Pacific/Auckland node scripts/regression-next-flight-gate.mjs
