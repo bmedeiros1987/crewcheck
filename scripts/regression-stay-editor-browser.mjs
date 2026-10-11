@@ -31,6 +31,7 @@ import {savedStayEditorEvent} from '@/lib/stayEditorStore';
 import {getToken} from '@/lib/authClient';
 import {setPendingNavigationContext} from '@/lib/navigationContext';
 import {isFinancialSetting,readFinancialSetting,writeFinancialSetting} from '@/lib/financialSettingStore';
+import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
 import {createPortal} from 'react-dom';
 import {Search,Hotel,LocateFixed,Plus,Check,MapPin,X,Save,ChevronRight,UserRound,Dumbbell,WashingMachine,Pill,Bell,Send,Menu,Home as HomeIcon,CalendarDays,Navigation} from 'lucide-react';
 import {toast} from 'sonner';

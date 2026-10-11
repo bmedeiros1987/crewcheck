@@ -42,6 +42,7 @@ assert.ok(links, 'Use actual prepared production CSS, not a mock stylesheet');
 const entry = `
 import React, {useState,useEffect,useMemo} from 'react';
 import {isFinancialSetting,readFinancialSetting,writeFinancialSetting} from '@/lib/financialSettingStore';
+import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
 import {createPortal} from 'react-dom';
 import {Search,Hotel,LocateFixed,Plus,Check,MapPin,X,Save,ChevronRight,UserRound,Dumbbell,WashingMachine,Pill,Bell,Send,Menu,Home as HomeIcon,CalendarDays,Navigation} from 'lucide-react';
 import {toast} from 'sonner';
