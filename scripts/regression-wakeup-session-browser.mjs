@@ -50,7 +50,7 @@ try{
  assert.equal(await page.getByRole('button',{name:/Testar|Vincular|Soneca|Salvar preferências|Ativar no servidor/}).count(),0,'technical/configuration actions are not simultaneous');
 
  const selection=page.locator('.cc-wakeup-selection'),primary=page.getByRole('button',{name:'Ativar despertador',exact:true});
- await page.getByText('Mensagem Telegram disponível para solicitar agendamento.',{exact:false}).waitFor();
+ await selection.getByText('Mensagem Telegram disponível para solicitar agendamento.',{exact:false}).waitFor();
  await page.evaluate(()=>{window.fixturePosts=[];window.fixturePost=async(path,body)=>{window.fixturePosts.push({path,body});return{ok:true,message:'Solicitação registrada no servidor; entrega não confirmada.'};};});
  const inherit=selection.getByRole('checkbox',{name:'Usar padrão de Menu → Notificações'}),telegram=selection.getByRole('checkbox',{name:/^Mensagem Telegram/}),call=selection.getByRole('checkbox',{name:/^Ligação via Telegram/}),phone=selection.getByRole('checkbox',{name:/^Ligação telefônica/});
  assert(await inherit.isChecked());assert(await telegram.isChecked());await inherit.uncheck();assert(await primary.isDisabled());
