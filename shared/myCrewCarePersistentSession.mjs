@@ -55,7 +55,7 @@ function validStatus(value) {
   return value === 'published' || value === 'changed' || value === 'cancelled';
 }
 
-function validStoredFact(fact, context) {
+function validStoredFact(fact, context, stays) {
   const expected = fact?.kind === 'hotel'
     ? HOTEL_FACT_KEYS
     : (fact?.kind === 'pickup' ? PICKUP_FACT_KEYS : null);
@@ -77,10 +77,15 @@ function validStoredFact(fact, context) {
     || !nullableString(fact.providerRecordId, 180)) return false;
 
   if (fact.kind === 'hotel') {
+    const stay = stays.find((candidate) => candidate.id === fact.stayId);
+    const start = fact.reservationStartAt === null ? null : myCrewCareInstant(fact.reservationStartAt);
+    const end = fact.reservationEndAt === null ? null : myCrewCareInstant(fact.reservationEndAt);
     return nullableString(fact.hotelAddress, 320)
       && nullableString(fact.hotelPhone, 80)
-      && (fact.reservationStartAt === null || Number.isFinite(myCrewCareInstant(fact.reservationStartAt)))
-      && (fact.reservationEndAt === null || Number.isFinite(myCrewCareInstant(fact.reservationEndAt)));
+      && Boolean(stay)
+      && (start === null || (Number.isFinite(start) && start < stay.end))
+      && (end === null || (Number.isFinite(end) && end > stay.start))
+      && (start === null || end === null || end > start);
   }
   return safeString(fact.timeZone, 100)
     && Number.isFinite(myCrewCareInstant(fact.pickupAt))
@@ -113,7 +118,7 @@ async function stayFingerprint(values) {
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function parseStored(value, context, expectedStayFingerprint, now) {
+function parseStored(value, context, expectedStayFingerprint, stays, now) {
   if (typeof value !== 'string' || !value) return null;
   try {
     const payload = JSON.parse(value);
@@ -128,7 +133,7 @@ function parseStored(value, context, expectedStayFingerprint, now) {
     if (!Number.isFinite(syncedAt)
       || syncedAt > now + 30_000
       || now - syncedAt > MYCREWCARE_CACHE_MAX_AGE_MS
-      || !payload.facts.every((fact) => validStoredFact(fact, context))) return null;
+      || !payload.facts.every((fact) => validStoredFact(fact, context, stays))) return null;
     return Object.freeze({
       syncedAt,
       facts: Object.freeze(payload.facts.map((fact) => Object.freeze({ ...fact }))),
@@ -367,10 +372,11 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
       }
       // Everything below uses the captured account/epoch, never the live `context`.
       const epoch = restoreEpoch += 1;
+      const requestGeneration = generation;
       const capturedContext = context;
       const capturedStays = stays;
       const accountId = capturedContext.accountId;
-      const stale = () => epoch !== restoreEpoch || context !== capturedContext;
+      const stale = () => epoch !== restoreEpoch || generation !== requestGeneration || context !== capturedContext;
       let raw;
       let fingerprint;
       try {
@@ -388,7 +394,7 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
         return false;
       }
       if (stale()) return false;
-      const restored = parseStored(raw, capturedContext, fingerprint, now());
+      const restored = parseStored(raw, capturedContext, fingerprint, capturedStays, now());
       if (!restored) {
         if (raw) {
           try {

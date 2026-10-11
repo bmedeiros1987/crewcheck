@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import {
   diffMyCrewCareFacts,
@@ -97,6 +102,44 @@ test('reconciliation creates separate hotel and pickup facts for one persisted s
   assert.equal(pickup.dataState, 'fresh');
 });
 
+test('explicit reservation bounds must overlap the persisted stay', () => {
+  const reconcile = (bounds) => reconcileMyCrewCareLogistics({
+    context, stays: [stay], now: NOW,
+    snapshot: { observedAt: new Date(NOW).toISOString(), records: [{ ...record, ...bounds }] },
+  });
+  const invalid = [
+    { reservationStartAt: '2026-10-20T15:00:00-03:00', reservationEndAt: '2026-10-21T09:00:00-03:00' },
+    { reservationStartAt: '2026-10-01T15:00:00-03:00', reservationEndAt: '2026-10-02T09:00:00-03:00' },
+    { reservationStartAt: stay.endAt },
+    { reservationEndAt: stay.startAt },
+    { reservationStartAt: '2026-10-10T09:00:00-03:00' },
+    { reservationEndAt: '2026-10-09T15:00:00-03:00' },
+    { reservationStartAt: stay.endAt, reservationEndAt: stay.startAt },
+  ];
+  for (const bounds of invalid) {
+    const result = reconcile(bounds);
+    assert.equal(result.accepted, false, JSON.stringify(bounds));
+    assert.equal(result.facts.length, 0);
+    assert.equal(selectMyCrewCareHotel(result.facts, stay.id, { now: NOW }), null);
+  }
+  const valid = [
+    {}, { reservationStartAt: null, reservationEndAt: '' },
+    { reservationStartAt: stay.startAt, reservationEndAt: stay.endAt },
+    { reservationStartAt: '2026-10-10T11:00:00Z', reservationEndAt: '2026-10-10T13:00:00Z' },
+    { reservationStartAt: '2026-10-09T17:00:00Z', reservationEndAt: '2026-10-09T19:00:00Z' },
+    { reservationStartAt: '2026-10-09T15:00:00-03:00', reservationEndAt: '2026-10-10T09:00:00-03:00' },
+    { reservationStartAt: '2026-10-09T17:59:59Z' },
+    { reservationEndAt: '2026-10-10T12:00:01Z' },
+    { reservationStartAt: '2026-10-10T11:59:59Z' },
+    { reservationEndAt: '2026-10-09T18:00:01Z' },
+  ];
+  for (const bounds of valid) {
+    const result = reconcile(bounds);
+    assert.equal(result.accepted, true, JSON.stringify(bounds));
+    assert.equal(selectMyCrewCareHotel(result.facts, stay.id, { now: NOW }).dataState, 'fresh');
+  }
+});
+
 test('overlapping candidate stays fail conservatively', () => {
   const second = { ...stay, id: 'stay-2', rosterEventId: 'event-2' };
   const result = reconcileMyCrewCareLogistics({
@@ -139,6 +182,26 @@ test('fact diff reports provider changes without mutating previous facts', () =>
   assert.equal(diff.hasChanges, true);
   assert.equal(diff.changed.length, 2);
   assert.equal(before.find((fact) => fact.kind === 'pickup').pickupAt, '2026-10-10T08:10:00.000Z');
+});
+
+test('disjoint reservation cannot sync, persist or restore as fresh hotel', async () => {
+  for (const [start, end] of [['2026-10-20T18:00:00Z', '2026-10-21T12:00:00Z'],
+    ['2026-10-01T18:00:00Z', '2026-10-02T12:00:00Z']]) {
+    const storage = new MemoryStorage();
+    const adapter = { read: async (request) => envelope(request, [{ ...record,
+      reservationStartAt: start, reservationEndAt: end }]) };
+    const session = createMyCrewCarePersistentSession({ adapter, storage, now: () => NOW });
+    session.setContext(context, [stay]);
+    session.setAutomatic(true);
+    assert.equal(await session.sync(), false);
+    assert.equal(session.hotel(stay.id), null);
+    assert.equal(storage.values.size, 0);
+    const restored = createMyCrewCarePersistentSession({ adapter, storage, now: () => NOW });
+    restored.setContext(context, [stay]);
+    restored.setAutomatic(true);
+    assert.equal(await restored.restore(), false);
+    assert.equal(restored.hotel(stay.id), null);
+  }
 });
 
 test('persistent session stores only normalized facts and restores them as cache', async () => {
@@ -306,6 +369,55 @@ class GatedStorage extends MemoryStorage {
   }
   clear(accountId) { this.clears.push(accountId); return super.clear(accountId); }
 }
+
+test('late invalid restore cannot clear a newer sync for the same account or another account', async () => {
+  for (const switchAccount of [false, true]) {
+    const storage = new GatedStorage();
+    storage.values.set(context.accountId, '{"corrupt":true}');
+    const ctx = switchAccount ? contextB : context;
+    const st = switchAccount ? stayB : stay;
+    const session = createMyCrewCarePersistentSession({
+      adapter: { read: async (request) => envelope(request, [record], { providerSubject: ctx.providerSubject }) },
+      storage, now: () => NOW,
+    });
+    session.setContext(context, [stay]); session.setAutomatic(true);
+    const oldRestore = session.restore();
+    if (switchAccount) session.setContext(ctx, [st]);
+    assert.equal(await session.sync(), true);
+    const latest = storage.values.get(ctx.accountId);
+    storage.gates[0]();
+    assert.equal(await oldRestore, false);
+    assert.deepEqual(storage.clears, []);
+    assert.equal(storage.values.get(ctx.accountId), latest);
+    assert.equal(session.state().connected, true);
+    assert.ok(session.hotel(st.id));
+  }
+});
+
+test('sync queued behind an already started restore cleanup preserves its new cache', async () => {
+  const storage = new MemoryStorage();
+  storage.values.set(context.accountId, '{"corrupt":true}');
+  let finishClear;
+  let enteredClear;
+  const clearStarted = new Promise(resolve => { enteredClear = resolve; });
+  storage.clear = (accountId) => new Promise(resolve => {
+    enteredClear();
+    finishClear = () => { storage.values.delete(accountId); resolve(); };
+  });
+  const session = createMyCrewCarePersistentSession({
+    adapter: { read: async request => envelope(request) }, storage, now: () => NOW,
+  });
+  session.setContext(context, [stay]); session.setAutomatic(true);
+  const restore = session.restore();
+  await clearStarted;
+  const sync = session.sync();
+  finishClear();
+  assert.equal(await restore, false);
+  assert.equal(await sync, true);
+  assert.ok(storage.values.get(context.accountId));
+  assert.ok(session.hotel(stay.id));
+  assert.equal(session.state().connected, true);
+});
 
 test('late restore(A) after switching to B never clears or publishes into B', async () => {
   const storage = new GatedStorage();
@@ -722,4 +834,56 @@ test('late A failure remains private to A and surfaces if A returns before it se
   session.setContext(b, [{ ...stay, ...b }]);
   assert.equal(session.state().cleanupPending, false);
   assert.equal(session.state().lastError, null);
+});
+
+// Generate the cache through the actual pre-fix session/reconciler, not a hand-built blob.
+test('upgrade rejects disjoint reservation cache produced by the previous version', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'mycrewcare-old-cache-'));
+  try {
+    for (const name of ['myCrewCareLogistics.mjs', 'myCrewCarePersistentSession.mjs']) {
+      const code = execFileSync('git', ['show', `091f5bf5982bf0b38a872cf8017ab63583b325c5:shared/${name}`], { encoding: 'utf8' });
+      await writeFile(join(directory, name), code);
+    }
+    const { createMyCrewCarePersistentSession: createPrevious } = await import(pathToFileURL(join(directory, 'myCrewCarePersistentSession.mjs')).href);
+    const bounds = [
+      { reservationStartAt: '2026-10-20T18:00:00Z', reservationEndAt: '2026-10-21T12:00:00Z', valid: false },
+      { reservationStartAt: '2026-10-01T18:00:00Z', reservationEndAt: '2026-10-02T12:00:00Z', valid: false },
+      { reservationStartAt: '2026-10-09T15:00:00-03:00', reservationEndAt: '2026-10-10T09:00:00-03:00', valid: true },
+      { reservationStartAt: null, reservationEndAt: null, valid: true },
+    ];
+    for (const { valid, ...reservation } of bounds) {
+      const storage = new MemoryStorage();
+      const adapter = { read: async (request) => envelope(request, [{ ...record, ...reservation }]) };
+      const previous = createPrevious({ adapter, storage, now: () => NOW });
+      previous.setContext(context, [stay]); previous.setAutomatic(true);
+      assert.equal(await previous.sync(), true);
+      assert.equal(JSON.parse(storage.read(context.accountId)).schemaVersion, 2);
+      if (!valid) {
+        const racedStorage = new GatedStorage();
+        racedStorage.values.set(context.accountId, storage.read(context.accountId));
+        const raced = createMyCrewCarePersistentSession({
+          adapter: { read: async request => envelope(request) }, storage: racedStorage, now: () => NOW,
+        });
+        raced.setContext(context, [stay]); raced.setAutomatic(true);
+        const staleRestore = raced.restore();
+        assert.equal(await raced.sync(), true);
+        const latest = racedStorage.values.get(context.accountId);
+        racedStorage.gates[0]();
+        assert.equal(await staleRestore, false);
+        assert.deepEqual(racedStorage.clears, []);
+        assert.equal(racedStorage.values.get(context.accountId), latest);
+        assert.equal(raced.hotel(stay.id).reservationStartAt, null);
+        assert.equal(raced.state().connected, true);
+      }
+      const upgraded = createMyCrewCarePersistentSession({ adapter, storage, now: () => NOW });
+      upgraded.setContext(context, [stay]); upgraded.setAutomatic(true);
+      assert.equal(await upgraded.restore(), valid);
+      if (valid) assert.equal(upgraded.hotel(stay.id).dataState, 'fresh');
+      else {
+        assert.equal(upgraded.hotel(stay.id), null);
+        assert.equal(upgraded.pickup(stay.id), null);
+        assert.equal(storage.read(context.accountId), null);
+      }
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
