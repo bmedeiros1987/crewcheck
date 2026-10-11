@@ -1,5 +1,57 @@
 import { MYCREWCARE_PROTOCOL } from './myCrewCarePersistentSession.mjs';
 
+/** Decode only the minimised review-only page envelope; never a persistent-session payload. */
+export function decodeMyCrewCareObservedNativePage(raw, request, pageUrl) {
+  const fail = () => { throw Object.assign(new Error('observed-native-validation-failed'), { code: 'observed-native-validation-failed' }); };
+  if (typeof raw !== 'string' || new TextEncoder().encode(raw).length > 256 * 1024) fail();
+  let value;
+  try { value = JSON.parse(raw); } catch { fail(); }
+  const scope = request?.scope;
+  const keys = ['schemaVersion', 'operationalImportAllowed', 'accountId', 'sessionId', 'requestId', 'generation', 'kind', 'rows'];
+  if (!scope || !value || Object.keys(value).length !== keys.length || keys.some(key => !(key in value))
+    || value.schemaVersion !== 3 || value.operationalImportAllowed !== false || value.kind !== request.kind
+    || !Number.isSafeInteger(value.generation) || value.generation < 1
+    || ['accountId', 'sessionId', 'requestId', 'generation'].some(key => value[key] !== scope[key])) fail();
+  if (['accountId', 'sessionId', 'requestId', 'employeeId', 'username'].some(key => typeof scope[key] !== 'string' || !scope[key].trim() || scope[key].length > 240 || /[\u0000-\u001f\u007f]/.test(scope[key]))) fail();
+  const profile = request.kind === 'profile-before' || request.kind === 'profile-after';
+  if (!profile && !['cards', 'detail'].includes(request.kind)) fail();
+  const expected = profile ? ['employeeId', 'username'] : ['providerReservationId', 'dutyPeriodNumber', 'airport', 'pairingId', 'hotelName'];
+  if (request.kind === 'detail') expected.push('confirmationRaw', 'checkInWallDateTime', 'checkOutWallDateTime',
+    'toHotelProvider', 'toHotelPickupWallTime', 'toHotelTransitMinutes', 'toAirportProvider', 'toAirportPickupWallTime', 'toAirportTransitMinutes');
+  let url;
+  try { url = new URL(pageUrl); } catch { fail(); }
+  const path = profile ? 'userprofile.aspx' : request.kind === 'cards' ? 'mytravel.aspx' : 'reservation.aspx';
+  if (url.origin !== 'https://api2.apicrewcare.com' || url.pathname !== `/LATAM/${path}` || url.username || url.password || url.hash) fail();
+  if (!Array.isArray(value.rows) || !value.rows.length || value.rows.length > 50 || (request.kind !== 'cards' && value.rows.length !== 1)) fail();
+  const seen = new Set();
+  const rows = value.rows.map(row => {
+    if (!row || Object.keys(row).length !== expected.length || expected.some(key => !(key in row))
+      || Object.values(row).some(text => typeof text !== 'string' || !text.trim() || text.length > 240 || /[\u0000-\u001f\u007f]/.test(text))) fail();
+    if (profile) {
+      if (row.employeeId !== scope.employeeId || row.username !== scope.username || !/^\d+$/.test(row.employeeId)) fail();
+    } else {
+      if (!/^[A-Z]{3}$/.test(row.airport)) fail();
+      const identity = JSON.stringify([row.providerReservationId, row.dutyPeriodNumber]);
+      if (seen.has(identity)) fail(); seen.add(identity);
+    }
+    if (request.kind === 'detail') {
+      if (!request.card || ['providerReservationId', 'dutyPeriodNumber', 'airport', 'pairingId', 'hotelName'].some(key => row[key] !== request.card[key])
+        || url.searchParams.getAll('tripreservid').length !== 1 || url.searchParams.getAll('dutyperiodnumber').length !== 1
+        || url.searchParams.get('tripreservid') !== row.providerReservationId || url.searchParams.get('dutyperiodnumber') !== row.dutyPeriodNumber) fail();
+      for (const key of ['toHotelPickupWallTime', 'toAirportPickupWallTime']) if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(row[key])) fail();
+      for (const key of ['toHotelTransitMinutes', 'toAirportTransitMinutes']) if (!/^\d{1,3}$/.test(row[key]) || Number(row[key]) > 360) fail();
+      for (const key of ['checkInWallDateTime', 'checkOutWallDateTime']) {
+        if (!/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d$/.test(row[key])) fail();
+        const instant = new Date(`${row[key]}:00Z`);
+        if (!Number.isFinite(instant.getTime()) || instant.toISOString().slice(0, 16) !== row[key]) fail();
+      }
+      if (row.checkOutWallDateTime <= row.checkInWallDateTime) fail();
+    }
+    return Object.freeze({ ...row });
+  });
+  return Object.freeze({ ...value, rows: Object.freeze(rows) });
+}
+
 function bridgeMethod(bridge, name) {
   return typeof bridge?.[name] === 'function' ? bridge[name].bind(bridge) : null;
 }

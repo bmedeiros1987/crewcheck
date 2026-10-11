@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
 public final class CrewCheckMyCrewCareRuntimeV3 {
     private final CrewCheckMyCrewCareSecureStore store;
     private final CrewCheckMyCrewCarePortalV3 portal;
+    private final CrewCheckMyCrewCarePortalV3.ObservedAcquisition observations = new CrewCheckMyCrewCarePortalV3.ObservedAcquisition();
 
     private static final Pattern OPERATION_ID = Pattern.compile("^[A-Za-z0-9_-]{8,80}$");
     private static final int MAX_CLEANUP_OPERATIONS = 32;
@@ -35,6 +36,16 @@ public final class CrewCheckMyCrewCareRuntimeV3 {
         store = new CrewCheckMyCrewCareSecureStore(activity);
         portal = new CrewCheckMyCrewCarePortalV3(activity, root, mainWebView, profiles, verifier);
     }
+
+    /** Review-only injected boundary: no JavascriptInterface, provider navigation or operational cache. */
+    public boolean observeMyCrewCareV3ForReview(CrewCheckMyCrewCarePortalV3.ObservedScope scope,
+            CrewCheckMyCrewCarePortalV3.ObservedSource source,
+            CrewCheckMyCrewCarePortalV3.ObservedDeadline deadline,
+            CrewCheckMyCrewCarePortalV3.ObservedCompletion completion) {
+        return observations.begin(scope, source, deadline, completion);
+    }
+
+    public void cancelMyCrewCareObservationV3ForReview() { observations.cancel(); }
 
     public int myCrewCareProtocolVersion() {
         return CrewCheckMyCrewCarePortalV3.PROTOCOL_VERSION;
@@ -102,6 +113,7 @@ public final class CrewCheckMyCrewCareRuntimeV3 {
     }
 
     public void cancelVisible() {
+        observations.cancel();
         portal.cancelVisible();
     }
 
@@ -110,6 +122,7 @@ public final class CrewCheckMyCrewCareRuntimeV3 {
     }
 
     public void destroy() {
+        observations.cancel();
         portal.destroy();
     }
 }
