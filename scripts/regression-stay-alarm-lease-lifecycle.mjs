@@ -41,3 +41,13 @@ test('runtime uses trusted native remaining lease and rejects over-limit duratio
   else {assert.equal(messages.at(-1).action,'revoke');const revoked=new Event('message');revoked.data=JSON.stringify({id:messages.at(-1).id,state:'revoked',payload:null});target.dispatchEvent(revoked);}
  }
 });
+test('roster replacement revokes actual runtime readiness with no editor mounted',async()=>{
+ const {createStayHostRuntime}=await import('../shared/stay-alarm-host-runtime.mjs');
+ const target=new EventTarget(),messages=[];target.postMessage=raw=>messages.push(JSON.parse(raw));
+ const runtime=createStayHostRuntime({port:target,readAccount:()=> 'verified',readToken:()=> 'candidate',setTimer:()=>1,clearTimer:()=>{}});
+ const promise=runtime.authenticate(),event=new Event('message');event.data=JSON.stringify({id:messages[0].id,state:'verified',payload:JSON.stringify({protocol:'crewcheck-stay-alarm-v1',ownerId:'verified',ownerEpoch:'native-epoch',featureEnabled:true,atomicReplace:true,acknowledgedCancel:true,leaseRemainingMillis:8*3600000})});target.dispatchEvent(event);
+ assert.equal(await promise,true);attachStayAlarmLifecycle(target,runtime);
+ target.dispatchEvent(new Event('crewcheck:roster-updated'));assert.equal(runtime.ready(),false);assert.equal(messages.at(-1).action,'revoke');
+ const ack=new Event('message');ack.data=JSON.stringify({id:messages.at(-1).id,state:'revoked',payload:null});target.dispatchEvent(ack);
+ assert.equal(messages.filter(value=>value.action==='authenticate').length,1);
+});
