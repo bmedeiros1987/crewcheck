@@ -16,8 +16,9 @@ public final class StayAlarmEngineFixture {
     }
     static final class Store implements StayAlarmEngine.Store {
         Map<String,StayAlarmEngine.Record> records=new HashMap<>();int commits=0,failCommit=0;boolean corrupt=false;
+        java.util.function.Consumer<StayAlarmEngine.Record> afterCommit=(record)->{};
         public StayAlarmEngine.Record read(String key)throws Exception {if(corrupt)throw new Exception("corrupt");return records.get(key);}
-        public void commit(StayAlarmEngine.Record record)throws Exception {if(++commits==failCommit)throw new Exception("disk");records.put(record.key,record);}
+        public void commit(StayAlarmEngine.Record record)throws Exception {if(++commits==failCommit)throw new Exception("disk");records.put(record.key,record);afterCommit.accept(record);}
         public java.util.List<StayAlarmEngine.Record> all(){return new ArrayList<>(records.values());}
     }
     static final class Device implements StayAlarmEngine.Device {
@@ -111,6 +112,31 @@ public final class StayAlarmEngineFixture {
         f.device.failNotify=false;check(!f.engine.receive(f.key,r.revision,r.alarm)&&f.device.notifications==1,"unknown delivery never retried");
         f=new Fixture();f.replace("corrupt",0,7_200_000,"relative");r=f.store.read(f.key);f.store.corrupt=true;f.device.clock=r.alarm;
         check(!f.engine.receive(f.key,r.revision,r.alarm)&&f.device.notifications==0,"corrupt journal fails closed");
+
+        f=new Fixture();final Fixture deliveryRace=f;f.replace("claim-owner-race",0,7_200_000,"relative");
+        r=f.store.read(f.key);f.device.clock=r.alarm;
+        f.store.afterCommit=(record)->{if(record.state.equals("delivery-unknown"))deliveryRace.owner.epoch="session-new";};
+        check(!f.engine.receive(f.key,r.revision,r.alarm),"epoch changed during durable claim rejects delivery");
+        check(f.device.notifications==0&&f.store.read(f.key).state.equals("blocked"),"old epoch never notifies or becomes attempted");
+        check(!f.engine.receive(f.key,r.revision,r.alarm),"blocked claim cannot retry");
+        f=new Fixture();final Fixture deliveryPermissionRace=f;f.replace("claim-permission-race",0,7_200_000,"relative");
+        r=f.store.read(f.key);f.device.clock=r.alarm;
+        f.store.afterCommit=(record)->{if(record.state.equals("delivery-unknown"))deliveryPermissionRace.device.allowed=false;};
+        check(!f.engine.receive(f.key,r.revision,r.alarm)&&f.device.notifications==0,"permission revoked during claim suppresses delivery");
+
+        // Trusted host revocation must share the delivery critical section.
+        final Fixture hostRace=new Fixture();hostRace.replace("host-race",0,7_200_000,"relative");
+        final StayAlarmEngine.Record hostRecord=hostRace.store.read(hostRace.key);hostRace.device.clock=hostRecord.alarm;
+        CountDownLatch claimed=new CountDownLatch(1),releaseClaim=new CountDownLatch(1),revoking=new CountDownLatch(1);
+        hostRace.store.afterCommit=(record)->{if(record.state.equals("delivery-unknown")){claimed.countDown();try{releaseClaim.await();}catch(Exception e){throw new RuntimeException(e);}}};
+        Thread deliver=new Thread(()->hostRace.engine.receive(hostRace.key,hostRecord.revision,hostRecord.alarm));deliver.start();claimed.await();
+        Thread revoke=new Thread(()->{revoking.countDown();StayAlarmEngine.updateTrustedOwner(()->hostRace.owner.epoch="revoked");});revoke.start();revoking.await();
+        check(hostRace.owner.epoch.equals("session-1"),"host revocation cannot interleave with claim/notify critical section");
+        releaseClaim.countDown();deliver.join();revoke.join();
+        check(hostRace.device.notifications==1&&hostRace.owner.epoch.equals("revoked"),"delivery first linearizes before revocation; no retrospective suppression claim");
+        f=new Fixture();f.replace("revoke-first",0,7_200_000,"relative");r=f.store.read(f.key);f.device.clock=r.alarm;
+        final Fixture revokeFirst=f;StayAlarmEngine.updateTrustedOwner(()->revokeFirst.owner.epoch="revoked");
+        check(!f.engine.receive(f.key,r.revision,r.alarm)&&f.device.notifications==0,"completed host revocation first suppresses notification");
 
         // Two independent bridge/engine instances share the same process lock.
         final Fixture serial=new Fixture();CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1);

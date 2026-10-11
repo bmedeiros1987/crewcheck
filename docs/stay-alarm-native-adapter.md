@@ -75,6 +75,13 @@ ou serviço de áudio e não promete comportamento de despertador audível.
    verifiedOwnerEpoch e verifiedOwnerExpiresAt. Não existe writer nesta PR;
    payload JSON/localStorage não constitui autoridade. Gate
    physicalValidationApproved começa false, sem setter exposto.
+   Toda alteração de owner/epoch/gate/lease deve usar
+   StayAlarmEngine.updateTrustedOwner, incluindo revogação/logout. A entrega
+   revalida owner e permissões depois do claim durável e imediatamente antes de
+   notify, dentro da mesma seção crítica. Se a revogação completar primeiro,
+   entrega é suprimida; se notify executar primeiro, logout posterior não desfaz
+   a tentativa. A integração desse contrato no host ainda não existe e é
+   requisito de ativação. Verificação de credencial/rede fica fora do lock.
 3. Transporte com origem e frame verificados, como WebMessagePort/listener com
    allowlist do app. Não registrar o endpoint como JavascriptInterface global
    acessível a iframes. Conectar leitura de conta/sessão e lifecycle/reconcile

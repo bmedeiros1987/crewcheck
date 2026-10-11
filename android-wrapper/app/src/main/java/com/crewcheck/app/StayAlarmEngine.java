@@ -10,6 +10,13 @@ import java.time.OffsetDateTime;
  * one transaction. Any incomplete boundary remains unknown until reconciliation. */
 public final class StayAlarmEngine {
     private static final Object LOCK = new Object();
+    /** Future trusted host MUST commit every owner/epoch/gate/lease mutation
+     * through this boundary. Verification/network work belongs outside it.
+     * Revocation completing first suppresses delivery; an in-flight notify
+     * completing first cannot be recalled by a later revocation. */
+    public static void updateTrustedOwner(Runnable commitVerifiedMutation) {
+        synchronized(LOCK) { commitVerifiedMutation.run(); }
+    }
     public interface Store {
         Record read(String key) throws Exception;
         void commit(Record record) throws Exception;
@@ -182,7 +189,17 @@ public final class StayAlarmEngine {
                 }
                 // Claim durably BEFORE invoking notification API: no duplicate
                 // attempt after crash; uncertain delivery is never retried.
-                commit(r.state("delivery-unknown"));device.notify(r);commit(r.state("attempted"));return true;
+                commit(r.state("delivery-unknown"));
+                // Durable claim/readback can execute arbitrary store work.
+                // Recheck immediately before the side effect, under the same
+                // lock required of the future trusted host's owner mutations.
+                if(!owned(r)||!device.permitted()) {
+                    device.cancel(r.key);commit(r.state("blocked"));return false;
+                }
+                if(!NotificationTiming.shouldAttempt(r.alarm,device.now(),true)||device.now()>=r.apz) {
+                    commit(r.state("expired"));return false;
+                }
+                device.notify(r);commit(r.state("attempted"));return true;
             } catch(Exception error) { return false; }
         }
     }
