@@ -336,7 +336,13 @@ export function reconcileMyCrewCareLogistics({ context: contextValue, stays: sta
         || record.pairingId !== stay.pairingId
         || (stay.hotelName && normalizedKey(record.hotelName) !== normalizedKey(stay.hotelName))) return [];
       const pickupEpoch = myCrewCareLocalInstant(record.date, record.time, stay.timeZone);
-      return pickupEpoch !== null && pickupEpoch > stay.start && pickupEpoch <= stay.end
+      // Explicit hotel bounds constrain the same stay. Missing endpoints remain
+      // unknown; touching intervals alone do not establish a reservation match.
+      const reservationMatches = (record.reservationStartAt === null
+        || myCrewCareInstant(record.reservationStartAt) < stay.end)
+        && (record.reservationEndAt === null
+          || myCrewCareInstant(record.reservationEndAt) > stay.start);
+      return reservationMatches && pickupEpoch !== null && pickupEpoch > stay.start && pickupEpoch <= stay.end
         ? [{ stay, pickupEpoch }]
         : [];
     });

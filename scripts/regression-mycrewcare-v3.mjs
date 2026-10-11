@@ -97,6 +97,42 @@ test('reconciliation creates separate hotel and pickup facts for one persisted s
   assert.equal(pickup.dataState, 'fresh');
 });
 
+test('explicit reservation bounds must overlap the persisted stay', () => {
+  const reconcile = (bounds) => reconcileMyCrewCareLogistics({
+    context, stays: [stay], now: NOW,
+    snapshot: { observedAt: new Date(NOW).toISOString(), records: [{ ...record, ...bounds }] },
+  });
+  const invalid = [
+    { reservationStartAt: '2026-10-20T15:00:00-03:00', reservationEndAt: '2026-10-21T09:00:00-03:00' },
+    { reservationStartAt: '2026-10-01T15:00:00-03:00', reservationEndAt: '2026-10-02T09:00:00-03:00' },
+    { reservationStartAt: stay.endAt },
+    { reservationEndAt: stay.startAt },
+    { reservationStartAt: '2026-10-10T09:00:00-03:00' },
+    { reservationEndAt: '2026-10-09T15:00:00-03:00' },
+    { reservationStartAt: stay.endAt, reservationEndAt: stay.startAt },
+  ];
+  for (const bounds of invalid) {
+    const result = reconcile(bounds);
+    assert.equal(result.accepted, false, JSON.stringify(bounds));
+    assert.equal(result.facts.length, 0);
+    assert.equal(selectMyCrewCareHotel(result.facts, stay.id, { now: NOW }), null);
+  }
+  const valid = [
+    {}, { reservationStartAt: null, reservationEndAt: '' },
+    { reservationStartAt: stay.startAt, reservationEndAt: stay.endAt },
+    { reservationStartAt: '2026-10-09T15:00:00-03:00', reservationEndAt: '2026-10-10T09:00:00-03:00' },
+    { reservationStartAt: '2026-10-09T17:59:59Z' },
+    { reservationEndAt: '2026-10-10T12:00:01Z' },
+    { reservationStartAt: '2026-10-10T11:59:59Z' },
+    { reservationEndAt: '2026-10-09T18:00:01Z' },
+  ];
+  for (const bounds of valid) {
+    const result = reconcile(bounds);
+    assert.equal(result.accepted, true, JSON.stringify(bounds));
+    assert.equal(selectMyCrewCareHotel(result.facts, stay.id, { now: NOW }).dataState, 'fresh');
+  }
+});
+
 test('overlapping candidate stays fail conservatively', () => {
   const second = { ...stay, id: 'stay-2', rosterEventId: 'event-2' };
   const result = reconcileMyCrewCareLogistics({
