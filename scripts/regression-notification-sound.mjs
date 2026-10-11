@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { loadClientModules } from './lib/ts-module-harness.mjs';
+import {build} from 'esbuild';
+import path from 'node:path';
 
 const root = 'client/src/components/pulse/';
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
@@ -49,9 +50,11 @@ class MockAudio {
   load() { this.loads++; }
 }
 for(const [k,v] of Object.entries({ window:windowEvents, document:documentEvents, Audio:MockAudio, localStorage:storage, sessionStorage:{ getItem:()=>null, setItem:()=>{} } })) Object.defineProperty(globalThis,k,{ configurable:true, value:v });
-const harness = loadClientModules({files:['pulseTypes.ts','pulseSession.ts','pulseSound.ts','pulseRuntime.ts'].map(p=>root+p)});
-const sound = harness.load('pulseSound');
-const runtime = harness.load('pulseRuntime');
+const bundle=await build({stdin:{contents:`import * as sound from './${root}pulseSound';import * as runtime from './${root}pulseRuntime';export {sound,runtime};`,resolveDir:process.cwd()},bundle:true,write:false,format:'esm',platform:'node',define:{'import.meta.env':'{}'},alias:{'@':path.resolve('client/src')}});
+const {sound,runtime}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+const harness={cleanup(){}};
+values.set('crewcheck_auth_token','synthetic-token');values.set('crewcheck_auth_user',JSON.stringify({id:'sound-owner'}));
+const accountPulse=enabled=>values.set('crewcheck:notification-preferences:v1:sound-owner',JSON.stringify({ownerId:'sound-owner',preferences:{settings:{crewcheck_pulse_enabled:enabled}}}));accountPulse(true);
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const count = () => audios.length;
 const states = [];
@@ -98,9 +101,9 @@ try {
   runtime.publishCrewCheckNotice({id:'other',title:'New context',systemNotification:'never'}); await tick(); assert.equal(count(),beforeNotice+2);
   runtime.dismissCrewCheckPulse(); assert(audios.at(-1).pauses,'dismiss stops sound');
   now+=9_000; runtime.publishCrewCheckNotice({id:'clear',title:'Clear',systemNotification:'never'}); runtime.clearCrewCheckPulse(); assert(audios.at(-1).pauses,'clear stops sound');
-  now+=9_000; runtime.publishCrewCheckNotice({id:'disable',title:'Disable',systemNotification:'never'}); runtime.setCrewCheckPulseEnabled(false); assert(audios.at(-1).pauses,'disable stops sound');
+  now+=9_000; runtime.publishCrewCheckNotice({id:'disable',title:'Disable',systemNotification:'never'}); runtime.setCrewCheckPulseEnabled(false); accountPulse(false); assert(audios.at(-1).pauses,'disable stops sound');
   const disabledCount=count(); now+=9_000; runtime.publishCrewCheckNotice({id:'disabled',title:'Disabled',systemNotification:'never'}); assert.equal(count(),disabledCount);
-  runtime.setCrewCheckPulseEnabled(true);
+  runtime.setCrewCheckPulseEnabled(true);accountPulse(true);
   now+=310_000; runtime.publishCrewCheckNotice({id:'live',title:'Later same context',systemNotification:'never'}); await tick(); assert.equal(count(),disabledCount+1,'cooldown expires');
   runtime.clearCrewCheckPulse();
   console.log('PASS notification sound: provenance, silent default, opt-in, foreground, dedupe, mute, interruption, failures, and actual Pulse integration');

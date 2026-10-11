@@ -18,6 +18,7 @@ const publishedPresentationOf=()=> '10:00',programDateLabel=()=> 'SYN',rosterEve
 const eventStartDateTime=()=>new Date('2032-02-01T10:00:00Z'),wakeupDateForEvent=eventStartDateTime;
 const getPlatformBilling=async()=>null,postCrewCheckJson=(...args)=>window.fixturePost(...args);
 const openTelegramBinding=()=>{},openWhatsAppBinding=()=>{};
+const openNotificationSettings=()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'notifications'}));
 const Brand=()=>null,StayNavigationContext=()=>null,KpiCard=()=>null;
 const Clock=()=>null,Bell=()=>null,Hotel=()=>null,Save=()=>null,Send=()=>null,Phone=()=>null,X=()=>null,ChevronRight=()=>null;
 `;

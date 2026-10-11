@@ -143,7 +143,9 @@ function boundedSlice(source, open, closeToken, context) {
   return { start, end: end + closeToken.length };
 }
 
-const home = read(HOME);
+let home = read(HOME);
+// Register the account notification destination before canonical grouping.
+if(home.includes("from '@/components/notifications/NotificationCenter'")&&!home.includes("['notifications','Notificações'"))home=home.replace("['settings','Configurações','Perfil e preferências',Settings]", "['notifications','Notificações','O que, por onde e quando',Bell], ['settings','Configurações','Perfil e preferências',Settings]");
 if (home.includes(MARKER)) {
   console.log('[p1-menu-premium] Menu já normalizado; nada a fazer.');
 } else {
