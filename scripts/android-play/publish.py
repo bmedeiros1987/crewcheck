@@ -6,15 +6,17 @@ import sys
 import time
 from pathlib import Path
 from urllib.parse import quote
-import google.auth.transport.requests
-from google.oauth2 import service_account
-import requests
 from credential import load_service_account_secret
 from play_error import safe_play_error
 from review_policy import commit_internal_edit
+from writer_guard import require_coordinator
 
 def main():
     assert os.environ['GITHUB_REF'] == 'refs/heads/main', 'Publishing requires main'
+    require_coordinator('joint', 'publish')
+    import google.auth.transport.requests
+    from google.oauth2 import service_account
+    import requests
     account = load_service_account_secret(os.environ['PLAY_SERVICE_ACCOUNT_JSON'])
     credentials = service_account.Credentials.from_service_account_info(account, scopes=['https://www.googleapis.com/auth/androidpublisher'])
     session = google.auth.transport.requests.AuthorizedSession(credentials)

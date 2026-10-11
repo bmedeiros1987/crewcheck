@@ -2,6 +2,7 @@
 import copy
 import json
 import os
+from writer_guard import require_coordinator
 from pathlib import Path
 
 MAX_VERSION_CODE = 2_100_000_000
@@ -27,6 +28,7 @@ def allocate_version_codes(policy, live_codes_by_package):
 
 def main():
     assert os.environ.get('GITHUB_REF') == 'refs/heads/main', 'Live Play allocation requires main'
+    require_coordinator('allocator', 'allocate')
 
     # Keep Google client imports out of module import time so unit tests remain dependency-free.
     import google.auth.transport.requests

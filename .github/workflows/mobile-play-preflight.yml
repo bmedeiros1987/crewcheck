@@ -20,6 +20,15 @@ on:
       - 'scripts/android-play/test_reconcile_journal.mjs'
       - 'scripts/android-play/platform_journal.mjs'
       - 'scripts/android-play/test_platform_journal.mjs'
+      - 'scripts/android-play/journal_protocol.mjs'
+      - 'scripts/android-play/test_journal_protocol.mjs'
+      - 'scripts/android-play/journal_transport.py'
+      - 'scripts/android-play/test_journal_transport.py'
+      - 'scripts/android-play/writer_guard.py'
+      - 'scripts/android-play/test_writer_guard.py'
+      - 'scripts/android-play/publish.py'
+      - 'scripts/android-play/allocate_versions.py'
+      - 'scripts/android-play/crewwatch_internal.py'
       - 'server/mysql-platform-adapter.mjs'
       - 'server/platform.mjs'
       - '.github/workflows/mobile-play-preflight.yml'
@@ -47,6 +56,9 @@ jobs:
       - run: python3 scripts/android-play/test_consumed_validation.py
       - run: node scripts/android-play/test_reconcile_journal.mjs
       - run: node scripts/android-play/test_platform_journal.mjs
+      - run: node scripts/android-play/test_journal_protocol.mjs
+      - run: python3 scripts/android-play/test_journal_transport.py
+      - run: python3 scripts/android-play/test_writer_guard.py
   inspect-existing-play-access:
     needs: offline-guards
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
