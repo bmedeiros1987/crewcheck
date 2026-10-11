@@ -1,6 +1,8 @@
 # Mobile reading and personal timezone review
 
-Base: `72ca637642a5f7e6c1f40917bb21e1b2089f838f`.
+Initial base: `72ca637642a5f7e6c1f40917bb21e1b2089f838f`.
+
+Final review base: `c30c3140196e5da0514204fd07d7b7905c15646b` (reviewed MCC #1019). Real merge-tree composition was clean; GitHub pending mergeability was not a content conflict. MCC Java files are identical to main and remain OFF; no edits by this PR.
 
 The prepared header was fixed below the safe-area inset, leaving the top strip transparent. The fix starts the opaque header at zero and includes that inset in its padding. Its existing measured spacer still follows its actual height. The footer is measured too, so content reserve follows font size and inset rather than a fixed estimate. Menu identity, search, personalization and favorites use compact spacing with 44px targets. Favorite editing has its own row.
 
