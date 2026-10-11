@@ -81,6 +81,7 @@ async function visibleTextBounds(page, selector) {
    await context.addInitScript(()=>localStorage.setItem('crewcheck:notification-preferences:v1:financial-ui-qa',JSON.stringify({ownerId:'financial-ui-qa',revision:1,preferences:{settings:{crewcheck_pulse_enabled:true}}})));
    const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'settings'})));await page.locator('#cc-text-size').selectOption(String(size));await settle(page);
+   await page.locator('body > nav.cz-bottom-nav').waitFor({state:'visible'});
    await page.evaluate(()=>{document.documentElement.style.setProperty('--cc-safe-area-top','24px');document.documentElement.style.setProperty('--cc-safe-area-bottom','20px');document.querySelector('body > nav.cz-bottom-nav').style.setProperty('bottom','20px','important');window.dispatchEvent(new Event('resize'));});await settle(page);
    const title='QA crítico: confira toda a programação da escala oficial antes de seguir para o aeroporto';
    await page.evaluate(title=>window.dispatchEvent(new CustomEvent('crewcheck:pulse',{detail:{dedupeKey:'qa-space-long',title,detail:('Texto longo sintético para leitura integral, com detalhes operacionais sem qualquer dado real. ').repeat(40)+' FIM DO AVISO SINTÉTICO.',tone:'erro',priority:'critica',category:'compliance',dismissible:true,autoDismissMs:0,systemNotification:'never'}})),title);

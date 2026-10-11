@@ -1,113 +1,167 @@
-/*
- * MyCrewCare v3 structured extraction.
- *
- * The native verifier must supply an exact, provider-reviewed CSS contract. This
- * asset has no body/ancestor/text-search fallback and returns only normalized
- * hotel/transport fields. It never reads form inputs, credentials or room data.
- */
+/* Generated from shared/myCrewCareObservedContract.mjs; OFF, provisional observations only. */
 (function extractMyCrewCareV3(contract) {
-  'use strict';
-
-  var clean = function (value, max) {
-    var result = String(value == null ? '' : value)
-      .replace(/\u00a0/g, ' ')
-      .replace(/[\t\r\n ]+/g, ' ')
-      .trim();
-    return result.length > 0 && result.length <= max ? result : '';
-  };
-  var selector = function (value) {
-    var result = clean(value, 180);
-    return result && !/[{};]/.test(result) ? result : '';
-  };
-  var one = function (root, css, required, max) {
-    if (!css) return required ? null : '';
-    var matches;
-    try { matches = root.querySelectorAll(css); } catch (_) { return null; }
-    if (matches.length !== 1) return required ? null : '';
-    var element = matches[0];
-    var value = element.getAttribute('data-crewcheck-value');
-    if (value == null) value = element.textContent;
-    var result = clean(value, max);
-    return required && !result ? null : result;
-  };
-  var fail = function (error) { return JSON.stringify({ schemaVersion: 3, records: [], error: error }); };
-
-  try {
-    if (!contract || contract.schemaVersion !== 1 || contract.activeOnly !== true || contract.dateOrder !== 'DMY') {
-      return fail('unverified-dom-contract');
-    }
-    var recordSelector = selector(contract.recordSelector);
-    var fields = contract.fields || {};
-    var required = ['pickupDate', 'pickupTime', 'airport', 'pairingId', 'hotelName'];
-    if (!recordSelector || required.some(function (key) { return !selector(fields[key]); })) {
-      return fail('unverified-dom-contract');
-    }
-    var cards = document.querySelectorAll(recordSelector);
-    if (cards.length > 100) return fail('too-many-records');
-    var records = [];
-    var seen = Object.create(null);
-
-    for (var index = 0; index < cards.length; index += 1) {
-      var card = cards[index];
-      if (card.querySelectorAll(recordSelector).length) continue;
-      var rawDate = one(card, selector(fields.pickupDate), true, 16);
-      var time = one(card, selector(fields.pickupTime), true, 8);
-      var airport = one(card, selector(fields.airport), true, 8);
-      var pairingId = one(card, selector(fields.pairingId), true, 120);
-      var hotelName = one(card, selector(fields.hotelName), true, 240);
-      if ([rawDate, time, airport, pairingId, hotelName].some(function (value) { return value === null; })) {
-        return fail('ambiguous-required-field');
-      }
-      var dateParts = rawDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-      var date = dateParts ? dateParts[3] + '-' + dateParts[2] + '-' + dateParts[1] : '';
-      airport = airport.toUpperCase();
-      if (!date || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time) || !/^[A-Z]{3}$/.test(airport)) {
-        return fail('invalid-required-field');
-      }
-      var dateEpoch = Date.parse(date + 'T00:00:00Z');
-      if (!Number.isFinite(dateEpoch) || new Date(dateEpoch).toISOString().slice(0, 10) !== date) {
-        return fail('invalid-date');
-      }
-
-      var status = one(card, selector(fields.status), false, 40).toLowerCase() || 'published';
-      var configuredStatuses = Array.isArray(contract.activeStatusValues)
-        ? contract.activeStatusValues.map(function (value) { return clean(value, 40).toLowerCase(); }).filter(Boolean)
-        : [];
-      if (configuredStatuses.length > 0 && configuredStatuses.indexOf(status) === -1) continue;
-      if (status !== 'published' && status !== 'changed' && status !== 'cancelled') {
-        status = 'published';
-      }
-
-      var transitText = one(card, selector(fields.transitMinutes), false, 24);
-      var transitMatch = transitText.match(/^(\d{1,3})(?:\s*(?:min|minutes?))?$/i);
-      var transitMinutes = transitMatch && Number(transitMatch[1]) <= 360 ? Number(transitMatch[1]) : null;
-      var record = {
-        direction: 'to_airport',
-        date: date,
-        time: time,
-        airport: airport,
-        pairingId: pairingId,
-        hotelName: hotelName,
-        providerRecordId: one(card, selector(fields.providerRecordId), false, 180) || null,
-        hotelAddress: one(card, selector(fields.hotelAddress), false, 320) || null,
-        hotelPhone: one(card, selector(fields.hotelPhone), false, 80) || null,
-        reservationStartAt: one(card, selector(fields.reservationStartAt), false, 40) || null,
-        reservationEndAt: one(card, selector(fields.reservationEndAt), false, 40) || null,
-        pickupLocation: one(card, selector(fields.pickupLocation), false, 240) || null,
-        transportProvider: one(card, selector(fields.transportProvider), false, 180) || null,
-        transportPhone: one(card, selector(fields.transportPhone), false, 80) || null,
-        transitMinutes: transitMinutes,
-        status: status
-      };
-      var key = JSON.stringify(record);
-      if (!seen[key]) {
-        seen[key] = true;
-        records.push(record);
-      }
-      if (records.length > 50) return fail('too-many-records');
-    }
-    return JSON.stringify({ schemaVersion: 3, records: records });
-  } catch (_) {
-    return fail('extraction-error');
+'use strict';
+/** Pure OFF-only DOM observation. No navigation, authentication or operational import. */
+const MYCREWCARE_OBSERVED_RELEASE_ENABLED = false;
+const ORIGIN = 'https://api2.apicrewcare.com';
+const clean = value => String(value ?? '').replace(/\s+/g, ' ').trim();
+function fail() { throw new Error('observed-contract-unverified'); }
+function one(root, selector) {
+  const nodes = [...root.querySelectorAll(selector)];
+  if (nodes.length !== 1) fail();
+  return nodes[0];
+}
+function url(value, path) {
+  const parsed = new URL(value);
+  if (parsed.origin !== ORIGIN || parsed.pathname !== `/LATAM/${path}` || parsed.username || parsed.password) fail();
+  return parsed;
+}
+function observeMyCrewCareProfile(document, pageUrl) {
+  url(pageUrl, 'userprofile.aspx');
+  const employee = one(document, 'input#employeeId');
+  const username = one(document, 'input#userName');
+  if (!employee.readOnly || !username.readOnly || employee.disabled || username.disabled
+    || employee.type !== 'number' || !/^\d+$/.test(employee.value) || !clean(username.value)) fail();
+  // Local observation only: no claim of global identity or canonical providerSubject.
+  return Object.freeze({ employeeId: employee.value, username: username.value });
+}
+function lines(element) {
+  const copy = element.cloneNode(true);
+  for (const br of copy.querySelectorAll('br')) br.replaceWith('\n');
+  return copy.textContent.split('\n').map(clean).filter(Boolean);
+}
+function line(values, label) {
+  const found = values.filter(value => value.startsWith(`${label}:`));
+  if (found.length !== 1) fail();
+  const value = clean(found[0].slice(label.length + 1));
+  if (!value) fail();
+  return value;
+}
+function wall(value) {
+  const match = /^(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{4}) ([0-2]\d:[0-5]\d)$/.exec(value);
+  if (!match || Number(match[4].slice(0, 2)) > 23) fail();
+  const month = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(match[2]) + 1;
+  const day = `${match[3]}-${String(month).padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+  const instant = new Date(`${day}T00:00:00Z`);
+  if (!Number.isFinite(instant.getTime()) || instant.toISOString().slice(0, 10) !== day) fail();
+  return `${day}T${match[4]}`;
+}
+function myCrewCareObservedStatus(raw) {
+  const text = clean(raw);
+  return Object.freeze({ raw: text, display: /^planned$/i.test(text) ? 'Planejada' : /^cancelled$/i.test(text) ? 'Cancelada' : text });
+}
+function section(root, label, className, bodySelector) {
+  const headings = [...root.querySelectorAll(':scope > .callout')].filter(node => {
+    const values = [...node.querySelectorAll(':scope > p')];
+    return values.length === 1 && clean(values[0].textContent) === label;
+  });
+  if (headings.length !== 1 || !headings[0].classList.contains(className)) fail();
+  const next = headings[0].nextElementSibling;
+  if (!next) fail();
+  return bodySelector === 'p.hr-info'
+    ? (next.matches(bodySelector) ? next : fail())
+    : (next.matches('.row') ? one(next, ':scope > .col-sm-6 > p.hr-info') : fail());
+}
+function transport(element) {
+  const values = lines(element);
+  const pickupWallTime = line(values, 'Pick-up time');
+  const transit = /^(\d+) minutes$/.exec(line(values, 'Transit time'));
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(pickupWallTime) || !transit || Number(transit[1]) > 360) fail();
+  const providerName = clean(one(element, 'strong').textContent);
+  if (!providerName) fail();
+  return Object.freeze({ providerName,
+    pickupWallTime, explicitPickupDate: null, transitMinutes: Number(transit[1]) });
+}
+/** The caller must supply a fresh before/after profile observation from one trusted session.
+ * This pure function cannot prove the session or tenant identity; callers must not import its output.
+ */
+function observeMyCrewCareReservation({ document, pageUrl, card, binding, profileBefore, profileAfter } = {}) {
+  const page = url(pageUrl, 'reservation.aspx');
+  if (!binding || !binding.sessionId || !binding.requestId || !binding.accountId || binding.fresh !== true
+    || !profileBefore || !profileAfter
+    || !binding.employeeId || !binding.username
+    || [profileBefore, profileAfter].some(p => p.employeeId !== binding.employeeId || p.username !== binding.username
+      || p.sessionId !== binding.sessionId || p.requestId !== binding.requestId || p.accountId !== binding.accountId)) fail();
+  if (!card || page.searchParams.getAll('tripreservid').length !== 1
+    || page.searchParams.getAll('dutyperiodnumber').length !== 1
+    || page.searchParams.get('tripreservid') !== card.providerReservationId
+    || page.searchParams.get('dutyperiodnumber') !== card.dutyPeriodNumber) fail();
+  const root = one(document, '#main-content-scroll.container.white-container.main-content');
+  if (clean(one(root, ':scope > h2').textContent) !== 'Reservation') fail();
+  const hotel = section(root, 'Hotel', 'hr-icon-hotel', 'p.hr-info');
+  const values = lines(hotel);
+  const hotelName = clean(one(hotel, 'strong > a[href^="hoteldetails.aspx?"]').textContent);
+  if (!hotelName || hotelName !== card.hotelName) fail();
+  const checkInWallDateTime = wall(line(values, 'Check-In'));
+  const checkOutWallDateTime = wall(line(values, 'Check-Out'));
+  if (checkOutWallDateTime <= checkInWallDateTime) fail();
+  // Flight pairings must join this detail to this card, never another card.
+  for (const label of ['Arriving Flight', 'Departure Flight']) {
+    const flight = section(root, label, 'hr-icon-plane', 'p.hr-info');
+    if (line(lines(flight), 'Pairing ID') !== card.pairingId
+      || !lines(flight)[0].startsWith(`${card.airport} - Flight:`)) fail();
   }
+  return Object.freeze({ schemaVersion: 1, operationalImportAllowed: false,
+    providerReservationId: card.providerReservationId, dutyPeriodNumber: card.dutyPeriodNumber,
+    airport: card.airport, pairingId: card.pairingId, hotelName,
+    status: myCrewCareObservedStatus(line(values, 'Confirmation')),
+    checkInWallDateTime, checkOutWallDateTime, timeZone: null,
+    transportToHotel: transport(section(root, 'Transportation To Hotel', 'hr-icon-transport', '.row')),
+    transportToAirport: transport(section(root, 'Transportation To Airport', 'hr-icon-transport', '.row')),
+  });
+}
+function observeMyCrewCareCards(document, pageUrl) {
+  url(pageUrl, 'mytravel.aspx');
+  const root = one(document, '#layovers');
+  const cards = [...root.querySelectorAll(':scope > .my-trips-box')];
+  if (!cards.length) fail(); // zero/loading is never authoritative empty
+  const keys = new Set();
+  return Object.freeze(cards.map(card => {
+    const link = one(card, 'p.mt-date a[href^="reservation.aspx?"]');
+    const ref = url(new URL(link.getAttribute('href'), `${ORIGIN}/LATAM/`).href, 'reservation.aspx');
+    const providerReservationId = ref.searchParams.get('tripreservid');
+    const dutyPeriodNumber = ref.searchParams.get('dutyperiodnumber');
+    const pairing = /^Pairing ID:\s*(.+)$/.exec(clean(one(card, 'p.mt-pairing-id').textContent));
+    const airport = clean(one(card, '.airport-code-box > p').textContent);
+    if (!providerReservationId || !dutyPeriodNumber || !pairing || !/^[A-Z]{3}$/.test(airport)
+      || ref.searchParams.getAll('tripreservid').length !== 1 || ref.searchParams.getAll('dutyperiodnumber').length !== 1) fail();
+    const key = JSON.stringify([providerReservationId, dutyPeriodNumber]);
+    if (keys.has(key)) fail(); keys.add(key);
+    const hotelName = clean(one(card, 'p.mt-stay-head a[href^="hoteldetails.aspx?"]').textContent);
+    if (!hotelName) fail();
+    return Object.freeze({ providerReservationId, dutyPeriodNumber, airport, pairingId: pairing[1], hotelName });
+  }));
+}
+
+
+try {
+  if (!contract || contract.schemaVersion !== 3 || contract.operationalImportAllowed !== false) fail();
+  const scope = contract.scope;
+  if (!scope || !scope.accountId || !scope.sessionId || !scope.requestId || !Number.isSafeInteger(scope.generation) || scope.generation < 1) fail();
+  let rows;
+  if (contract.kind === 'profile-before' || contract.kind === 'profile-after') {
+    rows = [observeMyCrewCareProfile(document, location.href)];
+  } else if (contract.kind === 'cards') {
+    rows = observeMyCrewCareCards(document, location.href);
+  } else if (contract.kind === 'detail') {
+    // Native acquisition already verified profile-before. This is provisional;
+    // the native owner must validate profile-after before exposing any result.
+    const identity = { employeeId: scope.employeeId, username: scope.username,
+      accountId: scope.accountId, sessionId: scope.sessionId, requestId: scope.requestId };
+    const value = observeMyCrewCareReservation({ document, pageUrl: location.href, card: contract.card,
+      binding: { ...scope, fresh: true }, profileBefore: identity, profileAfter: identity });
+    rows = [{ providerReservationId: value.providerReservationId, dutyPeriodNumber: value.dutyPeriodNumber,
+      airport: value.airport, pairingId: value.pairingId, hotelName: value.hotelName,
+      confirmationRaw: value.status.raw, checkInWallDateTime: value.checkInWallDateTime,
+      checkOutWallDateTime: value.checkOutWallDateTime,
+      toHotelProvider: value.transportToHotel.providerName, toHotelPickupWallTime: value.transportToHotel.pickupWallTime,
+      toHotelTransitMinutes: String(value.transportToHotel.transitMinutes),
+      toAirportProvider: value.transportToAirport.providerName, toAirportPickupWallTime: value.transportToAirport.pickupWallTime,
+      toAirportTransitMinutes: String(value.transportToAirport.transitMinutes) }];
+  } else fail();
+  return JSON.stringify({ schemaVersion: 3, operationalImportAllowed: false,
+    accountId: scope.accountId, sessionId: scope.sessionId, requestId: scope.requestId,
+    generation: scope.generation, kind: contract.kind, rows });
+} catch (_) { return JSON.stringify({ schemaVersion: 3, operationalImportAllowed: false, error: 'observed-contract-unverified' }); }
+
 })

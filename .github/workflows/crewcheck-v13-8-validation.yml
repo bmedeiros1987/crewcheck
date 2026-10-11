@@ -161,7 +161,9 @@ jobs:
       - name: Validate SOS intention and recovery with mocked Telegram
         run: node --experimental-vm-modules scripts/regression-emergency-intent.mjs
       - name: Validate source preparation cache invalidation
-        run: node scripts/regression-source-preparation-cache.mjs
+        run: |
+          node scripts/regression-preparation-crewlock-replay.mjs
+          node scripts/regression-source-preparation-cache.mjs
       - run: npm audit --omit=dev --audit-level=high
       - name: Prepare current CrewCheck sources
         run: node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/crewcheck-prepare.log"

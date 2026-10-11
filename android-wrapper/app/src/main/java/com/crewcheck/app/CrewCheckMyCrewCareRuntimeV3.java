@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
 public final class CrewCheckMyCrewCareRuntimeV3 {
     private final CrewCheckMyCrewCareSecureStore store;
     private final CrewCheckMyCrewCarePortalV3 portal;
+    private final CrewCheckMyCrewCarePortalV3.ObservedAcquisition observations = new CrewCheckMyCrewCarePortalV3.ObservedAcquisition();
 
     private static final Pattern OPERATION_ID = Pattern.compile("^[A-Za-z0-9_-]{8,80}$");
     private static final int MAX_CLEANUP_OPERATIONS = 32;
@@ -35,6 +36,16 @@ public final class CrewCheckMyCrewCareRuntimeV3 {
         store = new CrewCheckMyCrewCareSecureStore(activity);
         portal = new CrewCheckMyCrewCarePortalV3(activity, root, mainWebView, profiles, verifier);
     }
+
+    /** Review-only injected boundary: no JavascriptInterface, provider navigation or operational cache. */
+    public boolean observeMyCrewCareV3ForReview(CrewCheckMyCrewCarePortalV3.ObservedScope scope,
+            CrewCheckMyCrewCarePortalV3.ObservedSource source,
+            CrewCheckMyCrewCarePortalV3.ObservedDeadline deadline,
+            CrewCheckMyCrewCarePortalV3.ObservedCompletion completion) {
+        return observations.begin(scope, source, deadline, completion);
+    }
+
+    public void cancelMyCrewCareObservationV3ForReview() { observations.cancel(); }
 
     public int myCrewCareProtocolVersion() {
         return CrewCheckMyCrewCarePortalV3.PROTOCOL_VERSION;
@@ -60,17 +71,35 @@ public final class CrewCheckMyCrewCareRuntimeV3 {
         final String key = cleanupKey(accountId, operationId);
         if (cleanups.putIfAbsent(key, PENDING) != null) return false;
 
-        final boolean cacheCleared = !forgetData || store.clear(accountId);
+        RuntimeException cancellationFailure = null;
+        try { observations.beginAccountCleanup(accountId); }
+        catch (RuntimeException error) { cancellationFailure = error; }
+        boolean cleared;
+        try { cleared = !forgetData || store.clear(accountId); }
+        catch (RuntimeException error) {
+            cleared = false;
+            if (cancellationFailure == null) cancellationFailure = error;
+            else if (cancellationFailure != error) cancellationFailure.addSuppressed(error);
+        }
+        final boolean cacheCleared = cleared;
+        final java.util.concurrent.atomic.AtomicBoolean finished = new java.util.concurrent.atomic.AtomicBoolean();
         boolean accepted;
         try {
             accepted = portal.disconnect(accountId, forgetData, (success, code) -> {
-                if (!cacheCleared) cleanups.put(key, "failed:cache-clear-failed");
-                else cleanups.put(key, success ? "ok" : "failed:" + safeCode(code));
+                if (!finished.compareAndSet(false, true)) return;
+                try {
+                    if (!cacheCleared) cleanups.put(key, "failed:cache-clear-failed");
+                    else cleanups.put(key, success ? "ok" : "failed:" + safeCode(code));
+                } finally { observations.endAccountCleanup(accountId); }
             });
         } catch (RuntimeException error) {
             accepted = false;
         }
-        if (!accepted) cleanups.put(key, "failed:disconnect-rejected");
+        if (!accepted && finished.compareAndSet(false, true)) {
+            try { cleanups.put(key, "failed:disconnect-rejected"); }
+            finally { observations.endAccountCleanup(accountId); }
+        }
+        if (cancellationFailure != null) throw cancellationFailure;
         return true;
     }
 
@@ -102,6 +131,7 @@ public final class CrewCheckMyCrewCareRuntimeV3 {
     }
 
     public void cancelVisible() {
+        observations.cancel();
         portal.cancelVisible();
     }
 
@@ -110,6 +140,7 @@ public final class CrewCheckMyCrewCareRuntimeV3 {
     }
 
     public void destroy() {
+        observations.cancel();
         portal.destroy();
     }
 }

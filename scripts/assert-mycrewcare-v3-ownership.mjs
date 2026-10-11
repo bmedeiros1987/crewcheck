@@ -7,6 +7,18 @@ import { createMyCrewCarePersistentSession } from '../shared/myCrewCarePersisten
 
 const read = (path) => readFileSync(path, 'utf8');
 const allowed = [
+  'android-wrapper/app/src/debug/AndroidManifest.xml',
+  'android-wrapper/app/src/debug/java/com/crewcheck/app/CrewCheckMyCrewCareDebugActivity.java',
+  'scripts/regression-mycrewcare-debug-action.mjs',
+  'scripts/assert-mycrewcare-debug-release.mjs',
+  'scripts/fixtures/mycrewcare-native/DebugActionHarness.java',
+  'docs/mycrewcare-debug-test-off.md',
+  'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCareObservedWebViewSource.java',
+  'scripts/regression-mycrewcare-webview-source.mjs',
+  'scripts/fixtures/mycrewcare-native/ObservedWebViewSourceHarness.java',
+  'scripts/build-mycrewcare-observed-asset.mjs',
+  'scripts/regression-mycrewcare-native-observation.mjs',
+  'scripts/fixtures/mycrewcare-native/ObservedAcquisitionHarness.java',
   'shared/myCrewCareObservedCoordinator.mjs',
   'scripts/regression-mycrewcare-observed-coordinator.mjs',
   'shared/myCrewCareObservedContract.mjs',
@@ -113,8 +125,19 @@ assert.match(profile, /interface CleanupCallback/);
 assert.doesNotMatch(profile, /catch \(RuntimeException ignored\)[\s\S]{0,120}\n\s*\}\s*\n\s*\}\);[\s\S]*clear/, 'profile cleanup must not swallow failures');
 assert.match(adapter, /native-disconnect-timeout/);
 assert.doesNotMatch(runtime, /@JavascriptInterface/);
-assert.match(asset, /contract\.recordSelector/);
-assert.match(asset, /data-crewcheck-value/);
+const webviewSource = read('android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCareObservedWebViewSource.java');
+assert.match(webviewSource, /profiles\.create\(activity,accountId\)/);
+assert.match(webviewSource, /validatedObservedPage\(request,url,rows\)/);
+assert.match(webviewSource, /Looper\.getMainLooper\(\)/);
+assert.doesNotMatch(webviewSource, /addJavascriptInterface|CookieManager|clearCache|new WebView\(/);
+assert.doesNotMatch(runtime + portal, /ObservedWebViewSource\.prepare|new CrewCheckMyCrewCareObservedWebViewSource/);
+assert.match(asset, /Generated from shared\/myCrewCareObservedContract\.mjs/);
+assert.match(asset, /operationalImportAllowed: false/);
+assert.match(asset, /explicitPickupDate: null/);
+assert.doesNotMatch(asset, /status = 'published'/);
+assert.match(portal, /ObservedAcquisition/);
+assert.match(portal, /observed-timeout/);
+assert.doesNotMatch(runtime, /@JavascriptInterface/);
 assert.doesNotMatch(asset, /document\.body|innerHTML|localStorage|sessionStorage/);
 assert.match(policy, /AUTHORIZED_HTTP/);
 assert.match(policy, /defer-to-foreground/);
