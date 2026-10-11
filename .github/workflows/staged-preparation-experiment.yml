@@ -6,6 +6,8 @@ on:
       - .github/workflows/staged-preparation-experiment.yml
       - scripts/ci/staged-preparation-experiment.mjs
       - scripts/ci/staged-build-adapter.mjs
+      - scripts/ci/raw-invalidation-lifecycle.mjs
+      - scripts/regression-real-raw-invalidation.mjs
       - scripts/ci/staged-build-check.mjs
       - scripts/ci/staged-concierge-job.mjs
       - scripts/ci/capture-composition-evidence.mjs
@@ -45,9 +47,11 @@ jobs:
           env -i PATH="$PATH" HOME="$job" npm install --prefix "$job/dependencies" --cache "$job/npm-cache" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           env -i PATH="$PATH" HOME="$job" PLAYWRIGHT_BROWSERS_PATH="$job/browser-cache" node "$job/dependencies/node_modules/playwright/cli.js" install --with-deps chromium
       - name: Verify synthetic contract
+        # This gate intentionally retains the failing legacy replay as a counterexample.
         run: |
           node scripts/regression-staged-preparation-prototype.mjs
           node scripts/regression-staged-build-adapter.mjs
+          node scripts/regression-real-raw-invalidation.mjs
       - name: Run attested real cold repeat invalidation and independent comparisons
         shell: bash
         run: |
