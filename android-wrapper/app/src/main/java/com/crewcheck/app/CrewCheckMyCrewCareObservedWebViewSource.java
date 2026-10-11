@@ -41,7 +41,7 @@ public final class CrewCheckMyCrewCareObservedWebViewSource implements ObservedS
     private Pending pending;
     private static final class Pending {
         final ObservedRequest request; final ObservedPageCallback callback; final String url;
-        boolean started,extracting,receiptQueued;
+        boolean started,extracting,receiptQueued,revoked;
         Pending(ObservedRequest request,ObservedPageCallback callback,String url) {
             this.request=request; this.callback=callback; this.url=url;
         }
@@ -100,32 +100,40 @@ public final class CrewCheckMyCrewCareObservedWebViewSource implements ObservedS
                 driver.navigate(op.url,new Navigation() {
                     public boolean allow(String url,boolean mainFrame) {
                         boolean accepted;
-                        synchronized(CrewCheckMyCrewCareObservedWebViewSource.this) { accepted=current(op)&&mainFrame&&sameUrl(url,op.url); }
+                        synchronized(CrewCheckMyCrewCareObservedWebViewSource.this) { accepted=current(op)&&!op.revoked&&mainFrame&&sameUrl(url,op.url); if(!accepted && mainFrame && current(op)) op.revoked=true; }
                         if(!accepted && mainFrame) driver.post(()->finish(op,null));
                         return accepted;
                     }
-                    public void started(String url) { driver.post(()->onStarted(op,url)); }
-                    public void finished(String url) { driver.post(()->extract(op,url)); }
-                    public void failed() { driver.post(()->finish(op,null)); }
+                    public void started(String url) { onStarted(op,url); }
+                    public void finished(String url) {
+                        synchronized(CrewCheckMyCrewCareObservedWebViewSource.this) { if(current(op) && !sameUrl(url,op.url)) op.revoked=true; }
+                        driver.post(()->extract(op,url));
+                    }
+                    public void failed() { revoke(op); }
                 });
             }
         } catch(RuntimeException error) { finish(op,null); }
     }
     private void onStarted(Pending op,String url) {
-        main();boolean rejected=false;
+        boolean rejected=false;
         synchronized(this) {
             if(!current(op)) return;
-            if(!sameUrl(url,op.url) || op.extracting) rejected=true;
+            if(op.revoked || op.started || !sameUrl(url,op.url) || op.extracting) { op.revoked=true;rejected=true; }
             else op.started=true;
         }
-        if(rejected) finish(op,null);
+        if(rejected) driver.post(()->finish(op,null));
+    }
+    // Revoke validity at the native event, before queued receipt delivery.
+    private void revoke(Pending op) {
+        synchronized(this) { if(!current(op)) return;op.revoked=true; }
+        driver.post(()->finish(op,null));
     }
     private void extract(Pending op,String pageUrl) {
         try {
             main();
             synchronized(this) {
                 if(!current(op) || op.extracting) return;
-                if(!op.started || !sameUrl(pageUrl,op.url) || !sameUrl(driver.url(),op.url)) throw invalid();
+                if(op.revoked || !op.started || !sameUrl(pageUrl,op.url) || !sameUrl(driver.url(),op.url)) throw invalid();
                 op.extracting=true;
                 driver.evaluate(asset+"("+contract(op.request)+");",raw->{
                     synchronized(CrewCheckMyCrewCareObservedWebViewSource.this) {
@@ -143,7 +151,7 @@ public final class CrewCheckMyCrewCareObservedWebViewSource implements ObservedS
             main();
             synchronized(this) {
                 if(!current(op) || !op.extracting) return;
-                String url=driver.url();if(!sameUrl(url,op.url)) throw invalid();
+                String url=driver.url();if(op.revoked || !sameUrl(url,op.url)) throw invalid();
                 page=decode(raw,op.request,url);
             }
         } catch(RuntimeException error) { finish(op,null);return; }
@@ -151,7 +159,7 @@ public final class CrewCheckMyCrewCareObservedWebViewSource implements ObservedS
     }
     private void finish(Pending op,ObservedPage page) {
         main();
-        synchronized(this) { if(!current(op)) return;pending=null; }
+        synchronized(this) { if(!current(op)) return;if(op.revoked) page=null;pending=null; }
         // No source monitor while entering the acquisition owner: avoid cross-lock inversion.
         op.callback.complete(page);
     }

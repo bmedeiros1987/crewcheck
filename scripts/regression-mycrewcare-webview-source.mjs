@@ -44,7 +44,7 @@ test('actual source + acquisition + Runtime: offline lifecycle, navigation, boun
     for(const name of ['ObservedAcquisitionHarness','ObservedWebViewSourceHarness'])files.push(new URL('./fixtures/mycrewcare-native/'+name+'.java',import.meta.url).pathname);
     execFileSync(java,['com.sun.tools.javac.Main','-source','17','-target','17','-d',root,...files],{encoding:'utf8'});
     const result=execFileSync(java,['-cp',root,'ObservedWebViewSourceHarness',asset.pathname,root],{encoding:'utf8'});
-    assert.match(result,/PASS observed WebView source cases=241/);
+    assert.match(result,/PASS observed WebView source cases=265/);
     const require=createRequire(process.env.WAKEUP_JSDOM_PACKAGE||import.meta.url),{JSDOM}=require('jsdom');
     for(let i=0;i<8;i++){
       const request=JSON.parse(readFileSync(join(root,i+'-request.json'),'utf8'));

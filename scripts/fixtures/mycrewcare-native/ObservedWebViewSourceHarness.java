@@ -134,7 +134,7 @@ public class ObservedWebViewSourceHarness extends ObservedAcquisitionHarness {
       final java.util.concurrent.CountDownLatch entered=new java.util.concurrent.CountDownLatch(1),release=new java.util.concurrent.CountDownLatch(1);
       Ui ui=new Ui(){public void navigate(String u,Navigation cb){if(at.equals("navigate")){entered.countDown();await(release);}super.navigate(u,cb);}public void evaluate(String script,Consumer<String> cb){if(at.equals("evaluate")){entered.countDown();await(release);}super.evaluate(script,cb);}};
       var runtime=runtime();Capture result=new Capture();runtime.observeMyCrewCareV3ForReview(scope("A"),new Bound("A",ui),new Deadline(),result::done);
-      if(at.equals("evaluate")){ui.step();ui.step();ui.step();ui.step();} // navigate, start callback, consume start, queue finish
+      if(at.equals("evaluate")){ui.step();ui.step();ui.step();} // navigate, immediate start admission, queue finish
       Thread main=new Thread(ui::step);main.start();await(entered);
       Thread worker=new Thread(()->runtime.startMyCrewCareCleanupV3("A",true,"cleanup_race"));worker.start();blocked(worker);release.countDown();join(main);join(worker);ui.drive();
       check(result.count==1&&result.result==null&&ui.stops==1&&runtime.myCrewCareCleanupResultV3("A","cleanup_race").equals("ok"),"concurrent source dispatch/cancel "+at);cases++;
@@ -167,6 +167,19 @@ public class ObservedWebViewSourceHarness extends ObservedAcquisitionHarness {
     }
     check(result.count==1&&result.result!=null&&android.webkit.WebView.instances.get(android.webkit.WebView.instances.size()-1).destroyed,"native driver full sequence and destroy main");
     check(profiles.createdAccounts.get(viewIndex).equals(boundScope.accountId),"existing isolated profile factory owns the exact binding only");cases++;
+    }
+    // Native invalidation before terminal delivery revokes even an already queued receipt.
+    for(String phase:List.of("profile-before","cards","detail","profile-after"))for(String event:List.of("started","http","renderer"))for(boolean receiptFirst:List.of(false,true)) {
+      var source=CrewCheckMyCrewCareObservedWebViewSource.prepare(new android.app.Activity(),profiles,scope("A"));var owner=new ObservedAcquisition();Capture result=new Capture();final ObservedRequest[] current=new ObservedRequest[1];
+      ObservedSource bound=new ObservedSource(){public void acquire(ObservedRequest r,ObservedPageCallback cb){current[0]=r;source.acquire(r,cb);}public void cancel(ObservedScope s){source.cancel(s);}};
+      owner.begin(scope("A"),bound,new Deadline(),result::done);android.os.Handler.drain();
+      while(!current[0].kind.equals(phase)) {ObservedRequest r=current[0];var v=android.webkit.WebView.instances.get(android.webkit.WebView.instances.size()-1);android.os.Handler.runMain(()->v.client.onPageFinished(v,v.url));android.os.Handler.drain();android.os.Handler.runMain(()->v.value.onReceiveValue(q(envelope(r))));android.os.Handler.drain();}
+      var view=android.webkit.WebView.instances.get(android.webkit.WebView.instances.size()-1);ObservedRequest r=current[0];
+      android.os.Handler.runMain(()->view.client.onPageFinished(view,view.url));android.os.Handler.drain();
+      Runnable receipt=()->view.value.onReceiveValue(q(envelope(r)));
+      Runnable invalidate=()->{if(event.equals("started"))view.client.onPageStarted(view,view.url,null);if(event.equals("http"))view.client.onReceivedHttpError(view,new android.webkit.WebResourceRequest(view.url,true),new android.webkit.WebResourceResponse("text/plain","UTF-8",new java.io.ByteArrayInputStream(new byte[0])));if(event.equals("renderer"))view.client.onRenderProcessGone(view,new android.webkit.RenderProcessGoneDetail());};
+      android.os.Handler.runMain(()->{if(receiptFirst){receipt.run();invalidate.run();}else{invalidate.run();receipt.run();}});android.os.Handler.drain();
+      check(result.count==1&&result.result==null&&view.destroyed,"native invalidation revokes queued receipt "+phase+event+receiptFirst);cases++;
     }
     // Actual AndroidDriver stop precedes profile cleanup, both inline-main and worker-queued.
     for(String phase:List.of("profile-before","cards","detail","profile-after"))for(boolean onMain:List.of(false,true)) {
