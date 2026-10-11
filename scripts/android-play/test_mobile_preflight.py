@@ -92,3 +92,12 @@ for status in (300, 301, 302, 307, 308, 400, 401, 403, 404, 429, 500):
     assert all(t == {'httpStatus': status, 'state': 'unverified'}
                for t in report['tracks'].values())
 print('PASS: omitted/explicit empty releases accepted; malformed JSON/types and HTTP errors remain unverified without body leakage')
+
+from unittest.mock import patch
+for sha in ('', 'old-candidate', 'a' * 40):
+    with patch.dict(m.os.environ, {'GITHUB_SHA': sha}):
+        report = m.inspect(PayloadSession(PayloadResponse({})))
+        assert report['controllerSourceSha'] == (sha if len(sha) == 40 else None)
+        assert 'candidateSourceSha' not in report
+        assert report['publicationAllowed'] is False
+print('PASS: actual controller SHA reported; missing/invalid provenance stays unknown, never a stale candidate')

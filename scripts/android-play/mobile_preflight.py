@@ -9,13 +9,18 @@ from urllib.parse import quote
 from crewwatch_internal import play_session
 
 PACKAGE = 'com.crewcheck.app'
-SOURCE_SHA = 'ba3723a426184aadf9f1b1bf8106129f0179c5bd'
 TRACKS = ('production', 'qa', 'internal', 'alpha', 'beta', 'wear:qa', 'wear:internal')
 PUBLISHED = 'RELEASE_LIFECYCLE_STATE_PUBLISHED'
 
 
+def controller_sha():
+    import re
+    sha = os.environ.get('GITHUB_SHA', '')
+    return sha if re.fullmatch(r'[0-9a-f]{40}', sha) else None
+
+
 def inspect(session):
-    report = dict(package=PACKAGE, candidateSourceSha=SOURCE_SHA,
+    report = dict(package=PACKAGE, controllerSourceSha=controller_sha(),
                   observedAt=datetime.now(timezone.utc).isoformat(),
                   productionEligibility='unknown', publicationAllowed=False,
                   completeTrackInventory=False, completeVersionInventory=False,
@@ -57,7 +62,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', required=True)
     args = parser.parse_args()
-    report = dict(package=PACKAGE, candidateSourceSha=SOURCE_SHA,
+    report = dict(package=PACKAGE, controllerSourceSha=controller_sha(),
                   productionEligibility='unknown', publicationAllowed=False,
                   blockers=['Existing Play credential unavailable or authentication failed.'])
     try:

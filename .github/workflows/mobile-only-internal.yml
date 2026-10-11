@@ -3,8 +3,16 @@ name: CrewCheck reviewed mobile internal
 on:
   workflow_dispatch:
     inputs:
+      reviewed_source_sha:
+        description: 'Full reviewed merge SHA of current main; exact successful main CI required'
+        required: true
+        type: string
+      reviewed_source_pr:
+        description: 'Merged reviewed source PR number'
+        required: true
+        type: string
       publish_mobile_internal:
-        description: 'Publish only reviewed PR882 phone AAB to internal testing'
+        description: 'Publish only reviewed phone AAB to internal testing'
         type: boolean
         default: false
 
@@ -13,7 +21,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: crewcheck-play-release
+  group: crewcheck-mobile-preparation
   cancel-in-progress: false
 
 jobs:
@@ -21,10 +29,19 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      REVIEWED_SOURCE_SHA: ${{ inputs.reviewed_source_sha }}
+      REVIEWED_SOURCE_PR: ${{ inputs.reviewed_source_pr }}
     defaults:
       run:
         working-directory: source
     steps:
+      - name: Refuse publication until durable shared-package coordination is reviewed
+        if: inputs.publish_mobile_internal == true
+        working-directory: ${{ github.workspace }}
+        run: |
+          echo '::error::Publication remains disabled: no reviewed durable journal backend or all-writer coordination is configured.'
+          exit 1
       - name: Checkout release controller
         uses: actions/checkout@v6
         with:
@@ -33,7 +50,7 @@ jobs:
       - name: Checkout immutable reviewed phone source
         uses: actions/checkout@v6
         with:
-          ref: 253abd79eb80ed4b0ded4ffbe8425ede9e8d5327
+          ref: ${{ inputs.reviewed_source_sha }}
           path: source
           persist-credentials: false
       - uses: actions/setup-node@v6
@@ -55,11 +72,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 ../control/scripts/android-play/test_mobile_internal.py
+          python3 ../control/scripts/android-play/test_artifact_consumer.py
+          node ../control/scripts/android-play/test_mysql_journal.mjs
           python3 ../control/scripts/android-play/mobile_internal.py check-ci
       - name: Allocate only phone version from live package tracks and bundles
+        if: inputs.publish_mobile_internal == true
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: python3 ../control/scripts/android-play/mobile_internal.py allocate
+      - name: Mark build-only version as unallocated for Play submission
+        if: inputs.publish_mobile_internal != true
+        run: echo 'Build-only artifacts use the policy version; no live allocation, edit or submission is performed.'
       - name: Prepare and test reviewed source
         run: |
           npm ci
@@ -84,16 +107,18 @@ jobs:
           printf '%s' "${KEYSTORE_BASE64#base64:}" | tr -d '\r\n ' | base64 --decode > "$RUNNER_TEMP/crewcheck-mobile-upload.jks"
           keytool -exportcert -keystore "$RUNNER_TEMP/crewcheck-mobile-upload.jks" -storepass:env STORE_PASSWORD -alias "$KEY_ALIAS" -file "$RUNNER_TEMP/mobile-upload-cert.der"
           echo "EXPECTED_UPLOAD_CERT_SHA256=$(sha256sum "$RUNNER_TEMP/mobile-upload-cert.der" | cut -d ' ' -f1)" >> "$GITHUB_ENV"
-      - name: Build only phone release bundle
+      - name: Build only phone APK and release bundle
         env:
           CREWCHECK_STORE_FILE: ${{ runner.temp }}/crewcheck-mobile-upload.jks
           CREWCHECK_STORE_PASSWORD: ${{ secrets.CREWCHECK_STORE_PASSWORD }}
           CREWCHECK_KEY_ALIAS: ${{ secrets.CREWCHECK_KEY_ALIAS }}
           CREWCHECK_KEY_PASSWORD: ${{ secrets.CREWCHECK_KEY_PASSWORD }}
-        run: gradle -p android-wrapper --no-daemon --console=plain :app:bundleRelease
+        run: gradle -p android-wrapper --no-daemon --console=plain :app:assembleRelease :app:bundleRelease
       - name: Validate actual phone AAB and immutable provenance
         run: |
           curl --fail --location --retry 3 https://github.com/google/bundletool/releases/download/1.18.2/bundletool-all-1.18.2.jar -o "$RUNNER_TEMP/mobile-bundletool.jar"
+          export APK_ANALYZER="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          export APK_SIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
           python3 ../control/scripts/android-play/mobile_internal.py validate --bundletool "$RUNNER_TEMP/mobile-bundletool.jar" --output "$RUNNER_TEMP/mobile-verified"
       - name: Publish phone internal only with retained packages and post-commit verification
         if: inputs.publish_mobile_internal == true
