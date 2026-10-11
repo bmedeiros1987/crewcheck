@@ -33,7 +33,7 @@ export function BidsAlertPreferences() {
     try {
       const result = await authFetch<Snapshot>(path, { cache: 'no-store' });
       if (identity !== epoch.current || request !== ticket.current) return;
-      setSnapshot(result); cacheNotificationPreferences(result.preferences,result.ownerId);
+      setSnapshot(result); cacheNotificationPreferences(result.preferences,result.ownerId,result.revision);
       if (!dirty.current) setDraft(result.preferences);
       setMessage(result.message);
     } catch { if (identity === epoch.current && request === ticket.current) setMessage('Preferências não verificadas. Reconecte para consultar.'); }
@@ -64,7 +64,7 @@ export function BidsAlertPreferences() {
     try {
       const result = await authFetch<Snapshot>(path, { method: 'POST', body: JSON.stringify({ action, ownerId:snapshot.ownerId, expectedRevision: snapshot.revision, requestId: crypto.randomUUID(), preferences: draft, contextKey: snapshot.plan.contextKey, confirmed: action === 'already-did' }) });
       if (identity !== epoch.current) return;
-      dirty.current = false; setSnapshot(result); setDraft(result.preferences); cacheNotificationPreferences(result.preferences,result.ownerId); setMessage(result.message); setConflict(false);
+      dirty.current = false; setSnapshot(result); setDraft(result.preferences); cacheNotificationPreferences(result.preferences,result.ownerId,result.revision); setMessage(result.message); setConflict(false);
     } catch (error: any) {
       if (identity === epoch.current) { setMessage(error?.message || 'Não foi possível salvar. Nenhum envio está confirmado.'); if (error?.status === 409) setConflict(true); }
     } finally { if (identity === epoch.current) setBusy(false); }
