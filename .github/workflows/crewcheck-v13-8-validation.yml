@@ -99,8 +99,8 @@ jobs:
           node scripts/regression-bids-alert-preferences-browser.mjs
           node scripts/regression-web-push-worker-browser.mjs
           node scripts/regression-web-push-device-browser.mjs
-      - name: Prepare canonical application sources
-        run: node scripts/v139/apply.mjs
+      - name: Prepare canonical application and build shipping CSS for layout fixtures
+        run: npm run build
       - name: Test actual EmergencyCenter after source preparation
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
