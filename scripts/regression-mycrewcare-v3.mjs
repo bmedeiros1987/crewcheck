@@ -370,6 +370,55 @@ class GatedStorage extends MemoryStorage {
   clear(accountId) { this.clears.push(accountId); return super.clear(accountId); }
 }
 
+test('late invalid restore cannot clear a newer sync for the same account or another account', async () => {
+  for (const switchAccount of [false, true]) {
+    const storage = new GatedStorage();
+    storage.values.set(context.accountId, '{"corrupt":true}');
+    const ctx = switchAccount ? contextB : context;
+    const st = switchAccount ? stayB : stay;
+    const session = createMyCrewCarePersistentSession({
+      adapter: { read: async (request) => envelope(request, [record], { providerSubject: ctx.providerSubject }) },
+      storage, now: () => NOW,
+    });
+    session.setContext(context, [stay]); session.setAutomatic(true);
+    const oldRestore = session.restore();
+    if (switchAccount) session.setContext(ctx, [st]);
+    assert.equal(await session.sync(), true);
+    const latest = storage.values.get(ctx.accountId);
+    storage.gates[0]();
+    assert.equal(await oldRestore, false);
+    assert.deepEqual(storage.clears, []);
+    assert.equal(storage.values.get(ctx.accountId), latest);
+    assert.equal(session.state().connected, true);
+    assert.ok(session.hotel(st.id));
+  }
+});
+
+test('sync queued behind an already started restore cleanup preserves its new cache', async () => {
+  const storage = new MemoryStorage();
+  storage.values.set(context.accountId, '{"corrupt":true}');
+  let finishClear;
+  let enteredClear;
+  const clearStarted = new Promise(resolve => { enteredClear = resolve; });
+  storage.clear = (accountId) => new Promise(resolve => {
+    enteredClear();
+    finishClear = () => { storage.values.delete(accountId); resolve(); };
+  });
+  const session = createMyCrewCarePersistentSession({
+    adapter: { read: async request => envelope(request) }, storage, now: () => NOW,
+  });
+  session.setContext(context, [stay]); session.setAutomatic(true);
+  const restore = session.restore();
+  await clearStarted;
+  const sync = session.sync();
+  finishClear();
+  assert.equal(await restore, false);
+  assert.equal(await sync, true);
+  assert.ok(storage.values.get(context.accountId));
+  assert.ok(session.hotel(stay.id));
+  assert.equal(session.state().connected, true);
+});
+
 test('late restore(A) after switching to B never clears or publishes into B', async () => {
   const storage = new GatedStorage();
   // A holds an unreadable/corrupt payload, which would trigger storage.clear(<account>).
@@ -809,6 +858,23 @@ test('upgrade rejects disjoint reservation cache produced by the previous versio
       previous.setContext(context, [stay]); previous.setAutomatic(true);
       assert.equal(await previous.sync(), true);
       assert.equal(JSON.parse(storage.read(context.accountId)).schemaVersion, 2);
+      if (!valid) {
+        const racedStorage = new GatedStorage();
+        racedStorage.values.set(context.accountId, storage.read(context.accountId));
+        const raced = createMyCrewCarePersistentSession({
+          adapter: { read: async request => envelope(request) }, storage: racedStorage, now: () => NOW,
+        });
+        raced.setContext(context, [stay]); raced.setAutomatic(true);
+        const staleRestore = raced.restore();
+        assert.equal(await raced.sync(), true);
+        const latest = racedStorage.values.get(context.accountId);
+        racedStorage.gates[0]();
+        assert.equal(await staleRestore, false);
+        assert.deepEqual(racedStorage.clears, []);
+        assert.equal(racedStorage.values.get(context.accountId), latest);
+        assert.equal(raced.hotel(stay.id).reservationStartAt, null);
+        assert.equal(raced.state().connected, true);
+      }
       const upgraded = createMyCrewCarePersistentSession({ adapter, storage, now: () => NOW });
       upgraded.setContext(context, [stay]); upgraded.setAutomatic(true);
       assert.equal(await upgraded.restore(), valid);

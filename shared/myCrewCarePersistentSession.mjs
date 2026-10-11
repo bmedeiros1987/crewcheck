@@ -372,10 +372,11 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
       }
       // Everything below uses the captured account/epoch, never the live `context`.
       const epoch = restoreEpoch += 1;
+      const requestGeneration = generation;
       const capturedContext = context;
       const capturedStays = stays;
       const accountId = capturedContext.accountId;
-      const stale = () => epoch !== restoreEpoch || context !== capturedContext;
+      const stale = () => epoch !== restoreEpoch || generation !== requestGeneration || context !== capturedContext;
       let raw;
       let fingerprint;
       try {
