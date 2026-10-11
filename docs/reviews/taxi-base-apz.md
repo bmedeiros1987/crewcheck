@@ -20,14 +20,17 @@ inclusive, na base. Para saída, o caller usa a apresentação publicada no
 relógio canônico da escala BRT (UTC-03). APZ ausente/estimada e intervalos
 incompletos continuam pendentes. Reserva aeroportuária na base pode fornecer
 apresentação; sobreaviso, hotel e passagem intermediária não geram deslocamento.
-Não duplica previsão na mesma data operacional, inclusive reserva+ativação.
-Esse limite conservador precisa revisão da política se houver direito a dois
-trajetos pagos no dia; não modifica nem descarta lançamentos reais de recibos.
+Deduplica a mesma ocorrência por identidade de jornada/registro e APZ.
+Reserva+ativação comprovada no mesmo intervalo são um deslocamento, em ambas
+as ordens. Uma segunda saída independente no dia preserva a primeira linha
+conhecida e gera pendência de múltiplos trajetos; não fica silenciosamente
+descartada. Não modifica nem descarta lançamentos reais de recibos.
 
 Chegada final à base na janela é registrada como pendência, sem transformar
 hora de chegada ou motores cortados+30 em APZ. Falta definição explícita do
 horário de chegada/liberação aplicável. A ordem dos eventos não permite que
-essa pendência suprima uma saída comprovada na mesma data. Sem tarifa ou com
+essa pendência suprima uma saída comprovada na mesma data. A chegada pendente
+também não é apagada pela saída conhecida: os agregados permanecem incompletos. Sem tarifa ou com
 critério de chegada pendente, os agregados ficam incompletos, preservando as
 refeições calculadas e evitando total financeiro aparentemente confiável.
 
@@ -58,3 +61,12 @@ textual da extração PDF real na frente documental (sem copiar dados pessoais);
 revisão do HEAD final e CI terminal. Sem merge/deploy/serviço ou alteração de
 configuração Render. Ownership limitado ao cálculo, biblioteca financeira e
 regressões; nenhuma alteração de layout, Radar, MCC ou preparação.
+
+Revalidação privada: leitura autenticada de texto da Library com o documento
+resolvido exercitou `learnPerDiemStatement` real e extraiu TAXI (`amount`) e
+CAFE (`meal`) como categorias distintas, não confirmadas, com período limitado.
+Valores iguais não fundem as rubricas. A transferência de bytes pelo helper
+oficial falhou; portanto não foi possível executar o extrator PDF do app neste
+executor. O texto nativo não é prova de paridade de extração. O total declarado
+nesse texto foi corretamente mantido em revisão, sem fabricar confirmação.
+Texto e relatório privado ficam fora do repositório; não há fixture de dado real.

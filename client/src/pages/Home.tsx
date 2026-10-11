@@ -3476,6 +3476,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
   const rows: PerDiemRow[] = [];
   const seen = new Set<string>();
   const taxiArrivalPending = new Map<string, { iso: string; airport: string; reason: string }>();
+  const taxiDepartures = new Map<string, { iso: string; window: string; event: ZeroLeg; start: Date; end: Date }>();
   const pendingAirports = new Set<string>();
   const unclassifiedItems: Array<{ iso: string; airport: string; reason?: string }> = [];
   const usedRateKeys = new Set<PerDiemRateKey>();
@@ -3586,20 +3587,24 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     // Existing interval evidence above excludes absent/estimated APZ.
     const taxi = (activityKind === 'flight' || activityKind === 'reserve')
       ? taxiPresentationOccurrence(start, atContractualBase(representative.origin)) : null;
-    if (taxi && !seen.has(taxi.iso + '-taxi')) {
-      seen.add(taxi.iso + '-taxi');
-      const cfg = perDiemConfig(roster, taxi.iso);
-      const value = cfg.taxiRate;
-      const source = 'Táxi previsto · Critério operacional informado pelo usuário: APZ na base · '
-        + taxi.window + ' · relógio da escala BRT (UTC-03) · sem homologação ACT';
-      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-        unclassifiedItems.push({ iso: taxi.iso, airport: representative.origin, reason: source + ' · Tarifa de táxi confirmada para o período ausente.' });
+    // An airport reserve and its activation prove the same commute, regardless
+    // of input order. A later independent journey is not a duplicate commute.
+    const activatedFromReserve = activityKind === 'flight' && operational.some(candidate => {
+      const reserveCode = financialEventCode(candidate);
+      if (candidate.kind === 'flight' || !/\b(ASB|RES|RESERVA|RSV)\b/.test(reserveCode)
+        || /\b(HSB|HSBE|SOBREAVISO)\b/.test(reserveCode)
+        || !atContractualBase(candidate.origin) || financialIntervalEvidenceIssue([candidate])) return false;
+      const reserveStart = eventStartDateTime(candidate), reserveEnd = eventEndDateTime(candidate);
+      return allowanceIntervalState(reserveStart, reserveEnd) === 'available'
+        && start >= reserveStart && start <= reserveEnd;
+    });
+    if (taxi && !activatedFromReserve) {
+      const identity = financialJourneyGroupKey(representative);
+      if (identity === 'event:missing-id') {
+        unclassifiedItems.push({ iso: taxi.iso, airport: representative.origin,
+          reason: 'Táxi: identidade da ocorrência ausente; deslocamento não comprovado.' });
       } else {
-        rows.push({ eventId: representative.id, date: dateChip(new Date(taxi.iso + 'T12:00:00')), iso: taxi.iso,
-          label: 'Táxi', value, currency: 'BRL', convertedBRL: value,
-          source: source + ' · tarifa de táxi do demonstrativo confirmado no período; previsão não comprova pagamento',
-          airport: representative.origin, rateKey: 'domestic', rateSource: 'learned', rateVersion: 'taxi-user-reported-v1',
-          exchangeRate: 1, calculationStart: start.toISOString(), calculationEnd: end.toISOString() });
+        taxiDepartures.set(identity + ':departure:' + start.toISOString(), { ...taxi, event: representative, start, end });
       }
     }
     // A final base arrival is observable, but its qualifying clock/APZ has not
@@ -3608,7 +3613,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     const arrivalCandidate = activityKind === 'flight' && finalFlight
       ? taxiPresentationOccurrence(eventEndDateTime(finalFlight), atContractualBase(finalFlight.destination)) : null;
     if (arrivalCandidate) {
-      taxiArrivalPending.set(arrivalCandidate.iso, { iso: arrivalCandidate.iso, airport: finalFlight!.destination,
+      taxiArrivalPending.set(financialJourneyGroupKey(representative) + ':arrival:' + eventEndDateTime(finalFlight!).toISOString(), { iso: arrivalCandidate.iso, airport: finalFlight!.destination,
         reason: 'Táxi na chegada à base: horário publicado na janela 00:00–05:45; critério de APZ/liberação na chegada ainda não confirmado. Sem homologação ACT; valor pendente.' });
     }
 
@@ -3643,7 +3648,29 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       add(occurrenceEvent, occurrence.iso, occurrence.slot, labels[occurrence.slot], `${source} · ${occurrence.window}${occurrence.slot === 'breakfast' ? ' · Critério operacional informado pelo usuário: presença na base na janela do café; sem homologação ACT' : ''}`, start, end);
     }
   }
-  for (const [iso, pending] of taxiArrivalPending) if (!seen.has(iso + '-taxi')) unclassifiedItems.push(pending);
+  const taxiDays = new Set<string>();
+  for (const taxi of [...taxiDepartures.values()].sort((a, b) => a.start.getTime() - b.start.getTime() || financialJourneyGroupKey(a.event).localeCompare(financialJourneyGroupKey(b.event)))) {
+    if (taxiDays.has(taxi.iso)) {
+      unclassifiedItems.push({ iso: taxi.iso, airport: taxi.event.origin,
+        reason: 'Táxi: saída independente adicional na mesma data; política de múltiplos trajetos ainda não confirmada. Subtotal conhecido preservado; valor adicional pendente.' });
+      continue;
+    }
+    taxiDays.add(taxi.iso);
+    const cfg = perDiemConfig(roster, taxi.iso);
+    const value = cfg.taxiRate;
+    const source = 'Táxi previsto · Critério operacional informado pelo usuário: APZ na base · '
+      + taxi.window + ' · relógio da escala BRT (UTC-03) · sem homologação ACT';
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      unclassifiedItems.push({ iso: taxi.iso, airport: taxi.event.origin, reason: source + ' · Tarifa de táxi confirmada para o período ausente.' });
+    } else {
+      rows.push({ eventId: taxi.event.id, date: dateChip(new Date(taxi.iso + 'T12:00:00')), iso: taxi.iso,
+        label: 'Táxi', value, currency: 'BRL', convertedBRL: value,
+        source: source + ' · tarifa de táxi do demonstrativo confirmado no período; previsão não comprova pagamento',
+        airport: taxi.event.origin, rateKey: 'domestic', rateSource: 'learned', rateVersion: 'taxi-user-reported-v1',
+        exchangeRate: 1, calculationStart: taxi.start.toISOString(), calculationEnd: taxi.end.toISOString() });
+    }
+  }
+  for (const pending of taxiArrivalPending.values()) unclassifiedItems.push(pending);
   const monthlyRows = rowsForNominalFinancialCompetence(rows, roster);
   const monthlyUnclassifiedItems = [...rowsForNominalFinancialCompetence(unclassifiedItems, roster), ...unclassifiedItems.filter(item => !item.iso)];
   const nativeSummary = summarizeNativeForecastRows(monthlyRows, monthlyUnclassifiedItems);
