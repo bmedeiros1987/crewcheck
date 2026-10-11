@@ -95,11 +95,12 @@ jobs:
           node scripts/regression-emergency-center-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-readiness-browser.mjs
+          node scripts/regression-notification-center-browser.mjs
           node scripts/regression-bids-alert-preferences-browser.mjs
           node scripts/regression-web-push-worker-browser.mjs
           node scripts/regression-web-push-device-browser.mjs
-      - name: Prepare canonical application sources
-        run: node scripts/v139/apply.mjs
+      - name: Prepare canonical application and build shipping CSS for layout fixtures
+        run: npm run build
       - name: Test actual EmergencyCenter after source preparation
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
@@ -107,6 +108,7 @@ jobs:
           node scripts/regression-emergency-center-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
           node scripts/regression-notification-readiness-browser.mjs
+          node scripts/regression-notification-center-browser.mjs
           node scripts/regression-bids-alert-preferences-browser.mjs
           node scripts/regression-web-push-worker-browser.mjs
           node scripts/regression-web-push-device-browser.mjs
@@ -128,6 +130,8 @@ jobs:
         run: |
           node scripts/regression-bids-delivery.mjs
           node scripts/regression-bids-editing.mjs
+          node scripts/regression-notification-preference-projection.mjs
+          node scripts/regression-bids-default-window.mjs
           node scripts/regression-bids-alert-policy.mjs
           node scripts/regression-bids-alert-preferences.mjs
           node scripts/regression-bids-auth-boundary.mjs
@@ -157,6 +161,8 @@ jobs:
         run: |
           node scripts/regression-bids-delivery.mjs
           node scripts/regression-bids-editing.mjs
+          node scripts/regression-notification-preference-projection.mjs
+          node scripts/regression-bids-default-window.mjs
           node scripts/regression-bids-alert-policy.mjs
           node scripts/regression-bids-alert-preferences.mjs
           node scripts/regression-bids-auth-boundary.mjs

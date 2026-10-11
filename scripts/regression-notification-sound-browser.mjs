@@ -31,6 +31,7 @@ const page=await browser.newPage({viewport:{width:390,height:844}});
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 await page.addInitScript(()=>{
   window.__audio=[];window.__permissionCalls=0;
+  localStorage.setItem('crewcheck_auth_token','synthetic-token');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'sound-owner'}));localStorage.setItem('crewcheck:notification-preferences:v1:sound-owner',JSON.stringify({ownerId:'sound-owner',preferences:{settings:{crewcheck_pulse_enabled:true}}}));
   const Original=window.Audio;
   window.Audio=function(src){const a=new Original(src);window.__audio.push(a);return a;};
   if(window.Notification) Notification.requestPermission=()=>{window.__permissionCalls++;return Promise.resolve('denied');};

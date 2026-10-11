@@ -31,6 +31,7 @@ import {savedStayEditorEvent} from '@/lib/stayEditorStore';
 import {getToken} from '@/lib/authClient';
 import {setPendingNavigationContext} from '@/lib/navigationContext';
 import {isFinancialSetting,readFinancialSetting,writeFinancialSetting} from '@/lib/financialSettingStore';
+import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
 import {createPortal} from 'react-dom';
 import {Search,Hotel,LocateFixed,Plus,Check,MapPin,X,Save,ChevronRight,UserRound,Dumbbell,WashingMachine,Pill,Bell,Send,Menu,Home as HomeIcon,CalendarDays,Navigation} from 'lucide-react';
 import {toast} from 'sonner';
@@ -47,7 +48,7 @@ ${declarations.map(n=>n.getText(ast)).join('\n')}
 window.applyStayTheme=setCrewCheckThemePreference;
 import {peekPendingNavigationContext} from '@/lib/navigationContext';
 import '@/components/v139/v139.css';
-const day=new Date().toISOString().slice(0,10),now=Date.parse(day+'T12:00:00Z');
+const day='2026-10-11',now=Date.parse(day+'T12:00:00Z');
 const event=(id,hours)=>({id,kind:'stay',title:'Pernoite sintético '+id,date:new Date(now),day:{date:day},origin:'FOR',destination:'FOR',hotel:'Hotel sintético '+id,presentation:'01:11',canonical:{startDateTime:new Date(now+hours*3600000).toISOString(),endDateTime:new Date(now+(hours+24)*3600000).toISOString()}});
 const fixtures=[event('synthetic-current',-1),event('synthetic-future',48)];
 window.stayFixtureDay=day;window.stayFixtureEvents=fixtures;
@@ -77,10 +78,10 @@ try {
   await context.route('**/*',route=>{
    const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(!url.pathname.startsWith('/api/'))return route.continue();
    if(route.request().method()!=='GET')writes.push(url.pathname);
-   const day=new Date().toISOString().slice(0,10);
+   const day='2026-10-11';
    return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,address:null,stays:[{id:'saved-future',rosterEventId:'synthetic-future',stayDate:day,airport:'FOR',hotelName:'Hotel salvo sintético',presentationTime:'05:30',leadMinutes:90}]})});
   });
-  const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));await page.goto(origin);
+  const page=await context.newPage();await page.clock.setFixedTime(new Date('2026-10-11T12:00:00Z'));page.on('pageerror',error=>errors.push(error.message));await page.goto(origin);
   await page.getByRole('button',{name:'Editar pernoite synthetic-future',exact:true}).click();
   const program=page.getByRole('combobox',{name:'Programação',exact:true});
   await program.waitFor();assert.equal(await program.inputValue(),'synthetic-future');

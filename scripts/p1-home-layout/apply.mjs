@@ -96,7 +96,7 @@ if (!source.includes('function HomeFavoriteShortcuts(')) {
   const menuEnd = source.indexOf('\nfunction ', menuStart + 1);
   const canonicalMenu = source.slice(menuStart, menuEnd);
   const entries = [...canonicalMenu.matchAll(/\['([^']+)','([^']+)','([^']+)',([A-Za-z0-9_]+)\]/g)];
-  if (entries.length !== 40) throw new Error('[p1-home-layout] catálogo canônico incompleto');
+  if (entries.length !== 41 || new Set(entries.map(entry=>entry[1])).size !== 41 || !entries.some(entry=>entry[1]==='notifications')) throw new Error('[p1-home-layout] catálogo canônico incompleto');
   const tuples = entries.map((entry) => `['${entry[1]}','${entry[2]}',${entry[4]}]`).join(',\n');
   const shortcutBlock = `function HomeFavoriteShortcuts({ setView, openMenu }: { setView: (v: ZeroView) => void; openMenu: () => void }) {
     const accountId = getStoredUser()?.id || null;

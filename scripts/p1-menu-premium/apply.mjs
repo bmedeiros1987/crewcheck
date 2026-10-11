@@ -26,7 +26,7 @@ const GROUPS = [
   { title: 'Financeiro', views: ['perdiem', 'salary', 'crew'] },
   { title: 'Rotina e apoio', views: ['routine', 'life', 'hotels', 'gyms', 'concierge', 'community'] },
   { title: 'Documentos', views: ['crewlocker', 'crewlock', 'reports', 'calendar', 'exports'] },
-  { title: 'Conta, ajuda e segurança', views: ['settings', 'plans', 'guardian', 'manual', 'support'] },
+  { title: 'Conta, ajuda e segurança', views: ['notifications', 'settings', 'plans', 'guardian', 'manual', 'support'] },
 ];
 
 const ADMIN_GROUP = { title: 'Administração', views: ['updates', 'maintenance', 'admin'] };
@@ -86,6 +86,7 @@ const OVERRIDES = {
   calendar: ['Calendário', 'Google Calendar e ICS', 'CalendarCheck2'],
   exports: ['Exportar', 'PDF e compartilhamento', 'Share2'],
 
+  notifications: ['Notificações', 'O que, por onde e quando', 'Bell'],
   settings: ['Configurações', 'Perfil e preferências', 'Settings'],
   plans: ['Assinaturas', 'Plano e franquias', 'Crown'],
   guardian: ['Guardian', 'QR de emergência protegido', 'QrCode'],
@@ -142,7 +143,9 @@ function boundedSlice(source, open, closeToken, context) {
   return { start, end: end + closeToken.length };
 }
 
-const home = read(HOME);
+let home = read(HOME);
+// Register the account notification destination before canonical grouping.
+if(home.includes("from '@/components/notifications/NotificationCenter'")&&!home.includes("['notifications','Notificações'"))home=home.replace("['settings','Configurações','Perfil e preferências',Settings]", "['notifications','Notificações','O que, por onde e quando',Bell], ['settings','Configurações','Perfil e preferências',Settings]");
 if (home.includes(MARKER)) {
   console.log('[p1-menu-premium] Menu já normalizado; nada a fazer.');
 } else {

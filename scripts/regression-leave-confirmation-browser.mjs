@@ -34,7 +34,8 @@ try{
    if(holdBids&&token==='B'){holdBids=false;bidsStarted();await new Promise(resolve=>{bidsResume=resolve});}
    return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,windows:[{id:'fictional-'+token,title:'Fictional BIDS '+token,targetMonth:'2026-10',opensAt:'2026-10-11T10:00:00Z',closesAt:'2026-10-15T20:00:00Z',notifyOpen:true,notifyLastDay:true,openDispatchStatus:'uncertain',lastDayDispatchStatus:'accepted'}],notifications:[]})});
   }
-  if(url.pathname==='/api/platform/bids/alert-preferences'){
+  if(url.pathname==='/api/platform/bids/default-window')return route.fulfill({contentType:'application/json',body:JSON.stringify({ownerId:token,profile:null,revision:0,resolution:{status:'pending',pending:['Perfil e calendário não confirmados.'],window:null}})});
+  if(url.pathname==='/api/platform/notifications/preferences'){
    assert.equal(request.method(),'GET');
    return route.fulfill({contentType:'application/json',body:JSON.stringify({revision:0,preferences:{enabled:false,mode:'auto',preferredTime:'09:00',quietStart:'22:00',quietEnd:'08:00',timezone:'',channels:{all:false,individual:{mobilePwa:true,watch:false,crewCierge:false}}},pending:['comunicado vigente verificado'],plan:{candidateAt:null},campaign:null,alreadyDid:false,canConfirmAlreadyDid:false,message:'Nenhum alerta programado.'})});
   }

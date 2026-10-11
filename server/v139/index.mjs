@@ -1,6 +1,7 @@
 import '../../server/telegram-fast-ack.mjs';
 import { handleAuthRoute } from './auth.mjs';
 import { handleCrewCheckPush } from '../web-push/api.mjs';
+import { handleBidsDefaultWindow } from './bidsDefaultWindow.mjs';
 import { handleBidsCore } from './bidsCore.mjs';
 import { handleBidsAlertPreferences } from './bidsAlertPreferences.mjs';
 import { handleNotificationCycle } from './notificationCycles.mjs';
@@ -46,6 +47,7 @@ export async function handleV139Route(req, res, url) {
     if (await handleBidsCalendar(req, res, url)) return true;
     if (await handleCrewCheckPush(req, res, url)) return true;
     if (await handleBidsAlertPreferences(req, res, url)) return true;
+    if (await handleBidsDefaultWindow(req, res, url)) return true;
     if (await handleBidsCore(req, res, url)) return true;
     if (await handleCrewLockRoute(req, res, url)) return true;
     if (await handleRoutineRoute(req, res, url)) return true;
