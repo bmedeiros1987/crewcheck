@@ -83,7 +83,7 @@ TypeScript check supplements the existing final TypeScript gate. PR triggering
 also covers the reviewed stack, and source/generator/dependency/config changes
 are included for both PRs and existing main pushes; original path triggers remain.
 
-The adoption is tested against main
+Historical adoption validation was tested against main
 `efdd999892df8330a26de15b821cd2466844535e` in a separate worktree, without
 publishing it. If that main is already an ancestor, Git records the actual
 already-containing HEAD instead of inventing a merge. `capture-composition-evidence.mjs`
@@ -114,9 +114,35 @@ in-place npm build is used. This pin is part of the scoped CI behavior change.
 
 Main advanced during validation to
 `832b3cbaa13195adc471b4d7288082d2448ee664` (reviewed MyCrewCare debug OFF
-composition). The mandatory composition step now pins that exact main. The
+composition). The historical cffd7b87 validation pinned that exact main. The
 previous head83b97875 completed nine successful workflows against main efdd9998;
 its captured main composition3e47f5e3/tree90a308d8 is historical evidence for that
-base. The final updated head must obtain fresh CI and exact artifacts for832b3cba.
+base. Head cffd7b87 obtained nine successful workflows and exact captured artifacts for832b3cba; subsequent permanent adoption revisions must validate their actual event base.
 PR1017 remains unmerged and none of its four scoped changes was absorbed by this
 advance. No MyCrewCare implementation is changed by this adoption delta.
+
+## Permanent event base and root-server trigger coverage
+
+`server.mjs` is explicitly present in both PR and main-push path lists. The
+mandatory trigger regression verifies24 isolated relevant paths for both events,
+including the root server, generators, dependencies and configs, and reproduces
+that server/** alone cannot cover server.mjs. No functional gate is removed.
+
+The permanent job has no fixed main SHA. `staged-concierge-event.mjs` resolves
+PR head/base exclusively from the event's head.sha/base.sha, verifies the base
+repository, and exposes only validated hex SHAs as step outputs. The next step
+checks that checkout HEAD equals the resolved head before installing dependencies.
+For a main push, after must equal github.sha; its actual published HEAD already
+contains the target and is tested directly, without merging an old before commit
+back into it. Deleted/wrong-branch pushes, missing/zero bases, repository mismatch
+and unsupported events fail closed. The pure resolver and actual CLI are tested.
+
+A real divergent Git fixture advances base after head creation. Composing with
+the event's advanced base includes its new module; the stale-base counterexample
+omits it. The test also checks the actual workflow consumes event.outputs.base
+and rejects a permanent fixed-base assignment. Captured artifacts now say
+event-base-composition and record explicit input head/base, verified ancestry,
+actual commit/parents/tree and whether a merge was needed. Already-contained
+bases record the actual head; their original parent metadata is not presented
+as a new synthetic merge. Fixed832b3cba/efdd9998 values above are historical
+validation evidence only. Adoption remains draft pending the complete review.

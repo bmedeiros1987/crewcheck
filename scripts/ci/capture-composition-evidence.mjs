@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-const [repository, prefixArg, expectedCommit] = process.argv.slice(2);
+const [repository, prefixArg, expectedCommit, inputHead, inputBase] = process.argv.slice(2);
 assert.match(expectedCommit ?? '', /^[a-f0-9]{40}$/);
 const prefix = path.resolve(prefixArg);
 assert(!fs.existsSync(prefix + '.bundle') && !fs.existsSync(prefix + '.json'), 'Fresh evidence destination required');
@@ -13,6 +13,16 @@ const commit = git(['rev-parse', 'HEAD']).toString().trim();
 assert.equal(commit, expectedCommit);
 const parents = git(['rev-list', '--parents', '-n', '1', commit]).toString().trim().split(' ').slice(1);
 assert(parents.length >= 1, 'Versioned commit parents required');
+let inputs, compositionMode;
+if (inputHead !== undefined || inputBase !== undefined) {
+  assert.match(inputHead ?? '', /^[a-f0-9]{40}$/);
+  assert.match(inputBase ?? '', /^[a-f0-9]{40}$/);
+  git(['merge-base', '--is-ancestor', inputHead, commit]);
+  git(['merge-base', '--is-ancestor', inputBase, commit]);
+  inputs = {head: inputHead, base: inputBase};
+  compositionMode = commit === inputHead ? 'already-contained' : 'merged-event-base';
+  if (commit !== inputHead) assert.deepEqual(parents, [inputHead, inputBase]);
+}
 const tree = git(['rev-parse', `${commit}^{tree}`]).toString().trim();
 const entries = git(['ls-tree', '-r', '-z', commit]).toString().split('\0').filter(Boolean).map(row => {
   const tab = row.indexOf('\t'), [mode, type, object] = row.slice(0, tab).split(' ');
@@ -21,7 +31,7 @@ const entries = git(['ls-tree', '-r', '-z', commit]).toString().split('\0').filt
 git(['bundle', 'create', prefix + '.bundle', 'HEAD', ...parents.map(parent => '^' + parent)]);
 git(['bundle', 'verify', prefix + '.bundle']);
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
-const evidence = {commit, parents, tree, entries, treeManifestSha256: digest(JSON.stringify(entries)), bundleSha256: digest(fs.readFileSync(prefix + '.bundle')), bundlePrerequisites: parents, scope: 'Exact Git composition captured before required validation; test outcome is recorded separately'};
+const evidence = {commit, parents, inputs, compositionMode, tree, entries, treeManifestSha256: digest(JSON.stringify(entries)), bundleSha256: digest(fs.readFileSync(prefix + '.bundle')), bundlePrerequisites: parents, scope: 'Exact Git composition captured before required validation; test outcome is recorded separately'};
 fs.writeFileSync(prefix + '.json', JSON.stringify(evidence, null, 2) + '\n', {flag: 'wx'});
 assert.equal(git(['rev-parse', 'HEAD']).toString().trim(), commit);
-console.log(JSON.stringify({commit, parents, tree, treeManifestSha256: evidence.treeManifestSha256, bundleSha256: evidence.bundleSha256}));
+console.log(JSON.stringify({commit, parents, inputs, compositionMode, tree, treeManifestSha256: evidence.treeManifestSha256, bundleSha256: evidence.bundleSha256}));
