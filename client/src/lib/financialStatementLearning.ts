@@ -87,7 +87,15 @@ export function detectFinancialStatement(text: string): StatementKind | null {
 
 export function learnPerDiemStatement(text: string, sourceDocument: string): StatementLearningResult {
   const period = text.match(/De\s+(\d{4}-\d{2}-\d{2})\s+at[eé]\s+(\d{4}-\d{2}-\d{2})/i);
-  const payment = text.match(/Pagamento\s+em\s+(\d{4}-\d{2}-\d{2})/i);
+  const paymentDates = new Set<string>();
+  let invalidPaymentDate = false;
+  for (const marker of text.matchAll(/\bPagamento\s+em\b/gi)) {
+    const candidate = text.slice(marker.index! + marker[0].length).match(/^\s*(\d{4}-\d{2}-\d{2})(?=$|\s|[;:()])/);
+    if (!candidate || !validDay(candidate[1])) invalidPaymentDate = true;
+    else paymentDates.add(candidate[1]);
+  }
+  const paymentIssue = invalidPaymentDate || paymentDates.size > 1;
+  const paymentDate = !paymentIssue && paymentDates.size === 1 ? [...paymentDates][0] : undefined;
   const start = period?.[1] || '';
   const end = period?.[2] || '';
   const fp = fingerprint(text);
@@ -123,8 +131,18 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
   let invalidDepositedTotal = false;
   for (const marker of text.matchAll(/Total\s+depositado\b/gi)) {
     const tail = text.slice(marker.index! + marker[0].length);
-    const candidate = tail.match(/^\s*:?\s*R\$\s*([+-]?\s*[\d.,]+)(?=$|\s|[;:()])/);
-    const token = candidate?.[1] || '';
+    const candidate = tail.match(/^\s*(?:na\s+data\s+(\d{4}-\d{2}-\d{2})\s*)?:?\s*R\$\s*([+-]?\s*[\d.,]+)(?=$|\s|[;:()])/i);
+    const depositDate = candidate?.[1];
+    if (depositDate) {
+      // Dated deposits belong to the declared payment, not historical advances.
+      // Never guess the current payment from a different/invalid deposit date.
+      if (!validDay(depositDate) || !paymentDate || depositDate > paymentDate) {
+        invalidDepositedTotal = true;
+        continue;
+      }
+      if (depositDate < paymentDate) continue;
+    }
+    const token = candidate?.[2] || '';
     const strict = /^(?:\d+|\d{1,3}(?:\.\d{3})+),\d{2}$/.test(token);
     const cents = strict ? Number(token.replace(/\./g, '').replace(',', '')) : NaN;
     if (!strict || !Number.isSafeInteger(cents) || cents < 0) invalidDepositedTotal = true;
@@ -132,13 +150,14 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
   }
   const warnings: string[] = [];
   if (!start || !end || !validDay(start) || !validDay(end) || start > end) warnings.push('Período completo inválido ou não identificado; revisão obrigatória.');
+  if (paymentIssue) warnings.push('Datas de pagamento divergentes ou inválidas; revisão obrigatória.');
   if (conflictingMeals.length) warnings.push('Tarifas de diárias divergentes; revisão obrigatória.');
   if (!rates.length) warnings.push('Nenhuma tarifa de diária identificada.');
   if (depositedTotals.size > 1) warnings.push('Totais depositados divergentes; revisão obrigatória.');
   if (invalidDepositedTotal) warnings.push('Total depositado com formato inválido; revisão obrigatória.');
   if (!depositedTotals.size) warnings.push('Total depositado não identificado.');
-  const deposited = !invalidDepositedTotal && depositedTotals.size === 1 ? [...depositedTotals][0] / 100 : undefined;
-  return { kind: 'per_diem', competence: start.slice(0, 7), periodStart: start || undefined, periodEnd: end || undefined, paymentDate: payment?.[1], rates, totals: deposited === undefined ? {} : { deposited }, warnings };
+  const deposited = !paymentIssue && !invalidDepositedTotal && depositedTotals.size === 1 ? [...depositedTotals][0] / 100 : undefined;
+  return { kind: 'per_diem', competence: start.slice(0, 7), periodStart: start || undefined, periodEnd: end || undefined, paymentDate, rates, totals: deposited === undefined ? {} : { deposited }, warnings };
 }
 
 const PAYROLL_KEYS: Array<[RegExp, string, string, LearnedRate['unit']]> = [

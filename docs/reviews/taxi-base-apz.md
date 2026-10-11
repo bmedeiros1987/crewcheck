@@ -70,3 +70,29 @@ oficial falhou; portanto não foi possível executar o extrator PDF do app neste
 executor. O texto nativo não é prova de paridade de extração. O total declarado
 nesse texto foi corretamente mantido em revisão, sem fabricar confirmação.
 Texto e relatório privado ficam fora do repositório; não há fixture de dado real.
+
+Correção complementar de ingestão: o total vigente pode usar o rótulo
+`Total depositado na data AAAA-MM-DD R$ ...`. A data precisa ser válida e
+corresponder à única data válida declarada em `Pagamento em` do documento.
+Repetições do mesmo pagamento são aceitas; declarações divergentes ou inválidas
+são revisão obrigatória, independentemente da ordem das páginas. Totais depositados com data
+anterior são históricos e não substituem nem somam o total do pagamento atual;
+adiantamentos de despesas e seus subtotais não são depósitos atuais. Totais
+iguais repetidos por paginação contam uma vez; valores atuais divergentes,
+data futura/inválida/sem pagamento declarado e dinheiro malformado continuam
+em revisão, sem total numérico. Não houve remoção do gate de warnings.
+
+O handler `confirm` agora aplica a mesma trava de revisão obrigatória do botão,
+impedindo bypass programático com tarifas válidas e total inválido. O teste
+`regression-taxi-import-confirmation.mjs` gera PDFs exclusivamente sintéticos,
+usa o corpo exato do extrator PDF.js6.2.108, o leitor, a árvore renderizada do
+componente com hooks controlados, callbacks reais de importação/revisão/confirm
+e armazenamento real em memória. Não é teste visual de navegador.
+Confirma tarifa somente após revisão de fonte na conta vigente, com período e
+proveniência válidos. Casos negativos cobrem total/intervalo/proveniência,
+troca de conta, rotação de token e visitante. Não confirma pagamento bancário.
+
+Revisão independente externa comunicou paridade real do extrator do app com
+bytes oficiais do documento privado no SHAf2ccd91e, detectando o blocker de
+rótulo de total que motivou este complemento. O extrator não foi alterado.
+Nenhum PDF privado ou seu texto foi transferido ao repositório/CI.

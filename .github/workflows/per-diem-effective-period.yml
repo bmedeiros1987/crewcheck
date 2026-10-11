@@ -6,6 +6,9 @@ on:
     paths:
       - 'client/src/lib/compensationPolicy.ts'
       - 'scripts/regression-taxi-base-apz.mjs'
+      - 'scripts/regression-taxi-import-confirmation.mjs'
+      - 'scripts/regression-financial-statement-totals.mjs'
+      - 'client/src/components/finance/FinancialStatementImporter.tsx'
       - 'scripts/regression-operational-finance-clock.mjs'
       - 'client/src/lib/financialAmounts.ts'
       - 'client/src/lib/financialStatementLearning.ts'
@@ -39,6 +42,8 @@ jobs:
             TZ="$zone" node scripts/regression-taxi-base-apz.mjs
           done
           node scripts/regression-operational-finance-clock.mjs
+          node scripts/regression-taxi-import-confirmation.mjs
+          node scripts/regression-financial-statement-totals.mjs
       - name: Prepare canonical CrewCheck sources
         run: node scripts/v139/apply.mjs
       - name: Revalidate after preparation
@@ -49,6 +54,8 @@ jobs:
             TZ="$zone" node scripts/regression-taxi-base-apz.mjs
           done
           node scripts/regression-operational-finance-clock.mjs
+          node scripts/regression-taxi-import-confirmation.mjs
+          node scripts/regression-financial-statement-totals.mjs
       - name: TypeScript
         run: npx tsc --noEmit
       - name: Web build

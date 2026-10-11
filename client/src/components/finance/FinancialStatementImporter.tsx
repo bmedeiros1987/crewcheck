@@ -80,7 +80,7 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
   }
 
   function confirm() {
-    if (!result || !sourceConfirmed || !reviewSession.current || reviewSession.current !== financialRateSession() || (mode === 'payroll' && !cycleConfirmed)) return;
+    if (!result || result.warnings.some(item => item.includes('obrigatória')) || !sourceConfirmed || !reviewSession.current || reviewSession.current !== financialRateSession() || (mode === 'payroll' && !cycleConfirmed)) return;
     const reviewed = mode === 'payroll' ? applyReviewedPayrollCycle(result) : result.rates;
     const confirmed = reviewed.filter(item => item.valueOrigin !== 'derived').map((item) => ({ ...item, confirmed: true }));
     if (!confirmed.length) { setError('Nenhuma tarifa impressa e revisada está disponível. Valores derivados não são aplicados.'); return; }
