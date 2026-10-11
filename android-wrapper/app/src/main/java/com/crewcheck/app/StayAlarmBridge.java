@@ -12,8 +12,8 @@ public final class StayAlarmBridge {
     public StayAlarmBridge(StayAlarmEngine engine,StayAlarmEngine.Owner owner) {this.engine=engine;this.owner=owner;}
     public String capabilities() {
         JSONObject value=new JSONObject();
-        try {value.put("protocol",PROTOCOL);value.put("featureEnabled",owner.enabled());
-            value.put("atomicReplace",true);value.put("acknowledgedCancel",true);
+        try {value.put("protocol",PROTOCOL);value.put("featureEnabled",owner.enabled());value.put("permissionGranted",engine.permissionGranted());
+            value.put("ownerId",owner.activeOwner()==null?JSONObject.NULL:owner.activeOwner());value.put("atomicReplace",true);value.put("acknowledgedCancel",true);
             value.put("deliveryConfirmed",false);value.put("ownerEpoch",owner.activeOwner()==null?JSONObject.NULL:owner.epoch());}
         catch(Exception ignored){}return value.toString();
     }

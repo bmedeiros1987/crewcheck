@@ -74,12 +74,13 @@ test('replace then cancel stays serialized through async bridge completion',asyn
  await Promise.all([adapter.replace({...input,key}),adapter.cancel({key})]);
  assert.deepEqual(f.calls.map(x=>x.action),['inspect','replace','inspect','cancel']);assert.equal(f.jobs.get(key).state,'cancelled');
 });
-test('existing editor/host stay disconnected and manifest requests no additional permission',()=>{
+test('prepared host is hard OFF and manifest requests no additional permission',()=>{
  const root='android-wrapper/app/src/main/',manifest=fs.readFileSync(root+'AndroidManifest.xml','utf8');
  const permissions=[...manifest.matchAll(/<uses-permission android:name="([^"]+)"/g)].map(x=>x[1]).sort();
  assert.deepEqual(permissions,['INTERNET','ACCESS_FINE_LOCATION','ACCESS_COARSE_LOCATION','POST_NOTIFICATIONS','READ_EXTERNAL_STORAGE','WAKE_LOCK','SCHEDULE_EXACT_ALARM','REQUEST_IGNORE_BATTERY_OPTIMIZATIONS','RECEIVE_BOOT_COMPLETED'].map(x=>'android.permission.'+x).sort());
  assert.doesNotMatch(fs.readFileSync(root+'java/com/crewcheck/app/MainActivity.java','utf8'),/new StayAlarmBridge|AndroidCrewCheckStayAlarm/);
- assert.match(fs.readFileSync('client/src/components/v1391/PresentationStayManagerView.tsx','utf8'),/useRef\(createStayAlarmController\(\)\)/);
+ assert.match(fs.readFileSync('client/src/components/v1391/PresentationStayManagerView.tsx','utf8'),/useRef\(createStayAlarmController\(nativeHost.current\)\)/);
+ assert.match(fs.readFileSync(root+'java/com/crewcheck/app/StayAlarmHostAndroid.java','utf8'),/PREPARED_HOST_ENABLED=false/);
  const driver=fs.readFileSync(root+'java/com/crewcheck/app/StayAlarmAndroid.java','utf8');
  assert.doesNotMatch(driver,/requestPermissions|ACTION_REQUEST_|createNotificationChannel|startActivity/);
 });
