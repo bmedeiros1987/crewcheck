@@ -119,6 +119,15 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', de
   assert.equal(m.readManualGate(storage, 'conta-a', next), null, 'remoção explícita');
 }
 
+// 6b. Identidade do portão manual usa a data publicada, independente do fuso do aparelho.
+{
+  const storage = memoryStorage();
+  const published = { ...next, canonical: { ...next.canonical, date: '2026-10-11' } };
+  assert.equal(m.manualGateIdentity(published), 'LA3377|2026-10-11|GRU|REC');
+  m.writeManualGate(storage, 'conta-a', published, { gate: '5', author: 'Ana' }, NOW);
+  assert.equal(m.readManualGate(storage, 'conta-a', published)?.date, '2026-10-11');
+}
+
 // 7. Troca de conta: portão manual pertence à conta.
 {
   const storage = memoryStorage();
@@ -174,6 +183,8 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', de
   const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
   const preview = read('client/src/components/v1391/HomeRosterPreview.tsx');
   assert.match(preview, /<NextFlightGateCard events=\{events\}\/>/, 'card abaixo da Escala rápida');
+  const card = read('client/src/components/nextflight/NextFlightGateCard.tsx');
+  assert.doesNotMatch(card, /useMemo\(\(\) => selectNextFlight/, 'próximo voo é recalculado com o relógio, não memorizado');
   const home = read('client/src/pages/Home.tsx');
   assert.match(home, /applyNextFlightToWatchSnapshot\(base, gateInfo/, 'relógio usa a decisão do card');
   assert.match(home, /<ManualGateEditor event=\{event\}\/>/, 'portão manual no Radar');

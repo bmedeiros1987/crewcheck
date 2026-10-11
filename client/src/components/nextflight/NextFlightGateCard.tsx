@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useId, useState } from 'react';
 import { ChevronDown, Clock, DoorOpen, Pencil, Plane, Watch } from 'lucide-react';
 import { setPendingNavigationContext } from '@/lib/navigationContext';
 import { gateDisplay, selectNextFlight, type NextFlightGateInfo, type NextFlightLike } from '@/lib/nextFlightGate';
@@ -44,8 +44,9 @@ function openRadar(event: NextFlightLike, info: NextFlightGateInfo) {
 
 /** Card compacto do próximo voo, exibido abaixo da Escala rápida. Detalhes só ao tocar. */
 export function NextFlightGateCard({ events }: { events: readonly NextFlightLike[] }) {
-  const nextFlight = useMemo(() => selectNextFlight(events), [events]);
-  const info = useNextFlightGate(nextFlight);
+  // Recalculado a cada render (o hook renova a cada 30 s): o voo partido dá lugar ao seguinte.
+  const info = useNextFlightGate(selectNextFlight(events));
+  const nextFlight = info ? events.find((item) => item.id === info.eventId) || null : null;
   const sync = useWatchSyncState();
   const [open, setOpen] = useState(false);
   const detailsId = useId();

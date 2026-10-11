@@ -32,7 +32,7 @@ export type NextFlightLike = {
   terminal?: string;
   status?: string;
   date?: Date | string;
-  canonical?: { startDateTime?: string; endDateTime?: string };
+  canonical?: { startDateTime?: string; endDateTime?: string; date?: string };
 };
 
 export type RadarGateSnapshot = {
@@ -152,8 +152,14 @@ export function selectNextFlight<T extends NextFlightLike>(events: readonly T[],
   return best;
 }
 
+/** Data publicada na escala; não muda quando o aparelho troca de fuso. */
+export function flightPublishedDate(event: NextFlightLike): string {
+  const published = text(event.canonical?.date);
+  return /^\d{4}-\d{2}-\d{2}$/.test(published) ? published : flightOperationalDate(event);
+}
+
 export function manualGateIdentity(event: NextFlightLike): string {
-  return [upper(event.flightNumber), flightOperationalDate(event), upper(event.origin), upper(event.destination)].join('|');
+  return [upper(event.flightNumber), flightPublishedDate(event), upper(event.origin), upper(event.destination)].join('|');
 }
 
 export function manualGateAccountKey(user: { id?: string | null; email?: string | null } | null | undefined): string {
@@ -287,7 +293,7 @@ export function resolveNextFlightGate(input: {
   return {
     eventId: event.id,
     flight: upper(event.flightNumber),
-    operationalDate: flightOperationalDate(event),
+    operationalDate: flightPublishedDate(event),
     origin: upper(event.origin),
     destination: upper(event.destination),
     departureEpochMs,
