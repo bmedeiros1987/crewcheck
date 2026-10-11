@@ -24,6 +24,9 @@ export type MyCrewCareControllerSnapshot = Readonly<{
 export type MyCrewCareController = Readonly<{
   getSnapshot(): MyCrewCareControllerSnapshot;
   isBoundTo(context: MyCrewCareContext | null, stays?: readonly MyCrewCarePersistedStay[]): boolean;
+  canRetryLogout(context: MyCrewCareContext | null): boolean;
+  getLogoutRecoveryEpoch(context: MyCrewCareContext | null): number | null;
+  retryLogout(context: MyCrewCareContext | null, expectedEpoch: number): Promise<boolean>;
   subscribe(listener: () => void): () => void;
   bind(context: MyCrewCareContext | null, stays?: readonly MyCrewCarePersistedStay[]): Promise<boolean>;
   setAutomatic(enabled: boolean): void;

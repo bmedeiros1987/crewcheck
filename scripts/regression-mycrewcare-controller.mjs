@@ -389,14 +389,7 @@ test('disconnect publishes busy immediately and preserves cleanup retry after co
 });
 
 
-test('real panel hides prior account facts before binding effect with colliding stay ids', async () => {
-  const fake = fakeBridge();
-  const controller = make(fake);
-  const a = ctx('A');
-  const stays = [{ ...stayFor(a), id: 'shared-stay' }];
-  await controller.bind(a, stays);
-  controller.setAutomatic(true);
-  assert.equal(await controller.refresh({ userInitiated: true }), true);
+function panelFor(controller) {
   const source = readFileSync(new URL('../client/src/components/mycrewcare/MyCrewCareV3Panel.tsx', import.meta.url), 'utf8');
   const nativeRequire = createRequire(import.meta.url);
   const exports = {};
@@ -410,7 +403,19 @@ test('real panel hides prior account facts before binding effect with colliding 
   vm.runInContext(ts.transpileModule(source, { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
   } }).outputText, ui);
-  const render = (context, currentStays) => renderToStaticMarkup(exports.default({ context, stays: currentStays }));
+  return exports.default;
+}
+
+test('real panel hides prior account facts before binding effect with colliding stay ids', async () => {
+  const fake = fakeBridge();
+  const controller = make(fake);
+  const a = ctx('A');
+  const stays = [{ ...stayFor(a), id: 'shared-stay' }];
+  await controller.bind(a, stays);
+  controller.setAutomatic(true);
+  assert.equal(await controller.refresh({ userInitiated: true }), true);
+  const panel = panelFor(controller);
+  const render = (context, currentStays) => renderToStaticMarkup(panel({ context, stays: currentStays }));
   assert.match(render(a, stays), /Hotel Atlântico/);
   assert.match(render(a, stays), /Pickup:/);
   for (const changed of [ctx('B'), { ...a, rosterId: 'other-roster' }, { ...a, rosterRevision: 'rev-2' }, { ...a, providerSubject: 'other-subject' }, null]) {
@@ -431,4 +436,113 @@ test('real panel hides prior account facts before binding effect with colliding 
   controller.setAutomatic(true);
   assert.equal(await controller.refresh({ userInitiated: true }), true);
   assert.match(render(b, bStays), /Hotel Atlântico/);
+});
+
+
+test('failed logout renders only owner-scoped recovery and rechecks stale retry actions', async () => {
+  const fake = fakeBridge();
+  const controller = make(fake);
+  const a = ctx('A');
+  const stays = [{ ...stayFor(a), id: 'shared-stay' }];
+  const panel = panelFor(controller);
+  await controller.bind(a, stays);
+  controller.setAutomatic(true);
+  assert.equal(await controller.refresh({ userInitiated: true }), true);
+  fake.setCleanupOk(false);
+  await assert.rejects(controller.logout());
+  assert.equal(controller.getSnapshot().canRetryCleanup, true);
+  const tree = panel({ context: a, stays });
+  assert.match(renderToStaticMarkup(panel({ context: null, stays: [] })), /Tentar desconectar novamente/);
+  await controller.bind(null, []);
+  assert.match(renderToStaticMarkup(panel({ context: null, stays: [] })), /Tentar desconectar novamente/, 'logged-out binding effect preserves recovery');
+  const html = renderToStaticMarkup(tree);
+  assert.match(html, /Tentar desconectar novamente/);
+  assert.doesNotMatch(html, /Hotel Atlântico|Pickup:|Última atualização|checkbox|Atualizar agora/);
+  assert.equal(controller.hotel('shared-stay'), null);
+  assert.equal(controller.pickup('shared-stay'), null);
+  for (const other of [ctx('B'), { ...a, providerSubject: 'different-subject' }, { ...a, rosterRevision: 'rev-2' }]) {
+    assert.equal(renderToStaticMarkup(panel({ context: other, stays })), '');
+  }
+  function findButton(node) {
+    if (!node || typeof node !== 'object') return null;
+    if (node?.type === 'button') return node;
+    for (const child of [node?.props?.children].flat()) {
+      const found = findButton(child);
+      if (found) return found;
+    }
+    return null;
+  }
+  const retry = findButton(tree);
+  assert.ok(retry);
+  const before = fake.calls.disconnect.length;
+  retry.props.onClick(); // actual rendered recovery action, without binding A again
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fake.calls.disconnect.length, before + 1);
+  assert.deepEqual(fake.calls.disconnect.at(-1), ['A', true]);
+  assert.match(renderToStaticMarkup(panel({ context: a, stays })), /Tentar desconectar novamente/, 'failed retry stays available');
+  fake.setCleanupOk(true);
+  findButton(panel({ context: null, stays: [] })).props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(controller.getSnapshot().canRetryCleanup, false);
+  assert.equal(renderToStaticMarkup(panel({ context: a, stays })), '');
+
+  // A retained callback must not clean B after a new binding.
+  await controller.bind(a, stays);
+  fake.setCleanupOk(false);
+  await assert.rejects(controller.logout());
+  const stale = findButton(panel({ context: a, stays }));
+  const staleNull = findButton(panel({ context: null, stays: [] }));
+  const b = ctx('B');
+  await controller.bind(b, [{ ...stays[0], ...b }]);
+  const count = fake.calls.disconnect.length;
+  stale.props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fake.calls.disconnect.length, count);
+  assert.equal(renderToStaticMarkup(panel({ context: null, stays: [] })), '');
+  assert.equal(renderToStaticMarkup(panel({ context: a, stays })), '');
+  await assert.rejects(controller.logout()); // B now owns a new logged-out recovery
+  const afterBLogout = fake.calls.disconnect.length;
+  staleNull.props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fake.calls.disconnect.length, afterBLogout, 'old null-context callback cannot retarget B recovery');
+  assert.match(renderToStaticMarkup(panel({ context: null, stays: [] })), /Tentar desconectar novamente/);
+});
+
+
+test('late logout success or failure never exposes owner A recovery while B is bound', async () => {
+  const { createMyCrewCarePersistentSession } = await import('../shared/myCrewCarePersistentSession.mjs');
+  for (const fail of [false, true]) {
+    let resolveCleanup, rejectCleanup;
+    const gate = new Promise((resolve, reject) => { resolveCleanup = resolve; rejectCleanup = reject; });
+    const store = new Map();
+    const session = createMyCrewCarePersistentSession({ now: () => NOW, storage: {
+      read: id => store.get(id), write: (id, payload) => store.set(id, payload), clear: id => store.delete(id),
+    }, adapter: {
+      disconnect: () => gate,
+      read: async request => ({ schemaVersion: 3, requestId: request.requestId, context: request.context,
+        authenticated: true, providerSubject: request.context.providerSubject,
+        url: 'https://api2.apicrewcare.com/LATAM/mytravel.aspx', observedAt: new Date(NOW).toISOString(),
+        records: [record], emptyConfirmed: false }),
+    } });
+    const controller = make(fakeBridge(), { session });
+    const a = ctx('A'), b = ctx('B');
+    const aStays = [{ ...stayFor(a), id: 'shared-stay' }], bStays = [{ ...stayFor(b), id: 'shared-stay' }];
+    const panel = panelFor(controller);
+    await controller.bind(a, aStays);
+    controller.setAutomatic(true);
+    await controller.refresh({ userInitiated: true });
+    const logout = controller.logout().then(() => null, error => error);
+    await controller.bind(null, []); // logged-out effect during cleanup
+    await controller.bind(b, bStays);
+    controller.setAutomatic(true);
+    assert.equal(await controller.refresh({ userInitiated: true }), true);
+    if (fail) rejectCleanup(new Error('synthetic profile failure')); else resolveCleanup();
+    assert.equal(Boolean(await logout), fail);
+    assert.equal(controller.isBoundTo(b, bStays), true);
+    assert.match(renderToStaticMarkup(panel({ context: b, stays: bStays })), /Hotel Atlântico/);
+    assert.equal(renderToStaticMarkup(panel({ context: a, stays: aStays })), '');
+    assert.equal(renderToStaticMarkup(panel({ context: null, stays: [] })), '');
+    assert.equal(await controller.retryLogout(a), false);
+    assert.equal(await controller.retryLogout(null), false);
+  }
 });

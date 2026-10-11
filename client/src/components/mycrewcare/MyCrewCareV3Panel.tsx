@@ -50,7 +50,17 @@ export default function MyCrewCareV3Panel({ context, stays }: Props) {
 
   if (snapshot.capability !== 'available') return null;
   // React renders incoming props before the binding effect. Never expose the old scope.
-  if (!controller.isBoundTo(context, stays)) return null;
+  if (!controller.isBoundTo(context, stays)) {
+    const recoveryEpoch = controller.getLogoutRecoveryEpoch(context);
+    if (recoveryEpoch === null) return null;
+    // Recovery contains no prior facts, cache age, consent or refresh controls.
+    return <section className="cz-toolbox cc-mycrewcare" aria-label="Limpeza MyCrewCare">
+      <p role="status">A limpeza dos dados não foi concluída. Tente desconectar novamente.</p>
+      <button type="button" disabled={snapshot.busy} onClick={() => { void controller.retryLogout(context, recoveryEpoch).catch(() => undefined); }}>
+        Tentar desconectar novamente
+      </button>
+    </section>;
+  }
 
   const stayIds = stays.map(stay => stay.id);
   const message = STATUS_TEXT[snapshot.status] ?? STATUS_TEXT['sync-error'];

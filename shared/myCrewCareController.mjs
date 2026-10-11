@@ -62,6 +62,7 @@ export function createMyCrewCareController({
   let boundAccount = null;
   let bindingEpoch = 0;
   let boundKey = null;
+  let logoutRecoveryKey = null;
   let snapshot = build();
   let snapshotSignature = JSON.stringify(snapshot);
 
@@ -93,6 +94,15 @@ export function createMyCrewCareController({
       requiresInteraction: !state.connected,
       changes: state.changes,
     });
+  }
+
+  function canRetryLogout(context) {
+    const normalized = normalizeMyCrewCareContext(context);
+    if (!engine || boundKey !== null || logoutRecoveryKey === null) return false;
+    // Null props are the logged-out view; the retained owner comes only from the prior binding.
+    if (context !== null && (!normalized || logoutRecoveryKey !== JSON.stringify(normalized))) return false;
+    const state = engine.state();
+    return state.cleanupPending === true && state.cleanupInProgress !== true;
   }
 
   function emit() {
@@ -132,6 +142,22 @@ export function createMyCrewCareController({
       const key = myCrewCareBindingKey(context, stays);
       return engine !== null && key !== null && key === boundKey;
     },
+    canRetryLogout,
+    getLogoutRecoveryEpoch: context => canRetryLogout(context) ? bindingEpoch : null,
+    async retryLogout(context, expectedEpoch) {
+      // Recheck at action time: an old rendered callback must not target a new binding.
+      if (expectedEpoch !== bindingEpoch || !canRetryLogout(context)) return false;
+      const epoch = bindingEpoch;
+      const cleanup = engine.logout();
+      emit();
+      try {
+        await cleanup;
+        if (epoch === bindingEpoch) logoutRecoveryKey = null;
+        return true;
+      } finally {
+        emit();
+      }
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -140,10 +166,16 @@ export function createMyCrewCareController({
     /** Bind the active account/roster. A different account never sees the previous account's data. */
     async bind(context, stays = []) {
       if (!engine) return false;
+      // A logged-out effect must not erase or retarget the previous owner's cleanup.
+      if (context === null && boundKey === null && logoutRecoveryKey !== null) {
+        const state = engine.state();
+        if (state.cleanupPending || state.cleanupInProgress) return false;
+      }
       const accountId = context?.accountId ?? null;
       if (accountId !== boundAccount) refreshSuggested = false;
       const epoch = ++bindingEpoch;
       boundAccount = accountId;
+      logoutRecoveryKey = null;
       engine.setContext(context, stays);
       boundKey = myCrewCareBindingKey(context, stays);
       emit();
@@ -217,6 +249,8 @@ export function createMyCrewCareController({
     async logout() {
       if (!engine) return;
       const epoch = ++bindingEpoch;
+      // Retain only verified identity, never stay content or facts, for owner-scoped retry.
+      if (boundKey !== null) logoutRecoveryKey = JSON.stringify(JSON.parse(boundKey)[0]);
       boundAccount = null;
       boundKey = null;
       refreshSuggested = false;
@@ -224,6 +258,7 @@ export function createMyCrewCareController({
       emit();
       try {
         await cleanup;
+        if (epoch === bindingEpoch) logoutRecoveryKey = null;
       } finally {
         if (epoch === bindingEpoch) {
           refreshSuggested = false;
