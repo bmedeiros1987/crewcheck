@@ -50,3 +50,29 @@ The laboratory adapter maps a Flight Status fixture to the existing Radar shape 
 A numeric value the provider did not report stays `null` in the adapter and in the diagnostic summary. Only a real number or a plain numeric string (`^-?\d+(\.\d+)?$`) is accepted, so `null`, an empty string, a boolean, an array (`[]`, `[null]`, `[1]`) or an object never become a displayed `0` or a fabricated value; `Number([])` and `Number([null])` are `0`, which is exactly why they are rejected. `ciriumCoverage` counts delays as coverage only when a real delay value was reported.
 
 Activation remains blocked until a real response demonstrates the correct segment identity and acceptable coverage for status, departure gate/terminal, scheduled/estimated/actual times, and freshness. After that evidence, integration must be a separate PR with rollback flag, health isolation, cache, and existing-provider preservation.
+
+### Revisão offline de 11/10/2026: datas contraditórias
+
+`acceptRow` confronta todas as evidências de partida planejada, em vez de aceitar
+apenas a primeira `dateLocal`. Também valida cada horário operacional fornecido
+(partida/chegada publicada, programada, estimada e real), inclusive a coerência de
+`dateLocal` com `dateUtc`. Uma data atual em `departureDate` não legitima horários
+de 2020. Linhas rejeitadas não produzem resumo e são contadas em `rejectedRows`;
+o probe usa a mesma regra. As janelas são conservadoras: partida local planejada
+no dia solicitado, UTC e partidas operacionais em até um dia, chegada em até dois
+dias. Isso pode rejeitar atrasos extremos e não valida o contrato real do provedor.
+
+Regressões negativas em `scripts/regression-cirium-guard.mjs`: nove combinações
+contraditórias nos caminhos de voo e probe, mistura de linha válida/inválida e
+controle positivo de cruzamento de meia-noite UTC/local. O novo contrato falha
+no HEAD anterior `2266060b61190a71382d08136d76b10c42a1462d` (`available` em vez de
+`invalid_payload`) e passa após o reparo. A fixture positiva do diagnóstico agora
+usa o dia da consulta também nos horários operacionais, removendo a contradição
+que ela própria continha.
+
+Verificação local (Node 24.19.0): `node scripts/check-cirium-offline.mjs`,
+`node scripts/regression-radar-occurrence-identity.mjs` e sintaxe do módulo passam.
+A preparação canônica `scripts/v139/apply.mjs` foi executada em cópia descartável,
+com ambiente vazio e fetch real proibido; o contrato offline passa também nessa
+cópia. Não foi identificado gerador que reescreva este módulo. Integração OFF;
+sem chamada real, rota publicada, alteração de configuração, merge ou deploy.

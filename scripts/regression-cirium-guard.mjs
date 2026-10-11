@@ -308,3 +308,46 @@ assert.equal((await flightWith({}, 404)).ok, false);
 }
 
 console.log('Cirium guard/validation regression OK; no upstream calls');
+
+// Review 2026-10-11: every supplied operational time must belong to the occurrence.
+{
+  const old = { dateLocal: '2020-03-01T09:20:00.000', dateUtc: '2020-03-01T12:20:00.000Z' };
+  const oldArrival = { dateLocal: '2020-03-01T11:20:00.000', dateUtc: '2020-03-01T14:20:00.000Z' };
+  const contradictory = [
+    { scheduledGateDeparture: old, scheduledGateArrival: oldArrival },
+    { publishedDeparture: old, publishedArrival: oldArrival },
+    { estimatedGateDeparture: old, estimatedGateArrival: oldArrival },
+    { actualGateDeparture: old, actualGateArrival: oldArrival },
+    { scheduledGateDeparture: { dateLocal: `${today}T09:20:00.000`, dateUtc: old.dateUtc } },
+    { scheduledGateDeparture: { dateLocal: old.dateLocal, dateUtc: `${today}T12:20:00.000Z` } },
+    { scheduledGateArrival: oldArrival },
+    { actualRunwayArrival: oldArrival },
+    { publishedDeparture: { dateLocal: 'invalid' } },
+  ];
+  for (const operationalTimes of contradictory) {
+    const bad = row({ operationalTimes }); // row.departureDate still asserts today
+    const result = await flightWith({ flightStatuses: [bad] });
+    assert.equal(result.state, 'invalid_payload', JSON.stringify(operationalTimes));
+    assert.equal(result.ok, false);
+    assert.equal(result.rejectedRows, 1);
+    assert.equal(result.count, undefined);
+    assert.equal(result.flights, undefined, 'invalid occurrence never exposes a flight summary');
+    const probe = await diagnoseCirium({ guard: createCiriumGuard({ minIntervalMs: 0 }),
+      fetchImpl: async () => ok({ flightStatuses: [{ ...bad, flightNumber: '3377' }] }) });
+    assert.equal(probe.state, 'invalid_payload', 'probe must use the same occurrence validation');
+  }
+  const accepted = row();
+  const mixed = await flightWith({ flightStatuses: [accepted, row({ operationalTimes: contradictory[0] })] });
+  assert.equal(mixed.count, 1);
+  assert.equal(mixed.rejectedRows, 1);
+  const nextDay = new Date(Date.parse(`${today}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+  const midnight = await flightWith({ flightStatuses: [row({
+    departureDate: { dateLocal: `${today}T23:30:00.000`, dateUtc: `${nextDay}T02:30:00.000Z` },
+    operationalTimes: {
+      scheduledGateDeparture: { dateLocal: `${today}T23:30:00.000`, dateUtc: `${nextDay}T02:30:00.000Z` },
+      scheduledGateArrival: { dateLocal: `${nextDay}T01:30:00.000`, dateUtc: `${nextDay}T04:30:00.000Z` },
+    },
+  })] });
+  assert.equal(midnight.state, 'available', 'coherent local/UTC midnight crossing remains valid');
+}
+console.log('Cirium contradictory occurrence regression OK; synthetic rows only');

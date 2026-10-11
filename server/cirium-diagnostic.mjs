@@ -336,14 +336,34 @@ function acceptRow(row, carrier, flight, date) {
   if (safeCode(row.flightNumber, /^[0-9A-Z]{1,5}$/) !== flight) return false;
 
   const times = row.operationalTimes && typeof row.operationalTimes === 'object' ? row.operationalTimes : {};
-  const candidates = [row.departureDate, times.scheduledGateDeparture, times.publishedDeparture].filter(Boolean);
-  const local = candidates.map(localDateOf).find(Boolean);
-  if (local) {
-    if (local !== date) return false;
-  } else {
-    const utc = candidates.map(utcDateOf).find(Boolean);
-    // UTC-only evidence can differ from the local date by at most one day.
-    if (!utc || Math.abs(Date.parse(`${utc}T12:00:00Z`) - Date.parse(`${date}T12:00:00Z`)) > 86_400_000) return false;
+  const dayMs = 86_400_000;
+  const requestedDay = Date.parse(`${date}T12:00:00Z`);
+  const plannedDepartures = [row.departureDate, times.scheduledGateDeparture, times.publishedDeparture].filter((v) => v != null);
+  if (!plannedDepartures.length) return false;
+
+  function consistentTime(value, kind) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const local = localDateOf(value);
+    const utc = utcDateOf(value);
+    if (!local && !utc) return false;
+    if (value.dateLocal != null && (!local || !safeDateParts(local) || !Number.isFinite(Date.parse(value.dateLocal)))) return false;
+    if (value.dateUtc != null && !utc) return false;
+    // Local and UTC may straddle midnight, but cannot describe different years/days.
+    if (local && utc && Math.abs(Date.parse(`${local}T12:00:00Z`) - Date.parse(`${utc}T12:00:00Z`)) > dayMs) return false;
+    for (const [day, isLocal] of [[local, true], [utc, false]]) {
+      if (!day) continue;
+      const delta = (Date.parse(`${day}T12:00:00Z`) - requestedDay) / dayMs;
+      if (kind === 'planned-departure' && isLocal && delta !== 0) return false;
+      // Operational departures may be delayed into the next day; arrivals may cross
+      // another midnight. Beyond these conservative bounds the occurrence is unverified.
+      if (delta < -1 || delta > (kind === 'arrival' ? 2 : 1)) return false;
+    }
+    return true;
+  }
+  if (!plannedDepartures.every((value) => consistentTime(value, 'planned-departure'))) return false;
+  for (const [name, value] of Object.entries(times)) {
+    if (value == null || !/(Departure|Arrival)$/.test(name)) continue;
+    if (!consistentTime(value, /Arrival$/.test(name) ? 'arrival' : 'departure')) return false;
   }
 
   const departure = safeCode(row.departureAirportFsCode, /^[A-Z0-9]{3,4}$/);
