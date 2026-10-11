@@ -4031,12 +4031,12 @@ function WakeupView({ event }: { event: ZeroLeg }) {
   const [health, setHealth] = useState<any>(null);
   const [activeTest, setActiveTest] = useState('');
   const admin = isAdmin();
-  useEffect(()=>{const updateNotificationChoices=()=>{setLead(String(wakeupLeadMinutes()));setChannel(wakeupChannel());setChatId(storage.get('crewcheck_telegram_chat_id',''));setPhone(storage.get('crewcheck_wakeup_phone',''));};updateNotificationChoices();window.addEventListener('crewcheck:notification-preferences-changed',updateNotificationChoices);window.addEventListener('crewcheck:auth-changed',updateNotificationChoices);return()=>{window.removeEventListener('crewcheck:notification-preferences-changed',updateNotificationChoices);window.removeEventListener('crewcheck:auth-changed',updateNotificationChoices);};},[]);
   const planned = wakeupDateForEvent(event);
   const hotel = safe(event.hotel, event.kind === 'stay' ? `Hotel em ${city(event.destination || event.origin)}` : 'Sem hotel informado');
   // Continuação de jornada não tem apresentação própria; o despertador usa a
   // decolagem em vez de anunciar "Conexão/Solo" como horário (#512).
   const presentation = publishedPresentationOf(event) || safe(event.departure, 'A confirmar');
+  useEffect(()=>{const updateNotificationChoices=()=>{setLead(String(wakeupLeadMinutes()));setChannel(wakeupChannel());setChatId(storage.get('crewcheck_telegram_chat_id',''));setPhone(storage.get('crewcheck_wakeup_phone',''));};updateNotificationChoices();window.addEventListener('crewcheck:notification-preferences-changed',updateNotificationChoices);window.addEventListener('crewcheck:auth-changed',updateNotificationChoices);return()=>{window.removeEventListener('crewcheck:notification-preferences-changed',updateNotificationChoices);window.removeEventListener('crewcheck:auth-changed',updateNotificationChoices);};},[]);
 
   useEffect(() => {
     Promise.all([
