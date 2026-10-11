@@ -78,8 +78,8 @@ the existing offline suite. A contract test checks each standalone changed path.
 
 Caller-provided acknowledged/reconciled/positive store outcome fields are refused.
 The older publisher's final persistence calls are therefore deliberately NOT
-supported by this increment; do not wire it into publication. Mapping the existing
-trusted in-process helpers' durable final results into Python receipts still needs
+supported by this increment; do not wire it into publication. Read-only projection of existing trusted helpers' durable final results is now
+provided below; invoking the helpers from the actual publisher still requires
 separate lifecycle integration. Same-state evidence enrichment, recovery after
 runner loss and authoritative reconciliation are also not implemented here.
 
@@ -96,3 +96,30 @@ limited JSON schema: printable ASCII keys, UTF-8 strings, null/booleans, safe
 integers, arrays and objects. Fractional/unsafe numbers, non-ASCII keys and lone
 surrogates fail closed. Cross-language tests include Unicode release names,
 emoji, controls and nested values; schema limits are not silently coerced.
+
+
+## Verified final helper projection (OFF)
+
+ReceiptBackend.project_verified_result accepts a helper result as a lookup claim,
+not authority. It verifies pinned package/owner/source/controller/run/AAB/version,
+edit and staged snapshots, known lifecycle revision progression, and reads the
+exact existing Node record. Only matching durable state produces Python outcome
+flags. Reconciliation also requires the complete observation matching the persisted
+proof hash, preceding acknowledged revision, inventory and review/edit guards.
+No final-state advance/write, retry, release or rollover operation is exposed.
+
+Caller-authored final persist calls remain refused. Successful acknowledged import
+may subsequently import the next proven reconciled revision; replay or uncertainty
+blocks the instance. A new owner still cannot acquire the reserved package. The
+projection preserves unknown store availability, including after reconciliation;
+it does not prove tester access, review submission or public availability.
+
+The test-only batch fixture invokes existing coordinatedCommit and
+reconcileAcknowledged with a fictional commit callback and complete fictional
+observation, on deterministic fictional SQL. Positive, forged, stale, owner/hash,
+snapshot/proof drift and lost read responses are exercised through the actual
+Python/Node contract. This is not the real isolated MySQL end-to-end test; the
+existing real MySQL QA continues to cover prior components. No runtime wiring,
+real state reader, production identity/transport/DB access or Play eligibility is
+proved. Helper invocation, restart recovery, same-state enrichment and publisher
+lifecycle coupling remain separate, and all automation gates remain OFF.

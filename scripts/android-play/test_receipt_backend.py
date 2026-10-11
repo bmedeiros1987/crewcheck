@@ -13,9 +13,9 @@ OPEN = dict(BASE, state='edit_open', editId='edit1')
 PENDING = dict(OPEN, state='pending', track='qa', expectedTrack={'track':'qa','releases':[{'name':'Atualização ✈️','status':'completed','versionCodes':['144201']}]}, otherTracksBefore={}, committed=None, acknowledged=False, verified=False)
 
 class Fixture:
-    def __init__(self): self.frames=[]; self.lose_sql_at=None; self.lose_reply=False; self.last=None
+    def __init__(self): self.frames=[]; self.lose_sql_at=None; self.lose_reply=False; self.last=None; self.finish_after=None; self.final_outcome=None; self.reconcile_after=None
     def run(self, uncertain=False):
-        result=subprocess.run(['node',str(Path(__file__).with_suffix('.mjs'))],input=json.dumps(dict(binding=BINDING,frames=self.frames,loseSqlAt=self.lose_sql_at,uncertainCommit=uncertain,snapshots=[PENDING['expectedTrack'],{'z':[None,True,False,1,-1,9007199254740991,'é\u2028✈️\n'], 'a':{}}])),text=True,capture_output=True,check=True)
+        result=subprocess.run(['node',str(Path(__file__).with_suffix('.mjs'))],input=json.dumps(dict(binding=BINDING,frames=self.frames,loseSqlAt=self.lose_sql_at,uncertainCommit=uncertain,finishAfter=self.finish_after,finalOutcome=self.final_outcome,reconcileAfter=self.reconcile_after,expectedTrack=PENDING['expectedTrack'],otherTracks=PENDING['otherTracksBefore'],snapshots=[PENDING['expectedTrack'],{'z':[None,True,False,1,-1,9007199254740991,'é\u2028✈️\n'], 'a':{}}])),text=True,capture_output=True,check=True)
         self.last=json.loads(result.stdout); return self.last
     def exchange(self, frame):
         self.frames.append(frame); result=self.run()
@@ -80,3 +80,65 @@ offline = text.split('  offline-guards:\n')[1].split('  inspect-existing-play-ac
 assert 'run: python3 scripts/android-play/test_journal_transport.py' in offline
 assert 'import test_receipt_backend' in Path(__file__).with_name('test_journal_transport.py').read_text()
 print('PASS: each receipt backend/test/SQL fixture source-only PR path triggers the existing offline suite; unrelated documentation does not')
+
+
+# Trusted Node helpers persist final outcomes; Python only reads/proves them.
+def finalized(outcome):
+    f,b,j=setup();j.reserve(BASE);j.persist(OPEN)
+    f.finish_after=len(f.frames)-1;f.final_outcome=outcome
+    completed=f.run()
+    return f,b,j,copy.deepcopy(completed['finalResult']),copy.deepcopy(completed['observation'])
+
+def project(b,result,observation=None,expected=None,other=None):
+    return b.project_verified_result(result,expected if expected is not None else PENDING['expectedTrack'],other if other is not None else PENDING['otherTracksBefore'],observation)
+
+for outcome in ('acknowledged','reconciled','uncertain'):
+    f,b,j,result,observation=finalized(outcome)
+    count=len(f.frames);receipt=project(b,result,observation)
+    assert [json.loads(frame)['operation'] for frame in f.frames[count:]]==['read']
+    assert receipt['storeAvailability']=='unknown' and receipt['retryAllowed'] is False and receipt['rolloverAllowed'] is False
+    assert receipt['state']==('reconciliation_required' if outcome=='uncertain' else outcome)
+    assert receipt['committed']==(None if outcome=='uncertain' else True)
+    assert receipt['acknowledged']==(outcome!='uncertain') and receipt['verified']==(outcome=='reconciled')
+    assert b.read(BINDING['package'])==receipt and f.last['finalCommitCalls']==1
+    count=len(f.frames);rejects(lambda:project(b,result,observation));rejects(lambda:j.reserve(BASE));assert len(f.frames)==count
+    assert f.last['record']['owner']==BINDING['owner'] and f.last['record']['state']==receipt['state']
+
+# Plausible forged final claim while actual Node row is still edit_open.
+f,b,j=setup();j.reserve(BASE);j.persist(OPEN)
+forged=dict(package=BINDING['package'],owner=BINDING['owner'],revision=4,state='acknowledged',intent=dict(b.intent,track='qa',expectedTrackSha256=snapshot_digest(PENDING['expectedTrack']),otherTracksBeforeSha256=snapshot_digest({})),retryAllowed=False,storeAvailability='unknown')
+rejects(lambda:project(b,forged));assert f.last['record']['state']=='edit_open'
+count=len(f.frames);rejects(lambda:project(b,forged));assert len(f.frames)==count
+
+for mutate in (lambda r:r.update(revision=3), lambda r:r.update(owner='foreign'),lambda r:r['intent'].update(artifactSha256='f'*64),lambda r:r['intent'].update(expectedTrackSha256='f'*64),lambda r:r.update(retryAllowed=True)):
+    f,b,j,result,observation=finalized('acknowledged');mutate(result);count=len(f.frames)
+    rejects(lambda:project(b,result));assert len(f.frames)==count
+
+# Proof drift/missing proof and snapshot drift cannot grant verified status.
+for change in ('snapshot','proof','missing','availability'):
+    f,b,j,result,observation=finalized('reconciled');count=len(f.frames)
+    expected=copy.deepcopy(PENDING['expectedTrack'])
+    if change=='snapshot':expected['releases'][0]['name']='forged'
+    if change=='proof':observation['pendingReview']=True
+    if change=='missing':result['intent'].pop('reconciliationSha256')
+    if change=='availability':result['storeAvailability']='available'
+    rejects(lambda:project(b,result,observation,expected));assert len(f.frames)==count
+
+# Real final write in fictional SQL, but read response disappears: no projection/retry.
+f,b,j,result,observation=finalized('reconciled');previous=copy.deepcopy(b.value);f.lose_reply=True
+rejects(lambda:project(b,result,observation));assert b.value==previous and f.last['record']['state']=='reconciled'
+count=len(f.frames);rejects(lambda:project(b,result,observation));rejects(lambda:j.reserve(BASE));assert len(f.frames)==count
+print('PASS: final Node helper results imported only after exact owned readback and snapshot/proof checks; forged/stale/drift/lost replies blocked; no final writes, release or retry; fictional SQL only')
+
+
+# Read an acknowledged result, then the trusted helper's next reconciled revision.
+f,b,j,result,observation=finalized('acknowledged');ack=project(b,result)
+assert ack['acknowledged'] is True and ack['verified'] is False
+f.reconcile_after=len(f.frames)-1
+completed=f.run();result=copy.deepcopy(completed['finalResult']);observation=copy.deepcopy(completed['observation'])
+count=len(f.frames);final=project(b,result,observation)
+assert final['verified'] is True and b.revision==5
+assert [json.loads(frame)['operation'] for frame in f.frames[count:]]==['read']
+assert b.read(BINDING['package'])==final
+count=len(f.frames);rejects(lambda:project(b,result,observation));rejects(lambda:j.reserve(BASE));assert len(f.frames)==count
+print('PASS: acknowledged-to-reconciled helper progression imports only next verified revision; terminal projection remains locked; fictional SQL only')
