@@ -10,19 +10,19 @@ export function createStayHostRuntime({port,readAccount,readToken,onState=()=>{}
   const pending=new Map();
   const send=(action,extra={})=>new Promise((resolve,reject)=>{
     const id=`stay-${++sequence}`,timer=setTimer(()=>{pending.delete(id);reject(Error('host timeout'));},timeout);
-    pending.set(id,{resolve,reject,timer,generation});
+    pending.set(id,{resolve,reject,timer,generation,action});
     try{port.postMessage(JSON.stringify({id,action,...extra}));}catch(error){pending.delete(id);clearTimer(timer);reject(error);}
   });
   const listener=event=>{try{
     const value=JSON.parse(event.data),request=pending.get(value.id);if(!request)return;
     pending.delete(value.id);clearTimer(request.timer);
-    if(request.generation!==generation||!['ok','verified','revoked'].includes(value.state))request.reject(Error('host session unavailable'));
+    if(request.generation!==generation||value.state!==({authenticate:'verified',revoke:'revoked',transact:'ok'}[request.action]))request.reject(Error('host session unavailable'));
     else request.resolve(value.payload);
   }catch{}};
   port.addEventListener('message',listener);
-  function reset(){generation++;adapter=null;session=null;permission=false;programmed.clear();onState(false);if(leaseTimer!==null)clearTimer(leaseTimer);leaseTimer=null;
+  function reset(){generation++;adapter=null;session=null;permission=false;onState(false);if(leaseTimer!==null)clearTimer(leaseTimer);leaseTimer=null;
     for(const request of pending.values()){clearTimer(request.timer);request.reject(Error('session invalidated'));}pending.clear();}
-  async function revoke(){reset();try{await send('revoke');}catch{}}
+  async function revoke(){reset();try{await send('revoke');return {state:'native-revoked',cancelConfirmed:false};}catch{return {state:'revocation-unknown',cancelConfirmed:false};}}
   async function authenticate(){reset();const captured=generation,account=readAccount(),token=readToken();
     if(!account||!token){await revoke();return false;}
     try{
@@ -38,8 +38,17 @@ export function createStayHostRuntime({port,readAccount,readToken,onState=()=>{}
     }catch{if(captured===generation){adapter=null;session=null;}return false;}
   }
   return {authenticate,revoke,replace:async input=>adapter?await (()=>{programmed.add(input.key);return adapter.replace(input);})():({state:'not-programmed',reason:'native-host-unavailable',key:input.key}),
-    cancel:input=>adapter?adapter.cancel(input):Promise.resolve({state:'not-programmed',reason:'native-host-unavailable',key:input.key}),
+    cancel:async input=>{programmed.add(input.key);const current=adapter;if(!current){await revoke();return {state:'unknown',reason:'native-cancellation-unconfirmed',key:input.key};}
+      const result=await current.cancel(input);if(result.state==='cancelled')programmed.delete(input.key);else await revoke();return result;},
     atomicReplace:true,acknowledgedCancel:true,
-    async invalidate(){const current=adapter;if(!current)return;session=`${session}:edit-${++sequence}`;for(const key of [...programmed]){await current.cancel({key});programmed.delete(key);}},
+    async invalidate(){const current=adapter;
+      if(!programmed.size)return {state:'no-known-jobs'};
+      if(!current)return revoke();
+      session=`${session}:edit-${++sequence}`;
+      for(const key of [...programmed]){const result=await current.cancel({key});
+        if(result.state==='cancelled'&&result.key===key)programmed.delete(key);
+        else return revoke(); // preserve uncertain identity; native revocation is distinct from cancellation
+      }return {state:'cancelled'};},
+    uncertainKeys:()=>[...programmed],
     permission:()=>permission,close(){void revoke();port.removeEventListener('message',listener);},ready:()=>Boolean(adapter),session:()=>session};
 }

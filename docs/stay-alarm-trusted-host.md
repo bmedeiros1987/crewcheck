@@ -60,3 +60,15 @@ MainActivity e resolução Gradle; não equivale a WebView/aparelho físico.
 Fontes oficiais:
 https://developer.android.com/reference/androidx/webkit/WebViewCompat
 https://developer.android.com/jetpack/androidx/releases/webkit#1.14.0
+
+## Cancelamento incerto durante invalidação
+
+A identidade só sai do conjunto web após recibo cancelled correlacionado.
+Unknown preserva a identidade, desabilita readiness e solicita revoke; uma nova
+invalidate repete revoke em vez de esquecer o job. Recibo de revoke confirma
+revogação de autoridade, não remoção do alarme. O host também revoga a sessão
+nativa ANTES de devolver cancelamento incerto (inclusive falha do journal antes
+de pending-cancel). Assim receive recusa o epoch antigo mesmo se o job continua
+no SO. Falha de transporte antes de qualquer operação nativa permanece
+revocation-unknown: o web não pode afirmar revogação imediata. A lease nativa
+limita essa janela; testes físicos de perda de canal permanecem necessários.

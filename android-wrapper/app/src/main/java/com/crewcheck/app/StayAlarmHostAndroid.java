@@ -58,10 +58,19 @@ public final class StayAlarmHostAndroid {
                 if(!session.current(generation)) {reply.postMessage(response(id,"rejected",null));return;}
                 String payload=request.optString("payload","");
                 worker.execute(()->{String value=null;
-                    if(session.current(generation))value="capabilities".equals(action)?bridge.capabilities():"transact".equals(action)?bridge.transact(payload):null;
-                    final String result=value;view.post(()->{if(session.current(generation)&&allowed(view.getUrl()))reply.postMessage(response(id,result==null?"rejected":"ok",result));});});
+                    if(session.current(generation))value="capabilities".equals(action)?bridge.capabilities():"transact".equals(action)?transactOrRevoke(bridge,session,payload):null;
+                    final String result=value;view.post(()->{if((session.current(generation)||(session.generation()==generation+1&&session.activeOwner()==null))&&allowed(view.getUrl()))reply.postMessage(response(id,result==null?"rejected":"ok",result));});});
             }catch(Exception ignored){} // malformed packets never acquire authority
         });
+    }
+    /** Cancellation failure revokes native authority BEFORE returning its
+     * uncertain receipt, including journal failure before pending-cancel. */
+    static String transactOrRevoke(StayAlarmBridge bridge,StayAlarmSessionHost session,String payload){
+        String result=bridge.transact(payload);
+        try{if("cancel".equals(new JSONObject(payload).optString("action"))
+                &&!"cancelled".equals(new JSONObject(result).optString("state")))session.revoke();}
+        catch(Exception error){session.revoke();}
+        return result;
     }
     static boolean admitted(boolean main,String source,String page){return main&&allowed(source)&&allowed(page);}
     static boolean allowed(String value){try{Uri uri=Uri.parse(value);return "https".equals(uri.getScheme())&&"crewcheck.online".equals(uri.getHost())
