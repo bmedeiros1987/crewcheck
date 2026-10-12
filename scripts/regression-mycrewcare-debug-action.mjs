@@ -27,7 +27,7 @@ test('actual debug action: consent, lifecycle, validation and verified cleanup w
  stubs['com/crewcheck/app/CrewCheckMyCrewCareProfile.java']=stubs['com/crewcheck/app/CrewCheckMyCrewCareProfile.java'].replace('public boolean supported=true;','public static boolean supported=true;').replace('createdAccounts.add(id);','if(!supported)throw new UnsupportedOperationException("synthetic unsupported");createdAccounts.add(id);');
  stubs['android/widget/LinearLayout.java']=stubs['android/widget/LinearLayout.java'].replace('public void addView(android.view.View v){children.add(v);}', 'public void addView(android.view.View v){children.add(v);}public void addView(android.view.View v,LayoutParams p){children.add(v);}public void removeView(android.view.View v){children.remove(v);}public static class LayoutParams{public static final int MATCH_PARENT=-1;public LayoutParams(int w,int h,float weight){}}');
  stubs['android/view/View.java']=stubs['android/view/View.java'].replace('public void setEnabled(boolean e)', 'public boolean isEnabled(){return enabled;}public void setEnabled(boolean e)');
- stubs['android/webkit/WebView.java']=stubs['android/webkit/WebView.java'].replace('public class WebView {', 'public class WebView extends android.view.View {');
+ stubs['android/webkit/WebView.java']=stubs['android/webkit/WebView.java'].replace('public class WebView {', 'public class WebView extends android.view.View {public final java.util.Map<String,String> sessionStorage=new java.util.HashMap<>();');
  stubs['android/webkit/WebView.java']=stubs['android/webkit/WebView.java'].replace('public boolean destroyed;', 'public static java.util.function.Consumer<WebView> stopHook,destroyHook;public boolean destroyed,stopError,destroyError;').replace('public void stopLoading(){guard();}', 'public void stopLoading(){guard();if(stopHook!=null)stopHook.accept(this);if(stopError)throw new IllegalStateException("synthetic stop");}').replace('destroyed=true;', 'destroyed=true;if(destroyHook!=null)destroyHook.accept(this);if(destroyError)throw new IllegalStateException("synthetic destroy");');
  stubs['android/webkit/WebSettings.java']=stubs['android/webkit/WebSettings.java'].replace('public class WebSettings {', 'public class WebSettings {public void setSaveFormData(boolean v){guard();}');
  const root=mkdtempSync(join(tmpdir(),'mycrewcare-debug-action-'));
@@ -37,7 +37,7 @@ test('actual debug action: consent, lifecycle, validation and verified cleanup w
   files.push(activity,'scripts/fixtures/mycrewcare-native/ObservedAcquisitionHarness.java','scripts/fixtures/mycrewcare-native/ObservedWebViewSourceHarness.java','scripts/fixtures/mycrewcare-native/DebugActionHarness.java');
   execFileSync(java,['com.sun.tools.javac.Main','-source','17','-target','17','-d',root,...files],{encoding:'utf8'});
   const result=execFileSync(java,['-cp',root,'DebugActionHarness',join(process.cwd(),'android-wrapper/app/src/main/assets/mycrewcare-transport-v3.js')],{encoding:'utf8'});
-  assert.match(result,/PASS debug action cases=81/);
+  assert.match(result,/PASS debug action cases=82/);
  } finally {rmSync(root,{recursive:true,force:true});}
 });
 

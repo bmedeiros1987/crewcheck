@@ -105,6 +105,11 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
    android.widget.TextView.hook=null;android.webkit.WebView.stopHook=null;android.webkit.WebView.destroyHook=null;
    check(v.destroyed&&android.webkit.WebView.instances.size()==viewsBefore&&!s.status.text.contains("Contrato observado válido")&&s.status.text.contains("não confirmado"),"causal handoff invalidation prevents acquisition "+boundary+event);s.close();count++;
   }
-  check(count==81,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
+  clean();Screen storageOnly=new Screen();storageOnly.ready();storageOnly.prepare();var loginPage=view();loginPage.sessionStorage.put("synthetic-session-only","not-a-credential");
+  android.os.Handler.runMain(()->{loginPage.client.onPageFinished(loginPage,loginPage.url);storageOnly.start.click();});android.os.Handler.drain();var reader=view();
+  check(loginPage.destroyed&&reader!=loginPage&&reader.sessionStorage.isEmpty(),"fresh page cannot pretend to inherit login sessionStorage");
+  extract();android.os.Handler.runMain(()->reader.value.onReceiveValue("null"));android.os.Handler.drain();
+  check(storageOnly.status.text.contains("Não validado")&&!storageOnly.status.text.contains("Synthetic")&&storageOnly.status.text.contains("Perfil de teste limpo"),"sessionStorage-only authentication fails closed with cleanup; no session copied or own reservations claimed");storageOnly.close();count++;
+  check(count==82,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
  }catch(Exception e){throw new AssertionError(e);}}
 }
