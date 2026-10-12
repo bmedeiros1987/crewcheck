@@ -2237,7 +2237,7 @@ function notifyCrewCheck(title: string, body: string) {
 function weatherEventWindow(event: ZeroLeg, role: 'origin' | 'destination', now: number) {
   if (!event || event.placeholder || event.kind !== 'flight' || event.canonical?.kind !== 'flight') return { eligible: false };
   const publishedClock = (value?: string) => {
-    const match = String(value || '').trim().match(/^(\d{1,2})[:hH](\d{2})(?:\s*\+1)?$/);
+    const match = String(value || '').trim().match(/^(\d{1,2})[:hH](\d{2})(?:\s*(?:\+1|\(\+1\)))?$/);
     return Boolean(match && ((Number(match[1]) < 24 && Number(match[2]) < 60) || (Number(match[1]) === 24 && Number(match[2]) === 0)));
   };
   if (!publishedClock(event.canonical.leg?.departureTime) || !publishedClock(event.canonical.leg?.arrivalTime)) return { eligible: false };

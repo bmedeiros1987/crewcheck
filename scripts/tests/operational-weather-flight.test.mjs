@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import test from 'node:test';
+import { loadClientModules, TYPE_ONLY_PDF_PARSER_STUB } from '../lib/ts-module-harness.mjs';
 import { evaluateWeatherObservation, weatherFlightWindow, WEATHER_OBSERVATION_MAX_AGE_MS } from '../../server/weather/critical-observation.mjs';
 const ts = createRequire(import.meta.url)('typescript');
 const home = fs.readFileSync(new URL('../../client/src/pages/Home.tsx', import.meta.url), 'utf8');
@@ -78,4 +79,19 @@ test('actual server candidate selection uses the same origin/destination boundar
     const context = vm.createContext({weatherFlightWindow,conciergeProgramRecords:()=>[record],conciergeProgramDate:(_day,clock)=>new Date(clock==='12:00'?DEPARTURE:ARRIVAL),airportIcao:code=>code==='BSB'?'SBBR':'SBSP',conciergeRecordDateKey:()=> 'synthetic-2032-10-20'});
     vm.runInContext(fn.getText(tree)+';globalThis.run=conciergeWeatherCandidates',context);
     for(const [now,roles]of [[DEPARTURE-180*60_000-1,[]],[DEPARTURE-180*60_000,['origem']],[DEPARTURE,['origem','destino']],[DEPARTURE+30*60_000+1,['destino']],[ARRIVAL+45*60_000,['destino']],[ARRIVAL+45*60_000+1,[]]])assert.deepEqual(Array.from(context.run({},new Date(now)),x=>x.role),roles);
+});
+
+test('actual canonical overnight constructor keeps plain and parenthesized +1 clocks eligible',async()=>{
+    const modules=loadClientModules({files:['client/src/lib/canonicalRoster.ts'],stubs:TYPE_ONLY_PDF_PARSER_STUB,prefix:'weather-overnight-constructor-'});
+    try {
+        const {buildCanonicalRosterEvents}=modules.load('canonicalRoster');
+        const make=arrivalTime=>buildCanonicalRosterEvents({month:10,year:2032,base:'BSB',crewName:'SYNTHETIC OVERNIGHT QA',days:[{date:'20/10/2032',type:'FLIGHT',pairingCode:'QA',dutyReport:'22:00',dutyReportSource:'published',legs:[{flightNumber:'QA8001',origin:'BSB',destination:'CGH',departureTime:'23:00',arrivalTime,workType:'OP'}]}]}).find(e=>e.kind==='flight');
+        const plain=make('02:00');assert.equal(plain.startDateTime,'2032-10-21T02:00:00.000Z');assert.equal(plain.endDateTime,'2032-10-21T05:00:00.000Z');
+        for(const notation of ['02:00','02:00(+1)','02:00 (+1)']){
+            const canonical=make(notation);assert.equal(canonical.startDateTime,plain.startDateTime);assert.equal(canonical.endDateTime,plain.endDateTime);
+            const e=event({id:canonical.id,canonical});const now=Date.parse('2032-10-21T01:00:00Z'),h=harness({now,payload:packet(now)});h.start(e);await h.settle();assert.equal(h.calls.length,1,notation+' remains eligible before overnight departure');assert.match(h.calls[0],/airports=BSB&type=all/);assert.equal(h.notices.length,1,notation+' reaches the real producer');
+            const arrivalWindow=Date.parse('2032-10-21T03:00:00Z'),a=harness({now:arrivalWindow,payload:packet(arrivalWindow)});a.start(e);await a.settle();assert.equal(a.calls.length,1);assert.match(a.calls[0],/airports=CGH&type=all/);assert.equal(a.notices.length,1);assert.match(a.notices[0].title,/CGH/);
+            const expired=Date.parse('2032-10-21T05:45:00.001Z'),x=harness({now:expired,payload:packet(expired)});x.start(e);await x.settle();assert.equal(x.calls.length,0);assert.equal(x.notices.length,0);
+        }
+    } finally {modules.cleanup();}
 });
