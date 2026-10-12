@@ -18,6 +18,13 @@ on:
       - 'scripts/android-play/planned_mobile.py'
       - 'scripts/android-play/test_planned_cli.py'
       - 'scripts/android-play/test_planned_digest.py'
+      - 'scripts/android-play/test_planned_cli_isolated.mjs'
+      - 'scripts/android-play/test_planned_handoff.py'
+      - 'scripts/android-play/test_planned_handoff.mjs'
+      - 'scripts/android-play/test_legacy_writer_off.py'
+      - 'scripts/android-play/publish.py'
+      - 'scripts/android-play/allocate_versions.py'
+      - 'scripts/android-play/crewwatch_internal.py'
       - 'scripts/android-play/test_planned_transport.py'
       - 'scripts/android-play/test_planned_cli.mjs'
       - 'scripts/android-play/test_planned_protocol.mjs'
@@ -72,6 +79,8 @@ jobs:
       - run: python3 scripts/android-play/test_planned_cli.py
       - run: python3 scripts/android-play/test_planned_transport.py
       - run: python3 scripts/android-play/test_planned_digest.py
+      - run: python3 scripts/android-play/test_planned_handoff.py
+      - run: python3 scripts/android-play/test_legacy_writer_off.py
       - run: python3 scripts/android-play/test_consumed_validation.py
       - run: node scripts/android-play/test_reconcile_journal.mjs
       - run: node scripts/android-play/test_recovery_fence.mjs

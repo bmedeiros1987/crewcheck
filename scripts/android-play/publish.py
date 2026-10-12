@@ -6,14 +6,16 @@ import sys
 import time
 from pathlib import Path
 from urllib.parse import quote
-import google.auth.transport.requests
-from google.oauth2 import service_account
-import requests
 from credential import load_service_account_secret
 from play_error import safe_play_error
 from review_policy import commit_internal_edit
 
 def main():
+    raise AssertionError('Live joint publication disabled: multitrack journal policy/exclusivity unverified')
+    # Legacy implementation retained OFF until reviewed adoption; imports stay behind gate.
+    import google.auth.transport.requests
+    from google.oauth2 import service_account
+    import requests
     assert os.environ['GITHUB_REF'] == 'refs/heads/main', 'Publishing requires main'
     account = load_service_account_secret(os.environ['PLAY_SERVICE_ACCOUNT_JSON'])
     credentials = service_account.Credentials.from_service_account_info(account, scopes=['https://www.googleapis.com/auth/androidpublisher'])

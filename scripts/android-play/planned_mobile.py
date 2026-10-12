@@ -13,13 +13,17 @@ from receipt_backend import snapshot_digest as digest
 
 
 class PlannedMobileController:
-    def __init__(self, transport, create_edit, read_inventory, stage_release):
+    def __init__(self, transport, create_edit, read_inventory, stage_release, start_record=None):
         assert isinstance(transport, PlannedJournalTransport)
         assert transport.binding['plan']['producer'] == 'mobile'
         assert all(callable(x) for x in (create_edit, read_inventory, stage_release))
         self.transport = transport
         self.create_edit, self.read_inventory, self.stage_release = create_edit, read_inventory, stage_release
         self.record, self.inventory = None, None
+        self.start_record = copy.deepcopy(start_record)
+        if start_record is not None:
+            assert start_record == transport.record and start_record['state'] == 'planned'
+            assert start_record['generation'] > 1, 'Only an explicit verified rollover handoff can start a retained reservation'
 
     def step(self, operation, data):
         r = self.transport.request(operation, data, self.record['revision'] if self.record else 0)
@@ -28,9 +32,14 @@ class PlannedMobileController:
 
     def allocate(self, policy_path):
         assert self.record is None, 'No repeated allocation or implicit resume'
-        assert self.step('read', {}) is None, 'Existing reservation requires explicit recovery'
         p = self.transport.binding['plan']
-        self.step('reserve', p)
+        if self.start_record is None:
+            assert self.step('read', {}) is None, 'Existing reservation requires explicit recovery'
+            self.step('reserve', p)
+        else:
+            self.record = copy.deepcopy(self.start_record)
+            assert self.step('read', {}) == self.start_record, 'Rollover handoff changed'
+            self.start_record = None
         self.step('startAllocation', {})
         # Durable barrier before the only create; lost response stays locked.
         edit = self.create_edit(copy.deepcopy(self.record))

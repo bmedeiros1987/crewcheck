@@ -61,6 +61,7 @@ jobs:
           node scripts/regression-free-day-observational-get.mjs
           node scripts/regression-notification-mysql.mjs
           node scripts/android-play/test_mysql_journal_isolated.mjs || exit $?
+          node scripts/android-play/test_planned_cli_isolated.mjs || exit $?
           node scripts/regression-telegram-location-callback-scope.mjs
           node scripts/regression-notification-diagnostic.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs

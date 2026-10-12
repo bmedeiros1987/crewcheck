@@ -3,13 +3,28 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {createHash} from 'node:crypto';
 import {createMysqlJournal} from './mysql_journal.mjs';
+import {createPlatformJournal} from './platform_journal.mjs';
+import {mysqlAdapter} from '../../server/mysql-platform-adapter.mjs';
 import {createJournalProtocol} from './journal_protocol.mjs';
 import {createPlayStateReader,createReviewSafeCommit} from './play_state_reader.mjs';
 import {snapshotDigest} from './reconcile_journal.mjs';
 import {database} from './mysql_journal_fixture.mjs';
-const data=JSON.parse(fs.readFileSync(0,'utf8')),db=database(),responses=[],calls=[];
+const data=JSON.parse(fs.readFileSync(0,'utf8')),responses=[],calls=[];
+let db=database(),native=null;
+if(data.isolatedQa){
+ const socket='/tmp/crewcheck-notification-qa-socket/mysqld.sock';
+ assert.equal(process.env.CREWCHECK_NOTIFICATION_QA,'isolated-mysql');assert.equal(process.env.CREWCHECK_QA_MYSQL_SOCKET,socket);assert(fs.statSync(socket).isSocket());
+ const mysql=await import('mysql2/promise');native=mysql.createPool({socketPath:socket,user:'root',password:'',database:'crewcheck_notification_qa',connectionLimit:2});
+ assert.equal((await native.query('SELECT DATABASE() AS name'))[0][0].name,'crewcheck_notification_qa');
+ let lose=false;
+ db={query:(...args)=>native.query(...args),lose(){lose=true;},async getConnection(){const c=await native.getConnection();return {
+  async query(sql,args){const result=await c.query(sql,args);if(sql==='COMMIT'&&lose){lose=false;throw Error('QA response lost after durable COMMIT');}return result;},
+  release:()=>c.release(),destroy:()=>c.destroy()
+ };}};
+}
+
 const hash=b=>createHash('sha256').update(b).digest('hex');
-let staged=false,commits=0;
+let staged=Boolean(data.stagedAlready),commits=data.priorCommits??0;
 const tracks=()=>structuredClone(staged?data.stagedTracks:data.tracks);
 const reader=createPlayStateReader({now:()=>1000,request:async request=>{
  assert.equal(request.method,'GET');calls.push(request);
@@ -22,7 +37,7 @@ const reader=createPlayStateReader({now:()=>1000,request:async request=>{
  }
  if(suffix==='/bundles'){
   if(data.scenario==='incomplete')return {status:200,body:{kind:'androidpublisher#bundlesListResponse',nextPageToken:'unhandled-partial'}};
-  const b=[{versionCode:144154,sha256:'a'.repeat(64)}];if(staged)b.push({versionCode:144156,sha256:data.scenario==='remote-hash'?'0'.repeat(64):data.artifactSha256});
+  const b=structuredClone(data.initialBundles??[{versionCode:144154,sha256:'a'.repeat(64)}]);if(staged)b.push({versionCode:data.versionCode??144156,sha256:data.scenario==='remote-hash'?'0'.repeat(64):data.artifactSha256});
   return {status:200,body:{kind:'androidpublisher#bundlesListResponse',bundles:b}};
  }
  if(suffix==='/apks')return {status:200,body:{kind:'androidpublisher#apksListResponse',apks:[{versionCode:144155}]}};
@@ -31,7 +46,9 @@ const reader=createPlayStateReader({now:()=>1000,request:async request=>{
 const commitAdapter=createReviewSafeCommit({reader,verifyReviewProof:async()=>data.scenario!=='review-pending',request:async request=>{
  assert.equal(request.method,'POST');assert(request.url.endsWith('/edits/original-edit:commit'));
  assert.deepEqual(request.params,{changesNotSentForReview:true,changesInReviewBehavior:'ERROR_IF_IN_REVIEW'});
- assert.equal((await journal.read('com.crewcheck.app')).state,'pending');commits++;
+ assert.equal((await journal.read('com.crewcheck.app')).state,'pending');
+ if(data.scenario==='kill-pending-helper'){assert(data.isolatedQa);fs.writeSync(2,'QA_V2_PENDING_READ_BEFORE_HELPER_SIGKILL\n');process.kill(process.pid,'SIGKILL');}
+ commits++;
  if(data.scenario==='unknown-commit')throw Error('fixture lost response');
  return {status:200,body:{id:'original-edit'}};
 }});
@@ -49,9 +66,9 @@ const caps={approvePlan:async()=>true,
  },
  commitOnce:commitAdapter,
  verifyReconciliation:async()=>data.scenario==='complete-proof'};
-const journal=createMysqlJournal(db,caps);
+const journal=data.isolatedQa?createPlatformJournal(mysqlAdapter(db),caps):createMysqlJournal(db,caps);
 const protocol=createJournalProtocol({journal,binding:data.binding,authorize:async()=>true,lifecycle:{
  readCompleteState:async r=>({...await reader.inventory(r),generation:r.generation,revision:r.revision}),
  verifyReviewProof:async()=>data.scenario==='complete-proof'}});
 for(const f of data.frames){const request=JSON.parse(f);if(request.operation==='commit')staged=true;if(data.scenario==='lost-pending-sql'&&request.operation==='commit')db.lose();responses.push(await protocol(f));}
-console.log(JSON.stringify({responses,record:await journal.read('com.crewcheck.app'),commits,calls}));
+try{console.log(JSON.stringify({responses,record:await journal.read('com.crewcheck.app'),commits,calls}));}finally{if(native)await native.end();}

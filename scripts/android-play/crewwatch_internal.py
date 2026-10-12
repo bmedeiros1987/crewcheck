@@ -84,6 +84,7 @@ def collect_live_codes(session, edit_url):
 
 
 def allocate():
+    raise AssertionError('Live Wear allocation disabled: shared-package journal adoption/exclusivity unverified')
     require_main()
     policy = json.loads(POLICY_PATH.read_text())
     spec = policy["artifacts"][MODULE]
@@ -198,6 +199,7 @@ def validate(bundletool, output):
 
 
 def publish(root):
+    raise AssertionError('Live Wear publication disabled: multitrack journal policy/exclusivity unverified')
     require_main()
     from review_policy import commit_internal_edit
 

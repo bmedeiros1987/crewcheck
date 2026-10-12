@@ -26,6 +26,7 @@ def allocate_version_codes(policy, live_codes_by_package):
 
 
 def main():
+    raise AssertionError('Live legacy allocation disabled: shared-package journal adoption/exclusivity unverified')
     assert os.environ.get('GITHUB_REF') == 'refs/heads/main', 'Live Play allocation requires main'
 
     # Keep Google client imports out of module import time so unit tests remain dependency-free.

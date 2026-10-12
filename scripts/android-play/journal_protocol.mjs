@@ -102,17 +102,19 @@ function plannedProtocol({journal,binding,authorize,lifecycle}){
   exactKeys(binding,['schema','generation','plan']);assert.equal(binding.schema,2);
   assert(Number.isSafeInteger(binding.generation)&&binding.generation>0);validatePlan(binding.plan);
   assert.equal(typeof authorize,'function');assert.equal(typeof journal.plan,'function');
-  const pinned=structuredClone(binding),seen=new Set();
+  const pinned=structuredClone(binding),seen=new Set();let retired=false;
+  const nextBindingApprover=lifecycle?.approveNextBinding;
   const completeReader=lifecycle?.readCompleteState,reviewVerifier=lifecycle?.verifyReviewProof;
   return async serialized=>{
     let id=null;
     try{
+      assert(!retired,'Prior generation session retired');
       assert(typeof serialized==='string'&&Buffer.byteLength(serialized)<=65536);
       const request=JSON.parse(serialized);exactKeys(request,['schema','id','operation','binding','revision','input']);
       assert.equal(canonical(request),serialized);assert.equal(request.schema,2);
       assert(/^[A-Za-z0-9_-]{1,128}$/.test(request.id));id=request.id;assert(!seen.has(id));seen.add(id);
       assert.deepEqual(request.binding,pinned);assert(Number.isSafeInteger(request.revision)&&request.revision>=0);
-      assert(['read','reserve','startAllocation','saveEdit','allocate','finalize','startStage','commit','reconcile'].includes(request.operation));
+      assert(['read','reserve','startAllocation','saveEdit','allocate','finalize','startStage','commit','reconcile','rollover'].includes(request.operation));
       if(request.operation==='reserve'){assert.equal(request.revision,0);assert.equal(pinned.generation,1);assert.deepEqual(request.input,pinned.plan);}
       if(['read','reconcile'].includes(request.operation))exactKeys(request.input,[]);
       if(['commit','reconcile'].includes(request.operation))assert.equal(pinned.plan.producer,'mobile');
@@ -136,8 +138,15 @@ function plannedProtocol({journal,binding,authorize,lifecycle}){
         const digest=verifyPlannedSnapshot(current,observation);
         assert.equal(await reviewVerifier(structuredClone(current),structuredClone(observation)),true);
         record=await journal.plan('reconcile',expected,{reconciliationSha256:digest});
+      }else if(request.operation==='rollover'){
+        assert(current);assert.equal(current.state,'reconciled');
+        const next=request.input;exactKeys(next,['schema','generation','plan']);assert.equal(next.schema,2);validatePlan(next.plan);
+        assert.equal(next.generation,pinned.generation+1);assert.equal(typeof nextBindingApprover,'function');
+        assert.equal(await nextBindingApprover(structuredClone(current),structuredClone(next)),true);
+        record=await journal.plan('rollover',expected,next.plan);
       }else record=await journal.plan(request.operation,expected,request.input);
       if(record){validatePlannedRecord(record);assert.deepEqual(await journal.read(pinned.plan.package),record);}
+      if(request.operation==='rollover')retired=true;
       return canonical({schema:2,id,status:'ok',record,retryAllowed:false,storeAvailability:'unknown'});
     }catch{return canonical({schema:2,id,status:'blocked',record:null,retryAllowed:false,storeAvailability:'unknown'});}
   };

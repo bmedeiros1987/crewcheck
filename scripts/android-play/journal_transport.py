@@ -99,16 +99,30 @@ class PlannedJournalTransport:
         assert p['planSha256'] == snapshot_digest(body)
         self.exchange, self.binding, self.sequence, self.blocked = exchange, copy.deepcopy(binding), 0, False
         self.record = None
+        self.retired = False
+
+    @classmethod
+    def from_handoff(cls, exchange, binding, expected_record):
+        transport = cls(exchange, binding)
+        validate_planned_record(expected_record, binding)
+        assert expected_record['state'] == 'planned' and binding['generation'] > 1
+        assert transport.request('read', {}, expected_record['revision']) == expected_record
+        return transport
 
     def request(self, operation, data, revision=0):
-        assert not self.blocked, 'Uncertain transport cannot retry'
+        assert not self.blocked and not self.retired, 'Uncertain or retired transport cannot retry'
         self.sequence += 1
         frame = dict(schema=2, id='plan_' + str(self.sequence), operation=operation,
                      binding=self.binding, revision=revision, input=copy.deepcopy(data))
         try:
-            assert operation in {'read', 'reserve', 'startAllocation', 'saveEdit', 'allocate', 'finalize', 'startStage', 'commit', 'reconcile'}
+            assert operation in {'read', 'reserve', 'startAllocation', 'saveEdit', 'allocate', 'finalize', 'startStage', 'commit', 'reconcile', 'rollover'}
             assert type(revision) is int and revision >= 0
             if operation in ('commit', 'reconcile'): assert self.binding['plan']['producer'] == 'mobile'
+            target_binding = self.binding
+            if operation == 'rollover':
+                assert self.record and self.record['state'] == 'reconciled'
+                assert data['generation'] == self.binding['generation'] + 1
+                target_binding = PlannedJournalTransport(lambda _: None, data).binding
             response = self.exchange(json.dumps(frame, sort_keys=True, separators=(',', ':')))
             assert isinstance(response, str) and len(response.encode()) <= 65536
             def unique(pairs):
@@ -124,16 +138,23 @@ class PlannedJournalTransport:
             r = result['record']
             if r is None: assert operation == 'read' and revision == 0
             else:
-                validate_planned_record(r, self.binding)
-                assert r['schema'] == 2 and r['generation'] == self.binding['generation']
-                assert r['package'] == self.binding['plan']['package'] and r['owner'] == self.binding['plan']['owner']
-                assert r['plan'] == self.binding['plan']
+                validate_planned_record(r, target_binding)
+                assert r['schema'] == 2 and r['generation'] == target_binding['generation']
+                assert r['package'] == target_binding['plan']['package'] and r['owner'] == target_binding['plan']['owner']
+                assert r['plan'] == target_binding['plan']
                 assert type(r['revision']) is int and r['revision'] == revision + (0 if operation == 'read' else 2 if operation == 'commit' else 1)
-                expected = {'reserve': 'planned', 'startAllocation': 'allocation_started', 'saveEdit': 'edit_known', 'allocate': 'allocated', 'finalize': 'finalized', 'startStage': 'stage_started', 'reconcile': 'reconciled'}
+                expected = {'reserve': 'planned', 'startAllocation': 'allocation_started', 'saveEdit': 'edit_known', 'allocate': 'allocated', 'finalize': 'finalized', 'startStage': 'stage_started', 'reconcile': 'reconciled', 'rollover': 'planned'}
                 if operation in expected: assert r['state'] == expected[operation]
                 if operation == 'commit': assert r['state'] in ('acknowledged', 'reconciliation_required')
                 for f in ('retryAllowed', 'storeMutationAllowed', 'resumeAllowed', 'rolloverAllowed'): assert f not in r
-            if r and self.record:
+            if operation == 'rollover':
+                from receipt_backend import snapshot_digest
+                old = self.record
+                assert r['history'][:-1] == old['history']
+                expected_history = dict(generation=old['generation'],revision=old['revision'],owner=old['owner'],planSha256=old['plan']['planSha256'],artifactsSha256=snapshot_digest(old['artifacts']),allocationSha256=snapshot_digest(old['allocation']),reconciliationSha256=old['reconciliationSha256'],highWaterVersionCode=max(old['allocation']['versionCodes'].values()))
+                assert r['history'][-1] == expected_history
+                self.retired = True
+            elif r and self.record:
                 for field in ('plan','history','editId','allocation','artifacts','staged','reconciliationSha256'):
                     if field in self.record: assert r.get(field) == self.record[field]
                 if operation == 'read': assert r == self.record
