@@ -197,7 +197,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         final long attempt = token;
         final Login expected = login;
         final ObservedScope captured = scope;
-        status.setText("Verificando identidade e contrato. Nenhum dado será importado ou exibido.");
+        status.setText("Verificando identidade e contrato. Leitura somente das reservas desta identidade; sem importação.");
         try {
             if (!handoff(expected)) { finish(attempt, "Preparação ou encerramento não confirmado. Nada importado."); return; }
             var source = CrewCheckMyCrewCareObservedWebViewSource.prepare(this, profiles, captured);
@@ -211,7 +211,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
                     && account.equals(result.accountId) && captured.sessionId.equals(result.sessionId)
                     && captured.requestId.equals(result.requestId) && result.generation > 0;
                 String message = valid
-                    ? "Contrato observado válido (" + result.observations.size() + " registros). Datas/fusos e uso operacional não validados. Nada importado."
+                    ? reservationPreview(result)
                     : "Não validado: sessão, identidade, navegação ou conteúdo não comprovados. Nada importado.";
                 finish(attempt, message);
             });
@@ -220,8 +220,25 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
             if (running) finish(attempt, "Teste indisponível ou não validado. Sem fallback. Nada importado.");
         }
     }
+    private String reservationPreview(ObservedResult result) {
+        StringBuilder text = new StringBuilder("Contrato observado válido. Leitura somente; datas/fusos e uso operacional não validados. Nada importado.");
+        // Only the owner's validated observations reach here; no HTML, profile or login data.
+        for (var row : result.observations) {
+            text.append("\n\nReserva — ").append(row.get("airport"));
+            text.append("\nHotel: ").append(row.get("hotelName"));
+            text.append("\nEntrada (horário local informado): ").append(row.get("checkInWallDateTime"));
+            text.append("\nSaída (horário local informado): ").append(row.get("checkOutWallDateTime"));
+            text.append("\nPickup para hotel: ").append(row.get("toHotelProvider")).append(" — ").append(row.get("toHotelPickupWallTime"));
+            text.append("\nPickup para aeroporto: ").append(row.get("toAirportProvider")).append(" — ").append(row.get("toAirportPickupWallTime"));
+        }
+        if (result.observations.isEmpty()) text.append("\nNenhuma reserva observada nesta consulta.");
+        return text.toString();
+    }
     private void cancel() {
-        if (!running) return;
+        if (!running) {
+            if (!cleaning && !destroyed) status.setText("Cancelado. Visualização apagada; nada importado.");
+            return;
+        }
         // Cancel can synchronously deliver completion; mark ownership first.
         long attempt = token; running = false; stopLogin();
         try { if (runtime != null) runtime.cancelMyCrewCareObservationV3ForReview(); }

@@ -35,7 +35,8 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
   clean();CrewCheckMyCrewCareProfile.supported=false;Screen unsupported=new Screen();unsupported.ready();unsupported.click();check(android.webkit.WebView.instances.size()==before&&unsupported.status.text.contains("indisponível")&&!unsupported.consent.checked,"unsupported has no fallback, consent consumed");unsupported.close();count++;
   clean();Screen full=new Screen();full.ready();full.click();check(!full.prepare.enabled&&!full.consent.checked,"single-flight consumes consent");full.click();check(request(full).kind.equals("profile-before"),"double click cannot replace attempt");count++;
   for(int i=0;i<4;i++)deliver(full);
-  check(full.status.text.contains("Contrato observado válido")&&full.status.text.contains("não validados")&&full.status.text.contains("Perfil de teste limpo")&&full.prepare.enabled&&!full.status.text.contains("Synthetic")&&view().destroyed,"only bounded summary after validated cleanup");count++;
+  check(full.status.text.contains("Contrato observado válido")&&full.status.text.contains("não validados")&&full.status.text.contains("Perfil de teste limpo")&&full.prepare.enabled&&full.status.text.contains("Synthetic Harbor Hotel")&&full.status.text.contains("Synthetic Airport Shuttle")&&full.status.text.contains("07:05")&&view().destroyed,"only validated own reservation preview after verified cleanup");count++;
+  android.os.Handler.runMain(()->full.cancel.click());check(!full.status.text.contains("Synthetic")&&full.status.text.contains("apagada"),"disconnect clears completed preview");
   int after=android.webkit.WebView.instances.size();full.click();check(android.webkit.WebView.instances.size()==after,"retry needs new consent");full.close();count++;
   for(String phase:List.of("profile-before","cards","detail","profile-after"))for(String how:List.of("cancel","stop","destroy","timeout")) {
    clean();Screen s=new Screen();s.ready();s.click();to(s,phase);var v=view();extract();var late=v.value;ObservedRequest r=request(s);
@@ -47,10 +48,10 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
    clean();Screen s=new Screen();s.ready();s.click();to(s,phase);var v=view();
    if(bad.equals("http"))android.os.Handler.runMain(()->v.client.onReceivedHttpError(v,new android.webkit.WebResourceRequest(v.url,true),new android.webkit.WebResourceResponse("text/plain","UTF-8",new java.io.ByteArrayInputStream(new byte[0]))));
    else {ObservedRequest r=request(s);extract();android.os.Handler.runMain(()->v.value.onReceiveValue(q(envelope(r).replace(r.scope.accountId,"foreign"))));}
-   android.os.Handler.drain();check(v.destroyed&&s.status.text.contains("Não validado")&&!s.status.text.contains("Contrato observado válido"),"failure never becomes operational success "+phase+bad);s.close();count++;
+   android.os.Handler.drain();check(v.destroyed&&s.status.text.contains("Não validado")&&!s.status.text.contains("Contrato observado válido")&&!s.status.text.contains("Synthetic"),"failure never becomes operational success "+phase+bad);s.close();count++;
   }
   clean();CrewCheckMyCrewCareProfile.defer=true;Screen delayed=new Screen();delayed.ready();delayed.click();for(int i=0;i<4;i++)deliver(delayed);
-  check(!delayed.prepare.enabled&&delayed.status.text.contains("ainda não concluído")&&!delayed.status.text.contains("Contrato observado válido"),"cleanup pending is not success");
+  check(!delayed.prepare.enabled&&delayed.status.text.contains("ainda não concluído")&&!delayed.status.text.contains("Contrato observado válido")&&!delayed.status.text.contains("Synthetic"),"cleanup pending is not success");
   CrewCheckMyCrewCareProfile.pending.remove(0).onComplete(false,"profile-clear-failed");android.os.Handler.tick();check(!delayed.prepare.enabled&&delayed.status.text.contains("não confirmada"),"cleanup failure blocks retry and success");delayed.close();count++;
   for(String mode:List.of("pending-success","pending-timeout","profile-throw","cache-throw")) {
    clean();CrewCheckMyCrewCareProfile.defer=mode.startsWith("pending");
@@ -58,7 +59,7 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
    if(mode.equals("cache-throw"))CrewCheckMyCrewCareSecureStore.clearError=new IllegalStateException("synthetic");
    Screen s=new Screen();s.ready();s.click();for(int i=0;i<4;i++)deliver(s);
    if(mode.equals("pending-success")){check(!s.status.text.contains("Contrato observado válido"),"pending cleanup does not publish valid result");CrewCheckMyCrewCareProfile.pending.remove(0).onComplete(true,"ok");android.os.Handler.tick();check(s.prepare.enabled&&s.status.text.contains("Contrato observado válido"),"only confirmed delayed cleanup permits result/retry");}
-   else {if(mode.equals("pending-timeout"))for(int i=0;i<300;i++)android.os.Handler.tick();check(!s.prepare.enabled&&s.status.text.contains("não confirmada")&&!s.status.text.contains("Contrato observado válido"),"cleanup failures/timeout block result "+mode);}
+   else {if(mode.equals("pending-timeout"))for(int i=0;i<300;i++)android.os.Handler.tick();check(!s.prepare.enabled&&s.status.text.contains("não confirmada")&&!s.status.text.contains("Contrato observado válido")&&!s.status.text.contains("Synthetic"),"cleanup failures/timeout block result "+mode);}
    s.close();count++;
   }
   clean();Screen login=new Screen();login.ready();int loginIndex=android.webkit.WebView.instances.size();login.prepare();var visible=view();
