@@ -38,11 +38,11 @@ async function measure(page) {
   const browser=await chromium.launch({executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||undefined});
   const results=[],authResults=[];
   try {
-    for(const [width,height,language] of [...devices.map(d=>[...d,'en-US']),[320,740,'pt-BR']]) for(const theme of ['light','dark']) {
-      const context=await browser.newContext({viewport:{width,height},hasTouch:width<1000,isMobile:width<1000,serviceWorkers:'block',timezoneId:'America/Sao_Paulo'});
+    for(const [width,height,language] of [[320,740,'pt-BR'],...devices.map(d=>[...d,'en-US'])]) for(const theme of ['light','dark']) {
+      const context=await browser.newContext({viewport:{width,height},locale:language,hasTouch:width<1000,isMobile:width<1000,serviceWorkers:'block',timezoneId:'America/Sao_Paulo'});
       await context.route('**/*',route=>{const u=new URL(route.request().url());if(u.origin!==origin)return route.abort();if(u.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[],"enabled":false}'});return route.request().method()==='GET'?route.continue():route.abort();});
       await context.addInitScript(fixture.qaSeed,{theme,kind:fixture.qaRoster('multi'),amount:0});
-      await context.addInitScript(language=>localStorage.setItem('crewcheck_language',language),language);
+      await context.addInitScript(language=>localStorage.setItem('crewcheck_language',language.split('-')[0]),language);
       const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
       await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'settings'})));
       const fonts=[];
