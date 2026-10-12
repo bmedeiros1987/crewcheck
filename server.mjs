@@ -1,4 +1,4 @@
-import { ciriumRadarInjectionEnabled, ciriumRadarRegistration, ciriumRadarIdentity, runCiriumRadarInjection, ciriumRadarProjection } from './server/cirium-radar-injection.mjs';
+import { defaultCiriumRadarOptions, ciriumRadarInjectionEnabled, ciriumRadarRegistration, ciriumRadarIdentity, runCiriumRadarInjection, ciriumRadarProjection } from './server/cirium-radar-injection.mjs';
 import { weatherCanaryRecipientHash, weatherConsentCommand, sameWeatherCanaryConsent, writeWeatherCanaryConsent, weatherMonitorSettings, weatherMonitorReadiness, weatherCanaryConsent, createWeatherCanaryPolicy, findWeatherCanarySnapshots, acquireWeatherCanaryLease } from './server/weather/monitor-readiness.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -347,6 +347,7 @@ async function runRadarRace(ctx, origin, destination) {
 }
 async function handleRadar(req, res, url, radarOptions = {}) {
   const ctx = buildFlightContext(url.searchParams.get('flight') || '');
+  radarOptions = { ...radarOptions, cirium: radarOptions.cirium || defaultCiriumRadarOptions() };
   if (ciriumRadarInjectionEnabled(radarOptions.cirium)) {
     ctx.ciriumRadarOptions = radarOptions.cirium;
     ctx.ciriumRadarIdentity = ciriumRadarIdentity(url.searchParams);
