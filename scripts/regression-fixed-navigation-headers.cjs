@@ -1,3 +1,5 @@
+const { artifactEvidence } = require('./ui-artifact-evidence.cjs');
+const exactArtifact = artifactEvidence();
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), http = require('node:http'), vm = require('node:vm');
 const { createRequire } = require('node:module');
 const ts = require('typescript');
@@ -165,5 +167,6 @@ async function visibleTextBounds(page, selector) {
       await context.close();console.log('PASS fixed headers',width,theme,size);
     }
     fs.writeFileSync(path.join(output,'fixed-headers-results.json'),JSON.stringify({testedCommit,cases:results,limitations:['Chromium Android viewport emulation; keyboard represented by reduced visual layout height, not physical Android IME.','Safe-area values injected through CSS variables; no physical cutout device.']},null,2));
-  } finally {await browser.close();server.close();}
+  } finally {fs.writeFileSync(path.join(output,'artifact.json'),JSON.stringify(exactArtifact,null,2));
+    await browser.close();server.close();}
 })().catch(error=>{console.error(error);server.close();process.exitCode=1;});

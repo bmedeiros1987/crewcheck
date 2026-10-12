@@ -225,11 +225,17 @@ html body #root .cz-app[data-version] .cz-menu-header .cz-menu-header-actions { 
 html body #root .cz-app[data-version] .cz-menu-header .cc-menu-account-details { grid-column:1 / -1!important;padding-left:48px!important;min-width:0!important; }
 html body #root .cz-app[data-version] .cz-menu-header .cc-menu-account-details small { display:block!important;font-size:calc(.875rem * var(--cc-text-scale,1))!important;line-height:1.35!important;white-space:normal!important;overflow-wrap:anywhere!important;overflow:visible!important;text-overflow:clip!important;-webkit-line-clamp:unset!important;max-height:none!important;color:var(--cc-muted)!important; }
 html body #root .cz-app[data-version] .cz-menu-header .cz-menu-profile-copy strong { font-size:calc(clamp(14px,3.8vw,16px) * var(--cc-text-scale,1))!important; }
-@media(max-width:380px) {
+@media(max-width:430px) {
   html[data-crew-text-size="200"] body #root .cz-app[data-version] .cz-menu-scroll > .cz-menu-header { grid-template-columns:minmax(0,1fr)!important; }
   html[data-crew-text-size="200"] body #root .cz-app[data-version] .cz-menu-header .cz-menu-header-actions { grid-column:1!important;grid-row:3!important;justify-self:end!important; }
   html[data-crew-text-size="200"] body #root .cz-app[data-version] .cz-menu-header .cc-menu-account-details { grid-row:2!important; }
 }
 html body #root .cz-app[data-version] .cz-menu-header .cc-menu-account-details { position:static!important;display:block!important;clip:auto!important;clip-path:none!important;box-sizing:border-box!important;width:100%!important;max-width:none!important;height:auto!important;max-height:none!important;overflow:visible!important; }
 
-@media(max-width:380px) { html[data-crew-text-size="200"] body #root .cz-app[data-version] .cz-menu-header .cc-menu-account-details { padding-left:0!important; } }
+@media(max-width:430px) { html[data-crew-text-size="200"] body #root .cz-app[data-version] .cz-menu-header .cc-menu-account-details { padding-left:0!important; } }
+
+/* Revision: symmetric canvas, separated favorites and a stable personalization icon. */
+html body #root .cz-app[data-version] .cz-menu-scroll { padding-inline:0!important; scrollbar-gutter:stable both-edges!important; }
+html body #root .cz-app[data-version] .cc-menu-favorites-head { margin-bottom:8px!important; }
+html body #root .cz-app[data-version] .cc-menu-personalization > summary > svg { flex:0 0 24px!important; width:24px!important; height:24px!important; min-width:24px!important; }
+html body #root .cz-app[data-version] .cz-menu-header .cz-menu-profile-copy strong { overflow-wrap:normal!important; word-break:normal!important; }

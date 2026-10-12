@@ -1,3 +1,5 @@
+const { artifactEvidence } = require('./ui-artifact-evidence.cjs');
+const exactArtifact = artifactEvidence();
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), http = require('node:http'), vm = require('node:vm');
 const { createRequire } = require('node:module');
 const ts = require('typescript');
@@ -113,6 +115,7 @@ async function visibleTextBounds(page, selector) {
    await recovered(page);results.push({width,height,theme,size,closed,expanded,tail,afterDismiss});await context.close();console.log('PASS Pulse canvas',width,height,theme,size);
   }
   assert.equal(results.length,process.env.PULSE_SPACE_QUICK==='1'?1:36,'Complete Pulse geometry matrix');
-  fs.writeFileSync(path.join(output,'report.json'),JSON.stringify({testedCommit,results,scope:'Actual app and Pulse; long synthetic critical title/detail, document scroll, safe area24/20; Android viewport and reduced-height keyboard emulation, no physical IME'},null,2));
+  fs.writeFileSync(path.join(output,'report.json'),JSON.stringify({testedCommit,artifact:exactArtifact,results,scope:'Actual app and Pulse; long synthetic critical title/detail, document scroll, safe area24/20; Android viewport and reduced-height keyboard emulation, no physical IME'},null,2));
+  assert.deepEqual(artifactEvidence(),exactArtifact,'Exact artifact stays immutable during capture');
  }finally{await browser.close();server.close();}
 })().catch(error=>{console.error(error);server.close();process.exitCode=1;});
