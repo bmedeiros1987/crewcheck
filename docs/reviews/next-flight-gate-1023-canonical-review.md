@@ -11,3 +11,7 @@ Radar-to-weather forwards the same explicit home-roster/cockpit context; a remov
 Validation uses buildCanonicalRosterEvents on synthetic published11/10/2032,23:50BRT, three OS timezones, persisted manual gate and cache across timezone changes, phone/watch parity, invalid civil date, actual prepared card formatter, handoff and Home event selection with missing-event fail-closed. The actual save function is tested with stub notices for wrong flight/leg/day/not-ok/position and accepted changes/manual divergence/dedupe. Original code fails negative reproductions; corrected code passes. Typecheck and compiled build passed. Compiled mobile proofs cover320/390,light/dark,UTC/Auckland, manual save and weather handoff; no external request, provider, real notification or watch device used.
 
 Independent final review and exact-HEAD CI required before merge. Physical-watch acceptance remains pending. Financial #1018 preserved. Global visual proportionality/alignment is a separate requested proposal, not part of this correction.
+
+## Baseline AIMS check compatibility
+
+CI triggered the existing AIMS app browser workflow. Its decorative-tagline assertion failed at200% on both this branch and clean main510555c5 (same line23/column222). The approved #1020 header intentionally omits this decorative subtitle at enlarged mobile font while retaining the core logo. The expectation now checks visible subtitle at100%, omitted at200%; logo, canvas clearance, exact-event detail, zoom/pan, focus and accessibility checks remain. No AIMS component or runtime changes.
