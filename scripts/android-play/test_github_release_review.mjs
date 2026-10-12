@@ -3,10 +3,10 @@ import {canonical,snapshotDigest} from './reconcile_journal.mjs';
 import {createGitHubReviewProvider,APPROVAL_PREFIX} from '../../server/release-journal/github-review.mjs';
 import {reviewFixture} from './release_review_fixture.mjs';
 for(const scenario of ['valid','missing','generic-comment','old-attempt','wrong-reviewer','wrong-env','wrong-node','wrong-code','wrong-job','partial-jobs','changed-artifact','deleted-artifact','altered-plan','conflict','cancelled','rejected']){
- const f=reviewFixture(),provider=createGitHubReviewProvider({policy:f.policy,request:f.request,now:()=>10000});const frame={binding:f.binding,operation:'probe'};
+ const f=reviewFixture({attempt:scenario==='old-attempt'?'2':'1'}),provider=createGitHubReviewProvider({policy:f.policy,request:f.request,now:()=>10000});const frame={binding:f.binding,operation:'probe'};
  if(scenario==='missing')f.state.reviews=[];
  if(scenario==='generic-comment')f.state.reviews[0].comment='approved';
- if(scenario==='old-attempt'){const d=structuredClone(f.doc);d.approval.runAttempt='2';d.approvalSha256=snapshotDigest(d.approval);f.state.reviews[0].comment=APPROVAL_PREFIX+canonical(d);}
+ if(scenario==='old-attempt'){const d=structuredClone(f.doc);d.approval.runAttempt='1';d.approvalSha256=snapshotDigest(d.approval);f.state.reviews[0].comment=APPROVAL_PREFIX+canonical(d);}
  if(scenario==='wrong-reviewer')f.state.reviews[0].user.id=2;
  if(scenario==='wrong-env')f.state.reviews[0].environments[0].id=2;
  if(scenario==='wrong-node')f.state.reviews[0].environments[0].node_id='wrong';
@@ -30,3 +30,18 @@ console.log('PASS independent GitHub manual-review proof binds reviewer/environm
 {let time=10100;const f=reviewFixture({operations:['observe','reserve']}),p=createGitHubReviewProvider({policy:f.policy,request:f.request,now:()=>time});
  assert.equal((await p.verify(f.claims,{binding:f.binding,operation:'observe'})).state,'approved');
  await assert.rejects(p.verify(f.claims,{binding:f.binding,operation:'reserve'}));time=11000;await assert.rejects(p.verify(f.claims,{binding:f.binding,operation:'observe'}));}
+
+// Official attempt response path forms; jobs-by-attempt does not require run_attempt.
+for(const suffix of ['', '@main','@refs/heads/main','@topic','@refs/tags/main','@main-evil']){
+ const f=reviewFixture();f.state.meta.path='.github/workflows/mobile-only-internal.yml'+suffix;assert(!Object.hasOwn(f.state.jobs.jobs[0],'run_attempt'));
+ const p=createGitHubReviewProvider({policy:f.policy,request:f.request,now:()=>10000});const operation={binding:f.binding,operation:'probe'};
+ if(['','@main','@refs/heads/main'].includes(suffix))assert.equal((await p.verify(f.claims,operation)).state,'approved');else await assert.rejects(p.verify(f.claims,operation));
+}
+{const f=reviewFixture();f.state.jobs.jobs[0].run_attempt=2;const p=createGitHubReviewProvider({policy:f.policy,request:f.request,now:()=>10000});await assert.rejects(p.verify(f.claims,{binding:f.binding,operation:'probe'}));}
+// Explicit fail-closed RUN-wide rejection policy: old rejection + new exact approval
+// cannot authorize a rerun, because review history cannot independently date attempts.
+{const f=reviewFixture({attempt:'2'}),old=reviewFixture({attempt:'1'}).state.reviews[0];old.state='rejected';f.state.reviews.push(old);
+ const p=createGitHubReviewProvider({policy:f.policy,request:f.request,now:()=>10000});assert.equal((await p.verify(f.claims,{binding:f.binding,operation:'probe'})).state,'revoked');
+ const next=reviewFixture({run:'124'}),p2=createGitHubReviewProvider({policy:next.policy,request:next.request,now:()=>10000});assert.equal((await p2.verify(next.claims,{binding:next.binding,operation:'probe'})).state,'approved');}
+{const f=reviewFixture({attempt:'2'}),p=createGitHubReviewProvider({policy:f.policy,request:f.request,now:()=>10000});assert.equal((await p.verify(f.claims,{binding:f.binding,operation:'probe'})).state,'approved');assert(f.state.calls.some(url=>url.endsWith('/attempts/2/jobs?per_page=100&page=1')));f.state.jobs.jobs[0].check_run_url=f.state.jobs.jobs[0].check_run_url.replace('457','456');await assert.rejects(p.verify(f.claims,{binding:f.binding,operation:'probe'}));}
+console.log('PASS official exact workflow/main path forms and jobs-by-attempt without fixture-only run_attempt; mismatched optional attempt denied; documented rejection blocks whole run, new run needs fresh exact approval');

@@ -54,7 +54,7 @@ jobs:
 
   reviewed-mobile:
     needs: prepare-journal-plan
-    environment: '861'
+    environment: 'safety/manual-play-publication-gates - crewcheck PR #861'
     permissions:
       contents: read
       actions: read

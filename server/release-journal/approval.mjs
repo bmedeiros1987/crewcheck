@@ -34,12 +34,14 @@ export function createApprovalStore(db,{now=()=>Math.floor(Date.now()/1000)}={})
  assert.equal(db?.dialect,'mysql');assert.equal(typeof db.connect,'function');
  async function readRow(query,key){const result=await query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=$1',[key]);assert.equal(result.rows.length,1,'Independent approval absent');return parse(result.rows[0].payload);}
  async function read(claims,frame){const k=keys(claims.run_id,claims.run_attempt);const record=await readRow(db.query.bind(db),k.approval),rev=await readRow(db.query.bind(db),k.revocation);return match(record,rev,claims,frame,now());}
- function transitionAdmission(claims,frame){
+ function transitionAdmission(claims,frame,verifyFreshProof){
+  assert.equal(typeof verifyFreshProof,'function');
   const pinnedClaims=structuredClone(claims),pinnedFrame=structuredClone(frame);
   return async(connection,context)=>{
    const k=keys(pinnedClaims.run_id,pinnedClaims.run_attempt);
    const rawRead=async key=>{const [rows]=await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[key]);assert.equal(rows.length,1);return parse(rows[0].payload);};
-   const record=match(await rawRead(k.approval),await rawRead(k.revocation),pinnedClaims,pinnedFrame,now());
+   const record=await rawRead(k.approval),revocation=await rawRead(k.revocation);
+   match(record,revocation,pinnedClaims,pinnedFrame,now());
    assert.equal(context.operation,pinnedFrame.operation);assert.equal(context.next.package,PACKAGE);
    assert.equal(context.current?.revision??0,pinnedFrame.revision);assert.equal(context.current?.generation??1,pinnedFrame.binding.generation);
    const ledger=await rawRead(k.admission);exact(ledger,['schema','approvalSha256','revision','operations']);assert.equal(ledger.schema,1);assert.equal(ledger.approvalSha256,record.approvalSha256);assert(Number.isSafeInteger(ledger.revision)&&ledger.revision>0&&ledger.revision<Number.MAX_SAFE_INTEGER);assert(Array.isArray(ledger.operations)&&ledger.operations.length<128);
@@ -47,8 +49,15 @@ export function createApprovalStore(db,{now=()=>Math.floor(Date.now()/1000)}={})
    assert(!ledger.operations.some(o=>o.opId===pinnedFrame.id),'Operation replay denied');
    const op={opId:pinnedFrame.id,operation:pinnedFrame.operation,owner:pinnedFrame.binding.plan.owner,generation:pinnedFrame.binding.generation,revision:pinnedFrame.revision,digest:snapshotDigest(pinnedFrame),resultRevision:context.next.revision};
    const next={...ledger,revision:ledger.revision+1,operations:[...ledger.operations,op]};
+   // ALL authority/admission locks and readbacks are now held. No await between
+   // these last checks and the first ledger/journal write; waiting is not authority.
+   assert.equal(verifyFreshProof(),true,'GitHub proof aged while waiting for locks');
+   match(record,revocation,pinnedClaims,pinnedFrame,now());
    const [result]=await connection.query('UPDATE crewcheck_telegram_state SET payload=?,updated_at=CURRENT_TIMESTAMP(3) WHERE state_key=?',[JSON.stringify(next),k.admission]);assert.equal(result.affectedRows,1);
    const saved=await rawRead(k.admission);assert.deepEqual(saved,next);
+   // A delayed SQL readback must also roll back admission before journal mutation.
+   assert.equal(verifyFreshProof(),true,'GitHub proof aged during admission readback');
+   match(record,revocation,pinnedClaims,pinnedFrame,now());
    // This update commits/rolls back WITH the existing journal mutation, not before it.
    return true;
   };

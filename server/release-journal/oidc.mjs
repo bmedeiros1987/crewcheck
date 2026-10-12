@@ -9,7 +9,8 @@ export const REPOSITORY='bmedeiros1987/crewcheck';
 export const REPOSITORY_ID='1254349963';
 export const OWNER_ID='214496369';
 export const WORKFLOW_REF=REPOSITORY+'/.github/workflows/mobile-only-internal.yml@refs/heads/main';
-export const ENVIRONMENT_NAME='861';
+export const ENVIRONMENT_NAME='safety/manual-play-publication-gates - crewcheck PR #861';
+export const ENVIRONMENT_NODE_ID='EN_kwDOSsPci88AAAAFXnPQNA';
 export const ENVIRONMENT_ID='23059484724';
 export const SUBJECT='repo:'+REPOSITORY+':environment:'+ENVIRONMENT_NAME;
 function decode(part){assert(typeof part==='string'&&/^[A-Za-z0-9_-]+$/.test(part));const b=Buffer.from(part,'base64url');assert.equal(b.toString('base64url'),part);const value=JSON.parse(b.toString('utf8'));assert(value&&Object.getPrototypeOf(value)===Object.prototype);return value;}
@@ -23,7 +24,7 @@ export function validateClaims(c,now){
  assert.equal(c.repository,REPOSITORY);assert.equal(c.repository_id,REPOSITORY_ID);assert.equal(c.repository_owner,'bmedeiros1987');assert.equal(c.repository_owner_id,OWNER_ID);
  assert.equal(c.ref,'refs/heads/main');assert.equal(c.ref_type,'branch');assert.equal(c.event_name,'workflow_dispatch');assert.equal(c.runner_environment,'github-hosted');
  assert.equal(c.workflow_ref,WORKFLOW_REF);assert.equal(c.environment,ENVIRONMENT_NAME);
- assert(typeof c.environment_node_id==='string'&&c.environment_node_id.length>0&&c.environment_node_id.length<=128);
+ assert.equal(c.environment_node_id,ENVIRONMENT_NODE_ID);
  assert(typeof c.check_run_id==='string'&&/^[1-9][0-9]*$/.test(c.check_run_id));assert.equal(c.repository_visibility,'public');
  // Reusable-workflow identity needs a separately reviewed policy; none is implied.
  assert(!Object.hasOwn(c,'job_workflow_ref'));assert(!Object.hasOwn(c,'job_workflow_sha'));

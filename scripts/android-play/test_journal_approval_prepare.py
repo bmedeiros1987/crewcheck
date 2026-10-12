@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
-from prepare_journal_approval import prepare,comment,main
+from prepare_journal_approval import prepare,comment,main,ENVIRONMENT_NAME
 from journal_connection_probe import probe,main as probe_main
 from receipt_backend import snapshot_digest,snapshot_json
 ROOT=Path(__file__).resolve().parents[2]
@@ -22,6 +22,7 @@ with tempfile.TemporaryDirectory() as tmp:
  summary=Path(tmp)/'summary';out=Path(tmp)/'plan'
  with patch.dict('os.environ',dict(env,GITHUB_STEP_SUMMARY=str(summary))),patch('prepare_journal_approval.public_get',return_value=meta):
   main(['prepare','--output',str(out)]);main(['comment','--output',str(out),'--artifact-id','789','--archive-digest','a'*64])
+ assert ENVIRONMENT_NAME in summary.read_text()
  assert text in summary.read_text() and 'CC-' in summary.read_text() and 'nenhuma versão será publicada' in summary.read_text()
  assert not any(word in summary.read_text() for word in ['PRIVATE KEY','ACTIONS_ID_TOKEN','DATABASE_URL'])
 calls=[]

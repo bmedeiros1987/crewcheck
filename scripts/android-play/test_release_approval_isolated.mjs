@@ -17,8 +17,8 @@ const pool=mysql.createPool({socketPath:socket,user:'root',password:'',database:
 const pkg='com.crewcheck.app',journalKey='play-release-journal:'+pkg,run='125',attempt='1';
 const key=kind=>`play-release-${kind}:${pkg}:${run}:${attempt}`;
 const owned=[journalKey,...['approval','revocation','admission'].map(key)];
-let lose=false,pause=null,arrived=null,cleanupSafe=false,time=10000;
-const native={query:(...a)=>pool.query(...a),async getConnection(){const c=await pool.getConnection();return {async query(sql,args){if(sql.includes('FOR UPDATE')&&args?.[0]===journalKey){if(lose){lose=false;this.loseCommit=true;}if(pause){const hold=pause;pause=null;arrived();await hold;}}const result=await c.query(sql,args);if(sql==='COMMIT'&&this.loseCommit){this.loseCommit=false;throw Error('fixture lost SQL reply after commit');}return result;},release:()=>c.release(),destroy:()=>c.destroy()};}};
+let lose=false,pause=null,arrived=null,cleanupSafe=false,time=10000,clockAtJournal=null,ledgerArrived=null;
+const native={query:(...a)=>pool.query(...a),async getConnection(){const c=await pool.getConnection();return {async query(sql,args){if(sql.includes('FOR UPDATE')&&args?.[0]===key('admission')&&ledgerArrived){const signal=ledgerArrived;ledgerArrived=null;signal();}if(sql.includes('FOR UPDATE')&&args?.[0]===journalKey){if(clockAtJournal!==null){time=clockAtJournal;clockAtJournal=null;}if(lose){lose=false;this.loseCommit=true;}if(pause){const hold=pause;pause=null;arrived();await hold;}}const result=await c.query(sql,args);if(sql==='COMMIT'&&this.loseCommit){this.loseCommit=false;throw Error('fixture lost SQL reply after commit');}return result;},release:()=>c.release(),destroy:()=>c.destroy()};}};
 const db=mysqlAdapter(native),f=reviewFixture({run,operations:['reserve','startAllocation','observe']}),{binding,approval,claims:fixtureClaims}=f,plan=binding.plan;
 const provider=createGitHubReviewProvider({policy:f.policy,request:f.request,now:()=>time});
 const registrar=createGitHubApprovalBinder({db,proofProvider:provider});
@@ -26,7 +26,7 @@ const verifier=createOidcVerifier({now:()=>time,loadJwks:async()=>({keys:[fixtur
 const handler=createReleaseJournalHandler({enabled:true,poolProvider:async()=>db,verifyIngress:async()=>true,verifyToken:verifier,githubReviewProvider:provider,now:()=>time});
 const get=async k=>{const r=await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=$1',[k]);return r.rows[0]?.payload??null;};
 const reset=async()=>{for(const k of owned)await db.query('DELETE FROM crewcheck_telegram_state WHERE state_key=$1',[k]);};
-async function call(id,operation,revision,input={}){const f={schema:2,id,operation,binding,revision,input};const req=Readable.from([Buffer.from(canonical(f))]);req.method='POST';req.headers={'content-type':'application/json',authorization:'Bearer '+fixtureToken({...fixtureClaims,run_id:run,iat:time,nbf:time,exp:time+300,jti:id})};const res={writeHead(s){this.status=s;},end(b){this.body=JSON.parse(b);}};await handler(req,res,new URL('https://fixture.invalid'+PATH));return res;}
+async function call(id,operation,revision,input={},tokenClaims={}){const f={schema:2,id,operation,binding,revision,input};const req=Readable.from([Buffer.from(canonical(f))]);req.method='POST';req.headers={'content-type':'application/json',authorization:'Bearer '+fixtureToken({...fixtureClaims,run_id:run,iat:time,nbf:time,exp:time+300,jti:id,...tokenClaims})};const res={writeHead(s){this.status=s;},end(b){this.body=JSON.parse(b);}};await handler(req,res,new URL('https://fixture.invalid'+PATH));return res;}
 try{
  assert.equal((await db.query('SELECT DATABASE() AS name')).rows[0].name,'crewcheck_notification_qa');await reset();
  const proof=await provider.verify(fixtureClaims,{schema:2,id:'initial',operation:'reserve',binding,revision:0,input:plan});
@@ -41,6 +41,15 @@ try{
  const saved=await get(journalKey);assert.equal(saved.state,'planned');assert.equal((await get(key('admission'))).operations.length,1);
  const freshPool=mysql.createPool({socketPath:socket,user:'root',password:'',database:'crewcheck_notification_qa',connectionLimit:2});try{const independent=mysqlAdapter(freshPool);for(const [k,expected] of [[journalKey,saved],[key('approval'),immutable]])assert.deepEqual((await independent.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=$1',[k])).rows[0].payload,expected);assert.equal((await independent.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=$1',[key('admission')])).rows[0].payload.operations.length,1);}finally{await freshPool.end();}
  assert.equal((await call('reserve','startAllocation',1)).status,409);assert.deepEqual(await get(journalKey),saved);
+ // Actual InnoDB ledger contention; advance only the synthetic clock while SQL waits.
+ for(const [name,start,journalAt,releaseAt,tokenExpiry] of [['proof-lock-age',10000,10010,10011,10300],['approval-lock-expiry',10099,null,10100,10399],['jwt-lock-expiry',10000,null,10005,10005]]){
+  const beforeJournal=await get(journalKey),beforeLedger=await get(key('admission')),blocker=await pool.getConnection();let request;
+  try{await blocker.beginTransaction();await blocker.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[key('admission')]);time=start;clockAtJournal=journalAt;
+   const waiting=new Promise(resolve=>{ledgerArrived=resolve;});request=call(name,'startAllocation',1,{}, {exp:tokenExpiry});
+   await Promise.race([waiting,new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('Ledger lock wait not reached')),5000);timer.unref();})]);
+   time=releaseAt;await blocker.commit();assert.equal((await request).status,409,name);assert.deepEqual(await get(journalKey),beforeJournal);assert.deepEqual(await get(key('admission')),beforeLedger);assert.deepEqual(await get(key('approval')),immutable);
+  }finally{clockAtJournal=null;ledgerArrived=null;await blocker.rollback();blocker.release();if(request)await request;}
+ }
  time=10100;const expiredObservation=await call('expired-read','observe',0);assert.equal(expiredObservation.status,200);assert.equal(expiredObservation.body.resumeAllowed,false);assert.equal((await call('expired-write','startAllocation',1)).status,403);time=10000;
  // Revocation wins after outer authorization but before the journal's transaction.
  let resume,signal;pause=new Promise(r=>{resume=r;});const seen=new Promise(r=>{signal=r;});arrived=signal;
@@ -50,5 +59,5 @@ try{
  const observed=await call('recover','observe',0);assert.equal(observed.status,200);assert.deepEqual(observed.body.record,saved);assert.equal(observed.body.resumeAllowed,false);
  time=11000;assert.equal((await call('expired-recovery','observe',0)).status,403);assert.deepEqual(await get(journalKey),saved);
  cleanupSafe=true;
- console.log('PASS real existing InnoDB: sealed GitHub manual review and unique immutable run/attempt binding, atomic journal+op ledger survives lost reply, renewed token/replay denied, revocation race blocks before admission, bounded recovery never unlocks');
+ console.log('PASS real existing InnoDB: sealed GitHub manual review and unique immutable run/attempt binding, atomic journal+op ledger survives lost reply, renewed token/replay denied, revocation race blocks before admission, all-lock proof/JWT/approval expiry under actual ledger contention preserves BOTH records, bounded recovery never unlocks');
 }finally{if(cleanupSafe)await reset();await pool.end();}

@@ -10,6 +10,7 @@ from receipt_backend import snapshot_digest, snapshot_json
 REPO='bmedeiros1987/crewcheck'
 REPO_ID='1254349963'
 OWNER_ID='214496369'
+ENVIRONMENT_NAME='safety/manual-play-publication-gates - crewcheck PR #861'
 API='https://api.github.com/repos/'+REPO
 PREFIX='CrewCheck approval/v1\n'
 
@@ -66,7 +67,7 @@ def main(argv=None):
     block=comment(approval,args.artifact_id,args.archive_digest)
     (out/'approval-comment.txt').write_text(block+'\n')
     short='CC-'+snapshot_digest(approval)[:12].upper()
-    summary=f'''### CrewCheck — verificar conexão do journal\n\nReferência: **{short}**. Pacote `com.crewcheck.app`, somente teste de conexão; nenhuma versão será publicada.\n\nFonte: `{approval['codeSha']}`. [Execução e tentativa](https://github.com/{REPO}/actions/runs/{approval['runId']}/attempts/{approval['runAttempt']}).\n\nRevise este resumo, copie o bloco completo abaixo no comentário de **Review deployments** e aprove o ambiente **861**. Os identificadores já estão preenchidos. A referência curta sozinha não autoriza operações.\n\n```text\n{block}\n```\n'''
+    summary=f'''### CrewCheck — verificar conexão do journal\n\nReferência: **{short}**. Pacote `com.crewcheck.app`, somente teste de conexão; nenhuma versão será publicada.\n\nFonte: `{approval['codeSha']}`. [Execução e tentativa](https://github.com/{REPO}/actions/runs/{approval['runId']}/attempts/{approval['runAttempt']}).\n\nRevise este resumo, copie o bloco completo abaixo no comentário de **Review deployments** e aprove o ambiente **{ENVIRONMENT_NAME}**. Os identificadores já estão preenchidos. A referência curta sozinha não autoriza operações. Se esta execução já recebeu uma recusa, inicie uma nova execução; repetir a tentativa não remove a recusa.\n\n```text\n{block}\n```\n'''
     Path(os.environ['GITHUB_STEP_SUMMARY']).write_text(summary,encoding='utf-8')
 
 if __name__=='__main__':

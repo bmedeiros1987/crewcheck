@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {publicJson} from './public-json.mjs';
 import {canonical,snapshotDigest} from '../../scripts/android-play/reconcile_journal.mjs';
 import {validateApproval,OPERATIONS} from './approval.mjs';
-import {REPOSITORY,REPOSITORY_ID,OWNER_ID,WORKFLOW_REF,ENVIRONMENT_NAME,ENVIRONMENT_ID} from './oidc.mjs';
+import {REPOSITORY,REPOSITORY_ID,OWNER_ID,WORKFLOW_REF,ENVIRONMENT_NAME,ENVIRONMENT_ID,ENVIRONMENT_NODE_ID} from './oidc.mjs';
 export const API='https://api.github.com/repos/'+REPOSITORY;
 export const APPROVAL_PREFIX='CrewCheck approval/v1\n';
 const deepFreeze=v=>{if(v&&typeof v==='object'){for(const value of Object.values(v))deepFreeze(value);Object.freeze(v);}return v;};
@@ -14,16 +14,18 @@ export function parseApprovalComment(comment){assert(typeof comment==='string'&&
 export function createGitHubReviewProvider({policy,request,now=()=>Math.floor(Date.now()/1000)}){
  // Policy enrollment is trusted deployment data, never a body/environment-name guess.
  exact(policy,['reviewedCodeSha','reviewedWorkflowSha','environmentNodeId','protectedJobName','operations']);
- for(const k of ['reviewedCodeSha','reviewedWorkflowSha'])assert(typeof policy[k]==='string'&&/^[0-9a-f]{40}$/.test(policy[k]));assert(typeof policy.environmentNodeId==='string'&&policy.environmentNodeId.length>0);assert.equal(policy.protectedJobName,'reviewed-mobile');assert(Array.isArray(policy.operations)&&policy.operations.length>0&&new Set(policy.operations).size===policy.operations.length&&policy.operations.every(o=>OPERATIONS.includes(o)));
+ for(const k of ['reviewedCodeSha','reviewedWorkflowSha'])assert(typeof policy[k]==='string'&&/^[0-9a-f]{40}$/.test(policy[k]));assert.equal(policy.environmentNodeId,ENVIRONMENT_NODE_ID);assert.equal(policy.protectedJobName,'reviewed-mobile');assert(Array.isArray(policy.operations)&&policy.operations.length>0&&new Set(policy.operations).size===policy.operations.length&&policy.operations.every(o=>OPERATIONS.includes(o)));
  const pinned=structuredClone(policy),sealed=new WeakSet();
  const get=request??(url=>publicJson(url,262144,{rejectPagination:true}));
  async function verify(claims,frame){
   assert.equal(claims.sha,pinned.reviewedCodeSha);assert.equal(claims.workflow_sha,pinned.reviewedWorkflowSha);assert.equal(claims.environment_node_id,pinned.environmentNodeId);
   const run=positive(claims.run_id),attempt=positive(claims.run_attempt);const paths=[`${API}/actions/runs/${run}/approvals`,`${API}/actions/runs/${run}/attempts/${attempt}`,`${API}/actions/runs/${run}/attempts/${attempt}/jobs?per_page=100&page=1`];
   const results=await Promise.allSettled(paths.map(url=>get(url)));for(const r of results)assert.equal(r.status,'fulfilled','Independent GitHub proof unavailable');const [reviews,meta,jobs]=results.map(r=>r.value);
-  assert(Array.isArray(reviews)&&reviews.length<=100);assert.equal(positive(meta.id),run);assert.equal(positive(meta.run_attempt),attempt);assert.equal(positive(meta.repository?.id),REPOSITORY_ID);assert.equal(positive(meta.repository?.owner?.id),OWNER_ID);assert.equal(meta.repository.full_name,REPOSITORY);assert.equal(meta.head_sha,pinned.reviewedCodeSha);assert.equal(meta.head_branch,'main');assert.equal(meta.event,'workflow_dispatch');assert.equal(meta.path,'.github/workflows/mobile-only-internal.yml');assert.equal(positive(meta.actor?.id),claims.actor_id);
-  assert(Number.isSafeInteger(jobs.total_count)&&Array.isArray(jobs.jobs)&&jobs.total_count===jobs.jobs.length&&jobs.jobs.length<=100);const matching=jobs.jobs.filter(j=>j.check_run_url===`${API}/check-runs/${claims.check_run_id}`);assert.equal(matching.length,1);const job=matching[0];assert.equal(job.name,pinned.protectedJobName);assert.equal(positive(job.run_id),run);assert.equal(positive(job.run_attempt),attempt);assert.equal(job.head_sha,pinned.reviewedCodeSha);
+  assert(Array.isArray(reviews)&&reviews.length<=100);assert.equal(positive(meta.id),run);assert.equal(positive(meta.run_attempt),attempt);assert.equal(positive(meta.repository?.id),REPOSITORY_ID);assert.equal(positive(meta.repository?.owner?.id),OWNER_ID);assert.equal(meta.repository.full_name,REPOSITORY);assert.equal(meta.head_sha,pinned.reviewedCodeSha);assert.equal(meta.head_branch,'main');assert.equal(meta.event,'workflow_dispatch');assert(['.github/workflows/mobile-only-internal.yml','.github/workflows/mobile-only-internal.yml@main','.github/workflows/mobile-only-internal.yml@refs/heads/main'].includes(meta.path),'Exact reviewed workflow/main path required');assert.equal(positive(meta.actor?.id),claims.actor_id);
+  assert(Number.isSafeInteger(jobs.total_count)&&Array.isArray(jobs.jobs)&&jobs.total_count===jobs.jobs.length&&jobs.jobs.length<=100);const matching=jobs.jobs.filter(j=>j.check_run_url===`${API}/check-runs/${claims.check_run_id}`);assert.equal(matching.length,1);const job=matching[0];assert.equal(job.name,pinned.protectedJobName);assert.equal(positive(job.run_id),run);if(Object.hasOwn(job,'run_attempt'))assert.equal(positive(job.run_attempt),attempt);assert.equal(job.head_sha,pinned.reviewedCodeSha);
   const relevant=reviews.filter(r=>positive(r.user?.id)===OWNER_ID&&Array.isArray(r.environments)&&r.environments.some(e=>positive(e.id)===ENVIRONMENT_ID&&e.name===ENVIRONMENT_NAME&&e.node_id===pinned.environmentNodeId));
+  // Review history has no attempt timestamp/ID. Any authentic rejection in this
+  // environment blocks the WHOLE run, including reruns. Start a new run to recover.
   if(meta.conclusion==='cancelled'||meta.conclusion==='failure'||job.conclusion==='cancelled'||job.conclusion==='failure'||relevant.some(r=>r.state==='rejected')){const proof=Object.freeze({state:'revoked',runId:run,runAttempt:attempt});sealed.add(proof);return proof;}
   assert.equal(meta.status,'in_progress');assert.equal(job.status,'in_progress');
   const documents=[];

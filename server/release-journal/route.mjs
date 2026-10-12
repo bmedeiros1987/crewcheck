@@ -34,7 +34,7 @@ export function createReleaseJournalHandler({enabled=false,poolProvider,verifyTo
    if(proof.state==='revoked'){await binder.revoke(proof);assert.equal(frame.operation,'observe','GitHub approval revoked');}
    else{assert.equal(githubReviewProvider.isFresh(proof),true);await binder.register(proof);}
    const approvals=createApprovalStore(db,{now});const receipt=await approvals.read(claims,frame);
-   const capabilities={...pinnedProof,approvePlan:async p=>canonical(p)===canonical(receipt.approval.binding.plan),authorizeTransition:async(connection,context)=>{assert.equal(githubReviewProvider.isFresh(proof),true);return approvals.transitionAdmission(claims,frame)(connection,context);}};
+   const capabilities={...pinnedProof,approvePlan:async p=>canonical(p)===canonical(receipt.approval.binding.plan),authorizeTransition:async(connection,context)=>{assert.equal(githubReviewProvider.isFresh(proof),true);return approvals.transitionAdmission(claims,frame,()=>githubReviewProvider.isFresh(proof))(connection,context);}};
    if(frame.operation==='probe'){
     assert.equal(frame.revision,0);exact(frame.input,[]);await createPlatformJournal(db).verifyExistingSchema();
     await approvals.read(claims,frame);assert.equal(githubReviewProvider.isFresh(proof),true);
