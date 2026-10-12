@@ -18,6 +18,7 @@ on:
       - 'scripts/android-play/test_consumed_validation.py'
       - 'scripts/android-play/reconcile_journal.mjs'
       - 'scripts/android-play/test_reconcile_journal.mjs'
+      - 'scripts/android-play/test_recovery_fence.mjs'
       - 'scripts/android-play/platform_journal.mjs'
       - 'scripts/android-play/test_platform_journal.mjs'
       - 'scripts/android-play/journal_protocol.mjs'
@@ -54,6 +55,7 @@ jobs:
       - run: node scripts/android-play/test_mysql_journal.mjs
       - run: python3 scripts/android-play/test_consumed_validation.py
       - run: node scripts/android-play/test_reconcile_journal.mjs
+      - run: node scripts/android-play/test_recovery_fence.mjs
       - run: node scripts/android-play/test_platform_journal.mjs
       - run: node scripts/android-play/test_journal_protocol.mjs
       - run: python3 scripts/android-play/test_journal_transport.py

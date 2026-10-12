@@ -13,6 +13,35 @@ function canonical(value){
 }
 export const snapshotDigest=value=>createHash('sha256').update(canonical(value)).digest('hex');
 
+// Restart observation only, reusing the existing journal. No receipt projection,
+// retry, publication permission, new reservation or lifecycle transition.
+export async function readRecoveryFence(journal,binding){
+  try{
+    assert(journal&&typeof journal.read==='function');
+    assert(binding&&Object.getPrototypeOf(binding)===Object.prototype);
+    assert.deepEqual(Object.keys(binding).sort(),['package','owner','sourceSha','controllerSha','runId','artifactSha256','versionCode'].sort());
+    assert.equal(binding.package,'com.crewcheck.app');
+    assert(/^[A-Za-z0-9:_-]{1,128}$/.test(binding.owner));
+    for(const f of ['sourceSha','controllerSha'])assert(/^[0-9a-f]{40}$/.test(binding[f]));
+    assert(/^[0-9a-f]{64}$/.test(binding.artifactSha256));assert(/^[1-9][0-9]*$/.test(binding.runId));
+    assert(Number.isSafeInteger(binding.versionCode)&&binding.versionCode>0&&binding.versionCode<2100000000);
+    const pinned=structuredClone(binding);
+    const first=structuredClone(await journal.read(pinned.package));
+    if(first!==null){
+      assert(first&&Object.getPrototypeOf(first)===Object.prototype);
+      assert.equal(first.package,pinned.package);assert.equal(first.owner,pinned.owner);
+      assert(Number.isSafeInteger(first.revision)&&first.revision>0);
+      assert(['reserved','edit_open','pending','acknowledged','reconciliation_required','reconciled'].includes(first.state));
+      for(const f of ['sourceSha','controllerSha','runId','artifactSha256','versionCode'])assert.equal(first.intent[f],pinned[f]);
+    }
+    // A racing transition or uncertain read is not recovery authority.
+    assert.deepEqual(await journal.read(pinned.package),first);
+    return {record:first,observationSha256:snapshotDigest(first),reservationPresent:first!==null,
+      storeAvailability:'unknown',storeMutationAllowed:false,reservationAllowed:false,
+      retryAllowed:false,rolloverAllowed:false,resumeAllowed:false};
+  }catch{throw new Error('Restart journal observation unverified; publication remains OFF');}
+}
+
 export async function reconcileAcknowledged(journal,expected,readCompleteState){
   // Lost/ambiguous store acknowledgements deliberately cannot use this path.
   assert.equal(expected.package,'com.crewcheck.app');

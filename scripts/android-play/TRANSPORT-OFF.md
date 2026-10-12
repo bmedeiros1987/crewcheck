@@ -123,3 +123,24 @@ existing real MySQL QA continues to cover prior components. No runtime wiring,
 real state reader, production identity/transport/DB access or Play eligibility is
 proved. Helper invocation, restart recovery, same-state enrichment and publisher
 lifecycle coupling remain separate, and all automation gates remain OFF.
+
+## Restart observation fence (OFF)
+
+`readRecoveryFence` extends the existing reconciliation module with read-only
+observation of the existing shared-package journal after runner loss. A trusted
+embedding pins package/owner/source/controller/run/AAB/version independently;
+two equal journal reads bind an observation digest to the current durable record.
+Missing, stale, foreign, racing or uncertain evidence cannot authorize anything.
+Even an empty or reconciled journal observation returns reservationAllowed,
+storeMutationAllowed, retryAllowed, rolloverAllowed and resumeAllowed=false.
+It does not reconstruct a Python receipt, invoke commit/reconcile, allocate,
+upload, open an edit, unlock or adopt a legacy writer.
+
+Offline deterministic SQL tests model a stopped runner with a committed pending
+row and lost SQL response, uncertain Play commit acknowledgement, Mobile/Wear
+competition for com.crewcheck.app, foreign immutable binding and racing reads.
+This is not a real process-kill/production durability test or a complete Play
+reader. Existing publishers, OFF controller guard, identities, pool wiring and
+external Console coordination remain unchanged. Preflight must still establish
+current store eligibility through the existing read-only main workflow; no new
+credential or permission is introduced by this code.
