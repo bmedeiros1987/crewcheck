@@ -346,12 +346,28 @@ def publish(root, journal=None):
             api(session, 'DELETE', verify_url)
 
 
-def main():
+def main(argv=None, planned=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('command', choices=['check-ci', 'allocate', 'validate', 'publish'])
     parser.add_argument('--bundletool')
     parser.add_argument('--output')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if planned is not None:
+        from planned_mobile import PlannedMobileController
+        assert isinstance(planned, PlannedMobileController), 'Reviewed embedding executor required'
+        guard()
+        plan = planned.transport.binding['plan']
+        assert plan['sourceSha'] == SOURCE_SHA
+        assert plan['controllerSha'] == os.environ.get('GITHUB_SHA') and plan['runId'] == os.environ.get('GITHUB_RUN_ID'), 'Foreign controller/run binding'
+        if args.command == 'allocate': return planned.allocate(POLICY)
+        if args.command == 'validate':
+            validate(args.bundletool, args.output)
+            return planned.finalize(args.output)
+        if args.command == 'publish':
+            assert os.environ.get('PUBLISH_MOBILE_INTERNAL') == 'true'
+            check_ci()
+            return planned.publish(args.output)
+        assert args.command == 'check-ci'
     if args.command == 'check-ci': check_ci()
     elif args.command == 'allocate': allocate()
     elif args.command == 'validate': validate(args.bundletool, args.output)

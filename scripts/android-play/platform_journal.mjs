@@ -35,6 +35,6 @@ export function createPlatformJournal(db,capabilities={}){
 
 // Composition for the already-owned application adapter, not a new connection.
 // No runtime caller/endpoint supplies these capabilities; publication stays OFF.
-export function createPlatformReleaseProtocol({db,binding,authorize,lifecycle}){
-  return createJournalProtocol({journal:createPlatformJournal(db),binding,authorize,lifecycle});
+export function createPlatformReleaseProtocol({db,binding,authorize,lifecycle,journalCapabilities={}}){
+  return createJournalProtocol({journal:createPlatformJournal(db,journalCapabilities),binding,authorize,lifecycle});
 }

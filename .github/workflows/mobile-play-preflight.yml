@@ -15,6 +15,13 @@ on:
       - 'scripts/android-play/mysql_journal.mjs'
       - 'scripts/android-play/planned_lifecycle.mjs'
       - 'scripts/android-play/test_planned_lifecycle.mjs'
+      - 'scripts/android-play/planned_mobile.py'
+      - 'scripts/android-play/test_planned_cli.py'
+      - 'scripts/android-play/test_planned_transport.py'
+      - 'scripts/android-play/test_planned_cli.mjs'
+      - 'scripts/android-play/test_planned_protocol.mjs'
+      - 'scripts/android-play/play_state_reader.mjs'
+      - 'scripts/android-play/test_play_state_reader.mjs'
       - 'scripts/android-play/test_mysql_journal.mjs'
       - 'scripts/android-play/test_mysql_journal_isolated.mjs'
       - 'scripts/android-play/consumed_validation.py'
@@ -59,6 +66,10 @@ jobs:
       - run: python3 scripts/android-play/test_artifact_consumer.py
       - run: node scripts/android-play/test_mysql_journal.mjs
       - run: node scripts/android-play/test_planned_lifecycle.mjs
+      - run: node scripts/android-play/test_play_state_reader.mjs
+      - run: node scripts/android-play/test_planned_protocol.mjs
+      - run: python3 scripts/android-play/test_planned_cli.py
+      - run: python3 scripts/android-play/test_planned_transport.py
       - run: python3 scripts/android-play/test_consumed_validation.py
       - run: node scripts/android-play/test_reconcile_journal.mjs
       - run: node scripts/android-play/test_recovery_fence.mjs

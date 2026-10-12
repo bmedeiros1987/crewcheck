@@ -2,13 +2,13 @@
 import assert from 'node:assert/strict';
 import {snapshotDigest} from './reconcile_journal.mjs';
 const packageName='com.crewcheck.app';
-const states=['planned','allocation_started','edit_known','allocated','finalized','pending','acknowledged','reconciliation_required','reconciled'];
+const states=['planned','allocation_started','edit_known','allocated','finalized','stage_started','pending','acknowledged','reconciliation_required','reconciled'];
 const exact=(v,keys)=>{assert(v&&Object.getPrototypeOf(v)===Object.prototype);assert.deepEqual(Object.keys(v).sort(),[...keys].sort());};
 const sha=(v,n=64)=>assert(typeof v==='string'&&new RegExp(`^[0-9a-f]{${n}}$`).test(v));
 const positive=v=>assert(Number.isSafeInteger(v)&&v>0);
 const code=v=>{positive(v);assert(v<2100000000);};
 const owner=v=>assert(typeof v==='string'&&/^[A-Za-z0-9:_-]{1,128}$/.test(v));
-function validatePlan(p){
+export function validatePlan(p){
   exact(p,['package','owner','producer','sourceSha','controllerSha','runId','modules','planSha256']);
   assert.equal(p.package,packageName);owner(p.owner);sha(p.sourceSha,40);sha(p.controllerSha,40);
   assert(typeof p.runId==='string'&&/^[1-9][0-9]*$/.test(p.runId));
@@ -36,7 +36,7 @@ export function validatePlannedRecord(r){
   if(r.editId!==undefined)fields.push('editId');if(r.allocation!==undefined)fields.push('allocation');
   if(r.artifacts!==undefined)fields.push('artifacts');if(r.staged!==undefined)fields.push('staged');if(r.reconciliationSha256!==undefined)fields.push('reconciliationSha256');
   exact(r,fields);assert.equal(r.schema,2);assert.equal(r.package,packageName);positive(r.generation);positive(r.revision);
-  assert(states.includes(r.state));validatePlan(r.plan);assert.equal(r.owner,r.plan.owner);
+  assert(states.includes(r.state));if(r.state==='stage_started')assert.equal(r.plan.producer,'mobile');validatePlan(r.plan);assert.equal(r.owner,r.plan.owner);
   assert(Array.isArray(r.history));assert.equal(r.history.length,r.generation-1);
   let lastRevision=0;
   for(const [i,h] of r.history.entries()){
@@ -49,7 +49,7 @@ export function validatePlannedRecord(r){
   assert.equal(r.editId!==undefined,index>=2);if(r.editId!==undefined)assert(typeof r.editId==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(r.editId));
   assert.equal(r.allocation!==undefined,index>=3);if(r.allocation){validateAllocation(r.allocation,r.plan);if(r.history.length)assert(r.allocation.floor>=r.history.at(-1).highWaterVersionCode,'Allocation below previous generation');}
   assert.equal(r.artifacts!==undefined,index>=4);if(r.artifacts)validateArtifacts(r.artifacts,r);
-  assert.equal(r.staged!==undefined,index>=5);if(r.staged){assert.equal(r.plan.producer,'mobile','Multi-track commit policy not implemented');validateStage(r.staged);}
+  assert.equal(r.staged!==undefined,['pending','acknowledged','reconciliation_required','reconciled'].includes(r.state));if(r.staged){assert.equal(r.plan.producer,'mobile','Multi-track commit policy not implemented');validateStage(r.staged);}
   assert.equal(r.reconciliationSha256!==undefined,r.state==='reconciled');if(r.reconciliationSha256)sha(r.reconciliationSha256);
 }
 async function verified(c,name,...args){assert.equal(typeof c[name],'function',`Trusted ${name} capability missing`);assert.equal(await c[name](...args.map(x=>structuredClone(x))),true,`Trusted ${name} proof unverified`);}
@@ -74,7 +74,8 @@ export async function plannedMutation(op,current,expected,input,c){
   else if(op==='saveEdit'){assert.equal(current.state,'allocation_started');exact(input,['editId']);r.editId=input.editId;r.state='edit_known';}
   else if(op==='allocate'){assert.equal(current.state,'edit_known');validateAllocation(input,current.plan);await verified(c,'verifyInventory',current,input);r.allocation=input;r.state='allocated';}
   else if(op==='finalize'){assert.equal(current.state,'allocated');validateArtifacts(input,current);await verified(c,'verifyArtifacts',current,input);r.artifacts=input;r.state='finalized';}
-  else if(op==='pending'){assert.equal(current.plan.producer,'mobile','Multi-track commit policy not implemented');assert.equal(current.state,'finalized');validateStage(input);await verified(c,'verifyStage',current,input);r.staged=input;r.state='pending';}
+  else if(op==='startStage'){assert.equal(current.plan.producer,'mobile');assert.equal(current.state,'finalized');exact(input,[]);r.state='stage_started';}
+  else if(op==='pending'){assert.equal(current.plan.producer,'mobile','Multi-track commit policy not implemented');assert(['finalized','stage_started'].includes(current.state));validateStage(input);await verified(c,'verifyStage',current,input);r.staged=input;r.state='pending';}
   else if(op==='acknowledged'||op==='reconciliation_required'){assert.equal(current.state,'pending');exact(input,[]);r.state=op;}
   else if(op==='reconcile'){
     assert(['acknowledged','reconciliation_required'].includes(current.state));exact(input,['reconciliationSha256']);sha(input.reconciliationSha256);
