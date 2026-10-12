@@ -81,6 +81,12 @@ for (const badHeader of ['invalid', '-1', '', '9'.repeat(400)]) {
   const bad = createCiriumSkyTransport(config({ fetchImpl: async () => { badCalls++; return response({}, 429, { 'retry-after': badHeader }); } }));
   await bad.source(identity); clock += 59_999;
   assert.equal((await bad.source({ ...identity, flightNumber: '3378' })).state, 'rate_limited'); assert.equal(badCalls, 1);
+  if (badHeader === '9'.repeat(400)) {
+    clock += 1001; // beyond both the minimum cooldown and the cached failure TTL
+    assert.equal((await bad.source(identity)).state, 'rate_limited');
+    assert.equal((await bad.source({ ...identity, flightNumber: '3378' })).state, 'rate_limited');
+    assert.equal(badCalls, 1);
+  }
 }
 clock = beforeLongCooldown;
 const first = t.source(identity), second = t.source(identity); resolve(response()); const values = await Promise.all([first, second]); assert.equal(n, 1); assert.equal(values[0].state, 'available'); assert.equal(values[1].state, 'available');
