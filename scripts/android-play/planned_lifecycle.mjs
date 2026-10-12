@@ -49,7 +49,7 @@ export function validatePlannedRecord(r){
   assert.equal(r.editId!==undefined,index>=2);if(r.editId!==undefined)assert(typeof r.editId==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(r.editId));
   assert.equal(r.allocation!==undefined,index>=3);if(r.allocation){validateAllocation(r.allocation,r.plan);if(r.history.length)assert(r.allocation.floor>=r.history.at(-1).highWaterVersionCode,'Allocation below previous generation');}
   assert.equal(r.artifacts!==undefined,index>=4);if(r.artifacts)validateArtifacts(r.artifacts,r);
-  assert.equal(r.staged!==undefined,index>=5);if(r.staged)validateStage(r.staged);
+  assert.equal(r.staged!==undefined,index>=5);if(r.staged){assert.equal(r.plan.producer,'mobile','Multi-track commit policy not implemented');validateStage(r.staged);}
   assert.equal(r.reconciliationSha256!==undefined,r.state==='reconciled');if(r.reconciliationSha256)sha(r.reconciliationSha256);
 }
 async function verified(c,name,...args){assert.equal(typeof c[name],'function',`Trusted ${name} capability missing`);assert.equal(await c[name](...args.map(x=>structuredClone(x))),true,`Trusted ${name} proof unverified`);}
@@ -74,7 +74,7 @@ export async function plannedMutation(op,current,expected,input,c){
   else if(op==='saveEdit'){assert.equal(current.state,'allocation_started');exact(input,['editId']);r.editId=input.editId;r.state='edit_known';}
   else if(op==='allocate'){assert.equal(current.state,'edit_known');validateAllocation(input,current.plan);await verified(c,'verifyInventory',current,input);r.allocation=input;r.state='allocated';}
   else if(op==='finalize'){assert.equal(current.state,'allocated');validateArtifacts(input,current);await verified(c,'verifyArtifacts',current,input);r.artifacts=input;r.state='finalized';}
-  else if(op==='pending'){assert.equal(current.state,'finalized');validateStage(input);await verified(c,'verifyStage',current,input);r.staged=input;r.state='pending';}
+  else if(op==='pending'){assert.equal(current.plan.producer,'mobile','Multi-track commit policy not implemented');assert.equal(current.state,'finalized');validateStage(input);await verified(c,'verifyStage',current,input);r.staged=input;r.state='pending';}
   else if(op==='acknowledged'||op==='reconciliation_required'){assert.equal(current.state,'pending');exact(input,[]);r.state=op;}
   else if(op==='reconcile'){
     assert(['acknowledged','reconciliation_required'].includes(current.state));exact(input,['reconciliationSha256']);sha(input.reconciliationSha256);

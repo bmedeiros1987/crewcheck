@@ -4,7 +4,7 @@ import {database} from './mysql_journal_fixture.mjs';
 import {snapshotDigest} from './reconcile_journal.mjs';
 const pkg='com.crewcheck.app',key=`play-release-journal:${pkg}`;
 const binding=r=>({owner:r.owner,generation:r.generation,revision:r.revision});
-const plan=(run='123',producer='joint')=>{const p={package:pkg,owner:`run:${run}`,producer,sourceSha:'a'.repeat(40),controllerSha:'b'.repeat(40),runId:run,modules:{joint:['app','wear'],mobile:['app'],wear:['wear']}[producer]};return {...p,planSha256:snapshotDigest(p)};};
+const plan=(run='123',producer='mobile')=>{const p={package:pkg,owner:`run:${run}`,producer,sourceSha:'a'.repeat(40),controllerSha:'b'.repeat(40),runId:run,modules:{joint:['app','wear'],mobile:['app'],wear:['wear']}[producer]};return {...p,planSha256:snapshotDigest(p)};};
 const allocation=(p,floor=144155)=>({inventorySha256:'d'.repeat(64),floor,versionCodes:Object.fromEntries(p.modules.map((m,i)=>[m,floor+i+1]))});
 const artifacts=r=>r.plan.modules.map(module=>({module,package:pkg,versionCode:r.allocation.versionCodes[module],sourceSha:r.plan.sourceSha,controllerSha:r.plan.controllerSha,manifestSha256:'e'.repeat(64),uploadCertificateSha256:'f'.repeat(64),artifactSha256:'c'.repeat(64)}));
 const staged={track:'internal',expectedTrackSha256:'d'.repeat(64),otherTracksBeforeSha256:'e'.repeat(64)};
@@ -27,7 +27,7 @@ assert.equal(r.generation,2);assert.equal(r.revision,old.revision+1);assert.equa
 assert(!('editId' in r));assert(!('allocation' in r));assert(!('artifacts' in r));
 await assert.rejects(j.plan('startAllocation',binding(old),{}));
 r=await j.plan('startAllocation',binding(r),{});r=await j.plan('saveEdit',binding(r),{editId:'second-edit'});r=await j.plan('allocate',binding(r),allocation(r.plan,144157));r=await finished(j,r);
-assert.equal(r.generation,2);assert.equal(r.allocation.versionCodes.app,144158);assert.equal(r.allocation.versionCodes.wear,144159);assert.equal(r.history.length,1);assert.equal(r.history[0].planSha256,old.plan.planSha256);
+assert.equal(r.generation,2);assert.equal(r.allocation.versionCodes.app,144158);assert.equal(r.allocation.versionCodes.wear,undefined);assert.equal(r.history.length,1);assert.equal(r.history[0].planSha256,old.plan.planSha256);
 // Previous generation high-water mark cannot be lowered, even by an accepting fixture verifier.
 {
  const remote=database(),q=createMysqlJournal(remote,capabilities);
@@ -37,7 +37,7 @@ assert.equal(r.generation,2);assert.equal(r.allocation.versionCodes.app,144158);
  assert.equal((await q.read(pkg)).state,'edit_known');
 }
 // Exact plan schema/digest prevents hidden credentials, foreign package and fabricated modules.
-for(const invalid of [{...plan(),planSha256:'0'.repeat(64)},{...plan(),password:'forbidden'},{...plan(),package:'com.crewcheck.watch.app'},{...plan(),modules:['app']}]){
+for(const invalid of [{...plan(),planSha256:'0'.repeat(64)},{...plan(),password:'forbidden'},{...plan(),package:'com.crewcheck.watch.app'},{...plan(),modules:['wear']}]){
  const remote=database();await assert.rejects(createMysqlJournal(remote,capabilities).plan('reserve',null,invalid));assert.equal(remote.rows.size,0);
 }
 // Same PK across all producers; loser cannot open any edit.
@@ -90,14 +90,26 @@ for(const cap of ['approvePlan','verifyInventory','verifyArtifacts','verifyStage
  }
 }
 {
- const remote=database(),q=createMysqlJournal(remote,capabilities);let x=await allocated(q);
+ const remote=database(),q=createMysqlJournal(remote,capabilities);let x=await allocated(q,plan('123','joint'));
  for(const corrupt of [artifacts(x).slice(0,1),artifacts(x).map(a=>({...a,sourceSha:'0'.repeat(40)})),artifacts(x).map(a=>({...a,versionCode:1}))])await assert.rejects(q.plan('finalize',binding(x),corrupt));
  await assert.rejects(q.plan('allocate',binding(x),allocation(plan())));
  await assert.rejects(q.plan('acknowledged',binding(x),{}));
  x=await q.plan('finalize',binding(x),artifacts(x));
- const uncertain=createMysqlJournal(remote,{...capabilities,commitOnce:async()=>{throw Error('unknown');}});
- await uncertain.commitPlan(binding(x),staged);x=await q.read(pkg);assert.equal(x.state,'reconciliation_required');
- await assert.rejects(q.commitPlan(binding(x),staged));await assert.rejects(q.plan('rollover',binding(x),plan('124')));
+ await assert.rejects(q.commitPlan(binding(x),staged));
+ const mobileRemote=database();const mobile=createMysqlJournal(mobileRemote,capabilities);x=await allocated(mobile);x=await mobile.plan('finalize',binding(x),artifacts(x));
+ const uncertain=createMysqlJournal(mobileRemote,{...capabilities,commitOnce:async()=>{throw Error('unknown');}});
+ await uncertain.commitPlan(binding(x),staged);x=await mobile.read(pkg);assert.equal(x.state,'reconciliation_required');
+ await assert.rejects(mobile.commitPlan(binding(x),staged));await assert.rejects(mobile.plan('rollover',binding(x),plan('124')));
+}
+// Only mobile/internal has a reviewed single-target policy. Reject other producers before pending/commit.
+for(const producer of ['mobile','wear','joint']){
+ for(const track of ['internal','wear:internal','qa','production']){
+  const remote=database();let commits=0;
+  const q=createMysqlJournal(remote,{...capabilities,commitOnce:async()=>{commits++;}});
+  let x=await allocated(q,plan('123',producer));x=await q.plan('finalize',binding(x),artifacts(x));
+  if(producer==='mobile'&&track==='internal'){await q.commitPlan(binding(x),{...staged,track});assert.equal(commits,1);}
+  else{await assert.rejects(q.commitPlan(binding(x),{...staged,track}));assert.equal(commits,0);assert.equal((await q.read(pkg)).state,'finalized');}
+ }
 }
 // Old schema cannot be overwritten/migrated; old APIs cannot mutate schema-v2.
 {
@@ -107,4 +119,4 @@ for(const cap of ['approvePlan','verifyInventory','verifyArtifacts','verifyStage
  const v2=database(),next=createMysqlJournal(v2,capabilities);const x=await next.plan('reserve',null,plan());await assert.rejects(next.advance(pkg,x.owner,intent,x.revision,'edit_open'));
 }
 assert(db.calls.every(sql=>!/CREATE|ALTER|DROP|DELETE|TRUNCATE|UPSERT|REPLACE/i.test(sql)));
-console.log('PASS: same-row planned allocation/finalization, two generations, immutable history, shared-package races, all-boundary SQL loss, unknown edit/commit, legacy fail-closed; fictional capabilities only');
+console.log('PASS: same-row planned allocation/finalization, two mobile generations, immutable history, shared-package races, all-boundary SQL loss, unknown edit/commit, legacy fail-closed; fictional capabilities only');
