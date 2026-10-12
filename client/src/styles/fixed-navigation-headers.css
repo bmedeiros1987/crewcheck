@@ -236,7 +236,7 @@ html body #root .cz-app[data-version] .cz-menu-header .cc-menu-account-details {
 
 /* Revision: symmetric canvas, separated favorites and a stable personalization icon. */
 html body #root .cz-app[data-version] .cz-menu-scroll { padding-inline:0!important; scrollbar-gutter:stable both-edges!important; }
-html body #root .cz-app[data-version] .cc-menu-favorites-head { margin-bottom:8px!important; }
+html body #root .cz-app[data-version] .cc-menu-favorites-head { margin-bottom:10px!important; }
 html body #root .cz-app[data-version] .cc-menu-personalization > summary > svg { flex:0 0 24px!important; width:24px!important; height:24px!important; min-width:24px!important; }
 html body #root .cz-app[data-version] .cz-menu-header .cz-menu-profile-copy strong { overflow-wrap:normal!important; word-break:normal!important; }
 html body #root .cz-app[data-version] .cz-menu-panel { scrollbar-gutter:auto!important; }
