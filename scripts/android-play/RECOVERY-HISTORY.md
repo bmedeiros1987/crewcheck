@@ -153,3 +153,23 @@ database credential is copied or new unauthenticated interface invented.
    exact successful main/bridge CI and the same durable lifecycle/version safety.
    Do not revert861 or weaken its regression. Production/store availability requires
    verified eligibility; an internal deferred-review commit is not automatic delivery.
+
+### Current read-only evidence (12 October, no store mutation)
+
+The delegated reviewer verified main88183e93 preflight run38193057854, artifact11721992770,
+timestamp01:44:53UTC: canonical requests returnedHTTP200; production144153 was
+NOT_SENT_FOR_REVIEW,144100 NOT_APPROVED and140319 PUBLISHED; phone internal144154
+andWear internal144155 were PUBLISHED, while alpha/beta had drafts. qa/wear:qa
+returned404/unverified. These findings prove current bounded read access, not
+current production eligibility, all version codes, tester delivery or a submitted
+production update. No credential replacement is indicated by this evidence.
+
+The preflight now separates diagnostic failure from optional historical alias404.
+It retains their rawHTTP404/unverified state and absenceConfirmed=false; they are
+nonfatal only after both production/internal reads are valid.401/403, redirects,
+malformed reads, canonical-track failure and other read errors still fail. Review/
+draft blockers and publicationAllowed=false, unknown eligibility and incomplete
+track/version inventory remain. SUCCESS of this inspection cannot authorize edits.
+The original ZIP could not be materialized in this executor (official transfer
+failed and no local file was created); the figures above are reviewer-supplied
+evidence, not a claim of locally reading that JSON. No transfer bypass was used.
