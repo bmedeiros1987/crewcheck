@@ -90,6 +90,9 @@ export function createMysqlJournal(db, capabilities={}){
       const [rows]=await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[key(packageName)]);
       assert.equal(rows.length,current===null?0:1);
       if(current!==null)same(parse(rows[0].payload),current);
+      // Optional service-side admission shares this exact SQL transaction.
+      // Unconfigured callers retain existing behavior; no token/approval comes from intent.
+      if(capabilities.authorizeTransition)assert.equal(await capabilities.authorizeTransition(connection,{operation,current:structuredClone(current),next:structuredClone(next)}),true,'Independent transition admission refused');
       if(current===null){
         const [result]=await connection.query('INSERT INTO crewcheck_telegram_state(state_key,payload,updated_at) VALUES(?,?,CURRENT_TIMESTAMP(3))',[key(packageName),JSON.stringify(next)]);
         assert.equal(result.affectedRows,1);

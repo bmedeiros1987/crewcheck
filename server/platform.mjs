@@ -1,3 +1,4 @@
+import {createReleaseJournalHandler, PATH as RELEASE_JOURNAL_PATH} from './release-journal/route.mjs';
 import { mysqlAdapter } from './mysql-platform-adapter.mjs';
 import { amilDocumentaryReferences, AMIL_DOCUMENTARY_NOTICE } from '../shared/amil-documentary-reference.mjs';
 import { amilPlanFamily, amilConfirmedProviders, amilUnknownMessage, AMIL_GUIDE_URL } from '../shared/amil-coverage.mjs';
@@ -2502,12 +2503,16 @@ export async function deleteIfTableExists(client, sql, params) {
   }
 }
 
+// Activation requires independently verified GitHub review and trusted ingress; no env/caller toggle.
+const releaseJournalRoute=createReleaseJournalHandler({enabled:false,poolProvider:pool});
+
 export async function handlePlatformRoute(req, res, url) {
   const legacy = url.pathname === '/api/db/status' || url.pathname === '/api/stats' || url.pathname === '/api/rosters' || url.pathname.startsWith('/api/rosters/');
   if (!url.pathname.startsWith('/api/platform/') && !legacy) return false;
   if (!legacy && !enforcePlatformMethod(req, res, url.pathname)) return true;
   try {
     if (legacy) { await handleLegacyDatabase(req, res, url); return true; }
+    if(url.pathname===RELEASE_JOURNAL_PATH)return releaseJournalRoute(req,res,url);
     if (url.pathname === '/api/platform/catalog') { await handleCatalog(req, res); return true; }
     if (url.pathname === '/api/platform/terms/current') { await handleTermsCurrent(req, res); return true; }
     if (url.pathname === '/api/platform/terms/accept') { await handleTermsAccept(req, res); return true; }

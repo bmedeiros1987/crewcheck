@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 
-function canonical(value){
+export function canonical(value){
   if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
   if(value && typeof value==='object'){
     assert.equal(Object.getPrototypeOf(value),Object.prototype);

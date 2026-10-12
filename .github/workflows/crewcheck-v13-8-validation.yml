@@ -62,10 +62,15 @@ jobs:
           node scripts/regression-notification-mysql.mjs
           node scripts/android-play/test_mysql_journal_isolated.mjs || exit $?
           node scripts/android-play/test_planned_cli_isolated.mjs || exit $?
+          node scripts/android-play/test_release_approval_isolated.mjs || exit $?
+          node scripts/android-play/test_release_workflow_off.mjs
           node scripts/regression-telegram-location-callback-scope.mjs
           node scripts/regression-notification-diagnostic.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
           node scripts/v139/apply.mjs
+          node scripts/android-play/test_release_approval_isolated.mjs || exit $?
+          node scripts/android-play/test_release_workflow_off.mjs
+          node scripts/android-play/test_release_namespace.mjs
           node scripts/regression-free-day-held.mjs
           node scripts/regression-free-day-sources.mjs
           node scripts/regression-free-day-source-queue.mjs

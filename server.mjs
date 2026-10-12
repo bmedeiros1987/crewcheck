@@ -1,3 +1,4 @@
+import {assertNotProtectedReleaseKey} from './server/release-journal/namespace.mjs';
 import { defaultCiriumRadarOptions, ciriumRadarInjectionEnabled, ciriumRadarRegistration, ciriumRadarIdentity, runCiriumRadarInjection, ciriumRadarProjection } from './server/cirium-radar-injection.mjs';
 import { weatherCanaryRecipientHash, weatherConsentCommand, sameWeatherCanaryConsent, writeWeatherCanaryConsent, weatherMonitorSettings, weatherMonitorReadiness, weatherCanaryConsent, createWeatherCanaryPolicy, findWeatherCanarySnapshots, acquireWeatherCanaryLease } from './server/weather/monitor-readiness.mjs';
 import http from 'node:http';
@@ -2070,6 +2071,7 @@ async function conciergeDbPool() {
 }
 async function conciergeDbPut(key, payload) {
   try {
+    assertNotProtectedReleaseKey(key);
     const pool = await conciergeDbPool();
     if (!pool || !key) return false;
     await pool.query(
@@ -2083,6 +2085,7 @@ async function conciergeDbPut(key, payload) {
 }
 async function conciergeDbGet(key) {
   try {
+    assertNotProtectedReleaseKey(key);
     const pool = await conciergeDbPool();
     if (!pool || !key) return null;
     const [rows] = await pool.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? LIMIT 1', [String(key)]);
@@ -2095,6 +2098,7 @@ async function conciergeDbGet(key) {
 }
 async function conciergeDbDelete(key) {
   try {
+    assertNotProtectedReleaseKey(key);
     const pool = await conciergeDbPool();
     if (!pool || !key) return false;
     await pool.query('DELETE FROM crewcheck_telegram_state WHERE state_key=?', [String(key)]);

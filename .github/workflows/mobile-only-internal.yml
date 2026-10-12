@@ -25,7 +25,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare-journal-plan:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      id-token: none
+    env:
+      REVIEWED_SOURCE_SHA: ${{ inputs.reviewed_source_sha }}
+      GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Prepare read-only connection approval plan
+        run: python3 scripts/android-play/prepare_journal_approval.py prepare --output "$RUNNER_TEMP/journal-plan"
+      - uses: actions/upload-artifact@v4
+        id: journal-plan
+        with:
+          name: crewcheck-journal-plan-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/journal-plan/approval-plan.json
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 7
+      - name: Generate copy-ready manual approval
+        run: python3 scripts/android-play/prepare_journal_approval.py comment --output "$RUNNER_TEMP/journal-plan" --artifact-id "${{ steps.journal-plan.outputs.artifact-id }}" --archive-digest "${{ steps.journal-plan.outputs.artifact-digest }}"
+
   reviewed-mobile:
+    needs: prepare-journal-plan
+    environment: '861'
+    permissions:
+      contents: read
+      actions: read
+      id-token: none # activation patch: write ONLY here after independent review
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -47,6 +80,15 @@ jobs:
         with:
           path: control
           persist-credentials: false
+      - name: Download exact prepared plan for this attempt
+        uses: actions/download-artifact@v4
+        with:
+          name: crewcheck-journal-plan-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/journal-plan
+      - name: Reviewed OIDC connection probe (OFF until activation review)
+        if: ${{ false }}
+        working-directory: ${{ github.workspace }}/control
+        run: python3 scripts/android-play/journal_connection_probe.py --plan "$RUNNER_TEMP/journal-plan/approval-plan.json" --enable-reviewed-probe
       - name: Checkout immutable reviewed phone source
         uses: actions/checkout@v6
         with:

@@ -10,7 +10,7 @@ import hashlib
 import json
 
 
-def snapshot_digest(value):
+def snapshot_json(value):
     # Compatible subset of reconcile_journal.snapshotDigest: sorted ASCII keys,
     # UTF-8 JSON strings and safe integer numbers. Fractions/unsafe integers and
     # non-ASCII keys are rejected rather than silently hashed differently.
@@ -34,7 +34,11 @@ def snapshot_digest(value):
         raise ValueError('Snapshot value outside compatible schema')
     validate(value)
     data = json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
-    return hashlib.sha256(data.encode('utf-8')).hexdigest()
+    return data
+
+
+def snapshot_digest(value):
+    return hashlib.sha256(snapshot_json(value).encode('utf-8')).hexdigest()
 
 
 class ReceiptBackend:
