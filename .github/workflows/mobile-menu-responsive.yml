@@ -17,6 +17,16 @@ on:
       - 'scripts/regression-fixed-navigation-headers.cjs'
       - 'scripts/regression-pulse-content-space.cjs'
       - 'scripts/fixed-navigation-headers.mjs'
+      - 'scripts/menu-content-density.mjs'
+      - 'scripts/approved-brand-assets.mjs'
+      - 'scripts/ui-artifact-evidence.cjs'
+      - 'scripts/regression-approved-brand-assets.mjs'
+      - 'scripts/regression-brand-footer-browser.cjs'
+      - 'scripts/record-typescript-check.cjs'
+      - 'scripts/regression-menu-density-browser.cjs'
+      - 'client/public/assets/brand/**'
+      - 'scripts/v13910/generate-brand-icon.mjs'
+      - 'android-wrapper/app/src/main/res/**'
       - 'client/src/components/navigation/InternalHeaderFrame.tsx'
       - 'client/src/components/v1391/HomeLayoutShell.tsx'
       - 'client/src/components/v1391/MenuPersonalization.tsx'
@@ -88,9 +98,13 @@ jobs:
       - name: Personal timezone contracts
         run: node scripts/regression-timezone-choice.mjs
       - name: TypeScript and web build
+        env:
+          SOURCE_VERSION: ${{ github.sha }}
         run: |
-          npx tsc --noEmit
+          node scripts/record-typescript-check.cjs
           npx vite build
+      - name: Verify approved PR936 art, offline aliases and Android resource inputs
+        run: node scripts/regression-approved-brand-assets.mjs
       - name: Install isolated browser test dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/menu-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
@@ -122,11 +136,23 @@ jobs:
       - name: Verify pinned navigation and import theme with actual app
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+          UI_EVIDENCE_REQUIRE_COMMIT: '1'
         run: node scripts/regression-fixed-navigation-headers.cjs
       - name: Verify normal content canvas with long expanded Pulse
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+          UI_EVIDENCE_REQUIRE_COMMIT: '1'
         run: node scripts/regression-pulse-content-space.cjs
+      - name: Verify complete account copy and density in actual app
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+          UI_EVIDENCE_REQUIRE_COMMIT: '1'
+        run: node scripts/regression-menu-density-browser.cjs
+      - name: Verify approved mark and whole large-text footer labels
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
+          UI_EVIDENCE_REQUIRE_COMMIT: '1'
+        run: node scripts/regression-brand-footer-browser.cjs
       - name: Validate publication import to history with synthetic PDFs
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/menu-browser/package.json
@@ -150,6 +176,8 @@ jobs:
             artifacts/ui-reading-overlays
             artifacts/fixed-headers
             artifacts/pulse-content-space
+            artifacts/menu-density
+            artifacts/brand-footer
             artifacts/publication-import-flow
             artifacts/share-discovery
           if-no-files-found: warn

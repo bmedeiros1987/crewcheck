@@ -13,6 +13,7 @@
 
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import postcss from 'postcss';
 import { loadClientModules, TYPE_ONLY_PDF_PARSER_STUB } from './lib/ts-module-harness.mjs';
 
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
@@ -38,9 +39,11 @@ if (home.includes('// stay-editor-context-v2')) {
 }
 assert.equal((home.match(/<InternalHeaderFrame>/g) || []).length, 1, 'a aplicação deve montar um único header global');
 assert.match(frame, /className="cc-header-notice"><CrewCheckPulse compact\/>/,
-  'o frame deve montar um único Pulse fora da navegação fixa');
+  'o frame deve montar uma única superfície de aviso');
 assert.equal((frame.match(/<CrewCheckPulse\b/g) || []).length, 1, 'não duplicar a superfície de aviso');
-assert.match(frame, /className="cz-global-header" data-global-internal-header="true">\{children\}<\/div>/, 'somente navegação pertence ao header fixo');
+assert.match(frame, /className="cz-global-header" data-global-internal-header="true">\{children\}<div className="cc-header-notice"><CrewCheckPulse compact\/><\/div><\/div>/,
+  'marca e Pulse pertencem ao mesmo header em fluxo normal');
+assert.ok(!frame.includes('cc-fixed-header-space'), 'header em fluxo não pode reservar um spacer fixo');
 assert.ok(!/<Brand pulse(?:\s|=)/.test(home), 'Brand não deve montar outro Pulse além do frame');
 assert.ok(
   !home.includes('<CrewCheckPulse/>'),
@@ -54,22 +57,34 @@ assert.match(
   'sem alerta, o Pulse compacto precisa devolver a identidade do header',
 );
 
-// 3. O resumo compacto preserva toque/ellipsis. Detalhes expandidos ficam no
+// 3. O resumo compacto preserva toque e texto inteiro. Detalhes ficam no
 //    fluxo e mostram todo o texto; avisos críticos não podem ser truncados.
 assert.match(
   cssRules,
   /\.cc-pulse-compact-trigger \{[^}]*min-height: 44px;/,
   'o resumo compacto precisa manter alvo de toque de 44px',
 );
-assert.match(
-  cssRules,
-  /\.cc-pulse-compact-trigger > strong \{[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/,
-  'o título do Pulse compacto precisa permanecer em uma linha',
-);
-assert.match(finalCss, /\.cz-global-header \.cc-pulse-popover\s*\{[^}]*position:\s*static;[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/,
-  'detalhes precisam ficar no fluxo e continuar inteiros');
-assert.match(finalCss, /\.cz-app\[data-version\] > \.cz-global-header\s*\{[^}]*position:\s*fixed !important;/,
-  'o header final deve manter a posição explicitamente solicitada durante o scroll');
+// The prepared sheet retains legacy rules. An includes/first-match check can
+// falsely accept the obsolete fixed/ellipsis contract; inspect the last override.
+const finalRules = postcss.parse(finalCss);
+const lastDeclaration = (selector, property) => {
+  let value;
+  finalRules.walkRules(rule => {
+    if (!rule.selector.includes(selector)) return;
+    rule.walkDecls(property, declaration => { value = declaration.value; });
+  });
+  return value;
+};
+assert.equal(lastDeclaration('.cz-app[data-version] > .cz-global-header', 'position'), 'relative',
+  'a posição efetiva final acompanha o scroll do documento');
+assert.equal(lastDeclaration('.cc-header-notice .cc-pulse-compact-trigger > strong', 'white-space'), 'normal',
+  'o título usa quebra natural e a largura disponível');
+assert.equal(lastDeclaration('.cc-header-notice .cc-pulse-compact-trigger > strong', 'overflow'), 'visible',
+  'o título completo não pode ser cortado');
+for (const [property, value] of [['position', 'static'], ['max-height', 'none'], ['overflow', 'visible']]) {
+  assert.equal(lastDeclaration('.cc-header-notice .cc-pulse-popover', property), value,
+    'detalhes expandidos permanecem íntegros no fluxo');
+}
 assert.match(finalCss, /data-priority="critica"[\s\S]*?white-space:normal!important;overflow:visible!important;overflow-wrap:anywhere/,
   'aviso crítico deve mostrar o título completo');
 assert.ok(main.trimEnd().endsWith('import "./styles/ipad-header-recovery.css";'), 'CSS do header deve fechar a precedência visual');
