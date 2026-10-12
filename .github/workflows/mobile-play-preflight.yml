@@ -14,11 +14,14 @@ on:
       - 'scripts/android-play/test_artifact_consumer.py'
       - 'scripts/android-play/mysql_journal.mjs'
       - 'scripts/android-play/test_mysql_journal.mjs'
+      - 'scripts/android-play/test_mysql_journal_isolated.mjs'
       - 'scripts/android-play/consumed_validation.py'
       - 'scripts/android-play/test_consumed_validation.py'
       - 'scripts/android-play/reconcile_journal.mjs'
       - 'scripts/android-play/test_reconcile_journal.mjs'
       - 'scripts/android-play/test_recovery_fence.mjs'
+      - 'scripts/android-play/test_publisher_lifecycle.py'
+      - 'scripts/android-play/test_publisher_lifecycle.mjs'
       - 'scripts/android-play/platform_journal.mjs'
       - 'scripts/android-play/test_platform_journal.mjs'
       - 'scripts/android-play/journal_protocol.mjs'
@@ -59,6 +62,7 @@ jobs:
       - run: node scripts/android-play/test_platform_journal.mjs
       - run: node scripts/android-play/test_journal_protocol.mjs
       - run: python3 scripts/android-play/test_journal_transport.py
+      - run: python3 scripts/android-play/test_publisher_lifecycle.py
   inspect-existing-play-access:
     needs: offline-guards
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'

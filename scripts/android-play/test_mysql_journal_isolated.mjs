@@ -5,8 +5,10 @@ import mysql from 'mysql2/promise';
 import {createMysqlJournal,coordinatedCommit} from './mysql_journal.mjs';
 import {reconcileAcknowledged,snapshotDigest} from './reconcile_journal.mjs';
 import {mysqlAdapter} from '../../server/mysql-platform-adapter.mjs';
-import {createPlatformJournal} from './platform_journal.mjs';
+import {createPlatformJournal,createPlatformReleaseProtocol} from './platform_journal.mjs';
 import {createJournalProtocol} from './journal_protocol.mjs';
+import {runPrototypeNode} from '../v139/prototype-processes.mjs';
+import {fileURLToPath} from 'node:url';
 globalThis.fetch=()=>{throw Error('External network forbidden');};
 const socketPath='/tmp/crewcheck-notification-qa-socket/mysqld.sock';
 assert.equal(process.env.CREWCHECK_NOTIFICATION_QA,'isolated-mysql');
@@ -17,11 +19,23 @@ const packageName='com.crewcheck.app',stateKey=`play-release-journal:${packageNa
 const intent={sourceSha:'a'.repeat(40),controllerSha:'b'.repeat(40),artifactSha256:'c'.repeat(64),runId:'123',versionCode:144201};
 const staged={...intent,editId:'synthetic-edit',track:'qa',expectedTrackSha256:'d'.repeat(64),otherTracksBeforeSha256:'e'.repeat(64)};
 const reset=()=>db.query('DELETE FROM crewcheck_telegram_state WHERE state_key=?',[stateKey]);
+let cleanupSafe=true;
+if(process.argv.includes('--crash-after-pending')){
+  const worker=createMysqlJournal(db);
+  const reserved=await worker.reserve(packageName,'qa-dead-runner',intent);
+  const opened=await worker.advance(packageName,reserved.owner,staged,reserved.revision,'edit_open');
+  await coordinatedCommit(worker,opened,async()=>{
+    assert.equal((await worker.read(packageName)).state,'pending');
+    fs.writeSync(1,'QA_PENDING_DURABLY_READ_BEFORE_RUNNER_KILL\n');
+    process.kill(process.pid,'SIGKILL');
+  });
+  throw Error('Crash fixture unexpectedly survived');
+}
 try{
   assert.equal((await db.query('SELECT DATABASE() AS name'))[0][0].name,'crewcheck_notification_qa');
   // No DDL: prior existing notification regression created the ephemeral table.
   await reset();const journal=createMysqlJournal(db);await journal.verifyExistingSchema();
-  const outcomes=await Promise.allSettled(Array.from({length:6},(_,i)=>journal.reserve(packageName,`qa:${i}`,intent)));
+  const outcomes=await Promise.allSettled(Array.from({length:6},(_,i)=>journal.reserve(packageName,`${i%2?'wear':'mobile'}:qa:${i}`,intent)));
   assert.equal(outcomes.filter(x=>x.status==='fulfilled').length,1);
   assert.equal(outcomes.filter(x=>x.status==='rejected').length,5);
   const reserved=await journal.read(packageName),owner=reserved.owner;
@@ -91,5 +105,36 @@ try{
   assert.equal(JSON.parse(await protocol(frame('new-id','advance',2,'pending',bound))).status,'blocked');
   await assert.rejects(createPlatformJournal(mysqlAdapter(db)).reserve(packageName,'other-wire-owner',intent));
   console.log('PASS: serialized executor/journal protocol on existing real isolated platform SQL; lost durable reply and stale frames block without retry or Play');
+  await reset();
+  let lifecycleCommits=0;
+  const lifecycleBinding={...binding,owner:'qa-platform-lifecycle'};
+  const complete=record=>({...observation,owner:record.owner,revision:record.revision,editId:record.intent.editId});
+  const releaseProtocol=createPlatformReleaseProtocol({db:mysqlAdapter(db),binding:lifecycleBinding,authorize:async()=>true,
+    lifecycle:{async readStagedState(record){assert.equal((await createPlatformJournal(mysqlAdapter(db)).read(packageName)).state,'pending');return complete(record);},
+      async commitOnce(){lifecycleCommits++;},async readCompleteState(record){return complete(record);}}});
+  const releaseFrame=(id,operation,revision,state,value)=>canonical({schema:1,id,operation,binding:lifecycleBinding,revision,state,intent:value});
+  assert.equal(JSON.parse(await releaseProtocol(releaseFrame('life-reserve','reserve',0,null,intent))).status,'ok');
+  assert.equal(JSON.parse(await releaseProtocol(releaseFrame('life-open','advance',1,'edit_open',bound))).status,'ok');
+  const committed=JSON.parse(await releaseProtocol(releaseFrame('life-commit','commit',2,null,bound)));
+  assert.equal(committed.helperResult.state,'acknowledged');assert.equal(lifecycleCommits,1);
+  const reconciled=JSON.parse(await releaseProtocol(releaseFrame('life-reconcile','reconcile',4,null,bound)));
+  assert.equal(reconciled.helperResult.state,'reconciled');assert(Array.isArray(reconciled.observation.targetTrack.releases));
+  assert.equal((await createPlatformJournal(mysqlAdapter(db)).read(packageName)).intent.reconciliationSha256,reconciled.helperResult.observationSha256);
+  assert.equal(JSON.parse(await releaseProtocol(releaseFrame('life-replay','commit',2,null,bound))).status,'blocked');
+  await assert.rejects(createPlatformJournal(mysqlAdapter(db)).reserve(packageName,'wear-after-mobile',intent));
+  assert.equal(lifecycleCommits,1);
+  console.log('PASS: publisher lifecycle wire invokes existing helpers through existing platform adapter on real isolated SQL, exact proof persisted, replay/Mobile-Wear competition blocked; fictional Play only');
+  await reset();
+  cleanupSafe=false;
+  const killed=runPrototypeNode([fileURLToPath(import.meta.url),'--crash-after-pending'],{
+    timeout:30000,cwd:process.cwd(),env:{PATH:process.env.PATH,
+      CREWCHECK_NOTIFICATION_QA:'isolated-mysql',CREWCHECK_QA_MYSQL_SOCKET:socketPath}});
+  assert(!killed.error);assert.equal(killed.status,128);assert.equal(killed.signal,null);
+  assert.match(killed.stdout,/QA_PENDING_DURABLY_READ_BEFORE_RUNNER_KILL/);
+  cleanupSafe=true; // Approved supervisor returned after confirming quiescence.
+  const afterDeath=await createPlatformJournal(mysqlAdapter(db)).read(packageName);
+  assert.equal(afterDeath.state,'pending');assert.equal(afterDeath.owner,'qa-dead-runner');
+  await assert.rejects(createPlatformJournal(mysqlAdapter(db)).reserve(packageName,'wear-after-death',intent));
+  console.log('PASS: actual supervised runner SIGKILL after acknowledged pending SQL; existing InnoDB row survives and Mobile/Wear fresh owner remains blocked; no Play');
   console.log('PASS: real existing isolated MySQL PK concurrency, owner/revision fencing and committed-but-lost pending acknowledgement; no Play calls');
-}finally{await reset();await db.end();}
+}finally{if(cleanupSafe)await reset();await db.end();}

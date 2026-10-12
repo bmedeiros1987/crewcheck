@@ -25,12 +25,14 @@ class JournalTransport:
         frame = dict(schema=1, id=request_id, operation=operation, binding=self.binding,
                      revision=revision, state=state, intent=copy.deepcopy(intent))
         try:
-            assert operation in {'read', 'reserve', 'advance'}
+            assert operation in {'read', 'reserve', 'advance', 'commit', 'reconcile'}
+            helper = operation in {'commit', 'reconcile'}
             assert type(revision) is int and revision >= 0
             assert isinstance(intent, dict)
             if operation == 'advance': assert revision > 0 and state in {'edit_open', 'pending', 'reconciliation_required'}
             else: assert state is None
             if operation == 'reserve': assert revision == 0
+            if helper: assert revision > 0 and self.binding['producer'] == 'mobile'
             for field in ('sourceSha', 'controllerSha', 'runId', 'artifactSha256', 'versionCode'): assert intent[field] == self.binding[field]
             response = self.exchange(json.dumps(frame, sort_keys=True, separators=(',', ':')))
             assert isinstance(response, str) and len(response.encode()) <= 16384
@@ -41,7 +43,9 @@ class JournalTransport:
                     result[key] = value
                 return result
             result = json.loads(response, object_pairs_hook=unique)
-            assert set(result) == {'schema', 'id', 'status', 'record', 'retryAllowed', 'storeAvailability'}
+            response_fields = {'schema', 'id', 'status', 'record', 'retryAllowed', 'storeAvailability'}
+            if helper: response_fields |= {'helperResult', 'observation'}
+            assert set(result) == response_fields
             assert type(result['schema']) is int and result['schema'] == 1 and result['id'] == request_id and result['status'] == 'ok'
             assert result['retryAllowed'] is False and result['storeAvailability'] == 'unknown'
             record = result['record']
@@ -53,13 +57,24 @@ class JournalTransport:
                 assert isinstance(record['intent'], dict)
                 assert record['package'] == self.binding['package'] and record['owner'] == self.binding['owner']
                 assert type(record['revision']) is int
-                expected = revision if operation == 'read' else revision + 1
+                expected = revision if operation == 'read' else revision + (2 if operation == 'commit' else 1)
                 assert record['revision'] == expected
-                expected_state = None if operation == 'read' else ('reserved' if operation == 'reserve' else state)
+                expected_state = None if operation == 'read' or helper else ('reserved' if operation == 'reserve' else state)
                 if expected_state: assert record['state'] == expected_state
                 for field in ('sourceSha', 'controllerSha', 'runId', 'artifactSha256', 'versionCode'):
                     assert record['intent'][field] == self.binding[field]
-                if operation != 'read': assert record['intent'] == intent
+                if operation != 'read' and not helper: assert record['intent'] == intent
+            if helper:
+                assert record is not None
+                expected_states = {'acknowledged', 'reconciliation_required'} if operation == 'commit' else {'reconciled'}
+                assert record['state'] in expected_states
+                outcome = result['helperResult']
+                assert isinstance(outcome, dict)
+                assert {field: outcome[field] for field in ('package', 'owner', 'revision', 'state', 'intent')} == record
+                assert outcome['retryAllowed'] is False and outcome['storeAvailability'] == 'unknown'
+                if operation == 'commit': assert result['observation'] is None
+                else: assert isinstance(result['observation'], dict) and outcome['rolloverAllowed'] is False
+                return copy.deepcopy(dict(result=outcome, observation=result['observation']))
             return copy.deepcopy(record)
         except Exception:
             self.blocked = True

@@ -85,3 +85,71 @@ The same PR now adds offline immutable artifact consumption and an inactive
 existing-MySQL adapter/coordinator; prior c30eb8a9 approval does not cover this new
 HEAD. See EXISTING-JOURNAL-OPTIONS.md. Its real SQL test reuses the existing web CI
 QA socket/container and must pass before claiming InnoDB integration validation.
+
+## Functional offline continuation of the existing controller
+
+The mobile publisher now has a trusted-backend path through DurableJournal,
+ReceiptBackend and the existing serialized protocol. `commit` invokes the existing
+coordinatedCommit helper; SQL pending/readback precedes the independently injected
+staged-state reader and one store callback. `reconcile` invokes reconcileAcknowledged
+with the independently injected complete-state reader. Python imports each result
+only after exact durable readback through project_verified_result; it does not
+persist caller-authored positive flags. Lost SQL/transport/store replies preserve
+the original edit and reservation, with no retry, replacement, cleanup or unlock.
+
+No lifecycle callback comes from JSON, an artifact flag, environment or a secret.
+The protocol refuses helper operations without the trusted embedding. This increment
+supports the phone lifecycle only; Wear can compete for the same package reservation
+but cannot invoke the phone commit/track policy. Legacy publisher code and all
+workflow/manual guards remain unchanged. The CLI still has no configured backend;
+allocate still refuses and publish opt-in still fails before checkout. Nothing is
+enabled by this offline wiring.
+
+The actual publisher is tested with the actual Python receipt/transport and Node
+protocol/helpers over the existing fictional SQL fixture. Tests include successful
+single commit and full-proof reconciliation, artifact/allocated-version rejection,
+Wear code race, incomplete staged inventory/review, final-track drift, missing
+capability, SQL/transport/Play response loss, interrupted-runner model and Mobile/Wear
+exclusion. The existing real InnoDB QA is extended with the platform lifecycle and
+a supervised child killed after pending was durably read; no Play action occurs.
+Local fictional tests do not substitute for that CI proof or production durability.
+
+### Existing connection, not a new framework
+
+server/platform.mjs already creates one native mysql2 pool through pool(), adapting
+it with mysqlAdapter. createPlatformReleaseProtocol composes createPlatformJournal
+with createJournalProtocol for that already-owned adapter. It neither calls pool(),
+loads credentials, connects, exposes a route nor creates a table. The private pool
+getter is unchanged. The existing InnoDB JSON table is crewcheck_telegram_state,
+state_key PK, with play-release-journal:com.crewcheck.app as the shared reservation.
+Its production identity/access, primary durability, retention and authenticated
+release-executor boundary still need verification; current CI has QA sockets only.
+There is no evidence that GitHub CI can access this production connection, so no
+database credential is copied or new unauthenticated interface invented.
+
+### Smallest reviewable restoration sequence
+
+1. Review the functional OFF lifecycle in this continuation; run the existing
+   read-only main preflight with the existing Play secret. The cloud gh dispatch
+   attempt returned Forbidden at workflow lookup; PR offline-guards SUCCESS and
+   inspect-existing-play-access SKIPPED are not live evidence. No workaround/token.
+2. In the same existing journal architecture, wire the already-authorized executor
+   identity/exchange, actual staged/complete Play readers and consumed-byte validation.
+   Enroll every com.crewcheck.app writer BEFORE allocation/edit creation: Android
+   allocate_versions.py/publish.py, crewwatch_internal.py and mobile_internal.py,
+   plus external Console operators. The joint Android publisher needs immutable
+   evidence for both Mobile/Wear artifacts, not a phone-only hash. Wear track mapping
+   needs its own reviewed policy on this same coordinator; no separate lock/service.
+   Companion com.crewcheck.life and WatchFace com.crewcheck.watch.app are separate.
+   Keep bypassing legacy paths disabled until adopted. Add controlled, reviewed
+   reconciliation/history/rollover for subsequent releases: this increment retains
+   final reservations and deliberately cannot grant a fresh release after reconciliation.
+3. Only with verified current Play state, deployment/identity, all-writer fencing,
+   generation/history and signed consumed bytes, review removal/replacement of the
+   manual phone OFF fence and expose the existing main dispatch. Publication needs
+   its own authorization; no user has to recreate credentials merely because this
+   cloud executor cannot dispatch. Never use the old joint publisher as a shortcut.
+4. Separately review a phone-only push trigger bound to the reviewed immutable source,
+   exact successful main/bridge CI and the same durable lifecycle/version safety.
+   Do not revert861 or weaken its regression. Production/store availability requires
+   verified eligibility; an internal deferred-review commit is not automatic delivery.

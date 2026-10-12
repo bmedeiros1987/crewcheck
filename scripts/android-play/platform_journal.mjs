@@ -2,6 +2,7 @@
 // No import of platform state, environment, native pool getter, connection URL or API.
 import assert from 'node:assert/strict';
 import {createMysqlJournal} from './mysql_journal.mjs';
+import {createJournalProtocol} from './journal_protocol.mjs';
 
 function platformQuery(adapter){
   return async(sql,args=[])=>{
@@ -30,4 +31,10 @@ export function createPlatformJournal(db){
     return {query,beginTransaction:()=>query('BEGIN'),commit:()=>query('COMMIT'),rollback:()=>query('ROLLBACK'),release:()=>connection.release(),destroy:()=>connection.discard()};
   }};
   return createMysqlJournal(bridge);
+}
+
+// Composition for the already-owned application adapter, not a new connection.
+// No runtime caller/endpoint supplies these capabilities; publication stays OFF.
+export function createPlatformReleaseProtocol({db,binding,authorize,lifecycle}){
+  return createJournalProtocol({journal:createPlatformJournal(db),binding,authorize,lifecycle});
 }
