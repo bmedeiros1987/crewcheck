@@ -2,13 +2,14 @@
 import assert from 'node:assert/strict';
 import {snapshotDigest} from './reconcile_journal.mjs';
 const root='https://androidpublisher.googleapis.com/androidpublisher/v3/applications/';
+const repeated=(body,field)=>{if(!Object.hasOwn(body,field))body[field]=[];assert(Array.isArray(body[field]),'Invalid repeated field');return body[field];};
 function version(v){assert((typeof v==='number'&&Number.isSafeInteger(v))||(typeof v==='string'&&/^[1-9][0-9]*$/.test(v)));const n=Number(v);assert(Number.isSafeInteger(n)&&n>0&&n<2100000000);return n;}
 export function createPlayStateReader({request,now=()=>Date.now()}){
   assert.equal(typeof request,'function');assert.equal(typeof now,'function');
   async function get(url){
     const r=await request({method:'GET',url});assert.equal(r?.status,200);assert(r.body&&Object.getPrototypeOf(r.body)===Object.prototype);
     // These list methods expose no pagination; unknown partial-list metadata blocks.
-    assert(!Object.hasOwn(r.body,'nextPageToken'));assert(!Object.hasOwn(r.body,'tokenPagination'));return structuredClone(r.body);
+    assert(!Object.hasOwn(r.body,'error'));assert(!Object.hasOwn(r.body,'nextPageToken'));assert(!Object.hasOwn(r.body,'tokenPagination'));return structuredClone(r.body);
   }
   async function inventory(record){
     assert.equal(record.package,'com.crewcheck.app');assert(/^[A-Za-z0-9_-]{1,128}$/.test(record.editId));
@@ -17,11 +18,12 @@ export function createPlayStateReader({request,now=()=>Date.now()}){
     assert(typeof edit.expiryTimeSeconds==='string'&&/^[1-9][0-9]*$/.test(edit.expiryTimeSeconds));assert(Number(edit.expiryTimeSeconds)*1000>now());
     const tracks=await get(url+'/tracks'),bundles=await get(url+'/bundles'),apks=await get(url+'/apks');
     for(const [body,kind,field] of [[tracks,'tracks','tracks'],[bundles,'bundles','bundles'],[apks,'apks','apks']]){
-      assert.equal(body.kind,`androidpublisher#${kind}ListResponse`);assert(Array.isArray(body[field]));
+      assert.equal(body.kind,`androidpublisher#${kind}ListResponse`);
+      assert(Object.keys(body).every(k=>k==='kind'||k===field),'Unknown/partial list envelope');repeated(body,field);
     }
     const names=new Set(),codes=[];
-    for(const t of tracks.tracks){assert(typeof t.track==='string'&&t.track.length>0&&!names.has(t.track));names.add(t.track);assert(Array.isArray(t.releases));
-      for(const r of t.releases){assert(['draft','inProgress','halted','completed'].includes(r.status));assert(Array.isArray(r.versionCodes));for(const v of r.versionCodes)codes.push(version(v));}
+    for(const t of tracks.tracks){assert(typeof t.track==='string'&&t.track.length>0&&!names.has(t.track));names.add(t.track);repeated(t,'releases');
+      for(const r of t.releases){assert(['draft','inProgress','halted','completed'].includes(r.status));repeated(r,'versionCodes');for(const v of r.versionCodes)codes.push(version(v));}
     }
     for(const a of [...bundles.bundles,...apks.apks])codes.push(version(a.versionCode));
     // Verify the original edit still exists after all reads; no replacement creation.

@@ -21,7 +21,7 @@ const reader=createPlayStateReader({now:()=>1000,request:async request=>{
   return {status:200,body:{kind:'androidpublisher#tracksListResponse',tracks:t}};
  }
  if(suffix==='/bundles'){
-  if(data.scenario==='incomplete')return {status:200,body:{kind:'androidpublisher#bundlesListResponse'}};
+  if(data.scenario==='incomplete')return {status:200,body:{kind:'androidpublisher#bundlesListResponse',nextPageToken:'unhandled-partial'}};
   const b=[{versionCode:144154,sha256:'a'.repeat(64)}];if(staged)b.push({versionCode:144156,sha256:data.scenario==='remote-hash'?'0'.repeat(64):data.artifactSha256});
   return {status:200,body:{kind:'androidpublisher#bundlesListResponse',bundles:b}};
  }

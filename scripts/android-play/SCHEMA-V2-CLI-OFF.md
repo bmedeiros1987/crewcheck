@@ -25,3 +25,5 @@ Primary API contracts:
 - https://developers.google.com/android-publisher/api-ref/rest/v3/applications.tracks.releases/list
 
 P2 canonicalization correction: planned_mobile.digest is the existing receipt_backend.snapshot_digest by import alias, with no new serializer. Plan verification in PlannedJournalTransport uses the same helper. Unicode/emoji notes in a preserved Wear track exercise CLI staging; direct Python/Node comparisons cover accents, emoji, U+2028, escapes, safe integer extrema and reject unsupported floats/keys/surrogates.
+
+P2 ProtoJSON correction: after HTTP200 and documented list kind/envelope validation, missing tracks/bundles/apks and nested releases/versionCodes normalize to empty arrays. Explicit null, wrong types, error/partial envelopes remain rejected. Omitted artifact or target data never establishes the intended uploaded bytes/version; stage verification still requires those. Tests distinguish successful empty inventory from sufficient commit evidence. Sources: https://protobuf.dev/programming-guides/json/#presence-and-default-values and the official list/track contracts above.
