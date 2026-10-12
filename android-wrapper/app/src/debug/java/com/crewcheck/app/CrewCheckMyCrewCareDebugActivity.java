@@ -40,6 +40,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
     private static final String ENTRY = "https://api2.apicrewcare.com/LATAM/mytravel.aspx";
     private TextView explanation, status;
     private boolean foreground, cleaning, destroyed, stopFailed;
+    private boolean cleanupTerminalFailure;
     private volatile boolean running;
     private volatile long token;
     // Separate presentation authority: revocation must not abandon pending cleanup.
@@ -249,7 +250,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
     private void cancel() {
         ++previewEpoch; // Includes completed reads whose profile cleanup is still pending.
         if (!running) {
-            if (!destroyed) status.setText(cleaning ? "Resultado revogado; limpeza do perfil ainda pendente." : "Cancelado. Visualização apagada; nada importado.");
+            if (!destroyed && !cleanupTerminalFailure) status.setText(cleaning ? "Resultado revogado; limpeza do perfil ainda pendente." : "Cancelado. Visualização apagada; nada importado.");
             return;
         }
         // Cancel can synchronously deliver completion; mark ownership first.
@@ -293,6 +294,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         }
     }
     private void cleanupFailed() {
+        cleanupTerminalFailure = true; // Terminal latch: cancel/stop cannot relabel it as pending.
         // Keep retry disabled: never announce cleanup success or reuse an unverified profile.
         if (!destroyed) status.setText("Limpeza do perfil não confirmada ou encerramento incompleto. Teste bloqueado; nada importado.");
     }

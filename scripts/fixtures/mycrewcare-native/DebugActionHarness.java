@@ -135,6 +135,13 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
    CrewCheckMyCrewCareProfile.cleanupHook=()->{CrewCheckMyCrewCareProfile.cleanupHook=null;if(action.equals("cancel"))s.cancel.click();else{ s.activity.stop();try{Method resume=CrewCheckMyCrewCareDebugActivity.class.getDeclaredMethod("onStart");resume.setAccessible(true);resume.invoke(s.activity);}catch(Exception e){throw new AssertionError(e);}}};
    deliver(s);check(!s.status.text.contains("Synthetic")&&!s.status.text.contains("Contrato observado válido")&&s.status.text.contains("Perfil de teste limpo"),"native cleanup reentrancy cannot recapture revoked preview authority: "+action);s.close();count++;
   }
-  check(count==94,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
+  for(String outcome:List.of("failure","timeout"))for(String action:List.of("cancel","stop")) {
+   clean();CrewCheckMyCrewCareProfile.defer=true;Screen s=new Screen();s.ready();s.click();for(int i=0;i<4;i++)deliver(s);
+   if(outcome.equals("failure")){CrewCheckMyCrewCareProfile.pending.remove(0).onComplete(false,"profile-clear-failed");android.os.Handler.tick();}else for(int i=0;i<300;i++)android.os.Handler.tick();
+   check(s.status.text.contains("não confirmada")&&!s.prepare.enabled,"cleanup reached terminal failure before UI revocation: "+outcome);String failure=s.status.text;int clears=CrewCheckMyCrewCareProfile.clearCalls,timers=android.os.Handler.delayed.size();
+   android.os.Handler.runMain(()->{if(action.equals("cancel")){s.cancel.click();s.cancel.click();}else s.activity.stop();});android.os.Handler.drain();
+   check(s.status.text.equals(failure)&&!s.status.text.contains("pendente")&&!s.status.text.contains("Synthetic")&&!s.prepare.enabled&&clears==CrewCheckMyCrewCareProfile.clearCalls&&timers==android.os.Handler.delayed.size(),"terminal cleanup failure remains visible, no restart/polling/retry after "+outcome+action);s.close();count++;
+  }
+  check(count==98,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
  }catch(Exception e){throw new AssertionError(e);}}
 }

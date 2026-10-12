@@ -51,3 +51,7 @@ Cada reserva mostra confirmationRaw intacto. Planned é PLANEJADA, não confirma
 Toda a tela fica em ScrollView nativa (controles e resultado), sem limite de linhas. Texto usa 16sp escalável e foco; WebView visível usa altura 360dp em vez de peso/altura zero dentro do scroll. Teste com doubles verifica hierarquia, foco e configurações, não geometria física/TalkBack. CI SDK prova compilação; tela pequena/fontes ampliadas e acessibilidade no aparelho continuam validação física após revisão do APK. Nenhum APK gerado/entregue nesta etapa.
 
 Epoch de publicação capturada antes de chamar cleanup nativo, não após seu retorno: cancelamento/onStop→resume reentrantes durante início da limpeza também revogam resultado. Duas negativas adicionais; 94 casos debug totais.
+
+## Falha terminal de limpeza preservada
+
+Cancelar/onStop depois de falha/timeout preservam o aviso terminal, sem relabelar como pendente, sem reiniciar limpeza ou polling e sem liberar retry. Latch de falha terminal só controla apresentação; revogação do preview continua incrementando epoch. Quatro negativas falha/timeout→cancel repetido/onStop, além das anteriores: 98 casos debug. HEAD8d5f059b reproduz a negativa failure/cancel; novo SHA requer revisão e APK permanece HOLD.
