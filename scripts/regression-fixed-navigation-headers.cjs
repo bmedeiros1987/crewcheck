@@ -166,6 +166,7 @@ async function visibleTextBounds(page, selector) {
       results.push({width,theme,size,importColors,header,menuHead,title,scrollBox,safeArea:{top:24,bottom:20},keyboardHeight:width<500?420:null});
       await context.close();console.log('PASS fixed headers',width,theme,size);
     }
+    assert.deepEqual(artifactEvidence(),exactArtifact,'Exact source/bundle hashes stay unchanged through the complete flow matrix');
     fs.writeFileSync(path.join(output,'fixed-headers-results.json'),JSON.stringify({testedCommit,cases:results,limitations:['Chromium Android viewport emulation; keyboard represented by reduced visual layout height, not physical Android IME.','Safe-area values injected through CSS variables; no physical cutout device.']},null,2));
   } finally {fs.writeFileSync(path.join(output,'artifact.json'),JSON.stringify(exactArtifact,null,2));
     await browser.close();server.close();}

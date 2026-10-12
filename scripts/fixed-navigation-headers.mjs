@@ -1,3 +1,4 @@
+import { finalizeApprovedBrandAssets } from './approved-brand-assets.mjs';
 import fs from 'node:fs';
 import { finalizeMenuContentDensity } from './menu-content-density.mjs';
 const homePath = 'client/src/pages/Home.tsx';
@@ -19,3 +20,5 @@ let main = fs.readFileSync(mainPath, 'utf8').replaceAll('import "./styles/fixed-
 const finalImport = 'import "./styles/ipad-header-recovery.css";';
 main = main.replaceAll(finalImport + '\n', '');
 fs.writeFileSync(mainPath, main.trimEnd() + '\n' + finalImport + '\n');
+
+finalizeApprovedBrandAssets();
