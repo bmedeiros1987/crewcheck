@@ -85,10 +85,10 @@ test('actual canonical overnight constructor keeps plain and parenthesized +1 cl
     const modules=loadClientModules({files:['client/src/lib/canonicalRoster.ts'],stubs:TYPE_ONLY_PDF_PARSER_STUB,prefix:'weather-overnight-constructor-'});
     try {
         const {buildCanonicalRosterEvents}=modules.load('canonicalRoster');
-        const make=arrivalTime=>buildCanonicalRosterEvents({month:10,year:2032,base:'BSB',crewName:'SYNTHETIC OVERNIGHT QA',days:[{date:'20/10/2032',type:'FLIGHT',pairingCode:'QA',dutyReport:'22:00',dutyReportSource:'published',legs:[{flightNumber:'QA8001',origin:'BSB',destination:'CGH',departureTime:'23:00',arrivalTime,workType:'OP'}]}]}).find(e=>e.kind==='flight');
+        const make=(arrivalTime,departureTime='23:00')=>buildCanonicalRosterEvents({month:10,year:2032,base:'BSB',crewName:'SYNTHETIC OVERNIGHT QA',days:[{date:'20/10/2032',type:'FLIGHT',pairingCode:'QA',dutyReport:'22:00',dutyReportSource:'published',legs:[{flightNumber:'QA8001',origin:'BSB',destination:'CGH',departureTime,arrivalTime,workType:'OP'}]}]}).find(e=>e.kind==='flight');
         const plain=make('02:00');assert.equal(plain.startDateTime,'2032-10-21T02:00:00.000Z');assert.equal(plain.endDateTime,'2032-10-21T05:00:00.000Z');
-        for(const notation of ['02:00','02:00(+1)','02:00 (+1)']){
-            const canonical=make(notation);assert.equal(canonical.startDateTime,plain.startDateTime);assert.equal(canonical.endDateTime,plain.endDateTime);
+        for(const departureNotation of ['23:00','23:00(+1)','23:00 (+1)'])for(const notation of ['02:00','02:00(+1)','02:00 (+1)']){
+            const canonical=make(notation,departureNotation);assert.equal(canonical.startDateTime,plain.startDateTime);assert.equal(canonical.endDateTime,plain.endDateTime);
             const e=event({id:canonical.id,canonical});const now=Date.parse('2032-10-21T01:00:00Z'),h=harness({now,payload:packet(now)});h.start(e);await h.settle();assert.equal(h.calls.length,1,notation+' remains eligible before overnight departure');assert.match(h.calls[0],/airports=BSB&type=all/);assert.equal(h.notices.length,1,notation+' reaches the real producer');
             const arrivalWindow=Date.parse('2032-10-21T03:00:00Z'),a=harness({now:arrivalWindow,payload:packet(arrivalWindow)});a.start(e);await a.settle();assert.equal(a.calls.length,1);assert.match(a.calls[0],/airports=CGH&type=all/);assert.equal(a.notices.length,1);assert.match(a.notices[0].title,/CGH/);
             const expired=Date.parse('2032-10-21T05:45:00.001Z'),x=harness({now:expired,payload:packet(expired)});x.start(e);await x.settle();assert.equal(x.calls.length,0);assert.equal(x.notices.length,0);

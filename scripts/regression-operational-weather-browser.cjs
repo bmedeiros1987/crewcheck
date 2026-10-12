@@ -20,7 +20,15 @@ function packet(now, stale = false) { const observed = stale ? '2032-10-19T12:00
     const results = [];
     try {
         for (const timezoneId of ['UTC', 'America/Sao_Paulo', 'Pacific/Auckland'])
-            for (const spec of [{ name: 'distant', now: '2032-10-12T15:00:00Z', calls: 0, notice: false, manual: true }, { name: 'origin-window', now: '2032-10-20T12:00:00Z', calls: 1, notice: true }, { name: 'expired-observation', now: '2032-10-20T12:00:00Z', calls: 1, notice: false, stale: true }, { name: 'expired-flight', now: '2032-10-20T17:16:00Z', calls: 0, notice: false }]) {
+            for (const spec of [{ name: 'distant', now: '2032-10-12T15:00:00Z', calls: 0, notice: false, manual: true }, { name: 'origin-window', now: '2032-10-20T12:00:00Z', calls: 1, notice: true }, { name: 'expired-observation', now: '2032-10-20T12:00:00Z', calls: 1, notice: false, stale: true }, { name: 'expired-flight', now: '2032-10-20T17:16:00Z', calls: 0, notice: false },
+                ...[
+                    ['overnight-departure-tight','23:00(+1)','02:00','2032-10-21T01:00:00Z','BSB'],
+                    ['overnight-departure-spaced','23:00 (+1)','02:00','2032-10-21T01:00:00Z','BSB'],
+                    ['overnight-arrival-tight','23:00','02:00(+1)','2032-10-21T01:00:00Z','BSB'],
+                    ['overnight-arrival-spaced','23:00','02:00 (+1)','2032-10-21T01:00:00Z','BSB'],
+                    ['overnight-destination-tight','23:00(+1)','02:00(+1)','2032-10-21T03:00:00Z','CGH'],
+                    ['overnight-destination-spaced','23:00 (+1)','02:00 (+1)','2032-10-21T03:00:00Z','CGH']
+                ].map(([name,departure,arrival,now,airport])=>({name,departure,arrival,now,airport,calls:1,notice:true}))]) {
                 const context = await browser.newContext({ viewport: { width: 390, height: 844 }, timezoneId, serviceWorkers: 'block' });
                 let weatherCalls = 0, blocked = 0;
                 const queries = [];
@@ -33,7 +41,9 @@ function packet(now, stale = false) { const observed = stale ? '2032-10-19T12:00
                     return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(packet(spec.now, spec.stale)) });
                 } if (u.pathname.startsWith('/api/'))
                     return r.fulfill({ status: 503, contentType: 'application/json', body: '{"ok":false,"items":[],"data":[],"enabled":false}' }); return r.request().method() === 'GET' ? r.continue() : r.abort(); });
-                await context.addInitScript(fixture.seed, { theme: 'light', kind: roster, amount: 0 });
+                const fixtureRoster=JSON.parse(JSON.stringify(roster));
+                if(spec.departure){Object.assign(fixtureRoster.days[0],{dutyReport:'22:00',dutyDebrief:'03:00',dutyHours:5,flyingHours:3});Object.assign(fixtureRoster.days[0].legs[0],{departureTime:spec.departure,arrivalTime:spec.arrival,presentationTime:'22:00',duration:3});}
+                await context.addInitScript(fixture.seed, { theme: 'light', kind: fixtureRoster, amount: 0 });
                 await context.addInitScript(now => { const Native = Date, clock = Date.parse(now); globalThis.Date = class extends Native {
                     constructor(...a) { super(...(a.length ? a : [clock])); }
                     static now() { return clock; }
@@ -45,6 +55,7 @@ function packet(now, stale = false) { const observed = stale ? '2032-10-19T12:00
                 await page.locator('.cz-app').waitFor();
                 await page.waitForTimeout(900);
                 assert.equal(weatherCalls, spec.calls, `${timezoneId}/${spec.name}: automatic requests`);
+                if(spec.airport)assert.ok(queries[0].includes('airports='+spec.airport+'&'), 'actual overnight role targets the correct airport on the next UTC day');
                 const keys = await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('crewcheck_weather_pulse_signature_')));
                 assert.equal(keys.length, spec.notice ? 1 : 0, `${spec.name}: only eligible fresh observations reach publication`);
                 // A higher-priority synthetic roster warning may precede weather in the real FIFO.
