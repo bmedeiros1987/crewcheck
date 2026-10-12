@@ -143,3 +143,31 @@ for code in (True, 144200.5, '00144200', '１４４２００', '1e5', '', -1, 21
     assert result['tracks']['production']['state'] == 'unverified'
     assert m.inspection_failed(result) is True
 print('PASS: malformed version codes are not coerced/truncated into release evidence')
+
+
+class ReportedShapeSession:
+    """Synthesize the reviewer's observed shape, not a new live observation."""
+    def request(self, method, url, **kwargs):
+        assert method == 'GET' and '/edits' not in url
+        from urllib.parse import unquote
+        track = unquote(url.split('/tracks/')[1].split('/')[0])
+        if track in m.OPTIONAL_ALIASES: return PayloadResponse({}, status=404)
+        rows = {'production': [(144153, 'NOT_SENT_FOR_REVIEW'), (144100, 'NOT_APPROVED'), (140319, 'PUBLISHED')],
+                'internal': [(144154, 'PUBLISHED')], 'wear:internal': [(144155, 'PUBLISHED')]}.get(track)
+        releases = ([dict(track=track, releaseLifecycleState='RELEASE_LIFECYCLE_STATE_' + state,
+                          activeArtifacts=[{'versionCode': str(code)}]) for code, state in rows]
+                    if rows is not None else [dict(track=track, releaseLifecycleState='RELEASE_LIFECYCLE_STATE_DRAFT')])
+        return PayloadResponse({'releases': releases})
+
+observed = m.inspect(ReportedShapeSession())
+assert m.inspection_failed(observed) is False and observed['readAccessVerified'] is True
+assert observed['tracks']['production']['releases'] == [
+    {'state': 'RELEASE_LIFECYCLE_STATE_NOT_SENT_FOR_REVIEW', 'versionCodes': [144153]},
+    {'state': 'RELEASE_LIFECYCLE_STATE_NOT_APPROVED', 'versionCodes': [144100]},
+    {'state': m.PUBLISHED, 'versionCodes': [140319]}]
+assert observed['tracks']['internal']['releases'][0]['versionCodes'] == [144154]
+assert observed['tracks']['wear:internal']['releases'][0]['versionCodes'] == [144155]
+assert any('production: unresolved' in value for value in observed['blockers'])
+assert all(any(track + ': unresolved' in value for value in observed['blockers']) for track in ('alpha', 'beta'))
+assert observed['publicationAllowed'] is False and observed['productionEligibility'] == 'unknown'
+print('PASS: reviewer-reported published/pending/draft version shape is preserved; valid access does not mean production submitted or update ready')
