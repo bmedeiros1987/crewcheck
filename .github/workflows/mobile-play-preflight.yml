@@ -57,6 +57,9 @@ on:
       - 'server/platform.mjs'
       - 'server.mjs'
       - 'server/release-journal/**'
+      - 'server/mysql-verified-tls.mjs'
+      - 'server/certs/**'
+      - 'scripts/android-play/test_verified_mysql_tls.mjs'
       - '.github/workflows/mobile-only-internal.yml'
       - 'scripts/android-play/prepare_journal_approval.py'
       - 'scripts/android-play/journal_connection_probe.py'
@@ -90,6 +93,7 @@ jobs:
       - run: python3 scripts/android-play/test_receipt_journal.py
       - run: python3 scripts/android-play/test_mobile_internal.py
       - run: python3 scripts/android-play/test_artifact_consumer.py
+      - run: node scripts/android-play/test_verified_mysql_tls.mjs
       - run: node scripts/android-play/test_mysql_journal.mjs
       - run: node scripts/android-play/test_release_oidc.mjs
       - run: node scripts/android-play/test_github_release_review.mjs

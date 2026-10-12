@@ -1,3 +1,4 @@
+import {verifiedMysqlTls} from '../mysql-verified-tls.mjs';
 import crypto from 'node:crypto';
 
 let poolPromise = null;
@@ -74,8 +75,6 @@ export function secureCompare(a, b) {
 
 function mysqlOptions(connectionString) {
   const parsed = new URL(connectionString);
-  const local = ['localhost', '127.0.0.1'].includes(parsed.hostname);
-  const sslDisabled = /^(disable|disabled|false|off)$/i.test(env('MYSQL_SSL_MODE'));
   return {
     host: parsed.hostname,
     port: Number(parsed.port || 3306),
@@ -86,7 +85,7 @@ function mysqlOptions(connectionString) {
     connectTimeout: 8000,
     waitForConnections: true,
     dateStrings: true,
-    ssl: local || sslDisabled ? undefined : { rejectUnauthorized: false },
+    ssl: verifiedMysqlTls(parsed.hostname,Number(parsed.port||3306),env('MYSQL_SSL_MODE')),
   };
 }
 

@@ -1,3 +1,4 @@
+import {verifiedMysqlTls} from './mysql-verified-tls.mjs';
 import {createReleaseJournalHandler, PATH as RELEASE_JOURNAL_PATH} from './release-journal/route.mjs';
 import { mysqlAdapter } from './mysql-platform-adapter.mjs';
 import { amilDocumentaryReferences, AMIL_DOCUMENTARY_NOTICE } from '../shared/amil-documentary-reference.mjs';
@@ -277,8 +278,6 @@ const PLATFORM_OPTIONAL_TABLES = [
 
 function mysqlPoolOptions(connectionString) {
   const parsed = new URL(connectionString);
-  const sslDisabled = /^(?:disable|disabled|false|off)$/i.test(env('MYSQL_SSL_MODE'));
-  const local = ['localhost', '127.0.0.1'].includes(parsed.hostname);
   return {
     host: parsed.hostname,
     port: Number(parsed.port || 3306),
@@ -290,7 +289,7 @@ function mysqlPoolOptions(connectionString) {
     connectTimeout: 5000,
     dateStrings: true,
     decimalNumbers: true,
-    ssl: local || sslDisabled ? undefined : { rejectUnauthorized: false },
+    ssl: verifiedMysqlTls(parsed.hostname,Number(parsed.port||3306),env('MYSQL_SSL_MODE')),
   };
 }
 
