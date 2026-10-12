@@ -15,6 +15,9 @@ on:
       - 'scripts/regression-cirium-radar-wiring-off.mjs'
       - 'scripts/check-cirium-radar-wiring-off.mjs'
       - 'docs/cirium-radar-wiring-off.md'
+      - 'server/cirium-sky-transport.mjs'
+      - 'scripts/regression-cirium-sky-transport-off.mjs'
+      - 'docs/cirium-sky-transport-off.md'
 permissions:
   contents: read
 jobs:
