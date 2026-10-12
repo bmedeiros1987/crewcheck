@@ -110,6 +110,16 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
   check(loginPage.destroyed&&reader!=loginPage&&reader.sessionStorage.isEmpty(),"fresh page cannot pretend to inherit login sessionStorage");
   extract();android.os.Handler.runMain(()->reader.value.onReceiveValue("null"));android.os.Handler.drain();
   check(storageOnly.status.text.contains("Não validado")&&!storageOnly.status.text.contains("Synthetic")&&storageOnly.status.text.contains("Perfil de teste limpo"),"sessionStorage-only authentication fails closed with cleanup; no session copied or own reservations claimed");storageOnly.close();count++;
-  check(count==82,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
+  for(String action:List.of("cancel","stop"))for(String outcome:List.of("ok","failure","timeout")) {
+   clean();CrewCheckMyCrewCareProfile.defer=true;Screen s=new Screen();s.ready();s.click();for(int i=0;i<4;i++)deliver(s);
+   check(s.status.text.contains("ainda não concluído")&&!s.status.text.contains("Synthetic"),"preview unpublished during cleanup");
+   android.os.Handler.runMain(()->{if(action.equals("cancel")){s.cancel.click();s.cancel.click();}else s.activity.stop();});android.os.Handler.drain();
+   if(action.equals("stop")){Method resume=CrewCheckMyCrewCareDebugActivity.class.getDeclaredMethod("onStart");resume.setAccessible(true);android.os.Handler.runMain(()->{try{resume.invoke(s.activity);}catch(Exception e){throw new AssertionError(e);}});}
+   if(outcome.equals("timeout")){for(int i=0;i<300;i++)android.os.Handler.tick();}
+   else {CrewCheckMyCrewCareProfile.pending.remove(0).onComplete(outcome.equals("ok"),outcome.equals("ok")?"ok":"profile-clear-failed");android.os.Handler.tick();}
+   check(!s.status.text.contains("Synthetic")&&!s.status.text.contains("Contrato observado válido"),"revoked preview never returns after cleanup: "+action+outcome);
+   check(outcome.equals("ok")?s.prepare.enabled&&s.status.text.contains("Perfil de teste limpo"):!s.prepare.enabled&&s.status.text.contains("não confirmada"),"cleanup completion/errors remain authoritative after preview revocation: "+action+outcome);s.close();count++;
+  }
+  check(count==88,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
  }catch(Exception e){throw new AssertionError(e);}}
 }

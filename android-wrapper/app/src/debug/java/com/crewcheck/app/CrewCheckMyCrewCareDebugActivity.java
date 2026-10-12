@@ -41,6 +41,8 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
     private boolean foreground, cleaning, destroyed, stopFailed;
     private volatile boolean running;
     private volatile long token;
+    // Separate presentation authority: revocation must not abandon pending cleanup.
+    private long previewEpoch;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -88,6 +90,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
                 employee.getText().toString().trim(), username.getText().toString().trim(), 0);
         } catch (IllegalArgumentException error) { status.setText("Informe a matrícula e a identidade esperadas."); return; }
         final long attempt = ++token;
+        ++previewEpoch;
         running = true; preparing = true; attemptControls(true); prepare.setEnabled(false); start.setEnabled(false);
         status.setText("Prepare a sessão somente na página visível. Ao retornar a My Travel, toque em verificar. A URL não prova autenticação.");
         try {
@@ -235,8 +238,9 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         return text.toString();
     }
     private void cancel() {
+        ++previewEpoch; // Includes completed reads whose profile cleanup is still pending.
         if (!running) {
-            if (!cleaning && !destroyed) status.setText("Cancelado. Visualização apagada; nada importado.");
+            if (!destroyed) status.setText(cleaning ? "Resultado revogado; limpeza do perfil ainda pendente." : "Cancelado. Visualização apagada; nada importado.");
             return;
         }
         // Cancel can synchronously deliver completion; mark ownership first.
@@ -258,19 +262,25 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
                 cleanupFailed(); return;
             }
         } catch (RuntimeException error) { cleanupFailed(); return; }
-        checkCleanup(attempt, operation, message, 0);
+        checkCleanup(attempt, previewEpoch, operation, message, 0);
     }
-    private void checkCleanup(long attempt, String operation, String message, int polls) {
+    private void checkCleanup(long attempt, long publicationEpoch, String operation, String message, int polls) {
         if (attempt != token) return;
         String outcome = runtime.myCrewCareCleanupResultV3(account, operation);
         if (outcome.equals("pending") && polls < 300) {
             if (!destroyed) status.setText("Limpando o perfil de teste; resultado ainda não concluído.");
-            main.postDelayed(() -> checkCleanup(attempt, operation, message, polls + 1), 100);
+            main.postDelayed(() -> checkCleanup(attempt, publicationEpoch, operation, message, polls + 1), 100);
             return;
         }
         if (!outcome.equals("ok") || stopFailed) { cleanupFailed(); return; }
         cleaning = false;
-        if (!destroyed) { status.setText(message + " Perfil de teste limpo."); attemptControls(false); prepare.setEnabled(true); }
+        if (!destroyed) {
+            // Commit only while the exact attempt still owns visible presentation.
+            // Never increment token to revoke preview: cleanup/error polling must settle.
+            boolean mayPublish = attempt == token && publicationEpoch == previewEpoch && foreground;
+            status.setText((mayPublish ? message : "Resultado revogado. Nada importado.") + " Perfil de teste limpo.");
+            attemptControls(false); prepare.setEnabled(true);
+        }
     }
     private void cleanupFailed() {
         // Keep retry disabled: never announce cleanup success or reuse an unverified profile.

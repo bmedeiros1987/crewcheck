@@ -37,7 +37,7 @@ test('actual debug action: consent, lifecycle, validation and verified cleanup w
   files.push(activity,'scripts/fixtures/mycrewcare-native/ObservedAcquisitionHarness.java','scripts/fixtures/mycrewcare-native/ObservedWebViewSourceHarness.java','scripts/fixtures/mycrewcare-native/DebugActionHarness.java');
   execFileSync(java,['com.sun.tools.javac.Main','-source','17','-target','17','-d',root,...files],{encoding:'utf8'});
   const result=execFileSync(java,['-cp',root,'DebugActionHarness',join(process.cwd(),'android-wrapper/app/src/main/assets/mycrewcare-transport-v3.js')],{encoding:'utf8'});
-  assert.match(result,/PASS debug action cases=82/);
+  assert.match(result,/PASS debug action cases=88/);
  } finally {rmSync(root,{recursive:true,force:true});}
 });
 
