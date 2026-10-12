@@ -70,7 +70,7 @@ async function measure(page) {
       const context=await browser.newContext({viewport:{width:390,height:844},colorScheme:theme,serviceWorkers:'block'});
       await context.addInitScript(theme=>{localStorage.setItem('crewcheck_theme_mode',theme);localStorage.setItem('crewcheck:appearance:v1',theme);},theme);
       await context.route('**/*',r=>{const u=new URL(r.request().url());if(u.origin!==origin)return r.abort();if(u.pathname.startsWith('/api/'))return r.fulfill({status:503,contentType:'application/json',body:'{"ok":false}'});return r.continue();});
-      const page=await context.newPage();await page.goto(origin+'/auth');await page.locator('.cz-auth').waitFor();await settle(page);
+      const page=await context.newPage();await page.goto(origin+'/login');await page.locator('.cz-auth').waitFor();await settle(page);
       const brand=await page.locator('.cz-auth-brand > span').evaluate(el=>({background:getComputedStyle(el).backgroundImage,svg:getComputedStyle(el.querySelector('svg')).visibility}));
       assert(brand.background.includes('brand=936-3656d39df50e')&&brand.svg==='hidden','Auth uses approved art instead of the procedural plane');
       await page.screenshot({path:path.join(output,`auth-${theme}.png`)});authResults.push({theme,...brand});await context.close();
