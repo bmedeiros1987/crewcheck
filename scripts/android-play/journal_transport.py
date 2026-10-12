@@ -84,7 +84,7 @@ class JournalTransport:
 class PlannedJournalTransport:
     """Schema-v2 on the same injected exchange. No env/FD/connection loader."""
     def __init__(self, exchange, binding):
-        import hashlib
+        from receipt_backend import snapshot_digest
         assert callable(exchange)
         assert set(binding) == {'schema', 'generation', 'plan'} and binding['schema'] == 2
         assert type(binding['generation']) is int and 0 < binding['generation'] < 2**53
@@ -96,7 +96,7 @@ class PlannedJournalTransport:
         for f in ('sourceSha', 'controllerSha'): assert re.fullmatch('[0-9a-f]{40}', p[f])
         assert re.fullmatch('[1-9][0-9]*', p['runId'])
         body = {k: v for k, v in p.items() if k != 'planSha256'}
-        assert p['planSha256'] == hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        assert p['planSha256'] == snapshot_digest(body)
         self.exchange, self.binding, self.sequence, self.blocked = exchange, copy.deepcopy(binding), 0, False
         self.record = None
 

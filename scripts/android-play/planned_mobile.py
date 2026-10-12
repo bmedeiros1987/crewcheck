@@ -8,10 +8,8 @@ import hashlib
 import json
 from pathlib import Path
 from journal_transport import PlannedJournalTransport
+from receipt_backend import snapshot_digest as digest
 
-
-def digest(v):
-    return hashlib.sha256(json.dumps(v, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
 class PlannedMobileController:

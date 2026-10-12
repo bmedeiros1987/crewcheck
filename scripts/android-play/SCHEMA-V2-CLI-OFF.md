@@ -23,3 +23,5 @@ Primary API contracts:
 - https://developers.google.com/android-publisher/api-ref/rest/v3/edits.apks/list
 - https://developers.google.com/android-publisher/api-ref/rest/v3/edits/commit
 - https://developers.google.com/android-publisher/api-ref/rest/v3/applications.tracks.releases/list
+
+P2 canonicalization correction: planned_mobile.digest is the existing receipt_backend.snapshot_digest by import alias, with no new serializer. Plan verification in PlannedJournalTransport uses the same helper. Unicode/emoji notes in a preserved Wear track exercise CLI staging; direct Python/Node comparisons cover accents, emoji, U+2028, escapes, safe integer extrema and reject unsupported floats/keys/surrogates.

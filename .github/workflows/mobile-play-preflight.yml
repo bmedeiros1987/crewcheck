@@ -17,6 +17,7 @@ on:
       - 'scripts/android-play/test_planned_lifecycle.mjs'
       - 'scripts/android-play/planned_mobile.py'
       - 'scripts/android-play/test_planned_cli.py'
+      - 'scripts/android-play/test_planned_digest.py'
       - 'scripts/android-play/test_planned_transport.py'
       - 'scripts/android-play/test_planned_cli.mjs'
       - 'scripts/android-play/test_planned_protocol.mjs'
@@ -70,6 +71,7 @@ jobs:
       - run: node scripts/android-play/test_planned_protocol.mjs
       - run: python3 scripts/android-play/test_planned_cli.py
       - run: python3 scripts/android-play/test_planned_transport.py
+      - run: python3 scripts/android-play/test_planned_digest.py
       - run: python3 scripts/android-play/test_consumed_validation.py
       - run: node scripts/android-play/test_reconcile_journal.mjs
       - run: node scripts/android-play/test_recovery_fence.mjs

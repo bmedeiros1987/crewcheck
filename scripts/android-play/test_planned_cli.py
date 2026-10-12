@@ -15,7 +15,7 @@ from journal_transport import PlannedJournalTransport
 SCRIPT = Path(__file__).with_suffix('.mjs').resolve()
 POLICY = json.loads(Path(__file__).with_name('release-policy.json').read_text())
 TRACKS = [{'track':'internal','releases':[{'status':'completed','versionCodes':['144150']}]},
-          {'track':'wear:internal','releases':[{'status':'completed','versionCodes':['144153']}]},
+          {'track':'wear:internal','releases':[{'status':'completed','versionCodes':['144153'],'releaseNotes':[{'language':'pt-BR','text':'Correções de navegação ✈️'}]}]},
           {'track':'production','releases':[{'status':'completed','versionCodes':['144154']}]}]
 
 
