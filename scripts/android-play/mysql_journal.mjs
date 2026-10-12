@@ -2,11 +2,12 @@
 // environment access, DDL, endpoint, lease expiry, deletion or Play API client.
 // Wiring requires independently verified existing access and all-writer adoption.
 import assert from 'node:assert/strict';
+import {validatePlannedRecord, plannedMutation} from './planned_lifecycle.mjs';
 
 const PACKAGE='com.crewcheck.app';
 const transitions={reserved:['edit_open'],edit_open:['pending','reconciliation_required'],pending:['acknowledged','reconciliation_required'],acknowledged:['reconciled','reconciliation_required'],reconciliation_required:['reconciled'],reconciled:[]};
 const key=p=>{assert.equal(p,PACKAGE);return `play-release-journal:${p}`;};
-const parse=value=>{const record=typeof value==='string'?JSON.parse(value):value;assert(record && typeof record==='object' && !Array.isArray(record));assert.equal(record.package,PACKAGE);assert(Number.isSafeInteger(record.revision)&&record.revision>0);assert(Object.hasOwn(transitions,record.state));identity(record.owner,record.intent);return record;};
+const parse=value=>{const record=typeof value==='string'?JSON.parse(value):value;assert(record && typeof record==='object' && !Array.isArray(record));assert.equal(record.package,PACKAGE);if(record.schema===2){validatePlannedRecord(record);return record;}assert(Number.isSafeInteger(record.revision)&&record.revision>0);assert(Object.hasOwn(transitions,record.state));identity(record.owner,record.intent);return record;};
 const same=(a,b)=>assert.deepEqual(a,b,'Durable acknowledgement uncertain');
 const identity=(owner,intent)=>{
   assert(typeof owner==='string'&&/^[A-Za-z0-9:_-]{1,128}$/.test(owner));
@@ -21,7 +22,8 @@ const identity=(owner,intent)=>{
   for(const field of ['expectedTrackSha256','otherTracksBeforeSha256','reconciliationSha256'])if(intent[field]!==undefined)assert(/^[0-9a-f]{64}$/.test(intent[field]));
 };
 
-export function createMysqlJournal(db){
+export function createMysqlJournal(db, capabilities={}){
+  capabilities=Object.freeze({...capabilities});
   assert(db && typeof db.getConnection==='function');
   let schemaVerified=false;
   async function verifyExistingSchema(){
@@ -55,6 +57,7 @@ export function createMysqlJournal(db){
         assert.equal(result.affectedRows,1);
       }else{
         assert.equal(rows.length,1);const current=parse(rows[0].payload);
+        assert.equal(current.schema,undefined,'Planned release requires its reviewed lifecycle');
         assert.equal(current.owner,owner,'Reservation belongs to another runner');
         assert.equal(current.revision,expectedRevision,'Stale receipt revision');
         assert(current.revision<Number.MAX_SAFE_INTEGER,'Receipt revision exhausted');
@@ -75,7 +78,47 @@ export function createMysqlJournal(db){
     }finally{if(!discard)connection.release();}
     same(await read(packageName),next);return structuredClone(next);
   }
-  return {read,verifyExistingSchema,reserve:(packageName,owner,intent)=>write(packageName,owner,intent,null,'reserved'),advance:(packageName,owner,intent,revision,state)=>write(packageName,owner,intent,revision,state)};
+  // Same existing row, schema check and transaction contract. No runtime wiring.
+  async function mutatePlan(operation, expected, input){
+    const packageName=PACKAGE;
+    const current=await read(packageName);
+    const next=await plannedMutation(operation,current,expected,structuredClone(input),capabilities);
+    if(!schemaVerified)await verifyExistingSchema();
+    const connection=await db.getConnection();let commitAttempted=false,discard=false;
+    try{
+      await connection.beginTransaction();
+      const [rows]=await connection.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? FOR UPDATE',[key(packageName)]);
+      assert.equal(rows.length,current===null?0:1);
+      if(current!==null)same(parse(rows[0].payload),current);
+      if(current===null){
+        const [result]=await connection.query('INSERT INTO crewcheck_telegram_state(state_key,payload,updated_at) VALUES(?,?,CURRENT_TIMESTAMP(3))',[key(packageName),JSON.stringify(next)]);
+        assert.equal(result.affectedRows,1);
+      }else{
+        const [result]=await connection.query('UPDATE crewcheck_telegram_state SET payload=?,updated_at=CURRENT_TIMESTAMP(3) WHERE state_key=?',[JSON.stringify(next),key(packageName)]);
+        assert.equal(result.affectedRows,1);
+      }
+      commitAttempted=true;await connection.commit();
+    }catch{
+      if(commitAttempted){discard=true;connection.destroy?.();}
+      else{try{await connection.rollback();}catch{discard=true;connection.destroy?.();}}
+      throw Error('Durable planned journal write unacknowledged; no retry or external action');
+    }finally{if(!discard)connection.release();}
+    same(await read(packageName),next);return structuredClone(next);
+  }
+  async function plan(operation,expected,input){
+    assert(!['acknowledged','reconciliation_required'].includes(operation),'Caller cannot acknowledge commit');
+    return mutatePlan(operation,expected,input);
+  }
+  async function commitPlan(expected,staged){
+    assert.equal(typeof capabilities.commitOnce,'function','Trusted commit capability missing');
+    const pending=await plan('pending',expected,staged);
+    let outcome='reconciliation_required';
+    try{await capabilities.commitOnce(structuredClone(pending));outcome='acknowledged';}catch{}
+    const binding={owner:pending.owner,generation:pending.generation,revision:pending.revision};
+    const saved=await mutatePlan(outcome,binding,{});
+    return {...saved,retryAllowed:false,storeAvailability:'unknown'};
+  }
+  return {read,verifyExistingSchema,plan,commitPlan,reserve:(packageName,owner,intent)=>write(packageName,owner,intent,null,'reserved'),advance:(packageName,owner,intent,revision,state)=>write(packageName,owner,intent,revision,state)};
 }
 
 export async function coordinatedCommit(journal,record,commitOnce){

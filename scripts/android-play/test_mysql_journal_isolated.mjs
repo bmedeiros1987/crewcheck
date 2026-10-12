@@ -125,6 +125,31 @@ try{
   assert.equal(lifecycleCommits,1);
   console.log('PASS: publisher lifecycle wire invokes existing helpers through existing platform adapter on real isolated SQL, exact proof persisted, replay/Mobile-Wear competition blocked; fictional Play only');
   await reset();
+  // Schema-v2 OFF lifecycle uses the very same platform adapter/key, no DDL.
+  const qaCapabilities={approvePlan:async()=>true,verifyInventory:async()=>true,
+    verifyArtifacts:async()=>true,verifyStage:async()=>true,
+    verifyReconciliation:async()=>true,approveRollover:async()=>true,commitOnce:async()=>{}};
+  const planned=createPlatformJournal(mysqlAdapter(db),qaCapabilities);
+  const plannedBinding=r=>({owner:r.owner,generation:r.generation,revision:r.revision});
+  const nextPlan=run=>{const p={package:packageName,owner:`qa-planned:${run}`,producer:'joint',sourceSha:intent.sourceSha,controllerSha:intent.controllerSha,runId:run,modules:['app','wear']};return {...p,planSha256:snapshotDigest(p)};};
+  let plannedRecord=await planned.plan('reserve',null,nextPlan('801'));
+  for(let i=0;i<2;i++){
+    plannedRecord=await planned.plan('startAllocation',plannedBinding(plannedRecord),{});
+    plannedRecord=await planned.plan('saveEdit',plannedBinding(plannedRecord),{editId:`qa-original-${i}`});
+    const floor=144155+i*2;
+    plannedRecord=await planned.plan('allocate',plannedBinding(plannedRecord),{inventorySha256:'d'.repeat(64),floor,versionCodes:{app:floor+1,wear:floor+2}});
+    const a=['app','wear'].map(module=>({module,package:packageName,versionCode:plannedRecord.allocation.versionCodes[module],sourceSha:intent.sourceSha,controllerSha:intent.controllerSha,manifestSha256:'e'.repeat(64),uploadCertificateSha256:'f'.repeat(64),artifactSha256:'c'.repeat(64)}));
+    plannedRecord=await planned.plan('finalize',plannedBinding(plannedRecord),a);
+    await planned.commitPlan(plannedBinding(plannedRecord),{track:'internal',expectedTrackSha256:'d'.repeat(64),otherTracksBeforeSha256:'e'.repeat(64)});
+    plannedRecord=await planned.read(packageName);
+    plannedRecord=await planned.plan('reconcile',plannedBinding(plannedRecord),{reconciliationSha256:'f'.repeat(64)});
+    if(i===0){const stale=plannedBinding(plannedRecord);plannedRecord=await planned.plan('rollover',stale,nextPlan('802'));await assert.rejects(planned.plan('startAllocation',stale,{}));}
+  }
+  assert.equal(plannedRecord.generation,2);assert.equal(plannedRecord.history.length,1);
+  assert.equal(plannedRecord.history[0].highWaterVersionCode,144157);
+  assert.equal((await createPlatformJournal(mysqlAdapter(db)).read(packageName)).allocation.versionCodes.wear,144159);
+  console.log('PASS: schema-v2 plan/allocation/finalization and two generations persist through existing platform adapter on isolated InnoDB; no live transport');
+  await reset();
   cleanupSafe=false;
   const killed=runPrototypeNode([fileURLToPath(import.meta.url),'--crash-after-pending'],{
     timeout:30000,cwd:process.cwd(),env:{PATH:process.env.PATH,

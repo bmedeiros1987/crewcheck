@@ -16,7 +16,7 @@ function platformQuery(adapter){
     return /^\s*SELECT\b/i.test(sql)?[result.rows]:[{affectedRows:result.rowCount}];
   };
 }
-export function createPlatformJournal(db){
+export function createPlatformJournal(db,capabilities={}){
   assert.equal(db?.dialect,'mysql');
   assert.equal(typeof db.query,'function');assert.equal(typeof db.connect,'function');
   const bridge={query:platformQuery(db),async getConnection(){
@@ -30,7 +30,7 @@ export function createPlatformJournal(db){
     const query=platformQuery(connection);
     return {query,beginTransaction:()=>query('BEGIN'),commit:()=>query('COMMIT'),rollback:()=>query('ROLLBACK'),release:()=>connection.release(),destroy:()=>connection.discard()};
   }};
-  return createMysqlJournal(bridge);
+  return createMysqlJournal(bridge,capabilities);
 }
 
 // Composition for the already-owned application adapter, not a new connection.

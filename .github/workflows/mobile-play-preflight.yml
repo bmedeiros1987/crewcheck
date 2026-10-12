@@ -13,6 +13,8 @@ on:
       - 'scripts/android-play/artifact_consumer.py'
       - 'scripts/android-play/test_artifact_consumer.py'
       - 'scripts/android-play/mysql_journal.mjs'
+      - 'scripts/android-play/planned_lifecycle.mjs'
+      - 'scripts/android-play/test_planned_lifecycle.mjs'
       - 'scripts/android-play/test_mysql_journal.mjs'
       - 'scripts/android-play/test_mysql_journal_isolated.mjs'
       - 'scripts/android-play/consumed_validation.py'
@@ -56,6 +58,7 @@ jobs:
       - run: python3 scripts/android-play/test_mobile_internal.py
       - run: python3 scripts/android-play/test_artifact_consumer.py
       - run: node scripts/android-play/test_mysql_journal.mjs
+      - run: node scripts/android-play/test_planned_lifecycle.mjs
       - run: python3 scripts/android-play/test_consumed_validation.py
       - run: node scripts/android-play/test_reconcile_journal.mjs
       - run: node scripts/android-play/test_recovery_fence.mjs
