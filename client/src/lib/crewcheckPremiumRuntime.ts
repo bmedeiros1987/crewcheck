@@ -55,7 +55,7 @@ async function requestNotifications(): Promise<boolean> {
   }
 }
 
-function permissionStatus(): { location?: boolean; notifications?: boolean } {
+function permissionStatus(): { location?: boolean; notifications?: boolean; notificationAppEnabled?: boolean; notificationChannelEnabled?: boolean | null } {
   const native = bridge();
   try {
     if (native?.permissionStatus) {

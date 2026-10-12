@@ -11,7 +11,6 @@ const headerCss = fs.readFileSync('client/src/styles/internal-global-header.css'
 // Integração real depois da preparação canônica.
 for (const marker of [
   "from '@/components/pulse/pulseRuntime'",
-  "label=\"CrewCheck Pulse\"",
   'function NotificationPermissionSetting()',
   "title: 'Escala atualizada'",
   "title: 'Escala sem programação futura'",
@@ -24,6 +23,8 @@ for (const marker of [
   assert.ok(home.includes(marker), 'integração Pulse ausente após prepare: ' + marker);
 }
 
+assert(home.includes("view === 'notifications' && <NotificationCenter"), 'single Menu notification editor mounted');
+assert(fs.readFileSync('client/src/components/v139/BidsAlertPreferences.tsx','utf8').includes("['crewcheck_pulse_enabled','CrewCheck Pulse — dentro do app']"), 'canonical account Pulse control');
 // O Pulse do header é attention-only: confirmações rotineiras ficam em toast e
 // próxima programação continua no conteúdo principal.
 for (const forbidden of [

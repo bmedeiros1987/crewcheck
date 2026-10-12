@@ -41,6 +41,9 @@ const links = [...index.matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/g)].m
 assert.ok(links, 'Use actual prepared production CSS, not a mock stylesheet');
 const entry = `
 import React, {useState,useEffect,useMemo} from 'react';
+import {isFinancialSetting,readFinancialSetting,writeFinancialSetting} from '@/lib/financialSettingStore';
+import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
+import {getToken} from '@/lib/authClient';
 import {createPortal} from 'react-dom';
 import {Search,Hotel,LocateFixed,Plus,Check,MapPin,X,Save,ChevronRight,UserRound,Dumbbell,WashingMachine,Pill,Bell,Send,Menu,Home as HomeIcon,CalendarDays,Navigation} from 'lucide-react';
 import {toast} from 'sonner';
@@ -50,6 +53,8 @@ import {listPlatformStays,updatePlatformStay,findHotelCompanions} from '@/lib/pl
 import {CREW_HOTEL_CATALOG} from '@/data/crewHotels';
 import {saveNearbyPlacesOrigin} from '@/lib/nearbyPlacesOrigin';
 import {setPendingNavigationContext} from '@/lib/navigationContext';
+import {openStayProgramEditor,consumeStayEditorReturn,readStayEditorIntent,returnFromStayProgramEditor,hasStoredStayEditorOrigin,clearStoredStayEditorOrigin} from '@/lib/stayEditorNavigation';
+import {savedStayEditorEvent} from '@/lib/stayEditorStore';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import {InternalHeaderFrame} from '@/components/navigation/InternalHeaderFrame';
 import {OperationalLayoutSafety} from '@/components/navigation/OperationalLayoutSafety';

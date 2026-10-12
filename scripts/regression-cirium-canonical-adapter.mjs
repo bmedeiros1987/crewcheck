@@ -70,4 +70,23 @@ const alternateFreshness = normalizeCiriumFlightStatus({
 });
 assert.equal(alternateFreshness.updatedAt, '2026-08-09T10:05:00Z', 'statusDetails.updatedAt must preserve freshness when lastUpdatedDate is absent');
 
+// A value the provider never reported must not be displayed as a measured 0.
+const absentNumbers = normalizeCiriumFlightStatus({
+  carrierFsCode: 'LA', flightNumber: '3377', departureAirportFsCode: 'REC', arrivalAirportFsCode: 'GRU',
+  delays: { departureGateDelayMinutes: null, arrivalGateDelayMinutes: '' },
+  flightDurations: { blockMinutes: null, airMinutes: 'not-a-number' },
+});
+assert.equal(absentNumbers.delays.departureGateMinutes, null, 'an absent delay must stay null');
+assert.equal(absentNumbers.delays.arrivalGateMinutes, null, 'an empty delay must stay null');
+assert.equal(absentNumbers.durations.blockMinutes, null, 'an absent duration must stay null');
+assert.equal(absentNumbers.durations.airMinutes, null, 'a non-numeric duration must stay null');
+assert.equal(ciriumCoverage(absentNumbers).present.delays, false, 'absent delays are not provider coverage');
+
+const reportedZero = normalizeCiriumFlightStatus({
+  carrierFsCode: 'LA', flightNumber: '3377', departureAirportFsCode: 'REC', arrivalAirportFsCode: 'GRU',
+  delays: { departureGateDelayMinutes: 0 },
+});
+assert.equal(reportedZero.delays.departureGateMinutes, 0, 'a real reported zero is preserved');
+assert.equal(ciriumCoverage(reportedZero).present.delays, true);
+
 console.log('Cirium Sky canonical adapter regression OK');

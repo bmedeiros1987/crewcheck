@@ -27,6 +27,7 @@ await context.addInitScript(() => {
   localStorage.setItem('crewcheck_auth_user', JSON.stringify({id:'qa-positioning-composition',role:'user',name:'Conta fictícia QA'}));
   localStorage.setItem('crewcheck:first-access-tour:v1434:disabled', '1');
   localStorage.setItem('crewcheck_manual_route_origin', '-23.43,-46.47');
+  localStorage.setItem('crewcheck_manual_route_account', 'qa-positioning-composition');
   sessionStorage.setItem('crewcheck_demo_active', '1');
   if (!sessionStorage.getItem('crewcheck_initial_view')) sessionStorage.setItem('crewcheck_initial_view', 'departure');
 });
@@ -62,6 +63,9 @@ try {
   await waitLabel(departureLabel(), 'Consultando voo', 'departure');
   assert.equal(await page.getByText('planeje o deslocamento aéreo no dia anterior.', { exact: false }).count(), 0);
   await capture('Departure: active lookup');
+  // Freeze Date only while the terminal response records its exact TTL.
+  const terminalClock = await page.evaluate(() => Date.now());
+  await page.clock.setFixedTime(terminalClock);
   boardMode = 'error';
   await Promise.all(pendingBoards.splice(0).map(request => request.abort('failed')));
   await page.waitForFunction(() => document.body.innerText.includes('Radar temporariamente indisponível'));
@@ -71,14 +75,16 @@ try {
   });
   assert.equal(search.status, 'error');
   assert.equal(Date.parse(search.expiresAt) - Date.parse(search.checkedAt), 1800000);
+  await page.clock.setSystemTime(terminalClock);
   await capture('Departure: terminal Radar error');
   assert.equal(await departureLabel().innerText(), 'Dia anterior', 'terminal Radar error must retain previous-day plan');
   assert.match(await page.locator('.cz-depart-when').innerText(), /10 de janeiro de 2030/);
   routeError = true;
   await page.clock.fastForward(65000);
   await page.waitForFunction(() => document.querySelector('[data-departure-route-state="stale"]'));
-  assert.equal(await departureLabel().innerText(), 'Dia anterior');
-  await capture('Departure: stale route retains terminal-error fallback');
+  assert.notEqual(await departureLabel().innerText(), 'Dia anterior','stale route must not establish a fresh positioning decision');
+  assert.equal(await page.locator('[data-departure-route-state=stale]').count(),1,'stale route is explicitly marked');
+  await capture('Departure: stale route retains evidence without fresh flight decision');
   routeError = false;
   const callsAfterError = boardCalls;
   const remaining = await page.evaluate(expires => Date.parse(expires) - Date.now(), search.expiresAt);
@@ -102,8 +108,8 @@ try {
   }
   // A confirmed same-day record must still win over the conservative fallback.
   await page.evaluate(({ search, searchKey }) => {
-    const record = { eventId: search.eventId, flightNumber: 'CC900', origin: 'GRU', destination: 'BSB', departureAt: '2030-01-11T06:00:00Z', arrivalAt: '2030-01-11T08:00:00Z', status: 'Programado', source: 'Fixture offline', confirmed: true, checkedAt: new Date().toISOString(), expiresAt: '2030-01-11T12:00:00Z' };
-    localStorage.setItem(`crewcheck_positioning_flight:${search.eventId}`, JSON.stringify(record));
+    const record = { contextId: search.contextId, eventId: search.eventId, flightNumber: 'CC900', origin: 'GRU', destination: 'BSB', departureAt: '2030-01-11T06:00:00Z', arrivalAt: '2030-01-11T08:00:00Z', status: 'Programado', source: 'Fixture offline', confirmed: true, checkedAt: new Date().toISOString(), expiresAt: '2030-01-11T12:00:00Z' };
+    localStorage.setItem('crewcheck_positioning_flight:' + search.contextId, JSON.stringify(record));
     localStorage.setItem(searchKey, JSON.stringify({ ...search, status: 'found', expiresAt: '2030-01-11T10:00:00Z' }));
   }, { search, searchKey });
   await go('cockpit');

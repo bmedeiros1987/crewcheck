@@ -12,16 +12,16 @@ for (const file of [compliancePath, databasePath, rollingPath, homePath]) {
 
 let rolling = fs.readFileSync(rollingPath, 'utf8');
 if (!rolling.includes('ROLLING_FLIGHT_HOURS_KERNEL_VERSION')) {
-  rolling = `export const ROLLING_FLIGHT_HOURS_KERNEL_VERSION = '605.1';\n\n${rolling}`;
+  rolling = `export const ROLLING_FLIGHT_HOURS_KERNEL_VERSION = 'operated-extra-v3';\n\n${rolling}`;
 }
-if (!rolling.includes("export const ROLLING_FLIGHT_HOURS_KERNEL_VERSION = '605.1';")) {
+if (!rolling.includes("export const ROLLING_FLIGHT_HOURS_KERNEL_VERSION = 'operated-extra-v3';")) {
   throw new Error(`[${marker}] versão do kernel rolling 28d ausente`);
 }
 fs.writeFileSync(rollingPath, rolling, 'utf8');
 
 let compliance = fs.readFileSync(compliancePath, 'utf8');
 if (!compliance.includes(marker)) {
-  const signature = "export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSelection = 'auto'): ComplianceResult {";
+  const signature = "export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSelection = 'auto', regulatoryHistory: CrewRoster[] = []): ComplianceResult {";
   if (!compliance.includes(signature)) throw new Error(`[${marker}] assinatura analyzeCompliance não localizada`);
   compliance = compliance.replace(
     signature,
@@ -96,7 +96,7 @@ function complianceHasIncompleteRollingHistory(result: ComplianceResult): boolea
   return (result.alerts || []).some((alert) =>
     alert?.code === 'ROLLING_28D_DATA_GAP'
     && alert?.classification === 'dados_insuficientes'
-    && alert?.actionable === false);
+    && alert?.actionable === false) || result.metrics.flightHoursOriginPending === true;
 }
 
 function regulatoryRosterSignature(roster: CrewRoster): unknown {
@@ -256,6 +256,7 @@ export async function recomputeComplianceWithRegulatoryHistory(
     && cached.fingerprint === fingerprint
     && cached.previousRosterId === previousSummary.id
     && cached.compliance
+    && typeof cached.compliance.metrics?.flightHoursOriginPending === 'boolean'
   ) {
     return {
       compliance: cached.compliance,

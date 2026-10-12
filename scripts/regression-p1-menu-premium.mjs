@@ -55,7 +55,7 @@ const EXPECTED_VIEWS = [
   'perdiem', 'salary', 'crew',
   'routine', 'life', 'hotels', 'gyms', 'concierge', 'community',
   'crewlocker', 'crewlock', 'reports', 'calendar', 'exports',
-  'settings', 'plans', 'guardian', 'manual', 'support',
+  'notifications', 'settings', 'plans', 'guardian', 'manual', 'support',
   'updates', 'maintenance', 'admin',
 ];
 const views = items.map((item) => item.view);

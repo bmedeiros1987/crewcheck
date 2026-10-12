@@ -1,0 +1,59 @@
+{
+  "contextId": "[\"synthetic-A\",\"revision-2\",\"09/10/2030|duty|HSB|02:00|02:40|BSB\"]",
+  "rows": [
+    {
+      "id": "09/10/2030|duty|HSB|02:00|02:40|BSB",
+      "code": "HSB",
+      "kind": "duty",
+      "date": "09/10/2030",
+      "published": {
+        "start": "2030-10-09T05:00:00.000Z",
+        "end": "2030-10-09T05:40:00.000Z",
+        "minutes": 40
+      },
+      "airportPresentation": null,
+      "status": "published"
+    },
+    {
+      "id": "09/10/2030|duty|ASB|02:40|04:00|BSB",
+      "code": "ASB",
+      "kind": "duty",
+      "date": "09/10/2030",
+      "published": {
+        "start": "2030-10-09T05:40:00.000Z",
+        "end": "2030-10-09T07:00:00.000Z",
+        "minutes": 80
+      },
+      "airportPresentation": null,
+      "status": "published"
+    }
+  ],
+  "evidence": [
+    {
+      "kind": "published-adjacent-successor",
+      "successorId": "09/10/2030|duty|ASB|02:40|04:00|BSB",
+      "text": "A sequência publicada é compatível com possível acionamento; não confirma telefonema, deslocamento ou realização."
+    },
+    {
+      "kind": "standby-shortened-in-publication",
+      "beforeEnd": "2030-10-09T11:00:00.000Z",
+      "afterEnd": "2030-10-09T05:40:00.000Z",
+      "text": "Janela publicada encurtada; motivo não confirmado."
+    }
+  ],
+  "gaps": [
+    "Início do deslocamento não confirmado.",
+    "Início efetivo da jornada não confirmado."
+  ],
+  "activation": "possible",
+  "displacementStartedAt": null,
+  "dutyStartedAt": null,
+  "publishedMinutes": {
+    "standby": 40,
+    "reserve": 80,
+    "flight": 0
+  },
+  "legalCutoff": null,
+  "combinedDutyLimit": null,
+  "performed": false
+}

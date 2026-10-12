@@ -1,3 +1,4 @@
+import { defaultCiriumRadarOptions, ciriumRadarInjectionEnabled, ciriumRadarRegistration, ciriumRadarIdentity, runCiriumRadarInjection, ciriumRadarProjection } from './server/cirium-radar-injection.mjs';
 import { weatherCanaryRecipientHash, weatherConsentCommand, sameWeatherCanaryConsent, writeWeatherCanaryConsent, weatherMonitorSettings, weatherMonitorReadiness, weatherCanaryConsent, createWeatherCanaryPolicy, findWeatherCanarySnapshots, acquireWeatherCanaryLease } from './server/weather/monitor-readiness.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -50,6 +51,7 @@ function buildFlightContext(value) {
 }
 function publicRadarPayload(item = {}) {
   return {
+    ...ciriumRadarProjection(item),
     ok: Boolean(item.ok),
     configured: Boolean(item.configured),
     flight: firstKnown(item.flight, item.ident),
@@ -280,6 +282,7 @@ async function providerAeroDataBox(ctx, timeoutMs) {
 }
 function configuredProviders() {
   return [
+    ciriumRadarRegistration(),
     { key: 'flightaware', available: Boolean(envAny(['FLIGHTAWARE_AEROAPI_KEY', 'AEROAPI_KEY'])) },
     { key: 'custom', available: Boolean(envAny(['CREWCHECK_FLIGHT_STATUS_URL'])) },
     { key: 'aviationstack', available: Boolean(envAny(['AVIATIONSTACK_API_KEY'])) },
@@ -288,6 +291,10 @@ function configuredProviders() {
   ];
 }
 async function runRadarRace(ctx, origin, destination) {
+  if (ciriumRadarInjectionEnabled(ctx.ciriumRadarOptions)) {
+    const result = await runCiriumRadarInjection(ctx.ciriumRadarIdentity, ctx.ciriumRadarOptions, ctx.raw);
+    return publicRadarPayload(result);
+  }
   const timeoutMs = Math.max(800, Math.min(5000, Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400)));
   const started = Date.now();
   const providers = [
@@ -338,12 +345,18 @@ async function runRadarRace(ctx, origin, destination) {
     });
   });
 }
-async function handleRadar(req, res, url) {
+async function handleRadar(req, res, url, radarOptions = {}) {
   const ctx = buildFlightContext(url.searchParams.get('flight') || '');
+  radarOptions = { ...radarOptions, cirium: radarOptions.cirium || defaultCiriumRadarOptions() };
+  if (ciriumRadarInjectionEnabled(radarOptions.cirium)) {
+    ctx.ciriumRadarOptions = radarOptions.cirium;
+    ctx.ciriumRadarIdentity = ciriumRadarIdentity(url.searchParams);
+  }
   const origin = String(url.searchParams.get('origin') || '').trim();
   const destination = String(url.searchParams.get('destination') || '').trim();
   if (!ctx.raw) return sendJson(res, 200, { ok: false, configured: false, message: 'Voo não identificado na escala.', quality: 0 });
   const payload = await runRadarRace(ctx, origin, destination);
+  if (payload.provider === 'cirium-sky') return sendJson(res, 200, { ...payload, exportedToConcierge: false });
   const radarUser = telegramRequestUser(req, { email: url.searchParams.get('email') || '', name: url.searchParams.get('name') || '', conciergeKey: url.searchParams.get('conciergeKey') || '' });
   const email = telegramAppRequestAllowed(radarUser) ? conciergeSafeKey(radarUser.email) : '';
   let exportedToConcierge = false;

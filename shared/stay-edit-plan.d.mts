@@ -1,0 +1,13 @@
+export type StayScope = { accountId: string; rosterId: string; rosterRevision: string };
+export type StayAlarmChoice = { mode: 'relative'; leadMinutes?: number } | { mode: 'absolute'; alarmAt: string; timeZone?: string };
+export type StayPlanInput = Record<string, any>;
+export type StayPlanResult = Readonly<Record<string, any>>;
+export function stayInstant(value: unknown): number | null;
+export function stayLocalInstant(day: string, clock: string, timeZone: string): number | null;
+export function selectStayForEdit(events: readonly any[], clickedId: string, now: number): StayPlanResult;
+export function reconcileStayDraft(previous: StayPlanInput | null, incoming: StayPlanInput, scope: StayScope): StayPlanResult | null;
+export function editStayDraft(draft: StayPlanInput | null, changes: StayPlanInput): StayPlanResult | null;
+export function inspectStayPickup(options: StayPlanInput): StayPlanResult;
+export function resolveStayAlarmChoice(defaultLeadMinutes: unknown, override?: StayAlarmChoice): StayPlanResult;
+export function calculateStayWakeup(options: StayPlanInput): StayPlanResult;
+export function planStayAlarm(options?: StayPlanInput): StayPlanResult;

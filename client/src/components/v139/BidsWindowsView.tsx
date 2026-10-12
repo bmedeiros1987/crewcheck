@@ -5,6 +5,7 @@ import { PBS_OFFICIAL_WINDOWS, officialPbsWindow } from '@/data/pbsWindows';
 import { downloadBlob, notifyLocal, v139Api } from './api';
 import { V139Header } from './Shell';
 import { authFetch, getToken } from '@/lib/authClient';
+import {BidsNotificationSummary,openNotificationSettings} from '../notifications/NotificationCenter';
 import './v139.css';
 
 async function accountApi(path: string, options: RequestInit = {}) {
@@ -67,7 +68,7 @@ function status(item: BidWindow): 'Futura' | 'Aberta' | 'Encerrada' {
   return now <= closes ? 'Aberta' : 'Encerrada';
 }
 
-function initialForm(instructor: boolean) {
+function initialForm() {
   const targetMonth = nextWindowMonthKey();
   return {
     id: '',
@@ -88,10 +89,12 @@ export default function BidsWindowsView() {
   const identityEpoch = useRef(0);
   const leavePath = '/api/platform/notification-cycles/year-end-leave-2026-2027-cabine';
   type LeaveResponse = { submitted: boolean; message: string };
-  const [instructor, setInstructor] = useState(() => localStorage.getItem('crewcheck_instructor') === '1');
+  const [functional,setFunctional]=useState<any>(null);
+  const [profileEpoch,setProfileEpoch]=useState(0);
+  const instructor=functional?.profile?functional.profile.instructorKind!=='none':null;
   const [windows, setWindows] = useState<BidWindow[]>([]);
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState(() => initialForm(localStorage.getItem('crewcheck_instructor') === '1'));
+  const [form, setForm] = useState(() => initialForm());
   const openCount = useMemo(() => windows.filter((item) => status(item) === 'Aberta').length, [windows]);
 
   async function load() {
@@ -118,7 +121,7 @@ export default function BidsWindowsView() {
       authFetch<LeaveResponse>(leavePath, { cache: 'no-store' }).then(payload => { if (identityEpoch.current === version) setLeaveSubmitted(payload.submitted === true); }).catch(() => { if (identityEpoch.current === version) setLeaveSubmitted(null); });
     };
     refresh(epoch);
-    const changed = () => { identityEpoch.current++; setLeaveSubmitted(null); setLeaveBusy(false); setBusy(false); setWindows([]); setForm(initialForm(instructor)); refresh(); refreshBids(); };
+    const changed = () => { identityEpoch.current++; setFunctional(null); setProfileEpoch(value=>value+1); setLeaveSubmitted(null); setLeaveBusy(false); setBusy(false); setWindows([]); setForm(initialForm()); refresh(); refreshBids(); };
     window.addEventListener('crewcheck:auth-changed', changed);
     window.addEventListener('crewcheck:auth-expired', changed);
     const storage = (event: StorageEvent) => { if (['crewcheck_auth_user', 'crewcheck_auth_token'].includes(event.key || '')) changed(); };
@@ -127,6 +130,8 @@ export default function BidsWindowsView() {
     window.addEventListener('online', online);
     return () => { identityEpoch.current++; window.removeEventListener('crewcheck:auth-changed', changed); window.removeEventListener('crewcheck:auth-expired', changed); window.removeEventListener('storage', storage); window.removeEventListener('online', online); };
   }, []);
+
+  useEffect(()=>{const changed=()=>setProfileEpoch(value=>value+1);window.addEventListener('crewcheck:functional-profile-changed',changed);return()=>window.removeEventListener('crewcheck:functional-profile-changed',changed);},[]);
 
   async function confirmLeave() {
     const epoch = identityEpoch.current;
@@ -141,10 +146,7 @@ export default function BidsWindowsView() {
     finally { if (identityEpoch.current === epoch) setLeaveBusy(false); }
   }
 
-  function toggleInstructor(value: boolean) {
-    setInstructor(value);
-    localStorage.setItem('crewcheck_instructor', value ? '1' : '0');
-  }
+  useEffect(()=>{const epoch=identityEpoch.current;let cancelled=false;setFunctional(null);if(getToken())void authFetch<any>(`/api/platform/bids/default-window?targetMonth=${encodeURIComponent(form.targetMonth)}`,{cache:'no-store'}).then(result=>{if(cancelled||identityEpoch.current!==epoch)return;setFunctional(result);const window=result.resolution?.window;if(window)setForm(current=>!current.id&&!current.opensAt&&!current.closesAt?{...current,opensAt:localInput(new Date(window.opensAt)),closesAt:localInput(new Date(window.closesAt))}:current);}).catch(()=>{});return()=>{cancelled=true;};},[form.targetMonth,profileEpoch]);
 
   async function save() {
     const epoch = identityEpoch.current;
@@ -163,8 +165,8 @@ export default function BidsWindowsView() {
       });
       if (identityEpoch.current !== epoch) return;
       setWindows(payload.windows || []);
-      toast.success('Janela de BIDS salva.');
-      setForm(initialForm(instructor));
+      toast.success('Janela manual salva. Isso não valida o calendário nem agenda aviso.');
+      setForm(initialForm());
     } catch (error) {
       if (identityEpoch.current === epoch) toast.error(error instanceof Error ? error.message : 'Não consegui salvar a janela.');
     } finally {
@@ -179,7 +181,7 @@ export default function BidsWindowsView() {
       await accountApi(`/api/platform/bids/${encodeURIComponent(id)}`, { method: 'DELETE' });
       if (identityEpoch.current !== epoch) return;
       setWindows((current) => current.filter((item) => item.id !== id));
-      if (form.id === id) setForm(initialForm(instructor));
+      if (form.id === id) setForm(initialForm());
       toast.success('Janela removida.');
     } catch (error) {
       if (identityEpoch.current === epoch) toast.error(error instanceof Error ? error.message : 'Não consegui remover.');
@@ -201,12 +203,13 @@ export default function BidsWindowsView() {
 
   const selectedOfficial = officialPbsWindow(Number(form.targetMonth.split('-')[1]));
 
-  return <>
+  return <div className="cc-bids-window-page">
     <V139Header title="BIDS / PBS" detail="Janelas cadastradas e calendário. Envio externo depende de vínculo e agendador validado."/>
+    <BidsNotificationSummary />
     <section className="cc139-grid">
       <article><CalendarDays/><span>Janelas salvas</span><strong>{windows.length}</strong></article>
       <article><Bell/><span>Abertas agora</span><strong>{openCount}</strong></article>
-      <article><GraduationCap/><span>Perfil da janela</span><strong>{instructor ? 'Instrutor' : 'Geral'}</strong></article>
+      <article><GraduationCap/><span>Perfil da janela</span><strong>{instructor===null?'Não confirmado':instructor?'Instrutor':'Não instrutor'}</strong></article>
     </section>
     <section className="cc139-card">
       <h2>Folga de fim de ano · Cabine</h2>
@@ -219,27 +222,27 @@ export default function BidsWindowsView() {
       <button type="button" disabled title="Fuso e instante ainda precisam ser confirmados">Lembrar depois</button>
       <p>Pendentes vinculados a este ciclo no servidor são cancelados ao confirmar. Envios iniciados não podem ser recolhidos. Alarmes locais e calendários importados ainda não têm cancelamento integrado.</p>
     </section>
-    <section className="cc139-card">
-      <h2>Referência de datas cadastrada</h2>
+    <details className="cc139-card">
+      <summary>Referência histórica · vigência não validada</summary>
       <p>Esta referência não contém ano, fonte verificável ou fuso oficial. Confirme o comunicado vigente antes de cadastrar datas; salvar não comprova envio de alertas.</p>
       <div className="cc139-badges">
         {PBS_OFFICIAL_WINDOWS.map((item) => <span key={item.month}><b>{item.label}</b> · geral {item.generalStart}-{item.generalEnd} · instrutor {item.instructorStart}-{item.instructorEnd}{item.exception ? ' · exceção' : ''}</span>)}
       </div>
       <p>Janeiro não aparece nesta referência. As datas oficiais vigentes ainda precisam ser confirmadas.</p>
-    </section>
+    </details>
     <section className="cc139-card">
-      <h2>{form.id ? 'Editar janela' : 'Nova janela'}</h2>
+      <h2>{form.id ? 'Revisar janela manual' : 'Janela padrão ou revisão manual'}</h2><p>{functional?.resolution?.status==='resolved'?`Política ${functional.resolution.window.policyId} · versão ${functional.resolution.window.policyRevision} · fuso ${functional.resolution.window.timezone}. Fonte: ${functional.resolution.window.source.label}. Revisar os campos transforma este cadastro em revisão manual.`:functional?.resolution?.pending?.join(' ')||'Janela padrão ainda não resolvida. Nenhuma data será presumida.'}</p><p>Confirme ou revise o perfil em Menu → Notificações.</p>
       <div className="cc139-form">
-        <label className="wide"><input type="checkbox" checked={instructor} onChange={(event) => toggleInstructor(event.target.checked)}/> Sou instrutor: consultar referência</label>
+        <p>Perfil desta conta: {instructor===null?'a confirmar':instructor?'instrutor':'não instrutor'}. O antigo flag deste aparelho não comprova esse perfil.</p>
         <label>Título<input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })}/></label>
         <label>Mês da janela<input type="month" value={form.targetMonth} onChange={(event) => setForm({ ...form, targetMonth: event.target.value })}/></label>
         <label>Abertura<input type="datetime-local" value={form.opensAt} onChange={(event) => setForm({ ...form, opensAt: event.target.value })}/></label>
         <label>Encerramento<input type="datetime-local" value={form.closesAt} onChange={(event) => setForm({ ...form, closesAt: event.target.value })}/></label>
         <label className="wide">Link do sistema oficial<input value={form.providerUrl} onChange={(event) => setForm({ ...form, providerUrl: event.target.value })} placeholder="Opcional"/></label>
-        <label className="wide"><input type="checkbox" checked={form.notifyOpen} onChange={(event) => setForm({ ...form, notifyOpen: event.target.checked })}/> Solicitar alerta de abertura no Telegram vinculado</label>
-        <label className="wide"><input type="checkbox" checked={form.notifyLastDay} onChange={(event) => setForm({ ...form, notifyLastDay: event.target.checked })}/> Solicitar alerta do último dia no Telegram vinculado</label>
+
+
       </div>
-      {selectedOfficial && <p><CalendarCheck2/> Referência: {selectedOfficial.label}, dias {instructor ? selectedOfficial.instructorStart : selectedOfficial.generalStart} a {instructor ? selectedOfficial.instructorEnd : selectedOfficial.generalEnd}. Esta referência não define horários oficiais verificados. Informe os dados do comunicado vigente.</p>}
+      {selectedOfficial && instructor!==null && <p><CalendarCheck2/> Referência: {selectedOfficial.label}, dias {instructor ? selectedOfficial.instructorStart : selectedOfficial.generalStart} a {instructor ? selectedOfficial.instructorEnd : selectedOfficial.generalEnd}. Esta referência não define horários oficiais verificados. Informe os dados do comunicado vigente.</p>}
       <div className="cc139-actions">
         <button disabled title="Fonte, ano, horários e fuso precisam ser confirmados"><CalendarCheck2/> Referência sem fonte verificada</button>
         <button className="primary" onClick={save} disabled={busy}><Save/> {busy ? 'Salvando…' : 'Salvar janela'}</button>
@@ -262,5 +265,5 @@ export default function BidsWindowsView() {
       </article>)}
       {!windows.length && <article className="cc139-card cc139-empty"><Clock/><h2>Nenhuma janela cadastrada</h2><p>Cadastre apenas datas confirmadas no comunicado vigente. Alertas no Telegram dependem de vínculo e agendador validado; salvar não confirma entrega.</p></article>}
     </section>
-  </>;
+  </div>;
 }

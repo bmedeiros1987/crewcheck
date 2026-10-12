@@ -1,0 +1,17 @@
+import {authFetch,getStoredUser,getToken} from './authClient';
+import {NOTIFICATION_SETTING_KEYS,validateNotificationSettings} from '../../../shared/notificationSettings.mjs';
+export type NotificationSettings=Record<string,boolean|string|number>;
+const owner=()=>getToken()?getStoredUser()?.id||null:null;
+const cacheEpoch=new Map<string,number>();
+const key=(id:string)=>`crewcheck:notification-preferences:v1:${id}`;
+export function readAccountNotificationSetting(name:string,fallback=''){if(!NOTIFICATION_SETTING_KEYS.includes(name))return undefined;const id=owner();if(!id)return fallback;try{const record=JSON.parse(localStorage.getItem(key(id))||'null');const value=record?.ownerId===id?record.preferences?.settings?.[name]:undefined;return value===undefined?fallback:typeof value==='boolean'?value?'1':'0':String(value);}catch{return fallback;}}
+export function cacheNotificationPreferences(preferences:unknown,id=owner(),revision?:number){
+ if(!id||id!==owner()||typeof revision!=='number'||!Number.isSafeInteger(revision)||revision<0)return false;
+ try{const current=JSON.parse(localStorage.getItem(key(id))||'null');if(current?.ownerId===id&&Number.isSafeInteger(current.revision)&&current.revision>=revision)return false;
+ localStorage.setItem(key(id),JSON.stringify({ownerId:id,revision,preferences}));cacheEpoch.set(id,(cacheEpoch.get(id)||0)+1);window.dispatchEvent(new Event('crewcheck:notification-preferences-changed'));return true;}catch{return false;}
+}
+export function legacyNotificationSettings():NotificationSettings{
+ const read=(name:string)=>localStorage.getItem(name),bool=(name:string)=>read(name)==='1';
+ return validateNotificationSettings({crewcheck_pulse_enabled:read('crewcheck_pulse_enabled')===null?true:bool('crewcheck_pulse_enabled'),crewcheck_telegram_notifications:bool('crewcheck_telegram_notifications'),crewcheck_traffic_alerts:bool('crewcheck_traffic_alerts'),crewcheck_concierge:bool('crewcheck_concierge'),crewcheck_wakeup_lead_minutes:[60,75,90,120].includes(Number(read('crewcheck_wakeup_lead_minutes')))?Number(read('crewcheck_wakeup_lead_minutes')):90,crewcheck_wakeup_channel:['telegram','telegram-call','ligacao','ambos'].includes(read('crewcheck_wakeup_channel')||'')?read('crewcheck_wakeup_channel'):'telegram',crewcheck_telegram_chat_id:read('crewcheck_telegram_chat_id')||'',crewcheck_wakeup_phone:read('crewcheck_wakeup_phone')||''});
+}
+export function installNotificationPreferenceProjection(){let epoch=0;const refresh=()=>{const id=owner(),version=++epoch;if(!id)return;const writeEpoch=cacheEpoch.get(id)||0;void authFetch<{preferences:unknown;ownerId:string;revision:number}>('/api/platform/notifications/preferences',{cache:'no-store'}).then(value=>{if(version===epoch&&id===owner()&&writeEpoch===(cacheEpoch.get(id)||0))cacheNotificationPreferences(value.preferences,value.ownerId,value.revision);}).catch(()=>{});};const storage=(event:StorageEvent)=>{if(['crewcheck_auth_token','crewcheck_auth_user'].includes(event.key||''))refresh();};refresh();window.addEventListener('crewcheck:auth-changed',refresh);window.addEventListener('crewcheck:auth-expired',refresh);window.addEventListener('online',refresh);window.addEventListener('storage',storage);return()=>{epoch++;window.removeEventListener('crewcheck:auth-changed',refresh);window.removeEventListener('crewcheck:auth-expired',refresh);window.removeEventListener('online',refresh);window.removeEventListener('storage',storage);};}

@@ -1,0 +1,30 @@
+{
+  "fixtureKind": "synthetic_reconstruction_of_observed_visible_dom",
+  "containsRealUserValues": false,
+  "sourceScope": {"origin":"https://api2.apicrewcare.com","tenant":"LATAM","localeObserved":"English","observationDate":"2026-10-11"},
+  "identity": {
+    "employeeIdSelector":"input#employeeId","usernameSelector":"input#userName",
+    "displayNameSelector":".header-login-container .login-container p.welcome",
+    "employeeId":"900000001","username":"synthetic.crew@example.invalid",
+    "bindingRequired":true,"displayNameOnlyBindingAllowed":false
+  },
+  "reservation": {
+    "providerReservationId":"900000001","dutyPeriodNumber":"1","airport":"AAA","pairingId":"SYNTHETIC-PAIRING-001",
+    "hotelName":"Synthetic Harbor Hotel","sourceConfirmationRaw":"Planned","localizedDisplay":"Planejada","displayAsConfirmed":false,
+    "hotelCheckInWallDateTime":"2031-11-19T22:30","hotelCheckOutWallDateTime":"2031-11-20T06:45",
+    "transportToHotel":{"providerName":"Synthetic Airport Shuttle","pickupWallTime":"21:50","transitMinutes":40,"explicitPickupDate":null},
+    "transportToAirport":{"providerName":"Synthetic Return Shuttle","pickupWallTime":"07:05","transitMinutes":50,"explicitPickupDate":null},
+    "timezone":null,"timezoneEvidence":"not_shown","apzFromPickupAllowed":false,"pickupEqualsCheckInAllowed":false,"pickupEqualsCheckOutAssumed":false
+  },
+  "behavioralNegativeCasesNotObservedProviderTemplates": [
+    "missing, ambiguous or mismatched identity must not import",
+    "same display name with distinct profile identity must not cross accounts",
+    "zero cards during loading must not clear prior reservations",
+    "login, 502, partial DOM and parse errors must not become authoritative empty data",
+    "explicit CANCELLED translates to Cancelada; that provider DOM variant was not observed",
+    "unknown confirmation text stays unknown and preserved",
+    "main card date must not automatically anchor both pickup directions",
+    "missing values must not be borrowed from another card or section",
+    "feedback query dates and hidden state are not substitute time sources"
+  ]
+}

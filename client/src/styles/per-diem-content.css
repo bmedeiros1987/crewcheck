@@ -1,3 +1,8 @@
+/* Match the fixed header gutter even with body CSS zoom: viewport media
+   queries do not track the body's zoomed layout width. */
+html body #root .cz-app[data-version]:is([data-view="perdiem"], [data-view="salary"]) {
+  padding-inline: 12px !important;
+}
 /* Diárias uses the existing surfaces and content width. Navigation is unchanged. */
 html body .cz-app[data-version]:is([data-view="perdiem"], [data-view="salary"]) .cc-per-diem-content {
   width: 100%; max-width: 1180px; min-width: 0; margin-inline: auto;

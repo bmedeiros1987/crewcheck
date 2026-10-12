@@ -4,7 +4,7 @@ import fs from 'node:fs';
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 
 assert.ok(home.includes('const routeDistanceMeters = Number(route?.distanceMeters);'), 'Saída Inteligente deve ler a distância sem fallback zero');
-assert.ok(home.includes('const hasValidRouteDistance = Number.isFinite(routeDistanceMeters) && routeDistanceMeters > 0;'), 'rota válida exige distância finita e positiva');
+assert.ok(home.includes('Number.isFinite(routeDistanceMeters) && routeDistanceMeters > 0;'), 'rota válida exige distância finita e positiva');
 assert.ok(home.includes('const distanceKm = hasValidRouteDistance ? routeDistanceMeters / 1000 : null;'), 'ausência de rota da Saída Inteligente deve virar null');
 assert.ok(home.includes("route ? 'Rota indisponível' : 'Calculando rota'"), 'UI deve distinguir carregando de indisponível');
 assert.ok(home.includes("routeState === 'pending' || !route"), 'trânsito deve possuir estado de carregamento explícito');
@@ -16,3 +16,5 @@ const protectedBlock = home.slice(protectedBlockStart, protectedBlockEnd > prote
 assert.ok(!/const distanceKm = Number\(route\?\.distanceMeters\s*\|\|\s*0\)\s*\/\s*1000;/.test(protectedBlock), 'bloco protegido não pode converter rota ausente em 0,0 km');
 
 console.log('[p0-maps-route-tristate] OK — Saída Inteligente distingue rota ausente, carregando e válida sem mascarar falha como 0,0 km.');
+
+await import('./regression-departure-location-consistency.mjs');

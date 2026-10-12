@@ -38,7 +38,7 @@
   --cc-atlas-tone: var(--cc-atlas-attention);
 }
 :is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip):is([data-menu-label='Irregularidades'], [data-menu-label='Emergência'], [data-menu-label='Admin']) { --cc-atlas-tone: var(--cc-atlas-alert); }
-:is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip):is([data-menu-label='Configurações'], [data-menu-label='Manual CrewCheck'], [data-menu-label='Suporte']) { --cc-atlas-tone: var(--cc-atlas-brand-2); }
+:is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip):is([data-menu-label='Notificações'], [data-menu-label='Configurações'], [data-menu-label='Manual CrewCheck'], [data-menu-label='Suporte']) { --cc-atlas-tone: var(--cc-atlas-brand-2); }
 
 .cz-menu-section:not(.cz-menu-group) > button:is(:nth-of-type(3), :nth-of-type(4), :nth-of-type(6), :nth-of-type(8), :nth-of-type(13), :nth-of-type(17), :nth-of-type(18), :nth-of-type(22), :nth-of-type(27)) { --cc-atlas-tone: var(--cc-atlas-violet); }
 .cz-menu-section:not(.cz-menu-group) > button:is(:nth-of-type(9), :nth-of-type(10), :nth-of-type(11), :nth-of-type(14), :nth-of-type(19), :nth-of-type(23), :nth-of-type(24)) { --cc-atlas-tone: var(--cc-atlas-positive); }

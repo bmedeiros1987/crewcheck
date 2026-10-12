@@ -1,4 +1,4 @@
-import { observedStatementCycle, type AllowanceStatementCycle } from './compensationPolicy';
+import { observedStatementCycle, rosterOperationalIso, type AllowanceClockBasis, type AllowanceStatementCycle } from './compensationPolicy';
 
 type ForecastRow = { iso: string; currency: string; value: number; convertedBRL: number | null };
 type UnclassifiedItem = { iso: string; airport: string };
@@ -23,22 +23,21 @@ export function nativeForecastDelta(before: ReturnType<typeof summarizeNativeFor
 }
 export function rowsInObservedCycle<T extends { iso: string }>(rows: readonly T[], cycle: AllowanceStatementCycle): T[] {
   const civil = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  const start = civil(cycle.start);
-  const end = civil(cycle.end);
+  const start = cycle.clockBasis === 'roster_brt' ? rosterOperationalIso(cycle.start) : civil(cycle.start);
+  const end = cycle.clockBasis === 'roster_brt' ? rosterOperationalIso(cycle.end) : civil(cycle.end);
   return rows.filter(row => /^\d{4}-\d{2}-\d{2}$/.test(row.iso) && row.iso >= start && row.iso <= end);
 }
 
 // Calendar references from the existing observed cycle are not company records.
 // Keep the accumulating week separate from the prior week that its heuristic
 // places on today's payment date. No settlement/status can be inferred here.
-export function observedAllowancePeriods(now: Date) {
-  const accumulation = observedStatementCycle(now);
-  const before = new Date(accumulation.start);
-  before.setDate(before.getDate() - 1);
-  const previous = observedStatementCycle(before);
+export function observedAllowancePeriods(now: Date, clockBasis: AllowanceClockBasis = 'device_local') {
+  const accumulation = observedStatementCycle(now, clockBasis);
+  const before = new Date(accumulation.start.getTime() - 1);
+  const previous = observedStatementCycle(before, clockBasis);
   const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear()
     && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-  return { accumulation, previous, paymentReferenceToday: sameDay(now, previous.payment) ? previous : null,
+  return { accumulation, previous, paymentReferenceToday: (clockBasis === 'roster_brt' ? rosterOperationalIso(now) === rosterOperationalIso(previous.payment) : sameDay(now, previous.payment)) ? previous : null,
     source: 'legacy_observed_cycle' as const, paymentConfirmed: false as const };
 }
 
