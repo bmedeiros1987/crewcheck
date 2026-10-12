@@ -26,7 +26,7 @@ test('actual debug action: consent, lifecycle, validation and verified cleanup w
   'android/widget/CheckBox.java':'package android.widget;public class CheckBox extends Button {public boolean checked;public CheckBox(android.app.Activity a){super(a);}public boolean isChecked(){return checked;}public void setChecked(boolean c){checked=c;}}',
   'android/widget/LinearLayout.java':'package android.widget;public class LinearLayout extends android.view.View {public static final int VERTICAL=1;public java.util.List<android.view.View> children=new java.util.ArrayList<>();public LinearLayout(android.app.Activity a){}public void setOrientation(int v){}public void addView(android.view.View v){children.add(v);}}',
  });
- stubs['com/crewcheck/app/CrewCheckMyCrewCareProfile.java']=stubs['com/crewcheck/app/CrewCheckMyCrewCareProfile.java'].replace('public boolean supported=true;','public static boolean supported=true;').replace('createdAccounts.add(id);','if(!supported)throw new UnsupportedOperationException("synthetic unsupported");createdAccounts.add(id);');
+ stubs['com/crewcheck/app/CrewCheckMyCrewCareProfile.java']=stubs['com/crewcheck/app/CrewCheckMyCrewCareProfile.java'].replace('public boolean supported=true;','public static boolean supported=true;').replace('public static int clearCalls;', 'public static int clearCalls;public static Runnable cleanupHook;').replace('clearCalls++;', 'clearCalls++;if(cleanupHook!=null)cleanupHook.run();').replace('createdAccounts.add(id);','if(!supported)throw new UnsupportedOperationException("synthetic unsupported");createdAccounts.add(id);');
  stubs['android/widget/LinearLayout.java']=stubs['android/widget/LinearLayout.java'].replace('public void addView(android.view.View v){children.add(v);}', 'public void addView(android.view.View v){children.add(v);}public void addView(android.view.View v,LayoutParams p){children.add(v);}public void removeView(android.view.View v){children.remove(v);}public static class LayoutParams{public static final int MATCH_PARENT=-1;public LayoutParams(int w,int h,float weight){}}');
  stubs['android/view/View.java']=stubs['android/view/View.java'].replace('public void setEnabled(boolean e)', 'public boolean isEnabled(){return enabled;}public void setEnabled(boolean e)');
  stubs['android/webkit/WebView.java']=stubs['android/webkit/WebView.java'].replace('public class WebView {', 'public class WebView extends android.view.View {public final java.util.Map<String,String> sessionStorage=new java.util.HashMap<>();');
@@ -39,7 +39,7 @@ test('actual debug action: consent, lifecycle, validation and verified cleanup w
   files.push(activity,'scripts/fixtures/mycrewcare-native/ObservedAcquisitionHarness.java','scripts/fixtures/mycrewcare-native/ObservedWebViewSourceHarness.java','scripts/fixtures/mycrewcare-native/DebugActionHarness.java');
   execFileSync(java,['com.sun.tools.javac.Main','-source','17','-target','17','-d',root,...files],{encoding:'utf8'});
   const result=execFileSync(java,['-cp',root,'DebugActionHarness',join(process.cwd(),'android-wrapper/app/src/main/assets/mycrewcare-transport-v3.js')],{encoding:'utf8'});
-  assert.match(result,/PASS debug action cases=92/);
+  assert.match(result,/PASS debug action cases=94/);
  } finally {rmSync(root,{recursive:true,force:true});}
 });
 

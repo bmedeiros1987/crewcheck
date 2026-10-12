@@ -264,6 +264,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         cleanup(attempt, message);
     }
     private void cleanup(long attempt, String message) {
+        final long publicationEpoch = previewEpoch; // Capture before any native cleanup callback.
         cleaning = true;
         String operation = UUID.randomUUID().toString();
         try {
@@ -271,7 +272,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
                 cleanupFailed(); return;
             }
         } catch (RuntimeException error) { cleanupFailed(); return; }
-        checkCleanup(attempt, previewEpoch, operation, message, 0);
+        checkCleanup(attempt, publicationEpoch, operation, message, 0);
     }
     private void checkCleanup(long attempt, long publicationEpoch, String operation, String message, int polls) {
         if (attempt != token) return;

@@ -26,7 +26,7 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
  static void extract(){var v=view();android.os.Handler.runMain(()->v.client.onPageFinished(v,v.url));android.os.Handler.drain();}
  static void deliver(Screen s){ObservedRequest r=request(s);var v=view();extract();android.os.Handler.runMain(()->v.value.onReceiveValue(q(envelope(r))));android.os.Handler.drain();}
  static void to(Screen s,String phase){while(!request(s).kind.equals(phase))deliver(s);}
- static void clean(){CrewCheckMyCrewCareProfile.supported=true;CrewCheckMyCrewCareProfile.defer=false;CrewCheckMyCrewCareProfile.clearError=null;CrewCheckMyCrewCareProfile.pending.clear();CrewCheckMyCrewCareSecureStore.clearError=null;android.os.Handler.delayed.clear();}
+ static void clean(){CrewCheckMyCrewCareProfile.cleanupHook=null;CrewCheckMyCrewCareProfile.supported=true;CrewCheckMyCrewCareProfile.defer=false;CrewCheckMyCrewCareProfile.clearError=null;CrewCheckMyCrewCareProfile.pending.clear();CrewCheckMyCrewCareSecureStore.clearError=null;android.os.Handler.delayed.clear();}
  public static void main(String[] args){try {
   android.content.res.AssetManager.source=args[0];asset=Files.readString(Path.of(args[0]));
   Screen initial=new Screen();int before=android.webkit.WebView.instances.size();initial.click();check(android.webkit.WebView.instances.size()==before&&initial.status.text.contains("autorização"),"no navigation without consent");count++;
@@ -130,6 +130,11 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
   List<Map<String,String>> rows=new ArrayList<>();for(String state:List.of("Planned","Cancelled","UNRECOGNIZED")){var row=new LinkedHashMap<>(ObservedAcquisitionHarness.page(request(multiple)).rows.get(0));row.put("confirmationRaw",state);row.put("hotelName","Synthetic "+state+" Hotel");rows.add(row);}
   Constructor<ObservedResult> resultConstructor=ObservedResult.class.getDeclaredConstructor(ObservedScope.class,List.class);resultConstructor.setAccessible(true);Method preview=CrewCheckMyCrewCareDebugActivity.class.getDeclaredMethod("reservationPreview",ObservedResult.class);preview.setAccessible(true);String formatted=(String)preview.invoke(multiple.activity,resultConstructor.newInstance(context,rows));
   check(formatted.contains("Synthetic Planned Hotel")&&formatted.contains("Synthetic Cancelled Hotel")&&formatted.contains("Synthetic UNRECOGNIZED Hotel")&&formatted.contains("CANCELADA")&&formatted.contains("ESTADO DESCONHECIDO")&&formatted.contains("PLANEJADA"),"multiple reservations retain each raw state and warning independently");multiple.close();count++;
-  check(count==92,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
+  for(String action:List.of("cancel","stop-resume")) {
+   clean();Screen s=new Screen();s.ready();s.click();for(int i=0;i<3;i++)deliver(s);
+   CrewCheckMyCrewCareProfile.cleanupHook=()->{CrewCheckMyCrewCareProfile.cleanupHook=null;if(action.equals("cancel"))s.cancel.click();else{ s.activity.stop();try{Method resume=CrewCheckMyCrewCareDebugActivity.class.getDeclaredMethod("onStart");resume.setAccessible(true);resume.invoke(s.activity);}catch(Exception e){throw new AssertionError(e);}}};
+   deliver(s);check(!s.status.text.contains("Synthetic")&&!s.status.text.contains("Contrato observado válido")&&s.status.text.contains("Perfil de teste limpo"),"native cleanup reentrancy cannot recapture revoked preview authority: "+action);s.close();count++;
+  }
+  check(count==94,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
  }catch(Exception e){throw new AssertionError(e);}}
 }

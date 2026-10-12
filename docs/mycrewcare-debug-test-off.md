@@ -49,3 +49,5 @@ HEAD60af4f5e reproduz publicação de reserva depois de Cancelar com cleanup pen
 Cada reserva mostra confirmationRaw intacto. Planned é PLANEJADA, não confirmada; Cancelled é CANCELADA, com aviso para não utilizar hotel/pickup como reserva ativa; qualquer outro valor é ESTADO DESCONHECIDO, sem promovê-lo a confirmado. Três estados percorrem Activity/owner/cleanup reais com respostas sintéticas; formatação de múltiplas reservas mantém estado e aviso por registro. 92 casos debug totais.
 
 Toda a tela fica em ScrollView nativa (controles e resultado), sem limite de linhas. Texto usa 16sp escalável e foco; WebView visível usa altura 360dp em vez de peso/altura zero dentro do scroll. Teste com doubles verifica hierarquia, foco e configurações, não geometria física/TalkBack. CI SDK prova compilação; tela pequena/fontes ampliadas e acessibilidade no aparelho continuam validação física após revisão do APK. Nenhum APK gerado/entregue nesta etapa.
+
+Epoch de publicação capturada antes de chamar cleanup nativo, não após seu retorno: cancelamento/onStop→resume reentrantes durante início da limpeza também revogam resultado. Duas negativas adicionais; 94 casos debug totais.
