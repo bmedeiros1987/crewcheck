@@ -37,7 +37,7 @@ function packet(now, stale = false) { const observed = stale ? '2032-10-19T12:00
                 await context.addInitScript(now => { const Native = Date, clock = Date.parse(now); globalThis.Date = class extends Native {
                     constructor(...a) { super(...(a.length ? a : [clock])); }
                     static now() { return clock; }
-                }; localStorage.setItem('crewcheck_language', 'pt'); localStorage.setItem('crewcheck:notification-preferences:v1:financial-ui-qa', JSON.stringify({ ownerId: 'financial-ui-qa', revision: 1, preferences: { settings: { crewcheck_pulse_enabled: true, crewcheck_device_notifications_enabled: false } } })); Object.defineProperty(navigator, 'geolocation', { value: { getCurrentPosition: () => { } }, configurable: true }); window.__qaWeatherTitles = []; new MutationObserver(() => { for (const e of document.querySelectorAll('.cc-pulse-compact-trigger strong'))
+                }; localStorage.setItem('crewcheck_language', 'pt'); localStorage.setItem('crewcheck:notification-preferences:v1:financial-ui-qa', JSON.stringify({ ownerId: 'financial-ui-qa', revision: 1, preferences: { settings: { crewcheck_pulse_enabled: true, crewcheck_device_notifications_enabled: false } } })); Object.defineProperty(navigator, 'geolocation', { value: { getCurrentPosition: () => { } }, configurable: true }); window.__qaWeatherTitles = []; window.__qaNotificationCalls = 0; globalThis.Notification = class { static permission = 'denied'; constructor() { window.__qaNotificationCalls++; } static requestPermission() { window.__qaNotificationCalls++; return Promise.resolve('denied'); } }; new MutationObserver(() => { for (const e of document.querySelectorAll('.cc-pulse-compact-trigger strong'))
                     if (/Meteorologia/.test(e.textContent))
                         window.__qaWeatherTitles.push(e.textContent); }).observe(document, { childList: true, subtree: true }); }, spec.now);
                 const page = await context.newPage();
@@ -47,6 +47,17 @@ function packet(now, stale = false) { const observed = stale ? '2032-10-19T12:00
                 assert.equal(weatherCalls, spec.calls, `${timezoneId}/${spec.name}: automatic requests`);
                 const keys = await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('crewcheck_weather_pulse_signature_')));
                 assert.equal(keys.length, spec.notice ? 1 : 0, `${spec.name}: only eligible fresh observations reach publication`);
+                // A higher-priority synthetic roster warning may precede weather in the real FIFO.
+                // Dismiss only unrelated fixture notices through the existing UI, then require the actual weather title.
+                let unrelatedDismissed = 0;
+                if (spec.notice) for (let i = 0; i < 8 && !(await page.evaluate(() => window.__qaWeatherTitles.length)); i++) {
+                    const details = page.locator('.cc-pulse-compact-details');
+                    if (!await details.count()) break;
+                    await details.click();
+                    await page.locator('.cc-pulse-dismiss').click();
+                    unrelatedDismissed++;
+                    await page.waitForTimeout(220);
+                }
                 const titles = await page.evaluate(() => window.__qaWeatherTitles);
                 assert.equal(titles.length > 0, spec.notice, `${spec.name}: actual Pulse title visibility`);
                 if (spec.manual) {
@@ -55,7 +66,8 @@ function packet(now, stale = false) { const observed = stale ? '2032-10-19T12:00
                     assert.match(await page.locator('.cc-weather-flight-window').innerText(), /não confirmam o tempo para a data do voo/);
                     assert.equal(weatherCalls, 1, 'manual current reports remain accessible');
                 }
-                results.push({ timezoneId, name: spec.name, automaticRequests: spec.calls, totalRequests: weatherCalls, queries, weatherSignatureCount: keys.length, pulseWeatherObserved: titles.length > 0, manualFutureReadAvailable: !!spec.manual, blockedExternalRequests: blocked, realProviderCalls: 0, realNotifications: 0 });
+                assert.equal(await page.evaluate(() => window.__qaNotificationCalls), 0, 'No real or simulated device notification requested');
+                results.push({ timezoneId, name: spec.name, automaticRequests: spec.calls, totalRequests: weatherCalls, queries, weatherSignatureCount: keys.length, unrelatedSyntheticNoticesDismissed: unrelatedDismissed, pulseWeatherObserved: titles.length > 0, manualFutureReadAvailable: !!spec.manual, blockedExternalRequests: blocked, realProviderCalls: 0, realNotifications: 0 });
                 await context.close();
                 console.log('PASS compiled operational weather', timezoneId, spec.name);
             }
