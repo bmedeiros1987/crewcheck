@@ -107,7 +107,7 @@ const skyPolicy = { product: 'Sky Flight Status', evidenceId: 'OFFLINE_ONLY', co
 let upstream = 0;
 const skyTransport = createCiriumSkyTransport({ enabled: true, policy: skyPolicy, now: () => skyNow,
   credential: () => 'OFFLINE_FAKE_SECRET', fetchImpl: async (endpoint, options) => {
-    upstream++; assert.equal(endpoint.origin, 'https://api.sky.cirium.com'); assert.equal(options.redirect, 'error');
+    upstream++; assert.equal(endpoint.origin, 'https://api.sky.cirium.com'); assert.deepEqual([...endpoint.searchParams], [['codeType', 'FS']]); assert.equal(options.redirect, 'error');
     return new Response(JSON.stringify({ flightStatuses: [row] }), { headers: { 'content-type': 'application/json' } });
   } });
 const skyHarness = harness(source, true);

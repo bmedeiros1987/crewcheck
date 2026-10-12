@@ -7,7 +7,7 @@ const row = { carrierFsCode: 'LA', flightNumber: '3377', departureAirportFsCode:
 const policy = { product: 'Sky Flight Status', evidenceId: 'OFFLINE_FIXTURE_ONLY', contractEvidenceId: 'OFFLINE_FIXTURE_ONLY', validFromMs: clock - 1000, validUntilMs: clock + 86_400_000, maxCalls: 2, dateWindowDays: 2, maxObservationAgeMs: 900_000, airportTimeZones: { GRU: 'America/Sao_Paulo' } };
 const response = (body = { flightStatuses: [row] }, status = 200, headers = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 const config = extra => ({ enabled: true, policy, now: () => clock, credential: () => { credentials++; return 'OFFLINE_FAKE_SECRET'; }, fetchImpl: async (url, options) => {
-  calls++; assert.equal(url.origin, 'https://api.sky.cirium.com'); assert.equal(url.search, ''); assert.equal(options.redirect, 'error'); assert.equal(options.method, 'GET'); assert.equal(options.headers.Authorization, 'OFFLINE_FAKE_SECRET'); return response();
+  calls++; assert.equal(url.origin, 'https://api.sky.cirium.com'); assert.equal(url.search, '?codeType=FS'); assert.deepEqual([...url.searchParams], [['codeType', 'FS']]); assert.equal(options.redirect, 'error'); assert.equal(options.method, 'GET'); assert.equal(options.headers.Authorization, 'OFFLINE_FAKE_SECRET'); return response();
 }, ...extra });
 const poison = new Proxy({}, { get() { throw Error('OFF inspected input'); } });
 assert.equal((await productionCiriumSkyTransport().source(poison)).state, 'disabled');
@@ -19,6 +19,23 @@ for (const change of [{ validUntilMs: clock }, { contractEvidenceId: '' }, { max
 for (const change of [{ carrierNamespace: 'IATA' }, { originTimeZone: 'UTC' }, { flightNumber: '../3377' }, { origin: 'XXX' }]) assert.equal((await createCiriumSkyTransport(config()).source({ ...identity, ...change })).state, 'invalid_request');
 assert.equal(calls, 0); assert.equal(credentials, 0);
 const transport = createCiriumSkyTransport(config());
+// Synthetic collision: code LA resolves to another FS carrier if the namespace
+// is omitted. The transport must pin FS, not rely on response rejection later.
+let collisionCalls = 0;
+const collision = createCiriumSkyTransport(config({ fetchImpl: async endpoint => {
+  collisionCalls++;
+  const resolvedFs = endpoint.searchParams.get('codeType') === 'FS' ? 'LA' : 'JJ';
+  return response({ flightStatuses: [{ ...row, carrierFsCode: resolvedFs }] });
+} }));
+assert.equal((await runCiriumSkyRadar(identity, collision, 'LA3377')).providerState, 'available');
+assert.equal((await collision.source({ ...identity, carrierNamespace: 'IATA' })).state, 'invalid_request');
+assert.equal((await collision.source({ ...identity, carrierNamespace: 'ICAO' })).state, 'invalid_request');
+assert.equal(collisionCalls, 1);
+const wrongCarrier = createCiriumSkyTransport(config({ fetchImpl: async endpoint => {
+  assert.equal(endpoint.searchParams.get('codeType'), 'FS');
+  return response({ flightStatuses: [{ ...row, carrierFsCode: 'JJ' }] });
+} }));
+assert.equal((await runCiriumSkyRadar(identity, wrongCarrier, 'LA3377')).providerState, 'no_data');
 const good = await runCiriumSkyRadar(identity, transport, 'LA3377');
 assert.equal(good.providerState, 'available'); assert.equal(good.provenance.fields.departureGate.provider, 'cirium-sky'); assert.equal(good.provenance.fields.departureGate.observedAt, '2026-10-11T23:00:00.000Z'); assert.equal(good.exportedToConcierge, false); assert.equal(good.canonicalReadOnly, true); assert.ok(good.occurrenceKey.endsWith('UTC:2026-10-12T01:00:00.000Z'));
 assert.equal(calls, 1); const cached = await transport.source(identity); cached.rows[0].airportResources.departureGate = 'BAD'; assert.equal((await transport.source(identity)).rows[0].airportResources.departureGate, 'A12'); assert.equal(calls, 1);
@@ -39,6 +56,33 @@ for (const header of [undefined, '0', 'garbage', '120', new Date(clock + 120_000
   assert.equal((await t.source(identity)).state, 'rate_limited'); assert.equal((await t.source({ ...identity, flightNumber: '3378' })).state, 'rate_limited'); assert.equal(n, 1);
 }
 let resolve; let n = 0; const t = createCiriumSkyTransport(config({ fetchImpl: async () => { n++; return new Promise(r => { resolve = r; }); } }));
+// Never shorten a provider's long cooldown; expiration stays checked first.
+const beforeLongCooldown = clock;
+for (const longHeader of ['172800', new Date(beforeLongCooldown + 172800_000).toUTCString()]) {
+  clock = beforeLongCooldown;
+  let longCalls = 0;
+  const long = createCiriumSkyTransport(config({ policy: { ...policy, validUntilMs: clock + 259200_000 },
+    fetchImpl: async () => { longCalls++; return longCalls === 1 ? response({}, 429, { 'retry-after': longHeader }) : response(); } }));
+  assert.equal((await long.source(identity)).state, 'rate_limited');
+  clock += 86400_000 + 1000;
+  assert.equal((await long.source(identity)).state, 'rate_limited'); assert.equal(longCalls, 1);
+  clock = beforeLongCooldown + 172800_000 + 1000;
+  assert.equal((await long.source(identity)).upstreamCalled, true); assert.equal(longCalls, 2);
+}
+clock = beforeLongCooldown;
+let expiredCalls = 0;
+const expiredCooldown = createCiriumSkyTransport(config({ policy: { ...policy, validUntilMs: clock + 300_000 },
+  fetchImpl: async () => { expiredCalls++; return response({}, 429, { 'retry-after': '172800' }); } }));
+await expiredCooldown.source(identity); clock += 300_001;
+assert.equal((await expiredCooldown.source(identity)).state, 'not_configured'); assert.equal(expiredCalls, 1);
+for (const badHeader of ['invalid', '-1', '', '9'.repeat(400)]) {
+  clock = beforeLongCooldown;
+  let badCalls = 0;
+  const bad = createCiriumSkyTransport(config({ fetchImpl: async () => { badCalls++; return response({}, 429, { 'retry-after': badHeader }); } }));
+  await bad.source(identity); clock += 59_999;
+  assert.equal((await bad.source({ ...identity, flightNumber: '3378' })).state, 'rate_limited'); assert.equal(badCalls, 1);
+}
+clock = beforeLongCooldown;
 const first = t.source(identity), second = t.source(identity); resolve(response()); const values = await Promise.all([first, second]); assert.equal(n, 1); assert.equal(values[0].state, 'available'); assert.equal(values[1].state, 'available');
 let signal; const timeout = createCiriumSkyTransport(config({ timeoutMs: 10, fetchImpl: async (_, opts) => { signal = opts.signal; return new Promise(() => {}); } }));
 assert.equal((await timeout.source(identity)).state, 'timeout'); assert.equal(signal.aborted, true); assert.equal(timeout.counters().pending, 0); assert.equal((await timeout.source({ ...identity, flightNumber: '3378' })).state, 'rate_limited');

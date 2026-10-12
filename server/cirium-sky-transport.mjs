@@ -30,11 +30,14 @@ function policyValid(p, now) {
 
 function cooldownMs(headers, now) {
   const raw = headers?.get?.('retry-after');
-  const seconds = typeof raw === 'string' && /^\d+$/.test(raw.trim()) ? Number(raw) : NaN;
+  const numeric = typeof raw === 'string' && /^\d+$/.test(raw.trim());
+  const seconds = numeric ? Number(raw) : NaN;
+  // An overflowing numeric delay fails closed for the remaining capability.
+  if (numeric && !Number.isFinite(seconds)) return Infinity;
   const date = typeof raw === 'string' && !Number.isFinite(seconds) ? Date.parse(raw) : NaN;
   const ms = Number.isFinite(seconds) ? seconds * 1000 : Number.isFinite(date) ? date - now : 60_000;
   // A zero/missing/malformed header cannot create an immediate retry loop.
-  return Math.min(86_400_000, Math.max(60_000, ms));
+  return Math.max(60_000, ms);
 }
 
 async function readPayload(response, signal) {
@@ -116,6 +119,8 @@ export function createCiriumSkyTransport({ enabled = false, policy, credential, 
     let timer, response;
     const task = (async () => {
       const url = new URL(`/v1/flights/status/airline/${encodeURIComponent(identity.carrierFsCode)}/flight-number/${encodeURIComponent(identity.flightNumber)}/departure-date/${identity.departureDate}`, BASE);
+      // Identity is FS: never let upstream resolve an IATA/ICAO collision first.
+      url.searchParams.set('codeType', 'FS');
       try {
         const timeout = new Promise(resolve => { timer = setTimeout(() => { controller.abort(); resolve({ state: 'timeout' }); }, timeoutMs); });
         const request = (async () => {

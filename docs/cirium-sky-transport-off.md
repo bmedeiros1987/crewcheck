@@ -24,7 +24,9 @@ sem logs/URL/payload público. Prazo cobre fetch e body, abort explícito,
 body UTF-8/JSON limitado256KiB. Um pedido upstream por tentativa; sem retries,
 Flex, polling, timers permanentes ou novos recursos. Cache60s máximo128 entradas,
 falhas incluídas, copies independentes e coalescing de chamadas concorrentes.
-429 respeita Retry-After segundos/data com mínimo60s/máximo24h; 401/403 bloqueiam
+429 respeita Retry-After segundos/data com mínimo60s, sem encurtar prazo longo;
+delay numérico que excede a representação finita bloqueia a capability inteira.
+Vigência expirada sempre falha antes de credenciais/rede. 401/403 bloqueiam
 até o fim da vigência. Timeout bloqueia novos pedidos por60s. Orçamento contado
 antes da tentativa, máximo100 por capability, intervalo mínimo1s.
 
@@ -34,9 +36,11 @@ Prints inspecionados pelo parent confirmam trial Cirium Sky aprovado09/10/2026,
 vigência09/10–23/10/2026 e credencial CrewCheck ACTIVE criada10/10/2026.
 Referências Library: libfile_e3bba1adf49481918d245b14024072ee e
 libfile_70d2b61e5cb08191b98cd57a7551d62d; sem segredos visíveis.
-Não pedir renovação novamente: email de agosto é histórico. Falta confirmar
-inclusão do endpoint Flight Status, quota/saldo/rate limit, overage e uso em
-produção. Política sintética do teste é fixture,
+Não pedir renovação ou prova genérica de inclusão novamente: email de agosto
+é histórico. A página oficial subscriptions declara trial14dias com todas
+Sky APIs e máximo1.000 consultas/API. Isso sustenta o canário de uma tentativa;
+não informa saldo atual da conta nem autoriza plano pago/overage ou produção
+contínua. Política sintética do teste é fixture,
 não comprovação de direito comercial. Evidência e contrato da API são exigidos
 antes de chamar credential/fetch, mas seus identificadores são referências
 auditáveis de código, não verificação criptográfica/comercial.
@@ -44,11 +48,15 @@ auditáveis de código, não verificação criptográfica/comercial.
 Documentação oficial pública consultada:
 https://developer.cirium.com/apis/cirium-sky-api/flight-status
 https://developer.cirium.com/apis/cirium-sky-api/authentication
-O conteúdo detalhado não foi legível nesta execução. Endpoint/header/envelope
-estão preparados conforme o diagnóstico existente, sem reutilizar sua rota ou
-resumo: `/v1/flights/status/airline/{FS}/flight-number/{number}/departure-date/{date}`,
-Authorization com secret estático sem inventar Bearer. Confirmar especificação
-oficial e fixture sanitizada Sky antes de validar compatibilidade de produção.
+https://developer.cirium.com/postman/cirium-sky-api.postman_collection.json
+https://developer.cirium.com/apis/cirium-sky-api/subscriptions
+A coleção oficial, operação Flight Status - Flight Departures by Date,
+confirma GET `/v1/flights/status/airline/{FS}/flight-number/{number}/departure-date/{date}?codeType=FS`,
+Authorization com token estático e Accept application/json. codeType=FS é
+obrigatório neste contrato: sem ele o upstream tenta IATA/ICAO antes de FS.
+A data permanece local ao aeroporto, conforme default documentado; não
+usar utc=true com departureDate local. Envelope real ainda precisa de
+validação no canário limitado; a coleção não inclui exemplo de resposta.
 Nenhum payload Flex deve ser usado como prova de Sky.
 
 Orçamento/cache/cooldown são locais à capability/processo; restart/múltiplas
@@ -60,8 +68,8 @@ de produção não possui política/credenciais conectadas: trocar a constante
 isoladamente falha not_configured. Nunca ligar
 simplesmente por existência de env/token. Próximo teste real deve ser canário
 one-shot com uma identidade autorizada, quota1, janela curta e recibo sanitizado,
-somente depois da confirmação de inclusão do endpoint/especificação e revisão
-independente. Plano inicial: exatamente um GET de um voo do roster cuja
+somente depois da correção codeType=FS e revisão independente. Plano inicial:
+exatamente um GET de um voo do roster cuja
 identidade completa seja verificada (FS/número/rota/data/fuso/UTC exato),
 maxCalls1, timeout8000ms, sem retries/Flex/polling, validade da capability
 de5min dentro do trial; recibo somente status/duração/contagem e proveniência,
