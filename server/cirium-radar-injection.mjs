@@ -9,7 +9,8 @@ export function ciriumRadarInjectionEnabled(options) { return options?.enabled =
 export function ciriumRadarRegistration() { return { key: 'cirium-sky', available: false, state: 'disabled' }; }
 
 export function ciriumRadarIdentity(params) {
-  return Object.fromEntries(['carrierNamespace', 'carrierFsCode', 'flightNumber', 'origin', 'destination',
+  const carrierField = params.get('carrierNamespace') === 'IATA' ? 'carrierIataCode' : 'carrierFsCode';
+  return Object.fromEntries(['carrierNamespace', carrierField, 'flightNumber', 'origin', 'destination',
     'departureDate', 'originTimeZone', 'scheduledDepartureUtc'].map(key => [key, params.get(key)]));
 }
 
@@ -38,5 +39,7 @@ export async function runCiriumRadarInjection(identity, options, requestedFlight
 export function ciriumRadarProjection(item) {
   if (item.provider !== 'cirium-sky') return {};
   return { provider: item.provider, providerState: item.providerState, canonicalReadOnly: true,
+    ...(item.publishedIdentity ? { publishedIdentity: item.publishedIdentity, operatingIdentity: item.operatingIdentity,
+      identityBinding: item.identityBinding, operatingOccurrenceKey: item.operatingOccurrenceKey } : {}),
     occurrenceKey: item.occurrenceKey || '', provenance: item.provenance || null, updatedAt: item.updatedAt || null };
 }
