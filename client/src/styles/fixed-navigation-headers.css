@@ -251,8 +251,7 @@ html body #root .cz-app[data-version] .cz-menu-scroll { width:100%!important; ma
   html[data-crew-text-size="200"] body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button > span { white-space:nowrap!important; overflow:visible!important; overflow-wrap:normal!important; word-break:normal!important; text-overflow:clip!important; max-height:none!important; }
 }
 
-/* CI follow-up: desktop header shares the content canvas; narrow Portuguese labels retain width. */
-html body #root .cz-app[data-version] > .cz-global-header { width:min(100%,1180px)!important; max-width:1180px!important; margin:0 auto!important; }
+/* Keep complete Portuguese labels usable at 320px with 200% text. */
 @media(max-width:380px) {
   html[data-crew-text-size="200"] body > nav.cz-bottom-nav[aria-label="Navegação principal"] { left:0!important; right:0!important; width:100%!important; max-width:none!important; padding-inline:4px!important; }
   html[data-crew-text-size="200"] body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button { padding-inline:2px!important; }

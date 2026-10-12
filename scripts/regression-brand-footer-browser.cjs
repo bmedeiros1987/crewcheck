@@ -38,16 +38,17 @@ async function measure(page) {
   const browser=await chromium.launch({executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||undefined});
   const results=[],authResults=[];
   try {
-    for(const [width,height] of devices) for(const theme of ['light','dark']) {
+    for(const [width,height,language] of [...devices.map(d=>[...d,'en-US']),[320,740,'pt-BR']]) for(const theme of ['light','dark']) {
       const context=await browser.newContext({viewport:{width,height},hasTouch:width<1000,isMobile:width<1000,serviceWorkers:'block',timezoneId:'America/Sao_Paulo'});
       await context.route('**/*',route=>{const u=new URL(route.request().url());if(u.origin!==origin)return route.abort();if(u.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[],"enabled":false}'});return route.request().method()==='GET'?route.continue():route.abort();});
       await context.addInitScript(fixture.qaSeed,{theme,kind:fixture.qaRoster('multi'),amount:0});
+      await context.addInitScript(language=>localStorage.setItem('crewcheck_language',language),language);
       const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
       await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'settings'})));
       const fonts=[];
       for(const size of [100,200]) {
         await page.locator('#cc-text-size').selectOption(String(size));await settle(page);const m=await measure(page);
-        assert.equal(m.rows.length,5);assert.deepEqual(m.rows.map(r=>r.text),['FlightDeck','Roster','Saída','Alerts','Menu']);
+        assert.equal(m.rows.length,5);assert.deepEqual(m.rows.map(r=>r.text),language==='pt-BR'?['FlightDeck','Escala','Saída','Alertas','Menu']:['FlightDeck','Roster','Saída','Alerts','Menu']);
         for(const row of m.rows) {
           assert(row.button.width>=44&&row.button.height>=44&&row.hit,'Five usable navigation targets');
           assert(row.glyphs.every(g=>g.x>=row.button.x-1&&g.right<=row.button.right+1&&g.y>=row.button.y-1&&g.bottom<=row.button.bottom+1),`Whole label fits: ${JSON.stringify(row)}`);
@@ -57,8 +58,8 @@ async function measure(page) {
         fonts.push(m.rows.map(r=>r.font));
         const img=page.locator('.cz-global-header [data-crewcheck-brand="canonical"] img');
         await img.waitFor();assert(await img.evaluate(el=>el.complete&&el.naturalWidth===512&&el.currentSrc.includes('brand=936-3656d39df50e')),'Actual header loads the approved cache-versioned PNG');
-        await page.screenshot({path:path.join(output,`${width}-${height}-${theme}-${size}.png`)});
-        results.push({width,height,theme,size,...m});
+        await page.screenshot({path:path.join(output,`${width}-${height}-${theme}-${size}-${language}.png`)});
+        results.push({width,height,theme,size,language,...m});
       }
       assert(fonts[1].every((font,i)=>font>=fonts[0][i]*1.8),'200% never shrinks the text to fit columns');
       await page.locator('body > nav.cz-bottom-nav > button').last().click();await page.locator('.cz-menu-overlay').waitFor();await page.keyboard.press('Escape');await page.locator('.cz-menu-overlay').waitFor({state:'detached'});
