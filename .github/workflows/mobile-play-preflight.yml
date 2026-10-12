@@ -22,6 +22,10 @@ on:
       - 'scripts/android-play/test_planned_handoff.py'
       - 'scripts/android-play/test_planned_handoff.mjs'
       - 'scripts/android-play/test_legacy_writer_off.py'
+      - 'scripts/android-play/test_independent_package_scope.py'
+      - 'scripts/android-play/review_policy.py'
+      - 'scripts/regression-play-manual-publication-gates.mjs'
+      - '.github/workflows/android.yml'
       - 'scripts/android-play/publish.py'
       - 'scripts/android-play/allocate_versions.py'
       - 'scripts/android-play/crewwatch_internal.py'
@@ -81,6 +85,7 @@ jobs:
       - run: python3 scripts/android-play/test_planned_digest.py
       - run: python3 scripts/android-play/test_planned_handoff.py
       - run: python3 scripts/android-play/test_legacy_writer_off.py
+      - run: python3 scripts/android-play/test_independent_package_scope.py
       - run: python3 scripts/android-play/test_consumed_validation.py
       - run: node scripts/android-play/test_reconcile_journal.mjs
       - run: node scripts/android-play/test_recovery_fence.mjs

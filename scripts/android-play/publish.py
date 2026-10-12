@@ -1,4 +1,5 @@
 """Publish only verified bundles to explicit internal tracks; no production code path."""
+import argparse
 import hashlib
 import json
 import os
@@ -9,27 +10,37 @@ from urllib.parse import quote
 from credential import load_service_account_secret
 from play_error import safe_play_error
 from review_policy import commit_internal_edit
+from allocate_versions import select_live_package_policy, WATCHFACE_PACKAGE
 
-def main():
-    raise AssertionError('Live joint publication disabled: multitrack journal policy/exclusivity unverified')
-    # Legacy implementation retained OFF until reviewed adoption; imports stay behind gate.
-    import google.auth.transport.requests
-    from google.oauth2 import service_account
-    import requests
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('root')
+    parser.add_argument('--package', choices=[WATCHFACE_PACKAGE])
+    args = parser.parse_args(argv)
     assert os.environ['GITHUB_REF'] == 'refs/heads/main', 'Publishing requires main'
-    account = load_service_account_secret(os.environ['PLAY_SERVICE_ACCOUNT_JSON'])
-    credentials = service_account.Credentials.from_service_account_info(account, scopes=['https://www.googleapis.com/auth/androidpublisher'])
-    session = google.auth.transport.requests.AuthorizedSession(credentials)
-    root = Path(sys.argv[1])
-    report = json.loads((root / 'release-report.json').read_text())
-    policy = json.loads((root / 'resolved-release-policy.json').read_text())
-    assert {r['module'] for r in report} == set(policy['artifacts']), 'Incomplete release'
+    assert os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch', 'Manual publishing only'
+    root = Path(args.root)
+    complete_report = json.loads((root / 'release-report.json').read_text())
+    complete_policy = json.loads((root / 'resolved-release-policy.json').read_text())
+    policy = select_live_package_policy(complete_policy, args.package)
+    if args.package is None:
+        assert {r['module'] for r in complete_report} == set(complete_policy['artifacts']) and len(complete_report) == len(complete_policy['artifacts']), 'Incomplete release'
+        assert all(r['package'] == WATCHFACE_PACKAGE for r in complete_report), 'Mixed report needs explicit package selection'
+    report = [r for r in complete_report if r['package'] == WATCHFACE_PACKAGE]
+    assert {r['module'] for r in report} == set(policy['artifacts']) and len(report) == len(policy['artifacts']), 'Incomplete release'
     for item in report:
         assert all(item[k] == v for k, v in policy['artifacts'][item['module']].items()), 'Report/policy mismatch'
         assert item['track'] in ['qa', 'wear:qa'], 'Only internal testing is authorized'
         assert Path(item['file']).name == item['file'], 'Invalid artifact filename'
         assert hashlib.sha256((root / item['file']).read_bytes()).hexdigest() == item['sha256'], 'Bundle checksum mismatch'
 
+    # Existing independent-package route; shared-package scope was refused before credentials/client.
+    import google.auth.transport.requests
+    from google.oauth2 import service_account
+    import requests
+    account = load_service_account_secret(os.environ['PLAY_SERVICE_ACCOUNT_JSON'])
+    credentials = service_account.Credentials.from_service_account_info(account, scopes=['https://www.googleapis.com/auth/androidpublisher'])
+    session = google.auth.transport.requests.AuthorizedSession(credentials)
     # Require all current-commit CI except this publishing workflow to finish green.
     # Push workflows start concurrently, so wait instead of racing them and failing spuriously.
     gh = requests.Session()
@@ -96,10 +107,12 @@ def main():
         edit = api('POST', base, json={})['id']
         url = base + '/' + edit
         committed = False
+        commit_attempted = False
         try:
             tracks = api('GET', url + '/tracks').get('tracks', [])
             bundles = api('GET', url + '/bundles').get('bundles', [])
-            codes = [int(b['versionCode']) for b in bundles]
+            apks = api('GET', url + '/apks').get('apks', [])
+            codes = [int(b['versionCode']) for b in bundles + apks]
             codes += [int(v) for t in tracks for r in t.get('releases', []) for v in r.get('versionCodes', [])]
             known = max(codes + [policy['knownMaxVersionCode'][package]])
             items = [r for r in report if r['package'] == package]
@@ -132,14 +145,15 @@ def main():
                         }],
                     },
                 )
-            _, review_mode = commit_internal_edit(api, url)
+            commit_attempted = True
+            _, review_mode = commit_internal_edit(api, url, protect_reviews=True)
             committed = True
             print(
                 f'{package}: verified bundles COMMITTED TO INTERNAL TESTING '
                 f'({review_mode}). Production untouched.'
             )
         finally:
-            if not committed:
+            if not committed and not commit_attempted:
                 session.delete(url, timeout=30)
 
 if __name__ == '__main__': main()
