@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { evaluateCriticalWeatherDelivery } from './server/weather/critical-observation.mjs';
+import { evaluateCriticalWeatherDelivery, weatherFlightWindow } from './server/weather/critical-observation.mjs';
 import './server/telegram-fast-ack.mjs';
 import { parsePdfOnServer } from './server/rosterParser.mjs';
 import { handlePlatformRoute, consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';
@@ -1087,6 +1087,8 @@ async function handleAviationWeather(req, res, url) {
         tafDecoded: decodeTafPtBr(taf.raw, icao),
         source: { metar: metar.source || '', taf: taf.source || '' },
         provider: { metar: metar.provider || '', taf: taf.provider || '' },
+        official: { metar: metar.official === true, taf: taf.official === true },
+        available: { metar: metar.ok === true, taf: taf.ok === true },
         observedAt: { metar: metar.observedAt || '', taf: taf.observedAt || '' },
         cache: { metar: metar.cache, taf: taf.cache },
         monitoring: aviationReportMetrics(metar.raw),
@@ -3406,10 +3408,10 @@ function conciergeWeatherCandidates(snapshot = {}, now = new Date()) {
       const key = `${conciergeRecordDateKey(record)}:${flight}:${index}`;
       const origin = airportIcao(leg?.origin || '');
       const destination = airportIcao(leg?.destination || '');
-      if (/^[A-Z]{4}$/.test(origin) && now.getTime() >= departure.getTime() - 180 * 60_000 && now.getTime() <= departure.getTime() + 30 * 60_000) {
+      if (/^[A-Z]{4}$/.test(origin) && weatherFlightWindow({ departure: departure.getTime(), arrival: arrival.getTime(), role: 'origin', now: now.getTime() }).eligible) {
         candidates.push({ key, role: 'origem', station: origin, flight, scheduledAt: departure, route: `${leg?.origin || origin} → ${leg?.destination || destination}` });
       }
-      if (/^[A-Z]{4}$/.test(destination) && now.getTime() >= arrival.getTime() - 120 * 60_000 && now.getTime() <= arrival.getTime() + 45 * 60_000) {
+      if (/^[A-Z]{4}$/.test(destination) && weatherFlightWindow({ departure: departure.getTime(), arrival: arrival.getTime(), role: 'destination', now: now.getTime() }).eligible) {
         candidates.push({ key, role: 'destino', station: destination, flight, scheduledAt: arrival, route: `${leg?.origin || origin} → ${leg?.destination || destination}` });
       }
     }

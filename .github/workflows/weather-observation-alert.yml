@@ -7,6 +7,9 @@ on:
       - 'server.mjs'
       - 'server/weather/**'
       - 'scripts/tests/critical-weather-observation.test.mjs'
+      - 'scripts/tests/operational-weather-flight.test.mjs'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-operational-weather-browser.cjs'
       - '.github/workflows/weather-observation-alert.yml'
 
 permissions:
@@ -33,6 +36,11 @@ jobs:
           node --test scripts/tests/critical-weather-observation.test.mjs
           node scripts/regression-weather-monitor-heartbeat-health.mjs
       - run: npm ci
+      - name: Verify synthetic Home monitors in three timezones
+        run: |
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" node --test scripts/tests/operational-weather-flight.test.mjs
+          done
       - name: Prepare production sources
         run: node scripts/v139/apply.mjs
       - name: Verify prepared monitor retains policy and authorization
@@ -40,3 +48,25 @@ jobs:
           node --check server.mjs
           node --test scripts/tests/critical-weather-observation.test.mjs
           node scripts/regression-weather-monitor-heartbeat-health.mjs
+      - name: Verify prepared Home retains bounded weather monitors
+        run: |
+          for zone in UTC America/Sao_Paulo Pacific/Auckland; do
+            TZ="$zone" node --test scripts/tests/operational-weather-flight.test.mjs
+          done
+      - name: Build exact-SHA client and verify actual Home weather behavior
+        env:
+          SOURCE_VERSION: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node scripts/p1-concierge-journey/compile.mjs
+          npx tsc --noEmit
+          npx vite build
+          npm install --prefix "$RUNNER_TEMP/weather-flight-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/weather-flight-browser/node_modules/playwright/cli.js" install --with-deps chromium
+          MENU_PLAYWRIGHT_PACKAGE="$RUNNER_TEMP/weather-flight-browser/package.json" node scripts/regression-operational-weather-browser.cjs
+      - name: Save synthetic operational weather evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operational-weather-flight-${{ github.event.pull_request.head.sha }}
+          path: artifacts/weather-flight
+          if-no-files-found: ignore
