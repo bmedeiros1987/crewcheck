@@ -10,12 +10,12 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
  static class Screen {
   final CrewCheckMyCrewCareDebugActivity activity=new CrewCheckMyCrewCareDebugActivity();
   android.widget.EditText employee,user;android.widget.CheckBox consent;android.widget.Button prepare,start,cancel;android.widget.TextView status;
-  Screen(){android.os.Handler.runMain(activity::create);var layout=(android.widget.LinearLayout)activity.content;
-   employee=(android.widget.EditText)layout.children.get(1);user=(android.widget.EditText)layout.children.get(2);consent=(android.widget.CheckBox)layout.children.get(3);prepare=(android.widget.Button)layout.children.get(4);start=(android.widget.Button)layout.children.get(5);cancel=(android.widget.Button)layout.children.get(6);status=(android.widget.TextView)layout.children.get(7);
+  Screen(){android.os.Handler.runMain(activity::create);var scroll=(android.widget.ScrollView)activity.content;check(scroll.fillViewport,"whole debug screen scrollable, including controls/results");var layout=(android.widget.LinearLayout)scroll.children.get(0);
+   employee=(android.widget.EditText)layout.children.get(1);user=(android.widget.EditText)layout.children.get(2);consent=(android.widget.CheckBox)layout.children.get(3);prepare=(android.widget.Button)layout.children.get(4);start=(android.widget.Button)layout.children.get(5);cancel=(android.widget.Button)layout.children.get(6);status=(android.widget.TextView)layout.children.get(7);check(status.focusable&&status.textSize==16,"focus and scaled text; no line cap");
    check(!employee.save&&!user.save&&!consent.save&&layout.autofill==8,"identity/consent not restored or autofilled");}
   void ready(){employee.setText("900000001");user.setText("synthetic.crew@example.invalid");consent.setChecked(true);}
   void prepare(){android.os.Handler.runMain(prepare::click);android.os.Handler.drain();}
-  void click(){prepare();var layout=(android.widget.LinearLayout)activity.content;for(var child:new ArrayList<>(layout.children))if(child instanceof android.webkit.WebView){var v=(android.webkit.WebView)child;android.os.Handler.runMain(()->v.client.onPageFinished(v,v.url));}android.os.Handler.runMain(start::click);android.os.Handler.drain();}
+  void click(){prepare();var scroll=(android.widget.ScrollView)activity.content;check(scroll.fillViewport,"whole debug screen scrollable, including controls/results");var layout=(android.widget.LinearLayout)scroll.children.get(0);for(var child:new ArrayList<>(layout.children))if(child instanceof android.webkit.WebView){var v=(android.webkit.WebView)child;android.os.Handler.runMain(()->v.client.onPageFinished(v,v.url));}android.os.Handler.runMain(start::click);android.os.Handler.drain();}
   void close(){android.os.Handler.runMain(activity::destroy);android.os.Handler.drain();}
  }
  static ObservedRequest request(Screen s) {
@@ -63,7 +63,7 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
    s.close();count++;
   }
   clean();Screen login=new Screen();login.ready();int loginIndex=android.webkit.WebView.instances.size();login.prepare();var visible=view();
-  check(((android.widget.LinearLayout)login.activity.content).children.contains(visible)&&visible.settings.js&&visible.script==null&&visible.value==null&&!login.start.enabled,"visible official login page without native script/form extraction or early read");
+  check(((android.widget.LinearLayout)((android.widget.ScrollView)login.activity.content).children.get(0)).children.contains(visible)&&visible.settings.js&&visible.script==null&&visible.value==null&&!login.start.enabled,"visible official login page without native script/form extraction or early read");
   String official="https://api2.apicrewcare.com/Main/Login.aspx?ReturnUrl=%2fLATAM%2fmytravel.aspx";
   android.os.Handler.runMain(()->{check(!visible.client.shouldOverrideUrlLoading(visible,new android.webkit.WebResourceRequest(official,true)),"observed login target allowed");visible.url=official;visible.client.onPageStarted(visible,official,null);visible.client.onPageFinished(visible,official);check(!login.start.enabled,"login URL not authentication");check(!visible.client.shouldOverrideUrlLoading(visible,new android.webkit.WebResourceRequest(official,true,"POST")),"user browser form POST allowed only observed login target");check(visible.client.shouldInterceptRequest(visible,new android.webkit.WebResourceRequest("https://api2.apicrewcare.com/Content/site.css",false))==null,"same exact portal origin GET resources");visible.url="https://api2.apicrewcare.com/LATAM/mytravel.aspx";visible.client.onPageStarted(visible,visible.url,null);visible.client.onPageFinished(visible,visible.url);login.start.click();});android.os.Handler.drain();
   check(visible.destroyed&&CrewCheckMyCrewCareProfile.createdAccounts.get(loginIndex).equals(request(login).scope.accountId)&&CrewCheckMyCrewCareProfile.createdAccounts.get(loginIndex+1).equals(request(login).scope.accountId),"login and real source share exact profile/account; visible view stopped before acquisition");
@@ -120,6 +120,16 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
    check(!s.status.text.contains("Synthetic")&&!s.status.text.contains("Contrato observado válido"),"revoked preview never returns after cleanup: "+action+outcome);
    check(outcome.equals("ok")?s.prepare.enabled&&s.status.text.contains("Perfil de teste limpo"):!s.prepare.enabled&&s.status.text.contains("não confirmada"),"cleanup completion/errors remain authoritative after preview revocation: "+action+outcome);s.close();count++;
   }
-  check(count==88,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
+  for(String state:List.of("Planned","Cancelled","UNRECOGNIZED")) {
+   clean();Screen s=new Screen();s.ready();s.click();
+   for(int i=0;i<4;i++){ObservedRequest r=request(s);var page=view();extract();String body=envelope(r).replace("Planned",state);android.os.Handler.runMain(()->page.value.onReceiveValue(q(body)));android.os.Handler.drain();}
+   check(s.status.text.contains("Estado recebido: "+state),"raw reservation state never omitted: "+state);
+   check(s.status.text.contains(state.equals("Planned")?"PLANEJADA — não equivale":state.equals("Cancelled")?"CANCELADA — hotel e pickup":"ESTADO DESCONHECIDO — não tratar"),"state-specific reservation/pickup warning: "+state);s.close();count++;
+  }
+  clean();Screen multiple=new Screen();multiple.ready();multiple.click();to(multiple,"detail");ObservedScope context=request(multiple).scope;
+  List<Map<String,String>> rows=new ArrayList<>();for(String state:List.of("Planned","Cancelled","UNRECOGNIZED")){var row=new LinkedHashMap<>(ObservedAcquisitionHarness.page(request(multiple)).rows.get(0));row.put("confirmationRaw",state);row.put("hotelName","Synthetic "+state+" Hotel");rows.add(row);}
+  Constructor<ObservedResult> resultConstructor=ObservedResult.class.getDeclaredConstructor(ObservedScope.class,List.class);resultConstructor.setAccessible(true);Method preview=CrewCheckMyCrewCareDebugActivity.class.getDeclaredMethod("reservationPreview",ObservedResult.class);preview.setAccessible(true);String formatted=(String)preview.invoke(multiple.activity,resultConstructor.newInstance(context,rows));
+  check(formatted.contains("Synthetic Planned Hotel")&&formatted.contains("Synthetic Cancelled Hotel")&&formatted.contains("Synthetic UNRECOGNIZED Hotel")&&formatted.contains("CANCELADA")&&formatted.contains("ESTADO DESCONHECIDO")&&formatted.contains("PLANEJADA"),"multiple reservations retain each raw state and warning independently");multiple.close();count++;
+  check(count==92,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
  }catch(Exception e){throw new AssertionError(e);}}
 }

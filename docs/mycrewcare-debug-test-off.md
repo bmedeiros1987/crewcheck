@@ -43,3 +43,9 @@ A reutilização da mesma WebView não foi introduzida neste delta: a atribuiç�
 ## Blocker de preview após cleanup pendente — correção candidata
 
 HEAD60af4f5e reproduz publicação de reserva depois de Cancelar com cleanup pendente. Autoridade de apresentação agora usa epoch separada do token de tentativa: Cancelar/onStop revogam inclusive quando leitura já terminou; cleanup conserva sua operação/token para concluir e propagar falhas. Commit da mensagem após cleanup confere tentativa, epoch e foreground; retorno a foreground não restaura epoch revogada. Erros/timeout continuam bloqueando retry, sem apagar falha para obter sucesso. Seis interleavings cancel repetido/onStop→resume × cleanup ok/failure/timeout; 88 casos debug totais. Sem APK, entrega HOLD até nova revisão exact-SHA. Incerteza SSO/sessionStorage não é, sozinha, veto a futuro APK controlado revisado.
+
+## Estado de reserva e acesso ao resultado — revisão pendente
+
+Cada reserva mostra confirmationRaw intacto. Planned é PLANEJADA, não confirmada; Cancelled é CANCELADA, com aviso para não utilizar hotel/pickup como reserva ativa; qualquer outro valor é ESTADO DESCONHECIDO, sem promovê-lo a confirmado. Três estados percorrem Activity/owner/cleanup reais com respostas sintéticas; formatação de múltiplas reservas mantém estado e aviso por registro. 92 casos debug totais.
+
+Toda a tela fica em ScrollView nativa (controles e resultado), sem limite de linhas. Texto usa 16sp escalável e foco; WebView visível usa altura 360dp em vez de peso/altura zero dentro do scroll. Teste com doubles verifica hierarquia, foco e configurações, não geometria física/TalkBack. CI SDK prova compilação; tela pequena/fontes ampliadas e acessibilidade no aparelho continuam validação física após revisão do APK. Nenhum APK gerado/entregue nesta etapa.

@@ -16,6 +16,7 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.ScrollView;
 import androidx.webkit.WebViewBuilder;
 import java.util.UUID;
 import static com.crewcheck.app.CrewCheckMyCrewCarePortalV3.*;
@@ -63,8 +64,11 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         prepare = new Button(this); prepare.setText("Preparar sessão na página visível"); layout.addView(prepare);
         start = new Button(this); start.setEnabled(false); start.setText("Verificar contrato observado"); layout.addView(start);
         Button cancel = new Button(this); cancel.setText("Cancelar e limpar perfil de teste"); layout.addView(cancel);
-        status = new TextView(this); status.setText("Não iniciado. Nenhuma página consultada."); layout.addView(status);
-        setContentView(layout);
+        status = new TextView(this); status.setTextSize(16); status.setFocusable(true);
+        status.setText("Não iniciado. Nenhuma página consultada.");
+        ScrollView results = new ScrollView(this); results.setFillViewport(true);
+        layout.addView(status); results.addView(layout);
+        setContentView(results);
         prepare.setOnClickListener(view -> prepareSession());
         start.setOnClickListener(view -> start());
         cancel.setOnClickListener(view -> cancel());
@@ -144,7 +148,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
                 @Override public void onReceivedSslError(WebView v, SslErrorHandler handler, SslError error) { handler.cancel(); if (v == page) loginFailed(attempt, page); }
                 @Override public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail detail) { if (v == page) loginFailed(attempt, page); return true; }
             });
-            layout.addView(page, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+            layout.addView(page, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Math.round(360 * getResources().getDisplayMetrics().density), 0));
             page.loadUrl(ENTRY);
         } catch (RuntimeException error) { finish(attempt, "Preparação indisponível. Sem fallback. Nada importado."); }
     }
@@ -228,6 +232,11 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         // Only the owner's validated observations reach here; no HTML, profile or login data.
         for (var row : result.observations) {
             text.append("\n\nReserva — ").append(row.get("airport"));
+            String rawStatus = row.get("confirmationRaw");
+            text.append("\nEstado recebido: ").append(rawStatus);
+            if ("Cancelled".equalsIgnoreCase(rawStatus)) text.append("\nCANCELADA — hotel e pickup abaixo são dados do registro cancelado; não utilizar como reserva ativa.");
+            else if ("Planned".equalsIgnoreCase(rawStatus)) text.append("\nPLANEJADA — não equivale a reserva confirmada.");
+            else text.append("\nESTADO DESCONHECIDO — não tratar hotel ou pickup como confirmados.");
             text.append("\nHotel: ").append(row.get("hotelName"));
             text.append("\nEntrada (horário local informado): ").append(row.get("checkInWallDateTime"));
             text.append("\nSaída (horário local informado): ").append(row.get("checkOutWallDateTime"));
