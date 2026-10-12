@@ -111,7 +111,7 @@ import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
-import { MANUAL_GATE_EVENT, gateChangeAlertAllowed, manualGateAccountKey, normalizeBoardingGate, resolveNextFlightGate, radarSnapshotStorageKey, readCachedRadarForFlight, readManualGate, selectNextFlight } from '@/lib/nextFlightGate';
+import { MANUAL_GATE_EVENT, flightOperationalDate, gateChangeAlertAllowed, manualGateAccountKey, resolveNextFlightGate, radarSnapshotStorageKey, readCachedRadarForFlight, readManualGate, selectNextFlight } from '@/lib/nextFlightGate';
 import { applyNextFlightToWatchSnapshot } from '@/lib/nextFlightWatch';
 import { ManualGateEditor } from '@/components/nextflight/ManualGateEditor';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
@@ -1636,11 +1636,10 @@ function radarSnapshotKey(event: ZeroLeg): string {
   return radarSnapshotStorageKey(event);
 }
 function radarEventOperationalDate(event: ZeroLeg): string {
-  const date = eventStartDateTime(event);
-  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+  return flightOperationalDate(event);
 }
 function radarSnapshotMatchesEvent(snapshot: RadarSnapshot, event: ZeroLeg): boolean {
-  return String(snapshot.flight || '').trim().toUpperCase() === String(event.flightNumber || '').trim().toUpperCase()
+  return Boolean(radarEventOperationalDate(event)) && String(snapshot.flight || '').trim().toUpperCase() === String(event.flightNumber || '').trim().toUpperCase()
     && snapshot.operationalDate === radarEventOperationalDate(event)
     && String(snapshot.origin || '').trim().toUpperCase() === String(event.origin || '').trim().toUpperCase()
     && String(snapshot.destination || '').trim().toUpperCase() === String(event.destination || '').trim().toUpperCase();
@@ -1669,9 +1668,13 @@ function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapsho
   window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));
 
   const manualGate = readManualGate(localStorage, manualGateAccountKey(getStoredUser()), event)?.gate || '';
-  const previousGate = manualGate || confirmedRadarGate(previous?.gate) || confirmedRadarGate(event.gate);
-  const nextGate = normalizeBoardingGate(snapshot.gate).gate;
-  if (previousGate && nextGate && previousGate !== nextGate && confirmedRadarGate(previous?.gate) !== nextGate) {
+  // Alerts must accept exactly the same source/occurrence as the phone/watch decision.
+  const before = resolveNextFlightGate({ event, radar: previous });
+  const after = resolveNextFlightGate({ event, radar: snapshot });
+  const previousGate = manualGate || before.gate;
+  const nextGate = after.operationalDate && after.gateSource === 'radar' && !after.radarRejected && !after.stale ? after.gate : '';
+  const previousRadarGate = before.gateSource === 'radar' && !before.radarRejected ? before.gate : '';
+  if (previousGate && nextGate && previousGate !== nextGate && previousRadarGate !== nextGate) {
     publishCrewCheckNotice({
       id: `gate-change:${event.id}:${nextGate}`,
       dedupeKey: `gate-change:${event.id}:${nextGate}`,

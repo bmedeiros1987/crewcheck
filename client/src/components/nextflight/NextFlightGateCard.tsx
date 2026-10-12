@@ -14,9 +14,9 @@ function clock(epochMs: number): string {
 }
 
 function flightDate(info: NextFlightGateInfo): string {
-  if (!Number.isFinite(info.departureEpochMs)) return 'Data não informada';
-  return new Intl.DateTimeFormat('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })
-    .format(new Date(info.departureEpochMs)).replace('.', '');
+  if (!info.operationalDate) return 'Data não informada';
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', weekday: 'short', day: '2-digit', month: '2-digit' })
+    .format(new Date(`${info.operationalDate}T12:00:00Z`)).replace('.', '');
 }
 
 export function gateSourceLabel(info: NextFlightGateInfo): string {

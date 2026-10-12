@@ -9,6 +9,10 @@ on:
       - 'client/src/components/v1391/HomeRosterPreview.tsx'
       - 'client/src/pages/Home.tsx'
       - 'scripts/regression-next-flight-gate.mjs'
+      - 'scripts/regression-next-flight-gate-prepared.mjs'
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/rosterDisplayDate.ts'
+      - 'scripts/p1-566-flightdeck-radar-briefing-context/**'
       - '.github/workflows/next-flight-gate.yml'
 permissions:
   contents: read
@@ -27,3 +31,9 @@ jobs:
           TZ=UTC node scripts/regression-next-flight-gate.mjs
           TZ=America/Sao_Paulo node scripts/regression-next-flight-gate.mjs
           TZ=Pacific/Auckland node scripts/regression-next-flight-gate.mjs
+      - name: Verify actual prepared Radar handoff, civil date and safe notices
+        run: |
+          node scripts/v139/apply.mjs
+          TZ=UTC node scripts/regression-next-flight-gate-prepared.mjs
+          TZ=America/Sao_Paulo node scripts/regression-next-flight-gate-prepared.mjs
+          TZ=Pacific/Auckland node scripts/regression-next-flight-gate-prepared.mjs

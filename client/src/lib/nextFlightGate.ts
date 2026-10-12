@@ -1,3 +1,5 @@
+import { rosterDisplayIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
+
 /**
  * Decisão única do portão de embarque do próximo voo.
  *
@@ -32,10 +34,12 @@ export type NextFlightLike = {
   terminal?: string;
   status?: string;
   date?: Date | string;
+  operationalTimeZone?: string;
   canonical?: { startDateTime?: string; endDateTime?: string; date?: string };
 };
 
 export type RadarGateSnapshot = {
+  flight?: string;
   ok?: boolean;
   gate?: string;
   terminal?: string;
@@ -81,7 +85,7 @@ export type NextFlightGateInfo = {
   /** O portão exibido vem do Radar (base para a validade no relógio). */
   usesRadar: boolean;
   stale: boolean;
-  radarRejected: '' | 'not-ok' | 'other-segment' | 'other-day' | 'position';
+  radarRejected: '' | 'not-ok' | 'other-flight' | 'other-segment' | 'other-day' | 'position';
   divergence: { manualGate: string; sourceGate: string; source: 'radar' | 'roster' } | null;
   manual: ManualGateEntry | null;
 };
@@ -128,12 +132,9 @@ export function flightDepartureEpochMs(event: NextFlightLike): number {
   return Number.isFinite(ms) ? ms : NaN;
 }
 
-/** Data operacional local do voo, no mesmo formato da chave Radar existente. */
+/** Data operacional publicada, compartilhada pelo cache e pela identidade manual. */
 export function flightOperationalDate(event: NextFlightLike): string {
-  const ms = flightDepartureEpochMs(event);
-  if (!Number.isFinite(ms)) return '';
-  const date = new Date(ms);
-  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+  return flightPublishedDate(event);
 }
 
 /**
@@ -154,8 +155,7 @@ export function selectNextFlight<T extends NextFlightLike>(events: readonly T[],
 
 /** Data publicada na escala; não muda quando o aparelho troca de fuso. */
 export function flightPublishedDate(event: NextFlightLike): string {
-  const published = text(event.canonical?.date);
-  return /^\d{4}-\d{2}-\d{2}$/.test(published) ? published : flightOperationalDate(event);
+  return rosterDisplayIso({ ...event, operationalTimeZone: event.operationalTimeZone || ROSTER_DISPLAY_TIME_ZONE }) || '';
 }
 
 export function manualGateIdentity(event: NextFlightLike): string {
@@ -200,7 +200,7 @@ export function writeManualGate(
   if (!identity.split('|').every(Boolean)) return { ok: false, message: 'Voo sem número, data ou rota publicada.' };
   const map = readMap(storage, account);
   for (const [key, entry] of Object.entries(map)) {
-    const date = Date.parse(`${entry?.date || ''}T23:59:59`);
+    const date = Date.parse(`${entry?.date || ''}T23:59:59-03:00`);
     if (!Number.isFinite(date) || now - date > MANUAL_GATE_RETENTION_MS) delete map[key];
   }
   let entry: ManualGateEntry | null = null;
@@ -253,6 +253,7 @@ export function resolveNextFlightGate(input: {
     const sourceDestination = upper(radar.sourceDestination);
     const radarDeparture = radarDepartureEpochMs(radar.departure);
     if (radar.ok !== true) radarRejected = 'not-ok';
+    else if (upper(radar.flight) && upper(radar.flight) !== upper(event.flightNumber)) radarRejected = 'other-flight';
     else if ((sourceOrigin && sourceOrigin !== upper(event.origin)) || (sourceDestination && sourceDestination !== upper(event.destination))) radarRejected = 'other-segment';
     else if (Number.isFinite(radarDeparture) && Number.isFinite(departureEpochMs) && Math.abs(radarDeparture - departureEpochMs) > RADAR_OTHER_INSTANCE_MS) radarRejected = 'other-day';
     if (radarRejected) radar = null;
@@ -344,7 +345,7 @@ type RadarCacheRecord = RadarGateSnapshot & { flight?: string; operationalDate?:
 
 /** Lê o cache Radar do mesmo voo, data e trecho. Não faz nenhuma consulta de rede. */
 export function readCachedRadarForFlight(storage: Pick<Storage, 'getItem'>, event: NextFlightLike, now = Date.now()): RadarGateSnapshot | null {
-  if (event.kind !== 'flight' || event.placeholder) return null;
+  if (event.kind !== 'flight' || event.placeholder || !flightOperationalDate(event)) return null;
   try {
     const parsed = JSON.parse(storage.getItem(radarSnapshotStorageKey(event)) || 'null') as RadarCacheRecord | null;
     if (!parsed || !parsed.updatedAt || now - Number(parsed.updatedAt) > RADAR_SNAPSHOT_TTL_MS) return null;

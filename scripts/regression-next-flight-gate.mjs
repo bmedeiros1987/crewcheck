@@ -7,10 +7,11 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const root = process.env.NEXT_FLIGHT_GATE_ROOT || path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const out = fs.mkdtempSync(path.join(os.tmpdir(), 'next-flight-gate-'));
 const entry = path.join(out, 'entry.ts');
 fs.writeFileSync(entry, `
+export { buildCanonicalRosterEvents } from ${JSON.stringify(path.join(root, 'client/src/lib/canonicalRoster.ts'))};
 export * from ${JSON.stringify(path.join(root, 'client/src/lib/nextFlightGate.ts'))};
 export { applyNextFlightToWatchSnapshot } from ${JSON.stringify(path.join(root, 'client/src/lib/nextFlightWatch.ts'))};
 export { buildCrewCheckWatchSnapshot } from ${JSON.stringify(path.join(root, 'client/src/lib/watchContext.ts'))};
@@ -50,9 +51,8 @@ function flight(id, number, startIso, origin = 'GRU', destination = 'REC', extra
   const beforeMidnight = flight('n1', 'LA3100', '2026-10-12T02:50:00Z');
   const afterMidnight = flight('n2', 'LA3102', '2026-10-12T03:40:00Z');
   assert.equal(m.selectNextFlight([afterMidnight, beforeMidnight], NOW)?.id, 'n1');
-  const d = new Date('2026-10-12T02:50:00Z');
-  const expected = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  assert.equal(m.flightOperationalDate(beforeMidnight), expected, 'data operacional igual à chave Radar existente');
+  const expected = '2026-10-11';
+  assert.equal(m.flightOperationalDate(beforeMidnight), expected, 'data operacional BRT permanece estável na chave Radar');
 }
 
 const next = flight('x', 'LA3377', new Date(NOW + 3 * H).toISOString());
@@ -176,6 +176,41 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', de
   // Divergência também chega ao relógio.
   const snap5 = m.applyNextFlightToWatchSnapshot(m.buildCrewCheckWatchSnapshot([next], next, null, NOW, false), infoManual, { primaryEventId: next.id, nextFlightScheduleId: next.canonical.id });
   assert.equal(snap5.gate, '24'); assert.match(snap5.detail, /Fonte indica portão 9/);
+}
+
+// Construtor canônico real: DD/MM/YYYY publicado, sem substituí-lo por fixture ISO.
+{
+  const roster = { year:2032, month:10, base:'BSB', rank:'CC', airline:'LA', crewName:'SYNTHETIC', days:[{
+    date:'11/10/2032', year:2032, month:10, type:'VOO', pairingCode:'QA', base:'BSB', dutyReport:'23:00', dutyDebrief:'02:30', dutyReportSource:'published', dutyDebriefSource:'published',
+    legs:[{flightNumber:'QA3377',origin:'GRU',destination:'REC',departureTime:'23:50',arrivalTime:'02:00',duration:2+10/60,presentationTime:'23:00',workType:'OP',aircraftType:'SYNTHETIC'}],rawText:'SYNTHETIC ONLY',
+  }] };
+  const real = m.buildCanonicalRosterEvents(roster).find(item=>item.kind==='flight');
+  assert.equal(real.date,'11/10/2032');
+  const event = {...real,canonical:real,date:new Date(real.startDateTime),gate:'7'};
+  const now = Date.parse(real.startDateTime)-10*60_000;
+  const storage = memoryStorage();
+  const radar = {...radarBase,flight:'QA3377',gate:'9',origin:'GRU',destination:'REC',sourceOrigin:'GRU',sourceDestination:'REC',departure:real.startDateTime,updatedAt:now-60_000,operationalDate:'2032-10-11'};
+  const originalTZ=process.env.TZ;
+  try {
+    process.env.TZ='America/Sao_Paulo';
+    assert.equal(m.writeManualGate(storage,'synthetic',event,{gate:'24',author:'Synthetic'},now).ok,true);
+    storage.setItem(m.radarSnapshotStorageKey(event),JSON.stringify(radar));
+    for(const zone of ['America/Sao_Paulo','UTC','Pacific/Auckland']) {
+      process.env.TZ=zone;
+      assert.equal(m.manualGateIdentity(event),'QA3377|2032-10-11|GRU|REC',zone);
+      assert.equal(m.flightOperationalDate(event),'2032-10-11',zone);
+      assert.equal(m.readManualGate(storage,'synthetic',event)?.gate,'24',zone);
+      const cached=m.readCachedRadarForFlight(storage,event,now);
+      assert.equal(cached?.gate,'9',zone);
+      const info=m.resolveNextFlightGate({event,radar:cached,now});
+      assert.equal(info.operationalDate,'2032-10-11');assert.equal(info.departure,'23:50');
+      const watch=m.applyNextFlightToWatchSnapshot(m.buildCrewCheckWatchSnapshot([event],event,null,now,false),info,{primaryEventId:event.id,nextFlightScheduleId:real.id});
+      assert.equal(watch.gate,info.gate);assert.equal(watch.schedule.find(item=>item.id===real.id)?.gate,info.gate);
+    }
+    assert.equal(m.flightPublishedDate({...event,canonical:{...real,date:'31/02/2032'}}),'','invalid published date fails closed');
+    assert.equal(m.writeManualGate(storage,'synthetic',{...event,canonical:{...real,date:'31/02/2032'}},{gate:'12',author:'Synthetic'},now).ok,false);
+    assert.equal(m.readCachedRadarForFlight(storage,{...event,canonical:{...real,date:'31/02/2032'}},now),null,'invalid date cannot accept cached source');
+  } finally { if(originalTZ===undefined)delete process.env.TZ;else process.env.TZ=originalTZ; }
 }
 
 // 10. Contratos estáticos das superfícies.
