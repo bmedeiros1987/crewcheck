@@ -105,6 +105,8 @@ import { observedAllowancePeriods, rowsInObservedCycle, summarizeForecastRows, s
 import { financialJourneyGroupKey, rowsForNominalFinancialCompetence, nominalFinancialCompetencePrefix } from '@/lib/financialJourneyGrouping';
 import PlatformCenter from '@/components/platform/PlatformCenter';
 import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, getParkingPosition, saveParkingPosition, deleteParkingPosition, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
+import {TimezoneChoice} from '@/components/preferences/TimezoneChoice';
+import {deviceTimeZone} from '@shared/timezone-choice.mjs';
 import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient';
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
@@ -2835,26 +2837,29 @@ function FieldSetting({ icon: Icon, label, storageKey, placeholder }: { icon: an
 
 function PlatformPreferences() {
   const deviceLocale = (() => { const value = String(navigator.language || 'pt-BR'); return value.startsWith('en') ? 'en-US' : value.startsWith('es') ? 'es-ES' : 'pt-BR'; })() as CrewCheckLocale;
-  const deviceTimezone = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo'; } catch { return 'America/Sao_Paulo'; } })();
+  const deviceTimezone = deviceTimeZone();
   const [profile, setProfile] = useState<PlatformProfile | null>(null);
   const [locale, setLocale] = useState<CrewCheckLocale>(() => (storage.get('crewcheck_language', deviceLocale) as CrewCheckLocale));
-  const [timezone, setTimezone] = useState(() => storage.get('crewcheck_timezone', 'America/Sao_Paulo'));
+  const [timezone, setTimezone] = useState(() => storage.get('crewcheck_timezone', ''));
   const [busy, setBusy] = useState(false);
-  useEffect(() => { getPlatformProfile().then((result) => { setProfile(result.profile); setLocale(result.profile.locale || deviceLocale); setTimezone(result.profile.timezone || 'America/Sao_Paulo'); }).catch(() => undefined); }, []);
+  const [timezoneReset, setTimezoneReset] = useState(0);
+  useEffect(() => { getPlatformProfile().then((result) => { setProfile(result.profile); setLocale(result.profile.locale || deviceLocale); setTimezone(result.profile.timezone || ''); }).catch(() => undefined); }, []);
   async function save() {
     setBusy(true);
     try {
-      const result = await savePlatformProfile({ locale, timezone });
+      const effectiveTimezone = timezone || deviceTimezone;
+      const result = await savePlatformProfile({ locale, timezone: effectiveTimezone });
       setProfile(result.profile);
       storage.set('crewcheck_language', locale);
-      storage.set('crewcheck_timezone', timezone);
+      storage.set('crewcheck_timezone', effectiveTimezone);
+      setTimezone(effectiveTimezone);
       document.documentElement.lang = locale;
-      window.dispatchEvent(new CustomEvent('crewcheck:locale-change', { detail: { locale, timezone } }));
+      window.dispatchEvent(new CustomEvent('crewcheck:locale-change', { detail: { locale, timezone: effectiveTimezone } }));
       toast.success('Idioma e fuso horário salvos na conta.');
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui salvar idioma e fuso.'); }
     finally { setBusy(false); }
   }
-  return <section className="cz-toolbox"><h2>Idioma e fuso horário</h2><p>O primeiro acesso segue o idioma do dispositivo. O padrão operacional é Brasília (UTC−3) e todo texto compatível é tratado em UTF-8.</p><div className="cz-form-grid"><label><span>Idioma</span><select value={locale} onChange={(event) => setLocale(event.target.value as CrewCheckLocale)}><option value="pt-BR">Português (Brasil)</option><option value="en-US">English (United States)</option><option value="es-ES">Español</option></select></label><label><span>Fuso do sistema</span><select value={timezone} onChange={(event) => setTimezone(event.target.value)}><option value="America/Sao_Paulo">Brasília · UTC−3</option><option value={deviceTimezone}>Dispositivo · {deviceTimezone}</option><option value="UTC">UTC</option><option value="America/Manaus">Manaus · UTC−4</option><option value="America/Rio_Branco">Rio Branco · UTC−5</option><option value="America/Noronha">Fernando de Noronha · UTC−2</option><option value="Europe/Lisbon">Lisboa</option><option value="Europe/Madrid">Madri</option><option value="America/New_York">Nova York</option></select></label></div><div className="cz-tool-actions"><button onClick={() => { setLocale(deviceLocale); setTimezone(deviceTimezone); }}><Globe2/> Usar padrão do dispositivo</button><button onClick={save} disabled={busy}><Save/> {busy ? 'Salvando...' : 'Salvar na conta'}</button></div><div className="cz-routine-strip"><span>Conta {profile?.publicId || 'sincronizando'}</span><span>UTF-8</span><span>{locale}</span><span>{timezone}</span></div></section>;
+  return <section className="cz-toolbox"><h2>Idioma e fuso horário</h2><p>O primeiro acesso segue o aparelho. Uma escolha salva é preservada; mudar o fuso pessoal não altera os instantes da escala nem o fuso operacional.</p><div className="cz-form-grid"><label><span>Idioma</span><select value={locale} onChange={(event) => setLocale(event.target.value as CrewCheckLocale)}><option value="pt-BR">Português (Brasil)</option><option value="en-US">English (United States)</option><option value="es-ES">Español</option></select></label><TimezoneChoice key={`${profile?.publicId || "loading"}:${timezoneReset}`} value={timezone} onChange={setTimezone}/></div><div className="cz-tool-actions"><button onClick={() => { setLocale(deviceLocale); setTimezone(''); setTimezoneReset(value=>value+1); }}><Globe2/> Usar padrão do dispositivo</button><button onClick={save} disabled={busy}><Save/> {busy ? 'Salvando...' : 'Salvar na conta'}</button></div><div className="cz-routine-strip"><span>Conta {profile?.publicId || 'sincronizando'}</span><span>UTF-8</span><span>{locale}</span><span>{timezone || deviceTimezone}</span></div></section>;
 }
 function DatabaseConnectionCard({ admin }: { admin: boolean }) {
   const [status, setStatus] = useState<any>(null);

@@ -7,6 +7,12 @@ import { createMyCrewCarePersistentSession } from '../shared/myCrewCarePersisten
 
 const read = (path) => readFileSync(path, 'utf8');
 const allowed = [
+  'android-wrapper/app/src/debug/AndroidManifest.xml',
+  'android-wrapper/app/src/debug/java/com/crewcheck/app/CrewCheckMyCrewCareDebugActivity.java',
+  'scripts/regression-mycrewcare-debug-action.mjs',
+  'scripts/assert-mycrewcare-debug-release.mjs',
+  'scripts/fixtures/mycrewcare-native/DebugActionHarness.java',
+  'docs/mycrewcare-debug-test-off.md',
   'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCareObservedWebViewSource.java',
   'scripts/regression-mycrewcare-webview-source.mjs',
   'scripts/fixtures/mycrewcare-native/ObservedWebViewSourceHarness.java',

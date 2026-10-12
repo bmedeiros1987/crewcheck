@@ -23,6 +23,10 @@ on:
       - 'client/src/lib/myCrewCareV3Runtime.ts'
       - 'scripts/regression-mycrewcare-controller.mjs'
       - 'client/src/lib/myCrewCareV3.ts'
+      - 'android-wrapper/app/src/debug/**'
+      - 'scripts/regression-mycrewcare-debug-action.mjs'
+      - 'scripts/assert-mycrewcare-debug-release.mjs'
+      - 'docs/mycrewcare-debug-test-off.md'
       - 'android-wrapper/app/build.gradle'
       - 'android-wrapper/app/src/main/assets/mycrewcare-transport-v3.js'
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCareProfile.java'
@@ -65,7 +69,7 @@ jobs:
           node scripts/assert-mycrewcare-v3-ownership.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs scripts/regression-mycrewcare-controller.mjs
-            TZ="$zone" node --test scripts/regression-mycrewcare-observed.mjs scripts/regression-mycrewcare-observed-coordinator.mjs scripts/regression-mycrewcare-native-observation.mjs scripts/regression-mycrewcare-webview-source.mjs
+            TZ="$zone" node --test scripts/regression-mycrewcare-observed.mjs scripts/regression-mycrewcare-observed-coordinator.mjs scripts/regression-mycrewcare-native-observation.mjs scripts/regression-mycrewcare-webview-source.mjs scripts/regression-mycrewcare-debug-action.mjs
           done
       - name: Complete canonical preparation
         run: node scripts/v139/apply.mjs
@@ -74,7 +78,7 @@ jobs:
           node scripts/assert-mycrewcare-v3-ownership.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs scripts/regression-mycrewcare-controller.mjs
-            TZ="$zone" node --test scripts/regression-mycrewcare-observed.mjs scripts/regression-mycrewcare-observed-coordinator.mjs scripts/regression-mycrewcare-native-observation.mjs scripts/regression-mycrewcare-webview-source.mjs
+            TZ="$zone" node --test scripts/regression-mycrewcare-observed.mjs scripts/regression-mycrewcare-observed-coordinator.mjs scripts/regression-mycrewcare-native-observation.mjs scripts/regression-mycrewcare-webview-source.mjs scripts/regression-mycrewcare-debug-action.mjs
           done
           node scripts/regression-p0-525-stay-physical-association.mjs
           node scripts/regression-p1-566-stay-wakeup-concierge-context.mjs
@@ -89,5 +93,7 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
-      - name: Android debug compilation only
-        run: gradle -p android-wrapper --no-daemon --console=plain :app:assembleDebug
+      - name: Android debug and release compilation only (no user APK)
+        run: gradle -p android-wrapper --no-daemon --console=plain :app:compileDebugJavaWithJavac :app:compileReleaseJavaWithJavac :app:processDebugManifest :app:processReleaseManifest
+      - name: Verify debug action absent from compiled release
+        run: node scripts/assert-mycrewcare-debug-release.mjs --compiled

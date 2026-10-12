@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'client/src/styles/**'
+      - 'client/src/components/preferences/**'
+      - 'shared/timezone-choice*'
+      - 'scripts/regression-timezone-choice.mjs'
       - 'client/src/lib/textSizePreference.ts'
       - 'client/src/lib/overlayLifecycle.ts'
       - 'client/src/components/TextSizeSetting.tsx'
@@ -82,6 +85,8 @@ jobs:
           node scripts/regression-web-desktop-shell.mjs
           node scripts/regression-web-desktop-menu-panel-specificity.mjs
           node scripts/regression-menu-5s.mjs
+      - name: Personal timezone contracts
+        run: node scripts/regression-timezone-choice.mjs
       - name: TypeScript and web build
         run: |
           npx tsc --noEmit

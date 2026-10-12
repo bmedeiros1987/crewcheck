@@ -63,6 +63,9 @@ try {
   await waitLabel(departureLabel(), 'Consultando voo', 'departure');
   assert.equal(await page.getByText('planeje o deslocamento aéreo no dia anterior.', { exact: false }).count(), 0);
   await capture('Departure: active lookup');
+  // Freeze Date only while the terminal response records its exact TTL.
+  const terminalClock = await page.evaluate(() => Date.now());
+  await page.clock.setFixedTime(terminalClock);
   boardMode = 'error';
   await Promise.all(pendingBoards.splice(0).map(request => request.abort('failed')));
   await page.waitForFunction(() => document.body.innerText.includes('Radar temporariamente indisponível'));
@@ -72,6 +75,7 @@ try {
   });
   assert.equal(search.status, 'error');
   assert.equal(Date.parse(search.expiresAt) - Date.parse(search.checkedAt), 1800000);
+  await page.clock.setSystemTime(terminalClock);
   await capture('Departure: terminal Radar error');
   assert.equal(await departureLabel().innerText(), 'Dia anterior', 'terminal Radar error must retain previous-day plan');
   assert.match(await page.locator('.cz-depart-when').innerText(), /10 de janeiro de 2030/);
