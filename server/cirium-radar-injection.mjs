@@ -1,6 +1,10 @@
+import { CIRIUM_SKY_PRODUCTION_ENABLED, productionCiriumSkyTransport, runCiriumSkyRadar } from './cirium-sky-transport.mjs';
 import { evaluateCiriumRadar } from './cirium-radar-provider.mjs';
 
-// No env flag, HTTP switch, transport or credentials: only an explicit code-injected source.
+// Production remains hard OFF; no HTTP/env activation or credential reads.
+export function defaultCiriumRadarOptions() {
+  return CIRIUM_SKY_PRODUCTION_ENABLED ? { enabled: true, transport: productionCiriumSkyTransport() } : undefined;
+}
 export function ciriumRadarInjectionEnabled(options) { return options?.enabled === true; }
 export function ciriumRadarRegistration() { return { key: 'cirium-sky', available: false, state: 'disabled' }; }
 
@@ -19,6 +23,7 @@ function radarResult(result) {
 
 export async function runCiriumRadarInjection(identity, options, requestedFlight) {
   if (!ciriumRadarInjectionEnabled(options)) return null;
+  if (options.transport) return runCiriumSkyRadar(identity, options.transport, requestedFlight);
   // Reuse the pure request validation before invoking any injected source.
   const validation = evaluateCiriumRadar(identity, { state: 'available', rows: [] }, { enabled: true });
   if (validation.state === 'invalid_request') return radarResult(validation);

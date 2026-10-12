@@ -11,6 +11,8 @@ if (process.argv[2] !== '--worker') {
 }
 globalThis.fetch = () => { throw Error('Real network forbidden'); };
 const injection = await import('../server/cirium-radar-injection.mjs');
+const { createCiriumSkyTransport } = await import('../server/cirium-sky-transport.mjs');
+assert.equal(injection.defaultCiriumRadarOptions(), undefined, 'production gate remains OFF');
 const { patchCiriumRadarOff } = await import('./cirium-radar-off/patch.mjs');
 const source = fs.readFileSync('server.mjs', 'utf8');
 assert.equal(patchCiriumRadarOff(source), source, 'materializer is idempotent');
@@ -96,4 +98,28 @@ for (const [expected, sourceFn] of [['no_data', async () => ({ state: 'available
   assert.equal(response.providerState, expected); assert.equal(response.ok, false); assert.equal(response.exportedToConcierge, false);
   assert.equal(h.counters.apply + h.counters.save + h.counters.provider + h.counters.env + h.counters.fetch + h.counters.auth, 0);
 }
-console.log(`PASS Cirium Radar wiring OFF/synthetic real handlers; ${source.includes('function selectFlightAwareOccurrence(') ? 'prepared' : 'raw'}; TZ=${process.env.TZ}; zero Cirium env/network/canonical writes`);
+// Actual handler -> race -> Sky transport -> pure adapter/provenance -> public response.
+// Only an explicit code capability can select this path; HTTP parameters cannot.
+const skyNow = Date.parse(row.lastUpdatedDate);
+const skyPolicy = { product: 'Sky Flight Status', evidenceId: 'OFFLINE_ONLY', contractEvidenceId: 'OFFLINE_ONLY',
+  validFromMs: skyNow - 1000, validUntilMs: skyNow + 300_000, maxCalls: 1, dateWindowDays: 2,
+  maxObservationAgeMs: 900_000, airportTimeZones: { JFK: 'America/New_York' } };
+let upstream = 0;
+const skyTransport = createCiriumSkyTransport({ enabled: true, policy: skyPolicy, now: () => skyNow,
+  credential: () => 'OFFLINE_FAKE_SECRET', fetchImpl: async (endpoint, options) => {
+    upstream++; assert.equal(endpoint.origin, 'https://api.sky.cirium.com'); assert.deepEqual([...endpoint.searchParams], [['codeType', 'FS']]); assert.equal(options.redirect, 'error');
+    return new Response(JSON.stringify({ flightStatuses: [row] }), { headers: { 'content-type': 'application/json' } });
+  } });
+const skyHarness = harness(source, true);
+const skyBody = await skyHarness.call(url, { cirium: { enabled: true, transport: skyTransport } });
+assert.equal(upstream, 1); assert.equal(skyBody.providerState, 'available'); assert.equal(skyBody.configured, true);
+assert.equal(skyBody.gate, 'A12'); assert.equal(skyBody.occurrenceKey, body.occurrenceKey);
+assert.deepEqual(skyBody.provenance, body.provenance); assert.equal(skyBody.exportedToConcierge, false);
+assert.deepEqual(skyHarness.counters, { provider: 0, auth: 0, load: 0, apply: 0, save: 0, env: 0, fetch: 0 });
+assert.ok(!JSON.stringify(skyBody).includes('OFFLINE_FAKE_SECRET'));
+const failedSky = createCiriumSkyTransport({ enabled: true, policy: skyPolicy, now: () => skyNow,
+  credential: () => 'OFFLINE_FAKE_SECRET', fetchImpl: async () => new Response('{}', { status: 403 }) });
+const failedHarness = harness(source, true);
+assert.equal((await failedHarness.call(url, { cirium: { enabled: true, transport: failedSky } })).providerState, 'provider_error');
+assert.equal(failedHarness.counters.provider + failedHarness.counters.apply + failedHarness.counters.save, 0);
+console.log(`PASS Cirium Radar wiring OFF/synthetic/Sky fake HTTP real handlers; ${source.includes('function selectFlightAwareOccurrence(') ? 'prepared' : 'raw'}; TZ=${process.env.TZ}; zero Cirium env/real network/canonical writes`);

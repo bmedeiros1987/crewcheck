@@ -35,6 +35,7 @@ function wiring(root) {
   for (const zone of ['UTC', 'America/Sao_Paulo', 'Pacific/Auckland']) {
     console.log(run(root, 'scripts/regression-cirium-radar-wiring-off.mjs', [], zone).trim());
     run(root, 'scripts/regression-cirium-radar-provider-off.mjs', [], zone);
+    run(root, 'scripts/regression-cirium-sky-transport-off.mjs', [], zone);
   }
 }
 function canonicalGates(root) {
