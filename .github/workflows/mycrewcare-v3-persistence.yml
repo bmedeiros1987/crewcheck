@@ -97,3 +97,37 @@ jobs:
         run: gradle -p android-wrapper --no-daemon --console=plain :app:compileDebugJavaWithJavac :app:compileReleaseJavaWithJavac :app:processDebugManifest :app:processReleaseManifest
       - name: Verify debug action absent from compiled release
         run: node scripts/assert-mycrewcare-debug-release.mjs --compiled
+      # APK de diagnóstico somente para o teste físico da #1035 (debug, pacote .mcctest). Não é Play Store,
+      # não usa assinatura de release nem secrets; artifact privado do repositório por 7 dias.
+      - name: Diagnostic debug APK for physical test (PR 1035 branch only)
+        if: github.event_name == 'pull_request' && github.head_ref == 'fix/mycrewcare-debug-login-diagnostics'
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gradle -p android-wrapper --no-daemon --console=plain :app:assembleDebug
+          apk="$(ls android-wrapper/app/build/outputs/apk/debug/*.apk | head -1)"
+          out="$RUNNER_TEMP/mcc-diagnostic-apk"; mkdir -p "$out"
+          name="crewcheck-teste-mcc-${HEAD_SHA:0:8}-debug.apk"
+          cp "$apk" "$out/$name"
+          aapt2="$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)"
+          badging="$("$aapt2" dump badging "$out/$name" | head -1)"
+          tree_ok=no; [ "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse "${HEAD_SHA}^{tree}")" ] && tree_ok=yes
+          {
+            echo "pr=1035"
+            echo "head_commit=$HEAD_SHA"
+            echo "built_from=$(git rev-parse HEAD) (pull_request merge ref; tree identical to head: $tree_ok)"
+            echo "badging=$badging"
+            echo "variant=debug (applicationIdSuffix .mcctest, debug keystore of this CI run)"
+            echo "prepared_with=node scripts/v139/apply.mjs (same as release pipeline)"
+          } > "$out/BUILD-INFO.txt"
+          (cd "$out" && sha256sum "$name" > SHA256SUMS)
+          cat "$out/BUILD-INFO.txt" "$out/SHA256SUMS"
+          echo "$badging" | grep -q "name='com.crewcheck.app.mcctest'"
+      - name: Upload diagnostic debug APK (not a release)
+        if: github.event_name == 'pull_request' && github.head_ref == 'fix/mycrewcare-debug-login-diagnostics'
+        uses: actions/upload-artifact@v4
+        with:
+          name: crewcheck-teste-mcc-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/mcc-diagnostic-apk
+          retention-days: 7
+          if-no-files-found: error
