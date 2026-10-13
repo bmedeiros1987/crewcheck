@@ -11,7 +11,8 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
   final CrewCheckMyCrewCareDebugActivity activity=new CrewCheckMyCrewCareDebugActivity();
   android.widget.EditText employee,user;android.widget.CheckBox consent;android.widget.Button prepare,start,cancel;android.widget.TextView status;
   Screen(){android.os.Handler.runMain(activity::create);var scroll=(android.widget.ScrollView)activity.content;check(scroll.fillViewport,"whole debug screen scrollable, including controls/results");var layout=(android.widget.LinearLayout)scroll.children.get(0);
-   employee=(android.widget.EditText)layout.children.get(1);user=(android.widget.EditText)layout.children.get(2);consent=(android.widget.CheckBox)layout.children.get(3);prepare=(android.widget.Button)layout.children.get(4);start=(android.widget.Button)layout.children.get(5);cancel=(android.widget.Button)layout.children.get(6);status=(android.widget.TextView)layout.children.get(7);check(status.focusable&&status.textSize==16,"focus and scaled text; no line cap");
+   employee=(android.widget.EditText)layout.children.get(2);user=(android.widget.EditText)layout.children.get(4);consent=(android.widget.CheckBox)layout.children.get(5);prepare=(android.widget.Button)layout.children.get(6);start=(android.widget.Button)layout.children.get(7);cancel=(android.widget.Button)layout.children.get(8);status=(android.widget.TextView)layout.children.get(9);check(status.focusable&&status.textSize==16,"focus and scaled text; no line cap");
+   check(((android.widget.TextView)layout.children.get(1)).text.contains("Sua matrícula no MyCrewCare")&&((android.widget.TextView)layout.children.get(3)).text.contains("Seu usuário ou e-mail")&&((android.widget.TextView)layout.children.get(3)).text.contains("não é senha"),"persistent visible personal identity labels, no fixture fields");
    check(!employee.save&&!user.save&&!consent.save&&layout.autofill==8,"identity/consent not restored or autofilled");}
   void ready(){employee.setText("900000001");user.setText("synthetic.crew@example.invalid");consent.setChecked(true);}
   void prepare(){android.os.Handler.runMain(prepare::click);android.os.Handler.drain();}
@@ -142,6 +143,25 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
    android.os.Handler.runMain(()->{if(action.equals("cancel")){s.cancel.click();s.cancel.click();}else s.activity.stop();});android.os.Handler.drain();
    check(s.status.text.equals(failure)&&!s.status.text.contains("pendente")&&!s.status.text.contains("Synthetic")&&!s.prepare.enabled&&clears==CrewCheckMyCrewCareProfile.clearCalls&&timers==android.os.Handler.delayed.size(),"terminal cleanup failure remains visible, no restart/polling/retry after "+outcome+action);s.close();count++;
   }
-  check(count==98,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
+  for(String kind:List.of("ROUTE","ORIGIN","METHOD","RESOURCE-ORIGIN","RESOURCE-METHOD","FRAME","NETWORK","HTTP","TLS","RENDERER","DOWNLOAD")) {
+   clean();Screen s=new Screen();s.ready();s.prepare();var v=view();int readers=android.webkit.WebView.instances.size();String unverified="https://unverified.invalid/login?private=do-not-display";
+   android.os.Handler.runMain(()->{
+    if(kind.equals("ROUTE"))v.client.onPageStarted(v,"https://api2.apicrewcare.com/unverified?private=do-not-display",null);
+    if(kind.equals("ORIGIN"))v.client.onPageStarted(v,unverified,null);
+    if(kind.equals("METHOD"))v.client.shouldOverrideUrlLoading(v,new android.webkit.WebResourceRequest(v.url,true,"POST"));
+    if(kind.equals("RESOURCE-ORIGIN"))v.client.shouldInterceptRequest(v,new android.webkit.WebResourceRequest(unverified,false));
+    if(kind.equals("RESOURCE-METHOD"))v.client.shouldInterceptRequest(v,new android.webkit.WebResourceRequest(v.url,false,"POST"));
+    if(kind.equals("FRAME"))v.client.shouldOverrideUrlLoading(v,new android.webkit.WebResourceRequest(v.url,false));
+    if(kind.equals("NETWORK"))v.client.onReceivedError(v,new android.webkit.WebResourceRequest(v.url,true),new android.webkit.WebResourceError());
+    if(kind.equals("HTTP"))v.client.onReceivedHttpError(v,new android.webkit.WebResourceRequest(v.url,true),new android.webkit.WebResourceResponse("text/plain","UTF-8",new java.io.ByteArrayInputStream(new byte[0])));
+    if(kind.equals("TLS"))v.client.onReceivedSslError(v,new android.webkit.SslErrorHandler(),new android.net.http.SslError());
+    if(kind.equals("RENDERER"))v.client.onRenderProcessGone(v,new android.webkit.RenderProcessGoneDetail());
+    if(kind.equals("DOWNLOAD"))v.download.onDownloadStart(unverified,"","","",1);
+   });android.os.Handler.drain();check(s.status.text.contains("[MCC-"+kind+"]")&&s.status.text.contains("Perfil de teste limpo")&&!s.status.text.contains("do-not-display")&&!s.status.text.contains("unverified.invalid")&&!s.status.text.contains("synthetic.crew")&&!s.start.enabled&&v.destroyed&&android.webkit.WebView.instances.size()==readers,"typed safe diagnostic, cleanup and no acquisition: "+kind);check(s.employee.hint.contains("Digite sua matrícula")&&s.user.hint.contains("não o nome completo"),"personal identity labels, no technical fixture configuration");s.close();count++;
+  }
+  clean();Screen first=new Screen();first.ready();first.prepare();var v=view();android.os.Handler.runMain(()->{v.client.onReceivedHttpError(v,new android.webkit.WebResourceRequest(v.url,true),new android.webkit.WebResourceResponse("text/plain","UTF-8",new java.io.ByteArrayInputStream(new byte[0])));v.client.onRenderProcessGone(v,new android.webkit.RenderProcessGoneDetail());});android.os.Handler.drain();check(first.status.text.contains("[MCC-HTTP]")&&!first.status.text.contains("[MCC-RENDERER]"),"first causal failure owns diagnostic; later events do not overwrite it");first.close();count++;
+  clean();CrewCheckMyCrewCareProfile.defer=true;Screen diagnosticCleanup=new Screen();diagnosticCleanup.ready();diagnosticCleanup.prepare();var failedPage=view();android.os.Handler.runMain(()->failedPage.client.onReceivedHttpError(failedPage,new android.webkit.WebResourceRequest(failedPage.url,true),new android.webkit.WebResourceResponse("text/plain","UTF-8",new java.io.ByteArrayInputStream(new byte[0]))));android.os.Handler.drain();
+  check(diagnosticCleanup.status.text.contains("ainda não concluído")&&diagnosticCleanup.status.text.contains("[MCC-HTTP]"),"safe first event visible while cleanup pending");CrewCheckMyCrewCareProfile.pending.remove(0).onComplete(false,"profile-clear-failed");android.os.Handler.tick();check(diagnosticCleanup.status.text.contains("não confirmada")&&diagnosticCleanup.status.text.contains("[MCC-HTTP]")&&!diagnosticCleanup.prepare.enabled,"cleanup error remains authoritative and retains safe first event");diagnosticCleanup.close();count++;
+  check(count==111,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
  }catch(Exception e){throw new AssertionError(e);}}
 }
