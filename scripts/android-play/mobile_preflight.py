@@ -10,6 +10,8 @@ from crewwatch_internal import play_session
 
 PACKAGE = 'com.crewcheck.app'
 TRACKS = ('production', 'qa', 'internal', 'alpha', 'beta', 'wear:qa', 'wear:internal')
+OPTIONAL_ALIASES = ('qa', 'wear:qa')
+ACCESS_TRACKS = ('production', 'internal')
 PUBLISHED = 'RELEASE_LIFECYCLE_STATE_PUBLISHED'
 
 
@@ -43,9 +45,14 @@ def inspect(session):
             summaries = []
             for release in releases:
                 assert release['track'] == track
-                codes = [int(a['versionCode']) for a in release.get('activeArtifacts', [])]
+                raw_codes = [a['versionCode'] for a in release.get('activeArtifacts', [])]
+                assert all(type(code) is int or (type(code) is str and code.isascii()
+                    and code.isdigit() and not code.startswith('0')) for code in raw_codes)
+                codes = [int(code) for code in raw_codes]
                 assert all(0 < c < 2_100_000_000 for c in codes)
-                summaries.append(dict(state=release['releaseLifecycleState'], versionCodes=codes))
+                state = release['releaseLifecycleState']
+                assert type(state) is str and state
+                summaries.append(dict(state=state, versionCodes=codes))
             report['tracks'][track] = {'httpStatus': response.status_code, 'releases': summaries,
                                        'boundedListing': True}
             if len(releases) == 20:
@@ -55,7 +62,28 @@ def inspect(session):
         except Exception as error:
             # Never print credentials, raw response payloads, or exception text.
             report['tracks'][track] = {'state': 'unverified', 'errorType': type(error).__name__}
+    # A 404 on a historical optional alias is not a credential verdict when
+    # package access is independently verified on both canonical tracks. Keep
+    # the raw error/unverified state: 404 alone never proves track absence.
+    report['readAccessVerified'] = all(
+        report['tracks'][track].get('state') != 'unverified'
+        and 200 <= report['tracks'][track].get('httpStatus', 0) < 300
+        for track in ACCESS_TRACKS)
+    for track in OPTIONAL_ALIASES:
+        value = report['tracks'][track]
+        if value.get('httpStatus') == 404:
+            value.update(optionalAlias=True, absenceConfirmed=False)
+            report['blockers'].append(f'{track}: optional alias returned HTTP 404; remains unverified, absence/inventory not proved')
     return report
+
+
+def inspection_failed(report):
+    """Inspection success means bounded read access, never release permission."""
+    if 'errorType' in report or report.get('readAccessVerified') is not True:
+        return True
+    return any(value.get('state') == 'unverified'
+               and not (track in OPTIONAL_ALIASES and value.get('httpStatus') == 404)
+               for track, value in report.get('tracks', {}).items())
 
 
 def main():
@@ -75,7 +103,7 @@ def main():
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2) + '\n')
     print('Play evidence saved; publication remains blocked; production eligibility unknown.')
-    if 'errorType' in report or any(t.get('state') == 'unverified' for t in report.get('tracks', {}).values()):
+    if inspection_failed(report):
         raise SystemExit(1)
 
 
