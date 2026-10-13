@@ -1,3 +1,4 @@
+import {verifiedMysqlTls} from '../server/mysql-verified-tls.mjs';
 import fs from 'node:fs';
 
 const connectionString = String(process.env.DATABASE_URL || process.env.CREWCHECK_DATABASE_URL || process.env.MYSQL_URL || '').trim();
@@ -13,7 +14,7 @@ const db = await mysql.createConnection({
   password: decodeURIComponent(parsed.password),
   database: decodeURIComponent(parsed.pathname.replace(/^\//, '') || 'defaultdb'),
   charset: 'utf8mb4',
-  ssl: { rejectUnauthorized: false },
+  ssl: verifiedMysqlTls(parsed.hostname,Number(parsed.port||3306),process.env.MYSQL_SSL_MODE||''),
   multipleStatements: true,
 });
 

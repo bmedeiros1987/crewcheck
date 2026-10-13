@@ -228,7 +228,7 @@ try {
     assert.equal(revocation.status,'fulfilled');if(replay.status==='fulfilled')assert.equal(replay.value.status,'cancelled');else assert.equal(replay.reason.code,'CONSENT_REVISION_CHANGED');
     assert.equal((await readFreeDayHeldState(db,user,{now})).consent,false);
   });
-  await run('voluntary two-version receipts preserve owner/consent/404min under real MySQL sync and concurrent writes',async()=>{
+  await run('voluntary two-version receipts preserve owner/consent/404min and revocation in both InnoDB lock orders',async()=>{
     const user={email,id:owner};
     const digest=x=>crypto.createHash('sha256').update(JSON.stringify(x)).digest('hex');
     const receipt=clock=>({identityDigest:digest(['900001','BSB']),period:'2026-08',documentHash:digest(clock),starts:[12,13,14].map(d=>({date:`2026-08-${d}`,clock,offset:-180,literal:true}))});
@@ -241,12 +241,65 @@ try {
     assert.equal((await voluntarySources(db,user,{...body,expectedRevision:1})).duplicate,true);
     await db.query('UPDATE crewcheck_platform_rosters SET roster=? WHERE owner_email=?',[JSON.stringify({crewId:'900001',base:'BSB',days:[]}),email]);
     assert.equal((await voluntarySources(db,user)).review.before.starts[0].clock,'01:46');
+    const readPersisted=async()=>{const payload=(await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[sourceKey(user)]))[0][0].payload;return typeof payload==='string'?JSON.parse(payload):payload;};
+    const initialState=await readPersisted();
+    const revokedState=async()=>{
+      const stored=await readPersisted(),publicState=await voluntarySources(db,user);
+      assert.equal(stored.revision,2);assert.equal(stored.consent,false);
+      assert.equal(Object.hasOwn(stored,'review'),false);
+      assert.equal(publicState.revision,2);assert.equal(publicState.consent,false);
+      assert.equal(publicState.review,null);assert.equal(publicState.dispatchAllowed,false);
+    };
+    const restoreReview=()=>db.query('UPDATE crewcheck_telegram_state SET payload=? WHERE state_key=?',[JSON.stringify(initialState),sourceKey(user)]);
+    // Hold the first operation's real InnoDB owner lock while the second submits
+    // its lock query. Promise array position alone does not define acquisition order.
+    for(const replayFirst of [true,false]){
+      await restoreReview();
+      let firstLocked,releaseFirst,secondSubmitted,secondAcquired=false;
+      const held=new Promise(resolve=>{firstLocked=resolve;});
+      const release=new Promise(resolve=>{releaseFirst=resolve;});
+      const submitted=new Promise(resolve=>{secondSubmitted=resolve;});
+      const gatedDb=first=>({async getConnection(){
+        const c=await db.getConnection();
+        return {
+          beginTransaction:()=>c.beginTransaction(),commit:()=>c.commit(),
+          rollback:()=>c.rollback(),release:()=>c.release(),
+          async query(sql,values){
+            const ownerLock=sql.includes('crewcheck_platform_profiles')&&sql.includes('FOR UPDATE')&&values?.[0]===email;
+            const result=c.query(sql,values);
+            if(ownerLock&&!first)secondSubmitted();
+            const rows=await result;
+            if(ownerLock){if(first){firstLocked();await release;}else secondAcquired=true;}
+            return rows;
+          },
+        };
+      }});
+      const revokeBody={scope:SOURCE_SCOPE,action:'revoke',expectedRevision:1},replayBody={...body,expectedRevision:1};
+      const first=voluntarySources(gatedDb(true),user,replayFirst?replayBody:revokeBody);
+      // Attach rejection handlers immediately; do not replace the operation outcomes.
+      const firstOutcome=Promise.allSettled([first]);
+      await held;
+      const second=voluntarySources(gatedDb(false),user,replayFirst?revokeBody:replayBody);
+      const secondOutcome=Promise.allSettled([second]);
+      try{await submitted;assert.equal(secondAcquired,false);}finally{releaseFirst();}
+      const [[firstResult],[secondResult]]=await Promise.all([firstOutcome,secondOutcome]);
+      const revoked=replayFirst?secondResult:firstResult,replay=replayFirst?firstResult:secondResult;
+      assert.equal(revoked.status,'fulfilled');
+      if(replayFirst){assert.equal(replay.status,'fulfilled');assert.equal(replay.value.duplicate,true);}
+      else{assert.equal(replay.status,'rejected');assert.equal(replay.reason.code,'SOURCE_REVISION_CHANGED');}
+      assert.equal(secondAcquired,true);
+      await revokedState();
+    }
+    // Keep the unconstrained race too, accepting only the two proven outcomes.
+    await restoreReview();
     const [revoked,replay]=await Promise.allSettled([voluntarySources(db,user,{scope:SOURCE_SCOPE,action:'revoke',expectedRevision:1}),voluntarySources(db,user,{...body,expectedRevision:1})]);
-    assert.equal(revoked.status,'fulfilled');assert.equal(replay.status,'rejected');assert.equal((await voluntarySources(db,user)).review,null);
+    assert.equal(revoked.status,'fulfilled');
+    if(replay.status==='fulfilled')assert.equal(replay.value.duplicate,true);
+    else assert.equal(replay.reason.code,'SOURCE_REVISION_CHANGED');
+    await revokedState();
     const ttlSaved=await voluntarySources(db,user,{...body,expectedRevision:2});
     const expiredNow=Date.parse(ttlSaved.expiresAt)+1;
     await assert.rejects(voluntarySources(db,user,{...body,expectedRevision:2},{now:expiredNow}),error=>error.code==='SOURCE_REVISION_CHANGED');
-    const readPersisted=async()=>{const payload=(await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=?',[sourceKey(user)]))[0][0].payload;return typeof payload==='string'?JSON.parse(payload):payload;};
     let persisted=await readPersisted();
     assert.equal(persisted.revision,3);assert.equal(persisted.consent,true);assert.ok(persisted.review);
     const ttlAgain=await voluntarySources(db,user,{...body,expectedRevision:3},{now:expiredNow});

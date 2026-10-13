@@ -2,14 +2,15 @@
 
 Local receipts only cache a projection whose revision/intent is verified by Node.
 Caller flags cannot assert acknowledgement/reconciliation; internal helpers own
-those outcomes. This is not wired into mobile_internal.publish.
+those outcomes. The mobile publisher can use this injected lifecycle, but no
+production transport or executor capabilities are configured.
 """
 import copy
 import hashlib
 import json
 
 
-def snapshot_digest(value):
+def snapshot_json(value):
     # Compatible subset of reconcile_journal.snapshotDigest: sorted ASCII keys,
     # UTF-8 JSON strings and safe integer numbers. Fractions/unsafe integers and
     # non-ASCII keys are rejected rather than silently hashed differently.
@@ -33,7 +34,11 @@ def snapshot_digest(value):
         raise ValueError('Snapshot value outside compatible schema')
     validate(value)
     data = json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
-    return hashlib.sha256(data.encode('utf-8')).hexdigest()
+    return data
+
+
+def snapshot_digest(value):
+    return hashlib.sha256(snapshot_json(value).encode('utf-8')).hexdigest()
 
 
 class ReceiptBackend:
@@ -198,6 +203,51 @@ class ReceiptBackend:
         except Exception:
             self.blocked = True
             raise RuntimeError('Final receipt readback unverified; no retry or store action') from None
+
+    def commit_staged(self, package, owner, value):
+        """Invoke the existing executor helper; caller cannot assert an outcome."""
+        try:
+            self._check(package, value)
+            if owner != self.binding['owner'] or self.node_state != 'edit_open' or value['state'] != 'pending':
+                raise ValueError('Owned edit required before coordinated commit')
+            expected, others = value['expectedTrack'], value['otherTracksBefore']
+            track = value['track']
+            if not isinstance(expected, dict) or expected.get('track') != track or track not in ('qa', 'internal'):
+                raise ValueError('Staged target identity unverified')
+            if not isinstance(others, dict) or track in others:
+                raise ValueError('Other-track identity unverified')
+            releases = expected.get('releases')
+            if not isinstance(releases, list) or not releases:
+                raise ValueError('Intended release absent')
+            codes = []
+            for release in releases:
+                if not isinstance(release, dict) or release.get('status') != 'completed' or not isinstance(release.get('versionCodes'), list):
+                    raise ValueError('Invalid staged release')
+                for code in release['versionCodes']:
+                    if type(code) is not str or not code.isascii() or not code.isdigit() or code.startswith('0') or not 0 < int(code) < 2100000000:
+                        raise ValueError('Invalid staged version')
+                codes.extend(release['versionCodes'])
+            if str(self.binding['versionCode']) not in codes or value.get('editId') != self.intent.get('editId'):
+                raise ValueError('Intended version/edit absent')
+            intent = dict(self.intent, track=track, expectedTrackSha256=snapshot_digest(expected), otherTracksBeforeSha256=snapshot_digest(others))
+            for field in ('track', 'expectedTrack', 'otherTracksBefore', 'editId'):
+                if field in self.value and value.get(field) != self.value[field]:
+                    raise ValueError('Staged receipt changed')
+            response = self.transport.request('commit', intent, self.revision)
+            return self.project_verified_result(response['result'], expected, others)
+        except Exception:
+            self.blocked = True
+            raise RuntimeError('Coordinated commit unverified; preserve reservation and do not retry') from None
+
+    def reconcile_verified(self, package, owner):
+        try:
+            if self.blocked or owner != self.binding['owner'] or package != self.binding['package'] or self.node_state != 'acknowledged':
+                raise ValueError('Verified acknowledgement required')
+            response = self.transport.request('reconcile', self.intent, self.revision)
+            return self.project_verified_result(response['result'], self.value['expectedTrack'], self.value['otherTracksBefore'], response['observation'])
+        except Exception:
+            self.blocked = True
+            raise RuntimeError('Coordinated reconciliation unverified; preserve reservation and do not retry') from None
 
     def read(self, package):
         try:

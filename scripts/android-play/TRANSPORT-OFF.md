@@ -1,5 +1,9 @@
 # Inactive executor/journal wire protocol
 
+The early sections record the prior contract-only stages. The functional phone
+lifecycle section below supersedes their "no helper invocation" limitation;
+production wiring, guards and publication remain OFF throughout.
+
 Base main56ef873e744da463efafd9581dfc02dba4e969a1 (merged PR1005).
 No live executor, service listener, subprocess launcher, connection URL,
 credential loader, new identity/permission or production journal is configured.
@@ -123,3 +127,44 @@ existing real MySQL QA continues to cover prior components. No runtime wiring,
 real state reader, production identity/transport/DB access or Play eligibility is
 proved. Helper invocation, restart recovery, same-state enrichment and publisher
 lifecycle coupling remain separate, and all automation gates remain OFF.
+
+## Restart observation fence (OFF)
+
+`readRecoveryFence` extends the existing reconciliation module with read-only
+observation of the existing shared-package journal after runner loss. A trusted
+embedding pins package/owner/source/controller/run/AAB/version independently;
+two equal journal reads bind an observation digest to the current durable record.
+Missing, stale, foreign, racing or uncertain evidence cannot authorize anything.
+Even an empty or reconciled journal observation returns reservationAllowed,
+storeMutationAllowed, retryAllowed, rolloverAllowed and resumeAllowed=false.
+It does not reconstruct a Python receipt, invoke commit/reconcile, allocate,
+upload, open an edit, unlock or adopt a legacy writer.
+
+Offline deterministic SQL tests model a stopped runner with a committed pending
+row and lost SQL response, uncertain Play commit acknowledgement, Mobile/Wear
+competition for com.crewcheck.app, foreign immutable binding and racing reads.
+This is not a real process-kill/production durability test or a complete Play
+reader. Existing publishers, OFF controller guard, identities, pool wiring and
+external Console coordination remain unchanged. Preflight must still establish
+current store eligibility through the existing read-only main workflow; no new
+credential or permission is introduced by this code.
+
+## Functional phone lifecycle invocation (OFF)
+
+The optional trusted lifecycle embedding adds commit/reconcile operations to the
+same protocol. Without it they remain blocked before journal access. It owns the
+staged/complete readers and commit callback; serialized requests contain only
+bound intent/revision, never outcome flags, reader data or functions. Pending must
+be durably acknowledged before staged read or commit. Complete observation guards
+and digests are shared with reconcileAcknowledged. Helper results and proof are
+returned with the exact stored record; ReceiptBackend still performs an independent
+owned read before projection. Publisher helper uncertainty cannot fall through to
+legacy commit or cleanup. There is no live capability, listener or auth configuration.
+
+The actual mobile publisher uses this path when given the reviewed ReceiptBackend.
+Legacy fake backend tests and manual publisher workflows retain their prior behavior;
+this does not enroll any live writer. Mobile helper operations reject Wear/allocator
+bindings. All parties still use the shared com.crewcheck.app reservation for fencing.
+See RECOVERY-HISTORY.md for the concrete existing-pool connection and restoration
+sequence; offline integration is no longer just a result-projection stub, but no
+store execution/eligibility or automatic delivery is claimed.
