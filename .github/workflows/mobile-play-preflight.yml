@@ -70,6 +70,7 @@ on:
       - 'scripts/android-play/test_release_public_json.mjs'
       - 'scripts/android-play/test_release_oidc.mjs'
       - 'scripts/android-play/test_release_approval_route.mjs'
+      - 'scripts/android-play/test_release_probe_composition.mjs'
       - 'scripts/android-play/test_release_namespace.mjs'
       - 'scripts/android-play/test_release_approval_isolated.mjs'
       - '.github/workflows/mobile-play-preflight.yml'
@@ -99,6 +100,7 @@ jobs:
       - run: node scripts/android-play/test_github_release_review.mjs
       - run: node scripts/android-play/test_release_public_json.mjs
       - run: python3 scripts/android-play/test_journal_approval_prepare.py
+      - run: node scripts/android-play/test_release_probe_composition.mjs
       - run: node scripts/android-play/test_release_approval_route.mjs
       - run: node scripts/android-play/test_release_namespace.mjs
       - run: node scripts/android-play/test_planned_lifecycle.mjs

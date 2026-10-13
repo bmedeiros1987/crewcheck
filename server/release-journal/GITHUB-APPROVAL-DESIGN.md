@@ -46,3 +46,7 @@ All provider responses, tokens, identities and Store callbacks in tests are synt
 Primary contracts: [review history](https://docs.github.com/en/rest/actions/workflow-runs#get-the-review-history-for-a-workflow-run), [OIDC claims](https://docs.github.com/en/actions/reference/security/oidc), [job summaries](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#adding-a-job-summary), [artifact access](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts).
 
 Independent-review compatibility contracts: [exact workflow attempt](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run-attempt), [jobs for exact attempt](https://docs.github.com/en/rest/actions/workflow-jobs#list-jobs-for-a-workflow-run-attempt).
+
+## Probe-only OFF composition continuation
+
+The existing receiver is composed through `probe-composition.mjs` with immutable probe-only scope, exact public enrollment validation and a fail-closed request/socket-bound transport evidence interface. Runtime remains OFF; no real Render transport attestor or enrollment value is installed. See [PROBE-COMPOSITION-OFF.md](PROBE-COMPOSITION-OFF.md) for the three authority rows, rollback/expiry and the single bounded future activation checklist.

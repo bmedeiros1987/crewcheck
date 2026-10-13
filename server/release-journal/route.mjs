@@ -9,8 +9,10 @@ export const PATH='/api/platform/release-journal';
 const exact=(v,keys)=>{assert(v&&Object.getPrototypeOf(v)===Object.prototype);assert.deepEqual(Object.keys(v).sort(),[...keys].sort());};
 const send=(res,status,value)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(typeof value==='string'?value:JSON.stringify(value));};
 async function readFrame(req){let size=0;const chunks=[];for await(const chunk of req){const bytes=Buffer.from(chunk);size+=bytes.length;assert(size<=65536);chunks.push(bytes);}const raw=new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks));const f=JSON.parse(raw);assert.equal(canonical(f),raw,'Canonical frame required');exact(f,['schema','id','operation','binding','revision','input']);assert.equal(f.schema,2);assert(typeof f.id==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(f.id));assert(OPERATIONS.includes(f.operation));assert(Number.isSafeInteger(f.revision)&&f.revision>=0);exact(f.binding,['schema','generation','plan']);assert.equal(f.binding.schema,2);assert(Number.isSafeInteger(f.binding.generation)&&f.binding.generation>0);validatePlan(f.binding.plan);return {frame:f,raw};}
-export function createReleaseJournalHandler({enabled=false,poolProvider,verifyToken,verifyIngress,githubReviewProvider,proofCapabilities={},lifecycle={},now=()=>Math.floor(Date.now()/1000)}={}){
+export function createReleaseJournalHandler({enabled=false,allowedOperations=OPERATIONS,poolProvider,verifyToken,verifyIngress,githubReviewProvider,proofCapabilities={},lifecycle={},now=()=>Math.floor(Date.now()/1000)}={}){
  assert.equal(typeof enabled,'boolean');
+ assert(Array.isArray(allowedOperations)&&allowedOperations.length>0&&new Set(allowedOperations).size===allowedOperations.length&&allowedOperations.every(operation=>OPERATIONS.includes(operation)));
+ const scope=Object.freeze([...allowedOperations]);
  // No caller can inject commit/Play callbacks into the Render side.
  const allowedProof=['verifyInventory','verifyArtifacts','verifyStage','verifyReconciliation','approveRollover'];assert(Object.keys(proofCapabilities).every(k=>allowedProof.includes(k)));
  const allowedLifecycle=['readCompleteState','verifyReviewProof','approveNextBinding'];assert(Object.keys(lifecycle).every(k=>allowedLifecycle.includes(k)));
@@ -26,6 +28,7 @@ export function createReleaseJournalHandler({enabled=false,poolProvider,verifyTo
    assert.equal(typeof verifyIngress,'function');assert.equal(await verifyIngress(req),true);
    const auth=req.headers.authorization;assert(typeof auth==='string'&&/^Bearer [A-Za-z0-9_.-]+$/.test(auth));
    const claims=await authenticate(auth.slice(7));const {frame,raw}=await readFrame(req);
+   assert(scope.includes(frame.operation),'Operation outside compiled receiver scope');
    assert.equal(typeof githubReviewProvider?.verify,'function');
    const proof=await githubReviewProvider.verify(claims,frame);
    assert.equal(githubReviewProvider.isVerified(proof),true);
