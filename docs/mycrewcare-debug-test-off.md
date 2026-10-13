@@ -96,3 +96,48 @@ Reaproveitar dados já verificados não é possível neste APK: o pacote `.mccte
 **APK de diagnóstico:** gerado somente pelo CI desta PR (`mycrewcare-v3-persistence.yml`, passo restrito à branch `fix/mycrewcare-debug-login-diagnostics`), artifact `crewcheck-teste-mcc-<head>` com `BUILD-INFO.txt` (commit, `aapt2 badging` com pacote/versão) e `SHA256SUMS`, retenção 7 dias. Assinatura debug do runner: desinstale o "CrewCheck • teste MCC" anterior antes de instalar. Não é Play Store nem release.
 
 **Não é solução do login:** serve para identificar, no aparelho, o código e o domínio que encerram a preparação após o e-mail. Liberar qualquer provedor de autenticação exige essa evidência + revisão, com host exato (sem curinga) e fluxo mínimo.
+
+## Teste físico com `07b80120`: MCC-ROUTE (13/10)
+
+O APK de diagnóstico do commit `07b8012087e6fdb2ab8405a2ba8d03f67c78e3c7` retornou **`MCC-ROUTE`** no aparelho. Nesse código, isso significa: origem `api2.apicrewcare.com` comprovada por igualdade exata, mas página ou parâmetros fora das duas rotas exatas (My Travel e `Main/Login.aspx?ReturnUrl=…`). **Não demonstra SSO externo.** A allowlist continua inalterada.
+
+Para localizar a rota sem expor dados, o diagnóstico acrescenta somente categorias fixas:
+
+- **Página:** `página de login`, `MyTravel`, a mesma página com `(maiúsculas diferentes)` ou `outra página do mesmo domínio`. O caminho nunca é exibido.
+- **Parâmetros:** `parâmetros ausentes`, `ReturnUrl esperado` ou `outros parâmetros`. Nomes e valores nunca são exibidos.
+- **Callback que bloqueou:**
+  - `shouldOverrideUrlLoading`;
+  - `shouldOverrideUrlLoading (redirecionamento)`;
+  - `shouldOverrideUrlLoading (legado)`;
+  - `shouldInterceptRequest`;
+  - `onPageStarted`;
+  - `onPageFinished`;
+  - nas demais categorias, o callback do erro.
+- **Método:** `UNKNOWN` quando o callback não informa o método. Antes, nesses casos, o método era presumido GET.
+- Página e parâmetros aparecem só em `MCC-ROUTE`, `MCC-METHOD` e `MCC-RESOURCE-METHOD`, ou seja, apenas no domínio api2. O domínio continua restrito às categorias de origem.
+
+O primeiro erro continua sendo o único publicado.
+
+**Commit visível:**
+
+- O CI grava o SHA do head revisado no asset debug `mcc-test-build.txt`.
+- A tela mostra `commit <SHA completo>` o tempo todo, inclusive durante o login, e cada mensagem de falha termina com `Commit do APK: <12 caracteres>`.
+- Sem o asset, ou com conteúdo fora do formato `[0-9a-f]{40}`, aparece "não verificado".
+
+**Build bloqueado se não corresponder ao código revisado.** O passo do APK falha se:
+
+- a árvore do merge ref difere da do head revisado;
+- as fontes debug ou runtime MyCrewCare, ou o asset de transporte, diferem do head;
+- existe arquivo não versionado em `src/debug`;
+- o APK não contém exatamente esse SHA.
+
+**Testes:** 136 casos debug (125 + 11):
+
+- seis rotas api2 recusadas: redirecionamento com parâmetros extras, navegação, POST interceptado, maiúsculas diferentes, legado e `onPageFinished`;
+- preservação do primeiro erro com o callback;
+- commit visível;
+- asset ausente ou inválido;
+- categorias fixas e `UNKNOWN`;
+- allowlist inalterada.
+
+As asserções novas falham no código `07b80120`.

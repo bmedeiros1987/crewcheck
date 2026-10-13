@@ -9,10 +9,10 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
  static int count;
  static class Screen {
   final CrewCheckMyCrewCareDebugActivity activity=new CrewCheckMyCrewCareDebugActivity();
-  android.widget.EditText employee,user;android.widget.CheckBox consent;android.widget.Button prepare,start,cancel;android.widget.TextView status;
+  android.widget.TextView build;android.widget.EditText employee,user;android.widget.CheckBox consent;android.widget.Button prepare,start,cancel;android.widget.TextView status;
   Screen(){android.os.Handler.runMain(activity::create);var scroll=(android.widget.ScrollView)activity.content;check(scroll.fillViewport,"whole debug screen scrollable, including controls/results");var layout=(android.widget.LinearLayout)scroll.children.get(0);
-   employee=(android.widget.EditText)layout.children.get(2);user=(android.widget.EditText)layout.children.get(4);consent=(android.widget.CheckBox)layout.children.get(5);prepare=(android.widget.Button)layout.children.get(6);start=(android.widget.Button)layout.children.get(7);cancel=(android.widget.Button)layout.children.get(8);status=(android.widget.TextView)layout.children.get(9);check(status.focusable&&status.textSize==16,"focus and scaled text; no line cap");
-   check(((android.widget.TextView)layout.children.get(1)).text.contains("Sua matrícula no MyCrewCare")&&((android.widget.TextView)layout.children.get(3)).text.contains("Seu usuário no MyCrewCare, exatamente como no Perfil")&&((android.widget.TextView)layout.children.get(3)).text.contains("não é senha")&&((android.widget.TextView)layout.children.get(3)).text.contains("pode ser diferente do e-mail"),"persistent visible personal identity labels, no fixture fields; username not presumed equal to e-mail");
+   build=(android.widget.TextView)layout.children.get(0);employee=(android.widget.EditText)layout.children.get(3);user=(android.widget.EditText)layout.children.get(5);consent=(android.widget.CheckBox)layout.children.get(6);prepare=(android.widget.Button)layout.children.get(7);start=(android.widget.Button)layout.children.get(8);cancel=(android.widget.Button)layout.children.get(9);status=(android.widget.TextView)layout.children.get(10);check(status.focusable&&status.textSize==16,"focus and scaled text; no line cap");
+   check(((android.widget.TextView)layout.children.get(2)).text.contains("Sua matrícula no MyCrewCare")&&((android.widget.TextView)layout.children.get(4)).text.contains("Seu usuário no MyCrewCare, exatamente como no Perfil")&&((android.widget.TextView)layout.children.get(4)).text.contains("não é senha")&&((android.widget.TextView)layout.children.get(4)).text.contains("pode ser diferente do e-mail"),"persistent visible personal identity labels, no fixture fields; username not presumed equal to e-mail");
    check(!employee.save&&!user.save&&!consent.save&&layout.autofill==8,"identity/consent not restored or autofilled");}
   void ready(){employee.setText("900000001");user.setText("synthetic.crew@example.invalid");consent.setChecked(true);}
   void prepare(){android.os.Handler.runMain(prepare::click);android.os.Handler.drain();}
@@ -159,7 +159,8 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
     if(kind.equals("TLS"))v.client.onReceivedSslError(v,new android.webkit.SslErrorHandler(),new android.net.http.SslError());
     if(kind.equals("RENDERER"))v.client.onRenderProcessGone(v,new android.webkit.RenderProcessGoneDetail());
     if(kind.equals("DOWNLOAD"))v.download.onDownloadStart(unverified,"","","",1);
-   });android.os.Handler.drain();check(s.status.text.contains("[MCC-"+kind+"]")&&s.status.text.contains("Perfil de teste limpo")&&!s.status.text.contains("do-not-display")&&!s.status.text.contains("/login")&&!s.status.text.contains("/unverified")&&(kind.endsWith("ORIGIN")?s.status.text.contains("domínio unverified.invalid"):!s.status.text.contains("unverified.invalid"))&&!s.status.text.contains("synthetic.crew")&&!s.start.enabled&&v.destroyed&&android.webkit.WebView.instances.size()==readers,"typed safe diagnostic, cleanup and no acquisition: "+kind);check(s.employee.hint.contains("Digite sua matrícula")&&s.user.hint.contains("não o nome completo"),"personal identity labels, no technical fixture configuration");s.close();count++;
+   });android.os.Handler.drain();check(s.status.text.contains("[MCC-"+kind+"]")&&s.status.text.contains("Perfil de teste limpo")&&!s.status.text.contains("do-not-display")&&!s.status.text.contains("/login")&&!s.status.text.contains("/unverified")&&(kind.endsWith("ORIGIN")?s.status.text.contains("domínio unverified.invalid"):!s.status.text.contains("unverified.invalid"))&&!s.status.text.contains("synthetic.crew")&&!s.start.enabled&&v.destroyed&&android.webkit.WebView.instances.size()==readers,"typed safe diagnostic, cleanup and no acquisition: "+kind);
+   check(s.status.text.contains("callback ")&&(!kind.equals("ROUTE")||s.status.text.contains("(outra página do mesmo domínio, outros parâmetros, método UNKNOWN, callback onPageStarted)"))&&(!kind.equals("ORIGIN")||s.status.text.contains("método UNKNOWN, callback onPageStarted)"))&&(!kind.equals("METHOD")||s.status.text.contains("(MyTravel, parâmetros ausentes, método POST, callback shouldOverrideUrlLoading)")),"fixed callback/page/parameter categories; method UNKNOWN when the callback has none: "+kind);check(s.employee.hint.contains("Digite sua matrícula")&&s.user.hint.contains("não o nome completo"),"personal identity labels, no technical fixture configuration");s.close();count++;
   }
   clean();Screen first=new Screen();first.ready();first.prepare();var v=view();android.os.Handler.runMain(()->{v.client.onReceivedHttpError(v,new android.webkit.WebResourceRequest(v.url,true),new android.webkit.WebResourceResponse("text/plain","UTF-8",new java.io.ByteArrayInputStream(new byte[0])));v.client.onRenderProcessGone(v,new android.webkit.RenderProcessGoneDetail());});android.os.Handler.drain();check(first.status.text.contains("[MCC-HTTP]")&&!first.status.text.contains("[MCC-RENDERER]"),"first causal failure owns diagnostic; later events do not overwrite it");first.close();count++;
   clean();CrewCheckMyCrewCareProfile.defer=true;Screen diagnosticCleanup=new Screen();diagnosticCleanup.ready();diagnosticCleanup.prepare();var failedPage=view();android.os.Handler.runMain(()->failedPage.client.onReceivedHttpError(failedPage,new android.webkit.WebResourceRequest(failedPage.url,true),new android.webkit.WebResourceResponse("text/plain","UTF-8",new java.io.ByteArrayInputStream(new byte[0]))));android.os.Handler.drain();
@@ -224,6 +225,53 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
   android.os.Handler.runMain(keep.activity::stop);android.os.Handler.runMain(()->{try{resumeMfa.invoke(keep.activity);}catch(Exception e){throw new AssertionError(e);}});android.os.Handler.drain();
   check(keep.status.text.equals(failureText),"failure reason survives app switch");android.os.Handler.runMain(keep.cancel::click);android.os.Handler.drain();
   check(keep.status.text.equals(failureText)&&keep.prepare.enabled,"failure reason survives Cancel; retry still allowed");keep.close();count++;
-  check(count==125,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
+  // ---- MCC-ROUTE (teste físico com 07b80120): página, parâmetros, método e callback em categorias fixas ----
+  String api="https://api2.apicrewcare.com";
+  String[][] routes={
+   {"redirect",loginUrl+"&step=password&u=crew%40example.invalid","GET","página de login, outros parâmetros, método GET, callback shouldOverrideUrlLoading (redirecionamento)"},
+   {"navigation",api+"/Main/Password.aspx?token=secret-value","GET","outra página do mesmo domínio, outros parâmetros, método GET, callback shouldOverrideUrlLoading"},
+   {"intercept",api+"/Main/Login.aspx","POST","página de login, parâmetros ausentes, método POST, callback shouldInterceptRequest"},
+   {"started",api+"/LATAM/MyTravel.aspx","","MyTravel (maiúsculas diferentes), parâmetros ausentes, método UNKNOWN, callback onPageStarted"},
+   {"legacy",api+"/LATAM/mytravel.aspx?sid=secret-value","","MyTravel, outros parâmetros, método UNKNOWN, callback shouldOverrideUrlLoading (legado)"},
+   {"finished",api+"/Main/Default.aspx?ReturnUrl=%2fLATAM%2fmytravel.aspx","","outra página do mesmo domínio, ReturnUrl esperado, método UNKNOWN, callback onPageFinished"}};
+  for(String[] route:routes) {
+   clean();Screen s=new Screen();s.ready();s.prepare();var rv=view();
+   android.os.Handler.runMain(()->{
+    if(route[0].equals("redirect")){var r=new android.webkit.WebResourceRequest(route[1],true,route[2]);r.redirect=true;check(rv.client.shouldOverrideUrlLoading(rv,r),"redirect outside the exact route stays blocked");}
+    if(route[0].equals("navigation"))check(rv.client.shouldOverrideUrlLoading(rv,new android.webkit.WebResourceRequest(route[1],true,route[2])),"same-origin route outside allowlist stays blocked");
+    if(route[0].equals("intercept"))check(rv.client.shouldInterceptRequest(rv,new android.webkit.WebResourceRequest(route[1],true,route[2]))!=null,"main-frame POST outside the exact route stays blocked");
+    if(route[0].equals("started"))rv.client.onPageStarted(rv,route[1],null);
+    if(route[0].equals("legacy"))check(rv.client.shouldOverrideUrlLoading(rv,route[1]),"legacy navigation outside allowlist stays blocked");
+    if(route[0].equals("finished"))rv.client.onPageFinished(rv,route[1]);
+   });android.os.Handler.drain();
+   String t=s.status.text;
+   check(rv.destroyed&&t.contains("[MCC-ROUTE]")&&t.contains("("+route[3]+")")&&!t.contains("/Main")&&!t.contains("/LATAM")&&!t.contains("Password")&&!t.contains("Default")&&!t.contains("step")&&!t.contains("secret-value")&&!t.contains("crew%40")&&!t.contains("api2.apicrewcare.com")&&t.contains("Nada importado")&&t.contains("Perfil de teste limpo")&&s.employee.text.equals("900000001")&&s.prepare.enabled,"MCC-ROUTE names fixed page/parameter/method/callback categories, never path or values: "+route[0]);s.close();count++;
+  }
+  clean();Screen firstRoute=new Screen();firstRoute.ready();firstRoute.prepare();var fr=view();
+  android.os.Handler.runMain(()->{fr.client.onPageStarted(fr,api+"/Main/Other.aspx",null);fr.client.shouldOverrideUrlLoading(fr,new android.webkit.WebResourceRequest("https://idp.example.invalid/x",true));fr.client.onReceivedHttpError(fr,new android.webkit.WebResourceRequest(api+"/Main/Other.aspx",true),new android.webkit.WebResourceResponse("text/plain","UTF-8",new java.io.ByteArrayInputStream(new byte[0])));});android.os.Handler.drain();
+  check(firstRoute.status.text.contains("[MCC-ROUTE]")&&firstRoute.status.text.contains("callback onPageStarted)")&&!firstRoute.status.text.contains("MCC-ORIGIN")&&!firstRoute.status.text.contains("MCC-HTTP")&&!firstRoute.status.text.contains("idp.example"),"first error and its callback are preserved; later events do not overwrite");firstRoute.close();count++;
+  String sha="0123456789abcdef0123456789abcdef01234567";
+  clean();android.content.res.AssetManager.build=sha+"\n";Screen built=new Screen();built.ready();check(built.build.text.contains("commit "+sha),"reviewed commit visible on the screen");built.prepare();var bv=view();
+  check(built.build.visibility==0&&built.employee.visibility==8,"commit stays visible during the visible login");
+  android.os.Handler.runMain(()->bv.client.onPageStarted(bv,api+"/Main/Other.aspx",null));android.os.Handler.drain();
+  check(built.status.text.contains("[MCC-ROUTE]")&&built.status.text.contains("Commit do APK: 0123456789ab.")&&built.build.visibility==0,"failure message carries the APK commit for screenshots");built.close();count++;
+  boolean unverified=true;
+  for(String bad:new String[]{null,sha.toUpperCase(),"07b80120","0123456789abcdef0123456789abcdef01234567\n../x"}){
+   clean();android.content.res.AssetManager.build=bad;Screen local=new Screen();local.ready();local.prepare();var lov=view();
+   android.os.Handler.runMain(()->lov.client.onPageStarted(lov,api+"/Main/Other.aspx",null));android.os.Handler.drain();
+   unverified&=local.build.text.contains("commit não verificado (build local, fora do CI da PR)")&&local.status.text.contains("Commit do APK: não verificado.")&&!local.status.text.contains("0123456789ab");local.close();
+  }
+  android.content.res.AssetManager.build=null;check(unverified,"absent or malformed build asset never shows a commit");count++;
+  Method method=CrewCheckMyCrewCareDebugActivity.class.getDeclaredMethod("safeMethod",String.class),pageOf=CrewCheckMyCrewCareDebugActivity.class.getDeclaredMethod("safePage",String.class),paramsOf=CrewCheckMyCrewCareDebugActivity.class.getDeclaredMethod("safeParameters",String.class);
+  method.setAccessible(true);pageOf.setAccessible(true);paramsOf.setAccessible(true);
+  check(method.invoke(null,(Object)null).equals("UNKNOWN")&&method.invoke(null,"PUT").equals("outro")&&method.invoke(null,"POST").equals("POST")
+   &&pageOf.invoke(null,api+"/main/login.aspx").equals("página de login (maiúsculas diferentes)")&&pageOf.invoke(null,api+"/LATAM/mytravel.aspx").equals("MyTravel")&&pageOf.invoke(null,"not a uri").equals("outra página do mesmo domínio")
+   &&paramsOf.invoke(null,api+"/Main/Login.aspx?").equals("parâmetros ausentes")&&paramsOf.invoke(null,api+"/Main/Login.aspx?ReturnUrl=%2FLATAM%2Fmytravel.aspx").equals("ReturnUrl esperado")
+   &&paramsOf.invoke(null,loginUrl+"&x=1").equals("outros parâmetros")&&paramsOf.invoke(null,api+"/Main/Login.aspx?returnurl=%2fLATAM%2fmytravel.aspx").equals("outros parâmetros"),"fixed categories only; unknown method is UNKNOWN");count++;
+  Method target=CrewCheckMyCrewCareDebugActivity.class.getDeclaredMethod("loginTarget",String.class);target.setAccessible(true);
+  check((boolean)target.invoke(null,api+"/LATAM/mytravel.aspx")&&(boolean)target.invoke(null,loginUrl)&&(boolean)target.invoke(null,api+"/Main/Login.aspx?ReturnUrl=%2FLATAM%2Fmytravel.aspx")
+   &&!(boolean)target.invoke(null,api+"/LATAM/MyTravel.aspx")&&!(boolean)target.invoke(null,api+"/Main/Login.aspx")&&!(boolean)target.invoke(null,loginUrl+"&step=password")&&!(boolean)target.invoke(null,api+"/Main/Login.aspx?ReturnUrl=%2FLATAM%2FMytravel.aspx")
+   &&!(boolean)target.invoke(null,"https://api2.apicrewcare.com.evil.invalid/LATAM/mytravel.aspx"),"allowlist unchanged: exact entry and exact login route only");count++;
+  check(count==136,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
  }catch(Exception e){throw new AssertionError(e);}}
 }

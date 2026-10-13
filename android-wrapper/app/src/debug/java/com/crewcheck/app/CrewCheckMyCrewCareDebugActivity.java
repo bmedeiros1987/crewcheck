@@ -12,6 +12,9 @@ import android.net.http.SslError;
 import android.graphics.Bitmap;
 import java.net.URI;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -56,7 +59,14 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         PreparationFailure(String code, String description) { this.code=code; this.description=description; }
     }
     private static final String ENTRY = "https://api2.apicrewcare.com/LATAM/mytravel.aspx";
-    private TextView explanation, status, employeeLabel, usernameLabel;
+    // Commit revisado gravado pelo CI da PR no APK de diagnóstico; ausente em build local.
+    static final String BUILD_ASSET = "mcc-test-build.txt";
+    private String buildCommit;
+    // Callbacks que podem recusar a navegação; só estes nomes fixos entram no diagnóstico.
+    static final String CB_NAVIGATION = "shouldOverrideUrlLoading", CB_REDIRECT = "shouldOverrideUrlLoading (redirecionamento)",
+        CB_NAVIGATION_LEGACY = "shouldOverrideUrlLoading (legado)", CB_INTERCEPT = "shouldInterceptRequest",
+        CB_STARTED = "onPageStarted", CB_FINISHED = "onPageFinished";
+    private TextView buildLabel, explanation, status, employeeLabel, usernameLabel;
     private boolean foreground, cleaning, destroyed, stopFailed;
     private boolean cleanupTerminalFailure;
     private volatile boolean running;
@@ -78,6 +88,10 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+        buildCommit = readBuildCommit();
+        buildLabel = new TextView(this); // Sempre visível: capturas de tela identificam o código testado.
+        buildLabel.setText("APK de teste MyCrewCare • commit " + (buildCommit != null ? buildCommit : "não verificado (build local, fora do CI da PR)"));
+        layout.addView(buildLabel);
         explanation = new TextView(this);
         explanation.setText("Teste MyCrewCare exclusivo de debug.\n"
             + "1) Informe abaixo a matrícula e o usuário EXATAMENTE como aparecem em MyCrewCare › Perfil. "
@@ -106,6 +120,17 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         prepare.setOnClickListener(view -> prepareSession());
         start.setOnClickListener(view -> start());
         cancel.setOnClickListener(view -> cancel());
+    }
+    private String readBuildCommit() {
+        try (InputStream in = getAssets().open(BUILD_ASSET)) {
+            byte[] buffer = new byte[64]; int length = 0, read;
+            while (length < buffer.length && (read = in.read(buffer, length, buffer.length - length)) > 0) length += read;
+            String commit = new String(buffer, 0, length, StandardCharsets.US_ASCII).trim();
+            return commit.matches("[0-9a-f]{40}") ? commit : null;
+        } catch (IOException | RuntimeException error) { return null; }
+    }
+    private String buildSuffix() {
+        return " Commit do APK: " + (buildCommit != null ? buildCommit.substring(0, 12) : "não verificado") + ".";
     }
     private void attemptControls(boolean active) {
         int visibility = active ? View.GONE : View.VISIBLE;
@@ -159,19 +184,19 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
             settings.setJavaScriptCanOpenWindowsAutomatically(false); settings.setSupportMultipleWindows(false);
             settings.setJavaScriptEnabled(true); // Official page executes its own login UI; no native injection.
             page.setWebChromeClient(new WebChromeClient() { @Override public void onPermissionRequest(PermissionRequest request) { request.deny(); } });
-            page.setDownloadListener((url, agent, disposition, type, length) -> loginFailed(attempt, page, PreparationFailure.DOWNLOAD));
+            page.setDownloadListener((url, agent, disposition, type, length) -> loginFailed(attempt, page, PreparationFailure.DOWNLOAD, "onDownloadStart"));
             page.setWebViewClient(new WebViewClient() {
                 @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                     if (!loginCurrent(attempt, page) || v != page) return true;
                     boolean allowed = r.isForMainFrame() && loginTarget(r.getUrl().toString())
                         && (r.getMethod().equals("GET") || r.getMethod().equals("POST") && loginPage(r.getUrl().toString()));
-                    if (!allowed) loginFailed(attempt, page, !r.isForMainFrame() ? PreparationFailure.FRAME : !loginTarget(r.getUrl().toString()) ? targetFailure(r.getUrl().toString()) : PreparationFailure.METHOD, r.getUrl().toString(), r.getMethod());
+                    if (!allowed) loginFailed(attempt, page, !r.isForMainFrame() ? PreparationFailure.FRAME : !loginTarget(r.getUrl().toString()) ? targetFailure(r.getUrl().toString()) : PreparationFailure.METHOD, r.getUrl().toString(), r.getMethod(), r.isRedirect() ? CB_REDIRECT : CB_NAVIGATION);
                     return !allowed;
                 }
                 @Override public boolean shouldOverrideUrlLoading(WebView v, String url) {
                     if (!loginCurrent(attempt, page) || v != page) return true;
                     if (loginTarget(url)) return false;
-                    loginFailed(attempt, page, targetFailure(url), url, "GET"); return true;
+                    loginFailed(attempt, page, targetFailure(url), url, null, CB_NAVIGATION_LEGACY); return true;
                 }
                 @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
                     boolean allowed = loginCurrent(attempt, page) && v == page &&
@@ -179,23 +204,23 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
                             (r.getMethod().equals("GET") || r.getMethod().equals("POST") && loginPage(r.getUrl().toString()))
                             : portalOrigin(r.getUrl().toString()) && r.getMethod().equals("GET"));
                     if (allowed) return null;
-                    loginFailed(attempt, page, r.isForMainFrame() ? !loginTarget(r.getUrl().toString()) ? targetFailure(r.getUrl().toString()) : PreparationFailure.METHOD : portalOrigin(r.getUrl().toString()) ? PreparationFailure.RESOURCE_METHOD : PreparationFailure.RESOURCE_ORIGIN, r.getUrl().toString(), r.getMethod());
+                    loginFailed(attempt, page, r.isForMainFrame() ? !loginTarget(r.getUrl().toString()) ? targetFailure(r.getUrl().toString()) : PreparationFailure.METHOD : portalOrigin(r.getUrl().toString()) ? PreparationFailure.RESOURCE_METHOD : PreparationFailure.RESOURCE_ORIGIN, r.getUrl().toString(), r.getMethod(), CB_INTERCEPT);
                     return new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(new byte[0]));
                 }
                 @Override public void onPageStarted(WebView v, String url, Bitmap icon) {
                     if (v != page || !loginCurrent(attempt, page)) return;
                     start.setEnabled(false);
-                    if (!loginTarget(url)) loginFailed(attempt, page, targetFailure(url), url, "GET");
+                    if (!loginTarget(url)) loginFailed(attempt, page, targetFailure(url), url, null, CB_STARTED);
                 }
                 @Override public void onPageFinished(WebView v, String url) {
                     if (v != page || !loginCurrent(attempt, page)) return;
-                    if (!loginTarget(url) || !loginTarget(page.getUrl())) { String bad = !loginTarget(url) ? url : page.getUrl(); loginFailed(attempt, page, targetFailure(bad), bad, "GET"); return; }
+                    if (!loginTarget(url) || !loginTarget(page.getUrl())) { String bad = !loginTarget(url) ? url : page.getUrl(); loginFailed(attempt, page, targetFailure(bad), bad, null, CB_FINISHED); return; }
                     start.setEnabled(ENTRY.equals(url) && ENTRY.equals(page.getUrl()));
                 }
-                @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError error) { if (v == page && r.isForMainFrame()) loginFailed(attempt, page, PreparationFailure.NETWORK); }
-                @Override public void onReceivedHttpError(WebView v, WebResourceRequest r, WebResourceResponse response) { if (v == page && r.isForMainFrame()) loginFailed(attempt, page, PreparationFailure.HTTP); }
-                @Override public void onReceivedSslError(WebView v, SslErrorHandler handler, SslError error) { handler.cancel(); if (v == page) loginFailed(attempt, page, PreparationFailure.TLS); }
-                @Override public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail detail) { if (v == page) loginFailed(attempt, page, PreparationFailure.RENDERER); return true; }
+                @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError error) { if (v == page && r.isForMainFrame()) loginFailed(attempt, page, PreparationFailure.NETWORK, "onReceivedError"); }
+                @Override public void onReceivedHttpError(WebView v, WebResourceRequest r, WebResourceResponse response) { if (v == page && r.isForMainFrame()) loginFailed(attempt, page, PreparationFailure.HTTP, "onReceivedHttpError"); }
+                @Override public void onReceivedSslError(WebView v, SslErrorHandler handler, SslError error) { handler.cancel(); if (v == page) loginFailed(attempt, page, PreparationFailure.TLS, "onReceivedSslError"); }
+                @Override public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail detail) { if (v == page) loginFailed(attempt, page, PreparationFailure.RENDERER, "onRenderProcessGone"); return true; }
             });
             layout.addView(page, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Math.round(360 * getResources().getDisplayMetrics().density), 0));
             page.loadUrl(ENTRY);
@@ -208,8 +233,11 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
     }
     private static boolean loginPage(String url) {
         try { URI u = URI.create(url); return portalOrigin(url) && "/Main/Login.aspx".equals(u.getRawPath()) &&
-            ("ReturnUrl=%2fLATAM%2fmytravel.aspx".equals(u.getRawQuery()) || "ReturnUrl=%2FLATAM%2Fmytravel.aspx".equals(u.getRawQuery())); }
+            expectedReturnUrl(u.getRawQuery()); }
         catch (RuntimeException error) { return false; }
+    }
+    private static boolean expectedReturnUrl(String rawQuery) {
+        return "ReturnUrl=%2fLATAM%2fmytravel.aspx".equals(rawQuery) || "ReturnUrl=%2FLATAM%2Fmytravel.aspx".equals(rawQuery);
     }
     private static boolean loginTarget(String url) { return ENTRY.equals(url) || loginPage(url); }
     private boolean loginCurrent(long attempt, WebView page) {
@@ -232,20 +260,44 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
             return "http".equals(scheme) ? host + " (sem HTTPS)" : host;
         } catch (RuntimeException error) { return "inválido"; }
     }
-    static String safeMethod(String method) { return "GET".equals(method) || "POST".equals(method) ? method : "outro"; }
-    /** Detalhe permitido por categoria: domínio só para origem externa; método para recusas de método/rota. */
-    static String failureDetail(PreparationFailure reason, String url, String method) {
+    /** UNKNOWN quando o callback não informa o método; nunca presume GET. */
+    static String safeMethod(String method) { return method == null ? "UNKNOWN" : "GET".equals(method) || "POST".equals(method) ? method : "outro"; }
+    /** Página do domínio api2 em categoria fixa — nunca o caminho. */
+    static String safePage(String url) {
+        try {
+            String path = URI.create(url).getRawPath();
+            if ("/Main/Login.aspx".equals(path)) return "página de login";
+            if ("/LATAM/mytravel.aspx".equals(path)) return "MyTravel";
+            if ("/Main/Login.aspx".equalsIgnoreCase(path)) return "página de login (maiúsculas diferentes)";
+            if ("/LATAM/mytravel.aspx".equalsIgnoreCase(path)) return "MyTravel (maiúsculas diferentes)";
+        } catch (RuntimeException error) { /* categoria genérica abaixo */ }
+        return "outra página do mesmo domínio";
+    }
+    /** Parâmetros em categoria fixa — nunca nomes além de ReturnUrl nem valores. */
+    static String safeParameters(String url) {
+        try {
+            String query = URI.create(url).getRawQuery();
+            if (query == null || query.isEmpty()) return "parâmetros ausentes";
+            return expectedReturnUrl(query) ? "ReturnUrl esperado" : "outros parâmetros";
+        } catch (RuntimeException error) { return "outros parâmetros"; }
+    }
+    /** Detalhe permitido por categoria: domínio só para origem externa; página/parâmetros só no domínio api2 comprovado. */
+    static String failureDetail(PreparationFailure reason, String url, String method, String callback) {
         switch (reason) {
-            case ORIGIN: case RESOURCE_ORIGIN: return "domínio " + safeDomain(url) + ", método " + safeMethod(method);
-            case ROUTE: case METHOD: case RESOURCE_METHOD: return "método " + safeMethod(method);
-            default: return "";
+            case ORIGIN: case RESOURCE_ORIGIN: return "domínio " + safeDomain(url) + ", método " + safeMethod(method) + ", callback " + callback;
+            case ROUTE: case METHOD: case RESOURCE_METHOD:
+                return safePage(url) + ", " + safeParameters(url) + ", método " + safeMethod(method) + ", callback " + callback;
+            case FRAME: return "método " + safeMethod(method) + ", callback " + callback;
+            default: return "callback " + callback;
         }
     }
-    private void loginFailed(long attempt, WebView page, PreparationFailure reason, String url, String method) {
-        loginFailed(attempt, page, reason, failureDetail(reason, url, method));
+    private void loginFailed(long attempt, WebView page, PreparationFailure reason, String url, String method, String callback) {
+        publishFailure(attempt, page, reason, failureDetail(reason, url, method, callback));
     }
-    private void loginFailed(long attempt, WebView page, PreparationFailure reason) { loginFailed(attempt, page, reason, ""); }
-    private void loginFailed(long attempt, WebView page, PreparationFailure reason, String detail) {
+    private void loginFailed(long attempt, WebView page, PreparationFailure reason, String callback) {
+        publishFailure(attempt, page, reason, "callback " + callback);
+    }
+    private void publishFailure(long attempt, WebView page, PreparationFailure reason, String detail) {
         Login current = login;
         if (current == null) return;
         synchronized (current) {
@@ -257,13 +309,13 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
             preparationFailure = reason; preparationFailureAttempt = attempt;
             finish(attempt, "Preparação bloqueada [" + reason.code + "]: " + reason.description
                 + (detail.isEmpty() ? "" : " (" + detail + ")") + ". Nada importado; nenhuma sessão ficou conectada. "
-                + nextStep(reason) + " Matrícula e usuário foram mantidos; para tentar de novo, marque a autorização.");
+                + nextStep(reason) + " Matrícula e usuário foram mantidos; para tentar de novo, marque a autorização." + buildSuffix());
         } });
     }
     static String nextStep(PreparationFailure reason) {
         switch (reason) {
             case ORIGIN: case RESOURCE_ORIGIN: case ROUTE: case METHOD: case RESOURCE_METHOD: case FRAME:
-                return "Próximo passo: envie esta mensagem (código e domínio) ao responsável pelo teste; esse destino precisa ser revisado antes de ser liberado. Repetir agora levará ao mesmo ponto.";
+                return "Próximo passo: envie esta mensagem (código e detalhes entre parênteses) ao responsável pelo teste; esse destino precisa ser revisado antes de ser liberado. Repetir agora levará ao mesmo ponto.";
             case NETWORK: return "Próximo passo: verifique a conexão e tente de novo.";
             case HTTP: case RENDERER: return "Próximo passo: tente de novo mais tarde.";
             case TLS: return "Próximo passo: não prossiga nesta rede (proxy/Wi-Fi público); tente em outra.";
@@ -414,7 +466,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
                     preparationFailure = PreparationFailure.BACKGROUND; preparationFailureAttempt = attempt;
                     finish(attempt, "Preparação interrompida [" + PreparationFailure.BACKGROUND.code + "]: " + PreparationFailure.BACKGROUND.description
                         + ". Nada importado; nenhuma sessão ficou conectada. " + nextStep(PreparationFailure.BACKGROUND)
-                        + " Matrícula e usuário foram mantidos; para tentar de novo, marque a autorização.");
+                        + " Matrícula e usuário foram mantidos; para tentar de novo, marque a autorização." + buildSuffix());
                 }
             };
             main.postDelayed(backgroundDeadline, LOGIN_BACKGROUND_GRACE_MS);

@@ -32,6 +32,8 @@ test('actual debug action: consent, lifecycle, validation and verified cleanup w
  stubs['android/view/View.java']=stubs['android/view/View.java'].replace('public void setEnabled(boolean e)', 'public boolean isEnabled(){return enabled;}public void setEnabled(boolean e)');
  stubs['android/webkit/WebView.java']=stubs['android/webkit/WebView.java'].replace('public class WebView {', 'public class WebView extends android.view.View {public final java.util.Map<String,String> sessionStorage=new java.util.HashMap<>();');
  stubs['android/webkit/WebView.java']=stubs['android/webkit/WebView.java'].replace('public boolean destroyed;', 'public static java.util.function.Consumer<WebView> stopHook,destroyHook;public boolean destroyed,stopError,destroyError;').replace('public void stopLoading(){guard();}', 'public void stopLoading(){guard();if(stopHook!=null)stopHook.accept(this);if(stopError)throw new IllegalStateException("synthetic stop");}').replace('destroyed=true;', 'destroyed=true;if(destroyHook!=null)destroyHook.accept(this);if(destroyError)throw new IllegalStateException("synthetic destroy");');
+ stubs['android/content/res/AssetManager.java']=stubs['android/content/res/AssetManager.java'].replace('public java.io.InputStream open(String path)throws java.io.IOException {','public static String build;public java.io.InputStream open(String path)throws java.io.IOException {if(path.equals("mcc-test-build.txt")){if(build==null)throw new java.io.FileNotFoundException(path);return new java.io.ByteArrayInputStream(build.getBytes(java.nio.charset.StandardCharsets.US_ASCII));}');
+ stubs['android/webkit/WebResourceRequest.java']=stubs['android/webkit/WebResourceRequest.java'].replace('public boolean isForMainFrame(){return main;}','public boolean isForMainFrame(){return main;}public boolean redirect;public boolean isRedirect(){return redirect;}');
  stubs['android/webkit/WebSettings.java']=stubs['android/webkit/WebSettings.java'].replace('public class WebSettings {', 'public class WebSettings {public void setSaveFormData(boolean v){guard();}');
  const root=mkdtempSync(join(tmpdir(),'mycrewcare-debug-action-'));
  try {
@@ -40,7 +42,7 @@ test('actual debug action: consent, lifecycle, validation and verified cleanup w
   files.push(activity,'scripts/fixtures/mycrewcare-native/ObservedAcquisitionHarness.java','scripts/fixtures/mycrewcare-native/ObservedWebViewSourceHarness.java','scripts/fixtures/mycrewcare-native/DebugActionHarness.java');
   execFileSync(java,['com.sun.tools.javac.Main','-source','17','-target','17','-d',root,...files],{encoding:'utf8'});
   const result=execFileSync(java,['-cp',root,'DebugActionHarness',join(process.cwd(),'android-wrapper/app/src/main/assets/mycrewcare-transport-v3.js')],{encoding:'utf8'});
-  assert.match(result,/PASS debug action cases=125/);
+  assert.match(result,/PASS debug action cases=136/);
  } finally {rmSync(root,{recursive:true,force:true});}
 });
 
