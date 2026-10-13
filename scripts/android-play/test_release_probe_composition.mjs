@@ -62,7 +62,11 @@ assert.equal(publicGets, 0); assert.equal(poolCalls, 0); assert.equal(raw.rows.s
 assert.equal((await call(active, 'probe', true, { ...frame('probe'), allowedOperations: ['reserve'] })).status, 403);
 const result = await call(active); assert.equal(result.status, 200); assert.equal(result.body.storeMutationAllowed, false); assert.equal(result.body.retryAllowed, false);
 assert.deepEqual([...raw.rows.keys()].sort(), ['play-release-admission:com.crewcheck.app:123:1', 'play-release-approval:com.crewcheck.app:123:1', 'play-release-revocation:com.crewcheck.app:123:1']);
-const before = canonical([...raw.rows]); f.state.reviews = [];
+const before = canonical([...raw.rows]);
+const duplicate = await call(active); assert.equal(duplicate.status, 200);
+assert.equal(duplicate.body.retryAllowed, false); assert.equal(canonical([...raw.rows]), before);
+assert.equal(raw.rows.has('play-release-journal:com.crewcheck.app'), false);
+f.state.reviews = [];
 assert.equal((await call(active)).status, 403); assert.equal(canonical([...raw.rows]), before);
 f.state.reviews = reviewFixture({ operations: ['probe'] }).state.reviews; time = f.approval.expiresAt;
 assert.equal((await call(active)).status, 403); assert.equal(canonical([...raw.rows]), before);
