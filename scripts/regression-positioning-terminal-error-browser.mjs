@@ -33,6 +33,9 @@ await context.addInitScript(() => {
 });
 const page = await context.newPage();
 await page.clock.install({ time: new Date('2030-01-10T12:00:00Z') });
+// Freeze Date before navigation: lookup captures both Date.now() and new Date().
+// Timers still run; resume the clock after recording the terminal cache.
+await page.clock.setFixedTime(new Date('2030-01-10T12:00:00Z'));
 const departureLabel = () => page.locator('.cz-depart-when > strong');
 const smartLabel = () => page.locator('.cz-smart-card .cz-smart-content > strong');
 async function waitLabel(locator, expected, name) {
@@ -63,9 +66,8 @@ try {
   await waitLabel(departureLabel(), 'Consultando voo', 'departure');
   assert.equal(await page.getByText('planeje o deslocamento aéreo no dia anterior.', { exact: false }).count(), 0);
   await capture('Departure: active lookup');
-  // Freeze Date only while the terminal response records its exact TTL.
+  // Date was frozen before lookup started, including its original timestamps.
   const terminalClock = await page.evaluate(() => Date.now());
-  await page.clock.setFixedTime(terminalClock);
   boardMode = 'error';
   await Promise.all(pendingBoards.splice(0).map(request => request.abort('failed')));
   await page.waitForFunction(() => document.body.innerText.includes('Radar temporariamente indisponível'));
