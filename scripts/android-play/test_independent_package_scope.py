@@ -6,6 +6,10 @@ import os
 from pathlib import Path
 import tempfile
 import types
+import re
+import runpy
+import shlex
+import sys
 from unittest.mock import patch
 from urllib.parse import unquote
 import allocate_versions as allocator
@@ -13,6 +17,12 @@ import publish as publisher
 from review_policy import MUST_NOT_DEFER_REVIEW
 POLICY=json.loads(Path(__file__).with_name('release-policy.json').read_text())
 WATCH=allocator.WATCHFACE_PACKAGE;SHARED=allocator.SHARED_PACKAGE
+REPO=Path(__file__).resolve().parents[2]
+application_id=re.search(r"applicationId\s+'([^']+)'",(REPO/'android-wrapper/watchface/build.gradle').read_text()).group(1)
+assert application_id==WATCH
+workflow=(REPO/'.github/workflows/android.yml').read_text()
+commands=[shlex.split(line.strip()[5:]) for line in workflow.splitlines() if line.strip().startswith('run: python3 scripts/android-play/') and any(name in line for name in ('allocate_versions.py','publish.py'))]
+assert len(commands)==2 and all('--package' not in command for command in commands), 'Workflow package intent changed: review explicit scope before updating this guard test'
 selected=allocator.select_live_package_policy(POLICY,WATCH)
 assert set(selected['artifacts'])=={'watchface'} and set(selected['knownMaxVersionCode'])=={WATCH}
 for package in (None,SHARED,'com.foreign.app'):
@@ -83,4 +93,34 @@ for scenario in ('allocate','publish','required-review-mode','unknown-commit'):
     except AssertionError as error:assert 'disabled' in str(error) and 'credential reached' not in str(error)
     else:raise AssertionError('Uncoordinated shared-package publication enabled')
   finally:os.chdir(old_cwd)
+# Exercise the actual checked-in workflow commands, not only selection helpers.
+# The mixed archive must stop before client/credential access. No subprocess or
+# shell command can escape these in-process fictitious module/credential guards.
+with tempfile.TemporaryDirectory() as temp:
+ root=Path(temp);old_cwd=Path.cwd();os.chdir(root)
+ try:
+  path=root/'scripts/android-play/release-policy.json';path.parent.mkdir(parents=True);path.write_text(json.dumps(POLICY))
+  archive=root/'verified-bundles';archive.mkdir();(archive/'resolved-release-policy.json').write_text(json.dumps(POLICY))
+  (archive/'release-report.json').write_text(json.dumps([dict(module=m,file=m+'.aab',sha256='0'*64,**spec) for m,spec in POLICY['artifacts'].items()]))
+  env={'GITHUB_REF':'refs/heads/main','GITHUB_EVENT_NAME':'workflow_dispatch'}
+  for command in commands:
+   script=REPO/command[1]
+   with patch.dict(os.environ,env),patch.object(sys,'argv',[str(script),*command[2:]]),patch('credential.load_service_account_secret',side_effect=AssertionError('credential reached')) as secret:
+    try:runpy.run_path(str(script),run_name='__main__')
+    except AssertionError as error:assert 'Live shared-package writer disabled' in str(error)
+    else:raise AssertionError('Actual mixed workflow command opened Store scope')
+    assert secret.call_count==0
+  # Explicit selection must still refuse namespace-confused or tampered reports
+  # before reading a credential. Keep the existing fake-client positive cases.
+  original=json.loads((archive/'release-report.json').read_text());data=b'fictional WatchFace';(archive/'watchface.aab').write_bytes(data)
+  good=[dict(module=m,file=m+'.aab',sha256=hashlib.sha256(data).hexdigest(),**spec) for m,spec in POLICY['artifacts'].items()]
+  for bad_field,bad_value in [('package','com.crewcheck.face'),('package',SHARED),('sha256','f'*64)]:
+   report=copy.deepcopy(good);next(item for item in report if item['module']=='watchface')[bad_field]=bad_value
+   (archive/'release-report.json').write_text(json.dumps(report))
+   with patch.dict(os.environ,env),patch.object(publisher,'load_service_account_secret',side_effect=AssertionError('credential reached')) as secret:
+    try:publisher.main([str(archive),'--package',WATCH])
+    except AssertionError as error:assert 'credential reached' not in str(error)
+    else:raise AssertionError('Bad explicit package/report reached Store')
+    assert secret.call_count==0
+ finally:os.chdir(old_cwd)
 print('PASS build-only allocation guard and explicit independent WatchFace scope: shared package untouched/blocked; protected review mode, unknown commit preserved; fictional API only')

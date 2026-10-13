@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 from prepare_journal_approval import prepare,comment,main,ENVIRONMENT_NAME
-from journal_connection_probe import probe,main as probe_main
+from journal_connection_probe import probe,main as probe_main,NoRedirect,ENDPOINT
 from receipt_backend import snapshot_digest,snapshot_json
 ROOT=Path(__file__).resolve().parents[2]
 meta=dict(id=123,run_attempt=1,repository=dict(id=1254349963,owner=dict(id=214496369),full_name='bmedeiros1987/crewcheck'),head_sha='b'*40,head_branch='main',event='workflow_dispatch',actor=dict(id=214496369),run_started_at='1970-01-01T02:46:40Z')
@@ -33,7 +33,11 @@ def exchange(method,url,headers,data):
  return dict(schema=2,id=frame['id'],status='ok',namespace='com.crewcheck.app',connectionVerified=True,retryAllowed=False,storeMutationAllowed=False)
 probe(p,'https://pipelines.actions.githubusercontent.com/fixture?id=1','ephemeral-fixture',exchange)
 assert len(calls)==2 and calls[0][1].endswith('audience=crewcheck%3Arelease-journal%3Acom.crewcheck.app')
-assert calls[1][1]=='https://crewcheck.onrender.com/api/platform/release-journal'
+assert calls[1][1]==ENDPOINT=='https://crewcheck.onrender.com/api/platform/release-journal'
+for redirected in ['https://foreign.test/probe','http://crewcheck.onrender.com/api/platform/release-journal',ENDPOINT]:
+ try:NoRedirect().redirect_request(None,None,302,'redirect',{},redirected)
+ except RuntimeError:pass
+ else:raise AssertionError('Redirect accepted')
 for url in ['http://pipelines.actions.githubusercontent.com/x','https://attacker.test/x','https://pipelines.actions.githubusercontent.com/x?audience=other']:
  try:probe(p,url,'fixture',exchange)
  except AssertionError:pass

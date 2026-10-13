@@ -1,5 +1,6 @@
 import {verifiedMysqlTls} from './mysql-verified-tls.mjs';
-import {createReleaseJournalHandler, PATH as RELEASE_JOURNAL_PATH} from './release-journal/route.mjs';
+import { PATH as RELEASE_JOURNAL_PATH } from './release-journal/route.mjs';
+import { createProbeOnlyReleaseHandler } from './release-journal/probe-composition.mjs';
 import { mysqlAdapter } from './mysql-platform-adapter.mjs';
 import { amilDocumentaryReferences, AMIL_DOCUMENTARY_NOTICE } from '../shared/amil-documentary-reference.mjs';
 import { amilPlanFamily, amilConfirmedProviders, amilUnknownMessage, AMIL_GUIDE_URL } from '../shared/amil-coverage.mjs';
@@ -2503,7 +2504,7 @@ export async function deleteIfTableExists(client, sql, params) {
 }
 
 // Activation requires independently verified GitHub review and trusted ingress; no env/caller toggle.
-const releaseJournalRoute=createReleaseJournalHandler({enabled:false,poolProvider:pool});
+const releaseJournalRoute=createProbeOnlyReleaseHandler({poolProvider:pool});
 
 export async function handlePlatformRoute(req, res, url) {
   const legacy = url.pathname === '/api/db/status' || url.pathname === '/api/stats' || url.pathname === '/api/rosters' || url.pathname.startsWith('/api/rosters/');
