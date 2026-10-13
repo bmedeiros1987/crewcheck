@@ -13,13 +13,43 @@ const dependencyEnd = source.indexOf(']);', end);
 const dependencies = source.slice(end, dependencyEnd);
 for (const field of ['events', 'event.id', 'event.presentation', 'event.gate', 'event.status']) assert(dependencies.includes(field), `Fresh effect dependency required: ${field}`);
 const listeners = new Map(), timers = new Map(), published = [];
-const snapshotSource = fs.readFileSync('client/src/lib/watchContext.ts', 'utf8');
-const executable = stripTypeScriptTypes(snapshotSource);
-assert.equal((executable.match(/export function buildCrewCheckWatchSnapshot/g) || []).length, 1);
-const snapshotModule = vm.createContext({});
-vm.runInContext(executable.replace('export function buildCrewCheckWatchSnapshot', 'function buildCrewCheckWatchSnapshot')
-  + '\nglobalThis.actualSnapshot = buildCrewCheckWatchSnapshot;', snapshotModule);
 const now = Date.parse('2032-10-13T10:00:00Z');
+class FixtureDate extends Date {
+  constructor(...args) { super(...(args.length ? args : [now])); }
+  static now() { return now; }
+}
+const stored = new Map();
+const localStorage = {
+  getItem: key => stored.get(key) ?? null,
+  setItem: (key, value) => stored.set(key, String(value)),
+  removeItem: key => stored.delete(key),
+};
+localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'synthetic-watch-cadence-owner' }));
+// Strip types only; execute real modules in separate scopes with their real imports.
+// This guard also supports current main before the Next Flight imports are integrated.
+function actualModule(name, imports = {}) {
+  const filename = `client/src/lib/${name}.ts`;
+  let executable = stripTypeScriptTypes(fs.readFileSync(filename, 'utf8'));
+  if (name === 'watchContext') assert.equal((executable.match(/export function buildCrewCheckWatchSnapshot/g) || []).length, 1);
+  const exported = [...executable.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map(match => match[1]);
+  assert(exported.length, `Actual exports required: ${filename}`);
+  executable = executable.replace(/^import \{([^}]+)\} from ['"]([^'"]+)['"];?$/gm, (_, names, dependency) => {
+    assert(imports[dependency], `Actual dependency required: ${dependency}`);
+    return `const {${names.replace(/\bas\b/g, ':')}} = dependencies[${JSON.stringify(dependency)}];`;
+  });
+  assert(!/^import /m.test(executable), `Unsupported actual import: ${filename}`);
+  return vm.runInNewContext(executable.replace(/^export /gm, '') + `\n({${exported.join(',')}})`,
+    { Date: FixtureDate, localStorage, dependencies: imports }, { filename });
+}
+const snapshotModule = actualModule('watchContext');
+const gateBindings = {};
+if (source.includes("from '@/lib/nextFlightGate'")) {
+  const display = actualModule('rosterDisplayDate');
+  const gate = actualModule('nextFlightGate', { '@/lib/rosterDisplayDate': display });
+  const watch = actualModule('nextFlightWatch', { '@/lib/nextFlightGate': gate });
+  const auth = actualModule('authClient');
+  Object.assign(gateBindings, gate, watch, { getStoredUser: auth.getStoredUser });
+}
 const flight = (id, flightNumber, date, gate) => ({ id, kind: 'flight', flightNumber,
   origin: 'BSB', destination: 'GRU', gate, presentation: '09:30',
   canonical: { id: 'canonical-' + id, journeyId: id, startDateTime: date + 'T12:00:00Z', endDateTime: date + 'T14:00:00Z' } });
@@ -35,9 +65,9 @@ const window = {
   setInterval(handler, delay) { assert.equal(delay, 60_000); timers.set(1, handler); return 1; },
   clearInterval(id) { assert(timers.delete(id)); },
 };
-const context = vm.createContext({ window, events, event,
+const context = vm.createContext({ window, events, event, localStorage, Date: FixtureDate, ...gateBindings,
   CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
-  buildCrewCheckWatchSnapshot(actualEvents, actualEvent) { assert.equal(actualEvents, events); calls++; return snapshotModule.actualSnapshot(actualEvents, actualEvent, null, now); },
+  buildCrewCheckWatchSnapshot(actualEvents, actualEvent) { assert.equal(actualEvents, events); calls++; return snapshotModule.buildCrewCheckWatchSnapshot(actualEvents, actualEvent, null, now); },
 });
 const cleanup = vm.runInContext(`(() => {\n${source.slice(start, end)}\n})()`, context);
 assert.equal(calls, 1); // Immediate publication, not a minute-long first-sync wait.
@@ -67,6 +97,15 @@ for (const gate of [undefined, '', '—', 'A confirmar']) {
 }
 for (const gate of ['REMOTA', 'PÁTIO']) {
   event.gate = gate; listeners.get('crewcheck:native-ready')(); assertPublished(event, '', true);
+}
+if (gateBindings.MANUAL_GATE_EVENT) {
+  for (const name of ['crewcheck:radar-updated', gateBindings.MANUAL_GATE_EVENT]) {
+    assert.equal(typeof listeners.get(name), 'function');
+    const before = published.length;
+    listeners.get(name)();
+    assert.equal(published.length, before + 1);
+    assertPublished(event, '', true);
+  }
 }
 const countBeforeFailure = published.length;
 // Force the actual builder to throw through a fixture getter, never a fake builder.
