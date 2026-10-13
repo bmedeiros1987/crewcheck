@@ -1,3 +1,4 @@
+import { gateQueryDay, gateQuerySuppressed, originFlightDate } from '../../../shared/gate-query-day.mjs';
 import {NotificationCenter,openNotificationSettings} from '@/components/notifications/NotificationCenter';
 import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
 import { FreeDayPostponementAlerts } from '@/components/FreeDayPostponementAlerts';
@@ -77,7 +78,7 @@ import {
 } from 'lucide-react';
 import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getCanonicalWorkHoursTotal, getPublishedDutyLimitSummary, type ComplianceResult } from '@/lib/complianceEngine';
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
-import { authFetch, getStoredUser, logout } from '@/lib/authClient';
+import { authFetch, getStoredUser, getToken, logout } from '@/lib/authClient';
 import { exportReport } from '@/lib/pdfExport';
 import { generateICalendar, downloadCalendarFile } from '@/lib/calendarExport';
 import { shareToWhatsApp, shareToTelegram, copyToClipboard, shareExportedPdfNative } from '@/lib/sharing';
@@ -111,7 +112,7 @@ import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
-import { MANUAL_GATE_EVENT, flightOperationalDate, gateChangeAlertAllowed, manualGateAccountKey, resolveNextFlightGate, radarSnapshotStorageKey, readCachedRadarForFlight, readManualGate, selectNextFlight } from '@/lib/nextFlightGate';
+import { MANUAL_GATE_EVENT, manualGateIdentity, flightOperationalDate, gateChangeAlertAllowed, manualGateAccountKey, resolveNextFlightGate, radarSnapshotStorageKey, readCachedRadarForFlight, readManualGate, selectNextFlight } from '@/lib/nextFlightGate';
 import { applyNextFlightToWatchSnapshot } from '@/lib/nextFlightWatch';
 import { ManualGateEditor } from '@/components/nextflight/ManualGateEditor';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
@@ -1612,6 +1613,8 @@ function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; t
   return <article className={`cz-kpi ${tone}`}><span><Icon size={24}/></span><div><small>{title}</small><strong><MoneyText value={value}/></strong><p>{detail}</p></div></article>;
 }
 type RadarSnapshot = {
+  querySuppressed?: boolean;
+  queryReason?: string;
   ok?: boolean;
   flight?: string;
   gate?: string;
@@ -1693,13 +1696,31 @@ function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapsho
   }
   return snapshot;
 }
+const radarQuerySerial = new Map<string, number>();
 async function fetchRadarSnapshot(event: ZeroLeg, force = false): Promise<RadarSnapshot> {
   const flight = String(event.flightNumber || '').trim();
   if (event.kind !== 'flight' || event.placeholder || !/\d/.test(flight)) return { ok: false, message: 'Radar disponível apenas para voo publicado.' };
+  const scheduledDepartureUtc = event.canonical?.startDateTime;
+  if (typeof scheduledDepartureUtc !== 'string') return readRadarSnapshot(event) || gateQuerySuppressed({reason:'published-instant-unverified'});
+  const queryIdentity = { flight, origin: String(event.origin || ''), destination: String(event.destination || ''), departureDate: originFlightDate(scheduledDepartureUtc, String(event.origin || '')), scheduledDepartureUtc };
+  const decision = gateQueryDay(queryIdentity);
+  if (!decision.allowed) return readRadarSnapshot(event) || gateQuerySuppressed(decision);
+  const account = manualGateAccountKey(getStoredUser());
+  const sessionToken = getToken();
+  if (!sessionToken || account === 'local') return readRadarSnapshot(event) || gateQuerySuppressed({ reason: 'account-unverified' });
+  const serialKey = account + '|' + manualGateIdentity(event);
+  const serial = (radarQuerySerial.get(serialKey) || 0) + 1;
+  radarQuerySerial.set(serialKey, serial);
   const identity = telegramConciergeIdentity();
   const params = new URLSearchParams({ flight, origin: String(event.origin || ''), destination: String(event.destination || ''), force: force ? '1' : '0', email: identity.email, name: identity.name, conciergeKey: identity.conciergeKey });
-  const response = await fetch(`/api/radar-flight?${params.toString()}`, { cache: 'no-store' });
-  const payload = await response.json().catch(() => ({ ok: false, message: 'Radar indisponível.' }));
+  params.set('departureDate', queryIdentity.departureDate);
+  params.set('scheduledDepartureUtc', queryIdentity.scheduledDepartureUtc);
+  // Preserve the legacy preparation anchor, then pin its outgoing instant to canonical UTC.
+  params.set('scheduledDeparture', queryIdentity.scheduledDepartureUtc);
+  const payload = await authFetch<RadarSnapshot>(`/api/radar-flight?${params.toString()}`, { cache: 'no-store' });
+  if (getToken() !== sessionToken || manualGateAccountKey(getStoredUser()) !== account || radarQuerySerial.get(serialKey) !== serial || !gateQueryDay(queryIdentity).allowed)
+    return gateQuerySuppressed({ reason: 'response-context-expired' });
+  if (payload?.querySuppressed) return readRadarSnapshot(event) || payload;
   return saveRadarSnapshot(event, payload || { ok: false, message: 'Radar indisponível.' });
 }
 function useRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {

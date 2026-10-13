@@ -2,6 +2,12 @@ name: Next flight gate (phone + CrewWatch)
 on:
   pull_request:
     paths:
+      - 'server.mjs'
+      - 'shared/gate-query-day*'
+      - 'shared/timezone-choice.mjs'
+      - 'scripts/regression-gate-query-day.mjs'
+      - 'scripts/regression-gate-query-proof.mjs'
+      - 'scripts/regression-gate-query-binding.mjs'
       - 'client/src/lib/nextFlightGate.ts'
       - 'client/src/lib/nextFlightWatch.ts'
       - 'client/src/lib/watchContext.ts'
@@ -28,12 +34,22 @@ jobs:
       - run: npm ci
       - name: Simulated contract in three timezones (no network, no credentials)
         run: |
+          TZ=UTC node scripts/regression-gate-query-day.mjs
+          TZ=UTC node scripts/regression-gate-query-binding.mjs
+          TZ=UTC node scripts/regression-gate-query-proof.mjs
+          TZ=America/Sao_Paulo node scripts/regression-gate-query-proof.mjs
+          TZ=Pacific/Auckland node scripts/regression-gate-query-proof.mjs
           TZ=UTC node scripts/regression-next-flight-gate.mjs
           TZ=America/Sao_Paulo node scripts/regression-next-flight-gate.mjs
           TZ=Pacific/Auckland node scripts/regression-next-flight-gate.mjs
       - name: Verify actual prepared Radar handoff, civil date and safe notices
         run: |
           node scripts/v139/apply.mjs
+          TZ=UTC node scripts/regression-gate-query-day.mjs
+          TZ=UTC node scripts/regression-gate-query-binding.mjs
+          TZ=UTC node scripts/regression-gate-query-proof.mjs
+          TZ=America/Sao_Paulo node scripts/regression-gate-query-proof.mjs
+          TZ=Pacific/Auckland node scripts/regression-gate-query-proof.mjs
           TZ=UTC node scripts/regression-next-flight-gate-prepared.mjs
           TZ=America/Sao_Paulo node scripts/regression-next-flight-gate-prepared.mjs
           TZ=Pacific/Auckland node scripts/regression-next-flight-gate-prepared.mjs
