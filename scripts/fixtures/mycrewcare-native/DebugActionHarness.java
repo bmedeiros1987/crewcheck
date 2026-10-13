@@ -210,6 +210,20 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
   check(domain.invoke(null,"javascript:alert(1)").equals("esquema javascript")&&domain.invoke(null,"intent://x#Intent;end").equals("esquema intent")
    &&domain.invoke(null,"https://user:pw@evil.invalid/a?b").equals("evil.invalid")&&domain.invoke(null,"http://api2.apicrewcare.com/LATAM/mytravel.aspx").equals("api2.apicrewcare.com (sem HTTPS)")
    &&domain.invoke(null,"https://LOGIN.Example.invalid:8443/x?y").equals("login.example.invalid")&&domain.invoke(null,"https://bad_host!/x").equals("inválido"),"diagnostic domain never includes path, query, port or credentials");count++;
-  check(count==122,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
+  // Suspensão do aparelho: uptime pausa (timer não dispara), mas elapsedRealtime avança; expira ao voltar.
+  clean();Screen sleep=new Screen();sleep.ready();sleep.prepare();var slv=view();android.os.Handler.runMain(sleep.activity::stop);android.os.Handler.drain();
+  android.os.SystemClock.now+=181000;
+  android.os.Handler.runMain(()->{try{resumeMfa.invoke(sleep.activity);}catch(Exception e){throw new AssertionError(e);}});android.os.Handler.drain();
+  check(slv.destroyed&&sleep.status.text.contains("[MCC-BACKGROUND]")&&android.os.Handler.delayed.isEmpty()&&!sleep.status.text.contains("Contrato observado válido"),"grace measured with elapsedRealtime expires on return after device suspension");sleep.close();count++;
+  clean();Screen nap=new Screen();nap.ready();nap.prepare();var nv=view();android.os.Handler.runMain(nap.activity::stop);android.os.Handler.drain();
+  android.os.SystemClock.now+=60000;android.os.Handler.runMain(()->{try{resumeMfa.invoke(nap.activity);}catch(Exception e){throw new AssertionError(e);}});android.os.Handler.drain();
+  check(!nv.destroyed&&android.os.Handler.delayed.isEmpty()&&nap.status.text.startsWith("Prepare a sessão"),"return within grace after suspension keeps login");nap.close();count++;
+  clean();Screen keep=new Screen();keep.ready();keep.prepare();var kv=view();
+  android.os.Handler.runMain(()->kv.client.shouldOverrideUrlLoading(kv,new android.webkit.WebResourceRequest("https://idp.example.invalid/authorize?login_hint=x",true)));android.os.Handler.drain();
+  String failureText=keep.status.text;check(failureText.contains("[MCC-ORIGIN]")&&failureText.contains("domínio idp.example.invalid"),"failure published");
+  android.os.Handler.runMain(keep.activity::stop);android.os.Handler.runMain(()->{try{resumeMfa.invoke(keep.activity);}catch(Exception e){throw new AssertionError(e);}});android.os.Handler.drain();
+  check(keep.status.text.equals(failureText),"failure reason survives app switch");android.os.Handler.runMain(keep.cancel::click);android.os.Handler.drain();
+  check(keep.status.text.equals(failureText)&&keep.prepare.enabled,"failure reason survives Cancel; retry still allowed");keep.close();count++;
+  check(count==125,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
  }catch(Exception e){throw new AssertionError(e);}}
 }

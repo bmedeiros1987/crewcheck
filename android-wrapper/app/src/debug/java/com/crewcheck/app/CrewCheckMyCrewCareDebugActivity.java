@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.InputType;
 import android.view.View;
 import android.webkit.*;
@@ -67,6 +68,10 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
     // Login visível pode ir a segundo plano (app de MFA/e-mail) sem perder a tentativa, por tempo limitado.
     static final long LOGIN_BACKGROUND_GRACE_MS = 180_000;
     private Runnable backgroundDeadline;
+    // Relógio que continua contando com o aparelho suspenso (postDelayed usa uptime e pausa na suspensão).
+    private long backgroundSinceElapsed = -1;
+    // Último resultado publicado não é prévia (falha/cancelamento): trocar de app não pode apagá-lo.
+    private boolean outcomeIsFailure;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -119,7 +124,13 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
     }
     @Override protected void onStart() {
         super.onStart(); foreground = true;
-        if (backgroundDeadline != null) { main.removeCallbacks(backgroundDeadline); backgroundDeadline = null; }
+        if (backgroundDeadline != null) {
+            Runnable pending = backgroundDeadline;
+            main.removeCallbacks(pending); backgroundDeadline = null;
+            // Suspensão: o timer pode não ter disparado, mas o tempo real já excedeu o prazo.
+            if (backgroundSinceElapsed >= 0 && SystemClock.elapsedRealtime() - backgroundSinceElapsed >= LOGIN_BACKGROUND_GRACE_MS) pending.run();
+        }
+        backgroundSinceElapsed = -1;
     }
     private void prepareSession() {
         if (!foreground || destroyed || running || cleaning) return;
@@ -132,6 +143,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         final long attempt = ++token;
         preparationFailure = null; preparationFailureAttempt = attempt;
         ++previewEpoch;
+        outcomeIsFailure = false;
         running = true; preparing = true; attemptControls(true); prepare.setEnabled(false); start.setEnabled(false);
         status.setText("Prepare a sessão somente na página visível. Ao retornar a My Travel, toque em verificar. A URL não prova autenticação.");
         try {
@@ -333,7 +345,9 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
     private void cancel() {
         ++previewEpoch; // Includes completed reads whose profile cleanup is still pending.
         if (!running) {
-            if (!destroyed && !cleanupTerminalFailure) status.setText(cleaning ? "Resultado revogado; limpeza do perfil ainda pendente." + diagnosticSuffix() : "Cancelado. Visualização apagada; nada importado.");
+            // Motivo de falha já publicado permanece ao alternar apps ou tocar Cancelar; só a prévia é apagada.
+            if (!destroyed && !cleanupTerminalFailure && !(outcomeIsFailure && !cleaning))
+                status.setText(cleaning ? "Resultado revogado; limpeza do perfil ainda pendente." + diagnosticSuffix() : "Cancelado. Visualização apagada; nada importado.");
             return;
         }
         // Cancel can synchronously deliver completion; mark ownership first.
@@ -376,6 +390,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
             // Revocation guards only the reservation preview; failure/cancel reasons stay visible on return.
             boolean mayPublish = !preview || attempt == token && publicationEpoch == previewEpoch && foreground;
             status.setText((mayPublish ? message : "Resultado revogado. Nada importado." + diagnosticSuffix()) + " Perfil de teste limpo.");
+            outcomeIsFailure = !preview;
             attemptControls(false); prepare.setEnabled(true);
         }
     }
@@ -391,9 +406,10 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
             // Somente o login visível: sair para app de MFA/e-mail não destrói a tentativa de imediato.
             // A leitura (handoff já feito) continua cancelando ao sair do primeiro plano.
             final long attempt = token;
+            backgroundSinceElapsed = SystemClock.elapsedRealtime();
             backgroundDeadline = () -> {
                 backgroundDeadline = null;
-                if (!foreground && login == current && attempt == token && running) {
+                if (login == current && attempt == token && running) {
                     synchronized (current) { if (login != current || current.revoked) return; current.revoked = true; }
                     preparationFailure = PreparationFailure.BACKGROUND; preparationFailureAttempt = attempt;
                     finish(attempt, "Preparação interrompida [" + PreparationFailure.BACKGROUND.code + "]: " + PreparationFailure.BACKGROUND.description

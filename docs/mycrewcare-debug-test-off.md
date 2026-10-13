@@ -68,7 +68,7 @@ Rótulos permanentes: sua matrícula no MyCrewCare e seu usuário/e-mail (não n
 
 ## Correção do registro e continuação #1035 (13/10)
 
-**Correção:** as notas acima dizem "nenhum APK gerado/entregue". Isso deixou de valer: o APK debug do commit `a16e15d001f7cacf3d793cd9daffb6824294289c` (#1027) **foi entregue e testado fisicamente por Bruno em 13/10**. A página oficial abriu; após o e-mail, a tela fechou antes da senha e voltou à preparação. Não houve login concluído nem reservas importadas. As cinco capturas foram recebidas pelo owner; este agente não teve acesso a elas e não as analisou.
+**Correção:** as notas acima dizem "nenhum APK gerado/entregue". Isso deixou de valer: o APK debug do commit `a16e15d001f7cacf3d793cd9daffb6824294289c` (#1027) **foi entregue e testado fisicamente por Bruno em 13/10**. A página oficial abriu; após o e-mail, a tela fechou antes da senha e voltou à preparação. Não houve login concluído nem reservas importadas. As cinco capturas foram recebidas pelo owner; este agente não teve acesso a elas e não as analisou. Segundo o owner, mostram login aberto seguido de bloqueio, sem domínio SSO visível nem autenticação concluída — por isso a causa exata após o e-mail continua não comprovada.
 
 **Campos (sem presumir que usuário = e-mail):**
 
@@ -85,11 +85,13 @@ Reaproveitar dados já verificados não é possível neste APK: o pacote `.mccte
 - `MCC-ORIGIN` e `MCC-RESOURCE-ORIGIN`: mostram o **domínio** (host minúsculo); `MCC-ROUTE`, `MCC-METHOD` e `MCC-RESOURCE-METHOD`: mostram o **método** (GET/POST/outro).
 - Nunca caminho, query, fragmento, porta, credencial embutida, cabeçalhos, corpo, cookies ou identidade; nada em log.
 - Próximo passo por categoria; matrícula/usuário mantidos; autorização exigida de novo.
-- `MCC-BACKGROUND`: o login visível tolera até 3 min em segundo plano (app de MFA/e-mail) e é cancelado ao exceder; a leitura continua cancelando ao sair do primeiro plano.
+- `MCC-BACKGROUND`: o login visível tolera até 3 min em segundo plano (app de MFA/e-mail), medidos com `SystemClock.elapsedRealtime` (conta durante suspensão); o prazo é conferido também ao voltar (`onStart`), não só pelo timer, que usa uptime e pausa com o aparelho suspenso. A leitura continua cancelando ao sair do primeiro plano.
+- Motivo de falha/cancelamento já publicado permanece ao alternar entre apps ou tocar Cancelar; somente a prévia de reservas é apagada.
+- Comparação de domínio sempre por igualdade exata (`portalOrigin`); nenhum `startsWith`. O commit intermediário `d1f93a85` exibia caminho do api2 — removido nesta reconciliação.
 - Revogação por epoch/foreground só para a prévia de reservas; motivos de falha continuam visíveis ao voltar ao app.
 - **Allowlist de destinos inalterada.**
 
-**Testes:** 122 casos debug (111 da base + 11): etapa de senha no próprio portal; e-mail → `login.microsoftonline.com` / `sso2.apihotels.com` (`MCC-ORIGIN` + domínio, sem caminho/query); XHR POST (`MCC-RESOURCE-METHOD`, sem caminho); CDN (`MCC-RESOURCE-ORIGIN` + domínio); HTTP; cancelamento; MFA dentro/fora do prazo; isolamento entre tentativas; `safeDomain`. A asserção da base que proibia o domínio em `MCC-ORIGIN` foi trocada por: domínio presente, caminho/query ausentes.
+**Testes:** 125 casos debug (111 da base + 14): etapa de senha no próprio portal; e-mail → `login.microsoftonline.com` / `sso2.apihotels.com` (`MCC-ORIGIN` + domínio, sem caminho/query); XHR POST (`MCC-RESOURCE-METHOD`, sem caminho); CDN (`MCC-RESOURCE-ORIGIN` + domínio); HTTP; cancelamento; MFA dentro/fora do prazo; isolamento entre tentativas; `safeDomain`; suspensão além/dentro do prazo (elapsedRealtime); motivo preservado após trocar de app e após Cancelar. A asserção da base que proibia o domínio em `MCC-ORIGIN` foi trocada por: domínio presente, caminho/query ausentes.
 
 **APK de diagnóstico:** gerado somente pelo CI desta PR (`mycrewcare-v3-persistence.yml`, passo restrito à branch `fix/mycrewcare-debug-login-diagnostics`), artifact `crewcheck-teste-mcc-<head>` com `BUILD-INFO.txt` (commit, `aapt2 badging` com pacote/versão) e `SHA256SUMS`, retenção 7 dias. Assinatura debug do runner: desinstale o "CrewCheck • teste MCC" anterior antes de instalar. Não é Play Store nem release.
 
