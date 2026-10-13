@@ -55,3 +55,30 @@ Epoch de publicação capturada antes de chamar cleanup nativo, não após seu r
 ## Falha terminal de limpeza preservada
 
 Cancelar/onStop depois de falha/timeout preservam o aviso terminal, sem relabelar como pendente, sem reiniciar limpeza ou polling e sem liberar retry. Latch de falha terminal só controla apresentação; revogação do preview continua incrementando epoch. Quatro negativas falha/timeout→cancel repetido/onStop, além das anteriores: 98 casos debug. HEAD8d5f059b reproduz a negativa failure/cancel; novo SHA requer revisão e APK permanece HOLD.
+
+## Login fecha após o e-mail (relato Android de 13/10) — diagnóstico e correção candidata
+
+**Relato:** a preparação abre a página oficial; após o e-mail, a tela fecha antes da senha e volta à preparação. Nenhuma reserva importada confirmada. As capturas de 13/10 não foram analisadas por este agente (não acessíveis); a análise abaixo é do código, não das imagens.
+
+**Campos da preparação** (não são credenciais e não vão ao login):
+
+| Campo | Origem do valor | Finalidade | Quem preenche |
+|---|---|---|---|
+| Matrícula/BP | MyCrewCare › Perfil (`input#employeeId`, somente números) | `ObservedScope.employeeId`: a leitura confere `userprofile.aspx` antes e depois e recusa outra conta | o tripulante, copiando do Perfil |
+| Usuário do Perfil | MyCrewCare › Perfil (`input#userName`, comparação exata) | `ObservedScope.username`: idem | o tripulante, copiando do Perfil |
+| Autorização | — | consentimento consumido por tentativa | o tripulante |
+| Identificadores de teste (`debug_<uuid>`, sessão, requisição) | gerados em memória | isolam perfil/callbacks; não são prova de autenticação | o app, nunca o usuário |
+
+E-mail, senha e MFA do MyCrewCare são digitados **somente** na página oficial; o app não os lê. Limitação conhecida: a comparação exata exige copiar o usuário como o Perfil exibe — proposta (contrato do owner, fora desta PR): Perfil "antes" estabelece a identidade, o usuário confirma uma versão mascarada e o Perfil "depois" precisa ser igual.
+
+**Mecanismo comprovado no código:** durante a preparação, qualquer navegação principal fora de My Travel / `Main/Login.aspx?ReturnUrl=…`, qualquer sub-recurso que não seja GET em `api2.apicrewcare.com`, erro HTTP/rede/SSL/renderer/download ou `onStop` chamam o encerramento: WebView destruída, perfil limpo e formulário de volta — exatamente o sintoma. A mensagem antiga era única ("destino/SSO fora do escopo") e, em segundo plano, era trocada por "Resultado revogado", sem dizer qual evento ocorreu. **Não foi possível reproduzir com o portal real** (sem credenciais/aparelho; DOM/SSO autenticado não inspecionado). Candidatos, a distinguir no próximo teste físico pela nova mensagem: (1) redirecionamento do e-mail para provedor de senha/SSO em outro domínio; (2) XHR POST ou recurso de terceiro na etapa de senha; (3) saída do app (ex.: app de MFA/e-mail) — este último destruía o login de imediato.
+
+**Correção candidata (debug apenas):**
+- Motivo na tela, sem log: tipo (navegação/recurso), método e **somente o host**; caminho apenas no próprio portal HTTPS; nunca query, fragmento, credencial embutida, corpo ou cookies. Próximo passo explícito; matrícula/usuário mantidos; autorização exigida de novo.
+- A trava de revogação (epoch/foreground) passa a valer só para a prévia de reservas; motivos de falha/cancelamento continuam visíveis ao voltar.
+- Login visível pode ficar até 3 min em segundo plano (app de MFA/e-mail) sem perder a tentativa; ao voltar, o prazo é cancelado. Expirado, encerra com motivo. A leitura (após Verificar) continua cancelando ao sair do primeiro plano.
+- **Lista de destinos permitida inalterada.** Nenhum host de SSO foi liberado: só depois do host exato observado no aparelho e de revisão.
+
+**Testes (simulados, sem rede/aparelho):** 109 casos debug (98 anteriores + 11): etapa de senha no próprio portal mantém o login; e-mail → redirecionamento para `login.microsoftonline.com` e `sso2.apihotels.com` reproduz o fechamento, com host e sem caminho/query; XHR POST no portal; recurso de CDN; erro HTTP; cancelamento; MFA em segundo plano dentro/fora do prazo; contas isoladas por tentativa; sanitização de esquema/credencial/porta. O harness novo falha na Activity de `a16e15d0` (login destruído ao sair para MFA) e passa nesta.
+
+**Teste físico pendente:** instalar o APK debug deste HEAD (CI SDK compila, não gera APK), repetir até o e-mail e registrar a mensagem exibida. Se indicar SSO externo, liberar somente o(s) host(s) exato(s) após revisão. Esta Activity limpa a sessão após uma consulta; não é sincronização persistente.

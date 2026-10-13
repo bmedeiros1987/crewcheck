@@ -76,7 +76,9 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
    android.os.Handler.runMain(()->v.client.onPageFinished(v,v.url));
    if(mode.startsWith("worker")){Thread worker=new Thread(()->check(v.client.shouldInterceptRequest(v,new android.webkit.WebResourceRequest("https://sso2.apihotels.com/asset",false))!=null,"unverified worker resource blocked"));worker.start();join(worker);if(mode.equals("worker-before-read"))android.os.Handler.runMain(s.start::click);}
    else android.os.Handler.runMain(()->{if(mode.equals("cancel"))s.cancel.click();if(mode.equals("stop"))s.activity.stop();if(mode.equals("destroy"))s.activity.destroy();if(mode.equals("http"))v.client.onReceivedHttpError(v,new android.webkit.WebResourceRequest(v.url,true),new android.webkit.WebResourceResponse("text/plain","UTF-8",new java.io.ByteArrayInputStream(new byte[0])));if(mode.equals("ssl")){var h=new android.webkit.SslErrorHandler();v.client.onReceivedSslError(v,h,new android.net.http.SslError());check(h.cancelled,"SSL never bypassed");}if(mode.equals("renderer"))v.client.onRenderProcessGone(v,new android.webkit.RenderProcessGoneDetail());if(mode.equals("download"))v.download.onDownloadStart(v.url,"","","",1);if(mode.equals("subframe"))check(v.client.shouldOverrideUrlLoading(v,new android.webkit.WebResourceRequest(v.url,false)),"frame navigation denied");});
-   android.os.Handler.drain();check(v.destroyed&&android.webkit.WebView.instances.size()==views&&!s.status.text.contains("Contrato observado válido"),"preparation invalidation/lifecycle prevents acquisition "+mode);s.close();count++;
+   android.os.Handler.drain();
+   if(mode.equals("stop")){check(!v.destroyed&&android.webkit.WebView.instances.size()==views,"login in background keeps the attempt during grace (MFA/e-mail app)");android.os.Handler.tick();check(s.status.text.contains("segundo plano por mais de 3 minutos"),"background grace expiry explains reason");}
+   check(v.destroyed&&android.webkit.WebView.instances.size()==views&&!s.status.text.contains("Contrato observado válido"),"preparation invalidation/lifecycle prevents acquisition "+mode);s.close();count++;
   }
   for(String late:List.of("started","http","renderer","worker")) {
    clean();Screen s=new Screen();s.ready();s.prepare();var old=view();android.os.Handler.runMain(s.cancel::click);android.os.Handler.drain();s.ready();s.prepare();var fresh=view();
@@ -142,6 +144,52 @@ public class DebugActionHarness extends ObservedWebViewSourceHarness {
    android.os.Handler.runMain(()->{if(action.equals("cancel")){s.cancel.click();s.cancel.click();}else s.activity.stop();});android.os.Handler.drain();
    check(s.status.text.equals(failure)&&!s.status.text.contains("pendente")&&!s.status.text.contains("Synthetic")&&!s.prepare.enabled&&clears==CrewCheckMyCrewCareProfile.clearCalls&&timers==android.os.Handler.delayed.size(),"terminal cleanup failure remains visible, no restart/polling/retry after "+outcome+action);s.close();count++;
   }
-  check(count==98,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
+  // ---- Login após o e-mail (reprodução sintética do relato de 13/10) ----
+  String loginUrl="https://api2.apicrewcare.com/Main/Login.aspx?ReturnUrl=%2fLATAM%2fmytravel.aspx";
+  clean();Screen pw=new Screen();pw.ready();pw.prepare();var pv=view();
+  android.os.Handler.runMain(()->{
+   check(!pv.client.shouldOverrideUrlLoading(pv,new android.webkit.WebResourceRequest(loginUrl,true,"POST")),"e-mail POST to observed login page allowed");
+   check(pv.client.shouldInterceptRequest(pv,new android.webkit.WebResourceRequest(loginUrl,true,"POST"))==null,"e-mail POST not intercepted");
+   pv.url=loginUrl;pv.client.onPageStarted(pv,loginUrl,null);pv.client.onPageFinished(pv,loginUrl);
+   check(pv.client.shouldInterceptRequest(pv,new android.webkit.WebResourceRequest("https://api2.apicrewcare.com/Main/js/login.js",false))==null,"same-origin GET resource allowed on password step");
+  });android.os.Handler.drain();
+  check(!pv.destroyed&&!pw.start.enabled&&pw.status.text.startsWith("Prepare a sessão"),"password step on the portal itself keeps the visible login open; verify still disabled");pw.close();count++;
+  for(String external:List.of("https://login.microsoftonline.com/common/oauth2/authorize?client_id=x&login_hint=crew%40example.invalid","https://sso2.apihotels.com/sso/sp/ACS.saml2?SAMLRequest=abc")) {
+   clean();Screen s=new Screen();s.ready();s.prepare();var v=view();
+   android.os.Handler.runMain(()->{check(!v.client.shouldOverrideUrlLoading(v,new android.webkit.WebResourceRequest(loginUrl,true,"POST")),"e-mail POST allowed");check(v.client.shouldOverrideUrlLoading(v,new android.webkit.WebResourceRequest(external,true)),"external provider after e-mail blocked (allowlist preserved)");});
+   android.os.Handler.drain();var u=java.net.URI.create(external);
+   check(v.destroyed&&s.status.text.contains("destino fora do escopo")&&s.status.text.contains("o login seguiu para "+u.getHost())&&!s.status.text.contains(u.getRawPath())&&!s.status.text.contains(u.getRawQuery())&&!s.status.text.contains("crew%40")
+    &&s.status.text.contains("Nada importado")&&s.status.text.contains("nenhuma sessão ficou conectada")&&s.status.text.contains("Próximo passo")&&s.status.text.contains("Perfil de teste limpo")&&!s.status.text.contains("Contrato observado válido"),"post-e-mail redirect reproduces closure with explicit, non-sensitive reason: "+u.getHost());
+   check(s.employee.text.equals("900000001")&&s.user.text.equals("synthetic.crew@example.invalid")&&!s.consent.checked&&s.prepare.enabled&&s.employee.visibility==0,"non-sensitive preparation data kept; consent required again");s.close();count++;
+  }
+  clean();Screen xhr=new Screen();xhr.ready();xhr.prepare();var xv=view();
+  Thread xw=new Thread(()->check(xv.client.shouldInterceptRequest(xv,new android.webkit.WebResourceRequest("https://api2.apicrewcare.com/Main/Login.aspx/CheckUser?u=crew%40example.invalid",false,"POST"))!=null,"same-origin XHR POST still blocked"));xw.start();join(xw);android.os.Handler.drain();
+  check(xv.destroyed&&xhr.status.text.contains("recurso POST de api2.apicrewcare.com/Main/Login.aspx/CheckUser")&&!xhr.status.text.contains("crew%40")&&!xhr.status.text.contains("?u="),"XHR after e-mail names method/path, never query");xhr.close();count++;
+  clean();Screen cdn=new Screen();cdn.ready();cdn.prepare();var cv=view();
+  Thread cw=new Thread(()->cv.client.shouldInterceptRequest(cv,new android.webkit.WebResourceRequest("https://cdn.example.invalid/lib/secret-path.js?k=1",false)));cw.start();join(cw);android.os.Handler.drain();
+  check(cv.destroyed&&cdn.status.text.contains("recurso GET de cdn.example.invalid,")&&!cdn.status.text.contains("secret-path"),"third-party resource shows host only");cdn.close();count++;
+  clean();Screen herr=new Screen();herr.ready();herr.prepare();var hv=view();
+  android.os.Handler.runMain(()->hv.client.onReceivedHttpError(hv,new android.webkit.WebResourceRequest(loginUrl,true,"POST"),new android.webkit.WebResourceResponse("text/plain","UTF-8",new java.io.ByteArrayInputStream(new byte[0]))));android.os.Handler.drain();
+  check(hv.destroyed&&herr.status.text.contains("erro HTTP")&&!herr.status.text.contains("fora do escopo")&&herr.status.text.contains("Tente de novo")&&herr.employee.text.equals("900000001"),"validation/HTTP failure explains retry, keeps preparation data");herr.close();count++;
+  clean();Screen cancelLogin=new Screen();cancelLogin.ready();cancelLogin.prepare();var cl=view();android.os.Handler.runMain(cancelLogin.cancel::click);android.os.Handler.drain();
+  check(cl.destroyed&&cancelLogin.status.text.contains("Cancelado. Nada importado.")&&cancelLogin.user.text.equals("synthetic.crew@example.invalid")&&cancelLogin.prepare.enabled,"cancel during login cleans profile and keeps preparation data");cancelLogin.close();count++;
+  Method resumeMfa=CrewCheckMyCrewCareDebugActivity.class.getDeclaredMethod("onStart");resumeMfa.setAccessible(true);
+  clean();Screen mfa=new Screen();mfa.ready();mfa.prepare();var mv=view();
+  android.os.Handler.runMain(mfa.activity::stop);android.os.Handler.drain();check(!mv.destroyed&&android.os.Handler.delayed.size()==1,"leaving for MFA app arms a single grace deadline");
+  android.os.Handler.runMain(()->{try{resumeMfa.invoke(mfa.activity);}catch(Exception e){throw new AssertionError(e);}});check(android.os.Handler.delayed.isEmpty()&&!mv.destroyed,"returning within grace cancels deadline and keeps login");
+  android.os.Handler.runMain(()->{mv.url="https://api2.apicrewcare.com/LATAM/mytravel.aspx";mv.client.onPageFinished(mv,mv.url);mfa.start.click();});android.os.Handler.drain();for(int i=0;i<4;i++)deliver(mfa);
+  check(mfa.status.text.contains("Contrato observado válido"),"login completed after MFA app switch reaches validated read");mfa.close();count++;
+  clean();Screen late=new Screen();late.ready();late.prepare();var lv=view();android.os.Handler.runMain(late.activity::stop);android.os.Handler.drain();android.os.Handler.tick();
+  check(lv.destroyed&&late.status.text.contains("segundo plano por mais de 3 minutos")&&late.status.text.contains("Nada importado")&&!late.status.text.contains("Contrato observado válido"),"grace expiry cancels with explicit reason, no stale background session");late.close();count++;
+  clean();Field accountField=CrewCheckMyCrewCareDebugActivity.class.getDeclaredField("account");accountField.setAccessible(true);
+  Screen first=new Screen(),second=new Screen();String a1=(String)accountField.get(first.activity),a2=(String)accountField.get(second.activity);int clears=CrewCheckMyCrewCareProfile.clearCalls;
+  first.ready();first.prepare();android.os.Handler.runMain(first.cancel::click);android.os.Handler.drain();second.ready();second.prepare();var sv=view();
+  int created=CrewCheckMyCrewCareProfile.createdAccounts.size();
+  check(!a1.equals(a2)&&CrewCheckMyCrewCareProfile.clearCalls==clears+1&&CrewCheckMyCrewCareProfile.createdAccounts.get(created-1).equals(a2)&&!CrewCheckMyCrewCareProfile.createdAccounts.get(created-1).equals(a1)&&sv.sessionStorage.isEmpty(),"separate attempts use separate isolated profiles; first cleared before second");first.close();second.close();count++;
+  Method describe=CrewCheckMyCrewCareDebugActivity.class.getDeclaredMethod("describeDestination",String.class);describe.setAccessible(true);
+  check(describe.invoke(null,"javascript:alert(1)").equals("endereço com esquema não permitido (javascript)")&&describe.invoke(null,"intent://x#Intent;end").toString().contains("esquema não permitido")
+   &&describe.invoke(null,"https://user:pw@evil.invalid/a?b").equals("evil.invalid (com credencial embutida no endereço)")&&describe.invoke(null,"http://api2.apicrewcare.com/LATAM/mytravel.aspx").equals("api2.apicrewcare.com (sem HTTPS)")
+   &&describe.invoke(null,"https://api2.apicrewcare.com:8443/Main/Login.aspx?x=1").equals("api2.apicrewcare.com/Main/Login.aspx (porta não padrão)")&&describe.invoke(null,"https://api2.apicrewcare.com/a%20b?x").equals("api2.apicrewcare.com"),"diagnostic destination never includes query, credentials or unsafe path");count++;
+  check(count==109,"expected full debug matrix");System.out.println("PASS debug action cases="+count);
  }catch(Exception e){throw new AssertionError(e);}}
 }

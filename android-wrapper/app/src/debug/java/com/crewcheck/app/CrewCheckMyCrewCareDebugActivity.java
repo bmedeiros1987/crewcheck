@@ -18,6 +18,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.ScrollView;
 import androidx.webkit.WebViewBuilder;
+import java.util.Locale;
 import java.util.UUID;
 import static com.crewcheck.app.CrewCheckMyCrewCarePortalV3.*;
 
@@ -45,6 +46,9 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
     private volatile long token;
     // Separate presentation authority: revocation must not abandon pending cleanup.
     private long previewEpoch;
+    // Login visível pode ir a segundo plano (app de MFA/e-mail) sem perder a tentativa, por tempo limitado.
+    static final long LOGIN_BACKGROUND_GRACE_MS = 180_000;
+    private Runnable backgroundDeadline;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -52,12 +56,16 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
         explanation = new TextView(this);
-        explanation.setText("Teste MyCrewCare exclusivo de debug. Login manual somente na página oficial visível. "
-            + "Não captura formulário, senha ou cookies nem recebe a sessão do CrewCheck de produção. "
-            + "O teste pode consultar as páginas MyCrewCare; não comprova datas, fusos ou uso operacional.");
+        explanation.setText("Teste MyCrewCare exclusivo de debug.\n"
+            + "1) Abaixo, informe a matrícula (BP) e o usuário EXATAMENTE como aparecem em MyCrewCare › Perfil. "
+            + "Eles não são o seu login: servem só para conferir, depois do login, que as reservas lidas são da sua conta.\n"
+            + "2) Faça o login (e-mail, senha e eventual MFA) somente na página oficial que abrirá abaixo. "
+            + "O teste não lê o formulário, a senha nem os cookies e não recebe a sessão do CrewCheck de produção.\n"
+            + "3) Ao voltar a My Travel, toque em Verificar. Nada é importado; o perfil de teste é limpo ao final. "
+            + "Datas, fusos e uso operacional não são validados.");
         layout.addView(explanation);
-        employee = field(layout, "Matrícula esperada (somente números)");
-        username = field(layout, "Identidade esperada no perfil (não é senha)");
+        employee = field(layout, "Matrícula/BP do Perfil MyCrewCare (somente números)");
+        username = field(layout, "Usuário exibido no Perfil MyCrewCare (não é a senha)");
         consent = new CheckBox(this);
         consent.setText("Autorizo esta tentativa de teste e a consulta às páginas MyCrewCare. Login somente por mim na página visível, sem login automático.");
         consent.setSaveEnabled(false);
@@ -85,7 +93,10 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         layout.addView(field); return field;
     }
-    @Override protected void onStart() { super.onStart(); foreground = true; }
+    @Override protected void onStart() {
+        super.onStart(); foreground = true;
+        if (backgroundDeadline != null) { main.removeCallbacks(backgroundDeadline); backgroundDeadline = null; }
+    }
     private void prepareSession() {
         if (!foreground || destroyed || running || cleaning) return;
         if (!consent.isChecked()) { status.setText("Confirme a autorização antes de iniciar."); return; }
@@ -93,7 +104,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         try {
             scope = new ObservedScope(account, UUID.randomUUID().toString(), UUID.randomUUID().toString(),
                 employee.getText().toString().trim(), username.getText().toString().trim(), 0);
-        } catch (IllegalArgumentException error) { status.setText("Informe a matrícula e a identidade esperadas."); return; }
+        } catch (IllegalArgumentException error) { status.setText("Informe a matrícula (BP, só números) e o usuário exatamente como aparecem no Perfil do MyCrewCare."); return; }
         final long attempt = ++token;
         ++previewEpoch;
         running = true; preparing = true; attemptControls(true); prepare.setEnabled(false); start.setEnabled(false);
@@ -111,19 +122,20 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
             settings.setJavaScriptCanOpenWindowsAutomatically(false); settings.setSupportMultipleWindows(false);
             settings.setJavaScriptEnabled(true); // Official page executes its own login UI; no native injection.
             page.setWebChromeClient(new WebChromeClient() { @Override public void onPermissionRequest(PermissionRequest request) { request.deny(); } });
-            page.setDownloadListener((url, agent, disposition, type, length) -> loginFailed(attempt, page));
+            page.setDownloadListener((url, agent, disposition, type, length) -> loginFailed(attempt, page,
+                "o portal tentou iniciar um download, que não é permitido neste teste.", false));
             page.setWebViewClient(new WebViewClient() {
                 @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                     if (!loginCurrent(attempt, page) || v != page) return true;
                     boolean allowed = r.isForMainFrame() && loginTarget(r.getUrl().toString())
                         && (r.getMethod().equals("GET") || r.getMethod().equals("POST") && loginPage(r.getUrl().toString()));
-                    if (!allowed) loginFailed(attempt, page);
+                    if (!allowed) loginFailed(attempt, page, navigationReason(r.isForMainFrame(), r.getMethod(), r.getUrl().toString()), true);
                     return !allowed;
                 }
                 @Override public boolean shouldOverrideUrlLoading(WebView v, String url) {
                     if (!loginCurrent(attempt, page) || v != page) return true;
                     if (loginTarget(url)) return false;
-                    loginFailed(attempt, page); return true;
+                    loginFailed(attempt, page, navigationReason(true, "GET", url), true); return true;
                 }
                 @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
                     boolean allowed = loginCurrent(attempt, page) && v == page &&
@@ -131,23 +143,29 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
                             (r.getMethod().equals("GET") || r.getMethod().equals("POST") && loginPage(r.getUrl().toString()))
                             : portalOrigin(r.getUrl().toString()) && r.getMethod().equals("GET"));
                     if (allowed) return null;
-                    loginFailed(attempt, page);
+                    loginFailed(attempt, page, navigationReason(r.isForMainFrame(), r.getMethod(), r.getUrl().toString()), true);
                     return new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(new byte[0]));
                 }
                 @Override public void onPageStarted(WebView v, String url, Bitmap icon) {
                     if (v != page || !loginCurrent(attempt, page)) return;
                     start.setEnabled(false);
-                    if (!loginTarget(url)) loginFailed(attempt, page);
+                    if (!loginTarget(url)) loginFailed(attempt, page, navigationReason(true, "GET", url), true);
                 }
                 @Override public void onPageFinished(WebView v, String url) {
                     if (v != page || !loginCurrent(attempt, page)) return;
-                    if (!loginTarget(url) || !loginTarget(page.getUrl())) { loginFailed(attempt, page); return; }
+                    if (!loginTarget(url) || !loginTarget(page.getUrl())) {
+                        loginFailed(attempt, page, navigationReason(true, "GET", loginTarget(url) ? page.getUrl() : url), true); return;
+                    }
                     start.setEnabled(ENTRY.equals(url) && ENTRY.equals(page.getUrl()));
                 }
-                @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError error) { if (v == page && r.isForMainFrame()) loginFailed(attempt, page); }
-                @Override public void onReceivedHttpError(WebView v, WebResourceRequest r, WebResourceResponse response) { if (v == page && r.isForMainFrame()) loginFailed(attempt, page); }
-                @Override public void onReceivedSslError(WebView v, SslErrorHandler handler, SslError error) { handler.cancel(); if (v == page) loginFailed(attempt, page); }
-                @Override public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail detail) { if (v == page) loginFailed(attempt, page); return true; }
+                @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError error) { if (v == page && r.isForMainFrame()) loginFailed(attempt, page,
+                    "falha de rede ao carregar o portal. Verifique a conexão e tente de novo.", false); }
+                @Override public void onReceivedHttpError(WebView v, WebResourceRequest r, WebResourceResponse response) { if (v == page && r.isForMainFrame()) loginFailed(attempt, page,
+                    "o portal respondeu com erro HTTP ao carregar a página. Tente de novo mais tarde.", false); }
+                @Override public void onReceivedSslError(WebView v, SslErrorHandler handler, SslError error) { handler.cancel(); if (v == page) loginFailed(attempt, page,
+                    "certificado de segurança inválido; a conexão foi recusada. Não prossiga nesta rede (proxy/Wi-Fi público); tente em outra.", false); }
+                @Override public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail detail) { if (v == page) loginFailed(attempt, page,
+                    "o Android encerrou o processo da página. Tente de novo.", false); return true; }
             });
             layout.addView(page, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Math.round(360 * getResources().getDisplayMetrics().density), 0));
             page.loadUrl(ENTRY);
@@ -164,11 +182,41 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         catch (RuntimeException error) { return false; }
     }
     private static boolean loginTarget(String url) { return ENTRY.equals(url) || loginPage(url); }
+    /**
+     * Destino em forma não sensível para diagnóstico na tela (nunca em log): somente o host; o caminho
+     * apenas no próprio portal HTTPS e sem query/fragmento/credenciais. Corpo e cookies nunca são lidos.
+     */
+    static String describeDestination(String url) {
+        try {
+            URI u = URI.create(url);
+            String scheme = u.getScheme() == null ? "" : u.getScheme().toLowerCase(Locale.ROOT);
+            if (!"https".equals(scheme) && !"http".equals(scheme))
+                return "endereço com esquema não permitido (" + (scheme.matches("[a-z][a-z0-9+.-]{0,15}") ? scheme : "desconhecido") + ")";
+            String host = u.getHost() == null ? "" : u.getHost().toLowerCase(Locale.ROOT);
+            if (!host.matches("[a-z0-9.-]{1,253}")) return "endereço inválido";
+            if ("http".equals(scheme)) return host + " (sem HTTPS)";
+            String where = host;
+            String path = u.getRawPath();
+            if ("api2.apicrewcare.com".equals(host) && path != null && path.matches("/[A-Za-z0-9/._-]{0,80}")) where += path;
+            if (u.getPort() != -1 && u.getPort() != 443) where += " (porta não padrão)";
+            if (u.getRawUserInfo() != null) where += " (com credencial embutida no endereço)";
+            return where;
+        } catch (RuntimeException error) { return "endereço inválido"; }
+    }
+    static String navigationReason(boolean mainFrame, String method, String url) {
+        String verb = "POST".equals(method) ? "POST" : "GET".equals(method) ? "GET" : "outro método";
+        String where = describeDestination(url);
+        boolean portal = where.startsWith("api2.apicrewcare.com");
+        if (mainFrame) return portal
+            ? "o portal abriu uma página não prevista neste teste (" + where + ", " + verb + ")."
+            : "o login seguiu para " + where + " (" + verb + "), domínio fora do escopo autorizado deste teste — provável etapa de senha/SSO em outro provedor.";
+        return "a página pediu um recurso " + verb + " de " + where + ", fora do escopo autorizado deste teste.";
+    }
     private boolean loginCurrent(long attempt, WebView page) {
         Login current = login;
         return current != null && current.token == attempt && current.page == page && !current.revoked && attempt == token && running;
     }
-    private void loginFailed(long attempt, WebView page) {
+    private void loginFailed(long attempt, WebView page, String reason, boolean scopeBlock) {
         Login current = login;
         if (current == null) return;
         synchronized (current) {
@@ -176,8 +224,13 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
             // Shares the handoff commit monitor; revoke only this exact preparation.
             current.revoked = true;
         }
+        String next = scopeBlock
+            ? " Próximo passo: envie esta mensagem ao responsável pelo teste; esse destino precisa ser revisado antes de ser liberado. Repetir agora levará ao mesmo ponto."
+            : "";
         main.post(() -> { if (login == current && attempt == token && running) finish(attempt,
-            "Preparação bloqueada: destino/SSO fora do escopo ou página não comprovada. Nada importado."); });
+            "Preparação interrompida" + (scopeBlock ? " (destino fora do escopo)" : "") + ": " + reason
+                + " Nada importado; nenhuma sessão ficou conectada." + next
+                + " Matrícula e usuário foram mantidos; para tentar de novo, marque a autorização."); });
     }
     private boolean stopLogin() {
         WebView old = loginView; login = null; loginView = null; preparing = false; start.setEnabled(false);
@@ -221,7 +274,7 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
                 String message = valid
                     ? reservationPreview(result)
                     : "Não validado: sessão, identidade, navegação ou conteúdo não comprovados. Nada importado.";
-                finish(attempt, message);
+                finish(attempt, message, valid);
             });
             if (!accepted && running) { source.cancel(captured); finish(attempt, "Tentativa rejeitada. Nada importado."); }
         } catch (Exception error) {
@@ -259,12 +312,14 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         catch (RuntimeException error) { stopFailed = true; }
         cleanup(attempt, "Cancelado. Nada importado.");
     }
-    private void finish(long attempt, String message) {
+    private void finish(long attempt, String message) { finish(attempt, message, false); }
+    private void finish(long attempt, String message, boolean preview) {
         if (attempt != token || !running) return;
         running = false; stopLogin();
-        cleanup(attempt, message);
+        cleanup(attempt, message, preview);
     }
-    private void cleanup(long attempt, String message) {
+    private void cleanup(long attempt, String message) { cleanup(attempt, message, false); }
+    private void cleanup(long attempt, String message, boolean preview) {
         final long publicationEpoch = previewEpoch; // Capture before any native cleanup callback.
         cleaning = true;
         String operation = UUID.randomUUID().toString();
@@ -273,14 +328,14 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
                 cleanupFailed(); return;
             }
         } catch (RuntimeException error) { cleanupFailed(); return; }
-        checkCleanup(attempt, publicationEpoch, operation, message, 0);
+        checkCleanup(attempt, publicationEpoch, operation, message, preview, 0);
     }
-    private void checkCleanup(long attempt, long publicationEpoch, String operation, String message, int polls) {
+    private void checkCleanup(long attempt, long publicationEpoch, String operation, String message, boolean preview, int polls) {
         if (attempt != token) return;
         String outcome = runtime.myCrewCareCleanupResultV3(account, operation);
         if (outcome.equals("pending") && polls < 300) {
             if (!destroyed) status.setText("Limpando o perfil de teste; resultado ainda não concluído.");
-            main.postDelayed(() -> checkCleanup(attempt, publicationEpoch, operation, message, polls + 1), 100);
+            main.postDelayed(() -> checkCleanup(attempt, publicationEpoch, operation, message, preview, polls + 1), 100);
             return;
         }
         if (!outcome.equals("ok") || stopFailed) { cleanupFailed(); return; }
@@ -288,7 +343,8 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         if (!destroyed) {
             // Commit only while the exact attempt still owns visible presentation.
             // Never increment token to revoke preview: cleanup/error polling must settle.
-            boolean mayPublish = attempt == token && publicationEpoch == previewEpoch && foreground;
+            // Revocation guards only the reservation preview; failure/cancel reasons stay visible on return.
+            boolean mayPublish = !preview || attempt == token && publicationEpoch == previewEpoch && foreground;
             status.setText((mayPublish ? message : "Resultado revogado. Nada importado.") + " Perfil de teste limpo.");
             attemptControls(false); prepare.setEnabled(true);
         }
@@ -298,8 +354,26 @@ public final class CrewCheckMyCrewCareDebugActivity extends Activity {
         // Keep retry disabled: never announce cleanup success or reuse an unverified profile.
         if (!destroyed) status.setText("Limpeza do perfil não confirmada ou encerramento incompleto. Teste bloqueado; nada importado.");
     }
-    @Override protected void onStop() { foreground = false; cancel(); super.onStop(); }
+    @Override protected void onStop() {
+        foreground = false;
+        final Login current = login;
+        if (running && preparing && current != null && !cleaning && backgroundDeadline == null) {
+            // Somente o login visível: sair para app de MFA/e-mail não destrói a tentativa de imediato.
+            // A leitura (handoff já feito) continua cancelando ao sair do primeiro plano.
+            final long attempt = token;
+            backgroundDeadline = () -> {
+                backgroundDeadline = null;
+                if (!foreground && login == current && attempt == token && running) finish(attempt,
+                    "Preparação interrompida: a tela ficou em segundo plano por mais de 3 minutos durante o login. "
+                        + "Nada importado; nenhuma sessão ficou conectada. Matrícula e usuário foram mantidos; "
+                        + "para tentar de novo, marque a autorização e conclua senha/MFA em até 3 minutos fora da tela.");
+            };
+            main.postDelayed(backgroundDeadline, LOGIN_BACKGROUND_GRACE_MS);
+        } else cancel();
+        super.onStop();
+    }
     @Override protected void onDestroy() {
+        if (backgroundDeadline != null) { main.removeCallbacks(backgroundDeadline); backgroundDeadline = null; }
         foreground = false; cancel(); destroyed = true;
         if (runtime != null) runtime.destroy();
         super.onDestroy();
