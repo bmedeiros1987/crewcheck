@@ -39,6 +39,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: Verify tracked workflow script references before manual review
+        run: python3 scripts/ci/check_mobile_workflow_scripts.py
       - name: Prepare read-only connection approval plan
         run: python3 scripts/android-play/prepare_journal_approval.py prepare --output "$RUNNER_TEMP/journal-plan"
       - uses: actions/upload-artifact@v4
@@ -130,8 +132,10 @@ jobs:
           npm ci
           node scripts/v139/apply.mjs
           node scripts/regression-mobile-watch-publish-cadence.mjs
-          node scripts/regression-mobile-watch-gate-contract.mjs
-          TZ=UTC node scripts/regression-mobile-watch-gate-identity.cjs
+          node scripts/regression-radar-departure-gate-contract.mjs
+          node scripts/regression-radar-departure-gate-arrival-fallback.mjs
+          node scripts/regression-watch-first-sync.mjs
+          TZ=UTC node scripts/regression-radar-occurrence-identity.mjs
           npx tsc --noEmit
           npx vite build
       - uses: android-actions/setup-android@v4
