@@ -5,15 +5,36 @@ const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { createRequire } = require('node:module');
+const { spawnSync } = require('node:child_process');
 const { chromium } = createRequire(process.env.RBAC_PLAYWRIGHT_PACKAGE || __filename)('playwright');
 const esbuild = require('esbuild');
 (async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-rbac-form-'));
-  const bundle = esbuild.buildSync({stdin:{contents:`import React from 'react'; import {createRoot} from 'react-dom/client'; import Form from './client/src/components/v1432/ManualRegulationView'; function App(){const [day,setDay]=React.useState(null); window.setSyntheticSchedule=setDay; return React.createElement(Form,{scheduleDay:day});} createRoot(document.getElementById('root')).render(React.createElement(App));`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'iife',loader:{'.css':'empty'},jsx:'automatic'}).outputFiles[0].text;
-  const server = http.createServer((req,res)=>{res.setHeader('content-type',req.url==='/form.js'?'application/javascript':'text/html');res.end(req.url==='/form.js'?bundle:'<div id="root"></div><script src="/form.js"></script>');});
-  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-  const browser = await chromium.launch({headless:true,...(process.env.RBAC_BROWSER_PATH?{executablePath:process.env.RBAC_BROWSER_PATH}:{}),args:['--no-sandbox']});
+  // Exercise the real launch failure in a child: a leaked HTTP server must fail this check.
+  if (!process.argv.includes('--launch-failure-probe')) {
+    const invalidPath = path.join(os.tmpdir(), `crewcheck-missing-browser-${process.pid}`);
+    assert.equal(fs.existsSync(invalidPath), false);
+    const started = Date.now();
+    const result = spawnSync(process.execPath, [__filename, '--launch-failure-probe'], {
+      env: {...process.env, RBAC_BROWSER_PATH: invalidPath}, encoding: 'utf8', timeout: 5000,
+    });
+    assert.ifError(result.error);
+    assert.equal(result.signal, null, 'launch failure must exit without a timeout or signal');
+    assert.equal(result.status, 1, 'launch failure must preserve the error exit code');
+    assert.ok(result.stderr.includes('browserType.launch') && result.stderr.includes(invalidPath),
+      'must report the original browser launch failure');
+    assert.ok(!result.stdout.includes('PASS:'), 'failed launch must not report success');
+    console.log(`PASS: invalid RBAC_BROWSER_PATH exits 1 in ${Date.now() - started}ms`);
+  }
+  let dir, server, browser, failure;
   try {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-rbac-form-'));
+    const bundle = esbuild.buildSync({stdin:{contents:`import React from 'react'; import {createRoot} from 'react-dom/client'; import Form from './client/src/components/v1432/ManualRegulationView'; function App(){const [day,setDay]=React.useState(null); window.setSyntheticSchedule=setDay; return React.createElement(Form,{scheduleDay:day});} createRoot(document.getElementById('root')).render(React.createElement(App));`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'iife',loader:{'.css':'empty'},jsx:'automatic'}).outputFiles[0].text;
+    server = http.createServer((req,res)=>{res.setHeader('content-type',req.url==='/form.js'?'application/javascript':'text/html');res.end(req.url==='/form.js'?bundle:'<div id="root"></div><script src="/form.js"></script>');});
+    await new Promise((resolve,reject)=>{
+      server.once('error',reject);
+      server.listen(0,'127.0.0.1',()=>{server.removeListener('error',reject);resolve();});
+    });
+    browser = await chromium.launch({headless:true,...(process.env.RBAC_BROWSER_PATH?{executablePath:process.env.RBAC_BROWSER_PATH}:{}),args:['--no-sandbox']});
     const page = await browser.newPage();
     const url = `http://127.0.0.1:${server.address().port}`;
     await page.route('**/*',route=>route.request().url().startsWith(url)?route.continue():route.abort());
@@ -46,5 +67,21 @@ const esbuild = require('esbuild');
     await page.waitForFunction(()=>document.querySelector('input[type=number]').value==='3');
     assert.equal(await page.getByLabel('Origem da jornada').inputValue(),'presentation');
     console.log('PASS: clear/type 1/2/3, replace 9, boundaries, invalid drafts, blur, persistence, invalid stored value, reset, reserve activation and schedule changes');
-  } finally { await browser.close(); await new Promise(resolve=>server.close(resolve)); fs.rmSync(dir,{recursive:true,force:true}); }
+  } catch (error) {
+    failure = error;
+    throw error;
+  } finally {
+    const cleanupErrors = [];
+    for (const cleanup of [
+      async () => { if (browser) await browser.close(); },
+      async () => { if (server?.listening) await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve())); },
+      async () => { if (dir) fs.rmSync(dir,{recursive:true,force:true}); },
+    ]) {
+      try { await cleanup(); } catch (error) { cleanupErrors.push(error); }
+    }
+    if (cleanupErrors.length) {
+      const error = new AggregateError(cleanupErrors, 'Browser regression cleanup failed');
+      if (failure) console.error(error); else throw error;
+    }
+  }
 })().catch(error=>{console.error(error);process.exitCode=1;});
