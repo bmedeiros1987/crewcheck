@@ -128,7 +128,6 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
         >
           <span className="cc-pulse-compact-icon" aria-hidden="true"><Icon size={17}/><i/></span>
           <strong>{message.title}</strong>
-          {queued > 0 && <span className="cc-pulse-queue" aria-label={`${queued} aviso(s) aguardando`}>+{queued}</span>}
         </button>
         <button
           type="button"
@@ -137,8 +136,9 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
           aria-controls={expanded ? detailsId : undefined}
           onClick={toggleDetails}
           aria-expanded={expanded}
-          aria-label={expanded ? 'Recolher detalhes do alerta CrewCheck' : 'Abrir detalhes do alerta CrewCheck'}
+          aria-label={`${expanded ? 'Recolher detalhes do alerta CrewCheck' : 'Abrir detalhes do alerta CrewCheck'}${queued > 0 ? ` · ${queued} aviso(s) aguardando` : ''}`}
         >
+          {queued > 0 && <span className="cc-pulse-queue" aria-label={`${queued} aviso(s) aguardando`}>+{queued}</span>}
           <ChevronDown className="cc-pulse-compact-chevron" size={16} aria-hidden="true"/>
         </button>
         {expanded && (
