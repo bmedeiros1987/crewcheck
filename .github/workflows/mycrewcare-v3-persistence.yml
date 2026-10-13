@@ -97,3 +97,51 @@ jobs:
         run: gradle -p android-wrapper --no-daemon --console=plain :app:compileDebugJavaWithJavac :app:compileReleaseJavaWithJavac :app:processDebugManifest :app:processReleaseManifest
       - name: Verify debug action absent from compiled release
         run: node scripts/assert-mycrewcare-debug-release.mjs --compiled
+      # APK de diagnóstico somente para o teste físico da #1035 (debug, pacote .mcctest). Não é Play Store,
+      # não usa assinatura de release nem secrets; artifact privado do repositório por 7 dias.
+      - name: Diagnostic debug APK for physical test (PR 1035 branch only)
+        if: github.event_name == 'pull_request' && github.head_ref == 'fix/mycrewcare-debug-login-diagnostics'
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Bloqueia o APK se o código compilado não for exatamente o head revisado.
+          if [ "$(git rev-parse 'HEAD^{tree}')" != "$(git rev-parse "${HEAD_SHA}^{tree}")" ]; then
+            echo "::error::merge ref tree differs from reviewed head $HEAD_SHA; APK not built"; exit 1
+          fi
+          reviewed=(android-wrapper/app/src/debug ':(glob)android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCare*.java' android-wrapper/app/src/main/assets/mycrewcare-transport-v3.js)
+          if ! git diff --quiet "$HEAD_SHA" -- "${reviewed[@]}" || [ -n "$(git ls-files --others -- android-wrapper/app/src/debug)" ]; then
+            echo "::error::MyCrewCare debug/runtime sources differ from reviewed head $HEAD_SHA; APK not built"; exit 1
+          fi
+          # Commit revisado visível na tela do APK (asset somente do source set debug).
+          mkdir -p android-wrapper/app/src/debug/assets
+          printf '%s\n' "$HEAD_SHA" > android-wrapper/app/src/debug/assets/mcc-test-build.txt
+          gradle -p android-wrapper --no-daemon --console=plain :app:assembleDebug
+          git diff --quiet "$HEAD_SHA" -- "${reviewed[@]}" || { echo "::error::build changed reviewed sources"; exit 1; }
+          apk="$(ls android-wrapper/app/build/outputs/apk/debug/*.apk | head -1)"
+          out="$RUNNER_TEMP/mcc-diagnostic-apk"; mkdir -p "$out"
+          name="crewcheck-teste-mcc-${HEAD_SHA:0:8}-debug.apk"
+          cp "$apk" "$out/$name"
+          aapt2="$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)"
+          badging="$("$aapt2" dump badging "$out/$name" | head -1)"
+          embedded="$(unzip -p "$out/$name" assets/mcc-test-build.txt | tr -d '\n')"
+          [ "$embedded" = "$HEAD_SHA" ] || { echo "::error::APK does not embed reviewed commit"; exit 1; }
+          {
+            echo "pr=1035"
+            echo "head_commit=$HEAD_SHA"
+            echo "built_from=$(git rev-parse HEAD) (pull_request merge ref; tree identical to head: verified, build blocked otherwise)"
+            echo "embedded_commit=$embedded (shown on the debug screen and in failure messages)"
+            echo "badging=$badging"
+            echo "variant=debug (applicationIdSuffix .mcctest, debug keystore of this CI run)"
+            echo "prepared_with=node scripts/v139/apply.mjs (same as release pipeline)"
+          } > "$out/BUILD-INFO.txt"
+          (cd "$out" && sha256sum "$name" > SHA256SUMS)
+          cat "$out/BUILD-INFO.txt" "$out/SHA256SUMS"
+          echo "$badging" | grep -q "name='com.crewcheck.app.mcctest'"
+      - name: Upload diagnostic debug APK (not a release)
+        if: github.event_name == 'pull_request' && github.head_ref == 'fix/mycrewcare-debug-login-diagnostics'
+        uses: actions/upload-artifact@v4
+        with:
+          name: crewcheck-teste-mcc-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/mcc-diagnostic-apk
+          retention-days: 7
+          if-no-files-found: error

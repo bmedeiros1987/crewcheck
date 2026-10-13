@@ -65,3 +65,79 @@ Novo candidato conserva exatamente portalOrigin/loginPage/loginTarget e os predi
 Rótulos permanentes: sua matrícula no MyCrewCare e seu usuário/e-mail (não nome completo, não senha). Nenhum ID técnico/escala/data/fixture é solicitado. IDs técnicos já são automáticos. Não inserir identidade fictícia nem hardcodar dados das capturas: a identidade esperada é conferência independente de conta. Os rótulos e campos cedem espaço à página oficial durante preparação e reaparecem ao encerrar.
 
 111 casos debug, incluindo 11 categorias, primeiro-evento HTTP seguido de renderer, saída segura sem URL/query/identidade, rótulos e continuidade de consentimento/limpeza; diagnóstico seguro mantido em cleanup pending/failure. Capturas não entram no pacote de revisão. Não solicitar novo retry do APK a16e15d0 como solução. Revisão exact-SHA e CI Android precedem geração de novo APK diagnóstico. Nenhuma garantia de login corrigido ou de contenção universal de rede; nenhuma origem ou permissão nova.
+
+## Correção do registro e continuação #1035 (13/10)
+
+**Correção:** as notas acima dizem "nenhum APK gerado/entregue". Isso deixou de valer: o APK debug do commit `a16e15d001f7cacf3d793cd9daffb6824294289c` (#1027) **foi entregue e testado fisicamente por Bruno em 13/10**. A página oficial abriu; após o e-mail, a tela fechou antes da senha e voltou à preparação. Não houve login concluído nem reservas importadas. As cinco capturas foram recebidas pelo owner; este agente não teve acesso a elas e não as analisou. Segundo o owner, mostram login aberto seguido de bloqueio, sem domínio SSO visível nem autenticação concluída — por isso a causa exata após o e-mail continua não comprovada.
+
+**Campos (sem presumir que usuário = e-mail):**
+
+| Campo | Origem | Finalidade | Quem preenche |
+|---|---|---|---|
+| Matrícula | MyCrewCare › Perfil (`input#employeeId`, só números) | `ObservedScope.employeeId`, conferido no Perfil antes/depois da leitura | tripulante |
+| Usuário do Perfil | MyCrewCare › Perfil (`input#userName`, comparação exata; pode diferir do e-mail de login; não é senha nem nome completo) | `ObservedScope.username`, idem | tripulante |
+| Autorização | — | consentimento por tentativa | tripulante |
+| IDs técnicos (`debug_<uuid>`, sessão, requisição) | memória | isolamento | app |
+
+Reaproveitar dados já verificados não é possível neste APK: o pacote `.mcctest` não acessa armazenamento do app de produção (isolamento proposital). **Mudança necessária para o owner Mobile Core (fora destes arquivos):** na integração de produção, pré-preencher a matrícula a partir do `crewId` da escala canônica somente quando presente e validado; e trocar a digitação do usuário por "Perfil antes estabelece a identidade → usuário confirma versão mascarada → Perfil depois precisa ser igual" (contrato `ObservedScope`/asset em `CrewCheckMyCrewCarePortalV3`/`mycrewcare-transport-v3.js`).
+
+**Diagnóstico reconciliado com `0624e99c`:** mantidos os códigos fixos `MCC-*` e o primeiro evento causal. Acréscimos desta PR, por instrução do owner ("tipo, método e domínio necessários"):
+- `MCC-ORIGIN` e `MCC-RESOURCE-ORIGIN`: mostram o **domínio** (host minúsculo); `MCC-ROUTE`, `MCC-METHOD` e `MCC-RESOURCE-METHOD`: mostram o **método** (GET/POST/outro).
+- Nunca caminho, query, fragmento, porta, credencial embutida, cabeçalhos, corpo, cookies ou identidade; nada em log.
+- Próximo passo por categoria; matrícula/usuário mantidos; autorização exigida de novo.
+- `MCC-BACKGROUND`: o login visível tolera até 3 min em segundo plano (app de MFA/e-mail), medidos com `SystemClock.elapsedRealtime` (conta durante suspensão); o prazo é conferido também ao voltar (`onStart`), não só pelo timer, que usa uptime e pausa com o aparelho suspenso. A leitura continua cancelando ao sair do primeiro plano.
+- Motivo de falha/cancelamento já publicado permanece ao alternar entre apps ou tocar Cancelar; somente a prévia de reservas é apagada.
+- Comparação de domínio sempre por igualdade exata (`portalOrigin`); nenhum `startsWith`. O commit intermediário `d1f93a85` exibia caminho do api2 — removido nesta reconciliação.
+- Revogação por epoch/foreground só para a prévia de reservas; motivos de falha continuam visíveis ao voltar ao app.
+- **Allowlist de destinos inalterada.**
+
+**Testes:** 125 casos debug (111 da base + 14): etapa de senha no próprio portal; e-mail → `login.microsoftonline.com` / `sso2.apihotels.com` (`MCC-ORIGIN` + domínio, sem caminho/query); XHR POST (`MCC-RESOURCE-METHOD`, sem caminho); CDN (`MCC-RESOURCE-ORIGIN` + domínio); HTTP; cancelamento; MFA dentro/fora do prazo; isolamento entre tentativas; `safeDomain`; suspensão além/dentro do prazo (elapsedRealtime); motivo preservado após trocar de app e após Cancelar. A asserção da base que proibia o domínio em `MCC-ORIGIN` foi trocada por: domínio presente, caminho/query ausentes.
+
+**APK de diagnóstico:** gerado somente pelo CI desta PR (`mycrewcare-v3-persistence.yml`, passo restrito à branch `fix/mycrewcare-debug-login-diagnostics`), artifact `crewcheck-teste-mcc-<head>` com `BUILD-INFO.txt` (commit, `aapt2 badging` com pacote/versão) e `SHA256SUMS`, retenção 7 dias. Assinatura debug do runner: desinstale o "CrewCheck • teste MCC" anterior antes de instalar. Não é Play Store nem release.
+
+**Não é solução do login:** serve para identificar, no aparelho, o código e o domínio que encerram a preparação após o e-mail. Liberar qualquer provedor de autenticação exige essa evidência + revisão, com host exato (sem curinga) e fluxo mínimo.
+
+## Teste físico com `07b80120`: MCC-ROUTE (13/10)
+
+O APK de diagnóstico do commit `07b8012087e6fdb2ab8405a2ba8d03f67c78e3c7` retornou **`MCC-ROUTE`** no aparelho. Nesse código, isso significa: origem `api2.apicrewcare.com` comprovada por igualdade exata, mas página ou parâmetros fora das duas rotas exatas (My Travel e `Main/Login.aspx?ReturnUrl=…`). **Não demonstra SSO externo.** A allowlist continua inalterada.
+
+Para localizar a rota sem expor dados, o diagnóstico acrescenta somente categorias fixas:
+
+- **Página:** `página de login`, `MyTravel`, a mesma página com `(maiúsculas diferentes)` ou `outra página do mesmo domínio`. O caminho nunca é exibido.
+- **Parâmetros:** `parâmetros ausentes`, `ReturnUrl esperado` ou `outros parâmetros`. Nomes e valores nunca são exibidos.
+- **Callback que bloqueou:**
+  - `shouldOverrideUrlLoading`;
+  - `shouldOverrideUrlLoading (redirecionamento)`;
+  - `shouldOverrideUrlLoading (legado)`;
+  - `shouldInterceptRequest`;
+  - `onPageStarted`;
+  - `onPageFinished`;
+  - nas demais categorias, o callback do erro.
+- **Método:** `UNKNOWN` quando o callback não informa o método. Antes, nesses casos, o método era presumido GET.
+- Página e parâmetros aparecem só em `MCC-ROUTE`, `MCC-METHOD` e `MCC-RESOURCE-METHOD`, ou seja, apenas no domínio api2. O domínio continua restrito às categorias de origem.
+
+O primeiro erro continua sendo o único publicado.
+
+**Commit visível:**
+
+- O CI grava o SHA do head revisado no asset debug `mcc-test-build.txt`.
+- A tela mostra `commit <SHA completo>` o tempo todo, inclusive durante o login, e cada mensagem de falha termina com `Commit do APK: <12 caracteres>`.
+- Sem o asset, ou com conteúdo fora do formato `[0-9a-f]{40}`, aparece "não verificado".
+
+**Build bloqueado se não corresponder ao código revisado.** O passo do APK falha se:
+
+- a árvore do merge ref difere da do head revisado;
+- as fontes debug ou runtime MyCrewCare, ou o asset de transporte, diferem do head;
+- existe arquivo não versionado em `src/debug`;
+- o APK não contém exatamente esse SHA.
+
+**Testes:** 136 casos debug (125 + 11):
+
+- seis rotas api2 recusadas: redirecionamento com parâmetros extras, navegação, POST interceptado, maiúsculas diferentes, legado e `onPageFinished`;
+- preservação do primeiro erro com o callback;
+- commit visível;
+- asset ausente ou inválido;
+- categorias fixas e `UNKNOWN`;
+- allowlist inalterada.
+
+As asserções novas falham no código `07b80120`.
