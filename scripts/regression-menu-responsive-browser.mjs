@@ -266,7 +266,7 @@ async function inspect(page, label) {
     return { scrollTop: scroll.top, scrollBottom: scroll.bottom, top: last.top, bottom: last.bottom,
       headerTop: document.querySelector('.cz-menu-header').getBoundingClientRect().top };
   });
-  if (Math.abs(end.headerTop - metrics.header.y) > 1) failures.push('Menu navigation header moved while content scrolled');
+  if (!(end.headerTop < metrics.header.y - 20)) failures.push('Menu header must follow scrolling content');
   if (end.top < end.scrollTop - 1 || end.bottom > Math.min(end.scrollBottom, metrics.viewport.height) + 1) failures.push('Last destination unreachable');
   results.push({ label, failures, metrics });
   console.log(`${failures.length ? 'FAIL' : 'PASS'} ${label}: ${failures.join('; ') || 'contained, readable, scrollable'}`);

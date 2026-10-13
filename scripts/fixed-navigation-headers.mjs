@@ -1,4 +1,6 @@
+import { finalizeApprovedBrandAssets } from './approved-brand-assets.mjs';
 import fs from 'node:fs';
+import { finalizeMenuContentDensity } from './menu-content-density.mjs';
 const homePath = 'client/src/pages/Home.tsx';
 let home = fs.readFileSync(homePath, 'utf8');
 const anchor = '<div className="cz-menu-scroll" data-crew-menu-scroll="true">';
@@ -6,6 +8,7 @@ if (!home.includes('id="cc-menu-fixed-heading"')) {
   if (!home.includes(anchor)) throw new Error('Canonical menu scroller missing');
   home = home.replace(anchor, '<div id="cc-menu-fixed-heading"/>\n      ' + anchor);
 }
+home = finalizeMenuContentDensity(home);
 fs.writeFileSync(homePath, home);
 // Preserve canonical final stylesheet and manual-finalization ordering.
 const cssPath = 'client/src/styles/ipad-header-recovery.css';
@@ -17,3 +20,5 @@ let main = fs.readFileSync(mainPath, 'utf8').replaceAll('import "./styles/fixed-
 const finalImport = 'import "./styles/ipad-header-recovery.css";';
 main = main.replaceAll(finalImport + '\n', '');
 fs.writeFileSync(mainPath, main.trimEnd() + '\n' + finalImport + '\n');
+
+finalizeApprovedBrandAssets();
