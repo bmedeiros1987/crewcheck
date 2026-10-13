@@ -3,21 +3,21 @@
 import { createReleaseJournalHandler } from './route.mjs';
 import { createGitHubReviewProvider } from './github-review.mjs';
 import { probeEnrollmentFromEnvironment, PROBE_OPERATIONS } from './enrollment.mjs';
-import { createRenderIngressVerifier } from './render-ingress.mjs';
+import { createRenderTrustBoundaryVerifier } from './render-ingress.mjs';
 
-export function prepareProbeDependencies({ environment = process.env, githubRequest, transportAttestor, now } = {}) {
+export function prepareProbeDependencies({ environment = process.env, githubRequest, renderTrustBoundary, now } = {}) {
   const enrollment = probeEnrollmentFromEnvironment(environment);
   const githubReviewProvider = enrollment.policy
     ? createGitHubReviewProvider({ policy: enrollment.policy, request: githubRequest, now }) : undefined;
   return Object.freeze({
     enrollment,
     githubReviewProvider,
-    verifyIngress: createRenderIngressVerifier(transportAttestor),
+    verifyIngress: createRenderTrustBoundaryVerifier(renderTrustBoundary),
     allowedOperations: PROBE_OPERATIONS,
   });
 }
-export function createProbeOnlyReleaseHandler({ poolProvider, environment = process.env, githubRequest, transportAttestor, now } = {}) {
-  const dependencies = prepareProbeDependencies({ environment, githubRequest, transportAttestor, now });
+export function createProbeOnlyReleaseHandler({ poolProvider, environment = process.env, githubRequest, renderTrustBoundary, now } = {}) {
+  const dependencies = prepareProbeDependencies({ environment, githubRequest, renderTrustBoundary, now });
   return createReleaseJournalHandler({
     enabled: false,
     poolProvider,

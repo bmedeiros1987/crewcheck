@@ -12,11 +12,13 @@ The exact policy keys are `reviewedCodeSha`, `reviewedWorkflowSha`, `environment
 
 Do not embed a commit's own future hash in its source. After a separately reviewed activation commit is merged and deployed, its actual reviewed code/workflow hashes can be enrolled through the existing service's owner-controlled setting. Job inputs, request bodies and guessed environment names are not enrollment. `prepare_journal_approval.py` already requires reviewed source SHA to equal the actual workflow run's `GITHUB_SHA` and generates probe-only approval documents.
 
-## Ingress evidence: interface, not a live Render attestor
+## Render trust boundary, not a TLS attestation
 
-The verifier accepts only a reviewed server-side transport attestor with `inspect` and `isVerified`. Its sealed evidence must be bound to the exact request and socket, existing service/origin, and public HTTPS transport. Header-only evidence, a private-HTTP claim, another request/socket, or request flags fail closed. No attestor is wired in deployed runtime by this change; default verification returns false.
+Render terminates public HTTPS at its load balancer and forwards HTTP to Node. The backend socket cannot prove the original client's external TLS. Same-workspace/same-region peers can reach the primary port. This composition makes no cryptographic ingress claim, socket seal, proxy-IP guess, or header-based authentication.
 
-Synthetic sealing in tests is not proof of Render ingress. Render terminates public HTTPS at its load balancer and forwards HTTP; same-workspace/same-region peers can reach a web service's primary port. Before a real attestor is implemented, document the proxy/peer and header-sanitization contract, and the trusted private-peer boundary. Do not invent a proxy IP range or treat `X-Forwarded-Proto` alone as evidence. Authorized administrators remain trusted; proving no administrator can access their own service is not a gate.
+`createRenderTrustBoundaryVerifier` checks an explicit server-code policy accepting Render infrastructure, the reviewed Node process and authorized administrators, and authorized private-network peers as trusted. It is an administrative boundary acceptance, not proof about a request. No policy is supplied by the deployed composition, so its default is false; the receiver separately remains literally OFF. A future activation must explicitly accept this boundary in reviewed code. HTTP fields, forwarded headers and environment flags cannot supply it.
+
+The existing GitHub probe client uses the exact HTTPS endpoint `https://crewcheck.onrender.com/api/platform/release-journal`, standard certificate verification and `NoRedirect`; redirected responses are rejected. TLS protection is established by the client and trusted Render infrastructure. Server authorization still requires independently verified JWT identity/claims and public GitHub approval evidence before any DB access. A request over private HTTP is not distinguishable through a fabricated public-TLS proof; authorized peers are trusted, and headers alone never authorize a request.
 
 References: https://render.com/docs/web-services and https://render.com/docs/private-network
 
@@ -36,7 +38,7 @@ The future probe checks existing schema/connection and never creates or advances
 
 Review these as one bounded batch, not repeated blanket access requests:
 
-1. Review real ingress evidence and the server-side attestor implementation; unknown transport remains denied.
+1. Review and explicitly accept the Render infrastructure/process/authorized-peer boundary and exact HTTPS/no-redirect client contract. No public-TLS attestor is required or claimed.
 2. Revalidate the existing full protected environment, node/ID, main-only rule, reviewer and no admin bypass. Issue/validate a real short-lived JWT in the exact reviewed job without logging or persisting it; missing required claims stop the pilot.
 3. Approve the exact public enrollment values/destination for the actual activation code/workflow SHAs.
 4. Change `id-token:none` to `write` only on `reviewed-mobile`; prepare job stays `none`. Enable only the existing reviewed probe step after manual environment review. Keep publication input false and the first-step publication refusal.

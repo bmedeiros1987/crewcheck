@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import { parseProbeEnrollment, probeEnrollmentFromEnvironment, ENROLLMENT_KEY, SERVICE_ID, SERVICE_ORIGIN, PROBE_OPERATIONS } from '../../server/release-journal/enrollment.mjs';
-import { createRenderIngressVerifier } from '../../server/release-journal/render-ingress.mjs';
+import { createRenderTrustBoundaryVerifier } from '../../server/release-journal/render-ingress.mjs';
 import { prepareProbeDependencies, createProbeOnlyReleaseHandler } from '../../server/release-journal/probe-composition.mjs';
 import { createReleaseJournalHandler, PATH } from '../../server/release-journal/route.mjs';
 import { createOidcVerifier } from '../../server/release-journal/oidc.mjs';
@@ -25,22 +25,22 @@ for (const override of [{ serviceId: 'other' }, { repository: 'foreign/repo' }, 
 assert.equal(probeEnrollmentFromEnvironment({}).policy, null);
 assert.equal(probeEnrollmentFromEnvironment({ ...environment, [ENROLLMENT_KEY]: 'bad secret sentinel' }).policy, null);
 assert.equal(probeEnrollmentFromEnvironment({ ...environment, [ENROLLMENT_KEY]: 'x'.repeat(4097) }).code, 'RELEASE_ENROLLMENT_UNVERIFIED');
-const sealed = new WeakSet();
-const transportAttestor = { inspect(request) { const proof = Object.freeze({ request, socket: request.socket, serviceId: SERVICE_ID, origin: SERVICE_ORIGIN, transport: 'render-public-https', forwardedHeaderOnly: false }); if (request.fixtureTrustedTransport === true) sealed.add(proof); return proof; }, isVerified: proof => sealed.has(proof) };
+// Explicit TEST-only acceptance of trusted infrastructure/process/peers.
+// This is an administrative policy; it does not attest public TLS or a socket.
+const renderTrustBoundary = { serviceId: SERVICE_ID, origin: SERVICE_ORIGIN,
+  trustedInfrastructure: 'render', trustedProcess: 'reviewed-node-process-and-authorized-administrators',
+  trustedPeers: 'authorized-render-private-network-peers' };
 const forged = { socket: {}, headers: { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'crewcheck.onrender.com', forwarded: 'proto=https;host=crewcheck.onrender.com' }, trustedTls: true, ingressProof: { verified: true } };
-assert.equal(await createRenderIngressVerifier()(forged), false);
-assert.equal(await createRenderIngressVerifier(transportAttestor)(forged), false);
-const trusted = { socket: {}, fixtureTrustedTransport: true };
-assert.equal(await createRenderIngressVerifier(transportAttestor)(trusted), true);
-for (const override of [{ socket: {} }, { request: forged }, { origin: 'https://foreign.invalid' }, { serviceId: 'other' }, { transport: 'private-http' }, { forwardedHeaderOnly: true }]) {
-  const proof = { request: trusted, socket: trusted.socket, serviceId: SERVICE_ID, origin: SERVICE_ORIGIN, transport: 'render-public-https', forwardedHeaderOnly: false, ...override };
-  const provider = { inspect: () => proof, isVerified: value => value === proof };
-  assert.equal(await createRenderIngressVerifier(provider)(trusted), false);
+assert.equal(await createRenderTrustBoundaryVerifier()(forged), false);
+assert.equal(await createRenderTrustBoundaryVerifier(forged)(forged), false);
+assert.equal(await createRenderTrustBoundaryVerifier(renderTrustBoundary)(forged), true);
+for (const override of [{ origin: 'https://foreign.invalid' }, { serviceId: 'other' }, { trustedPeers: false }, { trustedProcess: false }, { trustedInfrastructure: false }, { publicHTTPSproof: true }]) {
+  assert.equal(await createRenderTrustBoundaryVerifier({ ...renderTrustBoundary, ...override })(forged), false);
 }
 const raw = database();
 const native = { query: (...args) => raw.query(...args), async getConnection() { const c = await raw.getConnection(); return { async query(sql, args) { if (sql === 'BEGIN') { await c.beginTransaction(); return [{}]; } if (sql === 'COMMIT') { await c.commit(); return [{}]; } if (sql === 'ROLLBACK') { await c.rollback(); return [{}]; } return c.query(sql, args); }, release: () => c.release(), destroy: () => c.destroy() }; } };
 const db = mysqlAdapter(native);
-const dependencies = prepareProbeDependencies({ environment, transportAttestor, githubRequest: url => { publicGets++; return f.request(url); }, now: () => time });
+const dependencies = prepareProbeDependencies({ environment, renderTrustBoundary, githubRequest: url => { publicGets++; return f.request(url); }, now: () => time });
 assert.deepEqual(dependencies.allowedOperations, ['probe']);
 assert(dependencies.githubReviewProvider);
 const verifyToken = createOidcVerifier({ now: () => time, loadJwks: async () => ({ keys: [fixtureJwk] }) });
@@ -49,8 +49,8 @@ const active = createReleaseJournalHandler({ enabled: true, allowedOperations: d
 const frame = operation => ({ schema: 2, id: 'fixture_' + operation, operation, binding: f.binding, revision: 0, input: {} });
 async function call(handler, operation = 'probe', transport = true, bodyOverride) {
   const req = Readable.from([Buffer.from(canonical(bodyOverride ?? frame(operation)))]);
-  req.method = 'POST'; req.socket = {}; req.fixtureTrustedTransport = transport;
-  req.headers = { ...forged.headers, 'content-type': 'application/json', authorization: 'Bearer ' + fixtureToken(f.claims) };
+  req.method = 'POST'; req.socket = {}; // Socket carries no TLS proof.
+  req.headers = { ...forged.headers, 'content-type': 'application/json', authorization: 'Bearer ' + (transport ? fixtureToken(f.claims) : 'forged.jwt.token') };
   req.trustedTls = true; req.ingressProof = { verified: true };
   const res = { writeHead(status) { this.status = status; }, end(text) { this.body = JSON.parse(text); } };
   await handler(req, res, new URL(SERVICE_ORIGIN + PATH)); return res;
@@ -91,7 +91,7 @@ for (const mode of ['rollback', 'lost-commit']) {
   } });
   if (mode === 'lost-commit') fixture.lose();
   const ownFixture = reviewFixture({ operations: ['probe'] });
-  const ownDeps = prepareProbeDependencies({ environment, transportAttestor, githubRequest: ownFixture.request, now: () => time });
+  const ownDeps = prepareProbeDependencies({ environment, renderTrustBoundary, githubRequest: ownFixture.request, now: () => time });
   const handler = createReleaseJournalHandler({ enabled: true, ...ownDeps, poolProvider: async () => testDb, verifyToken, now: () => time });
   const response = await call(handler); assert.equal(response.status, 403); assert.equal(response.body.code, 'RELEASE_JOURNAL_DENIED');
   assert.equal(fixture.rows.get('profile:fictional'), 'unchanged fictional user data');
@@ -100,12 +100,12 @@ for (const mode of ['rollback', 'lost-commit']) {
   assert.equal([...fixture.rows.keys()].filter(key => key.startsWith('play-release-')).length, mode === 'rollback' ? 0 : 3);
 }
 // Caller/environment "enabled" flags cannot switch this factory on, even with a
-// complete valid enrollment and attestor. Bad enrollment also leaves app startup safe.
+// complete valid enrollment and trust boundary. Bad enrollment also leaves app startup safe.
 for (const env of [{}, environment, { ...environment, [ENROLLMENT_KEY]: 'bad' }, { ...environment, RELEASE_ENABLED: 'true' }]) {
   let touches = 0;
-  const off = createProbeOnlyReleaseHandler({ enabled: true, environment: env, githubRequest: () => { touches++; throw Error(); }, poolProvider: () => { touches++; throw Error(); }, transportAttestor: { inspect() { touches++; throw Error(); }, isVerified() { touches++; return true; } } });
+  const off = createProbeOnlyReleaseHandler({ enabled: true, environment: env, githubRequest: () => { touches++; throw Error(); }, poolProvider: () => { touches++; throw Error(); }, renderTrustBoundary });
   const req = { method: 'POST', get headers() { touches++; throw Error(); }, [Symbol.asyncIterator]() { touches++; throw Error(); } };
   const res = { writeHead(status) { this.status = status; }, end(text) { this.body = JSON.parse(text); } };
   await off(req, res, new URL(SERVICE_ORIGIN + PATH)); assert.equal(res.status, 503); assert.equal(res.body.code, 'RELEASE_JOURNAL_OFF'); assert.equal(touches, 0);
 }
-console.log('PASS probe-only composition: exact trusted enrollment, sealed request/socket ingress, forged headers refused, scope before GitHub/DB, exactly3 authority rows in fictional SQL, expiry and compiled OFF');
+console.log('PASS probe-only composition: exact trusted enrollment, explicit process trust boundary, forged headers cannot authenticate, scope before GitHub/DB, exactly3 authority rows in fictional SQL, expiry and compiled OFF');

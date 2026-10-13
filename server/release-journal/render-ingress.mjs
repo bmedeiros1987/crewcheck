@@ -1,16 +1,13 @@
-// A transport attestor must be wired from reviewed server code after real ingress
-// verification. Headers, env strings and request flags are never attestations.
+// This gate records a reviewed process trust boundary, NOT transport evidence.
+// Render terminates public TLS upstream; Node cannot prove external HTTPS.
+// Headers/socket flags cannot opt in. JWT and independent approval remain required.
 import { SERVICE_ID, SERVICE_ORIGIN } from './enrollment.mjs';
-export function createRenderIngressVerifier(transportAttestor) {
-  return async request => {
-    try {
-      if (!transportAttestor || typeof transportAttestor.inspect !== 'function' ||
-          typeof transportAttestor.isVerified !== 'function') return false;
-      const proof = await transportAttestor.inspect(request);
-      if (transportAttestor.isVerified(proof) !== true) return false;
-      return proof.request === request && !!request.socket && proof.socket === request.socket &&
-        proof.serviceId === SERVICE_ID && proof.origin === SERVICE_ORIGIN &&
-        proof.transport === 'render-public-https' && proof.forwardedHeaderOnly === false;
-    } catch { return false; }
-  };
+export function createRenderTrustBoundaryVerifier(renderTrustBoundary) {
+  const accepted = !!renderTrustBoundary &&
+    Object.keys(renderTrustBoundary).sort().join(',') === 'origin,serviceId,trustedInfrastructure,trustedPeers,trustedProcess' &&
+    renderTrustBoundary.serviceId === SERVICE_ID && renderTrustBoundary.origin === SERVICE_ORIGIN &&
+    renderTrustBoundary.trustedInfrastructure === 'render' &&
+    renderTrustBoundary.trustedProcess === 'reviewed-node-process-and-authorized-administrators' &&
+    renderTrustBoundary.trustedPeers === 'authorized-render-private-network-peers';
+  return async () => accepted;
 }
