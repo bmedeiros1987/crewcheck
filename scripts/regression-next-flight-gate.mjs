@@ -71,6 +71,23 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', de
   assert.equal(previousLeg.gate, ''); assert.equal(previousLeg.radarRejected, 'other-segment');
   const otherDay = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, gate: '15', departure: new Date(NOW + 3 * H - 24 * H).toISOString() }, now: NOW });
   assert.equal(otherDay.gate, ''); assert.equal(otherDay.radarRejected, 'other-day', 'ocorrência do dia anterior é recusada');
+  // Ocorrência precisa ser provada pela fonte: só hora ("14:05") ou sem partida não vale.
+  for (const departure of ['14:05', '', undefined]) {
+    const unproven = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, gate: '15', departure }, now: NOW });
+    assert.equal(unproven.gate, '', `partida "${departure}" não prova a ocorrência`); assert.equal(unproven.radarRejected, 'unproven-day');
+  }
+  const localDate = m.flightPublishedDate(next) || m.flightOperationalDate(next);
+  const localSameDay = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, departure: `${localDate} 19:05` }, now: NOW });
+  assert.equal(localSameDay.gate, '9', 'data/hora local do aeroporto com a data publicada é aceita');
+  const localOtherDay = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, departure: '2001-01-01 19:05' }, now: NOW });
+  assert.equal(localOtherDay.gate, ''); assert.equal(localOtherDay.radarRejected, 'other-day');
+  // IATA/ICAO e formatos da fonte identificam o mesmo voo.
+  for (const alias of ['LAN3377', 'LA 3377', 'LA03377', 'LAN3377-1697000000-airline-0123', 'la3377']) {
+    assert.equal(m.canonicalFlightId(alias), 'LA3377', alias);
+    assert.equal(m.resolveNextFlightGate({ event: next, radar: { ...radarBase, flight: alias }, now: NOW }).gate, '9', `${alias} é o mesmo voo`);
+  }
+  assert.equal(m.canonicalFlightId('TAM3100'), 'JJ3100');
+  assert.equal(m.resolveNextFlightGate({ event: next, radar: { ...radarBase, flight: 'LAN3378' }, now: NOW }).radarRejected, 'other-flight');
   const notOk = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, ok: false }, now: NOW });
   assert.equal(notOk.gate, '');
   assert.deepEqual(m.normalizeBoardingGate('Portão 24'), { gate: '24', remote: false, position: false });
@@ -144,6 +161,8 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', de
   assert.equal(key, `CREWCHECK_RADAR_V2:X:LA3377:GRU:REC`, 'mesma chave já usada pelo FlightDeck');
   storage.setItem(key, JSON.stringify({ ...radarBase, flight: 'LA3377', operationalDate: m.flightOperationalDate(next), origin: 'GRU', destination: 'REC' }));
   assert.equal(m.readCachedRadarForFlight(storage, next, NOW)?.gate, '9');
+  storage.setItem(key, JSON.stringify({ ...radarBase, flight: 'LAN3377', operationalDate: m.flightOperationalDate(next), origin: 'GRU', destination: 'REC' }));
+  assert.equal(m.readCachedRadarForFlight(storage, next, NOW)?.gate, '9', 'ident ICAO do FlightAware continua sendo este voo');
   storage.setItem(key, JSON.stringify({ ...radarBase, flight: 'LA3377', operationalDate: '2026-01-01', origin: 'GRU', destination: 'REC' }));
   assert.equal(m.readCachedRadarForFlight(storage, next, NOW), null);
 }

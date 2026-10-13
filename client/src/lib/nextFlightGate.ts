@@ -85,7 +85,7 @@ export type NextFlightGateInfo = {
   /** O portão exibido vem do Radar (base para a validade no relógio). */
   usesRadar: boolean;
   stale: boolean;
-  radarRejected: '' | 'not-ok' | 'other-flight' | 'other-segment' | 'other-day' | 'position';
+  radarRejected: '' | 'not-ok' | 'other-flight' | 'other-segment' | 'other-day' | 'unproven-day' | 'position';
   divergence: { manualGate: string; sourceGate: string; source: 'radar' | 'roster' } | null;
   manual: ManualGateEntry | null;
 };
@@ -228,11 +228,31 @@ export function writeManualGate(
   return { ok: true, entry };
 }
 
-function radarDepartureEpochMs(value: unknown): number {
+const CARRIER_ALIASES: Record<string, string> = { LAN: 'LA', TAM: 'JJ' };
+
+/** Identidade do voo sem depender do formato da fonte: LAN3377, LA 3377, LA03377 e LAN3377-1697…-airline-0 são o mesmo voo. */
+export function canonicalFlightId(value: unknown): string {
+  const raw = upper(value).replace(/\s+/g, '');
+  const match = /^([A-Z]{3}|[A-Z0-9]{2})0*(\d{1,4})(?=-|$)/.exec(raw);
+  if (!match) return raw;
+  return `${CARRIER_ALIASES[match[1]] || match[1]}${match[2]}`;
+}
+
+/**
+ * Prova de que o dado da fonte é desta ocorrência do voo. Horário absoluto compara o instante;
+ * data/hora local do aeroporto compara a data publicada. Sem data ("14:05" ou vazio) não prova nada.
+ */
+function radarOccurrence(value: unknown, event: NextFlightLike, departureEpochMs: number): 'match' | 'other' | 'unproven' {
   const raw = text(value);
-  // Só horários absolutos provam o dia; "14:05" sozinho não identifica a ocorrência.
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw) || !/(Z|[+-]\d{2}:?\d{2})$/.test(raw)) return NaN;
-  return Date.parse(raw);
+  const dated = /^(\d{4}-\d{2}-\d{2})[T ]\d{2}:\d{2}/.exec(raw);
+  if (!dated) return 'unproven';
+  if (/(Z|[+-]\d{2}:?\d{2})$/.test(raw) && Number.isFinite(departureEpochMs)) {
+    const epoch = Date.parse(raw.replace(' ', 'T'));
+    if (Number.isFinite(epoch)) return Math.abs(epoch - departureEpochMs) > RADAR_OTHER_INSTANCE_MS ? 'other' : 'match';
+  }
+  const dates = [flightPublishedDate(event), flightOperationalDate(event)].filter(Boolean);
+  if (!dates.length) return 'unproven';
+  return dates.includes(dated[1]) ? 'match' : 'other';
 }
 
 export function resolveNextFlightGate(input: {
@@ -251,11 +271,12 @@ export function resolveNextFlightGate(input: {
   if (radar) {
     const sourceOrigin = upper(radar.sourceOrigin);
     const sourceDestination = upper(radar.sourceDestination);
-    const radarDeparture = radarDepartureEpochMs(radar.departure);
+    const occurrence = radarOccurrence(radar.departure, event, departureEpochMs);
     if (radar.ok !== true) radarRejected = 'not-ok';
-    else if (upper(radar.flight) && upper(radar.flight) !== upper(event.flightNumber)) radarRejected = 'other-flight';
+    else if (upper(radar.flight) && canonicalFlightId(radar.flight) !== canonicalFlightId(event.flightNumber)) radarRejected = 'other-flight';
     else if ((sourceOrigin && sourceOrigin !== upper(event.origin)) || (sourceDestination && sourceDestination !== upper(event.destination))) radarRejected = 'other-segment';
-    else if (Number.isFinite(radarDeparture) && Number.isFinite(departureEpochMs) && Math.abs(radarDeparture - departureEpochMs) > RADAR_OTHER_INSTANCE_MS) radarRejected = 'other-day';
+    else if (occurrence === 'other') radarRejected = 'other-day';
+    else if (occurrence === 'unproven') radarRejected = 'unproven-day';
     if (radarRejected) radar = null;
   }
 
@@ -349,7 +370,7 @@ export function readCachedRadarForFlight(storage: Pick<Storage, 'getItem'>, even
   try {
     const parsed = JSON.parse(storage.getItem(radarSnapshotStorageKey(event)) || 'null') as RadarCacheRecord | null;
     if (!parsed || !parsed.updatedAt || now - Number(parsed.updatedAt) > RADAR_SNAPSHOT_TTL_MS) return null;
-    if (upper(parsed.flight) !== upper(event.flightNumber)
+    if (canonicalFlightId(parsed.flight) !== canonicalFlightId(event.flightNumber)
       || parsed.operationalDate !== flightOperationalDate(event)
       || upper(parsed.origin) !== upper(event.origin)
       || upper(parsed.destination) !== upper(event.destination)) return null;
