@@ -3,6 +3,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Plane } from 'lucide-react';
 import { rosterDisplayCompare, rosterDisplayIso, rosterInstantIso, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { setPendingNavigationContext } from '@/lib/navigationContext';
 import { classifyScheduleActivity } from '@/lib/scheduleActivityClassification';
+import { NextFlightGateCard } from '@/components/nextflight/NextFlightGateCard';
 import './home-roster-preview.css';
 
 export type HomeRosterEvent = {
@@ -50,7 +51,7 @@ export function HomeRosterPreview({ events, onNavigate }: { events: HomeRosterEv
   }
   function select(iso: string) { setSelected(iso); if (iso < start || iso > shiftDay(start, 6)) setStart(iso); }
 
-  return <section className="cc-home-roster" aria-label="Escala rápida">
+  return <><section className="cc-home-roster" aria-label="Escala rápida">
     <header><div><small>CONSULTA RÁPIDA</small><h2>Sua escala, dia a dia</h2></div><button type="button" onClick={() => onNavigate('roster')}>Escala completa <ChevronRight aria-hidden="true"/></button></header>
     <div className="cc-home-roster-period"><button type="button" aria-label="Sete dias anteriores" onClick={() => setStart(shiftDay(start, -7))}><ChevronLeft/></button><strong>{dayLabel(start, { month: 'long', year: 'numeric' })}</strong><button type="button" aria-label="Próximos sete dias" onClick={() => setStart(shiftDay(start, 7))}><ChevronRight/></button><button type="button" onClick={() => { setStart(today); setSelected(today); }}>Hoje</button></div>
     <div className="cc-home-roster-days" aria-label="Escolher data">
@@ -67,5 +68,7 @@ export function HomeRosterPreview({ events, onNavigate }: { events: HomeRosterEv
     </div>
     {unknown > 0 && <p role="status">{unknown} {unknown === 1 ? 'atividade com data não confirmada' : 'atividades com data não confirmada'}. Consulte a escala completa.</p>}
     <footer>Horários publicados. Consulte sempre a escala e as comunicações oficiais da companhia.</footer>
-  </section>;
+  </section>
+  {/* A Escala rápida não mostra portão; o próximo voo fica logo abaixo dela. */}
+  <NextFlightGateCard events={events}/></>;
 }

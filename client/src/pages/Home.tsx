@@ -111,6 +111,9 @@ import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
+import { MANUAL_GATE_EVENT, flightOperationalDate, gateChangeAlertAllowed, manualGateAccountKey, resolveNextFlightGate, radarSnapshotStorageKey, readCachedRadarForFlight, readManualGate, selectNextFlight } from '@/lib/nextFlightGate';
+import { applyNextFlightToWatchSnapshot } from '@/lib/nextFlightWatch';
+import { ManualGateEditor } from '@/components/nextflight/ManualGateEditor';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import { crewCheckNotificationPermission, publishCrewCheckNotice, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
@@ -1630,14 +1633,13 @@ type RadarSnapshot = {
 const RADAR_CARD_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const RADAR_CARD_REFRESH_MS = 5 * 60 * 1000;
 function radarSnapshotKey(event: ZeroLeg): string {
-  return ['crewcheck_radar_v2', event.id, event.flightNumber, event.origin, event.destination].map((part) => String(part || '').trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '_')).join(':');
+  return radarSnapshotStorageKey(event);
 }
 function radarEventOperationalDate(event: ZeroLeg): string {
-  const date = eventStartDateTime(event);
-  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+  return flightOperationalDate(event);
 }
 function radarSnapshotMatchesEvent(snapshot: RadarSnapshot, event: ZeroLeg): boolean {
-  return String(snapshot.flight || '').trim().toUpperCase() === String(event.flightNumber || '').trim().toUpperCase()
+  return Boolean(radarEventOperationalDate(event)) && String(snapshot.flight || '').trim().toUpperCase() === String(event.flightNumber || '').trim().toUpperCase()
     && snapshot.operationalDate === radarEventOperationalDate(event)
     && String(snapshot.origin || '').trim().toUpperCase() === String(event.origin || '').trim().toUpperCase()
     && String(snapshot.destination || '').trim().toUpperCase() === String(event.destination || '').trim().toUpperCase();
@@ -1659,24 +1661,31 @@ function confirmedRadarGate(value?: string): string {
 }
 function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapshot {
   const previous = readRadarSnapshot(event);
-  const snapshot = { ...payload, flight: payload.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
+  // A origem/destino da fonte ficam preservados para recusar portão de outro trecho.
+  const snapshot = { ...payload, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: payload.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
   const key = radarSnapshotKey(event);
   storage.set(key, JSON.stringify(snapshot));
   window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));
 
-  const previousGate = confirmedRadarGate(previous?.gate) || confirmedRadarGate(event.gate);
-  const nextGate = confirmedRadarGate(snapshot.gate);
-  if (previousGate && nextGate && previousGate !== nextGate) {
+  const manualGate = readManualGate(localStorage, manualGateAccountKey(getStoredUser()), event)?.gate || '';
+  // Alerts must accept exactly the same source/occurrence as the phone/watch decision.
+  const before = resolveNextFlightGate({ event, radar: previous });
+  const after = resolveNextFlightGate({ event, radar: snapshot });
+  const previousGate = manualGate || before.gate;
+  const nextGate = after.operationalDate && after.gateSource === 'radar' && !after.radarRejected && !after.stale ? after.gate : '';
+  const previousRadarGate = before.gateSource === 'radar' && !before.radarRejected ? before.gate : '';
+  if (previousGate && nextGate && previousGate !== nextGate && previousRadarGate !== nextGate) {
     publishCrewCheckNotice({
       id: `gate-change:${event.id}:${nextGate}`,
       dedupeKey: `gate-change:${event.id}:${nextGate}`,
       category: 'gate',
       tone: 'atencao',
       priority: 'alta',
-      title: `Portão alterado · ${nextGate}`,
-      detail: [event.flightNumber, `${previousGate} → ${nextGate}`, snapshot.terminal].filter(Boolean).join(' · '),
+      title: manualGate ? `Portão diverge · fonte indica ${nextGate}` : `Portão alterado · ${nextGate}`,
+      detail: [event.flightNumber, manualGate ? `informado ${manualGate} · fonte ${nextGate}` : `${previousGate} → ${nextGate}`, snapshot.terminal].filter(Boolean).join(' · '),
       pulseCooldownMs: 60_000,
-      systemNotification: 'background',
+      // A notificação do sistema (espelhada e vibrando no relógio) só ocorre na janela do voo.
+      systemNotification: gateChangeAlertAllowed(eventStartDateTime(event).getTime()) ? 'background' : 'never',
       notificationTag: `crewcheck:gate:${event.id}`,
       notificationCooldownMs: 2 * 60_000,
       action: { label: 'Abrir Radar', view: 'radar' },
@@ -3139,7 +3148,7 @@ function RadarView({ event }: { event: ZeroLeg }) {
   const arr = state?.arrival || event.arrival;
   const quality = state?.quality ? `${state.quality}%` : 'Aguardando';
   const latency = state?.latencyMs ? `${state.latencyMs} ms` : '—';
-  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>{flight || 'Voo'} · {event.origin} → {event.destination} · portão e status sincronizados com a próxima programação.</p></section><section className="cz-radar-screen"><article><div className="cz-radar-airline"><AirlineLogo code={airlineCode} name={airlineName}/><strong>{airlineName}</strong></div><h2>{flight || 'Voo'}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {gate} · {terminal}</strong><span>Status: {status}</span></article><article><Plane/><h2>Horários</h2><p>Partida {safe(dep, 'A confirmar')} · Chegada {safe(arr, 'A confirmar')}</p><strong>{state?.ok ? 'Radar atualizado' : 'Radar aguardando fonte'}</strong><span>{state?.message || 'Consultando fontes operacionais disponíveis.'}</span></article><article><ShieldCheck/><h2>Qualidade</h2><p>Precisão {quality} · resposta {latency}</p><strong>{loading ? 'Atualizando...' : 'Seleção automática'}</strong><span>{state?.alternatives ? `${state.alternatives} fonte(s) responderam dentro do limite.` : 'Teste automático por disponibilidade.'}</span></article></section><section className="cz-toolbox"><h2>Ações</h2><div className="cz-tool-actions"><button onClick={() => refresh(true)} disabled={loading}><Radar/> Atualizar e exportar ao card</button><button onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${flight} flight status ${event.origin} ${event.destination}`)}`, '_blank', 'noopener,noreferrer')}><Globe2/> Consultar voo</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button></div></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>{flight || 'Voo'} · {event.origin} → {event.destination} · portão e status sincronizados com a próxima programação.</p></section><section className="cz-radar-screen"><article><div className="cz-radar-airline"><AirlineLogo code={airlineCode} name={airlineName}/><strong>{airlineName}</strong></div><h2>{flight || 'Voo'}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {gate} · {terminal}</strong><span>Status: {status}</span></article><article><Plane/><h2>Horários</h2><p>Partida {safe(dep, 'A confirmar')} · Chegada {safe(arr, 'A confirmar')}</p><strong>{state?.ok ? 'Radar atualizado' : 'Radar aguardando fonte'}</strong><span>{state?.message || 'Consultando fontes operacionais disponíveis.'}</span></article><article><ShieldCheck/><h2>Qualidade</h2><p>Precisão {quality} · resposta {latency}</p><strong>{loading ? 'Atualizando...' : 'Seleção automática'}</strong><span>{state?.alternatives ? `${state.alternatives} fonte(s) responderam dentro do limite.` : 'Teste automático por disponibilidade.'}</span></article></section><section className="cz-toolbox"><h2>Ações</h2><div className="cz-tool-actions"><button onClick={() => refresh(true)} disabled={loading}><Radar/> Atualizar e exportar ao card</button><button onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${flight} flight status ${event.origin} ${event.destination}`)}`, '_blank', 'noopener,noreferrer')}><Globe2/> Consultar voo</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button></div></section><ManualGateEditor event={event}/></>;
 }
 
 type WeatherDisplayMode = 'both' | 'raw' | 'decoded';
@@ -4985,7 +4994,18 @@ export default function Home() {
   useEffect(() => {
     const publishWatchSnapshot = () => {
       try {
-        const snapshot = buildCrewCheckWatchSnapshot(events, event);
+        const base = buildCrewCheckWatchSnapshot(events, event);
+        // Mesmo próximo voo e mesma decisão de portão do card da tela inicial.
+        const nextFlightEvent = selectNextFlight(events);
+        const gateInfo = nextFlightEvent ? resolveNextFlightGate({
+          event: nextFlightEvent,
+          radar: readCachedRadarForFlight(localStorage, nextFlightEvent),
+          manual: readManualGate(localStorage, manualGateAccountKey(getStoredUser()), nextFlightEvent),
+        }) : null;
+        const snapshot = applyNextFlightToWatchSnapshot(base, gateInfo, {
+          primaryEventId: event.id,
+          nextFlightScheduleId: nextFlightEvent ? (nextFlightEvent.canonical?.id || nextFlightEvent.id) : '',
+        });
         window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: snapshot }));
       } catch {
         // Watch sync is auxiliary. Never interfere with roster rendering.
@@ -4996,8 +5016,12 @@ export default function Home() {
     const onRequest = () => publishWatchSnapshot();
     window.addEventListener('crewcheck:watch-snapshot-request', onRequest);
     window.addEventListener('crewcheck:native-ready', onRequest);
+    window.addEventListener('crewcheck:radar-updated', onRequest);
+    window.addEventListener(MANUAL_GATE_EVENT, onRequest);
     const timer = window.setInterval(publishWatchSnapshot, 60_000);
     return () => {
+      window.removeEventListener('crewcheck:radar-updated', onRequest);
+      window.removeEventListener(MANUAL_GATE_EVENT, onRequest);
       window.removeEventListener('crewcheck:watch-snapshot-request', onRequest);
       window.removeEventListener('crewcheck:native-ready', onRequest);
       window.clearInterval(timer);
