@@ -188,7 +188,8 @@ function publicApiErrorMessage(payload: any, status: number, reason: AuthErrorRe
 
 async function jsonFetch<T>(url: string, init?: RequestInit, session?: { isCurrent(): boolean; isSameSession(): boolean; onExpired?(): void }): Promise<T> {
   const protectedRequest = !isPublicAuthRequest(url);
-  const token = protectedRequest ? getToken() : null;
+  const requestSession = protectedRequest ? captureAuthSession() : null;
+  const token = requestSession?.token ?? null;
   let response: Response;
   try {
     response = await fetch(url, {
@@ -209,9 +210,9 @@ async function jsonFetch<T>(url: string, init?: RequestInit, session?: { isCurre
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.ok === false) {
     const reason = classifyAuthErrorReason(response.status, String(payload?.code || '').toUpperCase(), protectedRequest);
-    if (reason === 'session_expired' && token === getToken() && (!session || session.isCurrent())) {
+    if (reason === 'session_expired' && token === getToken() && (!requestSession || requestSession.isCurrent()) && (!session || session.isCurrent())) {
       session?.onExpired?.();
-      if (token === getToken() && (!session || session.isSameSession())) expireSession();
+      if (token === getToken() && (!requestSession || requestSession.isCurrent()) && (!session || session.isSameSession())) expireSession();
     }
     throw new AuthClientError(publicApiErrorMessage(payload, response.status, reason), response.status, payload?.code, payload, reason);
   }

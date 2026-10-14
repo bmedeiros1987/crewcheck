@@ -93,27 +93,36 @@ function Protected({ children }: { children: ReactNode }) {
       getMe({ isCurrent, onSessionExpired: () => {
         if (!isCurrent()) return;
         expired = true;
-        setLocation('/login');
       } }).then(() => {
         if (!isCurrent()) return;
         setStartupStage("profile");
         return enablePartnerDemoRoster(isCurrent, session.owner);
       }).catch(() => {
         // Current transient failures retain the existing local session. A
-        // confirmed expiry routes only through the fenced callback above.
+        // confirmed expiry terminates through the auth-expired listener.
       }).finally(() => {
         if (!expired && isCurrent()) setReady(true);
       });
+    };
+    const onExpired = () => {
+      // Expiry can originate from another current protected request while getMe
+      // is pending. An obsolete event must never route an authenticated account.
+      if (!mounted || isAuthenticated()) return;
+      generation += 1;
+      setReady(false);
+      setLocation('/login');
     };
     const storage = (event: StorageEvent) => {
       if (event.key === null || ['crewcheck_auth_token', 'crewcheck_auth_user'].includes(event.key)) start();
     };
     start();
     window.addEventListener('crewcheck:auth-changed', start);
+    window.addEventListener('crewcheck:auth-expired', onExpired);
     window.addEventListener('storage', storage);
     return () => {
       mounted = false; generation += 1;
       window.removeEventListener('crewcheck:auth-changed', start);
+      window.removeEventListener('crewcheck:auth-expired', onExpired);
       window.removeEventListener('storage', storage);
     };
   }, [setLocation]);

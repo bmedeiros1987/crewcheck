@@ -14,7 +14,7 @@ function fixture() {
   const storage = values => ({ getItem: k => values.get(k) ?? null, setItem: (k,v) => values.set(k,String(v)), removeItem: k => values.delete(k) });
   const window = { localStorage: storage(data), sessionStorage: storage(sessionData), addEventListener: (n,fn) => { if (!listeners.has(n)) listeners.set(n,new Set()); listeners.get(n).add(fn); }, removeEventListener: (n,fn) => listeners.get(n)?.delete(fn), dispatchEvent: event => { for (const fn of [...listeners.get(event.type) || []]) fn(event); } };
   const context = { exports: {}, require, window, localStorage: window.localStorage, sessionStorage: window.sessionStorage, CustomEvent: class { constructor(type){this.type=type;} }, Event: class { constructor(type){this.type=type;} }, AbortController, setTimeout, clearTimeout,
-    fetch: (url,options) => new Promise(resolve => requests.push({url, options, respond: (status,payload) => resolve({ok:status>=200&&status<300,status,json:async()=>payload})})) };
+    fetch: (url,options) => new Promise((resolve,reject) => requests.push({url, options, reject, respond: (status,payload) => resolve({ok:status>=200&&status<300,status,json:async()=>payload})})) };
   vm.runInNewContext(compile(fs.readFileSync('client/src/lib/authClient.ts','utf8')),context);
   const auth=context.exports;
   const select = (id,token=id,emit=true) => { data.set('crewcheck_auth_token',token); data.set('crewcheck_auth_user',JSON.stringify(user(id))); if(emit) window.dispatchEvent(new context.CustomEvent('crewcheck:auth-changed')); };
@@ -63,5 +63,32 @@ if(run('upgrade')) {
  const f=fixture();f.select('email-only');f.mount();f.requests[0].respond(200,{ok:true,user:user('verified-id')});await flush();
  assert.equal(f.requests.length,2);assert(!f.states.includes(true));
  f.requests[1].respond(200,{ok:true,user:user('verified-id')});await flush();f.requests[2].respond(200,{ok:true,partner:false});await flush();assert(f.states.includes(true));f.unmount();checks++;
+}
+// Concurrent preference reads use the real authFetch/jsonFetch expiry contract.
+if(run('concurrent')) for(const mode of ['current401-late401','current401-late200','current401-late503','staleA401','aba401','transient503','offline']) {
+ if(process.env.STARTUP_CONCURRENT_MODE && mode!==process.env.STARTUP_CONCURRENT_MODE)continue;
+ const f=fixture();f.select('A');f.mount();
+ const preference=f.auth.authFetch('/api/platform/notifications/preferences').catch(error=>error);
+ if(mode==='staleA401'||mode==='aba401') { f.select('B'); if(mode==='aba401')f.select('A'); }
+ if(mode==='offline') f.requests[1].reject(new Error('synthetic offline'));
+ else f.requests[1].respond(mode==='transient503'?503:401,{ok:false,code:mode==='transient503'?'BACKEND_UNAVAILABLE':'AUTH_REQUIRED'});
+ await preference;await flush();
+ if(mode.startsWith('current401-')) {
+  assert.equal(f.data.get('crewcheck_auth_token'),undefined);
+  const status=Number(mode.split('late')[1]);
+  f.requests[0].respond(status,status===200?{ok:true,user:user('stale-A')}:{ok:false,code:status===401?'AUTH_REQUIRED':'BACKEND_UNAVAILABLE'});await flush();
+  assert.deepEqual(f.routes,['/login'],'concurrent confirmed expiry must terminate startup after late getMe '+status);
+  assert.equal(JSON.parse(f.data.get('crewcheck_auth_user')).id,'A');assert(!f.states.includes(true));
+ } else {
+  assert.deepEqual(f.routes,[],'stale or transient response must not route login');
+  const current=mode==='staleA401'?'B':'A';assert.equal(f.data.get('crewcheck_auth_token'),current);
+  const latest=f.requests.length-1;
+  if(mode==='staleA401'||mode==='aba401') {
+   for(const request of f.requests.slice(0,latest))if(request.url==='/api/auth/me')request.respond(200,{ok:true,user:user('stale-A')});
+  }
+  f.requests[latest===1?0:latest].respond(503,{ok:false,code:'BACKEND_UNAVAILABLE'});await flush();
+  assert(f.states.includes(true),'current transient access still releases startup');
+ }
+ f.unmount();checks++;
 }
 console.log('PASS startup lifecycle: '+checks+' real getMe/Protected/demo synthetic deferred-response cases');
