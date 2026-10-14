@@ -8,6 +8,7 @@ on:
       - 'client/src/components/alerts/**'
       - 'client/src/components/navigation/InternalHeaderFrame.tsx'
       - 'client/src/lib/alert*.ts'
+      - 'client/src/lib/groundAlertDispositions.ts'
       - 'client/src/lib/complianceAlertSemantics.ts'
       - 'client/src/lib/navigationContext.ts'
       - 'client/src/lib/i18n.ts'

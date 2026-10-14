@@ -1,3 +1,4 @@
+import { isGroundLimitAlert, isGroundAlertIgnored, ignoreGroundAlert, restoreGroundAlerts, pendingLegacyGroundAlerts, applyLegacyGroundAlerts, GROUND_DISPOSITION_EVENT } from '../../lib/groundAlertDispositions';
 import { useEffect, useRef, useState } from 'react';
 import { alertAccount, alertIsReviewed, complianceAlertIdentity, readAlertReviews, saveAlertReview } from '../../lib/alertReviewStore';
 import { getSavedLanguage } from '../../lib/i18n';
@@ -16,16 +17,31 @@ export function AlertCenter({ alerts, roster, onImport, onChoose, pendingAnalysi
   const ready = alertRosterOwned(roster);
   const items = (ready ? alerts : []).map(alert => ({ alert, identity: complianceAlertIdentity(alert, roster) }));
   const history = readAlertReviews();
+  const ignoredItems = items.filter(item => isGroundAlertIgnored(item.identity));
+  const legacyPending = ready ? pendingLegacyGroundAlerts(alerts, roster) : [];
   const currentTarget = target?.alertOccurrence ? items.find(item => item.identity.occurrence === target.alertOccurrence && item.identity.version === target.alertVersion) : null;
   useEffect(() => {
     const focusTarget = () => { const next = consumePendingNavigationContext('alerts'); if (next) setTarget(next); };
+    const sync = () => setRevision(value => value + 1);
     window.addEventListener('crewcheck:set-view', focusTarget);
-    return () => window.removeEventListener('crewcheck:set-view', focusTarget);
+    window.addEventListener(GROUND_DISPOSITION_EVENT, sync);
+    window.addEventListener('storage', sync);
+    return () => { window.removeEventListener('crewcheck:set-view', focusTarget); window.removeEventListener(GROUND_DISPOSITION_EVENT, sync); window.removeEventListener('storage', sync); };
   }, []);
   useEffect(() => { if (currentTarget) { targetRef.current?.focus({ preventScroll: true }); targetRef.current?.scrollIntoView({ block: 'center' }); } }, [target?.alertOccurrence, target?.alertVersion, currentTarget?.identity.occurrence, currentTarget?.identity.version]);
   function mark(item: typeof items[number]) {
     const ok = saveAlertReview({ ...item.identity, state: 'reviewed', title: item.alert.title, date: item.alert.date, category: 'compliance' }, owner);
     setStatus(ok ? copy.stored : copy.failed); setRevision(value => value + 1);
+  }
+  function groundAction(action: () => boolean) { setStatus(action() ? copy.stored : copy.failed); setRevision(value => value + 1); }
+  function renderItem(item: typeof items[number]) { const { alert, identity } = item; const disposition = history.find(row => row.occurrence === identity.occurrence && row.version === identity.version); const reviewed = disposition?.state === 'reviewed'; const ignored = isGroundAlertIgnored(identity); const selected = currentTarget?.identity.occurrence === identity.occurrence;
+      return <article className="cc-alert-card" key={identity.occurrence + identity.version} tabIndex={-1} ref={selected ? targetRef : undefined} data-alert-occurrence={identity.occurrence} data-ground-ignored={ignored || undefined} data-alert-version={identity.version} data-alert-selected={selected}>
+        <header><h2>{originalLanguage ? alert.title : copy.analysis}</h2><span>{ignored ? copy.ignoredGround : disposition?.state === 'dismissed' ? copy.dismissed : reviewed ? copy.reviewed : copy.review}</span></header>
+        {alert.date && <p><time>{alert.date}</time></p>}
+        <p>{originalLanguage ? alert.description : copy.reviewHint}</p>
+        <details open={selected || undefined}><summary>{copy.details}</summary>{!originalLanguage && <div lang="pt-BR"><strong>{copy.original}: {alert.title}</strong><p>{alert.description}</p></div>}{alert.details && <p>{alert.details}</p>}{alert.evidence && <p>{alert.evidence}</p>}{alert.legalReference && <p>{alert.legalReference}</p>}</details>
+        <div className="cc-alert-actions">{isGroundLimitAlert(alert) && !ignored && <button type="button" onClick={() => groundAction(() => ignoreGroundAlert(alert, roster, owner))}>{copy.ignoreGround}</button>}{!ignored && <button type="button" disabled={reviewed || !owner} onClick={() => mark(item)}>{reviewed ? copy.reviewed : copy.mark}</button>}<button type="button" onClick={() => { clearPendingNavigationContext(); window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'regulation' })); }}>{copy.reference}</button></div>
+      </article>;
   }
   return <section className="cc-alert-center" data-review-revision={revision}>
     <div className="cz-panel-head"><h1>{copy.alerts}</h1><p>{copy.saved}</p></div>
@@ -34,15 +50,9 @@ export function AlertCenter({ alerts, roster, onImport, onChoose, pendingAnalysi
     {roster.days?.length > 0 && !ready && <p role="status">{copy.pending}</p>}
     {ready && pendingAnalysis.length > 0 && <section role="status"><p>{copy.pending}</p>{pendingAnalysis.map((pending, index) => <details key={`${pending.code || ''}:${pending.date || ''}:${index}`}><summary>{originalLanguage ? pending.title || copy.details : copy.details}</summary><p lang="pt-BR">{pending.description}</p>{pending.details && <p lang="pt-BR">{pending.details}</p>}</details>)}</section>}
     {roster.days?.length > 0 && ready && !items.length && !pendingAnalysis.length && <p>{copy.noAlerts}</p>}
-    {items.map(item => { const { alert, identity } = item; const disposition = history.find(row => row.occurrence === identity.occurrence && row.version === identity.version); const reviewed = disposition?.state === 'reviewed'; const selected = currentTarget?.identity.occurrence === identity.occurrence;
-      return <article className="cc-alert-card" key={identity.occurrence + identity.version} tabIndex={-1} ref={selected ? targetRef : undefined} data-alert-occurrence={identity.occurrence} data-alert-version={identity.version} data-alert-selected={selected}>
-        <header><h2>{originalLanguage ? alert.title : copy.analysis}</h2><span>{disposition?.state === 'dismissed' ? copy.dismissed : reviewed ? copy.reviewed : copy.review}</span></header>
-        {alert.date && <p><time>{alert.date}</time></p>}
-        <p>{originalLanguage ? alert.description : copy.reviewHint}</p>
-        <details open={selected || undefined}><summary>{copy.details}</summary>{!originalLanguage && <div lang="pt-BR"><strong>{copy.original}: {alert.title}</strong><p>{alert.description}</p></div>}{alert.details && <p>{alert.details}</p>}{alert.evidence && <p>{alert.evidence}</p>}{alert.legalReference && <p>{alert.legalReference}</p>}</details>
-        <div className="cc-alert-actions"><button type="button" disabled={reviewed || !owner} onClick={() => mark(item)}>{reviewed ? copy.reviewed : copy.mark}</button><button type="button" onClick={() => { clearPendingNavigationContext(); window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'regulation' })); }}>{copy.reference}</button></div>
-      </article>;
-    })}
+    {legacyPending.length > 0 && <article className="cc-alert-card" role="status"><p>{copy.legacyGroundNotice}</p><div className="cc-alert-actions"><button type="button" onClick={() => groundAction(() => applyLegacyGroundAlerts(alerts, roster, owner))}>{copy.applyLegacyGround}</button></div></article>}
+    {items.filter(item => !isGroundAlertIgnored(item.identity)).map(renderItem)}
+    {ignoredItems.length > 0 && <section className="cc-alert-card cc-ground-ignored"><details open={ignoredItems.some(item => item === currentTarget) || undefined}><summary>{copy.ignoredGround} ({ignoredItems.length})</summary>{ignoredItems.map(renderItem)}</details><div className="cc-alert-actions"><button type="button" onClick={() => groundAction(() => restoreGroundAlerts(roster, owner))}>{copy.restoreGround}</button></div></section>}
     {status && <p role="status">{status}</p>}
     {history.length > 0 && <details className="cc-alert-history"><summary>{copy.history} ({history.length})</summary>{history.slice().reverse().map(row => <article key={row.occurrence + row.version}><strong>{row.title}</strong><p>{row.date || ''} · {row.state === 'dismissed' ? copy.dismissed : copy.reviewed}</p><time dateTime={row.at}>{alertHistoryDate(row.at)}</time></article>)}</details>}
   </section>;

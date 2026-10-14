@@ -8,7 +8,8 @@ if (!brand.includes('global = false')) {
  brand = brand.replace('pulse = false, backLabel }', 'pulse = false, backLabel, global = false }').replace('backLabel?: string }', 'backLabel?: string; global?: boolean }');
  brand = brand.replace(/\) \{\n/, ') {\n  if (!global && !pulse) return null;\n');
 }
-brand = brand.replace('{pulse ? <CrewCheckPulse compact fallback={lockup}/> : lockup}', '<CrewCheckPulse compact fallback={lockup}/>');
+brand = brand.replace('{pulse ? <CrewCheckPulse compact fallback={lockup}/> : lockup}', '<div className="cc-brand-and-notice">{lockup}<CrewCheckPulse compact/></div>');
+if (!brand.includes('cc-brand-and-notice')) throw new Error('Pulse experience: preserved brand lockup anchor missing');
 if (!brand.includes('if (!global && !pulse) return null;')) throw new Error('Pulse experience: global header guard missing');
 brand = brand.replace("aria-label={back ? backLabel || 'Voltar ao FlightDeck' : 'Menu'}", "aria-label={back ? backLabel || alertText().back : alertText().menu}");
 home = home.slice(0,start) + brand + home.slice(end);

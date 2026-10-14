@@ -1,3 +1,4 @@
+import { isGroundAlertIgnored, GROUND_DISPOSITION_EVENT } from '@/lib/groundAlertDispositions';
 import { alertRosterOwned } from '@/lib/alertRosterOwnership';
 import { AlertCenter } from '@/components/alerts/AlertCenter';
 import { alertAccount, alertIsReviewed, complianceAlertIdentity, ALERT_REVIEW_EVENT } from '@/lib/alertReviewStore';
@@ -969,7 +970,7 @@ function actionableComplianceAlerts(compliance: ComplianceResult | null, include
   const source = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
   const seen = new Set<string>();
   return source.filter((alert: any) => {
-    if (!includeReviewed && alert?.reviewIdentity && alertIsReviewed(alert.reviewIdentity)) return false;
+    if (!includeReviewed && alert?.reviewIdentity && (alertIsReviewed(alert.reviewIdentity) || isGroundAlertIgnored(alert.reviewIdentity))) return false;
     if (!alert || alert.dismissed || alert.falsePositive || alert.active === false || !isActionableComplianceAlert(alert)) return false;
     const title = String(alert.title || '').trim();
     const description = String(alert.description || '').trim();
@@ -1588,7 +1589,7 @@ function Brand({ back, onMenu, pulse = false, global = false }: { back?: boolean
   const lockup = <div className="cz-brand-lockup"><span className="cz-logo"><Plane size={26}/></span><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>;
   return <header className="cz-brand-row">
     <button className="cz-menu-btn" onClick={click} aria-label={back ? alertText().back : alertText().menu}>{back ? '←' : <Menu size={28}/>}</button>
-    {pulse ? <CrewCheckPulse compact fallback={lockup}/> : lockup}
+    <div className="cc-brand-and-notice">{lockup}{pulse && <CrewCheckPulse compact/>}</div>
   </header>;
 }
 function complianceAlertSignature(compliance: ComplianceResult | null): string {
@@ -4998,7 +4999,7 @@ export default function Home() {
   const [alertExperienceRevision, setAlertExperienceRevision] = useState(0);
   useEffect(() => {
     const sync = () => setAlertExperienceRevision(value => value + 1);
-    const names = [ALERT_REVIEW_EVENT, 'crewcheck:auth-changed', 'crewcheck:auth-expired', 'crewcheck:language-change', 'crewcheck:locale-change'];
+    const names = [ALERT_REVIEW_EVENT, GROUND_DISPOSITION_EVENT, 'crewcheck:auth-changed', 'crewcheck:auth-expired', 'crewcheck:language-change', 'crewcheck:locale-change'];
     for (const name of names) window.addEventListener(name, sync);
     window.addEventListener('storage', sync);
     return () => { for (const name of names) window.removeEventListener(name, sync); window.removeEventListener('storage', sync); };
