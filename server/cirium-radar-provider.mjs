@@ -103,6 +103,8 @@ export function evaluateCiriumRadar(request, response, options = {}) {
   if (displayedDeparture === null || displayedArrival === null || displayedArrival <= displayedDeparture
     || displayedArrival - displayedDeparture > day) return result('invalid_payload');
   // Identity helper expects local calendar/time; keep the same instant with canonical origin offset.
+  // Expose the planned source instant already validated above; never use an estimate or request fallback.
+  candidate.scheduledDepartureUtc = new Date(instant(clean.operationalTimes.scheduledGateDeparture.dateUtc)).toISOString();
   candidate.scheduledDeparture = localStamp(scheduledMs, request.originTimeZone);
   candidate.carrier = carrier;
   candidate.flightNumber = flightNumber;

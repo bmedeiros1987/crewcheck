@@ -22,6 +22,7 @@ for (const enabled of [undefined, false, 'true', 1, null]) {
 }
 const good = run();
 assert.equal(good.state, 'available');
+assert.equal(good.candidate.scheduledDepartureUtc, '2026-10-12T01:00:00.000Z');
 assert.equal(good.candidate.departureDate, '2026-10-11');
 assert.equal(good.provenance.fields.departureGate.value, 'A12');
 assert.equal(good.provenance.fields.departureGate.provider, 'cirium-sky');
@@ -32,6 +33,17 @@ const offsetRow = structuredClone(row);
 offsetRow.operationalTimes.scheduledGateDeparture.dateUtc = '2026-10-11T22:00:00-03:00';
 const equivalent = run(request, [offsetRow]);
 assert.equal(equivalent.occurrenceKey, good.occurrenceKey);
+assert.equal(equivalent.candidate.scheduledDepartureUtc, good.candidate.scheduledDepartureUtc);
+const delayedRow = structuredClone(offsetRow);
+delayedRow.operationalTimes.estimatedGateDeparture = { dateUtc: '2026-10-12T04:00:00Z' };
+delayedRow.operationalTimes.estimatedGateArrival = { dateUtc: '2026-10-12T06:00:00Z' };
+const delayed = run(request, [delayedRow]);
+assert.equal(delayed.state, 'available');
+assert.equal(delayed.candidate.scheduledDepartureUtc, good.candidate.scheduledDepartureUtc);
+assert.equal(delayed.candidate.departure, '2026-10-12T04:00:00Z');
+assert.equal(delayed.candidate.estimatedDeparture, delayed.candidate.departure);
+const missingScheduled = structuredClone(delayedRow); delete missingScheduled.operationalTimes.scheduledGateDeparture;
+state('invalid_payload', request, [missingScheduled]);
 assert.equal(equivalent.provenance.fields.scheduledDeparture.value, good.provenance.fields.scheduledDeparture.value);
 assert.equal(good.candidate.arrivalGate, 'B20');
 for (const key of Object.keys(request)) { const missing = { ...request }; delete missing[key]; state('invalid_request', missing); }

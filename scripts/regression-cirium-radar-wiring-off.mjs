@@ -31,6 +31,11 @@ function publishedRoster(flight, date, departureTime, arrivalTime) {
 const legacyRoster = publishedRoster('LA3377', '11/10/2026', '22:00', '00:00');
 const ciriumRoster = publishedRoster('AA123', '01/11/2026', '02:30', '05:00');
 const injection = await import('../server/cirium-radar-injection.mjs');
+const { evaluateCiriumRadar } = await import('../server/cirium-radar-provider.mjs');
+// The valid fallback fixture inherits its planned UTC contract from the real adapter.
+const legacyValidated = evaluateCiriumRadar({carrierNamespace:'FS',carrierFsCode:'LA',flightNumber:'3377',origin:'GRU',destination:'BSB',departureDate:'2026-10-11',originTimeZone:'America/Sao_Paulo',scheduledDepartureUtc:'2026-10-12T01:00:00Z'}, {state:'available',rows:[{carrierFsCode:'LA',flightNumber:'3377',departureAirportFsCode:'GRU',arrivalAirportFsCode:'BSB',operationalTimes:{scheduledGateDeparture:{dateUtc:'2026-10-11T22:00:00-03:00'},scheduledGateArrival:{dateUtc:'2026-10-12T03:00:00Z'}}}]}, {enabled:true});
+assert.equal(legacyValidated.state,'available');
+assert.equal(legacyValidated.candidate.scheduledDepartureUtc,'2026-10-12T01:00:00.000Z');
 const { createCiriumSkyTransport } = await import('../server/cirium-sky-transport.mjs');
 assert.equal(injection.defaultCiriumRadarOptions(), undefined, 'production gate remains OFF');
 const { patchCiriumRadarOff } = await import('./cirium-radar-off/patch.mjs');
@@ -61,7 +66,7 @@ function harness(text, forbidLegacy = false, overrides = {}) {
     globalThis[name] = async () => { legacyHit(); return name === 'providerCustom' ? legacyRow : null; };
   }`, Object.assign(sandbox, { legacyHit() { counters.provider++; if (forbidLegacy) throw Error('Synthetic path reached fallback'); },
     legacyRow: { ok: true, configured: true, flight: 'LA3377', origin: 'GRU', destination: 'BSB', gate: 'C4', terminal: '2',
-      status: 'Programado', departure: '2026-10-12T01:00:00Z', arrival: '2026-10-12T03:00:00Z', latencyMs: 100 } }));
+      status: 'Programado', scheduledDepartureUtc: legacyValidated.candidate.scheduledDepartureUtc, departure: '2026-10-12T01:00:00Z', arrival: '2026-10-12T03:00:00Z', latencyMs: 100 } }));
   return { counters, roster, async call(url, options) {
     let body; const res = { writeHead(status) { assert.equal(status, 200); }, end(value) { body = JSON.parse(value); } };
     await sandbox.handleRadar({}, res, new URL(url), options); return body;
@@ -101,6 +106,7 @@ const body = await synthetic.call(url, { cirium: { enabled: true, source: async 
 } } });
 assert.equal(sourceCalls, 1); assert.equal(body.ok, true); assert.equal(body.configured, false);
 assert.equal(body.provider, 'cirium-sky'); assert.equal(body.providerState, 'available');
+assert.equal(body.scheduledDepartureUtc, '2026-11-01T05:30:00.000Z');
 assert.equal(body.gate, 'A12'); assert.equal(body.updatedAt, '2026-11-01T04:00:00.000Z');
 assert.equal(body.canonicalReadOnly, true); assert.equal(body.exportedToConcierge, false);
 assert.ok(body.occurrenceKey.endsWith('|UTC:2026-11-01T05:30:00.000Z'));
@@ -109,6 +115,15 @@ for (const field of Object.values(body.provenance.fields)) assert.equal(field.oc
 assert.equal(body.provenance.fields.departureGate.provider, 'cirium-sky');
 assert.deepEqual(synthetic.counters, { provider: 0, auth: 2, load: 1, apply: 0, save: 0, env: 0, fetch: 0 });
 assert.deepEqual(synthetic.roster, ciriumRoster, 'Cirium cannot mutate the authorized published roster');
+const delayedRow=structuredClone(row);
+delayedRow.operationalTimes.estimatedGateDeparture={dateUtc:'2026-11-01T07:30:00Z'};
+delayedRow.operationalTimes.estimatedGateArrival={dateUtc:'2026-11-01T10:00:00Z'};
+const delayedHarness=harness(source,true);
+const delayedBody=await delayedHarness.call(url,{cirium:{enabled:true,source:async()=>({state:'available',rows:[delayedRow]})}});
+assert.equal(delayedBody.ok,true);assert.equal(delayedBody.gate,'A12');
+assert.equal(delayedBody.scheduledDepartureUtc,'2026-11-01T05:30:00.000Z');
+assert.equal(delayedBody.departure,'2026-11-01T07:30:00Z');
+assert.equal(delayedHarness.counters.save,0);assert.equal(delayedHarness.counters.provider,0);
 const missing = new URL(url); missing.searchParams.delete('originTimeZone');
 const invalid = harness(source, true);
 assert.equal((await invalid.call(missing, { cirium: { enabled: true, source: () => { throw Error('Invalid request reached source'); } } })).providerState, 'invalid_request');
