@@ -18,6 +18,9 @@ export function assertSharedPdfAckContract({home,android,inbox,channel,binding})
   const aliases=['acknowledgeSharedPdf','readSharedPdfChunk','sharedPdfStatus','reportSharedPdfSession','claimSharedPdf','blockSharedPdf','beginSharedPdfCommit','confirmSharedPdfCommit','readClaimedSharedPdfChunk','acknowledgeClaimedSharedPdf'];
   for(const name of aliases)assert.doesNotMatch(android,new RegExp('public\\s+(?:boolean|String)\\s+'+name+'\\s*\\('),'sensitive global alias '+name);
   assert.doesNotMatch(global,/\b(?:SharedPdfInbox|pdfChannelPolicy|pendingSharedPdfId)\b/,'global interface cannot access inbox authority');
+  for(const method of android.matchAll(/@JavascriptInterface\s+public\s+[\w.<>\[\]]+\s+\w+\s*\(/g)) {
+    assert.doesNotMatch(block(android.slice(method.index),method[0]),/\b(?:SharedPdfInbox|pdfChannelPolicy|pendingSharedPdfId)\b/,'no annotated global method may expose inbox authority');
+  }
   for(const name of ['openPdfPicker','openGoogleDrivePdfPicker'])assert.match(global,new RegExp('public boolean '+name+'\\('),'manual picker preserved');
   const host=flat(block(android,'private void installPdfChannel()'));
   assert(host.includes('acceptsDocument(origin,isMainFrame,document)'),'origin/frame/document required');

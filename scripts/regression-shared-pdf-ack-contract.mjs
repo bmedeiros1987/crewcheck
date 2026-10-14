@@ -7,6 +7,7 @@ assertSharedPdfAckContract(source);let checks=1;
 function rejects(label,key,before,after){assert(source[key].includes(before),'fixture anchor '+label);const fixture={...source,[key]:source[key].replace(before,after)};assert.throws(()=>assertSharedPdfAckContract(fixture),undefined,label);checks++;}
 for(const name of ['acknowledgeSharedPdf','readSharedPdfChunk','sharedPdfStatus','reportSharedPdfSession','claimSharedPdf','blockSharedPdf','beginSharedPdfCommit','confirmSharedPdfCommit','readClaimedSharedPdfChunk','acknowledgeClaimedSharedPdf'])rejects('global alias '+name,'android','public class CrewCheckNativeBridge {','public class CrewCheckNativeBridge {\n @JavascriptInterface public String '+name+'(){return "";}');
 rejects('anonymous new alias cannot expose inbox','android','public class CrewCheckNativeBridge {','public class CrewCheckNativeBridge {\n @JavascriptInterface public boolean oldReceiptAck(){return SharedPdfInbox.acknowledge(MainActivity.this,"id","A");}');
+rejects('another global bridge cannot expose inbox','android','public class CrewCheckIFlightBridge {','public class CrewCheckIFlightBridge {\n @JavascriptInterface public boolean oldInboxAlias(){return SharedPdfInbox.acknowledge(MainActivity.this,"id","A");}');
 rejects('missing owner fence','inbox','!owned(context, id, account) || !"committed"','!"committed"');
 rejects('ACK before committed phase','inbox','!"committed".equals(phase(context))','!"claimed".equals(phase(context))');
 rejects('durable identity guard missing','inbox','pending.id.equals(id.trim())','true');
