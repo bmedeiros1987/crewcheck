@@ -144,7 +144,7 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
           aria-label={`${copy.details}: ${message.title}`}
         >
           <span className="cc-pulse-compact-icon" aria-hidden="true"><Icon size={17}/><i/></span>
-          <strong>{copy.review}</strong>
+          <strong>{message.compactTitle?.trim() || message.title}</strong>
           <span className="cc-pulse-count" aria-hidden="true">{queued + 1}<ChevronDown size={14}/></span>
         </button>
         {expanded && (

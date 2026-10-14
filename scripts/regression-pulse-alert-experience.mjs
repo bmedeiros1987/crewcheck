@@ -10,11 +10,11 @@ const selected=process.argv.find(value=>value.startsWith('--case='))?.slice(7);
 if(process.env.PULSE_SOURCE_ROOT)process.chdir(process.env.PULSE_SOURCE_ROOT);
 const out=path.resolve(process.env.PULSE_EVIDENCE_DIR || 'artifacts/pulse-alert-experience');fs.mkdirSync(out,{recursive:true});
 const source=fs.readFileSync('client/src/pages/Home.tsx','utf8'),ast=ts.createSourceFile('Home.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
-const names=['Brand','CrewCheckMark','actionableComplianceAlerts','currentCompliance','reviewableCompliance','ReviewedAlerts'];
+const names=['Brand','CrewCheckMark','actionableComplianceAlerts','currentCompliance','reviewableCompliance','ReviewedAlerts','BottomNav','complianceAlertSignature'];
 const fns=ast.statements.filter(n=>ts.isFunctionDeclaration(n)&&names.includes(n.name?.text)).map(n=>n.getText(ast)).join('\n');
 const home=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='Home');
 const producer=home.body.statements.find(n=>ts.isExpressionStatement(n)&&n.getText(ast).includes("reconcileCrewCheckPulse('compliance'"));assert(producer,'exercise actual Home producer');
-const entry=`import React,{useEffect,useState} from 'react';import {createRoot} from 'react-dom/client';import {Plane,Menu} from 'lucide-react';
+const entry=`import React,{useEffect,useState} from 'react';import {createRoot} from 'react-dom/client';import {createPortal} from 'react-dom';import {Plane,Menu,Home as HomeIcon,CalendarDays,Bell,BriefcaseBusiness,Navigation} from 'lucide-react';
 import CrewCheckPulse from '${path.resolve('client/src/components/pulse/CrewCheckPulse.tsx')}';
 import {FlightDeckContextUnavailable} from '${path.resolve('client/src/components/navigation/FlightDeckNavigationContext.tsx')}';
 import {InternalHeaderFrame} from '${path.resolve('client/src/components/navigation/InternalHeaderFrame.tsx')}';
@@ -31,6 +31,7 @@ import * as complianceSemantics from '${path.resolve('client/src/lib/complianceA
 const {isActionableComplianceAlert,informationalComplianceDiagnostics}=complianceSemantics;
 const {alertAccount,alertIsReviewed,complianceAlertIdentity,ALERT_REVIEW_EVENT}=reviews;
 const {reconcileCrewCheckPulse,publishCrewCheckNotice}=runtime;
+const storage={get:(key,fallback='')=>localStorage.getItem(key)??fallback,set:(key,value)=>localStorage.setItem(key,value)};
 const analyzeSafe=()=>({alerts:[]});const neutralCompliance=()=>({alerts:[],metrics:{}});
 ${fns}
 const fixtureMetrics={...Object.fromEntries(['totalFlightHours','maxFlightHoursRolling28Days','totalDutyHours','maxFlightHoursMonth','maxDutyHoursMonth','totalDaysOff','minDaysOffRequired','totalStandby','maxStandbyMonth','nightOperations','maxNightOps168h','weekendPairs','minWeekendPairs','restDays','daysOff','standbyCount','reserveCount','averageTurnaround','maxConsecutiveNights','maxNightOps168hCount','totalGroundHours','maxGroundIntervalMinutes','groundLimitExceedances'].map(key=>[key,0])),flightHoursOriginPending:false};
@@ -41,7 +42,7 @@ function Harness(){const[bundle,setBundle]=useState(initial),[view,setView]=useS
 window.fixture.update=(next,bindSelection=true)=>{if(bindSelection)bind(next);setBundle(next)};window.fixture.bundle=bundle;window.fixture.open=()=>setView('alerts');
 useEffect(()=>{const sync=()=>bump(v=>v+1);const navigate=e=>setView(e.detail);for(const name of [ALERT_REVIEW_EVENT,GROUND_DISPOSITION_EVENT,'crewcheck:auth-changed','crewcheck:language-change','crewcheck:locale-change'])window.addEventListener(name,sync);window.addEventListener('crewcheck:set-view',navigate);return()=>{for(const name of [ALERT_REVIEW_EVENT,GROUND_DISPOSITION_EVENT,'crewcheck:auth-changed','crewcheck:language-change','crewcheck:locale-change'])window.removeEventListener(name,sync);window.removeEventListener('crewcheck:set-view',navigate)}},[]);
 ${producer.getText(ast)}
-return <main className='cz-app' data-version='synthetic' data-view={view}><InternalHeaderFrame><Brand back={view!=='cockpit'}/></InternalHeaderFrame><Brand back/>{view==='radar'&&<FlightDeckContextUnavailable targetView='radar'/>}<div id='priority-program'>SYNTHETIC PROGRAM</div>{view==='alerts'&&<ReviewedAlerts key={alertAccount()||'unbound'} compliance={compliance} roster={bundle.roster} onImport={()=>window.fixture.imported=true} onChoose={()=>window.fixture.chosen=true}/>}</main>};createRoot(document.getElementById('root')).render(<Harness/>);`;
+return <main className='cz-app' data-version='synthetic' data-view={view}><InternalHeaderFrame><Brand back={view!=='cockpit'}/></InternalHeaderFrame><Brand back/>{view==='radar'&&<FlightDeckContextUnavailable targetView='radar'/>}<div id='priority-program'>SYNTHETIC PROGRAM</div>{view==='alerts'&&<ReviewedAlerts key={alertAccount()||'unbound'} compliance={compliance} roster={bundle.roster} onImport={()=>window.fixture.imported=true} onChoose={()=>window.fixture.chosen=true}/>}<BottomNav view={view} setView={setView} openMenu={()=>{}} alertCount={actionableComplianceAlerts(reviewableCompliance(compliance,bundle.roster)).length} alertSignature={complianceAlertSignature(reviewableCompliance(compliance,bundle.roster))}/></main>};createRoot(document.getElementById('root')).render(<Harness/>);`;
 await build({stdin:{contents:entry,loader:'tsx',resolveDir:process.cwd()},bundle:true,format:'iife',outfile:path.join(out,'app.js'),jsx:'automatic',tsconfig:'tsconfig.json',logLevel:'silent'});
 // Real shipped cascade, plus the terminal integrated style, in the same order.
 const css=['client/src/index.css','client/src/styles/internal-global-header.css','client/src/styles/ipad-header-recovery.css','client/src/styles/fixed-navigation-headers.css','client/src/components/pulse/integrated-header.css'];
@@ -77,6 +78,27 @@ try{
   await page.waitForSelector('.cc-pulse-compact-trigger');
   assert.equal(await page.locator('.cz-global-header .cz-brand-lockup').count(),1,'active Pulse must retain the CrewCheck logo and name');
   assert(await page.locator('.cz-global-header .cz-brand-lockup').isVisible());
+ }
+ if (!selected || selected==='badge-review') {
+  await page.evaluate(()=>{window.badgeBundle=structuredClone(fixture.initial);badgeBundle.compliance.alerts=[0,1].map(i=>({...fixture.initial.compliance.alerts[0],id:'badge-'+i,code:'BADGE_'+i,title:'SYNTHETIC badge '+i}));fixture.update(badgeBundle)});
+  const badge=page.locator('.cz-bottom-nav button').filter({hasText:'Alertas'}).locator('em');
+  await badge.filter({hasText:'2'}).waitFor();await page.locator('.cz-bottom-nav button').filter({hasText:'Alertas'}).click();
+  await page.getByText('SYNTHETIC badge 0',{exact:true}).first().waitFor();assert.equal(await badge.count(),1,'opening Alerts must retain the badge');assert.equal(await badge.innerText(),'2','opening Alerts does not acknowledge active occurrences');assert.equal(await page.evaluate(()=>fixture.reviews.readAlertReviews().length),0);
+  await page.getByRole('button',{name:'Marcar como revisado',exact:true}).first().click();await page.waitForFunction(()=>document.querySelector('.cz-bottom-nav em')?.textContent==='1');
+  await page.locator('.cz-bottom-nav button').first().click();await page.locator('.cz-bottom-nav button').filter({hasText:'Alertas'}).click();assert.equal(await badge.innerText(),'1','only the explicitly reviewed occurrence leaves the badge');
+  await page.reload();await page.waitForFunction(()=>window.fixture?.bundle);await page.evaluate(()=>{const b=structuredClone(fixture.initial);b.compliance.alerts=[0,1].map(i=>({...b.compliance.alerts[0],id:'badge-'+i,code:'BADGE_'+i,title:'SYNTHETIC badge '+i}));fixture.update(b)});await badge.filter({hasText:'1'}).waitFor();
+  await page.evaluate(()=>{localStorage.removeItem('crewcheck:alert-review:v1:'+fixture.reviews.alertAccount());localStorage.removeItem('crewcheck_alerts_seen_signature');localStorage.removeItem('crewcheck_alerts_seen_count');fixture.update(structuredClone(fixture.initial));window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'}));window.dispatchEvent(new Event('crewcheck:alert-review-changed'))});
+ }
+ if (!selected || selected==='compact-label') {
+  await page.evaluate(()=>{const next=structuredClone(fixture.initial);next.compliance.alerts=[];fixture.update(next)});await page.waitForTimeout(40);
+  for(const category of ['gate','weather','wakeup','roster']) {
+   const title='SYNTHETIC full operational '+category,compactTitle='SYNTHETIC '+category;
+   await page.evaluate(({category,title,compactTitle})=>{fixture.runtime.clearCrewCheckPulse();fixture.runtime.publishCrewCheckPulse({id:'label-'+category,category,title,compactTitle,systemNotification:'never'})},{category,title,compactTitle});
+   await page.locator('.cc-pulse-compact[data-category='+category+']').waitFor();assert.equal(await page.locator('.cc-pulse-compact-trigger strong').innerText(),compactTitle,'compact operational label follows the current message');assert.equal(await page.locator('.cc-pulse-compact-trigger').getAttribute('aria-label'),'Detalhes: '+title);
+   await page.locator('.cc-pulse-compact-trigger').click();assert.equal(await page.locator('.cc-pulse-popover-copy>strong').innerText(),title);await page.keyboard.press('Escape');
+  }
+  await page.evaluate(()=>{fixture.runtime.clearCrewCheckPulse();fixture.runtime.publishCrewCheckPulse({id:'label-fallback',title:'SYNTHETIC exact title fallback',compactTitle:'  ',systemNotification:'never'})});await page.waitForFunction(()=>document.querySelector('.cc-pulse-compact-trigger strong')?.textContent==='SYNTHETIC exact title fallback');
+  await page.evaluate(()=>{fixture.runtime.clearCrewCheckPulse();fixture.update(structuredClone(fixture.initial))});await page.waitForSelector('.cc-pulse-compact-trigger');
  }
  if (!selected || selected==='pending-relogin') {
   await page.evaluate(()=>{window.dispatchEvent(new Event('crewcheck:auth-will-change'));localStorage.removeItem('crewcheck_auth_token');window.dispatchEvent(new Event('crewcheck:auth-changed'))});

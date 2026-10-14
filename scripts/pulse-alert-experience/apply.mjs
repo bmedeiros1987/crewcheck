@@ -17,6 +17,19 @@ const legacyStart=home.indexOf('function Alerts('), legacyEnd=home.indexOf('func
 if(legacyStart>=0&&legacyEnd>legacyStart)home=home.slice(0,legacyStart)+home.slice(legacyEnd);
 const dispositionStart=home.indexOf('type ComplianceAlertDisposition ='), dispositionEnd=home.indexOf('function analyzeSafe(',dispositionStart);
 if(dispositionStart>=0&&dispositionEnd>dispositionStart)home=home.slice(0,dispositionStart)+home.slice(dispositionEnd);
+// Earlier legacy preparation rebuilds the navigation. Preserve its portal, items
+// and menu coverage, but never treat opening the view as explicit review.
+const navStart=home.indexOf('function BottomNav('), navEnd=home.indexOf('function KpiCard(',navStart);
+if(navStart<0||navEnd<0)throw new Error('Pulse experience: review-aware navigation anchor missing');
+let bottomNav=home.slice(navStart,navEnd);
+if(bottomNav.includes('const currentSignature =')) {
+ const seenStart=bottomNav.indexOf('  const currentSignature ='), itemsStart=bottomNav.indexOf('  const items:',seenStart);
+ if(itemsStart<0)throw new Error('Pulse experience: navigation items anchor missing');
+ bottomNav=bottomNav.slice(0,seenStart)+'  const visibleAlertCount = alertCount;\n'+bottomNav.slice(itemsStart);
+ bottomNav=bottomNav.replace("if (v === 'alerts') markAlertsRead(); ",'');
+}
+if(!bottomNav.includes('const visibleAlertCount = alertCount;')||/markAlertsRead|seenSignature/.test(bottomNav))throw new Error('Pulse experience: navigation must require explicit review');
+home=home.slice(0,navStart)+bottomNav+home.slice(navEnd);
 fs.writeFileSync(path, home);
 const cssPath='client/src/styles/ipad-header-recovery.css';
 const marker='/* Single integrated Pulse header */';
