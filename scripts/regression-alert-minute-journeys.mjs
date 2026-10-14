@@ -77,6 +77,27 @@ try {
         assert.equal(engine.analyzeCompliance(roster([prior,closed,knownNext])).metrics.maxConsecutiveNights,2);
       }
     }
+    if (!selected || selected === 'uncertainty-boundary') {
+      const early = day('01/10/2032','01:00',null,'01:40','04:00');
+      const daytime = day('02/10/2032','10:00','18:00','10:40','17:30');
+      const nights = ['10','11','20'].map(date => day(`${date}/10/2032`,'02:10','10:30','02:50','10:00'));
+      const actual = engine.analyzeCompliance(roster([early,daytime,...nights]));
+      console.log(JSON.stringify({timezone,case:'uncertainty-boundary-observed',maxConsecutiveNights:actual.metrics.maxConsecutiveNights}));
+      assert.equal(actual.metrics.maxConsecutiveNights,2,'missing historical release cannot poison a new sequence after a complete daytime journey');
+      assert.ok(!actual.alerts.some(alert => /consecutivas.*revisar sequência/.test(alert.title)));
+      const filled = {...early,dutyDebrief:'04:30',dutyDebriefSource:'published'};
+      assert.equal(engine.analyzeCompliance(roster([filled,daytime,...nights])).metrics.maxConsecutiveNights,2);
+      const events = canonical.buildCanonicalRosterEvents(roster([early,daytime,...nights]));
+      const sequence = modules.load('publishedNightJourneys').publishedNightJourneySequence(events, () => true, 48, () => false);
+      assert.equal(sequence.uncertainEnds.length,1,'historical missing release stays explicit');
+      assert.equal(sequence.blockingEnds.length,0,'old flight uncertainty is scoped to the terminated sequence');
+      assert.equal(sequence.sequenceBoundaries.length,1);
+      assert.equal(measurement.measureCanonicalDuty(events,events.find(event => event.publishedDay.date === '01/10/2032').id).state,'incomplete');
+      const openHsb = {...day('02/10/2032','12:00',null,'',''),type:'HSB',pairingCode:'HSB',legs:[]};
+      const shortNext = day('03/10/2032','20:10','01:00','20:50','00:30');
+      const later = day('10/10/2032','02:10','10:30','02:50','10:00');
+      assert.equal(engine.analyzeCompliance(roster([openHsb,shortNext,later])).metrics.maxConsecutiveNights,2,'a later night release alone never closes an unknown HSB');
+    }
     if (!selected || selected === 'journey') {
       const first = day('04/10/2032','22:10','01:05','22:50','00:35');
       const daytime = day('05/10/2032','06:05','14:25','06:45','13:55');

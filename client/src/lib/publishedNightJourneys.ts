@@ -53,25 +53,39 @@ export function publishedNightJourneySequence(
 
   let current = 0, maxConsecutive = 0, busyEnd: number | null = null;
   const uncertainEnds: string[] = [];
+  const blockingEnds = new Map<string, boolean>();
+  const sequenceBoundaries: { journeyId: string; previousUncertainFlights: string[] }[] = [];
   const resets: { from: number; to: number; freeMinutes: number }[] = [];
   const sequence: typeof journeys = [];
   let longest: typeof journeys = [];
   for (const journey of journeys) {
     // Only the previous release and this presentation delimit the free gap.
     // This journey's own release is irrelevant to proving that preceding gap.
-    if (busyEnd !== null && !uncertainEnds.length && journey.startProven !== null
+    if (busyEnd !== null && !blockingEnds.size && journey.startProven !== null
       && journey.startProven - busyEnd >= resetAfterFreeHours * HOUR) {
       resets.push({ from: busyEnd, to: journey.startProven, freeMinutes: (journey.startProven - busyEnd) / 60_000 });
       current = 0; sequence.length = 0;
     }
     // An open availability is retained until its end is actually published.
     // Later unrelated releases never silently close it or prove48h free.
-    if (journey.endProven === null) uncertainEnds.push(journey.journeyId);
+    if (journey.endProven === null) { uncertainEnds.push(journey.journeyId); blockingEnds.set(journey.journeyId, journey.availability); }
     else busyEnd = Math.max(busyEnd ?? journey.endProven, journey.endProven);
     if (!journey.operational || !journey.timingKnown) continue;
-    if (!journey.night) { current = 0; sequence.length = 0; continue; }
+    if (!journey.night) {
+      current = 0; sequence.length = 0;
+      if (journey.measured) {
+        // A complete daytime journey terminates the prior night sequence.
+        // Its verified release anchors subsequent gaps. Historical missing
+        // flight releases remain unknown, but cannot join that new sequence.
+        // This does not infer closure/activation of an open availability.
+        const previousUncertainFlights = [...blockingEnds].filter(([, availability]) => !availability).map(([id]) => id);
+        for (const id of previousUncertainFlights) blockingEnds.delete(id);
+        if (previousUncertainFlights.length) sequenceBoundaries.push({ journeyId: journey.journeyId, previousUncertainFlights });
+      }
+      continue;
+    }
     current += 1; sequence.push(journey);
     if (current > maxConsecutive) { maxConsecutive = current; longest = [...sequence]; }
   }
-  return { maxConsecutive, journeys, longest, resets, uncertainEnds };
+  return { maxConsecutive, journeys, longest, resets, uncertainEnds, blockingEnds: [...blockingEnds.keys()], sequenceBoundaries };
 }
