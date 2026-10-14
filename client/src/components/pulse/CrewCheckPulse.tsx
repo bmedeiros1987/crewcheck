@@ -137,14 +137,14 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
         <button
           type="button"
           ref={detailsRef}
-          className="cc-pulse-compact-trigger cc-pulse-compact-details-trigger"
+          className="cc-pulse-compact-trigger cc-pulse-compact-details-trigger cc-pulse-compact-details"
           onClick={toggleDetails}
           aria-controls={expanded ? detailsId : undefined}
           aria-expanded={expanded}
           aria-label={`${copy.details}: ${message.title}`}
         >
           <span className="cc-pulse-compact-icon" aria-hidden="true"><Icon size={17}/><i/></span>
-          <strong>{message.compactTitle || message.title}</strong>
+          <strong>{copy.review}</strong>
           <span className="cc-pulse-count" aria-hidden="true">{queued + 1}<ChevronDown size={14}/></span>
         </button>
         {expanded && (
@@ -155,6 +155,9 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
               {message.action?.view && <button type="button" className="cc-pulse-action" onClick={act}>{message.action.label}</button>}
             </div>
             <div className="cc-pulse-controls">
+              <button type="button" className="cc-pulse-collapse" onClick={collapseDetails} aria-label={copy.collapse}>
+                <ChevronDown size={16} aria-hidden="true"/>
+              </button>
               {message.dismissible !== false && (
                 <button type="button" className="cc-pulse-dismiss" onClick={dismiss} aria-label={copy.close}>
                   <X size={16}/>
