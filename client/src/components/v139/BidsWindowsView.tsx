@@ -223,12 +223,12 @@ export default function BidsWindowsView() {
       <p>Pendentes vinculados a este ciclo no servidor são cancelados ao confirmar. Envios iniciados não podem ser recolhidos. Alarmes locais e calendários importados ainda não têm cancelamento integrado.</p>
     </section>
     <details className="cc139-card">
-      <summary>Referência histórica · vigência não validada</summary>
-      <p>Esta referência não contém ano, fonte verificável ou fuso oficial. Confirme o comunicado vigente antes de cadastrar datas; salvar não comprova envio de alertas.</p>
+      <summary>Referência · informativo de 05/02/2026</summary>
+      <p>O informativo de 05/02/2026 apresenta acesso geral e uma janela IDEAL para instrutores. Em outubro: acesso geral de 11 a 15; janela ideal para instrutores de 11 a 13. Esta referência não define hora, fuso ou competência deste cadastro e não preenche nem agenda o formulário manual.</p>
       <div className="cc139-badges">
-        {PBS_OFFICIAL_WINDOWS.map((item) => <span key={item.month}><b>{item.label}</b> · geral {item.generalStart}-{item.generalEnd} · instrutor {item.instructorStart}-{item.instructorEnd}{item.exception ? ' · exceção' : ''}</span>)}
+        {PBS_OFFICIAL_WINDOWS.map((item) => <span key={item.month}><b>{item.label}</b> · geral {item.generalStart}-{item.generalEnd} · ideal para instrutores {item.instructorStart}-{item.instructorEnd}{item.exception ? ' · exceção' : ''}</span>)}
       </div>
-      <p>Janeiro não aparece nesta referência. As datas oficiais vigentes ainda precisam ser confirmadas.</p>
+      <p>Janeiro não consta nesta tabela. Confirme a competência e os horários no comunicado aplicável antes de cadastrar uma janela.</p>
     </details>
     <section className="cc139-card">
       <h2>{form.id ? 'Revisar janela manual' : 'Janela padrão ou revisão manual'}</h2><p>{functional?.resolution?.status==='resolved'?`Política ${functional.resolution.window.policyId} · versão ${functional.resolution.window.policyRevision} · fuso ${functional.resolution.window.timezone}. Fonte: ${functional.resolution.window.source.label}. Revisar os campos transforma este cadastro em revisão manual.`:functional?.resolution?.pending?.join(' ')||'Janela padrão ainda não resolvida. Nenhuma data será presumida.'}</p><p>Confirme ou revise o perfil em Menu → Notificações.</p>
@@ -242,9 +242,9 @@ export default function BidsWindowsView() {
 
 
       </div>
-      {selectedOfficial && instructor!==null && <p><CalendarCheck2/> Referência: {selectedOfficial.label}, dias {instructor ? selectedOfficial.instructorStart : selectedOfficial.generalStart} a {instructor ? selectedOfficial.instructorEnd : selectedOfficial.generalEnd}. Esta referência não define horários oficiais verificados. Informe os dados do comunicado vigente.</p>}
+      {selectedOfficial && instructor!==null && <p><CalendarCheck2/> Referência: {selectedOfficial.label}, acesso geral de {selectedOfficial.generalStart} a {selectedOfficial.generalEnd}; janela ideal para instrutores de {selectedOfficial.instructorStart} a {selectedOfficial.instructorEnd}. Esta referência não define horários oficiais verificados. Informe os dados do comunicado vigente.</p>}
       <div className="cc139-actions">
-        <button disabled title="Fonte, ano, horários e fuso precisam ser confirmados"><CalendarCheck2/> Referência sem fonte verificada</button>
+        <button disabled title="Confirme competência, horários e fuso antes de cadastrar"><CalendarCheck2/> Referência informativa · preenchimento manual</button>
         <button className="primary" onClick={save} disabled={busy}><Save/> {busy ? 'Salvando…' : 'Salvar janela'}</button>
         <button onClick={exportCalendar}><Download/> Exportar calendário</button>
       </div>

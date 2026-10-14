@@ -110,7 +110,9 @@ async function visibleTextBounds(page, selector) {
         await page.screenshot({ path: path.join(output, `${width}-${theme}-${size}-home.png`) });
         assert.ok(alertBounds.height >= 44 && (size > 100 || alertBounds.height <= 100), 'Operational alert link is compact with an accessible target: ' + JSON.stringify({ width, theme, size, bounds: alertBounds, style: alertStyle }));
         assert.deepEqual(await visibleTextBounds(page, '.cc-operational-alert-link'), [], 'Operational alert text fits at enlarged size');
-        await alertLink.click(); await page.locator('.cz-alert-detail').waitFor();
+        await alertLink.click(); await page.locator('.cc-alert-center').waitFor();
+        const alertDetails = page.locator('.cc-alert-center details').first();
+        await alertDetails.locator('summary').click(); await alertDetails.locator('p').first().waitFor();
         await page.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'settings' })));
         await page.reload(); await page.locator('.cz-app').waitFor();
         await page.waitForFunction(size => document.documentElement.dataset.crewTextSize === String(size), size);

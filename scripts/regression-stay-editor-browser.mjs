@@ -24,6 +24,7 @@ if(fs.existsSync('dist/icons'))fs.cpSync('dist/icons',path.join(output,'icons'),
 
 await build({ stdin: { contents: `
 import React,{useState,useEffect,useMemo} from 'react';
+import {alertText} from '@/lib/alertExperienceText';
 import {createRoot} from 'react-dom/client';
 import Presentation from '@/components/v1391/PresentationStayManagerView';
 import {openStayProgramEditor,consumeStayEditorReturn,readStayEditorIntent,returnFromStayProgramEditor,hasStoredStayEditorOrigin,clearStoredStayEditorOrigin} from '@/lib/stayEditorNavigation';

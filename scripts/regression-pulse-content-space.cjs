@@ -75,7 +75,7 @@ async function visibleTextBounds(page, selector) {
  const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||undefined});
  try {
   for(const width of (process.env.PULSE_SPACE_QUICK==='1'?[320]:[320,390,1440])) for(const height of (process.env.PULSE_SPACE_QUICK==='1'?[420]:[420,844])) for(const theme of (process.env.PULSE_SPACE_QUICK==='1'?['light']:['light','dark'])) for(const size of (process.env.PULSE_SPACE_QUICK==='1'?[200]:[200,150,100])) {
-   const context=await browser.newContext({viewport:{width,height},hasTouch:width<500,isMobile:width<500,serviceWorkers:'block',timezoneId:'America/Sao_Paulo'});
+   const context=await browser.newContext({viewport:{width,height},hasTouch:width<500,isMobile:width<500,serviceWorkers:'block',timezoneId:'America/Sao_Paulo',locale:'pt-BR'});
    await context.route('**/*',route=>{const u=new URL(route.request().url());if(u.origin!==origin)return route.abort();if(u.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[],"enabled":false}'});return route.continue();});
    await context.addInitScript(fixtureScope.qaSeed,{theme,kind:fixtureScope.qaRoster('multi'),amount:1234567.89});
    // Explicit consent belongs to this synthetic owner. Unowned legacy flags must
@@ -86,15 +86,15 @@ async function visibleTextBounds(page, selector) {
    await page.locator('body > nav.cz-bottom-nav').waitFor({state:'visible'});
    await page.evaluate(()=>{document.documentElement.style.setProperty('--cc-safe-area-top','24px');document.documentElement.style.setProperty('--cc-safe-area-bottom','20px');document.querySelector('body > nav.cz-bottom-nav').style.setProperty('bottom','20px','important');window.dispatchEvent(new Event('resize'));});await settle(page);
    const title='QA crítico: confira toda a programação da escala oficial antes de seguir para o aeroporto';
-   await page.evaluate(title=>window.dispatchEvent(new CustomEvent('crewcheck:pulse',{detail:{dedupeKey:'qa-space-long',title,detail:('Texto longo sintético para leitura integral, com detalhes operacionais sem qualquer dado real. ').repeat(40)+' FIM DO AVISO SINTÉTICO.',tone:'erro',priority:'critica',category:'compliance',dismissible:true,autoDismissMs:0,systemNotification:'never'}})),title);
-   for(let i=0;i<8;i++){await settle(page);if(await page.locator('.cc-pulse-compact-trigger strong').innerText()===title)break;await page.locator('.cc-pulse-compact-details').click();await page.locator('.cc-pulse-dismiss').click();await page.waitForTimeout(220);}
-   assert.equal(await page.locator('.cc-pulse-compact-trigger strong').innerText(),title);await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));await settle(page);
+   await page.evaluate(title=>window.dispatchEvent(new CustomEvent('crewcheck:pulse',{detail:{dedupeKey:'qa-space-long',title,compactTitle:'Escala: atenção',detail:('Texto longo sintético para leitura integral, com detalhes operacionais sem qualquer dado real. ').repeat(40)+' FIM DO AVISO SINTÉTICO.',tone:'erro',priority:'critica',category:'compliance',dismissible:true,autoDismissMs:0,systemNotification:'never'}})),title);
+   for(let i=0;i<8;i++){await settle(page);if(await page.locator('.cc-pulse-compact-trigger').getAttribute('aria-label')==='Detalhes: '+title)break;await page.locator('.cc-pulse-compact-details').click();await page.locator('.cc-pulse-dismiss').click();await page.waitForTimeout(220);}
+   assert.equal(await page.locator('.cc-pulse-compact-trigger').getAttribute('aria-label'),'Detalhes: '+title);assert.equal(await page.locator('.cc-pulse-compact-trigger strong').innerText(),'Escala: atenção','Message-specific compact label preserves the full original title in details');await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));await settle(page);
    const measure=()=>page.evaluate(()=>{const b=el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom}};const header=b(document.querySelector('.cz-global-header')),nav=b(document.querySelector('body > nav.cz-bottom-nav'));return {header,nav,usable:nav.y-header.bottom,scrollY,bodyOverflow:getComputedStyle(document.body).overflowY};});
    const closed=await measure();fs.writeFileSync(path.join(output,'latest-geometry.json'),JSON.stringify({testedCommit,width,height,theme,size,closed},null,2));
    await page.screenshot({path:path.join(output,`${width}-${height}-${theme}-${size}-closed.png`)});
    assert.equal(await page.locator('.cz-global-header').evaluate(el=>getComputedStyle(el).position),'relative','Header remains in normal flow');
    await page.locator('.cc-pulse-compact-details').click();await page.locator('.cc-pulse-popover').waitFor();await settle(page);
-   const expanded=await measure();assert.ok(expanded.header.height>=closed.header.height,'Pulse expansion uses document height');
+   assert.equal(await page.locator('.cc-pulse-popover-copy strong').innerText(),title,'Full original title is available without truncation');const expanded=await measure();assert.ok(expanded.header.height>=closed.header.height,'Pulse expansion uses document height');
    assert.equal(await page.locator('.cz-global-header .cc-pulse-compact').count(),1,'Single Pulse inside normal-flow header');
    await page.screenshot({path:path.join(output,`${width}-${height}-${theme}-${size}-expanded.png`)});
    const before=expanded.header;
