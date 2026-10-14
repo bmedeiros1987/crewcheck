@@ -5,6 +5,9 @@ import { mysqlAdapter } from './mysql-platform-adapter.mjs';
 import { amilDocumentaryReferences, AMIL_DOCUMENTARY_NOTICE } from '../shared/amil-documentary-reference.mjs';
 import { amilPlanFamily, amilConfirmedProviders, amilUnknownMessage, AMIL_GUIDE_URL } from '../shared/amil-coverage.mjs';
 import { notificationStateDeletionStatements } from './v139/notificationStateDeletion.mjs';
+import { loadChatInbox } from './platform-chat-inbox.mjs';
+import { withProfileLocks, requestPeerConnection, answerPeerConnection, canonicalConnections, publicRosterProjection } from './platform-sharing.mjs';
+import { writeChatMessage } from './platform-chat-write.mjs';
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { diagnoseCirium, diagnoseCiriumFlight } from './cirium-diagnostic.mjs';
@@ -670,39 +673,7 @@ function stripSharedCoworkerFields(value) {
 
 function rosterForPermissions(roster, permissions = {}) {
   if (!roster) return null;
-  const allowed = allowedPermissions(permissions);
-  if (!allowed.roster) return {
-    year: roster.year, month: roster.month, base: roster.base, days: [],
-  };
-  const copy = stripSharedCoworkerFields(sanitizeRoster(roster));
-  copy.days = copy.days.map((day) => {
-    const next = { ...day };
-    if (!allowed.hotels) {
-      delete next.hotel;
-      delete next.hotelName;
-      delete next.accommodation;
-    }
-    if (!allowed.presentation) {
-      delete next.presentation;
-      delete next.hotelPresentation;
-      delete next.reportTime;
-      delete next.dutyReport;
-    }
-    if (!allowed.radar) {
-      delete next.gate;
-      delete next.terminal;
-      delete next.status;
-      next.legs = Array.isArray(next.legs) ? next.legs.map((leg) => {
-        const clean = { ...leg };
-        delete clean.gate;
-        delete clean.terminal;
-        delete clean.status;
-        return clean;
-      }) : [];
-    }
-    return next;
-  });
-  return copy;
+  return publicRosterProjection(stripSharedCoworkerFields(sanitizeRoster(roster)), allowedPermissions(permissions));
 }
 
 function rosterKey(roster) {
@@ -930,6 +901,19 @@ async function handleDatabaseHealth(req, res) {
   });
 }
 
+function planOperationalLimits(profile = {}, billing = {}) {
+  const plan = String(profile?.plan || billing?.plan || 'free').toLowerCase();
+  const premium = Boolean(billing?.premiumAccess || /premium|unlimited|partner|admin/.test(plan));
+  return {
+    premium,
+    guestLimit: premium ? 5 : 1,
+    meteoFavorites: premium ? 20 : 2,
+    meteoFollowHours: premium ? 24 : 3,
+    backgroundTrafficAlerts: premium,
+    backgroundMeteoAlerts: premium,
+  };
+}
+
 async function requirePremium(context, res, feature = 'Este recurso') {
   const billing = await subscriptionStatus(context.db, context.profile);
   if (!billing.premiumAccess) {
@@ -989,6 +973,7 @@ async function clearAuthFailures(db, identifier) {
 }
 
 const PLATFORM_METHOD_POLICIES = [
+  [/^\/api\/platform\/(?:visitor\/)?chat\/inbox$/, ['GET']],
   [/^\/api\/platform\/catalog$/, ['GET']],
   [/^\/api\/platform\/database\/health$/, ['GET']],
   [/^\/api\/platform\/profile$/, ['GET', 'PATCH']],
@@ -1728,7 +1713,8 @@ async function handleVisitors(req, res) {
   const body = req.method === 'POST' ? await readBody(req, 500_000) : {};
   const context = await requireMain(req, res, body);
   if (!context) return;
-  if (!await requirePremium(context, res, 'Modo visitante')) return;
+  const billing = await subscriptionStatus(context.db, context.profile);
+  const limits = planOperationalLimits(context.profile, billing);
   if (req.method === 'POST') {
     const email = safeEmail(body.email);
     if (!email) return sendJson(res, 400, { ok: false, message: 'Informe o e-mail do visitante.' });
@@ -1739,7 +1725,12 @@ async function handleVisitors(req, res) {
     const permissions = allowedPermissions(body.permissions);
     const displayName = normalizeText(body.displayName || email.split('@')[0], 120);
     const telegram = normalizeText(body.telegram, 80).replace(/^@/, '');
-    await context.db.query(`
+    const creation = await withProfileLocks(context.db, [context.identity.email], async (client) => {
+      const existing = await client.query('SELECT id,status FROM crewcheck_platform_visitors WHERE owner_email=$1 AND email=$2 FOR UPDATE', [context.identity.email, email]);
+      if (existing.rows[0] && existing.rows[0].status !== 'revoked') return { existing: existing.rows[0] };
+      const countResult = await client.query("SELECT COUNT(*) count FROM crewcheck_platform_visitors WHERE owner_email=$1 AND status<>'revoked'", [context.identity.email]);
+      if (Number(countResult.rows[0]?.count || 0) >= limits.guestLimit) return { limit: true };
+    await client.query(`
       INSERT INTO crewcheck_platform_visitors(id,owner_email,email,display_name,telegram,password_hash,invite_token_hash,telegram_token_hash,permissions,status,must_change_password)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'invited',TRUE)
       ON DUPLICATE KEY UPDATE
@@ -1748,7 +1739,10 @@ async function handleVisitors(req, res) {
         telegram_token_hash=VALUES(telegram_token_hash),permissions=VALUES(permissions),
         status='invited',must_change_password=TRUE,updated_at=NOW()`,
     [id, context.identity.email, email, displayName, telegram, passwordHash(password), sha256(token), sha256(telegramToken), JSON.stringify(permissions)]);
-    const saved = await context.db.query('SELECT id FROM crewcheck_platform_visitors WHERE owner_email=$1 AND email=$2 LIMIT 1', [context.identity.email, email]);
+      return { created: true };
+    });
+    if (creation.existing) return sendJson(res, 200, { ok: true, created: false, id: creation.existing.id, status: creation.existing.status, message: creation.existing.status === 'active' ? 'Este visitante já possui acesso. Suas permissões e senha foram preservadas.' : 'Este visitante já foi convidado. Use Reenviar convite se precisar renovar o convite.' });
+    if (creation.limit) return sendJson(res, 402, { ok: false, code: 'VISITOR_LIMIT_REACHED', limit: limits.guestLimit, message: `Seu plano permite até ${limits.guestLimit} convidados ativos. Revogue um acesso antes de criar outro.` });
     const link = `${publicBaseUrl(req)}/visitor?token=${encodeURIComponent(token)}`;
     const bot = env('TELEGRAM_BOT_USERNAME', env('CREWCHECK_TELEGRAM_BOT_USERNAME', 'crewchecknotify_bot')).replace(/^@/, '');
     const telegramLink = `https://t.me/${bot}?start=visitor_${telegramToken}`;
@@ -1762,7 +1756,7 @@ async function handleVisitors(req, res) {
       text: `Você recebeu acesso de visitante ao CrewCheck.\n\nLink: ${link}\nSenha temporária: ${password}\n\nNo primeiro acesso, defina uma nova senha. O titular controla e pode revogar todas as permissões.\nTelegram: ${telegramLink}`,
       html: `<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;padding:24px"><h1>Convite CrewCheck</h1><p><b>${safeOwnerName}</b> convidou você para acompanhar informações selecionadas da escala.</p><p><a href="${safeLink}" style="display:inline-block;padding:14px 20px;border-radius:12px;background:#0b5678;color:#fff;text-decoration:none;font-weight:bold">Aceitar convite</a></p><p>Senha temporária: <b>${safePassword}</b></p><p>Você deverá criar outra senha no primeiro acesso.</p><p><a href="${safeTelegramLink}">Vincular Telegram</a></p></div>`,
     });
-    return sendJson(res, 200, { ok: true, id: saved.rows[0]?.id || id, emailSent: mail.ok, link: mail.ok ? undefined : link, temporaryPassword: mail.ok ? undefined : password, telegramLink, permissions, message: mail.ok ? 'Convite enviado pelo CrewCheck.' : 'Convite criado. O e-mail não está configurado; compartilhe o link e a senha temporária exibidos agora.' });
+    return sendJson(res, 200, { ok: true, created: true, id, emailSent: mail.ok, link: mail.ok ? undefined : link, temporaryPassword: mail.ok ? undefined : password, telegramLink, permissions, message: mail.ok ? 'Convite enviado pelo CrewCheck.' : 'Convite criado. O e-mail não está configurado; compartilhe o link e a senha temporária exibidos agora.' });
   }
   const result = await context.db.query('SELECT id,email,display_name,telegram,permissions,status,must_change_password,last_login_at,created_at FROM crewcheck_platform_visitors WHERE owner_email=$1 ORDER BY created_at DESC', [context.identity.email]);
   return sendJson(res, 200, { ok: true, visitors: result.rows });
@@ -1821,10 +1815,11 @@ async function handleVisitorAccept(req, res) {
     return sendJson(res, 401, { ok: false, message: 'Convite, e-mail ou senha temporária inválidos.' });
   }
   await clearAuthFailures(db, throttleId);
-  await db.query("UPDATE crewcheck_platform_visitors SET password_hash=$2,invite_token_hash=$3,status='active',must_change_password=FALSE,last_login_at=NOW(),updated_at=NOW() WHERE id=$1", [visitor.id, passwordHash(nextPassword), retiredTokenHash()]);
+  const claimed = await db.query("UPDATE crewcheck_platform_visitors SET password_hash=$2,invite_token_hash=$3,status='active',must_change_password=FALSE,last_login_at=NOW(),updated_at=NOW() WHERE id=$1 AND status='invited' AND invite_token_hash=$4", [visitor.id, passwordHash(nextPassword), retiredTokenHash(), sha256(token)]);
+  if (!claimed.rowCount) return sendJson(res, 409, { ok: false, message: 'Este convite já foi utilizado, renovado ou revogado.' });
   const jwt = issueVisitorJwt(visitor);
   const secure = env('NODE_ENV').toLowerCase() === 'production' ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `crewcheck_visitor_token=${encodeURIComponent(jwt)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`);
+  res.setHeader('Set-Cookie', [`crewcheck_visitor_token=${encodeURIComponent(jwt)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`, `crewcheck_visitor_session=${sha256(jwt)}; Path=/; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`]);
   return sendJson(res, 200, { ok: true, message: 'Convite aceito. Sua senha foi definida.' });
 }
 
@@ -1859,7 +1854,7 @@ async function handleVisitorLogin(req, res) {
   await db.query('UPDATE crewcheck_platform_visitors SET last_login_at=NOW() WHERE id=$1', [visitor.id]);
   const jwt = issueVisitorJwt(visitor);
   const secure = env('NODE_ENV').toLowerCase() === 'production' ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `crewcheck_visitor_token=${encodeURIComponent(jwt)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`);
+  res.setHeader('Set-Cookie', [`crewcheck_visitor_token=${encodeURIComponent(jwt)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`, `crewcheck_visitor_session=${sha256(jwt)}; Path=/; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${secure}`]);
   return sendJson(res, 200, { ok: true, message: 'Acesso de visitante liberado.' });
 }
 
@@ -1886,7 +1881,7 @@ async function handleVisitorData(req, res) {
 
 async function handleVisitorLogout(req, res) {
   const secure = env('NODE_ENV').toLowerCase() === 'production' ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `crewcheck_visitor_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`);
+  res.setHeader('Set-Cookie', [`crewcheck_visitor_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`, `crewcheck_visitor_session=; Path=/; SameSite=Lax; Max-Age=0${secure}`]);
   return sendJson(res, 200, { ok: true, message: 'Sessão de visitante encerrada.' });
 }
 
@@ -2035,7 +2030,7 @@ async function handleShares(req, res) {
     const url = `${publicBaseUrl(req)}/share/${token}`;
     return sendJson(res, 200, { ok: true, id, url, token, expiresAt, permissions, revocable: true, message: 'Link temporário criado. O QR deve conter somente este link revogável.' });
   }
-  const result = await context.db.query('SELECT id,kind,roster_key,permissions,expires_at,revoked_at,created_at FROM crewcheck_platform_shares WHERE owner_email=$1 ORDER BY created_at DESC LIMIT 100', [context.identity.email]);
+  const result = await context.db.query('SELECT id,kind,roster_key,permissions,expires_at,revoked_at,created_at FROM crewcheck_platform_shares WHERE owner_email=$1 ORDER BY created_at DESC,id DESC LIMIT 100', [context.identity.email]);
   return sendJson(res, 200, { ok: true, shares: result.rows });
 }
 async function handleSharePublic(req, res, token) {
@@ -2075,6 +2070,7 @@ async function handleConnections(req, res) {
   const context = await requireMain(req, res, body);
   if (!context) return;
   if (!await requirePremium(context, res, 'Comparação de escala')) return;
+  let requestResult = null;
   if (req.method === 'POST') {
     const targetEmail = safeEmail(body.email || body.publicId);
     const targetId = normalizeText(body.publicId, 20).toUpperCase();
@@ -2082,20 +2078,14 @@ async function handleConnections(req, res) {
       ? await context.db.query('SELECT email,display_name,public_id FROM crewcheck_platform_profiles WHERE email=$1 LIMIT 1', [targetEmail])
       : await context.db.query('SELECT email,display_name,public_id FROM crewcheck_platform_profiles WHERE public_id=$1 LIMIT 1', [targetId]);
     if (!target.rows[0] || target.rows[0].email === context.identity.email) return sendJson(res, 404, { ok: false, message: 'ID CrewCheck não localizado.' });
-    await context.db.query(
-      `INSERT INTO crewcheck_platform_connections(id,requester_email,target_email,status,permissions)
-       VALUES($1,$2,$3,'pending',$4)
-       ON DUPLICATE KEY UPDATE status='pending',permissions=VALUES(permissions),updated_at=NOW()`,
-      [crypto.randomUUID(), context.identity.email, target.rows[0].email, JSON.stringify({ compareRoster: true, chat: Boolean(body.chat !== false) })],
-    );
+    requestResult = await requestPeerConnection(context.db, context.identity.email, target.rows[0].email, { compareRoster: true, chat: body.chat !== false }, body.reinvite === true);
   }
   if (req.method === 'PATCH') {
     const id = normalizeText(body.id, 80);
-    const status = body.status === 'accepted' ? 'accepted' : 'declined';
-    await context.db.query('UPDATE crewcheck_platform_connections SET status=$3,updated_at=NOW() WHERE id=$1 AND target_email=$2', [id, context.identity.email, status]);
+    await answerPeerConnection(context.db, context.identity.email, id, body.status);
   }
   const result = await context.db.query(`SELECT c.*,pr.display_name requester_name,pr.public_id requester_id,pt.display_name target_name,pt.public_id target_id FROM crewcheck_platform_connections c JOIN crewcheck_platform_profiles pr ON pr.email=c.requester_email JOIN crewcheck_platform_profiles pt ON pt.email=c.target_email WHERE c.requester_email=$1 OR c.target_email=$1 ORDER BY c.updated_at DESC`, [context.identity.email]);
-  return sendJson(res, 200, { ok: true, connections: result.rows.map((row) => ({ id: row.id, direction: row.requester_email === context.identity.email ? 'outgoing' : 'incoming', status: row.status, person: row.requester_email === context.identity.email ? { displayName: row.target_name, publicId: row.target_id } : { displayName: row.requester_name, publicId: row.requester_id }, permissions: row.permissions })) });
+  return sendJson(res, 200, { ok: true, requestResult, message: !requestResult ? undefined : requestResult.created ? 'Solicitação enviada. O outro usuário precisa aceitar.' : requestResult.status === 'accepted' ? 'Vocês já estão conectados.' : requestResult.status === 'pending' ? (requestResult.direction === 'incoming' ? 'Você já recebeu um convite desta pessoa. Responda na lista abaixo.' : 'Seu convite já está pendente; não foi duplicado.') : 'Esta conexão está encerrada. O acesso não foi reativado.', connections: canonicalConnections(result.rows).map((row) => ({ id: row.id, direction: row.requester_email === context.identity.email ? 'outgoing' : 'incoming', status: row.status, person: row.requester_email === context.identity.email ? { displayName: row.target_name, publicId: row.target_id } : { displayName: row.requester_name, publicId: row.requester_id }, permissions: row.permissions })) });
 }
 async function handleCompare(req, res, url) {
   const context = await requireMain(req, res);
@@ -2124,6 +2114,38 @@ async function handleCompare(req, res, url) {
   });
   return sendJson(res, 200, { ok: true, colleague: { displayName: other.display_name, publicId: other.public_id }, summary: { daysCompared: rows.length, bothFree: rows.filter((row) => row.bothFree).length, sameHotel: rows.filter((row) => row.sameHotel).length }, rows, privacy: 'A comparação exibe disponibilidade agregada, não números de voo, quarto ou dados pessoais.' });
 }
+async function handleChatInbox(req, res, visitorMode = false) {
+  if (req.method !== 'GET') return sendJson(res, 405, { ok: false, message: 'Método não permitido.' });
+  res.setHeader('Cache-Control', 'no-store');
+  let db; let recipient; let conversations;
+  if (visitorMode) {
+    const identity = visitorIdentity(req);
+    if (!identity) return sendJson(res, 401, { ok: false, message: 'Acesso de visitante expirado.' });
+    db = await pool();
+    if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
+    const result = await db.query("SELECT * FROM crewcheck_platform_visitors WHERE id=$1 AND owner_email=$2 AND status='active' LIMIT 1", [identity.visitorId, identity.ownerEmail]);
+    const visitor = result.rows[0];
+    if (!visitor || !allowedPermissions(visitor.permissions).chat) return sendJson(res, 403, { ok: false, message: 'Chat não autorizado.' });
+    const ownerResult = await db.query('SELECT * FROM crewcheck_platform_profiles WHERE email=$1 LIMIT 1', [visitor.owner_email]);
+    const owner = ownerResult.rows[0];
+    if (!owner || !(await subscriptionStatus(db, owner)).premiumAccess) return sendJson(res, 402, { ok: false, message: 'Chat indisponível.' });
+    recipient = `visitor:${visitor.id}`;
+    conversations = [{ directKey: visitorChatKey(visitor), kind: 'owner', targetId: owner.public_id }];
+  } else {
+    const context = await requireMain(req, res);
+    if (!context || !await requirePremium(context, res, 'Chat interno')) return;
+    db = context.db; recipient = context.identity.email;
+    const connections = await db.query("SELECT c.requester_email,c.target_email,c.permissions,p.public_id FROM crewcheck_platform_connections c JOIN crewcheck_platform_profiles p ON p.email=CASE WHEN c.requester_email=$1 THEN c.target_email ELSE c.requester_email END WHERE c.status='accepted' AND (c.requester_email=$1 OR c.target_email=$1)", [recipient]);
+    const visitors = await db.query("SELECT id,owner_email,permissions FROM crewcheck_platform_visitors WHERE owner_email=$1 AND status='active'", [recipient]);
+    conversations = [
+      ...connections.rows.filter((row) => row.permissions?.chat === true).map((row) => ({ directKey: [row.requester_email, row.target_email].sort().join('|'), kind: 'colleague', targetId: row.public_id })),
+      ...visitors.rows.filter((row) => allowedPermissions(row.permissions).chat).map((row) => ({ directKey: visitorChatKey(row), kind: 'visitor', targetId: row.id })),
+    ];
+  }
+  const { items, snapshotVersion } = await loadChatInbox(db, recipient, conversations);
+  return sendJson(res, 200, { ok: true, recipient: sha256(`chat-inbox:${recipient}`), items, snapshotVersion, windowDays: 7, limit: 100 });
+}
+
 async function handleChat(req, res, url) {
   const body = req.method === 'POST' ? await readBody(req, 100_000) : {};
   const context = await requireMain(req, res, body);
@@ -2146,11 +2168,9 @@ async function handleChat(req, res, url) {
   if (req.method === 'POST') {
     const message = normalizeText(body.message, 2000);
     if (!message) return sendJson(res, 400, { ok: false, message: 'Digite uma mensagem.' });
-    const recent = await context.db.query('SELECT COUNT(*) count FROM crewcheck_platform_chat_messages WHERE thread_id=$1 AND sender_email=$2 AND created_at>DATE_SUB(NOW(), INTERVAL 1 MINUTE)', [threadId, context.identity.email]);
-    if (Number(recent.rows[0]?.count || 0) >= 20) return sendJson(res, 429, { ok: false, message: 'Muitas mensagens em pouco tempo. Aguarde um minuto.' });
-    await context.db.query('INSERT INTO crewcheck_platform_chat_messages(id,thread_id,sender_email,body) VALUES($1,$2,$3,$4)', [crypto.randomUUID(), threadId, context.identity.email, message]);
+    await writeChatMessage(context.db, threadId, context.identity.email, message, body.requestId);
   }
-  const messages = await context.db.query('SELECT id,sender_email,body,created_at FROM crewcheck_platform_chat_messages WHERE thread_id=$1 ORDER BY created_at DESC LIMIT 100', [threadId]);
+  const messages = await context.db.query('SELECT id,sender_email,body,created_at FROM crewcheck_platform_chat_messages WHERE thread_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100', [threadId]);
   return sendJson(res, 200, { ok: true, threadId, person: { displayName: other.display_name, publicId: other.public_id }, messages: messages.rows.reverse().map((row) => ({ id: row.id, mine: row.sender_email === context.identity.email, body: row.body, createdAt: row.created_at })) });
 }
 
@@ -2168,16 +2188,14 @@ async function visitorChatThread(db, visitor) {
   return result.rows[0].id;
 }
 
-async function appendChatMessage(db, threadId, sender, value) {
+async function appendChatMessage(db, threadId, sender, value, requestId) {
   const message = normalizeText(value, 2000);
   if (!message) throw Object.assign(new Error('Digite uma mensagem.'), { status: 400 });
-  const recent = await db.query('SELECT COUNT(*) count FROM crewcheck_platform_chat_messages WHERE thread_id=$1 AND sender_email=$2 AND created_at>DATE_SUB(NOW(), INTERVAL 1 MINUTE)', [threadId, sender]);
-  if (Number(recent.rows[0]?.count || 0) >= 20) throw Object.assign(new Error('Muitas mensagens em pouco tempo. Aguarde um minuto.'), { status: 429 });
-  await db.query('INSERT INTO crewcheck_platform_chat_messages(id,thread_id,sender_email,body) VALUES($1,$2,$3,$4)', [crypto.randomUUID(), threadId, sender, message]);
+  return writeChatMessage(db, threadId, sender, message, requestId);
 }
 
 async function chatMessages(db, threadId, mineKey) {
-  const result = await db.query('SELECT id,sender_email,body,created_at FROM crewcheck_platform_chat_messages WHERE thread_id=$1 ORDER BY created_at DESC LIMIT 100', [threadId]);
+  const result = await db.query('SELECT id,sender_email,body,created_at FROM crewcheck_platform_chat_messages WHERE thread_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100', [threadId]);
   return result.rows.reverse().map((row) => ({ id: row.id, mine: row.sender_email === mineKey, body: row.body, createdAt: row.created_at }));
 }
 
@@ -2195,7 +2213,7 @@ async function handleVisitorChat(req, res) {
   if (!owner || !(await subscriptionStatus(db, owner)).premiumAccess) return sendJson(res, 402, { ok: false, code: 'OWNER_PREMIUM_REQUIRED', message: 'O chat está pausado porque o plano Premium do titular não está ativo.' });
   const threadId = await visitorChatThread(db, visitor);
   const sender = `visitor:${visitor.id}`;
-  if (req.method === 'POST') await appendChatMessage(db, threadId, sender, body.message);
+  if (req.method === 'POST') await appendChatMessage(db, threadId, sender, body.message, body.requestId);
   return sendJson(res, 200, { ok: true, threadId, person: { displayName: owner.display_name, publicId: owner.public_id }, messages: await chatMessages(db, threadId, sender) });
 }
 
@@ -2209,7 +2227,7 @@ async function handleOwnerVisitorChat(req, res, visitorId) {
   if (!visitor) return sendJson(res, 404, { ok: false, message: 'Visitante ativo não localizado.' });
   if (!allowedPermissions(visitor.permissions).chat) return sendJson(res, 403, { ok: false, message: 'Habilite a permissão de chat para este visitante.' });
   const threadId = await visitorChatThread(context.db, visitor);
-  if (req.method === 'POST') await appendChatMessage(context.db, threadId, context.identity.email, body.message);
+  if (req.method === 'POST') await appendChatMessage(context.db, threadId, context.identity.email, body.message, body.requestId);
   return sendJson(res, 200, { ok: true, threadId, person: { displayName: visitor.display_name, visitorId: visitor.id }, messages: await chatMessages(context.db, threadId, context.identity.email) });
 }
 
@@ -2579,6 +2597,8 @@ export async function handlePlatformRoute(req, res, url) {
     if (shareRevoke) { await handleShareRevoke(req, res, shareRevoke[1]); return true; }
     if (url.pathname === '/api/platform/connections') { await handleConnections(req, res); return true; }
     if (url.pathname === '/api/platform/compare') { await handleCompare(req, res, url); return true; }
+    if (url.pathname === '/api/platform/chat/inbox') { await handleChatInbox(req, res); return true; }
+    if (url.pathname === '/api/platform/visitor/chat/inbox') { await handleChatInbox(req, res, true); return true; }
     if (url.pathname === '/api/platform/chat') { await handleChat(req, res, url); return true; }
     if (url.pathname === '/api/platform/gyms/checkins') { await handleGym(req, res, url); return true; }
     if (url.pathname === '/api/platform/parking') { await handleParking(req, res); return true; }
