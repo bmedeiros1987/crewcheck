@@ -1622,6 +1622,7 @@ type RadarSnapshot = {
   status?: string;
   departure?: string;
   scheduledDepartureUtc?: string;
+  operationalDeparture?: string;
   sourceReceivedAt?: number;
   sourceOrigin?: string;
   sourceDestination?: string;
@@ -1690,7 +1691,7 @@ function confirmedRadarGate(value?: string): string {
 function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapshot {
   const previous = readRadarSnapshot(event);
   // A origem/destino da fonte ficam preservados para recusar portão de outro trecho.
-  const snapshot = { ...payload, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: payload.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
+  const snapshot = { ...payload, operationalDeparture: payload.operationalDeparture ?? payload.departure, departure: payload.scheduledDepartureUtc ?? payload.departure, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: payload.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
   const key = radarSnapshotKey(event);
   storage.set(key, JSON.stringify(snapshot));
   window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));
@@ -3194,7 +3195,7 @@ function RadarView({ event }: { event: ZeroLeg }) {
   const status = verified?.status || event.status || 'Monitorando';
   const gate = gateInfo.gate || 'A confirmar';
   const terminal = gateInfo.terminal || 'A confirmar';
-  const dep = verified?.departure || event.departure;
+  const dep = verified?.operationalDeparture || verified?.departure || event.departure;
   const arr = verified?.arrival || event.arrival;
   const quality = verified?.quality ? `${verified.quality}%` : 'Aguardando';
   const latency = verified?.latencyMs ? `${verified.latencyMs} ms` : '—';

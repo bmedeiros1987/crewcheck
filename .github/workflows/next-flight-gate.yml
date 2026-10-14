@@ -5,6 +5,7 @@ on:
       - 'server.mjs'
       - 'shared/gate-query-day*'
       - 'shared/timezone-choice.mjs'
+      - 'scripts/regression-radar-provider-provenance.mjs'
       - 'scripts/regression-radar-source-occurrence.mjs'
       - 'scripts/regression-gate-query-day.mjs'
       - 'scripts/regression-gate-query-proof.mjs'
@@ -35,6 +36,9 @@ jobs:
       - run: npm ci
       - name: Simulated contract in three timezones (no network, no credentials)
         run: |
+          TZ=UTC node scripts/regression-radar-provider-provenance.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
           TZ=UTC node scripts/regression-radar-source-occurrence.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-source-occurrence.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-source-occurrence.mjs
@@ -49,6 +53,9 @@ jobs:
       - name: Verify actual prepared Radar handoff, civil date and safe notices
         run: |
           node scripts/v139/apply.mjs
+          TZ=UTC node scripts/regression-radar-provider-provenance.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
           TZ=UTC node scripts/regression-radar-source-occurrence.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-source-occurrence.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-source-occurrence.mjs

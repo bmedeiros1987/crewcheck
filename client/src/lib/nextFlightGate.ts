@@ -1,3 +1,4 @@
+import { radarSourceEpoch } from '../../../shared/gate-query-day.mjs';
 import { rosterDisplayIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 
 /**
@@ -45,6 +46,8 @@ export type RadarGateSnapshot = {
   terminal?: string;
   status?: string;
   departure?: string;
+  scheduledDepartureUtc?: string;
+  operationalDeparture?: string;
   updatedAt?: number;
   sourceOrigin?: string;
   sourceDestination?: string;
@@ -285,7 +288,10 @@ export function resolveNextFlightGate(input: {
   if (radar) {
     const sourceOrigin = upper(radar.sourceOrigin);
     const sourceDestination = upper(radar.sourceDestination);
-    const occurrence = radarOccurrence(radar.departure, departureEpochMs);
+    const plannedEpoch = radarSourceEpoch(radar.scheduledDepartureUtc);
+    const occurrence = radar.scheduledDepartureUtc !== undefined
+      ? (!Number.isFinite(plannedEpoch) || !Number.isFinite(departureEpochMs) ? 'unproven' : plannedEpoch === departureEpochMs ? 'match' : 'other')
+      : radarOccurrence(radar.departure, departureEpochMs);
     if (radar.ok !== true) radarRejected = 'not-ok';
     else if (upper(radar.flight) && canonicalFlightId(radar.flight) !== canonicalFlightId(event.flightNumber)) radarRejected = 'other-flight';
     else if ((sourceOrigin && sourceOrigin !== upper(event.origin)) || (sourceDestination && sourceDestination !== upper(event.destination))) radarRejected = 'other-segment';
