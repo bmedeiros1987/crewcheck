@@ -23,6 +23,7 @@ public final class SharedPdfIncomingIntent {
             Uri uri = intent.getData();
             if (uri != null) uris.put(uri.toString(), uri);
         } else return null;
+        if (!Intent.ACTION_VIEW.equals(action) && intent.getData() != null) uris.put(intent.getData().toString(), intent.getData());
         if (!Intent.ACTION_VIEW.equals(action) && intent.getClipData() != null) {
             for (int index = 0; index < intent.getClipData().getItemCount(); index++) {
                 Uri uri = intent.getClipData().getItemAt(index).getUri();
