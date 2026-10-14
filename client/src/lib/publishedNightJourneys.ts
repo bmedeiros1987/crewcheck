@@ -1,3 +1,4 @@
+import { getRosterCodeDefinition } from './rosterCodes';
 import type { CanonicalRosterEvent } from './canonicalRoster';
 import { measureCanonicalDuty, publishedDutyEndpoints, publishedFlightClockBounds } from './canonicalDutyMeasurement';
 import type { RosterDay } from './pdfParser';
@@ -41,7 +42,10 @@ export function publishedNightJourneySequence(
     const measured = measure?.state === 'available';
     const start = measured ? Date.parse(measure.start!) : Math.min(...group.map(e => Date.parse(e.startDateTime)));
     const end = measured ? Date.parse(measure.end!) : Math.max(...group.map(e => Date.parse(e.endDateTime)));
-    const availability = /^(HSB|HSBE|RES|ASB)$/.test(String(first.publishedDay.type));
+    const availability = [first.publishedDay.type, first.publishedDay.pairingCode].some(code => {
+      const category = getRosterCodeDefinition(code)?.category;
+      return category === 'STANDBY' || category === 'RESERVE' || /^(HSB|HSBE|RES|ASB)$/.test(String(code || '').trim().toUpperCase());
+    });
     const operational = first.kind === 'flight' || (!availability && isOperational(first.publishedDay));
     // Preserve flight-interval eligibility; this change does not add APZ/cut to it.
     const timingKnown = first.kind === 'flight' || (endpoints.start !== null && endpoints.end !== null);

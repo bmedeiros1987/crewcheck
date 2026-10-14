@@ -132,6 +132,34 @@ try {
       const determined=engine.analyzeCompliance(roster([first,complete,...nights]));assert.equal(determined.metrics.maxConsecutiveNights,2);assert.equal(determined.metrics.maxConsecutiveNightsPending,false);
       const events=canonical.buildCanonicalRosterEvents(roster([first,crm,...nights]));const event=events.find(item=>item.publishedDay.type==='CRM');assert.equal(measurement.measureCanonicalDuty(events,event.id).state,'incomplete');
     }
+    if (!selected || selected === 'standby-variants') {
+      const nights = ['04','06','07'].map(date => day(`${date}/10/2032`,'02:10','10:30','02:50','10:00'));
+      for (const code of ['HSB','HSBE','HSB1','HSB2','HSBD','HSB-ADM','HSB_ADM','RES','ASB']) {
+        for (const type of ['OTHER', code]) {
+          const standby = {...day('05/10/2032','12:00','18:00','',''), type, pairingCode:code, legs:[]};
+          const result = engine.analyzeCompliance(roster([nights[0],standby,...nights.slice(1)]));
+          assert.equal(result.metrics.maxConsecutiveNights,3,`${type}/${code}: availability must not interrupt three night journeys`);
+          assert.equal(result.metrics.maxConsecutiveNightsPossible,3);
+          assert.equal(result.metrics.maxConsecutiveNightsPending,false);
+          assert.ok(result.alerts.some(a=>/consecutivas.*revisar sequência/.test(a.title)),`${type}/${code}: existing consecutive-night warning preserved`);
+          const activated = {...day('05/10/2032','12:00','18:00','12:40','17:30'),type,pairingCode:code};
+          assert.equal(engine.analyzeCompliance(roster([nights[0],activated,...nights.slice(1)])).metrics.maxConsecutiveNights,2,`${type}/${code}: actual daytime flight remains a worked interruption`);
+          const open = {...standby,date:'02/10/2032',dutyDebrief:null,dutyDebriefSource:undefined};
+          const prior = day('01/10/2032','01:00','04:30','01:40','04:00');
+          const later = day('09/10/2032','20:10','01:00','20:50','00:30');
+          const pending = engine.analyzeCompliance(roster([prior,open,later]));
+          assert.equal(pending.metrics.maxConsecutiveNights,1,`${type}/${code}: missing release cannot prove continuity`);
+          assert.equal(pending.metrics.maxConsecutiveNightsPossible,2);
+          assert.equal(pending.metrics.maxConsecutiveNightsPending,true);
+
+        }
+      }
+      const ordinary = {...day('05/10/2032','12:00','18:00','',''),type:'OTHER',pairingCode:'CRM',legs:[]};
+      assert.equal(engine.analyzeCompliance(roster([nights[0],ordinary,...nights.slice(1)])).metrics.maxConsecutiveNights,2,'ordinary daytime duty still interrupts sequence');
+      const unknown = {...ordinary,pairingCode:'HSB-UNKNOWN'};
+      assert.equal(engine.analyzeCompliance(roster([nights[0],unknown,...nights.slice(1)])).metrics.maxConsecutiveNights,2,'unknown prefix must not invent availability');
+      console.log(JSON.stringify({timezone,case:'standby-variants',variants:9,representations:2}));
+    }
     if (!selected || selected === 'journey') {
       const first = day('04/10/2032','22:10','01:05','22:50','00:35');
       const daytime = day('05/10/2032','06:05','14:25','06:45','13:55');
