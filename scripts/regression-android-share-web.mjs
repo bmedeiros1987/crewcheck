@@ -54,11 +54,11 @@ async function scenario(name, payload, options = {}) {
     window.btoa=btoa;window.location={href:options.pwaUrl||'https://synthetic.crewcheck.invalid/?crewcheckSharedPdf=synthetic-share-1'};
     window.history={state:null,replaceState:(_state,_title,url)=>{window.location.href=new URL(url,window.location.href).href;}};
   }
-  const toast = Object.fromEntries(['message','error','success','info'].map(k=>[k,x=>state.toasts.push([k,x])]));
+  const toast = Object.fromEntries(['message','error','success','info'].map(k=>[k,(x,options)=>{state.toasts.push([k,x,Boolean(options?.action)]);if(state.selectManual&&options?.action)options.action.onClick();}]));
   const context = vm.createContext({module:{exports:{}},window,localStorage:storage,sessionStorage:storage,crypto:{randomUUID:()=>String(Math.random())},CustomEvent:class{constructor(type,options={}){this.type=type;this.detail=options.detail;}},File,Uint8Array,Set,console,alive:true,nativePdfClaimsRef:{current:new Set()},
     financialRateSession:()=>state.owner&&state.token?state.owner+':'+state.token:null,getStoredUser:()=>state.owner?{id:state.owner}:null,startupOwner:()=>state.owner,getToken:()=>state.token,clearEpoch:()=>'',startupKey:()=>state.owner,readChoiceRevision:k=>storage.getItem(k),
     publicationOwner:()=>state.owner,currentPublicationReview:()=>({publication:{revision:state.revision}}),
-    beginRosterChoice:undefined,toast,fileRef:{current:{value:'x'}},setBusy:()=>{},bundle:{roster:{year:2032,month:10,days:[]}},
+    beginRosterChoice:undefined,toast,fileRef:{current:{value:'x',click:()=>{state.manualOpen=(state.manualOpen||0)+1;}}},setBusy:()=>{},bundle:{roster:{year:2032,month:10,days:[]}},
     parsePDFResilient:async()=>{state.parse++;if(state.onParse)state.onParse(state);if(state.replacePending)window.__crewcheckPendingNativePdf={...durable,shareId:'other-share'};if(state.invalidate==='planned')vm.runInContext('beginOwnedPlannedImport()',context);if(state.invalidate==='choice')vm.runInContext('beginRosterChoice()',context);if(state.parserFailure)throw new Error('Synthetic parser failure');return {roster:{year:2032,month:10,days:state.empty?[]:[{date:'2032-10-13'}]},source:'synthetic'};},
     confirmRosterImport:async()=>{if(state.onConfirm)state.onConfirm(state);state.confirmed=!state.cancel;return {ok:!state.cancel,hasFuture:true,summaryText:'synthetic',periodLabel:'synthetic'};},
     preservePlannedRosterBeforeImport:()=>null,sameRosterPeriod:()=>false,compareRosters:()=>null,
@@ -116,6 +116,8 @@ for(const payload of [durable,legacy]){
  r=await scenario('old APK unknown source requires manual picker',payload,{noProtocol:true});
  check(r.state.parse===0&&r.state.chunks===0&&(r.state.decodes||0)===0&&r.state.acks.length===0,'unknown native source never binds current login');
 }
+r=await scenario('legacy no-ID offers manual selection',{filename:'Synthetic.pdf',dataBase64:pdf.toString('base64')},{noProtocol:true,selectManual:true});
+check(r.state.parse===0&&(r.state.manualOpen||0)===1,'unknown no-ID payload offers a usable manual picker without reading it');
 for(const failure of ['cancel','parserFailure']){
  const initial=await scenario('A retains '+failure,durable,{[failure]:true});
  const other=await scenario('B resumes same receipt',durable,{owner:'owner-B',token:'token-B',persistedValues:initial.values,nativeState:initial.nativeState});

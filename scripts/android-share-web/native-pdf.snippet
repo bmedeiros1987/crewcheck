@@ -16,7 +16,7 @@
     const consumeNativePdf = async (payload: any) => {
       if (!alive) return;
       const shareId = sharedPdfIdentity(payload);
-      if (!shareId) { toast.message('PDF compartilhado sem identificador seguro. Importe pelo seletor de arquivos nesta conta.'); return; }
+      if (!shareId) { toast.message('PDF compartilhado sem identificador seguro. Importe pelo seletor de arquivos nesta conta.', {action:{label:'Selecionar PDF',onClick:()=>fileRef.current?.click()}}); return; }
       if (nativePdfClaimsRef.current.has(shareId)) return;
       let receipt = sharedPdfAccountReceipt(payload);
       if (receipt.claimable && claimSharedPdfForAccount(payload, () => window.confirm('Reivindicar este PDF para importação nesta conta?'))) receipt = sharedPdfAccountReceipt(payload);
