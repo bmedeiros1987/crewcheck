@@ -184,6 +184,25 @@ assert.equal(skyBody.gate, 'A12'); assert.equal(skyBody.occurrenceKey, body.occu
 assert.deepEqual(skyBody.provenance, body.provenance); assert.equal(skyBody.exportedToConcierge, false);
 assert.deepEqual(skyHarness.counters, { provider: 0, auth: 2, load: 1, apply: 0, save: 0, env: 0, fetch: 0 });
 assert.ok(!JSON.stringify(skyBody).includes('OFFLINE_FAKE_SECRET'));
+// The real evaluator must reject the original impossible offset through both transports.
+for(const [offset,minutes] of [['+14:01',841],['+15:00',900],['-15:00',-900]]) {
+ const invalidRow=structuredClone(row);
+ for(const field of ['scheduledGateDeparture','scheduledGateArrival']) {
+  const stamp=invalidRow.operationalTimes[field].dateUtc;
+  invalidRow.operationalTimes[field].dateUtc=new Date(Date.parse(stamp)+minutes*60000).toISOString().slice(0,-1)+offset;
+ }
+ const invalidInjected=harness(source,true);
+ const rejected=await invalidInjected.call(url,{cirium:{enabled:true,source:async()=>({state:'available',rows:[invalidRow]})}});
+ assert.equal(rejected.ok,false,offset);assert.equal(rejected.providerState,'invalid_payload');assert.equal(rejected.gate,undefined);
+ assert.equal(invalidInjected.counters.provider,0);assert.equal(invalidInjected.counters.save,0);
+ let fakeCalls=0;
+ const invalidTransport=createCiriumSkyTransport({enabled:true,policy:skyPolicy,now:()=>skyNow,credentialFactory:()=>({appId:'OFFLINE_FAKE_ID',appKey:'OFFLINE_FAKE_SECRET'}),fetchImpl:async()=>{fakeCalls++;return {ok:true,status:200,json:async()=>({flightStatuses:[invalidRow]})};}});
+ const invalidSky=harness(source,true);
+ const skyRejected=await invalidSky.call(url,{cirium:{enabled:true,transport:invalidTransport}});
+ assert.equal(fakeCalls,1);assert.equal(skyRejected.ok,false,offset);assert.equal(skyRejected.providerState,'invalid_payload');assert.equal(skyRejected.gate,undefined);
+ assert.equal(invalidSky.counters.provider,0);assert.equal(invalidSky.counters.save,0);
+}
+
 const failedSky = createCiriumSkyTransport({ enabled: true, policy: skyPolicy, now: () => skyNow,
   credential: () => 'OFFLINE_FAKE_SECRET', fetchImpl: async () => new Response('{}', { status: 403 }) });
 const failedHarness = harness(source, true);
