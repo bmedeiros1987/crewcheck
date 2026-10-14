@@ -2620,7 +2620,7 @@ function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
 }
 // The legacy Alerts above remains only for historical preparation anchors.
 function ReviewedAlerts({ compliance, roster, onImport, onChoose }: { compliance: ComplianceResult | null; roster: CrewRoster; onImport(): void; onChoose(): void }) {
-  return <AlertCenter alerts={alertRosterOwned(roster) ? actionableComplianceAlerts(compliance, true) : []} roster={roster} onImport={onImport} onChoose={onChoose}/>;
+  return <AlertCenter alerts={alertRosterOwned(roster) ? actionableComplianceAlerts(compliance, true) : []} roster={roster} onImport={onImport} onChoose={onChoose} pendingAnalysis={(compliance?.alerts || []).filter(alert => alert.code === 'night-sequence-pending')}/>;
 }
 function routeDurationMinutes(route: RoutePreviewInfo | null): number {
   const text = String(route?.durationInTrafficText || route?.durationText || '').toLowerCase();

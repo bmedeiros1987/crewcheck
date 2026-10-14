@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { alertAccount, alertIsReviewed, complianceAlertIdentity, readAlertReviews, saveAlertReview } from '../../lib/alertReviewStore';
 import { getSavedLanguage } from '../../lib/i18n';
-import { alertText } from '../../lib/alertExperienceText';
+import { alertText, alertHistoryDate } from '../../lib/alertExperienceText';
 import { consumePendingNavigationContext, clearPendingNavigationContext } from '../../lib/navigationContext';
 import type { CrewRoster } from '../../lib/pdfParser';
 import './alert-center.css';
 import { alertRosterOwned } from '../../lib/alertRosterOwnership';
 
-export function AlertCenter({ alerts, roster, onImport, onChoose }: { alerts: any[]; roster: CrewRoster; onImport(): void; onChoose(): void }) {
+export function AlertCenter({ alerts, roster, onImport, onChoose, pendingAnalysis = [] }: { alerts: any[]; roster: CrewRoster; onImport(): void; onChoose(): void; pendingAnalysis?: any[] }) {
   const [revision, setRevision] = useState(0);
   const [status, setStatus] = useState('');
   const [target, setTarget] = useState(() => consumePendingNavigationContext('alerts'));
@@ -32,7 +32,8 @@ export function AlertCenter({ alerts, roster, onImport, onChoose }: { alerts: an
     {target?.alertOccurrence && !currentTarget && <p role="status">{copy.missing}</p>}
     {!roster.days?.length && <article className="cc-alert-card"><h2>{copy.noRoster}</h2><div className="cc-alert-actions"><button type="button" onClick={onImport}>{copy.import}</button><button type="button" onClick={onChoose}>{copy.choose}</button></div></article>}
     {roster.days?.length > 0 && !ready && <p role="status">{copy.pending}</p>}
-    {roster.days?.length > 0 && ready && !items.length && <p>{copy.noAlerts}</p>}
+    {ready && pendingAnalysis.length > 0 && <section role="status"><p>{copy.pending}</p>{pendingAnalysis.map((pending, index) => <details key={pending.code || index}><summary>{originalLanguage ? pending.title : copy.details}</summary><p lang="pt-BR">{pending.description}</p>{pending.details && <p lang="pt-BR">{pending.details}</p>}</details>)}</section>}
+    {roster.days?.length > 0 && ready && !items.length && !pendingAnalysis.length && <p>{copy.noAlerts}</p>}
     {items.map(item => { const { alert, identity } = item; const disposition = history.find(row => row.occurrence === identity.occurrence && row.version === identity.version); const reviewed = disposition?.state === 'reviewed'; const selected = currentTarget?.identity.occurrence === identity.occurrence;
       return <article className="cc-alert-card" key={identity.occurrence + identity.version} tabIndex={-1} ref={selected ? targetRef : undefined} data-alert-occurrence={identity.occurrence} data-alert-version={identity.version} data-alert-selected={selected}>
         <header><h2>{originalLanguage ? alert.title : copy.analysis}</h2><span>{disposition?.state === 'dismissed' ? copy.dismissed : reviewed ? copy.reviewed : copy.review}</span></header>
@@ -43,6 +44,6 @@ export function AlertCenter({ alerts, roster, onImport, onChoose }: { alerts: an
       </article>;
     })}
     {status && <p role="status">{status}</p>}
-    {history.length > 0 && <details className="cc-alert-history"><summary>{copy.history} ({history.length})</summary>{history.slice().reverse().map(row => <article key={row.occurrence + row.version}><strong>{row.title}</strong><p>{row.date || ''} · {row.state === 'dismissed' ? copy.dismissed : copy.reviewed}</p><time dateTime={row.at}>{new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(new Date(row.at))}</time></article>)}</details>}
+    {history.length > 0 && <details className="cc-alert-history"><summary>{copy.history} ({history.length})</summary>{history.slice().reverse().map(row => <article key={row.occurrence + row.version}><strong>{row.title}</strong><p>{row.date || ''} · {row.state === 'dismissed' ? copy.dismissed : copy.reviewed}</p><time dateTime={row.at}>{alertHistoryDate(row.at)}</time></article>)}</details>}
   </section>;
 }

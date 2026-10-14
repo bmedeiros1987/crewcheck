@@ -8,3 +8,9 @@ const text = {
   de: { analysis:'Veröffentlichten Dienstplan prüfen', original:'Originalanalyse', reviewHint:'Zeiten, Nachweise und Regel in den Details prüfen.',  alerts:'Hinweise', review:'Prüfen', reviewed:'Geprüft', dismissed:'Ausgeblendet', mark:'Als geprüft markieren', history:'Verlauf auf diesem Gerät', noAlerts:'Keine Hinweise zu prüfen', noRoster:'Kein veröffentlichter Dienstplan ausgewählt.', choose:'Gespeicherten Dienstplan wählen', import:'Dienstplan importieren', missing:'Dieser Vorgang wurde geändert oder ist nicht mehr im ausgewählten Dienstplan.', details:'Details', close:'Hinweis ausblenden', collapse:'Details schließen', reference:'Rechtsgrundlage ansehen', pending:'Angaben fehlen; bitte Details prüfen.', stored:'Für dieses Konto auf diesem Gerät gespeichert.', failed:'Speichern fehlgeschlagen. Erneut versuchen.', saved:'Die Prüfung ändert die veröffentlichte Analyse nicht.', back:'Zurück', menu:'Menü' },
 } satisfies Record<CrewLanguage, Record<string,string>>;
 export function alertText(language = getSavedLanguage()) { return text[language]; }
+export function alertLocale(): string {
+  return { pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', it: 'it-IT', de: 'de-DE' }[getSavedLanguage()];
+}
+export function alertHistoryDate(value: string): string {
+  return new Intl.DateTimeFormat(alertLocale(), { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
+}

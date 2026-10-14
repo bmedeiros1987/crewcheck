@@ -31,7 +31,7 @@ const notificationMemory = new Map<string, number>();
 const session = createPulseSession((next) => {
   runtimeState = next;
   for (const listener of listeners) listener(next);
-});
+}, { queueLimit: Number.MAX_SAFE_INTEGER });
 
 const DEFAULT_PRIORITY: Record<CrewCheckPulseTone, CrewCheckPulsePriority> = {
   informativo: 'normal',
@@ -211,8 +211,8 @@ export function publishCrewCheckPulse(message: CrewCheckPulseMessage): boolean {
   if (!pulseEnabled() || !message || !String(message.title || '').trim()) return false;
   const normalized = normalizeMessage(message);
   if (normalized.account !== alertAccount() || normalized.review && alertIsReviewed(normalized.review)) return false;
-  const dedupeKey = String(normalized.dedupeKey || normalized.id || '').trim();
-  if (dedupeKey && recentlySeen(`${normalized.account || 'ephemeral'}:${normalized.review?.occurrence}:${normalized.review?.version}`, Number(normalized.pulseCooldownMs || 0))) return false;
+  // A presentation/sound cooldown is never a disposition. Unhandled messages
+  // must be reconstructible after logout and must not fall out of a short queue.
   session.publish(normalized);
   return true;
 }
@@ -222,7 +222,8 @@ export function publishCrewCheckNotice(message: CrewCheckPulseMessage): { pulse:
   if (normalized.account !== alertAccount() || normalized.review && alertIsReviewed(normalized.review)) return { pulse: false, notification: false };
   const pulse = publishCrewCheckPulse(normalized);
   const notification = deliverSystemNotification(normalized);
-  if (pulse) playCrewCheckNoticeSound(String(normalized.notificationTag || normalized.dedupeKey || normalized.id || normalized.title));
+  const soundKey = `${normalized.account || 'ephemeral'}:${normalized.review?.occurrence}:${normalized.review?.version}`;
+  if (pulse && !recentlySeen(soundKey, Number(normalized.pulseCooldownMs || 0))) playCrewCheckNoticeSound(String(normalized.notificationTag || normalized.dedupeKey || normalized.id || normalized.title));
   return { pulse, notification };
 }
 

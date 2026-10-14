@@ -53,7 +53,7 @@ export type CrewCheckPulseMessage = {
   systemNotification?: CrewCheckPulseSystemNotification;
   notificationTag?: string;
   notificationCooldownMs?: number;
-  /** Cooldown do próprio banner na sessão, útil para contexto recorrente. */
+  /** Cooldown de som da apresentação; nunca oculta pendentes nem equivale a revisão. */
   pulseCooldownMs?: number;
   action?: CrewCheckPulseAction;
 };
