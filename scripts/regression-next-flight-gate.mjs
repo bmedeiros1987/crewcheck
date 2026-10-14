@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import vm from 'node:vm';
 import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 
@@ -71,23 +72,22 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', de
   assert.equal(previousLeg.gate, ''); assert.equal(previousLeg.radarRejected, 'other-segment');
   const otherDay = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, gate: '15', departure: new Date(NOW + 3 * H - 24 * H).toISOString() }, now: NOW });
   assert.equal(otherDay.gate, ''); assert.equal(otherDay.radarRejected, 'other-day', 'ocorrência do dia anterior é recusada');
-  // Ocorrência precisa ser provada pela fonte: só hora ("14:05") ou sem partida não vale.
-  for (const departure of ['14:05', '', undefined]) {
+  // Ocorrência só é provada por instante absoluto válido da fonte; o resto falha fechado.
+  for (const departure of ['14:05', '', undefined, `${m.flightOperationalDate(next)} 19:05`]) {
     const unproven = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, gate: '15', departure }, now: NOW });
     assert.equal(unproven.gate, '', `partida "${departure}" não prova a ocorrência`); assert.equal(unproven.radarRejected, 'unproven-day');
   }
-  const localDate = m.flightPublishedDate(next) || m.flightOperationalDate(next);
-  const localSameDay = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, departure: `${localDate} 19:05` }, now: NOW });
-  assert.equal(localSameDay.gate, '9', 'data/hora local do aeroporto com a data publicada é aceita');
-  const localOtherDay = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, departure: '2001-01-01 19:05' }, now: NOW });
-  assert.equal(localOtherDay.gate, ''); assert.equal(localOtherDay.radarRejected, 'other-day');
-  // IATA/ICAO e formatos da fonte identificam o mesmo voo.
-  for (const alias of ['LAN3377', 'LA 3377', 'LA03377', 'LAN3377-1697000000-airline-0123', 'la3377']) {
+  // IATA/ICAO: só os aliases de buildFlightContext; ids com sufixo ou zeros não viram este voo.
+  for (const alias of ['LAN3377', 'LA 3377', 'la3377', ' LAN 3377 ']) {
     assert.equal(m.canonicalFlightId(alias), 'LA3377', alias);
     assert.equal(m.resolveNextFlightGate({ event: next, radar: { ...radarBase, flight: alias }, now: NOW }).gate, '9', `${alias} é o mesmo voo`);
   }
   assert.equal(m.canonicalFlightId('TAM3100'), 'JJ3100');
-  assert.equal(m.resolveNextFlightGate({ event: next, radar: { ...radarBase, flight: 'LAN3378' }, now: NOW }).radarRejected, 'other-flight');
+  for (const notProven of ['LAN3377-anything', 'LAN3377-1697000000-airline-0123', 'LA3377X', 'LA03377', 'LAN3378', 'XLAN3377']) {
+    assert.notEqual(m.canonicalFlightId(notProven), 'LA3377', notProven);
+    const r = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, flight: notProven }, now: NOW });
+    assert.equal(r.gate, '', `${notProven} não comprova o voo`); assert.equal(r.radarRejected, 'other-flight');
+  }
   const notOk = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, ok: false }, now: NOW });
   assert.equal(notOk.gate, '');
   assert.deepEqual(m.normalizeBoardingGate('Portão 24'), { gate: '24', remote: false, position: false });
@@ -252,4 +252,50 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', de
 }
 
 fs.rmSync(out, { recursive: true, force: true });
+// 10. Revisão independente: evento 2032-10-13T23:00:00Z; timestamps sem prova não liberam o portão Radar.
+{
+  const ev = flight('r', 'LA3377', '2032-10-13T23:00:00Z');
+  const now = Date.parse('2032-10-13T20:00:00Z');
+  const base = { ok: true, gate: '9', status: 'Programado', sourceOrigin: 'GRU', sourceDestination: 'REC', updatedAt: now - 60_000 };
+  const unproven = ['2032-10-13 00:01', '2032-10-13T99:99Z', '2032-10-13T23:00:00+99:00', '2032-10-13 00:01 garbage',
+    '2032-02-30T23:00:00Z', '2032-10-13T23:00:00+14:30', '2032-10-13T23:00', '23:00', '', null, undefined];
+  for (const departure of unproven) {
+    const r = m.resolveNextFlightGate({ event: ev, radar: { ...base, departure }, now });
+    assert.equal(r.gate, '', `"${departure}" não pode liberar o portão Radar`);
+    assert.notEqual(r.gateSource, 'radar'); assert.equal(r.radarRejected, 'unproven-day', String(departure));
+    const manual = { gate: '24', terminal: '', author: 'Ana', setAtEpochMs: now - 5 * 60_000, flight: 'LA3377', date: m.flightOperationalDate(ev) };
+    const withManual = m.resolveNextFlightGate({ event: ev, radar: { ...base, departure }, manual, now });
+    assert.equal(withManual.gate, '24', 'portão manual continua valendo'); assert.equal(withManual.gateSource, 'manual');
+    assert.equal(withManual.divergence, null, 'fonte recusada não gera divergência');
+  }
+  for (const departure of ['2032-10-13T23:00:00Z', '2032-10-13T20:00:00-03:00', '2032-10-13 20:00-03:00', '2032-10-13T23:05:00.000Z', '2032-10-13T20:00:00-0300']) {
+    const r = m.resolveNextFlightGate({ event: ev, radar: { ...base, departure }, now });
+    assert.equal(r.gate, '9', `"${departure}" é instante absoluto válido`); assert.equal(r.radarRejected, '');
+  }
+  assert.equal(m.resolveNextFlightGate({ event: ev, radar: { ...base, departure: '2032-10-12T23:00:00Z' }, now }).radarRejected, 'other-day');
+  assert.ok(Number.isNaN(m.sourceInstantEpochMs('2032-10-13T23:00:00+99:00')));
+  assert.equal(m.sourceInstantEpochMs('2032-10-13T20:00:00-03:00'), Date.parse('2032-10-13T23:00:00Z'));
+
+  // Adapter real do servidor (sem rede): FlightAware devolve o ident ICAO; buildFlightContext mapeia LA↔LAN.
+  const server = fs.readFileSync(path.join(root, 'server.mjs'), 'utf8');
+  const fnSource = (name) => {
+    const at = server.indexOf(`function ${name}(`);
+    assert.ok(at >= 0, `server.mjs ainda define ${name}`);
+    let depth = 0; let i = server.indexOf(') {', at) + 2; // corpo, não o default `row = {}`
+    for (; i < server.length; i += 1) { if (server[i] === '{') depth += 1; else if (server[i] === '}' && --depth === 0) break; }
+    return server.slice(at, i + 1);
+  };
+  const ctxVm = vm.createContext({});
+  vm.runInContext(['firstKnown', 'normalizeFlightRaw', 'buildFlightContext', 'normalizeFlightAwareFlight'].map(fnSource).join('\n'), ctxVm);
+  for (const roster of ['LA3377', 'LAN3377']) {
+    const ctx = ctxVm.buildFlightContext(roster);
+    assert.equal(ctx.flightAware, 'LAN3377');
+    const fromIdent = ctxVm.normalizeFlightAwareFlight({ ident: ctx.flightAware, gate_origin: '9', scheduled_out: '2032-10-13T23:00:00Z', origin: { code_iata: 'GRU' }, destination: { code_iata: 'REC' } }, ctx);
+    const r = m.resolveNextFlightGate({ event: { ...ev, flightNumber: roster }, radar: { ...base, flight: fromIdent.flight, gate: fromIdent.gate, departure: fromIdent.departure }, now });
+    assert.equal(r.gate, '9', `adapter FlightAware ${fromIdent.flight} comprova ${roster}`);
+    const onlyInternalId = ctxVm.normalizeFlightAwareFlight({ fa_flight_id: 'LAN3377-1697000000-airline-0123', gate_origin: '9', scheduled_out: '2032-10-13T23:00:00Z' }, ctx);
+    assert.equal(m.resolveNextFlightGate({ event: { ...ev, flightNumber: roster }, radar: { ...base, flight: onlyInternalId.flight, gate: '9', departure: onlyInternalId.departure }, now }).radarRejected, 'other-flight', 'fa_flight_id sem ident falha fechado');
+  }
+}
+
 console.log(`[next-flight-gate] seleção, virada de data, portão/posição, ausente/antigo, manual, conta e celular-relógio OK (TZ=${process.env.TZ || 'local'})`);

@@ -95,7 +95,7 @@ export function NextFlightGateCard({ events }: { events: readonly NextFlightLike
           : info.radarRejected === 'not-ok'
             ? 'Sem dado confirmado da fonte.'
             : info.radarRejected === 'unproven-day'
-              ? 'A fonte não informou a data do voo. Ignorada.'
+              ? 'A fonte não informou data, hora e fuso válidos do voo. Ignorada.'
               : 'Dado de outro trecho ou dia. Ignorado.'}</dd></div>}
         {sync && <div><dt><Watch aria-hidden="true"/> Relógio</dt><dd>{sync.at
           ? (sync.ok ? `Sincronizado às ${clock(sync.at)}` : `Falha na sincronização às ${clock(sync.at)}`)

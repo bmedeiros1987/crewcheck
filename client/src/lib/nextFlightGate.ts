@@ -230,29 +230,43 @@ export function writeManualGate(
 
 const CARRIER_ALIASES: Record<string, string> = { LAN: 'LA', TAM: 'JJ' };
 
-/** Identidade do voo sem depender do formato da fonte: LAN3377, LA 3377, LA03377 e LAN3377-1697…-airline-0 são o mesmo voo. */
+/**
+ * Identidade do voo restrita aos aliases que o servidor já usa em buildFlightContext
+ * (LA↔LAN, JJ↔TAM), com espaços removidos como em normalizeFlightRaw. Qualquer outro
+ * formato (sufixos, zeros à esquerda, ids internos do provedor) fica literal e falha fechado.
+ */
 export function canonicalFlightId(value: unknown): string {
   const raw = upper(value).replace(/\s+/g, '');
-  const match = /^([A-Z]{3}|[A-Z0-9]{2})0*(\d{1,4})(?=-|$)/.exec(raw);
-  if (!match) return raw;
-  return `${CARRIER_ALIASES[match[1]] || match[1]}${match[2]}`;
+  const match = /^(LAN|TAM|LA|JJ)(\d+)$/.exec(raw);
+  return match ? `${CARRIER_ALIASES[match[1]] || match[1]}${match[2]}` : raw;
+}
+
+const ABSOLUTE_INSTANT = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(?:(Z)|([+-])(\d{2}):?(\d{2}))$/;
+
+/** Instante absoluto válido informado pela fonte (data, hora e fuso coerentes); caso contrário NaN. */
+export function sourceInstantEpochMs(value: unknown): number {
+  const match = ABSOLUTE_INSTANT.exec(text(value));
+  if (!match) return NaN;
+  const [, y, mo, d, h, mi, sec = '0', zulu, sign, oh = '0', om = '0'] = match;
+  const [year, month, day, hour, minute, second, offH, offM] = [y, mo, d, h, mi, sec, oh, om].map(Number);
+  if (month < 1 || month > 12 || day < 1 || hour > 23 || minute > 59 || second > 59) return NaN;
+  if (!zulu && (offH > 14 || offM > 59 || (offH === 14 && offM > 0))) return NaN;
+  const wall = Date.UTC(year, month - 1, day, hour, minute, second);
+  const check = new Date(wall);
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return NaN;
+  const offsetMs = zulu ? 0 : (sign === '-' ? -1 : 1) * (offH * 60 + offM) * 60_000;
+  return wall - offsetMs;
 }
 
 /**
- * Prova de que o dado da fonte é desta ocorrência do voo. Horário absoluto compara o instante;
- * data/hora local do aeroporto compara a data publicada. Sem data ("14:05" ou vazio) não prova nada.
+ * Prova de que o dado da fonte é desta ocorrência do voo: só um instante absoluto válido
+ * (com fuso) comparado à partida da escala. Hora solta, data sem fuso, valor malformado
+ * ou ausente não provam nada e falham fechado.
  */
-function radarOccurrence(value: unknown, event: NextFlightLike, departureEpochMs: number): 'match' | 'other' | 'unproven' {
-  const raw = text(value);
-  const dated = /^(\d{4}-\d{2}-\d{2})[T ]\d{2}:\d{2}/.exec(raw);
-  if (!dated) return 'unproven';
-  if (/(Z|[+-]\d{2}:?\d{2})$/.test(raw) && Number.isFinite(departureEpochMs)) {
-    const epoch = Date.parse(raw.replace(' ', 'T'));
-    if (Number.isFinite(epoch)) return Math.abs(epoch - departureEpochMs) > RADAR_OTHER_INSTANCE_MS ? 'other' : 'match';
-  }
-  const dates = [flightPublishedDate(event), flightOperationalDate(event)].filter(Boolean);
-  if (!dates.length) return 'unproven';
-  return dates.includes(dated[1]) ? 'match' : 'other';
+function radarOccurrence(value: unknown, departureEpochMs: number): 'match' | 'other' | 'unproven' {
+  const epoch = sourceInstantEpochMs(value);
+  if (!Number.isFinite(epoch) || !Number.isFinite(departureEpochMs)) return 'unproven';
+  return Math.abs(epoch - departureEpochMs) > RADAR_OTHER_INSTANCE_MS ? 'other' : 'match';
 }
 
 export function resolveNextFlightGate(input: {
@@ -271,7 +285,7 @@ export function resolveNextFlightGate(input: {
   if (radar) {
     const sourceOrigin = upper(radar.sourceOrigin);
     const sourceDestination = upper(radar.sourceDestination);
-    const occurrence = radarOccurrence(radar.departure, event, departureEpochMs);
+    const occurrence = radarOccurrence(radar.departure, departureEpochMs);
     if (radar.ok !== true) radarRejected = 'not-ok';
     else if (upper(radar.flight) && canonicalFlightId(radar.flight) !== canonicalFlightId(event.flightNumber)) radarRejected = 'other-flight';
     else if ((sourceOrigin && sourceOrigin !== upper(event.origin)) || (sourceDestination && sourceDestination !== upper(event.destination))) radarRejected = 'other-segment';
