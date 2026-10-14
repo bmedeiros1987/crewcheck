@@ -52,8 +52,8 @@ console.log('[android-share-web] Base64/chunk compatibility; current-session can
 
 const pwaPath = 'client/src/lib/pwaSharedPdfRuntime.ts';
 let pwa = fs.readFileSync(pwaPath, 'utf8');
-if (!pwa.includes("import { registerPwaSharedPdfReceipt } from './sharedPdfAccountBinding';")) {
-  pwa = "import { registerPwaSharedPdfReceipt } from './sharedPdfAccountBinding';\n" + pwa;
+if (!pwa.includes("import { registerPwaSharedPdfReceipt, sharedPdfAccountReceipt } from './sharedPdfAccountBinding';")) {
+  pwa = "import { registerPwaSharedPdfReceipt, sharedPdfAccountReceipt } from './sharedPdfAccountBinding';\n" + pwa;
   const anchor = '  if (!shareId) return;';
   if (!pwa.includes(anchor)) throw new Error('[android-share-web] PWA receipt anchor missing');
   pwa = pwa.replace(anchor, anchor + `
@@ -68,6 +68,11 @@ if (!pwa.includes("import { registerPwaSharedPdfReceipt } from './sharedPdfAccou
     (window as any).__crewcheckPwaShareError = 'Este PDF não pode ser retomado nesta conta. Compartilhe novamente após entrar na conta correta.';
     return;
   }`);
+  const recheck = '    if (!sharedPdfAccountReceipt({shareId: "pwa:" + shareId}).allowed) return;';
+  for (const anchor of ["    if (!response.ok) throw new Error('shared_pdf_unavailable');", '    const blob = await response.blob();', '    const bytes = new Uint8Array(await blob.arrayBuffer());']) {
+    if (!pwa.includes(anchor)) throw new Error('[android-share-web] PWA awaited-read anchor missing');
+    pwa = pwa.replace(anchor, anchor + '\n' + recheck);
+  }
   // A failed SW fetch must retain the opaque URL ID for a same-account retry.
   const lostRetry = "    url.searchParams.delete(SHARED_PDF_QUERY);\n    url.searchParams.set('view', 'import');";
   if (!pwa.includes(lostRetry)) throw new Error('[android-share-web] PWA failure retry anchor missing');

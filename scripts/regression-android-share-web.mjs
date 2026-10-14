@@ -77,7 +77,7 @@ async function scenario(name, payload, options = {}) {
   if(!options.pwaRuntime && payload.shareId?.startsWith('pwa:') && typeof context.registerPwaSharedPdfReceipt==='function')context.registerPwaSharedPdfReceipt(payload.shareId);
   if(options.pwaRuntime){
     const runtime=fs.readFileSync(process.env.SHARE_WEB_PWA || 'client/src/lib/pwaSharedPdfRuntime.ts','utf8').replace(/^import .*;\n/m,'');
-    context.fetch=async()=>{if(state.offline)throw new Error('Synthetic offline');state.pwaFetches=(state.pwaFetches||0)+1;return new Response(new Blob([suppliedPdf]),{headers:{'x-crewcheck-filename':'Synthetic.pdf'}});};
+    context.fetch=async()=>{if(state.onPwaFetch)state.onPwaFetch(state);if(state.offline)throw new Error('Synthetic offline');state.pwaFetches=(state.pwaFetches||0)+1;return new Response(new Blob([suppliedPdf]),{headers:{'x-crewcheck-filename':'Synthetic.pdf'}});};
     Object.assign(context,{URL,Response,Blob,TextDecoder});
     vm.runInContext(transformSync(runtime.slice(0,runtime.lastIndexOf("if (typeof window"))+'\nglobalThis.consumePwa=consumePwaSharedPdf;',{loader:'ts',format:'cjs'}).code,context);
     const imports=[];window.addEventListener('crewcheck:native-pdf',e=>imports.push(context.consume(e.detail)));
@@ -170,6 +170,8 @@ r=await scenario('manual picker remains available',legacy,{manual:true});
 check(r.state.result===true&&r.state.save===1&&r.state.acks.length===0,'manual picker imports through current guarded canonical handler');
 r=await scenario('PWA real bootstrap',pwa,{pwaRuntime:true,noBridge:true,retry:true,replayLifecycle:true});
 check(r.state.parse===1&&r.state.save===1&&r.state.pwaFetches===1&&!r.window.__crewcheckPendingNativePdf,'PWA completion remains single-use without native ACK');
+r=await scenario('PWA owner changes while fetching source',pwa,{pwaRuntime:true,noBridge:true,onPwaFetch:s=>{s.owner='owner-B';s.token='token-B';}});
+check(r.state.parse===0&&(r.state.decodes||0)===0&&r.state.save===0&&!r.window.__crewcheckPendingNativePdf,'PWA source delivery must recheck account before emitting PDF data');
 const pwaMarker=await scenario('PWA commit-marker persistence fails',pwa,{pwaRuntime:true,noBridge:true,failCommitMarker:true});
 r=await scenario('PWA uncertain commit after reload',pwa,{persistedValues:pwaMarker.values,noBridge:true});
 check(r.state.parse===0&&r.state.save===0,'PWA uncertain commit is quarantined, never automatically imported twice');
