@@ -13,3 +13,5 @@ html body #root .cz-app[data-version]>.cz-global-header :is(button:focus-visible
 .cc-integrated-header-space{height:calc(var(--cc-fixed-header-height,64px) + var(--cc-safe-area-top,env(safe-area-inset-top,0px)) + 12px);flex:0 0 auto;pointer-events:none}
 html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-compact-trigger>strong{font-size:calc(1rem * var(--cc-text-scale,1))!important;line-height:1.35!important}
 html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-popover :is(strong,small){font-size:calc(1rem * var(--cc-text-scale,1))!important}
+html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-count{gap:2px;min-width:20px;padding:2px 4px}
+html body #root .cz-app[data-version]>.cz-global-header{position:fixed!important;top:var(--cc-safe-area-top,env(safe-area-inset-top,0px))!important;left:50%!important;right:auto!important;width:min(calc(100% - 24px),1180px)!important;transform:translateX(-50%)!important;margin:0!important;z-index:1200!important;background:var(--cc-review-surface,var(--cc-surface))!important}

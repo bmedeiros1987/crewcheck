@@ -41,6 +41,8 @@ export type CrewCheckPulseMessage = {
   /** Categoria visual/semântica; não altera a regra operacional que gerou o aviso. */
   category?: CrewCheckPulseCategory;
   title: string;
+  /** Short localized header label; complete title remains in details/accessible name. */
+  compactTitle?: string;
   detail?: string;
   /** Mensagens dispensáveis ganham o botão de fechar. */
   dismissible?: boolean;

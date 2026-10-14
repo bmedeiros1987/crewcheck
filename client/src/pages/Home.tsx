@@ -5042,7 +5042,7 @@ export default function Home() {
         id: `compliance:${identity.occurrence}:${identity.version}`,
         dedupeKey: `compliance:${identity.occurrence}:${identity.version}`,
         review: identity, scope: 'compliance', category: 'compliance', tone: 'atencao', priority: 'alta',
-        pulseCooldownMs: 6 * 60 * 60_000, title: `${alertText().review}${alert.date ? ' · ' + alert.date : ''}`, detail: alertText().reviewHint,
+        pulseCooldownMs: 6 * 60 * 60_000, compactTitle: alertText().review, title: `${alertText().review}${alert.date ? ' · ' + alert.date : ''}`, detail: alertText().reviewHint,
         systemNotification: 'never', action: { label: alertText().review, view: 'alerts', alert: identity },
       });
     }
