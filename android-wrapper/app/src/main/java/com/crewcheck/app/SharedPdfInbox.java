@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.net.Uri;
 import android.provider.OpenableColumns;
+import android.util.Base64;
 
 import java.io.File;
 import java.io.ByteArrayInputStream;
@@ -66,13 +67,24 @@ public final class SharedPdfInbox {
         }
         PendingPdf retained = peek(context);
         if (retained != null && sourceHash.equals(prefs.getString(KEY_SOURCE, ""))) return retained;
-        if (prefs.contains("source_" + sourceHash)) {
-            throw new IllegalStateException("Este PDF já foi recebido. Use a seleção manual para uma nova importação.");
-        }
         boolean signedOut = initialOwner == null || initialOwner.trim().isEmpty();
+        String account = signedOut ? "" : initialOwner;
+        String ledgerKey = "source_" + sourceHash;
+        String ledger = prefs.getString(ledgerKey, "");
+        String id = "share_" + UUID.randomUUID();
+        if (!ledger.isEmpty()) {
+            String[] previous = ledger.split("\\|", -1);
+            if (previous.length != 3 || !account.equals(new String(Base64.decode(previous[1], Base64.NO_WRAP), "UTF-8"))
+                    || "blocked".equals(previous[2]) || signedOut) {
+                throw new IllegalStateException("PDF de outra conta ou sem proveniência. Use a seleção manual.");
+            }
+            if (!"closed".equals(previous[2])) id = previous[0];
+        }
+        // Establish the stable owner/ID BEFORE opening any PDF stream.
+        String staged = sourceReceipt(id, account, signedOut ? "blocked" : "staged");
+        if (!persist(context, prefs.edit().putString(ledgerKey, staged)))
+            throw new IllegalStateException("Não consegui preservar a identidade do PDF. Nenhum conteúdo foi lido.");
         if (signedOut && retained != null) {
-            if (!persist(context, prefs.edit().putString("source_" + sourceHash, "blocked_" + UUID.randomUUID())))
-                throw new IllegalStateException("Não consegui preservar a quarentena.");
             throw new IllegalStateException("Entre na conta correta e selecione o PDF manualmente. O pendente anterior foi preservado.");
         }
         File directory = new File(context.getFilesDir(), DIRECTORY);
@@ -85,7 +97,6 @@ public final class SharedPdfInbox {
         fileName = sanitizeFileName(fileName);
         if (!fileName.toLowerCase(Locale.US).endsWith(".pdf")) fileName += ".pdf";
 
-        String id = "share_" + UUID.randomUUID();
         File temporary = new File(directory, id + ".tmp");
         File destination = new File(directory, id + ".pdf");
 
@@ -140,7 +151,7 @@ public final class SharedPdfInbox {
         boolean saved = persist(context, context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putString(KEY_ID, id).putString(KEY_NAME, fileName)
                 .putString(KEY_PATH, destination.getAbsolutePath()).putLong(KEY_CREATED_AT, createdAt)
-                .putString(KEY_SOURCE, sourceHash).putString("source_" + sourceHash, id)
+                .putString(KEY_SOURCE, sourceHash).putString("source_" + sourceHash, sourceReceipt(id, account, signedOut ? "blocked" : "pending"))
                 .putString(KEY_OWNER, initialOwner == null ? "" : initialOwner)
                 .putString(KEY_PHASE, initialOwner == null || initialOwner.trim().isEmpty() ? "blocked" : "unclaimed"));
         if (!saved) {
@@ -257,7 +268,11 @@ public final class SharedPdfInbox {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         if (!expectedId.equals(prefs.getString(KEY_ID, ""))) return false;
         String path = prefs.getString(KEY_PATH, "");
-        boolean saved = persist(context, prefs.edit().remove(KEY_ID).remove(KEY_NAME).remove(KEY_PATH)
+        String source = prefs.getString(KEY_SOURCE, "");
+        String account = owner(context);
+        SharedPreferences.Editor terminal = prefs.edit();
+        if (!source.isEmpty()) terminal.putString("source_" + source, sourceReceipt(expectedId, account, "closed"));
+        boolean saved = persist(context, terminal.remove(KEY_ID).remove(KEY_NAME).remove(KEY_PATH)
                 .remove(KEY_CREATED_AT).remove(KEY_SOURCE).remove(KEY_OWNER).remove(KEY_PHASE));
         if (!saved) return false;
         if (path != null && !path.isEmpty()) new File(path).delete();
@@ -277,6 +292,12 @@ public final class SharedPdfInbox {
         }
         try { rollback.commit(); } catch (RuntimeException ignored) { /* No file is removed on failure. */ }
         return false;
+    }
+
+    private static String sourceReceipt(String id, String account, String state) {
+        try {
+            return id + "|" + Base64.encodeToString(account.getBytes("UTF-8"), Base64.NO_WRAP) + "|" + state;
+        } catch (Exception error) { throw new IllegalStateException("Identidade de conta inválida."); }
     }
 
     private static String sourceHash(String value) throws Exception {
