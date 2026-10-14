@@ -32,11 +32,21 @@ async function scenario(name, payload, options = {}) {
   const suppliedPdf=options.largePdf?Buffer.concat([pdf,Buffer.alloc(400000)]):pdf;
   if(options.largePdf)payload={...payload,byteLength:suppliedPdf.length};
   const values = new Map(options.persistedValues || []);
+  const nativeState=options.nativeState || {id:payload.shareId,owner:state.owner||'',phase:state.owner?'unclaimed':'blocked'};
+  const trace=[];
   const listeners = new Map();
-  const storage = {getItem:k=>values.get(k)??null,setItem:(k,v)=>{if((state.storageFailure&&k===state.owner)||(state.bindingStorageFailure&&k.startsWith('crewcheck:shared-pdf-account:')))throw new Error('Synthetic storage blocked');values.set(k,String(v));if(k===state.owner&&String(v).includes('sourceFileName'))state.active='imported-roster';}};
-  const window = {atob:x=>{state.decodes=(state.decodes||0)+1;return atob(x);},localStorage:storage,setTimeout:fn=>fn(),addEventListener:(n,fn)=>{const a=listeners.get(n)||[];a.push(fn);listeners.set(n,a);},dispatchEvent:e=>{for(const fn of listeners.get(e.type)||[])fn(e);},AndroidCrewCheckNative:{
+  const storage = {getItem:k=>values.get(k)??null,setItem:(k,v)=>{if((state.failWriteAhead&&String(v).includes('\"phase\":\"committing\"'))||(state.failCommitMarker&&String(v).includes('\"committed\":true'))||(state.storageFailure&&k===state.owner)||(state.bindingStorageFailure&&k.startsWith('crewcheck:shared-pdf-account:')))throw new Error('Synthetic storage blocked');values.set(k,String(v));if(k===state.owner&&String(v).includes('sourceFileName'))state.active='imported-roster';}};
+  const window = {confirm:()=>{trace.push('explicit-claim');return !state.denyClaim;},atob:x=>{state.decodes=(state.decodes||0)+1;return atob(x);},localStorage:storage,setTimeout:fn=>fn(),addEventListener:(n,fn)=>{const a=listeners.get(n)||[];a.push(fn);listeners.set(n,a);},dispatchEvent:e=>{for(const fn of listeners.get(e.type)||[])fn(e);},AndroidCrewCheckNative:{
     readSharedPdfChunk:(id,offset,length)=>{state.chunks++;assert.equal(id,payload.shareId);if(state.onChunk)state.onChunk(state);if(state.badChunk)return '';if(state.oversizedChunk)return Buffer.alloc(Number(length)+1).toString('base64');return suppliedPdf.subarray(Number(offset),Number(offset)+Number(length)).toString('base64');},
     acknowledgeSharedPdf:id=>{state.acks.push(id);if(state.ackReplacePending)window.__crewcheckPendingNativePdf={...durable,shareId:'new-share-after-late-ACK'};if(state.ackFailure)return false;if(state.ackPromise)return Promise.resolve(true);return true;},
+    sharedPdfStatus:()=>JSON.stringify({shareId:nativeState.id,owner:nativeState.owner,phase:nativeState.phase,ownershipProtocol:state.noProtocol?undefined:'explicit-account-claim-v1'}),
+    reportSharedPdfSession:()=>true,
+    blockSharedPdf:id=>{if(id!==nativeState.id||nativeState.owner)return false;nativeState.phase='blocked';return true;},
+    claimSharedPdf:(id,account)=>{trace.push('native-claim');if(id!==nativeState.id||account!==nativeState.owner||nativeState.phase!=='unclaimed')return false;nativeState.phase='claimed';return true;},
+    beginSharedPdfCommit:(id,account)=>{if(id!==nativeState.id||account!==nativeState.owner||nativeState.phase!=='claimed')return false;nativeState.phase='committing';return true;},
+    confirmSharedPdfCommit:(id,account)=>{if(state.failNativeConfirm||id!==nativeState.id||account!==nativeState.owner||nativeState.phase!=='committing')return false;nativeState.phase='committed';return true;},
+    readClaimedSharedPdfChunk:(id,account,offset,length)=>{trace.push('chunk');if(id!==nativeState.id||account!==nativeState.owner||nativeState.phase!=='claimed')throw new Error('read before claim');return window.AndroidCrewCheckNative.readSharedPdfChunk(id,offset,length);},
+    acknowledgeClaimedSharedPdf:(id,account)=>{if(id!==nativeState.id||account!==nativeState.owner||nativeState.phase!=='committed')return false;return window.AndroidCrewCheckNative.acknowledgeSharedPdf(id);},
   },__crewcheckPendingNativePdf:payload};
   if(options.noBridge)delete window.AndroidCrewCheckNative;
   else if(options.noAck)delete window.AndroidCrewCheckNative.acknowledgeSharedPdf;
@@ -58,12 +68,13 @@ async function scenario(name, payload, options = {}) {
     syncRosterWithTelegramConcierge:async()=>{},saveRosterAnalysis:async()=>{},syncPlatformRoster:async()=>{},setView:()=>{},setLocation:()=>{},sanitizePdfImportError:x=>x.message,
   });
   if(bound){
-    const binding=fs.readFileSync('client/src/lib/sharedPdfAccountBinding.ts','utf8').replace(/^import .*;\n/m,'');
+    const binding=fs.readFileSync(process.env.SHARE_WEB_BINDING || 'client/src/lib/sharedPdfAccountBinding.ts','utf8').replace(/^import .*;\n/m,'');
     vm.runInContext(transformSync(binding,{loader:'ts',format:'cjs'}).code,context);
   }
   const code = 'let importRevision = 0;'+plannedGuard+'\n'+choiceGuard+'\n'+capture+'\n'+saveFunction+'\n'+handler+'\n'+listener+'\nglobalThis.consume=consumeNativePdf;globalThis.importHandler=handleFile;';
   vm.runInContext(transformSync(code,{loader:'ts',format:'cjs',target:'es2022'}).code,context);
   let pwaConsumer;
+  if(!options.pwaRuntime && payload.shareId?.startsWith('pwa:') && typeof context.registerPwaSharedPdfReceipt==='function')context.registerPwaSharedPdfReceipt(payload.shareId);
   if(options.pwaRuntime){
     const runtime=fs.readFileSync(process.env.SHARE_WEB_PWA || 'client/src/lib/pwaSharedPdfRuntime.ts','utf8').replace(/^import .*;\n/m,'');
     context.fetch=async()=>{if(state.offline)throw new Error('Synthetic offline');state.pwaFetches=(state.pwaFetches||0)+1;return new Response(new Blob([suppliedPdf]),{headers:{'x-crewcheck-filename':'Synthetic.pdf'}});};
@@ -93,103 +104,76 @@ async function scenario(name, payload, options = {}) {
     if(pwaConsumer)await pwaConsumer();
   }
   results.push({name,first,after:{parse:state.parse,save:state.save,bundle:state.bundle,acks:state.acks.length,pending:Boolean(window.__crewcheckPendingNativePdf)}});
-  return {state,first,window,values,context,pwaConsumer};
+  return {state,first,window,values,context,pwaConsumer,nativeState,trace};
 }
-function check(condition, label) {checks++;if(!condition)failures.push(label);if(!process.env.SHARE_WEB_OBSERVE)assert(condition,label);}
-let r=await scenario('durable metadata reaches actual importer',durable);
-check(r.state.parse===1&&r.state.save===1&&r.state.bundle===1&&r.state.acks.length===1&&!r.window.__crewcheckPendingNativePdf,'durable contract must import and ACK after commit');
-r=await scenario('multiple bounded chunks',durable,{largePdf:true});
-check(r.state.chunks===3&&r.state.save===1&&r.state.acks.length===1,'multi-chunk transport must import exact assembled PDF');
-r=await scenario('legacy Base64 remains compatible',legacy);
-check(r.state.parse===1&&r.state.save===1&&r.state.acks[0]===legacy.shareId,'legacy must still import');
-for (const [name, opts] of [['parser failure',{parserFailure:true}],['confirmation cancelled',{cancel:true}],['empty roster',{empty:true}],['compliance failure',{complianceFailure:true}],['bad native chunk',{badChunk:true}]]) {
-  r=await scenario(name,name==='bad native chunk'?durable:legacy,{...opts,retry:true});
-  check(r.first.save===0&&r.first.bundle===0&&r.first.acks===0&&r.first.pending&&r.first.claims===0,name+' must preserve roster/pending and release retry claim');
-  check(r.state.save===1&&r.state.bundle===1&&r.state.acks.length===1&&!r.window.__crewcheckPendingNativePdf,name+' same share retry must commit');
+function check(condition,label){checks++;if(!condition)failures.push(label);if(!process.env.SHARE_WEB_OBSERVE)assert(condition,label);}
+let r=await scenario('new receipt explicit claim before reading',durable);
+check(r.state.parse===1&&r.state.save===1&&r.state.acks.length===1&&!r.window.__crewcheckPendingNativePdf,'claimed receipt imports and ACKs committed canonical save');
+check(r.trace.indexOf('explicit-claim')>=0&&r.trace.indexOf('explicit-claim')<r.trace.indexOf('chunk'),'explicit claim precedes first chunk');
+r=await scenario('claim declined',durable,{denyClaim:true});
+check(r.state.parse===0&&r.state.chunks===0&&r.state.acks.length===0,'declining claim does not read or parse');
+for(const payload of [durable,legacy]){
+ r=await scenario('old APK unknown source requires manual picker',payload,{noProtocol:true});
+ check(r.state.parse===0&&r.state.chunks===0&&(r.state.decodes||0)===0&&r.state.acks.length===0,'unknown native source never binds current login');
 }
-for (const phase of ['onChunk','onParse','onConfirm','onPublication','onCompliance']) {
-  r=await scenario('account changes '+phase,phase==='onChunk'?durable:legacy,{[phase]:s=>{s.owner='owner-B';s.token='token-B';}});
-  check(r.state.save===0&&r.state.bundle===0&&r.state.acks.length===0&&r.window.__crewcheckPendingNativePdf,'account change '+phase+' must not commit/ACK');
-}
-r=await scenario('token rotation while parsing',legacy,{onParse:s=>{s.token='token-B';}});
-check(r.state.save===0&&r.state.acks.length===0,'token rotation must reject');
-for(const invalidate of ['planned','choice']) {
- r=await scenario('newer '+invalidate+' import while parsing',legacy,{invalidate});
- check(r.state.save===0&&r.state.bundle===0&&r.state.acks.length===0&&r.window.__crewcheckPendingNativePdf,'newer '+invalidate+' choice must reject stale import');
-}
-r=await scenario('successful bundle effect cleanup still ACKs',durable,{cleanupOnCommit:true});
-check(r.state.bundle===1&&r.state.acks.length===1,'normal effect cleanup after commit must not lose ACK');
-r=await scenario('duplicate successful event suppressed',legacy,{retry:true});
-check(r.state.parse===1&&r.state.acks.length===1,'success duplicate must be suppressed');
-r=await scenario('canonical storage unavailable',durable,{storageFailure:true});
-check(r.state.bundle===0&&r.state.active==='original-roster'&&r.state.acks.length===0&&r.window.__crewcheckPendingNativePdf,'unconfirmed durable local save must retain pending');
-r=await scenario('native ACK rejection keeps pending',durable,{ackFailure:true});
-check(r.state.save===1&&r.window.__crewcheckPendingNativePdf&&r.first.claims===0,'false ACK must retain pending and allow retry');
-r=await scenario('pending replaced by a different share before ACK',legacy,{replacePending:true});
-check(r.state.acks.length===1&&r.window.__crewcheckPendingNativePdf?.shareId==='other-share','ACK must not clear another pending share');
-r=await scenario('oversized native chunk rejected',durable,{oversizedChunk:true});
-check(r.state.parse===0&&r.state.acks.length===0&&r.window.__crewcheckPendingNativePdf,'oversized chunk must fail closed');
-r=await scenario('manual picker success preserved',legacy,{manual:true});
-check(r.state.result===true&&r.state.save===1&&r.state.bundle===1&&r.state.acks.length===0,'manual picker keeps canonical success without native ACK');
-r=await scenario('manual picker cancellation preserved',legacy,{manual:true,cancel:true});
-check(r.state.result===false&&r.state.save===0&&r.state.bundle===0,'manual cancellation preserves active roster');
-for(const [name,payload,options] of [
- ['PWA without Android bridge',pwa,{noBridge:true,pwaRuntime:true}],
- ['PWA with unrelated Android bridge',pwa,{}],
- ['legacy APK without ACK method',legacy,{noAck:true}],
- ['legacy payload without bridge',legacy,{noBridge:true}],
-]) {
- r=await scenario(name,payload,{...options,retry:true,replayLifecycle:true});
- check(r.first.parse===1&&r.first.save===1&&!r.first.pending&&r.first.claims===1,name+' finalized after canonical commit');
- check(r.state.parse===1&&r.state.save===1&&r.state.acks.length===0&&!r.window.__crewcheckPendingNativePdf,name+' must dedupe repeated event/effect and have no reload replay');
- if(options.pwaRuntime)check(r.state.pwaFetches===1&&!new URL(r.window.location.href).searchParams.has('crewcheckSharedPdf'),'real PWA runtime removes consumed query so reload does not fetch/reimport');
-}
-for(const payload of [{...durable,byteLength:35*1024*1024+1},{...durable,byteLength:0},{...durable,byteLength:1.5},{...durable,transport:'unsupported'},{...legacy,dataBase64:Buffer.from('not a PDF').toString('base64')}]) {
- r=await scenario('invalid native metadata/PDF rejected',payload);
- check(r.state.parse===0&&r.state.save===0&&r.state.acks.length===0&&r.window.__crewcheckPendingNativePdf,'invalid transport must not reach parser/ACK');
-}
-// Retained-share ownership, including a fresh VM simulating a document reload.
-for(const failure of ['cancel','parserFailure']) {
+for(const failure of ['cancel','parserFailure']){
  const initial=await scenario('A retains '+failure,durable,{[failure]:true});
- const foreign=await scenario('B attempts retained '+failure,durable,{owner:'owner-B',token:'token-B',persistedValues:initial.values});
- check(foreign.state.chunks===0&&foreign.state.parse===0&&(foreign.state.decodes||0)===0&&foreign.state.save===0&&foreign.state.acks.length===0,'other account cannot read/decode/parse/upload retained '+failure+' after reload');
- const same=await scenario('A returns to retained '+failure,durable,{persistedValues:initial.values,token:'new-token-same-owner'});
- check(same.state.chunks===1&&same.state.parse===1&&same.state.save===1&&same.state.acks.length===1,'same account can retry retained '+failure+' after reload');
+ const other=await scenario('B resumes same receipt',durable,{owner:'owner-B',token:'token-B',persistedValues:initial.values,nativeState:initial.nativeState});
+ check(other.state.chunks===0&&other.state.parse===0&&other.state.acks.length===0,'B cannot read A retained '+failure);
+ const alias={...durable,shareId:'new-id-same-file'};
+ const recaptured=await scenario('new ID without proven native ownership',alias,{owner:'owner-B',token:'token-B',persistedValues:initial.values,noProtocol:true});
+ check(recaptured.state.chunks===0&&recaptured.state.parse===0&&(recaptured.state.decodes||0)===0,'new unknown ID cannot bypass ownership');
+ const same=await scenario('A returns with rotated token',durable,{token:'new-token',persistedValues:initial.values,nativeState:initial.nativeState});
+ check(same.state.parse===1&&same.state.save===1&&same.state.acks.length===1,'same owner can retry a noncommitted failed attempt');
 }
-for(const payload of [durable,legacy,pwa]) {
- const anonymous=await scenario('received while logged out',payload,{owner:null,token:null,onlyReceipt:true});
- const loggedIn=await scenario('login must not adopt unowned receipt',payload,{persistedValues:anonymous.values});
- check(loggedIn.state.chunks===0&&loggedIn.state.parse===0&&(loggedIn.state.decodes||0)===0&&loggedIn.state.acks.length===0,'unowned share cannot be silently adopted after login/reload');
+const anonymous=await scenario('receipt while signed out',durable,{owner:null,token:null,onlyReceipt:true});
+r=await scenario('later login cannot adopt unowned receipt',durable,{persistedValues:anonymous.values,nativeState:anonymous.nativeState});
+check(r.state.chunks===0&&r.state.parse===0&&r.state.acks.length===0,'signed-out receipt stays blocked after recreation/login');
+const beforeLogin=await scenario('known A delivery observed during logout',durable,{owner:null,token:null,onlyReceipt:true,nativeState:{id:durable.shareId,owner:'owner-A',phase:'unclaimed'}});
+r=await scenario('A reclaims after observing its receipt signed out',durable,{persistedValues:beforeLogin.values,nativeState:beforeLogin.nativeState});
+check(r.state.parse===1&&r.state.save===1,'logout does not replace an authoritative A owner with an unowned web receipt');
+for(const value of ['true','false',1,null]){
+ const values=new Map([['crewcheck:shared-pdf-account:v1:'+encodeURIComponent(durable.shareId),JSON.stringify({version:2,kind:'native',owner:'owner-A',phase:'claimed',committed:value})]]);
+ r=await scenario('malformed committed marker',durable,{persistedValues:values});
+ check(r.state.parse===0&&r.state.chunks===0,'committed is a strict boolean');
 }
-r=await scenario('binding storage unavailable',durable,{bindingStorageFailure:true});
-check(r.state.chunks===0&&r.state.parse===0&&r.state.acks.length===0,'unpersistable account binding fails before file read');
-r=await scenario('legacy has no stable identity',{filename:'Synthetic.pdf',dataBase64:pdf.toString('base64')});
-check(r.state.parse===0&&(r.state.decodes||0)===0&&r.state.acks.length===0,'unidentified legacy payload requires manual picker instead of unsafe account replay');
-const cancelledPwa=await scenario('PWA A cancellation before reopening',pwa,{cancel:true,pwaRuntime:true,noBridge:true});
-r=await scenario('PWA B reopening retained ID',pwa,{owner:'owner-B',token:'token-B',persistedValues:cancelledPwa.values,pwaRuntime:true,noBridge:true});
-check((r.state.pwaFetches||0)===0&&r.state.parse===0,'PWA account check precedes SW fetch/blob read');
-const offlinePwa=await scenario('PWA A offline intake',pwa,{offline:true,pwaRuntime:true,noBridge:true});
-r=await scenario('PWA same account returns online',pwa,{persistedValues:offlinePwa.values,pwaRuntime:true,noBridge:true,pwaUrl:offlinePwa.window.location.href});
-check(r.state.pwaFetches===1&&r.state.parse===1&&r.state.save===1,'PWA same account can retry unconsumed SW entry after offline reopen');
-r=await scenario('same share repeated concurrently',legacy,{cancel:true,concurrentSameId:true});
-check(r.state.parse===2&&r.state.save===0&&r.state.acks.length===0,'duplicate simultaneous same-ID claims cannot run two parsers');
-r=await scenario('newer distinct share supersedes earlier parser',legacy,{cancel:true,concurrentDistinct:true});
-check(r.state.save===1&&r.state.acks.length===1&&r.state.acks[0]==='synthetic-share-2','only the newer concurrent share can commit/ACK');
-r=await scenario('late ACK sees a newer pending share',durable,{ackReplacePending:true});
-check(r.state.acks.length===1&&r.window.__crewcheckPendingNativePdf?.shareId==='new-share-after-late-ACK','late ACK cannot clear the newer pending JS share');
-r=await scenario('unexpected async ACK is not accepted',durable,{ackPromise:true});
-check(r.state.acks.length===1&&r.window.__crewcheckPendingNativePdf&&r.first.claims===0,'only synchronous native true finalizes private inbox');
-const ackFailed=await scenario('native ACK failed after canonical commit',durable,{ackFailure:true});
-r=await scenario('retry ACK after reload without reparse',durable,{persistedValues:ackFailed.values});
-check(r.state.chunks===0&&r.state.parse===0&&r.state.save===0&&r.state.acks.length===1&&!r.window.__crewcheckPendingNativePdf,'committed same-owner receipt retries only ACK after reload');
-r=await scenario('B cannot finalize A committed receipt',durable,{owner:'owner-B',token:'token-B',persistedValues:ackFailed.values});
-check(r.state.chunks===0&&r.state.parse===0&&r.state.acks.length===0&&r.window.__crewcheckPendingNativePdf,'foreign account cannot read OR ACK a committed receipt');
-const expired=await scenario('native TTL expired PDF cannot be read',durable,{badChunk:true});
-check(expired.state.parse===0&&expired.state.acks.length===0,'expired native PDF missing chunk cannot become a fresh import');
-// Only opaque account IDs and version are persisted, never auth tokens/PDF data.
-for(const [key,value] of r.values)if(key.startsWith('crewcheck:shared-pdf-account:')) {
- const receipt=JSON.parse(value);check(['owner,version','committed,owner,version'].includes(Object.keys(receipt).sort().join(','))&&!value.includes('token-')&&!value.includes('PDF'),'binding metadata is minimal');
+r=await scenario('write-ahead marker fails',durable,{failWriteAhead:true});
+check(r.state.save===0&&r.state.bundle===0&&r.state.acks.length===0,'marker failure before canonical mutation preserves active roster');
+for(const options of [{failNativeConfirm:true},{failCommitMarker:true}]){
+ const initial=await scenario('commit confirmation failure',durable,{...options,ackFailure:true});
+ check(initial.state.save===1&&initial.state.bundle===1&&initial.window.__crewcheckPendingNativePdf,'canonical saved but pending preserved on confirmation failure');
+ const reopened=await scenario('reopen uncertain commit',durable,{persistedValues:initial.values,nativeState:initial.nativeState});
+ check(reopened.state.parse===0&&reopened.state.save===0&&reopened.state.chunks===0,'uncertain commit must not automatically reparse after reload');
+ if(options.failNativeConfirm)check(reopened.state.acks.length===0,'unconfirmed native commit is quarantined');
+ else check(reopened.state.acks.length===1,'durable native confirmation recovers failed web marker with ACK-only retry');
 }
+const ackFailed=await scenario('ACK failure after committed save',durable,{ackFailure:true});
+r=await scenario('ACK-only retry after reload',durable,{persistedValues:ackFailed.values,nativeState:ackFailed.nativeState});
+check(r.state.parse===0&&r.state.save===0&&r.state.acks.length===1,'committed receipt never reparses for ACK retry');
+r=await scenario('foreign ACK attempt',durable,{owner:'owner-B',token:'token-B',persistedValues:ackFailed.values,nativeState:ackFailed.nativeState});
+check(r.state.parse===0&&r.state.acks.length===0,'B cannot ACK A committed receipt');
+for(const phase of ['onChunk','onParse','onConfirm','onPublication','onCompliance']){
+ r=await scenario('account changes '+phase,durable,{[phase]:s=>{s.owner='owner-B';s.token='token-B';}});
+ check(r.state.save===0&&r.state.bundle===0&&r.state.acks.length===0,'async account guard '+phase+' preserved');
+}
+for(const options of [{badChunk:true},{oversizedChunk:true},{bindingStorageFailure:true}]){
+ r=await scenario('unreadable/invalid pending file',durable,options);
+ check(r.state.parse===0&&r.state.acks.length===0,'invalid source/storage never parses or ACKs');
+}
+r=await scenario('late ACK after pending replacement',durable,{ackReplacePending:true});
+check(r.window.__crewcheckPendingNativePdf?.shareId==='new-share-after-late-ACK','old ACK preserves new pending pointer');
+r=await scenario('same-ID concurrent delivery',durable,{cancel:true,concurrentSameId:true});
+check(r.state.parse===2&&r.state.save===0,'simultaneous duplicate claims do not run simultaneous parsers');
+r=await scenario('manual picker remains available',legacy,{manual:true});
+check(r.state.result===true&&r.state.save===1&&r.state.acks.length===0,'manual picker imports through current guarded canonical handler');
+r=await scenario('PWA real bootstrap',pwa,{pwaRuntime:true,noBridge:true,retry:true,replayLifecycle:true});
+check(r.state.parse===1&&r.state.save===1&&r.state.pwaFetches===1&&!r.window.__crewcheckPendingNativePdf,'PWA completion remains single-use without native ACK');
+const pwaMarker=await scenario('PWA commit-marker persistence fails',pwa,{pwaRuntime:true,noBridge:true,failCommitMarker:true});
+r=await scenario('PWA uncertain commit after reload',pwa,{persistedValues:pwaMarker.values,noBridge:true});
+check(r.state.parse===0&&r.state.save===0,'PWA uncertain commit is quarantined, never automatically imported twice');
+const offline=await scenario('PWA offline fetch',pwa,{pwaRuntime:true,noBridge:true,offline:true});
+r=await scenario('PWA online reopening',pwa,{pwaRuntime:true,noBridge:true,pwaUrl:offline.window.location.href,persistedValues:offline.values});
+check(r.state.parse===1&&r.state.save===1,'same account can reopen unconsumed PWA entry after offline fetch');
 if(process.env.SHARE_WEB_REPORT)fs.writeFileSync(process.env.SHARE_WEB_REPORT,JSON.stringify({homePath,fixed,bound,checks,failures,results},null,2)+'\n');
-console.log(`Android shared PDF web: ${checks} assertions, ${failures.length} failures (${fixed?'fixed':'baseline'} actual Home functions, synthetic data only).`);
+console.log(`Shared PDF claim web: ${checks} checks, ${failures.length} failures, synthetic I/O only.`);
 if(failures.length){console.error(failures.join('\n'));process.exitCode=1;}

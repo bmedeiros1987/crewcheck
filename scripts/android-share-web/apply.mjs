@@ -3,7 +3,7 @@ import fs from 'node:fs';
 // Web compatibility only: preserve the current importer and all upstream guards.
 const path = 'client/src/pages/Home.tsx';
 let source = fs.readFileSync(path, 'utf8');
-const bindingImport = "import { sharedPdfAccountReceipt, sharedPdfIdentity, markSharedPdfCommitted } from '@/lib/sharedPdfAccountBinding';\n";
+const bindingImport = "import { sharedPdfAccountReceipt, sharedPdfIdentity, markSharedPdfCommitted, beginSharedPdfCommit, claimSharedPdfForAccount } from '@/lib/sharedPdfAccountBinding';\n";
 if (!source.includes(bindingImport.trim())) source = bindingImport + source;
 if (!source.includes('function captureSharedPdfImport(')) {
   const start = source.indexOf('  const nativePdfClaimsRef = useRef<Set<string>>(new Set());');
@@ -39,7 +39,7 @@ if (!source.includes('sharedContext?: ReturnType<typeof captureSharedPdfImport>'
   // A rejected async compliance computation must not replace the active roster.
   replace('      saveRoster(roster, file.name);\n', '');
   replace("      storage.set('crewcheck_last_import_guardian_summary', decision.summaryText);",
-    "      if (!importCurrent()) return false;\n      saveRoster(roster, file.name);\n      if (!importCurrent()) return false;\n      if (sharedContext) {\n        const persisted = JSON.parse(localStorage.getItem(startupKey()) || 'null');\n        if (persisted?.owner !== startupOwner() || persisted?.sourceFileName !== file.name\n          || JSON.stringify(persisted.roster) !== JSON.stringify(roster)) {\n          throw new Error('Não consegui preservar a escala importada neste dispositivo. Tente novamente.');\n        }\n      }\n      storage.set('crewcheck_last_import_guardian_summary', decision.summaryText);");
+    "      if (!importCurrent()) return false;\n      if (sharedContext && !beginSharedPdfCommit(sharedContext.sharedPdfPayload)) return false;\n      saveRoster(roster, file.name);\n      if (!importCurrent()) return false;\n      if (sharedContext) {\n        const persisted = JSON.parse(localStorage.getItem(startupKey()) || 'null');\n        if (persisted?.owner !== startupOwner() || persisted?.sourceFileName !== file.name\n          || JSON.stringify(persisted.roster) !== JSON.stringify(roster)) {\n          throw new Error('Não consegui preservar a escala importada neste dispositivo. Tente novamente.');\n        }\n      }\n      storage.set('crewcheck_last_import_guardian_summary', decision.summaryText);");
   replace('      setBundle({ roster, compliance: newCompliance, source: file.name });',
     '      setBundle({ roster, compliance: newCompliance, source: file.name });\n      committed = true;');
   replace("      setLocation('/result');", "      setLocation('/result');\n      return committed;");
@@ -52,13 +52,13 @@ console.log('[android-share-web] Base64/chunk compatibility; current-session can
 
 const pwaPath = 'client/src/lib/pwaSharedPdfRuntime.ts';
 let pwa = fs.readFileSync(pwaPath, 'utf8');
-if (!pwa.includes("import { sharedPdfAccountReceipt } from './sharedPdfAccountBinding';")) {
-  pwa = "import { sharedPdfAccountReceipt } from './sharedPdfAccountBinding';\n" + pwa;
+if (!pwa.includes("import { registerPwaSharedPdfReceipt } from './sharedPdfAccountBinding';")) {
+  pwa = "import { registerPwaSharedPdfReceipt } from './sharedPdfAccountBinding';\n" + pwa;
   const anchor = '  if (!shareId) return;';
   if (!pwa.includes(anchor)) throw new Error('[android-share-web] PWA receipt anchor missing');
   pwa = pwa.replace(anchor, anchor + `
   // Bind BEFORE the single-use SW fetch, blob read, decode or parser/upload.
-  const receipt = sharedPdfAccountReceipt({ shareId: 'pwa:' + shareId });
+  const receipt = registerPwaSharedPdfReceipt('pwa:' + shareId);
   if (receipt.committed) {
     url.searchParams.delete(SHARED_PDF_QUERY);
     window.history.replaceState(window.history.state, '', \`${'${url.pathname}'}${'${url.search}'}${'${url.hash}'}\`);

@@ -1,0 +1,47 @@
+        @JavascriptInterface
+        public boolean reportSharedPdfSession(final String account) {
+            if (!sharedPdfTrustedPage) return false;
+            final String owner = account == null || account.trim().isEmpty() ? null : account;
+            sharedPdfReceiptOwner = owner;
+            sharedPdfSessionReported = true;
+            runOnUiThread(() -> {
+                Intent startup = sharedPdfStartupIntent;
+                sharedPdfStartupIntent = null;
+                if (startup != null && !sharedPdfIncomingHandled) handleIncomingPdfIntent(startup, owner);
+                restorePendingSharedPdfFromInbox();
+                dispatchPendingSharedPdf();
+            });
+            return true;
+        }
+        @JavascriptInterface
+        public boolean claimSharedPdf(final String id, final String owner) {
+            return sharedPdfTrustedPage && SharedPdfInbox.claim(MainActivity.this, id, owner);
+        }
+        @JavascriptInterface
+        public boolean blockSharedPdf(final String id) {
+            return sharedPdfTrustedPage && SharedPdfInbox.block(MainActivity.this, id);
+        }
+        @JavascriptInterface
+        public boolean beginSharedPdfCommit(final String id, final String owner) {
+            return sharedPdfTrustedPage && SharedPdfInbox.beginCommit(MainActivity.this, id, owner);
+        }
+        @JavascriptInterface
+        public boolean confirmSharedPdfCommit(final String id, final String owner) {
+            return sharedPdfTrustedPage && SharedPdfInbox.confirmCommit(MainActivity.this, id, owner);
+        }
+        @JavascriptInterface
+        public String readClaimedSharedPdfChunk(final String id, final String owner, final String offset, final String length) {
+            if (!sharedPdfTrustedPage) return "";
+            try {
+                return Base64.encodeToString(SharedPdfInbox.readClaimedChunk(MainActivity.this, id, owner,
+                        Long.parseLong(offset), Integer.parseInt(length), MAX_PDF_BYTES), Base64.NO_WRAP);
+            } catch (Exception error) { return ""; }
+        }
+        @JavascriptInterface
+        public boolean acknowledgeClaimedSharedPdf(final String id, final String owner) {
+            if (!sharedPdfTrustedPage) return false;
+            boolean saved = SharedPdfInbox.acknowledge(MainActivity.this, id, owner);
+            if (saved) { pendingSharedPdfId = null; pendingSharedPdfName = null; pendingSharedPdfBase64 = null; }
+            return saved;
+        }
+
