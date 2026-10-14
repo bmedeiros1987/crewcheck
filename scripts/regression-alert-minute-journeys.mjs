@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const root = path.resolve(process.env.ALERT_SOURCE_ROOT || process.cwd());
 const { loadClientModules } = await import(pathToFileURL(path.join(root, 'scripts/lib/ts-module-harness.mjs')));
-const modules = loadClientModules({ files: ['client/src/lib/complianceEngine.ts', 'client/src/lib/canonicalRoster.ts', 'client/src/lib/canonicalDutyMeasurement.ts'], prefix: 'synthetic-alert-minutes-' });
+const prepared = fs.readFileSync(path.join(root,'client/src/lib/complianceEngine.ts'),'utf8').includes('function summarizeRegulatoryNightEvents(');
+const modules = loadClientModules({ expose: { complianceEngine: prepared ? ['summarizeRegulatoryNightEvents'] : [] }, files: ['client/src/lib/complianceEngine.ts', 'client/src/lib/canonicalRoster.ts', 'client/src/lib/canonicalDutyMeasurement.ts'], prefix: 'synthetic-alert-minutes-' });
 const selected = process.argv.find(x => x.startsWith('--case='))?.slice(7);
 try {
   const engine = modules.load('complianceEngine'), canonical = modules.load('canonicalRoster'), measurement = modules.load('canonicalDutyMeasurement');
@@ -49,6 +51,7 @@ try {
       const fourth = day('07/10/2032','02:10','10:30','02:50','10:00');
       const interrupted = engine.analyzeCompliance(roster([first,daytime,third,fourth]));
       console.log(JSON.stringify({timezone,case:'journey-observed',maxConsecutiveNights:interrupted.metrics.maxConsecutiveNights}));
+      if(prepared) assert.equal(engine.summarizeRegulatoryNightEvents([daytime],48,roster([first,daytime,third,fourth])).maxConsecutiveWorked,0,'summary respects selected days even when identity context contains more journeys');
       assert.equal(interrupted.metrics.maxConsecutiveNights,2,'daytime journey interrupts night journey sequence even on adjacent civil nights');
       assert.ok(!interrupted.alerts.some(a => /consecutivas.*revisar sequência/.test(a.title)), 'no three-journey warning for this fixture');
       const overnight = day('27/10/2032','13:45','01:05','14:25','00:35');
