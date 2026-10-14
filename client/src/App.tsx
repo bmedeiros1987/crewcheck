@@ -1,3 +1,4 @@
+import { StartupProgress, type StartupStage } from "./components/StartupProgress";
 import { useEffect, useState, type ReactNode } from "react";
 import { Toaster } from "sonner";
 import { Route, Switch, useLocation } from "wouter";
@@ -51,8 +52,8 @@ function applyCrewThemeMode(mode: CrewThemeMode) {
   } catch {}
 }
 
-function CrewCheckOpeningSplash({ label = "CrewCheck Premium" }: { label?: string }) {
-  return <div className="cc1270-loader" aria-label={label}><div className="cc1270-loader-bg" /><div className="cc1270-loader-card"><img className="cc1270-loader-brand" src="/icons/crewcheck-icon-v2.png" alt="CrewCheck" width="96" height="96" decoding="sync" fetchPriority="high" /><strong>CrewCheck</strong><small>Carregando CrewCheck Premium</small></div></div>;
+function CrewCheckOpeningSplash({ label = "Abrindo CrewCheck", stage = "session" }: { label?: string; stage?: StartupStage }) {
+  return <div className="cc1270-loader" aria-label={label}><div className="cc1270-loader-bg" /><div className="cc1270-loader-card"><img className="cc1270-loader-brand" src="/icons/crewcheck-icon-v2.png" alt="CrewCheck" width="96" height="96" decoding="sync" fetchPriority="high" /><strong>CrewCheck</strong><StartupProgress stage={stage} /></div></div>;
 }
 
 async function enablePartnerDemoRoster() {
@@ -76,12 +77,17 @@ async function enablePartnerDemoRoster() {
 function Protected({ children }: { children: ReactNode }) {
   const [, setLocation] = useLocation();
   const [ready, setReady] = useState(false);
+  const [startupStage, setStartupStage] = useState<StartupStage>("session");
   useEffect(() => {
     let mounted = true;
     const demoMode = window.localStorage.getItem('crewcheck_demo_mode_seen') === '1' || window.sessionStorage.getItem('crewcheck_demo_active') === '1';
     if (!isAuthenticated() && !demoMode) { setLocation('/login'); return; }
     if (!isAuthenticated() && demoMode) { setReady(true); return; }
-    getMe().then(() => enablePartnerDemoRoster()).catch((error) => {
+    getMe().then(() => {
+      if (!mounted) return;
+      setStartupStage("profile");
+      return enablePartnerDemoRoster();
+    }).catch((error) => {
       // Only a confirmed-invalid session (reason 'session_expired', i.e. the backend
       // itself rejected the token) should ever send someone back to /login. Everything
       // else - a rate limit, an account-state signal, a network hiccup, a timeout, a 5xx -
@@ -94,7 +100,7 @@ function Protected({ children }: { children: ReactNode }) {
     return () => { mounted = false; };
   }, [setLocation]);
   if (!isAuthenticated() && !(window.localStorage.getItem('crewcheck_demo_mode_seen') === '1' || window.sessionStorage.getItem('crewcheck_demo_active') === '1')) return null;
-  if (!ready) return <CrewCheckOpeningSplash label="CrewCheck Premium" />;
+  if (!ready) return <CrewCheckOpeningSplash stage={startupStage} />;
   return <TermsGate>{children}</TermsGate>;
 }
 

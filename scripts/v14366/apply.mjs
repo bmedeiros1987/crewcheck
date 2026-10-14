@@ -14,7 +14,7 @@ update('client/src/App.tsx', (source) => {
   let next = source;
   next = next.replace(
     /function CrewCheckOpeningSplash\([^)]*\) \{[\s\S]*?\n\}/,
-    `function CrewCheckOpeningSplash({ label = "CrewCheck Premium" }: { label?: string }) {\n  return <div className="cc1270-loader" aria-label={label}><div className="cc1270-loader-bg" /><div className="cc1270-loader-card"><img className="cc1270-loader-brand" src="${LOGO}" alt="CrewCheck" width="96" height="96" decoding="sync" fetchPriority="high" /><strong>CrewCheck</strong><small>Carregando CrewCheck Premium</small></div></div>;\n}`,
+    `function CrewCheckOpeningSplash({ label = "Abrindo CrewCheck", stage = "session" }: { label?: string; stage?: StartupStage }) {\n  return <div className="cc1270-loader" aria-label={label}><div className="cc1270-loader-bg" /><div className="cc1270-loader-card"><img className="cc1270-loader-brand" src="${LOGO}" alt="CrewCheck" width="96" height="96" decoding="sync" fetchPriority="high" /><strong>CrewCheck</strong><StartupProgress stage={stage} /></div></div>;\n}`,
   );
   next = next.replace(/crewcheck_last_loaded_version',\s*'[^']+'/g, `crewcheck_last_loaded_version', '${VERSION}'`);
   return next;
