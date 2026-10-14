@@ -3,6 +3,8 @@ import fs from 'node:fs';
 // Web compatibility only: preserve the current importer and all upstream guards.
 const path = 'client/src/pages/Home.tsx';
 let source = fs.readFileSync(path, 'utf8');
+const bindingImport = "import { sharedPdfAccountReceipt, sharedPdfIdentity } from '@/lib/sharedPdfAccountBinding';\n";
+if (!source.includes(bindingImport.trim())) source = bindingImport + source;
 if (!source.includes('function captureSharedPdfImport(')) {
   const start = source.indexOf('  const nativePdfClaimsRef = useRef<Set<string>>(new Set());');
   const end = source.indexOf('  }, [bundle]);', start);
@@ -47,3 +49,23 @@ if (!source.includes('sharedContext?: ReturnType<typeof captureSharedPdfImport>'
 }
 fs.writeFileSync(path, source);
 console.log('[android-share-web] Base64/chunk compatibility; current-session canonical commit gates ACK.');
+
+const pwaPath = 'client/src/lib/pwaSharedPdfRuntime.ts';
+let pwa = fs.readFileSync(pwaPath, 'utf8');
+if (!pwa.includes("import { sharedPdfAccountReceipt } from './sharedPdfAccountBinding';")) {
+  pwa = "import { sharedPdfAccountReceipt } from './sharedPdfAccountBinding';\n" + pwa;
+  const anchor = '  if (!shareId) return;';
+  if (!pwa.includes(anchor)) throw new Error('[android-share-web] PWA receipt anchor missing');
+  pwa = pwa.replace(anchor, anchor + `
+  // Bind BEFORE the single-use SW fetch, blob read, decode or parser/upload.
+  const receipt = sharedPdfAccountReceipt({ shareId: 'pwa:' + shareId });
+  if (!receipt.allowed) {
+    (window as any).__crewcheckPwaShareError = 'Este PDF não pode ser retomado nesta conta. Compartilhe novamente após entrar na conta correta.';
+    return;
+  }`);
+  // A failed SW fetch must retain the opaque URL ID for a same-account retry.
+  const lostRetry = "    url.searchParams.delete(SHARED_PDF_QUERY);\n    url.searchParams.set('view', 'import');";
+  if (!pwa.includes(lostRetry)) throw new Error('[android-share-web] PWA failure retry anchor missing');
+  pwa = pwa.replace(lostRetry, "    url.searchParams.set('view', 'import');");
+  fs.writeFileSync(pwaPath, pwa);
+}

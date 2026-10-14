@@ -15,10 +15,16 @@
     let alive = true;
     const consumeNativePdf = async (payload: any) => {
       if (!alive) return;
+      const shareId = sharedPdfIdentity(payload);
+      if (!shareId) { toast.message('PDF compartilhado sem identificador seguro. Importe pelo seletor de arquivos nesta conta.'); return; }
+      if (nativePdfClaimsRef.current.has(shareId)) return;
+      const receipt = sharedPdfAccountReceipt(payload);
+      if (!receipt.allowed) {
+        toast.message('Este PDF não pode ser retomado nesta conta. Compartilhe novamente após entrar na conta correta.');
+        return;
+      }
       const filename = String(payload?.filename || payload?.sourceFileName || 'CrewCheck-escala.pdf').trim() || 'CrewCheck-escala.pdf';
       const dataBase64 = String(payload?.dataBase64 || '').trim();
-      const shareId = String(payload?.shareId || (dataBase64 ? `legacy:${filename}:${dataBase64.length}` : '')).trim();
-      if (!shareId || nativePdfClaimsRef.current.has(shareId)) return;
       // Capture account, publication and choice BEFORE reading the shared file.
       const context = captureSharedPdfImport(() => alive);
       const current = () => alive && context.plannedImport.canCommit() && context.canCommit()
