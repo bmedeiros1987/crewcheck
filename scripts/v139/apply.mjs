@@ -212,6 +212,8 @@ await import('../stay-editor/apply.mjs');
 await import('../bids-default/apply.mjs');
 await import('../bids-default/wakeup-layout.mjs');
 await import('../cirium-radar-off/apply.mjs');
+// Shared-PDF web compatibility after all canonical import/session transformations.
+await import('../android-share-web/apply.mjs');
 
 }
 
