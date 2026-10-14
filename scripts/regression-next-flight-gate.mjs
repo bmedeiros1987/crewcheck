@@ -57,7 +57,7 @@ function flight(id, number, startIso, origin = 'GRU', destination = 'REC', extra
 }
 
 const next = flight('x', 'LA3377', new Date(NOW + 3 * H).toISOString());
-const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', departure: new Date(NOW + 3 * H).toISOString(), sourceOrigin: 'GRU', sourceDestination: 'REC', updatedAt: NOW - 5 * 60_000 };
+const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', scheduledDepartureUtc: new Date(NOW + 3 * H).toISOString(), departure: new Date(NOW + 3 * H).toISOString(), sourceOrigin: 'GRU', sourceDestination: 'REC', updatedAt: NOW - 5 * 60_000 };
 
 // 3. Portão de embarque ≠ posição da aeronave ≠ portão de outro trecho/dia.
 {
@@ -70,11 +70,11 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', de
   }
   const previousLeg = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, gate: '11', sourceOrigin: 'REC', sourceDestination: 'GRU' }, now: NOW });
   assert.equal(previousLeg.gate, ''); assert.equal(previousLeg.radarRejected, 'other-segment');
-  const otherDay = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, gate: '15', departure: new Date(NOW + 3 * H - 24 * H).toISOString() }, now: NOW });
+  const otherDay = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, gate: '15', scheduledDepartureUtc: new Date(NOW + 3 * H - 24 * H).toISOString() }, now: NOW });
   assert.equal(otherDay.gate, ''); assert.equal(otherDay.radarRejected, 'other-day', 'ocorrência do dia anterior é recusada');
   // Ocorrência só é provada por instante absoluto válido da fonte; o resto falha fechado.
   for (const departure of ['14:05', '', undefined, `${m.flightOperationalDate(next)} 19:05`]) {
-    const unproven = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, gate: '15', departure }, now: NOW });
+    const unproven = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, gate: '15', scheduledDepartureUtc: departure }, now: NOW });
     assert.equal(unproven.gate, '', `partida "${departure}" não prova a ocorrência`); assert.equal(unproven.radarRejected, 'unproven-day');
   }
   // IATA/ICAO: só os aliases de buildFlightContext; ids com sufixo ou zeros não viram este voo.
@@ -208,7 +208,7 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', de
   const event = {...real,canonical:real,date:new Date(real.startDateTime),gate:'7'};
   const now = Date.parse(real.startDateTime)-10*60_000;
   const storage = memoryStorage();
-  const radar = {...radarBase,flight:'QA3377',gate:'9',origin:'GRU',destination:'REC',sourceOrigin:'GRU',sourceDestination:'REC',departure:real.startDateTime,updatedAt:now-60_000,operationalDate:'2032-10-11'};
+  const radar = {...radarBase,flight:'QA3377',gate:'9',origin:'GRU',destination:'REC',sourceOrigin:'GRU',sourceDestination:'REC',scheduledDepartureUtc:real.startDateTime,departure:real.startDateTime,updatedAt:now-60_000,operationalDate:'2032-10-11'};
   const originalTZ=process.env.TZ;
   try {
     process.env.TZ='America/Sao_Paulo';
@@ -260,19 +260,19 @@ fs.rmSync(out, { recursive: true, force: true });
   const unproven = ['2032-10-13 00:01', '2032-10-13T99:99Z', '2032-10-13T23:00:00+99:00', '2032-10-13 00:01 garbage',
     '2032-02-30T23:00:00Z', '2032-10-13T23:00:00+14:30', '2032-10-13T23:00', '23:00', '', null, undefined];
   for (const departure of unproven) {
-    const r = m.resolveNextFlightGate({ event: ev, radar: { ...base, departure }, now });
+    const r = m.resolveNextFlightGate({ event: ev, radar: { ...base, scheduledDepartureUtc: departure }, now });
     assert.equal(r.gate, '', `"${departure}" não pode liberar o portão Radar`);
     assert.notEqual(r.gateSource, 'radar'); assert.equal(r.radarRejected, 'unproven-day', String(departure));
     const manual = { gate: '24', terminal: '', author: 'Ana', setAtEpochMs: now - 5 * 60_000, flight: 'LA3377', date: m.flightOperationalDate(ev) };
-    const withManual = m.resolveNextFlightGate({ event: ev, radar: { ...base, departure }, manual, now });
+    const withManual = m.resolveNextFlightGate({ event: ev, radar: { ...base, scheduledDepartureUtc: departure }, manual, now });
     assert.equal(withManual.gate, '24', 'portão manual continua valendo'); assert.equal(withManual.gateSource, 'manual');
     assert.equal(withManual.divergence, null, 'fonte recusada não gera divergência');
   }
-  for (const departure of ['2032-10-13T23:00:00Z', '2032-10-13T20:00:00-03:00', '2032-10-13 20:00-03:00', '2032-10-13T23:05:00.000Z', '2032-10-13T20:00:00-0300']) {
-    const r = m.resolveNextFlightGate({ event: ev, radar: { ...base, departure }, now });
+  for (const departure of ['2032-10-13T23:00:00Z', '2032-10-13T20:00:00-03:00', '2032-10-13 20:00-03:00', '2032-10-13T20:00:00-0300']) {
+    const r = m.resolveNextFlightGate({ event: ev, radar: { ...base, scheduledDepartureUtc: departure }, now });
     assert.equal(r.gate, '9', `"${departure}" é instante absoluto válido`); assert.equal(r.radarRejected, '');
   }
-  assert.equal(m.resolveNextFlightGate({ event: ev, radar: { ...base, departure: '2032-10-12T23:00:00Z' }, now }).radarRejected, 'other-day');
+  assert.equal(m.resolveNextFlightGate({ event: ev, radar: { ...base, scheduledDepartureUtc: '2032-10-12T23:00:00Z' }, now }).radarRejected, 'other-day');
   assert.ok(Number.isNaN(m.sourceInstantEpochMs('2032-10-13T23:00:00+99:00')));
   assert.equal(m.sourceInstantEpochMs('2032-10-13T20:00:00-03:00'), Date.parse('2032-10-13T23:00:00Z'));
 
@@ -291,7 +291,7 @@ fs.rmSync(out, { recursive: true, force: true });
     const ctx = ctxVm.buildFlightContext(roster);
     assert.equal(ctx.flightAware, 'LAN3377');
     const fromIdent = ctxVm.normalizeFlightAwareFlight({ ident: ctx.flightAware, gate_origin: '9', scheduled_out: '2032-10-13T23:00:00Z', origin: { code_iata: 'GRU' }, destination: { code_iata: 'REC' } }, ctx);
-    const r = m.resolveNextFlightGate({ event: { ...ev, flightNumber: roster }, radar: { ...base, flight: fromIdent.flight, gate: fromIdent.gate, departure: fromIdent.departure }, now });
+    const r = m.resolveNextFlightGate({ event: { ...ev, flightNumber: roster }, radar: { ...base, flight: fromIdent.flight, gate: fromIdent.gate, scheduledDepartureUtc: fromIdent.scheduledDepartureUtc, departure: fromIdent.departure }, now });
     assert.equal(r.gate, '9', `adapter FlightAware ${fromIdent.flight} comprova ${roster}`);
     const onlyInternalId = ctxVm.normalizeFlightAwareFlight({ fa_flight_id: 'LAN3377-1697000000-airline-0123', gate_origin: '9', scheduled_out: '2032-10-13T23:00:00Z' }, ctx);
     assert.equal(m.resolveNextFlightGate({ event: { ...ev, flightNumber: roster }, radar: { ...base, flight: onlyInternalId.flight, gate: '9', departure: onlyInternalId.departure }, now }).radarRejected, 'other-flight', 'fa_flight_id sem ident falha fechado');

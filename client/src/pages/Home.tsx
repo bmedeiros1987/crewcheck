@@ -1,3 +1,4 @@
+import { gateQueryDay, gateQuerySuppressed, originFlightDate, radarResultDecision, publishedGateDate } from '../../../shared/gate-query-day.mjs';
 import {NotificationCenter,openNotificationSettings} from '@/components/notifications/NotificationCenter';
 import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
 import { FreeDayPostponementAlerts } from '@/components/FreeDayPostponementAlerts';
@@ -77,7 +78,7 @@ import {
 } from 'lucide-react';
 import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getCanonicalWorkHoursTotal, getPublishedDutyLimitSummary, type ComplianceResult } from '@/lib/complianceEngine';
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
-import { authFetch, getStoredUser, logout } from '@/lib/authClient';
+import { authFetch, getStoredUser, getToken, logout } from '@/lib/authClient';
 import { exportReport } from '@/lib/pdfExport';
 import { generateICalendar, downloadCalendarFile } from '@/lib/calendarExport';
 import { shareToWhatsApp, shareToTelegram, copyToClipboard, shareExportedPdfNative } from '@/lib/sharing';
@@ -111,7 +112,7 @@ import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
-import { MANUAL_GATE_EVENT, flightOperationalDate, gateChangeAlertAllowed, manualGateAccountKey, resolveNextFlightGate, radarSnapshotStorageKey, readCachedRadarForFlight, readManualGate, selectNextFlight } from '@/lib/nextFlightGate';
+import { canonicalFlightId, RADAR_GATE_STALE_MS, MANUAL_GATE_EVENT, manualGateIdentity, flightOperationalDate, gateChangeAlertAllowed, manualGateAccountKey, resolveNextFlightGate, radarSnapshotStorageKey, readCachedRadarForFlight, readManualGate, selectNextFlight } from '@/lib/nextFlightGate';
 import { applyNextFlightToWatchSnapshot } from '@/lib/nextFlightWatch';
 import { ManualGateEditor } from '@/components/nextflight/ManualGateEditor';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
@@ -1612,12 +1613,19 @@ function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; t
   return <article className={`cz-kpi ${tone}`}><span><Icon size={24}/></span><div><small>{title}</small><strong><MoneyText value={value}/></strong><p>{detail}</p></div></article>;
 }
 type RadarSnapshot = {
+  querySuppressed?: boolean;
+  queryReason?: string;
   ok?: boolean;
   flight?: string;
   gate?: string;
   terminal?: string;
   status?: string;
   departure?: string;
+  scheduledDepartureUtc?: string;
+  operationalDeparture?: string;
+  sourceReceivedAt?: number;
+  sourceOrigin?: string;
+  sourceDestination?: string;
   arrival?: string;
   aircraft?: string;
   registration?: string;
@@ -1632,6 +1640,27 @@ type RadarSnapshot = {
 };
 const RADAR_CARD_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const RADAR_CARD_REFRESH_MS = 5 * 60 * 1000;
+function validatedRadarForEvent(event: ZeroLeg, snapshot: RadarSnapshot | null): RadarSnapshot | null {
+  const utc = event.canonical?.startDateTime;
+  const observed = Number(snapshot?.updatedAt ?? snapshot?.sourceReceivedAt);
+  if (typeof utc !== 'string' || !Number.isFinite(observed) || observed > Date.now() || Date.now()-observed>RADAR_GATE_STALE_MS) return null;
+  if (snapshot?.operationalDate && (!snapshot.sourceOrigin || !snapshot.sourceDestination)) return null;
+  const identity = {flight:String(event.flightNumber || ''),origin:String(event.origin || ''),destination:String(event.destination || ''),departureDate:originFlightDate(utc,String(event.origin || '')),scheduledDepartureUtc:utc};
+  return radarResultDecision(snapshot,identity,Date.now(),RADAR_GATE_STALE_MS).allowed ? snapshot : null;
+}
+function radarGateInfo(event: ZeroLeg, snapshot: RadarSnapshot | null) {
+  const verified = validatedRadarForEvent(event,snapshot);
+  const manual = readManualGate(localStorage,manualGateAccountKey(getStoredUser()),event);
+  return resolveNextFlightGate({event,manual,radar:verified ? {...verified,departure:verified.scheduledDepartureUtc ?? verified.departure,updatedAt:Number(verified.updatedAt ?? verified.sourceReceivedAt)} : null});
+}
+function radarFlightDateLabel(event: ZeroLeg): string {
+  const published = publishedGateDate(event.day?.date || event.canonical?.date);
+  const utc = event.canonical?.startDateTime;
+  const originDate = typeof utc==='string' ? originFlightDate(utc,String(event.origin || '')) : '';
+  const zone = gateQueryDay({flight:String(event.flightNumber || ''),origin:String(event.origin || ''),destination:String(event.destination || ''),departureDate:originDate,scheduledDepartureUtc:utc}).originTimeZone;
+  const br = (date:string) => date ? `${date.slice(8,10)}/${date.slice(5,7)}/${date.slice(0,4)}` : 'não confirmada';
+  return `Escala ${br(published)} (BRT) · Origem ${br(originDate)} (${zone || 'fuso não confirmado'})`;
+}
 function radarSnapshotKey(event: ZeroLeg): string {
   return radarSnapshotStorageKey(event);
 }
@@ -1639,7 +1668,7 @@ function radarEventOperationalDate(event: ZeroLeg): string {
   return flightOperationalDate(event);
 }
 function radarSnapshotMatchesEvent(snapshot: RadarSnapshot, event: ZeroLeg): boolean {
-  return Boolean(radarEventOperationalDate(event)) && String(snapshot.flight || '').trim().toUpperCase() === String(event.flightNumber || '').trim().toUpperCase()
+  return Boolean(radarEventOperationalDate(event)) && canonicalFlightId(snapshot.flight) === canonicalFlightId(event.flightNumber)
     && snapshot.operationalDate === radarEventOperationalDate(event)
     && String(snapshot.origin || '').trim().toUpperCase() === String(event.origin || '').trim().toUpperCase()
     && String(snapshot.destination || '').trim().toUpperCase() === String(event.destination || '').trim().toUpperCase();
@@ -1649,7 +1678,7 @@ function readRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
   try {
     const parsed = JSON.parse(storage.get(radarSnapshotKey(event), 'null')) as RadarSnapshot | null;
     if (!parsed || !parsed.updatedAt || Date.now() - parsed.updatedAt > RADAR_CARD_CACHE_TTL_MS || !radarSnapshotMatchesEvent(parsed, event)) return null;
-    return parsed;
+    return validatedRadarForEvent(event,parsed);
   } catch {
     return null;
   }
@@ -1662,7 +1691,7 @@ function confirmedRadarGate(value?: string): string {
 function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapshot {
   const previous = readRadarSnapshot(event);
   // A origem/destino da fonte ficam preservados para recusar portão de outro trecho.
-  const snapshot = { ...payload, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: payload.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
+  const snapshot = { ...payload, operationalDeparture: payload.operationalDeparture ?? payload.departure, departure: payload.scheduledDepartureUtc ?? payload.departure, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: payload.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
   const key = radarSnapshotKey(event);
   storage.set(key, JSON.stringify(snapshot));
   window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));
@@ -1693,13 +1722,32 @@ function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapsho
   }
   return snapshot;
 }
+const radarQuerySerial = new Map<string, number>();
 async function fetchRadarSnapshot(event: ZeroLeg, force = false): Promise<RadarSnapshot> {
   const flight = String(event.flightNumber || '').trim();
   if (event.kind !== 'flight' || event.placeholder || !/\d/.test(flight)) return { ok: false, message: 'Radar disponível apenas para voo publicado.' };
+  const scheduledDepartureUtc = event.canonical?.startDateTime;
+  if (typeof scheduledDepartureUtc !== 'string') return readRadarSnapshot(event) || gateQuerySuppressed({reason:'published-instant-unverified'});
+  const queryIdentity = { flight, origin: String(event.origin || ''), destination: String(event.destination || ''), departureDate: originFlightDate(scheduledDepartureUtc, String(event.origin || '')), scheduledDepartureUtc };
+  const decision = gateQueryDay(queryIdentity);
+  if (!decision.allowed) return readRadarSnapshot(event) || gateQuerySuppressed(decision);
+  const account = manualGateAccountKey(getStoredUser());
+  const sessionToken = getToken();
+  if (!sessionToken || account === 'local') return readRadarSnapshot(event) || gateQuerySuppressed({ reason: 'account-unverified' });
+  const serialKey = account + '|' + manualGateIdentity(event);
+  const serial = (radarQuerySerial.get(serialKey) || 0) + 1;
+  radarQuerySerial.set(serialKey, serial);
   const identity = telegramConciergeIdentity();
   const params = new URLSearchParams({ flight, origin: String(event.origin || ''), destination: String(event.destination || ''), force: force ? '1' : '0', email: identity.email, name: identity.name, conciergeKey: identity.conciergeKey });
-  const response = await fetch(`/api/radar-flight?${params.toString()}`, { cache: 'no-store' });
-  const payload = await response.json().catch(() => ({ ok: false, message: 'Radar indisponível.' }));
+  params.set('departureDate', queryIdentity.departureDate);
+  params.set('scheduledDepartureUtc', queryIdentity.scheduledDepartureUtc);
+  // Preserve the legacy preparation anchor, then pin its outgoing instant to canonical UTC.
+  params.set('scheduledDeparture', queryIdentity.scheduledDepartureUtc);
+  const payload = await authFetch<RadarSnapshot>(`/api/radar-flight?${params.toString()}`, { cache: 'no-store' });
+  if (getToken() !== sessionToken || manualGateAccountKey(getStoredUser()) !== account || radarQuerySerial.get(serialKey) !== serial || !gateQueryDay(queryIdentity).allowed)
+    return gateQuerySuppressed({ reason: 'response-context-expired' });
+  if (payload?.querySuppressed) return validatedRadarForEvent(event,readRadarSnapshot(event)) || payload;
+  if (payload?.ok && !radarResultDecision(payload,queryIdentity,Date.now(),RADAR_GATE_STALE_MS).allowed) return gateQuerySuppressed(radarResultDecision(payload,queryIdentity,Date.now(),RADAR_GATE_STALE_MS));
   return saveRadarSnapshot(event, payload || { ok: false, message: 'Radar indisponível.' });
 }
 function useRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
@@ -1728,11 +1776,12 @@ function AirlineLogo({ code, name }: { code?: string; name: string }) {
 }
 function FlightCard({ event, compact = false }: { event: ZeroLeg; compact?: boolean }) {
   const d = event.canonical ? new Date(event.canonical.startDateTime) : event.date;
-  const radar = useRadarSnapshot(event);
+  const radar = validatedRadarForEvent(event,useRadarSnapshot(event));
+  const gateInfo = radarGateInfo(event,radar);
   const airlineCode = event.airlineCode || normalizedAirlineCode(event.flightNumber);
   const airlineName = airlineNameFor(airlineCode, event.airlineName);
-  const gate = safe(radar?.gate || event.gate, 'A confirmar');
-  const terminal = safe(radar?.terminal || event.terminal, 'A confirmar');
+  const gate = safe(gateInfo.gate, 'A confirmar');
+  const terminal = safe(gateInfo.terminal, 'A confirmar');
   const status = safe(radar?.status || event.status, 'Programado');
   const aircraft = safe(radar?.aircraft || event.aircraft, 'A confirmar');
   const registration = safe(radar?.registration || event.registration, 'A confirmar');
@@ -1743,7 +1792,7 @@ function FlightCard({ event, compact = false }: { event: ZeroLeg; compact?: bool
     <div className="cz-route"><div><strong>{event.origin}</strong><span>{city(event.origin)}</span></div><div className="cz-route-arc"><i/><Plane size={20}/><i/></div><div><strong>{event.destination}</strong><span>{city(event.destination)}</span></div></div>
     {isFlight ? <div className="cz-flight-pills"><span className="cz-work-type-badge"><b>Operação</b>{workTypeLabel(workType)}</span><span><b>Apresentação</b>{event.presentation}</span><span><b>METAR/TAF Origem</b>{event.origin}</span><span><b>METAR/TAF Destino</b>{event.destination}</span><span><b>Alerta meteo até pouso</b>{radar?.updatedAt ? 'Radar sincronizado' : event.arrival}</span></div> : <div className="cz-flight-pills"><span><b>Programação</b>{rosterEventTitle(event)}</span><span><b>Local</b>{city(event.origin)}</span><span><b>Status</b>{status}</span></div>}
     <div className="cz-time-trio"><div><span>Apresentação</span><strong>{event.presentation}</strong><small>◷ Local</small></div><div><span>{isFlight ? 'Decolagem' : 'Início'}</span><strong>{event.departure}</strong><small>◷ Prevista</small></div><div><span>{isFlight ? 'Chegada' : 'Fim'}</span><strong>{event.arrival}</strong><small>◷ Prevista</small></div></div>
-    {!compact && <div className="cz-info-duo">{isFlight && <div><Lock size={25}/><span>Portão</span><strong>{gate}</strong><small>{terminal}{radar?.updatedAt ? ' · Radar' : ''}</small></div>}<div><Plane size={25}/><span>Status</span><strong className="ok">{status}</strong><small>{isFlight ? `Aeronave: ${aircraft} · Matrícula: ${registration}` : safe(event.subtitle, 'Programação publicada')}</small></div></div>}
+    {!compact && <div className="cz-info-duo">{isFlight && <div><Lock size={25}/><span>Portão</span><strong>{gate}</strong><small>{terminal}{radar?.updatedAt ? ' · Radar' : ''}</small><small>{radarFlightDateLabel(event)}</small></div>}<div><Plane size={25}/><span>Status</span><strong className="ok">{status}</strong><small>{isFlight ? `Aeronave: ${aircraft} · Matrícula: ${registration}` : safe(event.subtitle, 'Programação publicada')}</small></div></div>}
     {!compact && Boolean(event.crew?.length) && <div className="cz-crew-line"><UserRound size={18}/><span>Tripulação</span><strong>{event.crew?.slice(0, 4).join(', ')}</strong></div>}
     {!compact && Boolean(event.hotel) && <div className="cz-crew-line"><Hotel size={18}/><span>Hotel</span><strong>{event.hotel}</strong></div>}
     {!compact && Boolean(event.routine?.length) && <div className="cz-routine-strip">{event.routine?.slice(0, 4).map((item) => <span key={item}>{item}</span>)}</div>}
@@ -3141,14 +3190,16 @@ function RadarView({ event }: { event: ZeroLeg }) {
     setState(cached);
     refresh(false);
   }, [event.id, flight, event.origin, event.destination]);
-  const status = state?.status || event.status || 'Monitorando';
-  const gate = state?.gate || event.gate || 'A confirmar';
-  const terminal = state?.terminal || event.terminal || 'A confirmar';
-  const dep = state?.departure || event.departure;
-  const arr = state?.arrival || event.arrival;
-  const quality = state?.quality ? `${state.quality}%` : 'Aguardando';
-  const latency = state?.latencyMs ? `${state.latencyMs} ms` : '—';
-  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>{flight || 'Voo'} · {event.origin} → {event.destination} · portão e status sincronizados com a próxima programação.</p></section><section className="cz-radar-screen"><article><div className="cz-radar-airline"><AirlineLogo code={airlineCode} name={airlineName}/><strong>{airlineName}</strong></div><h2>{flight || 'Voo'}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {gate} · {terminal}</strong><span>Status: {status}</span></article><article><Plane/><h2>Horários</h2><p>Partida {safe(dep, 'A confirmar')} · Chegada {safe(arr, 'A confirmar')}</p><strong>{state?.ok ? 'Radar atualizado' : 'Radar aguardando fonte'}</strong><span>{state?.message || 'Consultando fontes operacionais disponíveis.'}</span></article><article><ShieldCheck/><h2>Qualidade</h2><p>Precisão {quality} · resposta {latency}</p><strong>{loading ? 'Atualizando...' : 'Seleção automática'}</strong><span>{state?.alternatives ? `${state.alternatives} fonte(s) responderam dentro do limite.` : 'Teste automático por disponibilidade.'}</span></article></section><section className="cz-toolbox"><h2>Ações</h2><div className="cz-tool-actions"><button onClick={() => refresh(true)} disabled={loading}><Radar/> Atualizar e exportar ao card</button><button onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${flight} flight status ${event.origin} ${event.destination}`)}`, '_blank', 'noopener,noreferrer')}><Globe2/> Consultar voo</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button></div></section><ManualGateEditor event={event}/></>;
+  const verified = validatedRadarForEvent(event,state);
+  const gateInfo = radarGateInfo(event,verified);
+  const status = verified?.status || event.status || 'Monitorando';
+  const gate = gateInfo.gate || 'A confirmar';
+  const terminal = gateInfo.terminal || 'A confirmar';
+  const dep = verified?.operationalDeparture || verified?.departure || event.departure;
+  const arr = verified?.arrival || event.arrival;
+  const quality = verified?.quality ? `${verified.quality}%` : 'Aguardando';
+  const latency = verified?.latencyMs ? `${verified.latencyMs} ms` : '—';
+  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>{flight || 'Voo'} · {event.origin} → {event.destination} · portão e status sincronizados com a próxima programação.</p></section><section className="cz-radar-screen"><article><div className="cz-radar-airline"><AirlineLogo code={airlineCode} name={airlineName}/><strong>{airlineName}</strong></div><h2>{flight || 'Voo'}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {gate} · {terminal}</strong><span>{radarFlightDateLabel(event)}</span><span>Status: {status}</span></article><article><Plane/><h2>Horários</h2><p>Partida {safe(dep, 'A confirmar')} · Chegada {safe(arr, 'A confirmar')}</p><strong>{verified?.ok ? 'Radar atualizado' : 'Radar aguardando fonte'}</strong><span>{(state?.ok && !verified ? 'Resposta sem ocorrência atual confirmada.' : state?.message) || 'Consultando fontes operacionais disponíveis.'}</span></article><article><ShieldCheck/><h2>Qualidade</h2><p>Precisão {quality} · resposta {latency}</p><strong>{loading ? 'Atualizando...' : 'Seleção automática'}</strong><span>{state?.alternatives ? `${state.alternatives} fonte(s) responderam dentro do limite.` : 'Teste automático por disponibilidade.'}</span></article></section><section className="cz-toolbox"><h2>Ações</h2><div className="cz-tool-actions"><button onClick={() => refresh(true)} disabled={loading}><Radar/> Atualizar e exportar ao card</button><button onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${flight} flight status ${event.origin} ${event.destination}`)}`, '_blank', 'noopener,noreferrer')}><Globe2/> Consultar voo</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button></div></section><ManualGateEditor event={event}/></>;
 }
 
 type WeatherDisplayMode = 'both' | 'raw' | 'decoded';

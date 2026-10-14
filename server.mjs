@@ -1,3 +1,5 @@
+import { buildCanonicalRosterEvents } from './server/concierge/generated/canonicalRoster.mjs';
+import { gateQueryDay, findPublishedGateOccurrence, findPublishedGateLeg, publishedGateDate, gateQuerySuppressed, originFlightDate, radarResultDecision } from './shared/gate-query-day.mjs';
 import {verifiedMysqlTls} from './server/mysql-verified-tls.mjs';
 import {assertNotProtectedReleaseKey} from './server/release-journal/namespace.mjs';
 import { defaultCiriumRadarOptions, ciriumRadarInjectionEnabled, ciriumRadarRegistration, ciriumRadarIdentity, runCiriumRadarInjection, ciriumRadarProjection } from './server/cirium-radar-injection.mjs';
@@ -52,6 +54,7 @@ function buildFlightContext(value) {
   return { raw, iata, icao, flightAware: icao };
 }
 function publicRadarPayload(item = {}) {
+  if (item.querySuppressed) return gateQuerySuppressed({reason:item.queryReason || 'source-unverified'});
   return {
     ...ciriumRadarProjection(item),
     ok: Boolean(item.ok),
@@ -61,6 +64,8 @@ function publicRadarPayload(item = {}) {
     gate: firstKnown(item.gate),
     terminal: firstKnown(item.terminal),
     departure: firstKnown(item.departure),
+    scheduledDepartureUtc: item.scheduledDepartureUtc,
+    sourceReceivedAt: item.sourceReceivedAt,
     arrival: firstKnown(item.arrival),
     origin: firstKnown(item.origin),
     destination: firstKnown(item.destination),
@@ -124,10 +129,11 @@ function normalizeFlightAwareFlight(row = {}, ctx) {
   return {
     ok: true,
     configured: true,
-    flight: firstKnown(row.ident, row.fa_flight_id, ctx.icao),
+    flight: firstKnown(row.ident, row.fa_flight_id),
     status: firstKnown(row.status, row.cancelled ? 'Cancelado' : '', row.progress_percent === 100 ? 'Finalizado' : '', 'Monitorando'),
     gate: firstKnown(row.gate_origin, row.departure_gate),
     terminal: firstKnown(row.terminal_origin, row.departure_terminal),
+    scheduledDepartureUtc: firstKnown(row.scheduled_out, row.filed_departure_time),
     departure: firstKnown(row.estimated_out, row.actual_out, row.scheduled_out, row.filed_departure_time),
     arrival: firstKnown(row.estimated_in, row.actual_in, row.scheduled_in, row.filed_arrival_time),
     origin: firstKnown(row.origin?.code_iata, row.origin?.code, row.origin?.airport_code),
@@ -171,14 +177,15 @@ async function providerCustom(ctx, timeoutMs, origin, destination) {
   return {
     ok: true,
     configured: true,
-    flight: firstKnown(payload?.flight, payload?.flight_iata, payload?.flight_icao, ctx.iata),
+    flight: firstKnown(payload?.flight, payload?.flight_iata, payload?.flight_icao),
     status: firstKnown(payload?.status, payload?.flight_status, 'Monitorando'),
     gate: firstKnown(payload?.gate, payload?.departure?.gate),
     terminal: firstKnown(payload?.terminal, payload?.departure?.terminal),
+    scheduledDepartureUtc: firstKnown(payload?.scheduledDepartureUtc, payload?.departure?.scheduled),
     departure: firstKnown(payload?.departure?.estimated, payload?.departure?.actual, payload?.departure?.scheduled, payload?.departure),
     arrival: firstKnown(payload?.arrival?.estimated, payload?.arrival?.actual, payload?.arrival?.scheduled, payload?.arrival),
-    origin: firstKnown(payload?.origin, payload?.departure?.iata, origin),
-    destination: firstKnown(payload?.destination, payload?.arrival?.iata, destination),
+    origin: firstKnown(payload?.origin, payload?.departure?.iata),
+    destination: firstKnown(payload?.destination, payload?.arrival?.iata),
     aircraft: firstKnown(payload?.aircraft, payload?.aircraft?.iata, payload?.aircraft?.icao),
     registration: firstKnown(payload?.registration, payload?.aircraft?.registration),
     latencyMs: Date.now() - started,
@@ -204,10 +211,11 @@ async function providerAviationstack(ctx, timeoutMs) {
   return {
     ok: true,
     configured: true,
-    flight: firstKnown(row.flight?.iata, row.flight?.icao, ctx.iata),
+    flight: firstKnown(row.flight?.iata, row.flight?.icao),
     status: firstKnown(row.flight_status, 'Monitorando'),
     gate: firstKnown(row.departure?.gate),
     terminal: firstKnown(row.departure?.terminal),
+    scheduledDepartureUtc: firstKnown(row.departure?.scheduled),
     departure: firstKnown(row.departure?.estimated, row.departure?.actual, row.departure?.scheduled),
     arrival: firstKnown(row.arrival?.estimated, row.arrival?.actual, row.arrival?.scheduled),
     origin: firstKnown(row.departure?.iata, row.departure?.icao),
@@ -233,10 +241,11 @@ async function providerAirLabs(ctx, timeoutMs) {
   return {
     ok: true,
     configured: true,
-    flight: firstKnown(row.flight_iata, row.flight_icao, ctx.iata),
+    flight: firstKnown(row.flight_iata, row.flight_icao),
     status: firstKnown(row.status, 'Monitorando'),
     gate: firstKnown(row.dep_gate),
     terminal: firstKnown(row.dep_terminal),
+    scheduledDepartureUtc: firstKnown(row.dep_time_utc, row.dep_time),
     departure: firstKnown(row.dep_estimated, row.dep_actual, row.dep_time),
     arrival: firstKnown(row.arr_estimated, row.arr_actual, row.arr_time),
     origin: firstKnown(row.dep_iata, row.dep_icao),
@@ -268,10 +277,11 @@ async function providerAeroDataBox(ctx, timeoutMs) {
   return {
     ok: true,
     configured: true,
-    flight: firstKnown(row.number, row.flightNumber, ctx.iata),
+    flight: firstKnown(row.number, row.flightNumber),
     status: firstKnown(row.status, row.statusCode, 'Monitorando'),
     gate: firstKnown(row.departure?.gate),
     terminal: firstKnown(row.departure?.terminal),
+    scheduledDepartureUtc: firstKnown(row.departure?.scheduledTime?.utc, row.departure?.scheduledTime?.local),
     departure: firstKnown(row.departure?.revisedTime?.local, row.departure?.predictedTime?.local, row.departure?.scheduledTime?.local),
     arrival: firstKnown(row.arrival?.revisedTime?.local, row.arrival?.predictedTime?.local, row.arrival?.scheduledTime?.local),
     origin: firstKnown(row.departure?.airport?.iata, row.departure?.airport?.icao),
@@ -292,10 +302,17 @@ function configuredProviders() {
     { key: 'aerodatabox', available: Boolean(envAny(['AERODATABOX_API_KEY'])) },
   ];
 }
-async function runRadarRace(ctx, origin, destination) {
+async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
+  // Trusted caller must derive this occurrence from the authorized published roster.
+  const evidence = ctx.gateQueryEvidence;
+  scheduledDeparture = evidence?.scheduledDepartureUtc || ''; // Never device time/URL override.
+  const decision = gateQueryDay(evidence);
+  if (!decision.allowed || evidence?.origin !== origin || evidence?.destination !== destination || evidence?.flight !== ctx.raw)
+    return gateQuerySuppressed(decision.allowed ? { reason: 'occurrence-unverified' } : decision);
   if (ciriumRadarInjectionEnabled(ctx.ciriumRadarOptions)) {
     const result = await runCiriumRadarInjection(ctx.ciriumRadarIdentity, ctx.ciriumRadarOptions, ctx.raw);
-    return publicRadarPayload(result);
+    if (result?.ok && !radarResultDecision(result,evidence,Date.now()).allowed) return gateQuerySuppressed(radarResultDecision(result,evidence,Date.now()));
+    return publicRadarPayload({...result,sourceReceivedAt:Date.now()});
   }
   const timeoutMs = Math.max(800, Math.min(5000, Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400)));
   const started = Date.now();
@@ -314,6 +331,7 @@ async function runRadarRace(ctx, origin, destination) {
       settled = true;
       const okResults = results.filter((item) => item && item.ok);
       const candidates = okResults.length ? okResults : results.filter(Boolean);
+      if (!okResults.length && results.some(item=>item?.querySuppressed)) { resolve(results.find(item=>item?.querySuppressed)); return; }
       const best = candidates.sort((a, b) => (b.quality - a.quality) || (a.latencyMs - b.latencyMs))[0];
       if (!best) {
         resolve({ ok: false, configured: configuredProviders().some((p) => p.available), status: 'Aguardando', message: 'Nenhuma fonte respondeu dentro do limite operacional.', latencyMs: Date.now() - started, quality: 0, alternatives: 0 });
@@ -326,6 +344,9 @@ async function runRadarRace(ctx, origin, destination) {
     providers.forEach((run) => {
       run().then((raw) => {
         if (raw) {
+          const sourceDecision = radarResultDecision(raw,evidence,Date.now());
+          if (raw.ok && !sourceDecision.allowed) { results.push(gateQuerySuppressed(sourceDecision)); return; }
+          raw = {...raw,sourceReceivedAt:raw.sourceReceivedAt ?? Date.now(),gate:raw.ok ? raw.gate : ''};
           const latencyMs = Number(raw.latencyMs || Date.now() - started);
           const quality = scoreRadar({ ...raw, latencyMs }, ctx);
           const item = { ...raw, latencyMs, quality };
@@ -349,29 +370,43 @@ async function runRadarRace(ctx, origin, destination) {
 }
 async function handleRadar(req, res, url, radarOptions = {}) {
   const ctx = buildFlightContext(url.searchParams.get('flight') || '');
+  const origin = String(url.searchParams.get('origin') || '').trim();
+  const destination = String(url.searchParams.get('destination') || '').trim();
+  if (!ctx.raw) return sendJson(res, 200, { ok: false, configured: false, message: 'Voo não identificado na escala.', quality: 0 });
+  const radarUser = telegramRequestUser(req, { email: url.searchParams.get('email') || '', name: url.searchParams.get('name') || '', conciergeKey: url.searchParams.get('conciergeKey') || '' });
+  const email = telegramAppRequestAllowed(radarUser) ? conciergeSafeKey(radarUser.email) : '';
+  const authorityCurrent = () => { const user=telegramRequestUser(req,{email:url.searchParams.get('email') || '',name:url.searchParams.get('name') || '',conciergeKey:url.searchParams.get('conciergeKey') || ''}); return telegramAppRequestAllowed(user) && conciergeSafeKey(user.email) === email && user.authenticated === radarUser.authenticated && user.accessKeyHash === radarUser.accessKeyHash; };
+  const profile = { email, name: radarUser.name || '', authenticated: radarUser.authenticated, accessKeyHash: radarUser.accessKeyHash };
+  const approvedSnapshot = email ? await conciergeLoadSnapshot(profile) : null;
+  ctx.gateQueryEvidence = approvedSnapshot && conciergeAccessMatches(profile, approvedSnapshot)
+    ? findPublishedGateOccurrence(approvedSnapshot.roster, { flight: ctx.raw, origin, destination, departureDate: url.searchParams.get('departureDate') || '', scheduledDepartureUtc: url.searchParams.get('scheduledDepartureUtc') || '' }, buildCanonicalRosterEvents(approvedSnapshot.roster)) : null;
+  if (!authorityCurrent()) return sendJson(res,200,{...gateQuerySuppressed({reason:'account-unverified'}),exportedToConcierge:false});
+  const queryDecision = gateQueryDay(ctx.gateQueryEvidence);
+  if (!queryDecision.allowed) return sendJson(res, 200, { ...gateQuerySuppressed(queryDecision), exportedToConcierge: false });
   radarOptions = { ...radarOptions, cirium: radarOptions.cirium || defaultCiriumRadarOptions() };
   if (ciriumRadarInjectionEnabled(radarOptions.cirium)) {
     ctx.ciriumRadarOptions = radarOptions.cirium;
     ctx.ciriumRadarIdentity = ciriumRadarIdentity(url.searchParams);
   }
-  const origin = String(url.searchParams.get('origin') || '').trim();
-  const destination = String(url.searchParams.get('destination') || '').trim();
-  if (!ctx.raw) return sendJson(res, 200, { ok: false, configured: false, message: 'Voo não identificado na escala.', quality: 0 });
   const payload = await runRadarRace(ctx, origin, destination);
-  if (payload.provider === 'cirium-sky') return sendJson(res, 200, { ...payload, exportedToConcierge: false });
-  const radarUser = telegramRequestUser(req, { email: url.searchParams.get('email') || '', name: url.searchParams.get('name') || '', conciergeKey: url.searchParams.get('conciergeKey') || '' });
-  const email = telegramAppRequestAllowed(radarUser) ? conciergeSafeKey(radarUser.email) : '';
+  if (!gateQueryDay(ctx.gateQueryEvidence).allowed) return sendJson(res, 200, { ...gateQuerySuppressed({ reason: 'response-context-expired' }), exportedToConcierge: false });
+  if (payload.querySuppressed || payload.provider === 'cirium-sky') return sendJson(res, 200, { ...payload, exportedToConcierge: false });
   let exportedToConcierge = false;
   if (email) {
     const profile = { email, name: radarUser.name || String(url.searchParams.get('name') || ''), authenticated: radarUser.authenticated, accessKeyHash: radarUser.accessKeyHash };
     const snapshot = await conciergeLoadSnapshot(profile);
-    const info = snapshot?.roster && conciergeAccessMatches(profile, snapshot) ? conciergeFindFlight(snapshot.roster, ctx.raw) : null;
+    if (!authorityCurrent() || !gateQueryDay(ctx.gateQueryEvidence).allowed || !snapshot || !conciergeAccessMatches(profile,snapshot))
+      return sendJson(res, 200, {...gateQuerySuppressed({reason:'response-context-expired'}),exportedToConcierge:false});
+
+    const info = snapshot?.roster && conciergeAccessMatches(profile, snapshot) ? findPublishedGateLeg(snapshot.roster, ctx.gateQueryEvidence, buildCanonicalRosterEvents(snapshot.roster)) : null;
+    if (!info) return sendJson(res,200,{...gateQuerySuppressed({reason:'response-occurrence-changed'}),exportedToConcierge:false});
     if (info) {
       conciergeApplyRadar(snapshot, info, payload);
       await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source: snapshot.source || 'app-radar', lastRadar: { ...payload, updatedAt: new Date().toISOString() } });
       exportedToConcierge = true;
     }
   }
+  if (!authorityCurrent() || !gateQueryDay(ctx.gateQueryEvidence).allowed) return sendJson(res, 200, {...gateQuerySuppressed({reason:'response-context-expired'}),exportedToConcierge:false});
   return sendJson(res, 200, { ...payload, exportedToConcierge });
 }
 function handleRadarHealth(req, res) {
@@ -2400,18 +2435,40 @@ function conciergeApplyRadar(snapshot, flightInfo, radar) {
   return snapshot;
 }
 async function conciergeRadarReply(text, profile, snapshot) {
+  if (!snapshot || !conciergeAccessMatches(profile,snapshot)) return gateQuerySuppressed({reason:'account-unverified'}).message;
   const roster = snapshot?.roster;
   const requested = conciergeExtractFlight(text);
   const next = conciergeNextProgram(roster);
   const firstFlight = requested ? conciergeFindFlight(roster, requested) : (next?.legs?.length ? { record: next, leg: next.legs[0] } : conciergeFindFlight(roster));
   const flight = requested || firstFlight?.leg?.flightNumber || '';
   if (!flight) return 'Não encontrei um voo na escala ativa. Envie o PDF ou informe o número, por exemplo: /radar LA3730.';
-  const info = firstFlight || conciergeFindFlight(roster, flight);
-  const radar = await runRadarRace(buildFlightContext(flight), info?.leg?.origin || '', info?.leg?.destination || '');
+  const queryContext = buildFlightContext(flight);
+  const canonicalEvents = buildCanonicalRosterEvents(roster);
+  const bindings = new Map();
+  for (const event of canonicalEvents) {
+    if (event.kind !== 'flight' || event.flightNumber !== queryContext.raw) continue;
+    const binding = findPublishedGateLeg(roster, {flight:queryContext.raw,origin:event.origin,destination:event.destination,
+      departureDate:originFlightDate(Date.now(),event.origin),scheduledDepartureUtc:event.startDateTime},canonicalEvents);
+    if (binding && gateQueryDay(binding.identity).allowed) bindings.set(binding.identity.eventId,binding);
+  }
+  if (bindings.size !== 1) return gateQuerySuppressed({reason:'occurrence-unverified'}).message;
+  let info = [...bindings.values()][0];
+  queryContext.gateQueryEvidence = info.identity;
+  const radar = await runRadarRace(queryContext, info?.leg?.origin || '', info?.leg?.destination || '');
+  if (!conciergeAccessMatches(profile,snapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed) return gateQuerySuppressed({ reason: 'response-context-expired' }).message;
+  if (radar.querySuppressed) return radar.message;
+  const currentSnapshot = await conciergeLoadSnapshot(profile);
+  if (!currentSnapshot || !conciergeAccessMatches(profile,currentSnapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed)
+    return gateQuerySuppressed({reason:'response-context-expired'}).message;
+  const currentBinding = findPublishedGateLeg(currentSnapshot.roster,queryContext.gateQueryEvidence,buildCanonicalRosterEvents(currentSnapshot.roster));
+  if (!currentBinding) return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;
+  snapshot = currentSnapshot;
+  info = currentBinding;
   if (snapshot && info?.leg) {
     conciergeApplyRadar(snapshot, info, radar);
     await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source: snapshot.source || 'radar', lastRadar: { ...radar, updatedAt: new Date().toISOString() } });
   }
+  if (!conciergeAccessMatches(profile,snapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed) return gateQuerySuppressed({reason:'response-context-expired'}).message;
   const lines = [
     `Radar ${buildFlightContext(flight).iata || flight}`,
     `${info?.leg?.origin || radar.origin || '—'} → ${info?.leg?.destination || radar.destination || '—'}`,
