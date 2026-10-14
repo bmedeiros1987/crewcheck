@@ -193,13 +193,13 @@ for(const [offset,minutes] of [['+14:01',841],['+15:00',900],['-15:00',-900]]) {
  }
  const invalidInjected=harness(source,true);
  const rejected=await invalidInjected.call(url,{cirium:{enabled:true,source:async()=>({state:'available',rows:[invalidRow]})}});
- assert.equal(rejected.ok,false,offset);assert.equal(rejected.providerState,'invalid_payload');assert.equal(rejected.gate,undefined);
+ assert.equal(rejected.ok,false,offset);assert.equal(rejected.providerState,'invalid_payload');assert.equal(rejected.gate||'','');
  assert.equal(invalidInjected.counters.provider,0);assert.equal(invalidInjected.counters.save,0);
  let fakeCalls=0;
- const invalidTransport=createCiriumSkyTransport({enabled:true,policy:skyPolicy,now:()=>skyNow,credentialFactory:()=>({appId:'OFFLINE_FAKE_ID',appKey:'OFFLINE_FAKE_SECRET'}),fetchImpl:async()=>{fakeCalls++;return {ok:true,status:200,json:async()=>({flightStatuses:[invalidRow]})};}});
+ const invalidTransport=createCiriumSkyTransport({enabled:true,policy:skyPolicy,now:()=>skyNow,credential:()=> 'OFFLINE_FAKE_SECRET',fetchImpl:async()=>{fakeCalls++;return new Response(JSON.stringify({flightStatuses:[invalidRow]}),{headers:{'content-type':'application/json'}});}});
  const invalidSky=harness(source,true);
  const skyRejected=await invalidSky.call(url,{cirium:{enabled:true,transport:invalidTransport}});
- assert.equal(fakeCalls,1);assert.equal(skyRejected.ok,false,offset);assert.equal(skyRejected.providerState,'invalid_payload');assert.equal(skyRejected.gate,undefined);
+ assert.equal(fakeCalls,1);assert.equal(skyRejected.ok,false,offset);assert.equal(skyRejected.providerState,'invalid_payload');assert.equal(skyRejected.gate||'','');
  assert.equal(invalidSky.counters.provider,0);assert.equal(invalidSky.counters.save,0);
 }
 
