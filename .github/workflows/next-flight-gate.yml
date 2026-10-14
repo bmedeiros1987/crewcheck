@@ -9,6 +9,7 @@ on:
       - 'server/platform.mjs'
       - 'server/v1403/premium-helpers.snippet'
       - 'client/src/lib/radarAvailability.ts'
+      - 'client/src/lib/authClient.ts'
       - 'scripts/regression-radar-cpv-timezone.mjs'
       - 'scripts/regression-radar-authority-followup.mjs'
       - 'scripts/regression-radar-availability-browser.mjs'

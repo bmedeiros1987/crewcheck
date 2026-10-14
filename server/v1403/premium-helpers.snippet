@@ -127,7 +127,7 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
     const canonical = buildCanonicalRosterEvents(roster);
     const bindings = [];
     if (owns(snapshot)) for (const event of canonical) {
-      if (event.kind !== 'flight' || event.flightNumber !== queryContext.raw) continue;
+      if (event.kind !== 'flight' || buildFlightContext(event.flightNumber).raw !== queryContext.raw) continue;
       const binding = findPublishedGateLeg(roster, {flight:queryContext.raw,origin:event.origin,destination:event.destination,
         departureDate:originFlightDate(event.startDateTime,event.origin),scheduledDepartureUtc:event.startDateTime}, canonical);
       if (binding?.leg === firstLeg && binding.day === record.day && gateQueryDay(binding.identity).allowed) bindings.push(binding);

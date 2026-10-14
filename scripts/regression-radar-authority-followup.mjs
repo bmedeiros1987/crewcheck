@@ -6,6 +6,7 @@ import ts from 'typescript';
 import {build} from 'esbuild';
 import * as policy from '../shared/gate-query-day.mjs';
 import {prepareConciergeCanonicalBridge} from './p1-concierge-journey/bridge.mjs';
+assert.match(fs.readFileSync('.github/workflows/next-flight-gate.yml','utf8'), /^\s+- ['"]client\/src\/lib\/authClient\.ts['"]\s*$/m, 'real authClient changes must trigger the Radar workflow');
 prepareConciergeCanonicalBridge();
 const {buildCanonicalRosterEvents}=await import('../server/concierge/generated/canonicalRoster.mjs');
 function extract(file,names){const text=fs.readFileSync(file,'utf8'),ast=ts.createSourceFile(file,text,99,true,ts.ScriptKind.TSX);return names.map(name=>{const fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(fn,name);return ts.transpileModule(fn.getText(ast).replace(/^export /,''),{compilerOptions:{target:99}}).outputText}).join('\n');}
@@ -18,10 +19,11 @@ let rows,queries,providerCalls,writes,claims,poolAvailable,lateChange,snapshot;
 const scope=vm.createContext({...policy,Date:FixedDate,buildCanonicalRosterEvents,gateQueryDay:i=>policy.gateQueryDay(i,now),setTimeout,clearTimeout,process:{env:{}},
  safeEmail:s=>String(s||'').trim().toLowerCase(),verifyJwt:()=>claims,requestToken:r=>r.token,
  pool:async()=>poolAvailable?{query:async(sql,args)=>{queries.push({sql,args});if(queries.length===2)lateChange?.();return {rows};}}:null,
- buildFlightContext:raw=>({raw}),telegramRequestUser:()=>({email:'a@example.invalid',authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:s=>String(s||'').trim().toLowerCase(),
+ telegramRequestUser:()=>({email:'a@example.invalid',authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:s=>String(s||'').trim().toLowerCase(),
  conciergeLoadSnapshot:async()=>snapshot,conciergeAccessMatches:()=>true,conciergeApplyRadar:()=>{writes++},conciergeSaveSnapshotAsync:async()=>{writes++},
  ciriumRadarInjectionEnabled:()=>false,defaultCiriumRadarOptions:()=>undefined,configuredProviders:()=>[],scoreRadar:()=>95,publicRadarPayload:x=>x,sendJson:(_r,status,payload)=>({...payload,httpStatus:status})});
 for(const name of ['providerFlightAware','providerCustom','providerAviationstack','providerAirLabs','providerAeroDataBox'])scope[name]=async()=>{providerCalls++;return {ok:true,gate:'46',...identity,departure:identity.scheduledDepartureUtc};};
+vm.runInContext(extract('server.mjs',['normalizeFlightRaw','buildFlightContext']),scope);
 vm.runInContext(extract('server/platform.mjs',['loadOwnedPlatformRoster'])+extract(process.env.RADAR_HELD_SERVER||'server.mjs',['runRadarRace','handleRadar']),scope);
 function reset(){rows=[{id:'published-A',owner_email:'a@example.invalid',updated_at:'2032-10-14T10:00:00Z',roster:structuredClone(roster)}];queries=[];providerCalls=0;writes=0;claims={email:'a@example.invalid'};poolAvailable=true;lateChange=null;snapshot=null;now=Date.parse('2032-10-14T12:00:00Z');}
 const url=()=>new URL('https://fixture.invalid/api/radar-flight?'+new URLSearchParams({...identity,email:'foreign@example.invalid',force:'1'}));
@@ -41,6 +43,12 @@ reset();snapshot={email:'a@example.invalid',roster,preferences:{location:{synthe
 Object.assign(scope,{conciergeProgramRecords:()=>[record],conciergeRemoteCodes:new Set(),conciergePresentationTime:()=> '08:00',conciergeProgramDate:()=>new FixedDate(now),conciergeTravelEstimate:async()=>({minutes:20,distanceKm:10}),calculateDepartureWindow:()=>({leave:new FixedDate(now),routeMinutes:20,leadMinutes:30}),buildDepartureSummary:x=>x.radar,conciergeLoadSnapshot:async()=>snapshot});
 const premiumFile=process.env.RADAR_HELD_PREMIUM || (fs.readFileSync('server.mjs','utf8').includes('async function conciergePremiumDepartureReply(')?'server.mjs':'server/v1403/premium-helpers.snippet');vm.runInContext(extract('server.mjs',['conciergeRosterDayParts','conciergeDateKey','conciergeRecordDateKey'])+extract(premiumFile,['conciergePremiumDepartureReply']),scope);
 result=await scope.conciergePremiumDepartureReply(snapshot,{email:'a@example.invalid',authenticated:true});assert.equal(result.ok,true);assert(providerCalls>0);assert.equal(writes,2);
+for (const formatted of ['LA 3981','la3981','la 3981',' LA \t3981 ']) {
+ leg.flightNumber=formatted;providerCalls=0;writes=0;
+ result=await scope.conciergePremiumDepartureReply(snapshot,{email:'a@example.invalid',authenticated:true});
+ assert.equal(result.ok,true,`formatted published flight ${JSON.stringify(formatted)} uses the canonical binding`);assert(providerCalls>0);assert.equal(writes,2);
+}
+leg.flightNumber='LA3981';
 providerCalls=0;writes=0;result=await scope.conciergePremiumDepartureReply(snapshot,{email:'foreign@example.invalid',authenticated:true});assert.equal(result,policy.gateQuerySuppressed({reason:'account-unverified'}).message);assert.equal(providerCalls,0);assert.equal(writes,0);
 console.log('PASS actual premium helper derives canonical published evidence and refuses foreign owner; route and providers mocked');
 // Exercise the actual authFetch error contract, then the actual Home caller.
