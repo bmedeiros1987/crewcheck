@@ -1,3 +1,5 @@
+import { useStartupCopy } from './components/startupCopy';
+import { StartupProgress, type StartupStage } from "./components/StartupProgress";
 import { useEffect, useState, type ReactNode } from "react";
 import { Toaster } from "sonner";
 import { Route, Switch, useLocation } from "wouter";
@@ -19,7 +21,7 @@ import SystemStatusPage from "./pages/SystemStatusPage";
 import TelegramConnectPage from "./pages/TelegramConnectPage";
 import GuardianPublicPage from './pages/GuardianPublicPage';
 import VoyagePublicPage from './pages/VoyagePublicPage';
-import { AuthClientError, getMe, getStoredUser, isAuthenticated } from "./lib/authClient";
+import { captureAuthSession, getMe, getStoredUser, isAuthenticated } from "./lib/authClient";
 import { applyDocumentLanguage, installGlobalStaticTranslations } from "./lib/i18n";
 import { installPwaUpdateCoordinator } from "./lib/pwaUpdateCoordinator";
 import TermsGate from "./components/TermsGate";
@@ -51,18 +53,17 @@ function applyCrewThemeMode(mode: CrewThemeMode) {
   } catch {}
 }
 
-function CrewCheckOpeningSplash({ label = "CrewCheck Premium" }: { label?: string }) {
-  return <div className="cc1270-loader" aria-label={label}><div className="cc1270-loader-bg" /><div className="cc1270-loader-card"><img className="cc1270-loader-brand" src="/icons/crewcheck-icon-v2.png" alt="CrewCheck" width="96" height="96" decoding="sync" fetchPriority="high" /><strong>CrewCheck</strong><small>Carregando CrewCheck Premium</small></div></div>;
+function CrewCheckOpeningSplash({ label, stage = "session" }: { label?: string; stage?: StartupStage }) {
+  const copy = useStartupCopy();
+  return <div className="cc1270-loader" aria-label={label || copy.opening}><div className="cc1270-loader-bg" /><div className="cc1270-loader-card"><img className="cc1270-loader-brand" src="/icons/crewcheck-icon-v2.png" alt="CrewCheck" width="96" height="96" decoding="sync" fetchPriority="high" /><strong>CrewCheck</strong><StartupProgress stage={stage} /></div></div>;
 }
 
-async function enablePartnerDemoRoster() {
+async function enablePartnerDemoRoster(isCurrent: () => boolean, accountKey: string) {
   try {
     const response = await fetch('/api/partner/demo-profile', { cache: 'no-store', credentials: 'same-origin' });
     if (!response.ok) return;
     const payload = await response.json().catch(() => null);
-    if (!payload?.partner || !payload?.demoRosterEnabled) return;
-    const user = getStoredUser();
-    const accountKey = String(user?.id || user?.email || 'partner').toLowerCase();
+    if (!isCurrent() || !accountKey || !payload?.partner || !payload?.demoRosterEnabled) return;
     const marker = `crewcheck_partner_demo_loaded:${accountKey}`;
     if (window.localStorage.getItem(marker) === '1') return;
     window.localStorage.setItem('crewcheck_demo_mode_seen', '1');
@@ -76,25 +77,57 @@ async function enablePartnerDemoRoster() {
 function Protected({ children }: { children: ReactNode }) {
   const [, setLocation] = useLocation();
   const [ready, setReady] = useState(false);
+  const [startupStage, setStartupStage] = useState<StartupStage>("session");
   useEffect(() => {
-    let mounted = true;
-    const demoMode = window.localStorage.getItem('crewcheck_demo_mode_seen') === '1' || window.sessionStorage.getItem('crewcheck_demo_active') === '1';
-    if (!isAuthenticated() && !demoMode) { setLocation('/login'); return; }
-    if (!isAuthenticated() && demoMode) { setReady(true); return; }
-    getMe().then(() => enablePartnerDemoRoster()).catch((error) => {
-      // Only a confirmed-invalid session (reason 'session_expired', i.e. the backend
-      // itself rejected the token) should ever send someone back to /login. Everything
-      // else - a rate limit, an account-state signal, a network hiccup, a timeout, a 5xx -
-      // means we simply don't know the session is invalid, so the existing local session
-      // and cached data stay exactly as they were; the user keeps working from what's
-      // already on the device instead of being bounced out by a transient backend issue.
-      const reason = error instanceof AuthClientError ? error.reason : 'backend_unavailable';
-      if (reason === 'session_expired') setLocation('/login');
-    }).finally(() => mounted && setReady(true));
-    return () => { mounted = false; };
+    let mounted = true, generation = 0;
+    const start = () => {
+      const request = ++generation;
+      const session = captureAuthSession();
+      const isCurrent = () => mounted && request === generation && session.isCurrent();
+      setReady(false);
+      setStartupStage("session");
+      const demoMode = window.localStorage.getItem('crewcheck_demo_mode_seen') === '1' || window.sessionStorage.getItem('crewcheck_demo_active') === '1';
+      if (!isAuthenticated() && !demoMode) { setLocation('/login'); return; }
+      if (!isAuthenticated() && demoMode) { setReady(true); return; }
+      let expired = false;
+      getMe({ isCurrent, onSessionExpired: () => {
+        if (!isCurrent()) return;
+        expired = true;
+      } }).then(() => {
+        if (!isCurrent()) return;
+        setStartupStage("profile");
+        return enablePartnerDemoRoster(isCurrent, session.owner);
+      }).catch(() => {
+        // Current transient failures retain the existing local session. A
+        // confirmed expiry terminates through the auth-expired listener.
+      }).finally(() => {
+        if (!expired && isCurrent()) setReady(true);
+      });
+    };
+    const onExpired = () => {
+      // Expiry can originate from another current protected request while getMe
+      // is pending. An obsolete event must never route an authenticated account.
+      if (!mounted || isAuthenticated()) return;
+      generation += 1;
+      setReady(false);
+      setLocation('/login');
+    };
+    const storage = (event: StorageEvent) => {
+      if (event.key === null || ['crewcheck_auth_token', 'crewcheck_auth_user'].includes(event.key)) start();
+    };
+    start();
+    window.addEventListener('crewcheck:auth-changed', start);
+    window.addEventListener('crewcheck:auth-expired', onExpired);
+    window.addEventListener('storage', storage);
+    return () => {
+      mounted = false; generation += 1;
+      window.removeEventListener('crewcheck:auth-changed', start);
+      window.removeEventListener('crewcheck:auth-expired', onExpired);
+      window.removeEventListener('storage', storage);
+    };
   }, [setLocation]);
   if (!isAuthenticated() && !(window.localStorage.getItem('crewcheck_demo_mode_seen') === '1' || window.sessionStorage.getItem('crewcheck_demo_active') === '1')) return null;
-  if (!ready) return <CrewCheckOpeningSplash label="CrewCheck Premium" />;
+  if (!ready) return <CrewCheckOpeningSplash stage={startupStage} />;
   return <TermsGate>{children}</TermsGate>;
 }
 
