@@ -21,7 +21,8 @@ const plannedGuard = fs.readFileSync('client/src/lib/plannedRosterStore.ts','utf
 const choiceGuard = between(fs.readFileSync('client/src/lib/rosterStartup.ts','utf8'), 'let choiceEpoch = 0;', '// Capture a read fence');
 const pdf = Buffer.from('%PDF-1.7\nSynthetic roster only\n');
 const durable = {filename:'Synthetic.pdf',shareId:'synthetic-share-1',byteLength:pdf.length,transport:'android-private-inbox'};
-const legacy = {...durable,dataBase64:pdf.toString('base64')};
+const legacy = {filename:'Synthetic.pdf',shareId:'synthetic-share-1',dataBase64:pdf.toString('base64')};
+const pwa = {sourceFileName:'Synthetic.pdf',shareId:'pwa:synthetic-share-1',dataBase64:pdf.toString('base64')};
 let checks = 0;
 const failures = [];
 const results = [];
@@ -36,8 +37,14 @@ async function scenario(name, payload, options = {}) {
     readSharedPdfChunk:(id,offset,length)=>{state.chunks++;assert.equal(id,payload.shareId);if(state.onChunk)state.onChunk(state);if(state.badChunk)return '';if(state.oversizedChunk)return Buffer.alloc(Number(length)+1).toString('base64');return suppliedPdf.subarray(Number(offset),Number(offset)+Number(length)).toString('base64');},
     acknowledgeSharedPdf:id=>{state.acks.push(id);if(state.ackFailure)return false;return true;},
   },__crewcheckPendingNativePdf:payload};
+  if(options.noBridge)delete window.AndroidCrewCheckNative;
+  else if(options.noAck)delete window.AndroidCrewCheckNative.acknowledgeSharedPdf;
+  if(options.pwaRuntime){
+    window.btoa=btoa;window.location={href:'https://synthetic.crewcheck.invalid/?crewcheckSharedPdf=synthetic-share-1'};
+    window.history={state:null,replaceState:(_state,_title,url)=>{window.location.href=new URL(url,window.location.href).href;}};
+  }
   const toast = Object.fromEntries(['message','error','success','info'].map(k=>[k,x=>state.toasts.push([k,x])]));
-  const context = vm.createContext({module:{exports:{}},window,localStorage:storage,sessionStorage:storage,crypto:{randomUUID:()=>String(Math.random())},CustomEvent:class{constructor(type){this.type=type}},File,Uint8Array,Set,console,alive:true,nativePdfClaimsRef:{current:new Set()},
+  const context = vm.createContext({module:{exports:{}},window,localStorage:storage,sessionStorage:storage,crypto:{randomUUID:()=>String(Math.random())},CustomEvent:class{constructor(type,options={}){this.type=type;this.detail=options.detail;}},File,Uint8Array,Set,console,alive:true,nativePdfClaimsRef:{current:new Set()},
     financialRateSession:()=>state.owner+':'+state.token,startupOwner:()=>state.owner,getToken:()=>state.token,clearEpoch:()=>'',startupKey:()=>state.owner,readChoiceRevision:k=>storage.getItem(k),
     publicationOwner:()=>state.owner,currentPublicationReview:()=>({publication:{revision:state.revision}}),
     beginRosterChoice:undefined,toast,fileRef:{current:{value:'x'}},setBusy:()=>{},bundle:{roster:{year:2032,month:10,days:[]}},
@@ -51,10 +58,28 @@ async function scenario(name, payload, options = {}) {
   });
   const code = 'let importRevision = 0;'+plannedGuard+'\n'+choiceGuard+'\n'+capture+'\n'+saveFunction+'\n'+handler+'\n'+listener+'\nglobalThis.consume=consumeNativePdf;globalThis.importHandler=handleFile;';
   vm.runInContext(transformSync(code,{loader:'ts',format:'cjs',target:'es2022'}).code,context);
-  if(options.manual)state.result=await context.importHandler({target:{files:[new File([suppliedPdf],'Synthetic.pdf',{type:'application/pdf'})]}});
+  let pwaConsumer;
+  if(options.pwaRuntime){
+    const runtime=fs.readFileSync('client/src/lib/pwaSharedPdfRuntime.ts','utf8');
+    context.fetch=async()=>{state.pwaFetches=(state.pwaFetches||0)+1;return new Response(new Blob([suppliedPdf]),{headers:{'x-crewcheck-filename':'Synthetic.pdf'}});};
+    Object.assign(context,{URL,Response,Blob,TextDecoder});
+    vm.runInContext(transformSync(runtime.slice(0,runtime.lastIndexOf("if (typeof window"))+'\nglobalThis.consumePwa=consumePwaSharedPdf;',{loader:'ts',format:'cjs'}).code,context);
+    const imports=[];window.addEventListener('crewcheck:native-pdf',e=>imports.push(context.consume(e.detail)));
+    delete window.__crewcheckPendingNativePdf;
+    pwaConsumer=context.consumePwa;await pwaConsumer();await Promise.all(imports);
+  }else if(options.manual)state.result=await context.importHandler({target:{files:[new File([suppliedPdf],'Synthetic.pdf',{type:'application/pdf'})]}});
   else await context.consume(payload);
   const first = {parse:state.parse,save:state.save,bundle:state.bundle,acks:state.acks.length,pending:Boolean(window.__crewcheckPendingNativePdf),claims:context.nativePdfClaimsRef.current.size};
   if(options.retry){state.parserFailure=false;state.cancel=false;state.empty=false;state.complianceFailure=false;state.badChunk=false;state.oversizedChunk=false;state.ackFailure=false;await context.consume(payload);}
+  if(options.replayLifecycle){
+    // Replaced effect keeps the React ref; a successful finalized payload is absent.
+    context.alive=true;
+    if(window.__crewcheckPendingNativePdf)await context.consume(window.__crewcheckPendingNativePdf);
+    // A reload has a new ref. Only the pending pointer can request a replay here.
+    context.nativePdfClaimsRef.current=new Set();
+    if(window.__crewcheckPendingNativePdf)await context.consume(window.__crewcheckPendingNativePdf);
+    if(pwaConsumer)await pwaConsumer();
+  }
   results.push({name,first,after:{parse:state.parse,save:state.save,bundle:state.bundle,acks:state.acks.length,pending:Boolean(window.__crewcheckPendingNativePdf)}});
   return {state,first,window};
 }
@@ -89,13 +114,24 @@ check(r.state.bundle===0&&r.state.active==='original-roster'&&r.state.acks.lengt
 r=await scenario('native ACK rejection keeps pending',durable,{ackFailure:true});
 check(r.state.save===1&&r.window.__crewcheckPendingNativePdf&&r.first.claims===0,'false ACK must retain pending and allow retry');
 r=await scenario('pending replaced by a different share before ACK',legacy,{replacePending:true});
-check(r.state.acks.length===1&&r.window.__crewcheckPendingNativePdf.shareId==='other-share','ACK must not clear another pending share');
+check(r.state.acks.length===1&&r.window.__crewcheckPendingNativePdf?.shareId==='other-share','ACK must not clear another pending share');
 r=await scenario('oversized native chunk rejected',durable,{oversizedChunk:true});
 check(r.state.parse===0&&r.state.acks.length===0&&r.window.__crewcheckPendingNativePdf,'oversized chunk must fail closed');
 r=await scenario('manual picker success preserved',legacy,{manual:true});
 check(r.state.result===true&&r.state.save===1&&r.state.bundle===1&&r.state.acks.length===0,'manual picker keeps canonical success without native ACK');
 r=await scenario('manual picker cancellation preserved',legacy,{manual:true,cancel:true});
 check(r.state.result===false&&r.state.save===0&&r.state.bundle===0,'manual cancellation preserves active roster');
+for(const [name,payload,options] of [
+ ['PWA without Android bridge',pwa,{noBridge:true,pwaRuntime:true}],
+ ['PWA with unrelated Android bridge',pwa,{}],
+ ['legacy APK without ACK method',legacy,{noAck:true}],
+ ['legacy payload without bridge',legacy,{noBridge:true}],
+]) {
+ r=await scenario(name,payload,{...options,retry:true,replayLifecycle:true});
+ check(r.first.parse===1&&r.first.save===1&&!r.first.pending&&r.first.claims===1,name+' finalized after canonical commit');
+ check(r.state.parse===1&&r.state.save===1&&r.state.acks.length===0&&!r.window.__crewcheckPendingNativePdf,name+' must dedupe repeated event/effect and have no reload replay');
+ if(options.pwaRuntime)check(r.state.pwaFetches===1&&!new URL(r.window.location.href).searchParams.has('crewcheckSharedPdf'),'real PWA runtime removes consumed query so reload does not fetch/reimport');
+}
 for(const payload of [{...durable,byteLength:35*1024*1024+1},{...durable,byteLength:0},{...durable,byteLength:1.5},{...durable,transport:'unsupported'},{...legacy,dataBase64:Buffer.from('not a PDF').toString('base64')}]) {
  r=await scenario('invalid native metadata/PDF rejected',payload);
  check(r.state.parse===0&&r.state.save===0&&r.state.acks.length===0&&r.window.__crewcheckPendingNativePdf,'invalid transport must not reach parser/ACK');
