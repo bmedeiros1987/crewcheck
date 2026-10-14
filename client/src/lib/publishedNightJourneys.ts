@@ -1,5 +1,5 @@
 import type { CanonicalRosterEvent } from './canonicalRoster';
-import { measureCanonicalDuty, publishedDutyEndpoints } from './canonicalDutyMeasurement';
+import { measureCanonicalDuty, publishedDutyEndpoints, publishedFlightClockBounds } from './canonicalDutyMeasurement';
 import type { RosterDay } from './pdfParser';
 
 const HOUR = 3_600_000;
@@ -37,6 +37,7 @@ export function publishedNightJourneySequence(
     const first = group[0];
     const measure = measureCanonicalDuty(events, first.id);
     const endpoints = publishedDutyEndpoints(events, first.id);
+    const flightBounds = publishedFlightClockBounds(group);
     const measured = measure?.state === 'available';
     const start = measured ? Date.parse(measure.start!) : Math.min(...group.map(e => Date.parse(e.startDateTime)));
     const end = measured ? Date.parse(measure.end!) : Math.max(...group.map(e => Date.parse(e.endDateTime)));
@@ -47,7 +48,9 @@ export function publishedNightJourneySequence(
     const night = operational && (first.kind === 'flight'
       ? group.some(e => touchesNight(Date.parse(e.startDateTime), Date.parse(e.endDateTime)))
       : isNightDuty(first.publishedDay));
-    return { journeyId: first.journeyId, date: first.date, start, end, night, operational, availability, measured, timingKnown, startProven: endpoints.start, endProven: endpoints.end };
+    return { journeyId: first.journeyId, date: first.date, start, end, night, operational, availability, measured, timingKnown, startProven: endpoints.start, endProven: endpoints.end,
+      latestStart: endpoints.start ?? flightBounds?.latestStart ?? null,
+      minimumEnd: endpoints.end ?? flightBounds?.earliestEnd ?? (availability ? endpoints.start : null) };
   }).filter(j => (j.operational || j.availability) && Number.isFinite(j.start) && Number.isFinite(j.end) && j.end > j.start)
     .sort((a, b) => a.start - b.start || a.journeyId.localeCompare(b.journeyId));
 
@@ -72,15 +75,15 @@ export function publishedNightJourneySequence(
     }
     // If unknown releases could hide a reset, continuity is not proven.
     // This lower-bound reset is NOT a proof of free time (resets stays unchanged).
-    if (blockingEnds.size && (journey.startProven === null || minimumBusyEnd === null
-      || journey.startProven - minimumBusyEnd >= resetAfterFreeHours * HOUR)) {
+    if ((blockingEnds.size || journey.startProven === null) && (journey.latestStart === null || minimumBusyEnd === null
+      || journey.latestStart - minimumBusyEnd >= resetAfterFreeHours * HOUR)) {
       confirmedCurrent = 0; confirmedSequence.length = 0;
     }
     // An open availability is retained until its end is actually published.
     // Later unrelated releases never silently close it or prove48h free.
     if (journey.endProven === null) { uncertainEnds.push(journey.journeyId); blockingEnds.set(journey.journeyId, journey.availability); }
     else busyEnd = Math.max(busyEnd ?? journey.endProven, journey.endProven);
-    const minimumEnd = journey.endProven ?? (journey.availability ? journey.startProven : journey.end);
+    const minimumEnd = journey.minimumEnd;
     if (minimumEnd !== null) minimumBusyEnd = Math.max(minimumBusyEnd ?? minimumEnd, minimumEnd);
     if (!journey.operational || !journey.timingKnown) continue;
     if (!journey.night) {

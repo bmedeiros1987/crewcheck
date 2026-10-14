@@ -138,14 +138,18 @@ const dayC = {
 };
 const sameNightTwice = analyzeCompliance(makeRoster([dayC, journeyA, journeyB, journeyBCarryOver]));
 console.log(`[3 jornadas, 19/08 com 2] maxConsecutiveNights=${sameNightTwice.metrics.maxConsecutiveNights}`);
-// A lacuna de data não inventa uma jornada diurna nem 48h livres (há só
-// 45h30 entre o corte publicado de17/08 e a apresentação de19/08).
-// A unidade revisada é jornada, não adjacência entre rótulos civis.
-check(
-  'três jornadas noturnas sem jornada diurna intermediária e sem48h livres => sequência publicada3',
-  sameNightTwice.metrics.maxConsecutiveNights === 3,
-  `maxConsecutiveNights=${sameNightTwice.metrics.maxConsecutiveNights}`,
-);
+// These original fixture fields have no published endpoint provenance. The
+// arrival-to-next-departure span can exceed48h, so3 is possible, not proven.
+check('sem origem dos endpoints:2 comprovadas,3 possíveis; sequência pendente',
+  sameNightTwice.metrics.maxConsecutiveNights === 2 && sameNightTwice.metrics.maxConsecutiveNightsPossible === 3 && sameNightTwice.metrics.maxConsecutiveNightsPending === true,
+  `metrics=${JSON.stringify(sameNightTwice.metrics)}`);
+// Positive control: explicitly published endpoints prove the45h30 gap, so the
+// same3 journeys remain a determined sequence. No default/estimated cut is used.
+const publishedEndpoints = item => ({ ...item, dutyReportSource: 'published', dutyDebriefSource: 'published' });
+const verifiedSameNightTwice = analyzeCompliance(makeRoster([dayC,journeyA,journeyB,journeyBCarryOver].map(publishedEndpoints)));
+check('origem publicada dos endpoints preserva a sequência comprovada3',
+  verifiedSameNightTwice.metrics.maxConsecutiveNights === 3 && verifiedSameNightTwice.metrics.maxConsecutiveNightsPending === false,
+  `metrics=${JSON.stringify(verifiedSameNightTwice.metrics)}`);
 const interveningDaytime = {
   ...dayC, date: '18/08/2026', dayNumber: 18, dutyReport: '08:00', dutyDebrief: '12:00',
   legs: [leg('LA9002','CGH','BPS','08:40','11:30')],

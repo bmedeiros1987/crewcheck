@@ -112,6 +112,16 @@ export function canonicalDutyDurationLabel(minutes: number | null): string {
   return `${Math.floor(whole / 60)}h${String(whole % 60).padStart(2, '0')}`;
 }
 
+/** Departure is an upper bound for presentation; arrival is a lower bound for
+ * release. Bounds never turn missing literal endpoints into a measured duty. */
+export function publishedFlightClockBounds(group: readonly CanonicalRosterEvent[]): { latestStart: number; earliestEnd: number } | null {
+  if (!group.length || group.some(e => e.kind !== 'flight' || !clock(e.leg?.departureTime) || !clock(e.leg?.arrivalTime)
+    || !Number.isFinite(Date.parse(e.startDateTime)) || !Number.isFinite(Date.parse(e.endDateTime))
+    || Date.parse(e.endDateTime) < Date.parse(e.startDateTime)
+    || ((e.publishedDay as any).publishedClockEvidence?.legs || e.publishedDay.legs).some((leg: any) => !clock(leg.departureTime) || !clock(leg.arrivalTime)))) return null;
+  return { latestStart: Math.min(...group.map(e => Date.parse(e.startDateTime))), earliestEnd: Math.max(...group.map(e => Date.parse(e.endDateTime))) };
+}
+
 /** Independent published boundaries for free-time proofs. An incomplete duration
  * must not erase a valid presentation, or turn an arrival/default into a release.
  */

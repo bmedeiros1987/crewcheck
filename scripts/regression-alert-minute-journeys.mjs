@@ -61,7 +61,7 @@ try {
         assert.equal(measurement.measureCanonicalDuty(events,events[0].id).state,'incomplete');
         assert.equal(measurement.publishedDutyEndpoints(events,events[0].id).end,null);
         const estimated = structuredClone(next); estimated.legs[0].presentationTime = undefined; estimated.dutyReportSource = 'estimated';
-        assert.equal(engine.analyzeCompliance(roster([prior,estimated])).metrics.maxConsecutiveNights,2);
+        assert.equal(engine.analyzeCompliance(roster([prior,estimated])).metrics.maxConsecutiveNightsPending,true,'unverified next presentation keeps the preceding gap indeterminate');
       }
       if (!selected || selected === 'availability') {
         const hsb = {...day('02/10/2032','12:00',null,'',''),type:'HSB',pairingCode:'HSB',legs:[]};

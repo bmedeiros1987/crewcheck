@@ -2203,8 +2203,8 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     pushAlert(alerts, {
       severity: 'warning', code: 'night-sequence-pending', actionable: false, classification: 'dados_insuficientes',
       title: 'Sequência de madrugadas indeterminada',
-      description: `A escala comprova sequência de ${metrics.maxConsecutiveNights} jornada(s); até ${metrics.maxConsecutiveNightsPossible} são possíveis, mas liberações ausentes impedem concluir a sequência.`,
-      details: 'A ausência de término não comprova disponibilidade encerrada nem 48h livres. Complete a evidência antes de afirmar extrapolação ou ausência de irregularidade.',
+      description: `A escala comprova sequência de ${metrics.maxConsecutiveNights} jornada(s); até ${metrics.maxConsecutiveNightsPossible} são possíveis, mas horários de início/fim não comprovados impedem concluir a sequência.`,
+      details: 'A ausência de início ou término não comprova disponibilidade encerrada, continuidade da sequência nem 48h livres. Complete a evidência antes de afirmar extrapolação ou ausência de irregularidade.',
       legalReference: actRules.nightOps.legalReference, confidence: 'baixa',
     });
   }
