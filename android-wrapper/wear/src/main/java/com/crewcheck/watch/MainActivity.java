@@ -432,9 +432,11 @@ public final class MainActivity extends FragmentActivity
         }
 
         Primary primary = primaryFor(snapshot);
+        TextView eyebrow = null;
+        TextView gate = null;
         // Ambient has no interactive scrolling: prioritise time and operation when space is scarce.
         if (!stackColumns()) {
-            TextView eyebrow = text(primary.eyebrow, 8, MUTED_AMBIENT, true, Gravity.CENTER);
+            eyebrow = text(primary.eyebrow, 8, MUTED_AMBIENT, true, Gravity.CENTER);
             eyebrow.setMaxLines(1);
             eyebrow.setPadding(0, dp(12), 0, dp(4));
             content.addView(eyebrow);
@@ -447,11 +449,31 @@ public final class MainActivity extends FragmentActivity
         content.addView(value);
 
         if (!stackColumns() && !snapshot.gateLabel().isBlank()) {
-            TextView gate = text(snapshot.remoteStand ? "REMOTA" : snapshot.gateLabel(),
+            gate = text(snapshot.remoteStand ? "REMOTA" : snapshot.gateLabel(),
                     10, MUTED_AMBIENT, true, Gravity.CENTER);
             gate.setPadding(0, dp(8), 0, 0);
             content.addView(gate);
         }
+
+        // Width/font thresholds alone cannot predict height after wrapping.
+        // Measure the actual text against the viewport before keeping optional details.
+        if (!ambientContentFits()) {
+            if (eyebrow != null) content.removeView(eyebrow);
+            if (gate != null) content.removeView(gate);
+            if (!ambientContentFits()) value.setMaxLines(1);
+        }
+    }
+
+    private boolean ambientContentFits() {
+        int width = scroll.getWidth() > 0 ? scroll.getWidth()
+                : getResources().getDisplayMetrics().widthPixels;
+        int height = scroll.getHeight() > 0 ? scroll.getHeight()
+                : getResources().getDisplayMetrics().heightPixels;
+        int availableWidth = width - scroll.getPaddingLeft() - scroll.getPaddingRight();
+        int availableHeight = height - scroll.getPaddingTop() - scroll.getPaddingBottom();
+        content.measure(View.MeasureSpec.makeMeasureSpec(availableWidth, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        return content.getMeasuredHeight() <= availableHeight;
     }
 
     /** Atualiza somente o relógio no ambiente; o restante da tela permanece estático. */

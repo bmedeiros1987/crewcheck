@@ -111,26 +111,38 @@ public class WatchTextLayoutTest {
     }
 
     @Test public void compactAmbientFitsWithoutInteractiveScrolling() throws Exception {
-        RuntimeEnvironment.setFontScale(1.5f);
-        try (ActivityController<MainActivity> controller =
-                     Robolectric.buildActivity(MainActivity.class).create()) {
-            MainActivity activity = controller.get();
-            ScrollView scroll = field(activity, "scroll", ScrollView.class);
-            LinearLayout content = field(activity, "content", LinearLayout.class);
-            measure(scroll, 192);
-            content.removeAllViews();
-            JSONObject json = WatchContextSnapshot.demo(System.currentTimeMillis()).toJson();
-            json.put("state", "CHANGED").put("headline", LONG_TEXT);
-            call(activity, "renderAmbient", new Class[]{WatchContextSnapshot.class, long.class},
-                    WatchContextSnapshot.fromJson(json.toString()), System.currentTimeMillis());
-            measure(scroll, 192);
-            assertFits(content);
-            int available = scroll.getHeight() - scroll.getPaddingTop() - scroll.getPaddingBottom();
-            View last = content.getChildAt(content.getChildCount() - 1);
-            assertTrue("ambient data fits without scrolling", last.getBottom() <= available);
-            TextView clock = field(activity, "ambientClockView", TextView.class);
-            assertEquals(1, clock.getLineCount());
-            assertEquals(0, clock.getLayout().getEllipsisCount(0));
+        assertAmbientFitsAtEveryFontSize(192);
+    }
+
+    @Test @Config(qualifiers = "w227dp-h227dp-round-mdpi")
+    public void ambientDetailsRespectVerticalBudgetAtColumnThreshold() throws Exception {
+        assertAmbientFitsAtEveryFontSize(227);
+    }
+
+    private static void assertAmbientFitsAtEveryFontSize(int size) throws Exception {
+        for (float scale : new float[]{1f, 1.2f, 1.3f, 1.5f, 2f}) {
+            RuntimeEnvironment.setFontScale(scale);
+            try (ActivityController<MainActivity> controller =
+                         Robolectric.buildActivity(MainActivity.class).create()) {
+                MainActivity activity = controller.get();
+                ScrollView scroll = field(activity, "scroll", ScrollView.class);
+                LinearLayout content = field(activity, "content", LinearLayout.class);
+                measure(scroll, size);
+                content.removeAllViews();
+                JSONObject json = WatchContextSnapshot.demo(System.currentTimeMillis()).toJson();
+                json.put("state", "CHANGED").put("headline", LONG_TEXT).put("gate", "B123");
+                call(activity, "renderAmbient", new Class[]{WatchContextSnapshot.class, long.class},
+                        WatchContextSnapshot.fromJson(json.toString()), System.currentTimeMillis());
+                measure(scroll, size);
+                assertFits(content);
+                int available = scroll.getHeight() - scroll.getPaddingTop() - scroll.getPaddingBottom();
+                View last = content.getChildAt(content.getChildCount() - 1);
+                assertTrue("ambient fits without scrolling at " + size + "/" + scale,
+                        last.getBottom() <= available);
+                TextView clock = field(activity, "ambientClockView", TextView.class);
+                assertEquals(1, clock.getLineCount());
+                assertEquals(0, clock.getLayout().getEllipsisCount(0));
+            }
         }
     }
 
