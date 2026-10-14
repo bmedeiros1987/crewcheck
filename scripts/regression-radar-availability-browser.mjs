@@ -11,7 +11,7 @@ const names=['RadarView','radarGateInfo','validatedRadarForEvent','radarFlightDa
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'crewcheck-radar-ui-'));
 const code=`import React,{useState,useEffect,useRef} from 'react';import {createRoot} from 'react-dom/client';import {Plane,ShieldCheck,Radar,Globe2,CloudSun} from 'lucide-react';
 import {getToken,getStoredUser} from '@/lib/authClient';import {manualGateAccountKey,readManualGate,resolveNextFlightGate,RADAR_GATE_STALE_MS} from '@/lib/nextFlightGate';import {gateQueryDay,originFlightDate,publishedGateDate,radarResultDecision} from './shared/gate-query-day.mjs';import {radarFailurePayload,radarAvailabilityLabel} from '@/lib/radarAvailability';
-const safe=(x,f='')=>x||f,normalizedAirlineCode=()=> 'LA',airlineNameFor=()=> 'LATAM',Brand=()=>null,AirlineLogo=()=>null,ManualGateEditor=()=>null,readRadarSnapshot=()=>null;
+const safe=(x,f='')=>x||f,normalizedAirlineCode=()=> 'LA',airlineNameFor=()=> 'LATAM',Brand=()=>null,FlightDeckNavigationContext=()=>null,AirlineLogo=()=>null,ManualGateEditor=()=>null,readRadarSnapshot=()=>null;
 window.requests=[];function fetchRadarSnapshot(event){return new Promise(resolve=>window.requests.push({event,resolve}))}
 ${functions}
 const root=createRoot(document.getElementById('root'));const event=id=>({id,kind:'flight',flightNumber:id==='one'?'LA3981':'LA3982',origin:'CPV',destination:'GRU',day:{date:'14/10/2032'},canonical:{startDateTime:'2032-10-14T12:00:00Z'}});
@@ -22,7 +22,7 @@ const require=createRequire(process.env.RADAR_PLAYWRIGHT_PACKAGE||import.meta.ur
 try{
  const context=await browser.newContext({serviceWorkers:'block'});await context.route('**/*',r=>new URL(r.request().url()).origin===origin?r.continue():r.abort());
  await context.addInitScript(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'A'}));localStorage.setItem('crewcheck_auth_token','synthetic-A');const NativeDate=Date;window.Date=class extends NativeDate{constructor(...args){super(...(args.length?args:['2032-10-14T12:00:00Z']))}static now(){return NativeDate.parse('2032-10-14T12:00:00Z')}}});
- const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin);await page.waitForFunction(()=>window.requests.length===1);
+ const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin);await page.waitForFunction(()=>window.requests.length===1).catch(async error=>{console.error(JSON.stringify({errors,body:await page.locator('body').innerText()}));throw error});
  await page.evaluate(()=>window.reply(0,200,'origin-timezone-unverified'));await page.getByText('O fuso do aeroporto de origem ainda não foi confirmado.',{exact:true}).waitFor();await page.getByText('Consulta suspensa',{exact:true}).waitFor();assert.equal(await page.getByText('DO-NOT-DISPLAY').count(),0);
  const settle=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
  const refresh=page.getByRole('button',{name:'Atualizar e exportar ao card',exact:true});await refresh.click();await page.waitForFunction(()=>window.requests.length===2);await page.evaluate(()=>window.renderRadar('two'));await page.waitForFunction(()=>window.requests.length===3);
