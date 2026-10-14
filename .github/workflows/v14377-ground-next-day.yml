@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'scripts/shared-pdf-ack-contract.mjs'
+      - 'scripts/regression-shared-pdf-ack-contract.mjs'
+      - 'scripts/regression-shared-pdf-native-offline.cjs'
       - 'server/rosterParser.mjs'
       - 'client/src/lib/aimsParser.ts'
       - 'scripts/v139/apply.mjs'

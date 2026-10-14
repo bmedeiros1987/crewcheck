@@ -6,6 +6,9 @@ on:
       - fix/p0-530-673-history-window-final
   pull_request:
     paths:
+      - 'scripts/shared-pdf-ack-contract.mjs'
+      - 'scripts/regression-shared-pdf-ack-contract.mjs'
+      - 'scripts/regression-shared-pdf-native-offline.cjs'
       - 'scripts/regression-p0-530-673-history-window-final.mjs'
       - 'scripts/p0-673-order-independent-window/**'
       - 'scripts/v139/apply.mjs'
