@@ -39,7 +39,7 @@ async function scenario(name, payload, options = {}) {
   const window = {confirm:()=>{trace.push('explicit-claim');return !state.denyClaim;},atob:x=>{state.decodes=(state.decodes||0)+1;return atob(x);},localStorage:storage,setTimeout:fn=>fn(),addEventListener:(n,fn)=>{const a=listeners.get(n)||[];a.push(fn);listeners.set(n,a);},dispatchEvent:e=>{for(const fn of listeners.get(e.type)||[])fn(e);},AndroidCrewCheckNative:{
     readSharedPdfChunk:(id,offset,length)=>{state.chunks++;assert.equal(id,payload.shareId);if(state.onChunk)state.onChunk(state);if(state.badChunk)return '';if(state.oversizedChunk)return Buffer.alloc(Number(length)+1).toString('base64');return suppliedPdf.subarray(Number(offset),Number(offset)+Number(length)).toString('base64');},
     acknowledgeSharedPdf:id=>{state.acks.push(id);if(state.ackReplacePending)window.__crewcheckPendingNativePdf={...durable,shareId:'new-share-after-late-ACK'};if(state.ackFailure)return false;if(state.ackPromise)return Promise.resolve(true);return true;},
-    sharedPdfStatus:()=>JSON.stringify({shareId:nativeState.id,owner:nativeState.owner,phase:nativeState.phase,ownershipProtocol:state.noProtocol?undefined:'explicit-account-claim-v1'}),
+    sharedPdfStatus:()=>JSON.stringify({shareId:nativeState.id,owner:nativeState.owner,phase:nativeState.phase,ownershipProtocol:state.noProtocol?undefined:'mainframe-host-session-v2'}),
     reportSharedPdfSession:()=>true,
     blockSharedPdf:id=>{if(id!==nativeState.id||nativeState.owner)return false;nativeState.phase='blocked';return true;},
     claimSharedPdf:(id,account)=>{trace.push('native-claim');if(id!==nativeState.id||account!==nativeState.owner||nativeState.phase!=='unclaimed')return false;nativeState.phase='claimed';return true;},
@@ -55,7 +55,7 @@ async function scenario(name, payload, options = {}) {
     window.history={state:null,replaceState:(_state,_title,url)=>{window.location.href=new URL(url,window.location.href).href;}};
   }
   const toast = Object.fromEntries(['message','error','success','info'].map(k=>[k,(x,options)=>{state.toasts.push([k,x,Boolean(options?.action)]);if(state.selectManual&&options?.action)options.action.onClick();}]));
-  const context = vm.createContext({module:{exports:{}},window,localStorage:storage,sessionStorage:storage,crypto:{randomUUID:()=>String(Math.random())},CustomEvent:class{constructor(type,options={}){this.type=type;this.detail=options.detail;}},File,Uint8Array,Set,console,alive:true,nativePdfClaimsRef:{current:new Set()},
+  const context = vm.createContext({module:{exports:{}},window,localStorage:storage,sessionStorage:storage,crypto:{randomUUID:()=>String(Math.random())},CustomEvent:class{constructor(type,options={}){this.type=type;this.detail=options.detail;}},File,Uint8Array,Set,console,alive:true,nativePdfClaimsRef:{current:new Set()},nativePdfRequestsRef:{current:new Set()},
     financialRateSession:()=>state.owner&&state.token?state.owner+':'+state.token:null,getStoredUser:()=>state.owner?{id:state.owner}:null,startupOwner:()=>state.owner,getToken:()=>state.token,clearEpoch:()=>'',startupKey:()=>state.owner,readChoiceRevision:k=>storage.getItem(k),
     publicationOwner:()=>state.owner,currentPublicationReview:()=>({publication:{revision:state.revision}}),
     beginRosterChoice:undefined,toast,fileRef:{current:{value:'x',click:()=>{state.manualOpen=(state.manualOpen||0)+1;}}},setBusy:()=>{},bundle:{roster:{year:2032,month:10,days:[]}},
@@ -67,8 +67,17 @@ async function scenario(name, payload, options = {}) {
     getGymRecommendations:()=>[],storage:{set:()=>{}},setBundle:()=>{state.bundle++;if(state.cleanupOnCommit)context.alive=false;},publishCrewCheckNotice:()=>{},
     syncRosterWithTelegramConcierge:async()=>{},saveRosterAnalysis:async()=>{},syncPlatformRoster:async()=>{},setView:()=>{},setLocation:()=>{},sanitizePdfImportError:x=>x.message,
   });
+  context.sharedPdfChannelStatus=()=>window.AndroidCrewCheckNative ? JSON.parse(window.AndroidCrewCheckNative.sharedPdfStatus()) : null;
+  context.refreshSharedPdfChannelStatus=async()=>context.sharedPdfChannelStatus();
+  window.CrewCheckPdfChannel=options.noBridge?undefined:{postMessage(){}};
+  context.sharedPdfChannelCall=async(op,id,fields={})=>{
+    const bridge=window.AndroidCrewCheckNative;if(!bridge)return false;
+    const method={claim:'claimSharedPdf',block:'blockSharedPdf',begin:'beginSharedPdfCommit',confirm:'confirmSharedPdfCommit',ack:'acknowledgeClaimedSharedPdf'}[op];
+    if(op==='read')return bridge.readClaimedSharedPdfChunk(id,state.owner,fields.offset,fields.length);
+    return method?bridge[method](id,state.owner):false;
+  };
   if(bound){
-    const binding=fs.readFileSync(process.env.SHARE_WEB_BINDING || 'client/src/lib/sharedPdfAccountBinding.ts','utf8').replace(/^import .*;\n/m,'');
+    const binding=fs.readFileSync(process.env.SHARE_WEB_BINDING || 'client/src/lib/sharedPdfAccountBinding.ts','utf8').replace(/^import .*;\n/gm,'');
     vm.runInContext(transformSync(binding,{loader:'ts',format:'cjs'}).code,context);
   }
   const code = 'let importRevision = 0;'+plannedGuard+'\n'+choiceGuard+'\n'+capture+'\n'+saveFunction+'\n'+handler+'\n'+listener+'\nglobalThis.consume=consumeNativePdf;globalThis.importHandler=handleFile;';
@@ -76,7 +85,7 @@ async function scenario(name, payload, options = {}) {
   let pwaConsumer;
   if(!options.pwaRuntime && payload.shareId?.startsWith('pwa:') && typeof context.registerPwaSharedPdfReceipt==='function')context.registerPwaSharedPdfReceipt(payload.shareId);
   if(options.pwaRuntime){
-    const runtime=fs.readFileSync(process.env.SHARE_WEB_PWA || 'client/src/lib/pwaSharedPdfRuntime.ts','utf8').replace(/^import .*;\n/m,'');
+    const runtime=fs.readFileSync(process.env.SHARE_WEB_PWA || 'client/src/lib/pwaSharedPdfRuntime.ts','utf8').replace(/^import .*;\n/gm,'');
     context.fetch=async()=>{if(state.onPwaFetch)state.onPwaFetch(state);if(state.offline)throw new Error('Synthetic offline');state.pwaFetches=(state.pwaFetches||0)+1;return new Response(new Blob([suppliedPdf]),{headers:{'x-crewcheck-filename':'Synthetic.pdf'}});};
     Object.assign(context,{URL,Response,Blob,TextDecoder});
     vm.runInContext(transformSync(runtime.slice(0,runtime.lastIndexOf("if (typeof window"))+'\nglobalThis.consumePwa=consumePwaSharedPdf;',{loader:'ts',format:'cjs'}).code,context);
@@ -84,6 +93,7 @@ async function scenario(name, payload, options = {}) {
     delete window.__crewcheckPendingNativePdf;
     pwaConsumer=context.consumePwa;await pwaConsumer();await Promise.all(imports);
   }else if(options.onlyReceipt){ /* Bootstrap captures the receipt even without Home. */ }else if(options.manual)state.result=await context.importHandler({target:{files:[new File([suppliedPdf],'Synthetic.pdf',{type:'application/pdf'})]}});
+  else if(options.initialConcurrent)await Promise.all([context.consume(payload),context.consume(payload)]);
   else await context.consume(payload);
   const first = {parse:state.parse,save:state.save,bundle:state.bundle,acks:state.acks.length,pending:Boolean(window.__crewcheckPendingNativePdf),claims:context.nativePdfClaimsRef.current.size};
   if(options.concurrentSameId)await Promise.all([context.consume(payload),context.consume(payload)]);
@@ -168,6 +178,8 @@ r=await scenario('late ACK after pending replacement',durable,{ackReplacePending
 check(r.window.__crewcheckPendingNativePdf?.shareId==='new-share-after-late-ACK','old ACK preserves new pending pointer');
 r=await scenario('same-ID concurrent delivery',durable,{cancel:true,concurrentSameId:true});
 check(r.state.parse===2&&r.state.save===0,'simultaneous duplicate claims do not run simultaneous parsers');
+r=await scenario('initial duplicate delivery during async status',durable,{initialConcurrent:true});
+check(r.state.parse===1&&r.state.save===1&&r.state.acks.length===1,'initial async duplicates share one import/ACK');
 r=await scenario('manual picker remains available',legacy,{manual:true});
 check(r.state.result===true&&r.state.save===1&&r.state.acks.length===0,'manual picker imports through current guarded canonical handler');
 r=await scenario('PWA real bootstrap',pwa,{pwaRuntime:true,noBridge:true,retry:true,replayLifecycle:true});

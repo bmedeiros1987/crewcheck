@@ -13,6 +13,7 @@ on:
       - 'scripts/android-share-web/**'
       - 'scripts/regression-android-share-web.mjs'
       - 'scripts/regression-shared-pdf-native-offline.cjs'
+      - 'scripts/regression-shared-pdf-channel.mjs'
       - 'scripts/regression-v14-3-68-android-share-import.mjs'
       - '.github/workflows/v14368-android-share-import.yml'
 
@@ -48,6 +49,8 @@ jobs:
         run: node scripts/regression-android-share-web.mjs
       - name: Execute real native inbox and receiver offline
         run: node scripts/regression-shared-pdf-native-offline.cjs
+      - name: Validate benign PDF channel rejection and correlation
+        run: node scripts/regression-shared-pdf-channel.mjs
       - name: TypeScript check
         run: npx tsc --noEmit
       - name: Build offline web shell consumed by Android

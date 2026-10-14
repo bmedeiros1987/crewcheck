@@ -1,5 +1,6 @@
   // Both legacy Base64 APKs and the #825 private-inbox bridge use this importer.
   const nativePdfClaimsRef = useRef<Set<string>>(new Set());
+  const nativePdfRequestsRef = useRef<Set<string>>(new Set());
   function captureSharedPdfImport(isAlive: () => boolean, sharedPdfPayload: any) {
     const capturedOwner = publicationOwner();
     const capturedReference = currentPublicationReview()?.publication.revision ?? null;
@@ -18,28 +19,29 @@
       const shareId = sharedPdfIdentity(payload);
       if (!shareId) { toast.message('PDF compartilhado sem identificador seguro. Importe pelo seletor de arquivos nesta conta.', {action:{label:'Selecionar PDF',onClick:()=>fileRef.current?.click()}}); return; }
       if (nativePdfClaimsRef.current.has(shareId)) return;
+      if (nativePdfRequestsRef.current.has(shareId)) return;
+      nativePdfRequestsRef.current.add(shareId);
+      try {
+      if(payload?.transport === 'android-private-inbox') await refreshSharedPdfChannelStatus();
+      if(!alive)return;
       let receipt = sharedPdfAccountReceipt(payload);
-      if (receipt.claimable && claimSharedPdfForAccount(payload, () => window.confirm('Reivindicar este PDF para importação nesta conta?'))) receipt = sharedPdfAccountReceipt(payload);
+      if (receipt.claimable && await claimSharedPdfForAccount(payload, () => window.confirm('Reivindicar este PDF para importação nesta conta?'))) receipt = sharedPdfAccountReceipt(payload);
       if (!receipt.allowed) {
         toast.message('PDF em quarentena. Entre na conta de origem ou selecione o arquivo manualmente nesta conta.', {action:{label:'Selecionar PDF',onClick:()=>fileRef.current?.click()}});
         return;
       }
       const filename = String(payload?.filename || payload?.sourceFileName || 'CrewCheck-escala.pdf').trim() || 'CrewCheck-escala.pdf';
       const dataBase64 = String(payload?.dataBase64 || '').trim();
-      const finalizeSharedPdf = () => {
+      const finalizeSharedPdf = async () => {
         let completed = false;
-        const nativeBridge = (window as any).AndroidCrewCheckNative;
         if (payload?.transport === 'android-private-inbox') {
           // The durable native inbox is deleted only by its exact-ID ACK.
-          completed = (window as any).AndroidCrewCheckNative?.acknowledgeClaimedSharedPdf?.(shareId, publicationOwner()) === true;
+          completed = await sharedPdfChannelCall('ack',shareId) === true;
         } else if (dataBase64 && shareId.startsWith('pwa:')) {
           // Current PWA intake already consumed its single-use SW entry.
           completed = true;
-        } else if (dataBase64) {
-          // Older Base64 APKs may not expose ACK. If present, honor its result.
-          completed = typeof nativeBridge?.acknowledgeSharedPdf === 'function'
-            ? nativeBridge.acknowledgeSharedPdf(shareId) === true : true;
         }
+
         const pending = (window as any).__crewcheckPendingNativePdf;
         if (completed && (pending === payload || (pending?.shareId && pending.shareId === shareId))) {
           delete (window as any).__crewcheckPendingNativePdf;
@@ -47,7 +49,7 @@
         return completed;
       };
       if (receipt.committed) {
-        try { if (finalizeSharedPdf()) nativePdfClaimsRef.current.add(shareId); }
+        try { if (await finalizeSharedPdf()) nativePdfClaimsRef.current.add(shareId); }
         catch { toast.message('A escala já foi importada; a confirmação do PDF compartilhado permanece pendente.'); }
         return;
       }
@@ -67,9 +69,8 @@
           bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
         } else {
           const expectedLength = Number(payload?.byteLength);
-          const bridge = (window as any).AndroidCrewCheckNative;
           if (payload?.transport !== 'android-private-inbox' || !Number.isInteger(expectedLength)
-            || expectedLength <= 0 || expectedLength > maxBytes || typeof bridge?.readClaimedSharedPdfChunk !== 'function') {
+            || expectedLength <= 0 || expectedLength > maxBytes || !((window as any).CrewCheckPdfChannel?.postMessage)) {
             throw new Error('Não consegui ler o PDF compartilhado do armazenamento local.');
           }
           bytes = new Uint8Array(expectedLength);
@@ -77,7 +78,7 @@
           while (offset < expectedLength) {
             if (!current()) return;
             const requested = Math.min(192 * 1024, expectedLength - offset);
-            const encoded = String(bridge.readClaimedSharedPdfChunk(shareId, context.importOwner, String(offset), String(requested)) || '');
+            const encoded = String(await sharedPdfChannelCall('read',shareId,{offset,length:requested}) || '');
             if (!encoded || encoded.length > Math.ceil(requested / 3) * 4) throw new Error('O PDF compartilhado retornou um bloco inválido.');
             const binary = window.atob(encoded);
             if (!binary.length || binary.length > requested) throw new Error('O PDF compartilhado retornou um bloco inválido.');
@@ -96,8 +97,8 @@
         // A successful setBundle can replace this effect. That is not a failed import.
         if (committed !== true || !context.plannedImport.canCommit() || !context.canCommit()
           || context.importOwner !== publicationOwner()) return;
-        if (!markSharedPdfCommitted(payload)) return;
-        finalized = finalizeSharedPdf();
+        if (!(await markSharedPdfCommitted(payload))) return;
+        finalized = await finalizeSharedPdf();
       } catch (error) {
         if (current()) {
           toast.error(error instanceof Error ? error.message : 'Não consegui importar o PDF compartilhado.');
@@ -107,6 +108,7 @@
         context.canCommit.finish();
         if (!finalized) nativePdfClaimsRef.current.delete(shareId);
       }
+      } finally { nativePdfRequestsRef.current.delete(shareId); }
     };
     const onNativePdf = (event: Event) => { void consumeNativePdf((event as CustomEvent).detail); };
     window.addEventListener('crewcheck:native-pdf', onNativePdf as EventListener);

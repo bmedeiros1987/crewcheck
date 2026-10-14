@@ -216,6 +216,7 @@ await import('../cirium-radar-off/apply.mjs');
 await import('../shared-pdf-native-claim/android.mjs');
 await import('../shared-pdf-native-claim/dispatch.mjs');
 await import('../shared-pdf-native-claim/manifest.mjs');
+await import('../shared-pdf-native-claim/message-channel.mjs');
 await import('../android-share-web/apply.mjs');
 
 }

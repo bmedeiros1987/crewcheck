@@ -3,7 +3,7 @@ import fs from 'node:fs';
 // Web compatibility only: preserve the current importer and all upstream guards.
 const path = 'client/src/pages/Home.tsx';
 let source = fs.readFileSync(path, 'utf8');
-const bindingImport = "import { sharedPdfAccountReceipt, sharedPdfIdentity, markSharedPdfCommitted, beginSharedPdfCommit, claimSharedPdfForAccount } from '@/lib/sharedPdfAccountBinding';\n";
+const bindingImport = "import { sharedPdfChannelCall, refreshSharedPdfChannelStatus } from '@/lib/sharedPdfChannel';\nimport { sharedPdfAccountReceipt, sharedPdfIdentity, markSharedPdfCommitted, beginSharedPdfCommit, claimSharedPdfForAccount } from '@/lib/sharedPdfAccountBinding';\n";
 if (!source.includes(bindingImport.trim())) source = bindingImport + source;
 if (!source.includes('function captureSharedPdfImport(')) {
   const start = source.indexOf('  const nativePdfClaimsRef = useRef<Set<string>>(new Set());');
@@ -39,7 +39,7 @@ if (!source.includes('sharedContext?: ReturnType<typeof captureSharedPdfImport>'
   // A rejected async compliance computation must not replace the active roster.
   replace('      saveRoster(roster, file.name);\n', '');
   replace("      storage.set('crewcheck_last_import_guardian_summary', decision.summaryText);",
-    "      if (!importCurrent()) return false;\n      if (sharedContext && !beginSharedPdfCommit(sharedContext.sharedPdfPayload)) return false;\n      if (!importCurrent()) return false;\n      saveRoster(roster, file.name);\n      if (!importCurrent()) return false;\n      if (sharedContext) {\n        const persisted = JSON.parse(localStorage.getItem(startupKey()) || 'null');\n        if (persisted?.owner !== startupOwner() || persisted?.sourceFileName !== file.name\n          || JSON.stringify(persisted.roster) !== JSON.stringify(roster)) {\n          throw new Error('Não consegui preservar a escala importada neste dispositivo. Tente novamente.');\n        }\n      }\n      storage.set('crewcheck_last_import_guardian_summary', decision.summaryText);");
+    "      if (!importCurrent()) return false;\n      if (sharedContext && !(await beginSharedPdfCommit(sharedContext.sharedPdfPayload))) return false;\n      if (!importCurrent()) return false;\n      saveRoster(roster, file.name);\n      if (!importCurrent()) return false;\n      if (sharedContext) {\n        const persisted = JSON.parse(localStorage.getItem(startupKey()) || 'null');\n        if (persisted?.owner !== startupOwner() || persisted?.sourceFileName !== file.name\n          || JSON.stringify(persisted.roster) !== JSON.stringify(roster)) {\n          throw new Error('Não consegui preservar a escala importada neste dispositivo. Tente novamente.');\n        }\n      }\n      storage.set('crewcheck_last_import_guardian_summary', decision.summaryText);");
   replace('      setBundle({ roster, compliance: newCompliance, source: file.name });',
     '      setBundle({ roster, compliance: newCompliance, source: file.name });\n      committed = true;');
   replace("      setLocation('/result');", "      setLocation('/result');\n      return committed;");
