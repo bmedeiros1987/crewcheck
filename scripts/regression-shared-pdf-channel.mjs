@@ -12,6 +12,7 @@ const main=fs.readFileSync('android-wrapper/app/src/main/java/com/crewcheck/app/
 const globalBridge=main.slice(main.indexOf('public class CrewCheckNativeBridge'),main.indexOf('public class CrewCheckIFlightBridge'));
 ok(!/public\s+(?:String|boolean)\s+(?:reportSharedPdfSession|claimSharedPdf|blockSharedPdf|beginSharedPdfCommit|confirmSharedPdfCommit|readClaimedSharedPdfChunk|acknowledgeClaimedSharedPdf|readSharedPdfChunk|sharedPdfStatus|acknowledgeSharedPdf)\(/.test(main),'no PDF global methods remain');
 ok(main.includes('WebViewCompat.addWebMessageListener')&&main.includes('WebViewFeature.WEB_MESSAGE_LISTENER'),'feature-gated restricted listener');
+ok(main.includes('if (!isMainFrame || !SharedPdfChannelPolicy.allowedOrigin(origin)) return;')&&main.includes('raw.length() > 32768'),'origin/frame and size checked before parsing');
 ok(main.includes('acceptsDocument(origin, isMainFrame, document)'),'real listener requires document/origin/main frame');
 ok(!main.includes('request.optString("owner"'),'owner is never read from a request');
 ok(main.includes('pdfSessionExecutor.shutdownNow()'),'PDF executor closes with Activity');

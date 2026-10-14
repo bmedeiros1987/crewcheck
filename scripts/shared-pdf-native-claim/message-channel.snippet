@@ -31,8 +31,11 @@
         androidx.webkit.WebViewCompat.addWebMessageListener(webView, "CrewCheckPdfChannel", SharedPdfChannelPolicy.ORIGINS,
             (view, message, sourceOrigin, isMainFrame, reply) -> {
                 final String origin = sourceOrigin.toString();
+                if (!isMainFrame || !SharedPdfChannelPolicy.allowedOrigin(origin)) return;
                 try {
-                    JSONObject request = new JSONObject(message.getData());
+                    String raw = message.getData();
+                    if (raw == null || raw.length() > 32768) return;
+                    JSONObject request = new JSONObject(raw);
                     final String document = request.optString("document", "");
                     if (!pdfChannelPolicy.acceptsDocument(origin, isMainFrame, document)) return;
                     final String requestId = request.optString("id", "");
