@@ -266,7 +266,8 @@ public final class SharedPdfInbox {
     private static boolean persist(Context context, SharedPreferences.Editor changes) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         java.util.Map<String, ?> before = new java.util.HashMap<>(prefs.getAll());
-        if (changes.commit()) return true;
+        try { if (changes.commit()) return true; }
+        catch (RuntimeException ignored) { /* Restore the previous memory view below. */ }
         // Android updates its in-memory map even when disk commit fails.
         // Restore that map too, retaining the prior durable pointer and file.
         SharedPreferences.Editor rollback = prefs.edit().clear();
@@ -274,7 +275,7 @@ public final class SharedPdfInbox {
             if (item.getValue() instanceof String) rollback.putString(item.getKey(), (String) item.getValue());
             else if (item.getValue() instanceof Long) rollback.putLong(item.getKey(), (Long) item.getValue());
         }
-        rollback.commit();
+        try { rollback.commit(); } catch (RuntimeException ignored) { /* No file is removed on failure. */ }
         return false;
     }
 
