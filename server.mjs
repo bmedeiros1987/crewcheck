@@ -1,5 +1,5 @@
 import { buildCanonicalRosterEvents } from './server/concierge/generated/canonicalRoster.mjs';
-import { gateQueryDay, findPublishedGateOccurrence, findPublishedGateLeg, publishedGateDate, gateQuerySuppressed, originFlightDate } from './shared/gate-query-day.mjs';
+import { gateQueryDay, findPublishedGateOccurrence, findPublishedGateLeg, publishedGateDate, gateQuerySuppressed, originFlightDate, radarResultDecision } from './shared/gate-query-day.mjs';
 import {verifiedMysqlTls} from './server/mysql-verified-tls.mjs';
 import {assertNotProtectedReleaseKey} from './server/release-journal/namespace.mjs';
 import { defaultCiriumRadarOptions, ciriumRadarInjectionEnabled, ciriumRadarRegistration, ciriumRadarIdentity, runCiriumRadarInjection, ciriumRadarProjection } from './server/cirium-radar-injection.mjs';
@@ -54,6 +54,7 @@ function buildFlightContext(value) {
   return { raw, iata, icao, flightAware: icao };
 }
 function publicRadarPayload(item = {}) {
+  if (item.querySuppressed) return gateQuerySuppressed({reason:item.queryReason || 'source-unverified'});
   return {
     ...ciriumRadarProjection(item),
     ok: Boolean(item.ok),
@@ -63,6 +64,8 @@ function publicRadarPayload(item = {}) {
     gate: firstKnown(item.gate),
     terminal: firstKnown(item.terminal),
     departure: firstKnown(item.departure),
+    scheduledDepartureUtc: item.scheduledDepartureUtc,
+    sourceReceivedAt: item.sourceReceivedAt,
     arrival: firstKnown(item.arrival),
     origin: firstKnown(item.origin),
     destination: firstKnown(item.destination),
@@ -130,6 +133,7 @@ function normalizeFlightAwareFlight(row = {}, ctx) {
     status: firstKnown(row.status, row.cancelled ? 'Cancelado' : '', row.progress_percent === 100 ? 'Finalizado' : '', 'Monitorando'),
     gate: firstKnown(row.gate_origin, row.departure_gate),
     terminal: firstKnown(row.terminal_origin, row.departure_terminal),
+    scheduledDepartureUtc: firstKnown(row.scheduled_out, row.filed_departure_time),
     departure: firstKnown(row.estimated_out, row.actual_out, row.scheduled_out, row.filed_departure_time),
     arrival: firstKnown(row.estimated_in, row.actual_in, row.scheduled_in, row.filed_arrival_time),
     origin: firstKnown(row.origin?.code_iata, row.origin?.code, row.origin?.airport_code),
@@ -177,6 +181,7 @@ async function providerCustom(ctx, timeoutMs, origin, destination) {
     status: firstKnown(payload?.status, payload?.flight_status, 'Monitorando'),
     gate: firstKnown(payload?.gate, payload?.departure?.gate),
     terminal: firstKnown(payload?.terminal, payload?.departure?.terminal),
+    scheduledDepartureUtc: firstKnown(payload?.scheduledDepartureUtc, payload?.departure?.scheduled),
     departure: firstKnown(payload?.departure?.estimated, payload?.departure?.actual, payload?.departure?.scheduled, payload?.departure),
     arrival: firstKnown(payload?.arrival?.estimated, payload?.arrival?.actual, payload?.arrival?.scheduled, payload?.arrival),
     origin: firstKnown(payload?.origin, payload?.departure?.iata, origin),
@@ -210,6 +215,7 @@ async function providerAviationstack(ctx, timeoutMs) {
     status: firstKnown(row.flight_status, 'Monitorando'),
     gate: firstKnown(row.departure?.gate),
     terminal: firstKnown(row.departure?.terminal),
+    scheduledDepartureUtc: firstKnown(row.departure?.scheduled),
     departure: firstKnown(row.departure?.estimated, row.departure?.actual, row.departure?.scheduled),
     arrival: firstKnown(row.arrival?.estimated, row.arrival?.actual, row.arrival?.scheduled),
     origin: firstKnown(row.departure?.iata, row.departure?.icao),
@@ -274,6 +280,7 @@ async function providerAeroDataBox(ctx, timeoutMs) {
     status: firstKnown(row.status, row.statusCode, 'Monitorando'),
     gate: firstKnown(row.departure?.gate),
     terminal: firstKnown(row.departure?.terminal),
+    scheduledDepartureUtc: firstKnown(row.departure?.scheduledTime?.utc, row.departure?.scheduledTime?.local),
     departure: firstKnown(row.departure?.revisedTime?.local, row.departure?.predictedTime?.local, row.departure?.scheduledTime?.local),
     arrival: firstKnown(row.arrival?.revisedTime?.local, row.arrival?.predictedTime?.local, row.arrival?.scheduledTime?.local),
     origin: firstKnown(row.departure?.airport?.iata, row.departure?.airport?.icao),
@@ -294,15 +301,17 @@ function configuredProviders() {
     { key: 'aerodatabox', available: Boolean(envAny(['AERODATABOX_API_KEY'])) },
   ];
 }
-async function runRadarRace(ctx, origin, destination) {
+async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
   // Trusted caller must derive this occurrence from the authorized published roster.
   const evidence = ctx.gateQueryEvidence;
+  scheduledDeparture = evidence?.scheduledDepartureUtc || ''; // Never device time/URL override.
   const decision = gateQueryDay(evidence);
   if (!decision.allowed || evidence?.origin !== origin || evidence?.destination !== destination || evidence?.flight !== ctx.raw)
     return gateQuerySuppressed(decision.allowed ? { reason: 'occurrence-unverified' } : decision);
   if (ciriumRadarInjectionEnabled(ctx.ciriumRadarOptions)) {
     const result = await runCiriumRadarInjection(ctx.ciriumRadarIdentity, ctx.ciriumRadarOptions, ctx.raw);
-    return publicRadarPayload(result);
+    if (result?.ok && !radarResultDecision(result,evidence,Date.now()).allowed) return gateQuerySuppressed(radarResultDecision(result,evidence,Date.now()));
+    return publicRadarPayload({...result,sourceReceivedAt:Date.now()});
   }
   const timeoutMs = Math.max(800, Math.min(5000, Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400)));
   const started = Date.now();
@@ -321,6 +330,7 @@ async function runRadarRace(ctx, origin, destination) {
       settled = true;
       const okResults = results.filter((item) => item && item.ok);
       const candidates = okResults.length ? okResults : results.filter(Boolean);
+      if (!okResults.length && results.some(item=>item?.querySuppressed)) { resolve(results.find(item=>item?.querySuppressed)); return; }
       const best = candidates.sort((a, b) => (b.quality - a.quality) || (a.latencyMs - b.latencyMs))[0];
       if (!best) {
         resolve({ ok: false, configured: configuredProviders().some((p) => p.available), status: 'Aguardando', message: 'Nenhuma fonte respondeu dentro do limite operacional.', latencyMs: Date.now() - started, quality: 0, alternatives: 0 });
@@ -333,6 +343,9 @@ async function runRadarRace(ctx, origin, destination) {
     providers.forEach((run) => {
       run().then((raw) => {
         if (raw) {
+          const sourceDecision = radarResultDecision(raw,evidence,Date.now());
+          if (raw.ok && !sourceDecision.allowed) { results.push(gateQuerySuppressed(sourceDecision)); return; }
+          raw = {...raw,sourceReceivedAt:raw.sourceReceivedAt ?? Date.now(),gate:raw.ok ? raw.gate : ''};
           const latencyMs = Number(raw.latencyMs || Date.now() - started);
           const quality = scoreRadar({ ...raw, latencyMs }, ctx);
           const item = { ...raw, latencyMs, quality };

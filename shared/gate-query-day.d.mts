@@ -5,3 +5,6 @@ export function findPublishedGateOccurrence(roster: unknown, request: GateQueryI
 export function gateQuerySuppressed(decision: { reason: string }): { ok: false; querySuppressed: true; queryReason: string; configured: false; message: string; quality: number };
 
 export function originFlightDate(instant: string | number, origin: string): string;
+export function radarFlightId(value: unknown): string;
+export function radarSourceEpoch(value: unknown): number;
+export function radarResultDecision(payload: object | null | undefined, identity: GateQueryIdentity | null, now?: number, maxAge?: number): { allowed: boolean; reason: string };

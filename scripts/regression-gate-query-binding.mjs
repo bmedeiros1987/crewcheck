@@ -25,7 +25,7 @@ if(!selected||selected==='unordered'){
 function functions(file,names){const source=fs.readFileSync(file,'utf8'),ast=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);return names.map(name=>{const n=ast.statements.find(x=>ts.isFunctionDeclaration(x)&&x.name?.text===name);assert(n,name);return ts.transpileModule(n.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;}).join('\n');}
 let now=Date.parse('2032-10-14T12:00:00Z'),writes=0,reads=0,calls=0,removeOnSecondRead=false;
 let r=roster([{date:'13/10/2032',legs:[leg('LA100','GRU','REC','09:00','11:00','old-13')]},{date:'14/10/2032',legs:[leg('LA100','GRU','REC','09:00','11:00','old-14')]}]);
-const fake=async()=>{calls++;return {ok:true,gate:'46'};};
+const fake=async()=>{calls++;return {ok:true,gate:'46',flight:'LA100',origin:'GRU',destination:'REC',departure:'2032-10-14T12:00:00Z'};};
 const records=()=>r.days.map(day=>({day,legs:day.legs}));
 const scope=vm.createContext({...policy,buildCanonicalRosterEvents,gateQueryDay:(i,t)=>policy.gateQueryDay(i,t??now),Date:class extends Date{static now(){return now;}},process:{env:{}},setTimeout:()=>1,clearTimeout:()=>{},
  ciriumRadarInjectionEnabled:()=>false,defaultCiriumRadarOptions:()=>undefined,publicRadarPayload:x=>x,scoreRadar:()=>95,configuredProviders:()=>[],

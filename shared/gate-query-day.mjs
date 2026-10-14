@@ -1,4 +1,5 @@
 import { baseTimeZone } from './timezone-choice.mjs';
+import { stayInstant } from './stay-edit-plan.mjs';
 export function publishedGateDate(value) {
   if (typeof value !== 'string') return '';
   const br = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -72,5 +73,42 @@ export function findPublishedGateLeg(roster, request, canonicalEvents = []) {
 export function findPublishedGateOccurrence(roster, request, canonicalEvents) { return findPublishedGateLeg(roster, request, canonicalEvents)?.identity || null; }
 export function gateQuerySuppressed(decision) {
   return { ok: false, querySuppressed: true, queryReason: decision.reason, configured: false,
-    message: 'Consulta sem custo: somente na data publicada do voo, com fuso da origem e ocorrência confirmados.', quality: 0 };
+    message: String(decision.reason).startsWith('source-') ? 'Portão da fonte não confirmado para esta ocorrência. Use o portão manual ou publicado na escala.' : 'Consulta sem custo: somente na data publicada do voo, com fuso da origem e ocorrência confirmados.', quality: 0 };
+}
+
+// Confirmed aliases only; parity with main's canonicalFlightId is regression-tested.
+export function radarFlightId(value) {
+  const raw = String(value || '').trim().toUpperCase().replace(/\s/g, '');
+  const alias = raw.match(/^(LAN|TAM)(\d+)$/);
+  return alias ? `${alias[1] === 'LAN' ? 'LA' : 'JJ'}${alias[2]}` : raw;
+}
+export function radarSourceEpoch(value) {
+  if (typeof value !== 'string') return NaN;
+  const match = value.trim().match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(\.\d{1,9})?)?(Z|([+-])(\d{2}):?(\d{2}))$/);
+  if (!match) return NaN;
+  const [,date,hour,minute,second='00',fraction='',zone,sign,offHour,offMinute] = match;
+  if (zone !== 'Z' && (Number(offHour)>14 || (Number(offHour)===14 && Number(offMinute)>0))) return NaN;
+  const offset = zone === 'Z' ? 'Z' : `${sign}${offHour}:${offMinute}`;
+  // Existing strict calendar/absolute-instant parser, not device-local clock arithmetic.
+  return stayInstant(`${date}T${hour}:${minute}:${second}${fraction.slice(0,4)}${offset}`) ?? NaN;
+}
+export function radarResultDecision(payload, identity, now=Date.now(), maxAge=30*60*1000) {
+  const deny = reason => ({allowed:false,reason});
+  if (payload?.ok !== true || !identity || !Number.isFinite(now)) return deny('source-unverified');
+  const flight=radarFlightId(payload.flight), wanted=radarFlightId(identity.flight);
+  const origin=String(payload.sourceOrigin ?? payload.origin ?? '').trim().toUpperCase();
+  const destination=String(payload.sourceDestination ?? payload.destination ?? '').trim().toUpperCase();
+  if (!baseTimeZone(origin) || !publishedGateDate(identity.departureDate)) return deny('source-origin-date-unverified');
+  if (!/^[A-Z0-9]{2,3}\d{1,5}[A-Z]?$/.test(flight) || flight!==wanted || origin!==identity.origin || destination!==identity.destination) return deny('source-other-flight-or-route');
+  const stamp = payload.scheduledDepartureUtc !== undefined ? payload.scheduledDepartureUtc : payload.departure;
+  const source=radarSourceEpoch(stamp), expected=radarSourceEpoch(identity.scheduledDepartureUtc);
+  if (!Number.isFinite(source) || !Number.isFinite(expected)) return deny('source-instant-unverified');
+  if (originFlightDate(source,origin)!==identity.departureDate) return deny('source-other-day');
+  if (source!==expected) return deny('source-other-occurrence');
+  const observed=payload.sourceReceivedAt ?? payload.updatedAt;
+  if (observed !== undefined) {
+    const ms=typeof observed==='number'?observed:radarSourceEpoch(observed);
+    if (!Number.isFinite(ms) || ms>now || now-ms>maxAge) return deny('source-stale');
+  }
+  return {allowed:true,reason:'source-occurrence-confirmed'};
 }
