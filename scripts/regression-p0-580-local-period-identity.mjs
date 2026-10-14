@@ -17,7 +17,7 @@ class MemoryStorage {
 function resetEnvironment() {
   globalThis.localStorage = new MemoryStorage();
   globalThis.sessionStorage = new MemoryStorage();
-  globalThis.window = { location: { origin: 'https://crewcheck.test' }, dispatchEvent() {} };
+  globalThis.window = Object.assign(new EventTarget(), { location: { origin: 'https://crewcheck.test' } });
   globalThis.fetch = async () => new Response(JSON.stringify({ ok: false, message: 'offline' }), {
     status: 503,
     headers: { 'content-type': 'application/json' },
