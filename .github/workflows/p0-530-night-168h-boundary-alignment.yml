@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/publishedNightJourneys.ts'
+      - 'client/src/lib/canonicalDutyMeasurement.ts'
+      - 'scripts/regression-alert-minute-journeys.mjs'
       - 'scripts/v14359/**'
       - 'scripts/regression-p0-530-night-168h-boundary-alignment.mjs'
       - 'scripts/regression-p0-530-journey-instant-timezone-independence.mjs'
@@ -27,6 +30,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Exact-minute margins and published journey sequence (three timezones)
+        run: node scripts/regression-alert-minute-journeys.mjs
       - name: Source 168h boundary contract
         run: node scripts/regression-p0-530-night-168h-boundary-alignment.mjs
       - name: TypeScript
@@ -47,6 +52,8 @@ jobs:
       - run: npm ci
       - name: Prepare canonical source
         run: node scripts/v139/apply.mjs
+      - name: Prepared exact-minute margins and published journey sequence (three timezones)
+        run: node scripts/regression-alert-minute-journeys.mjs
       - name: Prepared 168h boundary contract
         run: node scripts/regression-p0-530-night-168h-boundary-alignment.mjs
       - name: Existing official compliance gate
