@@ -1043,9 +1043,9 @@ function preservePlannedRosterBeforeImport(current: BundleState, incoming: CrewR
   return savePlannedRoster(current.roster, current.source, expectedSession);
 }
 
-function currentCompliance(bundle: BundleState) {
-  const result = bundle.compliance || analyzeSafe(bundle.roster);
-  return { ...result, alerts: (result.alerts || []).map(alert => ({ ...alert, reviewIdentity: complianceAlertIdentity(alert, bundle.roster) })) };
+function currentCompliance(bundle: BundleState) { return bundle.compliance || analyzeSafe(bundle.roster); }
+function reviewableCompliance(compliance: ComplianceResult, roster: CrewRoster) {
+  return { ...compliance, alerts: (compliance.alerts || []).map(alert => ({ ...alert, reviewIdentity: complianceAlertIdentity(alert, roster) })) };
 }
 function currentGym(bundle: BundleState) { try { return getGymRecommendations(bundle.roster); } catch { return []; } }
 
@@ -4992,7 +4992,7 @@ export default function Home() {
 
 
   useEffect(() => {
-    const alerts = alertRosterOwned(bundle.roster) ? actionableComplianceAlerts(compliance) : [];
+    const alerts = alertRosterOwned(bundle.roster) ? actionableComplianceAlerts(reviewableCompliance(compliance, bundle.roster)) : [];
     const active = alerts.map(alert => complianceAlertIdentity(alert, bundle.roster));
     reconcileCrewCheckPulse('compliance', active);
     if (!alertAccount()) return;
@@ -5201,7 +5201,7 @@ export default function Home() {
     {busy && <div className="cz-busy"><Plane/><strong>Interpretando escala...</strong></div>}
     {showIntro && <OpeningVideo onDone={() => setShowIntro(false)}/>}
     <MenuDrawer open={drawer} close={() => setDrawer(false)} view={view} setView={setView} actions={actions}/>
-    {view === 'cockpit' && <Cockpit events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>} 
+    {view === 'cockpit' && <Cockpit events={events} compliance={reviewableCompliance(compliance, bundle.roster)} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>} 
     <FreeDayPostponementAlerts roster={bundle.roster} source={bundle.source} view={view} onOpen={() => setView('alerts')}/>
     {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>} 
     {view === 'compare' && <CompareRosterView bundle={bundle} onUpload={actions.upload}/>} 
@@ -5237,6 +5237,6 @@ export default function Home() {
     {view === 'map' && <MonthlyMapView events={events} actions={actions}/>}
     {view === 'database' && <DatabaseView setBundle={setBundle} setView={setView}/>}
     {view === 'crew' && <CrewToolsView bundle={bundle}/>}
-    <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)} alertCount={actionableComplianceAlerts(compliance).length} alertSignature={complianceAlertSignature(compliance)}/>
+    <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)} alertCount={actionableComplianceAlerts(reviewableCompliance(compliance, bundle.roster)).length} alertSignature={complianceAlertSignature(reviewableCompliance(compliance, bundle.roster))}/>
   </main>;
 }
