@@ -1,15 +1,15 @@
   // Both legacy Base64 APKs and the #825 private-inbox bridge use this importer.
   const nativePdfClaimsRef = useRef<Set<string>>(new Set());
   function captureSharedPdfImport(isAlive: () => boolean) {
-    const importOwner = publicationOwner();
-    const importReference = currentPublicationReview()?.publication.revision ?? null;
+    const capturedOwner = publicationOwner();
+    const capturedReference = currentPublicationReview()?.publication.revision ?? null;
     const plannedImport = beginOwnedPlannedImport();
     const choice = beginRosterChoice();
     let finished = false;
     const canCommit = Object.assign(() => choice(), { finish() {
       if (!finished) { finished = true; choice.finish(); }
     } });
-    return { importOwner, importReference, plannedImport, canCommit, isAlive };
+    return { importOwner: capturedOwner, importReference: capturedReference, plannedImport, canCommit, isAlive };
   }
   useEffect(() => {
     let alive = true;
