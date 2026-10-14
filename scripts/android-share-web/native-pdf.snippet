@@ -25,6 +25,31 @@
       }
       const filename = String(payload?.filename || payload?.sourceFileName || 'CrewCheck-escala.pdf').trim() || 'CrewCheck-escala.pdf';
       const dataBase64 = String(payload?.dataBase64 || '').trim();
+      const finalizeSharedPdf = () => {
+        let completed = false;
+        const nativeBridge = (window as any).AndroidCrewCheckNative;
+        if (payload?.transport === 'android-private-inbox') {
+          // The durable native inbox is deleted only by its exact-ID ACK.
+          completed = (window as any).AndroidCrewCheckNative?.acknowledgeSharedPdf?.(shareId) === true;
+        } else if (dataBase64 && shareId.startsWith('pwa:')) {
+          // Current PWA intake already consumed its single-use SW entry.
+          completed = true;
+        } else if (dataBase64) {
+          // Older Base64 APKs may not expose ACK. If present, honor its result.
+          completed = typeof nativeBridge?.acknowledgeSharedPdf === 'function'
+            ? nativeBridge.acknowledgeSharedPdf(shareId) === true : true;
+        }
+        const pending = (window as any).__crewcheckPendingNativePdf;
+        if (completed && (pending === payload || (pending?.shareId && pending.shareId === shareId))) {
+          delete (window as any).__crewcheckPendingNativePdf;
+        }
+        return completed;
+      };
+      if (receipt.committed) {
+        try { if (finalizeSharedPdf()) nativePdfClaimsRef.current.add(shareId); }
+        catch { toast.message('A escala já foi importada; a confirmação do PDF compartilhado permanece pendente.'); }
+        return;
+      }
       // Capture account, publication and choice BEFORE reading the shared file.
       const context = captureSharedPdfImport(() => alive);
       const current = () => alive && context.plannedImport.canCommit() && context.canCommit()
@@ -70,22 +95,8 @@
         // A successful setBundle can replace this effect. That is not a failed import.
         if (committed !== true || !context.plannedImport.canCommit() || !context.canCommit()
           || context.importOwner !== publicationOwner()) return;
-        const nativeBridge = (window as any).AndroidCrewCheckNative;
-        if (payload?.transport === 'android-private-inbox') {
-          // The durable native inbox is deleted only by its exact-ID ACK.
-          finalized = (window as any).AndroidCrewCheckNative?.acknowledgeSharedPdf?.(shareId) === true;
-        } else if (dataBase64 && shareId.startsWith('pwa:')) {
-          // Current PWA intake already consumed its single-use SW entry.
-          finalized = true;
-        } else if (dataBase64) {
-          // Older Base64 APKs may not expose ACK. If present, honor its result.
-          finalized = typeof nativeBridge?.acknowledgeSharedPdf === 'function'
-            ? nativeBridge.acknowledgeSharedPdf(shareId) === true : true;
-        }
-        const pending = (window as any).__crewcheckPendingNativePdf;
-        if (finalized && (pending === payload || (pending?.shareId && pending.shareId === shareId))) {
-          delete (window as any).__crewcheckPendingNativePdf;
-        }
+        if (!markSharedPdfCommitted(payload)) return;
+        finalized = finalizeSharedPdf();
       } catch (error) {
         if (current()) {
           toast.error(error instanceof Error ? error.message : 'Não consegui importar o PDF compartilhado.');

@@ -179,11 +179,16 @@ r=await scenario('late ACK sees a newer pending share',durable,{ackReplacePendin
 check(r.state.acks.length===1&&r.window.__crewcheckPendingNativePdf?.shareId==='new-share-after-late-ACK','late ACK cannot clear the newer pending JS share');
 r=await scenario('unexpected async ACK is not accepted',durable,{ackPromise:true});
 check(r.state.acks.length===1&&r.window.__crewcheckPendingNativePdf&&r.first.claims===0,'only synchronous native true finalizes private inbox');
+const ackFailed=await scenario('native ACK failed after canonical commit',durable,{ackFailure:true});
+r=await scenario('retry ACK after reload without reparse',durable,{persistedValues:ackFailed.values});
+check(r.state.chunks===0&&r.state.parse===0&&r.state.save===0&&r.state.acks.length===1&&!r.window.__crewcheckPendingNativePdf,'committed same-owner receipt retries only ACK after reload');
+r=await scenario('B cannot finalize A committed receipt',durable,{owner:'owner-B',token:'token-B',persistedValues:ackFailed.values});
+check(r.state.chunks===0&&r.state.parse===0&&r.state.acks.length===0&&r.window.__crewcheckPendingNativePdf,'foreign account cannot read OR ACK a committed receipt');
 const expired=await scenario('native TTL expired PDF cannot be read',durable,{badChunk:true});
 check(expired.state.parse===0&&expired.state.acks.length===0,'expired native PDF missing chunk cannot become a fresh import');
 // Only opaque account IDs and version are persisted, never auth tokens/PDF data.
 for(const [key,value] of r.values)if(key.startsWith('crewcheck:shared-pdf-account:')) {
- const receipt=JSON.parse(value);check(Object.keys(receipt).sort().join(',')==='owner,version'&&!value.includes('token-')&&!value.includes('PDF'),'binding metadata is minimal');
+ const receipt=JSON.parse(value);check(['owner,version','committed,owner,version'].includes(Object.keys(receipt).sort().join(','))&&!value.includes('token-')&&!value.includes('PDF'),'binding metadata is minimal');
 }
 if(process.env.SHARE_WEB_REPORT)fs.writeFileSync(process.env.SHARE_WEB_REPORT,JSON.stringify({homePath,fixed,bound,checks,failures,results},null,2)+'\n');
 console.log(`Android shared PDF web: ${checks} assertions, ${failures.length} failures (${fixed?'fixed':'baseline'} actual Home functions, synthetic data only).`);

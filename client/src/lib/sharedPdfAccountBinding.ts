@@ -1,7 +1,7 @@
 import { getStoredUser, getToken } from './authClient';
 
 const PREFIX = 'crewcheck:shared-pdf-account:v1:';
-type Receipt = { version: 1; owner: string | null };
+type Receipt = { version: 1; owner: string | null; committed?: true };
 
 // Only an existing stable share ID can authorize replay across login/reload.
 // No PDF bytes, filename, token, email or display name is persisted.
@@ -16,7 +16,7 @@ function connectedOwner(): string | null {
   } catch { return null; }
 }
 
-export function sharedPdfAccountReceipt(payload: any): { allowed: boolean; reason: string } {
+export function sharedPdfAccountReceipt(payload: any): { allowed: boolean; reason: string; committed?: boolean } {
   // Capture the authenticated opaque account ID before looking at the payload.
   const owner = connectedOwner();
   const shareId = sharedPdfIdentity(payload);
@@ -39,8 +39,21 @@ export function sharedPdfAccountReceipt(payload: any): { allowed: boolean; reaso
     // An unowned receipt is NEVER silently adopted by the next login.
     if (receipt.owner === null) return { allowed: false, reason: 'signed-out' };
     if (!owner || receipt.owner !== owner) return { allowed: false, reason: 'other-account' };
-    return { allowed: true, reason: 'same-account' };
+    return { allowed: true, reason: 'same-account', committed: receipt.committed === true };
   } catch { return { allowed: false, reason: 'storage' }; }
+}
+
+// Keep a committed tombstone so failed/late ACK retries never reparse a saved PDF.
+export function markSharedPdfCommitted(payload: any): boolean {
+  const receipt = sharedPdfAccountReceipt(payload);
+  const owner = connectedOwner();
+  if (!receipt.allowed || !owner) return false;
+  try {
+    const key = PREFIX + encodeURIComponent(sharedPdfIdentity(payload));
+    const encoded = JSON.stringify({ version: 1, owner, committed: true });
+    localStorage.setItem(key, encoded);
+    return owner === connectedOwner() && localStorage.getItem(key) === encoded;
+  } catch { return false; }
 }
 
 // Loaded by the existing PWA bootstrap, before authenticated Home is mounted.

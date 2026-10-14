@@ -3,7 +3,7 @@ import fs from 'node:fs';
 // Web compatibility only: preserve the current importer and all upstream guards.
 const path = 'client/src/pages/Home.tsx';
 let source = fs.readFileSync(path, 'utf8');
-const bindingImport = "import { sharedPdfAccountReceipt, sharedPdfIdentity } from '@/lib/sharedPdfAccountBinding';\n";
+const bindingImport = "import { sharedPdfAccountReceipt, sharedPdfIdentity, markSharedPdfCommitted } from '@/lib/sharedPdfAccountBinding';\n";
 if (!source.includes(bindingImport.trim())) source = bindingImport + source;
 if (!source.includes('function captureSharedPdfImport(')) {
   const start = source.indexOf('  const nativePdfClaimsRef = useRef<Set<string>>(new Set());');
@@ -59,6 +59,11 @@ if (!pwa.includes("import { sharedPdfAccountReceipt } from './sharedPdfAccountBi
   pwa = pwa.replace(anchor, anchor + `
   // Bind BEFORE the single-use SW fetch, blob read, decode or parser/upload.
   const receipt = sharedPdfAccountReceipt({ shareId: 'pwa:' + shareId });
+  if (receipt.committed) {
+    url.searchParams.delete(SHARED_PDF_QUERY);
+    window.history.replaceState(window.history.state, '', \`${'${url.pathname}'}${'${url.search}'}${'${url.hash}'}\`);
+    return;
+  }
   if (!receipt.allowed) {
     (window as any).__crewcheckPwaShareError = 'Este PDF não pode ser retomado nesta conta. Compartilhe novamente após entrar na conta correta.';
     return;
