@@ -1,0 +1,19 @@
+.cc-alert-center{display:grid;gap:16px;min-width:0;color:var(--cc-text)}
+.cc-alert-card,.cc-alert-history{min-width:0;padding:18px;border:1px solid var(--cc-border);border-radius:18px;background:var(--cc-surface);overflow-wrap:anywhere}
+.cc-alert-card>header{display:flex;align-items:start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.cc-alert-card h2{margin:0;font-size:1.05rem;line-height:1.4}
+.cc-alert-card p{line-height:1.5;margin:12px 0}
+.cc-alert-card>header>span{font-size:.85rem;color:var(--cc-text-muted)}
+.cc-alert-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.cc-alert-actions button{min-height:44px;padding:10px 16px;border:1px solid var(--cc-border);border-radius:12px;background:var(--cc-surface);color:var(--cc-text);font:inherit;cursor:pointer;white-space:normal;text-align:start}
+.cc-alert-actions button:first-child{background:var(--cc-accent);color:#fff}
+.cc-alert-actions button:disabled{opacity:.65;cursor:default}
+.cc-alert-card summary,.cc-alert-history>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-weight:650;gap:8px}
+.cc-alert-card summary::after,.cc-alert-history>summary::after{content:'+';margin-inline-start:auto}
+.cc-alert-card details[open]>summary::after,.cc-alert-history[open]>summary::after{content:'−'}
+.cc-alert-card summary::-webkit-details-marker,.cc-alert-history>summary::-webkit-details-marker{display:none}
+.cc-alert-card:focus-visible,.cc-alert-actions button:focus-visible,.cc-alert-card summary:focus-visible,.cc-alert-history>summary:focus-visible{outline:3px solid var(--cc-accent);outline-offset:3px}
+.cc-alert-card[data-alert-selected='true']{border-color:var(--cc-accent)}
+.cc-alert-history article{padding:12px 0;border-top:1px solid var(--cc-border)}
+html body #root .cz-app[data-version] .cc-alert-center .cc-alert-actions button{min-height:44px!important;height:auto!important;font:inherit!important;white-space:normal!important;padding:10px 16px!important;border:1px solid var(--cc-review-border,var(--cc-border))!important;background:var(--cc-review-surface,var(--cc-surface))!important;color:var(--cc-review-text,var(--cc-text))!important}
+html body #root .cz-app[data-version] .cc-alert-center .cc-alert-actions button:first-child{background:var(--cc-review-text,var(--cc-text))!important;color:var(--cc-review-surface,var(--cc-surface))!important}

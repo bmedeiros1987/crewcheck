@@ -25,9 +25,14 @@ export type CrewCheckPulseAction = {
   label: string;
   /** Destino já existente do shell; o Pulse apenas dispara crewcheck:set-view. */
   view: string;
+  alert?: { occurrence: string; version: string };
 };
 
 export type CrewCheckPulseMessage = {
+  /** Account and material evidence are independent of translated display copy. */
+  review?: { occurrence: string; version: string };
+  account?: string | null;
+  scope?: string;
   id?: string;
   /** Chave estável para substituir/evitar duplicatas sem comparar texto livre. */
   dedupeKey?: string;
