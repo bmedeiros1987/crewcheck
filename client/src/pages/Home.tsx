@@ -4,6 +4,7 @@ import { AlertCenter } from '@/components/alerts/AlertCenter';
 import { alertAccount, alertIsReviewed, complianceAlertIdentity, ALERT_REVIEW_EVENT } from '@/lib/alertReviewStore';
 import { alertText } from '@/lib/alertExperienceText';
 import { reconcileCrewCheckPulse } from '@/components/pulse/pulseRuntime';
+import { radarFailurePayload, radarAvailabilityLabel } from '@/lib/radarAvailability';
 import { gateQueryDay, gateQuerySuppressed, originFlightDate, radarResultDecision, publishedGateDate } from '../../../shared/gate-query-day.mjs';
 import {NotificationCenter,openNotificationSettings} from '@/components/notifications/NotificationCenter';
 import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
@@ -1609,6 +1610,7 @@ function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; t
   return <article className={`cz-kpi ${tone}`}><span><Icon size={24}/></span><div><small>{title}</small><strong><MoneyText value={value}/></strong><p>{detail}</p></div></article>;
 }
 type RadarSnapshot = {
+  httpStatus?: number;
   querySuppressed?: boolean;
   queryReason?: string;
   ok?: boolean;
@@ -1739,10 +1741,12 @@ async function fetchRadarSnapshot(event: ZeroLeg, force = false): Promise<RadarS
   params.set('scheduledDepartureUtc', queryIdentity.scheduledDepartureUtc);
   // Preserve the legacy preparation anchor, then pin its outgoing instant to canonical UTC.
   params.set('scheduledDeparture', queryIdentity.scheduledDepartureUtc);
-  const payload = await authFetch<RadarSnapshot>(`/api/radar-flight?${params.toString()}`, { cache: 'no-store' });
+  let payload: RadarSnapshot;
+  try { payload = await authFetch<RadarSnapshot>(`/api/radar-flight?${params.toString()}`, { cache: 'no-store' }); }
+  catch (error) { payload = radarFailurePayload(error); }
   if (getToken() !== sessionToken || manualGateAccountKey(getStoredUser()) !== account || radarQuerySerial.get(serialKey) !== serial || !gateQueryDay(queryIdentity).allowed)
-    return gateQuerySuppressed({ reason: 'response-context-expired' });
-  if (payload?.querySuppressed) return validatedRadarForEvent(event,readRadarSnapshot(event)) || payload;
+    return { ...gateQuerySuppressed({ reason: 'response-context-expired' }), httpStatus: payload.httpStatus };
+  if (payload?.ok !== true || payload?.querySuppressed) return payload;
   if (payload?.ok && !radarResultDecision(payload,queryIdentity,Date.now(),RADAR_GATE_STALE_MS).allowed) return gateQuerySuppressed(radarResultDecision(payload,queryIdentity,Date.now(),RADAR_GATE_STALE_MS));
   return saveRadarSnapshot(event, payload || { ok: false, message: 'Radar indisponível.' });
 }
@@ -3174,22 +3178,31 @@ function RadarView({ event }: { event: ZeroLeg }) {
   const flight = safe(event.flightNumber, '');
   const airlineCode = event.airlineCode || normalizedAirlineCode(flight);
   const airlineName = airlineNameFor(airlineCode, event.airlineName);
+  const owner = manualGateAccountKey(getStoredUser());
+  const token = getToken();
+  const contextKey = [event.id, event.canonical?.startDateTime, flight, event.origin, event.destination, owner].join('|');
+  const requestState = useRef({ key: contextKey, serial: 0 });
+  if (requestState.current.key !== contextKey) requestState.current = { key: contextKey, serial: requestState.current.serial + 1 };
   async function refresh(force = false) {
+    if (requestState.current.key !== contextKey) return;
+    const serial = ++requestState.current.serial;
+    const current = () => requestState.current.key === contextKey && requestState.current.serial === serial && getToken() === token && manualGateAccountKey(getStoredUser()) === owner;
     setLoading(true);
     try {
       const payload = await fetchRadarSnapshot(event, force);
-      setState(payload || { ok: false, message: 'Radar indisponível.' });
-    } catch {
-      setState({ ok: false, message: 'Radar operacional aguardando fonte disponível.' });
+      if (current()) setState(payload || { ok: false, message: 'Radar indisponível.' });
+    } catch (error) {
+      if (current()) setState(radarFailurePayload(error));
     } finally {
-      setLoading(false);
+      if (current()) setLoading(false);
     }
   }
   useEffect(() => {
     const cached = readRadarSnapshot(event);
     setState(cached);
     refresh(false);
-  }, [event.id, flight, event.origin, event.destination]);
+    return () => { requestState.current.serial += 1; };
+  }, [contextKey, token]);
   const verified = validatedRadarForEvent(event,state);
   const gateInfo = radarGateInfo(event,verified);
   const status = verified?.status || event.status || 'Monitorando';
@@ -3199,7 +3212,7 @@ function RadarView({ event }: { event: ZeroLeg }) {
   const arr = verified?.arrival || event.arrival;
   const quality = verified?.quality ? `${verified.quality}%` : 'Aguardando';
   const latency = verified?.latencyMs ? `${verified.latencyMs} ms` : '—';
-  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>{flight || 'Voo'} · {event.origin} → {event.destination} · portão e status sincronizados com a próxima programação.</p></section><section className="cz-radar-screen"><article><div className="cz-radar-airline"><AirlineLogo code={airlineCode} name={airlineName}/><strong>{airlineName}</strong></div><h2>{flight || 'Voo'}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {gate} · {terminal}</strong><span>{radarFlightDateLabel(event)}</span><span>Status: {status}</span></article><article><Plane/><h2>Horários</h2><p>Partida {safe(dep, 'A confirmar')} · Chegada {safe(arr, 'A confirmar')}</p><strong>{verified?.ok ? 'Radar atualizado' : 'Radar aguardando fonte'}</strong><span>{(state?.ok && !verified ? 'Resposta sem ocorrência atual confirmada.' : state?.message) || 'Consultando fontes operacionais disponíveis.'}</span></article><article><ShieldCheck/><h2>Qualidade</h2><p>Precisão {quality} · resposta {latency}</p><strong>{loading ? 'Atualizando...' : 'Seleção automática'}</strong><span>{state?.alternatives ? `${state.alternatives} fonte(s) responderam dentro do limite.` : 'Teste automático por disponibilidade.'}</span></article></section><section className="cz-toolbox"><h2>Ações</h2><div className="cz-tool-actions"><button onClick={() => refresh(true)} disabled={loading}><Radar/> Atualizar e exportar ao card</button><button onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${flight} flight status ${event.origin} ${event.destination}`)}`, '_blank', 'noopener,noreferrer')}><Globe2/> Consultar voo</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button></div></section><ManualGateEditor event={event}/></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>{flight || 'Voo'} · {event.origin} → {event.destination} · portão e status sincronizados com a próxima programação.</p></section><section className="cz-radar-screen"><article><div className="cz-radar-airline"><AirlineLogo code={airlineCode} name={airlineName}/><strong>{airlineName}</strong></div><h2>{flight || 'Voo'}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {gate} · {terminal}</strong><span>{radarFlightDateLabel(event)}</span><span>Status: {status}</span></article><article><Plane/><h2>Horários</h2><p>Partida {safe(dep, 'A confirmar')} · Chegada {safe(arr, 'A confirmar')}</p><strong>{verified?.ok ? 'Radar atualizado' : radarAvailabilityLabel(state)}</strong><span>{(state?.ok && !verified ? 'Resposta sem ocorrência atual confirmada.' : state?.message) || 'Consultando fontes operacionais disponíveis.'}</span></article><article><ShieldCheck/><h2>Qualidade</h2><p>Precisão {quality} · resposta {latency}</p><strong>{loading ? 'Atualizando...' : 'Seleção automática'}</strong><span>{state?.alternatives ? `${state.alternatives} fonte(s) responderam dentro do limite.` : 'Teste automático por disponibilidade.'}</span></article></section><section className="cz-toolbox"><h2>Ações</h2><div className="cz-tool-actions"><button onClick={() => refresh(true)} disabled={loading}><Radar/> Atualizar e exportar ao card</button><button onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${flight} flight status ${event.origin} ${event.destination}`)}`, '_blank', 'noopener,noreferrer')}><Globe2/> Consultar voo</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button></div></section><ManualGateEditor event={event}/></>;
 }
 
 type WeatherDisplayMode = 'both' | 'raw' | 'decoded';

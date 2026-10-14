@@ -35,7 +35,7 @@ const server=vm.createContext({...policy,buildCanonicalRosterEvents,gateQueryDay
  providerFlightAware:fake,providerCustom:fake,providerAviationstack:fake,providerAirLabs:fake,providerAeroDataBox:fake,
  buildFlightContext:raw=>({raw}),defaultCiriumRadarOptions:()=>{credentialFactories++;return undefined;},ciriumRadarIdentity:()=>({}),
  telegramRequestUser:()=>({email:'fictional@test.invalid',authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:x=>x,
- conciergeLoadSnapshot:async()=>({roster}),conciergeAccessMatches:()=>true,conciergeFindFlight:()=>({leg:roster.days[0].legs[0]}),
+ conciergeLoadSnapshot:async()=>({email:'fictional@test.invalid',roster}),conciergeAccessMatches:()=>true,conciergeFindFlight:()=>({leg:roster.days[0].legs[0]}),
  conciergeApplyRadar:()=>{},conciergeSaveSnapshotAsync:async()=>{exports++;},sendJson:(_r,_s,data)=>data});
 const before=process.argv.includes('--before');
 vm.runInContext(functions(before?'/tmp/crewcheck-gate-cost-before-server.mjs':'server.mjs',['runRadarRace','handleRadar']),server);

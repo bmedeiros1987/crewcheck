@@ -56,7 +56,7 @@ function harness(text, forbidLegacy = false, overrides = {}) {
     fetch() { counters.fetch++; throw Error('Network forbidden'); },
     telegramRequestUser() { counters.auth++; return { email: 'fictional@example.invalid', authenticated: true }; },
     telegramAppRequestAllowed() { return true; }, conciergeSafeKey(value) { return value; },
-    async conciergeLoadSnapshot() { counters.load++; return { roster }; }, conciergeAccessMatches() { return true; },
+    async conciergeLoadSnapshot() { counters.load++; return { email:'fictional@example.invalid', roster }; }, conciergeAccessMatches() { return true; },
     conciergeFindFlight() { return { leg: {} }; }, conciergeApplyRadar() { counters.apply++; },
     async conciergeSaveSnapshotAsync() { counters.save++; } };
   const scope = text.slice(text.indexOf('function sendJson('), text.indexOf('function mapsServerKey('));

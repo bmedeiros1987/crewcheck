@@ -31,7 +31,7 @@ const scope=vm.createContext({...policy,buildCanonicalRosterEvents,gateQueryDay:
  ciriumRadarInjectionEnabled:()=>false,defaultCiriumRadarOptions:()=>undefined,publicRadarPayload:x=>x,scoreRadar:()=>95,configuredProviders:()=>[],
  providerFlightAware:fake,providerCustom:fake,providerAviationstack:fake,providerAirLabs:fake,providerAeroDataBox:fake,
  buildFlightContext:raw=>({raw}),telegramRequestUser:()=>({email:'fictional-a',authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:x=>x,
- conciergeLoadSnapshot:async()=>{reads++;if(removeOnSecondRead&&reads===2)r.days[0].legs=[];return {roster:r};},conciergeAccessMatches:()=>true,
+ conciergeLoadSnapshot:async()=>{reads++;if(removeOnSecondRead&&reads===2)r.days[0].legs=[];return {email:'fictional-a',roster:r};},conciergeAccessMatches:()=>true,
  conciergeFindFlight:()=>({record:records()[0],leg:r.days[0].legs[0]}),conciergeSaveSnapshotAsync:async()=>{writes++;},sendJson:(_r,_s,data)=>data,
  conciergeExtractFlight:()=> 'LA100',conciergeNextProgram:()=>records()[0],conciergeNextJourneyProgram:()=>records()[0],conciergeProgramRecords:records,conciergeJourneyProgramRecords:(_r,rs)=>rs});
 vm.runInContext(functions(held?root+'/server.mjs':'server.mjs',['runRadarRace','handleRadar','conciergeRadarReply','conciergeApplyRadar']),scope);
