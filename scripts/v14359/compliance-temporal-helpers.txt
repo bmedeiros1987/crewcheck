@@ -291,6 +291,7 @@ function summarizeRegulatoryNightEvents(days: RosterDay[], resetAfterFreeHours =
   const journeyDeduped = applySegments(dedupeRegulatoryNightEvents(rawEvents, (event) => event.journeyId), resetBoundaries);
   const workedEvents = journeyDeduped.filter((event) => event.kind === 'worked');
   const standbyEvents = journeyDeduped.filter((event) => event.kind === 'standby');
+  const publishedSequence = roster ? publishedNightJourneySequence(buildCanonicalRosterEvents({ ...roster, days }), isActiveDuty, resetAfterFreeHours, hasMadrugadaDuty) : null;
 
   return {
     events: journeyDeduped,
@@ -298,9 +299,9 @@ function summarizeRegulatoryNightEvents(days: RosterDay[], resetAfterFreeHours =
     standbyEvents,
     maxWorkedIn168h: maxEventsInRolling168h(workedEvents),
     maxCombinedIn168h: maxEventsInRolling168h(journeyDeduped),
-    maxConsecutiveWorked: roster
-      ? publishedNightJourneySequence(buildCanonicalRosterEvents({ ...roster, days }), isActiveDuty, resetAfterFreeHours, hasMadrugadaDuty).maxConsecutive
-      : maxConsecutiveWorkedNights(nightDeduped),
+    maxConsecutiveWorked: publishedSequence?.maxConsecutive ?? maxConsecutiveWorkedNights(nightDeduped),
+    maxConsecutivePossible: publishedSequence?.maxPossibleConsecutive ?? maxConsecutiveWorkedNights(nightDeduped),
+    sequenceIndeterminate: publishedSequence?.indeterminate ?? false,
   };
 }
 

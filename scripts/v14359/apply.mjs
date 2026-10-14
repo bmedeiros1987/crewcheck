@@ -65,8 +65,8 @@ if (!source.includes(marker)) {
   replaceRequired(`\n    if (hasMadrugada) metrics.nightOperations += 1;\n`, '\n', 'contador de madrugada por objeto');
 
   replaceRequired(
-    `  const nightData = buildNightData(roster, sortedDays);\n  metrics.maxConsecutiveNights = publishedNightJourneySequence(buildCanonicalRosterEvents(roster), isActiveDuty, actRules.nightOps.resetAfterFreeHours, hasMadrugadaDuty).maxConsecutive;\n  const maxNightOpsWindow = countNightOpsInRolling168h(nightData.occurrences);\n  metrics.maxNightOps168hCount = maxNightOpsWindow;`,
-    `  const nightSummary = summarizeRegulatoryNightEvents(sortedDays, actRules.nightOps.resetAfterFreeHours, roster);\n  metrics.nightOperations = nightSummary.workedEvents.length;\n  metrics.maxConsecutiveNights = nightSummary.maxConsecutiveWorked;\n  const maxNightOpsWindow = nightSummary.maxWorkedIn168h;\n  metrics.maxNightOps168hCount = maxNightOpsWindow;`,
+    `  const nightData = buildNightData(roster, sortedDays);\n  const publishedNightSequence = publishedNightJourneySequence(buildCanonicalRosterEvents(roster), isActiveDuty, actRules.nightOps.resetAfterFreeHours, hasMadrugadaDuty);\n  metrics.maxConsecutiveNights = publishedNightSequence.maxConsecutive;\n  metrics.maxConsecutiveNightsPossible = publishedNightSequence.maxPossibleConsecutive;\n  metrics.maxConsecutiveNightsPending = publishedNightSequence.indeterminate;\n  const maxNightOpsWindow = countNightOpsInRolling168h(nightData.occurrences);\n  metrics.maxNightOps168hCount = maxNightOpsWindow;`,
+    `  const nightSummary = summarizeRegulatoryNightEvents(sortedDays, actRules.nightOps.resetAfterFreeHours, roster);\n  metrics.nightOperations = nightSummary.workedEvents.length;\n  metrics.maxConsecutiveNights = nightSummary.maxConsecutiveWorked;\n  metrics.maxConsecutiveNightsPossible = nightSummary.maxConsecutivePossible;\n  metrics.maxConsecutiveNightsPending = nightSummary.sequenceIndeterminate;\n  const maxNightOpsWindow = nightSummary.maxWorkedIn168h;\n  metrics.maxNightOps168hCount = maxNightOpsWindow;`,
     'resumo de madrugadas',
   );
 

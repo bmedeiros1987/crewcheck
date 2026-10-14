@@ -51,13 +51,16 @@ export function publishedNightJourneySequence(
   }).filter(j => (j.operational || j.availability) && Number.isFinite(j.start) && Number.isFinite(j.end) && j.end > j.start)
     .sort((a, b) => a.start - b.start || a.journeyId.localeCompare(b.journeyId));
 
-  let current = 0, maxConsecutive = 0, busyEnd: number | null = null;
+  let current = 0, maxPossibleConsecutive = 0, busyEnd: number | null = null;
+  let confirmedCurrent = 0, maxConsecutive = 0, minimumBusyEnd: number | null = null;
   const uncertainEnds: string[] = [];
   const blockingEnds = new Map<string, boolean>();
   const sequenceBoundaries: { journeyId: string; previousUncertainFlights: string[] }[] = [];
   const resets: { from: number; to: number; freeMinutes: number }[] = [];
   const sequence: typeof journeys = [];
   let longest: typeof journeys = [];
+  const confirmedSequence: typeof journeys = [];
+  let possibleLongest: typeof journeys = [];
   for (const journey of journeys) {
     // Only the previous release and this presentation delimit the free gap.
     // This journey's own release is irrelevant to proving that preceding gap.
@@ -65,14 +68,24 @@ export function publishedNightJourneySequence(
       && journey.startProven - busyEnd >= resetAfterFreeHours * HOUR) {
       resets.push({ from: busyEnd, to: journey.startProven, freeMinutes: (journey.startProven - busyEnd) / 60_000 });
       current = 0; sequence.length = 0;
+      confirmedCurrent = 0; confirmedSequence.length = 0;
+    }
+    // If unknown releases could hide a reset, continuity is not proven.
+    // This lower-bound reset is NOT a proof of free time (resets stays unchanged).
+    if (blockingEnds.size && (journey.startProven === null || minimumBusyEnd === null
+      || journey.startProven - minimumBusyEnd >= resetAfterFreeHours * HOUR)) {
+      confirmedCurrent = 0; confirmedSequence.length = 0;
     }
     // An open availability is retained until its end is actually published.
     // Later unrelated releases never silently close it or prove48h free.
     if (journey.endProven === null) { uncertainEnds.push(journey.journeyId); blockingEnds.set(journey.journeyId, journey.availability); }
     else busyEnd = Math.max(busyEnd ?? journey.endProven, journey.endProven);
+    const minimumEnd = journey.endProven ?? (journey.availability ? journey.startProven : journey.end);
+    if (minimumEnd !== null) minimumBusyEnd = Math.max(minimumBusyEnd ?? minimumEnd, minimumEnd);
     if (!journey.operational || !journey.timingKnown) continue;
     if (!journey.night) {
       current = 0; sequence.length = 0;
+      confirmedCurrent = 0; confirmedSequence.length = 0;
       if (journey.measured) {
         // A complete daytime journey terminates the prior night sequence.
         // Its verified release anchors subsequent gaps. Historical missing
@@ -85,7 +98,9 @@ export function publishedNightJourneySequence(
       continue;
     }
     current += 1; sequence.push(journey);
-    if (current > maxConsecutive) { maxConsecutive = current; longest = [...sequence]; }
+    if (current > maxPossibleConsecutive) { maxPossibleConsecutive = current; possibleLongest = [...sequence]; }
+    confirmedCurrent += 1; confirmedSequence.push(journey);
+    if (confirmedCurrent > maxConsecutive) { maxConsecutive = confirmedCurrent; longest = [...confirmedSequence]; }
   }
-  return { maxConsecutive, journeys, longest, resets, uncertainEnds, blockingEnds: [...blockingEnds.keys()], sequenceBoundaries };
+  return { maxConsecutive, maxPossibleConsecutive, indeterminate: maxConsecutive !== maxPossibleConsecutive, journeys, longest, possibleLongest, resets, uncertainEnds, blockingEnds: [...blockingEnds.keys()], sequenceBoundaries };
 }

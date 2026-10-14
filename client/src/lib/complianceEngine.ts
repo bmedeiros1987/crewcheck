@@ -73,6 +73,8 @@ export interface Metrics {
   reserveCount: number;
   averageTurnaround: number;
   maxConsecutiveNights: number;
+  maxConsecutiveNightsPossible?: number;
+  maxConsecutiveNightsPending?: boolean;
   /**
    * Maior número de ocorrências de madrugada qualificáveis numa janela móvel
    * de 168h — não confundir com `maxNightOps168h`, que é o LIMITE regulatório
@@ -2031,7 +2033,10 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   metrics.weekendPairs = calculateWeekendPairs(sortedDays);
   metrics.averageTurnaround = restCount > 0 ? restTotal / restCount : 0;
   const nightData = buildNightData(roster, sortedDays);
-  metrics.maxConsecutiveNights = publishedNightJourneySequence(buildCanonicalRosterEvents(roster), isActiveDuty, actRules.nightOps.resetAfterFreeHours, hasMadrugadaDuty).maxConsecutive;
+  const publishedNightSequence = publishedNightJourneySequence(buildCanonicalRosterEvents(roster), isActiveDuty, actRules.nightOps.resetAfterFreeHours, hasMadrugadaDuty);
+  metrics.maxConsecutiveNights = publishedNightSequence.maxConsecutive;
+  metrics.maxConsecutiveNightsPossible = publishedNightSequence.maxPossibleConsecutive;
+  metrics.maxConsecutiveNightsPending = publishedNightSequence.indeterminate;
   const maxNightOpsWindow = countNightOpsInRolling168h(nightData.occurrences);
   metrics.maxNightOps168hCount = maxNightOpsWindow;
 
@@ -2191,6 +2196,16 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
       legalReference: actRules.nightOps.legalReference,
       confidence: 'media',
       classification: 'atencao',
+    });
+  }
+
+  if (metrics.maxConsecutiveNightsPending) {
+    pushAlert(alerts, {
+      severity: 'warning', code: 'night-sequence-pending', actionable: false, classification: 'dados_insuficientes',
+      title: 'Sequência de madrugadas indeterminada',
+      description: `A escala comprova sequência de ${metrics.maxConsecutiveNights} jornada(s); até ${metrics.maxConsecutiveNightsPossible} são possíveis, mas liberações ausentes impedem concluir a sequência.`,
+      details: 'A ausência de término não comprova disponibilidade encerrada nem 48h livres. Complete a evidência antes de afirmar extrapolação ou ausência de irregularidade.',
+      legalReference: actRules.nightOps.legalReference, confidence: 'baixa',
     });
   }
 
