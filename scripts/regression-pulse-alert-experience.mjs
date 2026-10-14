@@ -10,7 +10,7 @@ const selected=process.argv.find(value=>value.startsWith('--case='))?.slice(7);
 if(process.env.PULSE_SOURCE_ROOT)process.chdir(process.env.PULSE_SOURCE_ROOT);
 const out=path.resolve(process.env.PULSE_EVIDENCE_DIR || 'artifacts/pulse-alert-experience');fs.mkdirSync(out,{recursive:true});
 const source=fs.readFileSync('client/src/pages/Home.tsx','utf8'),ast=ts.createSourceFile('Home.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
-const names=['Brand','CrewCheckMark','actionableComplianceAlerts','currentCompliance','reviewableCompliance'];
+const names=['Brand','CrewCheckMark','actionableComplianceAlerts','currentCompliance','reviewableCompliance','ReviewedAlerts'];
 const fns=ast.statements.filter(n=>ts.isFunctionDeclaration(n)&&names.includes(n.name?.text)).map(n=>n.getText(ast)).join('\n');
 const home=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='Home');
 const producer=home.body.statements.find(n=>ts.isExpressionStatement(n)&&n.getText(ast).includes("reconcileCrewCheckPulse('compliance'"));assert(producer,'exercise actual Home producer');
@@ -25,7 +25,8 @@ import {getSavedLanguage} from '${path.resolve('client/src/lib/i18n.ts')}';
 import {alertRosterOwned} from '${path.resolve('client/src/lib/alertRosterOwnership.ts')}';
 import * as runtime from '${path.resolve('client/src/components/pulse/pulseRuntime.ts')}';
 import * as nav from '${path.resolve('client/src/lib/navigationContext.ts')}';
-import {isActionableComplianceAlert} from '${path.resolve('client/src/lib/complianceAlertSemantics.ts')}';
+import * as complianceSemantics from '${path.resolve('client/src/lib/complianceAlertSemantics.ts')}';
+const {isActionableComplianceAlert,informationalComplianceDiagnostics}=complianceSemantics;
 const {alertAccount,alertIsReviewed,complianceAlertIdentity,ALERT_REVIEW_EVENT}=reviews;
 const {reconcileCrewCheckPulse,publishCrewCheckNotice}=runtime;
 const analyzeSafe=()=>({alerts:[]});const neutralCompliance=()=>({alerts:[],metrics:{}});
@@ -38,7 +39,7 @@ function Harness(){const[bundle,setBundle]=useState(initial),[view,setView]=useS
 window.fixture.update=(next,bindSelection=true)=>{if(bindSelection)bind(next);setBundle(next)};window.fixture.bundle=bundle;window.fixture.open=()=>setView('alerts');
 useEffect(()=>{const sync=()=>bump(v=>v+1);const navigate=e=>setView(e.detail);for(const name of [ALERT_REVIEW_EVENT,'crewcheck:auth-changed','crewcheck:language-change','crewcheck:locale-change'])window.addEventListener(name,sync);window.addEventListener('crewcheck:set-view',navigate);return()=>{for(const name of [ALERT_REVIEW_EVENT,'crewcheck:auth-changed','crewcheck:language-change','crewcheck:locale-change'])window.removeEventListener(name,sync);window.removeEventListener('crewcheck:set-view',navigate)}},[]);
 ${producer.getText(ast)}
-return <main className='cz-app' data-version='synthetic' data-view={view}><InternalHeaderFrame><Brand back={view!=='cockpit'}/></InternalHeaderFrame><Brand back/>{view==='radar'&&<FlightDeckContextUnavailable targetView='radar'/>}<div id='priority-program'>SYNTHETIC PROGRAM</div>{view==='alerts'&&<AlertCenter key={alertAccount()||'unbound'} alerts={actionableComplianceAlerts(compliance,true)} roster={bundle.roster} pendingAnalysis={(compliance.alerts||[]).filter(alert=>alert.code==='night-sequence-pending')} onImport={()=>window.fixture.imported=true} onChoose={()=>window.fixture.chosen=true}/>}</main>};createRoot(document.getElementById('root')).render(<Harness/>);`;
+return <main className='cz-app' data-version='synthetic' data-view={view}><InternalHeaderFrame><Brand back={view!=='cockpit'}/></InternalHeaderFrame><Brand back/>{view==='radar'&&<FlightDeckContextUnavailable targetView='radar'/>}<div id='priority-program'>SYNTHETIC PROGRAM</div>{view==='alerts'&&<ReviewedAlerts key={alertAccount()||'unbound'} compliance={compliance} roster={bundle.roster} onImport={()=>window.fixture.imported=true} onChoose={()=>window.fixture.chosen=true}/>}</main>};createRoot(document.getElementById('root')).render(<Harness/>);`;
 await build({stdin:{contents:entry,loader:'tsx',resolveDir:process.cwd()},bundle:true,format:'iife',outfile:path.join(out,'app.js'),jsx:'automatic',tsconfig:'tsconfig.json',logLevel:'silent'});
 // Real shipped cascade, plus the terminal integrated style, in the same order.
 const css=['client/src/index.css','client/src/styles/internal-global-header.css','client/src/styles/ipad-header-recovery.css','client/src/styles/fixed-navigation-headers.css','client/src/components/pulse/integrated-header.css'];
@@ -65,6 +66,11 @@ try{
   const remaining=await page.evaluate(()=>{const accepted=[];for(let i=0;i<12;i++)accepted.push(fixture.runtime.publishCrewCheckPulse({id:'pending-'+i,dedupeKey:'pending-'+i,title:'Synthetic pending '+i,tone:'atencao',pulseCooldownMs:21600000,systemNotification:'never'}));const state=fixture.runtime.currentCrewCheckPulseState();return{accepted:accepted.filter(Boolean).length,total:(state.message?1:0)+state.queued}});
   console.log('QUEUE_REPOPULATION',remaining);assert.deepEqual(remaining,{accepted:3,total:3},'all three unseen occurrences remain available after nine dismissals');
   await page.evaluate(()=>{fixture.runtime.clearCrewCheckPulse();localStorage.setItem('crewcheck:alert-review:v1:'+fixture.reviews.alertAccount(),JSON.stringify(window.pendingRows));const next=structuredClone(fixture.bundle);next.compliance.alerts=[{id:'alert_1',code:'SYNTHETIC',title:'Jornada sintética',description:'Evidência sintética 40min',date:'01/10/2032',severity:'warning',actionable:true}];fixture.update(next)});await page.waitForSelector('.cc-pulse-compact-trigger');
+ }
+ if (!selected || selected==='informational-diagnostics') {
+  await page.evaluate(()=>{const next=structuredClone(fixture.initial);next.compliance.alerts=[{id:'synthetic-opps',code:'FLIGHT_ROLE_ORIGIN_PENDING',title:'Reimportação necessária para horas de voo operado',description:'SYNTHETIC OP/PS: origem não comprovada; reimporte.',severity:'warning',classification:'dados_insuficientes',actionable:false},{id:'synthetic-coverage',code:'SYNTHETIC_COVERAGE_PENDING',title:'Histórico incompleto',description:'SYNTHETIC coverage pending',severity:'warning',classification:'dados_insuficientes',actionable:false},{id:'synthetic-hidden',code:'SYNTHETIC_HIDDEN',title:'Inactive diagnostic',description:'Must remain hidden',severity:'warning',classification:'dados_insuficientes',actionable:false,active:false}];fixture.update(next);fixture.open()});await page.waitForTimeout(80);
+  const actual=await page.evaluate(()=>({falseAbsence:document.body.innerText.includes('Nenhum alerta para revisar'),opps:document.body.textContent.includes('SYNTHETIC OP/PS'),coverage:document.body.textContent.includes('SYNTHETIC coverage pending')}));console.log('REAL_REVIEWED_ALERTS_DIAGNOSTICS',actual);assert.equal(actual.falseAbsence,false,'real Home ReviewedAlerts must preserve informational diagnostics');assert.equal(actual.opps,true);assert.equal(actual.coverage,true);assert.equal(await page.getByText('Inactive diagnostic',{exact:true}).count(),0);assert.equal(await page.locator('.cc-pulse-compact').count(),0,'informational OP/PS never becomes actionable Pulse');
+  await page.evaluate(()=>{fixture.update(structuredClone(fixture.initial));window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'}))});await page.waitForSelector('.cc-pulse-compact-trigger');
  }
  if (!selected) {
  assert.equal(await page.locator('.cz-global-header').count(),1);assert.equal(await page.locator('.cz-brand-row').count(),1);assert.equal(await page.locator('.cc-pulse-compact').count(),1);
