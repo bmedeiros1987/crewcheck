@@ -85,7 +85,16 @@ export function publishedNightJourneySequence(
     else busyEnd = Math.max(busyEnd ?? journey.endProven, journey.endProven);
     const minimumEnd = journey.minimumEnd;
     if (minimumEnd !== null) minimumBusyEnd = Math.max(minimumBusyEnd ?? minimumEnd, minimumEnd);
-    if (!journey.operational || !journey.timingKnown) continue;
+    if (!journey.operational) continue;
+    if (!journey.timingKnown) {
+      // An incomplete operational interval may be a daytime interruption, or
+      // may itself touch the night window. Neither continuity nor night work
+      // is proven. Keep the upper hypothesis and break only the lower streak.
+      confirmedCurrent = 0; confirmedSequence.length = 0;
+      current += 1; sequence.push(journey);
+      if (current > maxPossibleConsecutive) { maxPossibleConsecutive = current; possibleLongest = [...sequence]; }
+      continue;
+    }
     if (!journey.night) {
       current = 0; sequence.length = 0;
       confirmedCurrent = 0; confirmedSequence.length = 0;

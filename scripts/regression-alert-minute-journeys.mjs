@@ -118,6 +118,20 @@ try {
       const three=nights.map((item,i)=>({...item,date:`${10+i}/10/2032`}));
       const confirmed=engine.analyzeCompliance(roster(three));assert.equal(confirmed.metrics.maxConsecutiveNights,3);assert.equal(confirmed.metrics.maxConsecutiveNightsPending,false);assert.ok(confirmed.alerts.some(alert=>/consecutivas.*revisar sequência/.test(alert.title)));
     }
+    if (!selected || selected === 'crm-interruption') {
+      const first=day('01/10/2032','01:00','04:30','01:40','04:00');
+      const crm={...day('02/10/2032','08:00',null,'',''),type:'CRM',pairingCode:'CRM',legs:[]};
+      const nights=['03','04'].map(date=>day(`${date}/10/2032`,'02:10','10:30','02:50','10:00'));
+      const result=engine.analyzeCompliance(roster([first,crm,...nights]));
+      console.log(JSON.stringify({timezone,case:'crm-interruption-observed',proven:result.metrics.maxConsecutiveNights,possible:result.metrics.maxConsecutiveNightsPossible,pending:result.metrics.maxConsecutiveNightsPending}));
+      assert.equal(result.metrics.maxConsecutiveNights,2,'incomplete operational activity may interrupt the previous streak');
+      assert.equal(result.metrics.maxConsecutiveNightsPending,true);assert.ok(result.metrics.maxConsecutiveNightsPossible>=3);
+      assert.ok(result.alerts.some(alert=>alert.code==='night-sequence-pending'&&alert.actionable===false));
+      assert.ok(!result.alerts.some(alert=>/consecutivas.*revisar sequência/.test(alert.title)),'no three-night violation is proven');
+      const complete={...crm,dutyDebrief:'12:00',dutyDebriefSource:'published'};
+      const determined=engine.analyzeCompliance(roster([first,complete,...nights]));assert.equal(determined.metrics.maxConsecutiveNights,2);assert.equal(determined.metrics.maxConsecutiveNightsPending,false);
+      const events=canonical.buildCanonicalRosterEvents(roster([first,crm,...nights]));const event=events.find(item=>item.publishedDay.type==='CRM');assert.equal(measurement.measureCanonicalDuty(events,event.id).state,'incomplete');
+    }
     if (!selected || selected === 'journey') {
       const first = day('04/10/2032','22:10','01:05','22:50','00:35');
       const daytime = day('05/10/2032','06:05','14:25','06:45','13:55');
