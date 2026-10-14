@@ -1,3 +1,4 @@
+import { radarSourceEpoch } from '../../../shared/gate-query-day.mjs';
 import { rosterDisplayIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 
 /**
@@ -13,7 +14,6 @@ import { rosterDisplayIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayD
 
 export const NEXT_FLIGHT_DEPARTED_GRACE_MS = 20 * 60 * 1000;
 export const RADAR_GATE_STALE_MS = 30 * 60 * 1000;
-export const RADAR_OTHER_INSTANCE_MS = 12 * 60 * 60 * 1000;
 export const GATE_ALERT_WINDOW_BEFORE_MS = 8 * 60 * 60 * 1000;
 export const GATE_ALERT_WINDOW_AFTER_MS = 60 * 60 * 1000;
 const MANUAL_GATE_PREFIX = 'crewcheck:manual-gate:v1:';
@@ -45,6 +45,8 @@ export type RadarGateSnapshot = {
   terminal?: string;
   status?: string;
   departure?: string;
+  scheduledDepartureUtc?: string;
+  operationalDeparture?: string;
   updatedAt?: number;
   sourceOrigin?: string;
   sourceDestination?: string;
@@ -263,12 +265,6 @@ export function sourceInstantEpochMs(value: unknown): number {
  * (com fuso) comparado à partida da escala. Hora solta, data sem fuso, valor malformado
  * ou ausente não provam nada e falham fechado.
  */
-function radarOccurrence(value: unknown, departureEpochMs: number): 'match' | 'other' | 'unproven' {
-  const epoch = sourceInstantEpochMs(value);
-  if (!Number.isFinite(epoch) || !Number.isFinite(departureEpochMs)) return 'unproven';
-  return Math.abs(epoch - departureEpochMs) > RADAR_OTHER_INSTANCE_MS ? 'other' : 'match';
-}
-
 export function resolveNextFlightGate(input: {
   event: NextFlightLike;
   radar?: RadarGateSnapshot | null;
@@ -285,7 +281,9 @@ export function resolveNextFlightGate(input: {
   if (radar) {
     const sourceOrigin = upper(radar.sourceOrigin);
     const sourceDestination = upper(radar.sourceDestination);
-    const occurrence = radarOccurrence(radar.departure, departureEpochMs);
+    const plannedEpoch = radarSourceEpoch(radar.scheduledDepartureUtc);
+    const occurrence = !Number.isFinite(plannedEpoch) || !Number.isFinite(departureEpochMs)
+      ? 'unproven' : plannedEpoch === departureEpochMs ? 'match' : 'other';
     if (radar.ok !== true) radarRejected = 'not-ok';
     else if (upper(radar.flight) && canonicalFlightId(radar.flight) !== canonicalFlightId(event.flightNumber)) radarRejected = 'other-flight';
     else if ((sourceOrigin && sourceOrigin !== upper(event.origin)) || (sourceDestination && sourceDestination !== upper(event.destination))) radarRejected = 'other-segment';
@@ -388,6 +386,8 @@ export function readCachedRadarForFlight(storage: Pick<Storage, 'getItem'>, even
       || parsed.operationalDate !== flightOperationalDate(event)
       || upper(parsed.origin) !== upper(event.origin)
       || upper(parsed.destination) !== upper(event.destination)) return null;
+    const plannedEpoch = radarSourceEpoch(parsed.scheduledDepartureUtc);
+    if (!Number.isFinite(plannedEpoch) || plannedEpoch !== flightDepartureEpochMs(event)) return null;
     return parsed;
   } catch {
     return null;

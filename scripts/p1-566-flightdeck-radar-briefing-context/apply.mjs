@@ -90,8 +90,9 @@ update('client/src/pages/Home.tsx', (source) => {
   next = updateRegion(next, 'function RadarView(', '\ntype WeatherDisplayMode', (radarSource) => {
     let radar = radarSource;
     if (!radar.includes('function openWeatherFromRadar()')) {
-      const anchor = "  const latency = state?.latencyMs ? `${state.latencyMs} ms` : '—';";
-      if (!radar.includes(anchor)) throw new Error(`[${MARKER}] latência do Radar não localizada.`);
+      const anchors = ["  const latency = verified?.latencyMs ? `${verified.latencyMs} ms` : '—';", "  const latency = state?.latencyMs ? `${state.latencyMs} ms` : '—';"];
+      const anchor = anchors.find(value => radar.includes(value));
+      if (!anchor) throw new Error(`[${MARKER}] latência do Radar não localizada.`);
       radar = radar.replace(anchor, `${anchor}\n  function openWeatherFromRadar() {\n    const inheritedContext = peekPendingNavigationContext('radar');\n    if (['cockpit', 'home-roster'].includes(inheritedContext?.sourceView || '') && inheritedContext?.returnView === 'cockpit' && inheritedContext.programId) {\n      setPendingNavigationContext({ ...inheritedContext, targetView: 'weather' });\n    } else {\n      clearPendingNavigationContext();\n    }\n    window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }));\n  }`);
     }
     radar = required(
