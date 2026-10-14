@@ -1,3 +1,6 @@
+        private boolean sharedPdfOwnerActive(final String owner) {
+            return sharedPdfTrustedPage && owner != null && owner.equals(sharedPdfReceiptOwner);
+        }
         @JavascriptInterface
         public boolean reportSharedPdfSession(final String account) {
             if (!sharedPdfTrustedPage) return false;
@@ -15,7 +18,7 @@
         }
         @JavascriptInterface
         public boolean claimSharedPdf(final String id, final String owner) {
-            return sharedPdfTrustedPage && SharedPdfInbox.claim(MainActivity.this, id, owner);
+            return sharedPdfOwnerActive(owner) && SharedPdfInbox.claim(MainActivity.this, id, owner);
         }
         @JavascriptInterface
         public boolean blockSharedPdf(final String id) {
@@ -23,15 +26,15 @@
         }
         @JavascriptInterface
         public boolean beginSharedPdfCommit(final String id, final String owner) {
-            return sharedPdfTrustedPage && SharedPdfInbox.beginCommit(MainActivity.this, id, owner);
+            return sharedPdfOwnerActive(owner) && SharedPdfInbox.beginCommit(MainActivity.this, id, owner);
         }
         @JavascriptInterface
         public boolean confirmSharedPdfCommit(final String id, final String owner) {
-            return sharedPdfTrustedPage && SharedPdfInbox.confirmCommit(MainActivity.this, id, owner);
+            return sharedPdfOwnerActive(owner) && SharedPdfInbox.confirmCommit(MainActivity.this, id, owner);
         }
         @JavascriptInterface
         public String readClaimedSharedPdfChunk(final String id, final String owner, final String offset, final String length) {
-            if (!sharedPdfTrustedPage) return "";
+            if (!sharedPdfOwnerActive(owner)) return "";
             try {
                 return Base64.encodeToString(SharedPdfInbox.readClaimedChunk(MainActivity.this, id, owner,
                         Long.parseLong(offset), Integer.parseInt(length), MAX_PDF_BYTES), Base64.NO_WRAP);
@@ -39,7 +42,7 @@
         }
         @JavascriptInterface
         public boolean acknowledgeClaimedSharedPdf(final String id, final String owner) {
-            if (!sharedPdfTrustedPage) return false;
+            if (!sharedPdfOwnerActive(owner)) return false;
             boolean saved = SharedPdfInbox.acknowledge(MainActivity.this, id, owner);
             if (saved) { pendingSharedPdfId = null; pendingSharedPdfName = null; pendingSharedPdfBase64 = null; }
             return saved;
