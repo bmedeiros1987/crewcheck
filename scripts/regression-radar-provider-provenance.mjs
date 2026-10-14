@@ -38,6 +38,15 @@ if(!selected||selected==='cache'){
  const client=vm.createContext({...policy,...m.exports,Date:class extends Date{static now(){return now;}},storage:{get:k=>store.get(k)||'null',set:(k,v)=>store.set(k,v)},localStorage:{},window:{dispatchEvent:()=>{}},CustomEvent:class {},getStoredUser:()=>({}),readManualGate:()=>null,manualGateAccountKey:()=> 'fixture-account',publishCrewCheckNotice:()=>{},RADAR_CARD_CACHE_TTL_MS:6*3600000});
  vm.runInContext(functions('client/src/pages/Home.tsx',['radarSnapshotKey','radarEventOperationalDate','radarSnapshotMatchesEvent','validatedRadarForEvent','readRadarSnapshot','saveRadarSnapshot'],true),client);
  const saved=client.saveRadarSnapshot(event,snapshot);const projected=m.exports.resolveNextFlightGate({event,radar:m.exports.readCachedRadarForFlight(storage,event,now),now});assert.equal(projected.gate,'99');assert.equal(saved.departure,snapshot.scheduledDepartureUtc);assert.equal(saved.operationalDeparture,snapshot.departure,'estimate/actual display value preserved separately');assert.equal(saved.scheduledDepartureUtc,snapshot.scheduledDepartureUtc);
+ const midnight={...event,canonical:{date:'2032-10-14',startDateTime:'2032-10-14T03:30:00Z'},date:new Date('2032-10-14T03:30:00Z')};
+ const legacy={...snapshot,departure:'2032-10-14T02:30:00Z',updatedAt:now-60000};delete legacy.scheduledDepartureUtc;
+ const estimateOnly={...snapshot,departure:snapshot.scheduledDepartureUtc};delete estimateOnly.scheduledDepartureUtc;
+ console.log(JSON.stringify({case:'legacy-upgrade',nextFlight:m.exports.resolveNextFlightGate({event:midnight,radar:legacy,now}),radarEstimateAccepted:!!client.validatedRadarForEvent(event,estimateOnly)}));
+ assert.equal(m.exports.resolveNextFlightGate({event:midnight,radar:legacy,now}).radarRejected,'unproven-day','legacy neighboring civil day cannot prove planned occurrence');
+ store.set(m.exports.radarSnapshotStorageKey(midnight),JSON.stringify(legacy));assert.equal(m.exports.readCachedRadarForFlight(storage,midnight,now),null,'legacy automatic cache is not consumed');
+ assert.equal(client.validatedRadarForEvent(event,estimateOnly),null,'legacy AirLabs estimate coinciding with plan is not scheduled proof');
+ assert.equal(m.exports.resolveNextFlightGate({event:{...midnight,gate:'24'},radar:legacy,now}).gate,'24','published gate preserved');
+ assert.equal(m.exports.resolveNextFlightGate({event:midnight,radar:legacy,manual:{gate:'25',flight:'LA100',date:m.exports.flightOperationalDate(midnight),setAtEpochMs:now-60000},now}).gate,'25','manual preserved');
  const wrong={...saved,scheduledDepartureUtc:'2032-10-15T12:00:00Z'};assert.notEqual(m.exports.resolveNextFlightGate({event,radar:wrong,now}).gate,'99');
  const shifted={...saved,scheduledDepartureUtc:'2032-10-14T12:05:00Z'};assert.notEqual(m.exports.resolveNextFlightGate({event,radar:shifted,now}).gate,'99','different planned instant on same day is rejected');
  const invalid={...saved,scheduledDepartureUtc:''};assert.notEqual(m.exports.resolveNextFlightGate({event,radar:invalid,now}).gate,'99','explicit invalid schedule cannot fall back to estimate');

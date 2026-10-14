@@ -100,7 +100,7 @@ export function radarResultDecision(payload, identity, now=Date.now(), maxAge=30
   const destination=String(payload.sourceDestination ?? payload.destination ?? '').trim().toUpperCase();
   if (!baseTimeZone(origin) || !publishedGateDate(identity.departureDate)) return deny('source-origin-date-unverified');
   if (!/^[A-Z0-9]{2,3}\d{1,5}[A-Z]?$/.test(flight) || flight!==wanted || origin!==identity.origin || destination!==identity.destination) return deny('source-other-flight-or-route');
-  const stamp = payload.scheduledDepartureUtc !== undefined ? payload.scheduledDepartureUtc : payload.departure;
+  const stamp = payload.scheduledDepartureUtc;
   const source=radarSourceEpoch(stamp), expected=radarSourceEpoch(identity.scheduledDepartureUtc);
   if (!Number.isFinite(source) || !Number.isFinite(expected)) return deny('source-instant-unverified');
   if (originFlightDate(source,origin)!==identity.departureDate) return deny('source-other-day');
