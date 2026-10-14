@@ -96,6 +96,10 @@ async function conciergePremiumScheduleReply(snapshot, mode = 'next', profile = 
     : `${premiumGreeting(profile, snapshot)} Não encontrei uma programação futura confirmada na escala ativa.`;
 }
 async function conciergePremiumDepartureReply(snapshot, profile = {}) {
+  const owner = conciergeSafeKey(profile.email || '');
+  const owns = candidate => Boolean(owner && conciergeSafeKey(profile.email || '') === owner && candidate?.roster
+    && conciergeSafeKey(candidate.email || candidate.key || '') === owner && (!candidate.key || conciergeSafeKey(candidate.key) === owner) && conciergeAccessMatches(profile, candidate));
+  if (!owns(snapshot)) return gateQuerySuppressed({reason:'account-unverified'}).message;
   const roster = snapshot?.roster;
   const record = conciergeProgramRecords(roster).find((item) => {
     if (item.end < new Date()) return false;
@@ -110,6 +114,7 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
   const location = snapshot?.preferences?.location;
   if (!location) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation });
   const route = await conciergeTravelEstimate(location, origin);
+  if (!owns(snapshot)) return gateQuerySuppressed({reason:'response-context-expired'}).message;
   if (!route) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation });
   if (route.distanceKm > 250) return `${premiumGreeting(profile, snapshot)} Você está longe de ${airportName(origin)}. Revise a rota completa no app antes de considerar o horário da apresentação, que é às ${spokenTime(presentation)}.`;
   const departureWindow = calculateDepartureWindow(presentationDate, route);
@@ -117,11 +122,31 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
   const safeRoute = { ...route, minutes: departureWindow.routeMinutes, leadMinutes: departureWindow.leadMinutes };
   let radar = null;
   const firstLeg = record.legs?.[0];
-  if (firstLeg && conciergeRecordDateKey(record) === conciergeDateKey(new Date())) {
-    radar = await runRadarRace(buildFlightContext(firstLeg.flightNumber), firstLeg.origin || '', firstLeg.destination || '');
-    if (snapshot && radar?.ok) {
-      conciergeApplyRadar(snapshot, { record, leg: firstLeg }, radar);
-      await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source: snapshot.source || 'departure-radar', lastRadar: { ...radar, updatedAt: new Date().toISOString() } });
+  if (firstLeg) {
+    const queryContext = buildFlightContext(firstLeg.flightNumber);
+    const canonical = buildCanonicalRosterEvents(roster);
+    const bindings = [];
+    if (owns(snapshot)) for (const event of canonical) {
+      if (event.kind !== 'flight' || event.flightNumber !== queryContext.raw) continue;
+      const binding = findPublishedGateLeg(roster, {flight:queryContext.raw,origin:event.origin,destination:event.destination,
+        departureDate:originFlightDate(event.startDateTime,event.origin),scheduledDepartureUtc:event.startDateTime}, canonical);
+      if (binding?.leg === firstLeg && binding.day === record.day && gateQueryDay(binding.identity).allowed) bindings.push(binding);
+    }
+    if (bindings.length !== 1) radar = gateQuerySuppressed({reason:owns(snapshot) ? 'occurrence-unverified' : 'account-unverified'});
+    else {
+      queryContext.gateQueryEvidence = bindings[0].identity;
+      radar = await runRadarRace(queryContext, firstLeg.origin || '', firstLeg.destination || '');
+      const currentSnapshot = await conciergeLoadSnapshot(profile);
+      if (!owns(currentSnapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed)
+        return gateQuerySuppressed({reason:'response-context-expired'}).message;
+      const currentBinding = findPublishedGateLeg(currentSnapshot.roster, queryContext.gateQueryEvidence, buildCanonicalRosterEvents(currentSnapshot.roster));
+      if (!currentBinding) return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;
+      if (radar?.ok && !radar.querySuppressed) {
+        conciergeApplyRadar(currentSnapshot, currentBinding, radar);
+        await conciergeSaveSnapshotAsync(profile, currentSnapshot.roster, {source:currentSnapshot.source || 'departure-radar',lastRadar:{...radar,updatedAt:new Date().toISOString()}});
+        if (!owns(currentSnapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed)
+          return gateQuerySuppressed({reason:'response-context-expired'}).message;
+      }
     }
   }
   return buildDepartureSummary({ profile, snapshot, record, route: safeRoute, leaveTime, origin, radar, presentationTime: presentation });

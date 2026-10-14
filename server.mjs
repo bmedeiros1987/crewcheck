@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { evaluateCriticalWeatherDelivery } from './server/weather/critical-observation.mjs';
 import './server/telegram-fast-ack.mjs';
 import { parsePdfOnServer } from './server/rosterParser.mjs';
-import { handlePlatformRoute, consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';
+import { handlePlatformRoute, consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram, loadOwnedPlatformRoster } from './server/platform.mjs';
 import { handleV139Route, handleV139Telegram } from './server/v139/index.mjs';
 import { buildInfobipTtsRequest, infobipConfiguration, infobipPublicStatus } from './server/v1396/infobip.mjs';
 
@@ -377,9 +377,22 @@ async function handleRadar(req, res, url, radarOptions = {}) {
   const email = telegramAppRequestAllowed(radarUser) ? conciergeSafeKey(radarUser.email) : '';
   const authorityCurrent = () => { const user=telegramRequestUser(req,{email:url.searchParams.get('email') || '',name:url.searchParams.get('name') || '',conciergeKey:url.searchParams.get('conciergeKey') || ''}); return telegramAppRequestAllowed(user) && conciergeSafeKey(user.email) === email && user.authenticated === radarUser.authenticated && user.accessKeyHash === radarUser.accessKeyHash; };
   const profile = { email, name: radarUser.name || '', authenticated: radarUser.authenticated, accessKeyHash: radarUser.accessKeyHash };
-  const approvedSnapshot = email ? await conciergeLoadSnapshot(profile) : null;
-  ctx.gateQueryEvidence = approvedSnapshot && conciergeAccessMatches(profile, approvedSnapshot)
-    ? findPublishedGateOccurrence(approvedSnapshot.roster, { flight: ctx.raw, origin, destination, departureDate: url.searchParams.get('departureDate') || '', scheduledDepartureUtc: url.searchParams.get('scheduledDepartureUtc') || '' }, buildCanonicalRosterEvents(approvedSnapshot.roster)) : null;
+  const loadAuthority = async () => {
+    if (!email) return null;
+    const snapshot = await conciergeLoadSnapshot(profile);
+    if (snapshot?.roster) {
+      if (!conciergeAccessMatches(profile, snapshot) || conciergeSafeKey(snapshot.email || snapshot.key || '') !== email || (snapshot.key && conciergeSafeKey(snapshot.key) !== email)) return null;
+      return { kind:'concierge', snapshot, roster:snapshot.roster, id:'', revision:'' };
+    }
+    if (!profile.authenticated) return null;
+    const active = await loadOwnedPlatformRoster(req, email);
+    return active ? { ...active, kind:'platform', snapshot:null } : null;
+  };
+  let authority;
+  try { authority = await loadAuthority(); }
+  catch (error) { return sendJson(res, error?.status === 401 ? 401 : error?.status === 403 ? 403 : 503, { ...gateQuerySuppressed({reason:'source-unavailable'}), exportedToConcierge:false }); }
+  ctx.gateQueryEvidence = authority
+    ? findPublishedGateOccurrence(authority.roster, { flight: ctx.raw, origin, destination, departureDate: url.searchParams.get('departureDate') || '', scheduledDepartureUtc: url.searchParams.get('scheduledDepartureUtc') || '' }, buildCanonicalRosterEvents(authority.roster)) : null;
   if (!authorityCurrent()) return sendJson(res,200,{...gateQuerySuppressed({reason:'account-unverified'}),exportedToConcierge:false});
   const queryDecision = gateQueryDay(ctx.gateQueryEvidence);
   if (!queryDecision.allowed) return sendJson(res, 200, { ...gateQuerySuppressed(queryDecision), exportedToConcierge: false });
@@ -392,19 +405,21 @@ async function handleRadar(req, res, url, radarOptions = {}) {
   if (!gateQueryDay(ctx.gateQueryEvidence).allowed) return sendJson(res, 200, { ...gateQuerySuppressed({ reason: 'response-context-expired' }), exportedToConcierge: false });
   if (payload.querySuppressed || payload.provider === 'cirium-sky') return sendJson(res, 200, { ...payload, exportedToConcierge: false });
   let exportedToConcierge = false;
-  if (email) {
-    const profile = { email, name: radarUser.name || String(url.searchParams.get('name') || ''), authenticated: radarUser.authenticated, accessKeyHash: radarUser.accessKeyHash };
-    const snapshot = await conciergeLoadSnapshot(profile);
-    if (!authorityCurrent() || !gateQueryDay(ctx.gateQueryEvidence).allowed || !snapshot || !conciergeAccessMatches(profile,snapshot))
-      return sendJson(res, 200, {...gateQuerySuppressed({reason:'response-context-expired'}),exportedToConcierge:false});
-
-    const info = snapshot?.roster && conciergeAccessMatches(profile, snapshot) ? findPublishedGateLeg(snapshot.roster, ctx.gateQueryEvidence, buildCanonicalRosterEvents(snapshot.roster)) : null;
-    if (!info) return sendJson(res,200,{...gateQuerySuppressed({reason:'response-occurrence-changed'}),exportedToConcierge:false});
-    if (info) {
-      conciergeApplyRadar(snapshot, info, payload);
-      await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source: snapshot.source || 'app-radar', lastRadar: { ...payload, updatedAt: new Date().toISOString() } });
-      exportedToConcierge = true;
-    }
+  let currentAuthority;
+  try { currentAuthority = await loadAuthority(); }
+  catch (error) { return sendJson(res, error?.status === 401 ? 401 : error?.status === 403 ? 403 : 503, { ...gateQuerySuppressed({reason:'source-unavailable'}), exportedToConcierge:false }); }
+  if (!authorityCurrent() || !gateQueryDay(ctx.gateQueryEvidence).allowed || !currentAuthority)
+    return sendJson(res, 200, {...gateQuerySuppressed({reason:'response-context-expired'}),exportedToConcierge:false});
+  if (currentAuthority.kind !== authority.kind || currentAuthority.id !== authority.id || currentAuthority.revision !== authority.revision)
+    return sendJson(res,200,{...gateQuerySuppressed({reason:'response-occurrence-changed'}),exportedToConcierge:false});
+  const info = findPublishedGateLeg(currentAuthority.roster, ctx.gateQueryEvidence, buildCanonicalRosterEvents(currentAuthority.roster));
+  if (!info) return sendJson(res,200,{...gateQuerySuppressed({reason:'response-occurrence-changed'}),exportedToConcierge:false});
+  if (!payload.ok) return sendJson(res,200,{...payload,exportedToConcierge:false});
+  if (currentAuthority.snapshot) {
+    const snapshot = currentAuthority.snapshot;
+    conciergeApplyRadar(snapshot, info, payload);
+    await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source:snapshot.source || 'app-radar', lastRadar:{...payload,updatedAt:new Date().toISOString()} });
+    exportedToConcierge = true;
   }
   if (!authorityCurrent() || !gateQueryDay(ctx.gateQueryEvidence).allowed) return sendJson(res, 200, {...gateQuerySuppressed({reason:'response-context-expired'}),exportedToConcierge:false});
   return sendJson(res, 200, { ...payload, exportedToConcierge });
