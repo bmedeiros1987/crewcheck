@@ -48,6 +48,24 @@ export function getStoredUser(): AuthUser | null {
 
 export function isAuthenticated(): boolean { return Boolean(getToken()); }
 
+let authGeneration = 0;
+if (typeof window !== 'undefined') {
+  for (const name of ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired'])
+    window.addEventListener(name, () => { authGeneration += 1; });
+  window.addEventListener('storage', (event) => {
+    if (event.key === null || event.key === TOKEN_KEY || event.key === USER_KEY) authGeneration += 1;
+  });
+}
+
+/** Read fence only: never establishes or changes an account. */
+export function captureAuthSession() {
+  const token = getToken(), generation = authGeneration;
+  const owner = String(getStoredUser()?.id || getStoredUser()?.email || '').trim().toLowerCase();
+  return { token, owner, isCurrent: () => generation === authGeneration && token === getToken()
+    && owner === String(getStoredUser()?.id || getStoredUser()?.email || '').trim().toLowerCase() };
+}
+
+
 export function crewcheckAuthHeader(extra: Record<string, string> = {}): Record<string, string> {
   const token = getToken();
   return { ...extra, ...(token ? { authorization: `Bearer ${token}` } : {}) };
@@ -168,7 +186,7 @@ function publicApiErrorMessage(payload: any, status: number, reason: AuthErrorRe
   return String(payload?.message || (`Erro HTTP ${status}`));
 }
 
-async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
+async function jsonFetch<T>(url: string, init?: RequestInit, session?: { isCurrent(): boolean; isSameSession(): boolean; onExpired?(): void }): Promise<T> {
   const protectedRequest = !isPublicAuthRequest(url);
   const token = protectedRequest ? getToken() : null;
   let response: Response;
@@ -191,7 +209,10 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.ok === false) {
     const reason = classifyAuthErrorReason(response.status, String(payload?.code || '').toUpperCase(), protectedRequest);
-    if (reason === 'session_expired' && token === getToken()) expireSession();
+    if (reason === 'session_expired' && token === getToken() && (!session || session.isCurrent())) {
+      session?.onExpired?.();
+      if (token === getToken() && (!session || session.isSameSession())) expireSession();
+    }
     throw new AuthClientError(publicApiErrorMessage(payload, response.status, reason), response.status, payload?.code, payload, reason);
   }
   return payload as T;
@@ -270,15 +291,24 @@ export async function confirmPasswordReset(payload: { email: string; code: strin
 
 const GET_ME_TIMEOUT_MS = 10_000;
 
-export async function getMe(): Promise<AuthUser> {
+export async function getMe(options: { isCurrent?(): boolean; onSessionExpired?(): void } = {}): Promise<AuthUser> {
+  const session = captureAuthSession();
+  const isCurrent = () => Boolean(session.token) && session.isCurrent() && (options.isCurrent?.() ?? true);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GET_ME_TIMEOUT_MS);
   try {
     // An aborted fetch rejects inside jsonFetch's own try/catch and is classified as
     // backend_unavailable there, the same as any other network failure - a slow backend
     // must fail fast into "try again", not hang the app shell indefinitely.
-    const payload = await jsonFetch<{ ok: boolean; user: AuthUser }>('/api/auth/me', { signal: controller.signal });
+    const payload = await jsonFetch<{ ok: boolean; user: AuthUser }>('/api/auth/me', { signal: controller.signal }, { isCurrent, isSameSession: session.isCurrent, onExpired: options.onSessionExpired });
+    if (!isCurrent()) throw new AuthClientError('Session changed.', 0, 'STALE_SESSION', null, 'other');
     localStorage.setItem(USER_KEY, JSON.stringify(payload.user));
+    const verifiedOwner = String(payload.user?.id || payload.user?.email || '').trim().toLowerCase();
+    if (verifiedOwner !== session.owner) {
+      // An authoritative identity upgrade (for example email -> stable ID)
+      // starts a fresh consumer generation instead of releasing the old one.
+      window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));
+    }
     return payload.user;
   } finally {
     clearTimeout(timer);
