@@ -1,3 +1,4 @@
+import { sendChatOperation } from './chatSend';
 import { authFetch, getStoredUser } from './authClient';
 
 export type CrewCheckLocale = 'pt-BR' | 'en-US' | 'es-ES';
@@ -298,9 +299,13 @@ export async function listConnections() {
   return authFetch<any>('/api/platform/connections');
 }
 
-export async function requestConnection(identifier: string) {
+export async function requestConnection(identifier: string, reinvite = false) {
   const value = String(identifier || '').trim();
-  return authFetch<any>('/api/platform/connections', { method: 'POST', body: JSON.stringify(value.includes('@') ? { email: value, chat: true } : { publicId: value, chat: true }) });
+  return authFetch<any>('/api/platform/connections', { method: 'POST', body: JSON.stringify(value.includes('@') ? { email: value, chat: true, ...(reinvite ? { reinvite: true } : {}) } : { publicId: value, chat: true, ...(reinvite ? { reinvite: true } : {}) }) });
+}
+
+export async function revokeConnection(id: string) {
+  return authFetch<any>('/api/platform/connections', { method: 'PATCH', body: JSON.stringify({ id, status: 'revoked' }) });
 }
 
 export async function answerConnection(id: string, accepted: boolean) {
@@ -311,20 +316,20 @@ export async function compareRoster(publicId: string) {
   return authFetch<any>(`/api/platform/compare?publicId=${encodeURIComponent(publicId)}`);
 }
 
-export async function loadChat(publicId: string) {
-  return authFetch<any>(`/api/platform/chat?publicId=${encodeURIComponent(publicId)}`);
+export async function loadChat(publicId: string, signal?: AbortSignal) {
+  return authFetch<any>(`/api/platform/chat?publicId=${encodeURIComponent(publicId)}`, { signal, cache: 'no-store' });
 }
 
 export async function sendChat(publicId: string, message: string) {
-  return authFetch<any>('/api/platform/chat', { method: 'POST', body: JSON.stringify({ publicId, message }) });
+  return sendChatOperation('main', `peer:${publicId}`, message, (requestId) => authFetch<any>('/api/platform/chat', { method: 'POST', body: JSON.stringify({ publicId, message, requestId }) }));
 }
 
-export async function loadVisitorChat(visitorId: string) {
-  return authFetch<any>(`/api/platform/visitors/${encodeURIComponent(visitorId)}/chat`);
+export async function loadVisitorChat(visitorId: string, signal?: AbortSignal) {
+  return authFetch<any>(`/api/platform/visitors/${encodeURIComponent(visitorId)}/chat`, { signal, cache: 'no-store' });
 }
 
 export async function sendVisitorChat(visitorId: string, message: string) {
-  return authFetch<any>(`/api/platform/visitors/${encodeURIComponent(visitorId)}/chat`, { method: 'POST', body: JSON.stringify({ message }) });
+  return sendChatOperation('main', `visitor:${visitorId}`, message, (requestId) => authFetch<any>(`/api/platform/visitors/${encodeURIComponent(visitorId)}/chat`, { method: 'POST', body: JSON.stringify({ message, requestId }) }));
 }
 
 export async function gymCheckIn(payload: { gymName: string; chainName?: string; location?: string; sharePresence: boolean; durationMinutes?: number }) {

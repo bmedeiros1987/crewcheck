@@ -17,6 +17,7 @@ import MoneyText from '@/components/MoneyText';
 import { initializeCrewTextSize } from '@/lib/textSizePreference';
 import { acquireOverlayLifecycle } from '@/lib/overlayLifecycle';
 import NotificationSoundSetting from '@/components/pulse/NotificationSoundSetting';
+import ChatInbox from '@/components/platform/ChatInbox';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useLocation } from 'wouter';
 import JSZip from 'jszip';
@@ -5175,6 +5176,7 @@ export default function Home() {
   };
 
   return <main className="cz-app" data-version={DEFAULT_VERSION} data-view={view}>
+    <ChatInbox />
     <div className="cz-wallpaper"/>
     <input ref={fileRef} type="file" accept="application/pdf,.pdf" hidden onChange={handleFile}/>
     <div className="cz-global-header" data-global-internal-header="true">
