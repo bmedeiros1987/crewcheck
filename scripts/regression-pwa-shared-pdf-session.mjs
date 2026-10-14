@@ -12,7 +12,7 @@ async function fixture(native=false){
  function load(file,tail=''){const source=fs.readFileSync(root+'/'+file,'utf8').replace(/^import .*;\n/gm,'');return vm.runInContext('(function(){const module={exports:{}};'+transformSync(source+tail,{loader:'ts',format:'cjs'}).code+';return module.exports;})()',context);}
  const channel=load('client/src/lib/sharedPdfChannel.ts');Object.assign(context,channel);const binding=load('client/src/lib/sharedPdfAccountBinding.ts');Object.assign(context,binding);
  // Run the real consumer explicitly, without its automatic startup timer.
- let runtime=fs.readFileSync(root+'/client/src/lib/pwaSharedPdfRuntime.ts','utf8').replace(/^import .*;\n/gm,'');runtime=runtime.slice(0,runtime.lastIndexOf("if (typeof window"));
+ let runtime=fs.readFileSync(root+'/client/src/lib/pwaSharedPdfRuntime.ts','utf8').replace(/^import .*;\n/gm,'');if(!runtime.includes('registerPwaSharedPdfReceipt'))throw Error('Prepare canonical source before PWA session regression');runtime=runtime.slice(0,runtime.lastIndexOf("if (typeof window"));
  const consumer=vm.runInContext('(function(){'+transformSync(runtime+'\nglobalThis.consumePwa=consumePwaSharedPdf;',{loader:'ts'}).code+'})()',context);
  window.addEventListener('crewcheck:native-pdf',()=>state.emitted++);await settle();await context.consumePwa();await settle();
  return{state,window,binding,values,event:(type,key)=>window.dispatchEvent({type,key}),payload:window.__crewcheckPendingNativePdf};

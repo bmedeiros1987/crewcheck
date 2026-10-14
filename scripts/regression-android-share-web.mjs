@@ -182,6 +182,15 @@ r=await scenario('initial duplicate delivery during async status',durable,{initi
 check(r.state.parse===1&&r.state.save===1&&r.state.acks.length===1,'initial async duplicates share one import/ACK');
 r=await scenario('manual picker remains available',legacy,{manual:true});
 check(r.state.result===true&&r.state.save===1&&r.state.acks.length===0,'manual picker imports through current guarded canonical handler');
+for(const failure of ['cancel','parserFailure']){
+ const first=await scenario('PWA retains '+failure,pwa,{pwaRuntime:true,noBridge:true,[failure]:true});
+ const retained=first.window.__crewcheckPendingNativePdf;
+ check(Boolean(retained)&&first.state.pwaFetches===1&&first.state.save===0,'single-use PWA keeps bytes after '+failure);
+ const other=await scenario('B cannot retry A PWA '+failure,retained,{noBridge:true,owner:'owner-B',token:'token-B',persistedValues:first.values});
+ check(other.state.parse===0&&(other.state.decodes||0)===0&&other.state.save===0,'PWA retry cannot be reassigned A to B '+failure);
+ const same=await scenario('A retries retained PWA '+failure,retained,{noBridge:true,token:'rotated-A',persistedValues:first.values});
+ check(same.state.parse===1&&same.state.save===1&&!same.window.__crewcheckPendingNativePdf&&(same.state.pwaFetches||0)===0,'A retries original PWA bytes without fetching consumed SW '+failure);
+}
 r=await scenario('PWA real bootstrap',pwa,{pwaRuntime:true,noBridge:true,retry:true,replayLifecycle:true});
 check(r.state.parse===1&&r.state.save===1&&r.state.pwaFetches===1&&!r.window.__crewcheckPendingNativePdf,'PWA completion remains single-use without native ACK');
 r=await scenario('PWA owner changes while fetching source',pwa,{pwaRuntime:true,noBridge:true,onPwaFetch:s=>{s.owner='owner-B';s.token='token-B';}});
