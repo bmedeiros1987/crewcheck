@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const compile = source => ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+const compile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 const app = fs.readFileSync('client/src/App.tsx', 'utf8');
 const ast = ts.createSourceFile('App.tsx', app, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const functions = ast.statements.filter(n => ts.isFunctionDeclaration(n) && ['Protected', 'enablePartnerDemoRoster'].includes(n.name?.text)).map(n => n.getText(ast)).join('\n');
