@@ -12,8 +12,8 @@
  * Duas métricas, tratadas como regras independentes (exigido explicitamente):
  *   - countNightOpsInRolling168h: conta OCORRÊNCIAS (cada jornada
  *     qualificável conta 1, mesmo que duas caiam no mesmo dia civil);
- *   - countMaxConsecutiveMadrugadas: conta NOITES CIVIS distintas em
- *     sequência (duas jornadas na mesma noite não inflam o streak).
+ *   - maxConsecutiveNights: conta jornadas noturnas publicadas em sequência;
+ *     jornada diurna interrompe, e a mesma jornada/continuação conta uma vez.
  */
 
 import { loadClientModules, TYPE_ONLY_PDF_PARSER_STUB, createChecker } from './lib/ts-module-harness.mjs';
@@ -138,14 +138,26 @@ const dayC = {
 };
 const sameNightTwice = analyzeCompliance(makeRoster([dayC, journeyA, journeyB, journeyBCarryOver]));
 console.log(`[3 jornadas, 19/08 com 2] maxConsecutiveNights=${sameNightTwice.metrics.maxConsecutiveNights}`);
-// 17/08 (dayC) não é adjacente a 19/08 (journeyA) - 18/08 fica sem madrugada
-// entre elas, quebrando o streak. Mas 19/08 (journeyA) e 20/08 (journeyB,
-// que só toca a janela do dia seguinte) SÃO adjacentes => streak de 2, não 1.
-check(
-  'streak não emenda 17/08 (isolado) com 19/08+20/08 (adjacentes entre si) => maior sequência é 2',
-  sameNightTwice.metrics.maxConsecutiveNights === 2,
-  `maxConsecutiveNights=${sameNightTwice.metrics.maxConsecutiveNights}`,
-);
+// These original fixture fields have no published endpoint provenance. The
+// arrival-to-next-departure span can exceed48h, so3 is possible, not proven.
+check('sem origem dos endpoints:2 comprovadas,3 possíveis; sequência pendente',
+  sameNightTwice.metrics.maxConsecutiveNights === 2 && sameNightTwice.metrics.maxConsecutiveNightsPossible === 3 && sameNightTwice.metrics.maxConsecutiveNightsPending === true,
+  `metrics=${JSON.stringify(sameNightTwice.metrics)}`);
+// Positive control: explicitly published endpoints prove the45h30 gap, so the
+// same3 journeys remain a determined sequence. No default/estimated cut is used.
+const publishedEndpoints = item => ({ ...item, dutyReportSource: 'published', dutyDebriefSource: 'published' });
+const verifiedSameNightTwice = analyzeCompliance(makeRoster([dayC,journeyA,journeyB,journeyBCarryOver].map(publishedEndpoints)));
+check('origem publicada dos endpoints preserva a sequência comprovada3',
+  verifiedSameNightTwice.metrics.maxConsecutiveNights === 3 && verifiedSameNightTwice.metrics.maxConsecutiveNightsPending === false,
+  `metrics=${JSON.stringify(verifiedSameNightTwice.metrics)}`);
+const interveningDaytime = {
+  ...dayC, date: '18/08/2026', dayNumber: 18, dutyReport: '08:00', dutyDebrief: '12:00',
+  legs: [leg('LA9002','CGH','BPS','08:40','11:30')],
+};
+const daytimeBreak = analyzeCompliance(makeRoster([dayC,interveningDaytime,journeyA,journeyB,journeyBCarryOver]));
+check('jornada diurna publicada em18/08 interrompe a sequência:19+20 =>2',
+  daytimeBreak.metrics.maxConsecutiveNights === 2,
+  `maxConsecutiveNights=${daytimeBreak.metrics.maxConsecutiveNights}`);
 
 // ===========================================================================
 // Terceira jornada realmente distinta e consecutiva: o alerta de streak
