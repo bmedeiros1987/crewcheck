@@ -5,6 +5,7 @@ import { alertText } from '../../lib/alertExperienceText';
 import { consumePendingNavigationContext, clearPendingNavigationContext } from '../../lib/navigationContext';
 import type { CrewRoster } from '../../lib/pdfParser';
 import './alert-center.css';
+import { alertRosterOwned } from '../../lib/alertRosterOwnership';
 
 export function AlertCenter({ alerts, roster, onImport, onChoose }: { alerts: any[]; roster: CrewRoster; onImport(): void; onChoose(): void }) {
   const [revision, setRevision] = useState(0);
@@ -12,7 +13,8 @@ export function AlertCenter({ alerts, roster, onImport, onChoose }: { alerts: an
   const [target, setTarget] = useState(() => consumePendingNavigationContext('alerts'));
   const targetRef = useRef<HTMLElement>(null);
   const copy = alertText(), owner = alertAccount(), originalLanguage = getSavedLanguage() === 'pt';
-  const items = alerts.map(alert => ({ alert, identity: complianceAlertIdentity(alert, roster) }));
+  const ready = alertRosterOwned(roster);
+  const items = (ready ? alerts : []).map(alert => ({ alert, identity: complianceAlertIdentity(alert, roster) }));
   const history = readAlertReviews();
   const currentTarget = target?.alertOccurrence ? items.find(item => item.identity.occurrence === target.alertOccurrence && item.identity.version === target.alertVersion) : null;
   useEffect(() => {
@@ -29,7 +31,8 @@ export function AlertCenter({ alerts, roster, onImport, onChoose }: { alerts: an
     <div className="cz-panel-head"><h1>{copy.alerts}</h1><p>{copy.saved}</p></div>
     {target?.alertOccurrence && !currentTarget && <p role="status">{copy.missing}</p>}
     {!roster.days?.length && <article className="cc-alert-card"><h2>{copy.noRoster}</h2><div className="cc-alert-actions"><button type="button" onClick={onImport}>{copy.import}</button><button type="button" onClick={onChoose}>{copy.choose}</button></div></article>}
-    {roster.days?.length > 0 && !items.length && <p>{copy.noAlerts}</p>}
+    {roster.days?.length > 0 && !ready && <p role="status">{copy.pending}</p>}
+    {roster.days?.length > 0 && ready && !items.length && <p>{copy.noAlerts}</p>}
     {items.map(item => { const { alert, identity } = item; const disposition = history.find(row => row.occurrence === identity.occurrence && row.version === identity.version); const reviewed = disposition?.state === 'reviewed'; const selected = currentTarget?.identity.occurrence === identity.occurrence;
       return <article className="cc-alert-card" key={identity.occurrence + identity.version} tabIndex={-1} ref={selected ? targetRef : undefined} data-alert-occurrence={identity.occurrence} data-alert-version={identity.version} data-alert-selected={selected}>
         <header><h2>{originalLanguage ? alert.title : copy.analysis}</h2><span>{disposition?.state === 'dismissed' ? copy.dismissed : reviewed ? copy.reviewed : copy.review}</span></header>

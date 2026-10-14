@@ -79,8 +79,9 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
       const target = queued > 0 ? detailsRef.current : compactRef.current.closest('.cz-app')?.querySelector<HTMLButtonElement>('.cz-global-header .cz-brand-row button');
       target?.focus({ preventScroll: true });
     }
-    setExpanded(false);
-    setSaveFailed(!dismissCrewCheckPulse());
+    const saved = dismissCrewCheckPulse();
+    setExpanded(!saved);
+    setSaveFailed(!saved);
   }, [compact, queued]);
 
   if (!message) return compact ? <>{fallback}</> : null;
