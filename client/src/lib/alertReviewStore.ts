@@ -42,7 +42,8 @@ export function saveAlertReview(record: Omit<AlertReviewRecord, 'at'>, expectedO
 export function complianceAlertIdentity(alert: any, roster: { year?: number; month?: number; days?: any[] }): AlertIdentity {
   const occurrence = alertDigest(['compliance', roster.year, roster.month, alert.code || alert.title,
     alert.date || '', alert.journeyId || '', alert.programId || '', alert.legalReference || '']);
-  const dates = new Set([alert.date, ...String([alert.details || '', alert.evidence || ''].join(' ')).matchAll(/\b\d{2}\/\d{2}\/\d{4}\b/g)].map(value => typeof value === 'string' ? value : value[0]));
+  const dates = new Set([alert.date, ...String([alert.details || '', alert.evidence || ''].join(' ')).matchAll(/\b\d{2}\/\d{2}\/\d{4}\b/g)]
+    .flatMap(value => typeof value === 'string' ? [value] : Array.isArray(value) ? [value[0]] : []));
   const relevant = (roster.days || []).filter(day => dates.has(day.date)).map(day => [day.date, day.type, day.dutyReport, day.dutyDebrief, day.dutyReportSource, day.dutyDebriefSource,
     (day.legs || []).map((leg: any) => [leg.flightNumber, leg.origin, leg.destination, leg.departureTime, leg.arrivalTime, leg.presentationTime, leg.workType])]);
   const version = alertDigest([alert.severity, alert.classification, alert.description, alert.details, alert.evidence, alert.coverage, relevant]);
