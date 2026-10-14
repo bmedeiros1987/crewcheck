@@ -34,7 +34,7 @@ if (!source.includes('private void installPdfChannel()')) {
   dispatch=dispatch.replace('if (pending == null) return;', 'if (pending == null || !java.util.Objects.equals(SharedPdfInbox.owner(this), pdfChannelPolicy.owner(pdfChannelPolicy.epoch(), android.os.SystemClock.elapsedRealtime()))) return;');
   source=source.slice(0,dispatchStart)+dispatch;
   source=source.replaceAll('explicit-account-claim-v1','mainframe-host-session-v2');
-  source=source.replace('        super.onDestroy();','        pdfChannelPolicy.invalidate("","");\n        pdfSessionExecutor.shutdownNow();\n        super.onDestroy();');
+  source=source.replace('        super.onDestroy();','        pdfChannelPolicy.invalidate("","");\n        cancelPdfValidation();\n        pdfSessionTimeouts.shutdownNow();\n        pdfSessionExecutor.shutdownNow();\n        super.onDestroy();');
   source=source.replace('Toast.makeText(this, "PDF guardado. Confirme a conta antes de importar.", Toast.LENGTH_LONG).show();','Toast.makeText(this, initialOwner == null ? "PDF sem sessão confirmada. Entre e selecione o arquivo manualmente." : "PDF guardado. Confirme a conta antes de importar.", Toast.LENGTH_LONG).show();');
 }
 fs.writeFileSync(path,source);

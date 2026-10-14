@@ -16,6 +16,13 @@ final class SharedPdfChannelPolicy {
                 && uri.getRawQuery() == null && uri.getRawFragment() == null && ORIGINS.contains(raw);
         } catch (Exception ignored) { return false; }
     }
+    static long validationDeadline(long tokenExpiryMs, long wallNow, long elapsedNow) {
+        if (wallNow < 0 || elapsedNow < 0 || tokenExpiryMs <= wallNow) return -1;
+        long remaining = tokenExpiryMs - wallNow;
+        if (remaining > 366L * 24 * 60 * 60 * 1000) return -1;
+        long duration = Math.min(120000L, remaining);
+        return elapsedNow <= Long.MAX_VALUE - duration ? elapsedNow + duration : -1;
+    }
     synchronized long invalidate(String nextDocument, String nextOrigin) {
         epoch++; owner = null; validUntil = 0;
         document = nextDocument; origin = allowedOrigin(nextOrigin) ? nextOrigin : "";

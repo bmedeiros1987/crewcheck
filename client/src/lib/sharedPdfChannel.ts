@@ -1,13 +1,14 @@
 import { getStoredUser, getToken } from './authClient';
 // PDF messages have their own origin/frame-restricted native channel. No global bridge fallback.
-type Pending = { document: string; token: string | null; resolve: (value:any)=>void; timer: ReturnType<typeof setTimeout> };
+type Pending = { cancel:()=>void; document: string; token: string | null; resolve: (value:any)=>void; timer: ReturnType<typeof setTimeout> };
 const pending = new Map<string,Pending>();
 let generation = 0, epoch: number | null = null, validatedOwner: string | null = null;
 let lastStatus: any = null;
 function documentId(): string { return String((window as any).__crewcheckPdfDocument || ''); }
 function clear() {
+  delete (window as any).__crewcheckPendingNativePdf;
   generation++; epoch=null; validatedOwner=null; lastStatus=null;
-  for(const p of pending.values()){clearTimeout(p.timer);p.resolve(false);} pending.clear();
+  for(const p of pending.values()){clearTimeout(p.timer);p.cancel();p.resolve(false);} pending.clear();
 }
 export function sharedPdfChannelStatus(): any { return validatedOwner === getStoredUser()?.id && getToken() ? lastStatus : null; }
 async function request(op:string, fields:Record<string,unknown>={}):Promise<any> {
@@ -15,8 +16,9 @@ async function request(op:string, fields:Record<string,unknown>={}):Promise<any>
   if(window.top!==window || !bridge?.postMessage || !document || typeof crypto?.randomUUID!=='function') return false;
   const token=getToken(), id=crypto.randomUUID();
   return new Promise(resolve=>{
-    const timer=setTimeout(()=>{pending.delete(id);resolve(false);},12000);
-    pending.set(id,{document,token,resolve,timer});
+    const cancel=()=>{try{bridge.postMessage(JSON.stringify({id:'cancel-'+id,op:'cancel',cancelId:id,document,epoch}));}catch{}};
+    const timer=setTimeout(()=>{pending.delete(id);cancel();resolve(false);},12000);
+    pending.set(id,{document,token,resolve,timer,cancel});
     bridge.onmessage=(event:{data:string})=>{
       try{
         const response=JSON.parse(event.data), item=pending.get(response.id);

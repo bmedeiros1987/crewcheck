@@ -6,6 +6,25 @@
         1,1,0L,java.util.concurrent.TimeUnit.MILLISECONDS,new java.util.concurrent.ArrayBlockingQueue<Runnable>(1),
         new java.util.concurrent.ThreadPoolExecutor.DiscardOldestPolicy());
 
+    private final java.util.concurrent.ScheduledExecutorService pdfSessionTimeouts = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+    private SharedPdfSessionVerifier.Attempt pdfValidation;
+    private String pdfValidationRequestId;
+    private java.util.concurrent.Future<?> pdfValidationFuture;
+    private java.util.concurrent.ScheduledFuture<?> pdfValidationTimeout;
+    private void cancelPdfValidation() {
+        SharedPdfSessionVerifier.Attempt attempt=pdfValidation;
+        java.util.concurrent.Future<?> future=pdfValidationFuture;
+        java.util.concurrent.ScheduledFuture<?> timeout=pdfValidationTimeout;
+        pdfValidation=null;pdfValidationRequestId=null;pdfValidationFuture=null;pdfValidationTimeout=null;
+        if(timeout!=null)timeout.cancel(false);
+        if(future!=null)future.cancel(true);
+        if(attempt!=null)attempt.cancel();
+        pdfSessionExecutor.purge();
+    }
+    private void finishPdfValidation() {
+        if(pdfValidationTimeout!=null)pdfValidationTimeout.cancel(false);
+        pdfValidation=null;pdfValidationRequestId=null;pdfValidationFuture=null;pdfValidationTimeout=null;
+    }
     private String pdfOrigin(String url) {
         try {
             java.net.URI uri = new java.net.URI(url);
@@ -15,6 +34,7 @@
         } catch (Exception ignored) { return ""; }
     }
     private void invalidatePdfChannel(String url) {
+        cancelPdfValidation();
         pdfDocument = java.util.UUID.randomUUID().toString();
         pdfChannelPolicy.invalidate(pdfDocument, pdfOrigin(url));
         sharedPdfTrustedPage = false; sharedPdfReceiptOwner = null; sharedPdfSessionReported = false;
@@ -41,7 +61,15 @@
                     final String requestId = request.optString("id", "");
                     if (requestId.isEmpty() || requestId.length() > 100) return;
                     final String operation = request.optString("op", "");
+                    if ("cancel".equals(operation)) {
+                        if(request.optString("cancelId", "").equals(pdfValidationRequestId)) {
+                            cancelPdfValidation();pdfChannelPolicy.begin(origin,true,document);
+                            sharedPdfTrustedPage=false;sharedPdfReceiptOwner=null;sharedPdfSessionReported=false;
+                        }
+                        return;
+                    }
                     if ("bind".equals(operation) || "logout".equals(operation)) {
+                        cancelPdfValidation();
                         final long epoch = pdfChannelPolicy.begin(origin, isMainFrame, document);
                         sharedPdfTrustedPage = false; sharedPdfReceiptOwner = null; sharedPdfSessionReported = false;
                         if (sharedPdfStartupIntent != null && pdfStartupValidationEpoch != -1) {
@@ -55,18 +83,22 @@
                             replyPdf(reply, requestId, epoch, false); return;
                         }
                         final String token = request.optString("token", "");
-                        pdfSessionExecutor.execute(() -> {
+                        final SharedPdfSessionVerifier.Attempt attempt=new SharedPdfSessionVerifier.Attempt(origin,token);
+                        pdfValidation=attempt;pdfValidationRequestId=requestId;
+                        final java.util.concurrent.Future<?> future=pdfSessionExecutor.submit(() -> {
                             SharedPdfSessionVerifier.Verified verified = null;
-                            try { verified = SharedPdfSessionVerifier.verify(origin, token); } catch (Exception ignored) { }
+                            try { verified = attempt.verify(); } catch (Exception ignored) { }
                             final SharedPdfSessionVerifier.Verified result = verified;
                             runOnUiThread(() -> {
-                                if (!pdfChannelPolicy.acceptsDocument(origin, true, document) || epoch != pdfChannelPolicy.epoch()) return;
+                                if (pdfValidation != attempt || !pdfChannelPolicy.acceptsDocument(origin, true, document) || epoch != pdfChannelPolicy.epoch()) return;
                                 long now = android.os.SystemClock.elapsedRealtime();
-                                if (result == null || !pdfChannelPolicy.validate(epoch, result.owner, now + result.lifetimeMs, now)) {
+                                if (!attempt.active() || result == null || !pdfChannelPolicy.validate(epoch, result.owner, result.deadlineElapsedMs, now)) {
+                                    finishPdfValidation();
                                     Intent startup = sharedPdfStartupIntent; sharedPdfStartupIntent = null; pdfStartupValidationEpoch = -1;
                                     if (startup != null && !sharedPdfIncomingHandled) handleIncomingPdfIntent(startup, null);
                                     replyPdf(reply, requestId, epoch, false); return;
                                 }
+                                finishPdfValidation();
                                 sharedPdfReceiptOwner = result.owner; sharedPdfSessionReported = true; sharedPdfTrustedPage = true;
                                 replyPdf(reply, requestId, epoch, result.owner);
                                 Intent startup = sharedPdfStartupIntent; sharedPdfStartupIntent = null; pdfStartupValidationEpoch = -1;
@@ -74,6 +106,18 @@
                                 restorePendingSharedPdfFromInbox(); dispatchPendingSharedPdf();
                             });
                         });
+                        pdfValidationFuture=future;
+                        pdfValidationTimeout=pdfSessionTimeouts.schedule(() -> {
+                            future.cancel(true);attempt.cancel();pdfSessionExecutor.purge();
+                            runOnUiThread(() -> {
+                                if(pdfValidation!=attempt)return;
+                                finishPdfValidation();pdfChannelPolicy.begin(origin,true,document);
+                                sharedPdfTrustedPage=false;sharedPdfReceiptOwner=null;sharedPdfSessionReported=false;
+                                Intent startup=sharedPdfStartupIntent;sharedPdfStartupIntent=null;pdfStartupValidationEpoch=-1;
+                                if(startup!=null&&!sharedPdfIncomingHandled)handleIncomingPdfIntent(startup,null);
+                                replyPdf(reply,requestId,epoch,false);
+                            });
+                        },Math.max(0,attempt.deadlineElapsedMs-android.os.SystemClock.elapsedRealtime()),java.util.concurrent.TimeUnit.MILLISECONDS);
                         return;
                     }
                     long epoch = request.optLong("epoch", -1);
@@ -103,6 +147,7 @@
                             break;
                         default: break;
                     }
+                    if (pdfChannelPolicy.owner(epoch, android.os.SystemClock.elapsedRealtime()) == null) result=false;
                     replyPdf(reply, requestId, epoch, result);
                 } catch (Exception ignored) { /* Invalid requests never access bytes or change ownership. */ }
             });
