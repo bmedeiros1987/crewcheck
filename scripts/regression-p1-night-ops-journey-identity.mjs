@@ -12,8 +12,8 @@
  * Duas métricas, tratadas como regras independentes (exigido explicitamente):
  *   - countNightOpsInRolling168h: conta OCORRÊNCIAS (cada jornada
  *     qualificável conta 1, mesmo que duas caiam no mesmo dia civil);
- *   - countMaxConsecutiveMadrugadas: conta NOITES CIVIS distintas em
- *     sequência (duas jornadas na mesma noite não inflam o streak).
+ *   - maxConsecutiveNights: conta jornadas noturnas publicadas em sequência;
+ *     jornada diurna interrompe, e a mesma jornada/continuação conta uma vez.
  */
 
 import { loadClientModules, TYPE_ONLY_PDF_PARSER_STUB, createChecker } from './lib/ts-module-harness.mjs';
@@ -138,14 +138,22 @@ const dayC = {
 };
 const sameNightTwice = analyzeCompliance(makeRoster([dayC, journeyA, journeyB, journeyBCarryOver]));
 console.log(`[3 jornadas, 19/08 com 2] maxConsecutiveNights=${sameNightTwice.metrics.maxConsecutiveNights}`);
-// 17/08 (dayC) não é adjacente a 19/08 (journeyA) - 18/08 fica sem madrugada
-// entre elas, quebrando o streak. Mas 19/08 (journeyA) e 20/08 (journeyB,
-// que só toca a janela do dia seguinte) SÃO adjacentes => streak de 2, não 1.
+// A lacuna de data não inventa uma jornada diurna nem 48h livres (há só
+// 45h30 entre o corte publicado de17/08 e a apresentação de19/08).
+// A unidade revisada é jornada, não adjacência entre rótulos civis.
 check(
-  'streak não emenda 17/08 (isolado) com 19/08+20/08 (adjacentes entre si) => maior sequência é 2',
-  sameNightTwice.metrics.maxConsecutiveNights === 2,
+  'três jornadas noturnas sem jornada diurna intermediária e sem48h livres => sequência publicada3',
+  sameNightTwice.metrics.maxConsecutiveNights === 3,
   `maxConsecutiveNights=${sameNightTwice.metrics.maxConsecutiveNights}`,
 );
+const interveningDaytime = {
+  ...dayC, date: '18/08/2026', dayNumber: 18, dutyReport: '08:00', dutyDebrief: '12:00',
+  legs: [leg('LA9002','CGH','BPS','08:40','11:30')],
+};
+const daytimeBreak = analyzeCompliance(makeRoster([dayC,interveningDaytime,journeyA,journeyB,journeyBCarryOver]));
+check('jornada diurna publicada em18/08 interrompe a sequência:19+20 =>2',
+  daytimeBreak.metrics.maxConsecutiveNights === 2,
+  `maxConsecutiveNights=${daytimeBreak.metrics.maxConsecutiveNights}`);
 
 // ===========================================================================
 // Terceira jornada realmente distinta e consecutiva: o alerta de streak

@@ -298,7 +298,9 @@ function summarizeRegulatoryNightEvents(days: RosterDay[], resetAfterFreeHours =
     standbyEvents,
     maxWorkedIn168h: maxEventsInRolling168h(workedEvents),
     maxCombinedIn168h: maxEventsInRolling168h(journeyDeduped),
-    maxConsecutiveWorked: maxConsecutiveWorkedNights(nightDeduped),
+    maxConsecutiveWorked: roster
+      ? publishedNightJourneySequence(buildCanonicalRosterEvents(roster), isActiveDuty, resetAfterFreeHours, hasMadrugadaDuty).maxConsecutive
+      : maxConsecutiveWorkedNights(nightDeduped),
   };
 }
 
