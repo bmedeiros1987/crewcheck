@@ -178,6 +178,8 @@ const skyTransport = createCiriumSkyTransport({ enabled: true, policy: skyPolicy
 const skyHarness = harness(source, true);
 const skyBody = await skyHarness.call(url, { cirium: { enabled: true, transport: skyTransport } });
 assert.equal(upstream, 1); assert.equal(skyBody.providerState, 'available'); assert.equal(skyBody.configured, true);
+assert.equal(skyBody.scheduledDepartureUtc, '2026-11-01T05:30:00.000Z');
+assert.equal(skyBody.scheduledDepartureUtc, body.scheduledDepartureUtc);
 assert.equal(skyBody.gate, 'A12'); assert.equal(skyBody.occurrenceKey, body.occurrenceKey);
 assert.deepEqual(skyBody.provenance, body.provenance); assert.equal(skyBody.exportedToConcierge, false);
 assert.deepEqual(skyHarness.counters, { provider: 0, auth: 2, load: 1, apply: 0, save: 0, env: 0, fetch: 0 });
