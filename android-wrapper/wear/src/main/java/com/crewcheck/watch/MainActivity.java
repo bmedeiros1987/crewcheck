@@ -13,6 +13,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.MotionEvent;
@@ -190,6 +191,13 @@ public final class MainActivity extends FragmentActivity
         scroll = new ScrollView(this);
         scroll.setBackgroundColor(BLACK);
         scroll.setFillViewport(true);
+        scroll.setClipToPadding(true);
+        scroll.addOnLayoutChangeListener((view, l, t, r, b, ol, ot, or, ob) -> {
+            if (r - l != or - ol || b - t != ob - ot) {
+                applySafePadding();
+                renderSnapshot();
+            }
+        });
         scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         scroll.setVerticalScrollBarEnabled(false);
         enableRotaryScrolling(scroll);
@@ -278,27 +286,29 @@ public final class MainActivity extends FragmentActivity
         if (scroll != null) scroll.post(() -> scroll.scrollTo(0, 0));
     }
 
-    /**
-     * Margem segura proporcional à tela, não em dp fixo.
-     *
-     * Numa tela redonda quem corta o conteúdo é a curva, e ela depende do tamanho do
-     * mostrador: o mesmo dp que cabe num 450 px sobra num 390 px. Medir em fração da menor
-     * dimensão faz a margem acompanhar o relógio.
-     *
-     * A folga vertical é maior que a horizontal de propósito: no topo e na base da área
-     * visível é onde o círculo mais fecha, e é ali que o primeiro e o último item eram
-     * aparados.
-     */
+    /** Keep the viewport safe while scrolling, including its top and bottom corners. */
     private void applySafePadding() {
-        int extent = Math.min(
-                getResources().getDisplayMetrics().widthPixels,
-                getResources().getDisplayMetrics().heightPixels
-        );
-        boolean round = isRoundScreen();
-        int horizontal = Math.round(extent * (round ? 0.10f : 0.06f));
-        int topSafe = Math.round(extent * (round ? 0.12f : 0.05f));
-        int bottomSafe = Math.round(extent * (round ? 0.16f : 0.10f));
-        content.setPadding(horizontal, topSafe, horizontal, bottomSafe);
+        int width = scroll.getWidth() > 0 ? scroll.getWidth()
+                : getResources().getDisplayMetrics().widthPixels;
+        int height = scroll.getHeight() > 0 ? scroll.getHeight()
+                : getResources().getDisplayMetrics().heightPixels;
+        int[] padding = WatchViewport.padding(width, height, isRoundScreen());
+        scroll.setPadding(padding[0], padding[1], padding[2], padding[3]);
+        content.setPadding(0, 0, 0, 0);
+    }
+
+    private boolean stackColumns() {
+        int width = scroll.getWidth() > 0 ? scroll.getWidth()
+                : getResources().getDisplayMetrics().widthPixels;
+        return WatchViewport.stack(width - scroll.getPaddingLeft() - scroll.getPaddingRight(),
+                getResources().getDisplayMetrics().density,
+                getResources().getConfiguration().fontScale);
+    }
+
+    private LinearLayout.LayoutParams columnParams() {
+        return new LinearLayout.LayoutParams(stackColumns()
+                ? LinearLayout.LayoutParams.MATCH_PARENT : 0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, stackColumns() ? 0f : 1f);
     }
 
     private void renderSnapshot() {
@@ -364,7 +374,9 @@ public final class MainActivity extends FragmentActivity
 
         TextView brand = text("CrewCheck", 11, WHITE, true, Gravity.START);
         brand.setPadding(dp(6), 0, 0, 0);
-        row.addView(brand, new LinearLayout.LayoutParams(0, dp(26), 1f));
+        brand.setMaxLines(1);
+        row.addView(brand, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         int count = alertCount(snapshot);
         if (count > 0) {
@@ -373,7 +385,10 @@ public final class MainActivity extends FragmentActivity
             bg.setColor(MAGENTA);
             bg.setShape(GradientDrawable.OVAL);
             badge.setBackground(bg);
-            LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dp(20), dp(20));
+            badge.setMinHeight(dp(20));
+            LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(dp(20),
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            badge.setMaxLines(1);
             bp.setMargins(0, 0, dp(4), 0);
             row.addView(badge, bp);
             badge.setOnClickListener(view -> showScreen(MODE_NOTIFICATIONS));
@@ -381,22 +396,28 @@ public final class MainActivity extends FragmentActivity
 
         clockView = text(LocalTime.now().format(clockFormatter), 10, WHITE, true, Gravity.END);
         tabular(clockView);
-        row.addView(clockView, new LinearLayout.LayoutParams(dp(52), dp(26)));
+        clockView.setMaxLines(1);
+        if (!stackColumns()) {
+            row.addView(clockView, new LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        }
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(28)
+                LinearLayout.LayoutParams.WRAP_CONTENT
         );
         params.setMargins(dp(2), 0, dp(2), dp(6));
         content.addView(row, params);
+        if (stackColumns()) content.addView(clockView);
     }
 
     private void renderAmbient(WatchContextSnapshot snapshot, long now) {
-        content.setPadding(isRoundScreen() ? dp(42) : dp(28), dp(46),
-                isRoundScreen() ? dp(42) : dp(28), dp(28));
 
         TextView time = text(LocalTime.now().format(clockFormatter), 38,
                 WHITE, false, Gravity.CENTER);
+        time.setMaxLines(1);
+        time.setAutoSizeTextTypeUniformWithConfiguration(24, 38, 1,
+                android.util.TypedValue.COMPLEX_UNIT_SP);
         // O relógio do modo ambiente fica aceso o tempo todo: é onde o pulo de dígito da
         // fonte proporcional mais incomoda.
         tabular(time);
@@ -411,9 +432,13 @@ public final class MainActivity extends FragmentActivity
         }
 
         Primary primary = primaryFor(snapshot);
-        TextView eyebrow = text(primary.eyebrow, 8, MUTED_AMBIENT, true, Gravity.CENTER);
-        eyebrow.setPadding(0, dp(12), 0, dp(4));
-        content.addView(eyebrow);
+        // Ambient has no interactive scrolling: prioritise time and operation when space is scarce.
+        if (!stackColumns()) {
+            TextView eyebrow = text(primary.eyebrow, 8, MUTED_AMBIENT, true, Gravity.CENTER);
+            eyebrow.setMaxLines(1);
+            eyebrow.setPadding(0, dp(12), 0, dp(4));
+            content.addView(eyebrow);
+        }
 
         TextView value = text(primary.value, primary.value.length() > 12 ? 18 : 22,
                 WHITE, true, Gravity.CENTER);
@@ -421,7 +446,7 @@ public final class MainActivity extends FragmentActivity
         tabular(value);
         content.addView(value);
 
-        if (!snapshot.gateLabel().isBlank()) {
+        if (!stackColumns() && !snapshot.gateLabel().isBlank()) {
             TextView gate = text(snapshot.remoteStand ? "REMOTA" : snapshot.gateLabel(),
                     10, MUTED_AMBIENT, true, Gravity.CENTER);
             gate.setPadding(0, dp(8), 0, 0);
@@ -450,14 +475,12 @@ public final class MainActivity extends FragmentActivity
         content.addView(title);
 
         TextView value = text("Conecte ao CrewCheck", 23, WHITE, true, Gravity.CENTER);
-        value.setMaxLines(2);
         content.addView(value);
 
         TextView detail = text(
                 "Abra o app no celular. Sua escala, próximos passos e alertas chegam automaticamente.",
                 10, MUTED, false, Gravity.CENTER
         );
-        detail.setMaxLines(4);
         detail.setPadding(0, dp(8), 0, dp(8));
         content.addView(detail);
 
@@ -487,7 +510,6 @@ public final class MainActivity extends FragmentActivity
                 stale ? 19 : (primary.value.length() > 14 ? 23 : 32),
                 WHITE, true, Gravity.CENTER
         );
-        value.setMaxLines(2);
         value.setPadding(0, dp(3), 0, 0);
         tabular(value);
         content.addView(value);
@@ -495,7 +517,6 @@ public final class MainActivity extends FragmentActivity
         if (!primary.detail.isBlank()) {
             TextView detail = text(primary.detail, 11, stale ? WARNING : WHITE,
                     false, Gravity.CENTER);
-            detail.setMaxLines(2);
             detail.setPadding(0, dp(4), 0, 0);
             content.addView(detail);
         }
@@ -503,7 +524,7 @@ public final class MainActivity extends FragmentActivity
         if (!primary.secondary.isBlank()) {
             TextView secondary = text(primary.secondary, 9, MUTED, false, Gravity.CENTER);
             secondary.setPadding(0, dp(4), 0, dp(4));
-            secondary.setMaxLines(2);
+
             content.addView(secondary);
         }
 
@@ -544,7 +565,6 @@ public final class MainActivity extends FragmentActivity
                     "Permita notificações do CrewCheck para receber hora de sair, mudanças, embarque e conexão.",
                     9, WARNING, false, Gravity.CENTER
             );
-            permission.setMaxLines(4);
             permission.setPadding(dp(4), dp(7), dp(4), dp(6));
             content.addView(permission);
 
@@ -560,7 +580,6 @@ public final class MainActivity extends FragmentActivity
             content.addView(empty);
             TextView detail = text("Quando algo realmente importar, o CrewCheck aparece no seu pulso.",
                     9, MUTED, false, Gravity.CENTER);
-            detail.setMaxLines(3);
             content.addView(detail);
             return;
         }
@@ -578,13 +597,11 @@ public final class MainActivity extends FragmentActivity
 
         if (life == null || life.isStale(now)) {
             TextView title = text("CrewLife no pulso", 19, WHITE, true, Gravity.CENTER);
-            title.setMaxLines(2);
             content.addView(title);
             TextView detail = text(
                     "CrewLife no relógio ainda não autorizado. No celular, ative “Mostrar CrewLife no relógio”. Só chegam valores agregados que você escolher.",
                     9, MUTED, false, Gravity.CENTER
             );
-            detail.setMaxLines(4);
             detail.setPadding(0, dp(8), 0, dp(8));
             content.addView(detail);
             TextView sync = heroAction("Sincronizar CrewLife", MAGENTA);
@@ -608,7 +625,7 @@ public final class MainActivity extends FragmentActivity
         content.addView(label);
 
         LinearLayout stats = new LinearLayout(this);
-        stats.setOrientation(LinearLayout.HORIZONTAL);
+        stats.setOrientation(stackColumns() ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         stats.setGravity(Gravity.CENTER);
         addCrewLifeStat(stats, "SONO", sleepLabel(life), VIOLET);
         addCrewLifeStat(stats, "PASSOS", compactSteps(life.steps), CYAN);
@@ -637,7 +654,6 @@ public final class MainActivity extends FragmentActivity
             card.addView(rValue);
             TextView rDetail = text(firstNonBlank(routine.nextAction, routine.reason),
                     8, MUTED, false, Gravity.CENTER);
-            rDetail.setMaxLines(2);
             card.addView(rDetail);
             content.addView(card, cardParams());
         }
@@ -646,7 +662,6 @@ public final class MainActivity extends FragmentActivity
                 "CrewLife é opcional. Dados brutos de saúde não ficam no mostrador.",
                 8, MUTED, false, Gravity.CENTER
         );
-        privacy.setMaxLines(3);
         privacy.setPadding(0, dp(6), 0, 0);
         content.addView(privacy);
     }
@@ -666,7 +681,6 @@ public final class MainActivity extends FragmentActivity
                     "Sincronize o CrewCheck no celular para abrir sua escala aqui.",
                     10, MUTED, false, Gravity.CENTER
             );
-            empty.setMaxLines(4);
             empty.setPadding(0, dp(12), 0, dp(12));
             content.addView(empty);
             return;
@@ -690,7 +704,7 @@ public final class MainActivity extends FragmentActivity
                 "stay".equals(item.kind) ? MAGENTA :
                 "flight".equals(item.kind) ? CYAN : VIOLET
         );
-        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setOrientation(stackColumns() ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
 
         int accent = "stay".equals(item.kind) ? MAGENTA
@@ -700,14 +714,15 @@ public final class MainActivity extends FragmentActivity
         TextView time = text(item.time.isBlank() ? "•" : item.time, 12,
                 first ? accent : WHITE, true, Gravity.CENTER);
         tabular(time);
-        card.addView(time, new LinearLayout.LayoutParams(dp(52), dp(42)));
+        card.addView(time, new LinearLayout.LayoutParams(stackColumns()
+                ? LinearLayout.LayoutParams.MATCH_PARENT : dp(52),
+                LinearLayout.LayoutParams.WRAP_CONTENT));
 
         LinearLayout copy = new LinearLayout(this);
         copy.setOrientation(LinearLayout.VERTICAL);
         copy.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView headline = text(item.title, 12, WHITE, true, Gravity.START);
-        headline.setMaxLines(1);
         copy.addView(headline);
 
         String route = join(" · ",
@@ -716,11 +731,9 @@ public final class MainActivity extends FragmentActivity
                 item.gate.isBlank() ? "" : item.gate
         );
         TextView detail = text(route, 8, MUTED, false, Gravity.START);
-        detail.setMaxLines(2);
         copy.addView(detail);
 
-        card.addView(copy, new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        card.addView(copy, columnParams());
         content.addView(card, cardParams());
     }
 
@@ -745,7 +758,7 @@ public final class MainActivity extends FragmentActivity
 
     private LinearLayout navRow() {
         LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setOrientation(stackColumns() ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -758,6 +771,9 @@ public final class MainActivity extends FragmentActivity
 
     private TextView navChip(String label, int accent, int mode) {
         TextView chip = actionChip(label, accent, screenMode == mode);
+        LinearLayout.LayoutParams params = columnParams();
+        params.setMargins(dp(2), dp(2), dp(2), 0);
+        chip.setLayoutParams(params);
         chip.setOnClickListener(view -> showScreen(mode));
         return chip;
     }
@@ -901,18 +917,18 @@ public final class MainActivity extends FragmentActivity
      * operacional em que a lista é construída.
      *
      * Com número ímpar entra um espaçador em vez de deixar o último quadro esticar para a
-     * largura toda: quadro de tamanho diferente sem motivo lê como defeito, não como ênfase.
+     * largura toda. Em tela estreita ou fonte ampliada, cada dado ganha sua própria linha.
      */
     private void addFactGrid(List<Fact> facts) {
-        for (int index = 0; index < facts.size(); index += 2) {
+        for (int index = 0; index < facts.size(); index += stackColumns() ? 1 : 2) {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER);
 
             addMiniStat(row, facts.get(index));
-            if (index + 1 < facts.size()) {
+            if (!stackColumns() && index + 1 < facts.size()) {
                 addMiniStat(row, facts.get(index + 1));
-            } else {
+            } else if (!stackColumns()) {
                 View filler = new View(this);
                 row.addView(filler, new LinearLayout.LayoutParams(
                         0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
@@ -934,24 +950,20 @@ public final class MainActivity extends FragmentActivity
 
         TextView label = text(fact.label, 7, MUTED, true, Gravity.CENTER);
         label.setLetterSpacing(.08f);
-        label.setMaxLines(1);
+
         box.addView(label);
 
         TextView value = text(fact.value, 15, fact.accent, true, Gravity.CENTER);
-        value.setMaxLines(1);
         tabular(value);
         value.setPadding(0, dp(2), 0, 0);
         box.addView(value);
 
         if (!fact.detail.isBlank()) {
             TextView detail = text(fact.detail, 7, MUTED, false, Gravity.CENTER);
-            detail.setMaxLines(1);
             box.addView(detail);
         }
 
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
-        );
+        LinearLayout.LayoutParams p = columnParams();
         p.setMargins(dp(2), 0, dp(2), 0);
         row.addView(box, p);
     }
@@ -962,13 +974,10 @@ public final class MainActivity extends FragmentActivity
         box.setPadding(dp(4), dp(6), dp(4), dp(6));
         box.addView(text(label, 7, MUTED, true, Gravity.CENTER));
         TextView metric = text(value, 11, accent, true, Gravity.CENTER);
-        metric.setMaxLines(2);
         tabular(metric);
         box.addView(metric);
 
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
-        );
+        LinearLayout.LayoutParams p = columnParams();
         p.setMargins(dp(2), 0, dp(2), 0);
         row.addView(box, p);
     }
@@ -978,18 +987,16 @@ public final class MainActivity extends FragmentActivity
         card.setOrientation(LinearLayout.VERTICAL);
 
         LinearLayout top = new LinearLayout(this);
-        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setOrientation(stackColumns() ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView title = text(item.title, 11, WHITE, true, Gravity.START);
-        top.addView(title, new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        top.addView(title, columnParams());
         TextView when = text(item.when, 8, item.accent, true, Gravity.END);
         top.addView(when);
         card.addView(top);
 
         TextView body = text(item.body, 9, MUTED, false, Gravity.START);
-        body.setMaxLines(3);
         body.setPadding(0, dp(3), 0, 0);
         card.addView(body);
 
@@ -1185,9 +1192,10 @@ public final class MainActivity extends FragmentActivity
         view.setTextColor(color);
         view.setTextSize(readable(sp));
         view.setGravity(gravity);
-        view.setMaxLines(3);
+        view.setEllipsize(TextUtils.TruncateAt.END);
+        view.setHorizontallyScrolling(false);
         view.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
-        view.setIncludeFontPadding(false);
+        view.setIncludeFontPadding(true);
         return view;
     }
 
