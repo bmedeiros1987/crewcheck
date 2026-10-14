@@ -5,7 +5,7 @@ const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 
 for (const required of [
   "scheduledDeparture, force: force ? '1' : '0'",
-  'date.setHours(Number(match[1]), Number(match[2]), 0, 0);',
+  "const scheduledDeparture = event.canonical?.startDateTime || '';",
 ]) {
   if (!home.includes(required)) throw new Error(`Home não envia identidade temporal do voo: ${required}`);
 }

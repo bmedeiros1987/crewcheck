@@ -1,3 +1,4 @@
+import * as gateQueryDay from '../shared/gate-query-day.mjs';
 // Exercise the actual Home effect offline: no duplicate publisher implementation.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -45,7 +46,7 @@ const snapshotModule = actualModule('watchContext');
 const gateBindings = {};
 if (source.includes("from '@/lib/nextFlightGate'")) {
   const display = actualModule('rosterDisplayDate');
-  const gate = actualModule('nextFlightGate', { '@/lib/rosterDisplayDate': display });
+  const gate = actualModule('nextFlightGate', { '@/lib/rosterDisplayDate': display, '../../../shared/gate-query-day.mjs': gateQueryDay });
   const watch = actualModule('nextFlightWatch', { '@/lib/nextFlightGate': gate });
   const auth = actualModule('authClient');
   Object.assign(gateBindings, gate, watch, { getStoredUser: auth.getStoredUser });

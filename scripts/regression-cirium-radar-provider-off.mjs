@@ -22,6 +22,7 @@ for (const enabled of [undefined, false, 'true', 1, null]) {
 }
 const good = run();
 assert.equal(good.state, 'available');
+assert.equal(good.candidate.scheduledDepartureUtc, '2026-10-12T01:00:00.000Z');
 assert.equal(good.candidate.departureDate, '2026-10-11');
 assert.equal(good.provenance.fields.departureGate.value, 'A12');
 assert.equal(good.provenance.fields.departureGate.provider, 'cirium-sky');
@@ -32,8 +33,38 @@ const offsetRow = structuredClone(row);
 offsetRow.operationalTimes.scheduledGateDeparture.dateUtc = '2026-10-11T22:00:00-03:00';
 const equivalent = run(request, [offsetRow]);
 assert.equal(equivalent.occurrenceKey, good.occurrenceKey);
+assert.equal(equivalent.candidate.scheduledDepartureUtc, good.candidate.scheduledDepartureUtc);
+const delayedRow = structuredClone(offsetRow);
+delayedRow.operationalTimes.estimatedGateDeparture = { dateUtc: '2026-10-12T04:00:00Z' };
+delayedRow.operationalTimes.estimatedGateArrival = { dateUtc: '2026-10-12T06:00:00Z' };
+const delayed = run(request, [delayedRow]);
+assert.equal(delayed.state, 'available');
+assert.equal(delayed.candidate.scheduledDepartureUtc, good.candidate.scheduledDepartureUtc);
+assert.equal(delayed.candidate.departure, '2026-10-12T04:00:00Z');
+assert.equal(delayed.candidate.estimatedDeparture, delayed.candidate.departure);
+const missingScheduled = structuredClone(delayedRow); delete missingScheduled.operationalTimes.scheduledGateDeparture;
+state('invalid_payload', request, [missingScheduled]);
 assert.equal(equivalent.provenance.fields.scheduledDeparture.value, good.provenance.fields.scheduledDeparture.value);
 assert.equal(good.candidate.arrivalGate, 'B20');
+// Invalid original offsets must never be laundered into an accepted Z instant.
+function stampAt(utc, offset, minutes) {return new Date(Date.parse(utc)+minutes*60000).toISOString().slice(0,-1)+offset;}
+for (const [offset,minutes] of [['+14:01',841],['+15:00',900],['-15:00',-900]]) {
+ const invalidSource=structuredClone(row);
+ invalidSource.operationalTimes.scheduledGateDeparture.dateUtc=stampAt(row.operationalTimes.scheduledGateDeparture.dateUtc,offset,minutes);
+ invalidSource.operationalTimes.scheduledGateArrival.dateUtc=stampAt(row.operationalTimes.scheduledGateArrival.dateUtc,offset,minutes);
+ const output=run(request,[invalidSource]);console.log(JSON.stringify({case:'strict-original-offset',offset,state:output.state}));
+ assert.equal(output.state,'invalid_payload');assert.equal(output.candidate,null);
+ state('invalid_request',{...request,scheduledDepartureUtc:invalidSource.operationalTimes.scheduledGateDeparture.dateUtc});
+ for(const kind of ['estimated','actual']) {
+  const invalidOptional=structuredClone(row);invalidOptional.operationalTimes[`${kind}GateDeparture`]={dateUtc:invalidSource.operationalTimes.scheduledGateDeparture.dateUtc};
+  state('invalid_payload',request,[invalidOptional]);
+ }
+}
+for (const [offset,minutes] of [['+14:00',840],['-14:00',-840]]) {
+ const boundary=structuredClone(row);boundary.operationalTimes.scheduledGateDeparture.dateUtc=stampAt(row.operationalTimes.scheduledGateDeparture.dateUtc,offset,minutes);
+ const accepted=run(request,[boundary]);assert.equal(accepted.state,'available');assert.equal(accepted.candidate.scheduledDepartureUtc,good.candidate.scheduledDepartureUtc);
+}
+
 for (const key of Object.keys(request)) { const missing = { ...request }; delete missing[key]; state('invalid_request', missing); }
 for (const changes of [{ carrierNamespace: 'ICAO' }, { carrierFsCode: 'lan' }, { origin: 'GRU', destination: 'GRU' },
   { departureDate: '2026-10-12' }, { departureDate: '2026-02-30' }, { originTimeZone: 'Bogus/Zone' },

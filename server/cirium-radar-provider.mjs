@@ -1,3 +1,4 @@
+import { radarSourceEpoch } from '../shared/gate-query-day.mjs';
 import { normalizeCiriumFlightStatus } from './cirium-flight-adapter.mjs';
 import { radarOccurrenceKey } from './radar-occurrence-identity.mjs';
 import { buildRadarFieldProvenance } from './radar-field-provenance.mjs';
@@ -6,10 +7,9 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 const code = (value, pattern) => typeof value === 'string' && pattern.test(value) ? value : '';
 function instant(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(value)) return null;
-  const calendar = Date.parse(`${value.slice(0, 10)}T12:00:00Z`);
-  const ms = Date.parse(value);
-  return Number.isFinite(calendar) && new Date(calendar).toISOString().slice(0, 10) === value.slice(0, 10)
-    && Number.isFinite(ms) ? ms : null;
+  // Validate the original source offset/calendar before any UTC normalization.
+  const ms = radarSourceEpoch(value);
+  return Number.isFinite(ms) ? ms : null;
 }
 function localDate(ms, zone) {
   try {
@@ -103,6 +103,8 @@ export function evaluateCiriumRadar(request, response, options = {}) {
   if (displayedDeparture === null || displayedArrival === null || displayedArrival <= displayedDeparture
     || displayedArrival - displayedDeparture > day) return result('invalid_payload');
   // Identity helper expects local calendar/time; keep the same instant with canonical origin offset.
+  // Expose the planned source instant already validated above; never use an estimate or request fallback.
+  candidate.scheduledDepartureUtc = new Date(instant(clean.operationalTimes.scheduledGateDeparture.dateUtc)).toISOString();
   candidate.scheduledDeparture = localStamp(scheduledMs, request.originTimeZone);
   candidate.carrier = carrier;
   candidate.flightNumber = flightNumber;
