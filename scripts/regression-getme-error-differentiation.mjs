@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { authFixture, flushAuth, realServerMe, syntheticUser } from './auth-contract-fixture.mjs';
 let checks=0;
 const cases=[
- [401,'AUTH_REQUIRED','session_expired'],[403,'','account_state'],[429,'','rate_limited'],
+ [401,'AUTH_REQUIRED','session_expired'],[401,undefined,'session_expired'],[401,'','session_expired'],[403,'','account_state'],[429,'','rate_limited'],
  [500,'','backend_unavailable'],[502,'','backend_unavailable'],[503,'','backend_unavailable'],
  [200,'DATABASE_REQUIRED','backend_unavailable'],[200,'DATABASE_MIGRATION_REQUIRED','backend_unavailable'],
  [200,'BACKEND_UNAVAILABLE','backend_unavailable'],[404,'','other'],['network','','backend_unavailable'],['timeout','','backend_unavailable'],
@@ -14,7 +14,7 @@ for(const [status,code,reason] of cases){
  assert(f.requests[0].options.signal instanceof AbortSignal,'real getMe passes abort signal');
  if(status==='network')f.requests[0].reject(new Error('SYNTHETIC_NETWORK'));
  else if(status==='timeout'){await f.advance(9999);assert(!f.requests[0].options.signal.aborted);await f.advance(10000);assert(f.requests[0].options.signal.aborted);}
- else f.requests[0].respond(status,{ok:false,code});
+ else f.requests[0].respond(status,code===undefined?{}:{ok:false,code});
  await flushAuth();
  if(reason==='session_expired'){assert.deepEqual(f.routes,['/login']);assert.equal(expiries,1);assert.equal(f.data.get('crewcheck_auth_token'),undefined);assert(!f.states.includes(true));}
  else {assert.deepEqual(f.routes,[]);assert.equal(expiries,0);assert.equal(f.data.get('crewcheck_auth_token'),'expired-synthetic-token');assert(f.states.includes(true),'recoverable error releases local access');}
@@ -24,13 +24,14 @@ for(const [status,code,reason] of cases){
  const direct=authFixture();direct.seed();const pending=direct.auth.getMe().then(()=>null,error=>error);
  if(status==='network')direct.requests[0].reject(new Error('SYNTHETIC_NETWORK'));
  else if(status==='timeout')await direct.advance(10000);
- else direct.requests[0].respond(status,{ok:false,code});
+ else direct.requests[0].respond(status,code===undefined?{}:{ok:false,code});
  const error=await pending;assert(error instanceof direct.auth.AuthClientError);assert.equal(error.reason,reason);assert.notEqual(error.message,'SYNTHETIC_NETWORK');assert.equal(direct.timers.size,0);checks++;
 }
 // Preserve the explicit AUTH_REQUIRED versus wrong-password distinction on public calls.
-for(const [code,reason]of [['AUTH_REQUIRED','session_expired'],['INVALID_CREDENTIALS','invalid_credentials']]){
- const f=authFixture();f.seed();const pending=f.auth.authFetch('/api/auth/login');f.requests[0].respond(401,{ok:false,code});
- await assert.rejects(pending,error=>error.reason===reason);assert.equal(f.data.get('crewcheck_auth_token'),'expired-synthetic-token','public request did not authenticate this credential and cannot expire it');checks++;
+for(const [code,reason]of [['AUTH_REQUIRED','session_expired'],['INVALID_CREDENTIALS','invalid_credentials'],[undefined,'invalid_credentials'],['','invalid_credentials']]){
+ const f=authFixture();f.seed();let expiries=0;f.window.addEventListener('crewcheck:auth-expired',()=>expiries++);const pending=f.auth.authFetch('/api/auth/login');
+ assert.equal(f.requests[0].options.headers.authorization,undefined);f.requests[0].respond(401,code===undefined?{}:{ok:false,code});
+ await assert.rejects(pending,error=>error.reason===reason);assert.equal(f.data.get('crewcheck_auth_token'),'expired-synthetic-token','public request did not authenticate this credential and cannot expire it');assert.equal(expiries,0);assert.equal(f.data.get('crewcheck_latest_roster_bundle'),'SYNTHETIC_ROSTER');assert.equal(f.sessionData.get('crewcheck_roster'),'SYNTHETIC_ROSTER');checks++;
 }
 // Execute the real server handler: database failure must finish with503, not hang/leak.
 for(const mode of ['database','invalid-token','unavailable-verifier']){
