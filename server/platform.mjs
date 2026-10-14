@@ -9,6 +9,29 @@ import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { diagnoseCirium, diagnoseCiriumFlight } from './cirium-diagnostic.mjs';
 
+/** Read-only Radar source: token identity owns the active publication, never URL email. */
+export async function loadOwnedPlatformRoster(req, expectedEmail) {
+  const token = verifyJwt(requestToken(req));
+  const email = safeEmail(token?.email);
+  if (token?.aud === 'crewcheck-visitor' || token?.role === 'visitor')
+    throw Object.assign(new Error('Sessão de visitante não autoriza publicação pessoal.'), { status:403, code:'ROSTER_OWNER_MISMATCH' });
+  if (!email || email !== safeEmail(expectedEmail))
+    throw Object.assign(new Error('Sessão não confirmada.'), { status:401, code:'AUTH_REQUIRED' });
+  const db = await pool();
+  if (!db) throw Object.assign(new Error('Publicação indisponível.'), { status:503, code:'DATABASE_OFFLINE' });
+  const result = await db.query('SELECT id,owner_email,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE ORDER BY updated_at DESC,created_at DESC,id DESC LIMIT 1', [email]);
+  const row = result.rows[0];
+  if (!row) return null;
+  if (safeEmail(row.owner_email) !== email)
+    throw Object.assign(new Error('Publicação de outra conta.'), { status:403, code:'ROSTER_OWNER_MISMATCH' });
+  if (row.id === null || row.id === undefined || !Number.isFinite(Date.parse(String(row.updated_at || '')))) return null;
+  let roster = row.roster;
+  if (typeof roster === 'string') { try { roster = JSON.parse(roster); } catch { return null; } }
+  if (!roster || !Array.isArray(roster.days)) return null;
+  return { roster, ownerEmail:email, id:String(row.id), revision:String(row.updated_at || '') };
+}
+
+
 const APP_VERSION = '13.8.8';
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 const SUPPORTED_LOCALES = new Set(['pt-BR', 'en-US', 'es-ES']);
@@ -1641,6 +1664,7 @@ async function handleRosterActive(req, res) {
   const result = await context.db.query('SELECT id,roster_key,roster,compliance,gym,source_name,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE ORDER BY updated_at DESC LIMIT 1', [context.identity.email]);
   return sendJson(res, 200, { ok: true, roster: result.rows[0] || null, databasePrimary: true });
 }
+
 
 async function handleStays(req, res) {
   const body = req.method === 'POST' || req.method === 'PATCH' ? await readBody(req, 500_000) : {};

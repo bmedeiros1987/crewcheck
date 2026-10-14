@@ -243,6 +243,8 @@ async function visibleTextBounds(page, selector) {
       // Preferences must not leak across authenticated accounts, including logout; the mounted select must sync too.
       await page.evaluate(() => { localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'other-synthetic-account', name: 'OTHER', role: 'user' })); window.dispatchEvent(new Event('crewcheck:auth-changed')); });
       await page.waitForFunction(() => document.documentElement.dataset.crewTextSize === '100');
+      await page.locator('.cz-app[data-view="cockpit"]').waitFor();
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'settings' })));
       assert.equal(await page.locator('#cc-text-size').inputValue(), '100', 'Mounted selector follows the new account preference');
       await context.close();
     }

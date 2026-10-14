@@ -1,4 +1,4 @@
-import { baseTimeZone } from './timezone-choice.mjs';
+import { airportTimeZone } from './airport-timezones.mjs';
 import { stayInstant } from './stay-edit-plan.mjs';
 export function publishedGateDate(value) {
   if (typeof value !== 'string') return '';
@@ -13,7 +13,7 @@ export function gateQueryDay(identity, now = Date.now()) {
   const origin = String(identity?.origin || '').trim().toUpperCase();
   const destination = String(identity?.destination || '').trim().toUpperCase();
   const flight = String(identity?.flight || '').replace(/\s/g, '').toUpperCase();
-  const zone = baseTimeZone(origin); // Confirmed existing map; never device/UTC fallback.
+  const zone = airportTimeZone(origin); // Reviewed airport evidence; never device/UTC fallback.
   const deny = reason => ({ allowed: false, reason, originTimeZone: zone, departureDate: date });
   if (!date || !/^[A-Z]{3}$/.test(origin) || !/^[A-Z]{3}$/.test(destination) || !/^[A-Z0-9]{2,3}\d{1,5}[A-Z]?$/.test(flight)) return deny('occurrence-unverified');
   if (!zone || !Number.isFinite(now)) return deny('origin-timezone-unverified');
@@ -31,7 +31,7 @@ export function gateQueryDay(identity, now = Date.now()) {
   return { allowed: true, reason: 'published-flight-day', originTimeZone: zone, departureDate: date };
 }
 export function originFlightDate(instant, origin) {
-  const zone = baseTimeZone(origin);
+  const zone = airportTimeZone(origin);
   const ms = typeof instant === 'number' ? instant : Date.parse(instant);
   if (!zone || !Number.isFinite(ms)) return '';
   const parts = new Intl.DateTimeFormat('en-CA', {timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(ms);
@@ -98,7 +98,7 @@ export function radarResultDecision(payload, identity, now=Date.now(), maxAge=30
   const flight=radarFlightId(payload.flight), wanted=radarFlightId(identity.flight);
   const origin=String(payload.sourceOrigin ?? payload.origin ?? '').trim().toUpperCase();
   const destination=String(payload.sourceDestination ?? payload.destination ?? '').trim().toUpperCase();
-  if (!baseTimeZone(origin) || !publishedGateDate(identity.departureDate)) return deny('source-origin-date-unverified');
+  if (!airportTimeZone(origin) || !publishedGateDate(identity.departureDate)) return deny('source-origin-date-unverified');
   if (!/^[A-Z0-9]{2,3}\d{1,5}[A-Z]?$/.test(flight) || flight!==wanted || origin!==identity.origin || destination!==identity.destination) return deny('source-other-flight-or-route');
   const stamp = payload.scheduledDepartureUtc;
   const source=radarSourceEpoch(stamp), expected=radarSourceEpoch(identity.scheduledDepartureUtc);

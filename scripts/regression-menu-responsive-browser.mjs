@@ -72,11 +72,12 @@ const localStorage = {
 };
 
 localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'menu-browser-account', role: 'admin' }));
-vm.runInNewContext(fs.readFileSync(menuDependenciesFile, 'utf8'), { module: dependencyModule, exports: dependencyModule.exports, require: createRequire(import.meta.url), localStorage, window: { localStorage } }, { timeout: 1000 });
+const menuWindow = Object.assign(new EventTarget(), { localStorage });
+vm.runInNewContext(fs.readFileSync(menuDependenciesFile, 'utf8'), { module: dependencyModule, exports: dependencyModule.exports, require: createRequire(import.meta.url), localStorage, window: menuWindow }, { timeout: 1000 });
 const menuDependencies = dependencyModule.exports;
 const scope = {
   React, ...React, ...icons, ...menuPreference, ...menuDependencies, localStorage, HomeIcon: icons.Home, MapIcon: icons.Map,
-  window: { localStorage },
+  window: menuWindow,
   storage: { get: (_key, fallback) => fallback, set: () => {} },
   getStoredUser: () => ({ id: 'menu-browser-account', name: 'Tripulante de demonstração com nome longo', email: 'demo@example.invalid' }),
   isAdmin: () => true,
