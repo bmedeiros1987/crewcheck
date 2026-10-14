@@ -41,6 +41,7 @@ const links = [...index.matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/g)].m
 assert.ok(links, 'Use actual prepared production CSS, not a mock stylesheet');
 const entry = `
 import React, {useState,useEffect,useMemo} from 'react';
+import {alertText} from '@/lib/alertExperienceText';
 import {isFinancialSetting,readFinancialSetting,writeFinancialSetting} from '@/lib/financialSettingStore';
 import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
 import {getToken} from '@/lib/authClient';
