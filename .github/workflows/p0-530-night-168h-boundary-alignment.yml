@@ -5,6 +5,7 @@ on:
     paths:
       - 'client/src/lib/complianceEngine.ts'
       - 'client/src/lib/publishedNightJourneys.ts'
+      - 'client/src/lib/canonicalDutyMeasurement.ts'
       - 'scripts/regression-alert-minute-journeys.mjs'
       - 'scripts/v14359/**'
       - 'scripts/regression-p0-530-night-168h-boundary-alignment.mjs'

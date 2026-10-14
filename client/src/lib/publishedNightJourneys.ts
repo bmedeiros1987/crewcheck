@@ -1,5 +1,5 @@
 import type { CanonicalRosterEvent } from './canonicalRoster';
-import { measureCanonicalDuty } from './canonicalDutyMeasurement';
+import { measureCanonicalDuty, publishedDutyEndpoints } from './canonicalDutyMeasurement';
 import type { RosterDay } from './pdfParser';
 
 const HOUR = 3_600_000;
@@ -36,33 +36,42 @@ export function publishedNightJourneySequence(
   const journeys = [...groups.values()].map(group => {
     const first = group[0];
     const measure = measureCanonicalDuty(events, first.id);
+    const endpoints = publishedDutyEndpoints(events, first.id);
     const measured = measure?.state === 'available';
     const start = measured ? Date.parse(measure.start!) : Math.min(...group.map(e => Date.parse(e.startDateTime)));
     const end = measured ? Date.parse(measure.end!) : Math.max(...group.map(e => Date.parse(e.endDateTime)));
     const availability = /^(HSB|HSBE|RES|ASB)$/.test(String(first.publishedDay.type));
     const operational = first.kind === 'flight' || (!availability && isOperational(first.publishedDay));
     // Preserve flight-interval eligibility; this change does not add APZ/cut to it.
-    const timingKnown = first.kind === 'flight' || Boolean(first.publishedDay.dutyReport && first.publishedDay.dutyDebrief);
+    const timingKnown = first.kind === 'flight' || (endpoints.start !== null && endpoints.end !== null);
     const night = operational && (first.kind === 'flight'
       ? group.some(e => touchesNight(Date.parse(e.startDateTime), Date.parse(e.endDateTime)))
       : isNightDuty(first.publishedDay));
-    return { journeyId: first.journeyId, date: first.date, start, end, night, operational, availability, measured, timingKnown };
-  }).filter(j => (j.operational || j.availability) && j.timingKnown && Number.isFinite(j.start) && Number.isFinite(j.end) && j.end > j.start)
+    return { journeyId: first.journeyId, date: first.date, start, end, night, operational, availability, measured, timingKnown, startProven: endpoints.start, endProven: endpoints.end };
+  }).filter(j => (j.operational || j.availability) && Number.isFinite(j.start) && Number.isFinite(j.end) && j.end > j.start)
     .sort((a, b) => a.start - b.start || a.journeyId.localeCompare(b.journeyId));
 
-  let current = 0, maxConsecutive = 0, busyEnd: number | null = null, busyEndMeasured = false;
+  let current = 0, maxConsecutive = 0, busyEnd: number | null = null;
+  const uncertainEnds: string[] = [];
+  const resets: { from: number; to: number; freeMinutes: number }[] = [];
   const sequence: typeof journeys = [];
   let longest: typeof journeys = [];
   for (const journey of journeys) {
-    if (busyEnd !== null && busyEndMeasured && journey.measured && journey.start - busyEnd >= resetAfterFreeHours * HOUR) {
+    // Only the previous release and this presentation delimit the free gap.
+    // This journey's own release is irrelevant to proving that preceding gap.
+    if (busyEnd !== null && !uncertainEnds.length && journey.startProven !== null
+      && journey.startProven - busyEnd >= resetAfterFreeHours * HOUR) {
+      resets.push({ from: busyEnd, to: journey.startProven, freeMinutes: (journey.startProven - busyEnd) / 60_000 });
       current = 0; sequence.length = 0;
     }
-    if (busyEnd === null || journey.end >= busyEnd) { busyEnd = journey.end; busyEndMeasured = journey.measured; }
-    else if (!journey.measured) busyEndMeasured = false;
-    if (!journey.operational) continue;
+    // An open availability is retained until its end is actually published.
+    // Later unrelated releases never silently close it or prove48h free.
+    if (journey.endProven === null) uncertainEnds.push(journey.journeyId);
+    else busyEnd = Math.max(busyEnd ?? journey.endProven, journey.endProven);
+    if (!journey.operational || !journey.timingKnown) continue;
     if (!journey.night) { current = 0; sequence.length = 0; continue; }
     current += 1; sequence.push(journey);
     if (current > maxConsecutive) { maxConsecutive = current; longest = [...sequence]; }
   }
-  return { maxConsecutive, journeys, longest };
+  return { maxConsecutive, journeys, longest, resets, uncertainEnds };
 }

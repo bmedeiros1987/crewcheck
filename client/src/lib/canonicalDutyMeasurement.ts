@@ -111,3 +111,40 @@ export function canonicalDutyDurationLabel(minutes: number | null): string {
   const whole = Math.round(minutes);
   return `${Math.floor(whole / 60)}h${String(whole % 60).padStart(2, '0')}`;
 }
+
+/** Independent published boundaries for free-time proofs. An incomplete duration
+ * must not erase a valid presentation, or turn an arrival/default into a release.
+ */
+export function publishedDutyEndpoints(events: readonly CanonicalRosterEvent[], selectedId: string): { start: number | null; end: number | null } {
+  const selected = events.find(e => e.id === selectedId);
+  if (!selected || !['flight', 'duty'].includes(selected.kind) || !selected.journeyId) return { start: null, end: null };
+  const complete = measureCanonicalDuty(events, selectedId);
+  if (complete?.state === 'available') return { start: Date.parse(complete.start!), end: Date.parse(complete.end!) };
+  const group = events.filter(e => e.kind === selected.kind && e.journeyId === selected.journeyId)
+    .sort((a,b) => Date.parse(a.startDateTime)-Date.parse(b.startDateTime));
+  const first = group[0], last = group.at(-1)!;
+  const firstInstant = Date.parse(first.startDateTime), lastInstant = Date.parse(last.endDateTime);
+  if (!Number.isFinite(firstInstant) || !Number.isFinite(lastInstant)) return { start: null, end: null };
+  let start: number | null = null, end: number | null = null;
+  if (first.kind === 'flight') {
+    // Retain the original clock-evidence guard used by the full measurement.
+    const clocksKnown = group.every(e => clock(e.leg?.departureTime) && clock(e.leg?.arrivalTime)
+      && !(((e.publishedDay as any).publishedClockEvidence?.legs || e.publishedDay.legs).some((leg: any) => !clock(leg.departureTime) || !clock(leg.arrivalTime))));
+    if (!clocksKnown) return { start, end };
+    const presentation = clock(first.leg?.presentationTime) || (first.legIndex === 0 ? clock(first.publishedDay.dutyReport) : null);
+    const source = first.leg?.presentationTime ? 'published' : first.publishedDay.dutyReportSource;
+    if (presentation && source === 'published' && presentation !== clock(first.departure)) {
+      const value = clockNear(firstInstant, presentation, 'before');
+      const reserve = /\b(?:ASB|RES|RESERVA|RSV)\b/.test(`${first.publishedDay.type || ''} ${first.publishedDay.pairingCode || ''}`.toUpperCase());
+      if (reserve || firstInstant - value <= 180 * 60_000) start = value;
+    }
+    const release = clock(last.publishedDay.dutyDebrief);
+    if (release && last.publishedDay.dutyDebriefSource === 'published' && last.legIndex === last.legCount - 1) end = clockNear(lastInstant, release, 'after');
+  } else {
+    if (clock(first.publishedDay.dutyReport) && first.publishedDay.dutyReportSource === 'published') start = firstInstant;
+    // With no start or explicit date-qualified endpoint, do not accept the
+    // canonical midnight fallback as evidence of the release's civil day.
+    if (start !== null && clock(last.publishedDay.dutyDebrief) && last.publishedDay.dutyDebriefSource === 'published') end = lastInstant;
+  }
+  return { start, end };
+}

@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 const root = path.resolve(process.env.ALERT_SOURCE_ROOT || process.cwd());
 const { loadClientModules } = await import(pathToFileURL(path.join(root, 'scripts/lib/ts-module-harness.mjs')));
 const prepared = fs.readFileSync(path.join(root,'client/src/lib/complianceEngine.ts'),'utf8').includes('function summarizeRegulatoryNightEvents(');
-const modules = loadClientModules({ expose: { complianceEngine: prepared ? ['summarizeRegulatoryNightEvents'] : [] }, files: ['client/src/lib/complianceEngine.ts', 'client/src/lib/canonicalRoster.ts', 'client/src/lib/canonicalDutyMeasurement.ts'], prefix: 'synthetic-alert-minutes-' });
+const modules = loadClientModules({ expose: { complianceEngine: prepared ? ['summarizeRegulatoryNightEvents'] : [] }, files: ['client/src/lib/publishedNightJourneys.ts', 'client/src/lib/complianceEngine.ts', 'client/src/lib/canonicalRoster.ts', 'client/src/lib/canonicalDutyMeasurement.ts'], prefix: 'synthetic-alert-minutes-' });
 const selected = process.argv.find(x => x.startsWith('--case='))?.slice(7);
 try {
   const engine = modules.load('complianceEngine'), canonical = modules.load('canonicalRoster'), measurement = modules.load('canonicalDutyMeasurement');
@@ -43,6 +43,39 @@ try {
       }
       const missing = marginDay('22/10/2032','04:50',500); missing.dutyDebrief = null;
       assert.equal(engine.getPublishedDutyLimitSummary(missing,null),null);
+    }
+    if (!selected || ['reset-start','availability'].includes(selected)) {
+      const prior = day('01/10/2032','01:00','04:30','01:40','04:00');
+      const next = day('09/10/2032','20:10',null,'20:50','00:30');
+      const inspect = days => {
+        const events = canonical.buildCanonicalRosterEvents(roster(days));
+        return modules.load('publishedNightJourneys').publishedNightJourneySequence(events, () => true, 48, () => false);
+      };
+      if (!selected || selected === 'reset-start') {
+        const actual = engine.analyzeCompliance(roster([prior,next])).metrics.maxConsecutiveNights;
+        console.log(JSON.stringify({timezone,case:'reset-start-observed',actual}));
+        assert.equal(actual,1,'proven preceding207h40 gap does not require the next release');
+        const sequence = inspect([prior,next]);
+        assert.equal(sequence.resets[0].freeMinutes,12460);
+        const events = canonical.buildCanonicalRosterEvents(roster([next]));
+        assert.equal(measurement.measureCanonicalDuty(events,events[0].id).state,'incomplete');
+        assert.equal(measurement.publishedDutyEndpoints(events,events[0].id).end,null);
+        const estimated = structuredClone(next); estimated.legs[0].presentationTime = undefined; estimated.dutyReportSource = 'estimated';
+        assert.equal(engine.analyzeCompliance(roster([prior,estimated])).metrics.maxConsecutiveNights,2);
+      }
+      if (!selected || selected === 'availability') {
+        const hsb = {...day('02/10/2032','12:00',null,'',''),type:'HSB',pairingCode:'HSB',legs:[]};
+        const knownNext = {...next,dutyDebrief:'01:00',dutyDebriefSource:'published'};
+        const actual = engine.analyzeCompliance(roster([prior,hsb,knownNext])).metrics.maxConsecutiveNights;
+        console.log(JSON.stringify({timezone,case:'open-availability-observed',actual}));
+        assert.equal(actual,2,'open HSB must block an unproven free-time reset');
+        const sequence = inspect([prior,hsb,knownNext]);
+        assert.equal(sequence.journeys.length,3); assert.equal(sequence.resets.length,0); assert.equal(sequence.uncertainEnds.length,1);
+        const closed = {...hsb,dutyDebrief:'23:00',dutyDebriefSource:'published'};
+        assert.equal(engine.analyzeCompliance(roster([prior,closed,knownNext])).metrics.maxConsecutiveNights,1);
+        closed.dutyDebriefSource='estimated';
+        assert.equal(engine.analyzeCompliance(roster([prior,closed,knownNext])).metrics.maxConsecutiveNights,2);
+      }
     }
     if (!selected || selected === 'journey') {
       const first = day('04/10/2032','22:10','01:05','22:50','00:35');
