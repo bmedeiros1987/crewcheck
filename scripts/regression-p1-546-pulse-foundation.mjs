@@ -33,7 +33,7 @@ assert.ok(frame.includes('global: true, pulse: true'), 'only the global frame ow
 assert.ok(!frame.includes('<CrewCheckPulse'), 'frame must not mount a second notice');
 assert.ok(home.includes('if (!global && !pulse) return null;'), 'nested Brand calls do not duplicate navigation');
 assert.ok(tsx.includes('onClick={toggleDetails}') && tsx.includes('aria-expanded={expanded}'));
-assert.ok(finalCss.includes('Single integrated Pulse header'), 'terminal cascade includes integrated header');
+assert.ok(finalCss.includes('.cc-integrated-header-space'), 'terminal cascade includes integrated header');
 assert.ok(main.trimEnd().endsWith('import "./styles/ipad-header-recovery.css";'));
 // Geometry, focus, account persistence and large text are exercised by the browser gate.
 
