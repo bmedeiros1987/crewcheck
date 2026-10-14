@@ -16,6 +16,7 @@ on:
       - 'scripts/regression-shared-pdf-channel.mjs'
       - 'scripts/regression-shared-pdf-deadline.mjs'
       - 'scripts/regression-shared-pdf-validation-timeout.mjs'
+      - 'scripts/regression-pwa-shared-pdf-session.mjs'
       - 'scripts/regression-v14-3-68-android-share-import.mjs'
       - '.github/workflows/v14368-android-share-import.yml'
 
@@ -56,6 +57,7 @@ jobs:
           node scripts/regression-shared-pdf-channel.mjs
           node scripts/regression-shared-pdf-deadline.mjs
           node scripts/regression-shared-pdf-validation-timeout.mjs
+          node scripts/regression-pwa-shared-pdf-session.mjs
       - name: TypeScript check
         run: npx tsc --noEmit
       - name: Build offline web shell consumed by Android

@@ -5,8 +5,14 @@ const pending = new Map<string,Pending>();
 let generation = 0, epoch: number | null = null, validatedOwner: string | null = null;
 let lastStatus: any = null;
 function documentId(): string { return String((window as any).__crewcheckPdfDocument || ''); }
+function isPwaPending(payload: any): boolean {
+  return typeof payload?.shareId === 'string' && payload.shareId.startsWith('pwa:')
+    && payload.transport !== 'android-private-inbox';
+}
 function clear() {
-  delete (window as any).__crewcheckPendingNativePdf;
+  // PWA bytes may be the only remaining copy after the SW single-use read.
+  // Their durable account receipt remains the authority for retry/quarantine.
+  if (!isPwaPending((window as any).__crewcheckPendingNativePdf)) delete (window as any).__crewcheckPendingNativePdf;
   generation++; epoch=null; validatedOwner=null; lastStatus=null;
   for(const p of pending.values()){clearTimeout(p.timer);p.cancel();p.resolve(false);} pending.clear();
 }
@@ -53,7 +59,7 @@ async function bind() {
   await refreshSharedPdfChannelStatus();
   if(captured!==generation)return;
   const payload=(window as any).__crewcheckPendingNativePdf;
-  if(payload)window.dispatchEvent(new CustomEvent('crewcheck:native-pdf',{detail:payload}));
+  if(payload && !isPwaPending(payload))window.dispatchEvent(new CustomEvent('crewcheck:native-pdf',{detail:payload}));
 }
 if(typeof window!=='undefined'){
   window.addEventListener('crewcheck:auth-will-change',()=>{clear();void request('logout');});
