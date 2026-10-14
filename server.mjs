@@ -12,7 +12,8 @@ import { fileURLToPath } from 'node:url';
 import { evaluateCriticalWeatherDelivery } from './server/weather/critical-observation.mjs';
 import './server/telegram-fast-ack.mjs';
 import { parsePdfOnServer } from './server/rosterParser.mjs';
-import { handlePlatformRoute, consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram, loadOwnedPlatformRoster } from './server/platform.mjs';
+import { handlePlatformRoute, consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';
+import { loadOwnedPlatformRoster } from './server/platform.mjs';
 import { handleV139Route, handleV139Telegram } from './server/v139/index.mjs';
 import { buildInfobipTtsRequest, infobipConfiguration, infobipPublicStatus } from './server/v1396/infobip.mjs';
 
