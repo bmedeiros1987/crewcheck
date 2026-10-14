@@ -43,7 +43,7 @@ async function scenario(name, payload, options = {}) {
     reportSharedPdfSession:()=>true,
     blockSharedPdf:id=>{if(id!==nativeState.id||nativeState.owner)return false;nativeState.phase='blocked';return true;},
     claimSharedPdf:(id,account)=>{trace.push('native-claim');if(id!==nativeState.id||account!==nativeState.owner||nativeState.phase!=='unclaimed')return false;nativeState.phase='claimed';return true;},
-    beginSharedPdfCommit:(id,account)=>{if(id!==nativeState.id||account!==nativeState.owner||nativeState.phase!=='claimed')return false;nativeState.phase='committing';return true;},
+    beginSharedPdfCommit:(id,account)=>{if(id!==nativeState.id||account!==nativeState.owner||nativeState.phase!=='claimed')return false;nativeState.phase='committing';if(state.onNativeBegin)state.onNativeBegin(state);return true;},
     confirmSharedPdfCommit:(id,account)=>{if(state.failNativeConfirm||id!==nativeState.id||account!==nativeState.owner||nativeState.phase!=='committing')return false;nativeState.phase='committed';return true;},
     readClaimedSharedPdfChunk:(id,account,offset,length)=>{trace.push('chunk');if(id!==nativeState.id||account!==nativeState.owner||nativeState.phase!=='claimed')throw new Error('read before claim');return window.AndroidCrewCheckNative.readSharedPdfChunk(id,offset,length);},
     acknowledgeClaimedSharedPdf:(id,account)=>{if(id!==nativeState.id||account!==nativeState.owner||nativeState.phase!=='committed')return false;return window.AndroidCrewCheckNative.acknowledgeSharedPdf(id);},
@@ -156,6 +156,8 @@ for(const phase of ['onChunk','onParse','onConfirm','onPublication','onComplianc
  r=await scenario('account changes '+phase,durable,{[phase]:s=>{s.owner='owner-B';s.token='token-B';}});
  check(r.state.save===0&&r.state.bundle===0&&r.state.acks.length===0,'async account guard '+phase+' preserved');
 }
+r=await scenario('account changes while native write-ahead commits',durable,{onNativeBegin:s=>{s.owner='owner-B';s.token='token-B';}});
+check(r.state.save===0&&r.state.bundle===0&&r.state.acks.length===0,'native bridge return cannot commit under a changed account');
 for(const options of [{badChunk:true},{oversizedChunk:true},{bindingStorageFailure:true}]){
  r=await scenario('unreadable/invalid pending file',durable,options);
  check(r.state.parse===0&&r.state.acks.length===0,'invalid source/storage never parses or ACKs');

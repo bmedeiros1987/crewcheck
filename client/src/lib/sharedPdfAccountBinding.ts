@@ -91,7 +91,8 @@ export function beginSharedPdfCommit(payload: any): boolean {
   try {
     const receipt = read(payload);
     if (!receipt || !write(payload,{...receipt,committed:false,phase:'committing'})) return false;
-    return receipt.kind === 'pwa' || (window as any).AndroidCrewCheckNative?.beginSharedPdfCommit?.(sharedPdfIdentity(payload),account) === true;
+    const begun = receipt.kind === 'pwa' || (window as any).AndroidCrewCheckNative?.beginSharedPdfCommit?.(sharedPdfIdentity(payload),account) === true;
+    return begun && owner() === account;
   } catch { return false; }
 }
 export function markSharedPdfCommitted(payload: any): boolean {
