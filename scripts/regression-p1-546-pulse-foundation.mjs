@@ -27,71 +27,15 @@ const frame = fs.readFileSync('client/src/components/navigation/InternalHeaderFr
 const finalCss = fs.readFileSync('client/src/styles/ipad-header-recovery.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 const main = fs.readFileSync('client/src/main.tsx', 'utf8');
 
-// 1. A marca e o aviso têm superfícies separadas no mesmo header em fluxo.
-//    Brand conserva navegação mesmo sem aviso; só o frame monta o Pulse ativo.
-const header = home.match(/<InternalHeaderFrame>\s*<Brand back=\{view !== 'cockpit'\}([\s\S]*?)\/>\s*<\/InternalHeaderFrame>/);
-assert.ok(header, 'o header deve montar marca navegável e frame de avisos');
-assert.match(header[1], /view === 'cockpit' \? \(\) => setDrawer\(true\) : undefined/,
-  'o menu do cockpit permanece navegável');
-if (home.includes('// stay-editor-context-v2')) {
-  assert.match(header[1], /onMenu=\{view === 'presentation' && \(readStayEditorIntent\(\) \|\| hasStoredStayEditorOrigin\(\)\) \? returnFromStayProgramEditor/,
-    'o retorno do editor pertence ao owner Home sem duplicar Pulse');
-}
-assert.equal((home.match(/<InternalHeaderFrame>/g) || []).length, 1, 'a aplicação deve montar um único header global');
-assert.match(frame, /className="cc-header-notice"><CrewCheckPulse compact\/>/,
-  'o frame deve montar uma única superfície de aviso');
-assert.equal((frame.match(/<CrewCheckPulse\b/g) || []).length, 1, 'não duplicar a superfície de aviso');
-assert.match(frame, /className="cz-global-header" data-global-internal-header="true">\{children\}<div className="cc-header-notice"><CrewCheckPulse compact\/><\/div><\/div>/,
-  'marca e Pulse pertencem ao mesmo header em fluxo normal');
-assert.ok(!frame.includes('cc-fixed-header-space'), 'header em fluxo não pode reservar um spacer fixo');
-assert.ok(!/<Brand pulse(?:\s|=)/.test(home), 'Brand não deve montar outro Pulse além do frame');
-assert.ok(
-  !home.includes('<CrewCheckPulse/>'),
-  'não pode existir uma segunda superfície Pulse abaixo do header',
-);
-
-// 2. Sem mensagem importante, Pulse retorna null no frame e mantém a marca.
-assert.match(
-  tsx,
-  /if \(!message\) return compact \? <>\{fallback\}<\/> : null;/,
-  'sem alerta, o Pulse compacto precisa devolver a identidade do header',
-);
-
-// 3. O resumo compacto preserva toque e texto inteiro. Detalhes ficam no
-//    fluxo e mostram todo o texto; avisos críticos não podem ser truncados.
-assert.match(
-  cssRules,
-  /\.cc-pulse-compact-trigger \{[^}]*min-height: 44px;/,
-  'o resumo compacto precisa manter alvo de toque de 44px',
-);
-// The prepared sheet retains legacy rules. An includes/first-match check can
-// falsely accept the obsolete fixed/ellipsis contract; inspect the last override.
-const finalRules = postcss.parse(finalCss);
-const lastDeclaration = (selector, property) => {
-  let value;
-  finalRules.walkRules(rule => {
-    if (!rule.selector.includes(selector)) return;
-    rule.walkDecls(property, declaration => { value = declaration.value; });
-  });
-  return value;
-};
-assert.equal(lastDeclaration('.cz-app[data-version] > .cz-global-header', 'position'), 'relative',
-  'a posição efetiva final acompanha o scroll do documento');
-assert.equal(lastDeclaration('.cc-header-notice .cc-pulse-compact-trigger > strong', 'white-space'), 'normal',
-  'o título usa quebra natural e a largura disponível');
-assert.equal(lastDeclaration('.cc-header-notice .cc-pulse-compact-trigger > strong', 'overflow'), 'visible',
-  'o título completo não pode ser cortado');
-for (const [property, value] of [['position', 'static'], ['max-height', 'none'], ['overflow', 'visible']]) {
-  assert.equal(lastDeclaration('.cc-header-notice .cc-pulse-popover', property), value,
-    'detalhes expandidos permanecem íntegros no fluxo');
-}
-assert.match(finalCss, /data-priority="critica"[\s\S]*?white-space:normal!important;overflow:visible!important;overflow-wrap:anywhere/,
-  'aviso crítico deve mostrar o título completo');
-assert.ok(main.trimEnd().endsWith('import "./styles/ipad-header-recovery.css";'), 'CSS do header deve fechar a precedência visual');
-assert.ok(
-  !/--cc-header-clearance|ResizeObserver/.test(css + home),
-  'o Pulse não pode voltar a controlar dinamicamente a geometria do header',
-);
+// Requested integrated header supersedes the former separate notice row.
+assert.equal((home.match(/<InternalHeaderFrame>/g) || []).length, 1);
+assert.ok(frame.includes('global: true, pulse: true'), 'only the global frame owns navigation and Pulse');
+assert.ok(!frame.includes('<CrewCheckPulse'), 'frame must not mount a second notice');
+assert.ok(home.includes('if (!global && !pulse) return null;'), 'nested Brand calls do not duplicate navigation');
+assert.ok(tsx.includes('onClick={toggleDetails}') && tsx.includes('aria-expanded={expanded}'));
+assert.ok(finalCss.includes('.cc-integrated-header-space'), 'terminal cascade includes integrated header');
+assert.ok(main.trimEnd().endsWith('import "./styles/ipad-header-recovery.css";'));
+// Geometry, focus, account persistence and large text are exercised by the browser gate.
 
 // 4. O Pulse continua sem entrar na disputa de !important do shell.
 const importantes = cssRules

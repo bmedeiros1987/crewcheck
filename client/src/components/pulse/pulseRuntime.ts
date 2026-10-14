@@ -1,6 +1,7 @@
 import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
 import { playCrewCheckNoticeSound, stopCrewCheckNotificationSound } from './pulseSound';
 import { createPulseSession, type PulseSessionState } from './pulseSession';
+import { alertAccount, alertDigest, alertIsReviewed, saveAlertReview, ALERT_REVIEW_EVENT, type AlertIdentity } from '../../lib/alertReviewStore';
 import type {
   CrewCheckPulseMessage,
   CrewCheckPulsePriority,
@@ -30,7 +31,7 @@ const notificationMemory = new Map<string, number>();
 const session = createPulseSession((next) => {
   runtimeState = next;
   for (const listener of listeners) listener(next);
-});
+}, { queueLimit: Number.MAX_SAFE_INTEGER });
 
 const DEFAULT_PRIORITY: Record<CrewCheckPulseTone, CrewCheckPulsePriority> = {
   informativo: 'normal',
@@ -70,6 +71,8 @@ function normalizeMessage(message: CrewCheckPulseMessage): CrewCheckPulseMessage
   const autoDismissMs = message.autoDismissMs ?? DEFAULT_AUTO_DISMISS[tone];
   return {
     ...message,
+    account: message.account === undefined ? alertAccount() : message.account,
+    review: message.review || { occurrence: alertDigest(['notice', message.dedupeKey || message.id || message.title]), version: alertDigest([message.dedupeKey || message.id || message.title, message.detail || '']) },
     tone,
     priority,
     dismissible: message.dismissible !== false,
@@ -207,17 +210,20 @@ function deliverSystemNotification(message: CrewCheckPulseMessage): boolean {
 export function publishCrewCheckPulse(message: CrewCheckPulseMessage): boolean {
   if (!pulseEnabled() || !message || !String(message.title || '').trim()) return false;
   const normalized = normalizeMessage(message);
-  const dedupeKey = String(normalized.dedupeKey || normalized.id || '').trim();
-  if (dedupeKey && recentlySeen(dedupeKey, Number(normalized.pulseCooldownMs || 0))) return false;
+  if (normalized.account !== alertAccount() || normalized.review && alertIsReviewed(normalized.review)) return false;
+  // A presentation/sound cooldown is never a disposition. Unhandled messages
+  // must be reconstructible after logout and must not fall out of a short queue.
   session.publish(normalized);
   return true;
 }
 
 export function publishCrewCheckNotice(message: CrewCheckPulseMessage): { pulse: boolean; notification: boolean } {
   const normalized = normalizeMessage(message);
+  if (normalized.account !== alertAccount() || normalized.review && alertIsReviewed(normalized.review)) return { pulse: false, notification: false };
   const pulse = publishCrewCheckPulse(normalized);
   const notification = deliverSystemNotification(normalized);
-  if (pulse) playCrewCheckNoticeSound(String(normalized.notificationTag || normalized.dedupeKey || normalized.id || normalized.title));
+  const soundKey = `${normalized.account || 'ephemeral'}:${normalized.review?.occurrence}:${normalized.review?.version}`;
+  if (pulse && !recentlySeen(soundKey, Number(normalized.pulseCooldownMs || 0))) playCrewCheckNoticeSound(String(normalized.notificationTag || normalized.dedupeKey || normalized.id || normalized.title));
   return { pulse, notification };
 }
 
@@ -231,9 +237,18 @@ export function currentCrewCheckPulseState(): PulseSessionState {
   return runtimeState;
 }
 
-export function dismissCrewCheckPulse(): void {
+export function dismissCrewCheckPulse(): boolean {
+  const message = runtimeState.message;
+  const saved = Boolean(message?.review && saveAlertReview({ ...message.review, state: 'dismissed', title: message.title, category: message.category }, message.account || null));
   stopCrewCheckNotificationSound();
-  session.dismiss();
+  if (!saved && message?.account) return false;
+  if (!saved) session.dismiss();
+  return saved;
+}
+
+/** Remove only stale/reviewed notices from this producer, preserving other priorities. */
+export function reconcileCrewCheckPulse(scope: string, active: AlertIdentity[]): void {
+  session.removeWhere(message => message.scope === scope && (!message.review || !active.some(identity => identity.occurrence === message.review!.occurrence && identity.version === message.review!.version)));
 }
 
 export function clearCrewCheckPulse(): void {
@@ -265,4 +280,8 @@ if (typeof window !== 'undefined' && !window.__crewcheckPulseEventBridgeV2) {
     const detail = (event as CustomEvent<CrewCheckPulseMessage>).detail;
     if (detail?.title) publishCrewCheckPulse(detail);
   });
+  for (const name of ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired']) window.addEventListener(name, clearCrewCheckPulse);
+  const removeReviewed = () => session.removeWhere(message => message.account !== alertAccount() || Boolean(message.review && alertIsReviewed(message.review)));
+  window.addEventListener(ALERT_REVIEW_EVENT, removeReviewed);
+  window.addEventListener('storage', removeReviewed);
 }

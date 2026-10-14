@@ -1,3 +1,8 @@
+import { alertRosterOwned } from '@/lib/alertRosterOwnership';
+import { AlertCenter } from '@/components/alerts/AlertCenter';
+import { alertAccount, alertIsReviewed, complianceAlertIdentity, ALERT_REVIEW_EVENT } from '@/lib/alertReviewStore';
+import { alertText } from '@/lib/alertExperienceText';
+import { reconcileCrewCheckPulse } from '@/components/pulse/pulseRuntime';
 import { gateQueryDay, gateQuerySuppressed, originFlightDate, radarResultDecision, publishedGateDate } from '../../../shared/gate-query-day.mjs';
 import {NotificationCenter,openNotificationSettings} from '@/components/notifications/NotificationCenter';
 import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
@@ -960,16 +965,17 @@ function neutralCompliance(roster: CrewRoster): ComplianceResult {
   } as any;
 }
 
-function actionableComplianceAlerts(compliance: ComplianceResult | null): any[] {
+function actionableComplianceAlerts(compliance: ComplianceResult | null, includeReviewed = false): any[] {
   const source = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
   const seen = new Set<string>();
   return source.filter((alert: any) => {
+    if (!includeReviewed && alert?.reviewIdentity && alertIsReviewed(alert.reviewIdentity)) return false;
     if (!alert || alert.dismissed || alert.falsePositive || alert.active === false || !isActionableComplianceAlert(alert)) return false;
     const title = String(alert.title || '').trim();
     const description = String(alert.description || '').trim();
     const severity = String(alert.severity || '').toLowerCase();
     if ((!title && !description) || !['error', 'warning'].includes(severity)) return false;
-    const signature = `${severity}|${title}|${description}|${String(alert.legalReference || '')}`;
+    const signature = `${severity}|${alert.code || title}|${alert.date || ''}|${alert.journeyId || ''}|${description}|${String(alert.legalReference || '')}`;
     if (seen.has(signature)) return false;
     seen.add(signature);
     return true;
@@ -1058,6 +1064,9 @@ function preservePlannedRosterBeforeImport(current: BundleState, incoming: CrewR
 }
 
 function currentCompliance(bundle: BundleState) { return bundle.compliance || analyzeSafe(bundle.roster); }
+function reviewableCompliance(compliance: ComplianceResult, roster: CrewRoster) {
+  return { ...compliance, alerts: (compliance.alerts || []).map(alert => ({ ...alert, reviewIdentity: complianceAlertIdentity(alert, roster) })) };
+}
 function currentGym(bundle: BundleState) { try { return getGymRecommendations(bundle.roster); } catch { return []; } }
 
 function buildLegs(roster: CrewRoster): ZeroLeg[] {
@@ -1573,40 +1582,26 @@ async function askTelegramConcierge(text: string) {
   return payload;
 }
 
-function Brand({ back, onMenu, pulse = false }: { back?: boolean; onMenu?: () => void; pulse?: boolean }) {
+function Brand({ back, onMenu, pulse = false, global = false }: { back?: boolean; onMenu?: () => void; pulse?: boolean; global?: boolean }) {
+  if (!global && !pulse) return null;
   const click = onMenu || (back ? (() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' }))) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));
   const lockup = <div className="cz-brand-lockup"><span className="cz-logo"><Plane size={26}/></span><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>;
   return <header className="cz-brand-row">
-    <button className="cz-menu-btn" onClick={click} aria-label={back ? 'Voltar' : 'Menu'}>{back ? '←' : <Menu size={28}/>}</button>
+    <button className="cz-menu-btn" onClick={click} aria-label={back ? alertText().back : alertText().menu}>{back ? '←' : <Menu size={28}/>}</button>
     {pulse ? <CrewCheckPulse compact fallback={lockup}/> : lockup}
   </header>;
 }
 function complianceAlertSignature(compliance: ComplianceResult | null): string {
-  const alerts = actionableComplianceAlerts(compliance);
-  return alerts.map((alert: any) => [alert?.severity, alert?.title, alert?.description, alert?.legalReference].map((item) => String(item || '').trim()).join('::')).sort().join('||');
+  return actionableComplianceAlerts(compliance).map(alert => alert.reviewIdentity ? `${alert.reviewIdentity.occurrence}:${alert.reviewIdentity.version}` : String(alert.code || alert.title)).sort().join('|');
 }
 
 function BottomNav({ view, setView, openMenu, alertCount = 0, alertSignature = '' }: { view: ZeroView; setView: (v: ZeroView) => void; openMenu: () => void; alertCount?: number; alertSignature?: string }) {
-  const currentSignature = alertCount > 0 ? (alertSignature || `count:${alertCount}`) : '';
-  const [seenSignature, setSeenSignature] = useState(() => storage.get('crewcheck_alerts_seen_signature', ''));
-  useEffect(() => {
-    if (alertCount === 0) {
-      storage.set('crewcheck_alerts_seen_signature', '');
-      storage.set('crewcheck_alerts_seen_count', '0');
-      setSeenSignature('');
-    }
-  }, [alertCount]);
-  const visibleAlertCount = currentSignature && currentSignature !== seenSignature ? alertCount : 0;
-  const markAlertsRead = () => {
-    storage.set('crewcheck_alerts_seen_signature', currentSignature);
-    storage.set('crewcheck_alerts_seen_count', String(alertCount));
-    setSeenSignature(currentSignature);
-  };
+  const visibleAlertCount = alertCount;
   const items: Array<[ZeroView, string, any]> = [['cockpit','Cockpit',HomeIcon],['roster','Escala',CalendarDays],['alerts','Alertas',Bell],['load','Carga',BriefcaseBusiness],['settings','Menu',Menu]];
   return <nav className="cz-bottom-nav" aria-label="Navegação principal">{items.map(([v, label, Icon]) => {
     const isMenu = v === 'settings';
     const active = view===v || (isMenu && ['settings','notifications','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','mycar','gyms','iflight','updates','plans','community','regulation','bids','admin','maintenance'].includes(view));
-    return <button key={v} className={active ? 'active' : ''} onClick={() => { if (v === 'alerts') markAlertsRead(); isMenu ? openMenu() : setView(v); }}><Icon size={23}/><span>{label}</span>{v==='alerts' && visibleAlertCount > 0 && <em aria-label={`${visibleAlertCount} alerta(s) novo(s)`}>{visibleAlertCount}</em>}</button>;
+    return <button key={v} className={active ? 'active' : ''} onClick={() => { isMenu ? openMenu() : setView(v); }}><Icon size={23}/><span>{label}</span>{v==='alerts' && visibleAlertCount > 0 && <em aria-label={`${visibleAlertCount} alerta(s) novo(s)`}>{visibleAlertCount}</em>}</button>;
   })}</nav>;
 }
 function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; title: string; value: string; detail: string; tone?: string }) {
@@ -1717,7 +1712,7 @@ function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapsho
       systemNotification: gateChangeAlertAllowed(eventStartDateTime(event).getTime()) ? 'background' : 'never',
       notificationTag: `crewcheck:gate:${event.id}`,
       notificationCooldownMs: 2 * 60_000,
-      action: { label: 'Abrir Radar', view: 'radar' },
+      action: { label: 'Abrir Radar', view: 'radar', context: { programId: event.id, dateEpochMs: Date.parse(event.canonical?.startDateTime || ''), journeyId: event.canonical?.journeyId, flightKey: event.flightNumber, airportCode: event.origin } },
     });
   }
   return snapshot;
@@ -2369,7 +2364,7 @@ function useOperationalWeatherPulse(event: ZeroLeg) {
             systemNotification: 'background',
             notificationTag: `crewcheck:weather:${event.id}:${airport}`,
             notificationCooldownMs: 15 * 60_000,
-            action: { label: 'Ver meteorologia', view: 'weather' },
+            action: { label: 'Ver meteorologia', view: 'weather', context: { programId: event.id, dateEpochMs: Date.parse(event.canonical?.startDateTime || ''), journeyId: event.canonical?.journeyId, flightKey: event.flightNumber, airportCode: airport } },
           });
         }
       } catch {
@@ -2622,6 +2617,10 @@ function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
     setDispositionRevision((value) => value + 1);
   }
   return <><Brand back/><section className="cz-panel-head"><h1>Irregularidades e alertas</h1>{compliance?.metrics.flightHoursOriginPending && <p role="status">Origem da classificação de extra pendente. Reimporte a escala original para verificar OP/PS; o acumulado de voo operado não está confirmado.</p>}<p>RBAC 117, ACT, repouso, jornada, sobreaviso, reserva e acionamentos. Sem alertas fictícios.</p></section>{list.length ? <section className="cz-alert-stack">{list.map((a: any, idx: number) => <article className={a.severity === 'error' ? 'danger' : 'warn'} key={`${a.title}-${idx}`}><AlertTriangle/><div><h2>{a.title}</h2><p>{a.description}</p><span>{a.severity === 'error' ? 'Confirmada' : 'Atenção'}</span><b>Confiança: {a.severity === 'error' ? 'alta' : 'média'}</b>{isGroundLimitAlert(a) && <button type="button" onClick={() => ignoreAsUserScheduleChange(a)}>Ignorar — alteração da minha programação</button>}</div><ChevronRight/></article>)}</section> : <article className="cz-empty-real"><ShieldCheck/><h2>Nenhuma irregularidade confirmada</h2><p>{ignored.length ? 'Os alertas desta análise foram classificados por você como alterações da programação.' : 'Carregue a escala real para que o motor regulatório refaça a análise completa.'}</p></article>}{ignored.length > 0 && <article className="cz-alert-detail"><h2>Alterações informadas por você <b>{ignored.length}</b></h2><div><p><strong>Tratamento</strong>Esses itens ficam fora dos alertas ativos, sem apagar a análise da escala publicada.</p><p><strong>Rastreabilidade</strong>A classificação é uma preferência do usuário e não altera o motor regulatório canônico.</p></div><footer><button onClick={restoreIgnoredAlerts}><RotateCcw/> Restaurar alertas ignorados</button></footer></article>}<article className="cz-alert-detail"><h2>Detalhes regulatórios <b>{list.length ? 'Ativo' : 'Aguardando escala'}</b></h2><div><p><strong>O que o sistema avalia</strong>Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p><p><strong>Dados usados</strong>Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p></div><footer><button>Ver base regulatória</button></footer></article></>;
+}
+// The legacy Alerts above remains only for historical preparation anchors.
+function ReviewedAlerts({ compliance, roster, onImport, onChoose }: { compliance: ComplianceResult | null; roster: CrewRoster; onImport(): void; onChoose(): void }) {
+  return <AlertCenter alerts={alertRosterOwned(roster) ? actionableComplianceAlerts(compliance, true) : []} roster={roster} onImport={onImport} onChoose={onChoose} pendingAnalysis={(compliance?.alerts || []).filter(alert => alert.code === 'night-sequence-pending')}/>;
 }
 function routeDurationMinutes(route: RoutePreviewInfo | null): number {
   const text = String(route?.durationInTrafficText || route?.durationText || '').toLowerCase();
@@ -4996,6 +4995,14 @@ body.crewcheck-menu-open {
 `;
 
 export default function Home() {
+  const [alertExperienceRevision, setAlertExperienceRevision] = useState(0);
+  useEffect(() => {
+    const sync = () => setAlertExperienceRevision(value => value + 1);
+    const names = [ALERT_REVIEW_EVENT, 'crewcheck:auth-changed', 'crewcheck:auth-expired', 'crewcheck:language-change', 'crewcheck:locale-change'];
+    for (const name of names) window.addEventListener(name, sync);
+    window.addEventListener('storage', sync);
+    return () => { for (const name of names) window.removeEventListener(name, sync); window.removeEventListener('storage', sync); };
+  }, []);
   useEffect(initializeCrewTextSize, []);
   const [, setLocation] = useLocation();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -5025,22 +5032,21 @@ export default function Home() {
 
 
   useEffect(() => {
-    const count = actionableComplianceAlerts(compliance).length;
-    if (!count) return;
-    const signature = complianceAlertSignature(compliance) || String(count);
-    publishCrewCheckNotice({
-      id: `compliance:${signature}`,
-      dedupeKey: `compliance:${signature}`,
-      pulseCooldownMs: 6 * 60 * 60_000,
-      category: 'compliance',
-      tone: 'atencao',
-      priority: 'alta',
-      title: `${count} ponto${count === 1 ? '' : 's'} para revisar`,
-      detail: 'Confira os alertas antes de considerar a programação conferida.',
-      systemNotification: 'never',
-      action: { label: 'Revisar', view: 'alerts' },
-    });
-  }, [compliance]);
+    const alerts = alertRosterOwned(bundle.roster) ? actionableComplianceAlerts(reviewableCompliance(compliance, bundle.roster)) : [];
+    const active = alerts.map(alert => complianceAlertIdentity(alert, bundle.roster));
+    reconcileCrewCheckPulse('compliance', active);
+    if (!alertAccount()) return;
+    for (const alert of alerts) {
+      const identity = complianceAlertIdentity(alert, bundle.roster);
+      publishCrewCheckNotice({
+        id: `compliance:${identity.occurrence}:${identity.version}`,
+        dedupeKey: `compliance:${identity.occurrence}:${identity.version}`,
+        review: identity, scope: 'compliance', category: 'compliance', tone: 'atencao', priority: 'alta',
+        pulseCooldownMs: 6 * 60 * 60_000, compactTitle: alertText().review, title: `${alertText().review}${alert.date ? ' · ' + alert.date : ''}`, detail: alertText().reviewHint,
+        systemNotification: 'never', action: { label: alertText().review, view: 'alerts', alert: identity },
+      });
+    }
+  }, [compliance, bundle.roster, alertExperienceRevision]);
 
   useEffect(() => {
     const publishWatchSnapshot = () => {
@@ -5235,12 +5241,12 @@ export default function Home() {
     {busy && <div className="cz-busy"><Plane/><strong>Interpretando escala...</strong></div>}
     {showIntro && <OpeningVideo onDone={() => setShowIntro(false)}/>}
     <MenuDrawer open={drawer} close={() => setDrawer(false)} view={view} setView={setView} actions={actions}/>
-    {view === 'cockpit' && <Cockpit events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>} 
+    {view === 'cockpit' && <Cockpit events={events} compliance={reviewableCompliance(compliance, bundle.roster)} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>} 
     <FreeDayPostponementAlerts roster={bundle.roster} source={bundle.source} view={view} onOpen={() => setView('alerts')}/>
     {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>} 
     {view === 'compare' && <CompareRosterView bundle={bundle} onUpload={actions.upload}/>} 
     {view === 'bids' && <BidsView events={events}/>} 
-    {view === 'alerts' && <Alerts compliance={compliance}/>}
+    {view === 'alerts' && <ReviewedAlerts key={alertAccount() || 'unbound'} compliance={compliance} roster={bundle.roster} onImport={actions.upload} onChoose={() => setView('database')}/>}
     {view === 'regulation' && <ManualRegulationView compliance={compliance}/>}
     {view === 'departure' && <Departure event={event}/>}
     {view === 'mycar' && <CarView event={event}/>}
@@ -5271,6 +5277,6 @@ export default function Home() {
     {view === 'map' && <MonthlyMapView events={events} actions={actions}/>}
     {view === 'database' && <DatabaseView setBundle={setBundle} setView={setView}/>}
     {view === 'crew' && <CrewToolsView bundle={bundle}/>}
-    <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)} alertCount={actionableComplianceAlerts(compliance).length} alertSignature={complianceAlertSignature(compliance)}/>
+    <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)} alertCount={actionableComplianceAlerts(reviewableCompliance(compliance, bundle.roster)).length} alertSignature={complianceAlertSignature(reviewableCompliance(compliance, bundle.roster))}/>
   </main>;
 }

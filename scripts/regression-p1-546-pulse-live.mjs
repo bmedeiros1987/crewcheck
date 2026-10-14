@@ -18,7 +18,7 @@ for (const marker of [
   "category: 'weather'",
   "category: 'compliance'",
   "systemNotification: 'background'",
-  "action: { label: 'Revisar', view: 'alerts' }",
+  "view: 'alerts', alert: identity",
 ]) {
   assert.ok(home.includes(marker), 'integração Pulse ausente após prepare: ' + marker);
 }
@@ -58,14 +58,10 @@ for (const marker of ['cc-pulse-compact', 'cc-pulse-popover', 'cc-pulse-controls
 }
 assert.ok(component.includes("crewcheck:set-view"), 'ação do Pulse deve usar a navegação já existente');
 
-// Interação compacta: o alerta inteiro navega direto; a seta é o único controle
-// dedicado a expandir detalhes. Navegar não equivale a dispensar a mensagem.
-const compactStart = component.indexOf('if (compact)');
-const compactEnd = component.indexOf('return (', compactStart + 20);
-const compactBlock = component.slice(compactStart, compactEnd > compactStart ? compactEnd : component.length);
-assert.ok(compactBlock.includes('onClick={act}'), 'toque no alerta compacto deve executar sua ação contextual');
-assert.ok(compactBlock.includes('className="cc-pulse-compact-details"') && compactBlock.includes('onClick={toggleDetails}'),
-  'detalhes do Pulse devem ter controle separado da navegação');
+// A single compact trigger expands details; the explicit action opens its occurrence.
+assert.ok(component.includes('onClick={toggleDetails}'));
+assert.ok(!component.includes('className="cc-pulse-compact-details"'), 'no duplicate detail arrow button');
+assert.ok(component.includes('message.action.alert'), 'navigation carries stable occurrence/version');
 const actStart = component.indexOf('const act = () => {');
 const actEnd = component.indexOf('const toggleDetails', actStart);
 const actBlock = component.slice(actStart, actEnd);
