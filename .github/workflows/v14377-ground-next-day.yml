@@ -4,6 +4,13 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'scripts/shared-pdf-native-claim/**'
+      - 'scripts/android-share-web/**'
+      - 'client/src/lib/sharedPdf*.ts'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/SharedPdf*.java'
+      - 'scripts/shared-pdf-ack-contract.mjs'
+      - 'scripts/regression-shared-pdf-ack-contract.mjs'
+      - 'scripts/regression-shared-pdf-native-offline.cjs'
       - 'server/rosterParser.mjs'
       - 'client/src/lib/aimsParser.ts'
       - 'scripts/v139/apply.mjs'

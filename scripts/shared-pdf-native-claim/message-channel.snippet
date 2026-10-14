@@ -1,0 +1,161 @@
+    private final SharedPdfChannelPolicy pdfChannelPolicy = new SharedPdfChannelPolicy();
+    private boolean pdfChannelAvailable;
+    private String pdfDocument = "";
+    private long pdfStartupValidationEpoch = -1;
+    private final java.util.concurrent.ThreadPoolExecutor pdfSessionExecutor = new java.util.concurrent.ThreadPoolExecutor(
+        1,1,0L,java.util.concurrent.TimeUnit.MILLISECONDS,new java.util.concurrent.ArrayBlockingQueue<Runnable>(1),
+        new java.util.concurrent.ThreadPoolExecutor.DiscardOldestPolicy());
+
+    private final java.util.concurrent.ScheduledExecutorService pdfSessionTimeouts = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+    private SharedPdfSessionVerifier.Attempt pdfValidation;
+    private String pdfValidationRequestId;
+    private java.util.concurrent.Future<?> pdfValidationFuture;
+    private java.util.concurrent.ScheduledFuture<?> pdfValidationTimeout;
+    private void cancelPdfValidation() {
+        SharedPdfSessionVerifier.Attempt attempt=pdfValidation;
+        java.util.concurrent.Future<?> future=pdfValidationFuture;
+        java.util.concurrent.ScheduledFuture<?> timeout=pdfValidationTimeout;
+        pdfValidation=null;pdfValidationRequestId=null;pdfValidationFuture=null;pdfValidationTimeout=null;
+        if(timeout!=null)timeout.cancel(false);
+        if(future!=null)future.cancel(true);
+        if(attempt!=null)attempt.cancel();
+        pdfSessionExecutor.purge();
+    }
+    private void finishPdfValidation() {
+        if(pdfValidationTimeout!=null)pdfValidationTimeout.cancel(false);
+        pdfValidation=null;pdfValidationRequestId=null;pdfValidationFuture=null;pdfValidationTimeout=null;
+    }
+    private String pdfOrigin(String url) {
+        try {
+            java.net.URI uri = new java.net.URI(url);
+            if (uri.getRawUserInfo() != null || uri.getPort() != -1) return "";
+            String origin = uri.getScheme() + "://" + uri.getHost();
+            return SharedPdfChannelPolicy.allowedOrigin(origin) ? origin : "";
+        } catch (Exception ignored) { return ""; }
+    }
+    private void invalidatePdfChannel(String url) {
+        cancelPdfValidation();
+        pdfDocument = java.util.UUID.randomUUID().toString();
+        pdfChannelPolicy.invalidate(pdfDocument, pdfOrigin(url));
+        sharedPdfTrustedPage = false; sharedPdfReceiptOwner = null; sharedPdfSessionReported = false;
+    }
+    private void announcePdfChannel(String url) {
+        if (!pdfChannelAvailable || pdfOrigin(url).isEmpty()) return;
+        String js = "window.__crewcheckPdfDocument=" + JSONObject.quote(pdfDocument)
+            + ";window.dispatchEvent(new Event('crewcheck:pdf-channel-ready'));";
+        webView.evaluateJavascript(js, null);
+    }
+    private void installPdfChannel() {
+        pdfChannelAvailable = androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.WEB_MESSAGE_LISTENER);
+        if (!pdfChannelAvailable) return; // Manual picker only; never install a global fallback.
+        androidx.webkit.WebViewCompat.addWebMessageListener(webView, "CrewCheckPdfChannel", SharedPdfChannelPolicy.ORIGINS,
+            (view, message, sourceOrigin, isMainFrame, reply) -> {
+                final String origin = sourceOrigin.toString();
+                if (!isMainFrame || !SharedPdfChannelPolicy.allowedOrigin(origin)) return;
+                try {
+                    String raw = message.getData();
+                    if (raw == null || raw.length() > 32768) return;
+                    JSONObject request = new JSONObject(raw);
+                    final String document = request.optString("document", "");
+                    if (!pdfChannelPolicy.acceptsDocument(origin, isMainFrame, document)) return;
+                    final String requestId = request.optString("id", "");
+                    if (requestId.isEmpty() || requestId.length() > 100) return;
+                    final String operation = request.optString("op", "");
+                    if ("cancel".equals(operation)) {
+                        if(request.optString("cancelId", "").equals(pdfValidationRequestId)) {
+                            cancelPdfValidation();pdfChannelPolicy.begin(origin,true,document);
+                            sharedPdfTrustedPage=false;sharedPdfReceiptOwner=null;sharedPdfSessionReported=false;
+                        }
+                        return;
+                    }
+                    if ("bind".equals(operation) || "logout".equals(operation)) {
+                        cancelPdfValidation();
+                        final long epoch = pdfChannelPolicy.begin(origin, isMainFrame, document);
+                        sharedPdfTrustedPage = false; sharedPdfReceiptOwner = null; sharedPdfSessionReported = false;
+                        if (sharedPdfStartupIntent != null && pdfStartupValidationEpoch != -1) {
+                            Intent uncertain = sharedPdfStartupIntent; sharedPdfStartupIntent = null; pdfStartupValidationEpoch = -1;
+                            if (!sharedPdfIncomingHandled) handleIncomingPdfIntent(uncertain, null);
+                        }
+                        if (sharedPdfStartupIntent != null) pdfStartupValidationEpoch = epoch;
+                        if ("logout".equals(operation)) {
+                            Intent startup = sharedPdfStartupIntent; sharedPdfStartupIntent = null; pdfStartupValidationEpoch = -1;
+                            if (startup != null && !sharedPdfIncomingHandled) handleIncomingPdfIntent(startup, null);
+                            replyPdf(reply, requestId, epoch, false); return;
+                        }
+                        final String token = request.optString("token", "");
+                        final SharedPdfSessionVerifier.Attempt attempt=new SharedPdfSessionVerifier.Attempt(origin,token);
+                        pdfValidation=attempt;pdfValidationRequestId=requestId;
+                        final java.util.concurrent.Future<?> future=pdfSessionExecutor.submit(() -> {
+                            SharedPdfSessionVerifier.Verified verified = null;
+                            try { verified = attempt.verify(); } catch (Exception ignored) { }
+                            final SharedPdfSessionVerifier.Verified result = verified;
+                            runOnUiThread(() -> {
+                                if (pdfValidation != attempt || !pdfChannelPolicy.acceptsDocument(origin, true, document) || epoch != pdfChannelPolicy.epoch()) return;
+                                long now = android.os.SystemClock.elapsedRealtime();
+                                if (!attempt.active() || result == null || !pdfChannelPolicy.validate(epoch, result.owner, result.deadlineElapsedMs, now)) {
+                                    finishPdfValidation();
+                                    Intent startup = sharedPdfStartupIntent; sharedPdfStartupIntent = null; pdfStartupValidationEpoch = -1;
+                                    if (startup != null && !sharedPdfIncomingHandled) handleIncomingPdfIntent(startup, null);
+                                    replyPdf(reply, requestId, epoch, false); return;
+                                }
+                                finishPdfValidation();
+                                sharedPdfReceiptOwner = result.owner; sharedPdfSessionReported = true; sharedPdfTrustedPage = true;
+                                replyPdf(reply, requestId, epoch, result.owner);
+                                Intent startup = sharedPdfStartupIntent; sharedPdfStartupIntent = null; pdfStartupValidationEpoch = -1;
+                                if (startup != null && !sharedPdfIncomingHandled) handleIncomingPdfIntent(startup, result.owner);
+                                restorePendingSharedPdfFromInbox(); dispatchPendingSharedPdf();
+                            });
+                        });
+                        pdfValidationFuture=future;
+                        pdfValidationTimeout=pdfSessionTimeouts.schedule(() -> {
+                            future.cancel(true);attempt.cancel();pdfSessionExecutor.purge();
+                            runOnUiThread(() -> {
+                                if(pdfValidation!=attempt)return;
+                                finishPdfValidation();pdfChannelPolicy.begin(origin,true,document);
+                                sharedPdfTrustedPage=false;sharedPdfReceiptOwner=null;sharedPdfSessionReported=false;
+                                Intent startup=sharedPdfStartupIntent;sharedPdfStartupIntent=null;pdfStartupValidationEpoch=-1;
+                                if(startup!=null&&!sharedPdfIncomingHandled)handleIncomingPdfIntent(startup,null);
+                                replyPdf(reply,requestId,epoch,false);
+                            });
+                        },Math.max(0,attempt.deadlineElapsedMs-android.os.SystemClock.elapsedRealtime()),java.util.concurrent.TimeUnit.MILLISECONDS);
+                        return;
+                    }
+                    long epoch = request.optLong("epoch", -1);
+                    String owner = pdfChannelPolicy.owner(epoch, android.os.SystemClock.elapsedRealtime());
+                    if (owner == null) { replyPdf(reply, requestId, epoch, false); return; }
+                    String id = request.optString("receipt", "");
+                    Object result = false;
+                    switch (operation) {
+                        case "status":
+                            SharedPdfInbox.PendingPdf pending = SharedPdfInbox.peek(this);
+                            if (pending != null && owner.equals(SharedPdfInbox.owner(this))) {
+                                JSONObject status = new JSONObject();
+                                status.put("shareId", pending.id); status.put("owner", owner);
+                                status.put("phase", SharedPdfInbox.phase(this));
+                                status.put("ownershipProtocol", "mainframe-host-session-v2");
+                                result = status;
+                            }
+                            break;
+                        case "claim": result = SharedPdfInbox.claim(this, id, owner); break;
+                        case "block": result = owner.equals(SharedPdfInbox.owner(this)) && SharedPdfInbox.block(this, id); break;
+                        case "begin": result = SharedPdfInbox.beginCommit(this, id, owner); break;
+                        case "confirm": result = SharedPdfInbox.confirmCommit(this, id, owner); break;
+                        case "read": result = Base64.encodeToString(SharedPdfInbox.readClaimedChunk(this,id,owner,request.optLong("offset",-1),request.optInt("length",0),MAX_PDF_BYTES),Base64.NO_WRAP); break;
+                        case "ack":
+                            result = SharedPdfInbox.acknowledge(this,id,owner);
+                            if (Boolean.TRUE.equals(result) && id.equals(pendingSharedPdfId)) { pendingSharedPdfId = null; pendingSharedPdfName = null; pendingSharedPdfBase64 = null; }
+                            break;
+                        default: break;
+                    }
+                    if (pdfChannelPolicy.owner(epoch, android.os.SystemClock.elapsedRealtime()) == null) result=false;
+                    replyPdf(reply, requestId, epoch, result);
+                } catch (Exception ignored) { /* Invalid requests never access bytes or change ownership. */ }
+            });
+    }
+    private void replyPdf(androidx.webkit.JavaScriptReplyProxy reply, String id, long epoch, Object result) {
+        try {
+            JSONObject response = new JSONObject(); response.put("id",id); response.put("epoch",epoch);
+            response.put("document",pdfDocument); response.put("result",result);
+            reply.postMessage(response.toString());
+        } catch (Exception ignored) { }
+    }

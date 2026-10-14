@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { assertSharedPdfAckContract } from './shared-pdf-ack-contract.mjs';
 
 function read(path) {
   if (!fs.existsSync(path)) throw new Error(`[p0-multichannel] arquivo ausente: ${path}`);
@@ -61,7 +62,12 @@ expectAll('abrir escala ativa deve continuar substituindo somente o bundle opera
 // Android ACTION_SEND must enter the exact same handleFile pipeline as PWA.
 assert.match(home, /window\.addEventListener\('crewcheck:native-pdf'/);
 assert.match(home, /await handleFile\(\{ target: \{ files: \[file\] \} \}/);
-assert.match(android, /acknowledgeSharedPdf/);
+assertSharedPdfAckContract({ home, android,
+  inbox: read('android-wrapper/app/src/main/java/com/crewcheck/app/SharedPdfInbox.java'),
+  channel: read('client/src/lib/sharedPdfChannel.ts'),
+  binding: read('client/src/lib/sharedPdfAccountBinding.ts'),
+});
+run('scripts/regression-shared-pdf-ack-contract.mjs');
 
 // Telegram must parse, then persist only a linked account through the same
 // canonical active-roster transaction used by the client/server API.

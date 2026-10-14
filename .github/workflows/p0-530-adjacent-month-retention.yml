@@ -3,6 +3,13 @@ name: P0 #530 adjacent month retention
 on:
   pull_request:
     paths:
+      - 'scripts/shared-pdf-native-claim/**'
+      - 'scripts/android-share-web/**'
+      - 'client/src/lib/sharedPdf*.ts'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/SharedPdf*.java'
+      - 'scripts/shared-pdf-ack-contract.mjs'
+      - 'scripts/regression-shared-pdf-ack-contract.mjs'
+      - 'scripts/regression-shared-pdf-native-offline.cjs'
       - 'client/src/lib/databaseClient.ts'
       - 'client/src/pages/Home.tsx'
       - 'client/src/components/v1391/RosterLaunchView.tsx'

@@ -213,6 +213,12 @@ await import('../bids-default/apply.mjs');
 await import('../bids-default/wakeup-layout.mjs');
 await import('../cirium-radar-off/apply.mjs');
 await import('../concierge-gate-functional.mjs');
+// Shared-PDF web compatibility after all canonical import/session transformations.
+await import('../shared-pdf-native-claim/android.mjs');
+await import('../shared-pdf-native-claim/dispatch.mjs');
+await import('../shared-pdf-native-claim/manifest.mjs');
+await import('../shared-pdf-native-claim/message-channel.mjs');
+await import('../android-share-web/apply.mjs');
 
 }
 
