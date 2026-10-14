@@ -189,8 +189,8 @@ test('real monitor integration: invalid/stale data never overwrites previous sta
   assert.equal(h.state, initialState);
 });
 test('no source change grants notifications or alters scheduler authorization/windows', () => {
-  assert.match(functionSource('conciergeWeatherCandidates'), /departure\.getTime\(\) - 180 \* 60_000/);
-  assert.match(functionSource('conciergeWeatherCandidates'), /arrival\.getTime\(\) - 120 \* 60_000/);
+  assert.match(functionSource('conciergeWeatherCandidates'), /weatherFlightWindow\(.*role: 'origin'/);
+  assert.match(functionSource('conciergeWeatherCandidates'), /weatherFlightWindow\(.*role: 'destination'/);
   assert.match(functionSource('criticalWeatherMonitorSettings'), /CREWCHECK_WEATHER_MONITOR_ENABLED/);
   assert.match(functionSource('scheduleCriticalWeatherMonitor'), /criticalWeatherMonitorSettings\(\)/);
   assert.match(functionSource('handleCriticalWeatherMonitorHealth'), /weatherAlertSchedulerAuthorized\(req\)/);

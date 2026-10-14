@@ -1,3 +1,4 @@
+import { evaluateWeatherObservation, weatherFlightWindow } from '../../../server/weather/critical-observation.mjs';
 import {NotificationCenter,openNotificationSettings} from '@/components/notifications/NotificationCenter';
 import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
 import { FreeDayPostponementAlerts } from '@/components/FreeDayPostponementAlerts';
@@ -2242,6 +2243,16 @@ function notifyCrewCheck(title: string, body: string) {
     action,
   });
 }
+function weatherEventWindow(event: ZeroLeg, role: 'origin' | 'destination', now: number) {
+  if (!event || event.placeholder || event.kind !== 'flight' || event.canonical?.kind !== 'flight') return { eligible: false };
+  const publishedClock = (value?: string) => {
+    const match = String(value || '').trim().match(/^(\d{1,2})[:hH](\d{2})(?:\s*(?:\+1|\(\+1\)))?$/);
+    return Boolean(match && ((Number(match[1]) < 24 && Number(match[2]) < 60) || (Number(match[1]) === 24 && Number(match[2]) === 0)));
+  };
+  if (!publishedClock(event.canonical.leg?.departureTime) || !publishedClock(event.canonical.leg?.arrivalTime)) return { eligible: false };
+  return weatherFlightWindow({ departure: event.canonical.startDateTime, arrival: event.canonical.endDateTime, role, now });
+}
+
 function useWeatherLandingMonitor(event: ZeroLeg) {
   useEffect(() => {
     if (!event || event.placeholder || event.kind !== 'flight') return;
@@ -2250,21 +2261,27 @@ function useWeatherLandingMonitor(event: ZeroLeg) {
     if (!airport) return;
     const signatureKey = `crewcheck_weather_signature_${airport}_${event.id}`;
     const check = () => {
-      const report = storage.get(`crewcheck_latest_weather_report_${airport}`, '');
-      const upper = String(report || '').toUpperCase();
+      if (!weatherEventWindow(event, 'destination', Date.now()).eligible) return;
+      // Legacy raw-only cache has no source/observation proof; never alert from it.
+      let report: any;
+      try { report = JSON.parse(storage.get(`crewcheck_latest_weather_report_${airport}`, 'null')); } catch { return; }
+      if (!evaluateWeatherObservation({ report, station: airportIcao(airport), now: Date.now() }).accepted) return;
+      const upper = String(report.raw || '').toUpperCase();
       if (!upper.startsWith('METAR') && !upper.startsWith('SPECI')) return;
       const signature = `${airport}|${upper}`;
       const previous = storage.get(signatureKey, '');
       if (previous && previous !== signature && weatherLooksWorse(upper)) {
-        notifyCrewCheck('Meteorologia mudou', `${airport}: novo ${upper.startsWith('SPECI') ? 'SPECI' : 'METAR'} com atenção operacional até o pouso.`);
+        notifyCrewCheck('Meteorologia mudou', `${airport}: novo ${upper.startsWith('SPECI') ? 'SPECI' : 'METAR'} com atenção durante a janela operacional da etapa.`);
       }
       storage.set(signatureKey, signature);
     };
-    try { navigator.geolocation?.getCurrentPosition((pos) => storage.set('crewcheck_last_geo', `${pos.coords.latitude},${pos.coords.longitude}`), () => {}, { enableHighAccuracy: false, timeout: 2500 }); } catch {}
+    if (weatherEventWindow(event, 'destination', Date.now()).eligible) {
+      try { navigator.geolocation?.getCurrentPosition((pos) => storage.set('crewcheck_last_geo', `${pos.coords.latitude},${pos.coords.longitude}`), () => {}, { enableHighAccuracy: false, timeout: 2500 }); } catch {}
+    }
     check();
     const timer = window.setInterval(check, 60000);
     return () => window.clearInterval(timer);
-  }, [event?.id, event?.destination, event?.kind]);
+  }, [event?.id, event?.destination, event?.kind, event?.canonical?.startDateTime, event?.canonical?.endDateTime]);
 }
 
 
@@ -2287,23 +2304,29 @@ function useOperationalWeatherPulse(event: ZeroLeg) {
   useEffect(() => {
     if (!event || event.placeholder || event.kind !== 'flight') return;
     if (storage.get('crewcheck_weather_hourly', '1') === '0') return;
-    const airports = Array.from(new Set([event.origin, event.destination].map((value) => String(value || '').trim().toUpperCase()).filter(Boolean))).slice(0, 2);
-    if (!airports.length) return;
+    const targets = [{ airport: event.origin, role: 'origin' as const }, { airport: event.destination, role: 'destination' as const }];
 
     let alive = true;
     const check = async () => {
       try {
+        if (!alive) return;
+        const eligible = targets.filter(target => target.airport && weatherEventWindow(event, target.role, Date.now()).eligible);
+        const airports = Array.from(new Set(eligible.map(target => target.airport.trim().toUpperCase())));
+        if (!airports.length) return;
         const response = await fetch(`/api/aviation-weather?airports=${encodeURIComponent(airports.join(','))}&type=all&view=decoded&v=1393`, { cache: 'no-store' });
         const payload = await response.json().catch(() => null);
         if (!alive || !payload?.stations) return;
 
         for (const airport of airports) {
+          if (!eligible.some(target => target.airport.trim().toUpperCase() === airport && weatherEventWindow(event, target.role, Date.now()).eligible)) continue;
           const station = payload.stations?.[airport];
           const severity = Number(station?.monitoring?.severity || 0);
-          if (!station || severity < 2) continue;
+          if (!station || !Number.isInteger(severity) || severity < 2 || severity > 3) continue;
+          const observation = evaluateWeatherObservation({ report: { ok: station.available?.metar === true, official: station.official?.metar === true, provider: station.provider?.metar, station: station.icao, raw: station.metar, observedAt: station.observedAt?.metar }, station: airportIcao(airport), now: Date.now() });
+          if (!observation.accepted) continue;
           const hazards = Array.isArray(station.monitoring?.hazards) ? station.monitoring.hazards : [];
           const hazardText = hazards.map((item: any) => String(item?.label || item?.code || '').trim()).filter(Boolean).slice(0, 3).join(' · ');
-          const signature = [severity, station.metar || '', station.taf || '', hazardText].join('|');
+          const signature = [severity, station.metar || '', hazardText].join('|');
           const signatureKey = `crewcheck_weather_pulse_signature_${event.id}_${airport}`;
           if (storage.get(signatureKey, '') === signature) continue;
           storage.set(signatureKey, signature);
@@ -2315,7 +2338,7 @@ function useOperationalWeatherPulse(event: ZeroLeg) {
             tone: severity >= 3 ? 'erro' : 'atencao',
             priority: severity >= 3 ? 'critica' : 'alta',
             title: severity >= 3 ? `Meteorologia crítica · ${airport}` : `Meteorologia requer atenção · ${airport}`,
-            detail: hazardText || `${event.flightNumber || 'Próximo voo'} · METAR/TAF com critério operacional relevante.`,
+            detail: `${event.flightNumber || 'Próximo voo'} · METAR observado em ${observation.observedAt} · ${hazardText || 'Critério operacional relevante.'}`,
             pulseCooldownMs: 10 * 60_000,
             systemNotification: 'background',
             notificationTag: `crewcheck:weather:${event.id}:${airport}`,
@@ -2331,7 +2354,7 @@ function useOperationalWeatherPulse(event: ZeroLeg) {
     void check();
     const timer = window.setInterval(() => { void check(); }, 60 * 60_000);
     return () => { alive = false; window.clearInterval(timer); };
-  }, [event.id, event.kind, event.placeholder, event.flightNumber, event.origin, event.destination]);
+  }, [event.id, event.kind, event.placeholder, event.flightNumber, event.origin, event.destination, event.canonical?.startDateTime, event.canonical?.endDateTime]);
 }
 
 function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroLeg[]; setView: (v: ZeroView) => void }) {
@@ -3223,7 +3246,7 @@ function WeatherView({ event }: { event: ZeroLeg }) {
         <button className={mode === 'raw' ? 'active' : ''} onClick={() => setMode('raw')}>Código original</button>
         <button className={mode === 'both' ? 'active' : ''} onClick={() => setMode('both')}>Os dois</button>
       </div>
-      {scheduled && <div className="cc-weather-flight-window"><Plane/><div><strong>Ligado à próxima etapa</strong><span>{event.origin} {safe(event.departure, 'horário a confirmar')} → {event.destination} {safe(event.arrival, 'horário a confirmar')}</span></div><small>Origem: 3 h antes da partida · destino: 2 h antes da chegada</small></div>}
+      {scheduled && <div className="cc-weather-flight-window"><Plane/><div><strong>Consulta dos aeroportos da próxima etapa</strong><span>{rosterDisplayIso(event) || 'Data a confirmar'} · {event.origin} {safe(event.departure, 'horário a confirmar')} → {event.destination} {safe(event.arrival, 'horário a confirmar')}</span></div><small>Boletins disponíveis na consulta; não confirmam o tempo para a data do voo. METAR/SPECI é observação; TAF vale apenas no período informado no boletim.</small></div>}
     </section>
     {stations.length > 0 && <section className="cc-weather-stations">{stations.map((station) => {
       const severity = Number(station.monitoring?.severity || 0);
