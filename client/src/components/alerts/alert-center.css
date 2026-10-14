@@ -17,3 +17,5 @@
 .cc-alert-history article{padding:12px 0;border-top:1px solid var(--cc-border)}
 html body #root .cz-app[data-version] .cc-alert-center .cc-alert-actions button{min-height:44px!important;height:auto!important;font:inherit!important;white-space:normal!important;padding:10px 16px!important;border:1px solid var(--cc-review-border,var(--cc-border))!important;background:var(--cc-review-surface,var(--cc-surface))!important;color:var(--cc-review-text,var(--cc-text))!important}
 html body #root .cz-app[data-version] .cc-alert-center .cc-alert-actions button:first-child{background:var(--cc-review-text,var(--cc-text))!important;color:var(--cc-review-surface,var(--cc-surface))!important}
+
+.cc-alert-center{font-size:calc(1rem * var(--cc-text-scale,1))}.cc-alert-card h2{font-size:calc(1.05rem * var(--cc-text-scale,1))}

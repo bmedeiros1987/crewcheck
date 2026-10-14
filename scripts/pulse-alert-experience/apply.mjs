@@ -12,6 +12,10 @@ brand = brand.replace('{pulse ? <CrewCheckPulse compact fallback={lockup}/> : lo
 if (!brand.includes('if (!global && !pulse) return null;')) throw new Error('Pulse experience: global header guard missing');
 brand = brand.replace("aria-label={back ? backLabel || 'Voltar ao FlightDeck' : 'Menu'}", "aria-label={back ? backLabel || alertText().back : alertText().menu}");
 home = home.slice(0,start) + brand + home.slice(end);
+const legacyStart=home.indexOf('function Alerts('), legacyEnd=home.indexOf('function ReviewedAlerts(',legacyStart);
+if(legacyStart>=0&&legacyEnd>legacyStart)home=home.slice(0,legacyStart)+home.slice(legacyEnd);
+const dispositionStart=home.indexOf('type ComplianceAlertDisposition ='), dispositionEnd=home.indexOf('function analyzeSafe(',dispositionStart);
+if(dispositionStart>=0&&dispositionEnd>dispositionStart)home=home.slice(0,dispositionStart)+home.slice(dispositionEnd);
 fs.writeFileSync(path, home);
 const cssPath='client/src/styles/ipad-header-recovery.css';
 const marker='/* Single integrated Pulse header */';

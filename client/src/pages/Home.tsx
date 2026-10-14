@@ -982,6 +982,26 @@ function actionableComplianceAlerts(compliance: ComplianceResult | null, include
   });
 }
 
+type ComplianceAlertDisposition = {
+  reason: 'user_schedule_change';
+  ignoredAt: string;
+  alertTitle: string;
+  alertDate: string;
+};
+const COMPLIANCE_ALERT_DISPOSITIONS_KEY = 'crewcheck_compliance_alert_dispositions_v1';
+function complianceAlertFingerprint(alert: any): string {
+  return [alert?.title, alert?.date, alert?.description, alert?.legalReference].map((value) => String(value || '').trim()).join('|');
+}
+function loadComplianceAlertDispositions(): Record<string, ComplianceAlertDisposition> {
+  try { return JSON.parse(storage.get(COMPLIANCE_ALERT_DISPOSITIONS_KEY, '{}')) || {}; } catch { return {}; }
+}
+function saveComplianceAlertDispositions(value: Record<string, ComplianceAlertDisposition>) {
+  storage.set(COMPLIANCE_ALERT_DISPOSITIONS_KEY, JSON.stringify(value));
+}
+function isGroundLimitAlert(alert: any): boolean {
+  return String(alert?.title || '').trim() === 'Tempo em solo entre etapas acima do limite ACT';
+}
+
 function analyzeSafe(roster: CrewRoster): ComplianceResult {
   try {
     if (!Array.isArray(roster.days) || !roster.days.length) return neutralCompliance(roster);
@@ -2579,7 +2599,27 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
   </>;
 }
 
-function Alerts({ compliance, roster, onImport, onChoose }: { compliance: ComplianceResult | null; roster: CrewRoster; onImport(): void; onChoose(): void }) {
+function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
+  const [dispositionRevision, setDispositionRevision] = useState(0);
+  const dispositions = useMemo(() => loadComplianceAlertDispositions(), [dispositionRevision]);
+  const source = actionableComplianceAlerts(compliance);
+  const ignored = source.filter((alert) => dispositions[complianceAlertFingerprint(alert)]);
+  const list = source.filter((alert) => !dispositions[complianceAlertFingerprint(alert)]).slice(0, 12);
+  function ignoreAsUserScheduleChange(alert: any) {
+    const next = loadComplianceAlertDispositions();
+    next[complianceAlertFingerprint(alert)] = { reason: 'user_schedule_change', ignoredAt: new Date().toISOString(), alertTitle: String(alert.title || ''), alertDate: String(alert.date || '') };
+    saveComplianceAlertDispositions(next);
+    setDispositionRevision((value) => value + 1);
+    toast.success('Alerta ocultado como alteração da sua programação.', { description: 'A análise original permanece preservada para auditoria.' });
+  }
+  function restoreIgnoredAlerts() {
+    saveComplianceAlertDispositions({});
+    setDispositionRevision((value) => value + 1);
+  }
+  return <><Brand back/><section className="cz-panel-head"><h1>Irregularidades e alertas</h1>{compliance?.metrics.flightHoursOriginPending && <p role="status">Origem da classificação de extra pendente. Reimporte a escala original para verificar OP/PS; o acumulado de voo operado não está confirmado.</p>}<p>RBAC 117, ACT, repouso, jornada, sobreaviso, reserva e acionamentos. Sem alertas fictícios.</p></section>{list.length ? <section className="cz-alert-stack">{list.map((a: any, idx: number) => <article className={a.severity === 'error' ? 'danger' : 'warn'} key={`${a.title}-${idx}`}><AlertTriangle/><div><h2>{a.title}</h2><p>{a.description}</p><span>{a.severity === 'error' ? 'Confirmada' : 'Atenção'}</span><b>Confiança: {a.severity === 'error' ? 'alta' : 'média'}</b>{isGroundLimitAlert(a) && <button type="button" onClick={() => ignoreAsUserScheduleChange(a)}>Ignorar — alteração da minha programação</button>}</div><ChevronRight/></article>)}</section> : <article className="cz-empty-real"><ShieldCheck/><h2>Nenhuma irregularidade confirmada</h2><p>{ignored.length ? 'Os alertas desta análise foram classificados por você como alterações da programação.' : 'Carregue a escala real para que o motor regulatório refaça a análise completa.'}</p></article>}{ignored.length > 0 && <article className="cz-alert-detail"><h2>Alterações informadas por você <b>{ignored.length}</b></h2><div><p><strong>Tratamento</strong>Esses itens ficam fora dos alertas ativos, sem apagar a análise da escala publicada.</p><p><strong>Rastreabilidade</strong>A classificação é uma preferência do usuário e não altera o motor regulatório canônico.</p></div><footer><button onClick={restoreIgnoredAlerts}><RotateCcw/> Restaurar alertas ignorados</button></footer></article>}<article className="cz-alert-detail"><h2>Detalhes regulatórios <b>{list.length ? 'Ativo' : 'Aguardando escala'}</b></h2><div><p><strong>O que o sistema avalia</strong>Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p><p><strong>Dados usados</strong>Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p></div><footer><button>Ver base regulatória</button></footer></article></>;
+}
+// The legacy Alerts above remains only for historical preparation anchors.
+function ReviewedAlerts({ compliance, roster, onImport, onChoose }: { compliance: ComplianceResult | null; roster: CrewRoster; onImport(): void; onChoose(): void }) {
   return <AlertCenter alerts={alertRosterOwned(roster) ? actionableComplianceAlerts(compliance, true) : []} roster={roster} onImport={onImport} onChoose={onChoose}/>;
 }
 function routeDurationMinutes(route: RoutePreviewInfo | null): number {
@@ -5206,7 +5246,7 @@ export default function Home() {
     {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>} 
     {view === 'compare' && <CompareRosterView bundle={bundle} onUpload={actions.upload}/>} 
     {view === 'bids' && <BidsView events={events}/>} 
-    {view === 'alerts' && <Alerts key={alertAccount() || 'unbound'} compliance={compliance} roster={bundle.roster} onImport={actions.upload} onChoose={() => setView('database')}/>}
+    {view === 'alerts' && <ReviewedAlerts key={alertAccount() || 'unbound'} compliance={compliance} roster={bundle.roster} onImport={actions.upload} onChoose={() => setView('database')}/>}
     {view === 'regulation' && <ManualRegulationView compliance={compliance}/>}
     {view === 'departure' && <Departure event={event}/>}
     {view === 'mycar' && <CarView event={event}/>}
