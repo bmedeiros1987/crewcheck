@@ -26,6 +26,7 @@ export type CrewCheckPulseAction = {
   /** Destino já existente do shell; o Pulse apenas dispara crewcheck:set-view. */
   view: string;
   alert?: { occurrence: string; version: string };
+  context?: { programId: string; dateEpochMs?: number; journeyId?: string; flightKey?: string; airportCode?: string };
 };
 
 export type CrewCheckPulseMessage = {

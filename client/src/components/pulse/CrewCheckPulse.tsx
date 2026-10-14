@@ -96,6 +96,7 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
     if (compact && compactRef.current?.contains(document.activeElement)) detailsRef.current?.focus();
     try {
       clearPendingNavigationContext();
+      if (message.action.context) setPendingNavigationContext({ ...message.action.context, targetView: message.action.view, sourceView: 'pulse', policy: 'persistent-until-return' });
       if (message.action.alert) setPendingNavigationContext({ targetView: message.action.view, sourceView: 'pulse', policy: 'once', alertOccurrence: message.action.alert.occurrence, alertVersion: message.action.alert.version });
       window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: message.action.view }));
     } catch {}

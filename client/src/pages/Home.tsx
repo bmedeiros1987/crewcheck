@@ -1712,7 +1712,7 @@ function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapsho
       systemNotification: gateChangeAlertAllowed(eventStartDateTime(event).getTime()) ? 'background' : 'never',
       notificationTag: `crewcheck:gate:${event.id}`,
       notificationCooldownMs: 2 * 60_000,
-      action: { label: 'Abrir Radar', view: 'radar' },
+      action: { label: 'Abrir Radar', view: 'radar', context: { programId: event.id, dateEpochMs: Date.parse(event.canonical?.startDateTime || ''), journeyId: event.canonical?.journeyId, flightKey: event.flightNumber, airportCode: event.origin } },
     });
   }
   return snapshot;
@@ -2364,7 +2364,7 @@ function useOperationalWeatherPulse(event: ZeroLeg) {
             systemNotification: 'background',
             notificationTag: `crewcheck:weather:${event.id}:${airport}`,
             notificationCooldownMs: 15 * 60_000,
-            action: { label: 'Ver meteorologia', view: 'weather' },
+            action: { label: 'Ver meteorologia', view: 'weather', context: { programId: event.id, dateEpochMs: Date.parse(event.canonical?.startDateTime || ''), journeyId: event.canonical?.journeyId, flightKey: event.flightNumber, airportCode: airport } },
           });
         }
       } catch {
