@@ -100,6 +100,15 @@ try{
   await page.evaluate(()=>{fixture.runtime.clearCrewCheckPulse();fixture.runtime.publishCrewCheckPulse({id:'label-fallback',title:'SYNTHETIC exact title fallback',compactTitle:'  ',systemNotification:'never'})});await page.waitForFunction(()=>document.querySelector('.cc-pulse-compact-trigger strong')?.textContent==='SYNTHETIC exact title fallback');
   await page.evaluate(()=>{fixture.runtime.clearCrewCheckPulse();fixture.update(structuredClone(fixture.initial))});await page.waitForSelector('.cc-pulse-compact-trigger');
  }
+ if (!selected || selected==='compact-invalid') {
+  await page.evaluate(()=>{const next=structuredClone(fixture.initial);next.compliance.alerts=[];fixture.update(next)});await page.waitForTimeout(40);
+  for(const compactTitle of [17,{label:'invalid'},['invalid'],true]) {
+   await page.evaluate(compactTitle=>{fixture.runtime.clearCrewCheckPulse();window.dispatchEvent(new CustomEvent('crewcheck:pulse',{detail:{id:'invalid-label',category:'gate',title:'SYNTHETIC safe fallback',compactTitle,systemNotification:'never'}}))},compactTitle);
+   await page.waitForTimeout(80);assert.deepEqual(errors,[],'malformed optional label from the event bridge must not crash the app');
+   assert.equal(await page.locator('.cz-app').count(),1,'application remains mounted');assert.equal(await page.locator('.cc-pulse-compact-trigger strong').innerText(),'SYNTHETIC safe fallback');
+  }
+  await page.evaluate(()=>{fixture.runtime.clearCrewCheckPulse();fixture.update(structuredClone(fixture.initial))});await page.waitForSelector('.cc-pulse-compact-trigger');
+ }
  if (!selected || selected==='pending-relogin') {
   await page.evaluate(()=>{window.dispatchEvent(new Event('crewcheck:auth-will-change'));localStorage.removeItem('crewcheck_auth_token');window.dispatchEvent(new Event('crewcheck:auth-changed'))});
   await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','SYN-A-RELOGIN');window.dispatchEvent(new Event('crewcheck:auth-changed'))});
