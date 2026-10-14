@@ -133,4 +133,4 @@ try{
  }
  assert.deepEqual(errors,[]);await context.close();
 }finally{await browser.close();await new Promise(r=>server.close(r))}
-fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({scope:'Synthetic actual Home producer and Brand, real Pulse/runtime/account review store/AlertCenter/Header; no App startup/PDF/provider execution, no personal data, no external sends. Chromium component integration, not full app E2E.',results},null,2));console.log('PASS account login/logout/relogin isolation, material/unrelated roster changes, exact/stale destinations, review history, locale normalization, selective queue and12 theme/size/text geometry cases');
+fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({scope:'Synthetic actual Home producer and Brand, real Pulse/runtime/account review store/AlertCenter/Header; no App startup/PDF/provider execution, no personal data, no external sends. Chromium component integration, not full app E2E.',results},null,2));console.log(selected ? 'PASS selected Pulse case: '+selected : 'PASS account isolation, ground legacy/ignore/restore, visible brand, material revisions, navigation, queue and12 geometry cases');
