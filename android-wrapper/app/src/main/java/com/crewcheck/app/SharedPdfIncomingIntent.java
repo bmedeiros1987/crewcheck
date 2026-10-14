@@ -33,7 +33,7 @@ public final class SharedPdfIncomingIntent {
         if (uris.size() > 1) throw new IllegalArgumentException("Envie apenas um PDF por vez. O PDF pendente foi preservado.");
         if (uris.isEmpty()) return null;
         Uri uri = uris.values().iterator().next();
-        if (!"content".equals(uri.getScheme()) && !"file".equals(uri.getScheme())) throw new IllegalArgumentException("Origem de PDF não permitida.");
+        if (!"content".equals(uri.getScheme()) && !(Intent.ACTION_VIEW.equals(action) && "file".equals(uri.getScheme()))) throw new IllegalArgumentException("Origem de PDF não permitida.");
         String type = intent.getType();
         if (type == null || type.trim().isEmpty()) type = resolver.getType(uri);
         if (!"application/pdf".equals(type) && !"application/octet-stream".equals(type)) throw new IllegalArgumentException("Compartilhe um arquivo PDF.");

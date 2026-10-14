@@ -55,6 +55,12 @@ public final class SharedPdfInbox {
     public static synchronized PendingPdf capture(Context context, Uri uri, int maxBytes, String initialOwner) throws Exception {
         if (context == null || uri == null) throw new IllegalArgumentException("PDF compartilhado sem origem.");
 
+        if ("file".equals(uri.getScheme())) {
+            File source = new File(uri.getPath()).getCanonicalFile();
+            File privateRoot = context.getFilesDir().getParentFile().getCanonicalFile();
+            if (source.equals(privateRoot) || source.getPath().startsWith(privateRoot.getPath() + File.separator))
+                throw new IllegalArgumentException("Arquivo privado do app não pode ser recebido por Intent externo.");
+        }
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         String sourceHash = sourceHash(uri.toString());
         String legacy = prefs.getString("legacy_quarantine_id", "");
