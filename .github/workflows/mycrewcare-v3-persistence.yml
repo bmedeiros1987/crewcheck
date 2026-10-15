@@ -34,6 +34,21 @@ on:
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCarePortalV3.java'
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCareObservedWebViewSource.java'
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCareRuntimeV3.java'
+      - 'docs/mycrewcare-concierge-wake-handoff-off.md'
+      - 'docs/mycrewcare-partial-hotel-review-off.md'
+      - 'docs/mycrewcare-snapshot-monotonic-review-off.md'
+      - 'docs/mycrewcare-sso-contract-inactive.md'
+      - 'scripts/fixtures/mycrewcare-sso-contract/AndroidManifest.synthetic.xml'
+      - 'scripts/fixtures/mycrewcare-sso-contract/CrewCheckMyCrewCareSsoDraft.java'
+      - 'scripts/fixtures/mycrewcare-sso-contract/RedirectInstrumentation.java'
+      - 'scripts/fixtures/mycrewcare-sso-contract/SsoDraftHarness.java'
+      - 'scripts/fixtures/mycrewcare-sso-contract/debug-inactive.patch'
+      - 'scripts/regression-mycrewcare-consumer-boundary.mjs'
+      - 'scripts/regression-mycrewcare-partial-hotel.mjs'
+      - 'scripts/regression-mycrewcare-snapshot-monotonic.mjs'
+      - 'scripts/regression-mycrewcare-sso-draft.mjs'
+      - 'scripts/regression-mycrewcare-ownership-paths.mjs'
+      - 'docs/mycrewcare-ci-composition-review-off.md'
       - 'scripts/regression-mycrewcare-v3.mjs'
       - 'scripts/assert-mycrewcare-v3-ownership.mjs'
       - 'docs/mycrewcare-v3-persistent-session.md'
@@ -69,6 +84,7 @@ jobs:
           node scripts/assert-mycrewcare-v3-ownership.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs scripts/regression-mycrewcare-controller.mjs
+            TZ="$zone" node --test scripts/regression-mycrewcare-consumer-boundary.mjs scripts/regression-mycrewcare-partial-hotel.mjs scripts/regression-mycrewcare-snapshot-monotonic.mjs scripts/regression-mycrewcare-sso-draft.mjs scripts/regression-mycrewcare-ownership-paths.mjs
             TZ="$zone" node --test scripts/regression-mycrewcare-observed.mjs scripts/regression-mycrewcare-observed-coordinator.mjs scripts/regression-mycrewcare-native-observation.mjs scripts/regression-mycrewcare-webview-source.mjs scripts/regression-mycrewcare-debug-action.mjs
           done
       - name: Complete canonical preparation
@@ -78,6 +94,7 @@ jobs:
           node scripts/assert-mycrewcare-v3-ownership.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs scripts/regression-mycrewcare-controller.mjs
+            TZ="$zone" node --test scripts/regression-mycrewcare-consumer-boundary.mjs scripts/regression-mycrewcare-partial-hotel.mjs scripts/regression-mycrewcare-snapshot-monotonic.mjs scripts/regression-mycrewcare-sso-draft.mjs scripts/regression-mycrewcare-ownership-paths.mjs
             TZ="$zone" node --test scripts/regression-mycrewcare-observed.mjs scripts/regression-mycrewcare-observed-coordinator.mjs scripts/regression-mycrewcare-native-observation.mjs scripts/regression-mycrewcare-webview-source.mjs scripts/regression-mycrewcare-debug-action.mjs
           done
           node scripts/regression-p0-525-stay-physical-association.mjs
