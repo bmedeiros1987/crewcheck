@@ -147,8 +147,17 @@ try {
   await preview.getByText('Despertar calculado: 04:00',{exact:false}).waitFor();
   await preview.getByText('1 h 30 min antes da APZ no hotel',{exact:true}).waitFor();
   await preview.locator('summary').click();
-  const mode=preview.getByRole('combobox',{name:'Modo do despertador',exact:true});await mode.selectOption('absolute');
+  const breakfast=preview.getByRole('combobox',{name:'Café antes da apresentação no hall',exact:true});
+  assert.equal(await breakfast.inputValue(),'unknown','Legacy clock/lead does not infer breakfast');
+  const mode=preview.getByRole('combobox',{name:'Modo do despertador',exact:true});
+  await mode.selectOption('auto');
+  await preview.getByText('Escolha com ou sem café para calcular no modo Auto.',{exact:false}).waitFor();
+  assert.equal(await preview.getByText('Despertar calculado:',{exact:false}).count(),0);
+  await breakfast.selectOption('with');await preview.getByText('Despertar calculado: 04:00',{exact:false}).waitFor();
+  await breakfast.selectOption('without');await preview.getByText('Despertar calculado: 04:30',{exact:false}).waitFor();
+  await mode.selectOption('absolute');
   const exact=preview.getByLabel('Data e horário exatos · America/Fortaleza',{exact:true});await exact.fill('2030-10-11T04:00');
+  await breakfast.selectOption('with');assert.equal(await exact.inputValue(),'2030-10-11T04:00','Breakfast updates preserve manual exact time');
   await preview.getByText('1 h 30 min antes da APZ no hotel',{exact:true}).waitFor();
   await apz.fill('06:00');await confirmApz.check();await preview.getByText('2 h antes da APZ no hotel',{exact:true}).waitFor();
   assert.equal(await exact.inputValue(),'2030-10-11T04:00');
@@ -157,11 +166,16 @@ try {
   await apz.fill('');await preview.getByRole('alert').filter({hasText:'APZ no hotel ausente'}).waitFor();
   assert.equal(await preview.getByText(/antes da APZ no hotel$/).count(),0);
   await apz.fill('05:30');await confirmApz.check();
-  const defaults=page.getByRole('region',{name:'Antecedência padrão'});await defaults.locator('summary').click();await defaults.getByRole('spinbutton').fill('60');await defaults.getByRole('button').click();
+  const defaults=page.getByRole('region',{name:'Antecedência padrão'});await defaults.locator('summary').click();
+  const withDefault=defaults.getByLabel('Minutos do padrão · com café',{exact:true});
+  const withoutDefault=defaults.getByLabel('Minutos do padrão · sem café',{exact:true});
+  assert.equal(await withDefault.inputValue(),'90');assert.equal(await withoutDefault.inputValue(),'60');
+  await withDefault.fill('60');await withoutDefault.fill('45');await defaults.getByRole('button').click();
   assert.equal(await mode.inputValue(),'absolute');assert.equal(await exact.inputValue(),'2030-10-11T04:00');
   await mode.selectOption('auto');
   await preview.getByText('Modo ativo: Auto · antecedência padrão',{exact:true}).waitFor();
   await preview.getByText('Despertar calculado: 04:30',{exact:false}).waitFor();
+  await breakfast.selectOption('without');await preview.getByText('Despertar calculado: 04:45',{exact:false}).waitFor();
   await mode.selectOption('relative');
   await preview.getByRole('combobox',{name:'Antecedência deste pernoite',exact:true}).selectOption('90');
   await preview.getByText('Despertar calculado: 04:00',{exact:false}).waitFor();
@@ -180,6 +194,7 @@ try {
   await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel editado sintético');
   await preview.locator('summary').click();
   assert.equal(await exact.inputValue(),'2030-10-11T04:00');assert.equal(await confirmApz.isChecked(),true);
+  assert.equal(await breakfast.inputValue(),'without','Breakfast choice survives save, reload and explicit return to the same stay');
   await preview.getByText('1 h 30 min antes da APZ no hotel',{exact:true}).waitFor();
   await page.getByText('Mais opções da edição',{exact:true}).click();
   await page.getByRole('button',{name:'Cancelar despertador deste pernoite',exact:true}).click();
@@ -197,11 +212,13 @@ try {
   await program.selectOption('synthetic-current');
   await page.waitForFunction(()=>document.querySelector('.cc-stay-editor input[type="time"]')?.value==='');
   assert.equal(await apz.inputValue(),'');
+  assert.equal(await breakfast.inputValue(),'unknown','Another stay never inherits the previous breakfast choice');
   await page.getByText('Atual pela escala',{exact:true}).waitFor();
   await page.evaluate(()=>window.replaceStayEvents(window.stayFixtureEvents.map(event=>event.id==='synthetic-future'?{...event,canonical:{...event.canonical,endDateTime:'2030-12-01T00:00:00Z'}}:event)));
   await program.selectOption('synthetic-future');
   await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel editado sintético');
   assert.equal(await hotel.inputValue(),'Hotel editado sintético');assert.equal(await exact.inputValue(),'2030-10-11T04:00');
+  assert.equal(await breakfast.inputValue(),'without','Unsaved per-stay selection restores its own breakfast choice');
   await page.getByRole('alert').filter({hasText:'Seus ajustes manuais foram preservados'}).waitFor();
   assert.equal(await confirmApz.isChecked(),false,'Cached manual edit must not re-confirm APZ after an off-screen roster change');
   await confirmApz.check();
@@ -216,11 +233,18 @@ try {
   await page.getByRole('alert').filter({hasText:'O pernoite selecionado não está mais na escala'}).waitFor(); assert.equal(await page.locator('[data-stay-editor-selected="true"]').count(),0);
   await page.getByRole('button',{name:'Editar pernoite synthetic-current',exact:true}).click();
   await page.getByRole('heading',{name:'Apresentação, hotel e descanso',exact:true}).waitFor();
-  await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'another-account',email:'another@example.invalid'}));localStorage.setItem('crewcheck_auth_token','another-synthetic');window.dispatchEvent(new Event('crewcheck:auth-changed'));});
+  await page.evaluate(()=>{
+    const priorButtons=['Salvar antecedência padrão','Salvar alterações do pernoite','Cancelar despertador deste pernoite'].map(text=>[...document.querySelectorAll('button')].find(button=>button.textContent.trim()===text));
+    localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'another-account',email:'another@example.invalid'}));localStorage.setItem('crewcheck_auth_token','another-synthetic');window.dispatchEvent(new Event('crewcheck:auth-changed'));
+    for(const button of priorButtons)button.click();
+  });
   await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='');
   assert.equal(await page.evaluate(()=>window.stayHasOrigin()),false,'Origin marker from another account cannot resume the editor');
+  assert.equal(await withDefault.inputValue(),'90');assert.equal(await withoutDefault.inputValue(),'60','Account B does not inherit A defaults');
+  assert.equal(await preview.count(),0,'Account change clears the previous per-stay preview');
+  assert.equal(await page.evaluate(()=>localStorage.getItem('crewcheck_stay_editor_v2:another-account')),null,'Old-render save/default/cancel in the account-change tick cannot write A preferences into B');
   assert.deepEqual(errors,[]);assert.deepEqual(writes,[],'No hotel saves or alarm requests');
-  results.push({width,touchIdentity:true,savedApz:true,noRosterApzFallback:true,manualPreserved:true,autoMode:true,modeAbsolute:true,liveGap:true,defaultSeparate:true,current:true,rosterChange:true,itemRemoval:true,cancelEdit:true,contextReturn:true,accountReset:true,persistenceReload:true,reloadInsideEditorDegradesToList:true,cancellationPersisted:true,layout,negativeControl:true,writes,errors});
+  results.push({width,touchIdentity:true,savedApz:true,noRosterApzFallback:true,manualPreserved:true,autoMode:true,breakfastExplicit:true,breakfastDefaults90_60:true,bothDefaultsEditable:true,breakfastPerStayPersisted:true,oldAccountHandlersBlocked:true,modeAbsolute:true,liveGap:true,defaultSeparate:true,current:true,rosterChange:true,itemRemoval:true,cancelEdit:true,contextReturn:true,accountReset:true,persistenceReload:true,reloadInsideEditorDegradesToList:true,cancellationPersisted:true,layout,negativeControl:true,writes,errors});
   await context.close();
  }
 } finally {

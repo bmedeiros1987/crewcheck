@@ -187,3 +187,46 @@ test('zero relative lead conflicts with hotel APZ and cannot propose an alarm', 
   assert.ok(preview.warnings.includes('alarm-not-before-hotel-apz'));
   assert.equal(planStayAlarm({...args,choice}).reason,'absolute-time-incompatible');
 });
+
+test('explicit breakfast Auto defaults are 90/60 and independently editable', () => {
+  const input = { scope, stay, hotelApz, now, defaultLeadMinutes: 90, defaultWithoutBreakfastMinutes: 60 };
+  assert.equal(calculateStayWakeup({ ...input, breakfastPlan: 'with' }).differenceMinutes, 90);
+  assert.equal(calculateStayWakeup({ ...input, breakfastPlan: 'without' }).differenceMinutes, 60);
+  assert.equal(calculateStayWakeup({ ...input, breakfastPlan: 'without' }).scheduledAt, '2030-10-11T02:30:00.000Z');
+  assert.equal(calculateStayWakeup({ ...input, breakfastPlan: 'with', defaultLeadMinutes: 105 }).differenceMinutes, 105);
+  assert.equal(calculateStayWakeup({ ...input, breakfastPlan: 'without', defaultWithoutBreakfastMinutes: 45 }).differenceMinutes, 45);
+  for (const breakfastPlan of ['unknown', null, true, '05:30']) {
+    assert.equal(calculateStayWakeup({ ...input, breakfastPlan }).reason, 'breakfast-plan-unconfirmed');
+  }
+});
+
+test('breakfast choice never invents hall time or uses departure/pickup; manual overrides survive updates', () => {
+  const input = { scope, stay: { ...stay, departure: '05:30', pickupAt: pickup.pickupAt }, hotelApz, now,
+    breakfastPlan: 'without', defaultLeadMinutes: 90, defaultWithoutBreakfastMinutes: 60 };
+  assert.equal(calculateStayWakeup({ ...input, hotelApz: null }).reason, 'hotel-apz-missing-manual-required');
+  assert.equal(calculateStayWakeup({ ...input, hotelApz: { ...hotelApz, confirmed: false } }).reason, 'hotel-apz-unconfirmed');
+  assert.equal(calculateStayWakeup({ ...input, hotelApz: pickup }).reason, 'hotel-apz-provider-contract-unavailable');
+  const relative = Object.freeze({ mode: 'relative', leadMinutes: 47 });
+  assert.equal(calculateStayWakeup({ ...input, choice: relative, breakfastPlan: 'unknown' }).differenceMinutes, 47);
+  const absolute = Object.freeze({ mode: 'absolute', alarmAt: '2030-10-11T02:00:00Z', timeZone: stay.timeZone });
+  const changed = calculateStayWakeup({ ...input, choice: absolute, breakfastPlan: 'with',
+    defaultLeadMinutes: 120, hotelApz: { ...hotelApz, hotelReportAt: '2030-10-11T01:30:00-03:00' } });
+  assert.equal(changed.scheduledAt, '2030-10-11T02:00:00.000Z');
+  assert.equal(changed.schedulingState, 'not-programmed');
+  assert.equal(calculateStayWakeup({ ...input, stay: { ...stay, accountId: 'other' } }).reason, 'scope-mismatch');
+  assert.equal(planStayAlarm({ ...args, breakfastPlan: 'without', defaultWithoutBreakfastMinutes: 60 }).calculated.differenceMinutes, 60);
+});
+
+test('breakfast defaults cross to previous local day in explicit hotel zones', () => {
+  for (const timeZone of ['America/Fortaleza', 'Asia/Tokyo', 'Pacific/Auckland']) {
+    const apz = stayLocalInstant('2030-10-11', '00:30', timeZone);
+    const input = { scope, stay: { ...stay, timeZone }, hotelApz: { ...hotelApz, timeZone, hotelReportAt: new Date(apz).toISOString() },
+      now: apz - 86400000, defaultLeadMinutes: 90, defaultWithoutBreakfastMinutes: 60 };
+    for (const [breakfastPlan, clock] of [['with', '23:00'], ['without', '23:30']]) {
+      const calculated = calculateStayWakeup({ ...input, breakfastPlan });
+      assert.equal(calculated.display.date, '2030-10-10');
+      assert.equal(calculated.display.clock, clock);
+      assert.equal(calculated.display.timeZone, timeZone);
+    }
+  }
+});
