@@ -36,8 +36,8 @@ export function useFinancialPrivacy() {
 }
 export function FinancialPrivacyToggle() {
   const { hidden, toggle } = useFinancialPrivacy();
-  return <button type="button" className="cc-financial-privacy-toggle" onClick={toggle} aria-label={hidden ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros'} aria-pressed={hidden}>
+  return <div className="cc-financial-privacy-control"><button type="button" className="cc-financial-privacy-toggle" onClick={toggle} aria-label={hidden ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros'} aria-pressed={hidden}>
     {hidden ? <EyeOff size={20} aria-hidden="true"/> : <Eye size={20} aria-hidden="true"/>}
     <span>{hidden ? 'Mostrar valores' : 'Ocultar valores'}</span>
-  </button>;
+  </button></div>;
 }

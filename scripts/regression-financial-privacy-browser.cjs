@@ -59,19 +59,25 @@ async function checkHidden(page){
  for(const [kind,width] of [['domestic',390],['multi',1440],['unknown',390],['empty',390]]){
   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:'block'}),errors=[];
   await context.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(url.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[],"enabled":false}'});return route.continue();});
-  await context.addInitScript(seed,{theme:'light',kind:roster(kind),amount:123.45,salaryBase:4321.67});
+  const jan={...roster('domestic',1),days:[day('31/01/2032')]};
+  const history=kind==='domestic'?[{id:'local-synthetic-january',checksum:'synthetic-january',createdAt:'2032-02-01T00:00:00Z',roster:jan,sourceFileName:'Synthetic January'}]:undefined;
+  await context.addInitScript(seed,{theme:'light',kind:roster(kind),amount:123.45,salaryBase:4321.67,history});
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
   await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();await expand(page);
+  if(kind==='domestic')await page.waitForFunction(()=>document.querySelectorAll('.cc-financial-bar-track').length>=2);
   const before=await page.locator('.cc-per-diem-content').textContent();
   const persistedBefore=await page.evaluate(()=>JSON.stringify(localStorage));
   const toggle=page.getByRole('button',{name:'Ocultar valores financeiros'}).first();await toggle.focus();await page.keyboard.press('Enter');
   await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().waitFor();await checkHidden(page);
   assert.equal(await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().getAttribute('aria-pressed'),'true');
   assert.equal(await page.evaluate(()=>JSON.stringify(localStorage)),persistedBefore,'display toggle never writes data/settings');
+  if(kind==='domestic')await page.evaluate(()=>scrollTo(0,0));
   if(kind==='domestic')await page.screenshot({path:path.join(out,'hidden-mobile.png'),fullPage:false});
   await page.getByLabel('Filtro financeiro').selectOption('year');await checkHidden(page);await page.getByLabel('Filtro financeiro').selectOption('month');
   await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().focus();await page.keyboard.press('Space');
+  if(kind==='domestic')await page.waitForFunction(()=>document.querySelectorAll('.cc-financial-bar-track').length>=2);
   assert.equal(await page.locator('.cc-per-diem-content').textContent(),before,'show restores exactly the same UI values and pending states');
+  if(kind==='domestic')await page.evaluate(()=>scrollTo(0,0));
   if(kind==='domestic')await page.screenshot({path:path.join(out,'visible-mobile.png'),fullPage:false});
   await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().click();await navigate(page,'salary');await page.locator('.cc-salary-history').waitFor();await expand(page);await checkHidden(page);
   await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().click();const salaryBefore=await page.locator('.cc-salary-history').textContent();
