@@ -413,6 +413,13 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
         setStatusFromCache();
         return false;
       }
+      // A valid but older cache is not evidence that the current facts reverted.
+      // setContext clears cached when account, revision or stay binding changes.
+      if (cached && restored.syncedAt < cached.syncedAt) {
+        lastError = 'stale-snapshot';
+        setStatusFromCache();
+        return false;
+      }
       cached = restored;
       lastError = null;
       status = automatic ? 'cached' : 'off';
@@ -500,6 +507,11 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
         }
         const envelope = normalizeProviderEnvelope(raw, requestId, capturedContext, now());
         if (!envelope) throw Object.assign(new Error('unverified-session'), { code: 'session-expired' });
+        // Preserve the latest accepted observation, including cancellations and
+        // confirmed-empty snapshots. Restored cache carries the same watermark.
+        if (cached && myCrewCareInstant(envelope.observedAt) < cached.syncedAt) {
+          throw Object.assign(new Error('stale-snapshot'), { code: 'stale-snapshot' });
+        }
         const reconciled = reconcileMyCrewCareLogistics({
           context: capturedContext,
           stays: capturedStays,
