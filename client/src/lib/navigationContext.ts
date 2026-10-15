@@ -26,6 +26,8 @@ export type CrewCheckNavigationContext = {
   policy: NavigationContextPolicy;
   alertOccurrence?: string;
   alertVersion?: string;
+  alertOwner?: string;
+  alertRosterVersion?: string;
 };
 
 let pending: CrewCheckNavigationContext | null = null;
@@ -53,6 +55,8 @@ function sanitizeContext(input: CrewCheckNavigationContext): CrewCheckNavigation
     policy,
     ...(cleanString(input.alertOccurrence) ? { alertOccurrence: cleanString(input.alertOccurrence) } : {}),
     ...(cleanString(input.alertVersion) ? { alertVersion: cleanString(input.alertVersion) } : {}),
+    ...(cleanString(input.alertOwner) ? { alertOwner: cleanString(input.alertOwner) } : {}),
+    ...(cleanString(input.alertRosterVersion) ? { alertRosterVersion: cleanString(input.alertRosterVersion) } : {}),
     ...(cleanString(input.sourceView, 80) ? { sourceView: cleanString(input.sourceView, 80) } : {}),
     ...(cleanEpoch(input.dateEpochMs) ? { dateEpochMs: cleanEpoch(input.dateEpochMs) } : {}),
     ...(cleanString(input.journeyId) ? { journeyId: cleanString(input.journeyId) } : {}),

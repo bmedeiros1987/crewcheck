@@ -1,3 +1,4 @@
+import { nightSequenceEvidence, type AlertDateEvidence } from './nightAlertEvidence';
 import { publishedNightJourneySequence } from './publishedNightJourneys';
 import { pendingFlightRoleDates, FLIGHT_ROLE_PENDING_MESSAGE } from './flightRoleEvidence';
 import type { CrewRoster, RosterDay, FlightLeg } from './pdfParser';
@@ -39,6 +40,7 @@ export interface ComplianceAlert {
     missingDates: string[];
   };
   evidence?: string;
+  dateEvidence?: AlertDateEvidence[];
 }
 
 export interface Metrics {
@@ -2234,6 +2236,18 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   alerts = sanitizeComplianceAlertsForProduction(auditAlertConfidence(alerts, sortedDays));
 
   if (roleOriginPending) pushAlert(alerts, { severity: 'warning', title: 'Reimportação necessária para horas de voo operado', description: FLIGHT_ROLE_PENDING_MESSAGE, legalReference: 'Origem do PDF importado', classification: 'dados_insuficientes', actionable: false, code: 'FLIGHT_ROLE_ORIGIN_PENDING' });
+
+  // Enrich after the raw/prepared calculation, preserving its exact boundaries.
+  const nightEvidenceEvents = buildCanonicalRosterEvents(roster);
+  const nightEvidenceSequence = publishedNightJourneySequence(nightEvidenceEvents, isActiveDuty, actRules.nightOps.resetAfterFreeHours, hasMadrugadaDuty);
+  for (const alert of alerts) {
+    const pending = alert.code === 'night-sequence-pending';
+    if (!pending && !/^Madrugadas (?:trabalhadas )?consecutivas/.test(alert.title)) continue;
+    if (!pending) alert.code = 'NIGHT_WORKED_SEQUENCE';
+    alert.dateEvidence = nightSequenceEvidence(nightEvidenceSequence, nightEvidenceEvents, pending);
+    alert.evidence = `Contagem comprovada: ${nightEvidenceSequence.maxConsecutive} jornada(s); possível: ${nightEvidenceSequence.maxPossibleConsecutive}. Datas da programação: ${[...new Set(alert.dateEvidence.map(row => row.date))].join(', ')}. Uma contagem por jornada, mesmo com várias etapas ou passagem da meia-noite.`;
+    alert.details = `Critério aplicado: atividade trabalhada que toca 00:00–06:00 BRT; referência de ${limits.maxConsecutiveNightOps} jornadas consecutivas. Jornada diurna comprovada interrompe a sequência; ${actRules.nightOps.resetAfterFreeHours}h livres comprovadas a reiniciam. HSB/reserva sem acionamento não contam como trabalho, mas disponibilidade aberta impede presumir tempo livre. Início/término ausentes mantêm a hipótese pendente. Atenção para revisão, sem afirmar infração automática.`;
+  }
 
   const loadAnalysis = analyzeDayLoads(roster);
   const errorCount = alerts.filter(alert => alert.severity === 'error').length;

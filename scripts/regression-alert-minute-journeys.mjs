@@ -182,6 +182,14 @@ try {
       assert.equal(measurement.measureCanonicalDuty(events,events[0].id).minutes,680,'explicit release, no duplicate +30');
       for (const [start, expected] of [['05:59',1],['06:00',0],['06:01',0]]) assert.equal(engine.analyzeCompliance(roster([day('10/10/2032',start,'08:00',start,'07:30')])).metrics.maxConsecutiveNights,expected);
       assert.equal(engine.analyzeCompliance(roster([first,third,fourth])).metrics.maxConsecutiveNights,3,'three distinct night journeys remain three');
+      const evidenced = engine.analyzeCompliance(roster([first,third,fourth])).alerts.find(a => a.code === 'NIGHT_WORKED_SEQUENCE');
+      assert.ok(evidenced, 'sequence warning has stable code and inspectable evidence');
+      assert.deepEqual(evidenced.dateEvidence.map(row => row.date), ['04/10/2032','06/10/2032','07/10/2032']);
+      assert.equal(new Set(evidenced.dateEvidence.map(row => row.journeyId)).size, 3);
+      assert.match(evidenced.dateEvidence[0].description, /05\/10\/2032/,'overnight activity exposes actual next-day clock as well as published date');
+      assert.match(evidenced.evidence, /Contagem comprovada: 3/);
+      assert.match(evidenced.details, /00:00–06:00 BRT/);
+      assert.match(evidenced.details, /48h livres comprovadas/);
       const availability={...day('05/10/2032','20:00','23:00','',''),type:'HSB',pairingCode:'HSB',legs:[]};
       assert.equal(engine.analyzeCompliance(roster([first,availability,fourth])).metrics.maxConsecutiveNights,2,'availability blocks a 48h-free reset but is not a night journey');
       const longBreak = day('10/10/2032','02:10','10:30','02:50','10:00');
