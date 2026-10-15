@@ -1,4 +1,6 @@
 import { crewCheckEmailIdentity, crewCheckEmailSignatureText as institutionalSignatureText } from '../shared/crewcheckEmailIdentity.mjs';
+import crypto from 'node:crypto';
+import { APPROVED_BRAND_SHA } from './approved-brand-assets.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -25,8 +27,11 @@ vm.runInContext(functions(deliveryFile,['escapeHtml','crewCheckEmailSignatureTex
 const {api}=scope,html=api.crewCheckEmailSignature(),text=api.crewCheckEmailSignatureText();
 for(const value of [html,text]){assert.match(value,/CrewCheck/);assert.match(value,/crewcheck\.online/);assert.doesNotMatch(value,/Bruno|Medeiros|Saraiva|Founder|CEO|Brasília|CNPJ|mailto:/i,'institutional footer contains no personal/legal/contact invention');}
 const logo=new URL(html.match(/<img src="([^"]+)"/)[1]);assert.equal(logo.origin,'https://crewcheck.online');
+assert.equal(logo.pathname,crewCheckEmailIdentity.logoPath,'email and preview reference the same approved logo');
+assert.equal(crypto.createHash('sha256').update(fs.readFileSync('client/public'+logo.pathname)).digest('hex'),APPROVED_BRAND_SHA,'email uses original approved pixels');
 const asset='client/public'+logo.pathname;assert.ok(fs.existsSync(asset),'default logo is a committed public asset');assert.equal(fs.readFileSync(asset).subarray(0,8).toString('hex'),'89504e470d0a1a0a');
-if(process.argv.includes('--built'))assert.equal(fs.readFileSync('dist'+logo.pathname).subarray(0,8).toString('hex'),'89504e470d0a1a0a','built site ships the exact image path');
+if(process.argv.includes('--built'))assert.equal(crypto.createHash('sha256').update(fs.readFileSync('dist'+logo.pathname)).digest('hex'),APPROVED_BRAND_SHA,'built site ships approved logo bytes at the exact image path');
+assert.match(html,/<img src="https:\/\/[^"]+\.png" width="64" height="64" alt="CrewCheck" style=/,'email uses an absolute PNG URL, fixed dimensions, alt text and inline styling');
 assert.match(html.replace(/<img\b[^>]*>/g,''),/>CrewCheck<\/div>/,'readable text brand survives blocked images');
 settings.CREWCHECK_EMAIL_LOGO_URL='https://crewcheck.online/favicon-512x512.png';assert.equal(api.crewCheckEmailSignature(),html,'legacy broken logo configuration maps to shipped asset');
 settings.CREWCHECK_EMAIL_LOGO_URL='https://example.invalid/brand.png';assert.match(api.crewCheckEmailSignature(),/https:\/\/example.invalid\/brand.png/,'other existing logo overrides remain intact');delete settings.CREWCHECK_EMAIL_LOGO_URL;
