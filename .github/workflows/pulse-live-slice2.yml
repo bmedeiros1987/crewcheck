@@ -6,14 +6,17 @@ on:
     paths:
       - 'client/src/components/pulse/**'
       - 'client/src/components/alerts/**'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
       - 'client/src/components/navigation/InternalHeaderFrame.tsx'
       - 'client/src/lib/alert*.ts'
       - 'client/src/lib/groundAlertDispositions.ts'
       - 'client/src/lib/complianceAlertSemantics.ts'
       - 'client/src/lib/navigationContext.ts'
+      - 'client/src/lib/nightAlertEvidence.ts'
       - 'client/src/lib/i18n.ts'
       - 'scripts/pulse-alert-experience/**'
       - 'scripts/regression-pulse-alert-experience.mjs'
+      - 'scripts/regression-night-alert-evidence-browser.cjs'
       - 'scripts/v139/apply.mjs'
       - 'client/src/pages/Home.tsx'
       - 'scripts/regression-p1-546-pulse-*.mjs'
@@ -58,3 +61,7 @@ jobs:
         run: npx tsc --noEmit
       - name: Build web
         run: npx vite build
+      - name: Night alert evidence and contextual roster navigation (synthetic)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/pulse-browser/package.json
+        run: node scripts/regression-night-alert-evidence-browser.cjs

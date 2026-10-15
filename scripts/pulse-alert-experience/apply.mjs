@@ -30,6 +30,11 @@ if(bottomNav.includes('const currentSignature =')) {
 }
 if(!bottomNav.includes('const visibleAlertCount = alertCount;')||/markAlertsRead|seenSignature/.test(bottomNav))throw new Error('Pulse experience: navigation must require explicit review');
 home=home.slice(0,navStart)+bottomNav+home.slice(navEnd);
+// The shipping roster surface replaces the legacy Home Roster during preparation.
+if (!home.includes('<RosterLaunchView events={rosterEvents} roster={bundle.roster}')) {
+ if (!home.includes('<RosterLaunchView events={rosterEvents}')) throw new Error('Pulse experience: shipping roster context anchor missing');
+ home=home.replace('<RosterLaunchView events={rosterEvents}', '<RosterLaunchView events={rosterEvents} roster={bundle.roster}');
+}
 fs.writeFileSync(path, home);
 const cssPath='client/src/styles/ipad-header-recovery.css';
 const marker='/* Single integrated Pulse header */';
