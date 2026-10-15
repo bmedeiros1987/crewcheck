@@ -1,7 +1,9 @@
+import type { jsPDF } from 'jspdf';
+import { crewCheckEmailIdentity } from '../../../shared/crewcheckEmailIdentity.mjs';
 export const CREWCHECK_BRAND = {
   name: 'CrewCheck',
   descriptor: 'Roster Intelligence',
-  iconPath: '/icons/crewcheck-icon-v2.png',
+  iconPath: crewCheckEmailIdentity.logoPath,
   palette: {
     navy950: '#020817',
     navy900: '#071D33',
@@ -41,13 +43,16 @@ function fileReaderDataUrl(blob: Blob): Promise<string> {
  */
 export function crewCheckLogoDataUrl(): Promise<string> {
   if (!logoDataUrlPromise) {
-    logoDataUrlPromise = fetch(CREWCHECK_BRAND.iconPath, { cache: 'force-cache' })
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 2500);
+    logoDataUrlPromise = fetch(CREWCHECK_BRAND.iconPath, { cache: 'force-cache', signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error(`Logo indisponível (${response.status}).`);
         return response.blob();
       })
       .then(fileReaderDataUrl)
-      .catch(() => '');
+      .catch(() => '')
+      .finally(() => window.clearTimeout(timer));
   }
   return logoDataUrlPromise;
 }
@@ -64,4 +69,10 @@ export function crewCheckPublicAssetUrl(path = CREWCHECK_BRAND.iconPath): string
   } catch {}
   if (typeof window !== 'undefined' && window.location?.origin) return `${window.location.origin}${cleanPath}`;
   return cleanPath;
+}
+
+/** Embed the existing approved PNG; readable document text remains the fallback. */
+export function addCrewCheckPdfLogo(doc: jsPDF, dataUrl: string, x: number, y: number, size: number): boolean {
+  if (!dataUrl) return false;
+  try { doc.addImage(dataUrl, 'PNG', x, y, size, size); return true; } catch { return false; }
 }

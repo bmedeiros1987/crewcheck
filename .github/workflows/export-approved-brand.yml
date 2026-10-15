@@ -1,0 +1,61 @@
+name: Exported PDF approved brand
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/brand.ts'
+      - 'client/src/lib/pdfExport.ts'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/components/premium/CabinChiefAssistant.tsx'
+      - 'scripts/regression-export-approved-brand.mjs'
+      - 'scripts/verify-export-brand-pdfs.py'
+      - '.github/workflows/export-approved-brand.yml'
+  workflow_dispatch:
+jobs:
+  pdf-pixels:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - name: Isolated browser and PDF validators
+        run: |
+          npm install --prefix "$RUNNER_TEMP/export-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/export-browser/node_modules/playwright/cli.js" install --with-deps chromium
+          python -m pip install PyMuPDF==1.26.6 Pillow==12.3.0
+      - name: Generate raw synthetic PDFs and compare approved pixels
+        env:
+          EXPORT_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/export-browser/package.json
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/export-base" "$BASE_SHA"
+          ln -s "$GITHUB_WORKSPACE/node_modules" "$RUNNER_TEMP/export-base/node_modules"
+          cp scripts/regression-export-approved-brand.mjs "$RUNNER_TEMP/export-base/scripts/"
+          (cd "$RUNNER_TEMP/export-base" && node scripts/regression-export-approved-brand.mjs)
+          node scripts/regression-export-approved-brand.mjs
+          python scripts/verify-export-brand-pdfs.py artifacts/export-brand --baseline "$RUNNER_TEMP/export-base/artifacts/export-brand"
+      - name: Prepare production sources and repeat artifact validation
+        env:
+          EXPORT_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/export-browser/package.json
+        run: |
+          node scripts/v139/apply.mjs
+          npx vite build
+          npx tsc --noEmit
+          (cd "$RUNNER_TEMP/export-base" && node scripts/v139/apply.mjs && node scripts/regression-export-approved-brand.mjs)
+          node scripts/regression-export-approved-brand.mjs
+          python scripts/verify-export-brand-pdfs.py artifacts/export-brand --baseline "$RUNNER_TEMP/export-base/artifacts/export-brand"
+          node scripts/regression-approved-brand-assets.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: synthetic-export-brand-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/export-brand/*.pdf
+            artifacts/export-brand/*.png
+            artifacts/export-brand/pdf-validation.json
