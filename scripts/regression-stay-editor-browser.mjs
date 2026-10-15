@@ -209,6 +209,9 @@ try {
   await page.getByRole('status').filter({hasText:'Despertador cancelado nesta preferência'}).waitFor();
   await preview.locator('summary').click();
   assert.equal(await exact.inputValue(),'2030-10-11T04:00');
+  assert.equal(await breakfast.inputValue(),'without');
+  await breakfast.selectOption('with');
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_stay_editor_v2:synthetic')).stays['synthetic-future'].breakfastPlan),'without','Changing the draft must not save it');
   await program.selectOption('synthetic-current');
   await page.waitForFunction(()=>document.querySelector('.cc-stay-editor input[type="time"]')?.value==='');
   assert.equal(await apz.inputValue(),'');
@@ -218,7 +221,8 @@ try {
   await program.selectOption('synthetic-future');
   await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel editado sintético');
   assert.equal(await hotel.inputValue(),'Hotel editado sintético');assert.equal(await exact.inputValue(),'2030-10-11T04:00');
-  assert.equal(await breakfast.inputValue(),'without','Unsaved per-stay selection restores its own breakfast choice');
+  assert.equal(await breakfast.inputValue(),'with','Returning restores the unsaved breakfast change, not the persisted without choice');
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_stay_editor_v2:synthetic')).stays['synthetic-future'].breakfastPlan),'without','Switching stays must not persist the unsaved change');
   await page.getByRole('alert').filter({hasText:'Seus ajustes manuais foram preservados'}).waitFor();
   assert.equal(await confirmApz.isChecked(),false,'Cached manual edit must not re-confirm APZ after an off-screen roster change');
   await confirmApz.check();
@@ -227,6 +231,8 @@ try {
   await preview.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(output,`alarm-${width}.png`)});
   await page.getByText('Mais opções da edição',{exact:true}).click();
   await page.getByRole('button',{name:'Descartar edição deste pernoite',exact:true}).click();await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel editado sintético');
+  await page.waitForFunction(()=>document.querySelector('select') && [...document.querySelectorAll('label')].find(label=>label.textContent.startsWith('Café antes da apresentação no hall'))?.querySelector('select')?.value==='without');
+  assert.equal(await breakfast.inputValue(),'without','Discard restores the saved breakfast choice');
   await page.evaluate(()=>window.replaceStayEvents(window.stayFixtureEvents.filter(event=>event.id!=='synthetic-future')));
   await page.getByRole('alert').filter({hasText:'Nenhum outro item foi selecionado automaticamente'}).waitFor();assert.equal(await program.inputValue(),'');
   await page.getByRole('button',{name:'Voltar ao pernoite',exact:true}).click();
