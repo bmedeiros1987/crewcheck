@@ -21,6 +21,8 @@ on:
       - 'client/src/lib/financialSettingStore.ts'
       - 'client/src/lib/freeDay*.ts'
       - 'client/src/components/FreeDayPostponementAlerts.tsx'
+      - 'client/src/components/FreeDayReviewPending.tsx'
+      - 'scripts/regression-free-day-pending-browser.cjs'
       - 'client/src/components/FreeDaySourceConsent.tsx'
       - 'client/src/components/FreeDaySourceQueue.tsx'
       - 'client/src/components/FreeDayPersonalConsent.tsx'
@@ -185,6 +187,10 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
         run: node scripts/regression-financial-ui-browser.cjs
+      - name: Explain free-day pending data and open roster dates (synthetic)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-free-day-pending-browser.cjs
       - name: Verify legacy flight-role origin remains pending
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
