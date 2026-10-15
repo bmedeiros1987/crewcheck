@@ -16,7 +16,8 @@ Assistant: `packages/home_concierge.yaml`.
 | 🛡️ **Alarme** | Armar **ausente / em casa / noite** e **desarmar com confirmação**. Se o alarme disparar, chega um aviso urgente (mesmo com 🔕), com botão para desarmar |
 | ⏰ **Despertador** | Horário pelos botões (±15 min, ±1 h, 5h30/6h/6h30/7h), só dias úteis ou todo dia. Na hora, a luz do quarto acende aos poucos, o som toca e chega um "Bom dia" com o tempo e **😴 Soneca 10 min** |
 | 🧹 **Faxina** | 6 h (padrão), 1 h, +1 h, renovar, encerrar. Aviso 10 min antes do fim |
-| 🎬 **Cenas** | 🏡 Cheguei · 🚪 Saindo (apaga a casa e **arma o alarme**) · 🍿 Cinema · 🌙 Boa noite (apaga a casa, silencia e **arma modo noite**) |
+| 🎬 **Cenas** | 🏡 Cheguei · 🚪 Saindo (apaga a casa e **arma o alarme**) · 🍿 Cinema · 🌙 Boa noite (apaga a casa, silencia e **arma modo noite**) · 🌧️ Dia de chuva |
+| 🌧️ **Modo chuva** | Em dia de chuva com a casa escura, acende **só as luzes escolhidas**, num brilho confortável (não a casa toda). Liga **sozinho** e desliga quando a chuva passa |
 | 🎵 **Laurinha** | Tocar/pausar, próxima, volume |
 | 📊 **Status** | Alarme, luzes por cômodo, temperaturas, despertador, faxina, música, clima, portas, sol |
 | ⌨️ **Menu fixo** | Grade de botões grandes embaixo do campo de mensagem, como no bot CrewCheck |
@@ -27,7 +28,7 @@ Assistant: `packages/home_concierge.yaml`.
 🎬 Cenas         🎵 Laurinha
 🚪 Saindo        🌙 Boa noite
 📊 Status        🔕 Não perturbe
-🏠 Painel da casa
+🌧️ Dia de chuva  🏠 Painel da casa
 ```
 
 Comandos: `/menu` `/casa` `/start` `/comodos` `/alarme` `/despertador`
@@ -98,6 +99,26 @@ completo.
 - **😴 Soneca** pausa o som e toca de novo em 10 min. **✅ Acordei** encerra.
 - **🧪 Testar agora** executa a rotina na hora.
 
+## Modo chuva
+
+- **Automático (padrão):** quando o tempo indica chuva por 5 min, de dia, o
+  concierge liga o modo chuva e avisa no Telegram, com botão para desligar.
+  Também liga se amanhecer chovendo.
+- Acende só `chuva_luzes` (vazio = Favoritos) a `chuva_brilho`% (padrão 60%).
+  Tomadas e interruptores (`switch.*`) só ligam.
+- **Desliga sozinho** depois de 30 min sem chuva, apagando essas luzes. Ao
+  anoitecer, o modo se encerra mas as luzes **ficam acesas** (a noite continua
+  com elas).
+- Com um sensor de luminosidade em `chuva_lux_sensor`, só liga se a casa
+  estiver realmente escura (abaixo de `chuva_lux_max` lux, padrão 150).
+- No máximo uma vez a cada 3 h, para não ficar ligando e desligando com chuva
+  intermitente.
+- `chuva_automatico`: `ligar` (padrão), `sugerir` (pergunta antes) ou `nao`
+  (só pelo botão 🌧️ Dia de chuva).
+- Se você tem automações que apagam luzes sozinhas (por movimento, horário…),
+  adicione a elas a condição `input_boolean.concierge_modo_chuva` = `off`,
+  como já é feito com a faxina.
+
 ## Vincular o Smart Life (Tuya) ao Home Assistant
 
 A integração oficial **Tuya** entra com a própria conta do app Smart Life, via
@@ -133,7 +154,7 @@ não respondem ao HA. Para controle 100% local existe o *Tuya Local* (HACS).
   `cbri <area> <pct>`, `luzes_on`, `luzes_off`, `alarme <away|home|night|disarm>`,
   `desp_toggle`, `desp_uteis`, `desp_adj <min>`, `desp_set <HHMM>`, `despertar`,
   `soneca`, `acordei`, `faxina_on`, `faxina_1h`, `faxina_mais`, `faxina_off`,
-  `cena <cheguei|saindo|cinema|boanoite>`,
+  `cena <cheguei|saindo|cinema|boanoite>`, `chuva`, `chuva_on`, `chuva_off`,
   `musica <play_pause|next|vol_up|vol_down>`, `dnd`.
 
 ## Teste offline
@@ -145,6 +166,7 @@ python3 home-assistant/tests/render_check.py
 
 O teste **simula o script passo a passo** (variáveis, `if`, `choose`, `stop`)
 contra um Home Assistant falso com cômodos, alarme, ar-condicionado, cortina e
-ventilador, em três cenários (casa completa, alarme disparado com soneca, HA
-vazio). Ele confere os serviços chamados em cada ação, o texto de cada tela, o
+ventilador, em seis cenários (casa completa, alarme disparado com soneca, HA
+vazio, chuva de dia com a casa escura, chuva com a casa clara e modo
+"sugerir"). Ele confere os serviços chamados em cada ação, o texto de cada tela, o
 formato dos teclados do Telegram e o limite de 64 bytes do `callback_data`.

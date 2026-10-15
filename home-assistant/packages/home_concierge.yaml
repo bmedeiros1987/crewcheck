@@ -29,6 +29,9 @@ input_boolean:
   concierge_despertador_uteis:
     name: Despertador · só dias úteis
     icon: mdi:calendar-week
+  concierge_modo_chuva:
+    name: Modo chuva
+    icon: mdi:weather-pouring
 
 input_datetime:
   concierge_despertador:
@@ -138,6 +141,15 @@ script:
       # Mídia opcional (URL/playlist). '' = só dá "play" no que estava tocando
       despertador_midia: ""
       despertador_midia_tipo: music
+      # 🌧️ Modo chuva: só estas luzes acendem ([] = Favoritos)
+      chuva_luzes: []
+      chuva_brilho: 60              # % de brilho das luzes de chuva
+      # Quando começar a chover de dia: 'sugerir' (pergunta no Telegram),
+      # 'ligar' (acende sozinho e avisa) ou 'nao' (só pelo botão)
+      chuva_automatico: ligar
+      # Sensor de luminosidade (lux) opcional: só age se a casa estiver escura
+      chuva_lux_sensor: ""
+      chuva_lux_max: 150
       # Luz que fica baixinha na cena Cinema (as outras apagam)
       luz_cinema: light.sala
       # Caixa de som da Laurinha ('' para esconder)
@@ -162,6 +174,7 @@ script:
         "🌙 Boa noite": cena boanoite
         "📊 Status": nav status
         "🔕 Não perturbe": dnd
+        "🌧️ Dia de chuva": chuva
         "🏠 Painel da casa": nav menu
       # ============================================================
       pedido: >-
@@ -192,6 +205,20 @@ script:
           {%- for e in c.ents if e.startswith('light.') and e not in ns.l -%}{%- set ns.l = ns.l + [e] -%}{%- endfor -%}
         {%- endfor -%}
         {{ ns.l }}
+      chuva_alvos: "{{ chuva_luzes if chuva_luzes else luzes.keys() | list }}"
+      chuva_ativo: "{{ is_state('input_boolean.concierge_modo_chuva', 'on') }}"
+      chuva_lux: >-
+        {{ states(chuva_lux_sensor) | float(-1) | round(0) | int if chuva_lux_sensor != '' and states(chuva_lux_sensor) | is_number else -1 }}
+      chuva_liga: >-
+        {{ cmd == 'chuva_on' or (cmd == 'chuva' and not chuva_ativo)
+           or (cmd == 'chuva_auto' and chuva_automatico == 'ligar') }}
+      chuva_desliga: "{{ cmd in ['chuva_off', 'chuva_fim'] or (cmd == 'chuva' and chuva_ativo) }}"
+      # Automático só de dia, com a casa escura, sem o modo já ligado
+      chuva_auto_ok: >-
+        {{ chuva_automatico in ['sugerir', 'ligar'] and not chuva_ativo
+           and is_state('sun.sun', 'above_horizon')
+           and (chuva_lux < 0 or chuva_lux <= chuva_lux_max | int(150))
+           and not (chuva_automatico == 'sugerir' and is_state('input_boolean.concierge_nao_perturbe', 'on')) }}
       sala_id: "{{ (arg | string).split(' ')[0] if cmd in ['comodo', 'ctog', 'con', 'coff', 'cbri'] else '' }}"
       sala: >-
         {%- set l = comodos | selectattr('id', 'eq', sala_id) | list -%}
@@ -232,6 +259,8 @@ script:
         {%- elif cmd in ['desp_adj', 'desp_set'] -%}⏰ Horário ajustado
         {%- elif cmd == 'soneca' -%}😴 Mais 10 minutinhos
         {%- elif cmd == 'acordei' -%}☀️ Bom dia!
+        {%- elif cmd == 'chuva_on' or (cmd == 'chuva' and not chuva_ativo) -%}🌧️ Modo chuva ligado
+        {%- elif cmd == 'chuva_off' or (cmd == 'chuva' and chuva_ativo) -%}☀️ Modo chuva desligado
         {%- elif cmd == 'musica' -%}🎵 Laurinha
         {%- elif cmd == 'dnd' -%}{{ '🔔 Avisos reativados' if is_state('input_boolean.concierge_nao_perturbe', 'on') else '🔕 Avisos silenciados' }}
         {%- else -%}🏠 Home Concierge{%- endif -%}
@@ -244,6 +273,8 @@ script:
         {%- elif cmd.startswith('desp_') -%}despertador
         {%- elif cmd in ['despertar', 'soneca'] -%}despertar
         {%- elif cmd.startswith('faxina') -%}faxina
+        {%- elif cmd in ['chuva_auto', 'chuva_fim'] -%}chuva_aviso
+        {%- elif cmd in ['chuva_on', 'chuva_off'] -%}cenas
         {%- elif cmd == 'musica' -%}musica
         {%- else -%}menu{%- endif -%}
     sequence:
@@ -283,6 +314,14 @@ script:
           - if: "{{ cmd == 'teclado_off' }}"
             then:
               - stop: "Menu fixo oculto"
+
+      # 0c) Modo chuva automático: só age quando faz sentido
+      - if: "{{ cmd == 'chuva_auto' and not chuva_auto_ok }}"
+        then:
+          - stop: "Modo chuva automático: nada a fazer agora"
+      - if: "{{ cmd == 'chuva_fim' and not chuva_ativo }}"
+        then:
+          - stop: "Modo chuva já estava desligado"
 
       # 1) Toast imediato (o Telegram exige resposta rápida ao clique)
       - if: "{{ callback_id | default('', true) | string != '' }}"
@@ -555,6 +594,41 @@ script:
                       modo: night
                       codigo: "{{ alarme_codigo }}"
 
+          # ---------- Modo chuva ----------
+          - conditions: "{{ chuva_liga }}"
+            sequence:
+              - service: input_boolean.turn_on
+                target:
+                  entity_id: input_boolean.concierge_modo_chuva
+              - if: "{{ chuva_alvos | select('match', '^light\\.') | list | count > 0 }}"
+                then:
+                  - service: light.turn_on
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ chuva_alvos | select('match', '^light\\.') | list }}"
+                    data:
+                      brightness_pct: "{{ [[chuva_brilho | int(60), 1] | max, 100] | min }}"
+                      transition: 3
+              - if: "{{ chuva_alvos | reject('match', '^light\\.') | list | count > 0 }}"
+                then:
+                  - service: homeassistant.turn_on
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ chuva_alvos | reject('match', '^light\\.') | list }}"
+
+          - conditions: "{{ chuva_desliga }}"
+            sequence:
+              - service: input_boolean.turn_off
+                target:
+                  entity_id: input_boolean.concierge_modo_chuva
+              # Ao anoitecer, as luzes ficam: a noite segue com elas acesas
+              - if: "{{ chuva_alvos | count > 0 and not (cmd == 'chuva_fim' and not is_state('sun.sun', 'above_horizon')) }}"
+                then:
+                  - service: homeassistant.turn_off
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ chuva_alvos }}"
+
           # ---------- Laurinha / avisos ----------
           - conditions: "{{ cmd == 'musica' and laurinha != '' }}"
             sequence:
@@ -666,9 +740,30 @@ script:
             {%- set desp_hora = '%dh%02d' % (dm // 60, dm % 60) -%}
             {%- set sfim = state_attr('timer.concierge_soneca', 'finishes_at') -%}
             {%- set soneca_ate = (as_datetime(sfim) | as_local).strftime('%H:%M') if sfim and is_state('timer.concierge_soneca', 'active') else '' -%}
+            {%- set chuva = is_state('input_boolean.concierge_modo_chuva', 'on') -%}
+            {%- set cn = namespace(n=[]) -%}
+            {%- for e in chuva_alvos -%}{%- set cn.n = cn.n + [luzes.get(e, state_attr(e, 'friendly_name') or e.split('.')[1])] -%}{%- endfor -%}
+            {%- set chuva_nomes = ((cn.n[:-1] | join(', ') ~ ' e ' ~ cn.n[-1]) if cn.n | count > 1 else cn.n[0]) if cn.n else 'nenhuma luz configurada' -%}
             {%- set n_lig = namespace(c=0, nomes=[]) -%}
             {%- for c in comodos if c.id != 'fav' and c.ents | select('match', '^light\.') | select('is_state', 'on') | list | count > 0 -%}{%- set n_lig.nomes = n_lig.nomes + [c.nome] -%}{%- endfor -%}
-            {%- if tela == 'despertar' -%}
+            {%- if tela == 'chuva_aviso' -%}
+            {%- if cmd == 'chuva_fim' -%}
+            {%- if is_state('sun.sun', 'above_horizon') -%}
+            <b>☀️ A chuva passou</b>
+            Desliguei o modo chuva e apaguei {{ chuva_nomes }}.
+            {%- else -%}
+            <b>🌙 Anoiteceu</b>
+            Encerrei o modo chuva. As luzes ficam como estão.
+            {%- endif -%}
+            {%- elif chuva_automatico == 'ligar' -%}
+            <b>🌧️ Modo chuva ligado</b>
+            Está chovendo e a casa ficou escura{{ ' (' ~ chuva_lux ~ ' lx)' if chuva_lux >= 0 }}.
+            Acendi só {{ chuva_nomes }}, a {{ chuva_brilho }}%.
+            {%- else -%}
+            <b>🌧️ Está chovendo e a casa está escura</b>{{ ' (' ~ chuva_lux ~ ' lx)' if chuva_lux >= 0 }}
+            Quer acender só {{ chuva_nomes }}, a {{ chuva_brilho }}%?
+            {%- endif -%}
+            {%- elif tela == 'despertar' -%}
             <b>⏰ {{ saud }}{{ ', ' ~ quem if quem }}!</b> São {{ now().strftime('%H:%M') }}.
             {%- if soneca_ate %}
             😴 Soneca até <b>{{ soneca_ate }}</b>.
@@ -702,6 +797,9 @@ script:
             {%- endif %}
             ⏰ Despertador: {{ (desp_hora ~ (' · dias úteis' if uteis else ' · todo dia')) if desp_on else 'desligado' }}{{ ' · 😴 soneca até ' ~ soneca_ate if soneca_ate }}
             🧹 Faxina: {{ ('<b>ativa</b> · faltam ' ~ rest ~ ' (até ' ~ ate ~ ')') if s > 0 else ('<b>ativa</b>' if fx else 'desligada') }}
+            {%- if chuva %}
+            🌧️ Modo chuva: <b>ligado</b> · {{ chuva_nomes }}
+            {%- endif %}
             {%- if mp and is_state(mp, 'playing') %}
             🎵 Laurinha: tocando{{ ' · <i>' ~ titulo ~ '</i>' if titulo }}
             {%- endif %}
@@ -780,6 +878,10 @@ script:
             🚪 <b>Saindo</b> · apaga a casa e pausa a música{{ ' · arma o alarme' if saindo_arma_alarme and alarme != '' }}
             🍿 <b>Cinema</b> · {{ luzes.get(luz_cinema, state_attr(luz_cinema, 'friendly_name') or 'luz') }} a 15%, resto apagado
             🌙 <b>Boa noite</b> · apaga a casa e silencia os avisos{{ ' · alarme modo noite' if boanoite_arma_alarme and alarme != '' }}
+            🌧️ <b>Dia de chuva</b> · acende só {{ chuva_nomes }}, a {{ chuva_brilho }}%{{ ' · <b>ligado</b>' if chuva }}
+            {%- if chuva_automatico != 'nao' %}
+               <i>{{ 'Pergunto' if chuva_automatico == 'sugerir' else 'Ligo sozinho' }} quando chover de dia, e desligo quando a chuva passar.</i>
+            {%- endif %}
             {%- elif tela == 'musica' %}
             <b>🎵 Laurinha</b>
             {%- if mp %}
@@ -801,6 +903,9 @@ script:
             {%- endif %}
             {%- endfor %}
             ⏰ Despertador: {{ desp_hora if desp_on else 'desligado' }}
+            {%- if chuva %}
+            🌧️ Modo chuva: ligado
+            {%- endif %}
             🧹 Faxina: {{ ('ativa até ' ~ ate ~ ' (' ~ rest ~ ')') if s > 0 else ('ativa' if fx else 'desligada') }}
             {%- if mp %}
             🎵 Laurinha: {{ {'playing': 'tocando', 'paused': 'pausada', 'idle': 'parada', 'off': 'desligada', 'on': 'ligada'}.get(states(mp), states(mp)) }}{{ ' · ' ~ vol ~ '%' if is_state(mp, 'playing') }}
@@ -879,6 +984,14 @@ script:
               '🧪 Testar agora:/hc despertar',
               voltar
             ] }}
+            {%- elif tela == 'chuva_aviso' -%}
+            {%- if cmd == 'chuva_fim' -%}
+            {{ ['🏠 Painel:/hc nav menu'] }}
+            {%- elif chuva_automatico == 'ligar' -%}
+            {{ ['☀️ Desligar modo chuva:/hc chuva_off, 🏠 Painel:/hc nav menu'] }}
+            {%- else -%}
+            {{ ['🌧️ Sim acender:/hc chuva_on, ✖️ Agora não:/hc nav menu'] }}
+            {%- endif -%}
             {%- elif tela == 'despertar' -%}
             {{ (['✅ Acordei:/hc acordei'] if is_state('timer.concierge_soneca', 'active')
                 else ['😴 Soneca 10 min:/hc soneca, ✅ Acordei:/hc acordei']) + ['🏠 Painel:/hc nav menu'] }}
@@ -893,6 +1006,7 @@ script:
             {{ [
               '🏡 Cheguei:/hc cena cheguei, 🚪 Saindo:/hc cena saindo',
               '🍿 Cinema:/hc cena cinema, 🌙 Boa noite:/hc cena boanoite',
+              ('🌧️ Dia de chuva ● ON:/hc chuva_off' if is_state('input_boolean.concierge_modo_chuva', 'on') else '🌧️ Dia de chuva:/hc chuva_on'),
               voltar
             ] }}
             {%- elif tela == 'musica' -%}
@@ -1029,6 +1143,57 @@ automation:
       - service: script.home_concierge
         data:
           acao: despertar
+
+  # ------------------------------------------------------------------
+  # 🌧️ Modo chuva: começou a chover de dia → sugere/liga (no máx. a cada 3 h)
+  # ------------------------------------------------------------------
+  - id: home_concierge_chuva_inicio
+    alias: "🏠 Home Concierge · chuva começou"
+    mode: single
+    trigger:
+      - platform: template
+        value_template: >-
+          {{ states.weather | selectattr('state', 'in', ['rainy', 'pouring', 'lightning-rainy', 'lightning'])
+             | list | count > 0 }}
+        for: "00:05:00"
+      # Choveu a madrugada toda e amanheceu escuro
+      - platform: state
+        entity_id: sun.sun
+        to: above_horizon
+        for: "00:30:00"
+    condition:
+      - >-
+        {{ states.weather | selectattr('state', 'in', ['rainy', 'pouring', 'lightning-rainy', 'lightning'])
+           | list | count > 0 }}
+      - "{{ this.attributes.last_triggered is none or (now() - this.attributes.last_triggered).total_seconds() > 10800 }}"
+    action:
+      - service: script.home_concierge
+        data:
+          acao: chuva_auto
+
+  # ------------------------------------------------------------------
+  # 🌧️ Modo chuva: a chuva passou (30 min sem chuva) ou anoiteceu → encerra
+  # ------------------------------------------------------------------
+  - id: home_concierge_chuva_fim
+    alias: "🏠 Home Concierge · chuva passou"
+    mode: single
+    trigger:
+      - platform: template
+        value_template: >-
+          {{ states.weather | selectattr('state', 'in', ['rainy', 'pouring', 'lightning-rainy', 'lightning'])
+             | list | count == 0 }}
+        for: "00:30:00"
+      - platform: state
+        entity_id: sun.sun
+        to: below_horizon
+    condition:
+      - condition: state
+        entity_id: input_boolean.concierge_modo_chuva
+        state: "on"
+    action:
+      - service: script.home_concierge
+        data:
+          acao: chuva_fim
 
   # ------------------------------------------------------------------
   # 🚨 Alarme disparado: aviso urgente (ignora o "Não perturbe")
