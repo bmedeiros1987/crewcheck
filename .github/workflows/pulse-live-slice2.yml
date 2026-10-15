@@ -58,3 +58,7 @@ jobs:
         run: npx tsc --noEmit
       - name: Build web
         run: npx vite build
+      - name: Night alert evidence and contextual roster navigation (synthetic)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/pulse-browser/package.json
+        run: node scripts/regression-night-alert-evidence-browser.cjs
