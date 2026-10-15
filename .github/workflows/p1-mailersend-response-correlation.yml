@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - 'scripts/v14382/apply.mjs'
+      - 'server/v139/delivery.mjs'
+      - 'server/v1410/partnerAccounts.mjs'
+      - 'scripts/regression-institutional-email-signature.mjs'
+      - 'client/public/assets/brand/crewcheck-app-icon-2026.png'
       - 'scripts/regression-p1-mailersend-response-correlation.mjs'
       - '.github/workflows/p1-mailersend-response-correlation.yml'
   workflow_dispatch:
@@ -16,5 +20,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - run: npm ci
+      - name: Institutional footer in source (no external sends)
+        run: node scripts/regression-institutional-email-signature.mjs
+      - name: Prepare and build shipping email assets
+        run: |
+          node scripts/v139/apply.mjs
+          npx vite build
+      - name: Institutional footer after preparation with built PNG
+        run: node scripts/regression-institutional-email-signature.mjs --built
       - run: node scripts/regression-p1-mailersend-response-correlation.mjs
       - run: node --check server/v139/delivery.mjs

@@ -14,16 +14,22 @@ async function postJson(url, apiKey, payload, timeoutMs = 12_000) {
   } finally { clearTimeout(timer); }
 }
 
-const defaultLogoUrl = 'https://crewcheck.online/favicon-512x512.png';
+const defaultLogoUrl = 'https://crewcheck.online/assets/brand/crewcheck-app-icon-2026.png';
 const defaultBcc = 'bmedeiros1987@gmail.com';
 
 function escapeHtml(value) {
   return String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 }
 
+export function crewCheckEmailSignatureText() {
+  return 'CrewCheck — Inteligência Operacional para Profissionais da Aviação\nhttps://crewcheck.online';
+}
+
 export function crewCheckEmailSignature() {
-  const logoUrl = env('CREWCHECK_EMAIL_LOGO_URL', defaultLogoUrl);
-  return `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:680px;margin-top:28px;border-radius:18px;overflow:hidden;background:#06162f;color:#fff;font-family:Arial,sans-serif"><tr><td style="padding:22px 24px;border-bottom:1px solid rgba(255,255,255,.14)"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="padding-right:16px"><img src="${escapeHtml(logoUrl)}" width="64" height="64" alt="CrewCheck" style="display:block;border-radius:16px"></td><td><div style="font-size:26px;font-weight:800;line-height:1">CrewCheck</div><div style="margin-top:8px;font-size:12px;letter-spacing:2px;color:#eb4ab3">INTELIGÊNCIA OPERACIONAL PARA PROFISSIONAIS DA AVIAÇÃO</div></td></tr></table></td></tr><tr><td style="padding:22px 24px"><div style="font-size:18px;font-weight:800">Bruno Saraiva de Medeiros</div><div style="margin-top:4px;color:#5fd4ff;font-weight:700">Founder &amp; CEO</div><div style="margin-top:14px;font-size:14px;line-height:1.7;color:#dbe7f5">Bruno Medeiros Tecnologia<br><a href="https://crewcheck.online" style="color:#5fd4ff;text-decoration:none">crewcheck.online</a><br>Brasília – DF | Brasil</div><div style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.14);font-size:12px;letter-spacing:1.2px;color:#d6b1ff">TRANSFORMANDO COMPLEXIDADE OPERACIONAL EM DECISÕES INTELIGENTES.</div></td></tr></table>`;
+  const configuredLogo = env('CREWCHECK_EMAIL_LOGO_URL', defaultLogoUrl);
+  // The former default has no shipped asset; preserve other configured logos.
+  const logoUrl = configuredLogo === 'https://crewcheck.online/favicon-512x512.png' ? defaultLogoUrl : configuredLogo;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:680px;margin-top:28px;border-radius:18px;background:#06162f;color:#fff;font-family:Arial,sans-serif"><tr><td style="padding:22px 24px"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="padding-right:16px"><img src="${escapeHtml(logoUrl)}" width="64" height="64" alt="CrewCheck" style="display:block;border:0;border-radius:16px"></td><td><div style="font-size:26px;font-weight:800;line-height:1.2">CrewCheck</div><div style="margin-top:8px;font-size:12px;line-height:1.5;color:#dbe7f5">Inteligência Operacional para Profissionais da Aviação</div><div style="margin-top:10px"><a href="https://crewcheck.online" style="color:#5fd4ff;text-decoration:underline">crewcheck.online</a></div></td></tr></table></td></tr></table>`;
 }
 
 function optionalEmail(message, key, fallback) {
@@ -36,7 +42,7 @@ function normalizeMessage(message) {
   const bcc = optionalEmail(message, 'bcc', env('CREWCHECK_EMAIL_BCC', defaultBcc));
   const appendSignature = message.appendSignature !== false;
   const html = appendSignature ? `${message.html || `<div style="white-space:pre-wrap">${escapeHtml(message.text)}</div>`}${crewCheckEmailSignature()}` : message.html;
-  const text = appendSignature ? `${message.text || ''}\n\nBruno Saraiva de Medeiros\nFounder & CEO | Bruno Medeiros Tecnologia\nCrewCheck — Inteligência Operacional para Profissionais da Aviação\nhttps://crewcheck.online` : message.text;
+  const text = appendSignature ? `${message.text || ''}\n\n${crewCheckEmailSignatureText()}` : message.text;
   return { ...message, html, text, replyTo, bcc };
 }
 
