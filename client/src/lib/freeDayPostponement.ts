@@ -14,7 +14,8 @@ export type FreeDayAlert = {
   convertedDocument: boolean; possibleAmount: number | null; currency: 'BRL';
   condition: string; cause: FreeDayCause; payment: 'unconfirmed';
 };
-export type FreeDayReview = { alerts: FreeDayAlert[]; pending: { date: string; reason: string }[]; reason: string | null };
+export type FreeDayReview = { alerts: FreeDayAlert[]; pending: { date: string; reason: string; missing?: string[] }[]; reason: string | null;
+  reasonCode?: 'current_unbound' | 'reference_missing' | 'period_mismatch' | 'identity_unverified' | 'no_sequences' };
 const REST = /^(DO|DOF|DOP|DOPR|DR|OFF)$/;
 
 // Parser rank defaults and financial profile fallbacks do not verify ACT scope.
@@ -65,6 +66,21 @@ function boundary(days: RosterDay[]) {
 }
 function instant(date: string, clock: string, offset: number): number { return Date.parse(date + 'T' + clock + ':00Z') - offset * 60000; }
 
+/** Describe the failed evidence gate without filling in a time or timezone. */
+function missingBoundary(days: RosterDay[] | undefined, publication: string): string[] {
+  if (!days?.length) return [`${publication}: sequência de folga correspondente não encontrada.`];
+  const first = days[0].freeDayStartEvidence;
+  if (!first) return [`${publication}: início literal e fuso da folga não disponíveis na leitura. Confira a publicação original.`];
+  const missing: string[] = [];
+  if (first.clockSource !== 'published' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(first.clock || '')) missing.push(`${publication}: horário literal de início da folga não comprovado.`);
+  if (first.timeZoneSource !== 'published' || !Number.isInteger(first.utcOffsetMinutes) || Math.abs(first.utcOffsetMinutes!) > 840) missing.push(`${publication}: fuso UTC publicado ausente ou ambíguo.`);
+  if (days.some(day => !day.freeDayStartEvidence || day.freeDayStartEvidence.date !== days[0].date
+    || day.freeDayStartEvidence.clock !== first.clock || day.freeDayStartEvidence.utcOffsetMinutes !== first.utcOffsetMinutes)) missing.push(`${publication}: registros do início da sequência ausentes ou conflitantes.`);
+  const literal = typeof first.tokenExcerpt === 'string' ? capturePublishedFreeDayStart(first.tokenExcerpt.split(/\s+/), first.date) : null;
+  if (first.origin !== 'AIMS published rest tokens' || !literal || literal.clock !== first.clock || literal.code !== first.code || !REST.test(first.code)) missing.push(`${publication}: origem do horário literal não comprovada; confira o início no PDF original.`);
+  return missing.length ? missing : [`${publication}: evidência do início da folga não verificável.`];
+}
+
 export function assessFreeDayDelay(delayMinutes: number, date: string, cabinAct: boolean, proof?: FreeDayCauseEvidence) {
   const cause: FreeDayCause = proof?.verified && typeof proof.source === 'string' && proof.source.trim()
     && ['ordinary','weather','unscheduled_maintenance','catastrophe','infrastructure'].includes(proof.cause) ? proof.cause : 'unknown';
@@ -86,10 +102,11 @@ export function assessFreeDayDelay(delayMinutes: number, date: string, cabinAct:
 export function reviewFreeDayPostponements(planned: OwnedPlannedRoster | null, current: CrewRoster, currentSource: string,
   owner: string, cabinAct: boolean, causes: Record<string, FreeDayCauseEvidence> = {}): FreeDayReview {
   const result: FreeDayReview = { alerts: [], pending: [], reason: null };
-  if (!owner || !planned || planned.owner !== owner) return { ...result, reason: 'Sem referência publicada desta conta.' };
-  if (!current.days?.length || planned.period.year !== current.year || planned.period.month !== current.month) return { ...result, reason: 'Referência e escala atual pertencem a períodos diferentes.' };
+  if (!owner) return { ...result, reasonCode: 'current_unbound', reason: 'A escala atual não está vinculada a esta conta para comparação.' };
+  if (!planned || planned.owner !== owner) return { ...result, reasonCode: 'reference_missing', reason: 'Falta a publicação anterior da escala desta conta. Sem dois inícios publicados, não é possível verificar se a folga foi adiada.' };
+  if (!current.days?.length || planned.period.year !== current.year || planned.period.month !== current.month) return { ...result, reasonCode: 'period_mismatch', reason: 'Publicação anterior e escala atual não pertencem ao mesmo mês/ano. Selecione duas versões do mesmo período.' };
   if (!planned.roster.crewId || !current.crewId || String(planned.roster.crewId) !== String(current.crewId)
-    || !planned.roster.base || planned.roster.base !== current.base) return { ...result, reason: 'Identidade ou base das versões não verificada.' };
+    || !planned.roster.base || planned.roster.base !== current.base) return { ...result, reasonCode: 'identity_unverified', reason: 'Identidade do tripulante ou base das duas publicações não coincidem ou não estão comprovadas.' };
   const beforeVersion = freeDayVersion(planned.roster), afterVersion = freeDayVersion(current);
   for (const [label, roster] of [['Referência', planned.roster], ['Atual', current]] as const) {
     for (const day of roster.days.filter(rest)) {
@@ -101,7 +118,10 @@ export function reviewFreeDayPostponements(planned: OwnedPlannedRoster | null, c
     if (!group.date.startsWith(`${current.year}-${String(current.month).padStart(2, '0')}-`)) continue;
     const updated = after.get(group.date);
     const oldStart = boundary(group.days), newStart = updated && boundary(updated.days);
-    if (!oldStart || !newStart) { result.pending.push({ date: group.date, reason: 'Início literal, sequência correspondente ou timezone publicado ausente/ambíguo. Não foi usada chegada de voo nem meia-noite.' }); continue; }
+    if (!oldStart || !newStart) {
+      const missing = [...(!oldStart ? missingBoundary(group.days, 'Publicação anterior') : []), ...(!newStart ? missingBoundary(updated?.days, 'Escala atual') : [])];
+      result.pending.push({ date: group.date, missing, reason: missing.join(' ') + ' Não foi usada chegada de voo nem meia-noite.' }); continue;
+    }
     const delayMinutes = (instant(group.date, newStart.clock, newStart.offset) - instant(group.date, oldStart.clock, oldStart.offset)) / 60000;
     if (delayMinutes <= 240) continue;
     const sequenceId = group.date;
