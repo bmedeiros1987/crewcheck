@@ -8,9 +8,11 @@ import { publishFreeDayAlert, readFreeDayAlertHistory, type FreeDayAlertRecord }
 import { clearCrewCheckPulse, crewCheckNotificationPermission, publishCrewCheckNotice } from './pulse/pulseRuntime';
 import './free-day-alerts.css';
 import { FreeDaySourceConsent } from './FreeDaySourceConsent';
+import { FreeDayReviewPending } from './FreeDayReviewPending';
 
 export function FreeDayPostponementAlerts({ roster, source, view, onOpen }: { roster: CrewRoster; source: string; view: string; onOpen(): void }) {
   const ownsPulse = useRef(false);
+  const panel = useRef<HTMLElement>(null);
   const [revision, setRevision] = useState(0);
   const [records, setRecords] = useState<{ session: string | null; items: FreeDayAlertRecord[] }>({ session: null, items: [] });
   const session = financialRateSession(), owner = financialRateOwner();
@@ -54,9 +56,14 @@ export function FreeDayPostponementAlerts({ roster, source, view, onOpen }: { ro
   if (view === 'cockpit') return review.alerts.length ? <button type="button" className="cc-free-day-summary" onClick={onOpen}>
     <strong>{review.alerts.length} início de folga postergado</strong><span>Revisar horários e condições do ACT</span></button> : null;
   if (view !== 'alerts' && view !== 'compare') return null;
-  return <section className="cc-free-day-alerts" aria-label="Postergação de folga">
+  function openComparison() {
+    const details = panel.current?.querySelector<HTMLDetailsElement>('[data-free-day-source-consent]');
+    if (details) { details.open = true; details.querySelector<HTMLElement>('summary')?.focus(); details.scrollIntoView({ block: 'start' }); }
+  }
+  return <section ref={panel} className="cc-free-day-alerts" aria-label="Postergação de folga">
     <h2>Início de folga</h2>
-    {!review.alerts.length && <p>{review.reason || (review.pending.length ? 'Há dados pendentes para verificar a postergação.' : 'Nenhuma postergação acima de 4h identificada nas versões disponíveis.')}</p>}
+    <FreeDayReviewPending key={session} review={review} roster={roster} view={view} bound={boundCurrent} onCompare={openComparison}/>
+    {!review.alerts.length && !review.reason && !review.pending.length && <p>Nenhuma postergação acima de 4h identificada nas sequências comparáveis das versões disponíveis.</p>}
     {review.alerts.map(alert => { const record = visibleRecords.find(item => item.alert.id === alert.id); return <article key={alert.id} data-free-day-alert={alert.date}>
       <h3>Folga {alert.date.split('-').reverse().join('/')}</h3><p>{freeDayAlertText(alert)}</p>
       <dl><div><dt>Início anterior publicado</dt><dd>{alert.oldClock} · UTC{alert.oldOffset >= 0 ? '+' : ''}{alert.oldOffset / 60}</dd></div>
@@ -65,7 +72,6 @@ export function FreeDayPostponementAlerts({ roster, source, view, onOpen }: { ro
       <p data-free-day-delivery>Notificação externa: {record?.external.state === 'accepted_unconfirmed' ? 'solicitada ao dispositivo · entrega não confirmada' : record?.external.state === 'failed' ? 'falha · entrega não comprovada' : 'indisponível · não enviada'}.</p>
       <details><summary>Fontes e condição da avaliação</summary><p>{alert.beforeSource} ({alert.beforeVersion}) → {alert.afterSource} ({alert.afterVersion}).</p><p>{alert.condition}</p><p>{record?.external.reason || 'Não há evidência de entrega externa.'}</p><a href={FREE_DAY_ACT_URL} target="_blank" rel="noreferrer">{FREE_DAY_ACT_SOURCE}</a></details>
     </article>; })}
-    {review.pending.length > 0 && <details><summary>Verificações pendentes ({review.pending.length})</summary>{review.pending.map(item => <p key={item.date}>{item.date.split('-').reverse().join('/')}: {item.reason}</p>)}</details>}
     {visibleRecords.length > 0 && <details><summary>Histórico destas avaliações ({visibleRecords.length})</summary><p>Versões anteriores ficam preservadas para revisão. Alertas calculados não comprovam pagamento ou entrega.</p>{visibleRecords.map(item => <p key={item.alert.id}>{item.alert.date.split('-').reverse().join('/')} · {item.alert.oldClock} → {item.alert.newClock} · {item.alert.afterVersion} · {item.external.state === 'accepted_unconfirmed' ? 'solicitação externa sem confirmação de entrega' : 'sem entrega comprovada'}</p>)}</details>}
     <FreeDaySourceConsent key={session} session={session} bound={boundCurrent} />
   </section>;

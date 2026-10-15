@@ -32,6 +32,7 @@ try {
   const iso = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   const context = vm.createContext({ React, ...modules.load('financialIntervalEvidence'), ...amounts, ...grouping, ...compensation, ...periods,
     useMemo: React.useMemo, useState: React.useState,
+    useFinancialPrivacy: () => ({ hidden:false, text:value=>value, amount:value=>value }), FinancialPrivacyToggle: () => null,
     resolveActFinancialRules: () => ({ profileLabel: 'Synthetic rules, not a real tariff', legalReference: 'synthetic-v1',
       breakfastPercent: 0.25, perDiem: [
         { key: 'domestic', label: 'Synthetic domestic', currency: 'BRL', mainMeal: 100 },
@@ -151,7 +152,7 @@ try {
   }
   findCompact(rosterFunction); assert.ok(compactExpression);
   for(const candidate of [mixed,invalidRate,empty,foreign]) {
-    assert.equal(vm.runInNewContext(compactExpression,{finance:{perdiem:candidate}}),candidate.currencySummary);
+    assert.equal(vm.runInNewContext(compactExpression,{finance:{perdiem:candidate},privacy:{text:value=>value}}),candidate.currencySummary);
   }
   // Actual detailed consumer must show every row of the selected competence,
   // including after changing the selected roster month. Adjacent rows stay out.

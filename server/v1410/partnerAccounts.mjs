@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { cleanText, dbPool, ensureProfile, env, isAdminEmail, readBody, requestToken, safeEmail, sendJson, verifyJwt } from '../v139/common.mjs';
-import { sendSystemEmail } from '../v139/delivery.mjs';
+import { sendSystemEmail, crewCheckEmailSignature, crewCheckEmailSignatureText } from '../v139/delivery.mjs';
 
 function passwordDigest(password, salt = crypto.randomBytes(16).toString('hex')) { return { salt, hash: crypto.scryptSync(String(password), salt, 64).toString('hex') }; }
 function generateTemporaryPassword() { return `Crew#${crypto.randomBytes(9).toString('base64url')}9!`; }
@@ -67,7 +67,7 @@ async function partnerDemoProfile(req, res, db) {
 }
 
 async function deliverInvitation({ db, email, contactName, partnerName, temporaryPassword, emailSubject, emailBody, copyMe = true }) {
-  const values = { nome: contactName, empresa: partnerName, email, senha_temporaria: temporaryPassword, url_acesso: 'https://crewcheck.online', assinatura: 'Bruno Saraiva de Medeiros\nFounder & CEO | Bruno Medeiros Tecnologia\nCrewCheck' };
+  const values = { nome: contactName, empresa: partnerName, email, senha_temporaria: temporaryPassword, url_acesso: 'https://crewcheck.online', assinatura: crewCheckEmailSignatureText() };
   const defaultSubject = 'Seu acesso de demonstração ao CrewCheck';
   const defaultBody = 'Olá, {{nome}}!\n\nPreparamos um acesso de demonstração ao CrewCheck para a equipe {{empresa}}.\n\nPortal: {{url_acesso}}\nUsuário: {{email}}\nSenha temporária: {{senha_temporaria}}\n\nPor segurança, será solicitada a alteração da senha no primeiro acesso.\n\nAtenciosamente,';
   const subject = cleanText(templateText(emailSubject || defaultSubject, values), 180).replace(/[\r\n]/g, ' ');
@@ -77,7 +77,7 @@ async function deliverInvitation({ db, email, contactName, partnerName, temporar
     to: email,
     subject,
     text: signedText,
-    html: `${textToHtml(text)}${textToHtml(values.assinatura)}`,
+    html: `${textToHtml(text)}${crewCheckEmailSignature()}`,
     appendSignature: false,
     bcc: false,
     replyTo: false,
