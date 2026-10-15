@@ -43,3 +43,28 @@ test('confirmed empty snapshot also prevents an older publication from reappeari
  const {session,data,next}=setup();next('2026-10-15T12:00:00Z','empty');assert.equal(await session.sync(),true);const saved=data.raw;
  next('2026-10-15T11:59:00Z','published');assert.equal(await session.sync(),false);assert.equal(session.hotel(stay.id),null);assert.equal(data.raw,saved);
 });
+for(const failure of ['read-error','missing','malformed'])test(`failed restore (${failure}) hides facts but preserves scoped watermark and permits later recovery`,async()=>{
+ const {session,data,next}=setup();assert.equal(await session.sync(),true);
+ const cancelled=data.raw;
+ const read=data.read;
+ if(failure==='read-error')data.read=()=>{throw new Error('synthetic read error');};
+ if(failure==='missing')data.raw=null;
+ if(failure==='malformed')data.raw='{synthetic-invalid-json';
+ assert.equal(await session.restore(),false);
+ assert.equal(session.hotel(stay.id,{includeCancelled:true}),null);assert.equal(session.pickup(stay.id),null);
+ assert.equal(session.state().hasCachedData,false);
+ data.read=read;
+ const writes=data.writes;
+ next('2026-10-15T11:59:00Z','published');assert.equal(await session.sync(),false);
+ assert.equal(session.state().lastError,'stale-snapshot');assert.equal(session.hotel(stay.id),null);assert.equal(data.writes,writes);
+ // An older valid restore must not rebuild unavailable facts either.
+ const old=JSON.parse(cancelled);old.syncedAt='2026-10-15T11:59:00.000Z';
+ old.facts=old.facts.map(fact=>({...fact,status:'published',observedAt:old.syncedAt}));data.raw=JSON.stringify(old);
+ assert.equal(await session.restore(),false);assert.equal(session.hotel(stay.id,{includeCancelled:true}),null);
+ assert.equal(session.state().hasCachedData,false);
+ next('2026-10-15T12:00:30Z','published');assert.equal(await session.sync(),true);assert.ok(session.hotel(stay.id));
+ // The unavailable period must not pin other legitimate scopes to A/revision1.
+ for(const changed of [{...context,rosterRevision:'revision-2'},{...context,accountId:'synthetic-B',providerSubject:'synthetic-B-subject'}]){
+  session.setContext(changed,[{...stay,...changed}]);next('2026-10-15T11:59:00Z','published');assert.equal(await session.sync(),true);assert.equal(session.hotel(stay.id).accountId,changed.accountId);assert.equal(session.hotel(stay.id).rosterRevision,changed.rosterRevision);
+ }
+});

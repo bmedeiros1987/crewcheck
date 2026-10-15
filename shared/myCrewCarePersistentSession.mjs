@@ -223,6 +223,9 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
   }
   let pending = null;
   let cached = null;
+  // Scope-local ordering metadata survives an unavailable/unreadable cache.
+  // It carries no facts and must never make unavailable data displayable.
+  let latestAcceptedAt = null;
   let status = 'disconnected';
   let lastAttemptAt = null;
   let lastError = null;
@@ -295,6 +298,7 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
       context = null;
       stays = [];
       cached = null;
+      latestAcceptedAt = null;
     }
     status = cached ? 'off' : 'disconnected';
     if (!accountId) return;
@@ -337,6 +341,7 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
       if (context) cleanupOwnerAccount = context.accountId;
       stays = nextStays;
       cached = null;
+      latestAcceptedAt = null;
       lastError = null;
       changes = Object.freeze({
         added: Object.freeze([]),
@@ -414,13 +419,15 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
         return false;
       }
       // A valid but older cache is not evidence that the current facts reverted.
-      // setContext clears cached when account, revision or stay binding changes.
-      if (cached && restored.syncedAt < cached.syncedAt) {
+      // The ordering metadata survives failed restores; only a binding change
+      // or context detachment resets it. It does not expose previous facts.
+      if (latestAcceptedAt !== null && restored.syncedAt < latestAcceptedAt) {
         lastError = 'stale-snapshot';
         setStatusFromCache();
         return false;
       }
       cached = restored;
+      latestAcceptedAt = restored.syncedAt;
       lastError = null;
       status = automatic ? 'cached' : 'off';
       return true;
@@ -509,7 +516,7 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
         if (!envelope) throw Object.assign(new Error('unverified-session'), { code: 'session-expired' });
         // Preserve the latest accepted observation, including cancellations and
         // confirmed-empty snapshots. Restored cache carries the same watermark.
-        if (cached && myCrewCareInstant(envelope.observedAt) < cached.syncedAt) {
+        if (latestAcceptedAt !== null && myCrewCareInstant(envelope.observedAt) < latestAcceptedAt) {
           throw Object.assign(new Error('stale-snapshot'), { code: 'stale-snapshot' });
         }
         const reconciled = reconcileMyCrewCareLogistics({
@@ -535,6 +542,7 @@ export function createMyCrewCarePersistentSession({ adapter, storage, now = Date
         });
         if (token !== generation || context !== capturedContext || stays !== capturedStays || !automatic) return false;
         cached = nextCached;
+        latestAcceptedAt = nextCached.syncedAt;
         changes = nextChanges;
         pending = null;
         status = 'connected';

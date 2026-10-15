@@ -17,3 +17,15 @@ Testes sintéticos novos:7/7 PASS. Contraprova em sessão anterior:7/7 FAIL. Cob
 Suite nova + partial-hotel + consumer-boundary + v3 + controller:87/87 PASS em UTC, America/Sao_Paulo e Pacific/Auckland. Composição exata do delta sobre main atual com preparação canônica:87/87 PASS. git diff --check PASS. Sem nova CI, build Android ou alegação de TypeScript reexecutado neste delta JS. CI/revisão independente do novo SHA seguem pendentes.
 
 Integração permanece OFF; flags, permissões, credenciais, allowlist e POST ACS não mudaram. Nenhum merge, deploy, loja ou agendamento. Solicitar revisão do diff concreto antes de qualquer integração.
+
+## Correção residual após revisão independente — somente local
+
+O revisor reproduziu que restore com erro de leitura, cache ausente ou malformado fazia cached=null e perdia a barreira temporal. Corrigido separando latestAcceptedAt dos fatos exibíveis. É apenas um número em memória, restrito ao binding atual; avança exclusivamente após sync aceito/gravado ou restore válido aceito. Não é nova persistência de sessão nem retém payload privado.
+
+Falhas de restore continuam retirando cached e tornando fatos indisponíveis. O watermark permanece: sync ou restore válido estritamente anterior não pode repor esses fatos. Um snapshot posterior permite recuperação normal. Mudança real de conta/revisão/providerSubject/pernoite e detach no logout reiniciam o watermark, sem sobrescrita tardia de outro binding. Disconnect com o mesmo contexto não apaga esse conhecimento temporal mesmo quando esquece os fatos.
+
+Regressões adicionadas para erro de leitura, ausência e JSON malformado: facts indisponíveis inclusive com includeCancelled, hasCachedData=false, sync anterior rejeitado sem escrita, restore válido anterior rejeitado, recuperação posterior permitida e troca legítima de conta/revisão permitida. Antes:7 PASS/3 FAIL; depois:10/10 PASS. Suite completa90/90 PASS em UTC, America/Sao_Paulo e Pacific/Auckland; composição main2286c88 preparada90/90 PASS; diff check PASS. Logs locais mcc-watermark-restore-before.log, mcc-watermark-restore-all-3tz.log e mcc-watermark-restore-main-composed.log.
+
+Não há promessa de monotonicidade entre processos sem cache válido: uma nova instância sem histórico válido não conhece o timestamp perdido. Este delta preserva conhecimento da instância atual durante falhas de restore; não cria registro durável extra. Timestamps iguais e conteúdo antigo rotulado com timestamp novo continuam limites já descritos.
+
+Por instrução atual: sem push, PR, Library nova, CI, merge ou deploy. Arquivos e commit permanecem locais para revisão. A branch remota continua no186355fa; o artefato Library anterior representa aquela versão, não esta correção residual.
