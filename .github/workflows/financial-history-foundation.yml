@@ -48,6 +48,8 @@ on:
       - 'client/src/components/finance/**'
       - 'client/src/lib/financialHistoryPeriods.ts'
       - 'client/src/lib/nextFinancialPayment.ts'
+      - 'client/src/lib/payrollPaymentComposition.ts'
+      - 'scripts/regression-payroll-payment-coverage.mjs'
       - 'scripts/regression-next-financial-payment.mjs'
       - 'scripts/regression-financial-payment-preview.cjs'
       - 'client/src/lib/financialComparisonPeriods.ts'
@@ -137,6 +139,7 @@ jobs:
           node scripts/regression-canonical-duty-load.mjs
       - run: node scripts/regression-p2-530-adjacent-fallback-finance.mjs
       - run: node scripts/regression-next-financial-payment.mjs
+      - run: node scripts/regression-payroll-payment-coverage.mjs
       - run: npx tsc --noEmit
       - run: npx vite build
       - name: Verify planned reference owner and session isolation

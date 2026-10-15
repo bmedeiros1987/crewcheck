@@ -81,6 +81,18 @@ function seed({theme,kind,amount,history,salaryBase}) {
     const salaryAmount=await page.locator('.cc-payment-value').textContent();await page.locator('.cc-payment-hero button').click();assert(!/R\$\s*\d/.test(await page.locator('.cc-per-diem-content').textContent()));await page.locator('.cc-payment-hero button').click();assert.equal(await page.locator('.cc-payment-value').textContent(),salaryAmount);
     await page.getByRole('button',{name:'Demonstrativos',exact:true}).click();assert.equal(await page.locator('.cc-salary-prerequisites>details').getAttribute('open'),'');
     await page.evaluate(()=>scrollTo({top:0,left:0,behavior:'instant'}));await page.screenshot({path:path.join(out,`${width}-payroll-overview.png`),fullPage:false});
+    for(const [state,count] of [['partial',1],['empty',0]]){
+      await page.evaluate(count=>{const key='crewcheck_local_history_v11_financial-ui-qa',history=JSON.parse(localStorage.getItem(key));const operational=history.find(item=>item.roster.year===2031&&item.roster.month===12);operational.roster.days=operational.roster.days.slice(0,count);operational.checksum='synthetic-coverage-'+count;localStorage.setItem(key,JSON.stringify(history));window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'}));},count);
+      await page.locator('.cc-salary-history').waitFor({state:'detached'});
+      await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));
+      await page.waitForFunction(()=>document.querySelector('.cc-payment-value')?.textContent.includes('Previsão incompleta'),null,{timeout:10000});
+      await page.waitForFunction(count=>document.querySelector('.cc-payment-pending')?.textContent.includes((31-count)+' dia(s)'),count,{timeout:10000});
+      await page.waitForFunction(()=>document.querySelector('.cc-next-payment-lines')?.textContent.includes('2.900,00'),null,{timeout:10000});
+      assert.match(await page.locator('.cc-payment-pending').textContent(),/dia\(s\) sem programação|Importe a escala/);
+      assert(!/R\$/.test(await page.locator('.cc-payment-value').textContent()),'fixed pay alone does not masquerade as a complete payment');
+      await page.evaluate(()=>scrollTo({top:0,left:0,behavior:'instant'}));await page.screenshot({path:path.join(out,`${width}-payroll-${state}.png`),fullPage:false});
+    }
+
   }
   assert.deepEqual(errors,[]);await context.close();
  }
