@@ -29,7 +29,7 @@ export function AlertRosterNavigation({ roster, onFocus }: { roster: CrewRoster;
   if (!context || !valid(context)) return null;
   function back() {
     if (!valid(context)) return;
-    setPendingNavigationContext({ targetView: 'alerts', policy: 'once', alertOccurrence: context!.alertOccurrence, alertVersion: context!.alertVersion });
+    setPendingNavigationContext({ targetView: 'alerts', policy: 'once', alertOccurrence: context!.alertOccurrence, alertVersion: context!.alertVersion, alertOwner: context!.alertOwner, alertRosterVersion: context!.alertRosterVersion });
     window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'alerts' }));
   }
   return <section className="cc-readable-surface" aria-label="Data aberta pelo alerta"><button type="button" onClick={back}>Voltar ao alerta</button><button type="button" onClick={() => { clearPendingNavigationContext(); setContext(null); }}>Fechar contexto do alerta</button><p>Data aberta para conferir a contagem; a escala publicada permanece inalterada.</p></section>;

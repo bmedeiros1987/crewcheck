@@ -6,7 +6,7 @@ import { alertText, alertHistoryDate } from '../../lib/alertExperienceText';
 import { consumePendingNavigationContext, clearPendingNavigationContext } from '../../lib/navigationContext';
 import type { CrewRoster } from '../../lib/pdfParser';
 import './alert-center.css';
-import { AlertDateEvidence } from './AlertDateEvidence';
+import { AlertDateEvidence, alertRosterVersion } from './AlertDateEvidence';
 import { alertRosterOwned } from '../../lib/alertRosterOwnership';
 
 export function AlertCenter({ alerts, roster, onImport, onChoose, pendingAnalysis = [] }: { alerts: any[]; roster: CrewRoster; onImport(): void; onChoose(): void; pendingAnalysis?: any[] }) {
@@ -22,7 +22,8 @@ export function AlertCenter({ alerts, roster, onImport, onChoose, pendingAnalysi
   const ignoredItems = items.filter(item => isGroundAlertIgnored(item.identity));
   const legacyPending = ready ? pendingLegacyGroundAlerts(alerts, roster) : [];
   const pendingItems = (ready ? pendingAnalysis : []).map(alert => ({ alert, identity: complianceAlertIdentity(alert, roster) }));
-  const isTarget = (item: typeof items[number]) => item.identity.occurrence === target?.alertOccurrence && item.identity.version === target?.alertVersion;
+  const targetValid = !target?.alertOwner || target.alertOwner === owner && target.alertRosterVersion === alertRosterVersion(roster);
+  const isTarget = (item: typeof items[number]) => targetValid && item.identity.occurrence === target?.alertOccurrence && item.identity.version === target?.alertVersion;
   const currentTarget = target?.alertOccurrence ? [...items, ...pendingItems].find(isTarget) : null;
   useEffect(() => {
     const focusTarget = () => { const next = consumePendingNavigationContext('alerts'); if (next) setTarget(next); };
@@ -49,7 +50,7 @@ export function AlertCenter({ alerts, roster, onImport, onChoose, pendingAnalysi
   }
   return <section className="cc-alert-center" data-review-revision={revision}>
     <div className="cz-panel-head"><h1>{copy.alerts}</h1><p>{copy.saved}</p></div>
-    {target?.alertOccurrence && !currentTarget && <p role="status">{copy.missing}</p>}
+    {targetValid && target?.alertOccurrence && !currentTarget && <p role="status">{copy.missing}</p>}
     {!roster.days?.length && <article className="cc-alert-card"><h2>{copy.noRoster}</h2><div className="cc-alert-actions"><button type="button" onClick={onImport}>{copy.import}</button><button type="button" onClick={onChoose}>{copy.choose}</button></div></article>}
     {roster.days?.length > 0 && !ready && <p role="status">{copy.pending}</p>}
     {ready && pendingAnalysis.length > 0 && <section role="status"><p>{copy.pending}</p>{pendingItems.map(({ alert: pending, identity }) => <details key={identity.occurrence + identity.version} tabIndex={-1} ref={isTarget({ alert: pending, identity }) ? pendingTargetRef : undefined} open={isTarget({ alert: pending, identity }) || undefined} data-alert-selected={isTarget({ alert: pending, identity })}><summary>{originalLanguage ? pending.title || copy.details : copy.details}</summary><p lang="pt-BR">{pending.description}</p>{pending.details && <p lang="pt-BR">{pending.details}</p>}{pending.evidence && <p lang="pt-BR">{pending.evidence}</p>}<AlertDateEvidence alert={pending} roster={roster}/></details>)}</section>}

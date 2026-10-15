@@ -106,3 +106,10 @@ export function peekPendingNavigationContext(targetView?: string): CrewCheckNavi
 export function clearPendingNavigationContext(): void {
   pending = null;
 }
+
+// A contextual hop must not survive a session transition, including between mounts.
+if (typeof window !== 'undefined') {
+  for (const event of ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired']) {
+    window.addEventListener(event, clearPendingNavigationContext);
+  }
+}
