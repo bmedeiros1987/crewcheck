@@ -1,3 +1,4 @@
+import { crewCheckEmailIdentity, crewCheckEmailSignatureText as institutionalSignatureText } from '../../shared/crewcheckEmailIdentity.mjs';
 import net from 'node:net';
 import tls from 'node:tls';
 import { cleanText, dbPool, env, flag, parseJsonColumn, safeEmail } from './common.mjs';
@@ -22,14 +23,14 @@ function escapeHtml(value) {
 }
 
 export function crewCheckEmailSignatureText() {
-  return 'CrewCheck — Inteligência Operacional para Profissionais da Aviação\nhttps://crewcheck.online';
+  return institutionalSignatureText;
 }
 
 export function crewCheckEmailSignature() {
   const configuredLogo = env('CREWCHECK_EMAIL_LOGO_URL', defaultLogoUrl);
   // The former default has no shipped asset; preserve other configured logos.
   const logoUrl = configuredLogo === 'https://crewcheck.online/favicon-512x512.png' ? defaultLogoUrl : configuredLogo;
-  return `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:680px;margin-top:28px;border-radius:18px;background:#06162f;color:#fff;font-family:Arial,sans-serif"><tr><td style="padding:22px 24px"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="padding-right:16px"><img src="${escapeHtml(logoUrl)}" width="64" height="64" alt="CrewCheck" style="display:block;border:0;border-radius:16px"></td><td><div style="font-size:26px;font-weight:800;line-height:1.2">CrewCheck</div><div style="margin-top:8px;font-size:12px;line-height:1.5;color:#dbe7f5">Inteligência Operacional para Profissionais da Aviação</div><div style="margin-top:10px"><a href="https://crewcheck.online" style="color:#5fd4ff;text-decoration:underline">crewcheck.online</a></div></td></tr></table></td></tr></table>`;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:680px;margin-top:28px;border-radius:18px;background:#06162f;color:#fff;font-family:Arial,sans-serif"><tr><td style="padding:22px 24px"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="padding-right:16px"><img src="${escapeHtml(logoUrl)}" width="64" height="64" alt="${crewCheckEmailIdentity.name}" style="display:block;border:0;border-radius:16px"></td><td><div style="font-size:26px;font-weight:800;line-height:1.2">${crewCheckEmailIdentity.name}</div><div style="margin-top:8px;font-size:12px;line-height:1.5;color:#dbe7f5">${crewCheckEmailIdentity.description}</div><div style="margin-top:10px"><a href="${crewCheckEmailIdentity.url}" style="color:#5fd4ff;text-decoration:underline">${crewCheckEmailIdentity.websiteLabel}</a></div></td></tr></table></td></tr></table>`;
 }
 
 function optionalEmail(message, key, fallback) {

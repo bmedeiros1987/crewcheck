@@ -1,3 +1,4 @@
+import { crewCheckEmailIdentity, crewCheckEmailSignatureText as institutionalSignatureText } from '../shared/crewcheckEmailIdentity.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -12,7 +13,7 @@ function functions(file, names) {
 }
 const deliveryFile='server/v139/delivery.mjs', partnerFile='server/v1410/partnerAccounts.mjs';
 const delivery=fs.readFileSync(deliveryFile,'utf8'),calls=[],settings={MAILERSEND_API_KEY:'synthetic-key',MAILERSEND_FROM:'sender@example.invalid',CREWCHECK_EMAIL_FROM_LOCK:'sender@example.invalid',EMAILSENDER_API_URL:'https://example.invalid/email',EMAILSENDER_API_KEY:'synthetic-key',EMAILSENDER_FROM:'sender@example.invalid'};
-const scope=vm.createContext({console,Buffer,setTimeout,clearTimeout,
+const scope=vm.createContext({console,Buffer,setTimeout,clearTimeout,crewCheckEmailIdentity,institutionalSignatureText,
   env:(name,fallback='')=>settings[name]??fallback,flag:(_name,fallback)=>fallback,
   safeEmail:value=>String(value||'').trim().toLowerCase(),cleanText:value=>String(value||''),
   defaultLogoUrl:delivery.match(/const defaultLogoUrl = '([^']+)'/)[1],defaultBcc:'',
