@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 import ts from 'typescript';
 import { crewCheckEmailIdentity, crewCheckEmailSignatureText as institutionalSignatureText } from '../shared/crewcheckEmailIdentity.mjs';
-const { chromium } = createRequire(import.meta.url)('playwright');
+const { chromium } = createRequire(process.env.PARTNER_PREVIEW_PLAYWRIGHT_PACKAGE || import.meta.url)('playwright');
 const out=path.resolve('artifacts/partner-institutional-preview');fs.mkdirSync(out,{recursive:true});
 const backend=vm.createContext({crewCheckEmailIdentity,institutionalSignatureText,env:(_key,fallback)=>fallback,defaultLogoUrl:'https://example.invalid/logo.png'});
 for(const [file,names] of [['server/v139/delivery.mjs',['escapeHtml','crewCheckEmailSignatureText','crewCheckEmailSignature']],['server/v1410/partnerAccounts.mjs',['templateText']]]){

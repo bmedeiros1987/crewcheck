@@ -26,8 +26,13 @@ jobs:
       - run: npm ci
       - name: Institutional footer in source (no external sends)
         run: node scripts/regression-institutional-email-signature.mjs
-      - run: npx playwright install --with-deps chromium
+      - name: Install isolated browser test dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/partner-preview-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/partner-preview-browser/node_modules/playwright/cli.js" install --with-deps chromium
       - name: Institutional admin preview (synthetic, no external requests)
+        env:
+          PARTNER_PREVIEW_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/partner-preview-browser/package.json
         run: node scripts/regression-partner-institutional-preview.mjs
       - name: Prepare and build shipping email assets
         run: |
@@ -36,6 +41,8 @@ jobs:
       - name: Institutional footer after preparation with built PNG
         run: node scripts/regression-institutional-email-signature.mjs --built
       - name: Prepared institutional admin preview
+        env:
+          PARTNER_PREVIEW_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/partner-preview-browser/package.json
         run: node scripts/regression-partner-institutional-preview.mjs
       - run: node scripts/regression-p1-mailersend-response-correlation.mjs
       - run: node --check server/v139/delivery.mjs
