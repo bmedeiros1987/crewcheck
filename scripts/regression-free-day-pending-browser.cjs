@@ -29,7 +29,7 @@ function select({owner,roster,planned,notify=true}) {
   await context.addInitScript(()=>{window.Notification=class{static permission='denied';constructor(){throw Error('No real notification allowed')}};});
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(12000);
   await page.goto(origin+'/app');await page.locator('.cz-app[data-version]').waitFor();
-  const open=async()=>{await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'alerts'})));await page.locator('.cc-free-day-alerts').waitFor();};
+  const open=async()=>{await page.locator('.cz-app[data-view="cockpit"]').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'alerts'})));await page.locator('.cc-free-day-alerts').waitFor();};
   const panel=page.locator('.cc-free-day-alerts');await open();
   assert.match(await panel.innerText(),/Falta a publicação anterior/);assert.match(await panel.innerText(),/não confirma adiamento/);assert.equal(await panel.locator('[data-free-day-pending-date]').count(),0);
   await panel.getByRole('button',{name:'Conferir as duas publicações',exact:true}).click();assert.equal(await panel.locator('[data-free-day-source-consent]').getAttribute('open'),'');
@@ -47,6 +47,10 @@ function select({owner,roster,planned,notify=true}) {
   await page.evaluate(select,{owner:'financial-ui-qa',roster:sameInstant,planned:reference});await open();assert.equal(await panel.locator('[data-free-day-alert]').count(),0,'different published UTC offsets compare as instants');assert.equal(await panel.locator('[data-free-day-pending]').count(),0);
   const missingZone=kind('01:46');for(const day of missingZone.days){day.freeDayStartEvidence.utcOffsetMinutes=null;day.freeDayStartEvidence.timeZoneSource='unknown';}
   await page.evaluate(select,{owner:'financial-ui-qa',roster:complete,planned:planned(missingZone)});await open();assert.match(await panel.innerText(),/Publicação anterior: fuso UTC publicado ausente ou ambíguo/);assert.equal(await panel.locator('[data-free-day-alert]').count(),0);
+  const mixed=JSON.parse(JSON.stringify(complete));mixed.days[0].freeDayStartEvidence.clock=null;
+  await page.evaluate(select,{owner:'financial-ui-qa',roster:mixed,planned:reference});await open();assert.equal(await panel.locator('[data-free-day-alert]').count(),3,'one pending sequence never hides valid alerts for the others');assert.equal(await panel.locator('[data-free-day-pending-date]').count(),1);assert.match(await panel.innerText(),/além das postergações identificadas/);
+  const removed={...complete,days:complete.days.slice(1)};
+  await page.evaluate(select,{owner:'financial-ui-qa',roster:removed,planned:reference});await open();assert.match(await panel.innerText(),/Escala atual: sequência de folga correspondente não encontrada/);assert.equal(await panel.getByRole('button',{name:'Abrir 12/08/2026 na escala atual',exact:true}).count(),0,'missing current date has no misleading navigation');
   const invalid=kind('01:46');invalid.days[0].date='31/02/2026';
   await page.evaluate(select,{owner:'financial-ui-qa',roster:complete,planned:planned(invalid)});await open();assert.match(await panel.innerText(),/Folga com data não confirmada/);assert.equal(await panel.getByRole('button',{name:/Abrir 31\/02/}).count(),0);
   await page.evaluate(select,{owner:'syn-b',roster:complete});await open();assert.match(await panel.innerText(),/Falta a publicação anterior/);assert.equal(await panel.locator('[data-free-day-alert]').count(),0);assert.equal(await panel.locator('[data-free-day-pending-date]').count(),0,'B inherits no A pending dates or stored reference');

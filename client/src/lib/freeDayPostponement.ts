@@ -15,7 +15,7 @@ export type FreeDayAlert = {
   condition: string; cause: FreeDayCause; payment: 'unconfirmed';
 };
 export type FreeDayReview = { alerts: FreeDayAlert[]; pending: { date: string; reason: string; missing?: string[] }[]; reason: string | null;
-  reasonCode?: 'current_unbound' | 'reference_missing' | 'period_mismatch' | 'identity_unverified' | 'no_sequences' };
+  reasonCode?: 'current_unbound' | 'reference_missing' | 'period_mismatch' | 'identity_unverified' };
 const REST = /^(DO|DOF|DOP|DOPR|DR|OFF)$/;
 
 // Parser rank defaults and financial profile fallbacks do not verify ACT scope.
