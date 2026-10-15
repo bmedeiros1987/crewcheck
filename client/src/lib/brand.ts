@@ -3,7 +3,7 @@ import { crewCheckEmailIdentity } from '../../../shared/crewcheckEmailIdentity.m
 export const CREWCHECK_BRAND = {
   name: 'CrewCheck',
   descriptor: 'Roster Intelligence',
-  iconPath: crewCheckEmailIdentity.logoPath,
+  iconPath: '/icons/crewcheck-icon-v2.png',
   palette: {
     navy950: '#020817',
     navy900: '#071D33',
@@ -46,7 +46,7 @@ export function crewCheckLogoDataUrl(): Promise<string> {
     const controller = new AbortController();
     let timer = 0;
     const timeout = new Promise<string>(resolve => { timer = window.setTimeout(() => { controller.abort(); resolve(''); }, 2500); });
-    const loading = fetch(CREWCHECK_BRAND.iconPath, { cache: 'force-cache', signal: controller.signal })
+    const loading = fetch(crewCheckEmailIdentity.logoPath, { cache: 'force-cache', signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error(`Logo indisponível (${response.status}).`);
         return response.blob();
