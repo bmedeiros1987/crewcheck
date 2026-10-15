@@ -65,9 +65,11 @@ def make_env(house):
     env.globals.update(
         states=States(), is_state=is_state, state_attr=state_attr, now=lambda: NOW, as_datetime=as_datetime,
         areas=lambda: list(areas), area_name=lambda a: areas.get(a, {}).get("name"),
+        area_id=lambda e: next((a for a, v in areas.items() if e in v["ents"]), None),
         area_entities=lambda a: list(areas.get(a, {}).get("ents", [])))
     env.filters.update(as_local=lambda d: d.astimezone(TZ), is_state=is_state, is_number=is_number)
-    env.tests.update(is_state=is_state, match=lambda v, rx: bool(re.match(rx, str(v))))
+    env.tests.update(is_state=is_state, match=lambda v, rx: bool(re.match(rx, str(v))),
+                     search=lambda v, rx: bool(re.search(rx, str(v))))
     return env
 
 
@@ -130,8 +132,10 @@ def houses():
     fim = (NOW + timedelta(hours=2, minutes=14)).isoformat()
     areas = {
         "sala": {"name": "Sala", "ents": ["light.sala", "light.sala_abajur", "switch.tv_tomada", "climate.ar_sala",
-                                          "sensor.temp_sala", "binary_sensor.porta"]},
-        "quarto": {"name": "Quarto", "ents": ["light.quarto", "fan.ventilador", "cover.cortina_quarto"]},
+                                          "sensor.temp_sala", "binary_sensor.porta", "light.sanca_sala",
+                                          "binary_sensor.presenca_sala", "sensor.lux_sala"]},
+        "quarto": {"name": "Quarto", "ents": ["light.quarto", "fan.ventilador", "cover.cortina_quarto",
+                                              "light.quarto_2", "binary_sensor.movimento_quarto"]},
         "garagem": {"name": "Garagem", "ents": ["sensor.x"]},
     }
     base = {
@@ -158,6 +162,16 @@ def houses():
         "input_boolean.concierge_despertador_uteis": {"state": "on"},
         "input_datetime.concierge_despertador": {"state": "06:45:00"},
         "input_boolean.concierge_modo_chuva": {"state": "on"},
+        # luzes indiretas (achadas pelo nome) e uma direta que não pode entrar
+        "light.sanca_sala": {"state": "off", "attrs": {"friendly_name": "Sanca Sala"}},
+        "switch.tuya_3fa2": {"state": "off", "attrs": {"friendly_name": "Luz da Sacada"}},
+        "light.quarto_2": {"state": "off", "attrs": {"friendly_name": "Luminária do Quarto"}},
+        "light.painel_led_cozinha": {"state": "off", "attrs": {"friendly_name": "Painel LED Cozinha"}},
+        # presença: gente na sala, quarto vazio, sacada sem sensor
+        "binary_sensor.presenca_sala": {"state": "on", "attrs": {"device_class": "occupancy"}},
+        "binary_sensor.movimento_quarto": {"state": "off", "attrs": {"device_class": "motion"}},
+        "binary_sensor.porta": {"state": "off", "attrs": {"device_class": "door"}},
+        "person.bruno": {"state": "home"},
     }
     yield "casa completa", {"states": base, "areas": areas}, {"alarme": "alarm_control_panel.casa"}
     armado = {k: dict(v) for k, v in base.items()}
@@ -173,13 +187,30 @@ def houses():
     dia.update({"sun.sun": {"state": "above_horizon", "attrs": {"next_setting": (NOW + timedelta(hours=3)).isoformat()}},
                 "weather.forecast_home": {"state": "pouring", "attrs": {"temperature": 19}},
                 "input_boolean.concierge_modo_chuva": {"state": "off"},
-                "sensor.lux_sala": {"state": "38.4", "attrs": {"unit_of_measurement": "lx"}}})
+                "sensor.lux_sala": {"state": "38.4", "attrs": {"unit_of_measurement": "lx",
+                                                               "device_class": "illuminance"}}})
     yield "chuva de dia", {"states": dia, "areas": areas}, {"chuva_lux_sensor": "sensor.lux_sala"}
     claro = {k: dict(v) for k, v in dia.items()}
-    claro["sensor.lux_sala"] = {"state": "900"}
+    claro["sensor.lux_sala"] = {"state": "900", "attrs": {"device_class": "illuminance"}}
     yield "chuva mas claro", {"states": claro, "areas": areas}, {"chuva_lux_sensor": "sensor.lux_sala"}
     yield "chuva sugerir", {"states": dia, "areas": areas}, {"chuva_lux_sensor": "sensor.lux_sala",
                                                              "chuva_automatico": "sugerir"}
+    def variante(origem, **estados):
+        novo = {k: dict(v) for k, v in origem.items()}
+        for e, st in estados.items():
+            e = e.replace("__", ".")
+            novo[e] = {"state": st, "attrs": origem.get(e, {}).get("attrs", {})}
+        return novo
+
+    saiu = variante(dia, input_boolean__concierge_modo_chuva="on", person__bruno="not_home",
+                    binary_sensor__presenca_sala="off", light__sanca_sala="on", switch__tuya_3fa2="on")
+    yield "chuva, todos saíram", {"states": saiu, "areas": areas}, {}
+    # 300 lx: entre acender (150) e apagar (400) → o que está aceso fica, o que está apagado não acende
+    meia = variante(dia, input_boolean__concierge_modo_chuva="on", sensor__lux_sala="300")
+    yield "chuva, meia-luz", {"states": meia, "areas": areas}, {"chuva_lux_sensor": "sensor.lux_sala"}
+    sol = variante(dia, input_boolean__concierge_modo_chuva="on", sensor__lux_sala="900", light__sanca_sala="on",
+                   switch__tuya_3fa2="on")
+    yield "chuva, sol voltou", {"states": sol, "areas": areas}, {"chuva_lux_sensor": "sensor.lux_sala"}
 
 
 ACOES = ["nav menu", "nav comodos", "nav luzes", "nav alarme", "nav despertador", "nav faxina", "nav cenas",
@@ -190,12 +221,36 @@ ACOES = ["nav menu", "nav comodos", "nav luzes", "nav alarme", "nav despertador"
          "desp_adj 1440", "desp_set 0530", "desp_set 9999", "despertar", "soneca", "acordei", "faxina_on",
          "faxina_1h", "faxina_mais", "faxina_off", "cena cheguei", "cena saindo", "cena cinema", "cena boanoite",
          "musica vol_up", "dnd", "", "teclado", "teclado_off", "txt oi tudo bem?",
-         "chuva_on", "chuva_off", "chuva", "chuva_auto", "chuva_fim"]
+         "chuva_on", "chuva_off", "chuva", "chuva_auto", "chuva_fim", "chuva_sync"]
 # (cenário, ação) que devem parar sem fazer nada
 PARADAS = {("casa completa", "chuva_auto"), ("alarme disparado + soneca", "chuva_auto"),
            ("HA vazio", "chuva_auto"), ("HA vazio", "chuva_fim"),
            ("chuva de dia", "chuva_fim"), ("chuva mas claro", "chuva_auto"), ("chuva mas claro", "chuva_fim"),
-           ("chuva sugerir", "chuva_fim")}
+           ("chuva sugerir", "chuva_fim"), ("chuva, todos saíram", "chuva_auto"),
+           ("chuva, meia-luz", "chuva_auto"), ("chuva, sol voltou", "chuva_auto")}
+INDIRETAS = ["light.quarto_2", "light.sala_abajur", "light.sanca_sala", "switch.tuya_3fa2"]
+
+
+def verificar_sync(casa, calls):
+    """chuva_sync é sempre silencioso; confere o que acende/apaga."""
+    assert not any(c[0].startswith("telegram_bot.") for c in calls), calls
+    lig = [c for c in calls if c[0] in ("light.turn_on", "homeassistant.turn_on")]
+    desl = [c for c in calls if c[0] == "homeassistant.turn_off"]
+    if casa in ("casa completa", "alarme disparado + soneca"):  # sala com gente: acende sanca + sacada; quarto vazio fica apagado
+        assert ("light.turn_on", {"entity_id": ["light.sanca_sala"]}, {"brightness_pct": 40, "transition": 3}) in lig
+        assert ("homeassistant.turn_on", {"entity_id": ["switch.tuya_3fa2"]}, {}) in lig and not desl, calls
+    elif casa == "chuva, todos saíram":  # ninguém em casa: apaga tudo o que estava aceso
+        assert desl == [("homeassistant.turn_off",
+                         {"entity_id": ["light.sala_abajur", "light.sanca_sala", "switch.tuya_3fa2"]}, {})], calls
+        assert not lig, calls
+    elif casa == "chuva, meia-luz":  # abajur aceso continua; sanca e sacada apagadas não acendem
+        assert not lig and not desl, calls
+    elif casa == "chuva, sol voltou":  # 900 lx: apaga tudo o que o modo acendeu
+        assert desl == [("homeassistant.turn_off",
+                         {"entity_id": ["light.sala_abajur", "light.sanca_sala", "switch.tuya_3fa2"]}, {})], calls
+        assert not lig, calls
+    else:
+        assert not lig and not desl, (casa, calls)  # modo chuva desligado: não mexe em nada
 MOSTRAR = {"nav menu", "comodo sala", "comodo quarto", "nav comodos", "nav alarme", "alarme_conf disarm",
            "nav despertador", "despertar", "nav status", "txt 🌙 Boa noite", "chuva_auto", "chuva_fim",
            "nav cenas"}
@@ -217,7 +272,7 @@ def main():
         env = make_env(house)
         mostrados = set()
         for acao in acoes:
-            automatico = acao in ("despertar", "chuva_auto", "chuva_fim")
+            automatico = acao in ("despertar", "chuva_auto", "chuva_fim", "chuva_sync")
             via_texto = acao.startswith("txt ") or acao.startswith("teclado") or automatico
             ctx = {"acao": acao, "chat_id": "" if automatico else 123, "nome": "Bruno",
                    "message_id": "" if via_texto else 9, "callback_id": "" if via_texto else "abc"}
@@ -228,7 +283,9 @@ def main():
             try:
                 run(env, script["sequence"], ctx, calls)
             except Stop as motivo:
-                if (nome_casa, acao) in PARADAS:
+                if acao == "chuva_sync":
+                    verificar_sync(nome_casa, calls)
+                elif (nome_casa, acao) in PARADAS:
                     pass
                 elif acao.startswith("txt "):
                     assert acao[4:] not in menu_fixo, f"{where}: botão do menu fixo ignorado"
@@ -237,7 +294,7 @@ def main():
                 continue
             except Exception as exc:
                 raise AssertionError(f"{where}: {exc}") from exc
-            assert (nome_casa, acao) not in PARADAS, f"{where}: deveria ter parado"
+            assert (nome_casa, acao) not in PARADAS and acao != "chuva_sync", f"{where}: deveria ter parado"
             servicos = [c[0] for c in calls]
             # the alarm helper script must accept what the concierge sends
             for svc, _, data in calls:
@@ -266,17 +323,25 @@ def main():
             if via_texto and ctx["cmd"] not in ("nav", "teclado"):
                 assert painel[0][0] == "telegram_bot.send_message", where
             # 🌧️ modo chuva
-            chuva_luz = ("light.turn_on", {"entity_id": ["light.cozinha", "light.sala"]},
-                         {"brightness_pct": 60, "transition": 3})
+            # sala tem gente (abajur + sanca), quarto vazio (luminária fica apagada), sacada sem sensor
+            chuva_luz = ("light.turn_on", {"entity_id": ["light.sala_abajur", "light.sanca_sala"]},
+                         {"brightness_pct": 40, "transition": 3})
+            chuva_tomada = ("homeassistant.turn_on", {"entity_id": ["switch.tuya_3fa2"]}, {})
             if acao == "chuva_auto" and nome_casa == "chuva de dia":
-                assert chuva_luz in calls and "Modo chuva ligado" in texto and "38 lx" in texto, (calls, texto)
-                assert "light.sala_abajur" not in str(calls), "modo chuva não pode acender a casa toda"
+                assert chuva_luz in calls and chuva_tomada in calls, calls
+                assert "Modo chuva ligado" in texto and "38 lx" in texto, texto
+                assert "Sala Abajur canto, Sanca Sala e Luz da Sacada" in texto or \
+                    "Sala Abajur, canto, Sanca Sala e Luz da Sacada" in texto, texto
+                assert "baixo consumo" in texto, texto
+                for direta in ("light.painel_led_cozinha", "light.cozinha", "light.sala\'", "light.quarto\'",
+                               "light.quarto_2"):
+                    assert direta not in str(calls), f"modo chuva acendeu luz direta {direta}"
             if acao == "chuva_auto" and nome_casa == "chuva sugerir":
                 assert chuva_luz not in calls and "/hc chuva_on" in str(painel[0][2]["inline_keyboard"]), calls
             if acao == "chuva_fim" and nome_casa == "casa completa":  # anoiteceu: luzes ficam
                 assert "homeassistant.turn_off" not in servicos and "Anoiteceu" in texto, (servicos, texto)
             if acao == "chuva" and nome_casa == "casa completa":  # botão manual desliga
-                assert ("homeassistant.turn_off", {"entity_id": ["light.cozinha", "light.sala"]}, {}) in calls
+                assert ("homeassistant.turn_off", {"entity_id": INDIRETAS}, {}) in calls, calls
             if acao == "chuva" and nome_casa == "chuva de dia":  # botão manual liga
                 assert chuva_luz in calls, calls
             # behaviour spot checks
@@ -286,7 +351,7 @@ def main():
                 if acao in ("ctog sala 99", "ctog quarto x", "alarme hack"):
                     assert not any(s.startswith(("homeassistant", "script.")) for s in servicos), (where, servicos)
                 if acao == "cbri sala 50":
-                    assert calls[1][1] == {"entity_id": ["light.sala", "light.sala_abajur"]}, calls
+                    assert calls[1][1] == {"entity_id": ["light.sala", "light.sala_abajur", "light.sanca_sala"]}, calls
                 if acao == "cena saindo":
                     assert "script.concierge_alarme" in servicos, servicos
                     off = next(c for c in calls if c[0] == "homeassistant.turn_off")[1]["entity_id"]

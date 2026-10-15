@@ -141,15 +141,28 @@ script:
       # Mídia opcional (URL/playlist). '' = só dá "play" no que estava tocando
       despertador_midia: ""
       despertador_midia_tipo: music
-      # 🌧️ Modo chuva: só estas luzes acendem ([] = Favoritos)
+      # 🌧️ Modo chuva: só luzes INDIRETAS acendem. Com a lista vazia, o
+      # concierge encontra sozinho as luzes (light.* e switch.*) cujo nome
+      # ou entity_id contém uma destas palavras:
+      chuva_palavras: [sanca, sacada, varanda, lumin, abajur, arandela, balizador, fita, nicho, rodap, indiret]
+      # Ou fixe a lista na mão. Ex.: [light.sanca_sala, switch.luz_sacada]
       chuva_luzes: []
-      chuva_brilho: 60              # % de brilho das luzes de chuva
+      chuva_brilho: 40              # % de brilho (baixo consumo)
       # Quando começar a chover de dia: 'sugerir' (pergunta no Telegram),
       # 'ligar' (acende sozinho e avisa) ou 'nao' (só pelo botão)
       chuva_automatico: ligar
-      # Sensor de luminosidade (lux) opcional: só age se a casa estiver escura
+      # Luminosidade: cada luz olha os sensores de lux (device_class
+      # illuminance) da Área dela. Cômodo sem sensor usa este sensor geral
+      # ('' = nenhum; sem nenhum sensor, vale só a presença).
       chuva_lux_sensor: ""
-      chuva_lux_max: 150
+      chuva_lux_max: 150            # acende se o cômodo estiver abaixo disso
+      chuva_lux_apaga: 400          # apaga se clarear acima disso (sol voltou)
+      # Presença: cada luz só acende se houver gente no cômodo dela
+      # (sensores de presença/movimento da mesma Área) e apaga quando o
+      # cômodo esvazia. Luz em cômodo SEM sensor acende se alguém estiver
+      # em casa (person.* em casa) — mude para false para não acender.
+      chuva_presenca: true
+      chuva_sem_sensor_acende: true
       # Luz que fica baixinha na cena Cinema (as outras apagam)
       luz_cinema: light.sala
       # Caixa de som da Laurinha ('' para esconder)
@@ -205,18 +218,77 @@ script:
           {%- for e in c.ents if e.startswith('light.') and e not in ns.l -%}{%- set ns.l = ns.l + [e] -%}{%- endfor -%}
         {%- endfor -%}
         {{ ns.l }}
-      chuva_alvos: "{{ chuva_luzes if chuva_luzes else luzes.keys() | list }}"
+      chuva_alvos: >-
+        {%- if chuva_luzes -%}{{ chuva_luzes }}
+        {%- else -%}
+          {%- set rx = '(' ~ chuva_palavras | join('|') ~ ')' -%}
+          {%- set ns = namespace(l=[]) -%}
+          {%- for e in states.light | list + states.switch | list -%}
+            {%- if (e.entity_id ~ ' ' ~ e.name) | lower is search(rx) -%}{%- set ns.l = ns.l + [e.entity_id] -%}{%- endif -%}
+          {%- endfor -%}
+          {{ ns.l | sort }}
+        {%- endif -%}
       chuva_ativo: "{{ is_state('input_boolean.concierge_modo_chuva', 'on') }}"
-      chuva_lux: >-
+      chuva_lux_geral: >-
         {{ states(chuva_lux_sensor) | float(-1) | round(0) | int if chuva_lux_sensor != '' and states(chuva_lux_sensor) | is_number else -1 }}
+      # Lux de cada luz de chuva: sensor da Área dela, senão o geral (-1 = sem leitura)
+      chuva_lux_luz: >-
+        {%- set ns = namespace(d={}) -%}
+        {%- for e in chuva_alvos -%}
+          {%- set a = area_id(e) -%}
+          {%- set lx = namespace(v=-1) -%}
+          {%- for sn in (area_entities(a) if a else []) if sn.startswith('sensor.')
+                and state_attr(sn, 'device_class') == 'illuminance' and states(sn) | is_number -%}
+            {%- set v = states(sn) | float | round(0) | int -%}
+            {%- if lx.v < 0 or v < lx.v -%}{%- set lx.v = v -%}{%- endif -%}
+          {%- endfor -%}
+          {%- set ns.d = dict(ns.d, **{e: lx.v if lx.v >= 0 else chuva_lux_geral | int}) -%}
+        {%- endfor -%}
+        {{ ns.d }}
+      # Cômodo mais escuro (-1 = nenhum sensor de luz)
+      chuva_lux: >-
+        {%- set v = chuva_lux_luz.values() | select('ge', 0) | list + ([chuva_lux_geral | int] if chuva_lux_geral | int >= 0 else []) -%}
+        {{ v | min if v else -1 }}
       chuva_liga: >-
         {{ cmd == 'chuva_on' or (cmd == 'chuva' and not chuva_ativo)
            or (cmd == 'chuva_auto' and chuva_automatico == 'ligar') }}
       chuva_desliga: "{{ cmd in ['chuva_off', 'chuva_fim'] or (cmd == 'chuva' and chuva_ativo) }}"
       # Automático só de dia, com a casa escura, sem o modo já ligado
+      alguem_em_casa: >-
+        {{ states.person | list | count == 0
+           or states.person | selectattr('state', 'eq', 'home') | list | count > 0 }}
+      # Luzes de chuva que devem estar acesas AGORA (presença por cômodo)
+      chuva_desejadas: >-
+        {%- if not chuva_presenca -%}
+          {%- set ns = namespace(l=[]) -%}
+          {%- for e in chuva_alvos if alguem_em_casa -%}
+            {%- set lx = chuva_lux_luz.get(e, -1) | int -%}
+            {%- if not (lx >= 0 and lx > (chuva_lux_apaga | int(400) if is_state(e, 'on') else chuva_lux_max | int(150))) -%}
+              {%- set ns.l = ns.l + [e] -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ ns.l }}
+        {%- else -%}
+          {%- set ns = namespace(l=[]) -%}
+          {%- for e in chuva_alvos -%}
+            {%- set a = area_id(e) -%}
+            {%- set p = namespace(tem=false, gente=false) -%}
+            {%- for b in (area_entities(a) if a else []) if b.startswith('binary_sensor.')
+                  and state_attr(b, 'device_class') in ['occupancy', 'motion', 'presence'] -%}
+              {%- set p.tem = true -%}
+              {%- if is_state(b, 'on') -%}{%- set p.gente = true -%}{%- endif -%}
+            {%- endfor -%}
+            {%- set lx = chuva_lux_luz.get(e, -1) | int -%}
+            {%- set claro = lx >= 0 and lx > (chuva_lux_apaga | int(400) if is_state(e, 'on') else chuva_lux_max | int(150)) -%}
+            {%- if (p.gente or (not p.tem and chuva_sem_sensor_acende and alguem_em_casa)) and not claro -%}
+              {%- set ns.l = ns.l + [e] -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ ns.l }}
+        {%- endif -%}
       chuva_auto_ok: >-
         {{ chuva_automatico in ['sugerir', 'ligar'] and not chuva_ativo
-           and is_state('sun.sun', 'above_horizon')
+           and is_state('sun.sun', 'above_horizon') and alguem_em_casa
            and (chuva_lux < 0 or chuva_lux <= chuva_lux_max | int(150))
            and not (chuva_automatico == 'sugerir' and is_state('input_boolean.concierge_nao_perturbe', 'on')) }}
       sala_id: "{{ (arg | string).split(' ')[0] if cmd in ['comodo', 'ctog', 'con', 'coff', 'cbri'] else '' }}"
@@ -319,9 +391,9 @@ script:
       - if: "{{ cmd == 'chuva_auto' and not chuva_auto_ok }}"
         then:
           - stop: "Modo chuva automático: nada a fazer agora"
-      - if: "{{ cmd == 'chuva_fim' and not chuva_ativo }}"
+      - if: "{{ cmd in ['chuva_fim', 'chuva_sync'] and not chuva_ativo }}"
         then:
-          - stop: "Modo chuva já estava desligado"
+          - stop: "Modo chuva desligado"
 
       # 1) Toast imediato (o Telegram exige resposta rápida ao clique)
       - if: "{{ callback_id | default('', true) | string != '' }}"
@@ -600,21 +672,49 @@ script:
               - service: input_boolean.turn_on
                 target:
                   entity_id: input_boolean.concierge_modo_chuva
-              - if: "{{ chuva_alvos | select('match', '^light\\.') | list | count > 0 }}"
+              - if: "{{ chuva_desejadas | select('match', '^light\\.') | list | count > 0 }}"
                 then:
                   - service: light.turn_on
                     continue_on_error: true
                     target:
-                      entity_id: "{{ chuva_alvos | select('match', '^light\\.') | list }}"
+                      entity_id: "{{ chuva_desejadas | select('match', '^light\\.') | list }}"
                     data:
-                      brightness_pct: "{{ [[chuva_brilho | int(60), 1] | max, 100] | min }}"
+                      brightness_pct: "{{ [[chuva_brilho | int(40), 1] | max, 100] | min }}"
                       transition: 3
-              - if: "{{ chuva_alvos | reject('match', '^light\\.') | list | count > 0 }}"
+              - if: "{{ chuva_desejadas | reject('match', '^light\\.') | list | count > 0 }}"
                 then:
                   - service: homeassistant.turn_on
                     continue_on_error: true
                     target:
-                      entity_id: "{{ chuva_alvos | reject('match', '^light\\.') | list }}"
+                      entity_id: "{{ chuva_desejadas | reject('match', '^light\\.') | list }}"
+
+          # Presença mudou: acende onde chegou gente, apaga onde esvaziou
+          - conditions: "{{ cmd == 'chuva_sync' }}"
+            sequence:
+              - variables:
+                  acender: "{{ chuva_desejadas | reject('is_state', 'on') | list }}"
+                  apagar: "{{ chuva_alvos | reject('in', chuva_desejadas) | select('is_state', 'on') | list }}"
+              - if: "{{ acender | select('match', '^light\\.') | list | count > 0 }}"
+                then:
+                  - service: light.turn_on
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ acender | select('match', '^light\\.') | list }}"
+                    data:
+                      brightness_pct: "{{ [[chuva_brilho | int(40), 1] | max, 100] | min }}"
+                      transition: 3
+              - if: "{{ acender | reject('match', '^light\\.') | list | count > 0 }}"
+                then:
+                  - service: homeassistant.turn_on
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ acender | reject('match', '^light\\.') | list }}"
+              - if: "{{ apagar | count > 0 }}"
+                then:
+                  - service: homeassistant.turn_off
+                    continue_on_error: true
+                    target:
+                      entity_id: "{{ apagar }}"
 
           - conditions: "{{ chuva_desliga }}"
             sequence:
@@ -648,6 +748,11 @@ script:
                   entity_id: input_boolean.concierge_nao_perturbe
 
       # 3) Dá tempo dos dispositivos reportarem o novo estado
+      # Ajuste silencioso por presença: não mexe no chat
+      - if: "{{ cmd == 'chuva_sync' }}"
+        then:
+          - stop: "Modo chuva ajustado à presença"
+
       - if: "{{ cmd not in ['nav', 'teclado', 'comodo', 'alarme_conf'] }}"
         then:
           - delay: "00:00:01"
@@ -743,7 +848,10 @@ script:
             {%- set chuva = is_state('input_boolean.concierge_modo_chuva', 'on') -%}
             {%- set cn = namespace(n=[]) -%}
             {%- for e in chuva_alvos -%}{%- set cn.n = cn.n + [luzes.get(e, state_attr(e, 'friendly_name') or e.split('.')[1])] -%}{%- endfor -%}
-            {%- set chuva_nomes = ((cn.n[:-1] | join(', ') ~ ' e ' ~ cn.n[-1]) if cn.n | count > 1 else cn.n[0]) if cn.n else 'nenhuma luz configurada' -%}
+            {%- set chuva_nomes = ((cn.n[:-1] | join(', ') ~ ' e ' ~ cn.n[-1]) if cn.n | count > 1 else cn.n[0]) if cn.n else 'nenhuma luz indireta encontrada' -%}
+            {%- set ca = namespace(n=[]) -%}
+            {%- for e in chuva_desejadas -%}{%- set ca.n = ca.n + [luzes.get(e, state_attr(e, 'friendly_name') or e.split('.')[1])] -%}{%- endfor -%}
+            {%- set chuva_acesas_nomes = ((ca.n[:-1] | join(', ') ~ ' e ' ~ ca.n[-1]) if ca.n | count > 1 else ca.n[0]) if ca.n else 'nenhuma' -%}
             {%- set n_lig = namespace(c=0, nomes=[]) -%}
             {%- for c in comodos if c.id != 'fav' and c.ents | select('match', '^light\.') | select('is_state', 'on') | list | count > 0 -%}{%- set n_lig.nomes = n_lig.nomes + [c.nome] -%}{%- endfor -%}
             {%- if tela == 'chuva_aviso' -%}
@@ -758,10 +866,17 @@ script:
             {%- elif chuva_automatico == 'ligar' -%}
             <b>🌧️ Modo chuva ligado</b>
             Está chovendo e a casa ficou escura{{ ' (' ~ chuva_lux ~ ' lx)' if chuva_lux >= 0 }}.
-            Acendi só {{ chuva_nomes }}, a {{ chuva_brilho }}%.
+            {%- if chuva_desejadas %}
+            Acendi só as luzes indiretas onde tem gente: {{ chuva_acesas_nomes }}, a {{ chuva_brilho }}% (baixo consumo).
+            {%- else %}
+            Ninguém nos cômodos agora. As luzes indiretas acendem quando alguém chegar.
+            {%- endif %}
+            {%- if chuva_presenca %}
+            Elas seguem a presença e a luz de cada cômodo: apagam quando o cômodo esvazia ou clareia.
+            {%- endif %}
             {%- else -%}
             <b>🌧️ Está chovendo e a casa está escura</b>{{ ' (' ~ chuva_lux ~ ' lx)' if chuva_lux >= 0 }}
-            Quer acender só {{ chuva_nomes }}, a {{ chuva_brilho }}%?
+            Quer acender as luzes indiretas{{ ' onde tem gente' if chuva_presenca }} ({{ chuva_acesas_nomes if chuva_desejadas else chuva_nomes }}, a {{ chuva_brilho }}%)?
             {%- endif -%}
             {%- elif tela == 'despertar' -%}
             <b>⏰ {{ saud }}{{ ', ' ~ quem if quem }}!</b> São {{ now().strftime('%H:%M') }}.
@@ -798,7 +913,7 @@ script:
             ⏰ Despertador: {{ (desp_hora ~ (' · dias úteis' if uteis else ' · todo dia')) if desp_on else 'desligado' }}{{ ' · 😴 soneca até ' ~ soneca_ate if soneca_ate }}
             🧹 Faxina: {{ ('<b>ativa</b> · faltam ' ~ rest ~ ' (até ' ~ ate ~ ')') if s > 0 else ('<b>ativa</b>' if fx else 'desligada') }}
             {%- if chuva %}
-            🌧️ Modo chuva: <b>ligado</b> · {{ chuva_nomes }}
+            🌧️ Modo chuva: <b>ligado</b> · acesas: {{ chuva_acesas_nomes }}
             {%- endif %}
             {%- if mp and is_state(mp, 'playing') %}
             🎵 Laurinha: tocando{{ ' · <i>' ~ titulo ~ '</i>' if titulo }}
@@ -878,7 +993,7 @@ script:
             🚪 <b>Saindo</b> · apaga a casa e pausa a música{{ ' · arma o alarme' if saindo_arma_alarme and alarme != '' }}
             🍿 <b>Cinema</b> · {{ luzes.get(luz_cinema, state_attr(luz_cinema, 'friendly_name') or 'luz') }} a 15%, resto apagado
             🌙 <b>Boa noite</b> · apaga a casa e silencia os avisos{{ ' · alarme modo noite' if boanoite_arma_alarme and alarme != '' }}
-            🌧️ <b>Dia de chuva</b> · acende só {{ chuva_nomes }}, a {{ chuva_brilho }}%{{ ' · <b>ligado</b>' if chuva }}
+            🌧️ <b>Dia de chuva</b> · luzes indiretas a {{ chuva_brilho }}%{{ ', só onde tem gente' if chuva_presenca }}: {{ chuva_nomes }}{{ ' · <b>ligado</b>' if chuva }}
             {%- if chuva_automatico != 'nao' %}
                <i>{{ 'Pergunto' if chuva_automatico == 'sugerir' else 'Ligo sozinho' }} quando chover de dia, e desligo quando a chuva passar.</i>
             {%- endif %}
@@ -1170,6 +1285,43 @@ automation:
       - service: script.home_concierge
         data:
           acao: chuva_auto
+
+  # ------------------------------------------------------------------
+  # 🌧️ Modo chuva segue a presença e a luz: chegou gente no cômodo → acende
+  # na hora; cômodo vazio → apaga 5 min depois; todo mundo saiu → apaga;
+  # a cada 5 min confere a luminosidade de cada cômodo
+  # ------------------------------------------------------------------
+  - id: home_concierge_chuva_presenca
+    alias: "🏠 Home Concierge · modo chuva segue a presença"
+    mode: parallel
+    max: 30
+    trigger:
+      - platform: event
+        event_type: state_changed
+        id: presenca
+      # Luminosidade muda o tempo todo: reavalia a cada 5 min
+      - platform: time_pattern
+        minutes: "/5"
+        id: luz
+    condition:
+      - condition: state
+        entity_id: input_boolean.concierge_modo_chuva
+        state: "on"
+      - >-
+        {%- if trigger.id == 'luz' -%}true{%- else -%}
+        {%- set d = trigger.event.data -%}
+        {{ d.new_state is not none and d.old_state is not none and d.old_state.state != d.new_state.state
+           and (d.entity_id == 'zone.home'
+                or (d.entity_id.startswith('binary_sensor.')
+                    and d.new_state.attributes.device_class in ['occupancy', 'motion', 'presence'])) }}
+        {%- endif -%}
+    action:
+      - if: "{{ trigger.id == 'presenca' and trigger.event.data.new_state.state == 'off' }}"
+        then:
+          - delay: "00:05:00"
+      - service: script.home_concierge
+        data:
+          acao: chuva_sync
 
   # ------------------------------------------------------------------
   # 🌧️ Modo chuva: a chuva passou (30 min sem chuva) ou anoiteceu → encerra

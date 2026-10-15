@@ -101,20 +101,33 @@ completo.
 
 ## Modo chuva
 
-- **Automático (padrão):** quando o tempo indica chuva por 5 min, de dia, o
-  concierge liga o modo chuva e avisa no Telegram, com botão para desligar.
-  Também liga se amanhecer chovendo.
-- Acende só `chuva_luzes` (vazio = Favoritos) a `chuva_brilho`% (padrão 60%).
-  Tomadas e interruptores (`switch.*`) só ligam.
-- **Desliga sozinho** depois de 30 min sem chuva, apagando essas luzes. Ao
-  anoitecer, o modo se encerra mas as luzes **ficam acesas** (a noite continua
-  com elas).
-- Com um sensor de luminosidade em `chuva_lux_sensor`, só liga se a casa
-  estiver realmente escura (abaixo de `chuva_lux_max` lux, padrão 150).
-- No máximo uma vez a cada 3 h, para não ficar ligando e desligando com chuva
-  intermitente.
-- `chuva_automatico`: `ligar` (padrão), `sugerir` (pergunta antes) ou `nao`
-  (só pelo botão 🌧️ Dia de chuva).
+Em dia de chuva, acende **só luzes indiretas**, em **baixo consumo**, e **só
+onde tem gente e onde está escuro**.
+
+- **Quais luzes:** o concierge acha sozinho as luzes indiretas pelo nome ou
+  entity_id: sanca, sacada, varanda, luminária, abajur, arandela, balizador,
+  fita, nicho, rodapé, indireta (`chuva_palavras`). Vale para `light.*` e
+  `switch.*` (Smart Life). Para fixar a lista, use `chuva_luzes`.
+- **Baixo consumo:** brilho de 40% (`chuva_brilho`).
+- **Presença:** cada luz só acende se o sensor de presença/movimento da
+  **Área** dela detectar alguém. Ela apaga 5 min depois que o cômodo esvazia,
+  e tudo apaga quando ninguém está em casa (`person.*`). Luz em cômodo sem
+  sensor (ex.: sacada) acende se alguém estiver em casa
+  (`chuva_sem_sensor_acende`). Para desligar a regra de presença, use
+  `chuva_presenca: false`.
+- **Luminosidade:** cada luz olha o sensor de lux (`illuminance`) da sua Área.
+  Acende só abaixo de `chuva_lux_max` (150 lx) e apaga se clarear acima de
+  `chuva_lux_apaga` (400 lx). A folga evita que a própria luz acesa faça o
+  sensor "achar" que clareou. Cômodo sem sensor de lux usa `chuva_lux_sensor`.
+  Sem nenhum sensor de lux, vale só a presença. A luminosidade é reavaliada a
+  cada 5 min.
+- **Automático (padrão):** quando o tempo indica chuva por 5 min, de dia, com
+  alguém em casa e algum cômodo escuro, o modo liga sozinho e avisa no
+  Telegram, com botão para desligar. Também liga se amanhecer chovendo. Age no
+  máximo uma vez a cada 3 h. Opções de `chuva_automatico`: `ligar`, `sugerir`
+  (pergunta antes) ou `nao` (só pelo botão 🌧️ Dia de chuva).
+- **Desliga sozinho** depois de 30 min sem chuva, apagando as luzes de chuva.
+  Ao anoitecer, o modo se encerra mas as luzes **ficam acesas**.
 - Se você tem automações que apagam luzes sozinhas (por movimento, horário…),
   adicione a elas a condição `input_boolean.concierge_modo_chuva` = `off`,
   como já é feito com a faxina.
@@ -167,6 +180,6 @@ python3 home-assistant/tests/render_check.py
 O teste **simula o script passo a passo** (variáveis, `if`, `choose`, `stop`)
 contra um Home Assistant falso com cômodos, alarme, ar-condicionado, cortina e
 ventilador, em seis cenários (casa completa, alarme disparado com soneca, HA
-vazio, chuva de dia com a casa escura, chuva com a casa clara e modo
-"sugerir"). Ele confere os serviços chamados em cada ação, o texto de cada tela, o
+vazio, chuva de dia com a casa escura, chuva com a casa clara, modo
+"sugerir", todos saíram de casa, meia-luz e sol voltou). Ele confere os serviços chamados em cada ação, o texto de cada tela, o
 formato dos teclados do Telegram e o limite de 64 bytes do `callback_data`.
