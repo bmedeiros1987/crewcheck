@@ -5,7 +5,8 @@ on:
       - 'server/v1413/partnerGate*.mjs'
       - 'server/radar-field-provenance.mjs'
       - 'server/radar-occurrence-identity.mjs'
-      - 'scripts/regression-partner-gate-api.mjs'
+      - 'scripts/regression-partner-gate-*.mjs'
+      - 'docs/partner-gate-http.openapi.json'
       - 'scripts/fixtures/partner-gate/**'
       - '.github/workflows/partner-gate-provenance-off.yml'
 permissions:
@@ -19,6 +20,7 @@ jobs:
         with:
           node-version: '22'
       - run: node scripts/regression-partner-gate-api.mjs
+      - run: node scripts/regression-partner-gate-http.mjs
       - run: node scripts/regression-radar-field-provenance.mjs
       - run: node scripts/regression-radar-occurrence-identity.mjs
       - run: node scripts/regression-cirium-radar-provider-off.mjs

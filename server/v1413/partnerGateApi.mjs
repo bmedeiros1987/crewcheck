@@ -3,8 +3,8 @@ import { partnerGatePayload } from './partnerGateProjection.mjs';
 export { normalizeAirport, normalizePartnerFlight, normalizeGateSourceClass, parsePartnerScopes } from './partnerGateIdentity.mjs';
 export { partnerGatePayload, partnerGateSourcePolicy } from './partnerGateProjection.mjs';
 
-// Offline composition seam only. No route, scheduler, credentials or network reader
-// is installed. Access authorization must be enforced by a future HTTP composition.
+// Projection seam used by the unregistered HTTP factory. No route, scheduler,
+// credentials or network reader is installed. The HTTP factory enforces access.
 export async function readPartnerGate(request = {}, dependencies = {}) {
   const partnerId = typeof dependencies.partnerId === 'string' ? dependencies.partnerId.trim() : '';
   const flight = normalizePartnerFlight(request.flight);

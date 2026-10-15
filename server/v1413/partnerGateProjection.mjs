@@ -32,7 +32,7 @@ export function partnerGatePayload(radar = {}, request = {}, now = new Date(), a
   const result = { ok: false, apiVersion: 'v1', flight: flight || null, origin: origin || null,
     destination: destination || null, gate: null, terminal: null, flightStatus: null,
     gateStatus: 'unavailable', source: 'crewcheck-radar', sourceClass: 'unclassified',
-    shareable: false, retrievedAt: now.toISOString(), occurrenceMatch: matches ? 'exact' : 'unmatched',
+    shareable: false, confidence: 0, confidenceBand: 'low', retrievedAt: now.toISOString(), occurrenceMatch: 'live-flight-route', occurrenceVerified: matches,
     provenance: { occurrenceKey: matches ? occurrenceKey : null, fields: {} } };
   for (const [output, name] of Object.entries(operationalFields)) {
     const field = radar.provenance?.fields?.[name];
@@ -49,6 +49,10 @@ export function partnerGatePayload(radar = {}, request = {}, now = new Date(), a
       if (output === 'gate') {
         result.ok = true; result.shareable = true; result.sourceClass = policy.sourceClass;
         result.gateStatus = 'available';
+        const quality = typeof radar.quality === 'number' && Number.isFinite(radar.quality)
+          ? Math.max(0, Math.min(100, radar.quality)) : 0;
+        result.confidence = Number((quality / 100).toFixed(2));
+        result.confidenceBand = quality >= 80 ? 'high' : quality >= 55 ? 'medium' : 'low';
       }
     }
   }

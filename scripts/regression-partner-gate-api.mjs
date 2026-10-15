@@ -61,3 +61,8 @@ const boundary = structuredClone(radar);
 boundary.provenance.fields.departureGate.observedAt='2030-01-01T11:45:00Z';
 assert.equal(project(boundary).gate,radar.gate);
 console.log('PASS review additions: denial metadata, spoofing, no unauthorized reads, status grant, freshness boundary');
+
+for (const [quality,confidence,band] of [[NaN,0,'low'],[Infinity,0,'low'],[-1,0,'low'],[101,1,'high'],[55,.55,'medium']]) {
+  const value=project({...radar,quality});assert.equal(value.confidence,confidence);assert.equal(value.confidenceBand,band);
+}
+assert.equal(project(radar,{...request,occurrenceKey:'other'}).occurrenceVerified,false);

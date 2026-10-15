@@ -1,82 +1,94 @@
-# Partner gate projection — offline, no external activation
+# Partner gates — testable HTTP, no external activation
 
 ## Evidence and direction
 
-Base inspected: main `3f8d0477`; rebased and tests rerun on main `6bb88844`. Source selectively inspected/reused:
-`feat/partner-gate-api-v1` at `c71697b0664835024a16a8fc35d31ae84de291f8`
-(PR #579 independently confirmed closed, unmerged and draft through the connected
-GitHub app; local gh REST/GraphQL calls returned Forbidden).
+Main revalidated: `6bb88844`. Selectively inspected/reused source:
+`feat/partner-gate-api-v1` at `c71697b0664835024a16a8fc35d31ae84de291f8`.
+The connected GitHub app independently confirms #579 closed, unmerged and draft.
 
-The intended direction is CrewCheck Radar -> outbound partner gate API (Crewtopia
-consumer). This is not importing Crewtopia gates into Radar. The old branch also
-contains watches, webhook delivery and roster import/activation; those are distinct
-capabilities and are not adopted by this change. No roster PDF is included.
+Direction: CrewCheck Radar -> outbound partner gate API (Crewtopia consumer).
+The source branch also has watches, webhook delivery and roster imports. Those
+capabilities are separate, not adopted or activated here; no roster PDF is included.
 
-Main already supplies field provenance and occurrence identity. The old API instead
-uses a global/class/environment sharing policy, reads a live-flight/route without
-an exact occurrence, and relies on an earlier fetch filter to strip restricted
-values. Its serializer itself can expose gate/terminal/status from restricted input.
-Keeping `unclassified` blocked is correct; removing that default would not establish
-rights. A source class or provider name alone cannot prove redistribution rights.
+The existing contract is **not missing**: source #579's
+`docs/partner-gate-api-v1.openapi.yaml`, `GET /api/v1/flights/{flight}/gate`, and
+`GateResponse` define the route, optional origin/destination, Bearer key, gates:read,
+rate limits, response fields and failure statuses. `partnerGateApi.mjs` on that
+branch implements them. The gate-only contract recovered here is
+`docs/partner-gate-http.openapi.json` (1.2.0). Administrative key creation,
+webhooks and roster paths are excluded.
 
 ## Implemented and tested
 
-Only normalization helpers and the API payload concept are selectively recovered.
-`readPartnerGate` is an injected offline composition seam, not an HTTP endpoint.
-It consumes a trusted server-side partner identity and an exact flight/route/occurrence,
-then independently checks every operational field. A grant must match partner,
-provider, occurrence and field, carry a review ID and future expiry, and separately
-approve access and redistribution. Those booleans are an internal contract, not
-proof of legal rights. No resolver or approvals are installed here.
+`createPartnerGateHttpHandler` implements that GET contract. Default/incomplete
+composition returns 503 before any dependency call. It is not registered in the
+application. Trusted injected dependencies must explicitly enable it, authenticate
+an existing active credential, enforce gates:read, consume a rate limit, resolve a
+current exact occurrence, read Radar, and resolve field rights. Optional route
+queries are preserved; an exact occurrence is resolved server-side rather than
+requiring a new caller query. Caller partnerId/rights/occurrence flags grant nothing.
+Invalid input and dependency failures do not expose tokens or provider errors.
 
-Every field must also match its Radar provenance value and occurrence, with an
-observed timestamp no more than 15 minutes old and not in the future. The 15-minute
-window is a conservative offline policy to review before live composition. Unapproved
-terminal/status stay null even if the gate is approved. Raw metadata, provider
-payloads and arbitrary Radar fields are never copied into the partner response.
-Caller request flags and Radar `partnerShareable`/`sourceClass` cannot grant rights.
-Request partner identity cannot override the trusted dependency.
+The HTTP handler delegates to `readPartnerGate`. Every field independently requires
+matching flight/route/occurrence and provenance value, an observed timestamp within
+15 minutes and not in the future, and an unexpired reviewed grant matching partner,
+provider, occurrence and field. Access and redistribution approvals are separate.
+The 15-minute policy is conservative and must be reviewed before a real rollout.
+Class labels or Radar shareable flags alone are never grants. `unclassified` stays
+blocked. Unapproved terminal/status are null even with an approved gate.
 
-No route registration, DB/migration, key creation, scheduler, HTTP reader, provider
-credentials, env permission expansion, deployment, B2B or webhook activation occurs.
-The old API's key/scopes management and network fetch are intentionally not copied.
-No files in the alert or MyCrewCare workstreams are changed.
+The #579 confidence/confidenceBand and constant `occurrenceMatch=live-flight-route`
+are preserved; **occurrenceVerified** is the additional authoritative boolean for
+an exact provenance match. Confidence is finite/clamped and zero for denied gates.
+Denied gates return unavailable without revealing whether another occurrence has a
+gate. Raw provider metadata is never copied. Grants/review IDs are an internal
+contract, not proof of legal approval.
 
-Run:
+No route registration, credential creation, DB migration, scheduler, network reader,
+provider config, permission expansion, deployment, B2B or webhook activation occurs.
+No files in alerts or MyCrewCare are changed. All tests use synthetic fixtures;
+HTTP tests bind an ephemeral loopback server only.
 
 ```sh
 node scripts/regression-partner-gate-api.mjs
+node scripts/regression-partner-gate-http.mjs
 node scripts/regression-radar-field-provenance.mjs
 node scripts/regression-radar-occurrence-identity.mjs
 node scripts/regression-cirium-radar-provider-off.mjs
 ```
 
-Fixtures, grants, partners and review IDs are synthetic. Tests include the existing
-Radar provenance builder -> partner projection path, independently denied rights,
-wrong partner/provider/field/route/occurrence, freshness, redaction and inert defaults.
-These demonstrate implementation behavior, not a successful live integration.
+The HTTP regression checks the recovered response schema, default/missing
+composition, authorization/revocation/scope, rate limit, optional queries, trusted
+occurrence resolution, anti-spoofing, redaction and dependency errors. The projection
+regression includes the existing Radar provenance builder -> projection path.
 
-## Remaining integration gates
+## Exact evidence/decisions still needed for real composition
 
-1. Confirm Crewtopia's consumer contract, partner identity, exact occurrence inputs,
-   response shape/version and real provider-field provenance on the selected Radar path.
-2. Independently establish license/redistribution rights and recipient access. A legal
-   review must define the trusted grant resolver and revocation/expiry semantics.
-3. Compose authenticated, rate-limited HTTP access with that resolver and a reviewed
-   internal Radar reader. The offline dependency seam does not authenticate clients.
-4. Port/review watches and webhook state transitions separately if still required,
-   including durable revocation checks, retry and destination protections. None run here.
-5. Revalidate main, independent review and applicable checks before any separately
-   authorized rollout. No web publication is performed by this patch.
+These do not block the testable HTTP implementation above:
 
-The complete gate API and real Crewtopia integration remain uncompleted until those
-gates are resolved; this patch closes the unsafe projection/provenance seam only.
+1. **Source redistribution approval record**: provider/license agreement clause or
+   signed review identifying the actual provider, permitted fields, Crewtopia as
+   recipient/use, effective date, expiry and revocation. The #579 source class
+   allowlist and feature flag do not supply that document. No such grant is installed.
+2. **Recipient access approval and existing credential binding**: approved Crewtopia
+   partner identity mapped to an existing active credential with gates:read. The
+   #579 `authenticatePartnerApi`/key table describes an implementation, not evidence
+   that a recipient has been approved. No credential is created or scope expanded.
+3. **Reviewed server composition decision**: select the existing Radar reader that
+   actually supplies field provenance/current exact occurrence, the credential/rate
+   storage adapters, and authoritative rights lookup/revocation source. Registering
+   the handler or enabling dependencies in the running app is outside this patch.
+   No external endpoint is called to infer readiness.
+4. Watches/webhooks remain outside this gate GET patch and need their own review if
+   requested. No requirement for them is inferred from the GET contract.
+
+No new consumer contract is demanded to finish the HTTP implementation. Real
+integration remains unproven until the specific evidence above is provided and a
+separately authorized server composition is reviewed.
 
 ## Independent review
 
-A separate reviewer executed the regression and found one metadata leak: a rejected
-occurrence could expose gate existence through `gateStatus=restricted`. All denied
-gates now return `unavailable`, and the regression asserts that for every rejection.
-Review suggestions added: trusted partner anti-spoofing, zero reads without trusted
-identity, explicit status grant and the exact freshness boundary. Review applies to
-this offline seam, not the unported full API or external integration.
+The first review caught gate-existence metadata on rejected occurrences; fixed and
+covered. A second review ran both projection and loopback HTTP regressions and found
+no blockers in the inert scope. Consumers must use occurrenceVerified as documented.
+CI status for the final SHA is recorded in PR #1047, not inferred from local tests.
