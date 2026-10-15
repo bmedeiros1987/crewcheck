@@ -1,3 +1,4 @@
+import { crewCheckLogoDataUrl, addCrewCheckPdfLogo } from '../../lib/brand';
 
 import { useEffect, useMemo, useState } from 'react';
 import { jsPDF } from 'jspdf';
@@ -569,9 +570,11 @@ function drawMedicalCheckbox(doc: jsPDF, x: number, y: number, checked: unknown)
   }
 }
 
-function buildMedicalOccurrencePdfBlob(flight: FlightOption | undefined, log: CabinLogState) {
+async function buildMedicalOccurrencePdfBlob(flight: FlightOption | undefined, log: CabinLogState) {
   const medical = { ...defaultMedicalOccurrence(), ...log.medical };
+  const logo = await crewCheckLogoDataUrl();
   const doc = new jsPDF('p', 'mm', 'a4');
+  addCrewCheckPdfLogo(doc, logo, 14, 14, 10);
   doc.setProperties({ title: 'Ocorrência Médica - Checklist', subject: 'Formulário de ocorrência médica', creator: 'CrewCheck' });
   const left = 12;
   const right = 198;
@@ -841,7 +844,8 @@ export default function CabinChiefAssistant({ bundle, onBack, onOpenRoster, init
     }
   }
 
-  function buildPdfBlob() {
+  async function buildPdfBlob() {
+    const logo = await crewCheckLogoDataUrl();
     const doc = new jsPDF();
     doc.setProperties({
       title: `CrewCheck Relatório Premium ${flight?.flightNumber || ''}`,
@@ -851,12 +855,13 @@ export default function CabinChiefAssistant({ bundle, onBack, onOpenRoster, init
     const [headerR, headerG, headerB] = getChiefReportColor();
     doc.setFillColor(headerR, headerG, headerB);
     doc.roundedRect(10, 10, 190, 24, 4, 4, 'F');
+    addCrewCheckPdfLogo(doc, logo, 14, 14, 16);
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(17);
-    doc.text('CrewCheck — Relatório Premium de Voo', 14, 22);
+    doc.text('CrewCheck — Relatório Premium de Voo', 34, 22);
     doc.setFontSize(10);
-    doc.text(flight ? `${flight.flightNumber} · ${flight.route} · ${flight.date}` : 'Sem voo selecionado', 14, 29);
+    doc.text(flight ? `${flight.flightNumber} · ${flight.route} · ${flight.date}` : 'Sem voo selecionado', 34, 29);
     doc.setTextColor(15, 23, 42);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
@@ -873,12 +878,13 @@ export default function CabinChiefAssistant({ bundle, onBack, onOpenRoster, init
     doc.setFontSize(8);
     doc.setTextColor(71, 85, 105);
     doc.text('Gerado pelo CrewCheck • PDF pesquisável • compartilhar via e-mail/WhatsApp', 14, 289);
+    for (let page = 1; page <= doc.getNumberOfPages(); page++) { doc.setPage(page); addCrewCheckPdfLogo(doc, logo, 194, 286, 5); }
     const filename = `CrewCheck_${safeFilename(flight?.date || new Date().toISOString().slice(0,10))}_${safeFilename(flight?.flightNumber || 'voo')}_${safeFilename(flight?.route || 'rota')}.pdf`;
     return { doc, filename, blob: doc.output('blob') as Blob };
   }
 
-  function exportPdf() {
-    const { doc, filename } = buildPdfBlob();
+  async function exportPdf() {
+    const { doc, filename } = await buildPdfBlob();
     doc.save(filename);
     registerPdfHistory(flight, filename);
     setHistory(loadPdfHistory());
@@ -888,7 +894,7 @@ export default function CabinChiefAssistant({ bundle, onBack, onOpenRoster, init
   }
 
   async function shareReport() {
-    const { filename, blob } = buildPdfBlob();
+    const { filename, blob } = await buildPdfBlob();
     const file = new File([blob], filename, { type: 'application/pdf' });
     try {
       if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
@@ -899,13 +905,13 @@ export default function CabinChiefAssistant({ bundle, onBack, onOpenRoster, init
         return;
       }
     } catch {}
-    exportPdf();
+    await exportPdf();
     toast.message('Compartilhamento nativo indisponível. PDF baixado para anexar manualmente.');
   }
 
   async function shareReportChannel(channel: 'email' | 'whatsapp') {
     try { await navigator.clipboard.writeText(reportText); } catch {}
-    exportPdf();
+    await exportPdf();
     const subject = encodeURIComponent(`CrewCheck - Relatório ${flight?.flightNumber || ''}`);
     const body = encodeURIComponent(`Segue o relatório do voo.
 
@@ -916,8 +922,8 @@ ${reportText.slice(0, 1500)}`);
     else window.open(`https://wa.me/?text=${body}`, '_blank');
   }
 
-  function exportMedicalPdf() {
-    const { doc, filename } = buildMedicalOccurrencePdfBlob(flight, log);
+  async function exportMedicalPdf() {
+    const { doc, filename } = await buildMedicalOccurrencePdfBlob(flight, log);
     doc.save(filename);
     registerPdfHistory(flight, filename);
     setHistory(loadPdfHistory());
@@ -926,7 +932,7 @@ ${reportText.slice(0, 1500)}`);
   }
 
   async function shareMedicalPdf() {
-    const { filename, blob } = buildMedicalOccurrencePdfBlob(flight, log);
+    const { filename, blob } = await buildMedicalOccurrencePdfBlob(flight, log);
     const file = new File([blob], filename, { type: 'application/pdf' });
     try {
       if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
@@ -937,7 +943,7 @@ ${reportText.slice(0, 1500)}`);
         return;
       }
     } catch {}
-    exportMedicalPdf();
+    await exportMedicalPdf();
     toast.message('Compartilhamento nativo indisponível. PDF salvo para anexar ao AQD/e-mail/WhatsApp.');
   }
 
