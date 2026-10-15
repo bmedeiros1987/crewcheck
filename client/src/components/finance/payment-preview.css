@@ -1,0 +1,45 @@
+.cc-payment-overview {display:grid;grid-template-columns:minmax(0,1fr);gap:16px;margin-bottom:24px;min-width:0}
+html body .cz-app[data-version] .cc-payment-hero {padding:28px;border-radius:24px;background:linear-gradient(130deg,#082c4b,#173e64 65%,#185578);color:#fff;box-sizing:border-box;min-width:0}
+.cc-payment-topline {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.cc-payment-topline>span {display:flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.13em;font-weight:700;color:#b8e9f7}
+.cc-payment-hero .cc-financial-privacy-toggle {border-color:#66849c;background:#ffffff0a;color:white;padding:8px 12px}
+.cc-payment-hero h2 {font-size:clamp(21px,2.4vw,28px);margin:20px 0 8px;letter-spacing:-.02em;color:inherit}
+.cc-payment-caption,.cc-payment-period,.cc-payment-disclaimer {color:#d5e4ee;font-size:14px;line-height:1.6;margin:8px 0}
+.cc-payment-value {display:flex;flex-wrap:wrap;gap:8px 24px;margin:20px 0;min-width:0}
+.cc-payment-value strong {font-size:clamp(28px,4vw,48px);line-height:1.2;letter-spacing:-.035em;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.cc-payment-timing {font-weight:600;font-size:16px;margin:16px 0 6px}
+.cc-payment-disclaimer {margin-top:22px;font-size:12px}
+.cc-payment-actions {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.cc-payment-actions button {display:flex;align-items:center;gap:12px;min-height:76px;padding:16px;border:1px solid var(--cc-review-border,#cad9e5);border-radius:16px;background:var(--cc-review-surface,#fff);color:var(--cc-review-text,#12304d);font:inherit;cursor:pointer;text-align:left;min-width:0}
+.cc-payment-actions button>svg:first-child {color:#0084ac;flex-shrink:0}
+.cc-payment-actions button>svg:last-child {margin-left:auto;width:16px}
+.cc-payment-actions button span {overflow-wrap:anywhere;font-weight:600}
+.cc-payment-pending {padding:22px;border:1px solid var(--cc-review-border,#cad9e5);border-radius:20px;background:var(--cc-review-surface,#fff);color:var(--cc-review-text,#12304d);min-width:0}
+.cc-payment-pending h3 {font-size:17px;margin:0 0 12px}.cc-payment-pending p,.cc-payment-pending li {font-size:14px;line-height:1.65}.cc-payment-pending ul {padding-left:20px}
+.cc-payment-pending button {display:inline-flex;gap:8px;align-items:center;min-height:44px;margin-top:10px;background:transparent;color:inherit;border:0;font:inherit;text-align:left;font-weight:600;cursor:pointer}
+.cc-next-payment-lines {border:1px solid var(--cc-review-border,#cad9e5);border-radius:18px;padding:18px;background:var(--cc-review-surface,#fff);color:var(--cc-review-text,#12304d)}
+.cc-next-payment-lines>summary {min-height:44px;cursor:pointer;font-weight:600;line-height:1.5}.cc-next-payment-lines>summary span {font-size:12px;margin-left:12px;font-weight:400}
+.cc-next-payment-lines p {font-size:13px;line-height:1.65}.cc-next-payment-lines article {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 16px;padding:16px 0;border-top:1px solid var(--cc-review-border,#cad9e5)}
+.cc-next-payment-lines article small {display:block;margin-top:6px}.cc-next-payment-lines article p {grid-column:1/-1;margin:0;overflow-wrap:anywhere}.cc-next-payment-lines article b {font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.cc-payment-overview :is(button,summary):focus-visible {outline:3px solid #00a9d2;outline-offset:4px}
+@media(min-width:900px){.cc-payment-overview {grid-template-columns:minmax(0,1.7fr) minmax(260px,1fr)}.cc-payment-hero {grid-column:1;grid-row:1}.cc-payment-pending {grid-column:2;grid-row:1}.cc-payment-actions,.cc-next-payment-lines {grid-column:1/-1}}
+@media(max-width:600px){html body .cz-app[data-version] .cc-payment-hero {padding:22px 20px;border-radius:20px}.cc-payment-actions {gap:8px}.cc-payment-actions button {flex-direction:column;gap:8px;padding:14px 6px;min-height:96px;text-align:center;font-size:12px}.cc-payment-actions button>svg:last-child {display:none}.cc-payment-topline .cc-financial-privacy-toggle span {display:none}.cc-payment-topline .cc-financial-privacy-toggle {min-width:44px;justify-content:center}.cc-next-payment-lines article {grid-template-columns:minmax(0,1fr)}.cc-next-payment-lines article p {grid-column:1}.cc-payment-value strong {font-size:32px}}
+/* Existing global navigation/surface rules must not turn these local shortcuts
+   into the app navigation, or recolor the hero as a secondary card. */
+html body #root .cz-app[data-version] .cc-payment-overview .cc-payment-hero {
+  background:linear-gradient(130deg,#082c4b,#173e64 65%,#185578)!important;color:#fff!important;border:0!important;padding:28px!important;
+}
+html body #root .cz-app[data-version] .cc-payment-hero :is(h2,strong,p,span,button) {color:#fff!important}
+html body #root .cz-app[data-version] nav.cc-payment-actions {display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:12px!important;background:transparent!important;border:0!important;position:static!important;box-shadow:none!important;padding:0!important;margin:0!important;width:100%!important}
+html body #root .cz-app[data-version] .cc-payment-actions button {display:flex!important;min-width:0!important;min-height:76px!important;padding:16px!important;margin:0!important;border-radius:16px!important}
+html body #root .cz-app[data-version] .cc-payment-value strong {font-size:clamp(28px,4vw,48px)!important;line-height:1.2!important}
+@media(max-width:600px){html body #root .cz-app[data-version] .cc-payment-overview .cc-payment-hero {padding:22px 20px!important}html body #root .cz-app[data-version] nav.cc-payment-actions {gap:8px!important}html body #root .cz-app[data-version] .cc-payment-actions button {flex-direction:column!important;padding:14px 6px!important;min-height:96px!important;font-size:12px!important}html body #root .cz-app[data-version] .cc-payment-value strong {font-size:32px!important}}
+html body #root .cz-app[data-version] .cc-payment-hero .cc-financial-privacy-toggle {background:#ffffff12!important;border:1px solid #87c4df!important;color:#fff!important}
+.cc-payment-pending {align-self:start}
+.cc-financial-bar-track {background:#dce8f0}.cc-financial-bar-track>span {background:#087fa4}
+/* Reuse the existing comparison rows as compact, labeled bar cards. Missing
+   periods remain explicit and disabled; their amounts are never invented. */
+.cc-financial-bars {grid-template-columns:repeat(auto-fit,minmax(180px,1fr));align-items:stretch}
+.cc-financial-bars>button {align-content:start;min-width:0;min-height:112px;box-sizing:border-box}
+.cc-financial-bars>button>span:first-child {line-height:1.4}
+@media(max-width:600px){.cc-financial-bars {grid-template-columns:repeat(2,minmax(0,1fr))}.cc-financial-bars>button {padding:10px;gap:8px}.cc-financial-bars strong {font-size:14px}}
