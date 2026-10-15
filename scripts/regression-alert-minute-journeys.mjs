@@ -190,6 +190,12 @@ try {
       assert.match(evidenced.evidence, /Contagem comprovada: 3/);
       assert.match(evidenced.details, /00:00–06:00 BRT/);
       assert.match(evidenced.details, /48h livres comprovadas/);
+      const evidenceEvents = canonical.buildCanonicalRosterEvents(roster([first,third,fourth]));
+      const evidenceSequence = modules.load('publishedNightJourneys').publishedNightJourneySequence(evidenceEvents, () => true, 48, () => false);
+      const linkedRest = { ...evidenceEvents.find(event => event.kind === 'flight'), id: 'synthetic-linked-rest', kind: 'rest', date: '03/10/2032' };
+      const evidenceRows = modules.load('nightAlertEvidence').nightSequenceEvidence(evidenceSequence, [...evidenceEvents, linkedRest]);
+      assert.ok(!evidenceRows.some(row => row.date === linkedRest.date), 'preceding rest linked to the next journey is never counted or linked as worked evidence');
+      assert.ok(evidenceRows.every(row => !row.description.includes('Atividade')), 'flight-only sequence must not label its linked rest as activity');
       const availability={...day('05/10/2032','20:00','23:00','',''),type:'HSB',pairingCode:'HSB',legs:[]};
       assert.equal(engine.analyzeCompliance(roster([first,availability,fourth])).metrics.maxConsecutiveNights,2,'availability blocks a 48h-free reset but is not a night journey');
       const longBreak = day('10/10/2032','02:10','10:30','02:50','10:00');
