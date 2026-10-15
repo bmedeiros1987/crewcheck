@@ -37,7 +37,7 @@ jobs:
           git worktree add --detach "$RUNNER_TEMP/export-base" "$BASE_SHA"
           ln -s "$GITHUB_WORKSPACE/node_modules" "$RUNNER_TEMP/export-base/node_modules"
           cp scripts/regression-export-approved-brand.mjs "$RUNNER_TEMP/export-base/scripts/"
-          (cd "$RUNNER_TEMP/export-base" && node scripts/regression-export-approved-brand.mjs)
+          (cd "$RUNNER_TEMP/export-base" && EXPORT_BASELINE=1 node scripts/regression-export-approved-brand.mjs)
           node scripts/regression-export-approved-brand.mjs
           python scripts/verify-export-brand-pdfs.py artifacts/export-brand --baseline "$RUNNER_TEMP/export-base/artifacts/export-brand"
       - name: Prepare production sources and repeat artifact validation
@@ -47,7 +47,7 @@ jobs:
           node scripts/v139/apply.mjs
           npx vite build
           npx tsc --noEmit
-          (cd "$RUNNER_TEMP/export-base" && node scripts/v139/apply.mjs && node scripts/regression-export-approved-brand.mjs)
+          (cd "$RUNNER_TEMP/export-base" && node scripts/v139/apply.mjs && EXPORT_BASELINE=1 node scripts/regression-export-approved-brand.mjs)
           node scripts/regression-export-approved-brand.mjs
           python scripts/verify-export-brand-pdfs.py artifacts/export-brand --baseline "$RUNNER_TEMP/export-base/artifacts/export-brand"
           node scripts/regression-approved-brand-assets.mjs

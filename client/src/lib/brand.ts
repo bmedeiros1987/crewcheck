@@ -44,15 +44,16 @@ function fileReaderDataUrl(blob: Blob): Promise<string> {
 export function crewCheckLogoDataUrl(): Promise<string> {
   if (!logoDataUrlPromise) {
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 2500);
-    logoDataUrlPromise = fetch(CREWCHECK_BRAND.iconPath, { cache: 'force-cache', signal: controller.signal })
+    let timer = 0;
+    const timeout = new Promise<string>(resolve => { timer = window.setTimeout(() => { controller.abort(); resolve(''); }, 2500); });
+    const loading = fetch(CREWCHECK_BRAND.iconPath, { cache: 'force-cache', signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error(`Logo indisponível (${response.status}).`);
         return response.blob();
       })
       .then(fileReaderDataUrl)
-      .catch(() => '')
-      .finally(() => window.clearTimeout(timer));
+      .catch(() => '');
+    logoDataUrlPromise = Promise.race([loading, timeout]).finally(() => window.clearTimeout(timer));
   }
   return logoDataUrlPromise;
 }

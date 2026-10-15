@@ -7,7 +7,7 @@ source=Image.open('client/public/assets/brand/crewcheck-app-icon-2026.png').conv
 results=[]
 for name in ['roster','premium','medical']:
  loaded=fitz.open(root/f'{name}-loaded.pdf');blocked=fitz.open(root/f'{name}-blocked.pdf')
- stalled=fitz.open(root/f'{name}-stalled.pdf')
+ stalled=fitz.open(root/f'{name}-stalled.pdf');reader=fitz.open(root/f'{name}-reader-stalled.pdf')
  assert len(loaded)==len(blocked)==len(stalled)
  texts=[]
  for index,page in enumerate(loaded):
@@ -22,7 +22,8 @@ for name in ['roster','premium','medical']:
     assert not any(rect.intersects(fitz.Rect(word[:4])) for word in page.get_text('words') if word[4].strip()),(name,index,'logo overlaps text')
     assert rect.x0>=11 and rect.y0>=10 and rect.x1<=page.rect.width-10 and rect.y1<=page.rect.height-10
   assert not blocked[index].get_images() and not stalled[index].get_images()
-  assert page.get_text()==stalled[index].get_text()
+  assert page.get_text()==stalled[index].get_text()==reader[index].get_text()
+  assert not reader[index].get_images()
   assert page.get_text()==blocked[index].get_text(),(name,index,'fallback changed document content')
   page.get_pixmap(matrix=fitz.Matrix(1.2,1.2)).save(root/f'{name}-page{index+1}.png')
   blocked[index].get_pixmap(matrix=fitz.Matrix(.7,.7)).save(root/f'{name}-fallback-page{index+1}.png')
