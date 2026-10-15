@@ -1,3 +1,4 @@
+import { useFinancialPrivacy, FinancialPrivacyToggle } from '@/components/finance/FinancialPrivacy';
 import { rosterDisplayCompare, rosterDisplayIso, rosterInstantIso, rosterLabelDate, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { useEffect, useMemo, useState } from 'react';
 import { summarizeForecastRows, summarizeNativeForecastRows } from '@/lib/financialForecastPeriods';
@@ -249,7 +250,13 @@ function publishedProgramWindow(event: RosterEvent) {
   };
 }
 
+const formatMoney = money;
+const formatCurrencyMoney = currencyMoney;
+
 export default function RosterLaunchView({ events, finance, financeMonth, setView, roster }: { events: RosterEvent[]; finance?: RosterFinance; financeMonth?: string; setView: (view: any) => void; roster?: CrewRoster }) {
+  const privacy = useFinancialPrivacy();
+  const money = (value: number | null) => privacy.text(formatMoney(value));
+  const currencyMoney = (value: number, currency = 'BRL') => privacy.text(formatCurrencyMoney(value, currency));
   const { layout, zoom, choose, chooseZoom, message } = useRosterLayout();
   const allOrdered = useMemo(() => [...events]
     .filter((event) => !event.id?.includes('placeholder'))
@@ -385,7 +392,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       <p role="status">{visibleEvents.length} programações {zoom === 'day' ? `em ${activeDay.split('-').reverse().join('/')}` : 'no mês'}. Horários publicados preservados.</p>
     </section>
 
-    <details className="cc-roster-finance-summary">
+    <FinancialPrivacyToggle/><details className="cc-roster-finance-summary">
       <summary>Resumo do mês · Diárias {financeAvailable ? money(perDiemTotal) : 'Indisponível'} · KM {financeAvailable ? (scopedFinance?.salary?.configured ? money(production) : 'Calibrar tarifa') : 'Indisponível'}</summary>
       <section className="cc-roster-hero-v1397">
       <div className="cc-roster-hero-copy-v1397">

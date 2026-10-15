@@ -41,6 +41,7 @@ on:
       - 'client/src/components/v1391/RosterLaunchView.tsx'
       - 'scripts/regression-financial-*.mjs'
       - 'scripts/regression-financial-ui-browser.cjs'
+      - 'scripts/regression-financial-privacy-browser.cjs'
       - 'scripts/regression-static-module-mime.mjs'
       - 'server.mjs'
       - 'client/src/styles/per-diem-content.css'
@@ -243,6 +244,17 @@ jobs:
         with:
           name: salary-prerequisites-synthetic
           path: artifacts/salary-prerequisites/
+          if-no-files-found: ignore
+      - name: Verify financial value privacy
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-financial-privacy-browser.cjs
+      - name: Save financial privacy evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: financial-privacy-synthetic
+          path: artifacts/financial-privacy/
           if-no-files-found: ignore
       - name: Save synthetic UI evidence
         if: always()
