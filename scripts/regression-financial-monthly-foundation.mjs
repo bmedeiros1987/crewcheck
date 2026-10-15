@@ -8,8 +8,18 @@ const login=(id,role='user')=>{localStorage.setItem('crewcheck_auth_user',JSON.s
 try{
  const periods=modules.load('financialPayrollPeriods'),catalog=modules.load('financialReferenceCatalog'),tax=modules.load('financialTaxReferences'),settings=modules.load('financialMonthlySettings'),learning=modules.load('financialStatementLearning');
  const cycle=periods.actPayrollCompetences('2026-09',periods.ACT_PAYROLL_CYCLE_SOURCE);
- assert.equal(cycle.rateMonth,'2026-10');assert.equal(cycle.fixedMonth,'2026-10');assert.equal(cycle.expectedCreditMonth,'2026-11');assert.equal(cycle.exactCreditDate,null);assert.equal(cycle.creditDeadline,'fifth_business_day');assert.equal(cycle.paymentConfirmed,false);
+ assert.equal(cycle.rateMonth,'2026-10');assert.equal(cycle.fixedMonth,null);assert.equal(cycle.fixedSource,null);assert.equal(cycle.variableSource,periods.ACT_PAYROLL_CYCLE_SOURCE);assert.equal(cycle.expectedCreditMonth,'2026-11');assert.equal(cycle.exactCreditDate,null);assert.equal(cycle.creditDeadline,'fifth_business_day');assert.equal(cycle.paymentConfirmed,false);
  assert.equal(periods.actPayrollCompetences('2026-12',periods.ACT_PAYROLL_CYCLE_SOURCE).expectedCreditMonth,'2027-02');assert.equal(periods.actPayrollCompetences('2026-13',periods.ACT_PAYROLL_CYCLE_SOURCE),null);
+ // ACT duration is 2025-12-01 through 2027-11-30; no policy carry-forward.
+ for(const month of ['2024-09','2025-11','2027-10','2027-11','2027-12','2028-09','2026-00','9998-12'])assert.equal(periods.actPayrollCompetences(month,periods.ACT_PAYROLL_CYCLE_SOURCE),null,month);
+ for(const month of ['2025-12','2026-01','2027-09'])assert(periods.actPayrollCompetences(month,periods.ACT_PAYROLL_CYCLE_SOURCE),month);
+ assert.equal(periods.actPayrollCompetences('2027-09',periods.ACT_PAYROLL_CYCLE_SOURCE).expectedCreditMonth,'2027-11');
+ assert.equal(periods.actPayrollCompetences('2026-09',undefined),null);
+ assert.equal(periods.actPayrollCompetences('2026-09','other-policy'),null);
+ assert.equal(periods.actPayrollCompetences('2026-09',periods.ACT_PAYROLL_CYCLE_SOURCE,'other-policy'),null);
+ const fixedCycle=periods.actPayrollCompetences('2026-09',periods.ACT_PAYROLL_CYCLE_SOURCE,periods.PAYROLL_CYCLE_SOURCE);
+ assert.equal(fixedCycle.fixedMonth,'2026-10');assert.equal(fixedCycle.fixedSource,periods.PAYROLL_CYCLE_SOURCE);assert.notEqual(fixedCycle.fixedSource,fixedCycle.variableSource);
+ assert.equal(periods.payrollCompetences('2028-09',periods.PAYROLL_CYCLE_SOURCE).fixedMonth,'2028-09','independent company guidance does not inherit ACT validity');
  const expected={cabin:[275112,307664],copilot:[591918,973285],captain:[1135517,1672707]};
  for(const [role,values] of Object.entries(expected))for(const [index,stage] of ['probation','regular'].entries()){
   const ref=catalog.salaryFloorReference({company:'TAM',role,stage,month:'2026-10'});assert.equal(ref.amountMinor,values[index]);assert.equal(ref.includesCO,true);assert.equal(ref.individualSalaryGuaranteed,false);assert.equal(ref.requiresConfirmation,true);assert.equal(ref.adjustmentBasisPoints,209);assert(ref.sources.every(url=>url.startsWith('https://')));
