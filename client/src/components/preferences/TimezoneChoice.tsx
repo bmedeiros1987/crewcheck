@@ -6,7 +6,9 @@ import {
   resolveTimeZoneChoice,
   timeZoneChoices,
   validTimeZone,
+  timeZoneOffsetLabel,
 } from "@shared/timezone-choice.mjs";
+import { presentStayInstant, resolveStayDisplayZone, type StayTimeZonePreference } from '@shared/stay-time-presentation.mjs';
 const labels: Record<string, string> = {
   "America/Sao_Paulo": "Brasília / São Paulo",
   "America/Fortaleza": "Fortaleza",
@@ -25,6 +27,30 @@ function normalizeSearch(value: string) {
     .replace(/[_/\s]+/g, " ")
     .trim()
     .toLocaleLowerCase("pt-BR");
+}
+
+/** Same reviewed IANA catalogue/search, with offset at the supplied event instant. */
+export function IanaTimeZoneSelect({ value, onChange, label, instant }: { value: string; onChange: (value: string) => void; label: string; instant?: string | null }) {
+  const [query, setQuery] = useState('');
+  const choices = timeZoneChoices(value).filter(zone => normalizeSearch(`${labels[zone] || ''} ${zone}`).includes(normalizeSearch(query)));
+  const option = (zone: string) => `${labels[zone] || zone.split('/').at(-1)?.replaceAll('_', ' ')} · ${zone}${timeZoneOffsetLabel(zone, instant) ? ` · ${timeZoneOffsetLabel(zone, instant)}` : ''}`;
+  return <div className="cc139-form wide"><label>Buscar {label.toLocaleLowerCase('pt-BR')}<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Cidade ou zona IANA"/></label>
+    <label>{label}<select value={value} onChange={event => onChange(event.target.value)}><option value="">Escolher zona IANA</option>{validTimeZone(value) && <option value={value}>{option(value)}</option>}{choices.filter(zone => zone !== value).map(zone => <option key={zone} value={zone}>{option(zone)}</option>)}</select></label>
+    {choices.length === 0 && <p>Nenhum resultado. Sua escolha anterior foi preservada.</p>}</div>;
+}
+
+export function EventTimeZonePreference({ value, onChange, localZone, baseZone, instant }: { value: StayTimeZonePreference; onChange: (value: StayTimeZonePreference) => void; localZone: string; baseZone: string; instant?: string | null }) {
+  const resolved = resolveStayDisplayZone(value, { localZone, baseZone });
+  const original = instant ? presentStayInstant(instant, localZone) : null;
+  const shown = instant ? presentStayInstant(instant, resolved.zone) : null;
+  const different = original?.status === 'available' && shown?.status === 'available' && (original.date !== shown.date || original.clock !== shown.clock);
+  return <fieldset className="cc-timezone-choice"><legend>Exibir horários</legend><label>Fuso de exibição<select value={value.source} onChange={event => onChange({ ...value, source: event.target.value as StayTimeZonePreference['source'] })}>
+    <option value="local">Local do evento{localZone ? ` · ${localZone}` : ' · falta confirmar'}</option><option value="base">Base cadastrada{baseZone ? ` · ${baseZone}` : ' · falta cadastrar'}</option><option value="utc">UTC</option><option value="manual">Escolher na lista</option></select></label>
+    {value.source === 'manual' && <IanaTimeZoneSelect label="Fuso manual de exibição" value={value.manualZone} instant={instant} onChange={manualZone => onChange({ ...value, manualZone })}/>}
+    <p>A escolha de exibição é salva nesta conta e neste aparelho ao selecionar. Não muda a fonte, o instante ou o despertador; alterações do pernoite e da autorização continuam dependendo de Salvar.</p>
+    {resolved.message ? <p role="status">{resolved.message}</p> : different ? <p role="status">Exibição em {resolved.zone} · {timeZoneOffsetLabel(resolved.zone, instant)}. Horário e data da fonte permanecem em {localZone}.</p> : null}
+    <button type="button" onClick={() => onChange({ source: 'local', manualZone: '' })}>Restaurar padrão local do evento</button>
+  </fieldset>;
 }
 export function TimezoneChoice({
   value,

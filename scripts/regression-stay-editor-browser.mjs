@@ -56,7 +56,7 @@ window.stayFixtureDay=day;window.stayFixtureEvents=fixtures;
 window.stayNavigation=[];window.stayContext=peekPendingNavigationContext;window.stayHasOrigin=hasStoredStayEditorOrigin;
 function App(){const [view,setView]=useState(()=>hasStoredStayEditorOrigin()?'presentation':'hotels'),[events,setEvents]=useState(fixtures);
  useEffect(()=>{window.replaceStayEvents=setEvents;const navigate=e=>{window.stayNavigation.push(e.detail);if(e.detail!=='presentation')clearStoredStayEditorOrigin();setView(e.detail)};window.addEventListener('crewcheck:set-view',navigate);return()=>window.removeEventListener('crewcheck:set-view',navigate)},[]);
- return <><main {...${JSON.stringify(rootProps)}} data-view={view}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back backLabel={view==='presentation'&&readStayEditorIntent()?'Voltar ao pernoite':view==='presentation'&&hasStoredStayEditorOrigin()?'Voltar à lista de pernoites':undefined} onMenu={view==='presentation'&&(readStayEditorIntent()||hasStoredStayEditorOrigin())?returnFromStayProgramEditor:undefined}/></InternalHeaderFrame>{view==='hotels'?<HotelsView events={events}/>:<Presentation events={events} embedded/>}</main><BottomNav view={view} setView={setView} openMenu={()=>{}}/></>}
+ return <><main {...${JSON.stringify(rootProps)}} data-view={view}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back backLabel={view==='presentation'&&readStayEditorIntent()?'Voltar ao pernoite':view==='presentation'&&hasStoredStayEditorOrigin()?'Voltar à lista de pernoites':undefined} onMenu={view==='presentation'&&(readStayEditorIntent()||hasStoredStayEditorOrigin())?returnFromStayProgramEditor:undefined}/></InternalHeaderFrame>{view==='hotels'?<HotelsView events={events}/>:<Presentation events={events} embedded initialFocus={window.stayInitialFocus}/>}</main><BottomNav view={view} setView={setView} openMenu={()=>{}}/></>}
 createRoot(document.getElementById('root')).render(<App/>);
 `, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, format: 'esm', platform: 'browser', tsconfig: 'tsconfig.json', outfile: path.join(output, 'harness.js'), loader: { '.css': 'empty' }, jsx: 'automatic', define: { 'process.env.NODE_ENV': '"test"', 'import.meta.env': JSON.stringify({ DEV: false, PROD: true, BASE_URL: '/' }) } });
 fs.writeFileSync(path.join(output,'index.html'),`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">${cssLinks}</head><body><div id="root"></div><script type="module" src="/harness.js"></script></body></html>`);
@@ -75,7 +75,7 @@ try {
  for(const width of [390,1280]){
   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:'block',timezoneId:'America/Fortaleza'});
   const errors=[],writes=[];
-  await context.addInitScript(()=>{localStorage.setItem('crewcheck_auth_token','synthetic-token');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic',email:'test@example.invalid'}));});
+  await context.addInitScript(()=>{localStorage.setItem('crewcheck_auth_token','synthetic-token');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic',email:'test@example.invalid',base:'MAO'}));});
   await context.route('**/*',route=>{
    const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(!url.pathname.startsWith('/api/'))return route.continue();
    if(route.request().method()!=='GET')writes.push(url.pathname);
@@ -83,12 +83,16 @@ try {
    return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,address:null,stays:[{id:'saved-future',rosterEventId:'synthetic-future',stayDate:day,airport:'FOR',hotelName:'Hotel salvo sintético',presentationTime:'05:30',leadMinutes:90}]})});
   });
   const page=await context.newPage();await page.clock.setFixedTime(new Date('2026-10-11T12:00:00Z'));page.on('pageerror',error=>errors.push(error.message));await page.goto(origin);
+  await page.evaluate(()=>{window.stayInitialFocus='emergency-sharing';});
   await page.getByRole('button',{name:'Editar pernoite synthetic-future',exact:true}).click();
   const program=page.getByRole('combobox',{name:'Programação',exact:true});
   await program.waitFor();assert.equal(await program.inputValue(),'synthetic-future');
   const hotel=page.getByRole('textbox',{name:'Hotel',exact:true}),apz=page.getByLabel('APZ no hotel (manual ou salva)',{exact:true});
   await page.waitForFunction(()=>document.querySelector('input[placeholder="Hotel de pernoite ou contingência"]')?.value==='Hotel salvo sintético');
   assert.equal(await apz.inputValue(),'05:30');
+  const consent=page.getByRole('checkbox',{name:'Autorizar colegas no mesmo hotel a me localizar em emergência',exact:true});
+  assert.equal(await consent.isChecked(),false,'Focusing the sharing setting cannot enable it');
+  assert.equal(await consent.evaluate(el=>document.activeElement===el),true,'Home contract can focus an explicit stay setting without clicking');
   const layout=[];
   for (const scenario of [{theme:'light',font:100,height:900},{theme:'dark',font:150,height:600},{theme:'dark',font:150,height:400}]) {
     await page.setViewportSize({width,height:scenario.height});
@@ -139,7 +143,7 @@ try {
   await page.setViewportSize({width,height:900});
   await page.evaluate(()=>document.documentElement.style.fontSize='16px');
   await hotel.fill('Hotel editado sintético');
-  await page.getByRole('textbox',{name:'Fuso do hotel',exact:true}).fill('America/Fortaleza');
+  await page.getByRole('combobox',{name:'Fuso do hotel',exact:true}).selectOption('America/Fortaleza');
   const apzDate=page.getByLabel('Data da APZ no hotel',{exact:true});await apzDate.fill('2030-10-11');
   const confirmApz=page.getByRole('checkbox',{name:'Confirmo esta data, horário e fuso como APZ no hotel',exact:true});
   await confirmApz.check();
@@ -158,6 +162,25 @@ try {
   await mode.selectOption('absolute');
   const exact=preview.getByLabel('Data e horário exatos · America/Fortaleza',{exact:true});await exact.fill('2030-10-11T04:00');
   await breakfast.selectOption('with');assert.equal(await exact.inputValue(),'2030-10-11T04:00','Breakfast updates preserve manual exact time');
+  const displayMode=page.getByRole('combobox',{name:'Fuso de exibição',exact:true});
+  const sourceSnapshot=async()=>({clock:await apz.inputValue(),date:await apzDate.inputValue(),zone:await page.getByRole('combobox',{name:'Fuso do hotel',exact:true}).inputValue(),exact:await exact.inputValue(),confirmed:await confirmApz.isChecked(),sharing:await page.getByRole('checkbox',{name:'Autorizar colegas no mesmo hotel a me localizar em emergência',exact:true}).isChecked()});
+  const sourceBefore=await sourceSnapshot();
+  await displayMode.selectOption('base');await preview.getByText('Despertar calculado: 03:00',{exact:false}).waitFor();
+  await page.evaluate(()=>{const profile=JSON.parse(localStorage.getItem('crewcheck_auth_user'));localStorage.setItem('crewcheck_auth_user',JSON.stringify({...profile,base:'BSB'}));});
+  await displayMode.selectOption('base');await preview.getByText('Despertar calculado: 04:00',{exact:false}).waitFor();
+  assert.equal(await page.getByRole('status').filter({hasText:'Exibição em'}).count(),0,'Different IANA names with the same event clock/date do not create a warning');
+  await page.evaluate(()=>{const profile=JSON.parse(localStorage.getItem('crewcheck_auth_user'));localStorage.setItem('crewcheck_auth_user',JSON.stringify({...profile,base:'MAO'}));});
+  await displayMode.selectOption('utc');await preview.getByText('Despertar calculado: 07:00',{exact:false}).waitFor();
+  await displayMode.selectOption('manual');
+  await page.getByRole('searchbox',{name:'Buscar fuso manual de exibição',exact:true}).fill('Lisboa');
+  const manualZone=page.getByRole('combobox',{name:'Fuso manual de exibição',exact:true});
+  assert.match(await manualZone.getByRole('option',{name:/Lisboa/}).textContent(),/UTC\+01:00/);
+  await manualZone.selectOption('Europe/Lisbon');await preview.getByText('Despertar calculado: 08:00',{exact:false}).waitFor();
+  await displayMode.selectOption('utc');await displayMode.selectOption('manual');assert.equal(await manualZone.inputValue(),'Europe/Lisbon');
+  assert.deepEqual(await sourceSnapshot(),sourceBefore,'Display modes cannot change source date/zone/clock, manual alarm or consent');
+  await page.getByRole('button',{name:'Restaurar padrão local do evento',exact:true}).click();
+  assert.equal(await displayMode.inputValue(),'local');await preview.getByText('Despertar calculado: 04:00',{exact:false}).waitFor();
+
   await preview.getByText('1 h 30 min antes da APZ no hotel',{exact:true}).waitFor();
   await apz.fill('06:00');await confirmApz.check();await preview.getByText('2 h antes da APZ no hotel',{exact:true}).waitFor();
   assert.equal(await exact.inputValue(),'2030-10-11T04:00');
@@ -195,6 +218,19 @@ try {
   await preview.locator('summary').click();
   assert.equal(await exact.inputValue(),'2030-10-11T04:00');assert.equal(await confirmApz.isChecked(),true);
   assert.equal(await breakfast.inputValue(),'without','Breakfast choice survives save, reload and explicit return to the same stay');
+  await consent.check();await page.getByRole('button',{name:'Salvar alterações do pernoite',exact:true}).click();
+  const storedStayBefore=await page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_stay_editor_v2:synthetic')).stays['synthetic-future']);
+  await displayMode.selectOption('utc');await preview.getByText('Despertar calculado: 07:00',{exact:false}).waitFor();
+  await page.reload();await page.getByRole('alert').filter({hasText:'O editor foi recarregado'}).waitFor();
+  await page.getByRole('button',{name:'Voltar à lista de pernoites',exact:true}).click();
+  await page.getByRole('button',{name:'Editar pernoite synthetic-future',exact:true}).click();
+  await preview.locator('summary').click();assert.equal(await displayMode.inputValue(),'utc','Display mode persists without asking again');
+  assert.equal(await exact.inputValue(),'2030-10-11T04:00');assert.equal(await confirmApz.isChecked(),true);
+  assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_stay_editor_v2:synthetic')).stays['synthetic-future']),storedStayBefore,'Persisting display preferences cannot rewrite saved consent or alarm');
+  assert.equal(await consent.isChecked(),true);await consent.uncheck();await page.getByRole('button',{name:'Salvar alterações do pernoite',exact:true}).click();
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('crewcheck_stay_editor_v2:synthetic')).stays['synthetic-future'].draft.shareSameHotel),false,'Explicit uncheck and Save revokes only the local preference');
+  await page.getByRole('button',{name:'Restaurar padrão local do evento',exact:true}).click();
+
   await preview.getByText('1 h 30 min antes da APZ no hotel',{exact:true}).waitFor();
   await page.getByText('Mais opções da edição',{exact:true}).click();
   await page.getByRole('button',{name:'Cancelar despertador deste pernoite',exact:true}).click();
@@ -250,7 +286,7 @@ try {
   assert.equal(await preview.count(),0,'Account change clears the previous per-stay preview');
   assert.equal(await page.evaluate(()=>localStorage.getItem('crewcheck_stay_editor_v2:another-account')),null,'Old-render save/default/cancel in the account-change tick cannot write A preferences into B');
   assert.deepEqual(errors,[]);assert.deepEqual(writes,[],'No hotel saves or alarm requests');
-  results.push({width,touchIdentity:true,savedApz:true,noRosterApzFallback:true,manualPreserved:true,autoMode:true,breakfastExplicit:true,breakfastDefaults90_60:true,bothDefaultsEditable:true,breakfastPerStayPersisted:true,oldAccountHandlersBlocked:true,modeAbsolute:true,liveGap:true,defaultSeparate:true,current:true,rosterChange:true,itemRemoval:true,cancelEdit:true,contextReturn:true,accountReset:true,persistenceReload:true,reloadInsideEditorDegradesToList:true,cancellationPersisted:true,layout,negativeControl:true,writes,errors});
+  results.push({width,touchIdentity:true,savedApz:true,noRosterApzFallback:true,manualPreserved:true,autoMode:true,breakfastExplicit:true,breakfastDefaults90_60:true,bothDefaultsEditable:true,breakfastPerStayPersisted:true,oldAccountHandlersBlocked:true,eventZoneDisplayOnly:true,displayPreferenceReload:true,pickupSourceUnaffected:true,focusDoesNotConsent:true,explicitConsentPreservedRevocable:true,modeAbsolute:true,liveGap:true,defaultSeparate:true,current:true,rosterChange:true,itemRemoval:true,cancelEdit:true,contextReturn:true,accountReset:true,persistenceReload:true,reloadInsideEditorDegradesToList:true,cancellationPersisted:true,layout,negativeControl:true,writes,errors});
   await context.close();
  }
 } finally {

@@ -1,10 +1,11 @@
 import { stayInstant } from './stay-edit-plan.mjs';
+import { stayTimeZonePreference } from './stay-time-presentation.mjs';
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const lead = value => Number.isInteger(value) && value >= 0 && value <= 720;
 export function stayEditorKey(accountId) {
   return typeof accountId === 'string' && accountId.trim() ? `crewcheck_stay_editor_v2:${encodeURIComponent(accountId)}` : null;
 }
-export function emptyStayEditor(accountId) { return { version: 2, accountId, defaultLeadMinutes: 90, defaultWithoutBreakfastMinutes: 60, stays: {} }; }
+export function emptyStayEditor(accountId) { return { version: 2, accountId, defaultLeadMinutes: 90, defaultWithoutBreakfastMinutes: 60, timeZonePreference: stayTimeZonePreference(), stays: {} }; }
 export function sanitizeStayChoice(value) {
   if (value == null) return undefined;
   if (value.mode === 'relative' && lead(value.leadMinutes)) return { mode: 'relative', leadMinutes: value.leadMinutes };
@@ -27,7 +28,7 @@ export function readStayEditor(storage, accountId) {
       if (choice === null) continue;
       stays[id] = { ...value, choice, breakfastPlan: ['with', 'without'].includes(value.breakfastPlan) ? value.breakfastPlan : 'unknown', apzConfirmed: value.apzConfirmed === true && value.apzSource === 'manual', alarmState: value.alarmState === 'cancelled' ? 'cancelled' : 'not-programmed' };
     }
-    return { ...empty, defaultLeadMinutes: lead(raw.defaultLeadMinutes) ? raw.defaultLeadMinutes : 90,
+    return { ...empty, timeZonePreference: stayTimeZonePreference(raw.timeZonePreference), defaultLeadMinutes: lead(raw.defaultLeadMinutes) ? raw.defaultLeadMinutes : 90,
       defaultWithoutBreakfastMinutes: lead(raw.defaultWithoutBreakfastMinutes) ? raw.defaultWithoutBreakfastMinutes : 60, stays };
   } catch { return empty; }
 }

@@ -1,4 +1,5 @@
 import { calculateStayWakeup, stayLocalInstant, type StayAlarmChoice, type StayBreakfastPlan } from '@shared/stay-edit-plan.mjs';
+import { presentStayInstant } from '@shared/stay-time-presentation.mjs';
 
 type Props = {
   eventId: string;
@@ -10,10 +11,11 @@ type Props = {
   breakfastPlan: StayBreakfastPlan;
   onBreakfastPlan: (plan: StayBreakfastPlan) => void;
   onChoice: (choice: StayAlarmChoice | undefined) => void;
+  displayTimeZone?: string | null;
 };
 
 /** Calculator only: native scheduling cannot currently replace/cancel by stable identity. */
-export default function StayHotelAlarmPreview({ eventId, hotelApzIso, timeZone, choice, defaultLeadMinutes, defaultWithoutBreakfastMinutes, breakfastPlan, onBreakfastPlan, onChoice }: Props) {
+export default function StayHotelAlarmPreview({ eventId, hotelApzIso, timeZone, choice, defaultLeadMinutes, defaultWithoutBreakfastMinutes, breakfastPlan, onBreakfastPlan, onChoice, displayTimeZone }: Props) {
   const scope = { accountId: 'calculation-only', rosterId: 'current-view', rosterRevision: 'preview' };
   const stay = { ...scope, id: eventId, eventId, timeZone };
   const hotelApz = hotelApzIso ? { ...scope, source: 'manual', stayId: eventId, rosterEventId: eventId,
@@ -21,6 +23,7 @@ export default function StayHotelAlarmPreview({ eventId, hotelApzIso, timeZone, 
   const calculated = calculateStayWakeup({ scope, stay, hotelApz, now: Date.now(), choice, defaultLeadMinutes, defaultWithoutBreakfastMinutes, breakfastPlan });
   const selectedDefault = breakfastPlan === 'with' ? defaultLeadMinutes : breakfastPlan === 'without' ? defaultWithoutBreakfastMinutes : undefined;
   const mode = choice?.mode || 'auto';
+  const displayed = calculated.action === 'calculated' && displayTimeZone ? presentStayInstant(calculated.scheduledAt, displayTimeZone) : calculated.display;
   const difference = calculated.differenceMinutes;
   const differenceLabel = typeof difference === 'number' && difference > 0
     ? `${Math.floor(difference / 60) ? `${Math.floor(difference / 60)} h ` : ''}${difference % 60 ? `${difference % 60} min ` : ''}antes da APZ no hotel`.trim() : null;
@@ -60,7 +63,7 @@ export default function StayHotelAlarmPreview({ eventId, hotelApzIso, timeZone, 
     <p><strong>Modo ativo: {mode === 'auto' ? 'Auto · antecedência padrão' : mode === 'absolute' ? 'horário exato' : 'antecedência individual da APZ no hotel'}</strong></p>
     {mode === 'auto' && <p>Auto usa o hall confirmado menos {defaultLeadMinutes ?? '—'} min com café ou {defaultWithoutBreakfastMinutes ?? '—'} min sem café, conforme sua escolha explícita. Ambos os padrões podem ser editados abaixo; a antecedência individual também pode ser alterada.</p>}
     {calculated.action === 'calculated' ? <>
-      <p role="status"><strong>Despertar calculado: {calculated.display.clock} · {calculated.display.date} · {calculated.display.timeZone}</strong></p>
+      <p role="status"><strong>{displayTimeZone === null ? 'Despertar calculado na fonte' : 'Despertar calculado'}: {displayed.clock} · {displayed.date} · {displayed.timeZone}{displayed.offset ? ` · ${displayed.offset}` : ''}</strong></p>
       {differenceLabel && <p role="status">{differenceLabel}</p>}
       {calculated.warnings.includes('alarm-not-before-hotel-apz') && <p role="alert">O horário escolhido não é anterior à APZ no hotel. Sua escolha foi mantida; revise antes de programar.</p>}
       {calculated.warnings.includes('alarm-past') && <p role="alert">O horário escolhido já passou. Sua escolha foi mantida.</p>}
