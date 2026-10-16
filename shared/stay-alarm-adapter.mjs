@@ -22,7 +22,8 @@ export function createStayAlarmController(adapter = null) {
         const alarm = stayInstant(input.alarmAt), apz = stayInstant(input.hotelReportAt);
         if (!Number.isFinite(input.now) || alarm === null || apz === null || alarm <= input.now || alarm >= apz) return { state: 'not-programmed', reason: 'time-incompatible', key };
         try {
-          const result = await adapter.replace({ key, alarmAt: input.alarmAt, hotelReportAt: input.hotelReportAt });
+          const result = await adapter.replace({ key, alarmAt: input.alarmAt, hotelReportAt: input.hotelReportAt,
+            confirmed: input.confirmed, apzConfirmed: input.apzConfirmed, mode: input.mode === 'absolute' ? 'absolute' : 'relative' });
           return result?.key === key && result?.alarmAt === input.alarmAt && result?.state === 'scheduled'
             ? { ...result, key } : { state: 'unknown', reason: 'unacknowledged-replacement', key };
         } catch { return { state: 'unknown', reason: 'replacement-failed', key }; }

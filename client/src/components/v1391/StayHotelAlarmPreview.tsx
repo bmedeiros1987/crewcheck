@@ -6,11 +6,13 @@ type Props = {
   timeZone: string;
   choice: StayAlarmChoice | undefined;
   defaultLeadMinutes: number | undefined;
+  nativeTestReady?: boolean;
+  onProgram?: (alarmAt: string, hotelReportAt: string) => void;
   onChoice: (choice: StayAlarmChoice | undefined) => void;
 };
 
 /** Calculator only: native scheduling cannot currently replace/cancel by stable identity. */
-export default function StayHotelAlarmPreview({ eventId, hotelApzIso, timeZone, choice, defaultLeadMinutes, onChoice }: Props) {
+export default function StayHotelAlarmPreview({ eventId, hotelApzIso, timeZone, choice, defaultLeadMinutes, onChoice, nativeTestReady, onProgram }: Props) {
   const scope = { accountId: 'calculation-only', rosterId: 'current-view', rosterRevision: 'preview' };
   const stay = { ...scope, id: eventId, eventId, timeZone };
   const hotelApz = hotelApzIso ? { ...scope, source: 'manual', stayId: eventId, rosterEventId: eventId,
@@ -58,7 +60,9 @@ export default function StayHotelAlarmPreview({ eventId, hotelApzIso, timeZone, 
       {calculated.warnings.includes('alarm-past') && <p role="alert">O horário escolhido já passou. Sua escolha foi mantida.</p>}
       {!calculated.hotelReportAt && <p role="alert">APZ no hotel ausente ou não confirmada. Informe-a manualmente antes de programar.</p>}
     </> : <p role="status">{!timeZone ? 'Confirme o fuso do hotel para calcular.' : !hotelApzIso && mode !== 'absolute' ? 'APZ no hotel ausente. Informe-a manualmente.' : 'Informe data, horário e antecedência válidos.'}</p>}
-    <p>Calculado; não programado no dispositivo. A substituição e o cancelamento de alarmes por pernoite ainda não estão disponíveis nesta integração.</p>
+    {nativeTestReady && calculated.action === 'calculated' && calculated.scheduledAt && calculated.hotelReportAt &&
+      <button type="button" onClick={() => onProgram?.(calculated.scheduledAt, calculated.hotelReportAt)}>Confirmar tentativa de notificação neste aparelho</button>}
+    <p>{nativeTestReady ? 'A tentativa de notificação exige confirmação explícita; recibo não confirma entrega ou som.' : 'Calculado; não programado no dispositivo. A substituição e o cancelamento de alarmes por pernoite ainda não estão disponíveis nesta integração.'}</p>
     <p>A edição deste pernoite não altera a antecedência padrão. Salve as alterações para mantê-las nesta conta e neste aparelho. Dados MyCrewCare continuam desligados.</p>
   </section>;
 }

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { loadStayEditor, persistStayEditor, stayEditorAccount } from '@/lib/stayEditorStore';
+import { preparedStayAlarmAdapter } from '../../lib/stayAlarmHost';
 import { createStayAlarmController } from '@shared/stay-alarm-adapter.mjs';
 import { sanitizeStayChoice, migrateLegacyStay } from '@shared/stay-editor-store.mjs';
 import { getToken } from '@/lib/authClient';
@@ -96,7 +97,13 @@ export default function PresentationStayManagerView({ events, initialStayId, emb
   const [apzConfirmed, setApzConfirmed] = useState(false);
   const [apzSource, setApzSource] = useState('absent');
   const [alarmCancelled, setAlarmCancelled] = useState(false);
-  const alarmController = useRef(createStayAlarmController());
+  const nativeHost = useRef(preparedStayAlarmAdapter());
+  const alarmController = useRef(createStayAlarmController(nativeHost.current));
+  const [hostReady, setHostReady] = useState(() => Boolean(nativeHost.current?.ready()));
+  useEffect(() => { const changed = () => setHostReady(Boolean(nativeHost.current?.ready()));
+    window.addEventListener('crewcheck:stay-host-state', changed);
+    return () => window.removeEventListener('crewcheck:stay-host-state', changed); }, []);
+
   const [defaultInput, setDefaultInput] = useState(() => String(loadStayEditor().defaultLeadMinutes));
   const [apzDate, setApzDate] = useState('');
   const dirty = useRef(false);
@@ -204,6 +211,8 @@ export default function PresentationStayManagerView({ events, initialStayId, emb
   }
   function discardEdits() { if (!selected) return; drafts.current.delete(selected.id); dirty.current = false; previousId.current = ''; setStays(items => [...items]); }
   const apzEpoch = selected?.kind === 'stay' && apzConfirmed ? stayLocalInstant(apzDate, draft.presentationTime, hotelTimeZone) : null;
+
+  useEffect(() => { void nativeHost.current?.invalidate(); }, [events, selectedId, apzEpoch, apzConfirmed, hotelTimeZone, alarmChoice, defaultLead, draft.hotelName]);
 
   function chooseHotel(hotel: (typeof CREW_HOTEL_CATALOG)[number]) {
     dirty.current = true;
@@ -330,8 +339,16 @@ export default function PresentationStayManagerView({ events, initialStayId, emb
       </div>
       <div className="cc139-actions"><button className="primary" onClick={saveStay} disabled={busy || !selected}><Save/> Salvar alterações do pernoite</button><details><summary>Mais opções da edição</summary><button type="button" onClick={() => setManual(true)}><Building2/> Hotel de contingência / manual</button><button type="button" onClick={discardEdits} disabled={!selected}>Descartar edição deste pernoite</button>{selected?.kind === 'stay' && <button type="button" onClick={cancelStayAlarm}>Cancelar despertador deste pernoite</button>}</details></div>
     </section>
+    {nativeHost.current && !hostReady && <button type="button" onClick={() => { void nativeHost.current.authenticate(); }}>Validar sessão deste aparelho</button>}
     {selected?.kind === 'stay' && <StayHotelAlarmPreview eventId={selected.id} hotelApzIso={apzEpoch === null ? '' : new Date(apzEpoch).toISOString()}
-      timeZone={hotelTimeZone} choice={alarmChoice} defaultLeadMinutes={defaultLead} onChoice={choice => { dirty.current = true; setAlarmChoice(choice); }}/>}
+      timeZone={hotelTimeZone} choice={alarmChoice} defaultLeadMinutes={defaultLead} onChoice={choice => { dirty.current = true; void nativeHost.current?.invalidate(); setAlarmChoice(choice); }}
+      nativeTestReady={hostReady} onProgram={async (alarmAt: string, hotelReportAt: string) => {
+        const session = editSession.current;
+        const result = await alarmController.current.replace({ accountId: stayEditorAccount(), eventId: selected.id,
+          confirmed: true, apzConfirmed, permission: nativeHost.current?.permission() ? 'granted' : 'denied',
+          alarmAt, hotelReportAt, now: Date.now(), cancelled: alarmCancelled, mode: alarmChoice?.mode });
+        if (session === editSession.current) toast.info(result.state === 'scheduled' ? 'Tentativa de notificação programada; entrega não confirmada.' : 'Programação não confirmada.');
+      }}/>}
     {alarmCancelled && <p role="status">Despertador cancelado nesta preferência. Editar ou importar não o reativa.</p>}
     <section className="cc139-card" aria-label="Antecedência padrão"><details><summary>Alterar antecedência padrão</summary><p>Alterar o padrão é uma ação separada. Antecedências individuais e horários exatos são preservados. O padrão é salvo para sua conta neste aparelho.</p>
       <label>Minutos do padrão<input type="number" min="0" max="720" value={defaultInput} onChange={event => setDefaultInput(event.target.value)}/></label>
