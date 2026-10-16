@@ -7,6 +7,7 @@ import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {createHash,createHmac} from 'node:crypto';
 import {runMysqlScenarios} from './infobip-whatsapp-mysql-scenarios.mjs';
+import {verifyNamespaceIsolation} from './infobip-whatsapp-mysql-scenarios.mjs';
 const HEAD=process.argv[6];assert(/^[a-f0-9]{40}$/.test(HEAD));
 const [mode,checkoutArg,socketArg,rootArg]=process.argv.slice(2);
 assert(['preflight','suite','restart'].includes(mode));
@@ -97,6 +98,7 @@ try{
      const first=times.find(t=>t>=60);assert.equal(first,61);clock=epoch+first*60000;const {receive}=make();assert.equal((await receive(packet())).accepted,1);assert.equal((await read()).status,'expired');assert.equal((await read()).sealed,null);assert.equal((await receive(packet())).duplicates,1);
    });
    await runMysqlScenarios({run,db,reset,make,event,eventKey,stateKey,sender,recipient,email,owner,key,salt,password,epoch,setClock:value=>{clock=value;}});
+   await verifyNamespaceIsolation({run,db,reset,make,event,sender,key,salt,email});
    // Leave exactly one held synthetic claim to verify an actual engine restart.
    await reset();assert.equal((await make().receive(packet())).accepted,1);
    console.log(JSON.stringify({head:HEAD,phase:'suite',engine:server[0].version,passed,externalCalls:0,retryContract:'general only; account inbound not verified'}));

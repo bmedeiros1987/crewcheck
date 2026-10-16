@@ -7,6 +7,7 @@ import {Readable} from 'node:stream';
 import {createInfobipWhatsAppRuntime,INFOBIP_WHATSAPP_CALLBACK_PATH} from '../server/infobip-whatsapp-runtime.mjs';
 import {eraseWhatsAppAccountState} from '../server/whatsapp-lifecycle.mjs';
 import {mysqlAdapter} from '../server/mysql-platform-adapter.mjs';
+import {createInfobipSqlStore} from '../server/infobip-whatsapp-store.mjs';
 
 export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateKey,sender,recipient,email,owner,key,salt,password,epoch,setClock}) {
  const packet=item=>({method:'POST',rawHeaders:['Authorization','Basic '+Buffer.from('synthetic:'+password).toString('base64')],rawBody:Buffer.from(JSON.stringify({results:[item]}))});
@@ -79,5 +80,30 @@ export async function runMysqlScenarios({run,db,reset,make,event,eventKey,stateK
      await client.query('BEGIN');await eraseWhatsAppAccountState(email,{client});await client.query('DELETE FROM crewcheck_platform_profiles WHERE email=$1',[email]);await client.query('COMMIT');
      assert.equal((await raw()).sealed,null);assert.equal((await raw()).ownerHash,null);assert.equal((await make().receive(packet(event))).denied,1);
    }finally{client.release();await runtime.dispose();}
+ });
+}
+
+export async function verifyNamespaceIsolation({run,db,reset,make,event,sender,key,salt,email}) {
+ await run('all three namespace scans use range index and leave foreign rows unlocked',async()=>{
+  for(const operation of ['nextHeld','maintain','eraseAccount']){
+   await reset();await make().receive({method:'POST',rawHeaders:['Authorization','Basic '+Buffer.from('synthetic:synthetic-webhook-password-not-real').toString('base64')],rawBody:Buffer.from(JSON.stringify({results:[event]}))});
+   const values=Array.from({length:256},(_,i)=>['telegram-qa-foreign:'+String(i).padStart(4,'0'),JSON.stringify({n:0}),'2032-01-01 12:00:00.000']);
+   await db.query('INSERT INTO crewcheck_telegram_state(state_key,payload,updated_at) VALUES ?',[values]);
+   let enter,release;const entered=new Promise(r=>enter=r),hold=new Promise(r=>release=r);
+   const wrapped={getConnection:async()=>{const c=await db.getConnection();return {
+    beginTransaction:()=>c.beginTransaction(),commit:()=>c.commit(),rollback:()=>c.rollback(),release:()=>c.release(),destroy:()=>c.destroy(),
+    async query(sql,params){
+     const selected=operation==='nextHeld'?sql.startsWith('SELECT state_key FROM'):operation==='maintain'?sql.startsWith('SELECT state_key,payload'):sql.startsWith('UPDATE crewcheck_telegram_state SET payload=JSON_SET');
+     if(selected){const [plan]=await c.query('EXPLAIN '+sql,params);assert(plan.length);assert(plan.every(row=>row.type==='range'&&row.key==='PRIMARY'),'prove indexed prefix range for '+operation);}
+     const result=await c.query(sql,params);if(selected){enter();await hold;}return result;
+    },
+   };}};
+   const store=createInfobipSqlStore({db:wrapped,sender,encryptionKey:key,linkHashKey:salt,now:()=>Date.parse(event.receivedAt)});
+   const running=operation==='eraseAccount'?store.eraseAccount(email):store[operation]();
+   try{await Promise.race([entered,running.then(()=>assert.fail('scan never reached lock'))]);
+    const [updated]=await db.query({sql:"UPDATE crewcheck_telegram_state SET payload=JSON_SET(payload,'$.n',1) WHERE state_key='telegram-qa-foreign:0128'",timeout:500});
+    assert.equal(updated.affectedRows,1,'foreign namespace update must succeed while Infobip locks held');
+   }finally{release();await running;}
+  }
  });
 }
