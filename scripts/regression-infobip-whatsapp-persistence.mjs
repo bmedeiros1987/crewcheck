@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {Readable} from 'node:stream';
 import {createHash, createHmac} from 'node:crypto';
 import {createInfobipSqlStore} from '../server/infobip-whatsapp-store.mjs';
 import {configureWhatsAppConcierge} from '../server/whatsapp.mjs';
@@ -8,7 +9,8 @@ import {createInfobipSqlBudget} from '../server/infobip-whatsapp-sql-budget.mjs'
 import {createOfflineInfobipDeliveryReceiver} from '../server/infobip-whatsapp-delivery.mjs';
 import {createOfflineInfobipReceiver} from '../server/infobip-whatsapp-candidate.mjs';
 import {buildInfobipTextRequest, createInfobipTextTransport} from '../server/infobip-whatsapp-transport.mjs';
-import {composeInfobipWhatsAppForOfflineTests} from '../server/infobip-whatsapp-runtime.mjs';
+import {composeInfobipWhatsAppForOfflineTests,createInfobipWhatsAppRuntime,INFOBIP_WHATSAPP_CALLBACK_PATH} from '../server/infobip-whatsapp-runtime.mjs';
+import {eraseWhatsAppAccountState} from '../server/whatsapp-lifecycle.mjs';
 
 // Real SQL adapter + real AEAD, exercised against a synthetic mysql2-shaped
 // transaction fixture. No database engine/network/migrations are started.
@@ -37,6 +39,12 @@ function fixture() {
         assert(began,'every query uses a transaction');
         if(sql.startsWith('SELECT email,consent_concierge')){assert(sql.endsWith('FOR UPDATE'));return [[p[0]===phoneHash&&s.link?{...s.link}:null].filter(Boolean)];}
         if(sql.startsWith('SELECT public_id')){assert(sql.endsWith('FOR UPDATE'));return [[s.owner&&s.link?.email===p[0]?{public_id:s.owner}:null].filter(Boolean)];}
+        if(sql.startsWith('SELECT state_key FROM'))return [[...rows].filter(([,r])=>r.status==='held').slice(0,1).map(([state_key])=>({state_key}))];
+        if(sql.startsWith('UPDATE crewcheck_whatsapp_links')){if(s.link?.email===p[0])s.link={...s.link,revoked_at:'now',consent_concierge:0};return [{affectedRows:1}];}
+        if(sql.startsWith('DELETE FROM crewcheck_whatsapp_link_codes'))return [{affectedRows:1}];
+        if(sql.startsWith('UPDATE crewcheck_telegram_state SET payload=JSON_SET')){
+          for(const [k,r] of rows)if(k>p[0]&&k<p[1]&&r.ownerHash===p[2])rows.set(k,{...r,sealed:null,ownerHash:null,report:null,status:['held','dispatching'].includes(r.status)?'cancelled':r.status});return [{affectedRows:1}];
+        }
         if(sql.startsWith('SELECT state_key,payload'))return [[...rows].filter(([k])=>k>p[0]&&k<p[1]).sort(([a],[b])=>a.localeCompare(b)).slice(0,p[2]).map(([state_key,payload])=>({state_key,payload:JSON.stringify(payload)}))];
         if(sql.startsWith('DELETE FROM crewcheck_telegram_state')){rows.delete(p[0]);return [{affectedRows:1}];}
         if(sql.startsWith('SELECT payload')){assert(sql.endsWith('FOR UPDATE'));return [[rows.has(p[0])?{payload:JSON.stringify(rows.get(p[0]))}:null].filter(Boolean)];}
@@ -253,3 +261,48 @@ for(const phase of ['beginTransaction','query','commit','rollback']){
   await assert.rejects(()=>result,/STATE_UNAVAILABLE/);assert(aborted);assert.equal(destroyed,1);releaseWork();await new Promise(r=>setTimeout(r,1));assert.equal(commits,0,'late continuation cannot commit');
 }
 console.log('PASS Infobip OFF: canonical engine, existing authenticated consent, SQL deadlines, retention/account erasure, authenticated correlated DLR, no retry after uncertainty; synthetic dependencies only');
+{
+  const {s,db}=fixture();let callback,cleared=0,sends=0;
+  const runtime=createInfobipWhatsAppRuntime({enabled:true,db,configuration:{...configuration,encryptionKey,linkHashKey,webhookUsername:username,webhookPassword:password},now:()=>s.clock,
+    scheduler:{set:fn=>{callback=fn;return 7;},clear:id=>{assert.equal(id,7);cleared++;}},concierge:async()=> 'SYNTHETIC ENABLED',
+    request:async(_url,{body})=>{sends++;const data=JSON.parse(body);return pending({recipient:data.to,messageId:data.messageId});}});
+  const route=async(item,{tls=true,headers=request().rawHeaders,body,contentType='application/json'}={})=>{
+    const req=Readable.from([body||request(item).rawBody]);Object.assign(req,{method:'POST',rawHeaders:headers,headers:{'content-type':contentType},socket:{encrypted:tls}});
+    const res={writeHead(status){this.status=status;},end(value){this.body=value;this.writableEnded=true;}};
+    await runtime.handleRoute(req,res,new URL(INFOBIP_WHATSAPP_CALLBACK_PATH,'https://example.invalid'));return res;
+  };
+  try{
+    assert.equal((await route(event,{tls:false})).status,503);assert.equal((await route(event,{headers:[]})).status,401);assert.equal(s.queries.length,0);
+    assert.equal((await route(event,{contentType:'text/plain'})).status,415);
+    assert.equal((await route(event,{body:Buffer.alloc(65537)})).status,400);
+    assert.equal((await route(event)).status,200);await runtime.maintain();assert.equal(sends,1);
+    assert.equal(typeof callback,'function');await callback();await runtime.maintain();assert.equal(sends,1);
+    await eraseWhatsAppAccountState(baseLink.email);assert.equal(s.rows.get(stateKey).ownerHash,null);assert.equal(s.link.consent_concierge,0);
+    assert.throws(()=>createInfobipWhatsAppRuntime({enabled:true,db,configuration:{...configuration,encryptionKey,linkHashKey,webhookUsername:username,webhookPassword:password},request:async()=>{}}),/LIFECYCLE_OWNED/);
+  }finally{await runtime.dispose();assert.equal(cleared,1);}
+  assert.equal((await route(event)).status,503);
+  const count=s.queries.length;
+  assert.equal((await runtime.dispatch(eventKey)).status,'closed');assert.equal((await runtime.expire(eventKey)).status,'closed');assert.equal(s.queries.length,count);
+  const platform=fs.readFileSync('server/platform.mjs','utf8'),deletion=platform.slice(platform.indexOf('async function handleAccountDeletion'));
+  assert(deletion.indexOf('await eraseWhatsAppAccountState(context.identity.email, {client})')>deletion.indexOf("await client.query('BEGIN')"));
+  assert(deletion.indexOf('await eraseWhatsAppAccountState(context.identity.email, {client})')<deletion.indexOf('DELETE FROM crewcheck_platform_profiles'));
+}
+{
+  let scheduled=0;
+  const {db}=fixture();
+  for(const bad of [{webhookPassword:'short'},{webhookUsername:'bad:name'},{apiKey:'bad'},{baseUrl:'https://example.invalid'},{sender:'bad'},{encryptionKey:Buffer.alloc(1)}]){
+    assert.throws(()=>createInfobipWhatsAppRuntime({enabled:true,db,configuration:{...configuration,encryptionKey,linkHashKey,webhookUsername:username,webhookPassword:password,...bad},
+      scheduler:{set(){scheduled++;},clear(){}},request:async()=>{}}));
+  }
+  assert.equal(scheduled,0);
+}
+{
+  const {db,receive,s}=fixture();await receive(request());let entered,release,done=false,sends=0;
+  const waiting=new Promise(r=>entered=r),hold=new Promise(r=>release=r);
+  const runtime=createInfobipWhatsAppRuntime({enabled:true,db,configuration:{...configuration,encryptionKey,linkHashKey,webhookUsername:username,webhookPassword:password},now:()=>s.clock,
+    scheduler:{set:()=>1,clear(){}},concierge:async()=>{entered();await hold;return 'SYNTHETIC';},request:async(_url,{body})=>{sends++;const m=JSON.parse(body);return pending({recipient:m.to,messageId:m.messageId});}});
+  const dispatch=runtime.dispatch(eventKey);await waiting;
+  const disposed=runtime.dispose().then(()=>{done=true;});await new Promise(r=>setTimeout(r,1));assert.equal(done,false);
+  release();await dispatch;await disposed;const queries=s.queries.length;
+  assert.equal((await runtime.dispatch(eventKey)).status,'closed');assert.equal((await runtime.expire(eventKey)).status,'closed');assert.equal(s.queries.length,queries);assert.equal(sends,1);
+}

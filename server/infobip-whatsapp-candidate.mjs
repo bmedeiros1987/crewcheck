@@ -92,6 +92,19 @@ export function createOfflineInfobipReceiver({ sender, username, password, store
     try {
       for (const event of events) {
         const result = await store.transaction(async tx => {
+          if (/^\d{6}$/.test(event.text) && typeof tx.completeLink === 'function') {
+            const digest = createHash('sha256').update(JSON.stringify(event)).digest('hex');
+            const claim = await tx.claim(eventKey(event), digest);
+            if (claim === 'duplicate') return 'duplicate';
+            if (claim !== 'new') fail('CLAIM');
+            const linked = now() - event.receivedAt <= INFOBIP_REPLY_MAX_AGE_MS && await tx.completeLink(event);
+            if (!linked) {await tx.finishClaim(eventKey(event)); return 'denied';}
+            const bindingStamp = linkStamp(await tx.lookupLink(event), event);
+            if (!bindingStamp) fail('LINK');
+            await tx.enqueue({...event, text: 'WhatsApp conectado ao CrewCheck com segurança.',
+              kind: 'link_confirmation', bindingStamp, eventKey: eventKey(event)});
+            return 'accepted';
+          }
           const stamp = linkStamp(await tx.lookupLink(event), event);
           if (!stamp) return 'denied';
           const digest = createHash('sha256').update(JSON.stringify(event)).digest('hex');

@@ -1,5 +1,9 @@
 # Preparação Infobip OFF — atualização v4
 
+> Histórico: as lacunas de código desta etapa são fechadas pelo
+> [candidato completo OFF](infobip-whatsapp-complete-off.md). Consulte o relatório
+> externo para o HEAD exato validado em SQL; não confundir preparação com ativação.
+
 Base desta etapa `b198acc9d507ff89b1ad75424ddcab72d3a10fd3`; base original
 `2286c88ffed330246f1c39bed5ad7bb4d64e7851`. Este documento substitui as
 pendências de implementação descritas na nota anterior; não anuncia ativação.

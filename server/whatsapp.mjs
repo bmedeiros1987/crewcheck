@@ -1,4 +1,7 @@
 import crypto from 'node:crypto';
+import {completeCanonicalWhatsAppLink} from './whatsapp-link-proof.mjs';
+import {createInfobipSqlBudget} from './infobip-whatsapp-sql-budget.mjs';
+import {eraseWhatsAppAccountState} from './whatsapp-lifecycle.mjs';
 import { dbPool, requireIdentity, secureCompare } from './v139/common.mjs';
 
 const MAX_WEBHOOK_BYTES = 1_000_000;
@@ -376,36 +379,7 @@ async function tryCompleteLink(from, code) {
   const phoneHash = privateHash(phone);
   const phoneCipher = encryptPhone(phone);
   if (!db || !phone || !codeHash || !phoneHash || !phoneCipher) return { linked: false };
-  const [pendingRows] = await db.query(
-    `SELECT email FROM crewcheck_whatsapp_link_codes
-     WHERE code_hash=? AND expires_at > UTC_TIMESTAMP(3) LIMIT 1`,
-    [codeHash],
-  );
-  const pending = pendingRows[0];
-  if (!pending?.email) return { linked: false };
-
-  const [existingRows] = await db.query(
-    `SELECT email,revoked_at FROM crewcheck_whatsapp_links
-     WHERE phone_hash=? LIMIT 1`,
-    [phoneHash],
-  );
-  const existing = existingRows[0];
-  if (existing?.email && String(existing.email).toLowerCase() !== String(pending.email).toLowerCase()) {
-    if (!existing.revoked_at) return { linked: false, conflict: true };
-    await db.query('DELETE FROM crewcheck_whatsapp_links WHERE phone_hash=? AND revoked_at IS NOT NULL', [phoneHash]);
-  }
-
-  await db.query(
-    `INSERT INTO crewcheck_whatsapp_links
-     (email,phone_hash,phone_cipher,phone_last4,consent_concierge,consent_alerts,linked_at,revoked_at)
-     VALUES(?,?,?,?,1,0,CURRENT_TIMESTAMP(3),NULL)
-     ON DUPLICATE KEY UPDATE
-       phone_hash=VALUES(phone_hash),phone_cipher=VALUES(phone_cipher),phone_last4=VALUES(phone_last4),
-       consent_concierge=1,revoked_at=NULL,linked_at=CURRENT_TIMESTAMP(3),updated_at=CURRENT_TIMESTAMP(3)`,
-    [pending.email, phoneHash, phoneCipher, phone.slice(-4)],
-  );
-  await db.query('DELETE FROM crewcheck_whatsapp_link_codes WHERE email=?', [pending.email]);
-  return { linked: true, email: String(pending.email) };
+  return createInfobipSqlBudget(db)(c => completeCanonicalWhatsAppLink(c, {phone, codeHash, phoneHash, phoneCipher}));
 }
 
 async function handleInboundMessage(message) {
@@ -619,6 +593,7 @@ async function handleUnlink(req, res) {
     [identity.email],
   );
   await db.query('DELETE FROM crewcheck_whatsapp_link_codes WHERE email=?', [identity.email]);
+  await eraseWhatsAppAccountState(identity.email);
   return sendJson(res, 200, { ok: true, linked: false, message: 'WhatsApp desvinculado da sua conta.' });
 }
 

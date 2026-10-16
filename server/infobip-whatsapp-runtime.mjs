@@ -1,8 +1,9 @@
-import { createOfflineInfobipReceiver, INFOBIP_WHATSAPP_RELEASE_ENABLED } from './infobip-whatsapp-candidate.mjs';
+import { createOfflineInfobipReceiver, INFOBIP_WHATSAPP_RELEASE_ENABLED, verifyInfobipBasic } from './infobip-whatsapp-candidate.mjs';
 import { createInfobipSqlStore } from './infobip-whatsapp-store.mjs';
 import { createInfobipTextTransport } from './infobip-whatsapp-transport.mjs';
 import {invokeConfiguredWhatsAppConcierge} from './whatsapp.mjs';
 import {createOfflineInfobipDeliveryReceiver} from './infobip-whatsapp-delivery.mjs';
+import {installWhatsAppLifecycle} from './whatsapp-lifecycle.mjs';
 
 export const INFOBIP_WHATSAPP_CALLBACK_PATH = '/api/infobip/whatsapp/webhook';
 export const INFOBIP_WHATSAPP_DELIVERY_PATH = '/api/infobip/whatsapp/delivery';
@@ -15,6 +16,7 @@ export function createHeldInfobipWhatsAppRuntime() {
     health: () => ({enabled: false, ready: false, code: 'INFOBIP_WHATSAPP_DISABLED'}),
     dispatch: async () => ({status: 'disabled'}),
     expire: async () => ({status: 'disabled'}),
+    dispose: async () => {},
     async handleRoute(_req, res, url) {
       if (![INFOBIP_WHATSAPP_CALLBACK_PATH, INFOBIP_WHATSAPP_DELIVERY_PATH].includes(url.pathname)) return false;
       res.writeHead(503, {'content-type': 'application/json; charset=utf-8',
@@ -39,5 +41,86 @@ export function composeInfobipWhatsAppForOfflineTests({db, configuration, concie
     dispatch: eventKey => store.exerciseDispatch(eventKey, {concierge, send: transport.exercise, clock: now}),
     expire: eventKey => store.expirePayload(eventKey),
     maintain: options => store.maintain(options),
+    nextHeld: () => store.nextHeld(),
+    eraseAccount: (email,context) => store.eraseAccount(email,context),
+  });
+}
+
+function readBoundedBody(req) {
+  return new Promise((resolve,reject) => {
+    const chunks=[];let bytes=0,finished=false;
+    const finish=(error,value)=>{if(finished)return;finished=true;clearTimeout(timer);
+      req.removeListener('data',data);req.removeListener('end',end);req.removeListener('error',failed);req.removeListener('aborted',failed);
+      if(error){req.resume?.();reject(Error('INFOBIP_BODY'));}else resolve(value);};
+    const data=chunk=>{const buffer=Buffer.from(chunk);bytes+=buffer.length;if(bytes>65_536)finish(true);else chunks.push(buffer);};
+    const end=()=>finish(false,Buffer.concat(chunks));const failed=()=>finish(true);
+    const timer=setTimeout(()=>finish(true),5_000);
+    req.on('data',data);req.once('end',end);req.once('error',failed);req.once('aborted',failed);
+  });
+}
+
+// Complete composition, explicitly enabled only by its caller. The production
+// writer calls this with NO arguments: false by default, no env gate or I/O.
+// No credentials/pool/request are discovered implicitly. TLS proxy verification
+// must be explicitly supplied by a deployment boundary; forwarded headers alone
+// never authorize it. Account profile/routing/cost verification remains external.
+export function createInfobipWhatsAppRuntime(options = {}) {
+  if (options.enabled !== true) return createHeldInfobipWhatsAppRuntime();
+  const {scheduler = {set:fn=>setInterval(fn,10_000),clear:id=>clearInterval(id)},
+    verifyTls = req=>req.socket?.encrypted === true} = options;
+  const configuration=Object.freeze({...options.configuration});
+  if (!verifyInfobipBasic(['Authorization',`Basic ${Buffer.from(`${configuration.webhookUsername}:${configuration.webhookPassword}`).toString('base64')}`],
+    configuration.webhookUsername,configuration.webhookPassword)) throw Error('INFOBIP_CONFIGURATION');
+  if (typeof verifyTls !== 'function' || typeof scheduler?.set !== 'function' || typeof scheduler?.clear !== 'function') throw Error('INFOBIP_CONFIGURATION');
+  const pipeline = composeInfobipWhatsAppForOfflineTests({...options,configuration});
+  let closed=false,running=null,cursor='',timer;
+  const active=new Set();
+  const tracked=run=>{
+    if(closed)return Promise.resolve({status:'closed'});
+    const task=Promise.resolve().then(run);active.add(task);
+    return task.finally(()=>active.delete(task));
+  };
+  const tick=()=>{
+    if(closed)return Promise.resolve({status:'closed'});
+    if(running)return running;
+    running=(async()=>{
+      const result=await pipeline.maintain({cursor});cursor=result.cursor||'';
+      const eventKey=await pipeline.nextHeld();if(eventKey)await pipeline.dispatch(eventKey);
+      return {status:'processed'};
+    })().catch(()=>({status:'unavailable'})).finally(()=>{running=null;});
+    return running;
+  };
+  const uninstall=installWhatsAppLifecycle((email,context)=>{
+    if(closed)throw Error('INFOBIP_CLOSED');
+    return tracked(()=>pipeline.eraseAccount(email,context));
+  });
+  try {timer=scheduler.set(()=>{void tick();});timer?.unref?.();}
+  catch {uninstall();throw Error('INFOBIP_SCHEDULER');}
+  const respond=(res,status,code)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify({ok:status===200,code}));};
+  return Object.freeze({
+    health:()=>({enabled:true,ready:!closed,code:closed?'INFOBIP_CLOSED':'INFOBIP_COMPOSED'}),
+    dispatch:eventKey=>tracked(()=>pipeline.dispatch(eventKey)),
+    expire:eventKey=>tracked(()=>pipeline.expire(eventKey)),maintain:tick,
+    async handleRoute(req,res,url){
+      if(![INFOBIP_WHATSAPP_CALLBACK_PATH,INFOBIP_WHATSAPP_DELIVERY_PATH].includes(url.pathname))return false;
+      const task=(async()=>{
+        if(closed)return respond(res,503,'INFOBIP_CLOSED');
+        if(req.method!=='POST')return respond(res,405,'METHOD');
+        if(verifyTls(req)!==true)return respond(res,503,'TLS_REQUIRED');
+        if(!verifyInfobipBasic(req.rawHeaders,configuration.webhookUsername,configuration.webhookPassword))return respond(res,401,'AUTH');
+        if(!/^application\/json(?:\s*;|$)/i.test(req.headers?.['content-type']||''))return respond(res,415,'CONTENT_TYPE');
+        let rawBody,isDelivery=false;
+        try {rawBody=await readBoundedBody(req);const body=JSON.parse(rawBody);if(body?.results?.length!==1)throw Error();
+          isDelivery=Object.hasOwn(body.results[0]||{},'status');}
+        catch{return respond(res,400,'INVALID_BODY');}
+        if(closed)return respond(res,503,'INFOBIP_CLOSED');
+        const receive=url.pathname===INFOBIP_WHATSAPP_DELIVERY_PATH||isDelivery?pipeline.receiveDelivery:pipeline.receive;
+        const result=await receive({method:req.method,rawHeaders:req.rawHeaders,rawBody});
+        respond(res,result.status,result.code);
+        if(result.status===200)void tick();
+      })();
+      active.add(task);try{await task;}catch{if(!res.writableEnded)respond(res,503,'UNAVAILABLE');}finally{active.delete(task);}return true;
+    },
+    async dispose(){closed=true;scheduler.clear(timer);await Promise.allSettled([...active,...(running?[running]:[])]);uninstall();},
   });
 }

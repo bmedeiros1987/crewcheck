@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {createHeldInfobipWhatsAppRuntime, INFOBIP_WHATSAPP_CALLBACK_PATH, INFOBIP_WHATSAPP_DELIVERY_PATH} from '../server/infobip-whatsapp-runtime.mjs';
+import {createHeldInfobipWhatsAppRuntime, createInfobipWhatsAppRuntime, INFOBIP_WHATSAPP_CALLBACK_PATH, INFOBIP_WHATSAPP_DELIVERY_PATH} from '../server/infobip-whatsapp-runtime.mjs';
 import {INFOBIP_WHATSAPP_RELEASE_ENABLED} from '../server/infobip-whatsapp-candidate.mjs';
 
 globalThis.fetch = () => assert.fail('OFF runtime cannot call real transport');
@@ -23,8 +23,10 @@ for (const path of ['/api/whatsapp/webhook','/api/whatsapp/link/start','/api/tel
 
 // Canonical preparation is performed by the broad suite before this check.
 const server=fs.readFileSync('server.mjs','utf8');
-const imported="import { createHeldInfobipWhatsAppRuntime } from './server/infobip-whatsapp-runtime.mjs';";
-const instance='const infobipWhatsAppRuntime = createHeldInfobipWhatsAppRuntime();';
+assert.equal(createInfobipWhatsAppRuntime().health().enabled,false);
+assert.equal(createInfobipWhatsAppRuntime({enabled:false,get configuration(){assert.fail();}}).health().enabled,false);
+const imported="import { createInfobipWhatsAppRuntime } from './server/infobip-whatsapp-runtime.mjs';";
+const instance='const infobipWhatsAppRuntime = createInfobipWhatsAppRuntime();';
 const route='  if (await infobipWhatsAppRuntime.handleRoute(req, res, url)) return;';
 const meta='  if (await handleWhatsAppRoute(req, res, url)) return;';
 for(const exact of [imported,instance,route])assert.equal(server.split(exact).length,2,'single canonical OFF composition');
@@ -34,6 +36,6 @@ assert.equal(composeHeldInfobipRoute(server),server,'composition idempotent');
 assert.throws(()=>composeHeldInfobipRoute(server.replace(meta,'')),/ANCHOR_MISSING/);
 assert.throws(()=>composeHeldInfobipRoute(server+'\n'+route),/DUPLICATE/);
 const source=fs.readFileSync('server/infobip-whatsapp-runtime.mjs','utf8');
-assert(!/process\.env|dbPool\(|setInterval\(|fetch\(/.test(source));
+assert(!/process\.env|dbPool\(|fetch\(/.test(source));
 assert(!server.includes('composeInfobipWhatsAppForOfflineTests'),'test composition never registered as server API');
 console.log('PASS Infobip runtime OFF: no dependency/request-body access, no I/O, unchanged upstream routes, canonical idempotent wiring, duplicate/missing-anchor counterproofs');

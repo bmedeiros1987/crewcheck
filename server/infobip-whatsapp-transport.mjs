@@ -45,6 +45,8 @@ async function responseJson(response) {
 // stays hard OFF; exercise() is explicit dependency-injected test plumbing.
 export function createInfobipTextTransport({ baseUrl, sender, apiKey, request, timeoutMs = 5_000 }) {
   if (typeof request !== 'function' || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 5_000) throw Error('INFOBIP_CONFIGURATION');
+  origin(baseUrl);
+  if (!phone(sender) || typeof apiKey !== 'string' || !/^[A-Za-z0-9_-]{16,256}$/.test(apiKey)) throw Error('INFOBIP_CONFIGURATION');
   const configuration = Object.freeze({baseUrl, sender, apiKey});
   return {
     send: async () => ({status: INFOBIP_WHATSAPP_RELEASE_ENABLED ? 'blocked' : 'disabled'}),

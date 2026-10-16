@@ -3,6 +3,8 @@ import { parseJsonColumn } from './v139/common.mjs';
 import { sealSubscription as seal, openSubscription as open } from './web-push/installationRegistry.mjs';
 import { prepareOfflineInfobipReply, INFOBIP_REPLY_MAX_AGE_MS, INFOBIP_WHATSAPP_RELEASE_ENABLED } from './infobip-whatsapp-candidate.mjs';
 import {createInfobipSqlBudget} from './infobip-whatsapp-sql-budget.mjs';
+import {completeCanonicalWhatsAppLink} from './whatsapp-link-proof.mjs';
+import {createCipheriv, randomBytes} from 'node:crypto';
 
 // Reuse the existing pool interface and state table. No pool creation, DDL,
 // auto-migration, polling worker or runtime registration occurs in this module.
@@ -54,11 +56,42 @@ export function createInfobipSqlStore({ db, sender, encryptionKey, linkHashKey, 
       revision: revision(link), consentConcierge: true, revoked: false };
   }
   const transaction = createInfobipSqlBudget(db, sqlBudget);
+  const erase = async (c,email) => {
+    if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) error();
+    await c.query('UPDATE crewcheck_whatsapp_links SET revoked_at=UTC_TIMESTAMP(3),consent_concierge=0,consent_alerts=0,updated_at=UTC_TIMESTAMP(3) WHERE email=?',[email]);
+    const [owners] = await c.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE',[email]);
+    await c.query('DELETE FROM crewcheck_whatsapp_link_codes WHERE email=?',[email]);
+    if (owners[0]?.public_id) await c.query(`UPDATE crewcheck_telegram_state SET payload=JSON_SET(payload,'$.sealed',NULL,'$.ownerHash',NULL,'$.report',NULL,
+      '$.status',CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(payload,'$.status')) IN ('held','dispatching') THEN 'cancelled' ELSE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.status')) END),updated_at=NOW(3)
+      WHERE state_key>? AND state_key<? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.ownerHash'))=?`,[PREFIX,PREFIX+'~',privateIndex(owners[0].public_id)]);
+    return {status:'erased'};
+  };
   const store = {
     transaction: run => transaction(async c => {
       const claimed = new Set();
       return run({
         lookupLink: event => lookupLink(c, event),
+        completeLink: async event => {
+          if (event.sender !== sender || !phone(event.recipient) || !/^\d{6}$/.test(event.text)) return false;
+          const stateKey = jobKey(hash(['infobip-link-attempts-v1', sender, privateIndex(event.recipient), Math.floor(now()/600_000)]));
+          await c.query('INSERT INTO crewcheck_telegram_state (state_key,payload,updated_at) VALUES(?,?,NOW(3)) ON DUPLICATE KEY UPDATE state_key=state_key',
+            [stateKey, JSON.stringify({v:1,status:'link_rate',attempts:0,sealed:null,retainUntil:now()+72*60*60_000})]);
+          const rate = await lockState(c,stateKey);
+          if (rate?.status !== 'link_rate' || !Number.isInteger(rate.attempts) || rate.attempts >= 5) return false;
+          await save(c,stateKey,{...rate,attempts:rate.attempts+1});
+          const phoneHash = privateIndex(event.recipient);
+          const codeHash = privateIndex(`crewcheck-whatsapp-link|${event.text}`);
+          const phoneKey = createHash('sha256').update(`crewcheck-whatsapp-phone|${linkHashKey}`).digest();
+          const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm',phoneKey,iv);
+          const ciphertext = Buffer.concat([cipher.update(event.recipient,'utf8'),cipher.final()]);
+          const phoneCipher = `${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${ciphertext.toString('base64url')}`;
+          return (await completeCanonicalWhatsAppLink(c,{phone:event.recipient,codeHash,phoneHash,phoneCipher})).linked;
+        },
+        finishClaim: async eventKey => {
+          if (!claimed.has(eventKey)) error();
+          const stateKey = jobKey(eventKey), state = await lockState(c,stateKey);
+          await save(c,stateKey,{...state,marker:null,status:'denied',sealed:null});
+        },
         claim: async (eventKey, digest) => {
           if (!hex(digest)) error();
           const stateKey = jobKey(eventKey), marker = randomUUID();
@@ -82,6 +115,22 @@ export function createInfobipSqlStore({ db, sender, encryptionKey, linkHashKey, 
     }),
     // Production dispatch cannot be enabled by configuration or environment.
     dispatch: async () => ({status: INFOBIP_WHATSAPP_RELEASE_ENABLED ? 'blocked' : 'disabled'}),
+    nextHeld: () => transaction(async c => {
+      const [rows] = await c.query("SELECT state_key FROM crewcheck_telegram_state WHERE state_key>? AND state_key<? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.status'))='held' ORDER BY state_key LIMIT 1 FOR UPDATE",[PREFIX,PREFIX+'~']);
+      return rows[0]?.state_key.slice(PREFIX.length) || null;
+    }),
+    eraseAccount: (email,{client} = {}) => {
+      if (!client) return transaction(c=>erase(c,email));
+      // Join the caller's account-deletion transaction; never commit/release it.
+      // Timeout discards that connection so late work cannot race deletion.
+      if(client.dialect !== 'mysql' || typeof client.discard !== 'function') error();
+      const joined = createInfobipSqlBudget({getConnection:async()=>({
+        async beginTransaction(){},async commit(){},async rollback(){},release(){},destroy:()=>client.discard(),
+        async query(sql,params){let index=0;const result=await client.query(sql.replace(/\?/g,()=>`$${++index}`),params);
+          return [/^\s*SELECT/i.test(sql)?result.rows:{affectedRows:result.rowCount}];},
+      })},sqlBudget);
+      return joined(c=>erase(c,email));
+    },
     // No raw recipient or content is retained for DLR correlation. A callback
     // cannot create a job or schedule a send, nor downgrade a delivered state.
     recordDelivery: report => transaction(async c => {
@@ -139,7 +188,8 @@ export function createInfobipSqlStore({ db, sender, encryptionKey, linkHashKey, 
         if (initial?.status !== 'held') return {status: initial?.status || 'missing'};
         const job = loadJob(initial, stateKey);
         const proposal = await prepareOfflineInfobipReply(job, {
-          lookupLink: event => transaction(c => lookupLink(c, event)), concierge, now: clock,
+          lookupLink: event => transaction(c => lookupLink(c, event)),
+          concierge: job.kind === 'link_confirmation' ? async () => job.text : concierge, now: clock,
         });
         // Phase one commits a durable no-retry marker BEFORE provider I/O.
         const attemptId = await transaction(async c => {

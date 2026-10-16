@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 
 export function composeHeldInfobipRoute(source) {
-  const imported = "import { createHeldInfobipWhatsAppRuntime } from './server/infobip-whatsapp-runtime.mjs';";
-  const instance = 'const infobipWhatsAppRuntime = createHeldInfobipWhatsAppRuntime();';
+  const imported = "import { createInfobipWhatsAppRuntime } from './server/infobip-whatsapp-runtime.mjs';";
+  const instance = 'const infobipWhatsAppRuntime = createInfobipWhatsAppRuntime();';
   const metaImport = "import { configureWhatsAppConcierge, handleWhatsAppRoute } from './server/whatsapp.mjs';";
   const metaRoute = '  if (await handleWhatsAppRoute(req, res, url)) return;';
   const route = '  if (await infobipWhatsAppRuntime.handleRoute(req, res, url)) return;';
