@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
 import {createHash, createHmac} from 'node:crypto';
-import {sealSubscription as seal} from '../server/web-push/installationRegistry.mjs';
-import {createInfobipSqlStore, infobipGrantKey} from '../server/infobip-whatsapp-store.mjs';
+import {createInfobipSqlStore} from '../server/infobip-whatsapp-store.mjs';
+import {configureWhatsAppConcierge} from '../server/whatsapp.mjs';
+import {createInfobipSqlBudget} from '../server/infobip-whatsapp-sql-budget.mjs';
+import {createOfflineInfobipDeliveryReceiver} from '../server/infobip-whatsapp-delivery.mjs';
 import {createOfflineInfobipReceiver} from '../server/infobip-whatsapp-candidate.mjs';
 import {buildInfobipTextRequest, createInfobipTextTransport} from '../server/infobip-whatsapp-transport.mjs';
 import {composeInfobipWhatsAppForOfflineTests} from '../server/infobip-whatsapp-runtime.mjs';
@@ -15,7 +19,6 @@ const linkHashKey='synthetic-existing-link-hash-secret-only';
 const username='synthetic', password='synthetic-not-a-real-webhook-password';
 const phoneHash=createHmac('sha256',linkHashKey).update(recipient).digest('hex');
 const baseLink={email:'synthetic@example.invalid',consent_concierge:1,revoked_at:null,linked_at:'2031-12-31 12:00:00.000',updated_at:'2031-12-31 12:00:00.000'};
-const grantKey=infobipGrantKey(sender,phoneHash);
 const event={from:recipient,to:sender,integrationType:'WHATSAPP',receivedAt:'2032-01-01T12:00:00.000Z',messageId:'synthetic-in-1',message:{type:'TEXT',text:'SYNTHETIC PRIVATE QUESTION'}};
 const eventKey=createHash('sha256').update(JSON.stringify(['infobip-inbound-v1',sender,event.messageId])).digest('hex');
 const stateKey='crewcheck-infobip-inbound-v1:'+eventKey;
@@ -23,22 +26,19 @@ const request=(item=event)=>({method:'POST',rawHeaders:['authorization','Basic '
 function fixture() {
   const s={rows:new Map(),link:{...baseLink},owner:'synthetic-account-A',active:0,queries:[],commits:0,rollbacks:0,releases:0,
     failEnqueue:false,commitUncertain:false,failAfterSend:false,clock:epoch,changeClaim:false};
-  const seedGrant=(changes={})=>{
-    const grant={provider:'infobip',sender,phoneHash,email:baseLink.email,accountId:s.owner,
-      linkRevision:JSON.stringify([baseLink.linked_at,baseLink.updated_at]),consentConcierge:true,active:true,revision:'grant-1',...changes};
-    s.rows.set(grantKey,{sealed:seal(grant,encryptionKey,['crewcheck-infobip-state-v1',grantKey])});
-  };
-  seedGrant(); let tail=Promise.resolve();
+  let tail=Promise.resolve();
   const db={async getConnection(){
-    let rows,unlock,began=false;
+    let rows,unlock,began=false,released=false;
     return {
       async beginTransaction(){const previous=tail;tail=new Promise(resolve=>{unlock=resolve;});await previous;
         rows=structuredClone(s.rows);began=true;s.active++;},
       async query(sql,p){
-        s.queries.push(sql);assert(!/CREATE|ALTER|DROP|DELETE|TRUNCATE/i.test(sql),'no DDL, migrations or claim cleanup');
+        s.queries.push(sql);assert(!/CREATE|ALTER|DROP|TRUNCATE/i.test(sql),'no DDL or migrations');
         assert(began,'every query uses a transaction');
         if(sql.startsWith('SELECT email,consent_concierge')){assert(sql.endsWith('FOR UPDATE'));return [[p[0]===phoneHash&&s.link?{...s.link}:null].filter(Boolean)];}
         if(sql.startsWith('SELECT public_id')){assert(sql.endsWith('FOR UPDATE'));return [[s.owner&&s.link?.email===p[0]?{public_id:s.owner}:null].filter(Boolean)];}
+        if(sql.startsWith('SELECT state_key,payload'))return [[...rows].filter(([k])=>k>p[0]&&k<p[1]).sort(([a],[b])=>a.localeCompare(b)).slice(0,p[2]).map(([state_key,payload])=>({state_key,payload:JSON.stringify(payload)}))];
+        if(sql.startsWith('DELETE FROM crewcheck_telegram_state')){rows.delete(p[0]);return [{affectedRows:1}];}
         if(sql.startsWith('SELECT payload')){assert(sql.endsWith('FOR UPDATE'));return [[rows.has(p[0])?{payload:JSON.stringify(rows.get(p[0]))}:null].filter(Boolean)];}
         if(sql.startsWith('INSERT INTO crewcheck_telegram_state')){if(!rows.has(p[0]))rows.set(p[0],JSON.parse(p[1]));if(s.changeClaim)s.link={...s.link,updated_at:'2032-01-01 12:00:00.001'};return [{affectedRows:1}];}
         if(sql.startsWith('UPDATE crewcheck_telegram_state')){
@@ -50,12 +50,13 @@ function fixture() {
       },
       async commit(){s.rows=rows;s.commits++;if(s.commitUncertain||(s.failCommitStatus&&s.failCommitStatus===rows.get(stateKey)?.status)){s.commitUncertain=false;s.failCommitStatus=null;throw Error('raw uncertain synthetic commit');}},
       async rollback(){s.rollbacks++;},
-      release(){s.releases++;if(began){s.active--;unlock();}},
+      release(){if(released)return;released=true;s.releases++;if(began){s.active--;unlock();}},
+      destroy(){this.release();},
     };
   }};
-  const makeStore=()=>createInfobipSqlStore({db,sender,encryptionKey,linkHashKey,now:()=>s.clock});
+  const makeStore=sqlBudget=>createInfobipSqlStore({db,sender,encryptionKey,linkHashKey,now:()=>s.clock,sqlBudget});
   const store=makeStore(),receive=createOfflineInfobipReceiver({sender,username,password,store,now:()=>s.clock});
-  return {s,store,receive,makeStore,seedGrant,db};
+  return {s,store,receive,makeStore,db};
 }
 {
   const {s,receive,makeStore}=fixture();
@@ -69,13 +70,10 @@ function fixture() {
   assert.equal((await restarted(request())).duplicates,1,'new adapter sees durable claim');
   assert.equal((await receive(request({...event,message:{type:'TEXT',text:'changed'}}))).status,503);
 }
-for(const change of [null,{...baseLink,consent_concierge:0},{...baseLink,revoked_at:'2032-01-01'}, {...baseLink,updated_at:'new'}]){
+for(const change of [null,{...baseLink,consent_concierge:0},{...baseLink,revoked_at:'2032-01-01'}, {...baseLink,linked_at:null}]){
   const {s,receive}=fixture();s.link=change;assert.equal((await receive(request())).denied,1);assert(!s.rows.has(stateKey));
 }
-for(const grant of [null,{provider:'meta'},{sender:other},{phoneHash:'wrong'},{accountId:'synthetic-B'},{consentConcierge:false},{active:false}]){
-  const {s,receive,seedGrant}=fixture();if(grant===null)s.rows.delete(grantKey);else seedGrant(grant);
-  assert.equal((await receive(request())).denied,1);assert(!s.rows.has(stateKey));
-}
+{const {receive}=fixture();assert.equal((await receive(request())).accepted,1,'existing authenticated WhatsApp consent sufficient without provider grant');}
 {
   const {s,receive}=fixture();s.failEnqueue=true;assert.equal((await receive(request())).status,503);
   assert(!s.rows.has(stateKey));assert.equal(s.rollbacks,1);s.failEnqueue=false;assert.equal((await receive(request())).accepted,1);
@@ -148,13 +146,13 @@ for(const requestImpl of [async()=>new Response('private raw error',{status:500}
   assert(results.some(x=>x.status==='accepted_unconfirmed'));assert.equal(calls,1);assert.equal(s.rows.get(stateKey).status,'accepted_unconfirmed');assert.equal(s.rows.get(stateKey).sealed,null);
   await store.exerciseDispatch(eventKey,deps);assert.equal(calls,1);
 }
-for(const mode of ['revoke','relink','account','grant','expire','failure','uncertain-commit','timeout']){
-  const {s,receive,store,seedGrant}=fixture();await receive(request());let calls=0;
+for(const mode of ['revoke','relink','account','consent','expire','failure','uncertain-commit','timeout']){
+  const {s,receive,store}=fixture();await receive(request());let calls=0;
   const deps={timeoutMs:2,concierge:async()=>{
     if(mode==='revoke')s.link={...s.link,revoked_at:'now'};
     if(mode==='relink')s.link={...s.link,updated_at:'new'};
     if(mode==='account')s.owner='synthetic-account-B';
-    if(mode==='grant')seedGrant({active:false});
+    if(mode==='consent')s.link={...s.link,consent_concierge:0};
     if(mode==='expire')s.clock=epoch+900001;
     return 'SYNTHETIC REPLY';
   },send:async()=>{calls++;if(mode==='failure')s.failAfterSend=true;if(mode==='uncertain-commit')s.commitUncertain=true;
@@ -178,4 +176,80 @@ for(const mode of ['revoke','relink','account','grant','expire','failure','uncer
   const state=s.rows.get(stateKey);state.sealed.tag=Buffer.alloc(16,1).toString('base64url');
   assert.equal((await store.exerciseDispatch(eventKey,{concierge:async()=>assert.fail('cipher tamper'),send:async()=>assert.fail('cipher tamper')})).status,'uncertain');
 }
-console.log('PASS Infobip SQL adapter/AEAD + mock transport: no DDL/network, locked binding/grant, atomic enqueue, retry horizon, concurrency, redaction, bounded single attempt, no retry after uncertainty; runtime OFF');
+{
+  // Execute the CURRENT canonical configure callback with synthetic snapshot and
+  // reply-builder dependencies; then reach it through the real shared invoker.
+  const source=fs.readFileSync('server.mjs','utf8');
+  const binding=source.match(/configureWhatsAppConcierge\(async \(\{ email, text, location \}\) => \{[\s\S]*?\n\}\);(?=\n\nhttp\.createServer)/)?.[0];
+  assert(binding,'prepare canonical server before this regression');
+  const {s,db}=fixture();let engineCalls=0,requests=0;
+  vm.runInNewContext(binding,{configureWhatsAppConcierge,conciergeLoadSnapshot:async profile=>{assert.equal(profile.email,baseLink.email);return {name:'Synthetic'};},
+    buildTelegramConciergeReply:async(text,profile,snapshot)=>{engineCalls++;assert.equal(text,event.message.text);assert.equal(profile.channel,'whatsapp');assert.equal(snapshot.name,'Synthetic');return 'SYNTHETIC CANONICAL REPLY';}});
+  const runtime=composeInfobipWhatsAppForOfflineTests({db,configuration:{...configuration,encryptionKey,linkHashKey,webhookUsername:username,webhookPassword:password},now:()=>s.clock,
+    request:async(_url,{body})=>{requests++;const data=JSON.parse(body);assert.equal(data.content.text,'SYNTHETIC CANONICAL REPLY');return pending({recipient:data.to,messageId:data.messageId});}});
+  await runtime.receive(request());assert.equal((await runtime.dispatch(eventKey)).status,'accepted_unconfirmed');assert.equal(engineCalls,1);assert.equal(requests,1);
+  configureWhatsAppConcierge(null);
+}
+{
+  const {s,receive,store}=fixture();await receive(request());
+  const delivery=createOfflineInfobipDeliveryReceiver({username,password,store,now:()=>s.clock});
+  const item={messageId:'cc-'+eventKey,to:recipient,sentAt:'2032-01-01T12:00:00.000Z',doneAt:'2032-01-01T12:00:01.000Z',status:{id:5,name:'DELIVERED_TO_HANDSET',groupId:3,groupName:'DELIVERED'}};
+  const report=(changes={},headers=request().rawHeaders)=>({method:'POST',rawHeaders:headers,rawBody:Buffer.from(JSON.stringify({results:[{...item,...changes}]}))});
+  assert.equal((await delivery(report())).ignored,1,'unsent held job cannot be delivered');
+  await store.exerciseDispatch(eventKey,{concierge:async()=> 'SYNTHETIC',send:async()=>({status:'accepted_unconfirmed'})});s.clock+=1000;
+  assert.equal((await delivery(report({},[]))).status,401);
+  assert.equal((await delivery(report({to:other}))).ignored,1);
+  assert.equal((await delivery(report({messageId:'cc-'+ 'a'.repeat(64)}))).ignored,1);
+  assert.equal((await delivery(report({status:{id:26,groupId:1,name:'PENDING_ACCEPTED',groupName:'PENDING'}}))).status,400,'accepted never delivered');
+  assert.equal((await delivery(report({seenAt:item.doneAt}))).status,400);
+  assert.equal((await delivery(report({error:{id:1}}))).status,400);
+  assert.equal((await delivery(report({contact:{phoneNumber:other}}))).status,400);
+  assert.equal((await delivery(report({sentAt:'2031-12-31T12:00:00.000Z'}))).ignored,1,'correlate attempt time');
+  assert.equal((await delivery(report())).recorded,1);assert.equal(s.rows.get(stateKey).status,'delivered');
+  assert.equal((await delivery(report())).ignored,1,'repeated DLR idempotent');
+  assert.equal((await delivery(report({status:{id:26,groupId:1,name:'PENDING_ACCEPTED',groupName:'PENDING'}}))).status,400);
+  assert.equal(s.rows.get(stateKey).status,'delivered','late pending cannot downgrade delivery');
+  let calls=0;await store.exerciseDispatch(eventKey,{concierge:async()=>assert.fail(),send:async()=>{calls++;}});assert.equal(calls,0);
+  assert(!JSON.stringify(s.rows.get(stateKey)).includes(recipient),'correlation keeps no raw phone');
+}
+{
+  const {s,receive,store}=fixture();await receive(request());s.clock=epoch+900001;
+  assert.equal((await store.maintain()).scanned,1);assert.equal(s.rows.get(stateKey).sealed,null);
+  assert.equal((await receive(request())).duplicates,1,'retention keeps replay tombstone');
+  s.clock=epoch+73*3600_000;await store.maintain();assert(!s.rows.has(stateKey));
+  assert.equal((await receive(request())).status,400,'old inbound rejected after tombstone deletion');
+  await assert.rejects(()=>store.maintain({limit:21}),/STATE_UNAVAILABLE/);
+}
+{
+  const {s,receive,store}=fixture();await receive(request());
+  await store.maintain({forgetAccountId:s.owner});assert.equal(s.rows.get(stateKey).sealed,null);assert.equal(s.rows.get(stateKey).ownerHash,null);
+  assert.equal((await receive(request())).duplicates,1);
+}
+{
+  let resolve,release=0;
+  const budget=createInfobipSqlBudget({getConnection:()=>new Promise(r=>resolve=r)},{transactionMs:5,queryMs:5});
+  await assert.rejects(()=>budget(()=>assert.fail('late acquisition')),/STATE_UNAVAILABLE/);
+  resolve({release(){release++;}});await new Promise(r=>setTimeout(r,1));assert.equal(release,1);
+}
+for(const phase of ['beginTransaction','query','commit','rollback']){
+  let destroyed=0,commits=0;
+  const raw={destroy(){destroyed++;},release(){},async beginTransaction(){},async query(){},async commit(){commits++;},async rollback(){}};
+  raw[phase]=()=>new Promise(()=>{});
+  const budget=createInfobipSqlBudget({getConnection:async()=>raw},{transactionMs:15,queryMs:3});
+  await assert.rejects(()=>budget(async c=>{if(phase==='rollback')throw Error('PRIVATE');await c.query('synthetic');}),{message:'INFOBIP_STATE_UNAVAILABLE'});
+  assert.equal(destroyed,1);if(phase!=='commit')assert.equal(commits,0);
+}
+{
+  const {receive,makeStore}=fixture();await receive(request());let sends=0;
+  const result=await makeStore({transactionMs:100,queryMs:100}).exerciseDispatch(eventKey,{timeoutMs:1,
+    concierge:async()=> 'SYNTHETIC',send:async()=>{sends++;return {status:'accepted_unconfirmed'};}});
+  assert.equal(result.status,'uncertain');assert.equal(sends,0,'no I/O without reserved SQL+send budget');
+}
+{
+  let aborted=false,destroyed=0,releaseWork,commits=0;
+  const budget=createInfobipSqlBudget({getConnection:async()=>({destroy(){destroyed++;},release(){},async beginTransaction(){},async commit(){commits++;},async rollback(){},async query(){}})},
+    {transactionMs:10,queryMs:10});
+  const result=budget(async c=>{c.signal.addEventListener('abort',()=>{aborted=true;});assert(c.remainingMs()>0);await new Promise(r=>releaseWork=r);await c.query('late');});
+  await assert.rejects(()=>result,/STATE_UNAVAILABLE/);assert(aborted);assert.equal(destroyed,1);releaseWork();await new Promise(r=>setTimeout(r,1));assert.equal(commits,0,'late continuation cannot commit');
+}
+console.log('PASS Infobip OFF: canonical engine, existing authenticated consent, SQL deadlines, retention/account erasure, authenticated correlated DLR, no retry after uncertainty; synthetic dependencies only');

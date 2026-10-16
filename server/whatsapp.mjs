@@ -304,6 +304,16 @@ export function configureWhatsAppConcierge(handler) {
   whatsappConciergeHandler = typeof handler === 'function' ? handler : null;
 }
 
+// Shared canonical engine only; no linking, provider fallback or transport.
+// Caller must supply an authenticated, currently revalidated owner binding.
+export async function invokeConfiguredWhatsAppConcierge({email, text, messageId, signal}) {
+  if (signal?.aborted || typeof whatsappConciergeHandler !== 'function' ||
+      typeof email !== 'string' || !email || typeof text !== 'string' || !text.trim()) throw Error('WHATSAPP_ENGINE_UNAVAILABLE');
+  const result = await whatsappConciergeHandler({email, text, location: null, messageType: 'text', messageId});
+  if (signal?.aborted) throw Error('WHATSAPP_ENGINE_UNAVAILABLE');
+  return typeof result === 'string' ? result : String(result?.text || result?.reply || '');
+}
+
 export async function sendWhatsAppText(to, text, options = {}) {
   const token = accessToken();
   const senderId = phoneNumberId();

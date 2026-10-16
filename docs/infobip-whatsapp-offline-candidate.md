@@ -1,5 +1,10 @@
 # Infobip WhatsApp: integração offline, release bloqueada
 
+> Registro histórico até b198. A etapa seguinte substitui os pontos sobre grant
+> adicional, motor, DLR, limites SQL e retenção: consulte
+> [preparação v4](infobip-whatsapp-preparation-v4.md). O PASS MySQL posterior a este
+> registro foi executado em b198; não deve ser atribuído automaticamente ao delta v4.
+
 Base original: `2286c88ffed330246f1c39bed5ad7bb4d64e7851`.
 Primeiro candidato: `e7f542ce0054f64830550f8e760f3734d800f9f1`.
 Etapa SQL/transporte: `89972c35704691c6c2127527b49043f5ea695e27`.

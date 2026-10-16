@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {createHeldInfobipWhatsAppRuntime, INFOBIP_WHATSAPP_CALLBACK_PATH} from '../server/infobip-whatsapp-runtime.mjs';
+import {createHeldInfobipWhatsAppRuntime, INFOBIP_WHATSAPP_CALLBACK_PATH, INFOBIP_WHATSAPP_DELIVERY_PATH} from '../server/infobip-whatsapp-runtime.mjs';
 import {INFOBIP_WHATSAPP_RELEASE_ENABLED} from '../server/infobip-whatsapp-candidate.mjs';
 
 globalThis.fetch = () => assert.fail('OFF runtime cannot call real transport');
@@ -10,10 +10,10 @@ assert.equal(INFOBIP_WHATSAPP_RELEASE_ENABLED, false);assert(Object.isFrozen(run
 assert.deepEqual(runtime.health(), {enabled: false, ready: false, code: 'INFOBIP_WHATSAPP_DISABLED'});
 assert.deepEqual(await runtime.dispatch(forbidden), {status: 'disabled'});
 assert.deepEqual(await runtime.expire(forbidden), {status: 'disabled'});
-for (const method of ['GET','POST','OPTIONS','PUT','DELETE']) {
+for (const path of [INFOBIP_WHATSAPP_CALLBACK_PATH, INFOBIP_WHATSAPP_DELIVERY_PATH]) for (const method of ['GET','POST','OPTIONS','PUT','DELETE']) {
   const req = new Proxy({method}, {get(_target, property) {assert.fail(`OFF cannot read request ${String(property)}`);}});
   const response = {status: 0, headers: null, body: '', writeHead(status, headers) {this.status=status;this.headers=headers;}, end(body) {this.body=body;}};
-  assert.equal(await runtime.handleRoute(req, response, new URL(INFOBIP_WHATSAPP_CALLBACK_PATH, 'https://example.invalid')), true);
+  assert.equal(await runtime.handleRoute(req, response, new URL(path, 'https://example.invalid')), true);
   assert.equal(response.status,503);assert.equal(response.headers['cache-control'],'no-store');
   assert.deepEqual(JSON.parse(response.body),{ok:false,code:'INFOBIP_WHATSAPP_DISABLED'});
 }

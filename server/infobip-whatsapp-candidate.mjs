@@ -126,7 +126,12 @@ export async function prepareOfflineInfobipReply(job, { lookupLink, concierge, n
     const initial = await lookupLink(job);
     const stamp = linkStamp(initial, job);
     if (!stamp || stamp !== job.bindingStamp) return null;
-    const reply = await concierge({ accountId: initial.accountId, text: job.text });
+    let timer; const controller = new AbortController();
+    const reply = await Promise.race([
+      Promise.resolve().then(() => concierge({accountId: initial.accountId, email: initial.email,
+        text: job.text, messageId: job.messageId, signal: controller.signal})),
+      new Promise(resolve => {timer = setTimeout(() => {controller.abort(); resolve(null);}, 5_000);}),
+    ]).finally(() => clearTimeout(timer));
     if (typeof reply !== 'string' || !reply.trim() || reply.length > 4_000 ||
         linkStamp(await lookupLink(job), job) !== stamp || now() - job.receivedAt > INFOBIP_REPLY_MAX_AGE_MS) return null;
     return Object.freeze({ provider: 'infobip', sender: job.sender, recipient: job.recipient,
