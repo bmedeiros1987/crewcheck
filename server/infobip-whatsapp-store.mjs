@@ -63,7 +63,7 @@ export function createInfobipSqlStore({ db, sender, encryptionKey, linkHashKey, 
     await c.query('DELETE FROM crewcheck_whatsapp_link_codes WHERE email=?',[email]);
     if (owners[0]?.public_id) await c.query(`UPDATE crewcheck_telegram_state SET payload=JSON_SET(payload,'$.sealed',NULL,'$.ownerHash',NULL,'$.report',NULL,
       '$.status',CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(payload,'$.status')) IN ('held','dispatching') THEN 'cancelled' ELSE JSON_UNQUOTE(JSON_EXTRACT(payload,'$.status')) END),updated_at=NOW(3)
-      WHERE state_key>? AND state_key<? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.ownerHash'))=?`,[PREFIX,PREFIX+'~',privateIndex(owners[0].public_id)]);
+      WHERE CAST(state_key AS BINARY)>? AND CAST(state_key AS BINARY)<? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.ownerHash'))=?`,[PREFIX,PREFIX+'~',privateIndex(owners[0].public_id)]);
     return {status:'erased'};
   };
   const store = {
@@ -116,7 +116,7 @@ export function createInfobipSqlStore({ db, sender, encryptionKey, linkHashKey, 
     // Production dispatch cannot be enabled by configuration or environment.
     dispatch: async () => ({status: INFOBIP_WHATSAPP_RELEASE_ENABLED ? 'blocked' : 'disabled'}),
     nextHeld: () => transaction(async c => {
-      const [rows] = await c.query("SELECT state_key FROM crewcheck_telegram_state WHERE state_key>? AND state_key<? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.status'))='held' ORDER BY state_key LIMIT 1 FOR UPDATE",[PREFIX,PREFIX+'~']);
+      const [rows] = await c.query("SELECT state_key FROM crewcheck_telegram_state WHERE CAST(state_key AS BINARY)>? AND CAST(state_key AS BINARY)<? AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.status'))='held' ORDER BY CAST(state_key AS BINARY) LIMIT 1 FOR UPDATE",[PREFIX,PREFIX+'~']);
       return rows[0]?.state_key.slice(PREFIX.length) || null;
     }),
     eraseAccount: (email,{client} = {}) => {
@@ -151,7 +151,7 @@ export function createInfobipSqlStore({ db, sender, encryptionKey, linkHashKey, 
     maintain: ({cursor = '', limit = 20, forgetAccountId} = {}) => transaction(async c => {
       if ((cursor && !hex(cursor)) || !Number.isInteger(limit) || limit < 1 || limit > 20 ||
           (forgetAccountId !== undefined && (typeof forgetAccountId !== 'string' || !forgetAccountId))) error();
-      const [rows] = await c.query('SELECT state_key,payload FROM crewcheck_telegram_state WHERE state_key>? AND state_key<? ORDER BY state_key LIMIT ? FOR UPDATE',
+      const [rows] = await c.query('SELECT state_key,payload FROM crewcheck_telegram_state WHERE CAST(state_key AS BINARY)>? AND CAST(state_key AS BINARY)<? ORDER BY CAST(state_key AS BINARY) LIMIT ? FOR UPDATE',
         [PREFIX + cursor, PREFIX + '~', limit]);
       for (const row of rows) {
         const state = parseJsonColumn(row.payload, null);

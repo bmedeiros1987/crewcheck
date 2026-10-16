@@ -66,6 +66,7 @@ try{
    await reset();
    await run('concurrent real SQL claim/enqueue',async()=>{const {receive}=make();const rs=await Promise.all(Array.from({length:16},()=>receive(packet())));assert(rs.every(r=>r.status===200));assert.equal(rs.reduce((n,r)=>n+r.accepted,0),1);assert.equal(rs.reduce((n,r)=>n+r.duplicates,0),15);assert.equal((await read()).status,'held');});
    await run('sealed state excludes raw synthetic identity/content',async()=>{const raw=JSON.stringify(await read());for(const x of [email,recipient,owner,event.message.text])assert(!raw.includes(x));});
+   await run('binary namespace scan selects held job under real database collation',async()=>{assert.equal(await make().store.nextHeld(),eventKey);assert.equal((await make().store.maintain()).scanned,1);});
    await run('same ID changed payload fails closed',async()=>{assert.equal((await make().receive(packet({...event,message:{type:'TEXT',text:'changed'}}))).status,503);});
    await reset();
    await run('actual transaction rollback after injected enqueue failure',async()=>{
