@@ -1,133 +1,175 @@
-# Infobip WhatsApp: candidato offline, release bloqueada
+# Infobip WhatsApp: integração offline, release bloqueada
 
-Base: `2286c88ffed330246f1c39bed5ad7bb4d64e7851` (main, 2026-10-16).
+Base original: `2286c88ffed330246f1c39bed5ad7bb4d64e7851`.
+Primeiro candidato: `e7f542ce0054f64830550f8e760f3734d800f9f1`.
+Esta etapa acrescenta SQL transacional e transporte exercitável com mocks; não
+transforma preparação em ativação. Nenhum módulo Infobip novo é importado pelo
+servidor. Gate literal `INFOBIP_WHATSAPP_RELEASE_ENABLED=false`; entradas de
+produção `dispatch`/`send` retornam disabled, sem consultar configuração/env.
+Métodos `exercise`/`exerciseDispatch` são plumbing de testes com dependências
+explicitamente injetadas, não APIs públicas ou autorização de envio.
 
-O módulo `server/infobip-whatsapp-candidate.mjs` não é importado pelo servidor.
-`INFOBIP_WHATSAPP_RELEASE_ENABLED=false` é literal e a resposta de release é
-sempre 503. Nenhuma variável de ambiente pode ativá-lo. Não contém transporte,
-leitura de credenciais reais, SQL/DDL, logs ou código de configuração Infobip.
-Não é um receptor de produção pronto para configurar.
+## O que foi implementado
 
-## Ownership e escopo
-
-Antes da implementação, a lista de tarefas indicou somente esta frente ativa
-para o receptor; a tarefa de browser estava idle e seu browser não foi operado.
-As buscas de PRs abertos por Infobip/WhatsApp não encontraram receptor equivalente.
-#872 é Wake e #907 é MyCrewCare; #888/#926 permanecem drafts de menus/PDF com
-gates OFF e não são portadas aqui. Nenhuma Home ou fórmula financeira é alterada.
-
-`server/whatsapp.mjs` continua Meta Cloud API. O materializador
-`scripts/p1-whatsapp-sender/apply.mjs` da #890 permanece intacto, incluindo guards
-de sender, vínculo e consentimento. O candidato não converte eventos Infobip em
-eventos Meta e não chama o transporte Meta como fallback. Voice/TTS Infobip não
-é modificado. Nenhum número ou ID real é usado nas fixtures.
+- Receiver em bytes com Basic estrito, limites de corpo/batch, sender permitido,
+  telefone estrito, rejeição conservadora de BSUID, vínculo e consentimento.
+- Adaptador mysql2 para o pool existente, sem criar pool/DB/tabela/migração.
+  Reutiliza `crewcheck_whatsapp_links`, `crewcheck_platform_profiles` e a tabela
+  `crewcheck_telegram_state` já usada por outboxes internos; namespace exclusivo
+  `crewcheck-infobip-inbound-v1:`. Não usa notification_jobs nem worker Telegram.
+- Claim único e enqueue na mesma conexão/transação. INSERT com upsert sem mudança
+  seguido de SELECT FOR UPDATE serializa o claim existente. Divergência de digest
+  falha fechado. Commit incerto retorna indisponível; retry encontra o claim se
+  houve commit. Não há fallback em memória nem exclusão automática de claims.
+- Vínculo original WhatsApp nunca é criado/alterado pelo adaptador. Busca usa o
+  mesmo HMAC de telefone existente, com chave injetada pelo futuro composition
+  root. Locks da linha de vínculo, perfil e autorização Infobip são mantidos nas
+  fases críticas. Timestamp/revisão mudados, revogação e consentimento retirado
+  invalidam a operação.
+- Exige autorização adicional Infobip, cifrada no namespace
+  `crewcheck-infobip-grant-v1:`. Sem ela, nenhum job é criado. Vínculo Meta não
+  implica migração/consentimento de provedor. O grant exige provider, sender,
+  phoneHash, email, public_id, revisão exata do vínculo, revisão própria,
+  consentConcierge=true e active=true. Não existe endpoint ou writer que crie
+  grants reais nesta entrega; o futuro fluxo deve exigir conta autenticada e
+  consentimento específico. Nunca inserir grant manual como substituto de prova.
+- Reutiliza helper AES-256-GCM existente de installationRegistry, com AAD contendo
+  versão e chave da linha. Texto, destinatário, conta e bindingStamp ficam cifrados
+  no job. Chave de cifra é cópia de Buffer injetado; não se lê/envia/cria segredo.
+  Claims usam namespace estável independente de rotação de credenciais. Hashes e
+  digest não são alegação de anonimização; não são logados.
+- Worker offline prepara resposta com conta derivada do vínculo, revalida após
+  await e commita dispatching ANTES de I/O. Segunda transação revalida tudo e
+  mantém locks durante uma tentativa limitada a 5s. Crash, timeout, falha de save
+  ou commit depois da tentativa nunca devolvem o job para held. Sem retry
+  automático para resultado incerto; perda de resposta é preferível a duplicação.
+- Expiração explícita por chave limpa conteúdo cifrado sem apagar tombstone.
+  Resultados finalizados/cancelados também removem conteúdo. Não há timer/scan
+  registrado. Um agendador real de expiração e política de retenção ainda precisam
+  de composição e revisão; payload dispatching expirado vira uncertain, sem retry.
+- Builder de saída usa somente HTTPS no domínio personalizado *.api.infobip.com,
+  endpoint fixo /whatsapp/1/message/text, Authorization: App e JSON com sender,
+  destinatário e messageId determinístico próprios. Recusa drift no binding,
+  origem/path/query/credenciais na URL, redirects e texto excessivo. Não inclui
+  callback URL arbitrária, dados de conta ou fallback Meta.
+- Transporte com request injetado, AbortController, deadline até 5s e resposta
+  limitada a 16 KiB. Somente resposta correlacionada com PENDING_ACCEPTED é
+  accepted_unconfirmed. Erros HTTP, redirecionamento, JSON inválido, ID/destinatário
+  divergentes e timeout retornam código fixo uncertain; nunca ecoa erro bruto.
+  Não existe default fetch/agente/rede. O teste injeta mocks, não credencial real.
+- Classificador de DLR é puro: reconhece somente o exemplo entregue estrito;
+  aceitação/pending não significa entrega. Atualização durável e monotônica de
+  recibos ainda não está implementada; status/mistos não entram como inbound.
 
 ## Contratos oficiais consultados em 2026-10-16
 
-- [Subscription components](https://www.infobip.com/docs/subscriptions/subscription-components):
-  Basic, HMAC e OAuth são autenticações possíveis do perfil. HMAC usa o corpo
-  bruto integral, o algoritmo configurado e, por padrão, `X-Hub-Signature`.
-- [Authentication settings](https://www.infobip.com/docs/subscriptions/manage/authentication-settings):
-  Basic usa username/password por request. A API key de envio não é autenticação
-  de webhook. O teste implementa somente Basic estrito com credenciais fictícias;
-  nenhum segredo foi criado ou configurado. Isso comprova o verificador offline,
-  não a identidade de uma request real da assinatura atual.
-- [Inbound, DLR e BSUID](https://www.infobip.com/docs/whatsapp/manage-integration/usernames-and-user-ids):
-  `results[]`, `from`, `to`, `integrationType=WHATSAPP`, `receivedAt`, `messageId`,
-  `message.type=TEXT`, `message.text`. `from` pode ser BSUID. O candidato aceita
-  apenas telefone estrito e recusa BSUID; nunca remove caracteres para fabricar
-  telefone nem resolve identidade por nome/username. Suporte a BSUID exige vínculo
-  próprio autenticado. Campos opcionais desconhecidos não são persistidos.
-- [Reports](https://www.infobip.com/docs/whatsapp/reports): entrega significa
-  chegada ao dispositivo; seen significa visualização. Aceitação HTTP/API não
-  significa entrega. O classificador só reconhece o exemplo oficial completo
-  `3/DELIVERED/5/DELIVERED_TO_HANDSET`; qualquer outro status fica unconfirmed.
+[Subscription components](https://www.infobip.com/docs/subscriptions/subscription-components)
+e [Authentication settings](https://www.infobip.com/docs/subscriptions/manage/authentication-settings)
+confirmam Basic, HMAC e OAuth no perfil. HMAC cobre bytes brutos integrais e usa
+por padrão X-Hub-Signature. As páginas consultadas não definem claramente
+codificação/prefixo do valor; não se assume sha256=hex da Meta. O candidato aceita
+somente Basic estrito e isso NÃO significa que Basic esteja habilitado na conta.
+Nenhum método efetivo foi verificado na inspeção adicional bloqueada por CUA.
+Último estado informado: perfil CrewCheck sem URL e autenticação Nenhum.
 
-O classificador é uma função pura, não atualiza recibos nem aceita callbacks de
-status. Requests de status/mistos são rejeitados pelo receiver de inbound.
-Falta a correlação durável de status com outbound conhecido, sender e destinatário,
-além de transições monotônicas. Não há promessa de rastreamento de entrega.
+[API authentication](https://www.infobip.com/docs/essentials/api-essentials/api-authentication)
+confirma Authorization: App para API key de saída. Essa chave não autentica o
+webhook. Nenhuma API key foi criada, consultada ou configurada.
 
-## Comportamento do candidato
+[Payloads WhatsApp/BSUID](https://www.infobip.com/docs/whatsapp/manage-integration/usernames-and-user-ids)
+documenta results[], from/to, receivedAt, messageId e message.type/text. from pode
+ser BSUID: rejeitado até haver vínculo próprio seguro. O builder segue o exemplo
+oficial /whatsapp/1/message/text com from/to/content.text e messageId de correlação.
+[Referência de envio](https://www.infobip.com/docs/api/channels/whatsapp/send-whatsapp-text-message)
+e [status oficiais](https://www.infobip.com/docs/essentials/api-essentials/response-status-and-error-codes)
+são referências de contrato; a página API dinâmica não expôs a especificação
+completa na ferramenta. O parser é conservador: formatos não reconhecidos são
+uncertain, nunca autorizam novo envio. Não se presume idempotência do provedor
+pelo messageId escolhido.
 
-`createOfflineInfobipReceiver` recebe bytes, headers e dependências injetadas.
-Rejeita auth ausente, duplicada ou diferente, corpo acima de 64 KiB, batch acima
-de 20, sender empresarial errado, telefone inválido, conteúdo não textual,
-conflito com telefone de contato e eventos antigos/futuros. Valida o batch inteiro
-antes de efeitos. Basic requer HTTPS no futuro deployment; esse módulo não abre
-listener nem valida TLS. HMAC não é adivinhado ou aceito como fallback.
+[Reporting webhooks](https://www.infobip.com/docs/reporting/webhooks) informa
+POST, retorno HTTP 200 e retry com atraso 1 min + 1 min × retryNumber², até 20
+retries, último em 41h30. Depois desse período os eventos podem ser perdidos.
+Esse horizonte é da documentação geral; sua aplicação exata ao inbound deste
+perfil permanece não comprovada e é bloqueio de ativação. Como política candidata,
+o receiver agora aceita eventos até 48h (mais 30s de tolerância futura). Respostas
+continuam limitadas a 15min: evento antigo cria apenas tombstone expired, sem
+reter texto ou gerar resposta. Retry autenticado antigo encontra o claim;
+reenvio fora de 48h é recusado. Claims não são purgados nesta entrega.
+O comportamento efetivo da assinatura, event format e response validation deve
+ser confrontado com a conta antes da ativação; documentação geral não é inspeção.
 
-Sender Infobip é o telefone empresarial em `to`, não o Meta Phone Number ID.
-O vínculo exigido é específico de provider/sender/destinatário, conta e revisão,
-com consentimento booleano explícito e revogação falsa. O candidato não cria
-vínculos automaticamente nem manda instruções a desconhecidos.
+[Notification profiles](https://www.infobip.com/docs/subscriptions/manage/notification-profiles)
+expõe validação por regex do corpo/status, batch e timeouts configuráveis.
+Não há configuração realizada. Basic exige HTTPS/TLS validado na futura borda.
+A fronteira HTTP, timeout total das operações SQL e validação em engine real
+continuam gates: fixture mysql2 não comprova locks, InnoDB, restart ou timeouts.
 
-O contrato injetado de store exige transação serializável para lookup, claim único
-e enqueue atômicos. O claim usa namespace estável e SHA-256 de
-provider/sender/messageId, independente de rotação de credenciais; esse hash não
-é uma alegação de anonimização. Digest divergente para o mesmo ID falha fechado. Não existe fallback em
-memória em produção: nenhum store de produção foi implementado. O ACK só ocorre
-depois da resolução das transações. Em batch parcialmente commitado, retry deve
-encontrar claims anteriores e completar o restante sem repetição.
+## Inspeção exata para a tarefa de navegador / Bruno
 
-O teste fornece exclusivamente um store sintético serializado com rollback e
-simulação de commit incerto. Ele demonstra a interface, concorrência e retries
-nesse modelo, não durabilidade MySQL, isolamento real ou recuperação após crash.
-A fila sintética contém texto em memória; um futuro store deve proteger dados,
-limitar retenção e não guardar telefone/texto em auditoria ou logs.
+Somente visualizar; não salvar nem revelar valores de segredos:
 
-A janela de freshness de 15 minutos e tolerância futura de 30 segundos são
-políticas conservadoras do candidato, não garantias Infobip. Freshness é reavaliada
-antes de preparar proposta de resposta. Dedup precisa sobreviver a reinício e ao
-horizonte de retry; a retenção real ainda precisa ser definida/comprovada.
+1. Developer Tools > Subscriptions Management > Subscriptions > CrewCheck > View:
+   categoria/canal WhatsApp; eventos INBOUND_MESSAGE/DELIVERY/SEEN; filtros de
+   sender/resource, applicationId/entityId; grupo/prioridade; profileId associado.
+2. Notification profiles > perfil associado > View: nome/profileId; Webhook URL
+   (vazio ou preenchido); referência Security settings/authId e tipo; certificado
+   mTLS se houver; Response body regex e Response regex; Max bucket size, Window
+   size, Connect timeout, Read timeout, TLS protocols, Rate limit. Em Headers,
+   mostrar só nomes e se há valores, nunca o conteúdo de Authorization/segredos.
+3. Authentication settings > authId associado > View: método e nome; para HMAC,
+   algoritmo, nome do header e documentação do encoding/prefixo; para Basic,
+   somente se username/password existem; para OAuth, tipo/grant e presença da
+   configuração, sem token/client secret. Não criar configuração nesta inspeção.
+4. Channels and Numbers > WhatsApp sender > View: número vinculado, estado,
+   WABA/Phone Number ID quando exibidos, inbound routing e aplicativo/entidade.
+   Confirmar vínculo à WABA atual, sem migrar/criar outro cadastro.
+5. Se retry/horizonte/ACK não aparecerem no perfil, obter o contrato documentado
+   do suporte para esse perfil/event format. Não inventar um campo de UI de retry.
 
-`prepareOfflineInfobipReply` chama apenas o motor injetado, usando a conta derivada
-do vínculo; recusa mudança de conta/revisão/sender/destinatário/consentimento durante
-o await. Retorna proposta em memória, nunca envia. A proposta não é autorização:
-o futuro sender deverá revalidar tudo sob lock até sua tentativa limitada de envio
-e impedir reenvio quando o resultado da tentativa for incerto. Esta função não
-implementa exatamente-uma-vez para efeitos externos.
+Para compatibilidade com os limites atuais do receiver, a futura configuração
+revisada deverá usar batch pequeno (preferencialmente 1; limite absoluto20 e64KiB)
+e response validation compatível com ACK durável. Não alterar nada agora.
 
-## Gates pendentes para ativação
+## Falha legada da suíte ampla delimitada e corrigida
 
-1. Revisão independente do delta final e implementação de persistência/queue real,
-   testes de transação, concorrência, reinício, commit incerto, TTL e revogação
-   durante processamento/envio. Não usar o store sintético no runtime.
-2. Contrato de eventos/versionamento e retries/timeout/ACK do perfil efetivo.
-   Para HMAC, comprovar codificação/prefixo exatos do header; as páginas consultadas
-   não os definem claramente. Não reutilizar `sha256=hex` da Meta por suposição.
-3. Evidência autorizada do sender Infobip e seu vínculo ao número/WABA/serviço
-   esperado. A conexão Meta informada não prova registro/routing pelo Infobip e
-   não autoriza migração de WABA. A assinatura atual sem URL/auth não foi alterada.
-4. Implementar transporte específico com guard de sender, binding, destinatário,
-   consentimento e janela da conversa, além de status correlacionado e monotônico.
-   Nenhum custo pode ser inferido como zero a partir de testes offline.
-5. Aprovação específica antes de criar/configurar credenciais, perfil, URL/auth,
-   env, permissões ou despesas; configuração segura só após revisão. Para Basic,
-   TLS obrigatório e segredo exclusivo forte; avaliar HMAC após contrato comprovado.
-6. Wiring de produção e remoção do gate em alteração posterior revisada; testes
-   reais/deploy/envios somente mediante escopo e custos explicitamente autorizados.
+O teste regression-whatsapp-business-webhook reimportava v14382/v14383 depois de
+writers mais novos. v14383 exige botão literal com Send, mas bids-default já moveu
+os vínculos para Notificações. Além de falhar em Home, esse writer podia reinserir
+um segundo binding antigo do Concierge; v14410 usa email/text/location.
+A causa foi reproduzida na base2286, com arquivos idênticos ao primeiro candidato.
+Correção restrita ao teste: bootstrap canônico v139; assertion exige a assinatura
+atual email/text/location e exatamente um handler. Todas as outras assertions
+foram preservadas. Não muda Home, Telegram runtime, guards, gates ou materializadores.
+A suíte corrigida passou com requests mock e sem DB; não enfraquece proteção para
+acomodar a implementação. Preparações geradas são restauradas antes do commit.
 
-## Validação offline
+## Validação e limites
 
-`node scripts/regression-infobip-whatsapp-candidate.mjs`
+- node scripts/regression-infobip-whatsapp-candidate.mjs
+- node scripts/regression-infobip-whatsapp-persistence.mjs
+- node scripts/regression-whatsapp-business-webhook.mjs (faz preparo canônico)
+- Regressões sender e status diagnostics na fonte preparada.
 
-Sem dependências npm e sem browser, API externa, DB ou mensagens reais. Cobre
-Basic estrito, shape/limites, sender, vínculo/consentimento, concorrência, rollback,
-commit incerto, replay/freshness, revogação durante await, proposta de destinatário
-correto e distinção aceitação/entrega. Essas evidências não comprovam configuração
-ou autenticação do provedor real. Não houve configuração/env/deploy/PR/envio aqui.
+SQL adapter, criptografia e pipeline de tentativa são código real, mas as queries
+foram exercitadas somente com fixture mysql2 serializável. Nenhum banco/serviço foi
+criado ou consultado; nenhuma migração executada. Fixture não substitui MySQL real.
+Sem listener, polling, worker real, engine real Concierge, envio, push, PR ou deploy.
 
-Revisão independente inicial encontrou um bloqueador: a chave de dedup não pode
-depender de segredo rotacionável. Corrigido para namespace estável independente
-de credenciais e coberto por teste de rotação/recriação do receiver. A revisão
-final não encontrou novos achados críticos, altos ou médios no escopo offline.
-Preparação completa `scripts/v139/apply.mjs` passou tanto na base limpa quanto
-no candidato. Regressões de sender e diagnóstico WhatsApp passaram na fonte
-preparada. A regressão ampla `regression-whatsapp-business-webhook.mjs` falhou
-em ambos no mesmo passo legado `v14383`: botão de vínculo Telegram não localizado.
-Uma execução inicial da preparação após aplicar somente o guard #890 falhou em
-`v14410`; repetir a preparação completa a partir da fonte limpa resolveu isso.
-Não atribuir essa falha inicial ao candidato nem reportar a suíte ampla verde.
-Arquivos gerados pela preparação foram removidos/restaurados no checkout isolado;
-o delta final contém apenas este documento, o módulo e sua regressão sintética.
+Preservados sender/vínculo/consentimento da #890, menus/PDF #888/#926 OFF, Voice/TTS,
+Home e financeiro. Grants reais, configuração/env e transportes permanecem ausentes.
+
+## Bloqueio mínimo para ativação
+
+1. Visualizar campos acima para comprovar sender/routing/profile/auth/format/ACK.
+   Perfil sem URL/auth é bloqueio conhecido; nada foi configurado para contorná-lo.
+2. Autorizar configuração específica de autenticação/URL e disponibilidade das
+   chaves existentes em composition root seguro, sem reutilização indevida de
+   credenciais Voice e sem presumir custo zero. Segredos nunca passam pela conversa.
+3. Implementar fluxo autenticado de consentimento/grant Infobip e composição do
+   motor canônico; validar SQL real, deadlocks, restart, commit incerto, revogação,
+   account deletion, timeouts totais e limpeza de payload. Nenhuma mudança de schema
+   é necessária para este desenho, mas presença/engine/permissões devem ser provadas.
+4. Correlacionar DLR autenticado com outbound/sender/destinatário e estados
+   monotônicos; revisar delta final antes de remover gate. Desbloquear wiring,
+   deploy ou teste real somente após autorização específica de escopo/custo.

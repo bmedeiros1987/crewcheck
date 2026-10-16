@@ -3,6 +3,8 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 // Review candidate only. No production router imports this module. Environment
 // variables cannot enable it; no transport, credentials, DDL or logs live here.
 export const INFOBIP_WHATSAPP_RELEASE_ENABLED = false;
+export const INFOBIP_INBOUND_MAX_AGE_MS = 48 * 60 * 60_000;
+export const INFOBIP_REPLY_MAX_AGE_MS = 15 * 60_000;
 export function infobipWhatsAppReleaseResponse() {
   return { status: 503, code: 'INFOBIP_WHATSAPP_DISABLED' };
 }
@@ -51,7 +53,7 @@ function parseInbound(rawBody, sender, now) {
         !phone(item?.from) || !id(item?.messageId) || item?.message?.type !== 'TEXT' ||
         typeof item?.message?.text !== 'string' || !item.message.text.trim() ||
         item.message.text.length > 4_000 || !Number.isFinite(at) ||
-        at > now + 30_000 || now - at > 15 * 60_000 ||
+        at > now + 30_000 || now - at > INFOBIP_INBOUND_MAX_AGE_MS ||
         Object.hasOwn(item, 'status') || Object.hasOwn(item, 'seenAt') ||
         (item.contact?.phoneNumber !== undefined && item.contact.phoneNumber !== item.from)) fail('EVENT');
     // A BSUID is not coerced into a phone number; username/name are never identity.
@@ -71,8 +73,8 @@ function linkStamp(link, event) {
 // OFFLINE entrypoint. The injected store MUST supply serializable transactions:
 // claim+enqueue commit together, unique claims survive restarts, failures roll
 // back, and lookupLink uses the same transaction. No production store is supplied.
-// Fifteen-minute freshness is a conservative candidate policy, not an Infobip
-// retry guarantee. Release requires the real retry/retention contract and storage.
+// Candidate retry policy: 48h (general reporting docs describe 41h30; application
+// to this inbound profile remains unverified). Reply freshness stays 15m.
 export function createOfflineInfobipReceiver({ sender, username, password, store, now = Date.now }) {
   if (!phone(sender) ||
       typeof store?.transaction !== 'function' || typeof now !== 'function') fail('CONFIGURATION');
@@ -119,14 +121,14 @@ export async function prepareOfflineInfobipReply(job, { lookupLink, concierge, n
   try {
     if (!job || job.provider !== 'infobip' || !phone(job.sender) || !phone(job.recipient) ||
         !id(job.messageId) || typeof job.text !== 'string' || !job.text.trim() ||
-        !Number.isFinite(job.receivedAt) || now() - job.receivedAt > 15 * 60_000 ||
+        !Number.isFinite(job.receivedAt) || now() - job.receivedAt > INFOBIP_REPLY_MAX_AGE_MS ||
         job.receivedAt > now() + 30_000) return null;
     const initial = await lookupLink(job);
     const stamp = linkStamp(initial, job);
     if (!stamp || stamp !== job.bindingStamp) return null;
     const reply = await concierge({ accountId: initial.accountId, text: job.text });
     if (typeof reply !== 'string' || !reply.trim() || reply.length > 4_000 ||
-        linkStamp(await lookupLink(job), job) !== stamp || now() - job.receivedAt > 15 * 60_000) return null;
+        linkStamp(await lookupLink(job), job) !== stamp || now() - job.receivedAt > INFOBIP_REPLY_MAX_AGE_MS) return null;
     return Object.freeze({ provider: 'infobip', sender: job.sender, recipient: job.recipient,
       replyToMessageId: job.messageId, bindingStamp: stamp, text: reply });
   } catch { return null; }
