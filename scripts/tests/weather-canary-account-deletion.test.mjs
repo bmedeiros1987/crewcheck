@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import { notificationStateDeletionStatements } from '../../server/v139/notificationStateDeletion.mjs';
+import { eraseWhatsAppAccountState } from '../../server/whatsapp-lifecycle.mjs';
 
 const source = fs.readFileSync(new URL('../../server/platform.mjs', import.meta.url), 'utf8');
 const start = source.indexOf('async function handleAccountDeletion(req, res) {');
@@ -14,7 +15,7 @@ test('existing account-deletion transaction removes new weather consent only for
   const other = 'other@example.test';
   const records = new Set([`link-email:${email}`, `snapshot:${email}`, `profile:${email}`, `weather-consent:${email}`, `weather-consent:${other}`]);
   const queries = [];
-  let reply;
+  let reply, lifecycleCalls = 0;
   const client = {
     async query(sql, values = []) {
       queries.push({ sql, values });
@@ -29,6 +30,11 @@ test('existing account-deletion transaction removes new weather consent only for
     platformTableReady: async () => false,
     accountHealthDeletionStatements: () => [],
     notificationStateDeletionStatements,
+    eraseWhatsAppAccountState: async (ownerEmail, {client: transaction}) => {
+      assert.equal(ownerEmail, email); assert.equal(transaction, client);
+      assert.equal(queries[0].sql, 'BEGIN'); lifecycleCalls++;
+      await eraseWhatsAppAccountState(ownerEmail, {client: transaction});
+    },
     deleteIfTableExists: async (connection, sql, values) => connection.query(sql, values),
     env: () => 'production',
     sendJson: (_res, status, data) => { reply = { status, data }; },
@@ -37,6 +43,7 @@ test('existing account-deletion transaction removes new weather consent only for
   const handler = vm.runInNewContext(`(${source.slice(start, end)})`, context);
   await handler({ method: 'POST' }, { setHeader() {} });
   assert.equal(reply.status, 200); assert.equal(reply.data.deleted, true);
+  assert.equal(lifecycleCalls, 1);
   assert.deepEqual([...records], [`weather-consent:${other}`]);
   const deletion = queries.find(query => query.sql.startsWith('DELETE FROM crewcheck_telegram_state') && query.sql.includes('state_key IN'));
   assert.match(deletion.sql, /IN \(\$1,\$2,\$3,\$4\)/);
