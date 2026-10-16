@@ -125,5 +125,5 @@ assert.equal(infobipDeliveryState({groupId: 3, groupName: 'DELIVERED', id: 5, na
 for (const status of [null, {}, {groupName: 'DELIVERED'}, {groupId: 3, groupName: 'DELIVERED', id: 26, name: 'PENDING_ACCEPTED'}]) assert.equal(infobipDeliveryState(status), 'unconfirmed');
 const source = fs.readFileSync(new URL('../server/infobip-whatsapp-candidate.mjs', import.meta.url), 'utf8');
 assert(!/\b(?:fetch|console|process\.env)\s*[.(]/.test(source), 'candidate has no network, logs or env activation');
-assert(!fs.readFileSync('server.mjs', 'utf8').includes('infobip-whatsapp-candidate'), 'not wired into production');
+assert(!fs.readFileSync('server.mjs', 'utf8').includes('infobip-whatsapp-candidate'), 'production never imports the offline receiver directly');
 console.log('PASS Infobip candidate: auth, strict inbound, binding, consent, atomic synthetic queue, concurrent dedup, rollback/retry, replay, reply revocation, status distinction; RELEASE OFF');

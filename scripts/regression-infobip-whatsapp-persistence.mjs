@@ -4,6 +4,7 @@ import {sealSubscription as seal} from '../server/web-push/installationRegistry.
 import {createInfobipSqlStore, infobipGrantKey} from '../server/infobip-whatsapp-store.mjs';
 import {createOfflineInfobipReceiver} from '../server/infobip-whatsapp-candidate.mjs';
 import {buildInfobipTextRequest, createInfobipTextTransport} from '../server/infobip-whatsapp-transport.mjs';
+import {composeInfobipWhatsAppForOfflineTests} from '../server/infobip-whatsapp-runtime.mjs';
 
 // Real SQL adapter + real AEAD, exercised against a synthetic mysql2-shaped
 // transaction fixture. No database engine/network/migrations are started.
@@ -54,7 +55,7 @@ function fixture() {
   }};
   const makeStore=()=>createInfobipSqlStore({db,sender,encryptionKey,linkHashKey,now:()=>s.clock});
   const store=makeStore(),receive=createOfflineInfobipReceiver({sender,username,password,store,now:()=>s.clock});
-  return {s,store,receive,makeStore,seedGrant};
+  return {s,store,receive,makeStore,seedGrant,db};
 }
 {
   const {s,receive,makeStore}=fixture();
@@ -104,6 +105,17 @@ for(const grant of [null,{provider:'meta'},{sender:other},{phoneHash:'wrong'},{a
 const configuration={sender,apiKey:'synthetic-outbound-api-key-only',baseUrl:'https://synthetic.api.infobip.com'};
 const proposal={provider:'infobip',sender,recipient,replyToMessageId:event.messageId,messageId:'synthetic-out-1',text:'SYNTHETIC REPLY',bindingStamp:JSON.stringify(['synthetic-account-A','revision','infobip',sender,recipient])};
 const pending=p=>new Response(JSON.stringify({to:p.recipient,messageId:p.messageId,status:{groupId:1,groupName:'PENDING',id:26,name:'PENDING_ACCEPTED'}}),{status:200});
+{
+  const {s,db}=fixture();let calls=0;
+  const composition=composeInfobipWhatsAppForOfflineTests({db,configuration:{...configuration,encryptionKey,linkHashKey,webhookUsername:username,webhookPassword:password},
+    now:()=>s.clock,concierge:async({accountId,text})=>{assert.equal(accountId,s.owner);assert.equal(text,event.message.text);return 'SYNTHETIC COMPOSED REPLY';},
+    request:async(_url,{body})=>{calls++;const data=JSON.parse(body);assert.equal(data.to,recipient);assert.equal(data.from,sender);return pending({recipient:data.to,messageId:data.messageId});},
+  });
+  assert.equal((await composition.receive(request())).accepted,1);
+  assert.equal((await composition.dispatch(eventKey)).status,'accepted_unconfirmed');
+  await composition.dispatch(eventKey);assert.equal(calls,1,'composed pipeline retains no-retry guard');
+  assert.equal((await composition.expire(eventKey)).status,'accepted_unconfirmed');
+}
 {
   const built=buildInfobipTextRequest(proposal,configuration);
   assert.equal(built.url,configuration.baseUrl+'/whatsapp/1/message/text');assert.equal(built.options.headers.authorization,'App '+configuration.apiKey);

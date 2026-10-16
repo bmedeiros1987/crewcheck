@@ -2,12 +2,42 @@
 
 Base original: `2286c88ffed330246f1c39bed5ad7bb4d64e7851`.
 Primeiro candidato: `e7f542ce0054f64830550f8e760f3734d800f9f1`.
-Esta etapa acrescenta SQL transacional e transporte exercitável com mocks; não
-transforma preparação em ativação. Nenhum módulo Infobip novo é importado pelo
-servidor. Gate literal `INFOBIP_WHATSAPP_RELEASE_ENABLED=false`; entradas de
+Etapa SQL/transporte: `89972c35704691c6c2127527b49043f5ea695e27`.
+A composição seguinte acrescenta somente uma superfície de runtime OFF pela cadeia
+canônica; não transforma preparação em ativação. O servidor preparado importa
+`infobip-whatsapp-runtime.mjs` e cria seu objeto fechado, sem dependências reais.
+Gate literal `INFOBIP_WHATSAPP_RELEASE_ENABLED=false`; entradas de
 produção `dispatch`/`send` retornam disabled, sem consultar configuração/env.
 Métodos `exercise`/`exerciseDispatch` são plumbing de testes com dependências
 explicitamente injetadas, não APIs públicas ou autorização de envio.
+
+## Composição de runtime OFF
+
+`createHeldInfobipWhatsAppRuntime` não recebe nem lê configuração. O handler local
+para `/api/infobip/whatsapp/webhook` devolve somente 503/INFOBIP_WHATSAPP_DISABLED,
+com no-store, antes de ler request/body/auth/credenciais ou adquirir conexão. Não
+é um webhook efetivo configurado; não houve deploy. Rotas Meta/Telegram e vínculos
+existentes continuam no handler original. Dispatch e expire desse objeto também
+são no-op disabled. Alterar apenas env ou a constante de release não habilita a
+composição: ativação exige implementação e revisão posteriores.
+
+O materializador `p1-infobip-whatsapp-off/apply.mjs` adiciona import/instância/hook
+únicos após os writers de runtime e antes do finalizador canônico, que continua
+último. Âncora ausente ou composição duplicada falham a preparação. A composição
+é idempotente e não recria servidor, pool, timer ou worker.
+
+`composeInfobipWhatsAppForOfflineTests` liga receiver + store + motor injetado +
+transporte injetado. O teste atravessa o pipeline com SQL fixture e mock request,
+preservando sender/destinatário/conta/grant/dedup e uma única tentativa. Essa função
+não é exposta no objeto de produção ou registrada no servidor.
+
+Validação MySQL efêmera real não foi executada: não há docker/podman/mysql/mysqld/
+mariadbd no PATH ou nos locais de instalação consultados em /Applications,
+/usr/local e /opt. Só sqlite3 está disponível; não é substituto para InnoDB.
+Não se instalou ferramenta, iniciou serviço, criou banco ou acessou credenciais.
+Para esse gate, é preciso disponibilizar um engine MySQL de testes autorizado;
+qualquer instalação/recurso novo deve ser aprovado antes. O fixture continua
+identificado como sintético, sem alegação de validação SQL em engine real.
 
 ## O que foi implementado
 
@@ -149,12 +179,14 @@ acomodar a implementação. Preparações geradas são restauradas antes do comm
 - node scripts/regression-infobip-whatsapp-candidate.mjs
 - node scripts/regression-infobip-whatsapp-persistence.mjs
 - node scripts/regression-whatsapp-business-webhook.mjs (faz preparo canônico)
+- node scripts/regression-infobip-whatsapp-runtime.mjs (após preparo canônico)
 - Regressões sender e status diagnostics na fonte preparada.
 
 SQL adapter, criptografia e pipeline de tentativa são código real, mas as queries
 foram exercitadas somente com fixture mysql2 serializável. Nenhum banco/serviço foi
 criado ou consultado; nenhuma migração executada. Fixture não substitui MySQL real.
-Sem listener, polling, worker real, engine real Concierge, envio, push, PR ou deploy.
+Sem listener iniciado, polling, worker real, engine real Concierge, envio, push,
+PR ou deploy. O único hook acrescentado à fonte preparada permanece OFF/503.
 
 Preservados sender/vínculo/consentimento da #890, menus/PDF #888/#926 OFF, Voice/TTS,
 Home e financeiro. Grants reais, configuração/env e transportes permanecem ausentes.
@@ -166,8 +198,8 @@ Home e financeiro. Grants reais, configuração/env e transportes permanecem aus
 2. Autorizar configuração específica de autenticação/URL e disponibilidade das
    chaves existentes em composition root seguro, sem reutilização indevida de
    credenciais Voice e sem presumir custo zero. Segredos nunca passam pela conversa.
-3. Implementar fluxo autenticado de consentimento/grant Infobip e composição do
-   motor canônico; validar SQL real, deadlocks, restart, commit incerto, revogação,
+3. Implementar fluxo autenticado de consentimento/grant Infobip e futura composição
+   habilitada com motor canônico; validar SQL real, deadlocks, restart, commit incerto, revogação,
    account deletion, timeouts totais e limpeza de payload. Nenhuma mudança de schema
    é necessária para este desenho, mas presença/engine/permissões devem ser provadas.
 4. Correlacionar DLR autenticado com outbound/sender/destinatário e estados
