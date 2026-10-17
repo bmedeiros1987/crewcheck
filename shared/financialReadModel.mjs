@@ -109,13 +109,16 @@ export function queryFinancialHistory({ identity, records, periodStart, periodEn
   let selected = [...latest.values()].filter(record => record.aggregationLevel === aggregationLevel
     && record.periodStart >= periodStart && record.periodEnd <= periodEnd)
     .sort((a, b) => b.periodStart.localeCompare(a.periodStart) || a.id.localeCompare(b.id));
-  // Day/week totals from the same source and exact scope are one aggregate,
-  // not multiple earnings. Distinct IDs here indicate ambiguous producer identity.
+  // Day/week comparisons keep forecast and statement statuses separate. Monthly
+  // payroll/vacation net credits instead represent one cash-credit lifecycle:
+  // distinct IDs across settlement statuses cannot establish supersession.
   if (aggregationLevel !== 'item') {
     const scope = new Map();
     const ambiguous = new Set();
     for (const record of selected) {
-      const key = JSON.stringify([record.sourceId, record.periodStart, record.periodEnd, record.currency, record.status, record.category]);
+      const lifecycleStatus = record.aggregationLevel === 'month' && ['payroll', 'vacation'].includes(record.category)
+        ? 'monthly_credit_lifecycle' : record.status;
+      const key = JSON.stringify([record.sourceId, record.periodStart, record.periodEnd, record.currency, lifecycleStatus, record.category]);
       if (scope.has(key)) { ambiguous.add(record.id); ambiguous.add(scope.get(key)); }
       scope.set(key, record.id);
     }

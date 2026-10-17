@@ -101,6 +101,7 @@ jobs:
       - run: node scripts/regression-salary-prerequisite-diagnostic.mjs
       - run: node scripts/regression-salary-review-callers.mjs
       - run: node scripts/regression-financial-read-model.mjs
+      - run: node scripts/regression-monthly-credit-lifecycle.mjs
       - run: node scripts/regression-financial-statement-totals.mjs
       - name: Verify reported breakfast criterion with base/time evidence
         run: node scripts/regression-breakfast-base-presence.mjs
