@@ -1,3 +1,4 @@
+import {captureReviewedFinancialForecast} from '../server/financial-forecast-producer.mjs';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import { appendFinancialRecord, readFinancialLedger } from '../server/financial-ledger.mjs';
@@ -135,4 +136,26 @@ const rosterDelete = platform.slice(platform.indexOf('async function handleLegac
 assert(!rosterDelete.includes('financialLedgerErasureStatements'), 'roster removal cannot erase financial history');
 const accountDelete = platform.slice(platform.indexOf('async function handleAccountDeletion'),platform.indexOf('export function accountHealthDeletionStatements'));
 assert(accountDelete.indexOf('SELECT email FROM crewcheck_platform_profiles') < accountDelete.indexOf('financialLedgerErasureStatements(context.identity.email)'));
-console.log('PASS offline financial ledger: persisted snapshots independent of rosters, revisions/latest totals, explicit settlement, owner isolation, idempotency/concurrent retries, rollback, HTTP methods/origin, unavailable schema; no production DB');
+// Reviewed synthetic producer uses the same SQL adapter and idempotency path.
+const producerDb=database(),producerStore=createFinancialSqlStore(producerDb);
+const producerSource={kind:'reviewed_financial_forecast',ownerId:A.ownerId,scopeId:'synthetic-stable-income',reviewReference:'synthetic-reviewed-snapshot',ruleVersion:'synthetic-v1',fingerprint:'b'.repeat(64),items:[{key:'meal-logical-1',expectedRevision:0,record:{periodStart:'2032-02-01',periodEnd:'2032-02-01',currency:'USD',timezone:'America/Sao_Paulo',amountMinor:1234,category:'allowance',aggregationLevel:'item'}}]};
+const produce=source=>captureReviewedFinancialForecast({identity:A,source,store:producerStore});
+const produced=await produce(producerSource),replayed=await produce(producerSource);
+assert.equal(produced.receipts[0].revision,1);assert.equal(replayed.receipts[0].replayed,true);
+assert.equal((await producerStore.list(A.ownerId)).length,1,'identical capture never adds income twice');
+const changed=structuredClone(producerSource);changed.items[0].record.amountMinor=2345;
+await assert.rejects(produce(changed),{code:'FINANCIAL_IDEMPOTENCY_CONFLICT'});
+changed.fingerprint='c'.repeat(64);changed.items[0].expectedRevision=1;
+const revised=await produce(changed);assert.equal(revised.receipts[0].id,produced.receipts[0].id);assert.equal(revised.receipts[0].revision,2);
+assert.equal((await readFinancialLedger({store:producerStore,identity:A,periodStart:'2032-02-01',periodEnd:'2032-02-01',aggregationLevel:'item'})).totals[0].amountMinor,2345);
+assert.equal((await producerStore.list(B.ownerId)).length,0);
+await assert.rejects(produce({...producerSource,ownerId:B.ownerId}),{code:'FINANCIAL_REVIEWED_FORECAST_REQUIRED'});
+const producerCount=(await producerStore.list(A.ownerId)).length;
+await assert.rejects(produce({...producerSource,items:[{...producerSource.items[0],key:'new-before-invalid'}, {...producerSource.items[0],key:'bad',record:{...producerSource.items[0].record,paymentDate:'2032-02-02'}}]}),{code:'FINANCIAL_REVIEWED_FORECAST_REQUIRED'});
+assert.equal((await producerStore.list(A.ownerId)).length,producerCount,'invalid later input prevents all batch writes');
+const resumeSource={...producerSource,scopeId:'synthetic-resumable-batch',items:[{...producerSource.items[0],key:'resume-1'},{...producerSource.items[0],key:'resume-2'}]};
+let appendAttempts=0;
+await assert.rejects(captureReviewedFinancialForecast({identity:A,source:resumeSource,store:{append:async(...args)=>{if(++appendAttempts===2)throw Error('synthetic interruption');return producerStore.append(...args);}}}),/synthetic interruption/);
+const resumed=await produce(resumeSource);assert.equal(resumed.receipts.length,2);assert.equal(resumed.receipts[0].replayed,true);assert.equal(resumed.receipts[1].replayed,false);
+const repeated=await produce(resumeSource);assert(repeated.receipts.every(receipt=>receipt.replayed));
+console.log('PASS offline financial ledger: persisted snapshots independent of rosters, revisions/latest totals, explicit settlement, owner isolation, idempotency/concurrent retries, rollback, HTTP methods/origin, unavailable schema, reviewed synthetic producer, interrupted batch replay; no production DB');

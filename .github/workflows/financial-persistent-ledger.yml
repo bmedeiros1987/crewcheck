@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'server/financial-ledger*.mjs'
+      - 'server/financial-forecast-producer.mjs'
       - 'server/platform.mjs'
       - 'client/src/components/finance/**'
       - 'client/src/pages/Home.tsx'

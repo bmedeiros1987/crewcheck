@@ -171,3 +171,48 @@ Regulation UI and the requested +1-hour simulation are a separate subsequent
 stage. No legal limits, duty formulas or actual roster are modified here.
 Official applicability evidence and independent review are needed before
 changing normative calculations.
+
+## Reviewed snapshot producer — separate local stage
+
+`server/financial-forecast-producer.mjs` accepts an explicit owner-reviewed
+financial snapshot and an injected ledger store. It validates the whole input
+batch before any append, derives stable source scopes from scopeId/item key,
+and uses source fingerprint plus expected revision for replayable writes through
+the existing SQL adapter. It never infers settlement, calls a paid API or runs
+on startup/render/roster replacement. Identical retry returns the original
+receipt; changed input using the same fingerprint conflicts. A changed reviewed
+snapshot can append a new revision of the same logical income.
+
+Batch writes are individually transactional, not atomic as a whole. If a later
+append fails, retrying the identical batch safely replays earlier successes and
+continues. The regression exercises this interruption and recovery with the
+offline SQL protocol double, alongside owner isolation, revision-only totals
+and prevalidation of a later invalid item. No real financial records are used.
+Production integration still requires a reviewed canonical capture point; this
+module is not wired to live roster ingestion or the read-only UI.
+
+## Exact remaining external inputs
+
+MySQL server/client, MariaDB, Docker and Podman were absent from PATH; usual
+Homebrew/MySQL and Docker.app paths were also absent. No database sockets or
+production connection strings were probed. To run the real integration gate,
+provide an existing disposable MySQL 8.x InnoDB instance reachable locally, or
+authorize installing/starting a local MySQL 8 runtime. Use a dedicated empty
+schema such as crewcheck_financial_test_20261017 and a user restricted to that
+schema (CREATE, SELECT, INSERT, UPDATE, DELETE); it must be safe to discard.
+Supply any connection through the local secret/environment mechanism, never
+paste credentials in chat. Do not point the test at the production schema.
+No install, schema creation or production migration occurred.
+
+FX discovery covered tracked currency/exchange/fx paths, client/src, shared,
+server routes and snippets, canonical generator scripts, package.json, the
+nonsecret configuration templates .env.example/render.yaml and matching Git
+commit subjects. Searches covered currency API names, AwesomeAPI, Frankfurter,
+OpenExchangeRates, Fixer, PTAX and exchange/fetch patterns. The code path found
+is Home.perDiemConfig -> readNumberSetting(crewcheck_fx_usd_brl/eur_brl/gbp_brl),
+backed by financialSettingStore; financialFxReference reads matching dated
+metadata from those account settings. No active quote-service route, provider
+client or FX config variable was found. OAuth authorization-code exchange is
+unrelated to currency. No secret files/values or paid services were accessed.
+The API integration remains incomplete: the missing input is its provider name,
+existing route/module or service/repository location (no keys needed).
