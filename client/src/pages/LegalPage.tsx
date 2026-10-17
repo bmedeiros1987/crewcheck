@@ -10,7 +10,7 @@ type LegalSection = {
 };
 
 const TERMS_LAST_UPDATED = '19 de julho de 2026';
-const PRIVACY_LAST_UPDATED = '25 de setembro de 2026';
+const PRIVACY_LAST_UPDATED = '1 de outubro de 2026';
 const PRIVACY_EMAIL = 'suporte@crewcheck.app';
 
 const termsSections: LegalSection[] = [
@@ -56,8 +56,8 @@ const termsSections: LegalSection[] = [
   {
     title: '6. Integração com o Google Calendar',
     paragraphs: [
-      'A integração é opcional e somente é iniciada quando o usuário toca no comando de conexão ou sincronização. O CrewCheck solicita o escopo https://www.googleapis.com/auth/calendar.events.owned para criar, consultar, atualizar e excluir eventos nos calendários Google pertencentes ao próprio usuário.',
-      'Na configuração de menor privilégio, o CrewCheck sincroniza a escala no calendário principal do usuário. O aplicativo consulta apenas o intervalo temporal necessário e identifica eventos próprios por propriedades privadas e pela marca #CREWCHECK. Eventos pessoais sem essa identificação não devem ser alterados ou excluídos.',
+      'A integração é opcional e somente é iniciada quando o usuário toca no comando de conexão ou sincronização. O CrewCheck solicita o escopo https://www.googleapis.com/auth/calendar.events.owned para criar, consultar, atualizar e excluir eventos nos calendários Google pertencentes ao próprio usuário, e o escopo https://www.googleapis.com/auth/calendar.calendarlist.readonly para listar, somente em leitura, os calendários do usuário e permitir a escolha do calendário de destino.',
+      'Na configuração de menor privilégio, o CrewCheck sincroniza a escala no calendário escolhido pelo usuário entre os calendários que pertencem a ele (principal ou secundário). O aplicativo consulta apenas o intervalo temporal necessário e identifica eventos próprios exclusivamente por propriedades privadas CrewCheck. Eventos pessoais sem essa identificação não são alterados nem excluídos.',
       'A autorização pode ser revogada no CrewCheck ou na página de conexões da Conta Google. A revogação impede novas sincronizações, mas não apaga automaticamente eventos já criados; o usuário pode removê-los no Google Calendar ou executar a limpeza antes de desconectar.',
       'Dados recebidos das APIs do Google não são vendidos, usados para publicidade direcionada, avaliação de crédito ou treinamento de modelos de inteligência artificial gerais.',
     ],
@@ -152,8 +152,8 @@ const privacySections: LegalSection[] = [
   {
     title: '3. Dados do Google Calendar acessados',
     paragraphs: [
-      'Quando o usuário conecta o Google Calendar, o CrewCheck utiliza o escopo https://www.googleapis.com/auth/calendar.events.owned. Esse escopo permite ver, criar, alterar e excluir eventos nos calendários pertencentes ao usuário.',
-      'O CrewCheck usa o acesso para criar eventos da escala no calendário principal, consultar um intervalo limitado para localizar eventos próprios, substituir versões anteriores sem duplicidade e excluir somente eventos identificados como gerados pelo CrewCheck.',
+      'Quando o usuário conecta o Google Calendar, o CrewCheck utiliza os escopos https://www.googleapis.com/auth/calendar.events.owned e https://www.googleapis.com/auth/calendar.calendarlist.readonly. O primeiro permite ver, criar, alterar e excluir eventos nos calendários pertencentes ao usuário; o segundo permite apenas ver a lista de calendários para a escolha do destino.',
+      'O CrewCheck usa o acesso para criar eventos da escala no calendário escolhido pelo usuário, consultar um intervalo limitado para localizar eventos próprios, substituir versões anteriores sem duplicidade e excluir somente eventos identificados como gerados pelo CrewCheck.',
       'Podem ser processados identificador do calendário, identificador do evento, título, descrição, local, data, hora, lembretes, cor e propriedades privadas técnicas. Eventos pessoais que não tenham marcação CrewCheck não são usados para perfil, publicidade ou análise comportamental.',
     ],
   },

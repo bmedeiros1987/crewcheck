@@ -16,8 +16,13 @@ export interface CalendarExportOptions {
   routineReminderMinutes?: number[];
   routineSuggestions?: RoutineSuggestion[];
   includeFinancialNotes?: boolean;
-  /** v11.1.92: padrão limpo, sem criar compromissos separados para rotina/tripulação/check-in. */
-  calendarStyle?: 'roster-cards' | 'legacy-detailed';
+  /**
+   * v11.1.92: padrão limpo, sem criar compromissos separados para rotina/tripulação/check-in.
+   * 'operational-detailed': formato operacional validado para o Google Calendar — um evento por
+   * jornada (C/I→C/O), um evento por etapa, atividades (HSB/ASB/treinamento) e folgas/férias com o
+   * código publicado. Sem eventos auxiliares (check-in/verificação) e com fuso de cada aeroporto.
+   */
+  calendarStyle?: 'roster-cards' | 'legacy-detailed' | 'operational-detailed';
 }
 
 
@@ -61,7 +66,68 @@ const AIRPORT_META: Record<string, { city: string; airport?: string; timezone?: 
   CGB: { city: 'Cuiabá', airport: 'Cuiabá', timezone: 'America/Cuiaba' },
   POA: { city: 'Porto Alegre', airport: 'Porto Alegre', timezone: 'America/Sao_Paulo' },
   CUR: { city: 'Curitiba', airport: 'Curitiba', timezone: 'America/Sao_Paulo' },
+  CWB: { city: 'Curitiba', airport: 'Afonso Pena', timezone: 'America/Sao_Paulo' },
+  OPS: { city: 'Sinop', airport: 'Sinop', timezone: 'America/Cuiaba' },
+  ROO: { city: 'Rondonópolis', airport: 'Rondonópolis', timezone: 'America/Cuiaba' },
+  AFL: { city: 'Alta Floresta', airport: 'Alta Floresta', timezone: 'America/Cuiaba' },
+  CGR: { city: 'Campo Grande', airport: 'Campo Grande', timezone: 'America/Campo_Grande' },
+  MAO: { city: 'Manaus', airport: 'Manaus', timezone: 'America/Manaus' },
+  BVB: { city: 'Boa Vista', airport: 'Boa Vista', timezone: 'America/Boa_Vista' },
+  PVH: { city: 'Porto Velho', airport: 'Porto Velho', timezone: 'America/Porto_Velho' },
+  RBR: { city: 'Rio Branco', airport: 'Rio Branco', timezone: 'America/Rio_Branco' },
+  STM: { city: 'Santarém', airport: 'Santarém', timezone: 'America/Santarem' },
+  MCP: { city: 'Macapá', airport: 'Macapá', timezone: 'America/Belem' },
+  THE: { city: 'Teresina', airport: 'Teresina', timezone: 'America/Fortaleza' },
+  IMP: { city: 'Imperatriz', airport: 'Imperatriz', timezone: 'America/Fortaleza' },
+  JDO: { city: 'Juazeiro do Norte', airport: 'Juazeiro do Norte', timezone: 'America/Fortaleza' },
+  IOS: { city: 'Ilhéus', airport: 'Ilhéus', timezone: 'America/Bahia' },
+  BPS: { city: 'Porto Seguro', airport: 'Porto Seguro', timezone: 'America/Bahia' },
+  FEN: { city: 'Fernando de Noronha', airport: 'Fernando de Noronha', timezone: 'America/Noronha' },
+  IGU: { city: 'Foz do Iguaçu', airport: 'Foz do Iguaçu', timezone: 'America/Sao_Paulo' },
+  LDB: { city: 'Londrina', airport: 'Londrina', timezone: 'America/Sao_Paulo' },
+  NVT: { city: 'Navegantes', airport: 'Navegantes', timezone: 'America/Sao_Paulo' },
+  JOI: { city: 'Joinville', airport: 'Joinville', timezone: 'America/Sao_Paulo' },
+  UDI: { city: 'Uberlândia', airport: 'Uberlândia', timezone: 'America/Sao_Paulo' },
+  AEP: { city: 'Buenos Aires / Aeroparque', airport: 'Aeroparque', timezone: 'America/Argentina/Buenos_Aires' },
+  COR: { city: 'Córdoba', airport: 'Córdoba', timezone: 'America/Argentina/Cordoba' },
+  MVD: { city: 'Montevidéu', airport: 'Carrasco', timezone: 'America/Montevideo' },
+  ASU: { city: 'Assunção', airport: 'Silvio Pettirossi', timezone: 'America/Asuncion' },
+  SCL: { city: 'Santiago', airport: 'Santiago', timezone: 'America/Santiago' },
+  LIM: { city: 'Lima', airport: 'Jorge Chávez', timezone: 'America/Lima' },
+  BOG: { city: 'Bogotá', airport: 'El Dorado', timezone: 'America/Bogota' },
+  MDE: { city: 'Medellín', airport: 'José María Córdova', timezone: 'America/Bogota' },
+  UIO: { city: 'Quito', airport: 'Mariscal Sucre', timezone: 'America/Guayaquil' },
+  GYE: { city: 'Guayaquil', airport: 'José Joaquín de Olmedo', timezone: 'America/Guayaquil' },
+  LPB: { city: 'La Paz', airport: 'El Alto', timezone: 'America/La_Paz' },
+  VVI: { city: 'Santa Cruz de la Sierra', airport: 'Viru Viru', timezone: 'America/La_Paz' },
+  MIA: { city: 'Miami', airport: 'Miami', timezone: 'America/New_York' },
+  MCO: { city: 'Orlando', airport: 'Orlando', timezone: 'America/New_York' },
+  JFK: { city: 'Nova York', airport: 'John F. Kennedy', timezone: 'America/New_York' },
+  LAX: { city: 'Los Angeles', airport: 'Los Angeles', timezone: 'America/Los_Angeles' },
+  CUN: { city: 'Cancún', airport: 'Cancún', timezone: 'America/Cancun' },
+  MEX: { city: 'Cidade do México', airport: 'Benito Juárez', timezone: 'America/Mexico_City' },
+  PTY: { city: 'Cidade do Panamá', airport: 'Tocumen', timezone: 'America/Panama' },
+  LIS: { city: 'Lisboa', airport: 'Humberto Delgado', timezone: 'Europe/Lisbon' },
+  MAD: { city: 'Madri', airport: 'Adolfo Suárez Madrid-Barajas', timezone: 'Europe/Madrid' },
+  BCN: { city: 'Barcelona', airport: 'Barcelona-El Prat', timezone: 'Europe/Madrid' },
+  CDG: { city: 'Paris', airport: 'Charles de Gaulle', timezone: 'Europe/Paris' },
+  LHR: { city: 'Londres', airport: 'Heathrow', timezone: 'Europe/London' },
+  FCO: { city: 'Roma', airport: 'Fiumicino', timezone: 'Europe/Rome' },
+  FRA: { city: 'Frankfurt', airport: 'Frankfurt', timezone: 'Europe/Berlin' },
 };
+
+const DEFAULT_CALENDAR_TIME_ZONE = 'America/Sao_Paulo';
+
+/** Fuso IANA do aeroporto; desconhecido → horário de Brasília (padrão operacional). */
+export function airportTimeZone(code?: string | null, strict = false): string {
+  const airport = String(code || '').trim().toUpperCase();
+  const zone = AIRPORT_META[airport]?.timezone;
+  if (zone) return zone;
+  if (strict && airport) {
+    throw new Error(`Fuso horário desconhecido para o aeroporto ${airport}. Atualize o CrewCheck antes de sincronizar esta escala com o Google Calendar.`);
+  }
+  return DEFAULT_CALENDAR_TIME_ZONE;
+}
 
 const CREWCONNECT_COLORS = {
   pairing: '#6f72c9',
@@ -73,6 +139,7 @@ const CREWCONNECT_COLORS = {
   meeting: '#ff7a50',
   rest: '#67c58d',
   layover: '#52aaa0',
+  vacation: '#0b8043',
   routine: '#0e7490',
 };
 
@@ -187,39 +254,60 @@ export function generateICalendar(roster: CrewRoster, gymRecommendations?: GymRe
     `X-WR-CALDESC:${escapeIcal('Escala premium exportada pelo CrewCheck com rotas, horários locais, cidades, atividades e lembretes.')}`,
   ].join('\n') + '\n';
 
+  const operational = cfg.calendarStyle === 'operational-detailed';
+  const usedKeys = new Map<string, number>();
+  const uniqueKey = (key: string): string => {
+    const seen = usedKeys.get(key) || 0;
+    usedKeys.set(key, seen + 1);
+    return seen ? `${key}#${seen + 1}` : key;
+  };
+
   roster.days.forEach((day, dayIndex) => {
+    const isoDate = isoDateKey(day.date);
     if (shouldExportFlights(cfg.mode) && day.legs && day.legs.length > 0) {
       const pairingUid = `${uidBase}-pairing-${dayIndex}`;
-      const pairingEndNextDay = pairingArrivesNextDay(day);
+      const timeline = buildDayTimeline(day, operational);
+      const pairingEndNextDay = timeline.endOffset > 0;
+      const allPositioning = day.legs.every((leg) => isPositioningLeg(leg));
+      const pairingColor = operational
+        ? (allPositioning ? CREWCONNECT_COLORS.positioning : CREWCONNECT_COLORS.pairing)
+        : (dayHasPositioning(day) ? CREWCONNECT_COLORS.positioning : CREWCONNECT_COLORS.pairing);
       ical += buildEvent({
         uid: pairingUid,
+        key: uniqueKey(`pairing|${isoDate}`),
         now,
-        start: formatDateTimeForIcal(day.date, pairingStartTime(day)),
-        end: formatDateTimeForIcal(day.date, pairingEndTime(day), pairingEndNextDay ? 1 : 0),
-        summary: buildPairingSummary(day),
+        start: formatDateTimeForIcal(day.date, pairingStartTime(day), timeline.startOffset),
+        end: formatDateTimeForIcal(day.date, pairingEndTime(day), timeline.endOffset),
+        startTimeZone: timeline.startTimeZone,
+        endTimeZone: timeline.endTimeZone,
+        summary: operational ? pairingRoute(day) : buildPairingSummary(day),
         description: buildPairingDescription(roster, day, pairingEndNextDay) + financialCalendarNote(day, cfg.includeFinancialNotes),
         location: buildPairingLocation(day),
-        categories: dayHasPositioning(day) ? 'CrewCheck,Pairing,Positioning' : 'CrewCheck,Pairing',
+        categories: (operational ? allPositioning : dayHasPositioning(day)) ? 'CrewCheck,Pairing,Positioning' : 'CrewCheck,Pairing',
         transparency: 'OPAQUE',
         alarms: cfg.includeReminders ? cfg.flightReminderMinutes : [],
-        color: dayHasPositioning(day) ? CREWCONNECT_COLORS.positioning : CREWCONNECT_COLORS.pairing,
+        color: pairingColor,
       });
 
       if (shouldExportDetailedLegs(cfg.mode, cfg.calendarStyle)) day.legs.forEach((leg, legIndex) => {
         const uid = `${uidBase}-flight-${dayIndex}-${legIndex}`;
-        const endNextDay = Boolean(leg.isNextDay) || arrivesNextDay(leg.departureTime, leg.arrivalTime);
+        const legTimes = timeline.legs[legIndex];
+        const endNextDay = legTimes.arrivalOffset > legTimes.departureOffset;
 
         ical += buildEvent({
           uid,
+          key: uniqueKey(`leg|${isoDate}|${normalizeFlightNumber(leg.flightNumber)}|${leg.origin}-${leg.destination}`),
           now,
-          start: formatDateTimeForIcal(day.date, leg.departureTime),
-          end: formatDateTimeForIcal(day.date, leg.arrivalTime, endNextDay ? 1 : 0),
-          summary: buildFlightSummary(leg, cfg.titleFormat, legIndex === 0 ? pairingStartTime(day) : ''),
-          description: buildFlightDescription(roster, day, leg, endNextDay) + financialCalendarNote(day, cfg.includeFinancialNotes),
+          start: formatDateTimeForIcal(day.date, leg.departureTime, legTimes.departureOffset),
+          end: formatDateTimeForIcal(day.date, leg.arrivalTime, legTimes.arrivalOffset),
+          startTimeZone: airportTimeZone(leg.origin, operational),
+          endTimeZone: airportTimeZone(leg.destination, operational),
+          summary: operational ? buildOperationalLegSummary(leg) : buildFlightSummary(leg, cfg.titleFormat, legIndex === 0 ? pairingStartTime(day) : ''),
+          description: buildFlightDescription(roster, day, leg, endNextDay, legTimes) + financialCalendarNote(day, cfg.includeFinancialNotes),
           location: buildFlightLocation(leg),
           categories: isPositioningLeg(leg) ? 'CrewCheck,Flight,Positioning' : 'CrewCheck,Flight',
           transparency: 'OPAQUE',
-          alarms: cfg.includeReminders ? cfg.flightReminderMinutes : [],
+          alarms: operational ? [] : cfg.includeReminders ? cfg.flightReminderMinutes : [],
           color: calendarColorForFlightLeg(leg),
         });
       });
@@ -228,9 +316,12 @@ export function generateICalendar(roster: CrewRoster, gymRecommendations?: GymRe
         const checkinStart = pairingStartTime(day);
         ical += buildEvent({
           uid: `${uidBase}-checkin-flight-${dayIndex}`,
+          key: uniqueKey(`checkin|${isoDate}`),
           now,
           start: formatDateTimeForIcal(day.date, checkinStart),
           end: formatDateTimeForIcal(day.date, addDisplayMinutes(checkinStart, 15)),
+          startTimeZone: timeline.startTimeZone,
+          endTimeZone: timeline.startTimeZone,
           summary: 'Check-in escala',
           description: buildCheckinDescription(roster, day),
           location: `${roster.base || day.legs?.[0]?.origin || 'Base'} · Formulário de Check-in da escala`,
@@ -242,18 +333,22 @@ export function generateICalendar(roster: CrewRoster, gymRecommendations?: GymRe
       }
     }
 
-    if (shouldExportDuties(cfg.mode) && day.dutyReport && day.dutyDebrief && !isUnreliableZeroDuty(day) && !isRestDay(day) && (!day.legs || day.legs.length === 0)) {
+    if (shouldExportDuties(cfg.mode, cfg.calendarStyle) && day.dutyReport && day.dutyDebrief && !isUnreliableZeroDuty(day) && !isRestDay(day) && (!day.legs || day.legs.length === 0)) {
       const uid = `${uidBase}-duty-${dayIndex}`;
       const endNextDay = Boolean(day.isNextDay) || arrivesNextDay(day.dutyReport, day.dutyDebrief);
+      const dutyTimeZone = airportTimeZone(day.base || roster.base, operational);
       ical += buildEvent({
         uid,
+        key: uniqueKey(`duty|${isoDate}`),
         now,
         start: formatDateTimeForIcal(day.date, day.dutyReport),
         end: formatDateTimeForIcal(day.date, day.dutyDebrief, endNextDay ? 1 : 0),
-        summary: buildDutyCalendarSummary(day),
+        startTimeZone: dutyTimeZone,
+        endTimeZone: dutyTimeZone,
+        summary: operational ? getDutySummary(day) : buildDutyCalendarSummary(day),
         description: buildDutyDescription(roster, day, endNextDay) + financialCalendarNote(day, cfg.includeFinancialNotes),
         location: buildDutyLocation(day),
-        categories: 'CrewCheck,Duty',
+        categories: dutyCategories(day),
         transparency: 'OPAQUE',
         alarms: cfg.includeReminders ? cfg.dutyReminderMinutes : [],
         color: calendarColorForDay(day),
@@ -262,9 +357,12 @@ export function generateICalendar(roster: CrewRoster, gymRecommendations?: GymRe
       if (shouldExportCheckin(cfg.mode, cfg.calendarStyle) && requiresScaleCheckin(day, roster.base)) {
         ical += buildEvent({
           uid: `${uidBase}-checkin-duty-${dayIndex}`,
+          key: uniqueKey(`checkin|${isoDate}`),
           now,
           start: formatDateTimeForIcal(day.date, day.dutyReport),
           end: formatDateTimeForIcal(day.date, addDisplayMinutes(day.dutyReport, 15)),
+          startTimeZone: dutyTimeZone,
+          endTimeZone: dutyTimeZone,
           summary: 'Check-in escala',
           description: buildCheckinDescription(roster, day),
           location: `${roster.base || day.base || 'Base'} · Formulário de Check-in da escala`,
@@ -276,16 +374,33 @@ export function generateICalendar(roster: CrewRoster, gymRecommendations?: GymRe
       }
     }
 
-    if (shouldExportRest(cfg.mode) && isRestDay(day)) {
+    // Formato operacional: HSB/ASB/treinamento publicados sem horário confiável continuam no
+    // calendário como evento de dia inteiro com o código publicado (antes eram omitidos).
+    if (operational && shouldExportDuties(cfg.mode, cfg.calendarStyle) && isUntimedPublishedActivity(day)) {
+      ical += buildAllDayEvent({
+        uid: `${uidBase}-duty-${dayIndex}`,
+        key: uniqueKey(`activity|${isoDate}`),
+        now,
+        date: day.date,
+        summary: getDutySummary(day),
+        description: buildDutyDescription(roster, day, false),
+        categories: dutyCategories(day),
+        color: calendarColorForDay(day),
+      });
+    }
+
+    if (shouldExportRest(cfg.mode, cfg.calendarStyle) && isRestDay(day)) {
       const uid = `${uidBase}-rest-${dayIndex}`;
+      const vacation = isVacationDay(day);
       ical += buildAllDayEvent({
         uid,
+        key: uniqueKey(`rest|${isoDate}`),
         now,
         date: day.date,
         summary: getRestSummary(day),
         description: buildRestDescription(roster, day),
-        categories: day.type === 'LAYOVER' ? 'CrewCheck,Layover' : 'CrewCheck,Rest',
-        color: calendarColorForDay(day),
+        categories: day.type === 'LAYOVER' ? 'CrewCheck,Layover' : vacation ? 'CrewCheck,Vacation' : 'CrewCheck,Rest',
+        color: vacation ? CREWCONNECT_COLORS.vacation : calendarColorForDay(day),
       });
     }
   });
@@ -366,6 +481,8 @@ function calendarColorForDay(day: RosterDay): string {
 
 function buildEvent(args: {
   uid: string;
+  /** Identidade operacional estável (data/voo/rota), usada pelo upsert idempotente do Google. */
+  key?: string;
   now: string;
   start: string;
   end: string;
@@ -376,10 +493,17 @@ function buildEvent(args: {
   transparency: 'OPAQUE' | 'TRANSPARENT';
   alarms?: number[];
   color?: string;
+  /** Fuso IANA do início (aeroporto de origem / apresentação). */
+  startTimeZone?: string;
+  /** Fuso IANA do fim (aeroporto de destino / liberação). */
+  endTimeZone?: string;
 }): string {
   const alarmBlock = (args.alarms || []).map((minutes) => buildAlarm(minutes)).join('');
   const colorLine = args.color ? `COLOR:${args.color}\nX-APPLE-CALENDAR-COLOR:${args.color}\n` : '';
-  return `BEGIN:VEVENT\nUID:${args.uid}\nDTSTAMP:${args.now}\n${colorLine}DTSTART;TZID=America/Sao_Paulo:${args.start}\nDTEND;TZID=America/Sao_Paulo:${args.end}\nSUMMARY:${escapeIcal(args.summary)}\nDESCRIPTION:${escapeIcal(args.description)}\nLOCATION:${escapeIcal(args.location || '')}\nCATEGORIES:${escapeIcal(args.categories)}\nSTATUS:CONFIRMED\nTRANSP:${args.transparency}\nX-MICROSOFT-CDO-BUSYSTATUS:${args.transparency === 'OPAQUE' ? 'BUSY' : 'FREE'}\n${alarmBlock}END:VEVENT\n`;
+  const keyLine = args.key ? `X-CREWCHECK-KEY:${escapeIcal(args.key)}\n` : '';
+  const startZone = args.startTimeZone || DEFAULT_CALENDAR_TIME_ZONE;
+  const endZone = args.endTimeZone || startZone;
+  return `BEGIN:VEVENT\nUID:${args.uid}\n${keyLine}DTSTAMP:${args.now}\n${colorLine}DTSTART;TZID=${startZone}:${args.start}\nDTEND;TZID=${endZone}:${args.end}\nSUMMARY:${escapeIcal(args.summary)}\nDESCRIPTION:${escapeIcal(args.description)}\nLOCATION:${escapeIcal(args.location || '')}\nCATEGORIES:${escapeIcal(args.categories)}\nSTATUS:CONFIRMED\nTRANSP:${args.transparency}\nX-MICROSOFT-CDO-BUSYSTATUS:${args.transparency === 'OPAQUE' ? 'BUSY' : 'FREE'}\n${alarmBlock}END:VEVENT\n`;
 }
 
 function buildAlarm(minutesBefore: number): string {
@@ -388,6 +512,7 @@ function buildAlarm(minutesBefore: number): string {
 
 function buildAllDayEvent(args: {
   uid: string;
+  key?: string;
   now: string;
   date: string;
   summary: string;
@@ -398,27 +523,38 @@ function buildAllDayEvent(args: {
   const start = formatDateForIcal(args.date);
   const end = formatDateForIcal(args.date, 1);
   const colorLine = args.color ? `COLOR:${args.color}\nX-APPLE-CALENDAR-COLOR:${args.color}\n` : '';
-  return `BEGIN:VEVENT\nUID:${args.uid}\nDTSTAMP:${args.now}\n${colorLine}DTSTART;VALUE=DATE:${start}\nDTEND;VALUE=DATE:${end}\nSUMMARY:${escapeIcal(args.summary)}\nDESCRIPTION:${escapeIcal(args.description)}\nCATEGORIES:${escapeIcal(args.categories)}\nSTATUS:CONFIRMED\nTRANSP:TRANSPARENT\nX-MICROSOFT-CDO-BUSYSTATUS:FREE\nEND:VEVENT\n`;
+  const keyLine = args.key ? `X-CREWCHECK-KEY:${escapeIcal(args.key)}\n` : '';
+  return `BEGIN:VEVENT\nUID:${args.uid}\n${keyLine}DTSTAMP:${args.now}\n${colorLine}DTSTART;VALUE=DATE:${start}\nDTEND;VALUE=DATE:${end}\nSUMMARY:${escapeIcal(args.summary)}\nDESCRIPTION:${escapeIcal(args.description)}\nCATEGORIES:${escapeIcal(args.categories)}\nSTATUS:CONFIRMED\nTRANSP:TRANSPARENT\nX-MICROSOFT-CDO-BUSYSTATUS:FREE\nEND:VEVENT\n`;
 }
 
 function buildPairingDescription(roster: CrewRoster, day: RosterDay, endNextDay: boolean): string {
   const route = pairingRoute(day);
   const legs = day.legs || [];
+  const timeline = buildDayTimeline(day);
+  const startAirport = legs[0]?.origin || day.base || roster.base;
+  const endAirport = legs[legs.length - 1]?.destination || day.base || roster.base;
   return [
     route,
     '',
-    `Apresentação: ${pairingStartTime(day)} LOCAL`,
+    `Apresentação: ${pairingStartTime(day)} LOCAL (${startAirport})`,
     '',
     'C/I:',
-    `  ${toUtcLabel(day.date, pairingStartTime(day))} (${pairingStartTime(day)} LOCAL)`,
-    `  ${pairingStartTime(day)} America/Sao_Paulo`,
+    `  ${toUtcLabel(day.date, pairingStartTime(day), timeline.startOffset, timeline.startTimeZone)} (${pairingStartTime(day)} LOCAL)`,
+    `  ${pairingStartTime(day)} ${timeline.startTimeZone}`,
     'C/O:',
-    `  ${toUtcLabel(day.date, pairingEndTime(day), endNextDay ? 1 : 0)} (${pairingEndTime(day)} LOCAL${endNextDay ? ' +1' : ''})`,
-    `  ${pairingEndTime(day)} America/Sao_Paulo`,
+    `  ${toUtcLabel(day.date, pairingEndTime(day), timeline.endOffset, timeline.endTimeZone)} (${pairingEndTime(day)} LOCAL${endNextDay ? ' +1' : ''})`,
+    `  ${pairingEndTime(day)} ${timeline.endTimeZone}`,
+    `Liberação: ${pairingEndTime(day)} LOCAL (${endAirport})${endNextDay ? ' +1' : ''}`,
     '-----------',
     '',
     'Voos:',
-    ...legs.map((leg) => `  ${leg.flightNumber}: ${leg.origin}-${leg.destination} ${leg.departureTime}–${leg.arrivalTime}${leg.isNextDay ? ' (+1)' : ''}${leg.aircraftType ? ` · Aircraft: ${leg.aircraftType}` : ''}${isPositioningLeg(leg) ? ' · PS/Extra' : ''}`),
+    ...legs.map((leg, index) => {
+      const times = timeline.legs[index];
+      const depZone = airportTimeZone(leg.origin);
+      const arrZone = airportTimeZone(leg.destination);
+      const zones = depZone === arrZone ? (depZone === DEFAULT_CALENDAR_TIME_ZONE ? '' : ` (${depZone})`) : ` (${depZone} → ${arrZone})`;
+      return `  ${leg.flightNumber}: ${leg.origin}-${leg.destination} ${leg.departureTime}–${leg.arrivalTime}${times.arrivalOffset > times.departureOffset ? ' (+1)' : ''}${zones} · ${workTypeCode(leg)}${leg.aircraftType ? ` · Aircraft: ${leg.aircraftType}` : ''}${isPositioningLeg(leg) ? ' · PS/Extra' : ''}`;
+    }),
     '',
     ...buildCrewDescriptionLines(roster, legs[0] || ({} as FlightLeg)),
     '',
@@ -443,26 +579,43 @@ function buildFlightSummary(leg: FlightLeg, format: CalendarTitleFormat, present
   return prefix + (presentationTime ? `Apres. ${presentationTime} · ${base}` : base);
 }
 
-function buildFlightDescription(roster: CrewRoster, day: RosterDay, leg: FlightLeg, endNextDay: boolean): string {
+function buildOperationalLegSummary(leg: FlightLeg): string {
+  const base = `${leg.origin}-${leg.destination} ${leg.flightNumber}`;
+  return isPositioningLeg(leg) ? `${base} · PS` : base;
+}
+
+function workTypeCode(leg: FlightLeg): string {
+  return String(leg.workType || 'OP').trim().toUpperCase() || 'OP';
+}
+
+function buildFlightDescription(roster: CrewRoster, day: RosterDay, leg: FlightLeg, endNextDay: boolean, legTimes?: LegTimeline): string {
   const workType = translateWorkType(leg.workType || 'OP');
+  const departureOffset = legTimes?.departureOffset || 0;
+  const arrivalOffset = legTimes?.arrivalOffset ?? (endNextDay ? 1 : 0);
+  const originZone = airportTimeZone(leg.origin);
+  const destinationZone = airportTimeZone(leg.destination);
+  const timeline = buildDayTimeline(day);
+  const releaseAirport = day.legs?.[day.legs.length - 1]?.destination || day.base || roster.base;
   return [
     `${leg.flightNumber}: ${leg.origin}-${leg.destination}`,
-    day.dutyReport ? `Apresentação da jornada: ${day.dutyReport} LOCAL` : '',
+    day.dutyReport ? `Apresentação da jornada: ${day.dutyReport} LOCAL (${day.legs?.[0]?.origin || day.base || roster.base})` : '',
     '',
     `${leg.origin}:`,
-    `  ${toUtcLabel(day.date, leg.departureTime)} (${leg.departureTime} LOCAL)`,
-    `  ${leg.departureTime} America/Sao_Paulo`,
+    `  ${toUtcLabel(day.date, leg.departureTime, departureOffset, originZone)} (${leg.departureTime} LOCAL${departureOffset ? ' +1' : ''})`,
+    `  ${leg.departureTime} ${originZone}`,
     `${leg.destination}:`,
-    `  ${toUtcLabel(day.date, leg.arrivalTime, endNextDay ? 1 : 0)} (${leg.arrivalTime} LOCAL${endNextDay ? ' +1' : ''})`,
-    `  ${leg.arrivalTime} America/Sao_Paulo`,
+    `  ${toUtcLabel(day.date, leg.arrivalTime, arrivalOffset, destinationZone)} (${leg.arrivalTime} LOCAL${endNextDay || arrivalOffset > departureOffset ? ' +1' : ''})`,
+    `  ${leg.arrivalTime} ${destinationZone}`,
     '',
     ...buildCrewDescriptionLines(roster, leg),
     '',
+    `Crew: (${roster.crewId || 'sem BP'}) ${titleCase(roster.crewName)}`,
     'Notes:',
     leg.aircraftType ? `  Aircraft: ${leg.aircraftType}` : '',
-    isPositioningLeg(leg) ? '  Work type: PS / Voo extra / passageiro' : `  Work type: ${workType}`,
+    isPositioningLeg(leg) ? '  Work type: PS · Posicionamento / voo extra / passageiro' : `  Work type: ${workTypeCode(leg)} · ${workType}`,
     day.dutyReport ? `  Pairing C/I: ${day.dutyReport}` : '',
-    day.dutyDebrief ? `  Pairing C/O: ${day.dutyDebrief}${day.isNextDay ? ' (+1)' : ''}` : '',
+    day.dutyDebrief ? `  Pairing C/O: ${day.dutyDebrief}${timeline.endOffset > 0 ? ' (+1)' : ''}` : '',
+    day.dutyDebrief ? `  Liberação: ${day.dutyDebrief} LOCAL (${releaseAirport})${timeline.endOffset > 0 ? ' +1' : ''}` : '',
     '#CREWCHECK',
   ].filter(Boolean).join('\n');
 }
@@ -521,19 +674,39 @@ function buildDutyLocation(day: RosterDay): string {
   return `${day.base} · ${cityOnly(day.base)}`;
 }
 
+/** Código publicado do dia (pairingCode tem prioridade sobre o tipo normalizado pelo parser). */
+function publishedDayCode(day: RosterDay): string {
+  const published = String(day.pairingCode || '').trim().toUpperCase();
+  if (published && getRosterCodeDefinition(published)) return published;
+  return String(day.type || published || '').trim().toUpperCase();
+}
+
+function isVacationDay(day: RosterDay): boolean {
+  return publishedDayCode(day) === 'VC';
+}
+
 function getRestSummary(day: RosterDay): string {
   if (day.type === 'LAYOVER') return `Inativo / pernoite${day.hotel ? ` · ${day.hotel}` : ''}`;
-  if (day.type === 'OFF') return 'OFF · Extensão do descanso';
-  if (day.type === 'DOF') return 'DOF · Folga';
-  if (day.type === 'DR') return 'DR · Descanso regulamentar';
+  // O parser normaliza VC/OFF/DOP para o tipo 'DO'; o rótulo do calendário preserva o código publicado.
+  const code = publishedDayCode(day);
+  if (code === 'VC') return 'VC · Férias';
+  if (code === 'OFF') return 'OFF · Extensão do descanso';
+  if (code === 'DOF') return 'DOF · Folga';
+  if (code === 'DR') return 'DR · Descanso regulamentar';
+  if (code === 'DO') return 'DO · Folga';
+  const definition = getRosterCodeDefinition(code);
+  if (definition?.category === 'DAY_OFF') return `${code} · ${definition.description}`;
   return 'DO · Folga';
 }
 
 function buildRestDescription(roster: CrewRoster, day: RosterDay): string {
+  const code = publishedDayCode(day);
   return [
     day.type === 'LAYOVER'
       ? 'Dia tratado como inativo / pernoite entre programações, sem apontamento automático de irregularidade.'
-      : explainRestType(day.type),
+      : code === 'VC'
+        ? 'Férias registradas na escala (VC).'
+        : explainRestType(code === 'OFF' || code === 'DOF' || code === 'DR' || code === 'DO' ? code as RosterDay['type'] : day.type),
     '',
     `Data: ${displayDate(day.date)}`,
     day.type === 'LAYOVER' ? `Local: ${day.hotel || cityOnly(day.base)}` : `Base: ${roster.base} · ${cityOnly(roster.base)}`,
@@ -577,6 +750,7 @@ function shouldExportFlights(mode: CalendarExportMode): boolean {
 function shouldExportDetailedLegs(mode: CalendarExportMode, style?: CalendarExportOptions['calendarStyle']): boolean {
   // v11.1.92: por padrão o Google/ICS fica igual à tela de Escala: um evento principal por programação.
   // Voos individuais, check-in, rotina e tripulação entram na descrição do card principal, sem poluir o calendário.
+  if (style === 'operational-detailed') return shouldExportFlights(mode);
   if (style === 'legacy-detailed') return mode === 'all' || mode === 'flights';
   return mode === 'flights';
 }
@@ -585,12 +759,29 @@ function shouldExportCheckin(mode: CalendarExportMode, style?: CalendarExportOpt
   return style === 'legacy-detailed' && (mode === 'all' || mode === 'flights' || mode === 'duties');
 }
 
-function shouldExportDuties(mode: CalendarExportMode): boolean {
+function shouldExportDuties(mode: CalendarExportMode, style?: CalendarExportOptions['calendarStyle']): boolean {
+  // Formato operacional: "voos + folgas" também leva HSB/ASB/treinamentos publicados.
+  if (style === 'operational-detailed' && mode === 'flights-rest') return true;
   return mode === 'all' || mode === 'duties';
 }
 
-function shouldExportRest(mode: CalendarExportMode): boolean {
+function shouldExportRest(mode: CalendarExportMode, _style?: CalendarExportOptions['calendarStyle']): boolean {
   return mode === 'all' || mode === 'rest' || mode === 'flights-rest';
+}
+
+function dutyCategories(day: RosterDay): string {
+  const code = publishedDayCode(day);
+  if (/^(HSBE?|ASB|RES)$/.test(code) || /^(HSBE?|ASB|RES)$/.test(String(day.type || ''))) return 'CrewCheck,Duty,Standby';
+  return 'CrewCheck,Duty';
+}
+
+function isUntimedPublishedActivity(day: RosterDay): boolean {
+  if (day.legs?.length || isRestDay(day)) return false;
+  const hasReliableTimes = Boolean(day.dutyReport && day.dutyDebrief && !isUnreliableZeroDuty(day));
+  if (hasReliableTimes) return false;
+  if (['HSB', 'HSBE', 'ASB', 'RES', 'CRM'].includes(day.type)) return true;
+  const code = String(day.pairingCode || '').trim().toUpperCase();
+  return Boolean(code && getRosterCodeDefinition(code) && getRosterCodeDefinition(code)?.category !== 'DAY_OFF');
 }
 
 function shouldExportGym(mode: CalendarExportMode): boolean {
@@ -665,18 +856,100 @@ function parseDate(dateStr: string, fallback = new Date()): Date {
   return isValidDate(parsed) ? parsed : safeFallback;
 }
 
-function formatDateForIcal(dateStr: string, addDays = 0): string {
+type CalendarYmd = { year: number; month: number; day: number };
+
+function rosterYmd(dateStr: string, addDays = 0): CalendarYmd {
   const date = parseDate(dateStr);
-  date.setDate(date.getDate() + addDays);
-  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+  // Aritmética em UTC: independe do fuso/horário de verão do aparelho.
+  const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate() + addDays, 12, 0, 0, 0));
+  return { year: utc.getUTCFullYear(), month: utc.getUTCMonth() + 1, day: utc.getUTCDate() };
+}
+
+function parseClock(timeStr: string): { hours: number; minutes: number } {
+  const [hours, minutes] = String(timeStr || '').replace('(+1)', '').split(':').map(Number);
+  return { hours: Number.isFinite(hours) ? hours : 0, minutes: Number.isFinite(minutes) ? minutes : 0 };
+}
+
+function isoDateKey(dateStr: string): string {
+  const ymd = rosterYmd(dateStr);
+  return `${ymd.year}-${String(ymd.month).padStart(2, '0')}-${String(ymd.day).padStart(2, '0')}`;
+}
+
+function formatDateForIcal(dateStr: string, addDays = 0): string {
+  const ymd = rosterYmd(dateStr, addDays);
+  return `${ymd.year}${String(ymd.month).padStart(2, '0')}${String(ymd.day).padStart(2, '0')}`;
 }
 
 function formatDateTimeForIcal(dateStr: string, timeStr: string, addDays = 0): string {
-  const date = parseDate(dateStr);
-  date.setDate(date.getDate() + addDays);
-  const [hours, minutes] = timeStr.replace('(+1)', '').split(':').map(Number);
-  date.setHours(Number.isFinite(hours) ? hours : 0, Number.isFinite(minutes) ? minutes : 0, 0, 0);
-  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}T${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}00`;
+  const ymd = rosterYmd(dateStr, addDays);
+  const { hours, minutes } = parseClock(timeStr);
+  return `${ymd.year}${String(ymd.month).padStart(2, '0')}${String(ymd.day).padStart(2, '0')}T${String(hours).padStart(2, '0')}${String(minutes).padStart(2, '0')}00`;
+}
+
+function timeZoneOffsetMs(utcMs: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(new Date(utcMs));
+  const get = (type: string) => Number(parts.find((part) => part.type === type)?.value || 0);
+  return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour') % 24, get('minute'), get('second')) - utcMs;
+}
+
+/** Converte data/hora local de um aeroporto (fuso IANA) para epoch UTC sem depender do fuso do aparelho. */
+export function zonedLocalTimeToUtcMs(dateStr: string, timeStr: string, addDays = 0, timeZone = DEFAULT_CALENDAR_TIME_ZONE): number {
+  const ymd = rosterYmd(dateStr, addDays);
+  const { hours, minutes } = parseClock(timeStr);
+  const guess = Date.UTC(ymd.year, ymd.month - 1, ymd.day, hours, minutes, 0, 0);
+  let zone = timeZone;
+  try { new Intl.DateTimeFormat('en-US', { timeZone: zone }); } catch { zone = DEFAULT_CALENDAR_TIME_ZONE; }
+  const firstOffset = timeZoneOffsetMs(guess, zone);
+  const candidate = guess - firstOffset;
+  const secondOffset = timeZoneOffsetMs(candidate, zone);
+  return secondOffset === firstOffset ? candidate : guess - secondOffset;
+}
+
+type LegTimeline = { departureOffset: number; arrivalOffset: number };
+type DayTimeline = { startOffset: number; endOffset: number; startTimeZone: string; endTimeZone: string; legs: LegTimeline[] };
+
+/**
+ * Linha do tempo da jornada com dia relativo (+0/+1…) de cada horário LOCAL publicado.
+ * Etapas consecutivas partem do aeroporto onde a anterior chegou (mesmo fuso), então a virada
+ * do dia é detectada comparando horários locais do mesmo aeroporto; partida→chegada usa UTC real.
+ */
+function buildDayTimeline(day: RosterDay, strictTimeZones = false): DayTimeline {
+  const legs = day.legs || [];
+  const startTimeZone = airportTimeZone(legs[0]?.origin || day.base, strictTimeZones);
+  const endTimeZone = airportTimeZone(legs[legs.length - 1]?.destination || day.base, strictTimeZones);
+  const report = day.dutyReport || legs[0]?.departureTime || '00:00';
+  const result: LegTimeline[] = [];
+  let previousTime = report;
+  let previousOffset = 0;
+  for (const leg of legs) {
+    const departureOffset = previousOffset + (minutesOfDay(leg.departureTime) < minutesOfDay(previousTime) ? 1 : 0);
+    const departureUtc = zonedLocalTimeToUtcMs(day.date, leg.departureTime, departureOffset, airportTimeZone(leg.origin, strictTimeZones));
+    let arrivalOffset = departureOffset;
+    while (arrivalOffset < departureOffset + 2 && zonedLocalTimeToUtcMs(day.date, leg.arrivalTime, arrivalOffset, airportTimeZone(leg.destination, strictTimeZones)) <= departureUtc) arrivalOffset += 1;
+    if (leg.isNextDay && arrivalOffset === 0) arrivalOffset = 1;
+    result.push({ departureOffset, arrivalOffset });
+    previousTime = leg.arrivalTime;
+    previousOffset = arrivalOffset;
+  }
+  const debrief = day.dutyDebrief || legs[legs.length - 1]?.arrivalTime || report;
+  let endOffset = legs.length
+    ? previousOffset + (minutesOfDay(debrief) < minutesOfDay(previousTime) ? 1 : 0)
+    : (arrivesNextDay(report, debrief) ? 1 : 0);
+  if (day.isNextDay && endOffset === 0) endOffset = 1;
+  return { startOffset: 0, endOffset, startTimeZone, endTimeZone, legs: result };
+}
+
+function normalizeFlightNumber(value: string): string {
+  return String(value || '').replace(/\s+/g, '').toUpperCase();
 }
 
 function escapeIcal(value: string): string {
@@ -706,17 +979,9 @@ function displayDate(dateStr: string): string {
   return date.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 }
 
-function toUtcLabel(dateStr: string, timeStr: string, addDays = 0): string {
-  const date = parseDate(dateStr);
-  date.setDate(date.getDate() + addDays);
-  const [hours, minutes] = timeStr.replace('(+1)', '').split(':').map(Number);
-  date.setHours(Number.isFinite(hours) ? hours : 0, Number.isFinite(minutes) ? minutes : 0, 0, 0);
-  return new Intl.DateTimeFormat('pt-BR', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'UTC',
-    hour12: false,
-  }).format(date) + ' UTC';
+function toUtcLabel(dateStr: string, timeStr: string, addDays = 0, timeZone = DEFAULT_CALENDAR_TIME_ZONE): string {
+  const utc = new Date(zonedLocalTimeToUtcMs(dateStr, timeStr, addDays, timeZone));
+  return `${String(utc.getUTCHours()).padStart(2, '0')}:${String(utc.getUTCMinutes()).padStart(2, '0')} UTC`;
 }
 
 function formatDecimalHours(value: number): string {
