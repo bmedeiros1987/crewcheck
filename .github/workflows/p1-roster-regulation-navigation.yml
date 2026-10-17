@@ -4,7 +4,12 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'client/src/components/regulation/RegulationNavigationContext.tsx'
+      - 'client/src/components/regulation/**'
+      - 'client/src/components/CanonicalDutyCard.tsx'
+      - 'client/src/components/canonical-duty-card.css'
+      - 'shared/regulationTemporalScenario.mjs'
+      - 'scripts/regression-regulation-temporal-scenario.mjs'
+      - 'scripts/regression-regulation-scenario-ui.cjs'
       - 'client/src/lib/navigationContext.ts'
       - 'client/src/lib/rosterFocus.ts'
       - 'client/src/pages/Home.tsx'
@@ -20,7 +25,12 @@ on:
   push:
     branches: [main]
     paths:
-      - 'client/src/components/regulation/RegulationNavigationContext.tsx'
+      - 'client/src/components/regulation/**'
+      - 'client/src/components/CanonicalDutyCard.tsx'
+      - 'client/src/components/canonical-duty-card.css'
+      - 'shared/regulationTemporalScenario.mjs'
+      - 'scripts/regression-regulation-temporal-scenario.mjs'
+      - 'scripts/regression-regulation-scenario-ui.cjs'
       - 'client/src/lib/navigationContext.ts'
       - 'client/src/lib/rosterFocus.ts'
       - 'client/src/pages/Home.tsx'
@@ -71,7 +81,15 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/regulation-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/regulation-browser/node_modules/playwright/cli.js" install --with-deps chromium
-      - name: Manual regulation sector editing regression
+      - name: Retained legacy regulation sector editing regression
         env:
           RBAC_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/regulation-browser/package.json
         run: node scripts/regression-rbac-sector-input.cjs
+      - name: Current conditional temporal scenario regression
+        run: |
+          node scripts/regression-regulation-temporal-scenario.mjs
+          npx vite build
+      - name: Current compiled scenario UI and Home shortcut
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/regulation-browser/package.json
+        run: node scripts/regression-regulation-scenario-ui.cjs

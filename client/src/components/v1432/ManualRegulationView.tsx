@@ -1,3 +1,4 @@
+import RegulationScenarioView from '@/components/regulation/RegulationScenarioView';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Calculator, CheckCircle2, Clock3, Plane, RotateCcw, ShieldCheck } from 'lucide-react';
 import '../v1392/v1392.css';
@@ -211,7 +212,7 @@ export function regulationForScheduleDay(day?: ScheduleDayLike | null): DayRegul
   };
 }
 
-export default function ManualRegulationView({ compliance, scheduleDay }: { compliance?: ComplianceLike; scheduleDay?: ScheduleDayLike | null }) {
+function LegacyManualRegulationView({ compliance, scheduleDay }: { compliance?: ComplianceLike; scheduleDay?: ScheduleDayLike | null }) {
   const [form, setForm] = useState<FormState>(loadForm);
   const [sectorsDraft, setSectorsDraft] = useState(() => String(form.sectors));
   const validSectorsDraft = /^[1-9]$/.test(sectorsDraft);
@@ -322,3 +323,6 @@ export default function ManualRegulationView({ compliance, scheduleDay }: { comp
     <section className="cc-reg-disclaimer cc-readable-surface"><AlertTriangle/><p>Ferramenta de apoio. O corte e o fim da jornada dependem dos dados confirmados, contexto real, ACT, RBAC 117, SGRF/manual aprovado e decisão operacional competente; o resultado não substitui a fonte oficial.</p></section>
   </>;
 }
+
+// New read-only scenario UI; legacy helpers remain unchanged for canonical callers.
+export default function ManualRegulationView(props: { compliance?: ComplianceLike; scheduleDay?: ScheduleDayLike | null }) { return <RegulationScenarioView {...props}/>; }

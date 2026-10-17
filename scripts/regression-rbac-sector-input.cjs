@@ -1,4 +1,5 @@
-// Synthetic browser regression against the actual React form; no account or external APIs.
+// Synthetic browser regression for the retained legacy sector form. The current
+// scenario UI has its own compiled-app regression in the same workflow.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -28,13 +29,24 @@ const esbuild = require('esbuild');
   let dir, server, browser, failure;
   try {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-rbac-form-'));
-    const bundle = esbuild.buildSync({stdin:{contents:`import React from 'react'; import {createRoot} from 'react-dom/client'; import Form from './client/src/components/v1432/ManualRegulationView';
+    // Compile the retained component under test without changing the application
+    // export, which now mounts RegulationScenarioView. Keep all sector assertions.
+    const bundle = (await esbuild.build({plugins:[{name:'legacy-sector-fixture',setup(build){
+      build.onLoad({filter:/[/\\]v1432[/\\]ManualRegulationView\.tsx$/},args=>{
+        const source=fs.readFileSync(args.path,'utf8');
+        const marker='export default function ManualRegulationView(';
+        const offset=source.lastIndexOf(marker);
+        assert.ok(offset>=0,'current wrapper must be present');
+        assert.match(source.slice(offset),/return <RegulationScenarioView \{\.\.\.props\}\/>/);
+        return {contents:source.slice(0,offset)+'export default LegacyManualRegulationView;',loader:'tsx',resolveDir:path.dirname(args.path)};
+      });
+    }}],stdin:{contents:`import React from 'react'; import {createRoot} from 'react-dom/client'; import Form from './client/src/components/v1432/ManualRegulationView';
       const compliance={score:75,alerts:[
         {severity:'error',actionable:true,classification:'irregularidade_confirmada',title:'Synthetic confirmed critical alert'},
         {severity:'warning',actionable:false,classification:'informativa',title:'Synthetic informational diagnostic'},
         {severity:'error',classification:'dados_insuficientes',title:'Synthetic insufficient-data diagnostic'}
       ]};
-      function App(){const [day,setDay]=React.useState(null); window.setSyntheticSchedule=setDay; return React.createElement(Form,{scheduleDay:day,compliance});} createRoot(document.getElementById('root')).render(React.createElement(App));`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'iife',loader:{'.css':'empty'},jsx:'automatic'}).outputFiles[0].text;
+      function App(){const [day,setDay]=React.useState(null); window.setSyntheticSchedule=setDay; return React.createElement(Form,{scheduleDay:day,compliance});} createRoot(document.getElementById('root')).render(React.createElement(App));`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'iife',loader:{'.css':'empty'},jsx:'automatic'})).outputFiles[0].text;
     server = http.createServer((req,res)=>{res.setHeader('content-type',req.url==='/form.js'?'application/javascript':'text/html');res.end(req.url==='/form.js'?bundle:'<div id="root"></div><script src="/form.js"></script>');});
     await new Promise((resolve,reject)=>{
       server.once('error',reject);
@@ -86,7 +98,7 @@ const esbuild = require('esbuild');
     await page.evaluate(()=>window.setSyntheticSchedule({date:'2032-02-03',pairingCode:'SYN',dutyReport:'09:00',dutyDebrief:'18:00',legs:Array.from({length:3},()=>({departureTime:'10:00',arrivalTime:'11:00'}))}));
     await page.waitForFunction(()=>document.querySelector('input[type=number]').value==='3');
     assert.equal(await page.getByLabel('Origem da jornada').inputValue(),'presentation');
-    console.log('PASS: clear/type 1/2/3, all valid sectors 1-9, invalid drafts, accessible errors, critical alerts/navigation, blur, persistence, invalid stored value, reset, reserve activation and schedule changes');
+    console.log('PASS retained legacy form: clear/type 1/2/3, all valid sectors 1-9, invalid drafts, accessible errors, critical alerts/navigation, blur, persistence, invalid stored value, reset, reserve activation and schedule changes');
   } catch (error) {
     failure = error;
     throw error;
