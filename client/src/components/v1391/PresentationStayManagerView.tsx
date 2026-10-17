@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { loadStayEditor, persistStayEditor, stayEditorAccount } from '@/lib/stayEditorStore';
+import { loadStayEditor, persistStayEditor, persistStayDisplayPreference, stayEditorAccount } from '@/lib/stayEditorStore';
 import { preparedStayAlarmAdapter } from '../../lib/stayAlarmHost';
 import { createStayAlarmController } from '@shared/stay-alarm-adapter.mjs';
 import { sanitizeStayChoice, migrateLegacyStay } from '@shared/stay-editor-store.mjs';
@@ -234,8 +234,8 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
   function saveDisplayPreference(value: StayTimeZonePreference) {
     if (!editorSessionCurrent()) return toast.info('A conta mudou. Reabra este pernoite.');
     try {
-      const preference = stayTimeZonePreference(value), current = loadStayEditor();
-      persistStayEditor({ ...current, timeZonePreference: preference }, renderAccount);
+      const preference = stayTimeZonePreference(value);
+      persistStayDisplayPreference(preference, renderAccount);
       setDisplayPreference(preference);
     } catch { toast.error('Não foi possível salvar a preferência de exibição.'); }
   }

@@ -8,6 +8,7 @@ import * as presentation from '../shared/stay-time-presentation.mjs';
 import { emptyStayEditor, readStayEditor, writeStayEditor } from '../shared/stay-editor-store.mjs';
 import { createStayAlarmController } from '../shared/stay-alarm-adapter.mjs';
 import { createStayHostRuntime } from '../shared/stay-alarm-host-runtime.mjs';
+import { attachStayAlarmLifecycle } from '../shared/stay-alarm-lifecycle.mjs';
 const require = createRequire(process.env.COMPOSITION_DEPS_PACKAGE || import.meta.url);
 const ts = require('typescript');
 const jsx = require('react/jsx-runtime');
@@ -28,8 +29,8 @@ const managerPath='client/src/components/v1391/PresentationStayManagerView.tsx';
 const manager=fs.readFileSync(managerPath,'utf8');
 const ast=ts.createSourceFile(managerPath,manager,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 assert.equal(ast.parseDiagnostics.length,0);
-let program;
-function walk(node) { if(ts.isJsxAttribute(node)&&node.name.text==='onProgram')program=node.initializer.expression.getText(ast);ts.forEachChild(node,walk); }
+let program, saveDisplay;
+function walk(node) { if(ts.isJsxAttribute(node)&&node.name.text==='onProgram')program=node.initializer.expression.getText(ast);if(ts.isFunctionDeclaration(node)&&node.name?.text==='saveDisplayPreference')saveDisplay=node.getText(ast);ts.forEachChild(node,walk); }
 walk(ast);assert.ok(program);
 function programHandler(context) { const m={exports:{}};vm.runInNewContext(compile('module.exports=('+program+');').outputText,{module:m,exports:m.exports,Date:Clock,...context});return m.exports; }
 function hostFixture() {
@@ -77,4 +78,35 @@ test('combined editor retains operational invalidation dependencies while displa
  const effects=[];function scan(n){if(ts.isCallExpression(n)&&n.expression.getText(ast)==='useEffect'&&n.arguments[0]?.getText(ast).includes('nativeHost.current?.invalidate()'))effects.push(n.arguments[1].elements.map(e=>e.getText(ast)));ts.forEachChild(n,scan);}scan(ast);
  assert.equal(effects.length,1);for(const dep of ['hotelTimeZone','alarmChoice','defaultLead','defaultWithoutBreakfast','breakfastPlan','apzConfirmed'])assert.ok(effects[0].includes(dep));assert.ok(!effects[0].includes('displayPreference'));
  const native=fs.readFileSync('android-wrapper/app/src/main/java/com/crewcheck/app/StayAlarmHostAndroid.java','utf8');assert.match(native,/PREPARED_HOST_ENABLED=false/);assert.match(native,/PREPARED_OVERNIGHT_LEASE_ENABLED=false/);
+});
+test('actual display callback and persistence preserve the host session; operational saves still revoke via the real lifecycle',async()=>{
+ const values=new Map(),storage={getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,v)};
+ let account='synthetic-account';const target=new EventTarget(),events=[];
+ target.addEventListener('crewcheck:stay-editor-saved',event=>events.push(event.detail));
+ const compiledStore=compile(fs.readFileSync('client/src/lib/stayEditorStore.ts','utf8')),storeModule={exports:{}};
+ assert.equal(compiledStore.diagnostics.length,0);
+ vm.runInNewContext(compiledStore.outputText,{module:storeModule,exports:storeModule.exports,localStorage:storage,window:target,CustomEvent,require:name=>{
+  if(name==='./authClient')return {getToken:()=>account?'synthetic-token':null,getStoredUser:()=>({id:account})};
+  if(name==='@shared/stay-editor-store.mjs')return {readStayEditor,writeStayEditor};
+  if(name==='@shared/stay-time-presentation.mjs')return presentation;
+  throw Error('Unexpected store import '+name);
+ }});
+ const store=storeModule.exports,f=hostFixture();await f.runtime.authenticate();const controller=createStayAlarmController(f.runtime);
+ await preview({onProgram:programHandler({editorSessionCurrent:()=>true,toast:{info:()=>{}},editSession:{current:0},alarmController:{current:controller},nativeHost:{current:f.runtime},stayEditorAccount:()=>account,selected:{id:'synthetic-stay'},apzConfirmed:true,alarmCancelled:false,alarmChoice:undefined})}).button.props.onClick();
+ assert.equal(f.jobs.size,1);const scheduled=JSON.stringify([...f.jobs]),messageCount=f.messages.length;
+ writeStayEditor(storage,account,{...emptyStayEditor(account),stays:{'synthetic-stay':{eventId:'synthetic-stay',signature:'r1',draft:{hotelName:'Synthetic',presentationTime:'08:30'},timeZone:'America/Manaus',apzDate:'2030-10-11',apzConfirmed:true,apzSource:'manual',alarmState:'scheduled',breakfastPlan:'with'}}});
+ const originalStays=JSON.stringify(store.loadStayEditor().stays),detach=attachStayAlarmLifecycle(target,f.runtime),shown=[];
+ assert.ok(saveDisplay);
+ const callbackModule={exports:{}};
+ vm.runInNewContext(compile('module.exports=('+saveDisplay+');').outputText,{module:callbackModule,exports:callbackModule.exports,editorSessionCurrent:()=>true,toast:{info:()=>assert.fail('current account'),error:()=>assert.fail('display persistence failed')},stayTimeZonePreference:presentation.stayTimeZonePreference,loadStayEditor:store.loadStayEditor,persistStayEditor:store.persistStayEditor,persistStayDisplayPreference:store.persistStayDisplayPreference,renderAccount:account,setDisplayPreference:value=>shown.push(value)});
+ for(const preference of [{source:'utc'},{source:'manual',manualZone:'Asia/Tokyo'},{source:'base'},{source:'local'}])callbackModule.exports(preference);
+ await Promise.resolve();assert.equal(shown.length,4);assert.equal(events.length,0);assert.equal(f.messages.length,messageCount);assert.equal(f.runtime.ready(),true);assert.equal(JSON.stringify([...f.jobs]),scheduled);assert.equal(JSON.stringify(store.loadStayEditor().stays),originalStays);
+ const beforeWrongAccount=JSON.stringify([...values]);account='another-synthetic-account';assert.throws(()=>store.persistStayDisplayPreference(presentation.stayTimeZonePreference({source:'utc'}),'synthetic-account'),/conta mudou/);assert.equal(JSON.stringify([...values]),beforeWrongAccount);assert.equal(events.length,0);account='synthetic-account';
+ for(const change of [{breakfastPlan:'without'},{draft:{hotelName:'Synthetic',presentationTime:'09:00'}}]){
+  const current=store.loadStayEditor(),record=current.stays['synthetic-stay'];
+  store.persistStayEditor({...current,stays:{...current.stays,'synthetic-stay':{...record,...change}}},account);
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(f.runtime.ready(),false);
+  await f.runtime.authenticate();assert.equal(f.runtime.ready(),true);
+ }
+ assert.equal(events.length,2);assert.equal(f.messages.filter(message=>message.action==='revoke').length,2);detach();
 });
