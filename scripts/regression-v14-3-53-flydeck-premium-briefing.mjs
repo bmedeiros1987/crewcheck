@@ -31,9 +31,10 @@ const sourceCss = read('scripts/v14353/flydeck-premium.css');
 const patch = read('scripts/v14353/apply.mjs');
 const applyChain = read('scripts/v139/apply.mjs');
 const packageJson = JSON.parse(read('package.json'));
-const cockpitStart = home.indexOf('function Cockpit(');
-const cockpitEnd = cockpitStart >= 0 ? home.indexOf('function rosterCode(', cockpitStart) : -1;
-const cockpit = cockpitStart >= 0 && cockpitEnd > cockpitStart ? home.slice(cockpitStart, cockpitEnd) : '';
+const homeAst = ts.createSourceFile('Home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const cockpitNode = homeAst.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'Cockpit');
+expect(Boolean(cockpitNode), 'Função Cockpit ativa ausente.');
+const cockpit = cockpitNode.getText(homeAst);
 
 expect(home.includes('data-flydeck-v14353="premium-briefing"'), 'Briefing Premium não foi instalado.');
 expect(home.includes('ATUALIZADO {flyDeckLiveClockV14353(nowMs)}'), 'Indicador de vida não exibe atualização real.');
@@ -41,7 +42,7 @@ expect(home.includes('Consulte sempre a escala oficial'), 'Aviso de confirmaçã
 expect(home.includes('em caso de divergência, prevalece a fonte oficial'), 'Regra de prevalência da fonte oficial está ausente.');
 expect(home.includes('<OperationalDayTimeline events={events}'), 'Linha do Dia deixou de aparecer depois do briefing.');
 expect(home.includes('isProgramScheduleActivity(event)'), 'Seleção da próxima programação não usa a classificação compartilhada.');
-expect(home.includes('isSmartDepartureEligible(event)'), 'Elegibilidade de rota não está separada da existência de programação.');
+expect(cockpit.includes('const departureEligible = loaded && !event.placeholder && isAirportDepartureEligible(event)'), 'Elegibilidade de rota não está separada da existência de programação.');
 expect(!cockpit.includes('<SmartCard'), 'Card antigo ainda pode exibir apresentação como horário de saída.');
 expect(!cockpit.includes('cz-kpi-row'), 'KPIs mensais continuam ocupando o briefing.');
 expect(!cockpit.includes('cz-money-row'), 'Financeiro continua ocupando a tela operacional.');
@@ -61,12 +62,12 @@ expect(!snippet.includes('>Ver escala <ChevronRight'), 'Rótulo textual antigo V
 
 expect(css.includes('CrewCheck v14.3.53 — FlyDeck Premium'), 'CSS do FlyDeck Premium está ausente.');
 expect(css.includes('@media (max-width: 760px)'), 'Layout mobile do briefing está ausente.');
-expect(css.includes("[data-theme='light']"), 'Tema claro do briefing está ausente.');
+expect(css.includes("[data-crew-theme='light']"), 'Tema claro do briefing está ausente.');
 expect(css.includes('@media (prefers-reduced-motion: reduce)'), 'Movimento reduzido não está respeitado.');
 expect(css.includes('grid-template-columns: repeat(2, minmax(0, 1fr))'), 'Fatos essenciais não se reorganizam no mobile.');
 expect(sourceCss.includes('.cc-flydeck-roster-label'), 'Rótulo "Ver Escala" não tem estilo próprio no FlightDeck.');
 expect(!sourceCss.includes('.cc-flydeck-calendar-icon'), 'CSS do ícone de calendário sobreviveu à remoção do #560.');
-expect(sourceCss.includes("[data-theme='light'] .cc-flydeck-facts svg"), 'Tema claro não preserva contraste próprio dos ícones.');
+expect(sourceCss.includes("[data-crew-theme='light'] .cc-flydeck-facts svg"), 'Tema claro não preserva contraste próprio dos ícones.');
 expect(sourceCss.includes('filter: drop-shadow'), 'Tema escuro não reforça visualmente os ícones do FlyDeck.');
 
 const transpiled = ts.transpileModule(snippet, {
