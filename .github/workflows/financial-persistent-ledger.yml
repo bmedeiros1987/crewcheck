@@ -1,0 +1,32 @@
+name: Financial persistent ledger offline
+on:
+  pull_request:
+    paths:
+      - 'server/financial-ledger*.mjs'
+      - 'server/platform.mjs'
+      - 'shared/financialReadModel.mjs'
+      - 'scripts/regression-financial-ledger.mjs'
+      - 'migrations/20261017_020_financial_ledger_mysql.sql'
+      - '.github/workflows/financial-persistent-ledger.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-ledger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify unprepared backend contract
+        run: node scripts/regression-financial-ledger.mjs
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Verify prepared backend contract
+        run: node scripts/regression-financial-ledger.mjs
+      - name: Preserve existing financial read and credit lifecycle
+        run: |
+          node scripts/regression-financial-read-model.mjs
+          node scripts/regression-monthly-credit-lifecycle.mjs
+          node scripts/regression-account-health-deletion.mjs

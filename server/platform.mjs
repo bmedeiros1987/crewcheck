@@ -1,3 +1,5 @@
+import {createFinancialLedgerHandler, FINANCIAL_LEDGER_PATH} from './financial-ledger-route.mjs';
+import {financialLedgerErasureStatements} from './financial-ledger-erasure.mjs';
 import {verifiedMysqlTls} from './mysql-verified-tls.mjs';
 import {eraseWhatsAppAccountState} from './whatsapp-lifecycle.mjs';
 import { PATH as RELEASE_JOURNAL_PATH } from './release-journal/route.mjs';
@@ -990,6 +992,7 @@ async function clearAuthFailures(db, identifier) {
 }
 
 const PLATFORM_METHOD_POLICIES = [
+  [/^\/api\/platform\/finance\/history$/, ['GET', 'POST']],
   [/^\/api\/platform\/catalog$/, ['GET']],
   [/^\/api\/platform\/database\/health$/, ['GET']],
   [/^\/api\/platform\/profile$/, ['GET', 'PATCH']],
@@ -2442,6 +2445,8 @@ async function handleAccountDeletion(req, res) {
   const client = await context.db.connect();
   try {
     await client.query('BEGIN');
+    // Same first lock as financial append: erasure cannot race new history.
+    await client.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 FOR UPDATE', [context.identity.email]);
     await eraseWhatsAppAccountState(context.identity.email, {client});
     const visitorRows = await client.query('SELECT id FROM crewcheck_platform_visitors WHERE owner_email=$1 OR email=$1', [context.identity.email]);
     const visitorKeys = new Set(visitorRows.rows.map((row) => `visitor:${row.id}`));
@@ -2466,6 +2471,9 @@ async function handleAccountDeletion(req, res) {
     await client.query('DELETE FROM crewcheck_platform_gym_checkins WHERE owner_email=$1', [context.identity.email]);
     if (await platformTableReady(client, 'crewcheck_platform_parking_positions')) {
       await client.query('DELETE FROM crewcheck_platform_parking_positions WHERE owner_email=$1', [context.identity.email]);
+    }
+    for (const [sql, params] of financialLedgerErasureStatements(context.identity.email)) {
+      await deleteIfTableExists(client, sql, params);
     }
     await client.query('DELETE FROM crewcheck_platform_rosters WHERE owner_email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_platform_usage WHERE email=$1', [context.identity.email]);
@@ -2529,6 +2537,23 @@ export async function deleteIfTableExists(client, sql, params) {
   }
 }
 
+// Financial storage stays off until a separately operated additive migration.
+// Unlike legacy development routes, this path never accepts an email header/body.
+const financialLedgerRoute = createFinancialLedgerHandler({
+  enabled: () => env('CREWCHECK_FINANCIAL_LEDGER_ENABLED', 'false') === 'true',
+  identityProvider: (req) => {
+    const claims = verifyJwt(requestToken(req));
+    const email = safeEmail(claims?.email);
+    if (!email || claims?.aud === 'crewcheck-visitor' || claims?.role === 'visitor') return null;
+    return { authenticated: true, role: 'owner', ownerId: email };
+  },
+  poolProvider: pool,
+  allowedOrigin: () => {
+    try { const url = new URL(env('PUBLIC_APP_URL')); return url.protocol === 'https:' ? url.origin : ''; }
+    catch { return ''; }
+  },
+});
+
 // Activation requires independently verified GitHub review and trusted ingress; no env/caller toggle.
 const releaseJournalRoute=createProbeOnlyReleaseHandler({poolProvider:pool});
 
@@ -2539,6 +2564,7 @@ export async function handlePlatformRoute(req, res, url) {
   try {
     if (legacy) { await handleLegacyDatabase(req, res, url); return true; }
     if(url.pathname===RELEASE_JOURNAL_PATH)return releaseJournalRoute(req,res,url);
+    if (url.pathname === FINANCIAL_LEDGER_PATH) return financialLedgerRoute(req, res, url);
     if (url.pathname === '/api/platform/catalog') { await handleCatalog(req, res); return true; }
     if (url.pathname === '/api/platform/terms/current') { await handleTermsCurrent(req, res); return true; }
     if (url.pathname === '/api/platform/terms/accept') { await handleTermsAccept(req, res); return true; }
