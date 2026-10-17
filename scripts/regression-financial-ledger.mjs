@@ -170,6 +170,9 @@ const canonicalInput={ownerId:A.ownerId,crewId:'synthetic-crew',airline:'LA',row
 const canonicalSource=await canonicalAllowanceCapture(canonicalInput);
 const floatSource=await canonicalAllowanceCapture({...canonicalInput,rows:[{...canonicalInput.rows[0],value:105.03999999999999}]});assert.equal(floatSource.items[0].record.amountMinor,10504);
 for(const value of [1.234,Number.MAX_VALUE])await assert.rejects(canonicalAllowanceCapture({...canonicalInput,rows:[{...canonicalInput.rows[0],value}]}),/INVALID_ROW/);
+const multiWeek={...canonicalInput,range:{start:'2026-06-01',end:'2026-06-08'},coveredDays:Array.from({length:8},(_,i)=>'2026-06-'+String(i+1).padStart(2,'0')),rows:[canonicalInput.rows[0],{...canonicalInput.rows[0],iso:'2026-06-08'}]};
+await assert.rejects(canonicalAllowanceCapture(multiWeek),/ONE_BRL_CYCLE_REQUIRED/);
+const pendingMulti=await canonicalAllowanceCapture({...multiWeek,review:{...multiWeek.review,brlConfirmed:false}});assert(pendingMulti.items.every(item=>!item.schedule),'multiple weeks preserve pending dates');
 const preview=await canonicalCaptureRequest({identity:A,input:{action:'preview',source:canonicalSource},store:canonicalStore});
 assert.equal(canonicalDb.state.revisions.length,0,'preview never writes');
 const captureInput={action:'capture',source:preview.source,reviewDigest:preview.reviewDigest,confirmed:true};

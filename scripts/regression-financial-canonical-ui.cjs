@@ -61,6 +61,8 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
  const summary=page.locator('summary').filter({hasText:'Revisar captura da previsão de diárias'});await summary.click();
  await page.getByLabel('Referência da revisão financeira').fill('synthetic-compiled-ui');
  await page.getByLabel('Confirmo que esta escala é minha e revisei os valores calculados.').check();
+ assert.equal(await page.getByLabel('Confirmo a política BRL: quinta-feira; feriado bancário de SP antecipa para quarta.').isDisabled(),true,'multi-week scope cannot apply one Thursday to all rows');
+ await page.getByText(/selecione uma única semana de trabalho/).waitFor();
  if(scenario==='multi'){
  await page.getByLabel('Confirmo a política: a diária internacional selecionada é prevista na data do voo vinculado.').check();
  const links=page.getByRole('combobox',{name:/Voo comprovado/});assert(await links.count()>0,'foreign canonical items exist');

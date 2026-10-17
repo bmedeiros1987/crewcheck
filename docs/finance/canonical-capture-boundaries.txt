@@ -7,6 +7,13 @@ Each record append is transactional, not the entire batch; identical reviewed
 payload retries resume/replay safely. Replacing/deleting a roster does not erase
 persisted financial revisions. Currency changes require further review.
 
+Known estimates and BRL timing
+Known native-currency components remain visible as partial estimates when scope,
+tariff, taxi or timing evidence is incomplete. This does not establish a complete
+capture scope, net credit, settlement or payment date. A single reviewed Thursday
+can apply only to BRL rows from one Wednesday-Tuesday work week. Multi-week BRL
+scopes can retain pending dates; filter one work week before confirming its date.
+
 International timing
 The owner explicitly confirms policy and links each allowance item to an existing
 canonical flight identity. Candidates require original published date and valid

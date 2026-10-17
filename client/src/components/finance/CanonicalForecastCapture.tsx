@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { authFetch, captureAuthSession, getStoredUser, getToken } from '@/lib/authClient';
-import { canonicalAllowanceCapture } from '@shared/financialCanonicalCapture.mjs';
+import { canonicalAllowanceCapture, canonicalBrlCycleKeys } from '@shared/financialCanonicalCapture.mjs';
 
 type Props={rows:any[];coveredDays:string[];range:{start:string;end:string};complete:boolean;crewId:string|number;airline:string;flights:Array<{id:string;published:boolean;localDate:string;timezone:string;airport:string;label:string}>};
 // Review state belongs to this mounted canonical snapshot. Parent keys by its
@@ -9,6 +9,7 @@ export default function CanonicalForecastCapture(props:Props){
  const [reference,setReference]=useState(''),[confirmed,setConfirmed]=useState(false),[brl,setBrl]=useState(false),[cycle,setCycle]=useState('');
  const [foreign,setForeign]=useState(false),[flightLinks,setFlightLinks]=useState<Record<string,string>>({});
  const [review,setReview]=useState<any>(null),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
+ const brlCycleCount=canonicalBrlCycleKeys(props.rows).length;
  const clear=()=>{setReview(null);setMessage('');};
  const preview=async()=>{
   const session=captureAuthSession(),user=getStoredUser(),ownerId=String(user?.email||'').trim().toLowerCase();
@@ -36,7 +37,8 @@ export default function CanonicalForecastCapture(props:Props){
   <p>{props.rows.length} itens · {props.range.start} a {props.range.end}. A substituição da escala não apaga o histórico salvo.</p>
   <fieldset disabled={busy}><label>Referência da revisão<input aria-label="Referência da revisão financeira" value={reference} maxLength={128} onChange={e=>{clear();setReference(e.target.value);}} placeholder="revisao-2026-10"/></label>
   <label><input type="checkbox" checked={confirmed} onChange={e=>{clear();setConfirmed(e.target.checked);}}/>Confirmo que esta escala é minha e revisei os valores calculados.</label>
-  <label><input type="checkbox" checked={brl} onChange={e=>{clear();setBrl(e.target.checked);}}/>Confirmo a política BRL: quinta-feira; feriado bancário de SP antecipa para quarta.</label>
+  <label><input type="checkbox" disabled={brlCycleCount!==1} checked={brl} onChange={e=>{clear();setBrl(e.target.checked);}}/>Confirmo a política BRL: quinta-feira; feriado bancário de SP antecipa para quarta.</label>
+  {brlCycleCount>1&&<p>Para confirmar a data BRL, selecione uma única semana de trabalho (quarta a terça) no filtro financeiro. Nesta seleção, os valores podem ser salvos com datas pendentes.</p>}
   {brl&&<label>Quinta-feira do ciclo comprovado<input aria-label="Data comprovada do ciclo BRL" type="date" value={cycle} onChange={e=>{clear();setCycle(e.target.value);}}/></label>}
   <p>Sem ciclo comprovado, a data fica pendente.</p>
   {props.rows.some(row=>row.currency!=='BRL')&&<fieldset><legend>Vínculo internacional revisado</legend>
