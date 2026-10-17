@@ -107,9 +107,8 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     </section>
   </>;
   const graph=<details className="cz-toolbox cc-financial-graph" onToggle={event=>setExpanded(event.currentTarget.open)}>
-    <summary>Histórico e comparação <small>Previsões</small></summary>
+    <summary>Gráfico e histórico <small>Estimativas</small></summary>
     <p>Estimativas por período · recebimento não confirmado.</p>
-    {kind==='month'&&<button type="button" onClick={()=>setKind('year')}>Comparar meses do ano</button>}
     {!privacy.hidden&&numeric.length>=2&&<p>Maior previsão: {numeric.filter(item=>item.values[displayedCurrency]===max).map(item=>item.title).join(', ')}. Comparação apenas entre períodos completos disponíveis em {displayedCurrency}.</p>}
     <label>Comparar por<select aria-label="Agrupamento do gráfico" value={comparison} onChange={event=>setComparison(event.target.value as 'month'|'week')}><option value="month">Mês</option>{mode==='allowance'&&periodMetric&&<option value="week">Semana</option>}</select></label>
     <p>Comparação: {comparisonRange.start} até {comparisonRange.end}. Moeda original: {displayedCurrency}. {comparison==='week'?'Semanas de quarta a terça; recortes parciais identificados.':''}</p>

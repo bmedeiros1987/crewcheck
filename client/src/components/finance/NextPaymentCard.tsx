@@ -34,7 +34,7 @@ export default function NextPaymentCard({ payment, requestRange }: { payment:Nex
       {payment.issues.some(issue=>/escala|programação/.test(issue))&&<button onClick={()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'import'}))}>Importar escala <ChevronRight size={16} aria-hidden="true"/></button>}
       <button aria-label="Demonstrativos" onClick={()=>open(payment.kind==='allowance'?'.cc-financial-reconciliation':'.cc-salary-reference')}><FileText size={16} aria-hidden="true"/> Conferir demonstrativo <ChevronRight size={16} aria-hidden="true"/></button>
     </section>
-    <details className="cc-next-payment-lines"><summary>Ver composição do próximo ciclo <span>{payment.lines.length} itens</span></summary>
+    <details className="cc-next-payment-lines"><summary>Extrato previsto do próximo ciclo <span>{payment.lines.length} itens</span></summary>
       <p>{payment.source}</p>
       {payment.lines.map((line,index)=><article key={`${line.iso}:${line.label}:${index}`}><div><strong>{line.label}</strong><small>{dateLabel(line.iso)}</small></div><b>{line.value===null?'Não informado':money(line.value,line.currency)}</b><details className="cc-payment-line-source"><summary>Origem</summary><p>{privacy.text(line.source)}</p></details></article>)}
       {!payment.lines.length&&<p>Nenhum valor foi presumido. Confira a referência e a escala deste ciclo.</p>}

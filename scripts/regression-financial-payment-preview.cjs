@@ -95,6 +95,7 @@ function seed({theme,kind,amount,history,salaryBase}) {
 
   await page.locator('.cc-payment-hero button').press('Space');
   const composition=page.locator('.cc-next-payment-lines>summary');
+  assert.match(await composition.innerText(),/Extrato previsto/,'statement never masquerades as received money');
   await composition.focus();await page.keyboard.press('Enter');assert.equal(await page.locator('.cc-next-payment-lines').getAttribute('open'),'');
   assert.equal(await composition.evaluate(el=>el===document.activeElement),true,'native disclosure retains keyboard focus');
   assert.equal(await page.locator('.cc-payment-actions').count(),0,'duplicated shortcut row is removed');
