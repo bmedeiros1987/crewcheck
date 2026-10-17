@@ -37,6 +37,8 @@ function seed({theme,kind,amount,history,salaryBase}) {
   if(salaryBase!==undefined)localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_salary_base_brl',String(salaryBase));
   localStorage.setItem('crewcheck_roster_choice_v1_financial-ui-qa',JSON.stringify({owner:'financial-ui-qa',roster:kind,selection:'explicit',cacheSchema:'p0-operational-date-anchor-v2',sourceFileName:'Synthetic finance UI QA'}));
 }
+async function showFinancial(page,screen){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===screen)return;const names={overview:'← Voltar ao resumo',statement:'Extrato',charts:'Gráficos',payment:'Detalhes do pagamento'};await page.getByRole('button',{name:names[screen],exact:true}).click();await page.waitForFunction(screen=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen===screen,screen);}
+
 (async()=>{
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
  const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}),args:['--no-sandbox']});
@@ -71,7 +73,7 @@ function seed({theme,kind,amount,history,salaryBase}) {
     assert.equal(await page.getByRole('button',{name:/^(Ocultar|Mostrar) valores financeiros$/}).count(),1,'one privacy control after repeated navigation');
   }
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'perdiem'})));
-  const hero=page.locator('.cc-payment-hero');await hero.waitFor();
+  await page.getByRole('region',{name:'Previsão de diárias',exact:true}).waitFor();const hero=page.locator('.cc-payment-hero');await hero.waitFor();await hero.getByRole('button').waitFor({state:'visible'});
   assert.equal(await page.getByRole('button',{name:/^(Ocultar|Mostrar) valores financeiros$/}).count(),1);
   const privacyBox=await hero.getByRole('button').boundingBox();assert(privacyBox.width>=44&&privacyBox.height>=44);
 
@@ -94,17 +96,23 @@ function seed({theme,kind,amount,history,salaryBase}) {
   }
 
   await page.locator('.cc-payment-hero button').press('Space');
-  const statementTab=page.getByRole('tab',{name:'Extrato',exact:true}), detailsTab=page.getByRole('tab',{name:'Detalhes',exact:true});
-  assert.equal(await statementTab.getAttribute('aria-selected'),'true','statement is the default view');
-  assert.equal(await page.locator('.cc-next-payment-lines').isVisible(),true);
-  assert.match(await page.locator('.cc-next-payment-lines').innerText(),/Extrato previsto/,'statement never masquerades as received money');
-  const dates=await page.locator('.cc-bank-transaction').evaluateAll(nodes=>nodes.map(node=>node.dataset.financialTransactionDate));assert.deepEqual(dates,[...dates].sort((a,b)=>a.localeCompare(b)),'synthetic statement dates are chronological');
-  await statementTab.focus();await page.keyboard.press('ArrowRight');assert.equal(await detailsTab.getAttribute('aria-selected'),'true');
-  assert.equal(await detailsTab.evaluate(el=>el===document.activeElement),true,'tab navigation transfers keyboard focus');
-  assert.equal(await page.locator('.cc-bank-details').isVisible(),true);if(scenario==='complete'){assert.equal(await page.locator('.cc-bank-chart-row').count(),2,'categories reuse actual labels without inferred financial rules');assert.match(await page.locator('.cc-bank-chart').innerText(),/864,15/,'seven real fixture lines total per category');}assert.equal(await page.locator('.cc-next-payment-lines').isVisible(),false);
+  assert.equal(await page.locator('.cc-payment-overview').getAttribute('data-financial-screen'),'overview');
+  assert.equal(await page.locator('.cc-per-diem-items').isVisible(),false,'overview does not stack the statement');
+  const overviewAmount=await page.locator('.cc-payment-value').textContent();
+  const statementEntry=page.getByRole('button',{name:'Extrato',exact:true});await statementEntry.focus();await page.keyboard.press('Enter');await page.waitForFunction(()=>document.querySelector('.cc-payment-overview').dataset.financialScreen==='statement');
+  assert.equal(await page.locator('.cc-per-diem-items').isVisible(),true);assert.equal(await page.locator('.cc-payment-hero').count(),0,'statement is its own screen');
+  const selectedMonth=await page.getByLabel('Competência de referência',{exact:true}).inputValue();
+  await showFinancial(page,'charts');assert.equal(await page.locator('.cc-bank-details').isVisible(),true);assert.equal(await page.locator('.cc-per-diem-items').isVisible(),false);
+  assert.equal(await page.getByLabel('Competência de referência',{exact:true}).inputValue(),selectedMonth,'month survives screen navigation');
+  assert.equal(await page.locator('[data-financial-screen-heading]').evaluate(el=>el===document.activeElement),true,'new screen receives heading focus');
+  if(scenario==='complete'){assert.equal(await page.locator('.cc-bank-chart-row').count(),2,'categories reuse actual labels without inferred financial rules');assert.match(await page.locator('.cc-bank-chart').innerText(),/864,15/,'seven fixture lines total per category');}
   await page.screenshot({path:path.join(out,`${width}-${theme}-${scenario}-details.png`),fullPage:false});
-  await page.locator('.cc-payment-hero button').click();assert.equal(await page.locator('.cc-bank-chart-track').count(),0,'hidden chart bars never disclose relative amounts');assert(!/R\$\s*\d/.test(await page.locator('.cc-bank-details').textContent()));assert(!/R\$\s*\d/.test(await page.locator('.cc-bank-details').ariaSnapshot()));await page.locator('.cc-payment-hero button').click();
-  await detailsTab.press('Home');assert.equal(await statementTab.getAttribute('aria-selected'),'true');
+  await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().click();assert.equal(await page.locator('.cc-bank-chart-track').count(),0,'hidden chart bars never disclose relative amounts');assert(!/R\$\s*\d/.test(await page.locator('.cc-bank-details').textContent()));assert(!/R\$\s*\d/.test(await page.locator('.cc-bank-details').ariaSnapshot()));await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().click();
+  await showFinancial(page,'overview');assert.equal(await page.locator('.cc-payment-value').textContent(),overviewAmount,'return preserves the independent cycle amount');
+  await showFinancial(page,'statement');assert.equal(await page.getByLabel('Competência de referência',{exact:true}).inputValue(),selectedMonth);
+  if(scenario==='complete'){await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-01');await showFinancial(page,'charts');assert.equal(await page.getByLabel('Competência de referência',{exact:true}).inputValue(),'2032-01');await showFinancial(page,'overview');assert.equal(await page.locator('.cc-payment-value').textContent(),overviewAmount);await showFinancial(page,'statement');assert.equal(await page.getByLabel('Competência de referência',{exact:true}).inputValue(),'2032-01','chosen non-default month survives back and forward screens');await page.getByLabel('Competência de referência',{exact:true}).selectOption(selectedMonth);}
+  await showFinancial(page,'payment');assert.match(await page.locator('.cc-next-payment-lines').innerText(),/Extrato previsto/);
+  const dates=await page.locator('.cc-bank-transaction').evaluateAll(nodes=>nodes.map(node=>node.dataset.financialTransactionDate));assert.deepEqual(dates,[...dates].sort((a,b)=>a.localeCompare(b)),'cycle statement is chronological');
   if(await page.locator('.cc-bank-transaction').count()){const item=page.locator('.cc-bank-transaction').first();await item.locator('summary').click();assert.equal(await item.getAttribute('open'),'');await item.locator('summary').click();}
   assert.equal(await page.locator('.cc-payment-actions').count(),0,'duplicated shortcut row is removed');
   assert.equal(await page.locator('.cc-payment-pending').isVisible(),true,'pending confirmation stays visible without a shortcut');
@@ -113,20 +121,19 @@ function seed({theme,kind,amount,history,salaryBase}) {
   const hitTargets=await page.locator('.cc-payment-overview button,.cc-payment-overview summary').evaluateAll(nodes=>nodes.filter(el=>el.getClientRects().length).map(el=>({text:el.textContent,box:el.getBoundingClientRect()})).filter(item=>item.box.width<44||item.box.height<44));
   assert.deepEqual(hitTargets,[],'visible payment controls have 44px touch targets');
   if(scenario==='complete'){
-   const amount=await page.locator('.cc-payment-value').textContent();await page.getByLabel('Filtro financeiro').selectOption('week');assert.equal(await page.locator('.cc-payment-value').textContent(),amount,'filter cannot substitute the hero cycle');await page.getByLabel('Filtro financeiro').selectOption('month');
-   await detailsTab.click();await page.locator('.cc-financial-graph>summary').click();
+   const amount=await page.locator('.cc-payment-value').textContent();await showFinancial(page,'statement');await page.getByLabel('Filtro financeiro').selectOption('week');await page.getByLabel('Filtro financeiro').selectOption('month');await showFinancial(page,'payment');assert.equal(await page.locator('.cc-payment-value').textContent(),amount,'filter cannot substitute the hero cycle');
   }
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
-  await statementTab.click();
+  await showFinancial(page,'overview');
   await page.evaluate(()=>{scrollTo({top:0,left:0,behavior:'instant'});for(const a of document.getAnimations())try{a.finish()}catch{}});
   await page.screenshot({path:path.join(out,`${width}-${theme}-${scenario}.png`),fullPage:true});
   await page.screenshot({path:path.join(out,`${width}-${theme}-${scenario}-overview.png`),fullPage:false});
   if(scenario==='complete'){
-    await detailsTab.click();await page.locator('.cc-financial-graph').evaluate(el=>el.scrollIntoView({behavior:'instant',block:'start'}));await page.screenshot({path:path.join(out,`${width}-${theme}-comparison.png`),fullPage:false});
+    await showFinancial(page,'charts');await page.locator('.cc-financial-graph').evaluate(el=>el.scrollIntoView({behavior:'instant',block:'start'}));await page.screenshot({path:path.join(out,`${width}-${theme}-comparison.png`),fullPage:false});
     await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));await page.locator('.cc-payment-hero').waitFor();
     await page.waitForFunction(()=>document.querySelector('.cc-payment-value').textContent.includes('2.900,00'),null,{timeout:10000}).catch(async error=>{console.log('SYNTHETIC PAYROLL DEBUG',await page.locator('.cc-payment-overview').innerText());await page.screenshot({path:path.join(out,'payroll-debug.png'),fullPage:true});throw error;});
     assert.match(await page.locator('.cc-payment-hero').innerText(),/fevereiro de 2032/);assert.match(await page.locator('.cc-payment-hero').innerText(),/bruto estimado, antes dos descontos/);
-    await page.getByRole('tab',{name:'Detalhes',exact:true}).click();
+    await showFinancial(page,'charts');
     const breakdown=page.getByRole('region',{name:'Ganhos e descontos da competência',exact:true});
     assert.match(await breakdown.innerText(),/Não calculável/,'missing selected-competence data never becomes zero or next-cycle net');
     assert.equal(await breakdown.locator('.cc-bank-chart-track').count(),0);
@@ -139,15 +146,15 @@ function seed({theme,kind,amount,history,salaryBase}) {
 
     await breakdown.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,`${width}-${theme}-salary-breakdown.png`),fullPage:false});
     await page.getByLabel('Filtro financeiro',{exact:true}).selectOption('week');assert.match(await breakdown.innerText(),/Não calculável/);assert.equal(await breakdown.locator('.cc-bank-chart-track').count(),0,'monthly amounts are not prorated into weeks');await page.getByLabel('Filtro financeiro',{exact:true}).selectOption('month');await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-02');
-    const salaryAmount=await page.locator('.cc-payment-value').textContent();await page.locator('.cc-payment-hero button').click();assert(!/R\$\s*\d/.test(await page.locator('.cc-per-diem-content').textContent()));await page.locator('.cc-payment-hero button').click();assert.equal(await page.locator('.cc-payment-value').textContent(),salaryAmount);
-    await page.getByRole('button',{name:'Demonstrativos',exact:true}).click();assert.equal(await page.locator('.cc-salary-reference').getAttribute('open'),'');
+    await showFinancial(page,'overview');const salaryAmount=await page.locator('.cc-payment-value').textContent();await page.locator('.cc-payment-hero button').click();assert(!/R\$\s*\d/.test(await page.locator('.cc-per-diem-content').textContent()));await page.locator('.cc-payment-hero button').click();assert.equal(await page.locator('.cc-payment-value').textContent(),salaryAmount);
+    await showFinancial(page,'payment');await page.getByRole('button',{name:'Demonstrativos',exact:true}).click();assert.equal(await page.locator('.cc-salary-reference').getAttribute('open'),'');
     await page.evaluate(()=>scrollTo({top:0,left:0,behavior:'instant'}));await page.screenshot({path:path.join(out,`${width}-${theme}-payroll-overview.png`),fullPage:false});
     for(const [state,count] of [['partial',1],['empty',0]]){
       await page.evaluate(count=>{const key='crewcheck_local_history_v11_financial-ui-qa',history=JSON.parse(localStorage.getItem(key));const operational=history.find(item=>item.roster.year===2031&&item.roster.month===12);operational.roster.days=operational.roster.days.slice(0,count);operational.checksum='synthetic-coverage-'+count;localStorage.setItem(key,JSON.stringify(history));window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'}));},count);
       await page.locator('.cc-salary-history').waitFor({state:'detached'});
       await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));
       await page.waitForFunction(()=>document.querySelector('.cc-payment-value')?.textContent.includes('Previsão incompleta'),null,{timeout:10000});
-      await page.waitForFunction(count=>document.querySelector('.cc-payment-pending')?.textContent.includes((31-count)+' dia(s)'),count,{timeout:10000});
+      await showFinancial(page,'payment');await page.waitForFunction(count=>document.querySelector('.cc-payment-pending')?.textContent.includes((31-count)+' dia(s)'),count,{timeout:10000});
       await page.waitForFunction(()=>document.querySelector('.cc-next-payment-lines')?.textContent.includes('2.900,00'),null,{timeout:10000});
       assert.match(await page.locator('.cc-payment-pending').textContent(),/dia\(s\) sem programação|Importe a escala/);
       assert(!/R\$/.test(await page.locator('.cc-payment-value').textContent()),'fixed pay alone does not masquerade as a complete payment');
@@ -157,7 +164,7 @@ function seed({theme,kind,amount,history,salaryBase}) {
   }
   assert.deepEqual(errors,[]);await context.close();
  }
- fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({scope:'Compiled production app, synthetic local fixtures only, all external requests blocked, API responses 503',widths:[390,1440],themes:['light','dark'],scenarios:['complete','partial','empty'],checks:['Home card and both destinations','repeated Home/salary navigation','single 44px privacy control','hidden DOM and accessibility','cycle calculation and filter independence','payroll incomplete coverage','keyboard action focus','default chronological statement','category chart per currency','missing versus explicit zero and mismatched monthly deductions','monthly gains/deductions/net with week fail-closed','no page overflow or runtime errors']},null,2));
+ fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({scope:'Compiled production app, synthetic local fixtures only, all external requests blocked, API responses 503',widths:[390,1440],themes:['light','dark'],scenarios:['complete','partial','empty'],checks:['Home card and both destinations','repeated Home/salary navigation','single 44px privacy control','hidden DOM and accessibility','cycle calculation and filter independence','payroll incomplete coverage','keyboard action focus','minimal overview and dedicated statement/chart/payment screens with back/month preservation','category chart per currency','missing versus explicit zero and mismatched monthly deductions','monthly gains/deductions/net with week fail-closed','no page overflow or runtime errors']},null,2));
  console.log('PASS next payment actual UI: own eligible-cycle amount, partial/empty, filter independence, Eye/EyeOff DOM/accessibility, keyboard shortcuts, mobile/desktop.');
  }finally{await browser.close();server.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;server.close();});

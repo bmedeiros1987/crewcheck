@@ -140,3 +140,21 @@ html body #root .cz-app[data-version] .cc-per-diem-content :is(.cz-panel-head,.c
 html body #root .cz-app[data-version] .cc-per-diem-content :is(.cz-panel-head,.cz-toolbox)::after,
 html body #root .cz-app[data-version] .cc-per-diem-content .cz-panel-head h1::after {content:none!important;display:none!important}
 html body #root .cz-app[data-version] .cc-per-diem-content .cz-kpi>span {background:transparent!important;color:var(--cc-review-text)!important;box-shadow:none!important;border:0!important}
+
+/* Financial destinations share their month/filter state, never a stacked feed. */
+.cc-financial-screen[hidden] {display:none!important}
+html body #root .cz-app[data-version] .cc-financial-screen>:is(.cz-panel-head,.cz-finance-grid,.cz-toolbox,.cz-finance-table) {width:100%!important;max-width:none!important;margin:0 0 12px!important;box-sizing:border-box}
+html body #root .cz-app[data-version] .cc-financial-screen :is(.cz-panel-head,.cz-toolbox,.cz-finance-table) {padding:16px!important;border:1px solid var(--cc-review-border)!important;border-radius:16px!important}
+.cc-payment-overview[data-financial-screen]:not([data-financial-screen="overview"]) {display:block}
+.cc-financial-screen-head {margin:0 0 16px}
+.cc-financial-screen-head h2 {font-size:24px;margin:8px 0;color:var(--cc-review-text)}
+.cc-financial-screen-head button {min-height:44px;padding:10px 0;border:0;background:transparent;color:var(--cc-review-text);font:inherit;cursor:pointer}
+.cc-financial-pending-line {font-size:13px;line-height:1.6;margin:0;color:var(--cc-review-text)}
+html body #root .cz-app[data-version] nav.cc-financial-screen-links {position:static!important;display:flex!important;flex-direction:column!important;grid-column:1/-1;gap:0!important;width:100%!important;margin:12px 0!important;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important}
+html body #root .cz-app[data-version] .cc-financial-screen-links>button {position:static!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:12px!important;min-width:44px!important;min-height:44px!important;padding:12px 0!important;border:0!important;border-bottom:1px solid var(--cc-review-border)!important;border-radius:0!important;background:transparent!important;color:var(--cc-review-text)!important;box-shadow:none!important;font:inherit!important;text-align:left!important;cursor:pointer}
+.cc-financial-screen .cc-per-diem-items>header h2 {font-size:16px;margin:0 0 6px}
+.cc-financial-screen .cc-per-diem-summary .cz-kpi {border:0!important;background:transparent!important;box-shadow:none!important}
+html body #root .cz-app[data-version] .cc-payment-overview[data-financial-screen="payment"] .cc-payment-hero {background:transparent!important;border:0!important;border-radius:0!important;padding:12px 0!important;box-shadow:none!important}
+html body #root .cz-app[data-version] .cc-payment-overview[data-financial-screen="payment"] .cc-payment-hero :is(h2,strong,p,span,button) {color:var(--cc-review-text)!important}
+.cc-payment-overview[data-financial-screen="payment"] .cc-payment-hero h2,.cc-payment-overview[data-financial-screen="payment"] .cc-payment-topline>span {display:none}
+.cc-financial-history-availability {font-size:12px;line-height:1.6;color:var(--cc-review-muted);margin:12px 0}

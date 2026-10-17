@@ -30,7 +30,7 @@ try {
   let activeEvents = [];
   let fxUSD = 0;
   const iso = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  const context = vm.createContext({ React, ...modules.load('financialIntervalEvidence'), ...amounts, ...grouping, ...compensation, ...periods,
+  const context = vm.createContext({FinancialScreen:p=>p.children, React, ...modules.load('financialIntervalEvidence'), ...amounts, ...grouping, ...compensation, ...periods,
     useMemo: React.useMemo, useState: React.useState,
     useFinancialPrivacy: () => ({ hidden:false, text:value=>value, amount:value=>value }), FinancialPrivacyToggle: () => null,
     resolveActFinancialRules: () => ({ profileLabel: 'Synthetic rules, not a real tariff', legalReference: 'synthetic-v1',

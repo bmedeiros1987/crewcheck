@@ -1,18 +1,19 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { ArrowDownLeft, FileText, ChevronRight } from 'lucide-react';
 import type { NextPayment } from '@/lib/nextFinancialPayment';
 import type { FinancialRange } from '@/lib/financialHistoryPeriods';
 import { FinancialPrivacyToggle, useFinancialPrivacy } from './FinancialPrivacy';
 import './payment-preview.css';
+import { useFinancialScreen } from './FinancialScreen';
 
 export default function NextPaymentCard({ payment, requestRange, extraDetails }: { payment:NextPayment; requestRange:(range:FinancialRange)=>void; extraDetails?:ReactNode }) {
   const privacy=useFinancialPrivacy(), root=useRef<HTMLDivElement>(null);
-  const [view,setView]=useState<'statement'|'details'>('statement');
-  const id=useId();
+  const {screen,navigate,controls}=useFinancialScreen();
   const lines=[...payment.lines].sort((a,b)=>a.iso.localeCompare(b.iso));
   const currencies=[...new Set(lines.map(line=>line.currency))];
-  function changeView(next:'statement'|'details'){setView(next);root.current?.querySelector<HTMLButtonElement>(`[data-financial-tab="${next}"]`)?.focus();}
+
   useEffect(()=>{if(payment.range)requestRange(payment.range);},[payment.range?.start,payment.range?.end]);
+  useEffect(()=>{const heading=root.current?.querySelector<HTMLElement>('[data-financial-screen-heading]');heading?.focus({preventScroll:true});root.current?.scrollIntoView({block:'start',behavior:'instant'});},[screen]);
   const dateLabel=(value:string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)?value.split('-').reverse().join('/'):value;
   const money=(value:number,currency:string)=>privacy.amount(new Intl.NumberFormat('pt-BR',{style:'currency',currency}).format(value));
   const signed=(value:number,currency:string)=>privacy.amount(new Intl.NumberFormat('pt-BR',{style:'currency',currency,signDisplay:'always'}).format(value));
@@ -24,37 +25,45 @@ export default function NextPaymentCard({ payment, requestRange, extraDetails }:
     if(!focus.hasAttribute('tabindex'))focus.setAttribute('tabindex','-1');
     target.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});focus.focus({preventScroll:true});
   }
-  return <div ref={root} className="cc-payment-overview">
+  return <div ref={root} className="cc-payment-overview" data-financial-screen={screen}>
+    {screen!=='overview'&&<header className="cc-financial-screen-head"><button type="button" onClick={()=>navigate('overview')}>← Voltar ao resumo</button><h2 tabIndex={-1} data-financial-screen-heading>{screen==='statement'?'Extrato':screen==='charts'?'Gráficos':'Detalhes do pagamento'}</h2></header>}
+    {(screen==='statement'||screen==='charts')&&controls}
+    {screen==='statement'&&<p className="cc-financial-history-availability" role="status">Previsões da escala · histórico financeiro indisponível nesta consulta.</p>}
+    {(screen==='overview'||screen==='payment')&&<>
     <section className="cc-payment-hero" aria-label="Próximo pagamento previsto">
       <div className="cc-payment-topline"><span><ArrowDownLeft aria-hidden="true"/> PRÓXIMO CICLO</span><FinancialPrivacyToggle/></div>
-      <h2>Próximo pagamento previsto</h2>
+      <h2 data-financial-screen-heading={screen==='overview'?true:undefined} tabIndex={-1}>Próximo pagamento previsto</h2>
       <p className="cc-payment-caption">{payment.caption}</p>
       <div className="cc-payment-value" data-complete={Boolean(payment.totals)}>{payment.totals ? Object.entries(payment.totals).map(([currency,value])=><strong key={currency}>{money(value,currency)}</strong>) : <strong>Previsão incompleta</strong>}</div>
       <p className="cc-payment-timing">{payment.timing}</p>
       {payment.range&&<p className="cc-payment-period">Ciclo · {payment.kind==='allowance'?'Trabalho de':'Composição de'} {dateLabel(payment.range.start)} a {dateLabel(payment.range.end)} · {payment.lines.length} itens</p>}
       <p className="cc-payment-disclaimer">Estimativa · recebimento não confirmado</p>
     </section>
-    <section className="cc-payment-pending" aria-label="Conferir previsão" tabIndex={-1}>
+    {screen==='overview'?<p className="cc-financial-pending-line">{payment.issues.length?`Falta confirmar: ${payment.issues[0]}`:'Data e recebimento a confirmar.'}</p>:<section className="cc-payment-pending" aria-label="Conferir previsão" tabIndex={-1}>
       <h3>{payment.issues.length?'Falta confirmar':'A conferir no demonstrativo'}</h3>
       {payment.issues.length?<><p>{payment.issues[0]}</p>{payment.issues.length>1&&<details><summary>Mais {payment.issues.length-1} pendência(s)</summary><ul>{payment.issues.slice(1).map(issue=><li key={issue}>{issue}</li>)}</ul></details>}</>:<p>Data e recebimento ainda não confirmados.</p>}
       {payment.issues.some(issue=>/escala|programação/.test(issue))&&<button onClick={()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'import'}))}>Importar escala <ChevronRight size={16} aria-hidden="true"/></button>}
       <button aria-label="Demonstrativos" onClick={()=>open(payment.kind==='allowance'?'.cc-financial-reconciliation':'.cc-salary-reference')}><FileText size={16} aria-hidden="true"/> Conferir demonstrativo <ChevronRight size={16} aria-hidden="true"/></button>
-    </section>
-    <div className="cc-bank-tabs" role="tablist" aria-label="Consulta financeira">
-      {(['statement','details'] as const).map((tab,index)=><button key={tab} type="button" role="tab" id={`${id}-${tab}-tab`} data-financial-tab={tab} aria-selected={view===tab} aria-controls={`${id}-${tab}`} tabIndex={view===tab?0:-1} onClick={()=>setView(tab)} onKeyDown={event=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();changeView(event.key==='Home'?'statement':event.key==='End'?'details':index===0?'details':'statement');}}}>{tab==='statement'?'Extrato':'Detalhes'}</button>)}
-    </div>
-    <section className="cc-next-payment-lines" role="tabpanel" id={`${id}-statement`} aria-labelledby={`${id}-statement-tab`} hidden={view!=='statement'} tabIndex={0}>
+    </section>}
+    </>}
+    <nav className="cc-financial-screen-links" aria-label="Navegação financeira">
+      {screen==='statement'||screen==='charts'?<button type="button" onClick={()=>navigate('payment')}>Detalhes do pagamento <ChevronRight size={16} aria-hidden="true"/></button>:<button type="button" onClick={()=>navigate(screen==='overview'?'payment':'statement')}>{screen==='overview'?'Detalhes do pagamento':'Extrato'} <ChevronRight size={16} aria-hidden="true"/></button>}
+      {screen!=='statement'&&screen!=='payment'&&<button type="button" onClick={()=>navigate('statement')}>Extrato <ChevronRight size={16} aria-hidden="true"/></button>}
+      {screen!=='charts'&&<button type="button" onClick={()=>navigate('charts')}>Gráficos <ChevronRight size={16} aria-hidden="true"/></button>}
+      {(screen==='charts'||screen==='statement')&&<FinancialPrivacyToggle/>}
+    </nav>
+    {screen==='payment'&&<section className="cc-next-payment-lines" aria-label="Composição do pagamento">
       <header><h3>Extrato previsto do próximo ciclo</h3><span>{lines.length} itens · recebimento não confirmado</span></header>
       {lines.map((line,index)=><details className="cc-bank-transaction" data-financial-transaction-date={line.iso} key={`${line.iso}:${line.label}:${index}`}><summary><span><strong>{line.label}</strong><small>{dateLabel(line.iso)} · Previsto</small></span><b>{line.value===null||!Number.isFinite(line.value)?'Não informado':signed(line.value,line.currency)}</b></summary><p>{privacy.text(line.source)}</p></details>)}
       {!lines.length&&<p>Sem lançamentos disponíveis. Nenhum valor foi presumido.</p>}
-    </section>
-    <section className="cc-bank-details" role="tabpanel" id={`${id}-details`} aria-labelledby={`${id}-details-tab`} hidden={view!=='details'} tabIndex={0}>
-      <h3>Composição em gráfico</h3><p>Estimativas · recebimento não confirmado</p>
+    </section>}
+    {screen==='charts'&&<section className="cc-bank-details" aria-label="Detalhes em gráficos">
+      <h3>Composição do próximo ciclo</h3><p>{payment.range?`${dateLabel(payment.range.start)} a ${dateLabel(payment.range.end)} · `:''}Estimativas · recebimento não confirmado</p><p className="cc-financial-history-availability">Histórico financeiro indisponível nesta consulta.</p>
       {currencies.map(currency=>{const grouped=new Map<string,{label:string;value:number|null;count:number}>();for(const line of lines.filter(line=>line.currency===currency)){const previous=grouped.get(line.label),known=line.value!==null&&Number.isFinite(line.value);const value=previous?(previous.value!==null&&known?previous.value+line.value!:null):known?line.value:null;grouped.set(line.label,{label:line.label,value:value!==null&&Number.isFinite(value)?value:null,count:(previous?.count||0)+1});}const items=[...grouped.values()],known=items.filter(line=>line.value!==null),max=known.length?Math.max(...known.map(line=>Math.abs(line.value!))):0;return <section className="cc-bank-chart" key={currency} aria-label={`Previsões em ${currency}`}><h4>{currency}</h4>{items.map((line,index)=><div className="cc-bank-chart-row" key={index}><span>{line.label}<small>{line.count} {line.count===1?'item':'itens'}</small></span><b>{line.value===null||!Number.isFinite(line.value)?'Não informado':signed(line.value,currency)}</b>{!privacy.hidden&&line.value!==null&&Number.isFinite(line.value)&&<span className="cc-bank-chart-track" aria-hidden="true"><span style={{width:`${max>0?Math.abs(line.value)/max*100:0}%`}}/></span>}</div>)}</section>})}
       {!lines.length&&<p>Sem dados suficientes para o gráfico.</p>}
       {payment.kind==='payroll'&&<p>Composição bruta. Descontos e líquido ficam no detalhe da competência.</p>}
       {extraDetails}
       <details className="cc-financial-help"><summary>Origem do ciclo</summary><p>{payment.source}</p></details>
-    </section>
+    </section>}
   </div>;
 }

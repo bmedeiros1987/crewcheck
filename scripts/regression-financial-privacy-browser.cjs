@@ -51,6 +51,8 @@ async function checkHidden(page){
  assert(!moneyPattern.test(await root.ariaSnapshot()),'accessibility tree has no amounts');
  assert.match(await root.textContent(),/Valor oculto|Não calculável|Sem itens previstos/);
 }
+async function showFinancial(page,screen){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===screen)return;const names={overview:'← Voltar ao resumo',statement:'Extrato',charts:'Gráficos',payment:'Detalhes do pagamento'};await page.getByRole('button',{name:names[screen],exact:true}).click();await page.waitForFunction(screen=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen===screen,screen);}
+
 (async()=>{
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
  const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}),args:['--no-sandbox']});
@@ -63,7 +65,7 @@ async function checkHidden(page){
   const history=kind==='domestic'?[{id:'local-synthetic-current-february',checksum:'synthetic-current-february',createdAt:'2032-02-02T14:00:00Z',roster:roster(kind),sourceFileName:'Synthetic current February'},{id:'local-synthetic-january',checksum:'synthetic-january',createdAt:'2032-02-01T00:00:00Z',roster:jan,sourceFileName:'Synthetic January'}]:undefined;
   await context.addInitScript(seed,{theme:'light',kind:roster(kind),amount:123.45,salaryBase:4321.67,history});
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
-  await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();await expand(page);await page.getByRole('tab',{name:'Detalhes',exact:true}).click();
+  await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();await expand(page);await showFinancial(page,'charts');
   if(kind==='domestic')await page.waitForFunction(()=>document.querySelectorAll('.cc-financial-bar-track').length>=2);
   const before=await page.locator('.cc-per-diem-content').textContent();
   const persistedBefore=await page.evaluate(()=>JSON.stringify(localStorage));
@@ -85,13 +87,13 @@ async function checkHidden(page){
   assert.equal(await page.locator('.cc-salary-history').textContent(),salaryBefore,'salary amount round trip is exact');
   await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().click();
   if(kind==='domestic'){
-   const importer=page.locator('.finance-learning-panel');
+   await showFinancial(page,'payment');const importer=page.locator('.finance-learning-panel');
    await importer.locator('input[type=file]').setInputFiles({name:'synthetic-payroll.pdf',mimeType:'application/pdf',buffer:documentBytes(['DEMONSTRATIVO DE PAGAMENTO RUBRICA','Competencia 02/2032','Salario 4321,67','TOTAIS 4321,67 123,45','Liquido 4198,22'])});
    await importer.locator('.finance-learning-review').waitFor();await checkHidden(page);
    await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().click();assert.match(await importer.locator('table').first().textContent(),/4.321,67/);
    await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().click();
    await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();await expand(page);
-   const reconciliation=page.locator('.cc-financial-reconciliation');
+   await showFinancial(page,'payment');const reconciliation=page.locator('.cc-financial-reconciliation');
    await reconciliation.locator('input[type=file]').setInputFiles({name:'synthetic-diarias.pdf',mimeType:'application/pdf',buffer:documentBytes(['DEMONSTRATIVO DE DIARIAS','De 2032-02-01 ate 2032-02-29','Pagamento em 2032-03-01','ALMOCO R$ 123,45','Total depositado R$ 789,12'])});
    await reconciliation.locator('[aria-label="Conciliação de diárias"]').waitFor({state:'attached'});
    await page.getByRole('button',{name:'Demonstrativos',exact:true}).click();
