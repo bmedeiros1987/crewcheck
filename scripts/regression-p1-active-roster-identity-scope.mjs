@@ -5,6 +5,8 @@ import ts from 'typescript';
 
 // Execute the same semantic dependency used by prepared databaseClient.ts.
 // A missing harness import must not hide the account-isolation assertions.
+// The historical mechanisms below explain the regression coverage. This patch
+// repairs the harness; its missing dependency is not evidence of a current leak.
 const semantics = {};
 vm.runInNewContext(ts.transpileModule(fs.readFileSync('client/src/lib/complianceAlertSemantics.ts', 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS },
@@ -260,6 +262,30 @@ function activeSnapshot(crewName, year, month) {
   const summary = aHarness.getSmartLocalActiveRosterSummary();
   assert.ok(summary, "A's own correctly-scoped local-history entry must still be usable as a fallback");
   assert.equal(summary.crewName, 'Crew A History');
+}
+
+// Critical/actionable alerts remain counted for their owner, while informational
+// and insufficient-data diagnostics never become actionable counts.
+{
+  const storage = new LocalStorageMock();
+  const own = activeSnapshot('Synthetic A Alerts', 2032, 2);
+  own.compliance.alerts = [
+    { severity: 'error', actionable: true, classification: 'irregularidade_confirmada' },
+    { severity: 'warning', actionable: true },
+    { severity: 'error', actionable: false },
+    { severity: 'error', classification: 'dados_insuficientes' },
+    { severity: 'warning', classification: 'informativa', actionable: false },
+    { severity: 'info', actionable: true },
+    null,
+  ];
+  const other = activeSnapshot('Synthetic B Alert', 2032, 2);
+  other.compliance.alerts = [{ severity: 'error', actionable: true }];
+  storage.setItem('crewcheck_active_roster_snapshot_user-a', JSON.stringify({ ...own, isActive: true }));
+  storage.setItem('crewcheck_active_roster_snapshot_user-b', JSON.stringify({ ...other, isActive: true }));
+  const a = buildHarness(storage, () => ({ id: 'user-a' })).getSmartLocalActiveRosterSummary();
+  const b = buildHarness(storage, () => ({ id: 'user-b' })).getSmartLocalActiveRosterSummary();
+  assert.equal(a.crewName, 'Synthetic A Alerts');assert.equal(a.alertsCount, 2);
+  assert.equal(b.crewName, 'Synthetic B Alert');assert.equal(b.alertsCount, 1);
 }
 
 // --- Guards against regressing to a permissive localStorage scan or to promoting
