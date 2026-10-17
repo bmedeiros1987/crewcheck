@@ -5,6 +5,18 @@ import {createRequire} from 'node:module';
 import {wakeDiagnosticLines as lines} from '../shared/wakeDiagnostic.mjs';
 const payload=(counts=[],status=counts.length?'recorded':'absent')=>({ok:true,observational:true,wake:{scope:'current_account_wake_history',status,counts}});
 for(const value of [null,{}, {ok:false}, {...payload(), observational:false}, {...payload(),wake:{...payload().wake,status:'unavailable'}}, payload([{status:'pending',total:-1}]), payload([{status:'pending',total:1}],'absent')]) assert.match(lines(value).join(' '),/Diagnóstico indisponível/);
+// HTTP JSON may contain nulls, scalar rows, wrong types and prototype-name statuses.
+const unavailable=lines(null);
+for(const row of [null,undefined,false,0,1,'pending',[],{}, {status:'pending'}, {total:1},
+  {status:null,total:1}, {status:[],total:1}, {status:1,total:1},
+  ...['future','toString','constructor','__proto__','hasOwnProperty','valueOf',''].map(status=>({status,total:1})),
+  ...[0,-1,1.5,NaN,Infinity,Number.MAX_SAFE_INTEGER+1,'1',null,undefined,true].map(total=>({status:'pending',total})),
+  Object.create({status:'pending',total:1})]) {
+  assert.deepEqual(lines(payload([row])),unavailable);
+  assert.deepEqual(lines(payload([{status:'pending',total:1},row])),unavailable);
+}
+for(const counts of [null,{},'pending',1,true,Array(1)]) assert.deepEqual(lines({...payload(),wake:{...payload().wake,counts}}),unavailable);
+for(const value of [undefined,false,0,'pending',[],{ok:true,observational:true,wake:null},{ok:true,observational:true,wake:[]},payload([],'recorded')]) assert.deepEqual(lines(value),unavailable);
 assert.match(lines(payload()).join(' '),/Não agendado/);
 for(const [status,label] of Object.entries({pending:'Agendado no servidor',processing:'Em processamento',dispatching:'Envio em andamento',sent:'Aceito pelo provedor; entrega não confirmada',failed:'Falha no envio',expired:'Prazo de envio expirado',uncertain:'Resultado do envio incerto',cancelled:'Cancelado',partial:'Envio parcial',held:'Retido'})) assert(lines(payload([{status,total:2}])).some(line=>line.includes(label)));
 assert(!lines(payload([{status:'future',total:1}])).some(line=>/Nenhum Wake|Agendado no servidor/.test(line)));
