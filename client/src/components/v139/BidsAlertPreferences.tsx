@@ -35,14 +35,15 @@ export function BidsAlertPreferences() {
   const epoch = useRef(0), ticket = useRef(0), dirty = useRef(false);
   async function load() {
     const identity = epoch.current, request = ++ticket.current;
-    if (!getToken()) { setMessage('Faça login para consultar suas preferências.'); return; }
+    if (!getToken()) { setMessage('Faça login para consultar suas preferências.'); return false; }
     try {
       const result = await authFetch<Snapshot>(path, { cache: 'no-store' });
-      if (identity !== epoch.current || request !== ticket.current) return;
+      if (identity !== epoch.current || request !== ticket.current) return false;
       setSnapshot(result); cacheNotificationPreferences(result.preferences,result.ownerId,result.revision);
       if (!dirty.current) replaceDraft(result.preferences);
       setMessage(result.message);
-    } catch { if (identity === epoch.current && request === ticket.current) setMessage('Preferências não verificadas. Reconecte para consultar.'); }
+      return true;
+    } catch { if (identity === epoch.current && request === ticket.current) setMessage('Preferências não verificadas. Reconecte para consultar.'); return false; }
   }
   useEffect(() => {
     const changed = () => { epoch.current++; ticket.current++; dirty.current = false; setSnapshot(null); replaceDraft({ ...defaults }); setBusy(false); setConflict(false); setMessage('Consultando preferências desta conta…'); load(); };
@@ -63,7 +64,13 @@ export function BidsAlertPreferences() {
     if (!snapshot || busy || !getToken()) return;
     if (conflict && action === 'save-preferences') {
       if (!window.confirm('Recarregar descarta as alterações ainda não salvas. Continuar?')) return;
-      dirty.current = false; setConflict(false); await load(); return;
+      const identity = epoch.current;
+      dirty.current = false; setBusy(true);
+      try {
+        const loaded = await load();
+        if (identity === epoch.current) { if (loaded) setConflict(false); else dirty.current = true; }
+      } finally { if (identity === epoch.current) setBusy(false); }
+      return;
     }
     if (action === 'already-did' && !window.confirm('Você já enviou BIDS para esta janela no sistema oficial? Esta declaração não comprova aceitação da companhia.')) return;
     const identity = epoch.current; setBusy(true); ticket.current++;
