@@ -69,7 +69,32 @@ assert.match(home, /if \(!primary.days\?\.length\) return;/);
 assert.match(home, /function currentCompliance[^\n]+bundle.roster.days\?\.length/);
 assert.match(home, /payload.owner !== startupOwner\(\)/);
 assert.match(home, /view === 'alerts' && !bundle.roster.days\?\.length/);
-assert.match(home, /view === 'salary' && !bundle.roster.days\?\.length/);
+// Currency navigation keeps the financial route mounted. Validate the actual
+// empty-roster branch, rather than requiring the retired outer JSX spelling.
+function verifyFinancialRosterGate(source) {
+  const tree = ts.createSourceFile('Home.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const routes = [];
+  function visit(node) {
+    if (ts.isJsxElement(node) && node.openingElement.attributes.properties.some(a => ts.isJsxAttribute(a) && a.name.getText(tree) === 'className' && a.initializer?.text === 'cc-financial-route')) routes.push(node);
+    ts.forEachChild(node, visit);
+  }
+  visit(tree);
+  for (const [view,mode,live] of [['salary','salary','SalaryReliableView'],['perdiem','allowance','PerDiemView']]) {
+    const route = routes.find(node => node.openingElement.attributes.properties.some(a => ts.isJsxAttribute(a) && a.name.getText(tree) === 'hidden' && a.initializer?.expression?.getText(tree) === `view !== '${view}'`));
+    assert.ok(route, `${view} route remains scoped during currency roundtrip`);
+    const content = route.children.find(n => ts.isJsxExpression(n) && n.expression);
+    const gate = content?.expression;
+    assert.ok(gate && ts.isConditionalExpression(gate));
+    assert.equal(gate.condition.getText(tree), '!bundle.roster.days?.length');
+    assert.match(gate.whenTrue.getText(tree), /startupStatus === 'loading'/);
+    assert.match(gate.whenTrue.getText(tree), new RegExp(`<FinancialHistoryWithoutRoster mode="${mode}"`));
+    assert.match(gate.whenTrue.getText(tree), /rosterUnavailable=\{startupStatus === 'error'\}/);
+    assert.equal(gate.whenFalse.openingElement?.tagName.getText(tree) || gate.whenFalse.tagName?.getText(tree), live);
+  }
+}
+verifyFinancialRosterGate(home);
+assert.throws(() => verifyFinancialRosterGate(home.replaceAll('!bundle.roster.days?.length ?', 'bundle.roster.days?.length ?')), 'reversed missing-roster guard must fail');
+assert.throws(() => verifyFinancialRosterGate(home.replace('FinancialHistoryWithoutRoster mode="salary"', 'SalaryReliableView mode="salary"')), 'missing-roster salary must not run the live salary view');
 assert.match(home, /historyError \? <article/);
 assert.match(home, /rosterWindowPrimaryRef.current === bundle.roster/);
 assert.match(home, /openActive: \(\) => \{ const canCommit = beginRosterChoice\(\)/);

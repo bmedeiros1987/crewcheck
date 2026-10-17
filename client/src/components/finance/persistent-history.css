@@ -1,0 +1,42 @@
+.cc-persisted-finance{margin:16px 0;padding:16px 0;border-block:1px solid var(--border);font-size:14px}
+.cc-persisted-finance h3{font-size:18px;margin:0 0 12px}
+.cc-persisted-finance label{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.cc-persisted-finance select,.cc-persisted-finance button{min-height:44px;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--background);color:var(--foreground)}
+.cc-persisted-finance :focus-visible{outline:2px solid currentColor;outline-offset:3px}
+.cc-persisted-finance ol{list-style:none;padding:0;margin:12px 0}
+.cc-persisted-finance li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+.cc-persisted-finance li div{display:flex;flex-direction:column;gap:4px;min-width:0}
+.cc-persisted-finance li b{white-space:nowrap;font-variant-numeric:tabular-nums}
+.cc-persisted-finance small,.cc-persisted-finance p{color:var(--muted-foreground)}
+.cc-persisted-finance-bar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin:16px 0}
+.cc-persisted-finance-track{grid-column:1/-1;height:8px;border:1px dashed currentColor;border-radius:8px;overflow:hidden}
+.cc-persisted-finance-track>span{display:block;height:100%;background:currentColor;opacity:.55}
+.cc-persisted-finance-track[data-status=payment_confirmed]{border-style:solid}
+@media(max-width:420px){.cc-persisted-finance li,.cc-persisted-finance-bar{grid-template-columns:minmax(0,1fr)}.cc-persisted-finance li b,.cc-persisted-finance-bar b{justify-self:end}}
+.cc-persisted-finance-only{padding:20px;margin:16px 0 100px;background:var(--background);color:var(--foreground);border-radius:16px}
+.cc-persisted-finance-only input{min-height:44px;padding:8px 12px;margin-left:12px;border:1px solid var(--border);border-radius:10px;background:var(--background);color:var(--foreground);max-width:100%}
+.cc-persisted-finance-only>label{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.cc-forecast-currencies{min-width:0;max-width:100%}
+.cc-forecast-currency-viewport{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;max-width:100%;touch-action:auto}
+.cc-forecast-currency-viewport::-webkit-scrollbar{display:none}
+.cc-forecast-currency-slide{flex:0 0 100%;min-width:0;scroll-snap-align:start;box-sizing:border-box}
+.cc-forecast-currency-code{font-size:13px;font-weight:700;letter-spacing:.1em;margin:8px 0 0}
+.cc-forecast-currency-controls{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.cc-forecast-currency-controls button{min-width:44px;min-height:44px;background:transparent;border:1px solid #87a9c2;border-radius:50%;color:inherit;font-size:24px}
+.cc-forecast-currency-controls button:disabled{opacity:.35}
+.cc-currency-calculator{max-width:760px;margin:20px auto 100px;padding:20px;color:var(--foreground);background:var(--background);border-radius:16px}
+.cc-currency-calculator header{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.cc-currency-calculator h1{font-size:24px;margin:0}
+.cc-currency-calculator label{display:flex;flex-direction:column;gap:8px;margin:16px 0}
+.cc-currency-calculator input,.cc-currency-calculator select{min-height:44px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;color:var(--foreground);background:var(--background);min-width:0;max-width:100%}
+.cc-currency-calculator summary{min-height:44px;cursor:pointer;padding:12px 0}
+.cc-currency-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.cc-currency-calculator [role=status]{border-block:1px solid var(--border);padding:16px 0;margin:20px 0}
+.cc-currency-calculator [role=status] strong{font-size:24px;overflow-wrap:anywhere}
+.cc-currency-calculator :focus-visible{outline:2px solid currentColor;outline-offset:3px}
+.cc-home-brl-estimate>strong{display:block;font-size:28px}.cc-home-brl-estimate small{display:block}.cc-home-brl-estimate summary{min-height:44px;cursor:pointer;padding:12px 0}
+.cc-financial-calculator-shortcut{display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px;border:1px solid var(--border);background:transparent;color:var(--foreground);border-radius:12px;margin-left:auto}
+.cc-financial-route[hidden]{display:none!important}
+html body #root .cz-app .cc-payment-hero button.cc-financial-calculator-shortcut{min-width:44px!important;min-height:44px!important;width:44px!important;height:44px!important;flex:0 0 44px!important;padding:0!important;box-sizing:border-box!important}
+html body #root .cz-app .cc-payment-hero button.cc-financial-calculator-shortcut,html body #root .cz-app .cc-payment-hero .cc-forecast-currency-controls button{color:#fff!important;background:transparent!important;border:1px solid #87a9c2!important;min-width:44px!important;min-height:44px!important;width:44px!important;height:44px!important;flex:0 0 44px!important;padding:0!important;box-sizing:border-box!important}
+.cc-fx-source{display:flex;flex-direction:column;gap:8px;margin:12px 0}.cc-fx-source select{min-height:44px;max-width:100%;padding:8px;border:1px solid var(--border);border-radius:10px;color:inherit;background:var(--background)}

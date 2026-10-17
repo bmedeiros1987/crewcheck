@@ -1,0 +1,69 @@
+name: Financial persistent ledger offline
+on:
+  pull_request:
+    paths:
+      - 'server/financial-ledger*.mjs'
+      - 'server/financial-forecast-producer.mjs'
+      - 'server/financial-fx.mjs'
+      - 'server/platform.mjs'
+      - 'client/src/components/finance/**'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-financial-ledger-ui.cjs'
+      - 'shared/financial*.mjs'
+      - 'shared/spBankCalendar2026.mjs'
+      - 'client/src/lib/financialFxReference.ts'
+      - 'client/src/lib/nextFinancialPayment.ts'
+      - 'scripts/regression-financial-*.mjs'
+      - 'scripts/regression-financial-currency-ui.cjs'
+      - 'scripts/roster-startup/apply.mjs'
+      - 'scripts/p1-menu-*/apply.mjs'
+      - 'scripts/regression-financial-ledger.mjs'
+      - 'migrations/20261017_020_financial_ledger_mysql.sql'
+      - '.github/workflows/financial-persistent-ledger.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-ledger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Verify unprepared backend contract
+        run: node scripts/regression-financial-ledger.mjs
+      - name: Prepare canonical source
+        run: node scripts/v139/apply.mjs
+      - name: Verify prepared backend contract
+        run: node scripts/regression-financial-ledger.mjs
+      - name: Preserve existing financial read and credit lifecycle
+        run: |
+          node scripts/regression-financial-fx.mjs
+          node scripts/regression-financial-money-schedule.mjs
+          node scripts/regression-financial-review-owner-negative.mjs
+          node scripts/regression-financial-read-model.mjs
+          node scripts/regression-monthly-credit-lifecycle.mjs
+          node scripts/regression-account-health-deletion.mjs
+      - name: Compile UI
+        run: |
+          npx tsc --noEmit
+          npx vite build
+      - name: Install isolated synthetic browser
+        run: |
+          npm install --prefix "$RUNNER_TEMP/financial-ledger-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/financial-ledger-ui/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify read-only ledger UI without real services
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ledger-ui/package.json
+        run: |
+          node scripts/regression-financial-ledger-ui.cjs
+          node scripts/regression-financial-currency-ui.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: synthetic-financial-ledger-ui
+          path: |
+            artifacts/financial-ledger-ui
+            artifacts/financial-currency-ui

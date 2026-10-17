@@ -57,5 +57,7 @@ if (!source.includes(marker)) {
   const header = "<Brand back={view !== 'cockpit'} onMenu={view === 'cockpit' ? () => setDrawer(true) : undefined}/>";
   if (!source.includes(header)) throw new Error('Stay editor: Home header owner anchor missing');
   source = source.replace(header, "<Brand back={view !== 'cockpit'} backLabel={view === 'presentation' && readStayEditorIntent() ? 'Voltar ao pernoite' : view === 'presentation' && hasStoredStayEditorOrigin() ? 'Voltar à lista de pernoites' : undefined} onMenu={view === 'presentation' && (readStayEditorIntent() || hasStoredStayEditorOrigin()) ? returnFromStayProgramEditor : view === 'cockpit' ? () => setDrawer(true) : undefined}/>");
+  // Preserve the calculator origin when composing the final shared header.
+  if (source.includes('const currencyReturnView')) source = source.replace("onMenu={view === 'presentation'", "onMenu={view === 'currency' ? () => setView(currencyReturnView.current) : view === 'presentation'");
   fs.writeFileSync(path, source);
 }

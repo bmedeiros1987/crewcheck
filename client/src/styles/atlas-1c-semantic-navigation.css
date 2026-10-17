@@ -34,7 +34,7 @@
 :is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip):is([data-menu-label='Escala oficial'], [data-menu-label='Push iFlight'], [data-menu-label='Meteorologia'], [data-menu-label='Calendário'], [data-menu-label='Exportar'], [data-menu-label='Atualizações'], [data-menu-label='Importar escala'], [data-menu-label='Mapa do mês']) {
   --cc-atlas-tone: var(--cc-atlas-flight);
 }
-:is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip):is([data-menu-label='Carga de trabalho'], [data-menu-label='Despertador'], [data-menu-label='Diárias'], [data-menu-label='Salário'], [data-menu-label='Manutenção']) {
+:is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip):is([data-menu-label='Carga de trabalho'], [data-menu-label='Despertador'], [data-menu-label='Diárias'], [data-menu-label='Salário'], [data-menu-label='Calculadora de moedas'], [data-menu-label='Manutenção']) {
   --cc-atlas-tone: var(--cc-atlas-attention);
 }
 :is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip):is([data-menu-label='Irregularidades'], [data-menu-label='Emergência'], [data-menu-label='Admin']) { --cc-atlas-tone: var(--cc-atlas-alert); }

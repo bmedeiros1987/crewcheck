@@ -36,7 +36,7 @@ const preparedMenu = home.slice(menuStart, menuEnd);
 for (const route of [
   'cockpit', 'roster', 'compare', 'departure', 'wakeup', 'weather', 'presentation', 'mycar',
   'radar', 'alerts', 'regulation', 'load', 'emergency', 'import', 'iflight', 'bids', 'map', 'database', 'crewlocker',
-  'perdiem', 'salary', 'crew', 'concierge', 'hotels', 'gyms', 'routine', 'community', 'life',
+  'perdiem', 'salary', 'currency', 'crew', 'concierge', 'hotels', 'gyms', 'routine', 'community', 'life',
   'reports', 'calendar', 'exports', 'plans', 'settings', 'manual', 'guardian', 'support', 'crewlock',
   'updates', 'maintenance', 'admin',
 ]) assert.match(preparedMenu, new RegExp(`\\['${route}',`), `menu index must keep ${route} discoverable`);

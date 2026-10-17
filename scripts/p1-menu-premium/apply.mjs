@@ -23,7 +23,7 @@ const GROUPS = [
   { title: 'Preparação', views: ['departure', 'wakeup', 'presentation', 'weather', 'mycar'] },
   { title: 'Em operação', views: ['radar', 'alerts', 'regulation', 'load', 'emergency'] },
   { title: 'Escala e planejamento', views: ['import', 'iflight', 'bids', 'map', 'database'] },
-  { title: 'Financeiro', views: ['perdiem', 'salary', 'crew'] },
+  { title: 'Financeiro', views: ['perdiem', 'salary', 'currency', 'crew'] },
   { title: 'Rotina e apoio', views: ['routine', 'life', 'hotels', 'gyms', 'concierge', 'community'] },
   { title: 'Documentos', views: ['crewlocker', 'crewlock', 'reports', 'calendar', 'exports'] },
   { title: 'Conta, ajuda e segurança', views: ['notifications', 'settings', 'plans', 'guardian', 'manual', 'support'] },
@@ -69,6 +69,7 @@ const OVERRIDES = {
 
   perdiem: ['Diárias', 'Previsão semanal e mensal', 'Banknote'],
   salary: ['Salário', 'Produção e adicionais', 'DollarSign'],
+  currency: ['Calculadora de moedas', 'Conversão de referência', 'Calculator'],
   crew: ['Tripulação e função', 'Composição e adicionais', 'Users'],
 
   routine: ['Rotina', 'Descanso, treino e preparação', 'Dumbbell'],
@@ -100,7 +101,7 @@ const OVERRIDES = {
 
 /** Ícones que a política usa e que o Home.tsx ainda não importa. */
 const REQUIRED_ICONS = [
-  'BellRing', 'Gauge', 'Siren', 'CalendarPlus', 'History', 'Banknote', 'Users', 'UserPlus',
+  'Calculator', 'BellRing', 'Gauge', 'Siren', 'CalendarPlus', 'History', 'Banknote', 'Users', 'UserPlus',
   'FileLock2', 'LockKeyhole', 'BarChart3', 'CalendarCheck2', 'Crown', 'RefreshCw', 'Wrench', 'Shield',
 ];
 
@@ -161,6 +162,7 @@ if (home.includes(MARKER)) {
   const adminLiteral = block.slice(adminRange.start, adminRange.end);
 
   const groupItems = parseItems(groupsLiteral);
+  groupItems.set('currency',{view:'currency',label:'Calculadora de moedas',desc:'Conversão de referência',icon:'Calculator'});
   const adminItems = parseItems(adminLiteral);
   if (!groupItems.size) throw new Error('[p1-menu-premium] Nenhum destino encontrado no menu.');
 
@@ -194,7 +196,7 @@ if (home.includes(MARKER)) {
   for (const view of before.keys()) {
     if (!after.has(view)) throw new Error(`[p1-menu-premium] Destino perdido na reorganização: ${view}`);
   }
-  if (after.size !== before.size) throw new Error('[p1-menu-premium] Contagem de destinos mudou na reorganização.');
+  if (!after.has('currency') || after.size !== before.size + (before.has('currency') ? 0 : 1)) throw new Error('[p1-menu-premium] Contagem de destinos mudou além da calculadora.');
 
   let nextHome = home.slice(0, menuStart) + nextBlock + home.slice(menuEnd);
 

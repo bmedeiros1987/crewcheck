@@ -41,11 +41,18 @@ function valid(record) {
     && (!record.evidence || (record.evidence.kind === 'settlement' && string(record.evidence.reference)))
     && (record.status !== 'payment_confirmed' || (
       record.evidence?.kind === 'settlement' && string(record.evidence.reference) && date(record.paymentDate)))
-    && (record.paymentDate === undefined || date(record.paymentDate));
+    && (record.paymentDate === undefined || date(record.paymentDate))
+    && (record.expectedPaymentDate === undefined || date(record.expectedPaymentDate))
+    && (record.expectedPaymentTimezone === undefined || (string(record.expectedPaymentTimezone) && (()=>{try{new Intl.DateTimeFormat('en',{timeZone:record.expectedPaymentTimezone});return true;}catch{return false;}})()))
+    && (record.flightDate === undefined || date(record.flightDate))
+    && (record.flightDateTimezone === undefined || (string(record.flightDateTimezone) && (()=>{try{new Intl.DateTimeFormat('en',{timeZone:record.flightDateTimezone});return true;}catch{return false;}})()))
+    && (record.flightAirport === undefined || /^[A-Z]{3}$/.test(record.flightAirport))
+    && (record.timingRuleId === undefined || string(record.timingRuleId));
 }
 
 function project(raw) {
   return Object.fromEntries(['id', 'ownerId', 'revision', 'periodStart', 'periodEnd',
+    'expectedPaymentDate','expectedPaymentTimezone','flightDate','flightDateTimezone','flightAirport','timingRuleId',
     'currency', 'timezone', 'amountMinor', 'category', 'status', 'sourceId', 'paymentDate', 'ruleVersion', 'aggregationLevel',
     ...(['payroll','vacation'].includes(raw.category)?['amountBasis']:[]),
     ...(raw.category==='payroll'?['operationalMonth','payrollMonth','rateMonth','expectedCreditMonth']:[])]
