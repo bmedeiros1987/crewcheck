@@ -1,4 +1,4 @@
-import { decimalToMinor } from './financialMoney.mjs';
+import { majorNumberToMinor } from './financialFx.mjs';
 const day = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value+'T12:00:00Z')) && new Date(value+'T12:00:00Z').toISOString().slice(0,10) === value;
 export async function financialCaptureDigest(value) {
   const bytes = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)));
@@ -23,6 +23,8 @@ export async function canonicalAllowanceCapture({ ownerId, crewId, airline, rows
   for (const row of orderedRows) {
     if (!day(row.iso) || row.iso < range.start || row.iso > range.end || typeof row.label !== 'string' || !row.source || !row.rateVersion
       || typeof row.value !== 'number' || !Number.isFinite(row.value) || row.value < 0) throw Error('CANONICAL_CAPTURE_INVALID_ROW');
+    const amountMinor=majorNumberToMinor(row.value,row.currency);
+    if(amountMinor===null)throw Error('CANONICAL_CAPTURE_INVALID_ROW');
     const key = await financialCaptureDigest([row.iso, row.label]);
     if (keys.has(key)) throw Error('CANONICAL_CAPTURE_DUPLICATE_ROW'); keys.add(key);
     const sourceId = await financialCaptureDigest([scopeId,key]);
@@ -33,7 +35,7 @@ export async function canonicalAllowanceCapture({ ownerId, crewId, airline, rows
       const flight = flights.find(flight => flight.id === (review.flightLinks?.[key] ?? review.flightLinks?.[JSON.stringify([row.iso,row.label])]));
       if (flight?.published === true && day(flight.localDate) && /^[A-Z]{3}$/.test(flight.airport)) schedule = { airline, policy: { ...policy, timing: 'foreign_allowance_flight_day', currencies: [row.currency] }, flightLink: { kind: 'published_allowance_flight_link', allowanceSourceId: sourceId, localDate: flight.localDate, timezone: flight.timezone || review.flightTimezone, airport: flight.airport, reference: await financialCaptureDigest(['canonical-flight',flight.id]) } };
     }
-    items.push({ key, expectedRevision: 0, record: { category: 'allowance', currency: row.currency, amountMinor: decimalToMinor(String(row.value),row.currency), periodStart: row.iso, periodEnd: row.iso, timezone: 'America/Sao_Paulo', aggregationLevel: 'item' }, ...(schedule ? { schedule } : {}) });
+    items.push({ key, expectedRevision: 0, record: { category: 'allowance', currency: row.currency, amountMinor, periodStart: row.iso, periodEnd: row.iso, timezone: 'America/Sao_Paulo', aggregationLevel: 'item' }, ...(schedule ? { schedule } : {}) });
   }
   return { kind: 'reviewed_financial_forecast', ownerId, scopeId, reviewReference: review.reference, ruleVersion: 'canonical-allowance-capture-v1',
     fingerprint: await financialCaptureDigest([orderedRows.map(row=>[row.iso,row.label,row.currency,row.value,row.source,row.rateVersion]), review]), items };
