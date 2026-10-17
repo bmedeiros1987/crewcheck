@@ -10,6 +10,10 @@ const record = (id, fields = {}) => ({ id: id.toString(16).padStart(64, '0'), ow
 const read = records => query({ identity, records, now });
 assert.equal(query({ identity: { authenticated: false }, records: [record(1)], now }).access, 'denied');
 assert.equal(read([]).state, 'no_data');
+assert.equal(read([record(8, { expectedPaymentDate: '2031-12-21', amountMinor: null }), record(9)]).state, 'available', 'past missing amount does not taint upcoming records');
+assert.equal(read([record(8, { expectedPaymentDate: '2031-12-21', amountMinor: null })]).state, 'no_data', 'past incomplete event does not make an empty horizon incomplete');
+assert.equal(read([record(8, { expectedPaymentDate: '2033-02-21', amountMinor: null }), record(9)]).state, 'available', 'later missing amount is outside this horizon');
+assert.equal(read([record(8, { expectedPaymentDate: '2031-12-21', amountMinor: 'invalid' }), record(9)]).state, 'available', 'rejected historical record is scoped outside horizon');
 let result = read([record(1), record(2, { ownerId: 'b@example.invalid', amountMinor: 999999 })]);
 assert.equal(result.events.length, 1); assert(!JSON.stringify(result).includes('999999'));
 assert(!JSON.stringify(result).includes('sourceId')); assert(!JSON.stringify(result).includes('history'));
