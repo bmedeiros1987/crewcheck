@@ -167,7 +167,7 @@ async function visibleTextBounds(page, selector) {
         }
         await page.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'perdiem' })));
         await page.locator('.cc-per-diem-content').waitFor();
-        await page.locator('.cc-per-diem-items > summary').click(); await settle(page);
+        await page.getByRole('button',{name:'Extrato',exact:true}).click(); await settle(page);
         const money = await fixtureScope.qaMoney(page);
         assert.ok(money.amounts.some(value => value.includes('1.234.567,89')), 'Exercise actual large synthetic currency amount');
         assert.ok(money.amounts.some(value => value.includes('US$') || value.includes('€') || value.includes('£')), 'Exercise actual multiple currencies');

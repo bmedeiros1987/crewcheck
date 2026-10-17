@@ -7,6 +7,7 @@ import type { CrewRoster } from '@/lib/pdfParser';
 import { financialMonths, financialRange, latestFinancialPeriods, validFinancialDay, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { financialComparisonPeriods } from '@/lib/financialComparisonPeriods';
 import './financial-history.css';
+import { FinancialScreenContext, type FinancialScreenName } from './FinancialScreen';
 
 const monthOf = (roster: CrewRoster) => `${roster.year}-${String(roster.month).padStart(2,'0')}`;
 const label = (month: string) => new Intl.DateTimeFormat('pt-BR', { month:'long', year:'numeric', timeZone:'UTC' }).format(new Date(month + '-01T12:00:00Z'));
@@ -24,6 +25,8 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   weeks?: (snapshots: S[], range: FinancialRange) => Array<{ range: FinancialRange; value: string }>;
 }) {
   const privacy = useFinancialPrivacy();
+  const [screen,setScreen]=useState<FinancialScreenName>('overview');
+  const expanded=screen==='charts';
   const money = (...args: Parameters<typeof formatMoney>) => privacy.amount(formatMoney(...args));
   const owner = session(), initialMonth = monthOf(roster), crew = financialRosterCrewIdentity(roster);
   const [authRevision, setAuthRevision] = useState(0), [calculationRevision,setCalculationRevision] = useState(0);
@@ -34,10 +37,11 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   const [loaded,setLoaded] = useState<Array<{roster:CrewRoster;source:string}>>([]);
   const [coverageReady,setCoverageReady]=useState(false);
   const [requestedPeriods,setRequestedPeriods]=useState<string[]>([]);
-  const [busy,setBusy] = useState(false), [notice,setNotice] = useState(''), [expanded,setExpanded] = useState(false), [currency,setCurrency] = useState('BRL');
+  const [busy,setBusy] = useState(false), [notice,setNotice] = useState(''), [currency,setCurrency] = useState('BRL');
   const [comparison,setComparison]=useState<'month'|'week'>('month');
   const epoch = useRef(0), fetching = useRef(new Set<string>());
   const account = String(getStoredUser()?.id || getStoredUser()?.email || '');
+  useEffect(()=>setScreen('overview'),[mode,owner,crew]);
   const bound = useRef({ account, roster });
   if (roster !== bound.current.roster) bound.current = { account, roster };
   const range = useMemo(()=>financialRange(kind,month,day,from,to),[kind,month,day,from,to]);
@@ -106,16 +110,15 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
       {(notice||conflicts.length>0)&&<p>{notice} {conflicts.length>0?'Revisões ambíguas em '+conflicts.join(', ')+': não somadas.':''}</p>}
     </section>
   </>;
-  const graph=<details className="cz-toolbox cc-financial-graph" onToggle={event=>setExpanded(event.currentTarget.open)}>
-    <summary>Demonstrativo e gráficos · previsões</summary>
-    <p>Reprocessado pelo motor atual. Previsto não significa recebido. Sem fonte de confirmação de pagamentos; demonstrativos oficiais permanecem separados.</p>
-    {kind==='month'&&<button type="button" onClick={()=>setKind('year')}>Comparar meses do ano</button>}
+  const graph=<section className="cz-toolbox cc-financial-graph" aria-label="Gráfico e histórico">
+    <h3>Gráfico e histórico <small>Estimativas</small></h3>
+    <p>Estimativas por período · recebimento não confirmado.</p>
     {!privacy.hidden&&numeric.length>=2&&<p>Maior previsão: {numeric.filter(item=>item.values[displayedCurrency]===max).map(item=>item.title).join(', ')}. Comparação apenas entre períodos completos disponíveis em {displayedCurrency}.</p>}
     <label>Comparar por<select aria-label="Agrupamento do gráfico" value={comparison} onChange={event=>setComparison(event.target.value as 'month'|'week')}><option value="month">Mês</option>{mode==='allowance'&&periodMetric&&<option value="week">Semana</option>}</select></label>
     <p>Comparação: {comparisonRange.start} até {comparisonRange.end}. Moeda original: {displayedCurrency}. {comparison==='week'?'Semanas de quarta a terça; recortes parciais identificados.':''}</p>
     {currencies.length>1&&<label>Moeda do gráfico<select aria-label="Moeda do gráfico" value={displayedCurrency} onChange={event=>setCurrency(event.target.value)}>{currencies.map(value=><option key={value}>{value}</option>)}</select></label>}
-    {numeric.length<2&&<p>São necessários dois períodos completos com total nesta moeda para comparar barras e variações.</p>}
-    <p>Períodos sem escala não podem ser abertos. O clique preserva as datas do valor exibido.</p>
+    {numeric.length<2&&<p>Comparação disponível com dois períodos completos.</p>}
+    <details className="cc-financial-help"><summary>Como ler o histórico</summary><p>Reprocessado pelo motor atual. Períodos sem escala não são zero e não podem ser abertos. O clique preserva as datas do valor exibido. Demonstrativos oficiais permanecem separados.</p></details>
     <div className="cc-financial-bars" aria-label="Comparativo de previsões por período">
       {rows.map((item,index)=>{
         const value=item.values[displayedCurrency],previous=rows[index-1];
@@ -128,8 +131,8 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
         </button>;
       })}
     </div>
-    <p>{mode==='salary'?'Salário-base e descontos são mensais; nenhuma parcela mensal é distribuída artificialmente por semana.':'Escolha um mês para abrir suas semanas de trabalho. O filtro Semana também está disponível acima.'}</p>
-    {kind==='month'&&weeks&&<section className="cc-financial-week-list" aria-label="Semanas da competência"><h3>Semanas da competência</h3><p>Recortes de trabalho dentro do mês, sem atribuir datas de pagamento.</p>{weeks(snapshots.map(item=>item.snapshot),range).map(item=><button type="button" key={item.range.start} onClick={()=>{setKind('custom');setFrom(item.range.start);setTo(item.range.end);}}>{item.range.start} até {item.range.end} · {privacy.text(item.value)}</button>)}</section>}
-  </details>;
-  return <>{render({snapshots,range,missing,controls,graph,coverageReady,requestRange:range=>setRequestedPeriods(financialMonths(range))})}</>;
+    <p>{mode==='salary'?'Salário-base e descontos são mensais; nenhuma parcela mensal é distribuída artificialmente por semana.':'Toque no mês para consultar o período.'}</p>
+    {kind==='month'&&weeks&&<section className="cc-financial-week-list" aria-label="Semanas da competência"><h3>Semanas da competência</h3><p>Datas de trabalho · não são datas de pagamento.</p>{weeks(snapshots.map(item=>item.snapshot),range).map(item=><button type="button" key={item.range.start} onClick={()=>{setKind('custom');setFrom(item.range.start);setTo(item.range.end);}}>{item.range.start} até {item.range.end} · {privacy.text(item.value)}</button>)}</section>}
+  </section>;
+  return <FinancialScreenContext.Provider value={{screen,navigate:setScreen,controls}}>{render({snapshots,range,missing,controls,graph,coverageReady,requestRange:range=>setRequestedPeriods(financialMonths(range))})}</FinancialScreenContext.Provider>;
 }
