@@ -58,3 +58,17 @@ Node 22.23.3 oficial (mesma versão do log CI): instalação com audit/scripts d
 Regressão revisada DOMPurify com fechamento </style>, serialize/reparse e controle negativo 3.4.13 PASS em Node22 antes/depois de preparação, assim como os PDFs de 3/5 páginas. Audit final desta branch: 4 pacotes dev ainda vulneráveis (@capacitor/ios crítico, tar/xmldom/brace-expansion altos), corrigidos separadamente pela #987; zero baixa/moderada nesta branch. Não se afirma zero vulnerabilidades em nenhuma branch isolada.
 
 Composição somente de manifest/lockfile das duas correções: audit autorizado retornou zero vulnerabilidades (info/baixa/moderada/alta/crítica = 0), snapshot em 2026-10-10. SHA-256 do lockfile composto: `e8aac2b5bf899342ef78e751971cc33462f2873f106d7769546a746915009816`. É evidência dessa composição local; não altera main, não faz merge das PRs e não substitui revisão/CI de cada SHA. Relatórios JSON e lock composto estão no pacote privado de revisão.
+
+## Conciliação com main em 2026-10-17
+
+Main fixada em `538834ac775f8d75679e078b8e32b098587fd532`; HEAD original `523158aed4354edbe613858b4399b0a22ab8362e`. Merge local normal sem conflito em manifest/lockfile; mysql2 3.23.1 e DOMPurify 3.4.16 preservados. Nenhum outro executor ativo ou movimento remoto destas branches observado na preparação.
+
+Auditoria completa da main atual: 7 entradas (1 crítica, 3 altas, 1 moderada, 2 baixas), snapshot distinto das 6 do job antigo. Esta PR atualizada deixa somente as 4 dependências dev tratadas na 987 (iOS crítica, tar/xmldom/brace altas). A composição local de ambas sobre esta main retornou zero em todas as severidades neste snapshot; isso não afirma encerramento dos alertas Dependabot privados.
+
+Impacto no código: mysql2 é usado nos pools do servidor; as opções inspecionadas não habilitam compressão. DOMPurify é transitivo de jsPDF; a exportação atual usa tabelas e texto, sem chamada `.html()`, hooks afterSanitize ou IN_PLACE encontrada no código de aplicação. As versões são afetadas segundo os advisories, mas as pré-condições de exploração em produção não foram demonstradas. Não houve conexão a banco real.
+
+A fixture antiga assumia exportReport síncrono. A função da main agora é assíncrona e carrega a identidade visual local: o teste passa a aguardar a Promise, fornece APIs em jsdom com scripts/resources desativados e permite somente a leitura do PNG aprovado do checkout. Não há stub da função exportadora nem remoção das assertions PDF/DOM. Node 22.13 não suporta o undici transitivo atual de jsdom; repetição com Node 22.23.3 oficial conferido resolve a incompatibilidade do ambiente de teste.
+
+Node 22.23.3: instalação isolada pelo lockfile, DOMPurify corrigido e controle negativo 3.4.13 antes/depois da preparação PASS; exportações reais de 1/80 linhas fictícias e roundtrip de 3/5 páginas PASS; share-target PDF, integridade de escala, TypeScript e build Vite PASS. O CI executará a fixture runtime antes/depois da preparação com jsdom 30.0.1 isolado. O job SQL descartável já existente permanece intacto e será repetido no novo CI.
+
+Sem Docker neste Mac: não há novo resultado SQL local; não se reutiliza o PASS histórico como se fosse desta composição. CI e revisão independente do novo HEAD permanecem requisitos. Nenhum merge/deploy, serviço, flag, credencial, permissão, loja ou dado real alterado.

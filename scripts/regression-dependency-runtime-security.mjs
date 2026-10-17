@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 import createDOMPurify from 'dompurify';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { crewCheckEmailIdentity } from '../shared/crewcheckEmailIdentity.mjs';
 
 // Test-only DOM installed separately with audit and lifecycle scripts disabled.
 assert(process.env.CREWCHECK_QA_JSDOM_PACKAGE, 'Set CREWCHECK_QA_JSDOM_PACKAGE to the isolated jsdom package.json');
@@ -66,6 +67,21 @@ try {
 } finally { window.close(); }
 
 const dir = await mkdtemp(path.join(os.tmpdir(), 'crewcheck-pdf-qa-'));
+// Current exportReport is asynchronous and loads the approved local brand PNG.
+// Provide browser APIs with scripts/resources off and reject every other fetch.
+const pdfWindow = new JSDOM('<!doctype html><body></body>', { url: 'https://fixture.invalid' }).window;
+const browserGlobals = ['window', 'document', 'localStorage', 'CustomEvent', 'FileReader', 'fetch'];
+const originalGlobals = new Map(browserGlobals.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+let logoRequests = 0;
+for (const key of browserGlobals.filter(key => key !== 'fetch')) {
+  Object.defineProperty(globalThis, key, { configurable: true, writable: true, value: key === 'window' ? pdfWindow : pdfWindow[key] });
+}
+globalThis.fetch = async url => {
+  assert.equal(url, crewCheckEmailIdentity.logoPath, 'only the approved local PNG may be requested');
+  logoRequests++;
+  const bytes = await readFile(path.join(process.cwd(), 'public', crewCheckEmailIdentity.logoPath));
+  return { ok: true, blob: async () => new pdfWindow.Blob([bytes], { type: 'image/png' }) };
+};
 try {
   const bundle = path.join(dir, 'pdf-export.cjs');
   await build({ entryPoints: ['client/src/lib/pdfExport.ts'], bundle: true, platform: 'node', format: 'cjs', outfile: bundle });
@@ -75,7 +91,7 @@ try {
   const compliance = { score: 100, alerts: [], legalProfile: { actName: 'Synthetic QA', roleLabel: 'QA', functionLabel: 'QA', flightLimit28Days: 80 }, metrics: { totalFlightHours: 0, totalDutyHours: 0, totalDaysOff: 1, minDaysOffRequired: 1, weekendPairs: 0, nightOperations: 0, maxNightOps168h: 2, totalStandby: 0, maxStandbyMonth: 80 }, loadAnalysis: { days: [] } };
   for (const count of [1, 80]) {
     roster.days = Array.from({ length: count }, () => ({ ...day }));
-    const result = exportReport(roster, compliance, []);
+    const result = await exportReport(roster, compliance, []);
     try {
       const bytes = new Uint8Array(await result.blob.arrayBuffer());
       assert.equal(Buffer.from(bytes.subarray(0, 5)).toString(), '%PDF-');
@@ -90,4 +106,12 @@ try {
       } finally { await task.destroy(); }
     } finally { URL.revokeObjectURL(result.url); }
   }
-} finally { await rm(dir, { recursive: true, force: true }); }
+  assert.equal(logoRequests, 1, 'approved logo is loaded once and cached across exports');
+} finally {
+  for (const [key, descriptor] of originalGlobals) {
+    if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+    else delete globalThis[key];
+  }
+  pdfWindow.close();
+  await rm(dir, { recursive: true, force: true });
+}

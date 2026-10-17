@@ -173,10 +173,20 @@ jobs:
           node scripts/regression-preparation-crewlock-replay.mjs
           node scripts/regression-source-preparation-cache.mjs
       - run: npm audit --omit=dev --audit-level=high
+      - name: Validate patched DOM sanitizer and actual PDF export before preparation
+        env:
+          CREWCHECK_QA_JSDOM_PACKAGE: ${{ runner.temp }}/dependency-dom/package.json
+        run: |
+          npm install --prefix "$RUNNER_TEMP/dependency-dom" --ignore-scripts --no-audit --no-fund jsdom@30.0.1
+          node scripts/regression-dependency-runtime-security.mjs
       - name: Prepare current CrewCheck sources
         run: node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/crewcheck-prepare.log"
       - name: TypeScript check
         run: npx tsc --noEmit 2>&1 | tee "$RUNNER_TEMP/typescript.log"
+      - name: Validate patched DOM sanitizer and actual PDF export after preparation
+        env:
+          CREWCHECK_QA_JSDOM_PACKAGE: ${{ runner.temp }}/dependency-dom/package.json
+        run: node scripts/regression-dependency-runtime-security.mjs
       - name: Validate notification safety after source preparation
         run: |
           node scripts/regression-bids-delivery.mjs
