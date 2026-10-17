@@ -78,7 +78,7 @@ try {
 
   globalThis.localStorage = new MemoryStorage();
   globalThis.sessionStorage = new MemoryStorage();
-  globalThis.window = { location: { origin: 'https://crewcheck.test' }, dispatchEvent() {} };
+  globalThis.window = Object.assign(new EventTarget(), { location: { origin: 'https://crewcheck.test' } });
   localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'history-e2e', email: 'history@example.test' }));
 
   const moduleUrl = `${pathToFileURL(path.join(outDir, 'database-client.mjs')).href}?v=${Date.now()}`;

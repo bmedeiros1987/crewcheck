@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import {createMysqlJournal,coordinatedCommit} from './mysql_journal.mjs';
+import {database} from './mysql_journal_fixture.mjs';
+import {readRecoveryFence} from './reconcile_journal.mjs';
+globalThis.fetch=()=>{throw Error('No live store calls');};
+const packageName='com.crewcheck.app';
+const intent={sourceSha:'a'.repeat(40),controllerSha:'b'.repeat(40),runId:'123',artifactSha256:'c'.repeat(64),versionCode:144201};
+const staged={...intent,editId:'fictional-edit',track:'internal',expectedTrackSha256:'d'.repeat(64),otherTracksBeforeSha256:'e'.repeat(64)};
+const binding={package:packageName,owner:'mobile:123:1',...intent};
+const db=database(),journal=createMysqlJournal(db);
+const empty=await readRecoveryFence(journal,binding);assert.equal(empty.reservationPresent,false);assert.equal(empty.reservationAllowed,false);
+const attempts=await Promise.allSettled([journal.reserve(packageName,binding.owner,intent),journal.reserve(packageName,'wear:124:1',{...intent,runId:'124'})]);
+assert.equal(attempts.filter(x=>x.status==='fulfilled').length,1);
+assert.equal(attempts.filter(x=>x.status==='rejected').length,1);
+let record=await journal.read(packageName);
+record=await journal.advance(packageName,binding.owner,staged,record.revision,'edit_open');
+let commits=0;db.lose();
+await assert.rejects(coordinatedCommit(journal,record,async()=>commits++));assert.equal(commits,0);
+// New process instance, same durable rows: SQL reply lost after pending write.
+const restarted=createMysqlJournal(db);
+const before=structuredClone(await restarted.read(packageName));const callsBefore=db.calls.length;
+const fence=await readRecoveryFence(restarted,binding);
+assert.equal(fence.record.state,'pending');assert.equal(fence.record.revision,3);
+for(const key of ['storeMutationAllowed','reservationAllowed','retryAllowed','rolloverAllowed','resumeAllowed'])assert.equal(fence[key],false);
+assert.equal(fence.storeAvailability,'unknown');
+assert(db.calls.slice(callsBefore).every(sql=>sql.startsWith('SELECT payload')));
+assert.deepEqual(await restarted.read(packageName),before);
+await assert.rejects(restarted.reserve(packageName,'wear:next',intent));
+for(const patch of [{owner:'wear:124:1'},{artifactSha256:'f'.repeat(64)},{runId:'124'},{versionCode:144202},{package:'com.crewcheck.life'}])await assert.rejects(readRecoveryFence(restarted,{...binding,...patch}));
+await assert.rejects(readRecoveryFence({async read(){throw Error('private DB diagnostic');}},binding),e=>!e.message.includes('private'));
+let reads=0;await assert.rejects(readRecoveryFence({async read(){return reads++?{...before,revision:4}:before;}},binding));
+// Uncertain external commit is still reserved; a fresh runner cannot retry.
+const db2=database(),j2=createMysqlJournal(db2);let r=await j2.reserve(packageName,binding.owner,intent);
+r=await j2.advance(packageName,binding.owner,staged,r.revision,'edit_open');
+await coordinatedCommit(j2,r,async()=>{throw Error('lost Play acknowledgement');});
+assert.equal((await readRecoveryFence(createMysqlJournal(db2),binding)).record.state,'reconciliation_required');
+await assert.rejects(createMysqlJournal(db2).reserve(packageName,'mobile:next',intent));
+console.log('PASS offline restart observation: lost SQL reply, stopped runner pending, uncertain Play commit, Mobile/Wear shared reservation, foreign identity and racing read; no write/retry/resume grant');

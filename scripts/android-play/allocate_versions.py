@@ -1,10 +1,13 @@
 """Resolve monotonically increasing Play version codes from live app state."""
+import argparse
 import copy
 import json
 import os
 from pathlib import Path
 
 MAX_VERSION_CODE = 2_100_000_000
+SHARED_PACKAGE = 'com.crewcheck.app'
+WATCHFACE_PACKAGE = 'com.crewcheck.watch.app'
 
 
 def allocate_version_codes(policy, live_codes_by_package):
@@ -25,8 +28,30 @@ def allocate_version_codes(policy, live_codes_by_package):
     return resolved
 
 
-def main():
+def select_live_package_policy(policy, package=None):
+    # Package isolation only; does not provide shared-package coordination authority.
+    packages = {v['package'] for v in policy['artifacts'].values()}
+    if package is None:
+        assert SHARED_PACKAGE not in packages, 'Live shared-package writer disabled: journal adoption/exclusivity unverified'
+    else:
+        assert package == WATCHFACE_PACKAGE, 'Only existing independent WatchFace scope supported'
+        assert package in packages, 'Selected package missing'
+    selected = copy.deepcopy(policy)
+    selected['artifacts'] = {m: v for m, v in selected['artifacts'].items() if package is None or v['package'] == package}
+    assert set(selected['artifacts']) == {'watchface'} and selected['artifacts']['watchface']['package'] == WATCHFACE_PACKAGE
+    selected['knownMaxVersionCode'] = {WATCHFACE_PACKAGE: policy['knownMaxVersionCode'][WATCHFACE_PACKAGE]}
+    return selected
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--package', choices=[WATCHFACE_PACKAGE])
+    args = parser.parse_args(argv)
     assert os.environ.get('GITHUB_REF') == 'refs/heads/main', 'Live Play allocation requires main'
+    assert os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch', 'Manual allocation only'
+    policy_path = Path('scripts/android-play/release-policy.json')
+    original_policy = json.loads(policy_path.read_text())
+    policy = select_live_package_policy(original_policy, args.package)
 
     # Keep Google client imports out of module import time so unit tests remain dependency-free.
     import google.auth.transport.requests
@@ -34,8 +59,6 @@ def main():
     import requests
     from credential import load_service_account_secret
 
-    policy_path = Path('scripts/android-play/release-policy.json')
-    policy = json.loads(policy_path.read_text())
     account = load_service_account_secret(os.environ.get('PLAY_SERVICE_ACCOUNT_JSON'))
     credentials = service_account.Credentials.from_service_account_info(
         account,
@@ -57,7 +80,8 @@ def main():
         try:
             tracks = api('GET', edit_url + '/tracks').get('tracks', [])
             bundles = api('GET', edit_url + '/bundles').get('bundles', [])
-            codes = [int(b['versionCode']) for b in bundles]
+            apks = api('GET', edit_url + '/apks').get('apks', [])
+            codes = [int(b['versionCode']) for b in bundles + apks]
             codes += [
                 int(version)
                 for track in tracks
@@ -69,7 +93,9 @@ def main():
             session.delete(edit_url, timeout=30)
 
     resolved = allocate_version_codes(policy, live)
-    policy_path.write_text(json.dumps(resolved, indent=2) + '\n')
+    original_policy['artifacts'].update(resolved['artifacts'])
+    original_policy['knownMaxVersionCode'].update(resolved['knownMaxVersionCode'])
+    policy_path.write_text(json.dumps(original_policy, indent=2) + '\n')
 
     for module, spec in resolved['artifacts'].items():
         print(f"[android-play] {module}: {spec['package']} versionCode={spec['versionCode']}")

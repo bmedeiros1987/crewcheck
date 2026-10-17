@@ -41,7 +41,10 @@ const links = [...index.matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/g)].m
 assert.ok(links, 'Use actual prepared production CSS, not a mock stylesheet');
 const entry = `
 import React, {useState,useEffect,useMemo} from 'react';
+import {alertText} from '@/lib/alertExperienceText';
 import {isFinancialSetting,readFinancialSetting,writeFinancialSetting} from '@/lib/financialSettingStore';
+import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
+import {getToken} from '@/lib/authClient';
 import {createPortal} from 'react-dom';
 import {Search,Hotel,LocateFixed,Plus,Check,MapPin,X,Save,ChevronRight,UserRound,Dumbbell,WashingMachine,Pill,Bell,Send,Menu,Home as HomeIcon,CalendarDays,Navigation} from 'lucide-react';
 import {toast} from 'sonner';
@@ -51,6 +54,8 @@ import {listPlatformStays,updatePlatformStay,findHotelCompanions} from '@/lib/pl
 import {CREW_HOTEL_CATALOG} from '@/data/crewHotels';
 import {saveNearbyPlacesOrigin} from '@/lib/nearbyPlacesOrigin';
 import {setPendingNavigationContext} from '@/lib/navigationContext';
+import {openStayProgramEditor,consumeStayEditorReturn,readStayEditorIntent,returnFromStayProgramEditor,hasStoredStayEditorOrigin,clearStoredStayEditorOrigin} from '@/lib/stayEditorNavigation';
+import {savedStayEditorEvent} from '@/lib/stayEditorStore';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
 import {InternalHeaderFrame} from '@/components/navigation/InternalHeaderFrame';
 import {OperationalLayoutSafety} from '@/components/navigation/OperationalLayoutSafety';
@@ -63,7 +68,7 @@ const events=[event('next',24,'BSB','Hotel sintético em Brasília','14:00'),eve
 window.hotelNavigation=[];
 window.addEventListener('crewcheck:set-view',e=>window.hotelNavigation.push(e.detail));
 window.applyHotelTheme=setCrewCheckThemePreference;
-function App(){return <><main {...${JSON.stringify(rootProps)}}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back/></InternalHeaderFrame><HotelsView events={events}/></main><BottomNav view="hotels" setView={view=>window.hotelNavigation.push(view)} openMenu={()=>window.hotelNavigation.push('menu')}/></>}
+function App(){return <><main {...${JSON.stringify(rootProps)}}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back backLabel="Voltar ao FlightDeck"/></InternalHeaderFrame><HotelsView events={events}/></main><BottomNav view="hotels" setView={view=>window.hotelNavigation.push(view)} openMenu={()=>window.hotelNavigation.push('menu')}/></>}
 createRoot(document.getElementById('root')).render(<App/>);
 `;
 await build({ stdin: { contents: entry, loader: 'tsx', resolveDir: process.cwd() }, bundle: true, platform: 'browser', format: 'esm', jsx: 'automatic', tsconfig: 'tsconfig.json', outfile: path.join(output, 'harness.js'), loader: { '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"test"', 'import.meta.env': JSON.stringify({ DEV: false, PROD: true, MODE: 'test', BASE_URL: '/' }) } });

@@ -21,6 +21,8 @@ on:
       - 'client/src/lib/financialSettingStore.ts'
       - 'client/src/lib/freeDay*.ts'
       - 'client/src/components/FreeDayPostponementAlerts.tsx'
+      - 'client/src/components/FreeDayReviewPending.tsx'
+      - 'scripts/regression-free-day-pending-browser.cjs'
       - 'client/src/components/FreeDaySourceConsent.tsx'
       - 'client/src/components/FreeDaySourceQueue.tsx'
       - 'client/src/components/FreeDayPersonalConsent.tsx'
@@ -39,11 +41,17 @@ on:
       - 'client/src/components/v1391/RosterLaunchView.tsx'
       - 'scripts/regression-financial-*.mjs'
       - 'scripts/regression-financial-ui-browser.cjs'
+      - 'scripts/regression-financial-privacy-browser.cjs'
       - 'scripts/regression-static-module-mime.mjs'
       - 'server.mjs'
       - 'client/src/styles/per-diem-content.css'
       - 'client/src/components/finance/**'
       - 'client/src/lib/financialHistoryPeriods.ts'
+      - 'client/src/lib/nextFinancialPayment.ts'
+      - 'client/src/lib/payrollPaymentComposition.ts'
+      - 'scripts/regression-payroll-payment-coverage.mjs'
+      - 'scripts/regression-next-financial-payment.mjs'
+      - 'scripts/regression-financial-payment-preview.cjs'
       - 'client/src/lib/financialComparisonPeriods.ts'
       - 'client/src/lib/salaryCalculationDiagnostic.ts'
       - 'client/src/lib/salaryActivityEvidence.ts'
@@ -97,7 +105,9 @@ jobs:
           TZ: America/New_York
       - run: node scripts/regression-salary-prerequisite-diagnostic.mjs
       - run: node scripts/regression-salary-review-callers.mjs
+      - run: node scripts/regression-inss-bracket-truncation.mjs
       - run: node scripts/regression-financial-read-model.mjs
+      - run: node scripts/regression-monthly-credit-lifecycle.mjs
       - run: node scripts/regression-financial-statement-totals.mjs
       - name: Verify reported breakfast criterion with base/time evidence
         run: node scripts/regression-breakfast-base-presence.mjs
@@ -130,6 +140,8 @@ jobs:
           node scripts/regression-canonical-duty-measurement.mjs
           node scripts/regression-canonical-duty-load.mjs
       - run: node scripts/regression-p2-530-adjacent-fallback-finance.mjs
+      - run: node scripts/regression-next-financial-payment.mjs
+      - run: node scripts/regression-payroll-payment-coverage.mjs
       - run: npx tsc --noEmit
       - run: npx vite build
       - name: Verify planned reference owner and session isolation
@@ -185,6 +197,10 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
         run: node scripts/regression-financial-ui-browser.cjs
+      - name: Explain free-day pending data and open roster dates (synthetic)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-free-day-pending-browser.cjs
       - name: Verify legacy flight-role origin remains pending
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
@@ -237,6 +253,28 @@ jobs:
         with:
           name: salary-prerequisites-synthetic
           path: artifacts/salary-prerequisites/
+          if-no-files-found: ignore
+      - name: Verify financial value privacy
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-financial-privacy-browser.cjs
+      - name: Verify proposed payment hierarchy (synthetic)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-financial-payment-preview.cjs
+      - name: Save financial payment preview
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: financial-payment-preview-synthetic
+          path: artifacts/financial-payment-preview/
+          if-no-files-found: ignore
+      - name: Save financial privacy evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: financial-privacy-synthetic
+          path: artifacts/financial-privacy/
           if-no-files-found: ignore
       - name: Save synthetic UI evidence
         if: always()

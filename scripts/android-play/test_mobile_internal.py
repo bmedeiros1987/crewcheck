@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import tempfile
 from unittest.mock import patch
+os.environ['REVIEWED_SOURCE_SHA'] = 'a' * 40
 import mobile_internal as m
 
 
@@ -26,7 +27,7 @@ assert payload['releases'][0]['versionCodes'] == ['144150', '144151', '144155']
 rejects(lambda: m.retained_release(track, 144150, '14.4.11'))
 assert m.next_version_code([144151,144154,144158],144101) == (144158,144159)
 
-runs = [dict(id=i+1, workflow_id=i+1, head_sha=m.SOURCE_SHA, event='pull_request', name=n, status='completed', conclusion='success') for i,n in enumerate(sorted(m.REQUIRED_CI))]
+runs = [dict(id=i+1, workflow_id=i+1, head_sha=m.SOURCE_SHA, event='push', head_branch='main', name=n, status='completed', conclusion='success') for i,n in enumerate(sorted(m.REQUIRED_CI))]
 m.check_ci_runs(runs)
 for override in [{'head_sha':'0'*40}, {'status':'in_progress','conclusion':None}, {'conclusion':'failure'}]:
     bad=copy.deepcopy(runs);bad[0].update(override);rejects(lambda:m.check_ci_runs(bad))
@@ -57,7 +58,15 @@ workflow=Path(__file__).parents[2]/'.github/workflows/mobile-only-internal.yml'
 source=workflow.read_text()
 assert ':app:bundleRelease' in source and ':wear:' not in source and ':watchface:' not in source
 assert 'default: false' in source and "if: inputs.publish_mobile_internal == true" in source
-assert m.SOURCE_SHA in source and 'persist-credentials: false' in source
+assert 'ref: ${{ inputs.reviewed_source_sha }}' in source and 'persist-credentials: false' in source
+assert source.index('Refuse publication until durable') < source.index('Checkout release controller')
+assert 'group: crewcheck-mobile-preparation' in source and 'group: crewcheck-play-release' not in source
+allocation_step = source.split('name: Allocate only phone')[1].split('      - name:')[0]
+assert 'if: inputs.publish_mobile_internal == true' in allocation_step
+assert 'playSubmissionAllowed' in Path(m.__file__).read_text()
+bridge_workflow=workflow.with_name('watch-phone-sync.yml').read_text()
+assert "'scripts/android-play/**'" in bridge_workflow
+assert "'.github/workflows/mobile-only-internal.yml'" in bridge_workflow
 print('PASS: mobile-only guards, exact-source CI, live allocation, retained codes; zero APIs')
 
 # Exercise the complete publish controller against a fake Play API.
@@ -68,7 +77,9 @@ def simulated_publish(failure=None):
         root=Path(temp);data=b'synthetic AAB bytes; no real signing material';(root/'app.aab').write_bytes(data)
         policy=copy.deepcopy(original);policy['knownMaxVersionCode'][m.PACKAGE]=144154;policy['artifacts']['app']['versionCode']=144155
         spec=policy['artifacts']['app']
-        evidence=dict(module='app',sourceSha=m.SOURCE_SHA,file='app.aab',sha256=hashlib.sha256(data).hexdigest(),certificateSha256=policy['uploadCertificateSha256'],versionName=policy['versionName'],**spec)
+        evidence=dict(module='app',sourceSha=m.SOURCE_SHA,file='app.aab',sha256=hashlib.sha256(data).hexdigest(),certificateSha256=policy['uploadCertificateSha256'],versionName=policy['versionName'],playSubmissionAllowed=True,**spec)
+        if failure=='unallocated':evidence['playSubmissionAllowed']=False
+        if failure=='allocation-unknown':evidence.pop('playSubmissionAllowed')
         if failure=='hash':evidence['sha256']='0'*64
         if failure=='wrong-source':evidence['sourceSha']='0'*40
         (root/'mobile-release.json').write_text(json.dumps(evidence));(root/'resolved-release-policy.json').write_text(json.dumps(policy))
@@ -164,7 +175,7 @@ def simulated_publish(failure=None):
         assert not any(method=='DELETE' and url.endswith('/release') for method,url,_ in state['calls'])
 
 simulated_publish()
-for failure in ['hash','wrong-source','version-race','other-track','retention','review-mode','no-opt-in','postcommit-drift','timeout-committed','timeout-uncommitted','verify-unavailable','uncertain-read-unavailable','prior-intent','runner-crash']:
+for failure in ['hash','wrong-source','version-race','other-track','retention','review-mode','no-opt-in','postcommit-drift','timeout-committed','timeout-uncommitted','verify-unavailable','uncertain-read-unavailable','prior-intent','runner-crash','unallocated','allocation-unknown']:
     simulated_publish(failure)
 print('PASS: fake publication guards existing reviews, persists intent before commit, reconciles lost responses and blocks blind retry/cleanup; zero APIs')
 with patch.dict(os.environ, {'PUBLISH_MOBILE_INTERNAL':'true'}), patch.object(m,'guard'), patch.object(m,'play_session') as session:
@@ -173,3 +184,33 @@ with patch.dict(os.environ, {'PUBLISH_MOBILE_INTERNAL':'true'}), patch.object(m,
 with patch.object(m,'play_session') as session:
     rejects(m.allocate)
     session.assert_not_called()
+
+# Merged-source CI cannot be substituted with PR, manual, old, pending or failed runs.
+for override in [{'event':'pull_request'}, {'event':'workflow_dispatch'}, {'head_branch':'topic'}]:
+    bad=copy.deepcopy(runs)
+    for item in bad:item.update(override)
+    rejects(lambda:m.check_ci_runs(bad))
+newer=copy.deepcopy(runs[0]);newer.update(id=999,status='in_progress',conclusion=None)
+rejects(lambda:m.check_ci_runs(runs+[newer]))
+
+# Validate BOTH outputs with mocked tools: package, code, targeting, signer and hashes.
+android='{http://schemas.android.com/apk/res/android}'
+manifest='''<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.crewcheck.app" android:versionCode="144156" android:versionName="14.4.11"><uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36"/><application android:debuggable="false"/></manifest>'''
+for replacement in [('com.crewcheck.app','com.other.app'),('144156','144110'),('26','25'),('36','35'),('false','true')]:
+    policy=copy.deepcopy(original);policy['knownMaxVersionCode'][m.PACKAGE]=144155;policy['artifacts']['app']['versionCode']=144156
+    rejects(lambda:m.validate_apk_manifest(manifest.replace(*replacement),policy))
+print('PASS: merged-source CI event/latest-run failures and APK identity/SDK/debug guards; zero APIs')
+pr=dict(merged=True,merge_commit_sha=m.SOURCE_SHA,base=dict(ref='main',repo=dict(full_name='bmedeiros1987/crewcheck')),head=dict(sha='b'*40,repo=dict(full_name='bmedeiros1987/crewcheck')))
+m.validate_source_pr(pr,m.SOURCE_SHA)
+for override in [{'merged':False},{'merge_commit_sha':'0'*40}]:
+    bad=copy.deepcopy(pr);bad.update(override);rejects(lambda:m.validate_source_pr(bad,m.SOURCE_SHA))
+rejects(lambda:m.validate_source_pr(pr,'0'*40))
+bad=copy.deepcopy(pr);bad['head']['repo']['full_name']='foreign/repo';rejects(lambda:m.validate_source_pr(bad,m.SOURCE_SHA))
+bridge=[dict(id=1,workflow_id=1,head_sha=pr['head']['sha'],event='pull_request',name='Watch phone sync bridge',status='completed',conclusion='success')]
+m.check_ci_runs(bridge,sha=pr['head']['sha'],event='pull_request',required=m.PR_REQUIRED_CI)
+rejects(lambda:m.check_ci_runs(bridge,sha=m.SOURCE_SHA,event='pull_request',required=m.PR_REQUIRED_CI))
+cert='c'*64
+m.validate_apk_signer('Signer #1 certificate SHA-256 digest: '+cert,cert)
+for signature in ['', 'Signer #1 certificate SHA-256 digest: '+'0'*64, '\n'.join('Signer #'+str(i)+' certificate SHA-256 digest: '+cert for i in (1,2))]:
+    rejects(lambda:m.validate_apk_signer(signature,cert))
+print('PASS: unmerged/foreign/moved PR-main, exact PR bridge CI and APK signer mismatch/multiple signer checks')

@@ -3,7 +3,7 @@
 MUST_NOT_DEFER_REVIEW = 'changesNotSentForReview must not be set'
 
 
-def commit_internal_edit(api, edit_url):
+def commit_internal_edit(api, edit_url, protect_reviews=False):
     """Commit an Internal Testing edit using the review mode required by that app.
 
     Some Play apps require ``changesNotSentForReview=true`` while others reject that
@@ -11,15 +11,16 @@ def commit_internal_edit(api, edit_url):
     deferred-review mode first and fall back only for Play's explicit "must not be set"
     response. Any other API failure remains fatal.
     """
+    protected = {'changesInReviewBehavior': 'ERROR_IF_IN_REVIEW'} if protect_reviews else {}
     try:
         result = api(
             'POST',
             edit_url + ':commit',
-            params={'changesNotSentForReview': 'true'},
+            params={'changesNotSentForReview': 'true', **protected},
         )
         return result, 'deferred-review'
     except RuntimeError as error:
         if MUST_NOT_DEFER_REVIEW not in str(error):
             raise
-        result = api('POST', edit_url + ':commit')
+        result = api('POST', edit_url + ':commit', **({'params': protected} if protected else {}))
         return result, 'automatic-review'

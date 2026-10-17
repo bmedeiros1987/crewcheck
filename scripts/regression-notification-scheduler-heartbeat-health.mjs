@@ -128,6 +128,8 @@ const cycleTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-scheduler-
 const cycleTempFile = path.join(cycleTempDir, 'run-scheduler-cycle.mjs');
 try {
   const harness = `
+import { runCrewCheckPushQueue as actualCrewCheckPushQueue } from ${JSON.stringify(pathToFileURL(path.resolve('server/web-push/bidsProducer.mjs')).href)};
+async function runCrewCheckPushQueue(db) { return actualCrewCheckPushQueue(db, { configuration: () => ({ enabled: false, configured: false }) }); }
 export let schedulerRunning = false;
 export let lastCycle = null;
 export let dbPoolCalls = 0;
@@ -177,6 +179,8 @@ export { runSchedulerCycle };
   await mod.runSchedulerCycle();
   assert.equal(mod.dbPoolCalls, 3, 'terceiro ciclo também não pode ficar bloqueado pelos dois anteriores');
   assert.equal(mod.schedulerRunning, false, 'ciclo bem-sucedido deve terminar com schedulerRunning=false');
+  assert.equal(mod.lastCycle.crewCheckPush.enabled, false, 'Web Push desativado permanece inerte no ciclo real');
+  assert.equal(mod.lastCycle.crewCheckPush.selected, 0);
   assert.equal(mod.lastCycle?.error, undefined, 'ciclo bem-sucedido não deve registrar summary.error');
   assert.equal(mod.heartbeatCalls.length, 2, 'ciclo bem-sucedido deve gravar heartbeat de início e de fim (db existe)');
   assert.equal(mod.heartbeatCalls[0].lastFinishedAt, null, 'heartbeat de início deve marcar lastFinishedAt=null');

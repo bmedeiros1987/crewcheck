@@ -1,0 +1,7 @@
+# Monthly credit lifecycle duplicate guard
+
+Reproduced on published main 09d6c703: the same monthly payroll or vacation source/scope/currency/category under IDs A (statement_reported) and B (payment_confirmed with valid settlement evidence/date) was publishable with both records and separate equal status totals. This demonstrates ambiguous duplicate lifecycle identity, not an observed combined doubled total or real-account incident. Repository inspection found no production caller of this query contract; the visual next-payment card uses an independent model.
+
+For monthly payroll/vacation net credits only, aggregate duplicate identity now spans all lifecycle statuses. Distinct IDs fail closed with duplicate_aggregate_scope, no publishable amounts, and valid historical records retained. The query does not guess which ID supersedes another. Same-ID later revisions still replace current state and preserve history. Day/week forecast-versus-statement comparisons remain separate by status. Sources, categories, currencies and owners remain isolated.
+
+Regression covers statement/settlement, forecast/statement, same status, differing amounts, reversed input order, same-ID revisions, preserved history, other owners and separate day/week comparisons. Existing financial read-model and monthly-foundation suites pass. No changes to UI, tax formulas, persistence, real data or configuration. Separate from visual PR #1054; no merge/deploy authorized.

@@ -1,3 +1,4 @@
+import {verifiedMysqlTls} from '../mysql-verified-tls.mjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -140,7 +141,7 @@ async function dbPool() {
           connectionLimit: 3,
           connectTimeout: 4500,
           waitForConnections: true,
-          ssl: { rejectUnauthorized: false },
+          ssl: verifiedMysqlTls(parsed.hostname,Number(parsed.port||3306),envAny(['MYSQL_SSL_MODE'])),
         });
         await pool.query(`CREATE TABLE IF NOT EXISTS crewcheck_google_oauth_store (
           record_key VARCHAR(191) PRIMARY KEY,

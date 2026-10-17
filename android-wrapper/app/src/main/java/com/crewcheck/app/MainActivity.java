@@ -77,6 +77,7 @@ public class MainActivity extends Activity {
 
     private FrameLayout rootLayout;
     private WebView webView;
+    private StayAlarmHostAndroid stayAlarmHost;
     private WebView portalWebView;
     private View portalContainer;
     private TextView portalStatusText;
@@ -149,6 +150,7 @@ public class MainActivity extends Activity {
         rootLayout.addView(webView);
 
         configureWebView(webView, false);
+        stayAlarmHost = StayAlarmHostAndroid.install(this, webView);
         webView.addJavascriptInterface(new CrewCheckIFlightBridge(), "AndroidCrewCheckIFlight");
         webView.addJavascriptInterface(new CrewCheckNativeBridge(), "AndroidCrewCheckNative");
         billingBridge = new CrewCheckBillingBridge(this, webView);
@@ -156,6 +158,10 @@ public class MainActivity extends Activity {
         registerWatchSyncRequestReceiver();
 
         webView.setWebViewClient(new WebViewClient() {
+            @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
+                super.onPageStarted(view, url, icon);
+                if (stayAlarmHost != null) stayAlarmHost.navigationStarted();
+            }
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 if (request != null && request.getUrl() != null) {
@@ -547,8 +553,15 @@ public class MainActivity extends Activity {
         try {
             boolean loc = hasCrewCheckLocationPermission();
             boolean notif = hasCrewCheckNotificationPermission();
+            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            boolean appEnabled = notificationManager != null && (Build.VERSION.SDK_INT < Build.VERSION_CODES.N || notificationManager.areNotificationsEnabled());
+            Boolean channelEnabled = null;
+            if (notificationManager != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationChannel channel = notificationManager.getNotificationChannel(NOTIFICATION_CHANNEL_ID);
+                if (channel != null) channelEnabled = channel.getImportance() != NotificationManager.IMPORTANCE_NONE;
+            }
             boolean unrestricted = isCrewCheckBatteryUnrestricted();
-            return "{\"location\":" + loc + ",\"notifications\":" + notif + ",\"background\":" + unrestricted + ",\"batteryUnrestricted\":" + unrestricted + "}";
+            return "{\"location\":" + loc + ",\"notifications\":" + notif + ",\"notificationAppEnabled\":" + appEnabled + ",\"notificationChannelEnabled\":" + channelEnabled + ",\"background\":" + unrestricted + ",\"batteryUnrestricted\":" + unrestricted + "}";
         } catch (Exception ex) {
             return "{\"location\":false,\"notifications\":false,\"background\":false,\"batteryUnrestricted\":false}";
         }
@@ -2712,6 +2725,7 @@ try{
     @Override
     protected void onDestroy() {
         closePortalOnly();
+        if (stayAlarmHost != null) { stayAlarmHost.close(); stayAlarmHost = null; }
         if (billingBridge != null) {
             billingBridge.destroy();
             billingBridge = null;

@@ -1,0 +1,19 @@
+.cc-financial-privacy-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  min-height: 44px;
+  padding: .6rem .85rem;
+  margin: .35rem 0;
+  border: 1px solid currentColor;
+  border-radius: .75rem;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.cc-financial-privacy-toggle:focus-visible {
+  outline: 3px solid #008bb5;
+  outline-offset: 3px;
+}
+.cc-financial-privacy-toggle svg { flex: 0 0 auto; }

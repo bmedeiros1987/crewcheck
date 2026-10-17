@@ -1,0 +1,9 @@
+<resources>
+    <!-- Reuse the approved asset finalized by approved-brand-assets.mjs and the
+         existing #1040 overlay background. No extra splash activity or timer. -->
+    <style name="AppTheme" parent="AppTheme.Base">
+        <item name="android:windowSplashScreenBackground">#00010E</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/crewcheck_splash_icon</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#00010E</item>
+    </style>
+</resources>

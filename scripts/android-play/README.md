@@ -65,3 +65,43 @@ the publisher.
 
 References: https://developer.android.com/health-and-fitness/health-connect/publish
 and https://developers.google.com/android-publisher/tracks.
+
+## Mobile-only preparation — publication remains disabled
+
+Recovery reuses the existing PR929; see [RECOVERY-HISTORY.md](RECOVERY-HISTORY.md)
+for verified upload history, intentional safety changes and exact enablement prerequisites.
+
+`mobile-only-internal.yml` accepts a full reviewed current-main merge SHA and its merged
+PR number. Exact Android/web main CI and phone/watch bridge PR-head CI must pass.
+The controller and source must receive independent review before execution. The
+existing bridge workflow now includes release-controller paths, so a controller PR
+cannot silently lack its mandatory bridge evidence.
+
+With publish=false, the workflow builds only `:app:assembleRelease :app:bundleRelease`.
+It does not read a Play credential, allocate a live version or open an edit. Exported
+artifacts use the policy version for build identification only and explicitly record
+`playSubmissionAllowed=false` and policy-only allocation. Both actual manifests,
+signatures and upload certificate must pass; provenance includes source PR/SHA,
+main/bridge CI, controller/run IDs and checksums. A build label is not an unused code.
+
+With publish=true, an initial step refuses execution before checkout or secrets.
+The CLI independently refuses live allocation and publication without a reviewed
+journal. No backend is configured and no store publication is enabled by this patch.
+A future publisher must consume approved immutable bytes instead of rebuilding on a
+second dispatch, reserve the shared package durably, allocate above all live phone/Wear
+codes and reconcile old edits/reviews before any mutation. The joint Android publisher
+is not a mobile-only shortcut. Do not remove the manual publication safety regression.
+
+An APK signed by the upload key is not established as compatible with Play App Signing
+installations. Compare the public app-signing certificate and verify an in-place update
+retains data before APK distribution. Otherwise use an authorized Play-delivered update;
+do not rotate keys, clear data or change package IDs. Production eligibility and current
+credential/lifecycle state remain unknown. The user's production/internal-fallback
+preference does not bypass code, review, durable-receipt or coordination gates.
+
+The follow-up in the same PR includes `artifact_consumer.py` (offline local ZIP
+verification) and `mysql_journal.mjs` (inactive existing-pool adapter and commit
+coordinator). See [EXISTING-JOURNAL-OPTIONS.md](EXISTING-JOURNAL-OPTIONS.md) for tested
+components, current wiring gaps and exact existing-access choices. Neither component
+is wired to the store publisher. The previous preparation-only approval does not
+cover this follow-up; its complete new HEAD requires independent review.

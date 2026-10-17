@@ -33,13 +33,16 @@ patch('server.mjs', (source) => {
   const urlAnchor = "  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);";
   source = insertAfter(source, urlAnchor, '  if (await handleV139Route(req, res, url)) return;', 'await handleV139Route(req, res, url)', 'server route');
   const telegramAnchor = "  if (chatId && text && await telegramTryBindFromWebhook(message, text)) return sendJson(res, 200, { ok: true, linked: true, message: 'Telegram vinculado.' });";
-  source = insertAfter(
-    source,
-    telegramAnchor,
-    "  if (chatId && message?.document && await handleV139Telegram(message, sendTelegramMessage)) return sendJson(res, 200, { ok: true, crewlock: true, message: 'Solicitação CrewLock processada.' });",
-    'await handleV139Telegram(message, sendTelegramMessage)',
-    'Telegram CrewLock',
-  );
+  const preparedCrewLockRoute = "const v1391TelegramHandled = await handleV139Telegram(update, sendTelegramMessage);\n  if (v1391TelegramHandled) return sendJson(res, 200, { ok: true, handled: true });";
+  if (!source.includes(preparedCrewLockRoute)) {
+    source = insertAfter(
+      source,
+      telegramAnchor,
+      "  if (chatId && message?.document && await handleV139Telegram(message, sendTelegramMessage)) return sendJson(res, 200, { ok: true, crewlock: true, message: 'Solicitação CrewLock processada.' });",
+      'await handleV139Telegram(message, sendTelegramMessage)',
+      'Telegram CrewLock',
+    );
+  }
   return source.replaceAll('13.8.8', '13.9.0');
 });
 

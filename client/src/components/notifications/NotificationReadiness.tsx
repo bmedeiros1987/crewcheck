@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { authFetch, getToken } from '@/lib/authClient';
+import { DeviceNotificationReadiness } from './DeviceNotificationReadiness';
 
 type Snapshot = { readiness: { telegramConfigured: boolean; telegramLinked: boolean }; jobs: Array<{ id: number; status: string }> };
 export function NotificationReadiness() {
@@ -34,6 +35,7 @@ export function NotificationReadiness() {
   const readiness = snapshot?.readiness;
   const count = (states: string[]) => snapshot?.jobs.filter(job => states.includes(job.status)).length || 0;
   return <section className="cz-toolbox" aria-label="Entrega fora do app">
+    <DeviceNotificationReadiness />
     <h2>Entrega fora do app</h2>
     <p>{unavailable ? 'Disponibilidade não verificada. Reconecte para consultar.' : !readiness ? 'Consultando vínculo e fila desta conta…' : !readiness.telegramConfigured ? 'Canal Telegram indisponível no servidor.' : !readiness.telegramLinked ? 'Esta conta não tem vínculo Telegram válido.' : 'Telegram vinculado a esta conta. Só os lembretes gravados no servidor podem ser enviados com o CrewCheck fechado.'}</p>
     {readiness && <p>Últimos {snapshot!.jobs.length} registros: {count(['pending'])} pendentes · {count(['sent'])} aceitos pelo provedor · {count(['uncertain', 'partial'])} com resultado desconhecido · {count(['expired'])} expirados · {count(['cancelled'])} cancelados. Aceitação não confirma entrega no aparelho; resultados desconhecidos não são repetidos automaticamente.</p>}
