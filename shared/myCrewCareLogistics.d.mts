@@ -28,10 +28,7 @@ export type MyCrewCarePersistedStay = {
   endAt: string;
 };
 
-export type MyCrewCareProviderRecord = {
-  direction: 'to_airport';
-  date: string;
-  time: string;
+type MyCrewCareRecordCommon = {
   airport: string;
   pairingId: string;
   hotelName?: string;
@@ -47,6 +44,24 @@ export type MyCrewCareProviderRecord = {
   transitMinutes?: number | null;
   status?: 'published' | 'changed' | 'cancelled';
 };
+
+export type MyCrewCareProviderRecord = MyCrewCareRecordCommon & ({
+  direction: 'to_airport';
+  date: string;
+  time: string;
+} | {
+  direction: 'hotel_only';
+  confirmation: 'confirmed';
+  status: 'published' | 'changed' | 'cancelled';
+  reservationStartAt: string;
+  reservationEndAt: string;
+  date?: null;
+  time?: null;
+  pickupLocation?: null;
+  transportProvider?: null;
+  transportPhone?: null;
+  transitMinutes?: null;
+});
 
 type MyCrewCareFactCommon = {
   schemaVersion: 1;
