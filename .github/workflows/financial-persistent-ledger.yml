@@ -40,6 +40,7 @@ jobs:
       - name: Preserve existing financial read and credit lifecycle
         run: |
           node scripts/regression-financial-money-schedule.mjs
+          node scripts/regression-financial-review-owner-negative.mjs
           node scripts/regression-financial-read-model.mjs
           node scripts/regression-monthly-credit-lifecycle.mjs
           node scripts/regression-account-health-deletion.mjs

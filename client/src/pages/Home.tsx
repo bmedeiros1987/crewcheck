@@ -3991,6 +3991,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
       const key = 'crewcheck_fx_' + currency.toLowerCase() + '_brl';
       const value = prompt('Cotação de referência: 1 ' + currency + ' em BRL (use vírgula decimal)', privacy.hidden ? '' : storage.get(key, '').replace('.', ','));
       if (value === null) continue;
+      if (session !== financialRateSession()) { toast.error('A sessão mudou. O câmbio não foi aplicado à outra conta.'); return; }
       const normalized = parseFinancialDecimal(value);
       if (!normalized || !Number.isFinite(Number(normalized)) || Number(normalized) <= 0) { toast.error('Informe uma cotação positiva válida.'); continue; }
       const asOf = prompt('Data de referência da cotação (AAAA-MM-DD)', '');
