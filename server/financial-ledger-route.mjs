@@ -1,6 +1,8 @@
 import { appendFinancialRecord, readFinancialLedger, FinancialLedgerError, ledgerOwner } from './financial-ledger.mjs';
 import { createFinancialSqlStore } from './financial-ledger-sql.mjs';
+import { queryUpcomingFinancialForecast } from '../shared/financialUpcoming.mjs';
 export const FINANCIAL_LEDGER_PATH = '/api/platform/finance/history';
+export const FINANCIAL_UPCOMING_PATH = '/api/platform/finance/upcoming';
 const send = (res, status, value) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); res.end(JSON.stringify(value)); };
 async function readInput(req) {
   const parts = []; let size = 0;
@@ -10,13 +12,23 @@ async function readInput(req) {
 }
 // Default off. Enabling is a separate operational step after the reviewed
 // additive migration; neither this handler nor startup applies migrations.
-export function createFinancialLedgerHandler({ enabled = () => false, identityProvider, poolProvider, allowedOrigin = () => '', storeFactory = createFinancialSqlStore } = {}) {
+export function createFinancialLedgerHandler({ enabled = () => false, identityProvider, poolProvider, allowedOrigin = () => '', storeFactory = createFinancialSqlStore, now = () => new Date() } = {}) {
   return async (req, res, url) => {
-    if (url.pathname !== FINANCIAL_LEDGER_PATH) return false;
+    if (![FINANCIAL_LEDGER_PATH, FINANCIAL_UPCOMING_PATH].includes(url.pathname)) return false;
+    const upcoming = url.pathname === FINANCIAL_UPCOMING_PATH;
+    if (upcoming && req.method !== 'GET') { res.setHeader('Allow', 'GET'); send(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED' }); return true; }
     if (!['GET', 'POST'].includes(req.method)) { res.setHeader('Allow', 'GET, POST'); send(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED' }); return true; }
     try {
       const identity = await identityProvider(req); ledgerOwner(identity);
       if (!enabled()) { send(res, 503, { ok: false, state: 'unavailable', code: 'FINANCIAL_LEDGER_NOT_ENABLED' }); return true; }
+      if (upcoming) {
+        if ([...url.searchParams].length) throw new FinancialLedgerError('FINANCIAL_INVALID_QUERY');
+        const db = await poolProvider();
+        if (!db) throw new FinancialLedgerError('FINANCIAL_HISTORY_UNAVAILABLE', 503);
+        const records = await storeFactory(db).list(ledgerOwner(identity));
+        send(res, 200, { ok: true, ...queryUpcomingFinancialForecast({ identity, records, now: now() }) });
+        return true;
+      }
       const keys = [...url.searchParams.keys()];
       if (keys.some(key => !['periodStart', 'periodEnd', 'aggregationLevel'].includes(key)) || new Set(keys).size !== keys.length || (req.method === 'POST' && keys.length)) throw new FinancialLedgerError('FINANCIAL_INVALID_QUERY');
       if (req.method === 'POST') {

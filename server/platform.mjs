@@ -1,5 +1,5 @@
 import {createFinancialFxHandler,FINANCIAL_FX_PATH} from './financial-fx.mjs';
-import {createFinancialLedgerHandler, FINANCIAL_LEDGER_PATH} from './financial-ledger-route.mjs';
+import {createFinancialLedgerHandler, FINANCIAL_LEDGER_PATH, FINANCIAL_UPCOMING_PATH} from './financial-ledger-route.mjs';
 import {financialLedgerErasureStatements} from './financial-ledger-erasure.mjs';
 import {verifiedMysqlTls} from './mysql-verified-tls.mjs';
 import {eraseWhatsAppAccountState} from './whatsapp-lifecycle.mjs';
@@ -2568,7 +2568,7 @@ export async function handlePlatformRoute(req, res, url) {
     if (legacy) { await handleLegacyDatabase(req, res, url); return true; }
     if(url.pathname===RELEASE_JOURNAL_PATH)return releaseJournalRoute(req,res,url);
     if(url.pathname===FINANCIAL_FX_PATH)return financialFxRoute(req,res,url);
-    if (url.pathname === FINANCIAL_LEDGER_PATH) return financialLedgerRoute(req, res, url);
+    if ([FINANCIAL_LEDGER_PATH, FINANCIAL_UPCOMING_PATH].includes(url.pathname)) return financialLedgerRoute(req, res, url);
     if (url.pathname === '/api/platform/catalog') { await handleCatalog(req, res); return true; }
     if (url.pathname === '/api/platform/terms/current') { await handleTermsCurrent(req, res); return true; }
     if (url.pathname === '/api/platform/terms/accept') { await handleTermsAccept(req, res); return true; }
