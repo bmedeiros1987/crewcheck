@@ -1,5 +1,9 @@
 # Restauração local do alarme nativo, OFF — 16/10/2026
 
+## Cobertura CI da composição publicada (#1058)
+
+A recuperação inicial omitiu expressamente os workflows dos drafts: recuperava fontes para revisão local, sem afirmar cobertura remota. Na composição publicada, isso deixou o contrato nativo/API e os testes de host, lease, fuso e callback combinado apenas na validação local. O workflow existente `stay-editor-contract.yml` passa a cobrir esses caminhos e executar os contratos raw e preparados em UTC, America/Sao_Paulo e Asia/Tokyo. O contrato nativo usa o motor e host reais com relógio/store simulados; a ponte JSON compila com Android15/API35 e WebKit1.14.0 pinados pelos mesmos SHA256 do workflow de #999. Não é criado workflow paralelo. Os passos anteriores de editor, TypeScript, build, browser e artefatos, o timeout, runner e `contents: read` são preservados. Nenhum secret, chave, APK ou ativação é necessário para esses contratos. Testes simulados não comprovam ciclo de vida Android em aparelho nem montagem integral dos efeitos React.
+
 Este candidato restaura código existente das evidências textuais das PRs997–999; não reimplementa o motor nem ativa alarmes. Base local2286c88ffed330246f1c39bed5ad7bb4d64e7851. Não inclui Wake/fuso3828acd7 nem afirma a composição final solicitada. A branch é independente, para revisão e futura composição com os arquivos exatos.
 
 ## Origem e recuperação verificável
