@@ -66,17 +66,20 @@ export function baseTimeZone(base) {
 }
 export function resolveTimeZoneChoice(
   source,
-  { device = "UTC", base = "", manual = "", local = "" } = {},
+  { device = "UTC", base = "", manual = "", local = "", strict = false } = {},
 ) {
   const fallback = validTimeZone(device) ? device : "UTC";
   const candidate =
-    source === "manual"
+    source === "utc" ? "UTC" : source === "manual"
       ? manual
       : source === "base"
         ? base
         : source === "local"
           ? local
           : fallback;
+  if (strict && (!['local', 'base', 'utc', 'manual'].includes(source) || !validTimeZone(candidate))) {
+    return { zone: '', source, fallback: false, message: source === 'base' ? 'Base cadastrada sem fuso confirmado.' : source === 'local' ? 'Fuso do local do evento ausente; confirme a zona da fonte.' : 'Escolha uma zona IANA válida.' };
+  }
   return {
     zone: validTimeZone(candidate) ? candidate : fallback,
     source,
@@ -89,4 +92,10 @@ export function resolveTimeZoneChoice(
           ? "Base sem fuso confirmado. Usando o fuso do aparelho."
           : "Fuso inválido. Usando o fuso do aparelho.",
   };
+}
+
+/** Offset at the event instant, never at today's date or in the device zone. */
+export function timeZoneOffsetLabel(zone, instant) {
+  if (!validTimeZone(zone) || typeof instant !== 'string' || !/(?:Z|[+-]\d{2}:\d{2})$/.test(instant) || !Number.isFinite(Date.parse(instant))) return '';
+  try { return new Intl.DateTimeFormat('pt-BR', { timeZone: zone, timeZoneName: 'longOffset' }).formatToParts(new Date(instant)).find(part => part.type === 'timeZoneName')?.value.replace('GMT', 'UTC') || ''; } catch { return ''; }
 }
