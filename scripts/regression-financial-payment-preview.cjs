@@ -94,10 +94,15 @@ function seed({theme,kind,amount,history,salaryBase}) {
   }
 
   await page.locator('.cc-payment-hero button').press('Space');
-  await page.getByRole('button',{name:'Composição',exact:true}).click();assert.equal(await page.locator('.cc-next-payment-lines').getAttribute('open'),'');
-  assert.equal(await page.locator('.cc-next-payment-lines summary').evaluate(el=>el===document.activeElement),true,'shortcut transfers keyboard focus');
+  const composition=page.locator('.cc-next-payment-lines>summary');
+  await composition.focus();await page.keyboard.press('Enter');assert.equal(await page.locator('.cc-next-payment-lines').getAttribute('open'),'');
+  assert.equal(await composition.evaluate(el=>el===document.activeElement),true,'native disclosure retains keyboard focus');
+  assert.equal(await page.locator('.cc-payment-actions').count(),0,'duplicated shortcut row is removed');
+  assert.equal(await page.locator('.cc-payment-pending').isVisible(),true,'pending confirmation stays visible without a shortcut');
   await page.getByRole('button',{name:'Demonstrativos',exact:true}).click();assert.equal(await page.locator('.cc-financial-reconciliation').getAttribute('open'),'');
-  await page.getByRole('button',{name:'Pendências',exact:true}).click();assert.equal(await page.locator('.cc-payment-pending').evaluate(el=>el===document.activeElement||el.contains(document.activeElement)),true);
+  assert.equal(await page.locator('.cc-financial-reconciliation>summary').evaluate(el=>el===document.activeElement),true,'document action transfers keyboard focus');
+  const hitTargets=await page.locator('.cc-payment-overview button,.cc-payment-overview summary').evaluateAll(nodes=>nodes.filter(el=>el.getClientRects().length).map(el=>({text:el.textContent,box:el.getBoundingClientRect()})).filter(item=>item.box.width<44||item.box.height<44));
+  assert.deepEqual(hitTargets,[],'visible payment controls have 44px touch targets');
   if(scenario==='complete'){
    const amount=await page.locator('.cc-payment-value').textContent();await page.getByLabel('Filtro financeiro').selectOption('week');assert.equal(await page.locator('.cc-payment-value').textContent(),amount,'filter cannot substitute the hero cycle');await page.getByLabel('Filtro financeiro').selectOption('month');
    await page.locator('.cc-financial-graph>summary').click();
@@ -113,7 +118,7 @@ function seed({theme,kind,amount,history,salaryBase}) {
     await page.waitForFunction(()=>document.querySelector('.cc-payment-value').textContent.includes('2.900,00'),null,{timeout:10000}).catch(async error=>{console.log('SYNTHETIC PAYROLL DEBUG',await page.locator('.cc-payment-overview').innerText());await page.screenshot({path:path.join(out,'payroll-debug.png'),fullPage:true});throw error;});
     assert.match(await page.locator('.cc-payment-hero').innerText(),/fevereiro de 2032/);assert.match(await page.locator('.cc-payment-hero').innerText(),/bruto estimado, antes dos descontos/);
     const salaryAmount=await page.locator('.cc-payment-value').textContent();await page.locator('.cc-payment-hero button').click();assert(!/R\$\s*\d/.test(await page.locator('.cc-per-diem-content').textContent()));await page.locator('.cc-payment-hero button').click();assert.equal(await page.locator('.cc-payment-value').textContent(),salaryAmount);
-    await page.getByRole('button',{name:'Demonstrativos',exact:true}).click();assert.equal(await page.locator('.cc-salary-prerequisites>details').getAttribute('open'),'');
+    await page.getByRole('button',{name:'Demonstrativos',exact:true}).click();assert.equal(await page.locator('.cc-salary-reference').getAttribute('open'),'');
     await page.evaluate(()=>scrollTo({top:0,left:0,behavior:'instant'}));await page.screenshot({path:path.join(out,`${width}-${theme}-payroll-overview.png`),fullPage:false});
     for(const [state,count] of [['partial',1],['empty',0]]){
       await page.evaluate(count=>{const key='crewcheck_local_history_v11_financial-ui-qa',history=JSON.parse(localStorage.getItem(key));const operational=history.find(item=>item.roster.year===2031&&item.roster.month===12);operational.roster.days=operational.roster.days.slice(0,count);operational.checksum='synthetic-coverage-'+count;localStorage.setItem(key,JSON.stringify(history));window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'}));},count);

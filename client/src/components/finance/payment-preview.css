@@ -103,3 +103,7 @@ html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row>.cc-per
 .cc-per-diem-content :is(button,summary,input,select):focus-visible {outline:3px solid #0084ac;outline-offset:3px}
 @media(max-width:360px){html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row {grid-template-columns:40px minmax(0,1fr)!important}.cc-per-diem-items .cz-finance-row>b {grid-column:2;justify-self:start}}
 @media(prefers-reduced-motion:reduce){.cc-per-diem-content * {scroll-behavior:auto!important}}
+html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row {grid-template-columns:48px minmax(0,1fr) minmax(0,40%)!important;grid-template-areas:'date label amount' 'source source source'!important}
+html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row>.cc-per-diem-source {grid-column:auto!important}
+@media(max-width:600px){html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row {grid-template-columns:44px minmax(0,1fr)!important;grid-template-areas:'date label' 'amount amount' 'source source'!important}html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row>b {grid-column:auto!important;justify-self:stretch!important;text-align:left!important}}
+html:is([data-crew-text-size="150"],[data-crew-text-size="200"]) body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row {grid-template-columns:minmax(0,1fr)!important;grid-template-areas:'date' 'label' 'amount' 'source'!important}

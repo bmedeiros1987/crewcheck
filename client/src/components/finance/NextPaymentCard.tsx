@@ -32,7 +32,7 @@ export default function NextPaymentCard({ payment, requestRange }: { payment:Nex
       <h3>{payment.issues.length?'Falta confirmar':'A conferir no demonstrativo'}</h3>
       {payment.issues.length?<><p>{payment.issues[0]}</p>{payment.issues.length>1&&<details><summary>Mais {payment.issues.length-1} pendência(s)</summary><ul>{payment.issues.slice(1).map(issue=><li key={issue}>{issue}</li>)}</ul></details>}</>:<p>Data e recebimento ainda não confirmados.</p>}
       {payment.issues.some(issue=>/escala|programação/.test(issue))&&<button onClick={()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'import'}))}>Importar escala <ChevronRight size={16} aria-hidden="true"/></button>}
-      <button aria-label="Demonstrativos" onClick={()=>open(payment.kind==='allowance'?'.cc-financial-reconciliation':'.cc-salary-prerequisites details')}><FileText size={16} aria-hidden="true"/> Conferir demonstrativo <ChevronRight size={16} aria-hidden="true"/></button>
+      <button aria-label="Demonstrativos" onClick={()=>open(payment.kind==='allowance'?'.cc-financial-reconciliation':'.cc-salary-reference')}><FileText size={16} aria-hidden="true"/> Conferir demonstrativo <ChevronRight size={16} aria-hidden="true"/></button>
     </section>
     <details className="cc-next-payment-lines"><summary>Ver composição do próximo ciclo <span>{payment.lines.length} itens</span></summary>
       <p>{payment.source}</p>
