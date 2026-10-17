@@ -41,6 +41,7 @@ const links = [...index.matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/g)].m
 assert.ok(links, 'Use actual prepared production CSS, not a mock stylesheet');
 const entry = `
 import React, {useState,useEffect,useMemo} from 'react';
+import {alertText} from '@/lib/alertExperienceText';
 import {isFinancialSetting,readFinancialSetting,writeFinancialSetting} from '@/lib/financialSettingStore';
 import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
 import {getToken} from '@/lib/authClient';
@@ -67,7 +68,7 @@ const events=[event('next',24,'BSB','Hotel sintético em Brasília','14:00'),eve
 window.hotelNavigation=[];
 window.addEventListener('crewcheck:set-view',e=>window.hotelNavigation.push(e.detail));
 window.applyHotelTheme=setCrewCheckThemePreference;
-function App(){return <><main {...${JSON.stringify(rootProps)}}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back/></InternalHeaderFrame><HotelsView events={events}/></main><BottomNav view="hotels" setView={view=>window.hotelNavigation.push(view)} openMenu={()=>window.hotelNavigation.push('menu')}/></>}
+function App(){return <><main {...${JSON.stringify(rootProps)}}><OperationalLayoutSafety/><InternalHeaderFrame><Brand back backLabel="Voltar ao FlightDeck"/></InternalHeaderFrame><HotelsView events={events}/></main><BottomNav view="hotels" setView={view=>window.hotelNavigation.push(view)} openMenu={()=>window.hotelNavigation.push('menu')}/></>}
 createRoot(document.getElementById('root')).render(<App/>);
 `;
 await build({ stdin: { contents: entry, loader: 'tsx', resolveDir: process.cwd() }, bundle: true, platform: 'browser', format: 'esm', jsx: 'automatic', tsconfig: 'tsconfig.json', outfile: path.join(output, 'harness.js'), loader: { '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"test"', 'import.meta.env': JSON.stringify({ DEV: false, PROD: true, MODE: 'test', BASE_URL: '/' }) } });

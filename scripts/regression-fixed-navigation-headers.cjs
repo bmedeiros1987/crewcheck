@@ -1,3 +1,5 @@
+const { artifactEvidence } = require('./ui-artifact-evidence.cjs');
+const exactArtifact = artifactEvidence();
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), http = require('node:http'), vm = require('node:vm');
 const { createRequire } = require('node:module');
 const ts = require('typescript');
@@ -95,20 +97,18 @@ async function visibleTextBounds(page, selector) {
       const box=async selector=>page.locator(selector).boundingBox();
       const stable=(before,after,label)=>{assert.ok(before&&after);assert.ok(Math.abs(before.y-after.y)<=1&&Math.abs(before.height-after.height)<=1,label+JSON.stringify({before,after}));};
       const header=await box('.cz-global-header');
-      assert.equal(header.y,0,'Opaque header covers the top safe area');
-      const shield=await page.locator('.cz-global-header').evaluate(el=>{const p=getComputedStyle(el,'::before'),r=el.getBoundingClientRect();return{content:p.content,left:r.x+parseFloat(p.left),right:r.right-parseFloat(p.right),viewport:innerWidth,background:p.backgroundColor,width:parseFloat(p.width)};});
-      assert.equal(shield.content,'\"\"');assert.ok(shield.left<=1&&shield.right>=shield.viewport-1,'Opaque shield covers viewport while header keeps content alignment');assert.notEqual(shield.background,'rgba(0, 0, 0, 0)');assert.ok(shield.width>=shield.viewport-2,'Resolved painted shield width covers both edges');
+      assert.equal(await page.locator('.cz-global-header').evaluate(el=>getComputedStyle(el).position),'relative','Header follows document flow');
       assert.ok(await page.locator('.cz-global-header').evaluate(el=>parseFloat(getComputedStyle(el).paddingTop))>=24,'Header reserves the simulated status bar');
-      assert.equal(await page.locator('.cz-global-header').evaluate(el=>getComputedStyle(el).position),'fixed','Only scroll behavior stays pinned');
       assert.equal(await page.locator('.cz-global-header').evaluate(el=>Boolean(el.closest('.cz-menu-scroll'))),false,'Header remains outside the scroll container');
       assert.equal(await page.locator('.cz-global-header .cz-brand-lockup .cz-logo').isVisible(),true,'Restore the previous brand at mobile widths');
       assert.equal(await page.locator('.cz-global-header .cz-brand-lockup small').isVisible(),!(width<=600&&size>=150),'Decorative subtitle yields space at large mobile text');
       if(width<=600)assert.ok(header.height<=110,'Mobile identity chrome stays compact with 200% text');
       const mark=await page.locator('.cz-global-header .cz-logo').boundingBox(),markImage=await page.locator('.cz-global-header .cz-logo img').boundingBox();assert.ok(markImage.x>=mark.x-1&&markImage.x+markImage.width<=mark.x+mark.width+1,'Identity image stays fully inside its mark');
-      const spacer=await box('.cc-fixed-header-space');assert.ok(spacer.height>=header.y+header.height,'Measured spacer follows the restored header size');
+      assert.equal(await page.locator('.cc-fixed-header-space').count(),0,'No obsolete header spacer');
       await page.locator('.cz-global-header button').last().focus();assert.equal(await page.locator('.cz-global-header button').last().evaluate(el=>el===document.activeElement),true,'Header actions retain keyboard focus');
       await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-restored-header.png`)});
-      for(const top of [900,0,160]) {await page.evaluate(top=>window.scrollTo({top,behavior:'instant'}),top);await settle(page);stable(header,await box('.cz-global-header'),'Page header moved');}
+      const headerDocY=header.y+await page.evaluate(()=>scrollY);
+      for(const top of [900,0,160]) {await page.evaluate(top=>window.scrollTo({top,behavior:'instant'}),top);await settle(page);const current=await box('.cz-global-header');const actualScroll=await page.evaluate(()=>scrollY);assert.ok(Math.abs(current.y+actualScroll-headerDocY)<=1,'Header follows document scroll');}
       assert.deepEqual(await visibleTextBounds(page,'.cz-global-header'),[]);
       const before=await page.evaluate(()=>window.scrollY);
       await page.locator('body > nav.cz-bottom-nav > button').last().click();await page.locator('.cz-menu-overlay').waitFor();await settle(page);
@@ -121,15 +121,17 @@ async function visibleTextBounds(page, selector) {
       assert.deepEqual(await visibleTextBounds(page,'.cz-menu-header .cz-menu-logout'),[],'Logout label stays inside its action');
       assert.deepEqual(await visibleTextBounds(page,'#cc-menu-fixed-heading'),[],'Pinned start heading text fits');
       const scroll=page.locator('.cz-menu-scroll');
+      const menuDoc=await page.evaluate(()=>{const n=document.querySelector('.cz-menu-scroll');return {header:document.querySelector('.cz-menu-header').getBoundingClientRect().top+n.scrollTop,title:document.querySelector('#cc-menu-fixed-heading').getBoundingClientRect().top+n.scrollTop};});
+      const normalMenu=async()=>{const r=await page.evaluate(()=>{const n=document.querySelector('.cz-menu-scroll');return {header:document.querySelector('.cz-menu-header').getBoundingClientRect().top+n.scrollTop,title:document.querySelector('#cc-menu-fixed-heading').getBoundingClientRect().top+n.scrollTop};});assert.ok(Math.abs(r.header-menuDoc.header)<=1&&Math.abs(r.title-menuDoc.title)<=1,'Menu headings remain in content flow');};
       for(const position of ['end','start','end']) {
         await scroll.evaluate((el,position)=>el.scrollTop=position==='end'?el.scrollHeight:0,position);await settle(page);
-        stable(menuHead,await box('.cz-menu-header'),'Menu header moved');stable(title,await box('#cc-menu-fixed-heading'),'Start heading moved');
+        await normalMenu();
       }
       assert.ok(title.y>=menuHead.y+menuHead.height-1,'Pinned headings overlap');
-      const wheelBox=await scroll.boundingBox();await page.mouse.move(wheelBox.x+wheelBox.width/2,wheelBox.y+wheelBox.height/2);await page.mouse.wheel(0,-500);await settle(page);stable(menuHead,await box('.cz-menu-header'),'Wheel up moved header');stable(title,await box('#cc-menu-fixed-heading'),'Wheel up moved title');
-      await page.mouse.wheel(0,500);await settle(page);stable(menuHead,await box('.cz-menu-header'),'Wheel down moved header');stable(title,await box('#cc-menu-fixed-heading'),'Wheel down moved title');
+      const wheelBox=await scroll.boundingBox();await page.mouse.move(wheelBox.x+wheelBox.width/2,wheelBox.y+wheelBox.height/2);await page.mouse.wheel(0,-500);await settle(page);await normalMenu();
+      await page.mouse.wheel(0,500);await settle(page);await normalMenu();
       await scroll.evaluate(el=>el.scrollTop=el.scrollHeight);await settle(page);
-      const scrollBox=await box('.cz-menu-scroll');assert.ok(scrollBox.y>=title.y+title.height-1,'Content overlaps pinned heading');
+      const scrollBox=await box('.cz-menu-scroll');assert.ok((await box('.cz-menu-header')).y<scrollBox.y,'Menu header scrolls out of view');
       const last=await page.locator('.cc-menu-destination').last().boundingBox();assert.ok(last.y>=scrollBox.y-1&&last.y+last.height<=scrollBox.y+scrollBox.height+1,'Last destination unreachable');
       await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-fixed-end.png`)});
       if(width<500) {
@@ -137,7 +139,7 @@ async function visibleTextBounds(page, selector) {
         await page.setViewportSize({width,height:420});await settle(page);
         const keyboardHeader=await box('.cz-menu-header'),keyboardTitle=await box('#cc-menu-fixed-heading');
         await scroll.evaluate(el=>el.scrollTop=el.scrollHeight);await settle(page);
-        stable(keyboardHeader,await box('.cz-menu-header'),'Reduced viewport header moved');stable(keyboardTitle,await box('#cc-menu-fixed-heading'),'Reduced viewport title moved');
+        assert.ok((await box('.cz-menu-header')).y<keyboardHeader.y,'Header follows reduced-height menu scrolling');
         const reduced=await box('.cz-menu-scroll');assert.ok(reduced.height>=44,'No usable content area with keyboard viewport');
         const final=await page.locator('.cc-menu-destination').last().boundingBox();assert.ok(final.y+final.height<=reduced.y+reduced.height+1,'Last destination unavailable at reduced height');
         await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-keyboard-height.png`)});
@@ -164,6 +166,8 @@ async function visibleTextBounds(page, selector) {
       results.push({width,theme,size,importColors,header,menuHead,title,scrollBox,safeArea:{top:24,bottom:20},keyboardHeight:width<500?420:null});
       await context.close();console.log('PASS fixed headers',width,theme,size);
     }
+    assert.deepEqual(artifactEvidence(),exactArtifact,'Exact source/bundle hashes stay unchanged through the complete flow matrix');
     fs.writeFileSync(path.join(output,'fixed-headers-results.json'),JSON.stringify({testedCommit,cases:results,limitations:['Chromium Android viewport emulation; keyboard represented by reduced visual layout height, not physical Android IME.','Safe-area values injected through CSS variables; no physical cutout device.']},null,2));
-  } finally {await browser.close();server.close();}
+  } finally {fs.writeFileSync(path.join(output,'artifact.json'),JSON.stringify(exactArtifact,null,2));
+    await browser.close();server.close();}
 })().catch(error=>{console.error(error);server.close();process.exitCode=1;});

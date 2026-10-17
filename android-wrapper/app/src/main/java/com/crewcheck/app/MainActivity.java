@@ -77,6 +77,7 @@ public class MainActivity extends Activity {
 
     private FrameLayout rootLayout;
     private WebView webView;
+    private StayAlarmHostAndroid stayAlarmHost;
     private WebView portalWebView;
     private View portalContainer;
     private TextView portalStatusText;
@@ -149,6 +150,7 @@ public class MainActivity extends Activity {
         rootLayout.addView(webView);
 
         configureWebView(webView, false);
+        stayAlarmHost = StayAlarmHostAndroid.install(this, webView);
         webView.addJavascriptInterface(new CrewCheckIFlightBridge(), "AndroidCrewCheckIFlight");
         webView.addJavascriptInterface(new CrewCheckNativeBridge(), "AndroidCrewCheckNative");
         billingBridge = new CrewCheckBillingBridge(this, webView);
@@ -156,6 +158,10 @@ public class MainActivity extends Activity {
         registerWatchSyncRequestReceiver();
 
         webView.setWebViewClient(new WebViewClient() {
+            @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
+                super.onPageStarted(view, url, icon);
+                if (stayAlarmHost != null) stayAlarmHost.navigationStarted();
+            }
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 if (request != null && request.getUrl() != null) {
@@ -2719,6 +2725,7 @@ try{
     @Override
     protected void onDestroy() {
         closePortalOnly();
+        if (stayAlarmHost != null) { stayAlarmHost.close(); stayAlarmHost = null; }
         if (billingBridge != null) {
             billingBridge.destroy();
             billingBridge = null;

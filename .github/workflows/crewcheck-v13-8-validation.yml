@@ -17,7 +17,7 @@ on:
 
 defaults:
   run:
-    shell: bash -o pipefail {0}
+    shell: bash -e -o pipefail {0}
 
 permissions:
   contents: read
@@ -66,6 +66,7 @@ jobs:
           node scripts/android-play/test_release_workflow_off.mjs
           node scripts/regression-telegram-location-callback-scope.mjs
           node scripts/regression-notification-diagnostic.mjs
+          node scripts/regression-wake-diagnostic.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
           node scripts/v139/apply.mjs
           node scripts/android-play/test_release_approval_isolated.mjs || exit $?
@@ -80,6 +81,7 @@ jobs:
           node scripts/regression-notification-mysql.mjs
           node scripts/regression-telegram-location-callback-scope.mjs
           node scripts/regression-notification-diagnostic.mjs
+          node scripts/regression-wake-diagnostic.mjs
           node scripts/regression-notification-scheduler-heartbeat-health.mjs
       - name: Remove disposable database
         if: always()
@@ -141,6 +143,10 @@ jobs:
       - run: npm ci
       - name: Validate CI pipeline exit propagation
         run: node scripts/ci/check-workflow-pipefail.mjs
+      - name: Validate patched development dependency compatibility
+        run: node scripts/regression-dependency-dev-security.mjs
+      - name: Audit all dependencies including development and iOS
+        run: npm audit --audit-level=high
       - name: Validate notification safety with fictional recipients before preparation
         run: |
           node scripts/regression-bids-delivery.mjs
@@ -171,10 +177,20 @@ jobs:
           node scripts/regression-preparation-crewlock-replay.mjs
           node scripts/regression-source-preparation-cache.mjs
       - run: npm audit --omit=dev --audit-level=high
+      - name: Validate patched DOM sanitizer and actual PDF export before preparation
+        env:
+          CREWCHECK_QA_JSDOM_PACKAGE: ${{ runner.temp }}/dependency-dom/package.json
+        run: |
+          npm install --prefix "$RUNNER_TEMP/dependency-dom" --ignore-scripts --no-audit --no-fund jsdom@30.0.1
+          node scripts/regression-dependency-runtime-security.mjs
       - name: Prepare current CrewCheck sources
         run: node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/crewcheck-prepare.log"
       - name: TypeScript check
         run: npx tsc --noEmit 2>&1 | tee "$RUNNER_TEMP/typescript.log"
+      - name: Validate patched DOM sanitizer and actual PDF export after preparation
+        env:
+          CREWCHECK_QA_JSDOM_PACKAGE: ${{ runner.temp }}/dependency-dom/package.json
+        run: node scripts/regression-dependency-runtime-security.mjs
       - name: Validate notification safety after source preparation
         run: |
           node scripts/regression-bids-delivery.mjs

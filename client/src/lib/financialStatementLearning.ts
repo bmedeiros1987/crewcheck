@@ -87,17 +87,30 @@ export function detectFinancialStatement(text: string): StatementKind | null {
 
 export function learnPerDiemStatement(text: string, sourceDocument: string): StatementLearningResult {
   const period = text.match(/De\s+(\d{4}-\d{2}-\d{2})\s+at[eé]\s+(\d{4}-\d{2}-\d{2})/i);
-  const payment = text.match(/Pagamento\s+em\s+(\d{4}-\d{2}-\d{2})/i);
+  const paymentDates = new Set<string>();
+  let invalidPaymentDate = false;
+  for (const marker of text.matchAll(/\bPagamento\s+em\b/gi)) {
+    const candidate = text.slice(marker.index! + marker[0].length).match(/^\s*(\d{4}-\d{2}-\d{2})(?=$|\s|[;:()])/);
+    if (!candidate || !validDay(candidate[1])) invalidPaymentDate = true;
+    else paymentDates.add(candidate[1]);
+  }
+  const paymentIssue = invalidPaymentDate || paymentDates.size > 1;
+  const paymentDate = !paymentIssue && paymentDates.size === 1 ? [...paymentDates][0] : undefined;
   const start = period?.[1] || '';
   const end = period?.[2] || '';
   const fp = fingerprint(text);
   const observations = new Map<string, number[]>();
-  const aliases: Record<string, string> = { CAFE: 'breakfast', ALMOCO: 'lunch', JANTAR: 'dinner', CEIA: 'supper' };
+  const aliases: Record<string, string> = { CAFE: 'breakfast', ALMOCO: 'lunch', JANTAR: 'dinner', CEIA: 'supper', TAXI: 'taxi' };
   const normalized = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  for (const match of normalized.matchAll(/\b(CAFE|ALMOCO|JANTAR|CEIA)\b[^\n\r]{0,40}?R\$\s*([\d.]+,\d{2})/gi)) {
+  let invalidRate = false;
+  for (const match of normalized.matchAll(/\b(CAFE|ALMOCO|JANTAR|CEIA|TAXI)\b[^\n\r]{0,40}?R\$[^\S\n\r]*([^\s;:()]+)/gi)) {
     const key = aliases[match[1].toUpperCase()];
+    const token = match[2];
+    const strict = /^(?:\d+|\d{1,3}(?:\.\d{3})+),\d{2}$/.test(token);
+    const cents = strict ? Number(token.replace(/\./g, '').replace(',', '')) : NaN;
+    if (!strict || !Number.isSafeInteger(cents) || cents < 0) { invalidRate = true; continue; }
     const values = observations.get(key) || [];
-    values.push(money(match[2]));
+    values.push(cents / 100);
     observations.set(key, values);
   }
   const rates: LearnedRate[] = [];
@@ -111,7 +124,7 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
       `per_diem.${key}`,
       key,
       selected,
-      'meal',
+      key === 'taxi' ? 'amount' : 'meal',
       start,
       sourceDocument,
       fp,
@@ -123,8 +136,18 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
   let invalidDepositedTotal = false;
   for (const marker of text.matchAll(/Total\s+depositado\b/gi)) {
     const tail = text.slice(marker.index! + marker[0].length);
-    const candidate = tail.match(/^\s*:?\s*R\$\s*([+-]?\s*[\d.,]+)(?=$|\s|[;:()])/);
-    const token = candidate?.[1] || '';
+    const candidate = tail.match(/^\s*(?:na\s+data\s+(\d{4}-\d{2}-\d{2})\s*)?:?\s*R\$\s*([+-]?\s*[\d.,]+)(?=$|\s|[;:()])/i);
+    const depositDate = candidate?.[1];
+    if (depositDate) {
+      // Dated deposits belong to the declared payment, not historical advances.
+      // Never guess the current payment from a different/invalid deposit date.
+      if (!validDay(depositDate) || !paymentDate || depositDate > paymentDate) {
+        invalidDepositedTotal = true;
+        continue;
+      }
+      if (depositDate < paymentDate) continue;
+    }
+    const token = candidate?.[2] || '';
     const strict = /^(?:\d+|\d{1,3}(?:\.\d{3})+),\d{2}$/.test(token);
     const cents = strict ? Number(token.replace(/\./g, '').replace(',', '')) : NaN;
     if (!strict || !Number.isSafeInteger(cents) || cents < 0) invalidDepositedTotal = true;
@@ -132,13 +155,15 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
   }
   const warnings: string[] = [];
   if (!start || !end || !validDay(start) || !validDay(end) || start > end) warnings.push('Período completo inválido ou não identificado; revisão obrigatória.');
-  if (conflictingMeals.length) warnings.push('Tarifas de alimentação divergentes; revisão obrigatória.');
-  if (!rates.length) warnings.push('Nenhuma tarifa de alimentação identificada.');
+  if (paymentIssue) warnings.push('Datas de pagamento divergentes ou inválidas; revisão obrigatória.');
+  if (invalidRate) warnings.push('Tarifa de diária com formato inválido; revisão obrigatória.');
+  if (conflictingMeals.length) warnings.push('Tarifas de diárias divergentes; revisão obrigatória.');
+  if (!rates.length) warnings.push('Nenhuma tarifa de diária identificada.');
   if (depositedTotals.size > 1) warnings.push('Totais depositados divergentes; revisão obrigatória.');
   if (invalidDepositedTotal) warnings.push('Total depositado com formato inválido; revisão obrigatória.');
   if (!depositedTotals.size) warnings.push('Total depositado não identificado.');
-  const deposited = !invalidDepositedTotal && depositedTotals.size === 1 ? [...depositedTotals][0] / 100 : undefined;
-  return { kind: 'per_diem', competence: start.slice(0, 7), periodStart: start || undefined, periodEnd: end || undefined, paymentDate: payment?.[1], rates, totals: deposited === undefined ? {} : { deposited }, warnings };
+  const deposited = !paymentIssue && !invalidDepositedTotal && depositedTotals.size === 1 ? [...depositedTotals][0] / 100 : undefined;
+  return { kind: 'per_diem', competence: start.slice(0, 7), periodStart: start || undefined, periodEnd: end || undefined, paymentDate, rates, totals: deposited === undefined ? {} : { deposited }, warnings };
 }
 
 const PAYROLL_KEYS: Array<[RegExp, string, string, LearnedRate['unit']]> = [
@@ -236,8 +261,8 @@ function boundedRate(item: LearnedRate): boolean {
   }
   return item?.confirmed === true && item.valueOrigin !== 'derived' && Number.isFinite(item.value) && item.value >= 0
     && ['BRL', 'USD', 'EUR', 'GBP'].includes(item.currency)
-    && item.unit === (item.key?.startsWith('per_diem.') ? 'meal' : item.key === 'salary.base' ? 'month' : ['salary.reserveHour','salary.standbyHour'].includes(item.key) ? 'hour' : 'km')
-    && ['per_diem.breakfast','per_diem.lunch','per_diem.dinner','per_diem.supper','salary.base','salary.dayKm','salary.nightKm','salary.dfsDayKm','salary.dfsNightKm','salary.reserveHour','salary.standbyHour'].includes(item.key)
+    && item.unit === (item.key === 'per_diem.taxi' ? 'amount' : item.key?.startsWith('per_diem.') ? 'meal' : item.key === 'salary.base' ? 'month' : ['salary.reserveHour','salary.standbyHour'].includes(item.key) ? 'hour' : 'km')
+    && ['per_diem.breakfast','per_diem.lunch','per_diem.dinner','per_diem.supper','per_diem.taxi','salary.base','salary.dayKm','salary.nightKm','salary.dfsDayKm','salary.dfsNightKm','salary.reserveHour','salary.standbyHour'].includes(item.key)
     && typeof item.sourceDocument === 'string' && Boolean(item.sourceDocument.trim())
     && typeof item.sourceFingerprint === 'string' && Boolean(item.sourceFingerprint.trim())
     && typeof item.effectiveFrom === 'string' && validDay(item.effectiveFrom)

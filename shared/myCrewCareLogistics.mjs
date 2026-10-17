@@ -200,9 +200,16 @@ export function normalizeMyCrewCareStays(values, contextValue) {
 }
 
 export function normalizeMyCrewCareRecord(value) {
-  if (!value || value.direction !== 'to_airport') return null;
-  const date = validDay(value.date);
-  const time = text(value.time, 5);
+  if (!value || !['to_airport', 'hotel_only'].includes(value.direction)) return null;
+  const hotelOnly = value.direction === 'hotel_only';
+  // Partial hotels require explicit confirmed input and complete reservation bounds.
+  // They must never smuggle an inferred pickup into the hotel-only contract.
+  if (hotelOnly && (value.confirmation !== 'confirmed'
+    || !['published', 'changed', 'cancelled'].includes(value.status)
+    || ['date', 'time', 'pickupLocation', 'transportProvider', 'transportPhone', 'transitMinutes']
+      .some(key => value[key] !== undefined && value[key] !== null))) return null;
+  const date = hotelOnly ? null : validDay(value.date);
+  const time = hotelOnly ? null : text(value.time, 5);
   const airport = text(value.airport, 3).toUpperCase();
   const pairingId = opaque(value.pairingId);
   const hotelName = text(value.hotelName ?? value.hotel);
@@ -226,8 +233,8 @@ export function normalizeMyCrewCareRecord(value) {
     && value.transitMinutes <= 360
     ? value.transitMinutes
     : null;
-  if (!date
-    || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)
+  if ((!hotelOnly && (!date || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)))
+    || (hotelOnly && (reservationStart === null || reservationEnd === null))
     || !/^[A-Z]{3}$/.test(airport)
     || !pairingId
     || !hotelName
@@ -236,7 +243,8 @@ export function normalizeMyCrewCareRecord(value) {
     || (reservationStart !== null && reservationEnd !== null && reservationEnd <= reservationStart)
     || !new Set(['published', 'changed', 'cancelled']).has(status)) return null;
   return Object.freeze({
-    direction: 'to_airport',
+    direction: value.direction,
+    ...(hotelOnly ? { confirmation: 'confirmed' } : {}),
     date,
     time,
     airport,
@@ -277,7 +285,8 @@ function createFacts(context, stay, record, observedAt, pickupEpoch) {
     hotelPhone: record.hotelPhone,
     reservationStartAt: record.reservationStartAt,
     reservationEndAt: record.reservationEndAt,
-  }, {
+  }];
+  if (record.direction !== 'hotel_only') materials.push({
     ...common,
     kind: 'pickup',
     hotelName: record.hotelName,
@@ -287,7 +296,7 @@ function createFacts(context, stay, record, observedAt, pickupEpoch) {
     transportProvider: record.transportProvider,
     transportPhone: record.transportPhone,
     transitMinutes: record.transitMinutes,
-  }];
+  });
   return Object.freeze(materials.map((material) => Object.freeze({
     schemaVersion: MYCREWCARE_LOGISTICS_SCHEMA,
     accountId: context.accountId,
@@ -335,6 +344,13 @@ export function reconcileMyCrewCareLogistics({ context: contextValue, stays: sta
       if (record.airport !== stay.airport
         || record.pairingId !== stay.pairingId
         || (stay.hotelName && normalizedKey(record.hotelName) !== normalizedKey(stay.hotelName))) return [];
+      if (record.direction === 'hotel_only') {
+        // Full containment, not a touching/overlapping hotel interval, proves this
+        // persisted stay candidate. The normal unique-owner check still applies.
+        return myCrewCareInstant(record.reservationStartAt) <= stay.start
+          && myCrewCareInstant(record.reservationEndAt) >= stay.end
+          ? [{ stay, pickupEpoch: null }] : [];
+      }
       const pickupEpoch = myCrewCareLocalInstant(record.date, record.time, stay.timeZone);
       // Explicit hotel bounds constrain the same stay. Missing endpoints remain
       // unknown; touching intervals alone do not establish a reservation match.

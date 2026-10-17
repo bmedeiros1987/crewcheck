@@ -1,3 +1,4 @@
+import { useFinancialPrivacy } from './FinancialPrivacy';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CalendarDays } from 'lucide-react';
 import { getStoredUser, getToken } from '@/lib/authClient';
@@ -9,7 +10,7 @@ import './financial-history.css';
 
 const monthOf = (roster: CrewRoster) => `${roster.year}-${String(roster.month).padStart(2,'0')}`;
 const label = (month: string) => new Intl.DateTimeFormat('pt-BR', { month:'long', year:'numeric', timeZone:'UTC' }).format(new Date(month + '-01T12:00:00Z'));
-const money = (value: number, currency: string) => new Intl.NumberFormat('pt-BR',{style:'currency',currency}).format(value);
+const formatMoney = (value: number, currency: string) => new Intl.NumberFormat('pt-BR',{style:'currency',currency}).format(value);
 function session() {
   const user = getStoredUser(), token = getToken();
   return user && token && (user.id || user.email) && !['visitor','guest'].includes(user.role || '') ? `${user.id || user.email}:${token}` : '';
@@ -22,6 +23,8 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   periodMetric?: (snapshots: S[], range: FinancialRange, missing: string[]) => Record<string,number>;
   weeks?: (snapshots: S[], range: FinancialRange) => Array<{ range: FinancialRange; value: string }>;
 }) {
+  const privacy = useFinancialPrivacy();
+  const money = (...args: Parameters<typeof formatMoney>) => privacy.amount(formatMoney(...args));
   const owner = session(), initialMonth = monthOf(roster), crew = financialRosterCrewIdentity(roster);
   const [authRevision, setAuthRevision] = useState(0), [calculationRevision,setCalculationRevision] = useState(0);
   const [kind, setKind] = useState<FinancialRange['kind']>('month');
@@ -107,7 +110,7 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     <summary>Demonstrativo e gráficos · previsões</summary>
     <p>Reprocessado pelo motor atual. Previsto não significa recebido. Sem fonte de confirmação de pagamentos; demonstrativos oficiais permanecem separados.</p>
     {kind==='month'&&<button type="button" onClick={()=>setKind('year')}>Comparar meses do ano</button>}
-    {numeric.length>=2&&<p>Maior previsão: {numeric.filter(item=>item.values[displayedCurrency]===max).map(item=>item.title).join(', ')}. Comparação apenas entre períodos completos disponíveis em {displayedCurrency}.</p>}
+    {!privacy.hidden&&numeric.length>=2&&<p>Maior previsão: {numeric.filter(item=>item.values[displayedCurrency]===max).map(item=>item.title).join(', ')}. Comparação apenas entre períodos completos disponíveis em {displayedCurrency}.</p>}
     <label>Comparar por<select aria-label="Agrupamento do gráfico" value={comparison} onChange={event=>setComparison(event.target.value as 'month'|'week')}><option value="month">Mês</option>{mode==='allowance'&&periodMetric&&<option value="week">Semana</option>}</select></label>
     <p>Comparação: {comparisonRange.start} até {comparisonRange.end}. Moeda original: {displayedCurrency}. {comparison==='week'?'Semanas de quarta a terça; recortes parciais identificados.':''}</p>
     {currencies.length>1&&<label>Moeda do gráfico<select aria-label="Moeda do gráfico" value={displayedCurrency} onChange={event=>setCurrency(event.target.value)}>{currencies.map(value=><option key={value}>{value}</option>)}</select></label>}
@@ -119,14 +122,14 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
         const delta=item.fullWeek&&previous?.fullWeek&&Number.isFinite(value)&&Number.isFinite(previous.values[displayedCurrency])?value-previous.values[displayedCurrency]:null;
         return <button type="button" key={item.range.start} disabled={item.absent.length>0} title={item.absent.length?'Sem escala disponível para abrir este período.':undefined} aria-label={`Abrir ${item.title}`} onClick={()=>{if(item.absent.length)return;setMonth(item.range.start.slice(0,7));setDay(item.range.start);if(comparison==='month'&&item.fullWeek)setKind('month');else{setKind('custom');setFrom(item.range.start);setTo(item.range.end);}}}>
           <span>{item.title}{!item.fullWeek?' · recorte parcial':''}</span>
-          {max!==null&&max>0&&item.fullWeek&&Number.isFinite(value)&&<span className="cc-financial-bar-track" aria-hidden="true"><span style={{width:`${Math.max(0,value/max*100)}%`}}/></span>}
+          {!privacy.hidden&&max!==null&&max>0&&item.fullWeek&&Number.isFinite(value)&&<span className="cc-financial-bar-track" aria-hidden="true"><span style={{width:`${Math.max(0,value/max*100)}%`}}/></span>}
           <strong>{item.absent.length?'Ausente · sem escala':Number.isFinite(value)?`Previsto · ${money(value,displayedCurrency)}`:'Total indisponível'}</strong>
-          {delta!==null&&<small>Variação ante período anterior: {delta>0?'+':''}{money(delta,displayedCurrency)}</small>}
+          {delta!==null&&<small>Variação ante período anterior: {!privacy.hidden&&delta>0?'+':''}{money(delta,displayedCurrency)}</small>}
         </button>;
       })}
     </div>
     <p>{mode==='salary'?'Salário-base e descontos são mensais; nenhuma parcela mensal é distribuída artificialmente por semana.':'Escolha um mês para abrir suas semanas de trabalho. O filtro Semana também está disponível acima.'}</p>
-    {kind==='month'&&weeks&&<section className="cc-financial-week-list" aria-label="Semanas da competência"><h3>Semanas da competência</h3><p>Recortes de trabalho dentro do mês, sem atribuir datas de pagamento.</p>{weeks(snapshots.map(item=>item.snapshot),range).map(item=><button type="button" key={item.range.start} onClick={()=>{setKind('custom');setFrom(item.range.start);setTo(item.range.end);}}>{item.range.start} até {item.range.end} · {item.value}</button>)}</section>}
+    {kind==='month'&&weeks&&<section className="cc-financial-week-list" aria-label="Semanas da competência"><h3>Semanas da competência</h3><p>Recortes de trabalho dentro do mês, sem atribuir datas de pagamento.</p>{weeks(snapshots.map(item=>item.snapshot),range).map(item=><button type="button" key={item.range.start} onClick={()=>{setKind('custom');setFrom(item.range.start);setTo(item.range.end);}}>{item.range.start} até {item.range.end} · {privacy.text(item.value)}</button>)}</section>}
   </details>;
   return <>{render({snapshots,range,missing,controls,graph,coverageReady,requestRange:range=>setRequestedPeriods(financialMonths(range))})}</>;
 }

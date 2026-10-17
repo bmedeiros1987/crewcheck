@@ -86,7 +86,7 @@ try {
 
   globalThis.localStorage = new MemoryStorage();
   globalThis.sessionStorage = new MemoryStorage();
-  globalThis.window = { location: { origin: 'https://crewcheck.test' }, dispatchEvent() {} };
+  globalThis.window = Object.assign(new EventTarget(), { location: { origin: 'https://crewcheck.test' } });
   localStorage.setItem('crewcheck_auth_token', 'test-token');
   localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'crew-623', email: 'crew@example.test' }));
 

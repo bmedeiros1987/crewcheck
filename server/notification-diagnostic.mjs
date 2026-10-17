@@ -36,6 +36,13 @@ export async function handleNotificationDiagnostic(req, res, {
     return { status: rows.length ? 'recorded' : 'absent', counts, total, pendingPastDispatchWindow: overdue, received: null,
       sentMeaning: 'provider_accepted_unconfirmed', scope: 'current_account_notification_job_history' };
   });
+  const wake = await observe(`SELECT j.status,COUNT(*) AS total
+    FROM crewcheck_notification_jobs j JOIN crewcheck_platform_profiles p ON p.email=j.email
+    WHERE j.email=? AND BINARY p.public_id=BINARY ? AND j.created_at>=p.created_at
+    AND j.job_key LIKE 'wakeup:%' GROUP BY j.status`, [email, ownerId], rows => ({
+      status: rows.length ? 'recorded' : 'absent', scope: 'current_account_wake_history',
+      counts: rows.map(row => ({ status: String(row.status), total: Number(row.total) })),
+    }));
   const scheduler = await observe(`SELECT last_started_at,last_finished_at,last_status,
     ROUND(UNIX_TIMESTAMP(last_started_at)*1000) AS started_epoch,
     ROUND(UNIX_TIMESTAMP(last_finished_at)*1000) AS finished_epoch
@@ -45,7 +52,7 @@ export async function handleNotificationDiagnostic(req, res, {
   // Account recreation during the reads must not expose the former owner's records.
   const owners = await observe('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? AND BINARY public_id=BINARY ? LIMIT 1', [email, ownerId], rows => ({ status: rows.length ? 'current' : 'changed' }));
   if (owners.status !== 'current') { reply(res, owners.status === 'changed' ? 401 : 503, { ok: false, code: owners.status === 'changed' ? 'ACCOUNT_CHANGED' : 'IDENTITY_UNAVAILABLE' }); return; }
-  reply(res, 200, { ok: true, observational: true, preferences, alarms, scheduler,
+  reply(res, 200, { ok: true, observational: true, preferences, alarms, wake, scheduler,
     bids: { campaign: CURRENT_BIDS_ALERT_CAMPAIGN === null ? 'absent' : 'configured', savingPreferencesSchedules: false },
     webPush: { gate: gateEnabled() ? 'enabled' : 'disabled', configuration: 'not_observed', installation: 'not_observed', delivery: 'not_observed' },
     localNative: { status: 'not_observed' }, watch: { status: 'not_observed' }, crewCierge: { status: 'not_observed' },

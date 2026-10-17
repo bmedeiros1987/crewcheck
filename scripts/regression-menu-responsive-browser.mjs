@@ -72,11 +72,12 @@ const localStorage = {
 };
 
 localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'menu-browser-account', role: 'admin' }));
-vm.runInNewContext(fs.readFileSync(menuDependenciesFile, 'utf8'), { module: dependencyModule, exports: dependencyModule.exports, require: createRequire(import.meta.url), localStorage, window: { localStorage } }, { timeout: 1000 });
+const menuWindow = Object.assign(new EventTarget(), { localStorage });
+vm.runInNewContext(fs.readFileSync(menuDependenciesFile, 'utf8'), { module: dependencyModule, exports: dependencyModule.exports, require: createRequire(import.meta.url), localStorage, window: menuWindow }, { timeout: 1000 });
 const menuDependencies = dependencyModule.exports;
 const scope = {
   React, ...React, ...icons, ...menuPreference, ...menuDependencies, localStorage, HomeIcon: icons.Home, MapIcon: icons.Map,
-  window: { localStorage },
+  window: menuWindow,
   storage: { get: (_key, fallback) => fallback, set: () => {} },
   getStoredUser: () => ({ id: 'menu-browser-account', name: 'Tripulante de demonstração com nome longo', email: 'demo@example.invalid' }),
   isAdmin: () => true,
@@ -266,7 +267,7 @@ async function inspect(page, label) {
     return { scrollTop: scroll.top, scrollBottom: scroll.bottom, top: last.top, bottom: last.bottom,
       headerTop: document.querySelector('.cz-menu-header').getBoundingClientRect().top };
   });
-  if (Math.abs(end.headerTop - metrics.header.y) > 1) failures.push('Menu navigation header moved while content scrolled');
+  if (!(end.headerTop < metrics.header.y - 20)) failures.push('Menu header must follow scrolling content');
   if (end.top < end.scrollTop - 1 || end.bottom > Math.min(end.scrollBottom, metrics.viewport.height) + 1) failures.push('Last destination unreachable');
   results.push({ label, failures, metrics });
   console.log(`${failures.length ? 'FAIL' : 'PASS'} ${label}: ${failures.join('; ') || 'contained, readable, scrollable'}`);

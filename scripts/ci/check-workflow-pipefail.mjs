@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -84,6 +85,22 @@ async function main() {
   const files = (await readdir(workflowDir))
     .filter((name) => /\.ya?ml$/i.test(name))
     .sort();
+
+  // Execute the configured validation shell, rather than merely checking pipefail.
+  // An intermediate failing command or pipeline must abort before a later success.
+  const validation = await readFile(path.join(workflowDir, 'crewcheck-v13-8-validation.yml'), 'utf8');
+  const shell = validation.match(/^    shell: (bash[^\n]+) \{0\}$/m)?.[1];
+  assert(shell, 'validation workflow must declare its shell');
+  const args = shell.split(/\s+/).slice(1);
+  for (const script of ['false\nprintf MASKED_FAILURE', 'false | cat\nprintf MASKED_FAILURE']) {
+    const result = spawnSync('bash', [...args, '-c', script], { encoding: 'utf8' });
+    assert.ifError(result.error);
+    assert.notEqual(result.status, 0, 'validation shell must propagate intermediate failure');
+    assert(!result.stdout.includes('MASKED_FAILURE'), 'validation shell must stop subsequent commands');
+  }
+  const original = spawnSync('bash', ['-o', 'pipefail', '-c', 'false\nprintf MASKED_FAILURE'], { encoding: 'utf8' });
+  assert.equal(original.status, 0, 'negative control reproduces the previous masking bug');
+  assert.equal(original.stdout, 'MASKED_FAILURE');
 
   const violations = [];
   let teeRunCount = 0;

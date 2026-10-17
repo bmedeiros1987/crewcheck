@@ -1,12 +1,27 @@
 // Query-only contract. The caller supplies identity from its authenticated host,
 // never from a chat prompt, document, URL, or browser-submitted owner field.
 const statuses = new Set(['forecast', 'statement_reported', 'payment_confirmed']);
-const levels = new Set(['item', 'day', 'week']);
+const levels = new Set(['item', 'day', 'week', 'month']);
 const string = value => typeof value === 'string' && value.trim().length > 0;
 function date(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(value + 'T12:00:00Z');
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+function monthlyCredit(record) {
+  if(record.amountBasis!=='net_credit')return false;
+  if(record.amountMinor!==null&&record.amountMinor<0)return false;
+  if(record.paymentDate!==undefined&&!date(record.paymentDate))return false;
+  const month=record.periodStart.slice(0,7),last=new Date(month+'-01T12:00:00Z');
+  last.setUTCMonth(last.getUTCMonth()+1);last.setUTCDate(0);
+  if(record.aggregationLevel!=='month'||record.periodStart!==month+'-01'||record.periodEnd!==last.toISOString().slice(0,10))return false;
+  if(record.paymentDate&&record.paymentDate.slice(0,7)!==month)return false;
+  if(record.category==='vacation')return true;
+  const serial=value=>typeof value==='string'&&date(value+'-01')?Number(value.slice(0,4))*12+Number(value.slice(5,7)):null;
+  const operational=serial(record.operationalMonth),payroll=serial(record.payrollMonth),credit=serial(record.expectedCreditMonth);
+  return operational!==null&&payroll===operational+1&&credit===payroll+1&&record.rateMonth===record.payrollMonth
+    && (record.paymentDate||record.expectedCreditMonth===month)
+    && (record.status!=='forecast'||!record.paymentDate);
 }
 function valid(record) {
   if (!record || typeof record !== 'object' || Array.isArray(record)) return false;
@@ -17,8 +32,10 @@ function valid(record) {
     && typeof record.currency === 'string' && /^[A-Z]{3}$/.test(record.currency) && statuses.has(record.status)
     && (record.amountMinor === null || Number.isSafeInteger(record.amountMinor))
     && string(record.sourceId) && string(record.timezone)
-    && ['allowance', 'advance'].includes(record.category)
+    && ['allowance', 'advance', 'payroll', 'vacation'].includes(record.category)
     && levels.has(record.aggregationLevel)
+    && (record.aggregationLevel!=='month'||['payroll','vacation'].includes(record.category))
+    && (!['payroll','vacation'].includes(record.category)||monthlyCredit(record))
     && (record.ruleVersion === undefined || string(record.ruleVersion))
     && (record.status !== 'forecast' || string(record.ruleVersion))
     && (!record.evidence || (record.evidence.kind === 'settlement' && string(record.evidence.reference)))
@@ -29,7 +46,9 @@ function valid(record) {
 
 function project(raw) {
   return Object.fromEntries(['id', 'ownerId', 'revision', 'periodStart', 'periodEnd',
-    'currency', 'timezone', 'amountMinor', 'category', 'status', 'sourceId', 'paymentDate', 'ruleVersion', 'aggregationLevel']
+    'currency', 'timezone', 'amountMinor', 'category', 'status', 'sourceId', 'paymentDate', 'ruleVersion', 'aggregationLevel',
+    ...(['payroll','vacation'].includes(raw.category)?['amountBasis']:[]),
+    ...(raw.category==='payroll'?['operationalMonth','payrollMonth','rateMonth','expectedCreditMonth']:[])]
     .filter(key => raw[key] !== undefined).map(key => [key, raw[key]]));
 }
 function signature(raw) {
@@ -90,13 +109,16 @@ export function queryFinancialHistory({ identity, records, periodStart, periodEn
   let selected = [...latest.values()].filter(record => record.aggregationLevel === aggregationLevel
     && record.periodStart >= periodStart && record.periodEnd <= periodEnd)
     .sort((a, b) => b.periodStart.localeCompare(a.periodStart) || a.id.localeCompare(b.id));
-  // Day/week totals from the same source and exact scope are one aggregate,
-  // not multiple earnings. Distinct IDs here indicate ambiguous producer identity.
+  // Day/week comparisons keep forecast and statement statuses separate. Monthly
+  // payroll/vacation net credits instead represent one cash-credit lifecycle:
+  // distinct IDs across settlement statuses cannot establish supersession.
   if (aggregationLevel !== 'item') {
     const scope = new Map();
     const ambiguous = new Set();
     for (const record of selected) {
-      const key = JSON.stringify([record.sourceId, record.periodStart, record.periodEnd, record.currency, record.status, record.category]);
+      const lifecycleStatus = record.aggregationLevel === 'month' && ['payroll', 'vacation'].includes(record.category)
+        ? 'monthly_credit_lifecycle' : record.status;
+      const key = JSON.stringify([record.sourceId, record.periodStart, record.periodEnd, record.currency, lifecycleStatus, record.category]);
       if (scope.has(key)) { ambiguous.add(record.id); ambiguous.add(scope.get(key)); }
       scope.set(key, record.id);
     }

@@ -25,9 +25,15 @@ export type CrewCheckPulseAction = {
   label: string;
   /** Destino já existente do shell; o Pulse apenas dispara crewcheck:set-view. */
   view: string;
+  alert?: { occurrence: string; version: string };
+  context?: { programId: string; dateEpochMs?: number; journeyId?: string; flightKey?: string; airportCode?: string };
 };
 
 export type CrewCheckPulseMessage = {
+  /** Account and material evidence are independent of translated display copy. */
+  review?: { occurrence: string; version: string };
+  account?: string | null;
+  scope?: string;
   id?: string;
   /** Chave estável para substituir/evitar duplicatas sem comparar texto livre. */
   dedupeKey?: string;
@@ -36,6 +42,8 @@ export type CrewCheckPulseMessage = {
   /** Categoria visual/semântica; não altera a regra operacional que gerou o aviso. */
   category?: CrewCheckPulseCategory;
   title: string;
+  /** Short localized header label; complete title remains in details/accessible name. */
+  compactTitle?: string;
   detail?: string;
   /** Mensagens dispensáveis ganham o botão de fechar. */
   dismissible?: boolean;
@@ -45,7 +53,7 @@ export type CrewCheckPulseMessage = {
   systemNotification?: CrewCheckPulseSystemNotification;
   notificationTag?: string;
   notificationCooldownMs?: number;
-  /** Cooldown do próprio banner na sessão, útil para contexto recorrente. */
+  /** Cooldown de som da apresentação; nunca oculta pendentes nem equivale a revisão. */
   pulseCooldownMs?: number;
   action?: CrewCheckPulseAction;
 };
