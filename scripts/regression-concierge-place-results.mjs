@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { pharmacyPlaceResults, pharmacyResultsText, pharmacyKind } from '../server/concierge/place-results.mjs';
+import { telegramPlaceReply } from '../server/concierge/telegram-place-links.mjs';
 import { pharmacyReferenceReply } from '../server/concierge/pharmacy-reference.mjs';
 const place = (name, extra = {}) => ({ name, address: 'Rua Exemplo, 12, Guarulhos', location: { latitude: -23.46, longitude: -46.53 }, distanceKm: 0.4, ...extra });
 const sample = [place('Botica Pet', {openNow:true}),place('Farmácia de Manipulação Centro',{openNow:true}),place('Drogaria Fechada',{openNow:false,distanceKm:.1}),place('Drogaria Sem Horário',{distanceKm:.3}),place('Drogaria Aberta',{openNow:true,distanceKm:1.1}),place('Drogaria Outra',{openNow:true,distanceKm:2}),place('Drogaria Terceira',{openNow:true,distanceKm:3})];
@@ -64,8 +65,8 @@ if(process.argv.includes('--prepared')) {
  assert.match(source,/nearby: \(point, kind\) => conciergeSearchNearbyHealthPlacesAtReference\(\[kind === 'hospital' \? 'hospital' : 'pharmacy'\], point, 20\)/);
  const start=source.indexOf('const poi = await pharmacyReferenceReply');const end=source.indexOf('\n',source.indexOf('if (poi.handled) return',start));const adapter=source.slice(start,end);
  for(const channel of ['app','telegram','whatsapp']) {
-  reset();const ctx=vm.createContext({pharmacyReferenceReply:(t,p,s,d)=>pharmacyReferenceReply(t,p,s,d,now),text:'farmácias',profile:{...profile,channel},currentSnapshot:snapshot,conciergeSaveSnapshotAsync:async(p,_r,m)=>deps.save(p,m.preferences),conciergeLoadSnapshot:deps.load,conciergeStayRecords:deps.stays,WEATHER_AIRPORT_POINTS:{GRU:{city:hotel.city}},conciergeLocationContextV14335:()=>gps,conciergeSearchPlaces:deps.lookup,conciergeSearchNearbyHealthPlacesAtReference:async(types,point,max)=>{assert.equal(max,20);return deps.nearby(point,types[0]);},conciergeHumanizeReplyV14408:r=>r});
-  const output=await vm.runInContext(`(async()=>{${adapter}})()`,ctx);assert.equal(typeof output,channel==='app'?'object':'string');if(channel==='app')assert.equal(output.placeResults.places.length,3);
+  reset();const ctx=vm.createContext({pharmacyReferenceReply:(t,p,s,d)=>pharmacyReferenceReply(t,p,s,d,now),text:'farmácias',profile:{...profile,channel},currentSnapshot:snapshot,conciergeSaveSnapshotAsync:async(p,_r,m)=>deps.save(p,m.preferences),conciergeLoadSnapshot:deps.load,conciergeStayRecords:deps.stays,WEATHER_AIRPORT_POINTS:{GRU:{city:hotel.city}},conciergeLocationContextV14335:()=>gps,conciergeSearchPlaces:deps.lookup,conciergeSearchNearbyHealthPlacesAtReference:async(types,point,max)=>{assert.equal(max,20);return deps.nearby(point,types[0]);},telegramPlaceReply,conciergeHumanizeReplyV14408:r=>r});
+  const output=await vm.runInContext(`(async()=>{${adapter}})()`,ctx);assert.equal(typeof output,channel==='whatsapp'?'string':'object');if(channel==='app')assert.equal(output.placeResults.places.length,3);
  }
  const endpoint=source.slice(source.indexOf('async function handleTelegramConciergeAsk('),source.indexOf('function telegramMessagePdfDocument('));
  let response;const ctx=vm.createContext({readJsonBody:async()=>({text:'farmácias'}),telegramRequestUser:()=>({email:profile.email}),telegramAppRequestAllowed:()=>true,telegramLinkedRecordForEmail:async()=>({chatId:'123'}),conciergeAccessMatches:()=>true,conciergeLoadSnapshot:async()=>snapshot,buildTelegramConciergeReply:async()=>({reply:'plain',placeResults:{title:'Farmácias'}}),conciergePreferencesV14336:()=>({}),conciergeVoiceOptionsV14336:()=>[],sendJson:(_r,_s,p)=>{response=p;}});
