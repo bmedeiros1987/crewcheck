@@ -1,5 +1,6 @@
+import { playPlanReady } from '@shared/play-catalog-readiness.mjs';
 import { consumePendingNavigationContext } from '@/lib/navigationContext';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { AlertTriangle, ArrowLeft, Check, Copy, Crown, KeyRound, Link2, Loader2, Lock, Mail, MessageCircle, QrCode, RefreshCcw, Send, ShieldCheck, Smartphone, UserPlus, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -92,14 +93,16 @@ function ErrorCard({ message, retry }: { message: string; retry: () => void }) {
 
 function PlanCard({ plan, current, busy, playPrice, onSubscribe }: { plan: PlatformPlan; current?: string; busy: string; playPrice?: string; onSubscribe: (plan: PlatformPlan) => void }) {
   const active = current === plan.id;
+  const play = hasGooglePlayBillingBridge();
+  const unavailable = play && !plan.adminGrantOnly && plan.id !== 'free' && !playPrice;
   return <article className={`cp-plan ${active ? 'active' : ''} ${plan.id === 'premium_annual' ? 'featured' : ''}`}>
     <header><span>{plan.id === 'free' ? <ShieldCheck/> : <Crown/>}</span><div><small>{plan.cycle}</small><h2>{plan.name}</h2></div>{active && <b><Check/> Atual</b>}</header>
-    <div className="cp-price"><strong>{playPrice || money(plan.value)}</strong>{plan.value > 0 && <span>/{plan.id === 'premium_annual' ? 'ano' : 'mês'}</span>}</div>
-    {Boolean(plan.annualSavings) && <p className="cp-saving">Economia anual aproximada de {plan.annualSavings}%</p>}
+    <div className="cp-price"><strong>{unavailable ? 'Disponibilidade não confirmada' : playPrice || money(plan.value)}</strong>{plan.value > 0 && !unavailable && <span>/{plan.id === 'premium_annual' ? 'ano' : 'mês'}</span>}</div>
+    {!play && Boolean(plan.annualSavings) && <p className="cp-saving">Economia anual aproximada de {plan.annualSavings}%</p>}
     <ul>{plan.features.map((feature) => <li key={feature}><Check/>{feature}</li>)}</ul>
     <div className="cp-plan-limit"><Smartphone/><span><b>{plan.callLimit} ligações/mês</b><small>Franquia reinicia mensalmente; texto e lembrete local continuam.</small></span></div>
     {plan.id === 'free' && !active && <p className="cp-admin-note"><ShieldCheck/> O Essencial continua disponível quando não houver assinatura recorrente ativa.</p>}
-    {!plan.adminGrantOnly && plan.id !== 'free' && !active && <button className="cp-primary" disabled={Boolean(busy)} onClick={() => onSubscribe(plan)}>{busy === plan.id ? <Loader2 className="cp-spin"/> : <Crown/>}{hasGooglePlayBillingBridge() ? 'Assinar pela Google Play' : 'Assinar no site'}</button>}
+    {!plan.adminGrantOnly && plan.id !== 'free' && !active && <button className="cp-primary" disabled={Boolean(busy) || unavailable} onClick={() => onSubscribe(plan)}>{busy === plan.id ? <Loader2 className="cp-spin"/> : <Crown/>}{hasGooglePlayBillingBridge() ? 'Assinar pela Google Play' : 'Assinar no site'}</button>}
     {plan.adminGrantOnly && <p className="cp-admin-note"><Lock/> Concessão vitalícia somente pelo administrador; sem botão de cobrança.</p>}
   </article>;
 }
@@ -110,16 +113,23 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
   const [billing, setBilling] = useState<PlatformBilling | null>(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  const [playProducts, setPlayProducts] = useState<Record<string, { formattedPrice?: string }>>({});
+  const [playProducts, setPlayProducts] = useState<Record<string, { productId?: string; formattedPrice?: string; billingPeriod?: string }>>({});
 
+  const playCatalogRequest=useRef<string|null>(null);
+  function queryCatalog(plans: PlatformPlan[]) {
+    setPlayProducts({});playCatalogRequest.current=null;
+    playCatalogRequest.current=queryGooglePlayProducts(plans.map(plan=>plan.googlePlayProductId||'').filter(Boolean));
+  }
   async function load() {
     setError('');
+    playCatalogRequest.current=null;
+    setPlayProducts({});
     setBusy('');
     let catalogResult: PlatformCatalog | null = null;
     try {
       catalogResult = await getPlatformCatalog();
       setCatalog(catalogResult);
-      if (hasGooglePlayBillingBridge()) queryGooglePlayProducts(catalogResult.plans.map((plan) => plan.googlePlayProductId || '').filter(Boolean));
+      if (hasGooglePlayBillingBridge()) queryCatalog(catalogResult.plans);
     } catch {
       setError('Não foi possível carregar os planos agora. Verifique sua conexão e tente novamente.');
       return;
@@ -152,11 +162,13 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
   }, []);
   useEffect(() => {
     const products = (event: Event) => {
+      if(!playCatalogRequest.current||(event as CustomEvent).detail?.requestId!==playCatalogRequest.current)return;
       const values = (event as CustomEvent).detail?.products || [];
+      if(!Array.isArray(values))return;
       setPlayProducts(Object.fromEntries(values.map((item: any) => [item.productId, item])));
     };
-    const ready = () => catalog && queryGooglePlayProducts(catalog.plans.map((plan) => plan.googlePlayProductId || '').filter(Boolean));
-    const errorListener = (event: Event) => toast.error((event as CustomEvent).detail?.message || 'Google Play indisponível.');
+    const ready = () => catalog && queryCatalog(catalog.plans);
+    const errorListener = (event: Event) => { playCatalogRequest.current=null;setPlayProducts({}); toast.error((event as CustomEvent).detail?.message || 'Google Play indisponível.'); };
     const pending = () => toast.message('Compra pendente na Google Play. O acesso será liberado após a confirmação.');
     window.addEventListener('crewcheck:billing-products', products as EventListener);
     window.addEventListener('crewcheck:billing-ready', ready);
@@ -175,7 +187,7 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
     setBusy(plan.id);
     try {
       if (hasGooglePlayBillingBridge()) {
-        if (!plan.googlePlayProductId) throw new Error('Produto Google Play não configurado.');
+        if (!plan.googlePlayProductId || !playPlanReady(plan, playProducts[plan.googlePlayProductId])) throw new Error('Plano ainda não confirmado pela Google Play. Consulte novamente antes de assinar.');
         startGooglePlayPurchase(plan.googlePlayProductId, profile?.publicId || '');
         toast.message('Conclua a compra na janela segura da Google Play.');
       } else {
@@ -231,7 +243,7 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
         <div className="cp-usage"><header><span>Ligações do despertador</span><strong>{usage?.used || 0} de {usage?.limit || 0} usadas</strong></header><div><i style={{ width: `${usedWidth}%` }}/></div><small>{usage?.remaining || 0} disponíveis em {usage?.monthKey || 'este mês'}</small></div>
         <div className="cp-current-actions">{hasGooglePlayBillingBridge() && <button onClick={restore} disabled={Boolean(busy)}><RefreshCcw className={busy === 'restore' ? 'cp-spin' : ''}/> Restaurar compras</button>}{['google_play', 'asaas'].includes(String(billing.provider || '')) && <button onClick={manageSubscription} disabled={Boolean(busy)}><Lock/> Gerenciar ou cancelar</button>}</div>
       </article>
-      <div className="cp-plans">{catalog.plans.map((plan) => <PlanCard key={plan.id} plan={plan} current={billing.plan} busy={busy} playPrice={plan.googlePlayProductId ? playProducts[plan.googlePlayProductId]?.formattedPrice : undefined} onSubscribe={subscribe}/>)}</div>
+      <div className="cp-plans">{catalog.plans.map((plan) => <PlanCard key={plan.id} plan={plan} current={billing.plan} busy={busy} playPrice={plan.googlePlayProductId && playPlanReady(plan, playProducts[plan.googlePlayProductId]) ? playProducts[plan.googlePlayProductId]?.formattedPrice : undefined} onSubscribe={subscribe}/>)}</div>
       <article className="cp-disclosures"><ShieldCheck/><div><h2>Antes de assinar</h2>{Object.values(catalog.disclosures).map((text) => <p key={text}>{text}</p>)}<p>O CrewCheck é apoio pessoal. Escala oficial, empresa e normas aplicáveis continuam prevalecendo.</p></div></article>
     </>}
   </section>;
