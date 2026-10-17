@@ -9,7 +9,7 @@ assert.match(lines(payload()).join(' '),/Não agendado/);
 for(const [status,label] of Object.entries({pending:'Agendado no servidor',processing:'Em processamento',dispatching:'Envio em andamento',sent:'Aceito pelo provedor; entrega não confirmada',failed:'Falha no envio',expired:'Prazo de envio expirado',uncertain:'Resultado do envio incerto',cancelled:'Cancelado',partial:'Envio parcial',held:'Retido'})) assert(lines(payload([{status,total:2}])).some(line=>line.includes(label)));
 assert(!lines(payload([{status:'future',total:1}])).some(line=>/Nenhum Wake|Agendado no servidor/.test(line)));
 // Execute the actual component effect with synthetic React, auth, browser and HTTP.
-const require=createRequire(process.env.COMPOSITION_DEPS_PACKAGE||'/Users/marinamoura/fabric-work/crewcheck/package.json');
+const require=createRequire(process.env.COMPOSITION_DEPS_PACKAGE||new URL('../package.json',import.meta.url));
 const ts=require('typescript');
 const source=fs.readFileSync('client/src/components/notifications/WakeDiagnostic.tsx','utf8');
 let effect, cleanup, state, user='owner-a', online=true, pending=[], requests=0;
