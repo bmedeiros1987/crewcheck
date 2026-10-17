@@ -40,6 +40,12 @@ function seed({theme,kind,amount,history,salaryBase}) {
 async function showFinancial(page,screen){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===screen)return;const names={overview:'← Voltar ao resumo',statement:'Extrato',charts:'Gráficos',payment:'Detalhes do pagamento'};await page.getByRole('button',{name:names[screen],exact:true}).click();await page.waitForFunction(screen=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen===screen,screen);}
 
 
+async function capture(page, name) {
+ await page.evaluate(async()=>{await document.fonts.ready;await Promise.all(document.getAnimations().filter(a=>Number.isFinite(a.effect?.getComputedTiming().endTime)).map(a=>a.finished.catch(()=>{})));});
+ await page.screenshot({path:path.join(out,name+'.png'),fullPage:true});
+}
+
+
 (async()=>{
  const {createFinancialLedgerHandler}=await import('../server/financial-ledger-route.mjs');
  const {createFinancialSqlStore}=await import('../server/financial-ledger-sql.mjs');
@@ -48,16 +54,18 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
  const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}),args:['--no-sandbox']});
  try{
- for(const scenario of ['domestic','multi']){
+ for(const width of [390,1440])for(const scenario of ['domestic','multi']){
  const db=database(),store=createFinancialSqlStore(db);
  handler=createFinancialLedgerHandler({enabled:()=>true,allowedOrigin:()=>origin,identityProvider:()=>({authenticated:true,role:'owner',ownerId:'synthetic-a@example.invalid'}),poolProvider:async()=>db,storeFactory:()=>store,now:()=>new Date('2032-02-02T15:00:00Z')});
- const context=await browser.newContext({viewport:{width:1440,height:1000},serviceWorkers:'block'});
+ const context=await browser.newContext({viewport:{width,height:1000},serviceWorkers:'block'});
  await context.route('**/*',route=>{const u=new URL(route.request().url());if(u.origin!==origin)return route.abort();if(u.pathname.startsWith('/api/')&&!['/api/platform/finance/capture','/api/platform/finance/history','/api/platform/finance/upcoming'].includes(u.pathname))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[],"enabled":false}'});return route.continue();});
  const payload=roster(scenario);if(scenario==='multi')payload.days.find(day=>day.date==='01/03/2032').legs=[{flightNumber:'LA8000',origin:'BSB',destination:'JFK',departureTime:'11:00',arrivalTime:'20:00',workType:'OP'}];for(let i=25;i<=29;i++)payload.days.push({...day(String(i)+'/02/2032'),type:'DO',pairingCode:'DO',dutyReport:null,dutyDebrief:null,dutyHours:0});
  await context.addInitScript(seed,{theme:'light',kind:payload,amount:123.45,history:[]});
  await context.addInitScript(()=>{const user=JSON.parse(localStorage.getItem('crewcheck_auth_user'));user.email='synthetic-a@example.invalid';user.crewId='900001';localStorage.setItem('crewcheck_auth_user',JSON.stringify(user));});
  const page=await context.newPage();page.setDefaultTimeout(15000);await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
+ await page.locator('.cc-home-finance').waitFor().catch(async error=>{await page.screenshot({path:path.join(out,`canonical-${width}-${scenario}-entry-debug.png`),fullPage:true});console.error('Synthetic entry state:',await page.locator('body').innerText());throw error;});
  await page.locator('.cc-home-finance').getByRole('button',{name:/Diárias/}).click();
+ await capture(page,`canonical-${width}-${scenario}-origin`);
  const summary=page.locator('summary').filter({hasText:'Revisar captura da previsão de diárias'});await summary.click();
  await page.getByLabel('Referência da revisão financeira').fill('synthetic-compiled-ui');
  await page.getByLabel('Confirmo que esta escala é minha e revisei os valores calculados.').check();
@@ -72,6 +80,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
  await page.getByRole('button',{name:'Preparar revisão sem gravar',exact:true}).click();
  await page.getByRole('button',{name:'Confirmar gravação da previsão revisada',exact:true}).waitFor().catch(async e=>{console.log(await page.locator('details').filter({has:summary}).innerText().catch(()=>page.locator('body').innerText()));throw e;});
  assert.equal(db.state.revisions.length,0,'preview remains read only');
+ await capture(page,`canonical-${width}-${scenario}-review-no-write`);
  await page.getByRole('button',{name:'Confirmar gravação da previsão revisada',exact:true}).click();
  await page.getByText('Previsão salva. Isso não confirma recebimento.',{exact:true}).waitFor();
  assert(db.state.revisions.length>0);const records=await store.list('synthetic-a@example.invalid');assert(records.every(x=>x.status==='forecast'&&!x.paymentDate));if(scenario==='domestic')assert(records.every(x=>!x.expectedPaymentDate));else{const linked=records.filter(x=>x.expectedPaymentDate);assert.equal(linked.length,1);assert.equal(linked[0].expectedPaymentDate,'2032-03-01');assert.equal(linked[0].expectedPaymentTimezone,'America/Sao_Paulo');}
@@ -92,8 +101,9 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
  await page.getByRole('heading',{name:'Próximas previsões financeiras',exact:true}).waitFor();
  await page.getByText('Resumo parcial: há dados, datas ou valores a conferir no Financeiro.',{exact:true}).waitFor();
  if(scenario==='multi')await page.locator('.cc-concierge-finance time[datetime="2032-03-01"]').waitFor();
- await page.screenshot({path:path.join(out,`canonical-${scenario}-concierge.png`),fullPage:true});
- console.log('PASS compiled canonical UI: real calculated roster -> review without write -> explicit capture -> real handler/producer/SQL protocol -> Concierge, pending unproven dates; all external requests blocked');
+ await capture(page,`canonical-${width}-${scenario}-concierge`);
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'capture flow stays within the viewport');
+ console.log(`PASS compiled canonical UI ${width}px: real calculated roster -> review without write -> explicit capture -> real handler/producer/SQL protocol -> Concierge, pending unproven dates; all external requests blocked`);
  await context.close();
  }
  }finally{await browser.close();server.close();}
