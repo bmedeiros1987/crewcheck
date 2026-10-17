@@ -30,7 +30,7 @@ export default function FinancialStatementReconciliation({ rows, unclassified, c
   const completeCoverage=Boolean(valid)&&missingMonths.length===0;
   const reported=result?.totals.deposited;
   return <details className="cz-toolbox cc-financial-reconciliation"><summary>Conferir previsão com demonstrativo</summary>
-    <p>Leitura privada neste aparelho, apenas durante esta consulta. Não salva o documento, não altera tarifas e não confirma pagamento bancário.</p>
+    <p>Leitura local, sem salvar o PDF. Não confirma recebimento.</p><details className="cc-financial-help"><summary>Sobre esta conferência</summary><p>Consulta privada neste aparelho. Não altera tarifas. Os valores do documento e a previsão são comparados sem confirmar pagamento bancário.</p></details>
     <label>Demonstrativo de diárias<input type="file" accept="application/pdf,.pdf" disabled={busy} onChange={event=>{void read(event.target.files?.[0]);event.target.value='';}}/></label>
     {busy&&<p role="status">Lendo demonstrativo…</p>}{error&&<p role="alert">{privacy.text(error)}</p>}
     {result&&<section aria-label="Conciliação de diárias"><p>Trabalho declarado: {result.periodStart || 'não identificado'} até {result.periodEnd || 'não identificado'}. Data de pagamento declarada: {result.paymentDate || 'não identificada'}.</p>

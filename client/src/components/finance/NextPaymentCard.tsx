@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { ArrowDownLeft, FileText, List, CircleAlert, ChevronRight } from 'lucide-react';
+import { ArrowDownLeft, FileText, ChevronRight } from 'lucide-react';
 import type { NextPayment } from '@/lib/nextFinancialPayment';
 import type { FinancialRange } from '@/lib/financialHistoryPeriods';
 import { FinancialPrivacyToggle, useFinancialPrivacy } from './FinancialPrivacy';
@@ -26,22 +26,17 @@ export default function NextPaymentCard({ payment, requestRange }: { payment:Nex
       <div className="cc-payment-value" data-complete={Boolean(payment.totals)}>{payment.totals ? Object.entries(payment.totals).map(([currency,value])=><strong key={currency}>{money(value,currency)}</strong>) : <strong>Previsão incompleta</strong>}</div>
       <p className="cc-payment-timing">{payment.timing}</p>
       {payment.range&&<p className="cc-payment-period">Ciclo · {payment.kind==='allowance'?'Trabalho de':'Composição de'} {dateLabel(payment.range.start)} a {dateLabel(payment.range.end)} · {payment.lines.length} itens</p>}
-      <p className="cc-payment-disclaimer">Estimativa para conferir. Não representa dinheiro recebido.</p>
+      <p className="cc-payment-disclaimer">Estimativa · recebimento não confirmado</p>
     </section>
-    <nav className="cc-payment-actions" aria-label="Ações financeiras">
-      <button onClick={()=>open('.cc-next-payment-lines')}><List aria-hidden="true"/><span>Composição</span><ChevronRight aria-hidden="true"/></button>
-      <button aria-label="Demonstrativos" onClick={()=>open(payment.kind==='allowance'?'.cc-financial-reconciliation':'.cc-salary-prerequisites details')}><FileText aria-hidden="true"/><span>Extratos</span><ChevronRight aria-hidden="true"/></button>
-      <button aria-label="Pendências" onClick={()=>open('.cc-payment-pending')}><CircleAlert aria-hidden="true"/><span>Pendências{payment.issues.length ? ` (${payment.issues.length})` : ''}</span><ChevronRight aria-hidden="true"/></button>
-    </nav>
     <section className="cc-payment-pending" aria-label="Conferir previsão" tabIndex={-1}>
-      <h3>{payment.issues.length?'O que falta conferir':'Composição disponível'}</h3>
-      {payment.issues.length?<ul>{payment.issues.map(issue=><li key={issue}>{issue}</li>)}</ul>:<p>Os itens do ciclo estão disponíveis. Confirme o calendário e os valores no demonstrativo.</p>}
+      <h3>{payment.issues.length?'Falta confirmar':'A conferir no demonstrativo'}</h3>
+      {payment.issues.length?<><p>{payment.issues[0]}</p>{payment.issues.length>1&&<details><summary>Mais {payment.issues.length-1} pendência(s)</summary><ul>{payment.issues.slice(1).map(issue=><li key={issue}>{issue}</li>)}</ul></details>}</>:<p>Data e recebimento ainda não confirmados.</p>}
       {payment.issues.some(issue=>/escala|programação/.test(issue))&&<button onClick={()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'import'}))}>Importar escala <ChevronRight size={16} aria-hidden="true"/></button>}
-      <button onClick={()=>open(payment.kind==='allowance'?'.cc-financial-reconciliation':'.cc-salary-prerequisites details')}>Conferir demonstrativo <ChevronRight size={16} aria-hidden="true"/></button>
+      <button aria-label="Demonstrativos" onClick={()=>open(payment.kind==='allowance'?'.cc-financial-reconciliation':'.cc-salary-prerequisites details')}><FileText size={16} aria-hidden="true"/> Conferir demonstrativo <ChevronRight size={16} aria-hidden="true"/></button>
     </section>
-    <details className="cc-next-payment-lines"><summary>Composição do próximo pagamento <span>{payment.lines.length} itens</span></summary>
+    <details className="cc-next-payment-lines"><summary>Ver composição do próximo ciclo <span>{payment.lines.length} itens</span></summary>
       <p>{payment.source}</p>
-      {payment.lines.map((line,index)=><article key={`${line.iso}:${line.label}:${index}`}><div><strong>{line.label}</strong><small>{dateLabel(line.iso)}</small></div><b>{line.value===null?'Não informado':money(line.value,line.currency)}</b><p>{privacy.text(line.source)}</p></article>)}
+      {payment.lines.map((line,index)=><article key={`${line.iso}:${line.label}:${index}`}><div><strong>{line.label}</strong><small>{dateLabel(line.iso)}</small></div><b>{line.value===null?'Não informado':money(line.value,line.currency)}</b><details className="cc-payment-line-source"><summary>Origem</summary><p>{privacy.text(line.source)}</p></details></article>)}
       {!payment.lines.length&&<p>Nenhum valor foi presumido. Confira a referência e a escala deste ciclo.</p>}
     </details>
   </div>;

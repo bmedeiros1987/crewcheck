@@ -76,3 +76,30 @@ html body #root .cz-app[data-version] .cc-home-finance-links button {display:fle
 .cc-home-finance button:focus-visible {outline:3px solid #0084ac;outline-offset:3px}
 @media(max-width:600px){.cc-home-finance-links {grid-template-columns:minmax(0,1fr)}html body #root .cz-app[data-version] .cc-payment-actions button {justify-content:center!important;flex-wrap:wrap;text-align:center}.cc-payment-actions button>svg:last-child {display:none}.cc-payment-actions button span {font-weight:500}}
 @media(max-width:600px){html body #root .cz-app[data-version] .cc-payment-actions button {flex-direction:column!important;flex-wrap:nowrap;gap:6px!important;min-height:64px!important}.cc-payment-actions button span {white-space:nowrap;font-size:12px}}
+
+/* Direct financial reading: value and timing first, explanations on demand. */
+.cc-payment-overview {gap:12px;margin-bottom:16px}
+.cc-payment-pending {padding:16px}
+.cc-payment-pending p {margin:6px 0}
+.cc-payment-pending summary,.cc-payment-line-source summary,.cc-financial-help summary,.cc-salary-variable summary {min-height:44px;cursor:pointer;align-content:center;line-height:1.4}
+.cc-payment-line-source {grid-column:1/-1;font-size:13px}
+.cc-payment-line-source p {margin:4px 0 0}
+.cc-next-payment-lines article {padding:10px 0;gap:4px 12px}
+.cc-next-payment-lines article small {margin-top:4px}
+.cc-next-payment-lines article .cc-payment-line-source {grid-column:1/-1}
+.cc-financial-graph>summary small {font-size:12px;font-weight:400;margin-left:8px}
+.cc-financial-help {margin-block:8px;font-size:13px}
+html body #root .cz-app[data-version] .cc-financial-bars {display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:0!important}
+html body #root .cz-app[data-version] .cc-financial-bars>button {display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;align-items:center;min-height:56px!important;padding:10px 4px!important;border:0!important;border-bottom:1px solid var(--cc-review-border,#cad9e5)!important;border-radius:0!important;background:transparent!important;gap:6px 12px!important;font:inherit;text-align:left}
+.cc-financial-bars>button>strong {text-align:right;font-size:13px}
+.cc-financial-bars .cc-financial-bar-track,.cc-financial-bars>button>small {grid-column:1/-1}
+html body #root .cz-app[data-version] .cc-financial-week-list>button {min-height:44px!important;padding:10px 8px!important;border-radius:8px!important;font-size:14px!important}
+html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row {display:grid!important;grid-template-columns:48px minmax(0,1fr) auto!important;align-items:start;gap:6px 10px!important;padding:12px 0!important;min-width:0}
+html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row>span {font-size:12px!important;line-height:1.5}
+html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row>strong {font-size:14px!important;line-height:1.5}
+html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row>b {font-size:14px!important;line-height:1.5;min-width:0;max-width:100%}
+html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row>.cc-per-diem-source {grid-column:2/-1!important;margin:0!important;min-width:0}
+.cc-per-diem-content .cc-per-diem-source>summary {min-height:44px;align-content:center;font-size:13px;line-height:1.4;cursor:pointer}
+.cc-per-diem-content :is(button,summary,input,select):focus-visible {outline:3px solid #0084ac;outline-offset:3px}
+@media(max-width:360px){html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row {grid-template-columns:40px minmax(0,1fr)!important}.cc-per-diem-items .cz-finance-row>b {grid-column:2;justify-self:start}}
+@media(prefers-reduced-motion:reduce){.cc-per-diem-content * {scroll-behavior:auto!important}}

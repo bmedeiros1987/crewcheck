@@ -3990,7 +3990,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
       <h1>Diárias</h1>
       {!controls && <p className="cc-per-diem-competence">Competência: {competence}</p>}
       {rangeLabel && !controls && <p>{rangeLabel}</p>}
-      <p>Previsão por moeda, sem confirmação de pagamento.</p>
+      <p>Estimativa por moeda</p>
     </section>
     {nextPayment}
     {controls}
@@ -4019,7 +4019,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
       {!forecastOverride && forecast.weeklySummary.pendingCurrencies.length > 0 && <p>Cotação pendente na semana: {forecast.weeklySummary.pendingCurrencies.join(', ')}.</p>}
     </details>
     <details className="cz-finance-table cc-per-diem-items">
-      <summary><h2>Itens previstos</h2><span>{itemLabel}</span></summary>
+      <summary><h2>Diárias do período</h2><span>{itemLabel}</span></summary>
       <p className="cc-per-diem-scope">{rangeLabel || `Competência: ${competence}. Os itens abaixo pertencem ao mês selecionado.`}</p>
       {forecast.monthlyRows.length ? forecast.monthlyRows.map((row, index) =>
         <div className="cz-finance-row" data-financial-iso={row.iso} data-financial-currency={row.currency} key={row.iso + '-' + row.label + '-' + index}>
@@ -4086,7 +4086,7 @@ function SalaryReliableView({ bundle }: { bundle: BundleState }) {
       const rows = financialRowsInRange(snapshots.flatMap(item=>item.snapshot.salary.rows),range);
       const rowAvailable = (row: FlightEarningRow) => row.distanceKnown && row.timeKnown && Number.isFinite(row.total) && selected.some(item=>item.snapshot.salary.rows.includes(row) && item.snapshot.salary.configured && !item.snapshot.salary.config.requiresManualFunction);
       return <><Brand back/><section className="cc-per-diem-content cc-salary-history" aria-label="Previsão salarial">
-        <section className="cz-panel-head cz-panel-head-compact"><h1>Salário</h1><p>Seu próximo ciclo e as previsões da sua escala.</p></section>
+        <section className="cz-panel-head cz-panel-head-compact"><h1>Salário</h1><p>Estimativa do próximo ciclo</p></section>
         <PayrollPaymentCard snapshots={snapshots.map(item=>({month:`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,salary:item.snapshot.salary,publishedDays:item.roster.days.map(day=>day.date)}))} requestRange={requestRange}/>
         {controls}<section className="cz-finance-grid cc-per-diem-summary"><KpiCard icon={DollarSign} title="Bruto previsto no período" value={gross===null?'Não calculável':moneyBRL(gross)} detail={fullMonths?'Salário-base exige fonte ou calibração; somente competências completas são somadas.':'A fonte mensal não permite distribuir salário-base e descontos por semana.'}/></section>
         <SalaryCalculationStatus items={diagnosticItems} range={range} missing={missing}/>

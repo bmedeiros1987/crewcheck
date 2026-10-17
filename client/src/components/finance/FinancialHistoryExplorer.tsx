@@ -107,15 +107,15 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     </section>
   </>;
   const graph=<details className="cz-toolbox cc-financial-graph" onToggle={event=>setExpanded(event.currentTarget.open)}>
-    <summary>Demonstrativo e gráficos · previsões</summary>
-    <p>Reprocessado pelo motor atual. Previsto não significa recebido. Sem fonte de confirmação de pagamentos; demonstrativos oficiais permanecem separados.</p>
+    <summary>Histórico e comparação <small>Previsões</small></summary>
+    <p>Estimativas por período · recebimento não confirmado.</p>
     {kind==='month'&&<button type="button" onClick={()=>setKind('year')}>Comparar meses do ano</button>}
     {!privacy.hidden&&numeric.length>=2&&<p>Maior previsão: {numeric.filter(item=>item.values[displayedCurrency]===max).map(item=>item.title).join(', ')}. Comparação apenas entre períodos completos disponíveis em {displayedCurrency}.</p>}
     <label>Comparar por<select aria-label="Agrupamento do gráfico" value={comparison} onChange={event=>setComparison(event.target.value as 'month'|'week')}><option value="month">Mês</option>{mode==='allowance'&&periodMetric&&<option value="week">Semana</option>}</select></label>
     <p>Comparação: {comparisonRange.start} até {comparisonRange.end}. Moeda original: {displayedCurrency}. {comparison==='week'?'Semanas de quarta a terça; recortes parciais identificados.':''}</p>
     {currencies.length>1&&<label>Moeda do gráfico<select aria-label="Moeda do gráfico" value={displayedCurrency} onChange={event=>setCurrency(event.target.value)}>{currencies.map(value=><option key={value}>{value}</option>)}</select></label>}
-    {numeric.length<2&&<p>São necessários dois períodos completos com total nesta moeda para comparar barras e variações.</p>}
-    <p>Períodos sem escala não podem ser abertos. O clique preserva as datas do valor exibido.</p>
+    {numeric.length<2&&<p>Comparação disponível com dois períodos completos.</p>}
+    <details className="cc-financial-help"><summary>Como ler o histórico</summary><p>Reprocessado pelo motor atual. Períodos sem escala não são zero e não podem ser abertos. O clique preserva as datas do valor exibido. Demonstrativos oficiais permanecem separados.</p></details>
     <div className="cc-financial-bars" aria-label="Comparativo de previsões por período">
       {rows.map((item,index)=>{
         const value=item.values[displayedCurrency],previous=rows[index-1];
@@ -128,8 +128,8 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
         </button>;
       })}
     </div>
-    <p>{mode==='salary'?'Salário-base e descontos são mensais; nenhuma parcela mensal é distribuída artificialmente por semana.':'Escolha um mês para abrir suas semanas de trabalho. O filtro Semana também está disponível acima.'}</p>
-    {kind==='month'&&weeks&&<section className="cc-financial-week-list" aria-label="Semanas da competência"><h3>Semanas da competência</h3><p>Recortes de trabalho dentro do mês, sem atribuir datas de pagamento.</p>{weeks(snapshots.map(item=>item.snapshot),range).map(item=><button type="button" key={item.range.start} onClick={()=>{setKind('custom');setFrom(item.range.start);setTo(item.range.end);}}>{item.range.start} até {item.range.end} · {privacy.text(item.value)}</button>)}</section>}
+    <p>{mode==='salary'?'Salário-base e descontos são mensais; nenhuma parcela mensal é distribuída artificialmente por semana.':'Toque no mês para consultar o período.'}</p>
+    {kind==='month'&&weeks&&<section className="cc-financial-week-list" aria-label="Semanas da competência"><h3>Semanas da competência</h3><p>Datas de trabalho · não são datas de pagamento.</p>{weeks(snapshots.map(item=>item.snapshot),range).map(item=><button type="button" key={item.range.start} onClick={()=>{setKind('custom');setFrom(item.range.start);setTo(item.range.end);}}>{item.range.start} até {item.range.end} · {privacy.text(item.value)}</button>)}</section>}
   </details>;
   return <>{render({snapshots,range,missing,controls,graph,coverageReady,requestRange:range=>setRequestedPeriods(financialMonths(range))})}</>;
 }
