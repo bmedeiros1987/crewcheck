@@ -133,3 +133,10 @@ html:is([data-crew-text-size="150"],[data-crew-text-size="200"]) body #root .cz-
 .cc-bank-salary-breakdown {margin-top:24px;padding-top:16px;border-top:1px solid var(--cc-review-border,#cad9e5)}
 .cc-bank-salary-breakdown>p {font-size:12px;line-height:1.5}
 .cc-financial-bar-track>span {box-sizing:border-box;border:1px dashed #0084ac;background:#0084ac22}
+
+/* CrewCheck identity with restrained financial surfaces, in both themes. */
+html body #root .cz-app[data-version] .cc-per-diem-content :is(.cz-panel-head,.cz-toolbox,.cz-finance-table,.cc-financial-period,.cc-financial-range) {background:var(--cc-review-surface)!important;background-image:none!important;box-shadow:none!important;border-color:var(--cc-review-border)!important}
+html body #root .cz-app[data-version] .cc-per-diem-content :is(.cz-panel-head,.cz-toolbox)::before,
+html body #root .cz-app[data-version] .cc-per-diem-content :is(.cz-panel-head,.cz-toolbox)::after,
+html body #root .cz-app[data-version] .cc-per-diem-content .cz-panel-head h1::after {content:none!important;display:none!important}
+html body #root .cz-app[data-version] .cc-per-diem-content .cz-kpi>span {background:transparent!important;color:var(--cc-review-text)!important;box-shadow:none!important;border:0!important}
