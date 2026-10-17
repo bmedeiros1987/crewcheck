@@ -6,6 +6,7 @@ on:
       - 'server/financial-forecast-producer.mjs'
       - 'server/financial-canonical-capture.mjs'
       - 'scripts/regression-financial-canonical-ui.cjs'
+      - 'scripts/regression-financial-estimate-visible-ui.cjs'
       - 'scripts/regression-financial-fx-open-client.cjs'
       - 'server/financial-fx.mjs'
       - 'server/platform.mjs'
