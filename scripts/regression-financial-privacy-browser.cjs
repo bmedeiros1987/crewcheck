@@ -63,7 +63,7 @@ async function checkHidden(page){
   const history=kind==='domestic'?[{id:'local-synthetic-current-february',checksum:'synthetic-current-february',createdAt:'2032-02-02T14:00:00Z',roster:roster(kind),sourceFileName:'Synthetic current February'},{id:'local-synthetic-january',checksum:'synthetic-january',createdAt:'2032-02-01T00:00:00Z',roster:jan,sourceFileName:'Synthetic January'}]:undefined;
   await context.addInitScript(seed,{theme:'light',kind:roster(kind),amount:123.45,salaryBase:4321.67,history});
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
-  await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();await expand(page);
+  await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();await expand(page);await page.getByRole('tab',{name:'Detalhes',exact:true}).click();
   if(kind==='domestic')await page.waitForFunction(()=>document.querySelectorAll('.cc-financial-bar-track').length>=2);
   const before=await page.locator('.cc-per-diem-content').textContent();
   const persistedBefore=await page.evaluate(()=>JSON.stringify(localStorage));

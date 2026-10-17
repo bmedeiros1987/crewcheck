@@ -106,3 +106,30 @@ html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row>.cc-per
 html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row {grid-template-columns:48px minmax(0,1fr) minmax(0,40%)!important;grid-template-areas:'date label amount' 'source source source'!important}
 @media(max-width:600px){html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row {grid-template-columns:44px minmax(0,1fr)!important;grid-template-areas:'date label' 'amount amount' 'source source'!important}html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row>b {justify-self:stretch!important;text-align:left!important}}
 html:is([data-crew-text-size="150"],[data-crew-text-size="200"]) body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row {grid-template-columns:minmax(0,1fr)!important;grid-template-areas:'date' 'label' 'amount' 'source'!important}
+
+/* Bank-like consultation: statement first, charts on a separate accessible tab. */
+.cc-bank-tabs {display:flex;gap:4px;border-bottom:1px solid var(--cc-review-border,#cad9e5)}
+.cc-bank-tabs button {flex:1;min-width:44px;min-height:44px;background:transparent;color:var(--cc-review-text,#12304d);border:0;border-bottom:3px solid transparent;font:inherit;font-weight:600;cursor:pointer}
+.cc-bank-tabs button[aria-selected="true"] {border-bottom-color:#0084ac;color:var(--cc-review-text,#12304d)}
+.cc-payment-overview>[hidden] {display:none!important}
+.cc-next-payment-lines header h3,.cc-bank-details h3 {margin:0 0 6px;font-size:16px}
+.cc-next-payment-lines header>span,.cc-bank-details>p {font-size:12px;line-height:1.5}
+.cc-bank-transaction {border-top:1px solid var(--cc-review-border,#cad9e5);margin-top:10px;padding:0}
+.cc-bank-transaction>summary {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,45%);align-items:center;gap:12px;min-height:60px;list-style:none;padding:10px 0;box-sizing:border-box;cursor:pointer}
+.cc-bank-transaction>summary::-webkit-details-marker {display:none}
+.cc-bank-transaction summary strong {font-size:14px;line-height:1.4;font-weight:600}
+.cc-bank-transaction summary small {display:block;font-size:12px;line-height:1.5;margin-top:4px}
+.cc-bank-transaction summary b {text-align:right;font-size:14px;line-height:1.4;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.cc-bank-transaction>p {margin:0 0 12px;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.cc-bank-details {padding:16px;border:1px solid var(--cc-review-border,#cad9e5);border-radius:16px;background:var(--cc-review-surface,#fff);color:var(--cc-review-text,#12304d);min-width:0}
+.cc-bank-chart h4 {font-size:13px;margin:18px 0 8px}
+.cc-bank-chart-row {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,45%);gap:6px 12px;padding:12px 0;border-top:1px solid var(--cc-review-border,#cad9e5);font-size:13px;line-height:1.5}
+.cc-bank-chart-row b {text-align:right;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.cc-bank-chart-row small {display:block;font-size:12px}
+.cc-bank-chart-track {grid-column:1/-1;height:10px;border-radius:6px;background:var(--cc-review-border,#dce8f0)}
+.cc-bank-chart-track>span {display:block;height:100%;box-sizing:border-box;min-width:0;border:1px dashed #0084ac;border-radius:6px;background:#0084ac22}
+@media(min-width:900px){.cc-bank-tabs,.cc-bank-details,.cc-next-payment-lines {grid-column:1/-1}}
+@media(max-width:360px){.cc-bank-transaction>summary,.cc-bank-chart-row {grid-template-columns:minmax(0,1fr)}.cc-bank-transaction summary b,.cc-bank-chart-row b {text-align:left}}
+.cc-bank-salary-breakdown {margin-top:24px;padding-top:16px;border-top:1px solid var(--cc-review-border,#cad9e5)}
+.cc-bank-salary-breakdown>p {font-size:12px;line-height:1.5}
+.cc-financial-bar-track>span {box-sizing:border-box;border:1px dashed #0084ac;background:#0084ac22}

@@ -94,10 +94,18 @@ function seed({theme,kind,amount,history,salaryBase}) {
   }
 
   await page.locator('.cc-payment-hero button').press('Space');
-  const composition=page.locator('.cc-next-payment-lines>summary');
-  assert.match(await composition.innerText(),/Extrato previsto/,'statement never masquerades as received money');
-  await composition.focus();await page.keyboard.press('Enter');assert.equal(await page.locator('.cc-next-payment-lines').getAttribute('open'),'');
-  assert.equal(await composition.evaluate(el=>el===document.activeElement),true,'native disclosure retains keyboard focus');
+  const statementTab=page.getByRole('tab',{name:'Extrato',exact:true}), detailsTab=page.getByRole('tab',{name:'Detalhes',exact:true});
+  assert.equal(await statementTab.getAttribute('aria-selected'),'true','statement is the default view');
+  assert.equal(await page.locator('.cc-next-payment-lines').isVisible(),true);
+  assert.match(await page.locator('.cc-next-payment-lines').innerText(),/Extrato previsto/,'statement never masquerades as received money');
+  const dates=await page.locator('.cc-bank-transaction').evaluateAll(nodes=>nodes.map(node=>node.dataset.financialTransactionDate));assert.deepEqual(dates,[...dates].sort((a,b)=>a.localeCompare(b)),'synthetic statement dates are chronological');
+  await statementTab.focus();await page.keyboard.press('ArrowRight');assert.equal(await detailsTab.getAttribute('aria-selected'),'true');
+  assert.equal(await detailsTab.evaluate(el=>el===document.activeElement),true,'tab navigation transfers keyboard focus');
+  assert.equal(await page.locator('.cc-bank-details').isVisible(),true);if(scenario==='complete'){assert.equal(await page.locator('.cc-bank-chart-row').count(),2,'categories reuse actual labels without inferred financial rules');assert.match(await page.locator('.cc-bank-chart').innerText(),/864,15/,'seven real fixture lines total per category');}assert.equal(await page.locator('.cc-next-payment-lines').isVisible(),false);
+  await page.screenshot({path:path.join(out,`${width}-${theme}-${scenario}-details.png`),fullPage:false});
+  await page.locator('.cc-payment-hero button').click();assert.equal(await page.locator('.cc-bank-chart-track').count(),0,'hidden chart bars never disclose relative amounts');assert(!/R\$\s*\d/.test(await page.locator('.cc-bank-details').textContent()));assert(!/R\$\s*\d/.test(await page.locator('.cc-bank-details').ariaSnapshot()));await page.locator('.cc-payment-hero button').click();
+  await detailsTab.press('Home');assert.equal(await statementTab.getAttribute('aria-selected'),'true');
+  if(await page.locator('.cc-bank-transaction').count()){const item=page.locator('.cc-bank-transaction').first();await item.locator('summary').click();assert.equal(await item.getAttribute('open'),'');await item.locator('summary').click();}
   assert.equal(await page.locator('.cc-payment-actions').count(),0,'duplicated shortcut row is removed');
   assert.equal(await page.locator('.cc-payment-pending').isVisible(),true,'pending confirmation stays visible without a shortcut');
   await page.getByRole('button',{name:'Demonstrativos',exact:true}).click();assert.equal(await page.locator('.cc-financial-reconciliation').getAttribute('open'),'');
@@ -106,18 +114,26 @@ function seed({theme,kind,amount,history,salaryBase}) {
   assert.deepEqual(hitTargets,[],'visible payment controls have 44px touch targets');
   if(scenario==='complete'){
    const amount=await page.locator('.cc-payment-value').textContent();await page.getByLabel('Filtro financeiro').selectOption('week');assert.equal(await page.locator('.cc-payment-value').textContent(),amount,'filter cannot substitute the hero cycle');await page.getByLabel('Filtro financeiro').selectOption('month');
-   await page.locator('.cc-financial-graph>summary').click();
+   await detailsTab.click();await page.locator('.cc-financial-graph>summary').click();
   }
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
-  await page.locator('.cc-next-payment-lines').evaluate(el=>el.open=false);
+  await statementTab.click();
   await page.evaluate(()=>{scrollTo({top:0,left:0,behavior:'instant'});for(const a of document.getAnimations())try{a.finish()}catch{}});
   await page.screenshot({path:path.join(out,`${width}-${theme}-${scenario}.png`),fullPage:true});
   await page.screenshot({path:path.join(out,`${width}-${theme}-${scenario}-overview.png`),fullPage:false});
   if(scenario==='complete'){
-    await page.locator('.cc-financial-graph').evaluate(el=>el.scrollIntoView({behavior:'instant',block:'start'}));await page.screenshot({path:path.join(out,`${width}-${theme}-comparison.png`),fullPage:false});
+    await detailsTab.click();await page.locator('.cc-financial-graph').evaluate(el=>el.scrollIntoView({behavior:'instant',block:'start'}));await page.screenshot({path:path.join(out,`${width}-${theme}-comparison.png`),fullPage:false});
     await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));await page.locator('.cc-payment-hero').waitFor();
     await page.waitForFunction(()=>document.querySelector('.cc-payment-value').textContent.includes('2.900,00'),null,{timeout:10000}).catch(async error=>{console.log('SYNTHETIC PAYROLL DEBUG',await page.locator('.cc-payment-overview').innerText());await page.screenshot({path:path.join(out,'payroll-debug.png'),fullPage:true});throw error;});
     assert.match(await page.locator('.cc-payment-hero').innerText(),/fevereiro de 2032/);assert.match(await page.locator('.cc-payment-hero').innerText(),/bruto estimado, antes dos descontos/);
+    await page.getByRole('tab',{name:'Detalhes',exact:true}).click();
+    const breakdown=page.getByRole('region',{name:'Ganhos e descontos da competência',exact:true});
+    assert.match(await breakdown.innerText(),/Não calculável/,'missing selected-competence data never becomes zero or next-cycle net');
+    assert.equal(await breakdown.locator('.cc-bank-chart-track').count(),0);
+    await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-01');await page.waitForFunction(()=>document.querySelector('.cc-bank-salary-breakdown')?.textContent.includes('2.900,00'));
+    assert.equal(await breakdown.locator('.cc-bank-chart-track').count(),3,'existing complete monthly calculation supplies gains, deductions and net');
+    await breakdown.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,`${width}-${theme}-salary-breakdown.png`),fullPage:false});
+    await page.getByLabel('Filtro financeiro',{exact:true}).selectOption('week');assert.match(await breakdown.innerText(),/Não calculável/);assert.equal(await breakdown.locator('.cc-bank-chart-track').count(),0,'monthly amounts are not prorated into weeks');await page.getByLabel('Filtro financeiro',{exact:true}).selectOption('month');await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-02');
     const salaryAmount=await page.locator('.cc-payment-value').textContent();await page.locator('.cc-payment-hero button').click();assert(!/R\$\s*\d/.test(await page.locator('.cc-per-diem-content').textContent()));await page.locator('.cc-payment-hero button').click();assert.equal(await page.locator('.cc-payment-value').textContent(),salaryAmount);
     await page.getByRole('button',{name:'Demonstrativos',exact:true}).click();assert.equal(await page.locator('.cc-salary-reference').getAttribute('open'),'');
     await page.evaluate(()=>scrollTo({top:0,left:0,behavior:'instant'}));await page.screenshot({path:path.join(out,`${width}-${theme}-payroll-overview.png`),fullPage:false});
