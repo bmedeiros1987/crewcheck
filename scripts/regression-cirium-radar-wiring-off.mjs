@@ -208,4 +208,27 @@ const failedSky = createCiriumSkyTransport({ enabled: true, policy: skyPolicy, n
 const failedHarness = harness(source, true);
 assert.equal((await failedHarness.call(url, { cirium: { enabled: true, transport: failedSky } })).providerState, 'provider_error');
 assert.equal(failedHarness.counters.provider + failedHarness.counters.apply + failedHarness.counters.save, 0);
+// Published Calendar identity is IATA; operator identity comes from Sky alone.
+const published = { carrierNamespace: 'IATA', carrierIataCode: 'LA', flightNumber: '3443', origin: 'GRU', destination: 'NAT',
+  departureDate: '2026-10-12', originTimeZone: 'America/Sao_Paulo', scheduledDepartureUtc: '2026-10-12T03:05:00Z' };
+const operatingRow = { carrierFsCode: 'O1', flightNumber: '9301', departureAirportFsCode: 'GRU', arrivalAirportFsCode: 'NAT', status: 'S',
+  operationalTimes: { scheduledGateDeparture: { dateUtc: published.scheduledDepartureUtc }, scheduledGateArrival: { dateUtc: '2026-10-12T06:20:00Z' } },
+  airportResources: { departureGate: 'A12' }, lastUpdatedDate: '2026-10-12T03:00:00Z', codeshares: [{ fsCode: 'M1', flightNumber: '3443', relationship: 'S' }] };
+const publishedAt = Date.parse(operatingRow.lastUpdatedDate);
+let publishedCalls = 0;
+const publishedPolicy = { ...skyPolicy, validFromMs: publishedAt - 1000, validUntilMs: publishedAt + 300_000, airportTimeZones: { GRU: 'America/Sao_Paulo' } };
+const publishedTransport = createCiriumSkyTransport({ enabled: true, identityMode: 'published-iata', policy: publishedPolicy, now: () => publishedAt,
+  credential: () => 'OFFLINE_FAKE_SECRET', fetchImpl: async endpoint => {
+    publishedCalls++; assert.deepEqual([...endpoint.searchParams], [['codeType', 'IATA']]);
+    return new Response(JSON.stringify({ flightStatuses: [operatingRow], appendix: { airlines: [{ fs: 'M1', iata: 'LA' }, { fs: 'O1', iata: 'JJ' }, { fs: 'LA', iata: 'ZZ' }] } }),
+      { headers: { 'content-type': 'application/json' } });
+  } });
+const publishedHarness = harness(source, true);
+const publishedUrl = `https://fixture.invalid/api/radar-flight?${new URLSearchParams({ flight: 'LA3443', ...published })}`;
+const publishedBody = await publishedHarness.call(publishedUrl, { cirium: { enabled: true, transport: publishedTransport } });
+assert.equal(publishedCalls, 1); assert.equal(publishedBody.providerState, 'available'); assert.equal(publishedBody.flight, 'LA3443');
+assert.equal(publishedBody.operatingIdentity.carrierFsCode, 'O1'); assert.equal(publishedBody.operatingIdentity.flightNumber, '9301');
+assert.equal(publishedBody.publishedIdentity.carrierNamespace, 'IATA'); assert.equal(publishedBody.identityBinding.marketingCarrierFsCode, 'M1');
+assert.equal(publishedBody.provenance.identityBinding.relationship, 'S'); assert.equal(publishedBody.exportedToConcierge, false);
+assert.deepEqual(publishedHarness.counters, { provider: 0, auth: 0, load: 0, apply: 0, save: 0, env: 0, fetch: 0 });
 console.log(`PASS Cirium Radar wiring OFF/synthetic/Sky fake HTTP real handlers; ${source.includes('function selectFlightAwareOccurrence(') ? 'prepared' : 'raw'}; TZ=${process.env.TZ}; zero Cirium env/real network/canonical writes`);
