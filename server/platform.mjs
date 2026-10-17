@@ -1,4 +1,5 @@
 import {verifiedMysqlTls} from './mysql-verified-tls.mjs';
+import {eraseWhatsAppAccountState} from './whatsapp-lifecycle.mjs';
 import { PATH as RELEASE_JOURNAL_PATH } from './release-journal/route.mjs';
 import { createProbeOnlyReleaseHandler } from './release-journal/probe-composition.mjs';
 import { mysqlAdapter } from './mysql-platform-adapter.mjs';
@@ -2441,6 +2442,7 @@ async function handleAccountDeletion(req, res) {
   const client = await context.db.connect();
   try {
     await client.query('BEGIN');
+    await eraseWhatsAppAccountState(context.identity.email, {client});
     const visitorRows = await client.query('SELECT id FROM crewcheck_platform_visitors WHERE owner_email=$1 OR email=$1', [context.identity.email]);
     const visitorKeys = new Set(visitorRows.rows.map((row) => `visitor:${row.id}`));
     const threadRows = await client.query('SELECT id,direct_key FROM crewcheck_platform_chat_threads');

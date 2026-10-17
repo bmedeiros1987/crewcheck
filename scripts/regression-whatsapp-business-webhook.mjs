@@ -25,8 +25,9 @@ globalThis.fetch = async (url, options = {}) => {
   };
 };
 
-await import('./v14382/apply.mjs');
-await import('./v14383/apply.mjs');
+// Prepare the current composition; replaying v14383 alone rewrites the later
+// location-aware binding and expects a Telegram button superseded by the UI.
+await import('./v139/apply.mjs');
 const {
   configureWhatsAppConcierge,
   extractWhatsAppEvents,
@@ -161,7 +162,8 @@ assert.doesNotMatch(whatsappSource, /console\.(?:log|info|warn|error)\([^\n]*(?:
 
 const serverSource = fs.readFileSync('server.mjs', 'utf8');
 assert.match(serverSource, /import \{ configureWhatsAppConcierge, handleWhatsAppRoute \} from '\.\/server\/whatsapp\.mjs';/);
-assert.match(serverSource, /configureWhatsAppConcierge\(async \(\{ email, text \}\) => \{/);
+assert.match(serverSource, /configureWhatsAppConcierge\(async \(\{ email, text, location \}\) => \{/);
+assert.equal((serverSource.match(/configureWhatsAppConcierge\(async /g) || []).length, 1, 'one canonical handler; no legacy overwrite');
 assert.match(serverSource, /buildTelegramConciergeReply\(String\(text \|\| ''\), profile, snapshot\)/);
 assert.match(serverSource, /if \(await handleWhatsAppRoute\(req, res, url\)\) return;/);
 assert.ok(serverSource.indexOf('handleWhatsAppRoute(req, res, url)') < serverSource.indexOf('handleV139Route(req, res, url)'));

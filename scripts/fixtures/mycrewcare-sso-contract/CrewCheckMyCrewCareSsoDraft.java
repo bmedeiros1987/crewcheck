@@ -1,0 +1,33 @@
+package com.crewcheck.app;
+
+/** Review fixture only. Not installed or called by the app. Never accepts a URL/query/body. */
+public final class CrewCheckMyCrewCareSsoDraft {
+  private CrewCheckMyCrewCareSsoDraft() {}
+  public enum Phase { ENTRY, BROKER, IDP, ACS, RETURN, DESTINATION, AUXILIARY }
+  public enum Shape { NONE, BROKER_KEYS_ONLY_UNVERIFIED, OPAQUE_RETURN_KEY_ONLY, UNKNOWN }
+  public enum Fact { SSO_ENTRY, BROKER_ENTRY, BROKER_ACS, SSO_RETURN, MYTRAVEL, CALENDAR, UNKNOWN }
+
+  // Observation classification is not an access decision. Fields must be sanitized upstream.
+  // No tenant/partner values, query strings, tokens or bodies are accepted by this API.
+  public static Fact observed(String origin, String rawPath, String method, Phase phase, Shape shape) {
+    if (origin == null || rawPath == null || method == null || phase == null || shape == null) return Fact.UNKNOWN;
+    if (origin.equals("https://api2.apicrewcare.com")) {
+      if (rawPath.equals("/LATAM/SSOLogin.aspx") && method.equals("GET")) {
+        if (phase == Phase.ENTRY && shape == Shape.NONE) return Fact.SSO_ENTRY;
+        if (phase == Phase.RETURN && shape == Shape.OPAQUE_RETURN_KEY_ONLY) return Fact.SSO_RETURN;
+      }
+      if (rawPath.equals("/LATAM/mytravel.aspx") && method.equals("GET") && phase == Phase.DESTINATION && shape == Shape.NONE) return Fact.MYTRAVEL;
+      if (rawPath.equals("/LATAM/mycrewcalendar.aspx") && method.equals("GET") && phase == Phase.AUXILIARY && shape == Shape.NONE) return Fact.CALENDAR;
+    }
+    if (origin.equals("https://sso2.apihotels.com")) {
+      if (rawPath.equals("/sso/sp/startSSO.ping") && method.equals("GET") && phase == Phase.BROKER && shape == Shape.BROKER_KEYS_ONLY_UNVERIFIED) return Fact.BROKER_ENTRY;
+      if (rawPath.equals("/sso/sp/ACS.saml2") && method.equals("POST") && phase == Phase.ACS && shape == Shape.NONE) return Fact.BROKER_ACS;
+    }
+    // Microsoft tenant/subresource contract is unknown: intentionally no IdP matcher.
+    return Fact.UNKNOWN;
+  }
+
+  // Deliberately unconditional denial. No enable flag, setter, network or app integration.
+  public static boolean permitsNavigation(Fact observation) { return false; }
+  public static boolean permitsAcquisition(Fact observation) { return false; }
+}

@@ -1,3 +1,4 @@
+import './lib/stayAlarmHost';
 import './lib/crewcheckPremiumRuntime';
 import './lib/themeRuntime';
 import './lib/offlineRuntime';
