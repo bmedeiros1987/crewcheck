@@ -31,6 +31,7 @@ public final class CrewCheckBillingBridge implements PurchasesUpdatedListener {
     private final BillingClient billingClient;
     private final Map<String, ProductDetails> products = new ConcurrentHashMap<>();
     private volatile boolean ready = false;
+    private final java.util.concurrent.atomic.AtomicLong catalogGeneration = new java.util.concurrent.atomic.AtomicLong();
 
     public CrewCheckBillingBridge(Activity activity, WebView webView) {
         this.activity = activity;
@@ -75,7 +76,14 @@ public final class CrewCheckBillingBridge implements PurchasesUpdatedListener {
 
     @JavascriptInterface
     public void queryProducts(String productIdsJson) {
+        queryProductsForRequest(productIdsJson, "");
+    }
+
+    @JavascriptInterface
+    public void queryProductsForRequest(String productIdsJson, String requestId) {
         activity.runOnUiThread(() -> {
+            final long generation = catalogGeneration.incrementAndGet();
+            products.clear();
             try {
                 JSONArray ids = new JSONArray(productIdsJson == null ? "[]" : productIdsJson);
                 List<QueryProductDetailsParams.Product> query = new ArrayList<>();
@@ -91,7 +99,8 @@ public final class CrewCheckBillingBridge implements PurchasesUpdatedListener {
                 if (query.isEmpty()) return;
                 ensureReady(() -> billingClient.queryProductDetailsAsync(
                         QueryProductDetailsParams.newBuilder().setProductList(query).build(),
-                        (billingResult, result) -> {
+                        (billingResult, result) -> activity.runOnUiThread(() -> {
+                            if (generation != catalogGeneration.get()) return;
                             if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
                                 dispatchError("Não foi possível consultar os planos da Google Play.", billingResult);
                                 return;
@@ -102,9 +111,9 @@ public final class CrewCheckBillingBridge implements PurchasesUpdatedListener {
                                 payload.put(publicProduct(details));
                             }
                             JSONObject event = new JSONObject();
-                            try { event.put("products", payload); } catch (Exception ignored) {}
+                            try { event.put("products", payload); event.put("requestId", requestId); } catch (Exception ignored) {}
                             dispatch("crewcheck:billing-products", event);
-                        }));
+                        })));
             } catch (Exception error) {
                 dispatchError("Lista de produtos Google Play inválida.", null);
             }
@@ -248,6 +257,8 @@ public final class CrewCheckBillingBridge implements PurchasesUpdatedListener {
     }
 
     private void dispatchError(String message, BillingResult result) {
+        catalogGeneration.incrementAndGet();
+        products.clear();
         JSONObject detail = new JSONObject();
         try {
             detail.put("message", message);

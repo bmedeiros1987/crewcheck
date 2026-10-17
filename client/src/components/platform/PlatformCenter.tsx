@@ -1,6 +1,6 @@
 import { playPlanReady } from '@shared/play-catalog-readiness.mjs';
 import { consumePendingNavigationContext } from '@/lib/navigationContext';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { AlertTriangle, ArrowLeft, Check, Copy, Crown, KeyRound, Link2, Loader2, Lock, Mail, MessageCircle, QrCode, RefreshCcw, Send, ShieldCheck, Smartphone, UserPlus, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -115,15 +115,21 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
   const [error, setError] = useState('');
   const [playProducts, setPlayProducts] = useState<Record<string, { productId?: string; formattedPrice?: string; billingPeriod?: string }>>({});
 
+  const playCatalogRequest=useRef<string|null>(null);
+  function queryCatalog(plans: PlatformPlan[]) {
+    setPlayProducts({});playCatalogRequest.current=null;
+    playCatalogRequest.current=queryGooglePlayProducts(plans.map(plan=>plan.googlePlayProductId||'').filter(Boolean));
+  }
   async function load() {
     setError('');
+    playCatalogRequest.current=null;
     setPlayProducts({});
     setBusy('');
     let catalogResult: PlatformCatalog | null = null;
     try {
       catalogResult = await getPlatformCatalog();
       setCatalog(catalogResult);
-      if (hasGooglePlayBillingBridge()) queryGooglePlayProducts(catalogResult.plans.map((plan) => plan.googlePlayProductId || '').filter(Boolean));
+      if (hasGooglePlayBillingBridge()) queryCatalog(catalogResult.plans);
     } catch {
       setError('Não foi possível carregar os planos agora. Verifique sua conexão e tente novamente.');
       return;
@@ -156,11 +162,13 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
   }, []);
   useEffect(() => {
     const products = (event: Event) => {
+      if(!playCatalogRequest.current||(event as CustomEvent).detail?.requestId!==playCatalogRequest.current)return;
       const values = (event as CustomEvent).detail?.products || [];
+      if(!Array.isArray(values))return;
       setPlayProducts(Object.fromEntries(values.map((item: any) => [item.productId, item])));
     };
-    const ready = () => catalog && queryGooglePlayProducts(catalog.plans.map((plan) => plan.googlePlayProductId || '').filter(Boolean));
-    const errorListener = (event: Event) => { setPlayProducts({}); toast.error((event as CustomEvent).detail?.message || 'Google Play indisponível.'); };
+    const ready = () => catalog && queryCatalog(catalog.plans);
+    const errorListener = (event: Event) => { playCatalogRequest.current=null;setPlayProducts({}); toast.error((event as CustomEvent).detail?.message || 'Google Play indisponível.'); };
     const pending = () => toast.message('Compra pendente na Google Play. O acesso será liberado após a confirmação.');
     window.addEventListener('crewcheck:billing-products', products as EventListener);
     window.addEventListener('crewcheck:billing-ready', ready);

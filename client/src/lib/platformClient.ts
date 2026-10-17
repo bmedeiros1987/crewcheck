@@ -183,6 +183,7 @@ export async function cancelSubscription() {
 type AndroidBillingBridge = {
   isReady?: () => boolean;
   queryProducts?: (productIdsJson: string) => void;
+  queryProductsForRequest?: (productIdsJson: string, requestId: string) => void;
   purchase?: (productId: string, obfuscatedAccountId: string) => void;
   restorePurchases?: () => void;
   acknowledge?: (purchaseToken: string) => void;
@@ -199,9 +200,11 @@ export function hasGooglePlayBillingBridge(): boolean {
   return Boolean(window.AndroidCrewCheckBilling && typeof window.AndroidCrewCheckBilling.purchase === 'function');
 }
 
-export function queryGooglePlayProducts(productIds: string[]): void {
-  if (!window.AndroidCrewCheckBilling?.queryProducts) return;
-  window.AndroidCrewCheckBilling.queryProducts(JSON.stringify(productIds.filter(Boolean)));
+export function queryGooglePlayProducts(productIds: string[]): string | null {
+  if (!window.AndroidCrewCheckBilling?.queryProductsForRequest) return null;
+  const requestId=globalThis.crypto.randomUUID();
+  window.AndroidCrewCheckBilling.queryProductsForRequest(JSON.stringify(productIds.filter(Boolean)),requestId);
+  return requestId;
 }
 
 export function startGooglePlayPurchase(productId: string, publicId: string): void {

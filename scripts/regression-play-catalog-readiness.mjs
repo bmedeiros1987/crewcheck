@@ -31,3 +31,15 @@ await context.module.exports.subscribe(monthly);assert.equal(purchases,0);assert
 context.playProducts[monthly.googlePlayProductId]=product;await context.module.exports.subscribe(monthly);assert.equal(purchases,1);assert.equal(web,0);
 play=false;assert(JSON.stringify(context.module.exports.PlanCard(props)).includes('WEB PRICE'));
 console.log('PASS actual card and handler: missing Play product blocks purchase and hides web price; valid match reaches synthetic bridge only.');
+// Actual event handlers: A -> error B -> late A -> query C -> late A -> C.
+const declarations={};
+function collect(node){if(ts.isVariableDeclaration(node)&&['products','errorListener'].includes(node.name?.getText(ast)))declarations[node.name.getText(ast)]=node.initializer.getText(ast);ts.forEachChild(node,collect);}collect(ast);
+const request={current:'A'};let catalogProducts={};
+const eventContext={module:{exports:{}},playCatalogRequest:request,setPlayProducts:value=>catalogProducts=value,toast:{error:()=>{}}};
+vm.runInNewContext(ts.transpileModule('module.exports={products:('+declarations.products+'),error:('+declarations.errorListener+')} ',{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,eventContext);
+const events=eventContext.module.exports;
+events.error({detail:{message:'synthetic B failure'}});events.products({detail:{requestId:'A',products:[product]}});assert.equal(Object.keys(catalogProducts).length,0);
+request.current='C';events.products({detail:{requestId:'A',products:[product]}});assert.equal(Object.keys(catalogProducts).length,0);
+events.products({detail:{products:[product]}});assert.equal(Object.keys(catalogProducts).length,0,'legacy uncorrelated events fail closed');
+events.products({detail:{requestId:'C',products:[product]}});assert.equal(Object.keys(catalogProducts).length,1);
+console.log('PASS actual catalog listeners: late A after B failure and during C ignored; only C accepted; legacy uncorrelated response blocked.');
