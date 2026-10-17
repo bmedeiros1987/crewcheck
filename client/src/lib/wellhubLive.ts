@@ -15,6 +15,9 @@ export type WellhubLivePartner = {
   reviewCount?: number;
   openingHours: string[];
   is24Hours?: boolean;
+  timeZone?: string;
+  holidayHoursUncertain?: boolean;
+  openingStatus?: import('@shared/wellhub-hours.mjs').OpeningStatus;
   accessNote?: string;
   sourceUrl: string;
   verifiedAt: string;

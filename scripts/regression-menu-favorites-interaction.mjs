@@ -152,7 +152,7 @@ try {
       });
       check(semantic.every(e => e.wrapped), label('canonical 5S destination row wrapper missing'));
       check(semantic.every(e => e.tone && e.color === e.expected && e.badge >= 38), label('semantic icon tone/badge lost: ' + semantic.filter(e => !e.tone || e.color !== e.expected || e.badge < 38).map(e => e.label).join(', ')));
-      if (semantic.length === 40) check(new Set(semantic.map(e => e.color)).size === 7, label('seven semantic tones must remain across catalog and favorites'));
+      if (semantic.length === 41) check(new Set(semantic.map(e => e.color)).size === 7, label('seven semantic tones must remain across catalog and favorites'));
       const clipped = await page.locator('.cc-menu-favorite-chip span').evaluateAll(els => els.filter(el => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1).map(el => el.textContent));
       check(clipped.length === 0, label('favorite labels clipped: ' + clipped.join(', ')));
       const undersized = await page.locator('.cc-menu-favorite').evaluateAll(els => els.some(el => { const r=el.getBoundingClientRect(); return r.width < 44 || r.height < 44; }));
@@ -162,11 +162,12 @@ try {
     };
     const stored = (account) => page.evaluate((a) => JSON.parse(localStorage.getItem('crewcheck:menu-favorites:v1:' + a) || 'null'), account);
 
-    // default: 3 favorites on top, 37 in the catalog, no stars, each destination once
+    // default: 3 favorites on top, 38 in the catalog, no stars, each destination once
     const initialChips = await chips(); const initialRows = await rows();
     check(initialChips.length === 3, label(`3 default favorites, got ${initialChips.length}`));
-    check(initialRows.length === 37, label(`37 catalog rows, got ${initialRows.length}`));
-    check(new Set([...initialChips, ...initialRows]).size === 40, label('every destination exactly once'));
+    check(initialRows.length === 38, label(`38 catalog rows, got ${initialRows.length}`));
+    check(new Set([...initialChips, ...initialRows]).size === 41, label('every destination exactly once'));
+    check(initialRows.includes('Notificações'),label('new canonical notification destination present'));
     check(!initialRows.some((r) => initialChips.includes(r)), label('catalog repeats a favorite'));
     check(await stars() === 0, label('stars visible outside edit mode'));
     const searchInput = page.locator('.cc-menu-search input');
@@ -181,9 +182,9 @@ try {
     check(await page.locator('.cz-menu-brandmark img').evaluateAll(els => els.every(el => el.complete && el.naturalWidth > 0)), label('brand image loaded'));
     await snap('1-default');
 
-    // edit mode: stars appear on all 40, hidden again on exit
+    // edit mode: stars appear on all 41, hidden again on exit
     await page.click('.cc-menu-edit-favorites');
-    check(await stars() === 40, label(`edit mode shows 40 controls, got ${await stars()}`));
+    check(await stars() === 41, label(`edit mode shows 41 controls, got ${await stars()}`));
     await readableFavorites();
     await snap('2-edit-mode');
     // add: starts with 3, add 2 -> 5
@@ -235,7 +236,7 @@ try {
     // Keyboard edit, actual close/reopen, Escape and focus restoration.
     await page.locator('.cc-menu-edit-favorites').focus();
     await page.keyboard.press('Enter');
-    check(await stars() === 40, label('Enter activates edit mode'));
+    check(await stars() === 41, label('Enter activates edit mode'));
     await page.locator('.cz-menu-close').click();
     await page.waitForSelector('.cc-menu-edit-favorites', { state: 'detached' });
     check(await page.locator('.menu-trigger').evaluate(el => el === document.activeElement), label('close restores opener focus'));
@@ -243,7 +244,7 @@ try {
     check(await stars() === 0, label('reopen exits editing'));
     await page.locator('.cc-menu-edit-favorites').focus();
     await page.keyboard.press('Space');
-    check(await stars() === 40, label('Space activates edit mode'));
+    check(await stars() === 41, label('Space activates edit mode'));
     await page.keyboard.press('Escape');
     await page.waitForSelector('.cc-menu-edit-favorites', { state: 'detached' });
     check(await page.locator('.menu-trigger').evaluate(el => el === document.activeElement), label('Escape restores opener focus'));

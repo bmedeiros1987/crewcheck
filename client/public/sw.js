@@ -1,3 +1,4 @@
+importScripts('/crewcheck-push-offline.js');
 const CACHE_NAME = 'crewcheck-v14.3-offline-shell';
 const RUNTIME_CACHE = 'crewcheck-v14.3-offline-runtime';
 const SHARED_PDF_CACHE = 'crewcheck-pwa-shared-pdf-v1';

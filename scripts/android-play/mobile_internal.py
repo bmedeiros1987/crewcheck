@@ -11,16 +11,18 @@ from urllib.parse import quote
 from crewwatch_internal import api, collect_live_codes, next_version_code, play_session, run
 from validate import validate_manifest
 
-SOURCE_SHA = '253abd79eb80ed4b0ded4ffbe8425ede9e8d5327'
+SOURCE_SHA = os.environ.get('REVIEWED_SOURCE_SHA', '')
 PACKAGE = 'com.crewcheck.app'
 POLICY = Path('scripts/android-play/release-policy.json')
 ALIASES = ('qa', 'internal')
-REQUIRED_CI = {'Watch phone sync bridge', 'Android signed store bundles', 'CrewCheck web validation'}
+REQUIRED_CI = {'Android signed store bundles', 'CrewCheck web validation'}
+PR_REQUIRED_CI = {'Watch phone sync bridge'}
 
 
 def guard():
     assert os.environ.get('GITHUB_REF') == 'refs/heads/main', 'Controller must be on main'
     assert os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch', 'Manual dispatch only'
+    assert re.fullmatch(r'[0-9a-f]{40}', SOURCE_SHA), 'Full immutable reviewed SHA required'
     assert run(['git', 'rev-parse', 'HEAD']).strip() == SOURCE_SHA, 'Unreviewed source SHA'
 
 
@@ -45,18 +47,27 @@ def other_tracks(tracks, target):
     return {t['track']: t for t in tracks if t['track'] != target}
 
 
-def check_ci_runs(runs):
+def check_ci_runs(runs, sha=None, event='push', required=None):
+    sha = SOURCE_SHA if sha is None else sha
+    required = REQUIRED_CI if required is None else required
     latest = {}
     for r in runs:
-        assert r['head_sha'] == SOURCE_SHA, 'Wrong CI source'
-        if r.get('event') != 'pull_request':
+        assert r['head_sha'] == sha, 'Wrong CI source'
+        if r.get('event') != event or (event == 'push' and r.get('head_branch') != 'main'):
             continue
         key = r['workflow_id']
         if key not in latest or r['id'] > latest[key]['id']:
             latest[key] = r
-    assert latest, 'Missing independent PR CI'
+    assert latest, 'Missing exact merged-source main CI'
     assert all(r['status'] == 'completed' and r['conclusion'] in ('success', 'skipped') for r in latest.values()), 'Pending/failed independent CI'
-    assert REQUIRED_CI <= {r['name'] for r in latest.values() if r['conclusion'] == 'success'}, 'Required mobile/source gates missing'
+    assert required <= {r['name'] for r in latest.values() if r['conclusion'] == 'success'}, 'Required mobile/source gates missing'
+
+
+def validate_source_pr(pr, main_sha):
+    assert pr.get('merged') is True and pr.get('merge_commit_sha') == SOURCE_SHA, 'Source must be the exact merged PR commit'
+    assert pr['base']['ref'] == 'main' and pr['base']['repo']['full_name'] == 'bmedeiros1987/crewcheck'
+    assert pr['head']['repo']['full_name'] == 'bmedeiros1987/crewcheck', 'Foreign source repository'
+    assert main_sha == SOURCE_SHA, 'Main moved; review the new release source'
 
 
 def check_ci():
@@ -65,10 +76,14 @@ def check_ci():
     session = requests.Session()
     session.headers.update({'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
     base = 'https://api.github.com/repos/bmedeiros1987/crewcheck'
-    response = session.get(base + '/pulls/882', timeout=30)
+    pr_number = os.environ.get('REVIEWED_SOURCE_PR', '')
+    assert re.fullmatch(r'[1-9][0-9]*', pr_number), 'Reviewed merged PR number required'
+    response = session.get(base + '/pulls/' + pr_number, timeout=30)
     response.raise_for_status()
     pr = response.json()
-    assert pr['head']['sha'] == SOURCE_SHA and pr['head']['repo']['full_name'] == 'bmedeiros1987/crewcheck', 'PR882 head moved'
+    response = session.get(base + '/branches/main', timeout=30)
+    response.raise_for_status()
+    validate_source_pr(pr, response.json()['commit']['sha'])
     runs, page = [], 1
     while True:
         response = session.get(base + '/actions/runs', params={'head_sha': SOURCE_SHA, 'per_page': 100, 'page': page}, timeout=30)
@@ -79,7 +94,18 @@ def check_ci():
             break
         page += 1
     check_ci_runs(runs)
-    print('PASS: exact reviewed PR882 source and independent CI')
+    pr_runs, page = [], 1
+    while True:
+        response = session.get(base + '/actions/runs', params={'head_sha': pr['head']['sha'], 'per_page': 100, 'page': page}, timeout=30)
+        response.raise_for_status()
+        batch = response.json()['workflow_runs']
+        pr_runs.extend(batch)
+        if len(batch) < 100: break
+        page += 1
+    check_ci_runs(pr_runs, sha=pr['head']['sha'], event='pull_request', required=PR_REQUIRED_CI)
+    Path('mobile-source-ci.json').write_text(json.dumps(dict(sourceSha=SOURCE_SHA, sourcePr=pr_number, reviewedPrHead=pr['head']['sha'], prRuns=pr_runs,
+        runs=[{key: r.get(key) for key in ('id', 'workflow_id', 'name', 'head_sha', 'event', 'head_branch', 'status', 'conclusion', 'html_url')} for r in runs]), indent=2) + '\n')
+    print('PASS: exact reviewed merged source and independent main CI')
 
 
 def allocate():
@@ -111,6 +137,16 @@ def allocate_offline_contract():
         api(session, 'DELETE', url)
 
 
+def validate_apk_signer(signature, expected):
+    signers = re.findall(r'Signer #\d+ certificate SHA-256 digest: ([A-Fa-f0-9:]+)', signature)
+    assert len(signers) == 1 and signers[0].replace(':', '').lower() == expected, 'APK upload signer mismatch'
+
+
+def validate_apk_manifest(xml, policy):
+    # The same identity/SDK/form-factor/privacy contract applies to both outputs.
+    return validate_manifest(xml, 'app', policy)
+
+
 def validate(bundletool, output):
     guard()
     policy = json.loads(POLICY.read_text())
@@ -128,14 +164,36 @@ def validate(bundletool, output):
     assert found and found[1].replace(':', '').lower() == expected
     out = Path(output)
     out.mkdir(parents=True, exist_ok=True)
+    ci_evidence = json.loads(Path('mobile-source-ci.json').read_text())
+    assert ci_evidence['sourceSha'] == SOURCE_SHA
+    check_ci_runs(ci_evidence['runs'])
+    check_ci_runs(ci_evidence['prRuns'], sha=ci_evidence['reviewedPrHead'], event='pull_request', required=PR_REQUIRED_CI)
+    (out / 'mobile-source-ci.json').write_text(json.dumps(ci_evidence, indent=2) + '\n')
     name = f'CrewCheck-app-{spec["versionCode"]}.aab'
     data = aab.read_bytes()
     (out / name).write_bytes(data)
     evidence = dict(module='app', sourceSha=SOURCE_SHA, file=name, sha256=hashlib.sha256(data).hexdigest(), certificateSha256=expected, versionName=policy['versionName'], **spec)
+    apk = Path('android-wrapper/app/build/outputs/apk/release/app-release.apk')
+    apk_manifest = run([os.environ['APK_ANALYZER'], 'manifest', 'print', str(apk)])
+    validate_apk_manifest(apk_manifest, policy)
+    apk_signature = run([os.environ['APK_SIGNER'], 'verify', '--verbose', '--print-certs', str(apk)])
+    validate_apk_signer(apk_signature, expected)
+    apk_name = f'CrewCheck-app-{spec["versionCode"]}.apk'
+    apk_data = apk.read_bytes()
+    (out / apk_name).write_bytes(apk_data)
+    evidence['apk'] = dict(file=apk_name, sha256=hashlib.sha256(apk_data).hexdigest(), certificateSha256=expected,
+        playInstalledUpdateCompatibility='unverified: compare Play app-signing certificate and test update without clearing data')
+    evidence['controllerSha'] = os.environ.get('GITHUB_SHA')
+    evidence['workflowRunId'] = os.environ.get('GITHUB_RUN_ID')
+    evidence['reviewedSourcePr'] = os.environ.get('REVIEWED_SOURCE_PR')
+    evidence['playSubmissionAllowed'] = False
+    evidence['versionAllocation'] = 'policy-only; not allocated against live Play inventory'
+    (out / 'apk-manifest.xml').write_text(apk_manifest)
+    (out / 'SHA256SUMS.txt').write_text(f'{evidence["sha256"]}  {name}\n{evidence["apk"]["sha256"]}  {apk_name}\n')
     (out / 'mobile-release.json').write_text(json.dumps(evidence, indent=2) + '\n')
     (out / 'app-manifest.xml').write_text(manifest)
     (out / 'resolved-release-policy.json').write_text(json.dumps(policy, indent=2) + '\n')
-    print('PASS: actual signed mobile AAB, manifest, upload certificate and provenance')
+    print('PASS: actual signed mobile AAB and APK, manifests, upload certificate and provenance')
 
 
 def write_receipt(path, receipt, initial=False):
@@ -155,11 +213,14 @@ def publish(root, journal=None):
     assert os.environ.get('PUBLISH_MOBILE_INTERNAL') == 'true', 'Explicit publication opt-in required'
     assert journal is not None, 'Publication disabled: reviewed durable receipt backend is not configured'
     assert journal.package == PACKAGE, 'Journal must reserve the entire shared mobile/Wear package'
+    if journal.supports_trusted_lifecycle:
+        assert journal.backend.binding['producer'] == 'mobile', 'Mobile controller cannot publish under a Wear/allocator binding'
     check_ci()
     out = Path(root)
     receipt_path = out / 'mobile-commit-receipt.json'
     assert not receipt_path.exists(), 'Prior commit intent exists; reconcile it before any retry'
     evidence = json.loads((out / 'mobile-release.json').read_text())
+    assert evidence.get('playSubmissionAllowed') is True, 'Build-only/unallocated artifacts cannot be submitted'
     policy = json.loads((out / 'resolved-release-policy.json').read_text())
     spec = policy['artifacts']['app']
     assert evidence['sourceSha'] == SOURCE_SHA and evidence['module'] == 'app'
@@ -203,6 +264,29 @@ def publish(root, journal=None):
             otherTracksBefore=other_tracks(tracks, track['track']),
             committed=None, acknowledged=False, verified=False, state='pending')
         write_receipt(receipt_path, receipt, initial=True)
+        if journal.supports_trusted_lifecycle:
+            # Existing Node coordinator owns pending->commit->ack and the complete
+            # reader. Python never sends positive outcome flags over the wire.
+            # Set this before requesting the helper: a lost SQL/transport reply
+            # cannot prove the original edit is safe to delete or replace.
+            commit_attempted = True
+            try:
+                receipt = journal.commit_staged(receipt)
+                write_receipt(receipt_path, receipt)
+                assert receipt['state'] == 'acknowledged' and receipt['acknowledged'] is True, 'Commit remains uncertain; no retry or replacement edit'
+                receipt = journal.reconcile_verified()
+                assert receipt['state'] == 'reconciled' and receipt['verified'] is True
+                write_receipt(receipt_path, receipt)
+            except Exception as error:
+                receipt.update(state='reconciliation_required', verified=False, errorType=type(error).__name__)
+                write_receipt(receipt_path, receipt)
+                raise RuntimeError('Trusted lifecycle result uncertain; preserve original edit and durable reservation, do not retry') from error
+            result = dict(evidence, committed=True, commitAcknowledged=True, verifiedTrack=track['track'],
+                retainedVersionCodes=payload['releases'][0]['versionCodes'], testUrl='https://play.google.com/apps/testing/' + PACKAGE,
+                testerEligibility='Not verified; existing tester access only', storeAvailability='unknown')
+            (out / 'mobile-internal-result.json').write_text(json.dumps(result, indent=2) + '\n')
+            print(json.dumps(result))
+            return result
         journal.persist(receipt)
         commit_attempted = True
         try:
@@ -262,12 +346,28 @@ def publish(root, journal=None):
             api(session, 'DELETE', verify_url)
 
 
-def main():
+def main(argv=None, planned=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('command', choices=['check-ci', 'allocate', 'validate', 'publish'])
     parser.add_argument('--bundletool')
     parser.add_argument('--output')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if planned is not None:
+        from planned_mobile import PlannedMobileController
+        assert isinstance(planned, PlannedMobileController), 'Reviewed embedding executor required'
+        guard()
+        plan = planned.transport.binding['plan']
+        assert plan['sourceSha'] == SOURCE_SHA
+        assert plan['controllerSha'] == os.environ.get('GITHUB_SHA') and plan['runId'] == os.environ.get('GITHUB_RUN_ID'), 'Foreign controller/run binding'
+        if args.command == 'allocate': return planned.allocate(POLICY)
+        if args.command == 'validate':
+            validate(args.bundletool, args.output)
+            return planned.finalize(args.output)
+        if args.command == 'publish':
+            assert os.environ.get('PUBLISH_MOBILE_INTERNAL') == 'true'
+            check_ci()
+            return planned.publish(args.output)
+        assert args.command == 'check-ci'
     if args.command == 'check-ci': check_ci()
     elif args.command == 'allocate': allocate()
     elif args.command == 'validate': validate(args.bundletool, args.output)

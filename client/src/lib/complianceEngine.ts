@@ -1,3 +1,5 @@
+import { nightSequenceEvidence, type AlertDateEvidence } from './nightAlertEvidence';
+import { publishedNightJourneySequence } from './publishedNightJourneys';
 import { pendingFlightRoleDates, FLIGHT_ROLE_PENDING_MESSAGE } from './flightRoleEvidence';
 import type { CrewRoster, RosterDay, FlightLeg } from './pdfParser';
 import { getActRulesForProfile, getLegalProfile, type CrewRoleSelection, type LegalProfileSummary } from './actRules';
@@ -38,6 +40,7 @@ export interface ComplianceAlert {
     missingDates: string[];
   };
   evidence?: string;
+  dateEvidence?: AlertDateEvidence[];
 }
 
 export interface Metrics {
@@ -72,6 +75,8 @@ export interface Metrics {
   reserveCount: number;
   averageTurnaround: number;
   maxConsecutiveNights: number;
+  maxConsecutiveNightsPossible?: number;
+  maxConsecutiveNightsPending?: boolean;
   /**
    * Maior número de ocorrências de madrugada qualificáveis numa janela móvel
    * de 168h — não confundir com `maxNightOps168h`, que é o LIMITE regulatório
@@ -332,9 +337,9 @@ function isLikelyParserMergedDutyWindow(day: RosterDay, dutyWindowHours: number,
   return false;
 }
 
-function getRegulatoryDutyBreakdown(day: RosterDay): { dutyWindowHours: number; groundHours: number; dutyHours: number; mode: 'canonico_publicado' | 'liquida_sem_solo' | 'janela' | 'estimada_parser' | 'indisponivel' } {
+function getRegulatoryDutyBreakdown(day: RosterDay): { dutyWindowHours: number; groundHours: number; dutyHours: number; dutyMinutes: number | null; mode: 'canonico_publicado' | 'liquida_sem_solo' | 'janela' | 'estimada_parser' | 'indisponivel' } {
   if (isRecoveryDay(day) || isNonOperationalAbsence(day) || isEmptyCalendarDay(day)) {
-    return { dutyWindowHours: 0, groundHours: 0, dutyHours: 0, mode: 'indisponivel' };
+    return { dutyWindowHours: 0, groundHours: 0, dutyHours: 0, dutyMinutes: null, mode: 'indisponivel' };
   }
 
   const dutyWindowHours = getDutyWindowHours(day);
@@ -344,11 +349,11 @@ function getRegulatoryDutyBreakdown(day: RosterDay): { dutyWindowHours: number; 
   // ground. Availability without a proved flight block stays separate; unknown
   // presentation/liberation must not become an estimated regulatory margin.
   if (isStandby(day) && !hasStandbyActivationCombination(day)) {
-    return { dutyWindowHours: 0, groundHours: 0, dutyHours: 0, mode: 'indisponivel' };
+    return { dutyWindowHours: 0, groundHours: 0, dutyHours: 0, dutyMinutes: null, mode: 'indisponivel' };
   }
 
   if (isReserve(day) && !legs.length) {
-    return { dutyWindowHours: 0, groundHours: 0, dutyHours: 0, mode: 'indisponivel' };
+    return { dutyWindowHours: 0, groundHours: 0, dutyHours: 0, dutyMinutes: null, mode: 'indisponivel' };
   }
 
   if (legs.length > 0) {
@@ -357,21 +362,22 @@ function getRegulatoryDutyBreakdown(day: RosterDay): { dutyWindowHours: number; 
     const measures = journeys.map(id => measureCanonicalDuty(events, events.find(event => event.kind === 'flight' && event.journeyId === id)!.id));
     const groundHours = getGroundIntervalHours(day);
     if (!measures.length || measures.some(measure => measure?.state !== 'available')) {
-      return { dutyWindowHours: round1(dutyWindowHours), groundHours: round1(groundHours), dutyHours: 0, mode: 'indisponivel' };
+      return { dutyWindowHours: round1(dutyWindowHours), groundHours: round1(groundHours), dutyHours: 0, dutyMinutes: null, mode: 'indisponivel' };
     }
-    const elapsed = measures.reduce((sum, measure) => sum + measure!.minutes! / 60, 0);
-    return { dutyWindowHours: round1(dutyWindowHours), groundHours: round1(groundHours), dutyHours: round1(elapsed), mode: 'canonico_publicado' };
+    const dutyMinutes = measures.reduce((sum, measure) => sum + measure!.minutes!, 0);
+    const elapsed = dutyMinutes / 60;
+    return { dutyWindowHours: round1(dutyWindowHours), groundHours: round1(groundHours), dutyHours: round1(elapsed), dutyMinutes, mode: 'canonico_publicado' };
   }
 
   if (typeof day.dutyHours === 'number' && day.dutyHours > 0 && !isStandby(day) && !isReserve(day)) {
-    return { dutyWindowHours: round1(day.dutyHours), groundHours: 0, dutyHours: round1(day.dutyHours), mode: 'janela' };
+    return { dutyWindowHours: round1(day.dutyHours), groundHours: 0, dutyHours: round1(day.dutyHours), dutyMinutes: null, mode: 'janela' };
   }
 
   if (dutyWindowHours > 0 && !isStandby(day) && !isReserve(day)) {
-    return { dutyWindowHours: round1(dutyWindowHours), groundHours: 0, dutyHours: round1(dutyWindowHours), mode: 'janela' };
+    return { dutyWindowHours: round1(dutyWindowHours), groundHours: 0, dutyHours: round1(dutyWindowHours), dutyMinutes: null, mode: 'janela' };
   }
 
-  return { dutyWindowHours: 0, groundHours: 0, dutyHours: 0, mode: 'indisponivel' };
+  return { dutyWindowHours: 0, groundHours: 0, dutyHours: 0, dutyMinutes: null, mode: 'indisponivel' };
 }
 
 
@@ -1316,6 +1322,9 @@ function describeRbac117Limit(limit: Rbac117DutyLimit | EffectiveDutyLimit): str
 }
 
 export type PublishedDutyLimitSummary = {
+  usedMinutes: number;
+  maxDutyMinutes: number;
+  remainingMinutes: number;
   usedHours: number;
   maxDutyHours: number;
   remainingHours: number;
@@ -1331,12 +1340,14 @@ export function getPublishedDutyLimitSummary(day: RosterDay, profile?: LegalProf
   const limit = applyMostRestrictiveDutyLimit(getRbac117B1SimpleDutyLimit(startTime, sectors), profile);
   if (!limit) return null;
   const breakdown = getRegulatoryDutyBreakdown(day);
-  if (breakdown.mode === 'indisponivel') return null;
+  if (breakdown.dutyMinutes === null) return null;
+  const usedMinutes = breakdown.dutyMinutes, maxDutyMinutes = limit.maxDutyHours * 60;
   const usedHours = round1(breakdown.dutyHours);
   return {
+    usedMinutes, maxDutyMinutes, remainingMinutes: maxDutyMinutes - usedMinutes,
     usedHours,
     maxDutyHours: limit.maxDutyHours,
-    remainingHours: round1(limit.maxDutyHours - usedHours),
+    remainingHours: (maxDutyMinutes - usedMinutes) / 60,
     sectors,
     startTime: startTime || '',
     source: limit.appliedRule,
@@ -1916,19 +1927,20 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
       const b1Limit = applyMostRestrictiveDutyLimit(getRbac117B1SimpleDutyLimit(startForLimit, sectorsForLimit), legalProfile);
       // v11.1.91: regra padrão passa a usar a Tabela B.1 do RBAC 117 para tripulação mínima/simples.
       // Isso evita o erro de usar 16h como régua genérica; 16h só aparece com evidência de composta/revezamento/GRF/interrompida.
-      if (breakdown.mode !== 'estimada_parser' && b1Limit) {
-        const remaining = round1(b1Limit.maxDutyHours - dutyHours);
+      if (breakdown.dutyMinutes !== null && b1Limit) {
+        const exactDutyHours = breakdown.dutyMinutes / 60;
+        const remaining = (b1Limit.maxDutyHours * 60 - breakdown.dutyMinutes) / 60;
         const detail = [
           describeRbac117Limit(b1Limit),
-          `Cálculo usado: jornada líquida ${formatHoursForAlert(dutyHours)}; início ${startForLimit || '--'}; ${sectorsForLimit} etapa(s).`,
+          `Cálculo usado: jornada publicada ${formatHoursForAlert(exactDutyHours)}; início ${startForLimit || '--'}; ${sectorsForLimit} etapa(s).`,
           b1Limit?.appliedRule ? `Regra efetiva: ${b1Limit.appliedRule}.` : '',
           'Solo/pernoite/continuação visual não é somado automaticamente quando o parser detectar contaminação; nesse caso o alerta fica como revisão, não irregularidade confirmada.',
         ].join(' ');
-        if (dutyHours > b1Limit.maxDutyHours) {
+        if (breakdown.dutyMinutes > b1Limit.maxDutyHours * 60) {
           pushAlert(alerts, {
             severity: 'error',
             title: 'Jornada acima do limite RBAC 117 — Tabela B.1',
-            description: `${day.date}: jornada calculada de ${formatHoursForAlert(dutyHours)}; limite aplicado: ${formatHoursForAlert(b1Limit.maxDutyHours)}.`,
+            description: `${day.date}: jornada calculada de ${formatHoursForAlert(exactDutyHours)}; limite aplicado: ${formatHoursForAlert(b1Limit.maxDutyHours)}.`,
             details: detail,
             legalReference: b1Limit.legalReference,
             date: day.date,
@@ -2023,7 +2035,10 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   metrics.weekendPairs = calculateWeekendPairs(sortedDays);
   metrics.averageTurnaround = restCount > 0 ? restTotal / restCount : 0;
   const nightData = buildNightData(roster, sortedDays);
-  metrics.maxConsecutiveNights = countMaxConsecutiveMadrugadas(nightData.nightKeys);
+  const publishedNightSequence = publishedNightJourneySequence(buildCanonicalRosterEvents(roster), isActiveDuty, actRules.nightOps.resetAfterFreeHours, hasMadrugadaDuty);
+  metrics.maxConsecutiveNights = publishedNightSequence.maxConsecutive;
+  metrics.maxConsecutiveNightsPossible = publishedNightSequence.maxPossibleConsecutive;
+  metrics.maxConsecutiveNightsPending = publishedNightSequence.indeterminate;
   const maxNightOpsWindow = countNightOpsInRolling168h(nightData.occurrences);
   metrics.maxNightOps168hCount = maxNightOpsWindow;
 
@@ -2186,6 +2201,16 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
     });
   }
 
+  if (metrics.maxConsecutiveNightsPending) {
+    pushAlert(alerts, {
+      severity: 'warning', code: 'night-sequence-pending', actionable: false, classification: 'dados_insuficientes',
+      title: 'Sequência de madrugadas indeterminada',
+      description: `A escala comprova sequência de ${metrics.maxConsecutiveNights} jornada(s); até ${metrics.maxConsecutiveNightsPossible} são possíveis, mas horários de início/fim não comprovados impedem concluir a sequência.`,
+      details: 'A ausência de início ou término não comprova disponibilidade encerrada, continuidade da sequência nem 48h livres. Complete a evidência antes de afirmar extrapolação ou ausência de irregularidade.',
+      legalReference: actRules.nightOps.legalReference, confidence: 'baixa',
+    });
+  }
+
   if (metrics.maxConsecutiveNights > limits.maxConsecutiveNightOps) {
     pushAlert(alerts, {
       severity: 'warning',
@@ -2211,6 +2236,18 @@ export function analyzeCompliance(roster: CrewRoster, roleSelection: CrewRoleSel
   alerts = sanitizeComplianceAlertsForProduction(auditAlertConfidence(alerts, sortedDays));
 
   if (roleOriginPending) pushAlert(alerts, { severity: 'warning', title: 'Reimportação necessária para horas de voo operado', description: FLIGHT_ROLE_PENDING_MESSAGE, legalReference: 'Origem do PDF importado', classification: 'dados_insuficientes', actionable: false, code: 'FLIGHT_ROLE_ORIGIN_PENDING' });
+
+  // Enrich after the raw/prepared calculation, preserving its exact boundaries.
+  const nightEvidenceEvents = buildCanonicalRosterEvents(roster);
+  const nightEvidenceSequence = publishedNightJourneySequence(nightEvidenceEvents, isActiveDuty, actRules.nightOps.resetAfterFreeHours, hasMadrugadaDuty);
+  for (const alert of alerts) {
+    const pending = alert.code === 'night-sequence-pending';
+    if (!pending && !/^Madrugadas (?:trabalhadas )?consecutivas/.test(alert.title)) continue;
+    if (!pending) alert.code = 'NIGHT_WORKED_SEQUENCE';
+    alert.dateEvidence = nightSequenceEvidence(nightEvidenceSequence, nightEvidenceEvents, pending);
+    alert.evidence = `Contagem comprovada: ${nightEvidenceSequence.maxConsecutive} jornada(s); possível: ${nightEvidenceSequence.maxPossibleConsecutive}. Datas da programação: ${[...new Set(alert.dateEvidence.map(row => row.date))].join(', ')}. Uma contagem por jornada, mesmo com várias etapas ou passagem da meia-noite.`;
+    alert.details = `Critério aplicado: atividade trabalhada que toca 00:00–06:00 BRT; referência de ${limits.maxConsecutiveNightOps} jornadas consecutivas. Jornada diurna comprovada interrompe a sequência; ${actRules.nightOps.resetAfterFreeHours}h livres comprovadas a reiniciam. HSB/reserva sem acionamento não contam como trabalho, mas disponibilidade aberta impede presumir tempo livre. Início/término ausentes mantêm a hipótese pendente. Atenção para revisão, sem afirmar infração automática.`;
+  }
 
   const loadAnalysis = analyzeDayLoads(roster);
   const errorCount = alerts.filter(alert => alert.severity === 'error').length;

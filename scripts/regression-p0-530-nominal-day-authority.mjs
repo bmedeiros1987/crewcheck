@@ -88,7 +88,7 @@ try {
 
   globalThis.localStorage = new MemoryStorage();
   globalThis.sessionStorage = new MemoryStorage();
-  globalThis.window = { location: { origin: 'https://crewcheck.test' }, dispatchEvent() {} };
+  globalThis.window = Object.assign(new EventTarget(), { location: { origin: 'https://crewcheck.test' } });
   localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'nominal-day-e2e', email: 'nominal-day@example.test' }));
 
   const database = await import(`${pathToFileURL(path.join(outDir, 'database-client.mjs')).href}?v=${Date.now()}`);

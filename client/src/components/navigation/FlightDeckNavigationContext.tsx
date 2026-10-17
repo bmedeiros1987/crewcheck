@@ -5,6 +5,7 @@ import {
   type CrewCheckNavigationContext,
 } from '@/lib/navigationContext';
 import './flight-context.css';
+import { alertText } from '../../lib/alertExperienceText';
 
 type FlightContextTarget = 'radar' | 'weather';
 
@@ -17,6 +18,7 @@ function dateLabel(epoch?: number): string {
     weekday: 'short',
     day: '2-digit',
     month: 'short',
+    timeZone: 'America/Sao_Paulo',
   }).format(date);
 }
 
@@ -27,8 +29,7 @@ function flightDeckContext(
   return Boolean(
     context
       && context.targetView === targetView
-      && context.sourceView === 'cockpit'
-      && context.returnView === 'cockpit'
+      && (context.sourceView === 'pulse' || context.sourceView === 'cockpit' && context.returnView === 'cockpit')
       && context.programId,
   );
 }
@@ -46,6 +47,7 @@ export default function FlightDeckNavigationContext({ targetView }: { targetView
   const flight = String(context.flightKey || '').trim();
   const airport = String(context.airportCode || '').trim();
   const detail = [flight, airport ? `origem ${airport}` : '', date].filter(Boolean).join(' · ');
+  if (context.sourceView === 'pulse') return <p className="cc-readable-surface" role="status">{detail}</p>;
 
   return <section className="cc-flight-context-return cc-readable-surface" aria-label="Contexto do voo aberto pelo FlightDeck">
     <button type="button" onClick={returnToFlightDeck}>
@@ -63,6 +65,8 @@ export default function FlightDeckNavigationContext({ targetView }: { targetView
 export function FlightDeckContextUnavailable({ targetView }: { targetView: FlightContextTarget }) {
   const [context] = useState(() => peekPendingNavigationContext(targetView));
   if (!flightDeckContext(context, targetView)) return null;
+
+  if (context.sourceView === 'pulse') return <p className="cc-readable-surface" role="status">{alertText().missing}</p>;
 
   return <section className="cc-flight-context-return cc-readable-surface" aria-label="Contexto do voo indisponível">
     <button type="button" onClick={returnToFlightDeck}>

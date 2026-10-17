@@ -27,3 +27,20 @@ class DurableJournal:
 
     def verify(self, expected):
         assert self.backend.read(self.package) == expected, 'Durable receipt acknowledgement uncertain; stop'
+
+    @property
+    def supports_trusted_lifecycle(self):
+        return callable(getattr(self.backend, 'commit_staged', None)) and callable(getattr(self.backend, 'reconcile_verified', None))
+
+    def commit_staged(self, receipt):
+        assert self.supports_trusted_lifecycle, 'Reviewed executor lifecycle required'
+        value = dict(copy.deepcopy(receipt), journalOwner=self.owner)
+        result = self.backend.commit_staged(self.package, self.owner, value)
+        self.verify(result)
+        return result
+
+    def reconcile_verified(self):
+        assert self.supports_trusted_lifecycle, 'Reviewed executor lifecycle required'
+        result = self.backend.reconcile_verified(self.package, self.owner)
+        self.verify(result)
+        return result

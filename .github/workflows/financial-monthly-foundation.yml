@@ -1,0 +1,33 @@
+name: Financial monthly foundation
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/financialPayrollPeriods.ts'
+      - 'client/src/lib/financialReferenceCatalog.ts'
+      - 'client/src/lib/financialTaxReferences.ts'
+      - 'client/src/lib/financialMonthlySettings.ts'
+      - 'shared/financialReadModel.mjs'
+      - 'scripts/regression-financial-monthly-foundation.mjs'
+      - '.github/workflows/financial-monthly-foundation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-monthly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/regression-financial-monthly-foundation.mjs
+      - run: node scripts/regression-financial-read-model.mjs
+      - run: node scripts/regression-financial-owner-periods.mjs
+      - run: node scripts/v139/apply.mjs
+      - run: npx tsc --noEmit
+      - run: node scripts/regression-financial-monthly-foundation.mjs
+        env:
+          TZ: America/Sao_Paulo
+      - run: npx vite build

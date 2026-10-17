@@ -1,3 +1,4 @@
+import vm from 'node:vm';
 import fs from 'node:fs';
 
 const sw = fs.readFileSync('client/public/sw.js', 'utf8');
@@ -13,7 +14,10 @@ assert(runtime.includes("navigator.serviceWorker.register('/sw.js'"), 'runtime d
 assert(runtime.includes("installPwaUpdateCoordinator()"), 'runtime deve preservar o coordenador de atualização segura');
 assert(!runtime.includes('window.location.reload'), 'runtime offline não pode forçar reload');
 assert(runtime.includes("window.addEventListener('offline'"), 'runtime deve publicar estado offline');
-assert(sw.includes("const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icons/crewcheck-icon-v2.png']"), 'SW deve incluir shell mínimo');
+const shellMatch = sw.match(/const APP_SHELL = (\[[^\]]*\]);/);
+assert(Boolean(shellMatch), 'SW deve definir shell mínimo');
+const shellUrls = vm.runInNewContext(shellMatch[1], Object.create(null), { timeout: 100 });
+assert(['/', '/index.html', '/manifest.json'].every(url => shellUrls.includes(url)) && shellUrls.some(url => new URL(url, 'https://crewcheck.invalid').pathname === '/icons/crewcheck-icon-v2.png'), 'SW deve incluir shell mínimo e ícone canônico, inclusive URL versionada');
 assert(sw.includes('precachePreparedShell'), 'SW deve preparar shell e assets do HTML');
 assert(sw.includes("request.mode === 'navigate'"), 'SW deve possuir fallback de navegação');
 assert(sw.includes("url.pathname.startsWith('/api/')"), 'SW não deve persistir respostas de API como shell');

@@ -1,0 +1,209 @@
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
+
+const root = path.resolve(process.env.ALERT_SOURCE_ROOT || process.cwd());
+const { loadClientModules } = await import(pathToFileURL(path.join(root, 'scripts/lib/ts-module-harness.mjs')));
+const prepared = fs.readFileSync(path.join(root,'client/src/lib/complianceEngine.ts'),'utf8').includes('function summarizeRegulatoryNightEvents(');
+const modules = loadClientModules({ expose: { complianceEngine: prepared ? ['summarizeRegulatoryNightEvents'] : [] }, files: ['client/src/lib/publishedNightJourneys.ts', 'client/src/lib/complianceEngine.ts', 'client/src/lib/canonicalRoster.ts', 'client/src/lib/canonicalDutyMeasurement.ts'], prefix: 'synthetic-alert-minutes-' });
+const selected = process.argv.find(x => x.startsWith('--case='))?.slice(7);
+try {
+  const engine = modules.load('complianceEngine'), canonical = modules.load('canonicalRoster'), measurement = modules.load('canonicalDutyMeasurement');
+  const roster = days => ({ year: 2032, month: 10, base: 'GRU', rank: 'CC', airline: 'LA', crewName: 'SYNTHETIC ONLY', days });
+  const day = (date, report, release, departure, arrival, origin = 'GRU', destination = 'REC', flight = 'LA9900') => ({ date, year: 2032, month: 10, type: 'VOO', pairingCode: 'SYN', base: 'GRU', dutyReport: report, dutyDebrief: release, dutyReportSource: report ? 'published' : undefined, dutyDebriefSource: release ? 'published' : undefined, legs: [{ flightNumber: flight, origin, destination, departureTime: departure, arrivalTime: arrival, presentationTime: report || undefined, workType: 'OP' }] });
+  const clock = minutes => `${String(Math.floor(((minutes % 1440) + 1440) % 1440 / 60)).padStart(2, '0')}:${String(((minutes % 60) + 60) % 60).padStart(2, '0')}`;
+  const marginDay = (date, start, elapsed) => {
+    const [h, m] = start.split(':').map(Number), at = h * 60 + m;
+    const item = day(date, start, clock(at + elapsed), '', '');
+    const flightMinutes = elapsed - 70 - 80, lengths = [Math.floor(flightMinutes / 3), Math.floor(flightMinutes / 3)]; lengths.push(flightMinutes - lengths[0] - lengths[1]);
+    let cursor = at + 40;
+    item.legs = lengths.map((length, i) => { const departureTime = clock(cursor), arrivalTime = clock(cursor + length); cursor += length + 40;
+      return { flightNumber: `LA991${i}`, origin: ['GRU','BSB','REC'][i], destination: ['BSB','REC','GRU'][i], departureTime, arrivalTime, duration: length / 60, presentationTime: i === 0 ? start : undefined, workType: 'OP' }; });
+    return item;
+  };
+  for (const timezone of (process.env.ALERT_TEST_TIMEZONE ? [process.env.ALERT_TEST_TIMEZONE] : ['UTC','America/Sao_Paulo','Pacific/Auckland'])) {
+    process.env.TZ = timezone;
+    if (!selected || selected === 'margin') {
+      for (const [date, start, elapsed, limit] of [['22/10/2032','04:50',500,9],['27/10/2032','13:35',680,12],['29/10/2032','02:20',500,9]]) {
+        const item = marginDay(date, start, elapsed), summary = engine.getPublishedDutyLimitSummary(item, null);
+        assert.equal(summary.maxDutyHours, limit, 'unchanged table selection in this synthetic scenario; not proof of actual profile');
+        console.log(JSON.stringify({timezone,case:'margin-observed',date,legacyRemainingMinutes:summary.remainingHours*60,exactRemainingMinutes:summary.remainingMinutes}));
+        assert.equal(summary.usedMinutes, elapsed); assert.equal(summary.remainingMinutes, 40); assert.equal(summary.remainingHours * 60, 40);
+        const result = engine.analyzeCompliance(roster([item]));
+        const alert = result.alerts.find(a => a.title === 'Jornada próxima do limite RBAC 117 — Tabela B.1');
+        assert.ok(alert, 'actual published-limit alert'); assert.match(alert.description, /0h40/); assert.doesNotMatch(alert.description, /0h42/);
+        console.log(JSON.stringify({ timezone, case: 'margin', date, elapsed, limitMinutes: limit * 60, margin: summary.remainingMinutes, description: alert.description }));
+      }
+      for (const [elapsed, remaining] of [[479,61],[480,60],[539,1],[540,0],[541,-1]]) {
+        const item = marginDay('22/10/2032','04:50',elapsed), summary = engine.getPublishedDutyLimitSummary(item, null);
+        assert.equal(summary.remainingMinutes, remaining); const alerts = engine.analyzeCompliance(roster([item])).alerts;
+        assert.equal(alerts.some(a => a.title === 'Jornada próxima do limite RBAC 117 — Tabela B.1'), remaining >= 0 && remaining <= 60);
+        assert.equal(alerts.some(a => a.title === 'Jornada acima do limite RBAC 117 — Tabela B.1'), remaining < 0);
+      }
+      const missing = marginDay('22/10/2032','04:50',500); missing.dutyDebrief = null;
+      assert.equal(engine.getPublishedDutyLimitSummary(missing,null),null);
+    }
+    if (!selected || ['reset-start','availability'].includes(selected)) {
+      const prior = day('01/10/2032','01:00','04:30','01:40','04:00');
+      const next = day('09/10/2032','20:10',null,'20:50','00:30');
+      const inspect = days => {
+        const events = canonical.buildCanonicalRosterEvents(roster(days));
+        return modules.load('publishedNightJourneys').publishedNightJourneySequence(events, () => true, 48, () => false);
+      };
+      if (!selected || selected === 'reset-start') {
+        const actual = engine.analyzeCompliance(roster([prior,next])).metrics.maxConsecutiveNights;
+        console.log(JSON.stringify({timezone,case:'reset-start-observed',actual}));
+        assert.equal(actual,1,'proven preceding207h40 gap does not require the next release');
+        const sequence = inspect([prior,next]);
+        assert.equal(sequence.resets[0].freeMinutes,12460);
+        const events = canonical.buildCanonicalRosterEvents(roster([next]));
+        assert.equal(measurement.measureCanonicalDuty(events,events[0].id).state,'incomplete');
+        assert.equal(measurement.publishedDutyEndpoints(events,events[0].id).end,null);
+        const estimated = structuredClone(next); estimated.legs[0].presentationTime = undefined; estimated.dutyReportSource = 'estimated';
+        assert.equal(engine.analyzeCompliance(roster([prior,estimated])).metrics.maxConsecutiveNightsPending,true,'unverified next presentation keeps the preceding gap indeterminate');
+      }
+      if (!selected || selected === 'availability') {
+        const hsb = {...day('02/10/2032','12:00',null,'',''),type:'HSB',pairingCode:'HSB',legs:[]};
+        const knownNext = {...next,dutyDebrief:'01:00',dutyDebriefSource:'published'};
+        const actual = engine.analyzeCompliance(roster([prior,hsb,knownNext])).metrics.maxConsecutiveNights;
+        console.log(JSON.stringify({timezone,case:'open-availability-observed',actual}));
+        assert.equal(actual,1,'only the proven consecutive lower bound is asserted');
+        const assessed = engine.analyzeCompliance(roster([prior,hsb,knownNext]));
+        assert.equal(assessed.metrics.maxConsecutiveNightsPossible,2);assert.equal(assessed.metrics.maxConsecutiveNightsPending,true);
+        const sequence = inspect([prior,hsb,knownNext]);
+        assert.equal(sequence.journeys.length,3); assert.equal(sequence.resets.length,0); assert.equal(sequence.uncertainEnds.length,1);
+        const closed = {...hsb,dutyDebrief:'23:00',dutyDebriefSource:'published'};
+        assert.equal(engine.analyzeCompliance(roster([prior,closed,knownNext])).metrics.maxConsecutiveNights,1);
+        closed.dutyDebriefSource='estimated';
+        assert.equal(engine.analyzeCompliance(roster([prior,closed,knownNext])).metrics.maxConsecutiveNightsPending,true);
+      }
+    }
+    if (!selected || selected === 'uncertainty-boundary') {
+      const early = day('01/10/2032','01:00',null,'01:40','04:00');
+      const daytime = day('02/10/2032','10:00','18:00','10:40','17:30');
+      const nights = ['10','11','20'].map(date => day(`${date}/10/2032`,'02:10','10:30','02:50','10:00'));
+      const actual = engine.analyzeCompliance(roster([early,daytime,...nights]));
+      console.log(JSON.stringify({timezone,case:'uncertainty-boundary-observed',maxConsecutiveNights:actual.metrics.maxConsecutiveNights}));
+      assert.equal(actual.metrics.maxConsecutiveNights,2,'missing historical release cannot poison a new sequence after a complete daytime journey');
+      assert.ok(!actual.alerts.some(alert => /consecutivas.*revisar sequência/.test(alert.title)));
+      const filled = {...early,dutyDebrief:'04:30',dutyDebriefSource:'published'};
+      assert.equal(engine.analyzeCompliance(roster([filled,daytime,...nights])).metrics.maxConsecutiveNights,2);
+      const events = canonical.buildCanonicalRosterEvents(roster([early,daytime,...nights]));
+      const sequence = modules.load('publishedNightJourneys').publishedNightJourneySequence(events, () => true, 48, () => false);
+      assert.equal(sequence.uncertainEnds.length,1,'historical missing release stays explicit');
+      assert.equal(sequence.blockingEnds.length,0,'old flight uncertainty is scoped to the terminated sequence');
+      assert.equal(sequence.sequenceBoundaries.length,1);
+      assert.equal(measurement.measureCanonicalDuty(events,events.find(event => event.publishedDay.date === '01/10/2032').id).state,'incomplete');
+      const openHsb = {...day('02/10/2032','12:00',null,'',''),type:'HSB',pairingCode:'HSB',legs:[]};
+      const shortNext = day('03/10/2032','20:10','01:00','20:50','00:30');
+      const later = day('10/10/2032','02:10','10:30','02:50','10:00');
+      assert.equal(engine.analyzeCompliance(roster([openHsb,shortNext,later])).metrics.maxConsecutiveNightsPending,true,'a later night release alone never closes an unknown HSB');
+    }
+    if (!selected || selected === 'hsb-indeterminate') {
+      const hsb = {...day('01/10/2032','12:00',null,'',''),type:'HSB',pairingCode:'HSB',legs:[]};
+      const daytime = day('02/10/2032','10:00','18:00','10:40','17:30');
+      const nights = ['10','11','20'].map(date => day(`${date}/10/2032`,'02:10','10:30','02:50','10:00'));
+      const assessed = engine.analyzeCompliance(roster([hsb,daytime,...nights]));
+      console.log(JSON.stringify({timezone,case:'hsb-indeterminate-observed',proven:assessed.metrics.maxConsecutiveNights,possible:assessed.metrics.maxConsecutiveNightsPossible,pending:assessed.metrics.maxConsecutiveNightsPending}));
+      assert.equal(assessed.metrics.maxConsecutiveNights,2);
+      assert.equal(assessed.metrics.maxConsecutiveNightsPossible,3);assert.equal(assessed.metrics.maxConsecutiveNightsPending,true);
+      const pending = assessed.alerts.find(alert => alert.code === 'night-sequence-pending');assert.ok(pending);assert.equal(pending.actionable,false);assert.equal(pending.classification,'dados_insuficientes');
+      assert.ok(!assessed.alerts.some(alert => /3 madrugada.*detectada/.test(alert.description)));
+      const events=canonical.buildCanonicalRosterEvents(roster([hsb,daytime,...nights]));
+      const sequence=modules.load('publishedNightJourneys').publishedNightJourneySequence(events,()=>true,48,()=>false);
+      assert.equal(sequence.indeterminate,true);assert.equal(sequence.blockingEnds.length,1);assert.equal(sequence.resets.length,0,'no free gap is fabricated');
+      const closed={...hsb,dutyDebrief:'23:00',dutyDebriefSource:'published'};
+      const proven=engine.analyzeCompliance(roster([closed,daytime,...nights]));assert.equal(proven.metrics.maxConsecutiveNights,2);assert.equal(proven.metrics.maxConsecutiveNightsPossible,2);assert.equal(proven.metrics.maxConsecutiveNightsPending,false);
+      const three=nights.map((item,i)=>({...item,date:`${10+i}/10/2032`}));
+      const confirmed=engine.analyzeCompliance(roster(three));assert.equal(confirmed.metrics.maxConsecutiveNights,3);assert.equal(confirmed.metrics.maxConsecutiveNightsPending,false);assert.ok(confirmed.alerts.some(alert=>/consecutivas.*revisar sequência/.test(alert.title)));
+    }
+    if (!selected || selected === 'crm-interruption') {
+      const first=day('01/10/2032','01:00','04:30','01:40','04:00');
+      const crm={...day('02/10/2032','08:00',null,'',''),type:'CRM',pairingCode:'CRM',legs:[]};
+      const nights=['03','04'].map(date=>day(`${date}/10/2032`,'02:10','10:30','02:50','10:00'));
+      const result=engine.analyzeCompliance(roster([first,crm,...nights]));
+      console.log(JSON.stringify({timezone,case:'crm-interruption-observed',proven:result.metrics.maxConsecutiveNights,possible:result.metrics.maxConsecutiveNightsPossible,pending:result.metrics.maxConsecutiveNightsPending}));
+      assert.equal(result.metrics.maxConsecutiveNights,2,'incomplete operational activity may interrupt the previous streak');
+      assert.equal(result.metrics.maxConsecutiveNightsPending,true);assert.ok(result.metrics.maxConsecutiveNightsPossible>=3);
+      assert.ok(result.alerts.some(alert=>alert.code==='night-sequence-pending'&&alert.actionable===false));
+      assert.ok(!result.alerts.some(alert=>/consecutivas.*revisar sequência/.test(alert.title)),'no three-night violation is proven');
+      const complete={...crm,dutyDebrief:'12:00',dutyDebriefSource:'published'};
+      const determined=engine.analyzeCompliance(roster([first,complete,...nights]));assert.equal(determined.metrics.maxConsecutiveNights,2);assert.equal(determined.metrics.maxConsecutiveNightsPending,false);
+      const events=canonical.buildCanonicalRosterEvents(roster([first,crm,...nights]));const event=events.find(item=>item.publishedDay.type==='CRM');assert.equal(measurement.measureCanonicalDuty(events,event.id).state,'incomplete');
+    }
+    if (!selected || selected === 'standby-variants') {
+      const nights = ['04','06','07'].map(date => day(`${date}/10/2032`,'02:10','10:30','02:50','10:00'));
+      for (const code of ['HSB','HSBE','HSB1','HSB2','HSBD','HSB-ADM','HSB_ADM','RES','ASB']) {
+        for (const type of ['OTHER', code]) {
+          const standby = {...day('05/10/2032','12:00','18:00','',''), type, pairingCode:code, legs:[]};
+          const result = engine.analyzeCompliance(roster([nights[0],standby,...nights.slice(1)]));
+          assert.equal(result.metrics.maxConsecutiveNights,3,`${type}/${code}: availability must not interrupt three night journeys`);
+          assert.equal(result.metrics.maxConsecutiveNightsPossible,3);
+          assert.equal(result.metrics.maxConsecutiveNightsPending,false);
+          assert.ok(result.alerts.some(a=>/consecutivas.*revisar sequência/.test(a.title)),`${type}/${code}: existing consecutive-night warning preserved`);
+          const activated = {...day('05/10/2032','12:00','18:00','12:40','17:30'),type,pairingCode:code};
+          assert.equal(engine.analyzeCompliance(roster([nights[0],activated,...nights.slice(1)])).metrics.maxConsecutiveNights,2,`${type}/${code}: actual daytime flight remains a worked interruption`);
+          const open = {...standby,date:'02/10/2032',dutyDebrief:null,dutyDebriefSource:undefined};
+          const prior = day('01/10/2032','01:00','04:30','01:40','04:00');
+          const later = day('09/10/2032','20:10','01:00','20:50','00:30');
+          const pending = engine.analyzeCompliance(roster([prior,open,later]));
+          assert.equal(pending.metrics.maxConsecutiveNights,1,`${type}/${code}: missing release cannot prove continuity`);
+          assert.equal(pending.metrics.maxConsecutiveNightsPossible,2);
+          assert.equal(pending.metrics.maxConsecutiveNightsPending,true);
+
+        }
+      }
+      const ordinary = {...day('05/10/2032','12:00','18:00','',''),type:'OTHER',pairingCode:'CRM',legs:[]};
+      assert.equal(engine.analyzeCompliance(roster([nights[0],ordinary,...nights.slice(1)])).metrics.maxConsecutiveNights,2,'ordinary daytime duty still interrupts sequence');
+      const unknown = {...ordinary,pairingCode:'HSB-UNKNOWN'};
+      assert.equal(engine.analyzeCompliance(roster([nights[0],unknown,...nights.slice(1)])).metrics.maxConsecutiveNights,2,'unknown prefix must not invent availability');
+      console.log(JSON.stringify({timezone,case:'standby-variants',variants:9,representations:2}));
+    }
+    if (!selected || selected === 'journey') {
+      const first = day('04/10/2032','22:10','01:05','22:50','00:35');
+      const daytime = day('05/10/2032','06:05','14:25','06:45','13:55');
+      const third = day('06/10/2032','02:10','10:30','02:50','10:00');
+      const fourth = day('07/10/2032','02:10','10:30','02:50','10:00');
+      const interrupted = engine.analyzeCompliance(roster([first,daytime,third,fourth]));
+      console.log(JSON.stringify({timezone,case:'journey-observed',maxConsecutiveNights:interrupted.metrics.maxConsecutiveNights}));
+      if(prepared) assert.equal(engine.summarizeRegulatoryNightEvents([daytime],48,roster([first,daytime,third,fourth])).maxConsecutiveWorked,0,'summary respects selected days even when identity context contains more journeys');
+      assert.equal(interrupted.metrics.maxConsecutiveNights,2,'daytime journey interrupts night journey sequence even on adjacent civil nights');
+      assert.ok(!interrupted.alerts.some(a => /consecutivas.*revisar sequência/.test(a.title)), 'no three-journey warning for this fixture');
+      const overnight = day('27/10/2032','13:45','01:05','14:25','00:35');
+      const following = day('29/10/2032','02:10','10:30','02:50','10:00');
+      assert.equal(engine.analyzeCompliance(roster([overnight])).metrics.maxConsecutiveNights,1);
+      assert.equal(engine.analyzeCompliance(roster([overnight,following])).metrics.maxConsecutiveNights,2);
+      const split1 = day('27/10/2032','13:45',null,'14:25','23:50');
+      const split2 = day('28/10/2032',null,'01:05','00:10','00:35','REC','GRU','LA9901');
+      const events = canonical.buildCanonicalRosterEvents(roster([split1,split2])).filter(e => e.kind === 'flight');
+      assert.equal(new Set(events.map(e=>e.journeyId)).size,1);
+      assert.equal(engine.analyzeCompliance(roster([split1,split2,following])).metrics.maxConsecutiveNights,2);
+      assert.equal(measurement.measureCanonicalDuty(events,events[0].id).minutes,680,'explicit release, no duplicate +30');
+      for (const [start, expected] of [['05:59',1],['06:00',0],['06:01',0]]) assert.equal(engine.analyzeCompliance(roster([day('10/10/2032',start,'08:00',start,'07:30')])).metrics.maxConsecutiveNights,expected);
+      assert.equal(engine.analyzeCompliance(roster([first,third,fourth])).metrics.maxConsecutiveNights,3,'three distinct night journeys remain three');
+      const evidenced = engine.analyzeCompliance(roster([first,third,fourth])).alerts.find(a => a.code === 'NIGHT_WORKED_SEQUENCE');
+      assert.ok(evidenced, 'sequence warning has stable code and inspectable evidence');
+      assert.deepEqual(evidenced.dateEvidence.map(row => row.date), ['04/10/2032','06/10/2032','07/10/2032']);
+      assert.equal(new Set(evidenced.dateEvidence.map(row => row.journeyId)).size, 3);
+      assert.match(evidenced.dateEvidence[0].description, /05\/10\/2032/,'overnight activity exposes actual next-day clock as well as published date');
+      assert.match(evidenced.evidence, /Contagem comprovada: 3/);
+      assert.match(evidenced.details, /00:00–06:00 BRT/);
+      assert.match(evidenced.details, /48h livres comprovadas/);
+      const evidenceEvents = canonical.buildCanonicalRosterEvents(roster([first,third,fourth]));
+      const evidenceSequence = modules.load('publishedNightJourneys').publishedNightJourneySequence(evidenceEvents, () => true, 48, () => false);
+      const linkedRest = { ...evidenceEvents.find(event => event.kind === 'flight'), id: 'synthetic-linked-rest', kind: 'rest', date: '03/10/2032' };
+      const evidenceRows = modules.load('nightAlertEvidence').nightSequenceEvidence(evidenceSequence, [...evidenceEvents, linkedRest]);
+      assert.ok(!evidenceRows.some(row => row.date === linkedRest.date), 'preceding rest linked to the next journey is never counted or linked as worked evidence');
+      assert.ok(evidenceRows.every(row => !row.description.includes('Atividade')), 'flight-only sequence must not label its linked rest as activity');
+      const availability={...day('05/10/2032','20:00','23:00','',''),type:'HSB',pairingCode:'HSB',legs:[]};
+      assert.equal(engine.analyzeCompliance(roster([first,availability,fourth])).metrics.maxConsecutiveNights,2,'availability blocks a 48h-free reset but is not a night journey');
+      const longBreak = day('10/10/2032','02:10','10:30','02:50','10:00');
+      assert.equal(engine.analyzeCompliance(roster([first,longBreak])).metrics.maxConsecutiveNights,1,'existing 48h free reset retained');
+      const unknownEnd={...first,dutyDebrief:null};
+      assert.equal(engine.analyzeCompliance(roster([unknownEnd,longBreak])).metrics.maxConsecutiveNightsPending,true,'missing release cannot prove48h free or confirmed continuity');
+      console.log(JSON.stringify({timezone,case:'journey',interrupted:interrupted.metrics.maxConsecutiveNights,splitJourneyCount:1,actualUserSequenceVerified:false}));
+    }
+  }
+  console.log('PASS actual engine/canonical source: exact minute margins and published journey sequence; synthetic only, no rule applicability or execution claimed');
+} finally { modules.cleanup(); }
