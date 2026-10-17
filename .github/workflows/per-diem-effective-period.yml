@@ -4,6 +4,12 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'client/src/lib/compensationPolicy.ts'
+      - 'scripts/regression-taxi-base-apz.mjs'
+      - 'scripts/regression-taxi-import-confirmation.mjs'
+      - 'scripts/regression-financial-statement-totals.mjs'
+      - 'client/src/components/finance/FinancialStatementImporter.tsx'
+      - 'scripts/regression-operational-finance-clock.mjs'
       - 'client/src/lib/financialAmounts.ts'
       - 'client/src/lib/financialStatementLearning.ts'
       - 'client/src/lib/financialRules.ts'
@@ -30,10 +36,26 @@ jobs:
       - run: npm ci
       - name: Validate demonstrated rate period
         run: node scripts/regression-p1-demonstrated-per-diem-effective-period.mjs
+      - name: Taxi and operational clock (raw, synthetic)
+        run: |
+          for zone in UTC America/Sao_Paulo Asia/Tokyo; do
+            TZ="$zone" node scripts/regression-taxi-base-apz.mjs
+          done
+          node scripts/regression-operational-finance-clock.mjs
+          node scripts/regression-taxi-import-confirmation.mjs
+          node scripts/regression-financial-statement-totals.mjs
       - name: Prepare canonical CrewCheck sources
         run: node scripts/v139/apply.mjs
       - name: Revalidate after preparation
         run: node scripts/regression-p1-demonstrated-per-diem-effective-period.mjs
+      - name: Taxi and operational clock (prepared, synthetic)
+        run: |
+          for zone in UTC America/Sao_Paulo Asia/Tokyo; do
+            TZ="$zone" node scripts/regression-taxi-base-apz.mjs
+          done
+          node scripts/regression-operational-finance-clock.mjs
+          node scripts/regression-taxi-import-confirmation.mjs
+          node scripts/regression-financial-statement-totals.mjs
       - name: TypeScript
         run: npx tsc --noEmit
       - name: Web build

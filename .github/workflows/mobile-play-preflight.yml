@@ -1,0 +1,154 @@
+name: CrewCheck mobile Play read-only preflight
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/mobile-only-internal.yml'
+      - 'scripts/android-play/mobile_preflight.py'
+      - 'scripts/android-play/test_mobile_preflight.py'
+      - 'scripts/android-play/receipt_journal.py'
+      - 'scripts/android-play/test_receipt_journal.py'
+      - 'scripts/android-play/mobile_internal.py'
+      - 'scripts/android-play/test_mobile_internal.py'
+      - 'scripts/android-play/artifact_consumer.py'
+      - 'scripts/android-play/test_artifact_consumer.py'
+      - 'scripts/android-play/mysql_journal.mjs'
+      - 'scripts/android-play/planned_lifecycle.mjs'
+      - 'scripts/android-play/test_planned_lifecycle.mjs'
+      - 'scripts/android-play/planned_mobile.py'
+      - 'scripts/android-play/test_planned_cli.py'
+      - 'scripts/android-play/test_planned_digest.py'
+      - 'scripts/android-play/test_planned_cli_isolated.mjs'
+      - 'scripts/android-play/test_planned_handoff.py'
+      - 'scripts/android-play/test_planned_handoff.mjs'
+      - 'scripts/android-play/test_legacy_writer_off.py'
+      - 'scripts/android-play/test_independent_package_scope.py'
+      - 'scripts/android-play/review_policy.py'
+      - 'scripts/regression-play-manual-publication-gates.mjs'
+      - '.github/workflows/android.yml'
+      - 'scripts/android-play/publish.py'
+      - 'scripts/android-play/allocate_versions.py'
+      - 'scripts/android-play/crewwatch_internal.py'
+      - 'scripts/android-play/test_planned_transport.py'
+      - 'scripts/android-play/test_planned_cli.mjs'
+      - 'scripts/android-play/test_planned_protocol.mjs'
+      - 'scripts/android-play/play_state_reader.mjs'
+      - 'scripts/android-play/test_play_state_reader.mjs'
+      - 'scripts/android-play/test_mysql_journal.mjs'
+      - 'scripts/android-play/test_mysql_journal_isolated.mjs'
+      - 'scripts/android-play/consumed_validation.py'
+      - 'scripts/android-play/test_consumed_validation.py'
+      - 'scripts/android-play/reconcile_journal.mjs'
+      - 'scripts/android-play/test_reconcile_journal.mjs'
+      - 'scripts/android-play/test_recovery_fence.mjs'
+      - 'scripts/android-play/test_publisher_lifecycle.py'
+      - 'scripts/android-play/test_publisher_lifecycle.mjs'
+      - 'scripts/android-play/platform_journal.mjs'
+      - 'scripts/android-play/test_platform_journal.mjs'
+      - 'scripts/android-play/journal_protocol.mjs'
+      - 'scripts/android-play/test_journal_protocol.mjs'
+      - 'scripts/android-play/journal_transport.py'
+      - 'scripts/android-play/test_journal_transport.py'
+      - 'scripts/android-play/receipt_backend.py'
+      - 'scripts/android-play/test_receipt_backend.py'
+      - 'scripts/android-play/test_receipt_backend.mjs'
+      - 'scripts/android-play/mysql_journal_fixture.mjs'
+      - 'server/mysql-platform-adapter.mjs'
+      - 'server/platform.mjs'
+      - 'server.mjs'
+      - 'server/release-journal/**'
+      - 'server/mysql-verified-tls.mjs'
+      - 'server/certs/**'
+      - 'scripts/android-play/test_verified_mysql_tls.mjs'
+      - '.github/workflows/mobile-only-internal.yml'
+      - 'scripts/android-play/prepare_journal_approval.py'
+      - 'scripts/android-play/journal_connection_probe.py'
+      - 'scripts/android-play/test_journal_approval_prepare.py'
+      - 'scripts/android-play/test_github_release_review.mjs'
+      - 'scripts/android-play/release_review_fixture.mjs'
+      - 'scripts/android-play/test_release_workflow_off.mjs'
+      - 'scripts/android-play/test_release_public_json.mjs'
+      - 'scripts/android-play/test_release_oidc.mjs'
+      - 'scripts/android-play/test_release_approval_route.mjs'
+      - 'scripts/android-play/test_release_probe_composition.mjs'
+      - 'scripts/android-play/test_release_namespace.mjs'
+      - 'scripts/android-play/test_release_approval_isolated.mjs'
+      - '.github/workflows/mobile-play-preflight.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crewcheck-mobile-preflight-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  offline-guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+      - run: python3 scripts/ci/check_mobile_workflow_scripts.py
+      - run: python3 scripts/ci/test_mobile_workflow_scripts.py
+      - run: node scripts/regression-mobile-watch-publish-cadence.mjs
+      - run: python3 scripts/android-play/test_mobile_preflight.py
+      - run: python3 scripts/android-play/test_receipt_journal.py
+      - run: python3 scripts/android-play/test_mobile_internal.py
+      - run: python3 scripts/android-play/test_artifact_consumer.py
+      - run: node scripts/android-play/test_verified_mysql_tls.mjs
+      - run: node scripts/android-play/test_mysql_journal.mjs
+      - run: node scripts/android-play/test_release_oidc.mjs
+      - run: node scripts/android-play/test_github_release_review.mjs
+      - run: node scripts/android-play/test_release_public_json.mjs
+      - run: python3 scripts/android-play/test_journal_approval_prepare.py
+      - run: node scripts/android-play/test_release_probe_composition.mjs
+      - run: node scripts/android-play/test_release_approval_route.mjs
+      - run: node scripts/android-play/test_release_namespace.mjs
+      - run: node scripts/android-play/test_planned_lifecycle.mjs
+      - run: node scripts/android-play/test_play_state_reader.mjs
+      - run: node scripts/android-play/test_planned_protocol.mjs
+      - run: python3 scripts/android-play/test_planned_cli.py
+      - run: python3 scripts/android-play/test_planned_transport.py
+      - run: python3 scripts/android-play/test_planned_digest.py
+      - run: python3 scripts/android-play/test_planned_handoff.py
+      - run: python3 scripts/android-play/test_legacy_writer_off.py
+      - run: python3 scripts/android-play/test_independent_package_scope.py
+      - run: python3 scripts/android-play/test_consumed_validation.py
+      - run: node scripts/android-play/test_reconcile_journal.mjs
+      - run: node scripts/android-play/test_recovery_fence.mjs
+      - run: node scripts/android-play/test_platform_journal.mjs
+      - run: node scripts/android-play/test_journal_protocol.mjs
+      - run: python3 scripts/android-play/test_journal_transport.py
+      - run: python3 scripts/android-play/test_publisher_lifecycle.py
+  inspect-existing-play-access:
+    needs: offline-guards
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install 'google-auth==2.40.3' 'requests==2.32.4'
+      - name: Inspect release lifecycle without opening an edit
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: python3 scripts/android-play/mobile_preflight.py --output "$RUNNER_TEMP/mobile-play-preflight.json"
+      - name: Retain bounded read-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrewCheck-mobile-play-preflight-${{ github.run_id }}
+          path: ${{ runner.temp }}/mobile-play-preflight.json
+          if-no-files-found: error
+          retention-days: 30

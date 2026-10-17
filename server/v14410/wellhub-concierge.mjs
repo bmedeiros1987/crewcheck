@@ -1,4 +1,5 @@
 import { detectWellhubActivityFromText, detectWellhubPlanFromText } from '../v14407/wellhub.mjs';
+import { wellhubLocationMatches } from '../../shared/wellhub-location.mjs';
 
 function normalize(value = '') {
   return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -141,15 +142,6 @@ export function extractWellhubLocationHintFromText(text = '') {
   return { city, state: '' };
 }
 
-export function filterWellhubPartnersForLocation(partners = [], { city = '', state = '' } = {}) {
-  const cityKey = normalize(city);
-  const stateKey = normalize(state);
-  if (!cityKey && !stateKey) return [...partners];
-  return (partners || []).filter((partner) => {
-    const partnerCity = normalize(partner?.city);
-    const partnerState = normalize(partner?.state);
-    if (cityKey && stateKey) return partnerCity === cityKey && partnerState === stateKey;
-    if (cityKey) return partnerCity === cityKey;
-    return partnerState === stateKey;
-  });
+export function filterWellhubPartnersForLocation(partners = [], location = {}) {
+  return partners.filter(partner => wellhubLocationMatches(partner, location));
 }

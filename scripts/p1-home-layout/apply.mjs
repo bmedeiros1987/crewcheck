@@ -5,6 +5,8 @@ if (!fs.existsSync(path)) throw new Error(`[p1-home-layout] arquivo ausente: ${p
 let source = fs.readFileSync(path, 'utf8');
 if (!source.includes("from '@/components/v1391/HomeRosterPreview'")) source = "import { HomeRosterPreview } from '@/components/v1391/HomeRosterPreview';\n" + source;
 
+if (!source.includes("from '@/components/finance/HomeFinancialCard'")) source = "import HomeFinancialCard from '@/components/finance/HomeFinancialCard';\n" + source;
+
 const importLine = "import { HomeLayoutShell, type HomeLayoutSlot } from '@/components/v1391/HomeLayoutShell';";
 if (!source.includes(importLine)) {
   const typeAnchor = '\ntype ZeroView =';
@@ -26,7 +28,7 @@ if (!source.includes('function PersonalizedCockpit(')) {
     + '</>} />;'
     + cockpit.slice(returnEnd + '</>;'.length);
   const wrapperProps = 'events={events} compliance={compliance} setView={setView} onUpload={onUpload} openMenu={openMenu} contextOnly';
-  wrappedCockpit = wrappedCockpit.replace(/return (<VacationModeCardV14738[^;]+);/, (_, card) => 'return <PersonalizedCockpit ' + wrapperProps + ' canonicalContent={' + card + '}/>;');
+  wrappedCockpit = wrappedCockpit.replace(/return (<VacationModeCardV14738[^;]+);/, (_, card) => 'return <PersonalizedCockpit ' + wrapperProps + ' canonicalContent={<>' + card + '<HomeFinancialCard onNavigate={setView}/></>}/>;');
   const emptyStart = wrappedCockpit.indexOf('return <>');
   if (emptyStart >= 0) {
     const emptyEnd = wrappedCockpit.indexOf('</>;', emptyStart);
@@ -39,22 +41,19 @@ if (!source.includes('function PersonalizedCockpit(')) {
   const event = nextFlight(events);
   const loaded = events.some((event) => !event.placeholder);
   const alertCount = actionableComplianceAlerts(compliance).length;
-  const dutyLimit = event.kind === 'flight' && !event.placeholder ? getPublishedDutyLimitSummary(event.day, compliance?.legalProfile) : null;
+  const dutyMeasurement = !event.placeholder && event.canonical ? measureCanonicalDuty(events.flatMap(item => item.canonical ? [item.canonical] : []), event.canonical.id) : null;
   const slots: HomeLayoutSlot[] = [
     {
       id: 'summary',
       label: 'Resumo operacional',
       description: 'Alertas operacionais e acesso ao painel completo.',
-      content: <button className="cz-mini-status" onClick={() => setView('alerts')}><Bell/><strong>Alertas operacionais</strong><span>{alertCount ? alertCount + ' confirmado(s)' : 'Nenhum alerta confirmado'}</span><ChevronRight/></button>,
+      content: <button className="cz-mini-status cc-operational-alert-link" onClick={() => setView('alerts')}><Bell/><strong>Alertas operacionais</strong><span>{alertCount ? alertCount + ' confirmado(s)' : 'Nenhum alerta confirmado'}</span><ChevronRight/></button>,
     },
     {
       id: 'finance',
       label: 'Atalhos financeiros',
       description: 'Diárias e salário no motor financeiro único.',
-      content: <section className="cz-money-row">
-        <div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>Abrir</strong></div>
-        <div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>Financeiro</strong></div>
-      </section>,
+      content: contextOnly ? null : <HomeFinancialCard onNavigate={setView}/>,
     },
     {
       id: 'next',
@@ -71,8 +70,8 @@ if (!source.includes('function PersonalizedCockpit(')) {
       id: 'limits',
       label: 'Alertas e limites',
       description: 'Alertas operacionais não podem ser ocultados.',
-      content: !contextOnly && dutyLimit
-        ? <button className="cz-mini-status" onClick={() => setView('regulation')}><ShieldCheck/><strong>Limite desta jornada</strong><span>{dutyLimit.usedHours.toFixed(1).replace('.', ',')} h de {dutyLimit.maxDutyHours.toFixed(1).replace('.', ',')} h · margem {Math.max(0, dutyLimit.remainingHours).toFixed(1).replace('.', ',')} h</span><ChevronRight/></button>
+      content: !contextOnly && loaded && !event.placeholder
+        ? <CanonicalDutyCard measurement={dutyMeasurement} onOpen={() => openCanonicalDutyDetails(event.canonical, setView)}/>
         : null,
     },
     {
@@ -96,7 +95,7 @@ if (!source.includes('function HomeFavoriteShortcuts(')) {
   const menuEnd = source.indexOf('\nfunction ', menuStart + 1);
   const canonicalMenu = source.slice(menuStart, menuEnd);
   const entries = [...canonicalMenu.matchAll(/\['([^']+)','([^']+)','([^']+)',([A-Za-z0-9_]+)\]/g)];
-  if (entries.length !== 40) throw new Error('[p1-home-layout] catálogo canônico incompleto');
+  if (entries.length !== 41 || new Set(entries.map(entry=>entry[1])).size !== 41 || !entries.some(entry=>entry[1]==='notifications')) throw new Error('[p1-home-layout] catálogo canônico incompleto');
   const tuples = entries.map((entry) => `['${entry[1]}','${entry[2]}',${entry[4]}]`).join(',\n');
   const shortcutBlock = `function HomeFavoriteShortcuts({ setView, openMenu }: { setView: (v: ZeroView) => void; openMenu: () => void }) {
     const accountId = getStoredUser()?.id || null;

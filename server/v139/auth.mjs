@@ -1,3 +1,4 @@
+import { verifiedStayLease } from '../../shared/stay-alarm-lease-policy.mjs';
 import crypto from 'node:crypto';
 import {
   authSecret,
@@ -380,6 +381,7 @@ async function me(req, res, db) {
     return sendJson(res, 200, {
       ok: true,
       authenticated: true,
+      stayAlarmLease: verifiedStayLease({ exp: payload.exp }),
       user: await enrichCrewFunction(db, email, await userFromAccount(db, email, Boolean(accounts[0]?.must_change_password))),
     });
   } catch (error) {

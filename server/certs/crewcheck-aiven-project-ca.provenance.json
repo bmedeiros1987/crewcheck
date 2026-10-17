@@ -1,0 +1,17 @@
+{
+  "asset_kind": "public project CA certificate; no private key or credential",
+  "project": "vitoriaregia1",
+  "service": "mysql-1c3b1be8",
+  "endpoint": "mysql-1c3b1be8-vitoriaregia1.a.aivencloud.com:22966",
+  "capture_at_utc": "2026-10-12T21:25:14Z",
+  "original_certificate_library_id": "libfile_d8cc9fd5c08c8191943046e207f9a47f",
+  "original_provenance_library_id": "libfile_40c592ee837081918b361d6cc1ff8891",
+  "delivery_to_this_workspace": "Exact public bytes supplied in parent task message after technical Library transfer failures; not materialized via Library",
+  "pem_byte_count": 1541,
+  "pem_sha256": "188afc99d79b9c310157993fc6a9b19946cee2dab08f4c60ad7ac5dbd00cbc38",
+  "der_sha256": "6557c74f72b8d8216afa68df498ceb17c582544806c06f1630d470160d26a6be",
+  "later_tls_only_evidence_library_id": "libfile_55cdcaabbc048191ac92545646435b8d",
+  "later_authenticated_metadata_evidence_library_id": "libfile_46ffd4264fac81919a9abec0f466d077",
+  "chronology": "Capture provenance reported binding not yet compared. Later operator probes separately verified Render binding, CA and hostname; they did not occur during capture.",
+  "rotation": "Any endpoint or CA change requires a separately verified asset/pin update and review; missing, changed or expired trust fails closed. Do not deploy without this public asset."
+}

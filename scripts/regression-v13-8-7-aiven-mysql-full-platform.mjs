@@ -13,7 +13,11 @@ const forbiddenSql = /\b(?:JSONB|TIMESTAMPTZ|to_regclass|string_to_array|current
 const forbiddenProvider = /POSTGRES_URL|PGSSLMODE|SUPABASE_DB_URL|await\s+import\(['"]pg['"]\)/i;
 
 assert.match(platform, /mysql2\/promise/);
-assert.match(platform, /function mysqlStatement/);
+const mysqlAdapterSource=read('server/mysql-platform-adapter.mjs');
+assert.match(platform, /import.*mysqlAdapter.*mysql-platform-adapter/);
+assert.match(mysqlAdapterSource, /function mysqlStatement/);
+assert.doesNotMatch(mysqlAdapterSource, forbiddenSql);
+assert.doesNotMatch(mysqlAdapterSource, forbiddenProvider);
 assert.match(platform, /table_schema=DATABASE\(\)/i);
 assert.match(platform, /ON DUPLICATE KEY UPDATE/);
 assert.match(platform, /INSERT IGNORE/);

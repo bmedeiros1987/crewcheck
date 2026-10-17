@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { prepareFreeDayTelegramJob } from '../shared/freeDayTelegramPreparation.mjs';
+const alert={date:'2026-08-12',delayMinutes:404,sequenceId:'2026-08-12',beforeVersion:'old',afterVersion:'new',beforeSource:'PRIVATE FILE',crewId:'PRIVATE ID'};
+const context={owner:'synthetic',consent:true,linkVerified:true,configurationVerified:true};
+const job=prepareFreeDayTelegramJob(alert,context);assert.equal(job.enabled,false);assert.deepEqual(job,prepareFreeDayTelegramJob(alert,context));
+assert.notEqual(job.jobKey,prepareFreeDayTelegramJob(alert,{...context,owner:'other'}).jobKey);
+assert.notEqual(job.jobKey,prepareFreeDayTelegramJob({...alert,afterVersion:'correction'},context).jobKey);
+assert.doesNotMatch(JSON.stringify(job),/PRIVATE|synthetic/);
+for(const key of ['consent','linkVerified','configurationVerified'])assert.equal(prepareFreeDayTelegramJob(alert,{...context,[key]:false}),null);
+console.log('PASS Telegram preparation disabled, minimal data, consent/link/config gates and owner/version idempotency');

@@ -57,10 +57,10 @@ const geocodes = [];
 const handlerStart = home.indexOf('  async function refreshLocation() {', home.indexOf('function GoogleMapsRoutePreview('));
 const handlerEnd = home.indexOf('  const mapsUrl =', handlerStart);
 assert.ok(handlerStart >= 0 && handlerEnd > handlerStart);
-const refreshLocation = new Function('getCurrentGeoPosition', 'coordsLabel', 'setOrigin', 'setLocationRevision', 'setOriginLabel', 'onOriginLabel', 'reverseGeocodePosition', 'toast', transpile(home.slice(handlerStart, handlerEnd)) + ';return refreshLocation;')(
+const refreshLocation = new Function('getCurrentGeoPosition', 'coordsLabel', 'setOrigin', 'setLocationRevision', 'setOriginLabel', 'onOriginLabel', 'reverseGeocodePosition', 'toast', 'locationRequestRef', 'storage', transpile(home.slice(handlerStart, handlerEnd)) + ';return refreshLocation;')(
   async () => ({ lat: 1, lng: 2 }), () => 'GPS-new-origin',
   value => { currentOrigin = value; }, update => { currentRevision = update(currentRevision); },
-  () => {}, null, () => new Promise(resolve => geocodes.push(resolve)), { success() {}, error(error) { throw Error(error); } },
+  () => {}, null, () => new Promise(resolve => geocodes.push(resolve)), { success() {}, error(error) { throw Error(error); } }, {current:0}, {set() {}},
 );
 render(currentOrigin, currentRevision);
 const beforeGps = requests.length;

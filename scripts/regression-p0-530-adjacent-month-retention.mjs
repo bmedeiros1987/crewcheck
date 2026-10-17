@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build } from 'vite';
+import ts from 'typescript';
 
 const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-530-adjacent-month-'));
 
@@ -131,7 +132,7 @@ try {
 
   globalThis.localStorage = new MemoryStorage();
   globalThis.sessionStorage = new MemoryStorage();
-  globalThis.window = { location: { origin: 'https://crewcheck.test' }, dispatchEvent() {} };
+  globalThis.window = Object.assign(new EventTarget(), { location: { origin: 'https://crewcheck.test' } });
   localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'bruno-e2e', email: 'bruno@example.test' }));
 
   const moduleUrl = `${pathToFileURL(path.join(outDir, 'database-client.mjs')).href}?v=${Date.now()}`;
@@ -183,7 +184,44 @@ try {
   // do bundle ativo; apenas a Escala usa rosterEvents derivados da janela visual.
   const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
   assert.match(home, /openRosterDisplayWindow/);
-  assert.match(home, /const rosterEvents = useMemo\(\(\) => buildLegs\(rosterWindow\)/);
+  // Execute the actual prepared initializer. Its spelling changed when startup
+  // began rejecting a display window belonging to an older primary roster.
+  // The database cases above verify the retained days; here buildLegs records
+  // which roster Home actually supplies, without duplicating its selection rule.
+  const ast = ts.createSourceFile('Home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const initializers = [];
+  function findRosterEvents(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'rosterEvents' && node.initializer)
+      initializers.push(node.initializer.getText(ast));
+    ts.forEachChild(node, findRosterEvents);
+  }
+  findRosterEvents(ast);
+  assert.equal(initializers.length, 1, 'Home must expose one actual rosterEvents initializer');
+  function verifyDisplaySelection(initializer) {
+    const select = new Function('useMemo', 'buildLegs', 'rosterWindowPrimaryRef', 'bundle', 'rosterWindow', `return (${initializer});`);
+    const primary = { id: 'current', days: ['current-publication'] };
+    const previous = { id: 'previous', days: ['previous-publication'] };
+    const display = { id: 'display', days: ['adjacent-history', 'current-publication'] };
+    for (const [name, boundPrimary, windowRoster, expected] of [
+      ['matching publication retains adjacent history', primary, display, display],
+      ['old publication window fails closed during replacement', previous, display, primary],
+      ['same id is not proof of identical publication', { ...primary }, display, primary],
+      ['initial window is the active publication', primary, primary, primary],
+    ]) {
+      let calls = 0, dependencies;
+      const result = select((read, deps) => { dependencies = deps; return read(); }, (roster) => { calls += 1; return roster; }, { current: boundPrimary }, { roster: primary }, windowRoster);
+      assert.strictEqual(result, expected, name);
+      assert.equal(calls, 1, `${name}: use actual buildLegs input once`);
+      assert.ok(dependencies.includes(primary), `${name}: active publication changes must invalidate the memo`);
+      assert.ok(dependencies.includes(windowRoster), `${name}: retained history changes must invalidate the memo`);
+    }
+  }
+  verifyDisplaySelection(initializers[0]);
+  // Contraproofs must fail: neither always using history nor always using the
+  // active roster satisfies both continuity and publication isolation.
+  assert.throws(() => verifyDisplaySelection('useMemo(() => buildLegs(rosterWindow), [rosterWindow, bundle.roster])'), assert.AssertionError);
+  assert.throws(() => verifyDisplaySelection('useMemo(() => buildLegs(bundle.roster), [rosterWindow, bundle.roster])'), assert.AssertionError);
+  assert.throws(() => verifyDisplaySelection('useMemo(() => buildLegs(rosterWindowPrimaryRef.current?.id === bundle.roster.id ? rosterWindow : bundle.roster), [rosterWindow, bundle.roster])'), assert.AssertionError);
   assert.match(home, /view === 'cockpit'[\s\S]{0,900}events=\{events\}/, 'Cockpit deve continuar preso ao roster operacional ativo');
   assert.match(home, /view === 'roster'[\s\S]{0,900}events=\{rosterEvents\}/, 'Escala deve usar a janela visual multi-competência');
   assert.match(home, /finance=\{financeSnapshot\(bundle\.roster\)\}/, 'finanças devem continuar usando só a competência operacional ativa');

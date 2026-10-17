@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import { loadClientModules } from './lib/ts-module-harness.mjs';
+const m=loadClientModules({files:['client/src/lib/salaryCalculationDiagnostic.ts','client/src/lib/financialStatementLearning.ts'],prefix:'synthetic-salary-diagnostic-'});
+const { salaryCalculationDiagnostic:check }=m.load('salaryCalculationDiagnostic');
+const learning=m.load('financialStatementLearning');
+const values=new Map();globalThis.localStorage={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,String(v)),removeItem:k=>values.delete(k)};globalThis.window=new EventTarget();
+localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-diagnostic-a',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-token');
+const source={currency:'BRL',sourceDocument:'synthetic.pdf',sourceFingerprint:'synthetic-diagnostic-only',confidence:'high',valueOrigin:'printed',confirmed:true,effectiveFrom:'2032-03-01',effectiveTo:'2032-03-31'};
+assert.equal(learning.saveConfirmedFinancialRates(learning.applyReviewedPayrollCycle({kind:'payroll',competence:'2032-03',rates:[{...source,key:'salary.base',label:'Synthetic base',unit:'month',value:2400},{...source,key:'salary.dayKm',label:'Synthetic variable',unit:'km',value:.07}],totals:{},warnings:[]})),true);
+assert.equal(learning.confirmedRateValueAt('salary.base','2032-02-01'),null);assert.equal(learning.confirmedRateValueAt('salary.base','2032-03-01'),2400);
+const range={kind:'month',start:'2032-02-01',end:'2032-02-29',valid:true};
+const item={month:'2032-02',days:2,configured:true,baseConfigured:false,requiresManualFunction:false,variable:123,variableComplete:true,fixedMonth:learning.reviewedPayrollCycleForOperationalMonth('2032-02').fixedMonth};
+const a=check([item],range,[]);assert.equal(a.ready,false);assert.equal(a.variable,123);assert.match(a.reasons.join(' '),/fixos à folha 2032-03/);assert.equal(learning.confirmedRateValueAt('salary.base','2032-02-01'),null,'diagnostic never moves fixed pay');
+assert.equal(check([{...item,baseConfigured:true}],range,[]).ready,true);
+for(const patch of [{days:0},{configured:false},{requiresManualFunction:true},{variable:NaN},{variableComplete:false}]){const result=check([{...item,...patch}],range,[]);assert.equal(result.ready,false);assert.equal(result.variable,null);}
+assert.equal(check([item],range,['2032-01']).variable,null);assert.match(check([],range,[]).reasons.join(' '),/Nenhuma escala/);
+assert.equal(check([item],{...range,kind:'week',end:'2032-02-07'},[]).variable,null);assert.equal(check([item],{...range,valid:false},[]).variable,null);
+assert.equal(check([{...item,baseConfigured:true,variable:0}],range,[]).variable,0,'known zero is distinct from unavailable');
+localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-diagnostic-b',role:'user'}));assert.equal(learning.readConfirmedFinancialRates().length,0);
+console.log('PASS: operational/fixed-month separation, actionable prerequisites, variables without duplicated base, unavailable!=zero, invalid/range/role/owner');

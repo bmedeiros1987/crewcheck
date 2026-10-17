@@ -21,8 +21,8 @@ if (!source.includes(cssImport)) {
 
 const confirmationBlock = `function requestCrewCheckImportConfirmation(decision: ImportGuardianDecision): Promise<boolean> {
   if (typeof document === 'undefined') return Promise.resolve(false);
+  if (document.querySelector('[data-crewcheck-import-confirm="true"]')) return Promise.resolve(false);
   return new Promise((resolve) => {
-    document.querySelector('[data-crewcheck-import-confirm="true"]')?.remove();
 
     const overlay = document.createElement('div');
     overlay.className = 'cc-import-confirm-overlay';
@@ -67,20 +67,25 @@ const confirmationBlock = `function requestCrewCheckImportConfirmation(decision:
     dialog.append(header, summary, note, actions);
     overlay.append(dialog);
 
-    const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement;
+    let releaseOverlay = () => {};
     let settled = false;
     const finish = (accepted: boolean) => {
       if (settled) return;
       settled = true;
       document.removeEventListener('keydown', onKeyDown);
       overlay.remove();
-      document.body.style.overflow = previousOverflow;
+      releaseOverlay();
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
       resolve(accepted);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
         finish(false);
+      } else if (event.key === 'Tab') {
+        event.preventDefault();
+        (document.activeElement === cancel ? activate : cancel).focus();
       }
     };
 
@@ -88,7 +93,7 @@ const confirmationBlock = `function requestCrewCheckImportConfirmation(decision:
     activate.addEventListener('click', () => finish(true));
     overlay.addEventListener('click', (event) => { if (event.target === overlay) finish(false); });
     document.addEventListener('keydown', onKeyDown);
-    document.body.style.overflow = 'hidden';
+    releaseOverlay = acquireOverlayLifecycle(() => finish(false));
     document.body.append(overlay);
     queueMicrotask(() => activate.focus());
   });
@@ -125,7 +130,9 @@ source = source.replace(
 );
 
 const pdfStart = '      const decision = confirmRosterImport(roster, file.name);';
-const pdfEnd = '      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster);';
+const pdfEnd = source.includes('preservePlannedRosterBeforeImport(bundle, roster, plannedImport.session)')
+  ? '      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster, plannedImport.session);'
+  : '      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster);';
 if (source.includes(pdfStart)) {
   const pdfReplacement = `      const decision = await confirmRosterImport(roster, file.name);
       let auditImport = false;
@@ -138,7 +145,9 @@ if (source.includes(pdfStart)) {
         toast.message('Importação cancelada. Sua escala ativa foi preservada.');
         return;
       }`;
-  source = replaceBlock(source, pdfStart, pdfEnd, pdfReplacement, 'consentimento PDF');
+  const guardedPdfReplacement = source.includes('const plannedImport = beginOwnedPlannedImport();')
+    ? pdfReplacement + '\n      if (!plannedImport.canCommit()) return;' : pdfReplacement;
+  source = replaceBlock(source, pdfStart, pdfEnd, guardedPdfReplacement, 'consentimento PDF');
 }
 
 for (const required of [

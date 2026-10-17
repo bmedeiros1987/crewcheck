@@ -1,0 +1,19 @@
+# Notification center and default BIDS window review
+
+Base: main `f5a6ec950bb785ea626c1a894b498000f904707e` (merged PR996).
+
+Menu → Notificações is the account preference editor. BIDS has a status and shortcut; the contextual wake-up screen has a shortcut and its existing operational actions. The former BIDS endpoint remains compatible and shares the exact same persisted state key with `/api/platform/notifications/preferences`. Existing All/individual, Auto/Manual, time, quiet interval and revision remain intact. Old clients omitting the optional settings preserve imported settings under the account lock.
+
+Legacy device settings have no provable account owner. They are retained in local storage and offered for explicit review/import, then saved to the current account with owner and revision checks. They are never silently assigned to a login. Until import, readers use their safe fallback rather than another account's legacy values. Device permission and sound remain device settings. The financial instructor setting remains unchanged and is not used as BIDS profile evidence.
+
+Functional profile confirmation is account-bound, revisable and tri-state: route instructor, other instructor, non-instructor. Missing confirmation stays unknown. Account confirmation is not airline verification or notification eligibility proof. GET is observational. POST locks the canonical owner and uses compare-and-swap; stale identity and competing revisions fail. Account deletion removes this namespace.
+
+The default-window resolver requires a current independently verified policy, version, source URL/hash/publication date, bounded validity, timezone, exact requested competence and exact airline/role/instructor audience entry. Explicit zoned instants must be valid. It does not extrapolate a yearless table or create annual dates. `CURRENT_BIDS_WINDOW_POLICY` remains null because no current authoritative source was established. The historical table originated with `fc4ab4ff` and documentation repeated it without establishing year, source or timezone. It remains a collapsed historical reference. Manual windows remain manual; saving one does not validate an official calendar, schedule or prove delivery.
+
+Readiness is separate from saving: preference, server channel configuration, device permission, scheduling and delivery. The closed-app OFF phrase is shown only from server `enabled=false`; synthetic fixtures prove rendering, not production configuration. Production OFF was not verified using an authorized session. No environment changes, keys, subscription grants, real deliveries or paid calls were made. Saving and profile confirmation never invoke transports.
+
+The private feedback JPEG could not be materialized through the supported Library helper after a fresh-link retry (`download failed`). No bypass or alternate executor path was used; its bytes were not inspected, committed or packaged. Parent-reported observations informed the layout check, which uses a synthetic 320×740 viewport and fixed 96px footer.
+
+Review limits: this change prepares the safe resolver but cannot supply the real default dates without an authoritative current calendar and audience coverage. Closed-app delivery and production OFF remain separate owner-verifiable checks. Auto scheduling from verified roster commitments is outside this change. No Cirium, Watch or Calendar integration is added.
+
+Regression coverage adds synthetic policy/audience/date failures, actual handler owner/revision checks, alias persistence and legacy-client preservation, real disposable MySQL concurrent confirmations and deletion, account-switch UI isolation, explicit legacy import without erasure, fixed-menu clearance, and existing BIDS/leave/preference checks. All HTTP browser fixtures are local and forbid unexpected endpoints.

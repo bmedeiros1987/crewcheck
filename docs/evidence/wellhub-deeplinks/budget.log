@@ -1,0 +1,26 @@
+Readable Wellhub blocks, conditions, dates, special characters and synthetic payload: PASS
+[crewcheck:whatsapp:send] {"status":"accepted","graphVersion":"synthetic","messageIdReceived":false}
+DF Treino de força, budget 3900: 3573 UTF-16 units, 6 complete gym blocks
+[crewcheck:whatsapp:send] {"status":"accepted","graphVersion":"synthetic","messageIdReceived":false}
+DF Treino de força, budget 4000: 3573 UTF-16 units, 6 complete gym blocks
+[crewcheck:whatsapp:send] {"status":"accepted","graphVersion":"synthetic","messageIdReceived":false}
+DF Treino de força, budget 1500: 1233 UTF-16 units, 1 complete gym blocks
+[crewcheck:whatsapp:send] {"status":"accepted","graphVersion":"synthetic","messageIdReceived":false}
+DF Treino de força, budget 1000: 587 UTF-16 units, 0 complete gym blocks
+[crewcheck:whatsapp:send] {"status":"accepted","graphVersion":"synthetic","messageIdReceived":false}
+DF Treino de força, budget 800: 587 UTF-16 units, 0 complete gym blocks
+[crewcheck:whatsapp:send] {"status":"accepted","graphVersion":"synthetic","messageIdReceived":false}
+DF Treino de força, budget 600: 587 UTF-16 units, 0 complete gym blocks
+[crewcheck:whatsapp:send] {"status":"accepted","graphVersion":"synthetic","messageIdReceived":false}
+DF Cycle, budget 3900: 3553 UTF-16 units, 6 complete gym blocks
+[crewcheck:whatsapp:send] {"status":"accepted","graphVersion":"synthetic","messageIdReceived":false}
+DF Cycle, budget 4000: 3553 UTF-16 units, 6 complete gym blocks
+[crewcheck:whatsapp:send] {"status":"accepted","graphVersion":"synthetic","messageIdReceived":false}
+DF Cycle, budget 1500: 1213 UTF-16 units, 1 complete gym blocks
+[crewcheck:whatsapp:send] {"status":"accepted","graphVersion":"synthetic","messageIdReceived":false}
+DF Cycle, budget 1000: 587 UTF-16 units, 0 complete gym blocks
+[crewcheck:whatsapp:send] {"status":"accepted","graphVersion":"synthetic","messageIdReceived":false}
+DF Cycle, budget 800: 587 UTF-16 units, 0 complete gym blocks
+[crewcheck:whatsapp:send] {"status":"accepted","graphVersion":"synthetic","messageIdReceived":false}
+DF Cycle, budget 600: 587 UTF-16 units, 0 complete gym blocks
+DF real catalogs, full blocks, footer reserved, UTF-16 budgets and all synthetic channel payloads: PASS

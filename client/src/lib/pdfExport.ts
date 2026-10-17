@@ -3,7 +3,7 @@ import autoTable from 'jspdf-autotable';
 import type { CrewRoster } from './pdfParser';
 import type { ComplianceResult, GymRecommendation } from './complianceEngine';
 import { isActionableComplianceAlert } from './complianceAlertSemantics';
-import { CREWCHECK_BRAND } from './brand';
+import { CREWCHECK_BRAND, crewCheckLogoDataUrl, addCrewCheckPdfLogo } from './brand';
 
 export type CrewCheckPdfExportResult = {
   fileName: string;
@@ -87,42 +87,15 @@ function drawTopAccent(doc: jsPDF, pageWidth: number) {
   doc.rect(segment * 2, 0, pageWidth - segment * 2, 2.4, 'F');
 }
 
-/**
- * Símbolo vetorial do CrewCheck para manter a identidade oficial também no PDF,
- * sem depender de internet, cache do navegador ou conversão externa de imagem.
- */
-function drawBrandIcon(doc: jsPDF, x: number, y: number, size: number) {
-  fill(doc, COLOR.magenta);
-  doc.roundedRect(x, y, size, size, size * 0.23, size * 0.23, 'F');
-
-  fill(doc, COLOR.violet);
-  doc.triangle(x, y, x + size * 0.72, y, x, y + size * 0.72, 'F');
-  fill(doc, COLOR.cyan);
-  doc.triangle(x + size, y + size, x + size * 0.38, y + size, x + size, y + size * 0.38, 'F');
-
-  stroke(doc, COLOR.white);
-  doc.setLineWidth(Math.max(0.9, size * 0.065));
-  doc.setLineCap('round');
-  doc.setLineJoin('round');
-  const points = [
-    [0.18, 0.46], [0.43, 0.49], [0.66, 0.27], [0.76, 0.23], [0.79, 0.27],
-    [0.58, 0.51], [0.61, 0.79], [0.55, 0.82], [0.43, 0.61], [0.33, 0.70],
-    [0.27, 0.79], [0.23, 0.76], [0.27, 0.65], [0.17, 0.60], [0.15, 0.56],
-    [0.18, 0.52], [0.29, 0.54], [0.16, 0.49], [0.15, 0.46], [0.18, 0.46],
-  ];
-  for (let index = 0; index < points.length - 1; index++) {
-    const from = points[index];
-    const to = points[index + 1];
-    doc.line(x + from[0] * size, y + from[1] * size, x + to[0] * size, y + to[1] * size);
-  }
-  doc.setLineWidth(0.2);
+function drawBrandIcon(doc: jsPDF, x: number, y: number, size: number, logo: string) {
+  addCrewCheckPdfLogo(doc, logo, x, y, size);
 }
 
-function drawMainHeader(doc: jsPDF, pageWidth: number, roster: CrewRoster, reportTitle: string) {
+function drawMainHeader(doc: jsPDF, pageWidth: number, roster: CrewRoster, reportTitle: string, logo: string) {
   fill(doc, COLOR.navy950);
   doc.rect(0, 0, pageWidth, 49, 'F');
   drawTopAccent(doc, pageWidth);
-  drawBrandIcon(doc, 14, 9, 25);
+  drawBrandIcon(doc, 14, 9, 25, logo);
 
   text(doc, COLOR.white);
   doc.setFont('helvetica', 'bold');
@@ -146,11 +119,11 @@ function drawMainHeader(doc: jsPDF, pageWidth: number, roster: CrewRoster, repor
   doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, pageWidth - 14, 42, { align: 'right' });
 }
 
-function drawContinuationHeader(doc: jsPDF, pageWidth: number, titleLabel: string) {
+function drawContinuationHeader(doc: jsPDF, pageWidth: number, titleLabel: string, logo: string) {
   fill(doc, COLOR.navy950);
   doc.rect(0, 0, pageWidth, 18, 'F');
   drawTopAccent(doc, pageWidth);
-  drawBrandIcon(doc, 14, 5, 9);
+  drawBrandIcon(doc, 14, 5, 9, logo);
   text(doc, COLOR.white);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10.5);
@@ -171,11 +144,11 @@ function sectionHeading(doc: jsPDF, y: number, titleLabel: string, accent: RGB =
   return y + 7;
 }
 
-function ensureSpace(doc: jsPDF, y: number, needed: number, pageWidth: number, continuationTitle: string): number {
+function ensureSpace(doc: jsPDF, y: number, needed: number, pageWidth: number, continuationTitle: string, logo: string): number {
   const pageHeight = doc.internal.pageSize.getHeight();
   if (y + needed <= pageHeight - 20) return y;
   doc.addPage();
-  drawContinuationHeader(doc, pageWidth, continuationTitle);
+  drawContinuationHeader(doc, pageWidth, continuationTitle, logo);
   return 27;
 }
 
@@ -247,7 +220,7 @@ function premiumTableDefaults(headColor: RGB) {
   };
 }
 
-function addDocumentFooter(doc: jsPDF, pageWidth: number) {
+function addDocumentFooter(doc: jsPDF, pageWidth: number, logo: string) {
   const totalPages = doc.getNumberOfPages();
   const pageHeight = doc.internal.pageSize.getHeight();
   for (let page = 1; page <= totalPages; page++) {
@@ -263,7 +236,7 @@ function addDocumentFooter(doc: jsPDF, pageWidth: number) {
     fill(doc, COLOR.cyan);
     doc.rect(46, pageHeight - 13.2, 16, 1.1, 'F');
 
-    drawBrandIcon(doc, 14, pageHeight - 11, 6);
+    drawBrandIcon(doc, 14, pageHeight - 11, 6, logo);
     text(doc, COLOR.muted);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
@@ -272,11 +245,12 @@ function addDocumentFooter(doc: jsPDF, pageWidth: number) {
   }
 }
 
-export function exportReport(
+export async function exportReport(
   roster: CrewRoster,
   compliance: ComplianceResult,
   gymRecommendations: GymRecommendation[],
-): CrewCheckPdfExportResult {
+): Promise<CrewCheckPdfExportResult> {
+  const logo = await crewCheckLogoDataUrl();
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
   const pageWidth = doc.internal.pageSize.getWidth();
 
@@ -284,7 +258,7 @@ export function exportReport(
   const irregularities = actionableAlerts.filter((alert) => alert.severity === 'error');
   const warnings = actionableAlerts.filter((alert) => alert.severity === 'warning');
 
-  drawMainHeader(doc, pageWidth, roster, 'Relatório Premium de Conformidade da Escala');
+  drawMainHeader(doc, pageWidth, roster, 'Relatório Premium de Conformidade da Escala', logo);
 
   let y = drawCrewCard(doc, pageWidth, 56, roster, compliance);
   const cardGap = 4;
@@ -311,7 +285,7 @@ export function exportReport(
   }
 
   if (warnings.length > 0) {
-    y = ensureSpace(doc, y, 42, pageWidth, 'Pontos de atenção');
+    y = ensureSpace(doc, y, 42, pageWidth, 'Pontos de atenção', logo);
     y = sectionHeading(doc, y, `Pontos de atenção (${warnings.length})`, COLOR.amber);
     autoTable(doc, {
       startY: y,
@@ -327,7 +301,7 @@ export function exportReport(
     y = (doc as any).lastAutoTable.finalY + 10;
   }
 
-  if (irregularities.length === 0 && warnings.length === 0) {
+  if (irregularities.length === 0 && warnings.length === 0 && !compliance.metrics.flightHoursOriginPending) {
     fill(doc, COLOR.cyanSoft);
     stroke(doc, COLOR.cyan);
     doc.roundedRect(14, y, pageWidth - 28, 18, 4, 4, 'FD');
@@ -338,11 +312,11 @@ export function exportReport(
     y += 27;
   }
 
-  y = ensureSpace(doc, y, 64, pageWidth, 'Métricas regulatórias');
+  y = ensureSpace(doc, y, 64, pageWidth, 'Métricas regulatórias', logo);
   y = sectionHeading(doc, y, 'Métricas regulatórias', COLOR.violet);
   const metricsData = [
-    ['Horas de voo', `${compliance.metrics.totalFlightHours.toFixed(0)}h`, `${compliance.legalProfile.flightLimit28Days}h/28d`, compliance.legalProfile.actName],
-    ['Horas de trabalho', `${compliance.metrics.totalDutyHours.toFixed(0)}h`, '176h (máx.)', 'Art. 41 - Lei 13.475'],
+    ['Horas de voo', compliance.metrics.totalFlightHours === null ? 'Reimporte a origem' : `${compliance.metrics.totalFlightHours.toFixed(0)}h`, `${compliance.legalProfile.flightLimit28Days}h/28d`, compliance.legalProfile.actName],
+    ['Horas de trabalho', compliance.metrics.totalDutyHours === null ? 'Dados pendentes' : `${compliance.metrics.totalDutyHours.toFixed(0)}h`, '176h (máx.)', 'Art. 41 - Lei 13.475'],
     ['Folgas no mês', `${compliance.metrics.totalDaysOff} dias`, `${compliance.metrics.minDaysOffRequired} parâmetro / 9 atenção`, compliance.legalProfile.actName],
     ['Sobreavisos', `${compliance.metrics.totalStandby}`, `${compliance.metrics.maxStandbyMonth} máx.`, compliance.legalProfile.actName],
     ['Operações na madrugada', `${compliance.metrics.nightOperations}`, `${compliance.metrics.maxNightOps168h} por 168h`, compliance.legalProfile.actName],
@@ -357,7 +331,7 @@ export function exportReport(
   });
 
   doc.addPage();
-  drawContinuationHeader(doc, pageWidth, 'Timeline da escala');
+  drawContinuationHeader(doc, pageWidth, 'Timeline da escala', logo);
   y = sectionHeading(doc, 28, 'Timeline da escala', COLOR.magenta);
   const timelineData = roster.days.map((day) => {
     let details = '';
@@ -395,7 +369,7 @@ export function exportReport(
   });
 
   doc.addPage();
-  drawContinuationHeader(doc, pageWidth, 'Planejamento de bem-estar');
+  drawContinuationHeader(doc, pageWidth, 'Planejamento de bem-estar', logo);
   y = sectionHeading(doc, 28, 'Planejamento de academia e bem-estar', COLOR.cyan);
   if (gymRecommendations.length) {
     const gymData = gymRecommendations.map((recommendation) => {
@@ -446,7 +420,7 @@ export function exportReport(
     doc.text('Nenhuma janela de academia foi calculada para este período.', 22, y + 13);
   }
 
-  addDocumentFooter(doc, pageWidth);
+  addDocumentFooter(doc, pageWidth, logo);
 
   const safeName = String(roster.crewName || 'Tripulante').split(' ')[0].replace(/[^A-Za-z0-9_-]/g, '') || 'Tripulante';
   const fileName = `CrewCheck_${MONTHS[roster.month - 1]}_${roster.year}_${safeName}.pdf`;

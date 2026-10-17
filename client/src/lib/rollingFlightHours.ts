@@ -1,3 +1,5 @@
+export const ROLLING_FLIGHT_HOURS_KERNEL_VERSION = 'operated-extra-v3';
+
 export type FlightHoursObservation = {
   /** Civil operational date in CrewCheck's canonical DD/MM/YYYY representation. */
   date: string;
@@ -6,7 +8,6 @@ export type FlightHoursObservation = {
 };
 
 const DAY_MS = 86_400_000;
-const ROLLING_28_DAYS_MS = 28 * DAY_MS;
 
 function round1(value: number): number {
   return Math.round((value + Number.EPSILON) * 10) / 10;
@@ -72,7 +73,7 @@ export function sumFlightHoursForCompetence(
  * deliberadamente elegível. Datas inválidas e horas não positivas não viram
  * evidência regulatória.
  */
-export function maxFlightHoursRolling28Days(observations: FlightHoursObservation[]): number {
+function maxFlightHoursRollingWindow(observations: FlightHoursObservation[], windowDays: number): number {
   const byDay = new Map<number, number>();
   for (const observation of observations) {
     const epoch = crewDateUtcEpoch(observation.date);
@@ -89,7 +90,7 @@ export function maxFlightHoursRolling28Days(observations: FlightHoursObservation
   for (let right = 0; right < days.length; right += 1) {
     const [rightEpoch, rightHours] = days[right];
     sum += rightHours;
-    while (left <= right && rightEpoch - days[left][0] >= ROLLING_28_DAYS_MS) {
+    while (left <= right && rightEpoch - days[left][0] >= windowDays * DAY_MS) {
       sum -= days[left][1];
       left += 1;
     }
@@ -99,20 +100,29 @@ export function maxFlightHoursRolling28Days(observations: FlightHoursObservation
   return round1(best);
 }
 
+export function maxFlightHoursRolling28Days(observations: FlightHoursObservation[]): number {
+  return maxFlightHoursRollingWindow(observations, 28);
+}
+
+export function maxFlightHoursRolling365Days(observations: FlightHoursObservation[]): number {
+  return maxFlightHoursRollingWindow(observations, 365);
+}
+
 /** Assess trailing windows ending in the active publication, through its last
  * observed day. Missing calendar dates are unknown, never inferred zero hours.
  * Explicit zero-hour days provide coverage; duplicate entries only add hours.
  * The observed maximum is a lower bound when coverage is incomplete.
  */
-export function assessFlightHoursRolling28Days(
+function assessFlightHoursRollingWindow(
   observations: FlightHoursObservation[],
   month: number,
   year: number,
+  windowDays: number,
 ): { maxHours: number; complete: boolean; missingDates: string[] } {
   if (!competenceKey(month, year)) return { maxHours: 0, complete: false, missingDates: [] };
   const start = Date.UTC(year, month - 1, 1);
   const end = Date.UTC(year, month, 1);
-  const firstRequired = start - 27 * DAY_MS;
+  const firstRequired = start - (windowDays - 1) * DAY_MS;
   const byDay = new Map<number, number>();
   let lastActive: number | null = null;
   for (const observation of observations) {
@@ -136,8 +146,16 @@ export function assessFlightHoursRolling28Days(
       missingDates.push(new Date(epoch).toISOString().slice(0, 10));
     }
     sum += byDay.get(epoch) || 0;
-    sum -= byDay.get(epoch - ROLLING_28_DAYS_MS) || 0;
+    sum -= byDay.get(epoch - windowDays * DAY_MS) || 0;
     if (epoch >= start) best = Math.max(best, sum);
   }
   return { maxHours: round1(best), complete, missingDates };
+}
+
+export function assessFlightHoursRolling28Days(observations: FlightHoursObservation[], month: number, year: number) {
+  return assessFlightHoursRollingWindow(observations, month, year, 28);
+}
+
+export function assessFlightHoursRolling365Days(observations: FlightHoursObservation[], month: number, year: number) {
+  return assessFlightHoursRollingWindow(observations, month, year, 365);
 }

@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Check, ChevronDown, ChevronUp, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
 import { getStoredUser } from '@/lib/authClient';
@@ -128,6 +129,8 @@ export function HomeLayoutShell({ slots, standardContent, shortcuts, quickRoster
     setStatus('Padrão CrewCheck restaurado.');
   }
 
+  const editorHeading = <header className="cc-home-editor-fixed-heading"><div><small>PRÉVIA E PREFERÊNCIAS</small><h2 id="cc-home-layout-editor-title">Como você quer começar?</h2></div>{!editorOnly && <button type="button" className="icon" onClick={cancel} aria-label="Cancelar personalização"><X/></button>}</header>;
+  const headingHost = editorOnly ? document.getElementById('cc-menu-fixed-heading') : null;
   return <section className="cc-home-layout" data-home-mode={preference.mode} data-home-preview={editing ? 'true' : 'false'}>
     <header className="cc-home-layout-heading">
       <div><small>INÍCIO</small><strong>{modeCopy[preference.mode].label}</strong><span>{modeCopy[preference.mode].detail}</span></div>
@@ -135,7 +138,7 @@ export function HomeLayoutShell({ slots, standardContent, shortcuts, quickRoster
     </header>
 
     {editing && <section className="cc-home-layout-editor" aria-labelledby="cc-home-layout-editor-title">
-      <header><div><small>PRÉVIA E PREFERÊNCIAS</small><h2 id="cc-home-layout-editor-title">Como você quer começar?</h2></div>{!editorOnly && <button type="button" className="icon" onClick={cancel} aria-label="Cancelar personalização"><X/></button>}</header>
+      {headingHost ? createPortal(editorHeading, headingHost) : editorHeading}
       <div className="cc-home-mode-options" role="radiogroup" aria-label="Modo da tela inicial">
         {(Object.keys(modeCopy) as HomeMode[]).map((mode) => <button key={mode} type="button" role="radio" ref={(element) => { if (element) radioRefs.current[mode] = element; }} tabIndex={draft.mode === mode ? 0 : -1} onKeyDown={(event) => selectWithKeyboard(event, mode)} aria-checked={draft.mode === mode} data-active={draft.mode === mode ? 'true' : 'false'} onClick={() => setDraft((current) => ({ ...current, mode }))}>
           <span>{draft.mode === mode && <Check aria-hidden="true"/>}</span><b>{modeCopy[mode].label}</b><small>{modeCopy[mode].detail}</small>

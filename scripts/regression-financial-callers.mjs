@@ -9,7 +9,7 @@ import { loadClientModules } from './lib/ts-module-harness.mjs';
 
 const modules = loadClientModules({ files: ['client/src/lib/financialAmounts.ts',
   'client/src/lib/financialStatementLearning.ts', 'client/src/lib/financialJourneyGrouping.ts',
-  'client/src/lib/compensationPolicy.ts', 'client/src/lib/financialForecastPeriods.ts'], prefix: 'synthetic-finance-callers-' });
+  'client/src/lib/financialIntervalEvidence.ts', 'client/src/lib/compensationPolicy.ts', 'client/src/lib/financialForecastPeriods.ts'], prefix: 'synthetic-finance-callers-' });
 try {
   const amounts = modules.load('financialAmounts');
   const learning = modules.load('financialStatementLearning');
@@ -30,8 +30,9 @@ try {
   let activeEvents = [];
   let fxUSD = 0;
   const iso = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  const context = vm.createContext({ React, ...amounts, ...grouping, ...compensation, ...periods,
+  const context = vm.createContext({ React, ...modules.load('financialIntervalEvidence'), ...amounts, ...grouping, ...compensation, ...periods,
     useMemo: React.useMemo, useState: React.useState,
+    useFinancialPrivacy: () => ({ hidden:false, text:value=>value, amount:value=>value }), FinancialPrivacyToggle: () => null,
     resolveActFinancialRules: () => ({ profileLabel: 'Synthetic rules, not a real tariff', legalReference: 'synthetic-v1',
       breakfastPercent: 0.25, perDiem: [
         { key: 'domestic', label: 'Synthetic domestic', currency: 'BRL', mainMeal: 100 },
@@ -51,14 +52,20 @@ try {
     KpiCard: props => React.createElement('article', null, props.title, ': ', props.value, ' — ', props.detail),
     BriefcaseBusiness: () => null, CalendarDays: () => null, Plane: () => null, DollarSign: () => null,
   });
+  // Include the real monetary presentation component used by the extracted caller.
+  if (home.includes('MoneyText')) {
+    const source = fs.readFileSync('client/src/components/MoneyText.tsx', 'utf8').replace(/^import.*$/gm, '').replace('export default function', 'function');
+    vm.runInContext(ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText, context);
+  }
   const compiled = ts.transpileModule(functions.map(node => node.getText(ast)).join('\n')
     + `\nglobalThis.subject = { perDiemConfig, calculatePerDiem, PerDiemView: ${monthlyViewName} };`,
   { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText;
   vm.runInContext(compiled, context);
   const { calculatePerDiem, PerDiemView } = context.subject;
+  // Match production canonical BRT instants, rather than naive device-local clocks.
   const event = (date, origin = 'BRL') => ({ id: 'synthetic-' + date + '-' + origin,
-    date: new Date(date + 'T11:00:00'), start: date + 'T11:00:00', end: date + 'T11:15:00',
-    kind: 'training', origin, destination: origin, day: {} });
+    date: new Date(date + 'T11:00:00-03:00'), start: date + 'T11:00:00-03:00', end: date + 'T11:15:00-03:00',
+    kind: 'training', origin, destination: origin, day: { type:'CRM',dutyReport:'11:00',dutyDebrief:'11:15',dutyReportSource:'published',dutyDebriefSource:'published' } });
   const roster = (year, month) => ({ year, month, base: 'TEST' });
 
   const datedEvents = ['2032-08-02', '2032-08-05', '2032-08-31', '2032-09-01', '2032-09-02'].map(date => event(date));
@@ -72,11 +79,11 @@ try {
   const inheritedEnd = amounts.DEMONSTRATED_DOMESTIC_EFFECTIVE_TO;
   // Existing demonstrated resolver is exercised at its real boundaries without
   // copying private money figures into a new fixture or creating a tariff.
-  assert.equal(context.subject.perDiemConfig(roster(2026, 8), inherited).domesticMainMealSource, 'demonstrated');
+  assert.equal(context.subject.perDiemConfig(roster(2026, 8), inherited).domesticMainMealSource, 'act');
   const after = new Date(inheritedEnd + 'T12:00:00'); after.setDate(after.getDate() + 1);
   assert.equal(context.subject.perDiemConfig(roster(2026, 9), iso(after)).domesticMainMealSource, 'act');
   const night = { ...event('2032-09-01'), kind: 'flight', presentation: '23:50',
-    start: '2032-09-01T23:50:00', end: '2032-09-02T00:30:00', canonical: { journeyId: 'synthetic-night' } };
+    start: '2032-09-01T23:50:00-03:00', end: '2032-09-02T00:30:00-03:00', day:{type:'VOO',dutyReport:'23:50',dutyReportSource:'published'}, canonical: { journeyId: 'synthetic-night',leg:{departureTime:'23:50',arrivalTime:'00:30'} } };
   const nightResult = calculatePerDiem([night], roster(2032, 9), new Date('2032-09-02T12:00:00'));
   assert.equal(nightResult.rows[0].iso, '2032-09-02');
   assert.equal(nightResult.rows[0].date, '2032-09-02', 'visible date follows occurrence date after midnight');
@@ -145,13 +152,13 @@ try {
   }
   findCompact(rosterFunction); assert.ok(compactExpression);
   for(const candidate of [mixed,invalidRate,empty,foreign]) {
-    assert.equal(vm.runInNewContext(compactExpression,{finance:{perdiem:candidate}}),candidate.currencySummary);
+    assert.equal(vm.runInNewContext(compactExpression,{finance:{perdiem:candidate},privacy:{text:value=>value}}),candidate.currencySummary);
   }
   // Actual detailed consumer must show every row of the selected competence,
   // including after changing the selected roster month. Adjacent rows stay out.
   activeEvents = [event('2032-01-31', 'INT'), ...Array.from({length:24},(_,i)=>{
     const day='2032-02-'+String(i+1).padStart(2,'0');
-    return {...event(day),start:day+'T05:00:00',end:day+'T21:00:00'};
+    return {...event(day),start:day+'T05:00:00-03:00',end:day+'T21:00:00-03:00'};
   }),event('2032-03-01')];
   const many=calculatePerDiem(activeEvents,roster(2032,2));
   assert.ok(many.monthlyRows.length>40,'synthetic canonical windows produce more than forty monthly items');

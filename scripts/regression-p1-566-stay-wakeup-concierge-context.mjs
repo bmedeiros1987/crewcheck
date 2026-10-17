@@ -20,7 +20,12 @@ for (const marker of [
   "policy: 'persistent-until-return'",
 ]) assert.ok(home.includes(marker), `contexto de pernoite ausente: ${marker}`);
 
-assert.match(home, /openStaySurface\(event, 'wakeup'\)/, 'card de pernoite deve abrir Despertador com contexto');
+assert.match(home, /onClick=\{\(\) => openStayProgramEditor\(event\)\}[^>]*><Bell\/> Despertador/, 'card de pernoite deve abrir o editor atual de pernoite/despertador');
+const editorNavigation=read('client/src/lib/stayEditorNavigation.ts');
+assert.match(editorNavigation,/sourceView: 'hotels', targetView: 'presentation', stayId: event.id/, 'editor deve receber identidade explícita do pernoite');
+assert.match(editorNavigation,/binding.token|token !== binding.token/, 'contexto do editor continua vinculado à sessão');
+assert.match(editorNavigation,/returnView: 'hotels'/, 'editor mantém retorno para pernoite');
+assert.doesNotMatch(editorNavigation,/alarm\/schedule|fetch\(|room:|hotelName:|presentationTime:/, 'navegação não pode agendar ou transportar dados privados');
 assert.match(home, /openStaySurface\(event, 'concierge'\)/, 'card de pernoite deve abrir Concierge com contexto');
 assert.match(home, /<StayNavigationContext targetView="wakeup"\/>/, 'Despertador deve oferecer retorno contextual');
 assert.match(home, /<StayNavigationContext targetView="concierge"\/>/, 'Concierge deve oferecer retorno contextual');

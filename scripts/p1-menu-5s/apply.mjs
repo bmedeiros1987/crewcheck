@@ -20,7 +20,7 @@ const allowedDeclaration = `const MENU_5S_ALLOWED_IDS: ZeroView[] = [
   'cockpit','roster','compare','departure','wakeup','weather','presentation','mycar',
   'radar','alerts','regulation','load','emergency','import','iflight','bids','map','database','crewlocker',
   'perdiem','salary','crew','concierge','hotels','gyms','routine','community','life',
-  'reports','calendar','exports','plans','settings','manual','guardian','support','crewlock',
+  'reports','calendar','exports','plans','settings','notifications','manual','guardian','support','crewlock',
   'updates','maintenance','admin',
 ];
 
@@ -52,6 +52,8 @@ if (!block.includes('const [menuQuery,')) {
     const panel = menuPanelRef.current;
     panel?.querySelector<HTMLButtonElement>('.cz-menu-close')?.focus({ preventScroll: true });
     const onMenuKeyDown = (event: KeyboardEvent) => {
+      if (panel && Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).some(dialog =>
+        dialog !== panel.closest('[role="dialog"]') && !panel.contains(dialog) && dialog.getClientRects().length > 0)) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();

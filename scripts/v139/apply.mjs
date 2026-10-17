@@ -200,6 +200,21 @@ await import('../roster-startup/apply.mjs');
 await import('../home-standby-departure/apply.mjs');
 await import('../transit-availability/apply.mjs');
 await import('../notification-safety/apply.mjs');
+await import('../departure-location-consistency/apply.mjs');
+await import('../departure-location-consistency/positioning-session.mjs');
+await import('../fixed-navigation-headers.mjs');
+await import('../standby-sequence-card/apply.mjs');
+await import('../amil-exact-coverage/apply.mjs');
+await import('../finalize-duty-clock-provenance.mjs');
+await import('../wellhub-hours/apply.mjs');
+await import('../wellhub-deeplinks/apply.mjs');
+await import('../stay-editor/apply.mjs');
+await import('../bids-default/apply.mjs');
+await import('../bids-default/wakeup-layout.mjs');
+await import('../cirium-radar-off/apply.mjs');
+await import('../concierge-gate-functional.mjs');
+await import('../pulse-alert-experience/apply.mjs');
+await import('../p1-infobip-whatsapp-off/apply.mjs');
 
 }
 

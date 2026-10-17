@@ -50,6 +50,7 @@ if(!source.includes("from '@/lib/menuUsagePreference'")) {
  const labels = {'theme':'Modo claro premium','pulse':'CrewCheck Pulse','wakeup-phone':'Telefone do despertador','virtual-base':'Base virtual','telegram':'Notificações via Telegram'};
  for(const [id,label] of Object.entries(labels)) {
   const pattern=new RegExp(`<((?:Toggle|Field)Setting) ([^\\n]*label="${label}"[^\\n]*?)/>`);
+  if(!pattern.test(source)&&source.includes("from '@/components/notifications/NotificationCenter'")&&['pulse','wakeup-phone','telegram'].includes(id))continue;
   if(!pattern.test(source))throw Error(`[menu-organization] unavailable nested setting ${id}`);
   source=source.replace(pattern,`<div id="cc-setting-${id}" tabIndex={-1}><$1 $2/></div>`);
  }
@@ -83,3 +84,7 @@ if(!source.includes('cc-hotel-catalog-disclosure')) {
  block=block.replace('</section>\n\n    {editorOpen &&','</section></details>\n\n    {editorOpen &&');
  source=source.slice(0,start)+block+source.slice(end);fs.writeFileSync(path,source);
 }
+
+// Use the existing catalog icon in the fixed-order editor as well.
+source=fs.readFileSync(path,'utf8').replaceAll('catalog={allMenuItems.map(([id,label])=>({id,label}))}', 'catalog={allMenuItems.map(([id,label,,Icon])=>({id,label,Icon}))}');
+fs.writeFileSync(path,source);

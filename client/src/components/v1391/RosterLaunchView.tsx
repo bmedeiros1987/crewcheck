@@ -1,8 +1,11 @@
+import { useFinancialPrivacy, FinancialPrivacyToggle } from '@/components/finance/FinancialPrivacy';
 import { rosterDisplayCompare, rosterDisplayIso, rosterInstantIso, rosterLabelDate, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { useEffect, useMemo, useState } from 'react';
 import { summarizeForecastRows, summarizeNativeForecastRows } from '@/lib/financialForecastPeriods';
 import { peekPendingNavigationContext } from '@/lib/navigationContext';
 import { consumePendingRosterFocus } from '@/lib/rosterFocus';
+import { AlertRosterNavigation } from '../alerts/AlertRosterNavigation';
+import type { CrewRoster } from '../../lib/pdfParser';
 import {
   Banknote,
   BedDouble,
@@ -29,6 +32,7 @@ import {
   WalletCards,
 } from 'lucide-react';
 import { V139Header } from '@/components/v139/Shell';
+import { AimsDocumentView } from './AimsDocumentView';
 import { AimsRosterTable } from './AimsRosterTable';
 import { CalendarRosterView } from './CalendarRosterView';
 import '@/components/v139/v139.css';
@@ -72,6 +76,8 @@ type PerDiemItem = {
 
 type FlightEarningItem = {
   id: string;
+  timeKnown?: boolean;
+  distanceKnown?: boolean;
   km: number;
   dayKm: number;
   nightKm: number;
@@ -206,6 +212,11 @@ function mealIcon(label: string) {
   return <Utensils/>;
 }
 
+function salaryRowsTotal(rows: readonly FlightEarningItem[]): number | null {
+  if (!rows.length || rows.some(row => row.timeKnown !== true || row.distanceKnown !== true || !Number.isFinite(row.total))) return null;
+  return rows.reduce((sum, row) => sum + row.total, 0);
+}
+
 function money(value: number | null) {
   if (value === null || !Number.isFinite(value)) return 'Não calculável';
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -239,7 +250,13 @@ function publishedProgramWindow(event: RosterEvent) {
   };
 }
 
-export default function RosterLaunchView({ events, finance, financeMonth, setView }: { events: RosterEvent[]; finance?: RosterFinance; financeMonth?: string; setView: (view: any) => void }) {
+const formatMoney = money;
+const formatCurrencyMoney = currencyMoney;
+
+export default function RosterLaunchView({ events, finance, financeMonth, setView, roster }: { events: RosterEvent[]; finance?: RosterFinance; financeMonth?: string; setView: (view: any) => void; roster?: CrewRoster }) {
+  const privacy = useFinancialPrivacy();
+  const money = (value: number | null) => privacy.text(formatMoney(value));
+  const currencyMoney = (value: number, currency = 'BRL') => privacy.text(formatCurrencyMoney(value, currency));
   const { layout, zoom, choose, chooseZoom, message } = useRosterLayout();
   const allOrdered = useMemo(() => [...events]
     .filter((event) => !event.id?.includes('placeholder'))
@@ -256,6 +273,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
   }, [months.join('|'), selectedMonth, currentMonth]);
   useEffect(() => {
     const context = peekPendingNavigationContext('roster');
+    if (context?.sourceView === 'alerts') return;
     const focus = consumePendingRosterFocus();
     if (!focus && !context?.programId) return;
     const focusedEvent = context?.programId ? allOrdered.find(event => event.id === context.programId) : allOrdered.find(event => dateOf(event).getTime() === focus?.getTime());
@@ -271,6 +289,12 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
     setPendingRosterFocusIso(iso);
     if (selectedMonth !== month) setSelectedMonth(month);
   }, []);
+  function focusAlertDate(date: string) {
+    const iso = date.split('/').reverse().join('-');
+    if (!months.includes(iso.slice(0, 7))) { setRosterFocusStatus('A data do alerta não está neste período da escala.'); return; }
+    setSelectedMonth(iso.slice(0, 7)); setSelectedDay(iso); setPendingRosterFocusIso(iso);
+    choose('cards', 'day');
+  }
   useEffect(() => {
     if (!pendingRosterFocusIso || selectedMonth !== pendingRosterFocusIso.slice(0, 7)) return;
     const frame = window.requestAnimationFrame(() => {
@@ -326,7 +350,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
   const uniqueDays = groups.length;
   const flights = ordered.filter((event) => ['operating', 'extra'].includes(workMode(event))).length;
   const stays = ordered.filter((event) => workMode(event) === 'stay').length;
-  const production = selectedSalaryRows.reduce((sum, row) => sum + Number(row.total || 0), 0);
+  const production = salaryRowsTotal(selectedSalaryRows);
   const totalKm = selectedSalaryRows.reduce((sum, row) => sum + Number(row.km || 0), 0);
   const perDiemSummary = scopedFinance?.perdiem?.monthlySummary ?? summarizeForecastRows(selectedPerDiemRows);
   const perDiemTotal = perDiemSummary.convertedTotalBRL;
@@ -342,11 +366,12 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
 
   return <div className="cc-roster-premium-v1397">
     <V139Header title="Escala inteligente" detail="Programações e horários publicados."/>
+    {roster && <AlertRosterNavigation roster={roster} onFocus={focusAlertDate}/>}
 
     <div className="cz-roster-actions cc-share-entry"><button type="button" onClick={() => { setPendingNavigationContext({sourceView:'roster',targetView:'community',programId:'share-roster',returnView:'roster',policy:'once'}); setView('community'); }}>Compartilhar escala</button></div>
     <section className="cc-roster-layout-picker cc-roster-compact-picker" aria-label="Formato da escala">
       <label>Formato<select aria-label="Formato da escala" value={layout} onChange={event => choose(event.target.value as typeof layout)}>
-        <option value="cards">Cards</option><option value="list">Lista</option><option value="aims">AIMS</option><option value="calendar">Calendário</option>
+        <option value="cards">Cards</option><option value="list">Lista</option><option value="aims">CrewCheck AIMS</option><option value="calendar">Calendário</option>
       </select></label>
       <button className="cc-roster-layout-reset" type="button" onClick={() => choose('cards', 'month')} disabled={layout === 'cards' && zoom === 'month'}><RotateCcw aria-hidden="true"/> Restaurar padrão</button>
       <p className="cc-roster-layout-status" role="status" aria-live="polite">{rosterFocusStatus || message}</p>
@@ -367,7 +392,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       <p role="status">{visibleEvents.length} programações {zoom === 'day' ? `em ${activeDay.split('-').reverse().join('/')}` : 'no mês'}. Horários publicados preservados.</p>
     </section>
 
-    <details className="cc-roster-finance-summary">
+    <FinancialPrivacyToggle/><details className="cc-roster-finance-summary">
       <summary>Resumo do mês · Diárias {financeAvailable ? money(perDiemTotal) : 'Indisponível'} · KM {financeAvailable ? (scopedFinance?.salary?.configured ? money(production) : 'Calibrar tarifa') : 'Indisponível'}</summary>
       <section className="cc-roster-hero-v1397">
       <div className="cc-roster-hero-copy-v1397">
@@ -401,8 +426,8 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       <AimsRosterTable events={unconfirmed} showHistory={false} focusEventId={focusedEventId} dayView title="Programações com data não confirmada"/>
     </section>}
 
-    {layout === 'aims' && timedEvents.length
-      ? <AimsRosterTable events={timedEvents} focusEventId={focusedEventId} dayView={zoom === 'day'}/>
+    {(layout === 'aims' || layout === 'document')
+      ? <AimsDocumentView events={visibleEvents} onReturnToMonth={() => chooseZoom('month')} month={selectedMonth} day={zoom === 'day' ? activeDay : undefined} focusEventId={focusedEventId} describe={event => { const mode = workMode(event); return { mode, label: modeMeta[mode].label }; }}/>
       : layout === 'calendar' && ordered.length
         ? <CalendarRosterView events={ordered} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>
         : <section className="cc-roster-days-v1397" data-roster-layout={layout}>
@@ -412,7 +437,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
         const groupPerDiemTotal = scopedFinance?.perdiem?.nativeSummary?.complete === false
           ? null : summarizeForecastRows(groupPerDiems).convertedTotalBRL;
         const groupPendingCurrencies = Array.from(new Set(groupPerDiems.filter(row => row.convertedBRL === null).map(row => row.currency)));
-        const groupProduction = groupEarnings.reduce((sum, row) => sum + Number(row.total || 0), 0);
+        const groupProduction = salaryRowsTotal(groupEarnings);
         const groupKm = groupEarnings.reduce((sum, row) => sum + Number(row.km || 0), 0);
         return <section className="cc-roster-day-v1397" key={`${group.iso}:${group.events[0]?.id}`} data-roster-iso={group.iso}>
           <header className="cc-roster-day-header-v1397">
@@ -467,8 +492,8 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
                   </div>}
                   {earning && <div className="cc-roster-km-gain-v1397">
                     <small><Route/> Ganho por KM</small>
-                    <strong>{scopedFinance?.salary?.configured ? money(earning.total) : 'Tarifa pendente'}</strong>
-                    <p>{earning.km} km · {earning.dayKm} diurnos × {money(earning.dayRateApplied)}/km · {earning.nightKm} noturnos × {money(earning.nightRateApplied)}/km</p>
+                    <strong>{scopedFinance?.salary?.configured ? money(salaryRowsTotal([earning])) : 'Tarifa pendente'}</strong>
+                    {salaryRowsTotal([earning]) === null ? <p>Horários, distância ou parcelas pendentes; valor não calculável.</p> : <p>{earning.km} km · {earning.dayKm} diurnos × {money(earning.dayRateApplied)}/km · {earning.nightKm} noturnos × {money(earning.nightRateApplied)}/km</p>}
                     {earning.payRule && <em>{earning.payRule}</em>}
                   </div>}
                 </section>}
@@ -492,7 +517,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       {!visibleEvents.length && <article className="cc-roster-empty-v1397"><CalendarDays/><h2>{unconfirmed.length ? 'Nenhuma programação com data confirmada neste período' : ordered.length ? 'Nenhuma programação neste dia' : 'Nenhuma escala carregada'}</h2><p>{unconfirmed.length ? 'Consulte as programações com data não confirmada acima.' : ordered.length ? 'Escolha outro dia ou volte ao mês completo.' : 'Importe o PDF ou sincronize o calendário autorizado do iFlight.'}</p></article>}
     </section>}
 
-    {layout !== 'calendar' && civilOnlyEvents.length > 0 && <section className="cc-roster-unconfirmed" aria-label="Programações sem instante confirmado">
+    {layout !== 'calendar' && layout !== 'document' && civilOnlyEvents.length > 0 && <section className="cc-roster-unconfirmed" aria-label="Programações sem instante confirmado">
       <h2>Data publicada, horário a confirmar</h2>
       <p>Estas programações têm data confirmada, mas não têm um instante confirmado para posicioná-las na sequência das jornadas. Estão listadas por data publicada.</p>
       <AimsRosterTable events={civilOnlyEvents} showHistory={false} focusEventId={focusedEventId} dayView={zoom === 'day'} title="Programações sem instante confirmado"/>

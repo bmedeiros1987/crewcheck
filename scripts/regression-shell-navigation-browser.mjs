@@ -13,7 +13,7 @@ import ts from 'typescript';
 // Run after regression-menu-responsive-browser.mjs. Reuse its actual root markers,
 // effective App theme functions and CSS from the prepared Vite build. Only the
 // content-height sample and account are synthetic; this is NOT full-app/device E2E.
-const output = path.resolve('artifacts/menu-responsive');
+const output = path.resolve(process.env.MENU_EVIDENCE_DIR || 'artifacts/menu-responsive');
 let html = fs.readFileSync(path.join(output, 'menu.html'), 'utf8');
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
 const source = ts.createSourceFile('Home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -58,6 +58,7 @@ const engines = require('playwright');
 const matrix = [
   { name: 'narrow-320', width: 320, height: 740, touch: true },
   { name: 'portrait', width: 360, height: 800, touch: true },
+  { name: 'portrait-390', width: 390, height: 844, touch: true },
   { name: 'landscape-small', width: 667, height: 375, touch: true },
   { name: 'landscape', width: 844, height: 390, touch: true },
   { name: 'landscape-wide', width: 932, height: 430, touch: true },
@@ -133,8 +134,9 @@ async function inspect(page, name, scale = 1) {
   console.log(`${failures.length ? 'FAIL' : 'PASS'} ${name}: ${failures.join('; ') || 'visible, contained, readable, content unobscured'}`);
 }
 try {
-  for (const engine of ['chromium', 'webkit']) {
-    const browser = await engines[engine].launch({ headless: true });
+  for (const engine of (process.env.MENU_BROWSER_ENGINES || 'chromium,webkit').split(',')) {
+    assert.ok(['chromium', 'webkit'].includes(engine));
+    const browser = await engines[engine].launch({ headless: true, ...(engine === 'chromium' && process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}) });
     try {
       for (const device of matrix) {
         const context = await browser.newContext({ viewport: { width: device.width, height: device.height }, hasTouch: device.touch, isMobile: device.touch, reducedMotion: 'reduce' });
@@ -144,7 +146,11 @@ try {
         await page.waitForFunction(() => typeof window.applyMenuTestTheme === 'function');
         for (const theme of ['dark', 'light']) {
           await page.evaluate(theme => window.applyMenuTestTheme(theme), theme);
-          await inspect(page, `${engine}-${device.name}-${theme}`);
+          for (const size of [100, 150, 200]) {
+            await page.evaluate(size => { document.documentElement.dataset.crewTextSize = String(size); document.documentElement.style.setProperty('--cc-text-scale', String(size / 100)); }, size);
+            await inspect(page, `${engine}-${device.name}-${theme}-reading-${size}`, size / 100);
+          }
+          await page.evaluate(() => { document.documentElement.dataset.crewTextSize = '100'; document.documentElement.style.setProperty('--cc-text-scale', '1'); });
         }
         if (device.name === 'portrait') {
           await page.setViewportSize({ width: 844, height: 390 });
@@ -165,5 +171,5 @@ try {
     scope: 'Prepared Brand/BottomNav/body portal plus actual CSS; synthetic content height; drawer state replay; not full-app E2E or physical acceptance', results }, null, 2));
   await new Promise(resolve => server.close(resolve));
 }
-assert.equal(results.length, 38, 'All browser/viewport/theme/rotation/text-scale cases must run');
+assert.equal(results.length, (process.env.MENU_BROWSER_ENGINES || 'chromium,webkit').split(',').length * 57, 'All selected browser/viewport/theme/rotation/text-scale cases must run');
 assert.ok(results.every(r => !r.failures.length), 'Shell layout failures; inspect screenshots and shell-report.json');

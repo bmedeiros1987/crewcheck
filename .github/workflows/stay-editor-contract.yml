@@ -1,0 +1,101 @@
+name: Stay editor hotel APZ contract
+on:
+  pull_request:
+    paths:
+      - 'shared/stay-edit-plan.*'
+      - 'shared/stay-editor-store.*'
+      - 'shared/stay-alarm-adapter.*'
+      - 'shared/stay-alarm-*'
+      - 'shared/stay-time-presentation.*'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/StayAlarm*.java'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/NotificationTiming.java'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
+      - 'android-wrapper/app/src/main/AndroidManifest.xml'
+      - 'scripts/fixtures/StayAlarm*.java'
+      - 'client/src/lib/stayAlarmHost.ts'
+      - 'client/src/main.tsx'
+      - 'client/src/components/notifications/CrewCheckPushDevice.tsx'
+      - 'shared/timezone-choice.*'
+      - 'shared/airport-timezones.*'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'client/src/components/preferences/TimezoneChoice.tsx'
+      - 'scripts/stay-editor/**'
+      - 'scripts/v139/apply.mjs'
+      - 'client/src/lib/stayEditorStore.ts'
+      - 'client/src/lib/stayEditorNavigation.ts'
+      - 'client/src/components/v1391/PresentationStayManagerView.tsx'
+      - 'client/src/components/v1391/StayHotelAlarmPreview.tsx'
+      - 'client/src/components/v1391/stay-editor.css'
+      - 'client/src/components/v139/Shell.tsx'
+      - 'scripts/regression-stay-edit*.mjs'
+      - 'scripts/regression-stay-alarm-*.mjs'
+      - 'scripts/regression-stay-time-presentation.mjs'
+      - 'scripts/regression-stay-combined-off.mjs'
+      - '.github/workflows/stay-editor-contract.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Pure contracts in three timezones
+        run: |
+          TZ=UTC node --test scripts/regression-stay-edit-plan.mjs
+          TZ=America/Sao_Paulo node --test scripts/regression-stay-edit-plan.mjs
+          TZ=Pacific/Auckland node --test scripts/regression-stay-edit-plan.mjs
+      - run: node --test scripts/regression-stay-editor-persistence.mjs
+      - name: Raw composed host, lease, editor and timezone contracts
+        run: |
+          for zone in UTC America/Sao_Paulo Asia/Tokyo; do
+            TZ="$zone" node --test scripts/regression-stay-edit-plan.mjs scripts/regression-stay-editor-persistence.mjs scripts/regression-stay-time-presentation.mjs scripts/regression-stay-alarm-android.mjs scripts/regression-stay-alarm-host.mjs scripts/regression-stay-alarm-lease-lifecycle.mjs scripts/regression-stay-combined-off.mjs
+          done
+          node scripts/regression-stay-alarm-native.mjs
+      - name: Compile actual Android API bindings and exercise JSON bridge with fake devices
+        env:
+          STAY_ANDROID_API_JAR: ${{ runner.temp }}/stay-android-all.jar
+          STAY_WEBKIT_JAR: ${{ runner.temp }}/stay-webkit.jar
+        run: |
+          curl --fail --location --silent --show-error -o "$STAY_ANDROID_API_JAR" https://repo.maven.apache.org/maven2/org/robolectric/android-all/15-robolectric-12650502/android-all-15-robolectric-12650502.jar
+          echo "6c0670454f6fcee9f1b17aa393e81d71bf26e7e6ae7c5777ed3924b062191d5b  $STAY_ANDROID_API_JAR" | sha256sum --check
+          curl --fail --location --silent --show-error -o "$RUNNER_TEMP/stay-webkit.aar" https://dl.google.com/dl/android/maven2/androidx/webkit/webkit/1.14.0/webkit-1.14.0.aar
+          echo "265604786ea1c9679e3f860f7f13072375c141f46db9092ed8ef5ecd599a516d  $RUNNER_TEMP/stay-webkit.aar" | sha256sum --check
+          unzip -p "$RUNNER_TEMP/stay-webkit.aar" classes.jar > "$STAY_WEBKIT_JAR"
+          node scripts/regression-stay-alarm-api.mjs
+      - run: npm run check
+      - run: npm run build
+      - name: Prepared composed contracts in three timezones, activation stays OFF
+        run: |
+          for zone in UTC America/Sao_Paulo Asia/Tokyo; do
+            TZ="$zone" node --test scripts/regression-stay-edit-plan.mjs scripts/regression-stay-editor-persistence.mjs scripts/regression-stay-time-presentation.mjs scripts/regression-stay-alarm-android.mjs scripts/regression-stay-alarm-host.mjs scripts/regression-stay-alarm-lease-lifecycle.mjs scripts/regression-stay-combined-off.mjs
+          done
+          node scripts/regression-stay-alarm-native.mjs
+          node scripts/regression-stay-alarm-api.mjs
+        env:
+          STAY_ANDROID_API_JAR: ${{ runner.temp }}/stay-android-all.jar
+          STAY_WEBKIT_JAR: ${{ runner.temp }}/stay-webkit.jar
+      - name: Install isolated browser tools
+        run: |
+          npm install --prefix "$RUNNER_TEMP/stay-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/stay-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Prepared Home/editor QA, local persistence, no real alarms
+        env:
+          STAY_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
+        run: node scripts/regression-stay-editor-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stay-editor-synthetic
+          path: artifacts/stay-editor/

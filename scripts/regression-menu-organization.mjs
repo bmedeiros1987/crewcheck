@@ -19,7 +19,9 @@ assert.equal(usage.suggestedMenuShortcuts(storage,'A',['roster']).includes('hote
 assert.equal(usage.resetMenuUsage(storage,'A'),true);assert.deepEqual(preferences.readMenuFavorites(storage,'A',allowed),['hotels','roster']);
 values.set(usage.menuUsageKey('A'),'{bad');assert.deepEqual(usage.readMenuUsage(storage,'A',allowed),{});
 for(const mode of ['roster','shortcuts','roster-mixed']){assert.equal(home.saveHomeLayout(storage,'A',{...home.DEFAULT_HOME_LAYOUT,mode}),true);assert.equal(home.readHomeLayout(storage,'A').mode,mode);assert.equal(home.readHomeLayout(storage,'B').mode,'standard');}
-assert.equal(search.searchMenuTargets('telefone despertador',['settings'])[0].id,'wakeup-phone');
+assert.equal(search.searchMenuTargets('telefone despertador',['notifications'])[0].id,'wakeup-phone');
+assert.equal(search.searchMenuTargets('telefone despertador',['settings']).length,0);
+assert.equal(search.searchMenuTargets('pulse',['notifications'])[0].view,'notifications');
 assert.equal(search.searchMenuTargets('configuracoes localizacao',['settings'])[0].id,'location');
 assert.equal(search.searchMenuTargets('claro',[]).length,0);assert.equal(search.searchMenuTargets('admin',['settings']).length,0);
 const event=(id,start,end,kind='stay')=>({id,kind,canonical:{startDateTime:start,endDateTime:end}});
