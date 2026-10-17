@@ -75,6 +75,17 @@ assert.equal(Object.values(db.state.heads).includes(0), false, 'failed new head 
 const unknown = input({ idempotencyKey: 'unknown', record: { ...input().record, sourceId: 'unknown', amountMinor: null } }); await write(unknown); assert.equal((await read()).totals.find(x => x.status === 'forecast').amountMinor, null);
 assert(db.calls.filter(x => /^(SELECT|UPDATE)/.test(x.sql)).every(x => /(?:owner_id|email)=\$1/.test(x.sql)), 'every data read/update is owner bound');
 assert(!db.calls.some(x => /rosters|DELETE|ALTER|CREATE/.test(x.sql)), 'no roster dependency or runtime DDL/delete');
+// Foreign allowance: original currency/amount is stable, flight-day timing is
+// an explicit scoped owner assertion and never a settlement or an FX write.
+const foreignRecord={...input().record,sourceId:'foreign-allowance',aggregationLevel:'item',periodStart:'2032-04-07',periodEnd:'2032-04-07',currency:'EUR',amountMinor:12345};
+const schedule={airline:'SYN',policy:{ownerId:A.ownerId,id:'foreign-rule',timing:'foreign_allowance_flight_day',currencies:['EUR','USD','GBP'],airline:'SYN',effectiveFrom:'2032-01-01',effectiveTo:'2032-12-31',provenance:'owner_report',reportReference:'synthetic-report'},flightLink:{kind:'published_allowance_flight_link',allowanceSourceId:foreignRecord.sourceId,localDate:'2032-04-08',timezone:'Europe/Madrid',airport:'MAD',reference:'synthetic-flight-link'}};
+const capture=input({record:foreignRecord,idempotencyKey:'foreign-1',schedule});await write(capture);
+const itemQuery=()=>readFinancialLedger({store,identity:A,periodStart:'2032-04-01',periodEnd:'2032-04-30',aggregationLevel:'item'});
+let foreignResult=await itemQuery();assert.equal(foreignResult.records[0].expectedPaymentDate,'2032-04-08');assert.equal(foreignResult.records[0].periodStart,'2032-04-07');assert.equal(foreignResult.records[0].amountMinor,12345);assert.equal(foreignResult.records[0].currency,'EUR');assert.equal(foreignResult.records[0].status,'forecast');
+await assert.rejects(write({...capture,idempotencyKey:'foreign-duplicate-leg',schedule:{...schedule,flightLink:{...schedule.flightLink,reference:'another-leg'}}}),{code:'FINANCIAL_REVISION_CONFLICT'});
+await write({...capture,expectedRevision:1,idempotencyKey:'foreign-2',schedule:undefined,action:'record_settlement',provenance:{kind:'settlement',reference:'synthetic-fx-unrelated-settlement'},record:{...foreignRecord,status:'payment_confirmed',paymentDate:'2032-04-09'}});
+foreignResult=await itemQuery();assert.equal(foreignResult.records.length,1);assert.equal(foreignResult.history.length,2);assert.equal(foreignResult.records[0].expectedPaymentDate,'2032-04-08');assert.equal(foreignResult.records[0].paymentDate,'2032-04-09');assert.equal(foreignResult.records[0].amountMinor,12345);
+await assert.rejects(write(input({record:{...foreignRecord,convertedBRL:1},idempotencyKey:'forbidden-conversion'})),{code:'FINANCIAL_INVALID_RECORD'});
 db.deletedOwners = new Set([A.ownerId]);
 await assert.rejects(read(), {code:'FINANCIAL_OWNER_REQUIRED'});
 await assert.rejects(write(input()), {code:'FINANCIAL_OWNER_REQUIRED'});
