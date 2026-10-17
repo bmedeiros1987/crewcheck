@@ -3990,7 +3990,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
       <h1>Diárias</h1>
       {!controls && <p className="cc-per-diem-competence">Competência: {competence}</p>}
       {rangeLabel && !controls && <p>{rangeLabel}</p>}
-      <p>Estimativa por moeda</p>
+      <p>Estimativa por moeda · sem confirmação de pagamento.</p>
     </section>
     {nextPayment}
     {controls}
