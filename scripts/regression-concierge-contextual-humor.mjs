@@ -5,6 +5,7 @@ import test from 'node:test';
 import { decorateConciergeReply as decorate, conciergeHumorContext, conciergeHumorSensitive } from '../server/v14336/concierge-personality.mjs';
 import { conciergeFormatTextV14354 as numeric } from '../server/v14354/concierge-language.mjs';
 import { buildProgramSummary } from '../server/v1404/telegram-language.mjs';
+import { companyTransportReply } from '../server/concierge/company-transport.mjs';
 
 // Synthetic itineraries only. No account, network, notification or TTS request.
 const now = new Date('2026-10-05T12:00:00Z');
@@ -82,7 +83,7 @@ async function runtime({ days = [], query = '/proximo', dateKey = '', care = tru
   const saved = [];
   const context = {
     Date: class extends Date { constructor(...args) { super(...(args.length ? args : [clock])); } }, Intl,
-    stayMenuReply: async () => ({ handled: false }),
+    stayMenuReply: async () => ({ handled: false }), companyTransportReply,
     pharmacyReferenceReply: async () => ({ handled: false }),
     conciergeLoadSnapshot: () => null, conciergeStayRecords: () => [], conciergeLocationContextV14335: () => ({ fresh: false }),
     conciergePreferenceCommandV14336: async () => ({ handled: false }),
