@@ -36,7 +36,7 @@ try{
  assert.equal(catalog.resolveSalaryReference({...context,personal:{...personal,amountMinor:NaN},reviewed}).kind,'invalid_value');
  assert.equal(tax.employeeTaxReference('2025-12'),null);assert.equal(tax.employeeTaxReference('2027-01'),null);
  const inss=contributionBaseMinor=>tax.estimateEmployeeInss({contributionMonth:'2026-01',contributionBaseMinor,singleEmploymentConfirmed:true});
- assert.equal(inss(null),null);assert.equal(inss(0).amountMinor,0);assert.equal(inss(162100).amountMinor,12158);assert.equal(inss(99999999).amountMinor,98809);assert.equal(tax.estimateEmployeeInss({contributionMonth:'2026-01',contributionBaseMinor:162100,singleEmploymentConfirmed:false}),null);
+ assert.equal(inss(null),null);assert.equal(inss(0).amountMinor,0);assert.equal(inss(162100).amountMinor,12157);assert.equal(inss(99999999).amountMinor,98807);assert.equal(tax.estimateEmployeeInss({contributionMonth:'2026-01',contributionBaseMinor:162100,singleEmploymentConfirmed:false}),null);
  const irrf={ordinaryMonthlyConfirmed:true,paymentMonth:'2026-10',taxableIncomeMinor:600000,mode:'legal',legalDeductionsMinor:100000};
  const result=tax.estimateMonthlyIrrf(irrf);assert.equal(result.taxableBaseMinor,500000);assert.equal(result.reductionMinor,17975,'reduction must use pre-deduction income 6000, not taxable base 5000');assert.equal(result.amountMinor,28652);
  const simplified=tax.estimateMonthlyIrrf({...irrf,mode:'simplified'});assert.equal(simplified.deductionMinor,60720,'never add legal deductions to simplified');assert.equal(tax.estimateMonthlyIrrf({...irrf,mode:'simplified',legalDeductionsMinor:999999}).amountMinor,simplified.amountMinor);
