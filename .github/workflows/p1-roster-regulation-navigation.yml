@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'client/src/components/regulation/**'
+      - 'client/src/components/CanonicalDutyCard.tsx'
+      - 'client/src/components/canonical-duty-card.css'
       - 'shared/regulationTemporalScenario.mjs'
       - 'scripts/regression-regulation-temporal-scenario.mjs'
       - 'scripts/regression-regulation-scenario-ui.cjs'
@@ -24,6 +26,8 @@ on:
     branches: [main]
     paths:
       - 'client/src/components/regulation/**'
+      - 'client/src/components/CanonicalDutyCard.tsx'
+      - 'client/src/components/canonical-duty-card.css'
       - 'shared/regulationTemporalScenario.mjs'
       - 'scripts/regression-regulation-temporal-scenario.mjs'
       - 'scripts/regression-regulation-scenario-ui.cjs'
