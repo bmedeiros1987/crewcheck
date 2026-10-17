@@ -84,6 +84,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   await page.getByLabel('Confirmo que esta escala é minha e revisei os valores calculados.').check();
   const brl=page.getByLabel('Confirmo a política BRL: quinta-feira; feriado bancário de SP antecipa para quarta.');assert.equal(await brl.isDisabled(),false);await brl.check();
   const date=page.getByLabel('Data comprovada do ciclo BRL');assert.equal(await date.getAttribute('min'),'2032-02-12');assert.equal(await date.getAttribute('max'),'2032-02-12');
+  await page.getByRole('button',{name:'Preparar revisão sem gravar',exact:true}).click();await page.getByRole('button',{name:'Confirmar gravação da previsão revisada',exact:true}).waitFor();assert.equal(db.state.revisions.length,count,'confirmed policy with empty date previews without writing');await page.getByRole('button',{name:'Cancelar revisão',exact:true}).click();
   await date.fill('2032-02-05');await page.getByRole('button',{name:'Preparar revisão sem gravar',exact:true}).click();await page.getByText(/quinta-feira informada não pertence/).waitFor();assert.equal(db.state.revisions.length,count,'wrong cycle never writes');
   await date.fill('2032-02-12');await page.getByRole('button',{name:'Preparar revisão sem gravar',exact:true}).click();await page.getByRole('button',{name:'Confirmar gravação da previsão revisada',exact:true}).waitFor();assert.equal(db.state.revisions.length,count,'valid single-week preview remains read-only');
  }

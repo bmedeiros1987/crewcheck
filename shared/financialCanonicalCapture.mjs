@@ -19,8 +19,8 @@ export async function canonicalAllowanceCapture({ ownerId, crewId, airline, rows
   if (!ownerId || !crewId || !airline || complete !== true || review?.ownerConfirmed !== true
     || !/^[A-Za-z0-9_.:-]{1,128}$/.test(review.reference || '') || !day(range?.start) || !day(range?.end) || range.start > range.end
     || !Array.isArray(rows) || !rows.length || rows.length > 200) throw Error('CANONICAL_CAPTURE_REVIEW_REQUIRED');
-  if(review.brlConfirmed===true&&canonicalBrlCycleKeys(rows).length>1)throw Error('CANONICAL_CAPTURE_ONE_BRL_CYCLE_REQUIRED');
-  if(review.brlConfirmed===true&&rows.some(row=>row.currency==='BRL')&&review.brlCycleDate!==canonicalBrlCycleThursday(rows))throw Error('CANONICAL_CAPTURE_BRL_CYCLE_DATE_MISMATCH');
+  if(review.brlConfirmed===true&&review.brlCycleDate&&canonicalBrlCycleKeys(rows).length>1)throw Error('CANONICAL_CAPTURE_ONE_BRL_CYCLE_REQUIRED');
+  if(review.brlConfirmed===true&&review.brlCycleDate&&rows.some(row=>row.currency==='BRL')&&review.brlCycleDate!==canonicalBrlCycleThursday(rows))throw Error('CANONICAL_CAPTURE_BRL_CYCLE_DATE_MISMATCH');
   const covered = new Set(coveredDays);
   for (const cursor = new Date(range.start+'T12:00:00Z'); cursor.toISOString().slice(0,10) <= range.end; cursor.setUTCDate(cursor.getUTCDate()+1)) {
     if (!covered.has(cursor.toISOString().slice(0,10))) throw Error('CANONICAL_CAPTURE_COVERAGE_REQUIRED');
@@ -40,7 +40,7 @@ export async function canonicalAllowanceCapture({ ownerId, crewId, airline, rows
     const sourceId = await financialCaptureDigest([scopeId,key]);
     const policy = { ownerId, airline, id: 'owner-reviewed-allowance-v1', provenance: 'owner_report', reportReference: review.reference, effectiveFrom: range.start, effectiveTo: range.end };
     let schedule;
-    if (row.currency === 'BRL' && review.brlConfirmed === true) schedule = { airline, policy: { ...policy, timing: 'brl_thursday_sp_bank_holiday' }, cycle: { kind: 'reviewed_allowance_payment_date', date: review.brlCycleDate, reference: review.reference } };
+    if (row.currency === 'BRL' && review.brlConfirmed === true && review.brlCycleDate) schedule = { airline, policy: { ...policy, timing: 'brl_thursday_sp_bank_holiday' }, cycle: { kind: 'reviewed_allowance_payment_date', date: review.brlCycleDate, reference: review.reference } };
     if (row.currency !== 'BRL' && review.foreignConfirmed === true) {
       const flight = flights.find(flight => flight.id === (review.flightLinks?.[key] ?? review.flightLinks?.[JSON.stringify([row.iso,row.label])]));
       if (flight?.published === true && day(flight.localDate) && /^[A-Z]{3}$/.test(flight.airport)) schedule = { airline, policy: { ...policy, timing: 'foreign_allowance_flight_day', currencies: [row.currency] }, flightLink: { kind: 'published_allowance_flight_link', allowanceSourceId: sourceId, localDate: flight.localDate, timezone: flight.timezone || review.flightTimezone, airport: flight.airport, reference: await financialCaptureDigest(['canonical-flight',flight.id]) } };
