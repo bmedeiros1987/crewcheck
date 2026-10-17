@@ -30,7 +30,7 @@ are required. It is not aliased to regular salary. Unknown stays pending.
 
 FX access behavior
 No periodic polling is added. Automatic source revalidates on mount, switching to
-automatic, window focus and visible-document access. Loading clears displayed old
+automatic, in-app view changes, window focus and visible-document access. Loading clears displayed old
 quotes; an OFF/error response clears quotes. Failed responses retain a five-minute
 cooldown; server daily caching/in-flight dedup controls provider cost. There is no
 instant push revocation while an untouched tab remains open. Observation date,

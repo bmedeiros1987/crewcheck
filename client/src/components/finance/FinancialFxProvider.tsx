@@ -19,7 +19,7 @@ async function automatic(revalidate=false):Promise<Data>{
  return pending;
 }
 function key(){const user=getStoredUser(),token=getToken();return user&&token&&!['visitor','guest'].includes(user.role||'')?[user.id,user.email,token].join(':'):'';}
-export function FinancialFxProvider({children}:{children:ReactNode}){
+export function FinancialFxProvider({children,accessKey=''}:{children:ReactNode;accessKey?:string}){
  const [,refresh]=useState(0),owner=key(),manual=readFinancialFxReferences(),initial:Mode=Object.keys(manual).length?'manual':'automatic';
  const [selection,setSelection]=useState({owner,mode:initial}),[remote,setRemote]=useState<{owner:string;data:Data}>({owner:'',data:{state:'loading',quotes:{}}});
  const mode=selection.owner===owner?selection.mode:initial;
@@ -33,7 +33,7 @@ export function FinancialFxProvider({children}:{children:ReactNode}){
   };
   revalidate();window.addEventListener('focus',revalidate);document.addEventListener('visibilitychange',revalidate);
   return()=>{current=false;window.removeEventListener('focus',revalidate);document.removeEventListener('visibilitychange',revalidate);};
- },[owner,mode]);
+ },[owner,mode,accessKey]);
  const data:Data=!owner?{state:'unavailable',quotes:{}}:mode==='manual'?{state:Object.keys(manual).length?'available':'unavailable',quotes:manual}:remote.owner===owner?remote.data:{state:'loading',quotes:{}};
  return <Context.Provider value={{...data,mode,setMode:mode=>setSelection({owner:key(),mode})}}>{children}</Context.Provider>;
 }

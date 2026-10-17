@@ -5356,7 +5356,7 @@ export default function Home() {
   };
 
   return <main className="cz-app" data-version={DEFAULT_VERSION} data-view={view}>
-    <HomeFinancialEstimateProvider roster={bundle.roster} calculate={homeAllowancePayment}>
+    <HomeFinancialEstimateProvider accessKey={view} roster={bundle.roster} calculate={homeAllowancePayment}>
     <div className="cz-wallpaper"/>
     <input ref={fileRef} type="file" accept="application/pdf,.pdf" hidden onChange={handleFile}/>
     <div className="cz-global-header" data-global-internal-header="true">
