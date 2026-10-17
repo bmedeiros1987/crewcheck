@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 const file='client/src/pages/Home.tsx';let source=fs.readFileSync(file,'utf8');
 const start=source.indexOf('function WakeupView('),end=source.indexOf('\nfunction ',start+10);if(start<0||end<0)throw Error('Wakeup presentation boundary missing');
-let block=source.slice(start,end);
+if(!source.includes("import {WakeDiagnostic}"))source="import {WakeDiagnostic} from '@/components/notifications/WakeDiagnostic';\n"+source;
+let block=source.slice(source.indexOf('function WakeupView('),source.indexOf('\nfunction ',source.indexOf('function WakeupView(')+10));
 let card=block.indexOf('<section className="cz-toolbox cz-wakeup-card">'),finish=block.indexOf('</section>',card)+10;
 if(card<0||finish<10)throw Error('Wakeup action card missing');
 const activate=block.includes('async function activateServerAlarm(')?'activateServerAlarm':'activateServerReminder';
@@ -43,6 +44,7 @@ if(!block.includes('className="cc-wakeup-history"')){
  if(history>=0){const stop=block.indexOf('</section>',history)+10;if(stop<10)throw Error('Wakeup history boundary missing');block=block.slice(0,history)+block.slice(history,stop).replace('<section className="cz-toolbox"><h2>Despertadores no servidor</h2>','<details className="cz-toolbox cc-wakeup-history"><summary>Despertadores no servidor · histórico e pendências</summary>').replace(/<\/section>$/,'</details>')+block.slice(stop);}
 }
 if(!block.includes('className="cc-wakeup-page"'))block=block.replace('<Brand back/>','<Brand back/><div className="cc-wakeup-page">').replace('</>;','</div></>;');
+if(!block.includes('<WakeDiagnostic/>'))block=block.replace('<WakeupChannelSelection ', '<WakeDiagnostic/><WakeupChannelSelection ');
 source=source.replace(source.slice(source.indexOf('function WakeupView('),source.indexOf('\nfunction ',source.indexOf('function WakeupView(')+10)),block);
 source=source.replace('deviceSettings={<><NotificationReadiness/>','deviceSettings={<><details className="cc-notification-channels"><summary>Vínculos de canais</summary><p>Vincular é uma ação explícita, distinta de salvar preferências.</p><button onClick={openTelegramBinding}>Vincular Telegram</button><button onClick={openWhatsAppBinding}>Vincular WhatsApp</button></details><NotificationReadiness/>');
 fs.writeFileSync(file,source);

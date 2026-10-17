@@ -11,7 +11,7 @@ const bundle = await build({ stdin: { contents: `import React from 'react';impor
   b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: '', loader: 'js' }));
   b.onResolve({ filter: /^@\// }, ({ path: name }) => ({ path: path.resolve('client/src', name.slice(2) + '.ts') }));
 } }] });
-const styles = fs.readFileSync('client/src/index.css', 'utf8') + fs.readFileSync('client/src/components/v139/v139.css', 'utf8') + fs.readFileSync('client/src/components/v139/bids-alert-preferences.css', 'utf8') + fs.readFileSync('client/src/components/notifications/wakeup-selection.css', 'utf8');
+const styles = fs.readFileSync('client/src/styles/fixed-navigation-headers.css', 'utf8') + fs.readFileSync('client/src/index.css', 'utf8') + fs.readFileSync('client/src/components/v139/v139.css', 'utf8') + fs.readFileSync('client/src/components/v139/bids-alert-preferences.css', 'utf8') + fs.readFileSync('client/src/components/notifications/wakeup-selection.css', 'utf8');
 const html = `<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${styles}</style><style>*{box-sizing:border-box}body{margin:0}#navigation-header{position:fixed;inset:0 0 auto;height:80px;padding:24px 12px 8px;z-index:20;background:Canvas;color:CanvasText}#navigation-footer{position:fixed;inset:auto 0 0;height:88px;padding:8px 12px 24px;z-index:20;background:Canvas;color:CanvasText}main{padding:92px 12px 100px}main fieldset{margin-inline:0}</style><header id="navigation-header">Navegação CrewCheck</header><main id="root"></main><nav id="navigation-footer">Menu</nav><script src="/fixture.js"></script>`;
 const server = http.createServer((req, res) => { res.setHeader('content-type', req.url === '/fixture.js' ? 'text/javascript' : 'text/html'); res.end(req.url === '/fixture.js' ? bundle.outputFiles[0].text : html); });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -48,12 +48,15 @@ try {
     window.Notification = { requestPermission() { throw Error('No permission request'); } };
     window.CrewCheckNative = { notify() { throw Error('No real notification'); }, scheduleNotification() { throw Error('No alarm'); } };
   });
+  const hour=page.getByLabel('Hora · Horário padrão para BIDS',{exact:true}),minute=page.getByLabel('Minuto · Horário padrão para BIDS',{exact:true});
+  const setTime=async value=>{const [h,m]=value.split(':');await hour.selectOption(h);await minute.selectOption(m);};
+  const readTime=async()=>[await hour.inputValue(),await minute.inputValue()].join(':');
   await page.goto(origin); await page.getByText('Janela oficial ainda não validada:', { exact: false }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Já fiz BIDS nesta janela' }).count(), 0);
   assert.equal(writes.length, 0); assert.equal(await page.getByRole('button', { name: 'Salvar preferências' }).isVisible(), false);
   await page.locator('summary').first().click();
   await page.getByLabel('Modo', { exact: false }).selectOption('manual');
-  await page.getByLabel('Horário padrão').fill('10:30'); await page.getByLabel('Meu fuso').fill('UTC');
+  await setTime('10:30'); await page.getByLabel('Origem do fuso',{exact:true}).selectOption('manual'); await page.getByLabel('Escolha o fuso',{exact:true}).selectOption('UTC');
   await page.getByLabel('Quero avisos BIDS', { exact: false }).check();
   await page.getByRole('checkbox', { name: 'Relógio', exact: true }).check();
   await page.getByRole('checkbox', { name: 'CrewCheck', exact: true }).uncheck();
@@ -65,12 +68,14 @@ try {
   assert.equal(await page.getByRole('checkbox', { name: 'CrewCierge', exact: true }).isChecked(), false);
   await page.getByRole('checkbox', { name: 'Todos', exact: true }).check();
   await page.getByLabel('Modo', { exact: false }).selectOption('auto');
-  assert.equal(await page.getByLabel('Horário padrão').inputValue(), '10:30', 'manual override survives Auto toggle');
+  assert.equal(await readTime(), '10:30', 'manual override survives Auto toggle');
   await page.getByRole('button', { name: 'Salvar preferências' }).click();
   await page.waitForFunction(() => !document.querySelector('fieldset').disabled);
   assert.equal(writes.length, 1); assert.equal(writes[0].token, 'A'); assert.equal(states.A.preferences.preferredTime, '10:30');
   assert.deepEqual(states.A.preferences.channels, { all: true, individual: { mobilePwa: false, watch: true, crewCierge: false } });
   await page.getByText('Ligação · número e disponibilidade',{exact:true}).click();
+  // Measure help text in its rendered state: closed details retain stale Range boxes in Chromium.
+  for(const detail of await page.locator('details.cc-notification-help').all()) { if(!(await detail.getAttribute('open')) && await detail.getAttribute('open')===null) await detail.locator('summary').click(); }
   const header = await page.locator('#navigation-header').boundingBox(), footer = await page.locator('#navigation-footer').boundingBox();
   const cases = [];
   for (const theme of ['light', 'dark']) for (const size of [100, 200]) {
@@ -91,19 +96,19 @@ try {
     cases.push(`${theme}/${size}`);
   }
   await page.setViewportSize({ width: 320, height: 360 });
-  await page.getByLabel('Meu fuso').focus(); await page.getByLabel('Meu fuso').scrollIntoViewIfNeeded();
+  await page.getByLabel('Origem do fuso',{exact:true}).focus(); await page.getByLabel('Origem do fuso',{exact:true}).scrollIntoViewIfNeeded();
   await page.getByRole('button', { name: 'Salvar preferências' }).scrollIntoViewIfNeeded();
   const keyboardButton = await page.getByRole('button', { name: 'Salvar preferências' }).boundingBox();
   assert(keyboardButton.y >= 80 && keyboardButton.y + keyboardButton.height <= 272, `short keyboard-like viewport retains accessible action: ${JSON.stringify(keyboardButton)}`);
   await page.setViewportSize({ width: 320, height: 700 });
   const start = new Promise(resolve => held = resolve); hold = true;
-  await page.getByLabel('Horário padrão').fill('11:15'); await page.getByRole('button', { name: 'Salvar preferências' }).click(); await start;
+  await setTime('11:15'); await page.getByRole('button', { name: 'Salvar preferências' }).click(); await start;
   await page.evaluate(() => { localStorage.setItem('crewcheck_auth_token', 'B'); window.dispatchEvent(new Event('crewcheck:auth-changed')); });
-  await page.waitForFunction(() => document.querySelector('input[type="time"]').value === '09:00');
-  resume(); await page.waitForTimeout(50); assert.equal(await page.getByLabel('Horário padrão').inputValue(), '09:00', 'late A save cannot repopulate B');
+  await page.waitForFunction(() => document.querySelector('select[aria-label="Hora · Horário padrão para BIDS"]').value === '09' && document.querySelector('select[aria-label="Minuto · Horário padrão para BIDS"]').value === '00');
+  resume(); await page.waitForTimeout(50); assert.equal(await readTime(), '09:00', 'late A save cannot repopulate B');
   assert.equal(await page.getByRole('checkbox', { name: 'Todos', exact: true }).isChecked(), false, 'B cannot inherit A channels');
-  await page.getByLabel('Horário padrão').fill('12:15');
-  await page.evaluate(() => window.dispatchEvent(new Event('online'))); assert.equal(await page.getByLabel('Horário padrão').inputValue(), '12:15', 'unsaved override not reset by online refresh');
+  await setTime('12:15');
+  await page.evaluate(() => window.dispatchEvent(new Event('online'))); assert.equal(await readTime(), '12:15', 'unsaved override not reset by online refresh');
   readyCampaign = true; await page.evaluate(() => window.dispatchEvent(new Event('crewcheck:auth-changed')));
   await page.getByRole('button', { name: 'Já fiz BIDS nesta janela' }).waitFor();
   const before = writes.length; page.once('dialog', dialog => dialog.dismiss()); await page.getByRole('button', { name: 'Já fiz BIDS nesta janela' }).click(); assert.equal(writes.length, before, 'dismissed confirmation writes nothing');
