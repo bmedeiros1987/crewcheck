@@ -3367,6 +3367,7 @@ type ActCompensationConfig = {
   nightHourMetric: number;
   basePay: number;
   baseConfigured: boolean;
+  fixedAdditionsConfigured: boolean;
   fixedAdditions: number;
   inssDeduction: number;
   irrfDeduction: number;
@@ -3497,6 +3498,7 @@ function loadActCompensationConfig(roster: CrewRoster): ActCompensationConfig {
     nightHourMetric: 0,
     basePay,
     baseConfigured: readOptionalNumberSetting('crewcheck_salary_base_brl') !== null || learnedBase !== null,
+    fixedAdditionsConfigured: readOptionalNumberSetting('crewcheck_salary_fixed_additions_brl') !== null,
     fixedAdditions,
     inssDeduction,
     irrfDeduction,
@@ -3591,7 +3593,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     const classification = resolvePerDiemRule(event.origin, event.destination, airportOverrides);
     if (!classification.rateKey) {
       if (classification.airport) pendingAirports.add(classification.airport);
-      unclassifiedItems.push({ iso, airport: classification.airport });
+      unclassifiedItems.push({ iso, airport: classification.airport, reason: 'Classificação geográfica da diária pendente.' });
       return;
     }
     const key = iso + '-' + slot;
@@ -3602,7 +3604,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     const rate = cfg.rates[classification.rateKey];
     if (!rate) {
       pendingAirports.add(classification.airport);
-      unclassifiedItems.push({ iso, airport: classification.airport });
+      unclassifiedItems.push({ iso, airport: classification.airport, reason: 'Tarifa da diária ausente para o período.' });
       return;
     }
     const value = slot === 'breakfast' && classification.rateKey === 'domestic'
@@ -3610,7 +3612,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       : perDiemSlotAmount(rate.mainMeal, slot, cfg.breakfastPercent);
     if (!Number.isFinite(value) || value < 0) {
       pendingAirports.add(classification.airport);
-      unclassifiedItems.push({ iso, airport: classification.airport });
+      unclassifiedItems.push({ iso, airport: classification.airport, reason: 'Valor da tarifa de diária inválido para o período.' });
       return;
     }
     const fx = cfg.exchangeRates[rate.currency];
@@ -3779,7 +3781,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
   const weekly = weeklySummary.convertedTotalBRL;
   const previousWeeklyRows = rowsInObservedCycle(rows, periods.previous);
   const previousWeeklySummary = summarizeForecastRows(previousWeeklyRows, [...rowsInObservedCycle(unclassifiedItems, periods.previous), ...unclassifiedItems.filter(item => !item.iso)]);
-  const currencySummary = !nativeSummary.complete ? (nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável') : (Object.entries(totalsByCurrency) as Array<[PerDiemCurrency, number]>)
+  const currencySummary = !nativeSummary.complete ? (Object.keys(nativeSummary.knownTotalsByCurrency).length ? 'Subtotal estimado: '+Object.entries(nativeSummary.knownTotalsByCurrency).map(([currency,value])=>moneyCurrency(value,currency as PerDiemCurrency)).join(' · ') : nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável') : (Object.entries(totalsByCurrency) as Array<[PerDiemCurrency, number]>)
     .map(([currency, value]) => moneyCurrency(value, currency))
     .join(' · ');
   return {
@@ -4068,7 +4070,7 @@ function scopedFinancialForecast(snapshots: ReturnType<typeof financeSnapshot>[]
   const scopeIncomplete = !range.valid || missing.length > 0;
   const nativeSummary = scopeIncomplete ? { ...native, complete:false, totalsByCurrency:{}, state:'unclassified' } : native;
   const monthlySummary = scopeIncomplete ? { ...converted, convertedComplete:false, convertedTotalBRL:null, state:'invalid_amount' } : converted;
-  const currencySummary = !nativeSummary.complete ? (nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável') : Object.entries(nativeSummary.totalsByCurrency).map(([currency,value])=>moneyCurrency(value,currency as PerDiemCurrency)).join(' · ');
+  const currencySummary = !nativeSummary.complete ? (Object.keys(nativeSummary.knownTotalsByCurrency).length ? 'Subtotal estimado: '+Object.entries(nativeSummary.knownTotalsByCurrency).map(([currency,value])=>moneyCurrency(value,currency as PerDiemCurrency)).join(' · ') : nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável') : Object.entries(nativeSummary.totalsByCurrency).map(([currency,value])=>moneyCurrency(value,currency as PerDiemCurrency)).join(' · ');
   return { ...base, rows, monthlyRows:rows, unclassifiedItems, monthlyUnclassifiedItems:unclassifiedItems, nativeSummary, monthlySummary, monthly:monthlySummary.convertedTotalBRL, currencySummary, totalsByCurrency:nativeSummary.totalsByCurrency, currencyCount:Object.keys(nativeSummary.totalsByCurrency).length, pendingCurrencies:monthlySummary.pendingCurrencies, convertedComplete:monthlySummary.convertedComplete, scopeIncomplete } as ReturnType<typeof calculatePerDiem> & { scopeIncomplete:boolean };
 }
 function PerDiemView({ bundle }: { bundle: BundleState }) {

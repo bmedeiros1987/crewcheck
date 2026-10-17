@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { readConfirmedFinancialRates, reviewedPayrollCycleForOperationalMonth } from '@/lib/financialStatementLearning';
 import { nextPayrollPayment } from '@/lib/nextFinancialPayment';
-import { composePayrollPayment, type PayrollSnapshot } from '@/lib/payrollPaymentComposition';
+import { composePayrollPayment, composeOperationalPayrollEstimate, type PayrollSnapshot } from '@/lib/payrollPaymentComposition';
 import type { FinancialRange } from '@/lib/financialHistoryPeriods';
 import NextPaymentCard from './NextPaymentCard';
 
@@ -11,5 +11,7 @@ export default function PayrollPaymentCard({ snapshots, requestRange, extraDetai
     const cycle=reviewedPayrollCycleForOperationalMonth(month);if(!cycle)return [];
     return [composePayrollPayment(cycle,snapshots)];
   });
-  return <NextPaymentCard payment={nextPayrollPayment(candidates)} requestRange={requestRange} extraDetails={extraDetails}/>;
+  let payment=nextPayrollPayment(candidates);
+  if(!payment.range&&snapshots.length){const current=new Date().toISOString().slice(0,7);const snapshot=snapshots.find(item=>item.month===current)||[...snapshots].sort((a,b)=>b.month.localeCompare(a.month))[0];payment=composeOperationalPayrollEstimate(snapshot);}
+  return <NextPaymentCard payment={payment} requestRange={requestRange} extraDetails={extraDetails}/>;
 }

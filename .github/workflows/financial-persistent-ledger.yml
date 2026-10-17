@@ -73,6 +73,7 @@ jobs:
           node scripts/regression-financial-upcoming-app.cjs
           node scripts/regression-financial-canonical-ui.cjs
           node scripts/regression-financial-fx-open-client.cjs
+          node scripts/regression-financial-estimate-visible-ui.cjs after
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -82,3 +83,4 @@ jobs:
             artifacts/financial-currency-ui
             artifacts/financial-upcoming-ui
             artifacts/financial-payment-preview
+            artifacts/financial-estimate-visible

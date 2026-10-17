@@ -13,7 +13,7 @@ export function summarizeNativeForecastRows(rows: readonly ForecastRow[], unclas
     if (!Number.isFinite(totals[row.currency])) invalid = true;
   }
   const state = unclassified.length ? 'unclassified' : invalid ? 'invalid_amount' : !rows.length ? 'no_data' : 'available';
-  return { state, complete: state === 'available', totalsByCurrency: state === 'available' ? totals : {} };
+  return { state, complete: state === 'available', totalsByCurrency: state === 'available' ? totals : {}, knownTotalsByCurrency: Object.fromEntries(Object.entries(totals).filter(([,value])=>Number.isFinite(value))), knownCount:rows.filter(row=>Number.isFinite(row.value)&&row.value>=0&&row.currency).length };
 }
 export function nativeForecastDelta(before: ReturnType<typeof summarizeNativeForecastRows>, after: ReturnType<typeof summarizeNativeForecastRows>) {
   if (!before.complete || !after.complete) return null;

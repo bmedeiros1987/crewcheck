@@ -158,3 +158,5 @@ html body #root .cz-app[data-version] .cc-payment-overview[data-financial-screen
 html body #root .cz-app[data-version] .cc-payment-overview[data-financial-screen="payment"] .cc-payment-hero :is(h2,strong,p,span,button) {color:var(--cc-review-text)!important}
 .cc-payment-overview[data-financial-screen="payment"] .cc-payment-hero h2,.cc-payment-overview[data-financial-screen="payment"] .cc-payment-topline>span {display:none}
 .cc-financial-history-availability {font-size:12px;line-height:1.6;color:var(--cc-review-muted);margin:12px 0}
+
+html body #root .cz-app[data-version] .cc-payment-hero .cc-payment-value small {display:block;flex-basis:100%;color:#d5e4ee;font-size:13px;line-height:1.5;opacity:1}

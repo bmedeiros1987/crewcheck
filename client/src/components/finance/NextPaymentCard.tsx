@@ -34,8 +34,8 @@ export default function NextPaymentCard({ payment, requestRange, extraDetails }:
     {screen==='statement'&&<p className="cc-financial-history-availability">Previsões recalculadas da escala · separadas dos registros salvos.</p>}
     {(screen==='overview'||screen==='payment')&&<>
     <section className="cc-payment-hero" aria-label="Próximo pagamento previsto">
-      <div className="cc-payment-topline"><span><ArrowDownLeft aria-hidden="true"/> PRÓXIMO CICLO</span><FinancialPrivacyToggle/>{payment.kind==='allowance'&&<button type="button" className="cc-financial-calculator-shortcut" aria-label="Abrir calculadora de moedas" onClick={()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'currency'}))}><Calculator size={20} aria-hidden="true"/></button>}</div>
-      <h2 data-financial-screen-heading={screen==='overview'?true:undefined} tabIndex={-1}>Próximo pagamento previsto</h2>
+      <div className="cc-payment-topline"><span><ArrowDownLeft aria-hidden="true"/> {payment.estimationBasis==='operational_month'?'CÁLCULO DA ESCALA':'PRÓXIMO CICLO'}</span><FinancialPrivacyToggle/>{payment.kind==='allowance'&&<button type="button" className="cc-financial-calculator-shortcut" aria-label="Abrir calculadora de moedas" onClick={()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'currency'}))}><Calculator size={20} aria-hidden="true"/></button>}</div>
+      <h2 data-financial-screen-heading={screen==='overview'?true:undefined} tabIndex={-1}>{payment.estimationBasis==='operational_month'?'Estimativa salarial da escala':'Próximo pagamento previsto'}</h2>
       <p className="cc-payment-caption">{payment.caption}</p>
       <ForecastCurrencyCarousel payment={payment}/>
       {payment.range&&<p className="cc-payment-period">Ciclo · {payment.kind==='allowance'?'Trabalho de':'Composição de'} {dateLabel(payment.range.start)} a {dateLabel(payment.range.end)} · {payment.lines.length} itens</p>}
