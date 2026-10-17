@@ -15,6 +15,8 @@ on:
       - 'client/src/lib/nextFinancialPayment.ts'
       - 'scripts/regression-financial-*.mjs'
       - 'scripts/regression-financial-currency-ui.cjs'
+      - 'scripts/regression-financial-upcoming-ui.cjs'
+      - 'scripts/regression-financial-upcoming-app.cjs'
       - 'scripts/roster-startup/apply.mjs'
       - 'scripts/p1-menu-*/apply.mjs'
       - 'scripts/regression-financial-ledger.mjs'
@@ -33,11 +35,15 @@ jobs:
           node-version: 22
       - run: npm ci
       - name: Verify unprepared backend contract
-        run: node scripts/regression-financial-ledger.mjs
+        run: |
+          node scripts/regression-financial-ledger.mjs
+          node scripts/regression-financial-upcoming.mjs
       - name: Prepare canonical source
         run: node scripts/v139/apply.mjs
       - name: Verify prepared backend contract
-        run: node scripts/regression-financial-ledger.mjs
+        run: |
+          node scripts/regression-financial-ledger.mjs
+          node scripts/regression-financial-upcoming.mjs
       - name: Preserve existing financial read and credit lifecycle
         run: |
           node scripts/regression-financial-fx.mjs
@@ -60,6 +66,8 @@ jobs:
         run: |
           node scripts/regression-financial-ledger-ui.cjs
           node scripts/regression-financial-currency-ui.cjs
+          node scripts/regression-financial-upcoming-ui.cjs
+          node scripts/regression-financial-upcoming-app.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -67,3 +75,4 @@ jobs:
           path: |
             artifacts/financial-ledger-ui
             artifacts/financial-currency-ui
+            artifacts/financial-upcoming-ui
