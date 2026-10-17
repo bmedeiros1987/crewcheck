@@ -60,7 +60,7 @@ async function checkHidden(page){
   const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:'block'}),errors=[];
   await context.route('**/*',route=>{const url=new URL(route.request().url());if(url.origin!==origin)return route.abort();if(url.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false,"items":[],"data":[],"enabled":false}'});return route.continue();});
   const jan={...roster('domestic',1),days:[day('31/01/2032')]};
-  const history=kind==='domestic'?[{id:'local-synthetic-january',checksum:'synthetic-january',createdAt:'2032-02-01T00:00:00Z',roster:jan,sourceFileName:'Synthetic January'}]:undefined;
+  const history=kind==='domestic'?[{id:'local-synthetic-current-february',checksum:'synthetic-current-february',createdAt:'2032-02-02T14:00:00Z',roster:roster(kind),sourceFileName:'Synthetic current February'},{id:'local-synthetic-january',checksum:'synthetic-january',createdAt:'2032-02-01T00:00:00Z',roster:jan,sourceFileName:'Synthetic January'}]:undefined;
   await context.addInitScript(seed,{theme:'light',kind:roster(kind),amount:123.45,salaryBase:4321.67,history});
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
   await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();await expand(page);
@@ -93,6 +93,9 @@ async function checkHidden(page){
    await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();await expand(page);
    const reconciliation=page.locator('.cc-financial-reconciliation');
    await reconciliation.locator('input[type=file]').setInputFiles({name:'synthetic-diarias.pdf',mimeType:'application/pdf',buffer:documentBytes(['DEMONSTRATIVO DE DIARIAS','De 2032-02-01 ate 2032-02-29','Pagamento em 2032-03-01','ALMOCO R$ 123,45','Total depositado R$ 789,12'])});
+   await reconciliation.locator('[aria-label="Conciliação de diárias"]').waitFor({state:'attached'});
+   await page.getByRole('button',{name:'Demonstrativos',exact:true}).click();
+   await expand(page);
    await reconciliation.locator('[aria-label="Conciliação de diárias"]').waitFor();await checkHidden(page);
    await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().click();assert.match(await reconciliation.textContent(),/789,12/);
    await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().click();await checkHidden(page);
