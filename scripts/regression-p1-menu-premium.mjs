@@ -52,7 +52,7 @@ const EXPECTED_VIEWS = [
   'departure', 'wakeup', 'presentation', 'weather', 'mycar',
   'radar', 'alerts', 'regulation', 'load', 'emergency',
   'import', 'iflight', 'bids', 'map', 'database',
-  'perdiem', 'salary', 'crew',
+  'perdiem', 'salary', 'currency', 'crew',
   'routine', 'life', 'hotels', 'gyms', 'concierge', 'community',
   'crewlocker', 'crewlock', 'reports', 'calendar', 'exports',
   'notifications', 'settings', 'plans', 'guardian', 'manual', 'support',

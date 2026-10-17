@@ -3,8 +3,8 @@
 This additive backend stage preserves financial snapshots independently from the
 roster store. It does not migrate, backfill, confirm payments, recalculate old
 values, or activate storage in production. The UI published in PR #1062 continues
-to say that durable history is unavailable until a separately reviewed integration
-consumes this API. No historical records have been populated by this change.
+to say that durable history is unavailable in production. This local candidate adds a read-only UI consumer, including
+a month picker usable without any roster; the API remains disabled. No historical records have been populated by this change.
 
 ## Operational dependency before activation
 
@@ -18,7 +18,8 @@ consumes this API. No historical records have been populated by this change.
 4. Only after separate operational authorization, enable
    `CREWCHECK_FINANCIAL_LEDGER_ENABLED=true` in the existing service, with
    `PUBLIC_APP_URL` configured to its exact HTTPS origin. No flag is changed here.
-5. Wire an explicit reviewed snapshot producer and the owner UI. Never capture
+5. Wire an explicit reviewed snapshot producer. The candidate UI only reads; it
+   never creates a snapshot. Never capture
    records merely by rendering, opening history, or replacing/deleting a roster.
 
 ## API and identity
@@ -91,5 +92,82 @@ rollback, HTTP methods/content type/origin and missing-schema behavior. Existing
 financial read-model and monthly-credit lifecycle regressions must also pass.
 
 No production migration, real financial write, backfill, credential creation or
-paid resource is part of this change. Frontend history wiring and actual canonical
-capture producers remain a subsequent integration step after the storage gate.
+paid resource is part of this change. Read-only UI wiring is included and verified with synthetic API fixtures.
+Canonical capture producers remain a subsequent integration step after the
+storage gate. The UI does not POST, confirm payments or backfill historical
+rosters. It suppresses stale/account-mismatched responses, separates forecast
+and settlement totals by category/currency, masks values and bars with the
+existing privacy control, and distinguishes unavailable/empty/unknown/zero.
+The no-roster view queries a chosen competence directly, without loading any
+previous roster. Offline browser tests remove all roster storage and reload.
+
+## Local delivery / external approval state
+
+The candidate is composed on published main `3373a1253c460a3249e32eca0616d150be0fe9e4`
+(tree `4a392d07f510c84cd4eef584dda03b06fb031f11`). The previous local commit
+`40a12d77a030d740a5d2e784285553b870565b3e` was cherry-picked onto this base.
+No push is part of this local-validation stage. The previous push returned
+`aborted by user` without a reviewer reason or execution confirmation.
+Read-only lookup of `refs/heads/feat/finance-ledger-20261017` returned 404 while
+the same repository/main/PR were readable through the same connector. This
+strongly indicates an absent branch rather than inaccessible repository; it
+does not establish who cancelled the push. A future push requires clarification
+of that cancellation and explicit permission to retry; do not change credentials
+or use another route. No PR for this backend has been created.
+
+Docker/MySQL server/client were absent from PATH and usual local binary paths.
+No runtime was installed, database created, credential requested or cost incurred.
+Before activation, an operator must provide an explicitly disposable MySQL 8
+environment for real DDL/concurrency/erasure-race checks, then approve the
+production migration and activation separately. No database or production access
+is needed to review the supplied local diff/bundle.
+
+## Original currency and expected payment dates
+
+Original currency and minor-unit precision are retained (including JPY 0 and KWD
+3 decimals). Totals and charts remain separated by currency, category and status.
+Expected payment date is distinct from accrual competence and reported actual
+payment date. Neither scheduling nor conversion promotes a payment status.
+
+Timing policies are explicitly owner scoped, airline scoped, versioned by
+effective period and based on the owner's report, not a global airline/legal
+rule. Foreign allowances require one explicit published-flight link for the
+logical allowance, with flight local date, airport and timezone; ordinary legs
+are never guessed or multiplied into advances. BRL Thursday timing requires a
+reviewed payment-cycle date: the payroll cutoff has not been established. A
+Thursday bank holiday in São Paulo capital moves only to an open Wednesday.
+A closed Wednesday, nonholiday closure or unverified 2027 calendar stays pending.
+The 2026 calendar distinguishes February 18 partial service and December 31
+nonholiday closure. Source: https://portal.febraban.org.br/noticia/4413/pt-br/ .
+
+These helpers accept explicit reviewed inputs; the current forecast producer
+does not yet supply the owner policy, cycle mapping and foreign flight links.
+Do not describe this candidate as automatically applying those dates to all
+existing forecasts. No past settlement or actual exchange rate is rewritten.
+
+## Converter, forecast carousel and Home estimate
+
+A single ephemeral currency-calculator route is reachable through the finance
+menu and the allowance calculator shortcut. Returning preserves competence and
+selected original currency. Calculator drafts are bound to the authenticated
+session and discarded on account changes/logout/expiry. Simulations never write
+ledger records or save a rate. Locale parsing, inverse/cross conversion and
+minor-unit rounding are explicit; missing, future or incompatible dates fail
+closed. The forecast card alone uses native horizontal scrolling and keyboard
+controls; other sections stay fixed and financial privacy masks all slides.
+
+Home can show a clearly labelled estimated BRL total for one allowance payment
+cycle, alongside original amounts and dated source/rate details. Missing or
+undated references and incomplete month coverage produce a partial estimate,
+not a fabricated zero or a received-payment claim. Salary is excluded.
+
+Inspection found the existing account-scoped manual FX settings, but no active
+conversion API/route. The user's description of an existing API remains
+unresolved. No new provider, paid API, credentials or per-keystroke requests are
+introduced. Existing manual settings without a matching dated reference are
+excluded from Home conversion; explicitly entering a new rate asks for its date.
+
+Regulation UI and the requested +1-hour simulation are a separate subsequent
+stage. No legal limits, duty formulas or actual roster are modified here.
+Official applicability evidence and independent review are needed before
+changing normative calculations.

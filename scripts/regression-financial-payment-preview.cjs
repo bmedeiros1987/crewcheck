@@ -61,7 +61,8 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
     assert.equal(await home.count(),1,'one Home finance card in '+mode+' including empty programs');
   }
 
-  assert(!/R\$\s*\d/.test(await home.textContent()),'Home does not invent a cycle amount');
+  if(scenario==='empty')assert(!/R\$\s*\d/.test(await home.textContent()),'empty Home does not invent a cycle amount');
+  else if(/R\$\s*\d/.test(await home.textContent())){assert.match(await home.textContent(),/Total (?:parcial )?estimado em R\$/);assert.match(await home.textContent(),/não confirma recebimento/);}
   await home.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,`${width}-${theme}-${scenario}-home.png`),fullPage:false});
   await home.getByRole('button',{name:/Diárias/}).click();
   await page.locator('.cc-payment-hero').waitFor();
@@ -73,15 +74,15 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
     assert.equal(await page.getByRole('button',{name:/^(Ocultar|Mostrar) valores financeiros$/}).count(),1,'one privacy control after repeated navigation');
   }
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'perdiem'})));
-  await page.getByRole('region',{name:'Previsão de diárias',exact:true}).waitFor();const hero=page.locator('.cc-payment-hero');await hero.waitFor();await hero.getByRole('button').waitFor({state:'visible'});
+  await page.getByRole('region',{name:'Previsão de diárias',exact:true}).waitFor();const hero=page.locator('.cc-payment-hero');await hero.waitFor();await hero.getByRole('button',{name:/^(Ocultar|Mostrar) valores financeiros$/}).waitFor({state:'visible'});
   assert.equal(await page.getByRole('button',{name:/^(Ocultar|Mostrar) valores financeiros$/}).count(),1);
-  const privacyBox=await hero.getByRole('button').boundingBox();assert(privacyBox.width>=44&&privacyBox.height>=44);
+  const privacyBox=await hero.getByRole('button',{name:/^(Ocultar|Mostrar) valores financeiros$/}).boundingBox();assert(privacyBox.width>=44&&privacyBox.height>=44);
 
   if(scenario==='complete'){await page.waitForFunction(()=>document.querySelector('.cc-payment-value').textContent.includes('R$'),null,{timeout:10000}).catch(async error=>{console.log('Synthetic allowance state:',await page.locator('.cc-payment-overview').innerText());console.log('Synthetic inventory:',await page.getByLabel('Competência de referência').innerText());await page.screenshot({path:path.join(out,'allowance-debug.png'),fullPage:true});throw error;});assert.match(await hero.innerText(),/1\.728,30/,'only the seven days of the eligible cycle, not the monthly total');}
   else assert.match(await hero.innerText(),/Previsão incompleta/);
   assert.match(await hero.innerText(),/Data a confirmar/);assert(!/saldo disponível|recebido R\$/i.test(await hero.innerText()));
-  await page.locator('.cc-payment-hero button').focus();await page.keyboard.press('Enter');
-  await page.waitForFunction(()=>document.querySelector('.cc-payment-hero button').getAttribute('aria-pressed')==='true');
+  await page.locator('.cc-payment-hero .cc-financial-privacy-toggle').focus();await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>document.querySelector('.cc-payment-hero .cc-financial-privacy-toggle').getAttribute('aria-pressed')==='true');
   await page.evaluate(()=>scrollTo({top:0,left:0,behavior:'instant'}));
   await page.screenshot({path:path.join(out,`${width}-${theme}-${scenario}-hidden.png`),fullPage:false});
   assert(!/R\$\s*\d/.test(await page.locator('.cc-per-diem-content').textContent()),'hidden mode includes the new hero and its closed details');
@@ -89,13 +90,13 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   if(scenario==='complete'){
     await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'})));
     await page.locator('.cc-home-finance').getByRole('button',{name:/Salário/}).click();await page.locator('.cc-payment-hero').waitFor();
-    assert.equal(await page.locator('.cc-payment-hero button').getAttribute('aria-pressed'),'true','hidden preference survives Home/salary navigation');
+    assert.equal(await page.locator('.cc-payment-hero .cc-financial-privacy-toggle').getAttribute('aria-pressed'),'true','hidden preference survives Home/salary navigation');
     assert(!/R\$\s*\d/.test(await page.locator('.cc-per-diem-content').textContent()));
     await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'perdiem'})));await page.locator('.cc-payment-hero').waitFor();
-    assert.equal(await page.locator('.cc-payment-hero button').getAttribute('aria-pressed'),'true','returning to allowance stays hidden');
+    assert.equal(await page.locator('.cc-payment-hero .cc-financial-privacy-toggle').getAttribute('aria-pressed'),'true','returning to allowance stays hidden');
   }
 
-  await page.locator('.cc-payment-hero button').press('Space');
+  await page.locator('.cc-payment-hero .cc-financial-privacy-toggle').press('Space');
   assert.equal(await page.locator('.cc-payment-overview').getAttribute('data-financial-screen'),'overview');
   assert.equal(await page.locator('.cc-per-diem-items').isVisible(),false,'overview does not stack the statement');
   const overviewAmount=await page.locator('.cc-payment-value').textContent();
@@ -146,7 +147,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
 
     await breakdown.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,`${width}-${theme}-salary-breakdown.png`),fullPage:false});
     await page.getByLabel('Filtro financeiro',{exact:true}).selectOption('week');assert.match(await breakdown.innerText(),/Não calculável/);assert.equal(await breakdown.locator('.cc-bank-chart-track').count(),0,'monthly amounts are not prorated into weeks');await page.getByLabel('Filtro financeiro',{exact:true}).selectOption('month');await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-02');
-    await showFinancial(page,'overview');const salaryAmount=await page.locator('.cc-payment-value').textContent();await page.locator('.cc-payment-hero button').click();assert(!/R\$\s*\d/.test(await page.locator('.cc-per-diem-content').textContent()));await page.locator('.cc-payment-hero button').click();assert.equal(await page.locator('.cc-payment-value').textContent(),salaryAmount);
+    await showFinancial(page,'overview');const salaryAmount=await page.locator('.cc-payment-value').textContent();await page.locator('.cc-payment-hero .cc-financial-privacy-toggle').click();assert(!/R\$\s*\d/.test(await page.locator('.cc-per-diem-content').textContent()));await page.locator('.cc-payment-hero .cc-financial-privacy-toggle').click();assert.equal(await page.locator('.cc-payment-value').textContent(),salaryAmount);
     await showFinancial(page,'payment');await page.getByRole('button',{name:'Demonstrativos',exact:true}).click();assert.equal(await page.locator('.cc-salary-reference').getAttribute('open'),'');
     await page.evaluate(()=>scrollTo({top:0,left:0,behavior:'instant'}));await page.screenshot({path:path.join(out,`${width}-${theme}-payroll-overview.png`),fullPage:false});
     for(const [state,count] of [['partial',1],['empty',0]]){

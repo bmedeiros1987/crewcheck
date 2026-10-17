@@ -1,3 +1,8 @@
+import {HomeFinancialEstimateProvider} from '@/components/finance/HomeFinancialEstimate';
+import CurrencyCalculator from '@/components/finance/CurrencyCalculator';
+import FinancialHistoryWithoutRoster from '@/components/finance/FinancialHistoryWithoutRoster';
+import {validFinancialDay} from '@/lib/financialHistoryPeriods';
+import {parseFinancialDecimal} from '@shared/financialFx.mjs';
 import { AlertRosterNavigation } from '@/components/alerts/AlertRosterNavigation';
 import { peekPendingNavigationContext as peekAlertRosterContext } from '@/lib/navigationContext';
 import { isGroundAlertIgnored, GROUND_DISPOSITION_EVENT } from '@/lib/groundAlertDispositions';
@@ -140,7 +145,7 @@ import '@/components/v1399/premium.css';
 
 type ZeroView =
   | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'notifications' | 'maintenance' | 'import' | 'features'
-  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community' | 'compare' | 'regulation' | 'bids' | 'admin';
+  | 'currency' | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community' | 'compare' | 'regulation' | 'bids' | 'admin';
 
 type ZeroLeg = {
   id: string;
@@ -2257,6 +2262,11 @@ function timelineStateClass(event: ZeroLeg): string {
   if (start > now) return 'future';
   return 'past';
 }
+function homeAllowancePayment(roster: CrewRoster) {
+  if(!roster.days?.length)return null;
+  const snapshot=financeSnapshot(roster),month=String(roster.year)+'-'+String(roster.month).padStart(2,'0');
+  return nextAllowancePayment(snapshot.perdiem.monthlyRows,snapshot.perdiem.unclassifiedItems,[month],new Date(),roster.days.map(day=>/^\d{2}\/\d{2}\/\d{4}$/.test(day.date)?day.date.split('/').reverse().join('-'):day.date));
+}
 function financeSnapshot(roster: CrewRoster) {
   const events = buildLegs(roster);
   const perdiem = calculatePerDiem(events, roster);
@@ -3979,12 +3989,17 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
     for (const currency of currencies) {
       if (session !== financialRateSession()) { toast.error('A sessão mudou. O câmbio não foi aplicado à outra conta.'); return; }
       const key = 'crewcheck_fx_' + currency.toLowerCase() + '_brl';
-      const value = prompt('Cotação informada: 1 ' + currency + ' em BRL', privacy.hidden ? '' : storage.get(key, ''));
+      const value = prompt('Cotação de referência: 1 ' + currency + ' em BRL (use vírgula decimal)', privacy.hidden ? '' : storage.get(key, '').replace('.', ','));
       if (value === null) continue;
-      if (!writeFinancialSetting(key, value.replace(',', '.'), session)) { toast.error('Não foi possível salvar o câmbio na sessão que abriu a revisão.'); return; }
+      const normalized = parseFinancialDecimal(value);
+      if (!normalized || !Number.isFinite(Number(normalized)) || Number(normalized) <= 0) { toast.error('Informe uma cotação positiva válida.'); continue; }
+      const asOf = prompt('Data de referência da cotação (AAAA-MM-DD)', '');
+      if (asOf === null) continue;
+      if (!validFinancialDay(asOf) || asOf > new Date().toISOString().slice(0, 10)) { toast.error('Informe uma data de referência válida, sem data futura.'); continue; }
+      if (!writeFinancialSetting(key, normalized, session) || !writeFinancialSetting(key + '_reference', JSON.stringify({rate: normalized, asOf, source: 'Cotação informada nesta conta'}), session)) { toast.error('Não foi possível salvar o câmbio na sessão que abriu a revisão.'); return; }
       changed = true;
     }
-    if (changed) { setRevision((value) => value + 1); toast.success('Câmbio atualizado para esta previsão.'); }
+    if (changed) { setRevision((value) => value + 1); toast.success('Referência de câmbio atualizada para esta previsão.'); }
   }
 
   return <><Brand back/><section className="cc-per-diem-content" aria-label="Previsão de diárias">
@@ -4962,6 +4977,7 @@ function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'weather' || value === 'meteo') return 'weather';
   if (value === 'perdiem' || value === 'diarias') return 'perdiem';
   if (value === 'salary' || value === 'salario') return 'salary';
+  if(value==='currency'||value==='currency-calculator')return 'currency';
   if (value === 'reports' || value === 'relatorios') return 'reports';
   if (value === 'load' || value === 'carga') return 'load';
   if (value === 'calendar') return 'calendar';
@@ -5107,6 +5123,9 @@ export default function Home() {
   const [, setLocation] = useLocation();
   const fileRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<ZeroView>(() => new URLSearchParams(window.location.search).has('connect') ? 'community' : normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
+  const currencyReturnView=useRef<ZeroView>('cockpit'),currencyPreviousView=useRef<ZeroView>(view);
+  if(view==='currency'&&currencyPreviousView.current!=='currency')currencyReturnView.current=['perdiem','salary'].includes(currencyPreviousView.current)?currencyPreviousView.current:'cockpit';
+  currencyPreviousView.current=view;
   const [bundle, setBundle] = useState<BundleState>(loadRoster());
   const [busy, setBusy] = useState(false);
   const [drawer, setDrawerState] = useState(false);
@@ -5332,6 +5351,7 @@ export default function Home() {
   };
 
   return <main className="cz-app" data-version={DEFAULT_VERSION} data-view={view}>
+    <HomeFinancialEstimateProvider roster={bundle.roster} calculate={homeAllowancePayment}>
     <div className="cz-wallpaper"/>
     <input ref={fileRef} type="file" accept="application/pdf,.pdf" hidden onChange={handleFile}/>
     <div className="cz-global-header" data-global-internal-header="true">
@@ -5363,6 +5383,7 @@ export default function Home() {
     {view === 'concierge' && <TelegramConciergeView bundle={bundle} setBundle={setBundle} setView={setView}/>}
     {view === 'radar' && <RadarView event={flightEvent}/>}
     {view === 'weather' && <WeatherView event={flightEvent}/>}
+    {view === 'currency' && <CurrencyCalculator/>}
     {view === 'perdiem' && <PerDiemView bundle={bundle}/>}
     {view === 'salary' && <SalaryReliableView bundle={bundle}/>}
     {view === 'reports' && <ReportsView bundle={bundle}/>}
@@ -5378,5 +5399,5 @@ export default function Home() {
     {view === 'database' && <DatabaseView setBundle={setBundle} setView={setView}/>}
     {view === 'crew' && <CrewToolsView bundle={bundle}/>}
     <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)} alertCount={actionableComplianceAlerts(reviewableCompliance(compliance, bundle.roster)).length} alertSignature={complianceAlertSignature(reviewableCompliance(compliance, bundle.roster))}/>
-  </main>;
+  </HomeFinancialEstimateProvider></main>;
 }

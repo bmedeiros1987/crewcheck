@@ -5,7 +5,7 @@ import { financialMonths, validFinancialDay, type FinancialRange } from './finan
 export type PaymentLine = { iso: string; label: string; currency: string; value: number | null; source: string };
 export type NextPayment = {
   kind: 'allowance' | 'payroll'; range: FinancialRange | null; timing: string;
-  source: string; lines: PaymentLine[]; totals: Record<string, number> | null;
+  currencyTiming?: Record<string,string>; source: string; lines: PaymentLine[]; totals: Record<string, number> | null;
   issues: string[]; caption: string;
 };
 type AllowanceRow = PaymentLine & { value: number; convertedBRL: number | null };
