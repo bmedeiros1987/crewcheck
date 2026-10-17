@@ -75,6 +75,18 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
  await page.getByRole('button',{name:'Confirmar gravação da previsão revisada',exact:true}).click();
  await page.getByText('Previsão salva. Isso não confirma recebimento.',{exact:true}).waitFor();
  assert(db.state.revisions.length>0);const records=await store.list('synthetic-a@example.invalid');assert(records.every(x=>x.status==='forecast'&&!x.paymentDate));if(scenario==='domestic')assert(records.every(x=>!x.expectedPaymentDate));else{const linked=records.filter(x=>x.expectedPaymentDate);assert.equal(linked.length,1);assert.equal(linked[0].expectedPaymentDate,'2032-03-01');assert.equal(linked[0].expectedPaymentTimezone,'America/Sao_Paulo');}
+ if(scenario==='domestic'){
+  const count=db.state.revisions.length;
+  await page.getByRole('button',{name:'Extrato',exact:true}).click();
+  await page.getByLabel('Filtro financeiro',{exact:true}).selectOption('custom');
+  await page.getByLabel('Início financeiro',{exact:true}).fill('2032-02-04');await page.getByLabel('Fim financeiro',{exact:true}).fill('2032-02-10');
+  await summary.click();await page.getByLabel('Referência da revisão financeira').fill('synthetic-week-review');
+  await page.getByLabel('Confirmo que esta escala é minha e revisei os valores calculados.').check();
+  const brl=page.getByLabel('Confirmo a política BRL: quinta-feira; feriado bancário de SP antecipa para quarta.');assert.equal(await brl.isDisabled(),false);await brl.check();
+  const date=page.getByLabel('Data comprovada do ciclo BRL');assert.equal(await date.getAttribute('min'),'2032-02-12');assert.equal(await date.getAttribute('max'),'2032-02-12');
+  await date.fill('2032-02-05');await page.getByRole('button',{name:'Preparar revisão sem gravar',exact:true}).click();await page.getByText(/quinta-feira informada não pertence/).waitFor();assert.equal(db.state.revisions.length,count,'wrong cycle never writes');
+  await date.fill('2032-02-12');await page.getByRole('button',{name:'Preparar revisão sem gravar',exact:true}).click();await page.getByRole('button',{name:'Confirmar gravação da previsão revisada',exact:true}).waitFor();assert.equal(db.state.revisions.length,count,'valid single-week preview remains read-only');
+ }
  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'})));await page.locator('.cz-menu-btn').first().click();await page.locator('.cc-menu-destination[data-menu-label="Concierge"]').click();
  await page.getByRole('heading',{name:'Próximas previsões financeiras',exact:true}).waitFor();
  await page.getByText('Resumo parcial: há dados, datas ou valores a conferir no Financeiro.',{exact:true}).waitFor();

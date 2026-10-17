@@ -167,6 +167,7 @@ const {canonicalCaptureRequest}=await import('../server/financial-canonical-capt
 const {queryUpcomingFinancialForecast}=await import('../shared/financialUpcoming.mjs');
 const canonicalDb=database(),canonicalStore=createFinancialSqlStore(canonicalDb);
 const canonicalInput={ownerId:A.ownerId,crewId:'synthetic-crew',airline:'LA',rows:[{iso:'2026-06-01',label:'Almoço',currency:'BRL',value:23.45,source:'synthetic-canonical-calculator',rateVersion:'synthetic-v1'}],coveredDays:['2026-06-01'],range:{start:'2026-06-01',end:'2026-06-01'},complete:true,review:{reference:'synthetic-owner-review',ownerConfirmed:true,brlConfirmed:true,brlCycleDate:'2026-06-04'}};
+for(const brlCycleDate of ['2026-05-28','2026-06-11'])await assert.rejects(canonicalAllowanceCapture({...canonicalInput,review:{...canonicalInput.review,brlCycleDate}}),/DATE_MISMATCH/);
 const canonicalSource=await canonicalAllowanceCapture(canonicalInput);
 const floatSource=await canonicalAllowanceCapture({...canonicalInput,rows:[{...canonicalInput.rows[0],value:105.03999999999999}]});assert.equal(floatSource.items[0].record.amountMinor,10504);
 for(const value of [1.234,Number.MAX_VALUE])await assert.rejects(canonicalAllowanceCapture({...canonicalInput,rows:[{...canonicalInput.rows[0],value}]}),/INVALID_ROW/);

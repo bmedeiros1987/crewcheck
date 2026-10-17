@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { authFetch, captureAuthSession, getStoredUser, getToken } from '@/lib/authClient';
-import { canonicalAllowanceCapture, canonicalBrlCycleKeys } from '@shared/financialCanonicalCapture.mjs';
+import { canonicalAllowanceCapture, canonicalBrlCycleKeys, canonicalBrlCycleThursday } from '@shared/financialCanonicalCapture.mjs';
 
 type Props={rows:any[];coveredDays:string[];range:{start:string;end:string};complete:boolean;crewId:string|number;airline:string;flights:Array<{id:string;published:boolean;localDate:string;timezone:string;airport:string;label:string}>};
 // Review state belongs to this mounted canonical snapshot. Parent keys by its
@@ -9,7 +9,7 @@ export default function CanonicalForecastCapture(props:Props){
  const [reference,setReference]=useState(''),[confirmed,setConfirmed]=useState(false),[brl,setBrl]=useState(false),[cycle,setCycle]=useState('');
  const [foreign,setForeign]=useState(false),[flightLinks,setFlightLinks]=useState<Record<string,string>>({});
  const [review,setReview]=useState<any>(null),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
- const brlCycleCount=canonicalBrlCycleKeys(props.rows).length;
+ const brlCycleCount=canonicalBrlCycleKeys(props.rows).length, brlThursday=canonicalBrlCycleThursday(props.rows);
  const clear=()=>{setReview(null);setMessage('');};
  const preview=async()=>{
   const session=captureAuthSession(),user=getStoredUser(),ownerId=String(user?.email||'').trim().toLowerCase();
@@ -20,7 +20,7 @@ export default function CanonicalForecastCapture(props:Props){
    if(!session.isCurrent())return;
    const result=await authFetch<any>('/api/platform/finance/capture',{method:'POST',body:JSON.stringify({action:'preview',source})});
    if(session.isCurrent()&&result?.ok===true)setReview({...result,session});
-  }catch{if(session.isCurrent())setMessage('Não foi possível preparar a revisão. Confira titular, cobertura, referência e disponibilidade do histórico.');}
+  }catch(error){if(session.isCurrent())setMessage(error instanceof Error&&error.message==='CANONICAL_CAPTURE_BRL_CYCLE_DATE_MISMATCH'?'A quinta-feira informada não pertence à semana de trabalho selecionada. Confira o ciclo; sem comprovação, mantenha a data pendente.':'Não foi possível preparar a revisão. Confira titular, cobertura, referência e disponibilidade do histórico.');}
   finally{if(session.isCurrent())setBusy(false);}
  };
  const save=async()=>{
@@ -39,7 +39,7 @@ export default function CanonicalForecastCapture(props:Props){
   <label><input type="checkbox" checked={confirmed} onChange={e=>{clear();setConfirmed(e.target.checked);}}/>Confirmo que esta escala é minha e revisei os valores calculados.</label>
   <label><input type="checkbox" disabled={brlCycleCount!==1} checked={brl} onChange={e=>{clear();setBrl(e.target.checked);}}/>Confirmo a política BRL: quinta-feira; feriado bancário de SP antecipa para quarta.</label>
   {brlCycleCount>1&&<p>Para confirmar a data BRL, selecione uma única semana de trabalho (quarta a terça) no filtro financeiro. Nesta seleção, os valores podem ser salvos com datas pendentes.</p>}
-  {brl&&<label>Quinta-feira do ciclo comprovado<input aria-label="Data comprovada do ciclo BRL" type="date" value={cycle} onChange={e=>{clear();setCycle(e.target.value);}}/></label>}
+  {brl&&<label>Quinta-feira do ciclo comprovado<input aria-label="Data comprovada do ciclo BRL" type="date" min={brlThursday||undefined} max={brlThursday||undefined} value={cycle} onChange={e=>{clear();setCycle(e.target.value);}}/></label>}
   <p>Sem ciclo comprovado, a data fica pendente.</p>
   {props.rows.some(row=>row.currency!=='BRL')&&<fieldset><legend>Vínculo internacional revisado</legend>
    <label><input type="checkbox" checked={foreign} onChange={e=>{clear();setForeign(e.target.checked);}}/>Confirmo a política: a diária internacional selecionada é prevista na data do voo vinculado.</label>

@@ -4,6 +4,10 @@ const day = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val
 export function canonicalBrlCycleKeys(rows) {
  return [...new Set((rows||[]).filter(row=>row.currency==='BRL'&&day(row.iso)).map(row=>{const date=new Date(row.iso+'T12:00:00Z');date.setUTCDate(date.getUTCDate()-((date.getUTCDay()+4)%7));return date.toISOString().slice(0,10);}))];
 }
+export function canonicalBrlCycleThursday(rows) {
+ const weeks=canonicalBrlCycleKeys(rows);if(weeks.length!==1)return null;
+ const date=new Date(weeks[0]+'T12:00:00Z');date.setUTCDate(date.getUTCDate()+8);return date.toISOString().slice(0,10);
+}
 export async function financialCaptureDigest(value) {
   const bytes = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)));
   return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2,'0')).join('');
@@ -16,6 +20,7 @@ export async function canonicalAllowanceCapture({ ownerId, crewId, airline, rows
     || !/^[A-Za-z0-9_.:-]{1,128}$/.test(review.reference || '') || !day(range?.start) || !day(range?.end) || range.start > range.end
     || !Array.isArray(rows) || !rows.length || rows.length > 200) throw Error('CANONICAL_CAPTURE_REVIEW_REQUIRED');
   if(review.brlConfirmed===true&&canonicalBrlCycleKeys(rows).length>1)throw Error('CANONICAL_CAPTURE_ONE_BRL_CYCLE_REQUIRED');
+  if(review.brlConfirmed===true&&rows.some(row=>row.currency==='BRL')&&review.brlCycleDate!==canonicalBrlCycleThursday(rows))throw Error('CANONICAL_CAPTURE_BRL_CYCLE_DATE_MISMATCH');
   const covered = new Set(coveredDays);
   for (const cursor = new Date(range.start+'T12:00:00Z'); cursor.toISOString().slice(0,10) <= range.end; cursor.setUTCDate(cursor.getUTCDate()+1)) {
     if (!covered.has(cursor.toISOString().slice(0,10))) throw Error('CANONICAL_CAPTURE_COVERAGE_REQUIRED');
