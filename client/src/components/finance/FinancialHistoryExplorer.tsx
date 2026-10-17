@@ -1,4 +1,4 @@
-import { useFinancialPrivacy, FinancialPrivacyToggle } from './FinancialPrivacy';
+import { useFinancialPrivacy } from './FinancialPrivacy';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CalendarDays } from 'lucide-react';
 import { getStoredUser, getToken } from '@/lib/authClient';
@@ -93,7 +93,7 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   const displayedCurrency=currencies.includes(currency)?currency:currencies[0] || 'BRL';
   const numeric=rows.filter(item=>item.fullWeek&&Number.isFinite(item.values[displayedCurrency]));
   const max=numeric.length>=2?Math.max(...numeric.map(item=>item.values[displayedCurrency])):null;
-  const controls=<><FinancialPrivacyToggle/>
+  const controls=<>
     <section className="cc-roster-period-v1399 cc-financial-period" aria-label="Período financeiro">
       <label><CalendarDays aria-hidden="true"/><span>Competência de referência</span><select aria-label="Competência de referência" value={month} onChange={event=>{setMonth(event.target.value);setDay(event.target.value+'-01');}}>{months.map(value=><option key={value} value={value}>{label(value)}</option>)}</select></label>
       <label><span>Filtro</span><select aria-label="Filtro financeiro" value={kind} onChange={event=>setKind(event.target.value as FinancialRange['kind'])}><option value="week">Semana</option><option value="month">Mês</option><option value="year">Ano</option><option value="custom">Período personalizado</option></select></label>

@@ -20,18 +20,18 @@ export default function NextPaymentCard({ payment, requestRange }: { payment:Nex
   }
   return <div ref={root} className="cc-payment-overview">
     <section className="cc-payment-hero" aria-label="Próximo pagamento previsto">
-      <div className="cc-payment-topline"><span><ArrowDownLeft aria-hidden="true"/> SUA PREVISÃO</span><FinancialPrivacyToggle/></div>
+      <div className="cc-payment-topline"><span><ArrowDownLeft aria-hidden="true"/> PRÓXIMO CICLO</span><FinancialPrivacyToggle/></div>
       <h2>Próximo pagamento previsto</h2>
       <p className="cc-payment-caption">{payment.caption}</p>
-      <div className="cc-payment-value">{payment.totals ? Object.entries(payment.totals).map(([currency,value])=><strong key={currency}>{money(value,currency)}</strong>) : <strong>Previsão incompleta</strong>}</div>
+      <div className="cc-payment-value" data-complete={Boolean(payment.totals)}>{payment.totals ? Object.entries(payment.totals).map(([currency,value])=><strong key={currency}>{money(value,currency)}</strong>) : <strong>Previsão incompleta</strong>}</div>
       <p className="cc-payment-timing">{payment.timing}</p>
-      {payment.range&&<p className="cc-payment-period">{payment.kind==='allowance'?'Trabalho de':'Composição de'} {dateLabel(payment.range.start)} a {dateLabel(payment.range.end)} · {payment.lines.length} itens</p>}
+      {payment.range&&<p className="cc-payment-period">Ciclo · {payment.kind==='allowance'?'Trabalho de':'Composição de'} {dateLabel(payment.range.start)} a {dateLabel(payment.range.end)} · {payment.lines.length} itens</p>}
       <p className="cc-payment-disclaimer">Estimativa para conferir. Não representa dinheiro recebido.</p>
     </section>
     <nav className="cc-payment-actions" aria-label="Ações financeiras">
       <button onClick={()=>open('.cc-next-payment-lines')}><List aria-hidden="true"/><span>Composição</span><ChevronRight aria-hidden="true"/></button>
-      <button onClick={()=>open(payment.kind==='allowance'?'.cc-financial-reconciliation':'.cc-salary-prerequisites details')}><FileText aria-hidden="true"/><span>Demonstrativos</span><ChevronRight aria-hidden="true"/></button>
-      <button onClick={()=>open('.cc-payment-pending')}><CircleAlert aria-hidden="true"/><span>Pendências</span><ChevronRight aria-hidden="true"/></button>
+      <button aria-label="Demonstrativos" onClick={()=>open(payment.kind==='allowance'?'.cc-financial-reconciliation':'.cc-salary-prerequisites details')}><FileText aria-hidden="true"/><span>Extratos</span><ChevronRight aria-hidden="true"/></button>
+      <button aria-label="Pendências" onClick={()=>open('.cc-payment-pending')}><CircleAlert aria-hidden="true"/><span>Pendências{payment.issues.length ? ` (${payment.issues.length})` : ''}</span><ChevronRight aria-hidden="true"/></button>
     </nav>
     <section className="cc-payment-pending" aria-label="Conferir previsão" tabIndex={-1}>
       <h3>{payment.issues.length?'O que falta conferir':'Composição disponível'}</h3>
