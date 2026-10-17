@@ -11,7 +11,7 @@ let server = fs.readFileSync(serverFile, 'utf8');
 let home = fs.readFileSync(homeFile, 'utf8');
 
 const oldRadarParams = `  const identity = telegramConciergeIdentity();\n  const params = new URLSearchParams({ flight, origin: String(event.origin || ''), destination: String(event.destination || ''), force: force ? '1' : '0', email: identity.email, name: identity.name, conciergeKey: identity.conciergeKey });`;
-const newRadarParams = `  const identity = telegramConciergeIdentity();\n  const scheduledDeparture = (() => {\n    const match = String(event.departure || '').match(/(\\d{1,2}):(\\d{2})/);\n    const date = new Date(event.date);\n    if (!match || Number.isNaN(date.getTime())) return '';\n    date.setHours(Number(match[1]), Number(match[2]), 0, 0);\n    return date.toISOString();\n  })();\n  const params = new URLSearchParams({ flight, origin: String(event.origin || ''), destination: String(event.destination || ''), scheduledDeparture, force: force ? '1' : '0', email: identity.email, name: identity.name, conciergeKey: identity.conciergeKey });`;
+const newRadarParams = `  const identity = telegramConciergeIdentity();\n  const scheduledDeparture = event.canonical?.startDateTime || '';\n  const params = new URLSearchParams({ flight, origin: String(event.origin || ''), destination: String(event.destination || ''), scheduledDeparture, force: force ? '1' : '0', email: identity.email, name: identity.name, conciergeKey: identity.conciergeKey });`;
 if (home.includes(oldRadarParams)) home = home.replace(oldRadarParams, newRadarParams);
 
 const normalizeMarker = 'function normalizeFlightAwareFlight(row = {}, ctx) {';

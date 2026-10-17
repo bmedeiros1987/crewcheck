@@ -211,6 +211,10 @@ await import('../wellhub-deeplinks/apply.mjs');
 await import('../stay-editor/apply.mjs');
 await import('../bids-default/apply.mjs');
 await import('../bids-default/wakeup-layout.mjs');
+await import('../cirium-radar-off/apply.mjs');
+await import('../concierge-gate-functional.mjs');
+await import('../pulse-alert-experience/apply.mjs');
+await import('../p1-infobip-whatsapp-off/apply.mjs');
 
 }
 

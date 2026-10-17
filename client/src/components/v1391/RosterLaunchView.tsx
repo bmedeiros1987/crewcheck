@@ -1,8 +1,11 @@
+import { useFinancialPrivacy, FinancialPrivacyToggle } from '@/components/finance/FinancialPrivacy';
 import { rosterDisplayCompare, rosterDisplayIso, rosterInstantIso, rosterLabelDate, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { useEffect, useMemo, useState } from 'react';
 import { summarizeForecastRows, summarizeNativeForecastRows } from '@/lib/financialForecastPeriods';
 import { peekPendingNavigationContext } from '@/lib/navigationContext';
 import { consumePendingRosterFocus } from '@/lib/rosterFocus';
+import { AlertRosterNavigation } from '../alerts/AlertRosterNavigation';
+import type { CrewRoster } from '../../lib/pdfParser';
 import {
   Banknote,
   BedDouble,
@@ -247,7 +250,13 @@ function publishedProgramWindow(event: RosterEvent) {
   };
 }
 
-export default function RosterLaunchView({ events, finance, financeMonth, setView }: { events: RosterEvent[]; finance?: RosterFinance; financeMonth?: string; setView: (view: any) => void }) {
+const formatMoney = money;
+const formatCurrencyMoney = currencyMoney;
+
+export default function RosterLaunchView({ events, finance, financeMonth, setView, roster }: { events: RosterEvent[]; finance?: RosterFinance; financeMonth?: string; setView: (view: any) => void; roster?: CrewRoster }) {
+  const privacy = useFinancialPrivacy();
+  const money = (value: number | null) => privacy.text(formatMoney(value));
+  const currencyMoney = (value: number, currency = 'BRL') => privacy.text(formatCurrencyMoney(value, currency));
   const { layout, zoom, choose, chooseZoom, message } = useRosterLayout();
   const allOrdered = useMemo(() => [...events]
     .filter((event) => !event.id?.includes('placeholder'))
@@ -264,6 +273,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
   }, [months.join('|'), selectedMonth, currentMonth]);
   useEffect(() => {
     const context = peekPendingNavigationContext('roster');
+    if (context?.sourceView === 'alerts') return;
     const focus = consumePendingRosterFocus();
     if (!focus && !context?.programId) return;
     const focusedEvent = context?.programId ? allOrdered.find(event => event.id === context.programId) : allOrdered.find(event => dateOf(event).getTime() === focus?.getTime());
@@ -279,6 +289,12 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
     setPendingRosterFocusIso(iso);
     if (selectedMonth !== month) setSelectedMonth(month);
   }, []);
+  function focusAlertDate(date: string) {
+    const iso = date.split('/').reverse().join('-');
+    if (!months.includes(iso.slice(0, 7))) { setRosterFocusStatus('A data do alerta não está neste período da escala.'); return; }
+    setSelectedMonth(iso.slice(0, 7)); setSelectedDay(iso); setPendingRosterFocusIso(iso);
+    choose('cards', 'day');
+  }
   useEffect(() => {
     if (!pendingRosterFocusIso || selectedMonth !== pendingRosterFocusIso.slice(0, 7)) return;
     const frame = window.requestAnimationFrame(() => {
@@ -350,6 +366,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
 
   return <div className="cc-roster-premium-v1397">
     <V139Header title="Escala inteligente" detail="Programações e horários publicados."/>
+    {roster && <AlertRosterNavigation roster={roster} onFocus={focusAlertDate}/>}
 
     <div className="cz-roster-actions cc-share-entry"><button type="button" onClick={() => { setPendingNavigationContext({sourceView:'roster',targetView:'community',programId:'share-roster',returnView:'roster',policy:'once'}); setView('community'); }}>Compartilhar escala</button></div>
     <section className="cc-roster-layout-picker cc-roster-compact-picker" aria-label="Formato da escala">
@@ -375,7 +392,7 @@ export default function RosterLaunchView({ events, finance, financeMonth, setVie
       <p role="status">{visibleEvents.length} programações {zoom === 'day' ? `em ${activeDay.split('-').reverse().join('/')}` : 'no mês'}. Horários publicados preservados.</p>
     </section>
 
-    <details className="cc-roster-finance-summary">
+    <FinancialPrivacyToggle/><details className="cc-roster-finance-summary">
       <summary>Resumo do mês · Diárias {financeAvailable ? money(perDiemTotal) : 'Indisponível'} · KM {financeAvailable ? (scopedFinance?.salary?.configured ? money(production) : 'Calibrar tarifa') : 'Indisponível'}</summary>
       <section className="cc-roster-hero-v1397">
       <div className="cc-roster-hero-copy-v1397">

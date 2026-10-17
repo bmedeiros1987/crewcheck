@@ -11,11 +11,11 @@ assert "'status': 'draft'" not in source
 assert "'releaseNotes':" in source
 assert "url + ':validate'" not in source
 assert "from review_policy import commit_internal_edit" in source
-assert "commit_internal_edit(api, url)" in source
+assert "commit_internal_edit(api, url, protect_reviews=True)" in source
 assert "url + ':commit'" not in source
-assert "params={'changesNotSentForReview': 'true'}" in review_policy
+assert "params={'changesNotSentForReview': 'true', **protected}" in review_policy
 assert "MUST_NOT_DEFER_REVIEW" in review_policy
-assert "api('POST', edit_url + ':commit')" in review_policy
+assert "api('POST', edit_url + ':commit', **({'params': protected} if protected else {}))" in review_policy
 assert "Independent CI failed; Play publication blocked" in source
 assert "time.time() + 12 * 60" in source
 

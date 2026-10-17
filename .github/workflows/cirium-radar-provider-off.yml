@@ -8,6 +8,16 @@ on:
       - 'server/radar-field-provenance.mjs'
       - 'scripts/regression-cirium-radar-provider-off.mjs'
       - '.github/workflows/cirium-radar-provider-off.yml'
+      - 'server/cirium-radar-injection.mjs'
+      - 'server.mjs'
+      - 'scripts/cirium-radar-off/**'
+      - 'scripts/v139/apply.mjs'
+      - 'scripts/regression-cirium-radar-wiring-off.mjs'
+      - 'scripts/check-cirium-radar-wiring-off.mjs'
+      - 'docs/cirium-radar-wiring-off.md'
+      - 'server/cirium-sky-transport.mjs'
+      - 'scripts/regression-cirium-sky-transport-off.mjs'
+      - 'docs/cirium-sky-transport-off.md'
 permissions:
   contents: read
 jobs:
@@ -23,3 +33,6 @@ jobs:
           TZ=UTC node scripts/regression-cirium-radar-provider-off.mjs
           TZ=America/Sao_Paulo node scripts/regression-cirium-radar-provider-off.mjs
           TZ=Pacific/Auckland node scripts/regression-cirium-radar-provider-off.mjs
+      - run: npm ci
+      - name: Raw and prepared wiring, cache lifecycle and canonical regression gates
+        run: node scripts/check-cirium-radar-wiring-off.mjs

@@ -106,11 +106,17 @@ function manualHotelApz(hotelApz, stay, scope) {
 }
 
 /** Updating the default is a separate caller action; this never mutates an override. */
-export function resolveStayAlarmChoice(defaultLeadMinutes, override) {
+export function resolveStayAlarmChoice(defaultLeadMinutes, override, breakfastDefaults) {
   if (override?.mode === 'absolute') return Object.freeze({ mode: 'absolute', alarmAt: override.alarmAt, timeZone: override.timeZone, source: 'individual' });
   if (override && override.mode !== 'relative') return none('invalid-mode');
   const individual = Boolean(override);
-  const leadMinutes = individual ? override.leadMinutes : defaultLeadMinutes;
+  let leadMinutes = individual ? override.leadMinutes : defaultLeadMinutes;
+  // Only callers with an explicit breakfast plan use the two defaults. Keep
+  // legacy callers' configured lead, without interpreting it as a breakfast fact.
+  if (!individual && breakfastDefaults) {
+    if (!['with', 'without'].includes(breakfastDefaults.breakfastPlan)) return none('breakfast-plan-unconfirmed');
+    if (breakfastDefaults.breakfastPlan === 'without') leadMinutes = breakfastDefaults.defaultWithoutBreakfastMinutes;
+  }
   if (!Number.isInteger(leadMinutes) || leadMinutes < 0 || leadMinutes > 720) return none('lead-not-configured');
   return Object.freeze({ mode: 'relative', leadMinutes, source: individual ? 'individual' : 'default' });
 }
@@ -121,10 +127,11 @@ function displayInstant(epoch, timeZone) {
 }
 
 /** Calculation is separate from permissions, capabilities and effective scheduling. */
-export function calculateStayWakeup({ scope, stay, hotelApz, now, choice, defaultLeadMinutes }) {
+export function calculateStayWakeup({ scope, stay, hotelApz, now, choice, defaultLeadMinutes, breakfastPlan, defaultWithoutBreakfastMinutes }) {
   if (!scopeEqual(stay, scope)) return none('scope-mismatch');
   if (!Number.isFinite(now)) return none('time-context-invalid');
-  const preference = resolveStayAlarmChoice(defaultLeadMinutes, choice);
+  const preference = resolveStayAlarmChoice(defaultLeadMinutes, choice,
+    breakfastPlan === undefined ? undefined : { breakfastPlan, defaultWithoutBreakfastMinutes });
   if (!preference.mode) return preference;
   if (!validZone(preference.mode === 'absolute' ? preference.timeZone || stay.timeZone : stay.timeZone)) return none('time-context-invalid');
   const hotel = manualHotelApz(hotelApz, stay, scope);
@@ -150,14 +157,14 @@ export function calculateStayWakeup({ scope, stay, hotelApz, now, choice, defaul
 }
 
 /** Pure scheduling proposal. No IO; #951 is not mounted and integration defaults off. */
-export function planStayAlarm({ enabled = false, scope, stay, hotelApz, now, choice, defaultLeadMinutes, leadMinutes,
+export function planStayAlarm({ enabled = false, scope, stay, hotelApz, now, choice, defaultLeadMinutes, leadMinutes, breakfastPlan, defaultWithoutBreakfastMinutes,
   automaticConfigured = false, devicePermission = 'unknown', channelConfigured = false,
   manualScheduleRequested = false, jobs = [] } = {}) {
   if (enabled !== true) return none('integration-disabled');
   const hotel = manualHotelApz(hotelApz, stay, scope);
   if (hotel.apz === undefined) return hotel;
   if (manualScheduleRequested !== true) return none('manual-confirmation-required', { dataState: 'manual' });
-  const calculated = calculateStayWakeup({ scope, stay, hotelApz, now, choice, defaultLeadMinutes: defaultLeadMinutes ?? leadMinutes });
+  const calculated = calculateStayWakeup({ scope, stay, hotelApz, now, choice, defaultLeadMinutes: defaultLeadMinutes ?? leadMinutes, breakfastPlan, defaultWithoutBreakfastMinutes });
   if (calculated.action !== 'calculated') return calculated;
   if (!calculated.eligible) return none(calculated.warnings.includes('alarm-past') ? 'trigger-expired' : 'absolute-time-incompatible', { calculated });
   if (automaticConfigured !== true || channelConfigured !== true) return none('capability-not-configured', { calculated });

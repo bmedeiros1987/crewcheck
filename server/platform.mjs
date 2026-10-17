@@ -1,3 +1,7 @@
+import {verifiedMysqlTls} from './mysql-verified-tls.mjs';
+import {eraseWhatsAppAccountState} from './whatsapp-lifecycle.mjs';
+import { PATH as RELEASE_JOURNAL_PATH } from './release-journal/route.mjs';
+import { createProbeOnlyReleaseHandler } from './release-journal/probe-composition.mjs';
 import { mysqlAdapter } from './mysql-platform-adapter.mjs';
 import { amilDocumentaryReferences, AMIL_DOCUMENTARY_NOTICE } from '../shared/amil-documentary-reference.mjs';
 import { amilPlanFamily, amilConfirmedProviders, amilUnknownMessage, AMIL_GUIDE_URL } from '../shared/amil-coverage.mjs';
@@ -5,6 +9,29 @@ import { notificationStateDeletionStatements } from './v139/notificationStateDel
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { diagnoseCirium, diagnoseCiriumFlight } from './cirium-diagnostic.mjs';
+
+/** Read-only Radar source: token identity owns the active publication, never URL email. */
+export async function loadOwnedPlatformRoster(req, expectedEmail) {
+  const token = verifyJwt(requestToken(req));
+  const email = safeEmail(token?.email);
+  if (token?.aud === 'crewcheck-visitor' || token?.role === 'visitor')
+    throw Object.assign(new Error('Sessão de visitante não autoriza publicação pessoal.'), { status:403, code:'ROSTER_OWNER_MISMATCH' });
+  if (!email || email !== safeEmail(expectedEmail))
+    throw Object.assign(new Error('Sessão não confirmada.'), { status:401, code:'AUTH_REQUIRED' });
+  const db = await pool();
+  if (!db) throw Object.assign(new Error('Publicação indisponível.'), { status:503, code:'DATABASE_OFFLINE' });
+  const result = await db.query('SELECT id,owner_email,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE ORDER BY updated_at DESC,created_at DESC,id DESC LIMIT 1', [email]);
+  const row = result.rows[0];
+  if (!row) return null;
+  if (safeEmail(row.owner_email) !== email)
+    throw Object.assign(new Error('Publicação de outra conta.'), { status:403, code:'ROSTER_OWNER_MISMATCH' });
+  if (row.id === null || row.id === undefined || !Number.isFinite(Date.parse(String(row.updated_at || '')))) return null;
+  let roster = row.roster;
+  if (typeof roster === 'string') { try { roster = JSON.parse(roster); } catch { return null; } }
+  if (!roster || !Array.isArray(roster.days)) return null;
+  return { roster, ownerEmail:email, id:String(row.id), revision:String(row.updated_at || '') };
+}
+
 
 const APP_VERSION = '13.8.8';
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
@@ -276,8 +303,6 @@ const PLATFORM_OPTIONAL_TABLES = [
 
 function mysqlPoolOptions(connectionString) {
   const parsed = new URL(connectionString);
-  const sslDisabled = /^(?:disable|disabled|false|off)$/i.test(env('MYSQL_SSL_MODE'));
-  const local = ['localhost', '127.0.0.1'].includes(parsed.hostname);
   return {
     host: parsed.hostname,
     port: Number(parsed.port || 3306),
@@ -289,7 +314,7 @@ function mysqlPoolOptions(connectionString) {
     connectTimeout: 5000,
     dateStrings: true,
     decimalNumbers: true,
-    ssl: local || sslDisabled ? undefined : { rejectUnauthorized: false },
+    ssl: verifiedMysqlTls(parsed.hostname,Number(parsed.port||3306),env('MYSQL_SSL_MODE')),
   };
 }
 
@@ -1641,6 +1666,7 @@ async function handleRosterActive(req, res) {
   return sendJson(res, 200, { ok: true, roster: result.rows[0] || null, databasePrimary: true });
 }
 
+
 async function handleStays(req, res) {
   const body = req.method === 'POST' || req.method === 'PATCH' ? await readBody(req, 500_000) : {};
   const context = await requireMain(req, res, body);
@@ -2416,6 +2442,7 @@ async function handleAccountDeletion(req, res) {
   const client = await context.db.connect();
   try {
     await client.query('BEGIN');
+    await eraseWhatsAppAccountState(context.identity.email, {client});
     const visitorRows = await client.query('SELECT id FROM crewcheck_platform_visitors WHERE owner_email=$1 OR email=$1', [context.identity.email]);
     const visitorKeys = new Set(visitorRows.rows.map((row) => `visitor:${row.id}`));
     const threadRows = await client.query('SELECT id,direct_key FROM crewcheck_platform_chat_threads');
@@ -2502,12 +2529,16 @@ export async function deleteIfTableExists(client, sql, params) {
   }
 }
 
+// Activation requires independently verified GitHub review and trusted ingress; no env/caller toggle.
+const releaseJournalRoute=createProbeOnlyReleaseHandler({poolProvider:pool});
+
 export async function handlePlatformRoute(req, res, url) {
   const legacy = url.pathname === '/api/db/status' || url.pathname === '/api/stats' || url.pathname === '/api/rosters' || url.pathname.startsWith('/api/rosters/');
   if (!url.pathname.startsWith('/api/platform/') && !legacy) return false;
   if (!legacy && !enforcePlatformMethod(req, res, url.pathname)) return true;
   try {
     if (legacy) { await handleLegacyDatabase(req, res, url); return true; }
+    if(url.pathname===RELEASE_JOURNAL_PATH)return releaseJournalRoute(req,res,url);
     if (url.pathname === '/api/platform/catalog') { await handleCatalog(req, res); return true; }
     if (url.pathname === '/api/platform/terms/current') { await handleTermsCurrent(req, res); return true; }
     if (url.pathname === '/api/platform/terms/accept') { await handleTermsAccept(req, res); return true; }

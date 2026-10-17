@@ -110,7 +110,9 @@ async function visibleTextBounds(page, selector) {
         await page.screenshot({ path: path.join(output, `${width}-${theme}-${size}-home.png`) });
         assert.ok(alertBounds.height >= 44 && (size > 100 || alertBounds.height <= 100), 'Operational alert link is compact with an accessible target: ' + JSON.stringify({ width, theme, size, bounds: alertBounds, style: alertStyle }));
         assert.deepEqual(await visibleTextBounds(page, '.cc-operational-alert-link'), [], 'Operational alert text fits at enlarged size');
-        await alertLink.click(); await page.locator('.cz-alert-detail').waitFor();
+        await alertLink.click(); await page.locator('.cc-alert-center').waitFor();
+        const alertDetails = page.locator('.cc-alert-center details').first();
+        await alertDetails.locator('summary').click(); await alertDetails.locator('p').first().waitFor();
         await page.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'settings' })));
         await page.reload(); await page.locator('.cz-app').waitFor();
         await page.waitForFunction(size => document.documentElement.dataset.crewTextSize === String(size), size);
@@ -243,6 +245,8 @@ async function visibleTextBounds(page, selector) {
       // Preferences must not leak across authenticated accounts, including logout; the mounted select must sync too.
       await page.evaluate(() => { localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'other-synthetic-account', name: 'OTHER', role: 'user' })); window.dispatchEvent(new Event('crewcheck:auth-changed')); });
       await page.waitForFunction(() => document.documentElement.dataset.crewTextSize === '100');
+      await page.locator('.cz-app[data-view="cockpit"]').waitFor();
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'settings' })));
       assert.equal(await page.locator('#cc-text-size').inputValue(), '100', 'Mounted selector follows the new account preference');
       await context.close();
     }

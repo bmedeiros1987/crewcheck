@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readStayEditor, writeStayEditor, emptyStayEditor, migrateLegacyStay, stayEditorKey } from '../shared/stay-editor-store.mjs';
 import { createStayAlarmController, stayAlarmIdentity } from '../shared/stay-alarm-adapter.mjs';
 const storage = () => { const data = new Map(); return { getItem: key => data.get(key) || null, setItem: (key,value) => data.set(key,value) }; };
-const record = { eventId:'stay',signature:'revision1',draft:{hotelName:'Synthetic',stayDate:'2030-10-11',presentationTime:'05:30'},timeZone:'America/Fortaleza',apzDate:'2030-10-11',apzSource:'manual',apzConfirmed:true,choice:{mode:'absolute',alarmAt:'2030-10-11T07:00:00Z',timeZone:'America/Fortaleza'},alarmState:'cancelled' };
+const record = { eventId:'stay',signature:'revision1',draft:{hotelName:'Synthetic',stayDate:'2030-10-11',presentationTime:'05:30'},timeZone:'America/Fortaleza',apzDate:'2030-10-11',apzSource:'manual',apzConfirmed:true,breakfastPlan:'with',choice:{mode:'absolute',alarmAt:'2030-10-11T07:00:00Z',timeZone:'America/Fortaleza'},alarmState:'cancelled' };
 test('reload retains absolute instant/zone, APZ provenance and cancellation, accounts do not mix',()=>{
  const db=storage(),state={...emptyStayEditor('a'),stays:{stay:record}};writeStayEditor(db,'a',state);
  assert.deepEqual(readStayEditor(db,'a').stays.stay,record);assert.equal(readStayEditor(db,'b').stays.stay,undefined);
@@ -50,4 +50,24 @@ test('invalid now never schedules, even when an otherwise confirmed instant is i
    assert.equal((await runner.replace({...input,now,alarmAt:'2000-01-01T07:00:00Z',hotelReportAt:'2000-01-01T08:30:00Z'})).state,'not-programmed');
  }
  assert.equal(adapter.calls.length,0);assert.equal(adapter.jobs.size,0);
+});
+
+test('two editable defaults and explicit per-stay breakfast persist without replacing manual choices',()=>{
+ const db=storage();
+ const state={...emptyStayEditor('a'),defaultLeadMinutes:105,defaultWithoutBreakfastMinutes:45,
+  stays:{stay:record,other:{...record,eventId:'other',breakfastPlan:'without',choice:{mode:'relative',leadMinutes:47}}}};
+ writeStayEditor(db,'a',state);const saved=readStayEditor(db,'a');
+ assert.equal(saved.defaultWithoutBreakfastMinutes,45);assert.equal(saved.defaultLeadMinutes,105);
+ assert.equal(saved.stays.stay.breakfastPlan,'with');assert.equal(saved.stays.other.breakfastPlan,'without');
+ assert.deepEqual(saved.stays.stay.choice,record.choice);assert.equal(saved.stays.stay.alarmState,'cancelled');
+ assert.deepEqual(readStayEditor(db,'b').stays,{});assert.equal(readStayEditor(db,'b').defaultWithoutBreakfastMinutes,60);
+});
+
+test('old preferences preserve custom lead; missing/invalid breakfast stays unknown, never inferred from a clock',()=>{
+ const db=storage(),old={...record};delete old.breakfastPlan;
+ writeStayEditor(db,'a',{version:2,accountId:'a',defaultLeadMinutes:75,stays:{stay:old}});
+ const saved=readStayEditor(db,'a');assert.equal(saved.defaultLeadMinutes,75);
+ assert.equal(saved.defaultWithoutBreakfastMinutes,60);assert.equal(saved.stays.stay.breakfastPlan,'unknown');
+ writeStayEditor(db,'a',{...saved,stays:{stay:{...old,breakfastPlan:true}}});
+ assert.equal(readStayEditor(db,'a').stays.stay.breakfastPlan,'unknown');
 });

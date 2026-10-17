@@ -90,7 +90,7 @@ try {
     try {
       globalThis.localStorage = new MemoryStorage();
       globalThis.sessionStorage = new MemoryStorage();
-      globalThis.window = { location: { origin: 'https://crewcheck.test' }, dispatchEvent() {} };
+      globalThis.window = Object.assign(new EventTarget(), { location: { origin: 'https://crewcheck.test' } });
       localStorage.setItem('crewcheck_auth_token', 'test-token');
       localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'crew-boundary', email: 'crew@example.test' }));
       localStorage.setItem('crewcheck_local_history_v11_crew-boundary', JSON.stringify([

@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {ENVIRONMENT_NAME,ENVIRONMENT_NODE_ID,SUBJECT} from '../../server/release-journal/oidc.mjs';
+import {handlePlatformRoute} from '../../server/platform.mjs';
+const workflow=fs.readFileSync('.github/workflows/mobile-only-internal.yml','utf8');
+const prepare=workflow.split('  prepare-journal-plan:')[1].split('  reviewed-mobile:')[0];
+const protectedJob=workflow.split('  reviewed-mobile:')[1];
+assert.match(prepare,/id-token: none/);assert.doesNotMatch(prepare,/secrets\.|environment:/);
+assert.match(protectedJob,/needs: prepare-journal-plan/);assert(protectedJob.includes("environment: '"+ENVIRONMENT_NAME+"'"));assert(!protectedJob.includes("environment: '861'"));assert.equal(ENVIRONMENT_NODE_ID,'EN_kwDOSsPci88AAAAFXnPQNA');assert.equal(SUBJECT,'repo:bmedeiros1987/crewcheck:environment:'+ENVIRONMENT_NAME);assert.match(protectedJob,/id-token: none/);assert.doesNotMatch(workflow,/id-token: write/);
+assert.match(protectedJob,/Reviewed OIDC connection probe[^\n]*\n\s+if: \$\{\{ false \}\}/);
+assert(protectedJob.indexOf('Refuse publication')<protectedJob.indexOf('Checkout release controller'));
+assert.match(workflow,/overwrite: false/);assert.match(workflow,/crewcheck-journal-plan-\$\{\{ github.run_id \}\}-attempt-\$\{\{ github.run_attempt \}\}/);
+let touched=false;globalThis.fetch=()=>{touched=true;throw Error('Network forbidden');};
+const res={writeHead(status){this.status=status;},end(body){this.body=JSON.parse(body);}};
+const req={method:'POST',get headers(){touched=true;throw Error('OFF must not inspect credentials');}};
+assert.equal(await handlePlatformRoute(req,res,new URL('https://fixture.invalid/api/platform/release-journal')),true);assert.equal(res.status,503);assert.equal(res.body.code,'RELEASE_JOURNAL_OFF');assert.equal(touched,false);
+console.log('PASS existing workflow exact protected environment name/nodeID and prepared immutable artifact; OIDC permission/probe/actual app receiver OFF; publication refusal remains first; no provider/credential/DB access');

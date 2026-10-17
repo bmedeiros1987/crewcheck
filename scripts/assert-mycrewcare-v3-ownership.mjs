@@ -7,6 +7,23 @@ import { createMyCrewCarePersistentSession } from '../shared/myCrewCarePersisten
 
 const read = (path) => readFileSync(path, 'utf8');
 const allowed = [
+  // Explicit OFF-only contract/fixture/regression additions; no directory wildcard.
+  'docs/mycrewcare-concierge-wake-handoff-off.md',
+  'docs/mycrewcare-partial-hotel-review-off.md',
+  'docs/mycrewcare-snapshot-monotonic-review-off.md',
+  'docs/mycrewcare-sso-contract-inactive.md',
+  'scripts/fixtures/mycrewcare-sso-contract/AndroidManifest.synthetic.xml',
+  'scripts/fixtures/mycrewcare-sso-contract/CrewCheckMyCrewCareSsoDraft.java',
+  'scripts/fixtures/mycrewcare-sso-contract/RedirectInstrumentation.java',
+  'scripts/fixtures/mycrewcare-sso-contract/SsoDraftHarness.java',
+  'scripts/fixtures/mycrewcare-sso-contract/debug-inactive.patch',
+  'scripts/regression-mycrewcare-consumer-boundary.mjs',
+  'scripts/regression-mycrewcare-partial-hotel.mjs',
+  'scripts/regression-mycrewcare-snapshot-monotonic.mjs',
+  'scripts/regression-mycrewcare-sso-draft.mjs',
+  'scripts/regression-mycrewcare-ownership-paths.mjs',
+  'docs/mycrewcare-ci-composition-review-off.md',
+
   'android-wrapper/app/src/debug/AndroidManifest.xml',
   'android-wrapper/app/src/debug/java/com/crewcheck/app/CrewCheckMyCrewCareDebugActivity.java',
   'scripts/regression-mycrewcare-debug-action.mjs',

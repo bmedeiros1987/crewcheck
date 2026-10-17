@@ -35,7 +35,13 @@ assert.ok(release.includes('14.4.11'), 'release final 14.4.08 ausente');
 const icon = path.join(root, 'client/public/icons/crewcheck-icon-v3.png');
 assert.ok(fs.existsSync(icon) && fs.statSync(icon).size > 1024, 'ícone canônico v3 deve ser gerado');
 const svg = read('client/public/brand/crewcheck-mark.svg');
-for (const color of ['#9A4DFF', '#EC2C86', '#27C3E8']) assert.ok(svg.includes(color), `cor da marca ausente: ${color}`);
+const officialBrand = path.join(root, 'client/public/assets/brand/crewcheck-app-icon-2026.png');
+if (fs.existsSync(officialBrand)) {
+  const embedded = svg.match(/data:image\/png;base64,([^"]+)/)?.[1];
+  assert.ok(embedded && Buffer.from(embedded, 'base64').equals(fs.readFileSync(officialBrand)), 'alias SVG deve preservar os pixels da arte aprovada936');
+} else {
+  for (const color of ['#9A4DFF', '#EC2C86', '#27C3E8']) assert.ok(svg.includes(color), `cor da marca ausente: ${color}`);
+}
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crewcheck-v14340-'));
 try {
