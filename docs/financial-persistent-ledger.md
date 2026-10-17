@@ -216,3 +216,25 @@ client or FX config variable was found. OAuth authorization-code exchange is
 unrelated to currency. No secret files/values or paid services were accessed.
 The API integration remains incomplete: the missing input is its provider name,
 existing route/module or service/repository location (no keys needed).
+
+## Real MySQL validation completed locally
+
+Bruno authorized official MySQL 8 installation and a disposable local database.
+MySQL Community 8.4.11 ARM64 was downloaded from the official MySQL catalog;
+archive MD5 `6e89113f04f2af85d0a164573493db3a` matches the published value.
+The binary is under workspace `handoff-inspection/mysql-test-runtime`, without
+administrator installation, service-manager registration or existing DB config.
+
+`FINANCIAL_TEST_MYSQLD=/absolute/path/to/mysqld node scripts/regression-financial-ledger-mysql.mjs`
+starts its own fresh data directory and private Unix socket, with TCP and MySQL X
+disabled and no production connection URL accepted. Only synthetic profiles and
+financial entries are created. The test stops the server and removes its own
+fixture directory. No Aiven, production schema, credential or permission was used.
+
+PASS on the real 8.4.11 InnoDB engine: migration twice; storage after actual server
+restart; roster-table deletion independence; twelve concurrent identical writers
+produce one revision; competing revisions yield one success/one conflict; real
+transaction rollback; original JPY producer/replay; owner isolation; actual account
+erasure lock blocks a competing writer and then rejects it after profile deletion.
+This closes the missing local-engine gate; production migration and live snapshot
+hook remain separate operational actions and were not performed.
