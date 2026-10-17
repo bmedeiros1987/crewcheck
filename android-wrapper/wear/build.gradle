@@ -83,6 +83,7 @@ android {
 
     testOptions {
         unitTests.returnDefaultValues = true
+        unitTests.includeAndroidResources = true
     }
 }
 
@@ -92,6 +93,7 @@ dependencies {
     implementation 'androidx.wear.watchface:watchface-complications-data-source:1.2.1'
 
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
     testImplementation 'org.json:json:20250517'
 }
 
