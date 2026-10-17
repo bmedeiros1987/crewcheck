@@ -12,6 +12,22 @@ try {
   } });
   const { learnPerDiemStatement } = await import(pathToFileURL(path.join(outDir, 'learning.mjs')).href);
   const header = 'DEMONSTRATIVO DE DIARIAS\nDe 2032-04-07 até 2032-04-13\nPagamento em 2032-04-15\nALMOCO R$ 100,00\n';
+  const reportedHeader = 'DEMONSTRATIVO DE DIARIAS\nDe 2026-02-01 até 2026-02-28\nPagamento em 2026-03-05\n';
+  for (const token of ['1.2,34', '1.23,45', '25,001', '25,00x', '-25,00']) {
+    const invalid = learnPerDiemStatement(reportedHeader + `CAFE R$ ${token}\nTotal depositado R$ 25,00`, 'synthetic-reported-money.pdf');
+    assert.equal(invalid.rates.length, 0, token + ' cannot become a high-confidence tariff');
+    assert.ok(invalid.warnings.some(w => w.includes('Tarifa') && w.includes('obrigatória')));
+  }
+  for (const [token, value] of [['0,00', 0], ['25,00', 25], ['1.234,56', 1234.56], ['1234,56', 1234.56]]) {
+    const valid = learnPerDiemStatement(reportedHeader + `CAFE R$ ${token}\nTotal depositado R$ ${token}`, 'synthetic-valid-money.pdf');
+    assert.equal(valid.rates[0].value, value);assert.equal(valid.totals.deposited, value);assert.deepEqual(valid.warnings, []);assert.equal(valid.rates[0].confirmed, false);
+  }
+  const invalidPayment = learnPerDiemStatement(reportedHeader.replace('2026-03-05', '2026-02-31') + 'CAFE R$ 25,00\nTotal depositado R$ 25,00', 'synthetic-reported-date.pdf');
+  assert.equal(invalidPayment.paymentDate, undefined);assert.deepEqual(invalidPayment.totals, {});assert.ok(invalidPayment.warnings.some(w => w.includes('pagamento') && w.includes('obrigatória')));
+  const invalidPeriod = learnPerDiemStatement(reportedHeader.replace('2026-02-01', '2026-02-31').replace('2026-02-28', '2026-03-04') + 'CAFE R$ 25,00\nTotal depositado R$ 25,00', 'synthetic-calendar-period.pdf');
+  assert.ok(invalidPeriod.warnings.some(w => w.includes('Período') && w.includes('obrigatória')));
+  const leap = learnPerDiemStatement(reportedHeader.replaceAll('2026-02', '2028-02').replace('2028-02-28', '2028-02-29').replace('2026-03', '2028-03') + 'CAFE R$ 25,00\nTotal depositado R$ 25,00', 'synthetic-leap.pdf');
+  assert.deepEqual(leap.warnings, []);assert.equal(leap.rates[0].effectiveTo, '2028-02-29');
   assert.deepEqual(learnPerDiemStatement(header, 'synthetic.pdf').totals, {});
   const repeated = learnPerDiemStatement(header + 'Total depositado R$ 825,00\nTotal depositado R$ 825,00', 'synthetic.pdf');
   assert.equal(repeated.totals.deposited, 825);

@@ -95,3 +95,15 @@ Revisão independente externa comunicou paridade real do extrator do app com
 bytes oficiais do documento privado no SHAf2ccd91e, detectando o blocker de
 rótulo de total que motivou este complemento. O extrator não foi alterado.
 Nenhum PDF privado ou seu texto foi transferido ao repositório/CI.
+
+## Revalidação em 17/10/2026 sobre o Home atual
+
+Main fixada em `0ebf8ec62c068f9ee44c09e28985ac7d9e212321`; candidato original reaproveitado `c708cc6f9e0b7b22de593b899e98c3a7020f1ea2`. Nenhum outro executor ativo ou movimento da branch observado. Merge normal da main sem conflito, preservando os componentes/navegação do Home1054, cálculos posteriores, privacidade financeira e dependências já integradas. O delta de Home contra a main permanece restrito ao import, configuração e caller de cálculo do táxi; não altera seu JSX/layout.
+
+Reprodução sintética na main: `CAFE R$ 1.2,34` produz tarifa 12.34 com confiança alta e nenhuma advertência; `Pagamento em 2026-02-31` produz data impossível sem advertência. A data impossível no período já gera advertência na main e é mantida coberta como não regressão. A implementação da1018 já resolve os dois casos reproduzidos: tarifa malformada ausente e revisão obrigatória; pagamento inválido sem data/total e revisão obrigatória. Não houve reescrita do parser ou da regra de táxi.
+
+As regressões existentes foram ampliadas com esses valores exatos, dinheiro com agrupamento correto/incorreto, zero e ano bissexto válido. PDFs sintéticos passam pelo extrator PDF.js, leitor e handlers reais: tanto o botão quanto a chamada direta de confirmação permanecem bloqueados para dinheiro/data/período inválidos. O caso válido continua exigindo revisão explícita de fonte e respeita owner, sessão, proveniência e vigência.
+
+O harness antigo esperava o helper `money`, renomeado na main para `formatMoney` com o hook de privacidade. A fixture foi alinhada ao AST atual e executa o modo visível; o hook real/DOM oculto continua coberto pela regressão de navegador compilado. A limpeza dos efeitos entre montagens sintéticas conserva os listeners reais de auth sem vazamento da fixture. Nenhuma assertion de confirmação ou isolamento foi retirada. Os testes raw/preparados e três zonas de tempo continuam no workflow existente.
+
+Somente fixtures sintéticas; nenhum documento ou dado real, flag, credencial, permissão, custo, loja ou serviço novo. Revisão independente do novo HEAD e CI terminal são necessários antes de merge; esta atualização não integra nem publica a PR.

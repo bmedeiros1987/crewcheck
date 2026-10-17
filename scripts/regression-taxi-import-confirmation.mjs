@@ -8,6 +8,7 @@ import { jsPDF } from 'jspdf';
 import { loadClientModules } from './lib/ts-module-harness.mjs';
 const require = createRequire(import.meta.url);
 const values = new Map();
+let dispose = () => {};
 const previous = {localStorage:globalThis.localStorage,window:globalThis.window};
 globalThis.localStorage = {getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,String(value)),removeItem:key=>values.delete(key)};
 globalThis.window = new EventTarget();
@@ -17,7 +18,7 @@ try {
  const learning=modules.load('financialStatementLearning');
  const source=fs.readFileSync('client/src/components/finance/FinancialStatementImporter.tsx','utf8');
  const ast=ts.createSourceFile('FinancialStatementImporter.tsx',source,99,true,ts.ScriptKind.TSX);
- const names=['extractPdfText','money','FinancialStatementImporter'];
+ const names=['extractPdfText','formatMoney','FinancialStatementImporter'];
  const functions=ast.statements.filter(node=>ts.isFunctionDeclaration(node)&&names.includes(node.name?.text));assert.equal(functions.length,3,'exact production PDF extractor, rendered component and handlers');
  const compiled=ts.transpileModule(functions.map(node=>node.getText(ast)).join('\n')+'\nglobalThis.subject={extractPdfText,FinancialStatementImporter};',{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
  const header=['DEMONSTRATIVO DE DIARIAS','De 2032-10-01 até 2032-10-07','Pagamento em 2032-10-09','TAXI R$ 31,50','CAFE R$ 25,00'];
@@ -25,15 +26,20 @@ try {
  const walk=(node,predicate)=>{if(!node||typeof node!=='object')return [];const children=node.props?.children;return [...(predicate(node)?[node]:[]),...(Array.isArray(children)?children:[children]).flatMap(child=>walk(child,predicate))];};
  const labelText=node=>typeof node==='string'?node:Array.isArray(node)?node.map(labelText).join(''):labelText(node?.props?.children??'');
  function harness(){
-  const states=[],refs=[];let stateIndex=0,refIndex=0,mounted=false;const effects=[];
+  dispose(); // Unmount the previous fixture, including its real auth listeners.
+  const states=[],refs=[];let stateIndex=0,refIndex=0,mounted=false;const effects=[],cleanups=[];
+  dispose=()=>{for(const cleanup of cleanups)cleanup();cleanups.length=0;};
   const exports={};const context=vm.createContext({...learning,require,exports,module:{exports},Uint8Array,File,Event,CustomEvent,window,
    pdfWorkerUrl:pathToFileURL(require.resolve('pdfjs-dist/legacy/build/pdf.worker.min.mjs')).href,
    useState:initial=>{const index=stateIndex++;if(!(index in states))states[index]=typeof initial==='function'?initial():initial;return [states[index],value=>{states[index]=typeof value==='function'?value(states[index]):value;}];},
    useRef:initial=>{const index=refIndex++;return refs[index]??(refs[index]={current:initial});},useMemo:fn=>fn(),useEffect:fn=>{if(!mounted)effects.push(fn);},
+   // This handler fixture renders the visible privacy mode. The compiled-app
+   // privacy regression separately verifies the actual hook and hidden DOM.
+   useFinancialPrivacy:()=>({amount:value=>value,text:value=>value}),FinancialPrivacyToggle:()=>null,
    Check:()=>null,FileSearch:()=>null,History:()=>null,ShieldCheck:()=>null,Upload:()=>null,X:()=>null});
   vm.runInContext(compiled,context);
   let tree;
-  const render=()=>{stateIndex=0;refIndex=0;tree=context.subject.FinancialStatementImporter({mode:'per_diem'});if(!mounted){mounted=true;for(const effect of effects)effect();}return tree;};
+  const render=()=>{stateIndex=0;refIndex=0;tree=context.subject.FinancialStatementImporter({mode:'per_diem'});if(!mounted){mounted=true;for(const effect of effects){const cleanup=effect();if(typeof cleanup==='function')cleanups.push(cleanup);}}return tree;};
   const button=()=>walk(tree,node=>node.type==='button'&&labelText(node.props.children)==='Confirmar valores')[0];
   const importFile=async file=>{const input=walk(tree,node=>node.type==='input'&&node.props.type==='file')[0];await input.props.onChange({target:{files:[file]}});render();};
   const checkSource=()=>{const checkbox=walk(tree,node=>node.type==='input'&&node.props.type==='checkbox')[0];assert.ok(checkbox);checkbox.props.onChange({target:{checked:true}});render();};
@@ -48,6 +54,9 @@ try {
  assert.equal(learning.readConfirmedFinancialRates().length,2);assert.equal(learning.confirmedRateValueAt('per_diem.taxi','2032-10-01'),31.5);assert.equal(learning.confirmedRateValueAt('per_diem.breakfast','2032-10-07'),25);assert.equal(learning.confirmedRateValueAt('per_diem.taxi','2032-09-30'),null);assert.equal(learning.confirmedRateValueAt('per_diem.taxi','2032-10-08'),null);
  login('other');assert.equal(learning.confirmedRateValueAt('per_diem.taxi','2032-10-05'),null,'rates never leak between owners');
  for(const [id,lines,name] of [
+  ['reported-malformed-cafe', [...header.map(line=>line.startsWith('CAFE ')?'CAFE R$ 1.2,34':line),'Total depositado na data 2032-10-09 R$ 56,50'],'synthetic-reported-money.pdf'],
+  ['reported-invalid-payment', [...header.map(line=>line.startsWith('Pagamento em ')?'Pagamento em 2026-02-31':line),'Total depositado R$ 56,50'],'synthetic-reported-date.pdf'],
+  ['invalid-calendar-period', [...header.map(line=>line.startsWith('De ')?'De 2026-02-31 até 2026-03-04':line),'Total depositado na data 2032-10-09 R$ 56,50'],'synthetic-calendar-period.pdf'],
   ['invalid-rate-0', [...header.map(line=>line.startsWith('TAXI ')?'TAXI R$ 31,501':line),'Total depositado na data 2032-10-09 R$ 56,50'],'synthetic-invalid-rate-0.pdf'],
   ['invalid-rate-1', [...header.map(line=>line.startsWith('TAXI ')?'TAXI R$ 1.2.3,45':line),'Total depositado na data 2032-10-09 R$ 56,50'],'synthetic-invalid-rate-1.pdf'],
   ['invalid-rate-2', [...header.map(line=>line.startsWith('TAXI ')?'TAXI R$ 31,50x':line),'Total depositado na data 2032-10-09 R$ 56,50'],'synthetic-invalid-rate-2.pdf'],
@@ -65,4 +74,4 @@ try {
  login('rotated','synthetic-token-1');const rotated=harness();await rotated.importFile(file);rotated.checkSource();const rotatedClick=rotated.button().props.onClick;login('rotated','synthetic-token-2');rotatedClick();assert.equal(learning.readConfirmedFinancialRates().length,0,'same-owner stale token cannot save');
  login('guest','synthetic-guest','visitor');const visitor=harness();assert.equal(walk(visitor.getTree(),node=>node.type==='input'&&node.props.type==='file').length,0);assert.equal(learning.readConfirmedFinancialRates().length,0);
  console.log('PASS synthetic real PDF.js extractor -> reader -> actual importer render/confirm -> owner-bounded tariff: dated/repeated/current-vs-historical total; source review, invalid money/period/provenance, owner/token/visitor guards; no payment confirmation or real data.');
-}finally{modules.cleanup();globalThis.localStorage=previous.localStorage;globalThis.window=previous.window;}
+}finally{dispose();modules.cleanup();globalThis.localStorage=previous.localStorage;globalThis.window=previous.window;}
