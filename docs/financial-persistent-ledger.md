@@ -238,3 +238,37 @@ transaction rollback; original JPY producer/replay; owner isolation; actual acco
 erasure lock blocks a competing writer and then rejects it after profile deletion.
 This closes the missing local-engine gate; production migration and live snapshot
 hook remain separate operational actions and were not performed.
+
+## Frankfurter integration — newly selected, not a claim of rediscovering an old API
+
+After the owner confirmed Frankfurter, the free keyless v2 public endpoint was
+verified from this Mac. One request returned all thirteen selected BRL pairs
+(USD/EUR/GBP/JPY/KWD/ARS/CLP/COP/MXN/PEN/UYU/PYG/BOB), observation dates and
+contributor dates. Official docs and terms: https://frankfurter.dev/ ,
+https://api.frankfurter.dev/v2/openapi.json , https://frankfurter.dev/license/ .
+The default blended daily feed permits commercial use; these are mid-market
+reference estimates, without guaranteed executable rate, tax or bank charges.
+Direct provider endpoints, their individual terms and alternative methods are
+not silently mixed into this feed. No account, key or paid plan is introduced.
+
+The authenticated read-only GET /api/platform/finance/exchange-rates route uses a
+fixed upstream public-pair URL. It transmits no user identity, amount or record.
+A single in-process 24-hour cache and shared in-flight request are reused; failures
+have a five-minute retry cooldown. Cached failure/staleness is explicit, and both
+retrieval age and automatic observation age are limited to seven days. The
+seven-day bound is a product freshness policy, not a provider/legal guarantee.
+Observation date, retrieval timestamp, blended method and contributor dates
+remain distinct. Unsupported or expired observations stay unavailable.
+
+BRL-to-foreign API quote direction is retained exactly and inverted rationally
+for conversion to BRL; no rounded inverse is stored as a new authoritative rate.
+Original ledger amounts remain unchanged. Home and calculator share a client
+provider/cache with bounded timeout, no per-keystroke requests or ledger writes.
+Automatic and account-manual sources are explicit choices and are never blended;
+existing dated manual settings remain selected unless the user chooses automatic.
+No automatic outage silently substitutes manual rates. A one-off calculator rate
+is an explicitly entered ephemeral scenario. Ver cálculo opens reference details.
+
+Runtime defaults OFF behind CREWCHECK_FINANCIAL_FX_ENABLED; no production env flag
+was changed. The local HTTP/fixture gates can test it without paid services. This
+is a new authorized integration; the originally remembered API was not identified.

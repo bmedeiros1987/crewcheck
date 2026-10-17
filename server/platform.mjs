@@ -1,3 +1,4 @@
+import {createFinancialFxHandler,FINANCIAL_FX_PATH} from './financial-fx.mjs';
 import {createFinancialLedgerHandler, FINANCIAL_LEDGER_PATH} from './financial-ledger-route.mjs';
 import {financialLedgerErasureStatements} from './financial-ledger-erasure.mjs';
 import {verifiedMysqlTls} from './mysql-verified-tls.mjs';
@@ -2554,6 +2555,8 @@ const financialLedgerRoute = createFinancialLedgerHandler({
   },
 });
 
+const financialFxRoute=createFinancialFxHandler({enabled:()=>env('CREWCHECK_FINANCIAL_FX_ENABLED','false')==='true',identityProvider:req=>{const claims=verifyJwt(requestToken(req)),email=safeEmail(claims?.email);return !email||claims?.aud==='crewcheck-visitor'||claims?.role==='visitor'?null:{authenticated:true,role:'owner',ownerId:email};}});
+
 // Activation requires independently verified GitHub review and trusted ingress; no env/caller toggle.
 const releaseJournalRoute=createProbeOnlyReleaseHandler({poolProvider:pool});
 
@@ -2564,6 +2567,7 @@ export async function handlePlatformRoute(req, res, url) {
   try {
     if (legacy) { await handleLegacyDatabase(req, res, url); return true; }
     if(url.pathname===RELEASE_JOURNAL_PATH)return releaseJournalRoute(req,res,url);
+    if(url.pathname===FINANCIAL_FX_PATH)return financialFxRoute(req,res,url);
     if (url.pathname === FINANCIAL_LEDGER_PATH) return financialLedgerRoute(req, res, url);
     if (url.pathname === '/api/platform/catalog') { await handleCatalog(req, res); return true; }
     if (url.pathname === '/api/platform/terms/current') { await handleTermsCurrent(req, res); return true; }

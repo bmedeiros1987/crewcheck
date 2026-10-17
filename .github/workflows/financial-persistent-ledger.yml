@@ -4,6 +4,7 @@ on:
     paths:
       - 'server/financial-ledger*.mjs'
       - 'server/financial-forecast-producer.mjs'
+      - 'server/financial-fx.mjs'
       - 'server/platform.mjs'
       - 'client/src/components/finance/**'
       - 'client/src/pages/Home.tsx'
@@ -39,6 +40,7 @@ jobs:
         run: node scripts/regression-financial-ledger.mjs
       - name: Preserve existing financial read and credit lifecycle
         run: |
+          node scripts/regression-financial-fx.mjs
           node scripts/regression-financial-money-schedule.mjs
           node scripts/regression-financial-review-owner-negative.mjs
           node scripts/regression-financial-read-model.mjs

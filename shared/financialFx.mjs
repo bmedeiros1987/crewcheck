@@ -6,7 +6,8 @@ export function parseFinancialDecimal(text) {
 }
 function ratio(rate){if(typeof rate!=='string'||rate.length>32||!/^\d+(?:\.\d{1,12})?$/.test(rate))return null;const [whole,fraction='']=rate.split('.'),n=BigInt(whole+fraction),d=10n**BigInt(fraction.length);return n>0n?{n,d}:null;}
 export function sameFxRate(a,b){const left=ratio(a),right=ratio(b);return Boolean(left&&right&&left.n*right.d===right.n*left.d);}
-export function validFxQuote(quote,today){return quote&&ratio(quote.rate)&&day(quote.asOf)&&day(today)&&quote.asOf<=today&&typeof quote.source==='string'&&quote.source.length>0&&quote.source.length<=120?quote:null;}
+export function validFxQuote(quote,today){return quote&&ratio(quote.rate)&&day(quote.asOf)&&day(today)&&quote.asOf<=today&&!(quote.method==='blended_daily'&&Date.parse(today+'T00:00:00Z')-Date.parse(quote.asOf+'T00:00:00Z')>7*86400000)&&typeof quote.source==='string'&&quote.source.length>0&&quote.source.length<=120?quote:null;}
+function quoteRatio(quote,currency){const value=ratio(quote.rate);if(!value)return null;if(quote.base===undefined&&quote.quote===undefined)return value;if(quote.base===currency&&quote.quote==='BRL')return value;if(quote.base==='BRL'&&quote.quote===currency)return {n:value.d,d:value.n};return null;}
 function rounded(n,d){const sign=n<0n?-1n:1n,a=n<0n?-n:n;const value=sign*(a/d+(a%d*2n>=d?1n:0n));const number=Number(value);return Number.isSafeInteger(number)?number:null;}
 export function convertFinancialMinor({amountMinor,from,to,quotes={},today,directQuote}={}) {
   const fromDigits=currencyMinorDigits(from),toDigits=currencyMinorDigits(to);
@@ -14,7 +15,7 @@ export function convertFinancialMinor({amountMinor,from,to,quotes={},today,direc
   if(from===to)return {state:'available',amountMinor,references:[]};
   let rate,references=[];
   if(directQuote){const q=validFxQuote(directQuote,today);if(!q)return {state:'unavailable',amountMinor:null};rate=ratio(q.rate);references=[q];}
-  else {const a=from==='BRL'?{rate:'1',asOf:today,source:'BRL'}:validFxQuote(quotes[from],today),b=to==='BRL'?{rate:'1',asOf:today,source:'BRL'}:validFxQuote(quotes[to],today);if(!a||!b)return {state:'unavailable',amountMinor:null};if(from!=='BRL'&&to!=='BRL'&&a.asOf!==b.asOf)return {state:'incompatible_dates',amountMinor:null};const ar=ratio(a.rate),br=ratio(b.rate);rate={n:ar.n*br.d,d:ar.d*br.n};references=[...(from==='BRL'?[]:[a]),...(to==='BRL'?[]:[b])];}
+  else {const a=from==='BRL'?{rate:'1',asOf:today,source:'BRL'}:validFxQuote(quotes[from],today),b=to==='BRL'?{rate:'1',asOf:today,source:'BRL'}:validFxQuote(quotes[to],today);if(!a||!b)return {state:'unavailable',amountMinor:null};if(from!=='BRL'&&to!=='BRL'&&a.asOf!==b.asOf)return {state:'incompatible_dates',amountMinor:null};const ar=from==='BRL'?ratio('1'):quoteRatio(a,from),br=to==='BRL'?ratio('1'):quoteRatio(b,to);if(!ar||!br)return {state:'incompatible_pair',amountMinor:null};if(from!=='BRL'&&to!=='BRL'&&(a.method||'account_manual')!==(b.method||'account_manual'))return {state:'incompatible_methods',amountMinor:null};rate={n:ar.n*br.d,d:ar.d*br.n};references=[...(from==='BRL'?[]:[a]),...(to==='BRL'?[]:[b])];}
   const amount=rounded(BigInt(amountMinor)*rate.n*10n**BigInt(toDigits),rate.d*10n**BigInt(fromDigits));
   return {state:amount===null?'invalid':'available',amountMinor:amount,references};
 }

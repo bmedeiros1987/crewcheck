@@ -39,3 +39,4 @@
 .cc-financial-route[hidden]{display:none!important}
 html body #root .cz-app .cc-payment-hero button.cc-financial-calculator-shortcut{min-width:44px!important;min-height:44px!important;width:44px!important;height:44px!important;flex:0 0 44px!important;padding:0!important;box-sizing:border-box!important}
 html body #root .cz-app .cc-payment-hero button.cc-financial-calculator-shortcut,html body #root .cz-app .cc-payment-hero .cc-forecast-currency-controls button{color:#fff!important;background:transparent!important;border:1px solid #87a9c2!important;min-width:44px!important;min-height:44px!important;width:44px!important;height:44px!important;flex:0 0 44px!important;padding:0!important;box-sizing:border-box!important}
+.cc-fx-source{display:flex;flex-direction:column;gap:8px;margin:12px 0}.cc-fx-source select{min-height:44px;max-width:100%;padding:8px;border:1px solid var(--border);border-radius:10px;color:inherit;background:var(--background)}
