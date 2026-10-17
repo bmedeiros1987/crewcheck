@@ -1,12 +1,14 @@
 import { appendFinancialRecord, readFinancialLedger, FinancialLedgerError, ledgerOwner } from './financial-ledger.mjs';
 import { createFinancialSqlStore } from './financial-ledger-sql.mjs';
 import { queryUpcomingFinancialForecast } from '../shared/financialUpcoming.mjs';
+import { canonicalCaptureRequest } from './financial-canonical-capture.mjs';
 export const FINANCIAL_LEDGER_PATH = '/api/platform/finance/history';
 export const FINANCIAL_UPCOMING_PATH = '/api/platform/finance/upcoming';
+export const FINANCIAL_CAPTURE_PATH = '/api/platform/finance/capture';
 const send = (res, status, value) => { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); res.end(JSON.stringify(value)); };
-async function readInput(req) {
+async function readInput(req, limit = 16384) {
   const parts = []; let size = 0;
-  for await (const part of req) { const bytes = Buffer.from(part); size += bytes.length; if (size > 16384) throw new FinancialLedgerError('FINANCIAL_INPUT_TOO_LARGE', 413); parts.push(bytes); }
+  for await (const part of req) { const bytes = Buffer.from(part); size += bytes.length; if (size > limit) throw new FinancialLedgerError('FINANCIAL_INPUT_TOO_LARGE', 413); parts.push(bytes); }
   try { return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(parts))); }
   catch { throw new FinancialLedgerError('FINANCIAL_INVALID_JSON'); }
 }
@@ -14,7 +16,9 @@ async function readInput(req) {
 // additive migration; neither this handler nor startup applies migrations.
 export function createFinancialLedgerHandler({ enabled = () => false, identityProvider, poolProvider, allowedOrigin = () => '', storeFactory = createFinancialSqlStore, now = () => new Date() } = {}) {
   return async (req, res, url) => {
-    if (![FINANCIAL_LEDGER_PATH, FINANCIAL_UPCOMING_PATH].includes(url.pathname)) return false;
+    if (![FINANCIAL_LEDGER_PATH, FINANCIAL_UPCOMING_PATH, FINANCIAL_CAPTURE_PATH].includes(url.pathname)) return false;
+    const capture = url.pathname === FINANCIAL_CAPTURE_PATH;
+    if (capture && req.method !== 'POST') { res.setHeader('Allow','POST'); send(res,405,{ok:false,code:'METHOD_NOT_ALLOWED'}); return true; }
     const upcoming = url.pathname === FINANCIAL_UPCOMING_PATH;
     if (upcoming && req.method !== 'GET') { res.setHeader('Allow', 'GET'); send(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED' }); return true; }
     if (!['GET', 'POST'].includes(req.method)) { res.setHeader('Allow', 'GET, POST'); send(res, 405, { ok: false, code: 'METHOD_NOT_ALLOWED' }); return true; }
@@ -40,6 +44,7 @@ export function createFinancialLedgerHandler({ enabled = () => false, identityPr
       const db = await poolProvider();
       if (!db) throw new FinancialLedgerError('FINANCIAL_HISTORY_UNAVAILABLE', 503);
       const store = storeFactory(db);
+      if (capture) { send(res,200,{ok:true,...await canonicalCaptureRequest({identity,input:await readInput(req,262144),store})}); return true; }
       if (req.method === 'GET') {
         const result = await readFinancialLedger({ store, identity, periodStart: url.searchParams.get('periodStart'), periodEnd: url.searchParams.get('periodEnd'), aggregationLevel: url.searchParams.get('aggregationLevel') || 'item' });
         send(res, 200, { ok: true, ...result });
