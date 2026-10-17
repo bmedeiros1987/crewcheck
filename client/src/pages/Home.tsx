@@ -114,7 +114,7 @@ import { rosterDisplayIso, rosterStrictInstant, rosterInstantIso, ROSTER_DISPLAY
 import { confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
-import { allowanceIntervalState, rosterOperationalIso, rosterOperationalDateAt, rosterPresentationBeforeDeparture, classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
+import { allowanceIntervalState, rosterOperationalIso, rosterOperationalDateAt, rosterPresentationBeforeDeparture, taxiPresentationOccurrence, classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
 import { observedAllowancePeriods, rowsInObservedCycle, summarizeForecastRows, summarizeNativeForecastRows, nativeForecastDelta, forecastSummaryValue } from '@/lib/financialForecastPeriods';
 import { financialJourneyGroupKey, rowsForNominalFinancialCompetence, nominalFinancialCompetencePrefix } from '@/lib/financialJourneyGrouping';
 import PlatformCenter from '@/components/platform/PlatformCenter';
@@ -3556,6 +3556,7 @@ function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
     exchangeRates,
     breakfastPercent: act.breakfastPercent,
     domesticBreakfast: domestic.breakfast,
+    taxiRate: confirmedRateValueAt('per_diem.taxi', effectiveDate),
     domesticMainMealSource: domestic.source,
     domesticBreakfastSource: learnedBreakfast !== null ? 'learned' : domestic.source,
     airportOverrides: loadAirportPerDiemOverrides(),
@@ -3568,6 +3569,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
   const airportOverrides = loadAirportPerDiemOverrides();
   const rows: PerDiemRow[] = [];
   const seen = new Set<string>();
+  const taxiDepartures = new Map<string, { iso: string; window: string; event: ZeroLeg; start: Date; end: Date }>();
   const pendingAirports = new Set<string>();
   const unclassifiedItems: Array<{ iso: string; airport: string; reason?: string }> = [];
   const usedRateKeys = new Set<PerDiemRateKey>();
@@ -3674,6 +3676,31 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
       }
     }
 
+    // Taxi is a separate user-reported operational rule, never a meal percentage.
+    // Existing interval evidence above excludes absent/estimated APZ.
+    const taxi = (activityKind === 'flight' || activityKind === 'reserve')
+      ? taxiPresentationOccurrence(start, atContractualBase(representative.origin)) : null;
+    // An airport reserve and its activation prove the same commute, regardless
+    // of input order. A later independent journey is not a duplicate commute.
+    const activatedFromReserve = activityKind === 'flight' && operational.some(candidate => {
+      const reserveCode = financialEventCode(candidate);
+      if (candidate.kind === 'flight' || !/\b(ASB|RES|RESERVA|RSV)\b/.test(reserveCode)
+        || /\b(HSB|HSBE|SOBREAVISO)\b/.test(reserveCode)
+        || !atContractualBase(candidate.origin) || financialIntervalEvidenceIssue([candidate])) return false;
+      const reserveStart = eventStartDateTime(candidate), reserveEnd = eventEndDateTime(candidate);
+      return allowanceIntervalState(reserveStart, reserveEnd) === 'available'
+        && start >= reserveStart && start <= reserveEnd;
+    });
+    if (taxi && !activatedFromReserve) {
+      const identity = financialJourneyGroupKey(representative);
+      if (identity === 'event:missing-id') {
+        unclassifiedItems.push({ iso: taxi.iso, airport: representative.origin,
+          reason: 'Táxi: identidade da ocorrência ausente; deslocamento não comprovado.' });
+      } else {
+        taxiDepartures.set(identity + ':departure:' + start.toISOString(), { ...taxi, event: representative, start, end });
+      }
+    }
+
     const breakfastIncluded = Boolean((event.day as any)?.breakfastIncluded || (event.day as any)?.hotelBreakfastIncluded || (event as any)?.breakfastIncluded);
     const occurrences = classifyAllowanceWindows({
       start,
@@ -3703,6 +3730,25 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
         return candidateStart <= windowEnd.getTime() && candidateEnd >= windowStart.getTime();
       }) || (occurrence.slot === 'breakfast' && dutyFlights.at(-1)?.destination?.toUpperCase() === String(roster.base || '').toUpperCase() ? dutyFlights.at(-1)! : representative);
       add(occurrenceEvent, occurrence.iso, occurrence.slot, labels[occurrence.slot], `${source} · ${occurrence.window}${occurrence.slot === 'breakfast' ? ' · Critério operacional informado pelo usuário: presença na base na janela do café; sem homologação ACT' : ''}`, start, end);
+    }
+  }
+  const taxiDays = new Set<string>();
+  for (const taxi of [...taxiDepartures.values()].sort((a, b) => a.start.getTime() - b.start.getTime() || financialJourneyGroupKey(a.event).localeCompare(financialJourneyGroupKey(b.event)))) {
+    // User-confirmed ceiling: one taxi allowance per operational BRT day.
+    if (taxiDays.has(taxi.iso)) continue;
+    taxiDays.add(taxi.iso);
+    const cfg = perDiemConfig(roster, taxi.iso);
+    const value = cfg.taxiRate;
+    const source = 'Táxi previsto · Critério operacional informado pelo usuário: APZ na base · '
+      + taxi.window + ' · máximo uma diária por dia · relógio da escala BRT (UTC-03) · sem homologação ACT';
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      unclassifiedItems.push({ iso: taxi.iso, airport: taxi.event.origin, reason: source + ' · Tarifa de táxi confirmada para o período ausente.' });
+    } else {
+      rows.push({ eventId: taxi.event.id, date: dateChip(new Date(taxi.iso + 'T12:00:00')), iso: taxi.iso,
+        label: 'Táxi', value, currency: 'BRL', convertedBRL: value,
+        source: source + ' · tarifa de táxi do demonstrativo confirmado no período; previsão não comprova pagamento',
+        airport: taxi.event.origin, rateKey: 'domestic', rateSource: 'learned', rateVersion: 'taxi-user-reported-v1',
+        exchangeRate: 1, calculationStart: taxi.start.toISOString(), calculationEnd: taxi.end.toISOString() });
     }
   }
   const monthlyRows = rowsForNominalFinancialCompetence(rows, roster);

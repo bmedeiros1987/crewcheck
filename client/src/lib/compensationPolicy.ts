@@ -176,3 +176,14 @@ export function freeDayPostponementIndemnity(delayHours: number, exceptionalOper
   const threshold = exceptionalOperationalNeed ? 12 : 4;
   return Number(delayHours) > threshold ? 700 : 0;
 }
+
+/** User-reported transport criterion. Separate from ACT meal windows.
+ * Only a published presentation at the contractual base establishes departure.
+ * Arrival uses no inferred APZ or meal-release (+30 minutes) clock.
+ */
+export function taxiPresentationOccurrence(presentation: Date, atContractualBase: boolean): { iso: string; window: string } | null {
+  if (!atContractualBase || !Number.isFinite(presentation.getTime())) return null;
+  const iso = rosterOperationalIso(presentation);
+  return presentation >= rosterOperationalDateAt(iso, 0) && presentation <= rosterOperationalDateAt(iso, 5, 45)
+    ? { iso, window: '00:00–05:45 (inclusive)' } : null;
+}
