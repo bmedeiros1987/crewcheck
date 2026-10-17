@@ -1,0 +1,43 @@
+Canonical capture boundaries
+
+The allowance UI adapts existing calculatePerDiem rows. No new rate engine,
+conversion or automatic roster lifecycle write is introduced. Preview reads
+current ledger revisions; only explicit confirmation calls the existing producer.
+Each record append is transactional, not the entire batch; identical reviewed
+payload retries resume/replay safely. Replacing/deleting a roster does not erase
+persisted financial revisions. Currency changes require further review.
+
+International timing
+The owner explicitly confirms policy and links each allowance item to an existing
+canonical flight identity. Candidates require original published date and valid
+original departure/arrival clocks. Dates shown are operational roster dates in
+America/Sao_Paulo (BRT), as documented by canonicalRoster. No destination timezone
+conversion, meal-to-flight matching or per-leg automatic advance is inferred.
+Unselected or unproven flight links remain pending. This is owner-reported review,
+not independent employer or bank certification.
+
+Minimum missing inputs for other categories
+Payroll: authenticated owner/stable logical source, immutable source reference,
+original currency, reviewed NET credit in integer minor units, operational/rate/
+payroll/expected-credit competence mapping, and applicable employer policy with
+reference, validity and timezone. Gross salary is not a net bank credit. A proven
+"by day 5" policy supplies only a deadline/window; it never supplies an exact day.
+Vacation: the same net/currency/source requirements plus employer-approved leave
+and payment schedule, timezone and applicable policy evidence. Unknown stays pending.
+Thirteenth: an explicit supported ledger category/schema, installment identity,
+net credit and original currency, employer policy/calendar and source references
+are required. It is not aliased to regular salary. Unknown stays pending.
+
+FX access behavior
+No periodic polling is added. Automatic source revalidates on mount, switching to
+automatic, window focus and visible-document access. Loading clears displayed old
+quotes; an OFF/error response clears quotes. Failed responses retain a five-minute
+cooldown; server daily caching/in-flight dedup controls provider cost. There is no
+instant push revocation while an untouched tab remains open. Observation date,
+source and retrieval date are explicit; references are not real-time prices.
+
+Release boundary
+Flags remain default OFF. No production migration, real ingestion, DB connection,
+price/catalog activation, store publication or new persistent access is performed.
+Synthetic SQL tests use an in-memory transactional protocol double this round;
+production engine/schema validation remains a separate gate before activation.

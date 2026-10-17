@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { authFetch, captureAuthSession, getStoredUser, getToken } from '@/lib/authClient';
 import { canonicalAllowanceCapture } from '@shared/financialCanonicalCapture.mjs';
 
-type Props={rows:any[];coveredDays:string[];range:{start:string;end:string};complete:boolean;crewId:string|number;airline:string};
+type Props={rows:any[];coveredDays:string[];range:{start:string;end:string};complete:boolean;crewId:string|number;airline:string;flights:Array<{id:string;published:boolean;localDate:string;timezone:string;airport:string;label:string}>};
 // Review state belongs to this mounted canonical snapshot. Parent keys by its
 // inputs; auth fence prevents a response/review crossing an account change.
 export default function CanonicalForecastCapture(props:Props){
  const [reference,setReference]=useState(''),[confirmed,setConfirmed]=useState(false),[brl,setBrl]=useState(false),[cycle,setCycle]=useState('');
+ const [foreign,setForeign]=useState(false),[flightLinks,setFlightLinks]=useState<Record<string,string>>({});
  const [review,setReview]=useState<any>(null),[busy,setBusy]=useState(false),[message,setMessage]=useState('');
  const clear=()=>{setReview(null);setMessage('');};
  const preview=async()=>{
@@ -14,7 +15,7 @@ export default function CanonicalForecastCapture(props:Props){
   setBusy(true);setReview(null);setMessage('');
   try{
    if(!getToken()||!ownerId||['visitor','guest'].includes(user?.role||'')||(user as any)?.crewId&&String((user as any).crewId)!==String(props.crewId))throw Error('owner');
-   const source=await canonicalAllowanceCapture({...props,ownerId,review:{reference,ownerConfirmed:confirmed,brlConfirmed:brl,brlCycleDate:cycle}});
+   const source=await canonicalAllowanceCapture({...props,ownerId,review:{reference,ownerConfirmed:confirmed,brlConfirmed:brl,brlCycleDate:cycle,foreignConfirmed:foreign,flightLinks}});
    if(!session.isCurrent())return;
    const result=await authFetch<any>('/api/platform/finance/capture',{method:'POST',body:JSON.stringify({action:'preview',source})});
    if(session.isCurrent()&&result?.ok===true)setReview({...result,session});
@@ -33,13 +34,19 @@ export default function CanonicalForecastCapture(props:Props){
  return <details className="cc-persisted-finance"><summary>Revisar captura da previsão de diárias</summary>
   <p>Valores calculados da escala, na moeda original. A revisão é informada pelo titular; não equivale a demonstrativo da empresa ou confirmação bancária.</p>
   <p>{props.rows.length} itens · {props.range.start} a {props.range.end}. A substituição da escala não apaga o histórico salvo.</p>
-  <label>Referência da revisão<input aria-label="Referência da revisão financeira" value={reference} maxLength={128} onChange={e=>{clear();setReference(e.target.value);}} placeholder="revisao-2026-10"/></label>
+  <fieldset disabled={busy}><label>Referência da revisão<input aria-label="Referência da revisão financeira" value={reference} maxLength={128} onChange={e=>{clear();setReference(e.target.value);}} placeholder="revisao-2026-10"/></label>
   <label><input type="checkbox" checked={confirmed} onChange={e=>{clear();setConfirmed(e.target.checked);}}/>Confirmo que esta escala é minha e revisei os valores calculados.</label>
   <label><input type="checkbox" checked={brl} onChange={e=>{clear();setBrl(e.target.checked);}}/>Confirmo a política BRL: quinta-feira; feriado bancário de SP antecipa para quarta.</label>
   {brl&&<label>Quinta-feira do ciclo comprovado<input aria-label="Data comprovada do ciclo BRL" type="date" value={cycle} onChange={e=>{clear();setCycle(e.target.value);}}/></label>}
-  <p>Sem ciclo comprovado, a data fica pendente. Diárias internacionais permanecem sem data até revisão do vínculo com voo publicado e seu fuso.</p>
+  <p>Sem ciclo comprovado, a data fica pendente.</p>
+  {props.rows.some(row=>row.currency!=='BRL')&&<fieldset><legend>Vínculo internacional revisado</legend>
+   <label><input type="checkbox" checked={foreign} onChange={e=>{clear();setForeign(e.target.checked);}}/>Confirmo a política: a diária internacional selecionada é prevista na data do voo vinculado.</label>
+   <p>Selecione explicitamente o voo para cada item. Datas e relógios publicados abaixo são da escala em BRT (America/Sao_Paulo); não representam conversão para o fuso do destino. Nenhum vínculo é escolhido automaticamente.</p>
+   {foreign&&props.rows.filter(row=>row.currency!=='BRL').map(row=>{const key=JSON.stringify([row.iso,row.label]);return <label key={key}>{row.iso} · {row.label} · {row.currency}<select aria-label={`Voo comprovado ${row.iso} ${row.label}`} value={flightLinks[key]||''} onChange={e=>{clear();setFlightLinks({...flightLinks,[key]:e.target.value});}}><option value="">Sem vínculo comprovado — data pendente</option>{props.flights.map(flight=><option key={flight.id} value={flight.id}>{flight.label}</option>)}</select></label>;})}
+   {!props.flights.length&&<p>Nenhum voo com data e relógios publicados comprovados nesta cobertura.</p>}
+  </fieldset>}
   <p>Salário exige crédito líquido e ciclo comprovado: “até dia 5” é prazo, não dia exato. Férias e 13º continuam sem data sem dados da empresa.</p>
-  <button type="button" disabled={busy||!props.complete||!confirmed||!reference} onClick={preview}>Preparar revisão sem gravar</button>
+  </fieldset><button type="button" disabled={busy||!props.complete||!confirmed||!reference} onClick={preview}>Preparar revisão sem gravar</button>
   {review&&review.session.isCurrent()&&<div role="status"><p>{review.count} itens revisados; {review.pendingDates} datas pendentes; {review.pendingAmounts} valores pendentes. Nenhum recebimento será confirmado.</p><button type="button" disabled={busy} onClick={save}>Confirmar gravação da previsão revisada</button><button type="button" disabled={busy} onClick={clear}>Cancelar revisão</button></div>}
   {message&&<p role="status">{message}</p>}
  </details>;

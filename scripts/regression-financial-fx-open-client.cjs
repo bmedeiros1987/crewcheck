@@ -12,8 +12,8 @@ const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||__filename)(
  await context.addInitScript(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic',email:'synthetic@example.invalid',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-only');});
  const page=await context.newPage();await page.clock.install({time:new Date('2032-02-02T15:00:00Z')});await page.goto(origin);await page.waitForFunction(()=>document.querySelector('output')?.textContent==='available');assert.equal(calls,1);
  enabled=false;await page.clock.fastForward(31*60*1000);assert.equal(await page.locator('output').textContent(),'available');assert.equal(calls,1,'already-open client does not poll or react to server OFF');
- await page.getByRole('button',{name:'manual',exact:true}).click();await page.getByRole('button',{name:'automatic',exact:true}).click();await page.waitForFunction(()=>document.querySelector('output')?.textContent==='unavailable');assert.equal(calls,2,'new revalidation receives OFF');
+ await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.waitForFunction(()=>document.querySelector('output')?.textContent==='unavailable');assert.equal(calls,2,'focus access revalidation receives OFF');
  await page.getByRole('button',{name:'manual',exact:true}).click();await page.getByRole('button',{name:'automatic',exact:true}).click();assert.equal(calls,2,'failure cooldown avoids retry');
- console.log('PASS synthetic actual FX provider: open client retains old quote beyond 30min/server OFF until explicit mode change; revalidation sees OFF; failure cooldown. GAP: no live revocation/TTL refresh while continuously mounted. No FX code changed.');await context.close();
+ console.log('PASS actual FX provider synthetic: no background polling; next focus access invalidates on server OFF; old quotes cleared; failure cooldown. Observation/source/retrieval remain explicit; no upstream external call.');await context.close();
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

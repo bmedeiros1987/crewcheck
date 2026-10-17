@@ -7,8 +7,8 @@ type Data={state:'available'|'stale'|'unavailable'|'loading';quotes:Record<strin
 type ContextValue=Data&{mode:Mode;setMode:(mode:Mode)=>void};
 const Context=createContext<ContextValue|null>(null);
 let cached:Data|null=null,cacheUntil=0,pending:Promise<Data>|null=null;
-async function automatic():Promise<Data>{
- if(cached&&Date.now()<cacheUntil)return cached;
+async function automatic(revalidate=false):Promise<Data>{
+ if(cached&&Date.now()<cacheUntil&&(!revalidate||cached.state==='unavailable'))return cached;
  if(!pending){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
  pending=authFetch<any>('/api/platform/finance/exchange-rates',{signal:controller.signal}).then(body=>{
   if(!['available','stale'].includes(body?.state)||body.method!=='blended_daily'||!body.quotes||typeof body.quotes!=='object')throw Error('Invalid FX response');
@@ -24,9 +24,18 @@ export function FinancialFxProvider({children}:{children:ReactNode}){
  const [selection,setSelection]=useState({owner,mode:initial}),[remote,setRemote]=useState<{owner:string;data:Data}>({owner:'',data:{state:'loading',quotes:{}}});
  const mode=selection.owner===owner?selection.mode:initial;
  useEffect(()=>{const reset=()=>refresh(n=>n+1);for(const e of ['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired','crewcheck:financial-config-changed','storage'])window.addEventListener(e,reset);return()=>{for(const e of ['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired','crewcheck:financial-config-changed','storage'])window.removeEventListener(e,reset);};},[]);
- useEffect(()=>{let current=true;if(owner&&mode==='automatic')void automatic().then(data=>{if(current&&key()===owner)setRemote({owner,data});});return()=>{current=false;};},[owner,mode]);
+ useEffect(()=>{let current=true;
+  const revalidate=()=>{if(!owner||mode!=='automatic'||document.visibilityState==='hidden')return;
+   // Revalidate at access boundaries, never by a polling timer. The server's
+   // daily cache still bounds upstream cost; an OFF response clears old quotes.
+   setRemote({owner,data:{state:'loading',quotes:{}}});
+   void automatic(true).then(data=>{if(current&&key()===owner)setRemote({owner,data});});
+  };
+  revalidate();window.addEventListener('focus',revalidate);document.addEventListener('visibilitychange',revalidate);
+  return()=>{current=false;window.removeEventListener('focus',revalidate);document.removeEventListener('visibilitychange',revalidate);};
+ },[owner,mode]);
  const data:Data=!owner?{state:'unavailable',quotes:{}}:mode==='manual'?{state:Object.keys(manual).length?'available':'unavailable',quotes:manual}:remote.owner===owner?remote.data:{state:'loading',quotes:{}};
  return <Context.Provider value={{...data,mode,setMode:mode=>setSelection({owner:key(),mode})}}>{children}</Context.Provider>;
 }
 export function useFinancialFx():ContextValue{return useContext(Context)||{state:'available',quotes:readFinancialFxReferences(),mode:'manual',setMode:()=>{}};}
-export function FinancialFxSourceControl(){const fx=useFinancialFx();return <label className="cc-fx-source"><span>Fonte do câmbio</span><select aria-label="Fonte do câmbio" value={fx.mode} onChange={e=>fx.setMode(e.target.value as Mode)}><option value="automatic">Frankfurter · referência diária</option><option value="manual">Referências informadas nesta conta</option></select>{fx.mode==='automatic'&&<small role="status">{fx.state==='loading'?'Consultando referência…':fx.state==='stale'?'Cotação em cache; atualização indisponível.':fx.state==='unavailable'?'Cotação automática indisponível.': 'Data de observação e consulta em Ver cálculo.'}</small>}</label>;}
+export function FinancialFxSourceControl(){const fx=useFinancialFx();return <label className="cc-fx-source"><span>Fonte do câmbio</span><select aria-label="Fonte do câmbio" value={fx.mode} onChange={e=>fx.setMode(e.target.value as Mode)}><option value="automatic">Frankfurter · referência diária</option><option value="manual">Referências informadas nesta conta</option></select>{fx.mode==='automatic'&&<><small role="status">{fx.state==='loading'?'Consultando referência…':fx.state==='stale'?'Cotação em cache; atualização indisponível.':fx.state==='unavailable'?'Cotação automática indisponível.': 'Referência diária; não é cotação em tempo real.'}</small>{Object.entries(fx.quotes).map(([currency,quote])=><small key={currency}>{currency} · {quote.source} · observação {quote.asOf} · consulta {quote.retrievedAt||'não informada'}</small>)}</>}</label>;}

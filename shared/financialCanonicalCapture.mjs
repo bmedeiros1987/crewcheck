@@ -30,8 +30,8 @@ export async function canonicalAllowanceCapture({ ownerId, crewId, airline, rows
     let schedule;
     if (row.currency === 'BRL' && review.brlConfirmed === true) schedule = { airline, policy: { ...policy, timing: 'brl_thursday_sp_bank_holiday' }, cycle: { kind: 'reviewed_allowance_payment_date', date: review.brlCycleDate, reference: review.reference } };
     if (row.currency !== 'BRL' && review.foreignConfirmed === true) {
-      const flight = flights.find(flight => flight.id === review.flightLinks?.[key]);
-      if (flight?.published === true && day(flight.localDate) && /^[A-Z]{3}$/.test(flight.airport)) schedule = { airline, policy: { ...policy, timing: 'foreign_allowance_flight_day', currencies: [row.currency] }, flightLink: { kind: 'published_allowance_flight_link', allowanceSourceId: sourceId, localDate: flight.localDate, timezone: review.flightTimezone, airport: flight.airport, reference: flight.id } };
+      const flight = flights.find(flight => flight.id === (review.flightLinks?.[key] ?? review.flightLinks?.[JSON.stringify([row.iso,row.label])]));
+      if (flight?.published === true && day(flight.localDate) && /^[A-Z]{3}$/.test(flight.airport)) schedule = { airline, policy: { ...policy, timing: 'foreign_allowance_flight_day', currencies: [row.currency] }, flightLink: { kind: 'published_allowance_flight_link', allowanceSourceId: sourceId, localDate: flight.localDate, timezone: flight.timezone || review.flightTimezone, airport: flight.airport, reference: await financialCaptureDigest(['canonical-flight',flight.id]) } };
     }
     items.push({ key, expectedRevision: 0, record: { category: 'allowance', currency: row.currency, amountMinor: decimalToMinor(String(row.value),row.currency), periodStart: row.iso, periodEnd: row.iso, timezone: 'America/Sao_Paulo', aggregationLevel: 'item' }, ...(schedule ? { schedule } : {}) });
   }
