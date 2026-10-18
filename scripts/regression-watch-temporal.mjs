@@ -16,7 +16,7 @@ try {
  const rest={id:'folga',kind:'duty',day:{type:'FOLGA'},canonical:{kind:'rest',startDateTime:'2032-10-17T03:00:00Z',endDateTime:'2032-10-18T02:59:59Z'}};
  assert.equal(build([rest,f],f,null,at('2032-10-17T21:00:00Z')).state,'OFF_DUTY');
  const midnight={...f,presentation:'23:18',canonical:{...f.canonical,startDateTime:'2032-10-19T03:05:00Z',endDateTime:'2032-10-19T05:00:00Z'}};
- const m=build([midnight],midnight,null,at('2032-10-19T01:50:00Z'));assert.equal(m.primaryTime,'23:18');assert.equal(m.boardingTime,'23:25');assert.match(m.detail,/18\/10 23:25/);
+ const m=build([midnight],midnight,null,at('2032-10-19T01:50:00Z'));assert.equal(m.primaryTime,'23:18');assert.equal(m.boardingTime,'23:25');assert.equal(m.schedule[0].presentation,'18/10 23:18');assert.match(m.schedule[0].detail,/19\/10.*BRT/);assert.match(m.detail,/18\/10 23:25/);
  for(const destination of ['LIS','ZZZ']){const x={...f,destination};assert.equal(build([x],x,null,at('2032-10-18T21:00:00Z')).boardingTime,'');}
  const restSnapshot=build([rest,f],rest,null,at('2032-10-17T21:00:00Z')); assert.equal(restSnapshot.state,'OFF_DUTY'); assert.equal(restSnapshot.presentationTime,'');
  const near={...f,presentation:'00:30',departure:'01:15',canonical:{...f.canonical,startDateTime:'2032-10-18T04:15:00Z',endDateTime:'2032-10-18T06:00:00Z'}}; const nearSnapshot=build([rest,near],near,null,at('2032-10-18T01:00:00Z')); assert.equal(nearSnapshot.state,'OFF_DUTY'); assert(nearSnapshot.validUntilEpochMs >= nearSnapshot.generatedAtEpochMs);

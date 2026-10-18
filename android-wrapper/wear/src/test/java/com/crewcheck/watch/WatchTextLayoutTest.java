@@ -159,6 +159,26 @@ public class WatchTextLayoutTest {
         }
     }
 
+    @Test public void scheduleDisplaysProducerDateAndZone() throws Exception {
+        try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).create()) {
+            MainActivity activity = controller.get();
+            LinearLayout content = field(activity, "content", LinearLayout.class);
+            content.removeAllViews();
+            long now = System.currentTimeMillis();
+            JSONObject json = WatchContextSnapshot.demo(now).toJson();
+            json.getJSONArray("schedule").getJSONObject(0).put("detail", "19/10 BRT").put("presentation", "18/10 23:18");
+            call(activity, "renderSchedule", new Class[]{WatchContextSnapshot.class, long.class}, WatchContextSnapshot.fromJson(json.toString()), now);
+            assertTrue(allText(content).contains("19/10 BRT"));
+            assertTrue(allText(content).contains("18/10 23:18"));
+        }
+    }
+    private static String allText(View view) {
+        if (view instanceof TextView) return ((TextView) view).getText().toString();
+        String result = "";
+        if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++) result += allText(((ViewGroup) view).getChildAt(i));
+        return result;
+    }
+
     @Test public void reportingKeepsDateAndEstimatedBoardingVisible() throws Exception {
         try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).create()) {
             MainActivity activity = controller.get();

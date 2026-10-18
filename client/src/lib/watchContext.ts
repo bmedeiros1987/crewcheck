@@ -284,7 +284,7 @@ export function buildCrewCheckWatchSnapshot(
         title,
         route,
         presentation: clockMinutes(candidate.presentation) != null
-          ? String(candidate.presentation)
+          ? `${dayLabel(clockBeforeOrAt(start, String(candidate.presentation)))} ${candidate.presentation}`
           : '',
         gate: remote ? 'REMOTA' : rawGate,
         detail: [dayLabel(start), 'BRT', kind === 'stay' ? clean(candidate.hotel) : clean(candidate.subtitle)].filter(Boolean).join(' • '),

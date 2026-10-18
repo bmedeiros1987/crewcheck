@@ -767,6 +767,7 @@ public final class MainActivity extends FragmentActivity
 
         String route = join(" · ",
                 item.route,
+                item.detail,
                 item.presentation.isBlank() ? "" : "APZ " + item.presentation,
                 item.gate.isBlank() ? "" : item.gate
         );
