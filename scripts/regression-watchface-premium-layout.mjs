@@ -11,7 +11,21 @@ assert.match(face, /#FF22D3EE/, 'CrewCheck cyan accent must remain present');
 assert.match(face, /#FF60A5FA/, 'CrewCheck blue accent must remain present');
 assert.match(face, /#FFA78BFA/, 'CrewCheck violet accent must remain present');
 assert.match(face, /Flight-deck cardinal markers/, 'instrument identity markers must remain explicit');
-assert.match(face, /<PartDraw x="56" y="88" width="338" height="126">/, 'clock hero stage must remain centered');
+assert.match(face, /<PartDraw x="56" y="96" width="338" height="120">/, 'clock hero stage must remain centered');
+
+// Every always-visible surface must stay clear of its neighbours: the face draws in
+// document order, so an overlapping PartDraw strokes across whatever came before it.
+const surfaces = [...face.matchAll(/<PartDraw x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)">/g)]
+  .map(([, x, y, w, h]) => ({ x: +x, y: +y, w: +w, h: +h }))
+  .filter(s => s.w > 30 && s.h > 30 && s.w < 380); // the full-dial rings are decoration, not surfaces
+const stage = surfaces.find(s => s.y === 96 && s.w === 338);
+assert.ok(stage, 'clock hero stage must be measurable');
+for (const other of surfaces) {
+  if (other === stage) continue;
+  const overlaps = other.x < stage.x + stage.w && stage.x < other.x + other.w
+    && other.y < stage.y + stage.h && stage.y < other.y + other.h;
+  assert.ok(!overlaps, `clock hero stage must not overlap surface at ${other.x},${other.y}`);
+}
 assert.match(labels, /CrewCheck Flight Deck/, 'face name must match the premium flight-deck identity');
 
 // Clock must remain the visual hero.
