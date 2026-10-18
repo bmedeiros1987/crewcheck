@@ -4,10 +4,12 @@ on:
     paths:
       - 'client/src/components/health/**'
       - 'client/src/lib/healthLockscreen.ts'
+      - 'client/src/lib/healthDraftCache.ts'
       - 'client/src/components/v14316/GuardianCenterView.tsx'
       - 'client/src/pages/GuardianPublicPage.tsx'
       - 'shared/health-access-proposal/**'
       - 'scripts/regression-health-lockscreen*.mjs'
+      - 'scripts/regression-health-account-isolation.mjs'
       - '.github/workflows/health-lockscreen-ui.yml'
 permissions:
   contents: read
@@ -26,9 +28,15 @@ jobs:
       - run: node scripts/regression-health-lockscreen-dom.mjs
         env:
           VISITOR_JSDOM_PACKAGE: /tmp/health-dom/package.json
+      - run: node scripts/regression-health-account-isolation.mjs
+        env:
+          VISITOR_JSDOM_PACKAGE: /tmp/health-dom/package.json
       - run: node scripts/v139/apply.mjs
       - run: node scripts/regression-health-lockscreen.mjs
       - run: node scripts/regression-health-lockscreen-dom.mjs
+        env:
+          VISITOR_JSDOM_PACKAGE: /tmp/health-dom/package.json
+      - run: node scripts/regression-health-account-isolation.mjs
         env:
           VISITOR_JSDOM_PACKAGE: /tmp/health-dom/package.json
       - run: npx tsc --noEmit
