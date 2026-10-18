@@ -6,6 +6,8 @@ on:
       - 'client/src/components/notifications/**'
       - 'client/src/components/v139/BidsAlertPreferences.tsx'
       - 'client/src/lib/crewcheckPushRuntime.ts'
+      - 'client/src/lib/crewcheckPushActivation.ts'
+      - 'scripts/regression-web-push-cancellation-contract.mjs'
       - 'scripts/regression-web-push-lifecycle.mjs'
       - 'scripts/regression-native-settings-return.mjs'
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
@@ -21,6 +23,8 @@ on:
       - 'client/src/components/notifications/**'
       - 'client/src/components/v139/BidsAlertPreferences.tsx'
       - 'client/src/lib/crewcheckPushRuntime.ts'
+      - 'client/src/lib/crewcheckPushActivation.ts'
+      - 'scripts/regression-web-push-cancellation-contract.mjs'
       - 'scripts/regression-web-push-lifecycle.mjs'
       - 'scripts/regression-native-settings-return.mjs'
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
@@ -62,6 +66,7 @@ jobs:
         run: |
           node scripts/regression-native-settings-return.mjs
           node scripts/regression-web-push-lifecycle.mjs
+          node scripts/regression-web-push-cancellation-contract.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
           node scripts/regression-notification-center-browser.mjs
@@ -79,6 +84,7 @@ jobs:
         run: |
           node scripts/regression-native-settings-return.mjs
           node scripts/regression-web-push-lifecycle.mjs
+          node scripts/regression-web-push-cancellation-contract.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
           node scripts/regression-notification-center-browser.mjs
