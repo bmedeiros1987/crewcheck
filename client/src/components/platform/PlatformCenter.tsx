@@ -168,7 +168,13 @@ export function SubscriptionCenter({ onBack }: Pick<Props, 'onBack'>) {
       setPlayProducts(Object.fromEntries(values.map((item: any) => [item.productId, item])));
     };
     const ready = () => catalog && queryCatalog(catalog.plans);
-    const errorListener = (event: Event) => { playCatalogRequest.current=null;setPlayProducts({}); toast.error((event as CustomEvent).detail?.message || 'Google Play indisponível.'); };
+    const errorListener = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      // Native restore/purchase errors do not invalidate a confirmed catalog.
+      // Older bridges and catalog/connection errors still fail closed.
+      if (detail?.catalogInvalidated !== false) { playCatalogRequest.current=null;setPlayProducts({}); }
+      toast.error(detail?.message || 'Google Play indisponível.');
+    };
     const pending = () => toast.message('Compra pendente na Google Play. O acesso será liberado após a confirmação.');
     window.addEventListener('crewcheck:billing-products', products as EventListener);
     window.addEventListener('crewcheck:billing-ready', ready);

@@ -58,7 +58,7 @@ public final class CrewCheckBillingBridge implements PurchasesUpdatedListener {
                     dispatch("crewcheck:billing-ready", new JSONObject());
                     restorePurchases();
                 } else {
-                    dispatchError("Não foi possível conectar à Google Play.", billingResult);
+                    dispatchCatalogError("Não foi possível conectar à Google Play.", billingResult);
                 }
             }
 
@@ -102,7 +102,7 @@ public final class CrewCheckBillingBridge implements PurchasesUpdatedListener {
                         (billingResult, result) -> activity.runOnUiThread(() -> {
                             if (generation != catalogGeneration.get()) return;
                             if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
-                                dispatchError("Não foi possível consultar os planos da Google Play.", billingResult);
+                                dispatchCatalogError("Não foi possível consultar os planos da Google Play.", billingResult);
                                 return;
                             }
                             JSONArray payload = new JSONArray();
@@ -115,7 +115,7 @@ public final class CrewCheckBillingBridge implements PurchasesUpdatedListener {
                             dispatch("crewcheck:billing-products", event);
                         })));
             } catch (Exception error) {
-                dispatchError("Lista de produtos Google Play inválida.", null);
+                dispatchCatalogError("Lista de produtos Google Play inválida.", null);
             }
         });
     }
@@ -252,16 +252,25 @@ public final class CrewCheckBillingBridge implements PurchasesUpdatedListener {
         } else {
             ready = false;
             connect();
-            dispatchError("Conectando à Google Play. Tente novamente em alguns segundos.", null);
+            dispatchCatalogError("Conectando à Google Play. Tente novamente em alguns segundos.", null);
         }
     }
 
-    private void dispatchError(String message, BillingResult result) {
+    private void dispatchCatalogError(String message, BillingResult result) {
         catalogGeneration.incrementAndGet();
         products.clear();
+        dispatchError(message, result, true);
+    }
+
+    private void dispatchError(String message, BillingResult result) {
+        dispatchError(message, result, false);
+    }
+
+    private void dispatchError(String message, BillingResult result, boolean catalogInvalidated) {
         JSONObject detail = new JSONObject();
         try {
             detail.put("message", message);
+            detail.put("catalogInvalidated", catalogInvalidated);
             if (result != null) detail.put("responseCode", result.getResponseCode());
         } catch (Exception ignored) {}
         dispatch("crewcheck:billing-error", detail);
