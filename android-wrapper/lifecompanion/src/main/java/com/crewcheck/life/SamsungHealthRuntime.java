@@ -151,7 +151,7 @@ final class SamsungHealthRuntime {
         if (allows(granted, "ACTIVITY_SUMMARY")) {
             String type = "com.samsung.android.sdk.health.data.request.DataType$ActivitySummaryType";
             Duration active = durationValue(aggregate(store, type, "TOTAL_ACTIVE_TIME", localTimeFilter(startOfDay, now)));
-            json.put("activeMinutes", active == null ? JSONObject.NULL : Math.max(0, active.toMinutes()));
+            json.put("activeMinutes", active == null || active.isNegative() ? JSONObject.NULL : active.toMinutes());
             putNumber(json, "caloriesBurned", aggregate(store, type, "TOTAL_ACTIVE_CALORIES_BURNED", localTimeFilter(startOfDay, now)));
             putNumber(json, "distanceMeters", aggregate(store, type, "TOTAL_DISTANCE", localTimeFilter(startOfDay, now)));
         }
@@ -203,7 +203,13 @@ final class SamsungHealthRuntime {
             if (raw.isBlank()) return "";
             JSONObject json = new JSONObject(raw);
             applyGrantedFields(json, granted);
-            return com.crewcheck.health.CompanionFreshness.filter(json, System.currentTimeMillis()).toString();
+            JSONObject filtered = com.crewcheck.health.CompanionFreshness.filter(json, System.currentTimeMillis());
+            // Persist removal too: re-granting a category must never resurrect revoked cache.
+            if (!filtered.toString().equals(raw) && !LifeSummaryStore.save(context, filtered)) {
+                LifeSummaryStore.clear(context);
+                return "";
+            }
+            return filtered.toString();
         } catch (Throwable deniedOrUnavailable) { return ""; }
     }
 
@@ -364,14 +370,11 @@ final class SamsungHealthRuntime {
         );
 
         Object latest = null;
-        LocalDateTime latestEnd = null;
+        Instant latestEnd = null;
         for (Object point : points) {
-            Object end = tryInvoke(point, "getEndLocalDateTime");
-            Object start = tryInvoke(point, "getStartLocalDateTime");
-            LocalDateTime candidate = end instanceof LocalDateTime
-                    ? (LocalDateTime) end
-                    : start instanceof LocalDateTime ? (LocalDateTime) start : null;
-            if (candidate != null && (latestEnd == null || candidate.isAfter(latestEnd))) {
+            Instant candidate = instantValue(tryInvoke(point, "getEndTime"));
+            if (candidate != null && !candidate.isAfter(Instant.now())
+                    && (latestEnd == null || candidate.isAfter(latestEnd))) {
                 latest = point;
                 latestEnd = candidate;
             }
@@ -386,7 +389,7 @@ final class SamsungHealthRuntime {
         Object end = tryInvoke(latest, "getEndLocalDateTime");
 
         Duration d = durationValue(duration);
-        json.put("sleepMinutes", d == null ? JSONObject.NULL : Math.max(0, d.toMinutes()));
+        json.put("sleepMinutes", d == null || d.isNegative() ? JSONObject.NULL : d.toMinutes());
         putNumber(json, "sleepScore", score);
         json.put("sleepStartLocal", start == null ? "" : start.toString());
         json.put("sleepStart", JSONObject.NULL);
@@ -395,6 +398,13 @@ final class SamsungHealthRuntime {
         preserveInstant(latest, "getStartTime", "sleepStartInstant", json);
         preserveInstant(latest, "getEndTime", "sleepEndInstant", json);
         return json;
+    }
+
+    private static Instant instantValue(Object value) {
+        if (value instanceof Instant) return (Instant)value;
+        if (value instanceof OffsetDateTime) return ((OffsetDateTime)value).toInstant();
+        if (value instanceof ZonedDateTime) return ((ZonedDateTime)value).toInstant();
+        return null;
     }
 
     // Preserve an absolute time/offset only when supplied by the SDK. Never attach the

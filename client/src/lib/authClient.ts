@@ -1,3 +1,5 @@
+import { invalidateLifeHealthCache, clearCompanionHealthCache } from './lifeHealthCache';
+
 export interface AuthUser {
   id: string | null;
   name: string;
@@ -51,10 +53,15 @@ export function isAuthenticated(): boolean { return Boolean(getToken()); }
 let authGeneration = 0;
 if (typeof window !== 'undefined') {
   for (const name of ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired'])
-    window.addEventListener(name, () => { authGeneration += 1; });
+    window.addEventListener(name, () => { authGeneration += 1; invalidateLifeHealthCache(); });
   window.addEventListener('storage', (event) => {
-    if (event.key === null || event.key === TOKEN_KEY || event.key === USER_KEY) authGeneration += 1;
+    if (event.key === null || event.key === TOKEN_KEY || event.key === USER_KEY) {
+      authGeneration += 1; invalidateLifeHealthCache();
+    }
   });
+  // An arriving sanitized/empty Companion result invalidates prior Samsung history
+  // even while Life is unmounted. Component consumers may then ingest current data.
+  window.addEventListener('crewcheck:life-companion-summary', () => clearCompanionHealthCache(captureAuthSession()));
 }
 
 /** Read fence only: never establishes or changes an account. */

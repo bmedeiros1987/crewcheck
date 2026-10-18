@@ -20,22 +20,22 @@ update('client/src/components/v1434/CrewCheckLifeView.tsx', (source) => {
     next = next.replace(anchor, `${anchor}\nimport LifeConciergePanel from '@/components/v14313/LifeConciergePanel';\nimport { clearLifeConciergeData, ingestHealthSummary, ingestManualSummary, saveLifeGoals } from '@/lib/lifeConcierge';`);
   }
 
-  if (!next.includes('ingestHealthSummary(detail);')) {
-    const anchor = '      if (detail.ok) writeStored(KEYS.nativeSummary, detail);';
+  if (!next.includes('ingestHealthSummary(detail, session);')) {
+    const anchor = '      if (detail.ok) writeStored(KEYS.nativeSummary, detail, session);';
     if (!next.includes(anchor)) throw new Error('[v14313] Âncora do resumo nativo não encontrada.');
-    next = next.replace(anchor, `      if (detail.ok) {\n        writeStored(KEYS.nativeSummary, detail);\n        ingestHealthSummary(detail);\n      }`);
+    next = next.replace(anchor, `      if (detail.ok) {\n        writeStored(KEYS.nativeSummary, detail, session);\n        ingestHealthSummary(detail, session);\n      }`);
   }
 
   if (!next.includes('saveLifeGoals(safe);')) {
-    const anchor = '    writeStored(KEYS.profile, safe);';
+    const anchor = '    writeStored(KEYS.profile, safe, healthSession);';
     if (!next.includes(anchor)) throw new Error('[v14313] Âncora dos objetivos do Life não encontrada.');
     next = next.replace(anchor, `${anchor}\n    saveLifeGoals(safe);`);
   }
 
-  if (!next.includes('ingestManualSummary(safe);')) {
-    const anchor = '    writeStored(KEYS.manual, safe);';
+  if (!next.includes('ingestManualSummary(safe, healthSession);')) {
+    const anchor = '    writeStored(KEYS.manual, safe, healthSession);';
     if (!next.includes(anchor)) throw new Error('[v14313] Âncora do resumo manual não encontrada.');
-    next = next.replace(anchor, `${anchor}\n    ingestManualSummary(safe);`);
+    next = next.replace(anchor, `${anchor}\n    ingestManualSummary(safe, healthSession);`);
   }
 
   if (!next.includes('clearLifeConciergeData();')) {
@@ -50,7 +50,7 @@ update('client/src/components/v1434/CrewCheckLifeView.tsx', (source) => {
     next = next.replace(anchor, `    <LifeConciergePanel nextProgram={nextProgram} healthSummary={nativeSummary} profile={profile}/>\n\n${anchor}`);
   }
 
-  if (!next.includes('LifeConciergePanel') || !next.includes('ingestHealthSummary(detail)') || !next.includes('clearLifeConciergeData()')) {
+  if (!next.includes('LifeConciergePanel') || !next.includes('ingestHealthSummary(detail, session)') || !next.includes('clearLifeConciergeData()')) {
     throw new Error('[v14313] Concierge adaptativo não foi integrado à tela Life por completo.');
   }
   return next;

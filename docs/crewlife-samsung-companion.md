@@ -185,3 +185,26 @@ Sem o SDK proprietário/aparelho não se comprova quais accessors opcionais a ve
 instalada fornece; ausência de accessor falha fechada. Confirmar sono/energia atuais,
 revogação e troca de conta no aparelho continua gate físico antes de liberar.
 A variante Play principal mantém a exclusão Health Connect em store-policy.
+
+### Correções após revisão independente (mesma PR, HOLD)
+
+O cache web `crewcheck:life:*` usa envelope local com proprietário e schema 2;
+entradas anteriores sem proprietário são descartadas, sem migração para a conta
+atual. `authClient` invalida esses caches e o resumo em memória na fronteira global
+de sessão e em mudanças de autenticação entre abas, mesmo com Life desmontado.
+Leituras verificam proprietário/sessão vigente; callbacks capturam a geração antes
+da leitura. Esse owner local é um fence de privacidade, não autenticação Samsung.
+
+`lifeConcierge` conserva os metadados de validade, aplica-os em resumo e histórico
+fallback e mantém zero medido. Resumo Samsung substituído/revogado remove versões
+Samsung anteriores do histórico, inclusive quando o evento chega sem Life montado.
+A preparação canônica preserva esses checks em vez de reescrever o parser legado.
+
+Duração negativa é recusada com `isNegative()` antes de `toMinutes()`, inclusive
+menos de um minuto. A escolha do sono mais recente usa `Instant`: 08:00+02:00 é
+anterior a 07:30Z. Revogação parcial sanitiza também o cache criptografado persistido;
+se a gravação sanitizada falhar, não exporta esse cache e solicita limpeza local.
+
+Fixtures Java e web continuam sem SDK/API/dispositivo real. O gate de ownership
+MyCrewCare continua intacto: seu FAIL na PR de saúde exige decisão separada de
+composição/ownership; não é tratado como teste de saúde aprovado nem dispensado.

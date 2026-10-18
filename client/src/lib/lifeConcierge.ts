@@ -1,3 +1,6 @@
+import { captureAuthSession } from './authClient';
+import { isLifeHealthCacheKey, readLifeHealthCache, writeLifeHealthCache, clearCompanionHealthCache, type LifeHealthSession } from './lifeHealthCache';
+
 export type LifePeriod = 'auto' | 'manha' | 'tarde' | 'noite' | 'qualquer';
 export type LifeFlexibility = 'flexivel' | 'equilibrado' | 'estruturado';
 export type LifeCoachTone = 'acolhedor' | 'direto' | 'discreto';
@@ -39,6 +42,9 @@ export type LifeAdaptivePreferences = {
 
 export type LifeHealthSnapshot = {
   capturedAt: string;
+  validUntilEpochMs?: number;
+  generatedAtEpochMs?: number;
+  metricValidity?: Record<string, { state: string; validUntilEpochMs: number }>;
   sleepMinutes?: number;
   sleepStart?: string;
   sleepEnd?: string;
@@ -145,18 +151,27 @@ function storageAvailable(): boolean {
 
 function readJson<T>(key: string, fallback: T): T {
   if (!storageAvailable()) return fallback;
+  if (isLifeHealthCacheKey(key)) {
+    const owned = readLifeHealthCache(captureAuthSession(), key, fallback);
+    if (Array.isArray(fallback)) return (Array.isArray(owned) ? owned : fallback) as T;
+    if (fallback && typeof fallback === 'object') return { ...fallback, ...(owned && typeof owned === 'object' ? owned : {}) } as T;
+    return owned;
+  }
   try {
     const raw = window.localStorage.getItem(key);
-    return raw ? { ...fallback as any, ...JSON.parse(raw) } : fallback;
-  } catch {
-    return fallback;
-  }
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(fallback)) return (Array.isArray(parsed) ? parsed : fallback) as T;
+    return parsed as T;
+  } catch { return fallback; }
 }
 
-function writeJson(key: string, value: unknown) {
+function writeJson(key: string, value: unknown, session = captureAuthSession()) {
   if (!storageAvailable()) return;
   try {
-    window.localStorage.setItem(key, JSON.stringify(value));
+    if (isLifeHealthCacheKey(key)) {
+      if (!writeLifeHealthCache(session, key, value)) return;
+    } else window.localStorage.setItem(key, JSON.stringify(value));
     window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key } }));
   } catch {}
 }
@@ -221,23 +236,41 @@ function weightedPreferredPeriod(events: LifeEvent[], type: LifeEventType, fallb
   return ranked[0]?.[1] > 0 ? ranked[0][0] : fallback;
 }
 
-function parseHealthSnapshot(value: any, source: LifeHealthSnapshot['source']): LifeHealthSnapshot | null {
+function optionalMetric(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+function parseHealthSnapshot(value: any, source: LifeHealthSnapshot['source'], now = Date.now()): LifeHealthSnapshot | null {
   if (!value || typeof value !== 'object') return null;
   const capturedAt = validDate(value.capturedAt || value.updatedAt)?.toISOString();
-  if (!capturedAt) return null;
-  return {
-    capturedAt,
-    sleepMinutes: safeNumber(value.sleepMinutes, safeNumber(value.sleepHours) * 60) || undefined,
-    sleepStart: validDate(value.sleepStart)?.toISOString(),
-    sleepEnd: validDate(value.sleepEnd)?.toISOString(),
-    sleepSource: String(value.sleepSource || '').trim() || undefined,
-    steps: safeNumber(value.steps) || undefined,
-    distanceMeters: safeNumber(value.distanceMeters) || undefined,
-    activityMinutes: safeNumber(value.activityMinutes) || undefined,
-    restingHeartRateAverage: safeNumber(value.restingHeartRateAverage) || undefined,
-    periodDays: clamp(Math.round(safeNumber(value.periodDays, 7)), 1, 30),
-    source,
+  if (!capturedAt || new Date(capturedAt).getTime() > now) return null;
+  const samsung = source === 'samsung-companion' || ['samsung_health', 'samsung-companion'].includes(value.source);
+  if (samsung && (!(value.generatedAtEpochMs > 0) || value.generatedAtEpochMs > now
+      || !(value.validUntilEpochMs > now) || value.validUntilEpochMs > value.generatedAtEpochMs + 6 * 60 * 60 * 1000
+      || !value.metricValidity)) return null;
+  const metric = (key: string, input: unknown, metadataKey = key) => {
+    const validity = value.metricValidity?.[metadataKey];
+    return samsung && (validity?.state !== 'valid' || !(validity.validUntilEpochMs > now))
+      ? undefined : optionalMetric(input);
   };
+  const sleepMinutes = metric('sleepMinutes', value.sleepMinutes ?? (optionalMetric(value.sleepHours) === undefined ? undefined : value.sleepHours * 60));
+  const snapshot: LifeHealthSnapshot = {
+    capturedAt,
+    validUntilEpochMs: samsung ? value.validUntilEpochMs : undefined,
+    generatedAtEpochMs: samsung ? value.generatedAtEpochMs : undefined,
+    metricValidity: samsung ? value.metricValidity : undefined,
+    sleepMinutes,
+    sleepStart: sleepMinutes === undefined ? undefined : validDate(value.sleepStart)?.toISOString(),
+    sleepEnd: sleepMinutes === undefined ? undefined : validDate(value.sleepEnd)?.toISOString(),
+    sleepSource: String(value.sleepSource || '').trim() || undefined,
+    steps: metric('steps', value.steps),
+    distanceMeters: metric('distanceMeters', value.distanceMeters),
+    activityMinutes: metric('activityMinutes', value.activityMinutes ?? value.activeMinutes, 'activeMinutes'),
+    restingHeartRateAverage: metric('restingHeartRateAverage', value.restingHeartRateAverage),
+    periodDays: clamp(Math.round(safeNumber(value.periodDays, 7)), 1, 30),
+    source: samsung ? 'samsung-companion' : source,
+  };
+  if (samsung && [snapshot.sleepMinutes, snapshot.steps, snapshot.distanceMeters, snapshot.activityMinutes].every(item => item === undefined)) return null;
+  return snapshot;
 }
 
 export function getLifeAdaptivePreferences(): LifeAdaptivePreferences {
@@ -346,52 +379,56 @@ export function cancelLifeSession() {
   window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key: KEYS.activeSession } }));
 }
 
-export function ingestHealthSummary(value: unknown): LifeHealthSnapshot | null {
+export function ingestHealthSummary(value: unknown, session: LifeHealthSession = captureAuthSession()): LifeHealthSnapshot | null {
+  if (!session.token || !session.owner || !session.isCurrent()) return null;
   const snapshot = parseHealthSnapshot(value, 'health-connect');
   if (!snapshot) return null;
   const cutoff = daysAgo(35);
   const history = readJson<LifeHealthSnapshot[]>(KEYS.healthHistory, []);
   const next = [snapshot, ...(Array.isArray(history) ? history : []).filter((item) => item.capturedAt !== snapshot.capturedAt && new Date(item.capturedAt).getTime() >= cutoff)].slice(0, 120);
-  writeJson(KEYS.healthHistory, next);
+  writeJson(KEYS.healthHistory, next, session);
   return snapshot;
 }
 
-export function ingestCompanionSummary(value: unknown): LifeHealthSnapshot | null {
+export function ingestCompanionSummary(value: unknown, session: LifeHealthSession = captureAuthSession()): LifeHealthSnapshot | null {
+  if (!session.token || !session.owner || !session.isCurrent()) return null;
   const raw = value && typeof value === 'object' ? value as any : null;
-  if (!raw || raw.automatic !== true || String(raw.source || '') !== 'samsung_health'
-      || !(Number(raw.generatedAtEpochMs) > 0) || !(Number(raw.validUntilEpochMs) > Date.now())) return null;
+  if (!raw || raw.automatic !== true || String(raw.source || '') !== 'samsung_health') return null;
+  clearCompanionHealthCache(session); // never fall back to superseded/revoked Samsung history
+  if (!(Number(raw.generatedAtEpochMs) > 0) || !(Number(raw.validUntilEpochMs) > Date.now())) return null;
   const capturedAt = Number(raw.generatedAtEpochMs) > 0
     ? new Date(Number(raw.generatedAtEpochMs)).toISOString()
     : '';
   const snapshot = parseHealthSnapshot({ ...raw, activityMinutes: raw.activeMinutes, capturedAt }, 'samsung-companion');
   if (!snapshot) return null;
-  writeJson(KEYS.companionSummary, snapshot);
+  writeJson(KEYS.companionSummary, snapshot, session);
   const cutoff = daysAgo(35);
   const history = readJson<LifeHealthSnapshot[]>(KEYS.healthHistory, []);
   const next = [snapshot, ...(Array.isArray(history) ? history : [])
     .filter((item) => item.capturedAt !== snapshot.capturedAt && new Date(item.capturedAt).getTime() >= cutoff)]
     .slice(0, 120);
-  writeJson(KEYS.healthHistory, next);
+  writeJson(KEYS.healthHistory, next, session);
   return snapshot;
 }
 
-export function ingestManualSummary(value: unknown): LifeHealthSnapshot | null {
+export function ingestManualSummary(value: unknown, session: LifeHealthSession = captureAuthSession()): LifeHealthSnapshot | null {
+  if (!session.token || !session.owner || !session.isCurrent()) return null;
   const snapshot = parseHealthSnapshot({ ...(value as any), capturedAt: (value as any)?.updatedAt || new Date().toISOString() }, 'manual');
   if (!snapshot) return null;
   const cutoff = daysAgo(35);
   const history = readJson<LifeHealthSnapshot[]>(KEYS.healthHistory, []);
   const next = [snapshot, ...(Array.isArray(history) ? history : []).filter((item) => item.capturedAt !== snapshot.capturedAt && new Date(item.capturedAt).getTime() >= cutoff)].slice(0, 120);
-  writeJson(KEYS.healthHistory, next);
+  writeJson(KEYS.healthHistory, next, session);
   return snapshot;
 }
 
-function currentSnapshot(): LifeHealthSnapshot | null {
-  const companion = parseHealthSnapshot(readJson<any>(KEYS.companionSummary, null), 'samsung-companion');
+function currentSnapshot(now = Date.now()): LifeHealthSnapshot | null {
+  const companion = parseHealthSnapshot(readJson<any>(KEYS.companionSummary, null), 'samsung-companion', now);
   if (companion) return companion;
-  const direct = parseHealthSnapshot(readJson<any>(KEYS.nativeSummary, null), 'health-connect');
+  const direct = parseHealthSnapshot(readJson<any>(KEYS.nativeSummary, null), 'health-connect', now);
   if (direct) return direct;
   const history = readJson<LifeHealthSnapshot[]>(KEYS.healthHistory, []);
-  return Array.isArray(history) ? history.map((item) => parseHealthSnapshot(item, item.source || 'manual')).find(Boolean) || null : null;
+  return Array.isArray(history) ? history.map((item) => parseHealthSnapshot(item, item.source || 'manual', now)).find(Boolean) || null : null;
 }
 
 function profileTargets() {
@@ -408,7 +445,7 @@ function profileTargets() {
 export function getLifeRoutineContext(now = new Date()): LifeRoutineContext {
   const preferences = getLifeAdaptivePreferences();
   const events = listLifeEvents();
-  const snapshot = currentSnapshot();
+  const snapshot = currentSnapshot(now.getTime());
   const targets = profileTargets();
   const sevenDays = daysAgo(7, now);
   const today = startOfDay(now);
@@ -440,10 +477,10 @@ export function getLifeRoutineContext(now = new Date()): LifeRoutineContext {
     learningLevel,
     observations,
     sleep: {
-      available: latestSleep > 0,
+      available: snapshot?.sleepMinutes !== undefined,
       latestMinutes: latestSleep,
       targetMinutes: targets.sleepMinutes,
-      deficitMinutes: latestSleep > 0 ? Math.max(0, targets.sleepMinutes - latestSleep) : 0,
+      deficitMinutes: snapshot?.sleepMinutes !== undefined ? Math.max(0, targets.sleepMinutes - latestSleep) : 0,
       source: snapshot?.sleepSource,
     },
     movement: {
