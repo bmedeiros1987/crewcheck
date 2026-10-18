@@ -48,7 +48,7 @@ public class WatchCacheLifecycleTest {
     private static String payload(String gate, long validUntil) throws Exception {
         long now=ShadowSystemClock.currentTimeMillis();
         JSONObject json=WatchContextSnapshot.demo(now).toJson();
-        return json.put("state","REPORTING").put("gate",gate)
+        return json.put("state","REPORTING").put("presentationTime","18:20").put("primaryTime","18:20").put("gate",gate)
                 .put("validUntilEpochMs",validUntil).toString();
     }
     private static void deliver(CrewCheckDataLayerService service, String json) {
@@ -104,8 +104,25 @@ public class WatchCacheLifecycleTest {
         try(ActivityController<MainActivity> activity=Robolectric.buildActivity(MainActivity.class).create().start().resume()) {
             MainActivity screen=activity.get();long expiry=ShadowSystemClock.currentTimeMillis()+90_000L;
             screen.getAmbientCallback().onEnterAmbient(new Bundle());
-            deliver(service.get(),payload("B123",expiry));settle();
+            String beforeDelivery = text(content(screen));
+            assertTrue(beforeDelivery.contains("CrewCheck"));
+            String firstPayload = payload("B123",expiry);
+            WatchContextSnapshot first = WatchContextSnapshot.fromJson(firstPayload);
+            String firstVisible = "APZ " + first.presentationTime;
+            assertFalse("empty AOD must not already contain the expected operation",beforeDelivery.contains(firstVisible));
+            deliver(service.get(),firstPayload);settle();
             assertTrue("ambient listener records current cache",new SecureSnapshotStore(context).load().gate.equals("B123"));
+            assertTrue("DataLayer delivery must change the visible AOD",text(content(screen)).contains(firstVisible));
+            assertNotEquals(beforeDelivery,text(content(screen)));
+            String secondPayload = new JSONObject(payload("C234",expiry))
+                    .put("presentationTime","19:42").put("primaryTime","19:42").toString();
+            WatchContextSnapshot second = WatchContextSnapshot.fromJson(secondPayload);
+            String secondVisible = "APZ " + second.presentationTime;
+            deliver(service.get(),secondPayload);settle();
+            String liveText = text(content(screen));
+            assertTrue("second DataLayer delivery must replace visible operation",liveText.contains(secondVisible));
+            assertFalse("old APZ must disappear after replacement",liveText.contains(firstVisible));
+            assertEquals("C234",new SecureSnapshotStore(context).load().gate);
             // Handler scheduling and wall clock are independent in Robolectric4.14.
             // Advance the app's synthetic wall clock before running the posted tick.
             ShadowSystemClock.setNanoTime((expiry + 1L) * 1_000_000L);
@@ -114,6 +131,10 @@ public class WatchCacheLifecycleTest {
             assertFalse(text(content(screen)).contains("18:20"));
             assertFalse(text(content(screen)).contains("B123"));
             assertTrue(text(content(screen)).contains("CrewCheck"));
+            assertFalse("the APZ actually displayed before expiry must disappear",text(content(screen)).contains(secondVisible));
+            assertFalse(text(content(screen)).contains(second.presentationTime));
+            assertFalse(text(content(screen)).contains("C234"));
+            assertNotEquals("expiry must visibly change the live AOD",liveText,text(content(screen)));
         } finally { service.destroy(); }
     }
 }

@@ -75,6 +75,7 @@ export type WatchEventLike = {
     leg?: { departureTime?: string | null; presentationTime?: string | null };
     publishedDay?: {
       dutyReport?: string | null;
+      dutyReportSource?: 'published' | 'estimated' | 'absent' | 'unknown';
       legs?: { departureTime?: string | null }[];
     };
     kind?: string;
@@ -130,15 +131,16 @@ function publishedPresentation(event: WatchEventLike): string {
   const leg = event.canonical?.leg;
   if (!leg) {
     const report = sourceClock(event.canonical?.publishedDay?.dutyReport);
-    return event.kind !== 'flight' && event.canonical?.kind !== 'rest' && report === value ? value : '';
+    return event.kind !== 'flight' && event.canonical?.kind !== 'rest'
+      && event.canonical?.publishedDay?.dutyReportSource === 'published' && report === value ? value : '';
   }
   const departure = sourceClock(leg.departureTime);
   const presentation = sourceClock(leg.presentationTime);
   if (presentation && presentation !== departure && value === presentation) return value;
   const day = event.canonical?.publishedDay;
   const report = sourceClock(day?.dutyReport);
-  const firstDeparture = sourceClock(day?.legs?.[0]?.departureTime);
-  return event.canonical?.legIndex === 0 && report && report !== firstDeparture && value === report ? value : '';
+  return event.canonical?.legIndex === 0 && day?.dutyReportSource === 'published'
+    && report && value === report ? value : '';
 }
 function clockBeforeOrAt(referenceMs: number, clock: string): number {
   const minute = clockMinutes(clock);
@@ -261,7 +263,7 @@ export function buildCrewCheckWatchSnapshot(
     else if (Number.isFinite(presentationMs)) state = 'REPORTING';
     else state = 'UNKNOWN';
   } else {
-    state = 'REPORTING';
+    state = Number.isFinite(presentationMs) ? 'REPORTING' : 'UNKNOWN';
   }
 
   const currentIndex = events.findIndex((candidate) => candidate.id === event.id);
@@ -322,7 +324,8 @@ export function buildCrewCheckWatchSnapshot(
       return {
         id: clean(candidate.canonical?.id) || candidate.id,
         kind,
-        time: candidate.kind === 'flight' && !publishedDeparture(candidate) ? '' : clockLabel(start),
+        time: candidate.kind === 'flight' ? (publishedDeparture(candidate) ? clockLabel(start) : '')
+          : candidate.kind === 'duty' ? (publishedPresentation(candidate) ? clockLabel(start) : '') : clockLabel(start),
         title,
         route,
         presentation: publishedPresentation(candidate) && (candidate.kind !== 'flight' || publishedDeparture(candidate))
@@ -342,7 +345,7 @@ export function buildCrewCheckWatchSnapshot(
     validUntilEpochMs: Math.min(validWindow(now, endMs), ...transitions),
     state,
     headline,
-    primaryTime: inactive ? '' : state === 'LEAVE_SOON' ? leaveTime : state === 'REPORTING' ? presentation : clockLabel(startMs),
+    primaryTime: inactive ? '' : state === 'LEAVE_SOON' ? leaveTime : state === 'REPORTING' ? presentation : event.kind === 'flight' ? clockLabel(startMs) : '',
     detail: event.kind === 'flight' && !departure ? 'Horário de decolagem a confirmar; confira a fonte.' : future ? `Próxima programação ${dayLabel(startMs)} ${clockLabel(startMs)} BRT` : expired ? 'Programação encerrada; sincronize a escala.' : state === 'OFF_DUTY' ? `Folga ${dayLabel(now)} BRT` : `Programação ${dayLabel(startMs)} BRT` + (Number.isFinite(boardingMs) ? ` • Embarque previsto ${dayLabel(boardingMs)} ${clockLabel(boardingMs)}` : ''),
     presentationTime: inactive ? '' : presentation,
     presentationPlace: [clean(event.origin), dayLabel(presentationMs), 'escala BRT'].filter(Boolean).join(' • '),
