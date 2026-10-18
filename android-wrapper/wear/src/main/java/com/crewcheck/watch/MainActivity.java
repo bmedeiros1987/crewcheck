@@ -460,7 +460,8 @@ public final class MainActivity extends FragmentActivity
             content.addView(eyebrow);
         }
 
-        TextView value = text(primary.value, primary.value.length() > 12 ? 18 : 22,
+        String compactValue = compactAmbientLabel(snapshot) + " " + primary.value;
+        TextView value = text(stackColumns() ? compactValue : primary.value, primary.value.length() > 12 ? 18 : 22,
                 WHITE, true, Gravity.CENTER);
         value.setMaxLines(2);
         tabular(value);
@@ -478,8 +479,26 @@ public final class MainActivity extends FragmentActivity
         if (!ambientContentFits()) {
             if (eyebrow != null) content.removeView(eyebrow);
             if (gate != null) content.removeView(gate);
-            if (!ambientContentFits()) value.setMaxLines(1);
+            value.setText(compactValue);
+            value.setAutoSizeTextTypeUniformWithConfiguration(10, 22, 1,
+                    android.util.TypedValue.COMPLEX_UNIT_SP);
+            if (!ambientContentFits()) {
+                time.setAutoSizeTextTypeUniformWithConfiguration(18, 28, 1,
+                        android.util.TypedValue.COMPLEX_UNIT_SP);
+            }
         }
+    }
+
+    private String compactAmbientLabel(WatchContextSnapshot snapshot) {
+        return switch (snapshot.state) {
+            case "REPORTING" -> "APZ";
+            case "LEAVE_SOON" -> "SAIR";
+            case "BOARDING" -> "EMB";
+            case "CONNECTION" -> "CONEXÃO";
+            case "OVERNIGHT" -> "PERNOITE";
+            case "OFF_DUTY" -> "FOLGA";
+            default -> "PROG";
+        };
     }
 
     private boolean ambientContentFits() {
@@ -531,6 +550,17 @@ public final class MainActivity extends FragmentActivity
 
     private void renderLiveState(WatchContextSnapshot snapshot, long now) {
         boolean stale = snapshot.isStale(now);
+        if (stale) {
+            // Every visible part of the card is invalidated, including facts below
+            // the fold: no old gate/boarding/APZ can appear current while scrolling.
+            content.addView(text("DADOS ANTIGOS", 10, WARNING, true, Gravity.CENTER));
+            content.addView(text("Snapshot vencido", 19, WHITE, true, Gravity.CENTER));
+            content.addView(text("Confira a programação e o portão no celular.", 11, MUTED, false, Gravity.CENTER));
+            TextView sync = heroAction("Sincronizar", WARNING);
+            sync.setOnClickListener(view -> requestSync());
+            content.addView(sync);
+            return;
+        }
         Primary primary = primaryFor(snapshot);
         int accent = snapshot.changed ? MAGENTA : stale ? WARNING : primary.accent;
 

@@ -31,7 +31,7 @@ function memoryStorage() {
 }
 function flight(id, number, startIso, origin = 'GRU', destination = 'REC', extra = {}) {
   return { id, kind: 'flight', flightNumber: number, origin, destination, presentation: '18:20', departure: '19:05', arrival: '22:10',
-    gate: 'A confirmar', status: '', date: new Date(startIso), canonical: { id: `c-${id}`, startDateTime: startIso, endDateTime: new Date(Date.parse(startIso) + 3 * H).toISOString() }, ...extra };
+    gate: 'A confirmar', status: '', date: new Date(startIso), canonical: { id: `c-${id}`, leg:{departureTime:'19:05',presentationTime:'18:20'},legIndex:0,showPresentation:true, startDateTime: startIso, endDateTime: new Date(Date.parse(startIso) + 3 * H).toISOString() }, ...extra };
 }
 
 // 1. Seleção do próximo voo: ordem por instante absoluto, ignora atividade em solo e voo já partido.

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
 const read = (p) => fs.readFileSync(p, 'utf8');
 
@@ -46,4 +47,9 @@ assert.match(lifeView, /Espelhamento autorizado/);
 assert.match(lifeView, /publishWatchCrewLife/);
 assert.match(lifeView, /Nenhum dado bruto é enviado/);
 
-console.log('[crewwatch-premium-consolidated] contracts OK');
+for (const TZ of ['UTC', 'America/Sao_Paulo', 'Pacific/Auckland']) {
+  const result = spawnSync(process.execPath, ['scripts/regression-watch-source-pipeline.mjs'], { env: { ...process.env, TZ }, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  process.stdout.write(result.stdout);
+}
+console.log('[crewwatch-premium-consolidated] contracts + real source pipeline OK');

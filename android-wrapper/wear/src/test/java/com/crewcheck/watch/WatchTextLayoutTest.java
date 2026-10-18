@@ -196,6 +196,45 @@ public class WatchTextLayoutTest {
         }
     }
 
+    @Test public void staleNowCardContainsNoExpiredOperationalFacts() throws Exception {
+        try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).create()) {
+            MainActivity activity = controller.get();
+            LinearLayout content = field(activity, "content", LinearLayout.class);
+            content.removeAllViews();
+            long now = System.currentTimeMillis();
+            JSONObject json = WatchContextSnapshot.demo(now - 7_200_000L).toJson();
+            json.put("gate", "B123").put("presentationTime", "18:20").put("boardingTime", "17:40");
+            call(activity, "renderLiveState", new Class[]{WatchContextSnapshot.class, long.class}, WatchContextSnapshot.fromJson(json.toString()), now);
+            String text = allText(content);
+            assertTrue(text.contains("Snapshot vencido"));
+            assertFalse(text.contains("B123"));
+            assertFalse(text.contains("18:20"));
+            assertFalse(text.contains("17:40"));
+        }
+    }
+
+    @Test public void compactAmbientDistinguishesApzFromLeaveTime() throws Exception {
+        for (float scale : new float[]{1f, 1.5f, 2f}) {
+            RuntimeEnvironment.setFontScale(scale);
+            try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).create()) {
+                MainActivity activity = controller.get();
+                ScrollView scroll = field(activity, "scroll", ScrollView.class);
+                LinearLayout content = field(activity, "content", LinearLayout.class);
+                measure(scroll, 192);
+                for (String state : new String[]{"REPORTING", "LEAVE_SOON"}) {
+                    content.removeAllViews();
+                    JSONObject json = WatchContextSnapshot.demo(System.currentTimeMillis()).toJson();
+                    json.put("state", state).put("presentationTime", "18:20").put("leaveTime", "18:20").put("primaryTime", "18:20");
+                    call(activity, "renderAmbient", new Class[]{WatchContextSnapshot.class, long.class}, WatchContextSnapshot.fromJson(json.toString()), System.currentTimeMillis());
+                    measure(scroll, 192);
+                    assertTrue(allText(content).contains(state.equals("REPORTING") ? "APZ 18:20" : "SAIR 18:20"));
+                    assertFits(content);
+                    assertTrue(content.getHeight() <= scroll.getHeight() - scroll.getPaddingTop() - scroll.getPaddingBottom());
+                }
+            }
+        }
+    }
+
     private static void measure(ScrollView scroll, int size) {
         int spec = View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY);
         scroll.measure(spec, spec);

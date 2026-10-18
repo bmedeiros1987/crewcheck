@@ -54,7 +54,7 @@ if (source.includes("from '@/lib/nextFlightGate'")) {
 }
 const flight = (id, flightNumber, date, gate) => ({ id, kind: 'flight', flightNumber,
   origin: 'BSB', destination: 'GRU', gate, presentation: '09:30',
-  canonical: { id: 'canonical-' + id, journeyId: id, startDateTime: date + 'T12:00:00Z', endDateTime: date + 'T14:00:00Z' } });
+  canonical: { id: 'canonical-' + id, journeyId: id, leg:{departureTime:'09:00'}, legIndex:0, startDateTime: date + 'T12:00:00Z', endDateTime: date + 'T14:00:00Z' } });
 const event = flight('active-2032-10-13', 'LA100', '2032-10-13', '12');
 const otherFlight = flight('other-2032-10-13', 'LA200', '2032-10-13', '99');
 const otherDate = flight('same-flight-2032-10-14', 'LA100', '2032-10-14', '88');
@@ -77,6 +77,13 @@ assert.equal(published[0].type, 'crewcheck:watch-snapshot');
 function assertPublished(selected, gate, remoteStand = false) {
   const snapshot = published.at(-1).detail;
   assert.equal(snapshot.contextId, selected.canonical.id);
+  if (selected === otherDate) {
+    assert.equal(snapshot.currentFlight, '');
+    assert.equal(snapshot.presentationTime, '');
+    assert.equal(snapshot.gate, '');
+    assert.match(snapshot.detail, /14\/10.*BRT/);
+    return;
+  }
   assert.equal(snapshot.currentFlight, selected.flightNumber);
   assert.equal(snapshot.gate, gate);
   assert.equal(snapshot.remoteStand, remoteStand);
