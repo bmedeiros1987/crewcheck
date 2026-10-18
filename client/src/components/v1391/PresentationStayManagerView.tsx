@@ -169,7 +169,7 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
       v139Api('/api/platform/home-address').catch(() => ({ address: null })),
     ]);
     if (session !== editSession.current || token !== getToken()) return;
-    // The legacy local fallback is not account scoped: never prefill it as this account's saved stay.
+    // Cached data is not a confirmed server read and is never used to choose a write target.
     setStays(stayPayload.localOnly ? [] : stayPayload.stays || []);
     if (addressPayload.address) {
       setHomeAddress(addressPayload.address.formattedAddress || '');
@@ -258,7 +258,7 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
     if (choice === null) throw new Error('Confirme o horário exato ou a antecedência individual antes de salvar.');
     const current = loadStayEditor();
     persistStayEditor({ ...current, lastEditedEventId: selected.id, stays: { ...current.stays, [selected.id]: {
-      eventId: selected.id, signature: eventSignature.current, draft, timeZone: hotelTimeZone, apzDate,
+      ...current.stays[selected.id], remotePersisted: false, eventId: selected.id, signature: eventSignature.current, draft, timeZone: hotelTimeZone, apzDate,
       apzConfirmed: apzConfirmed && apzEpoch !== null, apzSource: apzConfirmed ? 'manual' : apzSource, choice, breakfastPlan,
       alarmState: cancelled ? 'cancelled' : 'not-programmed',
     } } }, accountId);
@@ -288,8 +288,31 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
   async function saveStay() {
     if (!selected || owner.current !== getToken() || !editorSessionCurrent()) return toast.info('Selecione a programação nesta conta.');
     if (selected.kind === 'stay') {
-      try { saveLocalStay(); toast.success('Pernoite e preferências salvos para sua conta neste aparelho. Despertador não programado.'); }
-      catch (error) { toast.error(error instanceof Error ? error.message : 'Não foi possível salvar.'); }
+      const session = editSession.current, token = getToken(), eventId = selected.id;
+      try { saveLocalStay(); } catch (error) { toast.error(error instanceof Error ? error.message : 'Não foi possível salvar neste aparelho.'); return; }
+      setBusy(true);
+      try {
+        const payload = await listPlatformStays();
+        if (session !== editSession.current || token !== getToken() || !editorSessionCurrent()) return;
+        if (!payload.ok || payload.localOnly || payload.stayContractVersion !== 1) throw new Error('Servidor ainda não confirmou o contrato seguro de pernoites.');
+        const matches = payload.stays.filter((item: any) => String(item.stayDate || '').slice(0, 10) === draft.stayDate && item.airport === draft.airport);
+        const sameDay = operational.filter(item => item.kind === 'stay' && isoDay(item.date || item.canonical?.startDateTime) === draft.stayDate && (item.destination || item.origin) === draft.airport);
+        if (matches.length > 1 || sameDay.length !== 1) throw new Error('Vínculo de pernoite ambíguo.');
+        const existing = matches[0];
+        const previouslyShown = stays.find(item => item.id === existing?.id);
+        if (previouslyShown?.revision && previouslyShown.revision !== existing?.revision) throw new Error('O pernoite mudou desde a leitura. Reabra antes de salvar.');
+        // Synchronize the hotel only. Local APZ, room and consent are not provider facts or implicit server grants.
+        const saved = await updatePlatformStay({ contractVersion: 1, id: existing?.id,
+          expectedRevision: existing?.revision ?? null, stayDate: draft.stayDate,
+          airport: draft.airport, hotelName: draft.hotelName.trim() });
+        if (session !== editSession.current || token !== getToken() || !editorSessionCurrent()) return;
+        setStays(saved.stays);
+        const local = loadStayEditor();
+        persistStayEditor({ ...local, stays: { ...local.stays, [eventId]: { ...local.stays[eventId], remoteStayId: saved.savedStayId, remotePersisted: true } } }, renderAccount);
+        toast.success('Hotel salvo e relido no servidor. APZ e preferências continuam neste aparelho; despertador não programado.');
+      } catch (error) {
+        if (session === editSession.current && token === getToken() && editorSessionCurrent()) toast.error('Hotel guardado neste aparelho; sincronização pendente. ' + (error instanceof Error ? error.message : 'Tente novamente após conferir a conta.'));
+      } finally { if (session === editSession.current && token === getToken()) setBusy(false); }
       return;
     }
     const session = editSession.current, token = getToken();

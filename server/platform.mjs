@@ -1676,46 +1676,78 @@ async function handleStays(req, res) {
   const context = await requireMain(req, res, body);
   if (!context) return;
   if (!await requirePremium(context, res, 'Hotéis e aprendizado de apresentação')) return;
+  const own = key => Object.hasOwn(body, key);
+  const revision = row => sha256(JSON.stringify([row.id, row.hotel_name, row.hotel_key, row.airport,
+    row.room_cipher, row.presentation_time, row.lead_minutes, Boolean(row.share_same_hotel), Boolean(row.share_with_visitors)]));
+  let savedStayId = null;
   if (req.method !== 'GET') {
-    const id = normalizeText(body.id, 80);
-    const hotelName = normalizeText(body.hotelName, 180);
-    const stayDate = parseDateOnly(body.stayDate);
-    if (!id && (!hotelName || !stayDate)) return sendJson(res, 400, { ok: false, message: 'Informe o pernoite que deseja editar.' });
-    const hKey = hotelKey(hotelName);
-    const lead = Number(body.leadMinutes);
-    const leadMinutes = Number.isFinite(lead) && lead >= 0 && lead <= 720 ? Math.round(lead) : null;
-    if (body.learnRule && hKey && leadMinutes !== null) {
-      await context.db.query(`
-        INSERT INTO crewcheck_platform_hotel_rules(owner_email,hotel_key,hotel_name,lead_minutes,sample_count)
-        VALUES($1,$2,$3,$4,1)
-        ON DUPLICATE KEY UPDATE
-          lead_minutes=ROUND((lead_minutes*sample_count+VALUES(lead_minutes))/(sample_count+1)),
-          sample_count=sample_count+1,hotel_name=VALUES(hotel_name),updated_at=NOW()`,
-      [context.identity.email, hKey, hotelName, leadMinutes]);
-    }
-    if (id) {
-      await context.db.query(`UPDATE crewcheck_platform_stays
-        SET hotel_name=COALESCE(NULLIF($3,''),hotel_name),hotel_key=COALESCE(NULLIF($4,''),hotel_key),
-          room_cipher=IF($5,$6,room_cipher),presentation_time=COALESCE(NULLIF($7,''),presentation_time),
-          lead_minutes=COALESCE($8,lead_minutes),share_same_hotel=$9,share_with_visitors=$10,updated_at=NOW()
-        WHERE id=$1 AND owner_email=$2`,
-      [id, context.identity.email, hotelName, hKey, Object.hasOwn(body, 'room'), encryptPrivate(body.room), normalizeText(body.presentationTime, 10), leadMinutes, Boolean(body.shareSameHotel), Boolean(body.shareWithVisitors)]);
-    } else if (hotelName && stayDate) {
-      await context.db.query(`
-        INSERT INTO crewcheck_platform_stays(id,owner_email,stay_date,hotel_key,hotel_name,airport,room_cipher,presentation_time,lead_minutes,share_same_hotel,share_with_visitors)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-        ON DUPLICATE KEY UPDATE
-          hotel_name=VALUES(hotel_name),airport=VALUES(airport),room_cipher=VALUES(room_cipher),
-          presentation_time=VALUES(presentation_time),lead_minutes=VALUES(lead_minutes),
-          share_same_hotel=VALUES(share_same_hotel),share_with_visitors=VALUES(share_with_visitors),updated_at=NOW()`,
-      [crypto.randomUUID(), context.identity.email, stayDate, hKey, hotelName, normalizeText(body.airport, 8).toUpperCase(), encryptPrivate(body.room), normalizeText(body.presentationTime, 10), leadMinutes, Boolean(body.shareSameHotel), Boolean(body.shareWithVisitors)]);
-    }
+    const id = normalizeText(body.id, 80), hotelName = normalizeText(body.hotelName, 180);
+    const stayDate = parseDateOnly(body.stayDate), airport = normalizeText(body.airport, 8).toUpperCase();
+    const modern = body.contractVersion === 1;
+    if (modern && Object.keys(body).some(key => !['contractVersion', 'expectedRevision', 'id', 'stayDate', 'airport', 'hotelName', 'room', 'presentationTime', 'leadMinutes', 'shareSameHotel', 'shareWithVisitors', 'learnRule'].includes(key))) return sendJson(res, 400, { ok: false, message: 'Campo não suportado pelo contrato de pernoites.' });
+    if (!id && (!hotelName || !stayDate || !airport)) return sendJson(res, 400, { ok: false, message: 'Informe hotel, data e aeroporto do pernoite.' });
+    for (const key of ['shareSameHotel', 'shareWithVisitors']) if (own(key) && typeof body[key] !== 'boolean') return sendJson(res, 400, { ok: false, message: 'Preferência de compartilhamento inválida.' });
+    if (own('leadMinutes') && (typeof body.leadMinutes !== 'number' || !Number.isInteger(body.leadMinutes) || body.leadMinutes < 0 || body.leadMinutes > 720)) return sendJson(res, 400, { ok: false, message: 'Antecedência inválida.' });
+    if (modern && !own('expectedRevision')) return sendJson(res, 400, { ok: false, message: 'Releia o pernoite antes de salvar.' });
+    const client = await context.db.connect();
+    try {
+      await client.query('BEGIN');
+      // Serialize this owner's hotel edits, including first insert/retry. No new lock table.
+      const owner = await client.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 FOR UPDATE', [context.identity.email]);
+      if (!owner.rows.length) { await client.query('ROLLBACK'); return sendJson(res, 409, { ok: false, message: 'Perfil indisponível. Reabra sua conta.' }); }
+      const found = id
+        ? await client.query('SELECT * FROM crewcheck_platform_stays WHERE id=$1 AND owner_email=$2 FOR UPDATE', [id, context.identity.email])
+        : await client.query('SELECT * FROM crewcheck_platform_stays WHERE owner_email=$1 AND stay_date=$2 AND airport=$3 FOR UPDATE', [context.identity.email, stayDate, airport]);
+      if ((id && !found.rows.length) || found.rows.length > 1) {
+        await client.query('ROLLBACK'); return sendJson(res, id ? 404 : 409, { ok: false, message: id ? 'Pernoite não localizado nesta conta.' : 'Há mais de um pernoite nesta data/local. Confirme o vínculo.' });
+      }
+      const previous = found.rows[0] || null;
+      // An unversioned legacy update remains compatible, but omitted fields are preserved.
+      // New clients never silently overwrite a changed record or adopt an ambiguous first insert.
+      const retryMatches = previous && !id && modern && body.expectedRevision === null
+        && previous.hotel_name === hotelName && (!own('room') || decryptPrivate(previous.room_cipher) === String(body.room || ''))
+        && (!own('presentationTime') || previous.presentation_time === normalizeText(body.presentationTime, 10))
+        && (!own('leadMinutes') || Number(previous.lead_minutes) === body.leadMinutes)
+        && (!own('shareSameHotel') || Boolean(previous.share_same_hotel) === body.shareSameHotel)
+        && (!own('shareWithVisitors') || Boolean(previous.share_with_visitors) === body.shareWithVisitors);
+      if (modern && (previous ? body.expectedRevision !== revision(previous) && !retryMatches : body.expectedRevision !== null)) {
+        await client.query('ROLLBACK'); return sendJson(res, 409, { ok: false, message: 'O pernoite mudou. Releia antes de salvar.', conflict: true });
+      }
+      const next = {
+        hotelName: own('hotelName') && hotelName ? hotelName : previous?.hotel_name || '',
+        roomCipher: own('room') ? encryptPrivate(body.room) : previous?.room_cipher || null,
+        presentationTime: own('presentationTime') ? normalizeText(body.presentationTime, 10) : previous?.presentation_time || '',
+        leadMinutes: own('leadMinutes') ? body.leadMinutes : previous?.lead_minutes ?? null,
+        shareSameHotel: own('shareSameHotel') ? body.shareSameHotel : Boolean(previous?.share_same_hotel),
+        shareWithVisitors: own('shareWithVisitors') ? body.shareWithVisitors : Boolean(previous?.share_with_visitors),
+      };
+      savedStayId = previous?.id || crypto.randomUUID();
+      const unchanged = previous && next.hotelName === previous.hotel_name
+        && (!own('room') || String(body.room || '') === decryptPrivate(previous.room_cipher))
+        && next.presentationTime === (previous.presentation_time || '') && next.leadMinutes === previous.lead_minutes
+        && next.shareSameHotel === Boolean(previous.share_same_hotel) && next.shareWithVisitors === Boolean(previous.share_with_visitors);
+      if (!retryMatches && !unchanged) {
+        if (previous) {
+          const result = await client.query(`UPDATE crewcheck_platform_stays SET hotel_name=$3,hotel_key=$4,
+            room_cipher=$5,presentation_time=$6,lead_minutes=$7,share_same_hotel=$8,share_with_visitors=$9,updated_at=NOW()
+            WHERE id=$1 AND owner_email=$2`, [savedStayId, context.identity.email, next.hotelName, hotelKey(next.hotelName), next.roomCipher, next.presentationTime, next.leadMinutes, next.shareSameHotel, next.shareWithVisitors]);
+          if (!result.rowCount) throw new Error('Pernoite não atualizado. Releia antes de tentar novamente.');
+        } else {
+          await client.query(`INSERT INTO crewcheck_platform_stays(id,owner_email,stay_date,hotel_key,hotel_name,airport,room_cipher,presentation_time,lead_minutes,share_same_hotel,share_with_visitors)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [savedStayId, context.identity.email, stayDate, hotelKey(next.hotelName), next.hotelName, airport, next.roomCipher, next.presentationTime, next.leadMinutes, next.shareSameHotel, next.shareWithVisitors]);
+        }
+        if (body.learnRule === true && own('leadMinutes') && next.hotelName) await client.query(`INSERT INTO crewcheck_platform_hotel_rules(owner_email,hotel_key,hotel_name,lead_minutes,sample_count)
+          VALUES($1,$2,$3,$4,1) ON DUPLICATE KEY UPDATE lead_minutes=ROUND((lead_minutes*sample_count+VALUES(lead_minutes))/(sample_count+1)),sample_count=sample_count+1,hotel_name=VALUES(hotel_name),updated_at=NOW()`, [context.identity.email, hotelKey(next.hotelName), next.hotelName, next.leadMinutes]);
+      }
+      await client.query('COMMIT');
+    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
   }
   const result = await context.db.query(`SELECT s.*,r.sample_count FROM crewcheck_platform_stays s
     LEFT JOIN crewcheck_platform_hotel_rules r ON r.owner_email=s.owner_email AND r.hotel_key=s.hotel_key
     WHERE s.owner_email=$1 ORDER BY s.stay_date DESC LIMIT 120`, [context.identity.email]);
-  const stays = result.rows.map((row) => ({ id: row.id, rosterKey: row.roster_key, stayDate: row.stay_date, hotelKey: row.hotel_key, hotelName: row.hotel_name, airport: row.airport, room: decryptPrivate(row.room_cipher), presentationTime: row.presentation_time, leadMinutes: row.lead_minutes, learnedSamples: row.sample_count || 0, shareSameHotel: row.share_same_hotel, shareWithVisitors: row.share_with_visitors }));
-  return sendJson(res, 200, { ok: true, stays });
+  const stays = result.rows.map(row => ({ id: row.id, rosterKey: row.roster_key, stayDate: row.stay_date, hotelKey: row.hotel_key, hotelName: row.hotel_name, airport: row.airport, room: decryptPrivate(row.room_cipher), presentationTime: row.presentation_time, leadMinutes: row.lead_minutes, learnedSamples: row.sample_count || 0, shareSameHotel: row.share_same_hotel, shareWithVisitors: row.share_with_visitors, revision: revision(row) }));
+  return sendJson(res, 200, { ok: true, persisted: true, stayContractVersion: 1, savedStayId, stays });
 }
 
 async function handleSameHotel(req, res, url) {
