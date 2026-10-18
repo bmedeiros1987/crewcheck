@@ -51,9 +51,8 @@ export async function revokeCrewCheckPush(dependencies: PushDependencies) {
   if (!current()) return stale();
   return exclusive(() => dependencies.withSubscriptionLock(async () => {
     if (!current()) return stale();
-    // Capture only the prior subscription before awaiting owner-scoped worker CAS.
-    const subscription = await dependencies.registration.pushManager.getSubscription();
-    if (!current()) return stale();
+    // Cancel the owner binding before fallible subscription access. The origin
+    // lock remains held through lookup/unsubscribe and blocks new activations.
     const cancelled = await dependencies.cancelWorker();
     if (!current()) return stale();
     if (!cancelled) return { status: 'local_cancellation_unconfirmed', serverRevocationConfirmed: false };
@@ -61,7 +60,12 @@ export async function revokeCrewCheckPush(dependencies: PushDependencies) {
     try { await dependencies.revokeInstallation(ownerId!); serverRevocationConfirmed = true; } catch {}
     if (!current()) return { status: 'account_changed', serverRevocationConfirmed };
     // Remote revocation still occurs when the old subscription is already absent.
-    const unsubscribed = subscription ? await subscription.unsubscribe() : true;
+    let unsubscribed = false;
+    try {
+      const subscription = await dependencies.registration.pushManager.getSubscription();
+      if (!current()) return { status: 'account_changed', serverRevocationConfirmed };
+      unsubscribed = subscription ? await subscription.unsubscribe() : true;
+    } catch {} // Lookup/unsubscribe failure must not undo or overstate cancellation.
     if (!current()) return { status: 'account_changed', serverRevocationConfirmed };
     return { status: unsubscribed ? 'inactive' : 'local_cancellation_unconfirmed', serverRevocationConfirmed };
   }));
