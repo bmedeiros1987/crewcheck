@@ -39,6 +39,48 @@ async function statusTest(fetcher, expected, forbidden, failRefresh = false) {
   const html=renderToStaticMarkup(React.createElement(Page)).replace(/<style>[\s\S]*?<\/style>/g,'');
   assert.match(html,expected);if(forbidden)assert.doesNotMatch(html,forbidden);
 }
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+async function statusRaceTest(newestSucceeds, oldSucceeds, delayedOldBody = false, oldFinishesFirst = false) {
+  let states = [], cursor = 0, effect, tick;
+  const requests = [deferred(), deferred()];
+  let requestIndex = 0;
+  const mock = { ...React,
+    useState(initial) { const i = cursor++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = value; }]; },
+    useEffect(fn) { effect = fn; }, useMemo(fn) { return fn(); },
+  };
+  const Page = load('client/src/pages/SystemStatusPage.tsx', { react: mock, __globals: {
+    fetch: () => requests[requestIndex++].promise,
+    window: { setInterval(fn) { tick = fn; return 1; }, clearInterval() {} },
+  } }).default;
+  const render = () => { cursor = 0; return renderToStaticMarkup(React.createElement(Page)).replace(/<style>[\s\S]*?<\/style>/g, ''); };
+  render(); effect();
+  const oldBody = deferred();
+  if (delayedOldBody) {
+    requests[0].resolve({ ok: true, json: () => oldBody.promise });
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  tick();
+  const settle = (request, success) => success
+    ? request.resolve({ ok: true, json: async () => ({ enabled: false }) })
+    : request.reject(new Error('offline'));
+  if (oldFinishesFirst) {
+    settle(requests[0], oldSucceeds);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.match(render(), /Consultando o sistema/, 'An older completion must not finish loading the newest pending check');
+  }
+  settle(requests[1], newestSucceeds);
+  await new Promise(resolve => setImmediate(resolve));
+  const newestHtml = render();
+  if (delayedOldBody) oldBody.resolve({ enabled: false });
+  else settle(requests[0], oldSucceeds);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(render(), newestHtml, 'An older result must not overwrite the newest status attempt');
+  assert.match(newestHtml, newestSucceeds ? /CrewCheck operacional/ : /Não foi possível confirmar a situação agora/);
+}
 (async()=>{
  await statusTest(()=>Promise.reject(new Error('offline')),/Não foi possível confirmar a situação agora/,/CrewCheck operacional|Funcionando normalmente|Nenhuma manutenção/);
  await statusTest(()=>Promise.resolve({ok:false}),/Não foi possível confirmar a situação agora/,/CrewCheck operacional/);
@@ -46,5 +88,9 @@ async function statusTest(fetcher, expected, forbidden, failRefresh = false) {
  await statusTest(()=>Promise.resolve({ok:true,json:async()=>({enabled:true,title:'Manutenção real',message:'Trabalho em andamento'})}),/Manutenção real/,/CrewCheck operacional/);
  await statusTest(()=>Promise.resolve({ok:true,json:async()=>({enabled:false})}),/CrewCheck operacional/);
  let calls=0; await statusTest(()=>++calls===1 ? Promise.resolve({ok:true,json:async()=>({enabled:true,title:'Manutenção real'})}) : Promise.reject(Error('offline')),/Manutenção real[\s\S]*Não foi possível confirmar/,/CrewCheck operacional/,true);
+ await statusRaceTest(false, true);
+ await statusRaceTest(true, false);
+ await statusRaceTest(false, true, true);
+ await statusRaceTest(true, false, false, true);
  console.log('Public editorial: links, copy, public route, failure states and real maintenance OK');
 })();

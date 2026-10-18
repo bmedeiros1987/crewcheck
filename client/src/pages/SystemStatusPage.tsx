@@ -45,11 +45,16 @@ export default function SystemStatusPage() {
 
   useEffect(() => {
     let alive = true;
-    const load = () => fetch('/api/maintenance/status', { cache: 'no-store' })
+    let generation = 0;
+    const load = () => {
+      const requestGeneration = ++generation;
+      const isCurrent = () => alive && requestGeneration === generation;
+      return fetch('/api/maintenance/status', { cache: 'no-store' })
       .then((response) => { if (!response.ok) throw new Error('Status unavailable'); return response.json(); })
-      .then((payload) => { if (!payload || typeof payload.enabled !== 'boolean') throw new Error('Invalid status'); if (alive) { setState(payload); setUnconfirmed(false); } })
-      .catch(() => { if (alive) setUnconfirmed(true); })
-      .finally(() => { if (alive) setLoading(false); });
+      .then((payload) => { if (!payload || typeof payload.enabled !== 'boolean') throw new Error('Invalid status'); if (isCurrent()) { setState(payload); setUnconfirmed(false); } })
+      .catch(() => { if (isCurrent()) setUnconfirmed(true); })
+      .finally(() => { if (isCurrent()) setLoading(false); });
+    };
     load();
     const timer = window.setInterval(load, 60_000);
     return () => { alive = false; window.clearInterval(timer); };
