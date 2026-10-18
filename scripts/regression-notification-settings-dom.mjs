@@ -6,8 +6,8 @@ import {createRequire} from 'node:module';
 import {build} from 'esbuild';
 
 // Actual components/auth client and exact Home Brand callback; only cosmetic dependencies and data are synthetic.
-const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');const brandStart=home.indexOf('function Brand('),brandEnd=home.indexOf('\nfunction complianceAlertSignature',brandStart);assert(brandStart>=0&&brandEnd>brandStart);const brandSource=home.slice(brandStart,brandEnd);
-const built=await build({stdin:{contents:`import React from 'react';import{Plane,Menu}from'lucide-react';const alertText=()=>({back:'Voltar',menu:'Menu'});const CrewCheckPulse=()=>null;${brandSource}
+const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');const brandStart=home.indexOf('function Brand('),brandEnd=home.indexOf('\nfunction complianceAlertSignature',brandStart);assert(brandStart>=0&&brandEnd>brandStart);const brandSource=home.slice(brandStart,brandEnd);const markStart=home.indexOf('function CrewCheckMark(');const markSource=markStart>=0?home.slice(markStart,brandStart):'';
+const built=await build({stdin:{contents:`import React from 'react';import{Plane,Menu}from'lucide-react';const alertText=()=>({back:'Voltar',menu:'Menu'});const CrewCheckPulse=()=>null;${markSource}${brandSource}
 import{createRoot}from'react-dom/client';import{NotificationCenter}from'./client/src/components/notifications/NotificationCenter';import{NotificationReadiness}from'./client/src/components/notifications/NotificationReadiness';import{openNotificationSettings}from'./client/src/lib/notificationNavigation';
 const root=createRoot(document.getElementById('root'));
 function render(view){root.render(<><Brand global back={view!=='cockpit'}/>{view==='notifications'?<NotificationCenter deviceSettings={<NotificationReadiness/>}/>:<section><h1>{view==='settings'?'Configurações':'FlightDeck'}</h1><button onClick={()=>render('settings')}>Configurações</button><button onClick={()=>openNotificationSettings()}>Notificações</button></section>}</>);}
