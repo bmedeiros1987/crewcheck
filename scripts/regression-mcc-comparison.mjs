@@ -91,7 +91,11 @@ test('workflow retains all gates and broad unknown namespace discovery',()=>{
  for(const marker of ['UTC America/Sao_Paulo Pacific/Auckland','node scripts/assert-mycrewcare-v3-ownership.mjs','Complete canonical preparation','TypeScript','Web build',':app:compileDebugJavaWithJavac',':app:compileReleaseJavaWithJavac','scripts/assert-mycrewcare-debug-release.mjs --compiled'])assert.ok(workflow.includes(marker),marker);
  assert.equal(workflow.split('node scripts/assert-mycrewcare-v3-ownership.mjs').length-1,2);
  for(const name of ['scripts/ci/mcc-comparison.mjs','scripts/regression-mcc-comparison.mjs'])assert.ok(workflow.includes(`'${name}'`));
- assert.doesNotMatch(workflow,/skip.ownership|pull_request_target|labels|head_ref/);
+ assert.match(workflow,/- name: Resolve immutable MCC comparison \(fail closed\)\n        run: node scripts\/ci\/mcc-comparison.mjs/);
+ // Do not prohibit the independent PR1035 diagnostic APK branch condition.
+ // Only comparison/ownership may not have an author-controlled opt-out.
+ assert.doesNotMatch(fs.readFileSync(helper,'utf8'),/head_ref|labels|skip.ownership/);
+ assert.doesNotMatch(workflow,/pull_request_target/);
 });
 
  test('criss-cross merge bases are rejected instead of selecting an arbitrary ancestor',()=>fixture(({root,git,write,commit,base})=>{
