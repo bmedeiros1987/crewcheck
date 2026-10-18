@@ -30,13 +30,15 @@ export function applyNextFlightToWatchSnapshot(
   if (info.status) notes.push(info.status);
   if (info.stale) notes.push('Radar desatualizado');
 
-  if (options.primaryEventId === info.eventId) {
+  if (options.primaryEventId === info.eventId && out.currentFlight) {
     out.gate = info.remote && !/\d/.test(info.gate) ? '' : info.gate;
     out.remoteStand = info.remote;
-    if (!out.detail && out.state !== 'IN_FLIGHT' && out.state !== 'OVERNIGHT' && notes.length) out.detail = fit(notes.join(' · '), 96);
+    if (notes.length) out.detail = fit([notes.join(' · '), out.detail].filter(Boolean).join(' · '), 96);
   } else if (!out.nextFlight || out.nextFlight === info.flight) {
     out.nextFlight = fit(info.flight, 16);
+    const temporalDetail = out.nextDetail;
     out.nextDetail = fit([
+      temporalDetail,
       info.origin && info.destination ? `${info.origin} → ${info.destination}` : '',
       info.gate ? `P${gateLabel}` : 'Portão não informado',
       info.departure,

@@ -1,3 +1,5 @@
+import { airportTimeZone } from '../../../shared/airport-timezones.mjs';
+
 export type CrewCheckWatchState =
   | 'OFF_DUTY'
   | 'LEAVE_SOON'
@@ -62,6 +64,8 @@ export type WatchEventLike = {
   gate?: string;
   hotel?: string;
   subtitle?: string;
+  title?: string;
+  day?: { type?: string; pairingCode?: string };
   groundBeforeMinutes?: number | null;
   canonical?: {
     id?: string;
@@ -88,19 +92,37 @@ function clean(value: unknown): string {
   return text === '—' || /^a confirmar$/i.test(text) ? '' : text;
 }
 
-function clockBeforeOrAt(referenceMs: number, clock: string): number {
-  const match = String(clock || '').match(/^(\d{1,2}):(\d{2})$/);
-  if (!match || !Number.isFinite(referenceMs)) return referenceMs;
-  const target = new Date(referenceMs);
-  target.setHours(Number(match[1]), Number(match[2]), 0, 0);
-  if (target.getTime() > referenceMs + 3 * HOUR_MS) target.setDate(target.getDate() - 1);
-  return target.getTime();
+// Canonical roster clocks are explicitly published in BRT (canonicalRoster.dateAt).
+// Never reinterpret them as the device's local wall clock or as airport local time.
+const ROSTER_ZONE = 'America/Sao_Paulo';
+const DAY_MS = 24 * HOUR_MS;
+function instant(value?: string): number {
+  return value && /(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? Date.parse(value) : NaN;
 }
-
+function clockMinutes(clock?: string): number | null {
+  const m = String(clock || '').match(/^(\d{1,2}):(\d{2})$/);
+  return m && +m[1] < 24 && +m[2] < 60 ? +m[1] * 60 + +m[2] : null;
+}
+function clockBeforeOrAt(referenceMs: number, clock: string): number {
+  const minute = clockMinutes(clock);
+  if (minute == null || !Number.isFinite(referenceMs)) return NaN;
+  const wall = new Date(referenceMs - 3 * HOUR_MS);
+  let target = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate(), 3, minute);
+  if (target > referenceMs) target -= DAY_MS;
+  return target;
+}
 function clockLabel(epochMs: number): string {
   if (!Number.isFinite(epochMs) || epochMs <= 0) return '';
-  return new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' })
-    .format(new Date(epochMs));
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: ROSTER_ZONE, hour: '2-digit', minute: '2-digit' }).format(epochMs);
+}
+function dayLabel(epochMs: number): string {
+  return Number.isFinite(epochMs) ? new Intl.DateTimeFormat('pt-BR', { timeZone: ROSTER_ZONE, day: '2-digit', month: '2-digit' }).format(epochMs) : '';
+}
+// Conservative subset: only airports resolved by the existing reviewed Brazilian map.
+function provenDomestic(event: WatchEventLike): boolean {
+  const brazil = new Set(['America/Sao_Paulo', 'America/Fortaleza', 'America/Recife', 'America/Bahia', 'America/Belem', 'America/Manaus', 'America/Cuiaba', 'America/Rio_Branco']);
+  return !!event.origin && !!event.destination && event.origin !== event.destination
+    && brazil.has(airportTimeZone(event.origin)) && brazil.has(airportTimeZone(event.destination));
 }
 
 function validWindow(now: number, eventEndMs: number): number {
@@ -121,8 +143,8 @@ export function buildCrewCheckWatchSnapshot(
       contextId: 'off-duty',
       generatedAtEpochMs: now,
       validUntilEpochMs: now + HOUR_MS,
-      state: 'OFF_DUTY',
-      headline: 'SEM ATIVIDADE',
+      state: 'UNKNOWN',
+      headline: 'SEM PROGRAMAÇÃO',
       primaryTime: '',
       detail: 'Nenhuma programação operacional futura detectada.',
       presentationTime: '',
@@ -147,17 +169,17 @@ export function buildCrewCheckWatchSnapshot(
   }
 
   const canonical = event.canonical;
-  const startMs = canonical?.startDateTime
-    ? new Date(canonical.startDateTime).getTime()
-    : now + HOUR_MS;
-  const endMs = canonical?.endDateTime
-    ? new Date(canonical.endDateTime).getTime()
-    : startMs + 2 * HOUR_MS;
-
-  const presentation = /^\d{1,2}:\d{2}$/.test(String(event.presentation || ''))
-    ? String(event.presentation)
-    : '';
-  const presentationMs = presentation ? clockBeforeOrAt(startMs, presentation) : startMs;
+  const startMs = instant(canonical?.startDateTime);
+  const endMs = instant(canonical?.endDateTime);
+  const presentation = clockMinutes(event.presentation) != null ? String(event.presentation) : '';
+  const presentationMs = presentation ? clockBeforeOrAt(startMs, presentation) : NaN;
+  // At most three hours before APZ/STD: proposed conservative glance window.
+  const focusStartMs = (Number.isFinite(presentationMs) ? presentationMs : startMs) - 3 * HOUR_MS;
+  const currentRest = events.find(candidate => (candidate.canonical?.kind || candidate.kind) === 'rest' && instant(candidate.canonical?.startDateTime) <= now && instant(candidate.canonical?.endDateTime) >= now);
+  const restToday = Boolean(currentRest);
+  const future = Number.isFinite(startMs) && (now < focusStartMs || (restToday && now < startMs));
+  const expired = Number.isFinite(endMs) && now > endMs;
+  const boardingMs = event.kind === 'flight' && clockMinutes(event.departure) != null && provenDomestic(event) ? startMs - 40 * 60_000 : NaN;
 
   const rawGate = clean(event.gate);
   const remoteStand = /\b(REMOTA|REMOTO|REMOTE|PATIO|PÁTIO)\b/i.test(rawGate);
@@ -171,12 +193,18 @@ export function buildCrewCheckWatchSnapshot(
       && now - route.updatedAtEpochMs >= 0
       && now - route.updatedAtEpochMs <= 30 * 60 * 1000,
   );
-  const leaveMs = routeIsFresh && presentationMs
+  const leaveMs = routeIsFresh && Number.isFinite(presentationMs)
     ? presentationMs - ((route?.durationMinutes || 0) + (route?.marginMinutes || 0)) * 60 * 1000
     : 0;
 
   let state: CrewCheckWatchState = 'UNKNOWN';
-  if (event.kind === 'stay') {
+  if (future || expired) {
+    state = restToday ? 'OFF_DUTY' : 'UNKNOWN';
+  } else if (/^(?:rest|journey-rest)$/.test(canonical?.kind || event.kind)) {
+    state = restToday ? 'OFF_DUTY' : 'UNKNOWN';
+  } else if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
+    state = 'UNKNOWN';
+  } else if (event.kind === 'stay') {
     state = 'OVERNIGHT';
   } else if (event.kind === 'flight') {
     const groundBefore = Number(canonical?.groundBeforeMinutes ?? event.groundBeforeMinutes ?? 0);
@@ -185,11 +213,11 @@ export function buildCrewCheckWatchSnapshot(
       && now >= startMs - groundBefore * 60 * 1000
       && canonical?.journeyBoundary == null;
 
-    if (now >= startMs && now <= endMs) state = 'IN_FLIGHT';
+    if (now >= startMs && now <= endMs) state = 'UNKNOWN'; // Schedule alone does not prove takeoff.
     else if (inConnectionWindow) state = 'CONNECTION';
     else if (leaveMs && now < presentationMs && now >= leaveMs - 90 * 60 * 1000) state = 'LEAVE_SOON';
-    else if (now >= presentationMs && now < startMs) state = 'BOARDING';
-    else state = 'REPORTING';
+    else if (Number.isFinite(presentationMs)) state = 'REPORTING';
+    else state = 'UNKNOWN';
   } else {
     state = 'REPORTING';
   }
@@ -214,13 +242,9 @@ export function buildCrewCheckWatchSnapshot(
     ? (leaveMinutes > 0 ? `SAIR EM ${leaveMinutes} MIN` : 'HORA DE SAIR')
     : state === 'CONNECTION'
       ? 'CONEXÃO'
-      : state === 'IN_FLIGHT'
-        ? 'VOO EM ANDAMENTO'
-        : state === 'BOARDING'
-          ? (remoteStand ? 'EMBARQUE REMOTO' : 'EMBARQUE')
-          : state === 'OVERNIGHT'
+      : state === 'OVERNIGHT'
             ? 'PERNOITE'
-            : 'APRESENTAÇÃO';
+            : state === 'OFF_DUTY' ? 'FOLGA' : state === 'UNKNOWN' ? 'PROGRAMAÇÃO' : 'APRESENTAÇÃO';
 
   const currentFlight = event.kind === 'flight' ? clean(event.flightNumber) : '';
   const currentRoute = event.kind === 'flight'
@@ -228,17 +252,18 @@ export function buildCrewCheckWatchSnapshot(
     : '';
 
   const schedule = events
-    .filter((candidate) => !candidate.placeholder && ['flight', 'stay', 'duty'].includes(candidate.kind))
+    .filter((candidate) => !candidate.placeholder && ['flight', 'stay', 'duty'].includes(candidate.kind) && !['rest', 'journey-rest'].includes(candidate.canonical?.kind || ''))
     .filter((candidate) => {
       const start = candidate.canonical?.startDateTime
-        ? new Date(candidate.canonical.startDateTime).getTime()
+        ? instant(candidate.canonical.startDateTime)
         : Number.POSITIVE_INFINITY;
-      return !Number.isFinite(start) || start >= now - 2 * HOUR_MS;
+      const end = instant(candidate.canonical?.endDateTime);
+      return Number.isFinite(start) && Number.isFinite(end) && end >= now;
     })
     .slice(0, 8)
     .map((candidate): CrewCheckWatchScheduleItem => {
       const start = candidate.canonical?.startDateTime
-        ? new Date(candidate.canonical.startDateTime).getTime()
+        ? instant(candidate.canonical.startDateTime)
         : 0;
       const kind: CrewCheckWatchScheduleItem['kind'] =
         candidate.kind === 'flight' || candidate.kind === 'stay' ? candidate.kind : 'duty';
@@ -258,38 +283,40 @@ export function buildCrewCheckWatchSnapshot(
         time: clockLabel(start),
         title,
         route,
-        presentation: /^\d{1,2}:\d{2}$/.test(String(candidate.presentation || ''))
+        presentation: clockMinutes(candidate.presentation) != null
           ? String(candidate.presentation)
           : '',
         gate: remote ? 'REMOTA' : rawGate,
-        detail: kind === 'stay' ? clean(candidate.hotel) : clean(candidate.subtitle),
+        detail: [dayLabel(start), 'BRT', kind === 'stay' ? clean(candidate.hotel) : clean(candidate.subtitle)].filter(Boolean).join(' • '),
       };
     });
 
+  const inactive = future || expired || state === 'OFF_DUTY';
+  const transitions = [focusStartMs, startMs, endMs, instant(currentRest?.canonical?.endDateTime), routeIsFresh ? route!.updatedAtEpochMs + 30 * 60_000 : NaN].filter(time => Number.isFinite(time) && time > now);
   return {
     schemaVersion: 1,
     contextId: clean(canonical?.id) || event.id,
     generatedAtEpochMs: now,
-    validUntilEpochMs: validWindow(now, endMs),
+    validUntilEpochMs: Math.min(validWindow(now, endMs), ...transitions),
     state,
     headline,
-    primaryTime: state === 'LEAVE_SOON' ? leaveTime : presentation,
-    detail: state === 'IN_FLIGHT' ? clean(event.subtitle) : state === 'OVERNIGHT' ? clean(event.hotel) : '',
-    presentationTime: presentation,
-    presentationPlace: clean(event.origin),
-    leaveTime,
-    trafficDetail: routeIsFresh ? `${route?.durationMinutes || 0} min • deslocamento atual` : '',
-    currentFlight,
-    currentRoute,
-    gate,
-    remoteStand,
-    boardingTime: '',
-    eta: event.kind === 'flight' && /^\d{1,2}:\d{2}$/.test(String(event.arrival || ''))
+    primaryTime: inactive ? '' : state === 'LEAVE_SOON' ? leaveTime : state === 'REPORTING' ? presentation : clockLabel(startMs),
+    detail: future ? `Próxima programação ${dayLabel(startMs)} ${clockLabel(startMs)} BRT` : expired ? 'Programação encerrada; sincronize a escala.' : state === 'OFF_DUTY' ? `Folga ${dayLabel(now)} BRT` : `Programação ${dayLabel(startMs)} BRT` + (Number.isFinite(boardingMs) ? ` • Embarque previsto ${dayLabel(boardingMs)} ${clockLabel(boardingMs)}` : ''),
+    presentationTime: inactive ? '' : presentation,
+    presentationPlace: [clean(event.origin), dayLabel(presentationMs), 'escala BRT'].filter(Boolean).join(' • '),
+    leaveTime: inactive ? '' : leaveTime,
+    trafficDetail: !inactive && routeIsFresh ? `${route?.durationMinutes || 0} min • deslocamento atual` : '',
+    currentFlight: inactive ? '' : currentFlight,
+    currentRoute: inactive ? '' : currentRoute,
+    gate: inactive ? '' : gate,
+    remoteStand: inactive ? false : remoteStand,
+    boardingTime: inactive ? '' : clockLabel(boardingMs),
+    eta: !inactive && event.kind === 'flight' && /^\d{1,2}:\d{2}$/.test(String(event.arrival || ''))
       ? String(event.arrival)
       : '',
     connection: remainingConnectionMinutes ? `${remainingConnectionMinutes} MIN` : '',
-    nextFlight: nextFlightEvent ? clean(nextFlightEvent.flightNumber) : '',
-    nextDetail: nextFlightEvent
+    nextFlight: future ? clean(event.flightNumber) : nextFlightEvent ? clean(nextFlightEvent.flightNumber) : '',
+    nextDetail: future ? `${dayLabel(startMs)} ${clockLabel(startMs)} BRT` : nextFlightEvent
       ? [
           clean(nextFlightEvent.origin) && clean(nextFlightEvent.destination)
             ? `${clean(nextFlightEvent.origin)} → ${clean(nextFlightEvent.destination)}`

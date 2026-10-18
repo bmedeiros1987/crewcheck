@@ -167,6 +167,19 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', sc
   assert.equal(m.readCachedRadarForFlight(storage, next, NOW), null);
 }
 
+// Future gate enrichment preserves date/zone and never promotes a future flight to now.
+{
+  const f = flight('future-temporal', 'QA123', '2032-10-19T03:05:00Z', 'GRU', 'REC', {presentation:'23:18', departure:'00:05'});
+  const now = Date.parse('2032-10-18T12:00:00Z');
+  const info = m.resolveNextFlightGate({event:f, now});
+  const base = m.buildCrewCheckWatchSnapshot([f], f, null, now);
+  const out = m.applyNextFlightToWatchSnapshot(base, info, {primaryEventId:f.id, nextFlightScheduleId:f.canonical.id});
+  assert.equal(out.currentFlight, '');
+  assert.equal(out.gate, '');
+  assert.equal(out.presentationTime, '');
+  assert.match(out.nextDetail, /19\/10 00:05 BRT/);
+}
+
 // 9. Consistência celular-relógio: o snapshot usa exatamente a decisão do card.
 {
   const duty = { id: 'pres', kind: 'duty', flightNumber: 'APRES', origin: 'GRU', destination: 'GRU', presentation: '18:20', canonical: { id: 'c-pres', startDateTime: new Date(NOW + H).toISOString(), endDateTime: new Date(NOW + 2 * H).toISOString() } };

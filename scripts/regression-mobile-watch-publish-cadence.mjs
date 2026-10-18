@@ -1,3 +1,4 @@
+import * as airportTimeZones from '../shared/airport-timezones.mjs';
 import * as gateQueryDay from '../shared/gate-query-day.mjs';
 // Exercise the actual Home effect offline: no duplicate publisher implementation.
 import assert from 'node:assert/strict';
@@ -42,7 +43,7 @@ function actualModule(name, imports = {}) {
   return vm.runInNewContext(executable.replace(/^export /gm, '') + `\n({${exported.join(',')}})`,
     { Date: FixtureDate, localStorage, dependencies: imports }, { filename });
 }
-const snapshotModule = actualModule('watchContext');
+const snapshotModule = actualModule('watchContext', { '../../../shared/airport-timezones.mjs': airportTimeZones });
 const gateBindings = {};
 if (source.includes("from '@/lib/nextFlightGate'")) {
   const display = actualModule('rosterDisplayDate');
