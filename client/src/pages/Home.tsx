@@ -5146,13 +5146,23 @@ export default function Home() {
   const [view, setViewState] = useState<ZeroView>(() => new URLSearchParams(window.location.search).has('connect') ? 'community' : new URLSearchParams(window.location.search).get('view') ? normalizeInitialView(new URLSearchParams(window.location.search).get('view')) : normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
   const activeViewRef = useRef(view); activeViewRef.current = view;
   useEffect(() => {
-    const restoreFinancialView = () => setViewState(normalizeInitialView(new URLSearchParams(window.location.search).get('view')));
+    const restoreFinancialView = () => { const linkedView = new URLSearchParams(window.location.search).get('view'); if (linkedView) setViewState(normalizeInitialView(linkedView)); };
+    const resetAccountNavigation = () => {
+      const url = new URL(location.href); url.searchParams.set('view','cockpit');
+      for (const key of ['fmode','fscreen','fkind','fmonth','fday','ffrom','fto','fcurrency','fcomparison']) url.searchParams.delete(key);
+      history.replaceState({...history.state,ccFinancial:undefined,ccFinancialPosition:undefined,ccConciergePosition:undefined,ccEnteredFromConcierge:undefined},'',url);
+      setViewState('cockpit');
+    };
     window.addEventListener('popstate',restoreFinancialView);
-    return () => window.removeEventListener('popstate',restoreFinancialView);
+    const accountEvents = ['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'];
+    for (const name of accountEvents) window.addEventListener(name,resetAccountNavigation,true);
+    return () => { window.removeEventListener('popstate',restoreFinancialView); for (const name of accountEvents) window.removeEventListener(name,resetAccountNavigation,true); };
   },[]);
   function setView(nextView: ZeroView) {
     const {peekPendingNavigationContext,clearPendingNavigationContext}=rawNavigationContext;
-    const url = new URL(window.location.href), previousView = url.searchParams.get('view');
+    const url = new URL(window.location.href), previousView = activeViewRef.current;
+    const sourceUrl = new URL(url); sourceUrl.searchParams.set('view',previousView);
+    history.replaceState(history.state,'',sourceUrl);
     const fromConcierge = activeViewRef.current === 'concierge' && ['salary','perdiem'].includes(nextView);
     if (fromConcierge) {
       const origin = document.activeElement?.closest<HTMLElement>('[data-financial-origin]');
@@ -5165,6 +5175,9 @@ export default function Home() {
         url.searchParams.set('view',nextView);
         history[history.state?.crewcheckOverlay?'replaceState':'pushState']({...history.state,crewcheckOverlay:undefined,ccFinancial:undefined,ccFinancialPosition:undefined,ccConciergePosition:undefined,ccEnteredFromConcierge:fromConcierge||(['salary','perdiem'].includes(nextView)&&history.state?.ccEnteredFromConcierge)},'',url);
       }
+    }
+    if (!history.state?.crewcheckOverlay && !['salary','perdiem'].includes(nextView) && !['salary','perdiem'].includes(previousView)) {
+      url.searchParams.set('view',nextView); history.replaceState(history.state,'',url);
     }
     const pendingNavigation = peekPendingNavigationContext();
     if (!pendingNavigation || pendingNavigation.targetView !== nextView) clearPendingNavigationContext();
