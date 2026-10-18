@@ -33,11 +33,11 @@ import static org.junit.Assert.*;
  * key lookup alone uses a fixed TEST key; no device transport/pairing claim. */
 @RunWith(org.robolectric.RobolectricTestRunner.class)
 @LooperMode(LooperMode.Mode.LEGACY)
-@Config(sdk=35, qualifiers="w192dp-h192dp-round-mdpi", shadows={
+@Config(sdk=35, instrumentedPackages={"com.crewcheck.watch"}, qualifiers="w192dp-h192dp-round-mdpi", shadows={
         WatchTextLayoutTest.NoDeviceAmbient.class, WatchCacheLifecycleTest.TestKey.class})
 public class WatchCacheLifecycleTest {
     @Before public void alignSyntheticWallClock() {
-        ShadowSystemClock.setNanoTime(System.currentTimeMillis() * 1_000_000L);
+        ShadowSystemClock.setNanoTime(1_700_000_000_000L * 1_000_000L);
     }
     @Implements(value=SecureSnapshotStore.class, isInAndroidSdk=false)
     public static class TestKey {
@@ -46,7 +46,7 @@ public class WatchCacheLifecycleTest {
         }
     }
     private static String payload(String gate, long validUntil) throws Exception {
-        long now=System.currentTimeMillis();
+        long now=ShadowSystemClock.currentTimeMillis();
         JSONObject json=WatchContextSnapshot.demo(now).toJson();
         return json.put("state","REPORTING").put("gate",gate)
                 .put("validUntilEpochMs",validUntil).toString();
@@ -77,7 +77,7 @@ public class WatchCacheLifecycleTest {
         ServiceController<CrewCheckDataLayerService> service=Robolectric.buildService(CrewCheckDataLayerService.class).create();
         try(ActivityController<MainActivity> activity=Robolectric.buildActivity(MainActivity.class).create().start().resume()) {
             MainActivity screen=activity.get();
-            long expiry=System.currentTimeMillis()+90_000L;
+            long expiry=ShadowSystemClock.currentTimeMillis()+90_000L;
             deliver(service.get(),payload("B123",expiry));settle();
             assertTrue("DataLayer → encrypted cache → listener redraw",text(content(screen)).contains("B123"));
             String encrypted=context.getSharedPreferences("crewcheck_watch_secure",Context.MODE_PRIVATE).getString("snapshot_payload_v1","");
@@ -102,7 +102,7 @@ public class WatchCacheLifecycleTest {
         WatchNotificationCenter.setEnabled(context,false);
         ServiceController<CrewCheckDataLayerService> service=Robolectric.buildService(CrewCheckDataLayerService.class).create();
         try(ActivityController<MainActivity> activity=Robolectric.buildActivity(MainActivity.class).create().start().resume()) {
-            MainActivity screen=activity.get();long expiry=System.currentTimeMillis()+90_000L;
+            MainActivity screen=activity.get();long expiry=ShadowSystemClock.currentTimeMillis()+90_000L;
             screen.getAmbientCallback().onEnterAmbient(new Bundle());
             deliver(service.get(),payload("B123",expiry));settle();
             assertTrue("ambient listener records current cache",new SecureSnapshotStore(context).load().gate.equals("B123"));
