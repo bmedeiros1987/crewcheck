@@ -1,0 +1,35 @@
+name: Health lockscreen offline
+on:
+  pull_request:
+    paths:
+      - 'client/src/components/health/**'
+      - 'client/src/lib/healthLockscreen.ts'
+      - 'client/src/components/v14316/GuardianCenterView.tsx'
+      - 'client/src/pages/GuardianPublicPage.tsx'
+      - 'shared/health-access-proposal/**'
+      - 'scripts/regression-health-lockscreen*.mjs'
+      - '.github/workflows/health-lockscreen-ui.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --prefix /tmp/health-dom --no-audit --no-fund --package-lock=false jsdom@26.1.0
+      - run: node scripts/regression-health-lockscreen.mjs
+      - run: node scripts/regression-health-lockscreen-dom.mjs
+        env:
+          VISITOR_JSDOM_PACKAGE: /tmp/health-dom/package.json
+      - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-health-lockscreen.mjs
+      - run: node scripts/regression-health-lockscreen-dom.mjs
+        env:
+          VISITOR_JSDOM_PACKAGE: /tmp/health-dom/package.json
+      - run: npx tsc --noEmit
+      - run: npx vite build

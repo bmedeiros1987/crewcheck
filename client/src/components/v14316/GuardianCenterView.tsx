@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { Copy, Download, ExternalLink, HeartPulse, KeyRound, QrCode, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { authFetch, getStoredUser } from '@/lib/authClient';
 import './control-center.css';
+import HealthLockscreenCard from '@/components/health/HealthLockscreenCard';
 
 type GuardianForm = {
   displayName: string;
@@ -48,6 +49,7 @@ export default function GuardianCenterView() {
   const [result, setResult] = useState<GuardianResult | null>(null);
   const [qr, setQr] = useState('');
   const [busy, setBusy] = useState(false);
+  const createPending = useRef(false);
 
   useEffect(() => { try { localStorage.setItem(FORM_KEY, JSON.stringify(form)); } catch {} }, [form]);
   useEffect(() => {
@@ -58,7 +60,8 @@ export default function GuardianCenterView() {
   const filled = useMemo(() => [form.bloodType, form.allergies, form.medications, form.conditions, form.criticalNotes, form.contactPhone].filter((value) => String(value).trim()).length, [form]);
 
   async function create() {
-    setBusy(true);
+    if (createPending.current || result) return;
+    createPending.current = true; setBusy(true);
     try {
       const response = await authFetch<GuardianResult & { ok: boolean }>('/api/guardian/card', {
         method: 'POST',
@@ -75,10 +78,10 @@ export default function GuardianCenterView() {
         }),
       });
       setResult(response);
-      toast.success('QR Guardian protegido criado.');
+      toast.success('QR Saúde protegido criado.');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Não foi possível criar o QR Guardian.');
-    } finally { setBusy(false); }
+      toast.error(error instanceof Error ? error.message : 'Não foi possível criar o QR Saúde.');
+    } finally { createPending.current = false; setBusy(false); }
   }
 
   async function revoke() {
@@ -87,19 +90,19 @@ export default function GuardianCenterView() {
     try {
       await authFetch(`/api/guardian/card?id=${encodeURIComponent(result.id)}`, { method: 'DELETE' });
       setResult(null); setQr('');
-      toast.success('QR Guardian revogado.');
+      toast.success('QR Saúde revogado.');
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Não foi possível revogar.'); }
     finally { setBusy(false); }
   }
 
   async function copyLink() {
     if (!result?.url) return;
-    try { await navigator.clipboard.writeText(result.url); toast.success('Link Guardian copiado.'); }
+    try { await navigator.clipboard.writeText(result.url); toast.success('Link Saúde copiado.'); }
     catch { toast.info(result.url); }
   }
 
   return <section className="cc-control-shell cc-guardian-shell">
-    <header className="cc-control-hero guardian"><span><ShieldCheck/></span><div><small>CREWCHECK GUARDIAN</small><h1>Identificação protegida por QR Code</h1><p>Um cartão temporário, revogável e criptografado para situações de emergência. Você escolhe exatamente o que compartilhar.</p></div></header>
+    <header className="cc-control-hero guardian"><span><ShieldCheck/></span><div><small>CREWCHECK SAÚDE</small><h1>Identificação protegida por QR Code</h1><p>Um cartão temporário, revogável e criptografado para situações de emergência. Você escolhe exatamente o que compartilhar.</p></div></header>
 
     <div className="cc-control-kpis">
       <article><QrCode/><span>QR ativo nesta tela</span><strong>{result ? '1' : '0'}</strong></article>
@@ -127,13 +130,14 @@ export default function GuardianCenterView() {
           <label>Relação<input value={form.contactRelationship} maxLength={80} placeholder="Ex.: esposa" onChange={(e) => setForm({ ...form, contactRelationship: e.target.value })}/></label>
           <label>Telefone<input value={form.contactPhone} maxLength={40} inputMode="tel" onChange={(e) => setForm({ ...form, contactPhone: e.target.value })}/></label>
         </div>
-        <button className="cc-primary" onClick={create} disabled={busy || !form.displayName.trim()}>{busy ? <RefreshCw className="cc-spin"/> : <QrCode/>}{result ? 'Gerar um novo QR' : 'Criar QR Guardian'}</button>
+        <button className="cc-primary" onClick={create} disabled={busy || Boolean(result) || !form.displayName.trim()}>{busy ? <RefreshCw className="cc-spin"/> : <QrCode/>}{result ? 'QR criado nesta sessão' : 'Criar QR Saúde'}</button>
       </section>
 
       <aside className="cc-control-card cc-guardian-preview">
-        <h2>QR Guardian</h2>
-        {qr ? <><div className="cc-qr-frame"><img src={qr} alt="QR Code do CrewCheck Guardian"/></div><strong>Válido por {result?.expiresInHours} horas</strong><p>O QR abre uma página somente leitura com as informações autorizadas.</p><div className="cc-control-actions"><button onClick={copyLink}><Copy/> Copiar link</button><button onClick={() => qr && downloadDataUrl(qr, 'CrewCheck-Guardian-QR.png')}><Download/> Baixar QR</button><a href={result?.url} target="_blank" rel="noreferrer"><ExternalLink/> Testar</a><button className="danger" onClick={revoke} disabled={busy}><Trash2/> Revogar</button></div></> : <div className="cc-empty-panel"><QrCode/><h3>Crie o cartão para exibir o QR</h3><p>Preencha apenas as informações que deseja disponibilizar.</p></div>}
+        <h2>QR Saúde</h2>
+        {qr ? <><div className="cc-qr-frame"><img src={qr} alt="QR Code do CrewCheck Saúde"/></div><strong>Válido por {result?.expiresInHours} horas</strong><p>O QR abre uma página somente leitura com as informações autorizadas.</p><div className="cc-control-actions"><button onClick={copyLink}><Copy/> Copiar link</button><button onClick={() => qr && downloadDataUrl(qr, 'CrewCheck-Saude-QR.png')}><Download/> Baixar QR</button><a href={result?.url} target="_blank" rel="noreferrer"><ExternalLink/> Testar</a><button className="danger" onClick={revoke} disabled={busy}><Trash2/> Revogar</button></div></> : <div className="cc-empty-panel"><QrCode/><h3>Crie o cartão para exibir o QR</h3><p>Preencha apenas as informações que deseja disponibilizar.</p></div>}
       </aside>
     </div>
+    <HealthLockscreenCard values={form}/>
   </section>;
 }

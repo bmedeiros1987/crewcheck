@@ -55,10 +55,10 @@ update('client/src/pages/Home.tsx', (source) => {
     next = insertAfter(next, anchor, "import GuardianCenterView from '@/components/v14316/GuardianCenterView';\nimport SupportCenterView from '@/components/v14316/SupportCenterView';\nimport AdminControlCenter from '@/components/v14316/AdminControlCenter';", 'componentes v14.3.16');
   }
   if (!/\| 'guardian'\b/.test(next)) next = next.replace(/\| 'admin';/, "| 'guardian' | 'support' | 'admin';");
-  if (!next.includes("['guardian','Guardian'")) {
+  if (!next.includes("['guardian','Saúde'")) {
     const anchor = "['manual','Manual CrewCheck','Ajuda, PDFs e tutorial',BookOpen],";
     if (!next.includes(anchor)) throw new Error('[v14318] Item Manual não encontrado no menu.');
-    next = next.replace(anchor, `${anchor} ['guardian','Guardian','QR de emergência protegido',QrCode], ['support','Suporte','Problemas e sugestões',LifeBuoy],`);
+    next = next.replace(anchor, `${anchor} ['guardian','Saúde','QR de emergência protegido',QrCode], ['support','Suporte','Problemas e sugestões',LifeBuoy],`);
   }
   if (!next.includes("return 'guardian';")) {
     const anchor = "if (value === 'life' || value === 'crewcheck-life' || value === 'saude' || value === 'saúde' || value === 'bem-estar') return 'life';";
@@ -308,8 +308,8 @@ update('client/src/pages/AboutUsPage.tsx', (source) => {
 
 update('client/src/components/v1434/ManualCenterView.tsx', (source) => source
   .replace(/V14\.3\.4/g, `V${VERSION}`)
-  .replace('Manual completo, guia rápido e tutorial interativo no mesmo lugar.', 'Manual completo, guias rápidos, Guardian, Health Connect, visitante, Telegram, Saída Inteligente, suporte e privacidade no mesmo lugar.')
-  .replace('<article><BookOpen/><h2>Consulta no sistema</h2>', '<article><BookOpen/><h2>Guardian, visitante e suporte</h2><p>QR de emergência, escala compartilhada fiel ao PDF e abertura de tickets sem expor o e-mail pessoal.</p><a href="/manual.html#guardian">Abrir guia</a></article><article><BookOpen/><h2>Consulta no sistema</h2>'));
+  .replace('Manual completo, guia rápido e tutorial interativo no mesmo lugar.', 'Manual completo, guias rápidos, Saúde, Health Connect, visitante, Telegram, Saída Inteligente, suporte e privacidade no mesmo lugar.')
+  .replace('<article><BookOpen/><h2>Consulta no sistema</h2>', '<article><BookOpen/><h2>Saúde, visitante e suporte</h2><p>QR de emergência, escala compartilhada fiel ao PDF e abertura de tickets sem expor o e-mail pessoal.</p><a href="/manual.html#guardian">Abrir guia</a></article><article><BookOpen/><h2>Consulta no sistema</h2>'));
 
 update('client/src/components/v14316/control-center.css', (source) => source.includes('.cc-life-sync-strip') ? source : `${source}\n.cc-life-sync-strip{display:flex;align-items:center;gap:12px;margin:14px 0;padding:14px 16px;border:1px solid rgba(34,211,238,.22);border-radius:18px;background:rgba(8,145,178,.08)}.cc-life-sync-strip>span{width:11px;height:11px;border-radius:50%;background:#fbbf24;box-shadow:0 0 0 5px rgba(251,191,36,.12)}.cc-life-sync-strip>span.ready{background:#4ade80;box-shadow:0 0 0 5px rgba(74,222,128,.12)}.cc-life-sync-strip>div{display:grid;flex:1;gap:2px}.cc-life-sync-strip small{color:#cbd5e1}.cc-life-sync-strip button{display:flex;gap:8px;align-items:center;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:#fff;border-radius:13px;padding:10px 12px;font-weight:800}@media(max-width:620px){.cc-life-sync-strip{align-items:flex-start;flex-wrap:wrap}.cc-life-sync-strip button{width:100%;justify-content:center}}\n`);
 

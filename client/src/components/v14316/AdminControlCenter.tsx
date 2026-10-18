@@ -85,8 +85,8 @@ export default function AdminControlCenter() {
   const cards = [
     ['Usuários cadastrados', c.users, UserRound], ['Escalas armazenadas', c.rosters, FileClock], ['Escalas ativas', c.activeRosters, BarChart3],
     ['Acessos em 30 dias', c.accesses30d, UsersRound], ['Acessos hoje', c.accessesToday, UsersRound], ['Visitantes ativos', c.visitors, ShieldCheck],
-    ['E-mails rastreados', c.emails, Mail], ['Falhas de e-mail', c.emailFailures, Mail], ['Tickets abertos', c.ticketsOpen, TicketCheck],
-    ['QR Guardian ativos', c.guardianActive, QrCode], ['Tabelas do banco', c.tableCount, Database], ['Armazenamento do banco', bytesLabel(c.databaseBytes), Database],
+    ['E-mails enviados', c.emails, Mail], ['E-mails entregues', c.emailDelivered, Mail], ['Falhas de e-mail', c.emailFailures, Mail], ['Tickets abertos', c.ticketsOpen, TicketCheck],
+    ['QR Saúde ativos', c.guardianActive, QrCode], ['Registros estimados', c.databaseRowsApprox, Database], ['Tabelas do banco', c.tableCount, Database], ['Armazenamento do banco', bytesLabel(c.databaseBytes), Database],
   ] as const;
   const budget = maps?.budget;
   const budgetPercent = Math.min(100, Math.max(0, Number(budget?.percent || 0)));
