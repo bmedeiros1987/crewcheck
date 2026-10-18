@@ -16,7 +16,7 @@ export function closedVisitorDraft(visitorId = '') {
 export function financialDraftValid(draft) {
   const f = draft?.financial;
   const realDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && Number.isFinite(Date.parse(s)) && new Date(s).toISOString().slice(0,10) === s;
-  return Boolean(typeof draft?.visitorId === 'string' && draft.visitorId && f?.enabled === true && Array.isArray(f.categories) && f.categories.length && new Set(f.categories).size === f.categories.length && f.categories.every(c => FINANCIAL_CATEGORIES.includes(c)) && realDate(f.periodStart) && realDate(f.periodEnd) && f.periodStart <= f.periodEnd);
+  return Boolean(typeof draft?.visitorId === 'string' && draft.visitorId && f?.enabled === true && Array.isArray(f.categories) && f.categories.length && new Set(f.categories).size === f.categories.length && f.categories.every(c => FINANCIAL_CATEGORIES.includes(c)) && f.categories.some(c => c !== 'periodSummary') && realDate(f.periodStart) && realDate(f.periodEnd) && f.periodStart <= f.periodEnd);
 }
 export function canReadFinancialProjection({ enabled = false, identity, grant, currentRevision, ownerEntitled = false, request, now } = {}) {
   const at = Date.parse(now), expiry = Date.parse(grant?.expiresAt);
