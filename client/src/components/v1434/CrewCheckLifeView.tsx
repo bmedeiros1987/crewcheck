@@ -372,7 +372,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   const metrics = useMemo(() => {
-    const sleepHours = automaticSamsung ? (effectiveSummary.sleepMinutes == null ? null : effectiveSummary.sleepMinutes / 60)
+    const sleepHours = automaticSamsung ? (effectiveSummary.sleepMinutes == null || !Number.isFinite(effectiveSummary.sleepMinutes) || effectiveSummary.sleepMinutes < 0 ? null : effectiveSummary.sleepMinutes / 60)
       : numberOrZero(effectiveSummary.sleepMinutes) / 60 || numberOrZero(manual.sleepHours);
     return {
       sleepHours,
@@ -425,7 +425,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   const recommendation = useMemo(() => {
     const program = nextProgram?.title || (nextProgram?.kind === 'flight' ? 'próxima programação' : 'próximo compromisso operacional');
     const presentation = nextProgram?.presentation || nextProgram?.departure;
-    if (profile.areas.sleep && metrics.sleepHours != null && metrics.sleepHours > 0 && metrics.sleepHours < profile.sleepTarget) {
+    if (profile.areas.sleep && metrics.sleepHours != null && metrics.sleepHours >= 0 && (automaticSamsung || metrics.sleepHours > 0) && metrics.sleepHours < profile.sleepTarget) {
       return {
         tone: 'rest',
         title: 'Preserve seu descanso antes de encaixar novas atividades',
@@ -451,7 +451,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       title: 'Rotina registrada sem ajuste urgente',
       body: 'Mantenha a próxima programação como referência e atualize os registros quando sua rotina mudar.',
     };
-  }, [metrics, nextProgram, profile]);
+  }, [metrics, nextProgram, profile, automaticSamsung]);
 
   function activateLife() {
     if (!healthSession.token || !healthSession.isCurrent()) return;
