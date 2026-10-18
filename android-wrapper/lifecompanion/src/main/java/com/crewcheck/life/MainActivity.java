@@ -147,7 +147,8 @@ public final class MainActivity extends Activity {
 
         boolean bundled = status.optBoolean("sdkBundled", false);
         boolean connected = "connected".equals(state);
-        connectButton.setEnabled(bundled && !connected);
+        boolean allGranted = status.optBoolean("allPermissionsGranted", false);
+        connectButton.setEnabled(bundled && !allGranted);
         refreshButton.setEnabled(connected);
 
         connectButton.setText(switch (state) {
@@ -156,7 +157,7 @@ public final class MainActivity extends Activity {
             case "samsung_health_disabled" -> "Ativar Samsung Health";
             case "samsung_health_setup_required" -> "Concluir configuração";
             case "authorization_required", "samsung_health_timeout" -> "Tentar novamente";
-            case "connected" -> "Samsung Health conectado";
+            case "connected" -> allGranted ? "Samsung Health conectado" : "Gerenciar permissões Samsung";
             default -> "Conectar Samsung Health";
         });
     }
