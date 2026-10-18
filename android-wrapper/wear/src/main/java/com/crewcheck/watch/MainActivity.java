@@ -460,7 +460,9 @@ public final class MainActivity extends FragmentActivity
             content.addView(eyebrow);
         }
 
-        String compactValue = compactAmbientLabel(snapshot) + " " + primary.value;
+        String compactLabel = compactAmbientLabel(snapshot);
+        String compactValue = primary.value.length() > 12 || primary.value.equalsIgnoreCase(compactLabel)
+                ? compactLabel : compactLabel + " " + primary.value;
         TextView value = text(stackColumns() ? compactValue : primary.value, primary.value.length() > 12 ? 18 : 22,
                 WHITE, true, Gravity.CENTER);
         value.setMaxLines(2);
@@ -480,6 +482,7 @@ public final class MainActivity extends FragmentActivity
             if (eyebrow != null) content.removeView(eyebrow);
             if (gate != null) content.removeView(gate);
             value.setText(compactValue);
+            value.setMaxLines(1);
             value.setAutoSizeTextTypeUniformWithConfiguration(10, 22, 1,
                     android.util.TypedValue.COMPLEX_UNIT_SP);
             if (!ambientContentFits()) {
@@ -497,6 +500,7 @@ public final class MainActivity extends FragmentActivity
             case "CONNECTION" -> "CONEXÃO";
             case "OVERNIGHT" -> "PERNOITE";
             case "OFF_DUTY" -> "FOLGA";
+            case "CHANGED" -> "ALTERAÇÃO";
             default -> "PROG";
         };
     }

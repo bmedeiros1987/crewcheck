@@ -11,7 +11,7 @@ import {pathToFileURL} from 'node:url';
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'watch-source-'));
 try {
  const root=process.cwd();
- fs.writeFileSync(path.join(dir,'entry.ts'),`export {normalizeRosterDays,buildCanonicalRosterEvents,selectNextRosterEvent,isOperationalCanonicalEvent} from ${JSON.stringify(root+'/client/src/lib/canonicalRoster.ts')}; export {buildCrewCheckWatchSnapshot} from ${JSON.stringify(root+'/client/src/lib/watchContext.ts')};`);
+ fs.writeFileSync(path.join(dir,'entry.ts'),`export {normalizeRosterDays,buildCanonicalRosterEvents,selectNextRosterEvent,isOperationalCanonicalEvent} from ${JSON.stringify(root+'/client/src/lib/canonicalRoster.ts')}; export * from ${JSON.stringify(root+'/client/src/lib/scheduleActivityClassification.ts')}; export {buildCrewCheckWatchSnapshot} from ${JSON.stringify(root+'/client/src/lib/watchContext.ts')};`);
  await build({entryPoints:[path.join(dir,'entry.ts')],outfile:path.join(dir,'bundle.mjs'),bundle:true,platform:'node',format:'esm',logLevel:'silent'});
  const lib=await import(pathToFileURL(path.join(dir,'bundle.mjs')).href);
  let now=Date.parse('2032-10-18T21:00:00Z');
