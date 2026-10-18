@@ -1,5 +1,9 @@
 # Asaas receipt recovery — candidate, operational HOLD
 
+**Do not merge:** render.yaml autoDeploy tracks commits on main. Merge starts a
+real rollout, even while Asaas is paused. Independent re-review, additive schema
+readiness and an approved rollout sequence are prerequisites, not post-merge tasks.
+
 This candidate does not resume the Asaas queue, reconcile a real subscription, create
 provider credentials, change products/prices, or send a provider request. The configured
 URL stays `/api/webhooks/asaas`; its canonical alias keeps the same token check.
@@ -20,6 +24,11 @@ and plan are **not established** by this change.
 
 ## Receipt and entitlement are distinct
 
+The additive inbox and subscription-reference lock table are included in platform
+readiness, including required columns. Missing/partial schema makes Asaas readiness
+false and returns migration-required503 before receipt processing. Generic HTTP200
+or core database connectivity must not be used as proof of Asaas readiness.
+
 An additive inbox stores the event ID, canonical body hash, provider subscription
 reference, event kind/time and a minimal decision projection. No customer/contact,
 externalReference, money amount, card, token, URL or original payload is stored.
@@ -36,8 +45,11 @@ No email/public-ID/externalReference inference, subscription creation or provide
 is permitted. Unknown kinds, orphan/ambiguous references, invalid evidence, unproven
 legacy receipts/order, same-time ordering ambiguity and cross-payment reversals are
 held. Informational allowlisted kinds cannot change access. Reactivation alone is not
-payment evidence. The existing31/366-day period policy is retained; received does not
-shorten a confirmed period. Older notifications cannot undo a newer disposition.
+payment evidence. The existing31/366-day calculation is retained. Each processed paid receipt records
+its own payment reference and funded period. A later receipt cannot borrow a
+refunded payment's aggregate period, extend the same payment or reactivate an
+older/expired cycle. Debit/terminal events clear the spendable aggregate window.
+Older notifications cannot undo a newer disposition.
 
 The provider-native `dateCreated` format is validated and compared as a wall-clock
 stamp without guessing the Mac/server timezone. Unsupported formats are held.
@@ -52,18 +64,23 @@ event IDs, owner identities, provider references or payloads. It does not replay
 `retryAsaasReceipt(db,eventId)` is an internal explicit operator function, with no
 HTTP mutation endpoint, timer, automatic checkout callback or cron. It accepts no
 owner, plan or payload overrides. Only missing-subscription/profile cases can retry,
-after an independently evidenced local association is repaired. Final and unsafe
+after an independently evidenced local association is repaired. Both receive and
+retry acquire the same reference lock before receipt/subscription locks. Paid
+application inspects durable newer unresolved receipts; retrying an older orphan
+cannot bypass a later retained refund. Final and unsafe
 quarantines are not replayed. Late retry rechecks ordering under the same locks.
-Account erasure removes receipts matching that account's existing Asaas reference.
+Account erasure removes receipts and reference-lock rows matching that account's existing Asaas reference.
 Unmatched receipts have no inferred owner; any retention/review must respect this limit.
 
 ## Tests and limits
 
-The shared32-case scenario suite runs against a controlled SQL adapter and an actual
+The shared41-case scenario suite runs against a controlled SQL adapter and an actual
 disposable MySQL8.4 over a UNIX socket, before and after canonical preparation in the
 existing CI job. It covers orphan retention, explicit retry, duplicate/concurrent IDs,
 canonical hash conflicts, rollback after subscription write, legacy uncertainty,
 ordering/refund races, ambiguous owners, Google/unlimited isolation and missing evidence.
+It includes both independent-review counterexamples, different-event-ID races and
+COMMIT failure/committed-but-ACK-lost cases against the same real SQL scenarios.
 Actual HTTP-wrapper tests preserve method/token-before-body/DB, failure503, admin-only
 read observation and scoped erasure wiring. No production database/provider is used.
 
@@ -72,7 +89,7 @@ read observation and scoped erasure wiring. No production database/provider is u
 Keep the real Asaas queue paused. Before deployment, authorize/apply the additive
 `20261018_001_asaas_webhook_inbox.sql` migration to the existing database through the
 established operator path, then confirm readiness. Never deploy without this table.
-After independent review and current-head CI, authorize the rollout and read the
+After independent re-review and current-head CI, authorize merge/rollout and read the
 aggregate diagnostic. The historical orphan remains unassigned: establish its
 provider/local ownership and plan from authoritative records before authorizing a
 bounded explicit retry. No access should be granted solely to clear the queue.

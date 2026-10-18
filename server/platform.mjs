@@ -288,6 +288,8 @@ const PLATFORM_OPTIONAL_TABLES = [
   'crewcheck_platform_chat_messages',
   'crewcheck_platform_gym_checkins',
   'crewcheck_platform_webhook_events',
+  'crewcheck_asaas_webhook_inbox',
+  'crewcheck_asaas_subscription_locks',
   'crewcheck_platform_emergencies',
   'crewcheck_telegram_state',
   'crewcheck_platform_auth_attempts',
@@ -327,6 +329,8 @@ async function platformSchemaReport(db) {
   const requiredColumns = {
     crewcheck_platform_profiles: ['email', 'public_id', 'display_name', 'locale', 'timezone', 'plan', 'share_presence'],
     crewcheck_platform_shares: ['id', 'owner_email', 'token_hash', 'kind', 'permissions', 'expires_at', 'created_at'],
+    crewcheck_asaas_webhook_inbox: ['event_id', 'payload_hash', 'event_name', 'subscription_ref', 'payment_ref', 'event_time', 'funded_period_end', 'decision_payload', 'disposition', 'reason', 'attempts', 'received_at', 'updated_at'],
+    crewcheck_asaas_subscription_locks: ['subscription_ref'],
   };
   const tableParams = tables.map((_table, index) => `$${index + 1}`).join(',');
   const result = await db.query(
@@ -347,6 +351,7 @@ async function platformSchemaReport(db) {
   const missingShareColumns = requiredColumns.crewcheck_platform_shares
     .filter((column) => !columns.has(`crewcheck_platform_shares.${column}`))
     .map((column) => `crewcheck_platform_shares.${column}`);
+  const missingAsaasColumns = ['crewcheck_asaas_webhook_inbox', 'crewcheck_asaas_subscription_locks'].flatMap(table => requiredColumns[table].filter(column => !columns.has(`${table}.${column}`)).map(column => `${table}.${column}`));
   const missingCore = [
     ...PLATFORM_CORE_TABLES.filter((table) => !ready.has(table)),
     ...missingProfileColumns,
@@ -354,10 +359,12 @@ async function platformSchemaReport(db) {
   const missingOptional = [
     ...PLATFORM_OPTIONAL_TABLES.filter((table) => !ready.has(table)),
     ...missingShareColumns,
+    ...missingAsaasColumns,
   ];
   return {
     coreReady: missingCore.length === 0,
     optionalReady: missingOptional.length === 0,
+    asaasInboxReady: ready.has('crewcheck_asaas_webhook_inbox') && ready.has('crewcheck_asaas_subscription_locks') && missingAsaasColumns.length === 0,
     profileIdReady: ready.has('crewcheck_platform_profiles') && missingProfileColumns.length === 0,
     qrShareReady: ready.has('crewcheck_platform_shares') && missingShareColumns.length === 0,
     missingCore,
@@ -375,6 +382,10 @@ async function platformSchemaReady(db) {
 }
 
 async function platformTableReady(db, tableName) {
+  if (['crewcheck_asaas_webhook_inbox', 'crewcheck_asaas_subscription_locks'].includes(tableName)) {
+    state.schemaReport = await platformSchemaReport(db);
+    return state.schemaReport.asaasInboxReady;
+  }
   if (![...PLATFORM_CORE_TABLES, ...PLATFORM_OPTIONAL_TABLES].includes(tableName)) return false;
   if (tableName === 'crewcheck_platform_profiles' && state.schemaReport && !state.schemaReport.profileIdReady) return false;
   if (tableName === 'crewcheck_platform_shares' && state.schemaReport && !state.schemaReport.qrShareReady) return false;
@@ -921,6 +932,7 @@ async function handleDatabaseHealth(req, res) {
     provider: databaseDialect(),
     connected,
     coreReady: Boolean(report.coreReady),
+    asaasInboxReady: Boolean(connected && report.asaasInboxReady),
     profileIdReady,
     qrShareReady,
     degraded: connected && !report.optionalReady,
@@ -1454,6 +1466,7 @@ async function handleAsaasWebhook(req, res) {
   const db = await pool();
   if (!db) return sendJson(res, 503, { ok: false, code: 'DATABASE_OFFLINE' });
   try {
+    if (!await platformTableReady(db, 'crewcheck_asaas_webhook_inbox')) return sendJson(res, 503, { ok: false, code: 'DATABASE_MIGRATION_REQUIRED', retryable: true });
     const result = await receiveAsaasEvent(db, body);
     if (result.body.disposition === 'quarantined') console.warn('[crewcheck:asaas-webhook]', 'quarantined', result.body.reason);
     return sendJson(res, result.status, result.body);
@@ -1470,7 +1483,10 @@ async function handleAdminAsaasInbox(req, res) {
   if (!identity.admin) return sendJson(res, 403, { ok: false });
   const db = await pool();
   if (!db) return sendJson(res, 503, { ok: false, code: 'DATABASE_OFFLINE' });
-  try { return sendJson(res, 200, await asaasInboxSummary(db)); }
+  try {
+    if (!await platformTableReady(db, 'crewcheck_asaas_webhook_inbox')) return sendJson(res, 503, { ok: false, code: 'DATABASE_MIGRATION_REQUIRED' });
+    return sendJson(res, 200, await asaasInboxSummary(db));
+  }
   catch { return sendJson(res, 503, { ok: false, code: 'ASAAS_INBOX_UNAVAILABLE' }); }
 }
 
@@ -2469,6 +2485,7 @@ async function handleAccountDeletion(req, res) {
       await client.query('DELETE FROM crewcheck_platform_terms_acceptances WHERE email=$1', [context.identity.email]);
     }
     if (subscription?.provider === 'asaas' && subscription.provider_ref) await deleteIfTableExists(client, 'DELETE FROM crewcheck_asaas_webhook_inbox WHERE subscription_ref=$1', [subscription.provider_ref]);
+    if (subscription?.provider === 'asaas' && subscription.provider_ref) await deleteIfTableExists(client, 'DELETE FROM crewcheck_asaas_subscription_locks WHERE subscription_ref=$1', [subscription.provider_ref]);
     await client.query('DELETE FROM crewcheck_platform_subscriptions WHERE email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_platform_profiles WHERE email=$1', [context.identity.email]);
     for (const [sql, params] of notificationStateDeletionStatements(context.identity.email)) {
