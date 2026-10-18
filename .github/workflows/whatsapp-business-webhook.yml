@@ -8,6 +8,19 @@ on:
       - 'scripts/v14382/**'
       - 'scripts/v139/apply.mjs'
       - 'scripts/regression-whatsapp-business-webhook.mjs'
+      - 'server/concierge/whatsapp-menu.mjs'
+      - 'scripts/p1-whatsapp-menu/**'
+      - 'scripts/p1-whatsapp-pdf/**'
+      - 'scripts/p1-whatsapp-visitor/**'
+      - 'server/concierge/whatsapp-visitor.mjs'
+      - 'scripts/regression-whatsapp-linked-visitor.mjs'
+      - 'scripts/regression-whatsapp-visitor-portal.mjs'
+      - 'scripts/regression-whatsapp-visitor-browser.mjs'
+      - 'scripts/regression-whatsapp-query-parity.mjs'
+      - 'scripts/regression-whatsapp-menu.mjs'
+      - 'scripts/regression-whatsapp-payload-dedup.mjs'
+      - 'server/concierge/whatsapp-pdf*.mjs'
+      - 'scripts/regression-whatsapp-pdf*.mjs'
       - 'scripts/p1-whatsapp-sender/**'
       - 'scripts/regression-whatsapp-sender.mjs'
       - 'render.yaml'
@@ -21,6 +34,19 @@ on:
       - 'scripts/v14382/**'
       - 'scripts/v139/apply.mjs'
       - 'scripts/regression-whatsapp-business-webhook.mjs'
+      - 'server/concierge/whatsapp-menu.mjs'
+      - 'scripts/p1-whatsapp-menu/**'
+      - 'scripts/p1-whatsapp-pdf/**'
+      - 'scripts/p1-whatsapp-visitor/**'
+      - 'server/concierge/whatsapp-visitor.mjs'
+      - 'scripts/regression-whatsapp-linked-visitor.mjs'
+      - 'scripts/regression-whatsapp-visitor-portal.mjs'
+      - 'scripts/regression-whatsapp-visitor-browser.mjs'
+      - 'scripts/regression-whatsapp-query-parity.mjs'
+      - 'scripts/regression-whatsapp-menu.mjs'
+      - 'scripts/regression-whatsapp-payload-dedup.mjs'
+      - 'server/concierge/whatsapp-pdf*.mjs'
+      - 'scripts/regression-whatsapp-pdf*.mjs'
       - 'scripts/p1-whatsapp-sender/**'
       - 'scripts/regression-whatsapp-sender.mjs'
       - 'render.yaml'
@@ -60,3 +86,105 @@ jobs:
         run: |
           node --check server/whatsapp.mjs
           node scripts/regression-whatsapp-sender.mjs
+          node scripts/regression-whatsapp-menu.mjs
+          node scripts/regression-whatsapp-payload-dedup.mjs
+          node scripts/regression-whatsapp-pdf.mjs
+          node scripts/regression-whatsapp-pdf-integration.mjs
+          node scripts/regression-whatsapp-query-parity.mjs
+          node scripts/regression-whatsapp-linked-visitor.mjs
+
+  pdf-canonical-parser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-whatsapp-pdf-canonical-parser.mjs
+      - run: node scripts/regression-whatsapp-visitor-portal.mjs
+
+  visitor-mysql-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Prepare exact production helpers without external requests
+        run: node --import ./scripts/whatsapp-test-network-block.mjs scripts/v139/apply.mjs
+      - name: Start disposable MySQL with no network or published ports
+        run: |
+          mkdir -p /tmp/crewcheck-whatsapp-qa-socket
+          docker run --detach --rm --name crewcheck-whatsapp-qa --network none --mount type=bind,source=/tmp/crewcheck-whatsapp-qa-socket,target=/var/run/mysqld --env MYSQL_ALLOW_EMPTY_PASSWORD=yes mysql:8.4
+          for attempt in $(seq 1 60); do
+            if docker logs crewcheck-whatsapp-qa 2>&1 | grep -q 'MySQL init process done' && docker exec crewcheck-whatsapp-qa mysql --execute='SELECT 1'; then break; fi
+            sleep 1
+          done
+          docker exec crewcheck-whatsapp-qa mysql --execute='SELECT 1'
+          docker exec -i crewcheck-whatsapp-qa mysql <<'FIXTURE_SQL'
+          CREATE USER 'crewcheck_fixture'@'localhost' IDENTIFIED BY 'fixture-only';
+          GRANT ALL ON `crewcheck_test_whatsapp_%`.* TO 'crewcheck_fixture'@'localhost';
+          FIXTURE_SQL
+          docker exec crewcheck-whatsapp-qa chmod 755 /var/run/mysqld
+      - name: Exercise production adapter, authorization, transactions and delivery locks
+        shell: bash -eo pipefail {0}
+        env:
+          CREWCHECK_TEST_MYSQL_ISOLATED: 'true'
+          CREWCHECK_TEST_MYSQL_SOCKET: /tmp/crewcheck-whatsapp-qa-socket/mysqld.sock
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/whatsapp-mysql
+          node scripts/regression-whatsapp-pdf-mysql.mjs 2>&1 | tee artifacts/whatsapp-mysql/result.txt
+          grep -q 'PASS: actual materialized visitor guard' artifacts/whatsapp-mysql/result.txt
+          grep -q 'PASS: MySQL 8 InnoDB' artifacts/whatsapp-mysql/result.txt
+      - name: Remove only the disposable fixture container
+        if: always()
+        run: docker rm -f crewcheck-whatsapp-qa || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: WhatsApp-native-MySQL-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/whatsapp-mysql
+          retention-days: 7
+
+  visitor-build-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Full production build with no inherited application credentials or outbound network
+        run: |
+          env -i PATH="$PATH" HOME="$HOME" TMPDIR=/tmp LANG=C NODE_OPTIONS="--import=$PWD/scripts/whatsapp-test-network-block.mjs" npm run build
+      - name: Install isolated browser test dependency on the disposable runner
+        run: |
+          npm install --prefix "$RUNNER_TEMP/whatsapp-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/whatsapp-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Test built visitor UI and canonical login, JWT and logout with fictional data
+        shell: bash -eo pipefail {0}
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/whatsapp-browser
+          env -i PATH="$PATH" HOME="$HOME" TMPDIR=/tmp LANG=C MENU_PLAYWRIGHT_PACKAGE="$RUNNER_TEMP/whatsapp-browser/package.json" node scripts/regression-whatsapp-visitor-browser.mjs 2>&1 | tee artifacts/whatsapp-browser/result.txt
+          grep -q 'PASS built full app visitor page' artifacts/whatsapp-browser/result.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: WhatsApp-built-browser-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/whatsapp-browser
+          retention-days: 7

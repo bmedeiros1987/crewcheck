@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+const source = fs.readFileSync('client/src/pages/VisitorAccessPage.tsx', 'utf8');
+const parsed = ts.createSourceFile('VisitorAccessPage.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+assert.equal(parsed.parseDiagnostics.length, 0, 'whole prepared TSX parses');
+assert.match(source, /data\?\.whatsappAvailable &&/);
+const start = source.indexOf('  async function linkVisitorWhatsApp()');
+const end = source.indexOf('  const t = copy', start);
+assert.ok(start > 0 && end > start);
+const logoutStart = source.indexOf('  async function logout()');
+const logoutEnd = source.indexOf('  async function emergency()', logoutStart);
+const helpers = ts.transpileModule(source.slice(start, end) + source.slice(logoutStart, logoutEnd), { compilerOptions: { target: ts.ScriptTarget.ES2022 }, reportDiagnostics: true });
+assert.equal(helpers.diagnostics?.length || 0, 0);
+let pending, busy = false, link = null, notifications = [], calls = [];
+const context = vm.createContext({ whatsappOperation: { current: 0 }, setBusy: value => { busy = value; }, setWhatsAppLink: value => { link = value; },
+  visitorRequest: async (path, options) => { calls.push([path, options]); if (path.endsWith('/logout')) return { ok: true }; return new Promise((resolve, reject) => { pending = { resolve, reject }; }); },
+  toast: { error: message => notifications.push(message), success: message => notifications.push(message) }, setData() {}, setMode() {} });
+vm.runInContext(helpers.outputText, context);
+const first = context.linkVisitorWhatsApp(); assert.equal(busy, true);
+assert.equal(JSON.parse(calls[0][1].body).consentConcierge, true);
+pending.resolve({ code: 'fictional-code', openUrl: 'https://wa.me/15550000000?text=fictional', expiresInMinutes: 10 }); await first;
+assert.equal(link.code, 'fictional-code'); assert.equal(busy, false);
+const stale = context.linkVisitorWhatsApp(); const staleReply = pending; await context.logout();
+staleReply.resolve({ code: 'stale-private-code', openUrl: '', expiresInMinutes: 10 }); await stale;
+assert.equal(link, null, 'logout suppresses delayed handoff'); assert.equal(busy, false);
+const failing = context.linkVisitorWhatsApp(); pending.reject(new Error('private-database-details')); await failing;
+assert.equal(link, null); assert.ok(!notifications.join(' ').includes('private-database-details'));
+const unlink = context.unlinkVisitorWhatsApp(); pending.resolve({ ok: true }); await unlink;
+assert.equal(link, null); assert.equal(busy, false); assert.ok(calls.some(([path]) => path.endsWith('/link/unlink')));
+console.log('PASS whole prepared visitor TSX syntax and actual handoff/unlink helpers: consent, no automatic message, logout race suppression and redacted errors; no browser/server/network');
