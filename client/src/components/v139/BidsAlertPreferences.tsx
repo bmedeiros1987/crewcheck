@@ -49,7 +49,7 @@ export function BidsAlertPreferences() {
   }
   useEffect(() => {
     const changed = () => { epoch.current++; ticket.current++; dirty.current = false; setSnapshot(null); replaceDraft({ ...defaults }); setBusy(false); setConflict(false); setFeedback(false); setMessage('Consultando preferências desta conta…'); load(); };
-    const storage = (event: StorageEvent) => { if (['crewcheck_auth_token', 'crewcheck_auth_user'].includes(event.key || '')) changed(); };
+    const storage = (event: StorageEvent) => { if (event.key === null || ['crewcheck_auth_token', 'crewcheck_auth_user'].includes(event.key || '')) changed(); };
     const online = () => { if (!dirty.current) load(); };
     load();
     window.addEventListener('crewcheck:auth-changed', changed); window.addEventListener('crewcheck:auth-expired', changed); window.addEventListener('storage', storage); window.addEventListener('online', online);

@@ -5,6 +5,10 @@ on:
     paths:
       - 'client/src/components/notifications/**'
       - 'client/src/components/v139/BidsAlertPreferences.tsx'
+      - 'client/src/lib/crewcheckPushRuntime.ts'
+      - 'scripts/regression-web-push-lifecycle.mjs'
+      - 'scripts/regression-native-settings-return.mjs'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
       - 'scripts/regression-notification-settings-dom.mjs'
       - 'scripts/regression-notification-center-browser.mjs'
       - 'scripts/regression-notification-readiness-browser.mjs'
@@ -16,6 +20,10 @@ on:
     paths:
       - 'client/src/components/notifications/**'
       - 'client/src/components/v139/BidsAlertPreferences.tsx'
+      - 'client/src/lib/crewcheckPushRuntime.ts'
+      - 'scripts/regression-web-push-lifecycle.mjs'
+      - 'scripts/regression-native-settings-return.mjs'
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
       - 'scripts/regression-notification-settings-dom.mjs'
       - '.github/workflows/notification-settings-ui.yml'
 
@@ -38,6 +46,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
       - run: npm ci
       - name: Use existing synthetic browser test versions
         run: |
@@ -48,6 +60,8 @@ jobs:
           NOTIFICATIONS_JSDOM_PACKAGE: ${{ runner.temp }}/notification-ui/package.json
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/notification-ui/package.json
         run: |
+          node scripts/regression-native-settings-return.mjs
+          node scripts/regression-web-push-lifecycle.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
           node scripts/regression-notification-center-browser.mjs
@@ -63,6 +77,8 @@ jobs:
           NOTIFICATIONS_JSDOM_PACKAGE: ${{ runner.temp }}/notification-ui/package.json
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/notification-ui/package.json
         run: |
+          node scripts/regression-native-settings-return.mjs
+          node scripts/regression-web-push-lifecycle.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
           node scripts/regression-notification-center-browser.mjs

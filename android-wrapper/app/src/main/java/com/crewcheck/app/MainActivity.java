@@ -238,6 +238,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        // OS settings can change while the WebView remains mounted and unfocused.
+        dispatchCrewCheckPermissionStatus();
         resumeLifeCompanionMigrationIfNeeded();
         syncLifeCompanionToCrewCheckAndWatch("resume-cached");
         requestLifeCompanionRefresh();

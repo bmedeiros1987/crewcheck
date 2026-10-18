@@ -42,7 +42,7 @@ export function installCrewCheckPushLifecycle(){
   previousOwner=current;
  };
  const reconcile=()=>{void reconcileCrewCheckPushDevice().catch(()=>{});};
- const storage=(event:StorageEvent)=>{if(['crewcheck_auth_token','crewcheck_auth_user'].includes(event.key||''))changed();};
+ const storage=(event:StorageEvent)=>{if(event.key===null||['crewcheck_auth_token','crewcheck_auth_user'].includes(event.key||''))changed();};
  window.addEventListener('storage',storage);window.addEventListener('crewcheck:auth-will-change',willChange);window.addEventListener('crewcheck:auth-changed',changed);window.addEventListener('crewcheck:auth-expired',changed);window.addEventListener('online',reconcile);window.addEventListener('focus',reconcile);reconcile();
  return()=>{window.removeEventListener('storage',storage);window.removeEventListener('crewcheck:auth-will-change',willChange);window.removeEventListener('crewcheck:auth-changed',changed);window.removeEventListener('crewcheck:auth-expired',changed);window.removeEventListener('online',reconcile);window.removeEventListener('focus',reconcile);};
 }

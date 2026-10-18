@@ -81,6 +81,12 @@ if(process.argv.includes('--serve')){
   assert(text().includes('Notificações não autorizadas'),'denial never becomes success');
   for(const name of ['Onde receber','Horário e silêncio','Outros avisos e despertador']){assert(summary(name));assert(!summary(name).parentElement.open);}
   const toggle=input('input[aria-label="Quero avisos BIDS quando a janela estiver validada"]');toggle.click();
+  const contextBefore=w.document.querySelector('.cc-notification-center');
+  w.setFixtureScenario('android-ready');
+  await wait(()=>text().includes('Permissão disponível.'));
+  assert.equal(w.document.querySelector('.cc-notification-center'),contextBefore,'external settings return does not remount the current screen');
+  assert.equal(toggle.checked,true,'permission refresh preserves unsaved account draft');
+  assert.equal(w.qa.writes.length,0,'permission refresh never saves or sends');
   assert.equal(w.qa.writes.length,0,'toggle stages draft only');assert(text().includes('Alterações não salvas'));assert(!text().includes('Ligado na conta'),'draft must not claim saved account state');
   summary('Onde receber').click();const all=[...w.document.querySelectorAll('label')].find(e=>e.textContent.trim()==='Todos').querySelector('input');all.click();
   assert.equal(w.qa.writes.length,0);button('Salvar preferências').click();await wait(()=>w.qa.revision===1);
@@ -102,6 +108,17 @@ if(process.argv.includes('--serve')){
   w.qa.failure=true;button('Salvar preferências').click();await wait(()=>w.qa.writes.length===2);await wait(()=>!button('Salvando…'));
   assert.equal(w.qa.revision,1);assert(!text().includes('Preferências salvas.'),'save failure is not old success');
   localStorageFixture('fixtureB');await wait(()=>text().includes('Preferências consultadas.'));assert(!text().includes('Falha sintética'));assert.equal(input('input[aria-label="Quero avisos BIDS quando a janela estiver validada"]').checked,false,'new account cannot inherit saved toggle');
+  w.qa.registered=true;w.dispatchEvent(new w.Event('crewcheck:auth-changed'));
+  await wait(()=>button('Desativar neste aparelho'));
+  const realFetch=w.fetch;let releaseOldRead;
+  w.fetch=(url,init)=>url==='/api/platform/notifications/preferences'&&!init?.method?new Promise(resolve=>{releaseOldRead=()=>realFetch(url,init).then(resolve);}):realFetch(url,init);
+  w.dispatchEvent(new w.Event('online'));await wait(()=>releaseOldRead);
+  w.localStorage.clear();w.dispatchEvent(new w.StorageEvent('storage',{key:null}));
+  await wait(()=>w.document.querySelector('form > fieldset').disabled);
+  assert(!button('Desativar neste aparelho'),'cross-tab clear removes previous-account device action');
+  releaseOldRead();await new Promise(resolve=>setTimeout(resolve,30));
+  assert(w.document.querySelector('form > fieldset').disabled,'late previous-account response cannot restore cleared session');
+  assert.equal(w.qa.writes.length,2,'account clearing never sends or writes');
   assert.equal(w.qa.permissionRequests,1,'no automatic permission prompts');
   console.log('PASS notification settings: grouped actual React controls, staged save, owner reset, denial/channel/web/native states, OFF gate, actual Home Brand back to cockpit/remount, phone deep-link and failed save; no real provider or account access.');
  }finally{dom.window.close();}
