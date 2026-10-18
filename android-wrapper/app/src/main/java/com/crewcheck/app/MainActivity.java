@@ -342,7 +342,7 @@ public class MainActivity extends Activity {
         try {
             NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (manager == null) return;
-            NotificationChannel channel = new NotificationChannel(NOTIFICATION_CHANNEL_ID, "Alertas CrewCheck", NotificationManager.IMPORTANCE_DEFAULT);
+            NotificationChannel channel = new NotificationChannel(NOTIFICATION_CHANNEL_ID, "Alertas CrewCheck", NotificationManager.IMPORTANCE_HIGH);
             channel.setDescription("Escala, saída inteligente, calendário e lembretes do CrewCheck.");
             manager.createNotificationChannel(channel);
         } catch (Exception ignored) {}
@@ -567,9 +567,9 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void scheduleCrewCheckNotification(String title, String body, long epochMillis) {
+    private boolean scheduleCrewCheckNotification(String title, String body, long epochMillis) {
         try {
-            if (epochMillis <= System.currentTimeMillis() || !hasCrewCheckNotificationPermission()) return;
+            if (epochMillis <= System.currentTimeMillis() || !hasCrewCheckNotificationPermission()) return false;
             ensureCrewCheckNotificationChannel();
             Intent intent = new Intent(this, CrewCheckNotificationReceiver.class);
             intent.putExtra("title", title == null || title.trim().isEmpty() ? "CrewCheck" : title);
@@ -579,13 +579,14 @@ public class MainActivity extends Activity {
             PendingIntent pendingIntent = PendingIntent.getBroadcast(this, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             android.app.AlarmManager alarm = (android.app.AlarmManager) getSystemService(Context.ALARM_SERVICE);
             long when = epochMillis;
-            if (alarm == null) return;
+            if (alarm == null) return false;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 alarm.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
             } else {
                 alarm.set(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
             }
-        } catch (Exception ignored) {}
+            return true;
+        } catch (Exception ignored) { return false; }
     }
 
     private boolean isExternalSupportUrl(String url) {
@@ -1204,8 +1205,8 @@ public class MainActivity extends Activity {
             final long when;
             try { when = Long.parseLong(epochMillis); } catch (Exception ex) { return false; }
             if (when <= System.currentTimeMillis() || !hasCrewCheckNotificationPermission()) return false;
-            runOnUiThread(() -> scheduleCrewCheckNotification(title, body, when));
-            return true;
+            // AlarmManager is callable on the bridge thread; report OS acceptance, not UI enqueue.
+            return scheduleCrewCheckNotification(title, body, when);
         }
 
         @JavascriptInterface
