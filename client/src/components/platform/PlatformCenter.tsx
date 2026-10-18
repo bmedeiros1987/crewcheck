@@ -28,7 +28,6 @@ import {
   restoreGooglePlayPurchases,
   revokeShare,
   revokeVisitor,
-  resendVisitorInvite,
   sendChat,
   sendVisitorChat,
   startGooglePlayPurchase,
@@ -49,7 +48,7 @@ type Props = {
 };
 
 const PERMISSION_LABELS: Array<[keyof PlatformPermissions, string, string]> = [
-  ['roster', 'Escala', 'Dias e programação compartilhados em linguagem simples'],
+  ['roster', 'Escala', 'Dias e programação autorizados'],
   ['map', 'Mapa', 'Mapa do mês e cidades'],
   ['hotels', 'Hotel', 'Hotel compartilhado pelo titular'],
   ['room', 'Quarto', 'Dado sensível; mantenha desligado por padrão'],
@@ -335,22 +334,8 @@ function VisitorsPanel() {
   const [editingVisitorId, setEditingVisitorId] = useState('');
   const [editingPermissions, setEditingPermissions] = useState<PlatformPermissions>(defaultVisitorPermissions);
   const [busy, setBusy] = useState(false);
-  const [resendingVisitorId, setResendingVisitorId] = useState('');
   async function load() { try { setVisitors((await listVisitors()).visitors || []); } catch {} }
   useEffect(() => { load(); }, []);
-  async function createTestVisitor() {
-    setBusy(true); setFallback(null);
-    try {
-      const stamp = Date.now();
-      const testPermissions = { ...defaultVisitorPermissions, roster: true, map: true, hotels: true, room: false, presentation: true, radar: true, contact: true, emergency: false, chat: true };
-      const result = await createVisitor({ email: `visitante.teste.${stamp}@crewcheck.local`, displayName: 'Visitante Teste Premium', telegram: '', permissions: testPermissions });
-      setFallback({ ...result, isTestVisitor: true });
-      await load();
-      toast.success('Visitante de teste criado com acesso à sua escala compartilhada.');
-    } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui criar o visitante de teste.'); }
-    finally { setBusy(false); }
-  }
-
   async function invite() {
     setBusy(true); setFallback(null);
     try {
@@ -361,25 +346,15 @@ function VisitorsPanel() {
     } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui convidar.'); }
     finally { setBusy(false); }
   }
-  async function resendInvite(visitor: any) {
-    setResendingVisitorId(visitor.id); setFallback(null);
-    try {
-      const result = await resendVisitorInvite(visitor.id);
-      if (!result.emailSent) setFallback(result);
-      await load();
-      toast.success(result.message || 'Convite reenviado.');
-    } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui reenviar o convite.'); }
-    finally { setResendingVisitorId(''); }
-  }
   async function remove(id: string) { try { await revokeVisitor(id); await load(); toast.success('Visitante revogado.'); } catch { toast.error('Não consegui revogar.'); } }
   function edit(visitor: any) { setEditingVisitorId(visitor.id); setEditingPermissions({ ...defaultVisitorPermissions, ...(visitor.permissions || {}) }); }
   async function savePermissions() { if (!editingVisitorId) return; setBusy(true); try { await updateVisitorPermissions(editingVisitorId, editingPermissions); setEditingVisitorId(''); await load(); toast.success('Permissões atualizadas imediatamente.'); } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui atualizar as permissões.'); } finally { setBusy(false); } }
   async function openChat(id: string) { setChatVisitorId(id); try { setChat(await loadVisitorChat(id)); } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui abrir o chat.'); } }
   async function send() { if (!message.trim() || !chatVisitorId) return; setBusy(true); try { setChat(await sendVisitorChat(chatVisitorId, message)); setMessage(''); } catch (err) { toast.error(err instanceof Error ? err.message : 'Não consegui enviar.'); } finally { setBusy(false); } }
   return <div className="cp-stack">
-    <article className="cp-box"><header><div><UserPlus/><span><h2>Novo visitante</h2><p>O convite usa e-mail interno, senha temporária e troca obrigatória no primeiro acesso.</p></span></div></header><div className="cp-form"><label><span>Nome</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Familiar ou amigo"/></label><label><span>E-mail</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="pessoa@email.com"/></label><label><span>Telegram</span><input value={telegram} onChange={(event) => setTelegram(event.target.value)} placeholder="@usuario (opcional)"/></label></div><PermissionEditor value={permissions} onChange={setPermissions}/><div className="cp-actions"><button className="cp-primary" onClick={invite} disabled={busy || !email}>{busy ? <Loader2 className="cp-spin"/> : <Mail/>} Enviar convite pelo CrewCheck</button><button onClick={createTestVisitor} disabled={busy}><ShieldCheck/> Gerar visitante de teste</button></div></article>
-    {fallback && <article className="cp-fallback"><AlertTriangle/><div><h2>{fallback.isTestVisitor ? 'Visitante de teste pronto' : 'E-mail não configurado'}</h2><p>{fallback.isTestVisitor ? 'Use estes dados para entrar como visitante e validar sua escala, o Concierge Familiar e as permissões.' : 'Compartilhe estes dados uma única vez:'}</p><strong>{fallback.link}</strong><b>Senha temporária: {fallback.temporaryPassword}</b><button onClick={() => navigator.clipboard.writeText(`${fallback.link}\nSenha temporária: ${fallback.temporaryPassword}`)}><Copy/> Copiar convite</button></div></article>}
-    <article className="cp-box"><h2>Visitantes</h2>{visitors.length ? <div className="cp-list">{visitors.map((visitor) => <div className="cp-visitor-entry" key={visitor.id}><div className="cp-visitor-row"><span><strong>{visitor.display_name}</strong><small>{visitor.email} · {visitor.status === 'active' ? 'Ativo' : visitor.status === 'revoked' ? 'Revogado' : 'Convite enviado'}</small></span><aside>{visitor.status === 'active' && visitor.permissions?.chat && <button onClick={() => openChat(visitor.id)}><MessageCircle/> Chat</button>}{visitor.status !== 'revoked' && <button onClick={() => resendInvite(visitor)} disabled={resendingVisitorId === visitor.id}>{resendingVisitorId === visitor.id ? <Loader2 className="cp-spin"/> : <Mail/>} Reenviar convite</button>}{visitor.status !== 'revoked' && <button onClick={() => edit(visitor)}><ShieldCheck/> Permissões</button>}{visitor.status !== 'revoked' && <button className="danger" onClick={() => remove(visitor.id)}>Revogar</button>}</aside></div>{editingVisitorId === visitor.id && <div className="cp-permission-edit"><p>As alterações valem imediatamente no site, Telegram e chat.</p><PermissionEditor value={editingPermissions} onChange={setEditingPermissions}/><div className="cp-actions"><button className="cp-primary" onClick={savePermissions} disabled={busy}><Check/> Salvar permissões</button><button onClick={() => setEditingVisitorId('')} disabled={busy}><X/> Cancelar</button></div></div>}</div>)}</div> : <p>Nenhum visitante definido.</p>}</article>
+    <article className="cp-box"><header><div><UserPlus/><span><h2>Novo visitante</h2><p>O convite usa e-mail interno, senha temporária e troca obrigatória no primeiro acesso.</p></span></div></header><div className="cp-form"><label><span>Nome</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Familiar ou amigo"/></label><label><span>E-mail</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="pessoa@email.com"/></label><label><span>Telegram</span><input value={telegram} onChange={(event) => setTelegram(event.target.value)} placeholder="@usuario (opcional)"/></label></div><PermissionEditor value={permissions} onChange={setPermissions}/><button className="cp-primary" onClick={invite} disabled={busy || !email}>{busy ? <Loader2 className="cp-spin"/> : <Mail/>} Enviar convite pelo CrewCheck</button></article>
+    {fallback && <article className="cp-fallback"><AlertTriangle/><div><h2>E-mail não configurado</h2><p>Compartilhe estes dados uma única vez:</p><strong>{fallback.link}</strong><b>Senha temporária: {fallback.temporaryPassword}</b><button onClick={() => navigator.clipboard.writeText(`${fallback.link}\nSenha temporária: ${fallback.temporaryPassword}`)}><Copy/> Copiar convite</button></div></article>}
+    <article className="cp-box"><h2>Visitantes</h2>{visitors.length ? <div className="cp-list">{visitors.map((visitor) => <div className="cp-visitor-entry" key={visitor.id}><div className="cp-visitor-row"><span><strong>{visitor.display_name}</strong><small>{visitor.email} · {visitor.status === 'active' ? 'Ativo' : visitor.status === 'revoked' ? 'Revogado' : 'Convite enviado'}</small></span><aside>{visitor.status === 'active' && visitor.permissions?.chat && <button onClick={() => openChat(visitor.id)}><MessageCircle/> Chat</button>}{visitor.status !== 'revoked' && <button onClick={() => edit(visitor)}><ShieldCheck/> Permissões</button>}{visitor.status !== 'revoked' && <button className="danger" onClick={() => remove(visitor.id)}>Revogar</button>}</aside></div>{editingVisitorId === visitor.id && <div className="cp-permission-edit"><p>As alterações valem imediatamente no site, Telegram e chat.</p><PermissionEditor value={editingPermissions} onChange={setEditingPermissions}/><div className="cp-actions"><button className="cp-primary" onClick={savePermissions} disabled={busy}><Check/> Salvar permissões</button><button onClick={() => setEditingVisitorId('')} disabled={busy}><X/> Cancelar</button></div></div>}</div>)}</div> : <p>Nenhum visitante definido.</p>}</article>
     {chat && <article className="cp-box cp-chat"><header><div><MessageCircle/><span><h2>{chat.person?.displayName}</h2><p>Chat privado com visitante autorizado</p></span></div><button onClick={() => { setChat(null); setChatVisitorId(''); }}><X/></button></header><div className="cp-messages">{chat.messages?.map((item: any) => <p className={item.mine ? 'mine' : ''} key={item.id}><span>{item.body}</span><small>{new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short', dateStyle: 'short' }).format(new Date(item.createdAt))}</small></p>)}</div><div className="cp-inline-form"><input value={message} onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && send()} placeholder="Digite uma mensagem"/><button className="cp-primary" onClick={send} disabled={!message.trim() || busy === true}><Send/></button></div></article>}
   </div>;
 }
