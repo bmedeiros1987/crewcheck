@@ -12,6 +12,10 @@ type GuardianResult = { id: string; token: string; url: string; expiresInHours: 
 
 export default function GuardianCenterView() {
   const [session, setSession] = useState<HealthDraftSession | null>(null);
+  // Retain only this mounted account's existing revocation handle while masked.
+  // Never persist the bearer link or reconstruct it from an unverified cache.
+  const [result, setResult] = useState<GuardianResult | null>(null);
+  const cardFence = useRef<ReturnType<typeof captureAuthSession> | null>(null);
   const [status, setStatus] = useState('Confirmando sua sessão…');
   const epoch = useRef(0);
   const [recheck, setRecheck] = useState(0);
@@ -19,18 +23,19 @@ export default function GuardianCenterView() {
   useLayoutEffect(() => {
     let mounted = true;
     let verification: AbortController | null = null;
-    const lock = (message: string) => {
+    const lock = (message: string, discardCard = false) => {
       epoch.current += 1;
       verification?.abort(); verification = null;
       if (content.current) content.current.hidden = true;
       setSession(null); setStatus(message);
+      if (discardCard) { cardFence.current = null; setResult(null); }
     };
     const verify = async () => {
       lock('Confirmando sua sessão…');
       const ticket = epoch.current;
       let snapshot: ReturnType<typeof captureAuthSession>;
       try { snapshot = captureAuthSession(); } catch { setStatus('Entre novamente para abrir Saúde.'); return; }
-      if (!snapshot.token || !snapshot.owner) { setStatus('Entre na sua conta para abrir Saúde.'); return; }
+      if (!snapshot.token || !snapshot.owner) { lock('Entre na sua conta para abrir Saúde.', true); return; }
       const controller = new AbortController(); verification = controller;
       const timer = window.setTimeout(() => controller.abort(), 10000);
       try {
@@ -38,21 +43,25 @@ export default function GuardianCenterView() {
         if (!mounted || ticket !== epoch.current || !snapshot.isCurrent()) return;
         const owner = String(response.user?.id || response.user?.email || '').trim().toLowerCase();
         if (!owner || owner !== snapshot.owner || response.user?.role === 'visitor') {
-          lock('Não foi possível confirmar a conta. Entre novamente para abrir Saúde.'); return;
+          lock('Não foi possível confirmar a conta. Entre novamente para abrir Saúde.', true); return;
         }
         const current = { owner, user: response.user, isCurrent: () => mounted && ticket === epoch.current && snapshot.isCurrent() };
+        if (cardFence.current && (!cardFence.current.isCurrent() || cardFence.current.owner !== owner)) { cardFence.current = null; setResult(null); }
         setSession(current); setStatus('');
       } catch {
         if (mounted && ticket === epoch.current) lock('Não foi possível confirmar sua sessão. Reconecte e tente novamente.');
       } finally { window.clearTimeout(timer); if (verification === controller) verification = null; }
     };
-    const changing = () => lock('Sessão alterada. Dados de Saúde protegidos.');
+    const changing = () => lock('Sessão alterada. Dados de Saúde protegidos.', true);
+    const suspend = () => lock('Dados de Saúde ocultos. Confirme sua sessão ao voltar.');
     const refresh = () => { void verify(); };
-    const storage = (event: StorageEvent) => { if (event.key === null || event.key === 'crewcheck_auth_token' || event.key === 'crewcheck_auth_user') refresh(); };
-    const visibility = () => { if (document.visibilityState === 'hidden') changing(); else refresh(); };
+    const authRefresh = () => { changing(); refresh(); };
+    const storage = (event: StorageEvent) => { if (event.key === null || event.key === 'crewcheck_auth_token' || event.key === 'crewcheck_auth_user') authRefresh(); };
+    const visibility = () => { if (document.visibilityState === 'hidden') suspend(); else refresh(); };
     window.addEventListener('crewcheck:auth-will-change', changing);
-    for (const name of ['crewcheck:auth-changed','crewcheck:auth-expired','focus','pageshow','online']) window.addEventListener(name, refresh);
-    window.addEventListener('pagehide', changing);
+    for (const name of ['crewcheck:auth-changed','crewcheck:auth-expired']) window.addEventListener(name, authRefresh);
+    for (const name of ['focus','pageshow','online']) window.addEventListener(name, refresh);
+    window.addEventListener('pagehide', suspend);
     window.addEventListener('storage', storage);
     document.addEventListener('visibilitychange', visibility);
     refresh();
@@ -60,12 +69,18 @@ export default function GuardianCenterView() {
       mounted = false; epoch.current += 1; verification?.abort();
       if (content.current) content.current.hidden = true;
       window.removeEventListener('crewcheck:auth-will-change', changing);
-      for (const name of ['crewcheck:auth-changed','crewcheck:auth-expired','focus','pageshow','online']) window.removeEventListener(name, refresh);
-      window.removeEventListener('pagehide', changing); window.removeEventListener('storage', storage);
+      for (const name of ['crewcheck:auth-changed','crewcheck:auth-expired']) window.removeEventListener(name, authRefresh);
+      for (const name of ['focus','pageshow','online']) window.removeEventListener(name, refresh);
+      window.removeEventListener('pagehide', suspend); window.removeEventListener('storage', storage);
       document.removeEventListener('visibilitychange', visibility);
     };
   }, [recheck]);
-  return <section aria-label="Saúde"><p role="status">{status}</p>{!session && <button type="button" onClick={() => setRecheck(value => value + 1)} disabled={status === 'Confirmando sua sessão…'}>Verificar sessão novamente</button>}<div ref={content} hidden={!session}>{session && <GuardianAccountForm key={epoch.current} session={session}/>}</div></section>;
+  const updateResult = (value: GuardianResult | null) => {
+    if (!session?.isCurrent()) return;
+    cardFence.current = value ? captureAuthSession() : null;
+    setResult(value);
+  };
+  return <section aria-label="Saúde"><p role="status">{status}</p>{!session && <button type="button" onClick={() => setRecheck(value => value + 1)} disabled={status === 'Confirmando sua sessão…'}>Verificar sessão novamente</button>}<div ref={content} hidden={!session}>{session && <GuardianAccountForm key={epoch.current} session={session} result={result} onResult={updateResult}/>}</div></section>;
 }
 
 function downloadDataUrl(url: string, filename: string) {
@@ -77,9 +92,8 @@ function downloadDataUrl(url: string, filename: string) {
   link.remove();
 }
 
-function GuardianAccountForm({ session }: { session: HealthDraftSession }) {
+function GuardianAccountForm({ session, result, onResult }: { session: HealthDraftSession; result: GuardianResult | null; onResult(value: GuardianResult | null): void }) {
   const [form, setForm] = useState(() => readHealthDraft(session));
-  const [result, setResult] = useState<GuardianResult | null>(null);
   const [qr, setQr] = useState('');
   const [busy, setBusy] = useState(false);
   const createPending = useRef(false);
@@ -117,7 +131,7 @@ function GuardianAccountForm({ session }: { session: HealthDraftSession }) {
         }),
       });
       if (!session.isCurrent()) return;
-      setResult(response);
+      onResult(response);
       toast.success('QR Saúde protegido criado.');
     } catch (error) {
       if (session.isCurrent()) toast.error(error instanceof Error ? error.message : 'Não foi possível criar o QR Saúde.');
@@ -131,7 +145,7 @@ function GuardianAccountForm({ session }: { session: HealthDraftSession }) {
     try {
       await authFetch(`/api/guardian/card?id=${encodeURIComponent(result.id)}`, { method: 'DELETE' });
       if (!session.isCurrent()) return;
-      setResult(null); setQr('');
+      onResult(null); setQr('');
       toast.success('QR Saúde revogado.');
     } catch (error) { if (session.isCurrent()) toast.error(error instanceof Error ? error.message : 'Não foi possível revogar.'); }
     finally { if (session.isCurrent()) setBusy(false); }
