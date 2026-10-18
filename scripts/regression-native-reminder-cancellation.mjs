@@ -47,3 +47,4 @@ authContext.persistSession({token:'fake-B',user:{id:'B'}});assert.equal(authCall
 authContext.expireSession();assert(authCalls.slice(-2).every(x=>x.hint===''));assert.equal(values.has('crewcheck_auth_token'),false);
 authContext.persistSession({token:'fake-B-again',user:{id:'B'}});authContext.clearSession();assert.equal(authCalls.at(-1).hint,'');assert.equal(values.has('crewcheck_auth_user'),false);
 console.log('PASS actual authClient mutation functions: pre-mutation cancellation on logout/account switch/expiry; same-account renewal preserved; synthetic accounts only');
+await import('./regression-native-reminder-receiver.mjs');

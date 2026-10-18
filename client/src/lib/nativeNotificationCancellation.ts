@@ -34,7 +34,7 @@ export function installNativeNotificationCancellation(env: Environment) {
     env.target.removeEventListener('pagehide', changed);
   };
 }
-if (typeof window !== 'undefined') installNativeNotificationCancellation({ target: window,
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') installNativeNotificationCancellation({ target: window,
   identity: () => { try { return localStorage.getItem('crewcheck_auth_token') ? String(JSON.parse(localStorage.getItem('crewcheck_auth_user') || '{}').id || '') : ''; } catch { return ''; } },
   host: () => (window as unknown as { AndroidCrewCheckNative?: Host }).AndroidCrewCheckNative,
 });
