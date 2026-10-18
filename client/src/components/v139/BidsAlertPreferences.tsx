@@ -97,7 +97,7 @@ export function BidsAlertPreferences() {
       <form onSubmit={event => { event.preventDefault(); write('save-preferences'); }}>
         <fieldset disabled={busy || !snapshot}>
           <legend>Preferências desta conta</legend>
-          <label className="cc-bids-alert-optin cc-notification-toggle"><span><strong>Avisos BIDS</strong><small>{draft.enabled ? 'Ligado na conta' : 'Desligado'}</small></span><input aria-label="Quero avisos BIDS quando a janela estiver validada" type="checkbox" checked={draft.enabled} onChange={event => edit('enabled', event.target.checked)} /></label>
+          <label className="cc-bids-alert-optin cc-notification-toggle"><span><strong>Avisos BIDS</strong><small>{!snapshot ? 'Não verificado' : dirty.current ? 'Alterações não salvas' : draft.enabled ? 'Ligado na conta' : 'Desligado'}</small></span><input aria-label="Quero avisos BIDS quando a janela estiver validada" type="checkbox" checked={draft.enabled} onChange={event => edit('enabled', event.target.checked)} /></label>
           <details className="cc-notification-group"><summary><span><strong>Onde receber</strong><small>Disponibilidade não confirmada</small></span></summary><fieldset>
             <legend className="cc-notification-sr">Onde prefiro receber</legend>
             <label className="cc-bids-alert-optin"><input type="checkbox" checked={draft.channels.all} onChange={event => edit('channels', { ...draft.channels, all: event.target.checked })} /> Todos</label>

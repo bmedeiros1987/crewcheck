@@ -79,7 +79,7 @@ if(process.argv.includes('--serve')){
   assert(text().includes('Notificações não autorizadas'),'denial never becomes success');
   for(const name of ['Onde receber','Horário e silêncio','Outros avisos e despertador']){assert(summary(name));assert(!summary(name).parentElement.open);}
   const toggle=input('input[aria-label="Quero avisos BIDS quando a janela estiver validada"]');toggle.click();
-  assert.equal(w.qa.writes.length,0,'toggle stages draft only');
+  assert.equal(w.qa.writes.length,0,'toggle stages draft only');assert(text().includes('Alterações não salvas'));assert(!text().includes('Ligado na conta'),'draft must not claim saved account state');
   summary('Onde receber').click();const all=[...w.document.querySelectorAll('label')].find(e=>e.textContent.trim()==='Todos').querySelector('input');all.click();
   assert.equal(w.qa.writes.length,0);button('Salvar preferências').click();await wait(()=>w.qa.revision===1);
   assert.equal(w.qa.writes[0].preferences.enabled,true);assert.equal(w.qa.writes[0].preferences.channels.all,true);assert.equal(w.qa.writes[0].preferences.preferredTime,'10:30');

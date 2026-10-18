@@ -62,7 +62,7 @@ try{
  assert.equal(await page.evaluate(()=>window.permissionsRequested),1);
  await page.getByText('Notificações não autorizadas', {exact:false}).waitFor();
  await page.evaluate(()=>{window.nativeStatus={notifications:true,notificationAppEnabled:true,notificationChannelEnabled:true};window.dispatchEvent(new Event('crewcheck:permissions-updated'));});
- await page.getByText('Permissão disponível.', {exact:true}).waitFor();await page.getByRole('button',{name:'Ajuda: Permissão e outros aparelhos'}).click();await page.getByText('não comprova envio ou recebimento', {exact:false}).waitFor();
+ await page.getByText('Permissão disponível.', {exact:true}).waitFor();await page.locator('summary[aria-label="Ajuda: Permissão e outros aparelhos"]').click();await page.getByText('não comprova envio ou recebimento', {exact:false}).waitFor();
  console.log('Actual notification readiness UI PASS: current bearer, offline/reconnect, cleared account state, discarded late responses, acceptance/unknown/expiry/cancel labels, zero sends or permission requests.');
  console.log('Device readiness PASS: app/channel blocks, legacy unknown status, explicit permission tap only, queued request never reported granted, fresh native status, zero notification sends.');
 }finally{resume?.();await browser?.close();await new Promise(r=>server.close(r));}
