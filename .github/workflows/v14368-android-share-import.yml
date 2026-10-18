@@ -10,6 +10,7 @@ on:
       - 'scripts/v14365/**'
       - 'scripts/v14368/**'
       - 'scripts/regression-v14-3-68-android-share-import.mjs'
+      - 'scripts/regression-android-pdf-share-receive.mjs'
       - '.github/workflows/v14368-android-share-import.yml'
 
 permissions:
@@ -36,10 +37,19 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
       - run: npm ci || npm install
+      - name: Verify pinned Android framework and receive synthetic PDF before preparation
+        run: |
+          framework_jar="$RUNNER_TEMP/android-all-15-robolectric-12650502.jar"
+          curl --fail --silent --show-error --location --retry 3 --output "$framework_jar" https://repo.maven.apache.org/maven2/org/robolectric/android-all/15-robolectric-12650502/android-all-15-robolectric-12650502.jar
+          printf '%s  %s\n' 6c0670454f6fcee9f1b17aa393e81d71bf26e7e6ae7c5777ed3924b062191d5b "$framework_jar" | sha256sum --check
+          printf 'CREWCHECK_ANDROID_FRAMEWORK_JAR=%s\n' "$framework_jar" >> "$GITHUB_ENV"
+          CREWCHECK_ANDROID_FRAMEWORK_JAR="$framework_jar" node scripts/regression-android-pdf-share-receive.mjs
       - name: Prepare canonical CrewCheck source
         run: node scripts/v139/apply.mjs
       - name: Validate Android share bridge and canonical import
         run: node scripts/regression-v14-3-68-android-share-import.mjs
+      - name: Verify actual Android matcher and prepared receiver with synthetic URI grants
+        run: node scripts/regression-android-pdf-share-receive.mjs
       - name: TypeScript check
         run: npx tsc --noEmit
       - name: Build offline web shell consumed by Android
