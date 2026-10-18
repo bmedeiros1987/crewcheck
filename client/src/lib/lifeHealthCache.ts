@@ -1,3 +1,5 @@
+import { captureAuthSession } from './authClient';
+
 /** Local read/write fence only; never authenticates a health source or enables collection. */
 export type LifeHealthSession = { owner: string; token: string | null; isCurrent(): boolean };
 export const isLifeHealthCacheKey = (key: string) => key.startsWith('crewcheck:life:');
@@ -40,4 +42,15 @@ export function clearCompanionHealthCache(session: LifeHealthSession, storage: S
       !['samsung_health', 'samsung-companion'].includes(item?.source)), storage);
     if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key } }));
   } catch {}
+}
+
+// Installed by main.tsx before rendering App, independently of the Life screen.
+if (typeof window !== 'undefined') {
+  for (const name of ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired'])
+    window.addEventListener(name, () => invalidateLifeHealthCache());
+  window.addEventListener('storage', (event) => {
+    if (event.key === null || event.key === 'crewcheck_auth_token' || event.key === 'crewcheck_auth_user')
+      invalidateLifeHealthCache();
+  });
+  window.addEventListener('crewcheck:life-companion-summary', () => clearCompanionHealthCache(captureAuthSession()));
 }

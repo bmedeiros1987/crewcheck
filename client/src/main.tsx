@@ -1,3 +1,4 @@
+import './lib/lifeHealthCache';
 import './lib/nativeNotificationCancellation';
 import './lib/stayAlarmHost';
 import './lib/crewcheckPremiumRuntime';

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';import {build,transform} from 'esbuild';
+assert(fs.readFileSync('client/src/main.tsx','utf8').includes("import './lib/lifeHealthCache';"),'global cache boundary must load before Life mounts');
 const bundle=await build({stdin:{contents:`export * from './client/src/lib/authClient';export * from './client/src/lib/lifeConcierge';export * from './client/src/lib/lifeHealthCache';`,resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'cjs',platform:'node'});
 class Store { values=new Map();get length(){return this.values.size;}key(i){return [...this.values.keys()][i]??null;}getItem(k){return this.values.get(k)??null;}setItem(k,v){this.values.set(k,String(v));}removeItem(k){this.values.delete(k);}clear(){this.values.clear();}}
 let now=Date.parse('2026-10-18T15:00:00Z');class Clock extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}

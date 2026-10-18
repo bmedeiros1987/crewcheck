@@ -190,7 +190,8 @@ A variante Play principal mantém a exclusão Health Connect em store-policy.
 
 O cache web `crewcheck:life:*` usa envelope local com proprietário e schema 2;
 entradas anteriores sem proprietário são descartadas, sem migração para a conta
-atual. `authClient` invalida esses caches e o resumo em memória na fronteira global
+atual. `main.tsx` instala um listener independente de Life para invalidar esses caches e
+o resumo em memória nos eventos canônicos de `authClient`, na fronteira global
 de sessão e em mudanças de autenticação entre abas, mesmo com Life desmontado.
 Leituras verificam proprietário/sessão vigente; callbacks capturam a geração antes
 da leitura. Esse owner local é um fence de privacidade, não autenticação Samsung.
