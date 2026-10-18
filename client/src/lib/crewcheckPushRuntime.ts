@@ -34,10 +34,14 @@ export function installCrewCheckPushLifecycle(){
    // A late logout cleanup must not erase a renewed same-account session.
    if(owner()===priorOwner&&getToken())return;
    const registration=await navigator.serviceWorker.ready;
-   const subscription=await registration.pushManager.getSubscription();
    if(owner()===priorOwner&&getToken())return;
+   // Clear the account binding even when PushManager lookup fails. Keep the
+   // origin lock through unsubscribe so a new activation cannot be erased.
    const cancelled=await worker(registration,'cancel',{ownerId:priorOwner});
-   if(cancelled.ok&&!(owner()===priorOwner&&getToken()))await subscription?.unsubscribe();
+   if(cancelled.ok&&!(owner()===priorOwner&&getToken())){
+    const subscription=await registration.pushManager.getSubscription();
+    if(!(owner()===priorOwner&&getToken()))await subscription?.unsubscribe();
+   }
   }).catch(()=>{});
   previousOwner=current;
  };
