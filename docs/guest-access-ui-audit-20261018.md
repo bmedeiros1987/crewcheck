@@ -30,7 +30,7 @@ Não aplicado. Reduzir 10→6 no visitante (e eventualmente 8→6 na conta) aume
 
 ## Referências visuais e limite
 
-Library resolveu os dois arquivos e forneceu descrição/OCR. O helper exigido para baixar pixels deixou de estar disponível quando o catálogo de skills foi atualizado; a materialização não foi concluída. Não se afirma inspeção dos pixels originais no Mac. Os screenshots locais são fixtures sintéticas da UI real, sem dados de Bruno.
+As duas imagens originais da Library foram materializadas pelo helper oficial e inspecionadas no Mac. Confirmam os campos sem olho/regra e o bloqueio de tentativas na aceitação, além de duas linhas da mesma conexão nas direções enviada/recebida. Não foram enviadas a revisores nem incorporadas às fixtures; os screenshots locais usam somente dados fictícios.
 
 ## Validação
 
