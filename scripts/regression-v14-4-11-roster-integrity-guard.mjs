@@ -207,7 +207,8 @@ assert.match(loader, /v14411\/apply\.mjs/);
 assert.equal(policy.versionName, '14.4.11');
 assert.equal(release.version, '14.4.11');
 assert.equal(pkg.version, '14.4.11');
-assert.equal(policy.artifacts.app.versionCode, 144110);
+// Live Play already contains shared-package code144155; phone release must upgrade it.
+assert.equal(policy.artifacts.app.versionCode, 144156);
 assert.equal(policy.artifacts.wear.versionCode, 144111);
 assert.equal(policy.artifacts.watchface.versionCode, 144112);
 
