@@ -108,6 +108,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   const selectedMonth=await page.getByLabel('Competência de referência',{exact:true}).inputValue();
   await showFinancial(page,'charts');assert.equal(await page.locator('.cc-bank-details').isVisible(),true);assert.equal(await page.locator('.cc-per-diem-items').isVisible(),false);
   assert.equal(await page.getByLabel('Competência de referência',{exact:true}).inputValue(),selectedMonth,'month survives screen navigation');
+  await page.waitForFunction(()=>document.querySelector('[data-financial-screen-heading]')===document.activeElement);
   assert.equal(await page.locator('[data-financial-screen-heading]').evaluate(el=>el===document.activeElement),true,'new screen receives heading focus');
   if(scenario==='complete'){assert.equal(await page.locator('.cc-bank-chart-row').count(),2,'categories reuse actual labels without inferred financial rules');assert.match(await page.locator('.cc-bank-chart').innerText(),/864,15/,'seven fixture lines total per category');}
   await page.screenshot({path:path.join(out,`${width}-${theme}-${scenario}-details.png`),fullPage:false});

@@ -6,7 +6,7 @@ import FinancialHistoryWithoutRoster from '@/components/finance/FinancialHistory
 import {validFinancialDay} from '@/lib/financialHistoryPeriods';
 import {parseFinancialDecimal} from '@shared/financialFx.mjs';
 import { AlertRosterNavigation } from '@/components/alerts/AlertRosterNavigation';
-import { peekPendingNavigationContext as peekAlertRosterContext } from '@/lib/navigationContext';
+import { clearPendingNavigationContext as clearRawNavigationContext, peekPendingNavigationContext as peekAlertRosterContext } from '@/lib/navigationContext';
 import { isGroundAlertIgnored, GROUND_DISPOSITION_EVENT } from '@/lib/groundAlertDispositions';
 import { alertRosterOwned } from '@/lib/alertRosterOwnership';
 import { AlertCenter } from '@/components/alerts/AlertCenter';
@@ -1605,7 +1605,7 @@ async function askTelegramConcierge(text: string) {
 function Brand({ back, onMenu, pulse = false, backLabel, global = false }: { back?: boolean; onMenu?: () => void; pulse?: boolean; backLabel?: string; global?: boolean }) {
   if (!global && !pulse) return null;
   const click = onMenu || (back ? (() => { if (['perdiem','salary'].includes(new URLSearchParams(location.search).get('view') || '') && history.state?.ccEnteredFromConcierge) history.back(); else window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' })); }) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));
-  const lockup = <div className="cz-brand-lockup"><CrewCheckPulse compact brandMark fallback={<CrewCheckMark/>}/><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>;
+  const lockup = <div className="cz-brand-lockup"><CrewCheckPulse compact brandMark fallback={<span className="cz-logo"><Plane size={26}/></span>}/><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>;
   return <header className="cz-brand-row">
     <button className="cz-menu-btn" onClick={click} aria-label={back ? backLabel || alertText().back : alertText().menu}>{back ? '←' : <Menu size={28}/>}</button>
     <div className="cc-brand-and-notice">{lockup}<CrewCheckPulse compact/></div>
@@ -5164,8 +5164,8 @@ export default function Home() {
         history[history.state?.crewcheckOverlay?'replaceState':'pushState']({...history.state,crewcheckOverlay:undefined,ccFinancial:undefined,ccFinancialPosition:undefined,ccConciergePosition:undefined,ccEnteredFromConcierge:fromConcierge||(['salary','perdiem'].includes(nextView)&&history.state?.ccEnteredFromConcierge)},'',url);
       }
     }
-    const pendingNavigation = peekPendingNavigationContext();
-    if (!pendingNavigation || pendingNavigation.targetView !== nextView) clearPendingNavigationContext();
+    const pendingNavigation = peekAlertRosterContext();
+    if (!pendingNavigation || pendingNavigation.targetView !== nextView) clearRawNavigationContext();
     setViewState(nextView);
   }
   const currencyReturnView=useRef<ZeroView>('cockpit'),currencyPreviousView=useRef<ZeroView>(view);
