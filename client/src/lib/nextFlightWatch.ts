@@ -37,11 +37,12 @@ export function applyNextFlightToWatchSnapshot(
   } else if (!out.nextFlight || out.nextFlight === info.flight) {
     out.nextFlight = fit(info.flight, 16);
     const temporalDetail = out.nextDetail;
+    const departureKnown = out.schedule.some(item => item.id === options.nextFlightScheduleId && Boolean(item.time));
     out.nextDetail = fit([
       temporalDetail,
       info.origin && info.destination ? `${info.origin} → ${info.destination}` : '',
       info.gate ? `P${gateLabel}` : 'Portão não informado',
-      info.departure,
+      departureKnown ? info.departure : '',
       info.stale ? 'desatualizado' : '',
     ].filter(Boolean).join(' • '), 64);
   }

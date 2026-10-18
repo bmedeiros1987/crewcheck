@@ -6,6 +6,7 @@ import android.os.Looper;
 import com.google.android.gms.wearable.MessageEvent;
 import org.json.JSONObject;
 import org.junit.Test;
+import org.junit.Before;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.Shadows;
@@ -15,6 +16,8 @@ import org.robolectric.android.controller.ServiceController;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
+import org.robolectric.annotation.LooperMode;
+import org.robolectric.shadows.ShadowSystemClock;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
@@ -29,9 +32,13 @@ import static org.junit.Assert.*;
  * Activity resume/pause, posted minute tick and ambient callbacks. Android Keystore
  * key lookup alone uses a fixed TEST key; no device transport/pairing claim. */
 @RunWith(org.robolectric.RobolectricTestRunner.class)
+@LooperMode(LooperMode.Mode.LEGACY)
 @Config(sdk=35, qualifiers="w192dp-h192dp-round-mdpi", shadows={
         WatchTextLayoutTest.NoDeviceAmbient.class, WatchCacheLifecycleTest.TestKey.class})
 public class WatchCacheLifecycleTest {
+    @Before public void alignSyntheticWallClock() {
+        ShadowSystemClock.setNanoTime(System.currentTimeMillis() * 1_000_000L);
+    }
     @Implements(value=SecureSnapshotStore.class, isInAndroidSdk=false)
     public static class TestKey {
         @Implementation protected SecretKey getOrCreateKey() {
@@ -80,8 +87,11 @@ public class WatchCacheLifecycleTest {
             assertFalse("paused Activity has no cache listener",text(content(screen)).contains("C234"));
             activity.resume();settle();
             assertTrue("resume loads newest cache",text(content(screen)).contains("C234"));
+            // Handler scheduling and wall clock are independent in Robolectric4.14.
+            // Advance the app's synthetic wall clock before running the posted tick.
+            ShadowSystemClock.setNanoTime((expiry + 1L) * 1_000_000L);
             Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(3));
-            assertTrue(System.currentTimeMillis()>expiry);
+            assertTrue(ShadowSystemClock.currentTimeMillis()>expiry);
             assertTrue(text(content(screen)).contains("Snapshot vencido"));
             assertFalse("automatic minute tick hides expired gate",text(content(screen)).contains("C234"));
         } finally { service.destroy(); }
@@ -96,6 +106,9 @@ public class WatchCacheLifecycleTest {
             screen.getAmbientCallback().onEnterAmbient(new Bundle());
             deliver(service.get(),payload("B123",expiry));settle();
             assertTrue("ambient listener records current cache",new SecureSnapshotStore(context).load().gate.equals("B123"));
+            // Handler scheduling and wall clock are independent in Robolectric4.14.
+            // Advance the app's synthetic wall clock before running the posted tick.
+            ShadowSystemClock.setNanoTime((expiry + 1L) * 1_000_000L);
             Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(3));
             screen.getAmbientCallback().onUpdateAmbient();
             assertFalse(text(content(screen)).contains("18:20"));

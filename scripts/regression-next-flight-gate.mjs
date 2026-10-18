@@ -2,6 +2,7 @@
 // Só fixtures sintéticas: nenhuma rede, credencial, Cirium, FlightAware ou relógio físico.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -309,6 +310,12 @@ fs.rmSync(out, { recursive: true, force: true });
     const onlyInternalId = ctxVm.normalizeFlightAwareFlight({ fa_flight_id: 'LAN3377-1697000000-airline-0123', gate_origin: '9', scheduled_out: '2032-10-13T23:00:00Z' }, ctx);
     assert.equal(m.resolveNextFlightGate({ event: { ...ev, flightNumber: roster }, radar: { ...base, flight: onlyInternalId.flight, gate: '9', departure: onlyInternalId.departure }, now }).radarRejected, 'other-flight', 'fa_flight_id sem ident falha fechado');
   }
+}
+
+for (const TZ of ['UTC', 'America/Sao_Paulo', 'Pacific/Auckland']) {
+  const result = spawnSync(process.execPath, ['scripts/regression-watch-source-pipeline.mjs'], { env: { ...process.env, TZ }, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  process.stdout.write(result.stdout);
 }
 
 console.log(`[next-flight-gate] seleção, virada de data, portão/posição, ausente/antigo, manual, conta e celular-relógio OK (TZ=${process.env.TZ || 'local'})`);

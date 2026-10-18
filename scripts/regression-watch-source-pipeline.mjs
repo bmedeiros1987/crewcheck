@@ -11,8 +11,8 @@ import {pathToFileURL} from 'node:url';
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'watch-source-'));
 try {
  const root=process.cwd();
- fs.writeFileSync(path.join(dir,'entry.ts'),`export {normalizeRosterDays,buildCanonicalRosterEvents,selectNextRosterEvent,isOperationalCanonicalEvent} from ${JSON.stringify(root+'/client/src/lib/canonicalRoster.ts')}; export * from ${JSON.stringify(root+'/client/src/lib/scheduleActivityClassification.ts')}; export {buildCrewCheckWatchSnapshot} from ${JSON.stringify(root+'/client/src/lib/watchContext.ts')};`);
- await build({entryPoints:[path.join(dir,'entry.ts')],outfile:path.join(dir,'bundle.mjs'),bundle:true,platform:'node',format:'esm',logLevel:'silent'});
+ fs.writeFileSync(path.join(dir,'entry.ts'),`export {normalizeRosterDays,buildCanonicalRosterEvents,selectNextRosterEvent,isOperationalCanonicalEvent} from ${JSON.stringify(root+'/client/src/lib/canonicalRoster.ts')}; export * from ${JSON.stringify(root+'/client/src/lib/scheduleActivityClassification.ts')}; export {resolveNextFlightGate} from ${JSON.stringify(root+'/client/src/lib/nextFlightGate.ts')}; export {applyNextFlightToWatchSnapshot} from ${JSON.stringify(root+'/client/src/lib/nextFlightWatch.ts')}; export {buildCrewCheckWatchSnapshot} from ${JSON.stringify(root+'/client/src/lib/watchContext.ts')};`);
+ await build({entryPoints:[path.join(dir,'entry.ts')],outfile:path.join(dir,'bundle.mjs'),bundle:true,alias:{'@':root+'/client/src'},platform:'node',format:'esm',logLevel:'silent'});
  const lib=await import(pathToFileURL(path.join(dir,'bundle.mjs')).href);
  let now=Date.parse('2032-10-18T21:00:00Z');
  class FixtureDate extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
@@ -42,6 +42,7 @@ try {
  // Canonical departure fallback00:00 is not publication evidence.
  now=Date.parse('2032-10-18T02:00:00Z');
  const noStd=snapshot(roster({}));assert.equal(noStd.events[0].departure,'00:00');assert.equal(noStd.out.boardingTime,'');assert.equal(noStd.out.primaryTime,'');assert.equal(noStd.out.schedule[0].time,'');assert.match(noStd.out.detail,/a confirmar/);
+ const noStdInfo=lib.resolveNextFlightGate({event:noStd.events[0],now});const enriched=lib.applyNextFlightToWatchSnapshot(noStd.out,noStdInfo,{primaryEventId:noStd.events[0].id,nextFlightScheduleId:noStd.events[0].canonical.id});assert(!enriched.nextDetail.includes('00:00'),'Gate projection must not reintroduce canonical fallback STD');
  now=Date.parse('2032-10-18T15:00:00Z');
  const folga=snapshot({...roster({}),days:[{date:'18/10/2032',dayNumber:18,month:10,year:2032,type:'DO',pairingCode:'DO',base:'GRU',legs:[],rawText:'SYNTHETIC ONLY'}]});
  assert.equal(folga.selected.placeholder,true,'Actual Home selects noFutureLeg for a rest-only roster');assert.equal(folga.out.state,'OFF_DUTY');assert.equal(folga.out.headline,'FOLGA');assert.equal(folga.out.presentationTime,'');assert(folga.out.validUntilEpochMs>now);assert.equal(lib.buildCrewCheckWatchSnapshot(folga.events,undefined,null,now).state,'OFF_DUTY');
