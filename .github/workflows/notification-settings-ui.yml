@@ -1,0 +1,70 @@
+name: CrewCheck notification settings UI
+
+on:
+  pull_request:
+    paths:
+      - 'client/src/components/notifications/**'
+      - 'client/src/components/v139/BidsAlertPreferences.tsx'
+      - 'scripts/regression-notification-settings-dom.mjs'
+      - 'scripts/regression-notification-center-browser.mjs'
+      - 'scripts/regression-notification-readiness-browser.mjs'
+      - 'scripts/regression-bids-alert-preferences-browser.mjs'
+      - 'scripts/regression-web-push-device-browser.mjs'
+      - '.github/workflows/notification-settings-ui.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/components/notifications/**'
+      - 'client/src/components/v139/BidsAlertPreferences.tsx'
+      - 'scripts/regression-notification-settings-dom.mjs'
+      - '.github/workflows/notification-settings-ui.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notification-settings-ui-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  synthetic-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Use existing synthetic browser test versions
+        run: |
+          npm install --prefix "$RUNNER_TEMP/notification-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0 jsdom@22.1.0
+          node "$RUNNER_TEMP/notification-ui/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify raw components with fictional accounts and devices
+        env:
+          NOTIFICATIONS_JSDOM_PACKAGE: ${{ runner.temp }}/notification-ui/package.json
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/notification-ui/package.json
+        run: |
+          node scripts/regression-notification-settings-dom.mjs
+          node scripts/regression-notification-readiness-browser.mjs
+          node scripts/regression-notification-center-browser.mjs
+          node scripts/regression-bids-alert-preferences-browser.mjs
+          node scripts/regression-web-push-device-browser.mjs
+      - name: Prepare and validate web build only
+        run: |
+          node scripts/v139/apply.mjs
+          npx tsc --noEmit
+          npx vite build
+      - name: Verify prepared components preserve the same contracts
+        env:
+          NOTIFICATIONS_JSDOM_PACKAGE: ${{ runner.temp }}/notification-ui/package.json
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/notification-ui/package.json
+        run: |
+          node scripts/regression-notification-settings-dom.mjs
+          node scripts/regression-notification-readiness-browser.mjs
+          node scripts/regression-notification-center-browser.mjs
+          node scripts/regression-bids-alert-preferences-browser.mjs
+          node scripts/regression-web-push-device-browser.mjs
