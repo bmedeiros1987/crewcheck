@@ -1,0 +1,53 @@
+name: Play catalog recovery synthetic
+on:
+  pull_request:
+    paths:
+      - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckBillingBridge.java'
+      - 'client/src/components/platform/PlatformCenter.tsx'
+      - 'client/src/lib/platformClient.ts'
+      - 'shared/play-catalog-readiness.*'
+      - 'scripts/regression-play-catalog-*.mjs'
+      - '.github/workflows/play-catalog-recovery.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: npm ci
+      - name: Verify native error methods and actual frontend handlers before preparation
+        run: |
+          node scripts/regression-play-catalog-readiness.mjs
+          node scripts/regression-play-catalog-recovery.mjs
+      - name: Prepare and build existing application
+        run: npm run build
+      - run: npx tsc --noEmit
+      - name: Verify preparation preserves recovery
+        run: |
+          node scripts/regression-play-catalog-readiness.mjs
+          node scripts/regression-play-catalog-recovery.mjs
+      - name: Install isolated browser fixture
+        run: |
+          npm install --prefix "$RUNNER_TEMP/billing-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/billing-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify actual subscription component without real purchases or APIs
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/billing-browser/package.json
+        run: node scripts/regression-play-catalog-recovery-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: play-catalog-recovery-synthetic
+          path: artifacts/play-catalog-recovery/
+          if-no-files-found: ignore

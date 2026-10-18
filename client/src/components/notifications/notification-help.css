@@ -1,0 +1,5 @@
+.cc-notification-help-icon { margin: 0; min-width: 0; }
+.cc-notification-help-icon > summary { display: flex; align-items: center; justify-content: center; list-style: none; width: 44px; min-height: 44px; padding: 0; border-radius: 50%; color: inherit; border: 1px solid rgba(148,163,184,.45); font-weight: 700; cursor: pointer; }
+.cc-notification-help-icon > summary::-webkit-details-marker { display: none; }
+.cc-notification-help-icon > summary:focus-visible { outline: 3px solid #a78bfa; outline-offset: 3px; }
+.cc-notification-help-icon > div { padding: 0 12px; border-left: 2px solid #a78bfa; margin: 8px 0; }

@@ -2,13 +2,18 @@ name: CrewCheck Mobile safe Play update notice
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, fix/android-background-notifications-20261018, feat/android-in-app-update-notice-20261018]
     paths:
       - 'android-wrapper/app/build.gradle'
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckPlayUpdateCoordinator.java'
       - 'scripts/mobile-play-update/**'
+      - 'scripts/android-play/release-policy.json'
       - 'scripts/p0-android-self-heal/finalize.mjs'
       - 'scripts/regression-mobile-play-update-notice.mjs'
+      - 'scripts/regression-native-play-update-ui.cjs'
+      - 'client/src/components/NativePlayUpdateNotice.tsx'
+      - 'client/src/components/native-play-update-notice.css'
+      - 'client/src/App.tsx'
       - '.github/workflows/mobile-play-update-notice.yml'
   workflow_dispatch:
 
@@ -33,10 +38,16 @@ jobs:
         with:
           gradle-version: '8.13'
       - run: npm ci
+      - run: npm install --no-save --package-lock=false playwright@1.58.2
+      - run: npx playwright install --with-deps chromium
+      - name: Test actual notice offline before canonical preparation
+        run: node scripts/regression-native-play-update-ui.cjs
       - name: Materialize canonical Mobile runtime
         run: node scripts/v139/apply.mjs
       - name: Assert non-disruptive Play update contract
         run: node scripts/regression-mobile-play-update-notice.mjs
+      - name: Test actual notice after canonical preparation
+        run: node scripts/regression-native-play-update-ui.cjs
       - name: Build embedded/offline web shell from materialized sources
         run: npx vite build
       - uses: android-actions/setup-android@v4
