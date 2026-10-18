@@ -46,18 +46,33 @@ export default function SystemStatusPage() {
   useEffect(() => {
     let alive = true;
     let generation = 0;
+    let controller: AbortController | undefined;
+    let activeTimeout: number | undefined;
     const load = () => {
+      controller?.abort();
+      window.clearTimeout(activeTimeout);
       const requestGeneration = ++generation;
-      const isCurrent = () => alive && requestGeneration === generation;
-      return fetch('/api/maintenance/status', { cache: 'no-store' })
+      const requestController = new AbortController();
+      controller = requestController;
+      let timedOut = false;
+      const isCurrent = () => alive && requestGeneration === generation && !timedOut;
+      const requestTimeout = window.setTimeout(() => {
+        if (!isCurrent()) return;
+        timedOut = true;
+        requestController.abort();
+        setUnconfirmed(true);
+        setLoading(false);
+      }, 20_000);
+      activeTimeout = requestTimeout;
+      return fetch('/api/maintenance/status', { cache: 'no-store', signal: requestController.signal })
       .then((response) => { if (!response.ok) throw new Error('Status unavailable'); return response.json(); })
       .then((payload) => { if (!payload || typeof payload.enabled !== 'boolean') throw new Error('Invalid status'); if (isCurrent()) { setState(payload); setUnconfirmed(false); } })
       .catch(() => { if (isCurrent()) setUnconfirmed(true); })
-      .finally(() => { if (isCurrent()) setLoading(false); });
+      .finally(() => { window.clearTimeout(requestTimeout); if (isCurrent()) setLoading(false); });
     };
     load();
     const timer = window.setInterval(load, 60_000);
-    return () => { alive = false; window.clearInterval(timer); };
+    return () => { alive = false; window.clearInterval(timer); window.clearTimeout(activeTimeout); controller?.abort(); };
   }, []);
 
   const components = useMemo(() => Array.isArray(state.components) && state.components.length ? state.components : DEFAULT_COMPONENTS, [state.components]);
@@ -68,7 +83,7 @@ export default function SystemStatusPage() {
     <header className="cc-status-top"><a href="/"><span><Plane /></span><div><strong>CrewCheck</strong><small>Status do sistema</small></div></a><nav><a href="/sobre">Nossa origem</a><a href="mailto:suporte@crewcheck.com.br">Suporte</a></nav></header>
 
     <section className={`cc-status-hero ${maintenance ? 'maintenance' : unknown ? 'unknown' : 'operational'}`}>
-      <span className="cc-status-icon">{loading || unknown ? <RefreshCw className="spin" /> : maintenance ? <Wrench /> : <CheckCircle2 />}</span>
+      <span className="cc-status-icon">{loading || unknown ? <RefreshCw className={loading ? 'spin' : undefined} /> : maintenance ? <Wrench /> : <CheckCircle2 />}</span>
       <div><small>STATUS ATUAL</small><h1>{loading ? 'Consultando o sistema' : unknown ? 'Não foi possível confirmar a situação agora' : maintenance ? (state.title || 'CrewCheck em manutenção') : 'CrewCheck operacional'}</h1><p>{loading ? 'Atualizando as informações mais recentes.' : unknown ? 'Tente novamente em instantes. A consulta é atualizada automaticamente.' : maintenance ? (state.message || 'Estamos realizando melhorias e já estamos trabalhando para restabelecer a funcionalidade.') : 'Os principais recursos estão disponíveis normalmente.'}</p></div>
       <strong className="cc-status-badge">{loading ? 'Atualizando' : unknown ? 'Não confirmado' : statusLabel(state.status, maintenance)}</strong>
     </section>

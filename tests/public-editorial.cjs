@@ -8,7 +8,7 @@ const path = require('node:path');
 function load(file, overrides = {}) {
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(file,'utf8'), {compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
-  vm.runInNewContext(code, {exports, require(name) {
+  vm.runInNewContext(code, {exports, AbortController, require(name) {
     if (name in overrides) return overrides[name];
     if (name.startsWith('@/')) return {CREWCHECK_FOUNDER_PHOTO:'/founder.png'};
     if (name.startsWith('.')) return load(path.resolve(path.dirname(file),name+'.ts'),overrides);
@@ -31,7 +31,7 @@ for (const file of ['AboutUsPage','PublicUpdatesPage']) {
 async function statusTest(fetcher, expected, forbidden, failRefresh = false) {
   let states=[], cursor=0, effect, tick;
   const mock = {...React,useState(initial){const i=cursor++;if(!(i in states))states[i]=initial;return [states[i],value=>states[i]=value]},useEffect(fn){effect=fn},useMemo(fn){return fn()}};
-  const Page=load('client/src/pages/SystemStatusPage.tsx',{react:mock,__globals:{fetch:fetcher,window:{setInterval(fn){tick=fn;return 1},clearInterval(){}}}}).default;
+  const Page=load('client/src/pages/SystemStatusPage.tsx',{react:mock,__globals:{fetch:fetcher,window:{setInterval(fn){tick=fn;return 1},clearInterval(){},setTimeout(){return 1},clearTimeout(){}}}}).default;
   renderToStaticMarkup(React.createElement(Page)); effect();
   await new Promise(resolve=>setImmediate(resolve));
   if (failRefresh) { tick(); await new Promise(resolve=>setImmediate(resolve)); }
@@ -44,26 +44,29 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
-async function statusRaceTest(newestSucceeds, oldSucceeds, delayedOldBody = false, oldFinishesFirst = false) {
+async function statusRaceTest(newestSucceeds, oldSucceeds, delayedOldBody = false, oldFinishesFirst = false, timeoutNewest = false) {
   let states = [], cursor = 0, effect, tick;
   const requests = [deferred(), deferred()];
+  const timeouts = [];
+  const signals = [];
   let requestIndex = 0;
   const mock = { ...React,
     useState(initial) { const i = cursor++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = value; }]; },
     useEffect(fn) { effect = fn; }, useMemo(fn) { return fn(); },
   };
   const Page = load('client/src/pages/SystemStatusPage.tsx', { react: mock, __globals: {
-    fetch: () => requests[requestIndex++].promise,
-    window: { setInterval(fn) { tick = fn; return 1; }, clearInterval() {} },
+    fetch: (_, options) => { signals.push(options.signal); return requests[requestIndex++].promise; },
+    window: { setInterval(fn) { tick = fn; return 1; }, clearInterval() {}, setTimeout(fn, delay) { assert.ok(delay < 60_000); timeouts.push(fn); return timeouts.length; }, clearTimeout() {} },
   } }).default;
   const render = () => { cursor = 0; return renderToStaticMarkup(React.createElement(Page)).replace(/<style>[\s\S]*?<\/style>/g, ''); };
-  render(); effect();
+  render(); const cleanup = effect();
   const oldBody = deferred();
   if (delayedOldBody) {
     requests[0].resolve({ ok: true, json: () => oldBody.promise });
     await new Promise(resolve => setImmediate(resolve));
   }
   tick();
+  assert.equal(signals[0].aborted, true, 'Starting another poll cancels the previous request');
   const settle = (request, success) => success
     ? request.resolve({ ok: true, json: async () => ({ enabled: false }) })
     : request.reject(new Error('offline'));
@@ -72,14 +75,24 @@ async function statusRaceTest(newestSucceeds, oldSucceeds, delayedOldBody = fals
     await new Promise(resolve => setImmediate(resolve));
     assert.match(render(), /Consultando o sistema/, 'An older completion must not finish loading the newest pending check');
   }
-  settle(requests[1], newestSucceeds);
+  if (timeoutNewest) {
+    timeouts[1]();
+    assert.equal(signals[1].aborted, true, 'A timed-out request must be cancelled');
+  } else settle(requests[1], newestSucceeds);
   await new Promise(resolve => setImmediate(resolve));
   const newestHtml = render();
+  if (timeoutNewest) settle(requests[1], newestSucceeds);
   if (delayedOldBody) oldBody.resolve({ enabled: false });
   else settle(requests[0], oldSucceeds);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(render(), newestHtml, 'An older result must not overwrite the newest status attempt');
-  assert.match(newestHtml, newestSucceeds ? /CrewCheck operacional/ : /Não foi possível confirmar a situação agora/);
+  assert.match(newestHtml, newestSucceeds && !timeoutNewest ? /CrewCheck operacional/ : /Não foi possível confirmar a situação agora/);
+  if (timeoutNewest) assert.doesNotMatch(newestHtml, /class="[^"\n]*\bspin\b/, 'A timed-out check must not keep spinning');
+  cleanup();
+  const unmountedHtml = render();
+  timeouts.forEach(timeout => timeout());
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(render(), unmountedHtml, 'Timers must not mutate state after unmount');
 }
 (async()=>{
  await statusTest(()=>Promise.reject(new Error('offline')),/Não foi possível confirmar a situação agora/,/CrewCheck operacional|Funcionando normalmente|Nenhuma manutenção/);
@@ -92,5 +105,6 @@ async function statusRaceTest(newestSucceeds, oldSucceeds, delayedOldBody = fals
  await statusRaceTest(true, false);
  await statusRaceTest(false, true, true);
  await statusRaceTest(true, false, false, true);
+ await statusRaceTest(true, true, false, false, true);
  console.log('Public editorial: links, copy, public route, failure states and real maintenance OK');
 })();
