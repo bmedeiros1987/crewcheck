@@ -6,7 +6,8 @@ import FinancialHistoryWithoutRoster from '@/components/finance/FinancialHistory
 import {validFinancialDay} from '@/lib/financialHistoryPeriods';
 import {parseFinancialDecimal} from '@shared/financialFx.mjs';
 import { AlertRosterNavigation } from '@/components/alerts/AlertRosterNavigation';
-import { clearPendingNavigationContext as clearRawNavigationContext, peekPendingNavigationContext as peekAlertRosterContext } from '@/lib/navigationContext';
+import * as rawNavigationContext from '@/lib/navigationContext';
+import { peekPendingNavigationContext as peekAlertRosterContext } from '@/lib/navigationContext';
 import { isGroundAlertIgnored, GROUND_DISPOSITION_EVENT } from '@/lib/groundAlertDispositions';
 import { alertRosterOwned } from '@/lib/alertRosterOwnership';
 import { AlertCenter } from '@/components/alerts/AlertCenter';
@@ -5150,6 +5151,7 @@ export default function Home() {
     return () => window.removeEventListener('popstate',restoreFinancialView);
   },[]);
   function setView(nextView: ZeroView) {
+    const {peekPendingNavigationContext,clearPendingNavigationContext}=rawNavigationContext;
     const url = new URL(window.location.href), previousView = url.searchParams.get('view');
     const fromConcierge = activeViewRef.current === 'concierge' && ['salary','perdiem'].includes(nextView);
     if (fromConcierge) {
@@ -5164,8 +5166,8 @@ export default function Home() {
         history[history.state?.crewcheckOverlay?'replaceState':'pushState']({...history.state,crewcheckOverlay:undefined,ccFinancial:undefined,ccFinancialPosition:undefined,ccConciergePosition:undefined,ccEnteredFromConcierge:fromConcierge||(['salary','perdiem'].includes(nextView)&&history.state?.ccEnteredFromConcierge)},'',url);
       }
     }
-    const pendingNavigation = peekAlertRosterContext();
-    if (!pendingNavigation || pendingNavigation.targetView !== nextView) clearRawNavigationContext();
+    const pendingNavigation = peekPendingNavigationContext();
+    if (!pendingNavigation || pendingNavigation.targetView !== nextView) clearPendingNavigationContext();
     setViewState(nextView);
   }
   const currencyReturnView=useRef<ZeroView>('cockpit'),currencyPreviousView=useRef<ZeroView>(view);
