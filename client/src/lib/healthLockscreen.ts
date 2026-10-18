@@ -11,7 +11,7 @@ export function healthLockscreenSvg(values:HealthCardValues, selected:HealthCard
   const value=String(values[key]||'').replace(/[\u0000-\u001f\u007f]/g,' ').trim();if(!value)continue;
   rows.push({text:label,heading:true});
   const words=value.split(/\s+/);let line='';
-  for(const word of words){for(let offset=0;offset<word.length;offset+=38){const chunk=word.slice(offset,offset+38);if(line&&line.length+chunk.length+1>38){rows.push({text:line,heading:false});line='';}line+=(line?' ':'')+chunk;}}
+  for(const word of words){const points=Array.from(word);for(let offset=0;offset<points.length;offset+=22){const chunk=points.slice(offset,offset+22).join('');if(line&&Array.from(line).length+Array.from(chunk).length+1>22){rows.push({text:line,heading:false});line='';}line+=(line?' ':'')+chunk;}}
   if(line)rows.push({text:line,heading:false});
  }
  if(!rows.length)throw Error('Escolha pelo menos um campo preenchido para a prévia.');
