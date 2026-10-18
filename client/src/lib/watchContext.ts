@@ -339,7 +339,7 @@ export function buildCrewCheckWatchSnapshot(
   // A canonical duty start may be an estimated/legacy report clock. Future
   // prose must use the same publication proof as APZ and schedule.time.
   const futureClock = event.kind === 'duty' ? presentation || 'horário a confirmar' : clockLabel(startMs);
-  const futureDate = dayLabel(event.kind === 'duty' && presentation ? presentationMs : startMs);
+  const futureDate = dayLabel(startMs);
   const inactive = future || expired || state === 'OFF_DUTY' || !Number.isFinite(startMs) || !Number.isFinite(endMs);
   const transitions = [focusStartMs, startMs, endMs, instant(currentRest?.canonical?.endDateTime), routeIsFresh ? route!.updatedAtEpochMs + 30 * 60_000 : NaN].filter(time => Number.isFinite(time) && time > now);
   return {

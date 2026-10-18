@@ -64,6 +64,9 @@ try {
    overrides={[ctx.presentationOverrideKey(futureDuty.events[0])]:{presentation:'18:10',label:'SYNTHETIC manual'}};
    const manualFuture=snapshot(dutyRoster(source));
    for(const field of ['detail','nextDetail']) {assert.match(manualFuture.out[field],/18\/10.*18:10.*BRT/);assert(!manualFuture.out[field].includes('18:20'));}
+   overrides={[ctx.presentationOverrideKey(futureDuty.events[0])]:{presentation:'18:30',label:'SYNTHETIC later manual'}};
+   const laterManual=snapshot(dutyRoster(source));
+   for(const field of ['detail','nextDetail']) assert.match(laterManual.out[field],/18\/10.*18:30.*BRT/,'Manual time change preserves canonical event date');
    overrides={};
  }
  const publishedFuture=snapshot(dutyRoster('published'));
