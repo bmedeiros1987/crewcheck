@@ -20,6 +20,8 @@ function roster(kind, month=2) {
     : kind === 'single' ? [day('01/02/2032','BSB',true)]
     : [day('31/01/2032','JFK'), ...Array.from({length:24},(_,i)=>day(String(i+1).padStart(2,'0')+'/02/2032',airports[i%airports.length])),day('01/03/2032')];
   if(kind==='unknown')days[2]={...days[2],base:'ZZZ'};
+  if(kind==='all-unknown')for(const d of days)if(d.date.endsWith('/02/2032'))d.base='ZZZ';
+  if(kind==='missing-clocks')for(const d of days)if(d.date.endsWith('/02/2032')){d.dutyReport=null;d.dutyReportSource='absent';}
   return {crewName:'SYNTHETIC UI QA',crewId:'900001',base:'BSB',rank:'CC',airline:'LA',month,year:2032,days,rawText:'SYNTHETIC — NO REAL ROSTER OR TARIFF'};
 }
 function seed({theme,kind,amount,history,salaryBase}) {
@@ -103,7 +105,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
  const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}),args:['--no-sandbox']});
  const results=[];
  try {
-  const cases=[['desktop',1440,900,1,1,'domestic'],['mobile',390,844,1,1,'domestic'],['small-mobile',320,740,1,1,'large'],['desktop-large-200-css',1440,900,2,1,'large'],['mobile-large-200-css',390,844,2,1,'large'],['desktop-200-responsive',720,450,1,2,'large'],['mobile-multi',390,844,1,1,'multi'],['desktop-multi-200',720,450,1,2,'multi'],['mobile-single',390,844,1,1,'single'],['mobile-unknown',390,844,1,1,'unknown'],['mobile-empty',390,844,1,1,'empty']];
+  const cases=[['desktop',1440,900,1,1,'domestic'],['mobile',390,844,1,1,'domestic'],['small-mobile',320,740,1,1,'large'],['desktop-large-200-css',1440,900,2,1,'large'],['mobile-large-200-css',390,844,2,1,'large'],['desktop-200-responsive',720,450,1,2,'large'],['mobile-multi',390,844,1,1,'multi'],['desktop-multi-200',720,450,1,2,'multi'],['mobile-single',390,844,1,1,'single'],['mobile-unknown',390,844,1,1,'unknown'],['mobile-all-unknown',390,844,1,1,'all-unknown'],['mobile-missing-clocks',390,844,1,1,'missing-clocks'],['mobile-empty',390,844,1,1,'empty']];
   for(const theme of ['light','dark'])for(const [label,width,height,zoom,scale,kind] of cases) {
    const context=await browser.newContext({viewport:{width,height},deviceScaleFactor:scale,timezoneId:'America/Sao_Paulo',serviceWorkers:'block'});
    let blockedExternal=0,apiRequests=0;const errors=[];
@@ -123,14 +125,27 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
    const name=theme+'-'+label;await page.screenshot({path:path.join(out,name+'-summary.png')});
    await showFinancial(page,'charts');await settle(page);const convertedMoney=await measureMoney(page);assert.deepEqual(convertedMoney.violations,[]);await showFinancial(page,'statement');await settle(page);
    const rows=page.locator('.cc-per-diem-content .cz-finance-row'),count=await rows.count();
-   if(!['empty','single','unknown'].includes(kind))assert.ok(count>40,'monthly list contains all canonical rows beyond forty');
+   if(!['empty','single','unknown','all-unknown','missing-clocks'].includes(kind))assert.ok(count>40,'monthly list contains all canonical rows beyond forty');
    assert.ok(await rows.evaluateAll(elements=>elements.every(e=>e.dataset.financialIso.startsWith('2032-02-'))),'adjacent months excluded');
    if(count){await rows.first().locator('summary').click();await rows.first().scrollIntoViewIfNeeded();await settle(page);await page.screenshot({path:path.join(out,name+'-origin.png')});}
    const money=await measureMoney(page);assert.deepEqual(money.violations,[],'each money glyph remains inside its own card/row');assert.deepEqual(money.intersections,[],'amount and description never intersect');assert.deepEqual(money.splitAmounts,[],'currency amount and cents remain on one line');
    const colors=await contrast(page);assert.ok(colors.every(c=>Number(c.opacity)===1&&c.ratio>=4.5),'readable muted/source text in each theme');
    if(kind==='multi')assert.equal(new Set(await rows.evaluateAll(es=>es.map(e=>e.dataset.financialCurrency))).size,4);
    if(kind==='single')assert.match(await page.locator('.cc-per-diem-summary').textContent(),/1 item · 1 moeda/);
-   if(kind==='unknown')assert.match(await page.locator('.cc-per-diem-summary').textContent(),/Não calculável/);
+   if(kind==='unknown'){
+    // 23 published/classified days × lunch+dinner × synthetic BRL100; the
+    // 2 meals on02-Feb at ZZZ are excluded, not replaced by zeros.
+    assert.equal((await page.locator('.cc-per-diem-summary strong').textContent()).replace(/\s+/g,' ').trim(),'Subtotal estimado: R$ 4.600,00');
+    assert.equal(count,46);assert((await rows.evaluateAll(elements=>elements.map(element=>element.dataset.financialIso))).every(iso=>iso!=='2032-02-02'),'unclassified day contributes no monetary row');
+    assert((await rows.locator('b').allTextContents()).every(value=>value.replace(/\s+/g,' ').trim()==='R$ 100,00'));
+    await page.getByText('Classificação geográfica da diária pendente.',{exact:true}).waitFor();
+    assert.match(await page.locator('.cc-per-diem-summary').textContent(),/dados financeiros pendentes/);
+   }
+   if(['all-unknown','missing-clocks'].includes(kind)){
+    assert.equal(count,0);assert.equal((await page.locator('.cc-per-diem-summary strong').textContent()).trim(),'Não calculável');
+    assert.doesNotMatch(await page.locator('.cc-per-diem-summary').textContent(),/R\$|Subtotal estimado/,'no unknown amount becomes zero or a subtotal');
+    await page.getByText(kind==='all-unknown'?'Classificação geográfica da diária pendente.':/Intervalo operacional incompleto: Início\/fim publicados ausentes ou estimados/,{exact:kind==='all-unknown'}).waitFor();
+   }
    if(kind==='empty'){assert.equal(count,0);assert.doesNotMatch(await page.locator('.cc-per-diem-content').innerText(),/R\$\s*0,00|pagamento confirmado/);}
    let last=null,nav=null;
    if(count){await rows.last().evaluate(e=>e.scrollIntoView({block:'center',behavior:'instant'}));await settle(page);last=await rows.last().boundingBox();nav=await page.locator('.cz-bottom-nav').boundingBox();assert.ok(last.y>=0&&last.y+last.height<=nav.y+1,'last row clears unchanged navigation');await page.screenshot({path:path.join(out,name+'-last.png')});}
@@ -167,7 +182,12 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
 
    await showFinancial(page,'charts');await page.getByLabel('Filtro financeiro',{exact:true}).selectOption('year');await page.waitForFunction(()=>document.querySelectorAll('.cc-financial-bars>button').length===12);await settle(page);
    assert.equal(await page.locator('.cc-financial-bars>button').filter({hasText:'Ausente · sem escala'}).count(),9,'absent periods shown explicitly, never fake zeros');const unavailable=page.locator('.cc-financial-bars>button').filter({hasText:'Ausente · sem escala'}).first();assert.equal(await unavailable.isDisabled(),true);const beforeMissing={month:await selector.inputValue(),kind:await page.getByLabel('Filtro financeiro',{exact:true}).inputValue()};await unavailable.evaluate(el=>el.click());assert.equal(await selector.inputValue(),beforeMissing.month);assert.equal(await page.getByLabel('Filtro financeiro',{exact:true}).inputValue(),beforeMissing.kind);assert.equal(await selector.evaluate(el=>Array.from(el.options).some(o=>o.value===el.value)),true,'missing period never selects an absent option');assert.match(await page.locator('.cc-financial-graph').innerText(),/recebimento não confirmado/);
-   assert.match(await page.locator('.cc-financial-graph').innerText(),/Maior previsão: fevereiro/);assert.match(await page.locator('.cc-per-diem-summary').textContent(),/Não calculável/,'missing months do not become a full-year total');
+   assert.match(await page.locator('.cc-financial-graph').innerText(),/Maior previsão: fevereiro/);
+   // Jan200 + Feb4800 + Mar200. Nine absent months stay absent; this is
+   // explicitly the known subtotal, never a complete annual forecast.
+   await page.waitForFunction(()=>document.querySelector('.cc-per-diem-summary strong')?.textContent.replace(/\s+/g,' ').trim()==='Subtotal estimado: R$ 5.200,00');
+   assert.equal((await page.locator('.cc-per-diem-summary strong').textContent()).replace(/\s+/g,' ').trim(),'Subtotal estimado: R$ 5.200,00');
+   assert.match(await page.locator('.cc-financial-range').textContent(),/Sem escala para .*2032-04/);assert.match(await page.locator('.cc-financial-range').textContent(),/Total do intervalo indisponível/);
    await page.screenshot({path:path.join(out,theme+'-history-'+width+'-year.png')});
    if(timezoneId!=='America/Sao_Paulo'){
     await page.getByLabel('Filtro financeiro',{exact:true}).selectOption('custom');await page.getByLabel('Início financeiro',{exact:true}).fill('2032-02-10');await page.getByLabel('Fim financeiro',{exact:true}).fill('2032-02-10');await settle(page);

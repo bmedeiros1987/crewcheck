@@ -23,5 +23,12 @@ try{
  assert.equal(nextPayrollPayment([{...candidate,lines:[{...rows[0],value:null}]},{...candidate,creditMonth:'2032-03'}],now).totals,null,'do not skip an incomplete earliest cycle');
  assert.equal(nextPayrollPayment([{...candidate,creditMonth:'2032-01'}],now).totals,null,'past cycle is not next payment');
  assert.equal(nextPayrollPayment([],now).totals,null);
+ const pending=nextAllowancePayment(rows,[{iso:days[0],airport:'BSB',reason:'Synthetic APZ evidence absent'}],['2032-01','2032-02'],now,days);
+ assert.equal(pending.totals,null);assert.deepEqual(pending.calculationTotals,{BRL:70});assert.equal(pending.calculationPartial,true);assert(pending.issues.some(issue=>issue.includes('Synthetic APZ evidence absent')));
+ const partialPayroll=nextPayrollPayment([{...candidate,lines:[{...rows[0],value:100},{...rows[1],value:null}],issues:['Synthetic missing credit evidence']}],now);
+ assert.equal(partialPayroll.totals,null);assert.deepEqual(partialPayroll.calculationTotals,{BRL:100});
+
+ const taxi=nextAllowancePayment(rows,[{iso:days[0],airport:'BSB',reason:'Tarifa de táxi confirmada para o período ausente.'}],['2032-01','2032-02'],now,days);assert.deepEqual(taxi.calculationTotals,{BRL:70});assert(taxi.issues.some(x=>x.includes('táxi')));
+ const mixed=nextAllowancePayment([...rows,{...rows[0],currency:'USD',value:30,convertedBRL:null},{...rows[0],value:NaN},{...rows[0],value:-50}],[],['2032-01','2032-02'],now,days.slice(1));assert.equal(mixed.totals,null);assert.deepEqual(mixed.calculationTotals,{BRL:70,USD:30});
  console.log('PASS next payment: eligible closed cycle, cross-month own rows, coverage/day/invalid/no-data guards; reviewed payroll month, own-line total and incomplete earliest cycle.');
 }finally{rmSync(outDir,{recursive:true,force:true});}

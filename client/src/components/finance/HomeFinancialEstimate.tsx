@@ -9,14 +9,14 @@ import {formatFinancialMinor} from '@shared/financialMoney.mjs';
 import {FinancialPrivacyToggle,useFinancialPrivacy} from './FinancialPrivacy';
 const Context=createContext<NextPayment|null>(null);
 const account=()=>String(getStoredUser()?.id||getStoredUser()?.email||'');
-export function HomeFinancialEstimateProvider({roster,calculate,children}:{roster:CrewRoster;calculate:(roster:CrewRoster)=>NextPayment|null;children:ReactNode}){
+export function HomeFinancialEstimateProvider({roster,calculate,children,accessKey}:{accessKey?:string;roster:CrewRoster;calculate:(roster:CrewRoster)=>NextPayment|null;children:ReactNode}){
  const [,refresh]=useState(0),owner=account(),token=getToken(),bound=useRef({owner,roster});
  if(roster!==bound.current.roster)bound.current={owner,roster};
  useEffect(()=>{const update=()=>refresh(n=>n+1);for(const e of ['crewcheck:auth-changed','crewcheck:auth-expired','crewcheck:auth-will-change','crewcheck:financial-config-changed','storage'])window.addEventListener(e,update);return()=>{for(const e of ['crewcheck:auth-changed','crewcheck:auth-expired','crewcheck:auth-will-change','crewcheck:financial-config-changed','storage'])window.removeEventListener(e,update);};},[]);
  const allowed=owner&&token&&bound.current.owner===owner&&!['visitor','guest'].includes(getStoredUser()?.role||'');
  // Reuse the canonical producer; never query or mutate the ledger for a Home estimate.
  const payment=allowed&&roster.days?.length?calculate(roster):null;
- return <FinancialFxProvider><Context.Provider value={payment}>{children}</Context.Provider></FinancialFxProvider>;
+ return <FinancialFxProvider accessKey={accessKey}><Context.Provider value={payment}>{children}</Context.Provider></FinancialFxProvider>;
 }
 export default function HomeFinancialEstimate(){
  const payment=useContext(Context),privacy=useFinancialPrivacy(),fx=useFinancialFx();

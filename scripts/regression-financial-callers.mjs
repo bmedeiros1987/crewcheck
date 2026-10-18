@@ -114,14 +114,14 @@ try {
   const mixedEvents = [event('2032-02-01'), event('2032-02-02', 'UNKNOWN')];
   const mixed = calculatePerDiem(mixedEvents, roster(2032, 2), new Date('2032-02-02T12:00:00'));
   assert.equal(mixed.monthly, null);
-  assert.equal(mixed.currencySummary, 'Não calculável');
+  assert.match(mixed.currencySummary, /Subtotal estimado: R\$\s*100,00/);
   assert.deepEqual(Object.keys(mixed.totalsByCurrency), []);
   assert.equal(mixed.nativeSummary.complete, false);
   const originalRate = context.readOptionalNumberSetting;
   context.readOptionalNumberSetting = key => key === 'crewcheck_perdiem_rate_other_international' ? NaN : null;
   const invalidRate = calculatePerDiem([event('2032-02-01'), event('2032-02-02', 'INT')], roster(2032, 2));
   assert.equal(invalidRate.nativeSummary.complete, false);
-  assert.equal(invalidRate.currencySummary, 'Não calculável');
+  assert.match(invalidRate.currencySummary, /Subtotal estimado: R\$\s*100,00/);
   context.readOptionalNumberSetting = originalRate;
   const foreign = calculatePerDiem([event('2032-02-01', 'INT')], roster(2032, 2));
   assert.equal(foreign.monthly, null);
@@ -179,8 +179,8 @@ try {
 
   activeEvents = mixedEvents;
   const mixedHtml = renderToStaticMarkup(React.createElement(PerDiemView,{bundle:{roster:roster(2032,2)}}));
-  assert.match(mixedHtml,/Previsão do mês: Não calculável/);
-  assert.doesNotMatch(mixedHtml,/Previsão do mês: [^<]*R\$ 100,00/);
+  assert.match(mixedHtml,/Previsão do mês: Subtotal estimado:/);
+  assert.doesNotMatch(mixedHtml,/Previsão do mês: R\$ 100,00/);
 
   const october = periods.observedAllowancePeriods(new Date('2026-10-08T12:00:00'));
   assert.equal(iso(october.accumulation.start), '2026-10-07');

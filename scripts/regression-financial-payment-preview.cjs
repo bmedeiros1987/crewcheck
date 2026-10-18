@@ -158,7 +158,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
       await showFinancial(page,'payment');await page.waitForFunction(count=>document.querySelector('.cc-payment-pending')?.textContent.includes((31-count)+' dia(s)'),count,{timeout:10000});
       await page.waitForFunction(()=>document.querySelector('.cc-next-payment-lines')?.textContent.includes('2.900,00'),null,{timeout:10000});
       assert.match(await page.locator('.cc-payment-pending').textContent(),/dia\(s\) sem programação|Importe a escala/);
-      assert(!/R\$/.test(await page.locator('.cc-payment-value').textContent()),'fixed pay alone does not masquerade as a complete payment');
+      assert.match(await page.locator('.cc-payment-value').textContent(),/R\$/,'known fixed pay remains visible as a subtotal');assert.match(await page.locator('.cc-payment-value').textContent(),/subtotal estimado/);assert.equal(await page.locator('.cc-payment-value').getAttribute('data-complete'),'false');
       await page.evaluate(()=>scrollTo({top:0,left:0,behavior:'instant'}));await page.screenshot({path:path.join(out,`${width}-${theme}-payroll-${state}.png`),fullPage:false});
     }
 
