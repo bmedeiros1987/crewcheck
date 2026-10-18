@@ -12,6 +12,13 @@ brand = brand.replace('{pulse ? <CrewCheckPulse compact fallback={lockup}/> : lo
 if (!brand.includes('cc-brand-and-notice')) throw new Error('Pulse experience: preserved brand lockup anchor missing');
 if (!brand.includes('if (!global && !pulse) return null;')) throw new Error('Pulse experience: global header guard missing');
 brand = brand.replace("aria-label={back ? backLabel || 'Voltar ao FlightDeck' : 'Menu'}", "aria-label={back ? backLabel || alertText().back : alertText().menu}");
+// Canonical preparation rebuilds Brand upstream: reapply the owned header behavior here.
+brand = brand.replace('<CrewCheckMark/>', '<CrewCheckPulse compact brandMark fallback={<CrewCheckMark/>}/>');
+if (!brand.includes('brandMark fallback={<CrewCheckMark/>}')) throw new Error('Pulse experience: notification mark anchor missing');
+const legacyBack = "(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' })))";
+const financialBack = "(() => { if (['perdiem','salary'].includes(new URLSearchParams(location.search).get('view') || '') && history.state?.ccEnteredFromConcierge) history.back(); else window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' })); })";
+if (brand.includes(legacyBack)) brand = brand.replace(legacyBack, financialBack);
+else if (!brand.includes(financialBack)) throw new Error('Pulse experience: financial return anchor missing');
 home = home.slice(0,start) + brand + home.slice(end);
 const legacyStart=home.indexOf('function Alerts('), legacyEnd=home.indexOf('function ReviewedAlerts(',legacyStart);
 if(legacyStart>=0&&legacyEnd>legacyStart)home=home.slice(0,legacyStart)+home.slice(legacyEnd);

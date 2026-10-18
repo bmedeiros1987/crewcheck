@@ -18,3 +18,5 @@ assert.equal(check([item],{...range,kind:'week',end:'2032-02-07'},[]).variable,n
 assert.equal(check([{...item,baseConfigured:true,variable:0}],range,[]).variable,0,'known zero is distinct from unavailable');
 localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-diagnostic-b',role:'user'}));assert.equal(learning.readConfirmedFinancialRates().length,0);
 console.log('PASS: operational/fixed-month separation, actionable prerequisites, variables without duplicated base, unavailable!=zero, invalid/range/role/owner');
+
+assert.equal(check([{...item,baseConfigured:true,fixedAdditionsConfigured:false}],range,[]).ready,false,'missing additional is not a proved zero or complete gross');
