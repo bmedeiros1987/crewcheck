@@ -9,7 +9,7 @@ const require = nodeModule.createRequire(import.meta.url);
 export function prepareConciergeCanonicalBridge(root = process.cwd()) {
   const sourceRoot = path.join(root, 'client/src/lib');
   const outputRoot = path.join(root, 'server/concierge/generated');
-  const pending = ['canonicalRoster'];
+  const pending = ['canonicalRoster', 'rosterPublicationReview'];
   const outputs = new Map();
   const manifest = {};
   while (pending.length) {

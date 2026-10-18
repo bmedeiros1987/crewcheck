@@ -1,0 +1,48 @@
+name: Operational briefing preview
+on:
+  pull_request:
+    paths:
+      - 'server/concierge/operational-briefing.mjs'
+      - 'server/concierge/journey-programs.mjs'
+      - 'server/weather/critical-observation.mjs'
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/rosterContinuity.ts'
+      - 'client/src/lib/rosterPublicationReview.ts'
+      - 'scripts/p1-concierge-journey/**'
+      - 'scripts/tests/operational-briefing.test.mjs'
+      - '.github/workflows/operational-briefing-preview.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Compile unchanged engines and test tracked preview
+        run: |
+          node scripts/p1-concierge-journey/compile.mjs
+          node --check server/concierge/operational-briefing.mjs
+          for zone in UTC America/Sao_Paulo Pacific/Honolulu; do
+            TZ="$zone" node --test scripts/tests/operational-briefing.test.mjs
+          done
+      - run: npm ci
+      - name: Prepare production sources and verify the same preview
+        run: |
+          node scripts/v139/apply.mjs
+          node scripts/p1-concierge-journey/compile.mjs
+          for zone in UTC America/Sao_Paulo Pacific/Honolulu; do
+            TZ="$zone" node --test scripts/tests/operational-briefing.test.mjs
+          done
+          node scripts/regression-concierge-journey-programs.mjs
