@@ -90,7 +90,9 @@ jobs:
           javac -d "$RUNNER_TEMP/notification-timing" android-wrapper/app/src/main/java/com/crewcheck/app/NotificationTiming.java scripts/fixtures/NotificationTimingFixture.java
           java -cp "$RUNNER_TEMP/notification-timing" NotificationTimingFixture
       - name: Verify native scheduling acceptance without a device
-        run: node scripts/regression-android-alarm-acceptance.mjs
+        run: |
+          node scripts/regression-android-alarm-acceptance.mjs
+          node scripts/regression-play-catalog-recovery.mjs
       - name: Web and privacy validation
         run: |
           npx tsc --noEmit

@@ -99,3 +99,40 @@ and remains blocked on transport/config; identify device/content before any send
 
 References: https://developer.android.com/develop/background-work/services/alarms
 and https://firebase.google.com/docs/cloud-messaging/android/receive-messages.
+
+## Follow-up requested by coordinator — local delays, restart and stack
+
+PR1069 now targets the existing PR1068 branch, making the dependency explicit;
+1068 remains open/draft at4c09cc41. Its commits are ancestors, not copied patches.
+The phone build includes both. Do not merge1069 independently ahead of1068, and
+recheck base/main and exact CI when integrating. No billing product change added.
+
+The existing final manifest already declares SCHEDULE_EXACT_ALARM. The local
+legacy scheduler now uses setExactAndAllowWhileIdle only when special access is
+already granted (or Android before API31); it never requests a grant or opens OS
+settings. A revocation between check and call falls back to the previous inexact
+method. Missing grant keeps the previous behavior and120s expiry; old/stale
+operational notifications are not arbitrarily made valid for hours.
+
+A separate reproduced bug replaces pending reminders with colliding Java hashes:
+Aa and BB with identical suffixes have the same hash. A SHA256 length-framed opaque
+URI now distinguishes PendingIntents without storing raw text in their identity;
+repeating exactly the same reminder still replaces that same reminder. No new
+persistent state is written. New actual-method Java fixture covers24 cases,
+including grant/revocation, pre31, legacy API, collisions and framing.
+
+Reboot was investigated beyond a missing manifest entry: StayAlarmReceiver already
+listens for boot, package replacement and clock changes, but belongs to the
+separate authenticated stay journal whose two host flags are OFF. Its receiver
+correctly refuses owner authority after restart. The active generic bridge has
+no durable owner/event revision/cancellation journal at all. Blindly persisting
+and restoring its free-text intents would resurrect a prior account or edited
+roster reminder after logout/reboot. This cannot be called a safe reboot fix.
+A resumable server-verified owner lease plus event revision/expiry and durable
+logout/edit cancellation must be composed and tested; no gate was bypassed and
+no old account reminder restored. Exact grant use improves ordinary-process
+background scheduling but is not a reboot or force-stop guarantee.
+
+Existing AAB144156 from fe0bbc89 is retained as historical evidence only. New
+source changes require a new signed build of144156 before any upload; no earlier
+144156 has been uploaded to Play, so the code is not yet consumed.

@@ -575,15 +575,22 @@ public class MainActivity extends Activity {
             intent.putExtra("title", title == null || title.trim().isEmpty() ? "CrewCheck" : title);
             intent.putExtra("body", body == null ? "" : body);
             intent.putExtra("scheduledAt", epochMillis);
-            int requestCode = (int)(Math.abs((String.valueOf(title) + String.valueOf(body) + epochMillis).hashCode()) % 100000);
-            PendingIntent pendingIntent = PendingIntent.getBroadcast(this, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            intent.setData(Uri.parse("crewcheck-reminder://job/" + NotificationIdentity.key(title, body, epochMillis)));
+            PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             android.app.AlarmManager alarm = (android.app.AlarmManager) getSystemService(Context.ALARM_SERVICE);
             long when = epochMillis;
             if (alarm == null) return false;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                // Reuse only an existing grant; never request special access here.
+                if (Build.VERSION.SDK_INT < 31 || alarm.canScheduleExactAlarms()) {
+                    try {
+                        alarm.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
+                        return true;
+                    } catch (SecurityException revoked) { /* grant may change after the check */ }
+                }
                 alarm.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
             } else {
-                alarm.set(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
+                alarm.setExact(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
             }
             return true;
         } catch (Exception ignored) { return false; }
