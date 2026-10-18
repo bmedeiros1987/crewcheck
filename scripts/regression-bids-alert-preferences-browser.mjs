@@ -55,7 +55,7 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Já fiz BIDS nesta janela' }).count(), 0);
   assert.equal(writes.length, 0); assert.equal(await page.getByRole('button', { name: 'Salvar preferências' }).isVisible(), true);
   await page.locator('summary').filter({hasText:'Onde receber'}).click();await page.locator('summary').filter({hasText:'Horário e silêncio'}).click();await page.locator('summary').filter({hasText:'Outros avisos e despertador'}).click();
-  await page.getByLabel('Modo', { exact: false }).selectOption('manual');
+  await page.getByRole('combobox', { name: /^Modo\b/ }).selectOption('manual');
   await setTime('10:30'); await page.getByLabel('Origem do fuso',{exact:true}).selectOption('manual'); await page.getByLabel('Escolha o fuso',{exact:true}).selectOption('UTC');
   await page.getByLabel('Quero avisos BIDS', { exact: false }).check();
   await page.getByRole('checkbox', { name: 'Relógio', exact: true }).check();
@@ -67,7 +67,7 @@ try {
   assert.equal(await page.getByRole('checkbox', { name: 'Relógio', exact: true }).isChecked(), true);
   assert.equal(await page.getByRole('checkbox', { name: 'CrewCierge', exact: true }).isChecked(), false);
   await page.getByRole('checkbox', { name: 'Todos', exact: true }).check();
-  await page.getByLabel('Modo', { exact: false }).selectOption('auto');
+  await page.getByRole('combobox', { name: /^Modo\b/ }).selectOption('auto');
   assert.equal(await readTime(), '10:30', 'manual override survives Auto toggle');
   await page.getByRole('button', { name: 'Salvar preferências' }).click();
   await page.waitForFunction(() => !document.querySelector('fieldset').disabled);

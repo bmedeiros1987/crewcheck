@@ -30,7 +30,7 @@
 .cc-notification-center .cc-notification-profile > :not(summary) { margin-inline: 16px; }
 .cc-notification-center .cc-notification-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .cc-notification-center :focus-visible { outline: 3px solid #a78bfa; outline-offset: 3px; }
-.cc-notification-center :is(input,select,button,summary) { scroll-margin-block: 104px; }
+.cc-notification-center :is(input,select,button,summary) { scroll-margin-block: 104px 12px; }
 @media (prefers-reduced-motion: reduce) { .cc-notification-center input::before { transition: none; } }
 
 .cc-notification-center button { min-height: 44px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
