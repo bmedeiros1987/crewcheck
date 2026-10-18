@@ -10,6 +10,7 @@ const bundle=await build({stdin:{contents:`import React from 'react';import{crea
  b.onResolve({filter:/^@\//},({path:p})=>{let target=path.resolve('client/src',p.slice(2));return{path:fs.existsSync(target+'.tsx')?target+'.tsx':target+'.ts'};});
 }}]});
 function fixtureSetup(){
+ Object.defineProperty(navigator,'language',{configurable:true,value:'pt-BR'});
  window.qa={writes:[],failure:false,success:false};
  window.fetch=async(raw,init={})=>{
   const url=String(raw);let status=200,value;
