@@ -90,7 +90,7 @@ const OVERRIDES = {
   notifications: ['Notificações', 'O que, por onde e quando', 'Bell'],
   settings: ['Configurações', 'Perfil e preferências', 'Settings'],
   plans: ['Assinaturas', 'Plano e franquias', 'Crown'],
-  guardian: ['Guardian', 'QR de emergência protegido', 'QrCode'],
+  guardian: ['Saúde', 'QR de emergência protegido', 'QrCode'],
   manual: ['Manual CrewCheck', 'Ajuda e orientação de uso', 'BookOpen'],
   support: ['Suporte', 'Problemas e sugestões', 'LifeBuoy'],
 

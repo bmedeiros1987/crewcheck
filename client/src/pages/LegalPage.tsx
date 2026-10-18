@@ -144,7 +144,7 @@ const privacySections: LegalSection[] = [
       'Escala e atividade profissional: dados presentes no arquivo enviado, como nome, matrícula quando existente, base, função, voos, horários, reservas, sobreavisos, treinamentos, folgas, repousos, pernoites e observações.',
       'Preferências e uso: tema, configurações, histórico, relatórios, alertas, rotinas, veículo, endereços informados, hotel, academia e escolhas de compartilhamento.',
       'Localização: somente quando o usuário autoriza ou envia voluntariamente para Saída Inteligente, emergência, busca de locais próximos ou busca na rede do plano de saúde.',
-      'Dados médicos de emergência (opcionais): perfil médico de emergência e cartões Guardian informados pelo usuário, detalhados na seção 3-B.',
+      'Dados médicos de emergência (opcionais): perfil médico de emergência e cartões Saúde informados pelo usuário, detalhados na seção 3-B.',
       'Assinatura e pagamento: plano, estado, período, provedor e identificadores técnicos. O CrewCheck não armazena o número completo do cartão.',
       'Comunicações: mensagens de suporte, Concierge, notificações, convites e registros necessários para entrega e segurança.',
     ],
@@ -171,15 +171,15 @@ const privacySections: LegalSection[] = [
     ],
   },
   {
-    title: '3-B. Emergência, Guardian e plano de saúde',
+    title: '3-B. Emergência, Saúde e plano de saúde',
     paragraphs: [
-      'Emergência e Guardian são recursos opcionais de segurança pessoal. Na Central de Emergência, o usuário pode cadastrar um perfil médico de emergência com tipo sanguíneo, alergias, medicação contínua, observações médicas e operadora e código do plano de saúde. Esse perfil é armazenado nos servidores do CrewCheck com criptografia autenticada e só é usado nos fluxos de emergência descritos nesta seção.',
+      'Emergência e Saúde são recursos opcionais de segurança pessoal. Na Central de Emergência, o usuário pode cadastrar um perfil médico de emergência com tipo sanguíneo, alergias, medicação contínua, observações médicas e operadora e código do plano de saúde. Esse perfil é armazenado nos servidores do CrewCheck com criptografia autenticada e só é usado nos fluxos de emergência descritos nesta seção.',
       'Um alerta de emergência é enviado pelo Telegram às pessoas configuradas pelo usuário: contatos salvos, conexões aceitas e, quando o usuário e o colega ativaram o compartilhamento de mesmo hotel, colegas hospedados no mesmo hotel na mesma data. Por padrão, o alerta vai aos contatos salvos, às conexões aceitas e aos colegas do mesmo hotel e inclui a localização; o usuário pode alterar essas escolhas nas preferências. O CrewCheck registra o alerta, os destinatários e o link de localização enviado para permitir o acompanhamento e as respostas.',
       'Os dados médicos só entram em um alerta de emergência médica quando o usuário ativa essa inclusão e marca a autorização “Autorizo o envio desses dados em uma emergência médica confirmada”. Essa inclusão fica desligada por padrão. As mensagens trafegam pelo Telegram, que possui política própria.',
-      'O Guardian gera, a pedido do usuário, um cartão de emergência acessível por QR code ou link, com nome, identificação de tripulante, tipo sanguíneo, alergias, medicamentos, condições, observações críticas e um contato de emergência informados pelo usuário. O conteúdo é armazenado com criptografia, o link tem validade temporária (72 horas por padrão, no máximo 30 dias) e pode ser revogado a qualquer momento. Qualquer pessoa com o QR code ou o link pode ver o cartão enquanto ele estiver válido; compartilhe-o apenas com quem precisar dele.',
+      'O recurso Saúde gera, a pedido do usuário, um cartão de emergência acessível por QR code ou link, com nome, identificação de tripulante, tipo sanguíneo, alergias, medicamentos, condições, observações críticas e um contato de emergência informados pelo usuário. O conteúdo é armazenado com criptografia, o link tem validade temporária (72 horas por padrão, no máximo 30 dias) e pode ser revogado a qualquer momento. Qualquer pessoa com o QR code ou o link pode ver o cartão enquanto ele estiver válido; compartilhe-o apenas com quem precisar dele.',
       'A busca na rede credenciada do plano de saúde envia ao CrewCheck a localização, a cidade, o estado e o termo pesquisado, usados para responder à busca na rede publicada pela operadora.',
       'Esses recursos não são dispositivos médicos e não substituem serviços públicos de emergência nem avaliação médica; em uma emergência, acione também o serviço local (192, 193 ou 190 no Brasil). A entrega do alerta depende do Telegram e dos destinatários configurados. Dados médicos de emergência não são vendidos, não são usados para publicidade e não são compartilhados pelo CrewCheck com empregadores, companhias aéreas ou anunciantes.',
-      'O usuário pode editar ou limpar o perfil médico na Central de Emergência, revogar cartões Guardian a qualquer momento e excluir a conta. A exclusão da conta remove o perfil médico, as preferências, as sessões, os alertas de emergência e os cartões Guardian vinculados à conta.',
+      'O usuário pode editar ou limpar o perfil médico na Central de Emergência, revogar cartões Saúde a qualquer momento e excluir a conta. A exclusão da conta remove o perfil médico, as preferências, as sessões, os alertas de emergência e os cartões Saúde vinculados à conta.',
     ],
   },
   {
@@ -230,7 +230,7 @@ const privacySections: LegalSection[] = [
     paragraphs: [
       'Dados são mantidos enquanto necessários para fornecer o serviço, preservar segurança, cumprir obrigações legais ou exercer direitos. Escalas e histórico podem ser excluídos pelo usuário ou com a exclusão da conta.',
       'Tokens de acesso do Google Calendar são armazenados no dispositivo e possuem validade limitada. A desconexão remove o token local e solicita a revogação quando suportado. O CrewCheck não solicita senha da Conta Google.',
-      'A exclusão da conta remove também o perfil médico de emergência, as preferências, as sessões, os alertas e os cartões Guardian; os controles do CrewLife estão descritos na seção 3-A.',
+      'A exclusão da conta remove também o perfil médico de emergência, as preferências, as sessões, os alertas e os cartões Saúde; os controles do CrewLife estão descritos na seção 3-A.',
       'Após a exclusão da conta, registros mínimos de auditoria, prevenção a fraude, cobrança ou defesa podem ser conservados pelo prazo estritamente necessário e sem reutilização para finalidades incompatíveis.',
     ],
   },

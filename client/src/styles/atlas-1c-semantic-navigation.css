@@ -25,7 +25,7 @@
 /* Menu 5S nests destinations in rows; favorites reuse the same label/tone map.
    Keep the legacy direct-child path for unprepared menus. */
 /* Prepared menu labels are semantic anchors; the unprepared single list has a guarded fallback. */
-:is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip):is([data-menu-label='Planejado x atual'], [data-menu-label='BIDS / PBS'], [data-menu-label='Regulamentação'], [data-menu-label='Assinaturas'], [data-menu-label='Concierge'], [data-menu-label='Apresentação'], [data-menu-label='Hotéis'], [data-menu-label='Relatórios'], [data-menu-label='Histórico'], [data-menu-label='Crew Locker'], [data-menu-label='CrewLock'], [data-menu-label='Guardian']) {
+:is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip):is([data-menu-label='Planejado x atual'], [data-menu-label='BIDS / PBS'], [data-menu-label='Regulamentação'], [data-menu-label='Assinaturas'], [data-menu-label='Concierge'], [data-menu-label='Apresentação'], [data-menu-label='Hotéis'], [data-menu-label='Relatórios'], [data-menu-label='Histórico'], [data-menu-label='Crew Locker'], [data-menu-label='CrewLock'], [data-menu-label='Saúde']) {
   --cc-atlas-tone: var(--cc-atlas-violet);
 }
 :is(.cz-menu-section > button, .cc-menu-index-row > .cc-menu-destination, .cc-menu-favorite-slot > .cc-menu-favorite-chip):is([data-menu-label='Saída Inteligente'], [data-menu-label='Meu carro'], [data-menu-label='Radar de voos'], [data-menu-label='Locais próximos'], [data-menu-label='Rotina'], [data-menu-label='Tripulação e função'], [data-menu-label='Pessoas e visitantes'], [data-menu-label='CrewCheck Life']) {
