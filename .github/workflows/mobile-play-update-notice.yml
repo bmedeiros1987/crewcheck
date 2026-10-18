@@ -2,11 +2,12 @@ name: CrewCheck Mobile safe Play update notice
 
 on:
   pull_request:
-    branches: [main, fix/android-background-notifications-20261018]
+    branches: [main, fix/android-background-notifications-20261018, feat/android-in-app-update-notice-20261018]
     paths:
       - 'android-wrapper/app/build.gradle'
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckPlayUpdateCoordinator.java'
       - 'scripts/mobile-play-update/**'
+      - 'scripts/android-play/release-policy.json'
       - 'scripts/p0-android-self-heal/finalize.mjs'
       - 'scripts/regression-mobile-play-update-notice.mjs'
       - 'scripts/regression-native-play-update-ui.cjs'
