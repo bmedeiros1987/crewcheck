@@ -51,6 +51,24 @@ try {
    assert.equal(snapshot(roster({departureTime:'19:05'},{dutyReport:'18:20',...(dutyReportSource ? {dutyReportSource} : {})})).out.presentationTime,'18:10','Explicit per-event manual control remains known');
    overrides={};
  }
+ // A future duty's prose must not resurrect a rejected report clock.
+ const dutyRoster=dutyReportSource=>({...roster({}),days:[{date:'18/10/2032',dayNumber:18,month:10,year:2032,type:'RES',pairingCode:'RES',base:'GRU',legs:[],dutyReport:'18:20',dutyReportSource,dutyDebrief:'23:59',rawText:'SYNTHETIC ONLY'}]});
+ const savedNow=now; now=Date.parse('2032-10-17T15:00:00Z');
+ for(const source of ['estimated','unknown','absent',undefined]) {
+   const futureDuty=snapshot(dutyRoster(source));
+   assert.equal(futureDuty.out.primaryTime,'');assert.equal(futureDuty.out.presentationTime,'');assert.equal(futureDuty.out.schedule[0].time,'');
+   for(const field of ['detail','nextDetail']) {
+     assert.match(futureDuty.out[field],/18\/10.*horário a confirmar.*BRT/);
+     assert(!futureDuty.out[field].includes('18:20'),`Future ${field} must not certify ${source} report`);
+   }
+   overrides={[ctx.presentationOverrideKey(futureDuty.events[0])]:{presentation:'18:10',label:'SYNTHETIC manual'}};
+   const manualFuture=snapshot(dutyRoster(source));
+   for(const field of ['detail','nextDetail']) {assert.match(manualFuture.out[field],/18\/10.*18:10.*BRT/);assert(!manualFuture.out[field].includes('18:20'));}
+   overrides={};
+ }
+ const publishedFuture=snapshot(dutyRoster('published'));
+ for(const field of ['detail','nextDetail']) assert.match(publishedFuture.out[field],/18\/10.*18:20.*BRT/);
+ now=savedNow;
  const sameClock=snapshot(roster({departureTime:'19:05'},{dutyReport:'19:05',dutyReportSource:'published'}));assert.equal(sameClock.out.presentationTime,'19:05','Published marker proves even APZ equal to STD; legacy equality alone does not');
  // Canonical departure fallback00:00 is not publication evidence.
  now=Date.parse('2032-10-18T02:00:00Z');
@@ -60,5 +78,5 @@ try {
  const folga=snapshot({...roster({}),days:[{date:'18/10/2032',dayNumber:18,month:10,year:2032,type:'DO',pairingCode:'DO',base:'GRU',legs:[],rawText:'SYNTHETIC ONLY'}]});
  assert.equal(folga.selected.placeholder,true,'Actual Home selects noFutureLeg for a rest-only roster');assert.equal(folga.out.state,'OFF_DUTY');assert.equal(folga.out.headline,'FOLGA');assert.equal(folga.out.presentationTime,'');assert(folga.out.validUntilEpochMs>now);assert.equal(lib.buildCrewCheckWatchSnapshot(folga.events,undefined,null,now).state,'OFF_DUTY');
  now=Date.parse('2032-10-19T15:00:00Z');const ended=snapshot({...roster({}),days:[{date:'18/10/2032',dayNumber:18,month:10,year:2032,type:'DO',pairingCode:'DO',base:'GRU',legs:[],rawText:'SYNTHETIC ONLY'}]});assert.equal(ended.out.state,'UNKNOWN');
- console.log('PASS real canonical → Home buildLegs/managedPresentation/nextFlight → watch producer: missing APZ/STD, known leg/day/duty APZ, explicit day provenance/manual controls, Folga-only placeholder, ended Folga',process.env.TZ);
+ console.log('PASS real canonical → Home buildLegs/managedPresentation/nextFlight → watch producer: missing APZ/STD, known leg/day/duty APZ, explicit day provenance/manual controls including future duty prose, Folga-only placeholder, ended Folga',process.env.TZ);
 } finally {fs.rmSync(dir,{recursive:true,force:true});}

@@ -336,6 +336,10 @@ export function buildCrewCheckWatchSnapshot(
       };
     });
 
+  // A canonical duty start may be an estimated/legacy report clock. Future
+  // prose must use the same publication proof as APZ and schedule.time.
+  const futureClock = event.kind === 'duty' ? presentation || 'horário a confirmar' : clockLabel(startMs);
+  const futureDate = dayLabel(event.kind === 'duty' && presentation ? presentationMs : startMs);
   const inactive = future || expired || state === 'OFF_DUTY' || !Number.isFinite(startMs) || !Number.isFinite(endMs);
   const transitions = [focusStartMs, startMs, endMs, instant(currentRest?.canonical?.endDateTime), routeIsFresh ? route!.updatedAtEpochMs + 30 * 60_000 : NaN].filter(time => Number.isFinite(time) && time > now);
   return {
@@ -346,7 +350,7 @@ export function buildCrewCheckWatchSnapshot(
     state,
     headline,
     primaryTime: inactive ? '' : state === 'LEAVE_SOON' ? leaveTime : state === 'REPORTING' ? presentation : event.kind === 'flight' ? clockLabel(startMs) : '',
-    detail: event.kind === 'flight' && !departure ? 'Horário de decolagem a confirmar; confira a fonte.' : future ? `Próxima programação ${dayLabel(startMs)} ${clockLabel(startMs)} BRT` : expired ? 'Programação encerrada; sincronize a escala.' : state === 'OFF_DUTY' ? `Folga ${dayLabel(now)} BRT` : `Programação ${dayLabel(startMs)} BRT` + (Number.isFinite(boardingMs) ? ` • Embarque previsto ${dayLabel(boardingMs)} ${clockLabel(boardingMs)}` : ''),
+    detail: event.kind === 'flight' && !departure ? 'Horário de decolagem a confirmar; confira a fonte.' : future ? `Próxima programação ${futureDate} ${futureClock} BRT` : expired ? 'Programação encerrada; sincronize a escala.' : state === 'OFF_DUTY' ? `Folga ${dayLabel(now)} BRT` : `Programação ${dayLabel(startMs)} BRT` + (Number.isFinite(boardingMs) ? ` • Embarque previsto ${dayLabel(boardingMs)} ${clockLabel(boardingMs)}` : ''),
     presentationTime: inactive ? '' : presentation,
     presentationPlace: [clean(event.origin), dayLabel(presentationMs), 'escala BRT'].filter(Boolean).join(' • '),
     leaveTime: inactive ? '' : leaveTime,
@@ -361,7 +365,7 @@ export function buildCrewCheckWatchSnapshot(
       : '',
     connection: remainingConnectionMinutes ? `${remainingConnectionMinutes} MIN` : '',
     nextFlight: future ? clean(event.flightNumber) : nextFlightEvent ? clean(nextFlightEvent.flightNumber) : '',
-    nextDetail: future ? `${dayLabel(startMs)} ${clockLabel(startMs)} BRT` : nextFlightEvent
+    nextDetail: future ? `${futureDate} ${futureClock} BRT` : nextFlightEvent
       ? [
           clean(nextFlightEvent.origin) && clean(nextFlightEvent.destination)
             ? `${clean(nextFlightEvent.origin)} → ${clean(nextFlightEvent.destination)}`
