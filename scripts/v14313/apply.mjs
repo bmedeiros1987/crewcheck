@@ -17,7 +17,10 @@ update('client/src/components/v1434/CrewCheckLifeView.tsx', (source) => {
   if (!next.includes("import LifeConciergePanel from '@/components/v14313/LifeConciergePanel';")) {
     const anchor = "import { toast } from 'sonner';";
     if (!next.includes(anchor)) throw new Error('[v14313] Âncora de importação do CrewCheck Life não encontrada.');
-    next = next.replace(anchor, `${anchor}\nimport LifeConciergePanel from '@/components/v14313/LifeConciergePanel';\nimport { clearLifeConciergeData, ingestHealthSummary, ingestManualSummary, saveLifeGoals } from '@/lib/lifeConcierge';`);
+    const existingHelpers = [...next.matchAll(/import \{([^}]+)\} from ['"]@\/lib\/lifeConcierge['"];?/g)].flatMap(match => match[1].split(',').map(value => value.trim()));
+    const helpers = ['clearLifeConciergeData', 'ingestHealthSummary', 'ingestManualSummary', 'saveLifeGoals'].filter(name => !existingHelpers.includes(name));
+    const helperImport = helpers.length ? `\nimport { ${helpers.join(', ')} } from '@/lib/lifeConcierge';` : '';
+    next = next.replace(anchor, `${anchor}\nimport LifeConciergePanel from '@/components/v14313/LifeConciergePanel';${helperImport}`);
   }
 
   if (!next.includes('ingestHealthSummary(detail, session);')) {

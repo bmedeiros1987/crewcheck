@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { captureAuthSession } from '@/lib/authClient';
-import { ingestCompanionSummary } from '@/lib/lifeConcierge';
+import { ingestCompanionSummary, ingestManualSummary } from '@/lib/lifeConcierge';
 import { isLifeHealthCacheKey, readLifeHealthCache, writeLifeHealthCache, clearCompanionHealthCache, type LifeHealthSession } from '@/lib/lifeHealthCache';
 
 type NextProgram = {
@@ -48,7 +48,8 @@ type LifeProfile = {
 };
 
 type ManualSummary = {
-  sleepHours: number;
+  sleepHours?: number;
+  sleepReported?: boolean;
   steps: number;
   activityMinutes: number;
   studyMinutes: number;
@@ -104,7 +105,6 @@ const DEFAULT_PROFILE: LifeProfile = {
 };
 
 const DEFAULT_MANUAL: ManualSummary = {
-  sleepHours: 0,
   steps: 0,
   activityMinutes: 0,
   studyMinutes: 0,
@@ -372,10 +372,14 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   const metrics = useMemo(() => {
+    const manualSleepAvailable = typeof manual.sleepHours === 'number' && Number.isFinite(manual.sleepHours)
+      && manual.sleepHours >= 0 && (manual.sleepHours > 0 || manual.sleepReported === true);
     const sleepHours = automaticSamsung ? (effectiveSummary.sleepMinutes == null || !Number.isFinite(effectiveSummary.sleepMinutes) || effectiveSummary.sleepMinutes < 0 ? null : effectiveSummary.sleepMinutes / 60)
-      : numberOrZero(effectiveSummary.sleepMinutes) / 60 || numberOrZero(manual.sleepHours);
+      : numberOrZero(effectiveSummary.sleepMinutes) > 0 ? numberOrZero(effectiveSummary.sleepMinutes) / 60
+      : manualSleepAvailable ? manual.sleepHours! : null;
     return {
       sleepHours,
+      sleepAvailable: sleepHours !== null,
       steps: automaticSamsung ? effectiveSummary.steps ?? null : numberOrZero(effectiveSummary.steps) || numberOrZero(manual.steps),
       activityMinutes: automaticSamsung ? effectiveSummary.activityMinutes ?? null : numberOrZero(effectiveSummary.activityMinutes) || numberOrZero(manual.activityMinutes),
       studyMinutes: numberOrZero(manual.studyMinutes),
@@ -425,7 +429,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   const recommendation = useMemo(() => {
     const program = nextProgram?.title || (nextProgram?.kind === 'flight' ? 'próxima programação' : 'próximo compromisso operacional');
     const presentation = nextProgram?.presentation || nextProgram?.departure;
-    if (profile.areas.sleep && metrics.sleepHours != null && metrics.sleepHours >= 0 && (automaticSamsung || metrics.sleepHours > 0) && metrics.sleepHours < profile.sleepTarget) {
+    if (profile.areas.sleep && metrics.sleepAvailable && metrics.sleepHours != null && metrics.sleepHours >= 0 && metrics.sleepHours < profile.sleepTarget) {
       return {
         tone: 'rest',
         title: 'Preserve seu descanso antes de encaixar novas atividades',
@@ -477,8 +481,11 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
 
   function saveManual() {
     if (!healthSession.token || !healthSession.isCurrent()) return;
+    const sleepReported = typeof manual.sleepHours === 'number' && Number.isFinite(manual.sleepHours)
+      && manual.sleepHours >= 0 && (manual.sleepHours > 0 || manual.sleepReported === true);
     const safe: ManualSummary = {
-      sleepHours: Math.min(24, numberOrZero(manual.sleepHours)),
+      sleepHours: sleepReported ? Math.min(24, manual.sleepHours!) : undefined,
+      sleepReported,
       steps: Math.min(200000, Math.round(numberOrZero(manual.steps))),
       activityMinutes: Math.min(1440, Math.round(numberOrZero(manual.activityMinutes))),
       studyMinutes: Math.min(1440, Math.round(numberOrZero(manual.studyMinutes))),
@@ -487,6 +494,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     };
     setManual(safe);
     writeStored(KEYS.manual, safe, healthSession);
+    ingestManualSummary(safe, healthSession);
     toast.success('Resumo manual atualizado localmente.');
   }
 
@@ -595,7 +603,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       <button onClick={() => setWhyOpen((value) => !value)}>Por que estou vendo isso? {whyOpen ? <ChevronUp/> : <ChevronDown/>}</button>
       {whyOpen && <ul>
         <li>{nextProgram?.title ? `Próxima programação: ${nextProgram.title}${nextProgram.presentation ? ` às ${nextProgram.presentation}` : ''}.` : 'Nenhuma programação completa foi informada para esta orientação.'}</li>
-        <li>Meta pessoal de sono: {profile.sleepTarget.toFixed(1).replace('.', ',')} h; registro considerado: {metrics.sleepHours != null && (automaticSamsung || metrics.sleepHours > 0) ? `${metrics.sleepHours.toFixed(1).replace('.', ',')} h` : 'sem dado'}.</li>
+        <li>Meta pessoal de sono: {profile.sleepTarget.toFixed(1).replace('.', ',')} h; registro considerado: {metrics.sleepAvailable && metrics.sleepHours != null ? `${metrics.sleepHours.toFixed(1).replace('.', ',')} h` : 'sem dado'}.</li>
         <li>Atividade considerada: {metrics.activityMinutes == null ? 'sem dado' : `${metrics.activityMinutes} min`}; estudo informado: {metrics.studyMinutes} min.</li>
         <li>A orientação é uma sugestão de rotina e não substitui avaliação pessoal ou canal oficial de fadiga.</li>
       </ul>}
@@ -608,7 +616,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     </section>}
 
     <section className="cc-life-metrics" aria-label="Resumo do CrewCheck Life">
-      <article><MoonStar/><small>Sono recente</small><strong>{metrics.sleepHours != null && (automaticSamsung || metrics.sleepHours > 0) ? `${metrics.sleepHours.toFixed(1).replace('.', ',')} h` : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : `meta ${profile.sleepTarget.toFixed(1).replace('.', ',')} h`}</span></article>
+      <article><MoonStar/><small>Sono recente</small><strong>{metrics.sleepAvailable && metrics.sleepHours != null ? `${metrics.sleepHours.toFixed(1).replace('.', ',')} h` : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : `meta ${profile.sleepTarget.toFixed(1).replace('.', ',')} h`}</span></article>
       <article><Footprints/><small>Passos</small><strong>{metrics.steps != null && (automaticSamsung || metrics.steps > 0) ? metrics.steps.toLocaleString('pt-BR') : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : 'entrada manual'}</span></article>
       <article><Activity/><small>Atividade</small><strong>{metrics.activityMinutes != null && (automaticSamsung || metrics.activityMinutes > 0) ? `${metrics.activityMinutes} min` : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : 'sem avaliação clínica'}</span></article>
       <article><BookOpen/><small>Estudo</small><strong>{metrics.studyMinutes ? `${metrics.studyMinutes} min` : 'Sem dado'}</strong><span>meta {profile.studyTargetMinutes} min</span></article>
@@ -666,7 +674,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     <section className="cc-life-block">
       <header><div><small>ENTRADA MANUAL</small><h2>Resumo pessoal</h2><p>Use quando não quiser ou não puder conectar um repositório de saúde.</p></div><button onClick={saveManual}>Salvar resumo</button></header>
       <div className="cc-life-form-grid five">
-        <label><span>Sono recente (h)</span><input type="number" min="0" max="24" step="0.25" value={manual.sleepHours} onChange={(event) => setManual({ ...manual, sleepHours: Number(event.target.value) })}/></label>
+        <label><span>Sono recente (h)</span><input type="number" min="0" max="24" step="0.25" placeholder="Não informado" value={manual.sleepHours === undefined || (manual.sleepHours === 0 && manual.sleepReported !== true) ? '' : manual.sleepHours} onChange={(event) => setManual({ ...manual, sleepHours: event.target.value.trim() === '' ? undefined : Number(event.target.value), sleepReported: event.target.value.trim() !== '' })}/></label>
         <label><span>Passos</span><input type="number" min="0" max="200000" step="100" value={manual.steps} onChange={(event) => setManual({ ...manual, steps: Number(event.target.value) })}/></label>
         <label><span>Atividade (min)</span><input type="number" min="0" max="1440" step="5" value={manual.activityMinutes} onChange={(event) => setManual({ ...manual, activityMinutes: Number(event.target.value) })}/></label>
         <label><span>Estudo (min)</span><input type="number" min="0" max="1440" step="5" value={manual.studyMinutes} onChange={(event) => setManual({ ...manual, studyMinutes: Number(event.target.value) })}/></label>

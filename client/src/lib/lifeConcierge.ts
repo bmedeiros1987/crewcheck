@@ -46,6 +46,7 @@ export type LifeHealthSnapshot = {
   generatedAtEpochMs?: number;
   metricValidity?: Record<string, { state: string; validUntilEpochMs: number }>;
   sleepMinutes?: number;
+  sleepReported?: boolean;
   sleepStart?: string;
   sleepEnd?: string;
   sleepSource?: string;
@@ -252,13 +253,16 @@ function parseHealthSnapshot(value: any, source: LifeHealthSnapshot['source'], n
     return samsung && (validity?.state !== 'valid' || !(validity.validUntilEpochMs > now))
       ? undefined : optionalMetric(input);
   };
-  const sleepMinutes = metric('sleepMinutes', value.sleepMinutes ?? (optionalMetric(value.sleepHours) === undefined ? undefined : value.sleepHours * 60));
+  const measuredSleep = metric('sleepMinutes', value.sleepMinutes ?? (optionalMetric(value.sleepHours) === undefined ? undefined : value.sleepHours * 60));
+  // Manual form defaults and legacy unmarked zero are not observations.
+  const sleepMinutes = source === 'manual' && measuredSleep === 0 && value.sleepReported !== true ? undefined : measuredSleep;
   const snapshot: LifeHealthSnapshot = {
     capturedAt,
     validUntilEpochMs: samsung ? value.validUntilEpochMs : undefined,
     generatedAtEpochMs: samsung ? value.generatedAtEpochMs : undefined,
     metricValidity: samsung ? value.metricValidity : undefined,
     sleepMinutes,
+    sleepReported: source === 'manual' && value.sleepReported === true ? true : undefined,
     sleepStart: sleepMinutes === undefined ? undefined : validDate(value.sleepStart)?.toISOString(),
     sleepEnd: sleepMinutes === undefined ? undefined : validDate(value.sleepEnd)?.toISOString(),
     sleepSource: String(value.sleepSource || '').trim() || undefined,

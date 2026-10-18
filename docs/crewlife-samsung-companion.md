@@ -209,3 +209,19 @@ se a gravação sanitizada falhar, não exporta esse cache e solicita limpeza lo
 Fixtures Java e web continuam sem SDK/API/dispositivo real. O gate de ownership
 MyCrewCare continua intacto: seu FAIL na PR de saúde exige decisão separada de
 composição/ownership; não é tratado como teste de saúde aprovado nem dispensado.
+
+### Sono manual: ausência e zero intencional
+
+O formulário começa com sono em branco. Salvar apenas passos/atividade não cria
+uma observação de sono zero. Um zero legado sem indicação de preenchimento é
+tratado como não informado, tanto na tela como no histórico do Concierge.
+
+A edição explícita do campo registra `sleepReported`; preencher zero conserva
+zero e essa indicação no resumo local e na ingestão. Limpar o campo ou informar
+um valor negativo não gera zero. Valores positivos manuais anteriores permanecem
+legíveis. O marcador expressa preenchimento local, não validação de sensor.
+
+A fixture executa o onChange real do sono, o saveManual real, escrita com owner,
+ingestManualSummary e as orientações reais da tela/Concierge. Cobre defaults com
+passos51, zero legado, zero intencional, positivo, limpar campo e negativo, antes
+e depois da preparação canônica, sem API ou dado de saúde real.
