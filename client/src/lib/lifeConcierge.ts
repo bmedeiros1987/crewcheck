@@ -358,11 +358,12 @@ export function ingestHealthSummary(value: unknown): LifeHealthSnapshot | null {
 
 export function ingestCompanionSummary(value: unknown): LifeHealthSnapshot | null {
   const raw = value && typeof value === 'object' ? value as any : null;
-  if (!raw || raw.automatic !== true || String(raw.source || '') !== 'samsung_health') return null;
+  if (!raw || raw.automatic !== true || String(raw.source || '') !== 'samsung_health'
+      || !(Number(raw.generatedAtEpochMs) > 0) || !(Number(raw.validUntilEpochMs) > Date.now())) return null;
   const capturedAt = Number(raw.generatedAtEpochMs) > 0
     ? new Date(Number(raw.generatedAtEpochMs)).toISOString()
-    : new Date().toISOString();
-  const snapshot = parseHealthSnapshot({ ...raw, capturedAt }, 'samsung-companion');
+    : '';
+  const snapshot = parseHealthSnapshot({ ...raw, activityMinutes: raw.activeMinutes, capturedAt }, 'samsung-companion');
   if (!snapshot) return null;
   writeJson(KEYS.companionSummary, snapshot);
   const cutoff = daysAgo(35);

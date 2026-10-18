@@ -116,7 +116,7 @@ public final class MainActivity extends Activity {
 
         new Thread(() -> {
             JSONObject status = SamsungHealthRuntime.status(this);
-            String cached = LifeSummaryStore.read(this);
+            String cached = SamsungHealthRuntime.authorizedCachedSummary(this);
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed()) return;
                 applyStatus(status);
@@ -125,7 +125,7 @@ public final class MainActivity extends Activity {
                         renderSummary(new JSONObject(cached));
                     } catch (Exception ignored) {
                     }
-                }
+                } else summaryView.setText("Sem dados autorizados disponíveis.");
             });
         }, "crewlife-samsung-status").start();
     }
@@ -207,7 +207,7 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
                     renderSummary(summary);
-                    statusView.setText("Samsung Health conectado · atualizado agora");
+                    statusView.setText("Consulta concluída · cada medição mantém sua data");
                     refreshButton.setEnabled(true);
                 });
             } catch (Throwable error) {
@@ -231,12 +231,12 @@ public final class MainActivity extends Activity {
         StringBuilder value = new StringBuilder();
 
         int energy = json.optInt("energyScore", 0);
-        if (energy > 0) {
+        if (!json.isNull("energyScore") && energy >= 0) {
             value.append("Energia ").append(energy).append("/100\n");
         }
 
         int sleep = json.optInt("sleepMinutes", 0);
-        if (sleep > 0) {
+        if (!json.isNull("sleepMinutes") && sleep >= 0) {
             value.append("Sono ")
                     .append(sleep / 60)
                     .append("h")
@@ -245,27 +245,27 @@ public final class MainActivity extends Activity {
         }
 
         int sleepScore = json.optInt("sleepScore", 0);
-        if (sleepScore > 0) {
+        if (!json.isNull("sleepScore") && sleepScore >= 0) {
             value.append("Pontuação do sono ").append(sleepScore).append("\n");
         }
 
         long steps = json.optLong("steps", 0);
-        if (steps > 0) {
+        if (!json.isNull("steps") && steps >= 0) {
             value.append("Passos ").append(String.format("%,d", steps)).append("\n");
         }
 
         long activity = json.optLong("activeMinutes", 0);
-        if (activity > 0) {
+        if (!json.isNull("activeMinutes") && activity >= 0) {
             value.append("Atividade ").append(activity).append(" min\n");
         }
 
         long calories = json.optLong("caloriesBurned", 0);
-        if (calories > 0) {
+        if (!json.isNull("caloriesBurned") && calories >= 0) {
             value.append("Calorias ativas ").append(calories).append(" kcal\n");
         }
 
         double distance = json.optDouble("distanceMeters", 0);
-        if (distance > 0) {
+        if (!json.isNull("distanceMeters") && distance >= 0) {
             value.append("Distância ")
                     .append(String.format("%.2f km", distance / 1000d));
         }

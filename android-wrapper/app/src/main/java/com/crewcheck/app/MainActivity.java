@@ -887,6 +887,23 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
+    // This client hint only INVALIDATES local health consent/in-flight exports; it is not
+    // authentication or evidence of whose Samsung Health account is on this device.
+    private final Object companionFence = new Object();
+    private long companionGeneration = 0;
+    private String companionAccountHint = "";
+
+    private void invalidateCompanionOnAccountChange(String hint) {
+        String next = hint == null ? "" : hint;
+        synchronized (companionFence) {
+            if (next.equals(companionAccountHint)) return;
+            companionAccountHint = next;
+            companionGeneration++;
+            CrewLifeWatchPublisher.revoke(this, null);
+            dispatchLifeCompanionSummaryRaw("");
+        }
+    }
+
     private String readLifeCompanionSummaryInternal() {
         android.database.Cursor cursor = null;
         try {
@@ -894,7 +911,10 @@ public class MainActivity extends Activity {
             cursor = getContentResolver().query(uri, new String[]{"json"}, null, null, null);
             if (cursor == null || !cursor.moveToFirst()) return "";
             int column = cursor.getColumnIndex("json");
-            return column >= 0 ? String.valueOf(cursor.getString(column)) : "";
+            if (column < 0) return "";
+            String raw = cursor.getString(column);
+            return raw == null || raw.isBlank() ? "" : com.crewcheck.health.CompanionFreshness
+                    .filter(new JSONObject(raw), System.currentTimeMillis()).toString();
         } catch (SecurityException denied) {
             return "";
         } catch (Exception error) {
@@ -914,11 +934,16 @@ public class MainActivity extends Activity {
 
     private void syncLifeCompanionToCrewCheckAndWatch(String reason) {
         final String threadName = "crewlife-companion-sync";
+        final long generation;
+        synchronized (companionFence) { generation = companionGeneration; }
         new Thread(() -> {
             try {
                 String raw = readLifeCompanionSummaryInternal();
-                dispatchLifeCompanionSummaryRaw(raw);
-                publishLifeCompanionSummaryToWatch(raw);
+                synchronized (companionFence) {
+                    if (generation != companionGeneration || companionAccountHint.isEmpty()) return;
+                    dispatchLifeCompanionSummaryRaw(raw);
+                    publishLifeCompanionSummaryToWatch(raw);
+                }
             } catch (Exception ignored) {}
         }, threadName).start();
     }
@@ -938,17 +963,19 @@ public class MainActivity extends Activity {
             JSONObject payload = new JSONObject();
             payload.put("schemaVersion", 1);
             payload.put("generatedAtEpochMs", generatedAt);
-            payload.put("validUntilEpochMs", generatedAt + 6L * 60L * 60L * 1000L);
+            long validUntil = source.optLong("validUntilEpochMs", 0);
+            if (validUntil <= System.currentTimeMillis()) return;
+            payload.put("validUntilEpochMs", validUntil);
             payload.put("recoveryLabel", "DESCONHECIDA");
 
             int energyScore = source.optInt("energyScore", 0);
-            if (energyScore > 0 && energyScore <= 100) {
+            if (!source.isNull("energyScore") && energyScore >= 0 && energyScore <= 100) {
                 payload.put("recoveryScore", energyScore);
                 payload.put("scoreKind", "ENERGY");
             }
 
             int sleepMinutes = source.optInt("sleepMinutes", 0);
-            if (sleepMinutes > 0 && sleepMinutes <= 24 * 60) {
+            if (!source.isNull("sleepMinutes") && sleepMinutes >= 0 && sleepMinutes <= 24 * 60) {
                 payload.put("sleepMinutes", sleepMinutes);
                 payload.put(
                         "sleepLabel",
@@ -957,10 +984,10 @@ public class MainActivity extends Activity {
             }
 
             int steps = source.optInt("steps", 0);
-            if (steps >= 0 && steps <= 200_000) payload.put("steps", steps);
+            if (!source.isNull("steps") && steps >= 0 && steps <= 200_000) payload.put("steps", steps);
 
             int activeMinutes = source.optInt("activeMinutes", 0);
-            if (activeMinutes >= 0 && activeMinutes <= 24 * 60) {
+            if (!source.isNull("activeMinutes") && activeMinutes >= 0 && activeMinutes <= 24 * 60) {
                 payload.put("activeMinutes", activeMinutes);
             }
 
@@ -976,12 +1003,17 @@ public class MainActivity extends Activity {
         try {
             if (webView == null) return;
             String safe = raw == null || raw.isBlank() ? "{}" : raw;
+            final long generation;
+            synchronized (companionFence) { generation = companionGeneration; }
             final String js = "(function(){try{var detail=" + safe + ";" +
                     "window.__crewcheckLifeCompanionSummary=detail;" +
                     "window.dispatchEvent(new CustomEvent('crewcheck:life-companion-summary',{detail:detail}));" +
                     "}catch(e){}})();";
             runOnUiThread(() -> {
-                try { if (webView != null) webView.evaluateJavascript(js, null); } catch (Exception ignored) {}
+                synchronized (companionFence) {
+                    if (generation != companionGeneration) return;
+                    try { if (webView != null) webView.evaluateJavascript(js, null); } catch (Exception ignored) {}
+                }
             });
         } catch (Exception ignored) {}
     }
@@ -1216,7 +1248,10 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean setNotificationCancellationScope(final String accountHint) {
             NotificationLedger ledger = new NotificationLedgerAndroid(MainActivity.this).ledger();
-            if (accountHint != null && accountHint.length() > 512) { ledger.scope(""); return false; }
+            if (accountHint != null && accountHint.length() > 512) {
+                invalidateCompanionOnAccountChange(""); ledger.scope(""); return false;
+            }
+            invalidateCompanionOnAccountChange(accountHint);
             return ledger.scope(accountHint);
         }
 

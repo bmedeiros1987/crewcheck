@@ -16,6 +16,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { captureAuthSession } from '@/lib/authClient';
 
 type NextProgram = {
   title?: string;
@@ -69,6 +70,7 @@ type NativeHealthSummary = {
   automatic?: boolean;
   source?: string;
   generatedAtEpochMs?: number;
+  validUntilEpochMs?: number;
   energyScore?: number | null;
   sleepScore?: number | null;
   caloriesBurned?: number | null;
@@ -80,6 +82,7 @@ type NativeHealthSummary = {
   steps?: number | null;
   distanceMeters?: number | null;
   activityMinutes?: number | null;
+  activeMinutes?: number | null;
   restingHeartRateAverage?: number | null;
   capturedAt?: string;
 };
@@ -217,7 +220,15 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
 
   useEffect(() => {
     const native = (window as any).AndroidCrewCheckNative;
+    const session = captureAuthSession();
+    let cancelled = false;
+    const clearCompanion = () => {
+      cancelled = true;
+      setCompanionSummary({});
+      try { localStorage.removeItem('crewcheck:life:companion-summary:v1'); } catch {}
+    };
     const readCompanion = () => {
+      if (cancelled || !session.isCurrent()) return;
       try {
         const statusRaw = native?.lifeCompanionStatus?.();
         const status = typeof statusRaw === 'string' ? JSON.parse(statusRaw) : (statusRaw || {});
@@ -225,25 +236,29 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
         const summaryRaw = native?.readLifeCompanionSummary?.();
         const summary = typeof summaryRaw === 'string' ? JSON.parse(summaryRaw) : (summaryRaw || {});
         if (summary && typeof summary === 'object' && summary.automatic) {
-          const normalized = { ...summary, ok: true, source: 'samsung_health' };
+          const normalized = { ...summary, activityMinutes: summary.activeMinutes ?? null, ok: true, source: 'samsung_health' };
           setCompanionSummary(normalized);
           try {
             localStorage.setItem('crewcheck:life:companion-summary:v1', JSON.stringify({
               ...normalized,
               capturedAt: Number(normalized.generatedAtEpochMs) > 0
                 ? new Date(Number(normalized.generatedAtEpochMs)).toISOString()
-                : new Date().toISOString(),
+                : undefined,
               source: 'samsung-companion',
             }));
             window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key: 'crewcheck:life:companion-summary:v1' } }));
           } catch {}
+        } else {
+          setCompanionSummary({});
+          localStorage.removeItem('crewcheck:life:companion-summary:v1');
         }
       } catch {}
     };
     const onCompanion = (event: Event) => {
+      if (cancelled || !session.isCurrent()) return;
       const detail = parseNativePayload((event as CustomEvent).detail) as NativeHealthSummary;
       if (detail && detail.automatic) {
-        const normalized = { ...detail, ok: true, source: 'samsung_health' };
+        const normalized = { ...detail, activityMinutes: detail.activeMinutes ?? null, ok: true, source: 'samsung_health' };
         setCompanionSummary(normalized);
         setCompanionStatus((current) => ({ ...current, installed: true, state: 'connected', automatic: true }));
         try {
@@ -251,17 +266,25 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
             ...normalized,
             capturedAt: Number(normalized.generatedAtEpochMs) > 0
               ? new Date(Number(normalized.generatedAtEpochMs)).toISOString()
-              : new Date().toISOString(),
+              : undefined,
             source: 'samsung-companion',
           }));
           window.dispatchEvent(new CustomEvent('crewcheck:life-adaptive-update', { detail: { key: 'crewcheck:life:companion-summary:v1' } }));
         } catch {}
+      } else {
+        setCompanionSummary({});
+        localStorage.removeItem('crewcheck:life:companion-summary:v1');
       }
     };
     readCompanion();
+    window.addEventListener('crewcheck:auth-will-change', clearCompanion);
+    window.addEventListener('crewcheck:auth-expired', clearCompanion);
     window.addEventListener('crewcheck:life-companion-summary', onCompanion);
     window.addEventListener('focus', readCompanion);
     return () => {
+      cancelled = true;
+      window.removeEventListener('crewcheck:auth-will-change', clearCompanion);
+      window.removeEventListener('crewcheck:auth-expired', clearCompanion);
       window.removeEventListener('crewcheck:life-companion-summary', onCompanion);
       window.removeEventListener('focus', readCompanion);
     };
@@ -275,6 +298,7 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       && companionStatus.state === 'connected'
       && companionAgeMs >= 0
       && companionAgeMs <= 6 * 60 * 60 * 1000
+      && Number(companionSummary.validUntilEpochMs) > Date.now()
   );
   const effectiveSummary = companionFresh ? companionSummary : nativeSummary;
   const automaticSamsung = companionFresh;
@@ -340,15 +364,16 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   }
 
   const metrics = useMemo(() => {
-    const sleepHours = numberOrZero(effectiveSummary.sleepMinutes) / 60 || numberOrZero(manual.sleepHours);
+    const sleepHours = automaticSamsung ? (effectiveSummary.sleepMinutes == null ? null : effectiveSummary.sleepMinutes / 60)
+      : numberOrZero(effectiveSummary.sleepMinutes) / 60 || numberOrZero(manual.sleepHours);
     return {
       sleepHours,
-      steps: numberOrZero(effectiveSummary.steps) || numberOrZero(manual.steps),
-      activityMinutes: numberOrZero(effectiveSummary.activityMinutes) || numberOrZero(manual.activityMinutes),
+      steps: automaticSamsung ? effectiveSummary.steps ?? null : numberOrZero(effectiveSummary.steps) || numberOrZero(manual.steps),
+      activityMinutes: automaticSamsung ? effectiveSummary.activityMinutes ?? null : numberOrZero(effectiveSummary.activityMinutes) || numberOrZero(manual.activityMinutes),
       studyMinutes: numberOrZero(manual.studyMinutes),
       leisureMinutes: numberOrZero(manual.leisureMinutes),
     };
-  }, [manual, effectiveSummary]);
+  }, [manual, effectiveSummary, automaticSamsung]);
 
   useEffect(() => {
     if (!consent.active || !watchMirrorEnabled || (!effectiveSummary.ok && !effectiveSummary.automatic)) return;
@@ -356,26 +381,31 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
     if (!bridge?.publishWatchCrewLife) return;
 
     const now = Date.now();
+    // Samsung projection already bounds every metric by its source age. Never renew on render.
+    const samsung = effectiveSummary.source === 'samsung_health';
+    const generated = samsung ? Number(effectiveSummary.generatedAtEpochMs) : now;
+    const validUntil = samsung ? Number(effectiveSummary.validUntilEpochMs) : now + 6 * 60 * 60 * 1000;
+    if (!Number.isFinite(generated) || generated > now || !(validUntil > now)) return;
     const payload: Record<string, unknown> = {
       schemaVersion: 1,
-      generatedAtEpochMs: now,
-      validUntilEpochMs: now + 6 * 60 * 60 * 1000,
+      generatedAtEpochMs: generated,
+      validUntilEpochMs: validUntil,
       recoveryLabel: 'DESCONHECIDA',
     };
-    if (Number.isFinite(Number(effectiveSummary.sleepMinutes))) {
+    if (effectiveSummary.sleepMinutes != null && Number.isFinite(Number(effectiveSummary.sleepMinutes))) {
       payload.sleepMinutes = Math.max(0, Math.round(Number(effectiveSummary.sleepMinutes)));
       payload.sleepLabel = hoursLabel(effectiveSummary.sleepMinutes);
     }
-    if (Number.isFinite(Number(effectiveSummary.steps))) {
+    if (effectiveSummary.steps != null && Number.isFinite(Number(effectiveSummary.steps))) {
       payload.steps = Math.max(0, Math.round(Number(effectiveSummary.steps)));
     }
-    if (Number.isFinite(Number(effectiveSummary.activityMinutes))) {
+    if (effectiveSummary.activityMinutes != null && Number.isFinite(Number(effectiveSummary.activityMinutes))) {
       payload.activeMinutes = Math.max(0, Math.round(Number(effectiveSummary.activityMinutes)));
     }
-    if (Number.isFinite(Number(effectiveSummary.restingHeartRateAverage))) {
+    if (effectiveSummary.restingHeartRateAverage != null && Number.isFinite(Number(effectiveSummary.restingHeartRateAverage))) {
       payload.restingHeartRate = Math.max(0, Math.round(Number(effectiveSummary.restingHeartRateAverage)));
     }
-    if (effectiveSummary.source === 'samsung_health' && Number(effectiveSummary.energyScore) > 0) {
+    if (effectiveSummary.source === 'samsung_health' && effectiveSummary.energyScore != null && Number(effectiveSummary.energyScore) >= 0) {
       payload.recoveryScore = Math.max(0, Math.min(100, Math.round(Number(effectiveSummary.energyScore))));
       payload.scoreKind = 'ENERGY';
       payload.detail = 'Samsung Health · Energy Score';
@@ -387,14 +417,14 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
   const recommendation = useMemo(() => {
     const program = nextProgram?.title || (nextProgram?.kind === 'flight' ? 'próxima programação' : 'próximo compromisso operacional');
     const presentation = nextProgram?.presentation || nextProgram?.departure;
-    if (profile.areas.sleep && metrics.sleepHours > 0 && metrics.sleepHours < profile.sleepTarget) {
+    if (profile.areas.sleep && metrics.sleepHours != null && metrics.sleepHours > 0 && metrics.sleepHours < profile.sleepTarget) {
       return {
         tone: 'rest',
         title: 'Preserve seu descanso antes de encaixar novas atividades',
         body: `Seu registro mais recente está ${Math.max(0, profile.sleepTarget - metrics.sleepHours).toFixed(1).replace('.', ',')} h abaixo da meta pessoal. ${presentation ? `A apresentação do ${program} está indicada para ${presentation}.` : 'Confira a próxima programação antes de organizar estudo ou treino.'}`,
       };
     }
-    if (profile.areas.activity && metrics.activityMinutes < 20) {
+    if (profile.areas.activity && metrics.activityMinutes != null && metrics.activityMinutes < 20) {
       return {
         tone: 'activity',
         title: 'Há espaço para uma atividade curta, se sua agenda permitir',
@@ -548,21 +578,21 @@ export default function CrewCheckLifeView({ nextProgram }: { nextProgram?: NextP
       {whyOpen && <ul>
         <li>{nextProgram?.title ? `Próxima programação: ${nextProgram.title}${nextProgram.presentation ? ` às ${nextProgram.presentation}` : ''}.` : 'Nenhuma programação completa foi informada para esta orientação.'}</li>
         <li>Meta pessoal de sono: {profile.sleepTarget.toFixed(1).replace('.', ',')} h; registro considerado: {metrics.sleepHours ? `${metrics.sleepHours.toFixed(1).replace('.', ',')} h` : 'sem dado'}.</li>
-        <li>Atividade considerada: {metrics.activityMinutes} min; estudo informado: {metrics.studyMinutes} min.</li>
+        <li>Atividade considerada: {metrics.activityMinutes == null ? 'sem dado' : `${metrics.activityMinutes} min`}; estudo informado: {metrics.studyMinutes} min.</li>
         <li>A orientação é uma sugestão de rotina e não substitui avaliação pessoal ou canal oficial de fadiga.</li>
       </ul>}
     </section>
 
     {automaticSamsung && <section className="cc-life-auto-source">
       <div><small>FONTE AUTOMÁTICA</small><strong>Samsung Health</strong><span>Sincronizado pelo CrewLife Companion</span></div>
-      {Number(companionSummary.energyScore || 0) > 0 && <b>Energia {Math.round(Number(companionSummary.energyScore))}</b>}
+      {companionSummary.energyScore != null && Number(companionSummary.energyScore) >= 0 && <b>Energia {Math.round(Number(companionSummary.energyScore))}</b>}
       <button onClick={() => (window as any).AndroidCrewCheckNative?.openLifeCompanion?.()}>Abrir Companion</button>
     </section>}
 
     <section className="cc-life-metrics" aria-label="Resumo do CrewCheck Life">
       <article><MoonStar/><small>Sono recente</small><strong>{metrics.sleepHours ? `${metrics.sleepHours.toFixed(1).replace('.', ',')} h` : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : `meta ${profile.sleepTarget.toFixed(1).replace('.', ',')} h`}</span></article>
-      <article><Footprints/><small>Passos</small><strong>{metrics.steps ? metrics.steps.toLocaleString('pt-BR') : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : 'entrada manual'}</span></article>
-      <article><Activity/><small>Atividade</small><strong>{metrics.activityMinutes ? `${metrics.activityMinutes} min` : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : 'sem avaliação clínica'}</span></article>
+      <article><Footprints/><small>Passos</small><strong>{metrics.steps != null && (automaticSamsung || metrics.steps > 0) ? metrics.steps.toLocaleString('pt-BR') : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : 'entrada manual'}</span></article>
+      <article><Activity/><small>Atividade</small><strong>{metrics.activityMinutes != null && (automaticSamsung || metrics.activityMinutes > 0) ? `${metrics.activityMinutes} min` : 'Sem dado'}</strong><span>{automaticSamsung ? 'Samsung Health · automático' : 'sem avaliação clínica'}</span></article>
       <article><BookOpen/><small>Estudo</small><strong>{metrics.studyMinutes ? `${metrics.studyMinutes} min` : 'Sem dado'}</strong><span>meta {profile.studyTargetMinutes} min</span></article>
     </section>
 
