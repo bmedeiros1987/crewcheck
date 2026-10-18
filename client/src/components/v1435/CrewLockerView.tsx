@@ -47,7 +47,7 @@ export default function CrewLockerView() {
     const latest = await listCrewDocuments();
     if (session !== crewLockerSession()) return;
     setDocuments(latest); setStorage(estimate); setToday(civilToday());
-    if (newNotices) toast.info('Há prazos informados para revisar no CrewLocker.');
+    if (newNotices) toast.info('Há prazos informados para revisar no CreWallet.');
   }
   useEffect(() => {
     const reset = () => { setKey(null); setUnlockedSession(null); setDocuments([]); setPin(''); setFile(null); setHolderName(''); setDisplayName(''); setIssuer(''); setEditing(null); };
@@ -81,7 +81,7 @@ export default function CrewLockerView() {
       setPin('');
       await refresh(unlocked);
       if (session !== crewLockerSession()) return;
-      toast.success('CrewLocker desbloqueado neste aparelho.');
+      toast.success('CreWallet desbloqueado neste aparelho.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não foi possível desbloquear.');
     }
@@ -148,7 +148,7 @@ export default function CrewLockerView() {
   }
 
   if (!key || unlockedSession !== crewLockerSession()) return <section className="cc-locker-shell">
-    <header className="cc-locker-hero"><span><FileLock2/></span><div><small>DOCUMENTOS OPERACIONAIS OFFLINE</small><h1>CrewLocker</h1><p>Seus documentos ficam criptografados neste aparelho e disponíveis mesmo sem internet.</p></div></header>
+    <header className="cc-locker-hero"><span><FileLock2/></span><div><small>DOCUMENTOS OPERACIONAIS OFFLINE</small><h1>CreWallet</h1><p>Seus documentos ficam criptografados neste aparelho e disponíveis mesmo sem internet.</p></div></header>
     <article className="cc-locker-unlock">
       <ShieldCheck/>
       <div><h2>Desbloquear cofre local</h2><p>Digite o PIN desta conta neste aparelho. O CrewCheck não armazena o PIN. Cópias do cofre antigo sem conta vinculada não são migradas automaticamente; importe novamente os arquivos para vincular à conta atual.</p></div>
@@ -159,7 +159,7 @@ export default function CrewLockerView() {
   </section>;
 
   return <section className="cc-locker-shell">
-    <header className="cc-locker-hero"><span><Plane/></span><div><small>CREWCHECK · CARTEIRA OPERACIONAL</small><h1>CrewLocker</h1><p>Documentos protegidos, leitura offline e situação de validade em um único lugar.</p></div><b>{storage.persistent ? 'Offline persistente' : 'Offline local'}</b></header>
+    <header className="cc-locker-hero"><span><Plane/></span><div><small>CREWCHECK · CARTEIRA OPERACIONAL</small><h1>CreWallet</h1><p>Documentos protegidos, leitura offline e situação de validade em um único lugar.</p></div><b>{storage.persistent ? 'Offline persistente' : 'Offline local'}</b></header>
 
     <section className="cc-locker-summary">
       <article><FileCheck2/><small>Registros de validade</small><strong>{summary.total}</strong></article>
@@ -210,7 +210,7 @@ export default function CrewLockerView() {
         </article>;
       })}</div>}
       <p>Este acompanhamento não autoriza operação: fonte, assinatura, aptidão, treinamentos e demais requisitos operacionais exigem conferência própria. A licença de comissário é permanente; habilitações e CMA têm condições próprias. <a href="https://www.gov.br/pt-br/servicos/obter-autorizacao-para-trabalhar-como-comissario-de-voo" target="_blank" rel="noreferrer">Consultar ANAC</a>.</p>
-      <p>Avisos antecipados aparecem enquanto o CrewLocker está aberto e desbloqueado. Com o app fechado, não há entrega garantida: é necessária infraestrutura de agendamento e um canal autorizado. Nenhum envio externo é ativado aqui.</p>
+      <p>Avisos antecipados aparecem enquanto o CreWallet está aberto e desbloqueado. Com o app fechado, não há entrega garantida: é necessária infraestrutura de agendamento e um canal autorizado. Nenhum envio externo é ativado aqui.</p>
       <p className="cc-locker-storage">Armazenamento usado: {(storage.usage / 1024 / 1024).toFixed(1)} MB de {(storage.quota / 1024 / 1024).toFixed(0)} MB disponíveis. A disponibilidade offline depende da permanência dos dados do aplicativo no aparelho.</p>
     </section>
   </section>;
