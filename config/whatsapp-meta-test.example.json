@@ -1,0 +1,11 @@
+{
+  "mode": "mock",
+  "phoneNumberId": "1259259633936048",
+  "businessAccountId": "1374607321298577",
+  "businessNumber": "+15556583890",
+  "isolatedDatabaseAttestation": "",
+  "liveEnabled": false,
+  "allowedRecipients": [],
+  "ownerMode": "authenticated_existing_link",
+  "visitorMode": "existing_linked_visitor"
+}

@@ -1,3 +1,4 @@
+import * as testSendPolicy from '../server/concierge/whatsapp-test-send-policy.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -10,7 +11,9 @@ const BR='111111111111111', UK='222222222222222';
 let configured=BR, calls=[], links=0, completes=0, sends=[], current;
 const active={email:'a@example.invalid',linked_at:'2026-10-03 16:00:00.001',consent_concierge:1};
 let engine=async ({email})=>`private:${email}`;
-const context=vm.createContext({
+const context=vm.createContext({ ...testSendPolicy,
+ dispatchWhatsAppVisitor:async()=>false,whatsappVisitorEnabled:()=>false,whatsappPdfEnabled:()=>false,whatsappPdfConfiguration:null,
+ whatsappMenuEnabled:()=>false,
  phoneNumberId:()=>configured, normalizePhone:v=>String(v||''),
  findActiveLinkByPhone:async()=>{links++;return current;},
  tryCompleteLink:async()=>{completes++;return {linked:true};},
@@ -43,7 +46,7 @@ await context.handleInboundMessage(message(BR,'oi','5522222222222'));
 assert.equal(sends[0][0],'5511111111111');assert.equal(sends[1][0],'5522222222222');assert.equal(sends[1][1],'private:b@example.invalid');
 
 let network=[];
-const transport=vm.createContext({phoneNumberId:()=>configured,accessToken:()=> 'synthetic-token',normalizePhone:v=>v,
+const transport=vm.createContext({ ...testSendPolicy,phoneNumberId:()=>configured,accessToken:()=> 'synthetic-token',normalizePhone:v=>v,
  graphVersion:()=> 'v26.0',AbortController,setTimeout,clearTimeout,
  fetch:async(url,options)=>{network.push({url,options});return {ok:true,json:async()=>({messages:[{id:'synthetic-out'}]})};},
  console:{info:()=>{},warn:()=>{}},
@@ -61,7 +64,7 @@ configured=UK;assert.equal((await transport.sendWhatsAppText('5511111111111','sy
 assert.equal(network.length,1,'configuration drift must not switch reply sender');
 
 let deliveries=0;const claimed=new Set();
-const processing=vm.createContext({payloadHash:()=> 'synthetic-hash',extractWhatsAppEvents,extractWhatsAppInboundMessages,extractWhatsAppStatusDiagnostics,
+const processing=vm.createContext({ ...testSendPolicy,dispatchWhatsAppVisitor:async()=>false,whatsappVisitorEnabled:()=>false,whatsappPdfEnabled:()=>false,whatsappPdfConfiguration:null,payloadHash:()=> 'synthetic-hash',extractWhatsAppEvents,extractWhatsAppInboundMessages,extractWhatsAppStatusDiagnostics,
  claimInMemory:id=>{if(claimed.has(id))return false;claimed.add(id);return true;},claimPersistentEvent:async()=>true,
  handleInboundMessage:async()=>{deliveries++;},console:{info:()=>{},warn:()=>{}},
 });
