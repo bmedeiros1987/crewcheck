@@ -48,10 +48,10 @@ update('client/src/pages/Home.tsx', (source) => {
     next = insertAfter(next, anchor, "import GuardianCenterView from '@/components/v14316/GuardianCenterView';\nimport SupportCenterView from '@/components/v14316/SupportCenterView';\nimport AdminControlCenter from '@/components/v14316/AdminControlCenter';\nimport '@/components/v14316/control-center.css';", 'imports de Guardian e suporte');
   }
   if (!/\| 'guardian'\b/.test(next)) next = next.replace(/\| 'admin';/, "| 'guardian' | 'support' | 'admin';");
-  if (!next.includes("['guardian','Guardian'")) {
+  if (!next.includes("['guardian','Saúde'")) {
     const anchor = "['manual','Manual CrewCheck','Ajuda, PDFs e tutorial',BookOpen],";
     if (!next.includes(anchor)) throw new Error('[v14316] Menu Manual não encontrado.');
-    next = next.replace(anchor, `${anchor} ['guardian','Guardian','QR de emergência protegido',QrCode], ['support','Suporte','Problemas e sugestões',LifeBuoy],`);
+    next = next.replace(anchor, `${anchor} ['guardian','Saúde','QR de emergência protegido',QrCode], ['support','Suporte','Problemas e sugestões',LifeBuoy],`);
   }
   if (!next.includes("return 'guardian';")) {
     const anchor = "if (value === 'life' || value === 'crewcheck-life' || value === 'saude' || value === 'saúde' || value === 'bem-estar') return 'life';";
@@ -297,8 +297,8 @@ update('client/src/pages/AboutUsPage.tsx', (source) => {
 
 update('client/src/components/v1434/ManualCenterView.tsx', (source) => source
   .replace(/V14\.3\.4/g, `V${VERSION}`)
-  .replace('Manual completo, guia rápido e tutorial interativo no mesmo lugar.', 'Manual completo, guias rápidos, Guardian, Health Connect, visitante, Telegram, Saída Inteligente, suporte e privacidade no mesmo lugar.')
-  .replace('<article><BookOpen/><h2>Consulta no sistema</h2>', '<article><BookOpen/><h2>Guardian, visitante e suporte</h2><p>QR de emergência, escala compartilhada fiel ao PDF e abertura de tickets sem expor o e-mail pessoal.</p><a href="/manual.html#guardian">Abrir guia</a></article><article><BookOpen/><h2>Consulta no sistema</h2>'));
+  .replace('Manual completo, guia rápido e tutorial interativo no mesmo lugar.', 'Manual completo, guias rápidos, Saúde, Health Connect, visitante, Telegram, Saída Inteligente, suporte e privacidade no mesmo lugar.')
+  .replace('<article><BookOpen/><h2>Consulta no sistema</h2>', '<article><BookOpen/><h2>Saúde, visitante e suporte</h2><p>QR de emergência, escala compartilhada fiel ao PDF e abertura de tickets sem expor o e-mail pessoal.</p><a href="/manual.html#guardian">Abrir guia</a></article><article><BookOpen/><h2>Consulta no sistema</h2>'));
 
 update('client/src/main.tsx', (source) => source.includes('v14316/control-center.css') ? source : `${source}\nimport './components/v14316/control-center.css';\n`);
 

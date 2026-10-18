@@ -1,0 +1,6 @@
+import { useState } from 'react';
+// Unmounted, OFF proposal. Never calls current create-card endpoint.
+export default function HealthAccessProposal(){
+ const [expiry,setExpiry]=useState<'unset'|'never'|'at'>('unset');const [until,setUntil]=useState('');
+ return <section aria-label="Proposta de QR Saúde"><h2>Um acesso Saúde por titular</h2><p>Proposta em revisão. QR e NFC usarão o mesmo link revogável e os mesmos campos autorizados.</p><fieldset><legend>Escolha a validade</legend><label><input type="radio" name="health-expiry" checked={expiry==='never'} onChange={()=>setExpiry('never')}/>Sem vencimento automático</label><label><input type="radio" name="health-expiry" checked={expiry==='at'} onChange={()=>setExpiry('at')}/>Definir prazo</label>{expiry==='at'&&<label>Até<input type="datetime-local" value={until} onChange={e=>setUntil(e.target.value)}/></label>}</fieldset><p>Qualquer pessoa com o QR ou tag poderá abrir os campos autorizados. Revogar ou substituir o acesso invalidará o link anterior; cópias já vistas não podem ser apagadas.</p><button type="button" disabled>Revisar e substituir acesso · indisponível</button><p>NFC: proposta para tag NDEF compatível com o mesmo link. Não é transmissão universal entre celulares; nenhuma tag será gravada nesta prévia.</p></section>;
+}
