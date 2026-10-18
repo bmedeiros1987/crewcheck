@@ -71,6 +71,36 @@ try {
  }
  const publishedFuture=snapshot(dutyRoster('published'));
  for(const field of ['detail','nextDetail']) assert.match(publishedFuture.out[field],/18\/10.*18:20.*BRT/);
+ // Duty manual APZ resolves on its own event day, never "before" old APZ.
+ for(const clock of ['18:30','18:10','00:10','00:00','23:50']) {
+   now=Date.parse('2032-10-17T21:00:00Z'); //18hBRT on the preceding date.
+   const original=snapshot(dutyRoster('unknown'));
+   overrides={[ctx.presentationOverrideKey(original.events[0])]:{presentation:clock,label:'SYNTHETIC duty date control'}};
+   const [hour,minute]=clock.split(':').map(Number);
+   const expected=Date.UTC(2032,9,18,hour+3,minute);
+   const assertSchedule=out=>{
+     assert.equal(out.schedule[0].time,clock,'Schedule clock must be the manual duty start, not canonical18:20');
+     assert.equal(out.schedule[0].presentation,`18/10 ${clock}`,'Duty APZ must keep own date');
+     assert.match(out.schedule[0].detail,/18\/10.*BRT/);
+   };
+   const priorDay=snapshot(dutyRoster('unknown')).out;
+   assert.equal(priorDay.state,'UNKNOWN','Yesterday18h must not be REPORTING for tomorrow duty');
+   assert.equal(priorDay.primaryTime,'');assert.equal(priorDay.presentationTime,'');assertSchedule(priorDay);
+   for(const field of ['detail','nextDetail']) {assert(priorDay[field].includes(`18/10 ${clock} BRT`));assert(!priorDay[field].includes('17/10'));}
+   now=expected-4*60*60_000;
+   const beforeFocus=snapshot(dutyRoster('unknown')).out;
+   assert.equal(beforeFocus.state,'UNKNOWN');assertSchedule(beforeFocus);assert.equal(beforeFocus.primaryTime,'');
+   now=expected-2*60*60_000;
+   const highlighted=snapshot(dutyRoster('unknown')).out;
+   assert.equal(highlighted.state,'REPORTING');assert.equal(highlighted.primaryTime,clock);assert.equal(highlighted.presentationTime,clock);
+   assert.match(highlighted.presentationPlace,/18\/10.*BRT/);assert.match(highlighted.detail,/18\/10.*BRT/);assertSchedule(highlighted);
+   assert(highlighted.validUntilEpochMs<=expected && highlighted.validUntilEpochMs>now,'TTL uses the resolved duty instant');
+   now=expected+5*60_000;
+   const active=snapshot(dutyRoster('unknown')).out;assert.equal(active.state,'REPORTING');assert.equal(active.primaryTime,clock);assertSchedule(active);
+   now=Date.parse('2032-10-19T03:05:00Z');
+   const endedManual=snapshot(dutyRoster('unknown')).out;assert.equal(endedManual.state,'UNKNOWN');assert.equal(endedManual.presentationTime,'');assert.equal(endedManual.schedule.length,0);
+   overrides={};
+ }
  now=savedNow;
  const sameClock=snapshot(roster({departureTime:'19:05'},{dutyReport:'19:05',dutyReportSource:'published'}));assert.equal(sameClock.out.presentationTime,'19:05','Published marker proves even APZ equal to STD; legacy equality alone does not');
  // Canonical departure fallback00:00 is not publication evidence.
@@ -81,5 +111,5 @@ try {
  const folga=snapshot({...roster({}),days:[{date:'18/10/2032',dayNumber:18,month:10,year:2032,type:'DO',pairingCode:'DO',base:'GRU',legs:[],rawText:'SYNTHETIC ONLY'}]});
  assert.equal(folga.selected.placeholder,true,'Actual Home selects noFutureLeg for a rest-only roster');assert.equal(folga.out.state,'OFF_DUTY');assert.equal(folga.out.headline,'FOLGA');assert.equal(folga.out.presentationTime,'');assert(folga.out.validUntilEpochMs>now);assert.equal(lib.buildCrewCheckWatchSnapshot(folga.events,undefined,null,now).state,'OFF_DUTY');
  now=Date.parse('2032-10-19T15:00:00Z');const ended=snapshot({...roster({}),days:[{date:'18/10/2032',dayNumber:18,month:10,year:2032,type:'DO',pairingCode:'DO',base:'GRU',legs:[],rawText:'SYNTHETIC ONLY'}]});assert.equal(ended.out.state,'UNKNOWN');
- console.log('PASS real canonical → Home buildLegs/managedPresentation/nextFlight → watch producer: missing APZ/STD, known leg/day/duty APZ, explicit day provenance/manual controls including future duty prose, Folga-only placeholder, ended Folga',process.env.TZ);
+ console.log('PASS real canonical → Home buildLegs/managedPresentation/nextFlight → watch producer: missing APZ/STD, known leg/day/duty APZ, explicit day provenance/manual controls including future/current duty date, midnight and prose, Folga-only placeholder, ended Folga',process.env.TZ);
 } finally {fs.rmSync(dir,{recursive:true,force:true});}

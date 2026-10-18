@@ -70,10 +70,12 @@ export type WatchEventLike = {
   groundBeforeMinutes?: number | null;
   canonical?: {
     id?: string;
+    date?: string;
     legIndex?: number;
     showPresentation?: boolean;
     leg?: { departureTime?: string | null; presentationTime?: string | null };
     publishedDay?: {
+      date?: string;
       dutyReport?: string | null;
       dutyReportSource?: 'published' | 'estimated' | 'absent' | 'unknown';
       legs?: { departureTime?: string | null }[];
@@ -150,6 +152,32 @@ function clockBeforeOrAt(referenceMs: number, clock: string): number {
   if (target > referenceMs) target -= DAY_MS;
   return target;
 }
+// Duty APZ belongs to its published civil date. It is not a clock before
+// departure, and a later manual clock must never move it to the previous day.
+function clockOnEventDate(event: WatchEventLike, clock: string): number {
+  const minute = clockMinutes(clock);
+  if (minute == null) return NaN;
+  const date = event.canonical?.date || event.canonical?.publishedDay?.date;
+  if (date) {
+    const match = date.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!match) return NaN;
+    const day = +match[1], month = +match[2], year = +match[3];
+    const at = Date.UTC(year, month - 1, day, 3, minute);
+    const wall = new Date(at - 3 * HOUR_MS);
+    return wall.getUTCFullYear() === year && wall.getUTCMonth() === month - 1 && wall.getUTCDate() === day ? at : NaN;
+  }
+  // Legacy snapshots may omit the date field but retain a zoned canonical instant.
+  const reference = instant(event.canonical?.startDateTime);
+  if (!Number.isFinite(reference)) return NaN;
+  const wall = new Date(reference - 3 * HOUR_MS);
+  return Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate(), 3, minute);
+}
+function presentationInstant(event: WatchEventLike, clock: string): number {
+  if (!clock) return NaN;
+  return event.kind === 'flight'
+    ? clockBeforeOrAt(instant(event.canonical?.startDateTime), clock)
+    : clockOnEventDate(event, clock);
+}
 function clockLabel(epochMs: number): string {
   if (!Number.isFinite(epochMs) || epochMs <= 0) return '';
   return new Intl.DateTimeFormat('pt-BR', { timeZone: ROSTER_ZONE, hour: '2-digit', minute: '2-digit' }).format(epochMs);
@@ -214,14 +242,20 @@ export function buildCrewCheckWatchSnapshot(
 
   const canonical = event.canonical;
   const departure = publishedDeparture(event);
-  const startMs = event.kind === 'flight' && !departure ? NaN : instant(canonical?.startDateTime);
+  const canonicalStartMs = instant(canonical?.startDateTime);
   const endMs = instant(canonical?.endDateTime);
   const presentation = publishedPresentation(event);
-  const presentationMs = presentation ? clockBeforeOrAt(startMs, presentation) : NaN;
+  const presentationMs = presentationInstant(event, presentation);
+  const startMs = event.kind === 'duty' ? presentationMs
+    : event.kind === 'flight' && !departure ? NaN : canonicalStartMs;
+  const sourceDayMs = event.kind === 'duty' ? clockOnEventDate(event, '00:00') : canonicalStartMs;
+  const dateMs = Number.isFinite(startMs) ? startMs : sourceDayMs;
   // At most three hours before APZ/STD: proposed conservative glance window.
   const focusStartMs = (Number.isFinite(presentationMs) ? presentationMs : startMs) - 3 * HOUR_MS;
   const restToday = Boolean(currentRest);
-  const future = Number.isFinite(startMs) && (now < focusStartMs || (restToday && now < startMs));
+  const future = Number.isFinite(startMs)
+    ? now < focusStartMs || (restToday && now < startMs)
+    : event.kind === 'duty' && Number.isFinite(sourceDayMs) && now < sourceDayMs;
   const expired = Number.isFinite(endMs) && now > endMs;
   const boardingMs = event.kind === 'flight' && departure && provenDomestic(event) ? startMs - 40 * 60_000 : NaN;
 
@@ -306,9 +340,10 @@ export function buildCrewCheckWatchSnapshot(
     })
     .slice(0, 8)
     .map((candidate): CrewCheckWatchScheduleItem => {
-      const start = candidate.canonical?.startDateTime
-        ? instant(candidate.canonical.startDateTime)
-        : 0;
+      const candidatePresentation = publishedPresentation(candidate);
+      const candidatePresentationMs = presentationInstant(candidate, candidatePresentation);
+      const start = candidate.kind === 'duty' ? candidatePresentationMs : instant(candidate.canonical?.startDateTime);
+      const date = Number.isFinite(start) ? start : clockOnEventDate(candidate, '00:00');
       const kind: CrewCheckWatchScheduleItem['kind'] =
         candidate.kind === 'flight' || candidate.kind === 'stay' ? candidate.kind : 'duty';
       const title = kind === 'flight'
@@ -328,20 +363,20 @@ export function buildCrewCheckWatchSnapshot(
           : candidate.kind === 'duty' ? (publishedPresentation(candidate) ? clockLabel(start) : '') : clockLabel(start),
         title,
         route,
-        presentation: publishedPresentation(candidate) && (candidate.kind !== 'flight' || publishedDeparture(candidate))
-          ? `${dayLabel(clockBeforeOrAt(start, publishedPresentation(candidate)))} ${publishedPresentation(candidate)}`
+        presentation: Number.isFinite(candidatePresentationMs) && (candidate.kind !== 'flight' || publishedDeparture(candidate))
+          ? `${dayLabel(candidatePresentationMs)} ${candidatePresentation}`
           : '',
         gate: remote ? 'REMOTA' : rawGate,
-        detail: [dayLabel(start), 'BRT', kind === 'stay' ? clean(candidate.hotel) : kind === 'flight' ? (publishedDeparture(candidate) ? 'Decolagem prevista' : 'Decolagem a confirmar') : ''].filter(Boolean).join(' • '),
+        detail: [dayLabel(date), 'BRT', kind === 'stay' ? clean(candidate.hotel) : kind === 'flight' ? (publishedDeparture(candidate) ? 'Decolagem prevista' : 'Decolagem a confirmar') : ''].filter(Boolean).join(' • '),
       };
     });
 
   // A canonical duty start may be an estimated/legacy report clock. Future
   // prose must use the same publication proof as APZ and schedule.time.
   const futureClock = event.kind === 'duty' ? presentation || 'horário a confirmar' : clockLabel(startMs);
-  const futureDate = dayLabel(startMs);
+  const futureDate = dayLabel(dateMs);
   const inactive = future || expired || state === 'OFF_DUTY' || !Number.isFinite(startMs) || !Number.isFinite(endMs);
-  const transitions = [focusStartMs, startMs, endMs, instant(currentRest?.canonical?.endDateTime), routeIsFresh ? route!.updatedAtEpochMs + 30 * 60_000 : NaN].filter(time => Number.isFinite(time) && time > now);
+  const transitions = [focusStartMs, startMs, endMs, sourceDayMs, instant(currentRest?.canonical?.endDateTime), routeIsFresh ? route!.updatedAtEpochMs + 30 * 60_000 : NaN].filter(time => Number.isFinite(time) && time > now);
   return {
     schemaVersion: 1,
     contextId: clean(canonical?.id) || event.id,
@@ -350,7 +385,7 @@ export function buildCrewCheckWatchSnapshot(
     state,
     headline,
     primaryTime: inactive ? '' : state === 'LEAVE_SOON' ? leaveTime : state === 'REPORTING' ? presentation : event.kind === 'flight' ? clockLabel(startMs) : '',
-    detail: event.kind === 'flight' && !departure ? 'Horário de decolagem a confirmar; confira a fonte.' : future ? `Próxima programação ${futureDate} ${futureClock} BRT` : expired ? 'Programação encerrada; sincronize a escala.' : state === 'OFF_DUTY' ? `Folga ${dayLabel(now)} BRT` : `Programação ${dayLabel(startMs)} BRT` + (Number.isFinite(boardingMs) ? ` • Embarque previsto ${dayLabel(boardingMs)} ${clockLabel(boardingMs)}` : ''),
+    detail: event.kind === 'flight' && !departure ? 'Horário de decolagem a confirmar; confira a fonte.' : future ? `Próxima programação ${futureDate} ${futureClock} BRT` : expired ? 'Programação encerrada; sincronize a escala.' : state === 'OFF_DUTY' ? `Folga ${dayLabel(now)} BRT` : `Programação ${dayLabel(dateMs)} BRT` + (Number.isFinite(boardingMs) ? ` • Embarque previsto ${dayLabel(boardingMs)} ${clockLabel(boardingMs)}` : ''),
     presentationTime: inactive ? '' : presentation,
     presentationPlace: [clean(event.origin), dayLabel(presentationMs), 'escala BRT'].filter(Boolean).join(' • '),
     leaveTime: inactive ? '' : leaveTime,
