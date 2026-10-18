@@ -1,3 +1,4 @@
+import {NotificationHelp} from './NotificationHelp';
 import { useEffect, useRef, useState } from 'react';
 import { authFetch, getToken } from '@/lib/authClient';
 import { DeviceNotificationReadiness } from './DeviceNotificationReadiness';
@@ -36,9 +37,9 @@ export function NotificationReadiness() {
   const count = (states: string[]) => snapshot?.jobs.filter(job => states.includes(job.status)).length || 0;
   return <section className="cz-toolbox" aria-label="Entrega fora do app">
     <DeviceNotificationReadiness />
-    <h2>Entrega fora do app</h2>
-    <p>{unavailable ? 'Disponibilidade não verificada. Reconecte para consultar.' : !readiness ? 'Consultando vínculo e fila desta conta…' : !readiness.telegramConfigured ? 'Canal Telegram indisponível no servidor.' : !readiness.telegramLinked ? 'Esta conta não tem vínculo Telegram válido.' : 'Telegram vinculado a esta conta. Só os lembretes gravados no servidor podem ser enviados com o CrewCheck fechado.'}</p>
-    {readiness && <p>Últimos {snapshot!.jobs.length} registros: {count(['pending'])} pendentes · {count(['sent'])} aceitos pelo provedor · {count(['uncertain', 'partial'])} com resultado desconhecido · {count(['expired'])} expirados · {count(['cancelled'])} cancelados. Aceitação não confirma entrega no aparelho; resultados desconhecidos não são repetidos automaticamente.</p>}
-    <p>O app Android usa notificações locais previamente agendadas. Novos alertas do servidor não chegam diretamente ao app Android ou PWA fechado. Avisos internos e timers da página não comprovam entrega externa.</p>
+    <h3>Telegram · fora do app</h3>
+    <p role="status">{unavailable ? 'Disponibilidade não verificada.' : !readiness ? 'Consultando…' : !readiness.telegramConfigured ? 'Canal indisponível.' : !readiness.telegramLinked ? 'Conta não vinculada.' : 'Conta vinculada · entrega não confirmada.'}</p>
+    <NotificationHelp label="Entrega e últimos registros">{readiness && <p>Últimos {snapshot!.jobs.length} registros: {count(['pending'])} pendentes · {count(['sent'])} aceitos pelo provedor · {count(['uncertain', 'partial'])} com resultado desconhecido · {count(['expired'])} expirados · {count(['cancelled'])} cancelados. Aceitação não confirma entrega no aparelho; resultados desconhecidos não são repetidos automaticamente.</p>}
+    <p>O app Android usa notificações locais previamente agendadas. Novos alertas do servidor não chegam diretamente ao app Android ou PWA fechado. Avisos internos e timers da página não comprovam entrega externa.</p></NotificationHelp>
   </section>;
 }
