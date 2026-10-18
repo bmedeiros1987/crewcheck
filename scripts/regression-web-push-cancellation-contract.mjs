@@ -150,6 +150,29 @@ for (const failure of ['absentSubscription', 'unsubscribeFalse', 'unsubscribeThr
   const f = await fixture(); f.navigator.serviceWorker.ready = Promise.reject(Error('synthetic worker unavailable')); f.clearElsewhere(); await f.drain();
   assert.equal(f.state.get('binding').ownerId, A); assert.equal(f.unsubscribeCalls(), 0); assert.equal(f.requests.length, 0); f.stop();
 }
+// Explicit cancel uses the same safety boundary even if PushManager lookup fails.
+{
+  const f = await fixture(); f.faults.getSubscription = true;
+  const result = await f.api.cancelCrewCheckPushDevice().catch(() => ({ status: 'threw' }));
+  assert.equal(f.state.get('binding'), null, 'explicit cancel: PushManager failure must not prevent worker cancellation');
+  assert.equal(result.status, 'local_cancellation_unconfirmed'); assert.equal(result.serverRevocationConfirmed, true); assert.equal(f.serverRecord().active, false); assert.equal(f.requests.length, 1); assert.equal(f.unsubscribeCalls(), 0); f.stop();
+}
+for (const failure of ['none', 'absentSubscription', 'unsubscribeFalse', 'unsubscribeThrow']) {
+  const f = await fixture(); f.faults[failure] = true; const result = await f.api.cancelCrewCheckPushDevice();
+  assert.equal(result.status, ['none', 'absentSubscription'].includes(failure) ? 'inactive' : 'local_cancellation_unconfirmed');
+  assert.equal(result.serverRevocationConfirmed, true); assert.equal(f.state.get('binding'), null); assert.equal(f.serverRecord().active, false); assert.equal(f.requests.length, 1); f.stop();
+}
+// Account switch while explicit cancellation awaits lookup preserves B's binding.
+{
+  const f = await fixture(), gate = { entered: deferred(), release: deferred() }; f.faults.lookupGate = gate;
+  const cancelling = f.api.cancelCrewCheckPushDevice(); await gate.entered.promise; f.switchOwner(B); f.state.set('binding', { ownerId: B, installationId, consentRevision: 5 }); f.state.set('candidateOwner', B);
+  gate.release.resolve(); const result = await cancelling; await f.drain(); assert.equal(result.status, 'account_changed'); assert.equal(result.serverRevocationConfirmed, true); assert.equal(f.unsubscribeCalls(), 0); assert.equal(f.state.get('binding').ownerId, B); assert.equal(f.requests.length, 1); f.stop();
+}
+// Explicit cancellation rejected by B's binding cannot touch B's subscription/server.
+{
+  const f = await fixture(); f.state.set('binding', { ownerId: B, installationId, consentRevision: 2 }); f.state.set('candidateOwner', B);
+  const result = await f.api.cancelCrewCheckPushDevice(); assert.equal(result.status, 'local_cancellation_unconfirmed'); assert.equal(result.serverRevocationConfirmed, false); assert.equal(f.state.get('binding').ownerId, B); assert.equal(f.subscriptionLookups(), 0); assert.equal(f.requests.length, 0); assert.equal(f.unsubscribeCalls(), 0); f.stop();
+}
 // Actual server revocation function with transaction/query doubles: repeated revoke
 // is idempotent for an already inactive record (not an HTTP/auth integration test).
 {
@@ -167,4 +190,4 @@ for (const failure of ['absentSubscription', 'unsubscribeFalse', 'unsubscribeThr
   assert.equal((await revokeAccountInstallations(db, identity, installationId, Date.now())).revoked, 0);
   assert.equal(record.active, false); assert.equal(record.revision, 2); assert.equal(binding.active, false); assert.equal(binding.revision, 2); assert.equal(commits, 2);
 }
-console.log('PASS 20 synthetic cancellation runtime→worker/server scenarios; no browser, network, provider, credentials or physical delivery.');
+console.log('PASS 27 synthetic cancellation runtime→worker/server scenarios; no browser, network, provider, credentials or physical delivery.');
