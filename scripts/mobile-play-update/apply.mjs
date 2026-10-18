@@ -69,4 +69,16 @@ if (!/super\.onResume\(\);\s*CrewLifeWatchPublisher\.retryPendingRevocation/.tes
 }
 
 fs.writeFileSync(activityFile, source, 'utf8');
+// App.tsx is materialized by earlier canonical steps; retain the package-only UI.
+const appFile = 'client/src/App.tsx';
+let app = fs.readFileSync(appFile, 'utf8');
+if (!app.includes("import NativePlayUpdateNotice from './components/NativePlayUpdateNotice';")) {
+  app = "import NativePlayUpdateNotice from './components/NativePlayUpdateNotice';\n" + app;
+}
+if (!app.includes('<NativePlayUpdateNotice />')) {
+  const anchor = '<Router /><CrewCheckGlobalBottomMenu />';
+  if (!app.includes(anchor)) throw new Error('[mobile-play-update] app notice mount anchor changed');
+  app = app.replace(anchor, '<NativePlayUpdateNotice />' + anchor);
+}
+fs.writeFileSync(appFile, app, 'utf8');
 console.log('[mobile-play-update] disponibilidade do Google Play conectada ao lifecycle do app sem instalação/reload forçados.');
