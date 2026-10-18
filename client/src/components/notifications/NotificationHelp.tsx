@@ -1,3 +1,4 @@
+import './notification-help.css';
 import type {ReactNode} from 'react';
 
 export function NotificationHelp({label,children}:{label:string;children:ReactNode}) {

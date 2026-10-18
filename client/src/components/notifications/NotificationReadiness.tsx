@@ -37,7 +37,7 @@ export function NotificationReadiness() {
   const count = (states: string[]) => snapshot?.jobs.filter(job => states.includes(job.status)).length || 0;
   return <section className="cz-toolbox" aria-label="Entrega fora do app">
     <DeviceNotificationReadiness />
-    <h3>Telegram</h3>
+    <h3>Telegram · fora do app</h3>
     <p role="status">{unavailable ? 'Disponibilidade não verificada.' : !readiness ? 'Consultando…' : !readiness.telegramConfigured ? 'Canal indisponível.' : !readiness.telegramLinked ? 'Conta não vinculada.' : 'Conta vinculada · entrega não confirmada.'}</p>
     <NotificationHelp label="Entrega e últimos registros">{readiness && <p>Últimos {snapshot!.jobs.length} registros: {count(['pending'])} pendentes · {count(['sent'])} aceitos pelo provedor · {count(['uncertain', 'partial'])} com resultado desconhecido · {count(['expired'])} expirados · {count(['cancelled'])} cancelados. Aceitação não confirma entrega no aparelho; resultados desconhecidos não são repetidos automaticamente.</p>}
     <p>O app Android usa notificações locais previamente agendadas. Novos alertas do servidor não chegam diretamente ao app Android ou PWA fechado. Avisos internos e timers da página não comprovam entrega externa.</p></NotificationHelp>

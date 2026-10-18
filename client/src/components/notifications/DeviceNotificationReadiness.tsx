@@ -43,8 +43,8 @@ export function DeviceNotificationReadiness() {
     } finally { setSnapshot(readStatus()); setRequesting(false); }
   }
   return <div aria-label="Notificações neste aparelho">
-    <h3>Permissão</h3>
-    <p role="status">{message}</p>
+    <h3>Permissão do aparelho</h3>
+    <p role="status">{message}</p>{native && (status.notifications === false || status.notificationAppEnabled === false || status.notificationChannelEnabled === false) && <p className="cc-notification-guidance">Configurações do Android → CrewCheck → Notificações.</p>}
     {status.notifications === false && <button type="button" disabled={requesting} onClick={() => { request().catch(() => undefined); }}>{requesting ? 'Consultando…' : 'Autorizar notificações'}</button>}
     <NotificationHelp label="Permissão e outros aparelhos"><p>O relógio tem seu próprio canal e permissão. Confira “Notificações” no CrewWatch. Esta consulta não envia avisos nem altera preferências de outros aparelhos. Permissão disponível não comprova envio ou recebimento.</p></NotificationHelp>
   </div>;

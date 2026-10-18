@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 const require=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url);
 const {chromium}=require('playwright');
-const bundle=await build({stdin:{contents:`import React from 'react';import{createRoot}from'react-dom/client';import{NotificationReadiness}from'./client/src/components/notifications/NotificationReadiness';createRoot(document.getElementById('root')).render(<NotificationReadiness/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'iife',jsx:'automatic',define:{'process.env.NODE_ENV':'"test"'},plugins:[{name:'alias',setup(b){b.onResolve({filter:/^@\//},({path:p})=>({path:path.resolve('client/src',p.slice(2)+'.ts')}));}}]});
+const bundle=await build({stdin:{contents:`import React from 'react';import{createRoot}from'react-dom/client';import{NotificationReadiness}from'./client/src/components/notifications/NotificationReadiness';createRoot(document.getElementById('root')).render(<NotificationReadiness/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'iife',jsx:'automatic',define:{'process.env.NODE_ENV':'"test"'},plugins:[{name:'alias',setup(b){b.onResolve({filter:/\.css$/},()=>({path:'css',namespace:'style'}));b.onLoad({filter:/.*/,namespace:'style'},()=>({contents:'',loader:'js'}));b.onResolve({filter:/^@\//},({path:p})=>({path:path.resolve('client/src',p.slice(2)+'.ts')}));}}]});
 const server=http.createServer((req,res)=>{res.setHeader('content-type',req.url==='/fixture.js'?'text/javascript':'text/html');res.end(req.url==='/fixture.js'?bundle.outputFiles[0].text:'<div id="root"></div><script src="/fixture.js"></script>');});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${server.address().port}`;
 let browser,offline=false,hold=false,resume,signal;const reads=[];
@@ -45,7 +45,7 @@ try{
  });
  await page.getByText('App bloqueado no Android', {exact:false}).waitFor();
  await page.evaluate(()=>{window.nativeStatus={notifications:true,notificationAppEnabled:true,notificationChannelEnabled:false};window.dispatchEvent(new Event('crewcheck:permissions-updated'));});
- await page.getByText('Canal Alertas CrewCheck bloqueado', {exact:false}).waitFor();
+ await page.getByText('Canal Alertas CrewCheck bloqueado', {exact:false}).waitFor();await page.getByText('Configurações do Android → CrewCheck → Notificações.',{exact:true}).waitFor();
  await page.evaluate(()=>{window.nativeStatus={notifications:true};window.dispatchEvent(new Event('focus'));});
  await page.getByText('canal não verificado', {exact:false}).waitFor();
  await page.evaluate(()=>{window.nativeStatus={notifications:true,notificationAppEnabled:true,notificationChannelEnabled:'false'};window.dispatchEvent(new Event('focus'));});
