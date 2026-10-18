@@ -1,0 +1,32 @@
+name: Visitor access UI offline
+on:
+  pull_request:
+    paths:
+      - 'client/src/pages/VisitorAccessPage.tsx'
+      - 'client/src/pages/visitor-access.css'
+      - 'client/src/components/visitor/**'
+      - 'client/src/lib/visitorAccessUi.ts'
+      - 'scripts/regression-visitor-access-ui.mjs'
+      - '.github/workflows/visitor-access-ui.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --prefix /tmp/visitor-dom --no-audit --no-fund --package-lock=false jsdom@26.1.0
+      - run: node scripts/regression-visitor-access-ui.mjs
+        env:
+          VISITOR_JSDOM_PACKAGE: /tmp/visitor-dom/package.json
+      - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-visitor-access-ui.mjs
+        env:
+          VISITOR_JSDOM_PACKAGE: /tmp/visitor-dom/package.json
+      - run: npx tsc --noEmit
+      - run: npx vite build
