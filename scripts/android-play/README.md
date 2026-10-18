@@ -6,10 +6,13 @@ The terminal canonical preparation step applies `release-policy.json` after all 
 The web version is independent of Android store version codes. Increment all applicable codes
 before each new upload; codes are unique across phone and Wear because they share a package.
 Known floors are a conservative snapshot, not a substitute for live Play validation.
+Phone candidate144157 supersedes144156 after the cancellation/privacy change.
+The144156 draft upload has an uncertain UI outcome and must be inspected before
+any new store write; neither code is claimed published.
 
 | Artifact | Package | Code | Track |
 | --- | --- | --- | --- |
-| Mobile | com.crewcheck.app | 144110 | qa (internal testing) |
+| Mobile | com.crewcheck.app | 144157 | qa (internal testing) |
 | CrewWatch | com.crewcheck.app | 144111 | wear:qa |
 | Watch face (WFF 1) | com.crewcheck.watch.app | 144112 | wear:qa |
 

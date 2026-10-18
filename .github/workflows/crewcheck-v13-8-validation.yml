@@ -105,9 +105,11 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
           WAKEUP_JSDOM_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
+          NOTIFICATIONS_JSDOM_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
         run: |
           node scripts/regression-emergency-center-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
+          node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
           node scripts/regression-notification-center-browser.mjs
           node scripts/regression-wakeup-selection-react.mjs
@@ -120,9 +122,11 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
           WAKEUP_JSDOM_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
+          NOTIFICATIONS_JSDOM_PACKAGE: ${{ runner.temp }}/emergency-browser/package.json
         run: |
           node scripts/regression-emergency-center-browser.mjs
           node scripts/regression-leave-confirmation-browser.mjs
+          node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
           node scripts/regression-notification-center-browser.mjs
           node scripts/regression-wakeup-selection-react.mjs

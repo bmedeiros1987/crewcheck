@@ -8,7 +8,7 @@
   "artifacts": {
     "app": {
       "package": "com.crewcheck.app",
-      "versionCode": 144110,
+      "versionCode": 144158,
       "minSdk": 26,
       "targetSdk": 36,
       "track": "qa",
