@@ -28,7 +28,7 @@ confirmed=false;identity='D';target.dispatchEvent(new Event('crewcheck:auth-chan
 available=false;identity='E';target.dispatchEvent(new Event('crewcheck:auth-changed'));available=true;target.dispatchEvent(new Event('crewcheck:native-ready'));assert.equal(calls.at(-1),'E');
 let stable=calls.length;target.dispatchEvent(new Event('pagehide'));assert.equal(calls.length,stable,'normal page closure preserves reminders');identity='';target.dispatchEvent(new Event('pagehide'));assert.equal(calls.at(-1),'','direct account clearing is fenced before navigation');identity='F';target.dispatchEvent(new Event('focus'));assert.equal(calls.at(-1),'F');
 off();const end=calls.length;target.dispatchEvent(new Event('crewcheck:auth-will-change'));assert.equal(calls.length,end);
-assert.match(fs.readFileSync('client/src/lib/authClient.ts','utf8'),/import ['"]\.\/nativeNotificationCancellation['"]/);
+assert.match(fs.readFileSync('client/src/main.tsx','utf8'),/^import ['"]\.\/lib\/nativeNotificationCancellation['"]/);
 const receiver=fs.readFileSync(root+'CrewCheckNotificationReceiver.java','utf8');assert.match(receiver,/synchronized \(NotificationLedger\.LOCK\)/);assert.match(receiver,/\.claim\(intent\.getStringExtra\("notificationKey"\)/);assert.match(receiver,/NotificationLedgerAndroid\.TAG/);
 assert.doesNotMatch(fs.readFileSync(root+'NotificationLedgerAndroid.java','utf8'),/getStringExtra\("(?:title|body|token)"\)|BOOT_COMPLETED/);
 console.log('PASS actual JS lifecycle: startup, same-account refresh, logout, switch, expiry, storage, late native bridge and uncertain receipts; no storage writes, permissions, network or notifications');

@@ -140,8 +140,8 @@ source changes require a new signed build of144156 before any upload; no earlier
 ## Privacy fence follow-up — candidate144157, not yet physically accepted
 
 The preexisting explicit logout/account-switch cancellation gap is now addressed
-in source. authClient imports a lifecycle listener before its mutation functions
-can run. It clears the native cancellation scope synchronously on auth-will-change
+in source. The app entrypoint imports a lifecycle listener before mounting the
+application; authClient mutation functions remain unchanged. It clears the native cancellation scope synchronously on auth-will-change
 and expiry, then binds a new cancellation hint after the account changes. A same
 account token renewal preserves pending reminders. Storage/native-ready/focus and
 pagehide reconcile late availability or direct clearing without cancelling normal
