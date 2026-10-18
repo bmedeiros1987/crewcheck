@@ -18,8 +18,15 @@ public void setExact(int type,long when,Object pi){if(fail)throw new SecurityExc
 public void setAndAllowWhileIdle(int type,long when,Object pi){if(fail)throw new SecurityException();idle++;at=when;}
 public void set(int type,long when,Object pi){if(fail)throw new SecurityException();normal++;at=when;}}`);
  fs.writeFileSync(path.join(temp,'AlarmAcceptance.java'),`import com.crewcheck.app.NotificationIdentity;
+import com.crewcheck.app.NotificationLedger;
 public class AlarmAcceptance {
 static class Context {static final String ALARM_SERVICE="alarm";}
+static class NotificationLedgerAndroid {
+ static class Store implements NotificationLedger.Store {String scope="fixture",epoch="epoch";java.util.Map<String,Long> rows=new java.util.HashMap<>();public String scope(){return scope;}public String epoch(){return epoch;}public java.util.Map<String,Long> entries(){return new java.util.HashMap<>(rows);}public void commit(String s,String e,java.util.Map<String,Long> r){scope=s;epoch=e;rows=new java.util.HashMap<>(r);}}
+ static final Store store=new Store();NotificationLedgerAndroid(Object c){}
+ NotificationLedger ledger(){return new NotificationLedger(store,new NotificationLedger.Device(){public long now(){return System.currentTimeMillis();}public void cancel(String key){}public void dismiss(){}});}
+ static Intent envelope(Object c,String key){Intent i=new Intent(c,CrewCheckNotificationReceiver.class);i.setData("crewcheck-reminder://job/"+key);return i;}
+}
 static class Build {static class VERSION {static int SDK_INT=36;} static class VERSION_CODES {static final int M=23;}}
 static class CrewCheckNotificationReceiver {}
 static class Uri {static String parse(String value){return value;}}
@@ -52,6 +59,6 @@ a.alarm=null;check(!a.scheduleNotification("a","b",""+future));
 System.out.println("PASS actual schedule and bridge Java methods: "+cases+" synthetic acceptance/failure cases; no OS scheduling or send");}}
 `);
  const run=args=>{const r=spawnSync('java',args,{encoding:'utf8'});assert.equal(r.status,0,r.stdout+r.stderr);return r.stdout;};
- run(['com.sun.tools.javac.Main','-d',temp,'android-wrapper/app/src/main/java/com/crewcheck/app/NotificationIdentity.java',path.join(temp,'android/app/AlarmManager.java'),path.join(temp,'AlarmAcceptance.java')]);
+ run(['com.sun.tools.javac.Main','-d',temp,'android-wrapper/app/src/main/java/com/crewcheck/app/NotificationIdentity.java','android-wrapper/app/src/main/java/com/crewcheck/app/NotificationTiming.java','android-wrapper/app/src/main/java/com/crewcheck/app/NotificationLedger.java',path.join(temp,'android/app/AlarmManager.java'),path.join(temp,'AlarmAcceptance.java')]);
  process.stdout.write(run(['-cp',temp,'AlarmAcceptance']));
 }finally{fs.rmSync(temp,{recursive:true,force:true});}

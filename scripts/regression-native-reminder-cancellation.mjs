@@ -1,0 +1,49 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import vm from 'node:vm';
+import {spawnSync} from 'node:child_process';
+import ts from 'typescript';
+const root='android-wrapper/app/src/main/java/com/crewcheck/app/';
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'crewcheck-reminder-fence-'));
+try {
+ const run=args=>{const r=spawnSync('java',args,{encoding:'utf8',timeout:60000});assert.equal(r.status,0,r.stdout+r.stderr);return r.stdout;};
+ run(['com.sun.tools.javac.Main','-d',dir,...['NotificationIdentity','NotificationTiming','NotificationLedger'].map(x=>root+x+'.java'),'scripts/fixtures/NotificationLedgerFixture.java']);
+ process.stdout.write(run(['-cp',dir,'NotificationLedgerFixture']));
+}finally{fs.rmSync(dir,{recursive:true,force:true});}
+const source=fs.readFileSync('client/src/lib/nativeNotificationCancellation.ts','utf8');
+const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+class CE extends Event {constructor(name,options){super(name);this.detail=options?.detail;}}
+const context={exports:{},Event,CustomEvent:CE};vm.runInNewContext(code,context);
+const target=new EventTarget(),calls=[],receipts=[];let identity='A',available=true,confirmed=true;
+target.addEventListener('crewcheck:native-reminder-fence',e=>receipts.push(e.detail.confirmed));
+const off=context.exports.installNativeNotificationCancellation({target,identity:()=>identity,host:()=>available?{setNotificationCancellationScope:hint=>{calls.push(hint);return confirmed;}}:undefined});
+assert.deepEqual(calls,['A']);target.dispatchEvent(new Event('crewcheck:auth-changed'));assert.deepEqual(calls,['A'],'same-account renewal preserves reminders');
+target.dispatchEvent(new Event('crewcheck:auth-will-change'));assert.equal(calls.at(-1),'');identity='B';target.dispatchEvent(new Event('crewcheck:auth-changed'));assert.equal(calls.at(-1),'B');
+identity='';target.dispatchEvent(new Event('crewcheck:auth-expired'));assert.equal(calls.at(-1),'');
+identity='C';target.dispatchEvent(Object.assign(new Event('storage'),{key:'crewcheck_auth_user'}));assert.equal(calls.at(-1),'C');
+const before=calls.length;target.dispatchEvent(Object.assign(new Event('storage'),{key:'unrelated'}));assert.equal(calls.length,before);
+confirmed=false;identity='D';target.dispatchEvent(new Event('crewcheck:auth-changed'));assert.equal(receipts.at(-1),false);confirmed=true;target.dispatchEvent(new Event('crewcheck:native-ready'));assert.equal(calls.at(-1),'D');assert.equal(receipts.at(-1),true);
+available=false;identity='E';target.dispatchEvent(new Event('crewcheck:auth-changed'));available=true;target.dispatchEvent(new Event('crewcheck:native-ready'));assert.equal(calls.at(-1),'E');
+let stable=calls.length;target.dispatchEvent(new Event('pagehide'));assert.equal(calls.length,stable,'normal page closure preserves reminders');identity='';target.dispatchEvent(new Event('pagehide'));assert.equal(calls.at(-1),'','direct account clearing is fenced before navigation');identity='F';target.dispatchEvent(new Event('focus'));assert.equal(calls.at(-1),'F');
+off();const end=calls.length;target.dispatchEvent(new Event('crewcheck:auth-will-change'));assert.equal(calls.length,end);
+assert.match(fs.readFileSync('client/src/lib/authClient.ts','utf8'),/import ['"]\.\/nativeNotificationCancellation['"]/);
+const receiver=fs.readFileSync(root+'CrewCheckNotificationReceiver.java','utf8');assert.match(receiver,/synchronized \(NotificationLedger\.LOCK\)/);assert.match(receiver,/\.claim\(intent\.getStringExtra\("notificationKey"\)/);assert.match(receiver,/NotificationLedgerAndroid\.TAG/);
+assert.doesNotMatch(fs.readFileSync(root+'NotificationLedgerAndroid.java','utf8'),/getStringExtra\("(?:title|body|token)"\)|BOOT_COMPLETED/);
+console.log('PASS actual JS lifecycle: startup, same-account refresh, logout, switch, expiry, storage, late native bridge and uncertain receipts; no storage writes, permissions, network or notifications');
+// Exercise the actual auth mutation functions, not a reimplementation of their event order.
+const authSource=fs.readFileSync('client/src/lib/authClient.ts','utf8');
+const ast=ts.createSourceFile('authClient.ts',authSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
+const names=['persistSession','expireSession','clearSession'];
+const functions=ast.statements.filter(n=>ts.isFunctionDeclaration(n)&&names.includes(n.name?.text)).map(n=>n.getText(ast).replace(/^export\s+/,''));assert.equal(functions.length,3);
+const values=new Map(),sessionValues=new Map();const store=map=>({getItem:k=>map.get(k)||null,setItem:(k,v)=>map.set(k,String(v)),removeItem:k=>map.delete(k)});
+const authTarget=new EventTarget(),authCalls=[];const authContext={exports:{},window:authTarget,localStorage:store(values),sessionStorage:store(sessionValues),Event,CustomEvent:CE};
+vm.runInNewContext(ts.transpileModule(`const TOKEN_KEY='crewcheck_auth_token',USER_KEY='crewcheck_auth_user';${functions.join('\n')}`,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,authContext);
+context.exports.installNativeNotificationCancellation({target:authTarget,identity:()=>values.has('crewcheck_auth_token')?JSON.parse(values.get('crewcheck_auth_user')||'{}').id||'':'',host:()=>({setNotificationCancellationScope:hint=>{authCalls.push({hint,token:values.get('crewcheck_auth_token')||null});return true;}})});
+authContext.persistSession({token:'fake-A',user:{id:'A'}});assert.equal(authCalls.at(-1).hint,'A');
+let count=authCalls.length;authContext.persistSession({token:'fake-A-renewed',user:{id:'A'}});assert.equal(authCalls.length,count,'real same-account refresh does not cancel');
+authContext.persistSession({token:'fake-B',user:{id:'B'}});assert.equal(authCalls.at(-2).hint,'');assert.equal(authCalls.at(-2).token,'fake-A-renewed','revocation precedes token replacement');assert.equal(authCalls.at(-1).hint,'B');
+authContext.expireSession();assert(authCalls.slice(-2).every(x=>x.hint===''));assert.equal(values.has('crewcheck_auth_token'),false);
+authContext.persistSession({token:'fake-B-again',user:{id:'B'}});authContext.clearSession();assert.equal(authCalls.at(-1).hint,'');assert.equal(values.has('crewcheck_auth_user'),false);
+console.log('PASS actual authClient mutation functions: pre-mutation cancellation on logout/account switch/expiry; same-account renewal preserved; synthetic accounts only');

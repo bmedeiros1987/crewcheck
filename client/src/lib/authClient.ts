@@ -1,3 +1,4 @@
+import './nativeNotificationCancellation';
 export interface AuthUser {
   id: string | null;
   name: string;

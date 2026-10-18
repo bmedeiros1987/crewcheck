@@ -92,6 +92,7 @@ jobs:
       - name: Verify native scheduling acceptance without a device
         run: |
           node scripts/regression-android-alarm-acceptance.mjs
+          node scripts/regression-native-reminder-cancellation.mjs
           node scripts/regression-play-catalog-recovery.mjs
       - name: Web and privacy validation
         run: |

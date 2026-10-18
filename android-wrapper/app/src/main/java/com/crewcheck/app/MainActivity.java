@@ -571,28 +571,32 @@ public class MainActivity extends Activity {
         try {
             if (epochMillis <= System.currentTimeMillis() || !hasCrewCheckNotificationPermission()) return false;
             ensureCrewCheckNotificationChannel();
-            Intent intent = new Intent(this, CrewCheckNotificationReceiver.class);
-            intent.putExtra("title", title == null || title.trim().isEmpty() ? "CrewCheck" : title);
-            intent.putExtra("body", body == null ? "" : body);
-            intent.putExtra("scheduledAt", epochMillis);
-            intent.setData(Uri.parse("crewcheck-reminder://job/" + NotificationIdentity.key(title, body, epochMillis)));
-            PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-            android.app.AlarmManager alarm = (android.app.AlarmManager) getSystemService(Context.ALARM_SERVICE);
-            long when = epochMillis;
-            if (alarm == null) return false;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                // Reuse only an existing grant; never request special access here.
-                if (Build.VERSION.SDK_INT < 31 || alarm.canScheduleExactAlarms()) {
-                    try {
-                        alarm.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
-                        return true;
-                    } catch (SecurityException revoked) { /* grant may change after the check */ }
+            String key = NotificationIdentity.key(title, body, epochMillis);
+            NotificationLedger ledger = new NotificationLedgerAndroid(this).ledger();
+            return ledger.schedule(key, epochMillis, epoch -> {
+                Intent intent = NotificationLedgerAndroid.envelope(this, key);
+                intent.putExtra("notificationKey", key);
+                intent.putExtra("notificationEpoch", epoch);
+                intent.putExtra("title", title == null || title.trim().isEmpty() ? "CrewCheck" : title);
+                intent.putExtra("body", body == null ? "" : body);
+                intent.putExtra("scheduledAt", epochMillis);
+                PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                android.app.AlarmManager alarm = (android.app.AlarmManager) getSystemService(Context.ALARM_SERVICE);
+                long when = epochMillis;
+                if (alarm == null) throw new IllegalStateException("alarm unavailable");
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    // Reuse only an existing grant; never request special access here.
+                    if (Build.VERSION.SDK_INT < 31 || alarm.canScheduleExactAlarms()) {
+                        try {
+                            alarm.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
+                            return;
+                        } catch (SecurityException revoked) { /* grant may change after the check */ }
+                    }
+                    alarm.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
+                } else {
+                    alarm.setExact(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
                 }
-                alarm.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
-            } else {
-                alarm.setExact(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
-            }
-            return true;
+            });
         } catch (Exception ignored) { return false; }
     }
 
@@ -1205,6 +1209,13 @@ public class MainActivity extends Activity {
         public boolean requestWatchSnapshot() {
             requestCrewCheckWatchSnapshotFromWeb("watch-request");
             return true;
+        }
+
+        @JavascriptInterface
+        public boolean setNotificationCancellationScope(final String accountHint) {
+            NotificationLedger ledger = new NotificationLedgerAndroid(MainActivity.this).ledger();
+            if (accountHint != null && accountHint.length() > 512) { ledger.scope(""); return false; }
+            return ledger.scope(accountHint);
         }
 
         @JavascriptInterface

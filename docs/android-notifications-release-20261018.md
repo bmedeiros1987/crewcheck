@@ -136,3 +136,50 @@ background scheduling but is not a reboot or force-stop guarantee.
 Existing AAB144156 from fe0bbc89 is retained as historical evidence only. New
 source changes require a new signed build of144156 before any upload; no earlier
 144156 has been uploaded to Play, so the code is not yet consumed.
+
+## Privacy fence follow-up — candidate144157, not yet physically accepted
+
+The preexisting explicit logout/account-switch cancellation gap is now addressed
+in source. authClient imports a lifecycle listener before its mutation functions
+can run. It clears the native cancellation scope synchronously on auth-will-change
+and expiry, then binds a new cancellation hint after the account changes. A same
+account token renewal preserves pending reminders. Storage/native-ready/focus and
+pagehide reconcile late availability or direct clearing without cancelling normal
+page closure for an unchanged account. The hint never authenticates an owner.
+
+The native ledger stores only an opaque scope hash, random generation, opaque job
+keys and expiry timestamps in a separate private preference file. Before OS arm,
+the journal is committed/read back. On explicit cancellation, generation and job
+eligibility are invalidated durably BEFORE OS cancellation. Receiver claim and
+notification display serialize with cancellation; a consumed ticket cannot display
+twice. Existing own tagged tray notifications are dismissed, without clearing
+other CrewCheck notifications. Old intents without a ledger ticket fail closed,
+so pending pre-upgrade reminders need reconfirmation; user settings/roster are not
+cleared. No token/title/body is persisted by the ledger. An uncertain operation
+returns false and blocks scheduling in the process rather than claiming cleanup.
+
+Pure actual Java ledger fixtures pass303 assertions including process-death reads,
+logout, A→B→A epochs, no-scope, duplicate claims, expiry, limits and disk/OS failures.
+Actual JS lifecycle plus actual authClient mutation functions verify cancellation
+BEFORE token replacement/removal, preserved same-account renewal, expired sessions,
+late bridge, storage and uncertain feedback. Actual Android schedule methods24 and
+receiver timing12 remain passing raw and canonically prepared. These are synthetic
+checks and compilation evidence, not delivery on a physical device. Independent
+review of this new privacy delta is pending because the CUA connection closed;
+the earlier a082b844 approval does not approve this delta.
+
+No boot restoration or server-revocation guarantee is introduced: the cancellation
+hint is not a verified session lease, and journal records do not contain enough
+source/revision authority to recreate an alarm safely after reboot. Keep the
+prepared StayAlarm host flags OFF. Explicit local session changes are fenced;
+remote account revocation while the app never runs still needs trusted authority.
+
+A mobile-only internal draft was opened in the Play UI and an upload of the
+unambiguously identified a082b844 AAB144156 was attempted. The file-chooser tool
+blocked and later returned Transport closed with no receipt. Its outcome is
+UNCERTAIN, not confirmed uploaded, rejected, distributed or published. Do not retry
+or open a replacement edit until a read-only Console check resolves the draft.
+The browser tool remains unavailable even for read-only state/reset. Candidate
+144157 is rebuilt to avoid reuse of possibly consumed144156, but no new upload is
+permitted while the prior edit is unresolved. Terms/passkey requests remain
+pending; no new equivalent approval request was sent.
