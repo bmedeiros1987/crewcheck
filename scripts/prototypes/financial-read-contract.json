@@ -78,5 +78,10 @@
       "futureStep": "No browser IDB access or parallel dates/calculations; server-authorized snapshot and event/currency payment model require later design/approval."
     }
   ],
-  "stopBoundary": "This patch ends at pure legacy-format adaptation plus fixtures. No chained migration, reader wiring, writer/reset changes, actual data reads, production integration or transmission."
+  "stopBoundary": "This patch ends at pure legacy-format adaptation plus fixtures. No chained migration, reader wiring, writer/reset changes, actual data reads, production integration or transmission.",
+  "terminalRevisionDecisionPending": {
+    "currentBehavior": "Existing v1 writer can increment MAX_SAFE_INTEGER-1 to MAX_SAFE_INTEGER; old v1 reader accepts the terminal safe revision. New disconnected legacy parser rejects MAX_SAFE_INTEGER.",
+    "decisionBeforeRealIntegration": "Choose explicitly between preserving the terminal record as read-only (no further increment) or surfacing a handled conflict without hiding its values. Add a fixture proving the chosen behavior.",
+    "status": "Pending decision only; no parser/writer change in this step."
+  }
 }
