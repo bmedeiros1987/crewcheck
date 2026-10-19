@@ -7,7 +7,10 @@ const server=http.createServer((req,res)=>scope.respond(req,res,new URL(req.url,
 function seed({unknown,unknownAddition,futureForeign}){
  const NativeDate=Date,instant=Date.parse('2026-10-18T15:00:00Z');globalThis.Date=class extends NativeDate{constructor(...args){super(...(args.length?args:[instant]));}static now(){return instant;}};
  const owner='financial-ui-qa';localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:owner,email:'synthetic@example.invalid',name:'SYNTHETIC FINANCE',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-only');
- localStorage.setItem('crewcheck:first-access-tour:v1434:disabled','1');sessionStorage.setItem('crewcheck:first-access-tour:v1434:session-seen','1');localStorage.setItem('crewcheck_demo_mode_seen','1');
+ localStorage.setItem('crewcheck:first-access-tour:v1434:disabled','1');
+ // These scenarios exercise the detailed Home financial card; quick-default behavior has its own dedicated regression.
+ localStorage.setItem('crewcheck:home-layout:v1:financial-ui-qa',JSON.stringify({version:1,mode:'standard',order:['summary','finance','next','limits','smart'],visible:['summary','finance','next','limits','smart']}));
+sessionStorage.setItem('crewcheck:first-access-tour:v1434:session-seen','1');localStorage.setItem('crewcheck_demo_mode_seen','1');
  const days=Array.from({length:31},(_,i)=>({date:String(i+1).padStart(2,'0')+'/10/2026',dayOfWeek:'SYN',type:'DO',pairingCode:'DO',dutyReport:null,dutyDebrief:null,legs:[],dutyHours:0,flyingHours:0,isNextDay:false,hotel:null,base:'BSB',rawText:'SYNTHETIC QA ONLY'}));
  const leg=(flightNumber,origin,destination,departureTime,arrivalTime)=>({flightNumber,origin,destination,departureTime,arrivalTime,workType:'OP',duration:120,aircraftType:'SYN'});
  days[19]={...days[19],type:'FLIGHT',pairingCode:'SYN',dutyReport:'08:00',dutyDebrief:'17:00',legs:[leg('SYN1001','BSB','GRU','10:00','12:00'),leg('SYN1002','GRU','BSB','14:00','16:00')],dutyHours:9,flyingHours:4};

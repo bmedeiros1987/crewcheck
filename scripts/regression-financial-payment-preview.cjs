@@ -27,6 +27,9 @@ function seed({theme,kind,amount,history,salaryBase}) {
   globalThis.Date=class extends NativeDate {constructor(...args){super(...(args.length?args:[instant]));}static now(){return instant;}};
   localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'financial-ui-qa',name:'SYNTHETIC UI QA',role:'user'}));
   localStorage.setItem('crewcheck_auth_token','synthetic-local-only');
+ // These scenarios exercise the detailed Home financial card; quick-default behavior has its own dedicated regression.
+ localStorage.setItem('crewcheck:home-layout:v1:financial-ui-qa',JSON.stringify({version:1,mode:'standard',order:['summary','finance','next','limits','smart'],visible:['summary','finance','next','limits','smart']}));
+
   localStorage.setItem('crewcheck:first-access-tour:v1434:disabled','1');sessionStorage.setItem('crewcheck:first-access-tour:v1434:session-seen','1');
   localStorage.setItem('crewcheck_demo_mode_seen','1');
   localStorage.setItem('crewcheck_theme_mode',theme);localStorage.setItem('crewcheck:appearance:v1',theme);
