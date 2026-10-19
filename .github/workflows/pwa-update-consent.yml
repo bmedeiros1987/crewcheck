@@ -9,6 +9,9 @@ on:
       - 'client/src/components/pwa-update-notice.css'
       - 'client/public/sw.js'
       - 'vite.config.ts'
+      - 'server/static-html-guard.mjs'
+      - 'scripts/v1426/apply.mjs'
+      - 'scripts/regression-pwa-canonical-static.mjs'
       - 'scripts/ci/stamp-service-worker-build.mjs'
       - 'scripts/regression-pwa-update-*.mjs'
       - '.github/workflows/pwa-update-consent.yml'
@@ -53,3 +56,4 @@ jobs:
           node scripts/regression-native-play-update-ui.cjs
           node scripts/regression-mobile-pwa-safe-update.mjs
           node scripts/regression-v14-3-43-ipad-premium-layout-location-stability.mjs
+          node scripts/regression-pwa-canonical-static.mjs
