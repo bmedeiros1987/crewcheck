@@ -950,7 +950,8 @@ public class MainActivity extends Activity {
         final long work;
         synchronized (companionFence) {
             generation = companionGeneration;
-            work = "watch-proof-continuation".equals(reason) ? companionSyncWork.claim() : companionSyncWork.start();
+            work = ("watch-proof-continuation".equals(reason) || "watch-legacy-delete-continuation".equals(reason))
+                    ? companionSyncWork.claim() : companionSyncWork.start();
             if (work == 0) return;
         }
         new Thread(() -> {
@@ -983,6 +984,16 @@ public class MainActivity extends Activity {
                 if (java.util.Set.of("peer_cleanup_pending", "cleanup_pending", "peer_unavailable",
                         "capability_unconfirmed", "legacy_delete_pending", "data_layer_error").contains(code)) {
                     companionSyncWork.defer(work);
+                    if ("legacy_delete_pending".equals(code) && companionSyncWork.canResume(work)) {
+                        // This stage already has peer proof. Retry the failed deletion independently
+                        // of handshake ACKs, under the same bounded operation and owner fence.
+                        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                            synchronized (companionFence) {
+                                if (!companionSyncWork.canResume(work)) return;
+                                syncLifeCompanionToCrewCheckAndWatch("watch-legacy-delete-continuation");
+                            }
+                        }, 1000L);
+                    }
                 } else companionSyncWork.complete(work);
                 dispatchCrewCheckWatchSyncResult(ok, code, message);
             });

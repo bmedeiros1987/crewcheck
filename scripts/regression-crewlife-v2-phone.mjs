@@ -85,7 +85,7 @@ const signature='private void publishLifeCompanionSummaryToWatch(String raw)';
 const start=activity.indexOf(signature);assert(start>=0);let end=activity.indexOf('{',start)+1,depth=1;for(;depth;end++){if(activity[end]==='{')depth++;if(activity[end]==='}')depth--;}
 const bridgeStart=activity.indexOf('public boolean publishWatchCrewLife(final String payloadJson)');assert(bridgeStart>=0);let bridgeEnd=activity.indexOf('{',bridgeStart)+1,bridgeDepth=1;for(;bridgeDepth;bridgeEnd++){if(activity[bridgeEnd]==='{')bridgeDepth++;if(activity[bridgeEnd]==='}')bridgeDepth--;}
 put('com/crewcheck/app/NativeProjectionFixture',`package com.crewcheck.app;import org.json.*;public class NativeProjectionFixture extends android.content.Context{
-CrewLifeSyncWork companionSyncWork=new CrewLifeSyncWork();void dispatchCrewCheckWatchSyncResult(boolean ok,String code,String message){}
+final Object companionFence=new Object();CrewLifeSyncWork companionSyncWork=new CrewLifeSyncWork();void dispatchCrewCheckWatchSyncResult(boolean ok,String code,String message){}
 int refreshRequests;void syncLifeCompanionToCrewCheckAndWatch(String reason){refreshRequests++;}
 ${activity.slice(start,end)}
 ${activity.slice(bridgeStart,bridgeEnd)}
@@ -114,9 +114,10 @@ if(wearRoot){
  `);
  put('com/crewcheck/app/FullSenderFixture',`package com.crewcheck.app;import org.json.*;import java.util.*;import com.google.android.gms.wearable.*;import com.crewcheck.watch.FullSenderWearPeer;import com.crewcheck.health.CompanionFreshness;
  public class FullSenderFixture extends android.content.Context{
+ void syncLifeCompanionToCrewCheckAndWatch(String reason){} // Android scheduling is exercised by the real Robolectric suite.
  static int checks;static final String WATCH="watchA",PHONE="phone-node";static String last,lastAck;
  static void check(boolean ok,String why){checks++;if(!ok)throw new AssertionError("check "+checks+": "+why);}
- CrewLifeSyncWork companionSyncWork=new CrewLifeSyncWork();void dispatchCrewCheckWatchSyncResult(boolean ok,String code,String message){}
+ final Object companionFence=new Object();CrewLifeSyncWork companionSyncWork=new CrewLifeSyncWork();void dispatchCrewCheckWatchSyncResult(boolean ok,String code,String message){}
  ${activity.slice(start,end)}
  void nativePublish(String raw){publishLifeCompanionSummaryToWatch(raw);}
  static final CrewCheckWatchSyncService SERVICE=new CrewCheckWatchSyncService();
@@ -151,6 +152,7 @@ if(wearRoot){
  `);
  put('com/crewcheck/app/ReviewFixFixture',`package com.crewcheck.app;import org.json.*;import java.util.*;import com.google.android.gms.wearable.*;import com.crewcheck.watch.FullSenderWearPeer;import com.crewcheck.health.CompanionFreshness;
  public class ReviewFixFixture{
+ void syncLifeCompanionToCrewCheckAndWatch(String reason){} // Android scheduling is exercised by the real Robolectric suite.
  static int checks;static final String WATCH="watchA",PHONE="phone-node";static FullSenderFixture c;static FullSenderWearPeer w;
  static void check(boolean b,String why){checks++;if(!b)throw new AssertionError("review check "+checks+": "+why);}
  static JSONObject journal()throws Exception{return new JSONObject(c.getSharedPreferences("crewcheck_crewlife_v2_protocol",0).getString("journal",""));}

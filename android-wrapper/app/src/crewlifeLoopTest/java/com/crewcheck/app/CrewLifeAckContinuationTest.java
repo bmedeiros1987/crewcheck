@@ -19,6 +19,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.webkit.WebView;
 import com.google.android.gms.tasks.Tasks;
+import com.google.android.gms.tasks.TaskCompletionSource;
 import com.google.android.gms.wearable.*;
 import com.crewcheck.watch.CrewLifeLoopTestPeer;
 import java.nio.charset.StandardCharsets;
@@ -52,10 +53,12 @@ public class CrewLifeAckContinuationTest {
     private CrewLifeLoopTestPeer peer;
     private final List<Runnable> heldAcks = new ArrayList<>();
     private final List<String> cleanupAcks = new ArrayList<>();
-    private boolean holdAcks, failNativeDiscovery;
+    private boolean holdAcks, failNativeDiscovery, holdNativeDiscovery;
+    private final List<TaskCompletionSource<List<Node>>> pendingDiscoveries = new ArrayList<>();
     private final Map<String, CrewLifeLoopTestPeer> peers = new LinkedHashMap<>();
     private final Set<String> connectedIds = new LinkedHashSet<>();
-    private int discoveryFailures;
+    private int discoveryFailures, readyDeleteFailures, failedReadyDeletes;
+    private int controlsAtLegacyFailure = -1;
     private final class AckDelivery implements Runnable {
         final String node, raw;
         AckDelivery(String node, String raw) { this.node = node; this.raw = raw; }
@@ -127,6 +130,9 @@ public class CrewLifeAckContinuationTest {
         nodeClient = mock(NodeClient.class); capabilityClient = mock(CapabilityClient.class);
         dataClient = mock(DataClient.class); messageClient = mock(MessageClient.class);
         when(nodeClient.getConnectedNodes()).thenAnswer(i -> {
+            if (holdNativeDiscovery && Thread.currentThread().getName().equals("crewlife-companion-sync")) {
+                TaskCompletionSource<List<Node>> pending = new TaskCompletionSource<>(); pendingDiscoveries.add(pending); return pending.getTask();
+            }
             if (failNativeDiscovery && Thread.currentThread().getName().equals("crewlife-companion-sync")) {
                 discoveryFailures++; return Tasks.forException(new IllegalStateException("synthetic transient discovery"));
             }
@@ -138,7 +144,15 @@ public class CrewLifeAckContinuationTest {
             for (String id : peers.keySet()) nodes.add(node(id));
             when(capability.getNodes()).thenReturn(nodes); return Tasks.forResult(capability);
         });
-        when(dataClient.deleteDataItems(any(Uri.class))).thenAnswer(i -> Tasks.forResult(1));
+        when(dataClient.deleteDataItems(any(Uri.class))).thenAnswer(i -> {
+            CrewLifeV2Journal j = new CrewLifeV2Journal(app.getSharedPreferences("crewcheck_crewlife_v2_protocol", 0).getString("journal", ""));
+            if (!j.revoked() && j.allCleared() && readyDeleteFailures != 0) {
+                if (readyDeleteFailures > 0) readyDeleteFailures--;
+                failedReadyDeletes++; if (controlsAtLegacyFailure < 0) controlsAtLegacyFailure = controls;
+                return Tasks.forException(new IllegalStateException("synthetic legacy delete failure"));
+            }
+            return Tasks.forResult(1);
+        });
         when(dataClient.putDataItem(any(PutDataRequest.class))).thenAnswer(i -> {
             PutDataRequest request = i.getArgument(0);
             String raw = DataMap.fromByteArray(request.getData()).getString("crewLifeJson");
@@ -296,6 +310,85 @@ public class CrewLifeAckContinuationTest {
         twoPeers(); holdAcks = true; externalRequest(); drainUntilIdle(); releasePeer("watchA");
         ReflectionHelpers.callInstanceMethod(activity, "unregisterWatchSyncRequestReceiver");
         releasePeer("watchB"); holdAcks = false; drainUntilIdle(); assertEquals(0, snapshots); assertIdleAndStable();
+    }
+    private void releaseAcksWithoutAdvancingTimers() throws Exception {
+        for (int round = 0; round < 20; round++) {
+            List<Runnable> batch = new ArrayList<>(heldAcks); heldAcks.clear();
+            for (Runnable ack : batch) ack.run();
+            Shadows.shadowOf(Looper.getMainLooper()).idle(); joinIo(); Shadows.shadowOf(Looper.getMainLooper()).idle();
+            if (heldAcks.isEmpty() && !joinIo()) return;
+        }
+        fail("immediate ACK work did not settle");
+    }
+    @Test public void legacyDeleteRecoveryResumesWithoutExternalRequestOrNewHandshake() throws Exception {
+        holdAcks = true; externalRequest(); drainUntilIdle(); readyDeleteFailures = 2;
+        releaseAcksReversed(); holdAcks = false; drainUntilIdle();
+        assertEquals(2, failedReadyDeletes); assertTrue("cleanup recovery must publish pending work", snapshots > 0);
+        assertEquals("no unnecessary handshake after deletion failure", controlsAtLegacyFailure, controls);
+        assertEquals(1, SyntheticProvider.refreshes); assertIdleAndStable();
+    }
+    @Test public void persistentLegacyDeleteFailureStopsAtOperationLimit() throws Exception {
+        holdAcks = true; externalRequest(); drainUntilIdle(); readyDeleteFailures = -1;
+        releaseAcksReversed(); holdAcks = false; drainUntilIdle();
+        assertEquals(0, snapshots); assertTrue(failedReadyDeletes > 0 && failedReadyDeletes <= 25);
+        assertTrue("bounded native reads after both original phases", SyntheticProvider.reads <= 6);
+        assertEquals(controlsAtLegacyFailure, controls); assertIdleAndStable();
+        readyDeleteFailures = 0; CrewLifeV2Phone.retry(activity); drainUntilIdle(); assertEquals(0, snapshots);
+        externalRequest(); drainUntilIdle(); assertTrue(snapshots > 0); assertIdleAndStable();
+    }
+    @Test public void logoutCancelsScheduledLegacyDeleteContinuation() throws Exception {
+        holdAcks = true; externalRequest(); drainUntilIdle(); readyDeleteFailures = 2;
+        releaseAcksWithoutAdvancingTimers(); assertTrue(failedReadyDeletes > 0); assertEquals(0, snapshots);
+        ReflectionHelpers.callInstanceMethod(activity, "invalidateCompanionOnAccountChange", ReflectionHelpers.ClassParameter.from(String.class, ""));
+        readyDeleteFailures = 0; holdAcks = false; drainUntilIdle(); assertEquals(0, snapshots); assertIdleAndStable();
+    }
+    @Test public void destroyCancelsScheduledLegacyDeleteContinuation() throws Exception {
+        holdAcks = true; externalRequest(); drainUntilIdle(); readyDeleteFailures = 2;
+        releaseAcksWithoutAdvancingTimers(); assertTrue(failedReadyDeletes > 0); assertEquals(0, snapshots);
+        ReflectionHelpers.callInstanceMethod(activity, "unregisterWatchSyncRequestReceiver");
+        readyDeleteFailures = 0; holdAcks = false; drainUntilIdle(); assertEquals(0, snapshots); assertIdleAndStable();
+    }
+    private void failHeldDiscoveries() throws Exception {
+        for (TaskCompletionSource<List<Node>> pending : new ArrayList<>(pendingDiscoveries))
+            pending.setException(new IllegalStateException("synthetic obsolete discovery failure"));
+        pendingDiscoveries.clear(); drainUntilIdle();
+    }
+    @Test public void successIsTerminalAgainstLateDiscoveryFailureAndDuplicateAcks() throws Exception {
+        holdNativeDiscovery = true; externalRequest(); drainUntilIdle(); assertEquals(2, pendingDiscoveries.size());
+        holdNativeDiscovery = false; CrewLifeV2Phone.retry(activity); drainUntilIdle();
+        assertEquals(1, snapshots); int reads = SyntheticProvider.reads;
+        failHeldDiscoveries();
+        for (String ack : new ArrayList<>(cleanupAcks)) { deliverAck(ack); deliverAck(ack); }
+        CrewLifeV2Phone.retry(activity); drainUntilIdle();
+        assertEquals("completed operation cannot be reopened", 1, snapshots); assertEquals(reads, SyntheticProvider.reads);
+        assertIdleAndStable();
+    }
+    @Test public void staleDiscoveryFailureCannotReopenCanceledOrNewOperation() throws Exception {
+        holdNativeDiscovery = true; externalRequest(); drainUntilIdle(); assertEquals(2, pendingDiscoveries.size());
+        ReflectionHelpers.callInstanceMethod(activity, "invalidateCompanionOnAccountChange", ReflectionHelpers.ClassParameter.from(String.class, ""));
+        failHeldDiscoveries(); assertEquals(0, snapshots); assertIdleAndStable();
+        ReflectionHelpers.callInstanceMethod(activity, "invalidateCompanionOnAccountChange", ReflectionHelpers.ClassParameter.from(String.class, "synthetic-next-owner"));
+        WatchHealthConsent.grant(activity, "1.0", Set.of("recovery", "sleep", "activity"));
+        holdNativeDiscovery = false; externalRequest(); drainUntilIdle(); assertTrue(snapshots > 0);
+        int before = snapshots, reads = SyntheticProvider.reads;
+        CrewLifeV2Phone.retry(activity); drainUntilIdle(); assertEquals(before, snapshots); assertEquals(reads, SyntheticProvider.reads);
+        assertIdleAndStable();
+    }
+    @Test public void olderDiscoveryFailuresCannotReopenCompletedNewExternalOperation() throws Exception {
+        holdNativeDiscovery = true; externalRequest(); drainUntilIdle(); assertEquals(2, pendingDiscoveries.size());
+        holdNativeDiscovery = false; externalRequest(); drainUntilIdle(); assertTrue(snapshots > 0);
+        int before = snapshots, reads = SyntheticProvider.reads;
+        failHeldDiscoveries(); CrewLifeV2Phone.retry(activity); drainUntilIdle();
+        assertEquals(before, snapshots); assertEquals(reads, SyntheticProvider.reads); assertIdleAndStable();
+    }
+    @Test public void joinedPeerAndAutomaticRetryCannotReopenSucceededOperationFromOldCallback() throws Exception {
+        holdNativeDiscovery = true; externalRequest(); drainUntilIdle(); assertEquals(2, pendingDiscoveries.size());
+        holdNativeDiscovery = false; CrewLifeV2Phone.retry(activity); drainUntilIdle();
+        assertEquals(1, snapshots); int reads = SyntheticProvider.reads, beforeControls = controls;
+        twoPeers(); failHeldDiscoveries(); // obsolete discovery failure schedules retry(false); no explicit retry here
+        assertTrue("automatic retry must actually handshake with joined peer", controls > beforeControls);
+        assertEquals("completed operation stays terminal after new peer ACK", 1, snapshots);
+        assertEquals(reads, SyntheticProvider.reads); assertEquals(1, SyntheticProvider.refreshes); assertIdleAndStable();
     }
     @Test public void destroyedActivityCannotResumeFromQueuedAcksOrDelay() throws Exception {
         holdAcks = true; externalRequest(); Shadows.shadowOf(Looper.getMainLooper()).idle(); joinIo();

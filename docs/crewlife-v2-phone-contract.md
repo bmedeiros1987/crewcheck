@@ -182,7 +182,7 @@ new external phases coalesce older reads, terminal callbacks finish their own
 ticket, account changes invalidate tickets, and Activity destruction closes them.
 The durable per-node publication permits and all source/session fences remain.
 
-Fourteen Robolectric tests use actual Android broadcast registration/delivery, the
+Twenty-two Robolectric tests use actual Android broadcast registration/delivery, the
 production Activity receiver, native provider read, publisher and ACK service,
 and the real paused main Looper. A posting WebView test adapter models an attached
 View's Handler delivery. GMS transport, a synthetic ContentProvider and peer disk
@@ -207,3 +207,22 @@ exhaustion stops automatic source reads, while a new external request starts a
 new bounded operation. Transport retry alone never invents source work. Success,
 definitive rejection, account change and Activity destruction terminate it. No
 payload is persisted to make this work queue durable across process death.
+
+Legacy deletion failure has its own bounded Activity-local continuation after
+1000ms; it does not depend on a new handshake ACK or external request. It reuses
+unconsumed peer proof and revalidates source/session/consent through the ordinary
+producer before attempting deletion and publication. The scheduled callback is
+bound to its exact active ticket under the Activity owner fence. No publication
+is permitted until deletion succeeds. The shared four-continuation limit also
+bounds this stage; cancellation/logout/destruction suppress queued stage work.
+
+Success and definitive completion mark a ticket inactive irreversibly. A late
+failure callback cannot defer that terminal ticket or a newer operation. Tests
+hold the original discovery Tasks, complete publication through retry/proof, then
+release old failures/duplicate ACKs and invoke explicit retry; reads/publications
+must remain unchanged. One control uses explicit retry. Another adds a second
+connected/capable peer after success, then releases the old discovery failure;
+its scheduled retry(false) must really handshake the new peer while reads and
+snapshots stay unchanged. The rejected baseline demonstrates a bounded unwanted
+resumption, not an infinite loop. Separate tests demonstrate legacy-delete
+automatic recovery and bounded persistent failure.
