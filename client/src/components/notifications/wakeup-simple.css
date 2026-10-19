@@ -17,3 +17,8 @@
 
 .cc-wakeup-page .cc-wake-editor>.cc-wakeup-primary:disabled{color:var(--cc-text);opacity:.7}
 .cc-wakeup-page .cc-wake-fuso{font-size:.85rem}
+
+.cc-wakeup-page .cc-wake-clock-options label{display:flex;gap:.6em;align-items:flex-start;line-height:1.5;padding:8px 0}
+.cc-wakeup-page .cc-wake-clock-options input[type=checkbox]{box-sizing:border-box;width:22px;min-width:22px;height:22px;flex:0 0 22px;padding:0;margin-top:2px}
+.cc-wakeup-page .cc-wake-clock-options fieldset{min-width:0;border:1px solid var(--cc-border,var(--cc-line));border-radius:12px;padding:12px;margin:12px 0}
+.cc-wakeup-page .cc-wake-clock-options legend{white-space:normal;max-width:100%;line-height:1.5}

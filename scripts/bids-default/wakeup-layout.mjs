@@ -48,6 +48,7 @@ if(!block.includes('<WakeDiagnostic/>'))block=block.replace('<WakeupChannelSelec
 // Keep the existing generated WakeupView and its account/session fences. This is
 // its final presentation and receipt boundary, not a second route or scheduler.
 if (activate==='activateServerAlarm') {
+ if(!source.includes("import {WakeClockOptions}")) source="import {WakeClockOptions} from '@/components/notifications/WakeClockOptions';\n"+source;
  if(!source.includes("import {WakeupSimpleCard}")) source="import {WakeupSimpleCard} from '@/components/notifications/WakeupSimpleCard';\n"+source;
  if(!source.includes("import {wakeCivilDate")) source="import {wakeCivilDate,wakeDateFields,wakePlanConflict,wakeReceiptConfirmed,wakeNextConfirmed} from '@shared/wakeupPlan.mjs';\n"+source;
  block=block.replace('  const [health, setHealth]',`  const [wakeDraft,setWakeDraft]=useState<any>(null);
@@ -59,7 +60,7 @@ if (activate==='activateServerAlarm') {
  block=block.replace('  const planned = (() => {','  const scalePlanned = (() => {');
  const editor=`  const scaleFields=wakeDateFields(scalePlanned);
   const wakeOwner=getStoredUser()?.id;
-  const wakeEditor=wakeDraft && Boolean(wakeOwner) && wakeDraft.ownerId===wakeOwner?wakeDraft:{ownerId:wakeOwner,automatic:true,...scaleFields};
+  const wakeEditor=wakeDraft && Boolean(wakeOwner) && wakeDraft.ownerId===wakeOwner?wakeDraft:{ownerId:wakeOwner,automatic:true,directMessage:true,...scaleFields};
   const planned=wakeEditor.automatic?scalePlanned:wakeCivilDate(wakeEditor.day,wakeEditor.time);
   const wakeScopeId=wakeEditor.automatic?String(event.id||''):'manual:'+wakeEditor.day;
   const wakeScopeInstant=wakeEditor.automatic?wakeInstant:(planned?.toISOString()||'');
@@ -67,9 +68,9 @@ if (activate==='activateServerAlarm') {
   const wakeJobsCurrent=Boolean(wakeOwner) && wakeJobsOwner===wakeOwner;
   const wakeSnapshot=wakeNextConfirmed(scheduledJobs,jobsState,wakeNow);
   const wakeConflict=wakePlanConflict(scheduledJobs,wakePrefix);
-  const wakeChannelReason=wakeChannelDecision.channels.length>1?'Escolha um canal em Mais opções. Telegram e ligação juntos ainda não estão disponíveis.':wakeChannelDecision.channels[0]==='phone-call'?'Ligação telefônica ainda não liberada para ativar nesta conta. Veja Mais opções.':wakeChannelDecision.reason;
+  const wakeChannelReason=wakeChannelDecision.channels.length>1?'Escolha um canal em Mais opções. Telegram e ligação juntos ainda não estão disponíveis.':wakeChannelDecision.channels[0]==='phone-call'?'Agendamento de ligação ainda não liberado nesta tela. O teste manual é separado.':wakeChannelDecision.reason;
   const wakeScopeReady=wakeChannelDecision.ownerId===wakeOwner && wakeChannelDecision.eventId===wakeScopeId && wakeChannelDecision.instant===wakeScopeInstant;
-  const wakeReason=(!wakeJobsCurrent||jobsState!=='ready'||wakeSnapshot.kind==='unavailable')?'Estado do servidor não confirmado. Atualize antes de ativar.':wakeConflict?'Já existe uma solicitação para esta programação. Consulte o histórico em Mais opções.':!planned?'Confira um horário e uma data válidos. Horários ambíguos de mudança de fuso exigem a opção pela escala.':planned.getTime()<=wakeNow?'O horário escolhido já passou. Escolha outro dia ou horário.':!wakeScopeReady?'Escolha do canal ainda não verificada.':!wakeChannelDecision.ready?wakeChannelReason:'';
+  const wakeReason=(!wakeJobsCurrent||jobsState!=='ready'||wakeSnapshot.kind==='unavailable')?'Estado do servidor não confirmado. Atualize antes de ativar.':wakeConflict?'Já existe uma solicitação para esta programação. Consulte o histórico em Mais opções.':!planned?'Confira um horário e uma data válidos. Horários ambíguos de mudança de fuso exigem a opção pela escala.':planned.getTime()<=wakeNow?'O horário escolhido já passou. Escolha outro dia ou horário.':!wakeScopeReady?'Escolha do canal ainda não verificada.':!wakeChannelDecision.ready?wakeChannelReason:wakeEditor.directMessage===false?'Nenhum envio selecionado. O alarme local e a ligação automática ainda não estão liberados nesta tela.':'';
   function editWake(patch:any) {
     if(wakeSubmitting.current)return;
     setWakeDraft({...wakeEditor,...(wakeEditor.automatic?scaleFields:{}),...patch,ownerId:getStoredUser()?.id});
@@ -109,6 +110,7 @@ if (activate==='activateServerAlarm') {
  if(returnStart<0)throw Error('Existing Wake return missing');
  block=block.slice(0,returnStart)+`  return <><Brand back/><div className="cc-wakeup-page"><StayNavigationContext targetView="wakeup"/><section className="cz-panel-head"><h1>Despertador</h1></section>
     <WakeupSimpleCard automatic={wakeEditor.automatic} day={wakeEditor.day||''} time={wakeEditor.time||''} onEdit={editWake} planned={planned} jobs={wakeJobsCurrent?scheduledJobs:[]} jobsState={wakeJobsCurrent?jobsState:jobsState==='unavailable'?'unavailable':'loading'} now={wakeNow} reason={wakeReason} busy={scheduleBusy} onActivate={activateServerAlarm} onRefresh={refreshScheduledJobs}>
+      <WakeClockOptions messageSelected={wakeEditor.directMessage!==false&&wakeChannelDecision.channels.includes('telegram')} messageAvailable={wakeScopeReady&&wakeChannelDecision.ready&&wakeChannelDecision.channel==='telegram'} onMessageChange={selected=>editWake({directMessage:selected})} busy={scheduleBusy} planned={planned}/>
       <section aria-label="Ajustes da escala"><h2>Automático pela escala</h2><p>{programDateLabel(event)} · apresentação {presentation} · {hotel}</p><label>Antecedência da escala<select value={lead} onChange={event=>setLead(event.target.value)} disabled={scheduleBusy}>{[60,75,90,120].map(value=><option key={value} value={String(value)}>{value} minutos</option>)}</select></label><p>Este ajuste vale para a próxima solicitação; não altera alarmes salvos.</p></section>
       <section aria-label="Canal deste alarme"><h2>Canal</h2><p>{wakeChannelDecision.channels.map(value=>value==='phone-call'?'Ligação telefônica':value==='telegram-call'?'Ligação via Telegram':value==='telegram'?'Mensagem Telegram':'A confirmar').join(' + ')||'A confirmar'}</p><WakeupChannelSelection eventId={wakeScopeId} instant={wakeScopeInstant} readiness={wakeReadiness} onDecision={setWakeChannelDecision}/><button type="button" onClick={openNotificationSettings}>Menu → Notificações</button></section>
       ${history}

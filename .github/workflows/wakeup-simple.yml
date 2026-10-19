@@ -6,6 +6,11 @@ on:
       - 'client/src/components/notifications/WakeupSimpleCard.tsx'
       - 'client/src/components/notifications/wakeup-simple.css'
       - 'shared/wakeupPlan.mjs'
+      - 'shared/wakeupCycle.mjs'
+      - 'shared/wakeupChannelSelection.mjs'
+      - 'client/src/components/notifications/WakeupChannelSelection.tsx'
+      - 'client/src/components/notifications/WakeClockOptions.tsx'
+      - 'scripts/regression-wakeup-cycle.mjs'
       - 'scripts/bids-default/wakeup-layout.mjs'
       - 'scripts/regression-wakeup-simple-plan.mjs'
       - 'scripts/regression-wakeup-session-browser.mjs'
@@ -34,6 +39,7 @@ jobs:
           WAKEUP_JSDOM_PACKAGE: ${{ runner.temp }}/wake-ui/package.json
         run: |
           node scripts/regression-wakeup-simple-plan.mjs
+          node scripts/regression-wakeup-cycle.mjs
           node scripts/regression-wakeup-channel-selection.mjs
           node scripts/regression-wakeup-selection-react.mjs
       - name: Canonical existing application
@@ -48,6 +54,7 @@ jobs:
           WAKEUP_SIMPLE_SCREENSHOT: ${{ runner.temp }}/wake-simple-synthetic.png
         run: |
           node scripts/regression-wakeup-simple-plan.mjs
+          node scripts/regression-wakeup-cycle.mjs
           node scripts/regression-wakeup-channel-selection.mjs
           node scripts/regression-wakeup-selection-react.mjs
           node scripts/regression-wakeup-session-browser.mjs

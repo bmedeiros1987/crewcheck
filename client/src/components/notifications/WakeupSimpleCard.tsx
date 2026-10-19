@@ -24,6 +24,7 @@ export function WakeupSimpleCard(props:Props) {
     </section>
     <section className="cc-wake-editor" aria-label="Configurar despertador">
       <h2>Horário e dia</h2>
+      <p className="cc-wake-fuso">Alarme do celular e agendamento de ligações ainda não liberados nesta tela. O teste manual é separado.</p>
       <label className="cc-wake-auto"><input type="checkbox" checked={props.automatic} disabled={props.busy} onChange={event=>props.onEdit({automatic:event.target.checked})}/><span>Usar horário da escala</span></label>
       <div className="cc-wake-fields">
         <label>Horário<input type="time" value={fields.time} disabled={props.automatic||props.busy} onChange={event=>props.onEdit({time:event.target.value})}/></label>

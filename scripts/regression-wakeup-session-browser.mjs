@@ -10,7 +10,7 @@ const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');
 const begin=home.indexOf('function WakeupView('),end=home.indexOf('function PresentationManagerView',begin);
 assert(begin>=0&&end>begin);const wake=home.slice(begin,end);const kpiBegin=home.indexOf('function KpiCard('),kpiEnd=home.indexOf('\ntype RadarSnapshot',kpiBegin);assert(kpiBegin>=0&&kpiEnd>kpiBegin);const kpi=home.slice(kpiBegin,kpiEnd);
 assert(wake.includes('const wakeSession = useRef'),'run canonical preparation before host UI regression');
-const hostPrelude=`import{WakeupSimpleCard}from'./client/src/components/notifications/WakeupSimpleCard';import{wakeCivilDate,wakeDateFields,wakePlanConflict,wakeReceiptConfirmed,wakeNextConfirmed}from'./shared/wakeupPlan.mjs';import{setCrewCheckThemePreference}from'./client/src/lib/themeRuntime';window.fixtureTheme=setCrewCheckThemePreference;import React,{useState,useRef,useEffect} from 'react';import{getToken,authFetch,getStoredUser}from'./client/src/lib/authClient';
+const hostPrelude=`import{WakeClockOptions}from'./client/src/components/notifications/WakeClockOptions';import{WakeupSimpleCard}from'./client/src/components/notifications/WakeupSimpleCard';import{wakeCivilDate,wakeDateFields,wakePlanConflict,wakeReceiptConfirmed,wakeNextConfirmed}from'./shared/wakeupPlan.mjs';import{setCrewCheckThemePreference}from'./client/src/lib/themeRuntime';window.fixtureTheme=setCrewCheckThemePreference;import React,{useState,useRef,useEffect} from 'react';import{getToken,authFetch,getStoredUser}from'./client/src/lib/authClient';
 const storage={get:(key,fallback)=>localStorage.getItem(key)||fallback,set:(key,value)=>localStorage.setItem(key,value)};
 const toast=Object.fromEntries(['success','error','info','message'].map(name=>[name,(message)=>{(window.fixtureToasts ||= []).push(message);} ]));
 const isAdmin=()=>false,wakeupLeadMinutes=()=>90,wakeupChannel=()=> 'telegram',safe=(v,f)=>v||f,city=v=>v;
@@ -55,6 +55,9 @@ try{
  assert.equal(await page.getByRole('button',{name:/Testar|Vincular|Soneca|Salvar preferências|Ativar no servidor/}).count(),0,'technical/configuration actions are not simultaneous');
 
  await page.getByText('Mais opções',{exact:true}).click();
+ assert(await page.getByRole('checkbox',{name:'Tocar no celular',exact:true}).isDisabled());assert(await page.getByRole('checkbox',{name:'Ligar no horário',exact:true}).isDisabled());assert(await page.getByRole('checkbox',{name:/^Ligar se não recebermos/}).isDisabled());
+ const directMessage=page.getByRole('checkbox',{name:'Mandar mensagem no horário',exact:true});
+ await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);await directMessage.uncheck();assert(await page.getByRole('button',{name:'Ativar despertador',exact:true}).isDisabled());await directMessage.check();
  const selection=page.locator('.cc-wakeup-selection'),primary=page.getByRole('button',{name:'Ativar despertador',exact:true});
  await selection.getByText('Mensagem Telegram disponível para solicitar agendamento.',{exact:false}).waitFor();
  await page.evaluate(()=>{window.fixturePosts=[];window.fixturePost=async(path,body)=>{window.fixturePosts.push({path,body});return{ok:true,message:'Solicitação registrada no servidor; entrega não confirmada.'};};});
