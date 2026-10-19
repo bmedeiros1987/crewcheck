@@ -34,6 +34,7 @@ jobs:
         run: |
           node scripts/regression-profile-display-name.mjs
           node scripts/regression-profile-display-name-browser.cjs
+          node scripts/regression-profile-display-name-shared-browser.cjs
           # Global TypeScript needs the exports produced by source preparation.
           # It remains mandatory below, after the canonical build prepares them.
       - name: Build prepared sources
@@ -46,6 +47,7 @@ jobs:
           node scripts/regression-profile-display-name.mjs
           node scripts/regression-profile-display-name-browser.cjs
           node scripts/regression-profile-display-name-home-browser.cjs
+          node scripts/regression-profile-display-name-shared-browser.cjs
           npx tsc --noEmit
       - uses: actions/upload-artifact@v4
         if: always()

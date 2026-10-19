@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createTelegramMenu, menuGreeting, menuTemplate, missingFinanceReply, missingComplianceReply, financeUrl } from '../server/concierge/telegram-menu.mjs';
 import vm from 'node:vm';
+import { prepareConciergeCanonicalBridge } from './p1-concierge-journey/bridge.mjs';
+prepareConciergeCanonicalBridge();
+const { buildDutyFacts } = await import('../server/concierge/duty-facts.mjs');
 
 let clock = 1_000_000;
 let account = 'demo@example.test';
@@ -185,16 +188,16 @@ assert(source.includes('if (await crewcheckMenu.text(update.message || {})) retu
 assert(source.includes('await crewcheckMenu.interrupt(update.message || {});'));
 assert(source.includes('const conciergeKeyboard = menuTemplate();'));
 assert(!source.match(/function conciergeHelp[\s\S]*?\n}/)[0].includes('/ligacao'));
-for (const [name, producer] of [['conciergePerDiemReply', missingFinanceReply], ['conciergeComplianceReply', missingComplianceReply]]) {
+for (const [name, producer] of [['conciergePerDiemReply', missingFinanceReply], ['conciergeComplianceReply', () => buildDutyFacts({}).summary]]) {
   const fn = source.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n}`))[0];
-  const result = vm.runInNewContext(`${fn}; ${name}({roster:{days:[{dutyHours:15,hotel:'PRIVATE'}]}})`, { missingFinanceReply, missingComplianceReply });
+  const result = vm.runInNewContext(`${fn}; ${name}({roster:{days:[{dutyHours:15,hotel:'PRIVATE'}]}})`, { missingFinanceReply, missingComplianceReply, buildDutyFacts, conciergeAccessMatches: () => false });
   assert.equal(result, producer(), 'typed commands and buttons share exact response');
   assert(!result.includes('PRIVATE'));
 }
 const core = source.match(/async function buildTelegramConciergeReplyCore\([\s\S]*?\n}/)[0];
 const preparedHandlers = ['conciergePerDiemReply', 'conciergeComplianceReply'].map(name => source.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n}`))[0]).join('\n');
 const context = {
-  missingFinanceReply, missingComplianceReply, normalizeConciergeButtonText: value => value,
+  missingFinanceReply, missingComplianceReply, buildDutyFacts, conciergeAccessMatches: () => false, normalizeConciergeButtonText: value => value,
   isWellhubPlanPreferenceMessage: () => false, isWellhubActivityPreferenceMessage: () => false,
   conciergeIdentityFlow: async () => ({ handled: false }), conciergeDayForKey: () => null,
   conciergeDateKey: () => '2026-10-19', conciergeEasterEggReply: () => '',
@@ -211,7 +214,7 @@ const counterexamples = [
   [{ ...published, timezone: 'Europe/London', journeyId: 'synthetic', dutyReportSource: 'unknown' }],
 ];
 for (const days of counterexamples) {
-  for (const [command, expected] of [['/diarias', missingFinanceReply()], ['/conformidade', missingComplianceReply()]]) {
+  for (const [command, expected] of [['/diarias', missingFinanceReply()], ['/conformidade', buildDutyFacts({}).summary]]) {
     const result = await vm.runInNewContext(`${preparedHandlers}\n${core}\nbuildTelegramConciergeReplyCore(${JSON.stringify(command)}, {}, ${JSON.stringify({ roster: { days } })})`, context);
     assert.equal(result, expected, 'prepared typed dispatch does not convert unsafe clocks into alerts or per-diem values');
   }

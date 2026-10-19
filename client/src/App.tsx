@@ -61,11 +61,23 @@ function CrewCheckOpeningSplash({ label, stage = "session" }: { label?: string; 
 }
 
 async function enablePartnerDemoRoster(isCurrent: () => boolean, accountKey: string) {
+  const controller = new AbortController();
+  let expired = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const response = await fetch('/api/partner/demo-profile', { cache: 'no-store', credentials: 'same-origin' });
-    if (!response.ok) return;
-    const payload = await response.json().catch(() => null);
-    if (!isCurrent() || !accountKey || !payload?.partner || !payload?.demoRosterEnabled) return;
+    const deadline = new Promise<null>(resolve => {
+      timer = setTimeout(() => {
+        expired = true;
+        controller.abort();
+        resolve(null);
+      }, 5_000);
+    });
+    const profile = (async () => {
+      const response = await fetch('/api/partner/demo-profile', { cache: 'no-store', credentials: 'same-origin', signal: controller.signal });
+      return response.ok ? response.json().catch(() => null) : null;
+    })();
+    const payload = await Promise.race([profile, deadline]);
+    if (expired || !isCurrent() || !accountKey || !payload?.partner || !payload?.demoRosterEnabled) return;
     const marker = `crewcheck_partner_demo_loaded:${accountKey}`;
     if (window.localStorage.getItem(marker) === '1') return;
     window.localStorage.setItem('crewcheck_demo_mode_seen', '1');
@@ -73,7 +85,9 @@ async function enablePartnerDemoRoster(isCurrent: () => boolean, accountKey: str
     window.localStorage.setItem('crewcheck_partner_demo_account', accountKey);
     window.localStorage.setItem('crewcheck_partner_name', String(payload.partnerName || 'Parceiro CrewCheck'));
     window.localStorage.setItem(marker, '1');
-  } catch {}
+  } catch {} finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 function Protected({ children }: { children: ReactNode }) {

@@ -5,7 +5,8 @@ export function guardWakeupSession(wake) {
   wake = wake.replace('  const admin = isAdmin();', `  const [jobsState, setJobsState] = useState('loading');
   const wakeSession = useRef(0);
   const jobsRequest = useRef(0);
-  const sameWakeSession = (version: number, owner: string) => wakeSession.current === version && getToken() === owner;
+  const wakeIdentity = useRef<{token:string|null,userId:string}|null>(null);
+  const sameWakeSession = (version: number, owner: string) => wakeSession.current === version && getToken() === owner && wakeIdentity.current?.userId === String(getStoredUser()?.id || '');
   const admin = isAdmin();`);
   const start = wake.indexOf('  async function refreshScheduledJobs()');
   const end = wake.indexOf('  function savePrefs()', start);
@@ -27,8 +28,15 @@ export function guardWakeupSession(wake) {
 
   useEffect(() => {
     const refresh = () => {
-      const version = ++wakeSession.current, owner = getToken();
-      setScheduledJobs([]); setHealth(null); setScheduleBusy(false); setActiveTest('');
+      const owner = getToken(), userId = String(getStoredUser()?.id || '');
+      const changed = !wakeIdentity.current || wakeIdentity.current.token !== owner || wakeIdentity.current.userId !== userId;
+      if (changed) {
+        wakeSession.current++;
+        wakeIdentity.current = {token:owner,userId};
+        setScheduleBusy(false); setActiveTest('');
+      }
+      const version = wakeSession.current;
+      setScheduledJobs([]); setHealth(null);
       setChatId(storage.get('crewcheck_telegram_chat_id', '')); setPhone(storage.get('crewcheck_wakeup_phone', ''));
       void refreshScheduledJobs();
       if (!owner) return;
