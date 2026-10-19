@@ -83,6 +83,18 @@ test('upcoming horizon is payment date, not work competence', async () => {
   const december = (await f.request(FINANCIAL_LEDGER_PATH + '?periodStart=2032-12-01&periodEnd=2032-12-31&aggregationLevel=item')).body;
   assert.equal(december.state, 'no_data');
 });
+test('nonempty ledger with payment beyond 30 days is scoped no_data, not no allowances', async () => {
+  const item = record(1, { expectedPaymentDate: '2033-01-19' }); // Day31 from2032-12-20; outside the inclusive30-day horizon.
+  const f = fixture({ records: [item] });
+  const upcoming = (await f.request()).body;
+  assert.equal(upcoming.state, 'no_data'); assert.deepEqual(upcoming.events, []); assert.equal(upcoming.hasMore, false);
+  const history = (await f.request(FINANCIAL_LEDGER_PATH + '?periodStart=2032-12-01&periodEnd=2032-12-31&aggregationLevel=item')).body;
+  assert.equal(history.state, 'available'); assert.equal(history.records.length, 1);
+  assert.equal(history.records[0].category, 'allowance'); assert.equal(history.records[0].expectedPaymentDate, '2033-01-19');
+  assert.equal(history.records[0].amountMinor, item.amountMinor); assert.equal(f.calls.writes, 0);
+  const boundary = (await fixture({ records: [record(1, { expectedPaymentDate: '2033-01-18' })] }).request()).body;
+  assert.equal(boundary.state, 'available'); assert.equal(boundary.events.length, 1, 'last included day retains the existing allowance');
+});
 test('compact upcoming DTO lacks work period, snapshot revision/update and per-event provenance', async () => {
   const result = (await fixture({ records: [record(1)] }).request()).body;
   assert.deepEqual(Object.keys(result.events[0]).sort(), ['id', 'category', 'expectedPaymentDate', 'expectedPaymentTimezone', 'amountMinor', 'currency', 'status'].sort());
