@@ -1,6 +1,10 @@
 import { buildCanonicalRosterEvents } from './generated/canonicalRoster.mjs';
+import { publishedDutyEndpoints } from './generated/canonicalDutyMeasurement.mjs';
 
 const MINUTE = 60_000;
+// Reuse the canonical engine's fixed published BRT clock, never host timezone
+// or destination-local time. This metadata changes display only.
+const publishedDateKey = value => new Date(instant(value) - 180 * MINUTE).toISOString().slice(0, 10);
 function clockMinutes(value) {
   const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
   if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) return null;
@@ -18,6 +22,26 @@ function presentationInstant(event) {
   return start - (departure - presentation + 1440) % 1440 * MINUTE;
 }
 
+function statusFacts(group) {
+  const statuses = group.flatMap((event, index) => [
+    { level: 'day', index, status: event.publishedDay?.status },
+    { level: 'leg', index, status: event.leg?.status },
+  ]).filter(value => typeof value.status === 'string' && value.status.trim())
+    .map(value => ({ ...value, status: value.status.trim().toLowerCase() }));
+  return { statuses, cancelled: statuses.some(value => ['cancelled', 'canceled', 'cancelado'].includes(value.status)),
+    planned: statuses.some(value => value.status === 'planned') };
+}
+function publishedDisplay(events, group, start, end) {
+  const endpoints = group.length ? publishedDutyEndpoints(events, group[0].id) : { start: null, end: null };
+  return {
+    clockBasis: 'published-brt', ...statusFacts(group),
+    presentationConfirmed: endpoints.start !== null, publishedStart: endpoints.start,
+    endConfirmed: endpoints.end !== null && endpoints.end === instant(end), publishedEnd: endpoints.end,
+    presentationDate: endpoints.start === null ? null : publishedDateKey(endpoints.start),
+    endDate: endpoints.end === null ? null : publishedDateKey(endpoints.end),
+  };
+}
+
 // This is a consumer projection, not a journey classifier. The canonical
 // engine alone decides identity, chronology, ordering and real boundaries.
 export function projectConciergeJourneyPrograms(events = [], legacyRecords = []) {
@@ -31,7 +55,14 @@ export function projectConciergeJourneyPrograms(events = [], legacyRecords = [])
     group.push(event);
     groups.set(event.journeyId, group);
   }
-  const records = legacyRecords.filter((record) => !record.legs?.length);
+  const records = legacyRecords.filter((record) => !record.legs?.length).map(record => {
+    // Bind a unique existing canonical duty by its exact selected start and code;
+    // ambiguity stays unknown. Published endpoints, not a default clock, prove APZ.
+    const candidates = events.filter(event => event.kind === 'duty'
+      && instant(event.startDateTime) === instant(record.start)
+      && String(event.flightNumber).toUpperCase() === String(record.code).toUpperCase());
+    return { ...record, display: publishedDisplay(events, candidates.length === 1 ? candidates : [], record.start, record.end) };
+  });
   for (const [journeyId, group] of groups) {
     const ordered = [...group].sort((a, b) => instant(a.startDateTime) - instant(b.startDateTime));
     const first = ordered[0];
@@ -82,6 +113,10 @@ export function projectConciergeJourneyPrograms(events = [], legacyRecords = [])
       finalArrivalTime: last.arrival,
       finalArrivalDateTime: last.endDateTime,
       canonicalEventIds: ordered.map((event) => event.id),
+      display: {
+        ...publishedDisplay(events, ordered, start, end),
+        legs: ordered.map(event => ({ departureDate: publishedDateKey(event.startDateTime), arrivalDate: publishedDateKey(event.endDateTime) })),
+      },
     });
   }
   return records.sort((a, b) => a.start.getTime() - b.start.getTime());
