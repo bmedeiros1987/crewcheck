@@ -110,3 +110,26 @@ test('workflow retains all gates and broad unknown namespace discovery',()=>{
   const regex=p=>new RegExp('^'+p.replace(/\*\*\//g,'(?:.*/)?').replace(/\*\*/g,'.*').replace(/(?<![.])\*/g,'[^/]*')+'$');
   for(const name of ['shared/myCrewCareUnknown.mjs','scripts/fixtures/mycrewcare-sso-contract/unreviewed.java','android-wrapper/app/src/main/java/com/crewcheck/app/CrewCheckMyCrewCareUnknown.java','docs/MYCREWCARE-new.md','client/src/components/mycrewcare/NewPanel.tsx'])assert.ok(patterns.some(p=>regex(p).test(name)),name);
  });
+
+test('documented local invocation supplies explicit SHAs and fails closed',()=>fixture(({root,git,write,commit})=>{
+ const doc=fs.readFileSync('docs/mycrewcare-v3-persistent-session.md','utf8');
+ const command=doc.match(/<!-- mcc-local-command:start -->\s*```sh\n([\s\S]*?)```\s*<!-- mcc-local-command:end -->/)?.[1];
+ assert.ok(command,'Execute the documented shell block, not a copied command');
+ // Exercise the unchanged real path auditor in a synthetic repository, as in the
+ // existing ownership fixtures. Full source/lifecycle invariants run separately.
+ write('scripts/assert-mycrewcare-v3-ownership.mjs',`import assert from 'node:assert/strict';\nimport {mccChangedPaths} from ${JSON.stringify(new URL('./ci/mcc-comparison.mjs',import.meta.url).href)};\n${gate}\nconsole.log('LOCAL_PATH_AUDIT_PASS');\n`);
+ write('docs/mycrewcare-v3-persistent-session.md','synthetic baseline');const base=commit();
+ write('docs/mycrewcare-v3-persistent-session.md','synthetic reviewed change');const head=commit();
+ const values={MCC_REVIEW_BASE_SHA:base,MCC_REVIEW_HEAD_SHA:head,MCC_REVIEW_CHECKOUT_SHA:head};
+ const run=(changes={})=>spawnSync('/bin/sh',['-c',command],{cwd:root,encoding:'utf8',env:{PATH:path.dirname(process.execPath)+path.delimiter+(process.env.PATH||''),...values,...changes}});
+ let result=run();assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/LOCAL_PATH_AUDIT_PASS/);
+ for(const key of Object.keys(values)) { result=run({[key]:''});assert.notEqual(result.status,0);assert.match(result.stderr,/Informe o SHA completo/);assert.doesNotMatch(result.stdout,/LOCAL_PATH_AUDIT_PASS/); }
+ for(const [changes,message] of [
+  [{MCC_REVIEW_HEAD_SHA:'short'},/Invalid headSha/],
+  [{MCC_REVIEW_BASE_SHA:head},/Empty comparison/],
+  [{MCC_REVIEW_BASE_SHA:'f'.repeat(40)},/Command failed|fatal/],
+  [{MCC_REVIEW_CHECKOUT_SHA:base},/Checkout SHA mismatch/],
+ ]) { result=run(changes);assert.notEqual(result.status,0);assert.match(result.stderr,message);assert.doesNotMatch(result.stdout,/LOCAL_PATH_AUDIT_PASS/); }
+ write('client/src/pages/Home.tsx','synthetic forbidden writer');const mixed=commit();result=run({MCC_REVIEW_HEAD_SHA:mixed,MCC_REVIEW_CHECKOUT_SHA:mixed});assert.notEqual(result.status,0);assert.match(result.stderr,/outside its isolated/);
+ fs.renameSync(path.join(root,'.git'),path.join(root,'.git-unavailable'));result=run();assert.notEqual(result.status,0);assert.match(result.stderr,/Command failed|fatal/);assert.doesNotMatch(result.stdout,/LOCAL_PATH_AUDIT_PASS/);
+}));
