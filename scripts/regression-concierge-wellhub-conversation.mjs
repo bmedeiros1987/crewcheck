@@ -83,7 +83,7 @@ export function harness({ realFortalezaCatalog = false, operationalProbe = false
   let appResponse;
   const context = vm.createContext({
     crewcheckMenu: createTelegramMenu({}),
-    crewcheckTemporalDialogue: {handle:async()=>null},
+    crewcheckTemporalDialogue: {handle:async()=>null,interrupt:()=>{},protect:()=>{}},
     requestedWeatherAirport,
     normalizeConciergeNaturalTextV14338, interpretConciergeNaturalTextV14338, buildConciergeContextV14338, isConciergeContextFreshV14338,
     ...wellhub, ...preferences, ...language, ...human, ...premium, ...intents,

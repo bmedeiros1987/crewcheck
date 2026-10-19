@@ -1,0 +1,68 @@
+name: CrewCierge temporal dialogue and audio delivery
+on:
+  pull_request:
+    paths:
+      - 'server/concierge/**'
+      - 'server/v1403/**'
+      - 'server/v1404/**'
+      - 'shared/gate-query-day.mjs'
+      - 'scripts/concierge-temporal-dialogue/**'
+      - 'scripts/telegram-concierge-menu/**'
+      - 'scripts/p1-concierge-journey/**'
+      - 'scripts/v139/**'
+      - 'scripts/regression-concierge-wellhub-conversation.mjs'
+      - 'scripts/tests/concierge-*-router.test.mjs'
+      - 'client/src/lib/canonical*.ts'
+      - '.github/workflows/concierge-temporal-dialogue.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'server/concierge/**'
+      - 'scripts/concierge-temporal-dialogue/**'
+      - 'scripts/telegram-concierge-menu/**'
+      - 'scripts/tests/concierge-*-router.test.mjs'
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - run: node --check server.mjs
+      - name: Real prepared router and sender in four timezones
+        run: |
+          set -euo pipefail
+          for zone in America/Sao_Paulo UTC Asia/Tokyo Pacific/Honolulu; do
+            echo "Timezone: $zone" | tee -a "$RUNNER_TEMP/temporal-dialogue.log"
+            TZ="$zone" node scripts/tests/concierge-temporal-dialogue-router.test.mjs --materialized 2>&1 | tee -a "$RUNNER_TEMP/temporal-dialogue.log"
+          done
+          node scripts/tests/telegram-navigation-reuse.test.mjs --materialized
+          node scripts/regression-telegram-concierge-menu.mjs
+      - name: Preserve actual prepared sources and hashes
+        if: always()
+        run: |
+          proof="$RUNNER_TEMP/temporal-dialogue-proof"
+          mkdir -p "$proof"
+          for path in server.mjs server/concierge/temporal-dialogue.mjs server/concierge/telegram-menu.mjs server/concierge/telegram-menu-transport.mjs server/concierge/journey-programs.mjs server/concierge/generated/canonicalRoster.mjs server/concierge/generated/canonicalDutyMeasurement.mjs server/concierge/generated/rosterContinuity.mjs server/concierge/generated/source-hashes.json server/v1403/premium-helpers.snippet server/v1404/telegram-language.mjs scripts/concierge-temporal-dialogue/apply.mjs scripts/telegram-concierge-menu/apply.mjs scripts/regression-concierge-wellhub-conversation.mjs scripts/tests/concierge-premium-departure-router.test.mjs scripts/tests/concierge-temporal-dialogue-router.test.mjs; do
+            mkdir -p "$proof/$(dirname "$path")"
+            cp "$path" "$proof/$path"
+            sha256sum "$path" >> "$proof/SHA256SUMS"
+          done
+          git rev-parse HEAD > "$proof/HEAD.txt"
+          printf '%s\n' '${{ github.event.pull_request.base.sha || github.event.before }}' > "$proof/BASE.txt"
+          test ! -f "$RUNNER_TEMP/temporal-dialogue.log" || cp "$RUNNER_TEMP/temporal-dialogue.log" "$proof/"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: temporal-dialogue-prepared-source
+          path: ${{ runner.temp }}/temporal-dialogue-proof/

@@ -9,7 +9,7 @@ const at='2099-10-04T16:00:00Z';
 for(const input of ['/hoje','/proximo','não fui acionado'])test(`actual temporal ${input} → sim renders offered tomorrow without claiming actual rest`,async()=>{
  const h=realDeparture(data('estimated'),'missing',at);
  await h.send('telegram',input);const reply=h.trace.output.at(-1);
- assert.match(reply,/amanhã/);assert.match(reply,/05\/10\/2099 às 07:00/);assert.match(reply,/sim/);assert.doesNotMatch(reply,/Você está no descanso|já chegou|foi acionado\./);
+ assert.match(reply,/amanhã/);assert.match(reply,/05\/10\/2099 às 07:00/);assert.match(reply,/sim/);assert.doesNotMatch(reply,/Você está no descanso|já chegou|Você foi acionado\./);
  if(input==='não fui acionado')assert.match(reply,/Você informou que não foi acionado/);
  await h.send('telegram','sim');assert.match(h.trace.output.at(-1),/Detalhes da programação prevista/);assert.match(h.trace.output.at(-1),/05\/10\/2099 às 07:00/);assert.match(h.trace.output.at(-1),/QA-MERGED/);
  await h.send('telegram','sim');assert.match(h.trace.output.at(-1),/Não há um pedido de detalhes válido/);
@@ -26,15 +26,15 @@ for(const change of ['expiry','revision','subject','binding','callback'])test(`a
 
 test('actual sim revalidates revision after initial await before sender',async()=>{
  const roster=data('estimated'),h=realDeparture(roster,'missing',at);await h.send('telegram','/proximo');
- const load=h.context.conciergeLoadSnapshot;let calls=0;
- h.context.conciergeLoadSnapshot=async(...args)=>{const result=await load(...args);if(++calls===2){const replacement=structuredClone(roster);replacement.days[1].legs[0].flightNumber='QA-CHANGED';h.setRoster(replacement);}return result;};
- const before=h.trace.output.length;await h.send('telegram','sim');assert.doesNotMatch(h.trace.output.slice(before).join(' '),/QA-MERGED|05\/10\/2099|07:00/);
+ const read=h.context.telegramRostersRead;let calls=0;
+ h.context.telegramRostersRead=()=>{const result=read();if(++calls===2){const replacement=structuredClone(roster);replacement.days[1].legs[0].flightNumber='QA-CHANGED';h.setRoster(replacement);}return result;};
+ const before=h.trace.output.length;await h.send('telegram','sim');assert(calls>=3,'must cross cached store reads before final sender');assert.doesNotMatch(h.trace.output.slice(before).join(' '),/QA-MERGED|05\/10\/2099|07:00/);
 });
 function flights(rows){return{year:2099,month:10,base:'BSB',days:rows.map(([flight,dep,arr,status],i)=>({date:'04/10/2099',dayNumber:4,month:10,year:2099,type:'VOO',base:'BSB',dutyReport:dep,dutyDebrief:arr,dutyReportSource:'published',dutyDebriefSource:'published',legs:[{flightNumber:flight,origin:i?'GRU':'BSB',destination:i?'BSB':'GRU',departureTime:dep,arrivalTime:arr,presentationTime:dep,...(status?{status}:{})}]}))};}
 for(const scenario of ['future','ongoing','cancelled','ambiguous'])test(`actual meu voo resolves ${scenario} without historical fallback`,async()=>{
  let roster=flights([['LA1111','05:00','06:00'],['LA2222','08:00','09:00'],['LA3333','14:00','15:00']]);
  if(scenario==='cancelled')roster.days[1].legs[0].status='cancelled';
- if(scenario==='ambiguous'){const second=structuredClone(roster.days[1]);second.legs[0].flightNumber='LA9999';second.legs[0].origin='REC';second.legs[0].destination='FOR';roster.days.push(second);}
+ if(scenario==='ambiguous'){roster.days=roster.days.slice(0,2);Object.assign(roster.days[0],{date:'03/10/2099',dayNumber:3,dutyReport:'23:00',dutyDebrief:'09:00'});Object.assign(roster.days[0].legs[0],{departureTime:'23:00',arrivalTime:'09:00',presentationTime:'23:00'});}
  const h=realDeparture(roster,'missing',scenario==='future'?'2099-10-04T10:00:00Z':'2099-10-04T11:30:00Z');let queries=[];
  h.context.runRadarRace=async ctx=>{queries.push(ctx.raw);return{ok:false,querySuppressed:true,message:'Consulta sintética indisponível.'};};
  await h.send('telegram','portão do meu voo');
@@ -65,4 +65,37 @@ for(const outcome of ['provider_mismatch','unconfigured','synthesis_failed','del
  if(outcome==='sent'){assert.equal(delivery,1);assert.doesNotMatch(h.trace.output.join(' '),/Não consegui enviar/);}
  else if(outcome==='text_policy')assert.doesNotMatch(h.trace.output.join(' '),/Não consegui enviar/);
  else assert.match(h.trace.output.at(-1),/Não consegui enviar o áudio agora; segue por texto/);
+});
+
+test('actual midnight sim retains the explicitly offered date rather than a new tomorrow',async()=>{
+ const h=realDeparture(data('estimated'),'missing','2099-10-05T02:59:30Z');await h.send('telegram','/proximo');assert.match(h.trace.output.at(-1),/amanhã/);
+ h.advanceClock(60000);await h.send('telegram','sim');assert.match(h.trace.output.at(-1),/05\/10\/2099 às 07:00/);assert.doesNotMatch(h.trace.output.at(-1),/06\/10\/2099/);
+});
+
+test('actual late validation invalidates expired or superseded detail delivery',async()=>{
+ for(const trigger of ['expiry','subject']){
+  const h=realDeparture(data('estimated'),'missing',at);await h.send('telegram','/proximo');const read=h.context.telegramRostersRead;let calls=0,changed=0;
+  h.context.telegramRostersRead=()=>{const result=read();if(++calls===2){changed++;if(trigger==='expiry')h.advanceClock(121000);else h.context.crewcheckTemporalDialogue.interrupt(h.profile.chatId);}return result;};
+  const before=h.trace.output.length;await h.send('telegram','sim');assert.equal(changed,1);assert.doesNotMatch(h.trace.output.slice(before).join(' '),/QA-MERGED|05\/10\/2099|07:00/);
+ }
+});
+
+for(const phase of ['before','during'])test(`actual copied identity readers deny sim after relink ${phase}`,async()=>{
+ const h=realDeparture(data('estimated'),'missing',at);h.profile.accessKeyHash='synthetic-access-hash-AAA';let current={...h.profile};
+ const original=h.context.telegramRostersRead;h.context.telegramRostersRead=()=>{const result=original();for(const value of Object.values(result.snapshots))value.accessKeyHash='synthetic-access-hash-AAA';return result;};
+ h.context.telegramLinksRead=()=>({linked:{synthetic:{...current}}});h.context.telegramLinksWrite=()=>true;
+ vm.runInContext(extract('telegramProfileForChat')+'\n'+extract('telegramProfileForChatAsync'),h.context);
+ const runtime=source.match(/const crewcheckMenu = createTelegramMenu\([\s\S]*?\n}\);/);vm.runInContext(runtime[0].replace('const crewcheckMenu =','globalThis.crewcheckMenu ='),h.context);
+ await h.send('telegram','/proximo');assert.match(h.trace.output.at(-1),/Quer os detalhes/);
+ const relink=()=>{current={...current,email:'route-b@example.invalid'};};
+ if(phase==='before')relink();else{const read=h.context.telegramRostersRead;let calls=0;h.context.telegramRostersRead=()=>{const result=read();if(++calls===2)relink();return result;};}
+ const before=h.trace.output.length;await h.send('telegram','sim');assert.doesNotMatch(h.trace.output.slice(before).join(' '),/QA-MERGED|05\/10\/2099|07:00|Detalhes da programação/);
+});
+
+for(const changed of [false,true])test(`actual meu voo accepted Radar persists only its own revision, external change=${changed}`,async()=>{
+ const h=realDeparture(flights([['LA1234','08:00','09:00']]),'missing','2099-10-04T10:00:00Z');let queries=0,saves=0;
+ h.context.runRadarRace=async ctx=>{queries++;return{ok:true,flight:'LA1234',origin:'BSB',destination:'GRU',gate:'46',scheduledDepartureUtc:ctx.gateQueryEvidence.scheduledDepartureUtc,sourceReceivedAt:'2099-10-04T10:00:00Z'};};
+ if(changed){const save=h.context.conciergeSaveSnapshotAsync;h.context.conciergeSaveSnapshotAsync=async(...args)=>{const result=await save(...args);if(args[2]?.lastRadar){saves++;h.setRoster(flights([['LA4321','08:00','09:00']]));}return result;};}
+ await h.send('telegram','portão do meu voo');assert.equal(queries,1);
+ if(changed){assert.equal(saves,1);assert.doesNotMatch(h.trace.output.join(' '),/LA1234|Portão: 46/);}else assert.match(h.trace.output.at(-1),/Portão: 46/);
 });

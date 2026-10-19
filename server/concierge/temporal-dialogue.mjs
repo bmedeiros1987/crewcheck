@@ -8,27 +8,29 @@ const cancelled=record=>record.display?.cancelled===true||['cancelled','canceled
 // Ephemeral pending offers only. The canonical projection and existing renderers
 // remain the producers; no actuation, physical location or actual rest is inferred.
 export function createTemporalDialogue(deps,now=deps.now||Date.now){
- const offers=new Map();
+ const offers=new Map(),turns=new Map();
  const protect=(profile,snapshot)=>{
   const expected=revision(snapshot);
   const validate=async()=>{try{if(!await deps.authorized(profile,snapshot))return false;const current=await deps.snapshot(profile);return await deps.authorized(profile,current)&&revision(current)===expected;}catch{return false;}};
   profile.conciergeResponseAuthority=Object.freeze({kind:'voice',validate});
   return validate;
  };
- const owner=p=>p?.channel==='telegram'&&p.chatType==='private'&&p.linked===true?`${p.email}|${p.accessKeyHash||''}`:'';
- const prune=()=>{for(const [chat,item]of offers)if(now()-item.at>TTL)offers.delete(chat);while(offers.size>=MAX)offers.delete(offers.keys().next().value);};
+ const owner=p=>p?.channel==='telegram'&&p.chatType==='private'&&p.linked===true&&p.chatId&&/^[^@\s]+@[^@\s]+$/.test(p.email||'')?`${p.email}|${p.accessKeyHash||''}`:'';
+ const prune=()=>{for(const map of [offers,turns]){for(const [chat,item]of map)if(now()-item.at>TTL||now()<item.at)map.delete(chat);while(map.size>=MAX)map.delete(map.keys().next().value);}};
  async function handle(text,profile,snapshot){
-  if(!owner(profile)){if(profile?.chatId)offers.delete(String(profile.chatId));return null;}
+  if(!owner(profile)){if(profile?.chatId){offers.delete(String(profile.chatId));turns.delete(String(profile.chatId));}return null;}
   const chat=String(profile.chatId),input=plain(text);prune();
+  const turn={at:now()};turns.set(chat,turn);
   const offer=offers.get(chat);offers.delete(chat);
   const yes=/^(sim|quero|quero sim|pode mostrar|detalhes)[.!?]*$/.test(input);
   const schedule=/^\/(?:hoje|proximo)(?:@\S+)?$/.test(input)||/^(?:e )?(?:o que tenho (?:hoje|agora)|qual (?:a )?minha proxima programacao|como esta meu dia|nao fui acionado)[.!?]*$/.test(input);
   const mine=/\bmeu voo\b/.test(input)&&!deps.explicitFlight(text);
   if(!yes&&!schedule&&!mine)return null;
   const denied='A consulta mudou ou expirou. Consulte sua programação novamente.';
-  let expected=revision(snapshot),selected=null;
+  let expected=revision(snapshot),selected=null,selectedEvent=null,deadline=null;
   const validate=async()=>{
    try{
+    if(turns.get(chat)!==turn||(deadline!==null&&(now()<deadline||now()-deadline>TTL)))return false;
     if(!await deps.authorized(profile,snapshot))return false;
     const current=await deps.snapshot(profile);
     return await deps.authorized(profile,current)&&revision(current)===expected;
@@ -45,9 +47,10 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
   const records=deps.programs(snapshot.roster);
   if(yes){
    if(!offer||offer.owner!==owner(profile)||offer.revision!==expected||now()-offer.at>TTL)return {reply:'Não há um pedido de detalhes válido agora. Consulte sua próxima programação.'};
+   deadline=offer.at;
    selected=records.find(r=>key(r)===offer.record);
    if(!selected||cancelled(selected))return {reply:'Essa programação mudou ou consta cancelada. Consulte a escala atual.'};
-   const reply=deps.summary(selected);
+   const reply=summary(selected);
    return {reply:await validate()?`Detalhes da programação prevista:\n${reply}`:denied};
   }
   if(mine){
@@ -56,7 +59,7 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
    const earliest=events.length?Math.min(...events.map(e=>Date.parse(e.startDateTime))):null;
    const candidates=ongoing.length?ongoing:events.filter(e=>Date.parse(e.startDateTime)===earliest);
    if(candidates.length!==1)return {reply:'Não consegui identificar um único voo pertinente. Informe o número do voo.'};
-   const event=candidates[0];selected=records.find(r=>r.canonicalEventIds?.includes(event.id));
+   const event=candidates[0];selectedEvent=event;selected=records.find(r=>r.canonicalEventIds?.includes(event.id));
    if(!selected)return {reply:'Não consegui confirmar esse voo na leitura atual.'};
    if(cancelled(selected)||['cancelled','canceled','cancelado'].includes(plain(event.leg?.status)))return {reply:'Esse voo consta cancelado na leitura atual. Confirme a situação na fonte operacional.'};
    if(/\b(portao|terminal|radar|status)\b/.test(input)){
@@ -71,17 +74,19 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
    selected=candidates[0];
    if(cancelled(selected))return {reply:'A programação pertinente consta cancelada. Confirme a situação na fonte operacional.'};
   }
-  const rendered=deps.summary(selected);
+  const rendered=summary(selected);
   const tomorrow=selected.display?.presentationDate===civil(now()+86_400_000);
   const future=Number(selected.start)>now();
   const endedToday=records.some(r=>Number(r.end)<now()&&civil(Number(r.end))===civil(now()));
-  const lead=input.includes('nao fui acionado')?'Você informou que não foi acionado. ':endedToday&&!activeRecord(records,now())?'A programação prevista de hoje terminou. Execução e acionamento não estão confirmados. ':'';
+  const lead=input.includes('nao fui acionado')?'Você informou que não foi acionado. ':endedToday&&!activeRecord(records,now())?'O período previsto de hoje terminou. Execução e acionamento não estão confirmados. ':'';
   const timing=future?`Próxima programação prevista${tomorrow?' amanhã':''}.`:'Programação prevista em andamento; execução não confirmada.';
   const brief=rendered.split('\n').slice(0,2).join('\n');
   if(!await validate())return {reply:denied};
+  deadline=now();
   offers.set(chat,{owner:owner(profile),revision:expected,record:key(selected),at:now()});
-  return {reply:`${lead}${timing}\n${brief}\nQuer os detalhes? Responda “sim”.`};
+  return {reply:`${lead}${selectedEvent ? `Voo pertinente na escala: ${selectedEvent.flightNumber}. ` : ''}${timing}\n${brief}\nQuer os detalhes? Responda “sim”.`};
  }
- return {handle,protect,interrupt:chat=>offers.delete(String(chat))};
+ const summary=record=>deps.summary(record).replace(/^Próxima programação:/,'Programação prevista:').replace(/^Próxima atividade:/,'Atividade prevista:');
+ return {handle,protect,interrupt:chat=>{offers.delete(String(chat));turns.delete(String(chat));}};
 }
 const activeRecord=(records,now)=>records.some(r=>Number(r.start)<=now&&Number(r.end)>=now);
