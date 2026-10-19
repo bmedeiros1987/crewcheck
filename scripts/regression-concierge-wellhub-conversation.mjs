@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import test from 'node:test';
+import { createTelegramMenuTransport } from '../server/concierge/telegram-menu-transport.mjs';
 import { createTelegramMenu, menuTemplate, requestedWeatherAirport } from '../server/concierge/telegram-menu.mjs';
 import { execFileSync } from 'node:child_process';
 import {
@@ -157,7 +158,8 @@ function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}
       buildCrewCheckAtis: station => `ATIS meteorológico ${station} · fixture`,
       crewCheckAtisVoiceText: reply => `Voz: ${reply}`,
       sendHumanTelegramVoiceReply: async (chat, text, _query, snapshot) => trace.voices.push({ chat, text, owner: snapshot.email }),
-      answerTelegramCallback: async () => {}, createTelegramMenu, requestedWeatherAirport,
+      answerTelegramCallback: async () => {}, createTelegramMenu, requestedWeatherAirport, createTelegramMenuTransport,
+      telegramApiUrl: () => '', // This harness probes producers; edit I/O is covered by telegram-navigation-reuse.
       openEmergencyTelegramMenu: async () => { throw Error('emergency entry is tested separately with its actual handler'); },
       conciergeKeyboard: menuTemplate(),
     });

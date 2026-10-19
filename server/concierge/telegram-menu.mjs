@@ -5,7 +5,7 @@ const pages = {
   more: [['Amanhã', 'amanha'], ['Próxima', 'proximo'], ['Radar', 'radar'], ['Portão', 'portao'], ['Meteorologia', 'weather'], ['Saída', 'saida'], ['Bem-estar', 'wellness'], ['Revisar escala', 'conformidade'], ['Configurações', 'configuracoes'], ['Emergência', 'emergencia'], ['Voltar', 'home'], ['Início', 'home']],
   weather: [['METAR', 'metar'], ['TAF', 'taf'], ['ATIS', 'atis'], ['Voltar', 'more'], ['Início', 'home']],
   wellness: [['Hospitais', 'hospitais'], ['Farmácias', 'farmacias'], ['Academias', 'academias'], ['Rotina', 'rotina'], ['Voltar', 'more'], ['Início', 'home']],
-  hoteis: [['Informar hotel', 'informar_hotel'], ['Adicionar quarto', 'adicionar_quarto'], ['Histórico', 'historico_pernoites'], ['Voltar', 'home'], ['Início', 'home']],
+  hoteis: [['Histórico', 'historico_pernoites'], ['Início', 'home']],
   duty: [['Fundamento', 'duty_basis'], ['Voltar', 'more'], ['Início', 'home']],
   duty_details: [['Voltar', 'duty_summary'], ['Início', 'home']],
 };
@@ -16,6 +16,7 @@ const MAX = 2000;
 const foldMenuText = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/^[^\p{L}/]+/u, '').trim().toUpperCase();
 const navigationNames = new Set([...Object.values(pages).flat().map(([label]) => foldMenuText(label)), 'MENU', 'AJUDA', 'HELP', 'INICIO', 'VOLTAR AO MENU', 'CONFIGURACOES', 'MINHA ESCALA']);
 const priorityNavigation = value => /^\/|\bEMERGENCIA\b|^SOS\b/.test(foldMenuText(value)) || navigationNames.has(foldMenuText(value));
+export const hotelsUrl = 'https://crewcheck.online/?view=hotels';
 export const financeUrl = 'https://crewcheck.online/?view=perdiem';
 export function requestedWeatherAirport(text = '', interpret) {
   const value = String(text).trim();
@@ -32,6 +33,7 @@ export function menuTemplate(page = 'home') {
   const items = pages[page] || pages.home;
   const rows = [];
   for (let i = 0; i < items.length; i += 2) rows.push(items.slice(i, i + 2).map(([text, action]) => ({ text, callback_data: `cc_nav:entry:${action}` })));
+  if (page === 'hoteis') rows.unshift([{ text: 'Abrir Hotéis no app', url: hotelsUrl }]);
   return { inline_keyboard: rows };
 }
 export function menuGreeting(name = '') {
@@ -48,6 +50,8 @@ export function createTelegramMenu(deps, now = Date.now) {
   const flows = new Map();
   const migrated = new Map();
   const factsGuard = Symbol('facts-owner');
+  const navigationGuard = Symbol('navigation-owner');
+  const busy = new Set();
   const owner = profile => profile?.linked === true && profile.channel === 'telegram' && profile.chatType === 'private' && /^[^@\s]+@[^@\s]+$/.test(profile.email || '') ? `${profile.email}|${profile.accessKeyHash || ''}` : '';
   const prune = map => { for (const [key, value] of map) if (now() - value.at > TTL) map.delete(key); while (map.size >= MAX) map.delete(map.keys().next().value); };
   async function identity(message) {
@@ -56,8 +60,8 @@ export function createTelegramMenu(deps, now = Date.now) {
     return owner(profile) ? profile : null;
   }
   async function markup(chatId, extra = {}) {
-    const { [factsGuard]: factsContext, ...transportExtra } = extra;
-    const expectedFactsOwner = factsContext?.owner;
+    const { [factsGuard]: factsContext, [navigationGuard]: navigationContext, ...transportExtra } = extra;
+    const expectedFactsOwner = factsContext?.owner || navigationContext?.owner;
     extra = transportExtra;
     if (extra.reply_markup?.keyboard) migrated.delete(String(chatId));
     const buttons = extra.reply_markup?.inline_keyboard?.flat() || [];
@@ -91,10 +95,43 @@ export function createTelegramMenu(deps, now = Date.now) {
     }));
     tickets.set(token, { at: now(), chat: String(chatId), owner: owner(profile), actions,
       factRevision: [...actions].some(action => action.startsWith('duty_')) ? factsContext?.signature : null,
-      factPage: factsContext?.page || 0 });
+      factPage: factsContext?.page || 0, navigation: navigationContext || null });
+    if (navigationContext) navigationContext.token = token;
     return { ...extra, reply_markup: { inline_keyboard } };
   }
   async function send(chat, text, page = 'home') { await deps.send(chat, text, { reply_markup: menuTemplate(page) }); }
+  const messageId = value => Number.isSafeInteger(value) && value > 0 ? value : null;
+  async function stillOwner(profile) {
+    const current = await identity({ chat: { id: profile.chatId, type: 'private' }, from: { id: profile.chatId } });
+    return current && owner(current) === owner(profile);
+  }
+  async function clearMessage(profile, id) {
+    if (!deps.clear || !messageId(id) || !await stillOwner(profile)) return;
+    // Keep useful content; only the consumed controls are removed. Failure does
+    // not restore a ticket, so a visible old button cannot repeat its action.
+    try { await deps.clear(profile.chatId, id); } catch {}
+  }
+  async function navigation(profile, query, ticket, text, page) {
+    const context = { owner: owner(profile), text, messageId: null, token: null };
+    const extra = { [navigationGuard]: context, reply_markup: menuTemplate(page) };
+    const previous = ticket.navigation;
+    if (deps.edit && messageId(query.message?.message_id) && previous?.messageId === messageId(query.message?.message_id)
+      && previous?.text === query.message?.text && await stillOwner(profile)) {
+      const decorated = await markup(profile.chatId, extra);
+      if (!decorated) return;
+      let result;
+      try { result = await deps.edit(profile.chatId, previous.messageId, text, decorated); } catch {}
+      if (result?.ok === true) { context.messageId = previous.messageId; return; }
+      // An edit can fail after delivery. Retire its new token before the single
+      // fallback; never leave two actionable versions of the same navigation.
+      tickets.delete(context.token);
+    }
+    await clearMessage(profile, query.message?.message_id);
+    if (!await stillOwner(profile)) return;
+    const result = await deps.send(profile.chatId, text, extra);
+    context.messageId = result?.ok === true ? messageId(result.data?.result?.message_id) : null;
+    if (!context.messageId) tickets.delete(context.token);
+  }
   async function showFacts(profile, detail = false, expected = null, page = 0) {
     if (!deps.facts) { await send(profile.chatId, missingComplianceReply()); return; }
     const current = await identity({ chat: { id: profile.chatId, type: 'private' }, from: { id: profile.chatId } });
@@ -132,48 +169,52 @@ export function createTelegramMenu(deps, now = Date.now) {
   async function callback(update = {}) {
     const query = update.callback_query;
     if (!String(query?.data || '').startsWith('cc_nav:')) return false;
-    await deps.answer(query.id, '');
     const profile = await identity({ ...query.message, from: query.from });
-    if (!profile) return true;
+    if (!profile) { await deps.answer(query.id, 'Este menu não está disponível nesta conversa.'); return true; }
     prune(tickets); prune(flows);
     const [, version, token, action] = String(query.data).split(':');
     const ticket = tickets.get(token);
     if (version !== 'v1' || !ticket || ticket.chat !== String(profile.chatId) || ticket.owner !== owner(profile) || !ticket.actions.has(action)) {
-      const chat = String(profile.chatId);
-      const flow = flows.get(chat);
-      // A refreshed root ends only the validated sender's own pending question;
-      // neither an unrelated account nor another chat's flow is removed.
-      if (flow?.owner === owner(profile)) flows.delete(chat);
-      await send(profile.chatId, 'Este menu expirou. Escolha uma opção no novo menu.');
+      await deps.answer(query.id, 'Este menu expirou. Escreva Ajuda para abrir um novo menu.');
       return true;
     }
-    tickets.delete(token); // Claim before any asynchronous producer; replay fails closed.
-    flows.delete(String(profile.chatId));
-    if (pages[action]) {
-      await send(profile.chatId, action === 'home' ? menuGreeting() : action === 'hoteis' ? 'Hotéis: cadastro no app ou consulta dos registros salvos.' : 'Escolha uma opção:', action);
-    } else if (action === 'conformidade') {
-      await showFacts(profile);
-    } else if (['duty_basis', 'duty_summary', 'duty_next', 'duty_prev'].includes(action)) {
-      const page = ticket.factPage + (action === 'duty_next' ? 1 : action === 'duty_prev' ? -1 : 0);
-      await showFacts(profile, action === 'duty_basis', ticket.factRevision, page);
-    } else if (action === 'diarias') {
-      await send(profile.chatId, missingFinanceReply(), 'finance');
-    } else if (parameters[action]) {
-      const chat = String(profile.chatId);
-      const flow = { owner: owner(profile), action, at: now(), promptId: null, promptDate: null };
-      flows.set(chat, flow);
-      const delivered = await deps.send(profile.chatId, `${parameters[action]}\nOu toque em Cancelar.`, { reply_markup: { inline_keyboard: [[{ text: 'Cancelar', callback_data: 'cc_nav:entry:home' }]] } });
-      const prompt = delivered?.data?.result;
-      if (Number.isSafeInteger(prompt?.message_id) && prompt.message_id > 0 && Number.isSafeInteger(prompt?.date) && prompt.date > 0) {
-        flow.promptId = prompt.message_id;
-        flow.promptDate = prompt.date;
-      } else {
-        if (flows.get(chat) === flow) flows.delete(chat);
-        await send(chat, 'Não consegui abrir a pergunta agora. Escolha a consulta novamente.');
+    const key = `${profile.chatId}:${messageId(query.message?.message_id) || token}`;
+    if (busy.has(key)) { await deps.answer(query.id, 'Aguarde a navegação terminar e tente novamente.'); return true; }
+    tickets.delete(token); // Claim before any asynchronous transport or producer.
+    busy.add(key);
+    try {
+      await deps.answer(query.id, '');
+      flows.delete(String(profile.chatId));
+      if (pages[action]) {
+        await navigation(profile, query, ticket, action === 'home' ? menuGreeting() : action === 'hoteis' ? 'Hotéis: abra a tela do app e selecione o pernoite para cadastrar ou editar. O link abre a versão web.' : 'Escolha uma opção:', action);
+        return true;
       }
-    } else if (action === 'emergencia') await deps.emergency(query);
-    else if (commands.has(action)) await execute(action, profile);
-    return true;
+      await clearMessage(profile, query.message?.message_id);
+      if (!await stillOwner(profile)) return true;
+      if (action === 'conformidade') {
+        await showFacts(profile);
+      } else if (['duty_basis', 'duty_summary', 'duty_next', 'duty_prev'].includes(action)) {
+        const page = ticket.factPage + (action === 'duty_next' ? 1 : action === 'duty_prev' ? -1 : 0);
+        await showFacts(profile, action === 'duty_basis', ticket.factRevision, page);
+      } else if (action === 'diarias') {
+        await send(profile.chatId, missingFinanceReply(), 'finance');
+      } else if (parameters[action]) {
+        const chat = String(profile.chatId);
+        const flow = { owner: owner(profile), action, at: now(), promptId: null, promptDate: null };
+        flows.set(chat, flow);
+        const delivered = await deps.send(profile.chatId, `${parameters[action]}\nOu toque em Cancelar.`, { reply_markup: { inline_keyboard: [[{ text: 'Cancelar', callback_data: 'cc_nav:entry:home' }]] } });
+        const prompt = delivered?.data?.result;
+        if (Number.isSafeInteger(prompt?.message_id) && prompt.message_id > 0 && Number.isSafeInteger(prompt?.date) && prompt.date > 0) {
+          flow.promptId = prompt.message_id;
+          flow.promptDate = prompt.date;
+        } else {
+          if (flows.get(chat) === flow) flows.delete(chat);
+          await send(chat, 'Não consegui abrir a pergunta agora. Escolha a consulta novamente.');
+        }
+      } else if (action === 'emergencia') await deps.emergency(query);
+      else if (commands.has(action)) await execute(action, profile);
+      return true;
+    } finally { busy.delete(key); }
   }
   async function text(message = {}) {
     const chat = String(message.chat?.id || '');
