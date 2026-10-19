@@ -96,13 +96,24 @@ function reserveFlightEvidence(events: readonly CanonicalRosterEvent[], first: C
 function reserveRowBinding(events: readonly CanonicalRosterEvent[], first: CanonicalRosterEvent): 'owned' | 'other' | 'unproven' {
   const proofs = reserveFlightEvidence(events, first), report = clockIdentity(first.publishedDay.dutyReport);
   const departure = clockIdentity(first.leg?.departureTime), arrival = clockIdentity(first.leg?.arrivalTime);
-  if (!proofs || !report || report === departure || !proofs.every(({ record, event }) => reserveDay(event)
+  if (!proofs) return 'unproven';
+  // Once original evidence places this flight in a later block, an independent
+  // literal APZ belongs to that block. The earlier row report's unknown source
+  // cannot erase it or contribute reserve hours to its integral duration.
+  if (proofs.some(({ record }) => clockIdentity(record.legs[0].departureTime) !== departure
+    || clockIdentity(record.legs[0].arrivalTime) !== arrival)) {
+    return clock(first.leg?.presentationTime) && clockIdentity(first.leg?.presentationTime) !== departure ? 'other' : 'unproven';
+  }
+  return report && report !== departure && proofs.every(({ record, event }) => reserveDay(event)
     && clockIdentity(record.dutyReport) === report && record.dutyReportSource === 'published'
-    && clockIdentity(event.publishedDay.dutyReport) === report && event.publishedDay.dutyReportSource === 'published')) return 'unproven';
-  // A complete original row placing this flight later defeats a partial copy
-  // that starts here. Nested uncertainty has already been checked above.
-  return proofs.some(({ record }) => clockIdentity(record.legs[0].departureTime) !== departure
-    || clockIdentity(record.legs[0].arrivalTime) !== arrival) ? 'other' : 'owned';
+    && clockIdentity(event.publishedDay.dutyReport) === report && event.publishedDay.dutyReportSource === 'published') ? 'owned' : 'unproven';
+}
+
+function reserveReleaseProven(events: readonly CanonicalRosterEvent[], last: CanonicalRosterEvent): boolean {
+  const proofs = reserveFlightEvidence(events, last), release = clockIdentity(last.publishedDay.dutyDebrief);
+  return Boolean(proofs && release && proofs.every(({ record, event }) => record.dutyDebriefSource === 'published'
+    && clockIdentity(record.dutyDebrief) === release && event.publishedDay.dutyDebriefSource === 'published'
+    && clockIdentity(event.publishedDay.dutyDebrief) === release));
 }
 
 function publishedFlightClocksKnown(events: readonly CanonicalRosterEvent[], event: CanonicalRosterEvent): boolean {
@@ -159,7 +170,7 @@ export function measureCanonicalDuty(events: readonly CanonicalRosterEvent[], se
       || rowOwnsStart && clock(first.publishedDay.dutyReport) === presentation && presentation !== clock(first.departure);
     const debrief = clock(last.publishedDay.dutyDebrief);
     if (!presentation || !explicitPresentation || result.reportSource !== 'published') result.reasons.push('Apresentação publicada não comprovada.');
-    if (!debrief || result.debriefSource !== 'published' || last.legIndex !== last.legCount - 1) result.reasons.push('Liberação publicada não comprovada; corte estimado não confirma jornada.');
+    if (!debrief || result.debriefSource !== 'published' || last.legIndex !== last.legCount - 1 || reserveDay(last) && !reserveReleaseProven(events, last)) result.reasons.push('Liberação publicada não comprovada; corte estimado não confirma jornada.');
     if (result.reasons.length) return result;
     start = clockNear(start, presentation!, 'before');
     end = clockNear(end, debrief!, 'after');
@@ -228,7 +239,8 @@ export function publishedDutyEndpoints(events: readonly CanonicalRosterEvent[], 
       if (reserve || firstInstant - value <= 180 * 60_000) start = value;
     }
     const release = clock(last.publishedDay.dutyDebrief);
-    if (release && last.publishedDay.dutyDebriefSource === 'published' && last.legIndex === last.legCount - 1) end = clockNear(lastInstant, release, 'after');
+    if (release && last.publishedDay.dutyDebriefSource === 'published' && last.legIndex === last.legCount - 1
+      && (!reserveDay(last) || reserveReleaseProven(events, last))) end = clockNear(lastInstant, release, 'after');
   } else {
     if (clock(first.publishedDay.dutyReport) && first.publishedDay.dutyReportSource === 'published') start = firstInstant;
     // With no start or explicit date-qualified endpoint, do not accept the

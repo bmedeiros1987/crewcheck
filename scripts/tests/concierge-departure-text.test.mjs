@@ -226,3 +226,13 @@ for(const kind of ['estimated','earlier-block'])test(`nested original evidence c
  const roster=sourceRoster([raw]),before=JSON.stringify(roster),f=realRuntime(kind==='estimated'?'2099-10-04T09:00:00Z':'2099-10-04T15:00:00Z'),record=f.programs(roster)[0];
  assert.equal(record.display.publishedStart,Date.parse(kind==='estimated'?'2099-10-04T10:00:00Z':'2099-10-04T18:00:00Z'));const text=await f.run(roster);assert.match(text,kind==='estimated'?/04\/10\/2099 às 07:00/:/04\/10\/2099 às 15:00/);assert.doesNotMatch(text,/já passou|às 03:00/);assert.equal(f.routes(),1);assert.equal(JSON.stringify(roster),before);
 });
+
+for(const kind of ['estimated-container','earlier-container'])for(const order of ['alone','plain-first','preserved-first'])test(`preserved container survives normalization merge: ${kind} ${order}`,async()=>{
+ const own={flightNumber:'QA-MERGED',origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00',workType:'OP'};
+ const plain=sourceDay({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',legs:[own]});
+ const leaf={dutyReport:'03:00',dutyDebrief:'09:30',dutyReportSource:'published',dutyDebriefSource:'published',legs:[{departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00'}]};
+ const container=kind==='estimated-container'?{...leaf,dutyReportSource:'estimated',records:[leaf]}:{...leaf,legs:[{departureTime:'04:00',arrivalTime:'05:00'},...leaf.legs],records:[leaf]};
+ const preserved={...plain,publishedClockEvidence:container},days=order==='alone'?[preserved]:order==='plain-first'?[plain,preserved]:[preserved,plain],roster=sourceRoster(days),before=JSON.stringify(roster),f=realRuntime('2099-10-04T09:00:00Z');
+ const records=f.programs(roster);assert.equal(records.length,1);assert.equal(records[0].display.publishedStart,Date.parse('2099-10-04T10:00:00Z'));const summary=realSummary({record:records[0],label:'A próxima programação',includeGreeting:false});assert.match(summary,/APZ: 04\/10\/2099 às 07:00/);
+ const text=await f.run(roster);assert.match(text,/04\/10\/2099 às 07:00/);assert.doesNotMatch(text,/já passou|às 03:00/);assert.equal(f.routes(),1);assert.equal(JSON.stringify(roster),before);
+});

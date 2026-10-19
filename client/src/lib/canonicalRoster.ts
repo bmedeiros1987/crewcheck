@@ -574,11 +574,12 @@ export function normalizeRosterDays(roster: CrewRoster): CrewRoster {
     const previousEvidence = (current as any).publishedClockEvidence;
     const incomingEvidence = (day as any).publishedClockEvidence;
     if (previousEvidence && incomingEvidence) {
-      // Keep every original record before dedup/physical selection. A valid
-      // duplicate must not erase uncertainty from an invalid duplicate.
+      // Preserve both complete evidence trees, including their containers.
+      // Flattening .records would erase a container's own source or opening
+      // flight before downstream provenance readers can inspect it.
       (current as any).publishedClockEvidence = {
         ...previousEvidence,
-        records: [...(previousEvidence.records || [previousEvidence]), ...(incomingEvidence.records || [incomingEvidence])],
+        records: [previousEvidence, incomingEvidence],
         legs: [...(previousEvidence.legs || []), ...(incomingEvidence.legs || [])],
       };
     }

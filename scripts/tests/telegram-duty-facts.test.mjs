@@ -232,3 +232,18 @@ for(const kind of ['earlier-block','estimated','missing-clock'])test(`factual ne
  if(kind==='earlier-block'){assert.equal(result.items.length,1);assert.equal(result.items[0].start,Date.parse('2032-10-10T10:00:00Z'));assert.equal(result.items[0].minutes,150);}else{assert.equal(result.state,'incomplete');assert(!result.items.some(i=>i.minutes!==null));}
  assert(!result.items.some(i=>i.minutes===390));
 });
+
+for(const kind of ['estimated-container','earlier-container'])for(const order of ['alone','plain-first','preserved-first'])test(`normalized factual snapshot keeps incoming container: ${kind} ${order}`,()=>{
+ const plain=day({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyDebrief:'09:30',legs:[leg({departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00'})]});
+ const leaf={dutyReport:'03:00',dutyDebrief:'09:30',dutyReportSource:'published',dutyDebriefSource:'published',legs:[{departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00'}]};
+ const container=kind==='estimated-container'?{...leaf,dutyReportSource:'estimated',records:[leaf]}:{...leaf,legs:[{departureTime:'04:00',arrivalTime:'05:00'},...leaf.legs],records:[leaf]},preserved={...plain,publishedClockEvidence:container};
+ const input=snapshot(order==='alone'?[preserved]:order==='plain-first'?[plain,preserved]:[preserved,plain]);input.roster=normalizeRosterDays(input.roster);const before=JSON.stringify(input),result=read(undefined,{snapshot:input});
+ if(kind==='estimated-container'){assert.equal(result.state,'incomplete');assert.equal(result.items.length,0);}else{assert.equal(result.items.length,1);assert.equal(result.items[0].minutes,150);assert.equal(result.items[0].start,Date.parse('2032-10-10T10:00:00Z'));}assert(!result.items.some(i=>i.minutes===390));assert.equal(JSON.stringify(input),before);
+});
+for(const source of ['unknown','estimated',undefined])test(`factual later block is independent of previous report source ${source}`,()=>{
+ const result=read([day({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyReportSource:source,dutyDebrief:'19:30',legs:[
+  leg({flightNumber:'QA-EARLY',origin:'BSB',destination:'GRU',departureTime:'08:00',arrivalTime:'09:00',presentationTime:undefined}),
+  leg({flightNumber:'QA-LATER',origin:'CNF',destination:'SSA',departureTime:'16:00',arrivalTime:'17:00',presentationTime:'15:00'}),
+  leg({flightNumber:'QA-LATER-END',origin:'SSA',destination:'CNF',departureTime:'18:00',arrivalTime:'19:00',presentationTime:undefined}),
+ ]})]);assert.equal(result.items.length,1);assert.equal(result.items[0].minutes,270);assert.equal(result.items[0].start,Date.parse('2032-10-10T18:00:00Z'));assert.equal(result.items[0].end,Date.parse('2032-10-10T22:30:00Z'));
+});

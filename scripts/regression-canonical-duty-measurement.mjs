@@ -69,6 +69,27 @@ try {
       assert.equal(measured.minutes,kind==='earlier-block'?150:null,kind);assert.equal(endpoint.start,known?Date.parse('2032-10-10T18:00:00Z'):null,kind);
       assert.equal(measurement.publishedFlightClockBounds(nestedEvents)===null,!known,kind);assert.equal(engine.getCanonicalWorkHoursTotal(roster([raw])),kind==='earlier-block'?2.5:null,kind);
     }
+    const mergeOwn=leg('QA-MERGED','BSB','GRU','08:00','09:00',1,'07:00'),plain={...blocks,dutyDebrief:'09:30',legs:[mergeOwn]},leaf=clockEvidence(plain);
+    for(const kind of ['estimated-container','earlier-container']) {
+      const container=kind==='estimated-container'?{...leaf,dutyReportSource:'estimated',records:[leaf]}:{...leaf,legs:[{departureTime:'04:00',arrivalTime:'05:00'},...leaf.legs],records:[leaf]};
+      const preserved={...plain,publishedClockEvidence:container};
+      for(const rows of [[preserved],[plain,preserved],[preserved,plain]]) {
+        const input=roster(rows),before=JSON.stringify(input),normalized=canonical.normalizeRosterDays(input),twice=canonical.normalizeRosterDays(normalized);
+        assert.equal(JSON.stringify(twice),JSON.stringify(normalized),'normalization idempotence retains all source evidence');assert.equal(JSON.stringify(input),before);
+        const events=canonical.buildCanonicalRosterEvents(input).filter(e=>e.kind==='flight'),selected=events.find(e=>e.flightNumber==='QA-MERGED'),measured=measurement.measureCanonicalDuty(events,selected.id);
+        assert.equal(measurement.publishedDutyEndpoints(events,selected.id).start,Date.parse('2032-10-10T10:00:00Z'),kind);assert.equal(measured.minutes,kind==='estimated-container'?null:150,kind);assert.equal(engine.getCanonicalWorkHoursTotal(input),kind==='estimated-container'?null:2.5,kind);
+      }
+    }
+    for(const source of ['unknown','estimated',undefined]) {
+      const later={...blocks,dutyReportSource:source,dutyDebrief:'19:30',legs:[blocks.legs[0],{...blocks.legs[1],origin:'CNF',destination:'SSA'},leg('QA-LATER-END','SSA','CNF','18:00','19:00',1)]};
+      const events=canonical.buildCanonicalRosterEvents(roster([later])).filter(e=>e.kind==='flight'),selected=events.find(e=>e.flightNumber==='QA-ASB-SECOND'),measured=measurement.measureCanonicalDuty(events,selected.id);
+      assert.equal(measured.minutes,270,'unknown source of previous report cannot erase independently published later block');assert.equal(measured.start,'2032-10-10T18:00:00.000Z');assert.equal(engine.getCanonicalWorkHoursTotal(roster([later])),4.5);assert.equal(measurement.publishedDutyEndpoints(events,selected.id).start,Date.parse(measured.start));
+    }
+    for(const [source,release] of [['estimated','17:30'],['unknown','17:30'],['published','18:30']]) {
+      const raw={...blocks,legs:[blocks.legs[1]]},original=clockEvidence(raw);raw.publishedClockEvidence={...original,records:[{...original,dutyDebrief:release,dutyDebriefSource:source}]};
+      const events=canonical.buildCanonicalRosterEvents(roster([raw])).filter(e=>e.kind==='flight'),selected=events.find(e=>e.flightNumber==='QA-ASB-SECOND'),measured=measurement.measureCanonicalDuty(events,selected.id),endpoints=measurement.publishedDutyEndpoints(events,selected.id);
+      assert.equal(measured.minutes,null,'independent APZ cannot publish an uncertain nested release');assert.equal(endpoints.start,Date.parse('2032-10-10T18:00:00Z'));assert.equal(endpoints.end,null);assert.equal(engine.getCanonicalWorkHoursTotal(roster([raw])),null);
+    }
     const standby={...day,type:'HSB',pairingCode:'HSB'};const h=canonical.buildCanonicalRosterEvents(roster([standby])).filter(x=>x.kind==='flight');const hm=measurement.measureCanonicalDuty(h,h[0].id);assert.equal(hm.state,'incomplete');assert.equal(hm.minutes,null);assert.equal(hm.limitConfirmed,false,'no activation or16h inferred from HSB+OP');
     const excessive={...day,dutyReport:'05:00',dutyDebrief:'21:30',legs:[leg('QA-LONG','BSB','GRU','05:55','21:00',15+5/60)]};const x=canonical.buildCanonicalRosterEvents(roster([excessive])).filter(e=>e.kind==='flight');assert.equal(measurement.measureCanonicalDuty(x,x[0].id).minutes,990);assert.ok(engine.getPublishedDutyLimitSummary(excessive,null).remainingHours<0,'excess is preserved, never clamped tozero');
     assert.equal(measurement.measureCanonicalDuty(events,'missing'),null);
