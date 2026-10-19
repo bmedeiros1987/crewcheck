@@ -71,7 +71,7 @@ public final class CrewLifeFenceTest {
     }
     @Test public void malformedControlHasNoAckAndPreservesReplayFence() throws Exception {
         CrewLifeFence r=reset();CrewLifeFence bad=CrewLifeFence.control(r.state,"{}",NODE);
-        assertNull(bad.ack);assertTrue(bad.clearValues);assertEquals(r.state.toMap(),bad.state.toMap());
+        assertNull(bad.ack);assertTrue(bad.clearValues);assertTrue(r.state.similar(bad.state));
     }
     @Test public void journalLossCounterexampleNowRejectsDelayedResetAndOldData() throws Exception {
         CrewLifeFence oldChallenge=CrewLifeFence.control(new JSONObject(),request("reset",STREAM,1,STREAM),NODE);
@@ -112,7 +112,7 @@ public final class CrewLifeFenceTest {
     @Test public void nonceRandomFailureCannotEmitChallengeOrMutateFence() throws Exception {
         JSONObject state=reset().state;
         CrewLifeFence failure=CrewLifeFence.control(state,request("reset",B,1,B),NODE,()->{throw new IllegalStateException("synthetic RNG failure");});
-        assertNull(failure.ack);assertEquals(state.toMap(),failure.state.toMap());assertTrue(failure.clearValues);
+        assertNull(failure.ack);assertTrue(state.similar(failure.state));assertTrue(failure.clearValues);
     }
     @Test public void challengeRetryIsIdempotentWhileNewRequestUsesFreshNonce() throws Exception {
         CrewLifeFence c=CrewLifeFence.control(new JSONObject(),request("reset",STREAM,1,STREAM),NODE);
