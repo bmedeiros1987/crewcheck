@@ -1,5 +1,5 @@
 import { authFetch, getStoredUser, getToken } from './authClient';
-import { activateCrewCheckPush, revokeCrewCheckPush, invalidateCrewCheckPushActivation, type PushDependencies, type PushBinding } from './crewcheckPushActivation';
+import { activateCrewCheckPush, revokeCrewCheckPush, invalidateCrewCheckPushActivation, crewCheckPushOperationGeneration, type PushDependencies, type PushBinding } from './crewcheckPushActivation';
 const path='/api/platform/notifications/crewcheck-installation';
 async function withSubscriptionLock<T>(run:()=>Promise<T>):Promise<T>{if(!navigator.locks?.request)throw Error('Este navegador não confirmou proteção entre abas.');return navigator.locks.request('crewcheck:push-subscription:v1',run);}
 function installationId(){const key='crewcheck:notification-installation:v1';let value=localStorage.getItem(key);if(!value){value=crypto.randomUUID();localStorage.setItem(key,value);}return value;}
@@ -15,7 +15,20 @@ async function dependencies(enabled:boolean,revision:number):Promise<PushDepende
  bindWorker:async(binding,generation)=>(await worker(registration,'bind',{binding,generation})).ok===true,
  cancelWorker:async generation=>(await worker(registration,'cancel',generation===undefined?{ownerId:bindingOwner}:{generation,ownerId:bindingOwner})).ok===true,
 };}
-export async function activateCrewCheckPushDevice(state:{enabled:boolean;revision:number;publicKey:string|null}){if(!state.enabled||!state.publicKey||!window.isSecureContext||!('Notification'in window)||!('PushManager'in window)||!('serviceWorker'in navigator)||!navigator.locks?.request)return{status:'unsupported_or_disabled',received:null};return activateCrewCheckPush(await dependencies(state.enabled,state.revision),state.publicKey,true);}
+export async function activateCrewCheckPushDevice(state:{enabled:boolean;revision:number;publicKey:string|null}){
+ if(!state.enabled||!state.publicKey||!window.isSecureContext||!('Notification'in window)||!('PushManager'in window)||!('serviceWorker'in navigator)||!navigator.locks?.request)return{status:'unsupported_or_disabled',received:null};
+ const activationOwner=owner(),token=getToken(),generation=crewCheckPushOperationGeneration();
+ if(!activationOwner||!token)return{status:'blocked',received:null};
+ const current=()=>owner()===activationOwner&&getToken()===token&&crewCheckPushOperationGeneration()===generation;
+ // Invoke in the explicit tap's stack. Waiting for worker.ready first can lose
+ // iOS/iPadOS user activation. Existing permission never causes another prompt.
+ const permission=Notification.permission==='default'?await Notification.requestPermission():Notification.permission;
+ if(!current())return{status:'account_changed',received:null};
+ if(permission!=='granted')return{status:'permission_not_granted',received:null};
+ const ready=await dependencies(state.enabled,state.revision);
+ if(!current()||ready.ownerId!==activationOwner)return{status:'account_changed',received:null};
+ return activateCrewCheckPush({...ready,permission:async()=>permission},state.publicKey,true);
+}
 export async function cancelCrewCheckPushDevice(){if(!navigator.locks?.request)return{status:'local_cancellation_unconfirmed',serverRevocationConfirmed:false};return revokeCrewCheckPush(await dependencies(false,0));}
 export async function reconcileCrewCheckPushDevice(){if(!owner()||!('serviceWorker'in navigator))return;const currentOwner=owner(),registration=await navigator.serviceWorker.ready,result=await worker(registration,'reports');const reports=(result.reports||[]).filter((v:any)=>v.envelope?.ownerId===currentOwner&&v.envelope?.installationId===installationId());if(!reports.length)return;await authFetch(path,{method:'POST',body:JSON.stringify({action:'receipts',installationId:installationId(),reports:reports.map((v:any)=>({envelope:v.envelope,status:v.status}))})});if(owner()===currentOwner)await worker(registration,'acknowledge',{keys:reports.map((v:any)=>v.key)});}
 export function installCrewCheckPushLifecycle(){
