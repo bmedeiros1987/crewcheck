@@ -11,26 +11,32 @@ const cancelled=r=>r.display?.cancelled===true||['cancelled','canceled','cancela
 const identity=p=>p?.linked===true&&p.channel==='telegram'&&p.chatType==='private'&&p.chatId&&/^[^@\s]+@[^@\s]+$/.test(p.email||'')?`${String(p.email).trim().toLowerCase()}|${p.accessKeyHash||''}`:'';
 const freezePrincipal=p=>Object.freeze({email:p.email,name:p.name,chatId:String(p.chatId),linked:p.linked,channel:p.channel,chatType:p.chatType,accessKeyHash:String(p.accessKeyHash||''),authenticated:p.authenticated===true});
 export function createTemporalDialogue(deps,now=deps.now||Date.now){
- const offers=new Map(),turns=new Map(),states=new WeakMap(),declines=new WeakSet(),storage=new AsyncLocalStorage();
+ const offers=new Map(),turns=new Map(),states=new WeakMap(),declines=new WeakSet(),observed=new WeakMap(),consumed=new WeakSet(),storage=new AsyncLocalStorage();
  const prune=()=>{for(const map of[offers,turns]){for(const[chat,item]of map)if(now()<item.at||now()-item.at>TTL)map.delete(chat);while(map.size>=MAX)map.delete(map.keys().next().value);}};
  const currentTurn=ctx=>Boolean(ctx&&turns.get(ctx.chat)===ctx.turn&&now()>=ctx.turn.at&&now()-ctx.turn.at<=TTL);
  const sameBinding=ctx=>{const p=deps.profileNow(ctx.principal);return identity(p)===ctx.owner&&String(p?.chatId)===ctx.chat;};
  const owned=(p,s)=>Boolean(s?.roster&&plain(s.email||s.key)===plain(p.email)&&(!s.key||plain(s.key)===plain(p.email))&&deps.access(p,s));
  const rootCheck=ctx=>{try{const latest=deps.snapshotNow(ctx.principal);return currentTurn(ctx)&&sameBinding(ctx)&&revision(latest)===ctx.revision&&(!latest?.roster||owned(ctx.principal,latest));}catch{return false;}};
- async function run(update,work){
+ function observe(update){
+  if(observed.has(update))return observed.get(update);
   const query=update?.callback_query,message=query?.message||update?.message||update?.edited_message,from=query?.from||message?.from;
-  if(message?.chat?.type!=='private'||!from?.id||String(from.id)!==String(message.chat.id))return work();
-  const chat=String(message.chat.id);prune();const declined=Boolean(offers.has(chat)&&no(message.text));const turn=Object.freeze({at:now()});turns.set(chat,turn);
+  if(message?.chat?.type!=='private'||!from?.id||String(from.id)!==String(message.chat.id))return null;
+  const chat=String(message.chat.id);prune();const declined=Boolean(offers.has(chat)&&no(message.text)),turn=Object.freeze({at:now()});turns.set(chat,turn);
   const voice=Boolean(message.voice||message.audio||message.document?.mime_type?.startsWith('audio/'));
   if(query||(!voice&&!yes(message.text||'')))offers.delete(chat);
-  const beforeOwner=identity(deps.profileNow({chatId:chat}));
+  const cached=deps.profileNow({chatId:chat}),owner=identity(cached),snapshot=owner?deps.snapshotNow(cached):null;
+  const proof=Object.freeze({chat,turn,declined,message,from,beforeOwner:owner,revision:owned(cached,snapshot)?revision(snapshot):null});observed.set(update,proof);return proof;
+ }
+ async function run(update,work){
+  const proof=observe(update);if(!proof)return work();if(consumed.has(update))return true;consumed.add(update);
+  const{chat,turn,declined,message,from,beforeOwner}=proof;
   const loaded=await deps.profile({chat:message.chat,from});
   if(turns.get(chat)!==turn)return true;
   if(beforeOwner&&beforeOwner!==identity(loaded))return true;
   const principal=freezePrincipal(loaded||{chatId:chat});
   const snapshot=identity(principal)?await deps.snapshot(principal):null;
   if(turns.get(chat)!==turn)return true;
-  const entryRevision=revision(snapshot);
+  const entryRevision=proof.revision===null?revision(snapshot):proof.revision;
   if(snapshot?.roster&&!await deps.authorized(principal,snapshot))return true;
   const ctx=Object.freeze({chat,turn,principal,owner:identity(principal),snapshot,revision:entryRevision});
   if(ctx.owner&&!rootCheck(ctx))return true;
@@ -90,7 +96,7 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
   if(!await s.authority.validate())return{reply:denied};s.setDeadline(now());offers.set(chat,{owner:ctx.owner,revision:s.expected(),record:key(selected),at:now()});
   return{reply:`${lead}${selectedEvent?`Voo pertinente na escala: ${selectedEvent.flightNumber}. `:''}${timing}\n${summary(selected).split('\n').slice(0,2).join('\n')}\nQuer os detalhes? Responda “sim”.`};
  }
- return{run,handle,protect,
+ return{observe,run,handle,protect,
   subject:text=>{const ctx=storage.getStore();if(!currentTurn(ctx))return false;if(no(text)&&offers.has(ctx.chat))declines.add(ctx);if(!yes(text))offers.delete(ctx.chat);return true;},
   abandon:()=>{const ctx=storage.getStore();if(currentTurn(ctx))offers.delete(ctx.chat);},
   isCurrent:()=>currentTurn(storage.getStore()),

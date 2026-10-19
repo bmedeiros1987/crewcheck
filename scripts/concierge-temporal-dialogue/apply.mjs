@@ -20,6 +20,9 @@ const runtime=`const crewcheckTemporalDialogue = createTemporalDialogue({
 });\n\n`;
 if(!source.includes('const crewcheckTemporalDialogue ='))source=source.replace('const crewcheckMenu = createTelegramMenu(',runtime+'const crewcheckMenu = createTelegramMenu(');
 source=source.replace("profile.conciergeResponseAuthority?.kind === 'departure'",'profile.conciergeResponseAuthority');
+// Observe the existing admitted update before auxiliary early returns/queues.
+// This changes no webhook URL, token, secret, registration or service setting.
+patch('handleTelegramWebhook',body=>body.includes('crewcheckTemporalDialogue.observe(update)')?body:body.replace('  await crewcheckMenu.interrupt(update.message || {});','  crewcheckTemporalDialogue.observe(update);\n  await crewcheckMenu.interrupt(update.message || {});'));
 patch('processTelegramUpdate',body=>{
  body=body.replace('  if (update.callback_query) crewcheckTemporalDialogue.interrupt(update.callback_query.message?.chat?.id);\n','');
  if(body.includes('crewcheckTemporalDialogue.run(update,'))return body;

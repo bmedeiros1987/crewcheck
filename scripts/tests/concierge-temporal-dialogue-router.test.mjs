@@ -179,3 +179,12 @@ test('public acknowledgement of existing binding flow remains deliverable',async
  h.context.telegramTryBindFromWebhook=async message=>{bound++;h.profile.linked=true;await h.context.sendTelegramMessage(message.chat.id,'Vínculo confirmado.');return true;};
  await h.send('telegram','/start synthetic-binding');assert.equal(bound,1);assert.match(h.trace.output.at(-1),/Vínculo confirmado/);
 });
+
+test('admitted webhook observes a newer input before auxiliary early-return/STT completes',async()=>{
+ const h=voiceTools();let signal,release;const started=new Promise(r=>signal=r),gate=new Promise(r=>release=r);h.setSynth(async()=>{signal();await gate;});
+ const old=h.audio();await started;let signalAux,releaseAux;const auxStarted=new Promise(r=>signalAux=r),auxGate=new Promise(r=>releaseAux=r);let acknowledgements=0;
+ Object.assign(h.context,{readJsonBody:async req=>req.body,crewcheckTelegramUpdateClaim:()=>true,sendJson:()=>{acknowledgements++;},handleV139Telegram:async()=>{signalAux();await auxGate;return true;},setImmediate:()=>{throw Error('auxiliary handled update must not queue another route');}});
+ vm.runInContext(extract('handleTelegramWebhook'),h.context);
+ const newer=h.context.handleTelegramWebhook({method:'POST',headers:{},body:{update_id:999,message:{chat:{id:h.profile.chatId,type:'private'},from:{id:h.profile.chatId},voice:{file_id:'synthetic-new',duration:2}}}},{});
+ await auxStarted;const before=h.trace.output.length;release();await old;assert.equal(h.voice.length,0);assert.doesNotMatch(h.trace.output.slice(before).join(' '),/QA-MERGED|Entendi:/);releaseAux();await newer;assert.equal(acknowledgements,1);
+});
