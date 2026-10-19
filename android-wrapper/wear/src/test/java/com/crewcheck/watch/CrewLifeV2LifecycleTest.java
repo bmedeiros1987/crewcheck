@@ -175,7 +175,75 @@ public class CrewLifeV2LifecycleTest {
             assertNotNull(data);assertEquals(now+999,data.getValidTimeRange().getEndDateTimeMillis().toEpochMilli());
             assertFalse(data.getValidTimeRange().contains(java.time.Instant.ofEpochMilli(now+1000)));
             ShadowSystemClock.setNanoTime((now+1000)*1_000_000L);
-            assertNull(build.invoke(provider.get(),androidx.wear.watchface.complications.data.ComplicationType.RANGED_VALUE,false));
+            assertTrue(build.invoke(provider.get(),androidx.wear.watchface.complications.data.ComplicationType.RANGED_VALUE,false)
+                    instanceof androidx.wear.watchface.complications.data.NoDataComplicationData);
+        }finally{provider.destroy();}
+    }
+    /** Real provider callback; null would retain the old host value and must fail this test. */
+    private static final class ComplicationHost implements androidx.wear.watchface.complications.datasource.ComplicationDataSourceService.ComplicationRequestListener {
+        androidx.wear.watchface.complications.data.ComplicationData visible;
+        int callbacks;
+        ComplicationHost() {
+            visible=new androidx.wear.watchface.complications.data.RangedValueComplicationData.Builder(78,0,100,
+                    new androidx.wear.watchface.complications.data.PlainComplicationText.Builder("legacy78").build()).build();
+        }
+        @Override public void onComplicationData(androidx.wear.watchface.complications.data.ComplicationData data) {
+            assertNotNull("null retains the previous value per AndroidX callback contract",data);
+            visible=data;callbacks++;
+        }
+        void request(CrewLifeComplicationService provider) {
+            int before=callbacks;
+            provider.onComplicationRequest(new androidx.wear.watchface.complications.datasource.ComplicationRequest(
+                    1,androidx.wear.watchface.complications.data.ComplicationType.RANGED_VALUE,false),this);
+            assertEquals(before+1,callbacks);
+        }
+        void assertNoData() {
+            assertTrue(visible instanceof androidx.wear.watchface.complications.data.NoDataComplicationData);
+            assertNull("no fabricated zero/old placeholder",((androidx.wear.watchface.complications.data.NoDataComplicationData)visible).getPlaceholder());
+        }
+        void assertValue(float value) {
+            assertTrue(visible instanceof androidx.wear.watchface.complications.data.RangedValueComplicationData);
+            assertEquals(value,((androidx.wear.watchface.complications.data.RangedValueComplicationData)visible).getValue(),0);
+        }
+    }
+    @Test public void realCallbackReplacesMeasuredScoreWithNoDataAfterRevokeAndResetButPreservesMeasuredZero() throws Exception {
+        ServiceController<CrewLifeComplicationService> provider=Robolectric.buildService(CrewLifeComplicationService.class).create();
+        try {
+            WellbeingStore store=new WellbeingStore(context);handshake(store,"reset",STREAM,1,STREAM);
+            long now=ShadowSystemClock.currentTimeMillis();store.applyCrewLifeData(payload(2,78,now+1000,now+4000),NODE,now);
+            ComplicationHost host=new ComplicationHost();host.request(provider.get());host.assertValue(78);
+            handshake(store,"revoke",STREAM,3,B);host.request(provider.get());host.assertNoData();
+            handshake(store,"reset",B,1,B);
+            String zero=new JSONObject(payload(2,0,now+1000,now+4000)).put("streamId",B).toString();store.applyCrewLifeData(zero,NODE,now);
+            host.request(provider.get());host.assertValue(0);
+            handshake(store,"reset","00000000-0000-4000-8000-000000000003",1,B);
+            host.request(provider.get());host.assertNoData();
+        }finally{provider.destroy();}
+    }
+    @Test public void realCallbackReplacesScoreWhenFullSnapshotOmitsEnergyAndWhenTombstoneArrives() throws Exception {
+        ServiceController<CrewLifeComplicationService> provider=Robolectric.buildService(CrewLifeComplicationService.class).create();
+        try {
+            WellbeingStore store=new WellbeingStore(context);handshake(store,"reset",STREAM,1,STREAM);long now=ShadowSystemClock.currentTimeMillis();
+            store.applyCrewLifeData(payload(2,78,now+1000,now+4000),NODE,now);
+            ComplicationHost host=new ComplicationHost();host.request(provider.get());host.assertValue(78);
+            JSONObject partial=new JSONObject(payload(3,78,now+1000,now+4000));partial.getJSONObject("metrics").remove("recoveryScore");
+            store.applyCrewLifeData(partial.toString(),NODE,now);assertNotNull(store.loadCrewLife().value("steps",now));
+            host.request(provider.get());host.assertNoData();
+            store.applyCrewLifeData(payload(4,78,now+1000,now+4000),NODE,now);host.request(provider.get());host.assertValue(78);
+            JSONObject revoked=new JSONObject(payload(5,78,now+1000,now+4000)).put("kind","revoked")
+                    .put("generatedAtEpochMs",0).put("validUntilEpochMs",0).put("metrics",new JSONObject());
+            store.applyCrewLifeData(revoked.toString(),NODE,now);host.request(provider.get());host.assertNoData();
+        }finally{provider.destroy();}
+    }
+    @Test public void realCallbackClearsLegacyHostScoreWithoutTimeRangeAfterCacheMigration() throws Exception {
+        android.content.SharedPreferences p=context.getSharedPreferences("crewcheck_watch_wellbeing",0);
+        p.edit().putString("crewlife_payload_v1","synthetic-old-ciphertext").putString("crewlife_iv_v1","synthetic-old-iv").commit();
+        ServiceController<CrewLifeComplicationService> provider=Robolectric.buildService(CrewLifeComplicationService.class).create();
+        try {
+            ComplicationHost host=new ComplicationHost();host.assertValue(78);
+            assertEquals(androidx.wear.watchface.complications.data.TimeRange.ALWAYS,host.visible.getValidTimeRange());
+            host.request(provider.get());host.assertNoData();
+            assertFalse(p.contains("crewlife_payload_v1"));assertFalse(p.contains("crewlife_iv_v1"));
         }finally{provider.destroy();}
     }
     @Test public void failedDurableCommitCannotEmitCleanupAck() throws Exception {
