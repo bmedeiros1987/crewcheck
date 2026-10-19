@@ -44,7 +44,7 @@ for(const scenario of ['future','ongoing','cancelled','ambiguous'])test(`actual 
  assert.doesNotMatch(h.trace.output.join(' '),/LA1111/);
 });
 
-for(const outcome of ['provider_mismatch','unconfigured','synthesis_failed','delivery_failed','sent','text_policy'])test(`actual voice router and sender ${outcome} uses bounded result and safe text fallback`,async()=>{
+for(const outcome of ['provider_mismatch','unconfigured','synthesis_failed','delivery_failed','sent','text_policy','revoked','revision_changed'])test(`actual voice router and sender ${outcome} uses bounded result and safe text fallback`,async()=>{
  const h=realDeparture(data('estimated'),'missing',at),diagnostics=[];let synthesis=0,delivery=0;
  Object.assign(h.context,{
   telegramVoiceFileId:()=> 'synthetic-file',crewcheckSttConfigured:()=>true,elevenLabsSttConfigured:()=>false,telegramVoiceDuration:()=>2,
@@ -52,7 +52,7 @@ for(const outcome of ['provider_mismatch','unconfigured','synthesis_failed','del
   telegramVoiceFileName:()=> 'synthetic.ogg',telegramVoiceMime:()=> 'audio/ogg',transcribeTelegramAudio:async()=>({ok:true,text:outcome==='text_policy'?'/configuracoes':'/proximo'}),
   envAny:()=>'',conciergeVoiceScriptV14408:t=>t,conciergeVoiceProfileForSnapshotV14348:()=> 'default',telegramHumanAudioCaption:()=> 'Synthetic',telegramShouldEchoTranscript:()=>false,
   cleanTtsText:t=>t,ttsPolicySnapshot:()=>({provider:outcome==='provider_mismatch'?'none':'elevenlabs'}),elevenLabsTtsConfigured:()=>outcome!=='unconfigured',
-  generateElevenLabsSpeech:async()=>{synthesis++;return outcome==='synthesis_failed'?{ok:false}:{ok:true,buffer:Buffer.from('synthetic')};},
+  generateElevenLabsSpeech:async()=>{synthesis++;if(outcome==='revoked')h.profile.linked=false;if(outcome==='revision_changed')h.setRoster(data('earlier'));return outcome==='synthesis_failed'?{ok:false}:{ok:true,buffer:Buffer.from('synthetic')};},
   sendTelegramVoiceBuffer:async()=>{delivery++;return{ok:outcome!=='delivery_failed'};},telegramHumanVoiceEnabled:()=>true,
  });
  for(const name of ['sendTelegramTtsAudio','sendHumanTelegramVoiceReply','handleTelegramVoiceMessage'])vm.runInContext(extract(name),h.context);
@@ -61,8 +61,9 @@ for(const outcome of ['provider_mismatch','unconfigured','synthesis_failed','del
  await h.context.processTelegramUpdate({message:{chat:{id:h.profile.chatId,type:'private'},from:{id:h.profile.chatId},voice:{file_id:'synthetic',duration:2}}});
  assert.equal(diagnostics.length,1);const result=diagnostics[0];
  if(['provider_mismatch','unconfigured'].includes(outcome)){assert.equal(result.state,'unavailable');assert.equal(result.reason,outcome);assert.equal(synthesis,0);}
- else assert.equal(result.state,outcome);
- if(outcome==='sent'){assert.equal(delivery,1);assert.doesNotMatch(h.trace.output.join(' '),/Não consegui enviar/);}
+ else assert.equal(result.state,['revoked','revision_changed'].includes(outcome)?'context_expired':outcome);
+ if(['revoked','revision_changed'].includes(outcome)){assert.equal(synthesis,1);assert.equal(delivery,0);assert.doesNotMatch(h.trace.output.join(' '),/05\/10\/2099|APZ|QA-MERGED/);}
+ else if(outcome==='sent'){assert.equal(delivery,1);assert.doesNotMatch(h.trace.output.join(' '),/Não consegui enviar/);}
  else if(outcome==='text_policy')assert.doesNotMatch(h.trace.output.join(' '),/Não consegui enviar/);
  else assert.match(h.trace.output.at(-1),/Não consegui enviar o áudio agora; segue por texto/);
 });
@@ -98,4 +99,11 @@ for(const changed of [false,true])test(`actual meu voo accepted Radar persists o
  if(changed){const save=h.context.conciergeSaveSnapshotAsync;h.context.conciergeSaveSnapshotAsync=async(...args)=>{const result=await save(...args);if(args[2]?.lastRadar){saves++;h.setRoster(flights([['LA4321','08:00','09:00']]));}return result;};}
  await h.send('telegram','portão do meu voo');assert.equal(queries,1);
  if(changed){assert.equal(saves,1);assert.doesNotMatch(h.trace.output.join(' '),/LA1234|Portão: 46/);}else assert.match(h.trace.output.at(-1),/Portão: 46/);
+});
+
+test('actual concurrent topic invalidates old response and cannot recreate a stale offer',async()=>{
+ const h=realDeparture(data('estimated'),'missing',at);const read=h.context.telegramRostersRead;let reads=0,changed=0;
+ h.context.telegramRostersRead=()=>{const result=read();if(++reads===2){changed++;void h.context.crewcheckTemporalDialogue.handle('outro assunto',h.profile,result.snapshots[h.profile.email]);}return result;};
+ await h.send('telegram','/proximo');assert.equal(changed,1);assert.doesNotMatch(h.trace.output.join(' '),/QA-MERGED|05\/10\/2099|07:00/);
+ await h.send('telegram','sim');assert.match(h.trace.output.at(-1),/Não há um pedido de detalhes válido/);
 });

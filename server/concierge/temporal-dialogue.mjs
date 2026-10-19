@@ -28,12 +28,13 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
   if(!yes&&!schedule&&!mine)return null;
   const denied='A consulta mudou ou expirou. Consulte sua programação novamente.';
   let expected=revision(snapshot),selected=null,selectedEvent=null,deadline=null;
+  const validTurn=()=>turns.get(chat)===turn&&(deadline===null||(now()>=deadline&&now()-deadline<=TTL));
   const validate=async()=>{
    try{
-    if(turns.get(chat)!==turn||(deadline!==null&&(now()<deadline||now()-deadline>TTL)))return false;
+    if(!validTurn())return false;
     if(!await deps.authorized(profile,snapshot))return false;
     const current=await deps.snapshot(profile);
-    return await deps.authorized(profile,current)&&revision(current)===expected;
+    return await deps.authorized(profile,current)&&revision(current)===expected&&validTurn();
    }catch{return false;}
   };
   profile.conciergeResponseAuthority=Object.freeze({kind:'temporal',validate,acceptWrite:saved=>{
@@ -62,7 +63,7 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
    const event=candidates[0];selectedEvent=event;selected=records.find(r=>r.canonicalEventIds?.includes(event.id));
    if(!selected)return {reply:'Não consegui confirmar esse voo na leitura atual.'};
    if(cancelled(selected)||['cancelled','canceled','cancelado'].includes(plain(event.leg?.status)))return {reply:'Esse voo consta cancelado na leitura atual. Confirme a situação na fonte operacional.'};
-   if(/\b(portao|terminal|radar|status)\b/.test(input)){
+   if(/\b(portao|terminal|radar|status|cancelado|cancelamento)\b/.test(input)){
     const reply=await deps.radar(`/radar ${event.flightNumber}`,profile,snapshot);
     return {reply:await validate()?reply:denied};
    }
