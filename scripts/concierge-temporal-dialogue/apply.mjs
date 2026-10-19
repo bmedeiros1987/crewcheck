@@ -31,7 +31,7 @@ patch('sendTelegramTtsAudio',body=>body.includes("deliveryState:'context_expired
  .replace("configured: false, provider: policy.provider", "deliveryState: 'unavailable', deliveryReason: 'provider_mismatch', configured: false, provider: policy.provider")
  .replace("configured: false, provider: 'elevenlabs'", "deliveryState: 'unavailable', deliveryReason: 'unconfigured', configured: false, provider: 'elevenlabs'")
  .replace('  const generated = await generateElevenLabsSpeech', "  if (options.validate && !await options.validate()) return {ok:false,deliveryState:'context_expired'};\n  const generated = await generateElevenLabsSpeech")
- .replace('if (!generated.ok) return generated;', "if (!generated.ok) return {...generated,deliveryState:'synthesis_failed'};\n  if (options.validate && !await options.validate()) return {ok:false,deliveryState:'context_expired'};")
+ .replace('if (!generated.ok) return generated;', "if (!generated.ok) return {...generated,deliveryState:generated.configured === false ? 'unavailable' : 'synthesis_failed',deliveryReason:generated.configured === false ? 'voice_unavailable' : ''};\n  if (options.validate && !await options.validate()) return {ok:false,deliveryState:'context_expired'};")
  .replace('return { ...sent, provider:', "return { ...sent, deliveryState: sent?.ok ? 'sent' : 'delivery_failed', provider:"));
 patch('sendHumanTelegramVoiceReply',body=>body.includes('onResult') ? body : body
  .replace("snapshot = null) {", "snapshot = null, onResult = () => {}, validate = null) {")
