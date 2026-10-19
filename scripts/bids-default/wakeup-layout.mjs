@@ -53,7 +53,8 @@ if (activate==='activateServerAlarm') {
  if(!source.includes("import {wakeCivilDate")) source="import {wakeCivilDate,wakeDateFields,wakePlanConflict,wakeReceiptConfirmed,wakeReceiptState,wakeNextConfirmed} from '@shared/wakeupPlan.mjs';\n"+source;
  block=block.replace('  const [health, setHealth]',`  const [wakeDraft,setWakeDraft]=useState<any>(null);
   const [wakeJobsOwner,setWakeJobsOwner]=useState<string|null>(null);
-  const wakeSubmitting=useRef(false);
+  const wakeSubmitting=useRef<{generation:number;operation:number}|null>(null);
+  const wakeOperation=useRef(0);
   const [wakeNow,setWakeNow]=useState(()=>Date.now());
   useEffect(()=>{const clock=window.setInterval(()=>setWakeNow(Date.now()),30000);return()=>window.clearInterval(clock);},[]);
   const [health, setHealth]`);
@@ -90,7 +91,7 @@ if (activate==='activateServerAlarm') {
     if(wakeReason)return toast.info(wakeReason);`);
  block=block.replace('wakeChannelDecision.eventId!==event.id || wakeChannelDecision.instant!==wakeInstant','wakeChannelDecision.eventId!==wakeScopeId || wakeChannelDecision.instant!==wakeScopeInstant');
  block=block.replace("const alarmPrefix='wakeup:'+String(event.id).replace(/[^a-zA-Z0-9:_-]+/g,'_')+':';","const alarmPrefix=wakePrefix;");
- block=block.replace('    setScheduleBusy(true);\n    try {\n      const normalizedChannel', '    wakeSubmitting.current=true;\n    setScheduleBusy(true);\n    try {\n      const normalizedChannel');
+ block=block.replace('    setScheduleBusy(true);\n    try {\n      const normalizedChannel', '    const submission={generation:version,operation:++wakeOperation.current};\n    wakeSubmitting.current=submission;\n    setScheduleBusy(true);\n    try {\n      const normalizedChannel');
  const begin=block.indexOf('  async function activateServerAlarm()'), finish=block.indexOf('\n  async function cancelScheduledJob',begin);
  let action=block.slice(begin,finish);
  action=action.replace("const eventKey = [event.id, programDateLabel(event), presentation, lead, normalizedChannel].join(':').replace(/[^a-zA-Z0-9:_-]+/g, '_');", "const eventKey = wakeEditor.automatic?[event.id, programDateLabel(event), presentation, lead, normalizedChannel].join(':').replace(/[^a-zA-Z0-9:_-]+/g, '_'):wakeScopeId+':'+planned.getTime()+':'+normalizedChannel;");
@@ -98,11 +99,13 @@ if (activate==='activateServerAlarm') {
  action=action.replace("        message: 'Despertador CrewCheck: confira sua preparação no aplicativo.',\n      });", "        message: 'Despertador CrewCheck: confira sua preparação no aplicativo.',\n      };\n      const payload = await postCrewCheckJson('/api/alarm/schedule',request);");
  action=action.replace('      await refreshScheduledJobs();','      const confirmationRead=refreshScheduledJobs();\n      const confirmationSequence=jobsRequest.current;\n      const confirmedJobs=await confirmationRead;');
  action=action.replace("      window.dispatchEvent(new Event('crewcheck:notification-jobs-changed'));\n      toast.success(payload?.message || 'Solicitação registrada no servidor; entrega não confirmada.');", "      if(confirmedJobs===undefined && confirmationSequence!==jobsRequest.current)return toast.info('Consulta de confirmação substituída por uma atualização mais recente. Confira o estado atual na tela.');\n      if(!wakeReceiptConfirmed(request,payload,confirmedJobs)) { const receiptState=wakeReceiptState(request,payload,confirmedJobs); if(receiptState==='unconfirmed')return toast.error('Não foi possível confirmar este agendamento. Consulte o estado antes de tentar novamente.'); return toast.info(receiptState==='terminal'?'Registro persistido já encerrado. Consulte o status real no histórico.':receiptState==='uncertain'?'Registro persistido com resultado não confirmado. Consulte o histórico antes de tentar novamente.':receiptState==='sending'?'Registro persistido com envio em andamento; entrega não confirmada.':'Registro persistido com horário passado; envio não confirmado.'); }\n      window.dispatchEvent(new Event('crewcheck:notification-jobs-changed'));\n      toast.success('Registro confirmado no servidor. Recebimento ainda não confirmado.');");
- action=action.replace('    } finally {','    } finally {\n      wakeSubmitting.current=false;');
+ action=action.replace('    } finally {','    } finally {\n      if(wakeSubmitting.current===submission)wakeSubmitting.current=null;');
  if(!action.includes('wakeReceiptConfirmed(request,payload,confirmedJobs)') || !action.includes('const payload = await postCrewCheckJson'))throw Error('Wake receipt boundary not materialized');
  block=block.slice(0,begin)+action+block.slice(finish);
+ // Identity change invalidates the old latch; its finally owns only its own operation.
+ block=block.replace('wakeIdentity.current = {token:owner,userId};','wakeIdentity.current = {token:owner,userId}; wakeSubmitting.current=null;');
  // Refresh on return to the page; this is a GET, never an activation or retry.
- block=block.replace("'crewcheck:auth-expired', 'online']","'crewcheck:auth-expired', 'online', 'focus']");
+ block=block.replaceAll("'crewcheck:auth-expired', 'online']","'crewcheck:auth-expired', 'online', 'focus']");
  const historyStart=block.indexOf('<details className="cz-toolbox cc-wakeup-history">'),historyEnd=block.indexOf('</details>',historyStart)+10;
  if(historyStart<0||historyEnd<10)throw Error('Existing Wake history missing');
  const history=block.slice(historyStart,historyEnd);

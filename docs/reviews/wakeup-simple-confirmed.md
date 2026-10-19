@@ -59,3 +59,20 @@ case, the superseded handler emits a neutral refresh notice rather than a false
 confirmation error. It does not infer success from the POST. The latest authenticated
 GET still owns the displayed projection and read sequencing; both response orders
 are covered with held real host callbacks and a matching persisted job.
+
+## Session latch and focus cleanup follow-up
+
+The submission latch now owns a generation and operation identity. A real identity
+transition releases the prior latch immediately, even if that POST never settles;
+the old request's finally can clear only the exact latch it created. Same-account
+focus refresh still preserves the current operation. The focus event is now
+registered and removed symmetrically by the final generated view.
+
+Synthetic host regressions cover account A→B, token renewal for the same user,
+logout/login, an old POST that never finishes, edits in the new session, and a late
+old finally during a newer pending POST. Three mount/unmount/remount cycles assert
+zero job/health reads after unmount and no accumulation after remount. Both added
+counterexamples fail on main77dd3563 before the patch and pass with it. No network
+timeout is relied on to release a session, and no transport, channel, permission or
+OFF capability is activated. These UI defects do not establish the historical Voice
+incident's cause.
