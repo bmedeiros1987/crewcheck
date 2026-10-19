@@ -17,12 +17,15 @@ const themeRuntime = `export type CrewCheckThemePreference = 'system' | 'light' 
 const KEY = 'crewcheck:appearance:v1';
 const LEGACY_KEY = 'crewcheck_theme_mode';
 const ORDER: CrewCheckThemePreference[] = ['system', 'light', 'dark'];
+// Session-only fallback when storage is unavailable; never writes a new default.
+let volatilePreference: CrewCheckThemePreference | null = null;
 
 function normalize(value: unknown): CrewCheckThemePreference {
   return value === 'light' || value === 'dark' ? value : 'system';
 }
 
 export function getCrewCheckThemePreference(): CrewCheckThemePreference {
+  if (volatilePreference !== null) return volatilePreference;
   try {
     // The active Home/App setting takes precedence; initialization never writes preferences.
     const active = window.localStorage.getItem(LEGACY_KEY);
@@ -38,8 +41,9 @@ export function getEffectiveCrewCheckTheme(preference: CrewCheckThemePreference 
 }
 
 export function applyCrewCheckTheme(preference: CrewCheckThemePreference = getCrewCheckThemePreference()): CrewCheckThemePreference {
-  const html = document.documentElement;
   const normalized = normalize(preference);
+  if (typeof document === 'undefined') return normalized;
+  const html = document.documentElement;
   const effective = getEffectiveCrewCheckTheme(normalized);
   html.dataset.crewcheckThemePreference = normalized;
   html.dataset.crewThemeMode = normalized;
@@ -53,9 +57,10 @@ export function applyCrewCheckTheme(preference: CrewCheckThemePreference = getCr
 
 export function setCrewCheckThemePreference(preference: CrewCheckThemePreference): CrewCheckThemePreference {
   const normalized = normalize(preference);
-  try { window.localStorage.setItem(KEY, normalized); window.localStorage.setItem(LEGACY_KEY, normalized); } catch {}
+  try { window.localStorage.setItem(KEY, normalized); window.localStorage.setItem(LEGACY_KEY, normalized); volatilePreference = null; }
+  catch { volatilePreference = normalized; }
   const applied = applyCrewCheckTheme(normalized);
-  window.dispatchEvent(new CustomEvent('crewcheck:theme-change', { detail: { preference: applied } }));
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('crewcheck:theme-change', { detail: { preference: applied } }));
   return applied;
 }
 
@@ -115,10 +120,12 @@ if (typeof document !== 'undefined') {
   window.addEventListener('crewcheck:theme-change', refreshControls as EventListener);
 }
 
-window.addEventListener('crewcheck:theme-change', () => applyCrewCheckTheme());
-window.addEventListener('storage', (event) => {
-  if (event.key === KEY || event.key === LEGACY_KEY || event.key === null) { applyCrewCheckTheme(); refreshControls(); }
-});
+if (typeof window !== 'undefined') {
+  window.addEventListener('crewcheck:theme-change', () => applyCrewCheckTheme());
+  window.addEventListener('storage', (event) => {
+    if (event.key === KEY || event.key === LEGACY_KEY || event.key === null) { volatilePreference = null; applyCrewCheckTheme(); refreshControls(); }
+  });
+}
 `;
 fs.writeFileSync('client/src/lib/themeRuntime.ts', themeRuntime, 'utf8');
 
