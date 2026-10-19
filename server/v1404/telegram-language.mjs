@@ -205,6 +205,32 @@ function legSentence(leg = {}, index = 0) {
   return `${flight}: saída ${originDeparturePhrase(leg.origin)} às ${departure}; chegada em ${destination} às ${arrival}.`;
 }
 
+function nextProgramText(record, presentation) {
+  const legs = record.legs;
+  const display = record.display?.clockBasis === 'published-brt' ? record.display : null;
+  const date = value => {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return 'data não confirmada';
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+      ? value.split('-').reverse().join('/') : 'data não confirmada';
+  };
+  const clock = value => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value || '')) ? value : 'horário não confirmado';
+  const rows = [
+    `Próxima programação: ${legs.length} voo${legs.length === 1 ? '' : 's'}.`,
+    `APZ: ${date(display?.presentationDate)} às ${clock(presentation || record.startTime)}.`,
+    ...legs.slice(0, 4).map((leg, index) => {
+      const flight = String(leg.flightNumber || '').trim().toUpperCase().replace(/\s+/g, '') || `Voo ${index + 1} não confirmado`;
+      const dates = display?.legs?.[index];
+      return `${flight}: decolagem ${originDeparturePhrase(leg.origin)} em ${date(dates?.departureDate)} às ${clock(leg.departureTime)}; chegada ao aeroporto de ${shortAirportName(leg.destination)} em ${date(dates?.arrivalDate)} às ${clock(leg.arrivalTime)}.`;
+    }),
+    legs.length > 4 ? `Os outros ${legs.length - 4} voos estão na escala.` : '',
+    record.endKind === 'arrival' ? 'Fim publicado da jornada não confirmado.' : `Fim publicado: ${date(display?.endDate)} às ${clock(record.endTime)}.`,
+    display ? 'Relógio da escala: UTC−03; sem conversão para o fuso local do destino.' : 'Fuso não confirmado nesta leitura.',
+    'Hotel/van sem dados vinculados; chegada ao aeroporto não confirma chegada ao hotel.',
+  ];
+  return rows.filter(Boolean).join('\n');
+}
+
 export function buildProgramSummary({ profile = {}, snapshot = {}, record = null, label = '', presentationTime = '', radar = null, includeGreeting = true } = {}) {
   const greeting = includeGreeting ? `${premiumGreeting(profile, snapshot)} ` : '';
   if (!record) return `${greeting}Não encontrei uma programação confirmada para esse período.`.trim();
@@ -216,6 +242,7 @@ export function buildProgramSummary({ profile = {}, snapshot = {}, record = null
     const activity = String(record.code || 'atividade').toLowerCase();
     return `${greeting}${lead ? `${lead} ` : ''}você tem ${activity}. Sua apresentação é às ${presentation}, com término previsto às ${end}.`.trim();
   }
+  if (/proxima programacao|proximo/.test(normalizeIntent(label))) return nextProgramText(record, presentationTime);
   const count = legs.length;
   const finalDestination = shortAirportName(legs.at(-1)?.destination);
   const opening = `${greeting}${lead ? `${lead} ` : ''}você tem ${count} perna${count === 1 ? '' : 's'}. Apresentação às ${presentation}. Fim da jornada em ${finalDestination} às ${end}.`;

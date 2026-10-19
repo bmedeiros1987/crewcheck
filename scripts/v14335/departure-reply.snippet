@@ -1,19 +1,36 @@
 async function conciergeDepartureReply(snapshot) {
   const roster = snapshot?.roster;
-  const record = conciergeProgramRecords(roster).find((item) => {
-    if (item.end < new Date()) return false;
+  const now = new Date();
+  if (!Array.isArray(roster?.days) || !roster.days.length) return 'Não há escala disponível nesta leitura para confirmar apresentação ou saída.';
+  const record = conciergeJourneyProgramRecords(roster, conciergeProgramRecords(roster)).find((item) => {
+    if (item.end < now) return false;
     if (item.legs?.length) return true;
     return ['ASB', 'HSB', 'HSBE', 'MT', 'CRM', 'CBF', 'EMER'].some((code) => item.code === code || item.code.startsWith(code));
   });
-  if (!record) return 'Não encontrei uma próxima programação presencial que exija saída. Folga, EAD e períodos de descanso não geram rota.';
+  if (!record) return 'Não encontrei apresentação presencial aplicável no período disponível desta escala. A cobertura dos próximos dias não está confirmada.';
+  const civilKey = date => new Date(date.getTime() - 180 * 60_000).toISOString().slice(0, 10);
+  const stamp = date => {
+    const key = civilKey(date);
+    const tomorrow = civilKey(new Date(now.getTime() + 86_400_000));
+    const clock = new Date(date.getTime() - 180 * 60_000).toISOString().slice(11, 16);
+    return `${key === tomorrow ? 'amanhã, ' : ''}${key.split('-').reverse().join('/')} às ${clock} (UTC−03, relógio da escala)`;
+  };
+  const origin = record.legs?.[0]?.origin || record.day?.base || '';
+  const status = String(record.day?.status || '').toLowerCase();
+  if (['cancelled', 'canceled', 'cancelado'].includes(status)) return 'Esta programação consta cancelada no resumo recebido; não calculei saída. Confirme a situação na fonte operacional.';
+  if (['HSB', 'HSBE'].includes(record.code)) return 'Sobreaviso em casa não confirma deslocamento ao aeroporto. Aguarde o acionamento com apresentação confirmada.';
+  if (!roster.base || !origin) return 'Base ou origem da apresentação não confirmada nesta leitura. Não calculei saída de casa.';
+  if (String(origin).toUpperCase() !== String(roster.base).toUpperCase()) return `Programação fora da base: apresentação em ${origin}, ${stamp(record.start)}. Hotel e pickup não confirmados nesta leitura; não calculei saída de casa/base. A escala não confirma sua posição física.`;
+  const stay = conciergeCurrentStay(roster, now);
+  if (stay) return `A escala indica um pernoite; isso não confirma sua posição física. Apresentação em ${origin}, ${stamp(record.start)}. Confirme o ponto de partida e o pickup do hotel; não calculei saída de casa.`;
+  if (record.start <= now) return `A apresentação desta programação (${origin}, ${stamp(record.start)}) já passou. O deslocamento e a chegada não estão confirmados; não selecionei outra programação automaticamente.`;
   const presentation = conciergePresentationTime(record);
-  const presentationDate = conciergeProgramDate(record.day, presentation || record.startTime);
+  const presentationDate = record.start;
   const locationState = conciergeLocationContextV14335(snapshot);
   if (!locationState.fresh) {
-    return `${conciergeProgramTitle(record)} · ${conciergeDateLabel(record)}\nApresentação ${presentation || 'a confirmar'} em ${record.legs?.[0]?.origin || record.day?.base || 'local a confirmar'}.\n\n${locationState.message}`;
+    return `${conciergeProgramTitle(record)} · apresentação em ${origin}: ${stamp(record.start)}.\n\n${locationState.message}`;
   }
   const location = locationState.location;
-  const origin = record.legs?.[0]?.origin || record.day?.base || '';
   const route = await conciergeTravelEstimate(location, origin);
   if (!route) return `Apresentação ${presentation || 'a confirmar'} em ${origin || 'local a confirmar'}. ${conciergeLocationLineV14335(snapshot)} Não consegui calcular a rota agora; abra o Planejador de Saída no app.`;
   if (route.distanceKm > 250) {
@@ -29,8 +46,8 @@ async function conciergeDepartureReply(snapshot) {
   const bufferMinutes = 25;
   const leave = new Date(presentationDate.getTime() - (route.minutes + bufferMinutes) * 60_000);
   return [
-    conciergeLeaveDateLabel(leave),
-    `${conciergeProgramTitle(record)} · apresentação ${presentation} em ${origin}`,
+    leave < now ? `A saída recomendada já passou: ${stamp(leave)}. A apresentação ainda é futura; deslocamento e chegada não estão confirmados.` : `Saída recomendada: ${stamp(leave)}.`,
+    `${conciergeProgramTitle(record)} · apresentação em ${origin}: ${stamp(presentationDate)}`,
     conciergeLocationLineV14335(snapshot),
     `Deslocamento: ${route.durationText || `${route.minutes} min`} · ${route.distanceText} · margem ${bufferMinutes} min`,
     route.trafficAware ? 'Rota calculada com trânsito disponível.' : 'Tempo estimado; confirme o trânsito na prévia do mapa do app.',

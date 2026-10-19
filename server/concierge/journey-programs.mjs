@@ -1,6 +1,9 @@
 import { buildCanonicalRosterEvents } from './generated/canonicalRoster.mjs';
 
 const MINUTE = 60_000;
+// Reuse the canonical engine's fixed published BRT clock, never host timezone
+// or destination-local time. This metadata changes display only.
+const publishedDateKey = value => new Date(instant(value) - 180 * MINUTE).toISOString().slice(0, 10);
 function clockMinutes(value) {
   const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
   if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) return null;
@@ -82,6 +85,10 @@ export function projectConciergeJourneyPrograms(events = [], legacyRecords = [])
       finalArrivalTime: last.arrival,
       finalArrivalDateTime: last.endDateTime,
       canonicalEventIds: ordered.map((event) => event.id),
+      display: {
+        clockBasis: 'published-brt', presentationDate: publishedDateKey(start), endDate: publishedDateKey(end),
+        legs: ordered.map(event => ({ departureDate: publishedDateKey(event.startDateTime), arrivalDate: publishedDateKey(event.endDateTime) })),
+      },
     });
   }
   return records.sort((a, b) => a.start.getTime() - b.start.getTime());

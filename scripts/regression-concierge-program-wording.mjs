@@ -33,7 +33,7 @@ assert.equal(prepare(prepared), prepared, 'canonical renderer preparation is byt
 for (const [stage, code] of [['raw', source], ['prepared', prepared]]) {
   const url = pathToFileURL(`${process.cwd()}/server/v1403/telegram-human.mjs`).href;
   const module = await import(`data:text/javascript;base64,${Buffer.from(code.replaceAll('../v1403/telegram-human.mjs', url)).toString('base64')}`);
-  const render = (value, options = {}) => humanize(finalize(module.buildProgramSummary({ record: value, label: 'A próxima programação', includeGreeting: false, ...options }), '/proximo'), '/proximo');
+  const render = (value, options = {}) => humanize(finalize(module.buildProgramSummary({ record: value, label: 'Hoje', includeGreeting: false, ...options }), '/proximo'), '/proximo');
   const before = JSON.stringify(record);
   const text = render(record);
   for (const value of ['LA0012:', 'LA0098:', '22:15', '08:45', '23:10', '02:25', '05:15', '08:15', 'chegada em Natal', 'saída de Natal', 'Fim da jornada em Brasília', 'Se houver divergência, vale a escala oficial.']) assert.ok(text.includes(value), `${stage}: ${value}`);
