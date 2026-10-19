@@ -75,6 +75,8 @@ test('incompatible types, nullability, defaults, engines and prefix uniqueness f
     { schemaPatch: { column_name: 'row_version', column_default: '1' } },
     ...['crewcheck_platform_profiles','crewcheck_platform_rosters','crewcheck_platform_stays'].map(table_name => ({ enginePatch: { table_name, engine: 'MyISAM' } })),
     { indexPrefix: 16 },
+    { schemaPatch: { column_name: 'binding_evidence', extra: 'VIRTUAL GENERATED', generation_expression: 'json_object()' } },
+    { schemaPatch: { column_name: 'row_version', extra: 'STORED GENERATED', generation_expression: '0' } },
   ];
   for (const metadata of cases) {
     const d = database(undefined, metadata);

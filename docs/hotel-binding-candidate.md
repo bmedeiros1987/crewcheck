@@ -6,7 +6,7 @@ hotel reconciliation. It has not been deployed or used against any real account.
 
 ## Final behavior
 
-- Readiness checks expected column types/defaults/nullability, unsigned BIGINT, full unique owner/binding index without prefixes, and InnoDB for profile/roster/stays without DDL. Missing
+- Readiness checks expected column types/defaults/nullability, unsigned BIGINT, full unique owner/binding index without prefixes, non-generated columns, and InnoDB for profile/roster/stays without DDL. Missing
   schema or a failed probe leaves GET legacy-readable, v2 writes unavailable (503),
   and roster hotel reconciliation review-required. There is no writable v1 fallback.
 - Explicit user selection/confirmation associates one existing owned row to a
@@ -60,7 +60,11 @@ file, **not executed**. It does not backfill provenance, remove legacy uniquenes
 change IDs/room/grants, or wire a startup migration. Legacy uniqueness conflicts
 remain explicit conflicts without deletion/merge. Review schema, all active
 writers and deletion concurrency before activation. No MySQL/MariaDB/Docker binary
-was available locally; real disposable InnoDB integration remains unverified.
+was available locally. The existing disposable MySQL CI job now invokes
+`regression-hotel-binding-mysql.mjs` raw/prepared in its own newly created fixture
+schema. Its real InnoDB result must be checked at the exact CI SHA before treating
+SQL locking as validated. The deletion cases use a SQL-only fixture pattern and
+do not certify the account/auth deletion route.
 
 ## Local validation
 

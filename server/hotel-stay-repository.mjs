@@ -6,7 +6,7 @@ export async function hotelReadiness(db) {
   try {
     const result = await db.query(`SELECT COLUMN_NAME AS column_name,DATA_TYPE AS data_type,
       COLUMN_TYPE AS column_type,IS_NULLABLE AS is_nullable,COLUMN_DEFAULT AS column_default,
-      CHARACTER_MAXIMUM_LENGTH AS character_maximum_length FROM information_schema.COLUMNS
+      CHARACTER_MAXIMUM_LENGTH AS character_maximum_length,EXTRA AS extra,GENERATION_EXPRESSION AS generation_expression FROM information_schema.COLUMNS
       WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='crewcheck_platform_stays'`);
     const engines = await db.query(`SELECT TABLE_NAME AS table_name,ENGINE AS engine FROM information_schema.TABLES
       WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('crewcheck_platform_profiles','crewcheck_platform_rosters','crewcheck_platform_stays')`);
@@ -14,6 +14,10 @@ export async function hotelReadiness(db) {
       engines.rows.some(row => row.table_name === name && String(row.engine).toLowerCase() === 'innodb'))) return false;
     if (!hotelSchemaReady(result.rows.map(row => row.column_name))) return false;
     const columns = new Map(result.rows.map(row => [row.column_name, row]));
+    for (const name of ['binding_id','binding_evidence','manual_hotel_override','hotel_source_snapshot','row_version']) {
+      const column = columns.get(name);
+      if (column.generation_expression !== '' || /GENERATED/i.test(column.extra || '')) return false;
+    }
     const binding = columns.get('binding_id'), version = columns.get('row_version');
     if (binding.data_type !== 'varchar' || Number(binding.character_maximum_length) !== 64
       || binding.is_nullable !== 'YES' || binding.column_default !== null) return false;
