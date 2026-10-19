@@ -9,6 +9,7 @@ on:
       - 'client/src/lib/crewcheckPushActivation.ts'
       - 'scripts/regression-web-push-cancellation-contract.mjs'
       - 'scripts/regression-web-push-lifecycle.mjs'
+      - 'scripts/regression-web-push-user-gesture.mjs'
       - 'scripts/regression-native-settings-return.mjs'
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
       - 'scripts/regression-notification-settings-dom.mjs'
@@ -26,6 +27,7 @@ on:
       - 'client/src/lib/crewcheckPushActivation.ts'
       - 'scripts/regression-web-push-cancellation-contract.mjs'
       - 'scripts/regression-web-push-lifecycle.mjs'
+      - 'scripts/regression-web-push-user-gesture.mjs'
       - 'scripts/regression-native-settings-return.mjs'
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
       - 'scripts/regression-notification-settings-dom.mjs'
@@ -66,6 +68,7 @@ jobs:
         run: |
           node scripts/regression-native-settings-return.mjs
           node scripts/regression-web-push-lifecycle.mjs
+          node scripts/regression-web-push-user-gesture.mjs
           node scripts/regression-web-push-cancellation-contract.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
@@ -84,6 +87,7 @@ jobs:
         run: |
           node scripts/regression-native-settings-return.mjs
           node scripts/regression-web-push-lifecycle.mjs
+          node scripts/regression-web-push-user-gesture.mjs
           node scripts/regression-web-push-cancellation-contract.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
