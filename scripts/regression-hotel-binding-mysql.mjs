@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import vm from 'node:vm';
 import mysql from 'mysql2/promise';
 import ts from 'typescript';
@@ -22,7 +23,8 @@ assert.equal(fs.realpathSync(socketPath), socketPath);
 const schema = `crewcheck_hotel_qa_${process.pid}`;
 assert(/^crewcheck_hotel_qa_[0-9]+$/.test(schema));
 const admin = await mysql.createConnection({ socketPath, user: 'root', password: '', database: 'crewcheck_notification_qa' });
-let pool, created = false;
+let pool, created = false, restoreCreated = false;
+const restoreSchema = schema + '_restore';
 const borrowed = new Set(), releases = [], results = [];
 const owner = 'hotel-owner-a@example.test', otherOwner = 'hotel-owner-b@example.test', key = '2030-01';
 const keyFor = value => value.toLowerCase().replaceAll(' ', '-');
@@ -256,6 +258,63 @@ try {
     assert.equal(result.hotelReconciliation.status,'review-required'); assert.equal((await rowA()).hotel_name,'Manual hotel'); preserved(before,await rowA());
     assert.deepEqual(result.full.roster,roster); assert.deepEqual(result.full.compliance,compliance); assert.deepEqual(result.full.gym,gym);
   });
+  await run('consistent synthetic logical backup restores exact schema, provenance and private fields in a fresh schema', async () => {
+    await seed();
+    await pool.query("UPDATE crewcheck_platform_stays SET row_version='9007199254740992' WHERE id='hotel-a'");
+    await runHotelTransaction(driver('backup-manual').db,patch('9007199254740992','Backup manual hotel'),options);
+    await runHotelTransaction(driver('backup-source').db,sync(),options);
+    const tables = ['crewcheck_platform_profiles','crewcheck_platform_rosters','crewcheck_platform_stays'];
+    const snapshot = [], reader = await pool.getConnection(); borrowed.add(reader);
+    try {
+      await reader.query('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+      await reader.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
+      for (const table of tables) {
+        const [definition] = await reader.query('SHOW CREATE TABLE ' + table);
+        const [columns] = await reader.query('SELECT COLUMN_NAME,DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION',[schema,table]);
+        const projection = table === 'crewcheck_platform_stays' ? '*,CAST(row_version AS CHAR) AS row_version' : '*';
+        const ordering = table === 'crewcheck_platform_profiles' ? 'email' : 'id';
+        const [data] = await reader.query(`SELECT ${projection} FROM ${table} ORDER BY ${ordering}`);
+        snapshot.push({table,ddl:definition[0]['Create Table'],columns,data});
+      }
+      // Concurrent committed write after the snapshot must not change the backup.
+      await runHotelTransaction(driver('after-backup-snapshot').db,patch('9007199254740994','After backup snapshot'),options);
+      const [stable] = await reader.query("SELECT hotel_name FROM crewcheck_platform_stays WHERE id='hotel-a'");
+      assert.equal(stable[0].hotel_name,'Backup manual hotel');
+      await reader.query('COMMIT');
+    } catch (error) { await reader.query('ROLLBACK'); throw error; }
+    finally { borrowed.delete(reader); reader.release(); }
+    // In-memory logical fixture backup only: no real dump, secret or payload is published.
+    const serialized = JSON.stringify(snapshot), digest = createHash('sha256').update(serialized).digest('hex');
+    assert.equal(digest.length,64);
+    assert(/^crewcheck_hotel_qa_[0-9]+_restore$/.test(restoreSchema));
+    await admin.query(`CREATE DATABASE ${restoreSchema} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`); restoreCreated = true;
+    const restored = await mysql.createConnection({socketPath,user:'root',password:'',database:restoreSchema,supportBigNumbers:true,bigNumberStrings:true,dateStrings:true});
+    try {
+      assert.equal((await restored.query('SELECT DATABASE() AS name'))[0][0].name,restoreSchema);
+      const decoded = JSON.parse(serialized);
+      for (const entry of decoded) {
+        await restored.query(entry.ddl);
+        const names = entry.columns.map(column => column.COLUMN_NAME);
+        for (const row of entry.data) {
+          const values = entry.columns.map(column => column.DATA_TYPE === 'json' && row[column.COLUMN_NAME] !== null ? JSON.stringify(row[column.COLUMN_NAME]) : row[column.COLUMN_NAME]);
+          await restored.query(`INSERT INTO ${entry.table} (${names.map(name => '`'+name+'`').join(',')}) VALUES (${names.map(() => '?').join(',')})`,values);
+        }
+        const projection = entry.table === 'crewcheck_platform_stays' ? '*,CAST(row_version AS CHAR) AS row_version' : '*';
+        const ordering = entry.table === 'crewcheck_platform_profiles' ? 'email' : 'id';
+        const [data] = await restored.query(`SELECT ${projection} FROM ${entry.table} ORDER BY ${ordering}`);
+        assert.deepEqual(JSON.parse(JSON.stringify(data)),entry.data,entry.table + ' exact restored data');
+        const [definition] = await restored.query('SHOW CREATE TABLE '+entry.table);
+        assert.equal(definition[0]['Create Table'],entry.ddl,entry.table + ' exact restored DDL');
+      }
+      assert.equal(await hotelReadiness(mysqlAdapter({query:(sql,values)=>restored.query(sql,values)})),true);
+      const saved = decoded.find(entry => entry.table === 'crewcheck_platform_stays').data.find(row => row.id === 'hotel-a');
+      assert.equal(saved.row_version,'9007199254740994');
+      assert(saved.binding_evidence); assert(saved.manual_hotel_override); assert(saved.hotel_source_snapshot);
+      assert.equal((await rowA()).hotel_name,'After backup snapshot');
+      console.log('Synthetic backup verified:',JSON.stringify({sha256:digest,tables:decoded.length,rows:decoded.reduce((n,entry)=>n+entry.data.length,0),restoredExactly:true,productionData:false}));
+    } finally { await restored.end(); }
+    await admin.query(`DROP DATABASE ${restoreSchema}`); restoreCreated = false;
+  });
   await run('real metadata incompatibilities close writes without schema fallback', async () => {
     await seed(); await pool.query('ALTER TABLE crewcheck_platform_stays MODIFY row_version BIGINT NOT NULL DEFAULT 0');
     assert.equal(await hotelReadiness(driver('signed-version').db),false);
@@ -277,6 +336,7 @@ try {
   for (const release of releases) release();
   for (const connection of borrowed) connection.destroy();
   if (pool) await pool.end();
+  if (restoreCreated) await admin.query(`DROP DATABASE ${restoreSchema}`);
   if (created) await admin.query(`DROP DATABASE ${schema}`);
   await admin.end();
 }

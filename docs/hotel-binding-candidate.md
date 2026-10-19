@@ -55,8 +55,11 @@ of the source diff.
 
 ## Migration and remaining operational gates
 
+The sanitized [operational migration plan](hotel-migration-operational-plan.md)
+explains fields, compatibility, backup/restore, rollback and remaining risks.
+
 `migrations/20261019_001_hotel_binding_candidate.sql` is an additive review-only
-file, **not executed**. It does not backfill provenance, remove legacy uniqueness,
+file, **not executed in production** (only in disposable CI fixtures). It does not backfill provenance, remove legacy uniqueness,
 change IDs/room/grants, or wire a startup migration. Legacy uniqueness conflicts
 remain explicit conflicts without deletion/merge. Review schema, all active
 writers and deletion concurrency before activation. No MySQL/MariaDB/Docker binary
