@@ -119,10 +119,10 @@ for(const text of ['não','cancelar'])test(`actual declined detail offer ${text}
 });
 
 test('actual ephemeral meu voo gate is suppressed when accepted source expires before final delivery',async()=>{
- const h=realDeparture(flights([['LA1234','08:00','09:00']]),'missing','2099-10-04T10:00:00Z');let saves=0,queries=0;
+ const h=realDeparture(flights([['LA1234','08:00','09:00']]),'missing','2099-10-04T10:00:00Z');let finalMarkup=0,queries=0;
  h.context.runRadarRace=async ctx=>{queries++;return{ok:true,flight:'LA1234',origin:'BSB',destination:'GRU',gate:'EXPIRING_GATE',scheduledDepartureUtc:ctx.gateQueryEvidence.scheduledDepartureUtc,sourceReceivedAt:'2099-10-04T09:30:01Z'};};
- const save=h.context.conciergeSaveSnapshotAsync;h.context.conciergeSaveSnapshotAsync=async(...args)=>{const result=await save(...args);if(args[2]?.preferences?.conciergeConversation){saves++;h.advanceClock(2000);}return result;};
- await h.send('telegram','portão do meu voo');assert.equal(queries,1);assert.equal(saves,1);assert.equal(h.trace.saves.filter(x=>x.lastRadar).length,0);assert.doesNotMatch(h.trace.output.join(' '),/LA1234|EXPIRING_GATE|08:00/);
+ const markup=h.context.crewcheckMenu.markup;h.context.crewcheckMenu.markup=async(...args)=>{const result=await markup(...args);if(queries&&!finalMarkup){assert.equal(typeof h.context.crewcheckTemporalDialogue.currentDeliveryCheck(),'function','source-bound final reply must carry its producer guard');finalMarkup++;h.advanceClock(2000);}return result;};
+ await h.send('telegram','portão do meu voo');assert.equal(queries,1);assert.equal(finalMarkup,1);assert.equal(h.trace.saves.filter(x=>x.lastRadar).length,0);assert.doesNotMatch(h.trace.output.join(' '),/LA1234|EXPIRING_GATE|08:00/);
 });
 
 function actualTools(h){

@@ -82,7 +82,7 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
   if(decline)return{reply:'Tudo bem. Consulta de detalhes cancelada.'};
   const records=deps.programs(snapshot.roster);let selected=null,selectedEvent=null;
   if(yes(input)){
-   if(!offer||offer.owner!==ctx.owner||offer.revision!==s.expected()||now()<offer.at||now()-offer.at>TTL)return{reply:'Não há um pedido de detalhes válido agora. Consulte sua próxima programação.'};
+   if(!offer||offer.owner!==ctx.owner||offer.revision!==s.ctx.revision||now()<offer.at||now()-offer.at>TTL)return{reply:'Não há um pedido de detalhes válido agora. Consulte sua próxima programação.'};
    s.setDeadline(offer.at);selected=records.find(r=>key(r)===offer.record);
    if(!selected||cancelled(selected))return{reply:'Essa programação mudou ou consta cancelada. Consulte a escala atual.'};
    return{reply:await s.authority.validate()?`Detalhes da programação prevista:\n${summary(selected)}`:denied};
@@ -103,7 +103,7 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
   const tomorrow=selected.display?.presentationDate===civil(now()+86_400_000),future=Number(selected.start)>now(),active=records.some(r=>Number(r.start)<=now()&&Number(r.end)>=now()),ended=records.some(r=>Number(r.end)<now()&&civil(Number(r.end))===civil(now()));
   const lead=input.includes('nao fui acionado')?'Você informou que não foi acionado. ':ended&&!active?'O período previsto de hoje terminou. Execução e acionamento não estão confirmados. ':'';
   const timing=future?`Próxima programação prevista${tomorrow?' amanhã':''}.`:'Programação prevista em andamento; execução não confirmada.';
-  if(!await s.authority.validate())return{reply:denied};s.setDeadline(now());offers.set(chat,{owner:ctx.owner,revision:s.expected(),record:key(selected),at:now()});
+  if(!await s.authority.validate())return{reply:denied};s.setDeadline(now());offers.set(chat,{owner:ctx.owner,revision:s.ctx.revision,record:key(selected),at:now()});
   return{reply:`${lead}${selectedEvent?`Voo pertinente na escala: ${selectedEvent.flightNumber}. `:''}${timing}\n${summary(selected).split('\n').slice(0,2).join('\n')}\nQuer os detalhes? Responda “sim”.`};
  }
  return{observe,run,handle,protect,

@@ -40,7 +40,7 @@ patch('conciergeRadarReply',body=>{
  if(body.includes('// Telegram Radar stays response-local.'))return body;
  const start=body.indexOf('{')+1;body=body.slice(0,start)+"\n  if (profile.channel === 'telegram' && !await crewcheckTemporalDialogue.protect(profile,snapshot)()) return gateQuerySuppressed({reason:'response-context-expired'}).message;"+body.slice(start);
  body=body.replace("  const radar = await runRadarRace(queryContext, info?.leg?.origin || '', info?.leg?.destination || '');", "  const radar = await runRadarRace(queryContext, info?.leg?.origin || '', info?.leg?.destination || '');\n  profile.conciergeResponseAuthority?.acceptRadar?.(radar,queryContext.gateQueryEvidence);");
- body=body.replace('  snapshot = currentSnapshot;', "  if (profile.channel === 'telegram' && !await profile.conciergeResponseAuthority.validate()) return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;\n  snapshot = currentSnapshot;");
+ body=body.replace('  snapshot = currentSnapshot;', "  if (profile.channel === 'telegram' && !await crewcheckTemporalDialogue.protect(profile,snapshot)()) return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;\n  snapshot = currentSnapshot;");
  const write='  if (snapshot && info?.leg) {';
  if(!body.includes(write))throw Error('missing existing Radar persistence boundary');
  body=body.replace(write,"  // Telegram Radar stays response-local. Never replace a roster after an await.\n  if (profile.channel !== 'telegram' && snapshot && info?.leg) {");
