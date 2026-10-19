@@ -32,8 +32,8 @@ const menu = home.slice(menuStart, menuEnd);
 // Ordem dos grupos: do que acontece agora para o que é eventual. Os NOMES são contrato
 // de regression-v14-3-37-flydeck-navigation-brand.mjs — renomear grupo quebra aquele gate.
 const EXPECTED_GROUPS = [
-  'Hoje', 'Preparação', 'Em operação', 'Escala e planejamento',
-  'Financeiro', 'Rotina e apoio', 'Documentos', 'Conta, ajuda e segurança',
+  'Hoje', 'Preparação', 'Em operação', 'Rotina e apoio',
+  'Escala e planejamento', 'Financeiro', 'Documentos', 'Conta, ajuda e segurança',
 ];
 const renderedGroups = [...menu.matchAll(/\{ title: '([^']+)', items: \[/g)].map((match) => match[1]);
 assert.deepEqual(
@@ -59,6 +59,9 @@ const EXPECTED_VIEWS = [
   'updates', 'maintenance', 'admin',
 ];
 const views = items.map((item) => item.view);
+assert.deepEqual(views.filter(view => !['updates', 'maintenance', 'admin'].includes(view)).slice(-3),
+  ['settings', 'manual', 'support'], 'Configurações, ajuda e suporte fecham os destinos comuns');
+assert.ok(views.indexOf('routine') < views.indexOf('import'), 'Rotina antecede o planejamento eventual');
 for (const view of EXPECTED_VIEWS) assert.ok(views.includes(view), `destino ausente do menu: ${view}`);
 assert.equal(views.length, new Set(views).size, 'nenhum destino pode aparecer duas vezes no menu');
 assert.equal(views.length, EXPECTED_VIEWS.length, 'menu ganhou ou perdeu destino sem atualizar esta regressão');
