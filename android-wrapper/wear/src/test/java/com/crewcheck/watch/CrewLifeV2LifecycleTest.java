@@ -316,6 +316,27 @@ public class CrewLifeV2LifecycleTest {
             assertNull(new WellbeingStore(context).loadCrewLife());
         }finally{service.destroy();}
     }
+    @Test public void partialJsonJournalCannotUnrevokeAndRequiresNewHandshakeInActualStore() throws Exception {
+        WellbeingStore store=new WellbeingStore(context);handshake(store,"reset",STREAM,1,STREAM);
+        handshake(store,"revoke",STREAM,3,B);
+        android.content.SharedPreferences p=context.getSharedPreferences("crewcheck_watch_wellbeing",0);
+        JSONObject revoked=new JSONObject(p.getString("crewlife_fence_v2","{}"));
+        for(int mutation=0;mutation<3;mutation++) {
+            JSONObject partial=new JSONObject(revoked.toString());
+            if(mutation==0)partial.remove("revoked");else partial.put("revoked",mutation==1?JSONObject.NULL:"false");
+            p.edit().putString("crewlife_fence_v2",partial.toString()).commit();
+            long now=ShadowSystemClock.currentTimeMillis();
+            new WellbeingStore(context).applyCrewLifeData(payload(4,78,now+1000,now+4000),NODE,now);
+            assertNull(new WellbeingStore(context).loadCrewLife());
+            assertFalse(new JSONObject(p.getString("crewlife_fence_v2","{}")).has("streamId"));
+            assertFalse(p.contains("crewlife_payload_v2"));
+        }
+        // Only a fresh challenged new generation can make valid health values available again.
+        handshake(new WellbeingStore(context),"reset",B,1,B);
+        long now=ShadowSystemClock.currentTimeMillis();
+        String raw=new JSONObject(payload(2,0,now+1000,now+4000)).put("streamId",B).toString();
+        new WellbeingStore(context).applyCrewLifeData(raw,NODE,now);assertHealthCached();
+    }
     @Test public void losingOnlyJournalClearsOrphanCiphertextBeforeChallengeResponse() throws Exception {
         WellbeingStore store=new WellbeingStore(context);handshake(store,"reset",STREAM,1,STREAM);
         long now=ShadowSystemClock.currentTimeMillis();store.applyCrewLifeData(payload(2,78,now+1000,now+4000),NODE,now);assertHealthCached();

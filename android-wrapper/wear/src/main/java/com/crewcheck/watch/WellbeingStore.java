@@ -70,14 +70,8 @@ public final class WellbeingStore {
             org.json.JSONObject state=new org.json.JSONObject(preferences.getString(FENCE, "{}"));
             boolean hasCipher=preferences.contains(V2_PAYLOAD)||preferences.contains(V2_IV)
                     ||preferences.contains(CREWLIFE_PAYLOAD)||preferences.contains(CREWLIFE_IV);
-            boolean hasActive=state.has("streamId")||state.has("node")||state.has("revision");
-            if(hasActive) {
-                CrewLifeSnapshot.nonce(state.opt("streamId"));
-                CrewLifeSnapshot.positive(state.opt("revision"));
-                Object node=state.opt("node");
-                if(!(node instanceof String)||((String)node).isBlank()||((String)node).length()>256)
-                    throw new IllegalArgumentException("Invalid receiver journal.");
-            }
+            CrewLifeFence.validateJournal(state);
+            boolean hasActive=state.has("streamId");
             if(hasCipher&&!hasActive) throw new IllegalArgumentException("Ciphertext without receiver journal.");
             return state;
         } catch (org.json.JSONException | IllegalArgumentException corruptJournal) {

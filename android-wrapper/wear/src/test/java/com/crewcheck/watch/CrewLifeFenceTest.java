@@ -71,7 +71,7 @@ public final class CrewLifeFenceTest {
     }
     @Test public void malformedControlHasNoAckAndPreservesReplayFence() throws Exception {
         CrewLifeFence r=reset();CrewLifeFence bad=CrewLifeFence.control(r.state,"{}",NODE);
-        assertNull(bad.ack);assertTrue(bad.clearValues);assertEquals(r.state.toString(),bad.state.toString());
+        assertNull(bad.ack);assertTrue(bad.clearValues);assertEquals(r.state.toMap(),bad.state.toMap());
     }
     @Test public void journalLossCounterexampleNowRejectsDelayedResetAndOldData() throws Exception {
         CrewLifeFence oldChallenge=CrewLifeFence.control(new JSONObject(),request("reset",STREAM,1,STREAM),NODE);
@@ -112,7 +112,7 @@ public final class CrewLifeFenceTest {
     @Test public void nonceRandomFailureCannotEmitChallengeOrMutateFence() throws Exception {
         JSONObject state=reset().state;
         CrewLifeFence failure=CrewLifeFence.control(state,request("reset",B,1,B),NODE,()->{throw new IllegalStateException("synthetic RNG failure");});
-        assertNull(failure.ack);assertEquals(state.toString(),failure.state.toString());assertTrue(failure.clearValues);
+        assertNull(failure.ack);assertEquals(state.toMap(),failure.state.toMap());assertTrue(failure.clearValues);
     }
     @Test public void challengeRetryIsIdempotentWhileNewRequestUsesFreshNonce() throws Exception {
         CrewLifeFence c=CrewLifeFence.control(new JSONObject(),request("reset",STREAM,1,STREAM),NODE);
@@ -154,6 +154,56 @@ public final class CrewLifeFenceTest {
         CrewLifeFence revoked=CrewLifeFence.data(active.state,tombstone.toString(),NODE,NOW);
         assertTrue(revoked.state.getBoolean("revoked"));assertEquals(3,revoked.state.getLong("revision"));assertTrue(revoked.clearValues);
         assertNull(CrewLifeFence.data(revoked.state,data(4,78),NODE,NOW).snapshot);
+    }
+    @Test public void removingRevokedFromValidJsonCannotResumeValuesWithoutReset() throws Exception {
+        CrewLifeFence revoked=apply(reset().state,"revoke",STREAM,3,B);
+        JSONObject partial=new JSONObject(revoked.state.toString());partial.remove("revoked");
+        CrewLifeFence incoming=CrewLifeFence.data(partial,data(4,78),NODE,NOW);
+        assertNull(incoming.snapshot);assertTrue(incoming.clearValues);assertEquals(0,incoming.state.length());
+        assertNull(CrewLifeFence.control(partial,control("reset",STREAM,5,B),NODE).ack);
+    }
+    @Test public void allMandatorySecurityJournalFieldsRejectMissingNullAndWrongType() throws Exception {
+        JSONObject revoked=apply(reset().state,"revoke",STREAM,3,B).state;
+        for(String key:new String[]{"journalVersion","journalPhase","streamId","node","revision","revoked","op",
+                "requestId","fingerprint","retiredStreams","appliedReceipt","lastKind"}) {
+            for(int mutation=0;mutation<3;mutation++) {
+                JSONObject partial=new JSONObject(revoked.toString());
+                if(mutation==0)partial.remove(key);else partial.put(key,mutation==1?JSONObject.NULL:new JSONObject());
+                assertThrows(key+"/"+mutation,IllegalArgumentException.class,()->CrewLifeFence.validateJournal(partial));
+                CrewLifeFence incoming=CrewLifeFence.data(partial,data(4,78),NODE,NOW);
+                assertNull(key,incoming.snapshot);assertTrue(key,incoming.clearValues);assertEquals(key,0,incoming.state.length());
+            }
+        }
+    }
+    @Test public void securityTuplesRejectPartialNullWrongTypesAndNoncanonicalValues() throws Exception {
+        JSONObject active=reset().state;
+        for(String tuple:new String[]{"appliedReceipt","pendingChallenge"}) {
+            JSONObject state=new JSONObject(active.toString());
+            if(tuple.equals("pendingChallenge"))state=CrewLifeFence.control(state,request("revoke",STREAM,3,B),NODE).state;
+            for(String key:new String[]{"node","action","streamId","revision","requestId","wearChallenge"}) {
+                for(int mutation=0;mutation<3;mutation++) {
+                    JSONObject bad=new JSONObject(state.toString());JSONObject row=bad.getJSONObject(tuple);
+                    if(mutation==0)row.remove(key);else row.put(key,mutation==1?JSONObject.NULL:new JSONObject());
+                    assertThrows(tuple+"/"+key,IllegalArgumentException.class,()->CrewLifeFence.validateJournal(bad));
+                }
+            }
+        }
+        for(String key:new String[]{"revision","revoked","journalVersion"}) {
+            JSONObject bad=new JSONObject(active.toString());bad.put(key,"1");
+            assertThrows(key,IllegalArgumentException.class,()->CrewLifeFence.validateJournal(bad));
+        }
+    }
+    @Test public void contradictoryJournalStatesAndPartialActivePhaseFailClosed() throws Exception {
+        JSONObject revoked=apply(reset().state,"revoke",STREAM,3,B).state;
+        for(String key:new String[]{"revoked","lastKind","op"}) {
+            JSONObject bad=new JSONObject(revoked.toString());bad.put(key,key.equals("revoked")?false:"snapshot");
+            assertThrows(IllegalArgumentException.class,()->CrewLifeFence.validateJournal(bad));
+        }
+        JSONObject pending=CrewLifeFence.control(revoked,request("reset",B,1,B),NODE).state;
+        JSONObject fragment=new JSONObject().put("journalVersion",1).put("journalPhase","active").put("pendingChallenge",pending.getJSONObject("pendingChallenge"));
+        assertThrows(IllegalArgumentException.class,()->CrewLifeFence.validateJournal(fragment));
+        JSONObject unknown=new JSONObject(revoked.toString()).put("extra",true);
+        assertThrows(IllegalArgumentException.class,()->CrewLifeFence.validateJournal(unknown));
     }
     @Test public void pendingReplacementNeverActivatesStreamOrClearsExistingValues() throws Exception {
         CrewLifeFence r=reset();CrewLifeFence data=CrewLifeFence.data(r.state,data(2,78),NODE,NOW);
