@@ -173,3 +173,9 @@ for(const change of ['binding','roster'])test(`entry authority is retained while
  h.setTranscribe(async()=>{transcribed++;if(change==='binding')h.profile.email='route-b@example.invalid';else{const replacement=data('estimated');replacement.days[1].legs[0].presentationTime='07:30';h.setRoster(replacement);}});
  await h.audio();assert.equal(transcribed,1);assert.equal(synthesized,0);assert.equal(h.voice.length,0);assert.equal(h.trace.output.length,0,'old request must not be reinterpreted under a new entry authority');
 });
+
+test('public acknowledgement of existing binding flow remains deliverable',async()=>{
+ const h=realDeparture(data('estimated'),'missing',at);h.profile.linked=false;let bound=0;
+ h.context.telegramTryBindFromWebhook=async message=>{bound++;h.profile.linked=true;await h.context.sendTelegramMessage(message.chat.id,'Vínculo confirmado.');return true;};
+ await h.send('telegram','/start synthetic-binding');assert.equal(bound,1);assert.match(h.trace.output.at(-1),/Vínculo confirmado/);
+});

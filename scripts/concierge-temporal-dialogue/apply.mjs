@@ -30,7 +30,7 @@ patch('sendTelegramMessage',body=>{
  const before='  const deliveryCheck = crewcheckMenu.deliveryCheck(extra);';
  if(!body.includes(before))throw Error('missing final transport authority from parent1128');
  return body.replace(before,`  const producerDeliveryCheck = crewcheckMenu.deliveryCheck(extra);
-  const contextCheck = producerDeliveryCheck ? crewcheckTemporalDialogue.currentTurnCheck() : crewcheckTemporalDialogue.currentDeliveryCheck();
+  const contextCheck = producerDeliveryCheck || crewcheckMenu.hasOwnerGuard(extra) ? crewcheckTemporalDialogue.currentTurnCheck() : crewcheckTemporalDialogue.currentDeliveryCheck();
   const deliveryCheck = producerDeliveryCheck || contextCheck ? () => (!producerDeliveryCheck || producerDeliveryCheck()) && (!contextCheck || contextCheck()) : null;`);
 });
 patch('conciergeRadarReply',body=>{

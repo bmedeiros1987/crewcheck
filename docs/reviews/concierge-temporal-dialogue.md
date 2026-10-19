@@ -24,4 +24,6 @@ Existing synchronous link/snapshot readers provide the final no-await cache chec
 
 The existing Radar producer must still match the initial full revision before its real bound-leg enrichment. The adapter records the exact minimized post-enrichment roster before the save and compares the writer result to that expected shape. It never adopts an external revision merely because a flight survives. Fixtures execute the real conciergeApplyRadar and real sync/async profile readers with copied snapshots. They include positive unchanged Radar/voice/echo controls, not only suppressions.
 
-This R2 remains local pending the coordinator's consolidated review instructions. No shared Tom/Voz preferences files, preview assets, services, credentials, real messages or paid synthesis are changed.
+This R2 is prepared for renewed draft review over parent1128 HEAD8479907b, with the original b9c97a1b evidence preserved. Both PRs remain HOLD for independent review; no integration is authorized by a passing local suite. No shared Tom/Voz preferences files, preview assets, services, credentials, real messages or paid synthesis are changed.
+
+Public/unlinked onboarding acknowledgements retain their existing producer authorization. Owner-guarded frames require the admitted linked principal; unguarded public frames retain turn checks without creating private authority. A public binding-boundary acknowledgement is a positive control. No binding/token/permission implementation is changed.
