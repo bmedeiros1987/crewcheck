@@ -131,15 +131,27 @@ self.addEventListener('install', (event) => {
   event.waitUntil(precachePreparedShell());
 });
 
+// A closing window does not fire activate again. A fresh navigation provides
+// another opportunity, but only its brand-new resulting client may be excluded:
+// existing/hidden/uncontrolled documents can still need prior build chunks.
+async function cleanupRetiredBuildCaches(arrivingClientId = '') {
+  const hasExistingPages = async () => (await self.clients.matchAll({type:'window',includeUncontrolled:true}))
+    .some(page => page.id !== arrivingClientId);
+  if (await hasExistingPages()) return false;
+  const names = await caches.keys();
+  for (const name of names) {
+    if (!/^crewcheck-v[\d.]+-(?:offline-)?(?:shell|runtime)(?:-[a-zA-Z0-9]+)*$/.test(name)
+        || [CACHE_NAME,RUNTIME_CACHE,SHARED_PDF_CACHE].includes(name)) continue;
+    if (await hasExistingPages()) return false;
+    await caches.delete(name);
+  }
+  return true;
+}
+
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
-    const names = await caches.keys();
+    await cleanupRetiredBuildCaches();
     const openPages=await self.clients.matchAll({type:'window',includeUncontrolled:true});
-    await Promise.all(
-      names
-        .filter((name) => openPages.length===0 && /crewcheck|workbox|vite/i.test(name) && ![CACHE_NAME, RUNTIME_CACHE, SHARED_PDF_CACHE].includes(name))
-        .map((name) => caches.delete(name)),
-    );
     if(openPages.length===0)await cleanupSharedPdfs();
     await self.clients.claim();
   })().catch(() => self.clients.claim()));
@@ -211,6 +223,9 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
+      const arrivingClientId = !event.clientId && typeof event.resultingClientId === 'string'
+        ? event.resultingClientId : '';
+      await cleanupRetiredBuildCaches(arrivingClientId).catch(() => undefined);
       try {
         const response = await fetch(request, { cache: 'no-store' });
         if (response.ok && /^[a-f0-9]{20}$/.test(CREWCHECK_UPDATE_BUILD_ID) && (await matchesBuildHtml(response))) {

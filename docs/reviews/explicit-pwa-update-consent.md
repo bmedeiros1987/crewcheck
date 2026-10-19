@@ -27,8 +27,9 @@ composed separately, is hidden while the update notice is visible.
 
 Activation preserves old cache versions while windows remain open, and old chunks
 can be read offline by those documents. Existing shared-PDF storage is not deleted
-by the update action. Obsolete cache cleanup is deferred until activation without
-open windows; long-lived tabs can retain additional browser storage until then.
+by the update action. Obsolete cache cleanup runs at activation without open windows or a qualifying
+fresh navigation after prior documents close. Long-lived tabs can retain extra
+browser storage until that safe opportunity.
 Browser eviction/quota and physical iOS/PWA behavior remain validation limits.
 
 Tests use actual workers on localhost and simulated controller failures. They cover
@@ -53,3 +54,9 @@ The final HOLD also identified a shared sequence counter that let concurrent dis
 The ef18b39d review correctly found that canonical serveStatic added the cc-no-floating-shortcuts style after Vite sealed the HTML. A shared, idempotent guard now preserves the identical original CSS in both the build output and prepared static handler; the build seals the guarded bytes. Exact SHA-256 verification remains unchanged. The new canonical regression runs the same source preparation used before npm start, extracts and executes the actual prepared serveStatic with real fs and local HTTP, checks root/index/SPA/fallback byte parity, and installs the real emitted worker in VM against that handler before requesting readiness. It does not start the full application, scheduler, account readers or providers. Build/start preparation parity is tested; physical browser install remains unproven.
 
 Ready suppression is scoped to the same build identifier. The real coordinator VM regression now confirms A, discovers and defers B, then discovers/activates/confirms C in the same open tab; B's deferral does not hide C, and the old timeout cannot overwrite confirmed C.
+
+## Retiring builds after windows close
+
+Activation retains old shell/runtime caches whenever any origin window remains, including hidden or uncontrolled documents. Closing windows does not fire activation again. A fresh navigation now retries retirement, excluding only that FetchEvent's brand-new resulting client when there is no initiating client. Existing windows still prevent all retirement, and clients are rechecked before each deletion. If enumeration fails, navigation continues with caches retained. Only versioned CrewCheck shell/runtime cache names are eligible; current caches, shared PDFs and unrelated caches are preserved. No timer, background task, forced reload or new permission is introduced. Cleanup is eventual on a qualifying navigation, not a guarantee while no browser events run; clients without sufficient identity remain conservative.
+
+The real Chromium/local-worker regression consent-activates A/B/C, checks old unsaved documents and offline assets, closes all origin windows, and reopens C without a new activation event. It verifies retirement of A/B, preservation of current/shared/unrelated caches and offline C afterwards. This is synthetic Chromium evidence, not physical Safari validation or a browser-quota guarantee.
