@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createTelegramMenu, menuTemplate, menuGreeting, hotelsUrl } from '../../server/concierge/telegram-menu.mjs';
+import { stayMenuReply } from '../../server/concierge/stay-menu.mjs';
 import { createTelegramMenuTransport } from '../../server/concierge/telegram-menu-transport.mjs';
 
 const materialized = process.argv.includes('--materialized') || process.env.TELEGRAM_MENU_MATERIALIZED === '1';
@@ -211,8 +212,8 @@ test('edit transport handles missing configuration and malformed provider JSON',
 });
 
 async function openQuestion(f, label) {
-  await f.root(); await f.press(f.latest(), label === '📡 Radar' ? '📅 Programação' : '➕ Mais');
-  if (label !== '📡 Radar') await f.press(f.latest(), '🌤️ Meteorologia');
+  await f.root(); await f.press(f.latest(), ['📡 Radar', '🚪 Portão'].includes(label) ? '📅 Programação' : '➕ Mais');
+  if (!['📡 Radar', '🚪 Portão'].includes(label)) await f.press(f.latest(), '🌤️ Meteorologia');
   await f.press(f.latest(), label);
   return structuredClone(f.latest());
 }
@@ -484,3 +485,23 @@ for(const stage of ['snapshot','producer']) test(`owner change during ${stage} c
   if(stage==='snapshot')f.onSnapshot(()=>f.relink()); else f.onReply(()=>f.relink());
   await f.press(nav,'📅 Hoje'); assert.equal(f.count('sendMessage'),sends); assert.equal(f.producers.length,stage==='snapshot'?0:1);
 });
+
+
+for (const alias of ['Hotéis', 'hoteis', '🏨 Hotéis', 'Meu pernoite', '🏨 Meu pernoite']) {
+  for (const question of ['🌤️ METAR', '🌤️ TAF', '📻 ATIS', '📡 Radar', '🚪 Portão']) for (const replyMode of ['none', 'current', 'old']) {
+    test(`public stay alias ${alias} interrupts ${question}, reply ${replyMode}`, async () => {
+      const f = fixture(), prompt = await openQuestion(f, question);
+      await f.handoff(f.makeInput(alias, replyMode === 'old' ? { message_id: 1 } : replyMode === 'current' ? prompt : null));
+      assert.equal(f.routes.length, 1, 'supported alias must reach the existing downstream handler');
+      assert.equal(f.routes[0].text, alias); assert.deepEqual(f.producers, []);
+      const original = f.routes[0].text;
+      const command = materialized ? vm.runInNewContext(`${extract(producerSource, 'normalizeConciergeButtonText')}; normalizeConciergeButtonText(input)`, { input: original }) : original;
+      if (materialized) assert.equal(command, '/hoteis', 'actual materialized alias normalizer');
+      const result = await stayMenuReply(command, {}, { readHistory: () => { throw Error('No history read allowed'); } });
+      assert.equal(result.handled, true); assert.match(result.reply, /Meu pernoite/);
+      const sends = f.count('sendMessage'); await f.press(prompt, '✖️ Cancelar');
+      assert.match(f.answers.at(-1), /expirou/); assert.equal(f.count('sendMessage'), sends);
+      assert.equal(await f.input(f.makeInput(['📡 Radar', '🚪 Portão'].includes(question) ? 'LA1234' : 'SBGR', prompt)), false, 'retired question cannot resume');
+    });
+  }
+}

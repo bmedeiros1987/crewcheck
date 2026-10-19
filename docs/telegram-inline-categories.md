@@ -28,4 +28,13 @@ No changes to financial/Home/phone/platform/auth domains, ASB measurement, the V
 
 ## Offline validation
 
-The same 81 navigation cases run raw and after full source materialization, with synthetic transport, identity and snapshots. They cover layout, real action selection, Voltar/Início, prompt correlation/cancel, one-use/concurrent replay, expiry/restart, private sender/chat checks, revocation, account replacement during reads, uncertain edits, short financial details and refresh isolation. Existing integration regressions exercise the actual materialized webhook/runtime/sender and factual handler. CI preserves raw/prepared logs, exact HEAD/base and source hashes for independent review.
+The same 156 navigation cases run raw and after full source materialization, with synthetic transport, identity and snapshots. They cover layout, real action selection, Voltar/Início, prompt correlation/cancel, one-use/concurrent replay, expiry/restart, private sender/chat checks, revocation, account replacement during reads, uncertain edits, short financial details and refresh isolation. Existing integration regressions exercise the actual materialized webhook/runtime/sender and factual handler. CI preserves raw/prepared logs, exact HEAD/base and source hashes for independent review.
+
+
+## Review correction: public stay aliases
+
+Independent review found that deriving all priority intents from visible labels dropped “Hotéis” when the root label became “Pernoite”. Keep existing public aliases in a separate explicit set. “Hotéis”/“Hoteis”, emoji Hotéis and Meu pernoite now leave an active Radar/METAR question and reach the existing stay handler, even when replying to an older message. Old prompt callbacks remain retired; callback validation is unchanged.
+
+Counterproof on the first menu HEAD0880c039: the75 added alias/question/reply fixtures fail raw and materialized (81 pass/75 fail). With the correction, all156 cases pass raw and materialized; the materialized normalizer resolves each alias to /hoteis and the actual stay handler returns its existing menu without storage reads. CI14success/2skip and verified artifact12206380494 belong only to0880c039; they do not certify the correction. The corrected HEAD requires its own review and CI.
+
+The final alias matrix expands to75 cases: five stay aliases × METAR/TAF/ATIS/Radar/Portão × no reply/current reply/old reply. It includes the reviewer's complete45-case reported subset plus Meu pernoite aliases. Each case verifies downstream handoff, the existing handler, retired callbacks and a nonresumable prior question. No callback rule is relaxed.

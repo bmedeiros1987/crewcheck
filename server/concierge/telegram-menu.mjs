@@ -24,7 +24,11 @@ const parameters = { radar: 'Digite o voo, por exemplo LA1234.', portao: 'Digite
 const TTL = 15 * 60_000;
 const MAX = 2000;
 const foldMenuText = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/^[^\p{L}/]+/u, '').trim().toUpperCase();
-const navigationNames = new Set([...Object.values(pages).flat().map(([label]) => foldMenuText(label)), 'MENU', 'AJUDA', 'HELP', 'INICIO', 'VOLTAR AO MENU', 'CONFIGURACOES', 'MINHA ESCALA']);
+// Public text aliases belong to the existing routers, independently of labels.
+// Renaming a button must not turn a supported navigation intent into a flight
+// or airport parameter while a guided question is active.
+const navigationAliases = ['MENU', 'AJUDA', 'HELP', 'INICIO', 'VOLTAR AO MENU', 'CONFIGURACOES', 'MINHA ESCALA', 'HOTEIS', 'MEU PERNOITE'];
+const navigationNames = new Set([...Object.values(pages).flat().map(([label]) => foldMenuText(label)), ...navigationAliases]);
 const priorityNavigation = value => /^\/|\bEMERGENCIA\b|^SOS\b/.test(foldMenuText(value)) || navigationNames.has(foldMenuText(value));
 export const hotelsUrl = 'https://crewcheck.online/?view=hotels';
 export const financeUrl = 'https://crewcheck.online/?view=perdiem';
