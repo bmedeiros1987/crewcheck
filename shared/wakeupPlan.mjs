@@ -51,10 +51,15 @@ export function wakeNextConfirmed(jobs, state, now=Date.now()) {
   if (overdue) return {kind:'overdue', next:overdue};
   return {kind:'none', next:null};
 }
-export function wakeReceiptConfirmed(request, receipt, jobs) {
-  if (!receipt || receipt.ok!==true || receipt.jobKey!==request.jobKey || receipt.channel!==request.channel || epoch(receipt.scheduledAt)!==epoch(request.scheduledAt) || !Number.isFinite(epoch(request.scheduledAt)) || !Array.isArray(jobs)) return false;
-  return jobs.some(value=>{
-    const job=wakeJob(value);
-    return job && job.jobKey===request.jobKey && job.channel===request.channel && job.at===epoch(request.scheduledAt) && job.status===receipt.status;
-  });
+export function wakeReceiptState(request, receipt, jobs, now=Date.now()) {
+  if (!Number.isFinite(now) || !receipt || receipt.ok!==true || receipt.jobKey!==request.jobKey || receipt.channel!==request.channel || epoch(receipt.scheduledAt)!==epoch(request.scheduledAt) || !Number.isFinite(epoch(request.scheduledAt)) || !Array.isArray(jobs)) return 'unconfirmed';
+  const job=jobs.map(wakeJob).find(job=>job && job.jobKey===request.jobKey && job.channel===request.channel && job.at===epoch(request.scheduledAt) && job.status===receipt.status);
+  if(!job)return 'unconfirmed';
+  if(job.status==='pending')return job.at>now?'scheduled':'overdue';
+  if(['processing','dispatching'].includes(job.status))return 'sending';
+  if(['uncertain','partial'].includes(job.status))return 'uncertain';
+  return 'terminal';
+}
+export function wakeReceiptConfirmed(request, receipt, jobs, now=Date.now()) {
+  return wakeReceiptState(request,receipt,jobs,now)==='scheduled';
 }

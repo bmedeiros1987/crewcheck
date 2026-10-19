@@ -92,3 +92,19 @@ Incidente Voice: preservar investigação separada. O código canônico manual e
 fila diferem no fallback de voz configurada após HTTP400; a comparação sintética
 reproduziu essa diferença sem rede. Não há prova de que tal resposta/configuração
 ocorreu às07:30. Ainda faltam job/recibo correlacionados e login no portal existente.
+
+## Review corrections after 120adf99
+
+A failed Voice dispatch consumes the occurrence attempt across later plan revisions.
+Informative edits can still be represented, but the failed call slot and its original
+key carry forward, blocking both direct and fallback call execution for that occurrence.
+Invalidation only withdraws confidence; `local.everConfirmed` preserves the obligation
+to revoke a previously armed ticket. Revision requires an explicit old-revision
+revocation receipt even after roster/timezone invalidation, reboot or force-stop. A
+new arm receipt does not cancel the prior alarm. All capabilities remain OFF.
+
+Revocation is matched to the old account/occurrence/revision, device, stable native
+`ticketId`, scheduled ring instant and complete old plan binding. An arm receipt
+without a ticket ID cannot establish a confirmed local alarm. A revocation from a
+different device or ticket, even with matching plan scope, cannot authorize replacement.
+The synthetic lifecycle suite now contains 149 assertions; none activates a native adapter.

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {wakeCivilDate,wakeDateFields,wakeNextConfirmed,wakePlanConflict,wakeReceiptConfirmed} from '../shared/wakeupPlan.mjs';
+import {wakeCivilDate,wakeDateFields,wakeNextConfirmed,wakePlanConflict,wakeReceiptConfirmed,wakeReceiptState} from '../shared/wakeupPlan.mjs';
 let checks=0;const eq=(actual,expected)=>{checks++;assert.deepEqual(actual,expected);};
 const now=Date.parse('2032-02-01T08:00:00Z');
 const job=(extra={})=>({id:1,jobKey:'wakeup:synthetic:one',channel:'telegram',scheduledAt:'2032-02-01T09:00:00Z',status:'pending',...extra});
@@ -16,6 +16,13 @@ const request={jobKey:job().jobKey,channel:'telegram',scheduledAt:job().schedule
 eq(wakeReceiptConfirmed(request,receipt,[job()]),true);eq(wakeReceiptConfirmed(request,{ok:true},[job()]),false);eq(wakeReceiptConfirmed(request,receipt,null),false);eq(wakeReceiptConfirmed(request,receipt,[]),false);
 for(const extra of [{jobKey:'wakeup:foreign:one'},{channel:'phone-call'},{scheduledAt:'2032-02-01T10:00:00Z'},{ok:false},{status:'sent'}])eq(wakeReceiptConfirmed(request,{...receipt,...extra},[job()]),false);
 eq(wakeReceiptConfirmed(request,{...receipt,scheduledAt:'2032-02-01T06:00:00-03:00'},[job()]),true);
+for(const status of ['sent','failed','expired','cancelled','held','uncertain','partial','processing','dispatching'])eq(wakeReceiptConfirmed(request,{...receipt,status},[job({status})]),false);
+eq(wakeReceiptConfirmed(request,receipt,[job()],Date.parse(request.scheduledAt)),false);
+eq(wakeReceiptConfirmed(request,receipt,[job()],NaN),false);
+for(const status of ['sent','failed','cancelled','held','expired'])eq(wakeReceiptState(request,{...receipt,status},[job({status})]),'terminal');
+for(const status of ['uncertain','partial'])eq(wakeReceiptState(request,{...receipt,status},[job({status})]),'uncertain');
+eq(wakeReceiptState(request,receipt,[job()]),'scheduled');
+eq(wakeReceiptState(request,receipt,[job()],Date.parse(request.scheduledAt)),'overdue');
 const tz=process.env.TZ;
 for(const zone of ['UTC','America/Sao_Paulo','Europe/Lisbon']){
  process.env.TZ=zone;const d=wakeCivilDate('2032-02-29','04:30');eq(wakeDateFields(d),{day:'2032-02-29',time:'04:30'});eq(wakeCivilDate('2032-02-30','04:30'),null);eq(wakeCivilDate('2032-02-29','24:00'),null);eq(wakeCivilDate('bad','04:30'),null);

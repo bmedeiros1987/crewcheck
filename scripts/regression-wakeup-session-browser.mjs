@@ -10,7 +10,7 @@ const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');
 const begin=home.indexOf('function WakeupView('),end=home.indexOf('function PresentationManagerView',begin);
 assert(begin>=0&&end>begin);const wake=home.slice(begin,end);const kpiBegin=home.indexOf('function KpiCard('),kpiEnd=home.indexOf('\ntype RadarSnapshot',kpiBegin);assert(kpiBegin>=0&&kpiEnd>kpiBegin);const kpi=home.slice(kpiBegin,kpiEnd);
 assert(wake.includes('const wakeSession = useRef'),'run canonical preparation before host UI regression');
-const hostPrelude=`import{WakeClockOptions}from'./client/src/components/notifications/WakeClockOptions';import{WakeupSimpleCard}from'./client/src/components/notifications/WakeupSimpleCard';import{wakeCivilDate,wakeDateFields,wakePlanConflict,wakeReceiptConfirmed,wakeNextConfirmed}from'./shared/wakeupPlan.mjs';import{setCrewCheckThemePreference}from'./client/src/lib/themeRuntime';window.fixtureTheme=setCrewCheckThemePreference;import React,{useState,useRef,useEffect} from 'react';import{getToken,authFetch,getStoredUser}from'./client/src/lib/authClient';
+const hostPrelude=`import{WakeClockOptions}from'./client/src/components/notifications/WakeClockOptions';import{WakeupSimpleCard}from'./client/src/components/notifications/WakeupSimpleCard';import{wakeCivilDate,wakeDateFields,wakePlanConflict,wakeReceiptConfirmed,wakeReceiptState,wakeNextConfirmed}from'./shared/wakeupPlan.mjs';import{setCrewCheckThemePreference}from'./client/src/lib/themeRuntime';window.fixtureTheme=setCrewCheckThemePreference;import React,{useState,useRef,useEffect} from 'react';import{getToken,authFetch,getStoredUser}from'./client/src/lib/authClient';
 const storage={get:(key,fallback)=>localStorage.getItem(key)||fallback,set:(key,value)=>localStorage.setItem(key,value)};
 const toast=Object.fromEntries(['success','error','info','message'].map(name=>[name,(message)=>{(window.fixtureToasts ||= []).push(message);} ]));
 const isAdmin=()=>false,wakeupLeadMinutes=()=>90,wakeupChannel=()=> 'telegram',safe=(v,f)=>v||f,city=v=>v;
@@ -162,6 +162,31 @@ try{
  await page.evaluate(()=>{window.fixtureToasts=[];window.fixturePost=async(path,body)=>{window.fixturePosts.push({path,body});return {ok:true,...body,status:'pending'};};});
  await primary.click();await page.waitForFunction(()=>window.fixtureToasts.some(value=>value.includes('Não foi possível confirmar este agendamento')));assert.equal(await next.getByText('Agendado no servidor',{exact:true}).count(),0);
  await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);
+ // Matching persisted terminal/uncertain receipts remain real history, never scheduled success.
+ for(const status of ['sent','failed','cancelled','uncertain','partial','processing','dispatching','expired','held']){
+  await page.evaluate(()=>{window.fixtureConfirmedJobs=[];window.fixtureToasts=[];window.dispatchEvent(new Event('crewcheck:notification-jobs-changed'));});await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);
+  await page.evaluate(status=>{window.fixturePost=async(path,body)=>{window.fixturePosts.push({path,body});window.fixtureConfirmedJobs=[{id:501,...body,status}];return {ok:true,...body,status};};},status);
+  await primary.click();await page.waitForFunction(()=>window.fixtureToasts.some(value=>value.includes('Registro persistido')));
+  assert(!(await page.evaluate(()=>window.fixtureToasts)).some(value=>value.includes('Registro confirmado')),'non-pending receipt cannot announce scheduled: '+status);
+  assert.equal(await next.getByText('Agendado no servidor',{exact:true}).count(),0);
+  assert.equal(await page.evaluate(()=>window.fixtureConfirmedJobs[0].status),status,'never rewrite persisted status');
+  if(['uncertain','partial'].includes(status))assert((await next.textContent()).includes('Resultado não confirmado'));
+ }
+ // Focus during an accepted POST must retain its operation; stale pre-commit GET cannot erase readback.
+ for(const holdOldRead of [false,true]){
+  await page.evaluate(()=>{window.fixtureConfirmedJobs=[];window.fixturePosts=[];window.fixtureToasts=[];window.dispatchEvent(new Event('crewcheck:notification-jobs-changed'));});await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);
+  await page.evaluate(()=>{window.fixturePost=(path,body)=>{window.fixturePosts.push({path,body});return new Promise(resolve=>window.resolveFocusPost=()=>{window.fixtureConfirmedJobs=[{id:501,...body,status:'pending'}];resolve({ok:true,...body,status:'pending'});});};});
+  await primary.click();await page.waitForFunction(()=>window.fixturePosts.length===1);
+  if(holdOldRead)holdAllToken='A';
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  if(holdOldRead){for(let n=0;n<50&&!held.length;n++)await page.waitForTimeout(10);assert(held.length>0,'pre-commit GET held');holdAllToken='';}
+  else await next.getByText('Nenhum próximo toque confirmado',{exact:true}).waitFor();
+  assert(await page.locator('.cc-wakeup-primary').isDisabled(),'focus retains submission lock');
+  await page.locator('.cc-wakeup-primary').evaluate(node=>{const key=Object.keys(node).find(key=>key.startsWith('__reactProps$'));node[key].onClick();});assert.equal((await page.evaluate(()=>window.fixturePosts)).length,1);
+  await page.evaluate(()=>window.resolveFocusPost());await next.getByText('Agendado no servidor',{exact:true}).waitFor();await page.waitForFunction(()=>window.fixtureToasts.some(value=>value.includes('Registro confirmado no servidor')));
+  held.splice(0).forEach(r=>r());await page.waitForTimeout(80);assert.equal(await next.getByText('Agendado no servidor',{exact:true}).count(),1,'late pre-commit GET cannot clear newer persisted readback');
+ }
+ await page.evaluate(()=>{window.fixtureConfirmedJobs=[];window.fixtureToasts=[];window.dispatchEvent(new Event('crewcheck:notification-jobs-changed'));});await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);
  await page.evaluate(()=>{window.fixtureToasts=[];window.fixturePost=async(path,body)=>{window.fixturePosts.push({path,body});window.fixtureConfirmedJobs=[{id:501,...body,status:'pending'}];return {ok:true,...body,status:'pending'};};});
  await primary.click();await next.getByText('Agendado no servidor',{exact:true}).waitFor();await page.waitForFunction(()=>window.fixtureToasts.some(value=>value.includes('Registro confirmado no servidor')));
  const confirmed=(await page.evaluate(()=>window.fixturePosts)).at(-1);assert.equal(confirmed.body.scheduledAt,'2032-02-03T07:30:00.000Z');assert.equal(confirmed.body.channel,'telegram');assert(confirmed.body.jobKey.startsWith('wakeup:manual:2032-02-03:'));assert.equal(await next.getByText('04:30',{exact:true}).count(),1);assert((await next.textContent()).includes('03/02/2032'));
@@ -182,5 +207,10 @@ try{
  await primary.click();await page.locator('.cc-wakeup-primary').evaluate(node=>{const key=Object.keys(node).find(key=>key.startsWith('__reactProps$'));node[key].onClick();});assert.equal((await page.evaluate(()=>window.fixturePosts)).length,1);
  await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'B'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await next.getByText('Nenhum próximo toque confirmado',{exact:true}).waitFor();
  await page.evaluate(()=>window.resolveFixtureSchedule({ok:true,...window.fixturePosts[0].body,status:'pending'}));await page.waitForTimeout(100);assert.deepEqual(await page.evaluate(()=>window.fixtureToasts),[]);assert.equal(await next.getByText('Agendado no servidor',{exact:true}).count(),0);
- console.log('Complete prepared WakeupView UI PASS: simple date/time, exact receipt/readback, saved time preserved while editing, synchronous duplicate/late-owner guards, offline/reconnect, account expiry/races, responsive history, zero sends or permission requests.');
+ // A late accepted POST after logout must not restore a confirmation or emit a toast.
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'A'}));window.fixtureConfirmedJobs=[];window.fixturePosts=[];window.fixtureToasts=[];window.dispatchEvent(new Event('crewcheck:auth-changed'));window.fixturePost=(path,body)=>{window.fixturePosts.push({path,body});return new Promise(resolve=>window.resolveLogoutPost=()=>resolve({ok:true,...body,status:'pending'}));};});
+ await page.waitForFunction(()=>window.fixtureDecisions.at(-1)?.ownerId==='A');await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);await primary.click();await page.waitForFunction(()=>window.fixturePosts.length===1);
+ await page.evaluate(()=>{localStorage.removeItem('crewcheck_auth_token');localStorage.removeItem('crewcheck_auth_user');window.dispatchEvent(new Event('crewcheck:auth-expired'));});await next.getByText('Estado não confirmado',{exact:true}).waitFor();
+ await page.evaluate(()=>window.resolveLogoutPost());await page.waitForTimeout(80);assert.deepEqual(await page.evaluate(()=>window.fixtureToasts),[]);assert.equal(await next.getByText('Agendado no servidor',{exact:true}).count(),0);assert(await primary.isDisabled());
+ console.log('Complete prepared WakeupView UI PASS: simple date/time, exact receipt/readback, saved time preserved while editing, synchronous duplicate/late-owner guards, same-account focus/POST/stale-GET races, terminal/uncertain receipts, logout during POST, offline/reconnect, account expiry/races, responsive history, zero sends or permission requests.');
 }catch(error){if(testPage){fs.writeFileSync('/tmp/wake-simple-fixture-failure.txt',await testPage.locator('body').innerText());fs.writeFileSync('/tmp/wake-simple-fixture-details.json',JSON.stringify(await testPage.locator('details').evaluateAll(nodes=>nodes.map(node=>({text:node.querySelector('summary')?.textContent,open:node.open})))));await testPage.screenshot({path:'/tmp/wake-simple-fixture-failure.png'});}throw error;}finally{held.forEach(r=>r());resume?.();await browser?.close();await new Promise(r=>server.close(r));}

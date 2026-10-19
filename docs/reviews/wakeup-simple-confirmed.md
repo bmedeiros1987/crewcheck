@@ -38,3 +38,18 @@ rota, transporte ou implementação de Wake/MyCrewCare da PR872.
 Revisão independente e CI são obrigatórios antes de integração. Sem chamada
 real, reprocessamento, alteração de permissões/credenciais, publicação ou mudança
 dos HOLDs1082/1085/1088/1111/MCC. Fixtures e imagens de teste são sintéticas.
+
+## Review correction after 120adf99
+
+A same-account focus refresh must not advance the authentication session or release
+the active submission. Identity transitions (token/user change or logout) still
+invalidate callbacks. Read sequence fencing rejects a pre-commit GET after the
+post-commit readback; no stale snapshot overwrites the newer job. The browser
+regression interleaves focus/POST/readback, delayed pre-commit reads, account change
+and logout, retaining the synchronous duplicate-submission guard.
+
+Receipt/readback equality proves a persisted record, not a pending future alarm.
+Only a pending future job confirms scheduling. Sent/failed/cancelled/expired/held
+remain terminal; uncertain/partial remain uncertain; processing/dispatching remain
+in progress. The UI preserves those records and reports the actual category rather
+than announcing a scheduled alarm. Pure projection tests now contain 73 assertions.

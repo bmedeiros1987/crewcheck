@@ -21,12 +21,13 @@ export function createWakeCycle(plan,receipts={},capabilities={}) {
   if(!['phone-call','telegram-call'].includes(config.callChannel)||!integer(config.confirmationWindowMs)||config.confirmationWindowMs<60000||config.confirmationWindowMs>900000)throw Error('Invalid confirmation policy');
   if(config.fallbackCall&&!config.localAlarm)throw Error('Fallback requires an explicit local-alarm plan');
   const state={schemaVersion:1,owner:plan.owner,occurrence:plan.occurrence,planRevision:plan.planRevision,revision:0,at:plan.at,createdAt:plan.createdAt,valid:true,options:copy(config),
-    local:{device:plan.device,confirmed:false,everConfirmed:false,phase:'unavailable',ringAt:plan.at,awakeAt:null},devices:{},
+    local:{device:plan.device,confirmed:false,everConfirmed:false,phase:'unavailable',ringAt:plan.at,awakeAt:null,ticketId:null},devices:{},
     server:{confirmed:false,awakeAt:null,sequences:{},deadline:plan.at+config.confirmationWindowMs},
     effects:Object.fromEntries(slots.map(slot=>[slot,{status:'idle'}])),capabilities:copy(capabilities)};
   // An external Clock opening is neither an armed ticket nor a wake-up receipt.
-  state.local.confirmed=capabilities.localAlarm===true&&bound(state,receipts.local,'local-armed')&&receipts.local.at===plan.at&&receipts.local.device===plan.device&&receipts.local.binding===wakePlanBinding(plan);
+  state.local.confirmed=capabilities.localAlarm===true&&bound(state,receipts.local,'local-armed')&&receipts.local.at===plan.at&&receipts.local.device===plan.device&&receipts.local.binding===wakePlanBinding(plan)&&identity(receipts.local.ticketId);
   state.local.everConfirmed=state.local.confirmed;
+  if(state.local.confirmed)state.local.ticketId=receipts.local.ticketId;
   if(state.local.confirmed)state.local.phase='scheduled';
   state.server.confirmed=capabilities.serverReceipt===true&&bound(state,receipts.server,'server-plan')&&receipts.server.at===plan.at&&receipts.server.binding===wakePlanBinding(plan);
   return state;
@@ -143,6 +144,10 @@ export function wakeCycleLabels(state,device=state.local.device) {
 export function reviseWakeCycle(state,plan,receipts,capabilities) {
   if(plan?.owner!==state.owner||plan?.occurrence!==state.occurrence||!integer(plan.planRevision)||plan.planRevision<=state.planRevision)return {status:'rejected',state};
   if(slots.some(slot=>['dispatching','accepted','uncertain'].includes(state.effects[slot].status)))return {status:'reconciliation_required',state:invalidateWakeCycle(state,'roster_revision')};
-  if(state.local.confirmed&&!bound(state,receipts?.previousLocalRevoked,'local-revoked'))return {status:'local_revocation_required',state};
-  const next=createWakeCycle(plan,receipts,capabilities);next.revision=state.revision+1;return {status:'revised',state:next};
+  if(state.local.everConfirmed&&(!bound(state,receipts?.previousLocalRevoked,'local-revoked')||receipts.previousLocalRevoked.device!==state.local.device||receipts.previousLocalRevoked.ticketId!==state.local.ticketId||receipts.previousLocalRevoked.at!==state.local.ringAt||receipts.previousLocalRevoked.binding!==wakePlanBinding(state)))return {status:'local_revocation_required',state};
+  const next=createWakeCycle(plan,receipts,capabilities);
+  // A definitive failure still consumed the occurrence's call attempt. Editing
+  // a plan revision cannot reset that budget or manufacture another call key.
+  for(const slot of callSlots)if(state.effects[slot].status==='failed')next.effects[slot]=structuredClone(state.effects[slot]);
+  next.revision=state.revision+1;return {status:'revised',state:next};
 }

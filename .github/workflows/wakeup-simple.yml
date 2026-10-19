@@ -12,6 +12,7 @@ on:
       - 'client/src/components/notifications/WakeClockOptions.tsx'
       - 'scripts/regression-wakeup-cycle.mjs'
       - 'scripts/bids-default/wakeup-layout.mjs'
+      - 'scripts/notification-safety/wakeup-session.mjs'
       - 'scripts/regression-wakeup-simple-plan.mjs'
       - 'scripts/regression-wakeup-session-browser.mjs'
       - '.github/workflows/wakeup-simple.yml'
