@@ -26,7 +26,7 @@ const bundle=await build({stdin:{contents:`${hostPrelude}import{WakeDiagnostic}f
 const css=fs.readdirSync('dist/assets').filter(name=>name.endsWith('.css')).map(name=>fs.readFileSync('dist/assets/'+name,'utf8')).join('\n');
 const server=http.createServer((req,res)=>{res.setHeader('content-type',req.url==='/fixture.js'?'text/javascript':'text/html');res.end(req.url==='/fixture.js'?bundle.outputFiles.find(file=>file.path.endsWith('.js')).text:`<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}#fixture-header{position:fixed;top:0;height:80px;width:100%;z-index:999;background:#333}#fixture-footer{position:fixed;bottom:0;height:96px;width:100%;z-index:999;background:#333}#root{padding-top:96px}body{margin:0}</style><header id="fixture-header">Cabeçalho</header><main id="root" class="cz-app" data-view="wakeup"></main><footer id="fixture-footer">Menu</footer><script src="/fixture.js"></script>`);});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${server.address().port}`;
-let testPage;let browser,offline=false,hold=false,resume,signal;const reads=[];let holdAllToken='',held=[],allHeld;
+let testPage;let browser,offline=false,hold=false,resume,signal;const reads=[];let holdAllToken='',held=[],allHeld;let holdConfirmation=false,confirmationHeld=[];
 try{
  browser=await chromium.launch({args:['--no-sandbox'],...process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}});
  const context=await browser.newContext({viewport:{width:320,height:740},timezoneId:'America/Sao_Paulo',serviceWorkers:'block'});
@@ -44,6 +44,7 @@ try{
   const confirmedJobs=await route.request().frame().evaluate(()=>window.fixtureConfirmedJobs||[]);
   const token=req.headers().authorization?.replace('Bearer ','');assert(['A','B'].includes(token));reads.push(token);
   if(offline)return route.abort();
+  if(holdConfirmation&&confirmedJobs.length)await new Promise(resolve=>confirmationHeld.push(resolve));
   if(token===holdAllToken){await new Promise(r=>{held.push(r);if(held.length===2)allHeld();});if(offline)return route.abort();}
   if(hold&&token==='B'){hold=false;signal();await new Promise(r=>resume=r);}
   return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,readiness:{telegramConfigured:true,telegramLinked:token==='A'||await route.request().frame().evaluate(()=>window.fixtureLinkedB===true)},jobs:token==='A'?[...confirmedJobs,...(fixturePending?[{id:99,jobKey:'wakeup:synthetic:SYN:10:00:75:telegram',status:'pending',channel:'telegram',scheduledAt:'2032-02-01T08:30:00Z'}]:[]),{id:1,status:'pending',channel:'OWNER_A_FIXTURE',scheduledAt:'2032-02-01T10:00:00Z'},{id:2,status:'sent',channel:'Ligação VoIP',scheduledAt:'2026-10-03T05:05:00Z',sentAt:'2026-10-03T05:05:00Z'},{id:3,status:'uncertain'},{id:4,status:'expired'},{id:5,status:'cancelled'}]:[]})});
@@ -186,6 +187,21 @@ try{
   await page.evaluate(()=>window.resolveFocusPost());await next.getByText('Agendado no servidor',{exact:true}).waitFor();await page.waitForFunction(()=>window.fixtureToasts.some(value=>value.includes('Registro confirmado no servidor')));
   held.splice(0).forEach(r=>r());await page.waitForTimeout(80);assert.equal(await next.getByText('Agendado no servidor',{exact:true}).count(),1,'late pre-commit GET cannot clear newer persisted readback');
  }
+ // Focus supersedes the POST's confirmation GET. Both reads contain the correct job.
+ for(const newestFirst of [false,true]){
+  await page.evaluate(()=>{window.fixtureConfirmedJobs=[];window.fixturePosts=[];window.fixtureToasts=[];window.dispatchEvent(new Event('crewcheck:notification-jobs-changed'));});await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);
+  holdConfirmation=true;
+  await page.evaluate(()=>{window.fixturePost=async(path,body)=>{window.fixturePosts.push({path,body});window.fixtureConfirmedJobs=[{id:501,...body,status:'pending'}];return {ok:true,...body,status:'pending'};};});
+  await primary.click();for(let n=0;n<100&&!confirmationHeld.length;n++)await page.waitForTimeout(10);assert(confirmationHeld.length>0,'POST confirmation GET held');
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));for(let n=0;n<100&&confirmationHeld.length<2;n++)await page.waitForTimeout(10);assert(confirmationHeld.length>=2,'newer focus GET held');
+  holdConfirmation=false;const [oldRead,...newReads]=confirmationHeld.splice(0);
+  if(newestFirst){newReads.forEach(resolve=>resolve());await next.getByText('Agendado no servidor',{exact:true}).waitFor();oldRead();}
+  else {oldRead();await page.waitForFunction(()=>window.fixtureToasts.some(value=>value.includes('Consulta de confirmação substituída')));newReads.forEach(resolve=>resolve());}
+  await next.getByText('Agendado no servidor',{exact:true}).waitFor();await page.waitForFunction(()=>window.fixtureToasts.some(value=>value.includes('Consulta de confirmação substituída')));
+  assert(!(await page.evaluate(()=>window.fixtureToasts)).some(value=>value.includes('Não foi possível confirmar')),'superseded coherent GET is not a failed confirmation');
+  assert(!(await page.evaluate(()=>window.fixtureToasts)).some(value=>value.includes('Registro confirmado')),'superseded handler does not claim confirmation from POST alone');
+  assert.equal((await page.evaluate(()=>window.fixturePosts)).length,1);assert(await primary.isDisabled(),'persisted conflict prevents a duplicate');
+ }
  await page.evaluate(()=>{window.fixtureConfirmedJobs=[];window.fixtureToasts=[];window.dispatchEvent(new Event('crewcheck:notification-jobs-changed'));});await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);
  await page.evaluate(()=>{window.fixtureToasts=[];window.fixturePost=async(path,body)=>{window.fixturePosts.push({path,body});window.fixtureConfirmedJobs=[{id:501,...body,status:'pending'}];return {ok:true,...body,status:'pending'};};});
  await primary.click();await next.getByText('Agendado no servidor',{exact:true}).waitFor();await page.waitForFunction(()=>window.fixtureToasts.some(value=>value.includes('Registro confirmado no servidor')));
@@ -213,4 +229,4 @@ try{
  await page.evaluate(()=>{localStorage.removeItem('crewcheck_auth_token');localStorage.removeItem('crewcheck_auth_user');window.dispatchEvent(new Event('crewcheck:auth-expired'));});await next.getByText('Estado não confirmado',{exact:true}).waitFor();
  await page.evaluate(()=>window.resolveLogoutPost());await page.waitForTimeout(80);assert.deepEqual(await page.evaluate(()=>window.fixtureToasts),[]);assert.equal(await next.getByText('Agendado no servidor',{exact:true}).count(),0);assert(await primary.isDisabled());
  console.log('Complete prepared WakeupView UI PASS: simple date/time, exact receipt/readback, saved time preserved while editing, synchronous duplicate/late-owner guards, same-account focus/POST/stale-GET races, terminal/uncertain receipts, logout during POST, offline/reconnect, account expiry/races, responsive history, zero sends or permission requests.');
-}catch(error){if(testPage){fs.writeFileSync('/tmp/wake-simple-fixture-failure.txt',await testPage.locator('body').innerText());fs.writeFileSync('/tmp/wake-simple-fixture-details.json',JSON.stringify(await testPage.locator('details').evaluateAll(nodes=>nodes.map(node=>({text:node.querySelector('summary')?.textContent,open:node.open})))));await testPage.screenshot({path:'/tmp/wake-simple-fixture-failure.png'});}throw error;}finally{held.forEach(r=>r());resume?.();await browser?.close();await new Promise(r=>server.close(r));}
+}catch(error){if(testPage){fs.writeFileSync('/tmp/wake-simple-fixture-failure.txt',await testPage.locator('body').innerText());fs.writeFileSync('/tmp/wake-simple-fixture-details.json',JSON.stringify(await testPage.locator('details').evaluateAll(nodes=>nodes.map(node=>({text:node.querySelector('summary')?.textContent,open:node.open})))));await testPage.screenshot({path:'/tmp/wake-simple-fixture-failure.png'});}throw error;}finally{confirmationHeld.forEach(r=>r());held.forEach(r=>r());resume?.();await browser?.close();await new Promise(r=>server.close(r));}

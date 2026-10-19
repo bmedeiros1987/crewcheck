@@ -53,3 +53,9 @@ Only a pending future job confirms scheduling. Sent/failed/cancelled/expired/hel
 remain terminal; uncertain/partial remain uncertain; processing/dispatching remain
 in progress. The UI preserves those records and reports the actual category rather
 than announcing a scheduled alarm. Pure projection tests now contain 73 assertions.
+
+A focus GET can supersede the activation's post-commit confirmation GET. In that
+case, the superseded handler emits a neutral refresh notice rather than a false
+confirmation error. It does not infer success from the POST. The latest authenticated
+GET still owns the displayed projection and read sequencing; both response orders
+are covered with held real host callbacks and a matching persisted job.
