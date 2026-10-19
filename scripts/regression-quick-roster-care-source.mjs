@@ -19,7 +19,8 @@ const cases = [
   [{ canonical: { code: 'DO', publishedDay: { pairingCode: 'VC' } } }, 'Férias'],
   [{ canonical: { code: 'FOLGA', publishedDay: { pairingCode: 'VC' } } }, 'Folga'],
   [{ canonical: { code: 'ASB', kind: 'reserve', publishedDay: { pairingCode: 'VC' } } }, null],
-  [{ title: 'Férias', flightNumber: 'DMO' }, null],
+  [{ title: 'Férias' }, null],
+  [{ flightNumber: 'DMO' }, null],
   [{ canonical: { code: 'OFF' } }, 'Folga'],
   [{ canonical: { code: 'REST' } }, 'Repouso'],
   [{ placeholder: true, canonical: { code: 'DMO' } }, null],
@@ -29,10 +30,14 @@ const results = cases.map(([event, expected]) => {
   const actual = classification.carePresentationForScheduleActivity(event);
   assert.equal(actual?.label ?? null, expected);
   assert.equal(JSON.stringify(event), before, 'Presentation never mutates canonical input');
-  if (actual) assert.equal(actual.allowCriticalAlerts, true);
+  if (actual) {
+    assert.equal(actual.allowCriticalAlerts, true);
+    assert.equal(actual.suppressRoutineProactivity, true);
+    assert.equal(actual.suppressHumor, actual.state === 'LUTO');
+  }
   return actual;
 });
 const snapshot = { contract, results };
 if (process.argv.includes('--record')) fs.writeFileSync(process.argv[process.argv.indexOf('--record') + 1], JSON.stringify(snapshot));
 if (process.argv.includes('--compare')) assert.deepEqual(snapshot, JSON.parse(fs.readFileSync(process.argv[process.argv.indexOf('--compare') + 1], 'utf8')), 'Raw and prepared Care contract and results remain identical');
-console.log('PASS raw/prepared shared Care contract: nine formal-authority, sensitive-label, alert and immutability cases');
+console.log('PASS raw/prepared shared Care contract: ten formal-authority, sensitive-label, alert and immutability cases');
