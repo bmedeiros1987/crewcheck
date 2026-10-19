@@ -76,12 +76,16 @@ jobs:
           cp server/concierge/journey-programs.mjs server/concierge/stay-menu.mjs "$RUNNER_TEMP/activity-kind-proof/server/concierge/"
           cp scripts/v14335/departure-reply.snippet "$RUNNER_TEMP/activity-kind-proof/scripts/v14335/"
           cp scripts/tests/concierge-departure-text.test.mjs "$RUNNER_TEMP/activity-kind-proof/scripts/tests/"
+          mkdir -p "$RUNNER_TEMP/activity-kind-proof/scripts/p1-concierge-journey"
+          cp -R server/concierge/generated "$RUNNER_TEMP/activity-kind-proof/server/concierge/"
+          cp scripts/p1-concierge-journey/bridge.mjs "$RUNNER_TEMP/activity-kind-proof/scripts/p1-concierge-journey/"
+          printf '%s\n' '${{ github.event.pull_request.base.sha || github.event.before }}' > "$RUNNER_TEMP/activity-kind-proof/BASE.txt"
           git rev-parse HEAD > "$RUNNER_TEMP/activity-kind-proof/HEAD.txt"
           cp server.mjs "$RUNNER_TEMP/activity-kind-proof/"
           cp server/v1404/telegram-language.mjs "$RUNNER_TEMP/activity-kind-proof/server/v1404/"
           cp scripts/v14314/apply.mjs "$RUNNER_TEMP/activity-kind-proof/scripts/v14314/"
           cp scripts/tests/concierge-activity-kind.test.mjs "$RUNNER_TEMP/activity-kind-proof/scripts/tests/"
-          sha256sum server.mjs server/v1404/telegram-language.mjs server/concierge/journey-programs.mjs server/concierge/stay-menu.mjs scripts/v14314/apply.mjs scripts/v14335/departure-reply.snippet scripts/tests/concierge-departure-text.test.mjs scripts/tests/concierge-activity-kind.test.mjs > "$RUNNER_TEMP/activity-kind-proof/SHA256SUMS"
+          sha256sum server/concierge/generated/*.mjs server/concierge/generated/source-hashes.json scripts/p1-concierge-journey/bridge.mjs server.mjs server/v1404/telegram-language.mjs server/concierge/journey-programs.mjs server/concierge/stay-menu.mjs scripts/v14314/apply.mjs scripts/v14335/departure-reply.snippet scripts/tests/concierge-departure-text.test.mjs scripts/tests/concierge-activity-kind.test.mjs > "$RUNNER_TEMP/activity-kind-proof/SHA256SUMS"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
