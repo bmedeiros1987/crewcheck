@@ -62,6 +62,7 @@ public class CrewLifeV2LifecycleTest {
         }
     }
     private static void deliver(CrewCheckDataLayerService service,String path,String raw) {
+        if(path.equals(WatchContract.CREWLIFE_V2_PATH) && !raw.equals("{}")) CrewLifeSnapshot.fromJson(raw,System.currentTimeMillis());
         service.onMessageReceived(new MessageEvent(){
             public int getRequestId(){return 1;} public String getPath(){return path;}
             public byte[] getData(){return raw.getBytes(StandardCharsets.UTF_8);} public String getSourceNodeId(){return NODE;}
@@ -89,6 +90,13 @@ public class CrewLifeV2LifecycleTest {
         java.lang.reflect.Method m=MainActivity.class.getDeclaredMethod("showScreen",int.class);m.setAccessible(true);m.invoke(a,f.getInt(null));
     }
     private static void settle(){Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(250));}
+    private CrewLifeSnapshot assertHealthCached() throws Exception {
+        android.content.SharedPreferences p=context.getSharedPreferences("crewcheck_watch_wellbeing",0);
+        String info="time="+System.currentTimeMillis()+" fence="+p.getString("crewlife_fence_v2","{}");
+        WellbeingStore store=new WellbeingStore(context);
+        CrewLifeSnapshot value=store.loadCrewLife();
+        assertNotNull(info+" keys="+p.getAll().keySet(),value);return value;
+    }
     @Test public void migrationClearsLegacyWithoutTouchingRoutineOrOperationAndRejectsV1Replay() throws Exception {
         new SecureSnapshotStore(context).save(WatchContextSnapshot.demo(System.currentTimeMillis()).toJson().toString());
         new WellbeingStore(context).saveRoutine(RoutineSnapshot.demo(System.currentTimeMillis()).toJson().toString());
@@ -105,7 +113,7 @@ public class CrewLifeV2LifecycleTest {
         try {
             reset(service.get());long now=System.currentTimeMillis();String raw=payload(2,0,now+1000,now+2000);
             deliver(service.get(),WatchContract.CREWLIFE_V2_PATH,raw);
-            assertEquals(Integer.valueOf(0),new WellbeingStore(context).loadCrewLife().value("recoveryScore",now));
+            assertEquals(Integer.valueOf(0),assertHealthCached().value("recoveryScore",now));
             String cipher=context.getSharedPreferences("crewcheck_watch_wellbeing",0).getString("crewlife_payload_v2","");
             assertFalse(cipher.isEmpty());assertFalse(cipher.contains("recoveryScore"));
             deliver(service.get(),WatchContract.CREWLIFE_CONTROL_PATH,control("revoke",STREAM,3,"00000000-0000-4000-8000-000000000002"));
@@ -135,7 +143,9 @@ public class CrewLifeV2LifecycleTest {
         long now=System.currentTimeMillis();WellbeingStore s=new WellbeingStore(context);
         s.applyCrewLifeControl(control("reset",STREAM,1,STREAM),NODE);
         String wire=payload(2,0,now+1000,now+4000);
+        CrewLifeSnapshot.fromJson(wire,System.currentTimeMillis());
         s.applyCrewLifeData(wire,NODE,System.currentTimeMillis());
+        assertHealthCached();
         ServiceController<CrewLifeComplicationService> provider=Robolectric.buildService(CrewLifeComplicationService.class).create();
         try {
             java.lang.reflect.Method build=BaseComplicationService.class.getDeclaredMethod("buildData",androidx.wear.watchface.complications.data.ComplicationType.class,boolean.class);
@@ -161,9 +171,9 @@ public class CrewLifeV2LifecycleTest {
         try {
             reset(service.get());long now=System.currentTimeMillis();
             changedData(service.get(),NODE,payload(2,78,now+1000,now+2000));
-            assertEquals(78,new WellbeingStore(context).loadCrewLife().recoveryScore);
+            assertEquals(78,assertHealthCached().recoveryScore);
             changedData(service.get(),"foreign-node",payload(3,42,now+1000,now+2000));
-            assertEquals(78,new WellbeingStore(context).loadCrewLife().recoveryScore);
+            assertEquals(78,assertHealthCached().recoveryScore);
             changedData(service.get(),NODE,"{}");assertNull(new WellbeingStore(context).loadCrewLife());
         }finally{service.destroy();}
     }
@@ -184,7 +194,7 @@ public class CrewLifeV2LifecycleTest {
     }
     @Test public void malformedReplacementClearsPreviousHealthAndOldRevisionCannotReturn() throws Exception {
         WellbeingStore s=new WellbeingStore(context);s.applyCrewLifeControl(control("reset",STREAM,1,STREAM),NODE);
-        long now=System.currentTimeMillis();String raw=payload(2,78,now+1000,now+2000);s.applyCrewLifeData(raw,NODE,System.currentTimeMillis());assertNotNull(s.loadCrewLife());
+        long now=System.currentTimeMillis();String raw=payload(2,78,now+1000,now+2000);CrewLifeSnapshot.fromJson(raw,System.currentTimeMillis());s.applyCrewLifeData(raw,NODE,System.currentTimeMillis());assertHealthCached();
         s.applyCrewLifeData("{}",NODE,now);assertNull(s.loadCrewLife());s.applyCrewLifeData(raw,NODE,now);assertNull(s.loadCrewLife());
     }
 }
