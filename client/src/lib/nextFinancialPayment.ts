@@ -27,7 +27,12 @@ export function knownPaymentTotals(lines:readonly PaymentLine[]):Record<string,n
 function datedAllowanceLines(rows:AllowanceRow[],pending:Array<{iso:string}>,covered:string[],coveredDays?:string[]):PaymentLine[] {
  const cycles=new Map<string,{date:string|null;partial:boolean}>();
  return rows.filter(row=>validFinancialDay(row.iso)).map(row=>{
-  if(row.currency!=='BRL')return {...row,partial:row.partial===true||pending.some(item=>validFinancialDay(item.iso)&&item.iso===row.iso)};
+  if(row.currency!=='BRL'){
+   // The producer knows which journey supplied this meal. Never infer that
+   // relationship from a shared occurrence/payment date or display text.
+   // Legacy rows without structured evidence remain explicitly unconfirmed.
+   return {...row,partial:row.partial!==false,...(row.partial===undefined?{pendingReason:'Completude da origem da diária não comprovada.'}:{})};
+  }
   const cycle=observedStatementCycle(rosterOperationalDateAt(row.iso,12),'roster_brt'),start=rosterOperationalIso(cycle.start),end=rosterOperationalIso(cycle.end);
   if(!cycles.has(start)){
    let absent=false;for(const day=new Date(start+'T12:00:00Z');day.toISOString().slice(0,10)<=end;day.setUTCDate(day.getUTCDate()+1))if(!coveredDays?.includes(day.toISOString().slice(0,10)))absent=true;
