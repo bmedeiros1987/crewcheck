@@ -44,7 +44,7 @@ for(const width of [320,390,1440])for(const theme of ['light','dark']){
  });
  const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
  const open=async()=>{await page.goto('http://salary.invalid/app');await page.locator('.cz-app').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));await page.getByRole('radio',{name:'Bruto',exact:true}).waitFor();};
- await open();assert.equal(await page.getByRole('radio',{name:'Bruto',exact:true}).isChecked(),true);
+ await open();assert.equal(await page.getByRole('complementary',{name:'Prévia de PLR'}).count(),1);assert.equal(await page.locator('.cc-salary-plr-note details').getAttribute('open'),null);assert.match(await page.locator('.cc-salary-plr-note').innerText(),/faltam referências/);assert.equal(await page.getByRole('radio',{name:'Bruto',exact:true}).isChecked(),true);
  assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/2.400,00/);
  assert.equal(await page.getByRole('group',{name:'Valor salarial'}).count(),1);
  await page.getByRole('radio',{name:'Líquido',exact:true}).check();assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/2.250,00/);

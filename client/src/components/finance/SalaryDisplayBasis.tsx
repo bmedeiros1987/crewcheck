@@ -20,3 +20,8 @@ export function SalaryBasisAmount({summary}:{summary:SalaryDisplaySummary}){
  const privacy=useFinancialPrivacy();
  return <div className="cc-salary-basis-amount" aria-live="polite"><strong>{summary.amount===null?'Não calculável':privacy.amount(new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(summary.amount))}</strong><p>{summary.basis==='gross'?'Bruto':'Líquido'} {summary.complete?'estimado':'a confirmar'}</p>{summary.reason&&<p>{summary.reason}</p>}</div>;
 }
+
+/** No PLR rule/competence has been verified in the current calculation flow. */
+export function SalaryPlrNotice(){
+ return <aside className="cc-salary-plr-note" aria-label="Prévia de PLR"><span>PLR: faltam referências para estimar.</span><details><summary aria-label="Entender a prévia de PLR">?</summary><p>Falta conferir a regra e a competência da PLR. O holerite de dezembro pode complementar ou confirmar os dados, conforme a regra aplicável; o ano de referência ainda precisa ser verificado. Uma estimativa pode ser apresentada antes quando houver fonte e dados suficientes. Nenhum valor ou recebimento é presumido.</p></details></aside>;
+}
