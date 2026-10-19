@@ -12,9 +12,10 @@ const html=version=>`<meta charset="utf-8"><meta name="viewport" content="width=
 assert.notEqual(stampServiceWorkerBuild(raw,html('a')).buildId,stampServiceWorkerBuild(raw,html('b')).buildId,'same public version + new bundle must change worker bytes');
 assert.throws(()=>stampServiceWorkerBuild(raw,'<p>announcement only</p>'),'announcement without served entry is not downloadable');
 let stage='a',missing=false,servedMismatch=false;
-const server=http.createServer((req,res)=>{res.setHeader('cache-control','no-store');if(req.url==='/sw.js'){res.setHeader('content-type','text/javascript');res.end(stampServiceWorkerBuild(raw,html(stage)).source);}
+const server=http.createServer((req,res)=>{res.setHeader('cache-control','no-store');if(req.url==='/sw.js'){res.setHeader('content-type','text/javascript');res.end(stampServiceWorkerBuild(raw,html(stage),['/assets/pdf-dynamic.js','/assets/pdf.worker.mjs']).source);}
  else if(req.url==='/crewcheck-push-offline.js'){res.setHeader('content-type','text/javascript');res.end(push);}
- else if(req.url?.startsWith('/assets/')){res.setHeader('content-type','text/javascript');if(missing){res.statusCode=503;res.end('');}else res.end(js+`;window.fixtureVersion=${JSON.stringify(req.url.match(/app-(\w+)\.js/)?.[1])};`);}
+ else if(req.url==='/assets/pdf-dynamic.js'||req.url==='/assets/pdf.worker.mjs'){res.setHeader('content-type','text/javascript');if(req.url===missing){res.statusCode=404;res.end('');}else res.end('// synthetic lazy PDF dependency');}
+ else if(req.url?.startsWith('/assets/')){res.setHeader('content-type','text/javascript');res.end(js+`;window.fixtureVersion=${JSON.stringify(req.url.match(/app-(\w+)\.js/)?.[1])};`);}
  else if(req.url==='/manifest.json'){res.setHeader('content-type','application/json');res.end('{"name":"fixture","display":"standalone"}');}
  else if(req.url?.startsWith('/icons/')){res.setHeader('content-type','image/png');res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3WQAAAAASUVORK5CYII=','base64'));}
  else{res.setHeader('content-type','text/html');res.end(html(servedMismatch?'a':stage));}});
@@ -27,9 +28,12 @@ try{
  check(await first.getByRole('complementary').count()===0,'initial installation is not an update');
  const second=await context.newPage();await second.goto(origin);await second.waitForFunction(()=>window.fixtureVersion==='a');await first.locator('#draft').fill('unsaved A');await second.locator('#draft').fill('unsaved B');
  const update=()=>first.evaluate(async()=>{const registration=await navigator.serviceWorker.ready;await registration.update();});
- stage='b';missing=true;await update();await first.waitForTimeout(300);check(await first.getByRole('complementary').count()===0,'failed asset download creates no offer');
+ for(const [version,url]of [['b','/assets/pdf-dynamic.js'],['bb','/assets/pdf.worker.mjs']]){stage=version;missing=url;await update();await first.waitForTimeout(300);check(await first.getByRole('complementary').count()===0,'missing lazy dependency '+url+' creates no offer');}
  stage='c';missing=false;servedMismatch=true;await update();await first.waitForTimeout(300);check(await first.getByRole('complementary').count()===0,'worker build mismatching served index creates no offer');
  stage='d';servedMismatch=false;await update();const notice=first.getByRole('complementary',{name:'Atualização do CrewCheck'});await notice.waitFor();await second.getByRole('complementary').waitFor();
+ const probe=await context.newPage();await probe.goto(origin);await probe.close();
+ const oldCacheName=stampServiceWorkerBuild(raw,html('a'),['/assets/pdf-dynamic.js','/assets/pdf.worker.mjs']).source.match(/const CACHE_NAME = '([^']+)'/)[1];
+ const oldHtml=await first.evaluate(async name=>{const cache=await caches.open(name);return(await cache.match('/index.html')).text();},oldCacheName);check(oldHtml.includes('/assets/app-a.js'),'old controller never replaces its cached HTML with another build');
  check(await first.evaluate(()=>window.fixtureVersion==='a'),'downloaded update did not reload current page');check(await first.locator('#draft').inputValue()==='unsaved A','download retains form');
  for(const width of [320,390,820])for(const font of [14,28]){await first.setViewportSize({width,height:844});await notice.evaluate((node,size)=>node.style.fontSize=size+'px',font);const box=await notice.boundingBox();check(box.x>=0&&box.x+box.width<=width&&box.y>=80&&box.y+box.height<=748,'accessible notice clears navigation at font2x');check(await first.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no horizontal overflow');}await first.setViewportSize({width:390,height:844});await notice.evaluate(node=>node.style.fontSize='14px');if(process.env.PWA_UPDATE_SCREENSHOT)await first.screenshot({path:process.env.PWA_UPDATE_SCREENSHOT});
  await first.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await first.waitForTimeout(50);check(await notice.getByRole('button',{name:'Atualizar agora'}).isVisible(),'visibility never auto-activates');

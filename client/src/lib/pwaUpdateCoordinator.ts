@@ -5,14 +5,14 @@ let state:PwaUpdateState={phase:'idle',buildId:'',online:true,deferred:false},re
 let lifecycle=0,activationTimer:number|undefined;
 const listeners=new Set<()=>void>();
 const notify=()=>listeners.forEach(listener=>listener());
-function deferred(id:string){if(memoryDefer===id&&id)return true;try{const saved=JSON.parse(localStorage.getItem(KEY)||'null');return saved?.id===id&&Number.isFinite(saved.until)&&saved.until>Date.now()&&saved.until<=Date.now()+DAY;}catch{return false;}}
+function deferred(id:string){if(memoryDefer.id===id&&id&&memoryDefer.until>Date.now())return true;try{const saved=JSON.parse(localStorage.getItem(KEY)||'null');return saved?.id===id&&Number.isFinite(saved.until)&&saved.until>Date.now()&&saved.until<=Date.now()+DAY;}catch{return false;}}
 function publish(phase:UpdatePhase,id=state.buildId){state={phase,buildId:id,online:typeof navigator==='undefined'||navigator.onLine!==false,deferred:deferred(id)};notify();}
 export const pwaUpdateSnapshot=()=>state;
 export const subscribePwaUpdate=(listener:()=>void)=>{listeners.add(listener);return()=>{listeners.delete(listener);};};
 export const pwaUpdateServerSnapshot=()=>INITIAL;
 const INITIAL:PwaUpdateState={phase:'idle',buildId:'',online:true,deferred:false};
-let memoryDefer='';
-export function deferPwaUpdate(){memoryDefer=state.buildId;try{localStorage.setItem(KEY,JSON.stringify({id:state.buildId,until:Date.now()+DAY}));}catch{}state={...state,deferred:true};notify();}
+let memoryDefer={id:'',until:0};
+export function deferPwaUpdate(){memoryDefer={id:state.buildId,until:Date.now()+DAY};try{localStorage.setItem(KEY,JSON.stringify({id:state.buildId,until:Date.now()+DAY}));}catch{}state={...state,deferred:true};notify();}
 function message(worker:ServiceWorker,value:unknown):Promise<any>{return new Promise((resolve,reject)=>{const channel=new MessageChannel();const timer=setTimeout(()=>{channel.port1.close();channel.port2.close();reject(Error('worker acknowledgement timed out'));},5000);channel.port1.onmessage=event=>{clearTimeout(timer);channel.port1.close();resolve(event.data);};try{worker.postMessage(value,[channel.port2]);}catch(error){clearTimeout(timer);channel.port1.close();channel.port2.close();reject(error);}});}
 async function info(worker:ServiceWorker){const value=await message(worker,{type:'CREWCHECK_UPDATE_INFO'});return value?.ready===true&&/^[a-f0-9]{20}$/.test(value.buildId||'')?value.buildId:null;}
 export async function requestPwaUpdate(){
@@ -27,7 +27,7 @@ export function installPwaUpdateCoordinator(options:{checkIntervalMs?:number;idl
  if(typeof window==='undefined'||!('serviceWorker'in navigator)||nativeUpdateShell())return()=>{};
  const generation=++lifecycle;publish('idle','');let initialController=navigator.serviceWorker.controller;
  let stopped=false,sequence=0,activeRegistration:ServiceWorkerRegistration|null=null,installing:ServiceWorker|null=null;
- const inspect=async()=>{const ticket=++sequence;const waiting=activeRegistration?.waiting;if(!waiting){if(state.phase==='available')publish('idle','');return;}try{const id=await info(waiting);if(!stopped&&ticket===sequence&&activeRegistration?.waiting===waiting&&id){publish('available',id);if(memoryDefer===id){state={...state,deferred:true};notify();}}}catch{/* Incompatible or incomplete worker is not a downloaded offer. */}};
+ const inspect=async()=>{const ticket=++sequence;const waiting=activeRegistration?.waiting;if(!waiting){if(state.phase==='available')publish('idle','');return;}try{const id=await info(waiting);if(!stopped&&ticket===sequence&&activeRegistration?.waiting===waiting&&id){if(state.phase!=='activating'&&state.phase!=='ready')publish('available',id);}}catch{/* Incompatible or incomplete worker is not a downloaded offer. */}};
  const changed=()=>{if(installing?.state==='installed')void inspect();};
  const found=()=>{installing?.removeEventListener('statechange',changed);installing=activeRegistration?.installing||null;installing?.addEventListener('statechange',changed);void inspect();};
  const attach=(next:ServiceWorkerRegistration)=>{if(stopped)return;if(activeRegistration!==next){activeRegistration?.removeEventListener('updatefound',found);activeRegistration=next;registration=next;next.addEventListener('updatefound',found);}found();};

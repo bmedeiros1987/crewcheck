@@ -1,6 +1,7 @@
 importScripts('/crewcheck-push-offline.js');
 const CREWCHECK_UPDATE_BUILD_ID='__CREWCHECK_UPDATE_BUILD_ID__';
 const CREWCHECK_UPDATE_ENTRY='__CREWCHECK_UPDATE_ENTRY__';
+const CREWCHECK_UPDATE_ASSETS=[];
 const UPDATE_READY_KEY='/__crewcheck_update_ready__';
 const CACHE_NAME = 'crewcheck-v14.3-offline-shell';
 const RUNTIME_CACHE = 'crewcheck-v14.3-offline-runtime';
@@ -36,7 +37,7 @@ async function precachePreparedShell() {
   await cache.put('/', indexResponse.clone());
   await cache.put('/index.html', indexResponse.clone());
 
-  const urls = new Set(APP_SHELL);
+  const urls = new Set([...APP_SHELL,...CREWCHECK_UPDATE_ASSETS]);
   const assetPattern = /(?:src|href)=["']([^"']+)["']/g;
   let match;
   while ((match = assetPattern.exec(html))) {
@@ -50,7 +51,7 @@ async function precachePreparedShell() {
     if (url === '/' || url === '/index.html') return;
     const response = await fetch(url, { cache: 'no-store' });
     if(!response.ok)throw new Error('Incomplete update download');
-    if(/\.js(?:\?|$)/.test(url)&&!/(?:java|ecma)script/.test(response.headers.get('content-type')||''))throw new Error('Update script was not served');
+    if(/\.(?:m?js)(?:\?|$)/.test(url)&&!/(?:java|ecma)script/.test(response.headers.get('content-type')||''))throw new Error('Update script was not served');
     if(/\.css(?:\?|$)/.test(url)&&!/(?:text\/css)/.test(response.headers.get('content-type')||''))throw new Error('Update stylesheet was not served');
     await cache.put(url, response.clone());
   }));
@@ -210,7 +211,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith((async () => {
       try {
         const response = await fetch(request, { cache: 'no-store' });
-        if (response.ok) {
+        if (response.ok && /^[a-f0-9]{20}$/.test(CREWCHECK_UPDATE_BUILD_ID) && (await response.clone().text()).includes(CREWCHECK_UPDATE_ENTRY)) {
           const cache = await caches.open(CACHE_NAME);
           await cache.put('/', response.clone());
           await cache.put('/index.html', response.clone());

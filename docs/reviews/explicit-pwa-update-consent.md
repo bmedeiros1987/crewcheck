@@ -38,3 +38,10 @@ new-tab loading, ACK rejection/loss, missing controllerchange, cleanup, SSR and 
 existing Android Play UI. No real install, permission, subscription, provider,
 credential, account mutation or store publication occurs. Push/ACK/fallback gates
 and all Android/security HOLDs remain unchanged.
+
+
+## Independent-review corrections
+
+The first reviewed HEAD 67806545 did not include lazy PDF chunks in its HTML-derived download set, let online inspection erase the activating phase, and retained an in-memory defer beyond 24 hours. The revised build stamp enumerates every emitted dist/assets file (including PDF JS and worker MJS), binds that inventory into the build identifier, and requires those responses to cache successfully before readiness. Missing either lazy PDF dependency independently blocks the synthetic offer. This covers emitted assets and declared shell URLs, not remote data, runtime-fetched documents, browser quota eviction, or a promise that every app action works offline. Download failures may require a later browser update check; no permission or provider activation is introduced.
+
+Discovery cannot replace activating/ready with available. Acknowledgement remains distinct from controllerchange and its timeout still signals an error after an online event. Memory and persisted deferral both expire after 24 hours. Navigation may return fresh online HTML, but an old worker only updates its fallback HTML when that page references its own stamped entry; it cannot replace the old offline shell with another build's document. Open documents are never reloaded.
