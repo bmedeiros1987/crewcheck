@@ -5,7 +5,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import test from 'node:test';
 import { createTelegramMenuTransport } from '../server/concierge/telegram-menu-transport.mjs';
-import { createTelegramMenu, menuTemplate, requestedWeatherAirport } from '../server/concierge/telegram-menu.mjs';
+import { createTelegramMenu, menuTemplate, requestedWeatherAirport, missingFinanceReply, financeUrl } from '../server/concierge/telegram-menu.mjs';
 import { execFileSync } from 'node:child_process';
 import {
   normalizeConciergeNaturalTextV14341 as normalizeConciergeNaturalTextV14338,
@@ -159,12 +159,12 @@ export function harness({ realFortalezaCatalog = false, operationalProbe = false
       buildCrewCheckAtis: station => `ATIS meteorológico ${station} · fixture`,
       crewCheckAtisVoiceText: reply => `Voz: ${reply}`,
       sendHumanTelegramVoiceReply: async (chat, text, _query, snapshot) => trace.voices.push({ chat, text, owner: snapshot.email }),
-      answerTelegramCallback: async () => {}, createTelegramMenu, requestedWeatherAirport, createTelegramMenuTransport,
+      answerTelegramCallback: async () => {}, createTelegramMenu, requestedWeatherAirport, createTelegramMenuTransport, missingFinanceReply,
       telegramApiUrl: () => '', // This harness probes producers; edit I/O is covered by telegram-navigation-reuse.
       openEmergencyTelegramMenu: async () => { throw Error('emergency entry is tested separately with its actual handler'); },
       conciergeKeyboard: menuTemplate(),
     });
-    for (const name of ['conciergeExtractFlight', 'conciergeRadarReply', 'conciergeWeatherReply', 'conciergeAtisReply', 'conciergeWeatherKeyboard']) vm.runInContext(extract(source, name), context);
+    for (const name of ['conciergeExtractFlight', 'conciergeRadarReply', 'conciergeWeatherReply', 'conciergeAtisReply', 'conciergeWeatherKeyboard', 'conciergePerDiemReply']) vm.runInContext(extract(source, name), context);
     const runtimeStart = source.indexOf('const crewcheckMenu = createTelegramMenu(');
     const runtimeEnd = source.indexOf('\n});', runtimeStart) + 4;
     assert.ok(runtimeStart >= 0 && runtimeEnd > runtimeStart, 'actual prepared menu runtime');
@@ -474,4 +474,28 @@ test('Fortaleza official catalog through actual Telegram, WhatsApp and app routi
       assert.equal(h.trace.search.at(-1).plan, 'silver-plus');
     }
   }
+});
+
+
+test('prepared typed Diárias and callback share financial content and app destination', {skip:!materialized}, async () => {
+  const typed = harness({operationalProbe:true});
+  const typedReply = await typed.send('telegram', '/diarias');
+  assert(typedReply.includes(financeUrl), 'actual typed route retains its app link');
+  const button = harness({operationalProbe:true}); await button.openInline(); await button.tap('Diárias');
+  assert.equal(button.trace.output.at(-1), missingFinanceReply());
+  // Preserve the existing text-wrapper footer; compare the complete response
+  // rather than stripping arbitrary content or changing the shared decorator.
+  assert.equal(typedReply, `${missingFinanceReply()}\n\nSe houver divergência, vale a escala oficial.`);
+  assert.equal(button.trace.transports.at(-1).extra.reply_markup.inline_keyboard.flat().find(x=>x.url)?.url, financeUrl);
+  assert.deepEqual(typed.trace.search, []); assert.deepEqual(button.trace.search, []);
+});
+
+test('prepared revoked binding denies Diárias callback and grants no private controls to typed reply', {skip:!materialized}, async () => {
+  const h = harness({operationalProbe:true}); await h.openInline();
+  h.profile.linked = false; h.profile.authenticated = false;
+  const before = h.trace.transports.length; await h.tap('Diárias'); assert.equal(h.trace.transports.length, before);
+  await h.send('telegram','/diarias');
+  assert(h.trace.output.at(-1).includes(financeUrl), 'public fallback destination is still available for sign-in');
+  assert(!h.trace.transports.at(-1).extra.reply_markup?.inline_keyboard, 'revoked profile receives no private menu');
+  assert.deepEqual(h.trace.search, []);
 });

@@ -40,7 +40,7 @@ export function requestedWeatherAirport(text = '', interpret) {
   if (named && !['METAR', 'TAF', 'ATIS', 'QUAL', 'COMO', 'ONDE', 'QUEM', 'BASE', 'CASA', 'PARA', 'VOO', 'AERO', 'RAW'].includes(named)) return named;
   return interpret(value).airport || '';
 }
-export const missingFinanceReply = () => 'Diárias · valores indisponíveis nesta conversa. Consulte os dados disponíveis no app.';
+export const missingFinanceReply = () => `Diárias · valores indisponíveis nesta conversa. Consulte os dados disponíveis no app: ${financeUrl}`;
 const financialDetails = 'Os valores financeiros ainda não têm uma fonte autorizada integrada a esta conversa. A escala e os pernoites não permitem calcular valores, confirmar pagamento ou consultar o financeiro do navegador.';
 export const missingComplianceReply = () => 'Revisão da escala · dados insuficientes\n\nNão há ocorrências verificáveis neste resumo. Faltam, por ocorrência, horários com origem confirmada, duração verificável e fundamento aplicável com artigo ou cláusula, documento e vigência. Não é possível confirmar limite aplicável ou irregularidade.\n\nSem a origem dos horários, também não posso apresentá-los como fatos publicados. A análise fundamentada ainda não está disponível nesta conversa.';
 export function menuTemplate(page = 'home') {
@@ -144,7 +144,7 @@ export function createTelegramMenu(deps, now = Date.now) {
     return { ...extra, reply_markup: { inline_keyboard } };
   }
   async function send(chat, text, page = 'home', profile = null) {
-    await deps.send(chat, text, { ...(profile ? { [navigationGuard]: { owner: owner(profile), validate: profile.conciergeResponseAuthority?.validate } } : {}), reply_markup: menuTemplate(page) });
+    await deps.send(chat, text, { ...(profile ? { [navigationGuard]: { owner: owner(profile), validate: profile.conciergeResponseAuthority?.validate, checkNow: profile.conciergeResponseAuthority?.checkNow } } : {}), reply_markup: menuTemplate(page) });
   }
   const messageId = value => Number.isSafeInteger(value) && value > 0 ? value : null;
   async function stillOwner(profile) {
@@ -244,7 +244,7 @@ export function createTelegramMenu(deps, now = Date.now) {
     // Dispatch directly to the existing producer, never fabricate a user update.
     const reply = await deps.reply(`/${action}${arg ? ` ${arg}` : ''}`, profile, snapshot);
     if (!await stillOwner(profile)) return;
-    const guarded = { [navigationGuard]: { owner: owner(profile), validate: profile.conciergeResponseAuthority?.validate } };
+    const guarded = { [navigationGuard]: { owner: owner(profile), validate: profile.conciergeResponseAuthority?.validate, checkNow: profile.conciergeResponseAuthority?.checkNow } };
     if (action === 'configuracoes') {
       await deps.send(profile.chatId, reply, { ...guarded, reply_markup: deps.settingsKeyboard });
     } else if (action === 'metar' || action === 'taf') {
@@ -389,5 +389,5 @@ export function createTelegramMenu(deps, now = Date.now) {
     await clearPrompt(profile, retired);
     return true;
   }
-  return { markup, callback, text, interrupt, guard: profile => ({ [navigationGuard]: { owner: owner(profile) || 'unverified', validate: profile.conciergeResponseAuthority?.validate } }) };
+  return { markup, callback, text, interrupt, deliveryCheck: extra => extra?.[navigationGuard]?.checkNow || null, guard: profile => ({ [navigationGuard]: { owner: owner(profile) || 'unverified', validate: profile.conciergeResponseAuthority?.validate, checkNow: profile.conciergeResponseAuthority?.checkNow } }) };
 }
