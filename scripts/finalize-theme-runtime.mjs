@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import ts from 'typescript';
 
 const imports = "import { applyCrewCheckTheme, getCrewCheckThemePreference, getEffectiveCrewCheckTheme, setCrewCheckThemePreference } from './lib/themeRuntime';";
 const appPath = 'client/src/App.tsx';
@@ -74,3 +75,22 @@ if (!auth.includes('function chooseCrewTheme(')) {
   auth = auth.replaceAll("onClick={() => setThemeMode('", "onClick={() => chooseCrewTheme('");
 }
 fs.writeFileSync(authPath, auth);
+
+// Prepaint is compiled from the same runtime functions, never a parallel theme policy.
+const themeSource = fs.readFileSync('client/src/lib/themeRuntime.ts', 'utf8');
+const themeAst = ts.createSourceFile('themeRuntime.ts', themeSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+const bootstrapFunctions = new Set(['normalize', 'getCrewCheckThemePreference', 'getEffectiveCrewCheckTheme', 'applyCrewCheckTheme']);
+const bootstrapVariables = new Set(['KEY', 'LEGACY_KEY', 'volatilePreference']);
+const bootstrapNodes = themeAst.statements.filter(node =>
+  ts.isFunctionDeclaration(node) && bootstrapFunctions.has(node.name?.text)
+  || ts.isVariableStatement(node) && node.declarationList.declarations.some(item => bootstrapVariables.has(item.name.getText(themeAst))));
+if (bootstrapNodes.length !== 7) throw new Error('Canonical theme bootstrap inputs missing');
+const bootstrapCode = ts.transpileModule(bootstrapNodes.map(node => node.getText(themeAst).replace(/^export /, '')).join('\n') + '\napplyCrewCheckTheme();', {
+  compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.None },
+}).outputText;
+const htmlPath = 'client/index.html';
+let html = fs.readFileSync(htmlPath, 'utf8').replace(/\s*<script id="cc-theme-prepaint">[\s\S]*?<\/script>/g, '');
+const charset = '<meta charset="UTF-8" />';
+if (!html.includes(charset)) throw new Error('Canonical HTML charset anchor missing');
+html = html.replace(charset, charset + '\n    <script id="cc-theme-prepaint">\n' + bootstrapCode.replace(/<\/script/gi, '<\\/script') + '\n    </script>');
+fs.writeFileSync(htmlPath, html);
