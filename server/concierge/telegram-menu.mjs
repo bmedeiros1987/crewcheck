@@ -1,13 +1,13 @@
 import { randomBytes } from 'node:crypto';
 
 const pages = {
-  home: [['Hoje', 'hoje'], ['Escala', 'escala'], ['Diárias', 'diarias'], ['Hotéis', 'hoteis'], ['Mais', 'more']],
-  more: [['Amanhã', 'amanha'], ['Próxima', 'proximo'], ['Radar', 'radar'], ['Portão', 'portao'], ['Meteorologia', 'weather'], ['Saída', 'saida'], ['Bem-estar', 'wellness'], ['Revisar escala', 'conformidade'], ['Configurações', 'configuracoes'], ['Emergência', 'emergencia'], ['Voltar', 'home'], ['Início', 'home']],
-  weather: [['METAR', 'metar'], ['TAF', 'taf'], ['ATIS', 'atis'], ['Voltar', 'more'], ['Início', 'home']],
-  wellness: [['Hospitais', 'hospitais'], ['Farmácias', 'farmacias'], ['Academias', 'academias'], ['Rotina', 'rotina'], ['Voltar', 'more'], ['Início', 'home']],
-  hoteis: [['Histórico', 'historico_pernoites'], ['Início', 'home']],
-  duty: [['Fundamento', 'duty_basis'], ['Voltar', 'more'], ['Início', 'home']],
-  duty_details: [['Voltar', 'duty_summary'], ['Início', 'home']],
+  home: [['📅 Hoje', 'hoje'], ['✈️ Escala', 'escala'], ['💰 Diárias', 'diarias'], ['🏨 Hotéis', 'hoteis'], ['➕ Mais', 'more']],
+  more: [['📆 Amanhã', 'amanha'], ['⏭️ Próxima', 'proximo'], ['📡 Radar', 'radar'], ['🚪 Portão', 'portao'], ['🌤️ Meteorologia', 'weather'], ['🚗 Saída', 'saida'], ['🌿 Bem-estar', 'wellness'], ['📋 Revisar escala', 'conformidade'], ['⚙️ Configurações', 'configuracoes'], ['🚨 Emergência', 'emergencia'], ['↩️ Voltar', 'home'], ['🏠 Início', 'home']],
+  weather: [['🌤️ METAR', 'metar'], ['🌤️ TAF', 'taf'], ['📻 ATIS', 'atis'], ['↩️ Voltar', 'more'], ['🏠 Início', 'home']],
+  wellness: [['🏥 Hospitais', 'hospitais'], ['💊 Farmácias', 'farmacias'], ['🏋️ Academias', 'academias'], ['🗓️ Rotina', 'rotina'], ['↩️ Voltar', 'more'], ['🏠 Início', 'home']],
+  hoteis: [['🕘 Histórico', 'historico_pernoites'], ['🏠 Início', 'home']],
+  duty: [['📖 Fundamento', 'duty_basis'], ['↩️ Voltar', 'more'], ['🏠 Início', 'home']],
+  duty_details: [['↩️ Voltar', 'duty_summary'], ['🏠 Início', 'home']],
 };
 const commands = new Set(['hoje', 'escala', 'amanha', 'proximo', 'saida', 'hospitais', 'farmacias', 'academias', 'rotina', 'informar_hotel', 'adicionar_quarto', 'historico_pernoites', 'configuracoes']);
 const parameters = { radar: 'Digite o voo, por exemplo LA1234.', portao: 'Digite o voo, por exemplo LA1234.', metar: 'Digite o código ICAO do aeroporto, por exemplo SBGR.', taf: 'Digite o código ICAO do aeroporto, por exemplo SBGR.', atis: 'Digite o código ICAO do aeroporto, por exemplo SBGR.' };
@@ -29,11 +29,11 @@ export function requestedWeatherAirport(text = '', interpret) {
 export const missingFinanceReply = () => `Diárias · dados financeiros indisponíveis nesta conversa\n\nA escala recebida pelo Telegram não contém os valores financeiros, moedas, datas previstas de pagamento ou status de cálculo da sua conta. Não posso calcular esses dados a partir de pernoites.\n\nConsulte a fonte financeira existente: ${financeUrl}\nEntre na sua conta para consultar valores e eventuais dados pendentes.`;
 export const missingComplianceReply = () => 'Revisão da escala · dados insuficientes\n\nNão há ocorrências verificáveis neste resumo. Faltam, por ocorrência, horários com origem confirmada, duração verificável e fundamento aplicável com artigo ou cláusula, documento e vigência. Não é possível confirmar limite aplicável ou irregularidade.\n\nSem a origem dos horários, também não posso apresentá-los como fatos publicados. A análise fundamentada ainda não está disponível nesta conversa.';
 export function menuTemplate(page = 'home') {
-  if (page === 'finance') return { inline_keyboard: [[{ text: 'Ver Diárias', url: financeUrl }], [{ text: 'Voltar', callback_data: 'cc_nav:entry:home' }, { text: 'Início', callback_data: 'cc_nav:entry:home' }]] };
+  if (page === 'finance') return { inline_keyboard: [[{ text: '💰 Ver Diárias', url: financeUrl }], [{ text: '↩️ Voltar', callback_data: 'cc_nav:entry:home' }, { text: '🏠 Início', callback_data: 'cc_nav:entry:home' }]] };
   const items = pages[page] || pages.home;
   const rows = [];
   for (let i = 0; i < items.length; i += 2) rows.push(items.slice(i, i + 2).map(([text, action]) => ({ text, callback_data: `cc_nav:entry:${action}` })));
-  if (page === 'hoteis') rows.unshift([{ text: 'Abrir Hotéis no app', url: hotelsUrl }]);
+  if (page === 'hoteis') rows.unshift([{ text: '🏨 Abrir Hotéis no app', url: hotelsUrl }]);
   return { inline_keyboard: rows };
 }
 export function menuGreeting(name = '') {
@@ -160,7 +160,7 @@ export function createTelegramMenu(deps, now = Date.now) {
     await clearPrompt(profile, previous);
     if (!currentPrompt(chat, prompt)) return;
     const delivered = await deps.send(profile.chatId, text, { [promptGuard]: prompt,
-      reply_markup: { inline_keyboard: [[{ text: 'Cancelar', callback_data: 'cc_nav:entry:cancel' }]] } });
+      reply_markup: { inline_keyboard: [[{ text: '✖️ Cancelar', callback_data: 'cc_nav:entry:cancel' }]] } });
     const result = delivered?.data?.result;
     prompt.id = messageId(result?.message_id);
     prompt.date = Number.isSafeInteger(result?.date) && result.date > 0 ? result.date : null;
@@ -207,8 +207,8 @@ export function createTelegramMenu(deps, now = Date.now) {
     const replyMarkup = menuTemplate(!facts.signature ? 'more' : detail && !changed ? 'duty_details' : 'duty');
     if (facts.signature && (!detail || changed) && facts.pageCount > 1) {
       const row = [];
-      if (facts.page > 0) row.push({ text: 'Anterior', callback_data: 'cc_nav:entry:duty_prev' });
-      if (facts.page + 1 < facts.pageCount) row.push({ text: 'Próxima página', callback_data: 'cc_nav:entry:duty_next' });
+      if (facts.page > 0) row.push({ text: '◀️ Anterior', callback_data: 'cc_nav:entry:duty_prev' });
+      if (facts.page + 1 < facts.pageCount) row.push({ text: '▶️ Próxima página', callback_data: 'cc_nav:entry:duty_next' });
       replyMarkup.inline_keyboard.unshift(row);
     }
     await deps.send(profile.chatId, (changed ? 'O snapshot mudou ou não está mais disponível. Consulte esta nova leitura.\n\n' : '') + (detail && !changed ? facts.basis : facts.summary), {

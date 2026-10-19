@@ -42,48 +42,48 @@ const ask = () => run(message('/conformidade'));
 
 await ask(); assert.match(sent.at(-1).text, /6h40/); assert.match(sent.at(-1).text, /Correspondência com a escala ativa não comprovada/);
 const summary = sent.at(-1).text;
-const details = button('Fundamento');
+const details = button('📖 Fundamento');
 await run(callback(details)); assert.match(sent.at(-1).text, /Fundamento da leitura/); assert.match(sent.at(-1).text, /publicada \(07:25\)/);
 assert.match(sent.at(-1).text, /regime e composição confirmados/);
-await run(callback(button('Voltar'))); assert.equal(sent.at(-1).text, summary);
+await run(callback(button('↩️ Voltar'))); assert.equal(sent.at(-1).text, summary);
 await run(callback(details)); assert.match(answers.at(-1).text, /expirou/); // One-use ticket.
 
 // The actual production sender decorates the existing root, then the real
 // callback handler routes Mais → Revisar escala to the same factual consumer.
 context.root = menuTemplate();
 await vm.runInContext('sendTelegramMessage(123, "Escolha", {reply_markup: root})', context);
-await run(callback(button('Mais'))); await run(callback(button('Revisar escala')));
+await run(callback(button('➕ Mais'))); await run(callback(button('📋 Revisar escala')));
 assert.equal(sent.at(-1).text, summary);
 
 await run(message('revisar escala')); assert.equal(sent.at(-1).text, summary);
 snapshot = makeSnapshot([10, 12, 14, 16].map(n => day({ date: `${n}/10/2032` })));
 await ask(); assert.match(sent.at(-1).text, /Página 1\/3/);
-await run(callback(button('Próxima página'))); assert.match(sent.at(-1).text, /Página 2\/3/);
-await run(callback(button('Fundamento'))); assert.match(sent.at(-1).text, /Fundamento/);
-await run(callback(button('Voltar'))); assert.match(sent.at(-1).text, /Página 2\/3/);
-await run(callback(button('Anterior'))); assert.match(sent.at(-1).text, /Página 1\/3/);
-await run(callback(button('Próxima página'))); const pageTwoBasis = button('Fundamento');
-await ask(); const pageOneBasis = button('Fundamento'), startConcurrent = sent.length;
+await run(callback(button('▶️ Próxima página'))); assert.match(sent.at(-1).text, /Página 2\/3/);
+await run(callback(button('📖 Fundamento'))); assert.match(sent.at(-1).text, /Fundamento/);
+await run(callback(button('↩️ Voltar'))); assert.match(sent.at(-1).text, /Página 2\/3/);
+await run(callback(button('◀️ Anterior'))); assert.match(sent.at(-1).text, /Página 1\/3/);
+await run(callback(button('▶️ Próxima página'))); const pageTwoBasis = button('📖 Fundamento');
+await ask(); const pageOneBasis = button('📖 Fundamento'), startConcurrent = sent.length;
 await Promise.all([run(callback(pageOneBasis)), run(callback(pageTwoBasis))]);
 const concurrent = sent.slice(startConcurrent).filter(item => item.text.startsWith('Fundamento'));
 assert.equal(concurrent.length, 2);
 const pageOne = concurrent.find(item => item.text.includes('Programação 2032-10-10'));
 const pageTwo = concurrent.find(item => item.text.includes('Programação 2032-10-14'));
 assert(pageOne && pageTwo);
-const back = item => item.reply_markup.inline_keyboard.flat().find(button => button.text === 'Voltar').callback_data;
+const back = item => item.reply_markup.inline_keyboard.flat().find(button => button.text === '↩️ Voltar').callback_data;
 await run(callback(back(pageOne))); assert.match(sent.at(-1).text, /Página 1\/3/);
 await run(callback(back(pageTwo))); assert.match(sent.at(-1).text, /Página 2\/3/);
 snapshot = makeSnapshot();
 
-await ask(); const oldBasis = button('Fundamento');
+await ask(); const oldBasis = button('📖 Fundamento');
 snapshot = makeSnapshot([day({ dutyDebrief: '15:05' })]);
 await run(callback(oldBasis)); assert.match(sent.at(-1).text, /snapshot mudou/); assert.match(sent.at(-1).text, /7h40/);
 assert(!sent.at(-1).text.includes('6h40'));
-await run(callback(button('Fundamento'))); assert.match(sent.at(-1).text, /15:05/);
+await run(callback(button('📖 Fundamento'))); assert.match(sent.at(-1).text, /15:05/);
 
 snapshot = makeSnapshot(undefined, { updatedAt: '2020-01-01T12:00:00Z' });
 await ask(); assert.match(sent.at(-1).text, /01\/01\/2020/); assert.match(sent.at(-1).text, /não comprovada/);
-const oldMetadata = button('Fundamento'); snapshot.updatedAt = '2020-01-02T12:00:00Z';
+const oldMetadata = button('📖 Fundamento'); snapshot.updatedAt = '2020-01-02T12:00:00Z';
 await run(callback(oldMetadata)); assert.match(sent.at(-1).text, /snapshot mudou/);
 
 snapshot = makeSnapshot(undefined, { email: 'other@example.invalid' });
@@ -91,7 +91,7 @@ await ask(); assert.match(sent.at(-1).text, /não autorizado/); assert(!sent.at(
 snapshot = makeSnapshot(undefined, { accessKeyHash: 'different-binding' });
 await ask(); assert.match(sent.at(-1).text, /não autorizado/);
 snapshot = makeSnapshot();
-await ask(); const accountTicket = button('Fundamento'); profile.email = 'relinked@example.invalid';
+await ask(); const accountTicket = button('📖 Fundamento'); profile.email = 'relinked@example.invalid';
 const beforeRelink = sent.length; await run(callback(accountTicket)); assert.match(answers.at(-1).text, /expirou/); assert.equal(sent.length, beforeRelink);
 profile = { ...baseProfile };
 snapshotHook = () => { profile = { ...baseProfile, email: 'changed-during-await@example.invalid' }; };
@@ -111,12 +111,12 @@ assert.match(coreReply, /Duração pendente/);
 snapshot = makeSnapshot([day({ date: '2032-10-10' })]); await ask();
 assert.match(sent.at(-1).text, /DD\/MM\/AAAA/); assert(!sent.at(-1).text.includes('6h40'));
 assert(!sent.at(-1).text.includes('01/10/2032'));
-await run(callback(button('Fundamento'))); assert.match(sent.at(-1).text, /DD\/MM\/AAAA/);
+await run(callback(button('📖 Fundamento'))); assert.match(sent.at(-1).text, /DD\/MM\/AAAA/);
 const published = day(), estimated = day({ dutyDebrief: '15:05', dutyDebriefSource: 'estimated', legs: [leg({ arrivalTime: '13:36' })] });
 for (const days of [[published, estimated], [estimated, published]]) {
   snapshot = makeSnapshot(days); await ask(); assert.match(sent.at(-1).text, /duplicados.*conflitantes/);
   assert(!sent.at(-1).text.includes('6h40'));
-  await run(callback(button('Fundamento'))); assert(!sent.at(-1).text.includes('Extremos publicados comprovados'));
+  await run(callback(button('📖 Fundamento'))); assert(!sent.at(-1).text.includes('Extremos publicados comprovados'));
   snapshot = makeSnapshot(days); snapshot.roster = normalizeRosterDays(snapshot.roster);
   await ask(); assert.match(sent.at(-1).text, /duplicados preservados/); assert(!sent.at(-1).text.includes('6h40'));
 }
