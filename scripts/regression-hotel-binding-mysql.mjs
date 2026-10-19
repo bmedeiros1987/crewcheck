@@ -306,7 +306,7 @@ try {
       await reader.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
       for (const table of tables) {
         const [definition] = await reader.query('SHOW CREATE TABLE ' + table);
-        const [columns] = await reader.query('SELECT COLUMN_NAME,DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION',[schema,table]);
+        const [columns] = await reader.query('SELECT COLUMN_NAME,DATA_TYPE,COLUMN_TYPE,IS_NULLABLE,COLUMN_DEFAULT,EXTRA,CHARACTER_SET_NAME,COLLATION_NAME,GENERATION_EXPRESSION FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION',[schema,table]);
         const projection = table === 'crewcheck_platform_stays' ? '*,CAST(row_version AS CHAR) AS row_version' : '*';
         const ordering = table === 'crewcheck_platform_profiles' ? 'email' : 'id';
         const [data] = await reader.query(`SELECT ${projection} FROM ${table} ORDER BY ${ordering}`);
@@ -340,7 +340,13 @@ try {
         const [data] = await restored.query(`SELECT ${projection} FROM ${entry.table} ORDER BY ${ordering}`);
         assert.deepEqual(JSON.parse(JSON.stringify(data)),entry.data,entry.table + ' exact restored data');
         const [definition] = await restored.query('SHOW CREATE TABLE '+entry.table);
-        assert.equal(definition[0]['Create Table'],entry.ddl,entry.table + ' exact restored DDL');
+        // SHOW CREATE may spell an inherited utf8mb4 charset explicitly after
+        // restoring. Compare effective column metadata exactly and normalize only
+        // that redundant spelling; do not erase collation/index/default changes.
+        const [restoredColumns] = await restored.query('SELECT COLUMN_NAME,DATA_TYPE,COLUMN_TYPE,IS_NULLABLE,COLUMN_DEFAULT,EXTRA,CHARACTER_SET_NAME,COLLATION_NAME,GENERATION_EXPRESSION FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? ORDER BY ORDINAL_POSITION',[restoreSchema,entry.table]);
+        assert.deepEqual(JSON.parse(JSON.stringify(restoredColumns)),entry.columns,entry.table + ' exact effective column schema');
+        const canonicalDDL = value => value.replaceAll(' CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',' COLLATE utf8mb4_unicode_ci');
+        assert.equal(canonicalDDL(definition[0]['Create Table']),canonicalDDL(entry.ddl),entry.table + ' equivalent restored DDL');
       }
       assert.equal(await hotelReadiness(mysqlAdapter({query:(sql,values)=>restored.query(sql,values)})),true);
       const saved = decoded.find(entry => entry.table === 'crewcheck_platform_stays').data.find(row => row.id === 'hotel-a');
