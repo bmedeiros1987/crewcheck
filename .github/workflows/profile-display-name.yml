@@ -2,6 +2,7 @@ name: Profile display name
 on:
   pull_request:
     paths:
+      - 'client/src/pages/Home.tsx'
       - 'client/src/components/platform/**'
       - 'client/src/lib/platformClient.ts'
       - 'client/src/lib/authClient.ts'
@@ -44,6 +45,7 @@ jobs:
         run: |
           node scripts/regression-profile-display-name.mjs
           node scripts/regression-profile-display-name-browser.cjs
+          node scripts/regression-profile-display-name-home-browser.cjs
           npx tsc --noEmit
       - uses: actions/upload-artifact@v4
         if: always()

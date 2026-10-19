@@ -97,6 +97,7 @@ import {
 import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getCanonicalWorkHoursTotal, getPublishedDutyLimitSummary, type ComplianceResult } from '@/lib/complianceEngine';
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
 import { authFetch, getStoredUser, getToken, logout } from '@/lib/authClient';
+import { captureAuthSession } from '@/lib/authClient';
 import { exportReport } from '@/lib/pdfExport';
 import { generateICalendar, downloadCalendarFile } from '@/lib/calendarExport';
 import { shareToWhatsApp, shareToTelegram, copyToClipboard, shareExportedPdfNative } from '@/lib/sharing';
@@ -134,7 +135,7 @@ import { allowanceIntervalState, rosterOperationalIso, rosterOperationalDateAt, 
 import { observedAllowancePeriods, rowsInObservedCycle, summarizeForecastRows, summarizeNativeForecastRows, nativeForecastDelta, forecastSummaryValue } from '@/lib/financialForecastPeriods';
 import { financialJourneyGroupKey, rowsForNominalFinancialCompetence, nominalFinancialCompetencePrefix } from '@/lib/financialJourneyGrouping';
 import PlatformCenter from '@/components/platform/PlatformCenter';
-import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, getParkingPosition, saveParkingPosition, deleteParkingPosition, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
+import { getConfirmedPlatformProfile, getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, getParkingPosition, saveParkingPosition, deleteParkingPosition, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
 import {TimezoneChoice} from '@/components/preferences/TimezoneChoice';
 import {deviceTimeZone} from '@shared/timezone-choice.mjs';
 import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient';
@@ -3112,6 +3113,28 @@ function AdminControlView() {
   </>;
 }
 
+// Display confirmed profile name without modifying authentication identity.
+function useConfirmedProfileName(fallback: string) {
+  const [confirmed, setConfirmed] = useState<{ owner: string; name: string; isCurrent: () => boolean } | null>(null);
+  const owner = captureAuthSession().owner;
+  useEffect(() => {
+    let generation = 0;
+    const load = async () => {
+      const current = ++generation, session = captureAuthSession();
+      setConfirmed(null);
+      try {
+        const profile = await getConfirmedPlatformProfile();
+        if (current === generation && session.isCurrent()) setConfirmed({ owner: session.owner, name: profile.displayName, isCurrent: session.isCurrent });
+      } catch { /* Keep the existing account label until remote confirmation. */ }
+    };
+    const storage = (event: StorageEvent) => { if (!event.key || ['crewcheck_auth_user', 'crewcheck_auth_token'].includes(event.key)) void load(); };
+    const events = ['crewcheck:profile-name-confirmed', 'crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired'];
+    void load(); events.forEach(event => window.addEventListener(event, load)); window.addEventListener('storage', storage);
+    return () => { generation++; events.forEach(event => window.removeEventListener(event, load)); window.removeEventListener('storage', storage); };
+  }, []);
+  return confirmed?.owner === owner && confirmed.isCurrent() ? confirmed.name : fallback;
+}
+
 function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; actions: QuickActions }) {
   const admin = isAdmin();
   const user = getStoredUser();
@@ -3162,7 +3185,7 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
       toast.error('Não foi possível concluir a exclusão agora. Nenhum dado foi removido.');
     }
   }
-  const profileName = String(user?.name || user?.email?.split('@')[0] || storage.get('crewcheck_profile_display_name', '') || 'Tripulante CrewCheck');
+  const profileName = useConfirmedProfileName(String(user?.name || user?.email?.split('@')[0] || 'Tripulante CrewCheck'));
   return <><Brand back/><section className="cz-settings">
     <article className="cz-profile"><label className="cc-profile-photo" title="Alterar foto"><span>{profileAvatar ? <img src={profileAvatar} alt="Foto do perfil"/> : <UserRound/>}</span><input hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={updateProfileAvatar}/></label><div><h2>{profileName}</h2><p>{safe((user as any)?.role, 'Tripulante')}</p><span>{planLabel}</span><small>Versão CrewCheck {DEFAULT_VERSION}</small></div><ChevronRight/></article>
     {admin && <DatabaseConnectionCard admin/>}
