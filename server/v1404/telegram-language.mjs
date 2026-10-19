@@ -224,7 +224,7 @@ function nextProgramText(record, presentation) {
       return `${flight}: decolagem prevista ${originDeparturePhrase(leg.origin)} em ${date(dates?.departureDate)} às ${clock(leg.departureTime)}; chegada prevista ao aeroporto de ${shortAirportName(leg.destination)} em ${date(dates?.arrivalDate)} às ${clock(leg.arrivalTime)}.`;
     }),
     legs.length > 4 ? `Os outros ${legs.length - 4} voos estão na escala.` : '',
-    record.endKind !== 'duty-debrief' || !display ? 'Fim publicado da jornada não confirmado.' : `Fim publicado: ${date(display?.endDate)} às ${clock(record.endTime)}.`,
+    record.endKind !== 'duty-debrief' || display?.endConfirmed !== true ? 'Fim publicado da jornada não confirmado.' : `Fim publicado: ${date(display?.endDate)} às ${clock(record.endTime)}.`,
     display ? 'Relógio da escala: UTC−03; sem conversão para o fuso local do destino.' : 'Fuso não confirmado nesta leitura.',
     'Hotel/van sem dados vinculados; chegada ao aeroporto não confirma chegada ao hotel.',
   ];
@@ -240,9 +240,14 @@ export function buildProgramSummary({ profile = {}, snapshot = {}, record = null
   const lead = scheduleLead(label);
   const isNext = /proxima programacao|proximo/.test(normalizeIntent(label));
   if (isNext && (record.display?.cancelled === true || ['cancelled', 'canceled', 'cancelado'].includes(String(record.day?.status || '').trim().toLowerCase()))) return 'Programação consta cancelada no resumo recebido. Voos e apresentação não devem ser usados como programação ativa; confirme a situação na fonte operacional.';
-  if (isNext && !legs.length && !/^(?:[01]?\d|2[0-3]):[0-5]\d$/.test(String(record.day?.dutyReport || ''))) return 'Próxima atividade: apresentação não confirmada na escala recebida. Não há APZ publicada para informar.';
+  if (isNext && !legs.length && record.display?.presentationConfirmed !== true) return 'Próxima atividade: apresentação não confirmada na escala recebida. Não há APZ publicada para informar.';
   if (!legs.length) {
     const activity = String(record.code || 'atividade').toLowerCase();
+    if (isNext) {
+      const dates = record.display;
+      const day = value => value ? value.split('-').reverse().join('/') : 'data não confirmada';
+      return `Próxima atividade: ${activity}.${dates.planned ? ' Planejada; não é confirmação operacional.' : ''} APZ: ${day(dates.presentationDate)} às ${record.startTime}. ${dates.endConfirmed ? `Fim publicado: ${day(dates.endDate)} às ${record.endTime}.` : 'Fim publicado não confirmado.'} Relógio da escala: UTC−03.`;
+    }
     return `${greeting}${lead ? `${lead} ` : ''}você tem ${activity}. Sua apresentação é às ${presentation}, com término previsto às ${end}.`.trim();
   }
   if (isNext) return nextProgramText(record, presentationTime);

@@ -8,7 +8,7 @@ const source=prepared?fs.readFileSync('server.mjs','utf8'):snippet;
 const body=source.match(/async function conciergeDepartureReply\([\s\S]*?\n}/)?.[0];assert(body);
 function fixture({now='2099-10-04T09:00:00Z',origin='AAA',base='AAA',start='2099-10-04T10:00:00Z',end='2099-10-04T16:00:00Z',stay=null,status=null,records=true,days=true,code='VOO',following=false}={}) {
  let routes=0;
- const record={start:new Date(start),end:new Date(end),startTime:'07:00',endTime:'13:00',code,display:{presentationConfirmed:true},day:{base:origin,status,dutyReport:'07:00'},legs:code==='VOO'?[{origin,destination:'BBB'}]:[]};
+ const record={start:new Date(start),end:new Date(end),startTime:'07:00',endTime:'13:00',code,display:{presentationConfirmed:true,publishedStart:Date.parse(start)},day:{base:origin,status,dutyReport:'07:00'},legs:code==='VOO'?[{origin,destination:'BBB'}]:[]};
  const roster={base,days:days?[{}]:[]};
  class Clock extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return new Date(now).getTime();}}
  const context=vm.createContext({Date:Clock,conciergeJourneyProgramRecords:()=>records?[record,...(following?[{...record,start:new Date('2099-10-05T10:00:00Z'),end:new Date('2099-10-05T16:00:00Z')}]:[])]:[],conciergeProgramRecords:()=>[],conciergeCurrentStay:()=>assert.fail('unbound hotel selector must not be consumed'),
@@ -66,7 +66,7 @@ function realRuntime(now='2099-10-04T09:00:00Z') {
   vm.runInContext(declarations.join('\n')+'\nglobalThis.run=conciergeDepartureReply;globalThis.programs=conciergeProgramRecords;',context);
   return{run:roster=>context.run({roster}),programs:roster=>realPrograms(roster,context.programs(roster)),routes:()=>routes};
 }
-function sourceDay(extra={}){return{date:'04/10/2099',dayNumber:4,month:10,year:2099,type:'VOO',pairingCode:'LA0012',dutyReport:'07:00',dutyDebrief:'09:30',base:'AAA',hotel:null,legs:[{flightNumber:'LA0012',origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',workType:'OP'}],...extra};}
+function sourceDay(extra={}){return{date:'04/10/2099',dayNumber:4,month:10,year:2099,type:'VOO',pairingCode:'LA0012',dutyReport:'07:00',dutyDebrief:'09:30',dutyReportSource:'published',dutyDebriefSource:'published',base:'AAA',hotel:null,legs:[{flightNumber:'LA0012',origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',workType:'OP'}],...extra};}
 const sourceRoster=days=>({month:10,year:2099,base:'AAA',days});
 for(const status of [undefined,'Cancelled','Planned'])test(`real producer ignores loose hotel row ${status??'unknown'}`,async()=>{
   const f=realRuntime(),g=realRuntime();const clean=sourceRoster([sourceDay()]);
@@ -97,4 +97,39 @@ test('explicit published midnight remains valid rather than being treated as mis
 test('leg cancellation is not hidden by a Planned day',async()=>{
  const f=realRuntime(),raw=sourceDay({status:'Planned'});raw.legs[0].status='Cancelled';const roster=sourceRoster([raw]);const record=f.programs(roster)[0];assert.equal(record.display.cancelled,true);
  assert.match(realSummary({record,label:'A próxima programação',includeGreeting:false}),/cancelad/);assert.match(await f.run(roster),/cancelad/);assert.equal(f.routes(),0);
+});
+
+for(const [name,changes] of [
+ ['report equals departure fallback',{dutyReport:'08:00',dutyReportSource:'published'}],
+ ['estimated report',{dutyReportSource:'estimated'}],
+ ['missing provenance',{dutyReportSource:undefined}],
+ ['unknown provenance',{dutyReportSource:'unknown'}],
+ ['estimated ASB',{type:'ASB',pairingCode:'ASB',legs:[],dutyReportSource:'estimated'}],
+ ['ASB without provenance',{type:'ASB',pairingCode:'ASB',legs:[],dutyReportSource:undefined}],
+])test(`real canonical publication proof rejects ${name}`,async()=>{
+ const f=realRuntime(),roster=sourceRoster([sourceDay(changes)]);const record=f.programs(roster)[0];
+ assert.equal(record.display.presentationConfirmed,false);assert.equal(record.display.publishedStart,null);
+ const departure=await f.run(roster);assert.equal(f.routes(),0);assert.match(departure,/apresentação.*não está confirmada/);assert.doesNotMatch(departure,/Saída recomendada|às 00:00|às 06:05|às 07:05/);
+ const text=realSummary({record,label:'A próxima programação',includeGreeting:false});assert.match(text,/apresentação não confirmada|APZ: horário e data.*não confirmados/);assert.doesNotMatch(text,/APZ:.*às 0[78]:00/);
+});
+test('literal leg APZ equal to departure is not publication proof',async()=>{
+ const f=realRuntime(),raw=sourceDay({dutyReport:null});raw.legs[0].presentationTime='08:00';const roster=sourceRoster([raw]);assert.equal(f.programs(roster)[0].display.presentationConfirmed,false);assert.match(await f.run(roster),/apresentação.*não está confirmada/);assert.equal(f.routes(),0);
+});
+for(const changes of [{dutyDebriefSource:'estimated'},{dutyDebriefSource:undefined},{type:'ASB',pairingCode:'ASB',legs:[],dutyDebriefSource:'estimated'}])test(`published APZ remains independent of incomplete end ${JSON.stringify(changes)}`,async()=>{
+ const f=realRuntime(),roster=sourceRoster([sourceDay(changes)]),record=f.programs(roster)[0];
+ assert.equal(record.display.presentationConfirmed,true);assert.equal(record.display.publishedStart,Date.parse('2099-10-04T10:00:00Z'));assert.equal(record.display.endConfirmed,false);
+ const text=realSummary({record,label:'A próxima programação',includeGreeting:false});assert.match(text,/APZ: 04\/10\/2099 às 07:00/);assert.match(text,/Fim publicado.*não confirmado/);assert.match(await f.run(roster),/06:05/);assert.equal(f.routes(),1);
+});
+test('complete published endpoints remain available',async()=>{
+ const f=realRuntime(),roster=sourceRoster([sourceDay()]),record=f.programs(roster)[0];assert.equal(record.display.presentationConfirmed,true);assert.equal(record.display.endConfirmed,true);
+ const text=realSummary({record,label:'A próxima programação',includeGreeting:false});assert.match(text,/APZ: 04\/10\/2099 às 07:00/);assert.match(text,/Fim publicado: 04\/10\/2099 às 09:30/);assert.match(await f.run(roster),/06:05/);
+});
+test('ASB cancellation with whitespace blocks route',async()=>{
+ const f=realRuntime(),roster=sourceRoster([sourceDay({type:'ASB',pairingCode:'ASB',legs:[],status:' Cancelled '})]);assert.match(await f.run(roster),/cancelad/);assert.equal(f.routes(),0);
+ assert.match(realSummary({record:f.programs(roster)[0],label:'A próxima programação',includeGreeting:false}),/cancelad/);
+});
+test('Planned leg remains visible under a Confirmed day',()=>{
+ const f=realRuntime(),raw=sourceDay({status:'Confirmed'});raw.legs[0].status=' Planned ';const record=f.programs(sourceRoster([raw]))[0];
+ assert.equal(record.display.planned,true);assert(record.display.statuses.some(row=>row.level==='day'&&row.status==='confirmed'));assert(record.display.statuses.some(row=>row.level==='leg'&&row.status==='planned'));
+ assert.match(realSummary({record,label:'A próxima programação',includeGreeting:false}),/Planejada; não é confirmação operacional/);
 });

@@ -35,7 +35,7 @@ const { buildProgramSummary } = await import('../server/v1404/telegram-language.
 const leg = (id, origin, destination, departureTime, arrivalTime, extra = {}) => ({ flightNumber: `SYNTH-${id}`, origin, destination, departureTime, arrivalTime, workType: 'OP', ...extra });
 const day = (date, dutyReport, dutyDebrief, legs, extra = {}) => {
   const [dayNumber, month, year] = date.split('/').map(Number);
-  return { date, dayNumber, month, year, dayOfWeek: '', type: 'VOO', pairingCode: legs[0]?.flightNumber || '', dutyReport, dutyDebrief, dutyHours: null, flyingHours: null, isNextDay: false, hotel: null, base: 'AAA', rawText: '', legs, ...extra };
+  return { date, dayNumber, month, year, dayOfWeek: '', type: 'VOO', pairingCode: legs[0]?.flightNumber || '', dutyReport, dutyDebrief, dutyReportSource:'published', dutyDebriefSource:'published', dutyHours: null, flyingHours: null, isNextDay: false, hotel: null, base: 'AAA', rawText: '', legs, ...extra };
 };
 const fixture = (days) => ({ month: 10, year: 2099, base: 'AAA', rank: 'CCM', rawText: '', days });
 const midnight = fixture([
@@ -150,7 +150,7 @@ assert.equal(proof.startDateTime, '2099-10-07T03:30:00.000Z');
 assert.equal(records(provedWrap)[0].end.toISOString(), proof.startDateTime, 'proved canonical midnight debrief is retained');
 
 const duty = { day: { date: '04/10/2099', type: 'ASB', dutyReport: '10:00', dutyDebrief: '14:00', legs: [] }, code: 'ASB', legs: [], startTime: '10:00', endTime: '14:00', start: new Date('2099-10-04T13:00:00Z'), end: new Date('2099-10-04T17:00:00Z') };
-assert.equal(next(midnight, [duty], at), duty, 'independent nonflight duty preserved exactly');
+const projectedDuty=next(midnight,[duty],at); const {display: dutyDisplay,...dutyCore}=projectedDuty; assert.deepEqual(dutyCore,duty,'independent nonflight core preserved exactly');
 assert.equal(records(midnight, [duty]).filter((record) => !record.legs.length).length, 1);
 assert.throws(() => project([{ kind: 'flight', journeyId: '', leg: {} }]), /incomplete canonical/);
 
