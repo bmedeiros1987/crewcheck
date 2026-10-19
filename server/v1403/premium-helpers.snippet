@@ -109,6 +109,9 @@ async function conciergeDepartureOwnerCurrent(profile, snapshot) {
   } catch { return false; }
 }
 async function conciergePremiumDepartureReply(snapshot, profile = {}) {
+  // The actual producer, after semantic resolution, authorizes the final fence.
+  // No surface-specific text matcher may decide whether these facts are private.
+  profile.conciergeResponseAuthority = { kind: 'departure' };
   const owner = conciergeSafeKey(profile.email || '');
   const owns = candidate => Boolean(owner && conciergeSafeKey(profile.email || '') === owner && candidate?.roster
     && conciergeSafeKey(candidate.email || candidate.key || '') === owner && (!candidate.key || conciergeSafeKey(candidate.key) === owner) && conciergeAccessMatches(profile, candidate));

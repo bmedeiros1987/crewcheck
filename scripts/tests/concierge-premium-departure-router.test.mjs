@@ -121,7 +121,7 @@ for(const path of ['typed','button'])for(const mode of ['missing','null','throw'
  assert.doesNotMatch(reply,/Saia de casa/);assert.equal(h.radarCalls(),0);
 });
 
-for(const path of ['typed','button'])for(const boundary of ['route','radar','final'])test(`actual copied identity relink at ${boundary} denies ${path} prior-owner facts`,async()=>{
+for(const path of ['typed','button','que horas tenho que sair','hora de sair','rota para o aeroporto','trânsito para o aeroporto','ir para o aeroporto'])for(const boundary of ['route','radar','final'])test(`actual copied identity relink at ${boundary} denies ${path} prior-owner facts`,async()=>{
  const roster=data('estimated');const h=realDeparture(roster,'short');let current={...h.profile};
  h.context.telegramLinksRead=()=>({linked:{synthetic:{...current}}});
  h.context.telegramLinksWrite=()=>true;
@@ -137,7 +137,7 @@ for(const path of ['typed','button'])for(const boundary of ['route','radar','fin
   const save=h.context.conciergeSaveSnapshotAsync;
   h.context.conciergeSaveSnapshotAsync=async(...args)=>{const r=await save(...args);if(args[2]?.preferences?.conciergeConversation)relink();return r;};
  }
- if(path==='typed')await h.send('telegram','/saida');else{await h.openInline();await h.tap('Transporte');await h.tap('Saída');}
+ if(path==='button'){await h.openInline();await h.tap('Transporte');await h.tap('Saída');}else await h.send('telegram',path==='typed'?'/saida':path);
  if(boundary==='final')assert.equal(current.email,'route-b@example.invalid','final fixture must cross actual conversation save');
  const outputs=h.trace.output.join(' ');assert.doesNotMatch(outputs,/04\/10\/2099|07:00|QA-MERGED|FORBIDDEN_GATE/);
  if(boundary==='route')assert.equal(h.radarCalls(),0);
