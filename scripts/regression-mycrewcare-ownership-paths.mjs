@@ -5,6 +5,7 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
 import {join,dirname} from 'node:path';
 import {tmpdir} from 'node:os';
 import vm from 'node:vm';
+import {mccChangedPaths} from './ci/mcc-comparison.mjs';
 const gateSource=readFileSync('scripts/assert-mycrewcare-v3-ownership.mjs','utf8');
 // Execute the actual path gate, not a second copy of its allowlist or predicate.
 const boundary=gateSource.indexOf('const portal = read(');
@@ -32,10 +33,11 @@ function run(paths){
  const git=args=>execFileSync('git',args,{cwd:root,stdio:'pipe'});
  const commit=()=>git(['-c','user.name=Synthetic Gate Test','-c','user.email=synthetic@example.invalid','commit','-qm','synthetic fixture']);
  try {
-  git(['init','-q']);writeFileSync(join(root,'baseline'),'synthetic');git(['add','.']);commit();git(['update-ref','refs/remotes/origin/main','HEAD']);
+  git(['init','-q']);writeFileSync(join(root,'baseline'),'synthetic');git(['add','.']);commit();const base=git(['rev-parse','HEAD']).toString().trim();
   for(const path of paths){const file=join(root,path);mkdirSync(dirname(file),{recursive:true});writeFileSync(file,'synthetic');}
   git(['add','.']);commit();
-  vm.runInNewContext(gate,{assert,execFileSync:(file,args,options)=>execFileSync(file,args,{...options,cwd:root})},{timeout:10000});
+  const head=git(['rev-parse','HEAD']).toString().trim();
+  vm.runInNewContext(gate,{assert,process:{env:{CREWCHECK_MCC_BASE_SHA:base,CREWCHECK_MCC_HEAD_SHA:head,CREWCHECK_MCC_CHECKOUT_SHA:head}},mccChangedPaths:plan=>mccChangedPaths(plan,root),execFileSync:(file,args,options)=>execFileSync(file,args,{...options,cwd:root})},{timeout:10000});
  }finally{rmSync(root,{recursive:true,force:true});}
 }
 test('actual ownership gate accepts only the explicit contract/test additions',()=>run(additions));
