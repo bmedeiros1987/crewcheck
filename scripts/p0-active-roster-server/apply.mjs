@@ -19,12 +19,19 @@ if (!source.includes(marker)) {
   let save = block.value;
 
   const beginAnchor = "    await client.query('BEGIN');\n    await client.query('UPDATE crewcheck_platform_rosters SET active=FALSE WHERE owner_email=$1', [context.identity.email]);";
-  if (!save.includes(beginAnchor)) throw new Error('[p0-active-roster-server] transação de ativação não localizada.');
-  save = save.replace(beginAnchor, `    await client.query('BEGIN');\n    ${marker}\n    // Serializa importações concorrentes da mesma conta antes de trocar a escala ativa.\n    await client.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 FOR UPDATE', [context.identity.email]);\n    await client.query('UPDATE crewcheck_platform_rosters SET active=FALSE WHERE owner_email=$1', [context.identity.email]);`);
+  const hotelOwnerAnchor = "    await client.query('BEGIN');\n    const hotelOwner = await client.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 FOR UPDATE', [context.identity.email]);";
+  if (!save.includes(beginAnchor) && !save.includes(hotelOwnerAnchor)) throw new Error('[p0-active-roster-server] transação de ativação não localizada.');
+  if (save.includes(hotelOwnerAnchor)) {
+    // The hotel contract already owns this exact profile lock; keep its missing-owner guard.
+    save = save.replace(hotelOwnerAnchor, `    await client.query('BEGIN');\n    ${marker}\n    const hotelOwner = await client.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 FOR UPDATE', [context.identity.email]);`);
+  } else save = save.replace(beginAnchor, `    await client.query('BEGIN');\n    ${marker}\n    // Serializa importações concorrentes da mesma conta antes de trocar a escala ativa.\n    await client.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 FOR UPDATE', [context.identity.email]);\n    await client.query('UPDATE crewcheck_platform_rosters SET active=FALSE WHERE owner_email=$1', [context.identity.email]);`);
 
-  const commitAnchor = "    await client.query('COMMIT');\n    return { saved: saved.rows[0], full: full.rows[0] };";
+  const returnAnchor = save.includes("return { saved: saved.rows[0], full: full.rows[0], hotelReconciliation };")
+    ? "return { saved: saved.rows[0], full: full.rows[0], hotelReconciliation };"
+    : "return { saved: saved.rows[0], full: full.rows[0] };";
+  const commitAnchor = `    await client.query('COMMIT');\n    ${returnAnchor}`;
   if (!save.includes(commitAnchor)) throw new Error('[p0-active-roster-server] commit da escala não localizado.');
-  save = save.replace(commitAnchor, `    const activeInvariant = await client.query(\n      'SELECT roster_key,fingerprint FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE ORDER BY updated_at DESC,created_at DESC,id DESC LIMIT 2',\n      [context.identity.email],\n    );\n    const activeRow = activeInvariant.rows[0] || null;\n    if (activeInvariant.rows.length !== 1 || activeRow?.roster_key !== key || activeRow?.fingerprint !== fingerprint) {\n      throw Object.assign(new Error('Ativação canônica da escala não foi confirmada no banco.'), { code: 'ACTIVE_ROSTER_INVARIANT' });\n    }\n    await client.query('COMMIT');\n    return { saved: saved.rows[0], full: full.rows[0] };`);
+  save = save.replace(commitAnchor, `    const activeInvariant = await client.query(\n      'SELECT roster_key,fingerprint FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE ORDER BY updated_at DESC,created_at DESC,id DESC LIMIT 2',\n      [context.identity.email],\n    );\n    const activeRow = activeInvariant.rows[0] || null;\n    if (activeInvariant.rows.length !== 1 || activeRow?.roster_key !== key || activeRow?.fingerprint !== fingerprint) {\n      throw Object.assign(new Error('Ativação canônica da escala não foi confirmada no banco.'), { code: 'ACTIVE_ROSTER_INVARIANT' });\n    }\n    await client.query('COMMIT');\n    ${returnAnchor}`);
 
   source = `${source.slice(0, block.start)}${save}${source.slice(block.end)}`;
 }

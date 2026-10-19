@@ -51,6 +51,7 @@ jobs:
       - name: Test real SQL before and after canonical preparation
         env:
           CREWCHECK_NOTIFICATION_QA: isolated-mysql
+          CREWCHECK_HOTEL_QA: isolated-mysql
           CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-notification-qa-socket/mysqld.sock
         run: |
           node scripts/regression-free-day-held.mjs
@@ -60,6 +61,7 @@ jobs:
           node scripts/regression-free-day-simulated-worker.mjs
           node scripts/regression-free-day-observational-get.mjs
           node scripts/regression-notification-mysql.mjs
+          node scripts/regression-hotel-binding-mysql.mjs
           node scripts/android-play/test_mysql_journal_isolated.mjs || exit $?
           node scripts/android-play/test_planned_cli_isolated.mjs || exit $?
           node scripts/android-play/test_release_approval_isolated.mjs || exit $?
@@ -79,6 +81,7 @@ jobs:
           node scripts/regression-free-day-simulated-worker.mjs
           node scripts/regression-free-day-observational-get.mjs
           node scripts/regression-notification-mysql.mjs
+          node scripts/regression-hotel-binding-mysql.mjs
           node scripts/regression-telegram-location-callback-scope.mjs
           node scripts/regression-notification-diagnostic.mjs
           node scripts/regression-wake-diagnostic.mjs

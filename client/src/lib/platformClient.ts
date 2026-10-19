@@ -1,4 +1,6 @@
-import { authFetch, getStoredUser } from './authClient';
+import { authFetch, getStoredUser, captureAuthSession } from './authClient';
+import { createHotelStayClient } from './hotelStayClient.mjs';
+const hotelStayClient = createHotelStayClient({ capture: captureAuthSession, request: authFetch, storage: localStorage });
 
 export type CrewCheckLocale = 'pt-BR' | 'en-US' | 'es-ES';
 export type CrewCheckPlanId = 'free' | 'premium_monthly' | 'premium_annual' | 'premium_unlimited';
@@ -238,27 +240,11 @@ export async function syncPlatformRoster(roster: unknown, compliance: unknown, s
 }
 
 export async function listPlatformStays() {
-  try {
-    const payload = await authFetch<any>('/api/platform/hotels/stays');
-    writeLocal(LOCAL_STAYS_KEY, payload.stays || []);
-    return payload;
-  } catch {
-    return { ok: true, stays: readLocal<any[]>(LOCAL_STAYS_KEY, []), localOnly: true };
-  }
+  return hotelStayClient.list();
 }
 
 export async function updatePlatformStay(patch: Record<string, unknown>) {
-  const items = readLocal<any[]>(LOCAL_STAYS_KEY, []);
-  const key = String(patch.id || patch.hotelKey || patch.stayDate || Date.now());
-  const next = [...items.filter((item) => String(item.id || item.hotelKey || item.stayDate) !== key), { ...patch, id: patch.id || key, updatedAt: new Date().toISOString() }];
-  writeLocal(LOCAL_STAYS_KEY, next);
-  try {
-    const payload = await authFetch<any>('/api/platform/hotels/stays', { method: 'PATCH', body: JSON.stringify(patch) });
-    if (payload.stays) writeLocal(LOCAL_STAYS_KEY, payload.stays);
-    return payload;
-  } catch {
-    return { ok: true, stays: next, localOnly: true };
-  }
+  return hotelStayClient.update(patch);
 }
 
 export async function findHotelCompanions(hotelKey: string, date: string) {

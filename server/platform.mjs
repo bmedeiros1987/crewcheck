@@ -1,3 +1,5 @@
+import { hotelReadiness, runHotelTransaction, reconcileHotelRoster } from './hotel-stay-repository.mjs';
+import { hotelProjection } from './hotel-stay-model.mjs';
 import {createFinancialFxHandler,FINANCIAL_FX_PATH} from './financial-fx.mjs';
 import {createFinancialLedgerHandler, FINANCIAL_LEDGER_PATH, FINANCIAL_UPCOMING_PATH, FINANCIAL_CAPTURE_PATH} from './financial-ledger-route.mjs';
 import {financialLedgerErasureStatements} from './financial-ledger-erasure.mjs';
@@ -1567,6 +1569,8 @@ async function saveRosterMysql(context, { id, key, roster, compliance, gym, sour
   const client = await context.db.connect();
   try {
     await client.query('BEGIN');
+    const hotelOwner = await client.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 FOR UPDATE', [context.identity.email]);
+    if (hotelOwner.rows.length !== 1) throw Object.assign(new Error('Perfil indisponível para sincronização.'), { status: 409 });
     await client.query('UPDATE crewcheck_platform_rosters SET active=FALSE WHERE owner_email=$1', [context.identity.email]);
     await client.query(`
       INSERT INTO crewcheck_platform_rosters(id,owner_email,roster_key,roster,compliance,gym,source_name,fingerprint,active)
@@ -1576,31 +1580,10 @@ async function saveRosterMysql(context, { id, key, roster, compliance, gym, sour
         source_name=VALUES(source_name),fingerprint=VALUES(fingerprint),active=TRUE,updated_at=CURRENT_TIMESTAMP(3)`,
     [id, context.identity.email, key, JSON.stringify(roster), JSON.stringify(compliance), JSON.stringify(gym), sourceName, fingerprint]);
 
-    const existing = await client.query(
-      'SELECT id,stay_date,hotel_key FROM crewcheck_platform_stays WHERE owner_email=$1 AND roster_key=$2',
-      [context.identity.email, key],
-    );
-    const expected = new Set(stays.map((stay) => `${stay.stayDate}|${stay.hotelKey}`));
-    for (const row of existing.rows) {
-      const stayDate = parseDateOnly(row.stay_date);
-      if (!expected.has(`${stayDate}|${row.hotel_key}`)) {
-        await client.query('DELETE FROM crewcheck_platform_stays WHERE id=$1 AND owner_email=$2', [row.id, context.identity.email]);
-      }
-    }
-    for (const stay of stays) {
-      const rule = await client.query(
-        'SELECT lead_minutes FROM crewcheck_platform_hotel_rules WHERE owner_email=$1 AND hotel_key=$2',
-        [context.identity.email, stay.hotelKey],
-      );
-      await client.query(`
-        INSERT INTO crewcheck_platform_stays(id,owner_email,roster_key,stay_date,hotel_key,hotel_name,airport,presentation_time,lead_minutes)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
-        ON DUPLICATE KEY UPDATE
-          roster_key=VALUES(roster_key),hotel_name=VALUES(hotel_name),airport=VALUES(airport),
-          presentation_time=COALESCE(VALUES(presentation_time),presentation_time),
-          lead_minutes=COALESCE(lead_minutes,VALUES(lead_minutes)),updated_at=CURRENT_TIMESTAMP(3)`,
-      [crypto.randomUUID(), context.identity.email, key, stay.stayDate, stay.hotelKey, stay.hotelName, stay.airport, stay.presentationTime, rule.rows[0]?.lead_minutes || null]);
-    }
+    // No stable occurrence reference exists in the current roster parser.
+    // Reconciliation fails pending without insert/delete/name-based adoption.
+    const hotelReconciliation = await reconcileHotelRoster(client, { owner: context.identity.email,
+      rosterKey: key, observations: stays }, { hotelKey });
     const saved = await client.query(
       'SELECT id,roster_key,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND roster_key=$2 LIMIT 1',
       [context.identity.email, key],
@@ -1610,7 +1593,7 @@ async function saveRosterMysql(context, { id, key, roster, compliance, gym, sour
       [context.identity.email, key],
     );
     await client.query('COMMIT');
-    return { saved: saved.rows[0], full: full.rows[0] };
+    return { saved: saved.rows[0], full: full.rows[0], hotelReconciliation };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -1659,7 +1642,7 @@ async function handleRosterSync(req, res) {
   });
   return sendJson(res, 200, {
     ok: true, saved: saved.saved, roster: rosterSummary(saved.full),
-    databasePrimary: true, message: 'Escala ativa salva no banco principal.',
+    databasePrimary: true, hotelReconciliation: { status: saved.hotelReconciliation.status, reason: saved.hotelReconciliation.reason || null, pending: saved.hotelReconciliation.pending || [] }, message: 'Escala ativa salva no banco principal.',
   });
 }
 
@@ -1676,46 +1659,41 @@ async function handleStays(req, res) {
   const context = await requireMain(req, res, body);
   if (!context) return;
   if (!await requirePremium(context, res, 'Hotéis e aprendizado de apresentação')) return;
+  let savedStayId = null;
   if (req.method !== 'GET') {
-    const id = normalizeText(body.id, 80);
-    const hotelName = normalizeText(body.hotelName, 180);
-    const stayDate = parseDateOnly(body.stayDate);
-    if (!id && (!hotelName || !stayDate)) return sendJson(res, 400, { ok: false, message: 'Informe o pernoite que deseja editar.' });
-    const hKey = hotelKey(hotelName);
-    const lead = Number(body.leadMinutes);
-    const leadMinutes = Number.isFinite(lead) && lead >= 0 && lead <= 720 ? Math.round(lead) : null;
-    if (body.learnRule && hKey && leadMinutes !== null) {
-      await context.db.query(`
-        INSERT INTO crewcheck_platform_hotel_rules(owner_email,hotel_key,hotel_name,lead_minutes,sample_count)
-        VALUES($1,$2,$3,$4,1)
-        ON DUPLICATE KEY UPDATE
-          lead_minutes=ROUND((lead_minutes*sample_count+VALUES(lead_minutes))/(sample_count+1)),
-          sample_count=sample_count+1,hotel_name=VALUES(hotel_name),updated_at=NOW()`,
-      [context.identity.email, hKey, hotelName, leadMinutes]);
-    }
-    if (id) {
-      await context.db.query(`UPDATE crewcheck_platform_stays
-        SET hotel_name=COALESCE(NULLIF($3,''),hotel_name),hotel_key=COALESCE(NULLIF($4,''),hotel_key),
-          room_cipher=IF($5,$6,room_cipher),presentation_time=COALESCE(NULLIF($7,''),presentation_time),
-          lead_minutes=COALESCE($8,lead_minutes),share_same_hotel=$9,share_with_visitors=$10,updated_at=NOW()
-        WHERE id=$1 AND owner_email=$2`,
-      [id, context.identity.email, hotelName, hKey, Object.hasOwn(body, 'room'), encryptPrivate(body.room), normalizeText(body.presentationTime, 10), leadMinutes, Boolean(body.shareSameHotel), Boolean(body.shareWithVisitors)]);
-    } else if (hotelName && stayDate) {
-      await context.db.query(`
-        INSERT INTO crewcheck_platform_stays(id,owner_email,stay_date,hotel_key,hotel_name,airport,room_cipher,presentation_time,lead_minutes,share_same_hotel,share_with_visitors)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-        ON DUPLICATE KEY UPDATE
-          hotel_name=VALUES(hotel_name),airport=VALUES(airport),room_cipher=VALUES(room_cipher),
-          presentation_time=VALUES(presentation_time),lead_minutes=VALUES(lead_minutes),
-          share_same_hotel=VALUES(share_same_hotel),share_with_visitors=VALUES(share_with_visitors),updated_at=NOW()`,
-      [crypto.randomUUID(), context.identity.email, stayDate, hKey, hotelName, normalizeText(body.airport, 8).toUpperCase(), encryptPrivate(body.room), normalizeText(body.presentationTime, 10), leadMinutes, Boolean(body.shareSameHotel), Boolean(body.shareWithVisitors)]);
+    // There is deliberately no writable v1/unversioned fallback.
+    const allowed = ['contractVersion', 'action', 'id', 'rosterKey', 'expectedVersion', 'bindingId', 'hotelName', 'clearOverride', 'confirmation', 'contextRef', 'contextSignature'];
+    if (body.contractVersion !== 2 || !['associate', 'patch'].includes(body.action) || Object.keys(body).some(key => !allowed.includes(key)))
+      return sendJson(res, 400, { ok: false, code: 'HOTEL_V2_REQUIRED', message: 'Reabra o editor para conferir o vínculo explícito do pernoite.' });
+    if (typeof body.id !== 'string' || !body.id || body.id.length > 64 || !/^\d{4}-(0[1-9]|1[0-2])$/.test(body.rosterKey || ''))
+      return sendJson(res, 400, { ok: false, code: 'HOTEL_BINDING_REQUIRED', message: 'Selecione o registro e a escala para confirmar o vínculo.' });
+    if (body.action === 'associate' && (!body.contextRef || !body.contextSignature))
+      return sendJson(res, 400, { ok: false, code: 'HOTEL_CONTEXT_REQUIRED', message: 'Confirme a programação alvo deste vínculo.' });
+    if (Object.hasOwn(body, 'clearOverride') && typeof body.clearOverride !== 'boolean')
+      return sendJson(res, 400, { ok: false, message: 'Remoção de escolha manual inválida.' });
+    try {
+      const outcome = await runHotelTransaction(context.db, { ...body, owner: context.identity.email,
+        // Explicit user association is not a claimed provider identity.
+        occurrenceRef: `manual:${body.id}`, source: 'account-owner', at: new Date().toISOString() }, { hotelKey });
+      savedStayId = outcome.id;
+    } catch (error) {
+      const status = error.code === 'ER_DUP_ENTRY' ? 409 : error.code === 'ER_LOCK_DEADLOCK' ? 409 : error.status || 503;
+      return sendJson(res, status, { ok: false, persisted: false, code: error.code || 'HOTEL_WRITE_UNAVAILABLE',
+        message: status === 503 ? 'Sincronização de hotel indisponível. A edição continua neste aparelho.' : 'O vínculo ou a revisão mudou. Releia o pernoite antes de salvar.' });
     }
   }
-  const result = await context.db.query(`SELECT s.*,r.sample_count FROM crewcheck_platform_stays s
+  const ready = await hotelReadiness(context.db);
+  const result = await context.db.query(`SELECT s.*${ready ? ',CAST(s.row_version AS CHAR) AS row_version' : ''},r.sample_count FROM crewcheck_platform_stays s
     LEFT JOIN crewcheck_platform_hotel_rules r ON r.owner_email=s.owner_email AND r.hotel_key=s.hotel_key
     WHERE s.owner_email=$1 ORDER BY s.stay_date DESC LIMIT 120`, [context.identity.email]);
-  const stays = result.rows.map((row) => ({ id: row.id, rosterKey: row.roster_key, stayDate: row.stay_date, hotelKey: row.hotel_key, hotelName: row.hotel_name, airport: row.airport, room: decryptPrivate(row.room_cipher), presentationTime: row.presentation_time, leadMinutes: row.lead_minutes, learnedSamples: row.sample_count || 0, shareSameHotel: row.share_same_hotel, shareWithVisitors: row.share_with_visitors }));
-  return sendJson(res, 200, { ok: true, stays });
+  const active = await context.db.query('SELECT roster_key FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE ORDER BY updated_at DESC LIMIT 1', [context.identity.email]);
+  const stays = result.rows.map(row => ({ id: row.id, rosterKey: row.roster_key, stayDate: row.stay_date,
+    hotelKey: row.hotel_key, hotelName: row.hotel_name, airport: row.airport, room: decryptPrivate(row.room_cipher),
+    presentationTime: row.presentation_time, leadMinutes: row.lead_minutes, learnedSamples: row.sample_count || 0,
+    shareSameHotel: row.share_same_hotel, shareWithVisitors: row.share_with_visitors,
+    ...(ready ? hotelProjection(row) : { bindingId: null, rowVersion: null, contextRef: null, contextSignature: null, state: 'legacy-unbound', manualOverride: false, reviewRequired: true }) }));
+  return sendJson(res, 200, { ok: true, persisted: true, stayContractVersion: ready ? 2 : 0,
+    hotelWriteReady: ready, hotelReadiness: ready ? 'ready' : 'schema-not-ready', activeRosterKey: active.rows[0]?.roster_key || null, savedStayId, stays });
 }
 
 async function handleSameHotel(req, res, url) {
