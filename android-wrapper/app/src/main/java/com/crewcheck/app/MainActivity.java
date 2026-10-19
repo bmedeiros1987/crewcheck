@@ -69,6 +69,7 @@ public class MainActivity extends Activity {
     private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 4646;
     private static final String NOTIFICATION_CHANNEL_ID = "crewcheck_alerts";
     public static final String ACTION_WATCH_SYNC_REQUEST = "com.crewcheck.app.WATCH_SYNC_REQUEST";
+    public static final String ACTION_LIFE_WATCH_PROOF_READY = "com.crewcheck.app.LIFE_WATCH_PROOF_READY";
     private static final int MAX_PDF_BYTES = 35 * 1024 * 1024;
     private static final String IFLIGHT_CREW_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-crew/web/getMainPage";
     private static final String IFLIGHT_CWP_MAIN_URL = "https://iflightla.ibsplc.aero/iflight-cwp/web/getMainPage";
@@ -761,7 +762,12 @@ public class MainActivity extends Activity {
         watchSyncRequestReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
-                if (intent == null || !ACTION_WATCH_SYNC_REQUEST.equals(intent.getAction())) return;
+                if (intent == null) return;
+                if (ACTION_LIFE_WATCH_PROOF_READY.equals(intent.getAction())) {
+                    syncLifeCompanionToCrewCheckAndWatch("watch-proof-continuation");
+                    return; // no provider refresh, operational request or delayed work from an ACK
+                }
+                if (!ACTION_WATCH_SYNC_REQUEST.equals(intent.getAction())) return;
                 syncLifeCompanionToCrewCheckAndWatch("watch-data-layer-request");
                 requestLifeCompanionRefresh();
                 requestCrewCheckWatchSnapshotFromWeb("watch-data-layer-request");
@@ -777,6 +783,7 @@ public class MainActivity extends Activity {
             }
         };
         IntentFilter filter = new IntentFilter(ACTION_WATCH_SYNC_REQUEST);
+        filter.addAction(ACTION_LIFE_WATCH_PROOF_READY);
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(watchSyncRequestReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {
@@ -785,6 +792,7 @@ public class MainActivity extends Activity {
     }
 
     private void unregisterWatchSyncRequestReceiver() {
+        companionSyncWork.close();
         if (watchSyncRequestReceiver == null) return;
         try { unregisterReceiver(watchSyncRequestReceiver); } catch (Exception ignored) {}
         watchSyncRequestReceiver = null;
@@ -893,6 +901,7 @@ public class MainActivity extends Activity {
     // authentication or evidence of whose Samsung Health account is on this device.
     private final Object companionFence = new Object();
     private long companionGeneration = 0;
+    private final CrewLifeSyncWork companionSyncWork = new CrewLifeSyncWork();
     private String companionAccountHint = "";
 
     private void invalidateCompanionOnAccountChange(String hint) {
@@ -901,6 +910,7 @@ public class MainActivity extends Activity {
             if (next.equals(companionAccountHint)) return;
             companionAccountHint = next;
             companionGeneration++;
+            companionSyncWork.invalidate();
             CrewLifeWatchPublisher.revoke(this, null);
             dispatchLifeCompanionSummaryRaw("");
         }
@@ -937,12 +947,17 @@ public class MainActivity extends Activity {
     private void syncLifeCompanionToCrewCheckAndWatch(String reason) {
         final String threadName = "crewlife-companion-sync";
         final long generation;
-        synchronized (companionFence) { generation = companionGeneration; }
+        final long work;
+        synchronized (companionFence) {
+            generation = companionGeneration;
+            work = "watch-proof-continuation".equals(reason) ? companionSyncWork.claim() : companionSyncWork.start();
+            if (work == 0) return;
+        }
         new Thread(() -> {
             try {
                 String raw = readLifeCompanionSummaryInternal();
                 synchronized (companionFence) {
-                    if (generation != companionGeneration || companionAccountHint.isEmpty()) return;
+                    if (generation != companionGeneration || companionAccountHint.isEmpty() || !companionSyncWork.isCurrent(work)) return;
                     dispatchLifeCompanionSummaryRaw(raw);
                     publishLifeCompanionSummaryToWatch(raw);
                 }
@@ -951,20 +966,24 @@ public class MainActivity extends Activity {
     }
 
     private void publishLifeCompanionSummaryToWatch(String raw) {
+        final long work = companionSyncWork.current();
         try {
-            if (raw == null || raw.isBlank()) { CrewLifeV2Phone.invalidate(this); return; }
+            if (raw == null || raw.isBlank()) { companionSyncWork.complete(work); CrewLifeV2Phone.invalidate(this); return; }
             WatchHealthConsent consent = WatchHealthConsent.read(this);
-            if (!consent.allowsAnyHealth() || WatchHealthConsent.isRevocationPending(this)) return;
+            if (!consent.allowsAnyHealth() || WatchHealthConsent.isRevocationPending(this)) { companionSyncWork.complete(work); return; }
             JSONObject source = new JSONObject(raw);
             if (!source.optBoolean("automatic", false)
                     || source.optLong("validUntilEpochMs", 0) <= System.currentTimeMillis()) {
-                CrewLifeV2Phone.invalidate(this); return;
+                companionSyncWork.complete(work); CrewLifeV2Phone.invalidate(this); return;
             }
             // Source filtering already occurred in readLifeCompanionSummaryInternal.
             // Carry every per-metric deadline to v2; query time never renews a sample.
             JSONObject payload = CrewLifeV2Protocol.project(source);
-            CrewLifeWatchPublisher.publishCrewLife(this, payload.toString(), this::dispatchCrewCheckWatchSyncResult);
-        } catch (Exception invalid) { CrewLifeV2Phone.invalidate(this); }
+            CrewLifeWatchPublisher.publishCrewLife(this, payload.toString(), (ok, code, message) -> {
+                if (!"peer_cleanup_pending".equals(code) && !"cleanup_pending".equals(code)) companionSyncWork.complete(work);
+                dispatchCrewCheckWatchSyncResult(ok, code, message);
+            });
+        } catch (Exception invalid) { companionSyncWork.complete(work); CrewLifeV2Phone.invalidate(this); }
     }
 
     private void dispatchLifeCompanionSummaryRaw(String raw) {

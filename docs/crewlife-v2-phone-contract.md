@@ -169,3 +169,26 @@ also exercises strict malformed receipt permutations, old ACK replay after permi
 consumption, native Companion filtering through the actual Wear parser with mixed
 TTL orderings, process-start reconciliation, capability loss and DataClient failure.
 No cross-account leak was demonstrated or is claimed by these findings.
+
+
+## ACK continuation is not an external refresh request
+
+Accepted reset ACKs use a separate local `LIFE_WATCH_PROOF_READY` action. They do
+not use the external watch-request action, call the provider's `refresh`, request
+an operational projection, or post another 1800ms callback. Activity-local work
+tickets allow at most one ACK continuation of the latest original read phase;
+new external phases coalesce older reads, terminal callbacks finish their own
+ticket, account changes invalidate tickets, and Activity destruction closes them.
+The durable per-node publication permits and all source/session fences remain.
+
+Six Robolectric tests use actual Android broadcast registration/delivery, the
+production Activity receiver, native provider read, publisher and ACK service,
+and the real paused main Looper. A posting WebView test adapter models an attached
+View's Handler delivery. GMS transport, a synthetic ContentProvider and peer disk
+are explicit doubles; receiver parser/fence come from the exact pinned Wear source.
+The tests drain main callbacks and native worker threads until there is NO next
+scheduled main task, then advance another30seconds and require stable counts.
+They cover external request, ACK without original work, duplicate/reordered ACKs,
+logout, explicit retry and destroyed Activity. This closes the no-op-broadcast
+coverage gap in the older JVM fixtures; those still test their narrower contracts.
+No physical delivery or real vendor/encrypted-store behavior is inferred.

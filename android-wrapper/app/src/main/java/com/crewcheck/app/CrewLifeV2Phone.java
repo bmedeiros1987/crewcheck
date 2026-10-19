@@ -200,7 +200,8 @@ public final class CrewLifeV2Phone {
                 if (!j.ack(node, message)) return;
                 save(c, j); retries = 0;
                 // Full consent revocation is cleared only by publisher's separate routine cleanup.
-                c.sendBroadcast(new android.content.Intent(MainActivity.ACTION_WATCH_SYNC_REQUEST).setPackage(c.getPackageName()));
+                if ("reset_ack".equals(message.optString("op")))
+                    c.sendBroadcast(new android.content.Intent(MainActivity.ACTION_LIFE_WATCH_PROOF_READY).setPackage(c.getPackageName()));
             } catch (Exception ignored) { /* unknown/stale/wrong-node ACK cannot authorize values */ }
         }
     }
