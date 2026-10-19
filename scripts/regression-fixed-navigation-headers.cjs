@@ -38,6 +38,29 @@ const settle = page => page.evaluate(async () => {
   for (const animation of document.getAnimations()) if (Number.isFinite(animation.effect?.getComputedTiming().endTime)) try { animation.finish(); } catch {}
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 });
+async function waitForStableHeading(page) {
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    const start=performance.now();let previous='',stableFrames=0;
+    window.__ccHeadingStability=[];
+    while(performance.now()-start<3000) {
+      await new Promise(resolve=>requestAnimationFrame(resolve));
+      const button=document.querySelector('.cc-home-layout-heading>button');
+      if(!button?.isConnected) {stableFrames=0;continue;}
+      const rect=button.getBoundingClientRect();let animating=false;
+      for(let node=button;node;node=node.parentElement) {
+        if(node.getAnimations().some(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime)&&!['finished','idle'].includes(animation.playState))) animating=true;
+      }
+      const signature=JSON.stringify([rect.x,rect.y,rect.width,rect.height,getComputedStyle(button).transform,document.fonts.status]);
+      stableFrames=!animating&&document.fonts.status==='loaded'&&signature===previous?stableFrames+1:0;
+      previous=signature;
+      window.__ccHeadingStability.push({time:performance.now(),rect:{x:rect.x,y:rect.y,width:rect.width,height:rect.height},animating,fontStatus:document.fonts.status,stableFrames});
+      if(window.__ccHeadingStability.length>24) window.__ccHeadingStability.shift();
+      if(stableFrames>=3) return;
+    }
+    throw new Error('Home heading did not reach stable geometry without finite animations');
+  });
+}
 // The production event bridge and explicit UI dismissal exercise the compiled
 // app's actual queue. No test-only runtime, CSS mutation or external send.
 async function emptyPulseQueue(page) {
@@ -132,6 +155,8 @@ async function visibleTextBounds(page, selector) {
       });
       await context.addInitScript(fixtureScope.qaSeed,{theme,kind:fixtureScope.qaRoster('multi'),amount:1234567.89});
       await context.addInitScript(()=>{
+        window.__ccReadingPointer=null;
+        document.addEventListener('pointermove',event=>{window.__ccReadingPointer={x:event.clientX,y:event.clientY,type:event.pointerType,time:performance.now()};},true);
         const ownerId='financial-ui-qa';
         localStorage.setItem('crewcheck_language','pt-BR');
         localStorage.setItem('crewcheck:notification-preferences:v1:'+ownerId,JSON.stringify({ownerId,revision:0,preferences:{settings:{crewcheck_pulse_enabled:true}}}));
@@ -148,15 +173,24 @@ async function visibleTextBounds(page, selector) {
       const box=async selector=>page.locator(selector).boundingBox();
       const stable=(before,after,label)=>{assert.ok(before&&after);assert.ok(Math.abs(before.y-after.y)<=1&&Math.abs(before.height-after.height)<=1,label+JSON.stringify({before,after}));};
       // Prepared-cascade geometry: exactly one top inset, with no opaque rectangle.
+      const homeGeometry=[];let negativeControl=null;
       for (const inset of [0,24,48]) {
         await page.evaluate(inset=>document.documentElement.style.setProperty('--cc-safe-area-top',inset+'px'),inset);
         await settle(page);
+        try {await waitForStableHeading(page);} catch(error) {
+          const timeline=await page.evaluate(()=>window.__ccHeadingStability);
+          fs.writeFileSync(path.join(output,`${width}-${theme}-${size}-inset${inset}-stability-timeout.json`),JSON.stringify({width,theme,size,inset,timeline},null,2));
+          await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-inset${inset}-stability-timeout.png`)});throw error;
+        }
         const top=await page.evaluate(()=>{
           const app=document.querySelector('.cz-app'),header=app.querySelector(':scope > .cz-global-header'),row=header.querySelector('.cz-brand-row');
           const h=header.getBoundingClientRect(),r=row.getBoundingClientRect(),a=app.getBoundingClientRect();
           const heading=document.querySelector('.cc-home-layout-heading'),copy=heading.firstElementChild.getBoundingClientRect(),button=heading.querySelector('button').getBoundingClientRect();
-          return {parentPadding:getComputedStyle(app).paddingTop,headerPadding:getComputedStyle(header).paddingTop,background:getComputedStyle(header).backgroundColor,before:getComputedStyle(header,'::before').content,offset:r.top-a.top,headerTop:h.top-a.top,homeGap:Math.min(copy.top,button.top)-h.bottom,homePadding:getComputedStyle(heading).paddingTop,button:{width:button.width,height:button.height}};
+          const target=heading.querySelector('button'),style=getComputedStyle(target),ancestors=[];
+          for(let node=target;node;node=node.parentElement) ancestors.push({tag:node.tagName,className:node.className,transform:getComputedStyle(node).transform,animations:node.getAnimations().map(animation=>({state:animation.playState,time:animation.currentTime,end:animation.effect?.getComputedTiming().endTime}))});
+          return {time:performance.now(),parentPadding:getComputedStyle(app).paddingTop,headerPadding:getComputedStyle(header).paddingTop,background:getComputedStyle(header).backgroundColor,before:getComputedStyle(header,'::before').content,offset:r.top-a.top,headerTop:h.top-a.top,homeGap:Math.min(copy.top,button.top)-h.bottom,homePadding:getComputedStyle(heading).paddingTop,button:{width:button.width,height:button.height,offsetHeight:target.offsetHeight,minHeight:style.minHeight,transform:style.transform,hover:target.matches(':hover'),active:target.matches(':active'),fontStatus:document.fonts.status,pointer:window.__ccReadingPointer,ancestors},stability:window.__ccHeadingStability};
         });
+        homeGeometry.push({inset,...top});
         assert.equal(top.parentPadding,'0px','Parent does not duplicate header safe area');
         assert.equal(top.headerPadding,inset+'px','Header retains the full safe area');
         assert.equal(top.background,'rgba(0, 0, 0, 0)','Header shares the app canvas');
@@ -165,8 +199,28 @@ async function visibleTextBounds(page, selector) {
         assert.ok(Math.abs(top.headerTop)<=1,'No obsolete top gap');
         assert.equal(top.homePadding,'16px','Home owns one moderate content inset');
         assert.ok(top.homeGap>=16&&top.homeGap<=24,'Home heading breathes below the header without duplicated shell padding: '+JSON.stringify(top));
-        assert.ok(top.button.width>=44&&top.button.height>=44,'Personalize retains its touch target');
+        if(top.button.width<44||top.button.height<44) {
+          const failure={width,theme,size,inset,top};
+          fs.writeFileSync(path.join(output,`${width}-${theme}-${size}-inset${inset}-touch-failure.json`),JSON.stringify(failure,null,2));
+          await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-inset${inset}-touch-failure.png`)});
+        }
+        assert.ok(top.button.width>=44&&top.button.height>=44,'Personalize retains its touch target: '+JSON.stringify({width,theme,size,inset,button:top.button}));
         assert.deepEqual(await visibleTextBounds(page,'.cc-home-layout-heading'),[],'Home title and personalization text fit at every text size');
+      }
+      if(width===1440&&theme==='light'&&size===100) {
+        const target=page.locator('.cc-home-layout-heading>button'),originalStyle=await target.getAttribute('style');
+        try {
+          await target.evaluate(button=>{button.style.setProperty('min-height','43px','important');button.style.setProperty('height','43px','important');});
+          await waitForStableHeading(page);
+          negativeControl=await target.evaluate(button=>({width:button.getBoundingClientRect().width,height:button.getBoundingClientRect().height,offsetHeight:button.offsetHeight}));
+          assert.equal(negativeControl.offsetHeight,43,'Negative fixture really has a stable 43px layout box');
+          assert.throws(()=>assert.ok(negativeControl.width>=44&&negativeControl.height>=44),{code:'ERR_ASSERTION'},'The unchanged touch minimum rejects stable 43px; readiness does not wait for a passing size');
+          await page.screenshot({path:path.join(output,'negative-control-stable-43px.png')});
+        } finally {
+          await target.evaluate((button,style)=>{if(style===null)button.removeAttribute('style');else button.setAttribute('style',style);},originalStyle);
+          await waitForStableHeading(page);
+        }
+        const restored=await target.boundingBox();assert.ok(restored.width>=44&&restored.height>=44,'Restore the real minimum after the negative fixture');
       }
       await page.evaluate(()=>document.documentElement.style.setProperty('--cc-safe-area-top','24px'));
       await settle(page);
@@ -240,7 +294,7 @@ async function visibleTextBounds(page, selector) {
       });
       assert.ok(importColors.items.every(item=>item.ratio>=4.5&&item.opacity==='1'),'Import contrast: '+JSON.stringify(importColors));
       await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-import.png`)});
-      results.push({width,theme,size,activeBrand,importColors,header,menuHead,title,scrollBox,safeArea:{top:24,bottom:20},keyboardHeight:width<500?420:null});
+      results.push({width,theme,size,activeBrand,importColors,header,menuHead,title,scrollBox,homeGeometry,negativeControl,safeArea:{top:24,bottom:20},keyboardHeight:width<500?420:null});
       await context.close();console.log('PASS fixed headers',width,theme,size);
     }
     assert.deepEqual(artifactEvidence(),exactArtifact,'Exact source/bundle hashes stay unchanged through the complete flow matrix');
