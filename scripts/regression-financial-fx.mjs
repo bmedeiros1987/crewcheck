@@ -14,3 +14,44 @@ for(const rows of [[{base:'USD',quote:'BRL',rate:5,date:'2032-02-08'}],[{base:'B
 let handlerReads=0;const owner={authenticated:true,role:'owner',ownerId:'synthetic@example.invalid'};const run=async({identity=owner,enabled=true,method='GET',query=''}={})=>{const handler=createFinancialFxHandler({enabled:()=>enabled,identityProvider:()=>identity,service:{read:async()=>{handlerReads++;return {state:'available',quotes,method:'blended_daily'};}}});let status,body;const headers={};await handler({method},{setHeader:(k,v)=>headers[k]=v,writeHead:(s,h)=>{status=s;Object.assign(headers,h);},end:text=>body=JSON.parse(text)},new URL('https://synthetic.invalid'+FINANCIAL_FX_PATH+query));return {status,body,headers};};
 assert.equal((await run({identity:null})).status,403);assert.equal((await run({enabled:false})).status,503);assert.equal((await run({method:'POST'})).status,405);assert.equal((await run({query:'?base=USD'})).status,400);assert.equal(handlerReads,0);const good=await run();assert.equal(good.status,200);assert.match(good.headers['cache-control'],/no-store/);assert.equal(handlerReads,1);
 console.log('PASS free keyless FX: fixed public pairs, daily central cache, one in-flight query, explicit quote direction/inverse/cross, source/observation/retrieval separation, stale/error cooldown, no manual blend, immutable original amounts, strict read-only authenticated route, default OFF');
+
+// Exercise the actual TSX loader and rendered calculator with synthetic identities.
+const {default:ts}=await import('typescript');
+const {default:vm}=await import('node:vm');
+const {default:fs}=await import('node:fs');
+const React=await import('react');
+const jsx=await import('react/jsx-runtime');
+const {renderToStaticMarkup}=await import('react-dom/server');
+const fxMath=await import('../shared/financialFx.mjs');
+const money=await import('../shared/financialMoney.mjs');
+function compile(relative,stubs,Clock=Date){
+ const source=ts.transpileModule(fs.readFileSync(relative,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+ const exports={};vm.runInNewContext(source,{exports,require:name=>{if(name in stubs)return stubs[name];throw Error('Unexpected import '+name);},setTimeout,clearTimeout,AbortController,Date:Clock,console});return exports;
+}
+const provider=compile('client/src/components/finance/FinancialFxProvider.tsx',{'react':React,'react/jsx-runtime':jsx,'@/lib/authClient':{},'@/lib/financialFxReference':{},'@shared/financialFx.mjs':fxMath});
+let clock=Date.parse('2032-02-09T12:00:00Z'),requestCount=0,reply;
+const valid={state:'available',method:'blended_daily',quotes:{USD:{base:'BRL',quote:'USD',rate:'0.2',asOf:'2032-02-08',retrievedAt:new Date(clock).toISOString(),source:'SYNTHETIC reference',method:'blended_daily'}}};
+const request=async()=>{requestCount++;if(reply instanceof Error)throw reply;return reply;};
+const loader=provider.createFinancialFxLoader({request,now:()=>clock});
+reply=valid;const first=await loader('session-A',true);assert.equal(first.state,'available');assert.equal(fxMath.convertFinancialMinor({amountMinor:20000,from:'USD',to:'BRL',quotes:first.quotes,today:'2032-02-09'}).amountMinor,100000);
+reply=Object.assign(Error('synthetic timeout'),{name:'AbortError'});clock+=1800001;const retained=await loader('session-A',true);assert.equal(retained.state,'stale');assert.equal(retained.reason,'temporary');assert.equal(retained.quotes.USD.retrievedAt,valid.quotes.USD.retrievedAt,'failure does not renew quote age');const beforeCooldown=requestCount;await loader('session-A',true);assert.equal(requestCount,beforeCooldown);
+clock+=300001;reply=Object.assign(Error('synthetic OFF'),{status:503,code:'FINANCIAL_FX_NOT_ENABLED'});const off=await loader('session-A',true);assert.equal(off.state,'unavailable');assert.equal(off.reason,'disabled');assert.equal(Object.keys(off.quotes).length,0,'explicit OFF clears warm cache');
+reply=valid;await loader('session-B',true);reply=Object.assign(Error('synthetic denied'),{status:403});clock+=1800001;assert.equal((await loader('session-B',true)).reason,'access');assert.equal(Object.keys((await loader('session-B')).quotes).length,0);
+reply=Error('synthetic offline');assert.equal((await loader('session-C',true)).state,'unavailable','new session cannot inherit stale references');
+for(const patch of [{rate:'0'},{asOf:'2032-02-30'},{asOf:'2032-02-10'},{retrievedAt:'2020-01-01T00:00:00Z'},{base:'USD',quote:'BRL'},null]){
+ const bad=provider.createFinancialFxLoader({now:()=>clock,request:async()=>({...valid,quotes:{USD:patch===null?null:{...valid.quotes.USD,...patch}}})});const value=await bad('synthetic');assert.equal(value.state,'unavailable');assert.equal(value.reason,'invalid');
+}
+const expiration=provider.createFinancialFxLoader({request,now:()=>clock});reply=valid;await expiration('A');clock+=7*86400000+1;reply=Error('offline');assert.equal(Object.keys((await expiration('A',true)).quotes).length,0,'stale cannot outlive original observation/retrieval');
+let release;const race=provider.createFinancialFxLoader({request:()=>new Promise(resolve=>{release=resolve;}),now:()=>Date.parse('2032-02-09T12:00:00Z')});const old=race('A');const finishA=release;const next=race('B');const finishB=release;finishB({...valid,state:'stale'});await next;finishA(valid);await old;assert.equal((await race('B')).state,'stale','late previous session never publishes into new cache');
+const timeout=provider.createFinancialFxLoader({timeoutMs:1,request:(_url,{signal})=>new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(Error('synthetic aborted'))))});assert.equal((await timeout('A')).reason,'temporary');
+// Render the real JSX with hook inputs only; no real account, browser or API calls.
+let draft={key:'synthetic:synthetic@example.invalid:synthetic-token',amount:'200',from:'USD',to:'BRL',rate:'',asOf:'',manualOpen:false},fx=off;
+const calculator=compile('client/src/components/finance/CurrencyCalculator.tsx',{'react':{...React,useEffect:()=>{},useState:()=>[draft,change=>{draft=typeof change==='function'?change(draft):change;}]},'react/jsx-runtime':jsx,'./FinancialFxProvider':{useFinancialFx:()=>({...fx,mode:'automatic'}),FinancialFxSourceControl:()=>null,financialFxMessage:provider.financialFxMessage},'@/lib/authClient':{getStoredUser:()=>({id:'synthetic',email:'synthetic@example.invalid'}),getToken:()=> 'synthetic-token'},'lucide-react':{Calculator:()=>null},'@shared/financialFx.mjs':fxMath,'@shared/financialMoney.mjs':money,'./FinancialPrivacy':{useFinancialPrivacy:()=>({hidden:false,amount:x=>x}),FinancialPrivacyToggle:()=>null},'./persistent-history.css':{}},class extends Date{constructor(...args){super(...(args.length?args:['2032-02-09T12:00:00Z']));}}).default;
+const markup=()=>renderToStaticMarkup(calculator());
+assert.match(markup(),/Cotação automática ainda não está ativada/);assert.match(markup(),/Informar cotação e data/);
+const find=(node,type)=>{if(!node||typeof node!=='object')return null;if(node.type===type)return node;for(const child of [node.props?.children].flat(Infinity)){const result=find(child,type);if(result)return result;}return null;};
+find(calculator(),'button').props.onClick();assert.equal(draft.manualOpen,true);assert.match(markup(),/<details open="">/);assert.match(markup(),/Data da cotação/);assert.equal(draft.rate,'','shortcut does not fabricate rate');assert.equal(draft.asOf,'');
+fx=first;assert.match(markup(),/1\.000,00/);assert.match(markup(),/SYNTHETIC reference · referência 2032-02-08/);
+draft={...draft,from:'BRL',to:'USD',amount:'10'};assert.match(markup(),/2,00/);
+draft={...draft,from:'USD',to:'BRL',rate:'0',asOf:'2032-02-08'};assert.match(markup(),/Cotação\/data indisponível/);
+console.log('PASS actual FX loader/calculator: explicit OFF/access vs temporary, timeout, original-age bounded stale cache, session race, invalid/zero/future/inverse payloads, USD200, visible manual shortcut and source/date');
