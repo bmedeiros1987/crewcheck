@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import {transformSync} from 'esbuild';
+const source=fs.readFileSync('server/platform.mjs','utf8');
+const extract=name=>{const m=source.match(new RegExp(`async function ${name}\\([^]*?\\n}`));assert.ok(m,name);return m[0];};
+const original={email:'owner@example.invalid',public_id:'CC-SYNTHETIC',display_name:'Old Name',locale:'es-ES',timezone:'Pacific/Kiritimati',share_presence:true,plan:'premium_monthly'};
+let row,body,status,payload;
+const db={query:async(sql,args=[])=>{if(sql.includes('SELECT * FROM crewcheck_platform_profiles'))return {rows:[{...row}]};if(sql.includes('UPDATE crewcheck_platform_profiles')){assert.equal(args[0],original.email,'update remains bound to current account');for(const match of sql.matchAll(/(display_name|locale|timezone|share_presence)=IF\(\$(\d+), \$(\d+), \1\)/g)){if(args[Number(match[2])-1])row[match[1]]=args[Number(match[3])-1];}return {rows:[]};}throw Error('unexpected SQL');}};
+const context={Object,Boolean,Error,PLAN_IDS:new Set(['free','premium_monthly']),DEFAULT_TIMEZONE:'America/Sao_Paulo',unlimitedEmails:()=>[],publicId:()=>{throw Error('must preserve id');},normalizeText:(v,max)=>String(v||'').normalize('NFC').trim().slice(0,max),normalizeLocale:v=>v||'pt-BR',normalizeTimezone:v=>v||'America/Sao_Paulo',readBody:async()=>body,requireMain:async()=>({db,identity:{email:original.email,name:'Login Name',admin:false},profile:{...row}}),subscriptionStatus:async()=>({}),publicProfile:r=>({...r}),sendJson:(_r,s,p)=>{status=s;payload=p;}};
+vm.createContext(context);vm.runInContext(extract('ensureProfile')+'\n'+extract('handleProfile')+'\nthis.handle=handleProfile;',context);
+const call=async(patch)=>{row={...original};body=patch;status=null;await context.handle({method:'PATCH'},{});return {...row};};
+assert.deepEqual(await call({displayName:'Bruno Saraiva'}),{...original,display_name:'Bruno Saraiva'});assert.equal(status,200);
+assert.deepEqual(await call({locale:'en-US'}),{...original,locale:'en-US'},'language edit must not reset confirmed name or presence');
+assert.deepEqual(await call({timezone:'UTC',sharePresence:false}),{...original,timezone:'UTC',share_presence:false});
+for(const bad of [{displayName:''},{displayName:' '.repeat(5)},{displayName:'x'.repeat(121)},{displayName:7},{displayName:'Name',email:'other@example.invalid'},{plan:'premium_unlimited'},{id:'other'},{role:'admin'}]){await call(bad);assert.equal(status,400);assert.deepEqual(row,original);}
+let generation=0,events=[],calls=[],fail=false,block=null,profile;
+const reset=()=>{generation++;profile={email:original.email,publicId:original.public_id,displayName:'Old Name',locale:original.locale,timezone:original.timezone,sharePresence:true,plan:original.plan};events=[];calls=[];fail=false;block=null;};
+const auth={getStoredUser:()=>({id:'owner',email:original.email}),captureAuthSession:()=>{const n=generation;return {owner:'owner',isCurrent:()=>n===generation};},authFetch:async(path,options={})=>{calls.push({path,...options});if(fail)throw Error('offline');if(options.method==='PATCH'){if(block)await block;profile={...profile,...JSON.parse(options.body)};}return {ok:true,profile:{...profile}};}};
+const module={exports:{}};const compiled=transformSync(fs.readFileSync('client/src/lib/platformClient.ts','utf8'),{loader:'ts',format:'cjs'}).code;
+vm.runInNewContext(compiled,{module,exports:module.exports,require:()=>auth,window:{dispatchEvent:e=>events.push(e)},CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail;}},localStorage:{setItem:()=>{throw Error('strict editor must not write local fallback');}},console});
+const client=module.exports;reset();const result=await client.saveConfirmedDisplayName(' Bruno Saraiva ');assert.equal(result.displayName,'Bruno Saraiva');assert.equal(calls.length,3);assert.deepEqual(JSON.parse(calls[1].body),{displayName:'Bruno Saraiva'});assert.equal(events.length,1);assert.equal(events[0].detail.owner,'owner');assert.equal((await client.getConfirmedPlatformProfile()).displayName,'Bruno Saraiva','reload reads confirmed remote name');
+reset();fail=true;await assert.rejects(client.saveConfirmedDisplayName('New Name'));assert.equal(events.length,0);assert.equal(profile.displayName,'Old Name');
+reset();let release;block=new Promise(r=>release=r);const saving=client.saveConfirmedDisplayName('Delayed Name');while(calls.length<2)await new Promise(r=>setTimeout(r,0));generation++;release();await assert.rejects(saving);assert.equal(events.length,0,'late old-account response cannot announce success');assert.equal(calls.length,2,'no verification request under the switched account');
+reset();const fn=auth.authFetch;auth.authFetch=async(path,options)=>{const r=await fn(path,options);if(options?.method==='PATCH')fail=true;return r;};await assert.rejects(client.saveConfirmedDisplayName('Unverified Name'));assert.equal(events.length,0,'PATCH receipt alone is not persistence confirmation');
+console.log('PASS profile display name: owner-bound partial update preserves omitted settings and immutable identity; invalid fields rejected; strict remote receipt plus GET persistence; offline/verification failures and delayed account-switch replies never announce success.');
