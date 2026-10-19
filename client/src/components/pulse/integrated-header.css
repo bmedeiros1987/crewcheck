@@ -15,7 +15,7 @@ html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-compact-trigge
 html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-popover :is(strong,small){font-size:calc(1rem * var(--cc-text-scale,1))!important}
 html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-count{gap:2px;min-width:20px;padding:2px 4px}
 /* The summary occupies normal flow. Expanded evidence grows the document, never fixed chrome. */
-html body #root .cz-app[data-version]>.cz-global-header{position:relative!important;top:auto!important;left:auto!important;right:auto!important;width:100%!important;transform:none!important;margin:0!important;z-index:auto!important;background:var(--cc-review-surface,var(--cc-surface))!important}
+html body #root .cz-app[data-version]>.cz-global-header{position:relative!important;top:auto!important;left:auto!important;right:auto!important;width:100%!important;transform:none!important;margin:0!important;z-index:auto!important;background:transparent!important}
 html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-compact-trigger{width:100%!important;grid-template-columns:32px minmax(0,1fr) auto!important}
 html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-popover{position:relative!important;inset:auto!important;width:100%!important;max-height:none!important;overflow:visible!important;grid-template-columns:minmax(0,1fr) auto!important;margin-top:12px!important;box-shadow:none!important;box-sizing:border-box!important}
 html body #root .cz-app[data-version]>.cz-global-header .cc-pulse-popover-copy{min-width:0!important;overflow-wrap:anywhere!important}
