@@ -20,6 +20,11 @@ function seed({unknown,unknownAddition,futureForeign}){
  localStorage.setItem('crewcheck_financial_month_settings_v1:'+owner+':2026-10',JSON.stringify({schema:1,ownerId:owner,month:'2026-10',revision:1,closed:false,values:{fixed_with_co:val(340000),other_fixed:val(unknownAddition?null:1000),inss:val(10000,'deduction'),irrf:val(0,'deduction'),other_deductions:val(2000,'deduction')}}));
 }
 async function screen(page,name){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===name)return;await page.getByRole('button',{name:{payment:'Detalhes do pagamento',charts:'Gráficos',statement:'Extrato',overview:'Resumo financeiro'}[name],exact:true}).click();await page.waitForFunction(name=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen===name,name);}
+// Screen state commits before requestAnimationFrame restores keyboard focus.
+// Keep the original strict destination predicate; never accept body or timeout.
+async function requireFinancialFocus(page,timeout=5000){
+ await page.waitForFunction(()=>!!document.querySelector('.cc-payment-overview button:focus,[data-financial-screen-heading]:focus'),null,{timeout});
+}
 const money=text=>Number(text.replace(/[^0-9,.-]/g,'').replace(/\./g,'').replace(',','.'));
 function maySeed(){
  const owner='financial-ui-qa',key='crewcheck_roster_choice_v1_'+owner,stored=JSON.parse(localStorage.getItem(key));
@@ -28,7 +33,17 @@ function maySeed(){
  localStorage.setItem(key,JSON.stringify(stored));localStorage.setItem('crewcheck_financial_settings_v1:'+owner+':crewcheck_perdiem_rate_south_america_caribbean','100');
 }
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,args:['--no-sandbox'],...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});let financialWrites=0,external=0;const cases=[],blockedWrites=[];
-try{for(const timezoneId of ['UTC','America/Sao_Paulo','Asia/Tokyo'])for(const width of [320,390,1440]){
+try{
+ const focusControl=await browser.newPage();
+ await focusControl.setContent('<main class="cc-payment-overview"><button>Extrato</button><h2 data-financial-screen-heading tabindex="-1">Resumo</h2></main>');
+ assert.equal(await focusControl.evaluate(()=>document.activeElement===document.body),true);
+ await assert.rejects(()=>requireFinancialFocus(focusControl,150),error=>error.name==='TimeoutError','missing restoration must fail instead of accepting body or silent timeout');
+ await focusControl.evaluate(()=>setTimeout(()=>document.querySelector('button').focus(),80));
+ await requireFinancialFocus(focusControl,2000);
+ assert.equal(await focusControl.locator('.cc-payment-overview button:focus').count(),1);
+ await focusControl.close();
+ console.log('PASS strict focus controls: never-restored focus rejects; delayed restoration satisfies the unchanged destination predicate.');
+ for(const timezoneId of ['UTC','America/Sao_Paulo','Asia/Tokyo'])for(const width of [320,390,1440]){
  const context=await browser.newContext({viewport:{width,height:900},timezoneId,serviceWorkers:'block'});let responseState='available';let calls=0;
  await context.route('**/*',async route=>{const u=new URL(route.request().url());if(u.origin!==origin){external++;return route.abort();}if(u.pathname.startsWith('/api/')){
  if(route.request().method()!=='GET'){if(u.pathname.startsWith('/api/platform/finance/'))financialWrites++;else assert.equal(u.pathname,'/api/control/telemetry','unexpected nonfinancial mutation attempt');blockedWrites.push({path:u.pathname,method:route.request().method()});return route.fulfill({status:405,body:'{}'});}
@@ -50,7 +65,7 @@ try{for(const timezoneId of ['UTC','America/Sao_Paulo','Asia/Tokyo'])for(const w
  const changeState=async state=>{responseState=state;await page.getByLabel('Agrupamento do gráfico',{exact:true}).selectOption('week');await page.waitForFunction(()=>document.querySelector('[data-financial-load-state]')?.dataset.financialLoadState!=='loading');};
  await changeState('error');await persisted.getByRole('button',{name:'Tentar novamente',exact:true}).waitFor();responseState='available';await persisted.getByRole('button',{name:'Tentar novamente',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-financial-load-state]')?.dataset.financialLoadState==='available');
  for(const state of ['empty','wrong-owner','incomplete','null','off']){responseState=state;await page.getByLabel('Agrupamento do gráfico',{exact:true}).selectOption((await page.getByLabel('Agrupamento do gráfico',{exact:true}).inputValue())==='week'?'month':'week');await page.waitForFunction(expected=>document.querySelector('[data-financial-load-state]')?.dataset.financialLoadState===expected,({empty:'no_data','wrong-owner':'INVALID_RESPONSE',incomplete:'incomplete',null:'available',off:'LEDGER_OFF'})[state]);assert.equal(await persisted.locator('.cc-persisted-finance-track').count(),0);assert.doesNotMatch(await persisted.innerText(),/(?:R\$|US\$)\s*0,00/);if(state==='wrong-owner')assert.equal(await bars.count(),0);}
- await page.goBack();await page.waitForFunction(()=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen==='statement');await page.goBack();await page.waitForFunction(()=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen==='overview');assert(await page.locator('.cc-payment-overview button:focus').count()>0||await page.locator('[data-financial-screen-heading]:focus').count()>0);
+ await page.goBack();await page.waitForFunction(()=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen==='statement');await page.goBack();await page.waitForFunction(()=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen==='overview');await requireFinancialFocus(page);
  await screen(page,'payment');const buttons=page.locator('.cc-financial-actions>button');await buttons.first().waitFor();const sizes=await buttons.evaluateAll(es=>es.map(e=>({w:e.getBoundingClientRect().width,h:e.getBoundingClientRect().height})));assert(sizes.every(s=>s.h>=48));if(width<600)assert(sizes.every(s=>Math.abs(s.w-sizes[0].w)<1));
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
  await page.screenshot({path:path.join(out,`finance-payment-${width}-${timezoneId.replaceAll('/','-')}.png`)});
