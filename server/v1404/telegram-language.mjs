@@ -221,7 +221,7 @@ function nextProgramText(record, presentation) {
     ...legs.slice(0, 4).map((leg, index) => {
       const flight = String(leg.flightNumber || '').trim().toUpperCase().replace(/\s+/g, '') || `Voo ${index + 1} não confirmado`;
       const dates = display?.legs?.[index];
-      return `${flight}: decolagem ${originDeparturePhrase(leg.origin)} em ${date(dates?.departureDate)} às ${clock(leg.departureTime)}; chegada ao aeroporto de ${shortAirportName(leg.destination)} em ${date(dates?.arrivalDate)} às ${clock(leg.arrivalTime)}.`;
+      return `${flight}: decolagem prevista ${originDeparturePhrase(leg.origin)} em ${date(dates?.departureDate)} às ${clock(leg.departureTime)}; chegada prevista ao aeroporto de ${shortAirportName(leg.destination)} em ${date(dates?.arrivalDate)} às ${clock(leg.arrivalTime)}.`;
     }),
     legs.length > 4 ? `Os outros ${legs.length - 4} voos estão na escala.` : '',
     record.endKind !== 'duty-debrief' || !display ? 'Fim publicado da jornada não confirmado.' : `Fim publicado: ${date(display?.endDate)} às ${clock(record.endTime)}.`,
