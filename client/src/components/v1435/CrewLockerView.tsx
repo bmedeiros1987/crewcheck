@@ -1,3 +1,4 @@
+import { requestBlobDownload } from '@/lib/blobDownload';
 import { CrewValidityEditor } from './CrewValidityEditor';
 import { assessValidity, civilToday, legacyValidity, validityLabel, TEMPORAL_LABELS, dueValidityNotices } from '@/lib/crewlockerValidity';
 import { useEffect, useMemo, useState } from 'react';
@@ -126,16 +127,13 @@ export default function CrewLockerView() {
       const session = crewLockerSession();
       const blob = await openCrewDocument(key, doc.id);
       if (session !== crewLockerSession()) return;
-      const url = URL.createObjectURL(blob);
       if (download) {
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = doc.fileName;
-        anchor.click();
+        requestBlobDownload(blob, doc.fileName);
       } else {
+        const url = URL.createObjectURL(blob);
         window.open(url, '_blank', 'noopener,noreferrer');
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
       }
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Falha ao abrir documento.');
     }
