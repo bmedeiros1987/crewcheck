@@ -169,15 +169,18 @@ for(const path of ['typed','button'])for(const kind of ['base-missing','origin-m
  const expected={'base-missing':/não confirmada/,'origin-missing':/não confirmada/,'outside-base':/fora da base.*posição física/,'cancelled':/cancelada/,'home-standby':/Sobreaviso em casa|cobertura/,'empty':/Não há escala/,'no-future':/cobertura.*não está confirmada/i};assert.match(reply,expected[kind]);
 });
 
-for(const path of ['typed','button'])for(const boundary of ['radar-save','conversation-save','freshness','freshness-conversation','unchanged'])test(`actual delivery authority ${path} ${boundary} rejects changed occurrence or expired Radar`,async()=>{
+for(const path of ['typed','button'])for(const boundary of ['radar-save','conversation-save','freshness','freshness-conversation','unchanged'])test(`actual ephemeral Radar ${path} ${boundary} preserves roster and checks remaining conversation boundary`,async()=>{
  const roster={year:2099,month:10,base:'BSB',days:[{date:'04/10/2099',dayNumber:4,month:10,year:2099,type:'VOO',base:'BSB',dutyReport:'07:00',dutyDebrief:'09:30',dutyReportSource:'published',dutyDebriefSource:'published',legs:[{flightNumber:'LA1234',origin:'BSB',destination:'GRU',departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00'}]}]};
  const h=realDeparture(roster,'short');let queried=0,changed=0;
  h.context.runRadarRace=async ctx=>{queried++;return{ok:true,gate:'ACCEPTED_GATE_46',flight:'LA1234',origin:'BSB',destination:'GRU',scheduledDepartureUtc:ctx.gateQueryEvidence.scheduledDepartureUtc,sourceReceivedAt:new Date(Date.parse(now)-29*60000-59000).toISOString()};};
  const save=h.context.conciergeSaveSnapshotAsync;
  h.context.conciergeSaveSnapshotAsync=async(...args)=>{const result=await save(...args);if((boundary==='radar-save'&&args[2]?.lastRadar)||(boundary==='conversation-save'&&args[2]?.preferences?.conciergeConversation)){const replacement=JSON.parse(JSON.stringify(roster));replacement.days[0].legs[0].flightNumber='LA4321';h.setRoster(replacement);changed++;}if((boundary==='freshness'&&args[2]?.lastRadar)||(boundary==='freshness-conversation'&&args[2]?.preferences?.conciergeConversation)){h.advanceClock(2000);changed++;}return result;};
  if(path==='typed')await h.send('telegram','/saida');else{await h.openInline();await h.tap('Transporte');await h.tap('Saída');}
- assert.equal(queried,1,'real selected occurrence reaches Radar');assert.equal(changed,boundary==='unchanged'?0:1,'test crosses intended save boundary');
- if(boundary==='unchanged')assert.match(h.trace.output.join(' '),/ACCEPTED_GATE_46/,'unchanged fresh accepted occurrence must deliver');else assert.doesNotMatch(h.trace.output.join(' '),/LA1234|ACCEPTED_GATE_46|07:00|04\/10\/2099/);
+ assert.equal(queried,1,'real selected occurrence reaches Radar');const noRadarWrite = ['radar-save','freshness','unchanged'].includes(boundary);
+ assert.equal(h.trace.saves.filter(x=>x.lastRadar).length,0,'Saída never calls the whole-roster Radar writer');
+ assert.equal(changed,noRadarWrite?0:1,'only the existing conversation boundary remains reachable');
+ if(noRadarWrite)assert.equal(JSON.stringify(h.context.conciergeSnapshotForProfile(h.profile).roster),JSON.stringify(roster),'ephemeral evidence cannot replace the stored programming');
+ if(noRadarWrite)assert.match(h.trace.output.join(' '),/ACCEPTED_GATE_46/,'fresh ephemeral occurrence still delivers without a Radar write');else assert.doesNotMatch(h.trace.output.join(' '),/LA1234|ACCEPTED_GATE_46|07:00|04\/10\/2099/);
 });
 
 for(const path of ['typed','button'])for(const change of ['apz','base','earlier'])test(`actual Radar await cannot adopt changed operational baseline ${change} ${path}`,async()=>{

@@ -44,11 +44,11 @@ console.log('PASS actual app handler/owned DB loader: no snapshot, token owner, 
 reset();now=Date.parse('2032-10-14T10:30:00Z');snapshot={email:'a@example.invalid',roster,preferences:{location:{synthetic:true}}};const record={day:roster.days[0],legs:roster.days[0].legs,end:new FixedDate(now+3600000),start:new FixedDate(now),startTime:'08:00'};
 Object.assign(scope,{conciergeLocationContextV14335:()=>({fresh:true,location:{synthetic:true}}),conciergeProgramRecords:()=>[record],conciergeRemoteCodes:new Set(),conciergePresentationTime:()=> '08:00',conciergeProgramDate:()=>new FixedDate(now),conciergeTravelEstimate:async()=>({minutes:20,distanceKm:10}),calculateDepartureWindow:()=>({leave:new FixedDate(now),routeMinutes:20,leadMinutes:30}),buildDepartureSummary:x=>x.radar,conciergeLoadSnapshot:async()=>snapshot});
 const premiumFile=process.env.RADAR_HELD_PREMIUM || (fs.readFileSync('server.mjs','utf8').includes('async function conciergePremiumDepartureReply(')?'server.mjs':'server/v1403/premium-helpers.snippet');vm.runInContext(extract('server.mjs',['conciergeRosterDayParts','conciergeDateKey','conciergeRecordDateKey','conciergeMinimizeRoster','conciergeSnapshotForProfile'])+extract(premiumFile,['conciergeDepartureOwnerCurrent','conciergePremiumDepartureReply']),scope);
-result=await scope.conciergePremiumDepartureReply(snapshot,{email:'a@example.invalid',authenticated:true});assert.equal(result.ok,true);assert(providerCalls>0);assert.equal(writes,2);
+result=await scope.conciergePremiumDepartureReply(snapshot,{email:'a@example.invalid',authenticated:true});assert.equal(result.ok,true);assert(providerCalls>0);assert.equal(writes,0,'premium departure Radar evidence is ephemeral; no whole-roster write');
 for (const formatted of ['LA 3981','la3981','la 3981',' LA \t3981 ']) {
  leg.flightNumber=formatted;providerCalls=0;writes=0;
  result=await scope.conciergePremiumDepartureReply(snapshot,{email:'a@example.invalid',authenticated:true});
- assert.equal(result.ok,true,`formatted published flight ${JSON.stringify(formatted)} uses the canonical binding`);assert(providerCalls>0);assert.equal(writes,2);
+ assert.equal(result.ok,true,`formatted published flight ${JSON.stringify(formatted)} uses the canonical binding`);assert(providerCalls>0);assert.equal(writes,0,'premium departure Radar evidence is ephemeral; no whole-roster write');
 }
 leg.flightNumber='LA3981';
 providerCalls=0;writes=0;result=await scope.conciergePremiumDepartureReply(snapshot,{email:'foreign@example.invalid',authenticated:true});assert.equal(result,policy.gateQuerySuppressed({reason:'account-unverified'}).message);assert.equal(providerCalls,0);assert.equal(writes,0);

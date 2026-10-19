@@ -111,7 +111,7 @@ async function conciergeDepartureOwnerCurrent(profile, snapshot) {
 async function conciergePremiumDepartureReply(snapshot, profile = {}) {
   // The actual producer, after semantic resolution, authorizes the final fence.
   // No surface-specific text matcher may decide whether these facts are private.
-  let revision = crypto.createHash('sha256').update(JSON.stringify(snapshot?.roster || null)).digest('hex');
+  const revision = crypto.createHash('sha256').update(JSON.stringify(snapshot?.roster || null)).digest('hex');
   let evidence = null;
   let acceptedRadar = null;
   const initialEmail = conciergeSafeKey(profile.email || '');
@@ -212,15 +212,11 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
       if (radar?.ok && !radar.querySuppressed) {
         acceptedRadar = Object.freeze({ ...radar });
         if (!radarResultDecision(acceptedRadar, evidence, Date.now()).allowed) return gateQuerySuppressed({reason:'response-context-expired'}).message;
-        conciergeApplyRadar(currentSnapshot, currentBinding, radar);
-        revision = crypto.createHash('sha256').update(JSON.stringify(conciergeMinimizeRoster(currentSnapshot.roster))).digest('hex');
-        const saved = await conciergeSaveSnapshotAsync(profile, currentSnapshot.roster, {source:currentSnapshot.source || 'departure-radar',lastRadar:{...radar,updatedAt:new Date().toISOString()}});
-        // Compare the writer result to our exact expected enrichment/persistence shape.
-        // Never adopt a result containing unrelated operational changes.
-        if (saved?.roster && (!owns(saved) || crypto.createHash('sha256').update(JSON.stringify(saved.roster)).digest('hex') !== revision))
-          return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;
-        if (!owns(currentSnapshot) || !await conciergeDepartureOwnerCurrent(profile, currentSnapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed)
-          return gateQuerySuppressed({reason:'response-context-expired'}).message;
+        // Ephemeral Radar evidence only. The snapshot writer replaces the whole
+        // roster and has no atomic expected-revision contract. Do not persist or
+        // promote a revision here: an awaited validation cannot protect a later
+        // overwrite of independently updated programming. Final delivery still
+        // validates the original roster, exact occurrence and source freshness.
       }
     }
   }
