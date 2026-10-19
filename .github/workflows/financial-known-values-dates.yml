@@ -15,6 +15,7 @@ on:
       - 'scripts/regression-owner-per-diem-browser.mjs'
       - 'scripts/regression-owner-per-diem-caller.mjs'
       - 'scripts/regression-financial-long-history.cjs'
+      - 'scripts/regression-financial-navigation-focus-browser.cjs'
       - 'scripts/regression-financial-partial-flight-meals.mjs'
       - 'client/src/lib/salaryCalculationDiagnostic.ts'
       - 'client/src/lib/airports.ts'
