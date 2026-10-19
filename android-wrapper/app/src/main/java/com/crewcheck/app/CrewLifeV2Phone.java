@@ -166,7 +166,19 @@ public final class CrewLifeV2Phone {
         synchronized (LOCK) {
             try {
                 CrewLifeV2Journal j = read(c);
-                if (!j.ack(node, new JSONObject(new String(bytes, StandardCharsets.UTF_8)))) return;
+                JSONObject message = new JSONObject(new String(bytes, StandardCharsets.UTF_8));
+                if ("challenge".equals(message.optString("op"))) {
+                    if (!j.challenge(node, message)) return;
+                    // A reset for a revoked local owner must never be sent after logout.
+                    JSONObject request = j.data.getJSONObject("nodes").getJSONObject(node);
+                    if ("reset".equals(request.optString("op"))
+                            && (j.revoked() || !WatchHealthConsent.read(c).allowsAnyHealth()
+                                || WatchHealthConsent.isRevocationPending(c))) return;
+                    save(c, j); // the Wear nonce is durable BEFORE replying with reset/revoke
+                    send(c, node, j.control(request));
+                    return;
+                }
+                if (!j.ack(node, message)) return;
                 save(c, j); retries = 0;
                 // Full consent revocation is cleared only by publisher's separate routine cleanup.
                 c.sendBroadcast(new android.content.Intent(MainActivity.ACTION_WATCH_SYNC_REQUEST).setPackage(c.getPackageName()));

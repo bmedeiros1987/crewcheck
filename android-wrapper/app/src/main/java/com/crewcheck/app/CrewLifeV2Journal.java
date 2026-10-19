@@ -16,7 +16,12 @@ final class CrewLifeV2Journal {
             throw new IllegalArgumentException("Invalid journal schema");
         UUID.fromString(data.getString("streamId"));
         if (CrewLifeV2Protocol.integer(data.opt("revision"), 0) <= 0) throw new IllegalArgumentException("Invalid journal");
-        data.getJSONObject("nodes");
+        JSONObject storedNodes = data.getJSONObject("nodes");
+        for (Iterator<String> i = storedNodes.keys(); i.hasNext();) {
+            JSONObject record = storedNodes.getJSONObject(i.next());
+            // Unpublished pre-challenge checkpoints cannot migrate readiness by inference.
+            if (!validChallenge(record.optString("wearChallenge"))) record.put("ready", false).put("cleared", false);
+        }
     }
     String stream() throws Exception { return data.getString("streamId"); }
     long revision() throws Exception { return data.getLong("revision"); }
@@ -50,19 +55,41 @@ final class CrewLifeV2Journal {
         nodes.put(node, request);
         return request;
     }
+    static boolean validChallenge(String value) { return value != null && value.matches("[0-9a-f]{64}"); }
     JSONObject control(JSONObject request) throws Exception {
         JSONObject out = new JSONObject();
-        for (String k : new String[]{"schemaVersion", "op", "streamId", "revision", "requestId"}) out.put(k, request.get(k));
+        for (String k : new String[]{"schemaVersion", "streamId", "revision", "requestId"}) out.put(k, request.get(k));
+        String challenge = request.optString("wearChallenge");
+        if (validChallenge(challenge)) {
+            out.put("op", request.getString("op")).put("wearChallenge", challenge);
+        } else {
+            out.put("op", "challenge_request").put("action", request.getString("op"));
+        }
         return out;
     }
-    boolean ack(String node, JSONObject ack) throws Exception {
-        CrewLifeV2Protocol.keys(ack, Set.of("schemaVersion", "op", "streamId", "revision", "requestId", "status"));
+    private JSONObject matching(String node, JSONObject message) throws Exception {
         JSONObject request = data.getJSONObject("nodes").optJSONObject(node);
+        if (request == null || CrewLifeV2Protocol.integer(message.opt("schemaVersion"), -1) != 2
+                || !message.optString("streamId").equals(stream())
+                || CrewLifeV2Protocol.integer(message.opt("revision"), -1) != request.optLong("revision")
+                || !message.optString("requestId").equals(request.optString("requestId"))) return null;
+        return request;
+    }
+    boolean challenge(String node, JSONObject message) throws Exception {
+        CrewLifeV2Protocol.keys(message, Set.of("schemaVersion", "op", "action", "streamId", "revision", "requestId", "wearChallenge"));
+        JSONObject request = matching(node, message);
+        if (request == null || request.optBoolean("cleared") || !"challenge".equals(message.optString("op"))
+                || !message.optString("action").equals(request.optString("op"))
+                || !validChallenge(message.optString("wearChallenge"))) return false;
+        request.put("wearChallenge", message.getString("wearChallenge"));
+        return true;
+    }
+    boolean ack(String node, JSONObject ack) throws Exception {
+        CrewLifeV2Protocol.keys(ack, Set.of("schemaVersion", "op", "streamId", "revision", "requestId", "wearChallenge", "status"));
+        JSONObject request = matching(node, ack);
         if (request == null || !"cleared".equals(ack.optString("status"))
-                || CrewLifeV2Protocol.integer(ack.opt("schemaVersion"), -1) != 2
-                || !ack.optString("streamId").equals(stream())
-                || CrewLifeV2Protocol.integer(ack.opt("revision"), -1) != request.optLong("revision")
-                || !ack.optString("requestId").equals(request.optString("requestId"))
+                || !validChallenge(request.optString("wearChallenge"))
+                || !request.optString("wearChallenge").equals(ack.optString("wearChallenge"))
                 || !ack.optString("op").equals(request.optString("op") + "_ack")) return false;
         request.put("cleared", true).put("ready", !revoked() && request.optString("op").equals("reset"));
         return true;

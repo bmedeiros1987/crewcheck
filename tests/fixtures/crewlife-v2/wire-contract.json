@@ -48,7 +48,8 @@
     "op",
     "streamId",
     "revision",
-    "requestId"
+    "requestId",
+    "wearChallenge"
   ],
   "ackFields": [
     "schemaVersion",
@@ -56,6 +57,7 @@
     "streamId",
     "revision",
     "requestId",
+    "wearChallenge",
     "status"
   ],
   "unavailableValue": "omitted",
@@ -69,5 +71,24 @@
     "metrics": {}
   },
   "physicalProof": false,
-  "snapshotAckAuthority": false
+  "snapshotAckAuthority": false,
+  "handshake": "Wear-issued persistent single-use challenge required; phone-only requestId never authorizes reset",
+  "challengeEncoding": "64 lowercase hexadecimal characters (256-bit SecureRandom on Wear)",
+  "challengeRequestFields": [
+    "schemaVersion",
+    "op",
+    "action",
+    "streamId",
+    "revision",
+    "requestId"
+  ],
+  "challengeResponseFields": [
+    "schemaVersion",
+    "op",
+    "action",
+    "streamId",
+    "revision",
+    "requestId",
+    "wearChallenge"
+  ]
 }

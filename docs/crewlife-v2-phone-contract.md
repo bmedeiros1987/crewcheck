@@ -1,8 +1,8 @@
 # CrewLife v2 — phone candidate, health remains OFF
 
-**HOLD: the phone-issued reset challenge below is insufficient after Wear journal
-loss. Do not publish compatibility or integrate this candidate. A fresh Wear-issued
-challenge, bound to reset/ACK and durably consumed, needs joint agreement and tests.**
+**HOLD: receiver-issued challenge implemented on phone; actual corrected Wear
+composition and strict MCC integration remain unproved. Do not claim wire
+compatibility or integrate before both exact commits pass independent review.**
 
 Phone changes extend #1085 HEAD379eb3db. No Wear files, real SDK, permissions,
 Health Sync activation, live health records, Store operation or routine/roster
@@ -68,17 +68,35 @@ Each new owner/consent generation needs a fresh opaque stream and reset ACK.
 Revisions increase durably; Wear must persist stream/revision fences, reject
 older revisions/foreign streams and reject v1 replay after migration.
 
-Reset control is `{schemaVersion:2,op:"reset",streamId,revision,requestId}`.
-ACK echoes those fields with `op:"reset_ack",status:"cleared"`, from exactly the
-pending node. Wear ACKs only after durably clearing old CrewLife values and
-persisting the new fence. Duplicate requests are idempotent. An unknown node,
-stale challenge, wrong operation/revision/stream or extra field cannot grant
-readiness. Capable presence alone does not authorize a publication. The phone
-requires reset ACKs and successful legacy Data Item deletion before values.
+The phone first sends `{schemaVersion:2,op:"challenge_request",action:"reset",
+streamId,revision,requestId}` to a capable node. Wear must generate and persist
+`wearChallenge`, encoded as exactly 64 lowercase hex characters from 256 random
+bits, bound to sender/action/stream/revision/requestId before responding via ACK
+path with `op:"challenge"`, `action:"reset"` and the same tuple plus nonce.
+The phone accepts only its currently pending exact node/action/stream/revision/
+requestId, persists the nonce, then sends `{schemaVersion:2,op:"reset",streamId,
+revision,requestId,wearChallenge}`. Control does not include `action` after the
+challenge phase. For revocation the challenge action is `"revoke"` instead.
 
+Wear must check its own durable pending nonce; a reset cannot supply its own
+authority. Missing/corrupt/lost journal means unavailable and a NEW Wear nonce.
+After atomic cache clearing, fence installation and nonce consumption, Wear ACKs
+`{schemaVersion:2,op:"reset_ack",streamId,revision,requestId,wearChallenge,
+status:"cleared"}`. No `action` in final ACK. Without that exact persisted nonce,
+wrong node/action, stale challenge or prior-generation ACK cannot grant readiness.
+The phone does not issue the Wear nonce or reconstruct it from a clock.
+
+Duplicate exact consumed resets may only ACK idempotently from a durable applied
+receipt; they must not clear newer data or lower the fence. Issuing a challenge
+alone cannot change the active stream. Delayed old hello may cause another retry,
+never authorize old data. The actual receiver-side rules require verification in
+the separate Wear PR, including losing the Wear journal after issuing a nonce.
+Capability alone does not authorize publication. The phone requires challenge-bound
+reset ACKs and successful legacy Data Item deletion before values.
 Revocation/source invalidation advances the revision and publishes a durable
 `kind:"revoked"` tombstone with `metrics:{}`, generatedAt/validUntil zero. Control
-uses `op:"revoke"`, ACK `op:"revoke_ack",status:"cleared"`. Tombstone is retained,
+uses `op:"revoke"` with the persisted Wear nonce, ACK
+`op:"revoke_ack",status:"cleared"` echoing that nonce. Tombstone is retained,
 including after ACK, until a new stream is reset. Pending challenges survive
 restart; bounded local retries and incoming watch requests resume cleanup.
 Unknown/offline previously seen nodes stay pending. Empty node lists never mean
