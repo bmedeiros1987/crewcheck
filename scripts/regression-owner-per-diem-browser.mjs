@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import { createRequire } from 'node:module';
+import { buildSync } from 'esbuild';
+const { chromium } = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || import.meta.url)('playwright');
+const bundle = buildSync({ stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import Review from './client/src/components/finance/OwnerPerDiemConfirmation'; import {confirmedRateValueAt} from './client/src/lib/financialStatementLearning'; window.lookup=confirmedRateValueAt; createRoot(document.getElementById('root')).render(<Review/>);`, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, write: false, outfile: '/tmp/owner-review-fixture.js', format: 'iife', jsx: 'automatic', tsconfig: 'tsconfig.json' }).outputFiles.find(file => file.path.endsWith('.js') || file.path === '<stdout>').text;
+const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end('<div id="root"></div><script>' + bundle.replaceAll('</script>', '<\\/script>') + '</script>'); });
+await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+const browser = await chromium.launch({ headless: true });
+try {
+  const page = await browser.newPage();
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => { localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'synthetic-review-a', role: 'user' })); localStorage.setItem('crewcheck_auth_token', 'synthetic-token-a'); });
+  await page.goto('http://127.0.0.1:' + server.address().port);
+  await page.getByText('Confirmar tarifa informada pelo titular', { exact: true }).click();
+  await page.getByLabel('Mês de vigência').fill('2032-08');
+  await page.getByLabel('Refeição integral (BRL)').fill('175,00');
+  await page.getByLabel('Referência da confirmação').fill('Synthetic review');
+  await page.getByLabel('Confirmo café a 25% da refeição integral.').check();
+  await page.getByLabel('Confirmo tarifa de táxi a 25%, com elegibilidade calculada separadamente.').check();
+  const prepare = page.getByRole('button', { name: 'Preparar tarifas sem gravar', exact: true });
+  await prepare.click();
+  assert.equal(await page.evaluate(() => lookup('per_diem.taxi', '2032-08-06')), null, 'preview never saves');
+  await page.getByRole('button', { name: 'Cancelar revisão', exact: true }).click();
+  assert.equal(await page.evaluate(() => lookup('per_diem.lunch', '2032-08-06')), null);
+  await prepare.click();
+  await page.getByRole('button', { name: 'Confirmar e salvar tarifas nesta conta', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'Tarifas salvas' }).waitFor();
+  assert.equal(await page.evaluate(() => lookup('per_diem.taxi', '2032-08-06')), 43.75);
+  assert.equal(await page.evaluate(() => lookup('per_diem.lunch', '2032-09-01')), null);
+  await prepare.click();
+  await page.evaluate(() => { localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'synthetic-review-b', role: 'user' })); localStorage.setItem('crewcheck_auth_token', 'synthetic-token-b'); });
+  await page.getByRole('button', { name: 'Confirmar e salvar tarifas nesta conta', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'A conta ou sessão mudou' }).waitFor();
+  assert.equal(await page.evaluate(() => lookup('per_diem.taxi', '2032-08-06')), null);
+  assert.deepEqual(errors, []);
+  console.log('PASS synthetic owner review UI: preview/cancel, explicit save, bounded rates and account-switch rejection');
+} finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

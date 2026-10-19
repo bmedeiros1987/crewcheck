@@ -6,7 +6,7 @@ export type LearningConfidence = 'high' | 'medium' | 'review';
 export interface LearnedRate {
   ownerId?: string;
   revision?: number;
-  valueOrigin?: 'printed' | 'derived';
+  valueOrigin?: 'printed' | 'derived' | 'owner_confirmed';
   payrollCompetence?: string;
   cycleSource?: typeof PAYROLL_CYCLE_SOURCE;
   key: string;

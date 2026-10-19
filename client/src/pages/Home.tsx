@@ -3588,7 +3588,7 @@ function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
     domesticBreakfastSource: learnedBreakfast !== null ? 'learned' : domestic.source,
     airportOverrides: loadAirportPerDiemOverrides(),
     source: act.profileLabel + ' · ' + act.legalReference
-      + (learnedMeal || learnedBreakfast ? ' · demonstrativo confirmado pelo Admin' : '')
+      + (learnedMeal || learnedBreakfast ? ' · tarifas revisadas nesta conta' : '')
       + (domestic.source==='act' && learnedBreakfast===null ? ' · referência ACT; tarifa empresarial da conta não confirmada neste período' : '')
       + demonstratedSource,
   };
@@ -3789,7 +3789,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     } else {
       rows.push({ eventId: taxi.event.id, date: dateChip(new Date(taxi.iso + 'T12:00:00')), iso: taxi.iso,
         label: 'Táxi', value, currency: 'BRL', convertedBRL: value,
-        source: source + ' · tarifa de táxi do demonstrativo confirmado no período; previsão não comprova pagamento',
+        source: source + ' · tarifa de táxi revisada nesta conta no período; previsão não comprova pagamento',
         airport: taxi.event.origin, rateKey: 'domestic', rateSource: 'learned', rateVersion: 'taxi-user-reported-v1',
         exchangeRate: 1, calculationStart: taxi.start.toISOString(), calculationEnd: taxi.end.toISOString() });
     }
