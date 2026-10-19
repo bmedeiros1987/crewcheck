@@ -93,11 +93,29 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().click();await checkHidden(page);await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().click();
   assert.equal(await page.locator('.cc-salary-history').textContent(),salaryBefore,'salary amount round trip is exact');
   await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().click();
-  if(kind==='domestic'){
+  if(kind==='domestic'||kind==='multi'){
    await showFinancial(page,'payment');const importer=page.locator('.finance-learning-panel');
    await importer.locator('input[type=file]').setInputFiles({name:'synthetic-payroll.pdf',mimeType:'application/pdf',buffer:documentBytes(['DEMONSTRATIVO DE PAGAMENTO RUBRICA','Competencia 02/2032','Salario-base mensal 4321,67','TOTAIS 4321,67 123,45','Liquido 4198,22'])});
    await importer.locator('.finance-learning-review').waitFor();await checkHidden(page);
-   await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().click();assert.match(await importer.locator('table').first().textContent(),/4.321,67/);
+   await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().click();
+   const preview=importer.getByRole('region',{name:'Prévia privada do holerite',exact:true});
+   assert.match(await preview.innerText(),/2032-02/);assert.match(await preview.innerText(),/4.321,67/);assert.match(await preview.innerText(),/Totais impressos conciliados/);
+   assert.match(await preview.innerText(),/Página PDF 1, linha/);assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isEnabled(),false);
+   const storedBeforePreview=await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>/financial/.test(key))));
+   const header=['DEMONSTRATIVO DE PAGAMENTO RUBRICA','Competencia 02/2032'];
+   for(const [name,lines,expected] of [
+    ['proportional',['Salario-base mensal 3000,00','PROVENTOS','Salario 16 dias 1600,00','DESCONTOS','INSS 100,00','TOTAIS 1600,00 100,00','Liquido 1500,00'],/Proporcional/],
+    ['zero',['Salario-base mensal 0,00','DESCONTOS','INSS 0,00','TOTAIS 0,00 0,00','Liquido 0,00'],/Zero explícito/],
+    ['missing',['PROVENTOS','Adicional 100,00'],/Conciliação indisponível/],
+    ['conflict',['Salario-base mensal 3000,00','Salario-base mensal 4000,00'],/Conflito/],
+    ['mismatch',['Salario-base mensal 3000,00','TOTAIS 3000,00 100,00','Liquido 2800,00'],/Totais impressos divergentes/],
+   ]){
+    await importer.locator('input[type=file]').setInputFiles({name:'synthetic-'+name+'.pdf',mimeType:'application/pdf',buffer:documentBytes([...header,...lines])});
+    await importer.locator('.finance-learning-review').waitFor();assert.match(await preview.innerText(),expected,name);
+    assert.equal(await importer.getByRole('button',{name:'Confirmar valores',exact:true}).isEnabled(),false);
+    assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>/financial/.test(key)))),storedBeforePreview,'preview never adopts values: '+name);
+   }
+   await page.screenshot({path:path.join(out,'private-preview-'+width+'.png'),fullPage:true});
    await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().click();
    await navigate(page,'perdiem');await page.locator('.cc-per-diem-content').waitFor();await expand(page);
    await showFinancial(page,'payment');const reconciliation=page.locator('.cc-financial-reconciliation');
