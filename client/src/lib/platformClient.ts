@@ -69,14 +69,33 @@ const LOCAL_BILLING_KEY = 'crewcheck_platform_billing_cache_v1';
 const LOCAL_STAYS_KEY = 'crewcheck_platform_stays_cache_v1';
 const LOCAL_GYM_KEY = 'crewcheck_platform_gym_checkins_local_v1';
 const LOCAL_PARKING_KEY = 'crewcheck_my_car_parking_position_v1';
-let confirmedProfileRevision = 0;
-
-function captureProfileCacheWrite() {
-  const session = captureAuthSession();
-  const email = String(getStoredUser()?.email || '').trim().toLowerCase();
-  const revision = confirmedProfileRevision;
-  return (profile: PlatformProfile) => session.isCurrent() && revision === confirmedProfileRevision
-    && Boolean(email) && String(profile?.email || '').trim().toLowerCase() === email;
+/** Never cache a delayed response: all tabs refresh under the same origin lock. */
+async function refreshProfileCache(session: ReturnType<typeof captureAuthSession>, publicId: string): Promise<void> {
+  try {
+    if (!session.isCurrent()) return;
+    if (!navigator.locks?.request) {
+      removeLocal(LOCAL_PROFILE_KEY);
+      return;
+    }
+    await navigator.locks.request(LOCAL_PROFILE_KEY, async () => {
+      if (!session.isCurrent()) return;
+      const email = String(getStoredUser()?.email || '').trim().toLowerCase();
+      let fresh: { ok: boolean; profile: PlatformProfile; billing: PlatformBilling };
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      try {
+        fresh = await authFetch<typeof fresh>('/api/platform/profile', { cache: 'no-store', signal: controller.signal });
+      } catch { return; }
+      finally { clearTimeout(timeout); }
+      if (!session.isCurrent() || !email || !fresh.ok || !publicId || fresh.profile?.publicId !== publicId || !fresh.profile.displayName?.trim()
+        || String(fresh.profile.email || '').trim().toLowerCase() !== email) return;
+      writeLocal(LOCAL_PROFILE_KEY, fresh.profile);
+      writeLocal(LOCAL_BILLING_KEY, fresh.billing);
+    });
+  } catch {
+    // Without cross-tab exclusion, discard the cache rather than promote an old response.
+    try { if (session.isCurrent()) removeLocal(LOCAL_PROFILE_KEY); } catch {}
+  }
 }
 
 function readLocal<T>(key: string, fallback: T): T {
@@ -147,12 +166,9 @@ export async function getPlatformProfile(): Promise<{ ok: boolean; profile: Plat
   let timezone = 'America/Sao_Paulo';
   try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || timezone; } catch {}
   try {
-    const mayCache = captureProfileCacheWrite();
+    const session = captureAuthSession();
     const payload = await authFetch<{ ok: boolean; profile: PlatformProfile; billing: PlatformBilling }>('/api/platform/profile', { headers: { 'x-crewcheck-locale': navigator.language || 'pt-BR', 'x-crewcheck-timezone': timezone } });
-    if (payload.ok && mayCache(payload.profile)) {
-      writeLocal(LOCAL_PROFILE_KEY, payload.profile);
-      writeLocal(LOCAL_BILLING_KEY, payload.billing);
-    }
+    if (payload.ok) await refreshProfileCache(session, payload.profile?.publicId);
     return payload;
   } catch {
     return { ok: true, profile: localProfile(), billing: localBilling(), localOnly: true };
@@ -160,15 +176,11 @@ export async function getPlatformProfile(): Promise<{ ok: boolean; profile: Plat
 }
 
 export async function savePlatformProfile(patch: Partial<Pick<PlatformProfile, 'displayName' | 'locale' | 'timezone' | 'sharePresence'>>): Promise<{ ok: boolean; profile: PlatformProfile; billing: PlatformBilling; localOnly?: boolean }> {
-  const mayCache = captureProfileCacheWrite();
+  const session = captureAuthSession();
   const local = { ...localProfile(), ...patch };
-  writeLocal(LOCAL_PROFILE_KEY, local);
   try {
     const payload = await authFetch<{ ok: boolean; profile: PlatformProfile; billing: PlatformBilling }>('/api/platform/profile', { method: 'PATCH', body: JSON.stringify(patch) });
-    if (payload.ok && mayCache(payload.profile)) {
-      writeLocal(LOCAL_PROFILE_KEY, payload.profile);
-      writeLocal(LOCAL_BILLING_KEY, payload.billing);
-    }
+    if (payload.ok) await refreshProfileCache(session, payload.profile?.publicId);
     return payload;
   } catch {
     return { ok: true, profile: local, billing: localBilling(), localOnly: true };
@@ -198,8 +210,8 @@ export async function saveConfirmedDisplayName(value: string): Promise<PlatformP
   }
   const confirmed = await getConfirmedPlatformProfile();
   if (!session.isCurrent() || confirmed.publicId !== before.publicId || confirmed.displayName !== displayName) throw new Error('Não foi possível confirmar o nome salvo.');
-  confirmedProfileRevision += 1;
-  writeLocal(LOCAL_PROFILE_KEY, confirmed);
+  await refreshProfileCache(session, confirmed.publicId);
+  if (!session.isCurrent()) throw new Error('A conta mudou. Abra o perfil novamente.');
   window.dispatchEvent(new CustomEvent('crewcheck:profile-name-confirmed', { detail: { owner: session.owner, displayName } }));
   return confirmed;
 }

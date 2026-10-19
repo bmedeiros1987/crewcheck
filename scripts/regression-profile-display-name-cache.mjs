@@ -12,6 +12,8 @@ const compiled = transformSync(fs.readFileSync('client/src/lib/platformClient.ts
 function fixture() {
   let user = owner, generation = 0, remote = { ...initial }, offline = false;
   let writesBlocked = false, readsBlocked = false, intercept = async () => {};
+  let queue = Promise.resolve();
+  const locks = { request: (_name, callback) => { const run = queue.then(callback); queue = run.catch(() => {}); return run; } };
   const stored = new Map([[key, JSON.stringify(initial)]]), calls = [], writes = [], events = [];
   const auth = {
     getStoredUser: () => ({ ...user }),
@@ -31,7 +33,7 @@ function fixture() {
   const module = { exports: {} };
   vm.runInNewContext(compiled, {
     module, exports: module.exports, require: () => auth, console,
-    navigator: { language: 'en-US' }, Intl,
+    navigator: { language: 'en-US', locks }, Intl, AbortController, setTimeout, clearTimeout,
     localStorage: {
       getItem: name => { if (readsBlocked) throw Error('storage unavailable'); return stored.get(name) ?? null; },
       setItem: (name, value) => { if (writesBlocked) throw Error('storage unavailable'); writes.push({ name, value }); stored.set(name, value); },
@@ -59,9 +61,9 @@ function fixture() {
   const saved = await f.client.saveConfirmedDisplayName('Confirmed Name');
   assert.equal(saved.displayName, 'Confirmed Name');
   assert.deepEqual(JSON.parse(f.calls[1].body), { displayName: 'Confirmed Name' });
-  assert.equal(f.calls.length, 3, 'GET, PATCH, and persistence GET remain mandatory');
+  assert.equal(f.calls.length, 4, 'GET, PATCH, persistence GET, and locked fresh cache GET remain mandatory');
   assert.deepEqual(f.cached(), JSON.parse(JSON.stringify(saved)), 'cache the verified profile, not a name-only draft');
-  assert.equal(f.writes.length, 1);
+  assert.equal(f.writes.filter(write => write.name === key).length, 1);
   f.offline();
   const loaded = await f.client.getPlatformProfile();
   assert.equal(loaded.localOnly, true);
@@ -97,7 +99,7 @@ for (const phase of [2, 3]) {
   const f = fixture(); f.blockStorage();
   const saved = await f.client.saveConfirmedDisplayName('Remote Only');
   assert.equal(saved.displayName, 'Remote Only');
-  assert.equal(f.calls.length, 3);
+  assert.equal(f.calls.length, 4);
   assert.equal(f.events.length, 1);
   f.offline();
   await assert.rejects(f.client.saveConfirmedDisplayName('Unsaved Draft'));
@@ -164,7 +166,7 @@ for (const operation of ['getPlatformProfile', 'savePlatformProfile']) {
   }
 }
 
-// Confirmation invalidates older requests even when its storage write is unavailable.
+// After storage recovers, an old response may only cache a newly fetched server profile.
 {
   const f = fixture();
   let release, reached;
@@ -175,8 +177,7 @@ for (const operation of ['getPlatformProfile', 'savePlatformProfile']) {
   f.blockStorage();
   assert.equal((await f.client.saveConfirmedDisplayName('Remote Confirmed')).displayName, 'Remote Confirmed');
   f.allowStorage(); release(); await old;
-  assert.equal(f.writes.length, 0, 'old request stays invalid after storage recovers');
-  await f.client.getPlatformProfile();
+  assert.equal(f.calls.length, 6, 'old response must cause a fresh locked read, never write its snapshot');
   assert.equal(f.cached().displayName, 'Remote Confirmed');
 }
 console.log('PASS profile cache ordering: old GET/PATCH cannot overwrite confirmed save; new GET allowed; account/session fences; storage failure.');

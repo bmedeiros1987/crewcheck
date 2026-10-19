@@ -25,3 +25,4 @@ reset();let release;block=new Promise(r=>release=r);const saving=client.saveConf
 reset();const fn=auth.authFetch;auth.authFetch=async(path,options)=>{const r=await fn(path,options);if(options?.method==='PATCH')fail=true;return r;};await assert.rejects(client.saveConfirmedDisplayName('Unverified Name'));assert.equal(events.length,0,'PATCH receipt alone is not persistence confirmation');
 console.log('PASS profile display name: owner-bound partial update preserves omitted settings and immutable identity; invalid fields rejected; strict remote receipt plus GET persistence; offline/verification failures and delayed account-switch replies never announce success.');
 await import('./regression-profile-display-name-cache.mjs');
+await import('./regression-profile-display-name-shared-cache.mjs');
