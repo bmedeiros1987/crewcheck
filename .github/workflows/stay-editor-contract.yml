@@ -23,6 +23,17 @@ on:
       - 'scripts/stay-editor/**'
       - 'scripts/v139/apply.mjs'
       - 'client/src/lib/stayEditorStore.ts'
+      - 'client/src/lib/platformClient.ts'
+      - 'client/src/lib/hotelStayClient.*'
+      - 'server/platform.mjs'
+      - 'server/hotel-stay-*.mjs'
+      - 'migrations/20261019_001_hotel_binding_candidate.sql'
+      - 'scripts/regression-hotel-binding.mjs'
+      - 'scripts/regression-hotel-editor-v2-browser.mjs'
+      - 'scripts/fixtures/hotel-*.mjs'
+      - 'scripts/p0-active-roster-server/apply.mjs'
+      - 'scripts/v14376/apply.mjs'
+      - 'scripts/regression-hotel-persistence.mjs'
       - 'client/src/lib/stayEditorNavigation.ts'
       - 'client/src/components/v1391/PresentationStayManagerView.tsx'
       - 'client/src/components/v1391/StayHotelAlarmPreview.tsx'
@@ -51,6 +62,17 @@ jobs:
           distribution: temurin
           java-version: 17
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install isolated browser tools
+        run: |
+          npm install --prefix "$RUNNER_TEMP/stay-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/stay-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Raw hotel editor v2 through composed routes and synthetic database
+        env:
+          STAY_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
+          HOTEL_V2_ARTIFACTS: artifacts/hotel-v2-raw
+        run: node scripts/regression-hotel-editor-v2-browser.mjs
+      - name: Hotel persistence server/client contracts
+        run: node --test scripts/regression-hotel-persistence.mjs scripts/regression-hotel-binding.mjs
       - name: Pure contracts in three timezones
         run: |
           TZ=UTC node --test scripts/regression-stay-edit-plan.mjs
@@ -60,7 +82,7 @@ jobs:
       - name: Raw composed host, lease, editor and timezone contracts
         run: |
           for zone in UTC America/Sao_Paulo Asia/Tokyo; do
-            TZ="$zone" node --test scripts/regression-stay-edit-plan.mjs scripts/regression-stay-editor-persistence.mjs scripts/regression-stay-time-presentation.mjs scripts/regression-stay-alarm-android.mjs scripts/regression-stay-alarm-host.mjs scripts/regression-stay-alarm-lease-lifecycle.mjs scripts/regression-stay-combined-off.mjs
+            TZ="$zone" node --test scripts/regression-hotel-persistence.mjs scripts/regression-hotel-binding.mjs scripts/regression-stay-edit-plan.mjs scripts/regression-stay-editor-persistence.mjs scripts/regression-stay-time-presentation.mjs scripts/regression-stay-alarm-android.mjs scripts/regression-stay-alarm-host.mjs scripts/regression-stay-alarm-lease-lifecycle.mjs scripts/regression-stay-combined-off.mjs
           done
           node scripts/regression-stay-alarm-native.mjs
       - name: Compile actual Android API bindings and exercise JSON bridge with fake devices
@@ -79,23 +101,27 @@ jobs:
       - name: Prepared composed contracts in three timezones, activation stays OFF
         run: |
           for zone in UTC America/Sao_Paulo Asia/Tokyo; do
-            TZ="$zone" node --test scripts/regression-stay-edit-plan.mjs scripts/regression-stay-editor-persistence.mjs scripts/regression-stay-time-presentation.mjs scripts/regression-stay-alarm-android.mjs scripts/regression-stay-alarm-host.mjs scripts/regression-stay-alarm-lease-lifecycle.mjs scripts/regression-stay-combined-off.mjs
+            TZ="$zone" node --test scripts/regression-hotel-persistence.mjs scripts/regression-hotel-binding.mjs scripts/regression-stay-edit-plan.mjs scripts/regression-stay-editor-persistence.mjs scripts/regression-stay-time-presentation.mjs scripts/regression-stay-alarm-android.mjs scripts/regression-stay-alarm-host.mjs scripts/regression-stay-alarm-lease-lifecycle.mjs scripts/regression-stay-combined-off.mjs
           done
           node scripts/regression-stay-alarm-native.mjs
           node scripts/regression-stay-alarm-api.mjs
         env:
           STAY_ANDROID_API_JAR: ${{ runner.temp }}/stay-android-all.jar
           STAY_WEBKIT_JAR: ${{ runner.temp }}/stay-webkit.jar
-      - name: Install isolated browser tools
-        run: |
-          npm install --prefix "$RUNNER_TEMP/stay-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
-          node "$RUNNER_TEMP/stay-browser/node_modules/playwright/cli.js" install --with-deps chromium
       - name: Prepared Home/editor QA, local persistence, no real alarms
         env:
           STAY_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
         run: node scripts/regression-stay-editor-browser.mjs
+      - name: Prepared hotel editor v2 through composed routes and synthetic database
+        env:
+          STAY_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
+          HOTEL_V2_ARTIFACTS: artifacts/hotel-v2-prepared
+        run: node scripts/regression-hotel-editor-v2-browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: stay-editor-synthetic
-          path: artifacts/stay-editor/
+          path: |
+            artifacts/stay-editor/
+            artifacts/hotel-v2-raw/
+            artifacts/hotel-v2-prepared/

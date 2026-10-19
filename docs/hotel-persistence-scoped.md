@@ -1,5 +1,10 @@
 # Hotel manual: persistência autenticada, sem integração MCC
 
+> **HOLD — não fazer merge/deploy.** Descrição histórica do contrato v1 abaixo.
+> A revisão encontrou rename→sync destrutivo e revisão ABA insuficiente.
+> O candidato v2 está conectado às rotas/UI/sync, mas NÃO implantado: ver [bloqueios e próximos passos](hotel-binding-candidate.md).
+> Existe agora um arquivo de migração somente para revisão; ele não foi executado.
+
 Base: main `1d61ca81481782f9a6685a1044c3ed5895feb1d7`. Slice autorizado: handleStays, métodos stays do cliente/cache e PresentationStayManagerView. Não altera Home, auth, Asaas, health, Wear, Android ou contratos/workflows MCC.
 
 Salvar um pernoite contextual guarda o draft local e tenta sincronizar **somente o hotel**. Exige GET remoto com stayContractVersion1, conta/sessão ainda atuais, um único pernoite operacional e no máximo um registro remoto na mesma data/aeroporto. Se houve mudança desde a leitura anterior, pede releitura. PATCH envia ID/revisão ou criação com revisão null; GET posterior confere ID/revisão e campos enviados. Erro deixa mensagem explícita de sincronização pendente. APZ/quarto/preferências continuam locais; não são convertidos em fatos do fornecedor. Não programa despertador.

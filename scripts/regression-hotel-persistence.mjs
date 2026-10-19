@@ -1,128 +1,116 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import vm from 'node:vm';
-import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { createHotelStayClient } from '../client/src/lib/hotelStayClient.mjs';
-
-// Exercise the literal production handler; SQL adapter below is synthetic, never a live DB.
-const source = readFileSync(new URL('../server/platform.mjs', import.meta.url), 'utf8');
-const handler = source.slice(source.indexOf('async function handleStays('), source.indexOf('\nasync function handleSameHotel'));
-const row = (id = 'stay-A', owner = 'account-A') => ({ id, owner_email: owner, stay_date: '2030-01-01', hotel_name: 'Synthetic hotel', hotel_key: 'SYNTHETIC-HOTEL', airport: 'AAA', room_cipher: 'private-room', presentation_time: '07:00', lead_minutes: 90, share_same_hotel: true, share_with_visitors: true });
-function harness(initial = [row()]) {
-  let rows = structuredClone(initial), backup, updates = 0, insertions = 0, learns = 0, failUpdate = false;
-  const query = async (sql, p = []) => {
-    if (sql === 'BEGIN') { backup = structuredClone(rows); return { rows: [] }; }
-    if (sql === 'ROLLBACK') { rows = backup; return { rows: [] }; }
-    if (sql === 'COMMIT') return { rows: [] };
-    if (sql.startsWith('SELECT email')) return { rows: [{ email: p[0] }] };
-    if (sql.startsWith('SELECT *')) return { rows: rows.filter(r => sql.includes('WHERE id=') ? r.id === p[0] && r.owner_email === p[1] : r.owner_email === p[0] && r.stay_date === p[1] && r.airport === p[2]) };
-    if (sql.startsWith('UPDATE crewcheck_platform_stays')) {
-      if (failUpdate) return { rowCount: 0 };
-      const r = rows.find(r => r.id === p[0] && r.owner_email === p[1]); if (!r) return { rowCount: 0 };
-      Object.assign(r, { hotel_name: p[2], hotel_key: p[3], room_cipher: p[4], presentation_time: p[5], lead_minutes: p[6], share_same_hotel: p[7], share_with_visitors: p[8] }); updates++; return { rowCount: 1 };
-    }
-    if (sql.startsWith('INSERT INTO crewcheck_platform_stays')) {
-      rows.push({ id: p[0], owner_email: p[1], stay_date: p[2], hotel_key: p[3], hotel_name: p[4], airport: p[5], room_cipher: p[6], presentation_time: p[7], lead_minutes: p[8], share_same_hotel: p[9], share_with_visitors: p[10] }); insertions++; return { rowCount: 1 };
-    }
-    if (sql.startsWith('INSERT INTO crewcheck_platform_hotel_rules')) { learns++; return { rowCount: 1 }; }
-    if (sql.startsWith('SELECT s.*')) return { rows: rows.filter(r => r.owner_email === p[0]) };
-    throw new Error('Unexpected synthetic query: ' + sql);
-  };
-  const client = { query, release() {} };
-  const context = { identity: { email: 'account-A' }, db: { query, connect: async () => client } };
-  const sandbox = { crypto, sha256: v => crypto.createHash('sha256').update(v).digest('hex'),
-    readBody: async req => req.body, requireMain: async () => context, requirePremium: async () => true,
-    normalizeText: (v, n) => String(v ?? '').trim().slice(0, n), parseDateOnly: v => /^\d{4}-\d{2}-\d{2}$/.test(v || '') ? v : '',
-    hotelKey: v => v.toUpperCase().replaceAll(' ', '-'), encryptPrivate: v => v == null ? null : String(v), decryptPrivate: v => v || '',
-    sendJson: (res, status, body) => Object.assign(res, { status, body }) };
-  const call = vm.runInNewContext(handler + '\nhandleStays', sandbox);
-  return { async request(method = 'GET', body = {}) { const res = {}; await call({ method, body }, res); return res; },
-    get rows() { return rows; }, get writes() { return { updates, insertions, learns }; }, fail() { failUpdate = true; } };
-}
-test('GET owner-scoped and versioned; omitted private fields/grants survive PATCH', async () => {
-  const h = harness([row(), row('foreign', 'account-B')]); const get = await h.request();
-  assert.equal(get.body.stays.length, 1); const revision = get.body.stays[0].revision;
-  const saved = await h.request('PATCH', { contractVersion: 1, expectedRevision: revision, id: 'stay-A', hotelName: 'New synthetic hotel' });
-  assert.equal(saved.status, 200); assert.equal(h.rows[0].room_cipher, 'private-room'); assert.equal(h.rows[0].presentation_time, '07:00');
-  assert.equal(h.rows[0].share_same_hotel, true); assert.equal(h.rows[0].share_with_visitors, true); assert.equal(h.writes.learns, 0);
-});
-test('missing/foreign ID cannot mutate, including learning', async () => {
-  const h = harness([row('foreign', 'account-B')]); const r = await h.request('PATCH', { id: 'foreign', hotelName: 'Other', learnRule: true, leadMinutes: 100 });
-  assert.equal(r.status, 404); assert.deepEqual(h.writes, { updates: 0, insertions: 0, learns: 0 });
-});
-test('stale revision returns conflict; explicit false changes only requested grant', async () => {
-  const h = harness(); const revision = (await h.request()).body.stays[0].revision;
-  assert.equal((await h.request('PATCH', { contractVersion: 1, expectedRevision: 'old', id: 'stay-A', hotelName: 'X' })).status, 409);
-  await h.request('PATCH', { contractVersion: 1, expectedRevision: revision, id: 'stay-A', shareSameHotel: false });
-  assert.equal(h.rows[0].share_same_hotel, false); assert.equal(h.rows[0].share_with_visitors, true);
-});
-test('first insert and lost-response retry are idempotent; rename does not insert duplicate', async () => {
-  const h = harness([]); const patch = { contractVersion: 1, expectedRevision: null, stayDate: '2030-01-01', airport: 'AAA', hotelName: 'Synthetic hotel' };
-  const first = await h.request('PATCH', patch); const retry = await h.request('PATCH', patch);
-  assert.equal(first.body.savedStayId, retry.body.savedStayId); assert.equal(h.writes.insertions, 1);
-  await h.request('PATCH', { ...patch, id: first.body.savedStayId, expectedRevision: first.body.stays[0].revision, hotelName: 'Renamed hotel' });
-  assert.equal(h.rows.length, 1); assert.equal(h.rows[0].hotel_name, 'Renamed hotel');
-});
-test('ambiguous same date/airport rejected, unsupported provider fields rejected', async () => {
-  const h = harness([row(), row('second')]);
-  assert.equal((await h.request('PATCH', { contractVersion: 1, expectedRevision: null, stayDate: '2030-01-01', airport: 'AAA', hotelName: 'X' })).status, 409);
-  assert.equal((await h.request('PATCH', { contractVersion: 1, expectedRevision: null, transportProvider: 'T' })).status, 400);
-});
-test('zero affected rows rolls back and never returns saved', async () => {
-  const h = harness(); h.fail();
-  await assert.rejects(h.request('PATCH', { id: 'stay-A', hotelName: 'X' })); assert.equal(h.rows[0].hotel_name, 'Synthetic hotel');
-});
-test('identical versioned update is successful no-op', async () => {
-  const h = harness(); const revision = (await h.request()).body.stays[0].revision;
-  assert.equal((await h.request('PATCH', { contractVersion: 1, expectedRevision: revision, id: 'stay-A', hotelName: 'Synthetic hotel' })).status, 200);
-  assert.equal(h.writes.updates, 0);
-});
+import { createHotelStayClient, hotelOnlyPatch, hotelRemoteBaseline } from '../client/src/lib/hotelStayClient.mjs';
+import { readStayEditor, writeStayEditor, emptyStayEditor } from '../shared/stay-editor-store.mjs';
+import { syntheticHotel } from './fixtures/hotel-database.mjs';
+import { harness, association } from './fixtures/hotel-platform.mjs';
+const rosterBody = { roster: { year:2030,month:1,days:[{ date:'2030-01-01',hotel:'Source A',airport:'AAA' }] }, compliance:{synthetic:1}, gym:[{synthetic:2}], sourceName:'synthetic-source' };
+const patch = row => hotelOnlyPatch({ baseline:hotelRemoteBaseline(row),latest:row,hotelName:'Manual B',contextRef:association.contextRef,contextSignature:association.contextSignature });
 function clientHarness() {
-  let generation = 0, owner = 'A'; const data = new Map();
-  const storage = { getItem: k => data.get(k), setItem: (k, v) => data.set(k, v) };
-  const capture = () => { const g = generation, o = owner; return { token: 'synthetic', owner: o, isCurrent: () => g === generation && o === owner }; };
-  return { storage, data, capture, switch() { owner = 'B'; generation++; } };
+  let generation=0,owner='A';const data=new Map();
+  return { data, storage:{getItem:key=>data.get(key),setItem:(key,value)=>data.set(key,value)},
+    capture:()=>{const g=generation,o=owner;return {token:'synthetic',owner:o,isCurrent:()=>g===generation&&o===owner};},
+    switch(){owner='B';generation++;} };
 }
-test('delayed A GET after B login cannot populate B or A cache', async () => {
-  const h = clientHarness(); let resolve;
-  const client = createHotelStayClient({ ...h, request: () => new Promise(r => { resolve = r; }) });
-  const read = client.list(); h.switch(); resolve({ ok: true, stays: [row()] });
-  await assert.rejects(read, /conta mudou/); assert.equal(h.data.size, 0);
+function clientFor(server, state=clientHarness()) {
+  return createHotelStayClient({...state, request:async(_url,options)=>{
+    const res=await server.request(options?.method||'GET',options?JSON.parse(options.body):{});
+    if(res.status!==200)throw Object.assign(new Error(res.body.message),{status:res.status});return res.body;
+  }});
+}
+test('literal route GET is owner-scoped; schema absent preserves legacy reads and blocks writes',async()=>{
+  const h=harness([syntheticHotel(),syntheticHotel({id:'foreign',owner_email:'owner-B'})],{ready:false});
+  const get=await h.request();assert.equal(get.body.stays.length,1);assert.equal(get.body.stayContractVersion,0);
+  assert.equal(get.body.stays[0].state,'legacy-unbound');assert.equal(get.body.stays[0].manualOverride,false);
+  assert.equal((await h.request('PATCH',association)).status,503);
+  assert.equal((await h.sync(rosterBody)).body.hotelReconciliation.status,'review-required');
+  assert.equal(h.rows[0].hotel_name,'Source A');
 });
-test('delayed A PATCH after B login cannot perform readback/cache', async () => {
-  const h = clientHarness(); let resolve, calls = 0;
-  const client = createHotelStayClient({ ...h, request: () => { calls++; return new Promise(r => { resolve = r; }); } });
-  const save = client.update({ hotelName: 'X' }); h.switch(); resolve({ ok: true, savedStayId: 'stay-A' });
-  await assert.rejects(save, /conta mudou/); assert.equal(calls, 1); assert.equal(h.data.size, 0);
+test('v1/unversioned and extra room/grant/provider fields have no writable fallback',async()=>{
+  const h=harness();for(const body of [{id:'stay-A',hotelName:'X'},{...association,contractVersion:1},{...association,room:'X'},{...association,shareSameHotel:false},{...association,transportProvider:'X'}])
+    assert.equal((await h.request('PATCH',body)).status,400);
+  assert.equal(h.log.some(q=>q.sql.startsWith('UPDATE crewcheck_platform_stays')),false);
 });
-test('PATCH errors are errors, not optimistic success; successful update requires GET readback', async () => {
-  const h = clientHarness(); const failure = createHotelStayClient({ ...h, request: async () => { throw Object.assign(new Error('Conflict'), { status: 409 }); } });
-  await assert.rejects(failure.update({}), /Conflict/); assert.equal(h.data.size, 0);
-  let calls = 0; const good = createHotelStayClient({ ...h, request: async () => ++calls === 1 ? { ok: true, savedStayId: 'stay-A' } : { ok: true, stays: [{ id: 'stay-A', revision: 'v1' }] } });
-  assert.equal((await good.update({})).persisted, true); assert.equal(calls, 2);
+test('literal routes + actual client: explicit association -> PATCH -> repeated roster sync -> GET',async()=>{
+  const h=harness();const client=clientFor(h);await client.update(association);
+  const row=(await client.list()).stays[0];const before=h.rows[0];
+  assert.equal((await client.update(patch(row))).persisted,true);
+  for(let i=0;i<2;i++)assert.equal((await h.sync(rosterBody)).body.hotelReconciliation.status,'review-required');
+  const after=(await client.list()).stays[0];assert.equal(after.id,before.id);assert.equal(after.hotelName,'Manual B');
+  for(const key of ['room_cipher','share_same_hotel','share_with_visitors','presentation_time','lead_minutes'])assert.equal(h.rows[0][key],before[key]);
+  assert.equal(h.rows.length,1);assert.equal(h.log.some(q=>/DELETE FROM crewcheck_platform_stays|INSERT INTO crewcheck_platform_stays/.test(q.sql)),false);
+  assert.deepEqual(JSON.parse(h.rosters[0].roster),rosterBody.roster);assert.deepEqual(JSON.parse(h.rosters[0].compliance),rosterBody.compliance);assert.deepEqual(JSON.parse(h.rosters[0].gym),rosterBody.gym);
 });
-test('cache belongs to owner; auth failure cannot be presented as saved', async () => {
-  const h = clientHarness(); let status = 0;
-  const client = createHotelStayClient({ ...h, request: async () => { if (!status) return { ok: true, stays: [{ id: 'A' }] }; throw Object.assign(new Error('Unavailable'), { status }); } });
-  await client.list(); status = 503; assert.equal((await client.list()).stays.length, 1);
-  status = 401; assert.equal((await client.list()).stays.length, 0);
-  h.switch(); status = 503; const offline = await client.list(); assert.equal(offline.stays.length, 0); assert.equal(offline.ok, false);
+test('explicit selected NULL-roster legacy record links in place; no automatic manual inference',async()=>{
+  const h=harness([syntheticHotel({roster_key:null})]);const client=clientFor(h);
+  assert.equal((await client.list()).stays[0].manualOverride,false);await client.update(association);
+  await client.update(patch((await client.list()).stays[0]));await h.sync(rosterBody);
+  assert.equal(h.rows.length,1);assert.equal(h.rows[0].id,'stay-A');assert.equal(h.rows[0].hotel_name,'Manual B');
 });
-test('client and literal server compose; readback verifies fields and lost reply retry does not duplicate', async () => {
-  const server = harness([]), h = clientHarness(); let loseReply = true;
-  const client = createHotelStayClient({ ...h, request: async (_url, options) => {
-    const res = await server.request(options?.method || 'GET', options ? JSON.parse(options.body) : {});
-    if (res.status !== 200) throw Object.assign(new Error(res.body.message), { status: res.status });
-    if (options && loseReply) { loseReply = false; throw Object.assign(new Error('Reply lost'), { status: 0 }); }
-    return res.body;
-  } });
-  const patch = { contractVersion: 1, expectedRevision: null, stayDate: '2030-01-01', airport: 'AAA', hotelName: 'Synthetic hotel' };
-  await assert.rejects(client.update(patch), /Reply lost/);
-  assert.equal((await client.update(patch)).persisted, true); assert.equal(server.rows.length, 1);
+test('foreign/missing ID and wrong binding cannot mutate',async()=>{
+  const h=harness([syntheticHotel(),syntheticHotel({id:'foreign',owner_email:'owner-B'})]);
+  assert.equal((await h.request('PATCH',{...association,id:'foreign'})).status,409);
+  await h.request('PATCH',association);const row=(await h.request()).body.stays[0];
+  assert.equal((await h.request('PATCH',{...patch(row),bindingId:'other'})).status,409);
+  assert.equal(h.rows[0].hotel_name,'Source A');
 });
-test('readback with different hotel cannot claim saved', async () => {
-  const h = clientHarness(); let calls = 0;
-  const client = createHotelStayClient({ ...h, request: async () => ++calls === 1 ? { ok: true, savedStayId: 'X' } : { ok: true, stays: [{ id: 'X', revision: 'v', hotelName: 'Other hotel' }] } });
-  await assert.rejects(client.update({ hotelName: 'Expected hotel' }), /releitura/);
+test('same date/airport two records never pick a target without explicit association',async()=>{
+  const h=harness([syntheticHotel(),syntheticHotel({id:'second'})]);const client=clientFor(h);
+  assert.throws(()=>hotelOnlyPatch({baseline:undefined,latest:(h.rows[0]),hotelName:'X'}),/v2/);
+  await client.update(association);await client.update(patch((await client.list()).stays.find(r=>r.id==='stay-A')));
+  assert.equal(h.rows.find(r=>r.id==='second').hotel_name,'Source A');assert.equal(h.rows.length,2);
+});
+test('actual editor store retains stale baseline after B changes; reload replaces value and baseline together',async()=>{
+  const h=harness();const client=clientFor(h);await client.update(association);const row=(await client.list()).stays[0];
+  const state=clientHarness();writeStayEditor(state.storage,'A',{...emptyStayEditor('A'),stays:{'event-A':{eventId:'event-A',signature:association.contextSignature,draft:{hotelName:row.hotelName},remoteBase:hotelRemoteBaseline(row)}}});
+  await client.update(patch(row));const latest=(await client.list()).stays[0];const draft=readStayEditor(state.storage,'A').stays['event-A'];
+  assert.throws(()=>hotelOnlyPatch({baseline:draft.remoteBase,latest,hotelName:draft.draft.hotelName,contextRef:association.contextRef,contextSignature:association.contextSignature}),/origem deste rascunho/);
+  const intentional=hotelOnlyPatch({baseline:hotelRemoteBaseline(latest),latest,hotelName:'Intentional C',contextRef:association.contextRef,contextSignature:association.contextSignature});
+  assert.equal((await client.update(intentional)).persisted,true);
+});
+test('ABA cannot revive old route version even when hotel contents return',async()=>{
+  const h=harness();const client=clientFor(h);await client.update(association);const original=(await client.list()).stays[0];
+  for(const hotelName of ['A','B','Source A']){const row=(await client.list()).stays[0];await client.update({...patch(row),hotelName});}
+  assert.equal((await h.request('PATCH',patch(original))).status,409);
+});
+test('lost reply retry conflicts without duplicate or extra write; reread reveals saved state',async()=>{
+  const h=harness();await h.request('PATCH',association);const row=(await h.request()).body.stays[0],p=patch(row);
+  assert.equal((await h.request('PATCH',p)).status,200);assert.equal((await h.request('PATCH',p)).status,409);
+  assert.equal(h.rows.length,1);assert.equal((await h.request()).body.stays[0].hotelName,'Manual B');
+});
+test('session fences A/logout/B for delayed GET and PATCH; no readback/cache crosses account',async()=>{
+  for(const action of ['list','update']){const state=clientHarness();let resolve,calls=0;
+    const client=createHotelStayClient({...state,request:()=>{calls++;return new Promise(r=>{resolve=r;});}});
+    const result=action==='list'?client.list():client.update(association);state.switch();resolve({ok:true,stays:[],savedStayId:'stay-A',stayContractVersion:2,hotelWriteReady:true});
+    await assert.rejects(result,/conta mudou/);assert.equal(state.data.size,0);assert.equal(calls,1);
+  }
+});
+test('cache is owner scoped and never establishes schema readiness offline/auth failure',async()=>{
+  const state=clientHarness();let status=0;const client=createHotelStayClient({...state,request:async()=>{if(status)throw Object.assign(new Error('Unavailable'),{status});return {ok:true,stays:[{id:'A'}],hotelWriteReady:true,stayContractVersion:2};}});
+  await client.list();status=503;let offline=await client.list();assert.equal(offline.ok,false);assert.equal(offline.hotelWriteReady,undefined);assert.equal(offline.stays.length,1);
+  status=401;assert.equal((await client.list()).stays.length,0);state.switch();status=503;assert.equal((await client.list()).stays.length,0);
+});
+test('readback cannot falsely confirm another hotel or another context',async()=>{
+  for(const mismatch of ['hotel','context']){const state=clientHarness();let calls=0;
+    const client=createHotelStayClient({...state,request:async()=>++calls===1?{ok:true,savedStayId:'X',stayContractVersion:2,hotelWriteReady:true}:{ok:true,stayContractVersion:2,hotelWriteReady:true,stays:[{id:'X',state:'bound',rowVersion:'2',hotelName:mismatch==='hotel'?'Other':'Wanted',contextRef:'other',contextSignature:'other'}]}});
+    await assert.rejects(client.update({hotelName:'Wanted',contextRef:'event',contextSignature:'sig'}),/releitura/);
+  }
+});
+test('constraint/deadlock error response is not success and leaves row unchanged',async()=>{
+  for(const fail of ['ER_DUP_ENTRY','ER_LOCK_DEADLOCK']){const h=harness(undefined,{fail});assert.equal((await h.request('PATCH',association)).status,409);assert.equal(h.rows[0].row_version,'0');}
+});
+test('actual roster writer acquires owner before writing roster and never mutates unresolved hotels',async()=>{
+  const h=harness();await h.sync(rosterBody);const queries=h.log.map(q=>q.sql.trim());
+  assert.ok(queries.findIndex(q=>q.startsWith('SELECT email'))<queries.findIndex(q=>q.startsWith('UPDATE crewcheck_platform_rosters')));
+  const base=readFileSync(new URL('../server/platform.mjs',import.meta.url),'utf8');
+  const writer=base.slice(base.indexOf('async function saveRosterMysql('),base.indexOf('async function handleRosterSync'));
+  assert.doesNotMatch(writer,/DELETE FROM crewcheck_platform_stays|INSERT INTO crewcheck_platform_stays/);
+});
+test('UI uses explicit selection/confirmation, v2 baselines and exact ID reload; CI runs raw and prepared',()=>{
+  const editor=readFileSync(new URL('../client/src/components/v1391/PresentationStayManagerView.tsx',import.meta.url),'utf8');
+  assert.match(editor,/Confirmar registro para esta programação e carregar hotel/);assert.match(editor,/remoteBase\.current = persisted\.remoteBase\?\.contractVersion === 2/);
+  assert.match(editor,/hotelOnlyPatch\(\{ baseline, latest: existing/);assert.match(editor,/item\.id === baseline\?\.id/);
+  const ci=readFileSync(new URL('../.github/workflows/stay-editor-contract.yml',import.meta.url),'utf8');
+  assert.match(ci,/TZ="\$zone" node --test scripts\/regression-hotel-persistence\.mjs scripts\/regression-hotel-binding\.mjs/);
 });
