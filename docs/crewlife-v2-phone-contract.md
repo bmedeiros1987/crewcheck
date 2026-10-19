@@ -177,12 +177,12 @@ No cross-account leak was demonstrated or is claimed by these findings.
 Accepted reset ACKs use a separate local `LIFE_WATCH_PROOF_READY` action. They do
 not use the external watch-request action, call the provider's `refresh`, request
 an operational projection, or post another 1800ms callback. Activity-local work
-tickets allow at most one ACK continuation of the latest original read phase;
+tickets bound ACK continuations of the latest original read phase;
 new external phases coalesce older reads, terminal callbacks finish their own
 ticket, account changes invalidate tickets, and Activity destruction closes them.
 The durable per-node publication permits and all source/session fences remain.
 
-Seven Robolectric tests use actual Android broadcast registration/delivery, the
+Fourteen Robolectric tests use actual Android broadcast registration/delivery, the
 production Activity receiver, native provider read, publisher and ACK service,
 and the real paused main Looper. A posting WebView test adapter models an attached
 View's Handler delivery. GMS transport, a synthetic ContentProvider and peer disk
@@ -190,6 +190,20 @@ are explicit doubles; receiver parser/fence come from the exact pinned Wear sour
 The tests drain main callbacks and native worker threads until there is NO next
 scheduled main task, then advance another30seconds and require stable counts.
 They cover external request, ACK without original work, duplicate/reordered ACKs,
-logout, explicit retry, rendered Web projections and destroyed Activity. This closes the no-op-broadcast
+logout, explicit retry, rendered Web projections and destroyed Activity. They also
+require positive publication after two late peer ACKs in either order, one-peer
+transient discovery recovery after cached/settled reads fail, known-offline peer
+blocking/reconnect, two-peer cancellation/logout, and stable idle after persistent
+failure. This closes the no-op-broadcast
 coverage gap in the older JVM fixtures; those still test their narrower contracts.
 No physical delivery or real vendor/encrypted-store behavior is inferred.
+
+A reset ACK resumes pending work only after every persisted peer cleanup is
+confirmed. Partial quorum ACKs do not spend the Activity operation continuation.
+Recoverable discovery/capability/delete/send errors keep that operation pending;
+fresh accepted quorum proof can resume it, subject to the same source/account/
+consent/publication fences. Each operation allows at most four ACK continuations;
+exhaustion stops automatic source reads, while a new external request starts a
+new bounded operation. Transport retry alone never invents source work. Success,
+definitive rejection, account change and Activity destruction terminate it. No
+payload is persisted to make this work queue durable across process death.

@@ -52,7 +52,17 @@ public class CrewLifeAckContinuationTest {
     private CrewLifeLoopTestPeer peer;
     private final List<Runnable> heldAcks = new ArrayList<>();
     private final List<String> cleanupAcks = new ArrayList<>();
-    private boolean holdAcks;
+    private boolean holdAcks, failNativeDiscovery;
+    private final Map<String, CrewLifeLoopTestPeer> peers = new LinkedHashMap<>();
+    private final Set<String> connectedIds = new LinkedHashSet<>();
+    private int discoveryFailures;
+    private final class AckDelivery implements Runnable {
+        final String node, raw;
+        AckDelivery(String node, String raw) { this.node = node; this.raw = raw; }
+        public void run() { deliverAck(node, raw); }
+    }
+    private Node node(String id) { Node n = mock(Node.class); when(n.getId()).thenReturn(id); return n; }
+    private void twoPeers() { peers.put("watchB", new CrewLifeLoopTestPeer()); connectedIds.add("watchB"); }
     private int snapshots, controls;
     private static NodeClient nodeClient;
     private static CapabilityClient capabilityClient;
@@ -111,31 +121,40 @@ public class CrewLifeAckContinuationTest {
         ProviderInfo info = new ProviderInfo(); info.authority = "com.crewcheck.life.summary";
         provider.attachInfo(app, info);
         ShadowContentResolver.registerProviderInternal(info.authority, provider);
-        peer = new CrewLifeLoopTestPeer();
+        peer = new CrewLifeLoopTestPeer(); peers.put("watchA", peer); connectedIds.add("watchA");
         service = new CrewCheckWatchSyncService();
         ReflectionHelpers.setField(service, "mBase", app);
         nodeClient = mock(NodeClient.class); capabilityClient = mock(CapabilityClient.class);
         dataClient = mock(DataClient.class); messageClient = mock(MessageClient.class);
-        Node node = mock(Node.class); when(node.getId()).thenReturn("watchA");
-        CapabilityInfo capability = mock(CapabilityInfo.class); when(capability.getNodes()).thenReturn(Set.of(node));
-        when(nodeClient.getConnectedNodes()).thenAnswer(i -> Tasks.forResult(List.of(node)));
-        when(capabilityClient.getCapability(anyString(), anyInt())).thenAnswer(i -> Tasks.forResult(capability));
+        when(nodeClient.getConnectedNodes()).thenAnswer(i -> {
+            if (failNativeDiscovery && Thread.currentThread().getName().equals("crewlife-companion-sync")) {
+                discoveryFailures++; return Tasks.forException(new IllegalStateException("synthetic transient discovery"));
+            }
+            List<Node> nodes = new ArrayList<>(); for (String id : connectedIds) nodes.add(node(id));
+            return Tasks.forResult(nodes);
+        });
+        when(capabilityClient.getCapability(anyString(), anyInt())).thenAnswer(i -> {
+            CapabilityInfo capability = mock(CapabilityInfo.class); Set<Node> nodes = new HashSet<>();
+            for (String id : peers.keySet()) nodes.add(node(id));
+            when(capability.getNodes()).thenReturn(nodes); return Tasks.forResult(capability);
+        });
         when(dataClient.deleteDataItems(any(Uri.class))).thenAnswer(i -> Tasks.forResult(1));
         when(dataClient.putDataItem(any(PutDataRequest.class))).thenAnswer(i -> {
             PutDataRequest request = i.getArgument(0);
             String raw = DataMap.fromByteArray(request.getData()).getString("crewLifeJson");
             if (raw != null) {
                 if ("snapshot".equals(new JSONObject(raw).optString("kind"))) snapshots++;
-                peer.data(raw, System.currentTimeMillis());
+                for (String id : connectedIds) peers.get(id).data(raw, System.currentTimeMillis());
             }
             return Tasks.forResult(mock(DataItem.class));
         });
         when(messageClient.sendMessage(anyString(), anyString(), any(byte[].class))).thenAnswer(i -> {
             controls++;
-            String ack = peer.control(new String((byte[]) i.getArgument(2), StandardCharsets.UTF_8));
+            String target = i.getArgument(0);
+            String ack = peers.get(target).control(new String((byte[]) i.getArgument(2), StandardCharsets.UTF_8));
             if (ack != null) {
                 if (new JSONObject(ack).has("status")) cleanupAcks.add(ack);
-                Runnable delivery = () -> deliverAck(ack);
+                Runnable delivery = new AckDelivery(target, ack);
                 if (holdAcks) heldAcks.add(delivery); else new Handler(Looper.getMainLooper()).post(delivery);
             }
             return Tasks.forResult(1);
@@ -143,10 +162,11 @@ public class CrewLifeAckContinuationTest {
         WatchHealthConsent.grant(app, "1.0", Set.of("recovery", "sleep", "activity"));
         ReflectionHelpers.callInstanceMethod(activity, "registerWatchSyncRequestReceiver");
     }
-    private void deliverAck(String raw) {
+    private void deliverAck(String raw) { deliverAck("watchA", raw); }
+    private void deliverAck(String node, String raw) {
         MessageEvent e = mock(MessageEvent.class);
         when(e.getPath()).thenReturn(CrewLifeV2Protocol.ACK_PATH);
-        when(e.getSourceNodeId()).thenReturn("watchA");
+        when(e.getSourceNodeId()).thenReturn(node);
         when(e.getData()).thenReturn(raw.getBytes(StandardCharsets.UTF_8));
         service.onMessageReceived(e);
     }
@@ -202,7 +222,7 @@ public class CrewLifeAckContinuationTest {
         holdAcks = true; externalRequest(); drainUntilIdle(); assertEquals(0, snapshots);
         releaseAcksReversed(); holdAcks = false;
         for (String ack : new ArrayList<>(cleanupAcks)) { deliverAck(ack); deliverAck(ack); }
-        drainUntilIdle(); assertEquals(1, SyntheticProvider.refreshes); assertTrue(snapshots <= 2); assertIdleAndStable();
+        drainUntilIdle(); assertEquals(1, SyntheticProvider.refreshes); assertTrue(snapshots > 0 && snapshots <= 2); assertIdleAndStable();
     }
     @Test public void logoutDropsContinuationAndQueuedOldAcks() throws Exception {
         holdAcks = true; externalRequest(); drainUntilIdle();
@@ -219,6 +239,63 @@ public class CrewLifeAckContinuationTest {
         assertFalse(activity.new CrewCheckNativeBridge().publishWatchCrewLife("{\"schemaVersion\":1,\"steps\":51}"));
         drainUntilIdle(); assertEquals(0, snapshots); assertEquals(0, SyntheticProvider.reads); assertEquals(0, SyntheticProvider.refreshes);
         assertIdleAndStable();
+    }
+    private void releasePeer(String node) throws Exception {
+        for (int round = 0; round < 12; round++) {
+            List<Runnable> batch = new ArrayList<>();
+            for (Runnable ack : new ArrayList<>(heldAcks)) if (((AckDelivery) ack).node.equals(node)) {
+                heldAcks.remove(ack); batch.add(ack);
+            }
+            if (batch.isEmpty()) return;
+            Collections.reverse(batch); for (Runnable ack : batch) ack.run();
+            drainUntilIdle();
+        }
+        fail("peer ACKs did not settle: " + node);
+    }
+    private void delayedQuorum(String first, String last) throws Exception {
+        twoPeers(); holdAcks = true; externalRequest(); drainUntilIdle();
+        assertEquals(0, snapshots); releasePeer(first); assertEquals(0, snapshots);
+        releasePeer(last); holdAcks = false; drainUntilIdle();
+        assertTrue("last quorum ACK must publish legitimate pending work", snapshots > 0 && snapshots <= 2);
+        assertEquals(Integer.valueOf(0), peers.get("watchA").value("recoveryScore", System.currentTimeMillis()));
+        assertEquals(Integer.valueOf(0), peers.get("watchB").value("recoveryScore", System.currentTimeMillis()));
+        assertEquals(1, SyntheticProvider.refreshes); assertIdleAndStable();
+    }
+    @Test public void twoPeersLateAckPublishesAfterQuorum() throws Exception { delayedQuorum("watchA", "watchB"); }
+    @Test public void twoPeersReverseLateAckPublishesAfterQuorum() throws Exception { delayedQuorum("watchB", "watchA"); }
+    @Test public void onePeerTransientDiscoveryRecoversOriginalPendingWork() throws Exception {
+        holdAcks = true; failNativeDiscovery = true; externalRequest(); drainUntilIdle();
+        assertEquals(0, snapshots); assertEquals("cached and settled native discovery both failed", 2, discoveryFailures);
+        assertIdleAndStable();
+        failNativeDiscovery = false; releaseAcksReversed(); holdAcks = false;
+        CrewLifeV2Phone.retry(activity); drainUntilIdle();
+        assertTrue("retry proof must resume pending source publication", snapshots > 0);
+        assertEquals(1, SyntheticProvider.refreshes); assertIdleAndStable();
+    }
+    @Test public void persistentDiscoveryFailureIsBoundedAndNewExternalRequestCanRetry() throws Exception {
+        failNativeDiscovery = true; externalRequest(); drainUntilIdle();
+        assertEquals(0, snapshots); assertTrue("two original phases plus bounded continuations", discoveryFailures <= 10);
+        int before = discoveryFailures; CrewLifeV2Phone.retry(activity); drainUntilIdle();
+        assertEquals(before, discoveryFailures); assertIdleAndStable();
+        failNativeDiscovery = false; externalRequest(); drainUntilIdle();
+        assertTrue(snapshots > 0); assertEquals(2, SyntheticProvider.refreshes); assertIdleAndStable();
+    }
+    @Test public void offlineKnownPeerBlocksUntilItsDelayedProofAfterReconnect() throws Exception {
+        twoPeers(); holdAcks = true; externalRequest(); drainUntilIdle();
+        releasePeer("watchA"); connectedIds.remove("watchB"); CrewLifeV2Phone.retry(activity); drainUntilIdle();
+        assertEquals(0, snapshots); assertIdleAndStable();
+        connectedIds.add("watchB"); CrewLifeV2Phone.retry(activity); drainUntilIdle(); releasePeer("watchB");
+        holdAcks = false; drainUntilIdle(); assertTrue(snapshots > 0); assertIdleAndStable();
+    }
+    @Test public void logoutCancelsTwoPeerPendingQuorum() throws Exception {
+        twoPeers(); holdAcks = true; externalRequest(); drainUntilIdle(); releasePeer("watchA");
+        ReflectionHelpers.callInstanceMethod(activity, "invalidateCompanionOnAccountChange", ReflectionHelpers.ClassParameter.from(String.class, ""));
+        releasePeer("watchB"); holdAcks = false; drainUntilIdle(); assertEquals(0, snapshots); assertIdleAndStable();
+    }
+    @Test public void destroyedActivityCancelsTwoPeerPendingQuorum() throws Exception {
+        twoPeers(); holdAcks = true; externalRequest(); drainUntilIdle(); releasePeer("watchA");
+        ReflectionHelpers.callInstanceMethod(activity, "unregisterWatchSyncRequestReceiver");
+        releasePeer("watchB"); holdAcks = false; drainUntilIdle(); assertEquals(0, snapshots); assertIdleAndStable();
     }
     @Test public void destroyedActivityCannotResumeFromQueuedAcksOrDelay() throws Exception {
         holdAcks = true; externalRequest(); Shadows.shadowOf(Looper.getMainLooper()).idle(); joinIo();

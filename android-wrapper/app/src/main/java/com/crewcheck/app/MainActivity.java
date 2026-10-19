@@ -980,7 +980,10 @@ public class MainActivity extends Activity {
             // Carry every per-metric deadline to v2; query time never renews a sample.
             JSONObject payload = CrewLifeV2Protocol.project(source);
             CrewLifeWatchPublisher.publishCrewLife(this, payload.toString(), (ok, code, message) -> {
-                if (!"peer_cleanup_pending".equals(code) && !"cleanup_pending".equals(code)) companionSyncWork.complete(work);
+                if (java.util.Set.of("peer_cleanup_pending", "cleanup_pending", "peer_unavailable",
+                        "capability_unconfirmed", "legacy_delete_pending", "data_layer_error").contains(code)) {
+                    companionSyncWork.defer(work);
+                } else companionSyncWork.complete(work);
                 dispatchCrewCheckWatchSyncResult(ok, code, message);
             });
         } catch (Exception invalid) { companionSyncWork.complete(work); CrewLifeV2Phone.invalidate(this); }
