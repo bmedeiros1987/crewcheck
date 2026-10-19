@@ -47,7 +47,7 @@ prepareConciergeCanonicalBridge();
 const {conciergeJourneyProgramRecords:realPrograms}=await import('../../server/concierge/journey-programs.mjs');
 const {buildProgramSummary:realSummary}=await import('../../server/v1404/telegram-language.mjs');
 const actualServer=fs.readFileSync('server.mjs','utf8');
-function realRuntime(now='2099-10-04T09:00:00Z') {
+function realRuntime(now='2099-10-04T09:00:00Z',{routeMode='short',fresh=true}={}) {
   let routes=0;
   const external=new Set(['conciergeJourneyProgramRecords','conciergeTravelEstimate','conciergeLocationContextV14335','conciergeLocationLineV14335']);
   const names=['conciergeProgramRecords','conciergePresentationTime','conciergeProgramTitle','conciergeDateLabel'];
@@ -60,8 +60,8 @@ function realRuntime(now='2099-10-04T09:00:00Z') {
   class Clock extends Date{constructor(...args){super(...(args.length?args:[now]));}static now(){return new Date(now).getTime();}}
   const context=vm.createContext({Date:Clock,Intl,conciergeInactiveCodes:new Set(['DO','DOF','DOP','DOPR','DR','OFF','VC']),
     conciergeJourneyProgramRecords:realPrograms,
-    conciergeLocationContextV14335:()=>({fresh:true,location:{source:'synthetic'}}),conciergeLocationLineV14335:()=> 'Referência sintética compartilhada.',
-    conciergeTravelEstimate:async()=>{routes++;return{minutes:30,distanceKm:10,durationText:'30 min',distanceText:'10 km',trafficAware:false};},
+    conciergeLocationContextV14335:()=>({fresh,message:'Localização sintética pendente.',location:{source:'synthetic'}}),conciergeLocationLineV14335:()=> 'Referência sintética compartilhada.',
+    conciergeTravelEstimate:async()=>{routes++;if(routeMode==='throw')throw Error('SYNTH-ROUTE-UNAVAILABLE');if(routeMode==='null')return null;return{minutes:30,distanceKm:routeMode==='long'?300:10,durationText:'30 min',distanceText:routeMode==='long'?'300 km':'10 km',trafficAware:false};},
   });
   vm.runInContext(declarations.join('\n')+'\nglobalThis.run=conciergeDepartureReply;globalThis.programs=conciergeProgramRecords;',context);
   return{run:roster=>context.run({roster}),programs:roster=>realPrograms(roster,context.programs(roster)),routes:()=>routes};
@@ -147,4 +147,19 @@ for(const [name,overrides,publishedDate,now] of [
  assert(text.includes(`APZ: ${publishedDate} às 03:00.`));assert.doesNotMatch(text,/APZ:.*às 08:00/);assert.match(text,/UTC−03/);
  const departure=await f.run(roster);assert(departure.includes(`${publishedDate} às 03:00`));assert.match(departure,/UTC−03/);assert.equal(f.routes(),1);
  assert.equal(JSON.stringify(roster),before,'source data unchanged');assert.equal(record.startTime,'08:00','renderer does not repair classifier');
+});
+
+
+for(const [date,year,month,day,at] of [
+ ['04/10/2099',2099,10,4,'2099-10-04T04:00:00Z'],
+ ['01/01/2100',2100,1,1,'2099-12-31T23:00:00Z'],
+])for(const mode of ['null','throw','long','stale-location','past-APZ','outside-base'])test(`every APZ return uses published instant: ${mode} ${date}`,async()=>{
+ const now=mode==='past-APZ'?`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T07:00:00Z`:at;
+ const f=realRuntime(now,{routeMode:mode,fresh:mode!=='stale-location'}),raw=sourceDay({date,year,month,dayNumber:day,type:'ASB',pairingCode:'ASB',dutyReport:'03:00'});
+ if(mode==='outside-base')raw.legs[0].origin='CCC';
+ const roster={...sourceRoster([raw]),year,month};const before=JSON.stringify(roster),record=f.programs(roster)[0];assert.equal(record.startTime,'08:00');
+ const text=await f.run(roster);assert(text.includes(`${date} às 03:00`),text);assert.match(text,/UTC−03/);assert.doesNotMatch(text,/(?:Apresentação|apresentação|APZ)[^\n]*08:00/);
+ assert.equal(f.routes(),['stale-location','past-APZ','outside-base'].includes(mode)?0:1);assert.equal(JSON.stringify(roster),before);
+ if(['null','throw'].includes(mode))assert.match(text,/Não consegui calcular a rota/);
+ if(mode==='long')assert.match(text,/posicionamento aéreo/);
 });

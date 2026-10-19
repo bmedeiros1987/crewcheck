@@ -25,21 +25,22 @@ async function conciergeDepartureReply(snapshot) {
   if (!roster.base || !origin) return 'Base ou origem da apresentação não confirmada nesta leitura. Não calculei saída de casa.';
   if (String(origin).toUpperCase() !== String(roster.base).toUpperCase()) return `Programação fora da base: apresentação em ${origin}, ${stamp(presentationDate)}. Hotel e pickup não confirmados nesta leitura; não calculei saída de casa/base. A escala não confirma sua posição física.`;
   if (presentationDate <= now) return `A apresentação desta programação (${origin}, ${stamp(presentationDate)}) já passou. O deslocamento e a chegada não estão confirmados; não selecionei outra programação automaticamente.`;
-  const presentation = conciergePresentationTime(record);
   const locationState = conciergeLocationContextV14335(snapshot);
   if (!locationState.fresh) {
     return `${conciergeProgramTitle(record)} · apresentação em ${origin}: ${stamp(presentationDate)}.\n\n${locationState.message}`;
   }
   const location = locationState.location;
-  const route = await conciergeTravelEstimate(location, origin);
-  if (!route) return `Apresentação ${presentation || 'a confirmar'} em ${origin || 'local a confirmar'}. ${conciergeLocationLineV14335(snapshot)} Não consegui calcular a rota agora; abra o Planejador de Saída no app.`;
+  let route = null;
+  try { route = await conciergeTravelEstimate(location, origin); } catch {
+    // A route failure cannot replace a proven presentation with a classifier clock.
+  }
+  if (!route) return `Apresentação em ${origin}: ${stamp(presentationDate)}. ${conciergeLocationLineV14335(snapshot)} Não consegui calcular a rota agora; abra o Planejador de Saída no app.`;
   if (route.distanceKm > 250) {
     return [
       'Automático · posicionamento aéreo necessário',
-      `${conciergeProgramTitle(record)} · ${conciergeDateLabel(record)}`,
+      `${conciergeProgramTitle(record)} · apresentação em ${origin}: ${stamp(presentationDate)}`,
       conciergeLocationLineV14335(snapshot),
       `A base de apresentação ${origin} está a ${route.distanceText} de referência. O CrewCheck deve buscar voo seguro no mesmo dia e, sem opção válida, manter o posicionamento no dia anterior.`,
-      `Apresentação ${presentation || 'a confirmar'}.`,
       'Abra o Planejador de Saída no app para revisar o voo selecionado e cada trecho.',
     ].join('\n');
   }
