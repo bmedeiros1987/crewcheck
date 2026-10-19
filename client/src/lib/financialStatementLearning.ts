@@ -1,11 +1,12 @@
-import { extractPrivatePayroll, type PayrollPage, type PrivatePayrollExtraction, type PayrollSource } from './privatePayrollExtraction';
+import { extractPrivatePayroll, type PayrollPage, type PrivatePayrollExtraction, type PayrollSourceOrigin } from './privatePayrollExtraction';
 import { getStoredUser, getToken } from './authClient';
 import { payrollMonthBounds, payrollCompetences, PAYROLL_CYCLE_SOURCE } from './financialPayrollPeriods';
 export type StatementKind = 'per_diem' | 'payroll';
 export type LearningConfidence = 'high' | 'medium' | 'review';
 
+export interface PayrollRateEvidence { page: number; origin: PayrollSourceOrigin; line: number; field: 'monthlyBase' | 'rate'; value: number }
 export interface LearnedRate {
-  evidence?: PayrollSource[];
+  evidence?: PayrollRateEvidence[];
   ownerId?: string;
   revision?: number;
   valueOrigin?: 'printed' | 'derived' | 'owner_confirmed';
@@ -182,15 +183,33 @@ export function learnPayrollStatement(text: string, sourceDocument: string, page
   const competence = payrollExtraction.competence.state === 'candidate' ? payrollExtraction.competence.candidates[0].value : undefined;
   const effectiveFrom = competence ? `${competence}-01` : '';
   const fp = fingerprint(text);
-  const rateEvidence = (match: string): PayrollSource[] => {
-    const evidencePages = pages ?? text.split('\f').map((content, index) => ({ page: index + 1, text: content }));
-    return evidencePages.flatMap(page => page.text.split(/\r?\n/).flatMap((line, index) => match.includes(line.trim()) && line.trim() ? [{ page: page.page, line: index + 1, field: 'rate', text: line }] : []));
+  const evidencePages: readonly PayrollPage[] = pages ?? text.split('\f').map((content, index) => ({ page: index + 1, text: content, origin: 'document-logical' }));
+  const rateEvidence = (match: RegExpMatchArray, value: number): PayrollRateEvidence[] => {
+    // Match offsets refer to the coherent text supplied by the PDF extraction caller.
+    const matchStart = match.index ?? -1;
+    const matchEnd = matchStart + match[0].length;
+    let pageOffset = 0;
+    return evidencePages.flatMap(page => {
+      let lineOffset = pageOffset;
+      const refs = page.text.split(/\r?\n/).flatMap((line, index) => {
+        const start = lineOffset; lineOffset += line.length + (page.text.slice(lineOffset - pageOffset + line.length).startsWith('\r\n') ? 2 : 1);
+        return matchStart < start + line.length && matchEnd > start ? [{ page: page.page, origin: page.origin ?? 'document-logical', line: index + 1, field: 'rate' as const, value }] : [];
+      });
+      pageOffset += page.text.length + 1; // pages are joined with one form-feed
+      return refs;
+    });
+  };
+  const signedRateSource = (match: RegExpMatchArray) => {
+    const start = text.lastIndexOf('\n', match.index ?? 0) + 1;
+    const end = text.indexOf('\n', (match.index ?? 0) + match[0].length);
+    const row = text.slice(start, end < 0 ? undefined : end);
+    return /[-−]\s*(?:R\$\s*)?\d|\(\s*(?:R\$\s*)?\d|,\d{2}\s*[-−)]/.test(row);
   };
   const rates: LearnedRate[] = [];
   const base = payrollExtraction.monthlyBase;
-  if (effectiveFrom && (base.state === 'candidate' || base.state === 'zero')) {
+  if (effectiveFrom && !payrollExtraction.incomplete && (base.state === 'candidate' || base.state === 'zero') && base.candidates[0].value >= 0) {
     const candidate = base.candidates[0];
-    rates.push({ ...rate('salary.base', 'Salário-base', candidate.value, 'month', effectiveFrom, sourceDocument, fp, 'review'), valueOrigin: 'printed', evidence: candidate.sources });
+    rates.push({ ...rate('salary.base', 'Salário-base', candidate.value, 'month', effectiveFrom, sourceDocument, fp, 'review'), valueOrigin: 'printed', evidence: candidate.sources.map(source => ({ page: source.page, origin: source.origin, line: source.line, field: 'monthlyBase', value: candidate.value })) });
   }
   for (const [pattern, key, label, unit] of PAYROLL_KEYS) {
     const matches = [...text.matchAll(new RegExp(pattern.source, 'gi'))];
@@ -200,6 +219,7 @@ export function learnPayrollStatement(text: string, sourceDocument: string, page
     }
     const m = matches[0];
     if (!m) continue;
+    if (signedRateSource(m)) { payrollExtraction.warnings.push('Tarifa com sinal explícito; revisão obrigatória.'); continue; }
     const quantity = unit === 'km' ? decimal(m[1]) : 0;
     const statedRate = unit === 'km' ? decimal(m[2]) : 0;
     const derivedRate = unit === 'km' && quantity > 0 ? Number((money(m[3]) / quantity).toFixed(6)) : NaN;
@@ -208,7 +228,7 @@ export function learnPayrollStatement(text: string, sourceDocument: string, page
     const value = unit === 'km'
       ? usePrintedRate ? statedRate : derivedRate
       : money(m[1]);
-    if (Number.isFinite(value) && value >= 0 && (unit !== 'km' || value <= 5)) rates.push({ ...rate(key, label, value, unit, effectiveFrom, sourceDocument, fp, !usePrintedRate ? 'review' : 'high'), valueOrigin: !usePrintedRate ? 'derived' : 'printed', evidence: rateEvidence(m[0]) });
+    if (Number.isFinite(value) && value >= 0 && (unit !== 'km' || value <= 5)) rates.push({ ...rate(key, label, value, unit, effectiveFrom, sourceDocument, fp, !usePrintedRate ? 'review' : 'high'), valueOrigin: !usePrintedRate ? 'derived' : 'printed', evidence: rateEvidence(m, value) });
   }
   for (const [pattern, key, label] of [
     [/([\d.,]+)\s+Horas Reserva - CMS\s+([\d.]+,\d{2})/i, 'salary.reserveHour', 'Hora de reserva'],
@@ -220,16 +240,18 @@ export function learnPayrollStatement(text: string, sourceDocument: string, page
       continue;
     }
     const m = matches[0];
+    if (m && signedRateSource(m)) { payrollExtraction.warnings.push('Tarifa com sinal explícito; revisão obrigatória.'); continue; }
     const quantity = m ? decimal(m[1]) : 0;
     const hourlyValue = m && quantity > 0 ? Number((money(m[2]) / quantity).toFixed(6)) : NaN;
-    if (Number.isFinite(hourlyValue)) rates.push({ ...rate(key, label, hourlyValue, 'hour', effectiveFrom, sourceDocument, fp, 'review'), valueOrigin: 'derived', evidence: rateEvidence(m![0]) });
+    if (Number.isFinite(hourlyValue)) rates.push({ ...rate(key, label, hourlyValue, 'hour', effectiveFrom, sourceDocument, fp, 'review'), valueOrigin: 'derived', evidence: rateEvidence(m!, hourlyValue) });
   }
   const warnings: string[] = [...payrollExtraction.warnings];
+  if (payrollExtraction.incomplete) warnings.push('Extração incompleta; revisão obrigatória antes de aplicar valores.');
   if (!effectiveFrom) warnings.push('Competência não identificada; revisão obrigatória.');
   if (!rates.length) warnings.push('Nenhuma tarifa salarial identificada.');
   return {
     payrollExtraction, paymentDate: payrollExtraction.creditDate.state === 'candidate' ? payrollExtraction.creditDate.candidates[0].value : undefined,
-    kind: 'payroll', competence: effectiveFrom.slice(0, 7), rates: rates.filter(() => !!effectiveFrom).map(item => ({ ...item, confidence: 'review', effectiveTo: payrollMonthBounds(effectiveFrom.slice(0, 7))?.end })),
+    kind: 'payroll', competence: effectiveFrom.slice(0, 7), rates: rates.filter(item => !!effectiveFrom && !payrollExtraction.incomplete && !!item.evidence?.length).map(item => ({ ...item, confidence: 'review', effectiveTo: payrollMonthBounds(effectiveFrom.slice(0, 7))?.end })),
     totals: Object.fromEntries(Object.entries(payrollExtraction.totals).filter(([, field]) => field.state === 'candidate' || field.state === 'zero').map(([key, field]) => [key, field.candidates[0].value])), warnings,
   };
 }
@@ -333,7 +355,13 @@ export function saveConfirmedFinancialRates(rates: LearnedRate[], expectedSessio
       if (revisions.has(key) && revisions.get(key) !== signature) return false;
       revisions.set(key, signature);
     }
-    const bound = rates.map(item => ({ ...item, ownerId: owner }));
+    const bound = rates.map(item => {
+      const { evidence, ...rest } = item;
+      const safeEvidence = Array.isArray(evidence) ? evidence.filter(ref => Number.isInteger(ref?.page) && ref.page > 0 && Number.isInteger(ref?.line) && ref.line > 0
+        && ['pdf-physical', 'document-logical'].includes(ref.origin) && ['monthlyBase', 'rate'].includes(ref.field) && Number.isFinite(ref.value))
+        .map(ref => ({ page: ref.page, origin: ref.origin, line: ref.line, field: ref.field, value: ref.value })) : [];
+      return { ...rest, ownerId: owner, ...(safeEvidence.length ? { evidence: safeEvidence } : {}) };
+    });
     localStorage.setItem(OWNER_KEY + encodeURIComponent(owner), JSON.stringify({ version: 2, ownerId: owner, rates: bound }));
     window.dispatchEvent(new Event('crewcheck:financial-config-changed'));
     return true;

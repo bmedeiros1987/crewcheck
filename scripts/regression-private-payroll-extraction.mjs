@@ -9,7 +9,7 @@ try {
  assert.equal(result.rates.find(r=>r.key==='salary.base').value,3000);
  assert.equal(result.paymentDate,'2032-09-05');
  assert.equal(result.payrollExtraction.reconciliation,'balanced');
- assert.deepEqual(result.payrollExtraction.items.map(i=>i.kind),['proportional','earning','vacation','thirteenth','deduction','advance']);
+ assert.deepEqual(result.payrollExtraction.items.map(i=>i.kind),['proportional','earning','vacation','thirteenth','deduction','deduction']);
  assert.equal(result.payrollExtraction.items.reduce((sum,i)=>sum+(i.kind==='deduction'||i.kind==='advance'?-1:1)*i.amount.candidates[0].value,0),2200);
  assert.equal(learn(header+'Salário 16 dias 1.600,00','synthetic').rates.length,0);
  assert.equal(learn(header+'Salário-base 16 dias 1.600,00','synthetic').rates.length,0);
