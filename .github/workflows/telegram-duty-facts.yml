@@ -1,0 +1,67 @@
+name: Telegram factual duty review
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/concierge/**'
+      - 'scripts/p1-concierge-journey/**'
+      - 'scripts/telegram-concierge-menu/**'
+      - 'scripts/regression-telegram-duty-facts-handler.mjs'
+      - 'scripts/tests/telegram-duty-facts.test.mjs'
+      - 'scripts/fixtures/concierge-duty-facts/**'
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/canonicalDutyMeasurement.ts'
+      - 'client/src/lib/rosterContinuity.ts'
+      - 'scripts/v139/**'
+      - '.github/workflows/telegram-duty-facts.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.23.3'
+      - run: npm ci
+      - name: Raw canonical evidence tests
+        run: node --test scripts/tests/telegram-duty-facts.test.mjs
+      - name: Prepare exact production sources
+        run: |
+          set -euo pipefail
+          node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/duty-facts-preparation.log"
+          node scripts/p1-concierge-journey/compile.mjs
+      - run: npm run check
+      - run: npm run build
+      - name: Prepared real handler and simulated transport
+        run: |
+          set -euo pipefail
+          node --check server.mjs
+          node --test scripts/tests/telegram-duty-facts.test.mjs
+          node scripts/regression-telegram-duty-facts-handler.mjs
+          node scripts/regression-telegram-concierge-menu.mjs
+          node scripts/regression-canonical-duty-measurement.mjs
+          node scripts/regression-concierge-journey-programs.mjs
+          node scripts/regression-concierge-stay-menu.mjs
+      - name: Preserve prepared production sources for review
+        if: always()
+        run: |
+          test -f .crewcheck-source-preparation.json || exit 0
+          mkdir -p "$RUNNER_TEMP/duty-facts-proof"
+          git rev-parse HEAD > "$RUNNER_TEMP/duty-facts-proof/HEAD.txt"
+          cp server.mjs "$RUNNER_TEMP/duty-facts-proof/"
+          cp "$RUNNER_TEMP/duty-facts-preparation.log" "$RUNNER_TEMP/duty-facts-proof/preparation.log"
+          cp -R server/concierge "$RUNNER_TEMP/duty-facts-proof/concierge"
+          cp scripts/telegram-concierge-menu/apply.mjs "$RUNNER_TEMP/duty-facts-proof/telegram-apply.mjs"
+          cp scripts/p1-concierge-journey/bridge.mjs "$RUNNER_TEMP/duty-facts-proof/bridge.mjs"
+          sha256sum server.mjs server/concierge/duty-facts.mjs server/concierge/telegram-menu.mjs server/concierge/generated/*.mjs server/concierge/generated/source-hashes.json > "$RUNNER_TEMP/duty-facts-proof/SHA256SUMS"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: telegram-duty-facts-prepared-source
+          path: ${{ runner.temp }}/duty-facts-proof/

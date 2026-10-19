@@ -18,6 +18,8 @@ source = source.replace("import { createTelegramMenu, menuTemplate, menuGreeting
 if (!source.includes(line)) source = line + '\n' + source;
 const emergencyImport = "import { openEmergencyTelegramMenu } from './server/v1391/emergency.mjs';";
 if (!source.includes(emergencyImport)) source = emergencyImport + '\n' + source;
+const factsImport = "import { buildDutyFacts } from './server/concierge/duty-facts.mjs';";
+if (!source.includes(factsImport)) source = factsImport + '\n' + source;
 const keyboard = source.indexOf('const conciergeKeyboard = {');
 if (keyboard >= 0) source = source.slice(0, keyboard) + "const conciergeKeyboard = menuTemplate();" + source.slice(source.indexOf('\n};', keyboard) + 3);
 functionBody('conciergeHelp', "function conciergeHelp(name = '') {\n  return menuGreeting(name);\n}");
@@ -42,10 +44,12 @@ source = source.replaceAll(oldAirport, parsedAirport);
 source = source.replace("      const weatherAirport = interpretConciergeNaturalTextV14338(normalizedText).airport;", "      const weatherAirport = requestedWeatherAirport(normalizedText, interpretConciergeNaturalTextV14338);");
 replace("      const weatherMatch = normalizedText.toUpperCase().match(/\\b[A-Z]{4}\\b|\\b[A-Z]{3}\\b/);", "      const weatherAirport = requestedWeatherAirport(normalizedText, interpretConciergeNaturalTextV14338);\n      const weatherMatch = weatherAirport ? [weatherAirport] : null;");
 functionBody('conciergePerDiemReply', "function conciergePerDiemReply(snapshot) {\n  return missingFinanceReply();\n}");
-functionBody('conciergeComplianceReply', "function conciergeComplianceReply(snapshot) {\n  return missingComplianceReply();\n}");
+functionBody('conciergeComplianceReply', "function conciergeComplianceReply(snapshot, profile = {}) {\n  return buildDutyFacts({ profile, snapshot, accessAllowed: conciergeAccessMatches(profile, snapshot) }).summary;\n}");
+source = source.replace('return conciergeComplianceReply(snapshot);', 'return conciergeComplianceReply(snapshot, profile);');
 functionBody('conciergeReplyKeyboard', "function conciergeReplyKeyboard(value = '') {\n  if (/^\\/(?:configuracoes|meunome|nomeconcierge)(?:@\\S+)?/i.test(value)) return conciergeSettingsKeyboard;\n  return conciergeKeyboard;\n}");
 replace("async function sendTelegramMessage(chatId, text, extra = {}) {", "async function sendTelegramMessage(chatId, text, extra = {}) {\n  extra = await crewcheckMenu.markup(chatId, extra);");
-const runtime = `const crewcheckMenu = createTelegramMenu({\n  profile: telegramProfileForChatAsync, snapshot: conciergeLoadSnapshot,\n  reply: buildTelegramConciergeReply, send: sendTelegramMessage, answer: answerTelegramCallback,\n  weatherKeyboard: conciergeWeatherKeyboard, settingsKeyboard: conciergeSettingsKeyboard,\n  voice: (chatId, reply, text, snapshot) => sendHumanTelegramVoiceReply(chatId, crewCheckAtisVoiceText(reply), text, snapshot),\n  emergency: query => openEmergencyTelegramMenu(query, sendTelegramMessage),\n});\n\n`;
+replace('  extra = await crewcheckMenu.markup(chatId, extra);', '  extra = await crewcheckMenu.markup(chatId, extra);\n  if (extra === null) return { ok: false, message: \'Contexto da consulta alterado.\' };');
+const runtime = `const crewcheckMenu = createTelegramMenu({\n  profile: telegramProfileForChatAsync, snapshot: conciergeLoadSnapshot,\n  reply: buildTelegramConciergeReply, send: sendTelegramMessage, answer: answerTelegramCallback,\n  weatherKeyboard: conciergeWeatherKeyboard, settingsKeyboard: conciergeSettingsKeyboard,\n  voice: (chatId, reply, text, snapshot) => sendHumanTelegramVoiceReply(chatId, crewCheckAtisVoiceText(reply), text, snapshot),\n  emergency: query => openEmergencyTelegramMenu(query, sendTelegramMessage),\n  facts: (profile, snapshot, page = 0) => buildDutyFacts({ profile, snapshot, page, accessAllowed: conciergeAccessMatches(profile, snapshot) }),\n});\n\n`;
 const oldRuntime = `const crewcheckMenu = createTelegramMenu({\n  profile: telegramProfileForChatAsync, snapshot: conciergeLoadSnapshot,\n  reply: buildTelegramConciergeReply, send: sendTelegramMessage, answer: answerTelegramCallback,\n});\n\n`;
 const runtimeStart = source.indexOf('const crewcheckMenu = createTelegramMenu(');
 if (runtimeStart >= 0) {
