@@ -18,7 +18,7 @@ assert.deepEqual(usage.suggestedMenuShortcuts(storage,'A',allowed),['hotels','ro
 assert.equal(usage.suggestedMenuShortcuts(storage,'A',['roster']).includes('hotels'),false);
 assert.equal(usage.resetMenuUsage(storage,'A'),true);assert.deepEqual(preferences.readMenuFavorites(storage,'A',allowed),['hotels','roster']);
 values.set(usage.menuUsageKey('A'),'{bad');assert.deepEqual(usage.readMenuUsage(storage,'A',allowed),{});
-for(const mode of ['roster','shortcuts','roster-mixed']){assert.equal(home.saveHomeLayout(storage,'A',{...home.DEFAULT_HOME_LAYOUT,mode}),true);assert.equal(home.readHomeLayout(storage,'A').mode,mode);assert.equal(home.readHomeLayout(storage,'B').mode,'standard');}
+for(const mode of ['standard','roster','shortcuts','roster-mixed']){assert.equal(home.saveHomeLayout(storage,'A',{...home.DEFAULT_HOME_LAYOUT,mode}),true);assert.equal(home.readHomeLayout(storage,'A').mode,mode);assert.equal(home.readHomeLayout(storage,'B').mode,'roster-mixed');}
 assert.equal(search.searchMenuTargets('telefone despertador',['notifications'])[0].id,'wakeup-phone');
 assert.equal(search.searchMenuTargets('telefone despertador',['settings']).length,0);
 assert.equal(search.searchMenuTargets('pulse',['notifications'])[0].view,'notifications');
