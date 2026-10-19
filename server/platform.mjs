@@ -467,14 +467,15 @@ async function ensureProfile(db, identity, patch = {}) {
           UPDATE crewcheck_platform_profiles SET
             public_id=IF(public_id IS NULL OR TRIM(public_id)='', $2, public_id),
             display_name=IF($8, $3, display_name),
-            locale=IF($8, $4, locale),
-            timezone=IF($8, $5, timezone),
-            share_presence=IF($8, $7, share_presence),
+            locale=IF($11, $4, locale),
+            timezone=IF($12, $5, timezone),
+            share_presence=IF($13, $7, share_presence),
             plan=IF($9, 'premium_unlimited', IF($10, $6, plan)),
             updated_at=CURRENT_TIMESTAMP(3)
           WHERE email=$1`, [
           identity.email, candidate, displayName, locale, timezone, requestedPlan || defaultPlan,
-          Boolean(patch.sharePresence), Boolean(patch.apply), forcedUnlimited, Boolean(requestedPlan && identity.admin),
+          Boolean(patch.sharePresence), Boolean(patch.apply && Object.hasOwn(patch, 'displayName')), forcedUnlimited, Boolean(requestedPlan && identity.admin),
+          Boolean(patch.apply && Object.hasOwn(patch, 'locale')), Boolean(patch.apply && Object.hasOwn(patch, 'timezone')), Boolean(patch.apply && Object.hasOwn(patch, 'sharePresence')),
         ]);
       } else {
         await db.query(`
@@ -1343,15 +1344,21 @@ async function handleAmilSearch(req, res, url) {
 
 async function handleProfile(req, res) {
   const body = req.method === 'PATCH' || req.method === 'POST' ? await readBody(req) : {};
+  if (req.method !== 'GET' && Object.keys(body).some((key) => !['displayName', 'locale', 'timezone', 'sharePresence'].includes(key))) {
+    return sendJson(res, 400, { ok: false, message: 'Altere somente as informações do perfil.' });
+  }
+  if (Object.hasOwn(body, 'displayName') && (typeof body.displayName !== 'string' || !normalizeText(body.displayName, 120) || body.displayName.normalize('NFC').trim().length > 120)) {
+    return sendJson(res, 400, { ok: false, message: 'Informe um nome de até 120 caracteres.' });
+  }
   const context = await requireMain(req, res, body);
   if (!context) return;
   let profile = context.profile;
   if (req.method !== 'GET') profile = await ensureProfile(context.db, context.identity, {
     apply: true,
-    displayName: body.displayName,
-    locale: normalizeLocale(body.locale),
-    timezone: normalizeTimezone(body.timezone),
-    sharePresence: Boolean(body.sharePresence),
+    ...(Object.hasOwn(body, 'displayName') ? { displayName: body.displayName } : {}),
+    ...(Object.hasOwn(body, 'locale') ? { locale: normalizeLocale(body.locale) } : {}),
+    ...(Object.hasOwn(body, 'timezone') ? { timezone: normalizeTimezone(body.timezone) } : {}),
+    ...(Object.hasOwn(body, 'sharePresence') ? { sharePresence: Boolean(body.sharePresence) } : {}),
   });
   const billing = await subscriptionStatus(context.db, profile);
   return sendJson(res, 200, { ok: true, profile: publicProfile(profile), billing, encoding: 'UTF-8' });

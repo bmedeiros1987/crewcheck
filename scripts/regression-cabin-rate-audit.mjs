@@ -9,6 +9,14 @@ try{
  for(const tz of ['UTC','America/Sao_Paulo','Asia/Tokyo']){
   process.env.TZ=tz;
   const result=reference('2026-10');assert.equal(result.rateMonth,'2026-11');
+  assert.equal(result.referenceEffectiveFrom,'2025-12-01');assert.equal(result.referenceEffectiveTo,'2026-11-30');
+  assert.match(result.description,/produção 2026-10 · mês tarifário 2026-11/);
+  assert.match(result.description,/intervalo desta referência derivada: 2025-12 a 2026-11/);assert.doesNotMatch(result.description,/referência vigente/);
+  assert.equal(reference('2025-11'),null,'cross-ACT operational cycle is not backfilled');
+  const first=reference('2025-12'),prior=reference('2026-09');
+  assert.equal(first.rateMonth,'2026-01');assert.equal(prior.rateMonth,'2026-10');
+  for(const key of ['dayKm','nightKm','reserveHour','standbyHour','excessHour'])assert.equal(first[key],result[key],'same bounded reference, no future index: '+key);
+  assert.equal(reference('2026-12'),null,'unknown future reference stays unknown');
   assert.equal(result.dayKm,585475941/1e10);assert.equal(result.nightKm,1170951882/1e10);
   assert.equal(result.reserveHour,49768875/1e6);assert.equal(result.standbyHour,16589625/1e6);
   assert.equal(reference('2026-11'),null,'December2026 index is not extrapolated');assert.equal(reference('2032-05'),null);assert.equal(reference('invalid'),null);

@@ -1,4 +1,4 @@
-import { authFetch, getStoredUser } from './authClient';
+import { authFetch, captureAuthSession, getStoredUser } from './authClient';
 
 export type CrewCheckLocale = 'pt-BR' | 'en-US' | 'es-ES';
 export type CrewCheckPlanId = 'free' | 'premium_monthly' | 'premium_annual' | 'premium_unlimited';
@@ -156,6 +156,33 @@ export async function savePlatformProfile(patch: Partial<Pick<PlatformProfile, '
   } catch {
     return { ok: true, profile: local, billing: localBilling(), localOnly: true };
   }
+}
+
+/** Confirmed profile only: never substitute a local draft for a server receipt. */
+export async function getConfirmedPlatformProfile(): Promise<PlatformProfile> {
+  const session = captureAuthSession();
+  const email = String(getStoredUser()?.email || '').trim().toLowerCase();
+  const result = await authFetch<{ ok: boolean; profile: PlatformProfile }>('/api/platform/profile', { cache: 'no-store' });
+  if (!session.isCurrent() || !email || !result.ok || !result.profile?.publicId || result.profile.email?.trim().toLowerCase() !== email || !result.profile.displayName?.trim()) {
+    throw new Error('Não foi possível confirmar o perfil desta conta.');
+  }
+  return result.profile;
+}
+
+export async function saveConfirmedDisplayName(value: string): Promise<PlatformProfile> {
+  const displayName = value.normalize('NFC').trim();
+  if (!displayName || displayName.length > 120 || /[\u0000-\u001F\u007F]/.test(displayName)) throw new Error('Informe um nome de até 120 caracteres.');
+  const session = captureAuthSession();
+  const before = await getConfirmedPlatformProfile();
+  if (!session.isCurrent()) throw new Error('A conta mudou. Abra o perfil novamente.');
+  const receipt = await authFetch<{ ok: boolean; profile: PlatformProfile }>('/api/platform/profile', { method: 'PATCH', body: JSON.stringify({ displayName }) });
+  if (!session.isCurrent() || !receipt.ok || receipt.profile?.email !== before.email || receipt.profile?.publicId !== before.publicId || receipt.profile?.displayName !== displayName) {
+    throw new Error('Não foi possível confirmar o nome salvo.');
+  }
+  const confirmed = await getConfirmedPlatformProfile();
+  if (!session.isCurrent() || confirmed.publicId !== before.publicId || confirmed.displayName !== displayName) throw new Error('Não foi possível confirmar o nome salvo.');
+  window.dispatchEvent(new CustomEvent('crewcheck:profile-name-confirmed', { detail: { owner: session.owner, displayName } }));
+  return confirmed;
 }
 
 export async function getPlatformBilling(): Promise<PlatformBilling & { ok: boolean; plans: PlatformPlan[]; localOnly?: boolean }> {

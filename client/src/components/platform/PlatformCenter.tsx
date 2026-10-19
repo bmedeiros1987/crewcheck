@@ -2,6 +2,7 @@ import { playPlanReady } from '@shared/play-catalog-readiness.mjs';
 import { consumePendingNavigationContext } from '@/lib/navigationContext';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
+import ProfileNameEditor from './ProfileNameEditor';
 import { AlertTriangle, ArrowLeft, Check, Copy, Crown, KeyRound, Link2, Loader2, Lock, Mail, MessageCircle, QrCode, RefreshCcw, Send, ShieldCheck, Smartphone, UserPlus, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import '../../platform-v13-8.css';
@@ -409,6 +410,7 @@ export function CommunityCenter({ rosterKey, onBack, onEmailPdf }: Omit<Props, '
     <PageHead onBack={() => returnToRoster ? window.dispatchEvent(new CustomEvent('crewcheck:set-view', {detail:'roster'})) : onBack()} title="Compartilhar escala" subtitle={`Compartilhe ${rosterLabel} com controle, prazo, consentimento e revogação.`}/>
     {error ? <ErrorCard message={error} retry={() => window.location.reload()}/> : !profile ? <LoadingCard/> : <>
       <article className="cp-id-card"><div><span><KeyRound/></span><div><small>Seu ID CrewCheck</small><h2>{profile.publicId}</h2><p>{profile.displayName} · compartilhe o ID, o QR ou seu e-mail de login.</p></div></div>{idQr && <button className="cp-id-qr-trigger" onClick={() => setIdQrExpanded(true)} aria-label="Ampliar QR code do seu ID"><img className="cp-id-qr" src={idQr} alt="QR code para solicitar comparação de escala"/><small>Ampliar</small></button>}<div className="cp-id-actions"><button onClick={copyId}><Copy/> Copiar ID</button><button className="cp-whatsapp" onClick={() => openWhatsAppShare(`${window.location.origin}/app?connect=${encodeURIComponent(profile.publicId)}`, `Conecte-se comigo no CrewCheck · ${profile.publicId}`)}><MessageCircle/> WhatsApp</button></div></article>
+      <ProfileNameEditor onSaved={setProfile}/>
       <QrPreviewModal open={idQrExpanded} image={idQr} value={`${window.location.origin}/app?connect=${encodeURIComponent(profile.publicId)}`} title={`ID CrewCheck ${profile.publicId}`} onClose={() => setIdQrExpanded(false)}/>
       <nav className="cp-tabs"><button className={tab === 'share' ? 'active' : ''} onClick={() => setTab('share')}><QrCode/> Compartilhar</button><button className={tab === 'visitors' ? 'active' : ''} onClick={() => setTab('visitors')}><UserPlus/> Visitantes</button><button className={tab === 'people' ? 'active' : ''} onClick={() => setTab('people')}><Users/> Colegas e chat</button></nav>
       {tab === 'share' && <SharePanel rosterKey={rosterKey} onEmailPdf={onEmailPdf}/>} {tab === 'visitors' && <VisitorsPanel/>} {tab === 'people' && <ConnectionsPanel/>}

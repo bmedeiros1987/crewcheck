@@ -4,6 +4,8 @@ on:
     paths:
       - 'client/src/pages/Home.tsx'
       - 'client/src/lib/*Salary*.ts'
+      - 'client/src/lib/salaryDisplayBasis.ts'
+      - 'scripts/regression-salary-display-basis*'
       - 'client/src/lib/payrollPaymentComposition.ts'
       - 'client/src/lib/nextFinancialPayment.ts'
       - 'client/src/lib/financialLocalUpcoming.ts'
@@ -15,6 +17,7 @@ on:
       - 'scripts/regression-owner-per-diem-browser.mjs'
       - 'scripts/regression-owner-per-diem-caller.mjs'
       - 'scripts/regression-financial-long-history.cjs'
+      - 'scripts/regression-financial-navigation-focus-browser.cjs'
       - 'scripts/regression-financial-partial-flight-meals.mjs'
       - 'client/src/lib/salaryCalculationDiagnostic.ts'
       - 'client/src/lib/airports.ts'
@@ -50,6 +53,9 @@ jobs:
           TZ=America/Sao_Paulo node scripts/regression-financial-known-values-dates.mjs
           TZ=Asia/Tokyo node scripts/regression-financial-known-values-dates.mjs
           node scripts/regression-owner-per-diem-caller.mjs
+          TZ=UTC node scripts/regression-salary-display-basis.mjs
+          TZ=America/Sao_Paulo node scripts/regression-salary-display-basis.mjs
+          TZ=Asia/Tokyo node scripts/regression-salary-display-basis.mjs
       - run: npm run build
       - run: npx tsc --noEmit
       - name: Prepared real-function contracts and existing negative gates
@@ -60,6 +66,7 @@ jobs:
           node scripts/regression-financial-monthly-foundation.mjs
           node scripts/regression-financial-review-owner-negative.mjs
           node scripts/regression-salary-prerequisite-diagnostic.mjs
+          node scripts/regression-salary-display-basis.mjs
           node scripts/regression-financial-upcoming.mjs
           node scripts/regression-financial-concierge-timing.mjs
           node scripts/regression-financial-partial-flight-meals.mjs
@@ -75,16 +82,20 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/finance-known-ui/package.json
         run: |
+          node scripts/regression-financial-navigation-focus-browser.cjs
           node scripts/regression-financial-known-values-app.cjs
           node scripts/regression-financial-concierge-origin.cjs
           node scripts/regression-financial-history-loading-ui.cjs
           node scripts/regression-owner-per-diem-browser.mjs
           node scripts/regression-financial-long-history.cjs
+          node scripts/regression-salary-display-basis-browser.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: financial-known-values-synthetic
           path: |
+            artifacts/financial-focus-probe/
             artifacts/financial-known-values/
             artifacts/financial-long-history/
+            artifacts/salary-display-basis/
           if-no-files-found: ignore
