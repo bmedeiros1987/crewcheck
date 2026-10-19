@@ -21,6 +21,8 @@ jobs:
   synthetic:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      PLAY_UPDATE_EVIDENCE_DIR: ${{ runner.temp }}/pwa-play-update-evidence
     steps:
       - uses: actions/checkout@v6
         with:
@@ -47,6 +49,8 @@ jobs:
           node scripts/v139/apply.mjs
           npx tsc --noEmit
           npx vite build
+      - name: Canonical startup preparation and actual served HTML parity
+        run: node scripts/regression-pwa-canonical-static.mjs
       - name: Prepared contracts
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/update-ui/package.json
@@ -56,4 +60,3 @@ jobs:
           node scripts/regression-native-play-update-ui.cjs
           node scripts/regression-mobile-pwa-safe-update.mjs
           node scripts/regression-v14-3-43-ipad-premium-layout-location-stability.mjs
-          node scripts/regression-pwa-canonical-static.mjs
