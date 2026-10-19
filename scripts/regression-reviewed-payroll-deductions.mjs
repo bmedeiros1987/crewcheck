@@ -68,5 +68,10 @@ try{
  test('C22-tax-and-other-group',()=>{for(const label of ['INSS e Plano','Retencao IRRF e Seguro','Desconto INSS e Emprestimo']){const a=make(extract(text(label+' 100,00','')));assert.equal(rows(a.extraction)[0].classification,'conflict',label);assert.equal(rows(a.extraction)[0].bucket,null);assert.equal(plan(a).reviewable,false);}});
  test('C23-other-before-tax',()=>{const a=make(extract(text('Plano e INSS 100,00','')));assert.equal(rows(a.extraction)[0].classification,'conflict');assert.equal(plan(a).reviewable,false);});
  test('C24-legitimate-vacation-thirteenth',()=>{const r=plan(make(extract(text('INSS ferias 100,00\nIRRF 13º salario 50,00',''))));assert.equal(r.reviewable,true);assert.equal(r.changes.inss.amountMinor,10000);assert.equal(r.changes.irrf.amountMinor,5000);assert.ok(Object.values(r.changes).every(x=>x.recurrence==='once'));});
- assert.equal(count,59);console.log('PASS59 pure review cases (original35 +24classification/total/provenance/informational counterproofs). No save/undo execution or atomicity proof claimed.');
+
+ test('C25-salary-base-charge-not-excluded',()=>{const a=make(extract(text('INSS 100,00\nDesconto INSS sobre salario-base 20,00','TOTAIS 1000,00 120,00\nLiquido 880,00')));assert.equal(plan(a).changes.inss.amountMinor,12000);a.selection=a.selection.slice(0,1);assert.equal(plan(a).reviewable,false);assert.match(plan(a).reasons.join(' '),/omitidas/);});
+ test('C26-ambiguous-base-stays-pending',()=>{const a=make(extract(text('INSS 100,00\nINSS referencia salario-base 20,00','')));assert.equal(rows(a.extraction)[1].classification,'unknown');assert.equal(plan(a).reviewable,false);});
+ test('C27-unsupported-incidence-not-information',()=>{const a=make(extract(text('Desconto INSS sobre base de calculo 20,00','')));assert.equal(rows(a.extraction)[0].classification,'unknown');assert.equal(plan(a).reviewable,false);});
+ test('C28-explicit-IRRF-salary-base-charge',()=>{const a=make(extract(text('Retencao IRRF sobre o salario base 20,00','')));assert.equal(plan(a).reviewable,true);assert.equal(plan(a).changes.irrf.amountMinor,2000);});
+ assert.equal(count,63);console.log('PASS63 pure review cases (original35 +28classification/total/provenance/informational counterproofs). No save/undo execution or atomicity proof claimed.');
 }finally{modules.cleanup();}

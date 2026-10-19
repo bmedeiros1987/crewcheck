@@ -15,10 +15,19 @@ const buckets = ['inss', 'irrf', 'other_deductions'] as const;
 const normalized = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/^\s*\d+\s+/, '').trim();
 export function classifyPayrollDeduction(item: PayrollItem): { state:'recognized'|'unknown'|'conflict'|'informational'; bucket:DeductionBucket|null } {
   const label = normalized(item.label);
-  if (/\bBASES?\b|\bINFORMATIV[OA]S?\b/.test(label)) return {state:'informational',bucket:null};
   const inss = /\bINSS\b/.test(label), irrf = /\bIRRF\b/.test(label);
   const otherGroup = /\b(?:PLANO|CONVENIO|EMPRESTIMO|CONSIGNADO|MENSALIDADE|PENSAO|SEGURO|VALE|MCT\d*)\b/.test(label);
   if ((inss && irrf) || ((inss || irrf) && otherGroup)) return {state:'conflict',bucket:null};
+  const explicitTaxCharge = /^(?:DESCONTO|RETENCAO)(?:\s+(?:DE|DO|DA))?\s+(?:INSS|IRRF)\b/.test(label);
+  const salaryBaseCharge = explicitTaxCharge && /\bSOBRE\s+(?:O\s+)?SALARIO[ -]+BASE\b/.test(label);
+  if (/\bBASES?\b/.test(label) && !salaryBaseCharge) {
+    // An incidence description is not the base amount itself. Unsupported
+    // incidence stays pending rather than being silently excluded.
+    if (explicitTaxCharge && /\bSOBRE\b/.test(label)) return {state:'unknown',bucket:null};
+    const explicitBase = /\bBASES?(?:\s+DE)?\s+(?:CALCULO|CONTRIBUICAO|TRIBUTACAO)\b|\bBASES?(?:\s+(?:DE|DO|DA))?\s+(?:INSS|IRRF)\b|\b(?:INSS|IRRF)\s+BASES?\b/.test(label);
+    return {state:explicitBase?'informational':'unknown',bucket:null};
+  }
+  if (/\bINFORMATIV[OA]S?\b/.test(label)) return {state:'informational',bucket:null};
   // Explicit qualifiers may precede a tax; calculation bases and arbitrary
   // mentions are not automatically deductions of that tax.
   const qualifiedTax = /^(?:(?:DESCONTO|RETENCAO|AJUSTE|COMPLEMENTO|COMPLEMENTAR|DIFERENCA)(?:\s+(?:DE|DO|DA))?\s+)?(?:INSS|IRRF)\b/.test(label);
