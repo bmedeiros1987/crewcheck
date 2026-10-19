@@ -163,3 +163,17 @@ for(const [date,year,month,day,at] of [
  if(['null','throw'].includes(mode))assert.match(text,/Não consegui calcular a rota/);
  if(mode==='long')assert.match(text,/posicionamento aéreo/);
 });
+
+
+for(const [date,year,month,day] of [['04/10/2099',2099,10,4],['01/01/2100',2100,1,1]])test(`selected second ASB block keeps its own published APZ ${date}`,async()=>{
+ const f=realRuntime(`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T15:00:00Z`);
+ const raw=sourceDay({date,year,month,dayNumber:day,type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyDebrief:'17:30',legs:[
+  {flightNumber:'LA0012',origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',workType:'OP'},
+  {flightNumber:'LA0013',origin:'BBB',destination:'AAA',departureTime:'16:00',arrivalTime:'17:00',presentationTime:'15:00',workType:'OP'},
+ ]});
+ const roster={...sourceRoster([raw]),year,month,base:'BBB'};const before=JSON.stringify(roster),programs=f.programs(roster);assert.equal(programs.length,2);
+ assert.notEqual(programs[0].journeyId,programs[1].journeyId);assert.equal(programs[0].display.publishedStart,Date.parse(`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T06:00:00Z`),'first bound reserve still starts03:00');
+ const second=programs[1];assert.equal(second.startTime,'15:00');assert.equal(second.display.publishedStart,Date.parse(`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}T18:00:00Z`));
+ const text=realSummary({record:second,label:'A próxima programação',includeGreeting:false});assert(text.includes(`APZ: ${date} às 15:00.`));assert.match(text,/UTC−03/);assert.doesNotMatch(text,/APZ:.*03:00/);
+ const departure=await f.run(roster);assert(departure.includes(`${date} às 15:00`));assert.match(departure,/14:05/);assert.doesNotMatch(departure,/já passou|às 03:00/);assert.equal(f.routes(),1);assert.equal(JSON.stringify(roster),before);
+});

@@ -8,7 +8,7 @@ try {
   const day={date:'10/10/2032',year:2032,month:10,type:'VOO',pairingCode:'SYN',base:'BSB',dutyReport:'07:25',dutyDebrief:'14:05',dutyReportSource:'published',dutyDebriefSource:'published',legs:[leg('QA0001','BSB','GRU','08:20','10:35',2.25),leg('QA0002','GRU','BSB','11:20','13:35',2.25)],rawText:'SYNTHETIC ONLY'};
   const roster=days=>({year:2032,month:10,base:'BSB',rank:'CC',airline:'LA',crewName:'SYNTHETIC',days});
   const evidence=[];
-  for(const timezone of ['America/Sao_Paulo','UTC','Asia/Tokyo']) {
+  for(const timezone of ['America/Sao_Paulo','UTC','Asia/Tokyo','Pacific/Honolulu']) {
     process.env.TZ=timezone;
     const events=canonical.buildCanonicalRosterEvents(roster([day])).filter(e=>e.kind==='flight');
     const m=measurement.measureCanonicalDuty(events,events[1].id);
@@ -21,6 +21,18 @@ try {
       const incomplete={...day,[field]:null};const e=canonical.buildCanonicalRosterEvents(roster([incomplete])).filter(x=>x.kind==='flight');const p=measurement.measureCanonicalDuty(e,e[0].id);assert.equal(p.state,'incomplete');assert.equal(p.minutes,null);assert.equal(engine.getCanonicalWorkHoursTotal(roster([incomplete])),null);assert.equal(engine.getPublishedDutyLimitSummary(incomplete,null),null);
     }
     const reserve={...day,type:'ASB',pairingCode:'ASB',dutyReport:'04:10'};const r=canonical.buildCanonicalRosterEvents(roster([reserve])).filter(x=>x.kind==='flight');const rm=measurement.measureCanonicalDuty(r,r[0].id);assert.equal(rm.state,'available');assert.equal(rm.minutes,595,'reserve attached to same published flight block starts at04:10, once');
+    const blocks={...day,type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyDebrief:'17:30',legs:[leg('QA-ASB-FIRST','BSB','GRU','08:00','09:00',1),leg('QA-ASB-SECOND','GRU','BSB','16:00','17:00',1,'15:00')]};
+    const originalBlocks=JSON.stringify(blocks);const split=canonical.buildCanonicalRosterEvents(roster([blocks])).filter(e=>e.kind==='flight');
+    assert.equal(split.length,2);assert.notEqual(split[0].journeyId,split[1].journeyId);assert.equal(split[1].legIndex,1);
+    const own=measurement.measureCanonicalDuty(split,split[1].id),ownEndpoints=measurement.publishedDutyEndpoints(split,split[1].id);
+    assert.equal(own.state,'available');assert.equal(own.start,'2032-10-10T18:00:00.000Z');assert.equal(own.minutes,150,'second block must not add first-block reserve hours');
+    assert.equal(ownEndpoints.start,Date.parse(own.start));assert.equal(measurement.publishedDutyEndpoints(split,split[0].id).start,Date.parse('2032-10-10T06:00:00Z'),'first reserve03:00 retained');
+    assert.equal(engine.getCanonicalWorkHoursTotal(roster([blocks])),null,'incomplete first block still prevents a partial total');assert.equal(JSON.stringify(blocks),originalBlocks);
+    const unknownBlock={...blocks,legs:[blocks.legs[0],{...blocks.legs[1],origin:'CNF',presentationTime:undefined}]};
+    const incompleteSplit=canonical.buildCanonicalRosterEvents(roster([unknownBlock])).filter(e=>e.kind==='flight');assert.notEqual(incompleteSplit[0].journeyId,incompleteSplit[1].journeyId);
+    assert.equal(measurement.measureCanonicalDuty(incompleteSplit,incompleteSplit[1].id).minutes,null);assert.equal(measurement.publishedDutyEndpoints(incompleteSplit,incompleteSplit[1].id).start,null,'unknown second APZ cannot inherit03:00');
+    const estimatedEnd={...blocks,dutyDebriefSource:'estimated'};const pendingEnd=canonical.buildCanonicalRosterEvents(roster([estimatedEnd])).filter(e=>e.kind==='flight');
+    assert.equal(measurement.measureCanonicalDuty(pendingEnd,pendingEnd[1].id).minutes,null);assert.equal(measurement.publishedDutyEndpoints(pendingEnd,pendingEnd[1].id).start,Date.parse('2032-10-10T18:00:00Z'));assert.equal(measurement.publishedDutyEndpoints(pendingEnd,pendingEnd[1].id).end,null);
     const standby={...day,type:'HSB',pairingCode:'HSB'};const h=canonical.buildCanonicalRosterEvents(roster([standby])).filter(x=>x.kind==='flight');const hm=measurement.measureCanonicalDuty(h,h[0].id);assert.equal(hm.state,'incomplete');assert.equal(hm.minutes,null);assert.equal(hm.limitConfirmed,false,'no activation or16h inferred from HSB+OP');
     const excessive={...day,dutyReport:'05:00',dutyDebrief:'21:30',legs:[leg('QA-LONG','BSB','GRU','05:55','21:00',15+5/60)]};const x=canonical.buildCanonicalRosterEvents(roster([excessive])).filter(e=>e.kind==='flight');assert.equal(measurement.measureCanonicalDuty(x,x[0].id).minutes,990);assert.ok(engine.getPublishedDutyLimitSummary(excessive,null).remainingHours<0,'excess is preserved, never clamped tozero');
     assert.equal(measurement.measureCanonicalDuty(events,'missing'),null);
@@ -39,5 +51,5 @@ try {
   const availability={...day,type:'ASB',pairingCode:'ASB',legs:[],dutyReport:'15:00',dutyDebrief:'21:00'};assert.equal(engine.getCanonicalWorkHoursTotal(roster([day,availability])),null,'separate reserve makes integral work total pending, not a partial legal margin');
   const other={...overnight[0],id:'SYN-OTHER',journeyId:'SYN-INDEPENDENT',startDateTime:'2032-10-05T15:00:00Z',endDateTime:'2032-10-05T16:00:00Z'};assert.equal(measurement.measureCanonicalDuty([...overnight,other],overnight[1].id).minutes,265,'another journey on same date is not merged');
   fs.mkdirSync('artifacts/canonical-duty-measurement',{recursive:true});fs.writeFileSync('artifacts/canonical-duty-measurement/report.json',JSON.stringify({synthetic:true,evidence,overnight:night},null,2));
-  console.log('PASS actual canonical engine/summary: full ground-inclusive span,3 timezones, missing boundaries, reserve, HSB uncertainty, excess, overnight, identity and dedup');
+  console.log('PASS actual canonical engine/summary: full ground-inclusive span,4 timezones, missing boundaries, reserve, HSB uncertainty, excess, overnight, identity and dedup');
 }finally{modules.cleanup();}

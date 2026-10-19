@@ -91,7 +91,9 @@ export function measureCanonicalDuty(events: readonly CanonicalRosterEvent[], se
     // Reserve attached to this published flight block contributes from its
     // actual published presentation. A separate ASB/HSB is never linked merely
     // by proximity or a shortened availability interval.
-    if (/ASB|RES/.test(code)) {
+    // A row-level reserve start belongs only to its first flight block. A later
+    // canonical journey uses its own published APZ, never the earlier block's.
+    if (/ASB|RES/.test(code) && first.legIndex === 0) {
       const reserveStart = clock(first.publishedDay.dutyReport);
       if (!reserveStart) { result.reasons.push('Início da reserva acionada não comprovado.'); return result; }
       start = Math.min(start, clockNear(Date.parse(first.startDateTime), reserveStart, 'before'));
