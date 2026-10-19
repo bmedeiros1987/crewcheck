@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import ts from 'typescript';
+import * as nodeModule from 'node:module';
 
 const imports = "import { applyCrewCheckTheme, getCrewCheckThemePreference, getEffectiveCrewCheckTheme, setCrewCheckThemePreference } from './lib/themeRuntime';";
 const appPath = 'client/src/App.tsx';
@@ -78,16 +78,18 @@ fs.writeFileSync(authPath, auth);
 
 // Prepaint is compiled from the same runtime functions, never a parallel theme policy.
 const themeSource = fs.readFileSync('client/src/lib/themeRuntime.ts', 'utf8');
-const themeAst = ts.createSourceFile('themeRuntime.ts', themeSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-const bootstrapFunctions = new Set(['normalize', 'getCrewCheckThemePreference', 'getEffectiveCrewCheckTheme', 'applyCrewCheckTheme']);
-const bootstrapVariables = new Set(['KEY', 'LEGACY_KEY', 'volatilePreference']);
-const bootstrapNodes = themeAst.statements.filter(node =>
-  ts.isFunctionDeclaration(node) && bootstrapFunctions.has(node.name?.text)
-  || ts.isVariableStatement(node) && node.declarationList.declarations.some(item => bootstrapVariables.has(item.name.getText(themeAst))));
-if (bootstrapNodes.length !== 7) throw new Error('Canonical theme bootstrap inputs missing');
-const bootstrapCode = ts.transpileModule(bootstrapNodes.map(node => node.getText(themeAst).replace(/^export /, '')).join('\n') + '\napplyCrewCheckTheme();', {
-  compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.None },
-}).outputText;
+if (typeof nodeModule.stripTypeScriptTypes !== 'function') throw new Error('Theme preparation requires supported Node >=22.13.0');
+// Use the same built-in parser supported by the existing canonical bridge. No dev
+// compiler is required when production startup needs to prepare sources again.
+const themeJavascript = nodeModule.stripTypeScriptTypes(themeSource, { mode: 'strip' });
+const themeModule = await import('data:text/javascript;base64,' + Buffer.from(themeJavascript + '\nexport { normalize, KEY, LEGACY_KEY, volatilePreference };').toString('base64'));
+const bootstrapFunctions = ['normalize', 'getCrewCheckThemePreference', 'getEffectiveCrewCheckTheme', 'applyCrewCheckTheme'];
+if (bootstrapFunctions.some(name => typeof themeModule[name] !== 'function') || themeModule.volatilePreference !== null) throw new Error('Canonical theme bootstrap inputs missing');
+const bootstrapCode = `const KEY = ${JSON.stringify(themeModule.KEY)};
+const LEGACY_KEY = ${JSON.stringify(themeModule.LEGACY_KEY)};
+let volatilePreference = null;
+${bootstrapFunctions.map(name => themeModule[name].toString()).join('\n')}
+applyCrewCheckTheme();`;
 const htmlPath = 'client/index.html';
 let html = fs.readFileSync(htmlPath, 'utf8').replace(/\s*<script id="cc-theme-prepaint">[\s\S]*?<\/script>/g, '');
 const charset = '<meta charset="UTF-8" />';
