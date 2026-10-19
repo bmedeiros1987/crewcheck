@@ -66,3 +66,4 @@ replace('  const v1391TelegramHandled = await handleV139Telegram(update, sendTel
 replace("{ reply_markup: isWeather ? conciergeWeatherKeyboard(weatherStation, /taf/i.test(normalizedText) ? 'taf' : 'metar') : conciergeReplyKeyboard(normalizedText) }", "{ ...((profile.conciergeResponseAuthority?.kind === 'departure') ? crewcheckMenu.guard(profile) : {}), reply_markup: isWeather ? conciergeWeatherKeyboard(weatherStation, /taf/i.test(normalizedText) ? 'taf' : 'metar') : conciergeReplyKeyboard(normalizedText) }");
 fs.writeFileSync(file, source);
 console.log('[telegram-menu] private one-use inline navigation; direct existing producers; no live sends');
+await import('../concierge-temporal-dialogue/apply.mjs');

@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import crypto from 'node:crypto';
 import {prepareConciergeCanonicalBridge} from '../p1-concierge-journey/bridge.mjs';
 import {harness} from '../regression-concierge-wellhub-conversation.mjs';
+import {createTemporalDialogue} from '../../server/concierge/temporal-dialogue.mjs';
 import * as gates from '../../shared/gate-query-day.mjs';
 assert(process.argv.includes('--materialized'),'requires the actual fully prepared router');
 prepareConciergeCanonicalBridge();
@@ -13,10 +14,10 @@ const canonical=await import('../../server/concierge/generated/canonicalRoster.m
 const source=fs.readFileSync('server.mjs','utf8');
 const extract=name=>{const m=source.match(new RegExp(`(?:async )?function ${name}\\([\\s\\S]*?\\n}`));assert(m,name);return m[0];};
 const now='2099-10-04T09:00:00Z';
-function realDeparture(roster,mode='missing',at=now) {
+export function realDeparture(roster,mode='missing',at=now) {
  const h=harness({operationalProbe:true});let routeCalls=0,radarCalls=0,epoch=Date.parse(at);
  class Clock extends Date {constructor(...args){super(...(args.length?args:[epoch]));}static now(){return epoch;}}
- Object.assign(h.context,{Date:Clock,crypto,Buffer,...programs,buildCanonicalRosterEvents:canonical.buildCanonicalRosterEvents,
+ Object.assign(h.context,{Date:Clock,crypto,Buffer,createTemporalDialogue,...programs,buildCanonicalRosterEvents:canonical.buildCanonicalRosterEvents,
    findPublishedGateLeg:gates.findPublishedGateLeg,originFlightDate:gates.originFlightDate,
    gateQueryDay:i=>gates.gateQueryDay(i,Clock.now()),radarResultDecision:(...args)=>gates.radarResultDecision(...args),gateQuerySuppressed:gates.gateQuerySuppressed,
    conciergeLocationContextV14335:()=>({fresh:mode!=='missing',location:{latitude:1,longitude:2},message:'Localização sintética pendente.'}),
@@ -53,12 +54,13 @@ function realDeparture(roster,mode='missing',at=now) {
   return {ok:true,status:200,json:async()=>({ok:true,result})};
  };
  vm.runInContext(extract('sendTelegramMessage'),h.context);
+ const temporal=source.match(/const crewcheckTemporalDialogue = createTemporalDialogue\([\s\S]*?\n}\);/);if(temporal)vm.runInContext(temporal[0].replace('const crewcheckTemporalDialogue =','globalThis.crewcheckTemporalDialogue ='),h.context);
  const runtime=source.match(/const crewcheckMenu = createTelegramMenu\([\s\S]*?\n}\);/);assert(runtime);
  vm.runInContext(runtime[0].replace('const crewcheckMenu =','globalThis.crewcheckMenu ='),h.context);
  h.setRoster(roster,mode==='missing'?{location:null}:{location:{latitude:1,longitude:2,updatedAt:at}});
  return {...h,advanceClock:ms=>{epoch+=ms;},routeCalls:()=>routeCalls,radarCalls:()=>radarCalls};
 }
-function data(kind,normalized=false){
+export function data(kind,normalized=false){
  const leg={flightNumber:'QA-MERGED',origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00',workType:'OP'};
  const leaf={dutyReport:'03:00',dutyDebrief:'09:30',dutyReportSource:'published',dutyDebriefSource:'published',legs:[{departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00'}]};
  const container=kind==='estimated'?{...leaf,dutyReportSource:'estimated',records:[leaf]}:{...leaf,legs:[{departureTime:'04:00',arrivalTime:'05:00'},...leaf.legs],records:[leaf]};
