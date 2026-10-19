@@ -49,7 +49,7 @@ public class CrewLifeV2LifecycleTest {
         }
     }
     @Implements(value=CrewCheckDataLayerService.class,isInAndroidSdk=false)
-    public static class AckTransport {
+    public static class AckTransport extends org.robolectric.shadows.ShadowService {
         @Implementation protected void sendCrewLifeAck(String node,String ack) throws Exception {
             assertEquals(NODE,node);
             android.content.SharedPreferences p=RuntimeEnvironment.getApplication().getSharedPreferences("crewcheck_watch_wellbeing",0);
@@ -134,7 +134,8 @@ public class CrewLifeV2LifecycleTest {
     @Test public void actualComplicationDataExpiresBeforeTheMetricBoundaryIncludingZeroRing() throws Exception {
         long now=System.currentTimeMillis();WellbeingStore s=new WellbeingStore(context);
         s.applyCrewLifeControl(control("reset",STREAM,1,STREAM),NODE);
-        s.applyCrewLifeData(payload(2,0,now+1000,now+4000),NODE,now);
+        String wire=payload(2,0,now+1000,now+4000);
+        s.applyCrewLifeData(wire,NODE,System.currentTimeMillis());
         ServiceController<CrewLifeComplicationService> provider=Robolectric.buildService(CrewLifeComplicationService.class).create();
         try {
             java.lang.reflect.Method build=BaseComplicationService.class.getDeclaredMethod("buildData",androidx.wear.watchface.complications.data.ComplicationType.class,boolean.class);
@@ -183,7 +184,7 @@ public class CrewLifeV2LifecycleTest {
     }
     @Test public void malformedReplacementClearsPreviousHealthAndOldRevisionCannotReturn() throws Exception {
         WellbeingStore s=new WellbeingStore(context);s.applyCrewLifeControl(control("reset",STREAM,1,STREAM),NODE);
-        long now=System.currentTimeMillis();String raw=payload(2,78,now+1000,now+2000);s.applyCrewLifeData(raw,NODE,now);assertNotNull(s.loadCrewLife());
+        long now=System.currentTimeMillis();String raw=payload(2,78,now+1000,now+2000);s.applyCrewLifeData(raw,NODE,System.currentTimeMillis());assertNotNull(s.loadCrewLife());
         s.applyCrewLifeData("{}",NODE,now);assertNull(s.loadCrewLife());s.applyCrewLifeData(raw,NODE,now);assertNull(s.loadCrewLife());
     }
 }
