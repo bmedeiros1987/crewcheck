@@ -1,8 +1,9 @@
 # CrewLife v2 — phone candidate, health remains OFF
 
-**HOLD: receiver-issued challenge implemented on phone; actual corrected Wear
-composition and strict MCC integration remain unproved. Do not claim wire
-compatibility or integrate before both exact commits pass independent review.**
+**Draft/HOLD: corrected Wear79cfcb57 and phone producer pass synthetic composition
+(11 protocol cases and 30 complete-sender assertions). Independent review of this
+phone delta and the exact pair, strict MCC integration, vendor and physical gates
+remain pending. No health activation or Store publication follows from these tests.**
 
 Phone changes extend #1085 HEAD379eb3db. No Wear files, real SDK, permissions,
 Health Sync activation, live health records, Store operation or routine/roster
@@ -118,3 +119,27 @@ journal, transport coordinator and actual MainActivity producer method with
 explicit Android/storage/Task doubles. It does not execute the new Wear parser,
 real Data Layer, proprietary SDK, encryption migration or physical display.
 Those proofs and old/new composition remain with the separate Wear candidate.
+
+
+## Exact composition validation
+
+Wear input is pinned to `79cfcb57c720f3f06a8cc4beb2f4129f1d5572fe`.
+The receiver fixes challenged initial clear-only revoke and zero-time value-free
+revocation tombstones. CI checks out that exact read-only source tree and compiles
+its actual `CrewLifeFence`/`CrewLifeSnapshot` with this phone's actual native
+producer method, publisher, protocol journal, coordinator, ACK listener service,
+consent and revocation retry implementation. Input hashes are checked before/after.
+Transport Tasks, source query/clock, Android and persistence are explicit doubles.
+The store encryption/Android lifecycle proofs are separate Wear CI tests, not
+claimed by this harness.
+
+The sender suite covers cold-start cleanup before consent; fresh Wear challenge and
+reset ACK through the real phone service; zero/absence/source deadlines; old/new
+schemas; old Companion with missing provenance; logout during discovery; late
+already-handed-off put completion and tombstone repair; account stream replacement;
+Wear journal loss; and an old/offline peer never treated as cleaned. Protocol-only
+migration/source invalidation preserves routine, while existing full explicit
+consent revocation still removes routine. The operational publisher is not called
+by any health ACK flow. Old phone + old Wear behavior remains unsafe and is not
+certified by this rollout. No physical delivery/display or remote cache clearance
+is inferred from a DataClient success.
