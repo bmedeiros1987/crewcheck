@@ -4,6 +4,8 @@ on:
     paths:
       - 'client/src/pages/Home.tsx'
       - 'client/src/lib/*Salary*.ts'
+      - 'client/src/lib/salaryDisplayBasis.ts'
+      - 'scripts/regression-salary-display-basis*'
       - 'client/src/lib/payrollPaymentComposition.ts'
       - 'client/src/lib/nextFinancialPayment.ts'
       - 'client/src/lib/financialLocalUpcoming.ts'
@@ -51,6 +53,9 @@ jobs:
           TZ=America/Sao_Paulo node scripts/regression-financial-known-values-dates.mjs
           TZ=Asia/Tokyo node scripts/regression-financial-known-values-dates.mjs
           node scripts/regression-owner-per-diem-caller.mjs
+          TZ=UTC node scripts/regression-salary-display-basis.mjs
+          TZ=America/Sao_Paulo node scripts/regression-salary-display-basis.mjs
+          TZ=Asia/Tokyo node scripts/regression-salary-display-basis.mjs
       - run: npm run build
       - run: npx tsc --noEmit
       - name: Prepared real-function contracts and existing negative gates
@@ -61,6 +66,7 @@ jobs:
           node scripts/regression-financial-monthly-foundation.mjs
           node scripts/regression-financial-review-owner-negative.mjs
           node scripts/regression-salary-prerequisite-diagnostic.mjs
+          node scripts/regression-salary-display-basis.mjs
           node scripts/regression-financial-upcoming.mjs
           node scripts/regression-financial-concierge-timing.mjs
           node scripts/regression-financial-partial-flight-meals.mjs
@@ -82,6 +88,7 @@ jobs:
           node scripts/regression-financial-history-loading-ui.cjs
           node scripts/regression-owner-per-diem-browser.mjs
           node scripts/regression-financial-long-history.cjs
+          node scripts/regression-salary-display-basis-browser.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -90,4 +97,5 @@ jobs:
             artifacts/financial-focus-probe/
             artifacts/financial-known-values/
             artifacts/financial-long-history/
+            artifacts/salary-display-basis/
           if-no-files-found: ignore

@@ -8,7 +8,7 @@ import { FinancialPrivacyToggle, useFinancialPrivacy } from './FinancialPrivacy'
 import './payment-preview.css';
 import { useFinancialScreen } from './FinancialScreen';
 
-export default function NextPaymentCard({ payment, requestRange, extraDetails }: { payment:NextPayment; requestRange:(range:FinancialRange)=>void; extraDetails?:ReactNode }) {
+export default function NextPaymentCard({ payment, requestRange, extraDetails, salaryDisplay }: { payment:NextPayment; requestRange:(range:FinancialRange)=>void; extraDetails?:ReactNode;salaryDisplay?:{control:ReactNode;amount:ReactNode;caption:string} }) {
   const privacy=useFinancialPrivacy(), root=useRef<HTMLDivElement>(null);
   const {screen,navigate,back,controls,history}=useFinancialScreen();
   const overviewCaption=payment.kind==='payroll'?(payment.estimationBasis==='operational_month'&&payment.range?`Salário · ${payment.range.start.slice(0,7).split('-').reverse().join('/')} · bruto estimado`:payment.caption.replace(', antes dos descontos','').replace(' · antes dos descontos','')):'Diárias';
@@ -28,6 +28,7 @@ export default function NextPaymentCard({ payment, requestRange, extraDetails }:
     target.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});focus.focus({preventScroll:true});
   }
   return <div ref={root} className="cc-payment-overview" data-financial-screen={screen} data-financial-item-count={payment.lines.length}>
+    {payment.kind==='payroll'&&salaryDisplay?.control}
     {screen!=='overview'&&<header className="cc-financial-screen-head"><button type="button" onClick={()=>back?back():navigate('overview')}>← Voltar</button><h2 tabIndex={-1} data-financial-screen-heading>{screen==='statement'?'Extrato':screen==='charts'?'Gráficos':'Detalhes do pagamento'}</h2></header>}
     {(screen==='statement'||screen==='charts')&&controls}
     {(screen==='statement'||screen==='charts')&&history}
@@ -36,8 +37,8 @@ export default function NextPaymentCard({ payment, requestRange, extraDetails }:
     <section className="cc-payment-hero" aria-label="Próximo pagamento previsto">
       <div className="cc-payment-topline"><span><ArrowDownLeft aria-hidden="true"/> {payment.estimationBasis==='operational_month'?'CÁLCULO DA ESCALA':'PRÓXIMO CICLO'}</span><FinancialPrivacyToggle/><details className="cc-payment-help"><summary aria-label="Entender esta previsão"><span aria-hidden="true">?</span></summary><div><p>{privacy.text(payment.source)}</p>{Object.entries(payment.currencyTiming||{}).map(([currency,timing])=><p key={currency}>{currency} · {privacy.text(timing)}</p>)}{payment.issues.length>0&&<ul>{payment.issues.map(issue=><li key={issue}>{privacy.text(issue)}</li>)}</ul>}</div></details>{payment.kind==='allowance'&&<button type="button" className="cc-financial-calculator-shortcut" aria-label="Abrir calculadora de moedas" onClick={()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'currency'}))}><Calculator size={20} aria-hidden="true"/></button>}</div>
       <h2 data-financial-screen-heading={screen==='overview'?true:undefined} tabIndex={-1}>{payment.estimationBasis==='operational_month'?'Estimativa salarial da escala':'Próximo pagamento previsto'}</h2>
-      <p className="cc-payment-caption">{screen==='overview'?overviewCaption:payment.caption}</p>
-      <ForecastCurrencyCarousel payment={payment}/>
+      <p className="cc-payment-caption">{payment.kind==='payroll'&&salaryDisplay?salaryDisplay.caption:screen==='overview'?overviewCaption:payment.caption}</p>
+      {payment.kind==='payroll'&&salaryDisplay?salaryDisplay.amount:<ForecastCurrencyCarousel payment={payment}/>}
       {screen==='payment'&&payment.range&&<p className="cc-payment-period">Ciclo · {payment.kind==='allowance'?'Trabalho de':'Composição de'} {dateLabel(payment.range.start)} a {dateLabel(payment.range.end)} · {payment.lines.length} itens</p>}
       <p className="cc-payment-disclaimer">Estimativa · recebimento não confirmado</p>
     </section>
