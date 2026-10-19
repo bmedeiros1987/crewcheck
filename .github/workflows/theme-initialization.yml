@@ -5,6 +5,8 @@ on:
     paths:
       - 'client/src/lib/themeRuntime.ts'
       - 'scripts/finalize-theme-runtime.mjs'
+      - 'scripts/v14319/apply.mjs'
+      - 'client/index.html'
       - 'scripts/regression-theme-initialization.cjs'
       - '.github/workflows/theme-initialization.yml'
 jobs:
