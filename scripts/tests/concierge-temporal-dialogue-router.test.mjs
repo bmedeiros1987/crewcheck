@@ -188,3 +188,60 @@ test('admitted webhook observes a newer input before auxiliary early-return/STT 
  const newer=h.context.handleTelegramWebhook({method:'POST',headers:{},body:{update_id:999,message:{chat:{id:h.profile.chatId,type:'private'},from:{id:h.profile.chatId},voice:{file_id:'synthetic-new',duration:2}}}},{});
  await auxStarted;const before=h.trace.output.length;release();await old;assert.equal(h.voice.length,0);assert.doesNotMatch(h.trace.output.slice(before).join(' '),/QA-MERGED|Entendi:/);releaseAux();await newer;assert.equal(acknowledgements,1);
 });
+
+// Ordering fixtures use the actual admitted webhook, duplicate claim and queued
+// processTelegramUpdate. Only HTTP/provider/I/O and scheduling are synthetic.
+function realIngress(h){
+ const queued=[],pending=[],acks=[];let queuedCount=0,auxCalls=0;
+ const process=h.context.processTelegramUpdate;
+ Object.assign(h.context,{crewcheckTelegramUpdateClaims:new Map(),readJsonBody:async req=>req.body,sendJson:(_res,status,body)=>{acks.push({status,...body});},handleV139Telegram:async()=>{auxCalls++;return false;},setImmediate:fn=>{queuedCount++;queued.push(fn);},processTelegramUpdate:update=>{const work=process(update);pending.push(work);return work;}});
+ for(const name of ['crewcheckTelegramUpdateClaim','handleTelegramWebhook'])vm.runInContext(extract(name),h.context);
+ const event=(id,text,messageId=id,chat=h.profile.chatId)=>({update_id:id,message:{message_id:messageId,date:Math.floor(h.context.Date.now()/1000),chat:{id:chat,type:'private'},from:{id:chat},...(typeof text==='string'?{text}:{voice:{file_id:'synthetic',duration:2}})}});
+ const admit=async update=>{await h.context.handleTelegramWebhook({method:'POST',headers:{},body:update},{});while(queued.length)queued.shift()();return acks.at(-1);};
+ return{event,admit,drain:async()=>{await Promise.all(pending.splice(0));},acks,queuedCount:()=>queuedCount,auxCalls:()=>auxCalls};
+}
+
+test('real ingress rejects late audio before STT and cannot recreate an offer after newer thanks',async()=>{
+ const h=voiceTools(),i=realIngress(h);let transcribed=0;h.setTranscribe(async()=>{transcribed++;});
+ assert.equal((await i.admit(i.event(10201,'obrigado',201))).queued,true);await i.drain();
+ const before=h.trace.output.length,old=i.event(10200,null,200);old.message.date-=60;
+ const ack=await i.admit(old);await i.drain();assert.equal(ack.status,200);assert.equal(ack.stale,true);assert.equal(transcribed,0);assert.equal(i.queuedCount(),1);assert.equal(i.auxCalls(),1);
+ assert.equal((await i.admit(i.event(10202,'sim',202))).queued,true);await i.drain();
+ assert.doesNotMatch(h.trace.output.slice(before).join(' '),/Detalhes da programação|Quer os detalhes|QA-MERGED/);assert.equal(h.voice.length,0);
+});
+
+for(const kind of ['audio','callback'])test(`real ingress late ${kind} cannot cancel a newer admitted voice`,async()=>{
+ const h=voiceTools(),i=realIngress(h);let signal,release;const started=new Promise(r=>signal=r),gate=new Promise(r=>release=r);h.setSynth(async()=>{signal();await gate;});
+ assert.equal((await i.admit(i.event(10201,null,201))).queued,true);await started;
+ const older=kind==='audio'?i.event(10200,null,200):{update_id:10200,callback_query:{id:'synthetic-old-callback',from:{id:h.profile.chatId},data:'cc_nav:entry:home',message:{message_id:1,chat:{id:h.profile.chatId,type:'private'}}}};
+ const ack=await i.admit(older);assert.equal(ack.stale,true);assert.equal(i.queuedCount(),1);assert.equal(i.auxCalls(),1);
+ release();await i.drain();assert.equal(h.voice.length,1,'stale input must not replace the admitted turn');
+});
+
+test('real ingress duplicate retry retains the current voice turn and processes it once',async()=>{
+ const h=voiceTools(),i=realIngress(h);let signal,release;const started=new Promise(r=>signal=r),gate=new Promise(r=>release=r);h.setSynth(async()=>{signal();await gate;});const update=i.event(10201,null,201);
+ await i.admit(update);await started;const duplicate=await i.admit(structuredClone(update));assert.equal(duplicate.duplicate,true);assert.equal(i.queuedCount(),1);assert.equal(i.auxCalls(),1);
+ release();await i.drain();assert.equal(h.voice.length,1);
+});
+
+test('real ingress new callback update admits its older button message and dedupes its retry',async()=>{
+ const h=voiceTools(),i=realIngress(h);await i.admit(i.event(10201,'menu',5000));await i.drain();
+ const last=h.trace.transports.at(-1),button=last.extra.reply_markup.inline_keyboard.flat().find(b=>/Programação/.test(b.text));assert(button?.callback_data);assert(last.result.message_id<5000);
+ const callback={update_id:10202,callback_query:{id:'synthetic-fresh-callback',from:{id:h.profile.chatId},data:button.callback_data,message:{...last.result,chat:{id:h.profile.chatId,type:'private'}}}};
+ const ack=await i.admit(callback);await i.drain();assert.equal(ack.queued,true);assert.equal(ack.stale,undefined);assert(h.trace.transports.at(-1).extra.reply_markup.inline_keyboard.flat().some(b=>/Hoje/.test(b.text)));
+ const count=i.queuedCount();assert.equal((await i.admit(structuredClone(callback))).duplicate,true);await i.drain();assert.equal(i.queuedCount(),count);
+});
+
+test('real ingress rank is scoped to each private chat',async()=>{
+ const h=voiceTools(),i=realIngress(h);await i.admit(i.event(10201,'menu'));await i.drain();const ack=await i.admit(i.event(100,'menu',100,'synthetic-other-private-chat'));await i.drain();assert.equal(ack.queued,true);assert.equal(ack.stale,undefined);assert.equal(i.queuedCount(),2);
+});
+
+test('real ingress rank outlives offer expiry but allows Telegram week-id reset',async()=>{
+ const h=voiceTools(),i=realIngress(h);await i.admit(i.event(10201,'menu'));await i.drain();h.advanceClock(3*60000);
+ assert.equal((await i.admit(i.event(10200,'/proximo'))).stale,true);assert.equal(i.queuedCount(),1);
+ h.advanceClock(8*24*60*60000);assert.equal((await i.admit(i.event(100,'menu'))).queued,true);await i.drain();assert.equal(i.queuedCount(),2);
+});
+
+for(const id of [undefined,'10201',0,1.5])test(`real private ingress rejects missing or non-Telegram integer rank ${JSON.stringify(id)}`,async()=>{
+ const h=voiceTools(),i=realIngress(h);const ack=await i.admit(i.event(id,'/proximo'));await i.drain();assert.equal(ack.status,200);assert.equal(ack.stale,true);assert.equal(i.queuedCount(),0);assert.equal(i.auxCalls(),0);assert.equal(h.trace.output.length,0);
+});

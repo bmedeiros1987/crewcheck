@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {AsyncLocalStorage} from 'node:async_hooks';
-const TTL=2*60_000,MAX=1000;
+const TTL=2*60_000,ORDER_TTL=7*24*60*60_000,MAX=1000;
 const plain=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
 const no=v=>/^(nao|agora nao|cancelar|cancela)[.!?]*$/.test(plain(v));
 const yes=v=>/^(sim|quero|quero sim|pode mostrar|detalhes)[.!?]*$/.test(plain(v));
@@ -11,24 +11,37 @@ const cancelled=r=>r.display?.cancelled===true||['cancelled','canceled','cancela
 const identity=p=>p?.linked===true&&p.channel==='telegram'&&p.chatType==='private'&&p.chatId&&/^[^@\s]+@[^@\s]+$/.test(p.email||'')?`${String(p.email).trim().toLowerCase()}|${p.accessKeyHash||''}`:'';
 const freezePrincipal=p=>Object.freeze({email:p.email,name:p.name,chatId:String(p.chatId),linked:p.linked,channel:p.channel,chatType:p.chatType,accessKeyHash:String(p.accessKeyHash||''),authenticated:p.authenticated===true});
 export function createTemporalDialogue(deps,now=deps.now||Date.now){
- const offers=new Map(),turns=new Map(),states=new WeakMap(),declines=new WeakSet(),observed=new WeakMap(),consumed=new WeakSet(),storage=new AsyncLocalStorage();
+ const offers=new Map(),turns=new Map(),order=new Map(),states=new WeakMap(),declines=new WeakSet(),observed=new WeakMap(),consumed=new WeakSet(),storage=new AsyncLocalStorage();
  const prune=()=>{for(const map of[offers,turns]){for(const[chat,item]of map)if(now()<item.at||now()-item.at>TTL)map.delete(chat);while(map.size>=MAX)map.delete(map.keys().next().value);}};
  const currentTurn=ctx=>Boolean(ctx&&turns.get(ctx.chat)===ctx.turn&&now()>=ctx.turn.at&&now()-ctx.turn.at<=TTL);
  const sameBinding=ctx=>{const p=deps.profileNow(ctx.principal);return identity(p)===ctx.owner&&String(p?.chatId)===ctx.chat;};
  const owned=(p,s)=>Boolean(s?.roster&&plain(s.email||s.key)===plain(p.email)&&(!s.key||plain(s.key)===plain(p.email))&&deps.access(p,s));
  const rootCheck=ctx=>{try{const latest=deps.snapshotNow(ctx.principal);return currentTurn(ctx)&&sameBinding(ctx)&&revision(latest)===ctx.revision&&(!latest?.roster||owned(ctx.principal,latest));}catch{return false;}};
- function observe(update){
+ // Telegram update_id orders events; callback.message_id identifies the old
+ // bot message bearing a button and is never a turn-order key. Telegram may
+ // randomize update IDs after a week without updates; forget only idle ranks.
+ function advance(chat,update,strict){
+  const id=update?.update_id;
+  if(typeof id!=='number'||!Number.isSafeInteger(id)||id<=0)return !strict;
+  const previous=order.get(chat),at=now();
+  if(previous&&(at<previous.at||at-previous.at<ORDER_TTL)&&id<=previous.id)return false;
+  if(!order.has(chat))while(order.size>=MAX){const oldest=order.keys().next().value;order.delete(oldest);turns.delete(oldest);offers.delete(oldest);}
+  order.delete(chat);order.set(chat,Object.freeze({id,at}));return true;
+ }
+ function observe(update,strict=false){
   if(observed.has(update))return observed.get(update);
   const query=update?.callback_query,message=query?.message||update?.message||update?.edited_message,from=query?.from||message?.from;
   if(message?.chat?.type!=='private'||!from?.id||String(from.id)!==String(message.chat.id))return null;
-  const chat=String(message.chat.id);prune();const declined=Boolean(offers.has(chat)&&no(message.text)),turn=Object.freeze({at:now()});turns.set(chat,turn);
+  const chat=String(message.chat.id);
+  if(!advance(chat,update,strict)){const rejected=Object.freeze({stale:true});observed.set(update,rejected);return rejected;}
+  prune();const declined=Boolean(offers.has(chat)&&no(message.text)),turn=Object.freeze({at:now()});turns.set(chat,turn);
   const voice=Boolean(message.voice||message.audio||message.document?.mime_type?.startsWith('audio/'));
   if(query||(!voice&&!yes(message.text||'')))offers.delete(chat);
   const cached=deps.profileNow({chatId:chat}),owner=identity(cached),snapshot=owner?deps.snapshotNow(cached):null;
   const proof=Object.freeze({chat,turn,declined,message,from,beforeOwner:owner,revision:owned(cached,snapshot)?revision(snapshot):null});observed.set(update,proof);return proof;
  }
  async function run(update,work){
-  const proof=observe(update);if(!proof)return work();if(consumed.has(update))return true;consumed.add(update);
+  const proof=observe(update);if(!proof)return work();if(proof.stale)return true;if(consumed.has(update))return true;consumed.add(update);
   const{chat,turn,declined,message,from,beforeOwner}=proof;
   const loaded=await deps.profile({chat:message.chat,from});
   if(turns.get(chat)!==turn)return true;
