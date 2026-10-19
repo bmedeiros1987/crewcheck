@@ -293,9 +293,15 @@ export function createTelegramMenu(deps, now = Date.now) {
       return false;
     }
     if (owner(profile) !== flow.owner) { takeFlow(chat, flow); return false; }
-    if (flows.get(chat) !== flow) return true;
     const value = String(message.text).trim().toUpperCase();
     const plain = foldMenuText(value);
+    // Priority intents belong to the existing downstream routers even when the
+    // user replied to another message. Only parameter answers/cancel are scoped
+    // by prompt correlation; never swallow an emergency or navigation request.
+    if (priorityNavigation(value) && !/^(CANCELAR|\/CANCELAR)$/.test(plain)) {
+      const retired = takeFlow(chat, flow); await clearPrompt(profile, retired); return false;
+    }
+    if (flows.get(chat) !== flow) return true;
     const prompt = flow.prompt;
     if (message.reply_to_message && message.reply_to_message.message_id !== prompt?.id) return true;
     const followsPrompt = prompt && prompt.id !== null && Number.isSafeInteger(message.message_id)
@@ -305,9 +311,6 @@ export function createTelegramMenu(deps, now = Date.now) {
       const retired = takeFlow(chat, flow); await clearPrompt(profile, retired);
       if (await stillOwner(profile)) await send(chat, 'Consulta cancelada.');
       return true;
-    }
-    if (priorityNavigation(value) || value.startsWith('/')) {
-      const retired = takeFlow(chat, flow); await clearPrompt(profile, retired); return false;
     }
     if (now() - flow.at > TTL) {
       const retired = takeFlow(chat, flow); await clearPrompt(profile, retired);

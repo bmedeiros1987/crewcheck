@@ -25,7 +25,7 @@ const extract = (text, name) => { const match = text.match(new RegExp(`(?:async 
 
 function fixture() {
   let menu, context, id = 100, time = 1_000_000, linked = true;
-  const messages = new Map(), requests = [], answers = [], producers = [];
+  const messages = new Map(), requests = [], answers = [], producers = [], routes = [];
   let editMode = 'ok', clearFails = false, pauseEdit = null, pauseAfterEdit = null, pauseClear = null, pausePrompt = null, profileHook = null;
   const profile = () => { profileHook?.(); return { linked, channel: 'telegram', chatType: 'private', chatId: '101', email: 'synthetic@example.test', accessKeyHash: 'fixture-binding' }; };
   const fetch = async (url, options) => {
@@ -63,7 +63,9 @@ function fixture() {
     assert(runtime.includes('...createTelegramMenuTransport('));
     context = vm.createContext({ createTelegramMenu: deps => createTelegramMenu(deps, () => time), createTelegramMenuTransport, telegramApiUrl: apiUrl, fetch,
       telegramProfileForChatAsync: async () => profile(), conciergeLoadSnapshot: snapshot, buildTelegramConciergeReply: reply,
-      answerTelegramCallback: answer, conciergeWeatherKeyboard: producerContext.conciergeWeatherKeyboard, conciergeSettingsKeyboard: {} });
+      answerTelegramCallback: answer, conciergeWeatherKeyboard: producerContext.conciergeWeatherKeyboard, conciergeSettingsKeyboard: {},
+      handleTelegramWeatherCallback:async()=>false, handleTelegramCallCallback:async()=>false,
+      handlePlatformVisitorTelegram:async message=>{routes.push(structuredClone(message));return true;} });
     vm.runInContext([fn('sendTelegramMessage'), runtime, fn('processTelegramUpdate')].join('\n'), context);
     root = () => { context.rootMarkup = menuTemplate(); context.rootText = menuGreeting(); return vm.runInContext('sendTelegramMessage(101, rootText, {reply_markup:rootMarkup})', context); };
     dispatch = update => context.processTelegramUpdate(update);
@@ -88,7 +90,8 @@ function fixture() {
   const makeInput = (text, replyTo) => ({text,chat:{id:101,type:'private'},from:{id:101},message_id:++id,date:Math.floor(time/1000),...(replyTo?{reply_to_message:{message_id:replyTo.message_id}}:{})});
   producerContext.sendTelegramMessage = (chat,text,extra) => emit(text,extra.reply_markup);
   const count = method => requests.filter(x => x.method === method).length;
-  return { root, latest, press, callback, dispatch, messages, requests, answers, producers, count, makeInput, input, emit, callPrompt:()=>producerContext.requestConciergeCallConfirmation(101),
+  return { root, latest, press, callback, dispatch, messages, requests, answers, producers, routes, count, makeInput, input, emit,
+    handoff:async message=>{if(materialized)return dispatch({message});if(!await input(message))routes.push(structuredClone(message));}, callPrompt:()=>producerContext.requestConciergeCallConfirmation(101),
     expire: () => { time += 16 * 60_000; }, mode: value => { editMode = value; }, clearFailure: () => { clearFails = true; },
     pausePrompt: promise => { pausePrompt=promise; }, pauseCleanup: promise => { pauseClear=promise; }, pause: promise => { pauseEdit = promise; }, pauseAfter: promise => { pauseAfterEdit = promise; }, revoke: () => { linked = false; }, profileHook: fn => { profileHook = fn; } };
 }
@@ -320,4 +323,54 @@ test('reordered plain Cancelar from before current prompt cannot cancel it',asyn
   await f.input(stale); await f.input(f.makeInput('SBGR',current));
   assert.deepEqual(f.producers,['/metar SBGR']);
   assert(stale.message_id<current.message_id);
+});
+
+
+for(const text of ['/emergencia','SOS','Emergência','🚨 Emergência','Ajuda','/ajuda','Menu','/menu','HELP','/emergencia@CrewCheckBot']) {
+  for(const replyToOther of [false,true]) test(`priority ${text} reaches downstream router with old reply: ${replyToOther}`,async()=>{
+    const f=fixture(); const prompt=await openQuestion(f,'Radar');
+    const message=f.makeInput(text,replyToOther?{message_id:1}:null);
+    await f.handoff(message);
+    assert.equal(f.routes.length,1,'actual prepared process must pass priority input downstream');
+    assert.equal(f.routes[0].text,text); assert.equal(f.producers.length,0);
+    const sends=f.count('sendMessage'); await f.press(prompt,'Cancelar');
+    assert.match(f.answers.at(-1),/expirou/); assert.equal(f.count('sendMessage'),sends);
+    assert.equal(await f.input(f.makeInput('LA1234',prompt)),false,'interrupted question cannot resume');
+  });
+}
+
+for(const other of ['foreign-sender','other-chat','group-chat']) test(`priority from ${other} cannot retire another private question`,async()=>{
+  const f=fixture(); const prompt=await openQuestion(f,'Radar');
+  const message=f.makeInput('/emergencia',{message_id:1});
+  if(other==='foreign-sender')message.from.id=202;
+  if(other==='other-chat'){message.chat.id=202;message.from.id=202;}
+  if(other==='group-chat')message.chat.type='group';
+  const clears=f.count('editMessageReplyMarkup'); await f.handoff(message);
+  assert.equal(f.routes.length,1,'menu does not authorize or execute the downstream request');
+  assert.equal(f.count('editMessageReplyMarkup'),clears);
+  assert.equal(await f.input(f.makeInput('LA1234',prompt)),true);
+  assert.deepEqual(f.producers,['/radar LA1234']);
+});
+
+for(const text of ['/emergencia','SOS','Ajuda','/menu']) test(`priority ${text} also passes with an expired question`,async()=>{
+  const f=fixture(); const prompt=await openQuestion(f,'Radar');f.expire();
+  await f.handoff(f.makeInput(text,{message_id:1}));
+  assert.equal(f.routes.length,1);assert.equal(await f.input(f.makeInput('LA1234',prompt)),false);
+  const current=await openQuestion(f,'METAR');await f.press(prompt,'Cancelar');
+  assert.equal(await f.input(f.makeInput('SBGR',current)),true);
+  assert.deepEqual(f.producers,['/metar SBGR']);
+});
+
+test('ordinary answer attached to old message remains ignored without interrupting current question',async()=>{
+  const f=fixture();const prompt=await openQuestion(f,'Radar');
+  assert.equal(await f.input(f.makeInput('LA1234',{message_id:1})),true);
+  assert.equal(f.producers.length,0);assert.equal(f.routes.length,0);
+  assert.equal(await f.input(f.makeInput('LA1234',prompt)),true);
+  assert.deepEqual(f.producers,['/radar LA1234']);
+});
+
+for(const text of ['/emergencia','SOS','Ajuda','/menu']) test(`priority ${text} passes without a pending prompt`,async()=>{
+  const f=fixture();await f.handoff(f.makeInput(text,{message_id:1}));
+  assert.equal(f.routes.length,1);assert.equal(f.producers.length,0);
+  assert.equal(f.count('sendMessage'),0);
 });
