@@ -27,14 +27,14 @@ export function knownPaymentTotals(lines:readonly PaymentLine[]):Record<string,n
 function datedAllowanceLines(rows:AllowanceRow[],pending:Array<{iso:string}>,covered:string[],coveredDays?:string[]):PaymentLine[] {
  const cycles=new Map<string,{date:string|null;partial:boolean}>();
  return rows.filter(row=>validFinancialDay(row.iso)).map(row=>{
-  if(row.currency!=='BRL')return {...row};
+  if(row.currency!=='BRL')return {...row,partial:row.partial===true||pending.some(item=>validFinancialDay(item.iso)&&item.iso===row.iso)};
   const cycle=observedStatementCycle(rosterOperationalDateAt(row.iso,12),'roster_brt'),start=rosterOperationalIso(cycle.start),end=rosterOperationalIso(cycle.end);
   if(!cycles.has(start)){
    let absent=false;for(const day=new Date(start+'T12:00:00Z');day.toISOString().slice(0,10)<=end;day.setUTCDate(day.getUTCDate()+1))if(!coveredDays?.includes(day.toISOString().slice(0,10)))absent=true;
    const missing=financialMonths({start,end,kind:'custom',valid:true}).some(month=>!covered.includes(month));
    cycles.set(start,{date:observedBrlPaymentDate(rosterOperationalIso(cycle.payment)),partial:absent||missing||rowsInObservedCycle(pending,cycle).length>0||pending.some(item=>!validFinancialDay(item.iso))});
   }
-  const item=cycles.get(start)!;return {...row,expectedPaymentDate:item.date||undefined,expectedPaymentTimezone:item.date?'America/Sao_Paulo':undefined,partial:item.partial};
+  const item=cycles.get(start)!;return {...row,expectedPaymentDate:item.date||undefined,expectedPaymentTimezone:item.date?'America/Sao_Paulo':undefined,partial:item.partial||row.partial===true};
  });
 }
 export function nextAllowancePayment(rows: AllowanceRow[], pending: Array<{iso:string;airport:string;reason?:string}>, covered: string[], now = new Date(), coveredDays?: string[]): NextPayment {

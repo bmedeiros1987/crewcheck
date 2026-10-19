@@ -28,7 +28,13 @@ try {
  const now=new Date('2026-10-18T15:00:00Z');
  const payment=nextAllowancePayment([...rows,{...rows[0],iso:week[6],currency:'USD',value:30,convertedBRL:null,expectedPaymentDate:week[6],expectedPaymentTimezone:'America/Sao_Paulo'}],[{iso:week[0],airport:'ZZZ',reason:'Synthetic unknown taxi'}],['2026-10'],now,week);
  assert.deepEqual(payment.calculationTotals,{BRL:70,USD:30});assert.equal(payment.totals,null);assert.equal(payment.expectedPaymentDates.BRL,'2026-10-22');assert.match(payment.currencyTiming.USD,/20\/10\/2026/);
- const local=localUpcomingAllowance(payment,now);assert.equal(local.state,'incomplete');assert.deepEqual(local.events.map(e=>[e.expectedPaymentDate,e.currency,e.amountMinor]),[['2026-10-20','USD',3000],['2026-10-22','BRL',7000]]);assert(local.events.every(x=>x.partial));
+ // A partial hero week must not turn the next complete weekly group partial.
+ const secondWeek=Array.from({length:7},(_,i)=>'2026-10-'+(21+i));
+ const separated=nextAllowancePayment([...rows,...secondWeek.map(iso=>({...rows[0],iso}))],[{iso:week[0],airport:'ZZZ'}],['2026-10'],now,[...week,...secondWeek]);
+ const separatePreview=localUpcomingAllowance(separated,now);
+ assert.equal(separatePreview.state,'incomplete');
+ assert.deepEqual(separatePreview.events.map(e=>[e.expectedPaymentDate,e.amountMinor,e.partial]),[['2026-10-22',7000,true],['2026-10-29',7000,false]],'partiality belongs to one weekly date/currency group');
+ const local=localUpcomingAllowance(payment,now);assert.equal(local.state,'incomplete');assert.deepEqual(local.events.map(e=>[e.expectedPaymentDate,e.currency,e.amountMinor]),[['2026-10-20','USD',3000],['2026-10-22','BRL',7000]]);assert.deepEqual(local.events.map(x=>x.partial),[false,true],'foreign date without its own issue stays complete despite partial BRL week');
  assert.equal(localUpcomingAllowance({...payment,kind:'payroll'},now),null,'never turn salary month into an exact date');
  assert.equal(localUpcomingAllowance({...payment,lines:[],upcomingLines:[]},now).events.length,0,'empty is never zero');
  assert.equal(localUpcomingAllowance({...payment,upcomingLines:undefined,expectedPaymentDates:{BRL:'2026-10-17'},lines:rows},now).events.length,0,'exclude past dates');
@@ -41,6 +47,18 @@ try {
  const futureUnknownCalendar=nextAllowancePayment([{...rows[0],iso:'2026-12-31'}],[],['2026-12'],new Date('2026-12-27T15:00:00Z'),['2026-12-31']);assert.equal(localUpcomingAllowance(futureUnknownCalendar,new Date('2026-12-27T15:00:00Z')).events.length,0,'unknown2027 cycle never borrows the hero date');
  const noLink=localUpcomingAllowance({...payment,upcomingLines:undefined,lines:[{...rows[0],currency:'USD',value:30}]},now);assert.equal(noLink.events.length,0,'foreign meal date alone is not a flight link');
  const partialOrder=localUpcomingAllowance({...payment,calculationPartial:false,upcomingLines:[{...rows[0],value:1,expectedPaymentDate:'2026-10-22',expectedPaymentTimezone:'America/Sao_Paulo',partial:true},{...rows[0],value:2,expectedPaymentDate:'2026-10-22',expectedPaymentTimezone:'America/Sao_Paulo',partial:false}]},now);assert.equal(partialOrder.state,'incomplete');assert.equal(partialOrder.events[0].partial,true);assert.equal(partialOrder.events[0].amountMinor,300);
+ // Group identity is date AND currency, independent of input order. Invalid
+ // amounts/timing taint only their own group, including when encountered first.
+ const line=(date,currency,value,extra={})=>({...rows[0],currency,value,expectedPaymentDate:date,expectedPaymentTimezone:'America/Sao_Paulo',...extra});
+ const project=lines=>localUpcomingAllowance({...payment,calculationPartial:true,upcomingLines:lines},now);
+ const mixed=[line('2026-10-22','BRL',1,{partial:true}),line('2026-10-22','USD',2),line('2026-10-23','BRL',3)];
+ for(const lines of [mixed,[...mixed].reverse()])assert.deepEqual(project(lines).events.map(e=>[e.expectedPaymentDate,e.currency,e.amountMinor,e.partial]),[['2026-10-22','BRL',100,true],['2026-10-22','USD',200,false],['2026-10-23','BRL',300,false]]);
+ for(const bad of [line('2026-10-22','BRL',null),line('2026-10-22','USD',1,{expectedPaymentTimezone:'UTC'})])for(const lines of [[bad,line('2026-10-22',bad.currency,2),line('2026-10-23','BRL',3)],[line('2026-10-23','BRL',3),line('2026-10-22',bad.currency,2),bad]]) {
+   const preview=project(lines);assert.equal(preview.state,'incomplete');assert.equal(preview.events[0].partial,true);assert.equal(preview.events[0].amountMinor,200);assert.equal(preview.events[1].partial,false);
+ }
+ assert.equal(project([line('2026-10-22','USD',2)]).events[0].partial,false,'global state remains incomplete without fabricating group partiality');
+ const foreignOwnIssue=nextAllowancePayment([futureRow,{...futureRow,iso:'2026-10-22',expectedPaymentDate:'2026-10-22'}],[{iso:futureRow.iso,airport:'ZZZ'}],['2026-10'],now,days);
+ assert.deepEqual(localUpcomingAllowance(foreignOwnIssue,now).events.map(e=>e.partial),[true,false],'foreign pending source day affects only its group');
  const legacy={basePay:99,baseConfigured:false,fixedAdditions:99,fixedAdditionsConfigured:false,inssDeduction:99,irrfDeduction:99,otherDeductions:99,configured:true,source:'Synthetic'};
  const v=(amountMinor,kind='earning')=>({amountMinor,currency:'BRL',kind,source:'manual',sourceId:'synthetic',recurrence:'once'});
  const record={schema:1,ownerId:'synthetic',month,revision:1,closed:false,values:{fixed_with_co:v(340000),other_fixed:v(1000),inss:v(10000,'deduction'),irrf:v(0,'deduction'),other_deductions:v(2000,'deduction')}};
