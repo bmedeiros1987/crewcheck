@@ -16,7 +16,13 @@ const display = value => value === null ? 'pendente' : new Intl.DateTimeFormat('
 function baseDay(day) {
   const input = String(day?.date || '');
   const br = input.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  const value = br ? `${br[3]}-${br[2]}-${br[1]}` : /^\d{4}-\d{2}-\d{2}$/.test(input) ? input : '';
+  // The canonical parser accepts this complete published format. ISO is not
+  // accepted by that parser: never let its fallback silently select day 1.
+  if (!br || Number(br[3]) < 1000) return null;
+  const value = `${br[3]}-${br[2]}-${br[1]}`;
+  for (const [field, part] of [['dayNumber', br[1]], ['month', br[2]], ['year', br[3]]]) {
+    if (day[field] !== undefined && day[field] !== null && day[field] !== '' && Number(day[field]) !== Number(part)) return null;
+  }
   return value && stamp(value + 'T12:00:00Z')?.slice(0, 10) === value ? value : null;
 }
 // Validate explicit civil-day evidence against the consumer's existing instants.
@@ -53,7 +59,8 @@ export function buildDutyFacts({ profile, snapshot, accessAllowed = false, page 
       summary: `Revisão factual · BRT\n${header}\n${caveat}\n\n${lines.length ? lines.join('\n\n') : 'Nenhuma programação mensurável neste snapshot.'}${pageCount > 1 ? `\nPágina ${currentPage + 1}/${pageCount} · registros ${offset + 1}–${offset + shown.length} de ${items.length}.` : ''}${pending.length ? '\nPendente: ' + pending.join(' ') : ''}\n\nLimite aplicável e conformidade: indeterminados.`,
       basis: `Fundamento da leitura\n${common}\n\nOrigem: horários e proveniência preservados no snapshot; atualização não comprova nova importação da escala. Revisão identifica o conteúdo consultado, sem consulta à escala ativa.\n\nMedição: motor canônico existente, agrupamento por jornada e extremos publicados. Chegada não comprova liberação; tempo em solo permanece dentro da jornada. Intervalo não comprova repouso legal ou descanso realizado.\n\n${shown.map((item, i) => `${i + 1}. ${item.kind === 'interval' ? 'Intervalo' : 'Programação ' + item.date} · início: ${sourceLabel(item.startSource)} (${item.startLiteral || display(item.start)}); fim: ${sourceLabel(item.endSource)} (${item.endLiteral || display(item.end)}). ${item.reasons.join(' ') || 'Extremos publicados comprovados para esta medição.'}`).join('\n')}\n${pending.join(' ')}\n\nSem regra aplicável verificada, regime e composição confirmados, não há limite, irregularidade, extensão permitida ou autorização operacional.` };
   };
-  if (snapshot.roster.days.length > 370 || snapshot.roster.days.some(day => !baseDay(day) || !Array.isArray(day.legs) || day.legs.length > 12 || day.legs.some(leg => !leg || typeof leg !== 'object' || Array.isArray(leg)))) return result([], ['Datas ou estrutura da publicação incompletas; nenhum horário de fallback foi medido.']);
+  if (snapshot.roster.days.some(day => !baseDay(day))) return result([], ['Data inválida, sem formato DD/MM/AAAA comprovado ou conflitante com dia/mês/ano do registro. Nenhum horário de fallback foi medido.']);
+  if (snapshot.roster.days.length > 370 || snapshot.roster.days.some(day => !Array.isArray(day.legs) || day.legs.length > 12 || day.legs.some(leg => !leg || typeof leg !== 'object' || Array.isArray(leg)))) return result([], ['Estrutura da publicação incompleta; nenhum horário de fallback foi medido.']);
   const sourceRows = new Map();
   for (const day of snapshot.roster.days) {
     const key = JSON.stringify([baseDay(day), day.type, day.pairingCode, day.legs.map(leg => [leg.flightNumber, leg.origin, leg.destination, leg.departureTime, leg.arrivalTime]).sort()]);

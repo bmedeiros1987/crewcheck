@@ -59,7 +59,7 @@ test('intermediate standby availability blocks a claimed free rest interval', ()
 });
 test('malformed leg is unavailable instead of falling back to a clock or throwing', () => {
   const result = read([day({ legs: [null] })]);
-  assert.equal(result.items.length, 0); assert.match(result.summary, /estrutura.*incompletas/);
+  assert.equal(result.items.length, 0); assert.match(result.summary, /[Ee]strutura.*incompleta/);
 });
 test('standby code variant cannot create free time before or after availability', () => {
   const result = read([day(), day({ date: '11/10/2032', type: 'HSBE', pairingCode: 'HSBE', legs: [], dutyReport: '10:00', dutyDebrief: '18:00' }), day({ date: '12/10/2032' })]);
@@ -105,4 +105,42 @@ test('bounded pages cover all records and keep one snapshot signature', () => {
   assert.equal(first.pageCount, 3); assert.equal(second.page, 1); assert.equal(last.page, 2);
   assert.equal(first.signature, second.signature); assert.match(second.summary, /Página 2\/3/);
   assert.match(second.basis, /14:05/); assert(first.summary.length < 3900); assert(second.summary.length < 3900);
+});
+test('ISO date is explicitly refused before canonical day-1 fallback', () => {
+  const result = read([day({ date: '2032-10-10' })]);
+  assert.equal(result.state, 'incomplete'); assert.equal(result.items.length, 0);
+  assert.match(result.summary, /DD\/MM\/AAAA/); assert(!result.summary.includes('6h40'));
+  assert(!result.summary.includes('01/10/2032'));
+});
+test('complete published DD/MM/YYYY is accepted without normalizing the source', () => {
+  const input = snapshot([day({ date: '10/10/2032', dayNumber: 10 })]);
+  const before = JSON.stringify(input); const result = read(undefined, { snapshot: input });
+  assert.equal(result.items[0].date, '2032-10-10'); assert.equal(result.items[0].minutes, 400);
+  assert.match(result.summary, /10\/10\/2032, 07:25/); assert.equal(JSON.stringify(input), before);
+});
+test('unproved alternate publication formats are explicit pending, never inferred', () => {
+  for (const date of ['10-OCT-2032', '10/10', '10/10/32']) {
+    const result = read([day({ date })]); assert.equal(result.items.length, 0); assert.match(result.summary, /DD\/MM\/AAAA/);
+  }
+});
+test('invalid civil dates never roll forward through Date normalization', () => {
+  for (const date of ['31/02/2032', '29/02/2031', '00/10/2032', '10/13/2032', '2032-02-30', '10/10/0032']) {
+    const result = read([day({ date })]); assert.equal(result.items.length, 0); assert.equal(result.state, 'incomplete');
+  }
+});
+test('conflicting original date and normalized numeric components are rejected', () => {
+  for (const extra of [{ dayNumber: 1 }, { month: 11 }, { year: 2033 }]) {
+    const input = snapshot([day(extra)]), before = JSON.stringify(input);
+    const result = read(undefined, { snapshot: input }); assert.equal(result.items.length, 0);
+    assert.match(result.summary, /conflitante/); assert.equal(JSON.stringify(input), before);
+  }
+});
+for (const [before, after, firstMonth, nextMonth, firstYear, nextYear] of [
+  ['30/11/2032', '01/12/2032', 11, 12, 2032, 2032],
+  ['31/12/2032', '01/01/2033', 12, 1, 2032, 2033],
+]) test(`published overnight ${before} → ${after} retains month/year and measured duration`, () => {
+  const first = day({ date: before, month: firstMonth, year: firstYear, dutyReport: '22:15', dutyDebrief: '23:55', legs: [leg({ departureTime: '23:10', arrivalTime: '23:55' })] });
+  const second = day({ date: after, month: nextMonth, year: nextYear, dutyReport: '00:45', dutyDebrief: '02:40', legs: [leg({ flightNumber: 'QA0002', origin: 'GRU', destination: 'BSB', departureTime: '00:45', arrivalTime: '02:10' })] });
+  const result = read([first, second]); const duty = result.items.find(item => item.kind === 'duty');
+  assert.equal(duty.minutes, 265); assert.match(result.summary, new RegExp(before)); assert.match(result.summary, new RegExp(after));
 });

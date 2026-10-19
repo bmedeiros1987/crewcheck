@@ -105,6 +105,10 @@ await run({ message: { ...message('/conformidade').message, chat: { id: 123, typ
 snapshot = makeSnapshot([day({ dutyDebriefSource: 'estimated' })]); await ask(); assert.match(sent.at(-1).text, /Duração pendente/); assert(!sent.at(-1).text.includes('6h40'));
 const coreReply = vm.runInContext('conciergeComplianceReply', context)(snapshot, profile);
 assert.match(coreReply, /Duração pendente/);
+snapshot = makeSnapshot([day({ date: '2032-10-10' })]); await ask();
+assert.match(sent.at(-1).text, /DD\/MM\/AAAA/); assert(!sent.at(-1).text.includes('6h40'));
+assert(!sent.at(-1).text.includes('01/10/2032'));
+await run(callback(button('Fundamento'))); assert.match(sent.at(-1).text, /DD\/MM\/AAAA/);
 assert(sent.every(item => !item.text.includes(baseProfile.email) && !item.text.includes(baseProfile.accessKeyHash)));
 assert(answers.length > 0);
 console.log('PASS prepared actual processTelegramUpdate + runtime + sendTelegramMessage + access predicate: slash/button parity, foundation/back, revision change, old snapshot, replay, binding/owner/group denial and in-flight relink; simulated transport only.');
