@@ -18,6 +18,39 @@ try {
    perDiemConfig:()=>({rates:{domestic:{mainMeal:100,currency:'BRL',label:'SYNTHETIC'}},domesticBreakfast:25,domesticMainMealSource:'synthetic',domesticBreakfastSource:'synthetic',breakfastPercent:.25,exchangeRates:{BRL:1},source:'SYNTHETIC NOT A TARIFF',act:{version:'SYNTHETIC'}}),
    loadAirportPerDiemOverrides:()=>({}),resolvePerDiemRule:origin=>({rateKey:'domestic',airport:origin,reason:'synthetic fixture'}),readOptionalNumberSetting:()=>null});
  vm.runInContext(ts.transpileModule(functions.map(n=>n.getText(home)).join('\n')+'\nglobalThis.subject={buildLegs,calculateSalary,calculatePerDiem,financialFlightRule,eventStartDateTime,eventEndDateTime,nightHoursInsideWindow,isSundayOrConfiguredHoliday,moneyBRL};',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
+
+ // Compatibility characterization: metadata never changes existing numeric buckets.
+ // These synthetic expectations describe the current estimate, not a certified
+ // corporate KM/night policy. DFS/extra must not apply a second premium.
+ const originalDistance=context.flightDistanceKmFromEvent;
+ context.flightDistanceKmFromEvent=event=>event.origin==='ZZZ'?0:1000;
+ for(const timezone of ['UTC','America/Sao_Paulo','Asia/Tokyo']) {
+   process.env.TZ=timezone;
+   for(const [name,day,start,end,workType,origin,expectedDay,expectedPremium,expectedProduction] of [
+     ['evening','2032-02-02','18:00','20:00','OP','BSB',1000,0,1000],
+     ['morning','2032-02-02','05:00','06:00','OP','BSB',1000,0,1000],
+     ['mixed','2032-02-02','21:30','22:30','OP','BSB',500,500,1500],
+     ['night','2032-02-02','22:00','23:00','OP','BSB',0,1000,2000],
+     ['sunday-day','2032-02-01','12:00','13:00','OP','BSB',0,1000,2000],
+     ['sunday-night','2032-02-01','22:00','23:00','OP','BSB',0,1000,2000],
+     ['extra-night','2032-02-02','22:00','23:00','PS','BSB',0,1000,2000],
+     ['missing-distance','2032-02-02','12:00','13:00','OP','ZZZ',0,0,0]
+   ]) {
+     const event={id:name,kind:'flight',flightNumber:'SYN9000',origin,destination:'GRU',date:new Date(day+'T12:00:00-03:00'),day:{date:day.split('-').reverse().join('/')},leg:{workType},operationalTimeZone:'America/Sao_Paulo',canonical:{id:name,date:day,startDateTime:day+'T'+start+':00-03:00',endDateTime:day+'T'+end+':00-03:00'}};
+     const result=context.subject.calculateSalary([event,event],{year:2032,month:2,days:[event.day]});
+     assert.equal(result.rows.length,1,'duplicate flight remains once');
+     const row=result.rows[0];
+     assert.equal(row.dayKm,expectedDay,name);assert.equal(row.nightKm,expectedPremium,name);
+     assert.equal(row.production,expectedProduction,name);assert.equal(row.total,expectedProduction,name);
+     assert.equal(row.dayKm+row.nightKm,row.km,'tariff buckets partition distance once');
+     assert.equal(result.gross,1000+expectedProduction,'metadata adds no earnings');
+     assert.equal(row.distanceBasis,origin==='ZZZ'?'unavailable':'geographic_estimate');
+     assert.equal(row.confirmedRemunerableKm,null,'neither coordinates nor tariff prove remunerable KM');
+     assert.equal(row.kmGrouping,'base_and_premium_tariff');
+     if(name==='sunday-day')assert.equal(context.subject.nightHoursInsideWindow(event.canonical.startDateTime,event.canonical.endDateTime,'America/Sao_Paulo'),0,'premium bucket is not physical night KM');
+   }
+ }
+ context.flightDistanceKmFromEvent=originalDistance;
  const fixture=JSON.parse(fs.readFileSync('scripts/fixtures/salary-night-3900-4527.json','utf8'));
  const text=fixture.sourceText;
  const outputs=[];
