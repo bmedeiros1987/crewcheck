@@ -152,6 +152,16 @@ assert.equal(await menu.text({ ...message('LA1234'), message_id: undefined, date
 assert.equal(calls.length, callCount, 'old/reordered/uncorrelated input cannot call producer');
 assert.equal(await menu.text(message('LA1234')), true);
 assert.equal(calls.length, callCount + 1, 'new input after actual prompt can call producer once');
+await askRadar();
+const firstPrompt = outgoingId;
+await menu.text(message('não é um voo'));
+const currentPrompt = outgoingId;
+assert(currentPrompt > firstPrompt);
+const beforeReprompt = calls.length;
+await menu.text({ ...message('LA1234'), reply_to_message: { message_id: firstPrompt } });
+assert.equal(calls.length, beforeReprompt, 'answer to superseded question is rejected');
+await menu.text({ ...message('LA1234'), reply_to_message: { message_id: currentPrompt } });
+assert.equal(calls.length, beforeReprompt + 1, 'reply to the actually delivered replacement question works');
 output = await home();
 await menu.callback(query(dataFor(output, 'Mais')));
 const emergencyQuery = query(dataFor(sent.at(-1), 'Emergência'));

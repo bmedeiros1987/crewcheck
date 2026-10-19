@@ -10,6 +10,9 @@ on:
       - '.github/workflows/telegram-concierge-menu.yml'
 permissions:
   contents: read
+concurrency:
+  group: telegram-concierge-menu-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   offline:
     runs-on: ubuntu-latest

@@ -143,7 +143,20 @@ export function createTelegramMenu(deps, now = Date.now) {
       || flow.promptId === null || message.message_id <= flow.promptId || message.date < flow.promptDate
       || (message.reply_to_message && message.reply_to_message.message_id !== flow.promptId)) return true;
     const valid = ['radar', 'portao'].includes(flow.action) ? /^(LA|JJ|G3|AD|AZU|LAN|TAM)\s?\d{2,5}$/.test(value) : /^[A-Z]{4}$/.test(value);
-    if (!valid) { await deps.send(chat, `${parameters[flow.action]}\nPara sair, escreva Cancelar.`, { reply_markup: { inline_keyboard: [[{ text: 'Cancelar', callback_data: 'cc_nav:entry:home' }]] } }); return true; }
+    if (!valid) {
+      flow.promptId = null;
+      flow.promptDate = null;
+      const delivered = await deps.send(chat, `${parameters[flow.action]}\nPara sair, escreva Cancelar.`, { reply_markup: { inline_keyboard: [[{ text: 'Cancelar', callback_data: 'cc_nav:entry:home' }]] } });
+      const prompt = delivered?.data?.result;
+      if (Number.isSafeInteger(prompt?.message_id) && prompt.message_id > 0 && Number.isSafeInteger(prompt?.date) && prompt.date > 0) {
+        flow.promptId = prompt.message_id;
+        flow.promptDate = prompt.date;
+      } else {
+        if (flows.get(chat) === flow) flows.delete(chat);
+        await send(chat, 'Não consegui abrir a pergunta agora. Escolha a consulta novamente.');
+      }
+      return true;
+    }
     flows.delete(chat); // Duplicate text cannot execute the same pending flow twice.
     await execute(flow.action, profile, value);
     return true;
