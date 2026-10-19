@@ -37,6 +37,30 @@ function markerMatches(value, day, instant) {
   expected.setUTCDate(expected.getUTCDate() + Number(match[1]));
   return expected.toISOString().slice(0, 10) === civil(instant);
 }
+function preservedEvidenceConflicts(day) {
+  if (!day.publishedClockEvidence) return false;
+  const boundaries = value => JSON.stringify([value.dutyReport, value.dutyDebrief, value.dutyReportSource, value.dutyDebriefSource]);
+  const expected = boundaries(day), pending = [day.publishedClockEvidence], clocks = new Map();
+  let checked = 0;
+  // Canonical normalization preserves pre-selection records here. They remain
+  // evidence even when the outer row has already selected one physical leg.
+  while (pending.length) {
+    const record = pending.pop();
+    if (++checked > 4440 || !record || typeof record !== 'object' || boundaries(record) !== expected || !Array.isArray(record.legs)) return true;
+    if (record.records !== undefined) {
+      if (!Array.isArray(record.records) || record.records.length > 4440) return true;
+      pending.push(...record.records);
+    }
+    for (const leg of record.legs) {
+      if (!leg || typeof leg !== 'object') return true;
+      const key = String(leg.departureTime || '');
+      const value = JSON.stringify([leg.arrivalTime, leg.presentationTime]);
+      if (clocks.has(key) && clocks.get(key) !== value) return true;
+      clocks.set(key, value);
+    }
+  }
+  return false;
+}
 export function buildDutyFacts({ profile, snapshot, accessAllowed = false, page = 0 }) {
   const denied = { state: 'unavailable', signature: null, items: [], summary: 'Revisão da escala · snapshot não autorizado ou indisponível.', basis: 'Não há snapshot autorizado para esta consulta.' };
   if (!accessAllowed || !profile?.email || snapshot?.email !== profile.email
@@ -63,6 +87,7 @@ export function buildDutyFacts({ profile, snapshot, accessAllowed = false, page 
   if (snapshot.roster.days.length > 370 || snapshot.roster.days.some(day => !Array.isArray(day.legs) || day.legs.length > 12 || day.legs.some(leg => !leg || typeof leg !== 'object' || Array.isArray(leg)))) return result([], ['Estrutura da publicação incompleta; nenhum horário de fallback foi medido.']);
   const sourceRows = new Map();
   for (const day of snapshot.roster.days) {
+    if (preservedEvidenceConflicts(day)) return result([], ['Registros duplicados preservados têm extremos ou proveniência conflitantes ou não comprovados.']);
     // Recognize an occurrence before comparing its endpoints. Arrival/release
     // and their provenance are evidence, never part of duplicate identity.
     // Compare each repeated leg, including repeats inside a single source row.

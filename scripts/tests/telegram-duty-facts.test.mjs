@@ -4,6 +4,7 @@ import { prepareConciergeCanonicalBridge } from '../p1-concierge-journey/bridge.
 import { profile, leg, day, snapshot } from '../fixtures/concierge-duty-facts/synthetic.mjs';
 prepareConciergeCanonicalBridge();
 const { buildDutyFacts } = await import('../../server/concierge/duty-facts.mjs');
+const { normalizeRosterDays } = await import('../../server/concierge/generated/canonicalRoster.mjs');
 const read = (days = [day()], extra = {}) => buildDutyFacts({ profile, snapshot: snapshot(days), accessAllowed: true, ...extra });
 
 test('real canonical measurement; full dates, source and snapshot limits; immutable input', () => {
@@ -178,4 +179,21 @@ test('exact independent-review fixture: official positive, refused ISO and both 
     const result = read(days); assert.equal(result.state, 'incomplete'); assert(result.items.every(item => item.minutes === null));
     assert(!result.basis.includes('Extremos publicados comprovados'));
   }
+});
+test('previously normalized duplicates retain all preserved conflicting provenance', () => {
+  const published = day(), estimated = day({ dutyDebrief: '15:05', dutyDebriefSource: 'estimated', legs: [leg({ arrivalTime: '13:36' })] });
+  for (const days of [[published, estimated], [estimated, published]]) {
+    const input = snapshot(days); input.roster = normalizeRosterDays(input.roster);
+    assert.equal(input.roster.days[0].publishedClockEvidence.records.length, 2);
+    const result = read(undefined, { snapshot: input }); assert.equal(result.state, 'incomplete'); assert.equal(result.items.length, 0);
+    assert(!result.basis.includes('Extremos publicados comprovados'));
+  }
+});
+test('normalized identical duplicates preserve the available positive measurement', () => {
+  const input = snapshot([day(), day()]); input.roster = normalizeRosterDays(input.roster);
+  const result = read(undefined, { snapshot: input }); assert.equal(result.state, 'available'); assert.equal(result.items[0].minutes, 400);
+});
+test('preserved arrival conflict alone is not erased by physical leg selection', () => {
+  const input = snapshot([day(), day({ legs: [leg({ arrivalTime: '13:36' })] })]); input.roster = normalizeRosterDays(input.roster);
+  assert.equal(read(undefined, { snapshot: input }).items.length, 0);
 });

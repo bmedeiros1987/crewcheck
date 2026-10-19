@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import crypto from 'node:crypto';
 import { createTelegramMenu, menuTemplate } from '../server/concierge/telegram-menu.mjs';
 import { buildDutyFacts } from '../server/concierge/duty-facts.mjs';
+import { normalizeRosterDays } from '../server/concierge/generated/canonicalRoster.mjs';
 import { profile as baseProfile, leg, day, snapshot as makeSnapshot } from './fixtures/concierge-duty-facts/synthetic.mjs';
 
 const source = fs.readFileSync('server.mjs', 'utf8');
@@ -114,6 +115,8 @@ for (const days of [[published, estimated], [estimated, published]]) {
   snapshot = makeSnapshot(days); await ask(); assert.match(sent.at(-1).text, /duplicados.*conflitantes/);
   assert(!sent.at(-1).text.includes('6h40'));
   await run(callback(button('Fundamento'))); assert(!sent.at(-1).text.includes('Extremos publicados comprovados'));
+  snapshot = makeSnapshot(days); snapshot.roster = normalizeRosterDays(snapshot.roster);
+  await ask(); assert.match(sent.at(-1).text, /duplicados preservados/); assert(!sent.at(-1).text.includes('6h40'));
 }
 assert(sent.every(item => !item.text.includes(baseProfile.email) && !item.text.includes(baseProfile.accessKeyHash)));
 assert(answers.length > 0);
