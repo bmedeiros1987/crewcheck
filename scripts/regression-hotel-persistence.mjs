@@ -27,6 +27,13 @@ test('literal route GET is owner-scoped; schema absent preserves legacy reads an
   assert.equal((await h.sync(rosterBody)).body.hotelReconciliation.status,'review-required');
   assert.equal(h.rows[0].hotel_name,'Source A');
 });
+test('incompatible version column preserves legacy GET but cannot advertise writable v2',async()=>{
+  const h=harness([syntheticHotel({row_version:'not-a-version'})],{schemaPatch:{column_name:'row_version',data_type:'text',column_type:'text'}});
+  const result=await h.request();assert.equal(result.status,200);assert.equal(result.body.stayContractVersion,0);
+  assert.equal(result.body.stays[0].hotelName,'Source A');assert.equal(result.body.stays[0].rowVersion,null);
+  assert.equal(result.body.stays[0].bindingId,null);assert.equal(result.body.stays[0].reviewRequired,true);
+  assert.equal((await h.request('PATCH',association)).status,503);
+});
 test('v1/unversioned and extra room/grant/provider fields have no writable fallback',async()=>{
   const h=harness();for(const body of [{id:'stay-A',hotelName:'X'},{...association,contractVersion:1},{...association,room:'X'},{...association,shareSameHotel:false},{...association,transportProvider:'X'}])
     assert.equal((await h.request('PATCH',body)).status,400);
@@ -68,6 +75,13 @@ test('actual editor store retains stale baseline after B changes; reload replace
   assert.throws(()=>hotelOnlyPatch({baseline:draft.remoteBase,latest,hotelName:draft.draft.hotelName,contextRef:association.contextRef,contextSignature:association.contextSignature}),/origem deste rascunho/);
   const intentional=hotelOnlyPatch({baseline:hotelRemoteBaseline(latest),latest,hotelName:'Intentional C',contextRef:association.contextRef,contextSignature:association.contextSignature});
   assert.equal((await client.update(intentional)).persisted,true);
+});
+test('changed context signature requires review and is not reassociated by reload/confirmation',async()=>{
+  const h=harness();const client=clientFor(h);await client.update(association);const row=(await client.list()).stays[0];
+  const before=h.rows[0].row_version;
+  assert.throws(()=>hotelOnlyPatch({baseline:hotelRemoteBaseline(row),latest:row,hotelName:'Local',contextRef:row.contextRef,contextSignature:'changed-program'}),/revisão do vínculo/);
+  assert.equal((await h.request('PATCH',{...association,expectedVersion:row.rowVersion,contextSignature:'changed-program'})).status,409);
+  assert.equal(h.rows[0].row_version,before);
 });
 test('ABA cannot revive old route version even when hotel contents return',async()=>{
   const h=harness();const client=clientFor(h);await client.update(association);const original=(await client.list()).stays[0];

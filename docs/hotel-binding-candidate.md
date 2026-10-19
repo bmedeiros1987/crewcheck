@@ -6,7 +6,7 @@ hotel reconciliation. It has not been deployed or used against any real account.
 
 ## Final behavior
 
-- Readiness probes columns plus the unique owner/binding index without DDL. Missing
+- Readiness checks expected column types/defaults/nullability, unsigned BIGINT, full unique owner/binding index without prefixes, and InnoDB for profile/roster/stays without DDL. Missing
   schema or a failed probe leaves GET legacy-readable, v2 writes unavailable (503),
   and roster hotel reconciliation review-required. There is no writable v1 fallback.
 - Explicit user selection/confirmation associates one existing owned row to a
@@ -18,6 +18,7 @@ hotel reconciliation. It has not been deployed or used against any real account.
   override with provenance. UI/context metadata is explicit user association
   evidence, **not a provider occurrence reference**, and is never used by sync to
   infer source identity. Changed context/signature requires review, not auto-rebind.
+- Pending remote callbacks are invalidated by local edits/actions, cancellation, navigation, unmount and account changes. A late reload/association response cannot restore a captured draft or undo cancellation. Cancelling retains current room and lead in the local record. If an explicit remote association already committed, invalidating its response does not pretend to roll it back; the user must reread.
 - PATCH requires exact owner, ID, binding and decimal-string monotonic rowVersion.
   ABA, another device, stale draft and foreign/ambiguous binding are rejected.
   Readback must confirm v2 readiness, exact ID, context and requested hotel.
@@ -63,14 +64,17 @@ was available locally; real disposable InnoDB integration remains unverified.
 
 ## Local validation
 
-64 tests passed in each of UTC, America/Sao_Paulo and Asia/Tokyo on both raw and
+67 tests passed in each of UTC, America/Sao_Paulo and Asia/Tokyo on both raw and
 canonically prepared source. They exercise literal production functions extracted
 with the TypeScript parser, the real client/store and actual mysqlAdapter over a
 synthetic transactional native API. That lock queue is not an InnoDB substitute.
 
 The actual React editor → real client → literal routes → mysqlAdapter/synthetic DB
 browser scenario passed raw and prepared: explicit link, PATCH, repeated sync,
-reopen, stale draft rejection and intentional edit after explicit reload. TypeScript
+reopen, stale draft rejection and intentional edit after explicit reload. It also
+uses slow-GET barriers while editing room/lead, cancelling, navigating and changing
+accounts. The same test against the previous editor reproduced the reported loss
+of room edits, providing a negative control. TypeScript
 (noEmit, incremental false) passed raw/prepared. Canonical preparation and Vite
 prepared build passed. Browser requests are confined to a local fixture origin;
 no corporate document, real token, account or production database was used.

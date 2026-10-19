@@ -1690,7 +1690,8 @@ async function handleStays(req, res) {
   const stays = result.rows.map(row => ({ id: row.id, rosterKey: row.roster_key, stayDate: row.stay_date,
     hotelKey: row.hotel_key, hotelName: row.hotel_name, airport: row.airport, room: decryptPrivate(row.room_cipher),
     presentationTime: row.presentation_time, leadMinutes: row.lead_minutes, learnedSamples: row.sample_count || 0,
-    shareSameHotel: row.share_same_hotel, shareWithVisitors: row.share_with_visitors, ...hotelProjection(row) }));
+    shareSameHotel: row.share_same_hotel, shareWithVisitors: row.share_with_visitors,
+    ...(ready ? hotelProjection(row) : { bindingId: null, rowVersion: null, contextRef: null, contextSignature: null, state: 'legacy-unbound', manualOverride: false, reviewRequired: true }) }));
   return sendJson(res, 200, { ok: true, persisted: true, stayContractVersion: ready ? 2 : 0,
     hotelWriteReady: ready, hotelReadiness: ready ? 'ready' : 'schema-not-ready', activeRosterKey: active.rows[0]?.roster_key || null, savedStayId, stays });
 }

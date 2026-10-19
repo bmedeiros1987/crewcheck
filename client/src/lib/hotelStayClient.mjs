@@ -6,6 +6,8 @@ export function hotelRemoteBaseline(row) {
 }
 export function hotelOnlyPatch({ baseline, latest, hotelName, contextRef, contextSignature }) {
   if (baseline?.contractVersion !== 2) throw new Error('Rascunho sem vínculo remoto v2. Confirme o registro antes de sincronizar.');
+  if (baseline.contextRef !== contextRef || baseline.contextSignature !== contextSignature)
+    throw new Error('A programação mudou e exige revisão do vínculo. Recarregar não reassocia este registro; a edição permanece local.');
   const current = hotelRemoteBaseline(latest);
   if (!current || ['id', 'bindingId', 'rowVersion', 'rosterKey', 'contextRef', 'contextSignature'].some(key => current[key] !== baseline[key])
     || baseline.contextRef !== contextRef || baseline.contextSignature !== contextSignature)

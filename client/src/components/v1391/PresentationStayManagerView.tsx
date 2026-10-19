@@ -124,6 +124,13 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
   const dirty = useRef(false);
   const owner = useRef(getToken());
   const editSession = useRef(0);
+  // UI edits/actions invalidate pending remote responses before they can apply
+  // a closure captured before an await. Account/context fences remain separate.
+  const remoteOperation = useRef(0);
+  function invalidateRemoteResponse() { remoteOperation.current++; }
+  function requireUneditedResponse(operation: number) {
+    if (operation !== remoteOperation.current) throw new Error('A resposta remota foi descartada porque houve edição ou outra ação local. Seus ajustes foram preservados; recarregue novamente quando estiver pronto.');
+  }
   const drafts = useRef(new Map<string, { draft: StayDraft; manual: boolean; timeZone: string; choice: StayAlarmChoice | undefined; breakfastPlan: StayBreakfastPlan; apzDate: string; signature: string; apzConfirmed: boolean; apzSource: string; alarmCancelled: boolean; remoteBase?: HotelRemoteBaseline | null }>());
   const remoteBase = useRef<HotelRemoteBaseline | null | undefined>(undefined);
   const previousId = useRef('');
@@ -185,13 +192,13 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
   }
 
   useEffect(() => {
-    const reset = () => { editSession.current++; owner.current = getToken(); drafts.current.clear(); dirty.current = false; previousId.current = ''; remoteBase.current = undefined; setBindingChoice(''); setHotelWriteReady(false); setActiveRosterKey(''); setStays([]); setHomeAddress(''); setPostalCode(''); setBusy(false); setQuery(''); setSelectedId(''); setHotelTimeZone(''); setApzDate(''); setAlarmChoice(undefined); setBreakfastPlan('unknown'); const settings = loadStayEditor(); setDisplayPreference(settings.timeZonePreference); setDefaultLead(settings.defaultLeadMinutes); setDefaultInput(String(settings.defaultLeadMinutes)); setDefaultWithoutBreakfast(settings.defaultWithoutBreakfastMinutes); setWithoutBreakfastInput(String(settings.defaultWithoutBreakfastMinutes)); setApzConfirmed(false); setApzSource('absent'); setAlarmCancelled(false); setDraft({ hotelName: '', airport: '', stayDate: '', room: '', presentationTime: '', leadMinutes: '', shareSameHotel: false }); };
+    const reset = () => { remoteOperation.current++; editSession.current++; owner.current = getToken(); drafts.current.clear(); dirty.current = false; previousId.current = ''; remoteBase.current = undefined; setBindingChoice(''); setHotelWriteReady(false); setActiveRosterKey(''); setStays([]); setHomeAddress(''); setPostalCode(''); setBusy(false); setQuery(''); setSelectedId(''); setHotelTimeZone(''); setApzDate(''); setAlarmChoice(undefined); setBreakfastPlan('unknown'); const settings = loadStayEditor(); setDisplayPreference(settings.timeZonePreference); setDefaultLead(settings.defaultLeadMinutes); setDefaultInput(String(settings.defaultLeadMinutes)); setDefaultWithoutBreakfast(settings.defaultWithoutBreakfastMinutes); setWithoutBreakfastInput(String(settings.defaultWithoutBreakfastMinutes)); setApzConfirmed(false); setApzSource('absent'); setAlarmCancelled(false); setDraft({ hotelName: '', airport: '', stayDate: '', room: '', presentationTime: '', leadMinutes: '', shareSameHotel: false }); };
     window.addEventListener('crewcheck:auth-changed', reset); window.addEventListener('crewcheck:auth-expired', reset);
     const onStorage = (event: StorageEvent) => { if (['crewcheck_auth_token', 'crewcheck_auth_user'].includes(event.key || '')) reset(); };
     window.addEventListener('storage', onStorage);
     if (owner.current !== getToken()) reset();
     refresh().catch(() => undefined);
-    return () => { editSession.current++; window.removeEventListener('crewcheck:auth-changed', reset); window.removeEventListener('crewcheck:auth-expired', reset); window.removeEventListener('storage', onStorage); };
+    return () => { remoteOperation.current++; editSession.current++; window.removeEventListener('crewcheck:auth-changed', reset); window.removeEventListener('crewcheck:auth-expired', reset); window.removeEventListener('storage', onStorage); };
   }, []);
 
   useEffect(() => {
@@ -287,7 +294,7 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
       const accountId = stayEditorAccount();
       if (!selected || !accountId || owner.current !== getToken() || !editorSessionCurrent()) throw new Error('Reabra este pernoite na sua conta.');
       const current = loadStayEditor();
-      const record = current.stays[selected.id] || { eventId: selected.id, signature: eventSignature.current, draft, timeZone: hotelTimeZone, apzDate, apzSource: 'absent', apzConfirmed: false };
+      const record = { ...current.stays[selected.id], eventId: selected.id, signature: eventSignature.current, draft, timeZone: hotelTimeZone, apzDate, apzSource, apzConfirmed, choice: alarmChoice, breakfastPlan, remotePersisted: false };
       persistStayEditor({ ...current, stays: { ...current.stays, [selected.id]: { ...record, alarmState: 'cancelled' } } }, accountId);
       setAlarmCancelled(true);
       const result = await alarmController.current.cancel({ accountId: stayEditorAccount(), eventId: selected?.id });
@@ -298,7 +305,7 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
   function acceptRemoteHotel(row: any) {
     const baseline = hotelRemoteBaseline(row);
     if (!selected || !baseline || baseline.contextRef !== selected.id || baseline.contextSignature !== eventSignature.current)
-      throw new Error('O vínculo não corresponde à programação atual. Confirme o registro explicitamente.');
+      throw new Error('O vínculo não corresponde à programação atual. É necessária revisão do vínculo; recarregar ou confirmar não reassocia este registro.');
     remoteBase.current = baseline;
     const nextDraft = { ...draft, hotelName: row.hotelName };
     setDraft(nextDraft); drafts.current.delete(selected.id); dirty.current = true;
@@ -311,11 +318,12 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
   }
   async function reloadRemoteHotel() {
     if (!selected || !editorSessionCurrent()) return;
-    const session = editSession.current, token = getToken(), id = remoteBase.current?.id;
+    const session = editSession.current, token = getToken(), id = remoteBase.current?.id, operation = ++remoteOperation.current;
     try {
       if (!id) throw new Error('Selecione e confirme o registro antes de recarregar.');
       const payload = await listPlatformStays();
       if (session !== editSession.current || token !== getToken() || !editorSessionCurrent() || previousId.current !== selected.id) return;
+      requireUneditedResponse(operation);
       if (!payload.ok || payload.localOnly || payload.stayContractVersion !== 2 || !payload.hotelWriteReady) throw new Error('Consulta remota indisponível.');
       const row = payload.stays.find((item: any) => item.id === id);
       acceptRemoteHotel(row); setStays(payload.stays);
@@ -324,7 +332,7 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
   }
   async function associateRemoteHotel() {
     if (!selected || !editorSessionCurrent() || !hotelWriteReady) return;
-    const session = editSession.current, token = getToken(), contextRef = selected.id, contextSignature = eventSignature.current;
+    const session = editSession.current, token = getToken(), contextRef = selected.id, contextSignature = eventSignature.current, operation = ++remoteOperation.current;
     setBusy(true);
     try {
       const row = stays.find(item => item.id === bindingChoice);
@@ -335,6 +343,7 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
         expectedVersion: row.rowVersion, confirmation: 'associate-this-existing-stay', contextRef, contextSignature,
       });
       if (session !== editSession.current || token !== getToken() || !editorSessionCurrent() || previousId.current !== contextRef || eventSignature.current !== contextSignature) return;
+      requireUneditedResponse(operation);
       if (!payload.ok || payload.localOnly || payload.stayContractVersion !== 2 || !payload.hotelWriteReady) throw new Error('Vínculo remoto não confirmado.');
       acceptRemoteHotel(payload.stays.find((item: any) => item.id === row.id)); setStays(payload.stays);
       toast.info('Registro vinculado e hotel remoto carregado. Edite e salve a escolha manual desejada.');
@@ -345,19 +354,21 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
   async function saveStay() {
     if (!selected || owner.current !== getToken() || !editorSessionCurrent()) return toast.info('Selecione a programação nesta conta.');
     if (selected.kind === 'stay') {
-      const session = editSession.current, token = getToken(), eventId = selected.id, baseline = remoteBase.current;
+      const session = editSession.current, token = getToken(), eventId = selected.id, baseline = remoteBase.current, operation = ++remoteOperation.current;
       try { saveLocalStay(); } catch (error) { toast.error(error instanceof Error ? error.message : 'Não foi possível salvar neste aparelho.'); return; }
       setBusy(true);
       try {
         const payload = await listPlatformStays();
         if (session !== editSession.current || token !== getToken() || !editorSessionCurrent() || previousId.current !== selected.id) return;
+        requireUneditedResponse(operation);
         if (!payload.ok || payload.localOnly || payload.stayContractVersion !== 2 || !payload.hotelWriteReady) throw new Error('Servidor ainda não confirmou o contrato seguro de pernoites.');
-        if (needsReview) throw new Error('A programação mudou. Reconfirme o vínculo antes de sincronizar.');
+        if (needsReview) throw new Error('A programação mudou e exige revisão do vínculo. Recarregar ou confirmar não reassocia este registro; seus ajustes continuam locais.');
         const existing = payload.stays.find((item: any) => item.id === baseline?.id);
         const patch = hotelOnlyPatch({ baseline, latest: existing, hotelName: draft.hotelName.trim(),
           contextRef: selected.id, contextSignature: eventSignature.current });
         const saved = await updatePlatformStay(patch);
         if (session !== editSession.current || token !== getToken() || !editorSessionCurrent() || previousId.current !== selected.id) return;
+        requireUneditedResponse(operation);
         const remote = saved.stays.find((item: any) => item.id === saved.savedStayId);
         remoteBase.current = hotelRemoteBaseline(remote);
         setStays(saved.stays);
@@ -387,7 +398,9 @@ export default function PresentationStayManagerView({ events, initialStayId, ini
     }
   }
 
-  return <div ref={editorAnchor} className="cc-stay-editor-anchor"><section ref={editorRoot} className="cc-stay-editor">
+  return <div ref={editorAnchor} className="cc-stay-editor-anchor"><section ref={editorRoot} className="cc-stay-editor"
+    onChangeCapture={() => { invalidateRemoteResponse(); dirty.current = true; }}
+    onClickCapture={event => { if ((event.target as HTMLElement).closest('button,a,summary')) invalidateRemoteResponse(); }}>
     <div className="cc-stay-editor-header"><V139Header hideBrand={embedded} title="Apresentação, hotel e descanso" detail="Edite o horário, informe hotel/quarto e mantenha o endereço de casa para descansos na base." onBack={contextId || entry.orphaned ? () => { returnFromStayProgramEditor(); } : undefined} backLabel={contextId ? 'Voltar ao pernoite' : entry.orphaned ? 'Voltar à lista de pernoites' : undefined}/></div>
     <div className="cc-stay-editor-content">
     {entry.orphaned && <p role="alert">O editor foi recarregado. Nenhum pernoite foi selecionado automaticamente. Volte à lista ou selecione a programação explicitamente.</p>}

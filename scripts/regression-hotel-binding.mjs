@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { hotelSchemaMetadata, hotelEngineMetadata } from './fixtures/hotel-schema.mjs';
 import { mysqlAdapter } from '../server/mysql-platform-adapter.mjs';
-import { HOTEL_SCHEMA_COLUMNS, associateHotel, patchHotel, hotelProjection, reconcileHotels } from '../server/hotel-stay-model.mjs';
+import { associateHotel, patchHotel, hotelProjection, reconcileHotels } from '../server/hotel-stay-model.mjs';
 import { hotelReadiness, runHotelTransaction } from '../server/hotel-stay-repository.mjs';
 
 const legacy = (extra = {}) => ({ id: 'synthetic-stay', owner_email: 'owner-A', roster_key: '2030-01',
@@ -20,14 +21,15 @@ const sync = observations => ({ action: 'sync', owner: 'owner-A', rosterKey: '20
 const options = { hotelKey: value => value.toLowerCase().replaceAll(' ', '-') };
 // Real placeholder/result adapter over a synthetic, transactional native query API.
 // Serial owner-lock queue is a test model, not an InnoDB integration test.
-function database(initial = [legacy()], { ready = true, unique = true, fail = null, profileExists = true } = {}) {
+function database(initial = [legacy()], { ready = true, unique = true, fail = null, profileExists = true, schemaPatch = null, enginePatch = null, indexPrefix = null } = {}) {
   let rows = structuredClone(initial), tail = Promise.resolve(); const log = [];
   const native = { async getConnection() {
     let unlock, backup;
     return { release() {}, async query(sql, p) {
       log.push({ sql, p });
-      if (sql.includes('information_schema.COLUMNS')) return [(ready ? HOTEL_SCHEMA_COLUMNS : []).map(column_name => ({ column_name }))];
-      if (sql.includes('information_schema.STATISTICS')) return [unique ? ['owner_email', 'binding_id'].map((column_name, i) => ({ index_name: 'binding', column_name, seq_in_index: i + 1 })) : []];
+      if (sql.includes('information_schema.COLUMNS')) return [ready ? hotelSchemaMetadata().map(row => row.column_name === schemaPatch?.column_name ? { ...row, ...schemaPatch } : row) : []];
+      if (sql.includes('information_schema.TABLES')) return [hotelEngineMetadata().map(row => row.table_name === enginePatch?.table_name ? { ...row, ...enginePatch } : row)];
+      if (sql.includes('information_schema.STATISTICS')) return [unique ? ['owner_email', 'binding_id'].map((column_name, i) => ({ index_name: 'binding', column_name, seq_in_index: i + 1, sub_part: indexPrefix, index_type: 'BTREE' })) : []];
       if (sql === 'BEGIN') return [{}];
       if (sql.startsWith('SELECT email')) {
         const previous = tail; tail = new Promise(resolve => { unlock = resolve; }); await previous;
@@ -60,6 +62,25 @@ test('schema and unique binding index absent: PATCH fails closed; sync only repo
     await assert.rejects(runHotelTransaction(d.db, association, options), { code: 'HOTEL_SCHEMA_NOT_READY' });
     assert.equal((await runHotelTransaction(d.db, sync([observation()]), options)).status, 'review-required');
     assert.equal(d.log.some(q => /^(BEGIN|UPDATE|INSERT|DELETE|ALTER)/.test(q.sql)), false);
+  }
+});
+test('incompatible types, nullability, defaults, engines and prefix uniqueness fail closed', async () => {
+  const cases = [
+    { schemaPatch: { column_name: 'binding_id', character_maximum_length: 32 } },
+    { schemaPatch: { column_name: 'binding_id', is_nullable: 'NO' } },
+    { schemaPatch: { column_name: 'manual_hotel_override', data_type: 'text', column_type: 'text' } },
+    { schemaPatch: { column_name: 'binding_evidence', column_default: '{}' } },
+    { schemaPatch: { column_name: 'row_version', column_type: 'bigint' } },
+    { schemaPatch: { column_name: 'row_version', is_nullable: 'YES' } },
+    { schemaPatch: { column_name: 'row_version', column_default: '1' } },
+    ...['crewcheck_platform_profiles','crewcheck_platform_rosters','crewcheck_platform_stays'].map(table_name => ({ enginePatch: { table_name, engine: 'MyISAM' } })),
+    { indexPrefix: 16 },
+  ];
+  for (const metadata of cases) {
+    const d = database(undefined, metadata);
+    assert.equal(await hotelReadiness(await d.db.connect()), false);
+    await assert.rejects(runHotelTransaction(d.db, association, options), { code: 'HOTEL_SCHEMA_NOT_READY' });
+    assert.equal(d.log.some(item => /^(BEGIN|UPDATE|INSERT|DELETE|ALTER)/.test(item.sql)), false);
   }
 });
 test('NULL legacy and date/airport/name match never prove manual provenance or binding', () => {

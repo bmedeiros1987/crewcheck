@@ -4,15 +4,34 @@ const unavailable = () => Object.assign(new Error('HOTEL_SCHEMA_NOT_READY'), { c
 // Metadata probe is read-only, not a migration or a global feature flag.
 export async function hotelReadiness(db) {
   try {
-    const result = await db.query(`SELECT COLUMN_NAME AS column_name FROM information_schema.COLUMNS
+    const result = await db.query(`SELECT COLUMN_NAME AS column_name,DATA_TYPE AS data_type,
+      COLUMN_TYPE AS column_type,IS_NULLABLE AS is_nullable,COLUMN_DEFAULT AS column_default,
+      CHARACTER_MAXIMUM_LENGTH AS character_maximum_length FROM information_schema.COLUMNS
       WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='crewcheck_platform_stays'`);
-    const index = await db.query(`SELECT INDEX_NAME AS index_name,COLUMN_NAME AS column_name,SEQ_IN_INDEX AS seq_in_index
-      FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='crewcheck_platform_stays'
+    const engines = await db.query(`SELECT TABLE_NAME AS table_name,ENGINE AS engine FROM information_schema.TABLES
+      WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('crewcheck_platform_profiles','crewcheck_platform_rosters','crewcheck_platform_stays')`);
+    if (!['crewcheck_platform_profiles','crewcheck_platform_rosters','crewcheck_platform_stays'].every(name =>
+      engines.rows.some(row => row.table_name === name && String(row.engine).toLowerCase() === 'innodb'))) return false;
+    if (!hotelSchemaReady(result.rows.map(row => row.column_name))) return false;
+    const columns = new Map(result.rows.map(row => [row.column_name, row]));
+    const binding = columns.get('binding_id'), version = columns.get('row_version');
+    if (binding.data_type !== 'varchar' || Number(binding.character_maximum_length) !== 64
+      || binding.is_nullable !== 'YES' || binding.column_default !== null) return false;
+    for (const name of ['binding_evidence','manual_hotel_override','hotel_source_snapshot']) {
+      const column = columns.get(name);
+      if (column.data_type !== 'json' || column.is_nullable !== 'YES' || column.column_default !== null) return false;
+    }
+    if (version.data_type !== 'bigint' || !/^bigint(?:\(\d+\))? unsigned$/i.test(version.column_type || '')
+      || version.is_nullable !== 'NO' || String(version.column_default) !== '0') return false;
+    const index = await db.query(`SELECT INDEX_NAME AS index_name,COLUMN_NAME AS column_name,SEQ_IN_INDEX AS seq_in_index,
+      SUB_PART AS sub_part,INDEX_TYPE AS index_type FROM information_schema.STATISTICS
+      WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='crewcheck_platform_stays'
       AND NON_UNIQUE=0 ORDER BY INDEX_NAME,SEQ_IN_INDEX`);
     const groups = new Map();
-    for (const row of index.rows) { const list = groups.get(row.index_name) || []; list.push(row.column_name); groups.set(row.index_name, list); }
-    return hotelSchemaReady(result.rows.map(row => row.column_name))
-      && [...groups.values()].some(columns => columns.join(',') === 'owner_email,binding_id');
+    for (const row of index.rows) { const list = groups.get(row.index_name) || []; list.push(row); groups.set(row.index_name, list); }
+    return [...groups.values()].some(columns => columns.length === 2
+      && columns[0].column_name === 'owner_email' && columns[1].column_name === 'binding_id'
+      && columns.every((column, i) => Number(column.seq_in_index) === i + 1 && column.sub_part === null && column.index_type === 'BTREE'));
   } catch { return false; }
 }
 async function persist(client, before, after, owner, hotelKey) {
