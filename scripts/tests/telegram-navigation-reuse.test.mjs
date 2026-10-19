@@ -23,11 +23,11 @@ if (!materialized) {
 }
 const extract = (text, name) => { const match = text.match(new RegExp(`(?:async )?function ${name}\\([\\s\\S]*?\\n}`)); assert(match, name); return match[0]; };
 
-function fixture() {
+function fixture({publicProfile='linked'}={}) {
   let menu, context, id = 100, time = 1_000_000, linked = true;
   const messages = new Map(), requests = [], answers = [], producers = [], routes = [];
   let editMode = 'ok', clearFails = false, pauseEdit = null, pauseAfterEdit = null, pauseClear = null, pausePrompt = null, profileHook = null;
-  const profile = () => { profileHook?.(); return { linked, channel: 'telegram', chatType: 'private', chatId: '101', email: 'synthetic@example.test', accessKeyHash: 'fixture-binding' }; };
+  const profile = () => { profileHook?.(); if(publicProfile==='lookup-failure')throw Error('Synthetic lookup failure'); if(publicProfile==='missing')return null; return { linked:publicProfile==='revoked'?false:linked, channel: 'telegram', chatType: 'private', chatId: '101', email: 'synthetic@example.test', accessKeyHash: 'fixture-binding' }; };
   const fetch = async (url, options) => {
     const method = url.split('/').at(-1), body = JSON.parse(options.body); requests.push({ method, body });
     if (method === 'editMessageText' && pauseEdit) await pauseEdit;
@@ -91,7 +91,7 @@ function fixture() {
   producerContext.sendTelegramMessage = (chat,text,extra) => emit(text,extra.reply_markup);
   const count = method => requests.filter(x => x.method === method).length;
   return { root, latest, press, callback, dispatch, messages, requests, answers, producers, routes, count, makeInput, input, emit,
-    handoff:async message=>{if(materialized)return dispatch({message});if(!await input(message))routes.push(structuredClone(message));}, callPrompt:()=>producerContext.requestConciergeCallConfirmation(101),
+    handoff:async message=>{if(materialized)return dispatch({message});if(!await input(message))routes.push(structuredClone(message));}, callPrompt:()=>producerContext.requestConciergeCallConfirmation(101), weather:(station,kind)=>producerContext.conciergeWeatherKeyboard(station,kind),
     expire: () => { time += 16 * 60_000; }, mode: value => { editMode = value; }, clearFailure: () => { clearFails = true; },
     pausePrompt: promise => { pausePrompt=promise; }, pauseCleanup: promise => { pauseClear=promise; }, pause: promise => { pauseEdit = promise; }, pauseAfter: promise => { pauseAfterEdit = promise; }, revoke: () => { linked = false; }, profileHook: fn => { profileHook = fn; } };
 }
@@ -373,4 +373,29 @@ for(const text of ['/emergencia','SOS','Ajuda','/menu']) test(`priority ${text} 
   const f=fixture();await f.handoff(f.makeInput(text,{message_id:1}));
   assert.equal(f.routes.length,1);assert.equal(f.producers.length,0);
   assert.equal(f.count('sendMessage'),0);
+});
+
+
+for(const publicProfile of ['missing','revoked','lookup-failure','linked']) for(const [report,kind]of[['METAR','metar'],['TAF','taf'],['ATIS','metar']])test(`public ${report} controls survive profile ${publicProfile}`,async()=>{
+  const f=fixture({publicProfile});const keyboard=f.weather('SBGR',kind);
+  const expected=JSON.parse(JSON.stringify(keyboard.inline_keyboard.flat().filter(b=>b.callback_data?.startsWith('cc_weather:'))));
+  assert.equal(expected.length,5,'real current producer must expose all public controls');
+  await f.emit(`${report} synthetic public report`,keyboard);
+  const result=structuredClone(f.latest());const buttons=result.reply_markup.inline_keyboard.flat();
+  assert.deepEqual(buttons.filter(b=>b.callback_data?.startsWith('cc_weather:')),expected,'labels, report kind, station and modes must remain exact');
+  const nav=buttons.filter(b=>b.callback_data?.startsWith('cc_nav:'));
+  if(publicProfile==='linked'){
+    assert.equal(nav.length,1);assert.match(nav[0].callback_data,/^cc_nav:v1:[a-f0-9]{24}:home$/);
+    await f.press(result,nav[0].text);assert(f.latest().reply_markup.inline_keyboard.flat().some(b=>b.text==='Hoje'));
+  }else{
+    assert.equal(nav.length,0,'only unavailable private return is removed');
+    assert.equal(f.count('sendMessage'),1,'no migration/root side-message for public unbound report');
+  }
+  assert.equal(f.producers.length,0,'no weather fetch/call/account producer is invoked by decoration');
+});
+
+for(const publicProfile of ['missing','revoked','lookup-failure'])test(`private root remains unavailable with profile ${publicProfile}`,async()=>{
+  const f=fixture({publicProfile});await f.root();
+  assert.equal(f.latest().reply_markup.remove_keyboard,true);
+  assert(!f.latest().reply_markup.inline_keyboard,'public weather exception cannot mint a private root ticket');
 });
