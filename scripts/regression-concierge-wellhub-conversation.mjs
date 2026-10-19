@@ -305,7 +305,7 @@ test('prepared Telegram slash and guided buttons call the same actual producers,
     const slash = harness({ operationalProbe: true });
     await slash.send('telegram', `/${command} ${input}`);
     const guided = harness({ operationalProbe: true });
-    await guided.openInline(); await guided.tap('Mais');
+    await guided.openInline(); await guided.tap(['radar', 'portao'].includes(command) ? 'Programação' : 'Mais');
     if (['metar', 'taf', 'atis'].includes(command)) await guided.tap('Meteorologia');
     await guided.tap(label); await guided.send('telegram', input);
     assert.deepEqual(guided.trace.search.filter(item => item.boundary), slash.trace.search.filter(item => item.boundary), `${command} IO-boundary arguments`);
