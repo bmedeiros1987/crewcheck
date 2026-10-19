@@ -65,7 +65,14 @@ No background retry loop or automatic replay is added.
 The journal is capped at64 logical slots and eight cleanup keys per revision.
 The adapter also retains the existing256-job combined ledger limit without
 removing or pruning another module's entries to make room.
-Records expire after their scheduled epoch plus the existing120s window.
+Records without unresolved cleanup expire after their scheduled epoch plus the
+existing120s window. Nonempty cleanup records remain bounded by the same slot/key
+limits until selective OS cancellation is confirmed, even if a replacement's
+scheduled time has expired. State reads and process recreation retain those keys.
+Within retained records, a matching revision/fingerprint reconciles `armed` or
+`consumed` to `accepted` before checking future time; it never rearms. A new
+replacement revision still requires a future time. An expired `cancel_pending`
+retry can finish old cleanup but returns `expired` without arming the past job.
 Ordinary process recreation preserves a current eligible ticket. A changed or
 unknown boot context refuses old tickets and never restores alarms. The prepared
 StayAlarm host and overnight lease flags remain OFF.

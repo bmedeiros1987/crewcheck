@@ -62,7 +62,7 @@ jobs:
           import xml.etree.ElementTree as E
           p='android-wrapper/app/build/test-results/testReleaseUnitTest/TEST-com.crewcheck.app.LifeReminderAndroidTest.xml'
           r=E.parse(p).getroot()
-          assert r.attrib['tests']=='11'
+          assert r.attrib['tests']=='15'
           assert all(r.attrib[k]=='0' for k in ['failures','errors','skipped'])
           PY
       - uses: actions/upload-artifact@v4

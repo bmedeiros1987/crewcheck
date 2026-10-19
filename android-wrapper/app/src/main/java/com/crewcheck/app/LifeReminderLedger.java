@@ -65,7 +65,11 @@ public final class LifeReminderLedger {
         }
         // Account generation or boot changed: old tickets cannot display or be restored.
         if (!context.equals(journal.getString("context"))) return new JSONObject().put("schemaVersion",1).put("context",context).put("records",new JSONObject());
-        for (String id:names(records)) if (records.getJSONObject(id).getLong("at")+120_000<device.now()) records.remove(id);
+        for (String id:names(records)) {
+            JSONObject record=records.getJSONObject(id);
+            // A failed OS cancellation remains recoverable regardless of the replacement time.
+            if (record.getJSONObject("cleanup").length()==0 && record.getLong("at")+120_000<device.now()) records.remove(id);
+        }
         return journal;
     }
     private void save(JSONObject journal) throws Exception {
@@ -106,7 +110,7 @@ public final class LifeReminderLedger {
                 long at=op.equals("replace")?integer(request.get("at")):device.now();
                 if (op.equals("replace") && (!(request.opt("title") instanceof String) || !(request.opt("body") instanceof String))) return receipt("rejected",id,revision);
                 String title=op.equals("replace")?request.getString("title"):"", body=op.equals("replace")?request.getString("body"):"";
-                if (op.equals("replace") && (at<=device.now() || at>Long.MAX_VALUE-120_000 || title.trim().isEmpty() || title.length()>120 || body.length()>500)) return receipt("rejected",id,revision);
+                if (op.equals("replace") && (at<1 || at>Long.MAX_VALUE-120_000 || title.trim().isEmpty() || title.length()>120 || body.length()>500)) return receipt("rejected",id,revision);
                 String payloadHash=NotificationIdentity.key(title,body,op.equals("replace")?at:0);
                 String fingerprint=NotificationIdentity.key(op+":"+revision+":"+id,payloadHash,0);
                 JSONObject journal=load(context), records=journal.getJSONObject("records"), previous=records.optJSONObject(id);
@@ -119,6 +123,8 @@ public final class LifeReminderLedger {
                     if (phase.equals("arm_pending")) return receipt("uncertain",id,revision); // Never replay an uncertain OS arm.
                     if (phase.equals("failed")) return receipt("failed",id,revision);
                 } else {
+                    // Existing receipts reconcile even after their scheduled time; only a new arm requires the future.
+                    if (op.equals("replace") && at<=device.now()) return receipt("rejected",id,revision);
                     if (previous==null && op.equals("cancel")) return receipt("not_found",id,revision);
                     if (previous==null && records.length()>=LIMIT) return receipt("limit",id,revision);
                     JSONObject cleanup=previous==null?new JSONObject():new JSONObject(previous.getJSONObject("cleanup").toString());

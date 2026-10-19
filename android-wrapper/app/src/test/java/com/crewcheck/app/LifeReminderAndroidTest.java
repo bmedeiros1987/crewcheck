@@ -56,6 +56,41 @@ public class LifeReminderAndroidTest {
             alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,android.app.PendingIntent.getBroadcast(app,0,i,android.app.PendingIntent.FLAG_UPDATE_CURRENT|android.app.PendingIntent.FLAG_IMMUTABLE));
         }));return key;
     }
+    // Injectable time/cancel fault only; storage, PendingIntent identity and OS adapter remain real Android code.
+    private static class ControlledDevice implements LifeReminderLedger.Device {
+        final LifeReminderAndroid adapter;long clock;boolean failCancel;int arms;
+        ControlledDevice(LifeReminderAndroid adapter){this.adapter=adapter;clock=System.currentTimeMillis();}
+        public long now(){return clock;}
+        public void cancel(String key)throws Exception{if(failCancel)throw new Exception("synthetic OS cancel failure");adapter.cancel(key);}
+        public void arm(String key,String context,long at,String title,String body)throws Exception{arms++;adapter.arm(key,context,at,title,body);}
+    }
+    @Test public void acceptedRetryAtDueTimeAndAfterConsumptionNeverRearms()throws Exception{
+        LifeReminderAndroid adapter=new LifeReminderAndroid(app);ControlledDevice device=new ControlledDevice(adapter);
+        life=new LifeReminderLedger(adapter,adapter,device);
+        JSONObject r=replace(1,device.clock+60000);assertEquals("accepted",send(r).getString("status"));Intent intent=lifeIntent();
+        device.clock+=60000;
+        assertEquals("accepted",send(r).getString("status"));
+        assertTrue(life.claim(intent.getStringExtra("notificationKey"),intent.getStringExtra("notificationEpoch"),device.clock));
+        device.clock+=120000;
+        assertEquals("accepted",send(r).getString("status"));assertEquals(1,device.arms);
+        assertEquals(1,Shadows.shadowOf(alarms).getScheduledAlarms().size());
+        assertEquals("rejected",send(replace(2,device.clock)).getString("status"));assertEquals(1,device.arms);
+        assertFalse(life.claim(intent.getStringExtra("notificationKey"),intent.getStringExtra("notificationEpoch"),intent.getLongExtra("scheduledAt",0)));
+    }
+    @Test public void partialCleanupSurvivesReplacementExpiryAndProcessRecreation()throws Exception{
+        LifeReminderAndroid adapter=new LifeReminderAndroid(app);ControlledDevice device=new ControlledDevice(adapter);
+        life=new LifeReminderLedger(adapter,adapter,device);String other=other(device.clock+172800000);
+        assertTrue(send(replace(1,device.clock+86400000)).getBoolean("ok"));Intent old=lifeIntent();
+        device.failCancel=true;assertEquals("partial",send(replace(2,device.clock+60000)).getString("status"));
+        device.clock+=180001;
+        life=new LifeReminderLedger(new LifeReminderAndroid(app),new LifeReminderAndroid(app),device);
+        assertTrue(new JSONObject(life.state()).getJSONObject("records").has(ID));
+        assertEquals(2,Shadows.shadowOf(alarms).getScheduledAlarms().size());
+        device.failCancel=false;assertEquals("cancelled",send(request("cancel",3)).getString("status"));
+        assertEquals(1,Shadows.shadowOf(alarms).getScheduledAlarms().size());assertEquals(1,device.arms);
+        assertTrue(new NotificationLedgerAndroid(app).entries().containsKey(other));
+        assertFalse(new NotificationLedgerAndroid(app).entries().containsKey(old.getStringExtra("notificationKey")));
+    }
     @Test public void replaceAndCancelPreserveOtherModuleAlarmAndLedger()throws Exception{
         long now=System.currentTimeMillis();String other=other(now+120000);
         JSONObject first=replace(1,now+1000);assertTrue(send(first).getBoolean("ok"));Intent old=lifeIntent();

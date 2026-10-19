@@ -31,6 +31,33 @@ public final class LifeReminderLedgerFixture {
         void other(){check(device.alarms.containsKey("other-module"),"other module alarm preserved");}
     }
     public static void main(String[] args)throws Exception{
+        Fixture retry=new Fixture();JSONObject accepted=retry.replace(ID,1,NOW+60000);
+        check(retry.update(accepted).getBoolean("ok"),"retry fixture initial accepted");String retryKey=retry.key(ID);
+        retry.device.now=NOW+60000;
+        check(retry.update(accepted).getString("status").equals("accepted"),"identical armed retry at scheduled time reconciles receipt");
+        check(retry.ledger.claim(retryKey,retry.owner.context,NOW+60000),"retry fixture consumes once");
+        retry.device.now+=120000;
+        check(retry.update(accepted).getString("status").equals("accepted"),"identical consumed retry at retention boundary reconciles receipt");
+        check(retry.device.arms==1,"late accepted retry never rearms");
+        check(!retry.ledger.claim(retryKey,retry.owner.context,NOW+60000),"late retry cannot undo consumed claim");
+        check(retry.update(retry.replace(ID,2,NOW+60000)).getString("status").equals("rejected"),"new revision cannot arm a past time");
+        check(retry.device.arms==1,"rejected past revision preserves arm count");
+        Fixture recovery=new Fixture();recovery.update(recovery.replace(ID,1,NOW+86400000));String tomorrow=recovery.key(ID);
+        recovery.device.failCancel=true;
+        check(recovery.update(recovery.replace(ID,2,NOW+60000)).getString("status").equals("partial"),"tomorrow to one minute cancellation partial");
+        recovery.device.now=NOW+180001;
+        check(new JSONObject(recovery.ledger.state()).getJSONObject("records").has(ID),"unconfirmed cleanup survives new revision expiry");
+        recovery.ledger=new LifeReminderLedger(recovery.store,recovery.owner,recovery.device);
+        recovery.device.failCancel=false;
+        check(recovery.update(recovery.request("cancel",ID,3)).getString("status").equals("cancelled"),"selective recovery after expiry and recreation");
+        check(!recovery.device.alarms.containsKey(tomorrow),"recovery removes tomorrow OS alarm");
+        check(recovery.device.arms==1,"partial replacement never armed new alarm");recovery.other();
+        Fixture resumeExpired=new Fixture();resumeExpired.update(resumeExpired.replace(ID,1,NOW+86400000));String pendingOld=resumeExpired.key(ID);
+        resumeExpired.device.failCancel=true;JSONObject expiredRequest=resumeExpired.replace(ID,2,NOW+60000);resumeExpired.update(expiredRequest);
+        resumeExpired.device.now=NOW+180001;resumeExpired.device.failCancel=false;
+        check(resumeExpired.update(expiredRequest).getString("status").equals("expired"),"same expired partial request cleans up without arming");
+        check(!resumeExpired.device.alarms.containsKey(pendingOld),"expired partial retry cancels old future OS alarm");
+        check(resumeExpired.device.arms==1,"expired partial retry never arms past replacement");resumeExpired.other();
         Fixture f=new Fixture();JSONObject r=f.replace(ID,1,NOW+60000);
         check(f.update(r).getString("status").equals("accepted"),"initial receipt");String first=f.key(ID);
         check(!f.store.raw.contains("SYNTHETIC_BODY_NOT_STORED"),"no title/body stored in journal");
