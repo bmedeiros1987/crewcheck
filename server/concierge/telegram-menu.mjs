@@ -6,6 +6,8 @@ const pages = {
   weather: [['METAR', 'metar'], ['TAF', 'taf'], ['ATIS', 'atis'], ['Voltar', 'more'], ['Início', 'home']],
   wellness: [['Hospitais', 'hospitais'], ['Farmácias', 'farmacias'], ['Academias', 'academias'], ['Rotina', 'rotina'], ['Voltar', 'more'], ['Início', 'home']],
   hoteis: [['Informar hotel', 'informar_hotel'], ['Adicionar quarto', 'adicionar_quarto'], ['Histórico', 'historico_pernoites'], ['Voltar', 'home'], ['Início', 'home']],
+  duty: [['Fundamento', 'duty_basis'], ['Voltar', 'more'], ['Início', 'home']],
+  duty_details: [['Voltar', 'duty_summary'], ['Início', 'home']],
 };
 const commands = new Set(['hoje', 'escala', 'amanha', 'proximo', 'saida', 'hospitais', 'farmacias', 'academias', 'rotina', 'informar_hotel', 'adicionar_quarto', 'historico_pernoites', 'configuracoes']);
 const parameters = { radar: 'Digite o voo, por exemplo LA1234.', portao: 'Digite o voo, por exemplo LA1234.', metar: 'Digite o código ICAO do aeroporto, por exemplo SBGR.', taf: 'Digite o código ICAO do aeroporto, por exemplo SBGR.', atis: 'Digite o código ICAO do aeroporto, por exemplo SBGR.' };
@@ -45,6 +47,7 @@ export function createTelegramMenu(deps, now = Date.now) {
   const tickets = new Map();
   const flows = new Map();
   const migrated = new Map();
+  const factsGuard = Symbol('facts-owner');
   const owner = profile => profile?.linked === true && profile.channel === 'telegram' && profile.chatType === 'private' && /^[^@\s]+@[^@\s]+$/.test(profile.email || '') ? `${profile.email}|${profile.accessKeyHash || ''}` : '';
   const prune = map => { for (const [key, value] of map) if (now() - value.at > TTL) map.delete(key); while (map.size >= MAX) map.delete(map.keys().next().value); };
   async function identity(message) {
@@ -53,12 +56,16 @@ export function createTelegramMenu(deps, now = Date.now) {
     return owner(profile) ? profile : null;
   }
   async function markup(chatId, extra = {}) {
+    const { [factsGuard]: factsContext, ...transportExtra } = extra;
+    const expectedFactsOwner = factsContext?.owner;
+    extra = transportExtra;
     if (extra.reply_markup?.keyboard) migrated.delete(String(chatId));
     const buttons = extra.reply_markup?.inline_keyboard?.flat() || [];
     const navigation = buttons.some(button => button.callback_data?.startsWith('cc_nav:entry:'));
     const weather = buttons.some(button => button.callback_data?.startsWith('cc_weather:'));
     if (!navigation && !weather) return extra;
     const profile = await identity({ chat: { id: chatId, type: 'private' }, from: { id: chatId } });
+    if (expectedFactsOwner && owner(profile) !== expectedFactsOwner) return null;
     if (!profile) return navigation ? { ...extra, reply_markup: { remove_keyboard: true } } : extra;
     prune(migrated);
     const chat = String(chatId);
@@ -67,6 +74,10 @@ export function createTelegramMenu(deps, now = Date.now) {
       // Telegram permits one reply_markup kind per message. Remove the legacy
       // persistent reply keyboard in a separate transport call before inline UI.
       await deps.send(chatId, 'Escolha uma opção nos botões da conversa.', { reply_markup: { remove_keyboard: true } });
+    }
+    if (expectedFactsOwner) {
+      const confirmed = await identity({ chat: { id: chatId, type: 'private' }, from: { id: chatId } });
+      if (owner(confirmed) !== expectedFactsOwner) return null;
     }
     if (!navigation) return extra;
     prune(tickets);
@@ -78,10 +89,33 @@ export function createTelegramMenu(deps, now = Date.now) {
       actions.add(action);
       return { text: button.text, callback_data: `cc_nav:v1:${token}:${action}` };
     }));
-    tickets.set(token, { at: now(), chat: String(chatId), owner: owner(profile), actions });
+    tickets.set(token, { at: now(), chat: String(chatId), owner: owner(profile), actions,
+      factRevision: [...actions].some(action => action.startsWith('duty_')) ? factsContext?.signature : null,
+      factPage: factsContext?.page || 0 });
     return { ...extra, reply_markup: { inline_keyboard } };
   }
   async function send(chat, text, page = 'home') { await deps.send(chat, text, { reply_markup: menuTemplate(page) }); }
+  async function showFacts(profile, detail = false, expected = null, page = 0) {
+    if (!deps.facts) { await send(profile.chatId, missingComplianceReply()); return; }
+    const current = await identity({ chat: { id: profile.chatId, type: 'private' }, from: { id: profile.chatId } });
+    if (!current || owner(current) !== owner(profile)) return;
+    const latest = await deps.snapshot(current);
+    const confirmed = await identity({ chat: { id: profile.chatId, type: 'private' }, from: { id: profile.chatId } });
+    if (!confirmed || owner(confirmed) !== owner(current)) return;
+    let facts = deps.facts(current, latest, page);
+    const changed = (detail && !expected) || (expected && expected !== facts.signature);
+    if (changed) facts = deps.facts(current, latest, 0);
+    const replyMarkup = menuTemplate(!facts.signature ? 'more' : detail && !changed ? 'duty_details' : 'duty');
+    if (facts.signature && (!detail || changed) && facts.pageCount > 1) {
+      const row = [];
+      if (facts.page > 0) row.push({ text: 'Anterior', callback_data: 'cc_nav:entry:duty_prev' });
+      if (facts.page + 1 < facts.pageCount) row.push({ text: 'Próxima página', callback_data: 'cc_nav:entry:duty_next' });
+      replyMarkup.inline_keyboard.unshift(row);
+    }
+    await deps.send(profile.chatId, (changed ? 'O snapshot mudou ou não está mais disponível. Consulte esta nova leitura.\n\n' : '') + (detail && !changed ? facts.basis : facts.summary), {
+      [factsGuard]: { owner: owner(current), signature: facts.signature, page: facts.page || 0 }, reply_markup: replyMarkup,
+    });
+  }
   async function execute(action, profile, arg = '') {
     const snapshot = await deps.snapshot(profile);
     // Dispatch directly to the existing producer, never fabricate a user update.
@@ -118,7 +152,10 @@ export function createTelegramMenu(deps, now = Date.now) {
     if (pages[action]) {
       await send(profile.chatId, action === 'home' ? menuGreeting() : action === 'hoteis' ? 'Hotéis: cadastro no app ou consulta dos registros salvos.' : 'Escolha uma opção:', action);
     } else if (action === 'conformidade') {
-      await send(profile.chatId, missingComplianceReply());
+      await showFacts(profile);
+    } else if (['duty_basis', 'duty_summary', 'duty_next', 'duty_prev'].includes(action)) {
+      const page = ticket.factPage + (action === 'duty_next' ? 1 : action === 'duty_prev' ? -1 : 0);
+      await showFacts(profile, action === 'duty_basis', ticket.factRevision, page);
     } else if (action === 'diarias') {
       await send(profile.chatId, missingFinanceReply(), 'finance');
     } else if (parameters[action]) {
@@ -140,6 +177,15 @@ export function createTelegramMenu(deps, now = Date.now) {
   }
   async function text(message = {}) {
     const chat = String(message.chat?.id || '');
+    const factText = String(message.text || '').trim();
+    if (deps.facts && (/^\/conformidade(?:@\w+)?(?:\s|$)/i.test(factText)
+      || (!factText.startsWith('/') && /\b(?:rbac|act|irregularidade|conformidade)\b|^revisar escala$/i.test(factText)))) {
+      const profile = await identity(message);
+      if (!profile) return true;
+      flows.delete(chat);
+      await showFacts(profile);
+      return true;
+    }
     const flow = flows.get(chat);
     if (!flow || !message.text) return false;
     const profile = await identity(message);
