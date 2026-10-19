@@ -168,7 +168,7 @@ test('canonical wrapper owner keeps contextual arguments, and prepared actual se
 
 test('direct Next text stays objective when dated facts cannot prove the legacy humor contract', () => {
   for (const display of [undefined, {
-    clockBasis:'published-brt', presentationConfirmed:true, presentationDate:'2026-10-05', endDate:'2026-10-06',
+    clockBasis:'published-brt', presentationConfirmed:true, publishedStart:Date.parse('2026-10-05T12:00:00Z'), presentationDate:'2026-10-05', endDate:'2026-10-06',
     legs:[{departureDate:'2026-10-05',arrivalDate:'2026-10-06'}],
   }]) {
     const record={...program(),endKind:'duty-debrief',display};

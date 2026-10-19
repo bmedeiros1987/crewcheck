@@ -205,7 +205,16 @@ function legSentence(leg = {}, index = 0) {
   return `${flight}: saída ${originDeparturePhrase(leg.origin)} às ${departure}; chegada em ${destination} às ${arrival}.`;
 }
 
-function nextProgramText(record, presentation) {
+function publishedPresentationText(display) {
+  if (display?.clockBasis !== 'published-brt' || display.presentationConfirmed !== true || !Number.isFinite(display.publishedStart)) return 'horário e data da apresentação não confirmados';
+  // Same proven instant as departure; never classifier/argument fallback clocks.
+  const wall = new Date(display.publishedStart - 180 * 60_000);
+  if (!Number.isFinite(wall.getTime())) return 'horário e data da apresentação não confirmados';
+  const iso = wall.toISOString();
+  return `${iso.slice(0, 10).split('-').reverse().join('/')} às ${iso.slice(11, 16)}`;
+}
+
+function nextProgramText(record) {
   const legs = record.legs;
   const display = record.display?.clockBasis === 'published-brt' ? record.display : null;
   const date = value => {
@@ -217,7 +226,7 @@ function nextProgramText(record, presentation) {
   const clock = value => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value || '')) ? value : 'horário não confirmado';
   const rows = [
     `Próxima programação: ${legs.length} voo${legs.length === 1 ? '' : 's'}.${display?.planned ? ' Planejada; não é confirmação operacional.' : ''}`,
-    display?.presentationConfirmed === true ? `APZ: ${date(display.presentationDate)} às ${clock(presentation || record.startTime)}.` : 'APZ: horário e data da apresentação não confirmados.',
+    `APZ: ${publishedPresentationText(display)}.`,
     ...legs.slice(0, 4).map((leg, index) => {
       const flight = String(leg.flightNumber || '').trim().toUpperCase().replace(/\s+/g, '') || `Voo ${index + 1} não confirmado`;
       const dates = display?.legs?.[index];
@@ -246,11 +255,11 @@ export function buildProgramSummary({ profile = {}, snapshot = {}, record = null
     if (isNext) {
       const dates = record.display;
       const day = value => value ? value.split('-').reverse().join('/') : 'data não confirmada';
-      return `Próxima atividade: ${activity}.${dates.planned ? ' Planejada; não é confirmação operacional.' : ''} APZ: ${day(dates.presentationDate)} às ${record.startTime}. ${dates.endConfirmed ? `Fim publicado: ${day(dates.endDate)} às ${record.endTime}.` : 'Fim publicado não confirmado.'} Relógio da escala: UTC−03.`;
+      return `Próxima atividade: ${activity}.${dates.planned ? ' Planejada; não é confirmação operacional.' : ''} APZ: ${publishedPresentationText(dates)}. ${dates.endConfirmed ? `Fim publicado: ${day(dates.endDate)} às ${record.endTime}.` : 'Fim publicado não confirmado.'} Relógio da escala: UTC−03.`;
     }
     return `${greeting}${lead ? `${lead} ` : ''}você tem ${activity}. Sua apresentação é às ${presentation}, com término previsto às ${end}.`.trim();
   }
-  if (isNext) return nextProgramText(record, presentationTime);
+  if (isNext) return nextProgramText(record);
   const count = legs.length;
   const finalDestination = shortAirportName(legs.at(-1)?.destination);
   const opening = `${greeting}${lead ? `${lead} ` : ''}você tem ${count} perna${count === 1 ? '' : 's'}. Apresentação às ${presentation}. Fim da jornada em ${finalDestination} às ${end}.`;

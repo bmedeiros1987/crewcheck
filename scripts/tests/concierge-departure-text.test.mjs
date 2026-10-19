@@ -133,3 +133,18 @@ test('Planned leg remains visible under a Confirmed day',()=>{
  assert.equal(record.display.planned,true);assert(record.display.statuses.some(row=>row.level==='day'&&row.status==='confirmed'));assert(record.display.statuses.some(row=>row.level==='leg'&&row.status==='planned'));
  assert.match(realSummary({record,label:'A próxima programação',includeGreeting:false}),/Planejada; não é confirmação operacional/);
 });
+
+
+for(const [name,overrides,publishedDate,now] of [
+ ['reserve bound to flight',{type:'ASB',pairingCode:'ASB',dutyReport:'03:00'},'04/10/2099','2099-10-04T04:00:00Z'],
+ ['reserve at year turn',{type:'ASB',pairingCode:'ASB',dutyReport:'03:00',date:'01/01/2100',dayNumber:1,month:1,year:2100},'01/01/2100','2099-12-31T23:00:00Z'],
+])test(`same proven APZ in Next and departure: ${name}`,async()=>{
+ const f=realRuntime(now),roster=sourceRoster([sourceDay(overrides)]);if(overrides.year){roster.year=overrides.year;roster.month=overrides.month;}
+ const before=JSON.stringify(roster),record=f.programs(roster)[0];
+ assert.equal(record.startTime,'08:00','canonical classifier fallback stays unchanged');
+ assert.equal(new Date(record.display.publishedStart-180*60_000).toISOString().slice(11,16),'03:00');
+ const text=realSummary({record,label:'A próxima programação',includeGreeting:false,presentationTime:'08:00'});
+ assert(text.includes(`APZ: ${publishedDate} às 03:00.`));assert.doesNotMatch(text,/APZ:.*às 08:00/);assert.match(text,/UTC−03/);
+ const departure=await f.run(roster);assert(departure.includes(`${publishedDate} às 03:00`));assert.match(departure,/UTC−03/);assert.equal(f.routes(),1);
+ assert.equal(JSON.stringify(roster),before,'source data unchanged');assert.equal(record.startTime,'08:00','renderer does not repair classifier');
+});
