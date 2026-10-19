@@ -12,12 +12,25 @@ export type DeductionReviewContext = {
   completeBuckets: DeductionBucket[]; ownershipAndMonthConfirmed: boolean;
 };
 const buckets = ['inss', 'irrf', 'other_deductions'] as const;
+// One grammar is shared by other-group recognition and mixed-label checks.
+export const OTHER_DEDUCTION_GROUP_PATTERNS = ['PLANO','ADIANTAMENTO','EMPRESTIMO','CONSIGNADO','CONTRIBUICAO','MENSALIDADE','CONVENIO','ASSISTENCIA','COPARTICIPACAO','PENSAO','SEGURO','VALE','MCT\\d*'] as const;
+const otherGroupPattern = '(?:'+OTHER_DEDUCTION_GROUP_PATTERNS.join('|')+')';
+const otherGroupStart = new RegExp('^(?:(?:DESCONTO|RETENCAO)(?:\\s+(?:DE|DO|DA))?\\s+)?'+otherGroupPattern+'\\b');
 const normalized = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/^\s*\d+\s+/, '').trim();
 export function classifyPayrollDeduction(item: PayrollItem): { state:'recognized'|'unknown'|'conflict'|'informational'; bucket:DeductionBucket|null } {
   const label = normalized(item.label);
   const inss = /\bINSS\b/.test(label), irrf = /\bIRRF\b/.test(label);
-  const otherGroup = /\b(?:PLANO|CONVENIO|EMPRESTIMO|CONSIGNADO|MENSALIDADE|PENSAO|SEGURO|VALE|MCT\d*)\b/.test(label);
-  if ((inss && irrf) || ((inss || irrf) && otherGroup)) return {state:'conflict',bucket:null};
+  if (inss && irrf) return {state:'conflict',bucket:null};
+  if (inss || irrf) {
+    const tax = /\b(?:INSS|IRRF)\b/.exec(label)!;
+    const others = [...label.matchAll(new RegExp('\\b'+otherGroupPattern+'\\b','g'))];
+    for (const other of others) {
+      const afterTax = other.index! > tax.index;
+      const between = afterTax ? label.slice(tax.index+tax[0].length,other.index) : label.slice(other.index!+other[0].length,tax.index);
+      if (/^\s*(?:E|\/|\+|&)(?:\s+(?:DESCONTO|RETENCAO)(?:\s+DE)?)?\s*$/.test(between)) return {state:'conflict',bucket:null};
+      if (!afterTax || !/^\s+SOBRE\s+(?:(?:O|A|OS|AS)\s+)?$/.test(between)) return {state:'unknown',bucket:null};
+    }
+  }
   const explicitTaxCharge = /^(?:DESCONTO|RETENCAO)(?:\s+(?:DE|DO|DA))?\s+(?:INSS|IRRF)\b/.test(label);
   const salaryBaseCharge = explicitTaxCharge && /\bSOBRE\s+(?:O\s+)?SALARIO[ -]+BASE\b/.test(label);
   if (/\bBASES?\b/.test(label) && !salaryBaseCharge) {
@@ -32,8 +45,7 @@ export function classifyPayrollDeduction(item: PayrollItem): { state:'recognized
   // mentions are not automatically deductions of that tax.
   const qualifiedTax = /^(?:(?:DESCONTO|RETENCAO|AJUSTE|COMPLEMENTO|COMPLEMENTAR|DIFERENCA)(?:\s+(?:DE|DO|DA))?\s+)?(?:INSS|IRRF)\b/.test(label);
   if (inss || irrf) return qualifiedTax ? {state:'recognized',bucket:inss?'inss':'irrf'} : {state:'unknown',bucket:null};
-  const other = /^(?:(?:DESCONTO|RETENCAO)(?:\s+(?:DE|DO|DA))?\s+)?(?:PLANO|ADIANTAMENTO|EMPRESTIMO|CONSIGNADO|CONTRIBUICAO|MENSALIDADE|CONVENIO|ASSISTENCIA|COPARTICIPACAO|PENSAO|SEGURO|VALE|MCT\d*)\b/.test(label);
-  return other ? {state:'recognized',bucket:'other_deductions'} : {state:'unknown',bucket:null};
+  return otherGroupStart.test(label) ? {state:'recognized',bucket:'other_deductions'} : {state:'unknown',bucket:null};
 }
 export function payrollDeductionRows(extraction: PrivatePayrollExtraction) {
   return extraction.items.map((item, index) => {
@@ -86,10 +98,18 @@ export function planReviewedPayrollDeductions(args: DeductionReviewContext) {
     for (const source of row.locations) { const id=`${source.origin}:${source.page}:${source.line}`; if(origins.has(id))reject('A mesma origem não pode ser contada duas vezes.'); origins.add(id); }
     selectedRows.push(row);
   }
+  const documentOrigins=new Set<string>();let documentDebitMinor=0;
+  for(const row of rows.filter(row=>row.direction==='debit'&&row.eligible)){
+    const origin=row.locations.map(source=>`${source.origin}:${source.page}:${source.line}`).join('|');
+    if(documentOrigins.has(origin)){reject('Origem de desconto repetida no documento.');continue;}
+    documentOrigins.add(origin);documentDebitMinor+=row.amountMinor!;
+  }
   const selectedTotalMinor = selectedRows.reduce((sum,row)=>sum+row.amountMinor!,0);
   const printedDeductions = args.extraction.totals.deductions;
   if (['candidate','zero'].includes(printedDeductions.state) && printedDeductions.candidates.length===1 && !printedDeductions.unresolvedSources.length) {
     const value=printedDeductions.candidates[0].value, printedMinor=Math.round(value*100);
+    if (Number.isSafeInteger(printedMinor) && printedMinor>=0 && Math.abs(value*100-printedMinor)<1e-6 && documentDebitMinor>printedMinor)
+      reject('A soma dos débitos explícitos do documento excede o total impresso.');
     if (Number.isSafeInteger(printedMinor) && printedMinor>=0 && Math.abs(value*100-printedMinor)<1e-6 && selectedTotalMinor>printedMinor)
       reject('A soma dos descontos selecionados excede o total impresso.');
   }
