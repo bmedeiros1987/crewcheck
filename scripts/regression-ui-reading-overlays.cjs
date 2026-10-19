@@ -167,7 +167,9 @@ async function visibleTextBounds(page, selector) {
         }
         await page.evaluate(() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'perdiem' })));
         await page.locator('.cc-per-diem-content').waitFor();
-        await page.getByRole('button',{name:'Extrato',exact:true}).click(); await settle(page);
+        // Financial navigation preserves its screen across visits and reading-size changes.
+        if (await page.locator('.cc-payment-overview').getAttribute('data-financial-screen') !== 'statement') await page.getByRole('button',{name:'Extrato',exact:true}).click();
+        await settle(page); assert.equal(await page.locator('.cc-payment-overview').getAttribute('data-financial-screen'),'statement');
         const money = await fixtureScope.qaMoney(page);
         assert.ok(money.amounts.some(value => value.includes('1.234.567,89')), 'Exercise actual large synthetic currency amount');
         assert.ok(money.amounts.some(value => value.includes('US$') || value.includes('€') || value.includes('£')), 'Exercise actual multiple currencies');

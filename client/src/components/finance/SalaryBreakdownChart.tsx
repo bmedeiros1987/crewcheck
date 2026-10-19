@@ -16,12 +16,12 @@ export default function SalaryBreakdownChart({ gross, deductions, net, period, e
   // Require explicit monthly evidence that agrees with the existing engine;
   // never apply an override or invent a net amount in this presentation.
   const known=entries.length>0&&entries.every(entry=>salaryDeductionEvidence(entry.month,entry).complete);
-  const rows=[['Ganhos estimados',gross],['Descontos estimados',known?deductions:null],['Líquido estimado',known?net:null]] as const;
+  const rows=[['Ganhos estimados',gross],['Descontos estimados · saída',known&&deductions!==null?-Math.abs(deductions):null],['Líquido estimado',known?net:null]] as const;
   const values=rows.flatMap(([,value])=>value!==null&&Number.isFinite(value)?[Math.abs(value)]:[]);
   const max=values.length?Math.max(...values):null;
   return <section className="cc-bank-salary-breakdown" aria-label="Ganhos e descontos da competência">
     <h3>Ganhos e descontos</h3><p>Competência consultada · {period}</p>
-    {rows.map(([label,value])=><div className="cc-bank-chart-row" key={label}><span>{label}</span><b>{value===null||!Number.isFinite(value)?'Não calculável':privacy.amount(new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value))}</b>{!privacy.hidden&&max!==null&&value!==null&&Number.isFinite(value)&&<span className="cc-bank-chart-track" aria-hidden="true"><span style={{width:`${max>0?Math.abs(value)/max*100:0}%`}}/></span>}</div>)}
+    {rows.map(([label,value])=><div className="cc-bank-chart-row" data-money-direction={privacy.hidden||value===null||!Number.isFinite(value)?undefined:label.includes('saída')||value<0?'outflow':'income'} key={label}><span>{label}</span><b>{value===null||!Number.isFinite(value)?'Não calculável':privacy.amount(new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',signDisplay:'always'}).format(value))}</b>{!privacy.hidden&&max!==null&&value!==null&&Number.isFinite(value)&&<span className="cc-bank-chart-track" aria-hidden="true"><span style={{width:`${max>0?Math.abs(value)/max*100:0}%`}}/></span>}</div>)}
     {!known&&<p>Descontos da competência a confirmar. Líquido indisponível.</p>}<p>Simulação da competência. Recebimento não confirmado.</p>
   </section>;
 }

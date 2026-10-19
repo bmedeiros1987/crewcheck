@@ -36,6 +36,8 @@ try {
    // This handler fixture renders the visible privacy mode. The compiled-app
    // privacy regression separately verifies the actual hook and hidden DOM.
    useFinancialPrivacy:()=>({amount:value=>value,text:value=>value}),FinancialPrivacyToggle:()=>null,
+   // Independent owner-review form is exercised by regression-owner-per-diem-browser.
+   OwnerPerDiemConfirmation:()=>null,
    Check:()=>null,FileSearch:()=>null,History:()=>null,ShieldCheck:()=>null,Upload:()=>null,X:()=>null});
   vm.runInContext(compiled,context);
   let tree;

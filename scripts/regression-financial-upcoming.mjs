@@ -6,7 +6,11 @@ const now = new Date('2032-12-20T12:00:00Z');
 const record = (id, fields = {}) => ({ id: id.toString(16).padStart(64, '0'), ownerId: identity.ownerId,
   revision: 1, category: 'allowance', aggregationLevel: 'item', periodStart: '2032-12-01', periodEnd: '2032-12-01',
   sourceId: 'synthetic-' + id, timezone: 'UTC', ruleVersion: 'reviewed-synthetic', currency: 'USD', amountMinor: 12345,
-  status: 'forecast', expectedPaymentDate: '2032-12-21', expectedPaymentTimezone: 'UTC', ...fields });
+  status: 'forecast', expectedPaymentDate: '2032-12-21', expectedPaymentTimezone: 'UTC', ...fields,
+  ...((fields.currency || 'USD') !== 'BRL' && (fields.category || 'allowance') === 'allowance' ? {
+    flightDate: fields.expectedPaymentDate === undefined && !Object.hasOwn(fields,'expectedPaymentDate') ? '2032-12-21' : fields.expectedPaymentDate,
+    flightDateTimezone: fields.expectedPaymentTimezone || 'UTC', flightAirport: 'EZE', timingRuleId: 'synthetic-owner-rule',
+  } : {}) });
 const read = records => query({ identity, records, now });
 assert.equal(query({ identity: { authenticated: false }, records: [record(1)], now }).access, 'denied');
 assert.equal(read([]).state, 'no_data');
@@ -39,7 +43,7 @@ result = read([record(1), record(2, { aggregationLevel: 'week', periodStart: '20
 assert.equal(result.state, 'incomplete'); assert.equal(result.events.length, 0, 'overlapping aggregation levels never double count');
 result = read([record(1), record(2, { aggregationLevel: 'week', periodStart: '2032-12-01', periodEnd: '2032-12-07', status: 'payment_confirmed', paymentDate: '2032-12-20', evidence: { kind: 'settlement', reference: 'synthetic-only' } })]);
 assert.equal(result.events.length, 0, 'settled aggregate cannot leave an overlapping finer forecast presented as a new payment');
-result = read([record(1), record(2, { aggregationLevel: 'week', periodStart: '2032-12-08', periodEnd: '2032-12-14' })]);
+result = read([record(1, { currency: 'BRL' }), record(2, { currency: 'BRL', aggregationLevel: 'week', periodStart: '2032-12-08', periodEnd: '2032-12-14' })]);
 assert.equal(result.events.length, 2, 'nonoverlapping levels remain separate');
 const monthly = record(9, { category: 'vacation', aggregationLevel: 'month', periodStart: '2033-01-01', periodEnd: '2033-01-31', amountBasis: 'net_credit', currency: 'BRL', expectedPaymentDate: '2033-01-04' });
 assert.equal(read([monthly]).events[0].category, 'vacation', 'full competence outside 30-day window still considered by payment date');

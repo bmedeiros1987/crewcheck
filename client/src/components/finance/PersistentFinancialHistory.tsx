@@ -1,15 +1,18 @@
+import {financialHistoryComparison} from '@shared/financialHistoryComparison.mjs';
 import {formatFinancialMinor,currencyMinorDigits} from '@shared/financialMoney.mjs';
 import { useEffect, useState } from 'react';
 import { authFetch, captureAuthSession, getStoredUser, getToken } from '@/lib/authClient';
 import { validFinancialDay, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { useFinancialPrivacy } from './FinancialPrivacy';
 import './persistent-history.css';
+import { financialEntryScope, readFinancialListPreference, writeFinancialListPreference } from './financialEntryState';
 
 type Level='item'|'day'|'week'|'month';
 type Status='forecast'|'statement_reported'|'payment_confirmed';
 type Entry={id:string;ownerId:string;revision:number;periodStart:string;periodEnd:string;currency:string;amountMinor:number|null;category:string;status:Status;aggregationLevel:Level;paymentDate?:string;amountBasis?:string;expectedPaymentDate?:string;expectedPaymentTimezone?:string};
 type History={state:'available'|'no_data'|'incomplete';records:Entry[]};
 const categories:Record<string,string>={allowance:'Diárias',advance:'Adiantamento',payroll:'Crédito salarial',vacation:'Crédito de férias'};
+const shortStatus:Record<Status,string>={forecast:'Previsto',statement_reported:'Informado',payment_confirmed:'Liquidação informada'};
 const statuses:Record<Status,string>={forecast:'Previsão — não confirma pagamento',statement_reported:'Informado no demonstrativo — sem confirmação bancária',payment_confirmed:'Liquidação informada'};
 function owner(){const user=getStoredUser();return getToken()&&user&&!['visitor','guest'].includes(user.role||'')?String(user.email||'').trim().toLowerCase():'';}
 function decode(raw:any,expectedOwner:string,level:Level,range:FinancialRange):History|null {
@@ -22,20 +25,28 @@ function decode(raw:any,expectedOwner:string,level:Level,range:FinancialRange):H
   if((raw.state==='no_data')!==(raw.records.length===0)&&raw.state!=='incomplete')return null;
   return {state:raw.state,records:raw.records};
 }
-export default function PersistentFinancialHistory({range,mode,view}:{range:FinancialRange;mode:'allowance'|'salary';view:'statement'|'charts'}) {
+export default function PersistentFinancialHistory({range,mode,view,comparison='month',entryScope}:{range:FinancialRange;mode:'allowance'|'salary';view:'statement'|'charts';comparison?:'month'|'week';entryScope?:string}) {
   const privacy=useFinancialPrivacy(),identity=owner(),token=getToken();
-  const [level,setLevel]=useState<Level>(mode==='salary'?'month':'item');
-  const [revision,refresh]=useState(0),[result,setResult]=useState<{key:string;token:string|null;data:History|null;loading:boolean}>({key:'',token:null,data:null,loading:false});
-  const [visible,setVisible]=useState(20);
+  const scope=entryScope||financialEntryScope(identity+':'+token),preferenceKey=JSON.stringify([mode,range.start,range.end,view]);
+  const initial=()=>({scope,key:preferenceKey,...readFinancialListPreference(scope,preferenceKey,mode==='salary'?'month':'item')});
+  const [preferences,setPreferences]=useState(initial);
+  const preference=preferences.scope===scope&&preferences.key===preferenceKey?preferences:readFinancialListPreference(scope,preferenceKey,preferences.scope===scope?preferences.level:mode==='salary'?'month':'item');
+  const selectedLevel=(mode==='salary'?'month':['item','day','week'].includes(preference.level)?preference.level:'item') as Level;
+  const visible=preference.visible;
+  const changePreference=(next:{level:string;visible:number})=>{writeFinancialListPreference(scope,preferenceKey,next);setPreferences({scope,key:preferenceKey,...next});};
+  const setLevel=(next:Level)=>changePreference({level:next,visible:20});
+  useEffect(()=>writeFinancialListPreference(scope,preferenceKey,{level:selectedLevel,visible}),[scope,preferenceKey,selectedLevel,visible]);
+  const level:Level=view==='charts'?(mode==='salary'?'month':comparison==='month'?'day':'week'):selectedLevel;
+  const [revision,refresh]=useState(0),[result,setResult]=useState<{key:string;token:string|null;data:History|null;loading:boolean;error?:string}>({key:'',token:null,data:null,loading:false});
   const requestKey=[identity,mode,level,range.start,range.end,range.valid].join(':');
   useEffect(()=>{const changed=()=>{setResult({key:'',token:null,data:null,loading:false});refresh(n=>n+1);};const storage=(e:StorageEvent)=>{if(e.key===null||['crewcheck_auth_user','crewcheck_auth_token'].includes(e.key))changed();};for(const event of ['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'])window.addEventListener(event,changed);window.addEventListener('storage',storage);return()=>{for(const event of ['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'])window.removeEventListener(event,changed);window.removeEventListener('storage',storage);};},[]);
   useEffect(()=>{
-    const session=captureAuthSession(),controller=new AbortController();let live=true;setVisible(20);
+    const session=captureAuthSession(),controller=new AbortController();let live=true;
     if(!identity||!range.valid){setResult({key:requestKey,token,data:null,loading:false});return;}
     setResult({key:requestKey,token,data:null,loading:true});
     const query=new URLSearchParams({periodStart:range.start,periodEnd:range.end,aggregationLevel:level});
     const timer=setTimeout(()=>controller.abort(),8000);
-    authFetch<any>('/api/platform/finance/history?'+query,{method:'GET',signal:controller.signal,cache:'no-store'}).then(raw=>{if(live&&session.isCurrent()&&owner()===identity)setResult({key:requestKey,token,data:decode(raw,identity,level,range),loading:false});}).catch(()=>{if(live&&session.isCurrent())setResult({key:requestKey,token,data:null,loading:false});}).finally(()=>clearTimeout(timer));
+    authFetch<any>('/api/platform/finance/history?'+query,{method:'GET',signal:controller.signal,cache:'no-store'}).then(raw=>{if(live&&session.isCurrent()&&owner()===identity)setResult({key:requestKey,token,data:decode(raw,identity,level,range),loading:false,error:decode(raw,identity,level,range)?undefined:'INVALID_RESPONSE'});}).catch(error=>{if(live&&session.isCurrent())setResult({key:requestKey,token,data:null,loading:false,error:error?.code==='FINANCIAL_LEDGER_NOT_ENABLED'?'LEDGER_OFF':'LOAD_ERROR'});}).finally(()=>clearTimeout(timer));
     return()=>{live=false;clearTimeout(timer);controller.abort();};
   },[identity,token,revision,level,range.start,range.end,range.valid]);
   const current=result.key===requestKey&&result.token===token?result:null;
@@ -44,18 +55,30 @@ export default function PersistentFinancialHistory({range,mode,view}:{range:Fina
   const data=current?.data,rows=(data?.records||[]).filter(row=>allowed.includes(row.category));
   const money=(minor:number,currency:string)=>privacy.amount(formatFinancialMinor(minor,currency)||'Não calculável');
   const date=(iso:string)=>iso.split('-').reverse().join('/');
-  const groups=new Map<string,{currency:string;category:string;status:Status;amount:number|null}>();
-  for(const row of rows){const key=row.currency+':'+row.category+':'+row.status,group=groups.get(key);const sum=group?(group.amount===null||row.amountMinor===null?null:group.amount+row.amountMinor):row.amountMinor;groups.set(key,{currency:row.currency,category:row.category,status:row.status,amount:sum!==null&&Number.isSafeInteger(sum)?sum:null});}
-  const totals=[...groups.values()];
-  const width=(item:{currency:string;amount:number|null})=>{const max=Math.max(0,...totals.filter(row=>row.currency===item.currency).flatMap(row=>row.amount===null?[]:[Math.abs(row.amount)]));return max&&item.amount!==null?Math.abs(item.amount)/max*100:0;};
-  return <section className="cc-persisted-finance" aria-label="Histórico financeiro salvo">
+  const {groups:totals,excluded,comparableCurrencies}=financialHistoryComparison(rows,{grouping:comparison,incomplete:data?.state==='incomplete'});
+  const width=(item:{currency:string;amountMinor:number|null})=>{const max=Math.max(0,...totals.filter(row=>row.currency===item.currency).flatMap(row=>row.amountMinor===null?[]:[Math.abs(row.amountMinor)]));return max&&item.amountMinor!==null?Math.abs(item.amountMinor)/max*100:0;};
+  const message=current?.loading?'Consultando registros…':current?.error==='LEDGER_OFF'?'Histórico salvo indisponível.':!data?'Não foi possível carregar o histórico.':data.state==='incomplete'?'Histórico parcial · conferir registros.':!rows.length?'Sem registros neste período.':'Moeda original · previsto e confirmado separados.';
+  return <section className="cc-persisted-finance" aria-label="Histórico financeiro salvo" data-financial-content-ready={current&&!current.loading?'true':'false'}>
     <h3>Histórico salvo</h3>
-    <label>Registros por<select aria-label="Agrupamento dos registros salvos" value={level} onChange={event=>setLevel(event.target.value as Level)}>{(mode==='salary'?['month']:['item','day','week']).map(value=><option key={value} value={value}>{{item:'Lançamento',day:'Dia',week:'Semana',month:'Mês'}[value]}</option>)}</select></label>
-    <p role="status">{current?.loading?'Consultando registros salvos…':!data?'Histórico financeiro indisponível nesta consulta.':data.state==='incomplete'?'Histórico incompleto; totais não confirmados.':!rows.length?'Nenhum registro salvo neste período.':'Registros independentes da escala. Previsões e liquidações permanecem separadas.'}</p>
+    <details className="cc-financial-help"><summary aria-label="Entender histórico salvo">?</summary><p>Somente registros persistidos da conta. Períodos sem registros não são zero. Liquidação conforme registro informado, sem consulta bancária; datas não confirmam pagamento. {current?.error==='LEDGER_OFF'?'Consulta persistida desativada; estimativas da escala permanecem separadas.':''}</p></details>
+    {view==='statement'&&<label>Registros por<select aria-label="Agrupamento dos registros salvos" value={level} onChange={event=>setLevel(event.target.value as Level)}>{(mode==='salary'?['month']:['item','day','week']).map(value=><option key={value} value={value}>{{item:'Lançamento',day:'Dia',week:'Semana',month:'Mês'}[value]}</option>)}</select></label>}
+    <p role="status" data-financial-load-state={current?.loading?'loading':current?.error||data?.state||'unavailable'}>{message}</p>
+    {!current?.loading&&!data&&current?.error!=='LEDGER_OFF'&&<button type="button" onClick={()=>refresh(n=>n+1)}>Tentar novamente</button>}
+
     {data&&rows.length>0&&<>
-      {view==='statement'?<ol>{[...rows].sort((a,b)=>b.periodStart.localeCompare(a.periodStart)||a.id.localeCompare(b.id)).slice(0,visible).map(row=><li key={row.id}><div><strong>{categories[row.category]}</strong><span>{date(row.periodStart)} a {date(row.periodEnd)}</span><small>Moeda original: {row.currency}</small><small>{statuses[row.status]} · revisão {row.revision}</small>{row.expectedPaymentDate&&<small>Pagamento previsto: {date(row.expectedPaymentDate)} · {row.expectedPaymentTimezone||'fuso não informado'}</small>}{row.paymentDate&&<small>Data de liquidação informada: {date(row.paymentDate)}</small>}</div><b>{row.amountMinor===null?'Não informado':money(row.amountMinor,row.currency)}</b></li>)}</ol>:<div aria-label="Gráfico de registros salvos"><p>Escalas independentes por moeda; sem conversão implícita.</p>{totals.map(item=><div className="cc-persisted-finance-bar" key={item.currency+item.category+item.status}><span>{categories[item.category]} · {statuses[item.status]} · {item.currency}</span><b>{data.state==='incomplete'||item.amount===null?'Não calculável':money(item.amount,item.currency)}</b>{!privacy.hidden&&data.state!=='incomplete'&&item.amount!==null&&<span className="cc-persisted-finance-track" data-status={item.status} aria-hidden="true"><span style={{width:`${width(item)}%`}}/></span>}</div>)}</div>}
-      {view==='statement'&&rows.length>visible&&<button type="button" onClick={()=>setVisible(n=>n+20)}>Mostrar mais registros</button>}
-      <p>Liquidação conforme registro informado, sem consulta bancária. Nenhuma previsão é confirmada automaticamente.</p>
+      {view==='statement'?<ol>{[...rows].sort((a,b)=>b.periodStart.localeCompare(a.periodStart)||a.id.localeCompare(b.id)).slice(0,visible).map(row=><li key={row.id} data-financial-row-key={row.id}><div><strong>{categories[row.category]}</strong><span>{date(row.periodStart)} a {date(row.periodEnd)}</span><small>Moeda original: {row.currency}</small><small>{statuses[row.status]} · revisão {row.revision}</small>{row.expectedPaymentDate&&<small>Pagamento previsto: {date(row.expectedPaymentDate)} · {row.expectedPaymentTimezone||'fuso não informado'}</small>}{row.paymentDate&&<small>Data de liquidação informada: {date(row.paymentDate)}</small>}</div><b>{row.amountMinor===null?'Não informado':money(row.amountMinor,row.currency)}</b></li>)}</ol>:<div aria-label="Gráfico de registros salvos">
+        <p>{range.start.split('-').reverse().join('/')}–{range.end.split('-').reverse().join('/')} · registros disponíveis</p>
+        {!comparableCurrencies.length&&<p>Sem dois períodos na mesma moeda para comparar.</p>}
+        {excluded>0&&<p>Registros sem período compatível não foram distribuídos.</p>}
+        {totals.map(item=><div className="cc-persisted-finance-bar" data-period={item.period} data-currency={item.currency} data-status={item.status} key={item.period+item.currency+item.category+item.status}>
+          <span><strong>{item.period.includes('/')?item.period:item.period.slice(5)+'/'+item.period.slice(0,4)}</strong><small>{categories[item.category]} · {item.currency} · {shortStatus[item.status]}</small></span>
+          <b>{item.amountMinor===null?'Não calculável':money(item.amountMinor,item.currency)}</b>
+          {!privacy.hidden&&comparableCurrencies.includes(item.currency)&&item.amountMinor!==null&&<span className="cc-persisted-finance-track" data-status={item.status} aria-hidden="true"><span style={{width:`${width(item)}%`}}/></span>}
+        </div>)}
+      </div>}
+
+      {view==='statement'&&rows.length>visible&&<button type="button" onClick={()=>changePreference({level:selectedLevel,visible:visible+20})}>Mostrar mais registros</button>}
+
     </>}
   </section>;
 }

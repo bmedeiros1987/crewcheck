@@ -37,6 +37,47 @@ const settle = page => page.evaluate(async () => {
   for (const animation of document.getAnimations()) if (Number.isFinite(animation.effect?.getComputedTiming().endTime)) try { animation.finish(); } catch {}
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 });
+// The production event bridge and explicit UI dismissal exercise the compiled
+// app's actual queue. No test-only runtime, CSS mutation or external send.
+async function emptyPulseQueue(page) {
+  for (let count=0;count<80;count++) {
+    const trigger=page.locator('.cz-global-header .cc-pulse-compact-trigger');
+    if (!await trigger.count()) return;
+    await trigger.click();
+    const dismiss=page.getByRole('button',{name:'Dispensar aviso',exact:true});
+    await dismiss.waitFor(); await dismiss.click();
+    await page.locator('.cc-pulse-popover').waitFor({state:'detached'});
+  }
+  assert.equal(await page.locator('.cc-pulse-compact-trigger').count(),0,'synthetic queue must be explicitly dismissible');
+}
+async function activePulseBrandContract(page,{width,size}) {
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:pulse',{detail:{id:'synthetic-header-brand',title:'SYNTHETIC header brand review',compactTitle:'Revisar',category:'compliance',tone:'atencao',priority:'alta',autoDismissMs:0,systemNotification:'never',review:{occurrence:'synthetic-header-brand',version:'v1'}}})));
+  const mark=page.getByRole('img',{name:'Notificações CrewCheck',exact:true});
+  await mark.waitFor();
+  assert.equal(await page.locator('.cz-global-header [data-crewcheck-brand="canonical"]').count(),0,'active queue replaces, never duplicates, the official mark');
+  assert.equal(await mark.count(),1,'one accessible semantic notice mark');
+  assert.equal(await page.locator('.cz-brand-lockup small').isVisible(),width>=640,'active mobile notice yields the subtitle space; desktop retains it');
+  const geometry=await mark.evaluate(element=>{
+    const box=node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
+    const svg=element.querySelector('svg'),trigger=document.querySelector('.cc-pulse-compact-trigger'),menu=document.querySelector('.cz-menu-btn');
+    return{mark:box(element),svg:box(svg),trigger:box(trigger),menu:box(menu),stroke:Number(svg.getAttribute('stroke-width'))*svg.getBoundingClientRect().width/24,overflow:document.documentElement.scrollWidth>innerWidth+1};
+  });
+  assert.equal(geometry.mark.width,28);assert.equal(geometry.mark.height,28);
+  assert.equal(geometry.svg.width,18);assert.equal(geometry.svg.height,18);assert.ok(Math.abs(geometry.stroke-2)<.01);
+  assert.ok(geometry.svg.x>=geometry.mark.x&&geometry.svg.right<=geometry.mark.right&&geometry.svg.y>=geometry.mark.y&&geometry.svg.bottom<=geometry.mark.bottom,'pictogram contained in its brand position');
+  assert.ok(geometry.trigger.width>=44&&geometry.trigger.height>=44,'notice is a readable keyboard/touch target');
+  assert.ok(geometry.mark.right<=geometry.trigger.x+1&&geometry.trigger.right<=geometry.menu.x+1,'brand, notice and menu never overlap');
+  assert.equal(geometry.overflow,false);
+  const trigger=page.locator('.cc-pulse-compact-trigger');await trigger.focus();await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>document.querySelector('.cc-pulse-compact-trigger')?.getAttribute('aria-expanded')==='true');
+  const dismiss=page.getByRole('button',{name:'Dispensar aviso',exact:true});await dismiss.focus();
+  const target=await dismiss.boundingBox();assert.ok(target.width>=44&&target.height>=44);
+  await page.keyboard.press('Enter');await page.locator('.cz-global-header [data-crewcheck-brand="canonical"]').waitFor();
+  assert.equal(await mark.count(),0,'last dismissal restores the official mark');
+  assert.equal(await page.locator('.cz-brand-lockup small').isVisible(),!(width<=600&&size>=150),'normal subtitle returns exactly when due');
+  assert.equal(await page.locator('.cz-menu-btn').evaluate(element=>element===document.activeElement),true,'dismissal restores keyboard focus to the header action');
+  return geometry;
+}
 async function recovered(page) {
   await page.waitForFunction(() => !document.body.classList.contains('crewcheck-menu-open') && !history.state?.crewcheckOverlay && document.body.style.overflow !== 'hidden');
   await settle(page);
@@ -89,11 +130,18 @@ async function visibleTextBounds(page, selector) {
         return route.continue();
       });
       await context.addInitScript(fixtureScope.qaSeed,{theme,kind:fixtureScope.qaRoster('multi'),amount:1234567.89});
+      await context.addInitScript(()=>{
+        const ownerId='financial-ui-qa';
+        localStorage.setItem('crewcheck_language','pt-BR');
+        localStorage.setItem('crewcheck:notification-preferences:v1:'+ownerId,JSON.stringify({ownerId,revision:0,preferences:{settings:{crewcheck_pulse_enabled:true}}}));
+        window.Notification=class{static permission='denied';constructor(){throw Error('Synthetic fixture forbids external notifications');}};
+      });
       const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
       await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'settings'})));
       await page.locator('#cc-text-size').selectOption(String(size));await settle(page);
       await page.evaluate(()=>{document.documentElement.style.setProperty('--cc-safe-area-top','24px');document.documentElement.style.setProperty('--cc-safe-area-bottom','20px');});
       await page.evaluate(()=>window.dispatchEvent(new Event('resize')));await settle(page);
+      await emptyPulseQueue(page);await settle(page);
       const box=async selector=>page.locator(selector).boundingBox();
       const stable=(before,after,label)=>{assert.ok(before&&after);assert.ok(Math.abs(before.y-after.y)<=1&&Math.abs(before.height-after.height)<=1,label+JSON.stringify({before,after}));};
       const header=await box('.cz-global-header');
@@ -107,6 +155,9 @@ async function visibleTextBounds(page, selector) {
       assert.equal(await page.locator('.cc-fixed-header-space').count(),0,'No obsolete header spacer');
       await page.locator('.cz-global-header button').last().focus();assert.equal(await page.locator('.cz-global-header button').last().evaluate(el=>el===document.activeElement),true,'Header actions retain keyboard focus');
       await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-restored-header.png`)});
+      const activeBrand=await activePulseBrandContract(page,{width,size});
+      assert.deepEqual(await visibleTextBounds(page,'.cz-global-header'),[],'restored normal header remains readable');
+      await settle(page);
       const headerDocY=header.y+await page.evaluate(()=>scrollY);
       for(const top of [900,0,160]) {await page.evaluate(top=>window.scrollTo({top,behavior:'instant'}),top);await settle(page);const current=await box('.cz-global-header');const actualScroll=await page.evaluate(()=>scrollY);assert.ok(Math.abs(current.y+actualScroll-headerDocY)<=1,'Header follows document scroll');}
       assert.deepEqual(await visibleTextBounds(page,'.cz-global-header'),[]);
@@ -163,7 +214,7 @@ async function visibleTextBounds(page, selector) {
       });
       assert.ok(importColors.items.every(item=>item.ratio>=4.5&&item.opacity==='1'),'Import contrast: '+JSON.stringify(importColors));
       await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-import.png`)});
-      results.push({width,theme,size,importColors,header,menuHead,title,scrollBox,safeArea:{top:24,bottom:20},keyboardHeight:width<500?420:null});
+      results.push({width,theme,size,activeBrand,importColors,header,menuHead,title,scrollBox,safeArea:{top:24,bottom:20},keyboardHeight:width<500?420:null});
       await context.close();console.log('PASS fixed headers',width,theme,size);
     }
     assert.deepEqual(artifactEvidence(),exactArtifact,'Exact source/bundle hashes stay unchanged through the complete flow matrix');

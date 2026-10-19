@@ -1,3 +1,4 @@
+import {cabinSalaryRateReference} from '@/lib/cabinSalaryRateReference';
 import ConciergeFinancialPreview from '@/components/finance/ConciergeFinancialPreview';
 import {HomeFinancialEstimateProvider} from '@/components/finance/HomeFinancialEstimate';
 import CurrencyCalculator from '@/components/finance/CurrencyCalculator';
@@ -5,6 +6,7 @@ import FinancialHistoryWithoutRoster from '@/components/finance/FinancialHistory
 import {validFinancialDay} from '@/lib/financialHistoryPeriods';
 import {parseFinancialDecimal} from '@shared/financialFx.mjs';
 import { AlertRosterNavigation } from '@/components/alerts/AlertRosterNavigation';
+import * as rawNavigationContext from '@/lib/navigationContext';
 import { peekPendingNavigationContext as peekAlertRosterContext } from '@/lib/navigationContext';
 import { isGroundAlertIgnored, GROUND_DISPOSITION_EVENT } from '@/lib/groundAlertDispositions';
 import { alertRosterOwned } from '@/lib/alertRosterOwnership';
@@ -22,7 +24,7 @@ import { payableReserveHours } from '@/lib/financialReserveCredits';
 import { assessSalaryActivities } from '@/lib/salaryActivityEvidence';
 import { CanonicalDutyCard, openCanonicalDutyDetails } from '@/components/CanonicalDutyCard';
 import { measureCanonicalDuty } from '@/lib/canonicalDutyMeasurement';
-import { financialIntervalEvidenceIssue } from '@/lib/financialIntervalEvidence';
+import { financialIntervalEvidenceIssue, financialPublishedFlightIntervalIssue } from '@/lib/financialIntervalEvidence';
 import { NotificationReadiness } from '@/components/notifications/NotificationReadiness';
 import { isFinancialSetting, readFinancialSetting, writeFinancialSetting } from '@/lib/financialSettingStore';
 import type { ReactNode } from 'react';
@@ -116,11 +118,13 @@ import PayrollPaymentCard from '@/components/finance/PayrollPaymentCard';
 import SalaryBreakdownChart, { salaryDeductionEvidence } from '@/components/finance/SalaryBreakdownChart';
 import FinancialScreen from '@/components/finance/FinancialScreen';
 import { nextAllowancePayment } from '@/lib/nextFinancialPayment';
+import {readMonthlyFinancialSettings} from '@/lib/financialMonthlySettings';
+import {applyMonthlySalaryInputs} from '@/lib/monthlySalaryInputs';
 import FinancialStatementReconciliation from '@/components/finance/FinancialStatementReconciliation';
 import CanonicalForecastCapture from '@/components/finance/CanonicalForecastCapture';
 import { financialRowsInRange, financialWeeks, financialRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { rosterDisplayIso, rosterStrictInstant, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
-import { confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
+import { confirmedRateAt, confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import { allowanceIntervalState, rosterOperationalIso, rosterOperationalDateAt, rosterPresentationBeforeDeparture, taxiPresentationOccurrence, classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
@@ -1599,13 +1603,13 @@ async function askTelegramConcierge(text: string) {
   return payload;
 }
 
-function Brand({ back, onMenu, pulse = false, global = false }: { back?: boolean; onMenu?: () => void; pulse?: boolean; global?: boolean }) {
+function Brand({ back, onMenu, pulse = false, backLabel, global = false }: { back?: boolean; onMenu?: () => void; pulse?: boolean; backLabel?: string; global?: boolean }) {
   if (!global && !pulse) return null;
-  const click = onMenu || (back ? (() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' }))) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));
-  const lockup = <div className="cz-brand-lockup"><span className="cz-logo"><Plane size={26}/></span><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>;
+  const click = onMenu || (back ? (() => { if (['perdiem','salary'].includes(new URLSearchParams(location.search).get('view') || '') && history.state?.ccEnteredFromConcierge) history.back(); else window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' })); }) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));
+  const lockup = <div className="cz-brand-lockup"><CrewCheckPulse compact brandMark fallback={<span className="cz-logo"><Plane size={26}/></span>}/><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>;
   return <header className="cz-brand-row">
-    <button className="cz-menu-btn" onClick={click} aria-label={back ? alertText().back : alertText().menu}>{back ? '←' : <Menu size={28}/>}</button>
-    <div className="cc-brand-and-notice">{lockup}{pulse && <CrewCheckPulse compact/>}</div>
+    <button className="cz-menu-btn" onClick={click} aria-label={back ? backLabel || alertText().back : alertText().menu}>{back ? '←' : <Menu size={28}/>}</button>
+    <div className="cc-brand-and-notice">{lockup}<CrewCheckPulse compact/></div>
   </header>;
 }
 function complianceAlertSignature(compliance: ComplianceResult | null): string {
@@ -3367,6 +3371,7 @@ type ActCompensationConfig = {
   nightHourMetric: number;
   basePay: number;
   baseConfigured: boolean;
+  baseLabel?: string;
   fixedAdditionsConfigured: boolean;
   fixedAdditions: number;
   inssDeduction: number;
@@ -3418,6 +3423,8 @@ type PerDiemRow = {
   rateSource: string;
   rateVersion: string;
   exchangeRate: number | null;
+  expectedPaymentDate?:string;
+  expectedPaymentTimezone?:string;
   calculationStart: string;
   calculationEnd: string;
 };
@@ -3460,6 +3467,9 @@ function rosterFinancialDate(roster: CrewRoster): string {
 function loadActCompensationConfig(roster: CrewRoster): ActCompensationConfig {
   const act = resolveActFinancialRules(roster);
   const effectiveDate = rosterFinancialDate(roster);
+  const cabin=act.profileLabel==='Comissário(a) - ACT 2025/2027';
+  const variableReference=cabin?cabinSalaryRateReference(`${roster.year}-${String(roster.month).padStart(2,'0')}`):null;
+  const defaultRates=cabin?(variableReference||{dayKm:NaN,nightKm:NaN,reserveHour:NaN,standbyHour:NaN}):act.salary;
   const legacyMetric = readOptionalNumberSetting('crewcheck_act_km_metric_brl');
   const dayOverride = readOptionalNumberSetting('crewcheck_act_day_km_metric_brl');
   const nightOverride = readOptionalNumberSetting('crewcheck_act_night_km_metric_brl');
@@ -3470,10 +3480,10 @@ function loadActCompensationConfig(roster: CrewRoster): ActCompensationConfig {
   const learnedReserve = confirmedRateValueAt('salary.reserveHour', effectiveDate);
   const learnedStandby = confirmedRateValueAt('salary.standbyHour', effectiveDate);
   const learnedBase = confirmedRateValueAt('salary.base', effectiveDate);
-  const dayKmMetric = dayOverride ?? legacyMetric ?? learnedDay ?? act.salary.dayKm;
-  const nightKmMetric = nightOverride ?? learnedNight ?? act.salary.nightKm;
-  const reserveHourMetric = reserveOverride ?? learnedReserve ?? act.salary.reserveHour;
-  const standbyHourMetric = standbyOverride ?? learnedStandby ?? act.salary.standbyHour;
+  const dayKmMetric = dayOverride ?? legacyMetric ?? learnedDay ?? defaultRates.dayKm;
+  const nightKmMetric = nightOverride ?? learnedNight ?? defaultRates.nightKm;
+  const reserveHourMetric = reserveOverride ?? learnedReserve ?? defaultRates.reserveHour;
+  const standbyHourMetric = standbyOverride ?? learnedStandby ?? defaultRates.standbyHour;
   const chiefPerSector = readNumberSetting('crewcheck_act_chief_sector_brl', 0);
   const instructorPerSector = readNumberSetting('crewcheck_act_instructor_sector_brl', 0);
   const basePay = readOptionalNumberSetting('crewcheck_salary_base_brl') ?? learnedBase ?? 0;
@@ -3487,7 +3497,7 @@ function loadActCompensationConfig(roster: CrewRoster): ActCompensationConfig {
     || basePay > 0 || fixedAdditions > 0;
   const hasOverride = [dayOverride, nightOverride, reserveOverride, standbyOverride, legacyMetric].some((value) => value !== null);
   const hasLearned = [learnedDay, learnedNight, learnedReserve, learnedStandby, learnedBase].some((value) => value !== null);
-  return {
+  return applyMonthlySalaryInputs({
     kmMetric: dayKmMetric,
     dayKmMetric,
     nightKmMetric,
@@ -3506,10 +3516,11 @@ function loadActCompensationConfig(roster: CrewRoster): ActCompensationConfig {
     fgtsRate,
     configured,
     source: act.profileLabel + ' · ' + act.legalReference
-      + (hasOverride ? ' · calibração manual do Admin' : hasLearned ? ' · demonstrativo confirmado pelo Admin' : ' · tabela ACT vigente')
+      + (hasOverride ? ' · calibração manual da conta' : '') + (hasLearned ? ' · demonstrativo revisado da conta' : '')
+      + (cabin?' · '+(variableReference?.description||'Reajuste/tarifa da competência sem evidência; não calculável'):' · referência ACT impressa; conferir competência')
       + ' · cada KM é classificado uma única vez pela janela local 22:00–05:00',
     requiresManualFunction: act.requiresManualFunction,
-  };
+  },`${roster.year}-${String(roster.month).padStart(2,'0')}`,readMonthlyFinancialSettings(`${roster.year}-${String(roster.month).padStart(2,'0')}`));
 }
 function normalizeCrewNameForFinance(value: unknown): string {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
@@ -3538,9 +3549,10 @@ function flightDistanceKmFromEvent(event: ZeroLeg): number {
 }
 function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
   const act = resolveActFinancialRules(roster);
-  const learnedMeal = confirmedRateValueAt('per_diem.lunch', effectiveDate)
-    ?? confirmedRateValueAt('per_diem.dinner', effectiveDate)
-    ?? confirmedRateValueAt('per_diem.supper', effectiveDate);
+  const learnedMealRate = confirmedRateAt('per_diem.lunch', effectiveDate)
+    ?? confirmedRateAt('per_diem.dinner', effectiveDate)
+    ?? confirmedRateAt('per_diem.supper', effectiveDate);
+  const learnedMeal = learnedMealRate?.value ?? null;
   const learnedBreakfast = confirmedRateValueAt('per_diem.breakfast', effectiveDate);
   const domesticRule = act.perDiem.find((rule) => rule.key === 'domestic');
   const domesticOverride = readOptionalNumberSetting('crewcheck_perdiem_rate_domestic');
@@ -3549,6 +3561,7 @@ function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
     actMainMeal: domesticRule?.mainMeal ?? NaN,
     manualOverride: domesticOverride,
     learnedMainMeal: learnedMeal,
+    ownerConfirmedMainMeal: learnedMealRate?.valueOrigin === 'owner_confirmed',
     learnedBreakfast,
     breakfastPercent: act.breakfastPercent,
   });
@@ -3574,10 +3587,12 @@ function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
     domesticBreakfast: domestic.breakfast,
     taxiRate: confirmedRateValueAt('per_diem.taxi', effectiveDate),
     domesticMainMealSource: domestic.source,
-    domesticBreakfastSource: learnedBreakfast !== null ? 'learned' : domestic.source,
+    domesticBreakfastSource: domestic.breakfastSource,
     airportOverrides: loadAirportPerDiemOverrides(),
     source: act.profileLabel + ' · ' + act.legalReference
-      + (learnedMeal || learnedBreakfast ? ' · demonstrativo confirmado pelo Admin' : '')
+      + (learnedMeal || learnedBreakfast ? ' · tarifas revisadas nesta conta' : '')
+      + (domestic.source==='act' && learnedBreakfast===null ? ' · referência ACT; tarifa empresarial da conta não confirmada neste período' : '')
+      + (domestic.breakfastSource==='act' && domestic.source!=='act' ? ' · café: referência ACT; tarifa própria não confirmada neste período' : '')
       + demonstratedSource,
   };
 }
@@ -3618,6 +3633,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     const fx = cfg.exchangeRates[rate.currency];
     rows.push({
       eventId: event.id,
+      ...(rate.currency!=='BRL'&&event.kind==='flight'&&!financialPublishedFlightIntervalIssue([event])&&event.salaryClockKnown!==false?{expectedPaymentDate:rosterOperationalIso(eventStartDateTime(event)),expectedPaymentTimezone:'America/Sao_Paulo'}:{}),
       date: dateChip(new Date(iso + 'T12:00:00')),
       iso,
       label,
@@ -3676,6 +3692,20 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     if (evidenceIssue || allowanceIntervalState(start, end) !== 'available') {
       const iso = rosterOperationalIso(eventStartDateTime(representative));
       unclassifiedItems.push({ iso, airport: String(representative.origin || ''), reason: `Intervalo operacional incompleto: ${evidenceIssue || 'apresentação ou fim inválido'}. Relógio da escala BRT (UTC-03).` });
+      // Preserve only meals proved by literal flight intervals. Unknown APZ
+      // still blocks duty completeness, base breakfast and taxi. Do not extend
+      // to preflight, connections or arrival+30 in this partial-evidence path.
+      if (activityKind==='flight' && evidenceIssue==='Apresentação publicada ausente ou estimada.' && !financialPublishedFlightIntervalIssue(dutyFlights)) {
+        for (const flight of dutyFlights) {
+          const knownStart=eventStartDateTime(flight),knownEnd=eventEndDateTime(flight);
+          if (allowanceIntervalState(knownStart,knownEnd)!=='available') continue;
+          for (const occurrence of classifyAllowanceWindows({start:knownStart,end:knownEnd,kind:'flight',clockBasis:'roster_brt',breakfastIncluded:true})) {
+            if (occurrence.slot==='breakfast') continue;
+            const labels:Record<string,string>={lunch:'Almoço',dinner:'Jantar',supper:'Ceia'};
+            add(flight,occurrence.iso,occurrence.slot,labels[occurrence.slot],`Trecho com partida/chegada publicadas · ${occurrence.window} · subtotal parcial; apresentação da jornada pendente`,knownStart,knownEnd);
+          }
+        }
+      }
       continue;
     }
 
@@ -3762,7 +3792,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     } else {
       rows.push({ eventId: taxi.event.id, date: dateChip(new Date(taxi.iso + 'T12:00:00')), iso: taxi.iso,
         label: 'Táxi', value, currency: 'BRL', convertedBRL: value,
-        source: source + ' · tarifa de táxi do demonstrativo confirmado no período; previsão não comprova pagamento',
+        source: source + ' · tarifa de táxi revisada nesta conta no período; previsão não comprova pagamento',
         airport: taxi.event.origin, rateKey: 'domestic', rateSource: 'learned', rateVersion: 'taxi-user-reported-v1',
         exchangeRate: 1, calculationStart: taxi.start.toISOString(), calculationEnd: taxi.end.toISOString() });
     }
@@ -3874,8 +3904,8 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
     const dayKm = Math.max(0, km - nightKm);
     const dayRateApplied = payRule.extra ? cfg.nightKmMetric : cfg.dayKmMetric;
     const nightRateApplied = cfg.nightKmMetric;
-    const dayProduction = dayKm * dayRateApplied;
-    const nightProduction = nightKm * nightRateApplied;
+    const dayProduction = dayKm === 0 ? 0 : dayKm * dayRateApplied;
+    const nightProduction = nightKm === 0 ? 0 : nightKm * nightRateApplied;
     const production = timeKnown ? dayProduction + nightProduction : NaN;
     const chiefEligible = userIsFirstCcm(event, roster);
     const chief = chiefEligible ? cfg.chiefPerSector : 0;
@@ -3931,7 +3961,8 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
   const production = rows.reduce((sum, row) => sum + row.production, 0);
   const chief = rows.reduce((sum, row) => sum + row.chief, 0);
   const instructorPay = rows.reduce((sum, row) => sum + row.instructor, 0);
-  const gross = cfg.basePay + cfg.fixedAdditions + production + chief + instructorPay + reserve + standby;
+  const fixedReady=cfg.baseConfigured!==false&&cfg.fixedAdditionsConfigured!==false&&[cfg.basePay,cfg.fixedAdditions].every(value=>Number.isFinite(value)&&value>=0);
+  const gross = fixedReady?cfg.basePay + cfg.fixedAdditions + production + chief + instructorPay + reserve + standby:NaN;
   const inss = Math.max(0, cfg.inssDeduction);
   const irrf = Math.max(0, cfg.irrfDeduction);
   const otherDeductions = Math.max(0, cfg.otherDeductions);
@@ -4090,7 +4121,7 @@ function PerDiemView({ bundle }: { bundle: BundleState }) {
 function salaryDiagnosticItem(snapshot: ReturnType<typeof financeSnapshot>) {
   const salary = snapshot.salary, roster = snapshot.roster;
   const month = `${roster.year}-${String(roster.month).padStart(2,'0')}`;
-  return { month, days: roster.days.length, configured: salary.configured, baseConfigured: salary.config.baseConfigured,
+  return { month, days: roster.days.length, configured: salary.configured, baseConfigured: salary.config.baseConfigured, fixedAdditionsConfigured:salary.config.fixedAdditionsConfigured,
     requiresManualFunction: salary.config.requiresManualFunction,
     variableComplete: salary.rows.every(row => row.distanceKnown),
     pendingActivityCount: salary.reserveAssessment.pendingCount + salary.standbyAssessment.pendingCount,
@@ -4121,9 +4152,9 @@ function SalaryReliableView({ bundle }: { bundle: BundleState }) {
         </FinancialScreen>
         <FinancialScreen names={['payment']}>
         <SalaryCalculationStatus items={diagnosticItems} range={range} missing={missing}/>
-        <details className="cz-toolbox"><summary>Composição mensal e descontos informados</summary>{selected.length?selected.map(item=>{const salary=item.snapshot.salary, itemDiagnostic=salaryCalculationDiagnostic([salaryDiagnosticItem(item.snapshot)],financialRange('month',`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,'','',''),[]), cycle=reviewedPayrollCycleForOperationalMonth(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`), deductionsKnown=salaryDeductionEvidence(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,salary);return <article key={`${item.roster.year}-${item.roster.month}`}><h2>{item.roster.month}/{item.roster.year}</h2>{cycle && <p data-payroll-competences="reviewed-company-cycle">Variáveis operacionais: {cycle.operationalVariableMonth}. Fixos e competência da folha: {cycle.fixedMonth}. Mês esperado de crédito: {cycle.expectedCreditMonth}; data exata e liquidação não confirmadas. Origem: orientação empresarial fornecida pelo usuário e revisada nesta conta.</p>}<p>Fonte operacional: {item.source}. {privacy.text(salary.config.source)}</p><p>Salário-base: {salary.config.baseConfigured?moneyBRL(salary.config.basePay):'Não informado'}. Fixos informados: {moneyBRL(salary.config.fixedAdditions)}.</p>{itemDiagnostic.variable===null&&<p>Variáveis e total: não calculáveis; há dados ou função profissional pendentes.</p>}<p>Parcelas previstas: voos {moneyBRL(salary.production)}, chefe/instrutor {moneyBRL(salary.chief+salary.instructorPay)}, reserva {moneyBRL(salary.reserve)}, sobreaviso {moneyBRL(salary.standby)}.</p>{[salary.reserveAssessment,salary.standbyAssessment].map((assessment,index)=>assessment.pendingCount>0&&<p key={index} data-salary-activity-pending={index===0?'reserve':'standby'}>{index===0?'Reserva':'Sobreaviso'}: {assessment.knownCount>0?`subtotal com horários comprovados ${moneyBRL(assessment.knownAmount)}; `:''}{assessment.pendingCount} intervalo(s) sem horários publicados comprovados. O subtotal não representa a parcela completa.</p>)}{(salary.reserveAssessment.rows.length>0||salary.standbyAssessment.rows.length>0)&&<details className="cc-per-diem-source"><summary>Horários de reservas e sobreaviso</summary>{[...salary.reserveAssessment.rows,...salary.standbyAssessment.rows].map(row=><p key={row.id}>{row.date} · {row.code} · {row.timeKnown?moneyBRL(row.value!):'Não calculável'}<small>{row.report||'Início ausente'} até {row.release||'Fim ausente'} · {row.issue||'Intervalo publicado; previsão sem confirmação de pagamento.'}</small></p>)}</details>}<p>Descontos informados: INSS {deductionsKnown.inss?moneyBRL(salary.inss):'Não informado'}, IRRF {deductionsKnown.irrf?moneyBRL(salary.irrf):'Não informado'}, outros {deductionsKnown.otherDeductions?moneyBRL(salary.otherDeductions):'Não informado'}. Líquido simulado da competência: {itemDiagnostic.ready&&deductionsKnown.complete?moneyBRL(salary.net):'Não calculável'}.</p><p>Valores integrais da competência, sem rateio pelo filtro de dias.</p></article>}):<p>Nenhuma competência disponível.</p>}</details>
+        <details className="cz-toolbox"><summary>Composição mensal e descontos informados</summary>{selected.length?selected.map(item=>{const salary=item.snapshot.salary, itemDiagnostic=salaryCalculationDiagnostic([salaryDiagnosticItem(item.snapshot)],financialRange('month',`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,'','',''),[]), cycle=reviewedPayrollCycleForOperationalMonth(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`), deductionsKnown=salaryDeductionEvidence(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,salary);return <article key={`${item.roster.year}-${item.roster.month}`}><h2>{item.roster.month}/{item.roster.year}</h2>{cycle && <p data-payroll-competences="reviewed-company-cycle">Variáveis operacionais: {cycle.operationalVariableMonth}. Fixos e competência da folha: {cycle.fixedMonth}. Mês esperado de crédito: {cycle.expectedCreditMonth}; data exata e liquidação não confirmadas. Origem: orientação empresarial fornecida pelo usuário e revisada nesta conta.</p>}<p>Fonte operacional: {item.source}. {privacy.text(salary.config.source)}</p><p>{salary.config.baseLabel||'Salário-base'}: {salary.config.baseConfigured?moneyBRL(salary.config.basePay):'Não informado'}. Fixos informados: {salary.config.fixedAdditionsConfigured?moneyBRL(salary.config.fixedAdditions):'Não informado'}.</p>{itemDiagnostic.variable===null&&<p>Variáveis e total: não calculáveis; há dados ou função profissional pendentes.</p>}<p>Parcelas previstas: voos {moneyBRL(salary.production)}, chefe/instrutor {moneyBRL(salary.chief+salary.instructorPay)}, reserva {moneyBRL(salary.reserve)}, sobreaviso {moneyBRL(salary.standby)}.</p>{[salary.reserveAssessment,salary.standbyAssessment].map((assessment,index)=>assessment.pendingCount>0&&<p key={index} data-salary-activity-pending={index===0?'reserve':'standby'}>{index===0?'Reserva':'Sobreaviso'}: {assessment.knownCount>0?`subtotal com horários comprovados ${moneyBRL(assessment.knownAmount)}; `:''}{assessment.pendingCount} intervalo(s) sem horários publicados comprovados. O subtotal não representa a parcela completa.</p>)}{(salary.reserveAssessment.rows.length>0||salary.standbyAssessment.rows.length>0)&&<details className="cc-per-diem-source"><summary>Horários de reservas e sobreaviso</summary>{[...salary.reserveAssessment.rows,...salary.standbyAssessment.rows].map(row=><p key={row.id}>{row.date} · {row.code} · {row.timeKnown?moneyBRL(row.value!):'Não calculável'}<small>{row.report||'Início ausente'} até {row.release||'Fim ausente'} · {row.issue||'Intervalo publicado; previsão sem confirmação de pagamento.'}</small></p>)}</details>}<p>Descontos informados: INSS {deductionsKnown.inss?moneyBRL(salary.inss):'Não informado'}, IRRF {deductionsKnown.irrf?moneyBRL(salary.irrf):'Não informado'}, outros {deductionsKnown.otherDeductions?moneyBRL(salary.otherDeductions):'Não informado'}. Líquido simulado da competência: {itemDiagnostic.ready&&deductionsKnown.complete?moneyBRL(salary.net):'Não calculável'}.</p><p>Valores integrais da competência, sem rateio pelo filtro de dias.</p></article>}):<p>Nenhuma competência disponível.</p>}</details>
         </FinancialScreen>
-        <FinancialScreen names={['statement']}><section className="cz-finance-table cc-per-diem-items"><h3>Extrato previsto · Componentes por voo · {rows.length} itens</h3><p className="finance-learning-notice warning" data-km-source="operational-estimate">KM exibido nesta previsão é uma estimativa operacional pela distância entre aeroportos. A quilometragem remunerável da folha pode usar a tabela corporativa por trecho; confira o extrato/AIMS.</p><p>Somente as parcelas com vínculo a um voo. Salário-base, reserva, sobreaviso e descontos mensais não são rateados.</p>{rows.length?[...rows].sort((a,b)=>a.iso.localeCompare(b.iso)).map(row=><div className="cz-finance-row" key={row.id}><span>{row.iso}</span><strong>{row.flight} · {row.route}</strong><b><MoneyText value={rowAvailable(row)?moneyBRL(row.total):'Não calculável'}/></b><details className="cc-per-diem-source"><summary>Origem e regra</summary><small>{!row.timeKnown?'Horários ou fuso operacional ausentes ou ambíguos; parcela não calculável. ':''}{!row.distanceKnown?'Distância operacional desconhecida; os zeros internos do motor não são valores confirmados. ':''}{rowAvailable(row)?`${row.dayKm} km diurno × ${moneyBRL(row.dayRateApplied)} · ${row.nightKm} km noturno × ${moneyBRL(row.nightRateApplied)}`:'Parcela indisponível; distância, tarifas ou função profissional pendentes.'} · {privacy.text(row.payRule)} · {privacy.text(row.source)}</small></details></div>):<p>Sem parcelas por voo disponíveis no intervalo.</p>}</section></FinancialScreen>
+        <FinancialScreen names={['statement']}><section className="cz-finance-table cc-per-diem-items"><h3>Extrato previsto · Componentes por voo · {rows.length} itens</h3><p className="finance-learning-notice warning" data-km-source="operational-estimate">KM exibido nesta previsão é uma estimativa operacional pela distância entre aeroportos. A quilometragem remunerável da folha pode usar a tabela corporativa por trecho; confira o extrato/AIMS.</p><p>Somente as parcelas com vínculo a um voo. Salário-base, reserva, sobreaviso e descontos mensais não são rateados.</p>{rows.length?[...rows].sort((a,b)=>a.iso.localeCompare(b.iso)).map(row=><div className="cz-finance-row" key={row.id}><span>{row.iso}</span><strong>{row.flight} · {row.route}</strong><b><MoneyText value={rowAvailable(row)?moneyBRL(row.total):'Não calculável'}/></b><details className="cc-per-diem-source"><summary>Origem e regra</summary><small>{!row.timeKnown?'Horários ou fuso operacional ausentes ou ambíguos; parcela não calculável. ':''}{!row.distanceKnown?'Distância operacional desconhecida; os zeros internos do motor não são valores confirmados. ':''}{rowAvailable(row)?(privacy.hidden?'Valores ocultos':`${row.dayKm} km à tarifa base × R$ ${row.dayRateApplied.toLocaleString('pt-BR',{maximumFractionDigits:10})} · ${row.nightKm} km à tarifa majorada (noturno/extra/domingo/feriado) × R$ ${row.nightRateApplied.toLocaleString('pt-BR',{maximumFractionDigits:10})}`):'Parcela indisponível; distância, tarifas ou função profissional pendentes.'} · {privacy.text(row.payRule)} · {privacy.text(row.source)}</small></details></div>):<p>Sem parcelas por voo disponíveis no intervalo.</p>}</section></FinancialScreen>
       </section></>;
     }}/>
 }
@@ -4984,6 +5015,7 @@ function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'weather' || value === 'meteo') return 'weather';
   if (value === 'perdiem' || value === 'diarias') return 'perdiem';
   if (value === 'salary' || value === 'salario') return 'salary';
+  if (value === 'concierge') return 'concierge';
   if(value==='currency'||value==='currency-calculator')return 'currency';
   if (value === 'reports' || value === 'relatorios') return 'reports';
   if (value === 'load' || value === 'carga') return 'load';
@@ -5129,7 +5161,47 @@ export default function Home() {
   useEffect(initializeCrewTextSize, []);
   const [, setLocation] = useLocation();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [view, setView] = useState<ZeroView>(() => new URLSearchParams(window.location.search).has('connect') ? 'community' : normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
+  const [view, setViewState] = useState<ZeroView>(() => new URLSearchParams(window.location.search).has('connect') ? 'community' : new URLSearchParams(window.location.search).get('view') ? normalizeInitialView(new URLSearchParams(window.location.search).get('view')) : normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
+  const activeViewRef = useRef(view); activeViewRef.current = view;
+  useEffect(() => {
+    const restoreFinancialView = () => { const linkedView = new URLSearchParams(window.location.search).get('view'); if (linkedView) setViewState(normalizeInitialView(linkedView)); };
+    const resetAccountNavigation = () => {
+      const url = new URL(location.href); url.searchParams.set('view','cockpit');
+      for (const key of ['fmode','fscreen','fkind','fmonth','fday','ffrom','fto','fcurrency','fcomparison']) url.searchParams.delete(key);
+      history.replaceState({...history.state,ccFinancial:undefined,ccFinancialPosition:undefined,ccFinancialLists:undefined,ccFinancialScope:undefined,ccConciergePosition:undefined,ccEnteredFromConcierge:undefined},'',url);
+      window.scrollTo({left:0,top:0,behavior:'instant'});
+      setViewState('cockpit');
+    };
+    window.addEventListener('popstate',restoreFinancialView);
+    const accountEvents = ['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'];
+    for (const name of accountEvents) window.addEventListener(name,resetAccountNavigation,true);
+    return () => { window.removeEventListener('popstate',restoreFinancialView); for (const name of accountEvents) window.removeEventListener(name,resetAccountNavigation,true); };
+  },[]);
+  function setView(nextView: ZeroView) {
+    const {peekPendingNavigationContext,clearPendingNavigationContext}=rawNavigationContext;
+    const url = new URL(window.location.href), previousView = activeViewRef.current;
+    const sourceUrl = new URL(url); sourceUrl.searchParams.set('view',previousView);
+    history.replaceState(history.state,'',sourceUrl);
+    const fromConcierge = activeViewRef.current === 'concierge' && ['salary','perdiem'].includes(nextView);
+    if (fromConcierge) {
+      const origin = document.activeElement?.closest<HTMLElement>('[data-financial-origin]');
+      const sourceUrl = new URL(url); sourceUrl.searchParams.set('view','concierge');
+      history.replaceState({...history.state,ccConciergePosition:{x:scrollX,y:scrollY,key:origin?.dataset.financialOrigin||null}},'',sourceUrl);
+    }
+    if (history.state?.crewcheckOverlay || ['salary','perdiem'].includes(nextView) || ['salary','perdiem'].includes(previousView||'')) {
+      if (previousView !== nextView || fromConcierge) {
+        window.dispatchEvent(new Event('crewcheck:financial-navigation-leave'));
+        url.searchParams.set('view',nextView);
+        history[history.state?.crewcheckOverlay?'replaceState':'pushState']({...history.state,crewcheckOverlay:undefined,ccFinancial:undefined,ccFinancialPosition:undefined,ccConciergePosition:undefined,ccEnteredFromConcierge:fromConcierge||(['salary','perdiem'].includes(nextView)&&history.state?.ccEnteredFromConcierge)},'',url);
+      }
+    }
+    if (!history.state?.crewcheckOverlay && !['salary','perdiem'].includes(nextView) && !['salary','perdiem'].includes(previousView)) {
+      url.searchParams.set('view',nextView); history.replaceState(history.state,'',url);
+    }
+    const pendingNavigation = peekPendingNavigationContext();
+    if (!pendingNavigation || pendingNavigation.targetView !== nextView) clearPendingNavigationContext();
+    setViewState(nextView);
+  }
   const currencyReturnView=useRef<ZeroView>('cockpit'),currencyPreviousView=useRef<ZeroView>(view);
   if(view==='currency'&&currencyPreviousView.current!=='currency')currencyReturnView.current=['perdiem','salary'].includes(currencyPreviousView.current)?currencyPreviousView.current:'cockpit';
   currencyPreviousView.current=view;

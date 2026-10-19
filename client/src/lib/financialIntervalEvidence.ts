@@ -2,7 +2,22 @@
  * forecast completeness. This never establishes a payment confirmation. */
 const validClock = (value: unknown) => /^(?:[01]?\d|2[0-3]):[0-5]\d(?:\(\+\d+\))?$/.test(String(value || ''));
 const unresolvedOrigin = (value: unknown) => ['estimated', 'absent', 'unknown'].includes(String(value || ''));
-type EvidenceEvent = { kind?: string; presentation?: string; departure?: string; arrival?: string; day?: any; canonical?: any };
+type EvidenceEvent = { kind?: string; presentation?: string; departure?: string; arrival?: string; salaryClockKnown?: boolean; day?: any; canonical?: any };
+/** Narrow evidence for a partial meal: literal flight clocks can prove presence
+ * in a meal window even when the earlier presentation is unknown. This never
+ * proves APZ, a whole duty, breakfast at base, taxi, or payment. */
+export function financialPublishedFlightIntervalIssue(events: readonly EvidenceEvent[]): string | null {
+  if (!events.length || events.some(event=>event.kind!=='flight' || event.salaryClockKnown===false)) return 'Trecho publicado ausente.';
+  for (const event of events) {
+    const source=event.day || event.canonical?.publishedDay || {};
+    const published=source.publishedClockEvidence || source;
+    if ((published.records || [published]).length!==1) return 'Versões múltiplas do trecho exigem conferência.';
+    const leg=published.legs?.[event.canonical?.legIndex || 0] || event.canonical?.leg;
+    if (!leg || !validClock(leg.departureTime) || !validClock(leg.arrivalTime)
+      || (Array.isArray(published.legs) && published.legs.some((item:any)=>!validClock(item.departureTime)||!validClock(item.arrivalTime)))) return 'Horários publicados do trecho incompletos.';
+  }
+  return null;
+}
 export function financialIntervalEvidenceIssue(events: readonly EvidenceEvent[]): string | null {
   if (!events.length) return 'Programação ausente.';
   const first = events[0], firstDay = first.day || first.canonical?.publishedDay || {}, day = firstDay.publishedClockEvidence || firstDay;
