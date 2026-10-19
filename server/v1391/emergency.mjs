@@ -900,6 +900,12 @@ async function registeredHotelOrigin(db, email) {
   };
 }
 
+// Explicit internal menu navigation; the existing guard and confirmation flow
+// still authorize the original callback sender before any emergency action.
+export async function openEmergencyTelegramMenu(callback, sendTelegramMessage) {
+  return handleEmergencyTelegramUpdate({ callback_query: callback }, sendTelegramMessage, { openMenu: true });
+}
+
 export async function handleEmergencyTelegram(update = {}, sendTelegramMessage) {
   const callback = update?.callback_query;
   if (/^cc_emergency_(?:ok|close|finish):/.test(String(callback?.data || ''))) {
@@ -909,15 +915,15 @@ export async function handleEmergencyTelegram(update = {}, sendTelegramMessage) 
   return handleEmergencyTelegramUpdate(update, sendTelegramMessage);
 }
 
-async function handleEmergencyTelegramUpdate(update = {}, sendTelegramMessage) {
+async function handleEmergencyTelegramUpdate(update = {}, sendTelegramMessage, options = {}) {
   if (!flag('CREWCHECK_EMERGENCY_ENABLED', true)) return false;
   const callback = update?.callback_query;
   const message = callback?.message || update?.message || update?.edited_message || {};
   const chatId = String(message?.chat?.id || '');
   const text = String(message?.text || message?.caption || '').trim();
-  if (stayMenuIntent(text)) return false;
+  if (!options.openMenu && stayMenuIntent(text)) return false;
   const data = String(callback?.data || '').trim();
-  const emergencyCommand = /^\/emergencia(?:@\S+)?\b/i.test(text) || /^🚨?\s*emerg[êe]ncia\b/i.test(text);
+  const emergencyCommand = options.openMenu === true || /^\/emergencia(?:@\S+)?\b/i.test(text) || /^🚨?\s*emerg[êe]ncia\b/i.test(text);
   const hospitalCommand = /^\/(?:hospitais?|prontoatendimento)(?:@\S+)?\b/i.test(text) || /^(?:🏥\s*)?(?:hospitais?|pronto[- ]?(?:socorro|atendimento))$/i.test(text);
   const pharmacyCommand = /^\/farmacias?(?:@\S+)?\b/i.test(text) || /^(?:💊\s*)?farm[aá]cias?$/i.test(text);
   const hotelCommand = /^\/(?:hoteis|hotéis|hotel)(?:@\S+)?\b/i.test(text) || /^(?:🏨\s*)?hot[eé]is$/i.test(text);
