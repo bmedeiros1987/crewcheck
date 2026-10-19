@@ -17,7 +17,8 @@ export function classifyPayrollDeduction(item: PayrollItem): { state:'recognized
   const label = normalized(item.label);
   if (/\bBASES?\b|\bINFORMATIV[OA]S?\b/.test(label)) return {state:'informational',bucket:null};
   const inss = /\bINSS\b/.test(label), irrf = /\bIRRF\b/.test(label);
-  if (inss && irrf) return {state:'conflict',bucket:null};
+  const otherGroup = /\b(?:PLANO|CONVENIO|EMPRESTIMO|CONSIGNADO|MENSALIDADE|PENSAO|SEGURO|VALE|MCT\d*)\b/.test(label);
+  if ((inss && irrf) || ((inss || irrf) && otherGroup)) return {state:'conflict',bucket:null};
   // Explicit qualifiers may precede a tax; calculation bases and arbitrary
   // mentions are not automatically deductions of that tax.
   const qualifiedTax = /^(?:(?:DESCONTO|RETENCAO|AJUSTE|COMPLEMENTO|COMPLEMENTAR|DIFERENCA)(?:\s+(?:DE|DO|DA))?\s+)?(?:INSS|IRRF)\b/.test(label);
@@ -35,7 +36,7 @@ export function payrollDeductionRows(extraction: PrivatePayrollExtraction) {
     const locations = [...new Map([...item.amount.candidates.flatMap(value=>value.sources),...item.amount.unresolvedSources].map(({page,line,origin})=>[`${origin}:${page}:${line}`,{page,line,origin}])).values()];
     let reason = '';
     if (item.direction !== 'debit') reason = 'Rubrica não comprovada como desconto.';
-    else if (classification.state !== 'recognized') reason = classification.state === 'informational' ? 'Base ou valor informativo; não é desconto elegível.' : classification.state === 'conflict' ? 'Rótulo mistura tributos; classificação conflitante.' : 'Grupo do desconto não reconhecido; revisão pendente.';
+    else if (classification.state !== 'recognized') reason = classification.state === 'informational' ? 'Base ou valor informativo; não é desconto elegível.' : classification.state === 'conflict' ? 'Rótulo mistura grupos de desconto; classificação conflitante.' : 'Grupo do desconto não reconhecido; revisão pendente.';
     else if (!['candidate', 'zero'].includes(item.amount.state) || item.amount.candidates.length !== 1 || item.amount.unresolvedSources.length) reason = 'Valor ou sentido conflitante.';
     else if (amountMinor === null || !Number.isSafeInteger(amountMinor) || amountMinor < 0 || Math.abs(candidate.value * 100 - amountMinor) > 1e-6) reason = 'Valor em centavos não comprovado.';
     else if (candidate.sources.length !== 1) reason = 'Repetição de origem exige revisão de identidade da rubrica.';
