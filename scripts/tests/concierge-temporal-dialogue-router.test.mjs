@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {menuGreeting} from '../../server/concierge/telegram-menu.mjs';
 import {buildDutyFacts} from '../../server/concierge/duty-facts.mjs';
 import {realDeparture,data} from './concierge-premium-departure-router.test.mjs';
 const source=fs.readFileSync('server.mjs','utf8');
@@ -194,8 +195,8 @@ test('admitted webhook observes a newer input before auxiliary early-return/STT 
 function realIngress(h){
  const queued=[],pending=[],acks=[];let queuedCount=0,auxCalls=0;
  const process=h.context.processTelegramUpdate;
- Object.assign(h.context,{crewcheckTelegramUpdateClaims:new Map(),readJsonBody:async req=>req.body,sendJson:(_res,status,body)=>{acks.push({status,...body});},handleV139Telegram:async()=>{auxCalls++;return false;},setImmediate:fn=>{queuedCount++;queued.push(fn);},processTelegramUpdate:update=>{const work=process(update);pending.push(work);return work;}});
- for(const name of ['crewcheckTelegramUpdateClaim','handleTelegramWebhook'])vm.runInContext(extract(name),h.context);
+ Object.assign(h.context,{menuGreeting,crewcheckTelegramUpdateClaims:new Map(),readJsonBody:async req=>req.body,sendJson:(_res,status,body)=>{acks.push({status,...body});},handleV139Telegram:async()=>{auxCalls++;return false;},setImmediate:fn=>{queuedCount++;queued.push(fn);},processTelegramUpdate:update=>{const work=process(update);pending.push(work);return work;}});
+ for(const name of ['conciergeHelp','crewcheckTelegramUpdateClaim','handleTelegramWebhook'])vm.runInContext(extract(name),h.context);
  const event=(id,text,messageId=id,chat=h.profile.chatId)=>({update_id:id,message:{message_id:messageId,date:Math.floor(h.context.Date.now()/1000),chat:{id:chat,type:'private'},from:{id:chat},...(typeof text==='string'?{text}:{voice:{file_id:'synthetic',duration:2}})}});
  const admit=async update=>{await h.context.handleTelegramWebhook({method:'POST',headers:{},body:update},{});while(queued.length)queued.shift()();return acks.at(-1);};
  return{event,admit,drain:async()=>{await Promise.all(pending.splice(0));},acks,queuedCount:()=>queuedCount,auxCalls:()=>auxCalls};
