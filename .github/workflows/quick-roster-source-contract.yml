@@ -1,0 +1,45 @@
+name: Quick roster raw and prepared contract
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/scheduleActivityClassification.ts'
+      - 'client/src/components/v1391/HomeRosterPreview.tsx'
+      - 'scripts/p0-691-care-context/**'
+      - 'scripts/regression-quick-roster-care-source.mjs'
+      - '.github/workflows/quick-roster-source-contract.yml'
+jobs:
+  source-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Verify raw TypeScript and shared contract before preparation
+        run: |
+          npx tsc --noEmit
+          node scripts/regression-quick-roster-care-source.mjs --record "$RUNNER_TEMP/care-raw.json"
+          node scripts/regression-p1-303-schedule-classification-counts.mjs
+      - run: SOURCE_VERSION=$(git rev-parse HEAD) npm run build
+      - run: npm run check
+      - name: Compare prepared contract and preserve formal authority
+        run: |
+          node scripts/regression-quick-roster-care-source.mjs --compare "$RUNNER_TEMP/care-raw.json"
+          node scripts/regression-p1-303-schedule-classification-counts.mjs
+          node scripts/p0-691-care-context/regression-formal-folga-authority.mjs
+      - name: Install isolated browser tooling
+        run: |
+          npm install --prefix "$RUNNER_TEMP/cards-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          "$RUNNER_TEMP/cards-browser/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Verify cards against actual prepared source and bundle
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/cards-browser/package.json
+          UI_EVIDENCE_REQUIRE_COMMIT: '1'
+        run: node scripts/regression-quick-roster-cards-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quick-roster-source-contract
+          path: artifacts/quick-roster-cards
