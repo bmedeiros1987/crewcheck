@@ -168,7 +168,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
    await deductionReview.getByRole('checkbox',{name:'Conferi todas as rubricas de INSS e a substituição completa apenas neste mês.',exact:true}).check();await deductionReview.getByRole('checkbox',{name:'Conferi a titularidade, a competência e o antes/depois de cada grupo selecionado.',exact:true}).check();
    assert.doesNotMatch(await deductionReview.getByRole('status').innerText(),/Revisão preparada/);assert.match(await deductionReview.innerText(),/excede o total impresso/);
 
-   await classificationDoc('conflicting-values',['INSS 100,00','INSS 200,00'],[]);await deductionReview.getByText('Valor pendente',{exact:true}).waitFor();
+   await classificationDoc('conflicting-values',['INSS 100,00','INSS 200,00'],[]);await deductionReview.getByText('INSS · Valor pendente',{exact:true}).waitFor();
    assert.equal(await deductionReview.getByRole('checkbox',{name:'Selecionar desconto row-0',exact:true}).isEnabled(),false);
    await deductionReview.getByText('Conferir candidatos e origens',{exact:true}).click();const conflictText=await deductionReview.innerText();assert.match(conflictText,/100,00/);assert.match(conflictText,/200,00/);assert.match(conflictText,/Página PDF 1, linha 5/);assert.match(conflictText,/Página PDF 1, linha 6/);
    assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>/financial/.test(key)))),beforeDeductions,'classification and total contradictions never write');
