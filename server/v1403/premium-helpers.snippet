@@ -101,22 +101,29 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
     && conciergeSafeKey(candidate.email || candidate.key || '') === owner && (!candidate.key || conciergeSafeKey(candidate.key) === owner) && conciergeAccessMatches(profile, candidate));
   if (!owns(snapshot)) return gateQuerySuppressed({reason:'account-unverified'}).message;
   const roster = snapshot?.roster;
-  const record = conciergeProgramRecords(roster).find((item) => {
+  const record = conciergeJourneyProgramRecords(roster, conciergeProgramRecords(roster)).find((item) => {
     if (item.end < new Date()) return false;
     if (item.legs?.length) return true;
     return !conciergeRemoteCodes.has(item.code) && ['ASB', 'MT', 'CRM', 'CBF', 'EMER'].some((code) => item.code === code || item.code.startsWith(code));
   });
   if (!record) return buildDepartureSummary({ profile, snapshot });
-  const presentation = conciergePresentationTime(record);
-  const parsedPresentationDate = conciergeProgramDate(record.day, presentation || record.startTime);
-  const presentationDate = Number.isFinite(parsedPresentationDate.getTime()) ? parsedPresentationDate : record.start;
   const origin = record.legs?.[0]?.origin || record.day?.base || '';
+  // The projection's display proof is the same authority used by Next. Neither
+  // a classifier clock nor a legacy row report can supply a missing APZ.
+  const presentationDate = record.display?.clockBasis === 'published-brt'
+    && record.display.presentationConfirmed === true && Number.isFinite(record.display.publishedStart)
+    ? new Date(record.display.publishedStart) : null;
+  if (!presentationDate) return buildDepartureSummary({ profile, snapshot, record, origin });
+  const presentation = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(presentationDate);
   const location = snapshot?.preferences?.location;
   if (!location) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation });
-  const route = await conciergeTravelEstimate(location, origin);
+  let route = null;
+  try { route = await conciergeTravelEstimate(location, origin); } catch {
+    // An unavailable route cannot replace the shared published APZ with a fallback clock.
+  }
   if (!owns(snapshot)) return gateQuerySuppressed({reason:'response-context-expired'}).message;
-  if (!route) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation });
-  if (route.distanceKm > 250) return `${premiumGreeting(profile, snapshot)} Você está longe de ${airportName(origin)}. Revise a rota completa no app antes de considerar o horário da apresentação, que é às ${spokenTime(presentation)}.`;
+  if (!route) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation, routeState: 'unavailable' });
+  if (route.distanceKm > 250) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation, route, routeState: 'long' });
   const departureWindow = calculateDepartureWindow(presentationDate, route);
   const leaveTime = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(departureWindow.leave);
   const safeRoute = { ...route, minutes: departureWindow.routeMinutes, leadMinutes: departureWindow.leadMinutes };
@@ -127,10 +134,10 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
     const canonical = buildCanonicalRosterEvents(roster);
     const bindings = [];
     if (owns(snapshot)) for (const event of canonical) {
-      if (event.kind !== 'flight' || buildFlightContext(event.flightNumber).raw !== queryContext.raw) continue;
+      if (event.kind !== 'flight' || event.id !== record.canonicalEventIds?.[0] || buildFlightContext(event.flightNumber).raw !== queryContext.raw) continue;
       const binding = findPublishedGateLeg(roster, {flight:queryContext.raw,origin:event.origin,destination:event.destination,
-        departureDate:originFlightDate(event.startDateTime,event.origin),scheduledDepartureUtc:event.startDateTime}, canonical);
-      if (binding?.leg === firstLeg && binding.day === record.day && gateQueryDay(binding.identity).allowed) bindings.push(binding);
+        eventId:event.id,departureDate:originFlightDate(event.startDateTime,event.origin),scheduledDepartureUtc:event.startDateTime}, canonical);
+      if (binding?.identity.eventId === event.id && gateQueryDay(binding.identity).allowed) bindings.push(binding);
     }
     if (bindings.length !== 1) radar = gateQuerySuppressed({reason:owns(snapshot) ? 'occurrence-unverified' : 'account-unverified'});
     else {

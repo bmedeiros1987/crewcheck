@@ -293,9 +293,15 @@ export function calculateDepartureWindow(presentationDate, route = {}) {
   return { leave, leadMinutes, routeMinutes };
 }
 
-export function buildDepartureSummary({ profile = {}, snapshot = {}, record = null, route = null, leaveTime = '', origin = '', radar = null, presentationTime = '' } = {}) {
+export function buildDepartureSummary({ profile = {}, snapshot = {}, record = null, route = null, leaveTime = '', origin = '', radar = null, presentationTime = '', routeState = '' } = {}) {
   const greeting = premiumGreeting(profile, snapshot);
   if (!record) return `${greeting} Não encontrei uma programação presencial que exija deslocamento agora.`;
+  const canonical = record.display?.clockBasis === 'published-brt';
+  const apz = canonical ? `Apresentação: ${publishedPresentationText(record.display)} (UTC−03, relógio da escala).` : '';
+  if (canonical && (record.display.presentationConfirmed !== true || !Number.isFinite(record.display.publishedStart))) return `${greeting} ${apz} Não calculei saída nem presumi APZ à meia-noite.`;
+  if (canonical && routeState === 'unavailable') return `${greeting} ${apz} Não consegui calcular a rota agora; abra o Planejador de Saída no app.`;
+  if (canonical && routeState === 'long') return `${greeting} ${apz} A referência está longe de ${airportName(origin)}. Revise a rota completa no app antes de considerar o deslocamento.`;
+  if (canonical && !route) return `${greeting} ${apz} Envie sua localização para eu calcular o trânsito e um horário de saída anterior à apresentação.`;
   if (!route) return `${greeting} Sua apresentação é às ${spokenTime(presentationTime)} em ${airportName(origin)}. Envie sua localização para eu calcular o trânsito e um horário de saída anterior à apresentação.`;
   const traffic = trafficLevel(route);
   const firstLeg = record.legs?.[0];
@@ -303,7 +309,7 @@ export function buildDepartureSummary({ profile = {}, snapshot = {}, record = nu
   const flightPart = firstLeg
     ? ` Depois, você segue no ${spokenFlightNumber(firstLeg.flightNumber)}, às ${spokenTime(firstLeg.departureTime)}${gate ? `, pelo portão ${gate}` : ''}.`
     : '';
-  return `${greeting} Saia de casa às ${spokenTime(leaveTime)}. O trânsito está ${traffic}; o trajeto até ${airportName(origin)} deve levar cerca de ${spokenDuration(route.minutes)}.${flightPart}`;
+  return `${greeting} Saia de casa às ${spokenTime(leaveTime)}. ${apz ? `${apz} ` : ''}O trânsito está ${traffic}; o trajeto até ${airportName(origin)} deve levar cerca de ${spokenDuration(route.minutes)}.${flightPart}`;
 }
 
 export function premiumVoiceText(text = '') {

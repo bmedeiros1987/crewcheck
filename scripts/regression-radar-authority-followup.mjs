@@ -9,14 +9,15 @@ import {prepareConciergeCanonicalBridge} from './p1-concierge-journey/bridge.mjs
 assert.match(fs.readFileSync('.github/workflows/next-flight-gate.yml','utf8'), /^\s+- ['"]client\/src\/lib\/authClient\.ts['"]\s*$/m, 'real authClient changes must trigger the Radar workflow');
 prepareConciergeCanonicalBridge();
 const {buildCanonicalRosterEvents}=await import('../server/concierge/generated/canonicalRoster.mjs');
+const {conciergeJourneyProgramRecords}=await import('../server/concierge/journey-programs.mjs');
 function extract(file,names){const text=fs.readFileSync(file,'utf8'),ast=ts.createSourceFile(file,text,99,true,ts.ScriptKind.TSX);return names.map(name=>{const fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);assert(fn,name);return ts.transpileModule(fn.getText(ast).replace(/^export /,''),{compilerOptions:{target:99}}).outputText}).join('\n');}
 let now=Date.parse('2032-10-14T12:00:00Z');
 class FixedDate extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
 const leg={flightNumber:'LA3981',origin:'CPV',destination:'GRU',departureTime:'09:00',arrivalTime:'11:00',duration:2};
-const roster={year:2032,month:10,base:'CPV',days:[{date:'14/10/2032',type:'VOO',dutyReport:'08:00',dutyDebrief:'11:30',legs:[leg]}]};
+const roster={year:2032,month:10,base:'CPV',days:[{date:'14/10/2032',type:'VOO',dutyReport:'08:00',dutyDebrief:'11:30',dutyReportSource:'published',dutyDebriefSource:'published',legs:[leg]}]};
 const identity={flight:'LA3981',origin:'CPV',destination:'GRU',departureDate:'2032-10-14',scheduledDepartureUtc:'2032-10-14T12:00:00Z'};
 let rows,queries,providerCalls,writes,claims,poolAvailable,lateChange,snapshot;
-const scope=vm.createContext({...policy,Date:FixedDate,buildCanonicalRosterEvents,gateQueryDay:i=>policy.gateQueryDay(i,now),setTimeout,clearTimeout,process:{env:{}},
+const scope=vm.createContext({...policy,Date:FixedDate,buildCanonicalRosterEvents,conciergeJourneyProgramRecords,gateQueryDay:i=>policy.gateQueryDay(i,now),setTimeout,clearTimeout,process:{env:{}},
  safeEmail:s=>String(s||'').trim().toLowerCase(),verifyJwt:()=>claims,requestToken:r=>r.token,
  pool:async()=>poolAvailable?{query:async(sql,args)=>{queries.push({sql,args});if(queries.length===2)lateChange?.();return {rows};}}:null,
  telegramRequestUser:()=>({email:'a@example.invalid',authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:s=>String(s||'').trim().toLowerCase(),

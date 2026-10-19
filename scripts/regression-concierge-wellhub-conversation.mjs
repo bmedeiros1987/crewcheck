@@ -69,7 +69,7 @@ if (materialized) {
 }
 
 const clone = x => JSON.parse(JSON.stringify(x));
-function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}) {
+export function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}) {
   const profile = { email: 'route-a@example.invalid', name: 'Synthetic A', chatId: '9001', linked: true, authenticated: true };
   if (operationalProbe) Object.assign(profile, { channel: 'telegram', chatType: 'private' });
   const other = { ...profile, email: 'route-b@example.invalid', name: 'Synthetic B', chatId: '9002' };
@@ -181,6 +181,7 @@ function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}
   vm.runInContext(extract(whatsapp, 'handleInboundMessage'), context);
   return {
     trace, context, profile, other,
+    setRoster: (roster, preferences = {}) => { local.snapshots[profile.email].roster = clone(roster); local.snapshots[profile.email].preferences = { ...local.snapshots[profile.email].preferences, ...clone(preferences) }; },
     load: async (owner = profile) => clone(await context.conciergeLoadSnapshot(owner)),
     seed: preferences => { local.snapshots[profile.email].preferences = { ...local.snapshots[profile.email].preferences, ...clone(preferences) }; },
     restart: () => { local = { snapshots: {} }; },
