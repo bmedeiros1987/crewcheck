@@ -208,3 +208,21 @@ for(const source of ['estimated','unknown',undefined])for(const reverse of [fals
  const roster=sourceRoster(reverse?[uncertain,full]:[full,uncertain]),before=JSON.stringify(roster),f=realRuntime('2099-10-04T04:00:00Z'),programs=f.programs(roster);
  assert(programs.length);for(const p of programs)assert.equal(p.display.publishedStart,null,'a published duplicate cannot erase unknown provenance');const text=await f.run(roster);assert.doesNotMatch(text,/às 03:00/);assert.equal(f.routes(),0);assert.equal(JSON.stringify(roster),before);
 });
+
+for(const reverse of [false,true])test(`equivalent clock spellings reconcile reserve ownership reverse=${reverse}`,async()=>{
+ const early={flightNumber:'QA-EARLY',origin:'CCC',destination:'BBB',departureTime:'04:00',arrivalTime:'05:00',workType:'OP'},own={flightNumber:'QA-CLOCK',origin:'BBB',destination:'AAA',departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00',workType:'OP'};
+ const full=sourceDay({type:'ASB',pairingCode:'ASB',dutyReport:'00:00',legs:[early,own]}),partial={...full,legs:[{...own,departureTime:'8:00',arrivalTime:'9:00'}]};
+ const roster={...sourceRoster(reverse?[partial,full]:[full,partial]),base:'BBB'},before=JSON.stringify(roster),f=realRuntime('2099-10-04T09:00:00Z');
+ for(const p of f.programs(roster).filter(p=>p.legs.some(l=>l.flightNumber==='QA-CLOCK')))assert.equal(p.display.publishedStart,Date.parse('2099-10-04T10:00:00Z'));
+ const text=await f.run(roster);assert.match(text,/04\/10\/2099 às 07:00/);assert.doesNotMatch(text,/já passou|às 00:00/);assert.equal(f.routes(),1);assert.equal(JSON.stringify(roster),before);
+});
+for(const kind of ['estimated','earlier-block'])test(`nested original evidence cannot publish another reserve: ${kind}`,async()=>{
+ const own={flightNumber:'QA-NESTED',origin:'AAA',destination:'BBB',departureTime:kind==='estimated'?'08:00':'16:00',arrivalTime:kind==='estimated'?'09:00':'17:00',presentationTime:kind==='estimated'?'07:00':'15:00',workType:'OP'};
+ const raw=sourceDay({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyDebrief:kind==='estimated'?'09:30':'17:30',legs:[own]});
+ const clocks=legs=>legs.map(({departureTime,arrivalTime,presentationTime})=>({departureTime,arrivalTime,presentationTime}));
+ const original={dutyReport:raw.dutyReport,dutyDebrief:raw.dutyDebrief,dutyReportSource:'published',dutyDebriefSource:'published',legs:clocks(raw.legs)};
+ const nested=kind==='estimated'?{...original,dutyReportSource:'estimated'}:{...original,legs:clocks([{departureTime:'08:00',arrivalTime:'09:00'},own])};
+ raw.publishedClockEvidence={...original,records:[{...original,records:[nested]}]};
+ const roster=sourceRoster([raw]),before=JSON.stringify(roster),f=realRuntime(kind==='estimated'?'2099-10-04T09:00:00Z':'2099-10-04T15:00:00Z'),record=f.programs(roster)[0];
+ assert.equal(record.display.publishedStart,Date.parse(kind==='estimated'?'2099-10-04T10:00:00Z':'2099-10-04T18:00:00Z'));const text=await f.run(roster);assert.match(text,kind==='estimated'?/04\/10\/2099 às 07:00/:/04\/10\/2099 às 15:00/);assert.doesNotMatch(text,/já passou|às 03:00/);assert.equal(f.routes(),1);assert.equal(JSON.stringify(roster),before);
+});

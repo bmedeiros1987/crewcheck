@@ -31,44 +31,85 @@ function clockNear(reference: number, value: string, direction: 'before' | 'afte
   return result;
 }
 
-/** A row report can extend a flight only when its original, pre-filter clock
- * evidence identifies that physical flight as the row's opening leg. Check all
- * replicas, including partial duplicates in another canonical journey: a local
- * index after normalization is not provenance. Missing/conflicting proof denies
- * the row contribution; an independent literal leg APZ remains usable. */
-function reserveRowBinding(events: readonly CanonicalRosterEvent[], first: CanonicalRosterEvent): 'owned' | 'other' | 'unproven' {
-  const departure = clock(first.leg?.departureTime), arrival = clock(first.leg?.arrivalTime);
-  const report = clock(first.publishedDay.dutyReport);
-  if (!departure || !arrival) return 'unproven';
-  const replicas = events.filter(e => e.kind === 'flight' && e.date === first.date
-    && e.flightNumber === first.flightNumber && e.origin === first.origin && e.destination === first.destination
-    && e.leg?.departureTime === first.leg?.departureTime && e.leg?.arrivalTime === first.leg?.arrivalTime);
-  const proofs: { opening: boolean; published: boolean }[] = [];
-  for (const e of replicas) {
-    const evidence = (e.publishedDay as any).publishedClockEvidence;
-    if (!evidence) return 'unproven';
-    const records = evidence.records || [evidence];
-    if (!Array.isArray(records) || !records.length) return 'unproven';
-    for (const record of records) {
-      if (!record || typeof record !== 'object' || !Array.isArray(record.legs)) return 'unproven';
-      const opening = record.legs[0];
-      // The pre-filter clock pair must be present exactly once. Missing or
-      // repeated pairs cannot establish an original flight-block binding.
-      const matches = record.legs.filter((leg: any) => leg?.departureTime === first.leg?.departureTime && leg.arrivalTime === first.leg?.arrivalTime);
-      if (!clock(opening?.departureTime) || !clock(opening?.arrivalTime) || matches.length !== 1) return 'unproven';
-      proofs.push({
-        opening: opening.departureTime === first.leg?.departureTime && opening.arrivalTime === first.leg?.arrivalTime,
-        published: Boolean(report) && report !== departure && clock(record.dutyReport) === report && record.dutyReportSource === 'published'
-          && clock(e.publishedDay.dutyReport) === report && e.publishedDay.dutyReportSource === 'published'
-          && /\b(?:ASB|RES|RESERVA|RSV)\b/.test(`${e.publishedDay.type || ''} ${e.publishedDay.pairingCode || ''}`.toUpperCase()),
-      });
+// Canonical clock identity keeps explicit civil-day offsets distinct while
+// accepting equivalent padded/unpadded hour spellings. Never compare raw text.
+function clockIdentity(value: unknown): string | null {
+  if (typeof value !== 'string' || !clock(value)) return null;
+  const offset = Number(value.match(/\(\+(\d+)\)$/)?.[1] || 0);
+  return Number.isSafeInteger(offset) && offset <= 370 ? `${clock(value)}|${offset}` : null;
+}
+function reserveDay(event: CanonicalRosterEvent): boolean {
+  return /\b(?:ASB|RES|RESERVA|RSV)\b/.test(`${event.publishedDay.type || ''} ${event.publishedDay.pairingCode || ''}`.toUpperCase());
+}
+
+/** Read every preserved node, including container evidence and nested records.
+ * Bound both traversal and clock work. A cycle, malformed node or exhausted
+ * budget means unavailable proof, never permission to ignore that uncertainty. */
+function originalClockRecords(day: CanonicalRosterEvent['publishedDay']): { record: any; container: boolean }[] | null {
+  const stack: { record: any; depth: number; exit?: boolean }[] = [{ record: (day as any).publishedClockEvidence, depth: 0 }];
+  const active = new Set<object>(), records: { record: any; container: boolean }[] = [];
+  let visits = 0, clocks = 0;
+  while (stack.length) {
+    const { record, depth, exit } = stack.pop()!;
+    if (exit) { active.delete(record); continue; }
+    if (++visits > 4440 || depth > 64 || !record || typeof record !== 'object' || Array.isArray(record) || active.has(record)
+      || !Array.isArray(record.legs) || !record.legs.length || (clocks += record.legs.length) > 4440) return null;
+    if (record.legs.some((leg: any) => !leg || typeof leg !== 'object' || Array.isArray(leg)
+      || !clockIdentity(leg.departureTime) || !clockIdentity(leg.arrivalTime)
+      || (leg.presentationTime != null && leg.presentationTime !== '' && !clockIdentity(leg.presentationTime)))) return null;
+    const container = record.records !== undefined;
+    if (container && (!Array.isArray(record.records) || !record.records.length || record.records.length > 4440)) return null;
+    records.push({ record, container });
+    if (container) {
+      active.add(record); stack.push({ record, depth, exit: true });
+      for (const child of record.records) stack.push({ record: child, depth: depth + 1 });
     }
   }
-  if (!proofs.length) return 'unproven';
-  // A complete row showing this as a later block defeats a partial duplicate
-  // that happens to start here. Neither iteration order nor reindexing wins.
-  if (proofs.some(proof => !proof.opening)) return 'other';
-  return proofs.every(proof => proof.published) ? 'owned' : 'unproven';
+  return records;
+}
+
+function reserveFlightEvidence(events: readonly CanonicalRosterEvent[], first: CanonicalRosterEvent): { record: any; container: boolean; event: CanonicalRosterEvent }[] | null {
+  const departure = clockIdentity(first.leg?.departureTime), arrival = clockIdentity(first.leg?.arrivalTime);
+  if (!departure || !arrival) return null;
+  const replicas = events.filter(e => e.kind === 'flight' && e.date === first.date
+    && e.flightNumber === first.flightNumber && e.origin === first.origin && e.destination === first.destination
+    && clockIdentity(e.leg?.departureTime) === departure && clockIdentity(e.leg?.arrivalTime) === arrival);
+  const proofs: { record: any; container: boolean; event: CanonicalRosterEvent }[] = [];
+  const presentations = new Set<string | null>();
+  for (const event of replicas) {
+    const records = originalClockRecords(event.publishedDay);
+    if (!records || proofs.length + records.length > 4440) return null;
+    for (const { record, container } of records) {
+      const matches = record.legs.filter((leg: any) => clockIdentity(leg.departureTime) === departure && clockIdentity(leg.arrivalTime) === arrival);
+      // Container legs may aggregate identical duplicates; original leaves must
+      // identify a unique occurrence. Conflicting literal APZ stays unknown.
+      if (!matches.length || (!container && matches.length !== 1)) return null;
+      for (const leg of matches) presentations.add(clockIdentity(leg.presentationTime));
+      proofs.push({ record, container, event });
+    }
+  }
+  return proofs.length && presentations.size === 1 ? proofs : null;
+}
+
+/** Row ownership depends on original evidence across all physical replicas,
+ * never the incidental post-normalization legIndex or source iteration order. */
+function reserveRowBinding(events: readonly CanonicalRosterEvent[], first: CanonicalRosterEvent): 'owned' | 'other' | 'unproven' {
+  const proofs = reserveFlightEvidence(events, first), report = clockIdentity(first.publishedDay.dutyReport);
+  const departure = clockIdentity(first.leg?.departureTime), arrival = clockIdentity(first.leg?.arrivalTime);
+  if (!proofs || !report || report === departure || !proofs.every(({ record, event }) => reserveDay(event)
+    && clockIdentity(record.dutyReport) === report && record.dutyReportSource === 'published'
+    && clockIdentity(event.publishedDay.dutyReport) === report && event.publishedDay.dutyReportSource === 'published')) return 'unproven';
+  // A complete original row placing this flight later defeats a partial copy
+  // that starts here. Nested uncertainty has already been checked above.
+  return proofs.some(({ record }) => clockIdentity(record.legs[0].departureTime) !== departure
+    || clockIdentity(record.legs[0].arrivalTime) !== arrival) ? 'other' : 'owned';
+}
+
+function publishedFlightClocksKnown(events: readonly CanonicalRosterEvent[], event: CanonicalRosterEvent): boolean {
+  if (!clock(event.leg?.departureTime) || !clock(event.leg?.arrivalTime)) return false;
+  if (reserveDay(event)) return reserveFlightEvidence(events, event) !== null;
+  return !(((event.publishedDay as any).publishedClockEvidence?.legs || event.publishedDay.legs)
+    .some((leg: any) => !clock(leg.departureTime) || !clock(leg.arrivalTime)));
 }
 
 /** Read the selected canonical journey. Ground remains inside its elapsed span;
@@ -104,8 +145,7 @@ export function measureCanonicalDuty(events: readonly CanonicalRosterEvent[], se
   if (group.some(e => !Number.isFinite(Date.parse(e.startDateTime)) || !Number.isFinite(Date.parse(e.endDateTime)) || Date.parse(e.endDateTime) < Date.parse(e.startDateTime))) {
     result.reasons.push('Horários canônicos incompletos ou intervalo inválido.'); return result;
   }
-  if (selected.kind === 'flight' && group.some(e => !clock(e.leg?.departureTime) || !clock(e.leg?.arrivalTime)
-    || ((e.publishedDay as any).publishedClockEvidence?.legs || e.publishedDay.legs).some((leg: any) => !clock(leg.departureTime) || !clock(leg.arrivalTime)))) {
+  if (selected.kind === 'flight' && group.some(e => !publishedFlightClocksKnown(events, e))) {
     result.reasons.push('Partida/chegada publicada incompleta; instante canônico de fallback não comprova a etapa.'); return result;
   }
   let start = Date.parse(first.startDateTime), end = Date.parse(last.endDateTime);
@@ -155,10 +195,9 @@ export function canonicalDutyDurationLabel(minutes: number | null): string {
 /** Departure is an upper bound for presentation; arrival is a lower bound for
  * release. Bounds never turn missing literal endpoints into a measured duty. */
 export function publishedFlightClockBounds(group: readonly CanonicalRosterEvent[]): { latestStart: number; earliestEnd: number } | null {
-  if (!group.length || group.some(e => e.kind !== 'flight' || !clock(e.leg?.departureTime) || !clock(e.leg?.arrivalTime)
+  if (!group.length || group.some(e => e.kind !== 'flight' || !publishedFlightClocksKnown(group, e)
     || !Number.isFinite(Date.parse(e.startDateTime)) || !Number.isFinite(Date.parse(e.endDateTime))
-    || Date.parse(e.endDateTime) < Date.parse(e.startDateTime)
-    || ((e.publishedDay as any).publishedClockEvidence?.legs || e.publishedDay.legs).some((leg: any) => !clock(leg.departureTime) || !clock(leg.arrivalTime)))) return null;
+    || Date.parse(e.endDateTime) < Date.parse(e.startDateTime))) return null;
   return { latestStart: Math.min(...group.map(e => Date.parse(e.startDateTime))), earliestEnd: Math.max(...group.map(e => Date.parse(e.endDateTime))) };
 }
 
@@ -178,8 +217,7 @@ export function publishedDutyEndpoints(events: readonly CanonicalRosterEvent[], 
   let start: number | null = null, end: number | null = null;
   if (first.kind === 'flight') {
     // Retain the original clock-evidence guard used by the full measurement.
-    const clocksKnown = group.every(e => clock(e.leg?.departureTime) && clock(e.leg?.arrivalTime)
-      && !(((e.publishedDay as any).publishedClockEvidence?.legs || e.publishedDay.legs).some((leg: any) => !clock(leg.departureTime) || !clock(leg.arrivalTime))));
+    const clocksKnown = group.every(e => publishedFlightClocksKnown(events, e));
     if (!clocksKnown) return { start, end };
     const reserve = /\b(?:ASB|RES|RESERVA|RSV)\b/.test(`${first.publishedDay.type || ''} ${first.publishedDay.pairingCode || ''}`.toUpperCase());
     const rowOwnsStart = reserve ? reserveRowBinding(events, first) === 'owned' : first.legIndex === 0;

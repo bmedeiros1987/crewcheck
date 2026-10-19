@@ -49,6 +49,26 @@ try {
       const filteredEvents=canonical.buildCanonicalRosterEvents(roster([filtered])).filter(e=>e.kind==='flight'),selected=filteredEvents.find(e=>e.flightNumber==='QA-ASB-SECOND');assert.equal(selected.legIndex,0,'physical filtering reindexes the selected flight');assert(!filteredEvents.some(e=>e.flightNumber==='QA-ASB-FIRST'));
       const measured=measurement.measureCanonicalDuty(filteredEvents,selected.id);assert.equal(measured.minutes,explicit?270:null);assert.equal(measurement.publishedDutyEndpoints(filteredEvents,selected.id).start,explicit?Date.parse('2032-10-10T18:00:00Z'):null);assert.equal(engine.getCanonicalWorkHoursTotal(roster([filtered])),explicit?4.5:null,'shared total cannot claim16.5h from an unrelated reserve');
     }
+    const clockOwn=leg('QA-CLOCK','GRU','BSB','08:00','09:00',1,'07:00');
+    const clockFull={...blocks,dutyReport:'00:00',dutyDebrief:'09:30',legs:[leg('QA-EARLY','CNF','GRU','04:00','05:00',1),clockOwn]},clockPartial={...clockFull,legs:[{...clockOwn,departureTime:'8:00',arrivalTime:'9:00'}]};
+    for(const rows of [[clockFull,clockPartial],[clockPartial,clockFull]]) {
+      const equivalent=canonical.buildCanonicalRosterEvents(roster(rows)).filter(e=>e.kind==='flight');
+      for(const selected of equivalent.filter(e=>e.flightNumber==='QA-CLOCK')){assert.equal(measurement.measureCanonicalDuty(equivalent,selected.id).minutes,150);assert.equal(measurement.publishedDutyEndpoints(equivalent,selected.id).start,Date.parse('2032-10-10T10:00:00Z'));}
+      assert.equal(engine.getCanonicalWorkHoursTotal(roster(rows)),null);
+    }
+    const clockEvidence=(raw)=>({dutyReport:raw.dutyReport,dutyDebrief:raw.dutyDebrief,dutyReportSource:raw.dutyReportSource,dutyDebriefSource:raw.dutyDebriefSource,legs:raw.legs.map(({departureTime,arrivalTime,presentationTime})=>({departureTime,arrivalTime,presentationTime}))});
+    for(const kind of ['estimated','earlier-block','missing-clock','cycle','depth','node-budget']) {
+      const raw={...blocks,dutyDebrief:'17:30',legs:[blocks.legs[1]]},original=clockEvidence(raw);
+      let nested=kind==='estimated'?{...original,dutyReportSource:'estimated'}:kind==='earlier-block'?{...original,legs:clockEvidence(blocks).legs}:kind==='missing-clock'?{...original,legs:[{...original.legs[0],arrivalTime:''}]}:{...original};
+      if(kind==='cycle')nested.records=[nested];
+      if(kind==='depth')for(let i=0;i<66;i++)nested={...original,records:[nested]};
+      if(kind==='node-budget')nested={...original,records:Array.from({length:4441},()=>({...original}))};
+      raw.publishedClockEvidence={...original,records:[{...original,records:[nested]}]};
+      const nestedEvents=canonical.buildCanonicalRosterEvents(roster([raw])).filter(e=>e.kind==='flight'),selected=nestedEvents.find(e=>e.flightNumber==='QA-ASB-SECOND');
+      const measured=measurement.measureCanonicalDuty(nestedEvents,selected.id),endpoint=measurement.publishedDutyEndpoints(nestedEvents,selected.id),known=['estimated','earlier-block'].includes(kind);
+      assert.equal(measured.minutes,kind==='earlier-block'?150:null,kind);assert.equal(endpoint.start,known?Date.parse('2032-10-10T18:00:00Z'):null,kind);
+      assert.equal(measurement.publishedFlightClockBounds(nestedEvents)===null,!known,kind);assert.equal(engine.getCanonicalWorkHoursTotal(roster([raw])),kind==='earlier-block'?2.5:null,kind);
+    }
     const standby={...day,type:'HSB',pairingCode:'HSB'};const h=canonical.buildCanonicalRosterEvents(roster([standby])).filter(x=>x.kind==='flight');const hm=measurement.measureCanonicalDuty(h,h[0].id);assert.equal(hm.state,'incomplete');assert.equal(hm.minutes,null);assert.equal(hm.limitConfirmed,false,'no activation or16h inferred from HSB+OP');
     const excessive={...day,dutyReport:'05:00',dutyDebrief:'21:30',legs:[leg('QA-LONG','BSB','GRU','05:55','21:00',15+5/60)]};const x=canonical.buildCanonicalRosterEvents(roster([excessive])).filter(e=>e.kind==='flight');assert.equal(measurement.measureCanonicalDuty(x,x[0].id).minutes,990);assert.ok(engine.getPublishedDutyLimitSummary(excessive,null).remainingHours<0,'excess is preserved, never clamped tozero');
     assert.equal(measurement.measureCanonicalDuty(events,'missing'),null);

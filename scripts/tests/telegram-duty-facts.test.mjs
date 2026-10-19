@@ -215,3 +215,20 @@ for(const source of ['estimated','unknown',undefined])test(`ASB factual full dur
  const raw=day({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyReportSource:source,dutyDebrief:'09:30',legs:[leg({departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00'})]}),result=read([raw]);
  assert.equal(result.state,'incomplete');assert.equal(result.items[0].start,Date.parse('2032-10-10T10:00:00Z'));assert.equal(result.items[0].minutes,null);assert.match(result.summary,/Duração pendente/);assert(!result.summary.includes('6h30'));
 });
+
+for(const reverse of [false,true])test(`factual equivalent clock replicas never publish reserve00 reverse=${reverse}`,()=>{
+ const early=leg({flightNumber:'QA-EARLY',origin:'CNF',destination:'GRU',departureTime:'04:00',arrivalTime:'05:00',presentationTime:undefined}),own=leg({flightNumber:'QA-CLOCK',origin:'GRU',destination:'BSB',departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00'});
+ const full=day({type:'ASB',pairingCode:'ASB',dutyReport:'00:00',dutyDebrief:'09:30',legs:[early,own]}),partial={...full,legs:[{...own,departureTime:'8:00',arrivalTime:'9:00'}]},result=read(reverse?[partial,full]:[full,partial]);
+ assert(!result.items.some(i=>i.minutes===570));assert(!result.items.some(i=>i.startLiteral==='07:00'&&i.start===Date.parse('2032-10-10T03:00:00Z')));
+ // The factual adapter may reject differing literal duplicate records before
+ // canonical measurement. It must never choose the earlier reserve by order.
+ if(result.items.length)for(const item of result.items.filter(i=>i.startLiteral==='07:00')){assert.equal(item.start,Date.parse('2032-10-10T10:00:00Z'));assert.equal(item.minutes,150);}
+});
+for(const kind of ['earlier-block','estimated','missing-clock'])test(`factual nested evidence retains all uncertainty: ${kind}`,()=>{
+ const own=leg({departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00'}),raw=day({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyDebrief:'09:30',legs:[own]});
+ const original={dutyReport:raw.dutyReport,dutyDebrief:raw.dutyDebrief,dutyReportSource:'published',dutyDebriefSource:'published',legs:[{departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00'}]};
+ const child=kind==='earlier-block'?{...original,legs:[{departureTime:'04:00',arrivalTime:'05:00'},...original.legs]}:kind==='estimated'?{...original,dutyReportSource:'estimated'}:{...original,legs:[{...original.legs[0],arrivalTime:''}]};
+ raw.publishedClockEvidence={...original,records:[{...original,records:[child]}]};const result=read([raw]);
+ if(kind==='earlier-block'){assert.equal(result.items.length,1);assert.equal(result.items[0].start,Date.parse('2032-10-10T10:00:00Z'));assert.equal(result.items[0].minutes,150);}else{assert.equal(result.state,'incomplete');assert(!result.items.some(i=>i.minutes!==null));}
+ assert(!result.items.some(i=>i.minutes===390));
+});
