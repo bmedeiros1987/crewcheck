@@ -10,7 +10,7 @@ const home=fs.readFileSync('client/src/pages/Home.tsx','utf8');
 const begin=home.indexOf('function WakeupView('),end=home.indexOf('function PresentationManagerView',begin);
 assert(begin>=0&&end>begin);const wake=home.slice(begin,end);const kpiBegin=home.indexOf('function KpiCard('),kpiEnd=home.indexOf('\ntype RadarSnapshot',kpiBegin);assert(kpiBegin>=0&&kpiEnd>kpiBegin);const kpi=home.slice(kpiBegin,kpiEnd);
 assert(wake.includes('const wakeSession = useRef'),'run canonical preparation before host UI regression');
-const hostPrelude=`import{setCrewCheckThemePreference}from'./client/src/lib/themeRuntime';window.fixtureTheme=setCrewCheckThemePreference;import React,{useState,useRef,useEffect} from 'react';import{getToken,authFetch,getStoredUser}from'./client/src/lib/authClient';
+const hostPrelude=`import{WakeupSimpleCard}from'./client/src/components/notifications/WakeupSimpleCard';import{wakeCivilDate,wakeDateFields,wakePlanConflict,wakeReceiptConfirmed,wakeNextConfirmed}from'./shared/wakeupPlan.mjs';import{setCrewCheckThemePreference}from'./client/src/lib/themeRuntime';window.fixtureTheme=setCrewCheckThemePreference;import React,{useState,useRef,useEffect} from 'react';import{getToken,authFetch,getStoredUser}from'./client/src/lib/authClient';
 const storage={get:(key,fallback)=>localStorage.getItem(key)||fallback,set:(key,value)=>localStorage.setItem(key,value)};
 const toast=Object.fromEntries(['success','error','info','message'].map(name=>[name,(message)=>{(window.fixtureToasts ||= []).push(message);} ]));
 const isAdmin=()=>false,wakeupLeadMinutes=()=>90,wakeupChannel=()=> 'telegram',safe=(v,f)=>v||f,city=v=>v;
@@ -26,10 +26,10 @@ const bundle=await build({stdin:{contents:`${hostPrelude}import{WakeDiagnostic}f
 const css=fs.readdirSync('dist/assets').filter(name=>name.endsWith('.css')).map(name=>fs.readFileSync('dist/assets/'+name,'utf8')).join('\n');
 const server=http.createServer((req,res)=>{res.setHeader('content-type',req.url==='/fixture.js'?'text/javascript':'text/html');res.end(req.url==='/fixture.js'?bundle.outputFiles.find(file=>file.path.endsWith('.js')).text:`<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}#fixture-header{position:fixed;top:0;height:80px;width:100%;z-index:999;background:#333}#fixture-footer{position:fixed;bottom:0;height:96px;width:100%;z-index:999;background:#333}#root{padding-top:96px}body{margin:0}</style><header id="fixture-header">Cabeçalho</header><main id="root" class="cz-app" data-view="wakeup"></main><footer id="fixture-footer">Menu</footer><script src="/fixture.js"></script>`);});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin=`http://127.0.0.1:${server.address().port}`;
-let browser,offline=false,hold=false,resume,signal;const reads=[];let holdAllToken='',held=[],allHeld;
+let testPage;let browser,offline=false,hold=false,resume,signal;const reads=[];let holdAllToken='',held=[],allHeld;
 try{
  browser=await chromium.launch({args:['--no-sandbox'],...process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{}});
- const context=await browser.newContext({viewport:{width:320,height:740},serviceWorkers:'block'});
+ const context=await browser.newContext({viewport:{width:320,height:740},timezoneId:'America/Sao_Paulo',serviceWorkers:'block'});
  await context.addCookies([{name:'crewcheck_auth_token',value:'stale',url:origin}]);
  await context.route('**/*',async route=>{
   const req=route.request(),url=new URL(req.url());if(url.origin!==origin)return route.abort();
@@ -41,18 +41,20 @@ try{
   if(url.pathname==='/api/alarm/health')return route.fulfill({contentType:'application/json',body:'{"ok":true}'});
   assert.equal(url.pathname,'/api/alarm/scheduled');assert.equal(req.method(),'GET');
   const fixturePending=await route.request().frame().evaluate(()=>window.fixturePending===true);
+  const confirmedJobs=await route.request().frame().evaluate(()=>window.fixtureConfirmedJobs||[]);
   const token=req.headers().authorization?.replace('Bearer ','');assert(['A','B'].includes(token));reads.push(token);
   if(offline)return route.abort();
   if(token===holdAllToken){await new Promise(r=>{held.push(r);if(held.length===2)allHeld();});if(offline)return route.abort();}
   if(hold&&token==='B'){hold=false;signal();await new Promise(r=>resume=r);}
-  return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,readiness:{telegramConfigured:true,telegramLinked:token==='A'||await route.request().frame().evaluate(()=>window.fixtureLinkedB===true)},jobs:token==='A'?[...(fixturePending?[{id:99,jobKey:'wakeup:synthetic:SYN:10:00:75:telegram',status:'pending',channel:'telegram',scheduledAt:'2032-02-01T08:30:00Z'}]:[]),{id:1,status:'pending',channel:'OWNER_A_FIXTURE',scheduledAt:'2032-02-01T10:00:00Z'},{id:2,status:'sent',channel:'Ligação VoIP',scheduledAt:'2026-10-03T05:05:00Z',sentAt:'2026-10-03T05:05:00Z'},{id:3,status:'uncertain'},{id:4,status:'expired'},{id:5,status:'cancelled'}]:[]})});
+  return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,readiness:{telegramConfigured:true,telegramLinked:token==='A'||await route.request().frame().evaluate(()=>window.fixtureLinkedB===true)},jobs:token==='A'?[...confirmedJobs,...(fixturePending?[{id:99,jobKey:'wakeup:synthetic:SYN:10:00:75:telegram',status:'pending',channel:'telegram',scheduledAt:'2032-02-01T08:30:00Z'}]:[]),{id:1,status:'pending',channel:'OWNER_A_FIXTURE',scheduledAt:'2032-02-01T10:00:00Z'},{id:2,status:'sent',channel:'Ligação VoIP',scheduledAt:'2026-10-03T05:05:00Z',sentAt:'2026-10-03T05:05:00Z'},{id:3,status:'uncertain'},{id:4,status:'expired'},{id:5,status:'cancelled'}]:[]})});
  });
- const page=await context.newPage();
+ const page=await context.newPage();testPage=page;
  await page.addInitScript(()=>{localStorage.setItem('crewcheck_auth_token','A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'A'}));localStorage.setItem('crewcheck:notification-preferences:v1:A',JSON.stringify({ownerId:'A',revision:0,preferences:{settings:{crewcheck_wakeup_channel:'telegram'}}}));window.permissionsRequested=0;window.Notification={permission:'denied',requestPermission(){window.permissionsRequested++;throw Error('Permission must not be requested');}};});
  await page.goto(origin);
  assert.equal(await page.getByRole('button',{name:'Ativar despertador',exact:true}).count(),1);
  assert.equal(await page.getByRole('button',{name:/Testar|Vincular|Soneca|Salvar preferências|Ativar no servidor/}).count(),0,'technical/configuration actions are not simultaneous');
 
+ await page.getByText('Mais opções',{exact:true}).click();
  const selection=page.locator('.cc-wakeup-selection'),primary=page.getByRole('button',{name:'Ativar despertador',exact:true});
  await selection.getByText('Mensagem Telegram disponível para solicitar agendamento.',{exact:false}).waitFor();
  await page.evaluate(()=>{window.fixturePosts=[];window.fixturePost=async(path,body)=>{window.fixturePosts.push({path,body});return{ok:true,message:'Solicitação registrada no servidor; entrega não confirmada.'};};});
@@ -88,7 +90,7 @@ try{
  await page.evaluate(()=>{const node=document.querySelector('.cc-wakeup-primary'),key=Object.keys(node).find(key=>key.startsWith('__reactProps$')),oldHandler=node[key].onClick;window.fixturePending=true;window.dispatchEvent(new Event('crewcheck:notification-jobs-changed'));oldHandler();});await heldRead;assert(await primary.isDisabled());
  await primary.evaluate(node=>{const key=Object.keys(node).find(key=>key.startsWith('__reactProps$'));node[key].onClick();});assert.equal((await page.evaluate(()=>window.fixturePosts)).length,1,'Handler blocks activation while the pending-job snapshot is loading');
  offline=true;holdAllToken='';held.splice(0).forEach(r=>r());await page.locator('.cc-wakeup-history [role=alert]').filter({hasText:'Não foi possível consultar'}).waitFor({state:'attached'});assert(await primary.isDisabled());await primary.evaluate(node=>{const key=Object.keys(node).find(key=>key.startsWith('__reactProps$'));node[key].onClick();});assert.equal((await page.evaluate(()=>window.fixturePosts)).length,1,'Handler blocks activation after a failed refresh');offline=false;
- await page.evaluate(()=>{window.fixturePending=true;window.dispatchEvent(new Event('crewcheck:notification-jobs-changed'));});await page.waitForFunction(()=>document.querySelectorAll('.cc-wakeup-history article').length===6);await primary.click();await page.waitForTimeout(100);assert.equal((await page.evaluate(()=>window.fixturePosts)).length,1,'No duplicate alarm while a matching pending job exists');
+ await page.evaluate(()=>{window.fixturePending=true;window.dispatchEvent(new Event('crewcheck:notification-jobs-changed'));});await page.waitForFunction(()=>document.querySelectorAll('.cc-wakeup-history article').length===6);assert(await primary.isDisabled(),'pending same-program alarm disables the primary action');await primary.evaluate(node=>{const key=Object.keys(node).find(key=>key.startsWith('__reactProps$'));node[key].onClick();});await page.waitForTimeout(100);assert.equal((await page.evaluate(()=>window.fixturePosts)).length,1,'No duplicate alarm while a matching pending job exists');
  await page.evaluate(()=>{window.fixturePending=false;window.fixturePosts=[];window.dispatchEvent(new Event('crewcheck:notification-jobs-changed'));});
  await page.locator('.cc-wakeup-history > summary').click();
  const sent=page.locator('.cc-wakeup-history .cz-roster-card').filter({hasText:'Aceito pelo provedor; entrega não confirmada'});
@@ -106,6 +108,7 @@ try{
  await page.setViewportSize({width:320,height:740});await page.evaluate(sizes=>document.querySelectorAll('.cc-wakeup-page *').forEach((node,index)=>node.style.fontSize=sizes[index]+'px'),baseSizes);
  await sent.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));if(process.env.WAKEUP_SYNTHETIC_SCREENSHOT)await page.screenshot({path:process.env.WAKEUP_SYNTHETIC_SCREENSHOT});
 
+ await page.getByText('Diagnóstico da conta',{exact:true}).click();
  await page.getByText('Conta vinculada · entrega não confirmada.',{exact:false}).waitFor();
  assert((await page.getByRole('region',{name:'Entrega fora do app'}).textContent()).includes('1 aceitos pelo provedor'));
  assert((await page.getByRole('region',{name:'Entrega fora do app'}).textContent()).includes('1 com resultado desconhecido'));
@@ -137,5 +140,44 @@ try{
  await page.evaluate(()=>window.resolveFixturePost({ok:true,cancelled:true}));await page.waitForTimeout(100);
  assert.deepEqual(await page.evaluate(()=>window.fixtureToasts),[]);
  assert.equal(await page.evaluate(()=>window.permissionsRequested),0);assert(reads.includes('A')&&reads.includes('B'));
- console.log('Complete prepared WakeupView UI PASS: current bearer, offline/reconnect, cleared account state, discarded late responses, acceptance/unknown/expiry/cancel labels, zero sends or permission requests.');
-}finally{held.forEach(r=>r());resume?.();await browser?.close();await new Promise(r=>server.close(r));}
+ // Simple date/time editor uses the existing queue, never a recurring background job.
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'A'}));localStorage.setItem('crewcheck:notification-preferences:v1:A',JSON.stringify({ownerId:'A',revision:20,preferences:{settings:{crewcheck_wakeup_channel:'telegram'}}}));window.dispatchEvent(new Event('crewcheck:auth-changed'));window.dispatchEvent(new Event('crewcheck:notification-preferences-changed'));window.fixturePosts=[];window.fixtureToasts=[];window.fixtureConfirmedJobs=[];window.fixturePending=false;});
+ await page.getByText('OWNER_A_FIXTURE',{exact:false}).waitFor();
+ const more=page.locator('.cc-wake-more');if(await more.evaluate(node=>node.open))await more.locator(':scope > summary').click();
+ const next=page.getByRole('region',{name:'Próximo toque',exact:true});
+ await next.getByText('Nenhum próximo toque confirmado',{exact:true}).waitFor();
+ const automatic=page.getByRole('checkbox',{name:'Usar horário da escala',exact:true});
+ assert(await automatic.isChecked());assert(await page.getByLabel('Horário',{exact:true}).isDisabled());assert(await page.getByLabel('Dia',{exact:true}).isDisabled());
+ await automatic.uncheck();await page.getByLabel('Dia',{exact:true}).fill('2032-02-03');await page.getByLabel('Horário',{exact:true}).fill('04:30');
+ await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);
+ assert.equal((await page.evaluate(()=>window.fixturePosts)).length,0,'editing date/time never schedules');
+ // Bare ok and a receipt not found in the authenticated readback cannot confirm a next touch.
+ await page.evaluate(()=>{window.fixturePost=async(path,body)=>{window.fixturePosts.push({path,body});return {ok:true};};});
+ await primary.click();await page.waitForFunction(()=>window.fixtureToasts.some(value=>value.includes('Não foi possível confirmar este agendamento')));
+ assert.equal(await next.getByText('Agendado no servidor',{exact:true}).count(),0);assert(!(await page.evaluate(()=>window.fixtureToasts)).some(value=>value.includes('Registro confirmado')));
+ await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);
+ await page.evaluate(()=>{window.fixtureToasts=[];window.fixturePost=async(path,body)=>{window.fixturePosts.push({path,body});return {ok:true,...body,status:'pending'};};});
+ await primary.click();await page.waitForFunction(()=>window.fixtureToasts.some(value=>value.includes('Não foi possível confirmar este agendamento')));assert.equal(await next.getByText('Agendado no servidor',{exact:true}).count(),0);
+ await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);
+ await page.evaluate(()=>{window.fixtureToasts=[];window.fixturePost=async(path,body)=>{window.fixturePosts.push({path,body});window.fixtureConfirmedJobs=[{id:501,...body,status:'pending'}];return {ok:true,...body,status:'pending'};};});
+ await primary.click();await next.getByText('Agendado no servidor',{exact:true}).waitFor();await page.waitForFunction(()=>window.fixtureToasts.some(value=>value.includes('Registro confirmado no servidor')));
+ const confirmed=(await page.evaluate(()=>window.fixturePosts)).at(-1);assert.equal(confirmed.body.scheduledAt,'2032-02-03T07:30:00.000Z');assert.equal(confirmed.body.channel,'telegram');assert(confirmed.body.jobKey.startsWith('wakeup:manual:2032-02-03:'));assert.equal(await next.getByText('04:30',{exact:true}).count(),1);assert((await next.textContent()).includes('03/02/2032'));
+ await page.getByLabel('Horário',{exact:true}).fill('05:00');assert(await primary.isDisabled());assert.equal(await next.getByText('04:30',{exact:true}).count(),1,'editing never relabels the saved next touch');
+ assert(!(await next.textContent()).includes('05:00'));
+ if(process.env.WAKEUP_SIMPLE_SCREENSHOT){await page.setViewportSize({width:390,height:844});await page.evaluate(()=>{document.querySelectorAll('.cc-wakeup-page *').forEach(node=>node.style.removeProperty('font-size'));window.fixtureTheme('dark');document.activeElement?.blur();document.querySelector('#fixture-header').style.visibility='hidden';document.querySelector('#fixture-footer').style.visibility='hidden';scrollTo(0,0);});await page.waitForFunction(()=>scrollY===0);await page.locator('.cc-wakeup-page').screenshot({path:process.env.WAKEUP_SIMPLE_SCREENSHOT});await page.evaluate(()=>window.fixtureTheme('light'));await page.locator('.cc-wakeup-page').screenshot({path:process.env.WAKEUP_SIMPLE_SCREENSHOT.replace(/\.png$/,'-light.png')});await page.evaluate(()=>{document.querySelector('#fixture-header').style.visibility='';document.querySelector('#fixture-footer').style.visibility='';});}
+ // Offline events immediately withdraw the current confirmation without sending anything.
+ await page.evaluate(()=>window.dispatchEvent(new Event('offline')));await next.getByText('Estado não confirmado',{exact:true}).waitFor();assert.equal(await next.getByText('04:30',{exact:true}).count(),0);await page.evaluate(()=>window.dispatchEvent(new Event('online')));await next.getByText('Agendado no servidor',{exact:true}).waitFor();
+ // A failed read cannot leave the old confirmed time advertised as current.
+ offline=true;await page.evaluate(()=>window.dispatchEvent(new Event('online')));await next.getByText('Estado não confirmado',{exact:true}).waitFor();assert.equal(await next.getByText('04:30',{exact:true}).count(),0);assert(await primary.isDisabled());
+ offline=false;await page.evaluate(()=>window.dispatchEvent(new Event('online')));await next.getByText('Agendado no servidor',{exact:true}).waitFor();
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'B'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await next.getByText('Nenhum próximo toque confirmado',{exact:true}).waitFor();assert.equal(await next.getByText('04:30',{exact:true}).count(),0);assert(await automatic.isChecked(),'draft belongs to its current account');
+ assert.equal(await page.evaluate(()=>window.permissionsRequested),0);
+ // Two synchronous clicks share one submission; a late A receipt never confirms in B.
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'A'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));window.fixturePosts=[];window.fixtureToasts=[];window.fixturePost=(path,body)=>{window.fixturePosts.push({path,body});return new Promise(resolve=>window.resolveFixtureSchedule=resolve);};});
+ await page.waitForFunction(()=>window.fixtureDecisions.at(-1)?.ownerId==='A');
+ if(await automatic.isChecked())await automatic.uncheck();await page.getByLabel('Dia',{exact:true}).fill('2032-02-04');await page.getByLabel('Horário',{exact:true}).fill('04:30');await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);
+ await primary.click();await page.locator('.cc-wakeup-primary').evaluate(node=>{const key=Object.keys(node).find(key=>key.startsWith('__reactProps$'));node[key].onClick();});assert.equal((await page.evaluate(()=>window.fixturePosts)).length,1);
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'B'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await next.getByText('Nenhum próximo toque confirmado',{exact:true}).waitFor();
+ await page.evaluate(()=>window.resolveFixtureSchedule({ok:true,...window.fixturePosts[0].body,status:'pending'}));await page.waitForTimeout(100);assert.deepEqual(await page.evaluate(()=>window.fixtureToasts),[]);assert.equal(await next.getByText('Agendado no servidor',{exact:true}).count(),0);
+ console.log('Complete prepared WakeupView UI PASS: simple date/time, exact receipt/readback, saved time preserved while editing, synchronous duplicate/late-owner guards, offline/reconnect, account expiry/races, responsive history, zero sends or permission requests.');
+}catch(error){if(testPage){fs.writeFileSync('/tmp/wake-simple-fixture-failure.txt',await testPage.locator('body').innerText());fs.writeFileSync('/tmp/wake-simple-fixture-details.json',JSON.stringify(await testPage.locator('details').evaluateAll(nodes=>nodes.map(node=>({text:node.querySelector('summary')?.textContent,open:node.open})))));await testPage.screenshot({path:'/tmp/wake-simple-fixture-failure.png'});}throw error;}finally{held.forEach(r=>r());resume?.();await browser?.close();await new Promise(r=>server.close(r));}

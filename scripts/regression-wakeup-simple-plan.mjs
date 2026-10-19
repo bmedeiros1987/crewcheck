@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import {wakeCivilDate,wakeDateFields,wakeNextConfirmed,wakePlanConflict,wakeReceiptConfirmed} from '../shared/wakeupPlan.mjs';
+let checks=0;const eq=(actual,expected)=>{checks++;assert.deepEqual(actual,expected);};
+const now=Date.parse('2032-02-01T08:00:00Z');
+const job=(extra={})=>({id:1,jobKey:'wakeup:synthetic:one',channel:'telegram',scheduledAt:'2032-02-01T09:00:00Z',status:'pending',...extra});
+eq(wakeNextConfirmed([], 'loading',now).kind,'loading');eq(wakeNextConfirmed([], 'unavailable',now).kind,'unavailable');eq(wakeNextConfirmed([], 'ready',now).kind,'none');eq(wakeNextConfirmed([], 'ready',NaN).kind,'unavailable');eq(wakeNextConfirmed(Array.from({length:100},()=>job({status:'sent'})),'ready',now).kind,'unavailable');
+eq(wakeNextConfirmed([job()], 'ready',now).kind,'scheduled');eq(wakeNextConfirmed([job({scheduledAt:'2032-02-01T10:00:00Z'}),job()], 'ready',now).next.at,now+3600000);
+for(const status of ['sent','failed','expired','cancelled','held'])eq(wakeNextConfirmed([job({status})],'ready',now).kind,'none');
+for(const status of ['processing','dispatching'])eq(wakeNextConfirmed([job({status})],'ready',now).kind,'sending');
+for(const status of ['uncertain','partial'])eq(wakeNextConfirmed([job({status})],'ready',now).kind,'uncertain');
+eq(wakeNextConfirmed([job({scheduledAt:new Date(now-1).toISOString()})],'ready',now).kind,'overdue');
+for(const extra of [{status:'mystery'},{channel:'unknown'},{scheduledAt:'2032-02-01T09:00:00'},{scheduledAt:'bad'},{scheduledAt:'2032-02-30T09:00:00Z'},{scheduledAt:'2032-02-01T24:00:00Z'}])eq(wakeNextConfirmed([job(extra)],'ready',now).kind,'unavailable');
+eq(wakeNextConfirmed([job({jobKey:'other-module:one'})],'ready',now).kind,'none');
+eq(wakePlanConflict([job()],'wakeup:synthetic:'),true);eq(wakePlanConflict([job()],'wakeup:other:'),false);eq(wakePlanConflict([job({status:'uncertain'})],'wakeup:synthetic:'),true);
+const request={jobKey:job().jobKey,channel:'telegram',scheduledAt:job().scheduledAt};const receipt={ok:true,...request,status:'pending'};
+eq(wakeReceiptConfirmed(request,receipt,[job()]),true);eq(wakeReceiptConfirmed(request,{ok:true},[job()]),false);eq(wakeReceiptConfirmed(request,receipt,null),false);eq(wakeReceiptConfirmed(request,receipt,[]),false);
+for(const extra of [{jobKey:'wakeup:foreign:one'},{channel:'phone-call'},{scheduledAt:'2032-02-01T10:00:00Z'},{ok:false},{status:'sent'}])eq(wakeReceiptConfirmed(request,{...receipt,...extra},[job()]),false);
+eq(wakeReceiptConfirmed(request,{...receipt,scheduledAt:'2032-02-01T06:00:00-03:00'},[job()]),true);
+const tz=process.env.TZ;
+for(const zone of ['UTC','America/Sao_Paulo','Europe/Lisbon']){
+ process.env.TZ=zone;const d=wakeCivilDate('2032-02-29','04:30');eq(wakeDateFields(d),{day:'2032-02-29',time:'04:30'});eq(wakeCivilDate('2032-02-30','04:30'),null);eq(wakeCivilDate('2032-02-29','24:00'),null);eq(wakeCivilDate('bad','04:30'),null);
+}
+process.env.TZ='Europe/Lisbon';eq(wakeCivilDate('2026-03-29','01:30'),null);eq(wakeCivilDate('2026-10-25','01:30'),null);eq(wakeDateFields(wakeCivilDate('2026-10-25','03:30')),{day:'2026-10-25',time:'03:30'});
+process.env.TZ='America/Sao_Paulo';eq(wakeCivilDate('2026-10-19','04:30').toISOString(),'2026-10-19T07:30:00.000Z');
+if(tz===undefined)delete process.env.TZ;else process.env.TZ=tz;
+console.log(`PASS ${checks} Wake plan/receipt assertions: exact persisted binding, current pending vs terminal/unknown, account job scope, civil date and DST in three zones; zero transport/storage.`);

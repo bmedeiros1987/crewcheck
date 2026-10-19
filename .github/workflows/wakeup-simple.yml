@@ -1,0 +1,60 @@
+name: Wakeup simple confirmed schedule
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/components/notifications/WakeupSimpleCard.tsx'
+      - 'client/src/components/notifications/wakeup-simple.css'
+      - 'shared/wakeupPlan.mjs'
+      - 'scripts/bids-default/wakeup-layout.mjs'
+      - 'scripts/regression-wakeup-simple-plan.mjs'
+      - 'scripts/regression-wakeup-session-browser.mjs'
+      - '.github/workflows/wakeup-simple.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Existing isolated browser fixture versions
+        run: |
+          npm install --prefix "$RUNNER_TEMP/wake-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0 jsdom@22.1.0
+          node "$RUNNER_TEMP/wake-ui/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Raw plan, receipt and account channel contracts
+        env:
+          WAKEUP_JSDOM_PACKAGE: ${{ runner.temp }}/wake-ui/package.json
+        run: |
+          node scripts/regression-wakeup-simple-plan.mjs
+          node scripts/regression-wakeup-channel-selection.mjs
+          node scripts/regression-wakeup-selection-react.mjs
+      - name: Canonical existing application
+        run: |
+          node scripts/v139/apply.mjs
+          npx tsc --noEmit
+          npx vite build
+      - name: Prepared real WakeupView with synthetic HTTP only
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/wake-ui/package.json
+          WAKEUP_JSDOM_PACKAGE: ${{ runner.temp }}/wake-ui/package.json
+          WAKEUP_SIMPLE_SCREENSHOT: ${{ runner.temp }}/wake-simple-synthetic.png
+        run: |
+          node scripts/regression-wakeup-simple-plan.mjs
+          node scripts/regression-wakeup-channel-selection.mjs
+          node scripts/regression-wakeup-selection-react.mjs
+          node scripts/regression-wakeup-session-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wake-simple-synthetic-ui
+          path: ${{ runner.temp }}/wake-simple-synthetic.png
+          if-no-files-found: warn
+          retention-days: 7
