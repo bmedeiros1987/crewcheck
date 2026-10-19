@@ -44,7 +44,7 @@ function fixture() {
   });
   return {
     client: module.exports, calls, writes, events,
-    cached: () => JSON.parse(stored.get(key)),
+    cached: () => JSON.parse(stored.get(key) || 'null'),
     offline: () => { offline = true; },
     switchAccount: () => { user = other; generation++; },
     renewSession: () => { generation++; },
@@ -80,7 +80,7 @@ function fixture() {
 }
 
 // Do not cache a late PATCH or verification response after switching accounts.
-for (const phase of [2, 3]) {
+for (const phase of [2, 3, 4]) {
   const f = fixture();
   let release, reached;
   const blocked = new Promise(resolve => { release = resolve; });
@@ -181,3 +181,20 @@ for (const operation of ['getPlatformProfile', 'savePlatformProfile']) {
   assert.equal(f.cached().displayName, 'Remote Confirmed');
 }
 console.log('PASS profile cache ordering: old GET/PATCH cannot overwrite confirmed save; new GET allowed; account/session fences; storage failure.');
+
+// A failed or invalid extra cache GET cannot leave an older name as a valid fallback.
+for (const mode of ['unavailable', 'wrong-owner', 'wrong-id', 'empty-name']) {
+  const f = fixture();
+  f.intercept(async (_call, response) => {
+    if (f.calls.length !== 4) return;
+    if (mode === 'unavailable') throw Error('synthetic cache GET unavailable');
+    if (mode === 'wrong-owner') response.profile.email = other.email;
+    if (mode === 'wrong-id') response.profile.publicId = 'CC-OTHER';
+    if (mode === 'empty-name') response.profile.displayName = '';
+  });
+  assert.equal((await f.client.saveConfirmedDisplayName('Remote Confirmed')).displayName, 'Remote Confirmed');
+  assert.equal(f.cached(), null, mode + ': invalidate stale cache without invalidating the remote receipt');
+  f.offline();
+  assert.equal((await f.client.getPlatformProfile()).profile.displayName, owner.name);
+}
+console.log('PASS failed/invalid cache refresh: remote receipt preserved; stale cache discarded.');

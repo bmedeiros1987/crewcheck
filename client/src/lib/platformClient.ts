@@ -85,10 +85,17 @@ async function refreshProfileCache(session: ReturnType<typeof captureAuthSession
       const timeout = setTimeout(() => controller.abort(), 5000);
       try {
         fresh = await authFetch<typeof fresh>('/api/platform/profile', { cache: 'no-store', signal: controller.signal });
-      } catch { return; }
+      } catch {
+        if (session.isCurrent()) removeLocal(LOCAL_PROFILE_KEY);
+        return;
+      }
       finally { clearTimeout(timeout); }
-      if (!session.isCurrent() || !email || !fresh.ok || !publicId || fresh.profile?.publicId !== publicId || !fresh.profile.displayName?.trim()
-        || String(fresh.profile.email || '').trim().toLowerCase() !== email) return;
+      if (!session.isCurrent()) return;
+      if (!email || !fresh.ok || !publicId || fresh.profile?.publicId !== publicId || !fresh.profile.displayName?.trim()
+        || String(fresh.profile.email || '').trim().toLowerCase() !== email) {
+        removeLocal(LOCAL_PROFILE_KEY);
+        return;
+      }
       writeLocal(LOCAL_PROFILE_KEY, fresh.profile);
       writeLocal(LOCAL_BILLING_KEY, fresh.billing);
     });
