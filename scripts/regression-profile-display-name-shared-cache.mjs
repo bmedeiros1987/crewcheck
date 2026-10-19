@@ -8,7 +8,7 @@ const platformCode = compile('client/src/lib/platformClient.ts'), authCode = com
 const KEY = 'crewcheck_platform_profile_cache_v2';
 const user = { id: 'synthetic-a', email: 'a@example.invalid', name: 'Login A' };
 const initial = { email: user.email, publicId: 'CC-A', displayName: 'Old Name', locale: 'en-US', timezone: 'UTC', plan: 'free', sharePresence: false };
-function fixture({ locking = 'available' } = {}) {
+export function fixture({ locking = 'available', blockedReads = true } = {}) {
   let remote = { ...initial }, offline = false, blocked = false;
   // Model the browser's origin-wide Web Locks manager, shared by all module instances.
   let queue = Promise.resolve();
@@ -23,7 +23,7 @@ function fixture({ locking = 'available' } = {}) {
     };
     t.receive = event => window.dispatchEvent(event);
     const storage = {
-      getItem: k => { if (blocked && k === KEY) throw Error('synthetic cache unavailable'); return stored.get(k) ?? null; },
+      getItem: k => { if (blocked && blockedReads && k === KEY) throw Error('synthetic cache unavailable'); return stored.get(k) ?? null; },
       setItem: (k, v) => { if (blocked && k === KEY) throw Error('synthetic cache unavailable'); const oldValue = stored.get(k); stored.set(k, v); for (const other of tabs) if (other !== t) other.receive({ type: 'storage', key: k, oldValue, newValue: v }); },
       removeItem: k => stored.delete(k),
     };

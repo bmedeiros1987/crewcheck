@@ -26,3 +26,5 @@ reset();const fn=auth.authFetch;auth.authFetch=async(path,options)=>{const r=awa
 console.log('PASS profile display name: owner-bound partial update preserves omitted settings and immutable identity; invalid fields rejected; strict remote receipt plus GET persistence; offline/verification failures and delayed account-switch replies never announce success.');
 await import('./regression-profile-display-name-cache.mjs');
 await import('./regression-profile-display-name-shared-cache.mjs');
+await import('./regression-profile-display-name-cache-quota.mjs');
+await import('./regression-profile-display-name-preferences.mjs');

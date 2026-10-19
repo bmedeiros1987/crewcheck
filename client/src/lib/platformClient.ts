@@ -97,7 +97,7 @@ async function refreshProfileCache(session: ReturnType<typeof captureAuthSession
         removeLocal(LOCAL_PROFILE_KEY);
         return;
       }
-      writeLocal(LOCAL_PROFILE_KEY, fresh.profile);
+      if (!writeLocal(LOCAL_PROFILE_KEY, fresh.profile)) removeLocal(LOCAL_PROFILE_KEY);
       writeLocal(LOCAL_BILLING_KEY, fresh.billing);
     });
   } catch {
@@ -109,8 +109,8 @@ async function refreshProfileCache(session: ReturnType<typeof captureAuthSession
 function readLocal<T>(key: string, fallback: T): T {
   try { return JSON.parse(localStorage.getItem(key) || '') as T; } catch { return fallback; }
 }
-function writeLocal(key: string, value: unknown): void {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+function writeLocal(key: string, value: unknown): boolean {
+  try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; }
 }
 function removeLocal(key: string): void {
   try { localStorage.removeItem(key); } catch {}
@@ -185,13 +185,12 @@ export async function getPlatformProfile(): Promise<{ ok: boolean; profile: Plat
 
 export async function savePlatformProfile(patch: Partial<Pick<PlatformProfile, 'displayName' | 'locale' | 'timezone' | 'sharePresence'>>): Promise<{ ok: boolean; profile: PlatformProfile; billing: PlatformBilling; localOnly?: boolean }> {
   const session = captureAuthSession();
-  const local = { ...localProfile(), ...patch };
   try {
     const payload = await authFetch<{ ok: boolean; profile: PlatformProfile; billing: PlatformBilling }>('/api/platform/profile', { method: 'PATCH', body: JSON.stringify(patch) });
     if (payload.ok) await refreshProfileCache(session, payload.profile?.publicId);
     return payload;
   } catch {
-    return { ok: true, profile: local, billing: localBilling(), localOnly: true };
+    throw new Error('Não foi possível salvar as preferências na conta. Conecte-se e tente novamente.');
   }
 }
 
