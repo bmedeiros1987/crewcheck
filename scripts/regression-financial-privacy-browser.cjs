@@ -51,7 +51,14 @@ async function checkHidden(page){
  assert(!moneyPattern.test(await root.ariaSnapshot()),'accessibility tree has no amounts');
  assert.match(await root.textContent(),/Valor oculto|Não calculável|Sem itens previstos/);
 }
-async function showFinancial(page,screen){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===screen)return;const names={overview:'Resumo financeiro',statement:'Extrato',charts:'Gráficos',payment:'Detalhes do pagamento'};await page.getByRole('button',{name:names[screen],exact:true}).click();await page.waitForFunction(screen=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen===screen,screen);}
+async function showFinancial(page,screen){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===screen)return;const names={overview:'Resumo financeiro',statement:'Extrato',charts:'Gráficos',payment:'Detalhes do pagamento'};
+ // expand() deliberately exposes every details body for privacy assertions,
+ // including this overlay. Dismiss it through its real accessible control
+ // before navigating, just as a user would; never bypass pointer hit testing.
+ const help=root.locator('.cc-payment-help[open]');
+ while(await help.count()){await help.first().locator('summary').click();}
+ assert.equal(await root.locator('.cc-payment-help[open]').count(),0,'forecast help dismissed before financial navigation');
+ await page.getByRole('button',{name:names[screen],exact:true}).click();await page.waitForFunction(screen=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen===screen,screen);}
 
 (async()=>{
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
