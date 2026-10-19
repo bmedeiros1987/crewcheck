@@ -1,0 +1,68 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import {realDeparture,data} from './concierge-premium-departure-router.test.mjs';
+const source=fs.readFileSync('server.mjs','utf8');
+const extract=name=>{const m=source.match(new RegExp(`(?:async )?function ${name}\\([\\s\\S]*?\\n}`));assert(m,name);return m[0];};
+const at='2099-10-04T16:00:00Z';
+for(const input of ['/hoje','/proximo','não fui acionado'])test(`actual temporal ${input} → sim renders offered tomorrow without claiming actual rest`,async()=>{
+ const h=realDeparture(data('estimated'),'missing',at);
+ await h.send('telegram',input);const reply=h.trace.output.at(-1);
+ assert.match(reply,/amanhã/);assert.match(reply,/05\/10\/2099 às 07:00/);assert.match(reply,/sim/);assert.doesNotMatch(reply,/Você está no descanso|já chegou|foi acionado\./);
+ if(input==='não fui acionado')assert.match(reply,/Você informou que não foi acionado/);
+ await h.send('telegram','sim');assert.match(h.trace.output.at(-1),/Detalhes da programação prevista/);assert.match(h.trace.output.at(-1),/05\/10\/2099 às 07:00/);assert.match(h.trace.output.at(-1),/QA-MERGED/);
+ await h.send('telegram','sim');assert.match(h.trace.output.at(-1),/Não há um pedido de detalhes válido/);
+});
+for(const change of ['expiry','revision','subject','binding','callback'])test(`actual sim invalidates pending details on ${change}`,async()=>{
+ const roster=data('estimated'),h=realDeparture(roster,'missing',at);await h.send('telegram','/proximo');
+ if(change==='expiry')h.advanceClock(121000);
+ if(change==='revision'){const next=structuredClone(roster);next.days[1].legs[0].presentationTime='06:20';h.setRoster(next);}
+ if(change==='subject')await h.send('telegram','obrigado');
+ if(change==='binding')h.profile.linked=false;
+ if(change==='callback'){await h.openInline();await h.tap('Transporte');}
+ const before=h.trace.output.length;await h.send('telegram','sim');const output=h.trace.output.slice(before).join(' ');assert.doesNotMatch(output,/Detalhes da programação|QA-MERGED|07:00|05\/10\/2099/);
+});
+
+test('actual sim revalidates revision after initial await before sender',async()=>{
+ const roster=data('estimated'),h=realDeparture(roster,'missing',at);await h.send('telegram','/proximo');
+ const load=h.context.conciergeLoadSnapshot;let calls=0;
+ h.context.conciergeLoadSnapshot=async(...args)=>{const result=await load(...args);if(++calls===2){const replacement=structuredClone(roster);replacement.days[1].legs[0].flightNumber='QA-CHANGED';h.setRoster(replacement);}return result;};
+ const before=h.trace.output.length;await h.send('telegram','sim');assert.doesNotMatch(h.trace.output.slice(before).join(' '),/QA-MERGED|05\/10\/2099|07:00/);
+});
+function flights(rows){return{year:2099,month:10,base:'BSB',days:rows.map(([flight,dep,arr,status],i)=>({date:'04/10/2099',dayNumber:4,month:10,year:2099,type:'VOO',base:'BSB',dutyReport:dep,dutyDebrief:arr,dutyReportSource:'published',dutyDebriefSource:'published',legs:[{flightNumber:flight,origin:i?'GRU':'BSB',destination:i?'BSB':'GRU',departureTime:dep,arrivalTime:arr,presentationTime:dep,...(status?{status}:{})}]}))};}
+for(const scenario of ['future','ongoing','cancelled','ambiguous'])test(`actual meu voo resolves ${scenario} without historical fallback`,async()=>{
+ let roster=flights([['LA1111','05:00','06:00'],['LA2222','08:00','09:00'],['LA3333','14:00','15:00']]);
+ if(scenario==='cancelled')roster.days[1].legs[0].status='cancelled';
+ if(scenario==='ambiguous'){const second=structuredClone(roster.days[1]);second.legs[0].flightNumber='LA9999';second.legs[0].origin='REC';second.legs[0].destination='FOR';roster.days.push(second);}
+ const h=realDeparture(roster,'missing',scenario==='future'?'2099-10-04T10:00:00Z':'2099-10-04T11:30:00Z');let queries=[];
+ h.context.runRadarRace=async ctx=>{queries.push(ctx.raw);return{ok:false,querySuppressed:true,message:'Consulta sintética indisponível.'};};
+ await h.send('telegram','portão do meu voo');
+ if(scenario==='cancelled'){assert.match(h.trace.output.at(-1),/cancelado/);assert.equal(queries.length,0);}
+ else if(scenario==='ambiguous'){assert.match(h.trace.output.at(-1),/único voo/);assert.equal(queries.length,0);}
+ else assert.deepEqual(queries,['LA2222']);
+ assert.doesNotMatch(h.trace.output.join(' '),/LA1111/);
+});
+
+for(const outcome of ['provider_mismatch','unconfigured','synthesis_failed','delivery_failed','sent','text_policy'])test(`actual voice router and sender ${outcome} uses bounded result and safe text fallback`,async()=>{
+ const h=realDeparture(data('estimated'),'missing',at),diagnostics=[];let synthesis=0,delivery=0;
+ Object.assign(h.context,{
+  telegramVoiceFileId:()=> 'synthetic-file',crewcheckSttConfigured:()=>true,elevenLabsSttConfigured:()=>false,telegramVoiceDuration:()=>2,
+  showHumanRecordingAction:async()=>{},telegramGetFileInfo:async()=>({ok:true,fileSize:2,filePath:'synthetic'}),telegramDownloadFile:async()=>({ok:true,buffer:Buffer.from('synthetic')}),
+  telegramVoiceFileName:()=> 'synthetic.ogg',telegramVoiceMime:()=> 'audio/ogg',transcribeTelegramAudio:async()=>({ok:true,text:outcome==='text_policy'?'/configuracoes':'/proximo'}),
+  envAny:()=>'',conciergeVoiceScriptV14408:t=>t,conciergeVoiceProfileForSnapshotV14348:()=> 'default',telegramHumanAudioCaption:()=> 'Synthetic',telegramShouldEchoTranscript:()=>false,
+  cleanTtsText:t=>t,ttsPolicySnapshot:()=>({provider:outcome==='provider_mismatch'?'none':'elevenlabs'}),elevenLabsTtsConfigured:()=>outcome!=='unconfigured',
+  generateElevenLabsSpeech:async()=>{synthesis++;return outcome==='synthesis_failed'?{ok:false}:{ok:true,buffer:Buffer.from('synthetic')};},
+  sendTelegramVoiceBuffer:async()=>{delivery++;return{ok:outcome!=='delivery_failed'};},telegramHumanVoiceEnabled:()=>true,
+ });
+ for(const name of ['sendTelegramTtsAudio','sendHumanTelegramVoiceReply','handleTelegramVoiceMessage'])vm.runInContext(extract(name),h.context);
+ const human=h.context.sendHumanTelegramVoiceReply;
+ h.context.sendHumanTelegramVoiceReply=(...args)=>{const sink=args[4];args[4]=result=>{diagnostics.push(result);sink?.(result);};return human(...args);};
+ await h.context.processTelegramUpdate({message:{chat:{id:h.profile.chatId,type:'private'},from:{id:h.profile.chatId},voice:{file_id:'synthetic',duration:2}}});
+ assert.equal(diagnostics.length,1);const result=diagnostics[0];
+ if(['provider_mismatch','unconfigured'].includes(outcome)){assert.equal(result.state,'unavailable');assert.equal(result.reason,outcome);assert.equal(synthesis,0);}
+ else assert.equal(result.state,outcome);
+ if(outcome==='sent'){assert.equal(delivery,1);assert.doesNotMatch(h.trace.output.join(' '),/Não consegui enviar/);}
+ else if(outcome==='text_policy')assert.doesNotMatch(h.trace.output.join(' '),/Não consegui enviar/);
+ else assert.match(h.trace.output.at(-1),/Não consegui enviar o áudio agora; segue por texto/);
+});

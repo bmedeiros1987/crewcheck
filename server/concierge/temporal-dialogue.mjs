@@ -82,6 +82,6 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
   offers.set(chat,{owner:owner(profile),revision:expected,record:key(selected),at:now()});
   return {reply:`${lead}${timing}\n${brief}\nQuer os detalhes? Responda “sim”.`};
  }
- return {handle,protect};
+ return {handle,protect,interrupt:chat=>offers.delete(String(chat))};
 }
 const activeRecord=(records,now)=>records.some(r=>Number(r.start)<=now&&Number(r.end)>=now);
