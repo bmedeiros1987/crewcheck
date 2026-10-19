@@ -2,6 +2,7 @@ import { extractFinancialPdfPages, financialPdfPagesText } from '@/lib/financial
 import type { PayrollPage } from '@/lib/privatePayrollExtraction';
 import { useFinancialPrivacy, FinancialPrivacyToggle } from './FinancialPrivacy';
 import OwnerPerDiemConfirmation from './OwnerPerDiemConfirmation';
+import PrivatePayrollPreview from './PrivatePayrollPreview';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, FileSearch, History, ShieldCheck, Upload, X } from 'lucide-react';
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
@@ -59,6 +60,7 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
     () => rates.filter((item) => mode === 'per_diem' ? item.key.startsWith('per_diem.') : item.key.startsWith('salary.')),
     [rates, mode, authRevision]
   );
+  const payrollTotalsMismatch = mode === 'payroll' && result?.payrollExtraction?.reconciliation === 'mismatch';
   const reviewRates = result ? (mode === 'payroll' && cycleConfirmed ? applyReviewedPayrollCycle(result) : result.rates) : [];
   const label = mode === 'per_diem' ? 'demonstrativo de diárias' : 'demonstrativo de pagamento';
 
@@ -87,7 +89,7 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
   }
 
   function confirm() {
-    if (!result || result.warnings.some(item => item.includes('obrigatória')) || !sourceConfirmed || !reviewSession.current || reviewSession.current !== financialRateSession() || (mode === 'payroll' && !cycleConfirmed)) return;
+    if (!result || payrollTotalsMismatch || result.warnings.some(item => item.includes('obrigatória')) || !sourceConfirmed || !reviewSession.current || reviewSession.current !== financialRateSession() || (mode === 'payroll' && !cycleConfirmed)) return;
     const reviewed = mode === 'payroll' ? applyReviewedPayrollCycle(result) : result.rates;
     const confirmed = reviewed.filter(item => item.valueOrigin !== 'derived').map((item) => ({ ...item, confirmed: true }));
     if (!confirmed.length) { setError('Nenhuma tarifa impressa e revisada está disponível. Valores derivados não são aplicados.'); return; }
@@ -117,14 +119,16 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
 
     {result && <div className="finance-learning-review" aria-live="polite">
       <header><div><small>Revisão obrigatória</small><h3>{result.competence || 'Competência não identificada'}</h3></div></header>
+      {mode === 'payroll' && result.payrollExtraction && <PrivatePayrollPreview extraction={result.payrollExtraction}/>}
       {result.warnings.map((warning) => <div className="finance-learning-notice warning" key={warning}>{privacy.text(warning)}</div>)}
       <div className="finance-learning-table-wrap"><table><thead><tr><th>Rubrica</th><th>Valor encontrado</th><th>Vigência</th><th>Confiança</th></tr></thead><tbody>
         {reviewRates.map((item) => <tr key={item.key + '-' + item.effectiveFrom}><td>{item.label}</td><td>{money(item.value, item.currency)} / {item.unit}</td><td>{item.effectiveFrom || 'Revisar'} até {item.effectiveTo || 'Revisar'}</td><td>{item.valueOrigin === 'derived' ? 'Derivado — não aplicado' : item.confidence === 'high' ? 'Alta' : item.confidence === 'medium' ? 'Conferir' : 'Revisar'}</td></tr>)}
       </tbody></table></div>
+      {payrollTotalsMismatch && <p role="alert">Aplicação bloqueada: os totais impressos divergem. Confira o documento e importe uma versão corrigida antes de confirmar.</p>}
       <label><input type="checkbox" checked={sourceConfirmed} onChange={event => setSourceConfirmed(event.target.checked)}/> Conferi que o documento pertence a esta conta e que as tarifas e o período estão corretos.</label>
       {mode === 'payroll' && <label><input type="checkbox" checked={cycleConfirmed} onChange={event => setCycleConfirmed(event.target.checked)}/> Confirmo para esta conta: fixos do mês da folha, variáveis do mês anterior e crédito esperado no mês seguinte. Orientação empresarial fornecida pelo usuário; a data exata depende do calendário/documento.</label>}
       <p>Confirmar tarifa não confirma recebimento bancário. A aplicação fica limitada ao período do documento nesta conta.</p>
-      <div className="finance-learning-actions"><button type="button" onClick={() => setResult(null)}><X size={16}/>Descartar</button><button type="button" className="primary" disabled={!sourceConfirmed || (mode === 'payroll' && !cycleConfirmed) || !result.rates.length || result.warnings.some((item) => item.includes('obrigatória'))} onClick={confirm}><Check size={16}/>Confirmar valores</button></div>
+      <div className="finance-learning-actions"><button type="button" onClick={() => setResult(null)}><X size={16}/>Descartar</button><button type="button" className="primary" disabled={payrollTotalsMismatch || !sourceConfirmed || (mode === 'payroll' && !cycleConfirmed) || !result.rates.length || result.warnings.some((item) => item.includes('obrigatória'))} onClick={confirm}><Check size={16}/>Confirmar valores</button></div>
     </div>}
 
     {mode === 'per_diem' && <OwnerPerDiemConfirmation key={financialRateSession() || 'signed-out'} onSaved={() => setRates(readConfirmedFinancialRates())}/>}
