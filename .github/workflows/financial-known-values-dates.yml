@@ -15,6 +15,7 @@ on:
       - 'scripts/regression-owner-per-diem-browser.mjs'
       - 'scripts/regression-owner-per-diem-caller.mjs'
       - 'scripts/regression-financial-long-history.cjs'
+      - 'scripts/regression-financial-navigation-focus-browser.cjs'
       - 'scripts/regression-financial-partial-flight-meals.mjs'
       - 'client/src/lib/salaryCalculationDiagnostic.ts'
       - 'client/src/lib/airports.ts'
@@ -75,6 +76,7 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/finance-known-ui/package.json
         run: |
+          node scripts/regression-financial-navigation-focus-browser.cjs
           node scripts/regression-financial-known-values-app.cjs
           node scripts/regression-financial-concierge-origin.cjs
           node scripts/regression-financial-history-loading-ui.cjs
@@ -85,6 +87,7 @@ jobs:
         with:
           name: financial-known-values-synthetic
           path: |
+            artifacts/financial-focus-probe/
             artifacts/financial-known-values/
             artifacts/financial-long-history/
           if-no-files-found: ignore
