@@ -13,6 +13,7 @@ export function cabinSalaryRateReference(operationalMonth:string) {
  return {version:'cabin-variable:nov2025:inpc418-half:v1',rateMonth:cycle.rateMonth,
   dayKm:indexed(57349,1000000),nightKm:indexed(114698,1000000),
   reserveHour:indexed(4875,100),standbyHour:indexed(1625,100),excessHour:indexed(4875,100),
+  referenceEffectiveFrom:'2025-12-01',referenceEffectiveTo:'2026-11-30',
   adjustmentBasisPoints:209,sources:[FINANCIAL_SOURCES.cabin,FINANCIAL_SOURCES.inpc],
-  description:`Referência ACT derivada · tarifa ${cycle.rateMonth} · reajuste2,09% (50% INPC4,18%) · sem arredondamento intermediário; conferir tabela corporativa`};
+  description:`Referência ACT derivada · produção ${operationalMonth} · mês tarifário ${cycle.rateMonth} · referência vigente de 2025-12 a 2026-11 · reajuste2,09% (50% INPC4,18%) · sem arredondamento intermediário; conferir tabela corporativa`};
 }
