@@ -115,7 +115,7 @@ import FinancialStatementImporter from '@/components/finance/FinancialStatementI
 import FinancialHistoryExplorer from '@/components/finance/FinancialHistoryExplorer';
 import NextPaymentCard from '@/components/finance/NextPaymentCard';
 import {useSalaryDisplayBasis} from '@/components/finance/SalaryDisplayBasis';
-import {salaryDisplaySummary} from '@/lib/salaryDisplayBasis';
+import {salaryDisplaySummary,sumSalaryDisplaySummaries} from '@/lib/salaryDisplayBasis';
 import PayrollPaymentCard from '@/components/finance/PayrollPaymentCard';
 import SalaryBreakdownChart, { salaryDeductionEvidence } from '@/components/finance/SalaryBreakdownChart';
 import FinancialScreen from '@/components/finance/FinancialScreen';
@@ -4153,7 +4153,7 @@ function SalaryReliableView({ bundle }: { bundle: BundleState }) {
       const available = diagnostic.ready;
       const gross = available ? selected.reduce((sum,item)=>sum+item.snapshot.salary.gross,0) : null;
       const displayMonths=selected.map(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`);
-      const displaySummary=salaryDisplaySummary(basis,gross,available&&fullMonths,displayMonths,displayMonths.map(readMonthlyFinancialSettings));
+      const displaySummary=basis==='gross'?salaryDisplaySummary(basis,gross,available&&fullMonths,[],[]):sumSalaryDisplaySummaries(basis,selected.map((item,index)=>salaryDisplaySummary(basis,item.snapshot.salary.gross,available&&fullMonths,[displayMonths[index]],[readMonthlyFinancialSettings(displayMonths[index])])));
       const rows = financialRowsInRange(snapshots.flatMap(item=>item.snapshot.salary.rows),range);
       const rowAvailable = (row: FlightEarningRow) => row.distanceKnown && row.timeKnown && Number.isFinite(row.total) && selected.some(item=>item.snapshot.salary.rows.includes(row) && item.snapshot.salary.configured && !item.snapshot.salary.config.requiresManualFunction);
       return <><Brand back/><section className="cc-per-diem-content cc-salary-history" aria-label="Previsão salarial">

@@ -7,7 +7,7 @@ export function salaryDisplaySummary(basis:SalaryDisplayBasis,gross:number|null,
  const unavailable=(reason:string):SalaryDisplaySummary=>({basis,amount:null,complete:false,reason});
  if(basis==='gross')return {basis,amount:validGross?gross:null,complete:validGross&&earningsComplete,reason:earningsComplete?null:'Há parcelas salariais a confirmar.'};
  if(!validGross||!earningsComplete)return unavailable('Falta completar os ganhos e fixos desta composição.');
- if(!months.length||months.some(month=>!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))||new Set(months).size!==months.length||months.length!==records.length||new Set(records.filter(Boolean).map(record=>record!.ownerId)).size>1)return unavailable('Falta vincular os descontos à competência desta composição.');
+ if(months.length!==1||months.some(month=>!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))||new Set(months).size!==months.length||months.length!==records.length||new Set(records.filter(Boolean).map(record=>record!.ownerId)).size>1)return unavailable('Falta vincular os descontos à competência desta composição.');
  let deductions=0;
  for(let index=0;index<months.length;index++){
   const record=records[index];
@@ -21,4 +21,12 @@ export function salaryDisplaySummary(basis:SalaryDisplayBasis,gross:number|null,
  }
  // Same subtraction/clamp as the existing salary engine, in validated cents.
  return {basis,amount:Math.max(0,Math.round(gross!*100)-deductions)/100,complete:true,reason:null};
+}
+
+/** Monthly engine results retain their individual clamp/competence semantics. */
+export function sumSalaryDisplaySummaries(basis:SalaryDisplayBasis,parts:readonly SalaryDisplaySummary[]):SalaryDisplaySummary {
+ const missing=parts.find(part=>part.basis!==basis||part.amount===null||!part.complete);
+ if(!parts.length||missing)return {basis,amount:null,complete:false,reason:missing?.reason||'Composição mensal a confirmar.'};
+ const total=parts.reduce((sum,part)=>sum+Math.round(part.amount!*100),0);
+ return Number.isSafeInteger(total)?{basis,amount:total/100,complete:true,reason:null}:{basis,amount:null,complete:false,reason:'Total da composição inválido.'};
 }
