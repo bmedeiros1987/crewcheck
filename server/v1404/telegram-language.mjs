@@ -216,8 +216,8 @@ function nextProgramText(record, presentation) {
   };
   const clock = value => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value || '')) ? value : 'horário não confirmado';
   const rows = [
-    `Próxima programação: ${legs.length} voo${legs.length === 1 ? '' : 's'}.`,
-    `APZ: ${date(display?.presentationDate)} às ${clock(presentation || record.startTime)}.`,
+    `Próxima programação: ${legs.length} voo${legs.length === 1 ? '' : 's'}.${display?.planned ? ' Planejada; não é confirmação operacional.' : ''}`,
+    display?.presentationConfirmed === true ? `APZ: ${date(display.presentationDate)} às ${clock(presentation || record.startTime)}.` : 'APZ: horário e data da apresentação não confirmados.',
     ...legs.slice(0, 4).map((leg, index) => {
       const flight = String(leg.flightNumber || '').trim().toUpperCase().replace(/\s+/g, '') || `Voo ${index + 1} não confirmado`;
       const dates = display?.legs?.[index];
@@ -238,11 +238,14 @@ export function buildProgramSummary({ profile = {}, snapshot = {}, record = null
   const presentation = spokenTime(presentationTime || record.startTime);
   const end = spokenTime(record.endTime);
   const lead = scheduleLead(label);
+  const isNext = /proxima programacao|proximo/.test(normalizeIntent(label));
+  if (isNext && (record.display?.cancelled === true || ['cancelled', 'canceled', 'cancelado'].includes(String(record.day?.status || '').trim().toLowerCase()))) return 'Programação consta cancelada no resumo recebido. Voos e apresentação não devem ser usados como programação ativa; confirme a situação na fonte operacional.';
+  if (isNext && !legs.length && !/^(?:[01]?\d|2[0-3]):[0-5]\d$/.test(String(record.day?.dutyReport || ''))) return 'Próxima atividade: apresentação não confirmada na escala recebida. Não há APZ publicada para informar.';
   if (!legs.length) {
     const activity = String(record.code || 'atividade').toLowerCase();
     return `${greeting}${lead ? `${lead} ` : ''}você tem ${activity}. Sua apresentação é às ${presentation}, com término previsto às ${end}.`.trim();
   }
-  if (/proxima programacao|proximo/.test(normalizeIntent(label))) return nextProgramText(record, presentationTime);
+  if (isNext) return nextProgramText(record, presentationTime);
   const count = legs.length;
   const finalDestination = shortAirportName(legs.at(-1)?.destination);
   const opening = `${greeting}${lead ? `${lead} ` : ''}você tem ${count} perna${count === 1 ? '' : 's'}. Apresentação às ${presentation}. Fim da jornada em ${finalDestination} às ${end}.`;

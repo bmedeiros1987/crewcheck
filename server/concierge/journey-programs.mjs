@@ -86,7 +86,11 @@ export function projectConciergeJourneyPrograms(events = [], legacyRecords = [])
       finalArrivalDateTime: last.endDateTime,
       canonicalEventIds: ordered.map((event) => event.id),
       display: {
-        clockBasis: 'published-brt', presentationDate: publishedDateKey(start), endDate: publishedDateKey(end),
+        clockBasis: 'published-brt',
+        presentationConfirmed: (clockMinutes(first.leg?.presentationTime) ?? (first.legIndex === 0 ? clockMinutes(first.publishedDay?.dutyReport) : null)) === presentation,
+        cancelled: ordered.some(event => [event.publishedDay?.status, event.leg?.status].some(status => ['cancelled', 'canceled', 'cancelado'].includes(String(status || '').trim().toLowerCase()))),
+        planned: ordered.some(event => String(event.publishedDay?.status || event.leg?.status || '').trim().toLowerCase() === 'planned'),
+        presentationDate: publishedDateKey(start), endDate: publishedDateKey(end),
         legs: ordered.map(event => ({ departureDate: publishedDateKey(event.startDateTime), arrivalDate: publishedDateKey(event.endDateTime) })),
       },
     });

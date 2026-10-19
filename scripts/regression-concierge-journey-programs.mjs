@@ -89,7 +89,7 @@ const renderedYear = buildProgramSummary({record:newYear,label:'A próxima progr
 assert.match(renderedYear,/31\/12\/2099 às 23:18/);
 assert.match(renderedYear,/01\/01\/2100 às 00:05/);
 const unknownDate = buildProgramSummary({record:{...chosen,display:undefined},label:'A próxima programação',includeGreeting:false});
-assert.match(unknownDate,/APZ: data não confirmada/);assert.match(unknownDate,/Fuso não confirmado/);assert.match(unknownDate,/Fim publicado da jornada não confirmado/);
+assert.match(unknownDate,/APZ: horário e data da apresentação não confirmados/);assert.match(unknownDate,/Fuso não confirmado/);assert.match(unknownDate,/Fim publicado da jornada não confirmado/);
 const absentClock = buildProgramSummary({record:{...chosen,startTime:null,legs:[{...chosen.legs[0],departureTime:null,arrivalTime:'99:99'}]},label:'A próxima programação',includeGreeting:false});
 assert.match(absentClock,/horário não confirmado/);assert.doesNotMatch(absentClock,/99:99/);
 const endUnknown = buildProgramSummary({record:{...chosen,endKind:'arrival'},label:'A próxima programação',includeGreeting:false});

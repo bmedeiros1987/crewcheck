@@ -11,7 +11,9 @@ const now = new Date('2026-10-05T12:00:00Z');
 function program(route = ['GRU', 'BSB']) {
   return { start: new Date('2026-10-05T12:00:00Z'), end: new Date('2026-10-06T07:00:00Z'), startTime: '09:00', endTime: '04:00', legs: route.slice(1).map((destination, index) => ({ flightNumber: `LA00${12 + index}`, origin: route[index], destination, departureTime: index ? '02:00' : '23:00', arrivalTime: index ? '03:00' : '01:00' })) };
 }
-const render = (record) => buildProgramSummary({ record, includeGreeting: false, label: 'A próxima programação' });
+// Positive legacy framing still exercises the unchanged generic renderer.
+// The new direct Next text has stricter dated/unknown facts and is tested below.
+const render = (record) => buildProgramSummary({ record, includeGreeting: false, label: 'Hoje' });
 function run(record = program(), options = {}) {
   const reply = render(record);
   return decorate(reply, { roster: { base: 'BSB' }, records: [record], preferences: { mode: 'comic' }, query: '/proximo', intent: 'next', now, random: () => 0, ...options });
@@ -160,5 +162,27 @@ test('canonical wrapper owner keeps contextual arguments, and prepared actual se
     // The existing POI materializer legitimately adds an early lookup to this
     // wrapper. Its surrounding composition is exercised by runtime() above.
     assert.match(server, /const poi = await pharmacyReferenceReply/);
+  }
+});
+
+
+test('direct Next text stays objective when dated facts cannot prove the legacy humor contract', () => {
+  for (const display of [undefined, {
+    clockBasis:'published-brt', presentationConfirmed:true, presentationDate:'2026-10-05', endDate:'2026-10-06',
+    legs:[{departureDate:'2026-10-05',arrivalDate:'2026-10-06'}],
+  }]) {
+    const record={...program(),endKind:'duty-debrief',display};
+    const reply=buildProgramSummary({record,includeGreeting:false,label:'A próxima programação'});
+    assert.match(reply,/^Próxima programação: 1 voo/);
+    assert.match(reply,/chegada prevista ao aeroporto/);
+    assert.match(reply,/Hotel\/van sem dados vinculados/);
+    const result=decorate(reply,{roster:{base:'BSB'},records:[record],preferences:{mode:'comic'},query:'/proximo',intent:'next',now,random:()=>0});
+    assert.equal(result.humorApplied,false,'do not relax date/route/uncertainty gates to force humor');
+    assert.equal(result.reply,reply,'essential unknowns and dated operational facts remain unchanged');
+    if(display) {
+      assert.match(reply,/05\/10\/2026 às 23:00/);assert.match(reply,/06\/10\/2026 às 01:00/);
+    } else {
+      assert.match(reply,/horário e data da apresentação não confirmados/);assert.match(reply,/Fuso não confirmado/);
+    }
   }
 });
