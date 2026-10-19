@@ -55,20 +55,34 @@ function day(raw: string): string | undefined {
     ? `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}` : undefined;
 }
 /** Keep signs. Directional D/C labels are not silently converted to unsigned BRL. */
-function amounts(line: string): { values: number[]; uncertainDirection: boolean } {
+function amounts(line: string): { values: number[]; uncertainDirection: boolean; complete: boolean } {
   const values: number[] = [];
   let uncertainDirection = false;
   const pattern = /(?<![\d.,])(?:\(\s*)?(?:[+\-−]\s*)?(?:R\$\s*)?(?:[+\-−]\s*)?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}(?![\d.,])(?:\s*\)|\s*[\-−](?!\s*\d))?(?:\s*[DC]\b)?/g;
-  for (const match of line.matchAll(pattern)) {
+  const matches = [...line.matchAll(pattern)];
+  let residual = '';
+  let cursor = 0;
+  let complete = true;
+  for (const match of matches) {
+    const gap = line.slice(cursor, match.index);
+    if (cursor > 0 && gap.trim()) complete = false;
+    residual += gap;
+    cursor = match.index! + match[0].length;
     const raw = match[0].trim();
+    if ((raw.match(/[+\-−]/g) ?? []).length > 1) complete = false;
     const numeric = raw.match(/(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}/)![0];
     const cents = Number(numeric.replace(/[.,]/g, ''));
-    if (!Number.isSafeInteger(cents)) continue;
+    if (!Number.isSafeInteger(cents)) { complete = false; continue; }
     const negative = /[\-−]/.test(raw) || raw.startsWith('(');
     if (/[DC]$/.test(raw) || /\bDEBITO\b|\bCREDITO\b/.test(line)) uncertainDirection = true;
     values.push((negative ? -cents : cents) / 100);
   }
-  return { values, uncertainDirection };
+  const suffix = line.slice(cursor);
+  residual += suffix;
+  // Integer rubric codes/references may precede amounts, but malformed money and unparsed suffixes cannot be labels.
+  if (!matches.length || suffix.trim() || [...residual.matchAll(/[\d.,]+/g)].some(token => /\d/.test(token[0]) && /[.,]/.test(token[0]))
+    || /R\$|REDACT|REDIG|OCULTO|\*{2,}/.test(residual)) complete = false;
+  return { values, uncertainDirection, complete };
 }
 export function extractPrivatePayroll(input: string | readonly PayrollPage[]): PrivatePayrollExtraction {
   const pages: readonly PayrollPage[] = typeof input === 'string'
@@ -109,12 +123,12 @@ export function extractPrivatePayroll(input: string | readonly PayrollPage[]): P
       const parsed = amounts(line);
       const values = parsed.values;
       const setAmount = (target: PayrollField<number>, name: string, expected = 1) => {
-        if (values.length === expected && !parsed.uncertainDirection) add(target, values[0], source(name));
+        if (values.length === expected && parsed.complete && !parsed.uncertainDirection) add(target, values[0], source(name));
         else { ambiguous(target, source(name)); problem('Campo monetário ausente, redigido, direcional ou com múltiplas colunas; revisão necessária.'); }
       };
       if (/^\s*TOTAIS\b/.test(line)) {
         section = undefined;
-        if (values.length === 2 && !parsed.uncertainDirection) {
+        if (values.length === 2 && parsed.complete && !parsed.uncertainDirection) {
           add(result.totals.gross, values[0], source('gross')); add(result.totals.deductions, values[1], source('deductions'));
         } else {
           ambiguous(result.totals.gross, source('gross')); ambiguous(result.totals.deductions, source('deductions'));

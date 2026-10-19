@@ -221,9 +221,24 @@ export function learnPayrollStatement(text: string, sourceDocument: string, page
     // Inspect every labelled occurrence, including signed/parenthesized rows that the value regex cannot match.
     for (const row of rows) {
       if (signedRateSource(row)) { flagAmbiguousRate(row); invalid = true; }
-      else if (!matches.some(match => match.index! >= row.index! && match.index! + match[0].length <= row.index! + row[0].length)) {
-        flagAmbiguousRate(row, `Tarifa ${label} com ocorrência incompleta ou não interpretada; revisão obrigatória.`); invalid = true;
+      else {
+        const rowMatches = matches.filter(match => match.index! >= row.index! && match.index! + match[0].length <= row.index! + row[0].length);
+        const labelCount = [...row[0].matchAll(new RegExp(rubricLabels[key].source, 'gi'))].length;
+        const match = rowMatches[0];
+        const prefix = match ? row[0].slice(0, match.index! - row.index!) : '';
+        const suffix = match ? row[0].slice(match.index! - row.index! + match[0].length) : '';
+        if (rowMatches.length !== 1 || labelCount !== 1 || !/^\s*(?:\d+\s+)?$/.test(prefix) || suffix.trim()) {
+          flagAmbiguousRate(row, `Tarifa ${label} com linha incompleta, múltiplas rubricas ou conteúdo não interpretado; revisão obrigatória.`); invalid = true;
+        }
       }
+    }
+    const moneyToken = /^(?:\d+|\d{1,3}(?:\.\d{3})+),\d{2}$/;
+    const quantityToken = /^(?:\d+(?:[.,]\d+)?|\d{1,3}(?:\.\d{3})+,\d+)$/;
+    const invalidTokens = matches.some(match => key.endsWith('Km')
+      ? !moneyToken.test(match[1]) || !/^\d+(?:\.\d+)?$/.test(match[2]) || !moneyToken.test(match[3])
+      : !quantityToken.test(match[1]) || !moneyToken.test(match[2]));
+    if (invalidTokens) {
+      rows.forEach(row => flagAmbiguousRate(row, `Tarifa ${label} com token numérico malformado; revisão obrigatória.`)); invalid = true;
     }
     if (new Set(matches.map(match => match[0].replace(/\s+/g, ' ').trim())).size > 1) {
       rows.forEach(row => flagAmbiguousRate(row, `Tarifa ${label} com evidências divergentes; revisão obrigatória.`)); invalid = true;

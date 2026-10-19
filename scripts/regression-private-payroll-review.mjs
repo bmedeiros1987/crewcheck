@@ -134,5 +134,39 @@ try {
  const splitAmbiguity=learn(physical.map(p=>p.text).join('\f'),'synthetic-split.pdf',physical);
  assert.equal(splitAmbiguity.rates.length,0);assert.equal(splitAmbiguity.payrollExtraction.reconciliation,'unavailable');
  assert.ok(splitAmbiguity.payrollExtraction.unresolvedSources.some(ref=>ref.page===2&&ref.line===1&&ref.origin==='pdf-physical'));
- console.log('PASS prior review controls and all-occurrence sign/order/hourly/reconciliation counterproofs: real caller geometry/flat/scanned, signs, serialization privacy, sticky ambiguity, debit nature, rate offsets, duplicate/zero/competence');
+ // Complete-row grammar: accepted prefixes cannot hide another column, malformed token or rubric.
+ const exactCoverageFailures=[
+  '001 100,00 1 KM V CMS - D 100,00 200,00',
+  '001 100,00 1 KM V CMS - D 100,00,90',
+  '001 100,00 1 KM V CMS - D 100,00 002 KM V CMS - D [REDIGIDO]',
+ ];
+ for (const [clean,key,secondLabel] of [
+  ['001 100,00 1 KM V CMS - D 100,00','salary.dayKm','KM V CMS - D'],
+  ['001 100,00 Horas Reserva - CMS 100,00','salary.reserveHour','Horas Reserva - CMS'],
+  ['001 100,00 Horas Sobre Aviso - CMS 100,00','salary.standbyHour','Horas Sobre Aviso - CMS'],
+ ]) {
+  const valid=parse('  '+clean+'   \n'+printedTotals);assert.equal(valid.rates.find(r=>r.key===key).value,1,'optional code and whitespace are allowed');
+  const bare=parse(clean.replace(/^001 /,'')+'\n'+printedTotals);assert.equal(bare.rates.find(r=>r.key===key).value,1,'a code is optional');
+  for (const bad of [clean+' 200,00',clean+',90',clean+'x',clean+' EXCESSO',clean+' 002 '+secondLabel+' [REDIGIDO]',clean+' '+clean.replace(/^001 /,'002 '),clean.replace('100,00','100,00,90'),clean.replace('100,00','1.00,00'),clean.replace(/100,00$/,'1.00,00')]) {
+   for (const rows of [[bad],[clean,bad],[bad,clean]]) {
+    const result=parse(rows.join('\n')+'\n'+printedTotals);
+    assert.equal(result.rates.length,0,bad);assert.equal(result.payrollExtraction.incomplete,true,bad);assert.equal(result.payrollExtraction.reconciliation,'unavailable',bad);
+    assert.ok(result.payrollExtraction.unresolvedSources.some(ref=>ref.text===bad),'the full unparsed line stays available for review');
+   }
+  }
+ }
+ for (const bad of exactCoverageFailures) {
+  for (const section of ['', 'PROVENTOS\n']) {
+   const result=parse(section+bad+'\n'+printedTotals);assert.equal(result.rates.length,0,bad);
+   assert.equal(result.payrollExtraction.incomplete,true,bad);assert.equal(result.payrollExtraction.reconciliation,'unavailable',bad);
+   if (section) { const item=result.payrollExtraction.items[0];assert.equal(item.amount.state,'conflict');assert.equal(item.amount.candidates.length,0,'quantity must not replace the malformed total');assert.equal(item.amount.unresolvedSources[0].text,bad); }
+  }
+ }
+ for (const bad of ['INSS 100,00,90','INSS 100,00 EXCESSO','INSS [REDIGIDO] 100,00','INSS 100,00x','INSS R$ X100,00','INSS ++100,00']) {
+  const item=parse('DESCONTOS\n'+bad).payrollExtraction.items[0];assert.equal(item.amount.state,'conflict');assert.equal(item.amount.candidates.length,0,bad);
+ }
+ const punctuatedItem=parse('PROVENTOS\n001 Adic. noturno 100,00').payrollExtraction.items[0];assert.equal(punctuatedItem.amount.state,'candidate');assert.equal(punctuatedItem.amount.candidates[0].value,100);
+ const validItem=parse('DESCONTOS\n001 INSS 100,00').payrollExtraction.items[0];assert.equal(validItem.amount.state,'candidate');assert.equal(validItem.amount.candidates[0].value,100);
+ assert.equal(parse('TOTAIS 100,00 EXCESSO 0,00\nLíquido 100,00').payrollExtraction.reconciliation,'unavailable');
+ console.log('PASS prior review controls plus full-line coverage and all-occurrence sign/order/hourly/reconciliation counterproofs: real caller geometry/flat/scanned, signs, serialization privacy, sticky ambiguity, debit nature, rate offsets, duplicate/zero/competence');
 } finally {modules.cleanup();globalThis.localStorage=old.localStorage;globalThis.window=old.window;}
