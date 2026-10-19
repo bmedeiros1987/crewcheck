@@ -44,7 +44,7 @@ export default function PrivatePayrollPreview({ extraction }: { extraction: Priv
       <dt>Total de descontos impresso</dt><dd>{field(extraction.totals.deductions, true)}</dd>
       <dt>Líquido impresso</dt><dd>{field(extraction.totals.net, true)}</dd>
     </dl>
-    <p role="status">{extraction.reconciliation === 'balanced' ? 'Totais impressos conciliados aritmeticamente; rubricas e competência ainda exigem revisão.' : extraction.reconciliation === 'mismatch' ? 'Totais impressos divergentes — aplicação pendente.' : 'Conciliação indisponível — não presumir totais ou campos ausentes.'}</p>
+    <p role="status">{extraction.reconciliation === 'balanced' ? 'Totais impressos conciliados aritmeticamente; rubricas e competência ainda exigem revisão.' : extraction.reconciliation === 'mismatch' ? 'Totais impressos divergentes — aplicação bloqueada.' : 'Conciliação indisponível — não presumir totais ou campos ausentes.'}</p>
     {extraction.incomplete && <p>Extração incompleta. Confira as páginas e os campos pendentes no PDF.</p>}
     {extraction.unresolvedSources.length > 0 && <p>Campos ou linhas pendentes: {locations(extraction.unresolvedSources)}</p>}
     <p>Somente base e tarifas impressas elegíveis entram na confirmação abaixo, após revisão da conta e do ciclo. Fixos permanecem na competência do holerite; variáveis só seguem o ciclo empresarial confirmado. Não há aplicação em outros meses por recorrência presumida.</p>
