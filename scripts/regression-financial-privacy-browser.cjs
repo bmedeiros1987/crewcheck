@@ -171,6 +171,12 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
    await classificationDoc('conflicting-values',['INSS 100,00','INSS 200,00'],[]);await deductionReview.getByText('INSS · Valor pendente',{exact:true}).waitFor();
    assert.equal(await deductionReview.getByRole('checkbox',{name:'Selecionar desconto row-0',exact:true}).isEnabled(),false);
    await deductionReview.getByText('Conferir candidatos e origens',{exact:true}).click();const conflictText=await deductionReview.innerText();assert.match(conflictText,/100,00/);assert.match(conflictText,/200,00/);assert.match(conflictText,/Página PDF 1, linha 5/);assert.match(conflictText,/Página PDF 1, linha 6/);
+
+   await classificationDoc('tax-base-informational',['INSS base de calculo 1000,00','Desconto INSS 100,00'],['TOTAIS 1000,00 100,00','Liquido 900,00']);await deductionReview.getByText('INSS base de calculo',{exact:true}).waitFor();
+   assert.equal(await deductionReview.getByRole('checkbox',{name:'Selecionar desconto row-0',exact:true}).isEnabled(),false);assert.match(await deductionReview.innerText(),/Informativo — não aplicar/);
+   await deductionReview.getByRole('checkbox',{name:/^Confirmei que este é o holerite mensal/}).check();await deductionReview.getByRole('checkbox',{name:'Selecionar desconto row-1',exact:true}).check();
+   await deductionReview.getByRole('checkbox',{name:'Conferi todas as rubricas de INSS e a substituição completa apenas neste mês.',exact:true}).check();await deductionReview.getByRole('checkbox',{name:'Conferi a titularidade, a competência e o antes/depois de cada grupo selecionado.',exact:true}).check();
+   assert.match(await deductionReview.getByRole('status').innerText(),/Revisão preparada/);const taxAfter=deductionReview.getByRole('group',{name:'Prévia exata dos campos selecionados',exact:true});assert.match(await taxAfter.innerText(),/100,00/);assert.doesNotMatch(await taxAfter.innerText(),/1.000,00/);
    assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>/financial/.test(key)))),beforeDeductions,'classification and total contradictions never write');
 
 

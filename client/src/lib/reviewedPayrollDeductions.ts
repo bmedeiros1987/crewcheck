@@ -13,8 +13,9 @@ export type DeductionReviewContext = {
 };
 const buckets = ['inss', 'irrf', 'other_deductions'] as const;
 const normalized = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/^\s*\d+\s+/, '').trim();
-export function classifyPayrollDeduction(item: PayrollItem): { state:'recognized'|'unknown'|'conflict'; bucket:DeductionBucket|null } {
+export function classifyPayrollDeduction(item: PayrollItem): { state:'recognized'|'unknown'|'conflict'|'informational'; bucket:DeductionBucket|null } {
   const label = normalized(item.label);
+  if (/\bBASES?\b|\bINFORMATIV[OA]S?\b/.test(label)) return {state:'informational',bucket:null};
   const inss = /\bINSS\b/.test(label), irrf = /\bIRRF\b/.test(label);
   if (inss && irrf) return {state:'conflict',bucket:null};
   // Explicit qualifiers may precede a tax; calculation bases and arbitrary
@@ -34,7 +35,7 @@ export function payrollDeductionRows(extraction: PrivatePayrollExtraction) {
     const locations = [...new Map([...item.amount.candidates.flatMap(value=>value.sources),...item.amount.unresolvedSources].map(({page,line,origin})=>[`${origin}:${page}:${line}`,{page,line,origin}])).values()];
     let reason = '';
     if (item.direction !== 'debit') reason = 'Rubrica não comprovada como desconto.';
-    else if (classification.state !== 'recognized') reason = classification.state === 'conflict' ? 'Rótulo mistura tributos; classificação conflitante.' : 'Grupo do desconto não reconhecido; revisão pendente.';
+    else if (classification.state !== 'recognized') reason = classification.state === 'informational' ? 'Base ou valor informativo; não é desconto elegível.' : classification.state === 'conflict' ? 'Rótulo mistura tributos; classificação conflitante.' : 'Grupo do desconto não reconhecido; revisão pendente.';
     else if (!['candidate', 'zero'].includes(item.amount.state) || item.amount.candidates.length !== 1 || item.amount.unresolvedSources.length) reason = 'Valor ou sentido conflitante.';
     else if (amountMinor === null || !Number.isSafeInteger(amountMinor) || amountMinor < 0 || Math.abs(candidate.value * 100 - amountMinor) > 1e-6) reason = 'Valor em centavos não comprovado.';
     else if (candidate.sources.length !== 1) reason = 'Repetição de origem exige revisão de identidade da rubrica.';
@@ -57,7 +58,7 @@ export function planReviewedPayrollDeductions(args: DeductionReviewContext) {
     || args.extraction.competence.candidates[0]?.value !== args.month) reject('Competência única do documento não confirmada.');
   if (args.extraction.incomplete || args.extraction.unresolvedSources.length) reject('Extração incompleta ou conflitante.');
   if (args.extraction.reconciliation === 'mismatch') reject('Totais impressos divergentes.');
-  if (rows.some(row=>row.direction==='debit' && row.classification!=='recognized')) reject('Há descontos com classificação desconhecida ou conflitante; grupos completos não comprovados.');
+  if (rows.some(row=>row.direction==='debit' && ['unknown','conflict'].includes(row.classification))) reject('Há descontos com classificação desconhecida ou conflitante; grupos completos não comprovados.');
   const current = args.current;
   if (!current || current.ownerId !== args.ownerId || current.month !== args.month) reject('Registro mensal não pertence à conta e competência.');
   if (current?.closed) reject('Competência fechada.');

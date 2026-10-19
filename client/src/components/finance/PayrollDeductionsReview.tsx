@@ -37,7 +37,7 @@ export default function PayrollDeductionsReview({ extraction, documentFingerprin
     <div role="group" aria-label="Rubricas e grupos de desconto" className="payroll-deductions-rows">
       {plan.rows.map(row=><article key={row.rowId}>
         <label><input type="checkbox" aria-label={`Selecionar desconto ${row.rowId}`} disabled={!row.eligible} checked={selection.some(item=>item.rowId===row.rowId)} onChange={event=>{if(row.bucket)select(row.rowId,row.bucket,event.target.checked);}}/><span>{privacy.hidden?'Rubrica oculta':row.label}</span></label>
-        <p>{row.bucket?labels[row.bucket]:'Grupo pendente'} · {row.amountState==='conflict'?'Valor pendente':amount(row.amountMinor)}</p>
+        <p>{row.classification==='informational'?'Informativo — não aplicar':row.bucket?labels[row.bucket]:'Grupo pendente'} · {row.amountState==='conflict'?'Valor pendente':amount(row.amountMinor)}</p>
         <small>{row.locations.map(source=>`${source.origin==='pdf-physical'?'Página PDF':'Página lógica'} ${source.page}, linha ${source.line}`).join('; ')}{row.nature?' · rubrica especial: recorrência não confirmada':''}</small>
         {row.reason&&<p>{row.reason}</p>}
         {(row.amountState==='conflict'||row.locations.length>1)&&<details><summary>Conferir candidatos e origens</summary>{row.candidates.map((candidate,index)=><div key={index}><p>{amount(candidate.amountMinor)}</p><small>{candidate.locations.map(source=>`${source.origin==='pdf-physical'?'Página PDF':'Página lógica'} ${source.page}, linha ${source.line}`).join('; ')}</small></div>)}</details>}
