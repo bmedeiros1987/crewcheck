@@ -5,3 +5,9 @@
 html[data-crew-theme="light"] .cz-app .cc-home-layout-editor{background:#f8fafc;color:#0f172a}html[data-crew-theme="light"] .cz-app .cc-home-layout-editor button,html[data-crew-theme="light"] .cz-app .cc-home-slot-editor article{background:#fff;color:#0f172a}html[data-crew-theme="light"] .cz-app .cc-home-layout-heading>button{background:#fff;color:#0f172a}html[data-crew-theme="light"] .cz-app .cc-home-layout-status{color:#075985}
 
 html[data-crew-theme="light"] .cz-app .cc-home-shortcuts{background:#fff}html[data-crew-theme="light"] .cz-app .cc-home-layout-editor button.primary{background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff}html[data-crew-theme="light"] .cz-app .cc-home-layout-heading small,html[data-crew-theme="light"] .cz-app .cc-home-layout-editor header small{color:#0369a1}html[data-crew-theme="light"] .cz-app .cc-home-mode-options small,html[data-crew-theme="light"] .cz-app .cc-home-layout-heading span{color:#475569}
+
+/* Home owns this breathing room; the global header alone owns the safe inset. */
+.cc-home-layout-heading{padding-block-start:16px;flex-wrap:wrap}
+.cc-home-layout-heading>div{flex:1 1 10rem;min-width:0;overflow-wrap:anywhere}
+.cc-home-layout-heading>button{flex:0 1 auto;max-width:100%;justify-content:center;white-space:normal}
+.cc-home-layout-heading>button>svg{flex-shrink:0}

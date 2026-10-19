@@ -152,7 +152,8 @@ async function visibleTextBounds(page, selector) {
         const top=await page.evaluate(()=>{
           const app=document.querySelector('.cz-app'),header=app.querySelector(':scope > .cz-global-header'),row=header.querySelector('.cz-brand-row');
           const h=header.getBoundingClientRect(),r=row.getBoundingClientRect(),a=app.getBoundingClientRect();
-          return {parentPadding:getComputedStyle(app).paddingTop,headerPadding:getComputedStyle(header).paddingTop,background:getComputedStyle(header).backgroundColor,before:getComputedStyle(header,'::before').content,offset:r.top-a.top,headerTop:h.top-a.top};
+          const heading=document.querySelector('.cc-home-layout-heading'),copy=heading.firstElementChild.getBoundingClientRect(),button=heading.querySelector('button').getBoundingClientRect();
+          return {parentPadding:getComputedStyle(app).paddingTop,headerPadding:getComputedStyle(header).paddingTop,background:getComputedStyle(header).backgroundColor,before:getComputedStyle(header,'::before').content,offset:r.top-a.top,headerTop:h.top-a.top,homeGap:Math.min(copy.top,button.top)-h.bottom,homePadding:getComputedStyle(heading).paddingTop,button:{width:button.width,height:button.height}};
         });
         assert.equal(top.parentPadding,'0px','Parent does not duplicate header safe area');
         assert.equal(top.headerPadding,inset+'px','Header retains the full safe area');
@@ -160,6 +161,10 @@ async function visibleTextBounds(page, selector) {
         assert.equal(top.before,'none','No opaque header pseudo surface');
         assert.ok(Math.abs(top.offset-inset)<=1,'Brand starts immediately after the single safe inset: '+JSON.stringify(top));
         assert.ok(Math.abs(top.headerTop)<=1,'No obsolete top gap');
+        assert.equal(top.homePadding,'16px','Home owns one moderate content inset');
+        assert.ok(top.homeGap>=16&&top.homeGap<=24,'Home heading breathes below the header without duplicated shell padding: '+JSON.stringify(top));
+        assert.ok(top.button.width>=44&&top.button.height>=44,'Personalize retains its touch target');
+        assert.deepEqual(await visibleTextBounds(page,'.cc-home-layout-heading'),[],'Home title and personalization text fit at every text size');
       }
       await page.evaluate(()=>document.documentElement.style.setProperty('--cc-safe-area-top','24px'));
       await settle(page);
