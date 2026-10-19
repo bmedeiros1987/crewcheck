@@ -11,6 +11,13 @@ const SHARED_PDF_CACHE = 'crewcheck-pwa-shared-pdf-v1';
 const SHARED_PDF_ROUTE = '/__crewcheck_shared_pdf/';
 const SHARED_PDF_TTL_MS = 30 * 60 * 1000;
 const SHARED_PDF_MAX_BYTES = 20 * 1024 * 1024;
+// Install and retirement share one origin-wide exclusive lock. Unsupported browsers
+// still install normally, but retain old caches rather than guess lifecycle safety.
+const BUILD_CACHE_LOCK = 'crewcheck-build-cache-lifecycle-v1';
+function withBuildCacheLock(action, options = {}) {
+  return self.navigator?.locks?.request
+    ? self.navigator.locks.request(BUILD_CACHE_LOCK, options, action) : action();
+}
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icons/crewcheck-icon-v2.png'];
 
 async function trimCache(cacheName, maxEntries = 160) {
@@ -128,24 +135,36 @@ async function receiveSharedPdf(request) {
 self.addEventListener('install', (event) => {
   // Do not call skipWaiting here. The client coordinator decides when an update
   // can activate without interrupting an active operational session.
-  event.waitUntil(precachePreparedShell());
+  event.waitUntil(withBuildCacheLock(precachePreparedShell));
 });
 
 // A closing window does not fire activate again. A fresh navigation provides
 // another opportunity, but only its brand-new resulting client may be excluded:
 // existing/hidden/uncontrolled documents can still need prior build chunks.
 async function cleanupRetiredBuildCaches(arrivingClientId = '') {
-  const hasExistingPages = async () => (await self.clients.matchAll({type:'window',includeUncontrolled:true}))
-    .some(page => page.id !== arrivingClientId);
-  if (await hasExistingPages()) return false;
-  const names = await caches.keys();
-  for (const name of names) {
-    if (!/^crewcheck-v[\d.]+-(?:offline-)?(?:shell|runtime)(?:-[a-zA-Z0-9]+)*$/.test(name)
-        || [CACHE_NAME,RUNTIME_CACHE,SHARED_PDF_CACHE].includes(name)) continue;
-    if (await hasExistingPages()) return false;
-    await caches.delete(name);
-  }
-  return true;
+  if (!self.navigator?.locks?.request || !self.serviceWorker
+      || self.registration.installing || self.registration.waiting) return false;
+  return withBuildCacheLock(async (lock) => {
+    if (!lock) return false;
+    // Object identity distinguishes this execution from a replacement using the
+    // same script URL. Pending workers pin all build caches, even before their
+    // first cache write. The lock prevents installation from writing between
+    // these checks and deletion, including a new install after enumeration.
+    const ownsRetirement = () => self.registration.active === self.serviceWorker
+      && ['activating','activated'].includes(self.serviceWorker.state)
+      && !self.registration.installing && !self.registration.waiting;
+    const hasExistingPages = async () => (await self.clients.matchAll({type:'window',includeUncontrolled:true}))
+      .some(page => page.id !== arrivingClientId);
+    if (!ownsRetirement() || await hasExistingPages()) return false;
+    const names = await caches.keys();
+    for (const name of names) {
+      if (!/^crewcheck-v[\d.]+-(?:offline-)?(?:shell|runtime)(?:-[a-zA-Z0-9]+)*$/.test(name)
+          || [CACHE_NAME,RUNTIME_CACHE,SHARED_PDF_CACHE].includes(name)) continue;
+      if (await hasExistingPages() || !ownsRetirement()) return false;
+      await caches.delete(name);
+    }
+    return true;
+  }, {ifAvailable:true});
 }
 
 self.addEventListener('activate', (event) => {
