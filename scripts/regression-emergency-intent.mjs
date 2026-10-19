@@ -1,3 +1,4 @@
+import { createTelegramMenu } from '../server/concierge/telegram-menu.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -184,4 +185,27 @@ assert.equal(sends.filter(item => item.text?.includes('ALERTA CREWCHECK')).lengt
 const opened = messages.length;
 assert.equal(await mod.namespace.openEmergencyTelegramMenu({ ...menuCallback, from: { id: 20 } }, send), false);
 assert.equal(messages.length, opened, 'original sender guard still applies to explicit menu entry');
+// Actual SOS abort producer emits its Menu Concierge button through the same
+// outgoing decorator as production; returning must never notify contacts.
+reset();
+let nav, botId = 500;
+const decorated = [];
+const navSend = async (chatId,text,extra) => {
+  const reply = {chatId,text,extra:await nav.markup(chatId,extra),message_id:++botId};
+  decorated.push(reply);
+  return {ok:true,data:{result:{message_id:reply.message_id,date:1000}}};
+};
+nav = createTelegramMenu({profile:async()=>({channel:'telegram',chatType:'private',linked:true,chatId:'10',email:owner,accessKeyHash:'fixture'}),
+  send:navSend,answer:async()=>{},clear:async()=>({ok:true})});
+await handle(msg('/emergencia'),navSend);
+const sosButton = prefix => decorated.flatMap(item=>item.extra?.reply_markup?.inline_keyboard?.flat()||[]).findLast(x=>x.callback_data?.startsWith(prefix)).callback_data;
+await handle(cb(sosButton('cc_emergency:security:')),navSend);
+await handle(cb(sosButton('cc_emergency_abort:')),navSend);
+const aborted = decorated.at(-1), returnButton = sosButton('cc_nav:v1:');
+assert.match(aborted.text,/Rascunho descartado/);
+assert(!aborted.extra.reply_markup.inline_keyboard.flat().some(x=>x.callback_data==='cc_nav:menu'));
+await nav.callback({callback_query:{id:'sos-return',data:returnButton,from:{id:10},message:{chat:{id:10,type:'private'},message_id:aborted.message_id,text:aborted.text}}});
+assert(decorated.at(-1).extra.reply_markup.inline_keyboard.flat().some(x=>x.text==='Hoje'));
+assert.equal(alerts.size,0);
+assert.equal(sends.filter(item=>item.text?.includes('ALERTA CREWCHECK')).length,0,'return from SOS must not send contacts');
 console.log('PASS: original SOS safety and delivery recovery; closure ACK on every path; stable concurrent retry tokens and TTL; single exact closure; authenticated active context/privacy/failures; explicit menu entry has no contact sends');

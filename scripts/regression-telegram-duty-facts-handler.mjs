@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import crypto from 'node:crypto';
+import { createTelegramMenuTransport } from '../server/concierge/telegram-menu-transport.mjs';
 import { createTelegramMenu, menuTemplate } from '../server/concierge/telegram-menu.mjs';
 import { buildDutyFacts } from '../server/concierge/duty-facts.mjs';
 import { normalizeRosterDays } from '../server/concierge/generated/canonicalRoster.mjs';
@@ -17,14 +18,15 @@ const runtime = source.match(/const crewcheckMenu = createTelegramMenu\([\s\S]*?
 let profile = { ...baseProfile }, snapshot = makeSnapshot();
 const sent = [], answers = []; let messageId = 100, snapshotHook = null, profileHook = null;
 const context = vm.createContext({
-  crypto, Buffer, createTelegramMenu, buildDutyFacts,
+  crypto, Buffer, createTelegramMenu, createTelegramMenuTransport, buildDutyFacts,
   telegramProfileForChatAsync: async () => { if (profileHook) profileHook(); return { ...profile }; },
   conciergeLoadSnapshot: async () => { const copy = structuredClone(snapshot); if (snapshotHook) { const hook = snapshotHook; snapshotHook = null; hook(); } return copy; },
-  answerTelegramCallback: async id => answers.push(id),
+  answerTelegramCallback: async (id, text) => answers.push({id, text}),
   conciergeSettingsKeyboard: {}, conciergeWeatherKeyboard: () => ({}),
   buildTelegramConciergeReply: () => { throw Error('facts must not invoke a legacy legal reply'); },
-  telegramApiUrl: method => { assert.equal(method, 'sendMessage'); return 'https://transport.invalid/sendMessage'; },
+  telegramApiUrl: method => `https://transport.invalid/${method}`,
   fetch: async (url, options) => {
+    if (url === 'https://transport.invalid/editMessageReplyMarkup') return { ok:true, json: async () => ({ok:true}) };
     assert.equal(url, 'https://transport.invalid/sendMessage');
     const payload = JSON.parse(options.body); sent.push(payload);
     assert(payload.text.length <= 3900);
@@ -44,7 +46,7 @@ const details = button('Fundamento');
 await run(callback(details)); assert.match(sent.at(-1).text, /Fundamento da leitura/); assert.match(sent.at(-1).text, /publicada \(07:25\)/);
 assert.match(sent.at(-1).text, /regime e composição confirmados/);
 await run(callback(button('Voltar'))); assert.equal(sent.at(-1).text, summary);
-await run(callback(details)); assert.match(sent.at(-1).text, /expirou/); // One-use ticket.
+await run(callback(details)); assert.match(answers.at(-1).text, /expirou/); // One-use ticket.
 
 // The actual production sender decorates the existing root, then the real
 // callback handler routes Mais → Revisar escala to the same factual consumer.
@@ -90,7 +92,7 @@ snapshot = makeSnapshot(undefined, { accessKeyHash: 'different-binding' });
 await ask(); assert.match(sent.at(-1).text, /não autorizado/);
 snapshot = makeSnapshot();
 await ask(); const accountTicket = button('Fundamento'); profile.email = 'relinked@example.invalid';
-await run(callback(accountTicket)); assert.match(sent.at(-1).text, /expirou/); assert(!sent.at(-1).text.includes('6h40'));
+const beforeRelink = sent.length; await run(callback(accountTicket)); assert.match(answers.at(-1).text, /expirou/); assert.equal(sent.length, beforeRelink);
 profile = { ...baseProfile };
 snapshotHook = () => { profile = { ...baseProfile, email: 'changed-during-await@example.invalid' }; };
 const before = sent.length; await ask(); assert.equal(sent.length, before, 'relink during snapshot await cannot leak facts');

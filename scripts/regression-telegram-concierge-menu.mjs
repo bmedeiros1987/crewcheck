@@ -22,11 +22,11 @@ const deps = {
   voice: async (chat, reply, text, snapshot) => voices.push({ chat, reply, text, owner: snapshot.owner }),
   settingsKeyboard: { keyboard: [[{ text: 'Como me chamar' }, { text: 'Voltar ao menu' }]] },
   emergency: async query => emergencies.push(query),
-  send: async (chat, text, extra) => { sent.push({ chat, text, extra: await menu.markup(chat, extra) }); return { ok: true, data: { result: { message_id: ++outgoingId, date: Math.floor(clock / 1000) } } }; },
+  send: async (chat, text, extra) => { const decorated = await menu.markup(chat, extra); const result = { message_id: ++outgoingId, date: Math.floor(clock / 1000) }; sent.push({ chat, text, extra: decorated, ...result }); return { ok: true, data: { result } }; },
 };
 menu = createTelegramMenu(deps, () => clock);
 const message = text => ({ chat: { id: 101, type: 'private' }, from: { id: 101 }, message_id: outgoingId + 1, date: Math.floor(clock / 1000), text });
-const query = (data, overrides = {}) => ({ callback_query: { id: 'synthetic-callback', data, message: message(), from: { id: 101 }, ...overrides } });
+const query = (data, overrides = {}) => { const issued = sent.find(item => item.extra?.reply_markup?.inline_keyboard?.flat().some(button => button.callback_data === data)); return { callback_query: { id: 'synthetic-callback', data, message: { ...message(), ...(issued ? {message_id:issued.message_id,date:issued.date} : {}) }, from: { id: 101 }, ...overrides } }; };
 const dataFor = (output, label) => output.extra.reply_markup.inline_keyboard.flat().find(button => button.text === label).callback_data;
 async function home() { await deps.send(101, menuGreeting('Demo'), { reply_markup: menuTemplate() }); return sent.at(-1); }
 
@@ -89,27 +89,26 @@ await menu.callback(query(dataFor(sent.at(-1), 'Meteorologia')));
 await menu.callback(query(dataFor(sent.at(-1), 'METAR')));
 await menu.callback(query(dataFor(sent.at(-1), 'Cancelar')));
 assert.equal(await menu.text(message('SBGR')), false, 'cancel clears flow');
-assert.equal(await menu.callback(query('cc_nav:settings')), true, 'old callbacks refresh safely');
+assert.equal(await menu.callback(query('cc_nav:settings')), true, 'old callbacks fail clearly');
 assert.equal(await menu.callback(query('cc_weather:metar:SBGR:raw')), false, 'other handlers retain ownership');
 assert.equal(await menu.callback(query('cc_nav:v1:invented:ligacao')), true);
 assert.equal(calls.length, 2);
 assert(answers.length > 0);
 
-// Review sequence: reusing the consumed Mais button must clear its owner's
-// pending Radar question before the refreshed root is displayed.
+// A replay must not interrupt the newer pending Radar question.
 output = await home();
 const staleMore = dataFor(output, 'Mais');
 await menu.callback(query(staleMore));
 await menu.callback(query(dataFor(sent.at(-1), 'Radar')));
 await menu.callback(query(staleMore));
-assert.equal(await menu.text(message('LA1234')), false, 'stale callback reset clears pending input');
-assert.equal(calls.length, 2);
+assert.equal(await menu.text(message('LA1234')), true, 'stale callback preserves pending input');
+assert.equal(calls.length, 3);
 output = await home();
 await menu.callback(query(dataFor(output, 'Mais')));
 await menu.callback(query(dataFor(sent.at(-1), 'Radar')));
 await menu.callback(query('cc_nav:menu', { from: { id: 202 } }));
 assert.equal(await menu.text(message('LA1234')), true, 'another sender cannot clear the current flow');
-assert.equal(calls.length, 3);
+assert.equal(calls.length, 4);
 output = await home();
 await menu.callback(query(dataFor(output, 'Mais')));
 await menu.callback(query(dataFor(sent.at(-1), 'Radar')));

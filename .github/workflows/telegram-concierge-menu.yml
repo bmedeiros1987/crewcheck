@@ -4,6 +4,11 @@ on:
     branches: [main]
     paths:
       - 'server/concierge/telegram-menu.mjs'
+      - 'server/concierge/telegram-menu-transport.mjs'
+      - 'scripts/tests/telegram-navigation-reuse.test.mjs'
+      - 'scripts/regression-telegram-duty-facts-handler.mjs'
+      - 'scripts/regression-concierge-wellhub-conversation.mjs'
+      - 'scripts/regression-emergency-intent.mjs'
       - 'scripts/telegram-concierge-menu/**'
       - 'scripts/regression-telegram-concierge-menu.mjs'
       - 'scripts/v139/apply.mjs'
@@ -25,27 +30,35 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci
+      - run: node scripts/tests/telegram-navigation-reuse.test.mjs
       - run: |
           set -euo pipefail
           node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/telegram-menu-preparation.log"
+      - run: npm run check
+      - run: npm run build
       - run: node --check server.mjs
+      - run: node scripts/tests/telegram-navigation-reuse.test.mjs --materialized
       - run: node scripts/regression-telegram-concierge-menu.mjs
+      - run: node scripts/regression-telegram-duty-facts-handler.mjs
       - run: node scripts/regression-concierge-stay-menu.mjs
       - run: node scripts/regression-concierge-wellhub-conversation.mjs --materialized
       - run: node scripts/regression-wellhub-deeplinks.mjs
       - run: node scripts/regression-wellhub-readable-replies.mjs --materialized
       - run: node --experimental-vm-modules scripts/regression-emergency-intent.mjs
-      - run: npm run check
-      - run: npm run build
       - name: Preserve exact prepared source for independent review
         if: always()
         run: |
           if [ -f .crewcheck-source-preparation.json ]; then
             mkdir -p "$RUNNER_TEMP/telegram-menu-proof"
             cp server.mjs "$RUNNER_TEMP/telegram-menu-proof/"
+            mkdir -p "$RUNNER_TEMP/telegram-menu-proof/server/concierge" "$RUNNER_TEMP/telegram-menu-proof/scripts/telegram-concierge-menu" "$RUNNER_TEMP/telegram-menu-proof/scripts/tests" "$RUNNER_TEMP/telegram-menu-proof/scripts/v139"
+            cp server/concierge/telegram-menu{,-transport}.mjs "$RUNNER_TEMP/telegram-menu-proof/server/concierge/"
+            cp scripts/telegram-concierge-menu/apply.mjs "$RUNNER_TEMP/telegram-menu-proof/scripts/telegram-concierge-menu/"
+            cp scripts/tests/telegram-navigation-reuse.test.mjs "$RUNNER_TEMP/telegram-menu-proof/scripts/tests/"
+            cp scripts/v139/apply.mjs "$RUNNER_TEMP/telegram-menu-proof/scripts/v139/"
             cp "$RUNNER_TEMP/telegram-menu-preparation.log" "$RUNNER_TEMP/telegram-menu-proof/preparation.log"
             git rev-parse HEAD > "$RUNNER_TEMP/telegram-menu-proof/HEAD.txt"
-            sha256sum server.mjs scripts/v139/apply.mjs scripts/telegram-concierge-menu/apply.mjs server/concierge/telegram-menu.mjs > "$RUNNER_TEMP/telegram-menu-proof/SHA256SUMS"
+            sha256sum server.mjs scripts/v139/apply.mjs scripts/telegram-concierge-menu/apply.mjs server/concierge/telegram-menu.mjs server/concierge/telegram-menu-transport.mjs scripts/tests/telegram-navigation-reuse.test.mjs > "$RUNNER_TEMP/telegram-menu-proof/SHA256SUMS"
           fi
       - uses: actions/upload-artifact@v4
         if: always()
