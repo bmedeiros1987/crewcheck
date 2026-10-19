@@ -24,10 +24,10 @@ if (!materialized) {
 const extract = (text, name) => { const match = text.match(new RegExp(`(?:async )?function ${name}\\([\\s\\S]*?\\n}`)); assert(match, name); return match[0]; };
 
 function fixture({publicProfile='linked'}={}) {
-  let menu, context, id = 100, time = 1_000_000, linked = true;
+  let menu, context, id = 100, time = 1_000_000, linked = true, account = 'synthetic@example.test', snapshotHook = null, replyHook = null;
   const messages = new Map(), requests = [], answers = [], producers = [], routes = [];
   let editMode = 'ok', clearFails = false, pauseEdit = null, pauseAfterEdit = null, pauseClear = null, pausePrompt = null, profileHook = null;
-  const profile = () => { profileHook?.(); if(publicProfile==='lookup-failure')throw Error('Synthetic lookup failure'); if(publicProfile==='missing')return null; return { linked:publicProfile==='revoked'?false:linked, channel: 'telegram', chatType: 'private', chatId: '101', email: 'synthetic@example.test', accessKeyHash: 'fixture-binding' }; };
+  const profile = () => { profileHook?.(); if(publicProfile==='lookup-failure')throw Error('Synthetic lookup failure'); if(publicProfile==='missing')return null; return { linked:publicProfile==='revoked'?false:linked, channel: 'telegram', chatType: 'private', chatId: '101', email: account, accessKeyHash: 'fixture-binding' }; };
   const fetch = async (url, options) => {
     const method = url.split('/').at(-1), body = JSON.parse(options.body); requests.push({ method, body });
     if (method === 'editMessageText' && pauseEdit) await pauseEdit;
@@ -49,8 +49,9 @@ function fixture({publicProfile='linked'}={}) {
     if (method === 'editMessageText' && editMode === 'applied-throw') throw Error('synthetic uncertain delivery');
     return { ok: true, status: 200, json: async () => ({ ok: true, result: structuredClone(result) }) };
   };
-  const snapshot = async () => ({ owner: 'synthetic' });
-  const reply = async command => { producers.push(command); return command === '/historico_pernoites' ? 'Histórico sintético: registro salvo.' : `Resultado útil ${command}`; };
+  const snapshotReads = [];
+  const snapshot = async profile => { snapshotReads.push(profile.email); await snapshotHook?.(); return { owner: profile.email }; };
+  const reply = async command => { producers.push(command); await replyHook?.(); return command === '/historico_pernoites' ? 'Histórico sintético: registro salvo.' : `Resultado útil ${command}`; };
   const answer = async (id, text) => answers.push(text);
   const apiUrl = method => `https://fixture.invalid/${method}`;
   const producerContext = vm.createContext({ airportIcao: value => value, conciergeKeyboard: menuTemplate() });
@@ -90,7 +91,8 @@ function fixture({publicProfile='linked'}={}) {
   const makeInput = (text, replyTo) => ({text,chat:{id:101,type:'private'},from:{id:101},message_id:++id,date:Math.floor(time/1000),...(replyTo?{reply_to_message:{message_id:replyTo.message_id}}:{})});
   producerContext.sendTelegramMessage = (chat,text,extra) => emit(text,extra.reply_markup);
   const count = method => requests.filter(x => x.method === method).length;
-  return { root, latest, press, callback, dispatch, messages, requests, answers, producers, routes, count, makeInput, input, emit,
+  return { root, latest, press, callback, dispatch, messages, requests, answers, producers, routes, count, makeInput, input, emit, snapshotReads,
+    onSnapshot: fn => { snapshotHook = fn; }, onReply: fn => { replyHook = fn; }, relink: () => { account = 'other@example.test'; },
     handoff:async message=>{if(materialized)return dispatch({message});if(!await input(message))routes.push(structuredClone(message));}, callPrompt:()=>producerContext.requestConciergeCallConfirmation(101), weather:(station,kind)=>producerContext.conciergeWeatherKeyboard(station,kind),
     expire: () => { time += 16 * 60_000; }, mode: value => { editMode = value; }, clearFailure: () => { clearFails = true; },
     pausePrompt: promise => { pausePrompt=promise; }, pauseCleanup: promise => { pauseClear=promise; }, pause: promise => { pauseEdit = promise; }, pauseAfter: promise => { pauseAfterEdit = promise; }, revoke: () => { linked = false; }, profileHook: fn => { profileHook = fn; } };
@@ -100,8 +102,8 @@ test('web-only hotel destination and short accessible controls', () => {
   const buttons = menuTemplate('hoteis').inline_keyboard.flat();
   assert.equal(buttons.find(x => x.text === '🏨 Abrir Hotéis no app').url, hotelsUrl);
   assert.equal(hotelsUrl, 'https://crewcheck.online/?view=hotels');
-  assert.deepEqual(buttons.filter(x => x.callback_data).map(x => x.text), ['🕘 Histórico', '🏠 Início']);
-  assert(!buttons.some(x => /Informar|quarto|APK/i.test(x.text)));
+  assert.deepEqual(buttons.filter(x => x.callback_data).map(x => x.text), ['🕘 Histórico', '📝 Hotel no app', '🛏️ Quarto no app', '↩️ Voltar', '🏠 Início']);
+  assert(!buttons.some(x => /APK/i.test(x.text)));
   const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
   assert(home.includes("if (value === 'hotels' || value === 'hoteis') return 'hotels'"));
   assert(home.includes("view === 'hotels' && <HotelsView"));
@@ -115,14 +117,14 @@ test('pure navigation edits one message; return and hotel history preserve usefu
   const sends = f.count('sendMessage');
   await f.press(nav, '🌤️ Meteorologia'); assert.equal(f.latest().message_id, navId); assert.equal(f.count('sendMessage'), sends);
   await f.press(f.latest(), '↩️ Voltar'); assert(f.latest().reply_markup.inline_keyboard.flat().some(x => x.text === '🌤️ Meteorologia'));
-  await f.press(f.latest(), '🏠 Início'); await f.press(f.latest(), '🏨 Hotéis');
+  await f.press(f.latest(), '🏠 Início'); await f.press(f.latest(), '🏨 Pernoite');
   assert.match(f.latest().text, /versão web/);
   await f.press(f.latest(), '🕘 Histórico'); const history = structuredClone(f.latest());
   assert.equal(f.producers.at(-1), '/historico_pernoites');
   await f.press(history, '🏠 Início');
   assert.equal(f.messages.get(history.message_id).text, history.text, 'result content must never be overwritten');
   assert.deepEqual(f.messages.get(history.message_id).reply_markup.inline_keyboard, []);
-  assert(f.latest().reply_markup.inline_keyboard.flat().some(x => x.text === '📅 Hoje'));
+  assert(f.latest().reply_markup.inline_keyboard.flat().some(x => x.text === '📅 Programação'));
 });
 
 for (const mode of ['http', 'throw', 'applied-throw']) test(`edit ${mode}: retire uncertain controls and send one fallback`, async () => {
@@ -136,7 +138,7 @@ for (const mode of ['http', 'throw', 'applied-throw']) test(`edit ${mode}: retir
 });
 
 test('failed clear preserves text, but old callbacks cannot duplicate producers', async () => {
-  const f = fixture(); await f.root(); const root = structuredClone(f.latest()); f.clearFailure();
+  const f = fixture(); await f.root(); await f.press(f.latest(), '📅 Programação'); const root = structuredClone(f.latest()); f.clearFailure();
   await Promise.all([f.press(root, '📅 Hoje'), f.press(root, '📅 Hoje')]);
   assert.deepEqual(f.producers, ['/hoje']); assert.equal(f.messages.get(root.message_id).text, root.text);
   const count = f.count('sendMessage'); await f.press(root, '📅 Hoje'); assert.equal(f.count('sendMessage'), count);
@@ -155,14 +157,14 @@ test('concurrent duplicate callbacks do not edit twice', async () => {
 
 test('revoked/private identity denies callbacks and never edits or dispatches', async () => {
   const f = fixture(); await f.root(); const root = structuredClone(f.latest());
-  await f.press(root, '📅 Hoje', 202); f.revoke(); await f.press(root, '📅 Hoje');
+  await f.press(root, '📅 Programação', 202); f.revoke(); await f.press(root, '📅 Programação');
   assert.equal(f.producers.length, 0); assert.equal(f.count('editMessageReplyMarkup'), 0);
   assert.match(f.answers.at(-1), /não está disponível/);
 });
 
 test('expiry/restart are explicit and do not create another menu or execute actions', async () => {
   const f = fixture(); await f.root(); const root = structuredClone(f.latest()); const count = f.count('sendMessage');
-  f.expire(); await f.press(root, '📅 Hoje');
+  f.expire(); await f.press(root, '📅 Programação');
   assert.equal(f.count('sendMessage'), count); assert.equal(f.producers.length, 0); assert.match(f.answers.at(-1), /expirou/);
 });
 
@@ -190,14 +192,14 @@ test('uncertain edit plus failed clear leaves only inert old controls', async ()
 test('identity revoked during cleanup stops action and fallback', async () => {
   const f = fixture(); await f.root(); const nav = structuredClone(f.latest()); let reads = 0;
   f.profileHook(() => { if (++reads === 3) f.revoke(); });
-  const sends = f.count('sendMessage'); await f.press(nav, '📅 Hoje');
+  const sends = f.count('sendMessage'); await f.press(nav, '📅 Programação');
   assert.equal(f.producers.length, 0); assert.equal(f.count('sendMessage'), sends);
 });
 
 
 test('fresh process rejects old tickets with no transport mutation', async () => {
   const first = fixture(); await first.root(); const previous = structuredClone(first.latest());
-  const restarted = fixture(); await restarted.dispatch(first.callback(previous, '📅 Hoje'));
+  const restarted = fixture(); await restarted.dispatch(first.callback(previous, '📅 Programação'));
   assert.match(restarted.answers.at(-1), /expirou/); assert.equal(restarted.requests.length, 0);
 });
 
@@ -209,7 +211,7 @@ test('edit transport handles missing configuration and malformed provider JSON',
 });
 
 async function openQuestion(f, label) {
-  await f.root(); await f.press(f.latest(), '➕ Mais');
+  await f.root(); await f.press(f.latest(), label === '📡 Radar' ? '📅 Programação' : '➕ Mais');
   if (label !== '📡 Radar') await f.press(f.latest(), '🌤️ Meteorologia');
   await f.press(f.latest(), label);
   return structuredClone(f.latest());
@@ -279,7 +281,7 @@ for(const kind of ['🌤️ METAR','🌤️ TAF']) test(`real ${kind} keyboard e
   const sends=f.count('sendMessage');
   await f.dispatch({callback_query:{id:'old-legacy',data:'cc_nav:menu',from:{id:101},message:result}});
   assert.match(f.answers.at(-1),/expirou/); assert.equal(f.count('sendMessage'),sends);
-  await f.press(result,back.text); assert(f.latest().reply_markup.inline_keyboard.flat().some(x=>x.text==='📅 Hoje'));
+  await f.press(result,back.text); assert(f.latest().reply_markup.inline_keyboard.flat().some(x=>x.text==='📅 Programação'));
   assert.equal(f.messages.get(result.message_id).text,result.text);
 });
 
@@ -289,7 +291,7 @@ test('real call confirmation return is ticketed without invoking a call',async()
   assert(buttons.some(x=>x.callback_data==='cc_call:confirm'));
   assert(buttons.some(x=>x.callback_data==='cc_call:cancel'));
   const back=buttons.find(x=>/Voltar ao menu/.test(x.text)); assert(back.callback_data.startsWith('cc_nav:v1:'));
-  await f.press(result,back.text); assert(f.latest().reply_markup.inline_keyboard.flat().some(x=>x.text==='📅 Hoje'));
+  await f.press(result,back.text); assert(f.latest().reply_markup.inline_keyboard.flat().some(x=>x.text==='📅 Programação'));
   assert.equal(f.producers.length,0,'no call producer or finance action');
 });
 
@@ -300,7 +302,7 @@ test('cancel during prompt delivery gives busy feedback and remains usable',asyn
   while(!f.latest()?.reply_markup?.inline_keyboard?.flat().some(x=>x.text==='✖️ Cancelar')) await new Promise(resolve=>setTimeout(resolve,0));
   const prompt=structuredClone(f.latest()); await f.press(prompt,'✖️ Cancelar'); assert.match(f.answers.at(-1),/Aguarde/);
   release(); await opening; await f.press(prompt,'✖️ Cancelar');
-  assert(f.latest().reply_markup.inline_keyboard.flat().some(x=>x.text==='📅 Hoje'));
+  assert(f.latest().reply_markup.inline_keyboard.flat().some(x=>x.text==='📅 Programação'));
   assert.equal(f.producers.length,0);
 });
 
@@ -386,7 +388,7 @@ for(const publicProfile of ['missing','revoked','lookup-failure','linked']) for(
   const nav=buttons.filter(b=>b.callback_data?.startsWith('cc_nav:'));
   if(publicProfile==='linked'){
     assert.equal(nav.length,1);assert.match(nav[0].callback_data,/^cc_nav:v1:[a-f0-9]{24}:home$/);
-    await f.press(result,nav[0].text);assert(f.latest().reply_markup.inline_keyboard.flat().some(b=>b.text==='📅 Hoje'));
+    await f.press(result,nav[0].text);assert(f.latest().reply_markup.inline_keyboard.flat().some(b=>b.text==='📅 Programação'));
   }else{
     assert.equal(nav.length,0,'only unavailable private return is removed');
     assert.equal(f.count('sendMessage'),1,'no migration/root side-message for public unbound report');
@@ -403,17 +405,23 @@ for(const publicProfile of ['missing','revoked','lookup-failure'])test(`private 
 
 test('inline symbol labels retain ordered actions, layout and existing app destinations', () => {
   const contracts = {
-    home: ['hoje', 'escala', 'diarias', 'hoteis', 'more'],
-    more: ['amanha', 'proximo', 'radar', 'portao', 'weather', 'saida', 'wellness', 'conformidade', 'configuracoes', 'emergencia', 'home', 'home'],
+    home: ['programacao', 'hoteis', 'transporte', 'financeiro', 'diarias', 'regulamentacao', 'more', 'emergencia', 'refresh'],
+    programacao: ['hoje', 'amanha', 'proximo', 'escala', 'radar', 'portao', 'home', 'home'],
+    transporte: ['saida', 'home', 'home'],
+    regulamentacao: ['conformidade', 'home', 'home'],
+    more: ['weather', 'wellness', 'home', 'home'],
     weather: ['metar', 'taf', 'atis', 'more', 'home'],
     wellness: ['hospitais', 'farmacias', 'academias', 'rotina', 'more', 'home'],
-    hoteis: ['historico_pernoites', 'home'],
-    duty: ['duty_basis', 'more', 'home'],
+    hoteis: ['historico_pernoites', 'informar_hotel', 'adicionar_quarto', 'home', 'home'],
+    duty: ['duty_basis', 'regulamentacao', 'home'],
     duty_details: ['duty_summary', 'home'],
-    finance: ['home', 'home'],
+    finance: ['finance_details', 'home', 'home'],
+    financeiro: ['financeiro_details', 'home', 'home'],
+    finance_details: ['diarias', 'home'],
+    financeiro_details: ['financeiro', 'home'],
   };
   assert.deepEqual(menuTemplate().inline_keyboard.map(row => row.map(button => button.text)),
-    [['📅 Hoje', '✈️ Escala'], ['💰 Diárias', '🏨 Hotéis'], ['➕ Mais']]);
+    [['📅 Programação', '🏨 Pernoite'], ['🚗 Transporte', '💰 Financeiro'], ['🧾 Diárias', '📖 Regulamentação'], ['➕ Mais', '🚨 Emergência'], ['🔄 Atualizar']]);
   for (const [page, actions] of Object.entries(contracts)) {
     const markup = menuTemplate(page);
     assert.deepEqual(Object.keys(markup), ['inline_keyboard'], 'no persistent bottom keyboard');
@@ -429,4 +437,50 @@ test('inline symbol labels retain ordered actions, layout and existing app desti
   }
   assert.equal(menuTemplate('finance').inline_keyboard[0][0].url, 'https://crewcheck.online/?view=perdiem');
   assert.equal(menuTemplate('hoteis').inline_keyboard[0][0].url, 'https://crewcheck.online/?view=hotels');
+});
+
+test('categories invoke only the selected existing handler and preserve result on return', async () => {
+  const f = fixture();
+  for (const [category, label, command, context] of [
+    ['📅 Programação','📅 Hoje','/hoje','📅 Hoje'], ['📅 Programação','📆 Amanhã','/amanha','✈️ Escala'],
+    ['📅 Programação','⏭️ Próxima','/proximo','📅 Hoje'], ['📅 Programação','✈️ Escala','/escala','📅 Hoje'],
+    ['🚗 Transporte','🚗 Saída','/saida','🚗 Saída'], ['🏨 Pernoite','🕘 Histórico','/historico_pernoites','🕘 Histórico'],
+    ['🏨 Pernoite','📝 Hotel no app','/informar_hotel','🕘 Histórico'], ['🏨 Pernoite','🛏️ Quarto no app','/adicionar_quarto','🕘 Histórico'],
+  ]) {
+    await f.root(); await f.press(f.latest(),category); const before=f.producers.length;
+    await f.press(f.latest(),label); assert.equal(f.producers.length,before+1); assert.equal(f.producers.at(-1),command);
+    assert(f.latest().reply_markup.inline_keyboard.flat().some(b=>b.text===context));
+    const result=structuredClone(f.latest()); await f.press(result,'🏠 Início'); assert.equal(f.messages.get(result.message_id).text,result.text);
+  }
+});
+
+test('short financial states disclose details on touch without reading a source or invoking a producer',async()=>{
+  const f=fixture();
+  for(const label of ['💰 Financeiro','🧾 Diárias']) {
+    await f.root(); await f.press(f.latest(),label); const summary=f.latest().text;
+    assert(summary.length<160); assert.match(summary,/indisponíveis/); assert(!summary.includes('pernoites'));
+    await f.press(f.latest(),'🔎 Detalhes'); assert.match(f.latest().text,/fonte autorizada/);
+    await f.press(f.latest(),'↩️ Voltar'); assert.equal(f.latest().text,summary); await f.press(f.latest(),'🏠 Início');
+  }
+  assert.deepEqual(f.producers,[]); assert.deepEqual(f.snapshotReads,[]); assert(f.requests.every(r=>!r.body.reply_markup?.keyboard));
+});
+
+test('refresh rereads existing snapshot once and rotates controls without running any other producer',async()=>{
+  const f=fixture(); await f.root(); const old=structuredClone(f.latest());
+  await Promise.all([f.press(old,'🔄 Atualizar'),f.press(old,'🔄 Atualizar')]);
+  assert.deepEqual(f.snapshotReads,['synthetic@example.test']); assert.deepEqual(f.producers,[]); assert.match(f.latest().text,/Menu atualizado/);
+  await f.press(old,'📅 Programação'); assert.match(f.answers.at(-1),/expirou/);
+  await f.press(f.latest(),'📅 Programação'); await f.press(f.latest(),'📅 Hoje'); assert.deepEqual(f.producers,['/hoje']);
+});
+
+for(const change of ['revoke','relink']) test(`refresh ${change} during read cannot deliver a new menu`,async()=>{
+  const f=fixture(); await f.root(); const old=structuredClone(f.latest()),sends=f.count('sendMessage');
+  f.onSnapshot(()=>f[change]()); await f.press(old,'🔄 Atualizar'); assert.equal(f.count('sendMessage'),sends); assert.deepEqual(f.producers,[]);
+  await f.press(old,'🔄 Atualizar'); assert.equal(f.snapshotReads.length,1);
+});
+
+for(const stage of ['snapshot','producer']) test(`owner change during ${stage} cannot deliver former-owner output`,async()=>{
+  const f=fixture(); await f.root(); await f.press(f.latest(),'📅 Programação'); const nav=structuredClone(f.latest()),sends=f.count('sendMessage');
+  if(stage==='snapshot')f.onSnapshot(()=>f.relink()); else f.onReply(()=>f.relink());
+  await f.press(nav,'📅 Hoje'); assert.equal(f.count('sendMessage'),sends); assert.equal(f.producers.length,stage==='snapshot'?0:1);
 });

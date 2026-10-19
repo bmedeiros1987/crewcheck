@@ -3,6 +3,8 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'docs/telegram-inline-categories.md'
+      - 'scripts/regression-concierge-stay-menu.mjs'
       - 'server/concierge/telegram-menu.mjs'
       - 'server/concierge/telegram-menu-transport.mjs'
       - 'scripts/tests/telegram-navigation-reuse.test.mjs'
@@ -26,18 +28,23 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
       - run: npm ci
-      - run: node scripts/tests/telegram-navigation-reuse.test.mjs
+      - run: |
+          set -euo pipefail
+          node scripts/tests/telegram-navigation-reuse.test.mjs 2>&1 | tee "$RUNNER_TEMP/telegram-menu-raw.log"
       - run: |
           set -euo pipefail
           node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/telegram-menu-preparation.log"
       - run: npm run check
       - run: npm run build
       - run: node --check server.mjs
-      - run: node scripts/tests/telegram-navigation-reuse.test.mjs --materialized
+      - run: |
+          set -euo pipefail
+          node scripts/tests/telegram-navigation-reuse.test.mjs --materialized 2>&1 | tee "$RUNNER_TEMP/telegram-menu-materialized.log"
       - run: node scripts/regression-telegram-concierge-menu.mjs
       - run: node scripts/regression-telegram-duty-facts-handler.mjs
       - run: node scripts/regression-concierge-stay-menu.mjs
@@ -51,6 +58,11 @@ jobs:
           if [ -f .crewcheck-source-preparation.json ]; then
             mkdir -p "$RUNNER_TEMP/telegram-menu-proof"
             cp server.mjs "$RUNNER_TEMP/telegram-menu-proof/"
+            cp "$RUNNER_TEMP"/telegram-menu-{raw,materialized}.log "$RUNNER_TEMP/telegram-menu-proof/" 2>/dev/null || true
+            mkdir -p "$RUNNER_TEMP/telegram-menu-proof/docs"
+            cp docs/telegram-inline-categories.md "$RUNNER_TEMP/telegram-menu-proof/docs/"
+            printf '%s\n' "${{ github.event.pull_request.base.sha }}" > "$RUNNER_TEMP/telegram-menu-proof/BASE.txt"
+            cp scripts/regression-{telegram-concierge-menu,telegram-duty-facts-handler,concierge-stay-menu,concierge-wellhub-conversation,emergency-intent}.mjs "$RUNNER_TEMP/telegram-menu-proof/"
             mkdir -p "$RUNNER_TEMP/telegram-menu-proof/server/concierge" "$RUNNER_TEMP/telegram-menu-proof/scripts/telegram-concierge-menu" "$RUNNER_TEMP/telegram-menu-proof/scripts/tests" "$RUNNER_TEMP/telegram-menu-proof/scripts/v139"
             cp server/concierge/telegram-menu{,-transport}.mjs "$RUNNER_TEMP/telegram-menu-proof/server/concierge/"
             cp scripts/telegram-concierge-menu/apply.mjs "$RUNNER_TEMP/telegram-menu-proof/scripts/telegram-concierge-menu/"
@@ -58,7 +70,7 @@ jobs:
             cp scripts/v139/apply.mjs "$RUNNER_TEMP/telegram-menu-proof/scripts/v139/"
             cp "$RUNNER_TEMP/telegram-menu-preparation.log" "$RUNNER_TEMP/telegram-menu-proof/preparation.log"
             git rev-parse HEAD > "$RUNNER_TEMP/telegram-menu-proof/HEAD.txt"
-            sha256sum server.mjs scripts/v139/apply.mjs scripts/telegram-concierge-menu/apply.mjs server/concierge/telegram-menu.mjs server/concierge/telegram-menu-transport.mjs scripts/tests/telegram-navigation-reuse.test.mjs > "$RUNNER_TEMP/telegram-menu-proof/SHA256SUMS"
+            sha256sum server.mjs scripts/v139/apply.mjs scripts/telegram-concierge-menu/apply.mjs server/concierge/telegram-menu.mjs server/concierge/telegram-menu-transport.mjs scripts/tests/telegram-navigation-reuse.test.mjs scripts/regression-telegram-concierge-menu.mjs scripts/regression-telegram-duty-facts-handler.mjs scripts/regression-concierge-stay-menu.mjs scripts/regression-concierge-wellhub-conversation.mjs scripts/regression-emergency-intent.mjs docs/telegram-inline-categories.md > "$RUNNER_TEMP/telegram-menu-proof/SHA256SUMS"
           fi
       - uses: actions/upload-artifact@v4
         if: always()
