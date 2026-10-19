@@ -205,7 +205,7 @@ const aborted = decorated.at(-1), returnButton = sosButton('cc_nav:v1:');
 assert.match(aborted.text,/Rascunho descartado/);
 assert(!aborted.extra.reply_markup.inline_keyboard.flat().some(x=>x.callback_data==='cc_nav:menu'));
 await nav.callback({callback_query:{id:'sos-return',data:returnButton,from:{id:10},message:{chat:{id:10,type:'private'},message_id:aborted.message_id,text:aborted.text}}});
-assert(decorated.at(-1).extra.reply_markup.inline_keyboard.flat().some(x=>x.text==='Hoje'));
+assert(decorated.at(-1).extra.reply_markup.inline_keyboard.flat().some(x=>x.text==='📅 Hoje'));
 assert.equal(alerts.size,0);
 assert.equal(sends.filter(item=>item.text?.includes('ALERTA CREWCHECK')).length,0,'return from SOS must not send contacts');
 console.log('PASS: original SOS safety and delivery recovery; closure ACK on every path; stable concurrent retry tokens and TTL; single exact closure; authenticated active context/privacy/failures; explicit menu entry has no contact sends');
