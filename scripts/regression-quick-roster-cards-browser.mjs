@@ -4,6 +4,9 @@ import path from 'node:path';
 import http from 'node:http';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
+import ts from 'typescript';
+import vm from 'node:vm';
+import {loadClientModules,TYPE_ONLY_PDF_PARSER_STUB} from './lib/ts-module-harness.mjs';
 const exactArtifact=createRequire(import.meta.url)('./ui-artifact-evidence.cjs').artifactEvidence();
 const require=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url);
 const {chromium}=require('playwright');
@@ -12,7 +15,7 @@ fs.mkdirSync(output,{recursive:true});
 const make=(id,type,extra={})=>({id,kind:'duty',origin:'BSB',day:{date:'2032-10-19',type,pairingCode:type},canonical:{date:'2032-10-19',kind:'duty',publishedDay:{date:'2032-10-19',type,pairingCode:type}},...extra});
 const events=[
  make('base-rest','DESCANSO_BASE_CONTINUIDADE',{kind:'stay',presentation:'12:30',departure:'12:30',arrival:'04:10',day:{date:'2032-10-19',type:'DESCANSO_BASE_CONTINUIDADE',pairingCode:'DESCANSO BASE ENTRE JORNADAS'},canonical:{date:'2032-10-19',kind:'stay',startDateTime:'2032-10-19T15:30:00Z',endDateTime:'2032-10-20T07:10:00Z',publishedDay:{type:'DESCANSO_BASE_CONTINUIDADE'}}}),
- make('overnight','PERNOITE_CONTINUIDADE',{kind:'stay',origin:'GIG',presentation:'12:30',departure:'13:00',arrival:'05:20(+1)',day:{date:'2032-10-19',type:'PERNOITE_CONTINUIDADE',hotel:'Hotel Teste Inventado'},canonical:{date:'2032-10-19',kind:'stay',isNextDay:true,publishedDay:{type:'PERNOITE_CONTINUIDADE',hotel:'Hotel Teste Inventado'}}}),
+ make('overnight','PERNOITE_CONTINUIDADE',{kind:'stay',origin:'GIG',presentation:'12:30',departure:'13:00',arrival:'05:20(+1)',day:{date:'2032-10-19',type:'PERNOITE_CONTINUIDADE',hotel:'Hotel Teste Inventado'},canonical:{date:'2032-10-19',kind:'stay',isNextDay:true,startDateTime:'2032-10-19T16:00:00Z',endDateTime:'2032-10-20T08:20:00Z',publishedDay:{type:'PERNOITE_CONTINUIDADE',hotel:'Hotel Teste Inventado'}}}),
  make('night-nohotel','PERNOITE_CONTINUIDADE',{kind:'stay',origin:'GRU',canonical:{date:'2032-10-19',kind:'stay',publishedDay:{type:'PERNOITE_CONTINUIDADE'}}}),
  make('off','DO',{presentation:'09:00'}),
  make('reserve','ASB',{presentation:'06:30',departure:'06:30',arrival:'12:30'}),
@@ -23,7 +26,21 @@ const events=[
  make('unproved-rollover','DESCANSO_BASE_CONTINUIDADE',{kind:'stay',departure:'12:30',arrival:'04:10'}),
  make('bad-date','ASB',{canonical:{date:'invalid',kind:'duty'},day:{date:'invalid',type:'ASB'}}),
 ];
-const entry=`import React from 'react';import {createRoot} from 'react-dom/client';import {HomeRosterPreview} from './client/src/components/v1391/HomeRosterPreview';import {peekPendingNavigationContext} from './client/src/lib/navigationContext';import {applyCrewCheckTheme} from './client/src/lib/themeRuntime';window.__theme=applyCrewCheckTheme;const input=${JSON.stringify(events)};function freeze(v){if(v&&typeof v==='object'){Object.freeze(v);Object.values(v).forEach(freeze)}return v;}freeze(input);window.__fixture=input;window.__inputBefore=JSON.stringify(input);window.__peek=peekPendingNavigationContext;createRoot(document.getElementById('root')).render(<main className='cz-app' data-version='synthetic'><HomeRosterPreview events={input} onNavigate={view=>window.__destination=view}/></main>);`;
+// Reuse the canonical midnight regression's fixture, not a second producer/clock policy.
+const midnightAst=ts.createSourceFile('midnight.mjs',fs.readFileSync('scripts/regression-p0-canonical-midnight-presentation.mjs','utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
+const midnightNodes=midnightAst.statements.filter(node=>ts.isVariableStatement(node)&&node.declarationList.declarations.some(item=>['leg','day','roster'].includes(item.name.getText(midnightAst))));assert.equal(midnightNodes.length,3);
+const midnightScope=vm.createContext({});vm.runInContext(midnightNodes.map(node=>node.getText(midnightAst)).join('\n')+'\nglobalThis.rosterFixture=roster;',midnightScope);
+const canonicalHarness=loadClientModules({prefix:'quick-roster-midnight-',stubs:TYPE_ONLY_PDF_PARSER_STUB,files:['client/src/lib/rosterContinuity.ts','client/src/lib/canonicalRoster.ts']});
+const canonicalMidnight=canonicalHarness.load('canonicalRoster').buildCanonicalRosterEvents(midnightScope.rosterFixture).find(event=>event.flightNumber==='LA9102');assert(canonicalMidnight);assert.equal(canonicalMidnight.startDateTime,'2026-10-05T03:05:00.000Z');assert.equal(canonicalMidnight.presentation,'23:18');canonicalHarness.cleanup();
+const midnightEvent={...canonicalMidnight,day:canonicalMidnight.publishedDay,canonical:canonicalMidnight};
+const midnightInputs=[midnightEvent,
+ {...midnightEvent,id:'multi-day',canonical:{...canonicalMidnight,endDateTime:'2026-10-06T06:20:00.000Z'}},
+ {...midnightEvent,id:'unknown-instant',canonical:{...canonicalMidnight,startDateTime:'unconfirmed',endDateTime:'unconfirmed'}},
+ {...midnightEvent,id:'partial-instant',canonical:{...canonicalMidnight,endDateTime:'unconfirmed'}},
+ {...midnightEvent,id:'unknown-publication',canonical:{...canonicalMidnight,date:'invalid',publishedDay:{...canonicalMidnight.publishedDay,date:'invalid'}}},
+];
+const componentSource=path.resolve(process.env.CARD_COMPONENT_SOURCE||'client/src/components/v1391/HomeRosterPreview.tsx');
+const entry=`import React from 'react';import {createRoot} from 'react-dom/client';import {HomeRosterPreview} from ${JSON.stringify(componentSource)};import {peekPendingNavigationContext} from './client/src/lib/navigationContext';import {applyCrewCheckTheme} from './client/src/lib/themeRuntime';window.__theme=applyCrewCheckTheme;const input=${JSON.stringify(events)};function freeze(v){if(v&&typeof v==='object'){Object.freeze(v);Object.values(v).forEach(freeze)}return v;}freeze(input);window.__fixture=input;window.__inputBefore=JSON.stringify(input);window.__peek=peekPendingNavigationContext;const root=createRoot(document.getElementById('root'));function mount(next,key){freeze(next);window.__fixture=next;window.__inputBefore=JSON.stringify(next);root.render(<main className='cz-app' data-version='synthetic'><HomeRosterPreview key={key} events={next} onNavigate={view=>window.__destination=view}/></main>)}window.__midnightInputs=${JSON.stringify(midnightInputs)};window.__midnightId=${JSON.stringify(canonicalMidnight.id)};window.__mountFixture=(next,instant)=>{window.__fixtureNow=Date.parse(instant);mount(next,instant)};mount(input,'initial');`;
 await build({stdin:{contents:entry,loader:'jsx',resolveDir:process.cwd()},bundle:true,jsx:'automatic',format:'iife',outfile:path.join(output,'app.js'),plugins:[{name:'offline-next-flight',setup(b){b.onResolve({filter:/NextFlightGateCard$/},()=>({path:'next',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const NextFlightGateCard=()=>null;'}));}}],logLevel:'silent'});
 const built=fs.readFileSync('dist/index.html','utf8');const links=[...built.matchAll(/<link\b[^>]*rel=["']stylesheet["'][^>]*>/g)].map(m=>m[0]).join('');assert(links);
 fs.writeFileSync(path.join(output,'index.html'),`<html><head><meta name="viewport" content="width=device-width,initial-scale=1">${links}</head><body><div id="root"></div><script src="/fixture.js"></script></body></html>`);
@@ -34,7 +51,7 @@ console.log('fixture ready',origin);
 try{for(const width of [320,390,430,768,1440])for(const theme of ['light','dark'])for(const size of [100,200]){
  const context=await browser.newContext({viewport:{width,height:900},timezoneId:width===320?'Asia/Tokyo':width===390?'America/Los_Angeles':'UTC',serviceWorkers:'block'});let external=0;const errors=[];
  await context.route('**/*',r=>new URL(r.request().url()).origin===origin?r.continue():(external++,r.abort()));
- await context.addInitScript(({theme,size})=>{const RealDate=Date;const now=RealDate.parse('2032-10-19T15:00:00Z');globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}};},{theme,size});
+ await context.addInitScript(({theme,size})=>{const RealDate=Date;const now=RealDate.parse('2032-10-19T15:00:00Z');globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[window.__fixtureNow??now]));}static now(){return window.__fixtureNow??now;}};},{theme,size});
  const page=await context.newPage();console.log('case start',width,theme,size);page.on('pageerror',e=>{errors.push(e.message);console.error(e.message)});await page.goto(origin,{waitUntil:'domcontentloaded',timeout:15000});await page.evaluate(({theme,size})=>{window.__theme(theme);document.documentElement.dataset.crewTextSize=String(size);document.documentElement.style.setProperty('--cc-text-scale',String(size/100));},{theme,size});await page.locator('[data-roster-event-id="base-rest"]').waitFor();await page.evaluate(async()=>{await document.fonts.ready;document.body.offsetHeight;await new Promise(r=>requestAnimationFrame(r));for(const a of document.getAnimations())if(Number.isFinite(a.effect?.getComputedTiming().endTime))try{a.finish()}catch{}await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));});
  const card=id=>page.locator('[data-roster-event-id="'+id+'"]');
  assert.equal(await card('base-rest').locator('.cc-home-roster-copy>strong').innerText(),'Descanso');
@@ -52,6 +69,14 @@ try{for(const width of [320,390,430,768,1440])for(const theme of ['light','dark'
  function luminance(s){const [r,g,b]=s.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;});return .2126*r+.7152*g+.0722*b;}
  for(const tone of metrics.tones){const a=luminance(tone.text),b=luminance(tone.bg);assert.ok((Math.max(a,b)+.05)/(Math.min(a,b)+.05)>=4.5,'AA text contrast: '+JSON.stringify(tone));}
  await card('base-rest').focus();await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>window.__destination),'roster');const nav=await page.evaluate(()=>window.__peek());assert.equal(nav.programId,'base-rest');assert.equal(nav.returnView,'cockpit');
- await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-synthetic.png`),fullPage:true});assert.deepEqual(errors,[]);results.push({width,theme,size,metrics,externalBlocked:external});await context.close();console.log('PASS quick roster cards',width,theme,size);
+ await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-synthetic.png`),fullPage:true});
+ await page.evaluate(()=>window.__mountFixture(window.__midnightInputs,'2026-10-04T15:00:00Z'));
+ const midnightId=await page.evaluate(()=>window.__midnightId);await card(midnightId).waitFor();await page.evaluate(()=>document.fonts.ready);
+ const actualClock=await card(midnightId).locator('.cc-home-roster-clock').innerText();assert.match(actualClock,/Início · dia seguinte/);assert.match(actualClock,/Fim · dia seguinte/);assert.match(actualClock,/00:05/);assert.match(actualClock,/03:20/);assert.match(await card(midnightId).innerText(),/Apresentação 23:18/);
+ const multipleClock=await card('multi-day').locator('.cc-home-roster-clock').innerText();assert.match(multipleClock,/Início · dia seguinte/);assert.match(multipleClock,/Fim · 6 de outubro de 2026/);assert.doesNotMatch(multipleClock,/Fim · dia seguinte/);
+ assert.doesNotMatch(await card('unknown-instant').locator('.cc-home-roster-clock').innerText(),/dia seguinte/);assert.match(await card('unknown-instant').innerText(),/Virada de dia indicada; datas a confirmar/);
+ assert.match(await card('partial-instant').locator('.cc-home-roster-clock').innerText(),/Início · dia seguinte/);assert.doesNotMatch(await card('partial-instant').locator('.cc-home-roster-clock').innerText(),/Fim · dia seguinte/);assert.equal(await card('unknown-publication').count(),0);
+ assert.equal(await page.evaluate(()=>JSON.stringify(window.__fixture)===window.__inputBefore),true,'Canonical inputs retain identity, clocks and instants');
+ await page.screenshot({path:path.join(output,`${width}-${theme}-${size}-midnight-synthetic.png`),fullPage:true});assert.deepEqual(errors,[]);results.push({width,theme,size,metrics,midnight:{actualClock,multipleClock},externalBlocked:external});await context.close();console.log('PASS quick roster cards',width,theme,size);
 }}finally{await browser.close();server.close();}
 fs.writeFileSync(path.join(output,'report.json'),JSON.stringify({artifact:exactArtifact,scope:'Real HomeRosterPreview and shipped CSS, frozen synthetic input; unrelated NextFlightGateCard omitted; browser timezone variants and text-scale emulation; no physical Android or finance calculation.',results},null,2));

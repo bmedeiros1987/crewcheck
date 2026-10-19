@@ -183,6 +183,7 @@ jobs:
             artifacts/favorite-editor-app
             artifacts/ui-reading-overlays
             artifacts/fixed-headers
+            artifacts/quick-roster-cards
             artifacts/pulse-content-space
             artifacts/menu-density
             artifacts/brand-footer
