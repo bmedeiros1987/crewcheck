@@ -191,6 +191,9 @@ public class CrewLifeV2LifecycleTest {
             assertNotNull("null retains the previous value per AndroidX callback contract",data);
             visible=data;callbacks++;
         }
+        @Override public void onComplicationDataTimeline(androidx.wear.watchface.complications.datasource.ComplicationDataTimeline timeline) {
+            fail("Expected a concrete callback replacement, not a timeline.");
+        }
         void request(CrewLifeComplicationService provider) {
             int before=callbacks;
             provider.onComplicationRequest(new androidx.wear.watchface.complications.datasource.ComplicationRequest(
