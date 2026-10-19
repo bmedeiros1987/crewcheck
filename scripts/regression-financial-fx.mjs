@@ -45,6 +45,26 @@ for(const patch of [{rate:'0'},{asOf:'2032-02-30'},{asOf:'2032-02-10'},{retrieve
 const expiration=provider.createFinancialFxLoader({request,now:()=>clock});reply=valid;await expiration('A');clock+=7*86400000+1;reply=Error('offline');assert.equal(Object.keys((await expiration('A',true)).quotes).length,0,'stale cannot outlive original observation/retrieval');
 let release;const race=provider.createFinancialFxLoader({request:()=>new Promise(resolve=>{release=resolve;}),now:()=>Date.parse('2032-02-09T12:00:00Z')});const old=race('A');const finishA=release;const next=race('B');const finishB=release;finishB({...valid,state:'stale'});await next;finishA(valid);await old;assert.equal((await race('B')).state,'stale','late previous session never publishes into new cache');
 const timeout=provider.createFinancialFxLoader({timeoutMs:1,request:(_url,{signal})=>new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(Error('synthetic aborted'))))});assert.equal((await timeout('A')).reason,'temporary');
+// Each currency expires independently, including inside the client TTL.
+for(const age of ['observation','retrieval'])for(const revalidate of [false,true]){
+ let mixedClock=Date.parse('2032-02-09T23:50:00Z'),mixedCalls=0,mixedFail=false;
+ const retrievedAt='2032-02-09T23:50:00Z';
+ const quote=(currency,rate)=>({base:'BRL',quote:currency,rate,asOf:'2032-02-08',retrievedAt,source:'SYNTHETIC mixed dates',method:'blended_daily'});
+ const original={USD:{...quote('USD','0.2'),...(age==='observation'?{asOf:'2032-02-02'}:{asOf:'2032-02-02',retrievedAt:'2032-02-02T23:50:00Z'})},EUR:quote('EUR','0.1'),GBP:quote('GBP','0.05')};
+ const mixed=provider.createFinancialFxLoader({now:()=>mixedClock,request:async()=>{mixedCalls++;if(mixedFail)throw Object.assign(Error('synthetic temporary503'),{status:503});return {state:'available',method:'blended_daily',quotes:mixedCalls>2?{...original,USD:quote('USD','0.2')}:original};}});
+ assert.equal((await mixed('mixed-A')).state,'available');mixedClock=Date.parse(age==='observation'?'2032-02-10T00:05:00Z':'2032-02-09T23:55:00Z');mixedFail=true;
+ const partial=await mixed('mixed-A',revalidate);
+ assert.equal(mixedCalls,2,'partial expiry forces refresh even inside the existing TTL');assert.equal(partial.state,'stale');assert.deepEqual(Object.keys(partial.quotes),['EUR','GBP']);
+ assert.equal(partial.quotes.EUR.retrievedAt,retrievedAt,'subset keeps original retrieval age');assert.equal(partial.quotes.EUR.asOf,'2032-02-08');
+ const convert=(from,to)=>fxMath.convertFinancialMinor({amountMinor:1000,from,to,quotes:partial.quotes,today:'2032-02-10'});
+ assert.equal(convert('EUR','BRL').amountMinor,10000);assert.equal(convert('BRL','EUR').amountMinor,100);assert.equal(convert('EUR','GBP').amountMinor,500);
+ for(const [from,to] of [['USD','BRL'],['EUR','USD'],['USD','EUR']])assert.equal(convert(from,to).amountMinor,null,'missing expired currency never supplies a cross rate');
+ await mixed('mixed-A',true);assert.equal(mixedCalls,2,'transient cooldown still applies');
+ mixedClock+=300001;mixedFail=false;const recovered=await mixed('mixed-A',true);assert.equal(recovered.state,'available');assert.equal(mixedCalls,3);assert.deepEqual(Object.keys(recovered.quotes),['USD','EUR','GBP'],'a newly validated response can restore a currency');
+ mixedClock=Date.parse('2032-02-17T00:05:00Z');mixedFail=true;const expired=await mixed('mixed-A',true);assert.equal(expired.state,'unavailable');assert.equal(Object.keys(expired.quotes).length,0,'no fallback remains after all original references expire');
+}
+console.log('PASS independent currency expiry: observation/retrieval boundaries, subset revalidation inside TTL, transient fallback without renewed age, missing cross rates, recovery and complete expiry');
+
 // Render the real JSX with hook inputs only; no real account, browser or API calls.
 let draft={key:'synthetic:synthetic@example.invalid:synthetic-token',amount:'200',from:'USD',to:'BRL',rate:'',asOf:'',manualOpen:false},fx=off;
 const calculator=compile('client/src/components/finance/CurrencyCalculator.tsx',{'react':{...React,useEffect:()=>{},useState:()=>[draft,change=>{draft=typeof change==='function'?change(draft):change;}]},'react/jsx-runtime':jsx,'./FinancialFxProvider':{useFinancialFx:()=>({...fx,mode:'automatic'}),FinancialFxSourceControl:()=>null,financialFxMessage:provider.financialFxMessage},'@/lib/authClient':{getStoredUser:()=>({id:'synthetic',email:'synthetic@example.invalid'}),getToken:()=> 'synthetic-token'},'lucide-react':{Calculator:()=>null},'@shared/financialFx.mjs':fxMath,'@shared/financialMoney.mjs':money,'./FinancialPrivacy':{useFinancialPrivacy:()=>({hidden:false,amount:x=>x}),FinancialPrivacyToggle:()=>null},'./persistent-history.css':{}},class extends Date{constructor(...args){super(...(args.length?args:['2032-02-09T12:00:00Z']));}}).default;

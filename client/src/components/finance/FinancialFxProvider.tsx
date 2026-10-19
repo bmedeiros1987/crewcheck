@@ -19,7 +19,11 @@ export function createFinancialFxLoader({request=authFetch<any>,now=()=>Date.now
  return async function automatic(session:string,revalidate=false):Promise<Data>{
   if(owner!==session){owner=session;cached=null;cacheUntil=0;pending=null;generation++;}
   const at=now(),retained=cached?usableQuotes(cached.quotes,at):{};
-  if(cached&&Object.keys(retained).length!==Object.keys(cached.quotes).length)cached={state:'unavailable',reason:'invalid',quotes:{}};
+  if(cached&&Object.keys(retained).length!==Object.keys(cached.quotes).length){
+   cached=Object.keys(retained).length?{...cached,state:'stale',quotes:retained}:{state:'unavailable',reason:'invalid',quotes:{}};
+   // Expiry invalidates the client TTL, not unrelated valid references.
+   cacheUntil=0;
+  }
   if(cached&&at<cacheUntil&&(!revalidate||cached.state!=='available'))return cached;
   if(!pending){const revision=generation,previous=cached,controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
    const task=request('/api/platform/finance/exchange-rates',{signal:controller.signal}).then(body=>{
