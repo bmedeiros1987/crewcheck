@@ -6,6 +6,8 @@ on:
       - 'android-wrapper/lifecompanion/**'
       - 'android-wrapper/shared-health/**'
       - 'scripts/regression-samsung-sample-freshness.mjs'
+      - 'scripts/regression-crewlife-v2-phone.mjs'
+      - 'tests/fixtures/crewlife-v2/**'
       - 'android-wrapper/app/**'
       - 'client/src/components/v1434/**'
       - 'android-wrapper/settings.gradle'
@@ -67,6 +69,7 @@ jobs:
           curl --fail --silent --show-error --location --retry 3 --output "$framework_jar" https://repo.maven.apache.org/maven2/org/robolectric/android-all/15-robolectric-12650502/android-all-15-robolectric-12650502.jar
           printf '%s  %s\n' 6c0670454f6fcee9f1b17aa393e81d71bf26e7e6ae7c5777ed3924b062191d5b "$framework_jar" | sha256sum --check
           ANDROID_ALL_JAR="$framework_jar" node scripts/regression-samsung-sample-freshness.mjs
+          ANDROID_ALL_JAR="$framework_jar" node scripts/regression-crewlife-v2-phone.mjs
 
       - name: Synthetic global health cache and source-age contracts
         run: node scripts/regression-life-health-cache.mjs

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 2,
+  "capability": "crewlife_metric_validity_v2",
+  "dataPath": "/crewcheck/watch/crewlife/v2",
+  "dataKey": "crewLifeJson",
+  "controlPath": "/crewcheck/watch/crewlife/v2/control",
+  "ackPath": "/crewcheck/watch/crewlife/v2/ack",
+  "legacyPath": "/crewcheck/watch/crewlife/v1",
+  "snapshotFields": [
+    "schemaVersion",
+    "kind",
+    "streamId",
+    "revision",
+    "generatedAtEpochMs",
+    "validUntilEpochMs",
+    "metrics"
+  ],
+  "metricFields": [
+    "state",
+    "value",
+    "validUntilEpochMs"
+  ],
+  "metricStates": [
+    "valid",
+    "no_data",
+    "expired",
+    "sample_time_unknown",
+    "revoked",
+    "permission_denied",
+    "invalid"
+  ],
+  "mappings": {
+    "energyScore": "recoveryScore",
+    "sleepMinutes": "sleepMinutes",
+    "steps": "steps",
+    "activeMinutes": "activeMinutes"
+  },
+  "resetAck": {
+    "op": "reset_ack",
+    "status": "cleared"
+  },
+  "revokeAck": {
+    "op": "revoke_ack",
+    "status": "cleared"
+  },
+  "controlFields": [
+    "schemaVersion",
+    "op",
+    "streamId",
+    "revision",
+    "requestId"
+  ],
+  "ackFields": [
+    "schemaVersion",
+    "op",
+    "streamId",
+    "revision",
+    "requestId",
+    "status"
+  ],
+  "unavailableValue": "omitted",
+  "tombstone": {
+    "schemaVersion": 2,
+    "kind": "revoked",
+    "streamId": "opaque-current-stream",
+    "revision": 5,
+    "generatedAtEpochMs": 0,
+    "validUntilEpochMs": 0,
+    "metrics": {}
+  },
+  "physicalProof": false,
+  "snapshotAckAuthority": false
+}

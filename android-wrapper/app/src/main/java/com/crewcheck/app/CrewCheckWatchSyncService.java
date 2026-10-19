@@ -10,7 +10,14 @@ import com.google.android.gms.wearable.WearableListenerService;
 public final class CrewCheckWatchSyncService extends WearableListenerService {
     @Override
     public void onMessageReceived(MessageEvent messageEvent) {
+        if (CrewLifeV2Protocol.ACK_PATH.equals(messageEvent.getPath())) {
+            CrewLifeV2Phone.receiveAck(this, messageEvent.getSourceNodeId(), messageEvent.getData());
+            CrewLifeWatchPublisher.retryPendingRevocation(this, null);
+            return;
+        }
         if (!CrewCheckWatchPublisher.REQUEST_SYNC_PATH.equals(messageEvent.getPath())) return;
+        CrewLifeV2Phone.retry(this);
+        CrewLifeWatchPublisher.retryPendingRevocation(this, null);
         // Fast path: resend the last validated snapshot if one already exists.
         CrewCheckWatchPublisher.republishLast(this);
 

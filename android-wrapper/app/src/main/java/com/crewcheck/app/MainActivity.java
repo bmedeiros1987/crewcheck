@@ -136,6 +136,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        CrewLifeV2Phone.retry(this);
+        CrewLifeWatchPublisher.retryPendingRevocation(this, null);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setStatusBarColor(Color.parseColor("#071D33"));
         getWindow().setNavigationBarColor(Color.parseColor("#071D33"));
@@ -950,53 +952,19 @@ public class MainActivity extends Activity {
 
     private void publishLifeCompanionSummaryToWatch(String raw) {
         try {
-            if (raw == null || raw.isBlank()) return;
+            if (raw == null || raw.isBlank()) { CrewLifeV2Phone.invalidate(this); return; }
             WatchHealthConsent consent = WatchHealthConsent.read(this);
             if (!consent.allowsAnyHealth() || WatchHealthConsent.isRevocationPending(this)) return;
-
             JSONObject source = new JSONObject(raw);
-            if (!source.optBoolean("automatic", false)) return;
-
-            long generatedAt = source.optLong("generatedAtEpochMs", 0L);
-            if (generatedAt <= 0L) return;
-
-            JSONObject payload = new JSONObject();
-            payload.put("schemaVersion", 1);
-            payload.put("generatedAtEpochMs", generatedAt);
-            long validUntil = source.optLong("validUntilEpochMs", 0);
-            if (validUntil <= System.currentTimeMillis()) return;
-            payload.put("validUntilEpochMs", validUntil);
-            payload.put("recoveryLabel", "DESCONHECIDA");
-
-            int energyScore = source.optInt("energyScore", 0);
-            if (!source.isNull("energyScore") && energyScore >= 0 && energyScore <= 100) {
-                payload.put("recoveryScore", energyScore);
-                payload.put("scoreKind", "ENERGY");
+            if (!source.optBoolean("automatic", false)
+                    || source.optLong("validUntilEpochMs", 0) <= System.currentTimeMillis()) {
+                CrewLifeV2Phone.invalidate(this); return;
             }
-
-            int sleepMinutes = source.optInt("sleepMinutes", 0);
-            if (!source.isNull("sleepMinutes") && sleepMinutes >= 0 && sleepMinutes <= 24 * 60) {
-                payload.put("sleepMinutes", sleepMinutes);
-                payload.put(
-                        "sleepLabel",
-                        (sleepMinutes / 60) + "h" + String.format(Locale.ROOT, "%02d", sleepMinutes % 60)
-                );
-            }
-
-            int steps = source.optInt("steps", 0);
-            if (!source.isNull("steps") && steps >= 0 && steps <= 200_000) payload.put("steps", steps);
-
-            int activeMinutes = source.optInt("activeMinutes", 0);
-            if (!source.isNull("activeMinutes") && activeMinutes >= 0 && activeMinutes <= 24 * 60) {
-                payload.put("activeMinutes", activeMinutes);
-            }
-
-            CrewLifeWatchPublisher.publishCrewLife(
-                    this,
-                    payload.toString(),
-                    this::dispatchCrewCheckWatchSyncResult
-            );
-        } catch (Exception ignored) {}
+            // Source filtering already occurred in readLifeCompanionSummaryInternal.
+            // Carry every per-metric deadline to v2; query time never renews a sample.
+            JSONObject payload = CrewLifeV2Protocol.project(source);
+            CrewLifeWatchPublisher.publishCrewLife(this, payload.toString(), this::dispatchCrewCheckWatchSyncResult);
+        } catch (Exception invalid) { CrewLifeV2Phone.invalidate(this); }
     }
 
     private void dispatchLifeCompanionSummaryRaw(String raw) {
@@ -1206,12 +1174,10 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean publishWatchCrewLife(final String payloadJson) {
             if (payloadJson == null || payloadJson.trim().isEmpty()) return false;
-            CrewLifeWatchPublisher.publishCrewLife(
-                    MainActivity.this,
-                    payloadJson,
-                    (ok, code, message) -> dispatchCrewCheckWatchSyncResult(ok, code, message)
-            );
-            return true;
+            // Web input is not evidence of source validity. Refresh the native,
+            // session-fenced provider instead of accepting a timestamp-only projection.
+            syncLifeCompanionToCrewCheckAndWatch("watch-life-native-source-request");
+            return true; // refresh request accepted, never a delivery receipt
         }
 
         @JavascriptInterface
