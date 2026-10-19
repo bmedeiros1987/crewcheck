@@ -92,5 +92,5 @@ const htmlPath = 'client/index.html';
 let html = fs.readFileSync(htmlPath, 'utf8').replace(/\s*<script id="cc-theme-prepaint">[\s\S]*?<\/script>/g, '');
 const charset = '<meta charset="UTF-8" />';
 if (!html.includes(charset)) throw new Error('Canonical HTML charset anchor missing');
-html = html.replace(charset, charset + '\n    <script id="cc-theme-prepaint">\n' + bootstrapCode.replace(/<\/script/gi, '<\\/script') + '\n    </script>');
+html = html.replace(charset, charset + '\n    <script id="cc-theme-prepaint">\n(function () {\n' + bootstrapCode.replace(/<\/script/gi, '<\\/script') + '\n})();\n    </script>');
 fs.writeFileSync(htmlPath, html);
