@@ -203,7 +203,15 @@ export function learnPayrollStatement(text: string, sourceDocument: string, page
     const start = text.lastIndexOf('\n', match.index ?? 0) + 1;
     const end = text.indexOf('\n', (match.index ?? 0) + match[0].length);
     const row = text.slice(start, end < 0 ? undefined : end);
-    return /[-−]\s*(?:R\$\s*)?\d|\(\s*(?:R\$\s*)?\d|,\d{2}\s*[-−)]/.test(row);
+    return /[-−]\s*(?:R\$\s*)?\d|\(\s*(?:R\$\s*)?\d|,\d{2}\s*[-−)]|,\d{2}\s*[DC]\b|\b(?:DEBITO|CREDITO)\b/i.test(row.normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+  };
+  const flagAmbiguousRate = (match: RegExpMatchArray) => {
+    payrollExtraction.incomplete = true;
+    payrollExtraction.warnings.push('Tarifa com sinal ou notação de débito/crédito; revisão obrigatória.');
+    for (const ref of rateEvidence(match, 0)) {
+      const page = evidencePages.find(page => page.page === ref.page && (page.origin ?? 'document-logical') === ref.origin);
+      payrollExtraction.unresolvedSources.push({ page: ref.page, origin: ref.origin, line: ref.line, field: 'rate', text: page?.text.split(/\r?\n/)[ref.line - 1] ?? '' });
+    }
   };
   const rates: LearnedRate[] = [];
   const base = payrollExtraction.monthlyBase;
@@ -219,7 +227,7 @@ export function learnPayrollStatement(text: string, sourceDocument: string, page
     }
     const m = matches[0];
     if (!m) continue;
-    if (signedRateSource(m)) { payrollExtraction.warnings.push('Tarifa com sinal explícito; revisão obrigatória.'); continue; }
+    if (signedRateSource(m)) { flagAmbiguousRate(m); continue; }
     const quantity = unit === 'km' ? decimal(m[1]) : 0;
     const statedRate = unit === 'km' ? decimal(m[2]) : 0;
     const derivedRate = unit === 'km' && quantity > 0 ? Number((money(m[3]) / quantity).toFixed(6)) : NaN;
@@ -240,7 +248,7 @@ export function learnPayrollStatement(text: string, sourceDocument: string, page
       continue;
     }
     const m = matches[0];
-    if (m && signedRateSource(m)) { payrollExtraction.warnings.push('Tarifa com sinal explícito; revisão obrigatória.'); continue; }
+    if (m && signedRateSource(m)) { flagAmbiguousRate(m); continue; }
     const quantity = m ? decimal(m[1]) : 0;
     const hourlyValue = m && quantity > 0 ? Number((money(m[2]) / quantity).toFixed(6)) : NaN;
     if (Number.isFinite(hourlyValue)) rates.push({ ...rate(key, label, hourlyValue, 'hour', effectiveFrom, sourceDocument, fp, 'review'), valueOrigin: 'derived', evidence: rateEvidence(m!, hourlyValue) });

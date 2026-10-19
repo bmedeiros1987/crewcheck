@@ -67,7 +67,7 @@ try {
   }
  }
  for(const other of ['Salário-base mensal 3.000,00 100,00','Salário-base mensal [REDIGIDO]']) {
-  for(const body of [base+'\n'+other,other+'\n'+base]) assert.equal(parse(body).rates.length,0);
+  for(const body of [base+'\n'+other,other+'\n'+base]) { assert.equal(parse(body).rates.length,0); assert.equal(parse(body).payrollExtraction.monthlyBase.state,'conflict'); }
  }
  // 5: Debit/credit classification is retained before vacation/13th nature.
  const tax=parse('DESCONTOS\nINSS férias 100,00\nIRRF 13º salário 50,00\nPROVENTOS\nFérias 300,00\n13º salário 200,00').payrollExtraction.items;
@@ -84,5 +84,25 @@ try {
  const duplicate=parse('DESCONTOS\nINSS 0,00\nINSS 0,00');assert.equal(duplicate.payrollExtraction.items[0].amount.state,'zero');assert.equal(duplicate.payrollExtraction.items[0].amount.candidates[0].sources.length,2);
  assert.equal(parse('').payrollExtraction.monthlyBase.state,'absent');
  const multi=parse(base+'\nCompetência 09/2032\n'+base);assert.equal(multi.rates.length,0);
- console.log('PASS seven independent review counterproofs: real caller geometry/flat/scanned, signs, serialization privacy, sticky ambiguity, debit nature, rate offsets, duplicate/zero/competence');
+ // Renewed review: only an explicit monthly reference is a monthly base, not a rubric substring.
+ for (const [body,direction,nature] of [
+  ['DESCONTOS\nDesconto salário-base R$ 100,00','debit',undefined],
+  ['PROVENTOS\nDiferença salário-base R$ 100,00','credit',undefined],
+  ['Salário-base de férias R$ 1.000,00','unknown','vacation'],
+ ]) {
+  const result=parse(body);assert.equal(result.payrollExtraction.monthlyBase.state,'absent',body);
+  assert.ok(!result.rates.some(r=>r.key==='salary.base'),body);
+  assert.equal(result.payrollExtraction.items[0].direction,direction,body);
+  assert.equal(result.payrollExtraction.items[0].nature,nature,body);
+ }
+ assert.equal(parse('PROVENTOS\nSalário-base mensal R$ 3.000,00').rates[0].value,3000,'explicit monthly base remains a candidate');
+ for (const suffix of ['D','C']) {
+  const result=parse('001 100,00 1 KM V CMS - D 100,00 '+suffix);
+  assert.equal(result.rates.length,0,suffix);assert.equal(result.payrollExtraction.incomplete,true,suffix);assert.equal(result.payrollExtraction.unresolvedSources[0].line,4,suffix);
+  assert.ok(result.warnings.some(w=>w.includes('débito/crédito')),suffix);
+ }
+ const refund=parse('PROVENTOS\nRestituição INSS 100,00').payrollExtraction.items[0];
+ assert.equal(refund.direction,'credit');assert.equal(refund.kind,'earning');assert.equal(refund.amount.candidates[0].value,100);
+ const contradictory=parse('DESCONTOS\nRestituição INSS 100,00').payrollExtraction.items[0];assert.equal(contradictory.amount.state,'conflict');
+ console.log('PASS seven original plus six renewed review fixtures: real caller geometry/flat/scanned, signs, serialization privacy, sticky ambiguity, debit nature, rate offsets, duplicate/zero/competence');
 } finally {modules.cleanup();globalThis.localStorage=old.localStorage;globalThis.window=old.window;}

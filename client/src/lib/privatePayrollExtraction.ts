@@ -103,6 +103,7 @@ export function extractPrivatePayroll(input: string | readonly PayrollPage[]): P
         if (value) add(result.creditDate, value, source('creditDate'));
         else { ambiguous(result.creditDate, source('creditDate')); problem('Data de crédito inválida ou redigida.'); }
       }
+      if (/COMPETENCIA|DATA (?:DE )?CREDITO|PAGAMENTO EM/.test(line)) return;
       if (/^(?:RUBRICAS\s+)?PROVENTOS\s*$/.test(line.trim())) { section = 'credit'; return; }
       if (/^(?:RUBRICAS\s+)?DESCONTOS\s*$/.test(line.trim())) { section = 'debit'; return; }
       const parsed = amounts(line);
@@ -112,6 +113,7 @@ export function extractPrivatePayroll(input: string | readonly PayrollPage[]): P
         else { ambiguous(target, source(name)); problem('Campo monetário ausente, redigido, direcional ou com múltiplas colunas; revisão necessária.'); }
       };
       if (/^\s*TOTAIS\b/.test(line)) {
+        section = undefined;
         if (values.length === 2 && !parsed.uncertainDirection) {
           add(result.totals.gross, values[0], source('gross')); add(result.totals.deductions, values[1], source('deductions'));
         } else {
@@ -121,21 +123,32 @@ export function extractPrivatePayroll(input: string | readonly PayrollPage[]): P
       }
       const total = /^\s*TOTAL (?:DE )?PROVENTOS\b/.test(line) ? 'gross' : /^\s*TOTAL (?:DE )?DESCONTOS\b/.test(line) ? 'deductions'
         : /^\s*(?:VALOR )?LIQUIDO\b/.test(line) ? 'net' : undefined;
-      if (total) { setAmount(result.totals[total], total); return; }
+      if (total) { section = undefined; setAmount(result.totals[total], total); return; }
       const proportional = /PROPORCIONAL|SALARIO.{0,30}\b\d+\s*DIAS/.test(line);
-      if (/SALARIO[ -]+BASE|BASE MENSAL/.test(line) && !proportional) { setAmount(result.monthlyBase, 'monthlyBase'); return; }
       const nature = proportional ? 'proportional' : /ADIANTAMENTO/.test(line) ? 'advance' : /FERIAS/.test(line) ? 'vacation'
         : /\b13[ºO°]?\s+SALARIO|DECIMO TERCEIRO/.test(line) ? 'thirteenth' : undefined;
-      const explicitDebit = /\bINSS\b|\bIRRF\b|\bDESCONTO\b|\bDEBITO\b/.test(line);
-      const direction = explicitDebit || section === 'debit' ? 'debit' : section === 'credit' ? 'credit' : 'unknown';
-      if (!nature && !section && !explicitDebit) return;
+      const debitLabel = /\bDESCONTO\b|\bDEBITO\b/.test(line);
+      const creditLabel = /\bRESTITUICAO\b|\bDEVOLUCAO\b|\bCREDITO\b/.test(line);
+      const taxLabel = /\bINSS\b|\bIRRF\b/.test(line);
+      // A tax name describes the nature, not the direction of an explicit credit/refund.
+      const directionConflict = (section === 'credit' && debitLabel) || (section === 'debit' && creditLabel) || (creditLabel && debitLabel);
+      const direction = section ?? (creditLabel ? 'credit' : debitLabel || taxLabel ? 'debit' : 'unknown');
+      const baseReference = /SALARIO[ -]+BASE|BASE MENSAL/.test(line);
+      // Require the whole label, not a substring of a discount, adjustment or vacation rubric.
+      const label = text.replace(/(?:\(\s*)?(?:[+\-−]\s*)?(?:R\$\s*)?(?:[+\-−]\s*)?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}(?:\s*\)|\s*[\-−])?(?:\s*[DC]\b)?/gi, '').trim();
+      const plainLabel = normalize(label).replace(/^\d+\s+/, '').replace(/:$/, '').trim();
+      const explicitMonthlyBase = /^(?:SALARIO[ -]+BASE MENSAL|BASE MENSAL)$/.test(plainLabel);
+      if (explicitMonthlyBase && !nature && direction !== 'debit' && !directionConflict) { setAmount(result.monthlyBase, 'monthlyBase'); return; }
+      if (/^\s*(?:\d+\s+)?(?:SALARIO[ -]+BASE MENSAL|BASE MENSAL)\b/.test(line) && !nature && direction !== 'debit' && !/DIFERENCA|AJUSTE|COMPLEMENTO|RESTITUICAO/.test(line)) {
+        ambiguous(result.monthlyBase, source('monthlyBase')); problem('Referência mensal com conteúdo monetário ou qualificação ambígua; revisão obrigatória.'); return;
+      }
+      if (!nature && !section && !debitLabel && !creditLabel && !taxLabel && !baseReference) return;
       if (!values.length && !/R\$|\d|REDACT|REDIG|OCULTO|\[.*\]/.test(line)) return;
       const kind = direction === 'debit' ? 'deduction' : nature ?? 'earning';
-      // Preserve the nonmonetary label, including printed codes; never combine amounts.
-      const label = text.replace(/(?:\(\s*)?(?:[+\-−]\s*)?(?:R\$\s*)?(?:[+\-−]\s*)?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}(?:\s*\)|\s*[\-−])?(?:\s*[DC]\b)?/gi, '').trim();
       let item = result.items.find(i => normalize(i.label) === normalize(label) && i.direction === direction && i.competence === currentCompetence);
       if (!item) { item = { kind, direction, nature, label, competence: currentCompetence, amount: field(), recurring: 'unconfirmed' }; result.items.push(item); }
       setAmount(item.amount, 'amount');
+      if (directionConflict) { ambiguous(item.amount, source('amount')); problem('Seção e descrição divergem quanto a crédito/débito; revisão obrigatória.'); }
     });
   }
   const fields = [result.competence, result.creditDate, result.monthlyBase, ...Object.values(result.totals), ...result.items.map(i => i.amount)];
