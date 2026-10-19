@@ -6,7 +6,7 @@ const out = path.resolve(process.env.FUNCTIONAL_CSS_OUTPUT || 'artifacts/functio
 fs.mkdirSync(out, { recursive: true });
 const source = fs.readFileSync(root + '/server.mjs', 'utf8'), ast = ts.createSourceFile('server.mjs', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 const fn = ast.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === 'serveStatic');
-const ctx = vm.createContext({ fs, path, Buffer, distDir: root + '/dist', sendJson: (r, s, b) => { r.writeHead(s); r.end(JSON.stringify(b)); } });
+const ctx = vm.createContext({guardStaticHtml: require('../server/static-html-guard.mjs').guardStaticHtml, fs, path, Buffer, distDir: root + '/dist', sendJson: (r, s, b) => { r.writeHead(s); r.end(JSON.stringify(b)); } });
 vm.runInContext(fn.getText(ast) + ';globalThis.respond=serveStatic', ctx);
 const server = http.createServer((q, r) => ctx.respond(q, r, new URL(q.url, 'http://localhost')));
 const finance = fs.readFileSync(root + '/scripts/regression-financial-ui-browser.cjs', 'utf8'), a = ts.createSourceFile('finance.cjs', finance, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);

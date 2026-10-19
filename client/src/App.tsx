@@ -29,6 +29,7 @@ import TermsGate from "./components/TermsGate";
 import PartnerWelcome from "./components/PartnerWelcome";
 import NativePlayUpdateNotice from './components/NativePlayUpdateNotice';
 import PwaInstallNotice from './components/PwaInstallNotice';
+import { initializeCrewTextSize } from './lib/textSizePreference';
 
 type CrewThemeMode = 'light' | 'dark' | 'system';
 
@@ -200,6 +201,7 @@ function Router() {
 }
 
 export default function App() {
+  useEffect(initializeCrewTextSize, []);
   const [, setLocation] = useLocation();
   const [appMode, setAppMode] = useState(false);
   const [maintenanceState, setMaintenanceState] = useState<{ enabled?: boolean; message?: string; title?: string; status?: string; adminBypass?: boolean; updatedAt?: string | null; estimatedReturnAt?: string | null; etaMinutes?: number | null } | null>(null);

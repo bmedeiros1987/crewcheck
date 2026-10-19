@@ -33,7 +33,6 @@ import '@/styles/compact-navigation.css';
 import TextSizeSetting from '@/components/TextSizeSetting';
 import MoneyText from '@/components/MoneyText';
 import { FinancialPrivacyToggle, useFinancialPrivacy } from '@/components/finance/FinancialPrivacy';
-import { initializeCrewTextSize } from '@/lib/textSizePreference';
 import { acquireOverlayLifecycle } from '@/lib/overlayLifecycle';
 import NotificationSoundSetting from '@/components/pulse/NotificationSoundSetting';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
@@ -5184,7 +5183,6 @@ export default function Home() {
     window.addEventListener('storage', sync);
     return () => { for (const name of names) window.removeEventListener(name, sync); window.removeEventListener('storage', sync); };
   }, []);
-  useEffect(initializeCrewTextSize, []);
   const [, setLocation] = useLocation();
   const fileRef = useRef<HTMLInputElement>(null);
   const [view, setViewState] = useState<ZeroView>(() => new URLSearchParams(window.location.search).has('connect') ? 'community' : new URLSearchParams(window.location.search).get('view') ? normalizeInitialView(new URLSearchParams(window.location.search).get('view')) : normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));

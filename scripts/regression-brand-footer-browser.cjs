@@ -10,7 +10,7 @@ fs.mkdirSync(output, { recursive: true });
 const source = fs.readFileSync('server.mjs', 'utf8');
 const ast = ts.createSourceFile('server.mjs', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 const responder = ast.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === 'serveStatic');
-const scope = vm.createContext({ fs, path, Buffer, distDir: path.resolve('dist'), sendJson: (r,s,b) => { r.writeHead(s); r.end(JSON.stringify(b)); } });
+const scope = vm.createContext({guardStaticHtml: require('../server/static-html-guard.mjs').guardStaticHtml, fs, path, Buffer, distDir: path.resolve('dist'), sendJson: (r,s,b) => { r.writeHead(s); r.end(JSON.stringify(b)); } });
 vm.runInContext(responder.getText(ast) + ';globalThis.respond=serveStatic', scope);
 const server = http.createServer((q,r) => scope.respond(q,r,new URL(q.url,'http://localhost')));
 const fixtureText = fs.readFileSync('scripts/regression-financial-ui-browser.cjs','utf8');

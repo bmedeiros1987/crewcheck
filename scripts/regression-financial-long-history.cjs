@@ -2,7 +2,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {createRequire}=require('node:module'),{chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||__filename)('playwright');
 const out=path.resolve('artifacts/financial-long-history');fs.mkdirSync(out,{recursive:true});
 const serverSource=fs.readFileSync('server.mjs','utf8'),ast=ts.createSourceFile('server.mjs',serverSource,99,true,ts.ScriptKind.JS),handler=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='serveStatic');
-const scope=vm.createContext({fs,path,Buffer,distDir:path.resolve('dist'),sendJson:(res,status,body)=>{res.writeHead(status);res.end(JSON.stringify(body));}});vm.runInContext(handler.getText(ast)+'\nglobalThis.respond=serveStatic;',scope);
+const scope=vm.createContext({guardStaticHtml: require('../server/static-html-guard.mjs').guardStaticHtml,fs,path,Buffer,distDir:path.resolve('dist'),sendJson:(res,status,body)=>{res.writeHead(status);res.end(JSON.stringify(body));}});vm.runInContext(handler.getText(ast)+'\nglobalThis.respond=serveStatic;',scope);
 const server=http.createServer((req,res)=>scope.respond(req,res,new URL(req.url,'http://localhost')));
 const fixtureSource=fs.readFileSync('scripts/regression-financial-known-values-app.cjs','utf8'),fixtureAst=ts.createSourceFile('fixture.cjs',fixtureSource,99,true,ts.ScriptKind.JS),seed=fixtureAst.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='seed').getText(fixtureAst);
 const A='synthetic@example.invalid',B='synthetic-b@example.invalid';
