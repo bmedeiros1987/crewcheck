@@ -45,7 +45,10 @@ function fixture() {
     cached: () => JSON.parse(stored.get(key)),
     offline: () => { offline = true; },
     switchAccount: () => { user = other; generation++; },
+    renewSession: () => { generation++; },
+    updateRemote: patch => { remote = { ...remote, ...patch }; },
     blockStorage: () => { writesBlocked = readsBlocked = true; },
+    allowStorage: () => { writesBlocked = readsBlocked = false; },
     intercept: fn => { intercept = fn; },
   };
 }
@@ -124,3 +127,56 @@ for (const mode of ['offline-before-save', 'readback-fails', 'wrong-owner', 'wro
   assert.deepEqual(f.cached(), initial, mode);
 }
 console.log('PASS confirmed profile cache: online save → offline load; owner isolation; late PATCH/readback; unavailable storage; mandatory remote receipt and readback.');
+
+// A request started before the confirmed save cannot replace that newer cache.
+for (const operation of ['getPlatformProfile', 'savePlatformProfile']) {
+  const f = fixture();
+  let release, reached;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const ready = new Promise(resolve => { reached = resolve; });
+  f.intercept(async () => { if (f.calls.length === 1) { reached(); await blocked; } });
+  const old = operation === 'getPlatformProfile' ? f.client.getPlatformProfile() : f.client.savePlatformProfile({ locale: 'fr-FR' });
+  await ready;
+  await f.client.saveConfirmedDisplayName('Confirmed Name');
+  assert.equal(f.cached().displayName, 'Confirmed Name');
+  release(); await old;
+  assert.equal(f.cached().displayName, 'Confirmed Name', `${operation}: old response cannot overwrite confirmed cache`);
+  // A new request is allowed to observe a later legitimate server-side edit.
+  f.updateRemote({ displayName: 'New Server Name' });
+  await f.client.getPlatformProfile();
+  assert.equal(f.cached().displayName, 'New Server Name');
+  f.offline();
+  assert.equal((await f.client.getPlatformProfile()).profile.displayName, 'New Server Name');
+}
+
+// Even without a name save, a stale account or session must not write shared caches.
+for (const operation of ['getPlatformProfile', 'savePlatformProfile']) {
+  for (const transition of ['switchAccount', 'renewSession']) {
+    const f = fixture();
+    let release, reached;
+    const blocked = new Promise(resolve => { release = resolve; });
+    const ready = new Promise(resolve => { reached = resolve; });
+    f.intercept(async () => { if (f.calls.length === 1) { reached(); await blocked; } });
+    const old = operation === 'getPlatformProfile' ? f.client.getPlatformProfile() : f.client.savePlatformProfile({ locale: 'fr-FR' });
+    await ready; const writesBefore = f.writes.length;
+    f[transition](); release(); await old;
+    assert.equal(f.writes.length, writesBefore, `${operation}/${transition}: old response must not write cache`);
+  }
+}
+
+// Confirmation invalidates older requests even when its storage write is unavailable.
+{
+  const f = fixture();
+  let release, reached;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const ready = new Promise(resolve => { reached = resolve; });
+  f.intercept(async () => { if (f.calls.length === 1) { reached(); await blocked; } });
+  const old = f.client.getPlatformProfile(); await ready;
+  f.blockStorage();
+  assert.equal((await f.client.saveConfirmedDisplayName('Remote Confirmed')).displayName, 'Remote Confirmed');
+  f.allowStorage(); release(); await old;
+  assert.equal(f.writes.length, 0, 'old request stays invalid after storage recovers');
+  await f.client.getPlatformProfile();
+  assert.equal(f.cached().displayName, 'Remote Confirmed');
+}
+console.log('PASS profile cache ordering: old GET/PATCH cannot overwrite confirmed save; new GET allowed; account/session fences; storage failure.');

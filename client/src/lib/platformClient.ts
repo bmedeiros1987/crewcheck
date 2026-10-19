@@ -69,6 +69,15 @@ const LOCAL_BILLING_KEY = 'crewcheck_platform_billing_cache_v1';
 const LOCAL_STAYS_KEY = 'crewcheck_platform_stays_cache_v1';
 const LOCAL_GYM_KEY = 'crewcheck_platform_gym_checkins_local_v1';
 const LOCAL_PARKING_KEY = 'crewcheck_my_car_parking_position_v1';
+let confirmedProfileRevision = 0;
+
+function captureProfileCacheWrite() {
+  const session = captureAuthSession();
+  const email = String(getStoredUser()?.email || '').trim().toLowerCase();
+  const revision = confirmedProfileRevision;
+  return (profile: PlatformProfile) => session.isCurrent() && revision === confirmedProfileRevision
+    && Boolean(email) && String(profile?.email || '').trim().toLowerCase() === email;
+}
 
 function readLocal<T>(key: string, fallback: T): T {
   try { return JSON.parse(localStorage.getItem(key) || '') as T; } catch { return fallback; }
@@ -138,9 +147,12 @@ export async function getPlatformProfile(): Promise<{ ok: boolean; profile: Plat
   let timezone = 'America/Sao_Paulo';
   try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || timezone; } catch {}
   try {
+    const mayCache = captureProfileCacheWrite();
     const payload = await authFetch<{ ok: boolean; profile: PlatformProfile; billing: PlatformBilling }>('/api/platform/profile', { headers: { 'x-crewcheck-locale': navigator.language || 'pt-BR', 'x-crewcheck-timezone': timezone } });
-    writeLocal(LOCAL_PROFILE_KEY, payload.profile);
-    writeLocal(LOCAL_BILLING_KEY, payload.billing);
+    if (payload.ok && mayCache(payload.profile)) {
+      writeLocal(LOCAL_PROFILE_KEY, payload.profile);
+      writeLocal(LOCAL_BILLING_KEY, payload.billing);
+    }
     return payload;
   } catch {
     return { ok: true, profile: localProfile(), billing: localBilling(), localOnly: true };
@@ -148,12 +160,15 @@ export async function getPlatformProfile(): Promise<{ ok: boolean; profile: Plat
 }
 
 export async function savePlatformProfile(patch: Partial<Pick<PlatformProfile, 'displayName' | 'locale' | 'timezone' | 'sharePresence'>>): Promise<{ ok: boolean; profile: PlatformProfile; billing: PlatformBilling; localOnly?: boolean }> {
+  const mayCache = captureProfileCacheWrite();
   const local = { ...localProfile(), ...patch };
   writeLocal(LOCAL_PROFILE_KEY, local);
   try {
     const payload = await authFetch<{ ok: boolean; profile: PlatformProfile; billing: PlatformBilling }>('/api/platform/profile', { method: 'PATCH', body: JSON.stringify(patch) });
-    writeLocal(LOCAL_PROFILE_KEY, payload.profile);
-    writeLocal(LOCAL_BILLING_KEY, payload.billing);
+    if (payload.ok && mayCache(payload.profile)) {
+      writeLocal(LOCAL_PROFILE_KEY, payload.profile);
+      writeLocal(LOCAL_BILLING_KEY, payload.billing);
+    }
     return payload;
   } catch {
     return { ok: true, profile: local, billing: localBilling(), localOnly: true };
@@ -183,6 +198,7 @@ export async function saveConfirmedDisplayName(value: string): Promise<PlatformP
   }
   const confirmed = await getConfirmedPlatformProfile();
   if (!session.isCurrent() || confirmed.publicId !== before.publicId || confirmed.displayName !== displayName) throw new Error('Não foi possível confirmar o nome salvo.');
+  confirmedProfileRevision += 1;
   writeLocal(LOCAL_PROFILE_KEY, confirmed);
   window.dispatchEvent(new CustomEvent('crewcheck:profile-name-confirmed', { detail: { owner: session.owner, displayName } }));
   return confirmed;
