@@ -1,0 +1,54 @@
+[
+  {
+    "id": "all-absent",
+    "capture": {
+      "ownerId": "a",
+      "month": "2032-02",
+      "monthlyRaw": null,
+      "globalRaw": {
+        "inss": null,
+        "irrf": null,
+        "other_deductions": null
+      }
+    }
+  },
+  {
+    "id": "globals-zero-money-absent",
+    "capture": {
+      "ownerId": "a",
+      "month": "2032-02",
+      "monthlyRaw": null,
+      "globalRaw": {
+        "inss": "0",
+        "irrf": "12.34",
+        "other_deductions": null
+      }
+    }
+  },
+  {
+    "id": "monthly-all-states",
+    "capture": {
+      "ownerId": "a",
+      "month": "2032-02",
+      "monthlyRaw": "{\"schema\": 1, \"ownerId\": \"a\", \"month\": \"2032-02\", \"revision\": 7, \"closed\": true, \"values\": {\"inss\": {\"amountMinor\": 0, \"currency\": \"BRL\", \"kind\": \"deduction\", \"source\": \"manual\", \"sourceId\": \"synthetic:legacy\", \"recurrence\": \"once\"}, \"irrf\": {\"amountMinor\": 1234, \"currency\": \"BRL\", \"kind\": \"deduction\", \"source\": \"manual\", \"sourceId\": \"synthetic:legacy\", \"recurrence\": \"once\"}, \"other_deductions\": {\"amountMinor\": null, \"currency\": \"BRL\", \"kind\": \"deduction\", \"source\": \"manual\", \"sourceId\": \"synthetic:legacy\", \"recurrence\": \"once\"}, \"rubric_medical\": {\"amountMinor\": 4500, \"currency\": \"BRL\", \"kind\": \"deduction\", \"source\": \"manual\", \"sourceId\": \"synthetic:legacy\", \"recurrence\": \"once\"}, \"rubric_unknown\": {\"amountMinor\": null, \"currency\": \"BRL\", \"kind\": \"informational\", \"source\": \"manual\", \"sourceId\": \"synthetic:legacy\", \"recurrence\": \"once\"}, \"fixed_with_co\": {\"amountMinor\": 100000, \"currency\": \"BRL\", \"kind\": \"earning\", \"source\": \"reviewed_statement\", \"sourceId\": \"synthetic:legacy\", \"recurrence\": \"once\"}}}",
+      "globalRaw": {
+        "inss": "20",
+        "irrf": "3.5",
+        "other_deductions": null
+      }
+    }
+  },
+  {
+    "id": "monthly-empty-presence",
+    "capture": {
+      "ownerId": "a",
+      "month": "2032-02",
+      "monthlyRaw": "{\"schema\": 1, \"ownerId\": \"a\", \"month\": \"2032-02\", \"revision\": 0, \"closed\": false, \"values\": {}}",
+      "globalRaw": {
+        "inss": null,
+        "irrf": null,
+        "other_deductions": null
+      }
+    }
+  }
+]

@@ -8,7 +8,7 @@ export type FinancialReadValue={
   field:string; presence:'absent'|'present'; amountMinor:number|null;
   currency:string; category:string; kind:'earning'|'deduction'|'informational';
   source:'manual'|'reviewed_statement'|'derived_reference'; sourceId:string;
-  recurrence:'once'|'monthly';
+  recurrence:'once'|'monthly'|'unknown';
 };
 export type FinancialReadPeriod={from:string;to:string;timeZone:string};
 export type FinancialReadLayer={
@@ -38,7 +38,7 @@ const enumString=(x:unknown,allowed:readonly string[]):boolean=>typeof x==='stri
 const revision=(x:unknown)=>Number.isSafeInteger(x)&&Number(x)>=0&&Number(x)<Number.MAX_SAFE_INTEGER;
 function value(x:unknown):boolean {
   if(!object(x)||!id(x.field)||!id(x.category)||!id(x.sourceId)||typeof x.currency!=='string'||!(/^[A-Z]{3}$/).test(x.currency))return false;
-  if(!enumString(x.kind,['earning','deduction','informational'])||!enumString(x.source,['manual','reviewed_statement','derived_reference'])||!enumString(x.recurrence,['once','monthly']))return false;
+  if(!enumString(x.kind,['earning','deduction','informational'])||!enumString(x.source,['manual','reviewed_statement','derived_reference'])||!enumString(x.recurrence,['once','monthly','unknown']))return false;
   if(!enumString(x.presence,['absent','present']))return false;
   return x.presence==='absent'?x.amountMinor===null:x.amountMinor===null||(Number.isSafeInteger(x.amountMinor)&&Number(x.amountMinor)>=0);
 }

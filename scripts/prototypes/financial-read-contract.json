@@ -45,5 +45,38 @@
   "paymentModelPending": "expectedPayment singleton is a placeholder and cannot represent multiple event/currency payment dates. Event identity, currency, expected amount/status and event-specific dates/timezones need a separately reviewed model. No date derivation in bot; no assertion this singleton covers the month.",
   "scopeImmutability": "Lifecycle captures immutable scalars and freezes returned lease; adapter captures a frozen copy plus original fence. Caller scope and returned snapshot mutations cannot retarget reads.",
   "strictEnums": "kind/source/recurrence/presence/coverage status require primitive strings; arrays/objects never coerce.",
-  "authenticatedAdmission": "captureAuthSession/isCurrent proves continuity only, including possible retained identity with no token. Adapter requires explicit synchronous strict-true isAuthorized for owner/month from trusted authenticated host before source access, after completion, and every read. Missing/false/throw/Promise/nonboolean fail closed. Native test admission is synthetic and requires token presence; token presence is NOT claimed to verify login. No system auth changes; real getMe/server admission integration still pending."
+  "authenticatedAdmission": "captureAuthSession/isCurrent proves continuity only, including possible retained identity with no token. Adapter requires explicit synchronous strict-true isAuthorized for owner/month from trusted authenticated host before source access, after completion, and every read. Missing/false/throw/Promise/nonboolean fail closed. Native test admission is synthetic and requires token presence; token presence is NOT claimed to verify login. No system auth changes; real getMe/server admission integration still pending.",
+  "legacyAdapter": "Pure parser of supplied monthly financial settings schema1 and three global manual deduction decimal strings. No localStorage/IDB access, auth call, real reader import or transmission. All monthly fields/rubrics preserved; raw null means missing month, empty monthly record remains present requiring review. Globals missing/null-amount/zero distinct. Invalid raw conflicts, never coerces to zero. Global recurrence unknown because original scalar stores no recurrence. No payment/work dates inferred.",
+  "permanentRevocation": "Admission false then true may re-expose the same snapshot while lease remains current. Permanent revocation/reset MUST invalidate the monotonic lifecycle and retire outstanding leases; admission boolean alone is insufficient. Native counterproof demonstrates both outcomes.",
+  "integrationMap": [
+    {
+      "source": "financialMonthlySettings.ts::readMonthlyFinancialSettings and crewcheck_financial_month_settings_v1:<owner>:<month>",
+      "futureStep": "Authorized host capture must distinguish raw absence from malformed/present empty; use parser only after explicit admission. Do not call storage during module import."
+    },
+    {
+      "source": "financialSettingStore.ts::readFinancialSetting/writeFinancialSetting; Home storage.set",
+      "futureStep": "Capture exact account-prefixed raw INSS/IRRF/other values together. Need writer invalidation even same-value edit; no implicit zero fallback or monthly provenance."
+    },
+    {
+      "source": "Home salary composition; SalaryBreakdownChart; PayrollPaymentCard; PayrollDeductionsReview; monthlySalaryInputs; salaryDisplayBasis",
+      "futureStep": "Future separate reviewed patch consumes same coherent snapshot. All unchanged now; no parallel computations or hidden v1 fields."
+    },
+    {
+      "source": "authClient captureAuthSession plus authenticated host admission",
+      "futureStep": "Continuity is not authentication. Real authenticated owner/period admission, expiry/revocation and monotonic reset wiring remain required."
+    },
+    {
+      "source": "ErrorBoundary resetAndGoHome; Home deleteAccount; InfoPage auth-only deletion; server.mjs generated recovery HTML and originating materializers",
+      "futureStep": "Invalidate scope before reset; test exact emitted implementations and native commit race, then approved cleanup. All unchanged/unproved here."
+    },
+    {
+      "source": "b538 native IDB prototype",
+      "futureStep": "No coupling now. Combined domain validation, read refresh, transaction lifecycle/quota and complete-month v1 adoption remain blocked."
+    },
+    {
+      "source": "CrewCierge telegram-menu.mjs and materializer/future financial-read-adapter.mjs",
+      "futureStep": "No browser IDB access or parallel dates/calculations; server-authorized snapshot and event/currency payment model require later design/approval."
+    }
+  ],
+  "stopBoundary": "This patch ends at pure legacy-format adaptation plus fixtures. No chained migration, reader wiring, writer/reset changes, actual data reads, production integration or transmission."
 }
