@@ -77,6 +77,7 @@ function label(preference: CrewCheckThemePreference): string {
 }
 
 function refreshControls() {
+  if (typeof document === 'undefined') return;
   const preference = getCrewCheckThemePreference();
   document.querySelectorAll<HTMLElement>('.cc-theme-row').forEach((control) => {
     control.dataset.themePreference = preference;
