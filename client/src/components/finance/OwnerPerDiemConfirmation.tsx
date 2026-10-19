@@ -3,7 +3,7 @@ import { ownerPerDiemReview } from '@/lib/ownerPerDiemReview';
 import { financialRateOwner, financialRateSession, mergeConfirmedRates, readConfirmedFinancialRates, saveConfirmedFinancialRates, type LearnedRate } from '@/lib/financialStatementLearning';
 import { useFinancialPrivacy } from './FinancialPrivacy';
 
-export default function OwnerPerDiemConfirmation() {
+export default function OwnerPerDiemConfirmation({ onSaved }: { onSaved?: () => void }) {
   const privacy = useFinancialPrivacy();
   const [month, setMonth] = useState(''), [meal, setMeal] = useState(''), [reference, setReference] = useState('');
   const [breakfastQuarter, setBreakfast] = useState(false), [taxiQuarter, setTaxi] = useState(false);
@@ -19,6 +19,7 @@ export default function OwnerPerDiemConfirmation() {
     const next = mergeConfirmedRates(readConfirmedFinancialRates(), review.rates.map(rate => ({ ...rate, confirmed: true })));
     if (!saveConfirmedFinancialRates(next, review.session)) { setMessage('Gravação não confirmada; revise a conta e o histórico.'); return; }
     setReview(null); setMessage('Tarifas salvas nesta conta para o mês revisado. Recebimento não confirmado.');
+    onSaved?.();
     window.dispatchEvent(new CustomEvent('crewcheck:finance-calibrated', { detail: { mode: 'per_diem' } }));
   }
   return <details><summary>Confirmar tarifa informada pelo titular</summary>
