@@ -28,17 +28,17 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
   const mine=/\bmeu voo\b/.test(input)&&!deps.explicitFlight(text);
   if(!yes&&!schedule&&!mine&&!decline)return null;
   const denied='A consulta mudou ou expirou. Consulte sua programação novamente.';
-  let expected=revision(snapshot),selected=null,selectedEvent=null,deadline=null;
+  let expected=revision(snapshot),selected=null,selectedEvent=null,deadline=null,acceptedRadar=null;
   const validTurn=()=>turns.get(chat)===turn&&(deadline===null||(now()>=deadline&&now()-deadline<=TTL));
   const validate=async()=>{
    try{
     if(!validTurn())return false;
     if(!await deps.authorized(profile,snapshot))return false;
     const current=await deps.snapshot(profile);
-    return await deps.authorized(profile,current)&&revision(current)===expected&&validTurn();
+    return await deps.authorized(profile,current)&&revision(current)===expected&&validTurn()&&(!acceptedRadar||deps.radarCurrent(acceptedRadar.payload,acceptedRadar.evidence,current.roster));
    }catch{return false;}
   };
-  profile.conciergeResponseAuthority=Object.freeze({kind:'temporal',validate,acceptWrite:saved=>{
+  profile.conciergeResponseAuthority=Object.freeze({kind:'temporal',validate,acceptRadar:(payload,evidence)=>{if(payload?.ok&&!payload.querySuppressed)acceptedRadar=Object.freeze({payload:Object.freeze({...payload}),evidence:Object.freeze({...evidence})});},acceptWrite:saved=>{
    if(!saved?.roster||!selected)return;
    // Accept only the existing producer's own persisted snapshot, while retaining
    // the selected canonical identity, clocks and cancellation state.

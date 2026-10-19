@@ -112,3 +112,10 @@ for(const text of ['não','cancelar'])test(`actual declined detail offer ${text}
  const h=realDeparture(data('estimated'),'missing',at);await h.send('telegram','/proximo');await h.send('telegram',text);assert.match(h.trace.output.at(-1),/cancelada/);
  await h.send('telegram','sim');assert.match(h.trace.output.at(-1),/Não há um pedido de detalhes válido/);
 });
+
+test('actual meu voo gate becomes unavailable if accepted source expires during persistence',async()=>{
+ const h=realDeparture(flights([['LA1234','08:00','09:00']]),'missing','2099-10-04T10:00:00Z');let saves=0,queries=0;
+ h.context.runRadarRace=async ctx=>{queries++;return{ok:true,flight:'LA1234',origin:'BSB',destination:'GRU',gate:'EXPIRING_GATE',scheduledDepartureUtc:ctx.gateQueryEvidence.scheduledDepartureUtc,sourceReceivedAt:'2099-10-04T09:30:01Z'};};
+ const save=h.context.conciergeSaveSnapshotAsync;h.context.conciergeSaveSnapshotAsync=async(...args)=>{const result=await save(...args);if(args[2]?.lastRadar){saves++;h.advanceClock(2000);}return result;};
+ await h.send('telegram','portão do meu voo');assert.equal(queries,1);assert.equal(saves,1);assert.doesNotMatch(h.trace.output.join(' '),/LA1234|EXPIRING_GATE|08:00/);
+});

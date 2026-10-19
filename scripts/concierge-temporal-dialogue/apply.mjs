@@ -11,6 +11,7 @@ const runtime=`const crewcheckTemporalDialogue = createTemporalDialogue({
   events: buildCanonicalRosterEvents, explicitFlight: conciergeExtractFlight,
   summary: record => buildProgramSummary({record,label:'A próxima programação',includeGreeting:false}),
   radar: conciergeRadarReply,
+  radarCurrent: (payload, evidence, roster) => gateQueryDay(evidence).allowed && radarResultDecision(payload,evidence,Date.now()).allowed && Boolean(findPublishedGateLeg(roster,evidence,buildCanonicalRosterEvents(roster))),
 });\n\n`;
 if(!source.includes('const crewcheckTemporalDialogue ='))source=source.replace('const crewcheckMenu = createTelegramMenu(',runtime+'const crewcheckMenu = createTelegramMenu(');
 source=source.replace("profile.conciergeResponseAuthority?.kind === 'departure'",'profile.conciergeResponseAuthority');
@@ -42,4 +43,7 @@ patch('handleTelegramVoiceMessage',body=>body.includes('let audioResult') ? body
  .replace('    const humanAudioSent = await sendHumanTelegramVoiceReply(chatId, reply, transcript, snapshot);', "    let audioResult = {state:'unavailable'};\n    const humanAudioSent = await sendHumanTelegramVoiceReply(chatId, reply, transcript, snapshot, result => { audioResult = result; }, profile.conciergeResponseAuthority?.validate);")
  .replace('    if (humanAudioSent) return true;', "    if (humanAudioSent || audioResult.state === 'context_expired') return true;")
  .replace('await sendTelegramMessage(chatId, reply, { reply_markup: conciergeReplyKeyboard(normalizeConciergeButtonText(transcript)) });', "await sendTelegramMessage(chatId, audioResult.state === 'text_policy' ? reply : 'Não consegui enviar o áudio agora; segue por texto.\\n\\n' + reply, { ...crewcheckMenu.guard(profile), reply_markup: conciergeReplyKeyboard(normalizeConciergeButtonText(transcript)) });"));
+fs.writeFileSync('server.mjs',source);
+
+patch('conciergeRadarReply',body=>body.includes('acceptRadar?.') ? body : body.replace("  const radar = await runRadarRace(queryContext, info?.leg?.origin || '', info?.leg?.destination || '');", "  const radar = await runRadarRace(queryContext, info?.leg?.origin || '', info?.leg?.destination || '');\n  profile.conciergeResponseAuthority?.acceptRadar?.(radar,queryContext.gateQueryEvidence);"));
 fs.writeFileSync('server.mjs',source);
