@@ -141,6 +141,7 @@ public final class CrewLifeV2Phone {
                     try {
                         synchronized (LOCK) {
                             CrewLifeV2Journal j = read(c);
+                            save(c, j); // persist even the initial empty journal before transport
                             if (j.revoked()) putTombstone(c, j);
                             Set<String> capable = new HashSet<>();
                             for (Node n : info.getNodes()) capable.add(n.getId());

@@ -1,5 +1,9 @@
 # CrewLife v2 — phone candidate, health remains OFF
 
+**HOLD: the phone-issued reset challenge below is insufficient after Wear journal
+loss. Do not publish compatibility or integrate this candidate. A fresh Wear-issued
+challenge, bound to reset/ACK and durably consumed, needs joint agreement and tests.**
+
 Phone changes extend #1085 HEAD379eb3db. No Wear files, real SDK, permissions,
 Health Sync activation, live health records, Store operation or routine/roster
 projection is included. Final integration needs the exact independently reviewed
