@@ -68,9 +68,9 @@ final class ComplicationText {
         if (snapshot == null) {
             return new ComplicationRendering(
                     "--",
-                    "Ative o CrewLife no celular",
+                    "Medições indisponíveis",
                     "CREWLIFE",
-                    "CrewLife sem dados. Ative a sincronização de saúde no celular."
+                    "CrewLife sem medições válidas disponíveis."
             );
         }
         return new ComplicationRendering(
@@ -78,7 +78,8 @@ final class ComplicationText {
                 truncate(crewLifeLongText(snapshot, nowEpochMs), LONG_LIMIT),
                 snapshot.complicationTitle(),
                 truncate(snapshot.accessibilityDescription(nowEpochMs), DESCRIPTION_LIMIT),
-                crewLifeRingValue(snapshot, nowEpochMs)
+                crewLifeRingValue(snapshot, nowEpochMs),
+                snapshot.nextExpiry(nowEpochMs)
         );
     }
 
@@ -89,8 +90,7 @@ final class ComplicationText {
      * desenhar zero, porque zero desenhado é medida inventada.
      */
     private static Integer crewLifeRingValue(CrewLifeSnapshot snapshot, long nowEpochMs) {
-        if (snapshot.isStale(nowEpochMs) || snapshot.recoveryScore <= 0) return null;
-        return snapshot.recoveryScore;
+        return snapshot.value("recoveryScore", nowEpochMs);
     }
 
     static ComplicationRendering routine(RoutineSnapshot snapshot, long nowEpochMs) {
@@ -113,25 +113,11 @@ final class ComplicationText {
     private static String crewLifeLongText(CrewLifeSnapshot snapshot, long nowEpochMs) {
         if (snapshot.isStale(nowEpochMs)) return "Bem-estar desatualizado";
 
-        StringBuilder text = new StringBuilder();
-        if (snapshot.recoveryScore > 0) {
-            if (snapshot.isEnergyScore()) {
-                text.append("Energia ").append(snapshot.recoveryScore);
-            } else {
-                text.append(snapshot.recoveryScore).append("%");
-            }
-        } else {
-            text.append(snapshot.recoveryLabel);
-        }
-        if (!snapshot.sleepLabel.isEmpty()) {
-            text.append(" · ").append(snapshot.sleepLabel);
-        } else if (snapshot.steps > 0) {
-            text.append(" · ").append(snapshot.steps).append(" passos");
-        }
-        if (text.length() < 24 && !snapshot.recommendation.isEmpty()) {
-            text.append(" · ").append(snapshot.recommendation);
-        }
-        return text.toString();
+        String text = snapshot.value("recoveryScore", nowEpochMs) == null
+                ? "Energia indisponível" : "Energia " + snapshot.value("recoveryScore", nowEpochMs) + "/100";
+        if (snapshot.value("sleepMinutes", nowEpochMs) != null) text += " · " + snapshot.sleepText(nowEpochMs);
+        else if (snapshot.value("steps", nowEpochMs) != null) text += " · " + snapshot.value("steps", nowEpochMs) + " passos";
+        return text;
     }
 
     private static ComplicationRendering gateRendering(

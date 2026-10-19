@@ -75,12 +75,17 @@ abstract class BaseComplicationService extends ComplicationDataSourceService {
 
         PlainComplicationText descriptionText = text(rendering.description);
         MonochromaticImage icon = icon();
+        androidx.wear.watchface.complications.data.TimeRange validity = rendering.validUntilEpochMs > 0
+                ? androidx.wear.watchface.complications.data.TimeRange.before(
+                        java.time.Instant.ofEpochMilli(rendering.validUntilEpochMs - 1L))
+                : androidx.wear.watchface.complications.data.TimeRange.ALWAYS;
 
         if (ComplicationType.LONG_TEXT.equals(type)) {
             return new LongTextComplicationData.Builder(text(rendering.longText), descriptionText)
                     .setTitle(text(rendering.title))
                     .setMonochromaticImage(icon)
                     .setTapAction(tapAction)
+                    .setValidTimeRange(validity)
                     .build();
         }
 
@@ -93,6 +98,7 @@ abstract class BaseComplicationService extends ComplicationDataSourceService {
                     .setTitle(text(rendering.title))
                     .setMonochromaticImage(icon)
                     .setTapAction(tapAction)
+                    .setValidTimeRange(validity)
                     .build();
         }
 
@@ -106,6 +112,7 @@ abstract class BaseComplicationService extends ComplicationDataSourceService {
                 .setTitle(text(rendering.title))
                 .setMonochromaticImage(icon)
                 .setTapAction(tapAction)
+                    .setValidTimeRange(validity)
                 .build();
     }
 

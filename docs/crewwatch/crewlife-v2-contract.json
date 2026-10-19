@@ -1,0 +1,107 @@
+{
+  "status": "PARENT_AUTHORIZED_WEAR_IMPLEMENTATION_PHONE_COMPOSITION_PENDING",
+  "basedOn": {
+    "phone": "379eb3db812157489147c05cd85727efb7f695b4",
+    "wear": "6143f8ae20403c1032c77e0c5454d9cb87dce6dd"
+  },
+  "transport": {
+    "capability": "crewlife_metric_validity_v2",
+    "dataPath": "/crewcheck/watch/crewlife/v2",
+    "dataKey": "crewLifeJson",
+    "controlMessagePath": "/crewcheck/watch/crewlife/v2/control",
+    "ackMessagePath": "/crewcheck/watch/crewlife/v2/ack",
+    "legacyPath": "/crewcheck/watch/crewlife/v1",
+    "routinePathUnchanged": "/crewcheck/watch/routine/v1",
+    "maxUtf8Bytes": 4096
+  },
+  "envelope": {
+    "schemaVersion": 2,
+    "streamId": "random opaque UUID per local owner/consent generation; NOT derived from account/device/person; not freshness evidence",
+    "revision": "positive safe integer, durably increasing within stream; full replacement, not patch",
+    "generatedAtEpochMs": "original query epoch milliseconds; positive integer, not future; never receipt/render time",
+    "validUntilEpochMs": "original source envelope deadline; no extension",
+    "metrics": "object keyed by allowlisted metrics; each has state, optional integer value, validUntilEpochMs",
+    "kind": "snapshot | revoked; revoked is value-free tombstone, metrics={}, validUntilEpochMs=0, no positive freshness window required; stream/revision fences still required"
+  },
+  "metrics": {
+    "recoveryScore": {
+      "source": "energyScore",
+      "min": 0,
+      "max": 100,
+      "kind": "ENERGY"
+    },
+    "sleepMinutes": {
+      "source": "sleepMinutes",
+      "min": 0,
+      "max": 1440
+    },
+    "steps": {
+      "source": "steps",
+      "min": 0,
+      "max": 200000
+    },
+    "activeMinutes": {
+      "source": "activeMinutes",
+      "min": 0,
+      "max": 1440
+    }
+  },
+  "semantics": [
+    "v2 initial scope only four source-proven metrics; no heart/HRV/narrative/derived labels without separately proven validity; no routine/operational changes",
+    "Missing metric is unavailable. Nonvalid states omit value and use validUntilEpochMs=0. States allowed: valid,no_data,expired,sample_time_unknown,revoked,permission_denied,invalid. Unknown state means unavailable.",
+    "Valid requires actual JSON finite integer within range, value present, both envelope and metric deadlines strictly greater than now, metric deadline<=envelope deadline, generatedAt<=now. No string coercion, fractional truncation or clamp. Zero valid is displayed as zero.",
+    "Malformed metric replaces that metric with unavailable/invalid while other independently valid metrics survive. Never retain prior value. Structural envelope/schema/control errors reject whole snapshot and clear CrewLife values, while preserving replay high-watermark.",
+    "Every accepted revision replaces entire snapshot. Expiry re-evaluated on load, open Activity, AOD/complication/render; no TTL renewal. Exact expiry unavailable '--'.",
+    "Reject unknown/prohibited envelope/metric fields recursively; no raw series, identity, account ID, location, tokens, labels or free text. Only transport stream nonce and revision allowed.",
+    "Source query TTL and per-sample provenance remain enforced at phone; Wire generatedAt is not proof of sample age. Phone must transport per-metric deadlines from sanitizer; cannot reconstruct from receipt."
+  ],
+  "handshake": [
+    "Capability discovery is prerequisite only, never authorization, consent or cleanup proof. No capability/unknown peer => no v2 health values, remove phone-owned legacy health Data Items, report health unavailable.",
+    "Use node-directed MessageClient control/ACK. Control is {schemaVersion:2,op:reset,streamId,revision,requestId}; requestId random one-use challenge. No health data. ACK {schemaVersion:2,op:reset_ack,streamId,revision,requestId,status:cleared}. Validate source node against discovered intended peer and exact pending challenge; stale/foreign ACK ignored.",
+    "Wear reset first clears legacy CrewLife encrypted cache and current v2 values, persists stream/revision fence and v1 rejection policy, then ACKs. Reset retries same request id idempotently; stale/lower revision cannot roll back fence. New stream accepted only through current directed reset, not data arrival.",
+    "Before any values: local owner/consent fence captured; delete legacy phone Data Item; cleanup ACK required for each intended connected v2 node. Recheck generation/consent after every async step and before put. Consent alone cannot bypass pending cleanup.",
+    "DataClient items are shared/persistent, not node-targeted. Capability confirmed on one watch does not certify every paired watch or erase old watch cache. Offline/old watch cleanliness remains unconfirmed; keep unavailable/pending and no physical cleanup claim.",
+    "No app success from putDataItem/deleteDataItems means Wear applied it. Optional applied ACK uses exact stream/revision/requestId and status applied_unavailable/applied; means persistence/application only, never physical rendering proof.",
+    "Revocation control uses op=revoke with same stream/revision/requestId fields; ACK op=revoke_ack,status=cleared. Durable Data Item kind=revoked provides reconnect fallback. Reset ACK and revoke ACK are distinct and cannot substitute each other. Applied snapshot ACK op=snapshot_ack,status=applied or applied_unavailable never clears a pending revoke."
+  ],
+  "revocation": [
+    "Owner change/logout, consent withdrawal, provider disconnect/empty/revoked summary immediately invalidate phone generation and cancel/ignore pending work; stop values before transport cleanup.",
+    "Advance persistent revision in current stream; send durable v2 unavailable/revoked tombstone full replacement with no values and retain until all intended v2 peers ACK cleanup. Delete legacy v1 health item. Do not delete tombstone before ACK; retry on reconnect/process restart with bounded backoff.",
+    "Reset/revoke ACK only after Wear health cache cleared durably and high-water fence persisted. Expired/replayed lower/equal conflicting revision cannot restore values. Regrant/new owner needs new opaque stream plus fresh reset ACK.",
+    "Routine is NOT deleted by CrewLife protocol migration or category-specific health invalidation. Existing explicit revoke-all routine behavior remains separate and must be tested, not silently changed.",
+    "Uninstall/reset/loss of sender journal or new node requires handshake again. Old phone+old watch remains unfixed; old phone+new watch v1 replay remains unavailable. Release remains blocked where legacy remote cache cleanup cannot be proved."
+  ],
+  "commonTests": {
+    "sourceVectors": "/Users/marinamoura/Documents/Codex/2026-10-18/task-3/crewlife-contract-proposal/contract-acceptance-vectors.json",
+    "resolveAmbiguities": {
+      "negative": "metric unavailable/invalid, snapshot replaces prior",
+      "fractional_integer_metric": "metric unavailable/invalid",
+      "string_number": "metric unavailable/invalid",
+      "roundtrip_absence": "omit value, state no_data, validUntilEpochMs0"
+    },
+    "add": [
+      "future/generatedAt wrong type",
+      "envelope expired but metric fresh",
+      "metric deadline greater than envelope",
+      "late receipt never extends deadline",
+      "partial expiry while open/AOD",
+      "lower revision replay and duplicate idempotency",
+      "stale/foreign/wrong-node reset ACK",
+      "logout while awaiting capability/ACK/put",
+      "two watches only one upgraded",
+      "offline legacy cache not falsely confirmed",
+      "delete API success without Wear ACK",
+      "tombstone before delayed old values",
+      "restart retains generation/revision/pending revoke",
+      "malformed full replacement cannot retain old metric",
+      "recursive forbidden fields",
+      "routine and operational stores unchanged"
+    ]
+  },
+  "hold": [
+    "No implementation until parent/owner agreement",
+    "HealthSync OFF; no SDK, new permissions, real health data or store action",
+    "MCC shared integration gate remains separate"
+  ],
+  "implementationScope": "Wear only; phone owner implements sender/capability and pending cleanup journal separately"
+}

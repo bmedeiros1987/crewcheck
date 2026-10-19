@@ -34,6 +34,11 @@ public final class WellbeingStore {
     private static final String ROUTINE_PAYLOAD = "routine_payload_v1";
     private static final String ROUTINE_IV = "routine_iv_v1";
 
+    private static final String V2_PAYLOAD = "crewlife_payload_v2";
+    private static final String V2_IV = "crewlife_iv_v2";
+    private static final String FENCE = "crewlife_fence_v2";
+    private static final String MIGRATED = "crewlife_migrated_v2";
+    private static final Object HEALTH_LOCK = new Object();
     private final Context context;
     private final SharedPreferences preferences;
 
@@ -42,15 +47,55 @@ public final class WellbeingStore {
         this.preferences = this.context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
-    public synchronized CrewLifeSnapshot saveCrewLife(String rawJson) {
-        CrewLifeSnapshot snapshot = CrewLifeSnapshot.fromJson(rawJson);
-        try {
-            write(CREWLIFE_IV, CREWLIFE_PAYLOAD, snapshot.toJson().toString());
-        } catch (Exception error) {
-            throw new IllegalStateException("Não foi possível proteger o CrewLife local.", error);
-        }
+    /** Legacy input cannot prove source validity. It never replaces v2 or revives its old cache. */
+    public void rejectLegacyCrewLife() {
+        synchronized (HEALTH_LOCK) { migrateHealth(); }
+    }
+
+    public void registerChangeListener(SharedPreferences.OnSharedPreferenceChangeListener listener) {
+        preferences.registerOnSharedPreferenceChangeListener(listener);
+    }
+    public void unregisterChangeListener(SharedPreferences.OnSharedPreferenceChangeListener listener) {
+        preferences.unregisterOnSharedPreferenceChangeListener(listener);
+    }
+    private void migrateHealth() {
+        if (preferences.getBoolean(MIGRATED, false)) return;
+        if (!preferences.edit().remove(CREWLIFE_IV).remove(CREWLIFE_PAYLOAD)
+                .remove(V2_IV).remove(V2_PAYLOAD).putBoolean(MIGRATED, true).commit())
+            throw new IllegalStateException("CrewLife migration not persisted.");
         requestUpdate(CrewLifeComplicationService.class);
-        return snapshot;
+    }
+    private org.json.JSONObject fence() throws Exception {
+        return new org.json.JSONObject(preferences.getString(FENCE, "{}"));
+    }
+    /** ACK is returned only after one durable transaction clears values and persists the fence. */
+    public String applyCrewLifeControl(String raw, String sourceNode) {
+        synchronized (HEALTH_LOCK) {
+            migrateHealth();
+            try {
+                CrewLifeFence result = CrewLifeFence.control(fence(), raw, sourceNode);
+                persistHealth(result);
+                return result.ack;
+            } catch (Exception error) {
+                clearCrewLife();
+                return null;
+            }
+        }
+    }
+    public void applyCrewLifeData(String raw, String sourceNode, long now) {
+        synchronized (HEALTH_LOCK) {
+            migrateHealth();
+            try { persistHealth(CrewLifeFence.data(fence(), raw, sourceNode, now)); }
+            catch (Exception error) { clearCrewLife(); }
+        }
+    }
+    private boolean commitHealth(SharedPreferences.Editor edit) { return edit.commit(); }
+    private void persistHealth(CrewLifeFence result) throws Exception {
+        SharedPreferences.Editor edit = preferences.edit().putString(FENCE, result.state.toString());
+        if (result.clearValues) edit.remove(V2_IV).remove(V2_PAYLOAD).remove(CREWLIFE_IV).remove(CREWLIFE_PAYLOAD);
+        if (result.snapshot != null) putEncrypted(edit, V2_IV, V2_PAYLOAD, result.snapshot.toJson().toString());
+        if (!commitHealth(edit)) throw new IllegalStateException("CrewLife state not persisted.");
+        requestUpdate(CrewLifeComplicationService.class);
     }
 
     public synchronized RoutineSnapshot saveRoutine(String rawJson) {
@@ -64,14 +109,22 @@ public final class WellbeingStore {
         return snapshot;
     }
 
-    public synchronized CrewLifeSnapshot loadCrewLife() {
-        String raw = read(CREWLIFE_IV, CREWLIFE_PAYLOAD);
-        if (raw == null) return null;
-        try {
-            return CrewLifeSnapshot.fromJson(raw);
-        } catch (Exception error) {
-            clearCrewLife();
-            return null;
+    public CrewLifeSnapshot loadCrewLife() {
+        synchronized (HEALTH_LOCK) {
+            migrateHealth();
+            String raw = read(V2_IV, V2_PAYLOAD);
+            if (raw == null) return null;
+            try {
+                long now = System.currentTimeMillis();
+                CrewLifeSnapshot snapshot = CrewLifeSnapshot.fromJson(raw, now);
+                org.json.JSONObject fence = fence();
+                if (!snapshot.streamId.equals(fence.optString("streamId")) || snapshot.revision != fence.optLong("revision")
+                        || fence.optBoolean("revoked") || !snapshot.hasAny(now)) {
+                    clearCrewLife();
+                    return null;
+                }
+                return snapshot;
+            } catch (Exception error) { clearCrewLife(); return null; }
         }
     }
 
@@ -87,9 +140,13 @@ public final class WellbeingStore {
     }
 
     /** Revogar bem-estar não pode derrubar a escala: só este store é apagado. */
-    public synchronized void clearCrewLife() {
-        preferences.edit().remove(CREWLIFE_IV).remove(CREWLIFE_PAYLOAD).apply();
-        requestUpdate(CrewLifeComplicationService.class);
+    public void clearCrewLife() {
+        synchronized (HEALTH_LOCK) {
+            if (!preferences.edit().remove(CREWLIFE_IV).remove(CREWLIFE_PAYLOAD)
+                    .remove(V2_IV).remove(V2_PAYLOAD).commit())
+                throw new IllegalStateException("CrewLife cleanup not persisted.");
+            requestUpdate(CrewLifeComplicationService.class);
+        }
     }
 
     public synchronized void clearRoutine() {
@@ -103,13 +160,16 @@ public final class WellbeingStore {
     }
 
     private void write(String ivKey, String payloadKey, String plain) throws Exception {
+        SharedPreferences.Editor edit = preferences.edit();
+        putEncrypted(edit, ivKey, payloadKey, plain);
+        edit.apply();
+    }
+    private void putEncrypted(SharedPreferences.Editor edit, String ivKey, String payloadKey, String plain) throws Exception {
         Cipher cipher = Cipher.getInstance(TRANSFORMATION);
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey());
         byte[] encrypted = cipher.doFinal(plain.getBytes(StandardCharsets.UTF_8));
-        preferences.edit()
-                .putString(ivKey, Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP))
-                .putString(payloadKey, Base64.encodeToString(encrypted, Base64.NO_WRAP))
-                .apply();
+        edit.putString(ivKey, Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP))
+                .putString(payloadKey, Base64.encodeToString(encrypted, Base64.NO_WRAP));
     }
 
     private String read(String ivKey, String payloadKey) {

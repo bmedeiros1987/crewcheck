@@ -1,266 +1,172 @@
 package com.crewcheck.watch;
 
-import org.json.JSONException;
 import org.json.JSONObject;
-
 import java.nio.charset.StandardCharsets;
-import java.text.Normalizer;
-import java.util.Locale;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
-/**
- * Projeção de bem-estar para glance no relógio.
- *
- * O celular manda apenas VALORES DERIVADOS. Série temporal bruta — batimento
- * contínuo, estágios de sono, amostras — é recusada de propósito: ela não cabe
- * no orçamento da complicação, gasta bateria à toa e transformaria o mostrador
- * num monitor cardíaco permanente. O que o relógio mostra é "RECUPERAÇÃO 78%",
- * não a série que produziu os 78%.
- *
- * Isto é contexto de bem-estar, nunca diagnóstico.
- */
+/** Source-deadline-only v2 health projection. No labels, narratives, identity or raw data. */
 public final class CrewLifeSnapshot {
-    private static final Set<String> LABELS = Set.of("OTIMA", "BOA", "REGULAR", "BAIXA", "DESCONHECIDA");
-    private static final Set<String> SCORE_KINDS = Set.of("RECOVERY", "ENERGY");
+    static final long MAX_INTEGER = 9_007_199_254_740_991L;
+    static final Map<String, Integer> LIMITS = Map.of(
+            "recoveryScore", 100, "sleepMinutes", 1440, "steps", 200000, "activeMinutes", 1440);
+    private static final Set<String> ENVELOPE = Set.of("schemaVersion", "streamId", "revision", "kind",
+            "generatedAtEpochMs", "validUntilEpochMs", "metrics");
+    private static final Set<String> METRIC_FIELDS = Set.of("state", "value", "validUntilEpochMs");
+    private static final Set<String> STATES = Set.of("valid", "no_data", "expired", "sample_time_unknown",
+            "revoked", "permission_denied", "invalid");
+    public final int schemaVersion = 2;
+    public final String streamId;
+    public final long revision, generatedAtEpochMs, validUntilEpochMs;
+    public final String kind;
+    private final Map<String, Metric> metrics;
+    // Compatibility for callers: unavailable is -1, never zero. Rendering must use value(key, now).
+    public final int recoveryScore, sleepMinutes, steps, activeMinutes;
 
-    public final int schemaVersion;
-    public final long generatedAtEpochMs;
-    public final long validUntilEpochMs;
-    public final int recoveryScore;
-    public final String recoveryLabel;
-    public final String scoreKind;
-    public final int sleepMinutes;
-    public final String sleepLabel;
-    public final int steps;
-    public final int activeMinutes;
-    public final int restingHeartRate;
-    public final int hrvMs;
-    public final String recommendation;
-    public final String detail;
-
-    private CrewLifeSnapshot(
-            int schemaVersion,
-            long generatedAtEpochMs,
-            long validUntilEpochMs,
-            int recoveryScore,
-            String recoveryLabel,
-            String scoreKind,
-            int sleepMinutes,
-            String sleepLabel,
-            int steps,
-            int activeMinutes,
-            int restingHeartRate,
-            int hrvMs,
-            String recommendation,
-            String detail
-    ) {
-        this.schemaVersion = schemaVersion;
-        this.generatedAtEpochMs = generatedAtEpochMs;
-        this.validUntilEpochMs = validUntilEpochMs;
-        this.recoveryScore = recoveryScore;
-        this.recoveryLabel = recoveryLabel;
-        this.scoreKind = scoreKind;
-        this.sleepMinutes = sleepMinutes;
-        this.sleepLabel = sleepLabel;
-        this.steps = steps;
-        this.activeMinutes = activeMinutes;
-        this.restingHeartRate = restingHeartRate;
-        this.hrvMs = hrvMs;
-        this.recommendation = recommendation;
-        this.detail = detail;
+    private static final class Metric {
+        final String state;
+        final int value;
+        final long until;
+        Metric(String state, int value, long until) { this.state = state; this.value = value; this.until = until; }
     }
-
-    public static CrewLifeSnapshot fromJson(String raw) {
-        if (raw == null || raw.isBlank()) {
-            throw new IllegalArgumentException("CrewLife vazio.");
-        }
-        if (raw.getBytes(StandardCharsets.UTF_8).length > WatchContract.MAX_WELLBEING_BYTES) {
-            throw new IllegalArgumentException("CrewLife excede 4 KiB.");
-        }
+    private CrewLifeSnapshot(String stream, long revision, long generated, long until, String kind,
+            Map<String, Metric> metrics) {
+        this.streamId = stream; this.revision = revision; this.generatedAtEpochMs = generated;
+        this.validUntilEpochMs = until; this.kind = kind; this.metrics = metrics;
+        recoveryScore = storedValue("recoveryScore"); sleepMinutes = storedValue("sleepMinutes");
+        steps = storedValue("steps"); activeMinutes = storedValue("activeMinutes");
+    }
+    private int storedValue(String key) { return metrics.get(key).value; }
+    public static CrewLifeSnapshot fromJson(String raw) { return fromJson(raw, System.currentTimeMillis()); }
+    public static CrewLifeSnapshot fromJson(JSONObject json) { return fromJson(json, System.currentTimeMillis()); }
+    static CrewLifeSnapshot fromJson(String raw, long now) {
         try {
-            return fromJson(new JSONObject(raw));
-        } catch (JSONException error) {
-            throw new IllegalArgumentException("JSON de CrewLife inválido.", error);
-        }
+            if (raw == null || raw.isBlank() || raw.getBytes(StandardCharsets.UTF_8).length > WatchContract.MAX_WELLBEING_BYTES)
+                throw new IllegalArgumentException("CrewLife inválido ou maior que 4 KiB.");
+            return fromJson(new JSONObject(raw), now);
+        } catch (Exception error) { throw new IllegalArgumentException("CrewLife v2 inválido.", error); }
     }
-
-    public static CrewLifeSnapshot fromJson(JSONObject json) {
-        rejectIdentity(json);
-        rejectRawSeries(json);
-
-        int schemaVersion = json.optInt("schemaVersion", 0);
-        if (schemaVersion != WatchContract.CREWLIFE_SCHEMA_VERSION) {
-            throw new IllegalArgumentException("Versão de CrewLife incompatível.");
-        }
-
-        long generatedAt = json.optLong("generatedAtEpochMs", 0L);
-        if (generatedAt <= 0L) {
-            throw new IllegalArgumentException("generatedAtEpochMs obrigatório.");
-        }
-
-        // Exigido mesmo não estando no esboço original: sugestão de recuperação
-        // sem prazo de validade fica exibida por dias e deixa de ser verdade.
-        long validUntil = json.optLong("validUntilEpochMs", 0L);
-        if (validUntil <= 0L) {
-            throw new IllegalArgumentException("validUntilEpochMs obrigatório.");
-        }
-        if (validUntil < generatedAt) {
-            throw new IllegalArgumentException("validUntilEpochMs anterior à geração.");
-        }
-
-        String label = normalizeLabel(json.optString("recoveryLabel", "DESCONHECIDA"), 12);
-        if (!LABELS.contains(label)) label = "DESCONHECIDA";
-        String scoreKind = normalizeLabel(json.optString("scoreKind", "RECOVERY"), 12);
-        if (!SCORE_KINDS.contains(scoreKind)) scoreKind = "RECOVERY";
-
-        return new CrewLifeSnapshot(
-                schemaVersion,
-                generatedAt,
-                validUntil,
-                bounded(json, "recoveryScore", 0, 100),
-                label,
-                scoreKind,
-                bounded(json, "sleepMinutes", 0, 24 * 60),
-                clean(json.optString("sleepLabel", ""), 10),
-                bounded(json, "steps", 0, 200_000),
-                bounded(json, "activeMinutes", 0, 24 * 60),
-                bounded(json, "restingHeartRate", 0, 220),
-                bounded(json, "hrvMs", 0, 500),
-                clean(json.optString("recommendation", ""), 28),
-                clean(json.optString("detail", ""), 40)
-        );
-    }
-
-    public JSONObject toJson() throws JSONException {
-        return new JSONObject()
-                .put("schemaVersion", schemaVersion)
-                .put("generatedAtEpochMs", generatedAtEpochMs)
-                .put("validUntilEpochMs", validUntilEpochMs)
-                .put("recoveryScore", recoveryScore)
-                .put("recoveryLabel", recoveryLabel)
-                .put("scoreKind", scoreKind)
-                .put("sleepMinutes", sleepMinutes)
-                .put("sleepLabel", sleepLabel)
-                .put("steps", steps)
-                .put("activeMinutes", activeMinutes)
-                .put("restingHeartRate", restingHeartRate)
-                .put("hrvMs", hrvMs)
-                .put("recommendation", recommendation)
-                .put("detail", detail);
-    }
-
-    public boolean isStale(long nowEpochMs) {
-        return nowEpochMs > validUntilEpochMs;
-    }
-
-    public boolean isEnergyScore() {
-        return "ENERGY".equals(scoreKind);
-    }
-
-    /** Título curto da complicação. */
-    public String complicationTitle() {
-        return isEnergyScore() ? "ENERGIA" : "CREWLIFE";
-    }
-
-    /** Valor de glance preserva a semântica da fonte. */
-    public String complicationText(long nowEpochMs) {
-        if (isStale(nowEpochMs)) return "--";
-        if (recoveryScore > 0) {
-            return isEnergyScore() ? recoveryScore + "/100" : recoveryScore + "%";
-        }
-        return recoveryLabel;
-    }
-
-    public String accessibilityDescription(long nowEpochMs) {
-        if (isStale(nowEpochMs)) return "Dados de bem-estar desatualizados.";
-        StringBuilder text = new StringBuilder(isEnergyScore() ? "Energia Samsung " : "Recuperação ");
-        if (recoveryScore > 0) {
-            text.append(isEnergyScore() ? recoveryScore + " de 100" : recoveryScore + " por cento");
-        } else {
-            text.append(recoveryLabel.toLowerCase(Locale.ROOT));
-        }
-        if (!sleepLabel.isEmpty()) text.append(", sono ").append(sleepLabel);
-        if (!detail.isEmpty()) text.append(". ").append(detail);
-        return text.toString();
-    }
-
-    public static CrewLifeSnapshot demo(long nowEpochMs) {
+    static CrewLifeSnapshot fromJson(JSONObject json, long now) {
         try {
-            return fromJson(new JSONObject()
-                    .put("schemaVersion", WatchContract.CREWLIFE_SCHEMA_VERSION)
-                    .put("generatedAtEpochMs", nowEpochMs)
-                    .put("validUntilEpochMs", nowEpochMs + 6 * 60 * 60 * 1000L)
-                    .put("recoveryScore", 78)
-                    .put("recoveryLabel", "BOA")
-                    .put("scoreKind", "RECOVERY")
-                    .put("sleepMinutes", 412)
-                    .put("sleepLabel", "6h52")
-                    .put("steps", 6430)
-                    .put("activeMinutes", 31)
-                    .put("restingHeartRate", 58)
-                    .put("hrvMs", 44)
-                    .put("recommendation", "RECUPERAÇÃO BOA")
-                    .put("detail", "Treino leve ou moderado"));
-        } catch (JSONException error) {
-            throw new IllegalStateException(error);
-        }
-    }
-
-    /** Identidade nunca entra no canal de saúde. */
-    private static void rejectIdentity(JSONObject json) {
-        String[] prohibited = {
-                "cpf", "email", "phone", "crewName", "crewId", "hotelRoom", "roomNumber",
-                "token", "accessToken", "refreshToken", "authorization"
-        };
-        for (String key : prohibited) {
-            if (json.has(key)) {
-                throw new IllegalArgumentException("Campo pessoal não permitido no relógio: " + key);
+            only(json, ENVELOPE);
+            if (integer(json.opt("schemaVersion")) != 2) throw new IllegalArgumentException("CrewLife v2 obrigatório.");
+            String stream = nonce(json.opt("streamId"));
+            long revision = positive(json.opt("revision"));
+            long generated = positive(json.opt("generatedAtEpochMs"));
+            if (generated > now) throw new IllegalArgumentException("Geração futura.");
+            Object rawKind = json.opt("kind");
+            if (!(rawKind instanceof String) || !(rawKind.equals("snapshot") || rawKind.equals("revoked")))
+                throw new IllegalArgumentException("Kind inválido.");
+            String kind = (String) rawKind;
+            long until = integer(json.opt("validUntilEpochMs"));
+            if (kind.equals("revoked") ? until != 0 : until <= generated)
+                throw new IllegalArgumentException("Janela inválida.");
+            JSONObject source = json.getJSONObject("metrics");
+            only(source, LIMITS.keySet());
+            if (kind.equals("revoked") && source.length() != 0) throw new IllegalArgumentException("Tombstone com valores.");
+            Map<String, Metric> metrics = new LinkedHashMap<>();
+            for (String key : LIMITS.keySet()) {
+                Metric metric = new Metric("no_data", -1, 0);
+                if (source.has(key)) {
+                    Object item = source.opt(key);
+                    // Unknown nested fields reject the envelope; bad scalar/value only invalidates this metric.
+                    if (item instanceof JSONObject) {
+                        JSONObject m = (JSONObject)item;
+                        only(m, METRIC_FIELDS);
+                        for (String field : METRIC_FIELDS) {
+                            Object v = m.opt(field);
+                            if (v instanceof JSONObject || v instanceof org.json.JSONArray)
+                                throw new IllegalArgumentException("Nested metric data prohibited.");
+                        }
+                        try {
+                            Object state = m.opt("state");
+                            if (!(state instanceof String) || !STATES.contains(state)) throw new IllegalArgumentException();
+                            long deadline = integer(m.opt("validUntilEpochMs"));
+                            if (state.equals("valid")) {
+                                long value = integer(m.opt("value"));
+                                if (value < 0 || value > LIMITS.get(key) || deadline > until || deadline <= generated)
+                                    throw new IllegalArgumentException();
+                                metric = new Metric("valid", (int)value, deadline);
+                            } else {
+                                if (m.has("value") || deadline != 0) throw new IllegalArgumentException();
+                                metric = new Metric((String)state, -1, 0);
+                            }
+                        } catch (IllegalArgumentException badMetric) { metric = new Metric("invalid", -1, 0); }
+                    } else if (item instanceof org.json.JSONArray) {
+                        throw new IllegalArgumentException("Nested metric data prohibited.");
+                    } else metric = new Metric("invalid", -1, 0);
+                }
+                metrics.put(key, metric);
             }
-        }
+            return new CrewLifeSnapshot(stream, revision, generated, until, kind, metrics);
+        } catch (Exception error) { throw new IllegalArgumentException("CrewLife v2 inválido.", error); }
     }
-
-    /**
-     * Série bruta é recusada, não truncada: aceitar e descartar calado
-     * normalizaria o celular mandando o que não deve, e um dia alguém leria.
-     */
-    private static void rejectRawSeries(JSONObject json) {
-        String[] prohibited = {
-                "heartRateSeries", "heartRateSamples", "samples", "sleepStages",
-                "rawHeartRate", "bpmSeries", "hrvSeries", "spo2Series",
-                "gps", "location", "latitude", "longitude", "route"
-        };
-        for (String key : prohibited) {
-            if (json.has(key)) {
-                throw new IllegalArgumentException("Série bruta não permitida no relógio: " + key);
+    static void only(JSONObject json, Set<String> allowed) {
+        java.util.Iterator<String> keys = json.keys();
+        while (keys.hasNext()) if (!allowed.contains(keys.next())) throw new IllegalArgumentException("Unknown field.");
+    }
+    static long integer(Object value) {
+        if (!(value instanceof Number)) throw new IllegalArgumentException("Integer required.");
+        double number = ((Number)value).doubleValue();
+        if (!Double.isFinite(number) || number != Math.rint(number) || Math.abs(number) > MAX_INTEGER)
+            throw new IllegalArgumentException("Safe integer required.");
+        return ((Number)value).longValue();
+    }
+    static long positive(Object value) { long n = integer(value); if (n <= 0) throw new IllegalArgumentException(); return n; }
+    static String nonce(Object value) {
+        if (!(value instanceof String)) throw new IllegalArgumentException("UUID required.");
+        String s = (String)value;
+        if (!UUID.fromString(s).toString().equals(s)) throw new IllegalArgumentException("Canonical UUID required.");
+        return s;
+    }
+    public JSONObject toJson() {
+        try {
+            JSONObject values = new JSONObject();
+            if (!kind.equals("revoked")) for (Map.Entry<String, Metric> entry : metrics.entrySet()) {
+                Metric m = entry.getValue();
+                JSONObject item = new JSONObject().put("state", m.state).put("validUntilEpochMs", m.until);
+                if (m.value >= 0) item.put("value", m.value);
+                values.put(entry.getKey(), item);
             }
-        }
+            return new JSONObject().put("schemaVersion", 2).put("streamId", streamId).put("revision", revision)
+                    .put("generatedAtEpochMs", generatedAtEpochMs).put("validUntilEpochMs", validUntilEpochMs)
+                    .put("kind", kind).put("metrics", values);
+        } catch (Exception error) { throw new IllegalStateException(error); }
     }
-
-    /** Valor implausível reprova em vez de virar glance errado. */
-    private static int bounded(JSONObject json, String key, int min, int max) {
-        if (!json.has(key)) return 0;
-        int value = json.optInt(key, Integer.MIN_VALUE);
-        if (value < min || value > max) {
-            throw new IllegalArgumentException("Valor fora da faixa plausível em " + key + ": " + value);
-        }
-        return value;
+    public Integer value(String key, long now) {
+        Metric m = metrics.get(key);
+        return m != null && m.value >= 0 && !isStale(now) && now < m.until ? m.value : null;
     }
-
-    private static String clean(String value, int maxLength) {
-        if (value == null) return "";
-        String normalized = value.replaceAll("[\\p{Cntrl}]", " ").replaceAll("\\s+", " ").trim();
-        return normalized.length() <= maxLength ? normalized : normalized.substring(0, maxLength).trim();
+    public boolean isStale(long now) { return kind.equals("revoked") || now >= validUntilEpochMs; }
+    public boolean hasAny(long now) { for (String key : LIMITS.keySet()) if (value(key, now) != null) return true; return false; }
+    public long nextExpiry(long now) {
+        long next = 0;
+        for (String key : LIMITS.keySet()) if (value(key, now) != null)
+            next = next == 0 ? metrics.get(key).until : Math.min(next, metrics.get(key).until);
+        return next;
     }
-
-    /**
-     * Maiúsculas sem acento, via Normalizer.
-     *
-     * Trocar caractere a caractere não escala: "ÓTIMA" passava direto e virava DESCONHECIDA,
-     * porque só Ç e Ã estavam mapeados. NFD decompõe a letra do acento e a marca combinante é
-     * descartada, então ótima/ÓTIMA/Otima chegam todos em OTIMA.
-     */
-    private static String normalizeLabel(String value, int maxLength) {
-        String cleaned = clean(value, maxLength).toUpperCase(Locale.ROOT);
-        return Normalizer.normalize(cleaned, Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
+    public boolean isEnergyScore() { return true; }
+    public String complicationTitle() { return "ENERGIA"; }
+    public String complicationText(long now) { Integer score = value("recoveryScore", now); return score == null ? "--" : score + "/100"; }
+    public String sleepText(long now) {
+        Integer sleep = value("sleepMinutes", now);
+        return sleep == null ? "--" : (sleep / 60) + "h" + String.format(java.util.Locale.ROOT, "%02d", sleep % 60);
+    }
+    public String accessibilityDescription(long now) {
+        if (!hasAny(now)) return "Dados de bem-estar indisponíveis ou desatualizados.";
+        Integer score = value("recoveryScore", now);
+        return (score == null ? "Energia indisponível" : "Energia Samsung " + score + " de 100") + ", sono " + sleepText(now);
+    }
+    public static CrewLifeSnapshot demo(long now) {
+        try {
+            JSONObject metrics = new JSONObject();
+            int[] values = {78,412,6430,31}; String[] keys = {"recoveryScore","sleepMinutes","steps","activeMinutes"};
+            for (int i=0;i<keys.length;i++) metrics.put(keys[i],new JSONObject().put("state","valid").put("value",values[i]).put("validUntilEpochMs",now+21600000));
+            return fromJson(new JSONObject().put("schemaVersion",2).put("streamId","00000000-0000-4000-8000-000000000001")
+                    .put("revision",1).put("kind","snapshot").put("generatedAtEpochMs",now)
+                    .put("validUntilEpochMs",now+21600000).put("metrics",metrics), now);
+        } catch(Exception error) { throw new IllegalStateException(error); }
     }
 }
