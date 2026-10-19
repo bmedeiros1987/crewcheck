@@ -95,6 +95,16 @@ try {
     const payment=nextAllowancePayment(foreign.rows,foreign.unclassifiedItems,[month],now,[iso]);
     const upcoming=localUpcomingAllowance(payment,now);
     assert(upcoming.events.some(event=>event.currency==='USD'&&event.amountMinor===6500&&event.expectedPaymentDate===iso&&event.expectedPaymentTimezone==='America/Sao_Paulo'),'real Concierge projection preserves proved foreign flight payment date');
+    const nextIso=month+'-07';
+    const overnightEvent={...flight({id:'synthetic-overnight',departure:'23:10',arrival:'01:20',destination:'FOREIGN'}),end:nextIso+'T01:20:00-03:00'};
+    const overnight=run([overnightEvent]);
+    const supper=overnight.rows.find(row=>row.label==='Ceia');
+    assert(supper,'literal overnight flight preserves next-day supper');
+    assert.equal(supper.iso,nextIso);assert.equal(supper.expectedPaymentDate,iso);
+    assert(overnight.unclassifiedItems.some(item=>item.iso===iso),'pending duty is dated at flight start');
+    const nightPayment=nextAllowancePayment(overnight.rows,overnight.unclassifiedItems,[month],now,[iso,nextIso]);
+    const nightPreview=localUpcomingAllowance(nightPayment,now);
+    assert.deepEqual(nightPreview.events.map(event=>[event.expectedPaymentDate,event.currency,event.amountMinor,event.partial]),[[iso,'USD',6500,true]],'overnight partiality follows the proved flight payment date, not next-day meal occurrence');
     const duty=run([{...reserve,destination:'FOREIGN',end:at('12:30'),day:{...reserve.day,dutyDebrief:'12:30'}}]);
     assert(duty.rows.length);assert(duty.rows.every(row=>row.expectedPaymentDate===undefined),'foreign duty without a flight never borrows a payment date');
     assert.equal(localUpcomingAllowance(nextAllowancePayment(duty.rows,duty.unclassifiedItems,[month],now,[iso]),now).events.length,0);

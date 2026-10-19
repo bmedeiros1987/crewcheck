@@ -59,6 +59,15 @@ try {
  assert.equal(project([line('2026-10-22','USD',2)]).events[0].partial,false,'global state remains incomplete without fabricating group partiality');
  const foreignOwnIssue=nextAllowancePayment([futureRow,{...futureRow,iso:'2026-10-22',expectedPaymentDate:'2026-10-22'}],[{iso:futureRow.iso,airport:'ZZZ'}],['2026-10'],now,days);
  assert.deepEqual(localUpcomingAllowance(foreignOwnIssue,now).events.map(e=>e.partial),[true,false],'foreign pending source day affects only its group');
+ const overnightRow={...futureRow,iso:'2026-10-21',expectedPaymentDate:'2026-10-20'};
+ const overnightSibling={...futureRow,iso:'2026-10-22',expectedPaymentDate:'2026-10-22'};
+ const euroSibling={...futureRow,currency:'EUR',iso:'2026-10-21',expectedPaymentDate:'2026-10-21'};
+ for(const ordered of [[overnightRow,overnightSibling,euroSibling],[euroSibling,overnightSibling,overnightRow]]){
+  const preview=localUpcomingAllowance(nextAllowancePayment(ordered,[{iso:'2026-10-20',airport:'ZZZ'}],['2026-10'],now,days),now);
+  assert.deepEqual(preview.events.map(e=>[e.expectedPaymentDate,e.currency,e.amountMinor,e.partial]),[['2026-10-20','USD',3000,true],['2026-10-21','EUR',3000,false],['2026-10-22','USD',3000,false]],'linked overnight pending never taints another date/currency group');
+ }
+ const occurrencePending=localUpcomingAllowance(nextAllowancePayment([overnightRow],[{iso:overnightRow.iso,airport:'ZZZ'}],['2026-10'],now,days),now);
+ assert.equal(occurrencePending.events[0].partial,false,'unrelated next-day pending cannot override the proved flight date');
  const legacy={basePay:99,baseConfigured:false,fixedAdditions:99,fixedAdditionsConfigured:false,inssDeduction:99,irrfDeduction:99,otherDeductions:99,configured:true,source:'Synthetic'};
  const v=(amountMinor,kind='earning')=>({amountMinor,currency:'BRL',kind,source:'manual',sourceId:'synthetic',recurrence:'once'});
  const record={schema:1,ownerId:'synthetic',month,revision:1,closed:false,values:{fixed_with_co:v(340000),other_fixed:v(1000),inss:v(10000,'deduction'),irrf:v(0,'deduction'),other_deductions:v(2000,'deduction')}};
