@@ -12,6 +12,7 @@ on:
       - 'server/static-html-guard.mjs'
       - 'scripts/v1426/apply.mjs'
       - 'scripts/regression-pwa-canonical-static.mjs'
+      - 'scripts/regression-pwa-worker-build-scope.mjs'
       - 'scripts/ci/stamp-service-worker-build.mjs'
       - 'scripts/regression-pwa-update-*.mjs'
       - '.github/workflows/pwa-update-consent.yml'
@@ -50,6 +51,10 @@ jobs:
           npx vite build
       - name: Canonical startup preparation and actual served HTML parity
         run: node scripts/regression-pwa-canonical-static.mjs
+      - name: Preserve production seal across SSR and library builds
+        run: |
+          node scripts/regression-pwa-worker-build-scope.mjs
+          node scripts/regression-p1-journey-identity-client-parity.mjs
       - name: Prepared contracts
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/update-ui/package.json

@@ -31,8 +31,29 @@ export default defineConfig(({ mode }) => {
   );
   const buildTime = new Date().toISOString();
 
+  let thisShellOutput: string | null = null;
   return {
-    plugins: [react(), tailwindcss(),{name:'crewcheck-worker-build',apply:'build',closeBundle(){const root=path.resolve(import.meta.dirname,'dist'),worker=path.join(root,'sw.js');const index=path.join(root,'index.html'),html=guardStaticHtml(fs.readFileSync(index,'utf8'));fs.writeFileSync(index,html);const result=stampServiceWorkerBuild(fs.readFileSync(worker,'utf8'),html,fs.readdirSync(path.join(root,'assets'),{recursive:true}).filter(name=>fs.statSync(path.join(root,'assets',String(name))).isFile()).map(name=>'/assets/'+String(name).replaceAll('\\','/')));fs.writeFileSync(worker,result.source);}}],
+    plugins: [react(), tailwindcss(),{
+      name: 'crewcheck-worker-build',
+      apply: 'build',
+      configResolved(config) {
+        // SSR/library/in-memory builds do not produce the browser HTML shell.
+        thisShellOutput = !config.build.ssr && !config.build.lib && config.build.write
+          ? path.resolve(config.root, config.build.outDir) : null;
+      },
+      closeBundle() {
+        if (!thisShellOutput) return;
+        const root = thisShellOutput, worker = path.join(root, 'sw.js');
+        const index = path.join(root, 'index.html');
+        const html = guardStaticHtml(fs.readFileSync(index, 'utf8'));
+        fs.writeFileSync(index, html);
+        const assets = fs.readdirSync(path.join(root, 'assets'), { recursive: true })
+          .filter(name => fs.statSync(path.join(root, 'assets', String(name))).isFile())
+          .map(name => '/assets/' + String(name).replaceAll('\\', '/'));
+        const result = stampServiceWorkerBuild(fs.readFileSync(worker, 'utf8'), html, assets);
+        fs.writeFileSync(worker, result.source);
+      },
+    }],
     define: {
       "import.meta.env.VITE_GOOGLE_CLIENT_ID": JSON.stringify(googleClientId),
       "import.meta.env.VITE_CREWCHECK_BUILD_VERSION": JSON.stringify(buildVersion),
