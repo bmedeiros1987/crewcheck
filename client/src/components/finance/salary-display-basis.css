@@ -1,0 +1,12 @@
+.cc-salary-history .cc-salary-basis{display:flex;flex-wrap:wrap;gap:.65rem;border:0;padding:.5rem 0;margin:0;min-width:0}
+.cc-salary-history .cc-salary-basis legend{font-size:.85em;padding:0}
+.cc-salary-history .cc-salary-basis label{display:flex;align-items:center;gap:.4rem;min-height:44px;padding:.35rem .8rem;border:1px solid currentColor;border-radius:1rem;cursor:pointer}
+.cc-salary-history .cc-salary-basis label:has(input:checked){font-weight:700;outline:2px solid currentColor;outline-offset:1px}
+.cc-salary-history .cc-salary-basis input{accent-color:currentColor;width:1rem;height:1rem;flex-shrink:0}
+.cc-salary-history .cc-salary-basis-amount strong{display:block;font-size:clamp(1.5rem,6vw,2.5rem);overflow-wrap:anywhere}
+.cc-salary-history .cc-salary-basis-amount p{margin:.35rem 0;overflow-wrap:anywhere}
+
+.cc-salary-history .cc-salary-plr-note{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;font-size:.85em;margin:.4rem 0 .75rem}
+.cc-salary-history .cc-salary-plr-note details{min-width:0;max-width:100%}
+.cc-salary-history .cc-salary-plr-note summary{cursor:pointer;min-width:32px;min-height:32px;text-align:center;font-weight:700}
+.cc-salary-history .cc-salary-plr-note p{max-width:55ch;overflow-wrap:anywhere}
