@@ -114,6 +114,8 @@ import { salaryCalculationDiagnostic } from '@/lib/salaryCalculationDiagnostic';
 import FinancialStatementImporter from '@/components/finance/FinancialStatementImporter';
 import FinancialHistoryExplorer from '@/components/finance/FinancialHistoryExplorer';
 import NextPaymentCard from '@/components/finance/NextPaymentCard';
+import {useSalaryDisplayBasis} from '@/components/finance/SalaryDisplayBasis';
+import {salaryDisplaySummary} from '@/lib/salaryDisplayBasis';
 import PayrollPaymentCard from '@/components/finance/PayrollPaymentCard';
 import SalaryBreakdownChart, { salaryDeductionEvidence } from '@/components/finance/SalaryBreakdownChart';
 import FinancialScreen from '@/components/finance/FinancialScreen';
@@ -4132,10 +4134,17 @@ function salaryForecastMetric(snapshot: ReturnType<typeof financeSnapshot>, rang
   return salaryCalculationDiagnostic([salaryDiagnosticItem(snapshot)],range,[]).ready && Number.isFinite(snapshot.salary.gross) ? {BRL:snapshot.salary.gross} : {};
 }
 function SalaryReliableView({ bundle }: { bundle: BundleState }) {
+  const {basis,choose:chooseBasis}=useSalaryDisplayBasis();
+  const metricForBasis=(snapshot:ReturnType<typeof financeSnapshot>,range:FinancialRange):Record<string,number>=>{
+    const gross=salaryForecastMetric(snapshot,range).BRL??null;
+    const month=`${snapshot.roster.year}-${String(snapshot.roster.month).padStart(2,'0')}`;
+    const summary=salaryDisplaySummary(basis,gross,gross!==null,[month],[readMonthlyFinancialSettings(month)]);
+    return summary.amount===null?{}:{BRL:summary.amount};
+  };
   const privacy = useFinancialPrivacy();
   const moneyBRL = (value: number | null | undefined) => typeof value === 'number' && Number.isFinite(value) ? privacy.amount(`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`) : 'Não calculável';
   const moneyCurrency = (value: number, currency: PerDiemCurrency) => privacy.amount(new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value));
-  return <FinancialHistoryExplorer roster={bundle.roster} calculate={financeSnapshot} mode="salary" rangeMetric={salaryForecastMetric} metric={snapshot=>salaryForecastMetric(snapshot,financialRange('month',`${snapshot.roster.year}-${String(snapshot.roster.month).padStart(2,'0')}`,'','',''))}
+  return <FinancialHistoryExplorer roster={bundle.roster} calculate={financeSnapshot} mode="salary" rangeMetric={metricForBasis} metric={snapshot=>metricForBasis(snapshot,financialRange('month',`${snapshot.roster.year}-${String(snapshot.roster.month).padStart(2,'0')}`,'','',''))}
     render={({snapshots,range,missing,controls,graph,requestRange})=>{
       const fullMonths = range.valid && range.start.endsWith('-01') && range.end===financialRange('month',range.end.slice(0,7),'','','').end;
       const selected = snapshots.filter(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`>=range.start.slice(0,7)&&`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`<=range.end.slice(0,7));
@@ -4143,12 +4152,14 @@ function SalaryReliableView({ bundle }: { bundle: BundleState }) {
       const diagnostic = salaryCalculationDiagnostic(diagnosticItems, range, missing);
       const available = diagnostic.ready;
       const gross = available ? selected.reduce((sum,item)=>sum+item.snapshot.salary.gross,0) : null;
+      const displayMonths=selected.map(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`);
+      const displaySummary=salaryDisplaySummary(basis,gross,available&&fullMonths,displayMonths,displayMonths.map(readMonthlyFinancialSettings));
       const rows = financialRowsInRange(snapshots.flatMap(item=>item.snapshot.salary.rows),range);
       const rowAvailable = (row: FlightEarningRow) => row.distanceKnown && row.timeKnown && Number.isFinite(row.total) && selected.some(item=>item.snapshot.salary.rows.includes(row) && item.snapshot.salary.configured && !item.snapshot.salary.config.requiresManualFunction);
       return <><Brand back/><section className="cc-per-diem-content cc-salary-history" aria-label="Previsão salarial">
         <FinancialScreen names={['overview']}><section className="cz-panel-head cz-panel-head-compact"><h1>Salário</h1><p>Estimativa do próximo ciclo</p></section></FinancialScreen>
-        <PayrollPaymentCard snapshots={snapshots.map(item=>({month:`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,salary:item.snapshot.salary,publishedDays:item.roster.days.map(day=>day.date)}))} requestRange={requestRange} extraDetails={<><SalaryBreakdownChart gross={gross} deductions={available?selected.reduce((sum,item)=>sum+item.snapshot.salary.inss+item.snapshot.salary.irrf+item.snapshot.salary.otherDeductions,0):null} net={available?selected.reduce((sum,item)=>sum+item.snapshot.salary.net,0):null} period={`${range.start} a ${range.end}`} entries={available?selected.map(item=>({month:`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,inss:item.snapshot.salary.inss,irrf:item.snapshot.salary.irrf,otherDeductions:item.snapshot.salary.otherDeductions})):[]}/>{graph}</>}/>
-        <FinancialScreen names={['statement']}><section className="cz-finance-grid cc-per-diem-summary"><KpiCard icon={DollarSign} title="Bruto previsto no período" value={gross===null?'Não calculável':moneyBRL(gross)} detail={fullMonths?'Salário-base exige fonte ou calibração; somente competências completas são somadas.':'A fonte mensal não permite distribuir salário-base e descontos por semana.'}/></section>
+        <PayrollPaymentCard basis={basis} chooseBasis={chooseBasis} snapshots={snapshots.map(item=>({month:`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,salary:item.snapshot.salary,publishedDays:item.roster.days.map(day=>day.date)}))} requestRange={requestRange} extraDetails={<><SalaryBreakdownChart gross={gross} deductions={available?selected.reduce((sum,item)=>sum+item.snapshot.salary.inss+item.snapshot.salary.irrf+item.snapshot.salary.otherDeductions,0):null} net={available?selected.reduce((sum,item)=>sum+item.snapshot.salary.net,0):null} period={`${range.start} a ${range.end}`} entries={available?selected.map(item=>({month:`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,inss:item.snapshot.salary.inss,irrf:item.snapshot.salary.irrf,otherDeductions:item.snapshot.salary.otherDeductions})):[]}/>{graph}</>}/>
+        <FinancialScreen names={['statement']}><section className="cz-finance-grid cc-per-diem-summary"><KpiCard icon={DollarSign} title={basis==='gross'?'Bruto previsto no período':'Líquido previsto no período'} value={moneyBRL(displaySummary.amount)} detail={displaySummary.reason||(fullMonths?'Salário-base exige fonte ou calibração; somente competências completas são somadas.':'A fonte mensal não permite distribuir salário-base e descontos por semana.')}/></section>
         </FinancialScreen>
         <FinancialScreen names={['payment']}>
         <SalaryCalculationStatus items={diagnosticItems} range={range} missing={missing}/>
