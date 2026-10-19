@@ -186,15 +186,22 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
       const currentSnapshot = await conciergeLoadSnapshot(profile);
       if (!owns(currentSnapshot) || !await conciergeDepartureOwnerCurrent(profile, currentSnapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed)
         return gateQuerySuppressed({reason:'response-context-expired'}).message;
+      // The source that supplied APZ/route must still be the source being enriched.
+      // A matching flight tuple alone does not authorize a changed roster baseline.
+      if (crypto.createHash('sha256').update(JSON.stringify(currentSnapshot.roster)).digest('hex') !== revision || !await validate())
+        return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;
       const currentBinding = findPublishedGateLeg(currentSnapshot.roster, queryContext.gateQueryEvidence, buildCanonicalRosterEvents(currentSnapshot.roster));
       if (!currentBinding) return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;
       if (radar?.ok && !radar.querySuppressed) {
         acceptedRadar = Object.freeze({ ...radar });
         if (!radarResultDecision(acceptedRadar, evidence, Date.now()).allowed) return gateQuerySuppressed({reason:'response-context-expired'}).message;
         conciergeApplyRadar(currentSnapshot, currentBinding, radar);
-        revision = crypto.createHash('sha256').update(JSON.stringify(currentSnapshot.roster)).digest('hex');
+        revision = crypto.createHash('sha256').update(JSON.stringify(conciergeMinimizeRoster(currentSnapshot.roster))).digest('hex');
         const saved = await conciergeSaveSnapshotAsync(profile, currentSnapshot.roster, {source:currentSnapshot.source || 'departure-radar',lastRadar:{...radar,updatedAt:new Date().toISOString()}});
-        if (saved?.roster && owns(saved)) revision = crypto.createHash('sha256').update(JSON.stringify(saved.roster)).digest('hex');
+        // Compare the writer result to our exact expected enrichment/persistence shape.
+        // Never adopt a result containing unrelated operational changes.
+        if (saved?.roster && (!owns(saved) || crypto.createHash('sha256').update(JSON.stringify(saved.roster)).digest('hex') !== revision))
+          return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;
         if (!owns(currentSnapshot) || !await conciergeDepartureOwnerCurrent(profile, currentSnapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed)
           return gateQuerySuppressed({reason:'response-context-expired'}).message;
       }

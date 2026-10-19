@@ -174,3 +174,17 @@ for(const path of ['typed','button'])for(const boundary of ['radar-save','conver
  assert.equal(queried,1,'real selected occurrence reaches Radar');assert.equal(changed,boundary==='unchanged'?0:1,'test crosses intended save boundary');
  if(boundary==='unchanged')assert.match(h.trace.output.join(' '),/ACCEPTED_GATE_46/,'unchanged fresh accepted occurrence must deliver');else assert.doesNotMatch(h.trace.output.join(' '),/LA1234|ACCEPTED_GATE_46|07:00|04\/10\/2099/);
 });
+
+for(const path of ['typed','button'])for(const change of ['apz','base','earlier'])test(`actual Radar await cannot adopt changed operational baseline ${change} ${path}`,async()=>{
+ const roster={year:2099,month:10,base:'BSB',days:[{date:'04/10/2099',dayNumber:4,month:10,year:2099,type:'VOO',base:'BSB',dutyReport:'07:00',dutyDebrief:'09:30',dutyReportSource:'published',dutyDebriefSource:'published',legs:[{flightNumber:'LA1234',origin:'BSB',destination:'GRU',departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00'}]}]};
+ const h=realDeparture(roster,'short');let queries=0,radarSaves=0;
+ const save=h.context.conciergeSaveSnapshotAsync;h.context.conciergeSaveSnapshotAsync=async(...args)=>{if(args[2]?.lastRadar)radarSaves++;return save(...args);};
+ h.context.runRadarRace=async ctx=>{queries++;const replacement=JSON.parse(JSON.stringify(roster));
+  if(change==='apz'){replacement.days[0].dutyReport='07:30';replacement.days[0].legs[0].presentationTime='07:30';}
+  if(change==='base')replacement.base='GRU';
+  if(change==='earlier'){const prior=JSON.parse(JSON.stringify(replacement.days[0]));Object.assign(prior,{type:'ASB',pairingCode:'ASB',dutyReport:'06:00',dutyDebrief:'06:45',legs:[]});replacement.days.unshift(prior);}
+  h.setRoster(replacement);return{ok:true,flight:'LA1234',origin:'BSB',destination:'GRU',gate:'FORBIDDEN_OLD_GATE',scheduledDepartureUtc:ctx.gateQueryEvidence.scheduledDepartureUtc,sourceReceivedAt:now};
+ };
+ if(path==='typed')await h.send('telegram','/saida');else{await h.openInline();await h.tap('Transporte');await h.tap('Saída');}
+ assert.equal(queries,1,'must reach exact selected Radar occurrence before mutation');assert.equal(radarSaves,0,'must refuse changed baseline before applying/saving enrichment');assert.doesNotMatch(h.trace.output.join(' '),/LA1234|FORBIDDEN_OLD_GATE|07:00|06:05|04\/10\/2099/);
+});
