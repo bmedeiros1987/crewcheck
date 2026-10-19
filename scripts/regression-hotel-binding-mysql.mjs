@@ -43,7 +43,7 @@ function barrier() {
   releases.push(release); return { entered, enter, wait, release };
 }
 function driver(name, { ownerGate = null, lockTimeout = 5 } = {}) {
-  const state = { name, thread: null, ownerAttempts: 0, hotelUpdates: 0 };
+  const state = { name, thread: null, ownerAttempts: 0, hotelUpdates: 0, transactions: [] };
   const native = {
     query: (sql, values) => pool.query(sql, values),
     async getConnection() {
@@ -55,6 +55,7 @@ function driver(name, { ownerGate = null, lockTimeout = 5 } = {}) {
           if (isOwner) state.ownerAttempts++;
           if (sql.trim().startsWith('UPDATE crewcheck_platform_stays')) state.hotelUpdates++;
           const result = await connection.query(sql, values);
+          if (['BEGIN','COMMIT','ROLLBACK'].includes(sql.trim())) state.transactions.push(sql.trim());
           if (isOwner && ownerGate) { ownerGate.enter(); await ownerGate.wait; }
           return result;
         },
@@ -131,6 +132,13 @@ try {
   const legacy = fs.readFileSync('migrations/20260715_003_aiven_mysql_full_platform.sql', 'utf8');
   const match = legacy.match(/CREATE TABLE IF NOT EXISTS crewcheck_platform_stays\s*\([\s\S]*?ENGINE=InnoDB[^;]*;/i);
   assert(match, 'Actual legacy stays DDL must be present'); await pool.query(match[0]);
+  // Existing legacy data must precede the exact additive migration.
+  for (const [who,id,roster] of [[owner,'legacy-linked',key],[owner,'legacy-unknown',null],[otherOwner,'legacy-other',key]]) {
+    await pool.query('INSERT IGNORE INTO crewcheck_platform_profiles(email) VALUES(?)',[who]);
+    await pool.query(`INSERT INTO crewcheck_platform_stays(id,owner_email,roster_key,stay_date,hotel_key,hotel_name,airport,room_cipher,presentation_time,lead_minutes,share_same_hotel,share_with_visitors)
+      VALUES(?,?,?,'2030-01-02',?,'Legacy fictional hotel','AAA','legacy-fictional-ciphertext','06:30',75,TRUE,TRUE)`,[id,who,roster,id]);
+  }
+  const legacyBefore = (await pool.query('SELECT * FROM crewcheck_platform_stays ORDER BY id'))[0];
   assert.equal(await hotelReadiness(driver('missing-schema').db), false);
   await assert.rejects(runHotelTransaction(driver('closed-write').db, association, options), { code: 'HOTEL_SCHEMA_NOT_READY' });
   const ddl = fs.readFileSync('migrations/20261019_001_hotel_binding_candidate.sql', 'utf8').replace(/^--.*$/gm, '').trim();
@@ -138,7 +146,15 @@ try {
   assert.doesNotMatch(ddl, /\b(DROP|DELETE|INSERT|UPDATE)\b/i);
   // This applies only to the newly created disposable fixture schema above.
   await pool.query(ddl); assert.equal(await hotelReadiness(driver('ready-schema').db), true);
-  results.push({ name: 'schema missing fails closed; exact candidate DDL on disposable fixture becomes ready', passed: true });
+  const migratedLegacy = (await pool.query('SELECT *,CAST(row_version AS CHAR) AS row_version FROM crewcheck_platform_stays ORDER BY id'))[0];
+  assert.equal(migratedLegacy.length,legacyBefore.length);
+  const added = ['binding_id','binding_evidence','manual_hotel_override','hotel_source_snapshot','row_version'];
+  for (const row of migratedLegacy) {
+    for (const name of added.slice(0,-1)) assert.equal(row[name],null,name);
+    assert.equal(row.row_version,'0');
+  }
+  assert.deepEqual(migratedLegacy.map(row=>Object.fromEntries(Object.entries(row).filter(([name])=>!added.includes(name)))),legacyBefore);
+  results.push({ name: 'existing linked, NULL-roster and other-owner legacy rows preserved by exact additive DDL; missing schema fails closed', passed: true });
 
   await run('two devices same CAS version: one commit and one conflict with observed profile wait', async () => {
     await seed(); const gate = barrier(), a = driver('device-a', { ownerGate: gate }), b = driver('device-b');
@@ -195,23 +211,43 @@ try {
     finally { gate.release(); } await first;
     assert.equal(b.state.ownerAttempts, 1); assert.equal(b.state.hotelUpdates, 0); assert.equal((await rowA()).hotel_name, 'Manual hotel');
   });
-  await run('actual deadlock is surfaced and rolled back; no blind retry', async () => {
-    await seed(); const gate = barrier(), a = driver('deadlock-candidate', { ownerGate: gate });
+  await run('actual deadlock deterministically selects repository victim, rolls back once and releases transaction locks', async () => {
+    await seed(); const before = await rowA(), gate = barrier(), a = driver('deadlock-repository-victim', { ownerGate: gate });
+    // Make the reversed-order injector substantially heavier than the read-only
+    // repository transaction: InnoDB chooses the smaller transaction as victim.
+    await pool.query('CREATE TABLE IF NOT EXISTS hotel_qa_deadlock_weight(id INT PRIMARY KEY,n INT NOT NULL) ENGINE=InnoDB');
+    await pool.query('DELETE FROM hotel_qa_deadlock_weight');
+    await pool.query('INSERT INTO hotel_qa_deadlock_weight(id,n) VALUES '+Array.from({length:128},(_,i)=>`(${i},0)`).join(','));
     const candidate = launched(runHotelTransaction(a.db, patch('1','Deadlock candidate'), options)); await bounded(gate.entered, 'deadlock owner');
     const opposite = await pool.getConnection(); borrowed.add(opposite);
     try {
       await opposite.query('SET SESSION innodb_lock_wait_timeout=5'); await opposite.query('BEGIN');
+      await opposite.query('UPDATE hotel_qa_deadlock_weight SET n=n+1');
       await opposite.query('SELECT id FROM crewcheck_platform_rosters WHERE owner_email=? AND roster_key=? FOR UPDATE', [owner,key]);
-      // Deliberately reversed SQL lock order is fault injection, never application behavior.
+      // Deliberately reversed SQL lock order is fixture fault injection only.
       const reversed = launched(opposite.query('SELECT email FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE', [owner]));
-      await waitForProfileWait({ name:'reverse-order injector',thread:opposite.threadId }); gate.release();
-      const outcomes = await bounded(Promise.allSettled([candidate,reversed]), 'deadlock resolution');
-      assert.equal(outcomes.filter(value => value.status === 'rejected' && value.reason.code === 'ER_LOCK_DEADLOCK').length, 1);
-      assert.equal(a.state.ownerAttempts, 1); await opposite.query('ROLLBACK');
+      await waitForProfileWait({ name:'weighted reverse-order injector',thread:opposite.threadId }); gate.release();
+      const outcomes = await bounded(Promise.allSettled([candidate,reversed]), 'repository victim deadlock');
+      assert.equal(outcomes[0].status,'rejected'); assert.equal(outcomes[0].reason.code,'ER_LOCK_DEADLOCK');
+      assert.equal(outcomes[1].status,'fulfilled','injector must survive; otherwise this counterproof fails');
+      assert.deepEqual(a.state.transactions,['BEGIN','ROLLBACK']);
+      assert.equal(a.state.ownerAttempts,1); assert.equal(a.state.hotelUpdates,0);
+      console.log('Deadlock victim verified:',JSON.stringify({victim:'repository',code:outcomes[0].reason.code,attempts:a.state.ownerAttempts,rollbackObserved:true}));
+      await opposite.query('ROLLBACK');
     } finally { gate.release(); await opposite.query('ROLLBACK').catch(() => {}); borrowed.delete(opposite); opposite.release(); }
-    const current = await rowA(); assert(['1','2'].includes(current.row_version));
-    await runHotelTransaction(driver('after-deadlock-reviewed').db, patch(current.row_version,'After reread'), options);
-    assert.equal((await rowA()).hotel_name,'After reread');
+    assert.deepEqual(await rowA(),before,'failed repository transaction preserves every hotel field');
+    assert.equal(Number((await pool.query('SELECT SUM(n) AS n FROM hotel_qa_deadlock_weight'))[0][0].n),0);
+    // Independent connection must acquire every repository lock after rollback.
+    const clean = await pool.getConnection();
+    try {
+      await clean.query('SET SESSION innodb_lock_wait_timeout=1'); await clean.query('BEGIN');
+      await bounded(clean.query('SELECT email FROM crewcheck_platform_profiles WHERE email=? FOR UPDATE NOWAIT',[owner]),'clean profile after rollback');
+      await clean.query('SELECT id FROM crewcheck_platform_rosters WHERE owner_email=? AND roster_key=? FOR UPDATE NOWAIT',[owner,key]);
+      await clean.query('SELECT id FROM crewcheck_platform_stays WHERE owner_email=? ORDER BY id FOR UPDATE NOWAIT',[owner]);
+      await clean.query('ROLLBACK');
+    } finally { await clean.query('ROLLBACK').catch(()=>{}); clean.release(); }
+    await runHotelTransaction(driver('after-deadlock-reviewed').db,patch(before.row_version,'After reread'),options);
+    assert.equal((await rowA()).hotel_name,'After reread'); assert.equal((await rowA()).row_version,'2');
   });
   await run('legacy unique collision rolls back without merging rows or losing private fields', async () => {
     await seed(); const before = await rowA();

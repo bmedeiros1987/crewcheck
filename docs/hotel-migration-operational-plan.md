@@ -47,6 +47,10 @@ concorrente demonstra estabilidade do snapshot. Restaura em outro schema novo,
 compara DDL e todos os valores, incluindo JSONs, BIGINT acima de 2^53, IDs, campos
 privados e dados de outro titular, e confirma readiness. Publica apenas checksum,
 contagens e resultado; remove exclusivamente schemas que ele próprio criou.
+O DDL exato também é aplicado sobre linhas legadas já semeadas (vínculo conhecido,
+roster NULL e outro titular), comparando todos os campos anteriores e defaults
+novos. O deadlock exige que o repositório seja a vítima, um único rollback, dados
+inalterados e aquisição posterior dos mesmos locks por conexão independente.
 O resultado só é aprovado quando o job passar no SHA correspondente.
 
 Esse ensaio não certifica dump do banco inteiro, recuperação do provedor, retenção,
