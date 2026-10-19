@@ -29,6 +29,8 @@ on:
       - 'server/hotel-stay-*.mjs'
       - 'migrations/20261019_001_hotel_binding_candidate.sql'
       - 'scripts/regression-hotel-binding.mjs'
+      - 'scripts/build-hotel-maintenance.mjs'
+      - 'scripts/regression-hotel-maintenance.mjs'
       - 'scripts/regression-hotel-editor-v2-browser.mjs'
       - 'scripts/fixtures/hotel-*.mjs'
       - 'scripts/p0-active-roster-server/apply.mjs'
@@ -66,6 +68,21 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/stay-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
           node "$RUNNER_TEMP/stay-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Build and verify scoped hotel maintenance artifact without activation
+        run: |
+          node scripts/build-hotel-maintenance.mjs --output "$RUNNER_TEMP/hotel-maintenance"
+          ln -s "$GITHUB_WORKSPACE/node_modules" "$RUNNER_TEMP/hotel-maintenance/node_modules"
+          node scripts/regression-hotel-maintenance.mjs "$RUNNER_TEMP/hotel-maintenance"
+          (cd "$RUNNER_TEMP/hotel-maintenance" && node scripts/v139/apply.mjs && node scripts/v139/apply.mjs)
+          node scripts/regression-hotel-maintenance.mjs "$RUNNER_TEMP/hotel-maintenance"
+          (cd "$RUNNER_TEMP/hotel-maintenance" && node scripts/ci/smoke-render-build-start.mjs)
+          node scripts/regression-hotel-maintenance.mjs "$RUNNER_TEMP/hotel-maintenance"
+          node scripts/build-hotel-maintenance.mjs --seal "$RUNNER_TEMP/hotel-maintenance"
+          (cd "$RUNNER_TEMP/hotel-maintenance" && node scripts/v139/apply.mjs)
+          node scripts/regression-hotel-maintenance.mjs "$RUNNER_TEMP/hotel-maintenance"
+          node scripts/build-hotel-maintenance.mjs --verify-seal "$RUNNER_TEMP/hotel-maintenance"
+          mkdir -p artifacts/hotel-maintenance
+          cp "$RUNNER_TEMP/hotel-maintenance/hotel-maintenance-manifest.json" artifacts/hotel-maintenance/
       - name: Raw hotel editor v2 through composed routes and synthetic database
         env:
           STAY_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json
@@ -125,3 +142,4 @@ jobs:
             artifacts/stay-editor/
             artifacts/hotel-v2-raw/
             artifacts/hotel-v2-prepared/
+            artifacts/hotel-maintenance/
