@@ -215,6 +215,11 @@ public class CrewLifeAckContinuationTest {
         CrewLifeV2Phone.retry(activity); drainUntilIdle();
         assertEquals(before, snapshots); assertEquals(1, SyntheticProvider.refreshes); assertIdleAndStable();
     }
+    @Test public void renderedWebProjectionCannotRestartNativeRead() throws Exception {
+        assertFalse(activity.new CrewCheckNativeBridge().publishWatchCrewLife("{\"schemaVersion\":1,\"steps\":51}"));
+        drainUntilIdle(); assertEquals(0, snapshots); assertEquals(0, SyntheticProvider.reads); assertEquals(0, SyntheticProvider.refreshes);
+        assertIdleAndStable();
+    }
     @Test public void destroyedActivityCannotResumeFromQueuedAcksOrDelay() throws Exception {
         holdAcks = true; externalRequest(); Shadows.shadowOf(Looper.getMainLooper()).idle(); joinIo();
         ReflectionHelpers.callInstanceMethod(activity, "unregisterWatchSyncRequestReceiver");

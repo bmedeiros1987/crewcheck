@@ -19,8 +19,8 @@ const result=spawnSync(process.env.CREWLIFE_GRADLE||'gradle',['-p','android-wrap
 assert.equal(result.status,0,'Real Android broadcast/paused-looper continuation tests failed');
 for(const p of inputs)assert.equal(crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex'),hashes[p],p+' changed during test');
 const xml=fs.readFileSync('android-wrapper/app/build/test-results/testReleaseUnitTest/TEST-com.crewcheck.app.CrewLifeAckContinuationTest.xml','utf8');
-assert.match(xml,/<testsuite\b[^>]*tests="6"/);
+assert.match(xml,/<testsuite\b[^>]*tests="7"/);
 assert.match(xml,/<testsuite\b[^>]*failures="0"/);
 assert.match(xml,/<testsuite\b[^>]*errors="0"/);
 assert.match(xml,/<testsuite\b[^>]*skipped="0"/);
-console.log(JSON.stringify({status:'PASS',tests:6,wear:expected,scope:'actual Android broadcast registration/delivery, production receiver/service/native source and ACK handling; real paused main looper drained to no pending tasks; GMS/provider/peer disk synthetic, no physical/vendor proof',sourceSha256:hashes}));
+console.log(JSON.stringify({status:'PASS',tests:7,wear:expected,scope:'actual Android broadcast registration/delivery, production receiver/service/native source and ACK handling; real paused main looper drained to no pending tasks; GMS/provider/peer disk synthetic, no physical/vendor proof',sourceSha256:hashes}));

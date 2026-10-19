@@ -1193,10 +1193,10 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean publishWatchCrewLife(final String payloadJson) {
             if (payloadJson == null || payloadJson.trim().isEmpty()) return false;
-            // Web input is not evidence of source validity. Refresh the native,
-            // session-fenced provider instead of accepting a timestamp-only projection.
-            syncLifeCompanionToCrewCheckAndWatch("watch-life-native-source-request");
-            return true; // refresh request accepted, never a delivery receipt
+            // A rendered projection is not a request for another source read. Life observes
+            // native summaries and echoes this legacy call; refreshing here would feed back.
+            // The consent-gated native host alone publishes its validated provider results.
+            return false;
         }
 
         @JavascriptInterface
