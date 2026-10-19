@@ -45,7 +45,7 @@ import org.robolectric.util.ReflectionHelpers;
  * Only GMS transport, source provider and receiver disk are synthetic; no device/API access.
  */
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 35, manifest = Config.NONE, shadows = CrewLifeAckContinuationTest.FakeWearable.class)
+@Config(sdk = 35, manifest = Config.NONE, application = CrewLifeAckContinuationTest.DelayedBroadcastApp.class, shadows = CrewLifeAckContinuationTest.FakeWearable.class)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class CrewLifeAckContinuationTest {
     private MainActivity activity;
@@ -53,7 +53,8 @@ public class CrewLifeAckContinuationTest {
     private CrewLifeLoopTestPeer peer;
     private final List<Runnable> heldAcks = new ArrayList<>();
     private final List<String> cleanupAcks = new ArrayList<>();
-    private boolean holdAcks, failNativeDiscovery, holdNativeDiscovery;
+    private boolean holdAcks, failNativeDiscovery, holdNativeDiscovery, holdSnapshotPuts;
+    private final List<TaskCompletionSource<DataItem>> pendingPuts = new ArrayList<>();
     private final List<TaskCompletionSource<List<Node>>> pendingDiscoveries = new ArrayList<>();
     private final Map<String, CrewLifeLoopTestPeer> peers = new LinkedHashMap<>();
     private final Set<String> connectedIds = new LinkedHashSet<>();
@@ -72,6 +73,21 @@ public class CrewLifeAckContinuationTest {
     private static DataClient dataClient;
     private static MessageClient messageClient;
 
+    public static class DelayedBroadcastApp extends android.app.Application {
+        boolean delayProof;
+        final List<Intent> delayedProof = new ArrayList<>();
+        @Override public void sendBroadcast(Intent intent) {
+            if (delayProof && MainActivity.ACTION_LIFE_WATCH_PROOF_READY.equals(intent.getAction())) {
+                delayedProof.add(new Intent(intent)); return; // explicit delivery-delay double, released via real Android broadcast below
+            }
+            super.sendBroadcast(intent);
+        }
+        void releaseProof() {
+            delayProof = false;
+            for (Intent intent : new ArrayList<>(delayedProof)) super.sendBroadcast(intent);
+            delayedProof.clear();
+        }
+    }
     @Implements(value = Wearable.class, isInAndroidSdk = false)
     public static class FakeWearable {
         @Implementation public static NodeClient getNodeClient(Context c) { return nodeClient; }
@@ -115,6 +131,7 @@ public class CrewLifeAckContinuationTest {
         ReflectionHelpers.setStaticField(CrewLifeV2Phone.class, "retries", 0);
         activity = Robolectric.buildActivity(MainActivity.class).get(); // no onCreate/network/navigation
         Context app = activity.getApplicationContext();
+        ((DelayedBroadcastApp) app).delayProof = false; ((DelayedBroadcastApp) app).delayedProof.clear();
         app.getSharedPreferences("crewcheck_crewlife_v2_protocol", 0).edit().clear().commit();
         app.getSharedPreferences("crewcheck_watch_health_consent", 0).edit().clear().commit();
         ReflectionHelpers.setField(activity, "webView", new PostingWebView(activity));
@@ -159,6 +176,9 @@ public class CrewLifeAckContinuationTest {
             if (raw != null) {
                 if ("snapshot".equals(new JSONObject(raw).optString("kind"))) snapshots++;
                 for (String id : connectedIds) peers.get(id).data(raw, System.currentTimeMillis());
+                if (holdSnapshotPuts && "snapshot".equals(new JSONObject(raw).optString("kind"))) {
+                    TaskCompletionSource<DataItem> pending = new TaskCompletionSource<>(); pendingPuts.add(pending); return pending.getTask();
+                }
             }
             return Tasks.forResult(mock(DataItem.class));
         });
@@ -390,6 +410,32 @@ public class CrewLifeAckContinuationTest {
         assertEquals("completed operation stays terminal after new peer ACK", 1, snapshots);
         assertEquals(reads, SyntheticProvider.reads); assertEquals(1, SyntheticProvider.refreshes); assertIdleAndStable();
     }
+    private void latePutCannotFinishNewAttempt(boolean failOldPut) throws Exception {
+        DelayedBroadcastApp app = (DelayedBroadcastApp) activity.getApplicationContext();
+        app.delayProof = true; holdAcks = true; externalRequest();
+        Shadows.shadowOf(Looper.getMainLooper()).idle(); joinIo(); Shadows.shadowOf(Looper.getMainLooper()).idle();
+        releaseAcksWithoutAdvancingTimers(); holdAcks = false;
+        assertTrue("accepted ACK broadcast must really be delayed", app.delayedProof.size() > 0);
+        holdSnapshotPuts = true; drainUntilIdle();
+        assertEquals(1, snapshots); assertEquals(1, pendingPuts.size());
+        holdNativeDiscovery = true; app.releaseProof(); drainUntilIdle();
+        assertEquals("new continuation must already be in discovery", 1, pendingDiscoveries.size());
+        TaskCompletionSource<DataItem> oldPut = pendingPuts.remove(0);
+        if (failOldPut) oldPut.setException(new IllegalStateException("synthetic obsolete put failure"));
+        else oldPut.setResult(mock(DataItem.class));
+        // Deliver old ACKs while the newer attempt remains in flight.
+        for (String ack : new ArrayList<>(cleanupAcks)) { deliverAck(ack); deliverAck(ack); }
+        Shadows.shadowOf(Looper.getMainLooper()).idle();
+        holdNativeDiscovery = false; holdSnapshotPuts = false;
+        List<Node> nodes = new ArrayList<>(); for (String id : connectedIds) nodes.add(node(id));
+        for (TaskCompletionSource<List<Node>> pending : new ArrayList<>(pendingDiscoveries)) pending.setResult(nodes);
+        pendingDiscoveries.clear(); drainUntilIdle();
+        assertEquals("new attempt must publish after its own reset/ACK", 2, snapshots);
+        assertEquals(Integer.valueOf(51), peer.value("steps", System.currentTimeMillis()));
+        assertEquals(1, SyntheticProvider.refreshes); assertIdleAndStable();
+    }
+    @Test public void lateSupersededPutSuccessCannotTerminateNewDiscoveryAttempt() throws Exception { latePutCannotFinishNewAttempt(false); }
+    @Test public void latePutFailureAndOldAcksCannotDeferOrTerminateNewAttempt() throws Exception { latePutCannotFinishNewAttempt(true); }
     @Test public void destroyedActivityCannotResumeFromQueuedAcksOrDelay() throws Exception {
         holdAcks = true; externalRequest(); Shadows.shadowOf(Looper.getMainLooper()).idle(); joinIo();
         ReflectionHelpers.callInstanceMethod(activity, "unregisterWatchSyncRequestReceiver");

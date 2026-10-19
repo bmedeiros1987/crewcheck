@@ -182,7 +182,7 @@ new external phases coalesce older reads, terminal callbacks finish their own
 ticket, account changes invalidate tickets, and Activity destruction closes them.
 The durable per-node publication permits and all source/session fences remain.
 
-Twenty-two Robolectric tests use actual Android broadcast registration/delivery, the
+Twenty-four Robolectric tests use actual Android broadcast registration/delivery, the
 production Activity receiver, native provider read, publisher and ACK service,
 and the real paused main Looper. A posting WebView test adapter models an attached
 View's Handler delivery. GMS transport, a synthetic ContentProvider and peer disk
@@ -226,3 +226,18 @@ its scheduled retry(false) must really handshake the new peer while reads and
 snapshots stay unchanged. The rejected baseline demonstrates a bounded unwanted
 resumption, not an infinite loop. Separate tests demonstrate legacy-delete
 automatic recovery and bounded persistent failure.
+
+Operation identity and attempt identity are distinct. Starting/claiming work also
+advances an attempt generation before the native read. Reads, publisher callbacks,
+terminal completion, defer and delayed deletion retry must match both identities.
+An obsolete put completion (including superseded), failure or ACK cannot terminate
+or rearm the current attempt. A valid current-attempt success still closes the
+operation irreversibly; its four-continuation budget is not reset by a new attempt.
+
+Two additional Android controls explicitly delay an accepted ACK's local broadcast
+and release that same Intent through the real Android framework. The original
+1800ms phase queues a held put, delayed proof starts another discovery, then the
+old put completes or fails while old ACKs are duplicated. The current discovery
+must reset/ACK, enqueue the second snapshot and leave actual pinned Wear steps=51
+with stable idle, without another external request or public retry. The local
+broadcast delivery delay is an explicit test double, not a physical timing claim.
