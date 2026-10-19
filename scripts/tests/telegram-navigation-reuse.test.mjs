@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { createTelegramMenu, menuTemplate, menuGreeting, hotelsUrl } from '../../server/concierge/telegram-menu.mjs';
+import { createTelegramMenu, menuTemplate, menuGreeting, hotelsUrl, financeUrl, missingFinanceReply } from '../../server/concierge/telegram-menu.mjs';
 import { stayMenuReply } from '../../server/concierge/stay-menu.mjs';
 import { createTelegramMenuTransport } from '../../server/concierge/telegram-menu-transport.mjs';
 
@@ -505,3 +505,17 @@ for (const alias of ['Hotéis', 'hoteis', '🏨 Hotéis', 'Meu pernoite', '🏨 
     });
   }
 }
+
+
+test('shared unavailable Diárias reply retains the authenticated app destination for typed commands', () => {
+  assert(missingFinanceReply().includes(financeUrl));
+  assert(missingFinanceReply().length < 160);
+  assert.equal(financeUrl, 'https://crewcheck.online/?view=perdiem');
+});
+
+test('revoked binding cannot use an issued Diárias callback or read a snapshot', async () => {
+  const f = fixture(); await f.root(); const root = structuredClone(f.latest()), before = f.count('sendMessage');
+  f.revoke(); await f.press(root, '🧾 Diárias');
+  assert.equal(f.count('sendMessage'), before); assert.deepEqual(f.snapshotReads, []); assert.deepEqual(f.producers, []);
+  assert.match(f.answers.at(-1), /não está disponível/);
+});
