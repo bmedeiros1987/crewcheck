@@ -136,8 +136,8 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   if(scenario==='complete'){
     await showFinancial(page,'charts');await page.locator('.cc-financial-graph').evaluate(el=>el.scrollIntoView({behavior:'instant',block:'start'}));await page.screenshot({path:path.join(out,`${width}-${theme}-comparison.png`),fullPage:false});
     await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));await page.locator('.cc-payment-hero').waitFor();
-    await page.waitForFunction(()=>document.querySelector('.cc-payment-value').textContent.includes('2.900,00'),null,{timeout:10000}).catch(async error=>{console.log('SYNTHETIC PAYROLL DEBUG',await page.locator('.cc-payment-overview').innerText());await page.screenshot({path:path.join(out,'payroll-debug.png'),fullPage:true});throw error;});
-    assert.match(await page.locator('.cc-payment-hero').innerText(),/fevereiro de 2032/);assert.match(await page.locator('.cc-payment-hero').innerText(),/bruto estimado/);
+    await page.waitForFunction(()=>document.querySelector('.cc-salary-basis-amount').textContent.includes('2.900,00'),null,{timeout:10000}).catch(async error=>{console.log('SYNTHETIC PAYROLL DEBUG',await page.locator('.cc-payment-overview').innerText());await page.screenshot({path:path.join(out,'payroll-debug.png'),fullPage:true});throw error;});
+    assert.equal(await page.getByRole('radio',{name:'Bruto',exact:true}).isChecked(),true);assert.match(await page.locator('.cc-payment-hero').innerText(),/fevereiro de 2032/);assert.match(await page.locator('.cc-payment-hero').innerText(),/bruto estimado/);
     await showFinancial(page,'charts');
     const breakdown=page.getByRole('region',{name:'Ganhos e descontos da competência',exact:true});
     assert.match(await breakdown.innerText(),/Não calculável/,'missing selected-competence data never becomes zero or next-cycle net');
@@ -154,18 +154,18 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
 
     await breakdown.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,`${width}-${theme}-salary-breakdown.png`),fullPage:false});
     await page.getByLabel('Filtro financeiro',{exact:true}).selectOption('week');assert.match(await breakdown.innerText(),/Não calculável/);assert.equal(await breakdown.locator('.cc-bank-chart-track').count(),0,'monthly amounts are not prorated into weeks');await page.getByLabel('Filtro financeiro',{exact:true}).selectOption('month');await page.getByLabel('Competência de referência',{exact:true}).selectOption('2032-02');
-    await showFinancial(page,'overview');const salaryAmount=await page.locator('.cc-payment-value').textContent();await page.locator('.cc-payment-hero .cc-financial-privacy-toggle').click();assert(!/R\$\s*\d/.test(await page.locator('.cc-per-diem-content').textContent()));await page.locator('.cc-payment-hero .cc-financial-privacy-toggle').click();assert.equal(await page.locator('.cc-payment-value').textContent(),salaryAmount);
+    await showFinancial(page,'overview');const salaryAmount=await page.locator('.cc-salary-basis-amount').textContent();await page.locator('.cc-payment-hero .cc-financial-privacy-toggle').click();assert(!/R\$\s*\d/.test(await page.locator('.cc-per-diem-content').textContent()));await page.locator('.cc-payment-hero .cc-financial-privacy-toggle').click();assert.equal(await page.locator('.cc-salary-basis-amount').textContent(),salaryAmount);
     await showFinancial(page,'payment');await page.getByRole('button',{name:'Demonstrativos',exact:true}).click();assert.equal(await page.locator('.cc-salary-reference').getAttribute('open'),'');
     await page.evaluate(()=>scrollTo({top:0,left:0,behavior:'instant'}));await page.screenshot({path:path.join(out,`${width}-${theme}-payroll-overview.png`),fullPage:false});
     for(const [state,count] of [['partial',1],['empty',0]]){
       await page.evaluate(count=>{const key='crewcheck_local_history_v11_financial-ui-qa',history=JSON.parse(localStorage.getItem(key));const operational=history.find(item=>item.roster.year===2031&&item.roster.month===12);operational.roster.days=operational.roster.days.slice(0,count);operational.checksum='synthetic-coverage-'+count;localStorage.setItem(key,JSON.stringify(history));window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'}));},count);
       await page.locator('.cc-salary-history').waitFor({state:'detached'});
       await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));
-      await page.waitForFunction(()=>document.querySelector('.cc-payment-value')?.dataset.calculationPartial==='true',null,{timeout:10000});
+      await page.waitForFunction(()=>document.querySelector('.cc-salary-basis-amount')?.textContent.includes('subtotal bruto estimado'),null,{timeout:10000});
       await showFinancial(page,'payment');await page.waitForFunction(count=>document.querySelector('.cc-payment-pending')?.textContent.includes((31-count)+' dia(s)'),count,{timeout:10000});
       await page.waitForFunction(()=>document.querySelector('.cc-next-payment-lines')?.textContent.includes('2.900,00'),null,{timeout:10000});
       assert.match(await page.locator('.cc-payment-pending').textContent(),/dia\(s\) sem programação|Importe a escala/);
-      assert.match(await page.locator('.cc-payment-value').textContent(),/R\$/,'known fixed pay remains visible as a subtotal');assert.match(await page.locator('.cc-payment-value').textContent(),/subtotal estimado/);assert.equal(await page.locator('.cc-payment-value').getAttribute('data-complete'),'false');
+      assert.match(await page.locator('.cc-salary-basis-amount').textContent(),/R\$/,'known fixed pay remains visible as a subtotal');assert.match(await page.locator('.cc-salary-basis-amount').textContent(),/subtotal bruto estimado/);assert.match(await page.locator('.cc-salary-basis-amount').textContent(),/Há parcelas salariais a confirmar/);
       await page.evaluate(()=>scrollTo({top:0,left:0,behavior:'instant'}));await page.screenshot({path:path.join(out,`${width}-${theme}-payroll-${state}.png`),fullPage:false});
     }
 
