@@ -94,11 +94,12 @@ export function HomeRosterPreview({ events, onNavigate }: { events: HomeRosterEv
       {dayEvents.map((event, index) => {
         const card = cardPresentation(event, selected);
         const { Icon } = card;
-        return <button type="button" key={`${event.id}:${index}`} data-roster-event-id={event.id} data-activity={card.category} data-card-tone={card.tone} onClick={() => open(event)} aria-label={`Abrir ${card.title} em ${dayLabel(selected, { day: 'numeric', month: 'long' })}, início ${card.start}${card.startDate ? `, ${card.startDate}` : ''}, fim ${card.end}${card.endDate ? `, ${card.endDate}` : ''} no AIMS`}>
+        const uncertainty = card.datesUnconfirmed ? 'Virada de dia indicada; datas a confirmar' : '';
+        return <button type="button" key={`${event.id}:${index}`} data-roster-event-id={event.id} data-activity={card.category} data-card-tone={card.tone} onClick={() => open(event)} aria-label={`Abrir ${card.title} em ${dayLabel(selected, { day: 'numeric', month: 'long' })}, início ${card.start}${card.startDate ? `, ${card.startDate}` : ''}, fim ${card.end}${card.endDate ? `, ${card.endDate}` : ''} no AIMS${uncertainty ? `. ${uncertainty}` : ''}`}>
           <span className="cc-home-roster-icon"><Icon aria-hidden="true"/></span>
           <span className="cc-home-roster-copy"><strong>{card.title}{!card.nonOperational && event.leg?.workType && <small> · {event.leg.workType}</small>}</strong>
             {card.category !== 'PERNOITE' && <span>{event.origin || '—'}{event.destination && event.destination !== event.origin ? ` → ${event.destination}` : ''}</span>}
-            {card.datesUnconfirmed && <small>Virada de dia indicada; datas a confirmar</small>}
+            {uncertainty && <small>{uncertainty}</small>}
             {card.hotel && <small className="cc-home-roster-hotel">Hotel · {card.hotel}</small>}
             {!card.nonOperational && <small>{event.canonical?.showPresentation !== false && clock(event.presentation) !== '—' ? `Apresentação ${clock(event.presentation)}` : 'Detalhes publicados no AIMS'}</small>}
           </span>
