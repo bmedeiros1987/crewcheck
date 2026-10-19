@@ -3,6 +3,7 @@ import type { PayrollPage } from '@/lib/privatePayrollExtraction';
 import { useFinancialPrivacy, FinancialPrivacyToggle } from './FinancialPrivacy';
 import OwnerPerDiemConfirmation from './OwnerPerDiemConfirmation';
 import PrivatePayrollPreview from './PrivatePayrollPreview';
+import PayrollDeductionsReview from './PayrollDeductionsReview';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, FileSearch, History, ShieldCheck, Upload, X } from 'lucide-react';
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
@@ -47,12 +48,13 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
   const [sourceConfirmed, setSourceConfirmed] = useState(false);
   const [authRevision, setAuthRevision] = useState(0);
   useEffect(() => {
-    const reset = () => { epoch.current++; reviewSession.current = null; setResult(null); setRates(readConfirmedFinancialRates()); setBusy(false); setError(''); setCycleConfirmed(false); setSourceConfirmed(false); setAuthRevision(value => value + 1); };
+    const reset = () => { epoch.current++; reviewSession.current = null; setResult(null); setDocumentFingerprint(''); setRates(readConfirmedFinancialRates()); setBusy(false); setError(''); setCycleConfirmed(false); setSourceConfirmed(false); setAuthRevision(value => value + 1); };
     const storage = (event: StorageEvent) => { if (['crewcheck_auth_user', 'crewcheck_auth_token'].includes(event.key || '')) reset(); };
     window.addEventListener('crewcheck:auth-changed', reset); window.addEventListener('crewcheck:auth-expired', reset); window.addEventListener('storage', storage);
     return () => { epoch.current++; window.removeEventListener('crewcheck:auth-changed', reset); window.removeEventListener('crewcheck:auth-expired', reset); window.removeEventListener('storage', storage); };
   }, []);
   const [result, setResult] = useState<StatementLearningResult | null>(null);
+  const [documentFingerprint,setDocumentFingerprint]=useState('');
   const [rates, setRates] = useState<LearnedRate[]>(readConfirmedFinancialRates);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -73,13 +75,15 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
     setBusy(true);
     setError('');
     setResult(null);
+    setDocumentFingerprint('');
     try {
       const pages = await extractPdfPages(file);
       const learned = learnFinancialStatement(financialPdfPagesText(pages), file.name, pages);
       if (learned.kind !== mode) {
         throw new Error(mode === 'per_diem' ? 'Escolha um demonstrativo de diárias.' : 'Escolha um demonstrativo de pagamento.');
       }
-      if (version === epoch.current && identity === financialRateSession()) setResult(learned);
+      const digest = mode === 'payroll' ? await crypto.subtle.digest('SHA-256',await file.arrayBuffer()).then(bytes=>'sha256:'+Array.from(new Uint8Array(bytes)).map(value=>value.toString(16).padStart(2,'0')).join('')).catch(()=>'') : '';
+      if (version === epoch.current && identity === financialRateSession()) { setDocumentFingerprint(digest); setResult(learned); }
     } catch (cause) {
       if (version === epoch.current && identity === financialRateSession()) setError(cause instanceof Error ? cause.message : 'Não foi possível analisar este documento.');
     } finally {
@@ -120,6 +124,7 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
     {result && <div className="finance-learning-review" aria-live="polite">
       <header><div><small>Revisão obrigatória</small><h3>{result.competence || 'Competência não identificada'}</h3></div></header>
       {mode === 'payroll' && result.payrollExtraction && <PrivatePayrollPreview extraction={result.payrollExtraction}/>}
+      {mode === 'payroll' && result.payrollExtraction && <PayrollDeductionsReview extraction={result.payrollExtraction} documentFingerprint={documentFingerprint}/>}
       {result.warnings.map((warning) => <div className="finance-learning-notice warning" key={warning}>{privacy.text(warning)}</div>)}
       <div className="finance-learning-table-wrap"><table><thead><tr><th>Rubrica</th><th>Valor encontrado</th><th>Vigência</th><th>Confiança</th></tr></thead><tbody>
         {reviewRates.map((item) => <tr key={item.key + '-' + item.effectiveFrom}><td>{item.label}</td><td>{money(item.value, item.currency)} / {item.unit}</td><td>{item.effectiveFrom || 'Revisar'} até {item.effectiveTo || 'Revisar'}</td><td>{item.valueOrigin === 'derived' ? 'Derivado — não aplicado' : item.confidence === 'high' ? 'Alta' : item.confidence === 'medium' ? 'Conferir' : 'Revisar'}</td></tr>)}

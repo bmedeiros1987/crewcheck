@@ -5,6 +5,8 @@ on:
       - 'shared/financialReadModel.mjs'
       - 'client/src/lib/financialStatementLearning.ts'
       - 'client/src/lib/privatePayrollExtraction.ts'
+      - 'client/src/lib/reviewedPayrollDeductions.ts'
+      - 'scripts/regression-reviewed-payroll-deductions.mjs'
       - 'client/src/lib/financialPdfText.ts'
       - 'scripts/regression-private-payroll-*.mjs'
       - 'client/src/lib/aimsParser.ts'
@@ -86,11 +88,13 @@ jobs:
       - name: Private payroll counterproofs before preparation
         run: |
           node scripts/regression-private-payroll-extraction.mjs
+          node scripts/regression-reviewed-payroll-deductions.mjs
           node scripts/regression-private-payroll-review.mjs
       - run: node scripts/v139/apply.mjs
       - name: Private payroll counterproofs after preparation
         run: |
           node scripts/regression-private-payroll-extraction.mjs
+          node scripts/regression-reviewed-payroll-deductions.mjs
           node scripts/regression-private-payroll-review.mjs
       - run: node scripts/regression-salary-operational-clock.mjs
       - run: node scripts/regression-static-module-mime.mjs
