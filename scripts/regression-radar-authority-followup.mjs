@@ -22,7 +22,7 @@ const scope=vm.createContext({...policy,crypto,Date:FixedDate,buildCanonicalRost
  safeEmail:s=>String(s||'').trim().toLowerCase(),verifyJwt:()=>claims,requestToken:r=>r.token,
  pool:async()=>poolAvailable?{query:async(sql,args)=>{queries.push({sql,args});if(queries.length===2)lateChange?.();return {rows};}}:null,
  telegramRequestUser:()=>({email:'a@example.invalid',authenticated:true}),telegramAppRequestAllowed:()=>true,conciergeSafeKey:s=>String(s||'').trim().toLowerCase(),
- conciergeLoadSnapshot:async()=>snapshot,conciergeAccessMatches:()=>true,conciergeApplyRadar:()=>{writes++},conciergeSaveSnapshotAsync:async()=>{writes++},
+ conciergeLoadSnapshot:async()=>snapshot,conciergeAccessMatches:()=>true,conciergeApplyRadar:()=>{writes++},conciergeSaveSnapshotAsync:async(_profile,roster)=>{writes++;if(roster){snapshot={...snapshot,roster:scope.conciergeMinimizeRoster(roster)};return snapshot;}},
  ciriumRadarInjectionEnabled:()=>false,defaultCiriumRadarOptions:()=>undefined,configuredProviders:()=>[],scoreRadar:()=>95,publicRadarPayload:x=>x,sendJson:(_r,status,payload)=>({...payload,httpStatus:status})});
 for(const name of ['providerFlightAware','providerCustom','providerAviationstack','providerAirLabs','providerAeroDataBox'])scope[name]=async()=>{providerCalls++;return {ok:true,gate:'46',...identity,departure:identity.scheduledDepartureUtc};};
 vm.runInContext(extract('server.mjs',['normalizeFlightRaw','buildFlightContext']),scope);
