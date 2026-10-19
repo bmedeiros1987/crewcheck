@@ -148,6 +148,13 @@ public final class CrewLifeFenceTest {
         JSONObject tombstone=base().put("kind","revoked").put("validUntilEpochMs",0).put("revision",3);
         assertFalse(CrewLifeFence.data(new JSONObject(),tombstone.toString(),NODE,NOW).state.has("streamId"));
     }
+    @Test public void phoneZeroTimeTombstoneAdvancesFenceAndRejectsDelayedValues() throws Exception {
+        CrewLifeFence active=CrewLifeFence.data(reset().state,data(2,78),NODE,NOW);
+        JSONObject tombstone=base().put("revision",3).put("kind","revoked").put("generatedAtEpochMs",0).put("validUntilEpochMs",0);
+        CrewLifeFence revoked=CrewLifeFence.data(active.state,tombstone.toString(),NODE,NOW);
+        assertTrue(revoked.state.getBoolean("revoked"));assertEquals(3,revoked.state.getLong("revision"));assertTrue(revoked.clearValues);
+        assertNull(CrewLifeFence.data(revoked.state,data(4,78),NODE,NOW).snapshot);
+    }
     @Test public void pendingReplacementNeverActivatesStreamOrClearsExistingValues() throws Exception {
         CrewLifeFence r=reset();CrewLifeFence data=CrewLifeFence.data(r.state,data(2,78),NODE,NOW);
         CrewLifeFence hello=CrewLifeFence.control(data.state,request("reset",B,1,B),NODE);

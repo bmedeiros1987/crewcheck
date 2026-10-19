@@ -229,6 +229,22 @@ public class CrewLifeV2LifecycleTest {
         long now=ShadowSystemClock.currentTimeMillis();store.applyCrewLifeData(payload(4,78,now+1000,now+4000),NODE,now);
         assertNull(new WellbeingStore(context).loadCrewLife());
     }
+    @Test public void phoneZeroTimeTombstoneViaDataLayerAdvancesRevokedFenceAndClearsCiphertext() throws Exception {
+        ServiceController<CrewCheckDataLayerService> service=Robolectric.buildService(CrewCheckDataLayerService.class).create();
+        try {
+            reset(service.get());long now=ShadowSystemClock.currentTimeMillis();
+            deliver(service.get(),WatchContract.CREWLIFE_V2_PATH,payload(2,78,now+1000,now+4000));assertHealthCached();
+            JSONObject tombstone=new JSONObject(payload(3,78,now+1000,now+4000)).put("kind","revoked")
+                    .put("generatedAtEpochMs",0).put("validUntilEpochMs",0).put("metrics",new JSONObject());
+            deliver(service.get(),WatchContract.CREWLIFE_V2_PATH,tombstone.toString());
+            android.content.SharedPreferences p=context.getSharedPreferences("crewcheck_watch_wellbeing",0);
+            JSONObject state=new JSONObject(p.getString("crewlife_fence_v2","{}"));
+            assertEquals(3,state.getLong("revision"));assertTrue(state.getBoolean("revoked"));
+            assertFalse(p.contains("crewlife_payload_v2"));assertNull(new WellbeingStore(context).loadCrewLife());
+            deliver(service.get(),WatchContract.CREWLIFE_V2_PATH,payload(4,78,now+1000,now+4000));
+            assertNull(new WellbeingStore(context).loadCrewLife());
+        }finally{service.destroy();}
+    }
     @Test public void losingOnlyJournalClearsOrphanCiphertextBeforeChallengeResponse() throws Exception {
         WellbeingStore store=new WellbeingStore(context);handshake(store,"reset",STREAM,1,STREAM);
         long now=ShadowSystemClock.currentTimeMillis();store.applyCrewLifeData(payload(2,78,now+1000,now+4000),NODE,now);assertHealthCached();

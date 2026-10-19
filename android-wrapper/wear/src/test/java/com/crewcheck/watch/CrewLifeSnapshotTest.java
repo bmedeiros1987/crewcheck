@@ -72,6 +72,15 @@ public final class CrewLifeSnapshotTest {
         CrewLifeSnapshot s=parse(base().put("kind","revoked").put("validUntilEpochMs",0));assertFalse(s.hasAny(NOW));
         JSONObject j=s.toJson();j.getJSONObject("metrics").put("steps",metric(1,NOW+1000));assertThrows(IllegalArgumentException.class,()->parse(j));
     }
+    @Test public void valueFreeTombstoneAllowsZeroQueryTimeButSnapshotStillRequiresPositiveTime() throws Exception {
+        JSONObject tombstone=base().put("kind","revoked").put("generatedAtEpochMs",0).put("validUntilEpochMs",0);
+        assertFalse(parse(tombstone).hasAny(NOW));assertEquals(0,parse(tombstone).generatedAtEpochMs);
+        assertThrows(IllegalArgumentException.class,()->parse(base().put("generatedAtEpochMs",0)));
+        assertThrows(IllegalArgumentException.class,()->parse(new JSONObject(tombstone.toString()).put("generatedAtEpochMs",-1)));
+        assertThrows(IllegalArgumentException.class,()->parse(new JSONObject(tombstone.toString()).put("generatedAtEpochMs","0")));
+        tombstone.getJSONObject("metrics").put("steps",metric(0,NOW+1000));
+        assertThrows(IllegalArgumentException.class,()->parse(tombstone));
+    }
     @Test public void v1IsNeverReinterpretedAsV2() throws Exception {
         assertThrows(IllegalArgumentException.class,()->parse(base().put("schemaVersion",1)));
     }

@@ -54,12 +54,14 @@ public final class CrewLifeSnapshot {
             if (integer(json.opt("schemaVersion")) != 2) throw new IllegalArgumentException("CrewLife v2 obrigatório.");
             String stream = nonce(json.opt("streamId"));
             long revision = positive(json.opt("revision"));
-            long generated = positive(json.opt("generatedAtEpochMs"));
-            if (generated > now) throw new IllegalArgumentException("Geração futura.");
             Object rawKind = json.opt("kind");
             if (!(rawKind instanceof String) || !(rawKind.equals("snapshot") || rawKind.equals("revoked")))
                 throw new IllegalArgumentException("Kind inválido.");
             String kind = (String) rawKind;
+            long generated = integer(json.opt("generatedAtEpochMs"));
+            // Value-free tombstone has no measurement time; zero is not freshness evidence.
+            if (generated < 0 || (kind.equals("snapshot") && generated == 0) || generated > now)
+                throw new IllegalArgumentException("Geração inválida ou futura.");
             long until = integer(json.opt("validUntilEpochMs"));
             if (kind.equals("revoked") ? until != 0 : until <= generated)
                 throw new IllegalArgumentException("Janela inválida.");

@@ -18,7 +18,7 @@
     "schemaVersion": 2,
     "streamId": "random opaque UUID per local owner/consent generation; NOT derived from account/device/person; not freshness evidence",
     "revision": "positive safe integer, durably increasing within stream; full replacement, not patch",
-    "generatedAtEpochMs": "original query epoch milliseconds; positive integer, not future; never receipt/render time",
+    "generatedAtEpochMs": "snapshot: original positive integer query epoch, not future, no receipt/render renewal. kind revoked only: integer0 allowed to represent no measurement; never freshness evidence. Negative/fractional/string/future rejected.",
     "validUntilEpochMs": "original source envelope deadline; no extension",
     "metrics": "object keyed by allowlisted metrics; each has state, optional integer value, validUntilEpochMs",
     "kind": "snapshot | revoked; revoked is value-free tombstone, metrics={}, validUntilEpochMs=0, no positive freshness window required; stream/revision fences still required"
