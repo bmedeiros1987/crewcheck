@@ -28,10 +28,10 @@ function datedAllowanceLines(rows:AllowanceRow[],pending:Array<{iso:string}>,cov
  const cycles=new Map<string,{date:string|null;partial:boolean}>();
  return rows.filter(row=>validFinancialDay(row.iso)).map(row=>{
   if(row.currency!=='BRL'){
-   // Overnight meals can occur the next day; pending flight evidence uses
-   // the proved flight/payment date, not the meal's occurrence date.
-   const linkedDay=row.expectedPaymentTimezone==='America/Sao_Paulo'&&validFinancialDay(row.expectedPaymentDate||'')?row.expectedPaymentDate:row.iso;
-   return {...row,partial:row.partial===true||pending.some(item=>validFinancialDay(item.iso)&&item.iso===linkedDay)};
+   // The producer knows which journey supplied this meal. Never infer that
+   // relationship from a shared occurrence/payment date or display text.
+   // Legacy rows without structured evidence remain explicitly unconfirmed.
+   return {...row,partial:row.partial!==false,...(row.partial===undefined?{pendingReason:'Completude da origem da diária não comprovada.'}:{})};
   }
   const cycle=observedStatementCycle(rosterOperationalDateAt(row.iso,12),'roster_brt'),start=rosterOperationalIso(cycle.start),end=rosterOperationalIso(cycle.end);
   if(!cycles.has(start)){

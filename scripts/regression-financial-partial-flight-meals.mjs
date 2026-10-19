@@ -105,6 +105,20 @@ try {
     const nightPayment=nextAllowancePayment(overnight.rows,overnight.unclassifiedItems,[month],now,[iso,nextIso]);
     const nightPreview=localUpcomingAllowance(nightPayment,now);
     assert.deepEqual(nightPreview.events.map(event=>[event.expectedPaymentDate,event.currency,event.amountMinor,event.partial]),[[iso,'USD',6500,true]],'overnight partiality follows the proved flight payment date, not next-day meal occurrence');
+    // Same date, distinct journeys: domestic APZ cannot taint a complete foreign meal.
+    const completeNight={...overnightEvent,day:{...overnightEvent.day,dutyReport:'22:30',publishedClockEvidence:{...overnightEvent.day.publishedClockEvidence,dutyReport:'22:30',dutyReportSource:'published'}},canonical:{...overnightEvent.canonical,journeyId:'independent-foreign'}};
+    const domesticPending=flight({id:'domestic-pending'});
+    const isolated=run([domesticPending,completeNight]);
+    const isolatedPreview=localUpcomingAllowance(nextAllowancePayment(isolated.rows,isolated.unclassifiedItems,[month],now,[iso,nextIso]),now);
+    assert.equal(isolatedPreview.events.find(item=>item.currency==='USD').partial,false,'independent domestic pending cannot taint published foreign journey');
+    // One journey spans midnight; second leg retains the first leg's missing APZ.
+    const spanningLegs=[{departureTime:'22:00',arrivalTime:'23:50'},{departureTime:'00:20',arrivalTime:'02:00'}];
+    const first=flight({legs:spanningLegs,id:'journey-first',departure:'22:00',arrival:'23:50',destination:'FOREIGN'});
+    const second={...flight({legs:spanningLegs,id:'journey-second',departure:'00:20',arrival:'02:00',destination:'FOREIGN',index:1}),start:nextIso+'T00:20:00-03:00',end:nextIso+'T02:00:00-03:00'};
+    const spanning=run([first,second]);
+    assert.equal(spanning.rows.find(item=>item.label==='Ceia').partial,true,'producer carries missing journey APZ to second-leg meal');
+    const spanningPreview=localUpcomingAllowance(nextAllowancePayment(spanning.rows,spanning.unclassifiedItems,[month],now,[iso,nextIso]),now);
+    assert.equal(spanningPreview.events.find(item=>item.currency==='USD').partial,true,'second-leg payment date never clears journey pending');
     const duty=run([{...reserve,destination:'FOREIGN',end:at('12:30'),day:{...reserve.day,dutyDebrief:'12:30'}}]);
     assert(duty.rows.length);assert(duty.rows.every(row=>row.expectedPaymentDate===undefined),'foreign duty without a flight never borrows a payment date');
     assert.equal(localUpcomingAllowance(nextAllowancePayment(duty.rows,duty.unclassifiedItems,[month],now,[iso]),now).events.length,0);
