@@ -131,7 +131,11 @@ export function createTelegramMenu(deps, now = Date.now) {
     const flow = flows.get(chat);
     if (!flow || !message.text) return false;
     const profile = await identity(message);
-    if (!profile || owner(profile) !== flow.owner) { flows.delete(chat); return false; }
+    if (!profile) {
+      if (message.chat?.type === 'private' && message.from?.id && String(message.from.id) === chat) flows.delete(chat);
+      return false;
+    }
+    if (owner(profile) !== flow.owner) { flows.delete(chat); return false; }
     if (flows.get(chat) !== flow) return true;
     const value = String(message.text).trim().toUpperCase();
     const plain = foldMenuText(value);

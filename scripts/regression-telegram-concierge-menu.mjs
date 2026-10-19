@@ -145,6 +145,8 @@ assert.equal(await menu.interrupt(message('🚨 Emergência')), true, 'webhook e
 assert.equal(await menu.text(message('LA1234')), false);
 await askRadar();
 const callCount = calls.length;
+assert.equal(await menu.text({ ...message('LA1234'), from: { id: 202 } }), false);
+assert.equal(await menu.text({ ...message('LA1234'), chat: { id: 101, type: 'group' } }), false);
 assert.equal(await menu.text({ ...message('LA1234'), message_id: outgoingId - 1 }), true);
 assert.equal(await menu.text({ ...message('LA1234'), date: Math.floor(clock / 1000) - 1 }), true);
 assert.equal(await menu.text({ ...message('LA1234'), reply_to_message: { message_id: outgoingId - 1 } }), true);
