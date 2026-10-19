@@ -199,19 +199,36 @@ export function learnPayrollStatement(text: string, sourceDocument: string, page
       return refs;
     });
   };
-  const signedRateSource = (match: RegExpMatchArray) => {
-    const start = text.lastIndexOf('\n', match.index ?? 0) + 1;
-    const end = text.indexOf('\n', (match.index ?? 0) + match[0].length);
-    const row = text.slice(start, end < 0 ? undefined : end);
-    return /[-−]\s*(?:R\$\s*)?\d|\(\s*(?:R\$\s*)?\d|,\d{2}\s*[-−)]|,\d{2}\s*[DC]\b|\b(?:DEBITO|CREDITO)\b/i.test(row.normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
-  };
-  const flagAmbiguousRate = (match: RegExpMatchArray) => {
+  const signedRateSource = (row: RegExpMatchArray) => /[-−]\s*(?:R\$\s*)?\d|\(\s*(?:R\$\s*)?\d|,\d{2}\s*[-−)]|,\d{2}\s*[DC]\b|\b(?:DEBITO|CREDITO)\b/i.test(row[0].normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+  const flagAmbiguousRate = (match: RegExpMatchArray, warning = 'Tarifa com sinal ou notação de débito/crédito; revisão obrigatória.') => {
     payrollExtraction.incomplete = true;
-    payrollExtraction.warnings.push('Tarifa com sinal ou notação de débito/crédito; revisão obrigatória.');
+    payrollExtraction.warnings.push(warning);
     for (const ref of rateEvidence(match, 0)) {
       const page = evidencePages.find(page => page.page === ref.page && (page.origin ?? 'document-logical') === ref.origin);
-      payrollExtraction.unresolvedSources.push({ page: ref.page, origin: ref.origin, line: ref.line, field: 'rate', text: page?.text.split(/\r?\n/)[ref.line - 1] ?? '' });
+      const source = { page: ref.page, origin: ref.origin, line: ref.line, field: 'rate', text: page?.text.split(/\r?\n/)[ref.line - 1] ?? '' };
+      if (!payrollExtraction.unresolvedSources.some(old => old.page === source.page && old.origin === source.origin && old.line === source.line && old.field === source.field && old.text === source.text)) payrollExtraction.unresolvedSources.push(source);
     }
+  };
+  const rubricLabels: Record<string, RegExp> = {
+    'salary.dayKm': /\bKM V CMS - D\b/i, 'salary.nightKm': /\bKM V CMS - N\b/i,
+    'salary.dfsDayKm': /\bKM V CMS - DFS - D\b/i, 'salary.dfsNightKm': /\bKM V CMS - DFS - N\b/i,
+    'salary.reserveHour': /Horas Reserva - CMS/i, 'salary.standbyHour': /Horas Sobre Aviso - CMS/i,
+  };
+  const sourceRows = [...text.matchAll(/[^\r\n\f]+/g)];
+  const validateOccurrences = (matches: RegExpMatchArray[], key: string, label: string) => {
+    const rows = sourceRows.filter(row => rubricLabels[key].test(row[0]));
+    let invalid = false;
+    // Inspect every labelled occurrence, including signed/parenthesized rows that the value regex cannot match.
+    for (const row of rows) {
+      if (signedRateSource(row)) { flagAmbiguousRate(row); invalid = true; }
+      else if (!matches.some(match => match.index! >= row.index! && match.index! + match[0].length <= row.index! + row[0].length)) {
+        flagAmbiguousRate(row, `Tarifa ${label} com ocorrência incompleta ou não interpretada; revisão obrigatória.`); invalid = true;
+      }
+    }
+    if (new Set(matches.map(match => match[0].replace(/\s+/g, ' ').trim())).size > 1) {
+      rows.forEach(row => flagAmbiguousRate(row, `Tarifa ${label} com evidências divergentes; revisão obrigatória.`)); invalid = true;
+    }
+    return invalid ? undefined : matches[0];
   };
   const rates: LearnedRate[] = [];
   const base = payrollExtraction.monthlyBase;
@@ -221,13 +238,8 @@ export function learnPayrollStatement(text: string, sourceDocument: string, page
   }
   for (const [pattern, key, label, unit] of PAYROLL_KEYS) {
     const matches = [...text.matchAll(new RegExp(pattern.source, 'gi'))];
-    if (new Set(matches.map(match => match[0].replace(/\s+/g, ' ').trim())).size > 1) {
-      payrollExtraction.warnings.push(`Tarifa ${label} com evidências divergentes; revisão obrigatória.`);
-      continue;
-    }
-    const m = matches[0];
+    const m = validateOccurrences(matches, key, label);
     if (!m) continue;
-    if (signedRateSource(m)) { flagAmbiguousRate(m); continue; }
     const quantity = unit === 'km' ? decimal(m[1]) : 0;
     const statedRate = unit === 'km' ? decimal(m[2]) : 0;
     const derivedRate = unit === 'km' && quantity > 0 ? Number((money(m[3]) / quantity).toFixed(6)) : NaN;
@@ -236,23 +248,20 @@ export function learnPayrollStatement(text: string, sourceDocument: string, page
     const value = unit === 'km'
       ? usePrintedRate ? statedRate : derivedRate
       : money(m[1]);
-    if (Number.isFinite(value) && value >= 0 && (unit !== 'km' || value <= 5)) rates.push({ ...rate(key, label, value, unit, effectiveFrom, sourceDocument, fp, !usePrintedRate ? 'review' : 'high'), valueOrigin: !usePrintedRate ? 'derived' : 'printed', evidence: rateEvidence(m, value) });
+    if (Number.isFinite(value) && value >= 0 && (unit !== 'km' || value <= 5)) rates.push({ ...rate(key, label, value, unit, effectiveFrom, sourceDocument, fp, !usePrintedRate ? 'review' : 'high'), valueOrigin: !usePrintedRate ? 'derived' : 'printed', evidence: matches.flatMap(match => rateEvidence(match, value)) });
   }
   for (const [pattern, key, label] of [
     [/([\d.,]+)\s+Horas Reserva - CMS\s+([\d.]+,\d{2})/i, 'salary.reserveHour', 'Hora de reserva'],
     [/([\d.,]+)\s+Horas Sobre Aviso - CMS\s+([\d.]+,\d{2})/i, 'salary.standbyHour', 'Hora de sobreaviso'],
   ] as const) {
     const matches = [...text.matchAll(new RegExp(pattern.source, 'gi'))];
-    if (new Set(matches.map(match => match[0].replace(/\s+/g, ' ').trim())).size > 1) {
-      payrollExtraction.warnings.push(`Tarifa ${label} com evidências divergentes; revisão obrigatória.`);
-      continue;
-    }
-    const m = matches[0];
-    if (m && signedRateSource(m)) { flagAmbiguousRate(m); continue; }
+    const m = validateOccurrences(matches, key, label);
     const quantity = m ? decimal(m[1]) : 0;
     const hourlyValue = m && quantity > 0 ? Number((money(m[2]) / quantity).toFixed(6)) : NaN;
-    if (Number.isFinite(hourlyValue)) rates.push({ ...rate(key, label, hourlyValue, 'hour', effectiveFrom, sourceDocument, fp, 'review'), valueOrigin: 'derived', evidence: rateEvidence(m!, hourlyValue) });
+    if (Number.isFinite(hourlyValue)) rates.push({ ...rate(key, label, hourlyValue, 'hour', effectiveFrom, sourceDocument, fp, 'review'), valueOrigin: 'derived', evidence: matches.flatMap(match => rateEvidence(match, hourlyValue)) });
   }
+  // The legacy rate pass can add ambiguity after the pure extractor checked the printed totals.
+  if (payrollExtraction.incomplete) payrollExtraction.reconciliation = 'unavailable';
   const warnings: string[] = [...payrollExtraction.warnings];
   if (payrollExtraction.incomplete) warnings.push('Extração incompleta; revisão obrigatória antes de aplicar valores.');
   if (!effectiveFrom) warnings.push('Competência não identificada; revisão obrigatória.');

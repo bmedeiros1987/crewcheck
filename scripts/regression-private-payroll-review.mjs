@@ -104,5 +104,35 @@ try {
  const refund=parse('PROVENTOS\nRestituição INSS 100,00').payrollExtraction.items[0];
  assert.equal(refund.direction,'credit');assert.equal(refund.kind,'earning');assert.equal(refund.amount.candidates[0].value,100);
  const contradictory=parse('DESCONTOS\nRestituição INSS 100,00').payrollExtraction.items[0];assert.equal(contradictory.amount.state,'conflict');
- console.log('PASS seven original plus six renewed review fixtures: real caller geometry/flat/scanned, signs, serialization privacy, sticky ambiguity, debit nature, rate offsets, duplicate/zero/competence');
+ // Every occurrence participates in validation, even when punctuation prevents a value-regex match.
+ const printedTotals='TOTAIS 100,00 0,00\nLíquido 100,00';
+ for (const [clean,key] of [
+  ['001 100,00 1 KM V CMS - D 100,00','salary.dayKm'],
+  ['001 100,00 Horas Reserva - CMS 100,00','salary.reserveHour'],
+  ['001 100,00 Horas Sobre Aviso - CMS 100,00','salary.standbyHour'],
+ ]) {
+  const repeated=clean.replace(/^001 /,'002 ');
+  const good=parse(clean+'\n'+repeated+'\n'+printedTotals);
+  assert.equal(good.payrollExtraction.incomplete,false,key);assert.equal(good.payrollExtraction.reconciliation,'balanced',key);
+  const learned=good.rates.find(r=>r.key===key);assert.equal(learned.value,1,key);
+  assert.deepEqual(learned.evidence.map(ref=>ref.line),[4,5],key+' retains both clean sources');
+  for (const tainted of [repeated+' D',repeated+' C',repeated.replace('100,00','-100,00'),repeated.replace('100,00','−100,00'),repeated.replace('100,00','(100,00)'),repeated.replace(/100,00$/,'(100,00)')]) {
+   for (const rows of [[clean,tainted],[tainted,clean]]) {
+    const result=parse(rows.join('\n')+'\n'+printedTotals);
+    assert.equal(result.rates.length,0,rows.join(' / '));assert.equal(result.payrollExtraction.incomplete,true);
+    assert.equal(result.payrollExtraction.reconciliation,'unavailable');assert.ok(result.warnings.some(w=>w.includes('obrigatória')));
+    assert.ok(result.payrollExtraction.unresolvedSources.some(ref=>ref.text===tainted),'all ambiguous source locations retained');
+   }
+  }
+ }
+ const exactThird=parse('001 100,00 1 KM V CMS - D 100,00 D\n'+printedTotals);
+ assert.equal(exactThird.payrollExtraction.incomplete,true);assert.equal(exactThird.payrollExtraction.reconciliation,'unavailable');
+ const different=parse('001 100,00 1 KM V CMS - D 100,00\n002 100,00 1 KM V CMS - D 200,00\n'+printedTotals);
+ assert.equal(different.rates.length,0);assert.equal(different.payrollExtraction.incomplete,true);assert.equal(different.payrollExtraction.reconciliation,'unavailable');
+ assert.deepEqual(different.payrollExtraction.unresolvedSources.map(ref=>ref.line),[4,5]);
+ const physical=[{page:1,origin:'pdf-physical',text:header+'001 100,00 1 KM V CMS - D 100,00'},{page:2,origin:'pdf-physical',text:'002 100,00 1 KM V CMS - D 100,00 D\n'+printedTotals}];
+ const splitAmbiguity=learn(physical.map(p=>p.text).join('\f'),'synthetic-split.pdf',physical);
+ assert.equal(splitAmbiguity.rates.length,0);assert.equal(splitAmbiguity.payrollExtraction.reconciliation,'unavailable');
+ assert.ok(splitAmbiguity.payrollExtraction.unresolvedSources.some(ref=>ref.page===2&&ref.line===1&&ref.origin==='pdf-physical'));
+ console.log('PASS prior review controls and all-occurrence sign/order/hourly/reconciliation counterproofs: real caller geometry/flat/scanned, signs, serialization privacy, sticky ambiguity, debit nature, rate offsets, duplicate/zero/competence');
 } finally {modules.cleanup();globalThis.localStorage=old.localStorage;globalThis.window=old.window;}
