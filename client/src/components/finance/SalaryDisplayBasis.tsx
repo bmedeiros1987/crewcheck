@@ -18,7 +18,7 @@ export function SalaryBasisControl({basis,choose}:{basis:SalaryDisplayBasis;choo
 }
 export function SalaryBasisAmount({summary}:{summary:SalaryDisplaySummary}){
  const privacy=useFinancialPrivacy();
- return <div className="cc-salary-basis-amount" aria-live="polite"><strong>{summary.amount===null?'Não calculável':privacy.amount(new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(summary.amount))}</strong><p>{summary.basis==='gross'?'bruto':'líquido'} {summary.complete?'estimado':'a confirmar'}</p>{summary.reason&&<p>{summary.reason}</p>}</div>;
+ return <div className="cc-salary-basis-amount" aria-live="polite"><strong>{summary.amount===null?'Não calculável':privacy.amount(new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(summary.amount))}</strong><p>{summary.basis==='gross'?(summary.complete?'bruto estimado':'subtotal bruto estimado'):(summary.complete?'líquido estimado':'líquido a confirmar')}</p>{summary.reason&&<p>{summary.reason}</p>}</div>;
 }
 
 /** No PLR rule/competence has been verified in the current calculation flow. */
