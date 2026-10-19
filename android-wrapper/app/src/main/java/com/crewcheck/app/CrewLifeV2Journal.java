@@ -32,7 +32,7 @@ final class CrewLifeV2Journal {
     private boolean validRecord(JSONObject r) {
         try {
             if (r == null) return false;
-            CrewLifeV2Protocol.keys(r, Set.of("schemaVersion", "op", "streamId", "revision", "requestId", "wearChallenge", "ready", "cleared"));
+            CrewLifeV2Protocol.keys(r, Set.of("schemaVersion", "op", "streamId", "revision", "requestId", "wearChallenge", "ready", "cleared", "receipt"));
             if (!(r.opt("ready") instanceof Boolean) || !(r.opt("cleared") instanceof Boolean)) return false;
             if (r.length() == 2) return !r.getBoolean("ready") && !r.getBoolean("cleared");
             if (CrewLifeV2Protocol.integer(r.opt("schemaVersion"), -1) != 2 || !uuid(r.opt("streamId"))
@@ -43,7 +43,16 @@ final class CrewLifeV2Journal {
             if (!("reset".equals(op) || "revoke".equals(op)) || revoked() != "revoke".equals(op)) return false;
             if (r.has("wearChallenge") && (!(r.opt("wearChallenge") instanceof String) || !validChallenge(r.optString("wearChallenge")))) return false;
             boolean ready = r.getBoolean("ready"), cleared = r.getBoolean("cleared");
-            if (!cleared) return !ready;
+            if (!cleared) return !ready && !r.has("receipt");
+            JSONObject receipt = r.optJSONObject("receipt");
+            if (receipt == null) return false;
+            CrewLifeV2Protocol.keys(receipt, Set.of("schemaVersion", "op", "streamId", "revision", "requestId", "wearChallenge", "status"));
+            if (receipt.length() != 7 || CrewLifeV2Protocol.integer(receipt.opt("schemaVersion"), -1) != 2
+                    || !(op + "_ack").equals(receipt.opt("op")) || !"cleared".equals(receipt.opt("status"))
+                    || !r.opt("streamId").equals(receipt.opt("streamId"))
+                    || revision != CrewLifeV2Protocol.integer(receipt.opt("revision"), -1)
+                    || !r.opt("requestId").equals(receipt.opt("requestId"))
+                    || !r.opt("wearChallenge").equals(receipt.opt("wearChallenge"))) return false;
             if (!validChallenge(r.optString("wearChallenge"))) return false;
             if (revoked()) return "revoke".equals(op) && !ready && revision == revision();
             return "reset".equals(op); // ready=false is an already consumed one-publication permit
@@ -133,7 +142,7 @@ final class CrewLifeV2Journal {
                 || !validChallenge(request.optString("wearChallenge"))
                 || !(ack.opt("wearChallenge") instanceof String) || !request.optString("wearChallenge").equals(ack.optString("wearChallenge"))
                 || !ack.optString("op").equals(request.optString("op") + "_ack")) return false;
-        request.put("cleared", true).put("ready", !revoked() && request.optString("op").equals("reset"));
+        request.put("receipt", new JSONObject(ack.toString())).put("cleared", true).put("ready", !revoked() && request.optString("op").equals("reset"));
         return true;
     }
     boolean ready(Set<String> connected) throws Exception {

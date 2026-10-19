@@ -67,7 +67,7 @@ jobs:
       - name: Checkout exact independently reviewed Wear contract for synthetic composition
         uses: actions/checkout@v6
         with:
-          ref: 79cfcb57c720f3f06a8cc4beb2f4129f1d5572fe
+          ref: f9edefd647b1a982b8e19b77b703422f0a741f7b
           path: .ci-crewlife-wear
           persist-credentials: false
 
@@ -77,8 +77,8 @@ jobs:
           curl --fail --silent --show-error --location --retry 3 --output "$framework_jar" https://repo.maven.apache.org/maven2/org/robolectric/android-all/15-robolectric-12650502/android-all-15-robolectric-12650502.jar
           printf '%s  %s\n' 6c0670454f6fcee9f1b17aa393e81d71bf26e7e6ae7c5777ed3924b062191d5b "$framework_jar" | sha256sum --check
           ANDROID_ALL_JAR="$framework_jar" node scripts/regression-samsung-sample-freshness.mjs
-          ANDROID_ALL_JAR="$framework_jar" CREWLIFE_WEAR_SOURCE_ROOT="$GITHUB_WORKSPACE/.ci-crewlife-wear" CREWLIFE_WEAR_EXPECTED_HEAD=79cfcb57c720f3f06a8cc4beb2f4129f1d5572fe node scripts/regression-crewlife-v2-phone.mjs
-          ANDROID_ALL_JAR="$framework_jar" CREWLIFE_WEAR_SOURCE_ROOT="$GITHUB_WORKSPACE/.ci-crewlife-wear" CREWLIFE_WEAR_EXPECTED_HEAD=79cfcb57c720f3f06a8cc4beb2f4129f1d5572fe node scripts/regression-crewlife-v2-composition.mjs
+          ANDROID_ALL_JAR="$framework_jar" CREWLIFE_WEAR_SOURCE_ROOT="$GITHUB_WORKSPACE/.ci-crewlife-wear" CREWLIFE_WEAR_EXPECTED_HEAD=f9edefd647b1a982b8e19b77b703422f0a741f7b node scripts/regression-crewlife-v2-phone.mjs
+          ANDROID_ALL_JAR="$framework_jar" CREWLIFE_WEAR_SOURCE_ROOT="$GITHUB_WORKSPACE/.ci-crewlife-wear" CREWLIFE_WEAR_EXPECTED_HEAD=f9edefd647b1a982b8e19b77b703422f0a741f7b node scripts/regression-crewlife-v2-composition.mjs
 
       - name: Synthetic global health cache and source-age contracts
         run: node scripts/regression-life-health-cache.mjs

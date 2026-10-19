@@ -1,6 +1,6 @@
 # CrewLife v2 — phone candidate, health remains OFF
 
-**Draft/HOLD: corrected Wear79cfcb57 and phone producer pass synthetic composition
+**Draft/HOLD: corrected Wearf9edefd6 and phone producer pass synthetic composition
 (11 protocol cases and 30 complete-sender assertions). Independent review of this
 phone delta and the exact pair, strict MCC integration, vendor and physical gates
 remain pending. No health activation or Store publication follows from these tests.**
@@ -135,7 +135,7 @@ Those proofs and old/new composition remain with the separate Wear candidate.
 
 ## Exact composition validation
 
-Wear input is pinned to `79cfcb57c720f3f06a8cc4beb2f4129f1d5572fe`.
+Wear input is pinned to `f9edefd647b1a982b8e19b77b703422f0a741f7b`.
 The receiver fixes challenged initial clear-only revoke and zero-time value-free
 revocation tombstones. CI checks out that exact read-only source tree and compiles
 its actual `CrewLifeFence`/`CrewLifeSnapshot` with this phone's actual native
@@ -163,7 +163,7 @@ Three defects were reproduced separately on a30506c7 before the corrections:
 partial/string-flag persisted receipts could appear cleared; valid mixed deadlines
 became invalid during v2 sanitization; and a receiver journal loss left the sender
 reusing stale readiness indefinitely. The new complete-flow suite covers these
-with 90 additional assertions, including three retries plus three native publication
+with 100 additional assertions, including three retries plus three native publication
 attempts with no current Wear proof, followed by real challenge/ACK recovery. It
 also exercises strict malformed receipt permutations, old ACK replay after permit
 consumption, native Companion filtering through the actual Wear parser with mixed
