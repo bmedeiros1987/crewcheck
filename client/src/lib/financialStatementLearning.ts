@@ -1,9 +1,11 @@
+import { extractPrivatePayroll, type PayrollPage, type PrivatePayrollExtraction, type PayrollSource } from './privatePayrollExtraction';
 import { getStoredUser, getToken } from './authClient';
 import { payrollMonthBounds, payrollCompetences, PAYROLL_CYCLE_SOURCE } from './financialPayrollPeriods';
 export type StatementKind = 'per_diem' | 'payroll';
 export type LearningConfidence = 'high' | 'medium' | 'review';
 
 export interface LearnedRate {
+  evidence?: PayrollSource[];
   ownerId?: string;
   revision?: number;
   valueOrigin?: 'printed' | 'derived' | 'owner_confirmed';
@@ -24,6 +26,7 @@ export interface LearnedRate {
 }
 
 export interface StatementLearningResult {
+  payrollExtraction?: PrivatePayrollExtraction;
   kind: StatementKind;
   competence: string;
   paymentDate?: string;
@@ -168,20 +171,34 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
 }
 
 const PAYROLL_KEYS: Array<[RegExp, string, string, LearnedRate['unit']]> = [
-  [/Sal[aá]rio\s+([\d.]+,\d{2})/i, 'salary.base', 'Salário-base', 'month'],
   [/([\d.]+,\d{2})\s+([\d.]+)\s+KM V CMS - D\s+([\d.]+,\d{2})/i, 'salary.dayKm', 'KM diurno', 'km'],
   [/([\d.]+,\d{2})\s+([\d.]+)\s+KM V CMS - N\s+([\d.]+,\d{2})/i, 'salary.nightKm', 'KM noturno', 'km'],
   [/([\d.]+,\d{2})\s+([\d.]+)\s+KM V CMS - DFS - D\s+([\d.]+,\d{2})/i, 'salary.dfsDayKm', 'KM DFS diurno', 'km'],
   [/([\d.]+,\d{2})\s+([\d.]+)\s+KM V CMS - DFS - N\s+([\d.]+,\d{2})/i, 'salary.dfsNightKm', 'KM DFS noturno', 'km'],
 ];
 
-export function learnPayrollStatement(text: string, sourceDocument: string): StatementLearningResult {
-  const competence = text.match(/Compet[eê]ncia[^\n\r]*?(\d{2}\/\d{4})/i)?.[1];
-  const effectiveFrom = competence ? `${competence.slice(3)}-${competence.slice(0, 2)}-01` : '';
+export function learnPayrollStatement(text: string, sourceDocument: string, pages?: readonly PayrollPage[]): StatementLearningResult {
+  const payrollExtraction = extractPrivatePayroll(pages ?? text);
+  const competence = payrollExtraction.competence.state === 'candidate' ? payrollExtraction.competence.candidates[0].value : undefined;
+  const effectiveFrom = competence ? `${competence}-01` : '';
   const fp = fingerprint(text);
+  const rateEvidence = (match: string): PayrollSource[] => {
+    const evidencePages = pages ?? text.split('\f').map((content, index) => ({ page: index + 1, text: content }));
+    return evidencePages.flatMap(page => page.text.split(/\r?\n/).flatMap((line, index) => match.includes(line.trim()) && line.trim() ? [{ page: page.page, line: index + 1, field: 'rate', text: line }] : []));
+  };
   const rates: LearnedRate[] = [];
+  const base = payrollExtraction.monthlyBase;
+  if (effectiveFrom && (base.state === 'candidate' || base.state === 'zero')) {
+    const candidate = base.candidates[0];
+    rates.push({ ...rate('salary.base', 'Salário-base', candidate.value, 'month', effectiveFrom, sourceDocument, fp, 'review'), valueOrigin: 'printed', evidence: candidate.sources });
+  }
   for (const [pattern, key, label, unit] of PAYROLL_KEYS) {
-    const m = text.match(pattern);
+    const matches = [...text.matchAll(new RegExp(pattern.source, 'gi'))];
+    if (new Set(matches.map(match => match[0].replace(/\s+/g, ' ').trim())).size > 1) {
+      payrollExtraction.warnings.push(`Tarifa ${label} com evidências divergentes; revisão obrigatória.`);
+      continue;
+    }
+    const m = matches[0];
     if (!m) continue;
     const quantity = unit === 'km' ? decimal(m[1]) : 0;
     const statedRate = unit === 'km' ? decimal(m[2]) : 0;
@@ -191,32 +208,36 @@ export function learnPayrollStatement(text: string, sourceDocument: string): Sta
     const value = unit === 'km'
       ? usePrintedRate ? statedRate : derivedRate
       : money(m[1]);
-    if (Number.isFinite(value) && value >= 0 && (unit !== 'km' || value <= 5)) rates.push({ ...rate(key, label, value, unit, effectiveFrom, sourceDocument, fp, !usePrintedRate ? 'review' : 'high'), valueOrigin: !usePrintedRate ? 'derived' : 'printed' });
+    if (Number.isFinite(value) && value >= 0 && (unit !== 'km' || value <= 5)) rates.push({ ...rate(key, label, value, unit, effectiveFrom, sourceDocument, fp, !usePrintedRate ? 'review' : 'high'), valueOrigin: !usePrintedRate ? 'derived' : 'printed', evidence: rateEvidence(m[0]) });
   }
   for (const [pattern, key, label] of [
     [/([\d.,]+)\s+Horas Reserva - CMS\s+([\d.]+,\d{2})/i, 'salary.reserveHour', 'Hora de reserva'],
     [/([\d.,]+)\s+Horas Sobre Aviso - CMS\s+([\d.]+,\d{2})/i, 'salary.standbyHour', 'Hora de sobreaviso'],
   ] as const) {
-    const m = text.match(pattern);
+    const matches = [...text.matchAll(new RegExp(pattern.source, 'gi'))];
+    if (new Set(matches.map(match => match[0].replace(/\s+/g, ' ').trim())).size > 1) {
+      payrollExtraction.warnings.push(`Tarifa ${label} com evidências divergentes; revisão obrigatória.`);
+      continue;
+    }
+    const m = matches[0];
     const quantity = m ? decimal(m[1]) : 0;
     const hourlyValue = m && quantity > 0 ? Number((money(m[2]) / quantity).toFixed(6)) : NaN;
-    if (Number.isFinite(hourlyValue)) rates.push({ ...rate(key, label, hourlyValue, 'hour', effectiveFrom, sourceDocument, fp, 'review'), valueOrigin: 'derived' });
+    if (Number.isFinite(hourlyValue)) rates.push({ ...rate(key, label, hourlyValue, 'hour', effectiveFrom, sourceDocument, fp, 'review'), valueOrigin: 'derived', evidence: rateEvidence(m![0]) });
   }
-  const totals = text.match(/TOTAIS\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})/i);
-  const net = text.match(/L[ií]quido\s*\n?\s*(?:[\d.]+,\d{2}\s+)?([\d.]+,\d{2})/i);
-  const warnings: string[] = [];
+  const warnings: string[] = [...payrollExtraction.warnings];
   if (!effectiveFrom) warnings.push('Competência não identificada; revisão obrigatória.');
   if (!rates.length) warnings.push('Nenhuma tarifa salarial identificada.');
   return {
-    kind: 'payroll', competence: effectiveFrom.slice(0, 7), rates: rates.map(item => ({ ...item, effectiveTo: payrollMonthBounds(effectiveFrom.slice(0, 7))?.end })),
-    totals: { gross: totals ? money(totals[1]) : 0, deductions: totals ? money(totals[2]) : 0, net: net ? money(net[1]) : 0 }, warnings,
+    payrollExtraction, paymentDate: payrollExtraction.creditDate.state === 'candidate' ? payrollExtraction.creditDate.candidates[0].value : undefined,
+    kind: 'payroll', competence: effectiveFrom.slice(0, 7), rates: rates.filter(() => !!effectiveFrom).map(item => ({ ...item, confidence: 'review', effectiveTo: payrollMonthBounds(effectiveFrom.slice(0, 7))?.end })),
+    totals: Object.fromEntries(Object.entries(payrollExtraction.totals).filter(([, field]) => field.state === 'candidate' || field.state === 'zero').map(([key, field]) => [key, field.candidates[0].value])), warnings,
   };
 }
 
-export function learnFinancialStatement(text: string, sourceDocument: string): StatementLearningResult {
+export function learnFinancialStatement(text: string, sourceDocument: string, pages?: readonly PayrollPage[]): StatementLearningResult {
   const kind = detectFinancialStatement(text);
   if (kind === 'per_diem') return learnPerDiemStatement(text, sourceDocument);
-  if (kind === 'payroll') return learnPayrollStatement(text, sourceDocument);
+  if (kind === 'payroll') return learnPayrollStatement(text, sourceDocument, pages);
   throw new Error('O arquivo não foi reconhecido como demonstrativo de diárias ou de pagamento.');
 }
 

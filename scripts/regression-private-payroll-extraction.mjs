@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import { loadClientModules } from './lib/ts-module-harness.mjs';
+const modules = loadClientModules({files:['client/src/lib/financialStatementLearning.ts'], stubs:{ authClient:'exports.getStoredUser=()=>null; exports.getToken=()=>null;' }});
+try {
+ const {learnPayrollStatement: learn, learnFinancialStatement} = modules.load('financialStatementLearning');
+ const header = 'DEMONSTRATIVO DE PAGAMENTO\nRUBRICA\nCompetência: 08/2032\nData de crédito: 05/09/2032\n';
+ const body = 'Salário-base mensal R$ 3.000,00\nPROVENTOS\nSalário 16 dias R$ 1.600,00\nAdicional R$ 400,00\nFérias R$ 300,00\n13º salário R$ 200,00\nDESCONTOS\nINSS R$ 100,00\nAdiantamento R$ 200,00\nTOTAIS 2.500,00 300,00\nLíquido 2.200,00';
+ const result=learnFinancialStatement(header+body,'synthetic.txt');
+ assert.equal(result.rates.find(r=>r.key==='salary.base').value,3000);
+ assert.equal(result.paymentDate,'2032-09-05');
+ assert.equal(result.payrollExtraction.reconciliation,'balanced');
+ assert.deepEqual(result.payrollExtraction.items.map(i=>i.kind),['proportional','earning','vacation','thirteenth','deduction','advance']);
+ assert.equal(result.payrollExtraction.items.reduce((sum,i)=>sum+(i.kind==='deduction'||i.kind==='advance'?-1:1)*i.amount.candidates[0].value,0),2200);
+ assert.equal(learn(header+'Salário 16 dias 1.600,00','synthetic').rates.length,0);
+ assert.equal(learn(header+'Salário-base 16 dias 1.600,00','synthetic').rates.length,0);
+ assert.deepEqual(learn(header,'synthetic').totals,{});
+ assert.equal(learn(header+'Líquido 0,00','synthetic').payrollExtraction.totals.net.state,'zero');
+ const conflict=learn(header+body+'\nSalário-base mensal 4.000,00','synthetic');
+ assert.equal(conflict.payrollExtraction.monthlyBase.state,'conflict');
+ assert.ok(!conflict.rates.some(r=>r.key==='salary.base'));
+ const pages=[{page:4,text:header+body},{page:5,text:'PROVENTOS\nAdicional R$ 400,00'}];
+ const split=learn(header+body,'synthetic',pages).payrollExtraction;
+ assert.equal(split.items.filter(i=>i.label==='Adicional').length,1);
+ assert.equal(split.items.find(i=>i.label==='Adicional').amount.candidates[0].sources[1].page,5);
+ assert.equal(split.monthlyBase.candidates[0].sources[0].line,5);
+ assert.equal(learn(header+body+'\nCompetência 09/2032','synthetic').rates.length,0);
+ assert.equal(learn(header+body+'\nLíquido 2.100,00','synthetic').payrollExtraction.totals.net.state,'conflict');
+ assert.equal(learn(header+body.replace('2.200,00','2.199,93'),'synthetic').payrollExtraction.reconciliation,'mismatch');
+ const scanned=learn('','synthetic', [{page:1,text:''}]);
+ assert.equal(scanned.payrollExtraction.monthlyBase.state,'absent');
+ assert.ok(scanned.warnings.some(w=>w.includes('OCR')));
+ assert.equal(learn(header+'Salário-base mensal 0,00','synthetic').rates[0].value,0);
+ console.log('private payroll: synthetic extraction, provenance, arithmetic and ambiguity passed');
+} finally {modules.cleanup();}
