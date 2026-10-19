@@ -136,7 +136,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        CrewLifeV2Phone.retry(this);
+        CrewLifeV2Phone.reconcile(this);
         CrewLifeWatchPublisher.retryPendingRevocation(this, null);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setStatusBarColor(Color.parseColor("#071D33"));

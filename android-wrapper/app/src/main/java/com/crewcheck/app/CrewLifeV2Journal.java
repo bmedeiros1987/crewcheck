@@ -14,15 +14,44 @@ final class CrewLifeV2Journal {
         CrewLifeV2Protocol.keys(data, Set.of("schemaVersion", "streamId", "revision", "revoked", "nodes"));
         if (CrewLifeV2Protocol.integer(data.opt("schemaVersion"), 0) != 2 || !(data.opt("revoked") instanceof Boolean))
             throw new IllegalArgumentException("Invalid journal schema");
-        UUID.fromString(data.getString("streamId"));
+        if (!uuid(data.opt("streamId"))) throw new IllegalArgumentException("Invalid stream UUID");
         if (CrewLifeV2Protocol.integer(data.opt("revision"), 0) <= 0) throw new IllegalArgumentException("Invalid journal");
         JSONObject storedNodes = data.getJSONObject("nodes");
         for (Iterator<String> i = storedNodes.keys(); i.hasNext();) {
-            JSONObject record = storedNodes.getJSONObject(i.next());
-            // Unpublished pre-challenge checkpoints cannot migrate readiness by inference.
-            if (!validChallenge(record.optString("wearChallenge"))) record.put("ready", false).put("cleared", false);
+            String node = i.next();
+            JSONObject record = storedNodes.optJSONObject(node);
+            if (!validRecord(record)) storedNodes.put(node, pending());
+            // Keep the node as pending: dropping it could falsely certify an offline peer.
         }
     }
+    private static JSONObject pending() throws Exception { return new JSONObject().put("ready", false).put("cleared", false); }
+    private static boolean uuid(Object value) {
+        try { return value instanceof String && UUID.fromString((String)value).toString().equals(value); }
+        catch (Exception invalid) { return false; }
+    }
+    private boolean validRecord(JSONObject r) {
+        try {
+            if (r == null) return false;
+            CrewLifeV2Protocol.keys(r, Set.of("schemaVersion", "op", "streamId", "revision", "requestId", "wearChallenge", "ready", "cleared"));
+            if (!(r.opt("ready") instanceof Boolean) || !(r.opt("cleared") instanceof Boolean)) return false;
+            if (r.length() == 2) return !r.getBoolean("ready") && !r.getBoolean("cleared");
+            if (CrewLifeV2Protocol.integer(r.opt("schemaVersion"), -1) != 2 || !uuid(r.opt("streamId"))
+                    || !stream().equals(r.opt("streamId")) || !uuid(r.opt("requestId"))) return false;
+            long revision = CrewLifeV2Protocol.integer(r.opt("revision"), 0);
+            if (revision <= 0 || revision > revision()) return false;
+            Object op = r.opt("op");
+            if (!("reset".equals(op) || "revoke".equals(op)) || revoked() != "revoke".equals(op)) return false;
+            if (r.has("wearChallenge") && (!(r.opt("wearChallenge") instanceof String) || !validChallenge(r.optString("wearChallenge")))) return false;
+            boolean ready = r.getBoolean("ready"), cleared = r.getBoolean("cleared");
+            if (!cleared) return !ready;
+            if (!validChallenge(r.optString("wearChallenge"))) return false;
+            if (revoked()) return "revoke".equals(op) && !ready && revision == revision();
+            return "reset".equals(op); // ready=false is an already consumed one-publication permit
+        } catch (Exception invalid) { return false; }
+    }
+    private boolean cleared(JSONObject r) { return validRecord(r) && Boolean.TRUE.equals(r.opt("cleared")); }
+    private boolean permitted(JSONObject r) { return cleared(r) && Boolean.TRUE.equals(r.opt("ready")); }
+
     String stream() throws Exception { return data.getString("streamId"); }
     long revision() throws Exception { return data.getLong("revision"); }
     void advance() throws Exception {
@@ -33,7 +62,7 @@ final class CrewLifeV2Journal {
         data.put("streamId", UUID.randomUUID().toString()); data.put("revision", 1); data.put("revoked", false);
         JSONObject nodes = data.getJSONObject("nodes");
         for (Iterator<String> i = nodes.keys(); i.hasNext();) {
-            String node = i.next(); nodes.put(node, new JSONObject().put("ready", false).put("cleared", false));
+            String node = i.next(); nodes.put(node, pending());
         }
     }
     boolean revoked() { return data.optBoolean("revoked", true); }
@@ -41,13 +70,26 @@ final class CrewLifeV2Journal {
         advance(); data.put("revoked", true);
         JSONObject nodes = data.getJSONObject("nodes");
         for (Iterator<String> i = nodes.keys(); i.hasNext();) {
-            String node = i.next(); nodes.put(node, new JSONObject().put("ready", false).put("cleared", false));
+            String node = i.next(); nodes.put(node, pending());
         }
+    }
+    void reopenProof() throws Exception {
+        advance();
+        JSONObject nodes = data.getJSONObject("nodes");
+        for (Iterator<String> i = nodes.keys(); i.hasNext();) nodes.put(i.next(), pending());
+    }
+    boolean consumed(String node) throws Exception {
+        JSONObject r = data.getJSONObject("nodes").optJSONObject(node);
+        return !revoked() && cleared(r) && !permitted(r);
+    }
+    void consumePublication(Set<String> connected) throws Exception {
+        if (!ready(connected)) throw new IllegalStateException("Fresh peer proof required");
+        for (String node : connected) data.getJSONObject("nodes").getJSONObject(node).put("ready", false);
     }
     JSONObject request(String node, String op) throws Exception {
         JSONObject nodes = data.getJSONObject("nodes");
         JSONObject current = nodes.optJSONObject(node);
-        if (current != null && current.optString("op").equals(op)
+        if (validRecord(current) && current.optString("op").equals(op)
                 && current.optLong("revision") == revision() && current.optString("streamId").equals(stream())) return current;
         JSONObject request = new JSONObject().put("schemaVersion", 2).put("op", op).put("streamId", stream())
                 .put("revision", revision()).put("requestId", UUID.randomUUID().toString())
@@ -69,7 +111,7 @@ final class CrewLifeV2Journal {
     }
     private JSONObject matching(String node, JSONObject message) throws Exception {
         JSONObject request = data.getJSONObject("nodes").optJSONObject(node);
-        if (request == null || CrewLifeV2Protocol.integer(message.opt("schemaVersion"), -1) != 2
+        if (!validRecord(request) || CrewLifeV2Protocol.integer(message.opt("schemaVersion"), -1) != 2
                 || !message.optString("streamId").equals(stream())
                 || CrewLifeV2Protocol.integer(message.opt("revision"), -1) != request.optLong("revision")
                 || !message.optString("requestId").equals(request.optString("requestId"))) return null;
@@ -78,18 +120,18 @@ final class CrewLifeV2Journal {
     boolean challenge(String node, JSONObject message) throws Exception {
         CrewLifeV2Protocol.keys(message, Set.of("schemaVersion", "op", "action", "streamId", "revision", "requestId", "wearChallenge"));
         JSONObject request = matching(node, message);
-        if (request == null || request.optBoolean("cleared") || !"challenge".equals(message.optString("op"))
+        if (request == null || Boolean.TRUE.equals(request.opt("cleared")) || !"challenge".equals(message.optString("op"))
                 || !message.optString("action").equals(request.optString("op"))
-                || !validChallenge(message.optString("wearChallenge"))) return false;
+                || !(message.opt("wearChallenge") instanceof String) || !validChallenge(message.optString("wearChallenge"))) return false;
         request.put("wearChallenge", message.getString("wearChallenge"));
         return true;
     }
     boolean ack(String node, JSONObject ack) throws Exception {
         CrewLifeV2Protocol.keys(ack, Set.of("schemaVersion", "op", "streamId", "revision", "requestId", "wearChallenge", "status"));
         JSONObject request = matching(node, ack);
-        if (request == null || !"cleared".equals(ack.optString("status"))
+        if (request == null || Boolean.TRUE.equals(request.opt("cleared")) || !"cleared".equals(ack.optString("status"))
                 || !validChallenge(request.optString("wearChallenge"))
-                || !request.optString("wearChallenge").equals(ack.optString("wearChallenge"))
+                || !(ack.opt("wearChallenge") instanceof String) || !request.optString("wearChallenge").equals(ack.optString("wearChallenge"))
                 || !ack.optString("op").equals(request.optString("op") + "_ack")) return false;
         request.put("cleared", true).put("ready", !revoked() && request.optString("op").equals("reset"));
         return true;
@@ -97,17 +139,17 @@ final class CrewLifeV2Journal {
     boolean ready(Set<String> connected) throws Exception {
         if (revoked() || connected.isEmpty()) return false;
         JSONObject nodes = data.getJSONObject("nodes");
-        for (String node : connected) if (!nodes.has(node) || !nodes.getJSONObject(node).optBoolean("ready")) return false;
+        for (String node : connected) if (!nodes.has(node) || !permitted(nodes.optJSONObject(node))) return false;
         // Offline previously seen nodes must not be silently considered migrated/cleared.
         for (Iterator<String> i = nodes.keys(); i.hasNext();) {
-            if (!nodes.getJSONObject(i.next()).optBoolean("cleared")) return false;
+            if (!cleared(nodes.optJSONObject(i.next()))) return false;
         }
         return true;
     }
     boolean allCleared() throws Exception {
         JSONObject nodes = data.getJSONObject("nodes");
         if (nodes.length() == 0) return false; // no remote evidence
-        for (Iterator<String> i = nodes.keys(); i.hasNext();) if (!nodes.getJSONObject(i.next()).optBoolean("cleared")) return false;
+        for (Iterator<String> i = nodes.keys(); i.hasNext();) if (!cleared(nodes.optJSONObject(i.next()))) return false;
         return true;
     }
     JSONObject tombstone() throws Exception {

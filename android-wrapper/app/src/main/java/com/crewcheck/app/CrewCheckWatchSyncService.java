@@ -16,7 +16,7 @@ public final class CrewCheckWatchSyncService extends WearableListenerService {
             return;
         }
         if (!CrewCheckWatchPublisher.REQUEST_SYNC_PATH.equals(messageEvent.getPath())) return;
-        CrewLifeV2Phone.retry(this);
+        CrewLifeV2Phone.reconcile(this);
         CrewLifeWatchPublisher.retryPendingRevocation(this, null);
         // Fast path: resend the last validated snapshot if one already exists.
         CrewCheckWatchPublisher.republishLast(this);

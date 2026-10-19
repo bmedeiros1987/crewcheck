@@ -84,6 +84,7 @@ public final class CrewLifeV2Protocol {
     /** Only maps values whose provenance was already checked by CompanionFreshness. */
     static JSONObject project(JSONObject source) throws Exception {
         JSONObject metrics = new JSONObject(), validity = source.optJSONObject("metricValidity");
+        long envelope = integer(source.opt("validUntilEpochMs"), 0);
         for (String key : KEYS) {
             String original = key.equals("recoveryScore") ? "energyScore" : key;
             JSONObject v = validity == null ? null : validity.optJSONObject(original);
@@ -91,9 +92,12 @@ public final class CrewLifeV2Protocol {
             if (state.equals("stale")) state = "expired";
             JSONObject m = new JSONObject().put("state", state).put("validUntilEpochMs", v == null ? 0 : v.opt("validUntilEpochMs"));
             if (!source.isNull(original)) m.put("value", source.opt(original));
+            // Conservative projection: neither this metric nor the v1 envelope is extended.
+            if ("valid".equals(state)) m.put("validUntilEpochMs", Math.min(envelope,
+                    v == null ? 0 : integer(v.opt("validUntilEpochMs"), 0)));
             metrics.put(key, m);
         }
         return new JSONObject().put("schemaVersion", 2).put("generatedAtEpochMs", source.opt("generatedAtEpochMs"))
-                .put("validUntilEpochMs", source.opt("validUntilEpochMs")).put("metrics", metrics);
+                .put("validUntilEpochMs", envelope).put("metrics", metrics);
     }
 }

@@ -44,8 +44,11 @@ The legacy WebView publish request now requests a native source refresh; it cann
 inject source-valid health using fabricated timestamps. Manual local entries remain
 local and are not represented as automatic sensor data.
 
-The phone maps `metricValidity.energyScore` to `metrics.recoveryScore`, with the
-original value and deadline. This version carries ENERGY only, not a fabricated
+The phone maps `metricValidity.energyScore` to `metrics.recoveryScore`, preserving
+the value and conservatively bounding its transmitted deadline to the smaller of
+the original individual deadline and original source envelope. Neither deadline
+is extended. A longer valid metric is not marked invalid just because another
+metric shortens the envelope. This version carries ENERGY only, not a fabricated
 recovery assessment. Other mappings retain their names. Integer bounds are
 0–100, 0–1440, 0–200000, and 0–1440 respectively. Narrative, heart metrics,
 labels, raw records and identity fields are not accepted. Unknown fields are
@@ -66,6 +69,15 @@ Protocol journal stores only an opaque stream UUID, revision and per-node
 cleanup challenges/ACK state in a separate private preference file. No account
 identifier or health values are retained. Commit failure blocks the process.
 Each new owner/consent generation needs a fresh opaque stream and reset ACK.
+Persisted per-node receipts require exact Boolean flags, full typed schema/action/
+current-stream/safe-revision/request UUID/nonce and root-state consistency. A partial
+or malformed record remains a known pending node, never an inferred cleanup.
+A reset ACK grants one publication permit, consumed durably before DataClient
+handoff. Duplicated old ACKs cannot rearm that permit. Explicit retry after a
+consumed proof, startup/reconnect reconciliation and discovery/send failures reopen
+a challenge at a greater revision. This recovers from a Wear journal loss without
+accepting old receipts as current. Timer retries only resend pending work; they
+do not continuously reset an already-clean peer.
 Revisions increase durably; Wear must persist stream/revision fences, reject
 older revisions/foreign streams and reject v1 replay after migration.
 
@@ -143,3 +155,17 @@ consent revocation still removes routine. The operational publisher is not calle
 by any health ACK flow. Old phone + old Wear behavior remains unsafe and is not
 certified by this rollout. No physical delivery/display or remote cache clearance
 is inferred from a DataClient success.
+
+
+## Phone independent-review corrections
+
+Three defects were reproduced separately on a30506c7 before the corrections:
+partial/string-flag persisted receipts could appear cleared; valid mixed deadlines
+became invalid during v2 sanitization; and a receiver journal loss left the sender
+reusing stale readiness indefinitely. The new complete-flow suite covers these
+with 90 additional assertions, including three retries plus three native publication
+attempts with no current Wear proof, followed by real challenge/ACK recovery. It
+also exercises strict malformed receipt permutations, old ACK replay after permit
+consumption, native Companion filtering through the actual Wear parser with mixed
+TTL orderings, process-start reconciliation, capability loss and DataClient failure.
+No cross-account leak was demonstrated or is claimed by these findings.

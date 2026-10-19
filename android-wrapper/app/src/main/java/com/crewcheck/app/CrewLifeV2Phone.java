@@ -78,7 +78,7 @@ public final class CrewLifeV2Phone {
                                 for (Node n : nodes) {
                                     connected.add(n.getId());
                                     JSONObject known = j.data.getJSONObject("nodes").optJSONObject(n.getId());
-                                    if (known == null || !known.optBoolean("ready")) {
+                                    if (known == null || !Boolean.TRUE.equals(known.opt("ready")) || !capable.contains(n.getId())) {
                                         JSONObject request = j.request(n.getId(), "reset");
                                         save(c, j); // durable challenge BEFORE send
                                         if (capable.contains(n.getId())) send(c, n.getId(), j.control(request));
@@ -99,6 +99,9 @@ public final class CrewLifeV2Phone {
                                                 if (!same(c, stream, revision, stamp)) return;
                                                 JSONObject finalCheck = CrewLifeV2Protocol.sanitize(new JSONObject(raw), WatchHealthConsent.read(c).categories(), System.currentTimeMillis());
                                                 finalCheck.put("streamId", stream).put("revision", revision);
+                                                CrewLifeV2Journal authorized = read(c);
+                                                authorized.consumePublication(connected);
+                                                save(c, authorized);
                                                 put(c, finalCheck, stream, revision, stamp, callback);
                                             } catch (Exception invalid) { invalidate(c); callback.onResult(false, "expired_before_put", "Validade encerrada."); }
                                         }
@@ -106,9 +109,11 @@ public final class CrewLifeV2Phone {
                             }
                         } catch (Exception error) { callback.onResult(false, "crewlife_v2_unavailable", "Saúde indisponível."); }
                     }).addOnFailureListener(error -> {
+                        loseProofIfCurrent(c, stream, revision, stamp);
                         deleteLegacy(c); schedule(c); callback.onResult(false, "capability_unconfirmed", "Capacidade remota não confirmada.");
                     })
             ).addOnFailureListener(error -> {
+                loseProofIfCurrent(c, stream, revision, stamp);
                 deleteLegacy(c); schedule(c); callback.onResult(false, "peer_unavailable", "Relógio indisponível.");
             });
         } catch (Exception invalid) {
@@ -133,7 +138,18 @@ public final class CrewLifeV2Phone {
     }
 
     /** Reconnect/process restart resumes persisted challenges; health payload is never retained. */
-    public static void retry(Context context) {
+    public static void retry(Context context) { retry(context, true); }
+
+    /** Startup/reconnect cannot promote a persisted historic ACK into current peer readiness. */
+    public static void reconcile(Context context) {
+        Context c = context.getApplicationContext();
+        synchronized (LOCK) {
+            try { CrewLifeV2Journal j = read(c); j.reopenProof(); save(c, j); }
+            catch (Exception unavailable) { return; }
+        }
+        retry(c, false);
+    }
+    private static void retry(Context context, boolean refreshConsumed) {
         Context c = context.getApplicationContext();
         Wearable.getNodeClient(c).getConnectedNodes().addOnSuccessListener(nodes ->
             Wearable.getCapabilityClient(c).getCapability(CrewLifeV2Protocol.CAPABILITY, CapabilityClient.FILTER_ALL)
@@ -145,6 +161,9 @@ public final class CrewLifeV2Phone {
                             if (j.revoked()) putTombstone(c, j);
                             Set<String> capable = new HashSet<>();
                             for (Node n : info.getNodes()) capable.add(n.getId());
+                            boolean refresh = false;
+                            if (refreshConsumed) for (Node n : nodes) if (j.consumed(n.getId())) refresh = true;
+                            if (refresh) { j.reopenProof(); save(c, j); }
                             for (Node n : nodes) {
                                 JSONObject existing = j.data.getJSONObject("nodes").optJSONObject(n.getId());
                                 if (existing != null && existing.optBoolean("cleared")) continue;
@@ -188,6 +207,15 @@ public final class CrewLifeV2Phone {
     static boolean remoteCleared(Context c) {
         synchronized (LOCK) { try { return read(c).revoked() && read(c).allCleared(); } catch (Exception e) { return false; } }
     }
+    private static void loseProofIfCurrent(Context c, String stream, long revision, String stamp) {
+        synchronized (LOCK) {
+            try {
+                if (!same(c, stream, revision, stamp)) return;
+                CrewLifeV2Journal j = read(c); j.reopenProof(); save(c, j);
+            } catch (Exception ignored) { return; }
+        }
+        schedule(c);
+    }
     private static void send(Context c, String node, JSONObject control) {
         Wearable.getMessageClient(c).sendMessage(node, CrewLifeV2Protocol.CONTROL_PATH, control.toString().getBytes(StandardCharsets.UTF_8))
                 .addOnFailureListener(error -> schedule(c));
@@ -211,7 +239,7 @@ public final class CrewLifeV2Phone {
                     callback.onResult(true, "queued_v2", "Item recebido pelo Data Layer; aplicação no relógio não confirmada.");
                 } catch (Exception ignored) { callback.onResult(false, "journal_unavailable", "Estado indisponível."); }
             }
-        }).addOnFailureListener(error -> { schedule(c); callback.onResult(false, "data_layer_error", "Envio não confirmado."); });
+        }).addOnFailureListener(error -> { loseProofIfCurrent(c, stream, revision, stamp); schedule(c); callback.onResult(false, "data_layer_error", "Envio não confirmado."); });
     }
     private static void putTombstone(Context c, CrewLifeV2Journal j) throws Exception {
         PutDataMapRequest request = PutDataMapRequest.create(CrewLifeV2Protocol.PATH);
@@ -225,7 +253,7 @@ public final class CrewLifeV2Phone {
             retryScheduled = true;
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 synchronized (LOCK) { retryScheduled = false; }
-                retry(c);
+                retry(c, false);
             }, delay);
         }
     }
