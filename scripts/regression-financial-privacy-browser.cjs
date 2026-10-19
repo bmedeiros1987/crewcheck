@@ -155,6 +155,24 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
    assert.match(await deductionReview.innerText(),/Faltam regras e base para projetar os descontos/);
    assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>/financial/.test(key)))),beforeDeductions,'granular review cannot write settings');
    await deductionReview.screenshot({path:path.join(out,'deductions-review-'+width+'.png')});
+   const classificationDoc=async(name,body,totals)=>importer.locator('input[type=file]').setInputFiles({name:'synthetic-'+name+'.pdf',mimeType:'application/pdf',buffer:documentBytes([...header,'Salario-base mensal 3000,00','DESCONTOS',...body,...totals])});
+   await classificationDoc('mixed-taxes',['INSS IRRF 100,00'],['TOTAIS 1000,00 100,00','Liquido 900,00']);
+   await deductionReview.getByText('INSS IRRF',{exact:true}).waitFor();assert.equal(await deductionReview.getByRole('checkbox',{name:'Selecionar desconto row-0',exact:true}).isEnabled(),false);assert.match(await deductionReview.innerText(),/Grupo pendente/);assert.match(await deductionReview.innerText(),/classificação conflitante/);
+   await classificationDoc('omitted-complement',['INSS 100,00','Desconto INSS complementar 20,00'],['TOTAIS 1000,00 120,00','Liquido 880,00']);
+   await deductionReview.getByText('Desconto INSS complementar',{exact:true}).waitFor();
+   await deductionReview.getByRole('checkbox',{name:/^Confirmei que este é o holerite mensal/}).check();await deductionReview.getByRole('checkbox',{name:'Selecionar desconto row-0',exact:true}).check();
+   await deductionReview.getByRole('checkbox',{name:'Conferi todas as rubricas de INSS e a substituição completa apenas neste mês.',exact:true}).check();await deductionReview.getByRole('checkbox',{name:'Conferi a titularidade, a competência e o antes/depois de cada grupo selecionado.',exact:true}).check();
+   assert.doesNotMatch(await deductionReview.getByRole('status').innerText(),/Revisão preparada/);assert.match(await deductionReview.innerText(),/rubricas omitidas/);
+   await classificationDoc('selected-excess',['Desconto INSS 100,00'],['TOTAIS 1000,00 90,00','Liquido 910,00']);await deductionReview.getByText('Desconto INSS',{exact:true}).waitFor();
+   await deductionReview.getByRole('checkbox',{name:/^Confirmei que este é o holerite mensal/}).check();await deductionReview.getByRole('checkbox',{name:'Selecionar desconto row-0',exact:true}).check();
+   await deductionReview.getByRole('checkbox',{name:'Conferi todas as rubricas de INSS e a substituição completa apenas neste mês.',exact:true}).check();await deductionReview.getByRole('checkbox',{name:'Conferi a titularidade, a competência e o antes/depois de cada grupo selecionado.',exact:true}).check();
+   assert.doesNotMatch(await deductionReview.getByRole('status').innerText(),/Revisão preparada/);assert.match(await deductionReview.innerText(),/excede o total impresso/);
+
+   await classificationDoc('conflicting-values',['INSS 100,00','INSS 200,00'],[]);await deductionReview.getByText('Valor pendente',{exact:true}).waitFor();
+   assert.equal(await deductionReview.getByRole('checkbox',{name:'Selecionar desconto row-0',exact:true}).isEnabled(),false);
+   await deductionReview.getByText('Conferir candidatos e origens',{exact:true}).click();const conflictText=await deductionReview.innerText();assert.match(conflictText,/100,00/);assert.match(conflictText,/200,00/);assert.match(conflictText,/Página PDF 1, linha 5/);assert.match(conflictText,/Página PDF 1, linha 6/);
+   assert.deepEqual(await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>/financial/.test(key)))),beforeDeductions,'classification and total contradictions never write');
+
 
 
    await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().click();

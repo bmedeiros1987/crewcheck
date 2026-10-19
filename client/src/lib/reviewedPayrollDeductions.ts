@@ -13,24 +13,36 @@ export type DeductionReviewContext = {
 };
 const buckets = ['inss', 'irrf', 'other_deductions'] as const;
 const normalized = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/^\s*\d+\s+/, '').trim();
-function suggested(item: PayrollItem): DeductionBucket {
+export function classifyPayrollDeduction(item: PayrollItem): { state:'recognized'|'unknown'|'conflict'; bucket:DeductionBucket|null } {
   const label = normalized(item.label);
-  return /^INSS\b/.test(label) ? 'inss' : /^IRRF\b/.test(label) ? 'irrf' : 'other_deductions';
+  const inss = /\bINSS\b/.test(label), irrf = /\bIRRF\b/.test(label);
+  if (inss && irrf) return {state:'conflict',bucket:null};
+  // Explicit qualifiers may precede a tax; calculation bases and arbitrary
+  // mentions are not automatically deductions of that tax.
+  const qualifiedTax = /^(?:(?:DESCONTO|RETENCAO|AJUSTE|COMPLEMENTO|COMPLEMENTAR|DIFERENCA)(?:\s+(?:DE|DO|DA))?\s+)?(?:INSS|IRRF)\b/.test(label);
+  if (inss || irrf) return qualifiedTax ? {state:'recognized',bucket:inss?'inss':'irrf'} : {state:'unknown',bucket:null};
+  const other = /^(?:(?:DESCONTO|RETENCAO)(?:\s+(?:DE|DO|DA))?\s+)?(?:PLANO|ADIANTAMENTO|EMPRESTIMO|CONSIGNADO|CONTRIBUICAO|MENSALIDADE|CONVENIO|ASSISTENCIA|COPARTICIPACAO|PENSAO|SEGURO|VALE|MCT\d*)\b/.test(label);
+  return other ? {state:'recognized',bucket:'other_deductions'} : {state:'unknown',bucket:null};
 }
 export function payrollDeductionRows(extraction: PrivatePayrollExtraction) {
   return extraction.items.map((item, index) => {
+    const classification = classifyPayrollDeduction(item);
     const candidate = item.amount.candidates[0];
-    const amountMinor = candidate ? Math.round(candidate.value * 100) : null;
+    const unambiguous = ['candidate','zero'].includes(item.amount.state) && item.amount.candidates.length===1 && !item.amount.unresolvedSources.length;
+    const amountMinor = unambiguous && candidate ? Math.round(candidate.value * 100) : null;
+    const candidates = item.amount.candidates.map(value=>({amountMinor:Number.isSafeInteger(Math.round(value.value*100))?Math.round(value.value*100):null,locations:value.sources.map(({page,line,origin})=>({page,line,origin}))}));
+    const locations = [...new Map([...item.amount.candidates.flatMap(value=>value.sources),...item.amount.unresolvedSources].map(({page,line,origin})=>[`${origin}:${page}:${line}`,{page,line,origin}])).values()];
     let reason = '';
     if (item.direction !== 'debit') reason = 'Rubrica não comprovada como desconto.';
+    else if (classification.state !== 'recognized') reason = classification.state === 'conflict' ? 'Rótulo mistura tributos; classificação conflitante.' : 'Grupo do desconto não reconhecido; revisão pendente.';
     else if (!['candidate', 'zero'].includes(item.amount.state) || item.amount.candidates.length !== 1 || item.amount.unresolvedSources.length) reason = 'Valor ou sentido conflitante.';
     else if (amountMinor === null || !Number.isSafeInteger(amountMinor) || amountMinor < 0 || Math.abs(candidate.value * 100 - amountMinor) > 1e-6) reason = 'Valor em centavos não comprovado.';
     else if (candidate.sources.length !== 1) reason = 'Repetição de origem exige revisão de identidade da rubrica.';
     else if (!candidate.sources[0] || candidate.sources[0].page < 1 || candidate.sources[0].line < 1) reason = 'Origem da rubrica não comprovada.';
     return { rowId: `row-${index}`, label: item.label, competence: item.competence, direction: item.direction,
-      nature: item.nature, bucket: suggested(item), amountMinor, eligible: !reason, reason,
+      nature: item.nature, bucket: classification.bucket, classification:classification.state, amountState:item.amount.state,candidates, amountMinor, eligible: !reason, reason,
       // Locations only: never copy raw source text into the review plan.
-      locations: candidate?.sources.map(({page,line,origin}) => ({page,line,origin})) || [] };
+      locations };
   });
 }
 
@@ -45,6 +57,7 @@ export function planReviewedPayrollDeductions(args: DeductionReviewContext) {
     || args.extraction.competence.candidates[0]?.value !== args.month) reject('Competência única do documento não confirmada.');
   if (args.extraction.incomplete || args.extraction.unresolvedSources.length) reject('Extração incompleta ou conflitante.');
   if (args.extraction.reconciliation === 'mismatch') reject('Totais impressos divergentes.');
+  if (rows.some(row=>row.direction==='debit' && row.classification!=='recognized')) reject('Há descontos com classificação desconhecida ou conflitante; grupos completos não comprovados.');
   const current = args.current;
   if (!current || current.ownerId !== args.ownerId || current.month !== args.month) reject('Registro mensal não pertence à conta e competência.');
   if (current?.closed) reject('Competência fechada.');
@@ -62,7 +75,14 @@ export function planReviewedPayrollDeductions(args: DeductionReviewContext) {
     for (const source of row.locations) { const id=`${source.origin}:${source.page}:${source.line}`; if(origins.has(id))reject('A mesma origem não pode ser contada duas vezes.'); origins.add(id); }
     selectedRows.push(row);
   }
-  const selectedBuckets = [...new Set(selectedRows.map(row => row.bucket))];
+  const selectedTotalMinor = selectedRows.reduce((sum,row)=>sum+row.amountMinor!,0);
+  const printedDeductions = args.extraction.totals.deductions;
+  if (['candidate','zero'].includes(printedDeductions.state) && printedDeductions.candidates.length===1 && !printedDeductions.unresolvedSources.length) {
+    const value=printedDeductions.candidates[0].value, printedMinor=Math.round(value*100);
+    if (Number.isSafeInteger(printedMinor) && printedMinor>=0 && Math.abs(value*100-printedMinor)<1e-6 && selectedTotalMinor>printedMinor)
+      reject('A soma dos descontos selecionados excede o total impresso.');
+  }
+  const selectedBuckets = [...new Set(selectedRows.map(row => row.bucket).filter((bucket):bucket is DeductionBucket=>bucket!==null))];
   for (const bucket of selectedBuckets) {
     if (!args.completeBuckets.includes(bucket)) reject('Confirme a substituição completa de cada grupo selecionado.');
     // Partial selection must not replace a complete existing tax/other aggregate.

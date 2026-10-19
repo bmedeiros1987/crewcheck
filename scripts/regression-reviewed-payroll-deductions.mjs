@@ -43,5 +43,22 @@ try{
  test('D33',()=>assert.equal(plan(make()).futureEstimate.reason,'Faltam regras e base para projetar os descontos.'));
  test('D34',()=>{const r=plan(make());assert.ok(Object.values(r.changes).every(v=>v.recurrence==='once'));assert.equal(r.futureEstimate.enabled,false);});
  test('D35',()=>{const a=make();a.month='2032-10';assert.equal(plan(a).reviewable,false);});
- assert.equal(count,35);console.log('PASS35 pure review cases. No save/undo execution or atomicity proof claimed.');
+
+ test('C01-qualified-INSS',()=>{const r=plan(make(extract(text('Desconto INSS 100,00',''))));assert.equal(r.reviewable,true);assert.equal(r.changes.inss.amountMinor,10000);assert.equal(Object.hasOwn(r.changes,'other_deductions'),false);});
+ test('C02-qualified-IRRF',()=>{const r=plan(make(extract(text('Retencao IRRF 50,00',''))));assert.equal(r.reviewable,true);assert.equal(r.changes.irrf.amountMinor,5000);});
+ test('C03-mixed-tax',()=>{const a=make(extract(text('INSS IRRF 100,00','')));assert.equal(rows(a.extraction)[0].classification,'conflict');assert.equal(rows(a.extraction)[0].bucket,null);assert.equal(plan(a).reviewable,false);});
+ test('C04-omitted-complement',()=>{const a=make(extract(text('INSS 100,00\nDesconto INSS complementar 20,00','')));a.selection=a.selection.slice(0,1);const r=plan(a);assert.equal(r.reviewable,false);assert.match(r.reasons.join(' '),/omitidas/);});
+ test('C05-complete-complement',()=>{const r=plan(make(extract(text('INSS 100,00\nDesconto INSS complementar 20,00',''))));assert.equal(r.reviewable,true);assert.equal(r.changes.inss.amountMinor,12000);});
+ test('C06-unknown-not-other',()=>{const a=make(extract(text('Rubrica desconhecida 20,00','')));assert.equal(rows(a.extraction)[0].classification,'unknown');assert.equal(rows(a.extraction)[0].bucket,null);assert.equal(plan(a).reviewable,false);});
+ test('C07-omitted-ambiguous',()=>{const a=make(extract(text('INSS 100,00\nINSS IRRF 20,00','')));a.selection=a.selection.filter(x=>x.rowId==='row-0');assert.equal(plan(a).reviewable,false);});
+ test('C08-base-not-tax',()=>{const a=make(extract(text('Base INSS 100,00','')));assert.equal(rows(a.extraction)[0].bucket,null);assert.equal(plan(a).reviewable,false);});
+
+ test('C09-selected-exceeds-balanced-total',()=>{const a=make(extract(text('INSS 100,00','TOTAIS 1000,00 90,00\nLiquido 910,00')));assert.equal(a.extraction.reconciliation,'balanced');const r=plan(a);assert.equal(r.reviewable,false);assert.match(r.reasons.join(' '),/excede o total impresso/);});
+ test('C10-legitimate-partial-selection',()=>{const a=make();a.selection=a.selection.slice(0,1);const r=plan(a);assert.equal(r.reviewable,true);assert.deepEqual(Object.keys(r.changes),['inss']);assert.equal(r.changes.inss.amountMinor,10000);});
+ test('C11-absent-total-not-zero',()=>{const a=make(extract(text('Desconto INSS 100,00','')));assert.equal(a.extraction.totals.deductions.state,'absent');assert.equal(plan(a).reviewable,true);});
+ test('C12-explicit-total-zero',()=>{assert.equal(plan(make(extract(text('INSS 100,00','TOTAIS 1000,00 0,00\nLiquido 1000,00')))).reviewable,false);assert.equal(plan(make(extract(text('INSS 0,00','TOTAIS 1000,00 0,00\nLiquido 1000,00')))).reviewable,true);});
+
+ test('C13-conflict-no-preferred-value',()=>{const a=make(extract(text('INSS 100,00\nINSS 200,00','')));const row=rows(a.extraction)[0];assert.equal(row.amountMinor,null);assert.equal(row.amountState,'conflict');assert.deepEqual(row.candidates.map(x=>x.amountMinor),[10000,20000]);assert.deepEqual(row.locations.map(x=>x.line),[3,4]);assert.ok(row.locations.every(x=>x.origin==='document-logical'));assert.equal(plan(a).reviewable,false);});
+ test('C14-physical-conflict-origins',()=>{const a=make(extract([{page:7,origin:'pdf-physical',text:text('INSS 100,00\nINSS 200,00','')}]));const row=rows(a.extraction)[0];assert.equal(row.amountMinor,null);assert.deepEqual(row.candidates.map(x=>x.locations[0]),[{page:7,line:3,origin:'pdf-physical'},{page:7,line:4,origin:'pdf-physical'}]);});
+ assert.equal(count,49);console.log('PASS49 pure review cases (original35 +14classification/total/provenance counterproofs). No save/undo execution or atomicity proof claimed.');
 }finally{modules.cleanup();}
