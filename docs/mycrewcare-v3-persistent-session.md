@@ -89,7 +89,29 @@ Esses contratos são **simulações em Node** com uma ponte falsa. Eles provam o
 
 `node --test scripts/regression-mycrewcare-v3.mjs` cobre 21 contratos (os 12 originais mais restore atrasado após troca/logout/ida-e-volta fora de ordem, falha de leitura obsoleta, desconexão durante restore, retry de cleanup e limpeza nativa assíncrona/timeout/escopo por operação), em em UTC, Brasília e Auckland: URL exata, hotel/pickup separados, vínculo sem hotel prévio, ambiguidade, cancelamento, diff, persistência, restauração, cache offline, vazio verificado, troca de revisão, logout e política foreground/background.
 
-`node scripts/assert-mycrewcare-v3-ownership.mjs` protege a lista de arquivos, impede writers compartilhados, exige release desativado, perfil isolado, armazenamento cifrado, allowlists exatas e recusa dinâmica de registros sem vínculo. O workflow executa esses gates antes e depois da preparação canônica, além de TypeScript, Vite e `assembleDebug`.
+O auditor `scripts/assert-mycrewcare-v3-ownership.mjs` protege a lista de arquivos, impede writers compartilhados, exige release desativado, perfil isolado, armazenamento cifrado, allowlists exatas e recusa dinâmica de registros sem vínculo. O workflow fornece a comparação imutável e executa esses gates antes e depois da preparação canônica, além de TypeScript, Vite, compilação Android debug/release e verificação de exclusão do diagnóstico na release.
+
+### Execução local com comparação explícita
+
+Executar apenas `node scripts/assert-mycrewcare-v3-ownership.mjs`, sem fornecer a comparação, falha fechado. Para uso local, informe previamente `MCC_REVIEW_BASE_SHA`, `MCC_REVIEW_HEAD_SHA` e `MCC_REVIEW_CHECKOUT_SHA`, cada um com o SHA completo de 40 caracteres do commit escolhido. Não use nomes de branches, SHAs abreviados nem uma base histórica copiada deste documento.
+
+A base é o commit contra o qual você está revisando a mudança; o head é o commit da mudança; o checkout é o commit efetivamente aberto nesse clone. Em um checkout do próprio head, head e checkout são iguais. Em uma composição de PR, o checkout precisa ter exatamente os pais `[base, head]` e a árvore resultante dessa composição. Confira os commits antes de executar e obtenha os objetos necessários se o clone for raso. Nenhum fetch, inferência de `origin/main` ou recuperação com diff vazio ocorre automaticamente.
+
+Após definir as três variáveis de revisão, execute na raiz do repositório:
+
+<!-- mcc-local-command:start -->
+```sh
+: "${MCC_REVIEW_BASE_SHA:?Informe o SHA completo da base revisada}"
+: "${MCC_REVIEW_HEAD_SHA:?Informe o SHA completo do head revisado}"
+: "${MCC_REVIEW_CHECKOUT_SHA:?Informe o SHA completo do checkout revisado}"
+CREWCHECK_MCC_BASE_SHA="$MCC_REVIEW_BASE_SHA" \
+CREWCHECK_MCC_HEAD_SHA="$MCC_REVIEW_HEAD_SHA" \
+CREWCHECK_MCC_CHECKOUT_SHA="$MCC_REVIEW_CHECKOUT_SHA" \
+node scripts/assert-mycrewcare-v3-ownership.mjs
+```
+<!-- mcc-local-command:end -->
+
+As variáveis `CREWCHECK_MCC_*` são passadas apenas a essa chamada. O comando usa o mesmo auditor do CI, incluindo todas as invariantes; não há modo de pular ownership. Comparação ausente/vazia/invertida, objeto Git ausente, erro de Git, checkout divergente ou escopo misto continuam sendo falhas. Não use base igual ao head para tentar executar apenas as invariantes. Esta documentação não libera integração compartilhada nem Saúde 1085.
 
 ### Revisão offline de 11/10/2026: escrita e logout concorrentes
 

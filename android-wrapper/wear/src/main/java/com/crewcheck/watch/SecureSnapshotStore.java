@@ -69,6 +69,13 @@ public final class SecureSnapshotStore {
         }
     }
 
+    public void registerChangeListener(SharedPreferences.OnSharedPreferenceChangeListener listener) {
+        preferences.registerOnSharedPreferenceChangeListener(listener);
+    }
+    public void unregisterChangeListener(SharedPreferences.OnSharedPreferenceChangeListener listener) {
+        preferences.unregisterOnSharedPreferenceChangeListener(listener);
+    }
+
     public synchronized void clear() {
         preferences.edit().remove(KEY_IV).remove(KEY_PAYLOAD).apply();
         requestComplicationUpdate();
