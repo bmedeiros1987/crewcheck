@@ -45,8 +45,9 @@ for(const scenario of ['future','ongoing','cancelled','ambiguous'])test(`actual 
 });
 
 for(const outcome of ['provider_mismatch','unconfigured','synthesis_failed','delivery_failed','sent','text_policy','revoked','revision_changed'])test(`actual voice router and sender ${outcome} uses bounded result and safe text fallback`,async()=>{
- const h=realDeparture(data('estimated'),'missing',at),diagnostics=[];let synthesis=0,delivery=0;
+ const h=realDeparture(data('estimated'),'missing',at),diagnostics=[],voiceLogs=[];let synthesis=0,delivery=0;
  Object.assign(h.context,{
+  console:{...console,info:(label,value)=>{assert.equal(label,'[concierge-voice-delivery]');voiceLogs.push({...value});}},
   telegramVoiceFileId:()=> 'synthetic-file',crewcheckSttConfigured:()=>true,elevenLabsSttConfigured:()=>false,telegramVoiceDuration:()=>2,
   showHumanRecordingAction:async()=>{},telegramGetFileInfo:async()=>({ok:true,fileSize:2,filePath:'synthetic'}),telegramDownloadFile:async()=>({ok:true,buffer:Buffer.from('synthetic')}),
   telegramVoiceFileName:()=> 'synthetic.ogg',telegramVoiceMime:()=> 'audio/ogg',transcribeTelegramAudio:async()=>({ok:true,text:outcome==='text_policy'?'/configuracoes':'/proximo'}),
@@ -59,7 +60,7 @@ for(const outcome of ['provider_mismatch','unconfigured','synthesis_failed','del
  const human=h.context.sendHumanTelegramVoiceReply;
  h.context.sendHumanTelegramVoiceReply=(...args)=>{const sink=args[4];args[4]=result=>{diagnostics.push(result);sink?.(result);};return human(...args);};
  await h.context.processTelegramUpdate({message:{chat:{id:h.profile.chatId,type:'private'},from:{id:h.profile.chatId},voice:{file_id:'synthetic',duration:2}}});
- assert.equal(diagnostics.length,1);const result=diagnostics[0];
+ assert.equal(diagnostics.length,1);assert.equal(voiceLogs.length,1);assert.deepEqual(Object.keys(voiceLogs[0]).sort(),['reason','state']);assert.doesNotMatch(JSON.stringify(voiceLogs),/example\.invalid|9001|QA-MERGED|05\/10/);const result=diagnostics[0];assert.equal(voiceLogs[0].state,result.state);
  if(['provider_mismatch','unconfigured'].includes(outcome)){assert.equal(result.state,'unavailable');assert.equal(result.reason,outcome);assert.equal(synthesis,0);}
  else assert.equal(result.state,['revoked','revision_changed'].includes(outcome)?'context_expired':outcome);
  if(['revoked','revision_changed'].includes(outcome)){assert.equal(synthesis,1);assert.equal(delivery,0);assert.doesNotMatch(h.trace.output.join(' '),/05\/10\/2099|APZ|QA-MERGED/);}

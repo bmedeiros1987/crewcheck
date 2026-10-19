@@ -41,7 +41,7 @@ patch('sendHumanTelegramVoiceReply',body=>body.includes('onResult') ? body : bod
 patch('handleTelegramVoiceMessage',body=>body.includes('let audioResult') ? body : body
  .replace('    const reply = await buildTelegramConciergeReply', '    crewcheckTemporalDialogue.protect(profile, snapshot);\n    const reply = await buildTelegramConciergeReply')
  .replace('    const humanAudioSent = await sendHumanTelegramVoiceReply(chatId, reply, transcript, snapshot);', "    let audioResult = {state:'unavailable'};\n    const humanAudioSent = await sendHumanTelegramVoiceReply(chatId, reply, transcript, snapshot, result => { audioResult = result; }, profile.conciergeResponseAuthority?.validate);")
- .replace('    if (humanAudioSent) return true;', "    if (humanAudioSent || audioResult.state === 'context_expired') return true;")
+ .replace('    if (humanAudioSent) return true;', "    console.info('[concierge-voice-delivery]', {state:audioResult.state,reason:audioResult.reason || ''});\n    if (humanAudioSent || audioResult.state === 'context_expired') return true;")
  .replace('await sendTelegramMessage(chatId, reply, { reply_markup: conciergeReplyKeyboard(normalizeConciergeButtonText(transcript)) });', "await sendTelegramMessage(chatId, audioResult.state === 'text_policy' ? reply : 'Não consegui enviar o áudio agora; segue por texto.\\n\\n' + reply, { ...crewcheckMenu.guard(profile), reply_markup: conciergeReplyKeyboard(normalizeConciergeButtonText(transcript)) });"));
 fs.writeFileSync('server.mjs',source);
 
