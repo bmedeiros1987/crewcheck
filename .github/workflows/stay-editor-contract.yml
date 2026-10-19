@@ -83,6 +83,7 @@ jobs:
           node scripts/build-hotel-maintenance.mjs --verify-seal "$RUNNER_TEMP/hotel-maintenance"
           mkdir -p artifacts/hotel-maintenance
           cp "$RUNNER_TEMP/hotel-maintenance/hotel-maintenance-manifest.json" artifacts/hotel-maintenance/
+          node scripts/build-hotel-maintenance.mjs --package "$RUNNER_TEMP/hotel-maintenance" "$GITHUB_WORKSPACE/artifacts/hotel-maintenance/hotel-maintenance-tested.tar.gz"
       - name: Raw hotel editor v2 through composed routes and synthetic database
         env:
           STAY_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/stay-browser/package.json

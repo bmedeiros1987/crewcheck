@@ -82,9 +82,41 @@ export function sealHotelMaintenance(root, {verifyOnly=false}={}) {
   else fs.writeFileSync(path.join(root,'hotel-maintenance-manifest.json'),JSON.stringify(manifest,null,2)+'\n');
   return manifest;
 }
+export function packageHotelMaintenance(root, archive) {
+  const manifest=sealHotelMaintenance(root,{verifyOnly:true});
+  assert(path.isAbsolute(archive)&&!fs.existsSync(archive),'Archive must be a new absolute path');
+  const canonicalRoot=fs.realpathSync(root),canonicalArchive=path.join(fs.realpathSync(path.dirname(archive)),path.basename(archive));
+  const relative=path.relative(canonicalRoot,canonicalArchive);
+  assert(relative.startsWith('..'+path.sep)||relative==='..','Archive must be outside the sealed tree');
+  const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'hotel-maintenance-package-'));
+  try {
+    const files=[...manifest.files.map(file=>file.path),'hotel-maintenance-source.json','hotel-maintenance-manifest.json'];
+    if(fs.existsSync(path.join(root,'.crewcheck-source-preparation.json'))) files.push('.crewcheck-source-preparation.json');
+    assert(files.every(file=>!path.isAbsolute(file)&&!file.split('/').includes('..')&&!/[\r\n]/.test(file)));
+    const list=path.join(temporary,'files.txt');fs.writeFileSync(list,files.join('\n')+'\n');
+    // Copy the already tested and sealed tree verbatim. Never rebuild, prepare,
+    // generate sources or reseal during packaging. Dependencies are excluded.
+    execFileSync('tar',['-czf',archive,'--no-recursion','-C',root,'-T',list]);
+    const restored=path.join(temporary,'unpacked');fs.mkdirSync(restored);
+    execFileSync('tar',['-xzf',archive,'-C',restored]);
+    const unpacked=sealHotelMaintenance(restored,{verifyOnly:true});
+    assert.equal(unpacked.preparedTreeSha256,manifest.preparedTreeSha256);
+    sealHotelMaintenance(root,{verifyOnly:true});
+    const sha256=digest(fs.readFileSync(archive));
+    const result={archive:path.basename(archive),sha256,bytes:fs.statSync(archive).size,sourceSha:manifest.sourceSha,
+      sourceTree:manifest.sourceTree,preparedTreeSha256:manifest.preparedTreeSha256,unpackedSealVerified:true,
+      rebuiltAfterTests:false,dependenciesIncluded:false,productionActivation:false,httpDeletionCertified:false,hold:true};
+    fs.writeFileSync(archive+'.sha256',sha256+'  '+path.basename(archive)+'\n');
+    fs.writeFileSync(archive+'.json',JSON.stringify(result,null,2)+'\n');
+    return result;
+  } finally {fs.rmSync(temporary,{recursive:true,force:true});}
+}
 if (import.meta.url === pathToFileURL(process.argv[1]||'').href) {
-  const [action,root]=process.argv.slice(2);
-  assert(['--output','--seal','--verify-seal'].includes(action) && root,'Use --output <fresh absolute directory>, --seal or --verify-seal <artifact directory>');
+  const [action,root,archive]=process.argv.slice(2);
+  assert(['--output','--seal','--verify-seal','--package'].includes(action) && root,'Use --output <fresh absolute directory>, --seal or --verify-seal <artifact directory>');
+  if(action==='--package') {console.log(JSON.stringify(packageHotelMaintenance(root,archive)));}
+  else {
   const result=action==='--output'?buildHotelMaintenance(root):sealHotelMaintenance(root,{verifyOnly:action==='--verify-seal'});
   console.log(JSON.stringify({mode:result.mode,sourceSha:result.sourceSha,sourceTree:result.sourceTree,preparedTreeSha256:result.preparedTreeSha256,files:result.files.length,hold:result.hold}));
+  }
 }

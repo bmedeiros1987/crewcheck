@@ -64,3 +64,21 @@ vínculos, snapshots, overrides e versões. Não retornar ao writer antigo de sy
 remover schema, zerar versões ou restaurar dump antigo sobre dados vivos.
 Este mecanismo é uma entrega para revisão; nenhum deploy, flag, migração ou banco
 real foi executado e merge continua bloqueado pela revisão operacional.
+
+## Evidência de estado e pacote testado
+
+A fixture expõe getters que leem o estado atual do banco sintético em cada
+comparação. Uma contraprova separada altera deliberadamente uma linha fictícia:
+a comparação de estado e o detector de tentativa de DML precisam falhar. Os
+caminhos positivos continuam exigindo zero tentativas de DML em hotéis/regras.
+A mutação da contraprova não é operação de banco real nem teste de exclusão global.
+
+Após todos os testes e a verificação pós-seal, o CI empacota a árvore efetivamente
+testada com `--package`, sem executar preparação, build ou reseal. Inclui fontes,
+outputs gerados, certificados e cache de preparação; exclui node_modules e QA.
+O pacote é descompactado isoladamente e o seal precisa conferir exatamente com o
+original, antes/depois da cópia. O artifact existente `stay-editor-synthetic`
+preserva `hotel-maintenance-tested.tar.gz`, o SHA-256 do arquivo e um JSON com
+source SHA/tree e hash da árvore preparada. O mesmo pacote pode ser verificado
+com `sha256sum --check hotel-maintenance-tested.tar.gz.sha256` no diretório onde
+estão ambos. É uma entrega de revisão, sem autorização para publicar ou implantar.
