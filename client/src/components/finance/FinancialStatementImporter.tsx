@@ -1,4 +1,5 @@
 import { useFinancialPrivacy, FinancialPrivacyToggle } from './FinancialPrivacy';
+import OwnerPerDiemConfirmation from './OwnerPerDiemConfirmation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, FileSearch, History, ShieldCheck, Upload, X } from 'lucide-react';
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
@@ -123,6 +124,7 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
       <div className="finance-learning-actions"><button type="button" onClick={() => setResult(null)}><X size={16}/>Descartar</button><button type="button" className="primary" disabled={!sourceConfirmed || (mode === 'payroll' && !cycleConfirmed) || !result.rates.length || result.warnings.some((item) => item.includes('obrigatória'))} onClick={confirm}><Check size={16}/>Confirmar valores</button></div>
     </div>}
 
+    {mode === 'per_diem' && <OwnerPerDiemConfirmation key={financialRateSession() || 'signed-out'} onSaved={() => setRates(readConfirmedFinancialRates())}/>}
     <details className="finance-learning-history" open={visibleRates.length > 0}>
       <summary><History size={16}/> Histórico de tarifas revisadas ({visibleRates.length})</summary>
       {visibleRates.length ? <div className="finance-learning-table-wrap"><table><thead><tr><th>Rubrica</th><th>Valor</th><th>Período</th><th>Origem</th></tr></thead><tbody>

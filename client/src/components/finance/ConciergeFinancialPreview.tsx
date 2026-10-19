@@ -4,8 +4,10 @@ import { currencyMinorDigits, formatFinancialMinor } from '@shared/financialMone
 import { validFinancialDay } from '@/lib/financialHistoryPeriods';
 import { FinancialPrivacyToggle, useFinancialPrivacy } from './FinancialPrivacy';
 import './concierge-financial-preview.css';
+import {useHomeFinancialEstimate} from './HomeFinancialEstimate';
+import {localUpcomingAllowance} from '@/lib/financialLocalUpcoming';
 
-type Forecast = { id: string; category: string; expectedPaymentDate: string; expectedPaymentTimezone: string; amountMinor: number | null; currency: string; status: 'forecast' };
+type Forecast = { id: string; category: string; expectedPaymentDate: string; expectedPaymentTimezone: string; amountMinor: number | null; currency: string; status: 'forecast';partial?:boolean };
 type Preview = { state: 'available' | 'no_data' | 'incomplete'; events: Forecast[]; hasMore: boolean };
 type FinanceMode = 'allowance' | 'salary';
 const financeMode = (category: string): FinanceMode => ['payroll', 'vacation'].includes(category) ? 'salary' : 'allowance';
@@ -34,8 +36,9 @@ function decode(raw: any, identity: string): Preview | null {
 }
 export default function ConciergeFinancialPreview({ openFinance }: { openFinance: (mode: FinanceMode) => void }) {
   const privacy = useFinancialPrivacy(), identity = owner(), token = getToken();
+  const calculated=useHomeFinancialEstimate();
   const [revision, refresh] = useState(0);
-  const [result, setResult] = useState<{ identity: string; token: string | null; data: Preview | null; loading: boolean } | null>(null);
+  const [result, setResult] = useState<{ identity: string; token: string | null; data: Preview | null; loading: boolean;ledgerOff?:boolean } | null>(null);
   useEffect(() => {
     const changed = () => { setResult(null); refresh(value => value + 1); };
     const stored = (event: StorageEvent) => { if (event.key === null || ['crewcheck_auth_user', 'crewcheck_auth_token'].includes(event.key)) changed(); };
@@ -50,18 +53,31 @@ export default function ConciergeFinancialPreview({ openFinance }: { openFinance
     const timer = setTimeout(() => controller.abort(), 8000);
     authFetch<any>('/api/platform/finance/upcoming', { method: 'GET', signal: controller.signal, cache: 'no-store' })
       .then(raw => { if (live && session.isCurrent() && owner() === identity) setResult({ identity, token, data: decode(raw, identity), loading: false }); })
-      .catch(() => { if (live && session.isCurrent()) setResult({ identity, token, data: null, loading: false }); })
+      .catch(error => { if (live && session.isCurrent()) setResult({ identity, token, data: null, loading: false,ledgerOff:error?.code==='FINANCIAL_LEDGER_NOT_ENABLED' }); })
       .finally(() => clearTimeout(timer));
     return () => { live = false; clearTimeout(timer); controller.abort(); };
   }, [identity, token, revision]);
-  const current = result?.identity === identity && result.token === token ? result : null, data = current?.data;
+  const current = result?.identity === identity && result.token === token ? result : null;
+  const local=identity&&current?.ledgerOff?localUpcomingAllowance(calculated):null,data:Preview|null|undefined=current?.data||local;
+  useEffect(() => {
+    const position = history.state?.ccConciergePosition;
+    if (!identity || !data || !position || new URLSearchParams(location.search).get('view') !== 'concierge') return;
+    const frame = requestAnimationFrame(() => {
+      const target = Array.from(document.querySelectorAll<HTMLElement>('[data-financial-origin]')).find(element => element.dataset.financialOrigin === position.key);
+      target?.focus({preventScroll:true});
+      window.scrollTo({left:position.x,top:position.y,behavior:'instant'});
+      history.replaceState({...history.state,ccConciergePosition:undefined},'');
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [identity,current?.loading,data]);
   return <section className="cz-toolbox cc-concierge-finance" aria-label="Próximas previsões financeiras">
-    <h2>Próximas previsões financeiras</h2><p>Próximos 30 dias · moedas originais · não confirma recebimento.</p>
-    <p role="status">{!identity ? 'Entre na conta proprietária para consultar.' : current?.loading ? 'Consultando previsões…' : !data ? 'Previsões indisponíveis nesta consulta.' : data.state === 'incomplete' ? 'Resumo parcial: há dados, datas ou valores a conferir no Financeiro.' : !data.events.length ? 'Nenhuma previsão com data informada nos próximos 30 dias.' : 'Datas previstas conforme registros da sua conta.'}</p>
+    <header className="cc-concierge-finance-heading"><h2>Próximas previsões financeiras</h2><details className="cc-concierge-finance-help"><summary aria-label="Entender as previsões financeiras"><span aria-hidden="true">?</span></summary><div><p>Estimativas em moedas originais; recebimento não confirmado.</p>{local?<p>Calculado da escala aberta nesta conta. Histórico salvo indisponível; subtotais não incluem parcelas sem dados.</p>:<p>Previsões dos registros salvos nesta conta.</p>}{data&&<p>Fusos das origens: {[...new Set(data.events.map(event=>event.expectedPaymentTimezone))].join(', ')||'a confirmar'}.</p>}</div></details></header><p>30 dias · estimativas</p>
+    {local&&<p>Calculado da escala</p>}
+    <p role="status">{!identity ? 'Entre na sua conta.' : current?.loading ? 'Consultando…' : !data ? 'Indisponível · tentar novamente.' : data.state === 'incomplete' ? 'Parcial · conferir valores e datas.' : !data.events.length ? 'Sem previsão com data.' : ''}</p>
     {data && data.events.length > 0 && <><FinancialPrivacyToggle/>
-      <ol>{data.events.map(event => <li key={event.id}><button type="button" onClick={() => openFinance(financeMode(event.category))}><div><strong>{labels[event.category]}</strong><span><time dateTime={event.expectedPaymentDate}>{event.expectedPaymentDate.slice(5).split('-').reverse().join('/')}</time> · previsão</span><small>{event.expectedPaymentTimezone} · Ver no Financeiro</small></div>
-        <b>{event.amountMinor === null ? 'Valor a confirmar' : privacy.amount(formatFinancialMinor(event.amountMinor, event.currency) || 'Valor a confirmar')}<small>Moeda original: {event.currency}</small></b></button></li>)}</ol>
-      {data.hasMore && <p>Há outras previsões no Financeiro.</p>}</>}
-    <div className="cc-concierge-finance-actions"><button type="button" onClick={() => openFinance(financeMode(data?.events[0]?.category || 'allowance'))}>Abrir Financeiro</button>{identity && <button type="button" disabled={current?.loading} onClick={() => refresh(value => value + 1)}>Atualizar previsões</button>}</div>
+      <ol>{data.events.map(event => <li key={event.id}><button type="button" data-financial-origin={event.id} onClick={() => openFinance(financeMode(event.category))}><div><strong>{labels[event.category]}</strong><span><time dateTime={event.expectedPaymentDate}>{event.expectedPaymentDate.slice(5).split('-').reverse().join('/')}</time> · previsão</span></div>
+        <b>{event.amountMinor === null ? 'Valor a confirmar' : privacy.amount(formatFinancialMinor(event.amountMinor, event.currency) || 'Valor a confirmar')}<small>Moeda original: {event.currency}{event.partial?' · subtotal parcial':''}</small></b></button></li>)}</ol>
+      {data.hasMore && <p>Outras previsões disponíveis.</p>}</>}
+    <div className="cc-concierge-finance-actions">{(!data?.events.length||data?.hasMore)&&<button type="button" data-financial-origin="open-finance" onClick={() => openFinance(financeMode(data?.events[0]?.category || 'allowance'))}>Abrir Financeiro</button>}{identity && <button type="button" aria-label="Atualizar previsões" disabled={current?.loading} onClick={() => refresh(value => value + 1)}>Atualizar</button>}</div>
   </section>;
 }

@@ -3,13 +3,24 @@ import { validFinancialDay } from './financialHistoryPeriods';
 import {knownPaymentTotals,type NextPayment,type PayrollCandidate,type PaymentLine} from './nextFinancialPayment';
 
 export type PayrollSalary = {
-  configured:boolean; config:{baseConfigured:boolean;fixedAdditionsConfigured?:boolean;basePay:number;fixedAdditions:number;requiresManualFunction:boolean;source:string};
+  configured:boolean; config:{baseConfigured:boolean;fixedAdditionsConfigured?:boolean;basePay:number;fixedAdditions:number;requiresManualFunction:boolean;source:string;baseLabel?:string};
   production:number; reserve:number; standby:number; chief:number; instructorPay:number;
   rows:Array<{iso:string;flight:string;route:string;total:number;timeKnown:boolean;distanceKnown:boolean;source:string}>;
   reserveAssessment:{pendingCount:number;knownCount?:number;knownAmount?:number};standbyAssessment:{pendingCount:number;knownCount?:number;knownAmount?:number};
 };
 export type PayrollSnapshot = {month:string;salary:PayrollSalary;publishedDays:string[]};
 type Cycle = {operationalVariableMonth:string;fixedMonth:string;expectedCreditMonth:string};
+
+// Monthly coverage controls completeness, not visibility of independently
+// evidenced activities. An empty partial month is never an evidenced zero.
+function activityLine(s:PayrollSalary|undefined,key:'reserve'|'standby',month:string,covered:boolean):PaymentLine {
+ const a=key==='reserve'?s?.reserveAssessment:s?.standbyAssessment;
+ const ready=Boolean(s?.configured&&!s.config.requiresManualFunction);
+ const known=ready&&Boolean(a?.knownCount)&&Number.isFinite(a?.knownAmount)&&Number(a?.knownAmount)>=0;
+ const complete=ready&&covered&&a?.pendingCount===0&&Number.isFinite(s?.[key])&&Number(s?.[key])>=0;
+ return {iso:month,label:key==='reserve'?'Reserva':'Sobreaviso',currency:'BRL',value:complete?s![key]:known?a!.knownAmount!:null,
+  partial:!complete,pendingReason:complete?undefined:known?'Subtotal dos intervalos com horários e tarifa comprovados.':!ready?'Função ou tarifa salarial pendente.':a?.pendingCount?'Início/fim publicado não comprovado nos intervalos desta parcela.':'Cobertura da competência incompleta; ausência de atividades não prova valor zero.',source:s?.config.source||'Escala operacional ausente'};
+}
 
 /** A positive record count is not monthly coverage. Count distinct, valid civil
  * days of this competence, including published rest days, before totaling it. */
@@ -31,10 +42,10 @@ export function composePayrollPayment(cycle:Cycle,snapshots:PayrollSnapshot[]):P
   const rowReady=(row:PayrollSalary['rows'][number])=>Boolean(variable?.configured&&!variable.config.requiresManualFunction&&row.timeKnown&&row.distanceKnown&&Number.isFinite(row.total)&&row.total>=0);
   const ready=Boolean(coverage.complete&&variable?.configured&&!variable.config.requiresManualFunction&&variable.rows.every(rowReady)&&!variable.reserveAssessment.pendingCount&&!variable.standbyAssessment.pendingCount);
   const lines:PaymentLine[]=[
-    {iso:cycle.fixedMonth,label:'Salário-base',currency:'BRL',value:fixed?.config.baseConfigured?fixed.config.basePay:null,source:fixed?.config.source||'Referência dos fixos ausente'},
-    {iso:cycle.fixedMonth,label:'Adicionais fixos informados',currency:'BRL',value:fixed?.config.fixedAdditionsConfigured?fixed.config.fixedAdditions:null,source:fixed?.config.source||'Referência dos fixos ausente'},
-    ...(variable?.rows.map(row=>({iso:row.iso,label:`${row.flight} · ${row.route}`,currency:'BRL',value:rowReady(row)?row.total:null,source:row.source}))||[]),
-    ...(['reserve','standby'] as const).map((key,index)=>({iso:month,label:['Reserva','Sobreaviso'][index],currency:'BRL',value:ready?variable![key]:null,source:variable?.config.source||'Escala operacional ausente'})),
+    {iso:cycle.fixedMonth,label:fixed?.config.baseLabel||'Salário-base',currency:'BRL',value:fixed?.config.baseConfigured?fixed.config.basePay:null,pendingReason:fixed?.config.baseConfigured?undefined:'Valor pessoal dos fixos desta competência não informado; piso ACT não é salário individual.',source:fixed?.config.source||'Referência dos fixos ausente'},
+    {iso:cycle.fixedMonth,label:'Adicionais fixos informados',currency:'BRL',value:fixed?.config.fixedAdditionsConfigured?fixed.config.fixedAdditions:null,pendingReason:fixed?.config.fixedAdditionsConfigured?undefined:'Adicionais pessoais não informados para esta competência. Ausência não equivale a zero.',source:fixed?.config.source||'Referência dos fixos ausente'},
+    ...(variable?.rows.map(row=>({iso:row.iso,label:`${row.flight} · ${row.route}`,currency:'BRL',value:rowReady(row)?row.total:null,pendingReason:!row.distanceKnown?'KM da rota não disponível no cálculo salarial. Coordenadas geográficas não comprovam quilometragem remuneratória.':!row.timeKnown?'Horários publicados ou fuso não comprovados para calcular esta parcela.':'Função ou tarifa salarial pendente.',source:row.source}))||[]),
+    ...(['reserve','standby'] as const).map(key=>activityLine(variable,key,month,coverage.complete)),
   ];
   const issues=[
     ...(!coverage.complete?[`${month}: ${coverage.missing.length} dia(s) sem programação publicada. Importe ou confira a escala completa.`]:[]),
@@ -51,10 +62,10 @@ export function composeOperationalPayrollEstimate(snapshot:PayrollSnapshot):Next
  const tariffReady=s.configured&&!s.config.requiresManualFunction;
  const rowReady=(row:PayrollSalary['rows'][number])=>tariffReady&&row.timeKnown&&row.distanceKnown&&Number.isFinite(row.total)&&row.total>=0;
  const lines:PaymentLine[]=[
-  {iso:month,label:'Salário-base da competência',currency:'BRL',value:s.config.baseConfigured?s.config.basePay:null,source:s.config.source},
-  {iso:month,label:'Adicionais fixos informados',currency:'BRL',value:s.config.fixedAdditionsConfigured?s.config.fixedAdditions:null,source:s.config.source},
-  ...s.rows.map(row=>({iso:row.iso,label:`${row.flight} · ${row.route}`,currency:'BRL',value:rowReady(row)?row.total:null,source:row.source})),
-  ...(['reserve','standby'] as const).map((key,index)=>{const assessment=index?s.standbyAssessment:s.reserveAssessment;return {iso:month,label:['Reserva','Sobreaviso'][index]+(assessment.pendingCount?' · subtotal conhecido':''),currency:'BRL',value:!tariffReady?null:assessment.pendingCount?(assessment.knownCount&&Number.isFinite(assessment.knownAmount)?assessment.knownAmount!:null):coverage.complete&&Number.isFinite(s[key])?s[key]:null,source:s.config.source};}),
+  {iso:month,label:s.config.baseLabel||'Salário-base da competência',currency:'BRL',value:s.config.baseConfigured?s.config.basePay:null,pendingReason:s.config.baseConfigured?undefined:'Valor pessoal dos fixos desta competência não informado; piso ACT não é salário individual.',source:s.config.source},
+  {iso:month,label:'Adicionais fixos informados',currency:'BRL',value:s.config.fixedAdditionsConfigured?s.config.fixedAdditions:null,pendingReason:s.config.fixedAdditionsConfigured?undefined:'Adicionais pessoais não informados para esta competência. Ausência não equivale a zero.',source:s.config.source},
+  ...s.rows.map(row=>({iso:row.iso,label:`${row.flight} · ${row.route}`,currency:'BRL',value:rowReady(row)?row.total:null,pendingReason:!row.distanceKnown?'KM da rota não disponível no cálculo salarial. Coordenadas geográficas não comprovam quilometragem remuneratória.':!row.timeKnown?'Horários publicados ou fuso não comprovados para calcular esta parcela.':'Função ou tarifa salarial pendente.',source:row.source})),
+  ...(['reserve','standby'] as const).map(key=>activityLine(s,key,month,coverage.complete)),
  ];
  const complete=coverage.complete&&tariffReady&&s.config.baseConfigured&&Number.isFinite(lines.reduce((sum,line)=>sum+(line.value??NaN),0))&&lines.every(line=>line.value!==null&&Number.isFinite(line.value)&&line.value>=0)&&!s.reserveAssessment.pendingCount&&!s.standbyAssessment.pendingCount;
  const known=knownPaymentTotals(lines);

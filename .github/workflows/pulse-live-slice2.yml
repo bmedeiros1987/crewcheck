@@ -56,7 +56,10 @@ jobs:
       - name: Account review and integrated header browser regression
         env:
           PULSE_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/pulse-browser/package.json
-        run: node scripts/regression-pulse-alert-experience.mjs
+        run: |
+          node scripts/regression-pulse-alert-experience.mjs
+          node scripts/regression-pulse-alert-experience.mjs --case=header-close
+          node scripts/regression-pulse-alert-experience.mjs --case=mark-standard
       - name: TypeScript
         run: npx tsc --noEmit
       - name: Build web

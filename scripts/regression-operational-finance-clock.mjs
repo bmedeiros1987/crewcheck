@@ -41,11 +41,17 @@ try {
     assert.equal(run([night, { ...night, id: 'SYN-DUPLICATE' }]).rows.length, n.rows.length);
     for (const bad of [{ ...night, presentation: '', day: {} }, { ...night, presentation: '99:99', day: {} }, { ...night, canonical: { ...night.canonical, endDateTime: '2032-10-04T01:00:00-03:00' } }]) {
       const pending = run([bad]);
-      assert.equal(pending.rows.length, 0);
+      if (!bad.day.dutyReport) {
+        assert.deepEqual(Array.from(pending.rows, row => row.label), ['Ceia'], 'literal night flight preserves supper only when APZ is unresolved');
+        assert.equal(pending.rows[0].value, 100);
+        assert.equal(pending.rows[0].calculationStart, new Date(night.canonical.startDateTime).toISOString());
+        assert.match(pending.rows[0].source, /subtotal parcial/);
+        assert.equal(pending.rows.some(row => ['Café', 'Táxi'].includes(row.label)), false);
+      } else assert.equal(pending.rows.length, 0);
       assert.equal(pending.monthly, null);
       assert.equal(pending.monthlySummary.state, 'unclassified');
       assert.match(pending.unclassifiedItems[0].reason, /Intervalo operacional incompleto/);
-      assert.equal(pending.currencySummary, 'Não calculável');
+      assert.equal(pending.currencySummary, !bad.day.dutyReport ? 'Subtotal estimado: BRL 100' : 'Não calculável');
     }
     const foreign = run([event('SYN-USD', '2032-10-05T11:00:00-03:00', '2032-10-05T11:30:00-03:00', '10:05', 'flight', 'INT')]);
     assert.equal(foreign.rows[0].currency, 'USD');

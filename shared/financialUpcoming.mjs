@@ -1,6 +1,20 @@
 import { queryFinancialHistory } from './financialReadModel.mjs';
 import { currencyMinorDigits } from './financialMoney.mjs';
 
+function coherentForecastTiming(record) {
+  // A syntactically valid date is not evidence of a credit cycle or flight.
+  // Keep the record in History, but withhold its dated Concierge projection.
+  if (record.amountMinor !== null && record.amountMinor < 0) return false;
+  if (record.category === 'payroll') return record.expectedPaymentDate?.slice(0, 7) === record.expectedCreditMonth;
+  if (record.category === 'allowance' && record.currency !== 'BRL') {
+    return ['item', 'day'].includes(record.aggregationLevel)
+      && Boolean(record.timingRuleId && record.flightAirport && record.flightDateTimezone)
+      && record.flightDate === record.expectedPaymentDate
+      && record.flightDateTimezone === record.expectedPaymentTimezone;
+  }
+  return true;
+}
+
 function paymentScope(record, now) {
   if (['statement_reported', 'payment_confirmed'].includes(record?.status)) return 'outside';
   const date = record?.expectedPaymentDate;
@@ -70,7 +84,7 @@ export function queryUpcomingFinancialForecast({ identity, records, now = new Da
   for (const record of forecasts) {
     const scope = paymentScope(record, now);
     if (scope === 'outside') continue;
-    if (scope === 'unknown' || ambiguous.has(record.id)) { incomplete = true; continue; }
+    if (scope === 'unknown' || ambiguous.has(record.id) || !coherentForecastTiming(record)) { incomplete = true; continue; }
     if (currencyMinorDigits(record.currency) === null) { incomplete = true; continue; }
     const date = record.expectedPaymentDate, timezone = record.expectedPaymentTimezone;
     if (record.amountMinor === null) incomplete = true;

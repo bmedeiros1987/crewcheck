@@ -37,7 +37,7 @@ function seed({theme,kind,amount,history,salaryBase}) {
   if(salaryBase!==undefined)localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_salary_base_brl',String(salaryBase));
   localStorage.setItem('crewcheck_roster_choice_v1_financial-ui-qa',JSON.stringify({owner:'financial-ui-qa',roster:kind,selection:'explicit',cacheSchema:'p0-operational-date-anchor-v2',sourceFileName:'Synthetic finance UI QA'}));
 }
-async function showFinancial(page,screen){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===screen)return;const names={overview:'← Voltar ao resumo',statement:'Extrato',charts:'Gráficos',payment:'Detalhes do pagamento'};await page.getByRole('button',{name:names[screen],exact:true}).click();await page.waitForFunction(screen=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen===screen,screen);}
+async function showFinancial(page,screen){const root=page.locator('.cc-payment-overview');if(await root.getAttribute('data-financial-screen')===screen)return;const names={overview:'Resumo financeiro',statement:'Extrato',charts:'Gráficos',payment:'Detalhes do pagamento'};await page.getByRole('button',{name:names[screen],exact:true}).click();await page.waitForFunction(screen=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen===screen,screen);}
 
 
 async function capture(page, name) {
@@ -99,7 +99,7 @@ async function capture(page, name) {
  }
  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'})));await page.locator('.cz-menu-btn').first().click();await page.locator('.cc-menu-destination[data-menu-label="Concierge"]').click();
  await page.getByRole('heading',{name:'Próximas previsões financeiras',exact:true}).waitFor();
- await page.getByText('Resumo parcial: há dados, datas ou valores a conferir no Financeiro.',{exact:true}).waitFor();
+ await page.getByText('Parcial · conferir valores e datas.',{exact:true}).waitFor();
  if(scenario==='multi')await page.locator('.cc-concierge-finance time[datetime="2032-03-01"]').waitFor();
  await capture(page,`canonical-${width}-${scenario}-concierge`);
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'capture flow stays within the viewport');

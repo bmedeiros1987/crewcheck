@@ -38,6 +38,7 @@ try {
         { key: 'domestic', label: 'Synthetic domestic', currency: 'BRL', mainMeal: 100 },
         { key: 'other_international', label: 'Synthetic foreign', currency: 'USD', mainMeal: 20 },
       ] }),
+    confirmedRateAt: (key, date) => { consultedDates.push(date); return learning.rateAt(learned, key, date); },
     confirmedRateValueAt: (key, date) => { consultedDates.push(date); return learning.rateAt(learned, key, date)?.value ?? null; },
     readOptionalNumberSetting: () => null,
     readNumberSetting: key => key === 'crewcheck_fx_usd_brl' ? fxUSD : 0,

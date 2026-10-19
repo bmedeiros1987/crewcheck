@@ -160,3 +160,38 @@ html body #root .cz-app[data-version] .cc-payment-overview[data-financial-screen
 .cc-financial-history-availability {font-size:12px;line-height:1.6;color:var(--cc-review-muted);margin:12px 0}
 
 html body #root .cz-app[data-version] .cc-payment-hero .cc-payment-value small {display:block;flex-basis:100%;color:#d5e4ee!important;font-size:13px;line-height:1.5;opacity:1!important}
+
+/* Direction is redundant with explicit signs/labels; amounts retain privacy masking. */
+.cc-bank-chart-row[data-money-direction="income"] b {color:var(--cc-financial-income,#0969a5)}
+.cc-bank-chart-row[data-money-direction="outflow"] b {color:var(--error-text,#b42318)}
+.cc-bank-chart-row[data-money-direction="income"] .cc-bank-chart-track>span {background:var(--cc-financial-income,#0969a5);border-color:currentColor}
+.cc-bank-chart-row[data-money-direction="outflow"] .cc-bank-chart-track>span {background:var(--error-text,#b42318);border-color:currentColor}
+
+.cc-bank-transaction[data-money-direction="income"] summary b {color:var(--cc-financial-income,#0969a5)}
+.cc-bank-transaction[data-money-direction="outflow"] summary b {color:var(--error-text,#b42318)}
+
+html body .cz-app[data-version] {--cc-financial-income:#75c5ff;--cc-financial-outflow:#ffb4ab}
+html[data-crew-theme="light"] body .cz-app[data-version] {--cc-financial-income:#0969a5;--cc-financial-outflow:#b42318}
+.cc-bank-chart-row[data-money-direction="outflow"] b,.cc-bank-transaction[data-money-direction="outflow"] summary b {color:var(--cc-financial-outflow)}
+.cc-bank-chart-row[data-money-direction="outflow"] .cc-bank-chart-track>span {background:var(--cc-financial-outflow)}
+
+html body #root .cz-app[data-version] .cc-bank-chart-row[data-money-direction="income"] b,html body #root .cz-app[data-version] .cc-bank-transaction[data-money-direction="income"] summary b {color:var(--cc-financial-income)!important}
+html body #root .cz-app[data-version] .cc-bank-chart-row[data-money-direction="outflow"] b,html body #root .cz-app[data-version] .cc-bank-transaction[data-money-direction="outflow"] summary b {color:var(--cc-financial-outflow)!important}
+
+.cc-payment-topline {position:relative}
+.cc-payment-help {position:static;margin-left:auto;color:inherit}
+.cc-payment-help>summary {display:flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;cursor:pointer;list-style:none}
+.cc-payment-help>summary::-webkit-details-marker {display:none}
+.cc-payment-help>summary>span {display:flex;align-items:center;justify-content:center;width:24px;height:24px;border:2px solid currentColor;border-radius:50%;font-weight:700}
+.cc-payment-help>div {position:absolute;z-index:5;right:0;top:100%;width:min(280px,calc(100vw - 72px));max-height:60vh;overflow:auto;box-sizing:border-box;padding:16px;border:1px solid var(--cc-review-border);border-radius:12px;background:var(--cc-review-surface);box-shadow:0 8px 24px #0003}
+html body #root .cz-app[data-version] .cc-payment-help>div :is(p,li) {color:var(--cc-review-text)!important;font-size:13px;line-height:1.5}
+.cc-payment-help>div ul {padding-left:18px}
+
+/* Consistent financial controls; scoped away from the approved footer. */
+html body #root .cz-app[data-version] .cc-financial-actions {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}
+html body #root .cz-app[data-version] .cc-financial-actions>button,html body #root .cz-app[data-version] .cc-financial-screen-head>button {display:flex!important;align-items:center!important;justify-content:center!important;gap:8px!important;min-height:48px!important;min-width:0!important;padding:10px 14px!important;margin:0!important;box-sizing:border-box!important;border:1px solid var(--cc-review-border)!important;border-radius:12px!important;background:var(--cc-review-surface)!important;color:var(--cc-review-text)!important;font:inherit!important;font-size:14px!important;line-height:1.4!important;text-align:center!important;white-space:normal!important}
+.cc-financial-actions>button>svg{flex:0 0 18px}
+.cc-financial-actions>button:only-child{grid-column:1/-1}
+html body #root .cz-app[data-version] .cc-payment-overview[data-financial-screen="payment"] .cc-payment-value small {color:var(--cc-review-text)!important}
+html body #root .cz-app[data-version] .cc-payment-overview[data-financial-screen="payment"] .cc-payment-hero {padding:16px!important;border:1px solid var(--cc-review-border)!important;border-radius:16px!important;background:var(--cc-review-surface)!important}
+@media(max-width:600px){html body #root .cz-app[data-version] .cc-financial-actions{grid-template-columns:minmax(0,1fr);gap:8px}}

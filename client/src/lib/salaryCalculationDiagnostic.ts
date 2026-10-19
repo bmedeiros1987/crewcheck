@@ -1,7 +1,7 @@
 import type { FinancialRange } from './financialHistoryPeriods';
 import { payrollMonthBounds } from './financialPayrollPeriods';
 export type SalaryDiagnosticItem = {
-  month: string; days: number; configured: boolean; baseConfigured: boolean;
+  month: string; days: number; configured: boolean; baseConfigured: boolean;fixedAdditionsConfigured?:boolean;
   requiresManualFunction: boolean; variable: number; variableComplete: boolean; fixedMonth?: string; pendingActivityCount?: number;
 };
 /** Explains caller prerequisites without changing canonical calculation, moving
@@ -20,6 +20,7 @@ export function salaryCalculationDiagnostic(items: SalaryDiagnosticItem[], range
     if (!item.baseConfigured) reasons.push(item.fixedMonth
       ? `${item.month}: salário-base não informado nesta competência operacional. A referência revisada vincula os fixos à folha ${item.fixedMonth}; esse valor não foi repetido aqui.`
       : `${item.month}: falta salário-base com fonte revisada ou cadastro válido nesta conta e competência.`);
+    if (item.fixedAdditionsConfigured===false) reasons.push(`${item.month}: adicionais fixos não informados nesta competência. Ausência não equivale a zero; bruto e líquido integrais permanecem pendentes.`);
     if (!item.variableComplete) reasons.push(`${item.month}: há voos sem distância operacional válida entre aeroportos; as variáveis e o total permanecem desconhecidos. Confira a quilometragem e sua origem.`);
     if ((item.pendingActivityCount || 0) > 0) reasons.push(`${item.month}: há ${item.pendingActivityCount} intervalo(s) de reserva/sobreaviso sem início/fim publicados comprovados. Subtotais válidos permanecem disponíveis; variáveis e total estão pendentes.`);
     if (!Number.isFinite(item.variable) && !item.pendingActivityCount) reasons.push(`${item.month}: os componentes variáveis não produziram um valor válido. Confira a escala e a origem das tarifas.`);

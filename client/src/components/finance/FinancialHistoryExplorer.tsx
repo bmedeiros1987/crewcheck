@@ -8,7 +8,8 @@ import type { CrewRoster } from '@/lib/pdfParser';
 import { financialMonths, financialRange, latestFinancialPeriods, validFinancialDay, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { financialComparisonPeriods } from '@/lib/financialComparisonPeriods';
 import './financial-history.css';
-import { FinancialScreenContext, type FinancialScreenName } from './FinancialScreen';
+import { FinancialScreenContext } from './FinancialScreen';
+import useFinancialNavigation from './useFinancialNavigation';
 
 const monthOf = (roster: CrewRoster) => `${roster.year}-${String(roster.month).padStart(2,'0')}`;
 const label = (month: string) => new Intl.DateTimeFormat('pt-BR', { month:'long', year:'numeric', timeZone:'UTC' }).format(new Date(month + '-01T12:00:00Z'));
@@ -26,23 +27,21 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
   weeks?: (snapshots: S[], range: FinancialRange) => Array<{ range: FinancialRange; value: string }>;
 }) {
   const privacy = useFinancialPrivacy();
-  const [screen,setScreen]=useState<FinancialScreenName>('overview');
-  const expanded=screen==='charts';
+
   const money = (...args: Parameters<typeof formatMoney>) => privacy.amount(formatMoney(...args));
   const owner = session(), initialMonth = monthOf(roster), crew = financialRosterCrewIdentity(roster);
   const [authRevision, setAuthRevision] = useState(0), [calculationRevision,setCalculationRevision] = useState(0);
-  const [kind, setKind] = useState<FinancialRange['kind']>('month');
-  const [month, setMonth] = useState(initialMonth), [day,setDay] = useState(initialMonth + '-01');
-  const [from,setFrom] = useState(initialMonth + '-01'), [to,setTo] = useState(initialMonth + '-01');
+  const navigation=useFinancialNavigation(mode,initialMonth,owner+'|'+crew);
+  const {screen,kind,month,day,from,to,currency,comparison}=navigation.context;
+  const expanded=screen==='charts';
+  const setKind=(v:FinancialRange['kind'])=>navigation.update('kind',v),setMonth=(v:string)=>navigation.update('month',v),setDay=(v:string)=>navigation.update('day',v),setFrom=(v:string)=>navigation.update('from',v),setTo=(v:string)=>navigation.update('to',v),setCurrency=(v:string)=>navigation.update('currency',v),setComparison=(v:'month'|'week')=>navigation.update('comparison',v);
   const [inventory,setInventory] = useState<SavedRosterSummary[]>([]), [conflicts,setConflicts] = useState<string[]>([]);
   const [loaded,setLoaded] = useState<Array<{roster:CrewRoster;source:string}>>([]);
   const [coverageReady,setCoverageReady]=useState(false);
   const [requestedPeriods,setRequestedPeriods]=useState<string[]>([]);
-  const [busy,setBusy] = useState(false), [notice,setNotice] = useState(''), [currency,setCurrency] = useState('BRL');
-  const [comparison,setComparison]=useState<'month'|'week'>('month');
+  const [busy,setBusy] = useState(false), [notice,setNotice] = useState('');
   const epoch = useRef(0), fetching = useRef(new Set<string>());
   const account = String(getStoredUser()?.id || getStoredUser()?.email || '');
-  useEffect(()=>setScreen('overview'),[mode,owner,crew]);
   const bound = useRef({ account, roster });
   if (roster !== bound.current.roster) bound.current = { account, roster };
   const range = useMemo(()=>financialRange(kind,month,day,from,to),[kind,month,day,from,to]);
@@ -59,7 +58,7 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     return ()=>{epoch.current++;window.removeEventListener('crewcheck:auth-changed',changed);window.removeEventListener('crewcheck:auth-expired',changed);window.removeEventListener('storage',storage);};
   },[]);
   useEffect(()=>{
-    const version=++epoch.current;setLoaded([]);fetching.current.clear();setInventory([]);setConflicts([]);setCoverageReady(false);setMonth(initialMonth);setDay(initialMonth+'-01');
+    const version=++epoch.current;setLoaded([]);fetching.current.clear();setInventory([]);setConflicts([]);setCoverageReady(false);
     if(!owner||!crew)return;
     setBusy(true);setNotice('');
     listSavedRosters(72,false,{preserveRevisions:true}).then(items=>{
@@ -102,8 +101,9 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     <section className="cc-roster-period-v1399 cc-financial-period" aria-label="Período financeiro">
       <label><CalendarDays aria-hidden="true"/><span>Competência de referência</span><select aria-label="Competência de referência" value={month} onChange={event=>{setMonth(event.target.value);setDay(event.target.value+'-01');}}>{months.map(value=><option key={value} value={value}>{label(value)}</option>)}</select></label>
       <label><span>Filtro</span><select aria-label="Filtro financeiro" value={kind} onChange={event=>setKind(event.target.value as FinancialRange['kind'])}><option value="week">Semana</option><option value="month">Mês</option><option value="year">Ano</option><option value="custom">Período personalizado</option></select></label>
+      {screen==='charts'&&<label>Comparar por<select aria-label="Agrupamento do gráfico" value={comparison} onChange={event=>setComparison(event.target.value as 'month'|'week')}><option value="month">Mês</option>{mode==='allowance'&&periodMetric&&<option value="week">Semana</option>}</select></label>}
     </section>
-    <section className="cc-roster-zoom cc-financial-range" aria-label="Datas financeiras">
+    <section className="cc-roster-zoom cc-financial-range" aria-label="Datas financeiras" data-financial-content-ready={busy?'false':'true'}>
       {kind==='week'&&<label>Dia da semana de trabalho<input type="date" aria-label="Dia da semana de trabalho" value={day} onChange={event=>setDay(event.target.value)}/></label>}
       {kind==='custom'&&<><label>Início<input type="date" aria-label="Início financeiro" value={from} onChange={event=>setFrom(event.target.value)}/></label><label>Fim<input type="date" aria-label="Fim financeiro" value={to} onChange={event=>setTo(event.target.value)}/></label></>}
       <p role="status">{range.valid?`Trabalho: ${range.start} até ${range.end}. `:'Informe um intervalo válido.'}{busy?' Consultando histórico…':''}</p>
@@ -115,7 +115,7 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     <h3>Gráfico e histórico <small>Estimativas</small></h3>
     <p>Estimativas por período · recebimento não confirmado.</p>
     {!privacy.hidden&&numeric.length>=2&&<p>Maior previsão: {numeric.filter(item=>item.values[displayedCurrency]===max).map(item=>item.title).join(', ')}. Comparação apenas entre períodos completos disponíveis em {displayedCurrency}.</p>}
-    <label>Comparar por<select aria-label="Agrupamento do gráfico" value={comparison} onChange={event=>setComparison(event.target.value as 'month'|'week')}><option value="month">Mês</option>{mode==='allowance'&&periodMetric&&<option value="week">Semana</option>}</select></label>
+
     <p>Comparação: {comparisonRange.start} até {comparisonRange.end}. Moeda original: {displayedCurrency}. {comparison==='week'?'Semanas de quarta a terça; recortes parciais identificados.':''}</p>
     {currencies.length>1&&<label>Moeda do gráfico<select aria-label="Moeda do gráfico" value={displayedCurrency} onChange={event=>setCurrency(event.target.value)}>{currencies.map(value=><option key={value}>{value}</option>)}</select></label>}
     {numeric.length<2&&<p>Comparação disponível com dois períodos completos.</p>}
@@ -135,5 +135,5 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     <p>{mode==='salary'?'Salário-base e descontos são mensais; nenhuma parcela mensal é distribuída artificialmente por semana.':'Toque no mês para consultar o período.'}</p>
     {kind==='month'&&weeks&&<section className="cc-financial-week-list" aria-label="Semanas da competência"><h3>Semanas da competência</h3><p>Datas de trabalho · não são datas de pagamento.</p>{weeks(snapshots.map(item=>item.snapshot),range).map(item=><button type="button" key={item.range.start} onClick={()=>{setKind('custom');setFrom(item.range.start);setTo(item.range.end);}}>{item.range.start} até {item.range.end} · {privacy.text(item.value)}</button>)}</section>}
   </section>;
-  return <FinancialScreenContext.Provider value={{screen,navigate:setScreen,controls,history:(screen==='statement'||screen==='charts')?<PersistentFinancialHistory key={mode} range={range} mode={mode} view={screen}/>:undefined}}>{render({snapshots,range,missing,controls,graph,coverageReady,requestRange:range=>setRequestedPeriods(financialMonths(range))})}</FinancialScreenContext.Provider>;
+  return <FinancialScreenContext.Provider value={{screen,navigate:navigation.navigate,back:navigation.back,currency,setCurrency,controls,history:(screen==='statement'||screen==='charts')?<PersistentFinancialHistory key={mode} entryScope={navigation.scope} range={screen==='charts'?comparisonRange:range} mode={mode} view={screen} comparison={comparison}/>:undefined}}>{render({snapshots,range,missing,controls,graph,coverageReady,requestRange:range=>setRequestedPeriods(financialMonths(range))})}</FinancialScreenContext.Provider>;
 }

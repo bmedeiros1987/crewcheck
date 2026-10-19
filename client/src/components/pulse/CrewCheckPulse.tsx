@@ -50,10 +50,11 @@ const CATEGORY_ICON: Record<CrewCheckPulseCategory, typeof Info> = {
 
 type CrewCheckPulseProps = {
   compact?: boolean;
+  brandMark?: boolean;
   fallback?: ReactNode;
 };
 
-export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPulseProps = {}) {
+export function CrewCheckPulse({ compact = false, brandMark = false, fallback = null }: CrewCheckPulseProps = {}) {
   const [state, setState] = useState(() => currentCrewCheckPulseState());
   const [expanded, setExpanded] = useState(false);
   const [languageRevision, setLanguageRevision] = useState(0);
@@ -79,16 +80,17 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
       const target = queued > 0 ? detailsRef.current : compactRef.current.closest('.cz-app')?.querySelector<HTMLButtonElement>('.cz-global-header .cz-brand-row button');
       target?.focus({ preventScroll: true });
     }
-    const saved = dismissCrewCheckPulse();
+    const saved = dismissCrewCheckPulse(state.message || undefined);
     setExpanded(!saved);
     setSaveFailed(!saved);
-  }, [compact, queued]);
+  }, [compact, queued, state.message]);
 
   if (!message) return compact ? <>{fallback}</> : null;
 
   const tone: CrewCheckPulseTone = message.tone || 'informativo';
   const category: CrewCheckPulseCategory = message.category || 'general';
-  const Icon = category !== 'general' ? CATEGORY_ICON[category] : (TONE_ICON[tone] || Info);
+  const Icon = (category !== 'general' && CATEGORY_ICON[category]) || TONE_ICON[tone] || Info;
+  if (brandMark) return <span className="cz-logo cc-pulse-compact-icon cc-pulse-brand-mark" role="img" aria-label="Notificações CrewCheck" data-crewcheck-brand="notifications"><Icon size={18} strokeWidth={2} absoluteStrokeWidth aria-hidden="true"/><i aria-hidden="true"/></span>;
   const act = () => {
     if (!message.action?.view) {
       setExpanded((value) => !value);
@@ -159,8 +161,8 @@ export function CrewCheckPulse({ compact = false, fallback = null }: CrewCheckPu
                 <ChevronDown size={16} aria-hidden="true"/>
               </button>
               {message.dismissible !== false && (
-                <button type="button" className="cc-pulse-dismiss" onClick={dismiss} aria-label={copy.close}>
-                  <X size={16}/>
+                <button type="button" className="cc-pulse-dismiss" onClick={dismiss} disabled={leaving} aria-label={copy.close}>
+                  <X size={16} aria-hidden="true"/>
                 </button>
               )}
             </div>

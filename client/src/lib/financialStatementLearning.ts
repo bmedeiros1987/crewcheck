@@ -6,7 +6,8 @@ export type LearningConfidence = 'high' | 'medium' | 'review';
 export interface LearnedRate {
   ownerId?: string;
   revision?: number;
-  valueOrigin?: 'printed' | 'derived';
+  valueOrigin?: 'printed' | 'derived' | 'owner_confirmed';
+  perDiemReview?: { breakfastQuarter: boolean; taxiQuarter: boolean };
   payrollCompetence?: string;
   cycleSource?: typeof PAYROLL_CYCLE_SOURCE;
   key: string;
@@ -223,7 +224,9 @@ export function mergeConfirmedRates(current: LearnedRate[], incoming: LearnedRat
   const result = [...current];
   for (const item of incoming.filter(entry => entry.confirmed)) {
     const scope = result.filter(entry => entry.key === item.key && entry.effectiveFrom === item.effectiveFrom && entry.currency === item.currency);
-    if (scope.some(entry => entry.value === item.value && entry.effectiveTo === item.effectiveTo && entry.currency === item.currency && entry.sourceFingerprint === item.sourceFingerprint)) continue;
+    const latest = scope.slice().sort((a,b)=>(b.revision || 1)-(a.revision || 1))[0];
+    const same=(entry:LearnedRate)=>entry.value===item.value&&entry.effectiveTo===item.effectiveTo&&entry.currency===item.currency&&entry.sourceFingerprint===item.sourceFingerprint;
+    if (item.valueOrigin==='owner_confirmed' ? latest&&same(latest) : scope.some(same)) continue;
     const revision = scope.reduce((max, entry) => Math.max(max, entry.revision || 1), 0) + 1;
     result.push({ ...item, revision });
   }
@@ -253,6 +256,10 @@ function validDay(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(new Date(value + 'T12:00:00Z').getTime()) && new Date(value + 'T12:00:00Z').toISOString().slice(0, 10) === value;
 }
 function boundedRate(item: LearnedRate): boolean {
+  if (item?.perDiemReview !== undefined && (item.valueOrigin !== 'owner_confirmed'
+    || typeof item.perDiemReview?.breakfastQuarter !== 'boolean' || typeof item.perDiemReview?.taxiQuarter !== 'boolean'
+    || (item.key === 'per_diem.breakfast' && !item.perDiemReview.breakfastQuarter)
+    || (item.key === 'per_diem.taxi' && !item.perDiemReview.taxiQuarter))) return false;
   if (item?.revision !== undefined && (!Number.isSafeInteger(item.revision) || item.revision < 1)) return false;
   if (item?.cycleSource !== undefined || item?.payrollCompetence !== undefined) {
     const cycle = payrollCompetences(item.payrollCompetence || '', item.cycleSource!);
@@ -320,9 +327,19 @@ export function applyReviewedPayrollCycle(result: StatementLearningResult): Lear
     return { ...item, effectiveFrom: period.start, effectiveTo: period.end, payrollCompetence: cycle.payrollMonth, cycleSource: cycle.source };
   });
 }
+export function confirmedRateAt(key: string, date: string, currency: LearnedRate['currency'] = 'BRL'): LearnedRate | null {
+  const rates = readConfirmedFinancialRates();
+  const review = rateAt(rates.filter(item=>item.valueOrigin==='owner_confirmed'), 'per_diem.lunch', date, currency);
+  const quarter = key === 'per_diem.breakfast' ? 'breakfastQuarter' : key === 'per_diem.taxi' ? 'taxiQuarter' : null;
+  // Keep the audit archive, but an edited review with an unchecked option must
+  // not resurrect an earlier owner-confirmed percentage for this month.
+  const eligible = quarter && review?.valueOrigin === 'owner_confirmed' && review.perDiemReview?.[quarter] === false
+    ? rates.filter(item => item.key !== key || item.valueOrigin !== 'owner_confirmed') : rates;
+  const found = rateAt(eligible, key, date, currency);
+  return found && Number.isFinite(Number(found.value)) ? found : null;
+}
 export function confirmedRateValueAt(key: string, date: string, currency: LearnedRate['currency'] = 'BRL'): number | null {
-  const found = rateAt(readConfirmedFinancialRates(), key, date, currency);
-  return found && Number.isFinite(Number(found.value)) ? Number(found.value) : null;
+  return confirmedRateAt(key, date, currency)?.value ?? null;
 }
 
 export function reviewedPayrollCycleForOperationalMonth(month: string) {
