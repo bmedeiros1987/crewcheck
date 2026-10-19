@@ -127,7 +127,7 @@ function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}
   });
   const functions = [
     'conciergeSafeKey', 'conciergeSnapshotForProfile', 'conciergeMinimizeRoster', 'conciergeRosterDiagnostics', 'conciergeSaveSnapshot', 'conciergeSaveSnapshotAsync', 'conciergeLoadSnapshot',
-    'normalizeConciergeButtonText', 'conciergePreferencesV14336', 'conciergeVoiceOptionsV14336', 'conciergePreferenceCommandV14336',
+    'normalizeConciergeButtonText', 'conciergePreferencesV14336', 'conciergeVoiceOptionsV14336', 'conciergePreferenceSummaryV14336', 'conciergePreferenceCommandV14336',
     'conciergeSemanticInputContextV14338', 'conciergeSemanticCommandIntentV14338', 'conciergeSemanticFindRecordV14338', 'conciergeSemanticRecordExtraV14338', 'conciergeSemanticRecordKeyV14338', 'conciergeSemanticClarificationV14338', 'conciergeSemanticResolveV14338',
     'conciergeIdentityFlow', 'conciergeEasterEggNormalize', 'conciergeEasterEggPick', 'conciergeEasterEggReply',
     'conciergeGymsReply', 'buildTelegramConciergeReplyCore', 'buildTelegramConciergeReply', 'processTelegramUpdate', 'handleTelegramConciergeAsk',
@@ -319,6 +319,37 @@ test('prepared full handler ATIS reaches both actual weather reads for the reque
   await h.context.buildTelegramConciergeReply('/atis SBGR', h.profile, await h.load());
   const reports = h.trace.search.filter(item => item.boundary === 'weather');
   assert.deepEqual(reports.map(item => [item.station, item.type]).sort(), [['SBGR', 'metar'], ['SBGR', 'taf']]);
+});
+
+test('prepared settings/direct weather transitions remove only persistent keyboards and keep weather controls', { skip: !materialized }, async () => {
+  for (const settingsFirst of [false, true]) {
+    const h = harness({ operationalProbe: true });
+    // Use the actual settings keyboard declaration from the prepared source.
+    const at = source.indexOf('const conciergeSettingsKeyboard = {');
+    const end = source.indexOf('\n};', at) + 3;
+    assert.ok(at >= 0 && end > at);
+    vm.runInContext(source.slice(at, end).replace('const conciergeSettingsKeyboard =', 'globalThis.conciergeSettingsKeyboard ='), h.context);
+    if (settingsFirst) {
+      await h.send('telegram', '/configuracoes');
+      assert.ok(h.trace.transports.at(-1).extra.reply_markup.keyboard);
+    }
+    const before = h.trace.transports.length;
+    await h.send('telegram', '/metar SBGR');
+    const transition = h.trace.transports.slice(before);
+    assert.equal(transition.length, 2, 'separate ReplyKeyboardRemove precedes first weather inline');
+    assert.equal(transition[0].extra.reply_markup.remove_keyboard, true);
+    assert.ok(transition[1].extra.reply_markup.inline_keyboard.flat().some(button => button.callback_data === 'cc_weather:metar:SBGR:raw'));
+    assert.ok(transition[1].extra.reply_markup.inline_keyboard.flat().some(button => button.callback_data === 'cc_weather:metar:SBGR:decoded'));
+    const weatherBefore = h.trace.transports.length;
+    await h.send('telegram', '/taf SBGR');
+    assert.equal(h.trace.transports.length, weatherBefore + 1, 'weather-to-weather does not repeatedly remove input');
+    for (const reply_markup of [{ force_reply: true, selective: true }, { keyboard: [[{ text: 'Enviar localização', request_location: true }]], one_time_keyboard: true }]) {
+      const count = h.trace.transports.length;
+      await h.context.sendTelegramMessage(h.profile.chatId, 'Entrada explícita', { reply_markup });
+      assert.equal(h.trace.transports.length, count + 1);
+      assert.deepEqual(clone(h.trace.transports.at(-1).extra.reply_markup), reply_markup);
+    }
+  }
 });
 
 

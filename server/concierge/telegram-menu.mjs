@@ -54,9 +54,12 @@ export function createTelegramMenu(deps, now = Date.now) {
   }
   async function markup(chatId, extra = {}) {
     if (extra.reply_markup?.keyboard) migrated.delete(String(chatId));
-    if (!extra.reply_markup?.inline_keyboard?.flat().some(button => button.callback_data?.startsWith('cc_nav:entry:'))) return extra;
+    const buttons = extra.reply_markup?.inline_keyboard?.flat() || [];
+    const navigation = buttons.some(button => button.callback_data?.startsWith('cc_nav:entry:'));
+    const weather = buttons.some(button => button.callback_data?.startsWith('cc_weather:'));
+    if (!navigation && !weather) return extra;
     const profile = await identity({ chat: { id: chatId, type: 'private' }, from: { id: chatId } });
-    if (!profile) return { ...extra, reply_markup: { remove_keyboard: true } };
+    if (!profile) return navigation ? { ...extra, reply_markup: { remove_keyboard: true } } : extra;
     prune(migrated);
     const chat = String(chatId);
     if (migrated.get(chat)?.owner !== owner(profile)) {
@@ -65,6 +68,7 @@ export function createTelegramMenu(deps, now = Date.now) {
       // persistent reply keyboard in a separate transport call before inline UI.
       await deps.send(chatId, 'Escolha uma opção nos botões da conversa.', { reply_markup: { remove_keyboard: true } });
     }
+    if (!navigation) return extra;
     prune(tickets);
     const token = randomBytes(12).toString('hex');
     const actions = new Set();
