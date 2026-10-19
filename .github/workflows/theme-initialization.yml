@@ -1,0 +1,37 @@
+name: Automatic theme initialization
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/lib/themeRuntime.ts'
+      - 'scripts/finalize-theme-runtime.mjs'
+      - 'scripts/v14319/apply.mjs'
+      - 'client/index.html'
+      - 'scripts/regression-theme-initialization.cjs'
+      - '.github/workflows/theme-initialization.yml'
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: SOURCE_VERSION=$(git rev-parse HEAD) npm run build
+      - name: Install isolated browser test tooling
+        run: |
+          npm install --prefix "$RUNNER_TEMP/theme-browser" playwright
+          "$RUNNER_TEMP/theme-browser/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Verify SSR, prepaint, system preference and unavailable storage
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/theme-browser/package.json
+          UI_EVIDENCE_REQUIRE_COMMIT: '1'
+        run: node scripts/regression-theme-initialization.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: automatic-theme-evidence
+          path: artifacts/theme-initialization

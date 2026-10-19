@@ -1,9 +1,12 @@
+import { extractPrivatePayroll, type PayrollPage, type PrivatePayrollExtraction, type PayrollSourceOrigin } from './privatePayrollExtraction';
 import { getStoredUser, getToken } from './authClient';
 import { payrollMonthBounds, payrollCompetences, PAYROLL_CYCLE_SOURCE } from './financialPayrollPeriods';
 export type StatementKind = 'per_diem' | 'payroll';
 export type LearningConfidence = 'high' | 'medium' | 'review';
 
+export interface PayrollRateEvidence { page: number; origin: PayrollSourceOrigin; line: number; field: 'monthlyBase' | 'rate'; value: number }
 export interface LearnedRate {
+  evidence?: PayrollRateEvidence[];
   ownerId?: string;
   revision?: number;
   valueOrigin?: 'printed' | 'derived' | 'owner_confirmed';
@@ -24,6 +27,7 @@ export interface LearnedRate {
 }
 
 export interface StatementLearningResult {
+  payrollExtraction?: PrivatePayrollExtraction;
   kind: StatementKind;
   competence: string;
   paymentDate?: string;
@@ -168,20 +172,88 @@ export function learnPerDiemStatement(text: string, sourceDocument: string): Sta
 }
 
 const PAYROLL_KEYS: Array<[RegExp, string, string, LearnedRate['unit']]> = [
-  [/Sal[aá]rio\s+([\d.]+,\d{2})/i, 'salary.base', 'Salário-base', 'month'],
   [/([\d.]+,\d{2})\s+([\d.]+)\s+KM V CMS - D\s+([\d.]+,\d{2})/i, 'salary.dayKm', 'KM diurno', 'km'],
   [/([\d.]+,\d{2})\s+([\d.]+)\s+KM V CMS - N\s+([\d.]+,\d{2})/i, 'salary.nightKm', 'KM noturno', 'km'],
   [/([\d.]+,\d{2})\s+([\d.]+)\s+KM V CMS - DFS - D\s+([\d.]+,\d{2})/i, 'salary.dfsDayKm', 'KM DFS diurno', 'km'],
   [/([\d.]+,\d{2})\s+([\d.]+)\s+KM V CMS - DFS - N\s+([\d.]+,\d{2})/i, 'salary.dfsNightKm', 'KM DFS noturno', 'km'],
 ];
 
-export function learnPayrollStatement(text: string, sourceDocument: string): StatementLearningResult {
-  const competence = text.match(/Compet[eê]ncia[^\n\r]*?(\d{2}\/\d{4})/i)?.[1];
-  const effectiveFrom = competence ? `${competence.slice(3)}-${competence.slice(0, 2)}-01` : '';
+export function learnPayrollStatement(text: string, sourceDocument: string, pages?: readonly PayrollPage[]): StatementLearningResult {
+  const payrollExtraction = extractPrivatePayroll(pages ?? text);
+  const competence = payrollExtraction.competence.state === 'candidate' ? payrollExtraction.competence.candidates[0].value : undefined;
+  const effectiveFrom = competence ? `${competence}-01` : '';
   const fp = fingerprint(text);
+  const evidencePages: readonly PayrollPage[] = pages ?? text.split('\f').map((content, index) => ({ page: index + 1, text: content, origin: 'document-logical' }));
+  const rateEvidence = (match: RegExpMatchArray, value: number): PayrollRateEvidence[] => {
+    // Match offsets refer to the coherent text supplied by the PDF extraction caller.
+    const matchStart = match.index ?? -1;
+    const matchEnd = matchStart + match[0].length;
+    let pageOffset = 0;
+    return evidencePages.flatMap(page => {
+      let lineOffset = pageOffset;
+      const refs = page.text.split(/\r?\n/).flatMap((line, index) => {
+        const start = lineOffset; lineOffset += line.length + (page.text.slice(lineOffset - pageOffset + line.length).startsWith('\r\n') ? 2 : 1);
+        return matchStart < start + line.length && matchEnd > start ? [{ page: page.page, origin: page.origin ?? 'document-logical', line: index + 1, field: 'rate' as const, value }] : [];
+      });
+      pageOffset += page.text.length + 1; // pages are joined with one form-feed
+      return refs;
+    });
+  };
+  const signedRateSource = (row: RegExpMatchArray) => /[-−]\s*(?:R\$\s*)?\d|\(\s*(?:R\$\s*)?\d|,\d{2}\s*[-−)]|,\d{2}\s*[DC]\b|\b(?:DEBITO|CREDITO)\b/i.test(row[0].normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+  const flagAmbiguousRate = (match: RegExpMatchArray, warning = 'Tarifa com sinal ou notação de débito/crédito; revisão obrigatória.') => {
+    payrollExtraction.incomplete = true;
+    payrollExtraction.warnings.push(warning);
+    for (const ref of rateEvidence(match, 0)) {
+      const page = evidencePages.find(page => page.page === ref.page && (page.origin ?? 'document-logical') === ref.origin);
+      const source = { page: ref.page, origin: ref.origin, line: ref.line, field: 'rate', text: page?.text.split(/\r?\n/)[ref.line - 1] ?? '' };
+      if (!payrollExtraction.unresolvedSources.some(old => old.page === source.page && old.origin === source.origin && old.line === source.line && old.field === source.field && old.text === source.text)) payrollExtraction.unresolvedSources.push(source);
+    }
+  };
+  const rubricLabels: Record<string, RegExp> = {
+    'salary.dayKm': /\bKM V CMS - D\b/i, 'salary.nightKm': /\bKM V CMS - N\b/i,
+    'salary.dfsDayKm': /\bKM V CMS - DFS - D\b/i, 'salary.dfsNightKm': /\bKM V CMS - DFS - N\b/i,
+    'salary.reserveHour': /Horas Reserva - CMS/i, 'salary.standbyHour': /Horas Sobre Aviso - CMS/i,
+  };
+  const sourceRows = [...text.matchAll(/[^\r\n\f]+/g)];
+  const validateOccurrences = (matches: RegExpMatchArray[], key: string, label: string) => {
+    const rows = sourceRows.filter(row => rubricLabels[key].test(row[0]));
+    let invalid = false;
+    // Inspect every labelled occurrence, including signed/parenthesized rows that the value regex cannot match.
+    for (const row of rows) {
+      if (signedRateSource(row)) { flagAmbiguousRate(row); invalid = true; }
+      else {
+        const rowMatches = matches.filter(match => match.index! >= row.index! && match.index! + match[0].length <= row.index! + row[0].length);
+        const labelCount = [...row[0].matchAll(new RegExp(rubricLabels[key].source, 'gi'))].length;
+        const match = rowMatches[0];
+        const prefix = match ? row[0].slice(0, match.index! - row.index!) : '';
+        const suffix = match ? row[0].slice(match.index! - row.index! + match[0].length) : '';
+        if (rowMatches.length !== 1 || labelCount !== 1 || !/^\s*(?:\d+\s+)?$/.test(prefix) || suffix.trim()) {
+          flagAmbiguousRate(row, `Tarifa ${label} com linha incompleta, múltiplas rubricas ou conteúdo não interpretado; revisão obrigatória.`); invalid = true;
+        }
+      }
+    }
+    const moneyToken = /^(?:\d+|\d{1,3}(?:\.\d{3})+),\d{2}$/;
+    const quantityToken = /^(?:\d+(?:[.,]\d+)?|\d{1,3}(?:\.\d{3})+,\d+)$/;
+    const invalidTokens = matches.some(match => key.endsWith('Km')
+      ? !moneyToken.test(match[1]) || !/^\d+(?:\.\d+)?$/.test(match[2]) || !moneyToken.test(match[3])
+      : !quantityToken.test(match[1]) || !moneyToken.test(match[2]));
+    if (invalidTokens) {
+      rows.forEach(row => flagAmbiguousRate(row, `Tarifa ${label} com token numérico malformado; revisão obrigatória.`)); invalid = true;
+    }
+    if (new Set(matches.map(match => match[0].replace(/\s+/g, ' ').trim())).size > 1) {
+      rows.forEach(row => flagAmbiguousRate(row, `Tarifa ${label} com evidências divergentes; revisão obrigatória.`)); invalid = true;
+    }
+    return invalid ? undefined : matches[0];
+  };
   const rates: LearnedRate[] = [];
+  const base = payrollExtraction.monthlyBase;
+  if (effectiveFrom && !payrollExtraction.incomplete && (base.state === 'candidate' || base.state === 'zero') && base.candidates[0].value >= 0) {
+    const candidate = base.candidates[0];
+    rates.push({ ...rate('salary.base', 'Salário-base', candidate.value, 'month', effectiveFrom, sourceDocument, fp, 'review'), valueOrigin: 'printed', evidence: candidate.sources.map(source => ({ page: source.page, origin: source.origin, line: source.line, field: 'monthlyBase', value: candidate.value })) });
+  }
   for (const [pattern, key, label, unit] of PAYROLL_KEYS) {
-    const m = text.match(pattern);
+    const matches = [...text.matchAll(new RegExp(pattern.source, 'gi'))];
+    const m = validateOccurrences(matches, key, label);
     if (!m) continue;
     const quantity = unit === 'km' ? decimal(m[1]) : 0;
     const statedRate = unit === 'km' ? decimal(m[2]) : 0;
@@ -191,32 +263,35 @@ export function learnPayrollStatement(text: string, sourceDocument: string): Sta
     const value = unit === 'km'
       ? usePrintedRate ? statedRate : derivedRate
       : money(m[1]);
-    if (Number.isFinite(value) && value >= 0 && (unit !== 'km' || value <= 5)) rates.push({ ...rate(key, label, value, unit, effectiveFrom, sourceDocument, fp, !usePrintedRate ? 'review' : 'high'), valueOrigin: !usePrintedRate ? 'derived' : 'printed' });
+    if (Number.isFinite(value) && value >= 0 && (unit !== 'km' || value <= 5)) rates.push({ ...rate(key, label, value, unit, effectiveFrom, sourceDocument, fp, !usePrintedRate ? 'review' : 'high'), valueOrigin: !usePrintedRate ? 'derived' : 'printed', evidence: matches.flatMap(match => rateEvidence(match, value)) });
   }
   for (const [pattern, key, label] of [
     [/([\d.,]+)\s+Horas Reserva - CMS\s+([\d.]+,\d{2})/i, 'salary.reserveHour', 'Hora de reserva'],
     [/([\d.,]+)\s+Horas Sobre Aviso - CMS\s+([\d.]+,\d{2})/i, 'salary.standbyHour', 'Hora de sobreaviso'],
   ] as const) {
-    const m = text.match(pattern);
+    const matches = [...text.matchAll(new RegExp(pattern.source, 'gi'))];
+    const m = validateOccurrences(matches, key, label);
     const quantity = m ? decimal(m[1]) : 0;
     const hourlyValue = m && quantity > 0 ? Number((money(m[2]) / quantity).toFixed(6)) : NaN;
-    if (Number.isFinite(hourlyValue)) rates.push({ ...rate(key, label, hourlyValue, 'hour', effectiveFrom, sourceDocument, fp, 'review'), valueOrigin: 'derived' });
+    if (Number.isFinite(hourlyValue)) rates.push({ ...rate(key, label, hourlyValue, 'hour', effectiveFrom, sourceDocument, fp, 'review'), valueOrigin: 'derived', evidence: matches.flatMap(match => rateEvidence(match, hourlyValue)) });
   }
-  const totals = text.match(/TOTAIS\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})/i);
-  const net = text.match(/L[ií]quido\s*\n?\s*(?:[\d.]+,\d{2}\s+)?([\d.]+,\d{2})/i);
-  const warnings: string[] = [];
+  // The legacy rate pass can add ambiguity after the pure extractor checked the printed totals.
+  if (payrollExtraction.incomplete) payrollExtraction.reconciliation = 'unavailable';
+  const warnings: string[] = [...payrollExtraction.warnings];
+  if (payrollExtraction.incomplete) warnings.push('Extração incompleta; revisão obrigatória antes de aplicar valores.');
   if (!effectiveFrom) warnings.push('Competência não identificada; revisão obrigatória.');
   if (!rates.length) warnings.push('Nenhuma tarifa salarial identificada.');
   return {
-    kind: 'payroll', competence: effectiveFrom.slice(0, 7), rates: rates.map(item => ({ ...item, effectiveTo: payrollMonthBounds(effectiveFrom.slice(0, 7))?.end })),
-    totals: { gross: totals ? money(totals[1]) : 0, deductions: totals ? money(totals[2]) : 0, net: net ? money(net[1]) : 0 }, warnings,
+    payrollExtraction, paymentDate: payrollExtraction.creditDate.state === 'candidate' ? payrollExtraction.creditDate.candidates[0].value : undefined,
+    kind: 'payroll', competence: effectiveFrom.slice(0, 7), rates: rates.filter(item => !!effectiveFrom && !payrollExtraction.incomplete && !!item.evidence?.length).map(item => ({ ...item, confidence: 'review', effectiveTo: payrollMonthBounds(effectiveFrom.slice(0, 7))?.end })),
+    totals: Object.fromEntries(Object.entries(payrollExtraction.totals).filter(([, field]) => field.state === 'candidate' || field.state === 'zero').map(([key, field]) => [key, field.candidates[0].value])), warnings,
   };
 }
 
-export function learnFinancialStatement(text: string, sourceDocument: string): StatementLearningResult {
+export function learnFinancialStatement(text: string, sourceDocument: string, pages?: readonly PayrollPage[]): StatementLearningResult {
   const kind = detectFinancialStatement(text);
   if (kind === 'per_diem') return learnPerDiemStatement(text, sourceDocument);
-  if (kind === 'payroll') return learnPayrollStatement(text, sourceDocument);
+  if (kind === 'payroll') return learnPayrollStatement(text, sourceDocument, pages);
   throw new Error('O arquivo não foi reconhecido como demonstrativo de diárias ou de pagamento.');
 }
 
@@ -312,7 +387,13 @@ export function saveConfirmedFinancialRates(rates: LearnedRate[], expectedSessio
       if (revisions.has(key) && revisions.get(key) !== signature) return false;
       revisions.set(key, signature);
     }
-    const bound = rates.map(item => ({ ...item, ownerId: owner }));
+    const bound = rates.map(item => {
+      const { evidence, ...rest } = item;
+      const safeEvidence = Array.isArray(evidence) ? evidence.filter(ref => Number.isInteger(ref?.page) && ref.page > 0 && Number.isInteger(ref?.line) && ref.line > 0
+        && ['pdf-physical', 'document-logical'].includes(ref.origin) && ['monthlyBase', 'rate'].includes(ref.field) && Number.isFinite(ref.value))
+        .map(ref => ({ page: ref.page, origin: ref.origin, line: ref.line, field: ref.field, value: ref.value })) : [];
+      return { ...rest, ownerId: owner, ...(safeEvidence.length ? { evidence: safeEvidence } : {}) };
+    });
     localStorage.setItem(OWNER_KEY + encodeURIComponent(owner), JSON.stringify({ version: 2, ownerId: owner, rates: bound }));
     window.dispatchEvent(new Event('crewcheck:financial-config-changed'));
     return true;

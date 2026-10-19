@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import * as nodeModule from 'node:module';
 
 const imports = "import { applyCrewCheckTheme, getCrewCheckThemePreference, getEffectiveCrewCheckTheme, setCrewCheckThemePreference } from './lib/themeRuntime';";
 const appPath = 'client/src/App.tsx';
@@ -74,3 +75,24 @@ if (!auth.includes('function chooseCrewTheme(')) {
   auth = auth.replaceAll("onClick={() => setThemeMode('", "onClick={() => chooseCrewTheme('");
 }
 fs.writeFileSync(authPath, auth);
+
+// Prepaint is compiled from the same runtime functions, never a parallel theme policy.
+const themeSource = fs.readFileSync('client/src/lib/themeRuntime.ts', 'utf8');
+if (typeof nodeModule.stripTypeScriptTypes !== 'function') throw new Error('Theme preparation requires supported Node >=22.13.0');
+// Use the same built-in parser supported by the existing canonical bridge. No dev
+// compiler is required when production startup needs to prepare sources again.
+const themeJavascript = nodeModule.stripTypeScriptTypes(themeSource, { mode: 'strip' });
+const themeModule = await import('data:text/javascript;base64,' + Buffer.from(themeJavascript + '\nexport { normalize, KEY, LEGACY_KEY, volatilePreference };').toString('base64'));
+const bootstrapFunctions = ['normalize', 'getCrewCheckThemePreference', 'getEffectiveCrewCheckTheme', 'applyCrewCheckTheme'];
+if (bootstrapFunctions.some(name => typeof themeModule[name] !== 'function') || themeModule.volatilePreference !== null) throw new Error('Canonical theme bootstrap inputs missing');
+const bootstrapCode = `const KEY = ${JSON.stringify(themeModule.KEY)};
+const LEGACY_KEY = ${JSON.stringify(themeModule.LEGACY_KEY)};
+let volatilePreference = null;
+${bootstrapFunctions.map(name => themeModule[name].toString()).join('\n')}
+applyCrewCheckTheme();`;
+const htmlPath = 'client/index.html';
+let html = fs.readFileSync(htmlPath, 'utf8').replace(/\s*<script id="cc-theme-prepaint">[\s\S]*?<\/script>/g, '');
+const charset = '<meta charset="UTF-8" />';
+if (!html.includes(charset)) throw new Error('Canonical HTML charset anchor missing');
+html = html.replace(charset, charset + '\n    <script id="cc-theme-prepaint">\n(function () {\n' + bootstrapCode.replace(/<\/script/gi, '<\\/script') + '\n})();\n    </script>');
+fs.writeFileSync(htmlPath, html);
