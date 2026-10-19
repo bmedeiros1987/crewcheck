@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { createTelegramMenu, menuGreeting, menuTemplate } from '../server/concierge/telegram-menu.mjs';
+import { createTelegramMenu, menuGreeting, menuTemplate, missingFinanceReply, missingComplianceReply, financeUrl } from '../server/concierge/telegram-menu.mjs';
+import vm from 'node:vm';
 
 let clock = 1_000_000;
 let account = 'demo@example.test';
@@ -55,11 +56,12 @@ await menu.callback(query(dataFor(output, 'Hoje')));
 assert.equal(calls.length, 1, 'revoked account rejected'); linked = true;
 output = await home();
 await menu.callback(query(dataFor(output, 'Diárias')));
-assert(sent.at(-1).text.includes('ainda não oferece essa consulta financeira'));
+assert.equal(sent.at(-1).text, missingFinanceReply());
+assert.equal(sent.at(-1).extra.reply_markup.inline_keyboard[0][0].url, financeUrl);
 output = await home();
 await menu.callback(query(dataFor(output, 'Mais')));
 await menu.callback(query(dataFor(sent.at(-1), 'Revisar escala')));
-assert(sent.at(-1).text.includes('incompleta'));
+assert.equal(sent.at(-1).text, missingComplianceReply());
 assert(!sent.at(-1).text.includes('12 h'));
 output = await home();
 await menu.callback(query(dataFor(output, 'Mais')));
@@ -88,4 +90,35 @@ assert(source.includes('if (await crewcheckMenu.callback(update)) return true;')
 assert(source.includes('if (await crewcheckMenu.text(update.message || {})) return true;'));
 assert(source.includes('const conciergeKeyboard = menuTemplate();'));
 assert(!source.match(/function conciergeHelp[\s\S]*?\n}/)[0].includes('/ligacao'));
+for (const [name, producer] of [['conciergePerDiemReply', missingFinanceReply], ['conciergeComplianceReply', missingComplianceReply]]) {
+  const fn = source.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n}`))[0];
+  const result = vm.runInNewContext(`${fn}; ${name}({roster:{days:[{dutyHours:15,hotel:'PRIVATE'}]}})`, { missingFinanceReply, missingComplianceReply });
+  assert.equal(result, producer(), 'typed commands and buttons share exact response');
+  assert(!result.includes('PRIVATE'));
+}
+const core = source.match(/async function buildTelegramConciergeReplyCore\([\s\S]*?\n}/)[0];
+const preparedHandlers = ['conciergePerDiemReply', 'conciergeComplianceReply'].map(name => source.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n}`))[0]).join('\n');
+const context = {
+  missingFinanceReply, missingComplianceReply, normalizeConciergeButtonText: value => value,
+  isWellhubPlanPreferenceMessage: () => false, isWellhubActivityPreferenceMessage: () => false,
+  conciergeIdentityFlow: async () => ({ handled: false }), conciergeDayForKey: () => null,
+  conciergeDateKey: () => '2026-10-19', conciergeEasterEggReply: () => '',
+  ...Object.fromEntries(['Today', 'Tomorrow', 'Next', 'RosterSummary', 'Radar', 'Departure'].map(name => [`matches${name}Intent`, () => false])),
+};
+const published = { date: '2026-10-19', dutyReport: '07:00', dutyDebrief: '17:00', dutyHours: 10, legs: [] };
+const counterexamples = [
+  [published, { ...published, dutyReport: '16:00', dutyDebrief: '20:00' }], // overlap
+  [published, { ...published }], // duplicate
+  [published, { ...published, dutyReport: '18:00', dutyDebrief: '20:00' }], // same-day blocks
+  [{ date: '2026-10-19', type: 'ASB', legs: [] }], // missing clocks
+  [{ ...published, dutyDebrief: '19:00', arrivalDayOffset: 2 }], // +2 marker
+  [{ ...published, dutyHours: 15, timeSource: 'estimated', dutyReportSource: 'estimated' }],
+  [{ ...published, timezone: 'Europe/London', journeyId: 'synthetic', dutyReportSource: 'unknown' }],
+];
+for (const days of counterexamples) {
+  for (const [command, expected] of [['/diarias', missingFinanceReply()], ['/conformidade', missingComplianceReply()]]) {
+    const result = await vm.runInNewContext(`${preparedHandlers}\n${core}\nbuildTelegramConciergeReplyCore(${JSON.stringify(command)}, {}, ${JSON.stringify({ roster: { days } })})`, context);
+    assert.equal(result, expected, 'prepared typed dispatch does not convert unsafe clocks into alerts or per-diem values');
+  }
+}
 console.log('PASS Telegram menu: synthetic callbacks, per-callback identity, replay, relink, TTL, cancel, direct producers; zero network.');

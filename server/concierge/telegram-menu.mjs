@@ -11,7 +11,11 @@ const commands = new Set(['hoje', 'escala', 'amanha', 'proximo', 'saida', 'hospi
 const parameters = { radar: 'Digite o voo, por exemplo LA1234.', portao: 'Digite o voo, por exemplo LA1234.', metar: 'Digite o código ICAO do aeroporto, por exemplo SBGR.', taf: 'Digite o código ICAO do aeroporto, por exemplo SBGR.', atis: 'Digite o código ICAO do aeroporto, por exemplo SBGR.' };
 const TTL = 15 * 60_000;
 const MAX = 2000;
+export const financeUrl = 'https://crewcheck.online/?view=perdiem';
+export const missingFinanceReply = () => `Diárias · dados financeiros indisponíveis nesta conversa\n\nA escala recebida pelo Telegram não contém os valores financeiros, moedas, datas previstas de pagamento ou status de cálculo da sua conta. Não posso calcular esses dados a partir de pernoites.\n\nConsulte a fonte financeira existente: ${financeUrl}\nEntre na sua conta para consultar valores e eventuais dados pendentes.`;
+export const missingComplianceReply = () => 'Revisão da escala · dados insuficientes\n\nNão há ocorrências verificáveis neste resumo. Faltam, por ocorrência, horários com origem confirmada, duração verificável e fundamento aplicável com artigo ou cláusula, documento e vigência. Não é possível confirmar limite aplicável ou irregularidade.\n\nSem a origem dos horários, também não posso apresentá-los como fatos publicados. A análise fundamentada ainda não está disponível nesta conversa.';
 export function menuTemplate(page = 'home') {
+  if (page === 'finance') return { inline_keyboard: [[{ text: 'Ver Diárias', url: financeUrl }], [{ text: 'Voltar', callback_data: 'cc_nav:entry:home' }, { text: 'Início', callback_data: 'cc_nav:entry:home' }]] };
   const items = pages[page] || pages.home;
   const rows = [];
   for (let i = 0; i < items.length; i += 2) rows.push(items.slice(i, i + 2).map(([text, action]) => ({ text, callback_data: `cc_nav:entry:${action}` })));
@@ -77,9 +81,9 @@ export function createTelegramMenu(deps, now = Date.now) {
     if (pages[action]) {
       await send(profile.chatId, action === 'home' ? menuGreeting() : action === 'hoteis' ? 'Hotéis: cadastro no app ou consulta dos registros salvos.' : 'Escolha uma opção:', action);
     } else if (action === 'conformidade') {
-      await send(profile.chatId, 'Revisão da escala incompleta\n\nEste resumo ainda não recebe o fundamento aplicável, artigo ou cláusula, documento e vigência por ocorrência. Por isso não posso apresentar limite de jornada ou repouso como aplicável nem concluir irregularidade. A integração com a análise fundamentada está pendente.');
+      await send(profile.chatId, missingComplianceReply());
     } else if (action === 'diarias') {
-      await send(profile.chatId, 'Diárias\n\nNo app CrewCheck, abra Diárias para consultar valores, critérios e elegibilidade. O Telegram ainda não oferece essa consulta financeira. Pernoites operacionais ficam em Hotéis.');
+      await send(profile.chatId, missingFinanceReply(), 'finance');
     } else if (parameters[action]) {
       flows.set(String(profile.chatId), { owner: owner(profile), action, at: now() });
       await deps.send(profile.chatId, `${parameters[action]}\nOu toque em Cancelar.`, { reply_markup: { inline_keyboard: [[{ text: 'Cancelar', callback_data: 'cc_nav:entry:home' }]] } });
