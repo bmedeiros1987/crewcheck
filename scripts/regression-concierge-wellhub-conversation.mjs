@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import test from 'node:test';
-import { createTelegramMenu, menuTemplate } from '../server/concierge/telegram-menu.mjs';
+import { createTelegramMenu, menuTemplate, requestedWeatherAirport } from '../server/concierge/telegram-menu.mjs';
 import { execFileSync } from 'node:child_process';
 import {
   normalizeConciergeNaturalTextV14341 as normalizeConciergeNaturalTextV14338,
@@ -82,6 +82,7 @@ function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}
   let appResponse;
   const context = vm.createContext({
     crewcheckMenu: createTelegramMenu({}),
+    requestedWeatherAirport,
     normalizeConciergeNaturalTextV14338, interpretConciergeNaturalTextV14338, buildConciergeContextV14338, isConciergeContextFreshV14338,
     ...wellhub, ...preferences, ...language, ...human, ...premium, ...intents,
     normalizeConciergePreferencesV14336: personality.normalizeConciergePreferences,
@@ -156,7 +157,7 @@ function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}
       buildCrewCheckAtis: station => `ATIS meteorológico ${station} · fixture`,
       crewCheckAtisVoiceText: reply => `Voz: ${reply}`,
       sendHumanTelegramVoiceReply: async (chat, text, _query, snapshot) => trace.voices.push({ chat, text, owner: snapshot.email }),
-      answerTelegramCallback: async () => {}, createTelegramMenu,
+      answerTelegramCallback: async () => {}, createTelegramMenu, requestedWeatherAirport,
       openEmergencyTelegramMenu: async () => { throw Error('emergency entry is tested separately with its actual handler'); },
       conciergeKeyboard: menuTemplate(),
     });
@@ -280,6 +281,8 @@ test('prepared full handler preserves explicit flight/station and weather kind t
     ['/radar LA1234', 'radar', 'LA1234'], ['/portao LA1234', 'radar', 'LA1234'],
     ['/metar SBGR raw', 'weather', 'SBGR', 'metar'], ['/taf SBGR raw', 'weather', 'SBGR', 'taf'],
     ['/atis SBGR', 'atis', 'SBGR'], ['radar do voo LA1234', 'radar', 'LA1234'], ['ATIS de SBGR', 'atis', 'SBGR'],
+    ['/metar KJFK raw', 'weather', 'KJFK', 'metar'], ['/taf SCEL raw', 'weather', 'SCEL', 'taf'],
+    ['/atis FACT', 'atis', 'FACT'], ['METAR de KJFK', 'weather', 'KJFK', 'metar'], ['ATIS de SCEL', 'atis', 'SCEL'],
   ];
   for (const [text, kind, expected, weatherType] of cases) {
     const h = harness({ operationalProbe: true });
@@ -296,7 +299,7 @@ test('prepared full handler preserves explicit flight/station and weather kind t
 });
 
 test('prepared Telegram slash and guided buttons call the same actual producers, weather keyboard and ATIS voice adapter', { skip: !materialized }, async () => {
-  for (const [label, command, input] of [['Radar', 'radar', 'LA1234'], ['Portão', 'portao', 'LA1234'], ['METAR', 'metar', 'SBGR'], ['TAF', 'taf', 'SBGR'], ['ATIS', 'atis', 'SBGR']]) {
+  for (const [label, command, input] of [['Radar', 'radar', 'LA1234'], ['Portão', 'portao', 'LA1234'], ['METAR', 'metar', 'SBGR'], ['TAF', 'taf', 'SBGR'], ['ATIS', 'atis', 'SBGR'], ['METAR', 'metar', 'KJFK'], ['TAF', 'taf', 'SCEL'], ['ATIS', 'atis', 'FACT']]) {
     const slash = harness({ operationalProbe: true });
     await slash.send('telegram', `/${command} ${input}`);
     const guided = harness({ operationalProbe: true });

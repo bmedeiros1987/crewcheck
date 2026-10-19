@@ -15,6 +15,14 @@ const foldMenuText = value => String(value || '').normalize('NFD').replace(/[\u0
 const navigationNames = new Set([...Object.values(pages).flat().map(([label]) => foldMenuText(label)), 'MENU', 'AJUDA', 'HELP', 'INICIO', 'VOLTAR AO MENU', 'CONFIGURACOES', 'MINHA ESCALA']);
 const priorityNavigation = value => /^\/|\bEMERGENCIA\b|^SOS\b/.test(foldMenuText(value)) || navigationNames.has(foldMenuText(value));
 export const financeUrl = 'https://crewcheck.online/?view=perdiem';
+export function requestedWeatherAirport(text = '', interpret) {
+  const value = String(text).trim();
+  const argument = value.match(/^\/(?:metar|taf|atis)(?:@\w+)?\s+([a-z]{3,4})\b/i)?.[1];
+  if (argument && argument.toUpperCase() !== 'RAW') return argument.toUpperCase();
+  const named = value.match(/\b(?:metar|taf|atis)\b(?:\s+(?:de|do|da|em|para|no|na|aeroporto))*\s+([a-z]{3,4})\b/i)?.[1]?.toUpperCase();
+  if (named && !['METAR', 'TAF', 'ATIS', 'QUAL', 'COMO', 'ONDE', 'QUEM', 'BASE', 'CASA', 'PARA', 'VOO', 'AERO', 'RAW'].includes(named)) return named;
+  return interpret(value).airport || '';
+}
 export const missingFinanceReply = () => `Diárias · dados financeiros indisponíveis nesta conversa\n\nA escala recebida pelo Telegram não contém os valores financeiros, moedas, datas previstas de pagamento ou status de cálculo da sua conta. Não posso calcular esses dados a partir de pernoites.\n\nConsulte a fonte financeira existente: ${financeUrl}\nEntre na sua conta para consultar valores e eventuais dados pendentes.`;
 export const missingComplianceReply = () => 'Revisão da escala · dados insuficientes\n\nNão há ocorrências verificáveis neste resumo. Faltam, por ocorrência, horários com origem confirmada, duração verificável e fundamento aplicável com artigo ou cláusula, documento e vigência. Não é possível confirmar limite aplicável ou irregularidade.\n\nSem a origem dos horários, também não posso apresentá-los como fatos publicados. A análise fundamentada ainda não está disponível nesta conversa.';
 export function menuTemplate(page = 'home') {

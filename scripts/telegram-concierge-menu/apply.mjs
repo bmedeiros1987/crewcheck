@@ -12,7 +12,8 @@ function functionBody(name, body) {
   const end = source.indexOf('\n}', match.index) + 2;
   source = source.slice(0, match.index) + body + source.slice(end);
 }
-const line = "import { createTelegramMenu, menuTemplate, menuGreeting, missingFinanceReply, missingComplianceReply } from './server/concierge/telegram-menu.mjs';";
+const line = "import { createTelegramMenu, menuTemplate, menuGreeting, missingFinanceReply, missingComplianceReply, requestedWeatherAirport } from './server/concierge/telegram-menu.mjs';";
+source = source.replace("import { createTelegramMenu, menuTemplate, menuGreeting, missingFinanceReply, missingComplianceReply } from './server/concierge/telegram-menu.mjs';", line);
 source = source.replace("import { createTelegramMenu, menuTemplate, menuGreeting } from './server/concierge/telegram-menu.mjs';", line);
 if (!source.includes(line)) source = line + '\n' + source;
 const emergencyImport = "import { openEmergencyTelegramMenu } from './server/v1391/emergency.mjs';";
@@ -34,10 +35,12 @@ const semanticDispatch = [
 ].join('\n') + '\n';
 source = source.slice(0, semanticStart) + semanticDispatch + source.slice(semanticEnd);
 const oldAirport = "  const explicit = String(text).toUpperCase().match(/\\b[A-Z]{4}\\b|\\b[A-Z]{3}\\b/);";
-const parsedAirport = "  const explicitAirport = interpretConciergeNaturalTextV14338(String(text)).airport;\n  const explicit = explicitAirport ? [explicitAirport] : null;";
+const parsedAirport = "  const explicitAirport = requestedWeatherAirport(text, interpretConciergeNaturalTextV14338);\n  const explicit = explicitAirport ? [explicitAirport] : null;";
+source = source.replaceAll("  const explicitAirport = interpretConciergeNaturalTextV14338(String(text)).airport;", "  const explicitAirport = requestedWeatherAirport(text, interpretConciergeNaturalTextV14338);");
 if (!source.includes(oldAirport) && !source.includes(parsedAirport)) throw new Error('[telegram-menu] missing weather airport extraction');
 source = source.replaceAll(oldAirport, parsedAirport);
-replace("      const weatherMatch = normalizedText.toUpperCase().match(/\\b[A-Z]{4}\\b|\\b[A-Z]{3}\\b/);", "      const weatherAirport = interpretConciergeNaturalTextV14338(normalizedText).airport;\n      const weatherMatch = weatherAirport ? [weatherAirport] : null;");
+source = source.replace("      const weatherAirport = interpretConciergeNaturalTextV14338(normalizedText).airport;", "      const weatherAirport = requestedWeatherAirport(normalizedText, interpretConciergeNaturalTextV14338);");
+replace("      const weatherMatch = normalizedText.toUpperCase().match(/\\b[A-Z]{4}\\b|\\b[A-Z]{3}\\b/);", "      const weatherAirport = requestedWeatherAirport(normalizedText, interpretConciergeNaturalTextV14338);\n      const weatherMatch = weatherAirport ? [weatherAirport] : null;");
 functionBody('conciergePerDiemReply', "function conciergePerDiemReply(snapshot) {\n  return missingFinanceReply();\n}");
 functionBody('conciergeComplianceReply', "function conciergeComplianceReply(snapshot) {\n  return missingComplianceReply();\n}");
 functionBody('conciergeReplyKeyboard', "function conciergeReplyKeyboard(value = '') {\n  if (/^\\/(?:configuracoes|meunome|nomeconcierge)(?:@\\S+)?/i.test(value)) return conciergeSettingsKeyboard;\n  return conciergeKeyboard;\n}");
