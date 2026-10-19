@@ -37,7 +37,7 @@ patch('sendTelegramMessage',body=>{
   const deliveryCheck = producerDeliveryCheck || contextCheck ? () => (!producerDeliveryCheck || producerDeliveryCheck()) && (!contextCheck || contextCheck()) : null;`);
 });
 patch('conciergeRadarReply',body=>{
- if(body.includes('beforeRadarWrite?.'))return body;
+ if(body.includes('const temporalSaved = await conciergeSaveSnapshotAsync('))return body;
  const start=body.indexOf('{')+1;body=body.slice(0,start)+"\n  if (profile.channel === 'telegram' && !await crewcheckTemporalDialogue.protect(profile,snapshot)()) return gateQuerySuppressed({reason:'response-context-expired'}).message;"+body.slice(start);
  body=body.replace("  const radar = await runRadarRace(queryContext, info?.leg?.origin || '', info?.leg?.destination || '');", "  const radar = await runRadarRace(queryContext, info?.leg?.origin || '', info?.leg?.destination || '');\n  profile.conciergeResponseAuthority?.acceptRadar?.(radar,queryContext.gateQueryEvidence);");
  body=body.replace('  snapshot = currentSnapshot;', "  if (profile.conciergeResponseAuthority?.beforeRadarWrite && !await profile.conciergeResponseAuthority.beforeRadarWrite(currentSnapshot)) return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;\n  snapshot = currentSnapshot;");
