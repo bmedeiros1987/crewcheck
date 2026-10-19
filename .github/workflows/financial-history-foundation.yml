@@ -4,6 +4,9 @@ on:
     paths:
       - 'shared/financialReadModel.mjs'
       - 'client/src/lib/financialStatementLearning.ts'
+      - 'client/src/lib/privatePayrollExtraction.ts'
+      - 'client/src/lib/financialPdfText.ts'
+      - 'scripts/regression-private-payroll-*.mjs'
       - 'client/src/lib/aimsParser.ts'
       - 'scripts/v14374/apply.mjs'
       - 'scripts/regression-aims-duty-source-browser.mjs'
@@ -80,7 +83,15 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Private payroll counterproofs before preparation
+        run: |
+          node scripts/regression-private-payroll-extraction.mjs
+          node scripts/regression-private-payroll-review.mjs
       - run: node scripts/v139/apply.mjs
+      - name: Private payroll counterproofs after preparation
+        run: |
+          node scripts/regression-private-payroll-extraction.mjs
+          node scripts/regression-private-payroll-review.mjs
       - run: node scripts/regression-salary-operational-clock.mjs
       - run: node scripts/regression-static-module-mime.mjs
       - run: node scripts/regression-operated-flight-hours.mjs
