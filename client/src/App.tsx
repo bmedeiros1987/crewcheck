@@ -16,6 +16,7 @@ import WatchPage from "./pages/WatchPage";
 import VisitorAccessPage from "./pages/VisitorAccessPage";
 import SharedRosterPage from "./pages/SharedRosterPage";
 import AdminPartnerAccountsPage from "./pages/AdminPartnerAccountsPage";
+import PublicUpdatesPage from "./pages/PublicUpdatesPage";
 import AboutUsPage from "./pages/AboutUsPage";
 import SystemStatusPage from "./pages/SystemStatusPage";
 import TelegramConnectPage from "./pages/TelegramConnectPage";
@@ -26,6 +27,7 @@ import { applyDocumentLanguage, installGlobalStaticTranslations } from "./lib/i1
 import { installPwaUpdateCoordinator } from "./lib/pwaUpdateCoordinator";
 import TermsGate from "./components/TermsGate";
 import PartnerWelcome from "./components/PartnerWelcome";
+import NativePlayUpdateNotice from './components/NativePlayUpdateNotice';
 
 type CrewThemeMode = 'light' | 'dark' | 'system';
 
@@ -149,6 +151,7 @@ function Router() {
     <Route path="/share/:token">{(params) => <SharedRosterPage token={params.token} />}</Route>
     <Route path="/admin/partners">{() => <Protected><AdminOnly><AdminPartnerAccountsPage /></AdminOnly></Protected>}</Route>
     <Route path="/telegram">{() => <Protected><TelegramConnectPage /></Protected>}</Route>
+    <Route path="/atualizacoes" component={PublicUpdatesPage} />
     <Route path="/sobre" component={AboutUsPage} />
     <Route path="/about" component={AboutUsPage} />
     <Route path="/status" component={SystemStatusPage} />
@@ -230,7 +233,7 @@ export default function App() {
   const storedEmail = String(storedUser?.email || '').toLowerCase();
   const clientAdmin = storedRole.includes('admin') || ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'].includes(storedEmail);
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';
-  const publicPaths = ['/voyage', '/privacy', '/terms', '/about', '/sobre', '/status', '/system-status', '/oauth-verification', '/google-calendar', '/delete-account', '/guardian', '/visitor', '/share/'];
+  const publicPaths = ['/atualizacoes', '/voyage', '/privacy', '/terms', '/about', '/sobre', '/status', '/system-status', '/oauth-verification', '/google-calendar', '/delete-account', '/guardian', '/visitor', '/share/'];
   const maintenanceBlocks = Boolean(maintenanceState?.enabled && !clientAdmin && currentPath !== '/login' && !publicPaths.some((path) => currentPath.startsWith(path)));
 
   if (!bootSplashDone) return <CrewCheckOpeningSplash label="CrewCheck Premium" />;
@@ -238,6 +241,6 @@ export default function App() {
 
   return <ErrorBoundary>
     <Toaster richColors position={appMode ? "top-center" : "top-right"} />
-    <Router /><CrewCheckGlobalBottomMenu />
+    <NativePlayUpdateNotice /><Router /><CrewCheckGlobalBottomMenu />
   </ErrorBoundary>;
 }

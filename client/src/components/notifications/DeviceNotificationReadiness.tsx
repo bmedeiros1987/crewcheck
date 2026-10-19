@@ -1,3 +1,4 @@
+import {NotificationHelp} from './NotificationHelp';
 import { useEffect, useState } from 'react';
 
 type Status = { notifications?: boolean; notificationAppEnabled?: boolean; notificationChannelEnabled?: boolean | null };
@@ -26,12 +27,12 @@ export function DeviceNotificationReadiness() {
     return () => { events.forEach(event => window.removeEventListener(event, refresh)); document.removeEventListener('visibilitychange', refresh); };
   }, []);
   const { native, status } = snapshot;
-  const message = status.notifications === false ? 'Permissão de notificações ausente neste aparelho.'
-    : status.notifications !== true ? 'Permissão neste aparelho não verificada.'
-    : native && status.notificationAppEnabled === false ? 'Notificações do app bloqueadas nas configurações do Android.'
-    : native && status.notificationChannelEnabled === false ? 'Canal Alertas CrewCheck bloqueado nas configurações do Android.'
-    : native && (status.notificationAppEnabled !== true || status.notificationChannelEnabled !== true) ? 'Permissão concedida; disponibilidade do canal ainda não verificada.'
-    : 'Permissão disponível neste aparelho. Isso não comprova envio ou recebimento de um aviso.';
+  const message = status.notifications === false ? 'Notificações não autorizadas.'
+    : status.notifications !== true ? 'Permissão não verificada.'
+    : native && status.notificationAppEnabled === false ? 'App bloqueado no Android.'
+    : native && status.notificationChannelEnabled === false ? 'Canal Alertas CrewCheck bloqueado.'
+    : native && (status.notificationAppEnabled !== true || status.notificationChannelEnabled !== true) ? 'Permissão concedida · canal não verificado.'
+    : 'Permissão disponível.';
   async function request() {
     if (requesting) return;
     setRequesting(true);
@@ -42,9 +43,9 @@ export function DeviceNotificationReadiness() {
     } finally { setSnapshot(readStatus()); setRequesting(false); }
   }
   return <div aria-label="Notificações neste aparelho">
-    <h3>Notificações neste aparelho</h3>
-    <p role="status">{message}</p>
-    {status.notifications === false && <button type="button" disabled={requesting} onClick={() => { request().catch(() => undefined); }}>{requesting ? 'Consultando permissão…' : 'Solicitar permissão neste aparelho'}</button>}
-    <p>O relógio tem seu próprio canal e permissão. Confira “Notificações” no CrewWatch. Esta consulta não envia avisos nem altera preferências de outros aparelhos.</p>
+    <h3>Permissão do aparelho</h3>
+    <p role="status">{message}</p>{native && (status.notifications === false || status.notificationAppEnabled === false || status.notificationChannelEnabled === false) && <p className="cc-notification-guidance">Configurações do Android → CrewCheck → Notificações.</p>}
+    {status.notifications === false && <button type="button" disabled={requesting} onClick={() => { request().catch(() => undefined); }}>{requesting ? 'Consultando…' : 'Autorizar notificações'}</button>}
+    <NotificationHelp label="Permissão e outros aparelhos"><p>O relógio tem seu próprio canal e permissão. Confira “Notificações” no CrewWatch. Esta consulta não envia avisos nem altera preferências de outros aparelhos. Permissão disponível não comprova envio ou recebimento.</p></NotificationHelp>
   </div>;
 }

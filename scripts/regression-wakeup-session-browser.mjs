@@ -106,18 +106,18 @@ try{
  await page.setViewportSize({width:320,height:740});await page.evaluate(sizes=>document.querySelectorAll('.cc-wakeup-page *').forEach((node,index)=>node.style.fontSize=sizes[index]+'px'),baseSizes);
  await sent.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));if(process.env.WAKEUP_SYNTHETIC_SCREENSHOT)await page.screenshot({path:process.env.WAKEUP_SYNTHETIC_SCREENSHOT});
 
- await page.getByText('Telegram vinculado a esta conta.',{exact:false}).waitFor();
+ await page.getByText('Conta vinculada · entrega não confirmada.',{exact:false}).waitFor();
  assert((await page.getByRole('region',{name:'Entrega fora do app'}).textContent()).includes('1 aceitos pelo provedor'));
  assert((await page.getByRole('region',{name:'Entrega fora do app'}).textContent()).includes('1 com resultado desconhecido'));
  assert.equal(await page.evaluate(()=>window.permissionsRequested),0);
  offline=true;await page.evaluate(()=>window.dispatchEvent(new Event('online')));await page.getByText('Disponibilidade não verificada.',{exact:false}).waitFor();await page.getByRole('alert').filter({hasText:'Não foi possível consultar'}).waitFor();assert.equal(await page.getByText('Nenhum despertador gravado no servidor.',{exact:true}).count(),0);
- offline=false;await page.evaluate(()=>window.dispatchEvent(new Event('online')));await page.getByText('Telegram vinculado a esta conta.',{exact:false}).waitFor();
+ offline=false;await page.evaluate(()=>window.dispatchEvent(new Event('online')));await page.getByText('Conta vinculada · entrega não confirmada.',{exact:false}).waitFor();
  const began=new Promise(r=>signal=r);hold=true;
  await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'B'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await began;
- assert.equal(await page.getByText('Telegram vinculado a esta conta.',{exact:false}).count(),0);assert.equal(await page.getByText('OWNER_A_FIXTURE',{exact:false}).count(),0);
- await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'A'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.getByText('Telegram vinculado a esta conta.',{exact:false}).waitFor();resume();
- await page.waitForTimeout(100);assert.equal(await page.getByText('Esta conta não tem vínculo Telegram válido.',{exact:false}).count(),0);
- await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'B'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.getByText('Esta conta não tem vínculo Telegram válido.',{exact:true}).waitFor();await page.getByText('Nenhum despertador gravado no servidor.',{exact:true}).waitFor();assert.equal(await page.getByText('OWNER_A_FIXTURE',{exact:false}).count(),0);
+ assert.equal(await page.getByText('Conta vinculada · entrega não confirmada.',{exact:false}).count(),0);assert.equal(await page.getByText('OWNER_A_FIXTURE',{exact:false}).count(),0);
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'A'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.getByText('Conta vinculada · entrega não confirmada.',{exact:false}).waitFor();resume();
+ await page.waitForTimeout(100);assert.equal(await page.getByText('Conta não vinculada.',{exact:false}).count(),0);
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'B'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.getByText('Conta não vinculada.',{exact:true}).waitFor();await page.getByText('Nenhum despertador gravado no servidor.',{exact:true}).waitFor();assert.equal(await page.getByText('OWNER_A_FIXTURE',{exact:false}).count(),0);
  await page.evaluate(()=>{localStorage.removeItem('crewcheck_auth_token');localStorage.removeItem('crewcheck_auth_user');window.dispatchEvent(new Event('crewcheck:auth-expired'));});await page.getByText('Disponibilidade não verificada.',{exact:false}).waitFor();await page.getByRole('alert').filter({hasText:'Não foi possível consultar'}).waitFor();assert.equal(await page.getByText('Nenhum despertador gravado no servidor.',{exact:true}).count(),0);
  // Both child and host requests from A are held; B must keep an empty list
  // after every late A response has been released.

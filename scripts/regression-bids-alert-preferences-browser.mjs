@@ -6,12 +6,12 @@ import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 const require = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || import.meta.url);
 const { chromium } = require('playwright');
-const bundle = await build({ stdin: { contents: `import React from 'react';import{createRoot}from'react-dom/client';import{BidsAlertPreferences}from'./client/src/components/v139/BidsAlertPreferences';createRoot(document.getElementById('root')).render(<BidsAlertPreferences/>);`, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, write: false, format: 'iife', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"test"' }, plugins: [{ name: 'fixture', setup(b) {
+const bundle = await build({ stdin: { contents: `import React from 'react';import{createRoot}from'react-dom/client';import{BidsAlertPreferences}from'./client/src/components/v139/BidsAlertPreferences';createRoot(document.getElementById('root')).render(<div className="cc-notification-center"><BidsAlertPreferences/></div>);`, resolveDir: process.cwd(), loader: 'tsx' }, bundle: true, write: false, format: 'iife', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"test"' }, plugins: [{ name: 'fixture', setup(b) {
   b.onResolve({ filter: /\.css$/ }, () => ({ path: 'css', namespace: 'fixture' }));
   b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: '', loader: 'js' }));
   b.onResolve({ filter: /^@\// }, ({ path: name }) => ({ path: path.resolve('client/src', name.slice(2) + '.ts') }));
 } }] });
-const styles = fs.readFileSync('client/src/styles/fixed-navigation-headers.css', 'utf8') + fs.readFileSync('client/src/index.css', 'utf8') + fs.readFileSync('client/src/components/v139/v139.css', 'utf8') + fs.readFileSync('client/src/components/v139/bids-alert-preferences.css', 'utf8') + fs.readFileSync('client/src/components/notifications/wakeup-selection.css', 'utf8');
+const styles = fs.readFileSync('client/src/styles/fixed-navigation-headers.css', 'utf8') + fs.readFileSync('client/src/index.css', 'utf8') + fs.readFileSync('client/src/components/v139/v139.css', 'utf8') + fs.readFileSync('client/src/components/v139/bids-alert-preferences.css', 'utf8') + fs.readFileSync('client/src/components/notifications/wakeup-selection.css', 'utf8') + fs.readFileSync('client/src/components/notifications/notification-settings.css','utf8');
 const html = `<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${styles}</style><style>*{box-sizing:border-box}body{margin:0}#navigation-header{position:fixed;inset:0 0 auto;height:80px;padding:24px 12px 8px;z-index:20;background:Canvas;color:CanvasText}#navigation-footer{position:fixed;inset:auto 0 0;height:88px;padding:8px 12px 24px;z-index:20;background:Canvas;color:CanvasText}main{padding:92px 12px 100px}main fieldset{margin-inline:0}</style><header id="navigation-header">Navegação CrewCheck</header><main id="root"></main><nav id="navigation-footer">Menu</nav><script src="/fixture.js"></script>`;
 const server = http.createServer((req, res) => { res.setHeader('content-type', req.url === '/fixture.js' ? 'text/javascript' : 'text/html'); res.end(req.url === '/fixture.js' ? bundle.outputFiles[0].text : html); });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -51,11 +51,11 @@ try {
   const hour=page.getByLabel('Hora · Horário padrão para BIDS',{exact:true}),minute=page.getByLabel('Minuto · Horário padrão para BIDS',{exact:true});
   const setTime=async value=>{const [h,m]=value.split(':');await hour.selectOption(h);await minute.selectOption(m);};
   const readTime=async()=>[await hour.inputValue(),await minute.inputValue()].join(':');
-  await page.goto(origin); await page.getByText('Janela oficial ainda não validada:', { exact: false }).waitFor();
+  await page.goto(origin); await page.getByText('BIDS pendente de validação.', { exact: false }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Já fiz BIDS nesta janela' }).count(), 0);
-  assert.equal(writes.length, 0); assert.equal(await page.getByRole('button', { name: 'Salvar preferências' }).isVisible(), false);
-  await page.locator('summary').first().click();
-  await page.getByLabel('Modo', { exact: false }).selectOption('manual');
+  assert.equal(writes.length, 0); assert.equal(await page.getByRole('button', { name: 'Salvar preferências' }).isVisible(), true);
+  await page.locator('summary').filter({hasText:'Onde receber'}).click();await page.locator('summary').filter({hasText:'Horário e silêncio'}).click();await page.locator('summary').filter({hasText:'Outros avisos e despertador'}).click();
+  await page.getByRole('combobox', { name: /^Modo\b/ }).selectOption('manual');
   await setTime('10:30'); await page.getByLabel('Origem do fuso',{exact:true}).selectOption('manual'); await page.getByLabel('Escolha o fuso',{exact:true}).selectOption('UTC');
   await page.getByLabel('Quero avisos BIDS', { exact: false }).check();
   await page.getByRole('checkbox', { name: 'Relógio', exact: true }).check();
@@ -67,7 +67,7 @@ try {
   assert.equal(await page.getByRole('checkbox', { name: 'Relógio', exact: true }).isChecked(), true);
   assert.equal(await page.getByRole('checkbox', { name: 'CrewCierge', exact: true }).isChecked(), false);
   await page.getByRole('checkbox', { name: 'Todos', exact: true }).check();
-  await page.getByLabel('Modo', { exact: false }).selectOption('auto');
+  await page.getByRole('combobox', { name: /^Modo\b/ }).selectOption('auto');
   assert.equal(await readTime(), '10:30', 'manual override survives Auto toggle');
   await page.getByRole('button', { name: 'Salvar preferências' }).click();
   await page.waitForFunction(() => !document.querySelector('fieldset').disabled);
@@ -75,13 +75,13 @@ try {
   assert.deepEqual(states.A.preferences.channels, { all: true, individual: { mobilePwa: false, watch: true, crewCierge: false } });
   await page.getByText('Ligação · número e disponibilidade',{exact:true}).click();
   // Measure help text in its rendered state: closed details retain stale Range boxes in Chromium.
-  for(const detail of await page.locator('details.cc-notification-help').all()) { if(!(await detail.getAttribute('open')) && await detail.getAttribute('open')===null) await detail.locator('summary').click(); }
+  for(const detail of await page.locator('details.cc-notification-help,details.cc-notification-help-icon').all()) { if(!(await detail.getAttribute('open')) && await detail.getAttribute('open')===null) await detail.locator('summary').click(); }
   const header = await page.locator('#navigation-header').boundingBox(), footer = await page.locator('#navigation-footer').boundingBox();
   const cases = [];
   for (const theme of ['light', 'dark']) for (const size of [100, 200]) {
     await page.evaluate(({ theme, size }) => { document.documentElement.dataset.crewTheme = theme; document.documentElement.style.fontSize = `${16 * size / 100}px`; document.querySelector('main').style.fontSize = `${16 * size / 100}px`; }, { theme, size });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `${theme}/${size} has no horizontal overflow`);
-    for (const target of [page.getByRole('heading', { name: 'O que, por onde e quando notificar' }), page.getByRole('button', { name: 'Salvar preferências' })]) {
+    for (const target of [page.getByRole('heading', { name: 'Avisos' }), page.getByRole('button', { name: 'Salvar preferências' })]) {
       await target.scrollIntoViewIfNeeded(); const bounds = await target.boundingBox();
       assert(bounds.y >= header.y + header.height - 1 && bounds.y + bounds.height <= footer.y + 1, `${theme}/${size}: first/last target clear fixed navigation`);
     }

@@ -1,0 +1,45 @@
+# CrewWatch temporal context and cache redraw
+
+Base reviewed: ba11d921a75c1f5a91f66d290684899309b03163. Original checkout untouched; isolated branch fix/watch-temporal-sync-20261018.
+
+Confirmed defects: watchContext interpreted published APZ with device setHours and formatted canonical instants without a zone; APZ arrival alone produced BOARDING. Wear observed neither secure-cache changes nor expiry while foreground/AOD; schedule rows continued displaying stale gates.
+
+The existing canonicalRoster.dateAt contract is published BRT (UTC−03), including international legs. This patch preserves that clock, explicitly labels BRT and dates, rejects zone-less canonical instants, and never treats airport-local or device time as the published clock. It does not revise the roster import contract. APZ dates are resolved relative to canonical STD, including the preceding date at midnight. Airport mapping is used only to prove a conservative domestic subset, not to reinterpret canonical clocks.
+
+Proposed highlight window: three hours before published APZ, or canonical STD if APZ absent. This is a UI window, not an operational rule. A canonical rest interval currently in force retains Folga until its end, even when tomorrow's APZ enters this window. Outside the window show dated future programming; absence of programming alone does not prove Folga. Missing APZ never becomes STD. Schedule end, focus boundary, rest end and route-cache expiry bound snapshot validity.
+
+Bruno's domestic reference: estimated boarding = scheduled departure minus40 minutes, never APZ minus40. Emit only for distinct airports both resolved by the existing reviewed Brazilian airport map, with a published departure clock. Label Embarque previsto. International/unknown airport: no boardingTime estimate. Neither APZ, estimated boarding nor STD alone proves BOARDING or IN_FLIGHT. No international60-minute rule was adopted. Base APZ remains the published roster value; no hotel APZ/pickup is derived or populated. MyCrewCare OFF/missing data remains missing.
+
+Existing Radar/manual gate decision and TTL remain in nextFlightWatch; no new API, polling or paid requests. Gate enrichment preserves future date/zone and does not promote future flights to currentFlight. No validated estimated/actual departure is transported by the current snapshot adapter; it stays scheduled. Adding that requires a separate source-matched contract, not interpreting a status string as proof.
+
+Composition: reviewed1044 HEAD351ef0d949d806c073f22fe0615d72a90e2e8df0 MainActivity layout plus WatchViewport and its tests; selective836 HEAD09daf49d462c4304c0d0dd226d5b1373036c84c6 secure-cache listener and foreground/AOD expiry redraw. No historical merge/cherry-pick. No836 background requests, syncCrewLife or health changes. No Face work. Robolectric dependency/test resource flag are the1044 test slice. Existing tests preserved; stale schedule and reporting date/boarding tests added.
+
+Independent read-only review found and revalidated fixes for folga at midnight, lost next-flight date, REPORTING hiding temporal detail and stale schedule rows. No further blocker on re-review. No physical-layout claim.
+
+Offline evidence: actual producer temporal regression passes UTC, America/Sao_Paulo and Pacific/Auckland; covers midnight, tomorrow, active folga, missing APZ, unknown instant zone, international/unknown route, expired event, next leg, route departure. Existing next-flight-gate regression passes all three zones, including delayed-flight selection and Radar/manual TTL negatives. Actual Home publisher cadence regression passes; consolidated contracts pass; tsc --noEmit and Vite build pass (existing chunk-size warning).
+
+Local Wear Gradle build/lint/unit suite remain UNVERIFIED: attempts with existing JDK17/Gradle8.13/SDK, offline, produced no output; even isolated Gradle --version timed out after15seconds. Attempts terminated. No signing certificate touched, app installed/deleted, new permission, Play publication, location or real health data. PR CI must establish Android evidence. Physical Galaxy Watch4 pairing, gate push while open/AOD, expiry while offline, scroll/font layout and release-package pairing remain pending. Debug phone.mcctest and Wear debug do not prove release pairing.
+
+HealthSync: inventory only, no collection, activation or Companion edits. Phone/Wear package com.crewcheck.app; Face com.crewcheck.watch.app (com.crewcheck.face is namespace).
+
+## HOLD review follow-up
+
+External review of a5f0fd02 found three source-pipeline gaps despite green CI: absent APZ was canonical compatibility STD, absent STD became00:00, and Home's noFutureLeg bypassed active rest. Corrected in watchContext by consulting retained canonical.leg/publishedDay source fields (not merely projected HH:mm); day APZ for non-flight duty is preserved; only explicit per-event manual override is accepted independently. Active canonical rest is consulted before placeholder return. Home and canonicalRoster remain unedited.
+
+New regression executes actual normalize/buildCanonical plus extracted Home buildLegs/managedPresentation/nextFlight and actual watch producer using synthetic rosters. It proves the upstream compatibility fallbacks exist, then asserts they do not become watch APZ/boarding/STD; known leg/day APZ and duty APZ remain known; rest-only placeholder is Folga; expired rest is unknown. Runs in UTC/SP/Auckland through the existing Next flight gate regression (whose CI installs the required web dependencies; the dedicated Wear preflight remains dependency-free), without workflow changes.
+
+Two Wear follow-ups: stale Agora now returns only an explicit expired-snapshot/sync card with no old operational facts; compact AOD couples APZ/SAIR label to the time rather than dropping the label. Added render tests plus lifecycle test of real DataLayer message handler, real AES/prefs save/load, listener debounce, Activity pause/resume, minute expiry and ambient callback expiry. Only Keystore key acquisition uses a synthetic fixed AES key in Robolectric. Ambient hardware attachment remains shadowed; these tests do not prove BLE pairing or physical OLED behavior. No health/wellbeing wire changes; compatibility work for1085 is separate.
+
+## Final review follow-up: source marker and visible AOD proof
+
+Day-level APZ now requires retained dutyReportSource=published, for both flights and non-flight duty. estimated/unknown/absent/missing markers remain unknown even when the projected HH:mm is valid. Explicit per-event manual entry and published day/leg APZ remain accepted; a published day APZ equal to STD is not rejected merely because the clocks coincide. Unknown duty APZ no longer becomes REPORTING or an undifferentiated primary/schedule clock. The actual Home pipeline regression includes these negative and positive controls in all3 zones, including prepared Home.
+
+Ambient lifecycle evidence now checks actual UI content: initial empty AOD, visible APZ18:20 after the first DataLayer delivery, replacement by APZ19:42 after a second delivery, then disappearance of those exact payload values after expiry and a visibly different empty AOD. Existing negative assertions remain. Cache assertions alone are not treated as redraw proof. This strengthens simulated evidence only; physical Watch4 validation remains pending.
+
+Future duty prose follows the same APZ proof: unknown/estimated/absent/unmarked dutyReportSource retains the date and says horário a confirmar in both detail and nextDetail, rather than interpolating canonical startMs as a confirmed clock. Published day report retains18:20; an explicit manual APZ18:10 displays18:10, not the rejected upstream18:20. Real Home/canonical tests cover all source states and both future prose fields in3 zones, before and after source preparation.
+
+## Duty civil-date resolution
+
+The previous resolver incorrectly treated duty APZ like a clock before departure. For RES18/10 raw18:20 unknown, manual18:30 could become17/10 and the schedule still showed raw18:20. Duty now resolves known APZ on canonical.date/publishedDay.date in the existing BRT contract; legacy objects lacking a date may use only the civil date of an explicitly zoned canonical instant. Flight alone keeps the before-STD rule. The resolved duty instant feeds focus/state, primary APZ, schedule time/APZ/date, current/future prose, route leave time and validity. Unknown duty clocks retain their source date and remain unknown.
+
+A real-chain matrix tests manual18:30,18:10,00:10,00:00,23:50 at yesterday18h, before focus, inside focus, active and after date rollover. It checks detail/nextDetail, schedule.time/presentation/detail, primaryTime/presentationTime/presentationPlace, state and TTL in all3 zones. Baseline2907c744 fails in all3 zones with yesterday incorrectly REPORTING; the candidate passes raw/prepared Home chains, temporal and cadence contracts and TypeScript. Independent local read-only review revalidated the resolver and ran the matrix without a new blocker. No physical claim.

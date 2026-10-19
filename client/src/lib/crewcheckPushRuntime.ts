@@ -34,15 +34,19 @@ export function installCrewCheckPushLifecycle(){
    // A late logout cleanup must not erase a renewed same-account session.
    if(owner()===priorOwner&&getToken())return;
    const registration=await navigator.serviceWorker.ready;
-   const subscription=await registration.pushManager.getSubscription();
    if(owner()===priorOwner&&getToken())return;
+   // Clear the account binding even when PushManager lookup fails. Keep the
+   // origin lock through unsubscribe so a new activation cannot be erased.
    const cancelled=await worker(registration,'cancel',{ownerId:priorOwner});
-   if(cancelled.ok&&!(owner()===priorOwner&&getToken()))await subscription?.unsubscribe();
+   if(cancelled.ok&&!(owner()===priorOwner&&getToken())){
+    const subscription=await registration.pushManager.getSubscription();
+    if(!(owner()===priorOwner&&getToken()))await subscription?.unsubscribe();
+   }
   }).catch(()=>{});
   previousOwner=current;
  };
  const reconcile=()=>{void reconcileCrewCheckPushDevice().catch(()=>{});};
- const storage=(event:StorageEvent)=>{if(['crewcheck_auth_token','crewcheck_auth_user'].includes(event.key||''))changed();};
+ const storage=(event:StorageEvent)=>{if(event.key===null||['crewcheck_auth_token','crewcheck_auth_user'].includes(event.key||''))changed();};
  window.addEventListener('storage',storage);window.addEventListener('crewcheck:auth-will-change',willChange);window.addEventListener('crewcheck:auth-changed',changed);window.addEventListener('crewcheck:auth-expired',changed);window.addEventListener('online',reconcile);window.addEventListener('focus',reconcile);reconcile();
  return()=>{window.removeEventListener('storage',storage);window.removeEventListener('crewcheck:auth-will-change',willChange);window.removeEventListener('crewcheck:auth-changed',changed);window.removeEventListener('crewcheck:auth-expired',changed);window.removeEventListener('online',reconcile);window.removeEventListener('focus',reconcile);};
 }

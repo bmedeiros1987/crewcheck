@@ -2,6 +2,7 @@
 // Só fixtures sintéticas: nenhuma rede, credencial, Cirium, FlightAware ou relógio físico.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -31,7 +32,7 @@ function memoryStorage() {
 }
 function flight(id, number, startIso, origin = 'GRU', destination = 'REC', extra = {}) {
   return { id, kind: 'flight', flightNumber: number, origin, destination, presentation: '18:20', departure: '19:05', arrival: '22:10',
-    gate: 'A confirmar', status: '', date: new Date(startIso), canonical: { id: `c-${id}`, startDateTime: startIso, endDateTime: new Date(Date.parse(startIso) + 3 * H).toISOString() }, ...extra };
+    gate: 'A confirmar', status: '', date: new Date(startIso), canonical: { id: `c-${id}`, leg:{departureTime:'19:05',presentationTime:'18:20'},legIndex:0,showPresentation:true, startDateTime: startIso, endDateTime: new Date(Date.parse(startIso) + 3 * H).toISOString() }, ...extra };
 }
 
 // 1. Seleção do próximo voo: ordem por instante absoluto, ignora atividade em solo e voo já partido.
@@ -167,6 +168,19 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', sc
   assert.equal(m.readCachedRadarForFlight(storage, next, NOW), null);
 }
 
+// Future gate enrichment preserves date/zone and never promotes a future flight to now.
+{
+  const f = flight('future-temporal', 'QA123', '2032-10-19T03:05:00Z', 'GRU', 'REC', {presentation:'23:18', departure:'00:05'});
+  const now = Date.parse('2032-10-18T12:00:00Z');
+  const info = m.resolveNextFlightGate({event:f, now});
+  const base = m.buildCrewCheckWatchSnapshot([f], f, null, now);
+  const out = m.applyNextFlightToWatchSnapshot(base, info, {primaryEventId:f.id, nextFlightScheduleId:f.canonical.id});
+  assert.equal(out.currentFlight, '');
+  assert.equal(out.gate, '');
+  assert.equal(out.presentationTime, '');
+  assert.match(out.nextDetail, /19\/10 00:05 BRT/);
+}
+
 // 9. Consistência celular-relógio: o snapshot usa exatamente a decisão do card.
 {
   const duty = { id: 'pres', kind: 'duty', flightNumber: 'APRES', origin: 'GRU', destination: 'GRU', presentation: '18:20', canonical: { id: 'c-pres', startDateTime: new Date(NOW + H).toISOString(), endDateTime: new Date(NOW + 2 * H).toISOString() } };
@@ -296,6 +310,12 @@ fs.rmSync(out, { recursive: true, force: true });
     const onlyInternalId = ctxVm.normalizeFlightAwareFlight({ fa_flight_id: 'LAN3377-1697000000-airline-0123', gate_origin: '9', scheduled_out: '2032-10-13T23:00:00Z' }, ctx);
     assert.equal(m.resolveNextFlightGate({ event: { ...ev, flightNumber: roster }, radar: { ...base, flight: onlyInternalId.flight, gate: '9', departure: onlyInternalId.departure }, now }).radarRejected, 'other-flight', 'fa_flight_id sem ident falha fechado');
   }
+}
+
+for (const TZ of ['UTC', 'America/Sao_Paulo', 'Pacific/Auckland']) {
+  const result = spawnSync(process.execPath, ['scripts/regression-watch-source-pipeline.mjs'], { env: { ...process.env, TZ }, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  process.stdout.write(result.stdout);
 }
 
 console.log(`[next-flight-gate] seleção, virada de data, portão/posição, ausente/antigo, manual, conta e celular-relógio OK (TZ=${process.env.TZ || 'local'})`);

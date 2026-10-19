@@ -2,7 +2,13 @@ name: MyCrewCare v3 persistent session
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
     paths:
+      # Discovery is broad; the auditor retains an exact allowlist.
+      - '**/*[mM][yY][cC][rR][eE][wW][cC][aA][rR][eE]*'
+      - '**/*[mM][yY][cC][rR][eE][wW][cC][aA][rR][eE]*/**'
+      - 'scripts/ci/mcc-comparison.mjs'
+      - 'scripts/regression-mcc-comparison.mjs'
       - 'shared/myCrewCareLogistics*'
       - 'shared/myCrewCarePersistentSession*'
       - 'shared/myCrewCareSyncPolicy*'
@@ -54,6 +60,15 @@ on:
       - 'docs/mycrewcare-v3-persistent-session.md'
       - '.github/workflows/mycrewcare-v3-persistence.yml'
   workflow_dispatch:
+    inputs:
+      base_sha:
+        description: 'Immutable comparison base commit (full SHA)'
+        required: true
+        type: string
+      head_sha:
+        description: 'Immutable checked main commit (full SHA)'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -66,10 +81,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
+      - name: Resolve immutable MCC comparison (fail closed)
+        run: node scripts/ci/mcc-comparison.mjs
       - run: npm ci
       - uses: actions/setup-java@v5
         with:
@@ -82,6 +100,7 @@ jobs:
       - name: Focused contracts before canonical preparation
         run: |
           node scripts/assert-mycrewcare-v3-ownership.mjs
+          node --test scripts/regression-mcc-comparison.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs scripts/regression-mycrewcare-controller.mjs
             TZ="$zone" node --test scripts/regression-mycrewcare-consumer-boundary.mjs scripts/regression-mycrewcare-partial-hotel.mjs scripts/regression-mycrewcare-snapshot-monotonic.mjs scripts/regression-mycrewcare-sso-draft.mjs scripts/regression-mycrewcare-ownership-paths.mjs
@@ -92,6 +111,7 @@ jobs:
       - name: Focused contracts after canonical preparation
         run: |
           node scripts/assert-mycrewcare-v3-ownership.mjs
+          node --test scripts/regression-mcc-comparison.mjs
           for zone in UTC America/Sao_Paulo Pacific/Auckland; do
             TZ="$zone" node --test scripts/regression-mycrewcare-v3.mjs scripts/regression-mycrewcare-controller.mjs
             TZ="$zone" node --test scripts/regression-mycrewcare-consumer-boundary.mjs scripts/regression-mycrewcare-partial-hotel.mjs scripts/regression-mycrewcare-snapshot-monotonic.mjs scripts/regression-mycrewcare-sso-draft.mjs scripts/regression-mycrewcare-ownership-paths.mjs
