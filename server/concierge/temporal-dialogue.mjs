@@ -22,10 +22,11 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
   const chat=String(profile.chatId),input=plain(text);prune();
   const turn={at:now()};turns.set(chat,turn);
   const offer=offers.get(chat);offers.delete(chat);
+  const decline=Boolean(offer)&&/^(nao|agora nao|cancelar|cancela)[.!?]*$/.test(input);
   const yes=/^(sim|quero|quero sim|pode mostrar|detalhes)[.!?]*$/.test(input);
   const schedule=/^\/(?:hoje|proximo)(?:@\S+)?$/.test(input)||/^(?:e )?(?:o que tenho (?:hoje|agora)|qual (?:a )?minha proxima programacao|como esta meu dia|nao fui acionado)[.!?]*$/.test(input);
   const mine=/\bmeu voo\b/.test(input)&&!deps.explicitFlight(text);
-  if(!yes&&!schedule&&!mine)return null;
+  if(!yes&&!schedule&&!mine&&!decline)return null;
   const denied='A consulta mudou ou expirou. Consulte sua programação novamente.';
   let expected=revision(snapshot),selected=null,selectedEvent=null,deadline=null;
   const validTurn=()=>turns.get(chat)===turn&&(deadline===null||(now()>=deadline&&now()-deadline<=TTL));
@@ -45,6 +46,7 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
    if(current)expected=revision(saved);
   }});
   if(!await validate())return {reply:denied};
+  if(decline)return {reply:'Tudo bem. Consulta de detalhes cancelada.'};
   const records=deps.programs(snapshot.roster);
   if(yes){
    if(!offer||offer.owner!==owner(profile)||offer.revision!==expected||now()-offer.at>TTL)return {reply:'Não há um pedido de detalhes válido agora. Consulte sua próxima programação.'};

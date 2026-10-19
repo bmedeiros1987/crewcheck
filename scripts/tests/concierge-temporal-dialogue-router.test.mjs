@@ -107,3 +107,8 @@ test('actual concurrent topic invalidates old response and cannot recreate a sta
  await h.send('telegram','/proximo');assert.equal(changed,1);assert.doesNotMatch(h.trace.output.join(' '),/QA-MERGED|05\/10\/2099|07:00/);
  await h.send('telegram','sim');assert.match(h.trace.output.at(-1),/Não há um pedido de detalhes válido/);
 });
+
+for(const text of ['não','cancelar'])test(`actual declined detail offer ${text} stays cancelled`,async()=>{
+ const h=realDeparture(data('estimated'),'missing',at);await h.send('telegram','/proximo');await h.send('telegram',text);assert.match(h.trace.output.at(-1),/cancelada/);
+ await h.send('telegram','sim');assert.match(h.trace.output.at(-1),/Não há um pedido de detalhes válido/);
+});
