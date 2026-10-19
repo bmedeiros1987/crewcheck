@@ -40,7 +40,7 @@ export function requestedWeatherAirport(text = '', interpret) {
   if (named && !['METAR', 'TAF', 'ATIS', 'QUAL', 'COMO', 'ONDE', 'QUEM', 'BASE', 'CASA', 'PARA', 'VOO', 'AERO', 'RAW'].includes(named)) return named;
   return interpret(value).airport || '';
 }
-export const missingFinanceReply = () => 'Diárias · valores indisponíveis nesta conversa. Consulte os dados disponíveis no app.';
+export const missingFinanceReply = () => `Diárias · valores indisponíveis nesta conversa. Consulte os dados disponíveis no app: ${financeUrl}`;
 const financialDetails = 'Os valores financeiros ainda não têm uma fonte autorizada integrada a esta conversa. A escala e os pernoites não permitem calcular valores, confirmar pagamento ou consultar o financeiro do navegador.';
 export const missingComplianceReply = () => 'Revisão da escala · dados insuficientes\n\nNão há ocorrências verificáveis neste resumo. Faltam, por ocorrência, horários com origem confirmada, duração verificável e fundamento aplicável com artigo ou cláusula, documento e vigência. Não é possível confirmar limite aplicável ou irregularidade.\n\nSem a origem dos horários, também não posso apresentá-los como fatos publicados. A análise fundamentada ainda não está disponível nesta conversa.';
 export function menuTemplate(page = 'home') {

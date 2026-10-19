@@ -187,6 +187,7 @@ for (const [name, producer] of [['conciergePerDiemReply', missingFinanceReply], 
   const fn = source.match(new RegExp(`function ${name}\\([\\s\\S]*?\\n}`))[0];
   const result = vm.runInNewContext(`${fn}; ${name}({roster:{days:[{dutyHours:15,hotel:'PRIVATE'}]}})`, { missingFinanceReply, missingComplianceReply, buildDutyFacts, conciergeAccessMatches: () => false });
   assert.equal(result, producer(), 'typed commands and buttons share exact response');
+  if (name === 'conciergePerDiemReply') assert(result.includes(financeUrl), 'actual typed handler must retain the app destination');
   assert(!result.includes('PRIVATE'));
 }
 const core = source.match(/async function buildTelegramConciergeReplyCore\([\s\S]*?\n}/)[0];
