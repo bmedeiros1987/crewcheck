@@ -49,10 +49,10 @@ await run(callback(button('↩️ Voltar'))); assert.equal(sent.at(-1).text, sum
 await run(callback(details)); assert.match(answers.at(-1).text, /expirou/); // One-use ticket.
 
 // The actual production sender decorates the existing root, then the real
-// callback handler routes Mais → Revisar escala to the same factual consumer.
+// callback handler routes Regulamentação → Revisar escala to the same factual consumer.
 context.root = menuTemplate();
 await vm.runInContext('sendTelegramMessage(123, "Escolha", {reply_markup: root})', context);
-await run(callback(button('➕ Mais'))); await run(callback(button('📋 Revisar escala')));
+await run(callback(button('📖 Regulamentação'))); await run(callback(button('📋 Revisar escala')));
 assert.equal(sent.at(-1).text, summary);
 
 await run(message('revisar escala')); assert.equal(sent.at(-1).text, summary);

@@ -91,7 +91,7 @@ try {
   execFileSync(process.execPath,['--check',path.join(temp,'server/v1391/emergency.mjs')]);
   if (once.includes('const conciergeKeyboard = menuTemplate();')) {
     const {menuTemplate}=await import('../server/concierge/telegram-menu.mjs');
-    assert.ok(menuTemplate().inline_keyboard.flat().some(button=>button.text==='🏨 Hotéis'));
+    assert.ok(menuTemplate().inline_keyboard.flat().some(button=>button.text==='🏨 Pernoite'));
     assert.ok(menuTemplate('hoteis').inline_keyboard.flat().some(button=>button.text==='🕘 Histórico'));
   } else assert.match(once,/text: '🏨 Meu pernoite'/);
   assert.match(once,/\{ \.\.\.profile, channel: 'app' \}, snapshot\)/);
