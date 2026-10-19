@@ -131,20 +131,20 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
   const presentationDate = record.display?.clockBasis === 'published-brt'
     && record.display.presentationConfirmed === true && Number.isFinite(record.display.publishedStart)
     ? new Date(record.display.publishedStart) : null;
-  if (!presentationDate) return buildDepartureSummary({ profile, snapshot, record, origin });
+  if (!presentationDate) return buildDepartureSummary({ now: Date.now(), profile, snapshot, record, origin });
   const presentation = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(presentationDate);
-  if (presentationDate.getTime() <= Date.now()) return buildDepartureSummary({profile, snapshot, record, origin});
+  if (presentationDate.getTime() <= Date.now()) return buildDepartureSummary({ now: Date.now(),profile, snapshot, record, origin});
   const locationState = conciergeLocationContextV14335(snapshot);
   const location = locationState.fresh ? locationState.location : null;
-  if (!location) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation });
+  if (!location) return buildDepartureSummary({ now: Date.now(), profile, snapshot, record, origin, presentationTime: presentation });
   let route = null;
   try { route = await conciergeTravelEstimate(location, origin); } catch {
     // An unavailable route cannot replace the shared published APZ with a fallback clock.
   }
   if (!owns(snapshot) || !await conciergeDepartureOwnerCurrent(profile, snapshot)) return gateQuerySuppressed({reason:'response-context-expired'}).message;
-  if (presentationDate.getTime() <= Date.now()) return buildDepartureSummary({profile, snapshot, record, origin});
-  if (!route) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation, routeState: 'unavailable' });
-  if (route.distanceKm > 250) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation, route, routeState: 'long' });
+  if (presentationDate.getTime() <= Date.now()) return buildDepartureSummary({ now: Date.now(),profile, snapshot, record, origin});
+  if (!route) return buildDepartureSummary({ now: Date.now(), profile, snapshot, record, origin, presentationTime: presentation, routeState: 'unavailable' });
+  if (route.distanceKm > 250) return buildDepartureSummary({ now: Date.now(), profile, snapshot, record, origin, presentationTime: presentation, route, routeState: 'long' });
   const departureWindow = calculateDepartureWindow(presentationDate, route);
   const leaveTime = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(departureWindow.leave);
   const safeRoute = { ...route, minutes: departureWindow.routeMinutes, leadMinutes: departureWindow.leadMinutes };
@@ -179,5 +179,5 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
     }
   }
   if (!await conciergeDepartureOwnerCurrent(profile, snapshot)) return gateQuerySuppressed({reason:'response-context-expired'}).message;
-  return buildDepartureSummary({ profile, snapshot, record, route: safeRoute, leaveTime, leaveEpoch: departureWindow.leave.getTime(), origin, radar, presentationTime: presentation });
+  return buildDepartureSummary({ now: Date.now(), profile, snapshot, record, route: safeRoute, leaveTime, leaveEpoch: departureWindow.leave.getTime(), origin, radar, presentationTime: presentation });
 }

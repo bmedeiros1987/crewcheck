@@ -63,7 +63,8 @@ function data(kind,normalized=false){
  const leaf={dutyReport:'03:00',dutyDebrief:'09:30',dutyReportSource:'published',dutyDebriefSource:'published',legs:[{departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00'}]};
  const container=kind==='estimated'?{...leaf,dutyReportSource:'estimated',records:[leaf]}:{...leaf,legs:[{departureTime:'04:00',arrivalTime:'05:00'},...leaf.legs],records:[leaf]};
  const day={date:'04/10/2099',dayNumber:4,month:10,year:2099,type:'ASB',pairingCode:'ASB',base:'AAA',dutyReport:'03:00',dutyDebrief:'09:30',dutyReportSource:'published',dutyDebriefSource:'published',legs:[leg],publishedClockEvidence:container};
- const roster={year:2099,month:10,base:'AAA',days:[day]};
+ const next=JSON.parse(JSON.stringify(day));Object.assign(next,{date:'05/10/2099',dayNumber:5});
+ const roster={year:2099,month:10,base:'AAA',days:[day,next]};
  return normalized?canonical.normalizeRosterDays(roster):roster;
 }
 for(const at of ['2099-10-04T09:00:00Z','2099-10-04T09:30:00Z','2099-10-04T10:00:00Z','2099-10-04T10:30:00Z'])for(const kind of ['estimated','earlier'])for(const normalized of [false,true])for(const mode of ['missing','null','throw','long','short'])for(const path of ['typed','button']) {
@@ -123,6 +124,8 @@ for(const path of ['typed','button'])for(const mode of ['missing','null','throw'
 for(const path of ['typed','button'])for(const boundary of ['route','radar','final'])test(`actual copied identity relink at ${boundary} denies ${path} prior-owner facts`,async()=>{
  const roster=data('estimated');const h=realDeparture(roster,'short');let current={...h.profile};
  h.context.telegramProfileForChatAsync=async()=>({...current});
+ const runtime=source.match(/const crewcheckMenu = createTelegramMenu\([\s\S]*?\n}\);/);
+ vm.runInContext(runtime[0].replace('const crewcheckMenu =','globalThis.crewcheckMenu ='),h.context);
  const relink=()=>{current={...current,email:'route-b@example.invalid'};};
  if(boundary==='route')h.context.conciergeTravelEstimate=async()=>{relink();return{minutes:30,distanceKm:10};};
  else if(boundary==='radar'){
@@ -133,6 +136,7 @@ for(const path of ['typed','button'])for(const boundary of ['route','radar','fin
   h.context.conciergeSaveSnapshotAsync=async(...args)=>{const r=await save(...args);if(args[2]?.preferences?.conciergeConversation)relink();return r;};
  }
  if(path==='typed')await h.send('telegram','/saida');else{await h.openInline();await h.tap('Transporte');await h.tap('Saída');}
+ if(boundary==='final')assert.equal(current.email,'route-b@example.invalid','final fixture must cross actual conversation save');
  const outputs=h.trace.output.join(' ');assert.doesNotMatch(outputs,/04\/10\/2099|07:00|QA-MERGED|FORBIDDEN_GATE/);
  if(boundary==='route')assert.equal(h.radarCalls(),0);
 });
@@ -140,4 +144,18 @@ for(const path of ['typed','button'])for(const boundary of ['route','radar','fin
 test('actual wrapper never renders stale legacy gate when Radar rejects the occurrence',async()=>{
  const roster=data('estimated');roster.days[0].legs[0].gate='OLD_GATE_99';roster.days[0].legs[0].gateUpdatedAt='2099-10-01T00:00:00Z';
  const h=realDeparture(roster,'short');await h.send('telegram','/saida');assert.doesNotMatch(h.trace.output.join(' '),/OLD_GATE_99|portão/);
+});
+
+for(const path of ['typed','button'])for(const kind of ['base-missing','origin-missing','outside-base','cancelled','home-standby','empty','no-future'])test(`actual premium shares departure reader policy ${kind} ${path}`,async()=>{
+ const roster=data('estimated');
+ if(kind==='base-missing')delete roster.base;
+ if(kind==='origin-missing'){for(const d of roster.days){delete d.base;for(const leg of d.legs)delete leg.origin;}}
+ if(kind==='outside-base')roster.base='CCC';
+ if(kind==='cancelled')for(const day of roster.days)day.status='cancelled';
+ if(kind==='home-standby')for(const day of roster.days){day.type='HSB';day.pairingCode='HSB';day.legs=[];delete day.publishedClockEvidence;}
+ if(kind==='empty')roster.days=[];
+ const h=realDeparture(roster,'short',kind==='no-future'?'2099-10-08T09:00:00Z':now);
+ if(path==='typed')await h.send('telegram','/saida');else{await h.openInline();await h.tap('Transporte');await h.tap('Saída');}
+ const reply=h.trace.output.at(-1);assert.doesNotMatch(reply,/Saia de casa|Saída recomendada:/);assert.equal(h.routeCalls(),0);assert.equal(h.radarCalls(),0);
+ const expected={'base-missing':/não confirmada/,'origin-missing':/não confirmada/,'outside-base':/fora da base.*posição física/,'cancelled':/cancelada/,'home-standby':/Sobreaviso em casa|cobertura/,'empty':/Não há escala/,'no-future':/cobertura.*não está confirmada/i};assert.match(reply,expected[kind]);
 });

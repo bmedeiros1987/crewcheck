@@ -77,7 +77,10 @@ jobs:
       - name: Validate actual prepared menu, core, premium producer and sender
         run: |
           set -euo pipefail
-          node scripts/tests/concierge-premium-departure-router.test.mjs --materialized 2>&1 | tee "$RUNNER_TEMP/premium-departure-router.log"
+          for zone in America/Sao_Paulo UTC Asia/Tokyo Pacific/Honolulu; do
+            echo "Timezone: $zone" | tee -a "$RUNNER_TEMP/premium-departure-router.log"
+            TZ="$zone" node scripts/tests/concierge-premium-departure-router.test.mjs --materialized 2>&1 | tee -a "$RUNNER_TEMP/premium-departure-router.log"
+          done
           node scripts/regression-radar-authority-followup.mjs
       - name: Preserve exact activity-label sources
         if: always()
@@ -94,6 +97,9 @@ jobs:
           git rev-parse HEAD > "$RUNNER_TEMP/activity-kind-proof/HEAD.txt"
           cp server.mjs "$RUNNER_TEMP/activity-kind-proof/"
           mkdir -p "$RUNNER_TEMP/activity-kind-proof/server/v1403"
+          mkdir -p "$RUNNER_TEMP/activity-kind-proof/scripts/telegram-concierge-menu"
+          cp scripts/telegram-concierge-menu/apply.mjs "$RUNNER_TEMP/activity-kind-proof/scripts/telegram-concierge-menu/"
+          cp server/concierge/telegram-menu.mjs "$RUNNER_TEMP/activity-kind-proof/server/concierge/"
           cp server/v1403/premium-helpers.snippet "$RUNNER_TEMP/activity-kind-proof/server/v1403/"
           cp scripts/tests/concierge-premium-departure-router.test.mjs "$RUNNER_TEMP/activity-kind-proof/scripts/tests/"
           cp scripts/regression-concierge-wellhub-conversation.mjs scripts/regression-radar-authority-followup.mjs "$RUNNER_TEMP/activity-kind-proof/scripts/"
@@ -101,7 +107,7 @@ jobs:
           cp server/v1404/telegram-language.mjs "$RUNNER_TEMP/activity-kind-proof/server/v1404/"
           cp scripts/v14314/apply.mjs "$RUNNER_TEMP/activity-kind-proof/scripts/v14314/"
           cp scripts/tests/concierge-activity-kind.test.mjs "$RUNNER_TEMP/activity-kind-proof/scripts/tests/"
-          sha256sum server/concierge/generated/*.mjs server/concierge/generated/source-hashes.json scripts/p1-concierge-journey/bridge.mjs server.mjs server/v1404/telegram-language.mjs server/concierge/journey-programs.mjs server/concierge/stay-menu.mjs scripts/v14314/apply.mjs scripts/v14335/departure-reply.snippet scripts/tests/concierge-departure-text.test.mjs scripts/tests/concierge-activity-kind.test.mjs server/v1403/premium-helpers.snippet scripts/tests/concierge-premium-departure-router.test.mjs scripts/regression-concierge-wellhub-conversation.mjs scripts/regression-radar-authority-followup.mjs > "$RUNNER_TEMP/activity-kind-proof/SHA256SUMS"
+          sha256sum scripts/telegram-concierge-menu/apply.mjs server/concierge/telegram-menu.mjs server/concierge/generated/*.mjs server/concierge/generated/source-hashes.json scripts/p1-concierge-journey/bridge.mjs server.mjs server/v1404/telegram-language.mjs server/concierge/journey-programs.mjs server/concierge/stay-menu.mjs scripts/v14314/apply.mjs scripts/v14335/departure-reply.snippet scripts/tests/concierge-departure-text.test.mjs scripts/tests/concierge-activity-kind.test.mjs server/v1403/premium-helpers.snippet scripts/tests/concierge-premium-departure-router.test.mjs scripts/regression-concierge-wellhub-conversation.mjs scripts/regression-radar-authority-followup.mjs > "$RUNNER_TEMP/activity-kind-proof/SHA256SUMS"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
