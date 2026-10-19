@@ -2,6 +2,8 @@ importScripts('/crewcheck-push-offline.js');
 const CREWCHECK_UPDATE_BUILD_ID='__CREWCHECK_UPDATE_BUILD_ID__';
 const CREWCHECK_UPDATE_ENTRY='__CREWCHECK_UPDATE_ENTRY__';
 const CREWCHECK_UPDATE_ASSETS=[];
+const CREWCHECK_UPDATE_HTML_HASH='__CREWCHECK_UPDATE_HTML_HASH__';
+async function matchesBuildHtml(response){if(!response)return false;const bytes=await response.clone().arrayBuffer();const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(value=>value.toString(16).padStart(2,'0')).join('');return hash===CREWCHECK_UPDATE_HTML_HASH;}
 const UPDATE_READY_KEY='/__crewcheck_update_ready__';
 const CACHE_NAME = 'crewcheck-v14.3-offline-shell';
 const RUNTIME_CACHE = 'crewcheck-v14.3-offline-runtime';
@@ -32,7 +34,7 @@ async function precachePreparedShell() {
   const indexResponse = await fetch('/', { cache: 'no-store' });
   if (!indexResponse.ok) throw new Error(`CrewCheck shell unavailable (${indexResponse.status})`);
   const html = await indexResponse.clone().text();
-  if(/^[a-f0-9]{20}$/.test(CREWCHECK_UPDATE_BUILD_ID)&&!html.includes(CREWCHECK_UPDATE_ENTRY))throw new Error('Announced worker build does not match served entry');
+  if(/^[a-f0-9]{20}$/.test(CREWCHECK_UPDATE_BUILD_ID)&&!(await matchesBuildHtml(indexResponse)))throw new Error('Announced worker build does not match served entry');
 
   await cache.put('/', indexResponse.clone());
   await cache.put('/index.html', indexResponse.clone());
@@ -150,7 +152,7 @@ self.addEventListener('message', (event) => {
     let own=false;try{own=event.source?.type==='window'&&new URL(event.source.url).origin===self.location.origin;}catch{}
     if(!own)return;
     const cache=await caches.open(CACHE_NAME),response=await cache.match(UPDATE_READY_KEY),ready=response?await response.json().catch(()=>null):null;
-    const valid=/^[a-f0-9]{20}$/.test(CREWCHECK_UPDATE_BUILD_ID)&&ready?.buildId===CREWCHECK_UPDATE_BUILD_ID&&Array.isArray(ready.urls)&&(await Promise.all(ready.urls.map(url=>cache.match(url)))).every(Boolean);
+    const valid=/^[a-f0-9]{20}$/.test(CREWCHECK_UPDATE_BUILD_ID)&&ready?.buildId===CREWCHECK_UPDATE_BUILD_ID&&Array.isArray(ready.urls)&&(await matchesBuildHtml(await cache.match('/index.html')))&&(await Promise.all(ready.urls.map(url=>cache.match(url)))).every(Boolean);
     if(type==='CREWCHECK_UPDATE_INFO'){event.ports[0]?.postMessage({ready:valid,buildId:CREWCHECK_UPDATE_BUILD_ID});return;}
     const accepted=valid&&event.data.buildId===CREWCHECK_UPDATE_BUILD_ID;
     event.ports[0]?.postMessage({accepted,buildId:CREWCHECK_UPDATE_BUILD_ID});
@@ -211,7 +213,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith((async () => {
       try {
         const response = await fetch(request, { cache: 'no-store' });
-        if (response.ok && /^[a-f0-9]{20}$/.test(CREWCHECK_UPDATE_BUILD_ID) && (await response.clone().text()).includes(CREWCHECK_UPDATE_ENTRY)) {
+        if (response.ok && /^[a-f0-9]{20}$/.test(CREWCHECK_UPDATE_BUILD_ID) && (await matchesBuildHtml(response))) {
           const cache = await caches.open(CACHE_NAME);
           await cache.put('/', response.clone());
           await cache.put('/index.html', response.clone());
