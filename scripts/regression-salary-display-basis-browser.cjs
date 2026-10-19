@@ -23,7 +23,7 @@ function seed({theme,kind,amount,history,salaryBase}) {
 (async()=>{
 const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE});
 const errors=[],results=[];try{
-for(const width of [320,390,1440])for(const theme of ['light','dark']){
+for(const width of [320,390,1440])for(const theme of ['light','dark'])for(const completeCoverage of [true,false]){
  const context=await browser.newContext({viewport:{width,height:950},serviceWorkers:'block'});
  await context.route('**/*',async route=>{
   const url=new URL(route.request().url());
@@ -35,7 +35,7 @@ for(const width of [320,390,1440])for(const theme of ['light','dark']){
   return route.fulfill({status:200,contentType:types[path.extname(file)]||'application/octet-stream',body:fs.readFileSync(file)});
  });
  const days=Array.from({length:29},(_,i)=>({date:String(i+1).padStart(2,'0')+'/02/2032',dayOfWeek:'SYN',type:'DO',pairingCode:'DO',dutyReport:null,dutyDebrief:null,legs:[],dutyHours:0,flyingHours:0,isNextDay:false,base:'BSB'}));
- await context.addInitScript(seed,{theme,amount:100,salaryBase:2400,kind:{crewName:'SYNTHETIC',crewId:'900001',base:'BSB',rank:'CC',airline:'LA',month:2,year:2032,days,rawText:'SYNTHETIC ONLY'}});
+ await context.addInitScript(seed,{theme,amount:100,salaryBase:2400,kind:{crewName:'SYNTHETIC',crewId:'900001',base:'BSB',rank:'CC',airline:'LA',month:2,year:2032,days:completeCoverage?days:days.slice(0,1),rawText:'SYNTHETIC ONLY'}});
  await context.addInitScript(()=>{
   const v=(amountMinor,kind='deduction')=>({amountMinor,kind,currency:'BRL',source:'manual',sourceId:'synthetic',recurrence:'once'});
   const record={schema:1,ownerId:'financial-ui-qa',month:'2032-02',revision:1,closed:false,values:{fixed_with_co:v(240000,'earning'),other_fixed:v(0,'earning'),inss:v(10000),irrf:v(0),other_deductions:v(5000)}};
@@ -47,6 +47,12 @@ for(const width of [320,390,1440])for(const theme of ['light','dark']){
  await open();assert.equal(await page.getByRole('complementary',{name:'Prévia de PLR'}).count(),1);assert.equal(await page.locator('.cc-salary-plr-note details').getAttribute('open'),null);assert.match(await page.locator('.cc-salary-plr-note').innerText(),/faltam referências/);assert.equal(await page.getByRole('radio',{name:'Bruto',exact:true}).isChecked(),true);
  assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/2.400,00/);
  assert.equal(await page.getByRole('group',{name:'Valor salarial'}).count(),1);
+ if(!completeCoverage){
+  await page.getByRole('radio',{name:'Líquido',exact:true}).check();assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/Não calculável/);
+  await page.getByRole('button',{name:'Extrato',exact:true}).click();assert.match(await page.locator('.cc-per-diem-summary').innerText(),/Líquido previsto no período[\s\S]*Não calculável/);assert.match(await page.locator('.cc-per-diem-summary').innerText(),/28 dia/);
+  await page.getByRole('button',{name:'Gráficos',exact:true}).click();assert.equal(await page.locator('.cc-financial-bar-track').count(),0,'partial monthly net never produces complete graph bars');
+  await page.screenshot({path:path.join(out,`${width}-${theme}-partial-net.png`),fullPage:false});results.push({width,theme,publishedDays:1,expectedDays:29,heroNetUnavailable:true,statementNetUnavailable:true,graphNetUnavailable:true});await context.close();continue;
+ }
  await page.getByRole('radio',{name:'Líquido',exact:true}).check();assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/2.250,00/);
  await page.getByRole('radio',{name:'Líquido',exact:true}).focus();await page.keyboard.press('ArrowLeft');assert.equal(await page.getByRole('radio',{name:'Bruto',exact:true}).isChecked(),true);await page.keyboard.press('ArrowRight');
  await page.getByRole('button',{name:'Ocultar valores financeiros',exact:true}).first().click();assert.doesNotMatch(await page.locator('.cc-salary-basis-amount').innerText(),/2.250/);assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/Valor oculto/);
@@ -63,5 +69,5 @@ for(const width of [320,390,1440])for(const theme of ['light','dark']){
  if(await page.getByRole('radio',{name:'Bruto',exact:true}).count())assert.equal(await page.getByRole('radio',{name:'Bruto',exact:true}).isChecked(),true);
  results.push({width,theme,net2250:true,missingIRRF:true,reload:true,nativeKeyboard:true,masked:true,ownerIsolated:true});await context.close();
 }
-assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({results,errors,realAPIRequests:0,network:'all requests intercepted; static compiled dist only'},null,2));console.log('PASS compiled salary basis UI:6 viewport/theme cases, exact monthly net, missing IRRF, native keyboard, masking, reload and owner preference');
+assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({results,errors,realAPIRequests:0,network:'all requests intercepted; static compiled dist only'},null,2));console.log('PASS compiled salary basis UI:12 viewport/theme/coverage cases, exact monthly net, missing IRRF, native keyboard, masking, reload and owner preference');
 }finally{await browser.close();}})();
