@@ -98,8 +98,8 @@ for(const path of ['typed','button'])for(const kind of ['estimated','earlier'])t
 });
 
 test('actual owner change during route cannot deliver prior-owner departure facts',async()=>{
- const h=realDeparture(data('estimated'),'short');h.context.conciergeTravelEstimate=async()=>{h.profile.email='changed@example.invalid';return{minutes:30,distanceKm:10};};
- await h.send('telegram','/saida');const reply=h.trace.output.at(-1);assert.doesNotMatch(reply,/07:00|04\/10\/2099|Saia de casa/);assert.equal(h.radarCalls(),0);
+ const h=realDeparture(data('estimated'),'short');let entered=0;h.context.conciergeTravelEstimate=async()=>{entered++;h.profile.email='changed@example.invalid';return{minutes:30,distanceKm:10};};
+ await h.send('telegram','/saida');assert.equal(entered,1);const reply=h.trace.output.join(' ');assert.doesNotMatch(reply,/07:00|04\/10\/2099|Saia de casa/);assert.equal(h.radarCalls(),0);
 });
 
 test('actual revoked binding cannot use an issued Saída callback',async()=>{
