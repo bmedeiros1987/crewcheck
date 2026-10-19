@@ -7,17 +7,28 @@ const home = await import(`data:text/javascript;base64,${Buffer.from(code).toStr
 const values = new Map();
 const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
 
-assert.equal(home.readHomeLayout(storage, 'A').mode, 'standard');
+assert.equal(home.readHomeLayout(storage, 'A').mode, 'roster-mixed');
 assert.equal(home.saveHomeLayout(storage, 'A', { version: 1, mode: 'personalized', order: ['smart','next','summary','finance','limits'], visible: ['smart','next'] }), true);
 assert.deepEqual(home.visibleHomeSlots(home.readHomeLayout(storage, 'A'), home.HOME_SLOT_ORDER), ['smart','next','summary','limits']);
-assert.equal(home.readHomeLayout(storage, 'B').mode, 'standard', 'account B must not inherit account A');
+assert.equal(home.readHomeLayout(storage, 'B').mode, 'roster-mixed', 'account B must not inherit account A');
 assert.equal(home.saveHomeLayout(storage, null, home.DEFAULT_HOME_LAYOUT), false, 'anonymous preference must not persist');
 values.set(home.homeLayoutKey('A'), JSON.stringify({ version: 1, mode: 'mixed', order: ['finance'], visible: [] }));
 const normalized = home.readHomeLayout(storage, 'A');
 assert.deepEqual(normalized.order, ['finance','summary','next','limits','smart']);
 assert.ok(normalized.visible.includes('summary') && normalized.visible.includes('next') && normalized.visible.includes('limits'), 'critical slots remain visible');
 assert.equal(home.resetHomeLayout(storage, 'A'), true);
-assert.equal(home.readHomeLayout(storage, 'A').mode, 'standard');
+assert.equal(home.readHomeLayout(storage, 'A').mode, 'roster-mixed');
+
+// Existing explicit choices, including the old default saved by the user, survive.
+for(const mode of ['standard','personalized','mixed','roster','shortcuts','roster-mixed']){
+ const saved=JSON.stringify({version:1,mode,order:home.HOME_SLOT_ORDER,visible:home.HOME_SLOT_ORDER});
+ values.set(home.homeLayoutKey('A'),saved);
+ assert.equal(home.readHomeLayout(storage,'A').mode,mode);
+ assert.equal(values.get(home.homeLayoutKey('A')),saved,'reading never migrates an explicit preference');
+ assert.equal(home.readHomeLayout(storage,'B').mode,'roster-mixed');
+}
+assert.equal(home.readHomeLayout(storage,null).mode,'roster-mixed');
+values.set(home.homeLayoutKey('A'),'{malformed');assert.equal(home.readHomeLayout(storage,'A').mode,'roster-mixed');
 
 const shell = fs.readFileSync('client/src/components/v1391/HomeLayoutShell.tsx', 'utf8');
 assert.match(shell, /PRÉVIA E PREFERÊNCIAS/);
