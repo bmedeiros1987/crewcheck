@@ -41,5 +41,9 @@
     "b538 transaction tests separate; no combined lifecycle/transaction proof",
     "No v1 full-month adoption or precedence resolution",
     "Next reviewed patch may adapt actual legacy readers with explicit absence/invalid handling; still disconnected"
-  ]
+  ],
+  "paymentModelPending": "expectedPayment singleton is a placeholder and cannot represent multiple event/currency payment dates. Event identity, currency, expected amount/status and event-specific dates/timezones need a separately reviewed model. No date derivation in bot; no assertion this singleton covers the month.",
+  "scopeImmutability": "Lifecycle captures immutable scalars and freezes returned lease; adapter captures a frozen copy plus original fence. Caller scope and returned snapshot mutations cannot retarget reads.",
+  "strictEnums": "kind/source/recurrence/presence/coverage status require primitive strings; arrays/objects never coerce.",
+  "authenticatedAdmission": "captureAuthSession/isCurrent proves continuity only, including possible retained identity with no token. Adapter requires explicit synchronous strict-true isAuthorized for owner/month from trusted authenticated host before source access, after completion, and every read. Missing/false/throw/Promise/nonboolean fail closed. Native test admission is synthetic and requires token presence; token presence is NOT claimed to verify login. No system auth changes; real getMe/server admission integration still pending."
 }
