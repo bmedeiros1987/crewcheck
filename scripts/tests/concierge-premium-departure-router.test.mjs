@@ -123,7 +123,9 @@ for(const path of ['typed','button'])for(const mode of ['missing','null','throw'
 
 for(const path of ['typed','button'])for(const boundary of ['route','radar','final'])test(`actual copied identity relink at ${boundary} denies ${path} prior-owner facts`,async()=>{
  const roster=data('estimated');const h=realDeparture(roster,'short');let current={...h.profile};
- h.context.telegramProfileForChatAsync=async()=>({...current});
+ h.context.telegramLinksRead=()=>({linked:{synthetic:{...current}}});
+ h.context.telegramLinksWrite=()=>true;
+ vm.runInContext(extract('telegramProfileForChat')+'\n'+extract('telegramProfileForChatAsync'),h.context);
  const runtime=source.match(/const crewcheckMenu = createTelegramMenu\([\s\S]*?\n}\);/);
  vm.runInContext(runtime[0].replace('const crewcheckMenu =','globalThis.crewcheckMenu ='),h.context);
  const relink=()=>{current={...current,email:'route-b@example.invalid'};};
