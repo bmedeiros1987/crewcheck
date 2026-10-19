@@ -1,0 +1,24 @@
+name: Telegram Concierge menu
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/concierge/telegram-menu.mjs'
+      - 'scripts/telegram-concierge-menu/**'
+      - 'scripts/regression-telegram-concierge-menu.mjs'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/telegram-concierge-menu.yml'
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - run: node scripts/v139/apply.mjs
+      - run: node --check server.mjs
+      - run: node scripts/regression-telegram-concierge-menu.mjs
