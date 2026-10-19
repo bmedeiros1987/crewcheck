@@ -193,7 +193,8 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
         if (!radarResultDecision(acceptedRadar, evidence, Date.now()).allowed) return gateQuerySuppressed({reason:'response-context-expired'}).message;
         conciergeApplyRadar(currentSnapshot, currentBinding, radar);
         revision = crypto.createHash('sha256').update(JSON.stringify(currentSnapshot.roster)).digest('hex');
-        await conciergeSaveSnapshotAsync(profile, currentSnapshot.roster, {source:currentSnapshot.source || 'departure-radar',lastRadar:{...radar,updatedAt:new Date().toISOString()}});
+        const saved = await conciergeSaveSnapshotAsync(profile, currentSnapshot.roster, {source:currentSnapshot.source || 'departure-radar',lastRadar:{...radar,updatedAt:new Date().toISOString()}});
+        if (saved?.roster && owns(saved)) revision = crypto.createHash('sha256').update(JSON.stringify(saved.roster)).digest('hex');
         if (!owns(currentSnapshot) || !await conciergeDepartureOwnerCurrent(profile, currentSnapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed)
           return gateQuerySuppressed({reason:'response-context-expired'}).message;
       }
