@@ -178,6 +178,15 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
    await deductionReview.getByRole('checkbox',{name:'Conferi todas as rubricas de INSS e a substituição completa apenas neste mês.',exact:true}).check();await deductionReview.getByRole('checkbox',{name:'Conferi a titularidade, a competência e o antes/depois de cada grupo selecionado.',exact:true}).check();
    assert.match(await deductionReview.getByRole('status').innerText(),/Revisão preparada/);const taxAfter=deductionReview.getByRole('group',{name:'Prévia exata dos campos selecionados',exact:true});assert.match(await taxAfter.innerText(),/100,00/);assert.doesNotMatch(await taxAfter.innerText(),/1.000,00/);
 
+   for(const baseLabel of ['Base de contribuicao INSS','INSS base de contribuicao']){
+   await classificationDoc('tax-contribution-base',[baseLabel+' 1000,00','Desconto INSS 100,00'],['TOTAIS 1000,00 100,00','Liquido 900,00']);await deductionReview.getByText(baseLabel,{exact:true}).waitFor();
+   assert.equal(await deductionReview.getByRole('checkbox',{name:'Selecionar desconto row-0',exact:true}).isEnabled(),false);assert.match(await deductionReview.innerText(),/Informativo — não aplicar/);
+   await deductionReview.getByRole('checkbox',{name:/^Confirmei que este é o holerite mensal/}).check();await deductionReview.getByRole('checkbox',{name:'Selecionar desconto row-1',exact:true}).check();
+   await deductionReview.getByRole('checkbox',{name:'Conferi todas as rubricas de INSS e a substituição completa apenas neste mês.',exact:true}).check();await deductionReview.getByRole('checkbox',{name:'Conferi a titularidade, a competência e o antes/depois de cada grupo selecionado.',exact:true}).check();
+   assert.match(await deductionReview.getByRole('status').innerText(),/Revisão preparada/);const contributionAfter=deductionReview.getByRole('group',{name:'Prévia exata dos campos selecionados',exact:true});assert.match(await contributionAfter.innerText(),/100,00/);assert.doesNotMatch(await contributionAfter.innerText(),/1.000,00/);
+
+   }
+
    await classificationDoc('mixed-tax-and-plan',['INSS e Plano 100,00'],['TOTAIS 1000,00 100,00','Liquido 900,00']);await deductionReview.getByText('INSS e Plano',{exact:true}).waitFor();assert.equal(await deductionReview.getByRole('checkbox',{name:'Selecionar desconto row-0',exact:true}).isEnabled(),false);assert.match(await deductionReview.innerText(),/mistura grupos de desconto/);assert.match(await deductionReview.innerText(),/Grupo pendente/);
 
    await classificationDoc('salary-base-charge',['INSS 100,00','Desconto INSS sobre salario-base 20,00'],['TOTAIS 1000,00 120,00','Liquido 880,00']);await deductionReview.getByText('Desconto INSS sobre salario-base',{exact:true}).waitFor();assert.equal(await deductionReview.getByRole('checkbox',{name:'Selecionar desconto row-1',exact:true}).isEnabled(),true);

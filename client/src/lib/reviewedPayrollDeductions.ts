@@ -21,6 +21,10 @@ export function classifyPayrollDeduction(item: PayrollItem): { state:'recognized
   const label = normalized(item.label);
   const inss = /\bINSS\b/.test(label), irrf = /\bIRRF\b/.test(label);
   if (inss && irrf) return {state:'conflict',bucket:null};
+  // Anchored base labels have no debit-group conjunction or incidence.
+  // Recognize these before CONTRIBUICAO is considered another deduction.
+  const explicitContributionBase = /^(?:BASES? DE CONTRIBUICAO (?:INSS|IRRF)|(?:INSS|IRRF) BASES? DE CONTRIBUICAO)$/.test(label);
+  if (explicitContributionBase) return {state:'informational',bucket:null};
   if (inss || irrf) {
     const tax = /\b(?:INSS|IRRF)\b/.exec(label)!;
     const others = [...label.matchAll(new RegExp('\\b'+otherGroupPattern+'\\b','g'))];
