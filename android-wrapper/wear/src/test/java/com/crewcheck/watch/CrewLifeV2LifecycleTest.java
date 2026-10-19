@@ -221,6 +221,14 @@ public class CrewLifeV2LifecycleTest {
         JSONObject journal=new JSONObject(context.getSharedPreferences("crewcheck_watch_wellbeing",0).getString("crewlife_fence_v2","{}"));
         assertEquals(b,journal.getString("streamId"));
     }
+    @Test public void challengedRevokeAfterJournalLossPersistsOnlyRevokedFenceBeforeCleanupAck() throws Exception {
+        WellbeingStore store=new WellbeingStore(context);
+        handshake(store,"revoke",STREAM,3,STREAM);
+        JSONObject state=new JSONObject(context.getSharedPreferences("crewcheck_watch_wellbeing",0).getString("crewlife_fence_v2","{}"));
+        assertTrue(state.getBoolean("revoked"));assertFalse(state.has("pendingChallenge"));assertNull(store.loadCrewLife());
+        long now=ShadowSystemClock.currentTimeMillis();store.applyCrewLifeData(payload(4,78,now+1000,now+4000),NODE,now);
+        assertNull(new WellbeingStore(context).loadCrewLife());
+    }
     @Test public void losingOnlyJournalClearsOrphanCiphertextBeforeChallengeResponse() throws Exception {
         WellbeingStore store=new WellbeingStore(context);handshake(store,"reset",STREAM,1,STREAM);
         long now=ShadowSystemClock.currentTimeMillis();store.applyCrewLifeData(payload(2,78,now+1000,now+4000),NODE,now);assertHealthCached();

@@ -65,7 +65,8 @@
     "Phone validates ACK against both its pending challenge and current owner/consent generation. Presence of capability, local API success, arbitrary challenge responses, missing wearChallenge or replayed old reset ACK cannot release readiness.",
     "Pending challenge may be replaced by a newly received challenge_request without changing active stream. Delayed old hello can only cause handshake retry/availability loss, never activation. Use bounded retries; no clock ordering authority.",
     "Revocation remains immediate locally; matching active-stream higher-revision tombstone may only clear values, never establish a stream. Cleanup ACK requires challenged exchange. Unknown-stream tombstone must not reset current stream/fences. Persistent tombstone is retained while ACK is pending.",
-    "No clock-based nonce freshness. On actual journal loss, restart nonce must be unpredictable and distinct; prior stream UUID allow/deny history is not relied upon. Random-source or persistence failure stays unavailable."
+    "No clock-based nonce freshness. On actual journal loss, restart nonce must be unpredictable and distinct; prior stream UUID allow/deny history is not relied upon. Random-source or persistence failure stays unavailable.",
+    "Receiver journal absent: a fresh challenged revoke may install only a revoked fence plus cleanup receipt; values and same-stream regrant remain prohibited. Revoke of another active stream is rejected. Unknown-stream DataItem tombstone cannot establish a fence."
   ],
   "revocation": [
     "Owner change/logout, consent withdrawal, provider disconnect/empty/revoked summary immediately invalidate phone generation and cancel/ignore pending work; stop values before transport cleanup.",

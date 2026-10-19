@@ -128,6 +128,26 @@ public final class CrewLifeFenceTest {
         assertNull(CrewLifeFence.control(b.state,old,NODE).ack);
         assertEquals(B,b.state.getString("streamId"));
     }
+    @Test public void twoWearReceiversRequireTheirOwnChallengeAndCannotExchangeNonces() throws Exception {
+        CrewLifeFence first=CrewLifeFence.control(new JSONObject(),request("reset",STREAM,1,STREAM),NODE);
+        CrewLifeFence second=CrewLifeFence.control(new JSONObject(),request("reset",STREAM,1,STREAM),NODE);
+        assertNotEquals(first.ack,second.ack);
+        assertNull(CrewLifeFence.control(first.state,echoFrom("reset",second),NODE).ack);
+        assertNull(CrewLifeFence.control(second.state,echoFrom("reset",first),NODE).ack);
+        assertNotNull(CrewLifeFence.control(first.state,echoFrom("reset",first),NODE).ack);
+        assertNotNull(CrewLifeFence.control(second.state,echoFrom("reset",second),NODE).ack);
+    }
+    @Test public void challengedRevokeAfterJournalLossOnlyInstallsRevokedFenceAndCannotEnableValues() throws Exception {
+        CrewLifeFence lost=apply(new JSONObject(),"revoke",STREAM,3,STREAM);
+        assertNotNull(lost.ack);assertTrue(lost.state.getBoolean("revoked"));assertTrue(lost.clearValues);assertNull(lost.snapshot);
+        assertNull(CrewLifeFence.data(lost.state,data(4,78),NODE,NOW).snapshot);
+        assertNull(apply(lost.state,"reset",STREAM,4,B).ack);
+        assertNotNull(apply(lost.state,"reset",B,1,B).ack);
+        CrewLifeFence active=apply(new JSONObject(),"reset",B,1,B);
+        assertNull(apply(active.state,"revoke",STREAM,3,STREAM).ack);
+        JSONObject tombstone=base().put("kind","revoked").put("validUntilEpochMs",0).put("revision",3);
+        assertFalse(CrewLifeFence.data(new JSONObject(),tombstone.toString(),NODE,NOW).state.has("streamId"));
+    }
     @Test public void pendingReplacementNeverActivatesStreamOrClearsExistingValues() throws Exception {
         CrewLifeFence r=reset();CrewLifeFence data=CrewLifeFence.data(r.state,data(2,78),NODE,NOW);
         CrewLifeFence hello=CrewLifeFence.control(data.state,request("reset",B,1,B),NODE);

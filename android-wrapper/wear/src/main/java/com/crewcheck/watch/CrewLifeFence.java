@@ -70,7 +70,9 @@ final class CrewLifeFence {
                         && "data".equals(state.optString("op"));
                 if((!confirmTombstone && revision<=high) || ("reset".equals(op) && state.optBoolean("revoked"))) return unchanged(previous);
             } else {
-                if(!"reset".equals(op) || stream.equals(current)) return unchanged(previous);
+                // After journal loss, challenged revoke may install only a revoked fence.
+                // A revoke for another active stream cannot replace its generation.
+                if((!"reset".equals(op) && !current.isEmpty()) || stream.equals(current)) return unchanged(previous);
                 for(int i=0;i<retired.length();i++) if(stream.equals(retired.optString(i))) return unchanged(previous);
                 if(!current.isEmpty()) { if(retired.length()>=256) throw new IllegalArgumentException(); retired.put(current); }
             }
