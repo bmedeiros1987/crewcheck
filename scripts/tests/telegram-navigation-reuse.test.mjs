@@ -63,7 +63,7 @@ function fixture({publicProfile='linked'}={}) {
     const fn = name => { const match = source.match(new RegExp(`(?:async )?function ${name}\\([\\s\\S]*?\\n}`)); assert(match, name); return match[0]; };
     const runtime = source.match(/const crewcheckMenu = createTelegramMenu\([\s\S]*?\n}\);/)[0];
     assert(runtime.includes('...createTelegramMenuTransport('));
-    context = vm.createContext({ createTelegramMenu: deps => createTelegramMenu(deps, () => time), createTelegramMenuTransport, telegramApiUrl: apiUrl, fetch,
+    context = vm.createContext({ crewcheckTemporalDialogue: {run:(_u,work)=>work(),interrupt:()=>{},currentTurnCheck:()=>null,currentDeliveryCheck:()=>null}, createTelegramMenu: deps => createTelegramMenu(deps, () => time), createTelegramMenuTransport, telegramApiUrl: apiUrl, fetch,
       telegramProfileForChatAsync: async () => profile(), conciergeLoadSnapshot: snapshot, buildTelegramConciergeReply: reply,
       answerTelegramCallback: answer, conciergeWeatherKeyboard: producerContext.conciergeWeatherKeyboard, conciergeSettingsKeyboard: {},
       handleTelegramWeatherCallback:async()=>false, handleTelegramCallCallback:async()=>false,

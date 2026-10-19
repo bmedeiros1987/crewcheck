@@ -389,5 +389,5 @@ export function createTelegramMenu(deps, now = Date.now) {
     await clearPrompt(profile, retired);
     return true;
   }
-  return { markup, callback, text, interrupt, deliveryCheck: extra => extra?.[navigationGuard]?.checkNow || null, guard: profile => ({ [navigationGuard]: { owner: owner(profile) || 'unverified', validate: profile.conciergeResponseAuthority?.validate, checkNow: profile.conciergeResponseAuthority?.checkNow } }) };
+  return { markup, callback, text, interrupt, deliveryCheck: extra => extra?.[navigationGuard]?.checkNow || null, hasOwnerGuard: extra => Boolean(extra?.[navigationGuard]?.owner || extra?.[factsGuard]?.owner || extra?.[promptGuard]?.owner), guard: profile => ({ [navigationGuard]: { owner: owner(profile) || 'unverified', validate: profile.conciergeResponseAuthority?.validate, checkNow: profile.conciergeResponseAuthority?.checkNow } }) };
 }
