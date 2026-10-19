@@ -33,7 +33,8 @@ jobs:
         run: |
           node scripts/regression-profile-display-name.mjs
           node scripts/regression-profile-display-name-browser.cjs
-          npx tsc --noEmit
+          # Global TypeScript needs the exports produced by source preparation.
+          # It remains mandatory below, after the canonical build prepares them.
       - name: Build prepared sources
         run: npm run build
       - name: Verify prepared profile behavior and editor
