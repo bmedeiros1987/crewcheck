@@ -11,6 +11,7 @@ on:
       - 'scripts/v139/**'
       - 'scripts/v14314/**'
       - 'scripts/regression-concierge-clock-format.mjs'
+      - 'scripts/tests/concierge-activity-kind.test.mjs'
       - '.github/workflows/concierge-clock-format.yml'
   push:
     branches: [main]
@@ -22,6 +23,7 @@ on:
       - 'scripts/v139/**'
       - 'scripts/v14314/**'
       - 'scripts/regression-concierge-clock-format.mjs'
+      - 'scripts/tests/concierge-activity-kind.test.mjs'
       - '.github/workflows/concierge-clock-format.yml'
 
 permissions:
@@ -45,7 +47,27 @@ jobs:
       - run: npm ci
       - name: Validate source clocks and voice round trips
         run: node --test scripts/regression-concierge-clock-format.mjs
+      - name: Validate source activity labels and synthetic import lifecycle
+        run: node scripts/tests/concierge-activity-kind.test.mjs
       - name: Prepare canonical CrewCheck sources
         run: node scripts/v139/apply.mjs
       - name: Validate prepared clocks and voice round trips
         run: node --test scripts/regression-concierge-clock-format.mjs
+
+      - name: Validate prepared activity labels and actual Today consumer
+        run: node scripts/tests/concierge-activity-kind.test.mjs --materialized
+      - name: Preserve exact activity-label sources
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/activity-kind-proof/server/v1404" "$RUNNER_TEMP/activity-kind-proof/scripts/v14314" "$RUNNER_TEMP/activity-kind-proof/scripts/tests"
+          git rev-parse HEAD > "$RUNNER_TEMP/activity-kind-proof/HEAD.txt"
+          cp server.mjs "$RUNNER_TEMP/activity-kind-proof/"
+          cp server/v1404/telegram-language.mjs "$RUNNER_TEMP/activity-kind-proof/server/v1404/"
+          cp scripts/v14314/apply.mjs "$RUNNER_TEMP/activity-kind-proof/scripts/v14314/"
+          cp scripts/tests/concierge-activity-kind.test.mjs "$RUNNER_TEMP/activity-kind-proof/scripts/tests/"
+          sha256sum server.mjs server/v1404/telegram-language.mjs scripts/v14314/apply.mjs scripts/tests/concierge-activity-kind.test.mjs > "$RUNNER_TEMP/activity-kind-proof/SHA256SUMS"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: concierge-activity-kind-prepared-source
+          path: ${{ runner.temp }}/activity-kind-proof/
