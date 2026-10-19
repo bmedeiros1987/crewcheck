@@ -31,9 +31,10 @@ assert.equal(confirmation.length, 1);
 const modalBundle = buildSync({ stdin: { contents: `import { acquireOverlayLifecycle } from './client/src/lib/overlayLifecycle';\n${confirmation[0].getText(homeAst)}\nwindow.openQAImport=requestCrewCheckImportConfirmation; window.acquireQAOverlay=acquireOverlayLifecycle;`, resolveDir: process.cwd(), loader: 'ts' }, bundle: true, platform: 'browser', format: 'iife', write: false }).outputFiles[0].text;
 const results = [];
 const testedCommit = require('node:child_process').execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-const widths = (process.env.UI_READING_WIDTHS || '320,360,390,412,430,1440').split(',').map(Number);
-assert.ok(widths.every(width => [320, 360, 390, 412, 430, 1440].includes(width)));
+const widths = (process.env.UI_READING_WIDTHS || '320,360,390,412,430,768,1024,1440').split(',').map(Number);
+assert.ok(widths.every(width => [320, 360, 390, 412, 430, 768, 1024, 1440].includes(width)));
 const settle = page => page.evaluate(async () => {
+  await document.fonts.ready;
   for (const animation of document.getAnimations()) if (Number.isFinite(animation.effect?.getComputedTiming().endTime)) try { animation.finish(); } catch {}
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 });
@@ -144,6 +145,24 @@ async function visibleTextBounds(page, selector) {
       await emptyPulseQueue(page);await settle(page);
       const box=async selector=>page.locator(selector).boundingBox();
       const stable=(before,after,label)=>{assert.ok(before&&after);assert.ok(Math.abs(before.y-after.y)<=1&&Math.abs(before.height-after.height)<=1,label+JSON.stringify({before,after}));};
+      // Prepared-cascade geometry: exactly one top inset, with no opaque rectangle.
+      for (const inset of [0,24,48]) {
+        await page.evaluate(inset=>document.documentElement.style.setProperty('--cc-safe-area-top',inset+'px'),inset);
+        await settle(page);
+        const top=await page.evaluate(()=>{
+          const app=document.querySelector('.cz-app'),header=app.querySelector(':scope > .cz-global-header'),row=header.querySelector('.cz-brand-row');
+          const h=header.getBoundingClientRect(),r=row.getBoundingClientRect(),a=app.getBoundingClientRect();
+          return {parentPadding:getComputedStyle(app).paddingTop,headerPadding:getComputedStyle(header).paddingTop,background:getComputedStyle(header).backgroundColor,before:getComputedStyle(header,'::before').content,offset:r.top-a.top,headerTop:h.top-a.top};
+        });
+        assert.equal(top.parentPadding,'0px','Parent does not duplicate header safe area');
+        assert.equal(top.headerPadding,inset+'px','Header retains the full safe area');
+        assert.equal(top.background,'rgba(0, 0, 0, 0)','Header shares the app canvas');
+        assert.equal(top.before,'none','No opaque header pseudo surface');
+        assert.ok(Math.abs(top.offset-inset)<=1,'Brand starts immediately after the single safe inset: '+JSON.stringify(top));
+        assert.ok(Math.abs(top.headerTop)<=1,'No obsolete top gap');
+      }
+      await page.evaluate(()=>document.documentElement.style.setProperty('--cc-safe-area-top','24px'));
+      await settle(page);
       const header=await box('.cz-global-header');
       assert.equal(await page.locator('.cz-global-header').evaluate(el=>getComputedStyle(el).position),'relative','Header follows document flow');
       assert.ok(await page.locator('.cz-global-header').evaluate(el=>parseFloat(getComputedStyle(el).paddingTop))>=24,'Header reserves the simulated status bar');

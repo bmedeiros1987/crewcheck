@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createTelegramMenu } from '../server/concierge/telegram-menu.mjs';
 import fs from 'node:fs';import vm from 'node:vm';
 import { wellhubUnitActions, wellhubUnitPageUrl, wellhubTelegramMessage, wellhubPlainMessage } from '../shared/wellhub-unit-actions.mjs';
 import { loadVerifiedWellhubPartners } from '../server/v14407/wellhub.mjs';
@@ -27,7 +28,7 @@ assert.ok(wellhubPlainMessage(text,[partner]).includes('Ficha e ações: https:/
 const source=fs.readFileSync(process.env.WELLHUB_TRANSPORT_SOURCE || 'server.mjs','utf8');
 const extract=(s,name)=>{const at=s.indexOf(`async function ${name}(`);assert.ok(at>=0);return s.slice(at,s.indexOf('\n}',at)+2);};
 let payload,calls=0;
-const context=vm.createContext({wellhubTelegramMessage,loadVerifiedWellhubPartners:()=>[partner],telegramApiUrl:()=> 'https://example.invalid/sendMessage',fetch:async(_,init)=>{calls++;payload=JSON.parse(init.body);return{ok:true,status:200,json:async()=>({ok:true})}}});
+const context=vm.createContext({crewcheckMenu:createTelegramMenu({}),wellhubTelegramMessage,loadVerifiedWellhubPartners:()=>[partner],telegramApiUrl:()=> 'https://example.invalid/sendMessage',fetch:async(_,init)=>{calls++;payload=JSON.parse(init.body);return{ok:true,status:200,json:async()=>({ok:true})}}});
 vm.runInContext(extract(source,'sendTelegramMessage')+'\nthis.send=sendTelegramMessage;',context);
 const keyboard={keyboard:[[{text:'Menu'}]]};await context.send('synthetic-chat',text,{reply_markup:keyboard});
 assert.ok(payload.entities?.length===1,'actual Telegram transport must emit native text_link aliases');assert.equal(payload.parse_mode,undefined);assert.deepEqual(payload.reply_markup,keyboard);assert.equal(payload.allow_paid_broadcast,undefined);assert.equal(calls,1);
