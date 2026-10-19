@@ -7,6 +7,8 @@ on:
       - 'client/src/lib/payrollPaymentComposition.ts'
       - 'client/src/lib/nextFinancialPayment.ts'
       - 'client/src/lib/financialLocalUpcoming.ts'
+      - 'client/src/lib/financialIntervalEvidence.ts'
+      - 'scripts/regression-financial-partial-flight-meals.mjs'
       - 'client/src/lib/salaryCalculationDiagnostic.ts'
       - 'client/src/lib/airports.ts'
       - 'client/src/components/finance/**'
@@ -52,6 +54,7 @@ jobs:
           node scripts/regression-salary-prerequisite-diagnostic.mjs
           node scripts/regression-financial-upcoming.mjs
           node scripts/regression-financial-concierge-timing.mjs
+          node scripts/regression-financial-partial-flight-meals.mjs
           node scripts/regression-cabin-rate-audit.mjs
           node scripts/regression-financial-persisted-comparison.mjs
       - name: Install isolated UI browser

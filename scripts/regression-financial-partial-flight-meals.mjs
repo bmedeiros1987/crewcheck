@@ -1,0 +1,80 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import {execFileSync} from 'node:child_process';
+import ts from 'typescript';
+import {loadClientModules} from './lib/ts-module-harness.mjs';
+
+// Invented dates, airports and prices. Exercise real caller/evidence/window
+// functions, never a personal roster, statement or company tariff fixture.
+const modules=loadClientModules({files:['client/src/lib/financialAmounts.ts','client/src/lib/financialStatementLearning.ts','client/src/lib/financialJourneyGrouping.ts','client/src/lib/financialIntervalEvidence.ts','client/src/lib/compensationPolicy.ts','client/src/lib/financialForecastPeriods.ts'],prefix:'synthetic-partial-meals-'});
+try {
+  const source=process.env.FINANCIAL_BASELINE_SHA?execFileSync('git',['show',process.env.FINANCIAL_BASELINE_SHA+':client/src/pages/Home.tsx'],{encoding:'utf8'}):fs.readFileSync('client/src/pages/Home.tsx','utf8');
+  const ast=ts.createSourceFile('Home.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  const names=['perDiemConfig','calculatePerDiem','moneyBRL','moneyCurrency'];
+  const functions=ast.statements.filter(n=>ts.isFunctionDeclaration(n)&&names.includes(n.name?.text));assert.equal(functions.length,names.length);
+  const learned=[],consulted=[];
+  const rates=modules.load('financialStatementLearning');
+  const context=vm.createContext({
+    ...modules.load('financialAmounts'),...modules.load('financialJourneyGrouping'),...modules.load('financialIntervalEvidence'),...modules.load('compensationPolicy'),...modules.load('financialForecastPeriods'),
+    resolveActFinancialRules:()=>({profileLabel:'Synthetic reference',legalReference:'synthetic-only',version:'synthetic-v1',breakfastPercent:.25,perDiem:[{key:'domestic',label:'Synthetic domestic',currency:'BRL',mainMeal:100}]}),
+    confirmedRateValueAt:(key,date)=>{consulted.push({key,date});return rates.rateAt(learned,key,date,'BRL')?.value??null;},
+    readOptionalNumberSetting:()=>null,readNumberSetting:()=>0,loadAirportPerDiemOverrides:()=>({}),
+    resolvePerDiemRule:(origin,destination)=>({rateKey:origin==='UNKNOWN'||destination==='UNKNOWN'?null:'domestic',airport:destination,reason:'Synthetic geography'}),
+    isOperationalEvent:()=>true,financialEventCode:event=>event.day.type,
+    eventStartDateTime:event=>new Date(event.start),eventEndDateTime:event=>new Date(event.end),
+    dateChip:date=>date.toISOString().slice(0,10),
+  });
+  vm.runInContext(ts.transpileModule(functions.map(n=>n.getText(ast)).join('\n')+'\nglobalThis.calculate=calculatePerDiem;',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
+  const month='2032-08',iso=month+'-06',roster={year:2032,month:8,base:'TEST'};
+  const at=clock=>iso+'T'+clock+':00-03:00';
+  function flight({id='one',departure='09:10',arrival='11:20',report=departure,reportSource='estimated',destination='AWAY',index=0,legs,records}={}) {
+    const published={dutyReport:report,dutyReportSource:reportSource,legs:legs||[{departureTime:departure,arrivalTime:arrival}],...(records?{records}: {})};
+    return {id,kind:'flight',origin:'TEST',destination,start:at(departure),end:at(arrival),salaryClockKnown:true,
+      day:{type:'VOO',dutyReport:report,publishedClockEvidence:published},canonical:{journeyId:'synthetic-journey',legIndex:index,leg:published.legs[index]}};
+  }
+  const reserve={id:'reserve',kind:'duty',origin:'TEST',destination:'TEST',start:at('06:20'),end:at('09:10'),day:{type:'ASB',dutyReport:'06:20',dutyDebrief:'09:10',dutyReportSource:'published',dutyDebriefSource:'published'}};
+  const legs=[{departureTime:'09:10',arrivalTime:'11:20'},{departureTime:'11:55',arrivalTime:'14:10'}];
+  const pair=[flight({legs}),flight({id:'two',departure:'11:55',arrival:'14:10',index:1,legs})];
+  const run=events=>context.calculate(events,roster,new Date(iso+'T15:00:00Z'));
+  const known=run([reserve,...pair]);
+  assert.match(known.rows.find(row=>row.label==='Almoço').source,/referência ACT; tarifa empresarial da conta não confirmada neste período/,'reference pricing must disclose that an account tariff is unconfirmed');
+  assert.equal(known.rows.filter(row=>row.label==='Almoço').length,1,'literal flights crossing lunch preserve one known meal despite unknown APZ');
+  assert.equal(known.rows.find(row=>row.label==='Almoço').value,100);
+  assert.equal(known.rows.filter(row=>row.label==='Café').length,1,'breakfast is from the separately proven reserve only');
+  assert.equal(known.rows.filter(row=>row.label==='Táxi').length,0,'no unknown APZ commute is invented');
+  assert(known.unclassifiedItems.some(row=>/Apresentação publicada ausente/.test(row.reason)),'whole-duty completeness stays pending');
+  assert.match(known.rows.find(row=>row.label==='Almoço').source,/subtotal parcial/);
+  assert.equal(run([...pair].reverse()).rows.filter(row=>row.label==='Almoço').length,1,'input order never duplicates the same meal');
+  const literal=flight({report:'09:10',reportSource:'published',legs:[{presentationTime:'09:10',departureTime:'09:10',arrivalTime:'11:20'}]});
+  assert.equal(run([literal]).unclassifiedItems.length,0,'an explicitly published presentation equal to departure is valid; equality alone cannot invalidate original evidence');
+  assert.equal(run([literal]).rows.find(row=>row.label==='Almoço').value,100);
+  for(const report of [null,'bad','09:10']) {
+    const item=flight({report,reportSource:report?'estimated':'absent'});
+    const result=run([item]);assert.equal(result.rows.length,1);assert.equal(result.rows[0].label,'Almoço');assert(result.unclassifiedItems.length);
+  }
+  for(const item of [flight({arrival:'bad'}),{...flight(),salaryClockKnown:false},flight({records:[{legs},{legs}]}),flight({destination:'UNKNOWN'})]) {
+    const result=run([item]);assert.equal(result.rows.length,0,'missing clocks, unresolved versions or geography cannot create a known meal');assert(result.unclassifiedItems.length);
+  }
+  for(const [departure,arrival] of [['05:40','07:40'],['10:00','10:59'],['13:01','14:00']]) {
+    assert.equal(run([flight({departure,arrival})]).rows.length,0,'no breakfast, taxi, preflight extension or outside-window meal');
+  }
+  assert.equal(run([flight({departure:'10:00',arrival:'11:00'})]).rows.filter(row=>row.label==='Almoço').length,1,'literal arrival at inclusive11:00 proves lunch');
+  const touching={...reserve,end:at('11:00'),day:{...reserve.day,dutyDebrief:'11:00'}};
+  assert.equal(run([touching]).rows.filter(row=>row.label==='Almoço').length,1,'published reserve ending exactly11:00 retains inclusive lunch');
+  // A demonstrated price is adopted only with explicit, bounded reviewed input.
+  for(const [key,value] of [['per_diem.lunch',175],['per_diem.breakfast',43.75]]) learned.push({key,value,currency:'BRL',confirmed:true,effectiveFrom:month+'-01',effectiveTo:month+'-31'});
+  const reviewed=run([reserve,...pair]);assert.equal(reviewed.rows.find(row=>row.label==='Almoço').value,175);assert.equal(reviewed.rows.find(row=>row.label==='Café').value,43.75);
+  const early=flight({id:'early-independent',departure:'05:00',arrival:'06:40',report:'04:10',reportSource:'published'});
+  const missingTaxi=run([early]);
+  assert.equal(missingTaxi.rows.filter(row=>row.label==='Táxi').length,0);
+  assert(missingTaxi.unclassifiedItems.some(row=>/Tarifa de táxi confirmada para o período ausente/.test(row.reason)),'proved commute with absent tariff stays a specific pending item, never zero');
+  learned.push({key:'per_diem.taxi',value:31.25,currency:'BRL',confirmed:true,effectiveFrom:iso,effectiveTo:iso});
+  const pricedTaxi=run([early]);assert.equal(pricedTaxi.rows.find(row=>row.label==='Táxi').value,31.25,'taxi uses its own reviewed amount, never the breakfast percentage');
+  assert.match(pricedTaxi.rows.find(row=>row.label==='Táxi').source,/previsão não comprova pagamento/);
+  assert.equal(run([{...early,day:{...early.day,publishedClockEvidence:{...early.day.publishedClockEvidence,dutyReportSource:'estimated'}}}]).rows.filter(row=>row.label==='Táxi').length,0,'known taxi price cannot supply missing presentation evidence');
+  learned.forEach(row=>row.effectiveTo=month+'-05');
+  assert.equal(run([reserve,...pair]).rows.find(row=>row.label==='Almoço').value,100,'expired personal rate never extends into this date');
+  assert(consulted.every(row=>row.date===iso),'all pricing consults actual occurrence date');
+  console.log('PASS partial flight meals: real caller, literal-only inclusive windows, preserved APZ/taxi/breakfast unknowns, no duplicate meals, bounded reviewed tariffs. TZ='+process.env.TZ);
+} finally {modules.cleanup();}

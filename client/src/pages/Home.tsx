@@ -24,7 +24,7 @@ import { payableReserveHours } from '@/lib/financialReserveCredits';
 import { assessSalaryActivities } from '@/lib/salaryActivityEvidence';
 import { CanonicalDutyCard, openCanonicalDutyDetails } from '@/components/CanonicalDutyCard';
 import { measureCanonicalDuty } from '@/lib/canonicalDutyMeasurement';
-import { financialIntervalEvidenceIssue } from '@/lib/financialIntervalEvidence';
+import { financialIntervalEvidenceIssue, financialPublishedFlightIntervalIssue } from '@/lib/financialIntervalEvidence';
 import { NotificationReadiness } from '@/components/notifications/NotificationReadiness';
 import { isFinancialSetting, readFinancialSetting, writeFinancialSetting } from '@/lib/financialSettingStore';
 import type { ReactNode } from 'react';
@@ -3589,6 +3589,7 @@ function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
     airportOverrides: loadAirportPerDiemOverrides(),
     source: act.profileLabel + ' · ' + act.legalReference
       + (learnedMeal || learnedBreakfast ? ' · demonstrativo confirmado pelo Admin' : '')
+      + (domestic.source==='act' && learnedBreakfast===null ? ' · referência ACT; tarifa empresarial da conta não confirmada neste período' : '')
       + demonstratedSource,
   };
 }
@@ -3688,6 +3689,20 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     if (evidenceIssue || allowanceIntervalState(start, end) !== 'available') {
       const iso = rosterOperationalIso(eventStartDateTime(representative));
       unclassifiedItems.push({ iso, airport: String(representative.origin || ''), reason: `Intervalo operacional incompleto: ${evidenceIssue || 'apresentação ou fim inválido'}. Relógio da escala BRT (UTC-03).` });
+      // Preserve only meals proved by literal flight intervals. Unknown APZ
+      // still blocks duty completeness, base breakfast and taxi. Do not extend
+      // to preflight, connections or arrival+30 in this partial-evidence path.
+      if (activityKind==='flight' && evidenceIssue==='Apresentação publicada ausente ou estimada.' && !financialPublishedFlightIntervalIssue(dutyFlights)) {
+        for (const flight of dutyFlights) {
+          const knownStart=eventStartDateTime(flight),knownEnd=eventEndDateTime(flight);
+          if (allowanceIntervalState(knownStart,knownEnd)!=='available') continue;
+          for (const occurrence of classifyAllowanceWindows({start:knownStart,end:knownEnd,kind:'flight',clockBasis:'roster_brt',breakfastIncluded:true})) {
+            if (occurrence.slot==='breakfast') continue;
+            const labels:Record<string,string>={lunch:'Almoço',dinner:'Jantar',supper:'Ceia'};
+            add(flight,occurrence.iso,occurrence.slot,labels[occurrence.slot],`Trecho com partida/chegada publicadas · ${occurrence.window} · subtotal parcial; apresentação da jornada pendente`,knownStart,knownEnd);
+          }
+        }
+      }
       continue;
     }
 
