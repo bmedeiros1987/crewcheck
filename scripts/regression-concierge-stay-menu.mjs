@@ -89,7 +89,11 @@ try {
   assert.equal(fs.readFileSync(path.join(temp,'server/v1391/emergency.mjs'),'utf8'),emergencyOnce);
   execFileSync(process.execPath,['--check',path.join(temp,'server.mjs')]);
   execFileSync(process.execPath,['--check',path.join(temp,'server/v1391/emergency.mjs')]);
-  assert.match(once,/text: '🏨 Meu pernoite'/);
+  if (once.includes('const conciergeKeyboard = menuTemplate();')) {
+    const {menuTemplate}=await import('../server/concierge/telegram-menu.mjs');
+    assert.ok(menuTemplate().inline_keyboard.flat().some(button=>button.text==='Hotéis'));
+    assert.ok(menuTemplate('hoteis').inline_keyboard.flat().some(button=>button.text==='Histórico'));
+  } else assert.match(once,/text: '🏨 Meu pernoite'/);
   assert.match(once,/\{ \.\.\.profile, channel: 'app' \}, snapshot\)/);
   const wrapper=once.slice(once.indexOf("async function buildTelegramConciergeReply(text = ''"),once.indexOf('\nasync function ',once.indexOf("async function buildTelegramConciergeReply(text = ''")+10));
   const context=vm.createContext({stayMenuReply,conciergePreferenceCommandV14336:()=>assert.fail('exact stay menu must dispatch first')});

@@ -1,0 +1,55 @@
+name: Telegram Concierge menu
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/concierge/telegram-menu.mjs'
+      - 'scripts/telegram-concierge-menu/**'
+      - 'scripts/regression-telegram-concierge-menu.mjs'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/telegram-concierge-menu.yml'
+permissions:
+  contents: read
+concurrency:
+  group: telegram-concierge-menu-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: |
+          set -euo pipefail
+          node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/telegram-menu-preparation.log"
+      - run: node --check server.mjs
+      - run: node scripts/regression-telegram-concierge-menu.mjs
+      - run: node scripts/regression-concierge-stay-menu.mjs
+      - run: node scripts/regression-concierge-wellhub-conversation.mjs --materialized
+      - run: node scripts/regression-wellhub-deeplinks.mjs
+      - run: node scripts/regression-wellhub-readable-replies.mjs --materialized
+      - run: node --experimental-vm-modules scripts/regression-emergency-intent.mjs
+      - run: npm run check
+      - run: npm run build
+      - name: Preserve exact prepared source for independent review
+        if: always()
+        run: |
+          if [ -f .crewcheck-source-preparation.json ]; then
+            mkdir -p "$RUNNER_TEMP/telegram-menu-proof"
+            cp server.mjs "$RUNNER_TEMP/telegram-menu-proof/"
+            cp "$RUNNER_TEMP/telegram-menu-preparation.log" "$RUNNER_TEMP/telegram-menu-proof/preparation.log"
+            git rev-parse HEAD > "$RUNNER_TEMP/telegram-menu-proof/HEAD.txt"
+            sha256sum server.mjs scripts/v139/apply.mjs scripts/telegram-concierge-menu/apply.mjs server/concierge/telegram-menu.mjs > "$RUNNER_TEMP/telegram-menu-proof/SHA256SUMS"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: telegram-menu-prepared-source
+          path: ${{ runner.temp }}/telegram-menu-proof/
+          if-no-files-found: ignore

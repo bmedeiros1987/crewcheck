@@ -15,7 +15,9 @@ update('server.mjs', source => {
   if (!source.includes("from './server/concierge/stay-menu.mjs'")) source = "import { stayMenuReply } from './server/concierge/stay-menu.mjs';\n" + source;
   const replyStart = "async function buildTelegramConciergeReply(text = '', profile = {}, snapshot = null) {";
   source = replace(source, replyStart, `${replyStart}\n  const stayMenu = await stayMenuReply(text, profile);\n  if (stayMenu.handled) return stayMenu.reply;`, 'final Concierge wrapper');
-  source = replace(source, "[{ text: '🏨 Hotéis' }, { text: '🏥 Hospitais' }]", "[{ text: '🏨 Meu pernoite' }, { text: '🏥 Hospitais' }]", 'Telegram menu');
+  if (!source.includes('const conciergeKeyboard = menuTemplate();')) {
+    source = replace(source, "[{ text: '🏨 Hotéis' }, { text: '🏥 Hospitais' }]", "[{ text: '🏨 Meu pernoite' }, { text: '🏥 Hospitais' }]", 'Telegram menu');
+  }
   source = replace(source, "  if (normalized === 'hotéis' || normalized === 'hoteis') return '/hoteis';", "  if (normalized === 'meu pernoite' || normalized === 'hotéis' || normalized === 'hoteis') return '/hoteis';", 'legacy hotel alias');
   source = replace(source, "{ command: 'hoteis', description: 'Hotéis e pernoites' }", "{ command: 'hoteis', description: 'Meu pernoite e registros salvos' }", 'Telegram command description');
   // Trust the actual Telegram transport type, including audio/callback paths.
@@ -32,7 +34,9 @@ update('server/v1391/emergency.mjs', source => {
   // The legacy hotel interceptor otherwise sends twelve records with rooms
   // before the shared Concierge can handle the new menu/history requests.
   const anchor = "  const text = String(message?.text || message?.caption || '').trim();";
-  source = replace(source, anchor, `${anchor}\n  if (stayMenuIntent(text)) return false;`, 'legacy hotel interceptor');
+  if (!source.includes('if (!options.openMenu && stayMenuIntent(text)) return false;')) {
+    source = replace(source, anchor, `${anchor}\n  if (stayMenuIntent(text)) return false;`, 'legacy hotel interceptor');
+  }
   return source;
 });
 console.log('[concierge-stay-menu] compact private history; explicit app registration handoff; no stay writes');
