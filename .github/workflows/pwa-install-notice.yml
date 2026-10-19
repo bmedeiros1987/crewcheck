@@ -10,6 +10,9 @@ on:
       - 'client/src/components/pwa-install-notice.css'
       - 'scripts/regression-pwa-install-notice.mjs'
       - 'scripts/regression-global-text-preference-lifetime.mjs'
+      - 'scripts/regression-static-handler-contexts.mjs'
+      - 'server/static-html-guard.mjs'
+      - 'scripts/regression-*.cjs'
       - '.github/workflows/pwa-install-notice.yml'
 permissions:
   contents: read
@@ -35,6 +38,7 @@ jobs:
         run: |
           node scripts/regression-pwa-install-notice.mjs
           node scripts/regression-global-text-preference-lifetime.mjs
+          node scripts/regression-static-handler-contexts.mjs
       - name: Canonical composition
         run: |
           node scripts/v139/apply.mjs
@@ -46,3 +50,4 @@ jobs:
         run: |
           node scripts/regression-pwa-install-notice.mjs
           node scripts/regression-global-text-preference-lifetime.mjs
+          node scripts/regression-static-handler-contexts.mjs
