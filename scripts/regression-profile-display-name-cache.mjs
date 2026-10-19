@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { transformSync } from 'esbuild';
 
-const key = 'crewcheck_platform_profile_cache_v1';
+const key = 'crewcheck_platform_profile_cache_v2';
 const owner = { id: 'synthetic-a', email: 'a@example.invalid', name: 'Login A' };
 const other = { id: 'synthetic-b', email: 'b@example.invalid', name: 'Login B' };
 const initial = { email: owner.email, publicId: 'CC-SYNTHETIC-A', displayName: 'Old Name', locale: 'es-ES', timezone: 'Pacific/Kiritimati', sharePresence: true, plan: 'free' };

@@ -5,7 +5,7 @@ import { transformSync } from 'esbuild';
 
 const compile = path => transformSync(fs.readFileSync(path, 'utf8'), { loader: 'ts', format: 'cjs' }).code;
 const platformCode = compile('client/src/lib/platformClient.ts'), authCode = compile('client/src/lib/authClient.ts');
-const KEY = 'crewcheck_platform_profile_cache_v1';
+const KEY = 'crewcheck_platform_profile_cache_v2';
 const user = { id: 'synthetic-a', email: 'a@example.invalid', name: 'Login A' };
 const initial = { email: user.email, publicId: 'CC-A', displayName: 'Old Name', locale: 'en-US', timezone: 'UTC', plan: 'free', sharePresence: false };
 function fixture({ locking = 'available' } = {}) {
@@ -43,7 +43,7 @@ function fixture({ locking = 'available' } = {}) {
       storage.setItem('crewcheck_auth_token', 'synthetic-b-placeholder');
     } }); return t;
   };
-  return { tab, cached: () => JSON.parse(stored.get(KEY) || 'null'), remote: () => remote, offline: () => { offline = true; }, blockStorage: () => { blocked = true; }, allowStorage: () => { blocked = false; } };
+  return { tab, cached: () => JSON.parse(stored.get(KEY) || 'null'), remote: () => remote, offline: () => { offline = true; }, blockStorage: () => { blocked = true; }, allowStorage: () => { blocked = false; }, legacyWrite: () => stored.set('crewcheck_platform_profile_cache_v1', JSON.stringify(initial)) };
 }
 
 let failures = 0;
@@ -99,3 +99,16 @@ for (const transition of ['renewSession', 'switchAccount']) {
   assert.equal(first.events.filter(e => e.type === 'crewcheck:profile-name-confirmed').length, 0);
 }
 console.log('PASS real auth/session contracts: unsupported or denied locks; storage recovery; cross-tab token/account changes.');
+
+{
+  const f = fixture(), t = f.tab();
+  t.intercept = async () => { if (t.calls.length === 4) throw Error('synthetic cache GET unavailable'); };
+  assert.equal((await t.client.saveConfirmedDisplayName('Remote Receipt')).displayName, 'Remote Receipt');
+  assert.equal(f.cached(), null, 'the actual auth client preserves the receipt but discards stale cache');
+}
+{
+  const f = fixture(), t = f.tab();
+  await t.client.saveConfirmedDisplayName('Current Protocol');
+  f.legacyWrite(); f.offline();
+  assert.equal((await t.client.getPlatformProfile()).profile.displayName, 'Current Protocol', 'an older bundle cannot overwrite the coordinated cache');
+}

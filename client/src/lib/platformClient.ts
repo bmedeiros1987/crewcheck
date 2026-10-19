@@ -64,7 +64,8 @@ export type PlatformParkingPosition = {
   localOnly?: boolean;
 };
 
-const LOCAL_PROFILE_KEY = 'crewcheck_platform_profile_cache_v1';
+// Older bundles cannot overwrite the cache governed by the cross-tab protocol.
+const LOCAL_PROFILE_KEY = 'crewcheck_platform_profile_cache_v2';
 const LOCAL_BILLING_KEY = 'crewcheck_platform_billing_cache_v1';
 const LOCAL_STAYS_KEY = 'crewcheck_platform_stays_cache_v1';
 const LOCAL_GYM_KEY = 'crewcheck_platform_gym_checkins_local_v1';

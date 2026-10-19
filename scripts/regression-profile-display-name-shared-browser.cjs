@@ -11,7 +11,7 @@ const { chromium } = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || __file
   });
   const user = { id: 'synthetic-a', email: 'a@example.invalid', name: 'Login A' };
   const initial = { email: user.email, publicId: 'CC-A', displayName: 'Old Name', locale: 'en-US', timezone: 'UTC', plan: 'free', sharePresence: false };
-  const KEY = 'crewcheck_platform_profile_cache_v1';
+  const KEY = 'crewcheck_platform_profile_cache_v2';
   let remote, requests, holdAt, pending;
   const server = http.createServer(async (req, res) => {
     if (req.url === '/bundle.js') return res.end(bundle.outputFiles[0].contents);
