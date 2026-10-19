@@ -22,11 +22,14 @@ function roster(kind, month=2) {
   if(kind==='unknown')days[2]={...days[2],base:'ZZZ'};
   return {crewName:'SYNTHETIC UI QA',crewId:'900001',base:'BSB',rank:'CC',airline:'LA',month,year:2032,days,rawText:'SYNTHETIC — NO REAL ROSTER OR TARIFF'};
 }
-function seed({theme,kind,amount,history,salaryBase}) {
+function seed({theme,kind,amount,history,salaryBase,homeMode}) {
   const NativeDate=Date,instant=Date.parse('2032-02-02T15:00:00Z');
   globalThis.Date=class extends NativeDate {constructor(...args){super(...(args.length?args:[instant]));}static now(){return instant;}};
   localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'financial-ui-qa',name:'SYNTHETIC UI QA',role:'user'}));
   localStorage.setItem('crewcheck_auth_token','synthetic-local-only');
+ // Only callers that require the detailed financial card explicitly choose a Home mode.
+ if(homeMode)localStorage.setItem('crewcheck:home-layout:v1:financial-ui-qa',JSON.stringify({version:1,mode:homeMode,order:['summary','finance','next','limits','smart'],visible:['summary','finance','next','limits','smart']}));
+
   localStorage.setItem('crewcheck:first-access-tour:v1434:disabled','1');sessionStorage.setItem('crewcheck:first-access-tour:v1434:session-seen','1');
   localStorage.setItem('crewcheck_demo_mode_seen','1');
   localStorage.setItem('crewcheck_theme_mode',theme);localStorage.setItem('crewcheck:appearance:v1',theme);
@@ -52,7 +55,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   const payload=scenario==='empty'?roster('empty'):roster('domestic');
   const december={...january,month:12,year:2031,days:Array.from({length:31},(_,i)=>day(String(i+1).padStart(2,'0')+'/12/2031'))};
   const history=scenario==='complete'?[{id:'local-synthetic-february',checksum:'synthetic-february',createdAt:'2032-02-02T14:00:00Z',roster:payload,sourceFileName:'Synthetic February'},{id:'local-synthetic-december',checksum:'synthetic-december',createdAt:'2032-01-01T00:00:00Z',roster:december,sourceFileName:'Synthetic December'},{id:'local-synthetic-january',checksum:'synthetic-january',createdAt:'2032-02-01T00:00:00Z',roster:january,sourceFileName:'Synthetic January'}]:[];
-  await context.addInitScript(seed,{theme,kind:payload,amount:123.45,history});
+  await context.addInitScript(seed,{theme,kind:payload,amount:123.45,history,homeMode:'standard'});
   if(scenario==='complete')await context.addInitScript(()=>{localStorage.setItem('crewcheck_financial_settings_v1:financial-ui-qa:crewcheck_salary_fixed_additions_brl','0');const source={ownerId:'financial-ui-qa',currency:'BRL',sourceDocument:'synthetic-payroll.pdf',sourceFingerprint:'synthetic-payment-preview',confidence:'high',valueOrigin:'printed',confirmed:true,revision:1,payrollCompetence:'2032-01',cycleSource:'user-reported-absa-tam'};localStorage.setItem('crewcheck_financial_learned_rates_v2:financial-ui-qa',JSON.stringify({version:2,ownerId:'financial-ui-qa',rates:[{...source,key:'salary.base',label:'Synthetic base',unit:'month',value:2900,effectiveFrom:'2032-01-01',effectiveTo:'2032-01-31'},{...source,key:'salary.dayKm',label:'Synthetic variable',unit:'km',value:.07,effectiveFrom:'2031-12-01',effectiveTo:'2031-12-31'}]}));});
   const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
   const home=page.locator('.cc-home-finance');await home.waitFor();
