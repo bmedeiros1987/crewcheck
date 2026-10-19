@@ -66,7 +66,15 @@ public final class WellbeingStore {
         requestUpdate(CrewLifeComplicationService.class);
     }
     private org.json.JSONObject fence() throws Exception {
-        return new org.json.JSONObject(preferences.getString(FENCE, "{}"));
+        try { return new org.json.JSONObject(preferences.getString(FENCE, "{}")); }
+        catch (org.json.JSONException corruptJournal) {
+            // Receiver journal loss/corruption never reconstructs authorization from ciphertext.
+            SharedPreferences.Editor edit=preferences.edit().remove(FENCE).remove(V2_IV).remove(V2_PAYLOAD)
+                    .remove(CREWLIFE_IV).remove(CREWLIFE_PAYLOAD);
+            if(!commitHealth(edit)) throw new IllegalStateException("CrewLife journal recovery not persisted.");
+            requestUpdate(CrewLifeComplicationService.class);
+            return new org.json.JSONObject();
+        }
     }
     /** ACK is returned only after one durable transaction clears values and persists the fence. */
     public String applyCrewLifeControl(String raw, String sourceNode) {

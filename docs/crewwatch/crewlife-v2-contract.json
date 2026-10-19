@@ -1,5 +1,5 @@
 {
-  "status": "PARENT_AUTHORIZED_WEAR_IMPLEMENTATION_PHONE_COMPOSITION_PENDING",
+  "status": "WEAR_CHALLENGE_IMPLEMENTED_PHONE_COMPOSITION_AND_INDEPENDENT_REVIEW_PENDING",
   "basedOn": {
     "phone": "379eb3db812157489147c05cd85727efb7f695b4",
     "wear": "6143f8ae20403c1032c77e0c5454d9cb87dce6dd"
@@ -56,13 +56,16 @@
     "Source query TTL and per-sample provenance remain enforced at phone; Wire generatedAt is not proof of sample age. Phone must transport per-metric deadlines from sanitizer; cannot reconstruct from receipt."
   ],
   "handshake": [
-    "Capability discovery is prerequisite only, never authorization, consent or cleanup proof. No capability/unknown peer => no v2 health values, remove phone-owned legacy health Data Items, report health unavailable.",
-    "Use node-directed MessageClient control/ACK. Control is {schemaVersion:2,op:reset,streamId,revision,requestId}; requestId random one-use challenge. No health data. ACK {schemaVersion:2,op:reset_ack,streamId,revision,requestId,status:cleared}. Validate source node against discovered intended peer and exact pending challenge; stale/foreign ACK ignored.",
-    "Wear reset first clears legacy CrewLife encrypted cache and current v2 values, persists stream/revision fence and v1 rejection policy, then ACKs. Reset retries same request id idempotently; stale/lower revision cannot roll back fence. New stream accepted only through current directed reset, not data arrival.",
-    "Before any values: local owner/consent fence captured; delete legacy phone Data Item; cleanup ACK required for each intended connected v2 node. Recheck generation/consent after every async step and before put. Consent alone cannot bypass pending cleanup.",
-    "DataClient items are shared/persistent, not node-targeted. Capability confirmed on one watch does not certify every paired watch or erase old watch cache. Offline/old watch cleanliness remains unconfirmed; keep unavailable/pending and no physical cleanup claim.",
-    "No app success from putDataItem/deleteDataItems means Wear applied it. Optional applied ACK uses exact stream/revision/requestId and status applied_unavailable/applied; means persistence/application only, never physical rendering proof.",
-    "Revocation control uses op=revoke with same stream/revision/requestId fields; ACK op=revoke_ack,status=cleared. Durable Data Item kind=revoked provides reconnect fallback. Reset ACK and revoke ACK are distinct and cannot substitute each other. Applied snapshot ACK op=snapshot_ack,status=applied or applied_unavailable never clears a pending revoke."
+    "Before reset, phone sends directed {schemaVersion:2,op:challenge_request,action:reset|revoke,streamId,revision,requestId}. This has no authority to activate a stream or restore values.",
+    "Wear creates unpredictable SecureRandom 256-bit wearChallenge, persists one pending tuple {sourcePhoneNode,action,streamId,revision,requestId,wearChallenge,consumed:false} before responding. Missing/lost/corrupt journal starts unavailable, clears CrewLife cache and creates a fresh nonce. Never accepts a nonce supplied by reset itself.",
+    "Wear responds via ACK path {schemaVersion:2,op:challenge,action,streamId,revision,requestId,wearChallenge}. Phone accepts only exact currently pending node/action/stream/revision/requestId and live local owner/consent generation, commits the received challenge before sending reset/revoke.",
+    "Phone sends {schemaVersion:2,op:reset|revoke,streamId,revision,requestId,wearChallenge}. Wear requires exact durable pending tuple, authenticated DataLayer sender node and unused challenge. No pending challenge => reject; unknown/lost journal => reject reset, initiate fresh exchange.",
+    "Reset atomically clears CrewLife cache, installs stream/revision fence and consumes challenge durably before ACK. ACK {schemaVersion:2,op:reset_ack|revoke_ack,streamId,revision,requestId,wearChallenge,status:cleared}. Failed commit => unavailable/no ACK.",
+    "Duplicate exact already-applied request may ACK idempotently only against its durable applied receipt, without clearing newer values or lowering the current revision. A consumed old challenge cannot authorize a different stream/revision or replay after subsequent reset.",
+    "Phone validates ACK against both its pending challenge and current owner/consent generation. Presence of capability, local API success, arbitrary challenge responses, missing wearChallenge or replayed old reset ACK cannot release readiness.",
+    "Pending challenge may be replaced by a newly received challenge_request without changing active stream. Delayed old hello can only cause handshake retry/availability loss, never activation. Use bounded retries; no clock ordering authority.",
+    "Revocation remains immediate locally; matching active-stream higher-revision tombstone may only clear values, never establish a stream. Cleanup ACK requires challenged exchange. Unknown-stream tombstone must not reset current stream/fences. Persistent tombstone is retained while ACK is pending.",
+    "No clock-based nonce freshness. On actual journal loss, restart nonce must be unpredictable and distinct; prior stream UUID allow/deny history is not relied upon. Random-source or persistence failure stays unavailable."
   ],
   "revocation": [
     "Owner change/logout, consent withdrawal, provider disconnect/empty/revoked summary immediately invalidate phone generation and cancel/ignore pending work; stop values before transport cleanup.",
@@ -96,12 +99,28 @@
       "malformed full replacement cannot retain old metric",
       "recursive forbidden fields",
       "routine and operational stores unchanged"
+    ],
+    "wearChallenge": [
+      "old reset+old data delivered after Wear journal loss rejected before fresh challenge",
+      "old hello delivered after loss issues NEW nonce; old phone reset nonce mismatch rejected",
+      "old challenge response reaches current phone but requestId/stream/generation mismatch => ignored",
+      "wear journal lost after challenge output but before reset => old reset rejected; new exchange required",
+      "phone journal lost while reset in flight => no previous pending ACK authority; fresh handshake",
+      "exact duplicate reset idempotent; never clears higher-revision data",
+      "consumed old challenge cannot reactivate stream after another reset",
+      "logout/consent revoked between challenge, persist, reset send, ACK and put => no values",
+      "wrong node/action/requestId/revision/nonce/missing nonce => rejected",
+      "crash/commit failure at pending challenge, consumed marker, cache clear, ACK journal => unavailable/no false success",
+      "delayed old challenge_request may force retry but cannot change active stream",
+      "revoked tombstone never bootstraps unknown stream; old tombstone cannot roll back current generation"
     ]
   },
   "hold": [
-    "No implementation until parent/owner agreement",
+    "Exact-head CI and independent review of receiver challenge implementation",
+    "Joint phone/Wear composition and current sender generation/consent/pending ACK tests",
     "HealthSync OFF; no SDK, new permissions, real health data or store action",
     "MCC shared integration gate remains separate"
   ],
-  "implementationScope": "Wear only; phone owner implements sender/capability and pending cleanup journal separately"
+  "implementationScope": "Wear only; phone owner implements sender/capability and pending cleanup journal separately",
+  "challengeEncoding": "wearChallenge: opaque lowercase hexadecimal string of64characters encoding SecureRandom256bits; phone echoes exact string, never generates it"
 }

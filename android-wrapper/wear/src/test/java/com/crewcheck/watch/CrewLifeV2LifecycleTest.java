@@ -55,9 +55,19 @@ public class CrewLifeV2LifecycleTest {
             android.content.SharedPreferences p=RuntimeEnvironment.getApplication().getSharedPreferences("crewcheck_watch_wellbeing",0);
             JSONObject journal=new JSONObject(p.getString("crewlife_fence_v2","{}"));
             JSONObject message=new JSONObject(ack);
-            assertEquals(message.getLong("revision"),journal.getLong("revision"));
-            assertEquals(message.getString("streamId"),journal.getString("streamId"));
-            assertFalse(p.contains("crewlife_payload_v1"));assertFalse(p.contains("crewlife_payload_v2"));
+            if ("challenge".equals(message.getString("op"))) {
+                JSONObject pending=journal.getJSONObject("pendingChallenge");
+                assertEquals(node,pending.getString("node"));
+                assertEquals(message.getString("wearChallenge"),pending.getString("wearChallenge"));
+                assertEquals(message.getString("requestId"),pending.getString("requestId"));
+            } else {
+                assertTrue(journal.getLong("revision") >= message.getLong("revision"));
+                assertEquals(message.getString("streamId"),journal.getString("streamId"));
+                assertEquals(message.getString("wearChallenge"),journal.getJSONObject("appliedReceipt").getString("wearChallenge"));
+                assertFalse(journal.has("pendingChallenge"));
+                assertFalse(p.contains("crewlife_payload_v1"));
+                if(journal.getLong("revision")==message.getLong("revision")) assertFalse(p.contains("crewlife_payload_v2"));
+            }
             deliveredAck=ack;
         }
     }
@@ -76,8 +86,19 @@ public class CrewLifeV2LifecycleTest {
         m.getJSONObject("steps").put("value",51).put("validUntilEpochMs",stepsExpiry);
         m.remove("sleepMinutes");m.remove("activeMinutes");return j.toString();
     }
-    private static void reset(CrewCheckDataLayerService service) throws Exception {
-        deliver(service,WatchContract.CREWLIFE_CONTROL_PATH,control("reset",STREAM,1,STREAM));assertNotNull(deliveredAck);
+    private static String handshake(CrewCheckDataLayerService service,String action,String stream,long revision,String id) throws Exception {
+        deliver(service,WatchContract.CREWLIFE_CONTROL_PATH,request(action,stream,revision,id));
+        assertNotNull(deliveredAck);JSONObject challenge=new JSONObject(deliveredAck);
+        assertEquals("challenge",challenge.getString("op"));
+        String wire=echo(action,stream,revision,id,challenge.getString("wearChallenge"));
+        deliveredAck=null;deliver(service,WatchContract.CREWLIFE_CONTROL_PATH,wire);assertNotNull(deliveredAck);
+        return wire;
+    }
+    private static void reset(CrewCheckDataLayerService service) throws Exception {handshake(service,"reset",STREAM,1,STREAM);}
+    private static String handshake(WellbeingStore store,String action,String stream,long revision,String id) throws Exception {
+        String challenge=store.applyCrewLifeControl(request(action,stream,revision,id),NODE);assertNotNull(challenge);
+        String wire=echo(action,stream,revision,id,new JSONObject(challenge).getString("wearChallenge"));
+        assertNotNull(store.applyCrewLifeControl(wire,NODE));return wire;
     }
     private static String text(View view) {
         if(view instanceof TextView)return ((TextView)view).getText().toString();String out="";
@@ -116,7 +137,7 @@ public class CrewLifeV2LifecycleTest {
             assertEquals(Integer.valueOf(0),assertHealthCached().value("recoveryScore",now));
             String cipher=context.getSharedPreferences("crewcheck_watch_wellbeing",0).getString("crewlife_payload_v2","");
             assertFalse(cipher.isEmpty());assertFalse(cipher.contains("recoveryScore"));
-            deliver(service.get(),WatchContract.CREWLIFE_CONTROL_PATH,control("revoke",STREAM,3,"00000000-0000-4000-8000-000000000002"));
+            handshake(service.get(),"revoke",STREAM,3,"00000000-0000-4000-8000-000000000002");
             assertEquals("revoke_ack",new JSONObject(deliveredAck).getString("op"));assertNull(new WellbeingStore(context).loadCrewLife());
             deliver(service.get(),WatchContract.CREWLIFE_V2_PATH,raw);assertNull(new WellbeingStore(context).loadCrewLife());
             assertEquals(3,new JSONObject(context.getSharedPreferences("crewcheck_watch_wellbeing",0).getString("crewlife_fence_v2","{}")).getLong("revision"));
@@ -141,7 +162,7 @@ public class CrewLifeV2LifecycleTest {
     }
     @Test public void actualComplicationDataExpiresBeforeTheMetricBoundaryIncludingZeroRing() throws Exception {
         long now=ShadowSystemClock.currentTimeMillis();WellbeingStore s=new WellbeingStore(context);
-        s.applyCrewLifeControl(control("reset",STREAM,1,STREAM),NODE);
+        handshake(s,"reset",STREAM,1,STREAM);
         String wire=payload(2,0,now+1000,now+4000);
         CrewLifeSnapshot.fromJson(wire,ShadowSystemClock.currentTimeMillis());
         s.applyCrewLifeData(wire,NODE,ShadowSystemClock.currentTimeMillis());
@@ -161,10 +182,52 @@ public class CrewLifeV2LifecycleTest {
         WellbeingStore store=new WellbeingStore(context);store.loadCrewLife();failNextCommit=true;
         ServiceController<CrewCheckDataLayerService> service=Robolectric.buildService(CrewCheckDataLayerService.class).create();
         try {
-            deliver(service.get(),WatchContract.CREWLIFE_CONTROL_PATH,control("reset",STREAM,1,STREAM));
+            deliver(service.get(),WatchContract.CREWLIFE_CONTROL_PATH,request("reset",STREAM,1,STREAM));
             assertNull(deliveredAck);assertNull(store.loadCrewLife());
             assertFalse(context.getSharedPreferences("crewcheck_watch_wellbeing",0).contains("crewlife_fence_v2"));
         }finally{service.destroy();}
+    }
+    @Test public void crashBeforeConsumeCommitHasNoAckRetryAndRestartUseDurableReceipt() throws Exception {
+        WellbeingStore store=new WellbeingStore(context);store.loadCrewLife();
+        ServiceController<CrewCheckDataLayerService> service=Robolectric.buildService(CrewCheckDataLayerService.class).create();
+        try {
+            deliver(service.get(),WatchContract.CREWLIFE_CONTROL_PATH,request("reset",STREAM,1,STREAM));
+            JSONObject challenge=new JSONObject(deliveredAck);String nonce=challenge.getString("wearChallenge");
+            String wire=echo("reset",STREAM,1,STREAM,nonce);deliveredAck=null;failNextCommit=true;
+            deliver(service.get(),WatchContract.CREWLIFE_CONTROL_PATH,wire);assertNull(deliveredAck);
+            JSONObject journal=new JSONObject(context.getSharedPreferences("crewcheck_watch_wellbeing",0).getString("crewlife_fence_v2","{}"));
+            assertTrue(journal.has("pendingChallenge"));assertFalse(journal.has("appliedReceipt"));
+            // Process/store recreation after commit failure: pending tuple remains usable, but no false ACK.
+            assertNotNull(new WellbeingStore(context).applyCrewLifeControl(wire,NODE));
+            long now=ShadowSystemClock.currentTimeMillis();String raw=payload(2,0,now+1000,now+4000);
+            new WellbeingStore(context).applyCrewLifeData(raw,NODE,now);
+            // Simulate lost ACK after durable commit; exact retry after restart must not clear newer values.
+            String ack=new WellbeingStore(context).applyCrewLifeControl(wire,NODE);assertNotNull(ack);
+            assertEquals("reset_ack",new JSONObject(ack).getString("op"));assertHealthCached();
+            journal=new JSONObject(context.getSharedPreferences("crewcheck_watch_wellbeing",0).getString("crewlife_fence_v2","{}"));
+            assertEquals(2,journal.getLong("revision"));assertFalse(journal.has("pendingChallenge"));
+        }finally{service.destroy();}
+    }
+    @Test public void lostJournalAndDelayedResetCannotRestoreLegacyOrOldV2Health() throws Exception {
+        WellbeingStore store=new WellbeingStore(context);
+        String old=handshake(store,"reset",STREAM,1,STREAM);
+        context.getSharedPreferences("crewcheck_watch_wellbeing",0).edit().clear().commit();
+        String b="00000000-0000-4000-8000-000000000002";
+        handshake(new WellbeingStore(context),"reset",b,1,b);
+        assertNull(new WellbeingStore(context).applyCrewLifeControl(old,NODE));
+        long now=ShadowSystemClock.currentTimeMillis();
+        new WellbeingStore(context).applyCrewLifeData(payload(2,78,now+1000,now+4000),NODE,now);
+        assertNull(new WellbeingStore(context).loadCrewLife());
+        JSONObject journal=new JSONObject(context.getSharedPreferences("crewcheck_watch_wellbeing",0).getString("crewlife_fence_v2","{}"));
+        assertEquals(b,journal.getString("streamId"));
+    }
+    @Test public void corruptedJournalClearsCiphertextAndRequiresFreshChallenge() throws Exception {
+        WellbeingStore store=new WellbeingStore(context);String old=handshake(store,"reset",STREAM,1,STREAM);
+        long now=ShadowSystemClock.currentTimeMillis();store.applyCrewLifeData(payload(2,78,now+1000,now+4000),NODE,now);assertHealthCached();
+        context.getSharedPreferences("crewcheck_watch_wellbeing",0).edit().putString("crewlife_fence_v2","{").commit();
+        assertNull(new WellbeingStore(context).loadCrewLife());
+        assertNull(new WellbeingStore(context).applyCrewLifeControl(old,NODE));
+        assertNotNull(new WellbeingStore(context).applyCrewLifeControl(request("reset",STREAM,1,B),NODE));
     }
     @Test public void dataEventPathUsesSourceHostAndFullReplacementRatherThanMessageOnly() throws Exception {
         ServiceController<CrewCheckDataLayerService> service=Robolectric.buildService(CrewCheckDataLayerService.class).create();
@@ -193,7 +256,7 @@ public class CrewLifeV2LifecycleTest {
         });
     }
     @Test public void malformedReplacementClearsPreviousHealthAndOldRevisionCannotReturn() throws Exception {
-        WellbeingStore s=new WellbeingStore(context);s.applyCrewLifeControl(control("reset",STREAM,1,STREAM),NODE);
+        WellbeingStore s=new WellbeingStore(context);handshake(s,"reset",STREAM,1,STREAM);
         long now=ShadowSystemClock.currentTimeMillis();String raw=payload(2,78,now+1000,now+2000);CrewLifeSnapshot.fromJson(raw,ShadowSystemClock.currentTimeMillis());s.applyCrewLifeData(raw,NODE,ShadowSystemClock.currentTimeMillis());assertHealthCached();
         s.applyCrewLifeData("{}",NODE,now);assertNull(s.loadCrewLife());s.applyCrewLifeData(raw,NODE,now);assertNull(s.loadCrewLife());
     }
