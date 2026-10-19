@@ -31,7 +31,7 @@ function clock(value?: string) {
 }
 
 // Presentation only: canonical activity categories and published fields remain unchanged.
-function cardPresentation(event: HomeRosterEvent) {
+function cardPresentation(event: HomeRosterEvent, displayedDay: string) {
   const category = classifyScheduleActivity(event);
   const city = airportCity(event.origin || event.destination, '');
   const code = getRosterCodeDefinition(event.canonical?.code || event.canonical?.publishedDay?.type || event.day?.type || event.day?.pairingCode || event.flightNumber || '');
@@ -47,12 +47,17 @@ function cardPresentation(event: HomeRosterEvent) {
   const end = clock(event.arrival || event.day?.endTime || event.day?.dutyDebrief);
   const startDay = event.canonical?.startDateTime && rosterInstantIso(event.canonical.startDateTime, ROSTER_DISPLAY_TIME_ZONE);
   const endDay = event.canonical?.endDateTime && rosterInstantIso(event.canonical.endDateTime, ROSTER_DISPLAY_TIME_ZONE);
-  // Never infer midnight rollover merely because an end clock is earlier.
-  const endDate = startDay && endDay && endDay > startDay
-    ? endDay === shiftDay(startDay, 1) ? 'dia seguinte' : dayLabel(endDay, { day: 'numeric', month: 'long' })
-    : !endDay && (event.canonical?.isNextDay || /\(\+1\)$/.test(end)) ? 'dia seguinte' : '';
+  // Date each clock against the published day shown above this card, not the other bound.
+  const dateLabel = (day: string | null | undefined) => !day || day === displayedDay ? ''
+    : day === shiftDay(displayedDay, 1) ? 'dia seguinte'
+    : dayLabel(day, { day: 'numeric', month: 'long', year: 'numeric' });
+  const startDate = dateLabel(startDay);
+  const endDate = dateLabel(endDay);
+  // isNextDay can describe the start OR arrival offset; it cannot date either bound alone.
+  // Preserve published clock suffixes verbatim, without turning missing instants into dates.
+  const datesUnconfirmed = Boolean(event.canonical?.isNextDay && (!startDay || !endDay));
   const nonOperational = category === 'REPOUSO' || category === 'PERNOITE' || category === 'FOLGA';
-  return { category, tone, title, Icon, hotel, start, end, endDate, nonOperational };
+  return { category, tone, title, Icon, hotel, start, end, startDate, endDate, datesUnconfirmed, nonOperational };
 }
 
 /** Read-only projection of the same events used by RosterLaunchView. */
@@ -87,16 +92,17 @@ export function HomeRosterPreview({ events, onNavigate }: { events: HomeRosterEv
     <h3>{dayLabel(selected, { weekday: 'long', day: 'numeric', month: 'long' })}</h3>
     <div className="cc-home-roster-list">
       {dayEvents.map((event, index) => {
-        const card = cardPresentation(event);
+        const card = cardPresentation(event, selected);
         const { Icon } = card;
-        return <button type="button" key={`${event.id}:${index}`} data-roster-event-id={event.id} data-activity={card.category} data-card-tone={card.tone} onClick={() => open(event)} aria-label={`Abrir ${card.title} em ${dayLabel(selected, { day: 'numeric', month: 'long' })}, início ${card.start}, fim ${card.end}${card.endDate ? `, ${card.endDate}` : ''} no AIMS`}>
+        return <button type="button" key={`${event.id}:${index}`} data-roster-event-id={event.id} data-activity={card.category} data-card-tone={card.tone} onClick={() => open(event)} aria-label={`Abrir ${card.title} em ${dayLabel(selected, { day: 'numeric', month: 'long' })}, início ${card.start}${card.startDate ? `, ${card.startDate}` : ''}, fim ${card.end}${card.endDate ? `, ${card.endDate}` : ''} no AIMS`}>
           <span className="cc-home-roster-icon"><Icon aria-hidden="true"/></span>
           <span className="cc-home-roster-copy"><strong>{card.title}{!card.nonOperational && event.leg?.workType && <small> · {event.leg.workType}</small>}</strong>
             {card.category !== 'PERNOITE' && <span>{event.origin || '—'}{event.destination && event.destination !== event.origin ? ` → ${event.destination}` : ''}</span>}
+            {card.datesUnconfirmed && <small>Virada de dia indicada; datas a confirmar</small>}
             {card.hotel && <small className="cc-home-roster-hotel">Hotel · {card.hotel}</small>}
             {!card.nonOperational && <small>{event.canonical?.showPresentation !== false && clock(event.presentation) !== '—' ? `Apresentação ${clock(event.presentation)}` : 'Detalhes publicados no AIMS'}</small>}
           </span>
-          <span className="cc-home-roster-clock"><span><small>Início</small><strong>{card.start}</strong></span><span><small>Fim{card.endDate && ` · ${card.endDate}`}</small><strong>{card.end}</strong></span></span><ChevronRight aria-hidden="true"/>
+          <span className="cc-home-roster-clock"><span><small>Início{card.startDate && ` · ${card.startDate}`}</small><strong>{card.start}</strong></span><span><small>Fim{card.endDate && ` · ${card.endDate}`}</small><strong>{card.end}</strong></span></span><ChevronRight aria-hidden="true"/>
         </button>;
       })}
       {!dayEvents.length && <div className="cc-home-roster-empty"><CalendarDays aria-hidden="true"/><p>{ordered.length ? 'Sem atividades informadas para esta data.' : 'Importe uma escala para consultar sua programação.'}</p>{nextDay ? <button type="button" onClick={() => select(nextDay)}>Próxima data com programação</button> : !ordered.length ? <button type="button" onClick={() => onNavigate('import')}>Importar escala</button> : null}</div>}
