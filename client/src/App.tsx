@@ -28,6 +28,7 @@ import { installPwaUpdateCoordinator } from "./lib/pwaUpdateCoordinator";
 import TermsGate from "./components/TermsGate";
 import PartnerWelcome from "./components/PartnerWelcome";
 import NativePlayUpdateNotice from './components/NativePlayUpdateNotice';
+import PwaInstallNotice from './components/PwaInstallNotice';
 
 type CrewThemeMode = 'light' | 'dark' | 'system';
 
@@ -255,6 +256,6 @@ export default function App() {
 
   return <ErrorBoundary>
     <Toaster richColors position={appMode ? "top-center" : "top-right"} />
-    <NativePlayUpdateNotice /><Router /><CrewCheckGlobalBottomMenu />
+    <NativePlayUpdateNotice /><PwaInstallNotice /><Router /><CrewCheckGlobalBottomMenu />
   </ErrorBoundary>;
 }
