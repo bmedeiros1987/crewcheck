@@ -197,3 +197,21 @@ test('preserved arrival conflict alone is not erased by physical leg selection',
   const input = snapshot([day(), day({ legs: [leg({ arrivalTime: '13:36' })] })]); input.roster = normalizeRosterDays(input.roster);
   assert.equal(read(undefined, { snapshot: input }).items.length, 0);
 });
+
+for(const reverse of [false,true])test(`ASB factual second block keeps its own APZ with partial duplicate reverse=${reverse}`,()=>{
+ const first=leg({flightNumber:'QA-OWNER-1',origin:'BSB',destination:'GRU',departureTime:'08:00',arrivalTime:'09:00',presentationTime:undefined});
+ const second=leg({flightNumber:'QA-OWNER-2',origin:'GRU',destination:'BSB',departureTime:'16:00',arrivalTime:'17:00',presentationTime:'15:00'});
+ const full=day({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyDebrief:'17:30',legs:[first,second]}),partial={...full,legs:[second]},days=reverse?[partial,full]:[full,partial],before=JSON.stringify(days),result=read(days);
+ const own=result.items.filter(i=>i.kind==='duty'&&i.startLiteral==='15:00');assert(own.length);for(const item of own){assert.equal(item.start,Date.parse('2032-10-10T18:00:00Z'));assert.equal(item.minutes,150);}assert(!result.items.some(i=>i.minutes===870));assert.equal(JSON.stringify(days),before);
+});
+for(const explicit of [true,false])test(`ASB factual filtered row cannot acquire reserve03 explicit=${explicit}`,()=>{
+ const raw=day({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyDebrief:'19:30',legs:[
+  leg({flightNumber:'QA-DROPPED',origin:'BSB',destination:'GRU',departureTime:'08:00',arrivalTime:'09:00',presentationTime:undefined}),
+  leg({flightNumber:'QA-REINDEXED',origin:'CNF',destination:'SSA',departureTime:'16:00',arrivalTime:'17:00',presentationTime:explicit?'15:00':undefined}),
+  leg({flightNumber:'QA-CONTINUATION',origin:'SSA',destination:'CNF',departureTime:'18:00',arrivalTime:'19:00',presentationTime:undefined}),
+ ]});const result=read([raw]);assert.equal(result.items.length,1);assert.equal(result.items[0].start,explicit?Date.parse('2032-10-10T18:00:00Z'):null);assert.equal(result.items[0].minutes,explicit?270:null);assert(!result.summary.includes('16h30'));
+});
+for(const source of ['estimated','unknown',undefined])test(`ASB factual full duration remains pending with own APZ and row ${source}`,()=>{
+ const raw=day({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyReportSource:source,dutyDebrief:'09:30',legs:[leg({departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00'})]}),result=read([raw]);
+ assert.equal(result.state,'incomplete');assert.equal(result.items[0].start,Date.parse('2032-10-10T10:00:00Z'));assert.equal(result.items[0].minutes,null);assert.match(result.summary,/Duração pendente/);assert(!result.summary.includes('6h30'));
+});

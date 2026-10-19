@@ -31,6 +31,46 @@ function clockNear(reference: number, value: string, direction: 'before' | 'afte
   return result;
 }
 
+/** A row report can extend a flight only when its original, pre-filter clock
+ * evidence identifies that physical flight as the row's opening leg. Check all
+ * replicas, including partial duplicates in another canonical journey: a local
+ * index after normalization is not provenance. Missing/conflicting proof denies
+ * the row contribution; an independent literal leg APZ remains usable. */
+function reserveRowBinding(events: readonly CanonicalRosterEvent[], first: CanonicalRosterEvent): 'owned' | 'other' | 'unproven' {
+  const departure = clock(first.leg?.departureTime), arrival = clock(first.leg?.arrivalTime);
+  const report = clock(first.publishedDay.dutyReport);
+  if (!departure || !arrival) return 'unproven';
+  const replicas = events.filter(e => e.kind === 'flight' && e.date === first.date
+    && e.flightNumber === first.flightNumber && e.origin === first.origin && e.destination === first.destination
+    && e.leg?.departureTime === first.leg?.departureTime && e.leg?.arrivalTime === first.leg?.arrivalTime);
+  const proofs: { opening: boolean; published: boolean }[] = [];
+  for (const e of replicas) {
+    const evidence = (e.publishedDay as any).publishedClockEvidence;
+    if (!evidence) return 'unproven';
+    const records = evidence.records || [evidence];
+    if (!Array.isArray(records) || !records.length) return 'unproven';
+    for (const record of records) {
+      if (!record || typeof record !== 'object' || !Array.isArray(record.legs)) return 'unproven';
+      const opening = record.legs[0];
+      // The pre-filter clock pair must be present exactly once. Missing or
+      // repeated pairs cannot establish an original flight-block binding.
+      const matches = record.legs.filter((leg: any) => leg?.departureTime === first.leg?.departureTime && leg.arrivalTime === first.leg?.arrivalTime);
+      if (!clock(opening?.departureTime) || !clock(opening?.arrivalTime) || matches.length !== 1) return 'unproven';
+      proofs.push({
+        opening: opening.departureTime === first.leg?.departureTime && opening.arrivalTime === first.leg?.arrivalTime,
+        published: Boolean(report) && report !== departure && clock(record.dutyReport) === report && record.dutyReportSource === 'published'
+          && clock(e.publishedDay.dutyReport) === report && e.publishedDay.dutyReportSource === 'published'
+          && /\b(?:ASB|RES|RESERVA|RSV)\b/.test(`${e.publishedDay.type || ''} ${e.publishedDay.pairingCode || ''}`.toUpperCase()),
+      });
+    }
+  }
+  if (!proofs.length) return 'unproven';
+  // A complete row showing this as a later block defeats a partial duplicate
+  // that happens to start here. Neither iteration order nor reindexing wins.
+  if (proofs.some(proof => !proof.opening)) return 'other';
+  return proofs.every(proof => proof.published) ? 'owned' : 'unproven';
+}
+
 /** Read the selected canonical journey. Ground remains inside its elapsed span;
  * another journey/rest on the same day is never added. No generic duty limit,
  * activation, estimated presentation or estimated cut is confirmed here. */
@@ -71,9 +111,12 @@ export function measureCanonicalDuty(events: readonly CanonicalRosterEvent[], se
   let start = Date.parse(first.startDateTime), end = Date.parse(last.endDateTime);
   let groundMinutes = 0;
   if (selected.kind === 'flight') {
-    const presentation = clock(first.leg?.presentationTime) || (first.legIndex === 0 ? clock(first.publishedDay.dutyReport) : null);
+    const reserveBinding = reserveDeclared ? reserveRowBinding(events, first) : null;
+    const rowOwnsStart = reserveDeclared ? reserveBinding === 'owned' : first.legIndex === 0;
+    if (reserveBinding === 'unproven') result.reasons.push('Origem/vínculo do início da reserva não comprovados; duração integral pendente.');
+    const presentation = clock(first.leg?.presentationTime) || (rowOwnsStart ? clock(first.publishedDay.dutyReport) : null);
     const explicitPresentation = clock(first.leg?.presentationTime) === presentation && presentation !== clock(first.departure)
-      || first.legIndex === 0 && clock(first.publishedDay.dutyReport) === presentation && presentation !== clock(first.departure);
+      || rowOwnsStart && clock(first.publishedDay.dutyReport) === presentation && presentation !== clock(first.departure);
     const debrief = clock(last.publishedDay.dutyDebrief);
     if (!presentation || !explicitPresentation || result.reportSource !== 'published') result.reasons.push('Apresentação publicada não comprovada.');
     if (!debrief || result.debriefSource !== 'published' || last.legIndex !== last.legCount - 1) result.reasons.push('Liberação publicada não comprovada; corte estimado não confirma jornada.');
@@ -88,15 +131,10 @@ export function measureCanonicalDuty(events: readonly CanonicalRosterEvent[], se
       if (gap < 0 || group[i-1].destination !== group[i].origin) { result.reasons.push('Continuidade física da jornada não comprovada.'); return result; }
       groundMinutes += gap;
     }
-    // Reserve attached to this published flight block contributes from its
-    // actual published presentation. A separate ASB/HSB is never linked merely
-    // by proximity or a shortened availability interval.
-    // A row-level reserve start belongs only to its first flight block. A later
-    // canonical journey uses its own published APZ, never the earlier block's.
-    if (/ASB|RES/.test(code) && first.legIndex === 0) {
-      const reserveStart = clock(first.publishedDay.dutyReport);
-      if (!reserveStart) { result.reasons.push('Início da reserva acionada não comprovado.'); return result; }
-      start = Math.min(start, clockNear(Date.parse(first.startDateTime), reserveStart, 'before'));
+    // An independently published leg APZ cannot promote an estimated row
+    // report or bind a reserve belonging to a different original flight block.
+    if (reserveDeclared && rowOwnsStart) {
+      start = Math.min(start, clockNear(Date.parse(first.startDateTime), clock(first.publishedDay.dutyReport)!, 'before'));
     }
     if (/HSB|SOBREAVISO/.test(code)) {
       result.reasons.push('Acionamento/composição e regra de sobreaviso pendentes.'); return result;
@@ -143,11 +181,12 @@ export function publishedDutyEndpoints(events: readonly CanonicalRosterEvent[], 
     const clocksKnown = group.every(e => clock(e.leg?.departureTime) && clock(e.leg?.arrivalTime)
       && !(((e.publishedDay as any).publishedClockEvidence?.legs || e.publishedDay.legs).some((leg: any) => !clock(leg.departureTime) || !clock(leg.arrivalTime))));
     if (!clocksKnown) return { start, end };
-    const presentation = clock(first.leg?.presentationTime) || (first.legIndex === 0 ? clock(first.publishedDay.dutyReport) : null);
+    const reserve = /\b(?:ASB|RES|RESERVA|RSV)\b/.test(`${first.publishedDay.type || ''} ${first.publishedDay.pairingCode || ''}`.toUpperCase());
+    const rowOwnsStart = reserve ? reserveRowBinding(events, first) === 'owned' : first.legIndex === 0;
+    const presentation = clock(first.leg?.presentationTime) || (rowOwnsStart ? clock(first.publishedDay.dutyReport) : null);
     const source = first.leg?.presentationTime ? 'published' : first.publishedDay.dutyReportSource;
     if (presentation && source === 'published' && presentation !== clock(first.departure)) {
       const value = clockNear(firstInstant, presentation, 'before');
-      const reserve = /\b(?:ASB|RES|RESERVA|RSV)\b/.test(`${first.publishedDay.type || ''} ${first.publishedDay.pairingCode || ''}`.toUpperCase());
       if (reserve || firstInstant - value <= 180 * 60_000) start = value;
     }
     const release = clock(last.publishedDay.dutyDebrief);

@@ -177,3 +177,34 @@ for(const [date,year,month,day] of [['04/10/2099',2099,10,4],['01/01/2100',2100,
  const text=realSummary({record:second,label:'A próxima programação',includeGreeting:false});assert(text.includes(`APZ: ${date} às 15:00.`));assert.match(text,/UTC−03/);assert.doesNotMatch(text,/APZ:.*03:00/);
  const departure=await f.run(roster);assert(departure.includes(`${date} às 15:00`));assert.match(departure,/14:05/);assert.doesNotMatch(departure,/já passou|às 03:00/);assert.equal(f.routes(),1);assert.equal(JSON.stringify(roster),before);
 });
+
+for(const order of ['full-first','partial-first'])test(`ASB partial duplicate ownership is order independent: ${order}`,async()=>{
+ const first={flightNumber:'QA-OWNER-1',origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',workType:'OP'};
+ const second={flightNumber:'QA-OWNER-2',origin:'BBB',destination:'AAA',departureTime:'16:00',arrivalTime:'17:00',presentationTime:'15:00',workType:'OP'};
+ const full=sourceDay({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyDebrief:'17:30',legs:[first,second]}),partial={...full,legs:[second]};
+ const roster={...sourceRoster(order==='full-first'?[full,partial]:[partial,full]),base:'BBB'},before=JSON.stringify(roster),f=realRuntime('2099-10-04T15:00:00Z');
+ const next=f.programs(roster).filter(p=>p.legs.some(l=>l.flightNumber==='QA-OWNER-2'));assert(next.length);
+ for(const p of next)assert.equal(p.display.publishedStart,Date.parse('2099-10-04T18:00:00Z'),'03:00 cannot attach through a partial duplicate');
+ const text=await f.run(roster);assert.match(text,/04\/10\/2099 às 15:00/);assert.match(text,/14:05/);assert.doesNotMatch(text,/já passou|às 03:00/);assert.equal(f.routes(),1);assert.equal(JSON.stringify(roster),before);
+});
+for(const explicit of [true,false])test(`ASB physical filtering cannot transfer reserve ownership: explicit=${explicit}`,async()=>{
+ const raw=sourceDay({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyDebrief:'19:30',legs:[
+  {flightNumber:'QA-DROPPED',origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',workType:'OP'},
+  {flightNumber:'QA-REINDEXED',origin:'CCC',destination:'DDD',departureTime:'16:00',arrivalTime:'17:00',...(explicit?{presentationTime:'15:00'}:{}),workType:'OP'},
+  {flightNumber:'QA-CONTINUATION',origin:'DDD',destination:'CCC',departureTime:'18:00',arrivalTime:'19:00',workType:'OP'},
+ ]});
+ const roster={...sourceRoster([raw]),base:'CCC'},before=JSON.stringify(roster),f=realRuntime('2099-10-04T15:00:00Z'),programs=f.programs(roster);
+ assert.equal(programs.length,1);assert.equal(programs[0].legs[0].flightNumber,'QA-REINDEXED');assert.equal(programs[0].display.publishedStart,explicit?Date.parse('2099-10-04T18:00:00Z'):null);
+ const text=await f.run(roster);assert.doesNotMatch(text,/às 03:00/);assert.equal(f.routes(),explicit?1:0);if(explicit){assert.match(text,/04\/10\/2099 às 15:00/);assert.match(text,/14:05/);assert.doesNotMatch(text,/já passou/);}assert.equal(JSON.stringify(roster),before);
+});
+
+for(const source of ['estimated','unknown',undefined])test(`literal leg APZ cannot publish reserve03 from ${source}`,async()=>{
+ const raw=sourceDay({type:'ASB',pairingCode:'ASB',dutyReport:'03:00',dutyReportSource:source,legs:[{flightNumber:'QA-OWN-APZ',origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00',workType:'OP'}]});
+ const roster=sourceRoster([raw]),before=JSON.stringify(roster),f=realRuntime('2099-10-04T09:00:00Z'),record=f.programs(roster)[0];
+ assert.equal(record.display.publishedStart,Date.parse('2099-10-04T10:00:00Z'));const text=await f.run(roster);assert.match(text,/04\/10\/2099 às 07:00/);assert.doesNotMatch(text,/às 03:00/);assert.equal(f.routes(),1);assert.equal(JSON.stringify(roster),before);
+});
+for(const source of ['estimated','unknown',undefined])for(const reverse of [false,true])test(`duplicate reserve provenance stays pending: ${source} reverse=${reverse}`,async()=>{
+ const full=sourceDay({type:'ASB',pairingCode:'ASB',dutyReport:'03:00'}),uncertain={...full,dutyReportSource:source};
+ const roster=sourceRoster(reverse?[uncertain,full]:[full,uncertain]),before=JSON.stringify(roster),f=realRuntime('2099-10-04T04:00:00Z'),programs=f.programs(roster);
+ assert(programs.length);for(const p of programs)assert.equal(p.display.publishedStart,null,'a published duplicate cannot erase unknown provenance');const text=await f.run(roster);assert.doesNotMatch(text,/às 03:00/);assert.equal(f.routes(),0);assert.equal(JSON.stringify(roster),before);
+});

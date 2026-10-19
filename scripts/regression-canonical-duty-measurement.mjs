@@ -29,10 +29,26 @@ try {
     assert.equal(ownEndpoints.start,Date.parse(own.start));assert.equal(measurement.publishedDutyEndpoints(split,split[0].id).start,Date.parse('2032-10-10T06:00:00Z'),'first reserve03:00 retained');
     assert.equal(engine.getCanonicalWorkHoursTotal(roster([blocks])),null,'incomplete first block still prevents a partial total');assert.equal(JSON.stringify(blocks),originalBlocks);
     const unknownBlock={...blocks,legs:[blocks.legs[0],{...blocks.legs[1],origin:'CNF',presentationTime:undefined}]};
-    const incompleteSplit=canonical.buildCanonicalRosterEvents(roster([unknownBlock])).filter(e=>e.kind==='flight');assert.notEqual(incompleteSplit[0].journeyId,incompleteSplit[1].journeyId);
-    assert.equal(measurement.measureCanonicalDuty(incompleteSplit,incompleteSplit[1].id).minutes,null);assert.equal(measurement.publishedDutyEndpoints(incompleteSplit,incompleteSplit[1].id).start,null,'unknown second APZ cannot inherit03:00');
+    const incompleteSplit=canonical.buildCanonicalRosterEvents(roster([unknownBlock])).filter(e=>e.kind==='flight');const unknownSecond=incompleteSplit.find(e=>e.flightNumber==='QA-ASB-SECOND'),unknownFirst=incompleteSplit.find(e=>e.flightNumber==='QA-ASB-FIRST');assert.notEqual(unknownFirst.journeyId,unknownSecond.journeyId);
+    assert.equal(measurement.measureCanonicalDuty(incompleteSplit,unknownSecond.id).minutes,null);assert.equal(measurement.publishedDutyEndpoints(incompleteSplit,unknownSecond.id).start,null,'unknown second APZ cannot inherit03:00');
     const estimatedEnd={...blocks,dutyDebriefSource:'estimated'};const pendingEnd=canonical.buildCanonicalRosterEvents(roster([estimatedEnd])).filter(e=>e.kind==='flight');
     assert.equal(measurement.measureCanonicalDuty(pendingEnd,pendingEnd[1].id).minutes,null);assert.equal(measurement.publishedDutyEndpoints(pendingEnd,pendingEnd[1].id).start,Date.parse('2032-10-10T18:00:00Z'));assert.equal(measurement.publishedDutyEndpoints(pendingEnd,pendingEnd[1].id).end,null);
+    for(const source of ['estimated','unknown',undefined]) {
+      const uncertain={...reserve,dutyReport:'03:00',dutyReportSource:source,legs:reserve.legs.map((l,i)=>({...l,...(i===0?{presentationTime:'07:00'}:{})}))};
+      const uncertainEvents=canonical.buildCanonicalRosterEvents(roster([uncertain])).filter(e=>e.kind==='flight'),start=uncertainEvents.find(e=>e.flightNumber==='QA0001');
+      assert.equal(measurement.measureCanonicalDuty(uncertainEvents,start.id).state,'incomplete','literal leg APZ does not publish the unknown full reserve duration');assert.equal(measurement.measureCanonicalDuty(uncertainEvents,start.id).minutes,null);assert.equal(engine.getCanonicalWorkHoursTotal(roster([uncertain])),null);assert.equal(measurement.publishedDutyEndpoints(uncertainEvents,start.id).start,Date.parse('2032-10-10T10:00:00Z'));
+    }
+    for(const rows of [[blocks,{...blocks,legs:[blocks.legs[1]]}],[{...blocks,legs:[blocks.legs[1]]},blocks]]) {
+      const replicas=canonical.buildCanonicalRosterEvents(roster(rows)).filter(e=>e.kind==='flight');
+      for(const e of replicas.filter(e=>e.flightNumber==='QA-ASB-SECOND')) {
+        assert.equal(measurement.measureCanonicalDuty(replicas,e.id).start,'2032-10-10T18:00:00.000Z');assert.equal(measurement.publishedDutyEndpoints(replicas,e.id).start,Date.parse('2032-10-10T18:00:00Z'));
+      }
+    }
+    for(const explicit of [true,false]) {
+      const filtered={...blocks,dutyDebrief:'19:30',legs:[blocks.legs[0],{...blocks.legs[1],origin:'CNF',destination:'SSA',presentationTime:explicit?'15:00':undefined},leg('QA-CONTINUATION','SSA','CNF','18:00','19:00',1)]};
+      const filteredEvents=canonical.buildCanonicalRosterEvents(roster([filtered])).filter(e=>e.kind==='flight'),selected=filteredEvents.find(e=>e.flightNumber==='QA-ASB-SECOND');assert.equal(selected.legIndex,0,'physical filtering reindexes the selected flight');assert(!filteredEvents.some(e=>e.flightNumber==='QA-ASB-FIRST'));
+      const measured=measurement.measureCanonicalDuty(filteredEvents,selected.id);assert.equal(measured.minutes,explicit?270:null);assert.equal(measurement.publishedDutyEndpoints(filteredEvents,selected.id).start,explicit?Date.parse('2032-10-10T18:00:00Z'):null);assert.equal(engine.getCanonicalWorkHoursTotal(roster([filtered])),explicit?4.5:null,'shared total cannot claim16.5h from an unrelated reserve');
+    }
     const standby={...day,type:'HSB',pairingCode:'HSB'};const h=canonical.buildCanonicalRosterEvents(roster([standby])).filter(x=>x.kind==='flight');const hm=measurement.measureCanonicalDuty(h,h[0].id);assert.equal(hm.state,'incomplete');assert.equal(hm.minutes,null);assert.equal(hm.limitConfirmed,false,'no activation or16h inferred from HSB+OP');
     const excessive={...day,dutyReport:'05:00',dutyDebrief:'21:30',legs:[leg('QA-LONG','BSB','GRU','05:55','21:00',15+5/60)]};const x=canonical.buildCanonicalRosterEvents(roster([excessive])).filter(e=>e.kind==='flight');assert.equal(measurement.measureCanonicalDuty(x,x[0].id).minutes,990);assert.ok(engine.getPublishedDutyLimitSummary(excessive,null).remainingHours<0,'excess is preserved, never clamped tozero');
     assert.equal(measurement.measureCanonicalDuty(events,'missing'),null);
