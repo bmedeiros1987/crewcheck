@@ -97,12 +97,13 @@ for(const phase of ['before','during'])test(`actual copied identity readers deny
  const before=h.trace.output.length;await h.send('telegram','sim');assert.doesNotMatch(h.trace.output.slice(before).join(' '),/QA-MERGED|05\/10\/2099|07:00|Detalhes da programação/);
 });
 
-for(const changed of [false,true])test(`actual meu voo accepted Radar persists only its own revision, external change=${changed}`,async()=>{
- const h=realDeparture(flights([['LA1234','08:00','09:00']]),'missing','2099-10-04T10:00:00Z');let queries=0,saves=0;
- h.context.runRadarRace=async ctx=>{queries++;return{ok:true,flight:'LA1234',origin:'BSB',destination:'GRU',gate:'46',scheduledDepartureUtc:ctx.gateQueryEvidence.scheduledDepartureUtc,sourceReceivedAt:'2099-10-04T10:00:00Z'};};
- if(changed){const save=h.context.conciergeSaveSnapshotAsync;h.context.conciergeSaveSnapshotAsync=async(...args)=>{const result=await save(...args);if(args[2]?.lastRadar){saves++;h.setRoster(flights([['LA4321','08:00','09:00']]));}return result;};}
- await h.send('telegram','portão do meu voo');assert.equal(queries,1);
- if(changed){assert.equal(saves,1);assert.doesNotMatch(h.trace.output.join(' '),/LA1234|Portão: 46/);}else assert.match(h.trace.output.at(-1),/Portão: 46/);
+for(const query of ['portão do meu voo','status do meu voo','/radar LA1234'])test(`actual Telegram Radar remains useful and ephemeral ${query}`,async()=>{
+ const h=realDeparture(flights([['LA1234','08:00','09:00']]),'missing','2099-10-04T10:00:00Z');let queries=0,applies=0,radarSaves=0;
+ const before=await h.load(),apply=h.context.conciergeApplyRadar,save=h.context.conciergeSaveSnapshotAsync;
+ h.context.conciergeApplyRadar=(...args)=>{applies++;return apply(...args);};h.context.conciergeSaveSnapshotAsync=async(...args)=>{if(args[2]?.lastRadar){radarSaves++;throw Error('Telegram must not reach the whole-roster Radar writer');}return save(...args);};
+ h.context.runRadarRace=async ctx=>{queries++;return{ok:true,flight:'LA1234',origin:'BSB',destination:'GRU',gate:'46',status:'No horário',scheduledDepartureUtc:ctx.gateQueryEvidence.scheduledDepartureUtc,sourceReceivedAt:'2099-10-04T10:00:00Z'};};
+ await h.send('telegram',query);assert.equal(queries,1);assert.equal(applies,0);assert.equal(radarSaves,0);assert.match(h.trace.output.at(-1),/Portão: 46/);assert.match(h.trace.output.at(-1),/Status: No horário/);assert.doesNotMatch(h.trace.output.at(-1),/sincronizado com o card/);
+ const after=await h.load();assert.deepEqual(after.roster,before.roster);assert.deepEqual(after.lastRadar,before.lastRadar);
 });
 
 test('actual concurrent topic invalidates old response and cannot recreate a stale offer',async()=>{
@@ -117,11 +118,11 @@ for(const text of ['não','cancelar'])test(`actual declined detail offer ${text}
  await h.send('telegram','sim');assert.match(h.trace.output.at(-1),/Não há um pedido de detalhes válido/);
 });
 
-test('actual meu voo gate becomes unavailable if accepted source expires during persistence',async()=>{
+test('actual ephemeral meu voo gate is suppressed when accepted source expires before final delivery',async()=>{
  const h=realDeparture(flights([['LA1234','08:00','09:00']]),'missing','2099-10-04T10:00:00Z');let saves=0,queries=0;
  h.context.runRadarRace=async ctx=>{queries++;return{ok:true,flight:'LA1234',origin:'BSB',destination:'GRU',gate:'EXPIRING_GATE',scheduledDepartureUtc:ctx.gateQueryEvidence.scheduledDepartureUtc,sourceReceivedAt:'2099-10-04T09:30:01Z'};};
- const save=h.context.conciergeSaveSnapshotAsync;h.context.conciergeSaveSnapshotAsync=async(...args)=>{const result=await save(...args);if(args[2]?.lastRadar){saves++;h.advanceClock(2000);}return result;};
- await h.send('telegram','portão do meu voo');assert.equal(queries,1);assert.equal(saves,1);assert.doesNotMatch(h.trace.output.join(' '),/LA1234|EXPIRING_GATE|08:00/);
+ const save=h.context.conciergeSaveSnapshotAsync;h.context.conciergeSaveSnapshotAsync=async(...args)=>{const result=await save(...args);if(args[2]?.preferences?.conciergeConversation){saves++;h.advanceClock(2000);}return result;};
+ await h.send('telegram','portão do meu voo');assert.equal(queries,1);assert.equal(saves,1);assert.equal(h.trace.saves.filter(x=>x.lastRadar).length,0);assert.doesNotMatch(h.trace.output.join(' '),/LA1234|EXPIRING_GATE|08:00/);
 });
 
 function actualTools(h){

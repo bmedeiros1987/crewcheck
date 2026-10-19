@@ -11,7 +11,7 @@ const runtime=`const crewcheckTemporalDialogue = createTemporalDialogue({
   profile: (...args) => telegramProfileForChatAsync(...args),
   profileNow: profile => ({...telegramProfileForChat({chat:{id:profile.chatId,type:'private'},from:{id:profile.chatId}}),channel:'telegram',chatType:'private'}),
   snapshot: (...args) => conciergeLoadSnapshot(...args), snapshotNow: profile => conciergeSnapshotForProfile(profile),
-  access: conciergeAccessMatches, minimize: conciergeMinimizeRoster,
+  access: conciergeAccessMatches,
   programs: roster => conciergeJourneyProgramRecords(roster, conciergeProgramRecords(roster)),
   events: buildCanonicalRosterEvents, explicitFlight: conciergeExtractFlight,
   summary: record => buildProgramSummary({record,label:'A próxima programação',includeGreeting:false}),
@@ -37,14 +37,14 @@ patch('sendTelegramMessage',body=>{
   const deliveryCheck = producerDeliveryCheck || contextCheck ? () => (!producerDeliveryCheck || producerDeliveryCheck()) && (!contextCheck || contextCheck()) : null;`);
 });
 patch('conciergeRadarReply',body=>{
- if(body.includes('const temporalSaved = await conciergeSaveSnapshotAsync('))return body;
+ if(body.includes('// Telegram Radar stays response-local.'))return body;
  const start=body.indexOf('{')+1;body=body.slice(0,start)+"\n  if (profile.channel === 'telegram' && !await crewcheckTemporalDialogue.protect(profile,snapshot)()) return gateQuerySuppressed({reason:'response-context-expired'}).message;"+body.slice(start);
  body=body.replace("  const radar = await runRadarRace(queryContext, info?.leg?.origin || '', info?.leg?.destination || '');", "  const radar = await runRadarRace(queryContext, info?.leg?.origin || '', info?.leg?.destination || '');\n  profile.conciergeResponseAuthority?.acceptRadar?.(radar,queryContext.gateQueryEvidence);");
- body=body.replace('  snapshot = currentSnapshot;', "  if (profile.conciergeResponseAuthority?.beforeRadarWrite && !await profile.conciergeResponseAuthority.beforeRadarWrite(currentSnapshot)) return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;\n  snapshot = currentSnapshot;");
- body=body.replace('    conciergeApplyRadar(snapshot, info, radar);', "    conciergeApplyRadar(snapshot, info, radar);\n    if (profile.conciergeResponseAuthority?.prepareRadarWrite && !profile.conciergeResponseAuthority.prepareRadarWrite(snapshot)) return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;");
- const save="await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source: snapshot.source || 'radar', lastRadar: { ...radar, updatedAt: new Date().toISOString() } });";
- if(!body.includes(save))throw Error('missing existing Radar write');
- return body.replace(save,"const temporalSaved = "+save+"\n    if (profile.conciergeResponseAuthority?.acceptWrite && !profile.conciergeResponseAuthority.acceptWrite(temporalSaved)) return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;");
+ body=body.replace('  snapshot = currentSnapshot;', "  if (profile.channel === 'telegram' && !await profile.conciergeResponseAuthority.validate()) return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;\n  snapshot = currentSnapshot;");
+ const write='  if (snapshot && info?.leg) {';
+ if(!body.includes(write))throw Error('missing existing Radar persistence boundary');
+ body=body.replace(write,"  // Telegram Radar stays response-local. Never replace a roster after an await.\n  if (profile.channel !== 'telegram' && snapshot && info?.leg) {");
+ return body.replace("else if (radar.gate) lines.push('O portão foi sincronizado com o card da próxima programação.');", "else if (radar.gate) lines.push(profile.channel === 'telegram' ? 'Portão informado nesta consulta; confirme alterações na fonte operacional.' : 'O portão foi sincronizado com o card da próxima programação.');");
 });
 patch('sendTelegramTtsAudio',body=>body.includes("deliveryState:'context_expired'")?body:body
  .replace('configured: false, provider: policy.provider',"deliveryState: 'unavailable', deliveryReason: 'provider_mismatch', configured: false, provider: policy.provider")

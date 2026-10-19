@@ -59,16 +59,13 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
  function state(profile,snapshot){
   const ctx=storage.getStore();if(!ctx||ctx.chat!==String(profile.chatId)||!ctx.owner||identity(profile)!==ctx.owner)return null;
   let s=states.get(ctx);if(s){profile.conciergeResponseAuthority=s.authority;return s;}
-  let expected=ctx.revision,pendingWrite=null,writeBase=null,acceptedRadar=null,deadline=null;
+  const expected=ctx.revision;let acceptedRadar=null,deadline=null;
   const checkNow=()=>{try{const latest=deps.snapshotNow(ctx.principal);return currentTurn(ctx)&&sameBinding(ctx)&&owned(ctx.principal,latest)&&revision(latest)===expected&&(deadline===null||(now()>=deadline&&now()-deadline<=TTL))&&(!acceptedRadar||deps.radarCurrent(acceptedRadar.payload,acceptedRadar.evidence,latest.roster));}catch{return false;}};
   const validate=async()=>{try{if(revision(snapshot)!==ctx.revision||!checkNow()||!await deps.authorized(ctx.principal,ctx.snapshot))return false;const latest=await deps.snapshot(ctx.principal);if(revision(latest)!==expected||!await deps.authorized(ctx.principal,latest))return false;return checkNow();}catch{return false;}};
   const authority=Object.freeze({kind:'temporal',validate,checkNow,
-   beforeRadarWrite:async candidate=>{if(revision(candidate)!==expected||!await validate())return false;writeBase=expected;return true;},
-   prepareRadarWrite:candidate=>{if(writeBase!==expected)return false;pendingWrite=revision({roster:deps.minimize(candidate.roster)});return true;},
-   acceptWrite:saved=>{if(!pendingWrite||!saved?.roster||revision(saved)!==pendingWrite)return false;expected=pendingWrite;pendingWrite=null;writeBase=null;return true;},
    acceptRadar:(payload,evidence)=>{if(payload?.ok&&!payload.querySuppressed)acceptedRadar=Object.freeze({payload:Object.freeze({...payload}),evidence:Object.freeze({...evidence})});},
   });
-  s={authority,setDeadline:value=>{deadline=value;},expected:()=>expected,ctx};states.set(ctx,s);profile.conciergeResponseAuthority=authority;return s;
+  s={authority,setDeadline:value=>{deadline=value;},ctx};states.set(ctx,s);profile.conciergeResponseAuthority=authority;return s;
  }
  function protect(profile,snapshot){const s=state(profile,snapshot);if(!s)profile.conciergeResponseAuthority=Object.freeze({kind:'temporal',validate:async()=>false,checkNow:()=>false});return profile.conciergeResponseAuthority.validate;}
  const summary=r=>deps.summary(r).replace(/^Próxima programação:/,'Programação prevista:').replace(/^Próxima atividade:/,'Atividade prevista:');
