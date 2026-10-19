@@ -18,7 +18,7 @@ const runtime = source.match(/const crewcheckMenu = createTelegramMenu\([\s\S]*?
 let profile = { ...baseProfile }, snapshot = makeSnapshot();
 const sent = [], answers = []; let messageId = 100, snapshotHook = null, profileHook = null;
 const context = vm.createContext({
-  crewcheckTemporalDialogue: {interrupt:()=>{}},
+  crewcheckTemporalDialogue: {run:(_u,work)=>work(),interrupt:()=>{},currentTurnCheck:()=>null,currentDeliveryCheck:()=>null},
   crypto, Buffer, createTelegramMenu, createTelegramMenuTransport, buildDutyFacts,
   telegramProfileForChatAsync: async () => { if (profileHook) profileHook(); return { ...profile }; },
   conciergeLoadSnapshot: async () => { const copy = structuredClone(snapshot); if (snapshotHook) { const hook = snapshotHook; snapshotHook = null; hook(); } return copy; },

@@ -105,7 +105,7 @@ for(const changed of [false,true])test(`actual meu voo accepted Radar persists o
 
 test('actual concurrent topic invalidates old response and cannot recreate a stale offer',async()=>{
  const h=realDeparture(data('estimated'),'missing',at);const read=h.context.telegramRostersRead;let reads=0,changed=0;
- h.context.telegramRostersRead=()=>{const result=read();if(++reads===2){changed++;void h.context.crewcheckTemporalDialogue.handle('outro assunto',h.profile,result.snapshots[h.profile.email]);}return result;};
+ h.context.telegramRostersRead=()=>{const result=read();if(++reads===2){changed++;void h.send('telegram','outro assunto');}return result;};
  await h.send('telegram','/proximo');assert.equal(changed,1);assert.doesNotMatch(h.trace.output.join(' '),/QA-MERGED|05\/10\/2099|07:00/);
  await h.send('telegram','sim');assert.match(h.trace.output.at(-1),/Não há um pedido de detalhes válido/);
 });
