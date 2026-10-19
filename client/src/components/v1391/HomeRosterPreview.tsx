@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Plane } from 'lucide-react';
+import { BedDouble, CalendarDays, ChevronLeft, ChevronRight, Clock3, Moon, Phone, Plane, Sun } from 'lucide-react';
 import { rosterDisplayCompare, rosterDisplayIso, rosterInstantIso, rosterStrictInstant, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
 import { setPendingNavigationContext } from '@/lib/navigationContext';
-import { classifyScheduleActivity } from '@/lib/scheduleActivityClassification';
+import { carePresentationForScheduleActivity, classifyScheduleActivity } from '@/lib/scheduleActivityClassification';
+import { airportCity } from '@/lib/airports';
+import { getRosterCodeDefinition } from '@/lib/rosterCodes';
 import { NextFlightGateCard } from '@/components/nextflight/NextFlightGateCard';
 import './home-roster-preview.css';
 
@@ -12,7 +14,7 @@ export type HomeRosterEvent = {
   origin?: string; destination?: string; flightNumber?: string;
   presentation?: string; departure?: string; arrival?: string;
   day?: Record<string, any>; leg?: Record<string, any>;
-  canonical?: { date?: string; publishedDay?: { date?: string; type?: string; pairingCode?: string }; kind?: string; startDateTime?: string; endDateTime?: string; showPresentation?: boolean; isNextDay?: boolean };
+  canonical?: { date?: string; publishedDay?: { date?: string; type?: string; pairingCode?: string; hotel?: string | null }; kind?: string; code?: string; startDateTime?: string; endDateTime?: string; showPresentation?: boolean; isNextDay?: boolean };
 };
 
 function shiftDay(iso: string, offset: number) {
@@ -26,6 +28,36 @@ function dayLabel(iso: string, options: Intl.DateTimeFormatOptions) {
 function clock(value?: string) {
   const match = /^(\d{1,2}):([0-5]\d)(\(\+\d+\))?$/.exec(String(value || '').trim());
   return match && Number(match[1]) < 24 ? `${match[1].padStart(2, '0')}:${match[2]}${match[3] || ''}` : '—';
+}
+
+// Presentation only: canonical activity categories and published fields remain unchanged.
+function cardPresentation(event: HomeRosterEvent, displayedDay: string) {
+  const category = classifyScheduleActivity(event);
+  const city = airportCity(event.origin || event.destination, '');
+  const code = getRosterCodeDefinition(event.canonical?.code || event.canonical?.publishedDay?.type || event.day?.type || event.day?.pairingCode || event.flightNumber || '');
+  const tone = category === 'REPOUSO' ? 'rest' : category === 'PERNOITE' ? 'layover' : category === 'FOLGA' ? 'off'
+    : event.kind === 'flight' ? 'flight' : code?.category === 'RESERVE' ? 'reserve' : code?.category === 'STANDBY' ? 'standby' : 'duty';
+  const title = category === 'REPOUSO' ? 'Descanso' : category === 'PERNOITE' ? `Pernoite${city ? ` · ${city}` : ''}`
+    : category === 'FOLGA' ? carePresentationForScheduleActivity(event)?.label || 'Folga'
+    : event.flightNumber || event.day?.pairingCode || event.day?.type || event.title || 'Programação';
+  const Icon = { rest: Moon, layover: BedDouble, off: Sun, flight: Plane, reserve: Clock3, standby: Phone, duty: CalendarDays }[tone];
+  const rawHotel = event.canonical?.publishedDay?.hotel || event.day?.hotel;
+  const hotel = category === 'PERNOITE' && typeof rawHotel === 'string' && !/^(?:—|-|N\/A)$/i.test(rawHotel.trim()) ? rawHotel.trim() : '';
+  const start = clock(event.departure || event.day?.startTime || event.day?.dutyReport);
+  const end = clock(event.arrival || event.day?.endTime || event.day?.dutyDebrief);
+  const startDay = event.canonical?.startDateTime && rosterInstantIso(event.canonical.startDateTime, ROSTER_DISPLAY_TIME_ZONE);
+  const endDay = event.canonical?.endDateTime && rosterInstantIso(event.canonical.endDateTime, ROSTER_DISPLAY_TIME_ZONE);
+  // Date each clock against the published day shown above this card, not the other bound.
+  const dateLabel = (day: string | null | undefined) => !day || day === displayedDay ? ''
+    : day === shiftDay(displayedDay, 1) ? 'dia seguinte'
+    : dayLabel(day, { day: 'numeric', month: 'long', year: 'numeric' });
+  const startDate = dateLabel(startDay);
+  const endDate = dateLabel(endDay);
+  // isNextDay can describe the start OR arrival offset; it cannot date either bound alone.
+  // Preserve published clock suffixes verbatim, without turning missing instants into dates.
+  const datesUnconfirmed = Boolean(event.canonical?.isNextDay && (!startDay || !endDay));
+  const nonOperational = category === 'REPOUSO' || category === 'PERNOITE' || category === 'FOLGA';
+  return { category, tone, title, Icon, hotel, start, end, startDate, endDate, datesUnconfirmed, nonOperational };
 }
 
 /** Read-only projection of the same events used by RosterLaunchView. */
@@ -59,11 +91,21 @@ export function HomeRosterPreview({ events, onNavigate }: { events: HomeRosterEv
     </div>
     <h3>{dayLabel(selected, { weekday: 'long', day: 'numeric', month: 'long' })}</h3>
     <div className="cc-home-roster-list">
-      {dayEvents.map((event, index) => <button type="button" key={`${event.id}:${index}`} data-roster-event-id={event.id} data-activity={classifyScheduleActivity(event)} onClick={() => open(event)} aria-label={`Abrir ${event.flightNumber || event.day?.pairingCode || event.day?.type || event.title || 'programação'} em ${dayLabel(selected, { day: 'numeric', month: 'long' })} no AIMS`}>
-        <span className="cc-home-roster-icon">{event.kind === 'flight' ? <Plane aria-hidden="true"/> : <CalendarDays aria-hidden="true"/>}</span>
-        <span className="cc-home-roster-copy"><strong>{event.flightNumber || event.day?.pairingCode || event.day?.type || event.title || 'Programação'}{event.leg?.workType && <small> · {event.leg.workType}</small>}</strong><span>{event.origin || '—'}{event.destination && event.destination !== event.origin ? ` → ${event.destination}` : ''}</span><small>{event.canonical?.showPresentation !== false && clock(event.presentation) !== '—' ? `Apresentação ${clock(event.presentation)}` : 'Detalhes publicados no AIMS'}</small></span>
-        <span className="cc-home-roster-clock"><strong>{clock(event.departure || event.day?.startTime || event.day?.dutyReport)}</strong><small>{clock(event.arrival || event.day?.endTime || event.day?.dutyDebrief)}</small></span><ChevronRight aria-hidden="true"/>
-      </button>)}
+      {dayEvents.map((event, index) => {
+        const card = cardPresentation(event, selected);
+        const { Icon } = card;
+        const uncertainty = card.datesUnconfirmed ? 'Virada de dia indicada; datas a confirmar' : '';
+        return <button type="button" key={`${event.id}:${index}`} data-roster-event-id={event.id} data-activity={card.category} data-card-tone={card.tone} onClick={() => open(event)} aria-label={`Abrir ${card.title} em ${dayLabel(selected, { day: 'numeric', month: 'long' })}, início ${card.start}${card.startDate ? `, ${card.startDate}` : ''}, fim ${card.end}${card.endDate ? `, ${card.endDate}` : ''} no AIMS${uncertainty ? `. ${uncertainty}` : ''}`}>
+          <span className="cc-home-roster-icon"><Icon aria-hidden="true"/></span>
+          <span className="cc-home-roster-copy"><strong>{card.title}{!card.nonOperational && event.leg?.workType && <small> · {event.leg.workType}</small>}</strong>
+            {card.category !== 'PERNOITE' && <span>{event.origin || '—'}{event.destination && event.destination !== event.origin ? ` → ${event.destination}` : ''}</span>}
+            {uncertainty && <small>{uncertainty}</small>}
+            {card.hotel && <small className="cc-home-roster-hotel">Hotel · {card.hotel}</small>}
+            {!card.nonOperational && <small>{event.canonical?.showPresentation !== false && clock(event.presentation) !== '—' ? `Apresentação ${clock(event.presentation)}` : 'Detalhes publicados no AIMS'}</small>}
+          </span>
+          <span className="cc-home-roster-clock"><span><small>Início{card.startDate && ` · ${card.startDate}`}</small><strong>{card.start}</strong></span><span><small>Fim{card.endDate && ` · ${card.endDate}`}</small><strong>{card.end}</strong></span></span><ChevronRight aria-hidden="true"/>
+        </button>;
+      })}
       {!dayEvents.length && <div className="cc-home-roster-empty"><CalendarDays aria-hidden="true"/><p>{ordered.length ? 'Sem atividades informadas para esta data.' : 'Importe uma escala para consultar sua programação.'}</p>{nextDay ? <button type="button" onClick={() => select(nextDay)}>Próxima data com programação</button> : !ordered.length ? <button type="button" onClick={() => onNavigate('import')}>Importar escala</button> : null}</div>}
     </div>
     {unknown > 0 && <p role="status">{unknown} {unknown === 1 ? 'atividade com data não confirmada' : 'atividades com data não confirmada'}. Consulte a escala completa.</p>}
