@@ -75,10 +75,23 @@ export function createTelegramMenu(deps, now = Date.now) {
     const navigation = buttons.some(button => button.callback_data?.startsWith('cc_nav:entry:'));
     const weather = buttons.some(button => button.callback_data?.startsWith('cc_weather:'));
     if (!navigation && !weather) return extra;
-    const profile = await identity({ chat: { id: chatId, type: 'private' }, from: { id: chatId } });
+    let profile = null;
+    try { profile = await identity({ chat: { id: chatId, type: 'private' }, from: { id: chatId } }); } catch {
+      // Public weather controls do not require an account lookup to succeed.
+      // Owner-guarded output below still fails closed.
+    }
     if (expectedFactsOwner && owner(profile) !== expectedFactsOwner) return null;
     if (promptContext && !currentPrompt(String(chatId), promptContext)) return null;
-    if (!profile) return navigation ? { ...extra, reply_markup: { remove_keyboard: true } } : extra;
+    if (!profile) {
+      if (!navigation) return extra;
+      if (!weather) return { ...extra, reply_markup: { remove_keyboard: true } };
+      // Current weather keyboards mix public report controls with a private
+      // Concierge return. Drop only that unavailable return, not the report UI.
+      const inline_keyboard = extra.reply_markup.inline_keyboard
+        .map(row => row.filter(button => !button.callback_data?.startsWith('cc_nav:')))
+        .filter(row => row.length);
+      return { ...extra, reply_markup: { ...extra.reply_markup, inline_keyboard } };
+    }
     prune(migrated);
     const chat = String(chatId);
     if (migrated.get(chat)?.owner !== owner(profile)) {
