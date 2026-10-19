@@ -66,9 +66,22 @@ public final class WellbeingStore {
         requestUpdate(CrewLifeComplicationService.class);
     }
     private org.json.JSONObject fence() throws Exception {
-        try { return new org.json.JSONObject(preferences.getString(FENCE, "{}")); }
-        catch (org.json.JSONException corruptJournal) {
-            // Receiver journal loss/corruption never reconstructs authorization from ciphertext.
+        try {
+            org.json.JSONObject state=new org.json.JSONObject(preferences.getString(FENCE, "{}"));
+            boolean hasCipher=preferences.contains(V2_PAYLOAD)||preferences.contains(V2_IV)
+                    ||preferences.contains(CREWLIFE_PAYLOAD)||preferences.contains(CREWLIFE_IV);
+            boolean hasActive=state.has("streamId")||state.has("node")||state.has("revision");
+            if(hasActive) {
+                CrewLifeSnapshot.nonce(state.opt("streamId"));
+                CrewLifeSnapshot.positive(state.opt("revision"));
+                Object node=state.opt("node");
+                if(!(node instanceof String)||((String)node).isBlank()||((String)node).length()>256)
+                    throw new IllegalArgumentException("Invalid receiver journal.");
+            }
+            if(hasCipher&&!hasActive) throw new IllegalArgumentException("Ciphertext without receiver journal.");
+            return state;
+        } catch (org.json.JSONException | IllegalArgumentException corruptJournal) {
+            // Missing/partial/corrupt journal cannot infer a generation from ciphertext.
             SharedPreferences.Editor edit=preferences.edit().remove(FENCE).remove(V2_IV).remove(V2_PAYLOAD)
                     .remove(CREWLIFE_IV).remove(CREWLIFE_PAYLOAD);
             if(!commitHealth(edit)) throw new IllegalStateException("CrewLife journal recovery not persisted.");

@@ -221,6 +221,20 @@ public class CrewLifeV2LifecycleTest {
         JSONObject journal=new JSONObject(context.getSharedPreferences("crewcheck_watch_wellbeing",0).getString("crewlife_fence_v2","{}"));
         assertEquals(b,journal.getString("streamId"));
     }
+    @Test public void losingOnlyJournalClearsOrphanCiphertextBeforeChallengeResponse() throws Exception {
+        WellbeingStore store=new WellbeingStore(context);handshake(store,"reset",STREAM,1,STREAM);
+        long now=ShadowSystemClock.currentTimeMillis();store.applyCrewLifeData(payload(2,78,now+1000,now+4000),NODE,now);assertHealthCached();
+        android.content.SharedPreferences p=context.getSharedPreferences("crewcheck_watch_wellbeing",0);
+        assertTrue(p.getBoolean("crewlife_migrated_v2",false));assertTrue(p.contains("crewlife_payload_v2"));
+        p.edit().remove("crewlife_fence_v2").commit();
+        ServiceController<CrewCheckDataLayerService> service=Robolectric.buildService(CrewCheckDataLayerService.class).create();
+        try {
+            deliver(service.get(),WatchContract.CREWLIFE_CONTROL_PATH,request("reset",B,1,B));
+            assertNotNull(deliveredAck);assertEquals("challenge",new JSONObject(deliveredAck).getString("op"));
+            assertFalse(p.contains("crewlife_payload_v2"));assertFalse(p.contains("crewlife_iv_v2"));
+            assertTrue(p.getBoolean("crewlife_migrated_v2",false));assertNull(new WellbeingStore(context).loadCrewLife());
+        }finally{service.destroy();}
+    }
     @Test public void corruptedJournalClearsCiphertextAndRequiresFreshChallenge() throws Exception {
         WellbeingStore store=new WellbeingStore(context);String old=handshake(store,"reset",STREAM,1,STREAM);
         long now=ShadowSystemClock.currentTimeMillis();store.applyCrewLifeData(payload(2,78,now+1000,now+4000),NODE,now);assertHealthCached();
