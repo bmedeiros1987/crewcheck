@@ -337,6 +337,15 @@ public class CrewLifeV2LifecycleTest {
         String raw=new JSONObject(payload(2,0,now+1000,now+4000)).put("streamId",B).toString();
         new WellbeingStore(context).applyCrewLifeData(raw,NODE,now);assertHealthCached();
     }
+    @Test public void poisonedFingerprintCannotLeaveOldCiphertextVisible() throws Exception {
+        WellbeingStore store=new WellbeingStore(context);handshake(store,"reset",STREAM,1,STREAM);
+        long now=ShadowSystemClock.currentTimeMillis();store.applyCrewLifeData(payload(2,78,now+1000,now+4000),NODE,now);assertHealthCached();
+        android.content.SharedPreferences p=context.getSharedPreferences("crewcheck_watch_wellbeing",0);
+        JSONObject journal=new JSONObject(p.getString("crewlife_fence_v2","{}")).put("fingerprint","");
+        p.edit().putString("crewlife_fence_v2",journal.toString()).commit();
+        assertNull(new WellbeingStore(context).loadCrewLife());assertFalse(p.contains("crewlife_payload_v2"));
+        assertFalse(new JSONObject(p.getString("crewlife_fence_v2","{}")).has("streamId"));
+    }
     @Test public void losingOnlyJournalClearsOrphanCiphertextBeforeChallengeResponse() throws Exception {
         WellbeingStore store=new WellbeingStore(context);handshake(store,"reset",STREAM,1,STREAM);
         long now=ShadowSystemClock.currentTimeMillis();store.applyCrewLifeData(payload(2,78,now+1000,now+4000),NODE,now);assertHealthCached();

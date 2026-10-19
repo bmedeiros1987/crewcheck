@@ -175,6 +175,11 @@ final class CrewLifeFence {
             }
         } catch(Exception invalid) { throw new IllegalArgumentException("Corrupt CrewLife receiver journal.",invalid); }
     }
+    static boolean canReadCiphertext(JSONObject state) {
+        validateJournal(state);
+        return state.has("streamId") && state.optString("op").equals("data")
+                && state.optString("lastKind").equals("snapshot") && !state.optString("fingerprint").isEmpty();
+    }
     private static String journalText(JSONObject json,String key) {
         Object value=json.opt(key);if(!(value instanceof String))throw new IllegalArgumentException();return (String)value;
     }

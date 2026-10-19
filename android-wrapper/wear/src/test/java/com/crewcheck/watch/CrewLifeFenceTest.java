@@ -205,6 +205,13 @@ public final class CrewLifeFenceTest {
         JSONObject unknown=new JSONObject(revoked.toString()).put("extra",true);
         assertThrows(IllegalArgumentException.class,()->CrewLifeFence.validateJournal(unknown));
     }
+    @Test public void onlyDataSnapshotWithUnpoisonedFingerprintCanReadCachedValues() throws Exception {
+        CrewLifeFence reset=reset();assertFalse(CrewLifeFence.canReadCiphertext(reset.state));
+        CrewLifeFence data=CrewLifeFence.data(reset.state,data(2,78),NODE,NOW);assertTrue(CrewLifeFence.canReadCiphertext(data.state));
+        JSONObject poison=new JSONObject(data.state.toString()).put("fingerprint","");
+        CrewLifeFence.validateJournal(poison);assertFalse(CrewLifeFence.canReadCiphertext(poison));
+        CrewLifeFence revoked=apply(data.state,"revoke",STREAM,3,B);assertFalse(CrewLifeFence.canReadCiphertext(revoked.state));
+    }
     @Test public void pendingReplacementNeverActivatesStreamOrClearsExistingValues() throws Exception {
         CrewLifeFence r=reset();CrewLifeFence data=CrewLifeFence.data(r.state,data(2,78),NODE,NOW);
         CrewLifeFence hello=CrewLifeFence.control(data.state,request("reset",B,1,B),NODE);

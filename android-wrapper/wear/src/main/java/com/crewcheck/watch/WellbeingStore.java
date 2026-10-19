@@ -68,11 +68,11 @@ public final class WellbeingStore {
     private org.json.JSONObject fence() throws Exception {
         try {
             org.json.JSONObject state=new org.json.JSONObject(preferences.getString(FENCE, "{}"));
-            boolean hasCipher=preferences.contains(V2_PAYLOAD)||preferences.contains(V2_IV)
-                    ||preferences.contains(CREWLIFE_PAYLOAD)||preferences.contains(CREWLIFE_IV);
+            boolean hasPayload=preferences.contains(V2_PAYLOAD),hasIv=preferences.contains(V2_IV);
+            boolean hasLegacy=preferences.contains(CREWLIFE_PAYLOAD)||preferences.contains(CREWLIFE_IV);
             CrewLifeFence.validateJournal(state);
-            boolean hasActive=state.has("streamId");
-            if(hasCipher&&!hasActive) throw new IllegalArgumentException("Ciphertext without receiver journal.");
+            if(hasLegacy || hasPayload!=hasIv || ((hasPayload||hasIv)&&!CrewLifeFence.canReadCiphertext(state)))
+                throw new IllegalArgumentException("Ciphertext and receiver journal disagree.");
             return state;
         } catch (org.json.JSONException | IllegalArgumentException corruptJournal) {
             // Missing/partial/corrupt journal cannot infer a generation from ciphertext.
