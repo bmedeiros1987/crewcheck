@@ -71,7 +71,7 @@ public final class CrewLifeFenceTest {
     }
     @Test public void malformedControlHasNoAckAndPreservesReplayFence() throws Exception {
         CrewLifeFence r=reset();CrewLifeFence bad=CrewLifeFence.control(r.state,"{}",NODE);
-        assertNull(bad.ack);assertTrue(bad.clearValues);assertTrue(r.state.similar(bad.state));
+        assertNull(bad.ack);assertTrue(bad.clearValues);assertTrue(sameJson(r.state,bad.state));
     }
     @Test public void journalLossCounterexampleNowRejectsDelayedResetAndOldData() throws Exception {
         CrewLifeFence oldChallenge=CrewLifeFence.control(new JSONObject(),request("reset",STREAM,1,STREAM),NODE);
@@ -112,7 +112,7 @@ public final class CrewLifeFenceTest {
     @Test public void nonceRandomFailureCannotEmitChallengeOrMutateFence() throws Exception {
         JSONObject state=reset().state;
         CrewLifeFence failure=CrewLifeFence.control(state,request("reset",B,1,B),NODE,()->{throw new IllegalStateException("synthetic RNG failure");});
-        assertNull(failure.ack);assertTrue(state.similar(failure.state));assertTrue(failure.clearValues);
+        assertNull(failure.ack);assertTrue(sameJson(state,failure.state));assertTrue(failure.clearValues);
     }
     @Test public void challengeRetryIsIdempotentWhileNewRequestUsesFreshNonce() throws Exception {
         CrewLifeFence c=CrewLifeFence.control(new JSONObject(),request("reset",STREAM,1,STREAM),NODE);
@@ -217,4 +217,23 @@ public final class CrewLifeFenceTest {
         CrewLifeFence hello=CrewLifeFence.control(data.state,request("reset",B,1,B),NODE);
         assertFalse(hello.clearValues);assertNull(hello.snapshot);assertEquals(STREAM,hello.state.getString("streamId"));assertEquals(2,hello.state.getLong("revision"));
     }
+    private static boolean sameJson(Object left,Object right) throws Exception {
+        if(left instanceof JSONObject && right instanceof JSONObject) {
+            JSONObject a=(JSONObject)left,b=(JSONObject)right;
+            if(a.length()!=b.length())return false;
+            java.util.Iterator<String> keys=a.keys();
+            while(keys.hasNext()){String key=keys.next();if(!b.has(key)||!sameJson(a.get(key),b.get(key)))return false;}
+            return true;
+        }
+        if(left instanceof org.json.JSONArray && right instanceof org.json.JSONArray) {
+            org.json.JSONArray a=(org.json.JSONArray)left,b=(org.json.JSONArray)right;
+            if(a.length()!=b.length())return false;
+            for(int i=0;i<a.length();i++)if(!sameJson(a.get(i),b.get(i)))return false;
+            return true;
+        }
+        if(left instanceof Number && right instanceof Number)
+            return new java.math.BigDecimal(left.toString()).compareTo(new java.math.BigDecimal(right.toString()))==0;
+        return java.util.Objects.equals(left,right);
+    }
+
 }
