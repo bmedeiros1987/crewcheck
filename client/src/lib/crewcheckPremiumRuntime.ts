@@ -88,8 +88,8 @@ function scheduleNotification(title: string, body: string, epochMillis: number):
   if (!Number.isFinite(timestamp) || timestamp <= Date.now()) return false;
   const native = bridge();
   try {
-    if (native?.scheduleNotification) return Boolean(native.scheduleNotification(title, body, String(Math.round(epochMillis))));
-  } catch {}
+    if (native?.scheduleNotification) return native.scheduleNotification(title, body, String(Math.round(epochMillis))) === true;
+  } catch { return false; }
   const delay = timestamp - Date.now();
   if (!Number.isFinite(delay) || delay > 2147483647) return false;
   // This is only an in-page timer, not a background alarm or remote push.
