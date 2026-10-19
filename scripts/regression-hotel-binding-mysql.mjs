@@ -124,7 +124,7 @@ try {
   assert.equal(Number(server[0].deadlock_detection), 1);
   await pool.query('CREATE TABLE crewcheck_platform_profiles(email VARCHAR(254) NOT NULL PRIMARY KEY) ENGINE=InnoDB');
   await pool.query(`CREATE TABLE crewcheck_platform_rosters(id VARCHAR(64) PRIMARY KEY,owner_email VARCHAR(254) NOT NULL,roster_key VARCHAR(20) NOT NULL,
-    roster JSON,compliance JSON,gym JSON,source_name VARCHAR(180),fingerprint VARCHAR(100),active BOOLEAN,updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+    roster JSON,compliance JSON,gym JSON,source_name VARCHAR(180),fingerprint VARCHAR(100),active BOOLEAN,created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
     UNIQUE KEY owner_period(owner_email,roster_key)) ENGINE=InnoDB`);
   const legacy = fs.readFileSync('migrations/20260715_003_aiven_mysql_full_platform.sql', 'utf8');
   const match = legacy.match(/CREATE TABLE IF NOT EXISTS crewcheck_platform_stays\s*\([\s\S]*?ENGINE=InnoDB[^;]*;/i);
