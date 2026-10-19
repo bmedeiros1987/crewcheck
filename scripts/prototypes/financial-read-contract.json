@@ -1,0 +1,45 @@
+{
+  "status": "Disconnected prototype only; no app import, storage activation, migration, transmission, application, rollback or projection.",
+  "base": "90d5e181fbe91ecb581fd88cc2579bcb1c68aee8",
+  "referencePrototype": "b53887485b1e78d87345df1bd837d1571eb6d89f",
+  "browserAuthority": {
+    "session": "Injected real captureAuthSession opaque fence; token never serialized. Auth generation events/storage listener exercised.",
+    "sessionEpoch": "Monotonic local lifecycle epoch; injected invalidation; process-local, not server authority.",
+    "generation": "Synthetic host-supplied owner reset generation; no production initialization/storage.",
+    "gap": "Real financial writers/resets not wired. Direct same-tab edits without event remain unproved."
+  },
+  "telegramAuthority": {
+    "current": "unavailable; no transport, IDB access or server financial store",
+    "required": "Existing verified server auth and Telegram-chat/account binding must authorize each read. Server-issued session epoch, dataset generation/revision, expiry and revocation must come from server context; never trust browser epoch/marker as authorization."
+  },
+  "contract": [
+    "Original currency/category without conversion or recalculation",
+    "Competence separate from work period and expected payment/date/IANA timezone; never paid status",
+    "Coverage complete/partial/unknown and categories preserved before filtering",
+    "Monthly legacy and global manual layers separate; global revision null; zero/null/absence distinct",
+    "Present valid v1 yields legacy_review_required with all fields/rubrics/closed/revision; invalid data conflicts; no empty substitution or canonical creation",
+    "Cloned whitelist snapshot, loading removes stale data, old asynchronous load discarded; captured scope checked before and after"
+  ],
+  "CrewCierge": {
+    "ownedFiles": [
+      "telegram-menu.mjs",
+      "scripts/telegram-concierge-menu/apply.mjs",
+      "future financial-read-adapter.mjs"
+    ],
+    "rule": "Consume only authorized snapshot, never parallel financial calculations. Files untouched."
+  },
+  "beforeBrowserServerSync": [
+    "Specific user approval of selected fields/destination/purpose/account/period/retention; read-only PR approval insufficient",
+    "Server auth/chat binding, revocation/expiry, owner scope, epoch/generation and anti-replay/revision review",
+    "Minimal approved endpoint/transport; no raw PDF, auth token, source text or extra payload; no background upload",
+    "Review server storage/deletion, hosting/data handling and any cost/credential implications separately",
+    "Independent privacy/domain review and exact-head CI before any later activation"
+  ],
+  "remaining": [
+    "Injected read source; real monthly reader/IDB not integrated",
+    "Financial same-value invalidation injected; real writers and all reset pages/generators unchanged/unproved",
+    "b538 transaction tests separate; no combined lifecycle/transaction proof",
+    "No v1 full-month adoption or precedence resolution",
+    "Next reviewed patch may adapt actual legacy readers with explicit absence/invalid handling; still disconnected"
+  ]
+}
