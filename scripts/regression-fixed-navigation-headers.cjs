@@ -140,6 +140,8 @@ async function visibleTextBounds(page, selector) {
       const page=await context.newPage();await page.goto(origin+'/app');await page.locator('.cz-app').waitFor();
       await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'settings'})));
       await page.locator('#cc-text-size').selectOption(String(size));await settle(page);
+      await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'cockpit'})));
+      await page.locator('.cc-home-layout-heading').waitFor();await settle(page);
       await page.evaluate(()=>{document.documentElement.style.setProperty('--cc-safe-area-top','24px');document.documentElement.style.setProperty('--cc-safe-area-bottom','20px');});
       await page.evaluate(()=>window.dispatchEvent(new Event('resize')));await settle(page);
       await emptyPulseQueue(page);await settle(page);
