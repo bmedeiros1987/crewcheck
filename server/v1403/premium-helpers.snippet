@@ -114,6 +114,23 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
   let revision = crypto.createHash('sha256').update(JSON.stringify(snapshot?.roster || null)).digest('hex');
   let evidence = null;
   let acceptedRadar = null;
+  const initialEmail = conciergeSafeKey(profile.email || '');
+  const initialHash = String(profile.accessKeyHash || '');
+  const checkNow = () => {
+    try {
+      if (conciergeSafeKey(profile.email || '') !== initialEmail || String(profile.accessKeyHash || '') !== initialHash) return false;
+      if (profile.channel === 'telegram') {
+        const binding = telegramProfileForChat({chat:{id:profile.chatId,type:'private'},from:{id:profile.chatId}});
+        if (!binding?.linked || conciergeSafeKey(binding.email) !== initialEmail || String(binding.accessKeyHash || '') !== initialHash) return false;
+      }
+      const latest = conciergeSnapshotForProfile(profile);
+      if (!latest?.roster || conciergeSafeKey(latest.email || latest.key || '') !== initialEmail
+        || (latest.key && conciergeSafeKey(latest.key) !== initialEmail) || !conciergeAccessMatches(profile, latest)
+        || crypto.createHash('sha256').update(JSON.stringify(latest.roster)).digest('hex') !== revision) return false;
+      if (evidence && (!gateQueryDay(evidence).allowed || !findPublishedGateLeg(latest.roster,evidence,buildCanonicalRosterEvents(latest.roster)))) return false;
+      return !acceptedRadar || radarResultDecision(acceptedRadar,evidence,Date.now()).allowed;
+    } catch { return false; }
+  };
   const validate = async () => {
     try {
       if (!await conciergeDepartureOwnerCurrent(profile, snapshot)) return false;
@@ -122,10 +139,10 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
       if (crypto.createHash('sha256').update(JSON.stringify(current.roster)).digest('hex') !== revision) return false;
       if (evidence && (!gateQueryDay(evidence).allowed || !findPublishedGateLeg(current.roster, evidence, buildCanonicalRosterEvents(current.roster)))) return false;
       if (acceptedRadar && !radarResultDecision(acceptedRadar, evidence, Date.now()).allowed) return false;
-      return true;
+      return checkNow();
     } catch { return false; }
   };
-  profile.conciergeResponseAuthority = Object.freeze({ kind: 'departure', validate });
+  profile.conciergeResponseAuthority = Object.freeze({ kind: 'departure', validate, checkNow });
   const owner = conciergeSafeKey(profile.email || '');
   const owns = candidate => Boolean(owner && conciergeSafeKey(profile.email || '') === owner && candidate?.roster
     && conciergeSafeKey(candidate.email || candidate.key || '') === owner && (!candidate.key || conciergeSafeKey(candidate.key) === owner) && conciergeAccessMatches(profile, candidate));

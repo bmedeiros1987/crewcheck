@@ -14,7 +14,12 @@ const source=fs.readFileSync('server.mjs','utf8');
 const extract=name=>{const m=source.match(new RegExp(`(?:async )?function ${name}\\([\\s\\S]*?\\n}`));assert(m,name);return m[0];};
 const now='2099-10-04T09:00:00Z';
 function realDeparture(roster,mode='missing',at=now) {
- const h=harness({operationalProbe:true});let routeCalls=0,radarCalls=0,epoch=Date.parse(at);
+ const h=harness({operationalProbe:true});
+ h.profile.accessKeyHash='synthetic-access-hash-AAA';
+ const rosterRead=h.context.telegramRostersRead;
+ h.context.telegramRostersRead=()=>{const result=rosterRead();for(const snapshot of Object.values(result.snapshots))snapshot.accessKeyHash='synthetic-access-hash-AAA';return result;};
+ h.context.telegramLinksRead=()=>({linked:h.profile.linked?{synthetic:{...h.profile}}:{}});h.context.telegramLinksWrite=()=>true;
+ let routeCalls=0,radarCalls=0,epoch=Date.parse(at);
  class Clock extends Date {constructor(...args){super(...(args.length?args:[epoch]));}static now(){return epoch;}}
  Object.assign(h.context,{Date:Clock,crypto,Buffer,...programs,buildCanonicalRosterEvents:canonical.buildCanonicalRosterEvents,
    findPublishedGateLeg:gates.findPublishedGateLeg,originFlightDate:gates.originFlightDate,
@@ -25,7 +30,7 @@ function realDeparture(roster,mode='missing',at=now) {
    runRadarRace:async()=>{radarCalls++;return gates.gateQuerySuppressed({reason:'synthetic-offline'});},
  });
  for(const name of ['conciergeInactiveCodes','conciergeRemoteCodes']){const m=source.match(new RegExp(`const ${name} = new Set\\([\\s\\S]*?\\);`));assert(m,name);vm.runInContext(m[0],h.context);}
- const force=['buildFlightContext','normalizeFlightRaw','conciergeProgramRecords','conciergePresentationTime','conciergeProgramTitle','conciergeDateLabel','conciergePremiumScheduleReply','conciergePremiumDepartureReply','conciergeDepartureReply','conciergeAccessMatches'];
+ const force=['telegramProfileForChat','telegramProfileForChatAsync','buildFlightContext','normalizeFlightRaw','conciergeProgramRecords','conciergePresentationTime','conciergeProgramTitle','conciergeDateLabel','conciergePremiumScheduleReply','conciergePremiumDepartureReply','conciergeDepartureReply','conciergeAccessMatches'];
  const external=new Set([...Object.keys(programs),'conciergeTravelEstimate','conciergeLocationContextV14335','conciergeLocationLineV14335']);
  const names=[...force],seen=new Set();
  for(let i=0;i<names.length;i++){
@@ -187,4 +192,17 @@ for(const path of ['typed','button'])for(const change of ['apz','base','earlier'
  };
  if(path==='typed')await h.send('telegram','/saida');else{await h.openInline();await h.tap('Transporte');await h.tap('Saída');}
  assert.equal(queries,1,'must reach exact selected Radar occurrence before mutation');assert.equal(radarSaves,0,'must refuse changed baseline before applying/saving enrichment');assert.doesNotMatch(h.trace.output.join(' '),/LA1234|FORBIDDEN_OLD_GATE|07:00|06:05|04\/10\/2099/);
+});
+
+for(const path of ['typed','button'])for(const boundary of ['late-authorization','after-markup'])for(const change of ['roster','binding'])test(`actual last delivery cache check ${boundary} ${change} ${path}`,async()=>{
+ const roster={year:2099,month:10,base:'BSB',days:[{date:'04/10/2099',dayNumber:4,month:10,year:2099,type:'VOO',base:'BSB',dutyReport:'07:00',dutyDebrief:'09:30',dutyReportSource:'published',dutyDebriefSource:'published',legs:[{flightNumber:'LA1234',origin:'BSB',destination:'GRU',departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00'}]}]};
+ const h=realDeparture(roster,'short');let finalSave=0,arm=false,mutated=0;
+ const mutate=()=>{if(mutated)return;mutated++;if(change==='binding')h.profile.email='route-b@example.invalid';else{const replacement=JSON.parse(JSON.stringify(roster));replacement.days[0].dutyReport='07:30';replacement.days[0].legs[0].presentationTime='07:30';h.setRoster(replacement);}};
+ const save=h.context.conciergeSaveSnapshotAsync;h.context.conciergeSaveSnapshotAsync=async(...args)=>{const result=await save(...args);if(args[2]?.preferences?.conciergeConversation){finalSave++;arm=true;}return result;};
+ if(boundary==='late-authorization'){
+  const load=h.context.conciergeLoadSnapshot;let afterRead=false;h.context.conciergeLoadSnapshot=async(...args)=>{const result=await load(...args);if(arm)afterRead=true;return result;};
+  const profile=h.context.telegramProfileForChatAsync;h.context.telegramProfileForChatAsync=async(...args)=>{const result=await profile(...args);if(afterRead)mutate();return result;};
+ }else{const markup=h.context.crewcheckMenu.markup;h.context.crewcheckMenu.markup=async(...args)=>{const result=await markup(...args);if(arm&&result?.reply_markup?.inline_keyboard)mutate();return result;};}
+ if(path==='typed')await h.send('telegram','/saida');else{await h.openInline();await h.tap('Transporte');await h.tap('Saída');}
+ assert.equal(h.routeCalls(),1,'source must produce a real route before final mutation');assert.equal(finalSave,1);assert.equal(mutated,1,'must cross the specified final asynchronous boundary');assert.doesNotMatch(h.trace.output.join(' '),/LA1234|07:00|06:05|04\/10\/2099/);
 });
