@@ -4,7 +4,10 @@ export function requestBlobDownload(blob: Blob, fileName: string): string {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = fileName.replace(/[\\/\u0000-\u001f\u007f]/g, '_').slice(0, 180) || 'CrewCheck-documento';
+  const safeName = fileName.replace(/[\\/\u0000-\u001f\u007f]/g, '_') || 'CrewCheck-documento';
+  const dot = safeName.lastIndexOf('.');
+  const extension = dot > 0 && safeName.length - dot < 180 ? safeName.slice(dot) : '';
+  anchor.download = safeName.length > 180 ? safeName.slice(0, 180 - extension.length) + extension : safeName;
   anchor.rel = 'noopener';
   anchor.hidden = true;
   try {

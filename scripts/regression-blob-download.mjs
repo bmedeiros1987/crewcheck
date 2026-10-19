@@ -19,6 +19,10 @@ function fixture({ clickFails = false } = {}) {
 }
 const f = fixture(); assert.equal(f.request({ size: 12 }, '../SYNTHETIC/report.pdf'), 'blob:synthetic');
 assert.equal(f.anchor.download, '.._SYNTHETIC_report.pdf');
+const long = fixture(); long.request({ size: 12 }, 'A'.repeat(190)+'.pdf');
+assert.equal(long.anchor.download, 'A'.repeat(176)+'.pdf', 'truncate the basename, preserving the supplied extension');
+const noExtension = fixture(); noExtension.request({ size: 12 }, 'A'.repeat(194));
+assert.equal(noExtension.anchor.download, 'A'.repeat(180), 'do not invent a MIME-derived extension');
 assert.deepEqual(f.events, ['created', 'attached', 'clicked', 'removed']);
 assert.equal(f.timers.length, 1); assert(f.timers[0].ms >= 60_000);
 f.timers[0].fn(); assert.equal(f.events.at(-1), 'revoked');
