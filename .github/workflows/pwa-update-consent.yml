@@ -21,8 +21,6 @@ jobs:
   synthetic:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      PLAY_UPDATE_EVIDENCE_DIR: ${{ runner.temp }}/pwa-play-update-evidence
     steps:
       - uses: actions/checkout@v6
         with:
@@ -38,6 +36,7 @@ jobs:
       - name: Raw explicit consent, failure and real worker contracts
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/update-ui/package.json
+          PLAY_UPDATE_EVIDENCE_DIR: ${{ runner.temp }}/pwa-play-update-evidence
         run: |
           node scripts/regression-pwa-update-failures.mjs
           node scripts/regression-pwa-update-consent.mjs
@@ -54,6 +53,7 @@ jobs:
       - name: Prepared contracts
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/update-ui/package.json
+          PLAY_UPDATE_EVIDENCE_DIR: ${{ runner.temp }}/pwa-play-update-evidence
         run: |
           node scripts/regression-pwa-update-failures.mjs
           node scripts/regression-pwa-update-consent.mjs
