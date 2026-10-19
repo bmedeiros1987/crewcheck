@@ -10,7 +10,7 @@ const serverSource = fs.readFileSync('server.mjs', 'utf8');
 const serverAst = ts.createSourceFile('server.mjs', serverSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 const responder = serverAst.statements.filter(n => ts.isFunctionDeclaration(n) && n.name?.text === 'serveStatic');
 assert.equal(responder.length, 1);
-const staticScope = vm.createContext({ fs, path, Buffer, distDir: dist, sendJson: (res, code, body) => { res.writeHead(code); res.end(JSON.stringify(body)); } });
+const staticScope = vm.createContext({guardStaticHtml: require('../server/static-html-guard.mjs').guardStaticHtml, fs, path, Buffer, distDir: dist, sendJson: (res, code, body) => { res.writeHead(code); res.end(JSON.stringify(body)); } });
 vm.runInContext(responder[0].getText(serverAst) + '\nglobalThis.respond = serveStatic;', staticScope);
 const server = http.createServer((req, res) => staticScope.respond(req, res, new URL(req.url, 'http://localhost')));
 

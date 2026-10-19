@@ -4,7 +4,7 @@ const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||__filename)(
 const out=path.resolve('artifacts/aims-document-app');fs.mkdirSync(out,{recursive:true});
 const source=fs.readFileSync('server.mjs','utf8'),ast=ts.createSourceFile('server.mjs',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
 const responder=ast.statements.filter(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='serveStatic');assert.equal(responder.length,1);
-const scope=vm.createContext({fs,path,Buffer,distDir:path.resolve('dist'),sendJson:(res,status,body)=>{res.writeHead(status);res.end(JSON.stringify(body));}});
+const scope=vm.createContext({guardStaticHtml: require('../server/static-html-guard.mjs').guardStaticHtml,fs,path,Buffer,distDir:path.resolve('dist'),sendJson:(res,status,body)=>{res.writeHead(status);res.end(JSON.stringify(body));}});
 vm.runInContext(responder[0].getText(ast)+'\nglobalThis.respond=serveStatic;',scope);
 const seedSource=fs.readFileSync('scripts/regression-financial-ui-browser.cjs','utf8'),seedAst=ts.createSourceFile('seed.cjs',seedSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
 const seed=seedAst.statements.filter(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='seed');assert.equal(seed.length,1);const seedScope=vm.createContext({});vm.runInContext(seed[0].getText(seedAst)+'\nglobalThis.seed=seed;',seedScope);

@@ -2,7 +2,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {createRequire}=require('node:module'),{chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||__filename)('playwright');
 const out=path.resolve(process.env.FINANCIAL_UI_EVIDENCE_DIR||'artifacts/financial-known-values');fs.mkdirSync(out,{recursive:true});
 const source=fs.readFileSync('server.mjs','utf8'),ast=ts.createSourceFile('server.mjs',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS),serve=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='serveStatic');
-const scope=vm.createContext({fs,path,Buffer,distDir:path.resolve('dist'),sendJson:(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}});vm.runInContext(serve.getText(ast)+'\nglobalThis.respond=serveStatic;',scope);
+const scope=vm.createContext({guardStaticHtml: require('../server/static-html-guard.mjs').guardStaticHtml,fs,path,Buffer,distDir:path.resolve('dist'),sendJson:(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}});vm.runInContext(serve.getText(ast)+'\nglobalThis.respond=serveStatic;',scope);
 const server=http.createServer((req,res)=>scope.respond(req,res,new URL(req.url,'http://localhost')));
 function seed({unknown,unknownAddition,futureForeign}){
  const NativeDate=Date,instant=Date.parse('2026-10-18T15:00:00Z');globalThis.Date=class extends NativeDate{constructor(...args){super(...(args.length?args:[instant]));}static now(){return instant;}};
