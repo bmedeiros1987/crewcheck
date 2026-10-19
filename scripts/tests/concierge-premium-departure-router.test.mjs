@@ -14,11 +14,11 @@ const source=fs.readFileSync('server.mjs','utf8');
 const extract=name=>{const m=source.match(new RegExp(`(?:async )?function ${name}\\([\\s\\S]*?\\n}`));assert(m,name);return m[0];};
 const now='2099-10-04T09:00:00Z';
 function realDeparture(roster,mode='missing',at=now) {
- const h=harness({operationalProbe:true});let routeCalls=0,radarCalls=0;
- class Clock extends Date {constructor(...args){super(...(args.length?args:[at]));}static now(){return Date.parse(at);}}
+ const h=harness({operationalProbe:true});let routeCalls=0,radarCalls=0,epoch=Date.parse(at);
+ class Clock extends Date {constructor(...args){super(...(args.length?args:[epoch]));}static now(){return epoch;}}
  Object.assign(h.context,{Date:Clock,crypto,Buffer,...programs,buildCanonicalRosterEvents:canonical.buildCanonicalRosterEvents,
    findPublishedGateLeg:gates.findPublishedGateLeg,originFlightDate:gates.originFlightDate,
-   gateQueryDay:i=>gates.gateQueryDay(i,Date.parse(at)),gateQuerySuppressed:gates.gateQuerySuppressed,
+   gateQueryDay:i=>gates.gateQueryDay(i,Clock.now()),radarResultDecision:(...args)=>gates.radarResultDecision(...args),gateQuerySuppressed:gates.gateQuerySuppressed,
    conciergeLocationContextV14335:()=>({fresh:mode!=='missing',location:{latitude:1,longitude:2},message:'Localização sintética pendente.'}),
    conciergeLocationLineV14335:()=> 'Referência sintética compartilhada.',
    conciergeTravelEstimate:async()=>{routeCalls++;if(mode==='throw')throw Error('SYNTHETIC ROUTE FAILURE');if(mode==='null')return null;return {minutes:30,distanceKm:mode==='long'?300:10,durationText:'30 min',distanceText:mode==='long'?'300 km':'10 km'};},
@@ -56,7 +56,7 @@ function realDeparture(roster,mode='missing',at=now) {
  const runtime=source.match(/const crewcheckMenu = createTelegramMenu\([\s\S]*?\n}\);/);assert(runtime);
  vm.runInContext(runtime[0].replace('const crewcheckMenu =','globalThis.crewcheckMenu ='),h.context);
  h.setRoster(roster,mode==='missing'?{location:null}:{location:{latitude:1,longitude:2,updatedAt:at}});
- return {...h,routeCalls:()=>routeCalls,radarCalls:()=>radarCalls};
+ return {...h,advanceClock:ms=>{epoch+=ms;},routeCalls:()=>routeCalls,radarCalls:()=>radarCalls};
 }
 function data(kind,normalized=false){
  const leg={flightNumber:'QA-MERGED',origin:'AAA',destination:'BBB',departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00',workType:'OP'};
@@ -122,7 +122,8 @@ for(const path of ['typed','button'])for(const mode of ['missing','null','throw'
 });
 
 for(const path of ['typed','button','que horas tenho que sair','hora de sair','rota para o aeroporto','trânsito para o aeroporto','ir para o aeroporto'])for(const boundary of ['route','radar','final'])test(`actual copied identity relink at ${boundary} denies ${path} prior-owner facts`,async()=>{
- const roster=data('estimated');const h=realDeparture(roster,'short');let current={...h.profile};
+ const roster=data('estimated');const h=realDeparture(roster,'short');h.profile.accessKeyHash='synthetic-access-hash-AAA';let current={...h.profile};
+ const load=h.context.conciergeLoadSnapshot;h.context.conciergeLoadSnapshot=async(...args)=>{const snapshot=await load(...args);if(snapshot)snapshot.accessKeyHash='synthetic-access-hash-AAA';return snapshot;};
  h.context.telegramLinksRead=()=>({linked:{synthetic:{...current}}});
  h.context.telegramLinksWrite=()=>true;
  vm.runInContext(extract('telegramProfileForChat')+'\n'+extract('telegramProfileForChatAsync'),h.context);
@@ -138,6 +139,7 @@ for(const path of ['typed','button','que horas tenho que sair','hora de sair','r
   h.context.conciergeSaveSnapshotAsync=async(...args)=>{const r=await save(...args);if(args[2]?.preferences?.conciergeConversation)relink();return r;};
  }
  if(path==='button'){await h.openInline();await h.tap('Transporte');await h.tap('Saída');}else await h.send('telegram',path==='typed'?'/saida':path);
+ if(boundary==='final')assert.equal(h.routeCalls(),1,`must exercise premium route: ${path} ${h.trace.output.join(' ')}`);
  if(boundary==='final')assert.equal(current.email,'route-b@example.invalid','final fixture must cross actual conversation save');
  const outputs=h.trace.output.join(' ');assert.doesNotMatch(outputs,/04\/10\/2099|07:00|QA-MERGED|FORBIDDEN_GATE/);
  if(boundary==='route')assert.equal(h.radarCalls(),0);
@@ -160,4 +162,14 @@ for(const path of ['typed','button'])for(const kind of ['base-missing','origin-m
  if(path==='typed')await h.send('telegram','/saida');else{await h.openInline();await h.tap('Transporte');await h.tap('Saída');}
  const reply=h.trace.output.at(-1);assert.doesNotMatch(reply,/Saia de casa|Saída recomendada:/);assert.equal(h.routeCalls(),0);assert.equal(h.radarCalls(),0);
  const expected={'base-missing':/não confirmada/,'origin-missing':/não confirmada/,'outside-base':/fora da base.*posição física/,'cancelled':/cancelada/,'home-standby':/Sobreaviso em casa|cobertura/,'empty':/Não há escala/,'no-future':/cobertura.*não está confirmada/i};assert.match(reply,expected[kind]);
+});
+
+for(const path of ['typed','button'])for(const boundary of ['radar-save','conversation-save','freshness'])test(`actual delivery authority ${path} ${boundary} rejects changed occurrence or expired Radar`,async()=>{
+ const roster={year:2099,month:10,base:'BSB',days:[{date:'04/10/2099',dayNumber:4,month:10,year:2099,type:'VOO',base:'BSB',dutyReport:'07:00',dutyDebrief:'09:30',dutyReportSource:'published',dutyDebriefSource:'published',legs:[{flightNumber:'LA1234',origin:'BSB',destination:'GRU',departureTime:'08:00',arrivalTime:'09:00',presentationTime:'07:00'}]}]};
+ const h=realDeparture(roster,'short');let queried=0,changed=0;
+ h.context.runRadarRace=async ctx=>{queried++;return{ok:true,gate:'ACCEPTED_GATE_46',flight:'LA1234',origin:'BSB',destination:'GRU',scheduledDepartureUtc:ctx.gateQueryEvidence.scheduledDepartureUtc,sourceReceivedAt:new Date(Date.parse(now)-29*60000-59000).toISOString()};};
+ const save=h.context.conciergeSaveSnapshotAsync;
+ h.context.conciergeSaveSnapshotAsync=async(...args)=>{const result=await save(...args);if((boundary==='radar-save'&&args[2]?.lastRadar)||(boundary==='conversation-save'&&args[2]?.preferences?.conciergeConversation)){const replacement=JSON.parse(JSON.stringify(roster));replacement.days[0].legs[0].flightNumber='LA4321';h.setRoster(replacement);changed++;}if(boundary==='freshness'&&args[2]?.lastRadar){h.advanceClock(2000);changed++;}return result;};
+ if(path==='typed')await h.send('telegram','/saida');else{await h.openInline();await h.tap('Transporte');await h.tap('Saída');}
+ assert.equal(queried,1,'real selected occurrence reaches Radar');assert.equal(changed,1,'test crosses intended save boundary');assert.doesNotMatch(h.trace.output.join(' '),/LA1234|ACCEPTED_GATE_46|07:00|04\/10\/2099/);
 });
