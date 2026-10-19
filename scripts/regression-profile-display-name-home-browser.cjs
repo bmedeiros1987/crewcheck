@@ -46,9 +46,9 @@ const out=path.resolve(process.env.PROFILE_UI_EVIDENCE||'artifacts/home-confirme
   assert.equal(await name.innerText(),'Confirmed B','late response from A cannot replace B');assert.deepEqual(await auth(),switched);
   profiles.b.displayName='Updated B';await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:profile-name-confirmed',{detail:{owner:'synthetic-b'}})));await name.filter({hasText:'Updated B'}).waitFor();
   await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:path.join(out,'confirmed-desktop.png'),fullPage:true});
-  fail=true;await page.evaluate(()=>{window.dispatchEvent(new Event('crewcheck:auth-will-change'));localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-b',email:'b@example.invalid',role:'user'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await name.filter({hasText:'b'}).waitFor();assert.equal(await name.innerText(),'b','email prefix fallback when login name absent');
+  fail=true;await page.evaluate(()=>{window.dispatchEvent(new Event('crewcheck:auth-will-change'));localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-b',email:'b@example.invalid',role:'user'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await open();await name.filter({hasText:'b'}).waitFor();assert.equal(await name.innerText(),'b','email prefix fallback when login name absent');
   assert.equal(writes,0,'header never PATCHes profile');assert.deepEqual(errors,[]);
   fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({confirmed:true,reload:true,offlineFallback:true,emailPrefixFallback:true,accountSwitch:true,lateResponseRejected:true,confirmedEvent:true,immutableAuth:true,profileWrites:writes,profileGets},null,2));
   console.log('PASS actual compiled Home settings header: confirmed name, fallback, account switch, late response, reload, profile event; zero profile writes and unchanged auth identity.');
- }finally{await context.close();await browser.close();}
+ }catch(error){fs.writeFileSync(path.join(out,'failure.txt'),await page.locator('body').innerText());await page.screenshot({path:path.join(out,'failure.png'),fullPage:true});throw error;}finally{await context.close();await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
