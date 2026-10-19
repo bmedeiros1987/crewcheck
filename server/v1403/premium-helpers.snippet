@@ -95,19 +95,37 @@ async function conciergePremiumScheduleReply(snapshot, mode = 'next', profile = 
     ? buildProgramSummary({ profile, snapshot, record: next, label: 'A próxima programação', presentationTime: conciergePresentationTime(next) })
     : `${premiumGreeting(profile, snapshot)} Não encontrei uma programação futura confirmada na escala ativa.`;
 }
+async function conciergeDepartureOwnerCurrent(profile, snapshot) {
+  const owner = conciergeSafeKey(profile?.email || '');
+  if (!owner || !snapshot?.roster || conciergeSafeKey(snapshot.email || snapshot.key || '') !== owner
+    || (snapshot.key && conciergeSafeKey(snapshot.key) !== owner) || !conciergeAccessMatches(profile, snapshot)) return false;
+  if (profile.channel !== 'telegram') return true;
+  if (!profile.chatId || profile.chatType !== 'private' || profile.linked !== true) return false;
+  try {
+    const current = await telegramProfileForChatAsync({chat:{id:profile.chatId,type:'private'},from:{id:profile.chatId}});
+    return current?.linked === true && current.channel === 'telegram' && current.chatType === 'private'
+      && String(current.chatId) === String(profile.chatId) && conciergeSafeKey(current.email) === owner
+      && String(current.accessKeyHash || '') === String(profile.accessKeyHash || '') && conciergeAccessMatches(current, snapshot);
+  } catch { return false; }
+}
 async function conciergePremiumDepartureReply(snapshot, profile = {}) {
   const owner = conciergeSafeKey(profile.email || '');
   const owns = candidate => Boolean(owner && conciergeSafeKey(profile.email || '') === owner && candidate?.roster
     && conciergeSafeKey(candidate.email || candidate.key || '') === owner && (!candidate.key || conciergeSafeKey(candidate.key) === owner) && conciergeAccessMatches(profile, candidate));
-  if (!owns(snapshot)) return gateQuerySuppressed({reason:'account-unverified'}).message;
+  if (!owns(snapshot) || !await conciergeDepartureOwnerCurrent(profile, snapshot)) return gateQuerySuppressed({reason:'account-unverified'}).message;
   const roster = snapshot?.roster;
   const record = conciergeJourneyProgramRecords(roster, conciergeProgramRecords(roster)).find((item) => {
     if (item.end < new Date()) return false;
     if (item.legs?.length) return true;
-    return !conciergeRemoteCodes.has(item.code) && ['ASB', 'MT', 'CRM', 'CBF', 'EMER'].some((code) => item.code === code || item.code.startsWith(code));
+    return ['ASB', 'HSB', 'HSBE', 'MT', 'CRM', 'CBF', 'EMER'].some((code) => item.code === code || item.code.startsWith(code));
   });
-  if (!record) return buildDepartureSummary({ profile, snapshot });
-  const origin = record.legs?.[0]?.origin || record.day?.base || '';
+  // Share the existing departure reader's non-routing policy responses. These
+  // conditions return before its route boundary, preserving one canonical APZ.
+  const origin = record?.legs?.[0]?.origin || record?.day?.base || '';
+  const status = String(record?.day?.status || '').trim().toLowerCase();
+  if (!record || record.display?.cancelled === true || ['cancelled', 'canceled', 'cancelado'].includes(status)
+    || ['HSB', 'HSBE'].includes(record.code) || !roster.base || !origin
+    || String(origin).toUpperCase() !== String(roster.base).toUpperCase()) return conciergeDepartureReply(snapshot);
   // The projection's display proof is the same authority used by Next. Neither
   // a classifier clock nor a legacy row report can supply a missing APZ.
   const presentationDate = record.display?.clockBasis === 'published-brt'
@@ -115,13 +133,16 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
     ? new Date(record.display.publishedStart) : null;
   if (!presentationDate) return buildDepartureSummary({ profile, snapshot, record, origin });
   const presentation = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(presentationDate);
-  const location = snapshot?.preferences?.location;
+  if (presentationDate.getTime() <= Date.now()) return buildDepartureSummary({profile, snapshot, record, origin});
+  const locationState = conciergeLocationContextV14335(snapshot);
+  const location = locationState.fresh ? locationState.location : null;
   if (!location) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation });
   let route = null;
   try { route = await conciergeTravelEstimate(location, origin); } catch {
     // An unavailable route cannot replace the shared published APZ with a fallback clock.
   }
-  if (!owns(snapshot)) return gateQuerySuppressed({reason:'response-context-expired'}).message;
+  if (!owns(snapshot) || !await conciergeDepartureOwnerCurrent(profile, snapshot)) return gateQuerySuppressed({reason:'response-context-expired'}).message;
+  if (presentationDate.getTime() <= Date.now()) return buildDepartureSummary({profile, snapshot, record, origin});
   if (!route) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation, routeState: 'unavailable' });
   if (route.distanceKm > 250) return buildDepartureSummary({ profile, snapshot, record, origin, presentationTime: presentation, route, routeState: 'long' });
   const departureWindow = calculateDepartureWindow(presentationDate, route);
@@ -142,19 +163,21 @@ async function conciergePremiumDepartureReply(snapshot, profile = {}) {
     if (bindings.length !== 1) radar = gateQuerySuppressed({reason:owns(snapshot) ? 'occurrence-unverified' : 'account-unverified'});
     else {
       queryContext.gateQueryEvidence = bindings[0].identity;
+      if (!await conciergeDepartureOwnerCurrent(profile, snapshot)) return gateQuerySuppressed({reason:'response-context-expired'}).message;
       radar = await runRadarRace(queryContext, firstLeg.origin || '', firstLeg.destination || '');
       const currentSnapshot = await conciergeLoadSnapshot(profile);
-      if (!owns(currentSnapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed)
+      if (!owns(currentSnapshot) || !await conciergeDepartureOwnerCurrent(profile, currentSnapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed)
         return gateQuerySuppressed({reason:'response-context-expired'}).message;
       const currentBinding = findPublishedGateLeg(currentSnapshot.roster, queryContext.gateQueryEvidence, buildCanonicalRosterEvents(currentSnapshot.roster));
       if (!currentBinding) return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;
       if (radar?.ok && !radar.querySuppressed) {
         conciergeApplyRadar(currentSnapshot, currentBinding, radar);
         await conciergeSaveSnapshotAsync(profile, currentSnapshot.roster, {source:currentSnapshot.source || 'departure-radar',lastRadar:{...radar,updatedAt:new Date().toISOString()}});
-        if (!owns(currentSnapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed)
+        if (!owns(currentSnapshot) || !await conciergeDepartureOwnerCurrent(profile, currentSnapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed)
           return gateQuerySuppressed({reason:'response-context-expired'}).message;
       }
     }
   }
-  return buildDepartureSummary({ profile, snapshot, record, route: safeRoute, leaveTime, origin, radar, presentationTime: presentation });
+  if (!await conciergeDepartureOwnerCurrent(profile, snapshot)) return gateQuerySuppressed({reason:'response-context-expired'}).message;
+  return buildDepartureSummary({ profile, snapshot, record, route: safeRoute, leaveTime, leaveEpoch: departureWindow.leave.getTime(), origin, radar, presentationTime: presentation });
 }

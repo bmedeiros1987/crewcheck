@@ -62,5 +62,7 @@ if (runtimeStart >= 0) {
 if (!source.includes('const crewcheckMenu = createTelegramMenu(')) source = source.replace('async function processTelegramUpdate(update = {}) {', runtime + 'async function processTelegramUpdate(update = {}) {');
 replace('async function processTelegramUpdate(update = {}) {', 'async function processTelegramUpdate(update = {}) {\n  if (await crewcheckMenu.callback(update)) return true;\n  if (await crewcheckMenu.text(update.message || {})) return true;');
 replace('  const v1391TelegramHandled = await handleV139Telegram(update, sendTelegramMessage);', '  await crewcheckMenu.interrupt(update.message || {});\n  const v1391TelegramHandled = await handleV139Telegram(update, sendTelegramMessage);');
+// The typed departure path needs the same final transport owner fence as callbacks.
+replace("{ reply_markup: isWeather ? conciergeWeatherKeyboard(weatherStation, /taf/i.test(normalizedText) ? 'taf' : 'metar') : conciergeReplyKeyboard(normalizedText) }", "{ ...((/^\\/saida(?:@\\S+)?\\b/i.test(normalizedText) || matchesDepartureIntent(normalizedText)) ? crewcheckMenu.guard(profile) : {}), reply_markup: isWeather ? conciergeWeatherKeyboard(weatherStation, /taf/i.test(normalizedText) ? 'taf' : 'metar') : conciergeReplyKeyboard(normalizedText) }");
 fs.writeFileSync(file, source);
 console.log('[telegram-menu] private one-use inline navigation; direct existing producers; no live sends');

@@ -205,6 +205,12 @@ function legSentence(leg = {}, index = 0) {
   return `${flight}: saída ${originDeparturePhrase(leg.origin)} às ${departure}; chegada em ${destination} às ${arrival}.`;
 }
 
+function publishedDepartureStamp(epoch, now) {
+  const key = value => new Date(value - 180 * 60_000).toISOString().slice(0, 10);
+  const wall = new Date(epoch - 180 * 60_000).toISOString();
+  return `${key(epoch) === key(now + 86_400_000) ? 'amanhã, ' : ''}${wall.slice(0, 10).split('-').reverse().join('/')} às ${wall.slice(11, 16)}`;
+}
+
 function publishedPresentationText(display) {
   if (display?.clockBasis !== 'published-brt' || display.presentationConfirmed !== true || !Number.isFinite(display.publishedStart)) return 'horário e data da apresentação não confirmados';
   // Same proven instant as departure; never classifier/argument fallback clocks.
@@ -293,23 +299,27 @@ export function calculateDepartureWindow(presentationDate, route = {}) {
   return { leave, leadMinutes, routeMinutes };
 }
 
-export function buildDepartureSummary({ profile = {}, snapshot = {}, record = null, route = null, leaveTime = '', origin = '', radar = null, presentationTime = '', routeState = '' } = {}) {
+export function buildDepartureSummary({ profile = {}, snapshot = {}, record = null, route = null, leaveTime = '', origin = '', radar = null, presentationTime = '', routeState = '', leaveEpoch = null, now = Date.now() } = {}) {
   const greeting = premiumGreeting(profile, snapshot);
   if (!record) return `${greeting} Não encontrei uma programação presencial que exija deslocamento agora.`;
   const canonical = record.display?.clockBasis === 'published-brt';
-  const apz = canonical ? `Apresentação: ${publishedPresentationText(record.display)} (UTC−03, relógio da escala).` : '';
+  const apz = canonical ? `Apresentação: ${record.display.presentationConfirmed === true && Number.isFinite(record.display.publishedStart) ? publishedDepartureStamp(record.display.publishedStart, now) : publishedPresentationText(record.display)} (UTC−03, relógio da escala).` : '';
   if (canonical && (record.display.presentationConfirmed !== true || !Number.isFinite(record.display.publishedStart))) return `${greeting} ${apz} Não calculei saída nem presumi APZ à meia-noite.`;
+  if (canonical && record.display.publishedStart <= now) return `${greeting} ${apz} A apresentação desta programação já passou. Deslocamento e chegada não estão confirmados; não selecionei outra programação automaticamente.`;
   if (canonical && routeState === 'unavailable') return `${greeting} ${apz} Não consegui calcular a rota agora; abra o Planejador de Saída no app.`;
   if (canonical && routeState === 'long') return `${greeting} ${apz} A referência está longe de ${airportName(origin)}. Revise a rota completa no app antes de considerar o deslocamento.`;
   if (canonical && !route) return `${greeting} ${apz} Envie sua localização para eu calcular o trânsito e um horário de saída anterior à apresentação.`;
   if (!route) return `${greeting} Sua apresentação é às ${spokenTime(presentationTime)} em ${airportName(origin)}. Envie sua localização para eu calcular o trânsito e um horário de saída anterior à apresentação.`;
   const traffic = trafficLevel(route);
   const firstLeg = record.legs?.[0];
-  const gate = radar?.gate || firstLeg?.gate;
+  const gate = radar?.ok && !radar.querySuppressed ? radar.gate : ''; // Legacy leg.gate has no verified occurrence authority.
   const flightPart = firstLeg
     ? ` Depois, você segue no ${spokenFlightNumber(firstLeg.flightNumber)}, às ${spokenTime(firstLeg.departureTime)}${gate ? `, pelo portão ${gate}` : ''}.`
     : '';
-  return `${greeting} Saia de casa às ${spokenTime(leaveTime)}. ${apz ? `${apz} ` : ''}O trânsito está ${traffic}; o trajeto até ${airportName(origin)} deve levar cerca de ${spokenDuration(route.minutes)}.${flightPart}`;
+  const departure = canonical && Number.isFinite(leaveEpoch)
+    ? `${leaveEpoch < now ? 'A saída recomendada já passou' : 'Saída recomendada'}: ${publishedDepartureStamp(leaveEpoch, now)} (UTC−03, relógio da escala).${leaveEpoch < now ? ' A apresentação ainda é futura; deslocamento e chegada não estão confirmados.' : ''}`
+    : `Saída recomendada: ${spokenTime(leaveTime)}.`;
+  return `${greeting} ${departure} ${apz ? `${apz} ` : ''}O trânsito está ${traffic}; o trajeto até ${airportName(origin)} deve levar cerca de ${spokenDuration(route.minutes)}.${flightPart}`;
 }
 
 export function premiumVoiceText(text = '') {

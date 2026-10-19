@@ -388,5 +388,5 @@ export function createTelegramMenu(deps, now = Date.now) {
     await clearPrompt(profile, retired);
     return true;
   }
-  return { markup, callback, text, interrupt };
+  return { markup, callback, text, interrupt, guard: profile => ({ [navigationGuard]: { owner: owner(profile) || 'unverified' } }) };
 }
