@@ -11,6 +11,7 @@ try{
   const result=reference('2026-10');assert.equal(result.rateMonth,'2026-11');
   assert.equal(result.referenceEffectiveFrom,'2025-12-01');assert.equal(result.referenceEffectiveTo,'2026-11-30');
   assert.match(result.description,/produção 2026-10 · mês tarifário 2026-11/);
+  assert.match(result.description,/intervalo desta referência derivada: 2025-12 a 2026-11/);assert.doesNotMatch(result.description,/referência vigente/);
   assert.equal(reference('2025-11'),null,'cross-ACT operational cycle is not backfilled');
   const first=reference('2025-12'),prior=reference('2026-09');
   assert.equal(first.rateMonth,'2026-01');assert.equal(prior.rateMonth,'2026-10');
