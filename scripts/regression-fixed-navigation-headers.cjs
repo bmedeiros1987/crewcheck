@@ -41,28 +41,25 @@ const settle = page => page.evaluate(async () => {
 async function waitForStableHeading(page) {
   await page.evaluate(async () => {
     await document.fonts.ready;
-    const start=performance.now();let previous='',stableFrames=0;
-    window.__ccHeadingStability=[];
-    while(performance.now()-start<3000) {
-      await new Promise(resolve=>requestAnimationFrame(resolve));
+    window.__ccHeadingStability=[];window.__ccHeadingPrevious='';window.__ccHeadingStableFrames=0;
+  });
+  await page.waitForFunction(() => {
       const button=document.querySelector('.cc-home-layout-heading>button');
-      if(!button?.isConnected) {stableFrames=0;continue;}
+      if(!button?.isConnected) {window.__ccHeadingStableFrames=0;return false;}
       const rect=button.getBoundingClientRect();let animating=false;
       for(let node=button;node;node=node.parentElement) {
         if(node.getAnimations().some(animation=>Number.isFinite(animation.effect?.getComputedTiming().endTime)&&!['finished','idle'].includes(animation.playState))) animating=true;
       }
       const signature=JSON.stringify([rect.x,rect.y,rect.width,rect.height,getComputedStyle(button).transform,document.fonts.status]);
-      stableFrames=!animating&&document.fonts.status==='loaded'&&signature===previous?stableFrames+1:0;
-      previous=signature;
-      window.__ccHeadingStability.push({time:performance.now(),rect:{x:rect.x,y:rect.y,width:rect.width,height:rect.height},animating,fontStatus:document.fonts.status,stableFrames});
+      window.__ccHeadingStableFrames=!animating&&document.fonts.status==='loaded'&&signature===window.__ccHeadingPrevious?window.__ccHeadingStableFrames+1:0;
+      window.__ccHeadingPrevious=signature;
+      window.__ccHeadingStability.push({time:performance.now(),rect:{x:rect.x,y:rect.y,width:rect.width,height:rect.height},animating,fontStatus:document.fonts.status,stableFrames:window.__ccHeadingStableFrames});
       if(window.__ccHeadingStability.length>24) window.__ccHeadingStability.shift();
-      if(stableFrames>=3) return;
-    }
-    throw new Error('Home heading did not reach stable geometry without finite animations');
-  });
+      return window.__ccHeadingStableFrames>=3;
+  },undefined,{polling:'raf',timeout:3000});
 }
 // The production event bridge and explicit UI dismissal exercise the compiled
-// app's actual queue. No test-only runtime, CSS mutation or external send.
+// app's actual queue. No replacement queue or external send.
 async function emptyPulseQueue(page) {
   for (let count=0;count<80;count++) {
     const trigger=page.locator('.cz-global-header .cc-pulse-compact-trigger');
