@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {AsyncLocalStorage} from 'node:async_hooks';
 const TTL=2*60_000,MAX=1000;
 const plain=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
+const no=v=>/^(nao|agora nao|cancelar|cancela)[.!?]*$/.test(plain(v));
 const yes=v=>/^(sim|quero|quero sim|pode mostrar|detalhes)[.!?]*$/.test(plain(v));
 const revision=s=>createHash('sha256').update(JSON.stringify(s?.roster||null)).digest('hex');
 const civil=t=>new Date(t-180*60_000).toISOString().slice(0,10);
@@ -10,7 +11,7 @@ const cancelled=r=>r.display?.cancelled===true||['cancelled','canceled','cancela
 const identity=p=>p?.linked===true&&p.channel==='telegram'&&p.chatType==='private'&&p.chatId&&/^[^@\s]+@[^@\s]+$/.test(p.email||'')?`${String(p.email).trim().toLowerCase()}|${p.accessKeyHash||''}`:'';
 const freezePrincipal=p=>Object.freeze({email:p.email,name:p.name,chatId:String(p.chatId),linked:p.linked,channel:p.channel,chatType:p.chatType,accessKeyHash:String(p.accessKeyHash||''),authenticated:p.authenticated===true});
 export function createTemporalDialogue(deps,now=deps.now||Date.now){
- const offers=new Map(),turns=new Map(),states=new WeakMap(),storage=new AsyncLocalStorage();
+ const offers=new Map(),turns=new Map(),states=new WeakMap(),declines=new WeakSet(),storage=new AsyncLocalStorage();
  const prune=()=>{for(const map of[offers,turns]){for(const[chat,item]of map)if(now()<item.at||now()-item.at>TTL)map.delete(chat);while(map.size>=MAX)map.delete(map.keys().next().value);}};
  const currentTurn=ctx=>Boolean(ctx&&turns.get(ctx.chat)===ctx.turn&&now()>=ctx.turn.at&&now()-ctx.turn.at<=TTL);
  const sameBinding=ctx=>{const p=deps.profileNow(ctx.principal);return identity(p)===ctx.owner&&String(p?.chatId)===ctx.chat;};
@@ -19,7 +20,7 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
  async function run(update,work){
   const query=update?.callback_query,message=query?.message||update?.message||update?.edited_message,from=query?.from||message?.from;
   if(message?.chat?.type!=='private'||!from?.id||String(from.id)!==String(message.chat.id))return work();
-  const chat=String(message.chat.id);prune();const turn=Object.freeze({at:now()});turns.set(chat,turn);
+  const chat=String(message.chat.id);prune();const declined=Boolean(offers.has(chat)&&no(message.text));const turn=Object.freeze({at:now()});turns.set(chat,turn);
   const voice=Boolean(message.voice||message.audio||message.document?.mime_type?.startsWith('audio/'));
   if(query||(!voice&&!yes(message.text||'')))offers.delete(chat);
   const before=deps.profileNow({chatId:chat});
@@ -32,6 +33,7 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
   if(snapshot?.roster&&!await deps.authorized(principal,snapshot))return true;
   const ctx=Object.freeze({chat,turn,principal,owner:identity(principal),snapshot,revision:revision(snapshot)});
   if(ctx.owner&&!rootCheck(ctx))return true;
+  if(declined)declines.add(ctx);
   return storage.run(ctx,work);
  }
  function state(profile,snapshot){
@@ -53,7 +55,7 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
  async function handle(text,profile,snapshot){
   const ctx=storage.getStore();if(!identity(profile))return null;
   const chat=String(profile.chatId),input=plain(text),offer=offers.get(chat);offers.delete(chat);
-  const decline=Boolean(offer)&&/^(nao|agora nao|cancelar|cancela)[.!?]*$/.test(input);
+  const decline=(Boolean(offer)||declines.has(ctx))&&no(input);declines.delete(ctx);
   const schedule=/^\/(?:hoje|proximo)(?:@\S+)?$/.test(input)||/^(?:e )?(?:o que tenho (?:hoje|agora)|qual (?:a )?minha proxima programacao|como esta meu dia|nao fui acionado)[.!?]*$/.test(input);
   const mine=/\bmeu voo\b/.test(input)&&!deps.explicitFlight(text);
   if(!yes(input)&&!schedule&&!mine&&!decline)return null;
@@ -87,7 +89,7 @@ export function createTemporalDialogue(deps,now=deps.now||Date.now){
   return{reply:`${lead}${selectedEvent?`Voo pertinente na escala: ${selectedEvent.flightNumber}. `:''}${timing}\n${summary(selected).split('\n').slice(0,2).join('\n')}\nQuer os detalhes? Responda “sim”.`};
  }
  return{run,handle,protect,
-  subject:text=>{const ctx=storage.getStore();if(!currentTurn(ctx))return false;if(!yes(text))offers.delete(ctx.chat);return true;},
+  subject:text=>{const ctx=storage.getStore();if(!currentTurn(ctx))return false;if(no(text)&&offers.has(ctx.chat))declines.add(ctx);if(!yes(text))offers.delete(ctx.chat);return true;},
   abandon:()=>{const ctx=storage.getStore();if(currentTurn(ctx))offers.delete(ctx.chat);},
   isCurrent:()=>currentTurn(storage.getStore()),
   currentTurnCheck:()=>{const ctx=storage.getStore();return ctx?()=>currentTurn(ctx)&&sameBinding(ctx):null;},

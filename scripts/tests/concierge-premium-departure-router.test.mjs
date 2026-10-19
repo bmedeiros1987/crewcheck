@@ -31,7 +31,7 @@ export function realDeparture(roster,mode='missing',at=now) {
    runRadarRace:async()=>{radarCalls++;return gates.gateQuerySuppressed({reason:'synthetic-offline'});},
  });
  for(const name of ['conciergeInactiveCodes','conciergeRemoteCodes']){const m=source.match(new RegExp(`const ${name} = new Set\\([\\s\\S]*?\\);`));assert(m,name);vm.runInContext(m[0],h.context);}
- const force=['telegramProfileForChat','telegramProfileForChatAsync','buildFlightContext','normalizeFlightRaw','conciergeProgramRecords','conciergePresentationTime','conciergeProgramTitle','conciergeDateLabel','conciergePremiumScheduleReply','conciergePremiumDepartureReply','conciergeDepartureReply','conciergeAccessMatches'];
+ const force=['telegramProfileForChat','telegramProfileForChatAsync','conciergeApplyRadar','conciergeFindFlight','conciergeRadarReply','buildFlightContext','normalizeFlightRaw','conciergeProgramRecords','conciergePresentationTime','conciergeProgramTitle','conciergeDateLabel','conciergePremiumScheduleReply','conciergePremiumDepartureReply','conciergeDepartureReply','conciergeAccessMatches'];
  const external=new Set([...Object.keys(programs),'conciergeTravelEstimate','conciergeLocationContextV14335','conciergeLocationLineV14335']);
  const names=[...force],seen=new Set();
  for(let i=0;i<names.length;i++){

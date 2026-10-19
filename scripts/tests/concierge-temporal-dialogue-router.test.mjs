@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {buildDutyFacts} from '../../server/concierge/duty-facts.mjs';
 import {realDeparture,data} from './concierge-premium-departure-router.test.mjs';
 const source=fs.readFileSync('server.mjs','utf8');
 const extract=name=>{const m=source.match(new RegExp(`(?:async )?function ${name}\\([\\s\\S]*?\\n}`));assert(m,name);return m[0];};
@@ -121,3 +122,48 @@ test('actual meu voo gate becomes unavailable if accepted source expires during 
  const save=h.context.conciergeSaveSnapshotAsync;h.context.conciergeSaveSnapshotAsync=async(...args)=>{const result=await save(...args);if(args[2]?.lastRadar){saves++;h.advanceClock(2000);}return result;};
  await h.send('telegram','portão do meu voo');assert.equal(queries,1);assert.equal(saves,1);assert.doesNotMatch(h.trace.output.join(' '),/LA1234|EXPIRING_GATE|08:00/);
 });
+
+function actualTools(h){
+ h.context.buildDutyFacts=buildDutyFacts;h.context.envAny=()=>'';
+ for(const name of ['conciergeCallConfirmationKeyboard','requestConciergeCallConfirmation'])vm.runInContext(extract(name),h.context);
+ return h;
+}
+for(const text of ['/conformidade','revisar escala','/ligacao'])test(`common entry clears pending offer before early return ${text}`,async()=>{
+ const h=actualTools(realDeparture(data('estimated'),'missing',at));await h.send('telegram','/proximo');assert.match(h.trace.output.at(-1),/Quer os detalhes/);await h.send('telegram',text);
+ const before=h.trace.output.length;await h.send('telegram','sim');assert.doesNotMatch(h.trace.output.slice(before).join(' '),/Detalhes da programação|QA-MERGED|05\/10\/2099|07:00/);
+});
+for(const change of ['apz','base','earlier'])test(`real Radar enrichment cannot adopt external ${change} during await`,async()=>{
+ const roster=flights([['LA1234','08:00','09:00']]),h=actualTools(realDeparture(roster,'missing','2099-10-04T10:00:00Z'));let saves=0,queries=0,applies=0;
+ const apply=h.context.conciergeApplyRadar;h.context.conciergeApplyRadar=(...args)=>{applies++;return apply(...args);};const save=h.context.conciergeSaveSnapshotAsync;h.context.conciergeSaveSnapshotAsync=async(...args)=>{if(args[2]?.lastRadar)saves++;return save(...args);};
+ h.context.runRadarRace=async ctx=>{queries++;const changed=structuredClone(roster);if(change==='apz'){changed.days[0].dutyReport='08:30';changed.days[0].legs[0].presentationTime='08:30';}if(change==='base')changed.base='GRU';if(change==='earlier'){const prior=structuredClone(changed.days[0]);Object.assign(prior,{type:'ASB',pairingCode:'ASB',dutyReport:'07:00',dutyDebrief:'07:30',legs:[]});changed.days.unshift(prior);}h.setRoster(changed);return{ok:true,flight:'LA1234',origin:'BSB',destination:'GRU',gate:'STALE_GATE_46',scheduledDepartureUtc:ctx.gateQueryEvidence.scheduledDepartureUtc,sourceReceivedAt:'2099-10-04T10:00:00Z'};};
+ await h.send('telegram','portão do meu voo');assert.equal(queries,1);assert.equal(applies,0);assert.equal(saves,0);assert.doesNotMatch(h.trace.output.join(' '),/LA1234|STALE_GATE_46/);
+});
+function voiceTools(){
+ const h=actualTools(realDeparture(data('estimated'),'missing',at)),voice=[],states=[];let transcribeHook=null,synthHook=null,sendHook=null;
+ Object.assign(h.context,{console:{...console,info:(_label,value)=>states.push({...value})},telegramVoiceFileId:()=> 'synthetic',crewcheckSttConfigured:()=>true,elevenLabsSttConfigured:()=>false,telegramVoiceDuration:()=>2,showHumanRecordingAction:async()=>{},telegramGetFileInfo:async()=>({ok:true,fileSize:2,filePath:'synthetic'}),telegramDownloadFile:async()=>({ok:true,buffer:Buffer.from('synthetic')}),telegramVoiceFileName:()=> 'synthetic.ogg',telegramVoiceMime:()=> 'audio/ogg',transcribeTelegramAudio:async()=>{if(transcribeHook)await transcribeHook();return{ok:true,text:'/amanha'};},conciergeVoiceScriptV14408:t=>t,conciergeVoiceProfileForSnapshotV14348:()=> 'default',telegramHumanAudioCaption:()=> 'Synthetic',telegramShouldEchoTranscript:()=>true,cleanTtsText:t=>t,ttsPolicySnapshot:()=>({provider:'elevenlabs'}),elevenLabsTtsConfigured:()=>true,generateElevenLabsSpeech:async text=>{if(synthHook)await synthHook();return{ok:true,buffer:Buffer.from('synthetic'),text};},sendTelegramVoiceBuffer:async(...args)=>{voice.push(args);if(sendHook)await sendHook();return{ok:true};},telegramHumanVoiceEnabled:()=>true});
+ for(const name of ['sendTelegramTtsAudio','sendHumanTelegramVoiceReply','handleTelegramVoiceMessage'])vm.runInContext(extract(name),h.context);
+ return{...h,voice,states,setTranscribe:fn=>{transcribeHook=fn;},setSynth:fn=>{synthHook=fn;},setVoiceSend:fn=>{sendHook=fn;},audio:()=>h.context.processTelegramUpdate({message:{chat:{id:h.profile.chatId,type:'private'},from:{id:h.profile.chatId},voice:{file_id:'synthetic',duration:2}}})};
+}
+for(const phase of ['stt','synthesis'])for(const next of ['text','callback','incoming-stt'])test(`immutable entry turn cancels old audio during ${phase} on ${next}`,async()=>{
+ const h=voiceTools();let signal,release;const started=new Promise(r=>signal=r),gate=new Promise(r=>release=r);let entered=0;
+ const hold=async()=>{if(++entered===1){signal();await gate;}};if(phase==='stt')h.setTranscribe(hold);else h.setSynth(hold);
+ const old=h.audio();await started;let newer=null,releaseNew=null;
+ if(next==='text')await h.send('telegram','/conformidade');
+ if(next==='callback'){await h.openInline();await h.tap('Transporte');}
+ if(next==='incoming-stt'){let signalNew;const newStarted=new Promise(r=>signalNew=r),newGate=new Promise(r=>releaseNew=r);h.setTranscribe(async()=>{signalNew();await newGate;});newer=h.audio();await newStarted;}
+ const before=h.trace.output.length;release();await old;assert.equal(h.voice.length,0,'old voice must not reach transport');assert.doesNotMatch(h.trace.output.slice(before).join(' '),/QA-MERGED|05\/10\/2099|Entendi:/);
+ if(newer){h.context.telegramShouldEchoTranscript=()=>false;h.setSynth(null);releaseNew();await newer;assert.equal(h.voice.length,1,'new unchanged voice remains deliverable');}
+});
+for(const boundary of ['voice-result','echo-markup'])test(`accepted voice cannot authorize transcript echo after relink ${boundary}`,async()=>{
+ const h=voiceTools();let changed=0;const relink=()=>{if(!changed){changed++;h.profile.email='route-b@example.invalid';}};
+ if(boundary==='voice-result')h.setVoiceSend(relink);else{const markup=h.context.crewcheckMenu.markup;h.context.crewcheckMenu.markup=async(...args)=>{const result=await markup(...args);if(h.voice.length)relink();return result;};}
+ await h.audio();assert.equal(h.voice.length,1,'already accepted voice is not claimed recalled');assert.equal(changed,1);assert.doesNotMatch(h.trace.output.join(' '),/Entendi:/);
+});
+for(const boundary of ['final-auth','before-voice-send'])test(`current cache authority rejects old audio at ${boundary}`,async()=>{
+ const h=voiceTools();let synthesized=0,armed=false,mutated=0;const change=()=>{if(mutated)return;mutated++;const replacement=data('estimated');replacement.days[1].legs[0].presentationTime='07:30';h.setRoster(replacement);};
+ h.setSynth(async()=>{synthesized++;armed=true;});
+ if(boundary==='final-auth'){const load=h.context.conciergeLoadSnapshot;let read=false;h.context.conciergeLoadSnapshot=async(...args)=>{const result=await load(...args);if(armed)read=true;return result;};const auth=h.context.telegramProfileForChatAsync;h.context.telegramProfileForChatAsync=async(...args)=>{const result=await auth(...args);if(read)change();return result;};}
+ else{const actual=h.context.sendTelegramTtsAudio;h.context.sendTelegramTtsAudio=async(...args)=>{const options=args[2],validate=options.validate;options.validate=async()=>{const result=await validate();if(armed)change();return result;};return actual(...args);};}
+ await h.audio();assert.equal(synthesized,1);assert.equal(mutated,1);assert.equal(h.voice.length,0);assert.doesNotMatch(h.trace.output.join(' '),/QA-MERGED|05\/10\/2099|Entendi:/);
+});
+test('unchanged real voice path still delivers audio and optional guarded echo',async()=>{const h=voiceTools();await h.audio();assert.equal(h.voice.length,1);assert.match(h.trace.output.at(-1),/Entendi:/);});
