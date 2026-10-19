@@ -64,3 +64,20 @@ Suggested contextual app access for the Home owner: a visible “Conheça o Crew
 This candidate is a menu checkpoint, not completion of full Telegram financial/regulatory/hotel parity or Play assets. Independent review and CI are required before merge/deployment.
 
 Before push, remote main was reconfirmed as `550b298b`; there was no existing remote `feat/telegram-concierge-menu` branch or competing Telegram-menu PR. Newly inventoried PR1094 is a separate foreign-allowance partiality fix, not imported.
+
+## Consolidated independent-review fixes
+
+The original review SHA remains available as CI artifact `wellhub-compiled-routing`, artifact ID `12162766334`, run `39197568844`, head `7624d2f61811be8a77efa47b662188482034a457`. Its prepared `server.mjs` SHA-256 is `be34b16e8d2929982da9397cd24a270bd242c5457c963bc323028772c50ee5ed`; a clean archive/reproduction on the Mac generated exactly the same hash. No environment, credentials, private roster or Library transfer is involved.
+
+That SHA's CI reached terminal with two failures: Wellhub conversation and deep-link VM fixtures lacked the new menu runtime. Tests now instantiate the real menu module, preserving assertions. The menu-specific workflow itself passed. The historical version assertion was independently reproduced on clean base `550b298b` (actual 14.4.11, expected 14.0.5); its gate remains unchanged.
+
+Review corrections:
+
+- Expired/consumed/legacy callbacks clear only the validated current chat/account's pending question before showing a new root. Another sender cannot cancel the owner's flow.
+- Prompt state is correlated with the actual sendMessage result's message ID/date. Missing transport evidence fails closed. Parameter messages must be newer, with matching reply-to when supplied and within TTL. Old/reordered input cannot execute the pending question.
+- Emergency, help and navigation escape/cancel pending parameter questions. Configurações and Emergência are under Mais. An explicit internal `openEmergencyTelegramMenu` entry preserves the original callback, and the existing linked sender guard plus explicit emergency confirmation flow remain responsible for authorization. No fake slash user message is inserted. The routing-only helper is in `server/v1391/emergency.mjs`; tests confirm opening the menu sends no contact alerts and rejects another sender.
+- Slash arguments bypass legacy label normalization. Only exact Radar/ATIS legacy labels are mapped; the wrapper preserves explicit operations and extracts a natural Radar flight through the existing interpreter. Weather station selection reuses that interpreter, avoiding TAF/ATIS being misread as airport codes.
+- Guided METAR/TAF use the same existing weather keyboard; ATIS uses the same text-to-voice adapter as slash. These effects are mocked offline. Legacy persistent reply keyboards are explicitly removed in a separate message before inline UI; returning from settings removes its reply keyboard too. There is no advertised call action.
+- Full prepared `buildTelegramConciergeReply` and `processTelegramUpdate`, real semantic/normalizer functions, Radar/METAR/TAF/ATIS producers and actual menu dependency composition are exercised with only DB/provider/transport boundaries mocked. The old exact artifact fails the new Radar case with LA9999 instead of LA1234 and ATIS with SBBR instead of requested SBGR; corrected prepared sources pass, including natural phrasing, follow-up keyboard and voice-effect parity. These prepared tests are mandatory in CI; the separate raw phase keeps its original coverage.
+
+The revised menu workflow retains prepared-source hashes, exact HEAD and preparation.log as artifact `telegram-menu-prepared-source` for further review. Financial and normative integrations remain out of scope; this is not a complete CrewCierge.

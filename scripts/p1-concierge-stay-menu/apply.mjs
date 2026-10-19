@@ -34,7 +34,9 @@ update('server/v1391/emergency.mjs', source => {
   // The legacy hotel interceptor otherwise sends twelve records with rooms
   // before the shared Concierge can handle the new menu/history requests.
   const anchor = "  const text = String(message?.text || message?.caption || '').trim();";
-  source = replace(source, anchor, `${anchor}\n  if (stayMenuIntent(text)) return false;`, 'legacy hotel interceptor');
+  if (!source.includes('if (!options.openMenu && stayMenuIntent(text)) return false;')) {
+    source = replace(source, anchor, `${anchor}\n  if (stayMenuIntent(text)) return false;`, 'legacy hotel interceptor');
+  }
   return source;
 });
 console.log('[concierge-stay-menu] compact private history; explicit app registration handoff; no stay writes');

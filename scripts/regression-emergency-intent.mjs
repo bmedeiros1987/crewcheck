@@ -174,4 +174,14 @@ response = await route(owner, 'cancel', { alertId: 'one', confirmed: true }); as
 response = await route(owner, 'cancel', { alertId: 'one', confirmed: true }); assert.equal(response.payload.cancelled, false);
 response = await route(owner); assert.deepEqual(Array.from(response.payload.alerts, alert => alert.alertId), ['two']);
 queryFailure = true; response = await route(owner); assert.equal(response.status, 503); assert.doesNotMatch(JSON.stringify(response.payload), /PRIVATE/);
-console.log('PASS: original SOS safety and delivery recovery; closure ACK on every path; stable concurrent retry tokens and TTL; single exact closure; authenticated active context/privacy/failures');
+reset();
+const menuCallback = { id: 'synthetic-menu-callback', data: 'cc_nav:v1:opaque:emergencia', from: { id: 10 }, message: { chat: { id: 10, type: 'private' }, text: 'Escolha uma opção' } };
+assert.equal(await mod.namespace.openEmergencyTelegramMenu(menuCallback, send), true);
+assert.match(messages.at(-1).text, /Escolha a emergência/);
+assert.equal(record.filters.stage, 'menu');
+assert.equal(alerts.size, 0);
+assert.equal(sends.filter(item => item.text?.includes('ALERTA CREWCHECK')).length, 0, 'opening menu cannot notify contacts');
+const opened = messages.length;
+assert.equal(await mod.namespace.openEmergencyTelegramMenu({ ...menuCallback, from: { id: 20 } }, send), false);
+assert.equal(messages.length, opened, 'original sender guard still applies to explicit menu entry');
+console.log('PASS: original SOS safety and delivery recovery; closure ACK on every path; stable concurrent retry tokens and TTL; single exact closure; authenticated active context/privacy/failures; explicit menu entry has no contact sends');

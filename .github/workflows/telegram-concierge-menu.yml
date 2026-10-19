@@ -20,9 +20,28 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci
-      - run: node scripts/v139/apply.mjs
+      - run: node scripts/v139/apply.mjs 2>&1 | tee "$RUNNER_TEMP/telegram-menu-preparation.log"
       - run: node --check server.mjs
       - run: node scripts/regression-telegram-concierge-menu.mjs
       - run: node scripts/regression-concierge-stay-menu.mjs
+      - run: node scripts/regression-concierge-wellhub-conversation.mjs --materialized
+      - run: node scripts/regression-wellhub-deeplinks.mjs
+      - run: node --experimental-vm-modules scripts/regression-emergency-intent.mjs
       - run: npm run check
       - run: npm run build
+      - name: Preserve exact prepared source for independent review
+        if: always()
+        run: |
+          if [ -f .crewcheck-source-preparation.json ]; then
+            mkdir -p "$RUNNER_TEMP/telegram-menu-proof"
+            cp server.mjs "$RUNNER_TEMP/telegram-menu-proof/"
+            cp "$RUNNER_TEMP/telegram-menu-preparation.log" "$RUNNER_TEMP/telegram-menu-proof/preparation.log"
+            git rev-parse HEAD > "$RUNNER_TEMP/telegram-menu-proof/HEAD.txt"
+            sha256sum server.mjs scripts/v139/apply.mjs scripts/telegram-concierge-menu/apply.mjs server/concierge/telegram-menu.mjs > "$RUNNER_TEMP/telegram-menu-proof/SHA256SUMS"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: telegram-menu-prepared-source
+          path: ${{ runner.temp }}/telegram-menu-proof/
+          if-no-files-found: ignore
