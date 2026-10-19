@@ -27,7 +27,7 @@ for(const width of [320,390,1440])for(const theme of ['light','dark']){
  const context=await browser.newContext({viewport:{width,height:950},serviceWorkers:'block'});
  await context.route('**/*',async route=>{
   const url=new URL(route.request().url());
-  if(url.origin!=='http://salary.invalid')return route.abort();
+  if(url.origin!=='https://salary.invalid')return route.abort();
   if(url.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:'{"ok":false}'});
   const file=path.join(path.resolve('dist'),url.pathname==='/'||url.pathname==='/app'?'index.html':url.pathname);
   if(!fs.existsSync(file)||!fs.statSync(file).isFile())return route.fulfill({status:404,body:''});
@@ -42,8 +42,8 @@ for(const width of [320,390,1440])for(const theme of ['light','dark']){
   // Never reset preference on reload. These are invented local fixtures only.
   if(!localStorage.getItem('salary-basis-test-initialized')){localStorage.setItem('crewcheck_financial_month_settings_v1:financial-ui-qa:2032-02',JSON.stringify(record));localStorage.setItem('salary-basis-test-initialized','1');}
  });
- const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
- const open=async()=>{await page.goto('http://salary.invalid/app');await page.locator('.cz-app').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));await page.getByRole('radio',{name:'Bruto',exact:true}).waitFor();};
+ const page=await context.newPage();const consoleErrors=[];page.on('pageerror',error=>errors.push(error.message));page.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text());});
+ const open=async()=>{await page.goto('https://salary.invalid/app');await page.locator('.cz-app').waitFor();await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'salary'})));try{await page.getByRole('radio',{name:'Bruto',exact:true}).waitFor();}catch(error){await page.screenshot({path:path.join(out,'failure.png'),fullPage:true});fs.writeFileSync(path.join(out,'failure.txt'),await page.locator('body').innerText());fs.writeFileSync(path.join(out,'failure-errors.json'),JSON.stringify({errors,consoleErrors},null,2));throw error;}};
  await open();assert.equal(await page.getByRole('complementary',{name:'Prévia de PLR'}).count(),1);assert.equal(await page.locator('.cc-salary-plr-note details').getAttribute('open'),null);assert.match(await page.locator('.cc-salary-plr-note').innerText(),/faltam referências/);assert.equal(await page.getByRole('radio',{name:'Bruto',exact:true}).isChecked(),true);
  assert.match(await page.locator('.cc-salary-basis-amount').innerText(),/2.400,00/);
  assert.equal(await page.getByRole('group',{name:'Valor salarial'}).count(),1);
