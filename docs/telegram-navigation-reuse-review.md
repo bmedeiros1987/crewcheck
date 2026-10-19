@@ -23,3 +23,16 @@ Run order: raw suite → full production preparation + TypeScript check → prod
 Independent review and exact-head CI remain required before integration. No live-client accessibility/scroll/focus or Android app-link behavior is claimed by VM tests. No real messages, webhooks, credentials, permissions, financial activation, paid messaging, merge, deployment or store publication are part of this draft.
 
 Official API references: [InlineKeyboardButton](https://core.telegram.org/bots/api#inlinekeyboardbutton), [editMessageText](https://core.telegram.org/bots/api#editmessagetext), [editMessageReplyMarkup](https://core.telegram.org/bots/api#editmessagereplymarkup).
+
+
+## Independent review corrections
+
+The initial 14-case fixture missed two real regressions. A consumed parameter prompt kept a usable Cancelar ticket, which could discard a later question; current weather, SOS and call-confirmation producers still emitted legacy `cc_nav:menu`, so their return buttons were rejected. The original green tests/CI do not count as acceptance of these cases.
+
+Every prompt revision now owns its private cancellation context, message ID and ticket. Accepting text, replacing a prompt, navigation, explicit cancellation or expiration retires the revision before asynchronous cleanup/production. Only a matching live prompt can cancel its flow. Cleanup failure cannot restore that authority; delayed replacement delivery cannot resurrect it. A cancel pressed while its message is still being delivered gets busy feedback and retains its ticket. Old cancellation or typed replies attached to an old prompt cannot discard a newer question.
+
+Outgoing decoration now upgrades only the exact freshly emitted `cc_nav:menu` marker to a newly minted owner-bound home ticket. Incoming legacy payloads stay rejected. Audited producers: actual `conciergeWeatherKeyboard` (METAR/TAF and weather updates), `conciergeCallConfirmationKeyboard`/`requestConciergeCallConfirmation`, and `conciergeMenuKeyboard` in the SOS producer. Settings is a textual reply keyboard. No weather, SOS or call action authorization or side effect is changed.
+
+The expanded raw suite uses the real narrow v1403 navigation preparer in a disposable directory to obtain the current weather/call producers. Prepared mode uses their actual functions from fully prepared server.mjs. Guided text tests use the real controller from that prepared runtime; callback tests use actual processTelegramUpdate. The dedicated SOS regression invokes the actual handler's discard producer with a synthetic database, decorates its output and verifies return with zero contact sends. Real provider/client behavior remains outside this offline proof.
+
+Local correction evidence: 26 raw and 26 prepared cases PASS, plus the existing prepared menu/factual handler, 23 Wellhub cases, SOS, hotel-history/privacy, payload/deep-link and 47 weather-canary cases. Five focused regression cases fail on the original 11061ca0 in both raw and prepared modes. The Wellhub keyboard-parity assertion now requires a valid new home-ticket format and compares all controls after replacing only the random nonce; weather actions and labels are still compared exactly.

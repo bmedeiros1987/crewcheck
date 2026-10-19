@@ -311,7 +311,17 @@ test('prepared Telegram slash and guided buttons call the same actual producers,
     assert.deepEqual(guided.trace.search.filter(item => item.boundary), slash.trace.search.filter(item => item.boundary), `${command} IO-boundary arguments`);
     assert.equal(guided.trace.output.at(-1), slash.trace.output.at(-1), `${command} actual formatted response`);
     assert.deepEqual(guided.trace.voices, slash.trace.voices, `${command} deterministic voice effect parity`);
-    if (['metar', 'taf'].includes(command)) assert.deepEqual(clone(guided.trace.transports.at(-1).extra.reply_markup), clone(slash.trace.transports.at(-1).extra.reply_markup), `${command} Bruto/Decodificado/ATIS follow-up keyboard`);
+    if (['metar', 'taf'].includes(command)) {
+      const stableKeyboard = markup => {
+        const copy=clone(markup);
+        for(const button of copy.inline_keyboard.flat()) if(button.callback_data?.startsWith('cc_nav:')) {
+          assert.match(button.callback_data,/^cc_nav:v1:[a-f0-9]{24}:home$/, 'fresh return must be an issued ticket');
+          button.callback_data='cc_nav:v1:<nonce>:home';
+        }
+        return copy;
+      };
+      assert.deepEqual(stableKeyboard(guided.trace.transports.at(-1).extra.reply_markup), stableKeyboard(slash.trace.transports.at(-1).extra.reply_markup), `${command} exact weather controls and ticketed return`);
+    }
     assert.equal(slash.trace.voices.length, command === 'atis' ? 1 : 0);
   }
 });

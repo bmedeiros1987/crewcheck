@@ -52,6 +52,7 @@ export function createTelegramMenu(deps, now = Date.now) {
   const factsGuard = Symbol('facts-owner');
   const navigationGuard = Symbol('navigation-owner');
   const busy = new Set();
+  const promptGuard = Symbol('prompt-owner');
   const owner = profile => profile?.linked === true && profile.channel === 'telegram' && profile.chatType === 'private' && /^[^@\s]+@[^@\s]+$/.test(profile.email || '') ? `${profile.email}|${profile.accessKeyHash || ''}` : '';
   const prune = map => { for (const [key, value] of map) if (now() - value.at > TTL) map.delete(key); while (map.size >= MAX) map.delete(map.keys().next().value); };
   async function identity(message) {
@@ -60,9 +61,15 @@ export function createTelegramMenu(deps, now = Date.now) {
     return owner(profile) ? profile : null;
   }
   async function markup(chatId, extra = {}) {
-    const { [factsGuard]: factsContext, [navigationGuard]: navigationContext, ...transportExtra } = extra;
-    const expectedFactsOwner = factsContext?.owner || navigationContext?.owner;
+    const { [factsGuard]: factsContext, [navigationGuard]: navigationContext, [promptGuard]: promptContext, ...transportExtra } = extra;
+    const expectedFactsOwner = factsContext?.owner || navigationContext?.owner || promptContext?.owner;
     extra = transportExtra;
+    // Upgrade only newly emitted markup from current trusted producers. Incoming
+    // legacy payloads still have no ticket and remain rejected by callback().
+    if (extra.reply_markup?.inline_keyboard) extra = { ...extra, reply_markup: { ...extra.reply_markup,
+      inline_keyboard: extra.reply_markup.inline_keyboard.map(row => row.map(button => button.callback_data === 'cc_nav:menu'
+        ? { ...button, callback_data: 'cc_nav:entry:home' } : button)),
+    } };
     if (extra.reply_markup?.keyboard) migrated.delete(String(chatId));
     const buttons = extra.reply_markup?.inline_keyboard?.flat() || [];
     const navigation = buttons.some(button => button.callback_data?.startsWith('cc_nav:entry:'));
@@ -70,6 +77,7 @@ export function createTelegramMenu(deps, now = Date.now) {
     if (!navigation && !weather) return extra;
     const profile = await identity({ chat: { id: chatId, type: 'private' }, from: { id: chatId } });
     if (expectedFactsOwner && owner(profile) !== expectedFactsOwner) return null;
+    if (promptContext && !currentPrompt(String(chatId), promptContext)) return null;
     if (!profile) return navigation ? { ...extra, reply_markup: { remove_keyboard: true } } : extra;
     prune(migrated);
     const chat = String(chatId);
@@ -84,6 +92,7 @@ export function createTelegramMenu(deps, now = Date.now) {
       if (owner(confirmed) !== expectedFactsOwner) return null;
     }
     if (!navigation) return extra;
+    if (promptContext && !currentPrompt(chat, promptContext)) return null;
     prune(tickets);
     const token = randomBytes(12).toString('hex');
     const actions = new Set();
@@ -91,12 +100,13 @@ export function createTelegramMenu(deps, now = Date.now) {
       if (!button.callback_data?.startsWith('cc_nav:entry:')) return button;
       const action = button.callback_data.slice('cc_nav:entry:'.length);
       actions.add(action);
-      return { text: button.text, callback_data: `cc_nav:v1:${token}:${action}` };
+      return { ...button, callback_data: `cc_nav:v1:${token}:${action}` };
     }));
     tickets.set(token, { at: now(), chat: String(chatId), owner: owner(profile), actions,
       factRevision: [...actions].some(action => action.startsWith('duty_')) ? factsContext?.signature : null,
-      factPage: factsContext?.page || 0, navigation: navigationContext || null });
+      factPage: factsContext?.page || 0, navigation: navigationContext || null, prompt: promptContext || null });
     if (navigationContext) navigationContext.token = token;
+    if (promptContext) promptContext.token = token;
     return { ...extra, reply_markup: { inline_keyboard } };
   }
   async function send(chat, text, page = 'home') { await deps.send(chat, text, { reply_markup: menuTemplate(page) }); }
@@ -110,6 +120,45 @@ export function createTelegramMenu(deps, now = Date.now) {
     // Keep useful content; only the consumed controls are removed. Failure does
     // not restore a ticket, so a visible old button cannot repeat its action.
     try { await deps.clear(profile.chatId, id); } catch {}
+  }
+  function currentPrompt(chat, prompt) {
+    return prompt.active && flows.get(chat) === prompt.flow && prompt.flow.prompt === prompt
+      && now() - prompt.flow.at <= TTL;
+  }
+  function retirePrompt(prompt) {
+    if (!prompt) return null;
+    prompt.active = false;
+    tickets.delete(prompt.token);
+    if (prompt.flow.prompt === prompt) prompt.flow.prompt = null;
+    return prompt;
+  }
+  function takeFlow(chat, flow) {
+    if (!flow || flows.get(chat) !== flow) return null;
+    flows.delete(chat); // Claim synchronously before cleanup or any producer.
+    return retirePrompt(flow.prompt);
+  }
+  async function clearPrompt(profile, prompt) {
+    if (prompt) await clearMessage(profile, prompt.id);
+  }
+  async function ask(profile, flow, text, previous = null) {
+    const chat = String(profile.chatId);
+    const prompt = { flow, owner: flow.owner, active: true, id: null, date: null, token: null };
+    flow.prompt = prompt; // A replacement gets its own identity before any await.
+    await clearPrompt(profile, previous);
+    if (!currentPrompt(chat, prompt)) return;
+    const delivered = await deps.send(profile.chatId, text, { [promptGuard]: prompt,
+      reply_markup: { inline_keyboard: [[{ text: 'Cancelar', callback_data: 'cc_nav:entry:cancel' }]] } });
+    const result = delivered?.data?.result;
+    prompt.id = messageId(result?.message_id);
+    prompt.date = Number.isSafeInteger(result?.date) && result.date > 0 ? result.date : null;
+    if (!currentPrompt(chat, prompt)) {
+      retirePrompt(prompt);
+      await clearPrompt(profile, prompt); // Late delivery cannot resurrect a flow.
+    } else if (delivered?.ok !== true || !prompt.id || !prompt.date) {
+      takeFlow(chat, flow);
+      await clearPrompt(profile, prompt);
+      if (await stillOwner(profile)) await send(chat, 'Não consegui abrir a pergunta agora. Escolha a consulta novamente.');
+    }
   }
   async function navigation(profile, query, ticket, text, page) {
     const context = { owner: owner(profile), text, messageId: null, token: null };
@@ -178,13 +227,30 @@ export function createTelegramMenu(deps, now = Date.now) {
       await deps.answer(query.id, 'Este menu expirou. Escreva Ajuda para abrir um novo menu.');
       return true;
     }
+    if (ticket.prompt && currentPrompt(String(profile.chatId), ticket.prompt) && ticket.prompt.id === null) {
+      await deps.answer(query.id, 'Aguarde a pergunta terminar de abrir e tente novamente.');
+      return true;
+    }
+    if (ticket.prompt && (!currentPrompt(String(profile.chatId), ticket.prompt)
+      || ticket.prompt.id !== messageId(query.message?.message_id))) {
+      tickets.delete(token);
+      await deps.answer(query.id, 'Esta pergunta expirou ou foi substituída. Use a pergunta atual.');
+      return true;
+    }
     const key = `${profile.chatId}:${messageId(query.message?.message_id) || token}`;
     if (busy.has(key)) { await deps.answer(query.id, 'Aguarde a navegação terminar e tente novamente.'); return true; }
     tickets.delete(token); // Claim before any asynchronous transport or producer.
     busy.add(key);
+    const chat = String(profile.chatId);
+    const retired = takeFlow(chat, flows.get(chat));
     try {
       await deps.answer(query.id, '');
-      flows.delete(String(profile.chatId));
+      await clearPrompt(profile, retired);
+      if (!await stillOwner(profile)) return true;
+      if (ticket.prompt) {
+        await navigation(profile, query, ticket, 'Consulta cancelada.', 'home');
+        return true;
+      }
       if (pages[action]) {
         await navigation(profile, query, ticket, action === 'home' ? menuGreeting() : action === 'hoteis' ? 'Hotéis: abra a tela do app e selecione o pernoite para cadastrar ou editar. O link abre a versão web.' : 'Escolha uma opção:', action);
         return true;
@@ -199,18 +265,9 @@ export function createTelegramMenu(deps, now = Date.now) {
       } else if (action === 'diarias') {
         await send(profile.chatId, missingFinanceReply(), 'finance');
       } else if (parameters[action]) {
-        const chat = String(profile.chatId);
-        const flow = { owner: owner(profile), action, at: now(), promptId: null, promptDate: null };
+        const flow = { owner: owner(profile), action, at: now(), prompt: null };
         flows.set(chat, flow);
-        const delivered = await deps.send(profile.chatId, `${parameters[action]}\nOu toque em Cancelar.`, { reply_markup: { inline_keyboard: [[{ text: 'Cancelar', callback_data: 'cc_nav:entry:home' }]] } });
-        const prompt = delivered?.data?.result;
-        if (Number.isSafeInteger(prompt?.message_id) && prompt.message_id > 0 && Number.isSafeInteger(prompt?.date) && prompt.date > 0) {
-          flow.promptId = prompt.message_id;
-          flow.promptDate = prompt.date;
-        } else {
-          if (flows.get(chat) === flow) flows.delete(chat);
-          await send(chat, 'Não consegui abrir a pergunta agora. Escolha a consulta novamente.');
-        }
+        await ask(profile, flow, `${parameters[action]}\nOu toque em Cancelar.`);
       } else if (action === 'emergencia') await deps.emergency(query);
       else if (commands.has(action)) await execute(action, profile);
       return true;
@@ -223,7 +280,8 @@ export function createTelegramMenu(deps, now = Date.now) {
       || (!factText.startsWith('/') && /\b(?:rbac|act|irregularidade|conformidade)\b|^revisar escala$/i.test(factText)))) {
       const profile = await identity(message);
       if (!profile) return true;
-      flows.delete(chat);
+      const retired = takeFlow(chat, flows.get(chat));
+      await clearPrompt(profile, retired);
       await showFacts(profile);
       return true;
     }
@@ -231,36 +289,41 @@ export function createTelegramMenu(deps, now = Date.now) {
     if (!flow || !message.text) return false;
     const profile = await identity(message);
     if (!profile) {
-      if (message.chat?.type === 'private' && message.from?.id && String(message.from.id) === chat) flows.delete(chat);
+      if (message.chat?.type === 'private' && message.from?.id && String(message.from.id) === chat) takeFlow(chat, flow);
       return false;
     }
-    if (owner(profile) !== flow.owner) { flows.delete(chat); return false; }
+    if (owner(profile) !== flow.owner) { takeFlow(chat, flow); return false; }
     if (flows.get(chat) !== flow) return true;
     const value = String(message.text).trim().toUpperCase();
     const plain = foldMenuText(value);
-    if (/^(CANCELAR|\/CANCELAR)$/.test(plain)) { flows.delete(chat); await send(chat, 'Consulta cancelada.'); return true; }
-    if (priorityNavigation(value)) { flows.delete(chat); return false; }
-    if (value.startsWith('/')) { flows.delete(chat); return false; }
-    if (now() - flow.at > TTL) { flows.delete(chat); await send(chat, 'Esta consulta expirou. Escolha uma opção novamente.'); return true; }
-    if (!Number.isSafeInteger(message.message_id) || !Number.isSafeInteger(message.date)
-      || flow.promptId === null || message.message_id <= flow.promptId || message.date < flow.promptDate
-      || (message.reply_to_message && message.reply_to_message.message_id !== flow.promptId)) return true;
-    const valid = ['radar', 'portao'].includes(flow.action) ? /^(LA|JJ|G3|AD|AZU|LAN|TAM)\s?\d{2,5}$/.test(value) : /^[A-Z]{4}$/.test(value);
-    if (!valid) {
-      flow.promptId = null;
-      flow.promptDate = null;
-      const delivered = await deps.send(chat, `${parameters[flow.action]}\nPara sair, escreva Cancelar.`, { reply_markup: { inline_keyboard: [[{ text: 'Cancelar', callback_data: 'cc_nav:entry:home' }]] } });
-      const prompt = delivered?.data?.result;
-      if (Number.isSafeInteger(prompt?.message_id) && prompt.message_id > 0 && Number.isSafeInteger(prompt?.date) && prompt.date > 0) {
-        flow.promptId = prompt.message_id;
-        flow.promptDate = prompt.date;
-      } else {
-        if (flows.get(chat) === flow) flows.delete(chat);
-        await send(chat, 'Não consegui abrir a pergunta agora. Escolha a consulta novamente.');
-      }
+    const prompt = flow.prompt;
+    if (message.reply_to_message && message.reply_to_message.message_id !== prompt?.id) return true;
+    const followsPrompt = prompt && prompt.id !== null && Number.isSafeInteger(message.message_id)
+      && Number.isSafeInteger(message.date) && message.message_id > prompt.id && message.date >= prompt.date;
+    if (/^(CANCELAR|\/CANCELAR)$/.test(plain)) {
+      if (!followsPrompt) return true;
+      const retired = takeFlow(chat, flow); await clearPrompt(profile, retired);
+      if (await stillOwner(profile)) await send(chat, 'Consulta cancelada.');
       return true;
     }
-    flows.delete(chat); // Duplicate text cannot execute the same pending flow twice.
+    if (priorityNavigation(value) || value.startsWith('/')) {
+      const retired = takeFlow(chat, flow); await clearPrompt(profile, retired); return false;
+    }
+    if (now() - flow.at > TTL) {
+      const retired = takeFlow(chat, flow); await clearPrompt(profile, retired);
+      if (await stillOwner(profile)) await send(chat, 'Esta consulta expirou. Escolha uma opção novamente.');
+      return true;
+    }
+    if (!followsPrompt) return true;
+    const valid = ['radar', 'portao'].includes(flow.action) ? /^(LA|JJ|G3|AD|AZU|LAN|TAM)\s?\d{2,5}$/.test(value) : /^[A-Z]{4}$/.test(value);
+    if (!valid) {
+      const retired = retirePrompt(prompt);
+      await ask(profile, flow, `${parameters[flow.action]}\nPara sair, escreva Cancelar.`, retired);
+      return true;
+    }
+    const retired = takeFlow(chat, flow); // Duplicate input cannot claim this prompt twice.
+    await clearPrompt(profile, retired);
+    if (!await stillOwner(profile)) return true;
     await execute(flow.action, profile, value);
     return true;
   }
@@ -270,7 +333,8 @@ export function createTelegramMenu(deps, now = Date.now) {
     if (!flow || !priorityNavigation(message.text) || /^\/?CANCELAR$/.test(foldMenuText(message.text))) return false;
     const profile = await identity(message);
     if (!profile || flow.owner !== owner(profile) || flows.get(chat) !== flow) return false;
-    flows.delete(chat);
+    const retired = takeFlow(chat, flow);
+    await clearPrompt(profile, retired);
     return true;
   }
   return { markup, callback, text, interrupt };

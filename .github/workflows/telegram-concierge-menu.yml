@@ -8,6 +8,7 @@ on:
       - 'scripts/tests/telegram-navigation-reuse.test.mjs'
       - 'scripts/regression-telegram-duty-facts-handler.mjs'
       - 'scripts/regression-concierge-wellhub-conversation.mjs'
+      - 'scripts/regression-emergency-intent.mjs'
       - 'scripts/telegram-concierge-menu/**'
       - 'scripts/regression-telegram-concierge-menu.mjs'
       - 'scripts/v139/apply.mjs'
