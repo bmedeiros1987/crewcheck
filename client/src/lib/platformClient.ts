@@ -88,8 +88,10 @@ function localBilling(): PlatformBilling & { ok: boolean; plans: PlatformPlan[];
   return { ok: true, plans: [], localOnly: true, plan, status: cached.status || 'offline', provider: cached.provider || null, productId: cached.productId || null, currentPeriodEnd: cached.currentPeriodEnd || null, cancelAtPeriodEnd: Boolean(cached.cancelAtPeriodEnd), premiumAccess: plan !== 'free', entitlements: cached.entitlements || {}, usage: { kind: 'wakeup_call', monthKey, used, limit, remaining: Math.max(0, limit - used) } };
 }
 function localProfile(): PlatformProfile {
-  const cached = readLocal<Partial<PlatformProfile>>(LOCAL_PROFILE_KEY, {});
   const user: any = getStoredUser?.() || {};
+  const candidate = readLocal<Partial<PlatformProfile>>(LOCAL_PROFILE_KEY, {});
+  const email = String(user.email || '').trim().toLowerCase();
+  const cached = email && String(candidate?.email || '').trim().toLowerCase() === email ? candidate : {};
   return {
     email: cached.email || user.email || '',
     publicId: cached.publicId || 'CC-OFFLINE',
@@ -181,6 +183,7 @@ export async function saveConfirmedDisplayName(value: string): Promise<PlatformP
   }
   const confirmed = await getConfirmedPlatformProfile();
   if (!session.isCurrent() || confirmed.publicId !== before.publicId || confirmed.displayName !== displayName) throw new Error('Não foi possível confirmar o nome salvo.');
+  writeLocal(LOCAL_PROFILE_KEY, confirmed);
   window.dispatchEvent(new CustomEvent('crewcheck:profile-name-confirmed', { detail: { owner: session.owner, displayName } }));
   return confirmed;
 }
