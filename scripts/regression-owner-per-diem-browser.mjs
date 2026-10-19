@@ -10,7 +10,7 @@ const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage();
   const errors = []; page.on('pageerror', error => errors.push(error.message));
-  await page.addInitScript(() => { localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'synthetic-review-a', role: 'user' })); localStorage.setItem('crewcheck_auth_token', 'synthetic-token-a'); });
+  await page.addInitScript(() => { localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'synthetic-review-a', role: 'user' })); localStorage.setItem('crewcheck_auth_token', 'synthetic-token-a');localStorage.setItem('crewcheck_financial_settings_v1:synthetic-review-a:crewcheck_perdiem_rate_domestic','80'); });
   await page.goto('http://127.0.0.1:' + server.address().port);
   await page.getByText('Confirmar tarifa informada pelo titular', { exact: true }).click();
   await page.getByLabel('Mês de vigência').fill('2032-08');
@@ -20,6 +20,7 @@ try {
   await page.getByLabel('Confirmo tarifa de táxi a 25%, com elegibilidade calculada separadamente.').check();
   const prepare = page.getByRole('button', { name: 'Preparar tarifas sem gravar', exact: true });
   await prepare.click();
+  assert(await page.getByText(/Valor manual preservado:/).isVisible(),'review discloses the preserved manual conflict');
   assert.equal(await page.evaluate(() => lookup('per_diem.taxi', '2032-08-06')), null, 'preview never saves');
   await page.getByRole('button', { name: 'Cancelar revisão', exact: true }).click();
   assert.equal(await page.evaluate(() => lookup('per_diem.lunch', '2032-08-06')), null);
@@ -28,11 +29,24 @@ try {
   await page.getByRole('status').filter({ hasText: 'Tarifas salvas' }).waitFor();
   assert.equal(await page.evaluate(() => lookup('per_diem.taxi', '2032-08-06')), 43.75);
   assert.equal(await page.evaluate(() => lookup('per_diem.lunch', '2032-09-01')), null);
+  await page.getByLabel('Refeição integral (BRL)').fill('196,00');
+  await page.getByLabel('Confirmo café a 25% da refeição integral.').uncheck();
+  await page.getByLabel('Confirmo tarifa de táxi a 25%, com elegibilidade calculada separadamente.').uncheck();
+  await prepare.click();assert.equal(await page.locator('li').count(),3,'unchecked review contains principal meals only');
+  await page.getByRole('button', { name: 'Confirmar e salvar tarifas nesta conta', exact: true }).click();
+  assert.equal(await page.evaluate(() => lookup('per_diem.lunch', '2032-08-06')),196);
+  assert.equal(await page.evaluate(() => lookup('per_diem.breakfast', '2032-08-06')),null);
+  assert.equal(await page.evaluate(() => lookup('per_diem.taxi', '2032-08-06')),null);
+  await page.reload();
+  assert.equal(await page.evaluate(() => lookup('per_diem.lunch', '2032-08-06')),196);
+  assert.equal(await page.evaluate(() => lookup('per_diem.breakfast', '2032-08-06')),null,'unchecked option survives actual browser reload');
+  await page.getByText('Confirmar tarifa informada pelo titular', { exact: true }).click();
+  await page.getByLabel('Mês de vigência').fill('2032-08');await page.getByLabel('Refeição integral (BRL)').fill('196,00');await page.getByLabel('Referência da confirmação').fill('Synthetic edited review');
   await prepare.click();
   await page.evaluate(() => { localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'synthetic-review-b', role: 'user' })); localStorage.setItem('crewcheck_auth_token', 'synthetic-token-b'); });
   await page.getByRole('button', { name: 'Confirmar e salvar tarifas nesta conta', exact: true }).click();
   await page.getByRole('status').filter({ hasText: 'A conta ou sessão mudou' }).waitFor();
   assert.equal(await page.evaluate(() => lookup('per_diem.taxi', '2032-08-06')), null);
   assert.deepEqual(errors, []);
-  console.log('PASS synthetic owner review UI: preview/cancel, explicit save, bounded rates and account-switch rejection');
+  console.log('PASS synthetic owner review UI: preview/cancel, explicit save, unchecked edit/reload, manual conflict disclosure, bounded rates and account-switch rejection');
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

@@ -15,5 +15,5 @@ export function ownerPerDiemReview(input: { ownerId: string; month: string; meal
     unit: key === 'taxi' ? 'amount' : 'meal', currency: 'BRL', effectiveFrom: input.month + '-01', effectiveTo,
     sourceDocument: 'Confirmação do titular: ' + input.reference.trim(),
     sourceFingerprint: JSON.stringify(['owner-per-diem-v1', input.ownerId, input.month, cents, input.breakfastQuarter, input.taxiQuarter, input.reference.trim()]),
-    valueOrigin: 'owner_confirmed', confidence: 'review', confirmed: false }));
+    valueOrigin: 'owner_confirmed', perDiemReview: { breakfastQuarter: input.breakfastQuarter, taxiQuarter: input.taxiQuarter }, confidence: 'review', confirmed: false }));
 }

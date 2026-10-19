@@ -3,6 +3,10 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import {execFileSync} from 'node:child_process';
 import ts from 'typescript';
+import {build} from 'vite';
+import os from 'node:os';
+import path from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {loadClientModules} from './lib/ts-module-harness.mjs';
 
 // Invented dates, airports and prices. Exercise real caller/evidence/window
@@ -17,10 +21,11 @@ try {
   const rates=modules.load('financialStatementLearning');
   const context=vm.createContext({
     ...modules.load('financialAmounts'),...modules.load('financialJourneyGrouping'),...modules.load('financialIntervalEvidence'),...modules.load('compensationPolicy'),...modules.load('financialForecastPeriods'),
-    resolveActFinancialRules:()=>({profileLabel:'Synthetic reference',legalReference:'synthetic-only',version:'synthetic-v1',breakfastPercent:.25,perDiem:[{key:'domestic',label:'Synthetic domestic',currency:'BRL',mainMeal:100}]}),
+    resolveActFinancialRules:()=>({profileLabel:'Synthetic reference',legalReference:'synthetic-only',version:'synthetic-v1',breakfastPercent:.25,perDiem:[{key:'domestic',label:'Synthetic domestic',currency:'BRL',mainMeal:100},{key:'foreign',label:'Synthetic foreign',currency:'USD',mainMeal:65}]}),
+    confirmedRateAt:(key,date)=>{consulted.push({key,date});return rates.rateAt(learned,key,date,'BRL');},
     confirmedRateValueAt:(key,date)=>{consulted.push({key,date});return rates.rateAt(learned,key,date,'BRL')?.value??null;},
     readOptionalNumberSetting:()=>null,readNumberSetting:()=>0,loadAirportPerDiemOverrides:()=>({}),
-    resolvePerDiemRule:(origin,destination)=>({rateKey:origin==='UNKNOWN'||destination==='UNKNOWN'?null:'domestic',airport:destination,reason:'Synthetic geography'}),
+    resolvePerDiemRule:(origin,destination)=>({rateKey:origin==='UNKNOWN'||destination==='UNKNOWN'?null:destination==='FOREIGN'?'foreign':'domestic',airport:destination,reason:'Synthetic geography'}),
     isOperationalEvent:()=>true,financialEventCode:event=>event.day.type,
     eventStartDateTime:event=>new Date(event.start),eventEndDateTime:event=>new Date(event.end),
     dateChip:date=>date.toISOString().slice(0,10),
@@ -76,5 +81,23 @@ try {
   learned.forEach(row=>row.effectiveTo=month+'-05');
   assert.equal(run([reserve,...pair]).rows.find(row=>row.label==='Almoço').value,100,'expired personal rate never extends into this date');
   assert(consulted.every(row=>row.date===iso),'all pricing consults actual occurrence date');
+  const foreign=run([flight({destination:'FOREIGN'})]);
+  const lunch=foreign.rows.find(row=>row.label==='Almoço');
+  assert.equal(lunch.currency,'USD');assert.equal(lunch.value,65);
+  assert.equal(lunch.expectedPaymentDate,iso,'literal flight date survives unrelated pending APZ');
+  assert.equal(lunch.expectedPaymentTimezone,'America/Sao_Paulo');
+  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'synthetic-foreign-concierge-'));
+  try {
+    const entry=path.join(temp,'entry.ts');fs.writeFileSync(entry,['nextFinancialPayment','financialLocalUpcoming'].map(name=>`export * from ${JSON.stringify(path.resolve('client/src/lib/'+name+'.ts'))};`).join('\n'));
+    await build({configFile:false,logLevel:'silent',build:{lib:{entry,formats:['es'],fileName:()=> 'subject.mjs'},outDir:temp,emptyOutDir:false,minify:false}});
+    const {nextAllowancePayment,localUpcomingAllowance}=await import(pathToFileURL(path.join(temp,'subject.mjs')));
+    const now=new Date(iso+'T15:00:00Z');
+    const payment=nextAllowancePayment(foreign.rows,foreign.unclassifiedItems,[month],now,[iso]);
+    const upcoming=localUpcomingAllowance(payment,now);
+    assert(upcoming.events.some(event=>event.currency==='USD'&&event.amountMinor===6500&&event.expectedPaymentDate===iso&&event.expectedPaymentTimezone==='America/Sao_Paulo'),'real Concierge projection preserves proved foreign flight payment date');
+    const duty=run([{...reserve,destination:'FOREIGN',end:at('12:30'),day:{...reserve.day,dutyDebrief:'12:30'}}]);
+    assert(duty.rows.length);assert(duty.rows.every(row=>row.expectedPaymentDate===undefined),'foreign duty without a flight never borrows a payment date');
+    assert.equal(localUpcomingAllowance(nextAllowancePayment(duty.rows,duty.unclassifiedItems,[month],now,[iso]),now).events.length,0);
+  } finally {fs.rmSync(temp,{recursive:true,force:true});}
   console.log('PASS partial flight meals: real caller, literal-only inclusive windows, preserved APZ/taxi/breakfast unknowns, no duplicate meals, bounded reviewed tariffs. TZ='+process.env.TZ);
 } finally {modules.cleanup();}

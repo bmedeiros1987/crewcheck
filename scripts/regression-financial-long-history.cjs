@@ -1,0 +1,48 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),http=require('node:http'),vm=require('node:vm'),ts=require('typescript');
+const {createRequire}=require('node:module'),{chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||__filename)('playwright');
+const out=path.resolve('artifacts/financial-long-history');fs.mkdirSync(out,{recursive:true});
+const serverSource=fs.readFileSync('server.mjs','utf8'),ast=ts.createSourceFile('server.mjs',serverSource,99,true,ts.ScriptKind.JS),handler=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='serveStatic');
+const scope=vm.createContext({fs,path,Buffer,distDir:path.resolve('dist'),sendJson:(res,status,body)=>{res.writeHead(status);res.end(JSON.stringify(body));}});vm.runInContext(handler.getText(ast)+'\nglobalThis.respond=serveStatic;',scope);
+const server=http.createServer((req,res)=>scope.respond(req,res,new URL(req.url,'http://localhost')));
+const fixtureSource=fs.readFileSync('scripts/regression-financial-known-values-app.cjs','utf8'),fixtureAst=ts.createSourceFile('fixture.cjs',fixtureSource,99,true,ts.ScriptKind.JS),seed=fixtureAst.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='seed').getText(fixtureAst);
+const A='synthetic@example.invalid',B='synthetic-b@example.invalid';
+(async()=>{await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true});let writes=0;const results=[];
+try{for(const width of [390,1440]){
+ let delay=100,historyReads=0;const errors=[];
+ const context=await browser.newContext({viewport:{width,height:900},serviceWorkers:'block'});
+ await context.addInitScript({content:'('+seed+')('+JSON.stringify({unknown:false,unknownAddition:false,futureForeign:true})+');'});
+ await context.route('**/*',async route=>{const req=route.request(),url=new URL(req.url());if(url.origin!==origin)return route.abort();
+  if(url.pathname.startsWith('/api/platform/finance/')&&req.method()!=='GET')writes++;
+  if(url.pathname==='/api/platform/finance/history'){
+   historyReads++;const owner=(req.headers().authorization||'').includes('synthetic-owner-b')?B:A,level=url.searchParams.get('aggregationLevel');
+   const records=owner===A?Array.from({length:60},(_,i)=>({id:(i+1).toString(16).padStart(64,'0'),ownerId:A,revision:1,periodStart:'2026-10-19',periodEnd:'2026-10-19',currency:'BRL',amountMinor:10000+i,category:'allowance',status:'forecast',aggregationLevel:level})):[];
+   await new Promise(resolve=>setTimeout(resolve,delay));
+   return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,source:'persisted_financial_ledger',access:'allowed',state:records.length?'available':'no_data',aggregationLevel:level,records})});
+  }
+  if(url.pathname.startsWith('/api/'))return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({ok:false,code:url.pathname==='/api/platform/finance/upcoming'?'FINANCIAL_LEDGER_NOT_ENABLED':'SYNTHETIC_OFFLINE'})});return route.continue();
+ });
+ const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));await page.goto(origin+'/app?view=cockpit');await page.locator('.cz-app').waitFor();
+ await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'concierge'})));
+ const card=page.getByRole('region',{name:'Próximas previsões financeiras'}),opener=card.locator('li button').first();await opener.waitFor();
+ const originKey=await opener.getAttribute('data-financial-origin');await opener.focus();await opener.evaluate(button=>button.scrollIntoView({block:'center',behavior:'instant'}));const originY=await page.evaluate(()=>scrollY);await opener.press('Enter');
+ await page.getByRole('heading',{name:'Diárias',exact:true}).waitFor();await page.getByRole('button',{name:'Extrato',exact:true}).click();
+ const ledger=page.getByRole('region',{name:'Histórico financeiro salvo'}),group=page.getByLabel('Agrupamento dos registros salvos',{exact:true});
+ await ledger.locator('li').first().waitFor();await group.selectOption('day');await page.waitForFunction(()=>document.querySelector('.cc-persisted-finance [data-financial-load-state]')?.dataset.financialLoadState==='available');
+ await ledger.getByRole('button',{name:'Mostrar mais registros',exact:true}).click();await ledger.getByRole('button',{name:'Mostrar mais registros',exact:true}).click();assert.equal(await ledger.locator('li').count(),60);
+ const anchor=ledger.locator('li').nth(44),key=await anchor.getAttribute('data-financial-row-key');await group.evaluate(select=>select.focus({preventScroll:true}));await anchor.evaluate(row=>row.scrollIntoView({block:'center',behavior:'instant'}));
+ let saved=await page.evaluate(key=>({y:scrollY,offset:document.querySelector('[data-financial-row-key="'+key+'"]')?.getBoundingClientRect().top}),key);assert(saved.y>3000,'fixture exceeds a shallow single-frame restoration');
+ const detail=async()=>{await page.getByRole('button',{name:'Detalhes do pagamento',exact:true}).evaluate(button=>button.click());await page.waitForFunction(()=>document.querySelector('.cc-payment-overview')?.dataset.financialScreen==='payment');};
+ const restored=async()=>{await page.waitForFunction(()=>document.querySelectorAll('.cc-persisted-finance li').length===60);await page.waitForFunction(({key,offset})=>{const row=document.querySelector('[data-financial-row-key="'+key+'"]');return row&&Math.abs(row.getBoundingClientRect().top-offset)<3;},{key,offset:saved.offset});assert.equal(await group.inputValue(),'day');assert(Math.abs(await page.evaluate(()=>scrollY)-saved.y)<3);};
+ delay=900;await detail();assert.equal(await ledger.count(),0,'payment unmounts persisted list');await page.getByRole('button',{name:'← Voltar',exact:true}).click();await restored();assert.equal(await group.evaluate(select=>select===document.activeElement),true,'restore focus after actual list content is ready');
+ await page.evaluate(()=>window.dispatchEvent(new Event('crewcheck:open-menu')));await page.locator('.cz-menu-overlay').waitFor();await page.keyboard.press('Escape');await page.locator('.cz-menu-overlay').waitFor({state:'detached'});await restored();
+ await page.getByLabel('Filtro financeiro',{exact:true}).selectOption('custom');await page.getByLabel('Início financeiro',{exact:true}).fill('2026-10-01');await page.getByLabel('Fim financeiro',{exact:true}).fill('2026-10-31');await ledger.locator('li').first().waitFor();
+ assert.equal(await group.inputValue(),'day');await anchor.evaluate(row=>row.scrollIntoView({block:'center',behavior:'instant'}));saved=await page.evaluate(key=>({y:scrollY,offset:document.querySelector('[data-financial-row-key=\"'+key+'\"]')?.getBoundingClientRect().top}),key);await detail();await page.getByRole('button',{name:'← Voltar',exact:true}).click();await restored();assert.equal(await page.getByLabel('Filtro financeiro',{exact:true}).inputValue(),'custom');
+ await page.evaluate(()=>window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'concierge'})));await card.waitFor();await page.goBack();await restored();
+ for(let depth=0;depth<8&&new URL(page.url()).searchParams.get('view')!=='concierge';depth++){const before=page.url();await page.locator('.cz-global-header button.cz-menu-btn').evaluate(button=>button.click());await page.waitForFunction(before=>location.href!==before,before);}await card.waitFor();await page.waitForFunction(key=>document.activeElement?.getAttribute('data-financial-origin')===key,originKey);assert(Math.abs(await page.evaluate(()=>scrollY)-originY)<3,'header close returns to original Concierge focus/scroll');
+ await opener.press('Enter');await page.getByRole('heading',{name:'Diárias',exact:true}).waitFor();await page.getByRole('button',{name:'Extrato',exact:true}).click();await ledger.locator('li').first().waitFor();
+ while(await ledger.locator('li').count()<60)await ledger.getByRole('button',{name:'Mostrar mais registros',exact:true}).click();await ledger.locator('li').nth(44).evaluate(row=>row.scrollIntoView({block:'center',behavior:'instant'}));assert(await page.evaluate(()=>scrollY)>3000,'account test starts from a deep saved entry');await detail();delay=1400;await page.getByRole('button',{name:'← Voltar',exact:true}).click();
+ await page.evaluate(email=>{window.dispatchEvent(new Event('crewcheck:auth-will-change'));localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-b',email,role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-owner-b');window.dispatchEvent(new Event('crewcheck:auth-changed'));},B);
+ await page.waitForFunction(()=>!document.querySelector('.cc-financial-route:not([hidden]) .cc-persisted-finance li'));await page.waitForTimeout(1600);assert.notEqual(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Agrupamento dos registros salvos');assert(await page.evaluate(()=>scrollY)<3,'delayed response never restores another account position');assert.deepEqual(errors,[]);
+ results.push({width,rows:60,historyReads,slowResponseMs:900,grouping:true,anchor:true,filters:true,detailBack:true,conciergeReturn:true,headerClose:true,overlayClose:true,accountIsolation:true});await context.close();
+ }assert.equal(writes,0);fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({results,writes},null,2));console.log('PASS actual compiled long history '+JSON.stringify({results,writes}));
+}finally{await browser.close();server.closeAllConnections();server.close();}})().catch(error=>{console.error(error);server.closeAllConnections();server.close();process.exitCode=1;});

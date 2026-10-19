@@ -5,6 +5,7 @@ import { authFetch, captureAuthSession, getStoredUser, getToken } from '@/lib/au
 import { validFinancialDay, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { useFinancialPrivacy } from './FinancialPrivacy';
 import './persistent-history.css';
+import { financialEntryScope, readFinancialListPreference, writeFinancialListPreference } from './financialEntryState';
 
 type Level='item'|'day'|'week'|'month';
 type Status='forecast'|'statement_reported'|'payment_confirmed';
@@ -24,16 +25,23 @@ function decode(raw:any,expectedOwner:string,level:Level,range:FinancialRange):H
   if((raw.state==='no_data')!==(raw.records.length===0)&&raw.state!=='incomplete')return null;
   return {state:raw.state,records:raw.records};
 }
-export default function PersistentFinancialHistory({range,mode,view,comparison='month'}:{range:FinancialRange;mode:'allowance'|'salary';view:'statement'|'charts';comparison?:'month'|'week'}) {
+export default function PersistentFinancialHistory({range,mode,view,comparison='month',entryScope}:{range:FinancialRange;mode:'allowance'|'salary';view:'statement'|'charts';comparison?:'month'|'week';entryScope?:string}) {
   const privacy=useFinancialPrivacy(),identity=owner(),token=getToken();
-  const [selectedLevel,setLevel]=useState<Level>(mode==='salary'?'month':'item');
+  const scope=entryScope||financialEntryScope(identity+':'+token),preferenceKey=JSON.stringify([mode,range.start,range.end,view]);
+  const initial=()=>({scope,key:preferenceKey,...readFinancialListPreference(scope,preferenceKey,mode==='salary'?'month':'item')});
+  const [preferences,setPreferences]=useState(initial);
+  const preference=preferences.scope===scope&&preferences.key===preferenceKey?preferences:readFinancialListPreference(scope,preferenceKey,preferences.scope===scope?preferences.level:mode==='salary'?'month':'item');
+  const selectedLevel=(mode==='salary'?'month':['item','day','week'].includes(preference.level)?preference.level:'item') as Level;
+  const visible=preference.visible;
+  const changePreference=(next:{level:string;visible:number})=>{writeFinancialListPreference(scope,preferenceKey,next);setPreferences({scope,key:preferenceKey,...next});};
+  const setLevel=(next:Level)=>changePreference({level:next,visible:20});
+  useEffect(()=>writeFinancialListPreference(scope,preferenceKey,{level:selectedLevel,visible}),[scope,preferenceKey,selectedLevel,visible]);
   const level:Level=view==='charts'?(mode==='salary'?'month':comparison==='month'?'day':'week'):selectedLevel;
   const [revision,refresh]=useState(0),[result,setResult]=useState<{key:string;token:string|null;data:History|null;loading:boolean;error?:string}>({key:'',token:null,data:null,loading:false});
-  const [visible,setVisible]=useState(20);
   const requestKey=[identity,mode,level,range.start,range.end,range.valid].join(':');
   useEffect(()=>{const changed=()=>{setResult({key:'',token:null,data:null,loading:false});refresh(n=>n+1);};const storage=(e:StorageEvent)=>{if(e.key===null||['crewcheck_auth_user','crewcheck_auth_token'].includes(e.key))changed();};for(const event of ['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'])window.addEventListener(event,changed);window.addEventListener('storage',storage);return()=>{for(const event of ['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'])window.removeEventListener(event,changed);window.removeEventListener('storage',storage);};},[]);
   useEffect(()=>{
-    const session=captureAuthSession(),controller=new AbortController();let live=true;setVisible(20);
+    const session=captureAuthSession(),controller=new AbortController();let live=true;
     if(!identity||!range.valid){setResult({key:requestKey,token,data:null,loading:false});return;}
     setResult({key:requestKey,token,data:null,loading:true});
     const query=new URLSearchParams({periodStart:range.start,periodEnd:range.end,aggregationLevel:level});
@@ -50,7 +58,7 @@ export default function PersistentFinancialHistory({range,mode,view,comparison='
   const {groups:totals,excluded,comparableCurrencies}=financialHistoryComparison(rows,{grouping:comparison,incomplete:data?.state==='incomplete'});
   const width=(item:{currency:string;amountMinor:number|null})=>{const max=Math.max(0,...totals.filter(row=>row.currency===item.currency).flatMap(row=>row.amountMinor===null?[]:[Math.abs(row.amountMinor)]));return max&&item.amountMinor!==null?Math.abs(item.amountMinor)/max*100:0;};
   const message=current?.loading?'Consultando registros…':current?.error==='LEDGER_OFF'?'Histórico salvo indisponível.':!data?'Não foi possível carregar o histórico.':data.state==='incomplete'?'Histórico parcial · conferir registros.':!rows.length?'Sem registros neste período.':'Moeda original · previsto e confirmado separados.';
-  return <section className="cc-persisted-finance" aria-label="Histórico financeiro salvo">
+  return <section className="cc-persisted-finance" aria-label="Histórico financeiro salvo" data-financial-content-ready={current&&!current.loading?'true':'false'}>
     <h3>Histórico salvo</h3>
     <details className="cc-financial-help"><summary aria-label="Entender histórico salvo">?</summary><p>Somente registros persistidos da conta. Períodos sem registros não são zero. Liquidação conforme registro informado, sem consulta bancária; datas não confirmam pagamento. {current?.error==='LEDGER_OFF'?'Consulta persistida desativada; estimativas da escala permanecem separadas.':''}</p></details>
     {view==='statement'&&<label>Registros por<select aria-label="Agrupamento dos registros salvos" value={level} onChange={event=>setLevel(event.target.value as Level)}>{(mode==='salary'?['month']:['item','day','week']).map(value=><option key={value} value={value}>{{item:'Lançamento',day:'Dia',week:'Semana',month:'Mês'}[value]}</option>)}</select></label>}
@@ -58,7 +66,7 @@ export default function PersistentFinancialHistory({range,mode,view,comparison='
     {!current?.loading&&!data&&current?.error!=='LEDGER_OFF'&&<button type="button" onClick={()=>refresh(n=>n+1)}>Tentar novamente</button>}
 
     {data&&rows.length>0&&<>
-      {view==='statement'?<ol>{[...rows].sort((a,b)=>b.periodStart.localeCompare(a.periodStart)||a.id.localeCompare(b.id)).slice(0,visible).map(row=><li key={row.id}><div><strong>{categories[row.category]}</strong><span>{date(row.periodStart)} a {date(row.periodEnd)}</span><small>Moeda original: {row.currency}</small><small>{statuses[row.status]} · revisão {row.revision}</small>{row.expectedPaymentDate&&<small>Pagamento previsto: {date(row.expectedPaymentDate)} · {row.expectedPaymentTimezone||'fuso não informado'}</small>}{row.paymentDate&&<small>Data de liquidação informada: {date(row.paymentDate)}</small>}</div><b>{row.amountMinor===null?'Não informado':money(row.amountMinor,row.currency)}</b></li>)}</ol>:<div aria-label="Gráfico de registros salvos">
+      {view==='statement'?<ol>{[...rows].sort((a,b)=>b.periodStart.localeCompare(a.periodStart)||a.id.localeCompare(b.id)).slice(0,visible).map(row=><li key={row.id} data-financial-row-key={row.id}><div><strong>{categories[row.category]}</strong><span>{date(row.periodStart)} a {date(row.periodEnd)}</span><small>Moeda original: {row.currency}</small><small>{statuses[row.status]} · revisão {row.revision}</small>{row.expectedPaymentDate&&<small>Pagamento previsto: {date(row.expectedPaymentDate)} · {row.expectedPaymentTimezone||'fuso não informado'}</small>}{row.paymentDate&&<small>Data de liquidação informada: {date(row.paymentDate)}</small>}</div><b>{row.amountMinor===null?'Não informado':money(row.amountMinor,row.currency)}</b></li>)}</ol>:<div aria-label="Gráfico de registros salvos">
         <p>{range.start.split('-').reverse().join('/')}–{range.end.split('-').reverse().join('/')} · registros disponíveis</p>
         {!comparableCurrencies.length&&<p>Sem dois períodos na mesma moeda para comparar.</p>}
         {excluded>0&&<p>Registros sem período compatível não foram distribuídos.</p>}
@@ -69,7 +77,7 @@ export default function PersistentFinancialHistory({range,mode,view,comparison='
         </div>)}
       </div>}
 
-      {view==='statement'&&rows.length>visible&&<button type="button" onClick={()=>setVisible(n=>n+20)}>Mostrar mais registros</button>}
+      {view==='statement'&&rows.length>visible&&<button type="button" onClick={()=>changePreference({level:selectedLevel,visible:visible+20})}>Mostrar mais registros</button>}
 
     </>}
   </section>;

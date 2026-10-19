@@ -35,12 +35,14 @@ export function resolveDomesticPerDiemRate(args: {
   actMainMeal: number;
   manualOverride: number | null;
   learnedMainMeal: number | null;
+  ownerConfirmedMainMeal?: boolean;
   learnedBreakfast: number | null;
   breakfastPercent?: number;
 }): {
   mainMeal: number;
   breakfast: number;
   source: DomesticPerDiemRateSource;
+  breakfastSource: DomesticPerDiemRateSource;
 } {
   // A legacy device-wide sample is not an authenticated owner reference.
   // Document values enter through the owner-bound, reviewed learned-rate path only.
@@ -51,7 +53,11 @@ export function resolveDomesticPerDiemRate(args: {
   let source: DomesticPerDiemRateSource = 'act';
   let mainMeal = Number(args.actMainMeal);
 
-  if (args.manualOverride !== null && Number.isFinite(args.manualOverride)) {
+  const hasManual = args.manualOverride !== null && Number.isFinite(args.manualOverride);
+  if (args.ownerConfirmedMainMeal && args.learnedMainMeal !== null && Number.isFinite(args.learnedMainMeal)) {
+    source = 'learned';
+    mainMeal = Number(args.learnedMainMeal);
+  } else if (hasManual) {
     source = 'manual';
     mainMeal = Number(args.manualOverride);
   } else if (args.learnedMainMeal !== null && Number.isFinite(args.learnedMainMeal)) {
@@ -60,13 +66,18 @@ export function resolveDomesticPerDiemRate(args: {
 
   }
 
-  const breakfast = args.learnedBreakfast !== null && Number.isFinite(args.learnedBreakfast)
+  // A reviewed principal meal does not establish a reviewed breakfast price.
+  // Only the legacy explicit manual override includes the percentage fallback.
+  const explicitBreakfast = args.learnedBreakfast !== null && Number.isFinite(args.learnedBreakfast);
+  const breakfastSource: DomesticPerDiemRateSource = explicitBreakfast ? 'learned' : hasManual ? 'manual' : 'act';
+  const breakfast = explicitBreakfast
     ? roundCurrencyAmount(Number(args.learnedBreakfast))
-    : perDiemSlotAmount(mainMeal, 'breakfast', breakfastPercent);
+    : perDiemSlotAmount(hasManual ? Number(args.manualOverride) : args.actMainMeal, 'breakfast', breakfastPercent);
 
   return {
     mainMeal: roundCurrencyAmount(mainMeal),
     breakfast: roundCurrencyAmount(breakfast),
     source,
+    breakfastSource,
   };
 }

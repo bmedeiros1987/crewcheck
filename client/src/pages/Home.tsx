@@ -124,7 +124,7 @@ import FinancialStatementReconciliation from '@/components/finance/FinancialStat
 import CanonicalForecastCapture from '@/components/finance/CanonicalForecastCapture';
 import { financialRowsInRange, financialWeeks, financialRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
 import { rosterDisplayIso, rosterStrictInstant, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
-import { confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
+import { confirmedRateAt, confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
 import { allowanceIntervalState, rosterOperationalIso, rosterOperationalDateAt, rosterPresentationBeforeDeparture, taxiPresentationOccurrence, classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
@@ -3549,9 +3549,10 @@ function flightDistanceKmFromEvent(event: ZeroLeg): number {
 }
 function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
   const act = resolveActFinancialRules(roster);
-  const learnedMeal = confirmedRateValueAt('per_diem.lunch', effectiveDate)
-    ?? confirmedRateValueAt('per_diem.dinner', effectiveDate)
-    ?? confirmedRateValueAt('per_diem.supper', effectiveDate);
+  const learnedMealRate = confirmedRateAt('per_diem.lunch', effectiveDate)
+    ?? confirmedRateAt('per_diem.dinner', effectiveDate)
+    ?? confirmedRateAt('per_diem.supper', effectiveDate);
+  const learnedMeal = learnedMealRate?.value ?? null;
   const learnedBreakfast = confirmedRateValueAt('per_diem.breakfast', effectiveDate);
   const domesticRule = act.perDiem.find((rule) => rule.key === 'domestic');
   const domesticOverride = readOptionalNumberSetting('crewcheck_perdiem_rate_domestic');
@@ -3560,6 +3561,7 @@ function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
     actMainMeal: domesticRule?.mainMeal ?? NaN,
     manualOverride: domesticOverride,
     learnedMainMeal: learnedMeal,
+    ownerConfirmedMainMeal: learnedMealRate?.valueOrigin === 'owner_confirmed',
     learnedBreakfast,
     breakfastPercent: act.breakfastPercent,
   });
@@ -3585,11 +3587,12 @@ function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
     domesticBreakfast: domestic.breakfast,
     taxiRate: confirmedRateValueAt('per_diem.taxi', effectiveDate),
     domesticMainMealSource: domestic.source,
-    domesticBreakfastSource: learnedBreakfast !== null ? 'learned' : domestic.source,
+    domesticBreakfastSource: domestic.breakfastSource,
     airportOverrides: loadAirportPerDiemOverrides(),
     source: act.profileLabel + ' · ' + act.legalReference
       + (learnedMeal || learnedBreakfast ? ' · tarifas revisadas nesta conta' : '')
       + (domestic.source==='act' && learnedBreakfast===null ? ' · referência ACT; tarifa empresarial da conta não confirmada neste período' : '')
+      + (domestic.breakfastSource==='act' && domestic.source!=='act' ? ' · café: referência ACT; tarifa própria não confirmada neste período' : '')
       + demonstratedSource,
   };
 }
@@ -3630,7 +3633,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     const fx = cfg.exchangeRates[rate.currency];
     rows.push({
       eventId: event.id,
-      ...(rate.currency!=='BRL'&&event.kind==='flight'&&!financialIntervalEvidenceIssue([event])&&event.salaryClockKnown!==false?{expectedPaymentDate:rosterOperationalIso(eventStartDateTime(event)),expectedPaymentTimezone:'America/Sao_Paulo'}:{}),
+      ...(rate.currency!=='BRL'&&event.kind==='flight'&&!financialPublishedFlightIntervalIssue([event])&&event.salaryClockKnown!==false?{expectedPaymentDate:rosterOperationalIso(eventStartDateTime(event)),expectedPaymentTimezone:'America/Sao_Paulo'}:{}),
       date: dateChip(new Date(iso + 'T12:00:00')),
       iso,
       label,
@@ -5165,7 +5168,8 @@ export default function Home() {
     const resetAccountNavigation = () => {
       const url = new URL(location.href); url.searchParams.set('view','cockpit');
       for (const key of ['fmode','fscreen','fkind','fmonth','fday','ffrom','fto','fcurrency','fcomparison']) url.searchParams.delete(key);
-      history.replaceState({...history.state,ccFinancial:undefined,ccFinancialPosition:undefined,ccConciergePosition:undefined,ccEnteredFromConcierge:undefined},'',url);
+      history.replaceState({...history.state,ccFinancial:undefined,ccFinancialPosition:undefined,ccFinancialLists:undefined,ccFinancialScope:undefined,ccConciergePosition:undefined,ccEnteredFromConcierge:undefined},'',url);
+      window.scrollTo({left:0,top:0,behavior:'instant'});
       setViewState('cockpit');
     };
     window.addEventListener('popstate',restoreFinancialView);

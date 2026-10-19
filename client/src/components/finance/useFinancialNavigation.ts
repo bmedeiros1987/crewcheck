@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FinancialScreenName } from './FinancialScreen';
 import { validFinancialDay, type FinancialRange } from '@/lib/financialHistoryPeriods';
+import { clearFinancialEntryScopes, financialEntryScope } from './financialEntryState';
 
 type Context = { screen: FinancialScreenName; kind: FinancialRange['kind']; month: string; day: string; from: string; to: string; currency: string; comparison: 'month'|'week' };
 const fields = ['screen','kind','month','day','from','to','currency','comparison'] as const;
@@ -26,8 +27,10 @@ function read(mode: string, month: string): Context {
 
 /** URL contains filters only. No amounts, roster identity, credentials or cached financial records. */
 export default function useFinancialNavigation(mode: 'salary'|'allowance', month: string, identity: string) {
+  const scope=financialEntryScope(identity);
   const [context,setContext] = useState(() => read(mode,month));
-  const current = useRef(context), restoring = useRef(Boolean(history.state?.ccFinancialPosition)), previousIdentity = useRef({identity,month});
+  const current = useRef(context), restoring = useRef(history.state?.ccFinancialPosition?.scope===scope), previousIdentity = useRef({identity,month});
+  const [restoreRevision,setRestoreRevision]=useState(0),stopRestoration=useRef<(()=>void)|null>(null);
   const backFilters=useRef<Context|null>(null);
   current.current = context;
   const write = (next: Context, push = false) => {
@@ -35,17 +38,20 @@ export default function useFinancialNavigation(mode: 'salary'|'allowance', month
     url.searchParams.set('view',mode === 'allowance' ? 'perdiem' : 'salary');
     url.searchParams.set('fmode',mode);
     for (const key of fields) url.searchParams.set('f'+key,next[key]);
-    const state = { ...history.state, ...(push?{ccFinancialPosition:undefined}:{}), ccFinancial: { mode, depth: push ? (history.state?.ccFinancial?.depth||0)+1 : history.state?.ccFinancial?.depth||0 } };
+    const state = { ...history.state, ccFinancialScope:scope, ...(push?{ccFinancialPosition:undefined}:{}), ccFinancial: { mode, depth: push ? (history.state?.ccFinancial?.depth||0)+1 : history.state?.ccFinancial?.depth||0 } };
     history[push ? 'pushState' : 'replaceState'](state,'',url);
   };
   function update<K extends keyof Context>(key: K, value: Context[K]) {
+    stopRestoration.current?.();
     const next = { ...current.current, [key]: value };
     current.current = next; setContext(next); write(next);
   }
   function savePosition() {
+    stopRestoration.current?.();
     const root=document.querySelector<HTMLElement>('.cc-financial-route:not([hidden]) .cc-payment-overview');
     if (!root) return;
-    history.replaceState({...history.state,ccFinancialPosition:{x:scrollX,y:scrollY,focusKey:focusKey(root.contains(document.activeElement)?document.activeElement as HTMLElement:null)}},'');
+    const anchor=Array.from(root.querySelectorAll<HTMLElement>('[data-financial-row-key]')).find(element=>{const box=element.getBoundingClientRect();return box.bottom>0&&box.top<innerHeight;});
+    history.replaceState({...history.state,ccFinancialScope:scope,ccFinancialPosition:{scope,query:JSON.stringify(current.current),x:scrollX,y:scrollY,anchor:anchor?{key:anchor.dataset.financialRowKey,offset:anchor.getBoundingClientRect().top}:null,focusKey:focusKey(root.contains(document.activeElement)?document.activeElement as HTMLElement:null)}},'');
   }
   function navigate(screen: FinancialScreenName) {
     if (screen === current.current.screen) return;
@@ -60,17 +66,28 @@ export default function useFinancialNavigation(mode: 'salary'|'allowance', month
   useEffect(() => {
     const previousScrollRestoration=history.scrollRestoration;history.scrollRestoration='manual';
     const restore = () => {
+      stopRestoration.current?.();
       const params=new URLSearchParams(location.search);
       if (params.get('view') !== (mode==='allowance'?'perdiem':'salary')) return;
+      const linked=read(mode,month);
+      const visible=document.querySelector<HTMLElement>('.cc-financial-route:not([hidden]) .cc-payment-overview');
+      // Overlay close owns its own scroll restoration; it is not a financial
+      // route transition when the same screen and filters remain visible.
+      if(!backFilters.current&&visible?.getClientRects().length&&JSON.stringify(linked)===JSON.stringify(current.current))return;
       restoring.current = true;
-      const linked=read(mode,month),next=backFilters.current?{...backFilters.current,screen:linked.screen}:linked;
+      const next=backFilters.current?{...backFilters.current,screen:linked.screen}:linked;
       if(backFilters.current){backFilters.current=null;write(next);}
       current.current = next; setContext(next);
+      setRestoreRevision(value=>value+1);
     };
+    const invalidate=()=>{stopRestoration.current?.();clearFinancialEntryScopes();restoring.current=false;};
+    const storage=(event:StorageEvent)=>{if(event.key===null||['crewcheck_auth_user','crewcheck_auth_token'].includes(event.key))invalidate();};
+    for(const name of ['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'])window.addEventListener(name,invalidate);
     window.addEventListener('popstate',restore);
     window.addEventListener('crewcheck:financial-navigation-leave',savePosition);
-    return () => {history.scrollRestoration=previousScrollRestoration;window.removeEventListener('popstate',restore);window.removeEventListener('crewcheck:financial-navigation-leave',savePosition);};
-  },[mode,month]);
+    window.addEventListener('storage',storage);
+    return () => {history.scrollRestoration=previousScrollRestoration;window.removeEventListener('popstate',restore);window.removeEventListener('crewcheck:financial-navigation-leave',savePosition);window.removeEventListener('storage',storage);for(const name of ['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'])window.removeEventListener(name,invalidate);};
+  },[mode,month,scope]);
   useEffect(() => {
     if (previousIdentity.current.identity !== identity || previousIdentity.current.month !== month) {
       const sameOwner=previousIdentity.current.identity===identity;
@@ -81,16 +98,35 @@ export default function useFinancialNavigation(mode: 'salary'|'allowance', month
   },[identity,month]);
   useEffect(() => {
     const restore = restoring.current; restoring.current = false;
-    const frame = requestAnimationFrame(() => {
+    const saved=restore?history.state?.ccFinancialPosition:null;
+    const position=saved?.scope===scope&&saved.query===JSON.stringify(current.current)?saved:null;
+    let stopped=false,frame=0,timer=0;
+    let mutations:MutationObserver|undefined,resizes:ResizeObserver|undefined;
+    const cancel=()=>{stopped=true;cancelAnimationFrame(frame);clearTimeout(timer);mutations?.disconnect();resizes?.disconnect();for(const name of ['wheel','touchstart','pointerdown','keydown'])window.removeEventListener(name,cancel,true);};
+    stopRestoration.current=cancel;
+    const apply=(force=false)=>{
+      if(stopped||financialEntryScope(identity)!==scope){cancel();return;}
       const root = document.querySelector<HTMLElement>('.cc-financial-route:not([hidden]) .cc-payment-overview');
-      if (!root) return;
-      const position = restore ? history.state?.ccFinancialPosition : null;
+      if (!root) {if(force)cancel();return;}
+      if(position&&!force&&Array.from(root.querySelectorAll<HTMLElement>('[data-financial-content-ready="false"]')).some(element=>element.getClientRects().length))return;
+      const anchor=position?.anchor?Array.from(root.querySelectorAll<HTMLElement>('[data-financial-row-key]')).find(element=>element.getClientRects().length&&element.dataset.financialRowKey===position.anchor.key):null;
+      const top=position?(anchor?scrollY+anchor.getBoundingClientRect().top-position.anchor.offset:position.y):0;
+      if(position&&!force&&document.documentElement.scrollHeight-innerHeight+2<top)return;
       const target = (position?.focusKey ? Array.from(root.querySelectorAll<HTMLElement>('button,select,input,summary')).find(element=>element.getClientRects().length>0&&focusKey(element)===position.focusKey) : null) || root.querySelector<HTMLElement>('[data-financial-screen-heading]');
       target?.focus({preventScroll:true});
-      if (position) window.scrollTo({left:position.x,top:position.y,behavior:'instant'});
+      if (position) window.scrollTo({left:position.x,top,behavior:'instant'});
       else root.scrollIntoView({block:'start',behavior:'instant'});
-    });
-    return () => cancelAnimationFrame(frame);
-  },[context.screen]);
-  return { context,update,navigate,back };
+      cancel();
+    };
+    const schedule=()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>apply());};
+    if(position){
+      mutations=new MutationObserver(schedule);mutations.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','data-financial-content-ready','data-financial-load-state']});
+      resizes=new ResizeObserver(schedule);resizes.observe(document.body);
+      for(const name of ['wheel','touchstart','pointerdown','keydown'])window.addEventListener(name,cancel,true);
+      timer=window.setTimeout(()=>apply(true),10000);
+    }
+    schedule();
+    return cancel;
+  },[context.screen,identity,scope,restoreRevision]);
+  return { context,update,navigate,back,scope };
 }
