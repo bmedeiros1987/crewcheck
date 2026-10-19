@@ -63,10 +63,20 @@ export function buildDutyFacts({ profile, snapshot, accessAllowed = false, page 
   if (snapshot.roster.days.length > 370 || snapshot.roster.days.some(day => !Array.isArray(day.legs) || day.legs.length > 12 || day.legs.some(leg => !leg || typeof leg !== 'object' || Array.isArray(leg)))) return result([], ['Estrutura da publicação incompleta; nenhum horário de fallback foi medido.']);
   const sourceRows = new Map();
   for (const day of snapshot.roster.days) {
-    const key = JSON.stringify([baseDay(day), day.type, day.pairingCode, day.legs.map(leg => [leg.flightNumber, leg.origin, leg.destination, leg.departureTime, leg.arrivalTime]).sort()]);
-    const evidence = JSON.stringify([day.dutyReport, day.dutyDebrief, day.dutyReportSource, day.dutyDebriefSource, day.legs.map(leg => leg.presentationTime)]);
-    if (sourceRows.has(key) && sourceRows.get(key) !== evidence) return result([], ['Registros duplicados têm extremos ou proveniência conflitantes.']);
-    sourceRows.set(key, evidence);
+    // Recognize an occurrence before comparing its endpoints. Arrival/release
+    // and their provenance are evidence, never part of duplicate identity.
+    // Compare each repeated leg, including repeats inside a single source row.
+    const occurrences = day.legs.length ? day.legs : [null];
+    for (const leg of occurrences) {
+      const declaredOffset = Number(String(leg?.departureTime || '').match(/\(\+(\d+)\)/)?.[1] || 0);
+      const key = JSON.stringify(leg ? ['flight', baseDay(day), leg.flightNumber, leg.origin, leg.destination, declaredOffset]
+        : ['activity', baseDay(day), day.type, day.pairingCode]);
+      const evidence = JSON.stringify([day.type, day.pairingCode, day.dutyReport, day.dutyDebrief, day.dutyReportSource, day.dutyDebriefSource,
+        leg?.departureTime, leg?.arrivalTime, leg?.presentationTime, leg?.presentationTimeSource, leg?.departureTimeSource, leg?.arrivalTimeSource,
+        leg?.isNextDay, leg?.arrivalDayOffset, leg?.workType]);
+      if (sourceRows.has(key) && sourceRows.get(key) !== evidence) return result([], ['Registros duplicados têm extremos ou proveniência conflitantes.']);
+      sourceRows.set(key, evidence);
+    }
   }
   let events;
   try { events = buildCanonicalRosterEvents(snapshot.roster); } catch { return result([], ['Leitura canônica indisponível.']); }

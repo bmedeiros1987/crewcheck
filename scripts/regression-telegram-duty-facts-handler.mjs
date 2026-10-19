@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import crypto from 'node:crypto';
 import { createTelegramMenu, menuTemplate } from '../server/concierge/telegram-menu.mjs';
 import { buildDutyFacts } from '../server/concierge/duty-facts.mjs';
-import { profile as baseProfile, day, snapshot as makeSnapshot } from './fixtures/concierge-duty-facts/synthetic.mjs';
+import { profile as baseProfile, leg, day, snapshot as makeSnapshot } from './fixtures/concierge-duty-facts/synthetic.mjs';
 
 const source = fs.readFileSync('server.mjs', 'utf8');
 assert(source.includes('facts: (profile, snapshot, page = 0) => buildDutyFacts('), 'test requires actual prepared runtime wiring');
@@ -109,6 +109,12 @@ snapshot = makeSnapshot([day({ date: '2032-10-10' })]); await ask();
 assert.match(sent.at(-1).text, /DD\/MM\/AAAA/); assert(!sent.at(-1).text.includes('6h40'));
 assert(!sent.at(-1).text.includes('01/10/2032'));
 await run(callback(button('Fundamento'))); assert.match(sent.at(-1).text, /DD\/MM\/AAAA/);
+const published = day(), estimated = day({ dutyDebrief: '15:05', dutyDebriefSource: 'estimated', legs: [leg({ arrivalTime: '13:36' })] });
+for (const days of [[published, estimated], [estimated, published]]) {
+  snapshot = makeSnapshot(days); await ask(); assert.match(sent.at(-1).text, /duplicados.*conflitantes/);
+  assert(!sent.at(-1).text.includes('6h40'));
+  await run(callback(button('Fundamento'))); assert(!sent.at(-1).text.includes('Extremos publicados comprovados'));
+}
 assert(sent.every(item => !item.text.includes(baseProfile.email) && !item.text.includes(baseProfile.accessKeyHash)));
 assert(answers.length > 0);
 console.log('PASS prepared actual processTelegramUpdate + runtime + sendTelegramMessage + access predicate: slash/button parity, foundation/back, revision change, old snapshot, replay, binding/owner/group denial and in-flight relink; simulated transport only.');

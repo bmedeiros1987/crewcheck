@@ -73,6 +73,30 @@ test('duplicate source boundaries with conflicting provenance are not silently s
   const result = read([day(), day({ dutyDebriefSource: 'estimated' })]);
   assert.equal(result.items.length, 0); assert.match(result.summary, /duplicados.*conflitantes/);
 });
+test('arrival and release conflicts are rejected in every published/estimated permutation', () => {
+  const published = day(), estimated = day({ dutyDebrief: '15:05', dutyDebriefSource: 'estimated', legs: [leg({ arrivalTime: '13:36' })] });
+  for (const days of [[published, estimated], [estimated, published], [published, published, estimated], [estimated, published, published]]) {
+    const result = read(days); assert.equal(result.state, 'incomplete'); assert.equal(result.items.length, 0);
+    assert.match(result.summary, /duplicados.*conflitantes/); assert(!result.summary.includes('6h40'));
+    assert(!result.basis.includes('Extremos publicados comprovados'));
+  }
+});
+test('same occurrence with conflicting arrival alone is never selected by source order', () => {
+  const first = day(), second = day({ legs: [leg({ arrivalTime: '13:36' })] });
+  for (const days of [[first, second], [second, first]]) assert.equal(read(days).items.length, 0);
+});
+test('same date/flight/route with changed departure is unproved rather than a new authoritative occurrence', () => {
+  const a = day(), b = day({ legs: [leg({ departureTime: '08:21' })] });
+  for (const days of [[a, b], [b, a]]) assert.equal(read(days).items.length, 0);
+});
+test('conflicting repeated occurrence inside one row is rejected before physical selection', () => {
+  const result = read([day({ legs: [leg(), leg({ arrivalTime: '13:36' })] })]);
+  assert.equal(result.items.length, 0); assert.match(result.summary, /duplicados.*conflitantes/);
+});
+test('legitimate identical duplicate remains measured in either source order', () => {
+  const a = day(), b = structuredClone(a);
+  for (const days of [[a, b], [b, a]]) { const result = read(days); assert.equal(result.state, 'available'); assert.equal(result.items.length, 1); assert.equal(result.items[0].minutes, 400); }
+});
 test('missing flight clock and invalid published date never expose fallback duration', () => {
   assert.equal(read([day({ legs: [leg({ arrivalTime: '' })] })]).items[0].minutes, null);
   assert.equal(read([day({ date: '31/02/2032' })]).items.length, 0);
@@ -143,4 +167,15 @@ for (const [before, after, firstMonth, nextMonth, firstYear, nextYear] of [
   const second = day({ date: after, month: nextMonth, year: nextYear, dutyReport: '00:45', dutyDebrief: '02:40', legs: [leg({ flightNumber: 'QA0002', origin: 'GRU', destination: 'BSB', departureTime: '00:45', arrivalTime: '02:10' })] });
   const result = read([first, second]); const duty = result.items.find(item => item.kind === 'duty');
   assert.equal(duty.minutes, 265); assert.match(result.summary, new RegExp(before)); assert.match(result.summary, new RegExp(after));
+});
+test('exact independent-review fixture: official positive, refused ISO and both duplicate orders', () => {
+  const original = { date: '10/10/2032', type: 'VOO', pairingCode: 'SYN', base: 'BSB', dutyReport: '07:25', dutyDebrief: '14:05', dutyReportSource: 'published', dutyDebriefSource: 'published',
+    legs: [{ flightNumber: 'QA0001', origin: 'BSB', destination: 'GRU', departureTime: '08:20', arrivalTime: '13:35', workType: 'OP' }] };
+  const positive = read([original]); assert.equal(positive.items[0].minutes, 400); assert.equal(positive.items[0].date, '2032-10-10');
+  const iso = read([{ ...original, date: '2032-10-10' }]); assert.equal(iso.state, 'incomplete'); assert.equal(iso.items.length, 0); assert(!iso.summary.includes('01/10/2032'));
+  const conflicting = { ...original, dutyDebrief: '15:05', dutyDebriefSource: 'estimated', legs: [{ ...original.legs[0], arrivalTime: '13:36' }] };
+  for (const days of [[original, conflicting], [conflicting, original]]) {
+    const result = read(days); assert.equal(result.state, 'incomplete'); assert(result.items.every(item => item.minutes === null));
+    assert(!result.basis.includes('Extremos publicados comprovados'));
+  }
 });
