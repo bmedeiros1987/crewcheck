@@ -187,7 +187,7 @@ function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}
     openInline: () => context.sendTelegramMessage(profile.chatId, 'Menu de teste', { reply_markup: menuTemplate() }),
     tap: async label => {
       const last = trace.transports.at(-1);
-      const button = last.extra.reply_markup.inline_keyboard.flat().find(item => item.text === label);
+      const button = last.extra.reply_markup.inline_keyboard.flat().find(item => item.text.replace(/^[^\p{L}]+/u, '') === label);
       assert.ok(button?.callback_data, label);
       await context.processTelegramUpdate({ callback_query: { id: `callback-${sequence}`, data: button.callback_data, from: { id: profile.chatId }, message: { chat: { id: profile.chatId, type: 'private' }, ...last.result } } });
     },

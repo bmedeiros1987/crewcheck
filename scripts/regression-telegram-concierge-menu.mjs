@@ -18,7 +18,7 @@ const deps = {
   snapshot: async profile => ({ owner: profile.email, roster: { days: [] } }),
   reply: async (command, profile, snapshot) => { assert.equal(snapshot.owner, profile.email); calls.push({ command, owner: profile.email }); return 'Resposta sintética'; },
   answer: async (id, text) => answers.push({ id, text }),
-  weatherKeyboard: (station, type) => ({ inline_keyboard: [[{ text: 'Bruto', callback_data: `cc_weather:${type}:${station}:raw` }, { text: 'Decodificado', callback_data: `cc_weather:${type}:${station}:decoded` }], [{ text: 'ATIS', callback_data: `cc_weather:atis:${station}:both` }]] }),
+  weatherKeyboard: (station, type) => ({ inline_keyboard: [[{ text: 'Bruto', callback_data: `cc_weather:${type}:${station}:raw` }, { text: 'Decodificado', callback_data: `cc_weather:${type}:${station}:decoded` }], [{ text: '📻 ATIS', callback_data: `cc_weather:atis:${station}:both` }]] }),
   voice: async (chat, reply, text, snapshot) => voices.push({ chat, reply, text, owner: snapshot.owner }),
   settingsKeyboard: { keyboard: [[{ text: 'Como me chamar' }, { text: 'Voltar ao menu' }]] },
   emergency: async query => emergencies.push(query),
@@ -38,12 +38,12 @@ assert(sent.some(item => item.extra.reply_markup.remove_keyboard === true), 'fir
 const removals = sent.filter(item => item.extra.reply_markup.remove_keyboard === true).length;
 await home();
 assert.equal(sent.filter(item => item.extra.reply_markup.remove_keyboard === true).length, removals, 'migration is not repeated for each menu');
-assert.deepEqual(output.extra.reply_markup.inline_keyboard.flat().map(button => button.text), ['Hoje', 'Escala', 'Diárias', 'Hotéis', 'Mais']);
+assert.deepEqual(output.extra.reply_markup.inline_keyboard.flat().map(button => button.text), ['📅 Hoje', '✈️ Escala', '💰 Diárias', '🏨 Hotéis', '➕ Mais']);
 for (const button of output.extra.reply_markup.inline_keyboard.flat()) {
   assert(Buffer.byteLength(button.callback_data) <= 64);
   assert(!button.callback_data.includes(account));
 }
-const today = dataFor(output, 'Hoje');
+const today = dataFor(output, '📅 Hoje');
 const beforeReads = profileReads;
 await Promise.all([menu.callback(query(today)), menu.callback(query(today))]);
 assert.equal(calls.length, 1, 'concurrent replay dispatches once');
@@ -52,42 +52,42 @@ assert(profileReads >= beforeReads + 2, 'every callback revalidates');
 await menu.callback(query(today));
 assert.equal(calls.length, 1);
 output = await home();
-await menu.callback(query(dataFor(output, 'Escala'), { from: { id: 202 } }));
+await menu.callback(query(dataFor(output, '✈️ Escala'), { from: { id: 202 } }));
 assert.equal(calls.length, 1, 'different sender cannot use private menu');
-await menu.callback(query(dataFor(output, 'Escala'), { message: { chat: { id: -123, type: 'group' } } }));
+await menu.callback(query(dataFor(output, '✈️ Escala'), { message: { chat: { id: -123, type: 'group' } } }));
 assert.equal(calls.length, 1, 'group denied');
 account = 'other@example.test';
-await menu.callback(query(dataFor(output, 'Escala')));
+await menu.callback(query(dataFor(output, '✈️ Escala')));
 assert.equal(calls.length, 1, 'relinked account cannot use former account menu');
 account = 'demo@example.test';
 output = await home(); clock += 16 * 60_000;
-await menu.callback(query(dataFor(output, 'Escala')));
+await menu.callback(query(dataFor(output, '✈️ Escala')));
 assert.equal(calls.length, 1, 'old ticket rejected');
 output = await home(); linked = false;
-await menu.callback(query(dataFor(output, 'Hoje')));
+await menu.callback(query(dataFor(output, '📅 Hoje')));
 assert.equal(calls.length, 1, 'revoked account rejected'); linked = true;
 output = await home();
-await menu.callback(query(dataFor(output, 'Diárias')));
+await menu.callback(query(dataFor(output, '💰 Diárias')));
 assert.equal(sent.at(-1).text, missingFinanceReply());
 assert.equal(sent.at(-1).extra.reply_markup.inline_keyboard[0][0].url, financeUrl);
 output = await home();
-await menu.callback(query(dataFor(output, 'Mais')));
-await menu.callback(query(dataFor(sent.at(-1), 'Revisar escala')));
+await menu.callback(query(dataFor(output, '➕ Mais')));
+await menu.callback(query(dataFor(sent.at(-1), '📋 Revisar escala')));
 assert.equal(sent.at(-1).text, missingComplianceReply());
 assert(!sent.at(-1).text.includes('12 h'));
 output = await home();
-await menu.callback(query(dataFor(output, 'Mais')));
-await menu.callback(query(dataFor(sent.at(-1), 'Radar')));
+await menu.callback(query(dataFor(output, '➕ Mais')));
+await menu.callback(query(dataFor(sent.at(-1), '📡 Radar')));
 assert(await menu.text(message('not a flight')));
 assert.equal(calls.length, 1);
 await Promise.all([menu.text(message('LA1234')), menu.text(message('LA1234'))]);
 assert.equal(calls.length, 2, 'concurrent parameter messages dispatch once');
 assert.equal(calls.at(-1).command, '/radar LA1234');
 output = await home();
-await menu.callback(query(dataFor(output, 'Mais')));
-await menu.callback(query(dataFor(sent.at(-1), 'Meteorologia')));
-await menu.callback(query(dataFor(sent.at(-1), 'METAR')));
-await menu.callback(query(dataFor(sent.at(-1), 'Cancelar')));
+await menu.callback(query(dataFor(output, '➕ Mais')));
+await menu.callback(query(dataFor(sent.at(-1), '🌤️ Meteorologia')));
+await menu.callback(query(dataFor(sent.at(-1), '🌤️ METAR')));
+await menu.callback(query(dataFor(sent.at(-1), '✖️ Cancelar')));
 assert.equal(await menu.text(message('SBGR')), false, 'cancel clears flow');
 assert.equal(await menu.callback(query('cc_nav:settings')), true, 'old callbacks fail clearly');
 assert.equal(await menu.callback(query('cc_weather:metar:SBGR:raw')), false, 'other handlers retain ownership');
@@ -97,33 +97,33 @@ assert(answers.length > 0);
 
 // A replay must not interrupt the newer pending Radar question.
 output = await home();
-const staleMore = dataFor(output, 'Mais');
+const staleMore = dataFor(output, '➕ Mais');
 await menu.callback(query(staleMore));
-await menu.callback(query(dataFor(sent.at(-1), 'Radar')));
+await menu.callback(query(dataFor(sent.at(-1), '📡 Radar')));
 await menu.callback(query(staleMore));
 assert.equal(await menu.text(message('LA1234')), true, 'stale callback preserves pending input');
 assert.equal(calls.length, 3);
 output = await home();
-await menu.callback(query(dataFor(output, 'Mais')));
-await menu.callback(query(dataFor(sent.at(-1), 'Radar')));
+await menu.callback(query(dataFor(output, '➕ Mais')));
+await menu.callback(query(dataFor(sent.at(-1), '📡 Radar')));
 await menu.callback(query('cc_nav:menu', { from: { id: 202 } }));
 assert.equal(await menu.text(message('LA1234')), true, 'another sender cannot clear the current flow');
 assert.equal(calls.length, 4);
 output = await home();
-await menu.callback(query(dataFor(output, 'Mais')));
-await menu.callback(query(dataFor(sent.at(-1), 'Radar')));
-await menu.callback(query(dataFor(sent.at(-1), 'Cancelar')));
+await menu.callback(query(dataFor(output, '➕ Mais')));
+await menu.callback(query(dataFor(sent.at(-1), '📡 Radar')));
+await menu.callback(query(dataFor(sent.at(-1), '✖️ Cancelar')));
 assert.equal(await menu.text(message('LA1234')), false, 'cancel/new root does not consume old input');
 output = await home();
-await menu.callback(query(dataFor(output, 'Mais')));
-await menu.callback(query(dataFor(sent.at(-1), 'Radar')));
+await menu.callback(query(dataFor(output, '➕ Mais')));
+await menu.callback(query(dataFor(sent.at(-1), '📡 Radar')));
 clock += 16 * 60_000;
 await menu.callback(query('cc_nav:menu'));
 assert.equal(await menu.text(message('LA1234')), false, 'expired flow stays cleared on legacy menu refresh');
-for (const [label, command] of [['METAR', 'metar'], ['TAF', 'taf'], ['ATIS', 'atis']]) {
+for (const [label, command] of [['🌤️ METAR', 'metar'], ['🌤️ TAF', 'taf'], ['📻 ATIS', 'atis']]) {
   output = await home();
-  await menu.callback(query(dataFor(output, 'Mais')));
-  await menu.callback(query(dataFor(sent.at(-1), 'Meteorologia')));
+  await menu.callback(query(dataFor(output, '➕ Mais')));
+  await menu.callback(query(dataFor(sent.at(-1), '🌤️ Meteorologia')));
   await menu.callback(query(dataFor(sent.at(-1), label)));
   await menu.text(message('SBGR'));
   assert.equal(calls.at(-1).command, `/${command} SBGR`);
@@ -134,10 +134,10 @@ assert.equal(voices[0].owner, account);
 assert.equal(voices[0].reply, 'Resposta sintética');
 async function askRadar() {
   const root = await home();
-  await menu.callback(query(dataFor(root, 'Mais')));
-  await menu.callback(query(dataFor(sent.at(-1), 'Radar')));
+  await menu.callback(query(dataFor(root, '➕ Mais')));
+  await menu.callback(query(dataFor(sent.at(-1), '📡 Radar')));
 }
-for (const priority of ['🚨 Emergência', 'SOS', 'Ajuda', 'Voltar', 'Início', 'Configurações', '/emergencia', '/hoje']) {
+for (const priority of ['🚨 Emergência', 'SOS', 'Ajuda', '↩️ Voltar', '🏠 Início', '⚙️ Configurações', '/emergencia', '/hoje']) {
   await askRadar();
   assert.equal(await menu.text(message(priority)), false, `${priority} reaches its existing handler`);
   assert.equal(await menu.text(message('LA1234')), false, `${priority} clears the pending question`);
@@ -167,13 +167,13 @@ assert.equal(calls.length, beforeReprompt, 'answer to superseded question is rej
 await menu.text({ ...message('LA1234'), reply_to_message: { message_id: currentPrompt } });
 assert.equal(calls.length, beforeReprompt + 1, 'reply to the actually delivered replacement question works');
 output = await home();
-await menu.callback(query(dataFor(output, 'Mais')));
-const emergencyQuery = query(dataFor(sent.at(-1), 'Emergência'));
+await menu.callback(query(dataFor(output, '➕ Mais')));
+const emergencyQuery = query(dataFor(sent.at(-1), '🚨 Emergência'));
 await menu.callback(emergencyQuery);
 assert.equal(emergencies.at(-1), emergencyQuery.callback_query, 'explicit emergency entry preserves original callback object');
 output = await home();
-await menu.callback(query(dataFor(output, 'Mais')));
-await menu.callback(query(dataFor(sent.at(-1), 'Configurações')));
+await menu.callback(query(dataFor(output, '➕ Mais')));
+await menu.callback(query(dataFor(sent.at(-1), '⚙️ Configurações')));
 assert.deepEqual(sent.at(-1).extra.reply_markup, deps.settingsKeyboard);
 const beforeRestore = sent.filter(item => item.extra.reply_markup.remove_keyboard).length;
 await home();

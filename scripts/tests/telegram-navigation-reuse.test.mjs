@@ -44,7 +44,7 @@ function fixture({publicProfile='linked'}={}) {
       if (method === 'editMessageText') result.text = body.text;
       result.reply_markup = body.reply_markup;
     }
-    if (method === 'sendMessage' && body.reply_markup?.inline_keyboard?.flat().some(x=>x.text==='Cancelar') && pausePrompt) await pausePrompt;
+    if (method === 'sendMessage' && body.reply_markup?.inline_keyboard?.flat().some(x=>x.text==='✖️ Cancelar') && pausePrompt) await pausePrompt;
     if (method === 'editMessageText' && pauseAfterEdit) await pauseAfterEdit;
     if (method === 'editMessageText' && editMode === 'applied-throw') throw Error('synthetic uncertain delivery');
     return { ok: true, status: 200, json: async () => ({ ok: true, result: structuredClone(result) }) };
@@ -98,9 +98,9 @@ function fixture({publicProfile='linked'}={}) {
 
 test('web-only hotel destination and short accessible controls', () => {
   const buttons = menuTemplate('hoteis').inline_keyboard.flat();
-  assert.equal(buttons.find(x => x.text === 'Abrir Hotéis no app').url, hotelsUrl);
+  assert.equal(buttons.find(x => x.text === '🏨 Abrir Hotéis no app').url, hotelsUrl);
   assert.equal(hotelsUrl, 'https://crewcheck.online/?view=hotels');
-  assert.deepEqual(buttons.filter(x => x.callback_data).map(x => x.text), ['Histórico', 'Início']);
+  assert.deepEqual(buttons.filter(x => x.callback_data).map(x => x.text), ['🕘 Histórico', '🏠 Início']);
   assert(!buttons.some(x => /Informar|quarto|APK/i.test(x.text)));
   const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
   assert(home.includes("if (value === 'hotels' || value === 'hoteis') return 'hotels'"));
@@ -109,95 +109,95 @@ test('web-only hotel destination and short accessible controls', () => {
 
 test('pure navigation edits one message; return and hotel history preserve useful content', async () => {
   const f = fixture(); await f.root(); const original = structuredClone(f.latest());
-  await f.press(original, 'Mais'); const nav = f.latest(); const navId = nav.message_id;
+  await f.press(original, '➕ Mais'); const nav = f.latest(); const navId = nav.message_id;
   assert.equal(f.messages.get(original.message_id).text, original.text);
   assert.deepEqual(f.messages.get(original.message_id).reply_markup.inline_keyboard, []);
   const sends = f.count('sendMessage');
-  await f.press(nav, 'Meteorologia'); assert.equal(f.latest().message_id, navId); assert.equal(f.count('sendMessage'), sends);
-  await f.press(f.latest(), 'Voltar'); assert(f.latest().reply_markup.inline_keyboard.flat().some(x => x.text === 'Meteorologia'));
-  await f.press(f.latest(), 'Início'); await f.press(f.latest(), 'Hotéis');
+  await f.press(nav, '🌤️ Meteorologia'); assert.equal(f.latest().message_id, navId); assert.equal(f.count('sendMessage'), sends);
+  await f.press(f.latest(), '↩️ Voltar'); assert(f.latest().reply_markup.inline_keyboard.flat().some(x => x.text === '🌤️ Meteorologia'));
+  await f.press(f.latest(), '🏠 Início'); await f.press(f.latest(), '🏨 Hotéis');
   assert.match(f.latest().text, /versão web/);
-  await f.press(f.latest(), 'Histórico'); const history = structuredClone(f.latest());
+  await f.press(f.latest(), '🕘 Histórico'); const history = structuredClone(f.latest());
   assert.equal(f.producers.at(-1), '/historico_pernoites');
-  await f.press(history, 'Início');
+  await f.press(history, '🏠 Início');
   assert.equal(f.messages.get(history.message_id).text, history.text, 'result content must never be overwritten');
   assert.deepEqual(f.messages.get(history.message_id).reply_markup.inline_keyboard, []);
-  assert(f.latest().reply_markup.inline_keyboard.flat().some(x => x.text === 'Hoje'));
+  assert(f.latest().reply_markup.inline_keyboard.flat().some(x => x.text === '📅 Hoje'));
 });
 
 for (const mode of ['http', 'throw', 'applied-throw']) test(`edit ${mode}: retire uncertain controls and send one fallback`, async () => {
-  const f = fixture(); await f.root(); await f.press(f.latest(), 'Mais'); const previous = structuredClone(f.latest());
-  f.mode(mode); const sends = f.count('sendMessage'); await f.press(previous, 'Meteorologia');
+  const f = fixture(); await f.root(); await f.press(f.latest(), '➕ Mais'); const previous = structuredClone(f.latest());
+  f.mode(mode); const sends = f.count('sendMessage'); await f.press(previous, '🌤️ Meteorologia');
   assert.equal(f.count('sendMessage'), sends + 1);
   assert.deepEqual(f.messages.get(previous.message_id).reply_markup.inline_keyboard, []);
-  const after = f.count('sendMessage'); await f.press(previous, 'Meteorologia');
+  const after = f.count('sendMessage'); await f.press(previous, '🌤️ Meteorologia');
   assert.equal(f.count('sendMessage'), after); assert.match(f.answers.at(-1), /expirou/);
-  await f.press(f.latest(), 'Voltar'); assert(f.latest().reply_markup.inline_keyboard.flat().some(x => x.text === 'Meteorologia'));
+  await f.press(f.latest(), '↩️ Voltar'); assert(f.latest().reply_markup.inline_keyboard.flat().some(x => x.text === '🌤️ Meteorologia'));
 });
 
 test('failed clear preserves text, but old callbacks cannot duplicate producers', async () => {
   const f = fixture(); await f.root(); const root = structuredClone(f.latest()); f.clearFailure();
-  await Promise.all([f.press(root, 'Hoje'), f.press(root, 'Hoje')]);
+  await Promise.all([f.press(root, '📅 Hoje'), f.press(root, '📅 Hoje')]);
   assert.deepEqual(f.producers, ['/hoje']); assert.equal(f.messages.get(root.message_id).text, root.text);
-  const count = f.count('sendMessage'); await f.press(root, 'Hoje'); assert.equal(f.count('sendMessage'), count);
+  const count = f.count('sendMessage'); await f.press(root, '📅 Hoje'); assert.equal(f.count('sendMessage'), count);
 });
 
 test('concurrent duplicate callbacks do not edit twice', async () => {
-  const f = fixture(); await f.root(); await f.press(f.latest(), 'Mais'); const nav = structuredClone(f.latest());
+  const f = fixture(); await f.root(); await f.press(f.latest(), '➕ Mais'); const nav = structuredClone(f.latest());
   let release; const gate = new Promise(resolve => { release = resolve; }); f.pause(gate);
-  const first = f.press(nav, 'Meteorologia');
+  const first = f.press(nav, '🌤️ Meteorologia');
   while (!f.count('editMessageText')) await new Promise(resolve => setTimeout(resolve, 0));
-  await f.press(nav, 'Bem-estar'); assert.match(f.answers.at(-1), /expirou/);
+  await f.press(nav, '🌿 Bem-estar'); assert.match(f.answers.at(-1), /expirou/);
   release(); await first; const edited = structuredClone(f.latest());
-  await f.press(edited, 'Voltar'); assert.equal(f.count('editMessageText'), 2);
+  await f.press(edited, '↩️ Voltar'); assert.equal(f.count('editMessageText'), 2);
   assert.equal(f.count('sendMessage'), 3, 'only initial removal/root and first navigation were sent');
 });
 
 test('revoked/private identity denies callbacks and never edits or dispatches', async () => {
   const f = fixture(); await f.root(); const root = structuredClone(f.latest());
-  await f.press(root, 'Hoje', 202); f.revoke(); await f.press(root, 'Hoje');
+  await f.press(root, '📅 Hoje', 202); f.revoke(); await f.press(root, '📅 Hoje');
   assert.equal(f.producers.length, 0); assert.equal(f.count('editMessageReplyMarkup'), 0);
   assert.match(f.answers.at(-1), /não está disponível/);
 });
 
 test('expiry/restart are explicit and do not create another menu or execute actions', async () => {
   const f = fixture(); await f.root(); const root = structuredClone(f.latest()); const count = f.count('sendMessage');
-  f.expire(); await f.press(root, 'Hoje');
+  f.expire(); await f.press(root, '📅 Hoje');
   assert.equal(f.count('sendMessage'), count); assert.equal(f.producers.length, 0); assert.match(f.answers.at(-1), /expirou/);
 });
 
 
 test('new ticket clicked during edit is retained, with clear busy feedback', async () => {
-  const f = fixture(); await f.root(); await f.press(f.latest(), 'Mais'); const nav = structuredClone(f.latest());
+  const f = fixture(); await f.root(); await f.press(f.latest(), '➕ Mais'); const nav = structuredClone(f.latest());
   let release; const gate = new Promise(resolve => { release = resolve; }); f.pauseAfter(gate);
-  const pending = f.press(nav, 'Meteorologia');
-  while (f.latest().reply_markup.inline_keyboard.flat().some(x => x.text === 'Meteorologia')) await new Promise(resolve => setTimeout(resolve, 0));
+  const pending = f.press(nav, '🌤️ Meteorologia');
+  while (f.latest().reply_markup.inline_keyboard.flat().some(x => x.text === '🌤️ Meteorologia')) await new Promise(resolve => setTimeout(resolve, 0));
   const during = structuredClone(f.latest());
-  await f.press(during, 'Voltar'); assert.match(f.answers.at(-1), /Aguarde/);
+  await f.press(during, '↩️ Voltar'); assert.match(f.answers.at(-1), /Aguarde/);
   assert.equal(f.count('editMessageText'), 1);
-  release(); await pending; await f.press(during, 'Voltar');
+  release(); await pending; await f.press(during, '↩️ Voltar');
   assert.equal(f.count('editMessageText'), 2);
 });
 
 test('uncertain edit plus failed clear leaves only inert old controls', async () => {
-  const f = fixture(); await f.root(); await f.press(f.latest(), 'Mais'); const nav = structuredClone(f.latest());
-  f.mode('applied-throw'); f.clearFailure(); await f.press(nav, 'Meteorologia');
+  const f = fixture(); await f.root(); await f.press(f.latest(), '➕ Mais'); const nav = structuredClone(f.latest());
+  f.mode('applied-throw'); f.clearFailure(); await f.press(nav, '🌤️ Meteorologia');
   const uncertain = structuredClone(f.messages.get(nav.message_id)); const sends = f.count('sendMessage');
-  await f.press(uncertain, 'METAR');
+  await f.press(uncertain, '🌤️ METAR');
   assert.match(f.answers.at(-1), /expirou/); assert.equal(f.count('sendMessage'), sends); assert.equal(f.producers.length, 0);
 });
 
 test('identity revoked during cleanup stops action and fallback', async () => {
   const f = fixture(); await f.root(); const nav = structuredClone(f.latest()); let reads = 0;
   f.profileHook(() => { if (++reads === 3) f.revoke(); });
-  const sends = f.count('sendMessage'); await f.press(nav, 'Hoje');
+  const sends = f.count('sendMessage'); await f.press(nav, '📅 Hoje');
   assert.equal(f.producers.length, 0); assert.equal(f.count('sendMessage'), sends);
 });
 
 
 test('fresh process rejects old tickets with no transport mutation', async () => {
   const first = fixture(); await first.root(); const previous = structuredClone(first.latest());
-  const restarted = fixture(); await restarted.dispatch(first.callback(previous, 'Hoje'));
+  const restarted = fixture(); await restarted.dispatch(first.callback(previous, '📅 Hoje'));
   assert.match(restarted.answers.at(-1), /expirou/); assert.equal(restarted.requests.length, 0);
 });
 
@@ -209,67 +209,67 @@ test('edit transport handles missing configuration and malformed provider JSON',
 });
 
 async function openQuestion(f, label) {
-  await f.root(); await f.press(f.latest(), 'Mais');
-  if (label !== 'Radar') await f.press(f.latest(), 'Meteorologia');
+  await f.root(); await f.press(f.latest(), '➕ Mais');
+  if (label !== '📡 Radar') await f.press(f.latest(), '🌤️ Meteorologia');
   await f.press(f.latest(), label);
   return structuredClone(f.latest());
 }
 
 for (const clearFails of [false,true]) test(`answered Radar cancel cannot discard newer METAR (clear fails: ${clearFails})`, async () => {
-  const f=fixture(); const radar=await openQuestion(f,'Radar');
+  const f=fixture(); const radar=await openQuestion(f,'📡 Radar');
   if(clearFails) f.clearFailure();
   assert.equal(await f.input(f.makeInput('LA1234',radar)),true);
   if(!clearFails) assert.deepEqual(f.messages.get(radar.message_id).reply_markup.inline_keyboard,[]);
-  const metar=await openQuestion(f,'METAR'); const sends=f.count('sendMessage');
-  await f.press(radar,'Cancelar'); assert.match(f.answers.at(-1),/expirou/);
+  const metar=await openQuestion(f,'🌤️ METAR'); const sends=f.count('sendMessage');
+  await f.press(radar,'✖️ Cancelar'); assert.match(f.answers.at(-1),/expirou/);
   assert.equal(f.count('sendMessage'),sends,'stale cancel must not send root');
   assert.equal(await f.input(f.makeInput('SBGR',metar)),true);
   assert.deepEqual(f.producers,['/radar LA1234','/metar SBGR']);
 });
 
 test('replacement prompt revision rejects old cancel and concurrent old answers',async()=>{
-  const f=fixture(); const old=await openQuestion(f,'Radar'); const invalid=f.makeInput('invalid',old);
+  const f=fixture(); const old=await openQuestion(f,'📡 Radar'); const invalid=f.makeInput('invalid',old);
   const before=f.count('sendMessage');
   await Promise.all([f.input(invalid),f.input(invalid)]);
   assert.equal(f.count('sendMessage'),before+1,'one replacement prompt only');
   const replacement=structuredClone(f.latest());
-  await f.press(old,'Cancelar'); assert.match(f.answers.at(-1),/expirou/);
-  await f.input(f.makeInput('Cancelar',old));
+  await f.press(old,'✖️ Cancelar'); assert.match(f.answers.at(-1),/expirou/);
+  await f.input(f.makeInput('✖️ Cancelar',old));
   const answer=f.makeInput('LA1234',replacement);
   await Promise.all([f.input(answer),f.input(answer)]);
   assert.deepEqual(f.producers,['/radar LA1234']);
-  await f.press(replacement,'Cancelar'); assert.match(f.answers.at(-1),/expirou/);
+  await f.press(replacement,'✖️ Cancelar'); assert.match(f.answers.at(-1),/expirou/);
 });
 
 test('expired question is retired before a newer question can be cancelled',async()=>{
-  const f=fixture(); const old=await openQuestion(f,'Radar'); f.expire();
+  const f=fixture(); const old=await openQuestion(f,'📡 Radar'); f.expire();
   await f.input(f.makeInput('LA1234',old)); assert.equal(f.producers.length,0);
   assert.deepEqual(f.messages.get(old.message_id).reply_markup.inline_keyboard,[]);
-  const current=await openQuestion(f,'METAR'); await f.press(old,'Cancelar');
+  const current=await openQuestion(f,'🌤️ METAR'); await f.press(old,'✖️ Cancelar');
   assert.equal(await f.input(f.makeInput('SBGR',current)),true);
   assert.deepEqual(f.producers,['/metar SBGR']);
 });
 
 test('answer/cancel race claims its question once and cannot cancel the next one',async()=>{
-  const f=fixture(); const old=await openQuestion(f,'Radar'); const answer=f.makeInput('LA1234',old);
-  await Promise.all([f.input(answer),f.press(old,'Cancelar'),f.input(answer)]);
+  const f=fixture(); const old=await openQuestion(f,'📡 Radar'); const answer=f.makeInput('LA1234',old);
+  await Promise.all([f.input(answer),f.press(old,'✖️ Cancelar'),f.input(answer)]);
   assert(f.producers.length<=1); assert(f.producers.every(x=>x==='/radar LA1234'));
-  const current=await openQuestion(f,'METAR'); await f.press(old,'Cancelar');
+  const current=await openQuestion(f,'🌤️ METAR'); await f.press(old,'✖️ Cancelar');
   await f.input(f.makeInput('SBGR',current)); assert.equal(f.producers.at(-1),'/metar SBGR');
 });
 
 test('delayed cleanup of consumed answer never deletes a newer question',async()=>{
-  const f=fixture(); const old=await openQuestion(f,'Radar');
+  const f=fixture(); const old=await openQuestion(f,'📡 Radar');
   let release; const gate=new Promise(resolve=>{release=resolve;}); f.pauseCleanup(gate);
   const before=f.count('editMessageReplyMarkup'); const pending=f.input(f.makeInput('LA1234',old));
   while(f.count('editMessageReplyMarkup')===before) await new Promise(resolve=>setTimeout(resolve,0));
-  f.pauseCleanup(null); const current=await openQuestion(f,'METAR');
-  await f.press(old,'Cancelar'); release(); await pending;
+  f.pauseCleanup(null); const current=await openQuestion(f,'🌤️ METAR');
+  await f.press(old,'✖️ Cancelar'); release(); await pending;
   assert.equal(await f.input(f.makeInput('SBGR',current)),true);
   assert.deepEqual(f.producers,['/radar LA1234','/metar SBGR']);
 });
 
-for(const kind of ['METAR','TAF']) test(`real ${kind} keyboard emits a valid new return ticket`,async()=>{
+for(const kind of ['🌤️ METAR','🌤️ TAF']) test(`real ${kind} keyboard emits a valid new return ticket`,async()=>{
   const f=fixture(); const prompt=await openQuestion(f,kind);
   await f.input(f.makeInput('SBGR',prompt)); const result=structuredClone(f.latest());
   const back=result.reply_markup.inline_keyboard.flat().find(x=>/Voltar ao menu/.test(x.text));
@@ -279,7 +279,7 @@ for(const kind of ['METAR','TAF']) test(`real ${kind} keyboard emits a valid new
   const sends=f.count('sendMessage');
   await f.dispatch({callback_query:{id:'old-legacy',data:'cc_nav:menu',from:{id:101},message:result}});
   assert.match(f.answers.at(-1),/expirou/); assert.equal(f.count('sendMessage'),sends);
-  await f.press(result,back.text); assert(f.latest().reply_markup.inline_keyboard.flat().some(x=>x.text==='Hoje'));
+  await f.press(result,back.text); assert(f.latest().reply_markup.inline_keyboard.flat().some(x=>x.text==='📅 Hoje'));
   assert.equal(f.messages.get(result.message_id).text,result.text);
 });
 
@@ -289,58 +289,58 @@ test('real call confirmation return is ticketed without invoking a call',async()
   assert(buttons.some(x=>x.callback_data==='cc_call:confirm'));
   assert(buttons.some(x=>x.callback_data==='cc_call:cancel'));
   const back=buttons.find(x=>/Voltar ao menu/.test(x.text)); assert(back.callback_data.startsWith('cc_nav:v1:'));
-  await f.press(result,back.text); assert(f.latest().reply_markup.inline_keyboard.flat().some(x=>x.text==='Hoje'));
+  await f.press(result,back.text); assert(f.latest().reply_markup.inline_keyboard.flat().some(x=>x.text==='📅 Hoje'));
   assert.equal(f.producers.length,0,'no call producer or finance action');
 });
 
 
 test('cancel during prompt delivery gives busy feedback and remains usable',async()=>{
   const f=fixture(); let release; const gate=new Promise(resolve=>{release=resolve;}); f.pausePrompt(gate);
-  const opening=openQuestion(f,'Radar');
-  while(!f.latest()?.reply_markup?.inline_keyboard?.flat().some(x=>x.text==='Cancelar')) await new Promise(resolve=>setTimeout(resolve,0));
-  const prompt=structuredClone(f.latest()); await f.press(prompt,'Cancelar'); assert.match(f.answers.at(-1),/Aguarde/);
-  release(); await opening; await f.press(prompt,'Cancelar');
-  assert(f.latest().reply_markup.inline_keyboard.flat().some(x=>x.text==='Hoje'));
+  const opening=openQuestion(f,'📡 Radar');
+  while(!f.latest()?.reply_markup?.inline_keyboard?.flat().some(x=>x.text==='✖️ Cancelar')) await new Promise(resolve=>setTimeout(resolve,0));
+  const prompt=structuredClone(f.latest()); await f.press(prompt,'✖️ Cancelar'); assert.match(f.answers.at(-1),/Aguarde/);
+  release(); await opening; await f.press(prompt,'✖️ Cancelar');
+  assert(f.latest().reply_markup.inline_keyboard.flat().some(x=>x.text==='📅 Hoje'));
   assert.equal(f.producers.length,0);
 });
 
 test('late delivery of superseded replacement cannot revive its cancellation ticket',async()=>{
-  const f=fixture(); const old=await openQuestion(f,'Radar');
+  const f=fixture(); const old=await openQuestion(f,'📡 Radar');
   let release; const gate=new Promise(resolve=>{release=resolve;}); f.pausePrompt(gate);
   const pending=f.input(f.makeInput('invalid',old));
   while(f.latest().message_id===old.message_id) await new Promise(resolve=>setTimeout(resolve,0));
   const delayed=structuredClone(f.latest()); f.pausePrompt(null);
-  const current=await openQuestion(f,'METAR'); release(); await pending;
-  const sends=f.count('sendMessage'); await f.press(delayed,'Cancelar');
+  const current=await openQuestion(f,'🌤️ METAR'); release(); await pending;
+  const sends=f.count('sendMessage'); await f.press(delayed,'✖️ Cancelar');
   assert.match(f.answers.at(-1),/expirou/); assert.equal(f.count('sendMessage'),sends);
   await f.input(f.makeInput('SBGR',current)); assert.deepEqual(f.producers,['/metar SBGR']);
 });
 
 
 test('reordered plain Cancelar from before current prompt cannot cancel it',async()=>{
-  const f=fixture(); const old=await openQuestion(f,'Radar');
-  const stale=f.makeInput('Cancelar'); const current=await openQuestion(f,'METAR');
+  const f=fixture(); const old=await openQuestion(f,'📡 Radar');
+  const stale=f.makeInput('✖️ Cancelar'); const current=await openQuestion(f,'🌤️ METAR');
   await f.input(stale); await f.input(f.makeInput('SBGR',current));
   assert.deepEqual(f.producers,['/metar SBGR']);
   assert(stale.message_id<current.message_id);
 });
 
 
-for(const text of ['/emergencia','SOS','Emergência','🚨 Emergência','Ajuda','/ajuda','Menu','/menu','HELP','/emergencia@CrewCheckBot']) {
+for(const text of ['/emergencia','SOS','🚨 Emergência','🚨 Emergência','Ajuda','/ajuda','Menu','/menu','HELP','/emergencia@CrewCheckBot']) {
   for(const replyToOther of [false,true]) test(`priority ${text} reaches downstream router with old reply: ${replyToOther}`,async()=>{
-    const f=fixture(); const prompt=await openQuestion(f,'Radar');
+    const f=fixture(); const prompt=await openQuestion(f,'📡 Radar');
     const message=f.makeInput(text,replyToOther?{message_id:1}:null);
     await f.handoff(message);
     assert.equal(f.routes.length,1,'actual prepared process must pass priority input downstream');
     assert.equal(f.routes[0].text,text); assert.equal(f.producers.length,0);
-    const sends=f.count('sendMessage'); await f.press(prompt,'Cancelar');
+    const sends=f.count('sendMessage'); await f.press(prompt,'✖️ Cancelar');
     assert.match(f.answers.at(-1),/expirou/); assert.equal(f.count('sendMessage'),sends);
     assert.equal(await f.input(f.makeInput('LA1234',prompt)),false,'interrupted question cannot resume');
   });
 }
 
 for(const other of ['foreign-sender','other-chat','group-chat']) test(`priority from ${other} cannot retire another private question`,async()=>{
-  const f=fixture(); const prompt=await openQuestion(f,'Radar');
+  const f=fixture(); const prompt=await openQuestion(f,'📡 Radar');
   const message=f.makeInput('/emergencia',{message_id:1});
   if(other==='foreign-sender')message.from.id=202;
   if(other==='other-chat'){message.chat.id=202;message.from.id=202;}
@@ -353,16 +353,16 @@ for(const other of ['foreign-sender','other-chat','group-chat']) test(`priority 
 });
 
 for(const text of ['/emergencia','SOS','Ajuda','/menu']) test(`priority ${text} also passes with an expired question`,async()=>{
-  const f=fixture(); const prompt=await openQuestion(f,'Radar');f.expire();
+  const f=fixture(); const prompt=await openQuestion(f,'📡 Radar');f.expire();
   await f.handoff(f.makeInput(text,{message_id:1}));
   assert.equal(f.routes.length,1);assert.equal(await f.input(f.makeInput('LA1234',prompt)),false);
-  const current=await openQuestion(f,'METAR');await f.press(prompt,'Cancelar');
+  const current=await openQuestion(f,'🌤️ METAR');await f.press(prompt,'✖️ Cancelar');
   assert.equal(await f.input(f.makeInput('SBGR',current)),true);
   assert.deepEqual(f.producers,['/metar SBGR']);
 });
 
 test('ordinary answer attached to old message remains ignored without interrupting current question',async()=>{
-  const f=fixture();const prompt=await openQuestion(f,'Radar');
+  const f=fixture();const prompt=await openQuestion(f,'📡 Radar');
   assert.equal(await f.input(f.makeInput('LA1234',{message_id:1})),true);
   assert.equal(f.producers.length,0);assert.equal(f.routes.length,0);
   assert.equal(await f.input(f.makeInput('LA1234',prompt)),true);
@@ -376,7 +376,7 @@ for(const text of ['/emergencia','SOS','Ajuda','/menu']) test(`priority ${text} 
 });
 
 
-for(const publicProfile of ['missing','revoked','lookup-failure','linked']) for(const [report,kind]of[['METAR','metar'],['TAF','taf'],['ATIS','metar']])test(`public ${report} controls survive profile ${publicProfile}`,async()=>{
+for(const publicProfile of ['missing','revoked','lookup-failure','linked']) for(const [report,kind]of[['🌤️ METAR','metar'],['🌤️ TAF','taf'],['📻 ATIS','metar']])test(`public ${report} controls survive profile ${publicProfile}`,async()=>{
   const f=fixture({publicProfile});const keyboard=f.weather('SBGR',kind);
   const expected=JSON.parse(JSON.stringify(keyboard.inline_keyboard.flat().filter(b=>b.callback_data?.startsWith('cc_weather:'))));
   assert.equal(expected.length,5,'real current producer must expose all public controls');
@@ -386,7 +386,7 @@ for(const publicProfile of ['missing','revoked','lookup-failure','linked']) for(
   const nav=buttons.filter(b=>b.callback_data?.startsWith('cc_nav:'));
   if(publicProfile==='linked'){
     assert.equal(nav.length,1);assert.match(nav[0].callback_data,/^cc_nav:v1:[a-f0-9]{24}:home$/);
-    await f.press(result,nav[0].text);assert(f.latest().reply_markup.inline_keyboard.flat().some(b=>b.text==='Hoje'));
+    await f.press(result,nav[0].text);assert(f.latest().reply_markup.inline_keyboard.flat().some(b=>b.text==='📅 Hoje'));
   }else{
     assert.equal(nav.length,0,'only unavailable private return is removed');
     assert.equal(f.count('sendMessage'),1,'no migration/root side-message for public unbound report');
@@ -398,4 +398,35 @@ for(const publicProfile of ['missing','revoked','lookup-failure'])test(`private 
   const f=fixture({publicProfile});await f.root();
   assert.equal(f.latest().reply_markup.remove_keyboard,true);
   assert(!f.latest().reply_markup.inline_keyboard,'public weather exception cannot mint a private root ticket');
+});
+
+
+test('inline symbol labels retain ordered actions, layout and existing app destinations', () => {
+  const contracts = {
+    home: ['hoje', 'escala', 'diarias', 'hoteis', 'more'],
+    more: ['amanha', 'proximo', 'radar', 'portao', 'weather', 'saida', 'wellness', 'conformidade', 'configuracoes', 'emergencia', 'home', 'home'],
+    weather: ['metar', 'taf', 'atis', 'more', 'home'],
+    wellness: ['hospitais', 'farmacias', 'academias', 'rotina', 'more', 'home'],
+    hoteis: ['historico_pernoites', 'home'],
+    duty: ['duty_basis', 'more', 'home'],
+    duty_details: ['duty_summary', 'home'],
+    finance: ['home', 'home'],
+  };
+  assert.deepEqual(menuTemplate().inline_keyboard.map(row => row.map(button => button.text)),
+    [['📅 Hoje', '✈️ Escala'], ['💰 Diárias', '🏨 Hotéis'], ['➕ Mais']]);
+  for (const [page, actions] of Object.entries(contracts)) {
+    const markup = menuTemplate(page);
+    assert.deepEqual(Object.keys(markup), ['inline_keyboard'], 'no persistent bottom keyboard');
+    assert(markup.inline_keyboard.every(row => row.length <= 2));
+    const buttons = markup.inline_keyboard.flat();
+    assert.deepEqual(buttons.filter(button => button.callback_data).map(button => button.callback_data),
+      actions.map(action => `cc_nav:entry:${action}`));
+    for (const button of buttons) {
+      assert.match(button.text, /^[^\p{L}]+ \p{L}/u, 'symbol precedes readable name');
+      assert(!/[\u0000-\u001f\u200b-\u200d\u2060\ufeff/]/u.test(button.text), 'no hidden text or slash');
+      if (button.callback_data) assert(Buffer.byteLength(button.callback_data) <= 64);
+    }
+  }
+  assert.equal(menuTemplate('finance').inline_keyboard[0][0].url, 'https://crewcheck.online/?view=perdiem');
+  assert.equal(menuTemplate('hoteis').inline_keyboard[0][0].url, 'https://crewcheck.online/?view=hotels');
 });
