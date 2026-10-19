@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import fs from "node:fs";
 import path from "node:path";
 import { defineConfig, loadEnv } from "vite";
+import { stampServiceWorkerBuild } from './scripts/ci/stamp-service-worker-build.mjs';
 
 export default defineConfig(({ mode }) => {
   const runtimeEnv = loadEnv(mode, process.cwd(), "");
@@ -30,7 +31,7 @@ export default defineConfig(({ mode }) => {
   const buildTime = new Date().toISOString();
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(),{name:'crewcheck-worker-build',apply:'build',closeBundle(){const root=path.resolve(import.meta.dirname,'dist'),worker=path.join(root,'sw.js');const result=stampServiceWorkerBuild(fs.readFileSync(worker,'utf8'),fs.readFileSync(path.join(root,'index.html'),'utf8'));fs.writeFileSync(worker,result.source);}}],
     define: {
       "import.meta.env.VITE_GOOGLE_CLIENT_ID": JSON.stringify(googleClientId),
       "import.meta.env.VITE_CREWCHECK_BUILD_VERSION": JSON.stringify(buildVersion),

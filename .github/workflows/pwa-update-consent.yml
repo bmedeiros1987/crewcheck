@@ -1,0 +1,55 @@
+name: Explicit PWA update consent
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/lib/pwaUpdateCoordinator.ts'
+      - 'client/src/components/PwaUpdateNotice.tsx'
+      - 'client/src/components/NativePlayUpdateNotice.tsx'
+      - 'client/src/components/pwa-update-notice.css'
+      - 'client/public/sw.js'
+      - 'vite.config.ts'
+      - 'scripts/ci/stamp-service-worker-build.mjs'
+      - 'scripts/regression-pwa-update-*.mjs'
+      - '.github/workflows/pwa-update-consent.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: |
+          npm install --prefix "$RUNNER_TEMP/update-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/update-ui/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Raw explicit consent, failure and real worker contracts
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/update-ui/package.json
+        run: |
+          node scripts/regression-pwa-update-failures.mjs
+          node scripts/regression-pwa-update-consent.mjs
+          node scripts/regression-native-play-update-ui.cjs
+          node scripts/regression-mobile-pwa-safe-update.mjs
+          node scripts/regression-sw-version-sync.mjs
+      - name: Canonical build including served worker fingerprint
+        run: |
+          node scripts/v139/apply.mjs
+          npx tsc --noEmit
+          npx vite build
+      - name: Prepared contracts
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/update-ui/package.json
+        run: |
+          node scripts/regression-pwa-update-failures.mjs
+          node scripts/regression-pwa-update-consent.mjs
+          node scripts/regression-native-play-update-ui.cjs
+          node scripts/regression-mobile-pwa-safe-update.mjs
+          node scripts/regression-v14-3-43-ipad-premium-layout-location-stability.mjs

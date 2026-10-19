@@ -81,9 +81,9 @@ assert.equal((before.css.match(/CrewCheck v14\.3\.43 — premium layout hardenin
 assert.ok(!before.app.includes('registrations.map((registration) => registration.unregister())'), 'App não pode desregistrar todo service worker a cada inicialização');
 const coordinator = read('client/src/lib/pwaUpdateCoordinator.ts');
 assert.ok(before.app.includes('installPwaUpdateCoordinator()'), 'App deve instalar o coordenador de atualizações');
-assert.ok(coordinator.includes('await current.update()'), 'service worker deve ser atualizado sem desregistro');
-assert.ok(coordinator.includes("document.visibilityState === 'hidden' || Date.now() - lastActivityAt >= idleMs"), 'ativação deve esperar inatividade');
-assert.ok(coordinator.includes('if (!registration?.waiting || !isSafeToActivate()) return;'), 'worker não pode ser ativado durante uso');
+assert.ok(coordinator.includes('await next.update()'), 'service worker deve ser atualizado sem desregistro');
+assert.ok(coordinator.includes('export async function requestPwaUpdate()'), 'ativação depende do aceite explícito, não de inatividade');
+assert.ok(coordinator.includes("!['available','error'].includes(state.phase)"), 'worker exige um download confirmado e aceite explícito');
 assert.ok(!/window\.location\.reload\(\)/.test(coordinator.replace(/\/\*[^]*?\*\//g, '')), 'coordenador não pode forçar reload');
 assert.ok(!before.index.includes('crewcheck-release-watch-v14343') && !before.index.includes('crewcheck-release-watch-v14329'), 'watchers legados devem ser removidos');
 assert.ok(!before.app.includes('caches.delete('), 'inicialização não pode apagar caches ativos');
