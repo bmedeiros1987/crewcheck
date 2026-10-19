@@ -2,6 +2,8 @@ import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { createTelegramMenu, requestedWeatherAirport } from '../../server/concierge/telegram-menu.mjs';
+import { interpretConciergeNaturalTextV14341 as interpretConciergeNaturalTextV14338 } from '../../server/v14341/concierge-semantic.mjs';
 import * as policy from '../../server/weather/monitor-readiness.mjs';
 import { evaluateCriticalWeatherDelivery } from '../../server/weather/critical-observation.mjs';
 
@@ -388,6 +390,9 @@ test('actual opt-out handler still persists revocation without any message date'
 });
 test('actual Telegram text path carries message.date as the trusted command date', async () => {
   const f = fixture(); let received;
+  // Prepared dispatch also enters the real menu; a fresh menu must pass this command through.
+  f.context.crewcheckMenu = createTelegramMenu({});
+  Object.assign(f.context, { requestedWeatherAirport, interpretConciergeNaturalTextV14338 });
   Object.assign(f.context, {
     handleTelegramWeatherCallback: async () => false, handleTelegramCallCallback: async () => false,
     handlePlatformVisitorTelegram: async () => false, telegramTryBindFromWebhook: async () => false,

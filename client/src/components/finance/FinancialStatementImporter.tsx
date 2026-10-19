@@ -1,3 +1,5 @@
+import { extractFinancialPdfPages, financialPdfPagesText } from '@/lib/financialPdfText';
+import type { PayrollPage } from '@/lib/privatePayrollExtraction';
 import { useFinancialPrivacy, FinancialPrivacyToggle } from './FinancialPrivacy';
 import OwnerPerDiemConfirmation from './OwnerPerDiemConfirmation';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -15,19 +17,19 @@ import {
   type StatementLearningResult,
 } from '@/lib/financialStatementLearning';
 
-export async function extractPdfText(file: File): Promise<string> {
+export async function extractPdfPages(file: File): Promise<PayrollPage[]> {
   const module: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const pdfjs = module.default || module;
   if (pdfjs.GlobalWorkerOptions) pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const pdf = await pdfjs.getDocument({ data: bytes }).promise;
-  const pages: string[] = [];
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const content = await page.getTextContent();
-    pages.push(content.items.map((item: any) => String(item.str || '')).join(' '));
-  }
-  return pages.join('\n');
+  const task = pdfjs.getDocument({ data: bytes });
+  const pdf = await task.promise;
+  try { return await extractFinancialPdfPages(pdf); }
+  finally { await task.destroy(); }
+}
+
+export async function extractPdfText(file: File): Promise<string> {
+  return financialPdfPagesText(await extractPdfPages(file));
 }
 
 function formatMoney(value: number, currency = 'BRL') {
@@ -70,7 +72,8 @@ export default function FinancialStatementImporter({ mode }: { mode: 'per_diem' 
     setError('');
     setResult(null);
     try {
-      const learned = learnFinancialStatement(await extractPdfText(file), file.name);
+      const pages = await extractPdfPages(file);
+      const learned = learnFinancialStatement(financialPdfPagesText(pages), file.name, pages);
       if (learned.kind !== mode) {
         throw new Error(mode === 'per_diem' ? 'Escolha um demonstrativo de diárias.' : 'Escolha um demonstrativo de pagamento.');
       }

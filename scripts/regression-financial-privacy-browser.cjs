@@ -88,7 +88,7 @@ async function showFinancial(page,screen){const root=page.locator('.cc-payment-o
   await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().click();
   if(kind==='domestic'){
    await showFinancial(page,'payment');const importer=page.locator('.finance-learning-panel');
-   await importer.locator('input[type=file]').setInputFiles({name:'synthetic-payroll.pdf',mimeType:'application/pdf',buffer:documentBytes(['DEMONSTRATIVO DE PAGAMENTO RUBRICA','Competencia 02/2032','Salario 4321,67','TOTAIS 4321,67 123,45','Liquido 4198,22'])});
+   await importer.locator('input[type=file]').setInputFiles({name:'synthetic-payroll.pdf',mimeType:'application/pdf',buffer:documentBytes(['DEMONSTRATIVO DE PAGAMENTO RUBRICA','Competencia 02/2032','Salario-base mensal 4321,67','TOTAIS 4321,67 123,45','Liquido 4198,22'])});
    await importer.locator('.finance-learning-review').waitFor();await checkHidden(page);
    await page.getByRole('button',{name:'Mostrar valores financeiros'}).first().click();assert.match(await importer.locator('table').first().textContent(),/4.321,67/);
    await page.getByRole('button',{name:'Ocultar valores financeiros'}).first().click();
