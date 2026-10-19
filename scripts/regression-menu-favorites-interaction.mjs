@@ -62,13 +62,14 @@ import { MenuPersonalization } from '${path.resolve('client/src/components/v1391
 import { setPendingNavigationContext } from '${path.resolve('client/src/lib/navigationContext.ts')}';
 const code = ${JSON.stringify(menuCode)};
 window.__account = 'account-a';
+window.__role = 'admin';
 localStorage.setItem('crewcheck_auth_user', JSON.stringify({id:'account-a',role:'admin'}));
 window.__nav = [];
 const scope = {
   React, ...React, ...icons, ...menuPreference, ...menuUsage, ...menuNested, MenuPersonalization, setPendingNavigationContext, HomeIcon: icons.Home, MapIcon: icons.Map,
   storage: { get: (_k, f) => f, set: () => {} },
   getStoredUser: () => window.__account ? { id: window.__account, name: 'Tripulante ' + window.__account, email: 'demo@example.invalid' } : null,
-  isAdmin: () => true,
+  isAdmin: () => window.__role === 'admin',
 };
 const keys = Object.keys(scope).filter((k) => k !== 'default' && /^[A-Za-z_$][\\w$]*$/.test(k));
 const MenuDrawer = new Function(...keys, code)(...keys.map((k) => scope[k]));
@@ -113,6 +114,7 @@ const matrix = [
 ];
 const themedMatrix = matrix.flatMap(device => ['dark', 'light'].map(theme => ({ ...device, name: device.name + '-' + theme, theme })));
 const failures = [];
+const policyResults = [];
 const check = (condition, message) => { if (!condition) failures.push(message); };
 try {
   for (const device of themedMatrix) {
@@ -135,6 +137,10 @@ try {
     const chips = () => page.locator('.cc-menu-favorite-chip[data-menu-label]').allTextContents();
     const rows = () => page.locator('.cc-menu-destination[data-menu-label]').evaluateAll((els) => els.map((e) => e.dataset.menuLabel));
     const stars = () => page.locator('.cc-menu-favorite').count();
+    const initialOrder = await rows();
+    check(initialOrder.indexOf('Rotina') < initialOrder.indexOf('Importar escala'), label('routine precedes occasional planning'));
+    check(JSON.stringify(initialOrder.filter(v => !['Atualizações','Manutenção','Admin'].includes(v)).slice(-3)) === JSON.stringify(['Configurações','Manual CrewCheck','Suporte']), label('settings/help/support close common catalog'));
+    policyResults.push({case:device.name,initialOrder});
     const snap = (name) => page.screenshot({ path: path.join(output, `${device.name}-${name}.png`), animations: 'disabled' });
     const readableFavorites = async () => {
       // Exercise shipped semantic CSS through the actual 5S row wrapper and chips.
@@ -298,6 +304,15 @@ try {
     await page.evaluate(() => window.__setAccount('account-a'));
     await page.waitForFunction(() => document.querySelector('main').dataset.account === 'account-a');
     check((await chips()).length === 4, label('account A favorites restored'));
+    // The same catalog respects its existing admin fence across role/account changes.
+    for (const role of ['member','visitor']) {
+      await page.evaluate(role => { window.__role = role; window.__setAccount('synthetic-' + role); }, role);
+      await page.waitForFunction(role => document.querySelector('main').dataset.account === 'synthetic-' + role, role);
+      const roleOrder = await rows();
+      check(!roleOrder.some(v => ['Atualizações','Manutenção','Admin'].includes(v)), label(role + ' cannot see admin destinations'));
+      check(JSON.stringify(roleOrder.slice(-3)) === JSON.stringify(['Configurações','Manual CrewCheck','Suporte']), label(role + ' retains trailing help/settings'));
+      policyResults.push({case:device.name,role,order:roleOrder});
+    }
     // signed out: no private favorites
     await page.evaluate(() => window.__setAccount(null));
     await page.waitForFunction(() => !document.querySelector('.cc-menu-favorites'));
@@ -314,6 +329,6 @@ try {
   await browser.close();
   await new Promise((resolve) => server.close(resolve));
 }
-fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ scope: 'Real prepared MenuDrawer and themes; synthetic accounts and navigation callbacks; not full-app E2E', cases: themedMatrix.length, failures }, null, 2));
+fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ scope: 'Real prepared MenuDrawer and themes; synthetic accounts and navigation callbacks; not full-app E2E', cases: themedMatrix.length, policyResults, failures }, null, 2));
 assert.deepEqual(failures, [], 'Menu favorites interaction failures');
 console.log('PASS: edit favorites, add/remove, limit of five, search, navigation and account isolation');
