@@ -2347,14 +2347,23 @@ function useWeatherLandingMonitor(event: ZeroLeg) {
 function useOperationalRadarPulse(events: ZeroLeg[]) {
   useEffect(() => {
     let alive = true;
+    let lastTargetId = '';
     const check = () => {
-      // Same boarding occurrence as NextFlightGateCard, not the still-active leg.
-      // Reselect on the existing cadence even when Home has not rendered again.
-      const event = selectNextFlight(events);
-      if (!event) return;
-      const cached = readRadarSnapshot(event);
-      if (cached?.updatedAt && Date.now() - cached.updatedAt < RADAR_CARD_REFRESH_MS) return;
-      fetchRadarSnapshot(event, false).catch(() => undefined);
+      // Keep the active flight and the boarding card current within the SAME
+      // budget: at most one fetch per existing five-minute check, never two.
+      const targets: ZeroLeg[] = [];
+      for (const event of [selectNextFlight(events), nextRealFlight(events)]) {
+        if (event && !event.placeholder && event.kind === 'flight' && /\d/.test(String(event.flightNumber || '')) && !targets.some(target => target.id === event.id)) targets.push(event);
+      }
+      const previous = targets.findIndex(event => event.id === lastTargetId);
+      for (let step = 1; step <= targets.length; step += 1) {
+        const event = targets[(previous + step) % targets.length];
+        const cached = readRadarSnapshot(event);
+        if (cached?.updatedAt && Date.now() - cached.updatedAt < RADAR_CARD_REFRESH_MS) continue;
+        lastTargetId = event.id;
+        fetchRadarSnapshot(event, false).catch(() => undefined);
+        break;
+      }
     };
     check();
     const timer = window.setInterval(() => { if (alive) check(); }, RADAR_CARD_REFRESH_MS);
