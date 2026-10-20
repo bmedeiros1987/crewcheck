@@ -3654,7 +3654,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
   const seen = new Set<string>();
   const taxiDepartures = new Map<string, { iso: string; window: string; event: ZeroLeg; start: Date; end: Date }>();
   const pendingAirports = new Set<string>();
-  const unclassifiedItems: Array<{ iso: string; airport: string; reason?: string }> = [];
+  const unclassifiedItems: Array<{ iso: string; airport: string; reason?: string; pendingKind?: 'taxi_rate' }> = [];
   const usedRateKeys = new Set<PerDiemRateKey>();
   const add = (event: ZeroLeg, iso: string, slot: string, label: string, source: string, calculationStart: Date, calculationEnd: Date, partial = false) => {
     const classification = resolvePerDiemRule(event.origin, event.destination, airportOverrides);
@@ -3841,7 +3841,7 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date(
     const source = 'Táxi previsto · Critério operacional informado pelo usuário: APZ na base · '
       + taxi.window + ' · máximo uma diária por dia · relógio da escala BRT (UTC-03) · sem homologação ACT';
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-      unclassifiedItems.push({ iso: taxi.iso, airport: taxi.event.origin, reason: source + ' · Tarifa de táxi confirmada para o período ausente.' });
+      unclassifiedItems.push({ iso: taxi.iso, airport: taxi.event.origin, pendingKind: 'taxi_rate', reason: source + ' · Tarifa de táxi confirmada para o período ausente.' });
     } else {
       rows.push({ partial:false, eventId: taxi.event.id, date: dateChip(new Date(taxi.iso + 'T12:00:00')), iso: taxi.iso,
         label: 'Táxi', value, currency: 'BRL', convertedBRL: value,
@@ -4064,6 +4064,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
   const calculated = useMemo(() => calculatePerDiem(events, bundle.roster), [bundle.roster, revision]);
   const forecast = forecastOverride || calculated;
 
+  const pendingTaxiRows = forecast.monthlyUnclassifiedItems.filter(item => item.pendingKind === 'taxi_rate');
   const itemCount = forecast.monthlyRows.length;
   const itemLabel = `${itemCount} ${itemCount === 1 ? 'item' : 'itens'}`;
   const currencyLabel = `${forecast.currencyCount} ${forecast.currencyCount === 1 ? 'moeda' : 'moedas'}`;
@@ -4135,6 +4136,10 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
     <section className="cz-finance-table cc-per-diem-items">
       <header><h2>Extrato previsto de diárias</h2><span>{itemLabel}</span></header>
       <p className="cc-per-diem-scope">{rangeLabel || `Competência: ${competence}. Os itens abaixo pertencem ao mês selecionado.`}</p>
+      {pendingTaxiRows.map(row => <div className="cz-finance-row" data-financial-iso={row.iso} data-taxi-rate-pending="true" key={'taxi-pending-'+row.iso}>
+        <span>{dateChip(new Date(row.iso+'T12:00:00'))}</span><strong>Táxi · tarifa pendente · {row.airport}</strong><b aria-label="Valor não calculável">—</b>
+        <details className="cc-per-diem-source"><summary>Revisar tarifa</summary><small>{privacy.text(row.reason || '')}</small>{isAdmin() && <a href="?view=admin">Abrir revisão de tarifas</a>}</details>
+      </div>)}
       {forecast.monthlyRows.length ? [...forecast.monthlyRows].sort((a,b)=>a.iso.localeCompare(b.iso)).map((row, index) =>
         <div className="cz-finance-row" data-financial-iso={row.iso} data-financial-currency={row.currency} key={row.iso + '-' + row.label + '-' + index}>
           <span>{row.date}</span>
@@ -4142,7 +4147,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
           <b><MoneyText value={moneyCurrency(row.value, row.currency)}/></b>
           <details className="cc-per-diem-source"><summary>Origem e regra{row.convertedBRL === null ? ' · cotação pendente' : ''}</summary><small>{privacy.text(row.source)}</small></details>
         </div>
-      ) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>{forecast.nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Previsão pendente'}</h2><p>{forecast.nativeSummary.state === 'no_data' ? 'A escala selecionada não contém diárias previstas nesta competência.' : 'Os dados incompletos não foram tratados como ausência de diárias.'}</p></article>}
+      ) : pendingTaxiRows.length ? null : <article className="cz-empty-real"><BriefcaseBusiness/><h2>{forecast.nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Previsão pendente'}</h2><p>{forecast.nativeSummary.state === 'no_data' ? 'A escala selecionada não contém diárias previstas nesta competência.' : 'Os dados incompletos não foram tratados como ausência de diárias.'}</p></article>}
     </section>
     </FinancialScreen>
   </section></>;
