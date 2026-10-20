@@ -1,3 +1,4 @@
+import {resolveRegulationProgram,regulationProgramDay} from '@shared/regulationScenarioPrefill.mjs';
 import {cabinSalaryRateReference} from '@/lib/cabinSalaryRateReference';
 import ConciergeFinancialPreview from '@/components/finance/ConciergeFinancialPreview';
 import {HomeFinancialEstimateProvider} from '@/components/finance/HomeFinancialEstimate';
@@ -5245,6 +5246,9 @@ export default function Home() {
   const [presentationRevision, setPresentationRevision] = useState(0);
   const events = useMemo(() => buildLegs(bundle.roster), [bundle.roster, presentationRevision]);
   const event = nextFlight(events);
+  const regulationContext = view === 'regulation' ? peekAlertRosterContext('regulation') : null;
+  const regulationEvent = resolveRegulationProgram(events, event, regulationContext);
+  const regulationDay = regulationProgramDay(events, regulationEvent);
   const flightEvent = nextRealFlight(events);
   const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
@@ -5470,7 +5474,7 @@ export default function Home() {
     {view === 'compare' && <CompareRosterView bundle={bundle} onUpload={actions.upload}/>} 
     {view === 'bids' && <BidsView events={events}/>} 
     {view === 'alerts' && <ReviewedAlerts key={alertAccount() || 'unbound'} compliance={compliance} roster={bundle.roster} onImport={actions.upload} onChoose={() => setView('database')}/>}
-    {view === 'regulation' && <ManualRegulationView compliance={compliance}/>}
+    {view === 'regulation' && <ManualRegulationView compliance={compliance} scheduleDay={regulationDay} program={regulationEvent?.canonical}/>}
     {view === 'departure' && <Departure event={event}/>}
     {view === 'mycar' && <CarView event={event}/>}
     {view === 'iflight' && <IFlightPushView actions={actions}/>}

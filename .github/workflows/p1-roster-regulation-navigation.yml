@@ -8,6 +8,9 @@ on:
       - 'client/src/components/CanonicalDutyCard.tsx'
       - 'client/src/components/canonical-duty-card.css'
       - 'shared/regulationTemporalScenario.mjs'
+      - 'shared/regulationScenarioPrefill.mjs'
+      - 'scripts/regression-regulation-prefill.mjs'
+      - 'scripts/regression-regulation-prefill-browser.mjs'
       - 'scripts/regression-regulation-temporal-scenario.mjs'
       - 'scripts/regression-regulation-scenario-ui.cjs'
       - 'client/src/lib/navigationContext.ts'
@@ -29,6 +32,9 @@ on:
       - 'client/src/components/CanonicalDutyCard.tsx'
       - 'client/src/components/canonical-duty-card.css'
       - 'shared/regulationTemporalScenario.mjs'
+      - 'shared/regulationScenarioPrefill.mjs'
+      - 'scripts/regression-regulation-prefill.mjs'
+      - 'scripts/regression-regulation-prefill-browser.mjs'
       - 'scripts/regression-regulation-temporal-scenario.mjs'
       - 'scripts/regression-regulation-scenario-ui.cjs'
       - 'client/src/lib/navigationContext.ts'
@@ -87,9 +93,12 @@ jobs:
         run: node scripts/regression-rbac-sector-input.cjs
       - name: Current conditional temporal scenario regression
         run: |
+          node scripts/regression-regulation-prefill.mjs
           node scripts/regression-regulation-temporal-scenario.mjs
           npx vite build
       - name: Current compiled scenario UI and Home shortcut
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/regulation-browser/package.json
-        run: node scripts/regression-regulation-scenario-ui.cjs
+        run: |
+          node scripts/regression-regulation-prefill-browser.mjs
+          node scripts/regression-regulation-scenario-ui.cjs
