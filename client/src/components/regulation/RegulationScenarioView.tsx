@@ -17,14 +17,23 @@ const defaults=()=>({takeoff:'',normalEnd:'',offset:'',flight:'',delay:'0',taxi:
 function localClock(instant:string|undefined,offset:string){if(!instant||!/^([+-])(\d{2}):(\d{2})$/.test(offset))return '—';const sign=offset[0]==='-'?-1:1,shift=sign*(Number(offset.slice(1,3))*60+Number(offset.slice(4)))*60000;return new Date(Date.parse(instant)+shift).toISOString().slice(0,16).replace('T',' · ');}
 export default function RegulationScenarioView({scheduleDay,compliance,program}:{scheduleDay?:ScheduleDayLike|null;program?:CanonicalRosterEvent|null;compliance?:{legalProfile?:LegalProfileSummary;alerts?:Array<{title?:string;description?:string;actionable?:boolean;classification?:string;severity?:string}>}}){
  const details=useRef<HTMLDetailsElement>(null),owner=session(),signature=JSON.stringify(scheduleDay||null),key=owner+'|'+(program?.id||scheduleDay?.date||'manual');
- const admittedOwner=useRef(owner),sourceAllowed=Boolean(owner&&admittedOwner.current===owner);
+ const admittedOwner=useRef(owner),observedOwner=useRef(owner),sourceAllowed=Boolean(owner&&admittedOwner.current===owner);
  const reference=useMemo(()=>{try{return (scheduleDay as any)?.dutyReportSource==='published'&&/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(scheduleDay?.dutyReport||'')?getPublishedDutyLimitSummary(scheduleDay as RosterDay,compliance?.legalProfile):null;}catch{return null;}},[signature,compliance?.legalProfile]);
  const seed=sourceAllowed?regulationScenarioSeed(scheduleDay,reference,program):defaults(),basis=JSON.stringify([signature,program?.startDateTime,reference,compliance?.legalProfile]);
  type Form=ReturnType<typeof defaults>;
  const [draft,setDraft]=useState<{key:string;basis:string;overrides:Partial<Form>}>(()=>({key,basis,overrides:{}})),[,refresh]=useState(0);
  const form=regulationDraftForm(draft,key,seed,basis) as Form;
  const update=(changes:Partial<Form>)=>setDraft(previous=>({key,basis,overrides:{...(previous.key===key?previous.overrides:{}),...(previous.basis!==basis?{reviewed:false,publicationOffsetReviewed:false}:{}),...changes}}));
- useEffect(()=>{const reset=()=>{admittedOwner.current='';setDraft({key:'',basis:'',overrides:{}});refresh(n=>n+1);};for(const name of ['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired','storage'])window.addEventListener(name,reset);return()=>{for(const name of ['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired','storage'])window.removeEventListener(name,reset);};},[]);
+ useEffect(()=>{
+  const reset=()=>{observedOwner.current=session();admittedOwner.current='';setDraft({key:'',basis:'',overrides:{}});refresh(n=>n+1);};
+  // Storage also carries theme and other preferences from another tab. Only a
+  // changed identity/token is an authentication boundary for this draft.
+  const storageChanged=()=>{if(session()!==observedOwner.current)reset();};
+  const names=['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'];
+  for(const name of names)window.addEventListener(name,reset);
+  window.addEventListener('storage',storageChanged);
+  return()=>{for(const name of names)window.removeEventListener(name,reset);window.removeEventListener('storage',storageChanged);};
+ },[]);
  useEffect(()=>{window.scrollTo({top:0,behavior:'instant'});},[key]);
  const offsetValid=/^[+-]\d{2}:\d{2}$/.test(form.offset)&&explicitInstant('2026-01-01T00:00'+form.offset)!==null;
  const input={takeoffAt:offsetValid&&form.takeoff?form.takeoff+form.offset:'',normalDutyEndAt:offsetValid&&form.normalEnd?form.normalEnd+form.offset:'',limitReviewed:form.reviewed,flightMinutes:number(form.flight),flightDurationSource:form.flight?'user_estimate':'unknown',delayMinutes:number(form.delay),taxiInMinutes:number(form.taxi),operation:form.operation,postFlightMinutes:number(form.postFlight),additionalTasksMinutes:number(form.tasks),extensionMinutes:form.extension?60:0};
