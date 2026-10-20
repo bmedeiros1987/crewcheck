@@ -106,7 +106,7 @@ export function NextFlightGateCard({ events }: { events: readonly NextFlightLike
       </dl>
       <ManualGateReview event={nextFlight} info={info}/>
       <p>Portão de embarque deste voo. Não é a posição da aeronave nem o portão do voo anterior. Confirme sempre nas comunicações oficiais.</p>
-      <button type="button" onClick={() => openRadar(nextFlight, info)}><Pencil aria-hidden="true"/> Abrir Radar e informar portão</button>
+      <button type="button" onClick={() => openRadar(nextFlight, info)}><Pencil aria-hidden="true"/> Abrir Radar e informar dados</button>
     </div>}
   </section>;
 }

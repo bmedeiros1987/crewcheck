@@ -78,7 +78,7 @@ function publicRadarPayload(item = {}) {
     latencyMs: Number(item.latencyMs || 0),
     quality: Number(item.quality || item.score || 0),
     alternatives: Number(item.alternatives || 0),
-    message: firstKnown(item.message, item.ok ? 'Radar atualizado.' : 'Radar aguardando fonte operacional.'),
+    message: item.ok ? 'Resposta da fonte recebida; confirmação operacional depende da evidência de cada campo.' : firstKnown(item.message, 'Radar aguardando fonte operacional.'),
   };
 }
 function scoreRadar(item = {}, ctx = {}) {

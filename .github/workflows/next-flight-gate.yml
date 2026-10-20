@@ -6,6 +6,7 @@ on:
       - 'server/gate-source-update.mjs'
       - 'client/src/lib/manualGateNotices.ts'
       - 'scripts/regression-manual-gate-review*.mjs'
+      - 'scripts/regression-manual-operational-fields*.mjs'
       - 'shared/gate-query-day*'
       - 'shared/timezone-choice.mjs'
       - 'shared/airport-timezones.mjs'
@@ -65,6 +66,7 @@ jobs:
           TZ=America/Sao_Paulo node scripts/regression-gate-query-proof.mjs
           TZ=Pacific/Auckland node scripts/regression-gate-query-proof.mjs
           node scripts/regression-manual-gate-review.mjs
+          node scripts/regression-manual-operational-fields.mjs
           TZ=UTC node scripts/regression-next-flight-gate-pulse.mjs
           TZ=UTC node scripts/regression-next-flight-gate.mjs
           TZ=America/Sao_Paulo node scripts/regression-next-flight-gate.mjs
@@ -87,6 +89,7 @@ jobs:
           TZ=America/Sao_Paulo node scripts/regression-gate-query-proof.mjs
           TZ=Pacific/Auckland node scripts/regression-gate-query-proof.mjs
           node scripts/regression-manual-gate-review.mjs
+          node scripts/regression-manual-operational-fields.mjs
           TZ=UTC node scripts/regression-next-flight-gate-pulse.mjs
           TZ=UTC node scripts/regression-next-flight-gate-prepared.mjs
           TZ=America/Sao_Paulo node scripts/regression-next-flight-gate-prepared.mjs
@@ -105,3 +108,4 @@ jobs:
         run: |
           node scripts/regression-next-flight-gate-pulse-browser.mjs
           node scripts/regression-manual-gate-review-browser.mjs
+          node scripts/regression-manual-operational-fields-browser.mjs
