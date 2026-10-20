@@ -35,7 +35,7 @@ const { buildProgramSummary } = await import('../server/v1404/telegram-language.
 const leg = (id, origin, destination, departureTime, arrivalTime, extra = {}) => ({ flightNumber: `SYNTH-${id}`, origin, destination, departureTime, arrivalTime, workType: 'OP', ...extra });
 const day = (date, dutyReport, dutyDebrief, legs, extra = {}) => {
   const [dayNumber, month, year] = date.split('/').map(Number);
-  return { date, dayNumber, month, year, dayOfWeek: '', type: 'VOO', pairingCode: legs[0]?.flightNumber || '', dutyReport, dutyDebrief, dutyHours: null, flyingHours: null, isNextDay: false, hotel: null, base: 'AAA', rawText: '', legs, ...extra };
+  return { date, dayNumber, month, year, dayOfWeek: '', type: 'VOO', pairingCode: legs[0]?.flightNumber || '', dutyReport, dutyDebrief, dutyReportSource:'published', dutyDebriefSource:'published', dutyHours: null, flyingHours: null, isNextDay: false, hotel: null, base: 'AAA', rawText: '', legs, ...extra };
 };
 const fixture = (days) => ({ month: 10, year: 2099, base: 'AAA', rank: 'CCM', rawText: '', days });
 const midnight = fixture([
@@ -59,9 +59,42 @@ assert.equal(JSON.stringify(midnight), before, 'no input mutation');
 const canonical = buildCanonicalRosterEvents(midnight).filter((event) => event.kind === 'flight');
 assert.deepEqual(chosen.canonicalEventIds, canonical.filter((event) => event.journeyId === chosen.journeyId).map((event) => event.id));
 const summary = buildProgramSummary({ record: chosen, label: 'A próxima programação', presentationTime: chosen.startTime, includeGreeting: false });
-assert.match(summary, /2 pernas/);
+assert.match(summary, /2 voos/);
 assert.match(summary, /SYNTH-CONTINUATION:/);
 assert.match(summary, /AAA/);
+assert.match(summary, /APZ: 04\/10\/2099 às 23:18/);
+assert.match(summary, /decolagem prevista de CCC em 05\/10\/2099 às 00:05/);
+assert.match(summary, /chegada prevista ao aeroporto de AAA em 05\/10\/2099 às 07:05/);
+assert.match(summary, /UTC−03/);
+assert.match(summary, /sem conversão para o fuso local do destino/);
+assert.match(summary, /chegada ao aeroporto não confirma chegada ao hotel/);
+assert.equal(summary.startsWith('Próxima programação: 2 voos.'), true);
+assert.doesNotMatch(summary, /Olá|Fala,|Hotel publicado|pickup confirmado/);
+// Multiple unbound/planned/cancelled hotel and transport rows must not leak into
+// an operational answer or become a current-stay/location assertion.
+const unbound = { roster: { days: [
+  {date:'03/10/2099',hotel:'SYNTH-OLD-HOTEL'},
+  {date:'05/10/2099',hotel:'SYNTH-CANCELLED-HOTEL',status:'Cancelled'},
+  {date:'06/10/2099',hotel:'SYNTH-PLANNED-HOTEL',status:'Planned'},
+] }, mycrewcare: { hotel:'SYNTH-UNBOUND-HOTEL', pickup:'05:00', phone:'SYNTH-PERSONAL-CONTACT' } };
+assert.equal(buildProgramSummary({ record:chosen, snapshot:unbound, label:'A próxima programação', includeGreeting:false }), summary);
+const yearTurn = fixture([
+  day('31/12/2099','23:18',null,[leg('YEAR-A','AAA','BBB','00:05','02:30')]),
+  day('01/01/2100','03:20','07:45',[leg('YEAR-B','BBB','CCC','04:05','07:15')]),
+]);
+const newYear = next(yearTurn, [], new Date('2099-12-31T12:00:00Z'));
+assert.equal(newYear.display.presentationDate,'2099-12-31');
+assert.equal(newYear.display.legs[0].departureDate,'2100-01-01');
+const renderedYear = buildProgramSummary({record:newYear,label:'A próxima programação',includeGreeting:false});
+assert.match(renderedYear,/31\/12\/2099 às 23:18/);
+assert.match(renderedYear,/01\/01\/2100 às 00:05/);
+const unknownDate = buildProgramSummary({record:{...chosen,display:undefined},label:'A próxima programação',includeGreeting:false});
+assert.match(unknownDate,/APZ: horário e data da apresentação não confirmados/);assert.match(unknownDate,/Fuso não confirmado/);assert.match(unknownDate,/Fim publicado da jornada não confirmado/);
+const absentClock = buildProgramSummary({record:{...chosen,startTime:null,legs:[{...chosen.legs[0],departureTime:null,arrivalTime:'99:99'}]},label:'A próxima programação',includeGreeting:false});
+assert.match(absentClock,/horário não confirmado/);assert.doesNotMatch(absentClock,/99:99/);
+const endUnknown = buildProgramSummary({record:{...chosen,endKind:'arrival'},label:'A próxima programação',includeGreeting:false});
+assert.match(endUnknown,/Fim publicado da jornada não confirmado/);assert.doesNotMatch(endUnknown,/Fim publicado: /);
+
 
 // Existing canonical boundaries must remain authoritative: new APZ, real rest,
 // physical discontinuity, and two real journeys inside one published day.
@@ -117,7 +150,7 @@ assert.equal(proof.startDateTime, '2099-10-07T03:30:00.000Z');
 assert.equal(records(provedWrap)[0].end.toISOString(), proof.startDateTime, 'proved canonical midnight debrief is retained');
 
 const duty = { day: { date: '04/10/2099', type: 'ASB', dutyReport: '10:00', dutyDebrief: '14:00', legs: [] }, code: 'ASB', legs: [], startTime: '10:00', endTime: '14:00', start: new Date('2099-10-04T13:00:00Z'), end: new Date('2099-10-04T17:00:00Z') };
-assert.equal(next(midnight, [duty], at), duty, 'independent nonflight duty preserved exactly');
+const projectedDuty=next(midnight,[duty],at); const {display: dutyDisplay,...dutyCore}=projectedDuty; assert.deepEqual(dutyCore,duty,'independent nonflight core preserved exactly');
 assert.equal(records(midnight, [duty]).filter((record) => !record.legs.length).length, 1);
 assert.throws(() => project([{ kind: 'flight', journeyId: '', leg: {} }]), /incomplete canonical/);
 
@@ -148,7 +181,7 @@ if (source.includes("from './server/concierge/journey-programs.mjs'")) {
   // The unrelated selector remains an unchanged day-record consumer.
   const start = source.indexOf('function conciergeNextProgram('); const end = source.indexOf('\n}', start) + 2;
   assert.match(source.slice(start, end), /const records = conciergeProgramRecords\(roster\)/);
-  const namesForRuntime = ['conciergeRosterDayParts', 'conciergeTime', 'conciergeProgramDate', 'conciergeProgramRecords', 'conciergeNextProgram', 'conciergePresentationTime', 'conciergeDateKey', 'conciergeRecordDateKey', 'conciergeDateLabel', 'conciergeProgramTitle', 'conciergeFormatProgram', 'conciergePremiumScheduleReply', 'conciergeScheduleReply', 'conciergeRegulationReply'];
+  const namesForRuntime = ['conciergeRosterDayParts', 'conciergeTime', 'conciergeProgramDate', 'conciergeProgramRecords', 'conciergeNextProgram', 'conciergePresentationTime', 'conciergeDateKey', 'conciergeRecordDateKey', 'conciergeDateLabel', 'conciergeProgramTitle', 'conciergeFormatProgram', 'conciergePremiumScheduleReply', 'conciergeScheduleReply', 'conciergeRegulationReply', 'conciergeDepartureReply'];
   // Resolve real prepared helper declarations transitively, so materialized
   // Care/operational reminders are exercised rather than replaced by stubs.
   const externallyBound = new Set(['conciergeNextJourneyProgram', 'conciergeJourneyProgramRecords', 'conciergeJourneyEndText', 'conciergeRegulationForRecord']);
@@ -170,7 +203,7 @@ if (source.includes("from './server/concierge/journey-programs.mjs'")) {
   let runtimeAt = at;
   class TestDate extends Date { constructor(...args) { super(...(args.length ? args : [runtimeAt.getTime()])); } static now() { return runtimeAt.getTime(); } }
   const { conciergeJourneyEndText } = await import('../server/concierge/journey-programs.mjs');
-  const runtime = vm.runInNewContext(`${code}\n({ premium: conciergePremiumScheduleReply, basic: conciergeScheduleReply, regulation: conciergeRegulationReply })`, {
+  const runtime = vm.runInNewContext(`${code}\n({ premium: conciergePremiumScheduleReply, basic: conciergeScheduleReply, regulation: conciergeRegulationReply, departure: conciergeDepartureReply })`, {
     Date: TestDate, Intl, conciergeInactiveCodes: new Set(['DO', 'VC']),
     conciergeNextJourneyProgram: (roster, legacy) => next(roster, legacy, runtimeAt),
     conciergeJourneyProgramRecords: records, conciergeJourneyEndText,
@@ -178,7 +211,10 @@ if (source.includes("from './server/concierge/journey-programs.mjs'")) {
     premiumGreeting: () => 'Olá.', normalizeFlightRaw: (value) => String(value),
   });
   const actualPremium = await runtime.premium({ roster: midnight }, 'next', {});
-  assert.match(actualPremium, /2 pernas/); assert.match(actualPremium, /SYNTH-CONTINUATION:/);
+  assert.match(actualPremium, /2 voos/); assert.match(actualPremium, /SYNTH-CONTINUATION:/);
+  const departure = await runtime.departure({roster:midnight});
+  assert.match(departure,/fora da base: apresentação em CCC, 04\/10\/2099 às 23:18/);
+  assert.doesNotMatch(departure,/Saia de casa|SYNTH-OLD-HOTEL/);
   const actualBasic = runtime.basic({ roster: midnight }, 'next');
   assert.match(actualBasic, /SYNTH-CONTINUATION/); assert.match(actualBasic, /07:35/);
   const actualRegulation = runtime.regulation({ roster: midnight });

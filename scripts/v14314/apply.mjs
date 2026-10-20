@@ -22,7 +22,7 @@ update('server/v1404/telegram-language.mjs', (source) => {
 });
 
 const CREWCHECK_ACTIVITY_LABELS = Object.freeze({
-  DO:'folga', DOF:'folga regulamentar', DOP:'folga programada', OFF:'folga', ASB:'sobreaviso', HSB:'sobreaviso', HSBE:'sobreaviso especial',
+  DO:'folga', DOF:'folga regulamentar', DOP:'folga programada', OFF:'folga', ASB:'reserva', HSB:'sobreaviso', HSBE:'sobreaviso especial',
   RES:'reserva operacional', RSV:'reserva operacional', MT:'reunião operacional', CRM:'treinamento de gerenciamento de recursos da tripulação',
   RCFI:'treinamento recorrente', EAD:'treinamento a distância', PS:'deslocamento como passageiro', EXTRA:'deslocamento como passageiro', DH:'deslocamento como passageiro',
   DEADHEAD:'deslocamento como passageiro', PERNOITE:'pernoite em hotel', HOTEL:'pernoite em hotel', VOO:'voo'
@@ -47,6 +47,8 @@ export function translateAviationText(value = '') {
 
 const DIGIT_WORDS =`);
   }
+  // Repair generated sources too; this is a label correction, never a roster rewrite.
+  next = next.replace("ASB:'sobreaviso'", "ASB:'reserva'");
   next = next.replace(/export function spokenTime\(value = '', fallback = 'horário a confirmar'\) \{[\s\S]*?\n\}/, `export function spokenTime(value = '', fallback = 'horário a confirmar') {
   const match = String(value || '').match(/(?:T|\\s|^)(\\d{1,2}):(\\d{2})/);
   if (!match) return fallback;

@@ -1,3 +1,4 @@
+import { requestBlobDownload } from './blobDownload';
 import type { CrewRoster, RosterDay, FlightLeg } from './pdfParser';
 import type { GymRecommendation } from './complianceEngine';
 import type { RoutineSuggestion } from './routinePlanner';
@@ -775,12 +776,5 @@ function titleCase(value: string): string {
 }
 
 export function downloadCalendarFile(ical: string, filename: string = 'crew-roster.ics'): void {
-  const element = document.createElement('a');
-  const file = new Blob([ical], { type: 'text/calendar;charset=utf-8' });
-  element.href = URL.createObjectURL(file);
-  element.download = filename;
-  document.body.appendChild(element);
-  element.click();
-  document.body.removeChild(element);
-  URL.revokeObjectURL(element.href);
+  requestBlobDownload(new Blob([ical], { type: 'text/calendar;charset=utf-8' }), filename);
 }

@@ -32,6 +32,7 @@ on:
       - 'android-wrapper/app/src/main/res/**'
       - 'client/src/components/navigation/InternalHeaderFrame.tsx'
       - 'client/src/components/v1391/HomeLayoutShell.tsx'
+      - 'client/src/components/v1391/home-layout.css'
       - 'client/src/components/v1391/MenuPersonalization.tsx'
       - 'scripts/v14387d/apply.mjs'
       - 'scripts/p1-home-layout/apply.mjs'

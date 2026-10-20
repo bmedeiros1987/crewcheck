@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import './native-play-update-notice.css';
+import PwaUpdateNotice from './PwaUpdateNotice';
 
 const STORE_URL = 'https://play.google.com/store/apps/details?id=com.crewcheck.app';
 const SNOOZE_KEY = 'crewcheck_play_update_snooze';
@@ -26,7 +27,7 @@ function readOffer(value: unknown): Offer | null {
 /** Android package availability comes exclusively from the existing Play bridge.
  * Never infer it from release.json, the PWA cache, URL flags or a public version.
  */
-export default function NativePlayUpdateNotice() {
+function NativePlayOffer() {
   const [offer, setOffer] = useState<Offer | null>(null);
   const snooze = useRef<Snooze | null>(null);
   useEffect(() => {
@@ -76,6 +77,7 @@ export default function NativePlayUpdateNotice() {
   if (!offer) return null;
   return <aside className="cc-play-update-notice" aria-label="Atualização Android disponível">
     <div role="status"><strong>Atualização disponível</strong><p>Há uma atualização do app Android para você na Play Store.</p></div>
-    <div className="cc-play-update-actions"><button type="button" onClick={defer}>Mais tarde</button><button type="button" onClick={openPlay}>Atualizar</button></div>
+    <div className="cc-play-update-actions"><button type="button" onClick={defer}>Depois</button><button type="button" onClick={openPlay}>Atualizar agora</button></div>
   </aside>;
 }
+export default function NativePlayUpdateNotice(){return <><PwaUpdateNotice/><NativePlayOffer/></>;}

@@ -1,3 +1,4 @@
+import {resolveRegulationProgram,regulationProgramDay} from '@shared/regulationScenarioPrefill.mjs';
 import {cabinSalaryRateReference} from '@/lib/cabinSalaryRateReference';
 import ConciergeFinancialPreview from '@/components/finance/ConciergeFinancialPreview';
 import {HomeFinancialEstimateProvider} from '@/components/finance/HomeFinancialEstimate';
@@ -33,7 +34,6 @@ import '@/styles/compact-navigation.css';
 import TextSizeSetting from '@/components/TextSizeSetting';
 import MoneyText from '@/components/MoneyText';
 import { FinancialPrivacyToggle, useFinancialPrivacy } from '@/components/finance/FinancialPrivacy';
-import { initializeCrewTextSize } from '@/lib/textSizePreference';
 import { acquireOverlayLifecycle } from '@/lib/overlayLifecycle';
 import NotificationSoundSetting from '@/components/pulse/NotificationSoundSetting';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
@@ -97,6 +97,7 @@ import {
 import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getCanonicalWorkHoursTotal, getPublishedDutyLimitSummary, type ComplianceResult } from '@/lib/complianceEngine';
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
 import { authFetch, getStoredUser, getToken, logout } from '@/lib/authClient';
+import { captureAuthSession } from '@/lib/authClient';
 import { exportReport } from '@/lib/pdfExport';
 import { generateICalendar, downloadCalendarFile } from '@/lib/calendarExport';
 import { shareToWhatsApp, shareToTelegram, copyToClipboard, shareExportedPdfNative } from '@/lib/sharing';
@@ -141,11 +142,12 @@ import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
-import { canonicalFlightId, RADAR_GATE_STALE_MS, MANUAL_GATE_EVENT, manualGateIdentity, flightOperationalDate, gateChangeAlertAllowed, manualGateAccountKey, resolveNextFlightGate, radarSnapshotStorageKey, readCachedRadarForFlight, readManualGate, selectNextFlight } from '@/lib/nextFlightGate';
+import { retainLatestGateEvidence, nextGateUpdateWatermark, type GateSourceUpdate, type GateUpdateWatermark, canonicalFlightId, RADAR_GATE_STALE_MS, MANUAL_GATE_EVENT, manualGateIdentity, flightOperationalDate, gateChangeAlertAllowed, manualGateAccountKey, resolveNextFlightGate, radarSnapshotStorageKey, readCachedRadarForFlight, readManualGate, selectNextFlight } from '@/lib/nextFlightGate';
 import { applyNextFlightToWatchSnapshot } from '@/lib/nextFlightWatch';
+import { manualGateNoticeIdentity, manualGateNoticeScope, claimManualGateNotice } from '@/lib/manualGateNotices';
 import { ManualGateEditor } from '@/components/nextflight/ManualGateEditor';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
-import { crewCheckNotificationPermission, publishCrewCheckNotice, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';
+import { crewCheckNotificationPermission, publishCrewCheckNotice, publishCrewCheckPulse, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
 import { isActionableComplianceAlert, informationalComplianceDiagnostics } from '@/lib/complianceAlertSemantics';
 import '@/components/v1393/weather.css';
@@ -1632,6 +1634,9 @@ function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; t
   return <article className={`cz-kpi ${tone}`}><span><Icon size={24}/></span><div><small>{title}</small><strong><MoneyText value={value}/></strong><p>{detail}</p></div></article>;
 }
 type RadarSnapshot = {
+  gateUpdate?: GateSourceUpdate | null;
+  gateUpdateWatermark?: GateUpdateWatermark | null;
+  gateEvidenceReceivedAt?: number;
   httpStatus?: number;
   querySuppressed?: boolean;
   queryReason?: string;
@@ -1711,31 +1716,44 @@ function confirmedRadarGate(value?: string): string {
 function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapshot {
   const previous = readRadarSnapshot(event);
   // A origem/destino da fonte ficam preservados para recusar portão de outro trecho.
-  const snapshot = { ...payload, operationalDeparture: payload.operationalDeparture ?? payload.departure, departure: payload.scheduledDepartureUtc ?? payload.departure, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: payload.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
+  const evidence = previous?.gateUpdate ? retainLatestGateEvidence(event, previous, payload) : payload;
+  const snapshot = { ...evidence, gateUpdateWatermark: (payload.gateUpdate || previous?.gateUpdateWatermark) ? nextGateUpdateWatermark(event, previous, { ...payload, updatedAt: Date.now() }) : null, operationalDeparture: evidence.operationalDeparture ?? evidence.departure, departure: evidence.scheduledDepartureUtc ?? evidence.departure, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: evidence.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
   const key = radarSnapshotKey(event);
   storage.set(key, JSON.stringify(snapshot));
   window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));
 
-  const manualGate = readManualGate(localStorage, manualGateAccountKey(getStoredUser()), event)?.gate || '';
+  const manualEntry = readManualGate(localStorage, manualGateAccountKey(getStoredUser()), event);
+  const manualGate = manualEntry?.gate || '';
   // Alerts must accept exactly the same source/occurrence as the phone/watch decision.
   const before = resolveNextFlightGate({ event, radar: previous });
   const after = resolveNextFlightGate({ event, radar: snapshot });
   const previousGate = manualGate || before.gate;
   const nextGate = after.operationalDate && after.gateSource === 'radar' && !after.radarRejected && !after.stale ? after.gate : '';
   const previousRadarGate = before.gateSource === 'radar' && !before.radarRejected ? before.gate : '';
-  if (previousGate && nextGate && previousGate !== nextGate && previousRadarGate !== nextGate) {
-    publishCrewCheckNotice({
-      id: `gate-change:${event.id}:${nextGate}`,
-      dedupeKey: `gate-change:${event.id}:${nextGate}`,
+  const reviewAfter = manualEntry ? resolveNextFlightGate({ event, radar: snapshot, manual: manualEntry }).manualReview : null;
+  const manualChange = Boolean(reviewAfter?.state === 'newer' && reviewAfter.candidate);
+  const automaticChange = !manualEntry && previousGate && nextGate && previousGate !== nextGate && previousRadarGate !== nextGate;
+  const manualOwner = manualGateAccountKey(getStoredUser());
+  const activeManualNotice = manualChange ? manualGateNoticeIdentity(event, manualEntry!, reviewAfter!.candidate!, manualOwner) : undefined;
+  reconcileCrewCheckPulse(manualGateNoticeScope(event, manualOwner), activeManualNotice ? [activeManualNotice] : []);
+  if (manualChange || automaticChange) {
+    const noticeKey = `gate-change:${event.id}:${nextGate}${manualChange ? ':' + reviewAfter!.candidate!.sourceUpdatedAtEpochMs : ''}`;
+    const noticeReview = manualChange ? manualGateNoticeIdentity(event, manualEntry!, reviewAfter!.candidate!, manualGateAccountKey(getStoredUser())) : undefined;
+    const publish = manualChange && !claimManualGateNotice(localStorage, manualGateAccountKey(getStoredUser()), event, manualEntry!, reviewAfter!.candidate!) ? publishCrewCheckPulse : publishCrewCheckNotice;
+    publish({
+      id: noticeKey,
+      dedupeKey: noticeKey,
+      scope: manualChange ? manualGateNoticeScope(event, manualGateAccountKey(getStoredUser())) : undefined,
+      review: noticeReview,
       category: 'gate',
       tone: 'atencao',
       priority: 'alta',
-      title: manualGate ? `Portão diverge · fonte indica ${nextGate}` : `Portão alterado · ${nextGate}`,
+      title: manualGate ? `Possível mudança · fonte indica ${nextGate}` : `Portão alterado · ${nextGate}`,
       detail: [event.flightNumber, manualGate ? `informado ${manualGate} · fonte ${nextGate}` : `${previousGate} → ${nextGate}`, snapshot.terminal].filter(Boolean).join(' · '),
       pulseCooldownMs: 60_000,
       // A notificação do sistema (espelhada e vibrando no relógio) só ocorre na janela do voo.
       systemNotification: gateChangeAlertAllowed(eventStartDateTime(event).getTime()) ? 'background' : 'never',
-      notificationTag: `crewcheck:gate:${event.id}`,
+      notificationTag: `crewcheck:gate:${event.id}${manualChange ? ':' + reviewAfter!.candidate!.sourceUpdatedAtEpochMs : ''}`,
       notificationCooldownMs: 2 * 60_000,
       action: { label: 'Abrir Radar', view: 'radar', context: { programId: event.id, dateEpochMs: Date.parse(event.canonical?.startDateTime || ''), journeyId: event.canonical?.journeyId, flightKey: event.flightNumber, airportCode: event.origin } },
     });
@@ -1802,19 +1820,21 @@ function FlightCard({ event, compact = false }: { event: ZeroLeg; compact?: bool
   const gateInfo = radarGateInfo(event,radar);
   const airlineCode = event.airlineCode || normalizedAirlineCode(event.flightNumber);
   const airlineName = airlineNameFor(airlineCode, event.airlineName);
-  const gate = safe(gateInfo.gate, 'A confirmar');
-  const terminal = safe(gateInfo.terminal, 'A confirmar');
-  const status = safe(radar?.status || event.status, 'Programado');
-  const aircraft = safe(radar?.aircraft || event.aircraft, 'A confirmar');
-  const registration = safe(radar?.registration || event.registration, 'A confirmar');
+  const gate = safe(gateInfo.gate, 'Não confirmado');
+  const terminal = safe(gateInfo.terminal, 'Não confirmado');
+  const status = event.kind === 'flight' ? safe(gateInfo.status, 'Não confirmado') : safe(event.status, 'Programação publicada');
+  const aircraft = safe(event.aircraft, 'Não informada');
+  const registration = safe(gateInfo.registration, 'Não confirmada');
   const isFlight = event.kind === 'flight';
   const workType = flightWorkType(event);
   return <article className={`cz-flight-card ${compact ? 'compact' : ''} ${isFlight ? 'is-flight' : 'is-activity'} ${flightWorkClass(event)}`}>
     <div className="cz-flight-head">{isFlight ? <div className="cz-airline"><AirlineLogo code={airlineCode} name={airlineName}/><span><strong>{airlineName}</strong><em>{event.flightNumber}</em></span></div> : <div className="cz-airline cz-activity-brand"><span className="cz-airline-logo"><BriefcaseBusiness size={24}/></span><span><strong>{rosterEventTitle(event)}</strong><em>{safe(rosterCode(event.day), 'ATIVIDADE')}</em></span></div>}<div className="cz-date-chip"><CalendarDays size={16}/><b>{dateChip(d)}</b><small>{weekday(d)}</small></div></div>
     <div className="cz-route"><div><strong>{event.origin}</strong><span>{city(event.origin)}</span></div><div className="cz-route-arc"><i/><Plane size={20}/><i/></div><div><strong>{event.destination}</strong><span>{city(event.destination)}</span></div></div>
-    {isFlight ? <div className="cz-flight-pills"><span className="cz-work-type-badge"><b>Operação</b>{workTypeLabel(workType)}</span><span><b>Apresentação</b>{event.presentation}</span><span><b>METAR/TAF Origem</b>{event.origin}</span><span><b>METAR/TAF Destino</b>{event.destination}</span><span><b>Alerta meteo até pouso</b>{radar?.updatedAt ? 'Radar sincronizado' : event.arrival}</span></div> : <div className="cz-flight-pills"><span><b>Programação</b>{rosterEventTitle(event)}</span><span><b>Local</b>{city(event.origin)}</span><span><b>Status</b>{status}</span></div>}
+    {isFlight ? <div className="cz-flight-pills"><span className="cz-work-type-badge"><b>Operação</b>{workTypeLabel(workType)}</span><span><b>Apresentação</b>{event.presentation}</span><span><b>METAR/TAF Origem</b>{event.origin}</span><span><b>METAR/TAF Destino</b>{event.destination}</span><span><b>Chegada planejada</b>{event.arrival}</span></div> : <div className="cz-flight-pills"><span><b>Programação</b>{rosterEventTitle(event)}</span><span><b>Local</b>{city(event.origin)}</span><span><b>Status</b>{status}</span></div>}
     <div className="cz-time-trio"><div><span>Apresentação</span><strong>{event.presentation}</strong><small>◷ Local</small></div><div><span>{isFlight ? 'Decolagem' : 'Início'}</span><strong>{event.departure}</strong><small>◷ Prevista</small></div><div><span>{isFlight ? 'Chegada' : 'Fim'}</span><strong>{event.arrival}</strong><small>◷ Prevista</small></div></div>
-    {!compact && <div className="cz-info-duo">{isFlight && <div><Lock size={25}/><span>Portão</span><strong>{gate}</strong><small>{terminal}{radar?.updatedAt ? ' · Radar' : ''}</small><small>{radarFlightDateLabel(event)}</small></div>}<div><Plane size={25}/><span>Status</span><strong className="ok">{status}</strong><small>{isFlight ? `Aeronave: ${aircraft} · Matrícula: ${registration}` : safe(event.subtitle, 'Programação publicada')}</small></div></div>}
+    {!compact && <div className="cz-info-duo">{isFlight && <div><Lock size={25}/><span>Portão</span><strong>{gate}</strong><small>{gateInfo.gateSource === 'manual' ? 'Informado por você' : gateInfo.gateSource === 'radar' ? 'Fonte com evidência válida' : 'Sem confirmação operacional'}{gateInfo.gate ? ` · ${terminal}` : ''}</small><small>{radarFlightDateLabel(event)}</small></div>}<div><Plane size={25}/><span>Status</span><strong>{status}</strong>{isFlight && <small>{gateInfo.statusSource === 'manual' ? 'Informado por você' : gateInfo.statusSource === 'radar' ? 'Fonte operacional com evidência válida' : 'Sem confirmação operacional'}</small>}<small>{isFlight ? `Aeronave planejada: ${aircraft} · Matrícula: ${registration}${gateInfo.registrationSource === 'manual' ? ' · informada por você' : gateInfo.registrationSource === 'radar' ? ' · fonte com evidência válida' : ''}` : safe(event.subtitle, 'Programação publicada')}</small></div></div>}
+    {!compact && gateInfo.manualGateUnlinked && <p role="note">Portão manual anterior preservado; confirme o vínculo com este voo no editor.</p>}
+    {!compact && Boolean(gateInfo.operationalConflicts?.length) && <p role="note">Há divergência nos dados operacionais. Valores manuais preservados; confirme a informação.</p>}
     {!compact && Boolean(event.crew?.length) && <div className="cz-crew-line"><UserRound size={18}/><span>Tripulação</span><strong>{event.crew?.slice(0, 4).join(', ')}</strong></div>}
     {!compact && Boolean(event.hotel) && <div className="cz-crew-line"><Hotel size={18}/><span>Hotel</span><strong>{event.hotel}</strong></div>}
     {!compact && Boolean(event.routine?.length) && <div className="cz-routine-strip">{event.routine?.slice(0, 4).map((item) => <span key={item}>{item}</span>)}</div>}
@@ -2165,10 +2185,10 @@ function RosterInlineDetails({ event, setView }: { event: ZeroLeg; setView: (v: 
       <div><span>Chegada/Fim</span><strong>{safe(event.arrival, 'A confirmar')}</strong></div>
       <div><span>Duração</span><strong>{inlineDurationLabel(event)}</strong></div>
       <div><span>Fonte apresentação</span><strong>{source}</strong></div>
-      <div><span>Status</span><strong>{safe(event.status, 'Programado')}</strong></div>
+      <div><span>Status planejado da escala</span><strong>{safe(event.status, 'Não informado')}</strong></div>
       <div><span>Aeronave</span><strong>{safe(event.aircraft, 'A confirmar')}</strong></div>
-      <div><span>Matrícula</span><strong>{safe(event.registration, 'A confirmar')}</strong></div>
-      <div><span>Portão/Terminal</span><strong>{safe(radar?.gate || event.gate, 'A confirmar')} · {safe(radar?.terminal || event.terminal, 'A confirmar')}</strong></div>
+      <div><span>Matrícula planejada da escala</span><strong>{safe(event.registration, 'Não informada')}</strong></div>
+      <div><span>Portão/terminal planejados da escala</span><strong>{safe(event.gate, 'Não informado')} · {safe(event.terminal, 'Não informado')}</strong><small>Não confirma portão operacional.</small></div>
       <div><span>Hotel</span><strong>{safe(event.hotel, '—')}</strong></div>
     </div>}
     {!isJourneyRest && <RosterInlineWeatherBlock event={event}/>}
@@ -2344,19 +2364,31 @@ function useWeatherLandingMonitor(event: ZeroLeg) {
 }
 
 
-function useOperationalRadarPulse(event: ZeroLeg) {
+function useOperationalRadarPulse(events: ZeroLeg[]) {
   useEffect(() => {
-    if (!event || event.placeholder || event.kind !== 'flight' || !/\d/.test(String(event.flightNumber || ''))) return;
     let alive = true;
+    let lastTargetId = '';
     const check = () => {
-      const cached = readRadarSnapshot(event);
-      if (cached?.updatedAt && Date.now() - cached.updatedAt < RADAR_CARD_REFRESH_MS) return;
-      fetchRadarSnapshot(event, false).catch(() => undefined);
+      // Keep the active flight and the boarding card current within the SAME
+      // budget: at most one fetch per existing five-minute check, never two.
+      const targets: ZeroLeg[] = [];
+      for (const event of [selectNextFlight(events), nextRealFlight(events)]) {
+        if (event && !event.placeholder && event.kind === 'flight' && /\d/.test(String(event.flightNumber || '')) && !targets.some(target => target.id === event.id)) targets.push(event);
+      }
+      const previous = targets.findIndex(event => event.id === lastTargetId);
+      for (let step = 1; step <= targets.length; step += 1) {
+        const event = targets[(previous + step) % targets.length];
+        const cached = readRadarSnapshot(event);
+        if (cached?.updatedAt && Date.now() - cached.updatedAt < RADAR_CARD_REFRESH_MS) continue;
+        lastTargetId = event.id;
+        fetchRadarSnapshot(event, false).catch(() => undefined);
+        break;
+      }
     };
     check();
     const timer = window.setInterval(() => { if (alive) check(); }, RADAR_CARD_REFRESH_MS);
     return () => { alive = false; window.clearInterval(timer); };
-  }, [event.id, event.kind, event.placeholder, event.flightNumber, event.origin, event.destination]);
+  }, [events]);
 }
 
 function useOperationalWeatherPulse(event: ZeroLeg) {
@@ -2674,13 +2706,17 @@ function routeDurationMinutes(route: RoutePreviewInfo | null): number {
   return Math.round(hours * 60 + minutes);
 }
 function eventClockDate(event: ZeroLeg, clock: string): Date {
-  const base = eventStartDateTime(event);
-  const match = String(clock || '').match(/(\d{1,2}):(\d{2})/);
-  if (!match) return base;
-  const target = new Date(base);
-  target.setHours(Number(match[1]), Number(match[2]), 0, 0);
-  return target;
+  const match = String(clock || '').trim().match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+  const base = eventStartDateTime(event).getTime();
+  if (!match || !Number.isFinite(base)) return new Date(NaN);
+  // canonicalRoster publishes its civil clock in UTC-03. Never reinterpret it
+  // with device-local setters (or borrow a presentation from another day).
+  const civilDate = new Date(base - 3 * 60 * 60_000).toISOString().slice(0, 10);
+  let instant = Date.parse(`${civilDate}T${match[1].padStart(2, '0')}:${match[2]}:00-03:00`);
+  if (event.kind === 'flight' && clock === event.presentation && instant > base) instant -= 24 * 60 * 60_000;
+  return new Date(instant);
 }
+
 function Departure({ event }: { event: ZeroLeg }) {
   const departureModes = [
     { id: 'automatic', label: 'Automático', detail: 'Meio mais rápido', icon: Navigation },
@@ -3247,14 +3283,14 @@ function RadarView({ event }: { event: ZeroLeg }) {
   }, [contextKey, token]);
   const verified = validatedRadarForEvent(event,state);
   const gateInfo = radarGateInfo(event,verified);
-  const status = verified?.status || event.status || 'Monitorando';
-  const gate = gateInfo.gate || 'A confirmar';
+  const status = gateInfo.status || 'Não confirmado';
+  const gate = gateInfo.gate || 'Não confirmado';
   const terminal = gateInfo.terminal || 'A confirmar';
-  const dep = verified?.operationalDeparture || verified?.departure || event.departure;
-  const arr = verified?.arrival || event.arrival;
+  const dep = event.departure;
+  const arr = event.arrival;
   const quality = verified?.quality ? `${verified.quality}%` : 'Aguardando';
   const latency = verified?.latencyMs ? `${verified.latencyMs} ms` : '—';
-  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>{flight || 'Voo'} · {event.origin} → {event.destination} · portão e status sincronizados com a próxima programação.</p></section><section className="cz-radar-screen"><article><div className="cz-radar-airline"><AirlineLogo code={airlineCode} name={airlineName}/><strong>{airlineName}</strong></div><h2>{flight || 'Voo'}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {gate} · {terminal}</strong><span>{radarFlightDateLabel(event)}</span><span>Status: {status}</span></article><article><Plane/><h2>Horários</h2><p>Partida {safe(dep, 'A confirmar')} · Chegada {safe(arr, 'A confirmar')}</p><strong>{verified?.ok ? 'Radar atualizado' : radarAvailabilityLabel(state)}</strong><span>{(state?.ok && !verified ? 'Resposta sem ocorrência atual confirmada.' : state?.message) || 'Consultando fontes operacionais disponíveis.'}</span></article><article><ShieldCheck/><h2>Qualidade</h2><p>Precisão {quality} · resposta {latency}</p><strong>{loading ? 'Atualizando...' : 'Seleção automática'}</strong><span>{state?.alternatives ? `${state.alternatives} fonte(s) responderam dentro do limite.` : 'Teste automático por disponibilidade.'}</span></article></section><section className="cz-toolbox"><h2>Ações</h2><div className="cz-tool-actions"><button onClick={() => refresh(true)} disabled={loading}><Radar/> Atualizar e exportar ao card</button><button onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${flight} flight status ${event.origin} ${event.destination}`)}`, '_blank', 'noopener,noreferrer')}><Globe2/> Consultar voo</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button></div></section><ManualGateEditor event={event}/></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>{flight || 'Voo'} · {event.origin} → {event.destination} · portão e status sincronizados com a próxima programação.</p></section><section className="cz-radar-screen"><article><div className="cz-radar-airline"><AirlineLogo code={airlineCode} name={airlineName}/><strong>{airlineName}</strong></div><h2>{flight || 'Voo'}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {gate} · {terminal}</strong><span>{radarFlightDateLabel(event)}</span><span>Status: {status}</span><span>{gateInfo.statusSource === 'manual' ? 'Informado por você' : gateInfo.statusSource === 'radar' ? 'Fonte operacional com evidência válida' : 'Sem confirmação operacional'}</span><span>Matrícula: {gateInfo.registration || 'Não confirmada'}{gateInfo.registrationSource === 'manual' ? ' · informado por você' : ''}</span>{Boolean(gateInfo.operationalConflicts?.length) && <span role="note">Há divergência; dados conflitantes não confirmados e valores manuais preservados.</span>}{event.status && <span>Planejamento da escala: {event.status}</span>}</article><article><Plane/><h2>Horários planejados da escala</h2><p>Partida {safe(dep, 'Não informada')} · Chegada {safe(arr, 'Não informada')}</p><strong>{verified?.ok ? 'Resposta recebida; confirmação por campo' : radarAvailabilityLabel(state)}</strong><span>{(state?.ok && !verified ? 'Resposta sem ocorrência atual confirmada.' : state?.message) || 'Consultando fontes operacionais disponíveis.'}</span></article><article><ShieldCheck/><h2>Qualidade</h2><p>Resposta {latency}; pontuação interna não comprova exatidão.</p><strong>{loading ? 'Atualizando...' : 'Seleção automática'}</strong><span>{state?.alternatives ? `${state.alternatives} fonte(s) responderam dentro do limite.` : 'Teste automático por disponibilidade.'}</span></article></section><section className="cz-toolbox"><h2>Ações</h2><div className="cz-tool-actions"><button onClick={() => refresh(true)} disabled={loading}><Radar/> Atualizar e exportar ao card</button><button onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${flight} flight status ${event.origin} ${event.destination}`)}`, '_blank', 'noopener,noreferrer')}><Globe2/> Consultar voo</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button></div></section><ManualGateEditor event={event}/></>;
 }
 
 type WeatherDisplayMode = 'both' | 'raw' | 'decoded';
@@ -5184,7 +5220,6 @@ export default function Home() {
     window.addEventListener('storage', sync);
     return () => { for (const name of names) window.removeEventListener(name, sync); window.removeEventListener('storage', sync); };
   }, []);
-  useEffect(initializeCrewTextSize, []);
   const [, setLocation] = useLocation();
   const fileRef = useRef<HTMLInputElement>(null);
   const [view, setViewState] = useState<ZeroView>(() => new URLSearchParams(window.location.search).has('connect') ? 'community' : new URLSearchParams(window.location.search).get('view') ? normalizeInitialView(new URLSearchParams(window.location.search).get('view')) : normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
@@ -5249,9 +5284,12 @@ export default function Home() {
   const event = nextFlight(events);
   const flightEvent = nextRealFlight(events);
   const compliance = currentCompliance(bundle);
+  const regulationContext = view === 'regulation' ? peekAlertRosterContext('regulation') : null;
+  const regulationEvent = resolveRegulationProgram(events, event, regulationContext);
+  const regulationDay = regulationProgramDay(events, regulationEvent);
   const gym = currentGym(bundle);
   useWeatherLandingMonitor(flightEvent);
-  useOperationalRadarPulse(flightEvent);
+  useOperationalRadarPulse(events);
   useOperationalWeatherPulse(flightEvent);
 
 
@@ -5273,7 +5311,24 @@ export default function Home() {
   }, [compliance, bundle.roster, alertExperienceRevision]);
 
   useEffect(() => {
+    const watchSession = captureAuthSession();
+    let watchInvalidated = false;
+    const invalidateWatchSnapshot = () => {
+      watchInvalidated = true;
+      try {
+        const now = Date.now();
+        const empty = buildCrewCheckWatchSnapshot([], { id: 'session-invalidated', kind: 'empty', placeholder: true }, null, now);
+        window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: {
+          ...empty, contextId: 'session-invalidated', validUntilEpochMs: now,
+          headline: 'ABRA O CREWCHECK', detail: 'Sessão alterada. Atualize pelo celular.',
+        } }));
+      } catch {}
+    };
     const publishWatchSnapshot = () => {
+      if (watchInvalidated || !watchSession.token || !watchSession.owner || !watchSession.isCurrent()) {
+        invalidateWatchSnapshot();
+        return;
+      }
       try {
         const base = buildCrewCheckWatchSnapshot(events, event);
         // Mesmo próximo voo e mesma decisão de portão do card da tela inicial.
@@ -5287,6 +5342,7 @@ export default function Home() {
           primaryEventId: event.id,
           nextFlightScheduleId: nextFlightEvent ? (nextFlightEvent.canonical?.id || nextFlightEvent.id) : '',
         });
+        if (!watchSession.isCurrent()) { invalidateWatchSnapshot(); return; }
         window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: snapshot }));
       } catch {
         // Watch sync is auxiliary. Never interfere with roster rendering.
@@ -5299,12 +5355,20 @@ export default function Home() {
     window.addEventListener('crewcheck:native-ready', onRequest);
     window.addEventListener('crewcheck:radar-updated', onRequest);
     window.addEventListener(MANUAL_GATE_EVENT, onRequest);
+    const authEvents = ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired'];
+    for (const name of authEvents) window.addEventListener(name, invalidateWatchSnapshot);
+    const onAuthStorage = (change: StorageEvent) => {
+      if (change.key === null || change.key === 'crewcheck_auth_token' || change.key === 'crewcheck_auth_user') invalidateWatchSnapshot();
+    };
+    window.addEventListener('storage', onAuthStorage);
     const timer = window.setInterval(publishWatchSnapshot, 60_000);
     return () => {
       window.removeEventListener('crewcheck:radar-updated', onRequest);
       window.removeEventListener(MANUAL_GATE_EVENT, onRequest);
       window.removeEventListener('crewcheck:watch-snapshot-request', onRequest);
       window.removeEventListener('crewcheck:native-ready', onRequest);
+      for (const name of authEvents) window.removeEventListener(name, invalidateWatchSnapshot);
+      window.removeEventListener('storage', onAuthStorage);
       window.clearInterval(timer);
     };
   }, [events, event.id, event.presentation, event.gate, event.status]);
@@ -5447,7 +5511,7 @@ export default function Home() {
     telegram: () => { openTelegramBinding(); },
     copy: () => { copyToClipboard(bundle.roster, compliance).then(ok => ok ? toast.success('Resumo copiado.') : toast.error('Não consegui copiar.')); },
     email: async () => { const to = window.prompt('Enviar relatório com PDF para qual e-mail?') || ''; if (!to.trim()) return; try { const pdf = await exportReport(bundle.roster, compliance, gym); const result = await sendRosterByEmail({ to: to.trim(), roster: bundle.roster, compliance, gym, attachment: { fileName: pdf.fileName, blob: pdf.blob } }); toast.success(result.message || `Relatório e PDF enviados para ${to.trim()}.`); } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui enviar o relatório pelo CrewCheck.'); } },
-    sharePdf: async () => { try { const pdf = await exportReport(bundle.roster, compliance, gym); let result: 'shared' | 'downloaded'; try { result = await shareExportedPdfNative(pdf, `CrewCheck · ${bundle.roster.crewName} · ${String(bundle.roster.month).padStart(2, '0')}/${bundle.roster.year}`); } catch (error) { if ((error as any)?.name !== 'NotAllowedError') throw error; pdf.download(); result = 'downloaded'; } toast.success(result === 'shared' ? 'PDF compartilhado.' : 'PDF salvo para compartilhar.'); } catch (error) { if ((error as any)?.name !== 'AbortError') toast.error('Não consegui compartilhar o PDF agora.'); } },
+    sharePdf: async () => { try { const pdf = await exportReport(bundle.roster, compliance, gym); let result: 'shared' | 'downloaded'; try { result = await shareExportedPdfNative(pdf, `CrewCheck · ${bundle.roster.crewName} · ${String(bundle.roster.month).padStart(2, '0')}/${bundle.roster.year}`); } catch (error) { if ((error as any)?.name !== 'NotAllowedError') throw error; pdf.download(); result = 'downloaded'; } if (result === 'shared') toast.success('PDF compartilhado.'); else toast.message('Download solicitado. Confira os arquivos do dispositivo; se não aparecer, tente E-mail.'); } catch (error) { if ((error as any)?.name !== 'AbortError') toast.error('Não consegui compartilhar o PDF agora.'); } },
     google: async () => { try { await connectGoogleCalendar(); const result = await syncRosterToGoogleCalendar(bundle.roster, loadGoogleCalendarSettings(), { gymRecommendations: gym }); toast.success(`Google Calendar: ${(result as any).total || (result as any).created + (result as any).updated || 0} eventos sincronizados.`); } catch { try { googleCalendarIntegrationDiagnostics?.(); } catch {} toast.error('Google Calendar indisponível. Confira login/permissões e ENV do Render.'); } },
     save: () => { saveRoster(bundle.roster, bundle.source); Promise.allSettled([saveRosterAnalysis({ roster: bundle.roster, compliance, gym, sourceFileName: bundle.source } as any), syncPlatformRoster(bundle.roster, compliance, bundle.source)]).then((results) => results.some((result) => result.status === 'fulfilled') ? toast.success('Escala salva e sincronização atualizada.') : toast.success('Escala salva neste dispositivo; a nuvem será tentada novamente.')); },
     openActive: () => { openActiveRoster().then(active => { if (active?.roster) { const c = active.compliance || analyzeSafe(active.roster); setBundle({ roster: active.roster, compliance: c, source: 'Escala ativa do banco' }); saveRoster(active.roster, 'Escala ativa do banco'); setView('cockpit'); toast.success('Escala ativa carregada.'); } else { toast.message('Nenhuma escala ativa encontrada. Use Importar escala.'); setView('import'); } }).catch(()=>{ toast.error('Não encontrei escala ativa sincronizada.'); setView('import'); }); },
@@ -5472,7 +5536,7 @@ export default function Home() {
     {view === 'compare' && <CompareRosterView bundle={bundle} onUpload={actions.upload}/>} 
     {view === 'bids' && <BidsView events={events}/>} 
     {view === 'alerts' && <ReviewedAlerts key={alertAccount() || 'unbound'} compliance={compliance} roster={bundle.roster} onImport={actions.upload} onChoose={() => setView('database')}/>}
-    {view === 'regulation' && <ManualRegulationView compliance={compliance}/>}
+    {view === 'regulation' && <ManualRegulationView compliance={compliance} scheduleDay={regulationDay} program={regulationEvent?.canonical}/>}
     {view === 'departure' && <Departure event={event}/>}
     {view === 'mycar' && <CarView event={event}/>}
     {view === 'iflight' && <IFlightPushView actions={actions}/>}

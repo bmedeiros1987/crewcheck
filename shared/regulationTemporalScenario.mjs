@@ -23,8 +23,18 @@ export function projectRegulationScenario(input={}){
  if(!minutes(input.postFlightMinutes,360)||minimum!==null&&input.postFlightMinutes<minimum)missing.push('Pós-voo aplicável');
  if(!minutes(input.additionalTasksMinutes,1440))missing.push('Tarefas após o pós-voo');
  if(![0,60].includes(input.extensionMinutes))missing.push('Cenário de extensão (0 ou 60 minutos)');
- if(missing.length)return {state:'indeterminate',missing,authorization:'not_assessed',rest:'indeterminate',accumulatedLimits:'indeterminate',base:null,scenario:null};
- const make=delay=>{const landing=takeoff+(delay+input.flightMinutes)*60000,engineStop=landing+input.taxiInMinutes*60000,dutyEnd=engineStop+(input.postFlightMinutes+input.additionalTasksMinutes)*60000;return {takeoff:new Date(takeoff+delay*60000).toISOString(),landing:new Date(landing).toISOString(),engineStop:new Date(engineStop).toISOString(),dutyEnd:new Date(dutyEnd).toISOString()};};
+ // Each milestone depends only on its own inputs. Missing legal evidence must
+ // keep the assessment indeterminate without erasing a known landing time.
+ const make=delay=>{
+  const departure=takeoff!==null&&minutes(delay,1440)?takeoff+delay*60000:null;
+  const airborne=minutes(input.flightMinutes,1440,true)&&['published_airborne','user_estimate'].includes(input.flightDurationSource);
+  const landing=departure!==null&&airborne?departure+input.flightMinutes*60000:null;
+  const engineStop=landing!==null&&minutes(input.taxiInMinutes,240)?landing+input.taxiInMinutes*60000:null;
+  const dutyEnd=engineStop!==null&&minimum!==null&&minutes(input.postFlightMinutes,360)&&input.postFlightMinutes>=minimum&&minutes(input.additionalTasksMinutes,1440)?engineStop+(input.postFlightMinutes+input.additionalTasksMinutes)*60000:null;
+  const iso=value=>value===null?null:new Date(value).toISOString();
+  return {takeoff:iso(departure),landing:iso(landing),engineStop:iso(engineStop),dutyEnd:iso(dutyEnd)};
+ };
+ if(missing.length)return {state:'indeterminate',missing,authorization:'not_assessed',rest:'indeterminate',accumulatedLimits:'indeterminate',base:make(0),scenario:make(input.delayMinutes)};
  const base=make(0),scenario=make(input.delayMinutes),extendedLimit=normalLimit+input.extensionMinutes*60000,marginMinutes=(extendedLimit-Date.parse(scenario.dutyEnd))/60000;
  // Date and night boundaries are flagged for the existing regulatory/historical
  // evaluation; this small comparator does not silently recompute those limits.

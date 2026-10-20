@@ -4,7 +4,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const distDir=path.resolve('dist'),out=path.resolve(process.env.FINANCIAL_UI_EVIDENCE_DIR||'artifacts/financial-ledger-ui');fs.mkdirSync(out,{recursive:true});
 const source=fs.readFileSync('server.mjs','utf8'),ast=ts.createSourceFile('server.mjs',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
 const handler=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='serveStatic');assert(handler);
-const staticContext=vm.createContext({fs,path,Buffer,distDir,sendJson:(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}});vm.runInContext(handler.getText(ast)+'\nglobalThis.respond=serveStatic;',staticContext);
+const staticContext=vm.createContext({guardStaticHtml: require('../server/static-html-guard.mjs').guardStaticHtml,fs,path,Buffer,distDir,sendJson:(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}});vm.runInContext(handler.getText(ast)+'\nglobalThis.respond=serveStatic;',staticContext);
 const server=http.createServer((req,res)=>staticContext.respond(req,res,new URL(req.url,'http://localhost')));
 // Reuse the established synthetic roster/seed rather than real user data.
 const existing=fs.readFileSync('scripts/regression-financial-payment-preview.cjs','utf8'),fixtureAst=ts.createSourceFile('fixture.cjs',existing,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);

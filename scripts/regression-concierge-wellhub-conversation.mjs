@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import test from 'node:test';
-import { createTelegramMenu, menuTemplate, requestedWeatherAirport } from '../server/concierge/telegram-menu.mjs';
+import { createTelegramMenuTransport } from '../server/concierge/telegram-menu-transport.mjs';
+import { createTelegramMenu, menuTemplate, requestedWeatherAirport, missingFinanceReply, financeUrl } from '../server/concierge/telegram-menu.mjs';
 import { execFileSync } from 'node:child_process';
 import {
   normalizeConciergeNaturalTextV14341 as normalizeConciergeNaturalTextV14338,
@@ -157,11 +158,12 @@ function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}
       buildCrewCheckAtis: station => `ATIS meteorológico ${station} · fixture`,
       crewCheckAtisVoiceText: reply => `Voz: ${reply}`,
       sendHumanTelegramVoiceReply: async (chat, text, _query, snapshot) => trace.voices.push({ chat, text, owner: snapshot.email }),
-      answerTelegramCallback: async () => {}, createTelegramMenu, requestedWeatherAirport,
+      answerTelegramCallback: async () => {}, createTelegramMenu, requestedWeatherAirport, createTelegramMenuTransport, missingFinanceReply,
+      telegramApiUrl: () => '', // This harness probes producers; edit I/O is covered by telegram-navigation-reuse.
       openEmergencyTelegramMenu: async () => { throw Error('emergency entry is tested separately with its actual handler'); },
       conciergeKeyboard: menuTemplate(),
     });
-    for (const name of ['conciergeExtractFlight', 'conciergeRadarReply', 'conciergeWeatherReply', 'conciergeAtisReply', 'conciergeWeatherKeyboard']) vm.runInContext(extract(source, name), context);
+    for (const name of ['conciergeExtractFlight', 'conciergeRadarReply', 'conciergeWeatherReply', 'conciergeAtisReply', 'conciergeWeatherKeyboard', 'conciergePerDiemReply']) vm.runInContext(extract(source, name), context);
     const runtimeStart = source.indexOf('const crewcheckMenu = createTelegramMenu(');
     const runtimeEnd = source.indexOf('\n});', runtimeStart) + 4;
     assert.ok(runtimeStart >= 0 && runtimeEnd > runtimeStart, 'actual prepared menu runtime');
@@ -185,7 +187,7 @@ function harness({ realFortalezaCatalog = false, operationalProbe = false } = {}
     openInline: () => context.sendTelegramMessage(profile.chatId, 'Menu de teste', { reply_markup: menuTemplate() }),
     tap: async label => {
       const last = trace.transports.at(-1);
-      const button = last.extra.reply_markup.inline_keyboard.flat().find(item => item.text === label);
+      const button = last.extra.reply_markup.inline_keyboard.flat().find(item => item.text.replace(/^[^\p{L}]+/u, '') === label);
       assert.ok(button?.callback_data, label);
       await context.processTelegramUpdate({ callback_query: { id: `callback-${sequence}`, data: button.callback_data, from: { id: profile.chatId }, message: { chat: { id: profile.chatId, type: 'private' }, ...last.result } } });
     },
@@ -303,13 +305,23 @@ test('prepared Telegram slash and guided buttons call the same actual producers,
     const slash = harness({ operationalProbe: true });
     await slash.send('telegram', `/${command} ${input}`);
     const guided = harness({ operationalProbe: true });
-    await guided.openInline(); await guided.tap('Mais');
+    await guided.openInline(); await guided.tap(['radar', 'portao'].includes(command) ? 'Programação' : 'Mais');
     if (['metar', 'taf', 'atis'].includes(command)) await guided.tap('Meteorologia');
     await guided.tap(label); await guided.send('telegram', input);
     assert.deepEqual(guided.trace.search.filter(item => item.boundary), slash.trace.search.filter(item => item.boundary), `${command} IO-boundary arguments`);
     assert.equal(guided.trace.output.at(-1), slash.trace.output.at(-1), `${command} actual formatted response`);
     assert.deepEqual(guided.trace.voices, slash.trace.voices, `${command} deterministic voice effect parity`);
-    if (['metar', 'taf'].includes(command)) assert.deepEqual(clone(guided.trace.transports.at(-1).extra.reply_markup), clone(slash.trace.transports.at(-1).extra.reply_markup), `${command} Bruto/Decodificado/ATIS follow-up keyboard`);
+    if (['metar', 'taf'].includes(command)) {
+      const stableKeyboard = markup => {
+        const copy=clone(markup);
+        for(const button of copy.inline_keyboard.flat()) if(button.callback_data?.startsWith('cc_nav:')) {
+          assert.match(button.callback_data,/^cc_nav:v1:[a-f0-9]{24}:home$/, 'fresh return must be an issued ticket');
+          button.callback_data='cc_nav:v1:<nonce>:home';
+        }
+        return copy;
+      };
+      assert.deepEqual(stableKeyboard(guided.trace.transports.at(-1).extra.reply_markup), stableKeyboard(slash.trace.transports.at(-1).extra.reply_markup), `${command} exact weather controls and ticketed return`);
+    }
     assert.equal(slash.trace.voices.length, command === 'atis' ? 1 : 0);
   }
 });
@@ -460,4 +472,28 @@ test('Fortaleza official catalog through actual Telegram, WhatsApp and app routi
       assert.equal(h.trace.search.at(-1).plan, 'silver-plus');
     }
   }
+});
+
+
+test('prepared typed Diárias and callback share financial content and app destination', {skip:!materialized}, async () => {
+  const typed = harness({operationalProbe:true});
+  const typedReply = await typed.send('telegram', '/diarias');
+  assert(typedReply.includes(financeUrl), 'actual typed route retains its app link');
+  const button = harness({operationalProbe:true}); await button.openInline(); await button.tap('Diárias');
+  assert.equal(button.trace.output.at(-1), missingFinanceReply());
+  // Preserve the existing text-wrapper footer; compare the complete response
+  // rather than stripping arbitrary content or changing the shared decorator.
+  assert.equal(typedReply, `${missingFinanceReply()}\n\nSe houver divergência, vale a escala oficial.`);
+  assert.equal(button.trace.transports.at(-1).extra.reply_markup.inline_keyboard.flat().find(x=>x.url)?.url, financeUrl);
+  assert.deepEqual(typed.trace.search, []); assert.deepEqual(button.trace.search, []);
+});
+
+test('prepared revoked binding denies Diárias callback and grants no private controls to typed reply', {skip:!materialized}, async () => {
+  const h = harness({operationalProbe:true}); await h.openInline();
+  h.profile.linked = false; h.profile.authenticated = false;
+  const before = h.trace.transports.length; await h.tap('Diárias'); assert.equal(h.trace.transports.length, before);
+  await h.send('telegram','/diarias');
+  assert(h.trace.output.at(-1).includes(financeUrl), 'public fallback destination is still available for sign-in');
+  assert(!h.trace.transports.at(-1).extra.reply_markup?.inline_keyboard, 'revoked profile receives no private menu');
+  assert.deepEqual(h.trace.search, []);
 });

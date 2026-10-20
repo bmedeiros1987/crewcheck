@@ -1,4 +1,5 @@
 import { buildCanonicalRosterEvents } from './server/concierge/generated/canonicalRoster.mjs';
+import { customGateSourceUpdate } from './server/gate-source-update.mjs';
 import { gateQueryDay, findPublishedGateOccurrence, findPublishedGateLeg, publishedGateDate, gateQuerySuppressed, originFlightDate, radarResultDecision } from './shared/gate-query-day.mjs';
 import {verifiedMysqlTls} from './server/mysql-verified-tls.mjs';
 import {assertNotProtectedReleaseKey} from './server/release-journal/namespace.mjs';
@@ -67,6 +68,8 @@ function publicRadarPayload(item = {}) {
     departure: firstKnown(item.departure),
     scheduledDepartureUtc: item.scheduledDepartureUtc,
     sourceReceivedAt: item.sourceReceivedAt,
+    gateUpdate: item.gateUpdate?.provider === 'custom' ? item.gateUpdate : null,
+    operationalConflicts: Array.isArray(item.operationalConflicts) ? item.operationalConflicts.filter(field => ['gate','status','registration'].includes(field)) : [],
     arrival: firstKnown(item.arrival),
     origin: firstKnown(item.origin),
     destination: firstKnown(item.destination),
@@ -75,7 +78,7 @@ function publicRadarPayload(item = {}) {
     latencyMs: Number(item.latencyMs || 0),
     quality: Number(item.quality || item.score || 0),
     alternatives: Number(item.alternatives || 0),
-    message: firstKnown(item.message, item.ok ? 'Radar atualizado.' : 'Radar aguardando fonte operacional.'),
+    message: item.ok ? 'Resposta da fonte recebida; confirmação operacional depende da evidência de cada campo.' : firstKnown(item.message, 'Radar aguardando fonte operacional.'),
   };
 }
 function scoreRadar(item = {}, ctx = {}) {
@@ -155,10 +158,13 @@ async function providerFlightAware(ctx, timeoutMs) {
     markProvider('flightaware', false);
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional configurada, mas sem dados agora.' };
   }
-  const flights = Array.isArray(payload?.flights) ? payload.flights : [];
+  const sourceFlights = Array.isArray(payload?.flights) ? payload.flights : [];
+  // Reuse #1143's response-owned occurrence filter on the existing production path.
+  const exactFlights = ctx.gateQueryEvidence ? sourceFlights.filter(item => radarResultDecision(normalizeFlightAwareFlight(item, ctx), ctx.gateQueryEvidence, Date.now()).allowed) : null;
+  const flights = exactFlights ? exactFlights.length === 1 ? exactFlights : [] : sourceFlights;
   const row = flights.find((item) => !item.cancelled && !item.actual_in) || flights[0];
   if (!row) {
-    markProvider('flightaware', false);
+    // Successful no-data/ambiguity is not a provider outage.
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Voo não localizado na fonte operacional.' };
   }
   markProvider('flightaware', true);
@@ -181,6 +187,7 @@ async function providerCustom(ctx, timeoutMs, origin, destination) {
     flight: firstKnown(payload?.flight, payload?.flight_iata, payload?.flight_icao),
     status: firstKnown(payload?.status, payload?.flight_status, 'Monitorando'),
     gate: firstKnown(payload?.gate, payload?.departure?.gate),
+    gateUpdate: payload?.departureGateUpdate?.schema === 'crewcheck.departure-gate-update.v1' ? customGateSourceUpdate(payload) : null,
     terminal: firstKnown(payload?.terminal, payload?.departure?.terminal),
     scheduledDepartureUtc: firstKnown(payload?.scheduledDepartureUtc, payload?.departure?.scheduled),
     departure: firstKnown(payload?.departure?.estimated, payload?.departure?.actual, payload?.departure?.scheduled, payload?.departure),
@@ -338,7 +345,9 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
         resolve({ ok: false, configured: configuredProviders().some((p) => p.available), status: 'Aguardando', message: 'Nenhuma fonte respondeu dentro do limite operacional.', latencyMs: Date.now() - started, quality: 0, alternatives: 0 });
         return;
       }
-      resolve(publicRadarPayload({ ...best, alternatives: okResults.length || results.filter(Boolean).length }));
+      const operationalConflicts = ['gate', 'status', 'registration'].filter(field =>
+        new Set(okResults.map(row => String(row[field] || '').trim().toUpperCase()).filter(Boolean)).size > 1);
+      resolve(publicRadarPayload({ ...best, operationalConflicts, alternatives: okResults.length || results.filter(Boolean).length }));
     };
     const timer = setTimeout(finish, timeoutMs + 250);
     let pending = providers.length;

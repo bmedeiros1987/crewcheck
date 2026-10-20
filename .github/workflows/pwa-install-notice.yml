@@ -1,0 +1,53 @@
+name: PWA install notice
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/App.tsx'
+      - 'client/src/pages/Home.tsx'
+      - 'client/src/lib/textSizePreference.ts'
+      - 'client/src/components/PwaInstallNotice.tsx'
+      - 'client/src/components/pwa-install-notice.css'
+      - 'scripts/regression-pwa-install-notice.mjs'
+      - 'scripts/regression-global-text-preference-lifetime.mjs'
+      - 'scripts/regression-static-handler-contexts.mjs'
+      - 'server/static-html-guard.mjs'
+      - 'scripts/regression-*.cjs'
+      - '.github/workflows/pwa-install-notice.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: |
+          npm install --prefix "$RUNNER_TEMP/install-ui" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/install-ui/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Raw install guidance and explicit browser event only
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/install-ui/package.json
+        run: |
+          node scripts/regression-pwa-install-notice.mjs
+          node scripts/regression-global-text-preference-lifetime.mjs
+          node scripts/regression-static-handler-contexts.mjs
+      - name: Canonical composition
+        run: |
+          node scripts/v139/apply.mjs
+          npx tsc --noEmit
+          npx vite build
+      - name: Prepared install notice
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/install-ui/package.json
+        run: |
+          node scripts/regression-pwa-install-notice.mjs
+          node scripts/regression-global-text-preference-lifetime.mjs
+          node scripts/regression-static-handler-contexts.mjs

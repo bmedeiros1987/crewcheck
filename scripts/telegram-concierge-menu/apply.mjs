@@ -16,6 +16,8 @@ const line = "import { createTelegramMenu, menuTemplate, menuGreeting, missingFi
 source = source.replace("import { createTelegramMenu, menuTemplate, menuGreeting, missingFinanceReply, missingComplianceReply } from './server/concierge/telegram-menu.mjs';", line);
 source = source.replace("import { createTelegramMenu, menuTemplate, menuGreeting } from './server/concierge/telegram-menu.mjs';", line);
 if (!source.includes(line)) source = line + '\n' + source;
+const transportImport = "import { createTelegramMenuTransport } from './server/concierge/telegram-menu-transport.mjs';";
+if (!source.includes(transportImport)) source = transportImport + '\n' + source;
 const emergencyImport = "import { openEmergencyTelegramMenu } from './server/v1391/emergency.mjs';";
 if (!source.includes(emergencyImport)) source = emergencyImport + '\n' + source;
 const factsImport = "import { buildDutyFacts } from './server/concierge/duty-facts.mjs';";
@@ -49,7 +51,7 @@ source = source.replace('return conciergeComplianceReply(snapshot);', 'return co
 functionBody('conciergeReplyKeyboard', "function conciergeReplyKeyboard(value = '') {\n  if (/^\\/(?:configuracoes|meunome|nomeconcierge)(?:@\\S+)?/i.test(value)) return conciergeSettingsKeyboard;\n  return conciergeKeyboard;\n}");
 replace("async function sendTelegramMessage(chatId, text, extra = {}) {", "async function sendTelegramMessage(chatId, text, extra = {}) {\n  extra = await crewcheckMenu.markup(chatId, extra);");
 replace('  extra = await crewcheckMenu.markup(chatId, extra);', '  extra = await crewcheckMenu.markup(chatId, extra);\n  if (extra === null) return { ok: false, message: \'Contexto da consulta alterado.\' };');
-const runtime = `const crewcheckMenu = createTelegramMenu({\n  profile: telegramProfileForChatAsync, snapshot: conciergeLoadSnapshot,\n  reply: buildTelegramConciergeReply, send: sendTelegramMessage, answer: answerTelegramCallback,\n  weatherKeyboard: conciergeWeatherKeyboard, settingsKeyboard: conciergeSettingsKeyboard,\n  voice: (chatId, reply, text, snapshot) => sendHumanTelegramVoiceReply(chatId, crewCheckAtisVoiceText(reply), text, snapshot),\n  emergency: query => openEmergencyTelegramMenu(query, sendTelegramMessage),\n  facts: (profile, snapshot, page = 0) => buildDutyFacts({ profile, snapshot, page, accessAllowed: conciergeAccessMatches(profile, snapshot) }),\n});\n\n`;
+const runtime = `const crewcheckMenu = createTelegramMenu({\n  ...createTelegramMenuTransport({ apiUrl: telegramApiUrl, fetch: (...args) => fetch(...args) }),\n  profile: telegramProfileForChatAsync, snapshot: conciergeLoadSnapshot,\n  reply: buildTelegramConciergeReply, send: sendTelegramMessage, answer: answerTelegramCallback,\n  weatherKeyboard: conciergeWeatherKeyboard, settingsKeyboard: conciergeSettingsKeyboard,\n  voice: (chatId, reply, text, snapshot) => sendHumanTelegramVoiceReply(chatId, crewCheckAtisVoiceText(reply), text, snapshot),\n  emergency: query => openEmergencyTelegramMenu(query, sendTelegramMessage),\n  facts: (profile, snapshot, page = 0) => buildDutyFacts({ profile, snapshot, page, accessAllowed: conciergeAccessMatches(profile, snapshot) }),\n});\n\n`;
 const oldRuntime = `const crewcheckMenu = createTelegramMenu({\n  profile: telegramProfileForChatAsync, snapshot: conciergeLoadSnapshot,\n  reply: buildTelegramConciergeReply, send: sendTelegramMessage, answer: answerTelegramCallback,\n});\n\n`;
 const runtimeStart = source.indexOf('const crewcheckMenu = createTelegramMenu(');
 if (runtimeStart >= 0) {

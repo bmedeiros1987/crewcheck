@@ -1,5 +1,5 @@
 import type { CrewCheckWatchSnapshot } from '@/lib/watchContext';
-import { RADAR_GATE_STALE_MS, gateDisplay, type NextFlightGateInfo } from '@/lib/nextFlightGate';
+import { gateDisplay, type NextFlightGateInfo } from '@/lib/nextFlightGate';
 
 function fit(value: string, max: number): string {
   return value.length <= max ? value : value.slice(0, max);
@@ -9,7 +9,7 @@ function fit(value: string, max: number): string {
  * Projeta no snapshot do CrewWatch a mesma decisão de portão exibida no celular.
  * Não muda o contrato v1 nem a escala canônica: apenas preenche campos já existentes
  * (gate, remoteStand, nextFlight, nextDetail, detail, schedule[].gate) e encurta a
- * validade quando o portão vem de um Radar que ficou antigo.
+ * validade por observação de cada campo automático que será exibido.
  */
 export function applyNextFlightToWatchSnapshot(
   snapshot: CrewCheckWatchSnapshot,
@@ -27,7 +27,7 @@ export function applyNextFlightToWatchSnapshot(
 
   const notes: string[] = [];
   if (info.divergence) notes.push(`Fonte indica portão ${info.divergence.sourceGate}`);
-  if (info.status) notes.push(info.status);
+  if (info.status) notes.push(info.status + (info.statusSource === 'manual' ? ' · manual' : ''));
   if (info.stale) notes.push('Radar desatualizado');
 
   if (options.primaryEventId === info.eventId && out.currentFlight) {
@@ -47,10 +47,19 @@ export function applyNextFlightToWatchSnapshot(
     ].filter(Boolean).join(' • '), 64);
   }
 
-  // Um portão Radar antigo nunca pode parecer atual no relógio: a validade acompanha o dado.
-  if (info.usesRadar) {
-    const radarValidUntil = info.stale || !info.radarUpdatedAtEpochMs ? out.generatedAtEpochMs : info.radarUpdatedAtEpochMs + RADAR_GATE_STALE_MS;
-    out.validUntilEpochMs = Math.max(out.generatedAtEpochMs, Math.min(out.validUntilEpochMs, radarValidUntil));
+  // The Wear v1 snapshot has one expiry. Cap it at the earliest observation
+  // deadline of every automatic field actually projected, including a status
+  // alongside a manual gate and the automatic gate shown in a divergence note.
+  const automaticFields: Array<'gate' | 'status'> = [];
+  if (info.gate && info.gateSource === 'radar') automaticFields.push('gate');
+  if (options.primaryEventId === info.eventId && out.currentFlight) {
+    if (info.status && info.statusSource === 'radar') automaticFields.push('status');
+    if (info.divergence?.source === 'radar') automaticFields.push('gate');
+  }
+  for (const field of automaticFields) {
+    const expiry = info.automaticFieldValidUntilEpochMs?.[field];
+    const safeExpiry = typeof expiry === 'number' && Number.isFinite(expiry) ? expiry : out.generatedAtEpochMs;
+    out.validUntilEpochMs = Math.max(out.generatedAtEpochMs, Math.min(out.validUntilEpochMs, safeExpiry));
   }
   return out;
 }

@@ -14,6 +14,20 @@ export function stayMenuIntent(text = '') {
   if (/^(?:\/adicionar_quarto|adicionar (?:o )?quarto)$/.test(value)) return { kind: 'room' };
   const history = value.match(/^(?:\/(?:historico_pernoites|pernoites_registrados)|historico de pernoites|pernoites registrados)(?:\s+(\d+))?$/);
   if (history) return { kind: 'history', page: Math.min(MAX_PAGE, Math.max(1, Number(history[1] || 1))) };
+  // Exact logistics questions only. Nearby searches and hospital requests keep
+  // their existing routes. No position is inferred from current time.
+  const question = value.replace(/[?.!]+$/, '').trim();
+  let subject = null;
+  if (/^qual (?:e )?(?:o )?(?:meu )?hotel(?: do (?:meu )?pernoite)?$/.test(question)) subject = 'hotel';
+  if (/^que horas (?:eu )?(?:chego|saio|me apresento) (?:no|ao|do) hotel$/.test(question)) subject = 'hotel-time';
+  if (/^(?:que horas (?:a )?van (?:me )?(?:busca|pega|sai)|qual (?:e )?(?:o )?horario da van)(?: (?:do aeroporto (?:para|pro) (?:o )?hotel|do hotel (?:para|pro) (?:o )?aeroporto))?$/.test(question)) subject = 'pickup';
+  if (/^ate (?:que horas|quando) (?:eu )?(?:posso |devo )?esperar (?:a )?van$/.test(question)) subject = 'wait';
+  if (/^(?:qual (?:e )?(?:o )?(?:contato|telefone|whatsapp) da van|contato da van)$/.test(question)) subject = 'contact';
+  if (subject) {
+    const direction = /do aeroporto (?:para|pro) (?:o )?hotel$/.test(question) ? 'airport-hotel'
+      : /do hotel (?:para|pro) (?:o )?aeroporto$/.test(question) ? 'hotel-airport' : null;
+    return { kind: 'logistics-question', subject, direction };
+  }
   return null;
 }
 
@@ -58,6 +72,19 @@ const roomHandoff = `${appPath}\nSelecione o pernoite e toque em “Editar perno
 export async function stayMenuReply(text, profile = {}, deps = {}) {
   const intent = stayMenuIntent(text);
   if (!intent) return { handled: false };
+  if (intent.kind === 'logistics-question') {
+    const replies = {
+      hotel: 'O hotel desta estadia não está confirmado nesta leitura. Qual é a data e o aeroporto do pernoite?',
+      'hotel-time': 'Horário no hotel não confirmado. A chegada do voo é ao aeroporto; não informa chegada, saída ou apresentação no hotel.',
+      wait: 'Prazo máximo de espera da van não confirmado. Confirme com o transporte operacional da empresa.',
+      contact: 'Não há contato operacional da van autorizado para compartilhamento nesta leitura.',
+    };
+    const reply = intent.subject === 'pickup'
+      ? intent.direction ? `Pickup ${intent.direction === 'airport-hotel' ? 'aeroporto → hotel' : 'hotel → aeroporto'} não confirmado nesta leitura. Confira data, fuso e situação da reserva na fonte operacional.`
+        : 'Você quer a van do aeroporto para o hotel ou do hotel para o aeroporto? O pickup ainda não está confirmado nesta leitura.'
+      : replies[intent.subject];
+    return { handled: true, reply };
+  }
   if (intent.kind === 'hotel') return { handled: true, reply: hotelHandoff };
   if (intent.kind === 'room') return { handled: true, reply: roomHandoff };
   if (intent.kind === 'menu') return { handled: true, reply: [

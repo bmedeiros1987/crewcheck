@@ -156,7 +156,7 @@ try {
     "return event.kind === 'duty'",
     'function departurePositioningPlan(',
     'distanceKm > SMART_DEPARTURE_FLIGHT_THRESHOLD_KM',
-    'travelDate.setDate(travelDate.getDate() - 1)',
+    'travelDate.setTime(travelDate.getTime() - 24 * 60 * 60_000)',
     "'PLANEJAR VOO NO DIA ANTERIOR'",
     'Nenhum voo de posicionamento no mesmo dia foi confirmado',
     'function departureGroundRouteDestination(',

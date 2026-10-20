@@ -8,6 +8,19 @@ on:
       - 'client/src/components/CanonicalDutyCard.tsx'
       - 'client/src/components/canonical-duty-card.css'
       - 'shared/regulationTemporalScenario.mjs'
+      - 'shared/regulationDeadlineSummary.mjs'
+      - 'scripts/regression-regulation-deadline-*.mjs'
+      - 'shared/regulationScenarioPrefill.mjs'
+      - 'scripts/regression-regulation-source-hydration.mjs'
+      - 'shared/regulationContextExplanation.mjs'
+      - 'scripts/regression-regulation-context-explanation*.mjs'
+      - 'scripts/regression-canonical-journey-label.mjs'
+      - 'client/src/lib/canonicalDutyMeasurement.ts'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'scripts/regression-regulation-prefill.mjs'
+      - 'scripts/regression-regulation-prefill-browser.mjs'
+      - 'scripts/regression-regulation-window-selection.mjs'
+      - 'scripts/p0-530-adjacent-month-retention/**'
       - 'scripts/regression-regulation-temporal-scenario.mjs'
       - 'scripts/regression-regulation-scenario-ui.cjs'
       - 'client/src/lib/navigationContext.ts'
@@ -29,6 +42,19 @@ on:
       - 'client/src/components/CanonicalDutyCard.tsx'
       - 'client/src/components/canonical-duty-card.css'
       - 'shared/regulationTemporalScenario.mjs'
+      - 'shared/regulationDeadlineSummary.mjs'
+      - 'scripts/regression-regulation-deadline-*.mjs'
+      - 'shared/regulationScenarioPrefill.mjs'
+      - 'scripts/regression-regulation-source-hydration.mjs'
+      - 'shared/regulationContextExplanation.mjs'
+      - 'scripts/regression-regulation-context-explanation*.mjs'
+      - 'scripts/regression-canonical-journey-label.mjs'
+      - 'client/src/lib/canonicalDutyMeasurement.ts'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'scripts/regression-regulation-prefill.mjs'
+      - 'scripts/regression-regulation-prefill-browser.mjs'
+      - 'scripts/regression-regulation-window-selection.mjs'
+      - 'scripts/p0-530-adjacent-month-retention/**'
       - 'scripts/regression-regulation-temporal-scenario.mjs'
       - 'scripts/regression-regulation-scenario-ui.cjs'
       - 'client/src/lib/navigationContext.ts'
@@ -87,9 +113,19 @@ jobs:
         run: node scripts/regression-rbac-sector-input.cjs
       - name: Current conditional temporal scenario regression
         run: |
+          node scripts/regression-regulation-window-selection.mjs
+          node scripts/regression-regulation-prefill.mjs
+          node scripts/regression-regulation-source-hydration.mjs
+          node scripts/regression-regulation-context-explanation.mjs
+          node scripts/regression-canonical-journey-label.mjs
           node scripts/regression-regulation-temporal-scenario.mjs
+          node scripts/regression-regulation-deadline-summary.mjs
           npx vite build
       - name: Current compiled scenario UI and Home shortcut
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/regulation-browser/package.json
-        run: node scripts/regression-regulation-scenario-ui.cjs
+        run: |
+          node scripts/regression-regulation-deadline-browser.mjs
+          node scripts/regression-regulation-prefill-browser.mjs
+          node scripts/regression-regulation-context-explanation-browser.mjs
+          node scripts/regression-regulation-scenario-ui.cjs

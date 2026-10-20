@@ -10,7 +10,7 @@ const serverSource=fs.readFileSync(path.resolve('server.mjs'),'utf8');
 const staticAst=ts.createSourceFile('server.mjs',serverSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
 const staticFunctions=staticAst.statements.filter(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='serveStatic');
 assert.equal(staticFunctions.length,1,'exactly one production static handler must exist');
-const staticContext=vm.createContext({fs,path,Buffer,distDir:dist,sendJson:(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}});
+const staticContext=vm.createContext({guardStaticHtml: require('../server/static-html-guard.mjs').guardStaticHtml,fs,path,Buffer,distDir:dist,sendJson:(res,status,body)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));}});
 vm.runInContext(staticFunctions[0].getText(staticAst)+'\nglobalThis.respond=serveStatic;',staticContext);
 let handler; const server=http.createServer(async(req,res)=>{const url=new URL(req.url,'http://localhost');if(handler&&await handler(req,res,url))return;staticContext.respond(req,res,url);});
 function syntheticPDF(name, codes, partial = false) {

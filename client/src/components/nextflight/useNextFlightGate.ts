@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { manualGateNoticeIdentity, manualGateNoticeScope } from '@/lib/manualGateNotices';
+import { reconcileCrewCheckPulse } from '@/components/pulse/pulseRuntime';
 import { getStoredUser } from '@/lib/authClient';
 import {
   MANUAL_GATE_EVENT,
@@ -42,7 +44,18 @@ export function useNextFlightGate(event: NextFlightLike | null): NextFlightGateI
       window.clearInterval(timer);
     };
   }, []);
-  return computeNextFlightGate(event);
+  const info = computeNextFlightGate(event), owner = currentManualGateAccount();
+  const active = event && info?.manual && info.manualReview.state === 'newer' && info.manualReview.candidate
+    ? manualGateNoticeIdentity(event, info.manual, info.manualReview.candidate, owner) : null;
+  useEffect(() => {
+    if (!event || owner !== currentManualGateAccount()) return;
+    // Effects may run after a newer cache render; reconcile from current storage.
+    const current = computeNextFlightGate(event);
+    const identity = current?.manual && current.manualReview.state === 'newer' && current.manualReview.candidate
+      ? manualGateNoticeIdentity(event, current.manual, current.manualReview.candidate, owner) : null;
+    reconcileCrewCheckPulse(manualGateNoticeScope(event, owner), identity ? [identity] : []);
+  }, [event?.id, owner, active?.occurrence, active?.version]);
+  return info;
 }
 
 export type WatchSyncState = { ok: boolean; at: number; message: string } | null;

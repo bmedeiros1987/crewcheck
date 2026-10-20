@@ -91,8 +91,8 @@ try {
   execFileSync(process.execPath,['--check',path.join(temp,'server/v1391/emergency.mjs')]);
   if (once.includes('const conciergeKeyboard = menuTemplate();')) {
     const {menuTemplate}=await import('../server/concierge/telegram-menu.mjs');
-    assert.ok(menuTemplate().inline_keyboard.flat().some(button=>button.text==='Hotéis'));
-    assert.ok(menuTemplate('hoteis').inline_keyboard.flat().some(button=>button.text==='Histórico'));
+    assert.ok(menuTemplate().inline_keyboard.flat().some(button=>button.text==='🏨 Pernoite'));
+    assert.ok(menuTemplate('hoteis').inline_keyboard.flat().some(button=>button.text==='🕘 Histórico'));
   } else assert.match(once,/text: '🏨 Meu pernoite'/);
   assert.match(once,/\{ \.\.\.profile, channel: 'app' \}, snapshot\)/);
   const wrapper=once.slice(once.indexOf("async function buildTelegramConciergeReply(text = ''"),once.indexOf('\nasync function ',once.indexOf("async function buildTelegramConciergeReply(text = ''")+10));
@@ -109,4 +109,33 @@ try {
   for(const text of ['🏨 Hotéis','/hoteis@CrewCheckBot','/hotel teste','Histórico de pernoites','Adicionar quarto']) assert.equal(await legacy.run({message:{chat:{id:123,type:'private'},text}},()=>assert.fail('legacy sender reached')),false);
 } finally {fs.rmSync(temp,{recursive:true,force:true});}
 assert.match(fs.readFileSync('scripts/v139/apply.mjs','utf8'),/p1-concierge-stay-menu\/apply\.mjs/);
+// Original fictional natural questions. There is no server reader for bound
+// provider logistics in this stage; history/cancelled/planned rows cannot supply
+// pickups, hotel arrival, waiting deadlines, personal contacts or physical position.
+const noLogisticsReads = new Proxy({}, {get:()=>()=>assert.fail('logistics fallback must not read provider/history/network')});
+for (const [question, subject, wanted] of [
+  ['Qual é o meu hotel?', 'hotel', /hotel desta estadia não está confirmado/i],
+  ['Que horas chego ao hotel?', 'hotel-time', /chegada do voo é ao aeroporto/i],
+  ['Que horas saio do hotel?', 'hotel-time', /não informa chegada, saída ou apresentação no hotel/],
+  ['Que horas me apresento no hotel?', 'hotel-time', /Horário no hotel não confirmado/],
+  ['Que horas a van me busca?', 'pickup', /aeroporto para o hotel ou do hotel para o aeroporto/],
+  ['Até quando devo esperar a van?', 'wait', /Prazo máximo de espera da van não confirmado/],
+  ['Qual é o WhatsApp da van?', 'contact', /contato operacional.*autorizado/],
+]) {
+  assert.equal(stayMenuIntent(question)?.subject,subject);
+  for(const profile of [telegram, app, {}, {...telegram,chatType:'group'}]) {
+    const answer=await stayMenuReply(question,profile,noLogisticsReads);
+    assert.equal(answer.handled,true);assert.match(answer.reply,wanted);
+    assert.doesNotMatch(answer.reply,/wa\.me|SYNTH-PRIVATE|Hotel Teste|quarto|\b\d{2}:\d{2}\b/);
+  }
+}
+for(const [question,direction,wanted] of [
+  ['Que horas a van me busca do aeroporto para o hotel?','airport-hotel',/Pickup aeroporto → hotel não confirmado/],
+  ['Que horas a van me busca do hotel para o aeroporto?','hotel-airport',/Pickup hotel → aeroporto não confirmado/],
+]) {
+  assert.equal(stayMenuIntent(question)?.direction,direction);
+  const answer=await stayMenuReply(question,telegram,noLogisticsReads);
+  assert.match(answer.reply,wanted);assert.doesNotMatch(answer.reply,/Você quer/);
+}
+for(const text of ['hospitais perto do hotel','farmácias perto do hotel','hotel perto do aeroporto','ônibus e vans da empresa','transporte corporativo','preciso de emergência']) assert.equal(stayMenuIntent(text),null);
 console.log('PASS: stay menu, compact history, 3 trusted channels, private-chat guards, DATE timezone stability, no room reads/writes, prepared routing and idempotence');

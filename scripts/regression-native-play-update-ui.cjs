@@ -42,11 +42,11 @@ fs.mkdirSync(out, { recursive: true });
       await emit('available',144158,300001); await notice.waitFor({state:'hidden'});
       await emit('available',0); await notice.waitFor({state:'hidden'});
       await emit('available',144158,-1000); await notice.waitFor({state:'hidden'});
-      await emit('available'); await notice.waitFor(); await notice.getByRole('button',{name:'Mais tarde'}).click();
+      await emit('available'); await notice.waitFor(); await notice.getByRole('button',{name:'Depois'}).click();
       await emit('available'); await notice.waitFor({state:'hidden'});
       await page.reload(); await emit('available'); await notice.waitFor({state:'hidden'});
       await emit('available',144159); await notice.waitFor(); // New eligible version is independent.
-      await notice.getByRole('button',{name:'Atualizar',exact:true}).click();
+      await notice.getByRole('button',{name:'Atualizar agora',exact:true}).click();
       await page.waitForURL('https://play.google.com/store/apps/details?id=com.crewcheck.app');
       await page.goBack(); await emit('available',144159); await notice.waitFor({state:'hidden'}); // Store cancellation never loops.
       await emit('available',144160); await notice.waitFor();
