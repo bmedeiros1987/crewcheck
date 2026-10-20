@@ -47,23 +47,42 @@ try{
   if(holdConfirmation&&confirmedJobs.length)await new Promise(resolve=>confirmationHeld.push(resolve));
   if(token===holdAllToken){await new Promise(r=>{held.push(r);if(held.length===2)allHeld();});if(offline)return route.abort();}
   if(hold&&token==='B'){hold=false;signal();await new Promise(r=>resume=r);}
-  return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,readiness:{telegramConfigured:true,telegramLinked:['A','A2'].includes(token)||await route.request().frame().evaluate(()=>window.fixtureLinkedB===true)},jobs:['A','A2'].includes(token)?[...confirmedJobs,...(fixturePending?[{id:99,jobKey:'wakeup:synthetic:SYN:10:00:75:telegram',status:'pending',channel:'telegram',scheduledAt:'2032-02-01T08:30:00Z'}]:[]),{id:1,status:'pending',channel:'OWNER_A_FIXTURE',scheduledAt:'2032-02-01T10:00:00Z'},{id:2,status:'sent',channel:'Ligação VoIP',scheduledAt:'2026-10-03T05:05:00Z',sentAt:'2026-10-03T05:05:00Z'},{id:3,status:'uncertain'},{id:4,status:'expired'},{id:5,status:'cancelled'}]:[]})});
+  return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,readiness:{telegramConfigured:!(await route.request().frame().evaluate(()=>window.fixtureTelegramUnavailable===true)),telegramLinked:['A','A2'].includes(token)||await route.request().frame().evaluate(()=>window.fixtureLinkedB===true)},jobs:['A','A2'].includes(token)?[...confirmedJobs,...(fixturePending?[{id:99,jobKey:'wakeup:synthetic:SYN:10:00:75:telegram',status:'pending',channel:'telegram',scheduledAt:'2032-02-01T08:30:00Z'}]:[]),{id:1,status:'pending',channel:'OWNER_A_FIXTURE',scheduledAt:'2032-02-01T10:00:00Z'},{id:2,status:'sent',channel:'Ligação VoIP',scheduledAt:'2026-10-03T05:05:00Z',sentAt:'2026-10-03T05:05:00Z'},{id:3,status:'uncertain'},{id:4,status:'expired'},{id:5,status:'cancelled'}]:[]})});
  });
  const page=await context.newPage();testPage=page;
- await page.addInitScript(()=>{localStorage.setItem('crewcheck_auth_token','A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'A'}));localStorage.setItem('crewcheck:notification-preferences:v1:A',JSON.stringify({ownerId:'A',revision:0,preferences:{settings:{crewcheck_wakeup_channel:'telegram'}}}));window.permissionsRequested=0;window.Notification={permission:'denied',requestPermission(){window.permissionsRequested++;throw Error('Permission must not be requested');}};});
+ await page.addInitScript(()=>{localStorage.setItem('crewcheck_auth_token','A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'A'}));localStorage.setItem('crewcheck:notification-preferences:v1:A',JSON.stringify({ownerId:'A',revision:0,preferences:{settings:{crewcheck_wakeup_channel:'ambos'}}}));window.permissionsRequested=0;window.Notification={permission:'denied',requestPermission(){window.permissionsRequested++;throw Error('Permission must not be requested');}};});
  await page.goto(origin);
- assert.equal(await page.getByRole('button',{name:'Ativar despertador',exact:true}).count(),1);
+ assert.equal(await page.getByRole('button',{name:'Agendar mensagem Telegram',exact:true}).count(),1);
+ // Real inherited combined preference reproduces the reported disabled button.
+ const actionable=page.getByRole('button',{name:/^Mensagem Telegram(?: · selecionada)?$/}),scheduleAction=page.getByRole('button',{name:'Agendar mensagem Telegram',exact:true});
+ await actionable.waitFor();await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-selection>button').disabled);
+ assert(await scheduleAction.isDisabled(),'combined inherited choice must never silently pick a channel');
+ assert.equal(await page.locator('.cc-wake-more').getAttribute('open'),null,'eligible channel is outside More options');
+ const accountDefault=await page.evaluate(()=>localStorage.getItem('crewcheck:notification-preferences:v1:A'));
+ await actionable.click();await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);
+ assert.equal(await page.evaluate(()=>localStorage.getItem('crewcheck:notification-preferences:v1:A')),accountDefault,'quick selection changes only this occurrence');
+ const quickSaved=await page.evaluate(()=>Object.entries(localStorage).filter(([key])=>key.startsWith('crewcheck:wakeup-selection:')).map(([,value])=>JSON.parse(value)));
+ assert.equal(quickSaved.length,1);assert.deepEqual(quickSaved[0].channels,['telegram']);
+ assert.equal(await page.getByText('Nenhum próximo toque confirmado',{exact:true}).count(),1,'choosing never creates a schedule receipt');
+ await page.evaluate(()=>window.fixtureAlarm('synthetic-quick-other'));await page.waitForFunction(()=>document.querySelector('.cc-wakeup-primary').disabled);
+ await page.evaluate(()=>window.fixtureAlarm('synthetic'));await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);
+ await page.evaluate(()=>window.fixtureTelegramUnavailable=true);await page.getByRole('button',{name:'Atualizar estado',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.cc-wakeup-primary').disabled);
+ await page.waitForFunction(()=>document.querySelector('.cc-wakeup-selection>button').disabled);assert(await actionable.isDisabled(),'missing server capability blocks even a saved Telegram choice');
+ await page.evaluate(()=>window.fixtureTelegramUnavailable=false);await page.getByRole('button',{name:'Atualizar estado',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);
+ if(process.env.WAKEUP_ACTIONABLE_SCREENSHOT){await page.setViewportSize({width:390,height:844});await page.evaluate(()=>{window.fixtureTheme('dark');document.querySelector('#fixture-header').style.visibility='hidden';document.querySelector('#fixture-footer').style.visibility='hidden';document.activeElement?.blur();scrollTo(0,0);});await page.locator('.cc-wakeup-page').screenshot({path:process.env.WAKEUP_ACTIONABLE_SCREENSHOT,animations:'disabled'});await page.evaluate(()=>{document.querySelector('#fixture-header').style.visibility='';document.querySelector('#fixture-footer').style.visibility='';});await page.setViewportSize({width:320,height:740});}
+
  assert.equal(await page.getByRole('button',{name:/Testar|Vincular|Soneca|Salvar preferências|Ativar no servidor/}).count(),0,'technical/configuration actions are not simultaneous');
 
  await page.getByText('Mais opções',{exact:true}).click();
  assert(await page.getByRole('checkbox',{name:'Tocar no celular',exact:true}).isDisabled());assert(await page.getByRole('checkbox',{name:'Ligar no horário',exact:true}).isDisabled());assert(await page.getByRole('checkbox',{name:/^Ligar se não recebermos/}).isDisabled());
  const directMessage=page.getByRole('checkbox',{name:'Mandar mensagem no horário',exact:true});
- await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);await directMessage.uncheck();assert(await page.getByRole('button',{name:'Ativar despertador',exact:true}).isDisabled());await directMessage.check();
- const selection=page.locator('.cc-wakeup-selection'),primary=page.getByRole('button',{name:'Ativar despertador',exact:true});
+ await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);await directMessage.uncheck();assert(await page.getByRole('button',{name:'Agendar mensagem Telegram',exact:true}).isDisabled());await actionable.click();await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);assert(await directMessage.isChecked(),'explicit Telegram choice enables its message option, never calls');
+ const selection=page.locator('.cc-wakeup-selection'),primary=page.getByRole('button',{name:'Agendar mensagem Telegram',exact:true});
+ await selection.getByText('Canais e preferências',{exact:true}).click();
  await selection.getByText('Mensagem Telegram disponível para solicitar agendamento.',{exact:false}).waitFor();
  await page.evaluate(()=>{window.fixturePosts=[];window.fixturePost=async(path,body)=>{window.fixturePosts.push({path,body});return{ok:true,message:'Solicitação registrada no servidor; entrega não confirmada.'};};});
  const inherit=selection.getByRole('checkbox',{name:'Usar padrão de Menu → Notificações'}),telegram=selection.getByRole('checkbox',{name:/^Mensagem Telegram/}),call=selection.getByRole('checkbox',{name:/^Ligação via Telegram/}),phone=selection.getByRole('checkbox',{name:/^Ligação telefônica/});
- assert(await inherit.isChecked());assert(await telegram.isChecked());await inherit.uncheck();assert(await primary.isDisabled());
+ assert(!(await inherit.isChecked()));assert(await telegram.isChecked());await inherit.check();assert(await inherit.isChecked());await inherit.uncheck();assert(await primary.isDisabled());
  await call.check();await phone.check();await selection.getByRole('button',{name:'Salvar escolha deste alarme'}).click();
  assert(await primary.isDisabled());assert.equal((await page.evaluate(()=>window.fixturePosts)).length,0);assert.equal(await page.evaluate(()=>window.permissionsRequested),0);
  await selection.getByText('Seleção múltipla salva como preferência.',{exact:false}).waitFor();
@@ -106,7 +125,7 @@ try{
  for(const width of [320,390,768])for(const theme of ['light','dark'])for(const scale of [1,2]){
   await page.setViewportSize({width,height:740});await page.evaluate(({theme,scale,sizes})=>{document.documentElement.dataset.crewTheme=theme;document.documentElement.style.colorScheme=theme;document.querySelectorAll('.cc-wakeup-page *').forEach((node,index)=>node.style.fontSize=(sizes[index]*scale)+'px');},{theme,scale,sizes:baseSizes});
   const rows=await sent.locator('.cz-roster-copy > *').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return{top:r.top,bottom:r.bottom};}));for(let i=1;i<rows.length;i++)assert(rows[i].top>=rows[i-1].bottom-1,'status/time flow at '+width+'/'+theme+'/'+scale);
-  const primary=page.getByRole('button',{name:'Ativar despertador',exact:true});await primary.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));const box=await primary.boundingBox(),header=await page.locator('#fixture-header').boundingBox(),footer=await page.locator('#fixture-footer').boundingBox();assert(box.y>=header.y+header.height&&box.y+box.height<=footer.y,'primary action clear of fixed header/footer '+JSON.stringify({width,theme,scale,box,header,footer}));
+  const primary=page.getByRole('button',{name:'Agendar mensagem Telegram',exact:true});await primary.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));const box=await primary.boundingBox(),header=await page.locator('#fixture-header').boundingBox(),footer=await page.locator('#fixture-footer').boundingBox();assert(box.y>=header.y+header.height&&box.y+box.height<=footer.y,'primary action clear of fixed header/footer '+JSON.stringify({width,theme,scale,box,header,footer}));
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'no horizontal overflow');
  }
  await page.setViewportSize({width:320,height:740});await page.evaluate(sizes=>document.querySelectorAll('.cc-wakeup-page *').forEach((node,index)=>node.style.fontSize=sizes[index]+'px'),baseSizes);
@@ -247,7 +266,7 @@ try{
   for(let visit=0;visit<3;visit++){
    await page.evaluate(()=>window.fixtureVisible(false));await page.getByText('Wake fixture unmounted',{exact:true}).waitFor();await page.waitForTimeout(60);start=reads.length;healthStart=healthReads;
    await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.waitForTimeout(150);assert.equal(reads.length,start,'unmounted focus issues no job GET, visit '+visit);assert.equal(healthReads,healthStart,'unmounted focus issues no health GET, visit '+visit);
-   await page.evaluate(()=>window.fixtureVisible(true));await page.getByRole('button',{name:'Ativar despertador',exact:true}).waitFor();await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);await page.waitForTimeout(80);start=reads.length;healthStart=healthReads;
+   await page.evaluate(()=>window.fixtureVisible(true));await page.getByRole('button',{name:'Agendar mensagem Telegram',exact:true}).waitFor();await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);await page.waitForTimeout(80);start=reads.length;healthStart=healthReads;
    await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.waitForTimeout(150);assert.equal(reads.length-start,mountedReads,'remount does not accumulate job listeners');assert.equal(healthReads-healthStart,mountedHealth,'remount does not accumulate health listeners');
   }
  }
