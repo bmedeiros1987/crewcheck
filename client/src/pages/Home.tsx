@@ -2344,11 +2344,14 @@ function useWeatherLandingMonitor(event: ZeroLeg) {
 }
 
 
-function useOperationalRadarPulse(event: ZeroLeg) {
+function useOperationalRadarPulse(events: ZeroLeg[]) {
   useEffect(() => {
-    if (!event || event.placeholder || event.kind !== 'flight' || !/\d/.test(String(event.flightNumber || ''))) return;
     let alive = true;
     const check = () => {
+      // Same boarding occurrence as NextFlightGateCard, not the still-active leg.
+      // Reselect on the existing cadence even when Home has not rendered again.
+      const event = selectNextFlight(events);
+      if (!event) return;
       const cached = readRadarSnapshot(event);
       if (cached?.updatedAt && Date.now() - cached.updatedAt < RADAR_CARD_REFRESH_MS) return;
       fetchRadarSnapshot(event, false).catch(() => undefined);
@@ -2356,7 +2359,7 @@ function useOperationalRadarPulse(event: ZeroLeg) {
     check();
     const timer = window.setInterval(() => { if (alive) check(); }, RADAR_CARD_REFRESH_MS);
     return () => { alive = false; window.clearInterval(timer); };
-  }, [event.id, event.kind, event.placeholder, event.flightNumber, event.origin, event.destination]);
+  }, [events]);
 }
 
 function useOperationalWeatherPulse(event: ZeroLeg) {
@@ -5257,7 +5260,7 @@ export default function Home() {
   const regulationDay = regulationProgramDay(events, regulationEvent);
   const gym = currentGym(bundle);
   useWeatherLandingMonitor(flightEvent);
-  useOperationalRadarPulse(flightEvent);
+  useOperationalRadarPulse(events);
   useOperationalWeatherPulse(flightEvent);
 
 
