@@ -2,6 +2,8 @@
 // Scheduled block duration is deliberately never used as airborne duration.
 import {explicitInstant} from './regulationTemporalScenario.mjs';
 const clock=value=>typeof value==='string'&&/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+const clockMinutes=value=>{const m=typeof value==='string'&&value.trim().match(/^(\d{1,2}):(\d{2})(?:\s*\(\+\d+\))?$/);return m&&Number(m[1])<24&&Number(m[2])<60?Number(m[1])*60+Number(m[2]):null;};
+const sameClock=(a,b)=>clockMinutes(a)!==null&&clockMinutes(a)===clockMinutes(b);
 export function regulationCivilDate(value){
  const match=typeof value==='string'&&value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
  const date=match?`${match[3]}-${match[2]}-${match[1]}`:value;
@@ -56,7 +58,7 @@ export function regulationProgramDay(events,selected){
  const publishedReport=explicitLegReport||first.legIndex===0&&firstDay?.dutyReportSource==='published'&&clock(firstDay.dutyReport);
  // A legacy/estimated clock is useful for a labelled simulation, never for a
  // published-duration proof. Do not borrow the day's report for a later journey.
- const ownReport=explicitLegReport?first.leg.presentationTime:first.legIndex===0&&clock(firstDay?.dutyReport)&&(firstDay.dutyReportSource==='published'||firstDay.dutyReport!==first.leg?.departureTime)?firstDay.dutyReport:first.legIndex===0&&clock(first.presentation)&&first.presentation!==first.leg?.departureTime?first.presentation:'';
+ const ownReport=explicitLegReport?first.leg.presentationTime:first.legIndex===0&&clock(firstDay?.dutyReport)&&(firstDay.dutyReportSource==='published'||!sameClock(firstDay.dutyReport,first.departure||first.leg?.departureTime))?firstDay.dutyReport:first.legIndex===0&&clock(first.presentation)&&!sameClock(first.presentation,first.departure||first.leg?.departureTime)?first.presentation:'';
  const ownDebrief=last.legIndex===(lastDay?.legs?.length||0)-1&&lastDay?.dutyDebriefSource==='published'?lastDay.dutyDebrief:'';
  const start=explicitInstant(first.startDateTime?.replace(/\.000Z$/,'Z'));
  let date=regulationCivilDate(firstDay?.date);

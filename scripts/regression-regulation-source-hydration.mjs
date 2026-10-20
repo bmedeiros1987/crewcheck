@@ -21,6 +21,11 @@ try {
   assert.equal(parsed.dutyReportSource,'estimated');assert.equal(parsed.dutyReport,parsed.legs[0].departureTime);
  }finally{fs.rmSync(parserDir,{recursive:true,force:true});}
  assert.equal(engine.getScheduledDutyLimitReference(parsed,null),null,'actual parser departure placeholder must never start B.1');
+ for(const departureTime of ['5:00','05:00(+1)','5:00 (+1)']){
+  const equivalent={...parsed,legs:[{...parsed.legs[0],departureTime}]};assert.equal(engine.getScheduledDutyLimitReference(equivalent,null),null,'equivalent departure clock rejected: '+departureTime);
+  const ev=canonical.buildCanonicalRosterEvents({days:[equivalent],month:10,year:2032,base:'BSB'}).filter(e=>e.kind==='flight');const ui=ev.map(c=>({id:c.id,kind:c.kind,canonical:c,day:c.publishedDay}));const d=regulationProgramDay(ui,ui[0]);assert.equal(d.dutyReport,'','adapter must reject normalized equality: '+departureTime);assert.equal(engine.getScheduledDutyLimitReference(d,null),null);
+ }
+
  const parsedEvents=canonical.buildCanonicalRosterEvents({days:[parsed],month:10,year:2032,base:'BSB'}).filter(e=>e.kind==='flight');const parsedUI=parsedEvents.map(c=>({id:c.id,kind:c.kind,canonical:c,day:c.publishedDay}));const parsedDay=regulationProgramDay(parsedUI,parsedUI[0]);assert.equal(parsedDay.dutyReport,'');assert.equal(parsedDay.dutyReportSource,'unknown');assert.equal(regulationScenarioSeed(parsedDay,engine.getScheduledDutyLimitReference(parsedDay,null),parsedEvents[0]).normalEnd,'');
  const day={date:'20/10/2032',year:2032,month:10,type:'VOO',pairingCode:'SYN',base:'BSB',dutyReport:'04:10',dutyReportSource:'published',dutyDebrief:'07:30',dutyDebriefSource:'estimated',legs:[{flightNumber:'SYN001',origin:'BSB',destination:'GRU',departureTime:'05:00',arrivalTime:'07:00',presentationTime:'04:10',workType:'OP'}]};
  for(const timezone of ['UTC','America/Sao_Paulo','Asia/Tokyo']){
