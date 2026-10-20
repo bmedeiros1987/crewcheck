@@ -36,6 +36,7 @@ function wiring(root) {
     console.log(run(root, 'scripts/regression-cirium-radar-wiring-off.mjs', [], zone).trim());
     run(root, 'scripts/regression-cirium-radar-provider-off.mjs', [], zone);
     run(root, 'scripts/regression-cirium-sky-transport-off.mjs', [], zone);
+    run(root, 'scripts/regression-cirium-published-identity-off.mjs', [], zone);
   }
 }
 function canonicalGates(root) {

@@ -30,20 +30,31 @@ function localStamp(ms, zone) {
 const transportStates = new Set(['not_configured', 'timeout', 'rate_limited', 'provider_error']);
 const result = (state, extra = {}) => ({ state, ok: state === 'available', provider: 'cirium-sky', candidate: null, provenance: null, ...extra });
 
+// Shared physical identity validation; namespace is explicit, never inferred.
+export function validCiriumRadarIdentity(request, namespace = 'FS') {
+  if (!object(request) || !['FS', 'IATA'].includes(namespace)) return false;
+  const carrier = namespace === 'FS' ? code(request.carrierFsCode, /^[A-Z0-9]{2,3}$/)
+    : code(request.carrierIataCode, /^[A-Z0-9]{2}$/);
+  const scheduledMs = instant(request.scheduledDepartureUtc);
+  return request.carrierNamespace === namespace && Boolean(carrier)
+    && Boolean(code(request.flightNumber, /^[0-9]{1,4}[A-Z]?$/))
+    && Boolean(code(request.origin, /^[A-Z]{3}$/)) && Boolean(code(request.destination, /^[A-Z]{3}$/))
+    && request.origin !== request.destination && typeof request.originTimeZone === 'string' && Boolean(request.originTimeZone)
+    && scheduledMs !== null && /^\d{4}-\d{2}-\d{2}$/.test(request.departureDate || '')
+    && localDate(scheduledMs, request.originTimeZone) === request.departureDate
+    && (namespace !== 'IATA' || request.carrierFsCode === undefined);
+}
+
 // Pure eligibility contract, deliberately disconnected from HTTP, env and admin diagnostics.
 // `response.rows` is the parsed row collection supplied by a future reviewed transport.
 export function evaluateCiriumRadar(request, response, options = {}) {
   if (options.enabled !== true) return result('disabled');
-  if (!object(request)) return result('invalid_request');
+  if (!validCiriumRadarIdentity(request)) return result('invalid_request');
   const carrier = code(request.carrierFsCode, /^[A-Z0-9]{2,3}$/);
   const flightNumber = code(request.flightNumber, /^[0-9]{1,4}[A-Z]?$/);
   const origin = code(request.origin, /^[A-Z]{3}$/);
   const destination = code(request.destination, /^[A-Z]{3}$/);
   const scheduledMs = instant(request.scheduledDepartureUtc);
-  if (request.carrierNamespace !== 'FS' || !carrier || !flightNumber || !origin || !destination || origin === destination
-    || typeof request.originTimeZone !== 'string' || !request.originTimeZone
-    || scheduledMs === null || !/^\d{4}-\d{2}-\d{2}$/.test(request.departureDate || '')
-    || localDate(scheduledMs, request.originTimeZone) !== request.departureDate) return result('invalid_request');
   if (!object(response)) return result('invalid_payload');
   if (transportStates.has(response.state)) return result(response.state);
   if (response.state !== 'available' || !Array.isArray(response.rows) || response.rows.length > 100) return result('invalid_payload');

@@ -1,4 +1,5 @@
-import { evaluateCiriumRadar } from './cirium-radar-provider.mjs';
+import { evaluateCiriumRadar, validCiriumRadarIdentity } from './cirium-radar-provider.mjs';
+import { evaluatePublishedCiriumRadar } from './cirium-published-identity.mjs';
 
 // Activation requires a separate reviewed change with current entitlement evidence.
 export const CIRIUM_SKY_PRODUCTION_ENABLED = false;
@@ -15,7 +16,7 @@ export function adaptSkyStatusEnvelope(payload) {
   if (plural === singular) return { state: 'invalid_payload' };
   const rows = plural ? payload.flightStatuses : object(payload.flightStatus) ? [payload.flightStatus] : null;
   if (!Array.isArray(rows) || rows.length > 100 || rows.some(x => !object(x))) return { state: 'invalid_payload' };
-  return { state: 'available', rows };
+  return { state: 'available', rows, ...(Object.hasOwn(payload, 'appendix') ? { appendix: payload.appendix } : {}) };
 }
 
 function policyValid(p, now) {
@@ -71,7 +72,11 @@ async function readPayload(response, signal) {
 // Policy is copied once; caller mutation cannot extend quota or entitlement.
 // No environment reads, background timers, polling, retries, or logging.
 export function createCiriumSkyTransport({ enabled = false, policy, credential, fetchImpl = globalThis.fetch,
-  now = Date.now, timeoutMs = 8000, cacheTtlMs = 60_000, minIntervalMs = 1000 } = {}) {
+  now = Date.now, timeoutMs = 8000, cacheTtlMs = 60_000, minIntervalMs = 1000, identityMode = 'operating-fs' } = {}) {
+  if (!['operating-fs', 'published-iata'].includes(identityMode)) throw Error('Invalid identity mode');
+  const namespace = identityMode === 'published-iata' ? 'IATA' : 'FS';
+  const carrierField = namespace === 'IATA' ? 'carrierIataCode' : 'carrierFsCode';
+  const evaluate = namespace === 'IATA' ? evaluatePublishedCiriumRadar : evaluateCiriumRadar;
   const p = object(policy) ? { ...policy, airportTimeZones: { ...policy.airportTimeZones } } : null;
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 8000
     || !Number.isInteger(cacheTtlMs) || cacheTtlMs < 1000 || cacheTtlMs > 60_000
@@ -81,14 +86,14 @@ export function createCiriumSkyTransport({ enabled = false, policy, credential, 
   function delivery(value, identity) {
     if (!policyValid(p, now())) return { state: 'not_configured', upstreamCalled: value.upstreamCalled === true };
     if (value.state !== 'available') return structuredClone(value);
-    const evaluated = evaluateCiriumRadar(identity, value, { enabled: true });
+    const evaluated = evaluate(identity, value, { enabled: true });
     if (!evaluated.ok) return { state: evaluated.state, upstreamCalled: value.upstreamCalled === true };
     const observed = Date.parse(evaluated.candidate.updatedAt);
     if (!Number.isFinite(observed) || now() - observed > p.maxObservationAgeMs || observed > now())
       return { state: 'stale_data', upstreamCalled: value.upstreamCalled === true };
     return structuredClone(value);
   }
-  const keyOf = identity => JSON.stringify(['carrierNamespace', 'carrierFsCode', 'flightNumber', 'origin', 'destination',
+  const keyOf = identity => JSON.stringify(['carrierNamespace', carrierField, 'flightNumber', 'origin', 'destination',
     'departureDate', 'originTimeZone', 'scheduledDepartureUtc'].map(k => k === 'scheduledDepartureUtc' ? new Date(identity[k]).toISOString() : identity[k]));
   async function source(identity) {
     if (enabled !== true) return disabled();
@@ -96,8 +101,7 @@ export function createCiriumSkyTransport({ enabled = false, policy, credential, 
     identity = Object.freeze({ ...identity });
     const at = now();
     if (!policyValid(p, at)) return { state: 'not_configured', upstreamCalled: false };
-    const validation = evaluateCiriumRadar(identity, { state: 'available', rows: [] }, { enabled: true });
-    if (validation.state === 'invalid_request') return { state: 'invalid_request', upstreamCalled: false };
+    if (!validCiriumRadarIdentity(identity, namespace)) return { state: 'invalid_request', upstreamCalled: false };
     if (p.airportTimeZones[identity.origin] !== identity.originTimeZone) return { state: 'invalid_request', upstreamCalled: false };
     const parts = new Intl.DateTimeFormat('en-US', { timeZone: identity.originTimeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(at);
     const part = k => parts.find(x => x.type === k).value;
@@ -118,9 +122,9 @@ export function createCiriumSkyTransport({ enabled = false, policy, credential, 
     const controller = new AbortController();
     let timer, response;
     const task = (async () => {
-      const url = new URL(`/v1/flights/status/airline/${encodeURIComponent(identity.carrierFsCode)}/flight-number/${encodeURIComponent(identity.flightNumber)}/departure-date/${identity.departureDate}`, BASE);
-      // Identity is FS: never let upstream resolve an IATA/ICAO collision first.
-      url.searchParams.set('codeType', 'FS');
+      const url = new URL(`/v1/flights/status/airline/${encodeURIComponent(identity[carrierField])}/flight-number/${encodeURIComponent(identity.flightNumber)}/departure-date/${identity.departureDate}`, BASE);
+      // Pin the explicitly declared namespace; never try alternate namespaces.
+      url.searchParams.set('codeType', namespace);
       try {
         const timeout = new Promise(resolve => { timer = setTimeout(() => { controller.abort(); resolve({ state: 'timeout' }); }, timeoutMs); });
         const request = (async () => {
@@ -154,19 +158,21 @@ export function createCiriumSkyTransport({ enabled = false, policy, credential, 
     pending.set(key, task);
     try { return delivery(await task, identity); } finally { pending.delete(key); }
   }
-  return Object.freeze({ source, counters: () => ({ calls, cacheEntries: cache.size, pending: pending.size }) });
+  return Object.freeze({ source, identityMode, counters: () => ({ calls, cacheEntries: cache.size, pending: pending.size }) });
 }
 
 // The live process cannot acquire a transport from credentials or HTTP params.
 export function productionCiriumSkyTransport() { return createCiriumSkyTransport({ enabled: CIRIUM_SKY_PRODUCTION_ENABLED }); }
 
 export async function runCiriumSkyRadar(identity, transport, requestedFlight) {
-  const validation = evaluateCiriumRadar(identity, { state: 'available', rows: [] }, { enabled: true });
+  const published = transport?.identityMode === 'published-iata';
+  const evaluate = published ? evaluatePublishedCiriumRadar : evaluateCiriumRadar;
+  const validation = evaluate(identity, { state: 'available', rows: [] }, { enabled: true });
   let result = validation;
-  if (validation.state !== 'invalid_request' && requestedFlight === `${identity.carrierFsCode}${identity.flightNumber}`) {
+  if (validation.state !== 'invalid_request' && requestedFlight === `${published ? identity.carrierIataCode : identity.carrierFsCode}${identity.flightNumber}`) {
     const response = await transport.source(Object.freeze({ ...identity }));
     result = response.state === 'available' || ['not_configured', 'timeout', 'rate_limited', 'provider_error'].includes(response.state)
-      ? evaluateCiriumRadar(identity, response, { enabled: true }) : { state: response.state, ok: false };
+      ? evaluate(identity, response, { enabled: true }) : { state: response.state, ok: false };
   } else result = { state: 'invalid_request', ok: false };
   return { ...(result.candidate || {}), provider: 'cirium-sky', providerState: result.state, ok: result.ok,
     configured: result.state !== 'disabled' && result.state !== 'not_configured', canonicalReadOnly: true,
