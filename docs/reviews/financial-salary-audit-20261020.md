@@ -34,3 +34,11 @@ Statutory calculations need official effective-dated brackets, taxable/deductibl
 Keep payroll competence, operational variable month, tariff month, expected credit month and actual paid event distinct. Printed credit date does not prove a bank receipt. Exact predicted day needs a verified rule, applicable holiday/business-day calendar and explicit uncertainty. Existing confirmed company-cycle support provides expected month without guaranteeing an exact day.
 
 No personal salary figures, document text or identifiers are embedded in this report, tests or code. Source research is being coordinated separately; its recovered evidence must stay account-bound and private.
+
+## Incoming source reconciliation (not adopted as a global rule)
+
+The source researcher reports repeated payroll evidence for DSR over specified production/reserve/standby rubric codes with a 22/8 basis. This supports a component-level reconciliation candidate; adoption still requires the source report and applicable clause review. Preserve rubric inclusion/exclusion explicitly, especially chief compensation. Historical chief formulas are not evidence of a current formula.
+
+The researcher also reports cent-level discrepancies between printed rounded rates multiplied by printed quantities and paid rubric totals. Preserve source decimal precision and original printed paid values separately. Do not force historical paid lines to equal a recomputation from a rounded display rate, round intermediate rates prematurely, or overwrite a closed ledger to make it reconcile.
+
+Where only individual components lack evidence, expose the supported subtotal and named pending components. Keep the complete gross/net unavailable when material components are missing; a subtotal must not be labelled full salary. Do not disable supported calculation merely because another component needs evidence.
