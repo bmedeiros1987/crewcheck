@@ -69,6 +69,7 @@ function publicRadarPayload(item = {}) {
     scheduledDepartureUtc: item.scheduledDepartureUtc,
     sourceReceivedAt: item.sourceReceivedAt,
     gateUpdate: item.gateUpdate?.provider === 'custom' ? item.gateUpdate : null,
+    operationalConflicts: Array.isArray(item.operationalConflicts) ? item.operationalConflicts.filter(field => ['gate','status','registration'].includes(field)) : [],
     arrival: firstKnown(item.arrival),
     origin: firstKnown(item.origin),
     destination: firstKnown(item.destination),
@@ -344,7 +345,9 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
         resolve({ ok: false, configured: configuredProviders().some((p) => p.available), status: 'Aguardando', message: 'Nenhuma fonte respondeu dentro do limite operacional.', latencyMs: Date.now() - started, quality: 0, alternatives: 0 });
         return;
       }
-      resolve(publicRadarPayload({ ...best, alternatives: okResults.length || results.filter(Boolean).length }));
+      const operationalConflicts = ['gate', 'status', 'registration'].filter(field =>
+        new Set(okResults.map(row => String(row[field] || '').trim().toUpperCase()).filter(Boolean)).size > 1);
+      resolve(publicRadarPayload({ ...best, operationalConflicts, alternatives: okResults.length || results.filter(Boolean).length }));
     };
     const timer = setTimeout(finish, timeoutMs + 250);
     let pending = providers.length;

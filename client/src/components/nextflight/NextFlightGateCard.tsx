@@ -22,7 +22,7 @@ function flightDate(info: NextFlightGateInfo): string {
 
 export function gateSourceLabel(info: NextFlightGateInfo): string {
   if (info.gateSource === 'manual') return `${info.manual?.sourceReview?.action === 'accept' ? 'Aceito' : 'Informado'} por ${info.manual?.author || 'você'} em ${sourceGateUpdateLabel(info.manual?.setAtEpochMs || 0)}`;
-  if (info.gateSource === 'radar') return `Radar · atualizado ${clock(info.radarUpdatedAtEpochMs) || 'sem horário'}`;
+  if (info.gateSource === 'radar') return `Fonte operacional · resposta recebida ${clock(info.radarUpdatedAtEpochMs) || 'sem horário'}`;
   if (info.gateSource === 'roster') return 'Escala publicada';
   return 'Portão automático ainda não confirmado';
 }
@@ -54,7 +54,7 @@ export function NextFlightGateCard({ events }: { events: readonly NextFlightLike
   if (!nextFlight || !info) return null;
 
   const gate = gateDisplay(info);
-  const status = info.status || 'Não informado';
+  const status = info.status || 'Não confirmado';
   const state = info.stale ? 'stale' : info.gate ? 'ok' : 'missing';
 
   return <section className="cc-next-gate" data-gate-state={state} data-divergent={info.divergence ? 'true' : 'false'} aria-label="Próximo voo">
@@ -76,6 +76,8 @@ export function NextFlightGateCard({ events }: { events: readonly NextFlightLike
           <span><small>Status</small><b>{status}</b><small>{statusSourceLabel(info)}</small></span>
         </span>
       </span>
+      {info.manualGateUnlinked && <span role="note">Portão informado anteriormente preservado. Confirme o vínculo com este horário de voo no editor.</span>}
+      {Boolean(info.operationalConflicts?.length) && <span role="note">Há divergência nos dados operacionais. Valores manuais foram preservados; dados automáticos conflitantes não confirmam a informação.</span>}
       {info.divergence && <span className="cc-next-gate-divergence" role="note">
         {info.manualReview.state === 'newer' ? 'Possível mudança. ' : info.manualReview.state === 'kept' ? 'Manual mantido. ' : ''}Você informou {info.divergence.manualGate}; {info.divergence.source === 'radar' ? 'o Radar' : 'a escala'} indica {info.divergence.sourceGate}. {info.manualReview.state === 'kept' ? 'Essa atualização já foi revisada.' : info.manualReview.state === 'newer' ? 'Abra os detalhes para aceitar ou manter.' : 'Atualização posterior não comprovada; confirme no aeroporto.'}
       </span>}
@@ -89,7 +91,7 @@ export function NextFlightGateCard({ events }: { events: readonly NextFlightLike
         <div><dt>Trecho</dt><dd>{info.origin || '—'} → {info.destination || '—'}</dd></div>
         <div><dt>Apresentação</dt><dd>{info.presentation || 'Não informada'}</dd></div>
         <div><dt>Terminal</dt><dd>{info.terminal || 'Não informado'}</dd></div>
-        <div><dt>Status</dt><dd>{status}{info.statusSource === 'radar' ? ' · Radar' : info.statusSource === 'roster' ? ' · escala' : ''}</dd></div>
+        <div><dt>Status operacional</dt><dd>{status} · {statusSourceLabel(info)}</dd></div><div><dt>Matrícula</dt><dd>{info.registration || 'Não confirmada'}{info.registrationSource === 'manual' ? ' · informado por você' : info.registrationSource === 'radar' ? ' · fonte com evidência válida' : ''}</dd></div>{info.plannedStatus && <div><dt>Planejamento da escala</dt><dd>{info.plannedStatus}</dd></div>}{info.plannedGate && <div><dt>Portão publicado na escala</dt><dd>{info.plannedGate} · não confirma portão atual</dd></div>}
         <div><dt>Fonte do portão</dt><dd>{gateSourceLabel(info)}</dd></div>
         {info.radarRejected && <div><dt>Radar</dt><dd>{info.radarRejected === 'position'
           ? 'A fonte informou posição da aeronave, não portão. Ignorada.'

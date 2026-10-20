@@ -27,7 +27,7 @@ export function applyNextFlightToWatchSnapshot(
 
   const notes: string[] = [];
   if (info.divergence) notes.push(`Fonte indica portão ${info.divergence.sourceGate}`);
-  if (info.status) notes.push(info.status);
+  if (info.status) notes.push(info.status + (info.statusSource === 'manual' ? ' · manual' : ''));
   if (info.stale) notes.push('Radar desatualizado');
 
   if (options.primaryEventId === info.eventId && out.currentFlight) {
