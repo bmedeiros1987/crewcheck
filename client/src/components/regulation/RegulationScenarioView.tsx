@@ -13,9 +13,10 @@ import type {RosterDay} from '@/lib/pdfParser';
 import type {ScheduleDayLike} from '@/components/v1432/ManualRegulationView';
 import {projectRegulationScenario,explicitInstant} from '@shared/regulationTemporalScenario.mjs';
 import {regulationDeadlineSummary,regulationLastActivity,regulationExtensionMargin} from '@shared/regulationDeadlineSummary.mjs';
-import {ciriumRegulationArrivalEvidence,readRegulationOperationalArrival,regulationOperationalProjection} from '@shared/regulationOperationalArrival.mjs';
-import {originFlightDate} from '@shared/gate-query-day.mjs';
+import {useRegulationOperationalArrival} from '@/lib/useRegulationOperationalArrival';
+import type {RegulationOperationalArrivalInput} from '@/lib/useRegulationOperationalArrival';
 import RegulationNavigationContext from './RegulationNavigationContext';
+import RegulationAutomaticView from './RegulationAutomaticView';
 import './regulation-scenario.css';
 const session=()=>{const u=getStoredUser(),t=getToken();return u&&t&&!['visitor','guest'].includes(u.role||'')?[u.id,u.email,t].join(':'):'';};
 const number=(s:string)=>/^\d+$/.test(s)?Number(s):null;
@@ -25,8 +26,8 @@ function localClock(instant:string|undefined,offset:string){if(!instant||!/^([+-
 // Optional admitted-host input. No current cache is promoted into admission and
 // no subscription/fetch is created here. captureAuthSession is continuity only;
 // the supplying host must separately confirm authenticated source authority.
-export type RegulationOperationalArrivalInput={candidate:unknown;session:ReturnType<typeof captureAuthSession>;ownerScope:string;revision:string;receivedAt:string;isCurrent:()=>boolean};
-export default function RegulationScenarioView({scheduleDay,compliance,program,operationalArrival}:{scheduleDay?:ScheduleDayLike|null;program?:CanonicalRosterEvent|null;operationalArrival?:RegulationOperationalArrivalInput|null;compliance?:{legalProfile?:LegalProfileSummary;alerts?:Array<{title?:string;description?:string;actionable?:boolean;classification?:string;severity?:string}>}}){
+export type {RegulationOperationalArrivalInput} from '@/lib/useRegulationOperationalArrival';
+export function DetailedRegulationScenarioView({scheduleDay,compliance,program,operationalArrival}:{scheduleDay?:ScheduleDayLike|null;program?:CanonicalRosterEvent|null;operationalArrival?:RegulationOperationalArrivalInput|null;compliance?:{legalProfile?:LegalProfileSummary;alerts?:Array<{title?:string;description?:string;actionable?:boolean;classification?:string;severity?:string}>}}){
  const details=useRef<HTMLDetailsElement>(null),owner=session(),signature=JSON.stringify(scheduleDay||null),key=owner+'|'+(program?.id||scheduleDay?.date||'manual');
  const admittedOwner=useRef(owner),observedOwner=useRef(owner),sourceAllowed=Boolean(owner&&admittedOwner.current===owner);
  const reference=useMemo(()=>{try{return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(scheduleDay?.dutyReport||'')?getScheduledDutyLimitReference(scheduleDay as RosterDay,compliance?.legalProfile):null;}catch{return null;}},[signature,compliance?.legalProfile]);
@@ -56,8 +57,6 @@ export default function RegulationScenarioView({scheduleDay,compliance,program,o
  type Form=ReturnType<typeof defaults>;
  const [draft,setDraft]=useState<{key:string;basis:string;overrides:Partial<Form>}>(()=>({key,basis,overrides:{}})),[,refresh]=useState(0);
  const [arrivalMode,setArrivalMode]=useState('manual');
- const [operationalNow,setOperationalNow]=useState(Date.now);
- useEffect(()=>{if(!operationalArrival)return;setOperationalNow(Date.now());const timer=window.setInterval(()=>setOperationalNow(Date.now()),1000);return()=>window.clearInterval(timer);},[operationalArrival]);
  useEffect(()=>setArrivalMode('manual'),[key,basis,operationalArrival]);
  const form={...defaults(),...regulationDraftForm(draft,key,seed,basis)} as Form;
  const update=(changes:Partial<Form>)=>setDraft(previous=>({key,basis,overrides:{...(previous.key===key?previous.overrides:{}),...(previous.basis!==basis?{reviewed:false,publicationOffsetReviewed:false}:{}),...changes}}));
@@ -79,11 +78,7 @@ export default function RegulationScenarioView({scheduleDay,compliance,program,o
  const lastActivity=regulationLastActivity(scheduleDay,form.manualLastActivity);
  const hasPositioning=(scheduleDay?.legs||[]).some((leg:any)=>leg.workType==='PS');
  const finalProgram=((scheduleDay as any)?.regulationJourney?.at(-1)) as CanonicalRosterEvent|undefined;
- const operationalCurrent=()=>{try{const nowSession=captureAuthSession();return Boolean(sourceAllowed&&operationalArrival?.session.token&&operationalArrival.session.owner&&operationalArrival.session.isCurrent()&&operationalArrival.session.owner===nowSession.owner&&operationalArrival.session.token===nowSession.token&&operationalArrival.isCurrent());}catch{return false;}};
- const admitted=operationalCurrent();
- const operationalEvidence=admitted?ciriumRegulationArrivalEvidence(operationalArrival?.candidate,{ownerScope:operationalArrival?.ownerScope,revision:operationalArrival?.revision,receivedAt:operationalArrival?.receivedAt}):null;
- const operationalRead=readRegulationOperationalArrival({evidence:operationalEvidence,admitted,expected:{ownerScope:operationalArrival?.ownerScope,revision:operationalArrival?.revision,lastActivity,occurrence:finalProgram?{flight:finalProgram.flightNumber,departureDate:originFlightDate(finalProgram.startDateTime,finalProgram.origin),origin:finalProgram.origin,destination:finalProgram.destination,scheduledDepartureUtc:finalProgram.startDateTime}:null},now:operationalNow,operation:form.operation,postFlightMinutes:number(form.postFlight),additionalTasksMinutes:number(form.tasks),taxiInMinutes:number(form.taxi)});
- const operationalProjection=operationalCurrent()?regulationOperationalProjection(operationalRead):null;
+ const {read:operationalRead,projection:operationalProjection}=useRegulationOperationalArrival({input:operationalArrival,sourceAllowed,finalProgram,lastActivity,form});
  const useOperational=arrivalMode==='operational'&&Boolean(operationalProjection);
  const selectedProjection=useOperational?operationalProjection:baseResult;
  const deadlines=regulationDeadlineSummary(form,selectedProjection,{lastActivity,hasPositioning});
@@ -164,4 +159,19 @@ export default function RegulationScenarioView({scheduleDay,compliance,program,o
    <button type="button" onClick={()=>setDraft({key,basis,overrides:{}})}><RotateCcw aria-hidden="true"/> Restaurar programação</button>
   </details>
  </section>;
+}
+
+export default function RegulationScenarioView(props:Parameters<typeof DetailedRegulationScenarioView>[0]){
+ const originalSession=useRef(captureAuthSession()),[invalidated,setInvalidated]=useState(false),[manual,setManual]=useState(false);
+ const sourceKey=JSON.stringify([props.scheduleDay,props.program,props.compliance?.legalProfile]);
+ useEffect(()=>setManual(false),[sourceKey]);
+ useEffect(()=>{const reset=()=>{setInvalidated(true);setManual(false);};const storage=(event:StorageEvent)=>{if(event.key===null||['crewcheck_auth_token','crewcheck_auth_user'].includes(event.key)||!originalSession.current.isCurrent())reset();};const names=['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'];for(const name of names)window.addEventListener(name,reset);window.addEventListener('storage',storage);return()=>{for(const name of names)window.removeEventListener(name,reset);window.removeEventListener('storage',storage);};},[]);
+ if(!originalSession.current.token||!originalSession.current.owner||['visitor','guest'].includes(getStoredUser()?.role||''))return <section className="cc-regulation-scenario"><h1>Regulamentação</h1><p>Entre na conta para simular.</p></section>;
+ if(invalidated||!originalSession.current.isCurrent())return <section className="cc-regulation-scenario"><h1>Regulamentação</h1><p>Sessão alterada. Reabra a programação para carregar os dados atuais.</p></section>;
+ // A placeholder/borrowed day is not import evidence. Unknown classification on
+ // a real imported leg remains imported and cannot be overwritten as manual OP.
+ const imported=Boolean(props.scheduleDay&&props.scheduleDay.type!=='IMPORTAR'&&(props.scheduleDay.legs?.length||props.program?.kind==='duty'));
+ const automatic=imported&&props.scheduleDay?.type==='VOO'&&!manual;
+ if(automatic)return <RegulationAutomaticView scheduleDay={props.scheduleDay!} program={props.program} compliance={props.compliance} operationalArrival={props.operationalArrival} onManual={()=>setManual(true)}/>;
+ return <>{imported&&<button className="cc-reg-return-auto" type="button" onClick={()=>setManual(false)}>Voltar ao cenário automático</button>}<DetailedRegulationScenarioView {...props} scheduleDay={imported?props.scheduleDay:null} program={imported?props.program:null}/></>;
 }

@@ -4,7 +4,7 @@ import {createRequire} from 'node:module';import {build} from 'esbuild';
 const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url)('playwright');
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'regulation-arrival-browser-'));
 const entry=`import React from 'react';import {createRoot} from 'react-dom/client';
-import View from ${JSON.stringify(path.resolve('client/src/components/regulation/RegulationScenarioView.tsx'))};
+import {DetailedRegulationScenarioView as View} from ${JSON.stringify(path.resolve('client/src/components/regulation/RegulationScenarioView.tsx'))};
 import {buildCanonicalRosterEvents} from ${JSON.stringify(path.resolve('client/src/lib/canonicalRoster.ts'))};
 import {regulationProgramDay} from ${JSON.stringify(path.resolve('shared/regulationScenarioPrefill.mjs'))};
 import {captureAuthSession} from ${JSON.stringify(path.resolve('client/src/lib/authClient.ts'))};

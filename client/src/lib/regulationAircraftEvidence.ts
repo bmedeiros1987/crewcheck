@@ -13,7 +13,7 @@ const catalog: Record<string,{model:string;group:'NB'|'WB';familySource:string}>
  B789:{model:'Boeing 787-9',group:'WB',familySource:boeing},
 };
 export function regulationAircraftEvidence(legs:ReadonlyArray<{aircraftType?:unknown}>){
- const rows=legs.map(leg=>{const code=typeof leg.aircraftType==='string'?leg.aircraftType.trim().toUpperCase():'';const known=catalog[code];return {code,model:known?.model||null,group:known?.group||'unknown',source:known?{designator:faa,family:known.familySource}:null};});
+ const rows=legs.map<{code:string;model:string|null;group:'NB'|'WB'|'unknown';source:{designator:string;family:string}|null}>(leg=>{const code=typeof leg.aircraftType==='string'?leg.aircraftType.trim().toUpperCase():'';const known=Object.hasOwn(catalog,code)?catalog[code]:undefined;return {code,model:known?.model||null,group:known?.group||'unknown',source:known?{designator:faa,family:known.familySource}:null};});
  const groups=new Set(rows.map(row=>row.group));
  const group=!rows.length||groups.has('unknown')?'unknown':groups.size>1?'mixed':rows[0].group;
  return {version:REGULATION_AIRCRAFT_CATALOG_VERSION,group,rows};
