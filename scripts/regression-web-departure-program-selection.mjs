@@ -44,15 +44,20 @@ try{
  const initializers=[];function visit(node){if(ts.isVariableDeclaration(node)&&node.name.getText(ast)==='departureEvent'&&node.initializer?.getText(ast).includes('departureEventForContext'))initializers.push(node.initializer.getText(ast));ts.forEachChild(node,visit);}visit(ast);assert.equal(initializers.length,1,'actual Home root resolves scoped departure once');
  const selectedFromWindow=new Function('events','rosterEvents','departureContext','departureEventForContext',`return (${initializers[0]});`)([reserve],events,{programId:flight.id},(items,context)=>selection.departureEventForContext(items,context,now));assert.equal(selectedFromWindow.id,flight.id,'explicit selection uses the displayed owner-fenced collection');
  // Actual canonical builder + plan + actual UI initializer, not a copied date formula.
- const dstDay={...flightDay,date:'08/03/2026',dutyReport:'23:30',dutyDebrief:'02:00',isNextDay:true,legs:[{...flightDay.legs[0],departureTime:'00:30(+1)',arrivalTime:'01:30(+1)',presentationTime:'23:30',isNextDay:true}]};
- const dst=build([dstDay]).find(e=>e.kind==='flight');assert(dst);
- assert.equal(selection.departurePresentationDateTime(dst).toISOString(),'2026-03-09T02:30:00.000Z');
- const plan=selection.departurePositioningPlan(dst,{...route,distanceMeters:300000},'Synthetic origin');
- assert.equal(plan.requiresFlight,true);assert.equal(plan.sameDayConfirmed,false);
- assert.equal(plan.travelDate.toISOString(),'2026-03-08T02:30:00.000Z','previous BRT civil day must not use a device-local DST setter');
  let leaveDayInitializer;function findLeaveDay(node){if(ts.isVariableDeclaration(node)&&node.name.getText(ast)==='leaveDayLabel'&&node.initializer?.getText(ast).includes('positioningPlan.travelDate'))leaveDayInitializer=node.initializer.getText(ast);ts.forEachChild(node,findLeaveDay);}findLeaveDay(ast);assert(leaveDayInitializer);
- const leaveDay=new Function('positioningPlan','positioningUnresolved','event','estimate','departureCivilDateLabel',`return (${leaveDayInitializer});`)(plan,false,dst,selection.smartDepartureEstimate(dst,route,15),selection.departureCivilDateLabel);
- assert.match(leaveDay,/07 de março de 2026/,'actual previous-day UI expression must show07Mar in every device zone');
+ for(const [date,presentationAt,travelAt,label] of [
+  ['08/03/2026','2026-03-09T02:30:00.000Z','2026-03-08T02:30:00.000Z','07 de março de 2026'],
+  ['14/03/2027','2027-03-15T02:30:00.000Z','2027-03-14T02:30:00.000Z','13 de março de 2027'],
+ ]){
+  const dstDay={...flightDay,date,dutyReport:'23:30',dutyDebrief:'02:00',isNextDay:true,legs:[{...flightDay.legs[0],departureTime:'00:30(+1)',arrivalTime:'01:30(+1)',presentationTime:'23:30',isNextDay:true}]};
+  const dst=build([dstDay]).find(e=>e.kind==='flight');assert(dst);
+  assert.equal(selection.departurePresentationDateTime(dst).toISOString(),presentationAt);
+  const plan=selection.departurePositioningPlan(dst,{...route,distanceMeters:300000},'Synthetic origin');
+  assert.equal(plan.requiresFlight,true);assert.equal(plan.sameDayConfirmed,false);
+  assert.equal(plan.travelDate.toISOString(),travelAt,'previous BRT civil day must not use a device-local DST setter: '+date);
+  const leaveDay=new Function('positioningPlan','positioningUnresolved','event','estimate','departureCivilDateLabel',`return (${leaveDayInitializer});`)(plan,false,dst,selection.smartDepartureEstimate(dst,route,15),selection.departureCivilDateLabel);
+  assert.ok(leaveDay.includes(label),'actual previous-day UI expression must show '+label+' in every device zone');
+ }
  assert.equal(JSON.stringify(events),before,'selection and estimate cannot mutate the roster');
  console.log('PASS real web departure helpers/builder:20Oct04:10 before25OctASB, HOTEL annotation, explicit BRT instants/labels, midnight, real rest, reserve/home standby, removed/past context closed, displayed window,300km positioning previous BRT civil day across DST, immutable fixtures; TZ='+process.env.TZ);
 }finally{harness.cleanup();}
