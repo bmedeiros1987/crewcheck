@@ -75,36 +75,62 @@ operational choice is disabled unless accepted, manual values remain preserved,
 and expiry/revocation visibly returns to manual projection. Operational mode
 disables the manual delay controls so that delay cannot be added twice.
 
-## Precise pending Home handoff (proposal, not applied)
+## Implemented Home boundary (isolated, not published or activated)
 
-Home owns private `readRadarSnapshot(event)` and `validatedRadarForEvent(event,
-snapshot)`. Its owner must select the *final operated event of regulationJourney*,
-not the card's current/next leg, and read that event through those existing
-readers. A current received snapshot may then be passed through the wrapper:
+Home selects the final OP of regulationJourney and uses the existing private
+readRadarSnapshot/validatedRadarForEvent readers. The optional operationalArrival
+prop is memoized by original response object, exact canonical signature and roster
+revision, so unrelated renders do not discard a selected operational mode.
 
-```tsx
-<ManualRegulationView
-  compliance={compliance} scheduleDay={regulationDay}
-  program={regulationEvent?.canonical}
-  operationalArrival={admittedArrivalOrNull}
-/>
-```
+Only the existing canonical getMe success can create a private browser read
+capability: ok/authenticated are strictly true, the primitive confirmed identity
+matches the captured owner, and session/generation remains current. No new getMe
+call is added. Missing/incomplete success, identity upgrade, failure, account or
+credential change cannot create admission. The existing server-verified session
+expiry bounds the read horizon to at most five minutes, counted from the request
+start with a monotonic clock; receipt/retry cannot renew it. This is browser read
+continuity, never native/Watch authority or per-request Radar JWT attestation.
+The legacy Radar route can still use Concierge fallback.
 
-`admittedArrivalOrNull` must hold the validated snapshot (including arrivalMilestones,
-source statusCode, own departureDate/route/scheduledDepartureUtc), the auth session
-captured when that admitted response was received, concrete owner/roster revision,
-and original receipt time. Its callback must prove existing authenticated host
-admission plus current owner/session/roster revision and final-event identity.
-Never capture a new session around an old cached payload or fabricate `true` from
-a token/nonempty user record. Current private readers validate occurrence but do
-not expose this full authenticated admission envelope; that is the exact remaining
-handoff. No automatic fetch, polling of providers, new getMe call, cache migration
-or Home change is part of this patch. Tests inject only synthetic host admission.
+The existing fetch captures that capability and current owner/roster revision
+before awaiting the response. Its existing exact occurrence, serial, auth and
+source checks remain. saveRadarSnapshot registers only its original output object
+before dispatching radar-updated, with the original network receipt time. A
+private WeakMap binds the object and a bounded in-memory index retains it. Disk
+copies can select that same original object only while exact serialized content,
+capability, session and revision remain valid. Disk data, clones, fabricated
+callbacks, mutated snapshots and reloads cannot mint or refresh admission.
+No unscoped local roster is admitted: Home reuses alertRosterOwned.
 
-Provider clean/projection hunks in this shared clone preserve the new normalized
-fields; the transport is still OFF and real includeDeltas coverage is unverified.
+The two normal deadlines keep the #1152 review gates. In operational mode the
+exceptional hypothesis uses the same selected projection and validated reference,
+never an old manual margin. Normal legal limits are not extended by delay.
+The manual projection and its values remain available; there is no new fetch,
+provider poll, cache migration, native authority or paid API activation.
 
-Offline verification: `node scripts/regression-regulation-operational-arrival.mjs`.
-Also run `regression-cirium-arrival-milestones.mjs`,
-`regression-regulation-arrival-provider-projection.mjs` and the isolated component
-`regression-regulation-operational-arrival-browser.mjs` (zero external requests).
+## Hotel record wiring
+
+Home first obtains the actual producer-selected context, then resolves that stay's
+savedStayEditorEvent through the current account-scoped store and exact signature.
+It requires the existing roster ownership check and current captured session,
+passes the record into the unchanged optional producer argument, and observes
+stay-editor-saved plus matching-account storage changes. Airport presentation,
+departure and generic pickup remain ineligible as hotel APZ. Account changes
+invalidate the publisher before any later saved record is read or emitted.
+
+## Validation and remaining operational gates
+
+regression-home-operational-admission-browser.mjs runs the actual auth, admission,
+stay store, ownership, producer and View plus extracted Home fetch/save/read,
+watch effect and memoized prop. Its offline browser fixtures cover forty-seven
+checks including failed/incomplete getMe, forged capabilities, original receipt,
+late results, auth/roster/serial fences, expiry, saved-record updates and unrelated
+rerenders. Run the existing arrival/milestone/provider-projection/component and
+Watch overnight/source-pipeline fixtures as well. No fixture proves native or
+physical device end-to-end behavior.
+
+Transport remains OFF. Real Sky FlightStatus entitlements, includeDeltas coverage,
+current trial allowance/overage and existing server credential presence remain
+unverified. No API call, credential change, Watch distribution, auth publication
+or migration has occurred. The integrated candidate remains subject to independent
+review and CI; #1147/#1150 security HOLD is unchanged.
