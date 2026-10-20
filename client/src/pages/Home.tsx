@@ -2344,19 +2344,31 @@ function useWeatherLandingMonitor(event: ZeroLeg) {
 }
 
 
-function useOperationalRadarPulse(event: ZeroLeg) {
+function useOperationalRadarPulse(events: ZeroLeg[]) {
   useEffect(() => {
-    if (!event || event.placeholder || event.kind !== 'flight' || !/\d/.test(String(event.flightNumber || ''))) return;
     let alive = true;
+    let lastTargetId = '';
     const check = () => {
-      const cached = readRadarSnapshot(event);
-      if (cached?.updatedAt && Date.now() - cached.updatedAt < RADAR_CARD_REFRESH_MS) return;
-      fetchRadarSnapshot(event, false).catch(() => undefined);
+      // Keep the active flight and the boarding card current within the SAME
+      // budget: at most one fetch per existing five-minute check, never two.
+      const targets: ZeroLeg[] = [];
+      for (const event of [selectNextFlight(events), nextRealFlight(events)]) {
+        if (event && !event.placeholder && event.kind === 'flight' && /\d/.test(String(event.flightNumber || '')) && !targets.some(target => target.id === event.id)) targets.push(event);
+      }
+      const previous = targets.findIndex(event => event.id === lastTargetId);
+      for (let step = 1; step <= targets.length; step += 1) {
+        const event = targets[(previous + step) % targets.length];
+        const cached = readRadarSnapshot(event);
+        if (cached?.updatedAt && Date.now() - cached.updatedAt < RADAR_CARD_REFRESH_MS) continue;
+        lastTargetId = event.id;
+        fetchRadarSnapshot(event, false).catch(() => undefined);
+        break;
+      }
     };
     check();
     const timer = window.setInterval(() => { if (alive) check(); }, RADAR_CARD_REFRESH_MS);
     return () => { alive = false; window.clearInterval(timer); };
-  }, [event.id, event.kind, event.placeholder, event.flightNumber, event.origin, event.destination]);
+  }, [events]);
 }
 
 function useOperationalWeatherPulse(event: ZeroLeg) {
@@ -5257,7 +5269,7 @@ export default function Home() {
   const regulationDay = regulationProgramDay(events, regulationEvent);
   const gym = currentGym(bundle);
   useWeatherLandingMonitor(flightEvent);
-  useOperationalRadarPulse(flightEvent);
+  useOperationalRadarPulse(events);
   useOperationalWeatherPulse(flightEvent);
 
 

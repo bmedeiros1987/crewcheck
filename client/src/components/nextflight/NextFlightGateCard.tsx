@@ -23,7 +23,7 @@ export function gateSourceLabel(info: NextFlightGateInfo): string {
   if (info.gateSource === 'manual') return `Informado por ${info.manual?.author || 'você'} às ${clock(info.manual?.setAtEpochMs || 0)}`;
   if (info.gateSource === 'radar') return `Radar · atualizado ${clock(info.radarUpdatedAtEpochMs) || 'sem horário'}`;
   if (info.gateSource === 'roster') return 'Escala publicada';
-  return 'Nenhuma fonte informou o portão';
+  return 'Portão automático ainda não confirmado';
 }
 
 function openRadar(event: NextFlightLike, info: NextFlightGateInfo) {
