@@ -74,6 +74,7 @@ try {
   const missingTaxi=run([early]);
   assert.equal(missingTaxi.rows.filter(row=>row.label==='Táxi').length,0);
   assert(missingTaxi.unclassifiedItems.some(row=>/Tarifa de táxi confirmada para o período ausente/.test(row.reason)),'proved commute with absent tariff stays a specific pending item, never zero');
+  assert.equal(missingTaxi.monthlyUnclassifiedItems.filter(row=>row.pendingKind==='taxi_rate').length,1,'eligible unpriced taxi has a display-only pending marker');
   learned.push({key:'per_diem.taxi',value:31.25,currency:'BRL',confirmed:true,effectiveFrom:iso,effectiveTo:iso});
   const pricedTaxi=run([early]);assert.equal(pricedTaxi.rows.find(row=>row.label==='Táxi').value,31.25,'taxi uses its own reviewed amount, never the breakfast percentage');
   assert.match(pricedTaxi.rows.find(row=>row.label==='Táxi').source,/previsão não comprova pagamento/);

@@ -4138,8 +4138,9 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
       <p className="cc-per-diem-scope">{rangeLabel || `Competência: ${competence}. Os itens abaixo pertencem ao mês selecionado.`}</p>
       {pendingTaxiRows.map(row => <div className="cz-finance-row" data-financial-iso={row.iso} data-taxi-rate-pending="true" key={'taxi-pending-'+row.iso}>
         <span>{dateChip(new Date(row.iso+'T12:00:00'))}</span><strong>Táxi · tarifa pendente · {row.airport}</strong><b aria-label="Valor não calculável">—</b>
-        <details className="cc-per-diem-source"><summary>Revisar tarifa</summary><small>{privacy.text(row.reason || '')}</small>{isAdmin() && <a href="?view=admin">Abrir revisão de tarifas</a>}</details>
+        <details className="cc-per-diem-source"><summary>Origem e regra</summary><small>{privacy.text(row.reason || '')}</small></details>
       </div>)}
+      {pendingTaxiRows.length > 0 && <details className="cc-per-diem-source" data-taxi-rate-review><summary>Revisar tarifa de táxi</summary><FinancialStatementImporter mode="per_diem"/></details>}
       {forecast.monthlyRows.length ? [...forecast.monthlyRows].sort((a,b)=>a.iso.localeCompare(b.iso)).map((row, index) =>
         <div className="cz-finance-row" data-financial-iso={row.iso} data-financial-currency={row.currency} key={row.iso + '-' + row.label + '-' + index}>
           <span>{row.date}</span>

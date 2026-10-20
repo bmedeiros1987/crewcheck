@@ -19,6 +19,7 @@ on:
       - 'scripts/regression-financial-long-history.cjs'
       - 'scripts/regression-financial-navigation-focus-browser.cjs'
       - 'scripts/regression-financial-partial-flight-meals.mjs'
+      - 'scripts/regression-taxi-pending-row-browser.mjs'
       - 'client/src/lib/salaryCalculationDiagnostic.ts'
       - 'client/src/lib/airports.ts'
       - 'client/src/components/finance/**'
@@ -87,6 +88,7 @@ jobs:
           node scripts/regression-financial-concierge-origin.cjs
           node scripts/regression-financial-history-loading-ui.cjs
           node scripts/regression-owner-per-diem-browser.mjs
+          node scripts/regression-taxi-pending-row-browser.mjs
           node scripts/regression-financial-long-history.cjs
           node scripts/regression-salary-display-basis-browser.cjs
       - uses: actions/upload-artifact@v4
