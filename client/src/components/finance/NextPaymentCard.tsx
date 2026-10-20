@@ -1,7 +1,8 @@
+import FinancialChangesScreen from './FinancialChangesScreen';
 import ForecastCurrencyCarousel from './ForecastCurrencyCarousel';
 import './persistent-history.css';
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Calculator, ArrowDownLeft, FileText, ChevronRight } from 'lucide-react';
+import { Calculator, ArrowDownLeft, FileText, ChevronRight, GitCompareArrows } from 'lucide-react';
 import type { NextPayment } from '@/lib/nextFinancialPayment';
 import type { FinancialRange } from '@/lib/financialHistoryPeriods';
 import { FinancialPrivacyToggle, useFinancialPrivacy } from './FinancialPrivacy';
@@ -10,7 +11,7 @@ import { useFinancialScreen } from './FinancialScreen';
 
 export default function NextPaymentCard({ payment, requestRange, extraDetails, salaryDisplay }: { payment:NextPayment; requestRange:(range:FinancialRange)=>void; extraDetails?:ReactNode;salaryDisplay?:{control:ReactNode;amount:ReactNode;caption:string} }) {
   const privacy=useFinancialPrivacy(), root=useRef<HTMLDivElement>(null);
-  const {screen,navigate,back,controls,history}=useFinancialScreen();
+  const {screen,navigate,back,controls,history,range,changesDetails}=useFinancialScreen();
   const overviewCaption=payment.kind==='payroll'?(payment.estimationBasis==='operational_month'&&payment.range?`Salário · ${payment.range.start.slice(0,7).split('-').reverse().join('/')} · bruto estimado`:payment.caption.replace(', antes dos descontos','').replace(' · antes dos descontos','')):'Diárias';
   const lines=[...payment.lines].sort((a,b)=>a.iso.localeCompare(b.iso));
   const currencies=[...new Set(lines.map(line=>line.currency))];
@@ -28,9 +29,10 @@ export default function NextPaymentCard({ payment, requestRange, extraDetails, s
     target.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});focus.focus({preventScroll:true});
   }
   return <div ref={root} className="cc-payment-overview" data-financial-screen={screen} data-financial-item-count={payment.lines.length}>
-    {payment.kind==='payroll'&&salaryDisplay?.control}
-    {screen!=='overview'&&<header className="cc-financial-screen-head"><button type="button" onClick={()=>back?back():navigate('overview')}>← Voltar</button><h2 tabIndex={-1} data-financial-screen-heading>{screen==='statement'?'Extrato':screen==='charts'?'Gráficos':'Detalhes do pagamento'}</h2></header>}
-    {(screen==='statement'||screen==='charts')&&controls}
+    {screen!=='changes'&&payment.kind==='payroll'&&salaryDisplay?.control}
+    {screen!=='overview'&&<header className="cc-financial-screen-head"><button type="button" onClick={()=>back?back():navigate('overview')}>← Voltar</button><h2 tabIndex={-1} data-financial-screen-heading>{screen==='statement'?'Extrato':screen==='charts'?'Gráficos':screen==='changes'?'Alterações':'Detalhes do pagamento'}</h2></header>}
+    {(screen==='statement'||screen==='charts'||screen==='changes')&&controls}
+    {screen==='changes'&&<>{changesDetails}<FinancialChangesScreen range={range}/></>}
     {(screen==='statement'||screen==='charts')&&history}
     {screen==='statement'&&<p className="cc-financial-history-availability">Previsões recalculadas da escala · separadas dos registros salvos.</p>}
     {(screen==='overview'||screen==='payment')&&<>
@@ -51,10 +53,11 @@ export default function NextPaymentCard({ payment, requestRange, extraDetails, s
     </>}
     <nav className="cc-financial-screen-links" aria-label="Navegação financeira">
       {screen!=='overview'&&<button type="button" onClick={()=>navigate('overview')}>Resumo financeiro <ChevronRight size={16} aria-hidden="true"/></button>}
-      {screen==='statement'||screen==='charts'?<button type="button" onClick={()=>navigate('payment')}>Detalhes do pagamento <ChevronRight size={16} aria-hidden="true"/></button>:<button type="button" onClick={()=>navigate(screen==='overview'?'payment':'statement')}>{screen==='overview'?'Detalhes do pagamento':'Extrato'} <ChevronRight size={16} aria-hidden="true"/></button>}
+      {screen==='statement'||screen==='charts'||screen==='changes'?<button type="button" onClick={()=>navigate('payment')}>Detalhes do pagamento <ChevronRight size={16} aria-hidden="true"/></button>:<button type="button" onClick={()=>navigate(screen==='overview'?'payment':'statement')}>{screen==='overview'?'Detalhes do pagamento':'Extrato'} <ChevronRight size={16} aria-hidden="true"/></button>}
       {screen!=='statement'&&screen!=='payment'&&<button type="button" onClick={()=>navigate('statement')}>Extrato <ChevronRight size={16} aria-hidden="true"/></button>}
       {screen!=='charts'&&<button type="button" onClick={()=>navigate('charts')}>Gráficos <ChevronRight size={16} aria-hidden="true"/></button>}
-      {(screen==='charts'||screen==='statement')&&<FinancialPrivacyToggle/>}
+      {screen!=='changes'&&<button type="button" onClick={()=>navigate('changes')}><GitCompareArrows size={18} aria-hidden="true"/>Alterações</button>}
+      {(screen==='charts'||screen==='statement'||screen==='changes')&&<FinancialPrivacyToggle/>}
     </nav>
     {screen==='payment'&&<section className="cc-next-payment-lines" aria-label="Composição do pagamento">
       <header><h3>{payment.estimationBasis==='operational_month'?'Composição estimada da competência':'Extrato previsto do próximo ciclo'}</h3><span>{lines.length} itens · recebimento não confirmado</span></header>

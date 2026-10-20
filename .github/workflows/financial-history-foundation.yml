@@ -204,6 +204,11 @@ jobs:
           node scripts/regression-aims-duty-source-browser.mjs
           node scripts/regression-aims-activity-financial-chain.mjs
           AIMS_DUTY_SOURCE_REPORT=artifacts/aims-duty-source/report.json node scripts/regression-canonical-duty-home-browser.cjs
+      - name: Verify compact changes with isolated synthetic browser fixtures
+        timeout-minutes: 3
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
+        run: node scripts/regression-financial-changes-browser.mjs
       - name: Verify actual compiled financial UI with synthetic owner fixtures
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
