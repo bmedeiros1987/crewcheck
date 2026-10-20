@@ -225,4 +225,3 @@ await import('../mobile-google-identity/apply.mjs');
 const finalizeSources = () => import('../ci/sync-canonical-manual.mjs');
 await prepareSourcesOnce(prepareSources, '.', { finalize: finalizeSources });
 await import('../ci/sync-canonical-manual.mjs');
-
