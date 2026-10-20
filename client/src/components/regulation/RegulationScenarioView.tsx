@@ -1,7 +1,7 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {Calculator,ChevronDown,RotateCcw} from 'lucide-react';
 import {getStoredUser,getToken} from '@/lib/authClient';
-import {getPublishedDutyLimitReference} from '@/lib/complianceEngine';
+import {getScheduledDutyLimitReference} from '@/lib/complianceEngine';
 import type {LegalProfileSummary} from '@/lib/actRules';
 import type {CanonicalRosterEvent} from '@/lib/canonicalRoster';
 import {resolvePerDiemRule} from '@/lib/financialRules';
@@ -20,7 +20,7 @@ function localClock(instant:string|undefined,offset:string){if(!instant||!/^([+-
 export default function RegulationScenarioView({scheduleDay,compliance,program}:{scheduleDay?:ScheduleDayLike|null;program?:CanonicalRosterEvent|null;compliance?:{legalProfile?:LegalProfileSummary;alerts?:Array<{title?:string;description?:string;actionable?:boolean;classification?:string;severity?:string}>}}){
  const details=useRef<HTMLDetailsElement>(null),owner=session(),signature=JSON.stringify(scheduleDay||null),key=owner+'|'+(program?.id||scheduleDay?.date||'manual');
  const admittedOwner=useRef(owner),observedOwner=useRef(owner),sourceAllowed=Boolean(owner&&admittedOwner.current===owner);
- const reference=useMemo(()=>{try{return (scheduleDay as any)?.dutyReportSource==='published'&&/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(scheduleDay?.dutyReport||'')?getPublishedDutyLimitReference(scheduleDay as RosterDay,compliance?.legalProfile):null;}catch{return null;}},[signature,compliance?.legalProfile]);
+ const reference=useMemo(()=>{try{return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(scheduleDay?.dutyReport||'')?getScheduledDutyLimitReference(scheduleDay as RosterDay,compliance?.legalProfile):null;}catch{return null;}},[signature,compliance?.legalProfile]);
  const seed=useMemo(()=>{
   if(!sourceAllowed)return defaults();
   const next=regulationScenarioSeed(scheduleDay,reference,program);
@@ -80,6 +80,7 @@ export default function RegulationScenarioView({scheduleDay,compliance,program}:
   <details ref={details} className="cc-reg-scenario-details"><summary>Ver cálculo <ChevronDown aria-hidden="true"/></summary>
    <label>Método da projeção<select aria-label="Método da projeção" value={form.method} onChange={e=>update({method:e.target.value})}><option value="schedule">Jornada programada</option><option value="detailed">Decolagem, voo e táxi</option></select></label>
    <label>Encerramento programado / estimado<input type="datetime-local" aria-label="Encerramento programado da jornada" value={form.plannedEnd} onChange={e=>update({plannedEnd:e.target.value,plannedEndSource:'Encerramento informado pelo usuário'})}/><small>{form.plannedEndSource||'Liberação não comprovada; informe uma estimativa para simular.'}</small></label>
+   {sourceAllowed&&<p>Apresentação usada na referência: {scheduleDay?.dutyReport||'ausente'} · {reference?.presentationSource==='published'?'publicada':reference?'estimada; confirme o horário':'referência indisponível'}. Ajuste o limite abaixo se a apresentação aplicável for diferente.</p>}
    <p>Dados da programação preenchidos para revisão. Partida programada não comprova decolagem real.</p><p>{sourceAllowed&&compliance?.legalProfile?.actName||'Perfil ACT não disponível'}</p><div className="cc-reg-scenario-inputs">
     <label>Partida programada / estimativa de decolagem<input type="datetime-local" aria-label="Decolagem base" value={form.takeoff} onChange={e=>update({takeoff:e.target.value})}/></label>
     <label>Fuso explícito (UTC±HH:MM)<input aria-label="Deslocamento UTC" value={form.offset} onChange={e=>update({offset:e.target.value,reviewed:false,publicationOffsetReviewed:false})} placeholder="-03:00"/></label>

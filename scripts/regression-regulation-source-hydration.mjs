@@ -23,6 +23,12 @@ try {
   assert.equal(regulationScheduleProjection({...seed,composition:'augmented',reviewed:true}).state,'indeterminate','checkbox cannot validate an incompatible B.1 ceiling');
   const crossing=regulationScheduleProjection({...seed,plannedEnd:'2032-10-20T23:30',delay:'60'});assert.equal(crossing.crossesReferenceDate,true);
   for(const source of ['estimated','absent','unknown'])assert.equal(engine.getPublishedDutyLimitReference({...day,dutyReportSource:source},null),null);
+  for(const source of ['estimated','unknown','absent',undefined]){
+   const legacy={...day,dutyReportSource:source,legs:[{...day.legs[0],presentationTime:undefined}]};
+   const le=canonical.buildCanonicalRosterEvents({year:2032,month:10,base:'BSB',days:[legacy]}).filter(e=>e.kind==='flight');const lu=le.map(c=>({id:c.id,kind:c.kind,canonical:c,day:c.publishedDay}));const ld=regulationProgramDay(lu,lu[0]);
+   assert.equal(ld.dutyReport,'04:10');assert.equal(ld.dutyReportSource,'estimated');assert.equal(engine.getPublishedDutyLimitReference(ld,null),null,'estimate must not pass published-only reader');
+   const lr=engine.getScheduledDutyLimitReference(ld,null);assert.equal(lr.maxDutyMinutes,540);assert.equal(lr.presentationSource,'estimate');assert.match(lr.source,/apresentação estimada/);assert.equal(regulationScenarioSeed(ld,lr,le[0]).normalEnd,'2032-10-20T13:10');assert.equal(measure.publishedDutyEndpoints(le,le[0].id).start,null,'original publication proof remains missing');
+  }
   const published={...day,dutyDebriefSource:'published'};const pe=canonical.buildCanonicalRosterEvents({year:2032,month:10,base:'BSB',days:[published]}).filter(e=>e.kind==='flight');assert.notEqual(measure.publishedDutyEndpoints(pe,pe[0].id).end,null);
  }
  for(const [a,b,want] of [['BSB','GRU','domestic'],['GRU','LIS','international'],['BSB','ZZZ',null]]){
