@@ -11,6 +11,11 @@ on:
       - 'shared/financialUpcoming.mjs'
       - 'shared/financialReadModel.mjs'
       - 'shared/financialMoney.mjs'
+      - 'shared/financialPreviewMetadata.mjs'
+      - 'server/financial-channel-read.mjs'
+      - 'scripts/tests/financial-channel-read.test.mjs'
+      - 'scripts/tests/financial-preview-metadata.test.mjs'
+      - 'docs/financial-channel-preparation.md'
       - '.github/workflows/telegram-financial-read-contract.yml'
 permissions:
   contents: read
@@ -30,14 +35,14 @@ jobs:
       - name: Characterize existing reads raw
         run: |
           set -euo pipefail
-          node --test scripts/tests/telegram-financial-read-contract.test.mjs 2>&1 | tee "$RUNNER_TEMP/financial-contract-raw.log"
+          node --test scripts/tests/telegram-financial-read-contract.test.mjs scripts/tests/financial-channel-read.test.mjs scripts/tests/financial-preview-metadata.test.mjs 2>&1 | tee "$RUNNER_TEMP/financial-contract-raw.log"
           node scripts/regression-financial-upcoming.mjs
           node scripts/regression-financial-concierge-timing.mjs
       - name: Prepare and repeat synthetic route reads
         run: |
           set -euo pipefail
           node scripts/v139/apply.mjs > "$RUNNER_TEMP/financial-contract-preparation.log" 2>&1
-          node --test scripts/tests/telegram-financial-read-contract.test.mjs 2>&1 | tee "$RUNNER_TEMP/financial-contract-prepared.log"
+          node --test scripts/tests/telegram-financial-read-contract.test.mjs scripts/tests/financial-channel-read.test.mjs scripts/tests/financial-preview-metadata.test.mjs 2>&1 | tee "$RUNNER_TEMP/financial-contract-prepared.log"
           node scripts/regression-financial-upcoming.mjs
           node scripts/regression-financial-concierge-timing.mjs
       - name: Preserve read contract evidence
