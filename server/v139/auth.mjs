@@ -46,7 +46,10 @@ async function watchRedeem(req,res,db){
 }
 async function canonicalLogout(req,res,db){
  if(req.method!=='POST')return sendJson(res,405,{ok:false,code:'METHOD_NOT_ALLOWED'});
- if(flag('CREWCHECK_WATCH_AUTHORITY_ENABLED')){
+ // Turning admission OFF must not skip cleanup of a previously issued JTI.
+ let priorWatchSession=false;
+ try{const p=verifyJwt(requestToken(req));priorWatchSession=typeof p?.jti==='string'&&/^watch1_[0-9a-f]{64}$/.test(p.jti);}catch{}
+ if(flag('CREWCHECK_WATCH_AUTHORITY_ENABLED')||priorWatchSession){
   try{const result=await watchHost(db).invalidateCanonicalLogout(req);clearAuthCookie(res);return sendJson(res,result.ok?200:401,{ok:result.ok,watchAuthorityRevoked:result.ok,message:result.ok?'Sessão encerrada.':'Não foi possível confirmar a revogação Watch.'});}
   catch{clearAuthCookie(res);return sendJson(res,503,{ok:false,watchAuthorityRevoked:false,code:'WATCH_REVOCATION_UNCONFIRMED'});}
  }

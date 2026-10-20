@@ -66,6 +66,14 @@ try{
  const c=req();await host.invalidateCanonicalLogout(c);assert.equal((await issue(c)).ok,false,'logout before first proof leaves tombstone');
  const d=req(),grant=await issue(d);const race=await Promise.all([host.invalidateCanonicalLogout(d),host.consumeNativeProof({...grant.record,redemption:'D'})]);assert(race[0].ok);assert.equal((await host.consumeNativeProof({...grant.record,redemption:'D'})).ok,false,'no use after logout commit regardless race winner');
  if(!mysqlMode){const e=req(),g=await issue(e),r={...g.record,redemption:'E'};failCommit=true;await assert.rejects(host.consumeNativeProof(r),/commit/);failCommit=false;lostAck=true;await assert.rejects(host.consumeNativeProof(r),/uncertain/);lostAck=false;assert((await host.consumeNativeProof(r)).idempotent);}
+ // Invoke the actual canonical logout wrapper with admission OFF: a prior
+ // signed JTI still must commit a tombstone before a later re-enable can admit.
+ const offReq=req();assert((await issue(offReq)).ok);process.env.CREWCHECK_WATCH_AUTHORITY_ENABLED='false';
+ let offResponse;const logoutFn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='canonicalLogout');
+ const logoutScope={...common,watchHost:()=>host,clearAuthCookie:()=>{},sendJson:(_res,status,body)=>offResponse={status,body}};
+ vm.runInNewContext(logoutFn.getText(ast)+';globalThis.handler=canonicalLogout;',logoutScope);
+ offReq.method='POST';await logoutScope.handler(offReq,{},pool);assert.equal(offResponse.status,200);assert.equal(offResponse.body.watchAuthorityRevoked,true);
+ process.env.CREWCHECK_WATCH_AUTHORITY_ENABLED='true';assert.equal((await issue(offReq)).ok,false,'OFF logout cannot resurrect after re-enable');
  clock=sibling.record.leaseDeadline;assert.equal((await host.consumeNativeProof({...sibling.record,redemption:'B'})).ok,false,'strict independent lease expiry');
  const f=authFixture();f.seed('synthetic-token-A');await f.auth.logout();assert.equal(f.data.get('crewcheck_auth_token'),undefined);assert.equal(f.requests[0].options.headers.authorization,'Bearer synthetic-token-A');f.seed('synthetic-token-B',{...user,id:'B'});f.requests[0].respond(503,{ok:false});await flushAuth();assert.equal(f.data.get('crewcheck_auth_token'),'synthetic-token-B');
  console.log('PASS '+(mysqlMode?'real InnoDB':'synthetic SQL')+' integrated canonical getMe/JWT/logout: same-second independent JTI, legacy denial, owner, restart, one-use/race, tombstone, sibling session, expiry and logout token continuity. No production activation.');
