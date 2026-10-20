@@ -1,4 +1,5 @@
 import { buildCanonicalRosterEvents } from './server/concierge/generated/canonicalRoster.mjs';
+import { customGateSourceUpdate } from './server/gate-source-update.mjs';
 import { gateQueryDay, findPublishedGateOccurrence, findPublishedGateLeg, publishedGateDate, gateQuerySuppressed, originFlightDate, radarResultDecision } from './shared/gate-query-day.mjs';
 import {verifiedMysqlTls} from './server/mysql-verified-tls.mjs';
 import {assertNotProtectedReleaseKey} from './server/release-journal/namespace.mjs';
@@ -67,6 +68,7 @@ function publicRadarPayload(item = {}) {
     departure: firstKnown(item.departure),
     scheduledDepartureUtc: item.scheduledDepartureUtc,
     sourceReceivedAt: item.sourceReceivedAt,
+    gateUpdate: item.gateUpdate?.provider === 'custom' ? item.gateUpdate : null,
     arrival: firstKnown(item.arrival),
     origin: firstKnown(item.origin),
     destination: firstKnown(item.destination),
@@ -181,6 +183,7 @@ async function providerCustom(ctx, timeoutMs, origin, destination) {
     flight: firstKnown(payload?.flight, payload?.flight_iata, payload?.flight_icao),
     status: firstKnown(payload?.status, payload?.flight_status, 'Monitorando'),
     gate: firstKnown(payload?.gate, payload?.departure?.gate),
+    gateUpdate: payload?.departureGateUpdate?.schema === 'crewcheck.departure-gate-update.v1' ? customGateSourceUpdate(payload) : null,
     terminal: firstKnown(payload?.terminal, payload?.departure?.terminal),
     scheduledDepartureUtc: firstKnown(payload?.scheduledDepartureUtc, payload?.departure?.scheduled),
     departure: firstKnown(payload?.departure?.estimated, payload?.departure?.actual, payload?.departure?.scheduled, payload?.departure),

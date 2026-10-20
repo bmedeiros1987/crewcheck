@@ -50,7 +50,7 @@ try {
   const positive={ok:true,flight:event.flightNumber,gate:'7',origin:'GRU',destination:'REC',sourceOrigin:'GRU',sourceDestination:'REC',scheduledDepartureUtc:canonical.startDateTime,departure:canonical.startDateTime,updatedAt:now-60_000};
   function savedNotice(payload,manual=null,previous=positive){
     const notices=[],writes=[];
-    const context=vm.createContext({Date:FixedDate,storage:{set:(...args)=>writes.push(args)},readRadarSnapshot:()=>previous,radarSnapshotKey:m.radarSnapshotStorageKey,flightOperationalDate:m.flightOperationalDate,window:{dispatchEvent(){}},CustomEvent:class{},localStorage:{},readManualGate:()=>manual,manualGateAccountKey:()=> 'synthetic',getStoredUser:()=>({id:'SYNTHETIC'}),normalizeBoardingGate:m.normalizeBoardingGate,publishCrewCheckNotice:n=>notices.push(n),gateChangeAlertAllowed:epoch=>m.gateChangeAlertAllowed(epoch,now),resolveNextFlightGate:input=>m.resolveNextFlightGate({...input,now}),eventStartDateTime:e=>new Date(e.canonical.startDateTime)});
+    const context=vm.createContext({Date:FixedDate,storage:{set:(...args)=>writes.push(args)},readRadarSnapshot:()=>previous,radarSnapshotKey:m.radarSnapshotStorageKey,flightOperationalDate:m.flightOperationalDate,window:{dispatchEvent(){}},CustomEvent:class{},localStorage:{},readManualGate:()=>manual,manualGateAccountKey:()=> 'synthetic',getStoredUser:()=>({id:'SYNTHETIC'}),normalizeBoardingGate:m.normalizeBoardingGate,publishCrewCheckNotice:n=>notices.push(n),reconcileCrewCheckPulse(){},manualGateNoticeScope:()=>"synthetic-scope",retainLatestGateEvidence:m.retainLatestGateEvidence,nextGateUpdateWatermark:m.nextGateUpdateWatermark,gateChangeAlertAllowed:epoch=>m.gateChangeAlertAllowed(epoch,now),resolveNextFlightGate:input=>m.resolveNextFlightGate({...input,now}),eventStartDateTime:e=>new Date(e.canonical.startDateTime)});
     vm.runInContext(fn(home,'radarEventOperationalDate')+'\n'+fn(home,'confirmedRadarGate')+'\n'+fn(home,'saveRadarSnapshot'),context);
     const snapshot=context.saveRadarSnapshot(event,payload);return {notices,writes,snapshot,decision:m.resolveNextFlightGate({event,radar:snapshot,now})};
   }
@@ -59,7 +59,7 @@ try {
   const change=savedNotice({...positive,gate:'12'});assert.equal(change.notices.length,1);assert.equal(change.notices[0].systemNotification,'background');assert.equal(change.decision.gate,'12');
   assert.equal(savedNotice({...positive,gate:'7'}).notices.length,0,'unchanged source dedupes');
   const manual={gate:'24'};assert.equal(savedNotice({...positive,gate:'12',origin:'REC',destination:'GRU'},manual).notices.length,0,'manual cannot make rejected source alertable');
-  assert.match(savedNotice({...positive,gate:'12'},manual).notices[0].title,/Portão diverge/);
+  assert.equal(savedNotice({...positive,gate:'12'},manual).notices.length,0,'unproven source update cannot alert as newer than manual');
   assert.equal(savedNotice({...positive,gate:'7'},manual).notices.length,0,'same Radar source does not repeat divergence notice');
   const source=fs.readFileSync(path.join(root,'client/src/pages/Home.tsx'),'utf8');
   assert.equal((source.match(/addEventListener\('crewcheck:radar-updated', onRequest\)/g)||[]).length,1,'one Radar -> Watch listener');

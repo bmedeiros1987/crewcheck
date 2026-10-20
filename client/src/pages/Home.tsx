@@ -141,11 +141,12 @@ import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
-import { canonicalFlightId, RADAR_GATE_STALE_MS, MANUAL_GATE_EVENT, manualGateIdentity, flightOperationalDate, gateChangeAlertAllowed, manualGateAccountKey, resolveNextFlightGate, radarSnapshotStorageKey, readCachedRadarForFlight, readManualGate, selectNextFlight } from '@/lib/nextFlightGate';
+import { retainLatestGateEvidence, nextGateUpdateWatermark, type GateSourceUpdate, type GateUpdateWatermark, canonicalFlightId, RADAR_GATE_STALE_MS, MANUAL_GATE_EVENT, manualGateIdentity, flightOperationalDate, gateChangeAlertAllowed, manualGateAccountKey, resolveNextFlightGate, radarSnapshotStorageKey, readCachedRadarForFlight, readManualGate, selectNextFlight } from '@/lib/nextFlightGate';
 import { applyNextFlightToWatchSnapshot } from '@/lib/nextFlightWatch';
+import { manualGateNoticeIdentity, manualGateNoticeScope, claimManualGateNotice } from '@/lib/manualGateNotices';
 import { ManualGateEditor } from '@/components/nextflight/ManualGateEditor';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
-import { crewCheckNotificationPermission, publishCrewCheckNotice, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';
+import { crewCheckNotificationPermission, publishCrewCheckNotice, publishCrewCheckPulse, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
 import { isActionableComplianceAlert, informationalComplianceDiagnostics } from '@/lib/complianceAlertSemantics';
 import '@/components/v1393/weather.css';
@@ -1632,6 +1633,9 @@ function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; t
   return <article className={`cz-kpi ${tone}`}><span><Icon size={24}/></span><div><small>{title}</small><strong><MoneyText value={value}/></strong><p>{detail}</p></div></article>;
 }
 type RadarSnapshot = {
+  gateUpdate?: GateSourceUpdate | null;
+  gateUpdateWatermark?: GateUpdateWatermark | null;
+  gateEvidenceReceivedAt?: number;
   httpStatus?: number;
   querySuppressed?: boolean;
   queryReason?: string;
@@ -1711,31 +1715,44 @@ function confirmedRadarGate(value?: string): string {
 function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapshot {
   const previous = readRadarSnapshot(event);
   // A origem/destino da fonte ficam preservados para recusar portão de outro trecho.
-  const snapshot = { ...payload, operationalDeparture: payload.operationalDeparture ?? payload.departure, departure: payload.scheduledDepartureUtc ?? payload.departure, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: payload.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
+  const evidence = previous?.gateUpdate ? retainLatestGateEvidence(event, previous, payload) : payload;
+  const snapshot = { ...evidence, gateUpdateWatermark: (payload.gateUpdate || previous?.gateUpdateWatermark) ? nextGateUpdateWatermark(event, previous, { ...payload, updatedAt: Date.now() }) : null, operationalDeparture: evidence.operationalDeparture ?? evidence.departure, departure: evidence.scheduledDepartureUtc ?? evidence.departure, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: evidence.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
   const key = radarSnapshotKey(event);
   storage.set(key, JSON.stringify(snapshot));
   window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));
 
-  const manualGate = readManualGate(localStorage, manualGateAccountKey(getStoredUser()), event)?.gate || '';
+  const manualEntry = readManualGate(localStorage, manualGateAccountKey(getStoredUser()), event);
+  const manualGate = manualEntry?.gate || '';
   // Alerts must accept exactly the same source/occurrence as the phone/watch decision.
   const before = resolveNextFlightGate({ event, radar: previous });
   const after = resolveNextFlightGate({ event, radar: snapshot });
   const previousGate = manualGate || before.gate;
   const nextGate = after.operationalDate && after.gateSource === 'radar' && !after.radarRejected && !after.stale ? after.gate : '';
   const previousRadarGate = before.gateSource === 'radar' && !before.radarRejected ? before.gate : '';
-  if (previousGate && nextGate && previousGate !== nextGate && previousRadarGate !== nextGate) {
-    publishCrewCheckNotice({
-      id: `gate-change:${event.id}:${nextGate}`,
-      dedupeKey: `gate-change:${event.id}:${nextGate}`,
+  const reviewAfter = manualEntry ? resolveNextFlightGate({ event, radar: snapshot, manual: manualEntry }).manualReview : null;
+  const manualChange = Boolean(reviewAfter?.state === 'newer' && reviewAfter.candidate);
+  const automaticChange = !manualEntry && previousGate && nextGate && previousGate !== nextGate && previousRadarGate !== nextGate;
+  const manualOwner = manualGateAccountKey(getStoredUser());
+  const activeManualNotice = manualChange ? manualGateNoticeIdentity(event, manualEntry!, reviewAfter!.candidate!, manualOwner) : undefined;
+  reconcileCrewCheckPulse(manualGateNoticeScope(event, manualOwner), activeManualNotice ? [activeManualNotice] : []);
+  if (manualChange || automaticChange) {
+    const noticeKey = `gate-change:${event.id}:${nextGate}${manualChange ? ':' + reviewAfter!.candidate!.sourceUpdatedAtEpochMs : ''}`;
+    const noticeReview = manualChange ? manualGateNoticeIdentity(event, manualEntry!, reviewAfter!.candidate!, manualGateAccountKey(getStoredUser())) : undefined;
+    const publish = manualChange && !claimManualGateNotice(localStorage, manualGateAccountKey(getStoredUser()), event, manualEntry!, reviewAfter!.candidate!) ? publishCrewCheckPulse : publishCrewCheckNotice;
+    publish({
+      id: noticeKey,
+      dedupeKey: noticeKey,
+      scope: manualChange ? manualGateNoticeScope(event, manualGateAccountKey(getStoredUser())) : undefined,
+      review: noticeReview,
       category: 'gate',
       tone: 'atencao',
       priority: 'alta',
-      title: manualGate ? `Portão diverge · fonte indica ${nextGate}` : `Portão alterado · ${nextGate}`,
+      title: manualGate ? `Possível mudança · fonte indica ${nextGate}` : `Portão alterado · ${nextGate}`,
       detail: [event.flightNumber, manualGate ? `informado ${manualGate} · fonte ${nextGate}` : `${previousGate} → ${nextGate}`, snapshot.terminal].filter(Boolean).join(' · '),
       pulseCooldownMs: 60_000,
       // A notificação do sistema (espelhada e vibrando no relógio) só ocorre na janela do voo.
       systemNotification: gateChangeAlertAllowed(eventStartDateTime(event).getTime()) ? 'background' : 'never',
-      notificationTag: `crewcheck:gate:${event.id}`,
+      notificationTag: `crewcheck:gate:${event.id}${manualChange ? ':' + reviewAfter!.candidate!.sourceUpdatedAtEpochMs : ''}`,
       notificationCooldownMs: 2 * 60_000,
       action: { label: 'Abrir Radar', view: 'radar', context: { programId: event.id, dateEpochMs: Date.parse(event.canonical?.startDateTime || ''), journeyId: event.canonical?.journeyId, flightKey: event.flightNumber, airportCode: event.origin } },
     });

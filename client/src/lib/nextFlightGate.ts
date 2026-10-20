@@ -52,6 +52,36 @@ export type RadarGateSnapshot = {
   sourceDestination?: string;
   quality?: number;
   alternatives?: number;
+  /** Source-produced departure-gate update, never the local fetch/cache clock. */
+  gateUpdate?: GateSourceUpdate | null;
+  gateUpdateWatermark?: GateUpdateWatermark | null;
+  /** Original receipt anchor of retained gate evidence, independent of live status. */
+  gateEvidenceReceivedAt?: number;
+  origin?: string;
+  destination?: string;
+};
+
+export type GateUpdateWatermark = { sourceUpdatedAtEpochMs: number; gate: string; conflicted: boolean };
+
+export type GateSourceUpdate = {
+  version: 1;
+  provider: 'custom';
+  kind: 'departure-gate-update';
+  sourceUpdatedAt: string;
+  gate: string;
+  flight: string;
+  origin: string;
+  destination: string;
+  scheduledDepartureUtc: string;
+};
+
+export type ManualGateSourceReview = {
+  action: 'keep' | 'accept';
+  decidedAtEpochMs: number;
+  fingerprint: string;
+  sourceGate: string;
+  sourceUpdatedAtEpochMs: number;
+  provider: 'custom';
 };
 
 export type ManualGateEntry = {
@@ -63,6 +93,12 @@ export type ManualGateEntry = {
   destination: string;
   setAtEpochMs: number;
   author: string;
+  sourceReview?: ManualGateSourceReview;
+};
+
+export type ManualGateReviewInfo = {
+  state: 'none' | 'matching' | 'unverified' | 'older' | 'newer' | 'kept';
+  candidate: { gate: string; provider: 'custom'; sourceUpdatedAtEpochMs: number; fingerprint: string } | null;
 };
 
 export type GateSource = 'manual' | 'radar' | 'roster';
@@ -90,6 +126,7 @@ export type NextFlightGateInfo = {
   radarRejected: '' | 'not-ok' | 'other-flight' | 'other-segment' | 'other-day' | 'unproven-day' | 'position';
   divergence: { manualGate: string; sourceGate: string; source: 'radar' | 'roster' } | null;
   manual: ManualGateEntry | null;
+  manualReview: ManualGateReviewInfo;
 };
 
 const EMPTY_VALUES = /^(|—|-|–|N\/?A|NA|TBD|TBA|UNKNOWN|NULL|UNDEFINED|A CONFIRMAR|NÃO INFORMADO|NAO INFORMADO|NÃO INFORMADA|NAO INFORMADA|SEM PORTÃO|SEM PORTAO)$/;
@@ -243,6 +280,111 @@ export function canonicalFlightId(value: unknown): string {
   return match ? `${CARRIER_ALIASES[match[1]] || match[1]}${match[2]}` : raw;
 }
 
+/** Only an explicit source gate-update contract can establish chronology.
+ * Aircraft signals, HTTP receipt time and cache updatedAt are never substitutes. */
+export function sourceGateUpdate(event: NextFlightLike, radar: RadarGateSnapshot | null, now = Date.now()): ManualGateReviewInfo['candidate'] {
+  if (!Number.isFinite(now)) return null;
+  const proof = radar?.gateUpdate;
+  const receipt = radar?.gateEvidenceReceivedAt ?? radar?.updatedAt;
+  if (typeof receipt !== 'number' || !Number.isFinite(receipt) || receipt <= 0 || receipt > now || now - receipt > RADAR_GATE_STALE_MS) return null;
+  const at = radarSourceEpoch(proof?.sourceUpdatedAt);
+  const expected = flightDepartureEpochMs(event);
+  const normalized = normalizeBoardingGate(proof?.gate);
+  const sourceGate = normalizeBoardingGate(radar?.gate).gate;
+  if (!radar || radar.ok !== true || canonicalFlightId(radar.flight) !== canonicalFlightId(event.flightNumber)
+    || upper(radar.sourceOrigin ?? radar.origin) !== upper(event.origin) || upper(radar.sourceDestination ?? radar.destination) !== upper(event.destination)
+    || radarSourceEpoch(radar.scheduledDepartureUtc) !== expected
+    || !proof || proof.version !== 1 || proof.provider !== 'custom' || proof.kind !== 'departure-gate-update'
+    || !normalized.gate || normalized.position || normalized.gate !== sourceGate
+    || canonicalFlightId(proof.flight) !== canonicalFlightId(event.flightNumber)
+    || upper(proof.origin) !== upper(event.origin) || upper(proof.destination) !== upper(event.destination)
+    || !Number.isFinite(expected) || radarSourceEpoch(proof.scheduledDepartureUtc) !== expected
+    || !Number.isFinite(at) || at > now || now - at > RADAR_GATE_STALE_MS) return null;
+  const fingerprint = [canonicalFlightId(event.flightNumber), expected, upper(event.origin), upper(event.destination), sourceGate, proof.provider, at].join('|');
+  return { gate: sourceGate, provider: proof.provider, sourceUpdatedAtEpochMs: at, fingerprint };
+}
+
+/** Source-clock watermark only: receipt times cannot advance it. Equal-time
+ * contradictory gates remain ambiguous until a genuinely later source update. */
+export function nextGateUpdateWatermark(event: NextFlightLike, previous: RadarGateSnapshot | null, incoming: RadarGateSnapshot, now = Date.now()): GateUpdateWatermark | null {
+  const history = previous?.gateUpdateWatermark;
+  let result: GateUpdateWatermark | null = history && typeof history.sourceUpdatedAtEpochMs === 'number' && Number.isFinite(history.sourceUpdatedAtEpochMs)
+    && history.sourceUpdatedAtEpochMs > 0 && history.sourceUpdatedAtEpochMs <= now && normalizeBoardingGate(history.gate).gate
+    ? { sourceUpdatedAtEpochMs: history.sourceUpdatedAtEpochMs, gate: normalizeBoardingGate(history.gate).gate, conflicted: history.conflicted === true } : null;
+  for (const snapshot of [previous, incoming]) {
+    const candidate = sourceGateUpdate(event, snapshot, now);
+    if (!candidate) continue;
+    if (!result || candidate.sourceUpdatedAtEpochMs > result.sourceUpdatedAtEpochMs) result = { sourceUpdatedAtEpochMs: candidate.sourceUpdatedAtEpochMs, gate: candidate.gate, conflicted: false };
+    else if (candidate.sourceUpdatedAtEpochMs === result.sourceUpdatedAtEpochMs && candidate.gate !== result.gate) result.conflicted = true;
+  }
+  return result;
+}
+
+/** Keep only the last proven gate and its original receipt anchor while fresh.
+ * Status, operational times, aircraft, terminal and query receipt remain live. */
+export function retainLatestGateEvidence<T extends RadarGateSnapshot>(event: NextFlightLike, previous: T | null, incoming: T, now = Date.now()): T {
+  const before = sourceGateUpdate(event, previous, now);
+  const after = sourceGateUpdate(event, { ...incoming, updatedAt: now }, now);
+  return previous && before && (!after || after.sourceUpdatedAtEpochMs < before.sourceUpdatedAtEpochMs)
+    ? { ...incoming, gate: previous.gate, gateUpdate: previous.gateUpdate, gateEvidenceReceivedAt: previous.gateEvidenceReceivedAt ?? previous.updatedAt }
+    : incoming;
+}
+
+function manualGateReview(event: NextFlightLike, radar: RadarGateSnapshot | null, manual: ManualGateEntry | null, sourceGate: string, stale: boolean, now: number): ManualGateReviewInfo {
+  const none: ManualGateReviewInfo = { state: 'none', candidate: null };
+  if (!manual || !sourceGate || !radar || stale) return none;
+  if ([upper(manual.flight), manual.date, upper(manual.origin), upper(manual.destination)].join('|') !== manualGateIdentity(event)) return { state: 'unverified', candidate: null };
+  if (sourceGate === manual.gate) return { state: 'matching', candidate: null };
+  const candidate = sourceGateUpdate(event, radar, now);
+  if (!candidate) return { state: 'unverified', candidate: null };
+  const { fingerprint, sourceUpdatedAtEpochMs: at } = candidate;
+  const watermark = radar.gateUpdateWatermark;
+  if (watermark && typeof watermark.sourceUpdatedAtEpochMs === 'number' && watermark.sourceUpdatedAtEpochMs > at) return { state: 'older', candidate };
+  if (watermark?.sourceUpdatedAtEpochMs === at && watermark.conflicted === true) return { state: 'unverified', candidate: null };
+  const review = manual.sourceReview;
+  if (review?.action === 'keep' && review.fingerprint === fingerprint && Number.isFinite(review.decidedAtEpochMs) && review.decidedAtEpochMs <= now) return { state: 'kept', candidate };
+  const decidedAt = review && ['keep', 'accept'].includes(review.action) && Number.isFinite(review.decidedAtEpochMs) && review.decidedAtEpochMs <= now ? review.decidedAtEpochMs : 0;
+  const baseline = Math.max(Number(manual.setAtEpochMs), decidedAt);
+  if (!Number.isFinite(baseline) || baseline <= 0 || baseline > now || at <= baseline) return { state: 'older', candidate };
+  return { state: 'newer', candidate };
+}
+
+/** Compare-and-review token, scoped by the caller to its account and occurrence. */
+export function manualGateRevision(entry: ManualGateEntry | null, account: string): string {
+  return entry ? JSON.stringify([account, entry.gate, entry.terminal || '', entry.setAtEpochMs, entry.sourceReview || null]) : '';
+}
+
+export type ManualGateReviewWriteResult = { ok: true; entry: ManualGateEntry } | { ok: false; message: string };
+
+/** Explicit local choice only. Re-read manual and source before the one storage write.
+ * The host must also revalidate its current account/session before calling. */
+export function writeManualGateReview(storage: StorageLike, account: string, event: NextFlightLike,
+  input: { action: 'keep' | 'accept'; expectedManualRevision: string; expectedSourceFingerprint: string; author: string }, now = Date.now()): ManualGateReviewWriteResult {
+  const reject = (): ManualGateReviewWriteResult => ({ ok: false, message: 'Os dados mudaram. Reveja o portão antes de confirmar.' });
+  if (!account || account === 'local' || !Number.isFinite(now) || now <= 0 || !['keep', 'accept'].includes(input.action)) return reject();
+  const manual = readManualGate(storage, account, event);
+  if (!manual || manualGateRevision(manual, account) !== input.expectedManualRevision) return reject();
+  const radar = readCachedRadarForFlight(storage, event, now);
+  const info = resolveNextFlightGate({ event, manual, radar, now });
+  const candidate = info.manualReview.candidate;
+  if (info.manualReview.state !== 'newer' || !candidate || candidate.fingerprint !== input.expectedSourceFingerprint) return reject();
+  // Preserve other local entries, including a manual change made since the first read.
+  const map = readMap(storage, account), identity = manualGateIdentity(event);
+  const current = readManualGate({ getItem: () => JSON.stringify(map), setItem() {} }, account, event);
+  if (manualGateRevision(current, account) !== input.expectedManualRevision) return reject();
+  const entry: ManualGateEntry = { ...manual, sourceReview: { action: input.action, decidedAtEpochMs: now, fingerprint: candidate.fingerprint,
+    sourceGate: candidate.gate, sourceUpdatedAtEpochMs: candidate.sourceUpdatedAtEpochMs, provider: candidate.provider } };
+  if (input.action === 'accept') {
+    entry.gate = candidate.gate;
+    entry.setAtEpochMs = now;
+    entry.author = text(input.author).slice(0, 60) || 'Este dispositivo';
+  }
+  map[identity] = entry;
+  try { storage.setItem(MANUAL_GATE_PREFIX + account, JSON.stringify(map)); }
+  catch { return { ok: false, message: 'Não foi possível salvar a escolha neste dispositivo.' }; }
+  return { ok: true, entry };
+}
+
 const ABSOLUTE_INSTANT = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(?:(Z)|([+-])(\d{2}):?(\d{2}))$/;
 
 /** Instante absoluto válido informado pela fonte (data, hora e fuso coerentes); caso contrário NaN. */
@@ -295,7 +437,8 @@ export function resolveNextFlightGate(input: {
   const radarGate = radar ? normalizeBoardingGate(radar.gate) : { gate: '', remote: false, position: false };
   if (radar && radarGate.position) radarRejected = 'position';
   const rosterGate = normalizeBoardingGate(event.gate);
-  const radarUpdatedAt = radar && Number(radar.updatedAt) > 0 && Number(radar.updatedAt) <= now + 60_000 ? Number(radar.updatedAt) : 0;
+  const radarGateReceipt = radar?.gateEvidenceReceivedAt ?? radar?.updatedAt;
+  const radarUpdatedAt = radar && Number(radarGateReceipt) > 0 && Number(radarGateReceipt) <= now + 60_000 ? Number(radarGateReceipt) : 0;
   const radarStale = Boolean(radar) && (!radarUpdatedAt || now - radarUpdatedAt > RADAR_GATE_STALE_MS);
 
   const sourceGate = radarGate.gate ? { ...radarGate, source: 'radar' as const } : rosterGate.gate ? { ...rosterGate, source: 'roster' as const } : null;
@@ -346,6 +489,7 @@ export function resolveNextFlightGate(input: {
     radarRejected,
     divergence,
     manual,
+    manualReview: manualGateReview(event, radar, manual, radarGate.gate, radarStale, now),
   };
 }
 

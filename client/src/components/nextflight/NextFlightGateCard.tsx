@@ -3,6 +3,7 @@ import { ChevronDown, Clock, DoorOpen, Pencil, Plane, Watch } from 'lucide-react
 import { setPendingNavigationContext } from '@/lib/navigationContext';
 import { gateDisplay, selectNextFlight, type NextFlightGateInfo, type NextFlightLike } from '@/lib/nextFlightGate';
 import { useNextFlightGate, useWatchSyncState } from './useNextFlightGate';
+import { ManualGateReview, sourceGateUpdateLabel } from './ManualGateReview';
 import './next-flight-gate.css';
 
 function clock(epochMs: number): string {
@@ -20,7 +21,7 @@ function flightDate(info: NextFlightGateInfo): string {
 }
 
 export function gateSourceLabel(info: NextFlightGateInfo): string {
-  if (info.gateSource === 'manual') return `Informado por ${info.manual?.author || 'você'} às ${clock(info.manual?.setAtEpochMs || 0)}`;
+  if (info.gateSource === 'manual') return `${info.manual?.sourceReview?.action === 'accept' ? 'Aceito' : 'Informado'} por ${info.manual?.author || 'você'} em ${sourceGateUpdateLabel(info.manual?.setAtEpochMs || 0)}`;
   if (info.gateSource === 'radar') return `Radar · atualizado ${clock(info.radarUpdatedAtEpochMs) || 'sem horário'}`;
   if (info.gateSource === 'roster') return 'Escala publicada';
   return 'Portão automático ainda não confirmado';
@@ -76,7 +77,7 @@ export function NextFlightGateCard({ events }: { events: readonly NextFlightLike
         </span>
       </span>
       {info.divergence && <span className="cc-next-gate-divergence" role="note">
-        Você informou {info.divergence.manualGate}; {info.divergence.source === 'radar' ? 'o Radar' : 'a escala'} indica {info.divergence.sourceGate}. Confirme no aeroporto.
+        {info.manualReview.state === 'newer' ? 'Possível mudança. ' : info.manualReview.state === 'kept' ? 'Manual mantido. ' : ''}Você informou {info.divergence.manualGate}; {info.divergence.source === 'radar' ? 'o Radar' : 'a escala'} indica {info.divergence.sourceGate}. {info.manualReview.state === 'kept' ? 'Essa atualização já foi revisada.' : info.manualReview.state === 'newer' ? 'Abra os detalhes para aceitar ou manter.' : 'Atualização posterior não comprovada; confirme no aeroporto.'}
       </span>}
       <span className="cc-next-gate-source">
         {info.stale && <b className="cc-next-gate-stale"><Clock aria-hidden="true"/> Desatualizado</b>}
@@ -101,6 +102,7 @@ export function NextFlightGateCard({ events }: { events: readonly NextFlightLike
           ? (sync.ok ? `Sincronizado às ${clock(sync.at)}` : `Falha na sincronização às ${clock(sync.at)}`)
           : sync.message}</dd></div>}
       </dl>
+      <ManualGateReview event={nextFlight} info={info}/>
       <p>Portão de embarque deste voo. Não é a posição da aeronave nem o portão do voo anterior. Confirme sempre nas comunicações oficiais.</p>
       <button type="button" onClick={() => openRadar(nextFlight, info)}><Pencil aria-hidden="true"/> Abrir Radar e informar portão</button>
     </div>}
