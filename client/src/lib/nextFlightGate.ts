@@ -494,6 +494,12 @@ export function resolveNextFlightGate(input: {
 }
 
 /** Rótulo do portão para telas e relógio. Nunca inventa valor. */
+export function statusSourceLabel(info: Pick<NextFlightGateInfo, 'statusSource'>): string {
+  if (info.statusSource === 'roster') return 'Escala publicada · sem confirmação ao vivo';
+  if (info.statusSource === 'radar') return 'Radar · horário de atualização do status na fonte não informado';
+  return 'Status operacional não confirmado';
+}
+
 export function gateDisplay(info: Pick<NextFlightGateInfo, 'gate' | 'remote'>): string {
   if (!info.gate) return 'Não informado';
   return info.remote && !/\d/.test(info.gate) ? 'Remoto' : info.gate;

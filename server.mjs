@@ -157,10 +157,13 @@ async function providerFlightAware(ctx, timeoutMs) {
     markProvider('flightaware', false);
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional configurada, mas sem dados agora.' };
   }
-  const flights = Array.isArray(payload?.flights) ? payload.flights : [];
+  const sourceFlights = Array.isArray(payload?.flights) ? payload.flights : [];
+  // Reuse #1143's response-owned occurrence filter on the existing production path.
+  const exactFlights = ctx.gateQueryEvidence ? sourceFlights.filter(item => radarResultDecision(normalizeFlightAwareFlight(item, ctx), ctx.gateQueryEvidence, Date.now()).allowed) : null;
+  const flights = exactFlights ? exactFlights.length === 1 ? exactFlights : [] : sourceFlights;
   const row = flights.find((item) => !item.cancelled && !item.actual_in) || flights[0];
   if (!row) {
-    markProvider('flightaware', false);
+    // Successful no-data/ambiguity is not a provider outage.
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Voo não localizado na fonte operacional.' };
   }
   markProvider('flightaware', true);

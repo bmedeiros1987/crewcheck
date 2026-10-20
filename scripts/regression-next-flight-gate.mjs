@@ -101,6 +101,13 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', sc
   const missing = m.resolveNextFlightGate({ event: next, radar: null, now: NOW });
   assert.equal(missing.gate, ''); assert.equal(missing.gateSource, null); assert.equal(m.gateDisplay(missing), 'Não informado');
   assert.equal(missing.status, '', 'status ausente não é inventado');
+  assert.equal(m.statusSourceLabel(missing), 'Status operacional não confirmado');
+  const published = m.resolveNextFlightGate({ event: {...next,status:'Programado'}, radar:null, now:NOW });
+  assert.equal(published.statusSource, 'roster');
+  assert.match(m.statusSourceLabel(published), /Escala publicada.*sem confirmação ao vivo/);
+  const sourced = m.resolveNextFlightGate({event:next,radar:radarBase,now:NOW});
+  assert.equal(sourced.statusSource,'radar');
+  assert.match(m.statusSourceLabel(sourced), /horário de atualização do status na fonte não informado/);
   const stale = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, updatedAt: NOW - 45 * 60_000 }, now: NOW });
   assert.equal(stale.gate, '9'); assert.equal(stale.stale, true, 'Radar com mais de 30 min fica desatualizado');
   const future = m.resolveNextFlightGate({ event: next, radar: { ...radarBase, updatedAt: NOW + 10 * 60_000 }, now: NOW });

@@ -1,7 +1,7 @@
 import { useId, useState } from 'react';
 import { ChevronDown, Clock, DoorOpen, Pencil, Plane, Watch } from 'lucide-react';
 import { setPendingNavigationContext } from '@/lib/navigationContext';
-import { gateDisplay, selectNextFlight, type NextFlightGateInfo, type NextFlightLike } from '@/lib/nextFlightGate';
+import { gateDisplay, statusSourceLabel, selectNextFlight, type NextFlightGateInfo, type NextFlightLike } from '@/lib/nextFlightGate';
 import { useNextFlightGate, useWatchSyncState } from './useNextFlightGate';
 import { ManualGateReview, sourceGateUpdateLabel } from './ManualGateReview';
 import './next-flight-gate.css';
@@ -73,7 +73,7 @@ export function NextFlightGateCard({ events }: { events: readonly NextFlightLike
         </span>
         <span className="cc-next-gate-facts">
           <span><small>Partida</small><b>{info.departure || 'Não informada'}</b></span>
-          <span><small>Status</small><b>{status}</b></span>
+          <span><small>Status</small><b>{status}</b><small>{statusSourceLabel(info)}</small></span>
         </span>
       </span>
       {info.divergence && <span className="cc-next-gate-divergence" role="note">
