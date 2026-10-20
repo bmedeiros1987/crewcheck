@@ -387,10 +387,9 @@ async function callback(_req, res, url, context) {
         const reverseKey=crewLinkKey(owner.sub,cfg.encryptionSecret);
         const existingCrewLink=await tx.get(reverseKey);
         if(existingCrewLink?.payload?.providerKey && existingCrewLink.payload.providerKey!==providerKey) throw new Error('Esta conta CrewCheck já possui outra Conta Google vinculada. Desvincule-a antes de trocar.');
-        const linkId=crypto.randomBytes(32).toString('base64url'),linkedAt=new Date().toISOString();
-        await tx.put(providerLinkKey(providerKey),{provider:'google',providerKey,user:owner,linkId,revision,linkedAt});
-        await tx.put(reverseKey,{provider:'google',providerKey,linkId,revision,emailHint:maskEmail(claims.email),linkedAt});
-        await tx.put(stateKey(state),{status:'linked',intent:'link',user:owner,email:String(claims.email).toLowerCase(),linkedAt},expiresAt,true);
+        // External callback proves the Google identity only. It cannot finalize
+        // a link from a saved owner or a cookie belonging to another browser.
+        await tx.put(stateKey(state),{status:'link_ready',intent:'link',owner,ownerRevision:revision,providerKey,email:String(claims.email).toLowerCase(),expiresAt},expiresAt,true);
       } else if(existingProviderLink?.payload?.user?.sub && typeof existingProviderLink.payload.linkId==='string') {
         const link=existingProviderLink.payload,owner=sessionIdentity(link.user);
         const reverse=await tx.get(crewLinkKey(owner.sub,cfg.encryptionSecret));
@@ -405,7 +404,7 @@ async function callback(_req, res, url, context) {
     });
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
     const linked = stored.payload.intent === 'link';
-    return res.end(callbackHtml(true, linked ? 'Conta Google vinculada' : known ? 'Conta Google confirmada' : 'Conta Google ainda não vinculada', linked ? 'O vínculo explícito foi concluído. Volte ao CrewCheck.' : known ? 'Volte ao CrewCheck para concluir o login.' : 'Entre com e-mail e senha uma vez e vincule esta Conta Google nas configurações.'));
+    return res.end(callbackHtml(true, linked ? 'Confirmação Google recebida' : known ? 'Conta Google confirmada' : 'Conta Google ainda não vinculada', linked ? 'Volte ao CrewCheck para concluir o vínculo na sessão que o iniciou.' : known ? 'Volte ao CrewCheck para concluir o login.' : 'Entre com e-mail e senha uma vez e vincule esta Conta Google nas configurações.'));
   } catch (error) {
     await storePut(stateKey(state), { status: 'failed', error: safeText(error instanceof Error ? error.message : error, 'O login Google falhou.') }, expiresAt, true);
     res.writeHead(400, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
@@ -460,6 +459,32 @@ async function complete(req, res, context) {
 
 }
 
+async function completeLink(req,res,context) {
+  if(req.method!=='POST') return sendJson(res,405,{ok:false,message:'Use POST.'});
+  const body=await readJson(req),state=String(body.state||'');
+  if(body.confirmLink!==true) return sendJson(res,400,{ok:false,code:'EXPLICIT_LINK_CONFIRMATION_REQUIRED',message:'Confirme o vínculo.'});
+  try {
+    const result=await withLinkTransaction(async(tx)=>{
+      const stored=state?await tx.get(stateKey(state)):null,value=stored?.payload;
+      if(value?.status!=='link_ready'||!value.owner?.sub) throw new Error('Tentativa de vínculo indisponível.');
+      const owner=sessionIdentity(value.owner),current=context.identity;
+      if(current?.sub!==owner.sub||String(current?.email||'').trim().toLowerCase()!==owner.email||!Number.isSafeInteger(current?.exp)||current.exp*1000<=Date.now()) throw new Error('Sua sessão mudou. Inicie o vínculo novamente.');
+      await freshLinkedAccount(context,owner);
+      const cfg=config(),revision=await ownerEpoch(tx,owner.sub,cfg);
+      if(revision!==value.ownerRevision) throw new Error('O vínculo foi revogado. Inicie uma nova tentativa.');
+      const providerKey=value.providerKey,forward=await tx.get(providerLinkKey(providerKey)),reverseKey=crewLinkKey(owner.sub,cfg.encryptionSecret),reverse=await tx.get(reverseKey);
+      if(forward?.payload?.user?.sub&&forward.payload.user.sub!==owner.sub) throw new Error('Esta Conta Google já está vinculada a outra conta CrewCheck.');
+      if(reverse?.payload?.providerKey&&reverse.payload.providerKey!==providerKey) throw new Error('Esta conta CrewCheck já possui outra Conta Google vinculada.');
+      const linkId=crypto.randomBytes(32).toString('base64url'),linkedAt=new Date().toISOString();
+      await tx.put(providerLinkKey(providerKey),{provider:'google',providerKey,user:owner,linkId,revision,linkedAt});
+      await tx.put(reverseKey,{provider:'google',providerKey,linkId,revision,emailHint:maskEmail(value.email),linkedAt});
+      await tx.put(stateKey(state),{...value,status:'linked',linkedAt},value.expiresAt,true);
+      return {ok:true,linked:true,provider:'google',emailHint:maskEmail(value.email)};
+    });
+    return sendJson(res,200,result);
+  } catch(error) { return sendJson(res,409,{ok:false,code:'GOOGLE_IDENTITY_LINK_NOT_READY',message:safeText(error.message,'Inicie o vínculo novamente.')}); }
+}
+
 async function connection(_req, res, context) {
   const identity = sessionIdentity(context.identity);
   if (!identity.sub) return sendJson(res, 401, { ok: false, code: 'AUTH_REQUIRED', message: 'Entre no CrewCheck para consultar o vínculo Google.' });
@@ -496,6 +521,7 @@ export async function handleGoogleIdentityRoute(req, res, url, context = {}) {
   else if (pathname === '/api/auth/google/callback') await callback(req, res, url, context);
   else if (pathname === '/api/auth/google/status') await status(req, res, url);
   else if (pathname === '/api/auth/google/complete') await complete(req, res, context);
+  else if (pathname === '/api/auth/google/link/complete') await completeLink(req,res,context);
   else if (pathname === '/api/auth/google/connection') await connection(req, res, context);
   else if (pathname === '/api/auth/google/unlink') await unlink(req, res, context);
   else sendJson(res, 404, { ok: false, message: 'Rota de identidade Google não encontrada.' });

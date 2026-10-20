@@ -5,9 +5,9 @@ import crypto from 'node:crypto';
 import ts from 'typescript';
 const source=fs.readFileSync('server/mobile/google-identity-oidc.mjs','utf8');
 const ast=ts.createSourceFile('oidc.mjs',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
-const names=new Set(['safeText','sessionIdentity','stateKey','providerLinkKey','crewLinkKey','completionKey','epochKey','ownerEpoch','freshLinkedAccount','maskEmail','callback','complete','unlink']);
+const names=new Set(['safeText','sessionIdentity','stateKey','providerLinkKey','crewLinkKey','completionKey','epochKey','ownerEpoch','freshLinkedAccount','maskEmail','callback','complete','completeLink','unlink']);
 const functions=ast.statements.filter(n=>ts.isFunctionDeclaration(n)&&names.has(n.name?.text)).map(n=>n.getText(ast).replace(/^export /,'')).join('\n');
-const user={sub:'owner-A',email:'a@example.invalid',role:'premium'};
+const user={sub:'owner-A',email:'a@example.invalid',role:'premium',exp:Math.floor(Date.now()/1000)+3600};
 function fixture() {
  const db=new Map(),issued=[],cfg={configured:true,encryptionSecret:'synthetic-only',clientId:'synthetic'},contexts={};let tail=Promise.resolve(),releaseExchange,exchangeStarted;
  const entered=new Promise(r=>exchangeStarted=r);
@@ -16,7 +16,7 @@ function fixture() {
  sendJson:(res,status,body)=>Object.assign(res,{status,body}),storeGet:tx.get,storePut:tx.put,
  withLinkTransaction:fn=>{const run=tail.then(async()=>{const snapshot=structuredClone(db);try{return await fn(tx);}catch(e){db.clear();for(const[k,v]of snapshot)db.set(k,v);throw e;}});tail=run.catch(()=>{});return run;},
  exchangeCode:async()=>{exchangeStarted();await new Promise(r=>releaseExchange=r);return{id_token:'synthetic'};},verifyGoogleIdToken:async()=>({sub:'google-synthetic',email:user.email}),callbackHtml:()=>''};
- vm.createContext(sandbox);vm.runInContext(functions+'\nthis.api={complete,unlink,callback,stateKey,crewLinkKey,providerLinkKey,epochKey};',sandbox);
+ vm.createContext(sandbox);vm.runInContext(functions+'\nthis.api={complete,completeLink,unlink,callback,stateKey,crewLinkKey,providerLinkKey,epochKey};',sandbox);
  const a=sandbox.api,providerKey=crypto.createHmac('sha256',cfg.encryptionSecret).update('google:google-synthetic').digest('hex'),pk=a.providerLinkKey(providerKey),rk=a.crewLinkKey(user.sub,cfg.encryptionSecret);
  const context={identity:user,resolveAccount:async who=>({id:who.sub,email:who.email,role:'free',name:'Canonical synthetic'}),issueSession:(_res,u)=>issued.push(u)};
  return {a,db,issued,context,pk,rk,providerKey,entered,release:()=>releaseExchange(),
@@ -47,6 +47,17 @@ const res=()=>({writeHead(){},end(){}});let cases=0;
 }
 {
  const f=fixture();f.seed();f.ready();const r=res();await f.a.complete({method:'POST',body:{state:'ready'}},r,{issueSession:f.context.issueSession});assert.equal(r.status,503);assert.equal(f.issued.length,0);cases++;
+}
+{
+ const f=fixture();f.pending();const p=f.a.callback({},res(),new URL('https://example.invalid/callback?state=pending&code=synthetic'),{...f.context,identity:{sub:'owner-B'}});await f.entered;f.release();await p;
+ assert.equal(f.db.has(f.pk),false);assert.equal(f.db.has(f.rk),false);assert.equal(f.db.get(f.a.stateKey('pending')).payload.status,'link_ready');
+ const r=res();await f.a.completeLink({method:'POST',body:{state:'pending',confirmLink:true}},r,{...f.context,identity:{sub:'owner-B',email:'b@example.invalid',exp:user.exp}});assert.equal(r.status,409);assert.equal(f.db.has(f.pk),false);cases++;
+ const success=res();await f.a.completeLink({method:'POST',body:{state:'pending',confirmLink:true}},success,f.context);assert.equal(success.status,200);assert.equal(f.db.get(f.pk).payload.user.sub,user.sub);cases++;
+}
+{
+ const f=fixture();f.pending();const p=f.a.callback({},res(),new URL('https://example.invalid/callback?state=pending&code=synthetic'),f.context);await f.entered;f.release();await p;
+ const r=res();await f.a.completeLink({method:'POST',body:{state:'pending',confirmLink:true}},r,{...f.context,identity:{...user,exp:1}});assert.equal(r.status,409);assert.equal(f.db.has(f.pk),false);cases++;
+ await f.a.unlink({method:'POST'},res(),f.context);const revoked=res();await f.a.completeLink({method:'POST',body:{state:'pending',confirmLink:true}},revoked,f.context);assert.equal(revoked.status,409);assert.equal(f.db.has(f.pk),false);cases++;
 }
 // Exercise real SQL transaction wrapper with a synthetic connection, not an engine.
 {

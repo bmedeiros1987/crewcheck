@@ -22,7 +22,7 @@ const start={ok:true,state:'synthetic-state',authUrl:'https://accounts.google.co
  const f=fixture();const p=f.api.loginWithGoogle();f.requests[0].respond(start);await flush();f.timers.shift()();await flush();f.requests[1].respond({ok:true,state:'ready'});await flush();f.requests[2].respond({ok:true,user:{id:'A',email:'A@example.invalid'},token:'accepted-A'});await p;assert.equal(f.data.get('crewcheck_auth_token'),'accepted-A');cases++;
 }
 {
- const f=fixture();f.account();const p=f.api.linkGoogleIdentity(),rejected=assert.rejects(p,/sessão mudou/);f.requests[0].respond(start);await flush();f.timers.shift()();await flush();const unlink=f.api.unlinkGoogleIdentity();f.requests[1].respond({ok:true,state:'linked',emailHint:'a***@example.invalid'});await rejected;f.requests[2].respond({ok:true,linked:false});await unlink;cases++;
+ const f=fixture();f.account();const p=f.api.linkGoogleIdentity(),rejected=assert.rejects(p,/sessão mudou/);f.requests[0].respond(start);await flush();f.timers.shift()();await flush();const unlink=f.api.unlinkGoogleIdentity();f.requests[1].respond({ok:true,state:'link_ready',emailHint:'a***@example.invalid'});await rejected;f.requests[2].respond({ok:true,linked:false});await unlink;cases++;
 }
 for(const method of ['getGoogleIdentityConnection','unlinkGoogleIdentity']){
  const f=fixture();f.account();const p=f.api[method](),rejected=assert.rejects(p,/sessão mudou/);f.account('B','token-B');f.requests[0].respond({ok:true,linked:true,emailHint:'a***@example.invalid'});await rejected;cases++;

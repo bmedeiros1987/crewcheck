@@ -8,7 +8,7 @@ import {
 type GoogleIdentityStart = { ok: true; state: string; authUrl: string; expiresAt: string };
 type GoogleIdentityStatus = {
   ok: boolean;
-  state: 'pending' | 'exchanging' | 'link_required' | 'ready' | 'linked' | 'completed' | 'failed';
+  state: 'pending' | 'exchanging' | 'link_required' | 'ready' | 'link_ready' | 'linked' | 'completed' | 'failed';
   linkRequired?: boolean;
   canComplete?: boolean;
   linked?: boolean;
@@ -74,7 +74,7 @@ async function waitForState(state: string, expected: 'login' | 'link', requireCu
     if (status.state === 'failed') throw new Error(status.message || 'O Google não concluiu a autenticação.');
     if (status.state === 'link_required') throw new Error('Esta Conta Google ainda não está vinculada. Entre com e-mail e senha uma vez e vincule-a em Configurações.');
     if (expected === 'login' && status.state === 'ready') return status;
-    if (expected === 'link' && status.state === 'linked') return status;
+    if (expected === 'link' && status.state === 'link_ready') return status;
   }
   throw new Error('O login Google demorou demais. Nenhuma sessão foi alterada; tente novamente.');
 }
@@ -101,9 +101,11 @@ export async function linkGoogleIdentity(): Promise<GoogleIdentityConnection> {
   });
   requireCurrent();
   openSecureBrowser(start.authUrl);
-  const status = await waitForState(start.state, 'link',requireCurrent);
+  await waitForState(start.state, 'link',requireCurrent);
   requireCurrent();
-  return { ok: true, linked: true, provider: 'google', emailHint: status.emailHint };
+  const result=await json<GoogleIdentityConnection>('/api/auth/google/link/complete',{method:'POST',headers:crewcheckAuthHeader(),body:JSON.stringify({state:start.state,confirmLink:true})});
+  requireCurrent();
+  return result;
 }
 
 export async function getGoogleIdentityConnection(): Promise<GoogleIdentityConnection> {
