@@ -3,6 +3,8 @@
 export function financialLedgerErasureStatements(ownerId) {
   if (typeof ownerId !== 'string' || !ownerId || ownerId.length > 254) throw new TypeError('Owner required');
   return [
+    ['DELETE FROM crewcheck_financial_channel_consents WHERE owner_id=$1', [ownerId]],
+    ['DELETE FROM crewcheck_financial_source_observations WHERE owner_id=$1', [ownerId]],
     ['DELETE FROM crewcheck_financial_revisions WHERE owner_id=$1', [ownerId]],
     ['DELETE FROM crewcheck_financial_heads WHERE owner_id=$1', [ownerId]],
   ];

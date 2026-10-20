@@ -91,7 +91,7 @@ db.deletedOwners = new Set([A.ownerId]);
 await assert.rejects(read(), {code:'FINANCIAL_OWNER_REQUIRED'});
 await assert.rejects(write(input()), {code:'FINANCIAL_OWNER_REQUIRED'});
 db.deletedOwners.clear();
-assert.deepEqual(financialLedgerErasureStatements(A.ownerId).map(x=>x[1]), [[A.ownerId],[A.ownerId]]);
+assert.deepEqual(financialLedgerErasureStatements(A.ownerId).map(x=>x[1]), [[A.ownerId],[A.ownerId],[A.ownerId],[A.ownerId]]);
 assert(financialLedgerErasureStatements(A.ownerId).every(x=>/^DELETE FROM crewcheck_financial_/.test(x[0])));
 const ddl = readFileSync(new URL('../migrations/20261017_020_financial_ledger_mysql.sql', import.meta.url), 'utf8');
 assert.match(ddl, /UNIQUE KEY financial_owner_idempotency \(owner_id, idempotency_key\)/); assert(!/REFERENCES|CASCADE|INSERT INTO/i.test(ddl.replace(/^--.*$/gm, "")));
