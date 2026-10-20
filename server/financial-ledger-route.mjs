@@ -1,6 +1,9 @@
 import { appendFinancialRecord, readFinancialLedger, FinancialLedgerError, ledgerOwner } from './financial-ledger.mjs';
 import { createFinancialSqlStore } from './financial-ledger-sql.mjs';
 import { queryUpcomingFinancialForecast } from '../shared/financialUpcoming.mjs';
+import {createFinancialConsentHost} from './financial-consent-host.mjs';
+import {createFinancialOriginalSourceProvider,financialOriginalRecordsMatch} from './financial-original-source.mjs';
+import {createFinancialChannelSqlService} from './financial-channel-sql.mjs';
 import { canonicalCaptureRequest } from './financial-canonical-capture.mjs';
 export const FINANCIAL_LEDGER_PATH = '/api/platform/finance/history';
 export const FINANCIAL_UPCOMING_PATH = '/api/platform/finance/upcoming';
@@ -14,7 +17,8 @@ async function readInput(req, limit = 16384) {
 }
 // Default off. Enabling is a separate operational step after the reviewed
 // additive migration; neither this handler nor startup applies migrations.
-export function createFinancialLedgerHandler({ enabled = () => false, identityProvider, poolProvider, allowedOrigin = () => '', storeFactory = createFinancialSqlStore, now = () => new Date() } = {}) {
+export function createFinancialLedgerHandler({ enabled = () => false, identityProvider, poolProvider, allowedOrigin = () => '', storeFactory = createFinancialSqlStore, now = () => new Date(), consentHostEnabled = () => false, sourceEvidenceEnabled = () => false, sourceEvidenceProvider = createFinancialOriginalSourceProvider() } = {}) {
+  const consentHost = createFinancialConsentHost({enabled:consentHostEnabled,poolProvider,now});
   return async (req, res, url) => {
     if (![FINANCIAL_LEDGER_PATH, FINANCIAL_UPCOMING_PATH, FINANCIAL_CAPTURE_PATH].includes(url.pathname)) return false;
     const capture = url.pathname === FINANCIAL_CAPTURE_PATH;
@@ -42,10 +46,28 @@ export function createFinancialLedgerHandler({ enabled = () => false, identityPr
         const bearer = /^Bearer\s+\S+$/i.test(req.headers.authorization || '');
         if ((origin && (!allowedOrigin() || origin !== allowedOrigin())) || (!origin && !bearer)) throw new FinancialLedgerError('FINANCIAL_ORIGIN_REQUIRED', 403);
       }
+      const captureInput = capture ? await readInput(req,262144) : null;
+      if (capture && captureInput?.action === 'channel_consent') {
+        if (Object.keys(captureInput).some(key=>!['action','command'].includes(key))) throw new FinancialLedgerError('FINANCIAL_INVALID_CONSENT');
+        send(res,200,{ok:true,...await consentHost(identity,captureInput.command)});return true;
+      }
       const db = await poolProvider();
       if (!db) throw new FinancialLedgerError('FINANCIAL_HISTORY_UNAVAILABLE', 503);
       const store = storeFactory(db);
-      if (capture) { send(res,200,{ok:true,...await canonicalCaptureRequest({identity,input:await readInput(req,262144),store})}); return true; }
+      if (capture) {
+        const result = await canonicalCaptureRequest({identity,input:captureInput,store});
+        let freshness={state:'unavailable',reason:'source_evidence_not_enabled'};
+        if(sourceEvidenceEnabled()){try{freshness=await sourceEvidenceProvider({identity,source:structuredClone(result.source&&typeof result.source==='object'?result.source:captureInput.source)});}catch{freshness={state:'unavailable',reason:'original_publication_unavailable'};}}
+        if(captureInput?.action==='capture'&&freshness?.state==='available'&&!financialOriginalRecordsMatch({identity,source:captureInput.source,receipts:result.receipts,records:await store.list(ledgerOwner(identity))}))freshness={state:'unavailable',reason:'original_capture_payload_mismatch'};
+        const validEvidence=()=>sourceEvidenceEnabled()&&freshness?.state==='available'&&Number.isFinite(Date.parse(freshness.validUntil))&&now().getTime()<=Date.parse(freshness.validUntil);
+        if (captureInput?.action==='capture' && validEvidence()) {
+          const observation=freshness.observation;
+          if(observation?.sourceFingerprint!==captureInput.source.fingerprint)throw new FinancialLedgerError('FINANCIAL_SOURCE_REVISION_MISMATCH');
+          const service=createFinancialChannelSqlService(db,{now});
+          for(const receipt of result.receipts){if(!validEvidence())break;await service.recordSourceObservation(identity,{entryId:receipt.id,revision:receipt.revision,...observation});}
+        }
+        send(res,200,{ok:true,...result,sourceFreshness:validEvidence()?{state:'available',sourceAsOf:freshness.observation?.sourceAsOf}:{state:'unavailable',reason:freshness?.reason||'source_publication_not_proven'}});return true;
+      }
       if (req.method === 'GET') {
         const result = await readFinancialLedger({ store, identity, periodStart: url.searchParams.get('periodStart'), periodEnd: url.searchParams.get('periodEnd'), aggregationLevel: url.searchParams.get('aggregationLevel') || 'item' });
         send(res, 200, { ok: true, ...result });
