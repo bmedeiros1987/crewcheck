@@ -259,7 +259,9 @@ export function buildCrewCheckWatchSnapshot(
   const expired = Number.isFinite(endMs) && now > endMs;
   const boardingMs = event.kind === 'flight' && departure && provenDomestic(event) ? startMs - 40 * 60_000 : NaN;
 
-  const rawGate = clean(event.gate);
+  // Published schedule gates are planning, not current operational confirmation.
+  // applyNextFlightToWatchSnapshot supplies only the admitted/manual decision.
+  const rawGate = '';
   const remoteStand = /\b(REMOTA|REMOTO|REMOTE|PATIO|PÁTIO)\b/i.test(rawGate);
   const gate = remoteStand ? '' : rawGate;
 
@@ -354,7 +356,7 @@ export function buildCrewCheckWatchSnapshot(
       const route = kind === 'flight'
         ? [clean(candidate.origin), clean(candidate.destination)].filter(Boolean).join(' → ')
         : clean(candidate.destination) || clean(candidate.origin);
-      const rawGate = clean(candidate.gate);
+      const rawGate = ''; // Filled only by the confirmed occurrence projection.
       const remote = /\b(REMOTA|REMOTO|REMOTE|PATIO|PÁTIO)\b/i.test(rawGate);
       return {
         id: clean(candidate.canonical?.id) || candidate.id,
@@ -405,7 +407,7 @@ export function buildCrewCheckWatchSnapshot(
           clean(nextFlightEvent.origin) && clean(nextFlightEvent.destination)
             ? `${clean(nextFlightEvent.origin)} → ${clean(nextFlightEvent.destination)}`
             : '',
-          clean(nextFlightEvent.gate),
+          '', // No unconfirmed schedule gate on the operational watch glance.
         ].filter(Boolean).join(' • ')
       : '',
     overnight: state === 'OVERNIGHT'

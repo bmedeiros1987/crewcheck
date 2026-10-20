@@ -57,6 +57,11 @@ export function measureCanonicalDuty(events: readonly CanonicalRosterEvent[], se
   }
   const group = [...unique.values()].sort((a,b) => Date.parse(a.startDateTime)-Date.parse(b.startDateTime));
   const first = group[0], last = group.at(-1)!;
+  // The elapsed span belongs to the whole journey, not the selected leg.
+  // Retain each published work type (including PS) without reclassifying it.
+  result.date = first.date;
+  result.base = first.publishedDay.base || first.origin;
+  result.program = group.map(e => `${e.flightNumber || e.publishedDay.pairingCode || 'Atividade'}${e.leg?.workType ? ` (${e.leg.workType})` : ''}`).join(' → ');
   code = group.map(e => `${e.publishedDay.type || ''} ${e.publishedDay.pairingCode || ''}`).join(' ').toUpperCase();
   reserveDeclared = /\b(?:ASB|RES|RESERVA|RSV)\b/.test(code);
   result.reportSource = first.leg?.presentationTime ? 'published' : first.publishedDay.dutyReportSource || (first.publishedDay.dutyReport ? 'unknown' : 'absent');

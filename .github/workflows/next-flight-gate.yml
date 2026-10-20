@@ -6,6 +6,10 @@ on:
       - 'server/gate-source-update.mjs'
       - 'client/src/lib/manualGateNotices.ts'
       - 'scripts/regression-manual-gate-review*.mjs'
+      - 'scripts/regression-manual-gate-legacy-review.mjs'
+      - 'scripts/regression-mobile-watch-publish-cadence.mjs'
+      - 'scripts/regression-watch-automatic-field-expiry.mjs'
+      - 'scripts/regression-manual-operational-fields*.mjs'
       - 'shared/gate-query-day*'
       - 'shared/timezone-choice.mjs'
       - 'shared/airport-timezones.mjs'
@@ -18,6 +22,7 @@ on:
       - 'scripts/regression-radar-availability-browser.mjs'
       - 'scripts/regression-radar-provider-provenance.mjs'
       - 'scripts/regression-radar-source-occurrence.mjs'
+      - 'scripts/regression-flightaware-response-selection.mjs'
       - 'scripts/regression-gate-query-day.mjs'
       - 'scripts/regression-gate-query-proof.mjs'
       - 'scripts/regression-gate-query-binding.mjs'
@@ -52,6 +57,7 @@ jobs:
           TZ=UTC node scripts/regression-radar-provider-provenance.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
+          node scripts/regression-flightaware-response-selection.mjs
           TZ=UTC node scripts/regression-radar-source-occurrence.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-source-occurrence.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-source-occurrence.mjs
@@ -63,6 +69,10 @@ jobs:
           TZ=America/Sao_Paulo node scripts/regression-gate-query-proof.mjs
           TZ=Pacific/Auckland node scripts/regression-gate-query-proof.mjs
           node scripts/regression-manual-gate-review.mjs
+          node scripts/regression-manual-gate-legacy-review.mjs
+          node scripts/regression-mobile-watch-publish-cadence.mjs
+          node scripts/regression-watch-automatic-field-expiry.mjs
+          node scripts/regression-manual-operational-fields.mjs
           TZ=UTC node scripts/regression-next-flight-gate-pulse.mjs
           TZ=UTC node scripts/regression-next-flight-gate.mjs
           TZ=America/Sao_Paulo node scripts/regression-next-flight-gate.mjs
@@ -73,6 +83,7 @@ jobs:
           TZ=UTC node scripts/regression-radar-provider-provenance.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
+          node scripts/regression-flightaware-response-selection.mjs
           TZ=UTC node scripts/regression-radar-source-occurrence.mjs
           TZ=America/Sao_Paulo node scripts/regression-radar-source-occurrence.mjs
           TZ=Pacific/Auckland node scripts/regression-radar-source-occurrence.mjs
@@ -84,6 +95,10 @@ jobs:
           TZ=America/Sao_Paulo node scripts/regression-gate-query-proof.mjs
           TZ=Pacific/Auckland node scripts/regression-gate-query-proof.mjs
           node scripts/regression-manual-gate-review.mjs
+          node scripts/regression-manual-gate-legacy-review.mjs
+          node scripts/regression-mobile-watch-publish-cadence.mjs
+          node scripts/regression-watch-automatic-field-expiry.mjs
+          node scripts/regression-manual-operational-fields.mjs
           TZ=UTC node scripts/regression-next-flight-gate-pulse.mjs
           TZ=UTC node scripts/regression-next-flight-gate-prepared.mjs
           TZ=America/Sao_Paulo node scripts/regression-next-flight-gate-prepared.mjs
@@ -102,3 +117,4 @@ jobs:
         run: |
           node scripts/regression-next-flight-gate-pulse-browser.mjs
           node scripts/regression-manual-gate-review-browser.mjs
+          node scripts/regression-manual-operational-fields-browser.mjs

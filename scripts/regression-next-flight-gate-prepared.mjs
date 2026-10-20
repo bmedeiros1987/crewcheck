@@ -47,7 +47,7 @@ try {
   }
   m.clearPendingNavigationContext();const global=vm.createContext({...m,view:'weather',events:[globalFlight,event],flightEvent:globalFlight});vm.runInContext(pickerCode,global);assert.equal(global.selected.id,globalFlight.id,'global navigation keeps normal selection');
 
-  const positive={ok:true,flight:event.flightNumber,gate:'7',origin:'GRU',destination:'REC',sourceOrigin:'GRU',sourceDestination:'REC',scheduledDepartureUtc:canonical.startDateTime,departure:canonical.startDateTime,updatedAt:now-60_000};
+  const positive={ok:true,flight:event.flightNumber,gate:'7',origin:'GRU',destination:'REC',sourceOrigin:'GRU',sourceDestination:'REC',scheduledDepartureUtc:canonical.startDateTime,departure:canonical.startDateTime,updatedAt:now-60_000,operationalEvidence:{gate:{version:1,value:'7',sourceObservedAt:new Date(now-60000).toISOString(),provenance:'synthetic-prepared-field-proof'}}};
   function savedNotice(payload,manual=null,previous=positive){
     const notices=[],writes=[];
     const context=vm.createContext({Date:FixedDate,storage:{set:(...args)=>writes.push(args)},readRadarSnapshot:()=>previous,radarSnapshotKey:m.radarSnapshotStorageKey,flightOperationalDate:m.flightOperationalDate,window:{dispatchEvent(){}},CustomEvent:class{},localStorage:{},readManualGate:()=>manual,manualGateAccountKey:()=> 'synthetic',getStoredUser:()=>({id:'SYNTHETIC'}),normalizeBoardingGate:m.normalizeBoardingGate,publishCrewCheckNotice:n=>notices.push(n),reconcileCrewCheckPulse(){},manualGateNoticeScope:()=>"synthetic-scope",retainLatestGateEvidence:m.retainLatestGateEvidence,nextGateUpdateWatermark:m.nextGateUpdateWatermark,gateChangeAlertAllowed:epoch=>m.gateChangeAlertAllowed(epoch,now),resolveNextFlightGate:input=>m.resolveNextFlightGate({...input,now}),eventStartDateTime:e=>new Date(e.canonical.startDateTime)});
@@ -56,7 +56,7 @@ try {
   }
   const bad=[{...positive,gate:'12',flight:'QA9999'},{...positive,gate:'12',origin:'REC',destination:'GRU'},{...positive,gate:'12',scheduledDepartureUtc:'2032-10-11T02:50:00Z'},{...positive,gate:'12',ok:false},{...positive,gate:'POS 12'}];
   for(const payload of bad){const r=savedNotice(payload);assert.equal(r.notices.length,0,'rejected source must not emit even in-app gate notice');assert.equal(r.writes.length,1,'cache write remains existing behavior, guarded consumers reject it');}
-  const change=savedNotice({...positive,gate:'12'});assert.equal(change.notices.length,1);assert.equal(change.notices[0].systemNotification,'background');assert.equal(change.decision.gate,'12');
+  const confirmedChange={...positive,gate:'12',operationalEvidence:{gate:{version:1,value:'12',sourceObservedAt:new Date(now-60000).toISOString(),provenance:'synthetic-prepared-field-proof'}}};const change=savedNotice(confirmedChange);assert.equal(change.notices.length,1);assert.equal(change.notices[0].systemNotification,'background');assert.equal(change.decision.gate,'12');
   assert.equal(savedNotice({...positive,gate:'7'}).notices.length,0,'unchanged source dedupes');
   const manual={gate:'24'};assert.equal(savedNotice({...positive,gate:'12',origin:'REC',destination:'GRU'},manual).notices.length,0,'manual cannot make rejected source alertable');
   assert.equal(savedNotice({...positive,gate:'12'},manual).notices.length,0,'unproven source update cannot alert as newer than manual');

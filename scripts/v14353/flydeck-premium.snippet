@@ -96,9 +96,10 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
   }
 
   const isFlight = event.kind === 'flight';
-  const gate = safe(radar?.gate || event.gate, 'A confirmar');
-  const terminal = safe(radar?.terminal || event.terminal, '');
-  const status = safe(radar?.status || event.status, 'Programado');
+  const operationalInfo = radarGateInfo(event, radar);
+  const gate = safe(operationalInfo.gate, 'Não confirmado');
+  const terminal = operationalInfo.gate ? safe(operationalInfo.terminal, '') : '';
+  const status = isFlight ? safe(operationalInfo.status, 'Não confirmado') : safe(event.status, 'Programação publicada');
   const route = isFlight ? `${safe(event.origin, '—')} → ${safe(event.destination, '—')}` : safe(city(event.origin), safe(event.origin, 'Local a confirmar'));
   const programTitle = isFlight ? safe(event.flightNumber, rosterEventTitle(event)) : rosterEventTitle(event);
   const countdown = flyDeckCountdownV14353(event, nowMs);
