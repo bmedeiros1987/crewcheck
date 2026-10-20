@@ -1,7 +1,7 @@
 import * as airportTimeZones from '../shared/airport-timezones.mjs';
 import * as gateQueryDay from '../shared/gate-query-day.mjs';
 import {stayEditorKey} from '../shared/stay-editor-store.mjs';
-import {buildSync} from 'esbuild';
+import * as stayEditPlan from '../shared/stay-edit-plan.mjs';
 // Exercise the actual Home effect offline: no duplicate publisher implementation.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -32,16 +32,21 @@ localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'synthetic-watc
 localStorage.setItem('crewcheck_auth_token', 'synthetic-offline-token');
 // Strip types only; execute real modules in separate scopes with their real imports.
 // This guard also supports current main before the Next Flight imports are integrated.
-function actualModule(name) {
+function actualModule(name, imports = {}) {
   const filename = `client/src/lib/${name}.ts`;
-  const result=buildSync({entryPoints:[filename],bundle:true,platform:'node',format:'cjs',write:false,
-    alias:{'@':process.cwd()+'/client/src'},logLevel:'silent'});
-  const module={exports:{}};
-  vm.runInNewContext(result.outputFiles[0].text,{module,exports:module.exports,Date:FixtureDate,localStorage},{filename});
-  return module.exports;
+  let executable = stripTypeScriptTypes(fs.readFileSync(filename, 'utf8'));
+  if (name === 'watchContext') assert.equal((executable.match(/export function buildCrewCheckWatchSnapshot/g) || []).length, 1);
+  const exported = [...executable.matchAll(/^export (?:async )?(?:function|const) (\w+)/gm)].map(match => match[1]);
+  assert(exported.length, `Actual exports required: ${filename}`);
+  executable = executable.replace(/^import \{([^}]+)\} from ['"]([^'"]+)['"];?$/gm, (_, names, dependency) => {
+    assert(imports[dependency], `Actual dependency required: ${dependency}`);
+    return `const {${names.replace(/\bas\b/g, ':')}} = dependencies[${JSON.stringify(dependency)}];`;
+  });
+  assert(!/^import /m.test(executable), `Unsupported actual import: ${filename}`);
+  return vm.runInNewContext(executable.replace(/^export /gm, '') + `\n({${exported.join(',')}})`,
+    { Date: FixtureDate, localStorage, dependencies: imports }, { filename });
 }
-const snapshotModule = actualModule('watchContext');
-const stayModule=actualModule('stayEditorStore'),ownershipModule=actualModule('alertRosterOwnership');
+const snapshotModule = actualModule('watchContext', { '../../../shared/airport-timezones.mjs': airportTimeZones, '../../../shared/stay-edit-plan.mjs':stayEditPlan });
 const gateBindings = {};
 if (source.includes("from '@/lib/nextFlightGate'")) {
   const display = actualModule('rosterDisplayDate');
@@ -65,7 +70,7 @@ const window = {
   setInterval(handler, delay) { assert.equal(delay, 60_000); timers.set(1, handler); return 1; },
   clearInterval(id) { assert(timers.delete(id)); },
 };
-const context = vm.createContext({ window, events, event, localStorage, Date: FixtureDate, ...gateBindings, stayEditorKey, savedStayEditorEvent:stayModule.savedStayEditorEvent, alertRosterOwned:ownershipModule.alertRosterOwned, bundle:{roster:{days:[]}},
+const context = vm.createContext({ window, events, event, localStorage, Date: FixtureDate, ...gateBindings, stayEditorKey, bundle:{roster:{days:[]}},
   CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
   buildCrewCheckWatchSnapshot(actualEvents, actualEvent, route, at, report) { if (!actualEvent.placeholder) assert.equal(actualEvents, events); return snapshotModule.buildCrewCheckWatchSnapshot(actualEvents, actualEvent, route, at ?? now, report); },
 });
