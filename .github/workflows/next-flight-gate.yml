@@ -8,6 +8,7 @@ on:
       - 'scripts/regression-manual-gate-review*.mjs'
       - 'scripts/regression-manual-gate-legacy-review.mjs'
       - 'scripts/regression-mobile-watch-publish-cadence.mjs'
+      - 'scripts/regression-watch-automatic-field-expiry.mjs'
       - 'scripts/regression-manual-operational-fields*.mjs'
       - 'shared/gate-query-day*'
       - 'shared/timezone-choice.mjs'
@@ -70,6 +71,7 @@ jobs:
           node scripts/regression-manual-gate-review.mjs
           node scripts/regression-manual-gate-legacy-review.mjs
           node scripts/regression-mobile-watch-publish-cadence.mjs
+          node scripts/regression-watch-automatic-field-expiry.mjs
           node scripts/regression-manual-operational-fields.mjs
           TZ=UTC node scripts/regression-next-flight-gate-pulse.mjs
           TZ=UTC node scripts/regression-next-flight-gate.mjs
@@ -95,6 +97,7 @@ jobs:
           node scripts/regression-manual-gate-review.mjs
           node scripts/regression-manual-gate-legacy-review.mjs
           node scripts/regression-mobile-watch-publish-cadence.mjs
+          node scripts/regression-watch-automatic-field-expiry.mjs
           node scripts/regression-manual-operational-fields.mjs
           TZ=UTC node scripts/regression-next-flight-gate-pulse.mjs
           TZ=UTC node scripts/regression-next-flight-gate-prepared.mjs
