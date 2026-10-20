@@ -1635,6 +1635,7 @@ function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; t
 type RadarSnapshot = {
   gateUpdate?: GateSourceUpdate | null;
   gateUpdateWatermark?: GateUpdateWatermark | null;
+  gateEvidenceReceivedAt?: number;
   httpStatus?: number;
   querySuppressed?: boolean;
   queryReason?: string;
@@ -1715,7 +1716,7 @@ function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapsho
   const previous = readRadarSnapshot(event);
   // A origem/destino da fonte ficam preservados para recusar portão de outro trecho.
   const evidence = previous?.gateUpdate ? retainLatestGateEvidence(event, previous, payload) : payload;
-  const snapshot = { ...evidence, gateUpdateWatermark: (payload.gateUpdate || previous?.gateUpdateWatermark) ? nextGateUpdateWatermark(event, previous, payload) : null, operationalDeparture: evidence.operationalDeparture ?? evidence.departure, departure: evidence.scheduledDepartureUtc ?? evidence.departure, sourceOrigin: evidence === previous ? previous.sourceOrigin : payload.origin, sourceDestination: evidence === previous ? previous.sourceDestination : payload.destination, flight: evidence.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: evidence === previous ? previous.updatedAt : Date.now() };
+  const snapshot = { ...evidence, gateUpdateWatermark: (payload.gateUpdate || previous?.gateUpdateWatermark) ? nextGateUpdateWatermark(event, previous, { ...payload, updatedAt: Date.now() }) : null, operationalDeparture: evidence.operationalDeparture ?? evidence.departure, departure: evidence.scheduledDepartureUtc ?? evidence.departure, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: evidence.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
   const key = radarSnapshotKey(event);
   storage.set(key, JSON.stringify(snapshot));
   window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));

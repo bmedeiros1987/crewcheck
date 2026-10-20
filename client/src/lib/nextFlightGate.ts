@@ -55,6 +55,8 @@ export type RadarGateSnapshot = {
   /** Source-produced departure-gate update, never the local fetch/cache clock. */
   gateUpdate?: GateSourceUpdate | null;
   gateUpdateWatermark?: GateUpdateWatermark | null;
+  /** Original receipt anchor of retained gate evidence, independent of live status. */
+  gateEvidenceReceivedAt?: number;
   origin?: string;
   destination?: string;
 };
@@ -283,6 +285,8 @@ export function canonicalFlightId(value: unknown): string {
 export function sourceGateUpdate(event: NextFlightLike, radar: RadarGateSnapshot | null, now = Date.now()): ManualGateReviewInfo['candidate'] {
   if (!Number.isFinite(now)) return null;
   const proof = radar?.gateUpdate;
+  const receipt = radar?.gateEvidenceReceivedAt ?? radar?.updatedAt;
+  if (typeof receipt !== 'number' || !Number.isFinite(receipt) || receipt <= 0 || receipt > now || now - receipt > RADAR_GATE_STALE_MS) return null;
   const at = radarSourceEpoch(proof?.sourceUpdatedAt);
   const expected = flightDepartureEpochMs(event);
   const normalized = normalizeBoardingGate(proof?.gate);
@@ -316,12 +320,14 @@ export function nextGateUpdateWatermark(event: NextFlightLike, previous: RadarGa
   return result;
 }
 
-/** Retain the last proven source update while it is fresh. A later receipt,
- * missing proof or older source response cannot erase a pending choice. Keep
- * its original receipt time too; this never makes old evidence fresh again. */
+/** Keep only the last proven gate and its original receipt anchor while fresh.
+ * Status, operational times, aircraft, terminal and query receipt remain live. */
 export function retainLatestGateEvidence<T extends RadarGateSnapshot>(event: NextFlightLike, previous: T | null, incoming: T, now = Date.now()): T {
-  const before = sourceGateUpdate(event, previous, now), after = sourceGateUpdate(event, incoming, now);
-  return previous && before && (!after || after.sourceUpdatedAtEpochMs < before.sourceUpdatedAtEpochMs) ? previous : incoming;
+  const before = sourceGateUpdate(event, previous, now);
+  const after = sourceGateUpdate(event, { ...incoming, updatedAt: now }, now);
+  return previous && before && (!after || after.sourceUpdatedAtEpochMs < before.sourceUpdatedAtEpochMs)
+    ? { ...incoming, gate: previous.gate, gateUpdate: previous.gateUpdate, gateEvidenceReceivedAt: previous.gateEvidenceReceivedAt ?? previous.updatedAt }
+    : incoming;
 }
 
 function manualGateReview(event: NextFlightLike, radar: RadarGateSnapshot | null, manual: ManualGateEntry | null, sourceGate: string, stale: boolean, now: number): ManualGateReviewInfo {
@@ -431,7 +437,8 @@ export function resolveNextFlightGate(input: {
   const radarGate = radar ? normalizeBoardingGate(radar.gate) : { gate: '', remote: false, position: false };
   if (radar && radarGate.position) radarRejected = 'position';
   const rosterGate = normalizeBoardingGate(event.gate);
-  const radarUpdatedAt = radar && Number(radar.updatedAt) > 0 && Number(radar.updatedAt) <= now + 60_000 ? Number(radar.updatedAt) : 0;
+  const radarGateReceipt = radar?.gateEvidenceReceivedAt ?? radar?.updatedAt;
+  const radarUpdatedAt = radar && Number(radarGateReceipt) > 0 && Number(radarGateReceipt) <= now + 60_000 ? Number(radarGateReceipt) : 0;
   const radarStale = Boolean(radar) && (!radarUpdatedAt || now - radarUpdatedAt > RADAR_GATE_STALE_MS);
 
   const sourceGate = radarGate.gate ? { ...radarGate, source: 'radar' as const } : rosterGate.gate ? { ...rosterGate, source: 'roster' as const } : null;
