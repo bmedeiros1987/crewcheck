@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import {createRequire} from 'node:module';
+import {build} from 'esbuild';
+const require=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url),{chromium}=require('playwright');
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'regulation-prefill-browser-'));
+const source=path.resolve(process.env.REGULATION_COMPONENT_SOURCE||'client/src/components/regulation/RegulationScenarioView.tsx');
+const day={date:'20/10/2032',type:'VOO',dutyReport:'06:00',dutyReportSource:'published',dutyDebrief:'12:30',dutyDebriefSource:'published',dutyHours:6.5,legs:[{departureTime:'07:00',arrivalTime:'12:00',origin:'BSB',destination:'GRU',flightNumber:'TEST0001',duration:300}]};
+const entry=`import React from 'react';import {createRoot} from 'react-dom/client';import View from ${JSON.stringify(source)};const root=createRoot(document.getElementById('root'));const day=${JSON.stringify(day)};window.__render=(id='first',date=day.date)=>root.render(<View scheduleDay={{...day,date}} program={{id,leg:day.legs[0],startDateTime:'2032-10-20T10:00:00.000Z'}} compliance={{legalProfile:{role:'cabin',actName:'Perfil ACT sintético'}}}/>);window.__render();`;
+await build({stdin:{contents:entry,loader:'jsx',resolveDir:process.cwd()},bundle:true,jsx:'automatic',format:'iife',outfile:path.join(dir,'app.js'),alias:{'@':path.resolve('client/src'),'@shared':path.resolve('shared')},logLevel:'silent'});
+const server=http.createServer((req,res)=>{const file=req.url==='/app.js'?'app.js':req.url==='/app.css'?'app.css':null;res.setHeader('Content-Type',file?.endsWith('.js')?'text/javascript':file?'text/css':'text/html');res.end(file?fs.readFileSync(path.join(dir,file)):'<html><head><link rel="stylesheet" href="/app.css"></head><body><div id="root"></div><script src="/app.js"></script></body></html>');});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
+const browser=await chromium.launch({headless:true});
+try{for(const timezoneId of ['UTC','Asia/Tokyo','America/Sao_Paulo']){
+ const context=await browser.newContext({timezoneId,serviceWorkers:'block'});let external=0;const errors=[];
+ await context.route('**/*',route=>new URL(route.request().url()).origin===origin?route.continue():(external++,route.abort()));
+ await context.addInitScript(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'fixture-A',email:'fixture@example.invalid',role:'user'}));localStorage.setItem('crewcheck_auth_token','offline-fixture');});
+ const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(origin);await page.getByLabel('Decolagem base',{exact:true}).waitFor({state:'attached'});
+ assert.equal(await page.getByLabel('Decolagem base',{exact:true}).inputValue(),'2032-10-20T07:00','regression: programming must hydrate at mount');
+ assert.notEqual(await page.getByLabel('Limite normal de encerramento',{exact:true}).inputValue(),'','existing engine must hydrate its reference');
+ assert.match(await page.locator('section.cc-regulation-scenario').textContent(),/Perfil ACT sintético/);
+ await page.locator('summary').first().click();
+ const taxi=page.getByLabel('Táxi de chegada em minutos',{exact:true});await taxi.fill('7');
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_theme','dark');window.dispatchEvent(new StorageEvent('storage',{key:'crewcheck_theme',newValue:'dark',storageArea:localStorage}));});assert.equal(await taxi.inputValue(),'7','unrelated storage change must preserve field edits');assert.equal(await page.getByLabel('Decolagem base',{exact:true}).inputValue(),'2032-10-20T07:00','same-session theme change must retain source hydration');
+ await page.evaluate(()=>window.__render('first','21/10/2032'));assert.equal(await taxi.inputValue(),'7','source change retains field override');assert.equal(await page.getByLabel('Revisei a referência do limite normal',{exact:true}).isChecked(),false);
+ await page.evaluate(()=>window.__render('second'));await page.waitForFunction(()=>document.querySelector('[aria-label="Táxi de chegada em minutos"]').value==='');
+ assert.equal(await page.getByLabel('Condição de aclimatação',{exact:true}).inputValue(),'unknown');assert.equal(await page.getByLabel('Duração em voo em minutos',{exact:true}).inputValue(),'');
+ await taxi.fill('9');await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','offline-renewed');window.dispatchEvent(new StorageEvent('storage',{key:'crewcheck_auth_token',oldValue:'offline-fixture',newValue:'offline-renewed',storageArea:localStorage}));});await page.waitForFunction(()=>document.querySelector('[aria-label="Táxi de chegada em minutos"]').value==='');assert.equal(await page.getByLabel('Decolagem base',{exact:true}).inputValue(),'','actual storage session change must discard stale source');await taxi.fill('11');await page.evaluate(()=>{window.dispatchEvent(new Event('crewcheck:auth-will-change'));localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'fixture-B',email:'other@example.invalid',role:'user'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.waitForFunction(()=>document.querySelector('[aria-label="Táxi de chegada em minutos"]').value==='');
+ assert.equal(await page.getByLabel('Decolagem base',{exact:true}).inputValue(),'','stale source must not hydrate another owner');assert.equal(await page.getByLabel('Limite normal de encerramento',{exact:true}).inputValue(),'');assert.doesNotMatch(await page.locator('section.cc-regulation-scenario').textContent(),/Perfil ACT sintético/);assert.deepEqual(errors,[]);assert.equal(external,0);await context.close();
+ }console.log('PASS actual regulation component: mount hydration/profile reference, source changes preserve field overrides, program/account reset, unknown evidence, three device zones, offline');
+}finally{await browser.close();await new Promise(resolve=>server.close(resolve));fs.rmSync(dir,{recursive:true,force:true});}

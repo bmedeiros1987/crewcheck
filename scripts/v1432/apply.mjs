@@ -58,7 +58,7 @@ update('client/src/pages/Home.tsx', (source) => {
     '</span></header>{dayEvents.map(e =>',
     '</span><RosterRegulationBadge day={day}/></header>{dayEvents.map(e =>',
     'badge no cabeçalho de cada dia');
-  next = required(next,
+  if (!next.includes("scheduleDay={regulationDay} program={regulationEvent?.canonical}")) next = required(next,
     "{view === 'regulation' && <ManualRegulationView compliance={compliance}/>}",
     "{view === 'regulation' && <ManualRegulationView compliance={compliance} scheduleDay={event?.day}/>}",
     'programação do dia no cálculo');
