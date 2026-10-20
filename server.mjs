@@ -71,6 +71,7 @@ function publicRadarPayload(item = {}) {
     scheduledDepartureUtc: item.scheduledDepartureUtc,
     sourceReceivedAt: item.sourceReceivedAt,
     gateUpdate: item.gateUpdate?.provider === 'custom' ? item.gateUpdate : null,
+    operationalConflicts: Array.isArray(item.operationalConflicts) ? item.operationalConflicts.filter(field => ['gate','status','registration'].includes(field)) : [],
     arrival: firstKnown(item.arrival),
     origin: firstKnown(item.origin),
     destination: firstKnown(item.destination),
@@ -79,7 +80,7 @@ function publicRadarPayload(item = {}) {
     latencyMs: Number(item.latencyMs || 0),
     quality: Number(item.quality || item.score || 0),
     alternatives: Number(item.alternatives || 0),
-    message: firstKnown(item.message, item.ok ? 'Radar atualizado.' : 'Radar aguardando fonte operacional.'),
+    message: item.ok ? 'Resposta da fonte recebida; confirmação operacional depende da evidência de cada campo.' : firstKnown(item.message, 'Radar aguardando fonte operacional.'),
   };
 }
 function scoreRadar(item = {}, ctx = {}) {
@@ -160,12 +161,12 @@ async function providerFlightAware(ctx, timeoutMs) {
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional configurada, mas sem dados agora.' };
   }
   const sourceFlights = Array.isArray(payload?.flights) ? payload.flights : [];
+  // Reuse #1143's response-owned occurrence filter on the existing production path.
   const exactFlights = ctx.gateQueryEvidence ? sourceFlights.filter(item => radarResultDecision(normalizeFlightAwareFlight(item, ctx), ctx.gateQueryEvidence, Date.now()).allowed) : null;
   const flights = exactFlights ? exactFlights.length === 1 ? exactFlights : [] : sourceFlights;
   const row = flights.find((item) => !item.cancelled && !item.actual_in) || flights[0];
   if (!row) {
-    // A healthy API response without this occurrence is flight-level no-data.
-    // It must not suppress unrelated accounts/flights via provider cooldown.
+    // Successful no-data/ambiguity is not a provider outage.
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Voo não localizado na fonte operacional.' };
   }
   markProvider('flightaware', true);
@@ -356,7 +357,9 @@ async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
         resolve({ ok: false, configured: configuredProviders().some((p) => p.available), status: 'Aguardando', message: 'Nenhuma fonte respondeu dentro do limite operacional.', latencyMs: Date.now() - started, quality: 0, alternatives: 0 });
         return;
       }
-      resolve(publicRadarPayload({ ...best, alternatives: okResults.length || results.filter(Boolean).length }));
+      const operationalConflicts = ['gate', 'status', 'registration'].filter(field =>
+        new Set(okResults.map(row => String(row[field] || '').trim().toUpperCase()).filter(Boolean)).size > 1);
+      resolve(publicRadarPayload({ ...best, operationalConflicts, alternatives: okResults.length || results.filter(Boolean).length }));
     };
     const timer = setTimeout(finish, timeoutMs + 250);
     let pending = providers.length;

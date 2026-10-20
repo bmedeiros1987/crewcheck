@@ -7,6 +7,7 @@ import type {CanonicalRosterEvent} from '@/lib/canonicalRoster';
 import {resolvePerDiemRule} from '@/lib/financialRules';
 import {publishedDutyEndpoints} from '@/lib/canonicalDutyMeasurement';
 import {regulationScenarioSeed,regulationDraftForm,regulationScheduleProjection} from '@shared/regulationScenarioPrefill.mjs';
+import {regulationContextExplanation} from '@shared/regulationContextExplanation.mjs';
 import type {RosterDay} from '@/lib/pdfParser';
 import type {ScheduleDayLike} from '@/components/v1432/ManualRegulationView';
 import {projectRegulationScenario,explicitInstant} from '@shared/regulationTemporalScenario.mjs';
@@ -60,6 +61,7 @@ export default function RegulationScenarioView({scheduleDay,compliance,program}:
  const offsetValid=/^[+-]\d{2}:\d{2}$/.test(form.offset)&&explicitInstant('2026-01-01T00:00'+form.offset)!==null;
  const input={takeoffAt:offsetValid&&form.takeoff?form.takeoff+form.offset:'',normalDutyEndAt:offsetValid&&form.normalEnd?form.normalEnd+form.offset:'',limitReviewed:form.reviewed,flightMinutes:number(form.flight),flightDurationSource:form.flight?'user_estimate':'unknown',delayMinutes:number(form.delay),taxiInMinutes:number(form.taxi),operation:form.operation,postFlightMinutes:number(form.postFlight),additionalTasksMinutes:number(form.tasks),extensionMinutes:form.extension?60:0};
  const detailedResult=projectRegulationScenario(input),result=form.method==='schedule'?regulationScheduleProjection(form):detailedResult,known=result.state!=='indeterminate',within=result.state==='within_temporal_reference';
+ const explanation=regulationContextExplanation({allowed:sourceAllowed,scheduleDay,program,reference,form,result});
  const acclimatization=form.acclimatization==='acclimatized'?'Aclimatado':form.acclimatization==='not_acclimatized'?'Não aclimatado':'Indeterminado';
  const alerts=(sourceAllowed?compliance?.alerts||[]:[]).filter(a=>a.actionable!==false&&!['dados_insuficientes','informativa'].includes(a.classification||'')).slice(0,2);
  function openDetails(){if(details.current){details.current.open=true;details.current.scrollIntoView({block:'start',behavior:'smooth'});details.current.querySelector<HTMLInputElement>('input')?.focus({preventScroll:true});}}
@@ -67,6 +69,14 @@ export default function RegulationScenarioView({scheduleDay,compliance,program}:
  if(!owner)return <section className="cc-regulation-scenario"><h1>Regulamentação</h1><p>Entre na conta para simular.</p></section>;
  return <section className="cc-regulation-scenario" aria-label="Simulação de regulamentação">{sourceAllowed&&<RegulationNavigationContext/>}
   <header className="cc-reg-scenario-heading"><Calculator aria-hidden="true"/><div><h1>Regulamentação</h1><p>{sourceAllowed&&scheduleDay?.date?`Programação de ${scheduleDay.date}`:'Simulação sem escala'}</p></div></header>
+  {explanation&&<section className="cc-reg-scenario-details" aria-label="Concierge explica esta jornada">
+   <h2>Concierge · Entenda esta jornada</h2>
+   {explanation.facts.map((text:string,index:number)=><p key={index}>{text}</p>)}
+   <p>{explanation.hypothesis}</p><p>{explanation.scenario}</p>
+   {explanation.pending.length>0&&<><h3>O que falta confirmar</h3><ul>{explanation.pending.map((item:{label:string},index:number)=><li key={index}>{item.label}</li>)}</ul></>}
+   {explanation.next&&<button type="button" onClick={()=>{openDetails();const field=explanation.next?.field;Array.from(details.current?.querySelectorAll<HTMLElement>('[aria-label]')||[]).find(element=>element.getAttribute('aria-label')===field)?.focus({preventScroll:true});}}>Confirmar próximo dado</button>}
+   <small>Leitura explicativa da programação; os ajustes valem apenas para esta simulação.</small>
+  </section>}
   <section className="cc-reg-scenario-result" aria-label="Resultado temporal" data-state={result.state}>
    <span>SIMULAÇÃO · {form.extension?'+1 hora':'SEM EXTENSÃO'}</span><h2>{!known?'Indeterminado':within?(form.method==='schedule'?'Programação dentro da referência':'Cabe na referência informada'):(form.method==='schedule'?'Programação excede a referência':'Excede a referência informada')}</h2>
    {known?<><strong>{result.marginMinutes>=0?`${result.marginMinutes} min de margem`:`${Math.abs(result.marginMinutes)} min acima`}</strong><p>{form.method==='schedule'?'Projeção programada condicional · atraso desloca o encerramento; não autoriza extensão.':'Comparação temporal condicional · não autoriza extensão.'}</p></>:<><p>Confirme os dados pendentes para concluir a comparação.</p><button type="button" onClick={openDetails}>Completar dados</button></>}
