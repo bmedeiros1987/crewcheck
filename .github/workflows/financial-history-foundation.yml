@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'shared/financialReadModel.mjs'
+      - 'shared/financialSalaryDsr.mjs'
+      - 'shared/financialVacationTiming.mjs'
       - 'client/src/lib/financialStatementLearning.ts'
       - 'client/src/lib/privatePayrollExtraction.ts'
       - 'client/src/lib/financialPdfText.ts'
@@ -82,6 +84,11 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Verify sourced salary DSR and vacation deadlines (synthetic)
+        timeout-minutes: 2
+        run: |
+          node scripts/regression-financial-salary-dsr.mjs
+          node scripts/regression-financial-vacation-timing.mjs
       - run: npm ci
       - name: Private payroll counterproofs before preparation
         run: |
