@@ -4177,7 +4177,7 @@ function FinancialFreeDayDetails({evaluation}:{evaluation:FreeDayPostponementEva
  const reference=boundCurrent&&period?period.split('-').reverse().join('/'):null;
  if(outside)return <section className="cc-financial-free-day" data-comparison-state="outside-period" aria-label="Início de folga"><strong>Início de folga{reference?` · ${reference}`:''}</strong><span role="status">{range?.valid?'Fora do período':'Período inválido'}</span></section>;
  // Presentation projection only: the canonical review and delivery owner stay unchanged.
- const visibleReview=range?{...review,alerts:review.alerts.filter(alert=>alert.date>=range.start&&alert.date<=range.end),pending:review.pending.filter(item=>!item.date||item.date>=range.start&&item.date<=range.end)}:review;
+ const visibleReview=range?{...review,alerts:review.alerts.filter(alert=>alert.date>=range.start&&alert.date<=range.end),pending:review.pending.filter(item=>!validFinancialDay(item.date)||item.date>=range.start&&item.date<=range.end)}:review;
  return <section data-free-day-reference-month={boundCurrent?period||undefined:undefined}>{reference&&<small>Referência · {reference}</small>}<FinancialFreeDayComparison key={session} session={session} review={visibleReview}><FreeDaySourceConsent key={session} session={session} bound={boundCurrent}/></FinancialFreeDayComparison></section>;
 }
 function PerDiemView({ bundle,freeDayEvaluation }: { bundle: BundleState;freeDayEvaluation:FreeDayPostponementEvaluation }) {
