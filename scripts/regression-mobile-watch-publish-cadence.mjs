@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { stripTypeScriptTypes } from 'node:module';
 const source = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
-const marker = '    const publishWatchSnapshot = () => {';
+const marker = '    const watchSession = captureAuthSession();';
 const start = source.indexOf(marker);
 assert(start >= 0 && source.indexOf(marker, start + 1) < 0, 'One actual snapshot effect required');
 const end = source.indexOf('\n  }, [', start);
@@ -27,6 +27,7 @@ const localStorage = {
   removeItem: key => stored.delete(key),
 };
 localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'synthetic-watch-cadence-owner' }));
+localStorage.setItem('crewcheck_auth_token', 'synthetic-offline-token');
 // Strip types only; execute real modules in separate scopes with their real imports.
 // This guard also supports current main before the Next Flight imports are integrated.
 function actualModule(name, imports = {}) {
@@ -50,7 +51,7 @@ if (source.includes("from '@/lib/nextFlightGate'")) {
   const gate = actualModule('nextFlightGate', { '@/lib/rosterDisplayDate': display, '../../../shared/gate-query-day.mjs': gateQueryDay });
   const watch = actualModule('nextFlightWatch', { '@/lib/nextFlightGate': gate });
   const auth = actualModule('authClient');
-  Object.assign(gateBindings, gate, watch, { getStoredUser: auth.getStoredUser });
+  Object.assign(gateBindings, gate, watch, { getStoredUser: auth.getStoredUser, captureAuthSession: auth.captureAuthSession });
 }
 const flight = (id, flightNumber, date, gate) => ({ id, kind: 'flight', flightNumber,
   origin: 'BSB', destination: 'GRU', gate, presentation: '09:30',
@@ -69,9 +70,10 @@ const window = {
 };
 const context = vm.createContext({ window, events, event, localStorage, Date: FixtureDate, ...gateBindings,
   CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
-  buildCrewCheckWatchSnapshot(actualEvents, actualEvent) { assert.equal(actualEvents, events); calls++; return snapshotModule.buildCrewCheckWatchSnapshot(actualEvents, actualEvent, null, now); },
+  buildCrewCheckWatchSnapshot(actualEvents, actualEvent) { if (!actualEvent.placeholder) { assert.equal(actualEvents, events); calls++; } return snapshotModule.buildCrewCheckWatchSnapshot(actualEvents, actualEvent, null, now); },
 });
-const cleanup = vm.runInContext(`(() => {\n${source.slice(start, end)}\n})()`, context);
+const effect = stripTypeScriptTypes(`(() => {\n${source.slice(start, end)}\n})()`);
+const cleanup = vm.runInContext(effect, context);
 assert.equal(calls, 1); // Immediate publication, not a minute-long first-sync wait.
 assert.equal(published[0].type, 'crewcheck:watch-snapshot');
 function assertPublished(selected, gate, remoteStand = false) {
@@ -120,5 +122,24 @@ const countBeforeFailure = published.length;
 // Force the actual builder to throw through a fixture getter, never a fake builder.
 Object.defineProperty(event, 'presentation', { get() { throw Error('fictional unavailable snapshot'); } });
 assert.doesNotThrow(() => timers.get(1)()); assert.equal(published.length, countBeforeFailure);
+function assertInvalidated() {
+  const empty = published.at(-1).detail;
+  assert.equal(empty.contextId, 'session-invalidated');
+  assert.equal(empty.state, 'UNKNOWN');
+  assert.equal(empty.validUntilEpochMs, now);
+  for (const field of ['currentFlight', 'currentRoute', 'gate', 'nextFlight', 'nextDetail', 'hotelPickup']) assert.equal(empty[field], '');
+  assert.equal(empty.schedule.length, 0);
+}
+for (const name of ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired']) {
+  listeners.get(name)(); assertInvalidated();
+}
+const activeCalls = calls;
+localStorage.removeItem('crewcheck_auth_token');
+localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'synthetic-other-owner' }));
+timers.get(1)(); assertInvalidated(); assert.equal(calls, activeCalls, 'Old closure must never rebuild prior owner roster');
+listeners.get('storage')({key:'crewcheck_auth_user'}); assertInvalidated();
+// Retained identity without token is not admission even before any event.
 cleanup(); assert.equal(listeners.size, 0); assert.equal(timers.size, 0);
-console.log('PASS actual Home effect + actual TS snapshot builder: cadence, active flight/date context and gate isolation, missing/remote gates, error isolation and cleanup');
+const noTokenCleanup = vm.runInContext(effect, context); assertInvalidated(); assert.equal(calls, activeCalls);
+noTokenCleanup(); assert.equal(listeners.size, 0); assert.equal(timers.size, 0);
+console.log('PASS actual Home effect + actual TS snapshot builder: cadence, flight/date isolation, auth invalidation and tokenless retained identity, empty cache replacement and cleanup');

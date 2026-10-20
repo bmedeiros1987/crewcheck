@@ -97,6 +97,7 @@ import {
 import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getCanonicalWorkHoursTotal, getPublishedDutyLimitSummary, type ComplianceResult } from '@/lib/complianceEngine';
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
 import { authFetch, getStoredUser, getToken, logout } from '@/lib/authClient';
+import { captureAuthSession } from '@/lib/authClient';
 import { exportReport } from '@/lib/pdfExport';
 import { generateICalendar, downloadCalendarFile } from '@/lib/calendarExport';
 import { shareToWhatsApp, shareToTelegram, copyToClipboard, shareExportedPdfNative } from '@/lib/sharing';
@@ -5310,7 +5311,24 @@ export default function Home() {
   }, [compliance, bundle.roster, alertExperienceRevision]);
 
   useEffect(() => {
+    const watchSession = captureAuthSession();
+    let watchInvalidated = false;
+    const invalidateWatchSnapshot = () => {
+      watchInvalidated = true;
+      try {
+        const now = Date.now();
+        const empty = buildCrewCheckWatchSnapshot([], { id: 'session-invalidated', kind: 'empty', placeholder: true }, null, now);
+        window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: {
+          ...empty, contextId: 'session-invalidated', validUntilEpochMs: now,
+          headline: 'ABRA O CREWCHECK', detail: 'Sessão alterada. Atualize pelo celular.',
+        } }));
+      } catch {}
+    };
     const publishWatchSnapshot = () => {
+      if (watchInvalidated || !watchSession.token || !watchSession.owner || !watchSession.isCurrent()) {
+        invalidateWatchSnapshot();
+        return;
+      }
       try {
         const base = buildCrewCheckWatchSnapshot(events, event);
         // Mesmo próximo voo e mesma decisão de portão do card da tela inicial.
@@ -5324,6 +5342,7 @@ export default function Home() {
           primaryEventId: event.id,
           nextFlightScheduleId: nextFlightEvent ? (nextFlightEvent.canonical?.id || nextFlightEvent.id) : '',
         });
+        if (!watchSession.isCurrent()) { invalidateWatchSnapshot(); return; }
         window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: snapshot }));
       } catch {
         // Watch sync is auxiliary. Never interfere with roster rendering.
@@ -5336,12 +5355,20 @@ export default function Home() {
     window.addEventListener('crewcheck:native-ready', onRequest);
     window.addEventListener('crewcheck:radar-updated', onRequest);
     window.addEventListener(MANUAL_GATE_EVENT, onRequest);
+    const authEvents = ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired'];
+    for (const name of authEvents) window.addEventListener(name, invalidateWatchSnapshot);
+    const onAuthStorage = (change: StorageEvent) => {
+      if (change.key === null || change.key === 'crewcheck_auth_token' || change.key === 'crewcheck_auth_user') invalidateWatchSnapshot();
+    };
+    window.addEventListener('storage', onAuthStorage);
     const timer = window.setInterval(publishWatchSnapshot, 60_000);
     return () => {
       window.removeEventListener('crewcheck:radar-updated', onRequest);
       window.removeEventListener(MANUAL_GATE_EVENT, onRequest);
       window.removeEventListener('crewcheck:watch-snapshot-request', onRequest);
       window.removeEventListener('crewcheck:native-ready', onRequest);
+      for (const name of authEvents) window.removeEventListener(name, invalidateWatchSnapshot);
+      window.removeEventListener('storage', onAuthStorage);
       window.clearInterval(timer);
     };
   }, [events, event.id, event.presentation, event.gate, event.status]);
