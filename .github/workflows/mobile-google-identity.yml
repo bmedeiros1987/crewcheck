@@ -15,6 +15,7 @@ on:
       - 'scripts/regression-mobile-google-identity.mjs'
       - 'scripts/regression-google-identity-lifecycle.mjs'
       - 'scripts/regression-google-identity-innodb.mjs'
+      - 'scripts/regression-google-identity-browser.mjs'
       - 'scripts/regression-google-identity-client-continuity.mjs'
       - 'server/v139/auth.mjs'
       - 'scripts/v139/apply.mjs'
@@ -40,6 +41,14 @@ jobs:
       - run: node scripts/regression-google-identity-lifecycle.mjs
       - run: node scripts/regression-google-identity-client-continuity.mjs
       - run: node scripts/regression-google-calendar-session-fence.mjs
+      - name: Install isolated browser runtime
+        run: |
+          npm install --prefix "$RUNNER_TEMP/google-identity-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/google-identity-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Real browser PWA and Android bridge fixtures without provider grants
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/google-identity-browser/package.json
+        run: node scripts/regression-google-identity-browser.mjs
       - run: npx tsc --noEmit
 
   google-identity-innodb:

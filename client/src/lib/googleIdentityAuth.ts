@@ -56,8 +56,10 @@ function openSecureBrowser(url: string) {
   const nativeWindow = window as GoogleIdentityWindow;
   const openedNatively = Boolean(nativeWindow.CrewCheckNative?.openExternal?.(url));
   if (openedNatively) return;
-  const popup = window.open(url, '_blank', 'noopener,noreferrer');
-  if (!popup) throw new Error('O navegador bloqueou a janela do Google. Permita pop-ups e tente novamente.');
+  // noopener intentionally makes Window.open return null in real browsers.
+  // Only the authenticated callback/poll can confirm progress; a blocked or
+  // cancelled popup times out without adopting a session. Keep opener isolation.
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 function delay(ms: number) {
