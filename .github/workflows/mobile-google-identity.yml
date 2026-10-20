@@ -46,22 +46,9 @@ jobs:
     name: Google identity concurrency in disposable InnoDB
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    services:
-      mysql:
-        image: mysql:8.4
-        env:
-          MYSQL_ROOT_PASSWORD: synthetic-google-qa-only
-          MYSQL_ROOT_HOST: "%"
-          MYSQL_DATABASE: crewcheck_google_identity_qa
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h localhost -psynthetic-google-qa-only"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=30
     env:
       CREWCHECK_GOOGLE_INNODB_QA: github-disposable-mysql
+      CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-google-identity-qa-socket/mysqld.sock
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -69,6 +56,19 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Start disposable MySQL without network or published ports
+        run: |
+          mkdir -p /tmp/crewcheck-google-identity-qa-socket
+          docker run --detach --rm --name crewcheck-google-identity-qa --network none --mount type=bind,source=/tmp/crewcheck-google-identity-qa-socket,target=/var/run/mysqld --env MYSQL_ALLOW_EMPTY_PASSWORD=yes --env MYSQL_DATABASE=crewcheck_google_identity_qa mysql:8.4
+          for attempt in $(seq 1 60); do
+            if docker logs crewcheck-google-identity-qa 2>&1 | grep -q 'MySQL init process done' && docker exec crewcheck-google-identity-qa mysql --database=crewcheck_google_identity_qa --execute='SELECT 1'; then break; fi
+            sleep 1
+          done
+          docker exec crewcheck-google-identity-qa mysql --database=crewcheck_google_identity_qa --execute='SELECT 1'
+          docker exec crewcheck-google-identity-qa chmod 755 /var/run/mysqld
       - run: node scripts/regression-google-identity-innodb.mjs
       - run: node scripts/v139/apply.mjs
       - run: node scripts/regression-google-identity-innodb.mjs
+      - name: Remove disposable MySQL
+        if: always()
+        run: docker rm --force crewcheck-google-identity-qa || true
