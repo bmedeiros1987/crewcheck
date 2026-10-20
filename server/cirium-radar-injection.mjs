@@ -3,7 +3,7 @@ import { evaluateCiriumRadar } from './cirium-radar-provider.mjs';
 
 // Production remains hard OFF; no HTTP/env activation or credential reads.
 export function defaultCiriumRadarOptions() {
-  return CIRIUM_SKY_PRODUCTION_ENABLED ? { enabled: true, transport: productionCiriumSkyTransport() } : undefined;
+  return CIRIUM_SKY_PRODUCTION_ENABLED ? { enabled: true, transport: productionCiriumSkyTransport(), flightAwareFallback: true } : undefined;
 }
 export function ciriumRadarInjectionEnabled(options) { return options?.enabled === true; }
 export function ciriumRadarRegistration() { return { key: 'cirium-sky', available: false, state: 'disabled' }; }
