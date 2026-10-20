@@ -4065,7 +4065,7 @@ function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabe
   const forecast = forecastOverride || calculated;
 
   const pendingTaxiRows = forecast.monthlyUnclassifiedItems.filter(item => item.pendingKind === 'taxi_rate');
-  const itemCount = forecast.monthlyRows.length;
+  const itemCount = forecast.monthlyRows.length + pendingTaxiRows.length;
   const itemLabel = `${itemCount} ${itemCount === 1 ? 'item' : 'itens'}`;
   const currencyLabel = `${forecast.currencyCount} ${forecast.currencyCount === 1 ? 'moeda' : 'moedas'}`;
   const year = Number(bundle.roster.year), month = Number(bundle.roster.month);
