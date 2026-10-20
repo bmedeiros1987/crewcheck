@@ -2,13 +2,15 @@
 // Scheduled block duration is deliberately never used as airborne duration.
 import {explicitInstant} from './regulationTemporalScenario.mjs';
 const clock=value=>typeof value==='string'&&/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+const clockMinutes=value=>{const m=typeof value==='string'&&value.trim().match(/^(\d{1,2}):(\d{2})(?:\s*\(\+\d+\))?$/);return m&&Number(m[1])<24&&Number(m[2])<60?Number(m[1])*60+Number(m[2]):null;};
+const sameClock=(a,b)=>clockMinutes(a)!==null&&clockMinutes(a)===clockMinutes(b);
 export function regulationCivilDate(value){
  const match=typeof value==='string'&&value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
  const date=match?`${match[3]}-${match[2]}-${match[1]}`:value;
  return typeof date==='string'&&explicitInstant(date+'T00:00Z')!==null?date:'';
 }
 export function regulationScenarioSeed(day,reference,program){
- const seed={takeoff:'',normalEnd:'',offset:'',flight:'',delay:'0',taxi:'',postFlight:'',tasks:'',operation:'',extension:false,reviewed:false,publicationOffsetReviewed:false,composition:'',acclimatization:'unknown',limitSource:'Referência informada para esta simulação',method:'schedule',plannedEnd:'',plannedEndSource:'',scheduledArrival:''};
+ const seed={takeoff:'',normalEnd:'',offset:'',flight:'',delay:'0',taxi:'',postFlight:'',tasks:'',operation:'',extension:false,reviewed:false,publicationOffsetReviewed:false,composition:'',acclimatization:'unknown',limitSource:'Referência informada para esta simulação',method:'schedule',plannedEnd:'',plannedEndSource:'',scheduledArrival:'',reviewRequired:false};
  const date=regulationCivilDate(day?.date),leg=program?.leg||day?.legs?.[0];
  if(date&&clock(leg?.departureTime))seed.takeoff=date+'T'+leg.departureTime;
  // Canonical roster instants use the existing BRT publication clock, independent
@@ -56,7 +58,7 @@ export function regulationProgramDay(events,selected){
  const publishedReport=explicitLegReport||first.legIndex===0&&firstDay?.dutyReportSource==='published'&&clock(firstDay.dutyReport);
  // A legacy/estimated clock is useful for a labelled simulation, never for a
  // published-duration proof. Do not borrow the day's report for a later journey.
- const ownReport=explicitLegReport?first.leg.presentationTime:first.legIndex===0&&clock(firstDay?.dutyReport)?firstDay.dutyReport:first.legIndex===0&&clock(first.presentation)&&first.presentation!==first.leg?.departureTime?first.presentation:'';
+ const ownReport=explicitLegReport?first.leg.presentationTime:first.legIndex===0&&clock(firstDay?.dutyReport)&&(firstDay.dutyReportSource==='published'||!sameClock(firstDay.dutyReport,first.departure||first.leg?.departureTime))?firstDay.dutyReport:'';
  const ownDebrief=last.legIndex===(lastDay?.legs?.length||0)-1&&lastDay?.dutyDebriefSource==='published'?lastDay.dutyDebrief:'';
  const start=explicitInstant(first.startDateTime?.replace(/\.000Z$/,'Z'));
  let date=regulationCivilDate(firstDay?.date);
@@ -80,6 +82,8 @@ export function regulationScheduleProjection(form){
  if(end!==null&&departure!==null&&end<departure)missing.push('Encerramento anterior à partida da programação');
  if(end===null)missing.push('Encerramento programado ou estimado da jornada');
  if(limit===null)missing.push('Limite normal da jornada');
+ const engineLimit=form.limitSource?.startsWith('Motor existente');
+ if((!engineLimit||form.reviewRequired===true)&&form.reviewed!==true)missing.push('Limite normal revisado');
  if(delay===null||delay>1440)missing.push('Atraso previsto');
  const manualReviewed=form.reviewed===true&&!form.limitSource?.startsWith('Motor existente');
  if(form.composition&&form.composition!=='simple'&&!manualReviewed)missing.push('Limite aplicável à composição informada');
