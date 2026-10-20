@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import http from 'node:http';import {createRequire} from 'node:module';import {build} from 'esbuild';
 const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url)('playwright');
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'regulation-deadline-browser-'));const evidence=process.env.REGULATION_DEADLINE_EVIDENCE||'/tmp/crewcheck-regulation-deadline-evidence-20261020';fs.mkdirSync(evidence,{recursive:true});
-const entry=`import React from 'react';import {createRoot} from 'react-dom/client';import View from ${JSON.stringify(path.resolve('client/src/components/regulation/RegulationScenarioView.tsx'))};
+const entry=`import React from 'react';import {createRoot} from 'react-dom/client';import {DetailedRegulationScenarioView as View} from ${JSON.stringify(path.resolve('client/src/components/regulation/RegulationScenarioView.tsx'))};
 const day={date:'15/04/2033',type:'VOO',base:'BSB',dutyReport:'08:15',dutyReportSource:'published',dutyDebrief:'13:00',dutyDebriefSource:'published',legs:[{flightNumber:'QA1001',origin:'BSB',destination:'GRU',departureTime:'09:00',arrivalTime:'10:30',presentationTime:'08:15',workType:'OP'},{flightNumber:'QA1002',origin:'GRU',destination:'BSB',departureTime:'11:00',arrivalTime:'12:30',workType:'OP'}]};
 createRoot(document.getElementById('root')).render(<View scheduleDay={day} compliance={{legalProfile:{role:'cabin'}}}/>);`;
 let server,browser;

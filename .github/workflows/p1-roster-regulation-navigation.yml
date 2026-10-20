@@ -32,6 +32,11 @@ on:
       - 'scripts/regression-canonical-journey-label.mjs'
       - 'client/src/lib/canonicalDutyMeasurement.ts'
       - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/regulationAutomaticScenario.ts'
+      - 'client/src/lib/regulationAircraftEvidence.ts'
+      - 'client/src/lib/useRegulationOperationalArrival.ts'
+      - 'scripts/regression-regulation-automatic*.mjs'
+      - 'scripts/regression-regulation-no-roster-home-browser.mjs'
       - 'scripts/regression-regulation-prefill.mjs'
       - 'scripts/regression-regulation-prefill-browser.mjs'
       - 'scripts/regression-regulation-window-selection.mjs'
@@ -81,6 +86,11 @@ on:
       - 'scripts/regression-canonical-journey-label.mjs'
       - 'client/src/lib/canonicalDutyMeasurement.ts'
       - 'client/src/lib/complianceEngine.ts'
+      - 'client/src/lib/regulationAutomaticScenario.ts'
+      - 'client/src/lib/regulationAircraftEvidence.ts'
+      - 'client/src/lib/useRegulationOperationalArrival.ts'
+      - 'scripts/regression-regulation-automatic*.mjs'
+      - 'scripts/regression-regulation-no-roster-home-browser.mjs'
       - 'scripts/regression-regulation-prefill.mjs'
       - 'scripts/regression-regulation-prefill-browser.mjs'
       - 'scripts/regression-regulation-window-selection.mjs'
@@ -143,6 +153,7 @@ jobs:
         run: node scripts/regression-rbac-sector-input.cjs
       - name: Current conditional temporal scenario regression
         run: |
+          node scripts/regression-regulation-automatic-scenario.mjs
           node scripts/regression-regulation-window-selection.mjs
           node scripts/regression-regulation-prefill.mjs
           node scripts/regression-regulation-source-hydration.mjs
@@ -161,6 +172,8 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/regulation-browser/package.json
         run: |
+          node scripts/regression-regulation-automatic-browser.mjs
+          node scripts/regression-regulation-no-roster-home-browser.mjs
           node scripts/regression-regulation-deadline-browser.mjs
           node scripts/regression-regulation-review-gates-browser.mjs
           node scripts/regression-regulation-operational-arrival-browser.mjs

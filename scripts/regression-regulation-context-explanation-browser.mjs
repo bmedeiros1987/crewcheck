@@ -4,7 +4,7 @@ import {createRequire} from 'node:module';import {build} from 'esbuild';
 const {chromium}=createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE||import.meta.url)('playwright');
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'regulation-explainer-browser-'));
 const entry=`import React from 'react';import {createRoot} from 'react-dom/client';
-import View from ${JSON.stringify(path.resolve('client/src/components/regulation/RegulationScenarioView.tsx'))};
+import {DetailedRegulationScenarioView as View} from ${JSON.stringify(path.resolve('client/src/components/regulation/RegulationScenarioView.tsx'))};
 import {buildCanonicalRosterEvents} from ${JSON.stringify(path.resolve('client/src/lib/canonicalRoster.ts'))};
 import {regulationProgramDay} from ${JSON.stringify(path.resolve('shared/regulationScenarioPrefill.mjs'))};
 const day={date:'20/10/2032',year:2032,month:10,type:'VOO',base:'BSB',dutyReport:'04:10',dutyReportSource:'published',dutyDebrief:'11:25',dutyDebriefSource:'published',legs:[
