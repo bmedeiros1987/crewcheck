@@ -44,8 +44,8 @@ export default function RegulationAutomaticView({scheduleDay,program,compliance,
   <section className="cc-reg-scenario-result" aria-label="Resultado automático condicional" data-state={assessment.state}>
    <span>REFERÊNCIA AUTOMÁTICA · HIPÓTESE</span>
    <div className="cc-reg-deadlines">
-    <div><h2>Limite da jornada</h2><strong>{localClock(assessment.normalDutyEnd,form.offset).split(' · ').at(-1)}</strong></div>
-    <div><h2>Corte dos motores</h2><strong>{localClock(assessment.engineStopLimit,form.offset).split(' · ').at(-1)}</strong></div>
+    <div><h2>Limite da jornada</h2><strong>{localClock(assessment.normalDutyEnd,form.offset).split(' · ').at(-1)}</strong><small>{localClock(assessment.normalDutyEnd,form.offset).split(' · ')[0]}</small></div>
+    <div><h2>Corte dos motores</h2><strong>{localClock(assessment.engineStopLimit,form.offset).split(' · ').at(-1)}</strong><small>{localClock(assessment.engineStopLimit,form.offset).split(' · ')[0]}</small></div>
    </div>
    <p className="cc-reg-assumptions">{assessment.aircraft.group==='NB'?'NB':assessment.aircraft.group==='WB'?'WB':assessment.aircraft.group==='mixed'?'Equipamentos mistos':'Equipamento não reconhecido'} · {composition} · {form.acclimatization==='acclimatized'?'aclimatado (padrão)':'aclimatação fora da hipótese'} · {clockSource}.</p>
    <small>Hipótese ajustável — conferir condições.</small>

@@ -47,6 +47,8 @@ let browser;try{
   await page.getByLabel('Composição da tripulação',{exact:true}).selectOption('augmented');
   assert.match(await result.innerText(),/—/);assert.doesNotMatch(await result.innerText(),/min de diferença/);
   await page.getByRole('button',{name:'Restaurar dados da escala'}).click();
+  await page.getByLabel('Apresentação da jornada',{exact:true}).fill('2032-10-20T23:00');assert.match(await page.locator('.cc-reg-deadlines').innerText(),/2032-10-21/,'overnight deadlines retain local date in every device zone');
+  await page.getByRole('button',{name:'Restaurar dados da escala'}).click();
   await page.getByLabel('Equipamento da etapa 1',{exact:true}).fill('B789');assert.match(await result.innerText(),/WB/);assert.equal(await page.getByLabel('Composição da tripulação',{exact:true}).inputValue(),'');
   await page.getByLabel('Equipamento da etapa 1',{exact:true}).fill('UNKNOWN');assert.match(await result.innerText(),/Equipamento não reconhecido/);assert.doesNotMatch(await result.innerText(),/padrão NB/);
   await page.evaluate(()=>window.renderAircraft('B789'));await page.waitForFunction(()=>document.querySelector('[aria-label="Equipamento da etapa 1"]').value==='B789');assert.equal(await page.getByLabel('Atraso previsto em minutos',{exact:true}).inputValue(),'0','source revision clears delay override');assert.equal(await page.getByLabel('Composição da tripulação',{exact:true}).inputValue(),'','new WB source does not inherit NB default');
