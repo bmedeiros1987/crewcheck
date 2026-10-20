@@ -5246,11 +5246,11 @@ export default function Home() {
   const [presentationRevision, setPresentationRevision] = useState(0);
   const events = useMemo(() => buildLegs(bundle.roster), [bundle.roster, presentationRevision]);
   const event = nextFlight(events);
+  const flightEvent = nextRealFlight(events);
+  const compliance = currentCompliance(bundle);
   const regulationContext = view === 'regulation' ? peekAlertRosterContext('regulation') : null;
   const regulationEvent = resolveRegulationProgram(events, event, regulationContext);
   const regulationDay = regulationProgramDay(events, regulationEvent);
-  const flightEvent = nextRealFlight(events);
-  const compliance = currentCompliance(bundle);
   const gym = currentGym(bundle);
   useWeatherLandingMonitor(flightEvent);
   useOperationalRadarPulse(flightEvent);
