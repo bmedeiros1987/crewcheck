@@ -89,23 +89,23 @@ function assertPublished(selected, gate, remoteStand = false) {
   assert.equal(snapshot.remoteStand, remoteStand);
   assert.equal(snapshot.source, 'canonical-roster');
 }
-assertPublished(event, '12');
+assertPublished(event, '');
 assert.notEqual(published[0].detail.contextId, otherFlight.canonical.id);
 assert.notEqual(published[0].detail.contextId, otherDate.canonical.id);
 for (const name of ['crewcheck:watch-snapshot-request', 'crewcheck:native-ready']) listeners.get(name)();
 assert.equal(calls, 3);
-event.gate = '15'; timers.get(1)(); assertPublished(event, '15');
+event.gate = '15'; timers.get(1)(); assertPublished(event, '');
 assert.equal(calls, 4); assert.equal(published.length, 4);
 for (const selected of [otherFlight, otherDate, event]) {
   context.event = selected; listeners.get('crewcheck:watch-snapshot-request')();
-  assertPublished(selected, selected.gate);
+  assertPublished(selected, '');
 }
 context.event = event;
 for (const gate of [undefined, '', '—', 'A confirmar']) {
   event.gate = gate; timers.get(1)(); assertPublished(event, '');
 }
 for (const gate of ['REMOTA', 'PÁTIO']) {
-  event.gate = gate; listeners.get('crewcheck:native-ready')(); assertPublished(event, '', true);
+  event.gate = gate; listeners.get('crewcheck:native-ready')(); assertPublished(event, '', false);
 }
 if (gateBindings.MANUAL_GATE_EVENT) {
   for (const name of ['crewcheck:radar-updated', gateBindings.MANUAL_GATE_EVENT]) {
@@ -113,12 +113,12 @@ if (gateBindings.MANUAL_GATE_EVENT) {
     const before = published.length;
     listeners.get(name)();
     assert.equal(published.length, before + 1);
-    assertPublished(event, '', true);
+    assertPublished(event, '', false);
   }
 }
 const countBeforeFailure = published.length;
 // Force the actual builder to throw through a fixture getter, never a fake builder.
-Object.defineProperty(event, 'gate', { get() { throw Error('fictional unavailable snapshot'); } });
+Object.defineProperty(event, 'presentation', { get() { throw Error('fictional unavailable snapshot'); } });
 assert.doesNotThrow(() => timers.get(1)()); assert.equal(published.length, countBeforeFailure);
 cleanup(); assert.equal(listeners.size, 0); assert.equal(timers.size, 0);
 console.log('PASS actual Home effect + actual TS snapshot builder: cadence, active flight/date context and gate isolation, missing/remote gates, error isolation and cleanup');
