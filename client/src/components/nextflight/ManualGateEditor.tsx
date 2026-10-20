@@ -21,7 +21,7 @@ export function ManualGateEditor({ event }: { event: NextFlightLike }) {
   const info = useNextFlightGate(event.kind === 'flight' && !event.placeholder ? event : null);
   const manual = info?.manual || null;
   const owner = currentManualGateAccount(), token = getToken();
-  const scope = [owner, token, event.id, event.canonical?.startDateTime].join('|');
+  const scope = [owner, token, event.id, event.flightNumber, event.origin, event.destination, event.canonical?.startDateTime].join('|');
   const capturedOccurrence = [event.id,event.flightNumber,event.origin,event.destination,event.canonical?.startDateTime].join('|');
   const active = useRef(scope);active.current=scope;
   useEffect(()=>()=>{if(active.current===scope)active.current='';},[scope]);

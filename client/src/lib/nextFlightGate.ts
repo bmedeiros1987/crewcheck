@@ -434,9 +434,16 @@ export function writeManualGateReview(storage: StorageLike, account: string, eve
   const candidate = info.manualReview.candidate;
   if (info.manualReview.state !== 'newer' || !candidate || candidate.fingerprint !== input.expectedSourceFingerprint) return reject();
   // Re-read the same exact occurrence before patching its gate alone.
-  const map=operationalMap(storage,account),identity=operationalIdentity(event),current=readManualGate(storage,account,event),entry=readManualOperational(storage,account,event);
-  if (!entry?.gate || manualGateRevision(current,account)!==input.expectedManualRevision) return reject();
-  const gate:ManualOperationalGate={...entry.gate,sourceReview:{action:input.action,decidedAtEpochMs:now,fingerprint:candidate.fingerprint,sourceGate:candidate.gate,sourceUpdatedAtEpochMs:candidate.sourceUpdatedAtEpochMs,provider:candidate.provider}};
+  const map=operationalMap(storage,account),identity=operationalIdentity(event),current=readManualGate(storage,account,event),stored=readManualOperational(storage,account,event);
+  if (!identity || !current || manualGateRevision(current,account)!==input.expectedManualRevision) return reject();
+  const currentInfo=resolveNextFlightGate({event,manual:current,radar,now});
+  if(currentInfo.manualReview.state!=='newer'||currentInfo.manualReview.candidate?.fingerprint!==input.expectedSourceFingerprint) return reject();
+  const [flight,date,origin,destination,scheduledDepartureUtc]=identity.split('|');
+  const entry=stored||{owner:account,flight,date,origin,destination,scheduledDepartureUtc};
+  // An explicit keep/accept may migrate a UTC-bound v1 gate. Copy only the
+  // validated gate fields; legacy status/registration and v1 bytes stay untouched.
+  const priorGate=entry.gate||{value:current.gate,terminal:cleanTerminal(current.terminal),author:current.author,setAtEpochMs:current.setAtEpochMs};
+  const gate:ManualOperationalGate={...priorGate,sourceReview:{action:input.action,decidedAtEpochMs:now,fingerprint:candidate.fingerprint,sourceGate:candidate.gate,sourceUpdatedAtEpochMs:candidate.sourceUpdatedAtEpochMs,provider:candidate.provider}};
   if(input.action==='accept'){gate.value=candidate.gate;gate.author=text(input.author).slice(0,60)||'Você';gate.setAtEpochMs=now;}
   map[identity]={owner:account,flight:entry.flight,date:entry.date,origin:entry.origin,destination:entry.destination,scheduledDepartureUtc:entry.scheduledDepartureUtc,gate,
     ...(entry.legacyGateDismissed?{legacyGateDismissed:true}:{}),...(entry.status?{status:entry.status}:{}),...(entry.registration?{registration:entry.registration}:{})};
