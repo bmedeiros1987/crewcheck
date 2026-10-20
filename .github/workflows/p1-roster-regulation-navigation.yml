@@ -10,6 +10,9 @@ on:
       - 'shared/regulationTemporalScenario.mjs'
       - 'shared/regulationScenarioPrefill.mjs'
       - 'scripts/regression-regulation-source-hydration.mjs'
+      - 'shared/regulationContextExplanation.mjs'
+      - 'scripts/regression-regulation-context-explanation*.mjs'
+      - 'scripts/regression-canonical-journey-label.mjs'
       - 'client/src/lib/complianceEngine.ts'
       - 'scripts/regression-regulation-prefill.mjs'
       - 'scripts/regression-regulation-prefill-browser.mjs'
@@ -38,6 +41,9 @@ on:
       - 'shared/regulationTemporalScenario.mjs'
       - 'shared/regulationScenarioPrefill.mjs'
       - 'scripts/regression-regulation-source-hydration.mjs'
+      - 'shared/regulationContextExplanation.mjs'
+      - 'scripts/regression-regulation-context-explanation*.mjs'
+      - 'scripts/regression-canonical-journey-label.mjs'
       - 'client/src/lib/complianceEngine.ts'
       - 'scripts/regression-regulation-prefill.mjs'
       - 'scripts/regression-regulation-prefill-browser.mjs'
@@ -104,6 +110,8 @@ jobs:
           node scripts/regression-regulation-window-selection.mjs
           node scripts/regression-regulation-prefill.mjs
           node scripts/regression-regulation-source-hydration.mjs
+          node scripts/regression-regulation-context-explanation.mjs
+          node scripts/regression-canonical-journey-label.mjs
           node scripts/regression-regulation-temporal-scenario.mjs
           npx vite build
       - name: Current compiled scenario UI and Home shortcut
@@ -111,4 +119,5 @@ jobs:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/regulation-browser/package.json
         run: |
           node scripts/regression-regulation-prefill-browser.mjs
+          node scripts/regression-regulation-context-explanation-browser.mjs
           node scripts/regression-regulation-scenario-ui.cjs
