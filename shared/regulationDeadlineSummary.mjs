@@ -33,3 +33,17 @@ export function regulationDeadlineSummary(form,result,{lastActivity='unknown',ha
  const marginMinutes=normalDutyEnd&&projectionValid?(limit-projected)/60000:null;
  return {normalDutyEnd,engineStopLimit,marginMinutes,marginMissing:!projectionValid?[...new Set([...(result?.missing||[]),...(projected===null?['Encerramento previsto']:[]),...(tasks===null?['Tarefas posteriores, inclusive zero']:[]),...(projected!==null&&presentation!==null&&projected<presentation?['Encerramento posterior à apresentação']:[])])]:[],projectedDutyEnd:projected===null?null:new Date(projected).toISOString(),missing:[...new Set(missing)],cutMissing,authorization:'not_assessed'};
 }
+
+// A manual declaration is usable only without an imported schedule. Never replace
+// an imported OP/PS/unknown classification with a simulation override.
+export function regulationLastActivity(scheduleDay,manual='unknown') {
+ if(scheduleDay) {
+  const leg=scheduleDay.regulationJourney?.at(-1)?.leg||scheduleDay.legs?.at(-1);
+  return leg?.workType==='OP'?'operating':leg?.workType==='PS'?'positioning':'unknown';
+ }
+ return ['operating','positioning'].includes(manual)?manual:'unknown';
+}
+export function regulationExtensionMargin(summary,extension) {
+ return extension===true&&typeof summary?.marginMinutes==='number'&&Number.isFinite(summary.marginMinutes)
+  &&!!summary.normalDutyEnd&&summary.missing?.length===0 ? summary.marginMinutes+60 : null;
+}
