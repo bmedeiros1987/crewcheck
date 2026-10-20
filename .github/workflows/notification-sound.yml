@@ -1,0 +1,60 @@
+name: Optional aircraft notification sound
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/components/pulse/**'
+      - 'client/src/pages/Home.tsx'
+      - 'client/public/assets/sounds/**'
+      - 'scripts/p1-notification-sound/**'
+      - 'scripts/regression-notification-sound*'
+      - 'scripts/v139/apply.mjs'
+      - '.github/workflows/notification-sound.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: notification-sound-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  sound:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Raw-source audio regression
+        run: node scripts/regression-notification-sound.mjs
+      - name: Prepare canonical sources
+        run: node scripts/v139/apply.mjs
+      - name: Prepared audio and existing Pulse regressions
+        run: |
+          node scripts/regression-notification-sound.mjs
+          node scripts/regression-p1-546-pulse-foundation.mjs
+          node scripts/regression-p1-546-pulse-live.mjs
+          cp client/src/pages/Home.tsx /tmp/notification-sound-home.tsx
+          node scripts/p1-notification-sound/apply.mjs
+          cmp client/src/pages/Home.tsx /tmp/notification-sound-home.tsx
+      - name: TypeScript and production web build
+        run: |
+          npx tsc --noEmit
+          npx vite build
+          cmp client/public/assets/sounds/a320-interphone-cc0.mp3 dist/assets/sounds/a320-interphone-cc0.mp3
+      - name: Browser test dependencies
+        run: |
+          npm install --no-save --package-lock=false playwright@1.62.1 esbuild@0.25.10
+          npx playwright install --with-deps chromium
+      - name: Actual settings component and audio browser regression
+        run: node scripts/regression-notification-sound-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: notification-sound-browser
+          path: artifacts/notification-sound/
+          if-no-files-found: ignore

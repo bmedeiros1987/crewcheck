@@ -399,7 +399,7 @@ html[data-crew-theme="light"] .cc-calendar-roster { box-shadow: 0 14px 34px rgba
   gap: 5px;
 }
 .cc-calendar-day article {
-  padding: 7px;
+  padding: 10px;
   border-left: 3px solid #a78bfa;
   border-radius: 8px;
   background: color-mix(in srgb, #a78bfa 7%, var(--ccr-panel-soft));
@@ -409,21 +409,21 @@ html[data-crew-theme="light"] .cc-calendar-roster { box-shadow: 0 14px 34px rgba
 .cc-calendar-day article small { display: block; overflow-wrap: anywhere; }
 .cc-calendar-day article strong {
   color: var(--ccr-title);
-  font-size: 10px;
-  line-height: 1.2;
+  font-size: 14px;
+  line-height: 1.35;
 }
 .cc-calendar-day article span {
   margin-top: 2px;
   color: var(--ccr-text);
-  font-size: 9px;
-  line-height: 1.25;
+  font-size: 12px;
+  line-height: 1.45;
 }
 .cc-calendar-day article small {
   margin-top: 3px;
   color: var(--ccr-cyan);
-  font-size: 8px;
+  font-size: 12px;
   font-weight: 780;
-  line-height: 1.25;
+  line-height: 1.5;
 }
 
 @media (max-width: 760px) {
@@ -448,9 +448,9 @@ html[data-crew-theme="light"] .cc-calendar-roster { box-shadow: 0 14px 34px rgba
 
 
 .cc-aims-roster tbody tr[role="button"] { cursor: pointer; }
-.cc-aims-roster tbody tr[role="button"]:focus-visible > * {
-  outline: 3px solid #16bcd0;
-  outline-offset: -3px;
+.cc-aims-roster tbody tr[role="button"]:focus-visible {
+  outline: 2px solid var(--ccr-cyan) !important;
+  outline-offset: -2px !important;
 }
 .cc-aims-roster tbody tr[data-change-status="unread"] > * {
   border-bottom-color: rgba(161, 98, 7, .32);
@@ -531,3 +531,110 @@ html:not([data-crew-theme="light"]) .cc-aims-change-badge {
 .cc-aims-removed article > div { padding: 4px 12px 12px; background: var(--ccr-panel-soft); }
 .cc-aims-removed article > div p { margin: 5px 0 0; color: var(--ccr-muted); font-size: 11px; }
 .cc-aims-awareness-status { min-height: 1.3em; margin: 0; padding: 0 20px 14px; color: var(--ccr-muted); font-size: 10px; }
+
+/* Controls belong exclusively to the roster. */
+.cc-roster-zoom { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin:16px 0; padding:14px; border:1px solid var(--ccr-line); border-radius:18px; background:var(--ccr-panel); color:var(--ccr-text); }
+.cc-roster-zoom > div { display:flex; flex-wrap:wrap; gap:8px; }
+.cc-roster-zoom button, .cc-roster-zoom input, .cc-calendar-day button { min-height:44px; min-width:44px; padding:8px 12px; border:1px solid var(--ccr-line); border-radius:10px; background:var(--ccr-panel-strong); color:var(--ccr-text); font:inherit; font-size:14px; cursor:pointer; }
+.cc-roster-zoom button[aria-pressed="true"] { border-color:var(--ccr-cyan); box-shadow:inset 0 0 0 1px var(--ccr-cyan); font-weight:800; }
+.cc-roster-zoom label { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:14px; }
+.cc-roster-zoom p { margin:0; flex-basis:100%; font-size:13px; line-height:1.5; }
+.cc-roster-zoom button:focus-visible, .cc-roster-zoom input:focus-visible, .cc-calendar-day button:focus-visible { outline:3px solid var(--ccr-cyan); outline-offset:2px; }
+.cc-calendar-day button { display:block; text-align:left; white-space:normal; overflow-wrap:anywhere; }
+.cc-calendar-day article > button { width:100%; margin-bottom:4px; }
+.cc-calendar-day > header button { padding:0; }
+.cc-calendar-day button:disabled { cursor:default; }
+.cc-calendar-roster td[data-outside-month="true"] { opacity:1; background:var(--ccr-panel-soft); }
+.cc-aims-roster thead th { font-size:12px; letter-spacing:.02em; }
+.cc-aims-roster[data-day-view="true"] tbody th,
+.cc-aims-roster[data-day-view="true"] tbody td { font-size:14px; padding-top:14px; padding-bottom:14px; }
+@media(max-width:480px) { .cc-roster-zoom { padding:12px; } .cc-roster-zoom label, .cc-roster-zoom input { max-width:100%; min-width:0; } }
+
+@media (max-width: 680px) {
+  .cc-aims-roster[data-day-view="true"] table { min-width: 0; }
+  .cc-aims-roster[data-day-view="true"] thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .cc-aims-roster[data-day-view="true"] tbody { display: block; }
+  .cc-aims-roster[data-day-view="true"] tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border-bottom: 2px solid var(--ccr-line); }
+  .cc-aims-roster[data-day-view="true"] tbody tr > * { min-width: 0; padding: 10px 14px; white-space: normal; overflow-wrap: anywhere; border: 0; }
+  .cc-aims-roster[data-day-view="true"] tbody tr > *::before { display: block; margin-bottom: 5px; color: var(--ccr-muted); font-size: 12px; font-weight: 600; }
+  .cc-aims-roster[data-day-view="true"] tr[data-roster-event-id] > :nth-child(1)::before { content: 'Data'; }
+  .cc-aims-roster[data-day-view="true"] tr[data-roster-event-id] > :nth-child(2)::before { content: 'Código / atividade'; }
+  .cc-aims-roster[data-day-view="true"] tr[data-roster-event-id] > :nth-child(3)::before { content: 'Apresentação'; }
+  .cc-aims-roster[data-day-view="true"] tr[data-roster-event-id] > :nth-child(4)::before { content: 'Origem'; }
+  .cc-aims-roster[data-day-view="true"] tr[data-roster-event-id] > :nth-child(5)::before { content: 'Partida / início'; }
+  .cc-aims-roster[data-day-view="true"] tr[data-roster-event-id] > :nth-child(6)::before { content: 'Destino'; }
+  .cc-aims-roster[data-day-view="true"] tr[data-roster-event-id] > :nth-child(7)::before { content: 'Chegada / fim'; }
+  .cc-aims-roster[data-day-view="true"] tr[data-roster-event-id] > :nth-child(8) { grid-column: 1 / -1; }
+  .cc-aims-roster[data-day-view="true"] tr[data-roster-event-id] > :nth-child(8)::before { content: 'Detalhes publicados'; }
+  .cc-aims-roster[data-day-view="true"] .cc-aims-detail-row { display: block; }
+  .cc-aims-roster[data-day-view="true"] .cc-aims-detail-row td { display: block; }
+}
+
+.cc-roster-published-code { display: block; margin: 0 16px 12px; color: var(--ccr-muted); font-size: 12px; line-height: 1.5; }
+
+.cc-roster-unconfirmed { margin: 18px 0; color: var(--ccr-text); }
+.cc-roster-unconfirmed > h2 { font-size: 18px; }
+.cc-roster-unconfirmed > p { font-size: 14px; line-height: 1.5; }
+.cc-aims-roster th > small { display: block; margin-top: 6px; font-size: 12px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
+/* Separate compact presentation delta. */
+.cc-roster-premium-v1397 .cc-roster-compact-picker { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; padding:10px; border-radius:12px; box-shadow:none; background:var(--ccr-panel); }
+.cc-roster-compact-picker label { display:flex; align-items:center; gap:8px; flex:1; font-size:12px; color:var(--ccr-text); }
+.cc-roster-compact-picker select { min-height:44px; min-width:0; width:100%; padding:8px; border:1px solid var(--ccr-line); border-radius:8px; background:var(--ccr-panel-strong); color:var(--ccr-text); font:inherit; }
+.cc-roster-compact-picker .cc-roster-layout-reset { width:auto; font-size:11px; padding:6px; }
+.cc-roster-compact-picker .cc-roster-layout-status { flex-basis:100%; min-height:0; font-size:10px; }
+.cc-roster-compact-picker .cc-roster-layout-status:empty { display:none; }
+.cc-roster-premium-v1397 .cc-roster-period-v1399 { margin:0 !important; padding:8px 10px !important; border-radius:12px !important; box-shadow:none !important; gap:8px !important; }
+.cc-roster-premium-v1397 .cc-roster-zoom { margin:6px 0; padding:8px 10px; border-radius:12px; gap:6px; }
+.cc-roster-zoom p { margin:0; font-size:11px; }
+.cc-roster-finance-summary { margin:8px 0; border:1px solid var(--ccr-line); border-radius:12px; background:var(--ccr-panel); color:var(--ccr-text); }
+.cc-roster-finance-summary > summary { padding:10px; min-height:44px; box-sizing:border-box; cursor:pointer; font-size:12px; line-height:1.5; font-variant-numeric:tabular-nums; }
+.cc-roster-finance-summary :focus-visible { outline:3px solid #16bcd0; outline-offset:2px; }
+.cc-roster-finance-summary .cc-roster-hero-v1397 { margin:0 !important; padding:12px !important; gap:12px !important; border:0 !important; border-radius:12px !important; background:var(--ccr-panel) !important; box-shadow:none !important; }
+.cc-roster-finance-summary .cc-roster-hero-v1397::after { content:none; }
+.cc-roster-finance-summary .cc-roster-hero-copy-v1397 h2 { font-size:16px !important; line-height:1.3 !important; margin:0 !important; }
+.cc-roster-finance-summary .cc-roster-hero-copy-v1397 p { font-size:12px !important; margin:6px 0 !important; }
+.cc-roster-finance-summary .cc-roster-money-overview-v1397 button { min-height:0 !important; padding:12px !important; border-radius:10px !important; }
+.cc-roster-finance-summary .cc-roster-money-overview-v1397 button strong { font-size:20px !important; }
+.cc-roster-premium-v1397 .cc-roster-legend-v1397 { margin:8px 0 !important; padding:6px !important; }
+.cc-roster-premium-v1397 .cc-calendar-roster table, .cc-roster-premium-v1397 .cc-calendar-roster td { height:auto !important; }
+.cc-roster-premium-v1397 .cc-calendar-day { min-height:76px; }
+.cc-roster-premium-v1397 .cc-calendar-day article { min-height:0 !important; height:auto !important; }
+.cc-roster-premium-v1397 .cc-aims-roster > header, .cc-roster-premium-v1397 .cc-calendar-roster > header { padding:10px 12px; }
+.cc-roster-premium-v1397 .cc-aims-roster > header p, .cc-roster-premium-v1397 .cc-calendar-roster > header p { margin:0; font-size:11px; }
+
+.cc-roster-premium-v1397 > .cc139-brand { margin:8px 0 !important; padding:0 !important; min-height:44px !important; }
+.cc-roster-premium-v1397 > .cc139-head { margin:8px 0 !important; padding:0 !important; }
+.cc-roster-premium-v1397 > .cc139-head h1 { margin:0 !important; font-size:24px !important; line-height:1.25 !important; }
+.cc-roster-premium-v1397 > .cc139-head p { margin:4px 0 !important; font-size:12px !important; }
+.cc-roster-compact-legend { margin:4px 0; color:var(--ccr-muted); font-size:11px; }
+.cc-roster-compact-legend > summary { min-height:44px; display:list-item; box-sizing:border-box; padding:12px; cursor:pointer; }
+.cc-roster-compact-legend > summary:focus-visible { outline:3px solid #16bcd0; outline-offset:2px; }
+.cc-roster-premium-v1397 .cc-calendar-roster table { min-width:1120px; }
+.cc-roster-premium-v1397 .cc-calendar-day article { padding:6px; }
+.cc-roster-premium-v1397 .cc-calendar-day article strong { font-size:12px; }
+.cc-roster-premium-v1397 .cc-calendar-day article span, .cc-roster-premium-v1397 .cc-calendar-day article small { font-size:11px; }
+.cc-roster-premium-v1397 .cc-calendar-day article button { padding:4px; }
+.cc-roster-premium-v1397 > .cc139-brand { float:left; width:44px; margin-right:10px !important; }
+.cc-roster-premium-v1397 > .cc139-brand > span { display:none; }
+.cc-roster-premium-v1397 > .cc139-brand > button { width:44px; height:44px; }
+.cc-roster-premium-v1397 > .cc139-head { width:auto; min-height:52px; margin-left:54px !important; padding-top:8px !important; }
+.cc-roster-premium-v1397 .cc-roster-compact-picker { clear:both; }
+.cc-roster-premium-v1397 .cc-roster-period-v1399 { grid-template-columns:minmax(0,1fr) auto !important; }
+.cc-roster-premium-v1397 .cc-roster-period-v1399 label { display:flex !important; gap:6px !important; min-width:0; }
+.cc-roster-premium-v1397 .cc-roster-period-v1399 label > span { font-size:11px !important; }
+.cc-roster-premium-v1397 .cc-roster-period-v1399 select { width:100%; min-width:0; min-height:44px !important; padding:0 20px 0 6px !important; font-size:12px; }
+.cc-roster-premium-v1397 .cc-roster-period-v1399 > button { padding:0 10px !important; }
+.cc-roster-premium-v1397 .cc-aims-roster > header, .cc-roster-premium-v1397 .cc-calendar-roster > header { padding:8px 12px; }
+.cc-roster-premium-v1397 .cc-roster-period-v1399 label > span, .cc-roster-premium-v1397 .cc-roster-period-v1399 label > svg { flex-shrink:0; white-space:nowrap; }
+
+/* Personal reading state; removing data-change-status restores existing semantic styling. */
+.cc-publication-history { padding:16px; }
+.cc-publication-history > div { margin:8px 0; padding:8px; border:1px solid var(--ccr-line); border-radius:12px; }
+.cc-publication-history > div[data-change-status="unread"] { background:#fef3c7; color:#422006; }
+.cc-publication-history button,.cc-publication-change button { min-height:44px; padding:8px 12px; white-space:normal; text-align:left; }
+.cc-publication-change { padding:12px; border:1px solid currentColor; border-radius:12px; }
+.cc-publication-change dl > div { display:grid; grid-template-columns:minmax(80px,1fr) minmax(0,2fr); gap:8px; padding:6px 0; }
+.cc-publication-change dd { margin:0; overflow-wrap:anywhere; }
+.cc-publication-change dd span { display:block; }
+.cc-publication-change p { white-space:normal; }
+.cc-publication-change { box-sizing:border-box; max-width:min(680px,calc(100vw - 80px)); }

@@ -18,23 +18,29 @@ public class CrewCheckNotificationReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         if (context == null) return;
         if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
-        ensureChannel(context);
-        String title = intent == null ? "CrewCheck" : intent.getStringExtra("title");
-        String body = intent == null ? "" : intent.getStringExtra("body");
-        if (title == null || title.trim().isEmpty()) title = "CrewCheck";
-        if (body == null) body = "";
-        Intent open = new Intent(context, MainActivity.class);
-        open.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        PendingIntent pi = PendingIntent.getActivity(context, 10837, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? new Notification.Builder(context, CHANNEL_ID) : new Notification.Builder(context);
-        builder.setContentTitle(title)
-                .setContentText(body)
-                .setStyle(new Notification.BigTextStyle().bigText(body))
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentIntent(pi)
-                .setAutoCancel(true);
-        NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager != null) manager.notify((int)(System.currentTimeMillis() % 100000), builder.build());
+        if (intent == null || !NotificationTiming.shouldAttempt(intent.getLongExtra("scheduledAt", 0L), System.currentTimeMillis(), true)) return;
+        synchronized (NotificationLedger.LOCK) {
+            if (!new NotificationLedgerAndroid(context).ledger().claim(intent.getStringExtra("notificationKey"), intent.getStringExtra("notificationEpoch"), intent.getLongExtra("scheduledAt", 0L))) return;
+            ensureChannel(context);
+            String title = intent == null ? "CrewCheck" : intent.getStringExtra("title");
+            String body = intent == null ? "" : intent.getStringExtra("body");
+            if (title == null || title.trim().isEmpty()) title = "CrewCheck";
+            if (body == null) body = "";
+            Intent open = new Intent(context, MainActivity.class);
+            open.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            PendingIntent pi = PendingIntent.getActivity(context, 10837, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? new Notification.Builder(context, CHANNEL_ID) : new Notification.Builder(context);
+            builder.setContentTitle(title)
+                    .setVisibility(Notification.VISIBILITY_PRIVATE)
+                    .setContentText(body)
+                    .setStyle(new Notification.BigTextStyle().bigText(body))
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setContentIntent(pi)
+                    .setOnlyAlertOnce(true)
+                    .setAutoCancel(true);
+            NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager != null) manager.notify(NotificationLedgerAndroid.TAG + intent.getStringExtra("notificationKey"), 0, builder.build());
+        }
     }
 
     private static void ensureChannel(Context context) {

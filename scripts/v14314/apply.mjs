@@ -22,7 +22,7 @@ update('server/v1404/telegram-language.mjs', (source) => {
 });
 
 const CREWCHECK_ACTIVITY_LABELS = Object.freeze({
-  DO:'folga', DOF:'folga regulamentar', DOP:'folga programada', OFF:'folga', ASB:'sobreaviso', HSB:'sobreaviso', HSBE:'sobreaviso especial',
+  DO:'folga', DOF:'folga regulamentar', DOP:'folga programada', OFF:'folga', ASB:'reserva', HSB:'sobreaviso', HSBE:'sobreaviso especial',
   RES:'reserva operacional', RSV:'reserva operacional', MT:'reunião operacional', CRM:'treinamento de gerenciamento de recursos da tripulação',
   RCFI:'treinamento recorrente', EAD:'treinamento a distância', PS:'deslocamento como passageiro', EXTRA:'deslocamento como passageiro', DH:'deslocamento como passageiro',
   DEADHEAD:'deslocamento como passageiro', PERNOITE:'pernoite em hotel', HOTEL:'pernoite em hotel', VOO:'voo'
@@ -47,6 +47,8 @@ export function translateAviationText(value = '') {
 
 const DIGIT_WORDS =`);
   }
+  // Repair generated sources too; this is a label correction, never a roster rewrite.
+  next = next.replace("ASB:'sobreaviso'", "ASB:'reserva'");
   next = next.replace(/export function spokenTime\(value = '', fallback = 'horário a confirmar'\) \{[\s\S]*?\n\}/, `export function spokenTime(value = '', fallback = 'horário a confirmar') {
   const match = String(value || '').match(/(?:T|\\s|^)(\\d{1,2}):(\\d{2})/);
   if (!match) return fallback;
@@ -57,7 +59,7 @@ const DIGIT_WORDS =`);
   return minute ? hourText + ' e ' + minute + ' ' + (minute === 1 ? 'minuto' : 'minutos') : hourText;
 }`);
   next = next.replace(/function shortAirportName\(code = ''\) \{[\s\S]*?\n\}/, `function shortAirportName(code = '') {
-  return translatedAirportName(code);
+  return translatedAirportName(code)\n    .replace(/^aeroporto\\s+(?:d[aeo]\\s+)?/i, '')\n    .trim();
 }`);
   next = next.replace("const activity = String(record.code || 'atividade').toLowerCase();", "const activity = translatedActivityLabel(record.code || 'atividade');");
   next = next.replace('e a chave termina em', 'e a programação termina em');
@@ -142,3 +144,4 @@ update('android-wrapper/app/build.gradle', (source) => source.replace(/versionCo
 update('package.json', (source) => { const data = JSON.parse(source); data.version = VERSION; data.description = `CrewCheck v${VERSION} - tradução aeronáutica e Concierge Familiar Premium`; data.scripts ||= {}; data.scripts['regression:v14.3.14'] = 'node scripts/v139/apply.mjs && node scripts/regression-v14-3-14-aviation-family.mjs'; return `${JSON.stringify(data, null, 2)}\n`; });
 
 console.log(`[v14314] CrewCheck ${VERSION}: tradução IATA/ICAO, atividades em linguagem simples e Concierge Familiar Premium.`);
+

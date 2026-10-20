@@ -1,0 +1,120 @@
+name: Next flight gate (phone + CrewWatch)
+on:
+  pull_request:
+    paths:
+      - 'server.mjs'
+      - 'server/gate-source-update.mjs'
+      - 'client/src/lib/manualGateNotices.ts'
+      - 'scripts/regression-manual-gate-review*.mjs'
+      - 'scripts/regression-manual-gate-legacy-review.mjs'
+      - 'scripts/regression-mobile-watch-publish-cadence.mjs'
+      - 'scripts/regression-watch-automatic-field-expiry.mjs'
+      - 'scripts/regression-manual-operational-fields*.mjs'
+      - 'shared/gate-query-day*'
+      - 'shared/timezone-choice.mjs'
+      - 'shared/airport-timezones.mjs'
+      - 'server/platform.mjs'
+      - 'server/v1403/premium-helpers.snippet'
+      - 'client/src/lib/radarAvailability.ts'
+      - 'client/src/lib/authClient.ts'
+      - 'scripts/regression-radar-cpv-timezone.mjs'
+      - 'scripts/regression-radar-authority-followup.mjs'
+      - 'scripts/regression-radar-availability-browser.mjs'
+      - 'scripts/regression-radar-provider-provenance.mjs'
+      - 'scripts/regression-radar-source-occurrence.mjs'
+      - 'scripts/regression-flightaware-response-selection.mjs'
+      - 'scripts/regression-gate-query-day.mjs'
+      - 'scripts/regression-gate-query-proof.mjs'
+      - 'scripts/regression-gate-query-binding.mjs'
+      - 'client/src/lib/nextFlightGate.ts'
+      - 'client/src/lib/nextFlightWatch.ts'
+      - 'client/src/lib/watchContext.ts'
+      - 'client/src/components/nextflight/**'
+      - 'client/src/components/v1391/HomeRosterPreview.tsx'
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/regression-next-flight-gate.mjs'
+      - 'scripts/regression-next-flight-gate-pulse.mjs'
+      - 'scripts/regression-next-flight-gate-pulse-browser.mjs'
+      - 'scripts/regression-next-flight-gate-prepared.mjs'
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/rosterDisplayDate.ts'
+      - 'scripts/p1-566-flightdeck-radar-briefing-context/**'
+      - '.github/workflows/next-flight-gate.yml'
+permissions:
+  contents: read
+jobs:
+  simulated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - run: npm ci
+      - name: Simulated contract in three timezones (no network, no credentials)
+        run: |
+          TZ=UTC node scripts/regression-radar-provider-provenance.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
+          node scripts/regression-flightaware-response-selection.mjs
+          TZ=UTC node scripts/regression-radar-source-occurrence.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-source-occurrence.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-source-occurrence.mjs
+          node scripts/regression-radar-cpv-timezone.mjs
+          node scripts/regression-radar-authority-followup.mjs
+          TZ=UTC node scripts/regression-gate-query-day.mjs
+          TZ=UTC node scripts/regression-gate-query-binding.mjs
+          TZ=UTC node scripts/regression-gate-query-proof.mjs
+          TZ=America/Sao_Paulo node scripts/regression-gate-query-proof.mjs
+          TZ=Pacific/Auckland node scripts/regression-gate-query-proof.mjs
+          node scripts/regression-manual-gate-review.mjs
+          node scripts/regression-manual-gate-legacy-review.mjs
+          node scripts/regression-mobile-watch-publish-cadence.mjs
+          node scripts/regression-watch-automatic-field-expiry.mjs
+          node scripts/regression-manual-operational-fields.mjs
+          TZ=UTC node scripts/regression-next-flight-gate-pulse.mjs
+          TZ=UTC node scripts/regression-next-flight-gate.mjs
+          TZ=America/Sao_Paulo node scripts/regression-next-flight-gate.mjs
+          TZ=Pacific/Auckland node scripts/regression-next-flight-gate.mjs
+      - name: Verify actual prepared Radar handoff, civil date and safe notices
+        run: |
+          node scripts/v139/apply.mjs
+          TZ=UTC node scripts/regression-radar-provider-provenance.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-provider-provenance.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-provider-provenance.mjs
+          node scripts/regression-flightaware-response-selection.mjs
+          TZ=UTC node scripts/regression-radar-source-occurrence.mjs
+          TZ=America/Sao_Paulo node scripts/regression-radar-source-occurrence.mjs
+          TZ=Pacific/Auckland node scripts/regression-radar-source-occurrence.mjs
+          node scripts/regression-radar-cpv-timezone.mjs
+          node scripts/regression-radar-authority-followup.mjs
+          TZ=UTC node scripts/regression-gate-query-day.mjs
+          TZ=UTC node scripts/regression-gate-query-binding.mjs
+          TZ=UTC node scripts/regression-gate-query-proof.mjs
+          TZ=America/Sao_Paulo node scripts/regression-gate-query-proof.mjs
+          TZ=Pacific/Auckland node scripts/regression-gate-query-proof.mjs
+          node scripts/regression-manual-gate-review.mjs
+          node scripts/regression-manual-gate-legacy-review.mjs
+          node scripts/regression-mobile-watch-publish-cadence.mjs
+          node scripts/regression-watch-automatic-field-expiry.mjs
+          node scripts/regression-manual-operational-fields.mjs
+          TZ=UTC node scripts/regression-next-flight-gate-pulse.mjs
+          TZ=UTC node scripts/regression-next-flight-gate-prepared.mjs
+          TZ=America/Sao_Paulo node scripts/regression-next-flight-gate-prepared.mjs
+          TZ=Pacific/Auckland node scripts/regression-next-flight-gate-prepared.mjs
+      - name: Install isolated browser for actual RadarView responses
+        run: |
+          npm install --prefix "$RUNNER_TEMP/radar-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/radar-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify prepared RadarView suppression and stale response fences
+        env:
+          RADAR_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/radar-browser/package.json
+        run: node scripts/regression-radar-availability-browser.mjs
+      - name: Verify automatic boarding pulse and manual precedence offline
+        env:
+          GATE_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/radar-browser/package.json
+        run: |
+          node scripts/regression-next-flight-gate-pulse-browser.mjs
+          node scripts/regression-manual-gate-review-browser.mjs
+          node scripts/regression-manual-operational-fields-browser.mjs

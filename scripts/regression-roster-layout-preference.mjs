@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
 const code = ts.transpileModule(fs.readFileSync('client/src/lib/rosterLayoutPreference.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.ES2022 } }).outputText;
-const { readRosterLayout: read, saveRosterLayout: save, rosterLayoutKey: key } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+const { readRosterLayout: read, saveRosterLayout: save, rosterLayoutKey: key, readRosterZoom: zoom } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
 const data = new Map();
 const storage = { getItem: k => data.get(k) ?? null, setItem: (k,v) => data.set(k,v), removeItem: k => data.delete(k) };
 assert.equal(read(storage,'A'), 'cards');
@@ -15,6 +15,13 @@ assert.equal(read(storage,'B'), 'cards');
 assert.equal(save(storage,'A','calendar'), true);
 assert.equal(read(storage,'A'), 'calendar');
 assert.equal(read(storage,'B'), 'cards');
+assert.equal(save(storage,'A','document'), true);
+assert.equal(read(storage,'A'),'aims');
+data.set(key('A'), JSON.stringify({version:1,layout:'document',zoom:'day'}));
+assert.equal(read(storage,'A'),'aims','legacy document becomes the single AIMS mode');
+assert.equal(zoom(storage,'A'),'day','legacy zoom survives');
+assert.equal(save(storage,'A','aims','month'),true);
+assert.equal(read(storage,'B'),'cards');
 assert.equal(save(storage,null,'list'), false);
 assert.equal(read(storage,null), 'cards');
 for (const raw of ['invalid', '{"version":2,"layout":"list"}', '{"version":1,"layout":"unknown"}']) {
@@ -27,19 +34,20 @@ assert.equal(save(storage,'A','cards'), true);
 assert.equal(read(storage,'A'), 'cards');
 const prepared = fs.readFileSync('client/src/components/v1391/RosterLaunchView.tsx','utf8');
 assert.ok(prepared.includes('data-roster-layout={layout}'), 'selector must survive canonical preparation');
-assert.ok(prepared.includes('aria-pressed={layout === \'cards\'}'), 'cards option must expose selected state');
-assert.ok(prepared.includes('aria-pressed={layout === \'list\'}'), 'list option must expose selected state');
-assert.ok(prepared.includes('aria-pressed={layout === \'aims\'}'), 'AIMS option must expose selected state');
-assert.ok(prepared.includes('aria-pressed={layout === \'calendar\'}'), 'calendar option must expose selected state');
-assert.ok(prepared.includes('<AimsRosterTable events={ordered}/>'), 'AIMS must use its own renderer');
-assert.ok(prepared.includes('<CalendarRosterView events={ordered} month={selectedMonth}/>'), 'calendar must use its own renderer');
-assert.ok(!prepared.includes('<select value={layout}'), 'layout must not fall back to the raw select control');
+assert.match(prepared, /<select aria-label="Formato da escala" value=\{layout\}/, 'native picker exposes current value and accessible name');
+for (const layout of ['cards','list','aims','calendar']) assert.ok(prepared.includes(`<option value="${layout}">`), `missing native option ${layout}`);
+assert.ok(prepared.includes('<AimsDocumentView events={visibleEvents}'), 'AIMS uses the existing document projection');
+assert.ok(!prepared.includes('<option value="document">'), 'no duplicate Document option');
+assert.ok(prepared.includes('<CalendarRosterView events={ordered} month={selectedMonth} zoom={zoom} selectedDay={activeDay} onSelectDay={selectDay}/>'), 'calendar must use its own renderer');
+
 assert.ok(prepared.includes('data-roster-iso={group.iso}'), 'date navigation remains reachable');
 const aimsTable = fs.readFileSync('client/src/components/v1391/AimsRosterTable.tsx', 'utf8');
-for (const heading of ['Data', 'Código / atividade', 'Apresentação', 'Origem', 'Partida', 'Destino', 'Chegada', 'Detalhes publicados']) {
-  assert.ok(aimsTable.includes(`<th scope="col">${heading}</th>`), `missing AIMS column: ${heading}`);
+for (const heading of ['Código / atividade', 'Apresentação', 'Origem', 'Partida / início', 'Destino', 'Chegada / fim', 'Detalhes publicados']) {
+  assert.ok(aimsTable.includes(heading), `missing published AIMS field: ${heading}`);
 }
-assert.ok(aimsTable.includes('<table>'), 'AIMS must be a semantic table, not compacted cards');
+assert.ok(aimsTable.includes('className="cc-aims-days"'), 'AIMS must group each published day in a vertical column');
+assert.ok(aimsTable.includes('<dl className="cc-aims-published-fields">'), 'published values need semantic labels');
+assert.doesNotMatch(aimsTable, /cc-aims-roster-scroll|<table>/, 'AIMS must not require horizontal field scrolling');
 assert.ok(aimsTable.includes('data-roster-iso={iso}'), 'AIMS rows must preserve date navigation');
 assert.doesNotMatch(aimsTable, /finance|salary|perDiem|parser/i, 'AIMS renderer must not invent finance or parser logic');
 const calendar = fs.readFileSync('client/src/components/v1391/CalendarRosterView.tsx', 'utf8');
@@ -53,3 +61,17 @@ const layoutCss = fs.readFileSync('client/src/components/v1391/roster-layout.css
 assert.match(layoutCss, /data-roster-layout="list"[\s\S]*display: flex !important;/, 'list mode must win the premium stylesheet cascade');
 assert.match(layoutCss, /\.cc-roster-layout-reset[\s\S]*min-height: 44px;/, 'reset action must keep the mobile touch target');
 console.log('PASS: account isolation, reload, reset, accessible Cards/List/AIMS/Calendar picker, complete calendar and prepared integration');
+
+assert.equal(zoom(storage, 'A'), 'month');
+assert.equal(save(storage, 'A', 'aims', 'day'), true);
+assert.equal(zoom(storage, 'A'), 'day');
+assert.equal(zoom(storage, 'B'), 'month');
+assert.equal(save(storage, 'A', 'calendar'), true);
+assert.equal(zoom(storage, 'A'), 'day', 'changing layout preserves zoom');
+assert.equal(save(storage, 'A', 'cards', 'month'), true);
+assert.equal(zoom(storage, 'A'), 'month');
+assert.equal(zoom(blocked, 'A'), 'month');
+assert.equal(save(storage, null, 'aims', 'day'), false);
+assert.equal(save(storage, 'A', 'aims', 'week'), false);
+console.log('PASS: backward-compatible month/day preference, reload, reset, account isolation and blocked storage');
+

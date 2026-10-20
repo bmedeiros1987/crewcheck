@@ -87,10 +87,10 @@ const record = {
 };
 const summary = buildProgramSummary({ profile, snapshot, record, label: 'Hoje', presentationTime: '12:00' });
 assert.match(summary, /Hoje, você tem 2 pernas/);
-assert.match(summary, /saindo de Brasília/);
-assert.match(summary, /saindo do Recife/);
-assert.doesNotMatch(summary, /saindo do Brasília/);
-assert.match(summary, /voo três sete nove quatro da LATAM/);
+assert.match(summary, /saída de Brasília/);
+assert.match(summary, /saída do Recife/);
+assert.doesNotMatch(summary, /saída do Brasília/);
+assert.match(summary, /LA3794:/);
 
 const presentation = new Date('2026-07-20T12:00:00-03:00');
 const window = calculateDepartureWindow(presentation, { minutes: 0 });
@@ -113,3 +113,4 @@ assert.match(departure, /aeroporto de Brasília/);
 assert.doesNotMatch(departure, /saia.*12 horas/);
 
 console.log('CrewCheck v14.0.5 Telegram natural language and grammar regression OK.');
+

@@ -1,0 +1,13 @@
+# Recomendação objetiva: não reduzir para 6 caracteres
+
+Manter neste patch os mínimos atuais: visitante 10 e conta principal 8. Isso preserva compatibilidade, não certifica que a política atual seja ideal. Não alterar senhas existentes, resetar contas ou exigir troca nesta etapa.
+
+Não recomendo senha permanente de 6 caracteres para estes fluxos. O visitante pode ver escala, hotéis/apresentação, contatos/quarto e ações autorizadas; a conta do titular possui ainda dados médicos e financeiros. As novas permissões financeiras para visitante continuam OFF, mas sua ativação futura aumentaria o impacto de comprometimento. O hash scrypt com salt é uma proteção real, porém não torna uma senha curta escolhida por humanos resistente a adivinhação.
+
+No visitante, o throttle depende de tabela opcional e retorna sem bloqueio quando ela não está pronta; a chave mistura IP e e-mail, a confiança em X-Forwarded-For depende do proxy e a contagem do upsert requer teste MySQL por atribuições sequenciais. Não foi comprovado MFA obrigatório no login de visitante. Convite com token/senha temporária e verificação de e-mail/recuperação não equivalem automaticamente a MFA a cada login. Cookie/JWT de visitante dura 30 dias, com acesso efetivo dependente de status/permissões no banco. Não há evidência suficiente para reduzir o mínimo como compensação a uma proteção de tentativas garantida em produção.
+
+Como referência técnica atual, NIST SP 800-63B-4 §3.1.1.2 exige 15 caracteres quando a senha é fator único e ao menos 8 quando integra MFA; também evita regras obrigatórias de composição, pede bloqueio de senhas comuns/comprometidas e rate limiting efetivo. Não é uma mudança automaticamente aplicável ao produto, mas 6 fica abaixo de ambos os referenciais. Fonte primária: https://pages.nist.gov/800-63-4/sp800-63b.html#passwordver . Orientação complementar: https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html .
+
+Proposta a avaliar separadamente: frases-senha longas, símbolos opcionais, gerenciador/autofill/colar e olho; proteção durável por conta, proxy verificado e blocklist; discutir MFA antes de rever mínimo. Não obrigar letra+numero por presumir que “alfanumérico” é uma regra de segurança suficiente. Uma senha permanente de 6 caracteres não deve ser confundida com OTP de 6 dígitos, temporário e de uso limitado, nem com QR/NFC, que carregam outra credencial.
+
+Qualquer mudança real requer aprovação específica do escopo (visitante, conta ou ambos), validação client/server coerente, testes de concorrência/tentativas/recuperação e revisão de segurança. Nenhuma redução foi implementada.

@@ -32,3 +32,26 @@ for (const policy of policies) {
 }
 
 console.log('PASS: all Google Play internal publishers require explicit manual dispatch');
+
+// Version allocation itself opens temporary Play edits: never run it on web push/PR.
+const android = fs.readFileSync('.github/workflows/android.yml', 'utf8');
+const allocationCondition = "github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.publish_internal_drafts";
+function assertAllocationGuard(condition) {
+  assert.equal(condition, allocationCondition, 'Play version allocation must remain main-only and manual-only');
+}
+for (const step of ['Install Play API client for version allocation', 'Allocate live Play version codes']) {
+  const start = android.indexOf('      - name: ' + step + '\n');
+  assert.ok(start >= 0, 'allocation step missing: ' + step);
+  const tail = android.slice(start).split('\n      - ', 1)[0];
+  const condition = tail.match(/\n        if: ([^\n]+)/)?.[1];
+  assertAllocationGuard(condition);
+  const evaluate = new Function('github','inputs', 'return (' + condition + ');');
+  for (const ref of ['refs/heads/main', 'refs/heads/test']) {
+    for (const event_name of ['push', 'pull_request', 'workflow_dispatch']) {
+      for(const publish_internal_drafts of [false,true])assert.equal(evaluate({ ref, event_name },{publish_internal_drafts}), ref === 'refs/heads/main' && event_name === 'workflow_dispatch' && publish_internal_drafts);
+    }
+  }
+}
+assert.throws(() => assertAllocationGuard("github.ref == 'refs/heads/main'"));
+assert.throws(() => assertAllocationGuard("github.event_name == 'workflow_dispatch'"));
+console.log('PASS: Play allocator excluded from push/PR; build-only dispatch skips Play imports/allocation; explicit publishing dispatch remains gated');

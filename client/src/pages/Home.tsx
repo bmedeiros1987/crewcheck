@@ -1,3 +1,41 @@
+import {resolveRegulationProgram,regulationProgramDay} from '@shared/regulationScenarioPrefill.mjs';
+import {cabinSalaryRateReference} from '@/lib/cabinSalaryRateReference';
+import ConciergeFinancialPreview from '@/components/finance/ConciergeFinancialPreview';
+import {HomeFinancialEstimateProvider} from '@/components/finance/HomeFinancialEstimate';
+import CurrencyCalculator from '@/components/finance/CurrencyCalculator';
+import FinancialHistoryWithoutRoster from '@/components/finance/FinancialHistoryWithoutRoster';
+import {validFinancialDay} from '@/lib/financialHistoryPeriods';
+import {parseFinancialDecimal} from '@shared/financialFx.mjs';
+import { AlertRosterNavigation } from '@/components/alerts/AlertRosterNavigation';
+import * as rawNavigationContext from '@/lib/navigationContext';
+import { peekPendingNavigationContext as peekAlertRosterContext } from '@/lib/navigationContext';
+import { isGroundAlertIgnored, GROUND_DISPOSITION_EVENT } from '@/lib/groundAlertDispositions';
+import { alertRosterOwned } from '@/lib/alertRosterOwnership';
+import { AlertCenter } from '@/components/alerts/AlertCenter';
+import { alertAccount, alertIsReviewed, complianceAlertIdentity, ALERT_REVIEW_EVENT } from '@/lib/alertReviewStore';
+import { alertText } from '@/lib/alertExperienceText';
+import { reconcileCrewCheckPulse } from '@/components/pulse/pulseRuntime';
+import { radarFailurePayload, radarAvailabilityLabel } from '@/lib/radarAvailability';
+import { gateQueryDay, gateQuerySuppressed, originFlightDate, radarResultDecision, publishedGateDate } from '../../../shared/gate-query-day.mjs';
+import {NotificationCenter,openNotificationSettings} from '@/components/notifications/NotificationCenter';
+import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
+import { FreeDayPostponementAlerts } from '@/components/FreeDayPostponementAlerts';
+import { beginOwnedPlannedImport, loadOwnedPlannedRoster, saveOwnedPlannedRoster, clearOwnedPlannedRoster, isCurrentPlannedRoster, type OwnedPlannedRoster } from '@/lib/plannedRosterStore';
+import { payableReserveHours } from '@/lib/financialReserveCredits';
+import { assessSalaryActivities } from '@/lib/salaryActivityEvidence';
+import { CanonicalDutyCard, openCanonicalDutyDetails } from '@/components/CanonicalDutyCard';
+import { measureCanonicalDuty } from '@/lib/canonicalDutyMeasurement';
+import { financialIntervalEvidenceIssue, financialPublishedFlightIntervalIssue } from '@/lib/financialIntervalEvidence';
+import { NotificationReadiness } from '@/components/notifications/NotificationReadiness';
+import { isFinancialSetting, readFinancialSetting, writeFinancialSetting } from '@/lib/financialSettingStore';
+import type { ReactNode } from 'react';
+import '@/styles/per-diem-content.css';
+import '@/styles/compact-navigation.css';
+import TextSizeSetting from '@/components/TextSizeSetting';
+import MoneyText from '@/components/MoneyText';
+import { FinancialPrivacyToggle, useFinancialPrivacy } from '@/components/finance/FinancialPrivacy';
+import { acquireOverlayLifecycle } from '@/lib/overlayLifecycle';
+import NotificationSoundSetting from '@/components/pulse/NotificationSoundSetting';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useLocation } from 'wouter';
 import JSZip from 'jszip';
@@ -56,9 +94,10 @@ import {
   Plus,
   Search,
 } from 'lucide-react';
-import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getPublishedDutyLimitSummary, type ComplianceResult } from '@/lib/complianceEngine';
+import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getCanonicalWorkHoursTotal, getPublishedDutyLimitSummary, type ComplianceResult } from '@/lib/complianceEngine';
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
-import { authFetch, getStoredUser, logout } from '@/lib/authClient';
+import { authFetch, getStoredUser, getToken, logout } from '@/lib/authClient';
+import { captureAuthSession } from '@/lib/authClient';
 import { exportReport } from '@/lib/pdfExport';
 import { generateICalendar, downloadCalendarFile } from '@/lib/calendarExport';
 import { shareToWhatsApp, shareToTelegram, copyToClipboard, shareExportedPdfNative } from '@/lib/sharing';
@@ -71,32 +110,57 @@ import { buildCanonicalRosterEvents, normalizeRosterDays, selectNextRosterEvent,
 import { isOperationalCanonicalEvent } from '@/lib/canonicalRoster';
 import { isSmartDepartureEligible, publishedPresentationOf } from '@/lib/scheduleActivityClassification';
 import { resolveActFinancialRules, resolvePerDiemRule, type AirportPerDiemOverrides, type PerDiemCurrency, type PerDiemRateKey } from '@/lib/financialRules';
+import { SalaryCalculationStatus } from '@/components/finance/SalaryCalculationStatus';
+import { salaryCalculationDiagnostic } from '@/lib/salaryCalculationDiagnostic';
 import FinancialStatementImporter from '@/components/finance/FinancialStatementImporter';
-import { confirmedRateValueAt } from '@/lib/financialStatementLearning';
+import FinancialHistoryExplorer from '@/components/finance/FinancialHistoryExplorer';
+import NextPaymentCard from '@/components/finance/NextPaymentCard';
+import {useSalaryDisplayBasis} from '@/components/finance/SalaryDisplayBasis';
+import {payrollOperationalCoverage} from '@/lib/payrollPaymentComposition';
+import {salaryDisplaySummary,sumSalaryDisplaySummaries} from '@/lib/salaryDisplayBasis';
+import PayrollPaymentCard from '@/components/finance/PayrollPaymentCard';
+import SalaryBreakdownChart, { salaryDeductionEvidence } from '@/components/finance/SalaryBreakdownChart';
+import FinancialScreen from '@/components/finance/FinancialScreen';
+import { nextAllowancePayment } from '@/lib/nextFinancialPayment';
+import {readMonthlyFinancialSettings} from '@/lib/financialMonthlySettings';
+import {applyMonthlySalaryInputs} from '@/lib/monthlySalaryInputs';
+import FinancialStatementReconciliation from '@/components/finance/FinancialStatementReconciliation';
+import CanonicalForecastCapture from '@/components/finance/CanonicalForecastCapture';
+import { financialRowsInRange, financialWeeks, financialRange, type FinancialRange } from '@/lib/financialHistoryPeriods';
+import { rosterDisplayIso, rosterStrictInstant, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
+import { confirmedRateAt, confirmedRateValueAt, reviewedPayrollCycleForOperationalMonth, financialRateSession } from '@/lib/financialStatementLearning';
 import { perDiemSlotAmount, resolveDomesticPerDiemRate } from '@/lib/financialAmounts';
 import { compareRosters, rosterFingerprint, sameRosterPeriod, type ComparableRosterEvent, type RosterChange } from '@/lib/rosterComparison';
-import { classifyAllowanceWindows, freeDayPostponementIndemnity, observedStatementCycle } from '@/lib/compensationPolicy';
-import { financialJourneyGroupKey, rowsForNominalFinancialCompetence } from '@/lib/financialJourneyGrouping';
+import { allowanceIntervalState, rosterOperationalIso, rosterOperationalDateAt, rosterPresentationBeforeDeparture, taxiPresentationOccurrence, classifyAllowanceWindows, freeDayPostponementIndemnity } from '@/lib/compensationPolicy';
+import { observedAllowancePeriods, rowsInObservedCycle, summarizeForecastRows, summarizeNativeForecastRows, nativeForecastDelta, forecastSummaryValue } from '@/lib/financialForecastPeriods';
+import { financialJourneyGroupKey, rowsForNominalFinancialCompetence, nominalFinancialCompetencePrefix } from '@/lib/financialJourneyGrouping';
 import PlatformCenter from '@/components/platform/PlatformCenter';
 import { getPlatformProfile, getPlatformBilling, savePlatformProfile, syncPlatformRoster, listPlatformStays, updatePlatformStay, findHotelCompanions, gymCheckIn, listGymCrowding, getParkingPosition, saveParkingPosition, deleteParkingPosition, deleteCrewCheckAccount, type CrewCheckLocale, type PlatformProfile } from '@/lib/platformClient';
+import {TimezoneChoice} from '@/components/preferences/TimezoneChoice';
+import {deviceTimeZone} from '@shared/timezone-choice.mjs';
 import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient';
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
+import { retainLatestGateEvidence, nextGateUpdateWatermark, type GateSourceUpdate, type GateUpdateWatermark, canonicalFlightId, RADAR_GATE_STALE_MS, MANUAL_GATE_EVENT, manualGateIdentity, flightOperationalDate, gateChangeAlertAllowed, manualGateAccountKey, resolveNextFlightGate, radarSnapshotStorageKey, readCachedRadarForFlight, readManualGate, selectNextFlight } from '@/lib/nextFlightGate';
+import { applyNextFlightToWatchSnapshot } from '@/lib/nextFlightWatch';
+import { manualGateNoticeIdentity, manualGateNoticeScope, claimManualGateNotice } from '@/lib/manualGateNotices';
+import { ManualGateEditor } from '@/components/nextflight/ManualGateEditor';
 import CrewCheckPulse from '@/components/pulse/CrewCheckPulse';
-import { crewCheckNotificationPermission, publishCrewCheckNotice, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';
+import { crewCheckNotificationPermission, publishCrewCheckNotice, publishCrewCheckPulse, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';
 import ManualRegulationView from '@/components/v1392/ManualRegulationView';
-import { isActionableComplianceAlert } from '@/lib/complianceAlertSemantics';
+import { isActionableComplianceAlert, informationalComplianceDiagnostics } from '@/lib/complianceAlertSemantics';
 import '@/components/v1393/weather.css';
 import '@/components/v1394/v1394.css';
 import '@/components/v1399/premium.css';
 
 type ZeroView =
-  | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'maintenance' | 'import' | 'features'
-  | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community' | 'compare' | 'regulation' | 'bids' | 'admin';
+  | 'cockpit' | 'roster' | 'alerts' | 'departure' | 'settings' | 'notifications' | 'maintenance' | 'import' | 'features'
+  | 'currency' | 'radar' | 'weather' | 'perdiem' | 'salary' | 'reports' | 'calendar' | 'exports' | 'routine' | 'database' | 'crew' | 'load' | 'wakeup' | 'hotels' | 'presentation' | 'map' | 'mycar' | 'gyms' | 'iflight' | 'updates' | 'concierge' | 'plans' | 'community' | 'compare' | 'regulation' | 'bids' | 'admin';
 
 type ZeroLeg = {
   id: string;
+  salaryClockKnown?: boolean;
   day: RosterDay;
   leg?: FlightLeg;
   kind: 'flight' | 'stay' | 'duty' | 'journey-rest';
@@ -150,10 +214,13 @@ const ADMIN_EMAILS = ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'];
 
 const storage = {
   get(key: string, fallback = '') {
+    const preference=readAccountNotificationSetting(key,fallback);if(preference!==undefined)return preference;
+    if (isFinancialSetting(key)) return readFinancialSetting(key, fallback);
     try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
   },
   set(key: string, value: string) {
-    try { localStorage.setItem(key, value); } catch {}
+    if (isFinancialSetting(key)) return writeFinancialSetting(key, value);
+    try { localStorage.setItem(key, value); return true; } catch { return false; }
   },
 };
 
@@ -924,16 +991,17 @@ function neutralCompliance(roster: CrewRoster): ComplianceResult {
   } as any;
 }
 
-function actionableComplianceAlerts(compliance: ComplianceResult | null): any[] {
+function actionableComplianceAlerts(compliance: ComplianceResult | null, includeReviewed = false): any[] {
   const source = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];
   const seen = new Set<string>();
   return source.filter((alert: any) => {
+    if (!includeReviewed && alert?.reviewIdentity && (alertIsReviewed(alert.reviewIdentity) || isGroundAlertIgnored(alert.reviewIdentity))) return false;
     if (!alert || alert.dismissed || alert.falsePositive || alert.active === false || !isActionableComplianceAlert(alert)) return false;
     const title = String(alert.title || '').trim();
     const description = String(alert.description || '').trim();
     const severity = String(alert.severity || '').toLowerCase();
     if ((!title && !description) || !['error', 'warning'].includes(severity)) return false;
-    const signature = `${severity}|${title}|${description}|${String(alert.legalReference || '')}`;
+    const signature = `${severity}|${alert.code || title}|${alert.date || ''}|${alert.journeyId || ''}|${description}|${String(alert.legalReference || '')}`;
     if (seen.has(signature)) return false;
     seen.add(signature);
     return true;
@@ -1003,61 +1071,40 @@ function saveRoster(roster: CrewRoster, source: string): ComplianceResult {
   return compliance;
 }
 
-type PlannedRosterSnapshot = {
-  roster: CrewRoster;
-  source: string;
-  capturedAt: string;
-  fingerprint: string;
-};
+type PlannedRosterSnapshot = OwnedPlannedRoster;
 
-const PLANNED_ROSTER_STORAGE_KEY = 'crewcheck_planned_roster_snapshot_v1';
-
-function loadPlannedRoster(): PlannedRosterSnapshot | null {
-  try {
-    const parsed = JSON.parse(storage.get(PLANNED_ROSTER_STORAGE_KEY, 'null')) as PlannedRosterSnapshot | null;
-    if (!parsed?.roster || !Array.isArray(parsed.roster.days) || !parsed.roster.days.length) return null;
-    return {
-      ...parsed,
-      source: String(parsed.source || 'Escala planejada'),
-      capturedAt: String(parsed.capturedAt || new Date().toISOString()),
-      fingerprint: String(parsed.fingerprint || rosterFingerprint(parsed.roster)),
-    };
-  } catch {
-    return null;
-  }
+function loadPlannedRoster(): PlannedRosterSnapshot | null { return loadOwnedPlannedRoster(); }
+function savePlannedRoster(roster: CrewRoster, source: string, expectedSession = financialRateSession()): PlannedRosterSnapshot | null {
+  return saveOwnedPlannedRoster(roster, source, expectedSession);
 }
+function clearPlannedRoster(expectedSession = financialRateSession()): boolean { return clearOwnedPlannedRoster(expectedSession); }
 
-function savePlannedRoster(roster: CrewRoster, source: string): PlannedRosterSnapshot {
-  const snapshot: PlannedRosterSnapshot = {
-    roster,
-    source: source || 'Escala planejada',
-    capturedAt: new Date().toISOString(),
-    fingerprint: rosterFingerprint(roster),
-  };
-  storage.set(PLANNED_ROSTER_STORAGE_KEY, JSON.stringify(snapshot));
-  window.dispatchEvent(new CustomEvent('crewcheck:planned-roster-updated', { detail: snapshot }));
-  return snapshot;
-}
-
-function clearPlannedRoster(): void {
-  try { localStorage.removeItem(PLANNED_ROSTER_STORAGE_KEY); } catch {}
-  window.dispatchEvent(new CustomEvent('crewcheck:planned-roster-updated'));
-}
-
-function preservePlannedRosterBeforeImport(current: BundleState, incoming: CrewRoster): PlannedRosterSnapshot | null {
+function preservePlannedRosterBeforeImport(current: BundleState, incoming: CrewRoster, expectedSession: string | null = null): PlannedRosterSnapshot | null {
+  if (!expectedSession || expectedSession !== financialRateSession()) return null;
   const currentHasDays = Array.isArray(current.roster.days) && current.roster.days.length > 0;
   if (!currentHasDays || !sameRosterPeriod(current.roster, incoming)) return loadPlannedRoster();
   if (rosterFingerprint(current.roster) === rosterFingerprint(incoming)) return loadPlannedRoster();
   const existing = loadPlannedRoster();
   if (existing && sameRosterPeriod(existing.roster, incoming)) return existing;
-  return savePlannedRoster(current.roster, current.source);
+  return savePlannedRoster(current.roster, current.source, expectedSession);
 }
 
 function currentCompliance(bundle: BundleState) { return bundle.compliance || analyzeSafe(bundle.roster); }
+function reviewableCompliance(compliance: ComplianceResult, roster: CrewRoster) {
+  return { ...compliance, alerts: (compliance.alerts || []).map(alert => ({ ...alert, reviewIdentity: complianceAlertIdentity(alert, roster) })) };
+}
 function currentGym(bundle: BundleState) { try { return getGymRecommendations(bundle.roster); } catch { return []; } }
 
 function buildLegs(roster: CrewRoster): ZeroLeg[] {
-  const normalized = normalizeRosterDays(roster);
+  // Capture salary clock evidence before canonical midnight/arrival fallbacks.
+  // This financial-only annotation never changes regulatory normalization.
+  const clock = (value: unknown) => /^(?:[01]?\d|2[0-3]):[0-5]\d(?:\(\+\d+\))?$/.test(String(value || ''));
+  const clockSourceRoster = { ...roster, days: roster.days.map(day => ({ ...day,
+    legs: (day.legs || []).map(leg => ({ ...leg,
+      salaryClockKnown: clock(leg.departureTime) && clock(leg.arrivalTime),
+    })),
+  })) };
+  const normalized = normalizeRosterDays(clockSourceRoster);
   const canonicalEvents = buildCanonicalRosterEvents(normalized);
 
   const legs = canonicalEvents.map((event): ZeroLeg => {
@@ -1082,6 +1129,7 @@ function buildLegs(roster: CrewRoster): ZeroLeg[] {
         day,
         leg,
         kind: 'flight',
+        salaryClockKnown: anyLeg.salaryClockKnown === true,
         date: d,
         title,
         subtitle,
@@ -1385,8 +1433,12 @@ function GoogleMapsRoutePreview({ event, mode = 'driving', margin = 25, onRoute,
     return () => { alive = false; };
   }, [event.id, event.presentation, origin, destination, mapsMode, margin]);
   useEffect(() => {
+    // Pending/failed responses do not establish a new traffic incident.
+    if (!route?.ok) return;
     const incidents = route?.incidents || [];
-    const fingerprint = incidents.map((item) => `${item.id || item.title}:${item.severity}:${item.delaySeconds || 0}`).join('|');
+    // Arrival delay is refreshed independently; a few seconds or a different
+    // provider ordering do not turn the same incident into a new alert.
+    const fingerprint = incidents.map((item) => JSON.stringify([item.id || item.title, item.category, item.severity, Boolean(item.roadClosure)])).sort().join('|');
     if (!fingerprint) return;
     // Persisted across mounts/reloads (not just component-scoped) so a remount of the
     // same still-active incident does not re-alert; only a genuine fingerprint change does.
@@ -1556,52 +1608,49 @@ async function askTelegramConcierge(text: string) {
   return payload;
 }
 
-function Brand({ back, onMenu, pulse = false }: { back?: boolean; onMenu?: () => void; pulse?: boolean }) {
-  const click = onMenu || (back ? (() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' }))) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));
-  const lockup = <div className="cz-brand-lockup"><span className="cz-logo"><Plane size={26}/></span><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>;
+function Brand({ back, onMenu, pulse = false, backLabel, global = false }: { back?: boolean; onMenu?: () => void; pulse?: boolean; backLabel?: string; global?: boolean }) {
+  if (!global && !pulse) return null;
+  const click = onMenu || (back ? (() => { if (['perdiem','salary'].includes(new URLSearchParams(location.search).get('view') || '') && history.state?.ccEnteredFromConcierge) history.back(); else window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'cockpit' })); }) : (() => window.dispatchEvent(new Event('crewcheck:open-menu'))));
+  const lockup = <div className="cz-brand-lockup"><CrewCheckPulse compact brandMark fallback={<span className="cz-logo"><Plane size={26}/></span>}/><div><strong>CrewCheck</strong><small>ROSTER INTELLIGENCE</small></div></div>;
   return <header className="cz-brand-row">
-    <button className="cz-menu-btn" onClick={click} aria-label={back ? 'Voltar' : 'Menu'}>{back ? '←' : <Menu size={28}/>}</button>
-    {pulse ? <CrewCheckPulse compact fallback={lockup}/> : lockup}
+    <button className="cz-menu-btn" onClick={click} aria-label={back ? backLabel || alertText().back : alertText().menu}>{back ? '←' : <Menu size={28}/>}</button>
+    <div className="cc-brand-and-notice">{lockup}<CrewCheckPulse compact/></div>
   </header>;
 }
 function complianceAlertSignature(compliance: ComplianceResult | null): string {
-  const alerts = actionableComplianceAlerts(compliance);
-  return alerts.map((alert: any) => [alert?.severity, alert?.title, alert?.description, alert?.legalReference].map((item) => String(item || '').trim()).join('::')).sort().join('||');
+  return actionableComplianceAlerts(compliance).map(alert => alert.reviewIdentity ? `${alert.reviewIdentity.occurrence}:${alert.reviewIdentity.version}` : String(alert.code || alert.title)).sort().join('|');
 }
 
 function BottomNav({ view, setView, openMenu, alertCount = 0, alertSignature = '' }: { view: ZeroView; setView: (v: ZeroView) => void; openMenu: () => void; alertCount?: number; alertSignature?: string }) {
-  const currentSignature = alertCount > 0 ? (alertSignature || `count:${alertCount}`) : '';
-  const [seenSignature, setSeenSignature] = useState(() => storage.get('crewcheck_alerts_seen_signature', ''));
-  useEffect(() => {
-    if (alertCount === 0) {
-      storage.set('crewcheck_alerts_seen_signature', '');
-      storage.set('crewcheck_alerts_seen_count', '0');
-      setSeenSignature('');
-    }
-  }, [alertCount]);
-  const visibleAlertCount = currentSignature && currentSignature !== seenSignature ? alertCount : 0;
-  const markAlertsRead = () => {
-    storage.set('crewcheck_alerts_seen_signature', currentSignature);
-    storage.set('crewcheck_alerts_seen_count', String(alertCount));
-    setSeenSignature(currentSignature);
-  };
+  const visibleAlertCount = alertCount;
   const items: Array<[ZeroView, string, any]> = [['cockpit','Cockpit',HomeIcon],['roster','Escala',CalendarDays],['alerts','Alertas',Bell],['load','Carga',BriefcaseBusiness],['settings','Menu',Menu]];
   return <nav className="cz-bottom-nav" aria-label="Navegação principal">{items.map(([v, label, Icon]) => {
     const isMenu = v === 'settings';
-    const active = view===v || (isMenu && ['settings','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','mycar','gyms','iflight','updates','plans','community','regulation','bids','admin','maintenance'].includes(view));
-    return <button key={v} className={active ? 'active' : ''} onClick={() => { if (v === 'alerts') markAlertsRead(); isMenu ? openMenu() : setView(v); }}><Icon size={23}/><span>{label}</span>{v==='alerts' && visibleAlertCount > 0 && <em aria-label={`${visibleAlertCount} alerta(s) novo(s)`}>{visibleAlertCount}</em>}</button>;
+    const active = view===v || (isMenu && ['settings','notifications','features','exports','calendar','database','routine','crew','radar','weather','perdiem','salary','reports','wakeup','hotels','presentation','map','mycar','gyms','iflight','updates','plans','community','regulation','bids','admin','maintenance'].includes(view));
+    return <button key={v} className={active ? 'active' : ''} onClick={() => { isMenu ? openMenu() : setView(v); }}><Icon size={23}/><span>{label}</span>{v==='alerts' && visibleAlertCount > 0 && <em aria-label={`${visibleAlertCount} alerta(s) novo(s)`}>{visibleAlertCount}</em>}</button>;
   })}</nav>;
 }
 function KpiCard({ icon: Icon, title, value, detail, tone = '' }: { icon: any; title: string; value: string; detail: string; tone?: string }) {
-  return <article className={`cz-kpi ${tone}`}><span><Icon size={24}/></span><div><small>{title}</small><strong>{value}</strong><p>{detail}</p></div></article>;
+  return <article className={`cz-kpi ${tone}`}><span><Icon size={24}/></span><div><small>{title}</small><strong><MoneyText value={value}/></strong><p>{detail}</p></div></article>;
 }
 type RadarSnapshot = {
+  gateUpdate?: GateSourceUpdate | null;
+  gateUpdateWatermark?: GateUpdateWatermark | null;
+  gateEvidenceReceivedAt?: number;
+  httpStatus?: number;
+  querySuppressed?: boolean;
+  queryReason?: string;
   ok?: boolean;
   flight?: string;
   gate?: string;
   terminal?: string;
   status?: string;
   departure?: string;
+  scheduledDepartureUtc?: string;
+  operationalDeparture?: string;
+  sourceReceivedAt?: number;
+  sourceOrigin?: string;
+  sourceDestination?: string;
   arrival?: string;
   aircraft?: string;
   registration?: string;
@@ -1616,15 +1665,35 @@ type RadarSnapshot = {
 };
 const RADAR_CARD_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const RADAR_CARD_REFRESH_MS = 5 * 60 * 1000;
+function validatedRadarForEvent(event: ZeroLeg, snapshot: RadarSnapshot | null): RadarSnapshot | null {
+  const utc = event.canonical?.startDateTime;
+  const observed = Number(snapshot?.updatedAt ?? snapshot?.sourceReceivedAt);
+  if (typeof utc !== 'string' || !Number.isFinite(observed) || observed > Date.now() || Date.now()-observed>RADAR_GATE_STALE_MS) return null;
+  if (snapshot?.operationalDate && (!snapshot.sourceOrigin || !snapshot.sourceDestination)) return null;
+  const identity = {flight:String(event.flightNumber || ''),origin:String(event.origin || ''),destination:String(event.destination || ''),departureDate:originFlightDate(utc,String(event.origin || '')),scheduledDepartureUtc:utc};
+  return radarResultDecision(snapshot,identity,Date.now(),RADAR_GATE_STALE_MS).allowed ? snapshot : null;
+}
+function radarGateInfo(event: ZeroLeg, snapshot: RadarSnapshot | null) {
+  const verified = validatedRadarForEvent(event,snapshot);
+  const manual = readManualGate(localStorage,manualGateAccountKey(getStoredUser()),event);
+  return resolveNextFlightGate({event,manual,radar:verified ? {...verified,departure:verified.scheduledDepartureUtc ?? verified.departure,updatedAt:Number(verified.updatedAt ?? verified.sourceReceivedAt)} : null});
+}
+function radarFlightDateLabel(event: ZeroLeg): string {
+  const published = publishedGateDate(event.day?.date || event.canonical?.date);
+  const utc = event.canonical?.startDateTime;
+  const originDate = typeof utc==='string' ? originFlightDate(utc,String(event.origin || '')) : '';
+  const zone = gateQueryDay({flight:String(event.flightNumber || ''),origin:String(event.origin || ''),destination:String(event.destination || ''),departureDate:originDate,scheduledDepartureUtc:utc}).originTimeZone;
+  const br = (date:string) => date ? `${date.slice(8,10)}/${date.slice(5,7)}/${date.slice(0,4)}` : 'não confirmada';
+  return `Escala ${br(published)} (BRT) · Origem ${br(originDate)} (${zone || 'fuso não confirmado'})`;
+}
 function radarSnapshotKey(event: ZeroLeg): string {
-  return ['crewcheck_radar_v2', event.id, event.flightNumber, event.origin, event.destination].map((part) => String(part || '').trim().toUpperCase().replace(/[^A-Z0-9_-]+/g, '_')).join(':');
+  return radarSnapshotStorageKey(event);
 }
 function radarEventOperationalDate(event: ZeroLeg): string {
-  const date = eventStartDateTime(event);
-  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+  return flightOperationalDate(event);
 }
 function radarSnapshotMatchesEvent(snapshot: RadarSnapshot, event: ZeroLeg): boolean {
-  return String(snapshot.flight || '').trim().toUpperCase() === String(event.flightNumber || '').trim().toUpperCase()
+  return Boolean(radarEventOperationalDate(event)) && canonicalFlightId(snapshot.flight) === canonicalFlightId(event.flightNumber)
     && snapshot.operationalDate === radarEventOperationalDate(event)
     && String(snapshot.origin || '').trim().toUpperCase() === String(event.origin || '').trim().toUpperCase()
     && String(snapshot.destination || '').trim().toUpperCase() === String(event.destination || '').trim().toUpperCase();
@@ -1634,7 +1703,7 @@ function readRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
   try {
     const parsed = JSON.parse(storage.get(radarSnapshotKey(event), 'null')) as RadarSnapshot | null;
     if (!parsed || !parsed.updatedAt || Date.now() - parsed.updatedAt > RADAR_CARD_CACHE_TTL_MS || !radarSnapshotMatchesEvent(parsed, event)) return null;
-    return parsed;
+    return validatedRadarForEvent(event,parsed);
   } catch {
     return null;
   }
@@ -1646,38 +1715,79 @@ function confirmedRadarGate(value?: string): string {
 }
 function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapshot {
   const previous = readRadarSnapshot(event);
-  const snapshot = { ...payload, flight: payload.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
+  // A origem/destino da fonte ficam preservados para recusar portão de outro trecho.
+  const evidence = previous?.gateUpdate ? retainLatestGateEvidence(event, previous, payload) : payload;
+  const snapshot = { ...evidence, gateUpdateWatermark: (payload.gateUpdate || previous?.gateUpdateWatermark) ? nextGateUpdateWatermark(event, previous, { ...payload, updatedAt: Date.now() }) : null, operationalDeparture: evidence.operationalDeparture ?? evidence.departure, departure: evidence.scheduledDepartureUtc ?? evidence.departure, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: evidence.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
   const key = radarSnapshotKey(event);
   storage.set(key, JSON.stringify(snapshot));
   window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));
 
-  const previousGate = confirmedRadarGate(previous?.gate) || confirmedRadarGate(event.gate);
-  const nextGate = confirmedRadarGate(snapshot.gate);
-  if (previousGate && nextGate && previousGate !== nextGate) {
-    publishCrewCheckNotice({
-      id: `gate-change:${event.id}:${nextGate}`,
-      dedupeKey: `gate-change:${event.id}:${nextGate}`,
+  const manualEntry = readManualGate(localStorage, manualGateAccountKey(getStoredUser()), event);
+  const manualGate = manualEntry?.gate || '';
+  // Alerts must accept exactly the same source/occurrence as the phone/watch decision.
+  const before = resolveNextFlightGate({ event, radar: previous });
+  const after = resolveNextFlightGate({ event, radar: snapshot });
+  const previousGate = manualGate || before.gate;
+  const nextGate = after.operationalDate && after.gateSource === 'radar' && !after.radarRejected && !after.stale ? after.gate : '';
+  const previousRadarGate = before.gateSource === 'radar' && !before.radarRejected ? before.gate : '';
+  const reviewAfter = manualEntry ? resolveNextFlightGate({ event, radar: snapshot, manual: manualEntry }).manualReview : null;
+  const manualChange = Boolean(reviewAfter?.state === 'newer' && reviewAfter.candidate);
+  const automaticChange = !manualEntry && previousGate && nextGate && previousGate !== nextGate && previousRadarGate !== nextGate;
+  const manualOwner = manualGateAccountKey(getStoredUser());
+  const activeManualNotice = manualChange ? manualGateNoticeIdentity(event, manualEntry!, reviewAfter!.candidate!, manualOwner) : undefined;
+  reconcileCrewCheckPulse(manualGateNoticeScope(event, manualOwner), activeManualNotice ? [activeManualNotice] : []);
+  if (manualChange || automaticChange) {
+    const noticeKey = `gate-change:${event.id}:${nextGate}${manualChange ? ':' + reviewAfter!.candidate!.sourceUpdatedAtEpochMs : ''}`;
+    const noticeReview = manualChange ? manualGateNoticeIdentity(event, manualEntry!, reviewAfter!.candidate!, manualGateAccountKey(getStoredUser())) : undefined;
+    const publish = manualChange && !claimManualGateNotice(localStorage, manualGateAccountKey(getStoredUser()), event, manualEntry!, reviewAfter!.candidate!) ? publishCrewCheckPulse : publishCrewCheckNotice;
+    publish({
+      id: noticeKey,
+      dedupeKey: noticeKey,
+      scope: manualChange ? manualGateNoticeScope(event, manualGateAccountKey(getStoredUser())) : undefined,
+      review: noticeReview,
       category: 'gate',
       tone: 'atencao',
       priority: 'alta',
-      title: `Portão alterado · ${nextGate}`,
-      detail: [event.flightNumber, `${previousGate} → ${nextGate}`, snapshot.terminal].filter(Boolean).join(' · '),
+      title: manualGate ? `Possível mudança · fonte indica ${nextGate}` : `Portão alterado · ${nextGate}`,
+      detail: [event.flightNumber, manualGate ? `informado ${manualGate} · fonte ${nextGate}` : `${previousGate} → ${nextGate}`, snapshot.terminal].filter(Boolean).join(' · '),
       pulseCooldownMs: 60_000,
-      systemNotification: 'background',
-      notificationTag: `crewcheck:gate:${event.id}`,
+      // A notificação do sistema (espelhada e vibrando no relógio) só ocorre na janela do voo.
+      systemNotification: gateChangeAlertAllowed(eventStartDateTime(event).getTime()) ? 'background' : 'never',
+      notificationTag: `crewcheck:gate:${event.id}${manualChange ? ':' + reviewAfter!.candidate!.sourceUpdatedAtEpochMs : ''}`,
       notificationCooldownMs: 2 * 60_000,
-      action: { label: 'Abrir Radar', view: 'radar' },
+      action: { label: 'Abrir Radar', view: 'radar', context: { programId: event.id, dateEpochMs: Date.parse(event.canonical?.startDateTime || ''), journeyId: event.canonical?.journeyId, flightKey: event.flightNumber, airportCode: event.origin } },
     });
   }
   return snapshot;
 }
+const radarQuerySerial = new Map<string, number>();
 async function fetchRadarSnapshot(event: ZeroLeg, force = false): Promise<RadarSnapshot> {
   const flight = String(event.flightNumber || '').trim();
   if (event.kind !== 'flight' || event.placeholder || !/\d/.test(flight)) return { ok: false, message: 'Radar disponível apenas para voo publicado.' };
+  const scheduledDepartureUtc = event.canonical?.startDateTime;
+  if (typeof scheduledDepartureUtc !== 'string') return readRadarSnapshot(event) || gateQuerySuppressed({reason:'published-instant-unverified'});
+  const queryIdentity = { flight, origin: String(event.origin || ''), destination: String(event.destination || ''), departureDate: originFlightDate(scheduledDepartureUtc, String(event.origin || '')), scheduledDepartureUtc };
+  const decision = gateQueryDay(queryIdentity);
+  if (!decision.allowed) return readRadarSnapshot(event) || gateQuerySuppressed(decision);
+  const account = manualGateAccountKey(getStoredUser());
+  const sessionToken = getToken();
+  if (!sessionToken || account === 'local') return readRadarSnapshot(event) || gateQuerySuppressed({ reason: 'account-unverified' });
+  const serialKey = account + '|' + manualGateIdentity(event);
+  const serial = (radarQuerySerial.get(serialKey) || 0) + 1;
+  radarQuerySerial.set(serialKey, serial);
   const identity = telegramConciergeIdentity();
   const params = new URLSearchParams({ flight, origin: String(event.origin || ''), destination: String(event.destination || ''), force: force ? '1' : '0', email: identity.email, name: identity.name, conciergeKey: identity.conciergeKey });
-  const response = await fetch(`/api/radar-flight?${params.toString()}`, { cache: 'no-store' });
-  const payload = await response.json().catch(() => ({ ok: false, message: 'Radar indisponível.' }));
+  params.set('departureDate', queryIdentity.departureDate);
+  params.set('scheduledDepartureUtc', queryIdentity.scheduledDepartureUtc);
+  // Preserve the legacy preparation anchor, then pin its outgoing instant to canonical UTC.
+  params.set('scheduledDeparture', queryIdentity.scheduledDepartureUtc);
+  let payload: RadarSnapshot;
+  try { payload = await authFetch<RadarSnapshot>(`/api/radar-flight?${params.toString()}`, { cache: 'no-store' }); }
+  catch (error) { payload = radarFailurePayload(error); }
+  if (getToken() !== sessionToken || manualGateAccountKey(getStoredUser()) !== account || radarQuerySerial.get(serialKey) !== serial || !gateQueryDay(queryIdentity).allowed)
+    return { ...gateQuerySuppressed({ reason: 'response-context-expired' }), httpStatus: payload.httpStatus };
+  if (payload?.ok !== true || payload?.querySuppressed) return payload;
+  if (payload?.ok && !radarResultDecision(payload,queryIdentity,Date.now(),RADAR_GATE_STALE_MS).allowed) return gateQuerySuppressed(radarResultDecision(payload,queryIdentity,Date.now(),RADAR_GATE_STALE_MS));
   return saveRadarSnapshot(event, payload || { ok: false, message: 'Radar indisponível.' });
 }
 function useRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
@@ -1706,22 +1816,25 @@ function AirlineLogo({ code, name }: { code?: string; name: string }) {
 }
 function FlightCard({ event, compact = false }: { event: ZeroLeg; compact?: boolean }) {
   const d = event.canonical ? new Date(event.canonical.startDateTime) : event.date;
-  const radar = useRadarSnapshot(event);
+  const radar = validatedRadarForEvent(event,useRadarSnapshot(event));
+  const gateInfo = radarGateInfo(event,radar);
   const airlineCode = event.airlineCode || normalizedAirlineCode(event.flightNumber);
   const airlineName = airlineNameFor(airlineCode, event.airlineName);
-  const gate = safe(radar?.gate || event.gate, 'A confirmar');
-  const terminal = safe(radar?.terminal || event.terminal, 'A confirmar');
-  const status = safe(radar?.status || event.status, 'Programado');
-  const aircraft = safe(radar?.aircraft || event.aircraft, 'A confirmar');
-  const registration = safe(radar?.registration || event.registration, 'A confirmar');
+  const gate = safe(gateInfo.gate, 'Não confirmado');
+  const terminal = safe(gateInfo.terminal, 'Não confirmado');
+  const status = event.kind === 'flight' ? safe(gateInfo.status, 'Não confirmado') : safe(event.status, 'Programação publicada');
+  const aircraft = safe(event.aircraft, 'Não informada');
+  const registration = safe(gateInfo.registration, 'Não confirmada');
   const isFlight = event.kind === 'flight';
   const workType = flightWorkType(event);
   return <article className={`cz-flight-card ${compact ? 'compact' : ''} ${isFlight ? 'is-flight' : 'is-activity'} ${flightWorkClass(event)}`}>
     <div className="cz-flight-head">{isFlight ? <div className="cz-airline"><AirlineLogo code={airlineCode} name={airlineName}/><span><strong>{airlineName}</strong><em>{event.flightNumber}</em></span></div> : <div className="cz-airline cz-activity-brand"><span className="cz-airline-logo"><BriefcaseBusiness size={24}/></span><span><strong>{rosterEventTitle(event)}</strong><em>{safe(rosterCode(event.day), 'ATIVIDADE')}</em></span></div>}<div className="cz-date-chip"><CalendarDays size={16}/><b>{dateChip(d)}</b><small>{weekday(d)}</small></div></div>
     <div className="cz-route"><div><strong>{event.origin}</strong><span>{city(event.origin)}</span></div><div className="cz-route-arc"><i/><Plane size={20}/><i/></div><div><strong>{event.destination}</strong><span>{city(event.destination)}</span></div></div>
-    {isFlight ? <div className="cz-flight-pills"><span className="cz-work-type-badge"><b>Operação</b>{workTypeLabel(workType)}</span><span><b>Apresentação</b>{event.presentation}</span><span><b>METAR/TAF Origem</b>{event.origin}</span><span><b>METAR/TAF Destino</b>{event.destination}</span><span><b>Alerta meteo até pouso</b>{radar?.updatedAt ? 'Radar sincronizado' : event.arrival}</span></div> : <div className="cz-flight-pills"><span><b>Programação</b>{rosterEventTitle(event)}</span><span><b>Local</b>{city(event.origin)}</span><span><b>Status</b>{status}</span></div>}
+    {isFlight ? <div className="cz-flight-pills"><span className="cz-work-type-badge"><b>Operação</b>{workTypeLabel(workType)}</span><span><b>Apresentação</b>{event.presentation}</span><span><b>METAR/TAF Origem</b>{event.origin}</span><span><b>METAR/TAF Destino</b>{event.destination}</span><span><b>Chegada planejada</b>{event.arrival}</span></div> : <div className="cz-flight-pills"><span><b>Programação</b>{rosterEventTitle(event)}</span><span><b>Local</b>{city(event.origin)}</span><span><b>Status</b>{status}</span></div>}
     <div className="cz-time-trio"><div><span>Apresentação</span><strong>{event.presentation}</strong><small>◷ Local</small></div><div><span>{isFlight ? 'Decolagem' : 'Início'}</span><strong>{event.departure}</strong><small>◷ Prevista</small></div><div><span>{isFlight ? 'Chegada' : 'Fim'}</span><strong>{event.arrival}</strong><small>◷ Prevista</small></div></div>
-    {!compact && <div className="cz-info-duo">{isFlight && <div><Lock size={25}/><span>Portão</span><strong>{gate}</strong><small>{terminal}{radar?.updatedAt ? ' · Radar' : ''}</small></div>}<div><Plane size={25}/><span>Status</span><strong className="ok">{status}</strong><small>{isFlight ? `Aeronave: ${aircraft} · Matrícula: ${registration}` : safe(event.subtitle, 'Programação publicada')}</small></div></div>}
+    {!compact && <div className="cz-info-duo">{isFlight && <div><Lock size={25}/><span>Portão</span><strong>{gate}</strong><small>{gateInfo.gateSource === 'manual' ? 'Informado por você' : gateInfo.gateSource === 'radar' ? 'Fonte com evidência válida' : 'Sem confirmação operacional'}{gateInfo.gate ? ` · ${terminal}` : ''}</small><small>{radarFlightDateLabel(event)}</small></div>}<div><Plane size={25}/><span>Status</span><strong>{status}</strong>{isFlight && <small>{gateInfo.statusSource === 'manual' ? 'Informado por você' : gateInfo.statusSource === 'radar' ? 'Fonte operacional com evidência válida' : 'Sem confirmação operacional'}</small>}<small>{isFlight ? `Aeronave planejada: ${aircraft} · Matrícula: ${registration}${gateInfo.registrationSource === 'manual' ? ' · informada por você' : gateInfo.registrationSource === 'radar' ? ' · fonte com evidência válida' : ''}` : safe(event.subtitle, 'Programação publicada')}</small></div></div>}
+    {!compact && gateInfo.manualGateUnlinked && <p role="note">Portão manual anterior preservado; confirme o vínculo com este voo no editor.</p>}
+    {!compact && Boolean(gateInfo.operationalConflicts?.length) && <p role="note">Há divergência nos dados operacionais. Valores manuais preservados; confirme a informação.</p>}
     {!compact && Boolean(event.crew?.length) && <div className="cz-crew-line"><UserRound size={18}/><span>Tripulação</span><strong>{event.crew?.slice(0, 4).join(', ')}</strong></div>}
     {!compact && Boolean(event.hotel) && <div className="cz-crew-line"><Hotel size={18}/><span>Hotel</span><strong>{event.hotel}</strong></div>}
     {!compact && Boolean(event.routine?.length) && <div className="cz-routine-strip">{event.routine?.slice(0, 4).map((item) => <span key={item}>{item}</span>)}</div>}
@@ -1892,7 +2005,7 @@ function MenuDrawer({ open, close, view, setView, actions }: { open: boolean; cl
     ['cockpit','Cockpit','Próxima programação',HomeIcon], ['roster','Escala completa','Todos os dias e eventos',CalendarDays], ['compare','Planejado x atual','Mudanças e impacto financeiro',GitCompareArrows], ['bids','BIDS','Preferências para a próxima escala',CalendarDays], ['alerts','Irregularidades','Alertas confirmados',AlertTriangle], ['regulation','Regulamentação','RBAC 117, ACT e limites',ShieldCheck], ['load','Carga de trabalho','Horas usadas x limites',BriefcaseBusiness], ['plans','Assinaturas','Planos, recursos e ligações',ShieldCheck], ['community','Pessoas e compartilhar','QR, visitantes, comparação e chat',UserRound], ['departure','Planejador de Saída','Quando sair, rota e trânsito',Car], ['mycar','Meu carro','Estacionamento e rota',Car], ['iflight','Push iFlight','Importação assistida',Upload],
     ['concierge','Concierge Telegram','PDF, comandos e voz',Send], ['radar','Radar de voos','Portão e status',Radar], ['weather','Meteorologia','METAR/TAF e alertas',CloudSun], ['wakeup','Despertador','Alarmes inteligentes',Bell], ['presentation','Gerenciador de apresentação','Hotel/local e ajuste manual',Clock], ['hotels','Hotéis','Pernoite e entorno',Hotel], ['gyms','Locais próximos','Academias, saúde e serviços',MapIcon], ['perdiem','Diárias','Semanal/mensal',BriefcaseBusiness], ['salary','Salário','Previsões e adicionais',DollarSign],
     ['reports','Relatórios','Indicadores premium',FileText], ['routine','Rotina','Academia e descanso',ShieldCheck], ['crew','Crew / Chefe','Tripulação e adicional',UserRound], ['calendar','Calendário','Google/ICS',CalendarDays],
-    ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Escalas salvas',Database], ['settings','Configurações','Perfil e preferências',Settings],
+    ['exports','Exportar','PDF e compartilhamento',Share2], ['database','Histórico','Escalas salvas',Database], ['notifications','Notificações','O que, por onde e quando',Bell], ['settings','Configurações','Perfil e preferências',Settings],
   ];
   if (admin) nav.push(['updates','Atualizações','Hotfix e pacote ZIP',Upload], ['maintenance','Manutenção','Prévia administrativa',Lock], ['admin', 'Admin', 'Saúde, APIs, termos e operação', ShieldCheck]);
   const jump = (v: ZeroView) => { setView(v); close(); };
@@ -1920,7 +2033,7 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
   const event = nextFlight(events);
   const loaded = events.some((event) => !event.placeholder);
   const alertCount = actionableComplianceAlerts(compliance).length;
-  const dutyLimit = event.kind === 'flight' && !event.placeholder ? getPublishedDutyLimitSummary(event.day, compliance?.legalProfile) : null;
+  const dutyMeasurement = !event.placeholder && event.canonical ? measureCanonicalDuty(events.flatMap(item => item.canonical ? [item.canonical] : []), event.canonical.id) : null;
   const counters = loaded && events[0]?.day ? {
     days: new Set(events.map((e) => e.day.date)).size,
     flights: events.filter((e) => e.kind === 'flight').length,
@@ -1928,7 +2041,7 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
     rest: events.filter((e) => e.canonical?.kind === 'rest').length,
   } : { days: 0, flights: 0, activities: 0, rest: 0 };
 
-  return <><Brand onMenu={openMenu}/><section className="cz-title"><small>Cockpit</small><i/></section><section className="cz-kpi-row"><KpiCard icon={CalendarDays} title="Dias publicados" value={String(counters.days)} detail="Datas reais"/><KpiCard icon={Plane} title="Voos" value={String(counters.flights)} detail="Pernas detectadas" tone="blue"/><KpiCard icon={BriefcaseBusiness} title="Atividades" value={String(counters.activities)} detail={`Folgas ${counters.rest}`} tone="blue"/><KpiCard icon={Bell} title="Alertas" value={String(alertCount)} detail="Confirmados" tone="pink"/></section><section className="cz-money-row"><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>Abrir</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>Financeiro</strong></div></section><section className="cz-section-head"><h2>Próxima Programação</h2><button onClick={() => setView(loaded ? 'roster' : 'import')}>{loaded ? 'Ver todas' : 'Importar'} <ChevronRight size={18}/></button></section>{loaded && !event.placeholder ? <FlightCard event={event}/> : <article className="cz-empty-real"><Upload/><h2>{loaded ? 'Nenhuma programação futura' : 'Nenhuma escala real carregada'}</h2><p>{loaded ? 'A escala foi carregada, mas não há evento operacional futuro após agora. Confira se o período importado está correto.' : 'Suba o PDF oficial para ativar a escala completa e os recursos operacionais com dados reais.'}</p><button onClick={onUpload}>Importar PDF agora</button></article>}{dutyLimit && <button className="cz-mini-status" onClick={() => setView('regulation')}><ShieldCheck/><strong>Limite desta jornada</strong><span>{dutyLimit.usedHours.toFixed(1).replace('.', ',')} h de {dutyLimit.maxDutyHours.toFixed(1).replace('.', ',')} h · margem {Math.max(0, dutyLimit.remainingHours).toFixed(1).replace('.', ',')} h</span><ChevronRight/></button>}<SmartCard event={event} setView={setView}/></>;
+  return <><Brand onMenu={openMenu}/><section className="cz-title"><small>Cockpit</small><i/></section><section className="cz-kpi-row"><KpiCard icon={CalendarDays} title="Dias publicados" value={String(counters.days)} detail="Datas reais"/><KpiCard icon={Plane} title="Voos" value={String(counters.flights)} detail="Pernas detectadas" tone="blue"/><KpiCard icon={BriefcaseBusiness} title="Atividades" value={String(counters.activities)} detail={`Folgas ${counters.rest}`} tone="blue"/><KpiCard icon={Bell} title="Alertas" value={String(alertCount)} detail="Confirmados" tone="pink"/></section><FinancialPrivacyToggle/><section className="cz-money-row"><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>Abrir</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>Financeiro</strong></div></section><section className="cz-section-head"><h2>Próxima Programação</h2><button onClick={() => setView(loaded ? 'roster' : 'import')}>{loaded ? 'Ver todas' : 'Importar'} <ChevronRight size={18}/></button></section>{loaded && !event.placeholder ? <FlightCard event={event}/> : <article className="cz-empty-real"><Upload/><h2>{loaded ? 'Nenhuma programação futura' : 'Nenhuma escala real carregada'}</h2><p>{loaded ? 'A escala foi carregada, mas não há evento operacional futuro após agora. Confira se o período importado está correto.' : 'Suba o PDF oficial para ativar a escala completa e os recursos operacionais com dados reais.'}</p><button onClick={onUpload}>Importar PDF agora</button></article>}{loaded && !event.placeholder && <CanonicalDutyCard measurement={dutyMeasurement} onOpen={() => openCanonicalDutyDetails(event.canonical, setView)}/>}<SmartCard event={event} setView={setView}/></>;
 }
 
 function rosterCode(day?: RosterDay): string {
@@ -2072,10 +2185,10 @@ function RosterInlineDetails({ event, setView }: { event: ZeroLeg; setView: (v: 
       <div><span>Chegada/Fim</span><strong>{safe(event.arrival, 'A confirmar')}</strong></div>
       <div><span>Duração</span><strong>{inlineDurationLabel(event)}</strong></div>
       <div><span>Fonte apresentação</span><strong>{source}</strong></div>
-      <div><span>Status</span><strong>{safe(event.status, 'Programado')}</strong></div>
+      <div><span>Status planejado da escala</span><strong>{safe(event.status, 'Não informado')}</strong></div>
       <div><span>Aeronave</span><strong>{safe(event.aircraft, 'A confirmar')}</strong></div>
-      <div><span>Matrícula</span><strong>{safe(event.registration, 'A confirmar')}</strong></div>
-      <div><span>Portão/Terminal</span><strong>{safe(radar?.gate || event.gate, 'A confirmar')} · {safe(radar?.terminal || event.terminal, 'A confirmar')}</strong></div>
+      <div><span>Matrícula planejada da escala</span><strong>{safe(event.registration, 'Não informada')}</strong></div>
+      <div><span>Portão/terminal planejados da escala</span><strong>{safe(event.gate, 'Não informado')} · {safe(event.terminal, 'Não informado')}</strong><small>Não confirma portão operacional.</small></div>
       <div><span>Hotel</span><strong>{safe(event.hotel, '—')}</strong></div>
     </div>}
     {!isJourneyRest && <RosterInlineWeatherBlock event={event}/>}
@@ -2178,11 +2291,16 @@ function timelineStateClass(event: ZeroLeg): string {
   if (start > now) return 'future';
   return 'past';
 }
+function homeAllowancePayment(roster: CrewRoster) {
+  if(!roster.days?.length)return null;
+  const snapshot=financeSnapshot(roster),month=String(roster.year)+'-'+String(roster.month).padStart(2,'0');
+  return nextAllowancePayment(snapshot.perdiem.monthlyRows,snapshot.perdiem.unclassifiedItems,[month],new Date(),roster.days.map(day=>/^\d{2}\/\d{2}\/\d{4}$/.test(day.date)?day.date.split('/').reverse().join('-'):day.date));
+}
 function financeSnapshot(roster: CrewRoster) {
   const events = buildLegs(roster);
   const perdiem = calculatePerDiem(events, roster);
   const salary = calculateSalary(events, roster);
-  return { perdiem, salary };
+  return { roster, perdiem, salary };
 }
 function notifyCrewCheck(title: string, body: string) {
   const reminder = /despertador|soneca/i.test(title);
@@ -2246,19 +2364,31 @@ function useWeatherLandingMonitor(event: ZeroLeg) {
 }
 
 
-function useOperationalRadarPulse(event: ZeroLeg) {
+function useOperationalRadarPulse(events: ZeroLeg[]) {
   useEffect(() => {
-    if (!event || event.placeholder || event.kind !== 'flight' || !/\d/.test(String(event.flightNumber || ''))) return;
     let alive = true;
+    let lastTargetId = '';
     const check = () => {
-      const cached = readRadarSnapshot(event);
-      if (cached?.updatedAt && Date.now() - cached.updatedAt < RADAR_CARD_REFRESH_MS) return;
-      fetchRadarSnapshot(event, false).catch(() => undefined);
+      // Keep the active flight and the boarding card current within the SAME
+      // budget: at most one fetch per existing five-minute check, never two.
+      const targets: ZeroLeg[] = [];
+      for (const event of [selectNextFlight(events), nextRealFlight(events)]) {
+        if (event && !event.placeholder && event.kind === 'flight' && /\d/.test(String(event.flightNumber || '')) && !targets.some(target => target.id === event.id)) targets.push(event);
+      }
+      const previous = targets.findIndex(event => event.id === lastTargetId);
+      for (let step = 1; step <= targets.length; step += 1) {
+        const event = targets[(previous + step) % targets.length];
+        const cached = readRadarSnapshot(event);
+        if (cached?.updatedAt && Date.now() - cached.updatedAt < RADAR_CARD_REFRESH_MS) continue;
+        lastTargetId = event.id;
+        fetchRadarSnapshot(event, false).catch(() => undefined);
+        break;
+      }
     };
     check();
     const timer = window.setInterval(() => { if (alive) check(); }, RADAR_CARD_REFRESH_MS);
     return () => { alive = false; window.clearInterval(timer); };
-  }, [event.id, event.kind, event.placeholder, event.flightNumber, event.origin, event.destination]);
+  }, [events]);
 }
 
 function useOperationalWeatherPulse(event: ZeroLeg) {
@@ -2298,7 +2428,7 @@ function useOperationalWeatherPulse(event: ZeroLeg) {
             systemNotification: 'background',
             notificationTag: `crewcheck:weather:${event.id}:${airport}`,
             notificationCooldownMs: 15 * 60_000,
-            action: { label: 'Ver meteorologia', view: 'weather' },
+            action: { label: 'Ver meteorologia', view: 'weather', context: { programId: event.id, dateEpochMs: Date.parse(event.canonical?.startDateTime || ''), journeyId: event.canonical?.journeyId, flightKey: event.flightNumber, airportCode: airport } },
           });
         }
       } catch {
@@ -2313,6 +2443,8 @@ function useOperationalWeatherPulse(event: ZeroLeg) {
 }
 
 function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroLeg[]; setView: (v: ZeroView) => void }) {
+  const privacy = useFinancialPrivacy();
+  const moneyBRL = (value: number | null | undefined) => typeof value === 'number' && Number.isFinite(value) ? privacy.amount(`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`) : 'Não calculável';
   const normalizedRoster = normalizeRosterDays(roster);
   const days = Array.isArray(normalizedRoster.days) ? normalizedRoster.days : [];
   const groupedEvents = days
@@ -2328,6 +2460,7 @@ function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroL
   // repasse é de uma leitura só, então abrir a escala pelo rodapé ou pelo menu
   // não herda o foco de uma navegação anterior.
   useEffect(() => {
+    if (peekAlertRosterContext('roster')?.sourceView === 'alerts') return;
     const focus = consumePendingRosterFocus();
     if (!focus) return;
     const key = dateChip(focus);
@@ -2345,6 +2478,13 @@ function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroL
     requestAnimationFrame(() => document.querySelector(`[data-roster-day="${key}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }, []);
 
+  function focusAlertDate(date: string) {
+    const group = groupedEvents.find(item => item.day.date === date);
+    setExpandedId(group?.events[0]?.id || null);
+    const day = days.find(item => item.date === date);
+    if (day) requestAnimationFrame(() => document.querySelector(`[data-roster-day="${dateChip(parseDate(day))}"]`)?.scrollIntoView({ block: 'start' }));
+  }
+
   function openToday() {
     const firstToday = todayGroup?.events?.[0];
     if (!firstToday) {
@@ -2355,7 +2495,7 @@ function Roster({ roster, events, setView }: { roster: CrewRoster; events: ZeroL
     requestAnimationFrame(() => document.querySelector(`[data-roster-day="${todayKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
 
-  return <><Brand back/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>{finance.perdiem.currencyCount > 1 ? finance.perdiem.currencyCount + ' moedas' : finance.perdiem.currencySummary || 'Sem previsão'}</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>{moneyBRL(finance.salary.gross)}</strong></div></section><section className="cz-roster-actions"><button onClick={openToday}><CalendarDays/> Hoje</button><button onClick={() => setView('compare')}><GitCompareArrows/> Comparar</button><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('map')}><MapIcon/> Mapa do mês</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group cz-day-linked" data-roster-day={dateChip(d)} key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <div className="cz-roster-expand-wrap" key={e.id}><article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''} ${e.kind === 'flight' ? flightWorkClass(e) : ''} ${timelineStateClass(e)} ${expandedId === e.id ? 'expanded' : ''}`} onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div><RosterEventChips event={e}/><LayoverWeatherBadge event={e}/></article>{expandedId === e.id && <RosterInlineDetails event={e} setView={setView}/>}</div>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} data-roster-day={dateChip(d)} onClick={() => dayEvents[0] && setExpandedId(expandedId === dayEvents[0].id ? null : dayEvents[0].id)}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}</>;
+  return <><Brand back/><AlertRosterNavigation roster={roster} onFocus={focusAlertDate}/><section className="cz-panel-head"><h1>Escala completa</h1><p>{safe(roster.crewName, 'Tripulante')} · {hasRoster ? monthLong(normalizedRoster) : 'sem escala real'} · Base {safe(roster.base, '—')}</p></section>{hasRoster ? <><section className="cz-roster-date"><span>{weekday(first.date)}</span><strong>{pad2(first.date.getDate())}</strong><em>{new Intl.DateTimeFormat('pt-BR',{month:'short'}).format(first.date).replace('.','').toUpperCase()}</em><b>{first.date.toDateString() === new Date().toDateString() ? 'Hoje' : 'Próximo evento'}</b></section><FinancialPrivacyToggle/><section className="cz-money-row"><div><CalendarDays/><span>Dias</span><strong>{days.length}</strong></div><div><Plane/><span>Voos</span><strong>{events.filter(e => e.kind === 'flight').length}</strong></div><div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>{privacy.text(!finance.perdiem.nativeSummary.complete ? finance.perdiem.currencySummary : finance.perdiem.currencyCount > 1 ? finance.perdiem.currencyCount + ' moedas' : finance.perdiem.currencySummary)}</strong></div><div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>{moneyBRL(finance.salary.gross)}</strong></div></section><section className="cz-roster-actions"><button onClick={openToday}><CalendarDays/> Hoje</button><button onClick={() => setView('compare')}><GitCompareArrows/> Comparar</button><button onClick={() => setView('import')}><Upload/> Importar PDF</button><button onClick={() => setView('map')}><MapIcon/> Mapa do mês</button><button onClick={() => setView('exports')}><Share2/> Exportar</button><button onClick={() => setView('calendar')}><CalendarDays/> Calendário</button></section><section className="cz-stack-list">{groupedEvents.map(({ day, events: dayEvents }) => { const d = parseDate(day); return <div className="cz-day-group cz-day-linked" data-roster-day={dateChip(d)} key={day.date}><header className="cz-day-group-head"><span className="cz-day-headline"><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong>{' · '}{rosterDaySummary(day, dayEvents)}</span></header>{dayEvents.map(e => <div className="cz-roster-expand-wrap" key={e.id}><article className={`cz-roster-card compact ${e.kind === 'stay' ? 'stay' : ''} ${e.kind === 'flight' ? flightWorkClass(e) : ''} ${timelineStateClass(e)} ${expandedId === e.id ? 'expanded' : ''}`} onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}><div className="cz-roster-main"><span className="cz-roster-icon">{e.kind === 'flight' ? <Plane/> : e.kind === 'stay' ? <Hotel/> : <BriefcaseBusiness/>}</span><div className="cz-roster-copy"><h3>{rosterEventTitle(e)}</h3><p>{rosterEventLine(e)}</p></div><ChevronDown className="cz-roster-chevron"/></div><RosterEventChips event={e}/><LayoverWeatherBadge event={e}/></article>{expandedId === e.id && <RosterInlineDetails event={e} setView={setView}/>}</div>)}</div>; })}</section><section className="cz-complete-days"><h2>Todos os dias publicados</h2>{days.map((day, index) => { const dayEvents = events.filter(e => e.day.date === day.date); const d = parseDate(day); return <article key={`${day.date}-${index}`} data-roster-day={dateChip(d)} onClick={() => dayEvents[0] && setExpandedId(expandedId === dayEvents[0].id ? null : dayEvents[0].id)}><header><strong>{weekday(d)} {pad2(d.getDate())}/{pad2(d.getMonth()+1)}</strong><span>{' · '}{rosterCodeLabel(rosterCode(day))}</span></header><p>{rosterDaySummary(day, dayEvents)}</p><small>{dayEvents.filter(e => e.kind === 'flight').length ? `Voos ${dayEvents.filter(e => e.kind === 'flight').length}` : 'Dia sem voo operacional'}</small></article>; })}</section></> : <article className="cz-empty-real"><Upload/><h2>Escala real não carregada</h2><p>Os dados fictícios foram removidos. Use o botão de importar para carregar o PDF oficial de julho e abrir os detalhes reais.</p><button onClick={() => setView('import')}>Importar escala PDF</button></article>}</>;
 }
 
 function comparisonEventSummary(event: ComparableRosterEvent | null): string {
@@ -2379,10 +2519,32 @@ function comparisonChangeLabel(change: RosterChange): string {
 }
 
 function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload: () => void }) {
-  const [planned, setPlanned] = useState<PlannedRosterSnapshot | null>(() => loadPlannedRoster());
+  const privacy = useFinancialPrivacy();
+  const moneyBRL = (value: number | null | undefined) => typeof value === 'number' && Number.isFinite(value) ? privacy.amount(`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`) : 'Não calculável';
+  const moneyCurrency = (value: number, currency: PerDiemCurrency) => privacy.amount(new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value));
+  const [storedPlanned, setPlanned] = useState<PlannedRosterSnapshot | null>(() => loadPlannedRoster());
+  const [plannedSession, setPlannedSession] = useState(() => financialRateSession());
+  const liveSession = financialRateSession();
+  const planned = plannedSession && plannedSession === liveSession && isCurrentPlannedRoster(storedPlanned) ? storedPlanned : null;
   const [filter, setFilter] = useState<'all' | 'financial' | 'days_off'>('all');
   const [freeDayDelay, setFreeDayDelay] = useState(() => readNumberSetting('crewcheck_free_day_delay_hours', 0));
   const [exceptionalNeed, setExceptionalNeed] = useState(() => storage.get('crewcheck_free_day_exceptional_need', '0') === '1');
+  useEffect(() => {
+    const sync = () => {
+      setPlannedSession(financialRateSession());
+      setPlanned(loadPlannedRoster());
+      setFilter('all');
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || ['crewcheck_auth_user', 'crewcheck_auth_token'].includes(event.key) || event.key.startsWith('crewcheck_planned_roster_snapshot_v2:')) sync();
+    };
+    for (const name of ['crewcheck:auth-changed', 'crewcheck:auth-expired', 'crewcheck:planned-roster-updated']) window.addEventListener(name, sync);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      for (const name of ['crewcheck:auth-changed', 'crewcheck:auth-expired', 'crewcheck:planned-roster-updated']) window.removeEventListener(name, sync);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
   const hasCurrent = Array.isArray(bundle.roster.days) && bundle.roster.days.length > 0;
   const comparison = useMemo(
     () => planned && hasCurrent ? compareRosters(planned.roster, bundle.roster) : null,
@@ -2396,47 +2558,44 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
       + before.salary.chief + before.salary.instructorPay;
     const afterVariable = after.salary.production + after.salary.reserve + after.salary.standby
       + after.salary.chief + after.salary.instructorPay;
-    const currencies = Array.from(new Set([
-      ...Object.keys(before.perdiem.totalsByCurrency),
-      ...Object.keys(after.perdiem.totalsByCurrency),
-    ])) as PerDiemCurrency[];
-    const perDiemDelta = currencies
-      .map((currency) => ({
-        currency,
-        value: Number(after.perdiem.totalsByCurrency[currency] || 0)
-          - Number(before.perdiem.totalsByCurrency[currency] || 0),
-      }))
-      .filter((item) => Math.abs(item.value) >= 0.005);
+    const perDiemDelta = nativeForecastDelta(before.perdiem.nativeSummary, after.perdiem.nativeSummary);
+    const salaryReady = before.salary.configured && after.salary.configured
+      && !before.salary.config.requiresManualFunction && !after.salary.config.requiresManualFunction
+      && Number.isFinite(beforeVariable) && Number.isFinite(afterVariable)
+      && [...(before.salary.rows || []), ...(after.salary.rows || [])].every(row => row.timeKnown === true && row.distanceKnown === true && Number.isFinite(row.total));
     return {
-      variableDelta: afterVariable - beforeVariable,
-      plannedVariable: beforeVariable,
-      currentVariable: afterVariable,
-      plannedGuaranteeReview: afterVariable + 0.005 < beforeVariable,
+      variableDelta: salaryReady ? afterVariable - beforeVariable : null,
+      plannedVariable: salaryReady ? beforeVariable : null,
+      currentVariable: salaryReady ? afterVariable : null,
+      plannedGuaranteeReview: salaryReady ? afterVariable + 0.005 < beforeVariable : null,
       perDiemDelta,
-      salaryReady: !before.salary.config.requiresManualFunction && !after.salary.config.requiresManualFunction,
+      salaryReady,
     };
   }, [planned, bundle.roster, comparison?.summary.periodMatches]);
 
   function markCurrentAsPlanned() {
     if (!hasCurrent) return;
-    const snapshot = savePlannedRoster(bundle.roster, bundle.source);
+    const snapshot = savePlannedRoster(bundle.roster, bundle.source, plannedSession);
+    if (!snapshot) return;
     setPlanned(snapshot);
     toast.success('Escala atual marcada como planejada. Importe a próxima versão para comparar.');
   }
 
   function resetPlanned() {
-    if (!window.confirm('Remover a referência planejada deste dispositivo? A escala atual continuará ativa.')) return;
-    clearPlannedRoster();
+    if (!window.confirm('Remover a referência planejada desta conta neste dispositivo? A escala atual continuará ativa.')) return;
+    if (!clearPlannedRoster(plannedSession)) return;
     setPlanned(null);
     toast.success('Referência planejada removida.');
   }
+
+  if (!liveSession) return <><Brand back/><section className="cz-empty-real"><h2>Acesse sua conta para comparar escalas</h2></section></>;
 
   if (!hasCurrent) {
     return <><Brand back/><section className="cz-panel-head"><h1>Planejado x atual</h1><p>Compare versões da mesma escala sem misturar períodos.</p></section><article className="cz-empty-real"><GitCompareArrows/><h2>Importe a primeira escala</h2><p>Ela poderá ser marcada como planejada antes da próxima publicação.</p><button onClick={onUpload}>Importar PDF</button></article></>;
   }
 
   if (!planned) {
-    return <><Brand back/><section className="cz-panel-head"><h1>Planejado x atual</h1><p>Guarde uma referência e compare a próxima publicação do mesmo mês.</p></section><section className="cz-toolbox"><h2>Definir a referência planejada</h2><p>A escala ativa {rosterPeriodLabel(bundle.roster)} será guardada neste dispositivo. Na próxima importação do mesmo período, o CrewCheck mostrará mudanças de horários, voos, OP/PS, atividades e folgas.</p><div className="cz-tool-actions"><button onClick={markCurrentAsPlanned}><Save/> Marcar atual como planejada</button><button onClick={onUpload}><Upload/> Importar nova versão</button></div></section></>;
+    return <><Brand back/><section className="cz-panel-head"><h1>Planejado x atual</h1><p>Guarde uma referência e compare a próxima publicação do mesmo mês.</p></section><section className="cz-toolbox"><h2>Definir a referência planejada</h2><p>A escala ativa {rosterPeriodLabel(bundle.roster)} será guardada para esta conta neste dispositivo. Na próxima importação do mesmo período, o CrewCheck mostrará mudanças de horários, voos, OP/PS, atividades e folgas.</p><div className="cz-tool-actions"><button onClick={markCurrentAsPlanned}><Save/> Marcar atual como planejada</button><button onClick={onUpload}><Upload/> Importar nova versão</button></div></section></>;
   }
 
   const filteredChanges = (comparison?.changes || []).filter((change) => {
@@ -2448,14 +2607,14 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
   const capturedAt = Number.isFinite(capturedDate.getTime())
     ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(capturedDate)
     : 'data não informada';
-  const perDiemDeltaText = financial?.perDiemDelta.length
-    ? financial.perDiemDelta.map((item) => moneyCurrency(item.value, item.currency)).join(' · ')
+  const perDiemDeltaText = !financial || financial.perDiemDelta === null ? 'Não calculável' : financial.perDiemDelta.length
+    ? financial.perDiemDelta.map((item) => moneyCurrency(item.value, item.currency as PerDiemCurrency)).join(' · ')
     : 'Sem diferença';
   const freeDayIndemnity = freeDayPostponementIndemnity(freeDayDelay, exceptionalNeed);
 
   return <><Brand back/>
     <section className="cz-panel-head">
-      <h1>Planejado x atual</h1>
+      <h1>Planejado x atual</h1><FinancialPrivacyToggle/>
       <p>Referência {comparison?.plannedPeriod || '—'} comparada com a escala ativa {comparison?.currentPeriod || '—'}.</p>
     </section>
     {!comparison?.summary.periodMatches && <section className="cz-toolbox cz-compare-warning">
@@ -2481,8 +2640,8 @@ function CompareRosterView({ bundle, onUpload }: { bundle: BundleState; onUpload
       </section>}
       <section className="cz-finance-table cz-compare-financial">
         <h2>Possível impacto financeiro</h2>
-        <div className="cz-finance-row"><span>Parcela variável</span><strong>Diferença prevista</strong><small>KM diurno/noturno, reserva, sobreaviso e adicionais com as regras atuais</small><b>{financial?.salaryReady ? moneyBRL(financial.variableDelta) : 'Função pendente'}</b></div>
-        <div className="cz-finance-row"><span>Garantia da planejada</span><strong>{financial?.plannedGuaranteeReview ? 'Revisão necessária' : 'Sem redução detectada'}</strong><small>Quando a perda decorrer de motivo alheio ao tripulante e não houver programação equivalente, conferir o piso variável da escala inicialmente publicada</small><b>{financial?.plannedGuaranteeReview ? moneyBRL(financial.plannedVariable) : '—'}</b></div>
+        <div className="cz-finance-row"><span>Parcela variável</span><strong>Diferença prevista</strong><small>KM diurno/noturno, reserva, sobreaviso e adicionais com as regras atuais</small><b>{financial?.salaryReady ? moneyBRL(financial.variableDelta) : 'Não calculável · dados pendentes'}</b></div>
+        <div className="cz-finance-row"><span>Garantia da planejada</span><strong>{!financial?.salaryReady ? 'Comparação financeira pendente' : financial.plannedGuaranteeReview ? 'Revisão necessária' : 'Sem redução detectada'}</strong><small>Quando a perda decorrer de motivo alheio ao tripulante e não houver programação equivalente, conferir o piso variável da escala inicialmente publicada</small><b>{financial?.plannedGuaranteeReview ? moneyBRL(financial.plannedVariable) : '—'}</b></div>
         <div className="cz-finance-row"><span>Diárias</span><strong>Diferença por moeda</strong><small>Sem somar moedas diferentes e sem presumir câmbio</small><b>{perDiemDeltaText}</b></div>
         <div className="cz-finance-row"><span>Início da folga</span><strong>{freeDayDelay.toFixed(2).replace('.', ',')} h de postergação</strong><small>{exceptionalNeed ? 'Exceção operacional comprovada: limite de 12 h' : 'Regra geral do ACT: acima de 4 h'} · uma indenização por sequência agrupada</small><b>{moneyBRL(freeDayIndemnity)}</b></div>
       </section>
@@ -2534,7 +2693,11 @@ function Alerts({ compliance }: { compliance: ComplianceResult | null }) {
     saveComplianceAlertDispositions({});
     setDispositionRevision((value) => value + 1);
   }
-  return <><Brand back/><section className="cz-panel-head"><h1>Irregularidades e alertas</h1><p>RBAC 117, ACT, repouso, jornada, sobreaviso, reserva e acionamentos. Sem alertas fictícios.</p></section>{list.length ? <section className="cz-alert-stack">{list.map((a: any, idx: number) => <article className={a.severity === 'error' ? 'danger' : 'warn'} key={`${a.title}-${idx}`}><AlertTriangle/><div><h2>{a.title}</h2><p>{a.description}</p><span>{a.severity === 'error' ? 'Confirmada' : 'Atenção'}</span><b>Confiança: {a.severity === 'error' ? 'alta' : 'média'}</b>{isGroundLimitAlert(a) && <button type="button" onClick={() => ignoreAsUserScheduleChange(a)}>Ignorar — alteração da minha programação</button>}</div><ChevronRight/></article>)}</section> : <article className="cz-empty-real"><ShieldCheck/><h2>Nenhuma irregularidade confirmada</h2><p>{ignored.length ? 'Os alertas desta análise foram classificados por você como alterações da programação.' : 'Carregue a escala real para que o motor regulatório refaça a análise completa.'}</p></article>}{ignored.length > 0 && <article className="cz-alert-detail"><h2>Alterações informadas por você <b>{ignored.length}</b></h2><div><p><strong>Tratamento</strong>Esses itens ficam fora dos alertas ativos, sem apagar a análise da escala publicada.</p><p><strong>Rastreabilidade</strong>A classificação é uma preferência do usuário e não altera o motor regulatório canônico.</p></div><footer><button onClick={restoreIgnoredAlerts}><RotateCcw/> Restaurar alertas ignorados</button></footer></article>}<article className="cz-alert-detail"><h2>Detalhes regulatórios <b>{list.length ? 'Ativo' : 'Aguardando escala'}</b></h2><div><p><strong>O que o sistema avalia</strong>Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p><p><strong>Dados usados</strong>Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p></div><footer><button>Ver base regulatória</button></footer></article></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Irregularidades e alertas</h1>{compliance?.metrics.flightHoursOriginPending && <p role="status">Origem da classificação de extra pendente. Reimporte a escala original para verificar OP/PS; o acumulado de voo operado não está confirmado.</p>}<p>RBAC 117, ACT, repouso, jornada, sobreaviso, reserva e acionamentos. Sem alertas fictícios.</p></section>{list.length ? <section className="cz-alert-stack">{list.map((a: any, idx: number) => <article className={a.severity === 'error' ? 'danger' : 'warn'} key={`${a.title}-${idx}`}><AlertTriangle/><div><h2>{a.title}</h2><p>{a.description}</p><span>{a.severity === 'error' ? 'Confirmada' : 'Atenção'}</span><b>Confiança: {a.severity === 'error' ? 'alta' : 'média'}</b>{isGroundLimitAlert(a) && <button type="button" onClick={() => ignoreAsUserScheduleChange(a)}>Ignorar — alteração da minha programação</button>}</div><ChevronRight/></article>)}</section> : <article className="cz-empty-real"><ShieldCheck/><h2>Nenhuma irregularidade confirmada</h2><p>{ignored.length ? 'Os alertas desta análise foram classificados por você como alterações da programação.' : 'Carregue a escala real para que o motor regulatório refaça a análise completa.'}</p></article>}{ignored.length > 0 && <article className="cz-alert-detail"><h2>Alterações informadas por você <b>{ignored.length}</b></h2><div><p><strong>Tratamento</strong>Esses itens ficam fora dos alertas ativos, sem apagar a análise da escala publicada.</p><p><strong>Rastreabilidade</strong>A classificação é uma preferência do usuário e não altera o motor regulatório canônico.</p></div><footer><button onClick={restoreIgnoredAlerts}><RotateCcw/> Restaurar alertas ignorados</button></footer></article>}<article className="cz-alert-detail"><h2>Detalhes regulatórios <b>{list.length ? 'Ativo' : 'Aguardando escala'}</b></h2><div><p><strong>O que o sistema avalia</strong>Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p><p><strong>Dados usados</strong>Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p></div><footer><button>Ver base regulatória</button></footer></article></>;
+}
+// The legacy Alerts above remains only for historical preparation anchors.
+function ReviewedAlerts({ compliance, roster, onImport, onChoose }: { compliance: ComplianceResult | null; roster: CrewRoster; onImport(): void; onChoose(): void }) {
+  return <AlertCenter alerts={alertRosterOwned(roster) ? actionableComplianceAlerts(compliance, true) : []} roster={roster} onImport={onImport} onChoose={onChoose} pendingAnalysis={informationalComplianceDiagnostics(compliance?.alerts)}/>;
 }
 function routeDurationMinutes(route: RoutePreviewInfo | null): number {
   const text = String(route?.durationInTrafficText || route?.durationText || '').toLowerCase();
@@ -2543,13 +2706,17 @@ function routeDurationMinutes(route: RoutePreviewInfo | null): number {
   return Math.round(hours * 60 + minutes);
 }
 function eventClockDate(event: ZeroLeg, clock: string): Date {
-  const base = eventStartDateTime(event);
-  const match = String(clock || '').match(/(\d{1,2}):(\d{2})/);
-  if (!match) return base;
-  const target = new Date(base);
-  target.setHours(Number(match[1]), Number(match[2]), 0, 0);
-  return target;
+  const match = String(clock || '').trim().match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+  const base = eventStartDateTime(event).getTime();
+  if (!match || !Number.isFinite(base)) return new Date(NaN);
+  // canonicalRoster publishes its civil clock in UTC-03. Never reinterpret it
+  // with device-local setters (or borrow a presentation from another day).
+  const civilDate = new Date(base - 3 * 60 * 60_000).toISOString().slice(0, 10);
+  let instant = Date.parse(`${civilDate}T${match[1].padStart(2, '0')}:${match[2]}:00-03:00`);
+  if (event.kind === 'flight' && clock === event.presentation && instant > base) instant -= 24 * 60 * 60_000;
+  return new Date(instant);
 }
+
 function Departure({ event }: { event: ZeroLeg }) {
   const departureModes = [
     { id: 'automatic', label: 'Automático', detail: 'Meio mais rápido', icon: Navigation },
@@ -2703,7 +2870,8 @@ function rosterDayIso(day: RosterDay): string {
   return raw.slice(0, 10);
 }
 
-function HourLimitBar({ title, used, limit, detail }: { title: string; used: number; limit: number; detail: string }) {
+function HourLimitBar({ title, used, limit, detail }: { title: string; used: number | null; limit: number; detail: string }) {
+  if (used === null) return <article className="cz-hour-limit"><header><strong>{title}</strong><b>Dados pendentes</b></header><p>{detail || 'Intervalos incompletos não permitem calcular este total ou uma margem.'}</p></article>;
   const ratio = limit > 0 ? used / limit : 0;
   const tone = ratio >= 1 ? 'danger' : ratio >= .85 ? 'warn' : 'ok';
   return <article className={`cz-hour-limit ${tone}`}><header><span><strong>{title}</strong><small>{detail}</small></span><b>{used.toFixed(1).replace('.', ',')} h / {limit.toFixed(1).replace('.', ',')} h</b></header><div><i style={{ width: `${Math.min(100, Math.max(2, ratio * 100))}%` }}/></div><footer>{ratio >= 1 ? 'Limite de referência alcançado; revise a análise regulatória.' : `${Math.max(0, limit - used).toFixed(1).replace('.', ',')} h de margem na referência configurada.`}</footer></article>;
@@ -2713,35 +2881,33 @@ function LoadView({ bundle }: { bundle: BundleState }) {
   const [limitRevision, setLimitRevision] = useState(0);
   void limitRevision;
   const compliance = currentCompliance(bundle) as any;
-  const days = Array.isArray(bundle.roster.days) ? bundle.roster.days : [];
-  const auditedDays = Array.isArray(compliance.loadAnalysis?.days) ? compliance.loadAnalysis.days : [];
-  const auditedDayByDate = new Map(auditedDays.map((item: any) => [String(item.date || ''), item]));
-  const rows = days.map((day) => {
-    const audited = auditedDayByDate.get(String((day as any).date || '')) as any;
-    return {
-      day,
-      date: rosterDayIso(day),
-      hours: Number.isFinite(Number(audited?.dutyHours)) ? Number(audited.dutyHours) : dutyHoursForRosterDay(day),
-      sectors: Array.isArray((day as any).legs) ? (day as any).legs.length : 0,
-    };
-  }).filter((row) => row.date);
+  const canonicalEvents = buildCanonicalRosterEvents(bundle.roster);
+  const journeys = new Map<string, CanonicalRosterEvent>();
+  for (const event of canonicalEvents) {
+    if (event.kind !== 'flight' && event.kind !== 'duty') continue;
+    if (event.kind === 'duty' && /\b(?:HSB|HSBE|ASB|RES|RESERVA|RSV)\b/.test(`${event.publishedDay.type} ${event.publishedDay.pairingCode}`.toUpperCase())) continue;
+    if (!journeys.has(event.journeyId)) journeys.set(event.journeyId, event);
+  }
+  const measurements = [...journeys.values()].map(event => ({ event, measurement: measureCanonicalDuty(canonicalEvents, event.id) }));
+  const measurementComplete = measurements.length > 0 && measurements.every(item => item.measurement?.state === 'available');
+  const rows = measurements.flatMap(({ event, measurement }) => measurement?.minutes !== null && measurement?.state === 'available'
+    ? [{ date: rosterDayIso(event.publishedDay), hours: measurement.minutes / 60, sectors: canonicalEvents.filter(item => item.kind === 'flight' && item.journeyId === event.journeyId).length, journeyId: event.journeyId }] : []);
+  const weeklyComplete = measurementComplete && !canonicalEvents.some(event => event.kind === 'duty' && /\b(?:HSB|HSBE|ASB|RES|RESERVA|RSV)\b/.test(`${event.publishedDay.type} ${event.publishedDay.pairingCode}`.toUpperCase()));
   const dailyLimit = readNumberSetting('crewcheck_limit_daily_hours', 11);
   const weeklyLimit = readNumberSetting('crewcheck_limit_weekly_hours', 44);
   const monthlyLimit = readNumberSetting('crewcheck_limit_monthly_hours', 176);
   const heaviest = [...rows].sort((a, b) => (b.hours + b.sectors * .35) - (a.hours + a.sectors * .35)).slice(0, 6);
   const peakDay = heaviest[0] || { hours: 0, date: '—', sectors: 0 };
   let peakWeek = { hours: 0, from: '—', to: '—' };
-  rows.forEach((row, index) => { const start = new Date(`${row.date}T12:00:00`); const windowRows = rows.filter((candidate) => { const date = new Date(`${candidate.date}T12:00:00`); const diff = (date.getTime() - start.getTime()) / 86400000; return diff >= 0 && diff < 7; }); const hours = windowRows.reduce((sum, item) => sum + item.hours, 0); if (hours > peakWeek.hours) peakWeek = { hours, from: row.date, to: windowRows.at(-1)?.date || row.date }; });
-  const monthlyHours = Number.isFinite(Number(compliance.metrics?.totalDutyHours))
-    ? Number(compliance.metrics.totalDutyHours)
-    : rows.reduce((sum, row) => sum + row.hours, 0);
+  rows.forEach((row, index) => { const start = new Date(`${row.date}T12:00:00Z`); const windowRows = rows.filter((candidate) => { const date = new Date(`${candidate.date}T12:00:00Z`); const diff = (date.getTime() - start.getTime()) / 86400000; return diff >= 0 && diff < 7; }); const hours = windowRows.reduce((sum, item) => sum + item.hours, 0); if (hours > peakWeek.hours) peakWeek = { hours, from: row.date, to: windowRows.at(-1)?.date || row.date }; });
+  const monthlyHours = getCanonicalWorkHoursTotal(bundle.roster);
   function configure() {
     const daily = prompt('Referência diária de jornada (horas)', String(dailyLimit)); if (daily !== null) storage.set('crewcheck_limit_daily_hours', daily.replace(',', '.'));
     const weekly = prompt('Referência semanal de jornada (horas)', String(weeklyLimit)); if (weekly !== null) storage.set('crewcheck_limit_weekly_hours', weekly.replace(',', '.'));
     const monthly = prompt('Referência mensal de jornada (horas)', String(monthlyLimit)); if (monthly !== null) storage.set('crewcheck_limit_monthly_hours', monthly.replace(',', '.'));
     setLimitRevision((value) => value + 1);
   }
-  return <><Brand back/><section className="cz-panel-head"><h1>Carga e limites</h1><p>Relação direta de horas usadas x limite de referência, sem substituir a análise contextual de RBAC 117, ACT e escala oficial.</p></section><section className="cz-hour-limits"><HourLimitBar title="Jornada diária mais alta" used={peakDay.hours} limit={dailyLimit} detail={`${peakDay.date} · ${peakDay.sectors} trecho(s)`}/><HourLimitBar title="Pico em 7 dias" used={peakWeek.hours} limit={weeklyLimit} detail={`${peakWeek.from} a ${peakWeek.to}`}/><HourLimitBar title="Total mensal" used={monthlyHours} limit={monthlyLimit} detail={`${rows.length} dia(s) com dados de jornada`}/></section><section className="cz-toolbox"><h2>Referências e confiabilidade</h2><p>Os valores acima são referências configuráveis para visualização. Uma extrapolação visual não vira irregularidade sozinha: composição, horário, tripulação, operação, repouso, ACT e RBAC continuam sendo avaliados no motor de conformidade.</p><div className="cz-tool-actions"><button onClick={configure}><Settings/> Configurar limites de referência</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'alerts' }))}><AlertTriangle/> Abrir análise regulatória</button></div></section><section className="cz-finance-table"><h2>Dias mais puxados da escala</h2>{heaviest.length ? heaviest.map((row, index) => <div className="cz-finance-row" key={`${row.date}-${index}`}><span>#{index + 1}</span><strong>{row.date}</strong><small>{row.hours.toFixed(1).replace('.', ',')} h de jornada · {row.sectors} trecho(s){row.hours >= dailyLimit ? ' · acima da referência diária' : ''}</small><b>{row.hours.toFixed(1).replace('.', ',')} h / {dailyLimit.toFixed(1).replace('.', ',')} h</b></div>) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem jornada calculável</h2><p>Importe uma escala com apresentação e término para calcular as relações de horas.</p></article>}</section><section className="cz-report-grid"><article><h2>Score de conformidade</h2><strong>{compliance.score ?? '—'}</strong><p>{compliance.summary || 'Aguardando análise.'}</p></article><article><h2>Alertas válidos</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Sem contadores antigos ou duplicados.</p></article><article><h2>Fonte</h2><strong>Escala ativa</strong><p>Todos os cálculos usam o mesmo motor canônico.</p></article><article><h2>Solo entre etapas</h2><strong>{Number(compliance.metrics?.totalGroundHours || 0).toFixed(1).replace('.', ',')} h</strong><p>Maior intervalo: {Number(compliance.metrics?.maxGroundIntervalMinutes || 0)} min · {Number(compliance.metrics?.groundLimitExceedances || 0)} acima do ACT. Solo não entra na jornada.</p></article></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Carga e limites</h1><p>Relação direta de horas usadas x limite de referência, sem substituir a análise contextual de RBAC 117, ACT e escala oficial.</p></section><section className="cz-hour-limits"><HourLimitBar title="Jornada publicada mais alta" used={measurementComplete ? peakDay.hours : null} limit={dailyLimit} detail={`${peakDay.date} · ${peakDay.sectors} trecho(s)`}/><HourLimitBar title="Pico em 7 dias" used={weeklyComplete ? peakWeek.hours : null} limit={weeklyLimit} detail={weeklyComplete ? `${peakWeek.from} a ${peakWeek.to}` : 'Acumulado semanal pendente: intervalos ou créditos de reserva/sobreaviso não comprovados.'}/><HourLimitBar title="Horas de trabalho no mês" used={null} limit={monthlyLimit} detail={monthlyHours === null ? 'Acumulado integral pendente; reserva/sobreaviso e demais créditos precisam de validação.' : `${monthlyHours.toFixed(1).replace('.', ',')} h de jornadas publicadas · subtotal; acumulado integral de trabalho pendente.`}/></section><section className="cz-toolbox"><h2>Referências e confiabilidade</h2>{compliance.metrics?.flightHoursOriginPending && <p role="status">Origem da classificação de extra pendente. Reimporte a escala original para verificar OP/PS; o acumulado de voo operado não está confirmado.</p>}<p>Os valores acima são referências configuráveis para visualização. Uma extrapolação visual não vira irregularidade sozinha: composição, horário, tripulação, operação, repouso, ACT e RBAC continuam sendo avaliados no motor de conformidade.</p><div className="cz-tool-actions"><button onClick={configure}><Settings/> Configurar limites de referência</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'alerts' }))}><AlertTriangle/> Abrir análise regulatória</button></div></section><section className="cz-finance-table"><h2>Dias mais puxados da escala</h2>{measurementComplete && heaviest.length ? heaviest.map((row, index) => <div className="cz-finance-row" key={`${row.journeyId}-${index}`}><span>#{index + 1}</span><strong>{row.date}</strong><small>{row.hours.toFixed(1).replace('.', ',')} h de jornada · {row.sectors} trecho(s){row.hours >= dailyLimit ? ' · acima da referência diária' : ''}</small><b>{row.hours.toFixed(1).replace('.', ',')} h / {dailyLimit.toFixed(1).replace('.', ',')} h</b></div>) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem jornada calculável</h2><p>Importe uma escala com apresentação e término para calcular as relações de horas.</p></article>}</section><section className="cz-report-grid"><article><h2>Score de conformidade</h2><strong>{compliance.score ?? '—'}</strong><p>{compliance.summary || 'Aguardando análise.'}</p></article><article><h2>Alertas válidos</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Sem contadores antigos ou duplicados.</p></article><article><h2>Fonte</h2><strong>Escala ativa</strong><p>Todos os cálculos usam o mesmo motor canônico.</p></article><article><h2>Solo entre etapas</h2><strong>{Number(compliance.metrics?.totalGroundHours || 0).toFixed(1).replace('.', ',')} h</strong><p>Maior intervalo: {Number(compliance.metrics?.maxGroundIntervalMinutes || 0)} min · {Number(compliance.metrics?.groundLimitExceedances || 0)} acima do ACT. Solo permanece dentro da jornada, sem somar novamente.</p></article></section></>;
 }
 
 function ToggleSetting({ icon: Icon, label, storageKey, defaultOn = true, detail }: { icon: any; label: string; storageKey: string; defaultOn?: boolean; detail?: string }) {
@@ -2796,32 +2962,38 @@ function NotificationPermissionSetting() {
   return <button className="cz-setting" onClick={() => void toggle()} aria-pressed={enabled && permission === 'granted'}><Bell/><div><strong>Notificações do aparelho</strong><small>{detail}</small></div><span className={enabled && permission === 'granted' ? 'on' : ''}/></button>;
 }
 function FieldSetting({ icon: Icon, label, storageKey, placeholder }: { icon: any; label: string; storageKey: string; placeholder: string }) {
+  const privacy = useFinancialPrivacy();
+  const concealed = privacy.hidden && isFinancialSetting(storageKey);
   const [value, setValue] = useState(() => storage.get(storageKey, ''));
-  return <label className="cz-setting cz-field-setting"><Icon/><div><strong>{label}</strong><input value={value} onChange={(event) => { setValue(event.target.value); storage.set(storageKey, event.target.value); }} placeholder={placeholder}/></div><ChevronRight/></label>;
+  useEffect(() => { const sync = () => setValue(storage.get(storageKey, '')); window.addEventListener('crewcheck:auth-changed', sync); window.addEventListener('crewcheck:auth-expired', sync); window.addEventListener('storage', sync); return () => { window.removeEventListener('crewcheck:auth-changed', sync); window.removeEventListener('crewcheck:auth-expired', sync); window.removeEventListener('storage', sync); }; }, [storageKey]);
+  return <label className="cz-setting cz-field-setting"><Icon/><div><strong>{label}</strong><input aria-label={label} disabled={concealed} value={concealed ? '' : value} onChange={(event) => { if (storage.set(storageKey, event.target.value)) setValue(event.target.value); else toast.error('Não foi possível salvar a configuração nesta conta.'); }} placeholder={concealed ? 'Valor oculto' : placeholder}/></div><ChevronRight/></label>;
 }
 
 function PlatformPreferences() {
   const deviceLocale = (() => { const value = String(navigator.language || 'pt-BR'); return value.startsWith('en') ? 'en-US' : value.startsWith('es') ? 'es-ES' : 'pt-BR'; })() as CrewCheckLocale;
-  const deviceTimezone = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo'; } catch { return 'America/Sao_Paulo'; } })();
+  const deviceTimezone = deviceTimeZone();
   const [profile, setProfile] = useState<PlatformProfile | null>(null);
   const [locale, setLocale] = useState<CrewCheckLocale>(() => (storage.get('crewcheck_language', deviceLocale) as CrewCheckLocale));
-  const [timezone, setTimezone] = useState(() => storage.get('crewcheck_timezone', 'America/Sao_Paulo'));
+  const [timezone, setTimezone] = useState(() => storage.get('crewcheck_timezone', ''));
   const [busy, setBusy] = useState(false);
-  useEffect(() => { getPlatformProfile().then((result) => { setProfile(result.profile); setLocale(result.profile.locale || deviceLocale); setTimezone(result.profile.timezone || 'America/Sao_Paulo'); }).catch(() => undefined); }, []);
+  const [timezoneReset, setTimezoneReset] = useState(0);
+  useEffect(() => { getPlatformProfile().then((result) => { setProfile(result.profile); setLocale(result.profile.locale || deviceLocale); setTimezone(result.profile.timezone || ''); }).catch(() => undefined); }, []);
   async function save() {
     setBusy(true);
     try {
-      const result = await savePlatformProfile({ locale, timezone });
+      const effectiveTimezone = timezone || deviceTimezone;
+      const result = await savePlatformProfile({ locale, timezone: effectiveTimezone });
       setProfile(result.profile);
       storage.set('crewcheck_language', locale);
-      storage.set('crewcheck_timezone', timezone);
+      storage.set('crewcheck_timezone', effectiveTimezone);
+      setTimezone(effectiveTimezone);
       document.documentElement.lang = locale;
-      window.dispatchEvent(new CustomEvent('crewcheck:locale-change', { detail: { locale, timezone } }));
+      window.dispatchEvent(new CustomEvent('crewcheck:locale-change', { detail: { locale, timezone: effectiveTimezone } }));
       toast.success('Idioma e fuso horário salvos na conta.');
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui salvar idioma e fuso.'); }
     finally { setBusy(false); }
   }
-  return <section className="cz-toolbox"><h2>Idioma e fuso horário</h2><p>O primeiro acesso segue o idioma do dispositivo. O padrão operacional é Brasília (UTC−3) e todo texto compatível é tratado em UTF-8.</p><div className="cz-form-grid"><label><span>Idioma</span><select value={locale} onChange={(event) => setLocale(event.target.value as CrewCheckLocale)}><option value="pt-BR">Português (Brasil)</option><option value="en-US">English (United States)</option><option value="es-ES">Español</option></select></label><label><span>Fuso do sistema</span><select value={timezone} onChange={(event) => setTimezone(event.target.value)}><option value="America/Sao_Paulo">Brasília · UTC−3</option><option value={deviceTimezone}>Dispositivo · {deviceTimezone}</option><option value="UTC">UTC</option><option value="America/Manaus">Manaus · UTC−4</option><option value="America/Rio_Branco">Rio Branco · UTC−5</option><option value="America/Noronha">Fernando de Noronha · UTC−2</option><option value="Europe/Lisbon">Lisboa</option><option value="Europe/Madrid">Madri</option><option value="America/New_York">Nova York</option></select></label></div><div className="cz-tool-actions"><button onClick={() => { setLocale(deviceLocale); setTimezone(deviceTimezone); }}><Globe2/> Usar padrão do dispositivo</button><button onClick={save} disabled={busy}><Save/> {busy ? 'Salvando...' : 'Salvar na conta'}</button></div><div className="cz-routine-strip"><span>Conta {profile?.publicId || 'sincronizando'}</span><span>UTF-8</span><span>{locale}</span><span>{timezone}</span></div></section>;
+  return <section className="cz-toolbox"><h2>Idioma e fuso horário</h2><p>O primeiro acesso segue o aparelho. Uma escolha salva é preservada; mudar o fuso pessoal não altera os instantes da escala nem o fuso operacional.</p><div className="cz-form-grid"><label><span>Idioma</span><select value={locale} onChange={(event) => setLocale(event.target.value as CrewCheckLocale)}><option value="pt-BR">Português (Brasil)</option><option value="en-US">English (United States)</option><option value="es-ES">Español</option></select></label><TimezoneChoice key={`${profile?.publicId || "loading"}:${timezoneReset}`} value={timezone} onChange={setTimezone}/></div><div className="cz-tool-actions"><button onClick={() => { setLocale(deviceLocale); setTimezone(''); setTimezoneReset(value=>value+1); }}><Globe2/> Usar padrão do dispositivo</button><button onClick={save} disabled={busy}><Save/> {busy ? 'Salvando...' : 'Salvar na conta'}</button></div><div className="cz-routine-strip"><span>Conta {profile?.publicId || 'sincronizando'}</span><span>UTF-8</span><span>{locale}</span><span>{timezone || deviceTimezone}</span></div></section>;
 }
 function DatabaseConnectionCard({ admin }: { admin: boolean }) {
   const [status, setStatus] = useState<any>(null);
@@ -3044,20 +3216,16 @@ function SettingsView({ setView, actions }: { setView: (v: ZeroView) => void; ac
     <ToggleSetting icon={Dumbbell} label="Autocheck-in em academia" storageKey="crewcheck:gym-auto-checkin" defaultOn={false} detail="Compartilha presença por 90 min somente ao entrar no raio configurado"/>
     <ToggleSetting icon={Sun} label="Modo claro premium" storageKey="crewcheck_light_premium" defaultOn={false}/>
 
+    <section aria-label="Acessibilidade"><h3>Acessibilidade</h3><TextSizeSetting/></section>
     <h3>Perfil</h3>
     <FieldSetting icon={Globe2} label="País do telefone" storageKey="crewcheck_phone_country" placeholder="Brasil +55"/>
-    <FieldSetting icon={Phone} label="Telefone do despertador" storageKey="crewcheck_wakeup_phone" placeholder="61996071663"/>
-    <FieldSetting icon={Bell} label="Chat do Telegram" storageKey="crewcheck_telegram_chat_id" placeholder="Cole seu chat ID"/>
-    <FieldSetting icon={Bell} label="Canal do despertador" storageKey="crewcheck_wakeup_channel" placeholder="telegram | ligação | ambos"/>
+
+
+
     <FieldSetting icon={Building2} label="Base virtual" storageKey="crewcheck_virtual_base" placeholder="Ex.: BSB / CGH / GRU"/>
     <ToggleSetting icon={GraduationCap} label="Sou instrutor" storageKey="crewcheck_instructor" defaultOn={false}/>
 
-    <h3>Notificações e concierge</h3>
-    <ToggleSetting icon={Bell} label="CrewCheck Pulse" storageKey="crewcheck_pulse_enabled" detail="Banner contextual dentro do app"/>
-    <NotificationPermissionSetting/>
-    <ToggleSetting icon={Bell} label="Notificações via Telegram" storageKey="crewcheck_telegram_notifications"/>
-    <ToggleSetting icon={Car} label="Alertas de trânsito e saída" storageKey="crewcheck_traffic_alerts"/>
-    <ToggleSetting icon={Wifi} label="Concierge operacional" storageKey="crewcheck_concierge"/>
+    <h3>Notificações</h3><button onClick={openNotificationSettings}>Definir o que, por onde e quando em Notificações</button>
 
     {admin && <><h3>Administração</h3><section className="cz-settings-actions"><button onClick={() => setView('admin')}><ShieldCheck/> Abrir painel Admin</button></section></>}
 
@@ -3088,30 +3256,41 @@ function RadarView({ event }: { event: ZeroLeg }) {
   const flight = safe(event.flightNumber, '');
   const airlineCode = event.airlineCode || normalizedAirlineCode(flight);
   const airlineName = airlineNameFor(airlineCode, event.airlineName);
+  const owner = manualGateAccountKey(getStoredUser());
+  const token = getToken();
+  const contextKey = [event.id, event.canonical?.startDateTime, flight, event.origin, event.destination, owner].join('|');
+  const requestState = useRef({ key: contextKey, serial: 0 });
+  if (requestState.current.key !== contextKey) requestState.current = { key: contextKey, serial: requestState.current.serial + 1 };
   async function refresh(force = false) {
+    if (requestState.current.key !== contextKey) return;
+    const serial = ++requestState.current.serial;
+    const current = () => requestState.current.key === contextKey && requestState.current.serial === serial && getToken() === token && manualGateAccountKey(getStoredUser()) === owner;
     setLoading(true);
     try {
       const payload = await fetchRadarSnapshot(event, force);
-      setState(payload || { ok: false, message: 'Radar indisponível.' });
-    } catch {
-      setState({ ok: false, message: 'Radar operacional aguardando fonte disponível.' });
+      if (current()) setState(payload || { ok: false, message: 'Radar indisponível.' });
+    } catch (error) {
+      if (current()) setState(radarFailurePayload(error));
     } finally {
-      setLoading(false);
+      if (current()) setLoading(false);
     }
   }
   useEffect(() => {
     const cached = readRadarSnapshot(event);
     setState(cached);
     refresh(false);
-  }, [event.id, flight, event.origin, event.destination]);
-  const status = state?.status || event.status || 'Monitorando';
-  const gate = state?.gate || event.gate || 'A confirmar';
-  const terminal = state?.terminal || event.terminal || 'A confirmar';
-  const dep = state?.departure || event.departure;
-  const arr = state?.arrival || event.arrival;
-  const quality = state?.quality ? `${state.quality}%` : 'Aguardando';
-  const latency = state?.latencyMs ? `${state.latencyMs} ms` : '—';
-  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>{flight || 'Voo'} · {event.origin} → {event.destination} · portão e status sincronizados com a próxima programação.</p></section><section className="cz-radar-screen"><article><div className="cz-radar-airline"><AirlineLogo code={airlineCode} name={airlineName}/><strong>{airlineName}</strong></div><h2>{flight || 'Voo'}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {gate} · {terminal}</strong><span>Status: {status}</span></article><article><Plane/><h2>Horários</h2><p>Partida {safe(dep, 'A confirmar')} · Chegada {safe(arr, 'A confirmar')}</p><strong>{state?.ok ? 'Radar atualizado' : 'Radar aguardando fonte'}</strong><span>{state?.message || 'Consultando fontes operacionais disponíveis.'}</span></article><article><ShieldCheck/><h2>Qualidade</h2><p>Precisão {quality} · resposta {latency}</p><strong>{loading ? 'Atualizando...' : 'Seleção automática'}</strong><span>{state?.alternatives ? `${state.alternatives} fonte(s) responderam dentro do limite.` : 'Teste automático por disponibilidade.'}</span></article></section><section className="cz-toolbox"><h2>Ações</h2><div className="cz-tool-actions"><button onClick={() => refresh(true)} disabled={loading}><Radar/> Atualizar e exportar ao card</button><button onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${flight} flight status ${event.origin} ${event.destination}`)}`, '_blank', 'noopener,noreferrer')}><Globe2/> Consultar voo</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button></div></section></>;
+    return () => { requestState.current.serial += 1; };
+  }, [contextKey, token]);
+  const verified = validatedRadarForEvent(event,state);
+  const gateInfo = radarGateInfo(event,verified);
+  const status = gateInfo.status || 'Não confirmado';
+  const gate = gateInfo.gate || 'Não confirmado';
+  const terminal = gateInfo.terminal || 'A confirmar';
+  const dep = event.departure;
+  const arr = event.arrival;
+  const quality = verified?.quality ? `${verified.quality}%` : 'Aguardando';
+  const latency = verified?.latencyMs ? `${verified.latencyMs} ms` : '—';
+  return <><Brand back/><section className="cz-panel-head"><h1>Radar de voos</h1><p>{flight || 'Voo'} · {event.origin} → {event.destination} · portão e status sincronizados com a próxima programação.</p></section><section className="cz-radar-screen"><article><div className="cz-radar-airline"><AirlineLogo code={airlineCode} name={airlineName}/><strong>{airlineName}</strong></div><h2>{flight || 'Voo'}</h2><p>{event.origin} → {event.destination}</p><strong>Portão: {gate} · {terminal}</strong><span>{radarFlightDateLabel(event)}</span><span>Status: {status}</span><span>{gateInfo.statusSource === 'manual' ? 'Informado por você' : gateInfo.statusSource === 'radar' ? 'Fonte operacional com evidência válida' : 'Sem confirmação operacional'}</span><span>Matrícula: {gateInfo.registration || 'Não confirmada'}{gateInfo.registrationSource === 'manual' ? ' · informado por você' : ''}</span>{Boolean(gateInfo.operationalConflicts?.length) && <span role="note">Há divergência; dados conflitantes não confirmados e valores manuais preservados.</span>}{event.status && <span>Planejamento da escala: {event.status}</span>}</article><article><Plane/><h2>Horários planejados da escala</h2><p>Partida {safe(dep, 'Não informada')} · Chegada {safe(arr, 'Não informada')}</p><strong>{verified?.ok ? 'Resposta recebida; confirmação por campo' : radarAvailabilityLabel(state)}</strong><span>{(state?.ok && !verified ? 'Resposta sem ocorrência atual confirmada.' : state?.message) || 'Consultando fontes operacionais disponíveis.'}</span></article><article><ShieldCheck/><h2>Qualidade</h2><p>Resposta {latency}; pontuação interna não comprova exatidão.</p><strong>{loading ? 'Atualizando...' : 'Seleção automática'}</strong><span>{state?.alternatives ? `${state.alternatives} fonte(s) responderam dentro do limite.` : 'Teste automático por disponibilidade.'}</span></article></section><section className="cz-toolbox"><h2>Ações</h2><div className="cz-tool-actions"><button onClick={() => refresh(true)} disabled={loading}><Radar/> Atualizar e exportar ao card</button><button onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${flight} flight status ${event.origin} ${event.destination}`)}`, '_blank', 'noopener,noreferrer')}><Globe2/> Consultar voo</button><button onClick={() => window.dispatchEvent(new CustomEvent('crewcheck:set-view', { detail: 'weather' }))}><CloudSun/> Meteorologia</button></div></section><ManualGateEditor event={event}/></>;
 }
 
 type WeatherDisplayMode = 'both' | 'raw' | 'decoded';
@@ -3204,8 +3383,9 @@ function WeatherView({ event }: { event: ZeroLeg }) {
     <p className="cc-weather-disclaimer">A decodificação é apoio de leitura e não substitui METAR/SPECI, TAF, ATIS, despacho, NOTAM nem orientação operacional oficial.</p>
   </>;
 }
-function moneyBRL(value: number) {
-  return `R$ ${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function moneyBRL(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'Não calculável';
+  return `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 function durationHours(event: ZeroLeg) {
   const start = eventStartDateTime(event).getTime();
@@ -3229,6 +3409,9 @@ type ActCompensationConfig = {
   instructorPerSector: number;
   nightHourMetric: number;
   basePay: number;
+  baseConfigured: boolean;
+  baseLabel?: string;
+  fixedAdditionsConfigured: boolean;
   fixedAdditions: number;
   inssDeduction: number;
   irrfDeduction: number;
@@ -3239,12 +3422,19 @@ type ActCompensationConfig = {
   requiresManualFunction: boolean;
 };
 type FlightEarningRow = {
+  iso: string;
   id: string;
   date: string;
   flight: string;
   route: string;
   workType: string;
   km: number;
+  distanceKnown: boolean;
+  distanceBasis?: 'geographic_estimate' | 'unavailable';
+  confirmedRemunerableKm?: null;
+  // Legacy numeric buckets select tariffs; they do not measure physical night KM.
+  kmGrouping?: 'base_and_premium_tariff';
+  timeKnown: boolean;
   dayKm: number;
   nightKm: number;
   metric: number;
@@ -3263,6 +3453,7 @@ type FlightEarningRow = {
   source: string;
 };
 type PerDiemRow = {
+  partial: boolean;
   eventId: string;
   date: string;
   iso: string;
@@ -3273,6 +3464,13 @@ type PerDiemRow = {
   source: string;
   airport: string;
   rateKey: PerDiemRateKey;
+  rateSource: string;
+  rateVersion: string;
+  exchangeRate: number | null;
+  expectedPaymentDate?:string;
+  expectedPaymentTimezone?:string;
+  calculationStart: string;
+  calculationEnd: string;
 };
 function readNumberSetting(key: string, fallback = 0): number {
   const raw = storage.get(key, String(fallback)).replace(',', '.');
@@ -3313,6 +3511,9 @@ function rosterFinancialDate(roster: CrewRoster): string {
 function loadActCompensationConfig(roster: CrewRoster): ActCompensationConfig {
   const act = resolveActFinancialRules(roster);
   const effectiveDate = rosterFinancialDate(roster);
+  const cabin=act.profileLabel==='Comissário(a) - ACT 2025/2027';
+  const variableReference=cabin?cabinSalaryRateReference(`${roster.year}-${String(roster.month).padStart(2,'0')}`):null;
+  const defaultRates=cabin?(variableReference||{dayKm:NaN,nightKm:NaN,reserveHour:NaN,standbyHour:NaN}):act.salary;
   const legacyMetric = readOptionalNumberSetting('crewcheck_act_km_metric_brl');
   const dayOverride = readOptionalNumberSetting('crewcheck_act_day_km_metric_brl');
   const nightOverride = readOptionalNumberSetting('crewcheck_act_night_km_metric_brl');
@@ -3323,10 +3524,10 @@ function loadActCompensationConfig(roster: CrewRoster): ActCompensationConfig {
   const learnedReserve = confirmedRateValueAt('salary.reserveHour', effectiveDate);
   const learnedStandby = confirmedRateValueAt('salary.standbyHour', effectiveDate);
   const learnedBase = confirmedRateValueAt('salary.base', effectiveDate);
-  const dayKmMetric = dayOverride ?? legacyMetric ?? learnedDay ?? act.salary.dayKm;
-  const nightKmMetric = nightOverride ?? learnedNight ?? act.salary.nightKm;
-  const reserveHourMetric = reserveOverride ?? learnedReserve ?? act.salary.reserveHour;
-  const standbyHourMetric = standbyOverride ?? learnedStandby ?? act.salary.standbyHour;
+  const dayKmMetric = dayOverride ?? legacyMetric ?? learnedDay ?? defaultRates.dayKm;
+  const nightKmMetric = nightOverride ?? learnedNight ?? defaultRates.nightKm;
+  const reserveHourMetric = reserveOverride ?? learnedReserve ?? defaultRates.reserveHour;
+  const standbyHourMetric = standbyOverride ?? learnedStandby ?? defaultRates.standbyHour;
   const chiefPerSector = readNumberSetting('crewcheck_act_chief_sector_brl', 0);
   const instructorPerSector = readNumberSetting('crewcheck_act_instructor_sector_brl', 0);
   const basePay = readOptionalNumberSetting('crewcheck_salary_base_brl') ?? learnedBase ?? 0;
@@ -3340,7 +3541,7 @@ function loadActCompensationConfig(roster: CrewRoster): ActCompensationConfig {
     || basePay > 0 || fixedAdditions > 0;
   const hasOverride = [dayOverride, nightOverride, reserveOverride, standbyOverride, legacyMetric].some((value) => value !== null);
   const hasLearned = [learnedDay, learnedNight, learnedReserve, learnedStandby, learnedBase].some((value) => value !== null);
-  return {
+  return applyMonthlySalaryInputs({
     kmMetric: dayKmMetric,
     dayKmMetric,
     nightKmMetric,
@@ -3350,6 +3551,8 @@ function loadActCompensationConfig(roster: CrewRoster): ActCompensationConfig {
     instructorPerSector,
     nightHourMetric: 0,
     basePay,
+    baseConfigured: readOptionalNumberSetting('crewcheck_salary_base_brl') !== null || learnedBase !== null,
+    fixedAdditionsConfigured: readOptionalNumberSetting('crewcheck_salary_fixed_additions_brl') !== null,
     fixedAdditions,
     inssDeduction,
     irrfDeduction,
@@ -3357,10 +3560,11 @@ function loadActCompensationConfig(roster: CrewRoster): ActCompensationConfig {
     fgtsRate,
     configured,
     source: act.profileLabel + ' · ' + act.legalReference
-      + (hasOverride ? ' · calibração manual do Admin' : hasLearned ? ' · demonstrativo confirmado pelo Admin' : ' · tabela ACT vigente')
-      + ' · cada KM é classificado uma única vez pela janela local 22:00–05:00',
+      + (hasOverride ? ' · calibração manual da conta' : '') + (hasLearned ? ' · demonstrativo revisado da conta' : '')
+      + (cabin?' · '+(variableReference?.description||'Reajuste/tarifa da competência sem evidência; não calculável'):' · referência ACT impressa; conferir competência')
+      + ' · estimativa atual usa janela operacional 22:00–05:00; enquadramento remuneratório corporativo pendente. Grupos de tarifa base/majorada não equivalem a KM diurno/noturno físico',
     requiresManualFunction: act.requiresManualFunction,
-  };
+  },`${roster.year}-${String(roster.month).padStart(2,'0')}`,readMonthlyFinancialSettings(`${roster.year}-${String(roster.month).padStart(2,'0')}`));
 }
 function normalizeCrewNameForFinance(value: unknown): string {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
@@ -3387,20 +3591,21 @@ function flightDistanceKmFromEvent(event: ZeroLeg): number {
   if (!from || !to) return 0;
   return Math.round(routeDistanceKm(from, to));
 }
-function perDiemConfig(roster: CrewRoster) {
+function perDiemConfig(roster: CrewRoster, effectiveDate: string) {
   const act = resolveActFinancialRules(roster);
-  const effectiveDate = rosterFinancialDate(roster);
-  const learnedMeal = confirmedRateValueAt('per_diem.lunch', effectiveDate)
-    ?? confirmedRateValueAt('per_diem.dinner', effectiveDate)
-    ?? confirmedRateValueAt('per_diem.supper', effectiveDate);
+  const learnedMealRate = confirmedRateAt('per_diem.lunch', effectiveDate)
+    ?? confirmedRateAt('per_diem.dinner', effectiveDate)
+    ?? confirmedRateAt('per_diem.supper', effectiveDate);
+  const learnedMeal = learnedMealRate?.value ?? null;
   const learnedBreakfast = confirmedRateValueAt('per_diem.breakfast', effectiveDate);
   const domesticRule = act.perDiem.find((rule) => rule.key === 'domestic');
   const domesticOverride = readOptionalNumberSetting('crewcheck_perdiem_rate_domestic');
   const domestic = resolveDomesticPerDiemRate({
     effectiveDate,
-    actMainMeal: domesticRule?.mainMeal || 0,
+    actMainMeal: domesticRule?.mainMeal ?? NaN,
     manualOverride: domesticOverride,
     learnedMainMeal: learnedMeal,
+    ownerConfirmedMainMeal: learnedMealRate?.valueOrigin === 'owner_confirmed',
     learnedBreakfast,
     breakfastPercent: act.breakfastPercent,
   });
@@ -3424,45 +3629,70 @@ function perDiemConfig(roster: CrewRoster) {
     exchangeRates,
     breakfastPercent: act.breakfastPercent,
     domesticBreakfast: domestic.breakfast,
+    taxiRate: confirmedRateValueAt('per_diem.taxi', effectiveDate),
     domesticMainMealSource: domestic.source,
+    domesticBreakfastSource: domestic.breakfastSource,
     airportOverrides: loadAirportPerDiemOverrides(),
     source: act.profileLabel + ' · ' + act.legalReference
-      + (learnedMeal || learnedBreakfast ? ' · demonstrativo confirmado pelo Admin' : '')
+      + (learnedMeal || learnedBreakfast ? ' · tarifas revisadas nesta conta' : '')
+      + (domestic.source==='act' && learnedBreakfast===null ? ' · referência ACT; tarifa empresarial da conta não confirmada neste período' : '')
+      + (domestic.breakfastSource==='act' && domestic.source!=='act' ? ' · café: referência ACT; tarifa própria não confirmada neste período' : '')
       + demonstratedSource,
   };
 }
-function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
-  const cfg = perDiemConfig(roster);
+function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster, now = new Date()) {
+  const airportOverrides = loadAirportPerDiemOverrides();
   const rows: PerDiemRow[] = [];
   const seen = new Set<string>();
+  const taxiDepartures = new Map<string, { iso: string; window: string; event: ZeroLeg; start: Date; end: Date }>();
   const pendingAirports = new Set<string>();
+  const unclassifiedItems: Array<{ iso: string; airport: string; reason?: string }> = [];
   const usedRateKeys = new Set<PerDiemRateKey>();
-  const add = (event: ZeroLeg, iso: string, slot: string, label: string, source: string) => {
-    const classification = resolvePerDiemRule(event.origin, event.destination, cfg.airportOverrides);
+  const add = (event: ZeroLeg, iso: string, slot: string, label: string, source: string, calculationStart: Date, calculationEnd: Date, partial = false) => {
+    const classification = resolvePerDiemRule(event.origin, event.destination, airportOverrides);
     if (!classification.rateKey) {
       if (classification.airport) pendingAirports.add(classification.airport);
+      unclassifiedItems.push({ iso, airport: classification.airport, reason: 'Classificação geográfica da diária pendente.' });
       return;
     }
     const key = iso + '-' + slot;
     if (seen.has(key)) return;
     seen.add(key);
     usedRateKeys.add(classification.rateKey);
+    const cfg = perDiemConfig(roster, iso);
     const rate = cfg.rates[classification.rateKey];
+    if (!rate) {
+      pendingAirports.add(classification.airport);
+      unclassifiedItems.push({ iso, airport: classification.airport, reason: 'Tarifa da diária ausente para o período.' });
+      return;
+    }
     const value = slot === 'breakfast' && classification.rateKey === 'domestic'
       ? cfg.domesticBreakfast
       : perDiemSlotAmount(rate.mainMeal, slot, cfg.breakfastPercent);
+    if (!Number.isFinite(value) || value < 0) {
+      pendingAirports.add(classification.airport);
+      unclassifiedItems.push({ iso, airport: classification.airport, reason: 'Valor da tarifa de diária inválido para o período.' });
+      return;
+    }
     const fx = cfg.exchangeRates[rate.currency];
     rows.push({
       eventId: event.id,
-      date: dateChip(event.date),
+      partial,
+      ...(rate.currency!=='BRL'&&event.kind==='flight'&&!financialPublishedFlightIntervalIssue([event])&&event.salaryClockKnown!==false?{expectedPaymentDate:rosterOperationalIso(eventStartDateTime(event)),expectedPaymentTimezone:'America/Sao_Paulo'}:{}),
+      date: dateChip(new Date(iso + 'T12:00:00')),
       iso,
       label,
       value,
       currency: rate.currency,
       convertedBRL: rate.currency === 'BRL' ? value : fx > 0 ? value * fx : null,
-      source: source + ' · ' + rate.label + ' · ' + classification.reason,
+      source: source + ' · relógio da escala BRT (UTC-03) · ' + rate.label + ' · ' + classification.reason + ' · ' + cfg.source + ' · vigência consultada em ' + iso,
       airport: classification.airport,
       rateKey: classification.rateKey,
+      rateSource: classification.rateKey === 'domestic' ? (slot === 'breakfast' ? cfg.domesticBreakfastSource : cfg.domesticMainMealSource) : (readOptionalNumberSetting('crewcheck_perdiem_rate_' + classification.rateKey) !== null ? 'manual' : 'act'),
+      rateVersion: cfg.act.version,
+      exchangeRate: rate.currency === 'BRL' ? 1 : fx > 0 ? fx : null,
+      calculationStart: calculationStart.toISOString(),
+      calculationEnd: calculationEnd.toISOString(),
     });
   };
   const operational = events.filter(isOperationalEvent);
@@ -3486,8 +3716,8 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
       representative = dutyFlights[0] || event;
       const last = dutyFlights[dutyFlights.length - 1] || event;
       start = eventStartDateTime(representative);
-      const report = String((event.day as any)?.dutyReport || representative.presentation || '').match(/(\d{1,2}):(\d{2})/);
-      if (report) start.setHours(Number(report[1]), Number(report[2]), 0, 0);
+      const report = String(representative.canonical?.leg?.presentationTime || (representative.day as any)?.dutyReport || '').trim();
+      start = rosterPresentationBeforeDeparture(start, report) || new Date(NaN);
       enginesOff = eventEndDateTime(last);
       end = enginesOff;
       activityKind = 'flight';
@@ -3503,16 +3733,77 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
       activityKind = 'training';
     }
 
+    const evidenceIssue = financialIntervalEvidenceIssue(dutyFlights);
+    if (evidenceIssue || allowanceIntervalState(start, end) !== 'available') {
+      const iso = rosterOperationalIso(eventStartDateTime(representative));
+      unclassifiedItems.push({ iso, airport: String(representative.origin || ''), reason: `Intervalo operacional incompleto: ${evidenceIssue || 'apresentação ou fim inválido'}. Relógio da escala BRT (UTC-03).` });
+      // Preserve only meals proved by literal flight intervals. Unknown APZ
+      // still blocks duty completeness, base breakfast and taxi. Do not extend
+      // to preflight, connections or arrival+30 in this partial-evidence path.
+      if (activityKind==='flight' && evidenceIssue==='Apresentação publicada ausente ou estimada.' && !financialPublishedFlightIntervalIssue(dutyFlights)) {
+        for (const flight of dutyFlights) {
+          const knownStart=eventStartDateTime(flight),knownEnd=eventEndDateTime(flight);
+          if (allowanceIntervalState(knownStart,knownEnd)!=='available') continue;
+          for (const occurrence of classifyAllowanceWindows({start:knownStart,end:knownEnd,kind:'flight',clockBasis:'roster_brt',breakfastIncluded:true})) {
+            if (occurrence.slot==='breakfast') continue;
+            const labels:Record<string,string>={lunch:'Almoço',dinner:'Jantar',supper:'Ceia'};
+            add(flight,occurrence.iso,occurrence.slot,labels[occurrence.slot],`Trecho com partida/chegada publicadas · ${occurrence.window} · subtotal parcial; apresentação da jornada pendente`,knownStart,knownEnd,true);
+          }
+        }
+      }
+      continue;
+    }
+
+    const atContractualBase = (airport: string) => Boolean(roster.base) && String(airport || '').toUpperCase() === String(roster.base).toUpperCase();
+    // Presence evidence, including intermediate base arrivals. Destination alone
+    // does not establish presence during the breakfast window.
+    const breakfastBasePresence: Array<{ start: Date; end: Date; eventId: string }> = [];
+    if (activityKind === 'reserve' && atContractualBase(representative.origin)) breakfastBasePresence.push({ start, end, eventId: representative.id });
+    if (activityKind === 'flight') {
+      if (atContractualBase(representative.origin)) breakfastBasePresence.push({ start, end: eventStartDateTime(representative), eventId: representative.id });
+      for (const flight of dutyFlights) if (atContractualBase(flight.destination)) {
+        const arrival = eventEndDateTime(flight);
+        breakfastBasePresence.push({ start: arrival, end: arrival, eventId: flight.id });
+      }
+    }
+
+    // Taxi is a separate user-reported operational rule, never a meal percentage.
+    // Existing interval evidence above excludes absent/estimated APZ.
+    const taxi = (activityKind === 'flight' || activityKind === 'reserve')
+      ? taxiPresentationOccurrence(start, atContractualBase(representative.origin)) : null;
+    // An airport reserve and its activation prove the same commute, regardless
+    // of input order. A later independent journey is not a duplicate commute.
+    const activatedFromReserve = activityKind === 'flight' && operational.some(candidate => {
+      const reserveCode = financialEventCode(candidate);
+      if (candidate.kind === 'flight' || !/\b(ASB|RES|RESERVA|RSV)\b/.test(reserveCode)
+        || /\b(HSB|HSBE|SOBREAVISO)\b/.test(reserveCode)
+        || !atContractualBase(candidate.origin) || financialIntervalEvidenceIssue([candidate])) return false;
+      const reserveStart = eventStartDateTime(candidate), reserveEnd = eventEndDateTime(candidate);
+      return allowanceIntervalState(reserveStart, reserveEnd) === 'available'
+        && start >= reserveStart && start <= reserveEnd;
+    });
+    if (taxi && !activatedFromReserve) {
+      const identity = financialJourneyGroupKey(representative);
+      if (identity === 'event:missing-id') {
+        unclassifiedItems.push({ iso: taxi.iso, airport: representative.origin,
+          reason: 'Táxi: identidade da ocorrência ausente; deslocamento não comprovado.' });
+      } else {
+        taxiDepartures.set(identity + ':departure:' + start.toISOString(), { ...taxi, event: representative, start, end });
+      }
+    }
+
     const breakfastIncluded = Boolean((event.day as any)?.breakfastIncluded || (event.day as any)?.hotelBreakfastIncluded || (event as any)?.breakfastIncluded);
     const occurrences = classifyAllowanceWindows({
       start,
       end,
+      clockBasis: 'roster_brt',
       enginesOff,
       kind: activityKind,
       activated: event.kind === 'flight',
       originAtContractualBase: String(representative.origin || '').toUpperCase() === String(roster.base || '').toUpperCase(),
       destinationAtContractualBase: String((dutyFlights.at(-1) || representative).destination || '').toUpperCase() === String(roster.base || '').toUpperCase(),
       breakfastIncluded,
+      breakfastBasePresence,
     });
     const source = activityKind === 'stay_external' ? 'Pernoite fora da base'
       : activityKind === 'reserve' ? 'Reserva no aeroporto'
@@ -3522,68 +3813,93 @@ function calculatePerDiem(events: ZeroLeg[], roster: CrewRoster) {
       const labels: Record<string, string> = { breakfast: 'Café', lunch: 'Almoço', dinner: 'Jantar', supper: 'Ceia' };
       const slotHours: Record<string, [number, number]> = { breakfast: [5, 8], lunch: [11, 13], dinner: [19, 20], supper: [0, 1] };
       const [windowStartHour, windowEndHour] = slotHours[occurrence.slot] || [0, 23];
-      const windowStart = new Date(`${occurrence.iso}T00:00:00`);
-      windowStart.setHours(windowStartHour, 0, 0, 0);
-      const windowEnd = new Date(`${occurrence.iso}T00:00:00`);
-      windowEnd.setHours(windowEndHour, 0, 0, 0);
-      const occurrenceEvent = dutyFlights.find((candidate, index) => {
+      const windowStart = rosterOperationalDateAt(occurrence.iso, windowStartHour);
+      const windowEnd = rosterOperationalDateAt(occurrence.iso, windowEndHour);
+      const occurrenceEvent = (occurrence.slot === 'breakfast' && occurrence.eventId ? dutyFlights.find(candidate => candidate.id === occurrence.eventId) : null) || dutyFlights.find((candidate, index) => {
         const candidateStart = eventStartDateTime(candidate).getTime();
         const candidateEnd = eventEndDateTime(candidate).getTime() + (index === dutyFlights.length - 1 ? 30 * 60_000 : 0);
         return candidateStart <= windowEnd.getTime() && candidateEnd >= windowStart.getTime();
       }) || (occurrence.slot === 'breakfast' && dutyFlights.at(-1)?.destination?.toUpperCase() === String(roster.base || '').toUpperCase() ? dutyFlights.at(-1)! : representative);
-      add(occurrenceEvent, occurrence.iso, occurrence.slot, labels[occurrence.slot], `${source} · ${occurrence.window}`);
+      add(occurrenceEvent, occurrence.iso, occurrence.slot, labels[occurrence.slot], `${source} · ${occurrence.window}${occurrence.slot === 'breakfast' ? ' · Critério operacional informado pelo usuário: presença na base na janela do café; sem homologação ACT' : ''}`, start, end);
+    }
+  }
+  const taxiDays = new Set<string>();
+  for (const taxi of [...taxiDepartures.values()].sort((a, b) => a.start.getTime() - b.start.getTime() || financialJourneyGroupKey(a.event).localeCompare(financialJourneyGroupKey(b.event)))) {
+    // User-confirmed ceiling: one taxi allowance per operational BRT day.
+    if (taxiDays.has(taxi.iso)) continue;
+    taxiDays.add(taxi.iso);
+    const cfg = perDiemConfig(roster, taxi.iso);
+    const value = cfg.taxiRate;
+    const source = 'Táxi previsto · Critério operacional informado pelo usuário: APZ na base · '
+      + taxi.window + ' · máximo uma diária por dia · relógio da escala BRT (UTC-03) · sem homologação ACT';
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      unclassifiedItems.push({ iso: taxi.iso, airport: taxi.event.origin, reason: source + ' · Tarifa de táxi confirmada para o período ausente.' });
+    } else {
+      rows.push({ partial:false, eventId: taxi.event.id, date: dateChip(new Date(taxi.iso + 'T12:00:00')), iso: taxi.iso,
+        label: 'Táxi', value, currency: 'BRL', convertedBRL: value,
+        source: source + ' · tarifa de táxi revisada nesta conta no período; previsão não comprova pagamento',
+        airport: taxi.event.origin, rateKey: 'domestic', rateSource: 'learned', rateVersion: 'taxi-user-reported-v1',
+        exchangeRate: 1, calculationStart: taxi.start.toISOString(), calculationEnd: taxi.end.toISOString() });
     }
   }
   const monthlyRows = rowsForNominalFinancialCompetence(rows, roster);
-  const totalsByCurrency = monthlyRows.reduce((totals, row) => {
-    totals[row.currency] = (totals[row.currency] || 0) + row.value;
-    return totals;
-  }, {} as Partial<Record<PerDiemCurrency, number>>);
-  const pendingCurrencies = (Object.keys(totalsByCurrency) as PerDiemCurrency[])
-    .filter((currency) => currency !== 'BRL' && totalsByCurrency[currency] && cfg.exchangeRates[currency] <= 0);
-  const convertedTotalBRL = monthlyRows.reduce((sum, row) => sum + (row.convertedBRL || 0), 0);
-  const cycle = observedStatementCycle(new Date());
-  const weekly = rows.filter((row) => {
-    const date = new Date(row.iso + 'T12:00:00');
-    return date >= cycle.start && date <= cycle.end;
-  }).reduce((sum, row) => sum + (row.convertedBRL || 0), 0);
-  const currencySummary = (Object.entries(totalsByCurrency) as Array<[PerDiemCurrency, number]>)
-    .filter(([, value]) => value > 0)
+  const monthlyUnclassifiedItems = [...rowsForNominalFinancialCompetence(unclassifiedItems, roster), ...unclassifiedItems.filter(item => !item.iso)];
+  const nativeSummary = summarizeNativeForecastRows(monthlyRows, monthlyUnclassifiedItems);
+  const totalsByCurrency = nativeSummary.totalsByCurrency as Partial<Record<PerDiemCurrency, number>>;
+  const monthlySummary = summarizeForecastRows(monthlyRows, monthlyUnclassifiedItems);
+  const pendingCurrencies = monthlySummary.pendingCurrencies;
+  const convertedTotalBRL = monthlySummary.convertedTotalBRL;
+  const periods = observedAllowancePeriods(now, 'roster_brt');
+  const cycle = periods.accumulation;
+  const weeklyRows = rowsInObservedCycle(rows, cycle);
+  const weeklySummary = summarizeForecastRows(weeklyRows, [...rowsInObservedCycle(unclassifiedItems, cycle), ...unclassifiedItems.filter(item => !item.iso)]);
+  const weekly = weeklySummary.convertedTotalBRL;
+  const previousWeeklyRows = rowsInObservedCycle(rows, periods.previous);
+  const previousWeeklySummary = summarizeForecastRows(previousWeeklyRows, [...rowsInObservedCycle(unclassifiedItems, periods.previous), ...unclassifiedItems.filter(item => !item.iso)]);
+  const currencySummary = !nativeSummary.complete ? (Object.keys(nativeSummary.knownTotalsByCurrency).length ? 'Subtotal estimado: '+Object.entries(nativeSummary.knownTotalsByCurrency).map(([currency,value])=>moneyCurrency(value,currency as PerDiemCurrency)).join(' · ') : nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável') : (Object.entries(totalsByCurrency) as Array<[PerDiemCurrency, number]>)
     .map(([currency, value]) => moneyCurrency(value, currency))
     .join(' · ');
   return {
     rows,
+    unclassifiedItems,
+    monthlyUnclassifiedItems,
     monthlyRows,
     monthly: convertedTotalBRL,
+    monthlySummary,
+    nativeSummary,
     weekly,
+    weeklyRows,
+    weeklySummary,
+    previousWeeklyRows,
+    previousWeeklySummary,
+    periods,
     totalsByCurrency,
     currencySummary,
     currencyCount: Object.keys(totalsByCurrency).length,
     pendingCurrencies,
     pendingAirports: Array.from(pendingAirports).sort(),
     usedRateKeys: Array.from(usedRateKeys),
-    convertedComplete: pendingCurrencies.length === 0,
+    convertedComplete: monthlySummary.convertedComplete,
     cycle,
-    config: cfg,
-    configured: true,
+    configured: rows.length > 0,
   };
 }
-function nightHoursInsideWindow(start: Date, end: Date): number {
-  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return 0;
-  const anchor = new Date(start);
-  anchor.setDate(anchor.getDate() - 1);
-  anchor.setHours(22, 0, 0, 0);
-  let total = 0;
-  while (anchor < end) {
-    const windowEnd = new Date(anchor);
-    windowEnd.setDate(windowEnd.getDate() + 1);
-    windowEnd.setHours(5, 0, 0, 0);
-    const overlapStart = Math.max(start.getTime(), anchor.getTime());
-    const overlapEnd = Math.min(end.getTime(), windowEnd.getTime());
-    if (overlapEnd > overlapStart) total += (overlapEnd - overlapStart) / 36e5;
-    anchor.setDate(anchor.getDate() + 1);
+function nightHoursInsideWindow(start: Date | string, end: Date | string, operationalTimeZone = ROSTER_DISPLAY_TIME_ZONE): number {
+  const from = rosterStrictInstant(start), until = rosterStrictInstant(end);
+  if (!from || !until || until < from || !operationalTimeZone) return NaN;
+  let clock: Intl.DateTimeFormat;
+  try { clock = new Intl.DateTimeFormat('en-GB', { timeZone: operationalTimeZone, hour: '2-digit', hourCycle: 'h23' }); }
+  catch { return NaN; }
+  // Canonical instants retain elapsed time through DST folds/gaps. Classify
+  // each minute in the explicitly supplied operational clock, never device TZ.
+  let cursor = from.getTime(), total = 0;
+  while (cursor < until.getTime()) {
+    const hour = Number(clock.formatToParts(new Date(cursor)).find(part => part.type === 'hour')?.value);
+    const next = Math.min(until.getTime(), (Math.floor(cursor / 60000) + 1) * 60000);
+    if (hour >= 22 || hour < 5) total += next - cursor;
+    cursor = next;
   }
-  return total;
+  return total / 36e5;
 }
 
 function financialEventCode(event: ZeroLeg): string {
@@ -3606,32 +3922,36 @@ function financialFlightRule(event: ZeroLeg): { extra: boolean; reason: string }
     : 'tarifa regular' };
 }
 
-function isSundayOrConfiguredHoliday(event: ZeroLeg): boolean {
-  const date = eventStartDateTime(event);
-  if (date.getDay() === 0) return true;
-  const iso = `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+function isSundayOrConfiguredHoliday(event: ZeroLeg): boolean | null {
+  const iso = rosterInstantIso(event.canonical ? event.canonical.startDateTime : eventStartDateTime(event), (event as any).operationalTimeZone === undefined ? ROSTER_DISPLAY_TIME_ZONE : (event as any).operationalTimeZone);
+  if (!iso) return null;
+  if (new Date(iso + 'T00:00:00Z').getUTCDay() === 0) return true;
   const configured = storage.get('crewcheck_local_holiday_dates', '').split(',').map(value => value.trim()).filter(Boolean);
   return configured.includes(iso);
 }
 
 function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
+  const competencePrefix = nominalFinancialCompetencePrefix(roster);
+  events = events.filter(event => Boolean(competencePrefix && rosterDisplayIso({ ...event, operationalTimeZone: (event as any).operationalTimeZone || ROSTER_DISPLAY_TIME_ZONE })?.startsWith(competencePrefix + '-')));
   const cfg = loadActCompensationConfig(roster);
   const flightEvents = dedupeProjectedLegs(events.filter((event) => event.kind === 'flight' && !event.placeholder));
   const instructor = storage.get('crewcheck_instructor', '0') !== '0';
   const rows: FlightEarningRow[] = flightEvents.map((event) => {
     const km = event.origin && event.destination && event.origin !== event.destination ? flightDistanceKmFromEvent(event) : 0;
     const block = Math.max(0, durationHours(event));
-    const nightHours = nightHoursInsideWindow(eventStartDateTime(event), eventEndDateTime(event));
+    const nightHours = event.salaryClockKnown === false ? NaN : nightHoursInsideWindow(event.canonical ? event.canonical.startDateTime : eventStartDateTime(event), event.canonical ? event.canonical.endDateTime : eventEndDateTime(event), (event as any).operationalTimeZone === undefined ? ROSTER_DISPLAY_TIME_ZONE : (event as any).operationalTimeZone);
     const nightFraction = block > 0 ? Math.min(1, nightHours / block) : 0;
     const payRule = financialFlightRule(event);
-    const premiumAllKm = payRule.extra || isSundayOrConfiguredHoliday(event);
+    const holiday = isSundayOrConfiguredHoliday(event);
+    const timeKnown = event.salaryClockKnown !== false && Number.isFinite(nightHours) && holiday !== null;
+    const premiumAllKm = payRule.extra || holiday === true;
     const nightKm = premiumAllKm ? km : Math.min(km, Math.max(0, Math.round(km * nightFraction)));
     const dayKm = Math.max(0, km - nightKm);
     const dayRateApplied = payRule.extra ? cfg.nightKmMetric : cfg.dayKmMetric;
     const nightRateApplied = cfg.nightKmMetric;
-    const dayProduction = dayKm * dayRateApplied;
-    const nightProduction = nightKm * nightRateApplied;
-    const production = dayProduction + nightProduction;
+    const dayProduction = dayKm === 0 ? 0 : dayKm * dayRateApplied;
+    const nightProduction = nightKm === 0 ? 0 : nightKm * nightRateApplied;
+    const production = timeKnown ? dayProduction + nightProduction : NaN;
     const chiefEligible = userIsFirstCcm(event, roster);
     const chief = chiefEligible ? cfg.chiefPerSector : 0;
     const instructorPay = instructor ? cfg.instructorPerSector : 0;
@@ -3639,10 +3959,16 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
     return {
       id: event.id,
       date: dateChip(event.date),
+      iso: rosterDisplayIso({ ...event, operationalTimeZone: (event as any).operationalTimeZone || ROSTER_DISPLAY_TIME_ZONE }) || '',
       flight: safe(event.flightNumber, 'Voo'),
       route: safe(event.origin, '—') + ' → ' + safe(event.destination, '—'),
       workType,
       km,
+      distanceKnown: Number.isFinite(km) && km > 0,
+      distanceBasis: Number.isFinite(km) && km > 0 ? 'geographic_estimate' : 'unavailable',
+      confirmedRemunerableKm: null,
+      kmGrouping: 'base_and_premium_tariff',
+      timeKnown,
       dayKm,
       nightKm,
       metric: km > 0 ? production / km : 0,
@@ -3664,23 +3990,27 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
   const activityEvents = events.filter((event) => event.kind !== 'flight' && isOperationalEvent(event));
   const reserveEvents = activityEvents.filter((event) => /\b(ASB|RES|RESERVA|RSV)\b/i.test(financialEventCode(event)));
   const standbyEvents = activityEvents.filter((event) => /\b(HSB|HSBE|SOBREAVISO)\b/i.test(financialEventCode(event)));
-  const reserveHours = reserveEvents.reduce((sum, event) => sum + durationHours(event), 0);
-  const standbyHours = standbyEvents.reduce((sum, event) => sum + durationHours(event), 0);
-  const reserve = reserveHours * cfg.reserveHourMetric;
-  const standby = standbyHours * cfg.standbyHourMetric;
+  const reserveFlightStarts = flightEvents.map((event) => eventStartDateTime(event));
+  const reserveAssessment = assessSalaryActivities(reserveEvents, event => payableReserveHours(eventStartDateTime(event), eventEndDateTime(event), reserveFlightStarts), cfg.reserveHourMetric);
+  const standbyAssessment = assessSalaryActivities(standbyEvents, durationHours, cfg.standbyHourMetric);
+  const reserveHours = reserveAssessment.hours;
+  const standbyHours = standbyAssessment.hours;
+  const reserve = reserveAssessment.amount;
+  const standby = standbyAssessment.amount;
   const sectors = flightEvents.length;
   const kmTotal = rows.reduce((sum, row) => sum + row.km, 0);
   const dayKmTotal = rows.reduce((sum, row) => sum + row.dayKm, 0);
   const nightKmTotal = rows.reduce((sum, row) => sum + row.nightKm, 0);
   const blockHours = flightEvents.reduce((sum, event) => sum + durationHours(event), 0);
   const chiefSectors = rows.filter((row) => row.chiefEligible).length;
-  const nightHours = flightEvents.reduce((sum, event) => sum + nightHoursInsideWindow(eventStartDateTime(event), eventEndDateTime(event)), 0);
+  const nightHours = flightEvents.reduce((sum, event) => sum + (event.salaryClockKnown === false ? NaN : nightHoursInsideWindow(event.canonical ? event.canonical.startDateTime : eventStartDateTime(event), event.canonical ? event.canonical.endDateTime : eventEndDateTime(event), (event as any).operationalTimeZone === undefined ? ROSTER_DISPLAY_TIME_ZONE : (event as any).operationalTimeZone)), 0);
   const dayProduction = rows.reduce((sum, row) => sum + row.dayProduction, 0);
   const nightProduction = rows.reduce((sum, row) => sum + row.nightProduction, 0);
-  const production = dayProduction + nightProduction;
+  const production = rows.reduce((sum, row) => sum + row.production, 0);
   const chief = rows.reduce((sum, row) => sum + row.chief, 0);
   const instructorPay = rows.reduce((sum, row) => sum + row.instructor, 0);
-  const gross = cfg.basePay + cfg.fixedAdditions + production + chief + instructorPay + reserve + standby;
+  const fixedReady=cfg.baseConfigured!==false&&cfg.fixedAdditionsConfigured!==false&&[cfg.basePay,cfg.fixedAdditions].every(value=>Number.isFinite(value)&&value>=0);
+  const gross = fixedReady?cfg.basePay + cfg.fixedAdditions + production + chief + instructorPay + reserve + standby:NaN;
   const inss = Math.max(0, cfg.inssDeduction);
   const irrf = Math.max(0, cfg.irrfDeduction);
   const otherDeductions = Math.max(0, cfg.otherDeductions);
@@ -3697,6 +4027,8 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
     nightHours,
     reserveHours,
     standbyHours,
+    reserveAssessment,
+    standbyAssessment,
     production,
     dayProduction,
     nightProduction,
@@ -3715,107 +4047,179 @@ function calculateSalary(events: ZeroLeg[], roster: CrewRoster) {
     configured: cfg.configured,
   };
 }
-function PerDiemView({ bundle }: { bundle: BundleState }) {
+function PerDiemMonthView({ bundle, forecastOverride, controls, graph, rangeLabel, nextPayment }: { bundle: BundleState; forecastOverride?: ReturnType<typeof calculatePerDiem> & { scopeIncomplete?: boolean }; controls?: ReactNode; graph?: ReactNode; rangeLabel?: string; nextPayment?: ReactNode }) {
+  const privacy = useFinancialPrivacy();
+  const moneyBRL = (value: number | null | undefined) => typeof value === 'number' && Number.isFinite(value) ? privacy.amount(`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`) : 'Não calculável';
+  const moneyCurrency = (value: number, currency: PerDiemCurrency) => privacy.amount(new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value));
   const events = buildLegs(bundle.roster);
   const [revision, setRevision] = useState(0);
-  const forecast = useMemo(() => calculatePerDiem(events, bundle.roster), [bundle.roster, revision]);
+  const calculated = useMemo(() => calculatePerDiem(events, bundle.roster), [bundle.roster, revision]);
+  const forecast = forecastOverride || calculated;
+
+  const itemCount = forecast.monthlyRows.length;
+  const itemLabel = `${itemCount} ${itemCount === 1 ? 'item' : 'itens'}`;
+  const currencyLabel = `${forecast.currencyCount} ${forecast.currencyCount === 1 ? 'moeda' : 'moedas'}`;
+  const year = Number(bundle.roster.year), month = Number(bundle.roster.month);
+  const competence = Number.isInteger(year) && year >= 2000 && Number.isInteger(month) && month >= 1 && month <= 12
+    ? new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month - 1, 1)))
+    : 'não informada';
 
   function configureExchange() {
+    const session = financialRateSession();
+    if (!session) return;
     const currencies = (Object.keys(forecast.totalsByCurrency) as PerDiemCurrency[]).filter((currency) => currency !== 'BRL');
-    currencies.forEach((currency) => {
+    let changed = false;
+    for (const currency of currencies) {
+      if (session !== financialRateSession()) { toast.error('A sessão mudou. O câmbio não foi aplicado à outra conta.'); return; }
       const key = 'crewcheck_fx_' + currency.toLowerCase() + '_brl';
-      const value = prompt('Cotação informada: 1 ' + currency + ' em BRL', storage.get(key, ''));
-      if (value !== null) storage.set(key, value.replace(',', '.'));
-    });
-    setRevision((value) => value + 1);
-    toast.success('Câmbio atualizado para esta previsão.');
+      const value = prompt('Cotação de referência: 1 ' + currency + ' em BRL (use vírgula decimal)', privacy.hidden ? '' : storage.get(key, '').replace('.', ','));
+      if (value === null) continue;
+      if (session !== financialRateSession()) { toast.error('A sessão mudou. O câmbio não foi aplicado à outra conta.'); return; }
+      const normalized = parseFinancialDecimal(value);
+      if (!normalized || !Number.isFinite(Number(normalized)) || Number(normalized) <= 0) { toast.error('Informe uma cotação positiva válida.'); continue; }
+      const asOf = prompt('Data de referência da cotação (AAAA-MM-DD)', '');
+      if (asOf === null) continue;
+      if (!validFinancialDay(asOf) || asOf > new Date().toISOString().slice(0, 10)) { toast.error('Informe uma data de referência válida, sem data futura.'); continue; }
+      if (!writeFinancialSetting(key, normalized, session) || !writeFinancialSetting(key + '_reference', JSON.stringify({rate: normalized, asOf, source: 'Cotação informada nesta conta'}), session)) { toast.error('Não foi possível salvar o câmbio na sessão que abriu a revisão.'); return; }
+      changed = true;
+    }
+    if (changed) { setRevision((value) => value + 1); toast.success('Referência de câmbio atualizada para esta previsão.'); }
   }
 
-  return <><Brand back/>
-    <section className="cz-panel-head cz-panel-head-compact">
+  return <><Brand back/><section className="cc-per-diem-content" aria-label="Previsão de diárias">
+    <FinancialScreen names={['overview']}><section className="cz-panel-head cz-panel-head-compact">
       <h1>Diárias</h1>
-      <p>Valores previstos por janela e moeda.</p>
+      {!controls && <p className="cc-per-diem-competence">Competência: {competence}</p>}
+      {rangeLabel && !controls && <p>{rangeLabel}</p>}
+      <p>Estimativa por moeda · sem confirmação de pagamento.</p>
     </section>
-    <section className="cz-finance-grid">
-      <KpiCard icon={BriefcaseBusiness} title="Totais por moeda" value={String(forecast.currencyCount)} detail={forecast.currencySummary || 'Sem itens previstos'}/>
-      <KpiCard icon={CalendarDays} title="Convertido previsto" value={forecast.pendingCurrencies.length ? 'Câmbio pendente' : moneyBRL(forecast.monthly)} detail={forecast.pendingCurrencies.length ? 'Informe ' + forecast.pendingCurrencies.join(', ') : 'Conversão conferível'}/>
-      <KpiCard icon={Plane} title="Ciclo do demonstrativo" value={moneyBRL(forecast.weekly)} detail={`${dateChip(forecast.cycle.start)}–${dateChip(forecast.cycle.end)} · paga ${dateChip(forecast.cycle.payment)}`}/>
+    </FinancialScreen>
+    {nextPayment}
+    <FinancialScreen names={['statement']}>
+    <section className="cz-finance-grid cc-per-diem-summary" aria-label="Resumo da competência">
+      <KpiCard icon={BriefcaseBusiness} title={rangeLabel ? 'Período consultado' : 'Previsão do mês'} value={privacy.text(forecast.currencySummary || 'Sem itens previstos')} detail={forecast.nativeSummary.complete ? `${itemLabel} · ${currencyLabel} · valores na moeda original` : forecast.nativeSummary.state === 'no_data' ? 'Não há diárias previstas nesta competência' : 'Há dados financeiros pendentes nesta competência'}/>
     </section>
     {forecast.pendingCurrencies.length > 0 && <section className="cz-toolbox cz-finance-attention">
       <h2>Câmbio necessário</h2>
-      <p>Informe a cotação para converter {forecast.pendingCurrencies.join(', ')} sem somar moedas diferentes.</p>
-      <div className="cz-tool-actions"><button onClick={configureExchange}><DollarSign/> Informar câmbio</button></div>
+      <p>A conversão em reais depende da cotação de {forecast.pendingCurrencies.join(', ')}.</p>
+      <div className="cz-tool-actions"><button onClick={configureExchange} disabled={!forecast.nativeSummary.complete}><DollarSign/> Informar câmbio</button></div>
     </section>}
-    {forecast.pendingAirports.length > 0 && <section className="cz-toolbox cz-finance-attention">
-      <h2>Classificação pendente</h2>
-      <p>{forecast.pendingAirports.join(' · ')}. O valor permanece fora do total até a calibração administrativa.</p>
+    {!forecast.nativeSummary.complete && forecast.nativeSummary.state !== 'no_data' && <section className="cz-toolbox cz-finance-attention">
+      <h2>Dados financeiros pendentes</h2>
+      <p>{forecastOverride?.scopeIncomplete ? 'Há períodos sem escala disponível ou datas inválidas. O total não foi presumido.' : 'Há itens sem classificação ou valores válidos. Confira a origem antes de usar o total.'}</p>
+      {[...new Set(forecast.monthlyUnclassifiedItems.map(item => item.reason).filter(Boolean))].map(reason => <p key={reason}>{reason}</p>)}
     </section>}
-    <section className="cz-finance-table">
-      <h2>Itens previstos</h2>
-      {forecast.rows.length ? forecast.rows.slice(0, 40).map((row, index) =>
-        <div className="cz-finance-row" key={row.iso + '-' + row.label + '-' + index}>
+    </FinancialScreen>
+    <FinancialScreen names={['payment']}>{graph}</FinancialScreen>
+    <FinancialScreen names={['charts']}>
+    <section className="cz-toolbox cc-per-diem-periods">
+      <h3>{forecastOverride ? 'Conversão da previsão' : 'Conversão e semanas de referência'}</h3>
+      <section className="cz-finance-grid" aria-label="Previsões convertidas">
+        <KpiCard icon={CalendarDays} title={forecastOverride ? 'Convertido em reais no período' : 'Convertido em reais no mês'} value={forecastSummaryValue(forecast.monthlySummary, moneyBRL)} detail={forecast.pendingCurrencies.length ? 'Cotação pendente: ' + forecast.pendingCurrencies.join(', ') : forecastOverride ? (rangeLabel || 'Intervalo selecionado') : 'Competência: ' + competence}/>
+        {!forecastOverride && <KpiCard icon={Plane} title="Semana em andamento" value={forecastSummaryValue(forecast.weeklySummary, moneyBRL)} detail={`${dateChip(new Date(rosterOperationalIso(forecast.cycle.start) + 'T12:00:00'))}–${dateChip(new Date(rosterOperationalIso(forecast.cycle.end) + 'T12:00:00'))}`}/>}
+      </section>
+      <p>{forecastOverride ? 'Conversão com as cotações configuradas nesta consulta; não comprova câmbio histórico ou pagamento.' : 'A semana vai de quarta a terça e pode cruzar o mês selecionado.'}</p>
+      {!forecastOverride && <p>Semana anterior ({dateChip(new Date(rosterOperationalIso(forecast.periods.previous.start) + 'T12:00:00'))}–{dateChip(new Date(rosterOperationalIso(forecast.periods.previous.end) + 'T12:00:00'))}): {forecastSummaryValue(forecast.previousWeeklySummary, moneyBRL)}.</p>}
+      {!forecastOverride && forecast.weeklySummary.pendingCurrencies.length > 0 && <p>Cotação pendente na semana: {forecast.weeklySummary.pendingCurrencies.join(', ')}.</p>}
+    </section>
+    </FinancialScreen>
+    <FinancialScreen names={['statement']}>
+    <section className="cz-finance-table cc-per-diem-items">
+      <header><h2>Extrato previsto de diárias</h2><span>{itemLabel}</span></header>
+      <p className="cc-per-diem-scope">{rangeLabel || `Competência: ${competence}. Os itens abaixo pertencem ao mês selecionado.`}</p>
+      {forecast.monthlyRows.length ? [...forecast.monthlyRows].sort((a,b)=>a.iso.localeCompare(b.iso)).map((row, index) =>
+        <div className="cz-finance-row" data-financial-iso={row.iso} data-financial-currency={row.currency} key={row.iso + '-' + row.label + '-' + index}>
           <span>{row.date}</span>
           <strong>{row.label} · {row.airport}</strong>
-          <small>{row.source}{row.convertedBRL === null ? ' · câmbio pendente' : ''}</small>
-          <b>{moneyCurrency(row.value, row.currency)}</b>
+          <b><MoneyText value={moneyCurrency(row.value, row.currency)}/></b>
+          <details className="cc-per-diem-source"><summary>Origem e regra{row.convertedBRL === null ? ' · cotação pendente' : ''}</summary><small>{privacy.text(row.source)}</small></details>
         </div>
-      ) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>Sem diárias confirmadas</h2><p>Carregue uma escala com voos, reservas ou pernoites.</p></article>}
+      ) : <article className="cz-empty-real"><BriefcaseBusiness/><h2>{forecast.nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Previsão pendente'}</h2><p>{forecast.nativeSummary.state === 'no_data' ? 'A escala selecionada não contém diárias previstas nesta competência.' : 'Os dados incompletos não foram tratados como ausência de diárias.'}</p></article>}
     </section>
-  </>;
+    </FinancialScreen>
+  </section></>;
 }
 
+function scopedFinancialForecast(snapshots: ReturnType<typeof financeSnapshot>[], range: FinancialRange, missing: string[]) {
+  const base = snapshots[0]?.perdiem || {};
+  const rows = financialRowsInRange(snapshots.flatMap(snapshot => snapshot.perdiem.monthlyRows), range);
+  const pending = snapshots.flatMap(snapshot => snapshot.perdiem.monthlyUnclassifiedItems);
+  const unclassifiedItems = [...financialRowsInRange(pending, range), ...pending.filter(item => !item.iso)];
+  const native = summarizeNativeForecastRows(rows, unclassifiedItems), converted = summarizeForecastRows(rows, unclassifiedItems);
+  const scopeIncomplete = !range.valid || missing.length > 0;
+  const nativeSummary = scopeIncomplete ? { ...native, complete:false, totalsByCurrency:{}, state:'unclassified' } : native;
+  const monthlySummary = scopeIncomplete ? { ...converted, convertedComplete:false, convertedTotalBRL:null, state:'invalid_amount' } : converted;
+  const currencySummary = !nativeSummary.complete ? (Object.keys(nativeSummary.knownTotalsByCurrency).length ? 'Subtotal estimado: '+Object.entries(nativeSummary.knownTotalsByCurrency).map(([currency,value])=>moneyCurrency(value,currency as PerDiemCurrency)).join(' · ') : nativeSummary.state === 'no_data' ? 'Sem itens previstos' : 'Não calculável') : Object.entries(nativeSummary.totalsByCurrency).map(([currency,value])=>moneyCurrency(value,currency as PerDiemCurrency)).join(' · ');
+  return { ...base, rows, monthlyRows:rows, unclassifiedItems, monthlyUnclassifiedItems:unclassifiedItems, nativeSummary, monthlySummary, monthly:monthlySummary.convertedTotalBRL, currencySummary, totalsByCurrency:nativeSummary.totalsByCurrency, currencyCount:Object.keys(nativeSummary.totalsByCurrency).length, pendingCurrencies:monthlySummary.pendingCurrencies, convertedComplete:monthlySummary.convertedComplete, scopeIncomplete } as ReturnType<typeof calculatePerDiem> & { scopeIncomplete:boolean };
+}
+function PerDiemView({ bundle }: { bundle: BundleState }) {
+  return <FinancialHistoryExplorer roster={bundle.roster} calculate={financeSnapshot} mode="allowance" metric={snapshot=>snapshot.perdiem.nativeSummary.totalsByCurrency} rangeMetric={(snapshot,range)=>scopedFinancialForecast([snapshot],range,[]).nativeSummary.totalsByCurrency}
+    periodMetric={(snapshots,range,missing)=>scopedFinancialForecast(snapshots,range,missing).nativeSummary.totalsByCurrency}
+    weeks={(snapshots,range)=>financialWeeks(range).map(week=>({range:week,value:scopedFinancialForecast(snapshots,week,[]).currencySummary}))}
+    render={({snapshots,range,missing,controls,graph,coverageReady,requestRange})=>{
+      const forecast = scopedFinancialForecast(snapshots.map(item=>item.snapshot),range,missing);
+      const selected = snapshots.find(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`===range.start.slice(0,7)) || {roster:bundle.roster,source:bundle.source};
+      const knownPeriods = new Set(snapshots.map(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`));
+      const auditRows = snapshots.flatMap(item=>item.snapshot.perdiem.monthlyRows);
+      const payment = nextAllowancePayment(auditRows, snapshots.flatMap(item=>item.snapshot.perdiem.unclassifiedItems), coverageReady?[...knownPeriods]:[], new Date(), snapshots.flatMap(item=>item.roster.days.map(day=>/^\d{2}\/\d{2}\/\d{4}$/.test(day.date)?day.date.split('/').reverse().join('-'):day.date)));
+      const captureFlights = [...new Map(snapshots.flatMap(item=>buildLegs(item.roster).filter(event=>event.kind==='flight'&&event.salaryClockKnown===true&&item.roster.days.some(day=>day.date===event.day.date&&(day.legs||[]).some(leg=>leg.flightNumber===event.flightNumber&&leg.origin===event.origin&&leg.destination===event.destination&&leg.departureTime===event.leg?.departureTime&&leg.arrivalTime===event.leg?.arrivalTime))&&/^\d{2}\/\d{2}\/\d{4}$/.test(event.day.date)).map(event=>({id:event.id,published:true,localDate:event.day.date.split('/').reverse().join('-'),timezone:'America/Sao_Paulo',airport:event.origin,label:`${event.day.date} · ${event.flightNumber} · ${event.origin} → ${event.destination} · ${event.departure} BRT`}))).map(flight=>[flight.id,flight])).values()];
+      return <><CanonicalForecastCapture key={JSON.stringify([getStoredUser()?.email,range,forecast.monthlyRows,captureFlights])} flights={captureFlights} rows={forecast.monthlyRows} range={range} complete={forecast.nativeSummary.complete&&!forecast.scopeIncomplete} crewId={selected.roster.crewId} airline={selected.roster.airline||''} coveredDays={snapshots.flatMap(item=>item.roster.days.map(day=>/^\d{2}\/\d{2}\/\d{4}$/.test(day.date)?day.date.split('/').reverse().join('-'):day.date))}/><PerDiemMonthView bundle={{...bundle,roster:selected.roster,source:selected.source}} forecastOverride={forecast} nextPayment={<NextPaymentCard payment={payment} requestRange={requestRange} extraDetails={graph}/>} rangeLabel={`Trabalho: ${range.start} até ${range.end}`} controls={controls} graph={<><FinancialStatementReconciliation requestRange={requestRange} coveredMonths={coverageReady?[...knownPeriods]:[]} rows={auditRows} unclassified={snapshots.flatMap(item=>item.snapshot.perdiem.unclassifiedItems)}/></>}/></>;
+    }}/>
+}
+function salaryDiagnosticItem(snapshot: ReturnType<typeof financeSnapshot>) {
+  const salary = snapshot.salary, roster = snapshot.roster;
+  const month = `${roster.year}-${String(roster.month).padStart(2,'0')}`;
+  return { month, days: roster.days.length, configured: salary.configured, baseConfigured: salary.config.baseConfigured, fixedAdditionsConfigured:salary.config.fixedAdditionsConfigured,
+    requiresManualFunction: salary.config.requiresManualFunction,
+    variableComplete: salary.rows.every(row => row.distanceKnown),
+    pendingActivityCount: salary.reserveAssessment.pendingCount + salary.standbyAssessment.pendingCount,
+    variable: salary.production + salary.reserve + salary.standby + salary.chief + salary.instructorPay,
+    fixedMonth: reviewedPayrollCycleForOperationalMonth(month)?.fixedMonth };
+}
+function salaryForecastMetric(snapshot: ReturnType<typeof financeSnapshot>, range: FinancialRange): Record<string,number> {
+  return salaryCalculationDiagnostic([salaryDiagnosticItem(snapshot)],range,[]).ready && Number.isFinite(snapshot.salary.gross) ? {BRL:snapshot.salary.gross} : {};
+}
 function SalaryReliableView({ bundle }: { bundle: BundleState }) {
-  const events = buildLegs(bundle.roster);
-  const compliance = currentCompliance(bundle);
-  const salary = useMemo(() => calculateSalary(events, bundle.roster), [bundle.roster]);
-  const variable = salary.production + salary.chief + salary.instructorPay + salary.reserve + salary.standby;
-  const deductions = salary.inss + salary.irrf + salary.otherDeductions;
-
-  return <><Brand back/>
-    <section className="cz-panel-head cz-panel-head-compact">
-      <h1>Salário</h1>
-      <p>Previsão auditável por voo e função.</p>
-    </section>
-    <section className="cz-finance-grid">
-      <KpiCard icon={DollarSign} title="Bruto previsto" value={salary.configured ? moneyBRL(salary.gross) : 'Calibração pendente'} detail={salary.kmTotal + ' km · ' + salary.sectors + ' setores'}/>
-      <KpiCard icon={DollarSign} title="Líquido previsto" value={salary.configured ? moneyBRL(salary.net) : 'Calibração pendente'} detail={moneyBRL(deductions) + ' em descontos informados'}/>
-      <KpiCard icon={Plane} title="Parcela variável" value={moneyBRL(variable)} detail="voos + reserva + sobreaviso + adicionais"/>
-    </section>
-    {salary.config.requiresManualFunction && <section className="cz-toolbox cz-finance-attention"><h2>Função pendente</h2><p>Confirme Comandante/Copiloto e aeronave nas configurações administrativas antes de usar a previsão.</p></section>}
-    <section className="cz-finance-table">
-      <h2>Ganhos variáveis por voo</h2>
-      {salary.rows.length ? salary.rows.slice(0, 40).map((row) =>
-        <div className={'cz-finance-row ' + (row.workType === 'PS' ? 'work-ps' : row.workType === 'OP' ? 'work-op' : '')} key={row.id}>
-          <span>{row.date}</span>
-          <strong>{row.flight} · {workTypeLabel(row.workType)} · {row.route}</strong>
-          <small>{row.dayKm + ' km diurno × ' + moneyBRL(row.dayRateApplied)
-            + '/km · ' + row.nightKm + ' km noturno × ' + moneyBRL(row.nightRateApplied)
-            + '/km · ' + row.payRule
-            + ' · ' + (row.chiefEligible ? '1º CCM identificado' : 'sem adicional de chefe')}</small>
-          <b>{moneyBRL(row.total)}</b>
-        </div>
-      ) : <article className="cz-empty-real"><DollarSign/><h2>Sem voos detectados</h2><p>Importe a escala oficial para relacionar os setores aos valores vigentes.</p></article>}
-    </section>
-    <section className="cz-finance-table">
-      <h2>Composição rastreável</h2>
-      <div className="cz-finance-row"><span>Salário-base</span><strong>Calibrado</strong><small>valor confirmado pelo administrador</small><b>{moneyBRL(salary.config.basePay)}</b></div>
-      <div className="cz-finance-row"><span>Adicionais fixos</span><strong>Calibrados</strong><small>valor vigente</small><b>{moneyBRL(salary.config.fixedAdditions)}</b></div>
-      <div className="cz-finance-row"><span>Produtividade diurna</span><strong>{salary.dayKmTotal} km</strong><small>cada KM classificado uma única vez</small><b>{moneyBRL(salary.dayProduction)}</b></div>
-      <div className="cz-finance-row"><span>Produtividade noturna</span><strong>{salary.nightKmTotal} km</strong><small>janela local 22:00–05:00</small><b>{moneyBRL(salary.nightProduction)}</b></div>
-      <div className="cz-finance-row"><span>Reserva</span><strong>{salary.reserveHours.toFixed(1)} h</strong><small>{moneyBRL(salary.config.reserveHourMetric)}/h · sem dobra</small><b>{moneyBRL(salary.reserve)}</b></div>
-      <div className="cz-finance-row"><span>Sobreaviso</span><strong>{salary.standbyHours.toFixed(1)} h</strong><small>{moneyBRL(salary.config.standbyHourMetric)}/h · sem dobra</small><b>{moneyBRL(salary.standby)}</b></div>
-      <div className="cz-finance-row"><span>Chefe / instrutor</span><strong>{salary.chiefSectors} setor(es)</strong><small>atividade em solo não recebe dobra de KM</small><b>{moneyBRL(salary.chief + salary.instructorPay)}</b></div>
-      <div className="cz-finance-row muted"><span>INSS</span><strong>Informado</strong><small>não calculado por tabela presumida</small><b>-{moneyBRL(salary.inss)}</b></div>
-      <div className="cz-finance-row muted"><span>IRRF</span><strong>Informado</strong><small>não calculado por tabela presumida</small><b>-{moneyBRL(salary.irrf)}</b></div>
-      <div className="cz-finance-row muted"><span>Outros descontos</span><strong>Informados</strong><small>benefícios, consignados ou ajustes</small><b>-{moneyBRL(salary.otherDeductions)}</b></div>
-      {salary.config.fgtsRate > 0 && <div className="cz-finance-row"><span>FGTS</span><strong>{salary.config.fgtsRate}%</strong><small>informativo; não descontado do líquido</small><b>{moneyBRL(salary.fgts)}</b></div>}
-    </section>
-    <section className="cz-toolbox cz-finance-reliability">
-      <ShieldCheck/><div><h2>Conferência</h2><p>{actionableComplianceAlerts(compliance).length} alerta(s) operacional(is). Reserva e sobreaviso permanecem em valor simples. Voo extra/DFS ou acionado usa a tarifa superior uma única vez, sem redobrar o trecho noturno.</p></div>
-    </section>
-  </>;
+  const {basis,choose:chooseBasis}=useSalaryDisplayBasis();
+  const summaryForMonth=(snapshot:ReturnType<typeof financeSnapshot>,gross:number|null,complete:boolean)=>{
+    const month=`${snapshot.roster.year}-${String(snapshot.roster.month).padStart(2,'0')}`;
+    const coverage=payrollOperationalCoverage(month,snapshot.roster.days.map(day=>day.date));
+    const summary=salaryDisplaySummary(basis,gross,complete&&(basis==='gross'||coverage.complete),[month],[readMonthlyFinancialSettings(month)]);
+    return basis==='net'&&!coverage.complete?{...summary,reason:`Falta conferir ${coverage.missing.length} dia(s) da escala de ${month}.`}:summary;
+  };
+  const metricForBasis=(snapshot:ReturnType<typeof financeSnapshot>,range:FinancialRange):Record<string,number>=>{
+    const gross=salaryForecastMetric(snapshot,range).BRL??null;
+    const summary=summaryForMonth(snapshot,gross,gross!==null);
+    return summary.amount===null?{}:{BRL:summary.amount};
+  };
+  const privacy = useFinancialPrivacy();
+  const moneyBRL = (value: number | null | undefined) => typeof value === 'number' && Number.isFinite(value) ? privacy.amount(`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`) : 'Não calculável';
+  const moneyCurrency = (value: number, currency: PerDiemCurrency) => privacy.amount(new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(value));
+  return <FinancialHistoryExplorer roster={bundle.roster} calculate={financeSnapshot} mode="salary" rangeMetric={metricForBasis} metric={snapshot=>metricForBasis(snapshot,financialRange('month',`${snapshot.roster.year}-${String(snapshot.roster.month).padStart(2,'0')}`,'','',''))}
+    render={({snapshots,range,missing,controls,graph,requestRange})=>{
+      const fullMonths = range.valid && range.start.endsWith('-01') && range.end===financialRange('month',range.end.slice(0,7),'','','').end;
+      const selected = snapshots.filter(item=>`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`>=range.start.slice(0,7)&&`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`<=range.end.slice(0,7));
+      const diagnosticItems = selected.map(item => salaryDiagnosticItem(item.snapshot));
+      const diagnostic = salaryCalculationDiagnostic(diagnosticItems, range, missing);
+      const available = diagnostic.ready;
+      const gross = available ? selected.reduce((sum,item)=>sum+item.snapshot.salary.gross,0) : null;
+      const completeNetScope=available&&fullMonths&&selected.length>0&&selected.every(item=>payrollOperationalCoverage(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,item.roster.days.map(day=>day.date)).complete);
+      const displaySummary=basis==='gross'?salaryDisplaySummary(basis,gross,available&&fullMonths,[],[]):sumSalaryDisplaySummaries(basis,selected.map(item=>summaryForMonth(item.snapshot,item.snapshot.salary.gross,available&&fullMonths)));
+      const rows = financialRowsInRange(snapshots.flatMap(item=>item.snapshot.salary.rows),range);
+      const rowAvailable = (row: FlightEarningRow) => row.distanceKnown && row.timeKnown && Number.isFinite(row.total) && selected.some(item=>item.snapshot.salary.rows.includes(row) && item.snapshot.salary.configured && !item.snapshot.salary.config.requiresManualFunction);
+      return <><Brand back/><section className="cc-per-diem-content cc-salary-history" aria-label="Previsão salarial">
+        <FinancialScreen names={['overview']}><section className="cz-panel-head cz-panel-head-compact"><h1>Salário</h1><p>Estimativa do próximo ciclo</p></section></FinancialScreen>
+        <PayrollPaymentCard basis={basis} chooseBasis={chooseBasis} snapshots={snapshots.map(item=>({month:`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,salary:item.snapshot.salary,publishedDays:item.roster.days.map(day=>day.date)}))} requestRange={requestRange} extraDetails={<><SalaryBreakdownChart gross={gross} deductions={available?selected.reduce((sum,item)=>sum+item.snapshot.salary.inss+item.snapshot.salary.irrf+item.snapshot.salary.otherDeductions,0):null} net={completeNetScope?selected.reduce((sum,item)=>sum+item.snapshot.salary.net,0):null} period={`${range.start} a ${range.end}`} entries={available?selected.map(item=>({month:`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,inss:item.snapshot.salary.inss,irrf:item.snapshot.salary.irrf,otherDeductions:item.snapshot.salary.otherDeductions})):[]}/>{graph}</>}/>
+        <FinancialScreen names={['statement']}><section className="cz-finance-grid cc-per-diem-summary"><KpiCard icon={DollarSign} title={basis==='gross'?'Bruto previsto no período':'Líquido previsto no período'} value={moneyBRL(displaySummary.amount)} detail={displaySummary.reason||(fullMonths?'Salário-base exige fonte ou calibração; somente competências completas são somadas.':'A fonte mensal não permite distribuir salário-base e descontos por semana.')}/></section>
+        </FinancialScreen>
+        <FinancialScreen names={['payment']}>
+        <SalaryCalculationStatus items={diagnosticItems} range={range} missing={missing}/>
+        <details className="cz-toolbox"><summary>Composição mensal e descontos informados</summary>{selected.length?selected.map(item=>{const salary=item.snapshot.salary, itemDiagnostic=salaryCalculationDiagnostic([salaryDiagnosticItem(item.snapshot)],financialRange('month',`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,'','',''),[]), cycle=reviewedPayrollCycleForOperationalMonth(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`), deductionsKnown=salaryDeductionEvidence(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,salary);return <article key={`${item.roster.year}-${item.roster.month}`}><h2>{item.roster.month}/{item.roster.year}</h2>{cycle && <p data-payroll-competences="reviewed-company-cycle">Variáveis operacionais: {cycle.operationalVariableMonth}. Fixos e competência da folha: {cycle.fixedMonth}. Mês esperado de crédito: {cycle.expectedCreditMonth}; data exata e liquidação não confirmadas. Origem: orientação empresarial fornecida pelo usuário e revisada nesta conta.</p>}<p>Fonte operacional: {item.source}. {privacy.text(salary.config.source)}</p><p>{salary.config.baseLabel||'Salário-base'}: {salary.config.baseConfigured?moneyBRL(salary.config.basePay):'Não informado'}. Fixos informados: {salary.config.fixedAdditionsConfigured?moneyBRL(salary.config.fixedAdditions):'Não informado'}.</p>{itemDiagnostic.variable===null&&<p>Variáveis e total: não calculáveis; há dados ou função profissional pendentes.</p>}<p>Parcelas previstas: voos {moneyBRL(salary.production)}, chefe/instrutor {moneyBRL(salary.chief+salary.instructorPay)}, reserva {moneyBRL(salary.reserve)}, sobreaviso {moneyBRL(salary.standby)}.</p>{[salary.reserveAssessment,salary.standbyAssessment].map((assessment,index)=>assessment.pendingCount>0&&<p key={index} data-salary-activity-pending={index===0?'reserve':'standby'}>{index===0?'Reserva':'Sobreaviso'}: {assessment.knownCount>0?`subtotal com horários comprovados ${moneyBRL(assessment.knownAmount)}; `:''}{assessment.pendingCount} intervalo(s) sem horários publicados comprovados. O subtotal não representa a parcela completa.</p>)}{(salary.reserveAssessment.rows.length>0||salary.standbyAssessment.rows.length>0)&&<details className="cc-per-diem-source"><summary>Horários de reservas e sobreaviso</summary>{[...salary.reserveAssessment.rows,...salary.standbyAssessment.rows].map(row=><p key={row.id}>{row.date} · {row.code} · {row.timeKnown?moneyBRL(row.value!):'Não calculável'}<small>{row.report||'Início ausente'} até {row.release||'Fim ausente'} · {row.issue||'Intervalo publicado; previsão sem confirmação de pagamento.'}</small></p>)}</details>}<p>Descontos informados: INSS {deductionsKnown.inss?moneyBRL(salary.inss):'Não informado'}, IRRF {deductionsKnown.irrf?moneyBRL(salary.irrf):'Não informado'}, outros {deductionsKnown.otherDeductions?moneyBRL(salary.otherDeductions):'Não informado'}. Líquido simulado da competência: {itemDiagnostic.ready&&deductionsKnown.complete&&payrollOperationalCoverage(`${item.roster.year}-${String(item.roster.month).padStart(2,'0')}`,item.roster.days.map(day=>day.date)).complete?moneyBRL(salary.net):'Não calculável'}.</p><p>Valores integrais da competência, sem rateio pelo filtro de dias.</p></article>}):<p>Nenhuma competência disponível.</p>}</details>
+        </FinancialScreen>
+        <FinancialScreen names={['statement']}><section className="cz-finance-table cc-per-diem-items" data-salary-items><h3>Extrato previsto · Componentes por voo · {rows.length} itens</h3><details className="cc-per-diem-source"><summary aria-label="Entender os KM da previsão salarial">?</summary><p data-km-source="operational-estimate">KM exibido nesta previsão é uma estimativa operacional pela distância entre aeroportos. Distância geográfica estimada não confirma KM remunerável. A quilometragem remunerável da folha pode usar a tabela corporativa por trecho. Confira o demonstrativo da empresa.</p><p>O grupo de tarifa majorada pode incluir noturno estimado, extra e domingo/feriado. Não representa KM noturno físico.</p></details><p>Somente as parcelas com vínculo a um voo. Salário-base, reserva, sobreaviso e descontos mensais não são rateados.</p>{rows.length?[...rows].sort((a,b)=>a.iso.localeCompare(b.iso)).map(row=><div className="cz-finance-row" key={row.id}><span>{row.iso}</span><strong>{row.flight} · {row.route}</strong><b><MoneyText value={rowAvailable(row)?moneyBRL(row.total):'Não calculável'}/></b><details className="cc-per-diem-source"><summary>Origem e regra</summary><small><span data-salary-distance-basis={row.distanceBasis || 'unavailable'}>{row.distanceKnown?'Distância geográfica estimada entre aeroportos; KM remunerável não confirmado. ':'KM remunerável não confirmado. '}Grupos de tarifa base/majorada: o grupo majorado inclui noturno estimado, extra e domingo/feriado; não representa KM noturno físico.</span>{!row.timeKnown?'Horários ou fuso operacional ausentes ou ambíguos; parcela não calculável. ':''}{!row.distanceKnown?'Distância operacional desconhecida; os zeros internos do motor não são valores confirmados. ':''}{rowAvailable(row)?(privacy.hidden?'Valores ocultos':`${row.dayKm} km à tarifa base × R$ ${row.dayRateApplied.toLocaleString('pt-BR',{maximumFractionDigits:10})} · ${row.nightKm} km no grupo de tarifa majorada × R$ ${row.nightRateApplied.toLocaleString('pt-BR',{maximumFractionDigits:10})}`):'Parcela indisponível; distância, tarifas ou função profissional pendentes.'} · {privacy.text(row.payRule)} · {privacy.text(row.source)}</small></details></div>):<p>Sem parcelas por voo disponíveis no intervalo.</p>}</section></FinancialScreen>
+      </section></>;
+    }}/>
 }
-
 function ReportsView({ bundle }: { bundle: BundleState }) {
   const compliance = currentCompliance(bundle);
   return <><Brand back/><section className="cz-panel-head"><h1>Relatórios</h1><p>Indicadores premium de jornada, repouso, horas, carga, academia, rotina e alertas.</p></section><section className="cz-report-grid"><article><h2>Conformidade</h2><strong>{(compliance as any).score ?? '—'}/100</strong><p>{(compliance as any).summary || 'Resumo indisponível'}</p></article><article><h2>Carga</h2><strong>{(compliance as any).loadAnalysis?.intensityScore ?? '—'}</strong><p>Índice de intensidade da escala.</p></article><article><h2>Alertas</h2><strong>{actionableComplianceAlerts(compliance).length}</strong><p>Itens confirmados e para revisão.</p></article></section></>;
@@ -3911,6 +4315,7 @@ function WakeupView({ event }: { event: ZeroLeg }) {
   // Continuação de jornada não tem apresentação própria; o despertador usa a
   // decolagem em vez de anunciar "Conexão/Solo" como horário (#512).
   const presentation = publishedPresentationOf(event) || safe(event.departure, 'A confirmar');
+  useEffect(()=>{const updateNotificationChoices=()=>{setLead(String(wakeupLeadMinutes()));setChannel(wakeupChannel());setChatId(storage.get('crewcheck_telegram_chat_id',''));setPhone(storage.get('crewcheck_wakeup_phone',''));};updateNotificationChoices();window.addEventListener('crewcheck:notification-preferences-changed',updateNotificationChoices);window.addEventListener('crewcheck:auth-changed',updateNotificationChoices);return()=>{window.removeEventListener('crewcheck:notification-preferences-changed',updateNotificationChoices);window.removeEventListener('crewcheck:auth-changed',updateNotificationChoices);};},[]);
 
   useEffect(() => {
     Promise.all([
@@ -3921,13 +4326,7 @@ function WakeupView({ event }: { event: ZeroLeg }) {
       .catch(() => setHealth({ ok: false, message: 'Despertador aguardando conexão.' }));
   }, []);
 
-  function savePrefs() {
-    storage.set('crewcheck_wakeup_lead_minutes', lead);
-    storage.set('crewcheck_wakeup_channel', channel);
-    storage.set('crewcheck_telegram_chat_id', chatId);
-    if (admin) storage.set('crewcheck_wakeup_phone', phone);
-    toast.success('Preferências do despertador salvas.');
-  }
+  function savePrefs() { /* Account preferences are saved exclusively in Menu → Notificações. */ }
 
   async function testAlarm(testType: 'telegram-message' | 'telegram-call' | 'phone-call') {
     savePrefs();
@@ -3964,11 +4363,10 @@ function WakeupView({ event }: { event: ZeroLeg }) {
         chatId,
         phone: admin ? phone : '',
         jobKey: `wakeup:${event.id}:${scheduled.toISOString()}:${serverChannel}`,
-        message: `Despertador CrewCheck: prepare-se para ${rosterEventTitle(event)}. Apresentação ${presentation}.`,
+        message: 'Despertador CrewCheck: confira sua preparação no aplicativo.',
       });
-      if (typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
-      window.setTimeout(() => notifyCrewCheck('Despertador CrewCheck', `Hora de se preparar para ${rosterEventTitle(event)}. Apresentação ${presentation}.`), Math.min(delay, 2147483647));
-      toast.success(payload?.telegramLinked || serverChannel === 'phone' ? 'Despertador ativado no servidor.' : 'Despertador salvo; vincule o Telegram para receber com o app fechado.');
+      window.dispatchEvent(new Event('crewcheck:notification-jobs-changed'));
+      toast.success(payload?.message || 'Solicitação registrada no servidor; entrega não confirmada.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não consegui ativar o despertador no servidor.');
     }
@@ -3984,14 +4382,13 @@ function WakeupView({ event }: { event: ZeroLeg }) {
         jobKey: `snooze:${event.id}:${next.toISOString()}`,
         message: 'Soneca CrewCheck encerrada. Confira sua apresentação e o Planejador de Saída.',
       });
-      window.setTimeout(() => notifyCrewCheck('Soneca CrewCheck', 'Soneca encerrada. Confira sua apresentação.'), 10 * 60000);
       toast.success(`Soneca no servidor ativada até ${wakeupDateLabel(next)}.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não consegui ativar a soneca.');
     }
   }
 
-  return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><p>Mensagens Telegram ficam disponíveis para todos; ligações via Telegram respeitam a franquia mensal do plano. O teste telefônico segue exclusivo do administrador.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Horário calculado" value={wakeupDateLabel(planned)} detail={`${lead} min antes da apresentação`}/><KpiCard icon={Bell} title="Canal" value={wakeupChannelLabel(channel)} detail={(channel.includes('liga') || channel === 'ambos') ? (health?.phoneCallMessage || 'Verificando Infobip') : (health?.message || 'Verificando configuração')}/><KpiCard icon={Hotel} title="Hotel/local" value={hotel} detail={`Apresentação ${presentation}`}/></section><section className="cz-toolbox cz-wakeup-card"><h2>Configuração do despertador</h2><p>Vincule o bot para liberar mensagens e ligações via Telegram. Cada ligação via Telegram consome uma unidade da franquia mensal; mensagens e lembretes locais não consomem. O teste telefônico usa as credenciais da Infobip no servidor e só aparece para o administrador.</p><div className="cz-form-grid"><label><span>Canal preferido</span><select value={channel} onChange={(e) => setChannel(e.target.value)}><option value="telegram">Mensagem no Telegram</option><option value="telegram-call">Ligação via Telegram</option>{admin && <option value="ligacao">Ligação telefônica Premium</option>}{admin && <option value="ambos">Ligação telefônica + Telegram</option>}</select></label><label><span>Antecedência</span><select value={lead} onChange={(e) => setLead(e.target.value)}><option value="60">60 min antes</option><option value="75">75 min antes</option><option value="90">90 min antes</option><option value="120">120 min antes</option></select></label><label><span>Chat do Telegram</span><input value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="Preenchido ao vincular o bot"/></label>{admin && <label><span>Telefone do administrador com DDI</span><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+5561999999999"/></label>}</div><div className="cz-tool-actions"><button onClick={savePrefs}><Save/> Salvar preferências</button><button onClick={openTelegramBinding}><Send/> Vincular Telegram</button><button onClick={() => testAlarm('telegram-message')} disabled={Boolean(activeTest)}><Send/> {activeTest === 'telegram-message' ? 'Enviando...' : 'Testar Telegram'}</button><button onClick={() => testAlarm('telegram-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'telegram-call' ? 'Ligando...' : 'Testar ligação via Telegram'}</button>{admin && <button onClick={() => testAlarm('phone-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'phone-call' ? 'Ligando...' : 'Testar Infobip Premium'}</button>}<button onClick={activateServerReminder}><Bell/> Ativar no servidor</button><button onClick={snoozeTelegram}><Clock/> Soneca 10 min</button></div>{admin && <p><small>{health?.phoneCallMessage || 'Verificando a integração de ligação Premium…'}</small></p>}</section><section className="cz-stack-list"><article className="cz-roster-card"><div className="cz-roster-main"><span className="cz-roster-icon"><Bell/></span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · apresentação {presentation}</p><small>{event.origin} → {event.destination} · {health?.telegram ? 'Telegram configurado' : 'Telegram aguardando vínculo'} · {health?.telegramCall ? 'Ligação Telegram disponível' : 'Ligação Telegram requer usuário autorizado'} · {health?.phoneCall ? `${health?.phoneProvider?.selected === 'infobip' ? 'Infobip' : 'Ligação admin'} configurada` : (health?.phoneCallMessage || 'Ligação admin aguardando canal')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-routine-strip"><span>Telegram para todos</span><span>{health?.usage ? `${health.usage.used} / ${health.usage.limit} ligações no mês` : 'Franquia por plano'}</span><span>Teste admin protegido</span><span>Fallback local</span></div></article></section></>;
+  return <><Brand back/><section className="cz-panel-head"><h1>Despertador Inteligente</h1><NotificationReadiness/><p>Mensagens Telegram ficam disponíveis para todos; ligações via Telegram respeitam a franquia mensal do plano. O teste telefônico segue exclusivo do administrador.</p></section><section className="cz-finance-grid"><KpiCard icon={Clock} title="Horário calculado" value={wakeupDateLabel(planned)} detail={`${lead} min antes da apresentação`}/><KpiCard icon={Bell} title="Canal" value={wakeupChannelLabel(channel)} detail={(channel.includes('liga') || channel === 'ambos') ? (health?.phoneCallMessage || 'Verificando Infobip') : (health?.message || 'Verificando configuração')}/><KpiCard icon={Hotel} title="Hotel/local" value={hotel} detail={`Apresentação ${presentation}`}/></section><section className="cz-toolbox cz-wakeup-card"><h2>Configuração do despertador</h2><p>Vincule o bot para liberar mensagens e ligações via Telegram. Cada ligação via Telegram consome uma unidade da franquia mensal; mensagens e lembretes locais não consomem. O teste telefônico usa as credenciais da Infobip no servidor e só aparece para o administrador.</p><p>Preferências do despertador em Menu → Notificações.</p><button onClick={openNotificationSettings}>Revisar preferências de notificação</button><div className="cz-tool-actions"><button onClick={openTelegramBinding}><Send/> Vincular Telegram</button><button onClick={() => testAlarm('telegram-message')} disabled={Boolean(activeTest)}><Send/> {activeTest === 'telegram-message' ? 'Enviando...' : 'Testar Telegram'}</button><button onClick={() => testAlarm('telegram-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'telegram-call' ? 'Ligando...' : 'Testar ligação via Telegram'}</button>{admin && <button onClick={() => testAlarm('phone-call')} disabled={Boolean(activeTest)}><Phone/> {activeTest === 'phone-call' ? 'Ligando...' : 'Testar Infobip Premium'}</button>}<button onClick={activateServerReminder}><Bell/> Ativar no servidor</button><button onClick={snoozeTelegram}><Clock/> Soneca 10 min</button></div>{admin && <p><small>{health?.phoneCallMessage || 'Verificando a integração de ligação Premium…'}</small></p>}</section><section className="cz-stack-list"><article className="cz-roster-card"><div className="cz-roster-main"><span className="cz-roster-icon"><Bell/></span><div className="cz-roster-copy"><h3>{rosterEventTitle(event)}</h3><p>{programDateLabel(event)} · apresentação {presentation}</p><small>{event.origin} → {event.destination} · {health?.telegram ? 'Telegram configurado' : 'Telegram aguardando vínculo'} · {health?.telegramCall ? 'Ligação Telegram disponível' : 'Ligação Telegram requer usuário autorizado'} · {health?.phoneCall ? `${health?.phoneProvider?.selected === 'infobip' ? 'Infobip' : 'Ligação admin'} configurada` : (health?.phoneCallMessage || 'Ligação admin aguardando canal')}</small></div><ChevronRight className="cz-roster-chevron"/></div><div className="cz-routine-strip"><span>Telegram para todos</span><span>{health?.usage ? `${health.usage.used} / ${health.usage.limit} ligações no mês` : 'Franquia por plano'}</span><span>Teste admin protegido</span><span>Fallback local</span></div></article></section></>;
 }
 
 function PresentationManagerView({ events }: { events: ZeroLeg[] }) {
@@ -4523,6 +4920,7 @@ function TelegramConciergeView({ bundle, setBundle, setView }: { bundle: BundleS
   }
 
   return <><Brand back/><section className="cz-panel-head"><h1>Concierge Telegram</h1><p>Envie sua escala em PDF ao bot, use os comandos antigos e consulte radar, portão, saída, meteorologia, hotéis, academias e rotina por texto ou voz.</p></section>
+    <ConciergeFinancialPreview openFinance={(mode) => setView(mode === 'salary' ? 'salary' : 'perdiem')}/>
     <section className="cz-finance-grid">
       <KpiCard icon={Send} title="Telegram" value={status?.linked ? 'Vinculado' : 'Vincular'} detail={status?.message || 'Verificando bot'}/>
       <KpiCard icon={FileText} title="Escala no bot" value={status?.hasRoster ? 'Sincronizada' : 'Aguardando'} detail={status?.roster?.updatedAt ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(status.roster.updatedAt)) : 'Envie PDF ou sincronize'}/>
@@ -4671,6 +5069,7 @@ function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'alerts' || value === 'irregularities') return 'alerts';
   if (value === 'regulation' || value === 'regulamentacao' || value === 'regulamentação') return 'regulation';
   if (value === 'manual' || value === 'departure' || value === 'smartDeparture') return 'departure';
+  if(value==='notifications')return 'notifications';
   if (value === 'settings') return 'settings';
   if (value === 'import') return 'import';
   if (value === 'features') return 'features';
@@ -4678,6 +5077,8 @@ function normalizeInitialView(value: string | null): ZeroView {
   if (value === 'weather' || value === 'meteo') return 'weather';
   if (value === 'perdiem' || value === 'diarias') return 'perdiem';
   if (value === 'salary' || value === 'salario') return 'salary';
+  if (value === 'concierge') return 'concierge';
+  if(value==='currency'||value==='currency-calculator')return 'currency';
   if (value === 'reports' || value === 'relatorios') return 'reports';
   if (value === 'load' || value === 'carga') return 'load';
   if (value === 'calendar') return 'calendar';
@@ -4811,46 +5212,137 @@ body.crewcheck-menu-open {
 `;
 
 export default function Home() {
+  const [alertExperienceRevision, setAlertExperienceRevision] = useState(0);
+  useEffect(() => {
+    const sync = () => setAlertExperienceRevision(value => value + 1);
+    const names = [ALERT_REVIEW_EVENT, GROUND_DISPOSITION_EVENT, 'crewcheck:auth-changed', 'crewcheck:auth-expired', 'crewcheck:language-change', 'crewcheck:locale-change'];
+    for (const name of names) window.addEventListener(name, sync);
+    window.addEventListener('storage', sync);
+    return () => { for (const name of names) window.removeEventListener(name, sync); window.removeEventListener('storage', sync); };
+  }, []);
   const [, setLocation] = useLocation();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [view, setView] = useState<ZeroView>(() => new URLSearchParams(window.location.search).has('connect') ? 'community' : normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
+  const [view, setViewState] = useState<ZeroView>(() => new URLSearchParams(window.location.search).has('connect') ? 'community' : new URLSearchParams(window.location.search).get('view') ? normalizeInitialView(new URLSearchParams(window.location.search).get('view')) : normalizeInitialView(sessionStorage.getItem('crewcheck_force_view_once') || sessionStorage.getItem('crewcheck_initial_view')));
+  const activeViewRef = useRef(view); activeViewRef.current = view;
+  useEffect(() => {
+    const restoreFinancialView = () => { const linkedView = new URLSearchParams(window.location.search).get('view'); if (linkedView) setViewState(normalizeInitialView(linkedView)); };
+    const resetAccountNavigation = () => {
+      const url = new URL(location.href); url.searchParams.set('view','cockpit');
+      for (const key of ['fmode','fscreen','fkind','fmonth','fday','ffrom','fto','fcurrency','fcomparison']) url.searchParams.delete(key);
+      history.replaceState({...history.state,ccFinancial:undefined,ccFinancialPosition:undefined,ccFinancialLists:undefined,ccFinancialScope:undefined,ccConciergePosition:undefined,ccEnteredFromConcierge:undefined},'',url);
+      window.scrollTo({left:0,top:0,behavior:'instant'});
+      setViewState('cockpit');
+    };
+    window.addEventListener('popstate',restoreFinancialView);
+    const accountEvents = ['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'];
+    for (const name of accountEvents) window.addEventListener(name,resetAccountNavigation,true);
+    return () => { window.removeEventListener('popstate',restoreFinancialView); for (const name of accountEvents) window.removeEventListener(name,resetAccountNavigation,true); };
+  },[]);
+  function setView(nextView: ZeroView) {
+    const {peekPendingNavigationContext,clearPendingNavigationContext}=rawNavigationContext;
+    const url = new URL(window.location.href), previousView = activeViewRef.current;
+    const sourceUrl = new URL(url); sourceUrl.searchParams.set('view',previousView);
+    history.replaceState(history.state,'',sourceUrl);
+    const fromConcierge = activeViewRef.current === 'concierge' && ['salary','perdiem'].includes(nextView);
+    if (fromConcierge) {
+      const origin = document.activeElement?.closest<HTMLElement>('[data-financial-origin]');
+      const sourceUrl = new URL(url); sourceUrl.searchParams.set('view','concierge');
+      history.replaceState({...history.state,ccConciergePosition:{x:scrollX,y:scrollY,key:origin?.dataset.financialOrigin||null}},'',sourceUrl);
+    }
+    if (history.state?.crewcheckOverlay || ['salary','perdiem'].includes(nextView) || ['salary','perdiem'].includes(previousView||'')) {
+      if (previousView !== nextView || fromConcierge) {
+        window.dispatchEvent(new Event('crewcheck:financial-navigation-leave'));
+        url.searchParams.set('view',nextView);
+        history[history.state?.crewcheckOverlay?'replaceState':'pushState']({...history.state,crewcheckOverlay:undefined,ccFinancial:undefined,ccFinancialPosition:undefined,ccConciergePosition:undefined,ccEnteredFromConcierge:fromConcierge||(['salary','perdiem'].includes(nextView)&&history.state?.ccEnteredFromConcierge)},'',url);
+      }
+    }
+    if (!history.state?.crewcheckOverlay && !['salary','perdiem'].includes(nextView) && !['salary','perdiem'].includes(previousView)) {
+      url.searchParams.set('view',nextView); history.replaceState(history.state,'',url);
+    }
+    const pendingNavigation = peekPendingNavigationContext();
+    if (!pendingNavigation || pendingNavigation.targetView !== nextView) clearPendingNavigationContext();
+    setViewState(nextView);
+  }
+  const currencyReturnView=useRef<ZeroView>('cockpit'),currencyPreviousView=useRef<ZeroView>(view);
+  if(view==='currency'&&currencyPreviousView.current!=='currency')currencyReturnView.current=['perdiem','salary'].includes(currencyPreviousView.current)?currencyPreviousView.current:'cockpit';
+  currencyPreviousView.current=view;
   const [bundle, setBundle] = useState<BundleState>(loadRoster());
   const [busy, setBusy] = useState(false);
-  const [drawer, setDrawer] = useState(false);
+  const [drawer, setDrawerState] = useState(false);
+  const menuScrollRef = useRef(0);
+  const menuOpenerRef = useRef<HTMLElement | null>(null);
+  const setDrawer = (open: boolean) => {
+    if (open) {
+      menuScrollRef.current = window.scrollY;
+      menuOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    }
+    setDrawerState(open);
+  };
   const [showIntro, setShowIntro] = useState(false);
   const [presentationRevision, setPresentationRevision] = useState(0);
   const events = useMemo(() => buildLegs(bundle.roster), [bundle.roster, presentationRevision]);
   const event = nextFlight(events);
   const flightEvent = nextRealFlight(events);
   const compliance = currentCompliance(bundle);
+  const regulationContext = view === 'regulation' ? peekAlertRosterContext('regulation') : null;
+  const regulationEvent = resolveRegulationProgram(events, event, regulationContext);
+  const regulationDay = regulationProgramDay(events, regulationEvent);
   const gym = currentGym(bundle);
   useWeatherLandingMonitor(flightEvent);
-  useOperationalRadarPulse(flightEvent);
+  useOperationalRadarPulse(events);
   useOperationalWeatherPulse(flightEvent);
 
 
   useEffect(() => {
-    const count = actionableComplianceAlerts(compliance).length;
-    if (!count) return;
-    const signature = complianceAlertSignature(compliance) || String(count);
-    publishCrewCheckNotice({
-      id: `compliance:${signature}`,
-      dedupeKey: `compliance:${signature}`,
-      pulseCooldownMs: 6 * 60 * 60_000,
-      category: 'compliance',
-      tone: 'atencao',
-      priority: 'alta',
-      title: `${count} ponto${count === 1 ? '' : 's'} para revisar`,
-      detail: 'Confira os alertas antes de considerar a programação conferida.',
-      systemNotification: 'never',
-      action: { label: 'Revisar', view: 'alerts' },
-    });
-  }, [compliance]);
+    const alerts = alertRosterOwned(bundle.roster) ? actionableComplianceAlerts(reviewableCompliance(compliance, bundle.roster)) : [];
+    const active = alerts.map(alert => complianceAlertIdentity(alert, bundle.roster));
+    reconcileCrewCheckPulse('compliance', active);
+    if (!alertAccount()) return;
+    for (const alert of alerts) {
+      const identity = complianceAlertIdentity(alert, bundle.roster);
+      publishCrewCheckNotice({
+        id: `compliance:${identity.occurrence}:${identity.version}`,
+        dedupeKey: `compliance:${identity.occurrence}:${identity.version}`,
+        review: identity, scope: 'compliance', category: 'compliance', tone: 'atencao', priority: 'alta',
+        pulseCooldownMs: 6 * 60 * 60_000, compactTitle: alertText().review, title: `${alertText().review}${alert.date ? ' · ' + alert.date : ''}`, detail: alertText().reviewHint,
+        systemNotification: 'never', action: { label: alertText().review, view: 'alerts', alert: identity },
+      });
+    }
+  }, [compliance, bundle.roster, alertExperienceRevision]);
 
   useEffect(() => {
-    const publishWatchSnapshot = () => {
+    const watchSession = captureAuthSession();
+    let watchInvalidated = false;
+    const invalidateWatchSnapshot = () => {
+      watchInvalidated = true;
       try {
-        const snapshot = buildCrewCheckWatchSnapshot(events, event);
+        const now = Date.now();
+        const empty = buildCrewCheckWatchSnapshot([], { id: 'session-invalidated', kind: 'empty', placeholder: true }, null, now);
+        window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: {
+          ...empty, contextId: 'session-invalidated', validUntilEpochMs: now,
+          headline: 'ABRA O CREWCHECK', detail: 'Sessão alterada. Atualize pelo celular.',
+        } }));
+      } catch {}
+    };
+    const publishWatchSnapshot = () => {
+      if (watchInvalidated || !watchSession.token || !watchSession.owner || !watchSession.isCurrent()) {
+        invalidateWatchSnapshot();
+        return;
+      }
+      try {
+        const base = buildCrewCheckWatchSnapshot(events, event);
+        // Mesmo próximo voo e mesma decisão de portão do card da tela inicial.
+        const nextFlightEvent = selectNextFlight(events);
+        const gateInfo = nextFlightEvent ? resolveNextFlightGate({
+          event: nextFlightEvent,
+          radar: readCachedRadarForFlight(localStorage, nextFlightEvent),
+          manual: readManualGate(localStorage, manualGateAccountKey(getStoredUser()), nextFlightEvent),
+        }) : null;
+        const snapshot = applyNextFlightToWatchSnapshot(base, gateInfo, {
+          primaryEventId: event.id,
+          nextFlightScheduleId: nextFlightEvent ? (nextFlightEvent.canonical?.id || nextFlightEvent.id) : '',
+        });
+        if (!watchSession.isCurrent()) { invalidateWatchSnapshot(); return; }
         window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: snapshot }));
       } catch {
         // Watch sync is auxiliary. Never interfere with roster rendering.
@@ -4861,10 +5353,22 @@ export default function Home() {
     const onRequest = () => publishWatchSnapshot();
     window.addEventListener('crewcheck:watch-snapshot-request', onRequest);
     window.addEventListener('crewcheck:native-ready', onRequest);
+    window.addEventListener('crewcheck:radar-updated', onRequest);
+    window.addEventListener(MANUAL_GATE_EVENT, onRequest);
+    const authEvents = ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired'];
+    for (const name of authEvents) window.addEventListener(name, invalidateWatchSnapshot);
+    const onAuthStorage = (change: StorageEvent) => {
+      if (change.key === null || change.key === 'crewcheck_auth_token' || change.key === 'crewcheck_auth_user') invalidateWatchSnapshot();
+    };
+    window.addEventListener('storage', onAuthStorage);
     const timer = window.setInterval(publishWatchSnapshot, 60_000);
     return () => {
+      window.removeEventListener('crewcheck:radar-updated', onRequest);
+      window.removeEventListener(MANUAL_GATE_EVENT, onRequest);
       window.removeEventListener('crewcheck:watch-snapshot-request', onRequest);
       window.removeEventListener('crewcheck:native-ready', onRequest);
+      for (const name of authEvents) window.removeEventListener(name, invalidateWatchSnapshot);
+      window.removeEventListener('storage', onAuthStorage);
       window.clearInterval(timer);
     };
   }, [events, event.id, event.presentation, event.gate, event.status]);
@@ -4912,6 +5416,9 @@ export default function Home() {
 
 
   useEffect(() => {
+    if (!drawer) return;
+    const originalView = document.querySelector('.cz-app')?.getAttribute('data-view');
+    const release = acquireOverlayLifecycle(() => setDrawer(false), () => document.querySelector('.cz-app')?.getAttribute('data-view') === originalView, menuScrollRef.current, menuOpenerRef.current);
     try {
       document.documentElement.classList.toggle('crewcheck-menu-open', drawer);
       document.body.classList.toggle('crewcheck-menu-open', drawer);
@@ -4921,24 +5428,29 @@ export default function Home() {
         document.documentElement.classList.remove('crewcheck-menu-open');
         document.body.classList.remove('crewcheck-menu-open');
       } catch {}
+      release();
     };
   }, [drawer]);
 
   useEffect(() => { loadCrewCheckRuntimePatch(); }, []);
 
   async function handleFile(inputEvent: ChangeEvent<HTMLInputElement>) {
+    const plannedImport = beginOwnedPlannedImport();
+    if (!plannedImport.canCommit()) return;
     const file = inputEvent.target.files?.[0];
     if (!file) return;
     setBusy(true);
     try {
       const parsed = await parsePDFResilient(file);
+      if (!plannedImport.canCommit()) return;
       const roster = parsed.roster;
       const decision = confirmRosterImport(roster, file.name);
       if (!decision.ok) {
         toast.message(decision.toastText || 'Importação cancelada.');
         return;
       }
-      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster);
+      if (!plannedImport.canCommit()) return;
+      const plannedSnapshot = preservePlannedRosterBeforeImport(bundle, roster, plannedImport.session);
       const importComparison = plannedSnapshot && sameRosterPeriod(plannedSnapshot.roster, roster)
         ? compareRosters(plannedSnapshot.roster, roster)
         : null;
@@ -4983,7 +5495,7 @@ export default function Home() {
       if (!decision.hasFuture) toast.error('A escala importada não possui programação futura após agora.');
       setLocation('/result');
     } catch (error) {
-      toast.error(sanitizePdfImportError(error));
+      if (plannedImport.canCommit()) toast.error(sanitizePdfImportError(error));
     } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
   }
 
@@ -4993,13 +5505,13 @@ export default function Home() {
 
   const actions: QuickActions = {
     upload: () => fileRef.current?.click(),
-    pdf: () => { try { const pdf = exportReport(bundle.roster, compliance, gym); pdf.download(); toast.success(`PDF gerado: ${pdf.fileName}`); } catch { toast.error('Não consegui gerar o PDF agora.'); } },
+    pdf: async () => { try { const pdf = await exportReport(bundle.roster, compliance, gym); pdf.download(); toast.success(`PDF gerado: ${pdf.fileName}`); } catch { toast.error('Não consegui gerar o PDF agora.'); } },
     ics: () => { try { const ics = generateICalendar(bundle.roster, gym); downloadCalendarFile(ics, `crewcheck-${bundle.roster.year}-${String(bundle.roster.month).padStart(2,'0')}.ics`); toast.success('Arquivo ICS gerado.'); } catch { toast.error('Não consegui gerar o ICS.'); } },
     whatsapp: () => { try { copyCurrentSummarySilently(); shareToWhatsApp(bundle.roster, compliance); toast.success('Resumo enviado para o WhatsApp.'); } catch { toast.error('Não consegui abrir WhatsApp.'); } },
     telegram: () => { openTelegramBinding(); },
     copy: () => { copyToClipboard(bundle.roster, compliance).then(ok => ok ? toast.success('Resumo copiado.') : toast.error('Não consegui copiar.')); },
-    email: async () => { const to = window.prompt('Enviar relatório com PDF para qual e-mail?') || ''; if (!to.trim()) return; try { const pdf = exportReport(bundle.roster, compliance, gym); const result = await sendRosterByEmail({ to: to.trim(), roster: bundle.roster, compliance, gym, attachment: { fileName: pdf.fileName, blob: pdf.blob } }); toast.success(result.message || `Relatório e PDF enviados para ${to.trim()}.`); } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui enviar o relatório pelo CrewCheck.'); } },
-    sharePdf: async () => { try { const pdf = exportReport(bundle.roster, compliance, gym); const result = await shareExportedPdfNative(pdf, `CrewCheck · ${bundle.roster.crewName} · ${String(bundle.roster.month).padStart(2, '0')}/${bundle.roster.year}`); toast.success(result === 'shared' ? 'PDF compartilhado.' : 'PDF salvo para compartilhar.'); } catch (error) { if ((error as any)?.name !== 'AbortError') toast.error('Não consegui compartilhar o PDF agora.'); } },
+    email: async () => { const to = window.prompt('Enviar relatório com PDF para qual e-mail?') || ''; if (!to.trim()) return; try { const pdf = await exportReport(bundle.roster, compliance, gym); const result = await sendRosterByEmail({ to: to.trim(), roster: bundle.roster, compliance, gym, attachment: { fileName: pdf.fileName, blob: pdf.blob } }); toast.success(result.message || `Relatório e PDF enviados para ${to.trim()}.`); } catch (error) { toast.error(error instanceof Error ? error.message : 'Não consegui enviar o relatório pelo CrewCheck.'); } },
+    sharePdf: async () => { try { const pdf = await exportReport(bundle.roster, compliance, gym); let result: 'shared' | 'downloaded'; try { result = await shareExportedPdfNative(pdf, `CrewCheck · ${bundle.roster.crewName} · ${String(bundle.roster.month).padStart(2, '0')}/${bundle.roster.year}`); } catch (error) { if ((error as any)?.name !== 'NotAllowedError') throw error; pdf.download(); result = 'downloaded'; } if (result === 'shared') toast.success('PDF compartilhado.'); else toast.message('Download solicitado. Confira os arquivos do dispositivo; se não aparecer, tente E-mail.'); } catch (error) { if ((error as any)?.name !== 'AbortError') toast.error('Não consegui compartilhar o PDF agora.'); } },
     google: async () => { try { await connectGoogleCalendar(); const result = await syncRosterToGoogleCalendar(bundle.roster, loadGoogleCalendarSettings(), { gymRecommendations: gym }); toast.success(`Google Calendar: ${(result as any).total || (result as any).created + (result as any).updated || 0} eventos sincronizados.`); } catch { try { googleCalendarIntegrationDiagnostics?.(); } catch {} toast.error('Google Calendar indisponível. Confira login/permissões e ENV do Render.'); } },
     save: () => { saveRoster(bundle.roster, bundle.source); Promise.allSettled([saveRosterAnalysis({ roster: bundle.roster, compliance, gym, sourceFileName: bundle.source } as any), syncPlatformRoster(bundle.roster, compliance, bundle.source)]).then((results) => results.some((result) => result.status === 'fulfilled') ? toast.success('Escala salva e sincronização atualizada.') : toast.success('Escala salva neste dispositivo; a nuvem será tentada novamente.')); },
     openActive: () => { openActiveRoster().then(active => { if (active?.roster) { const c = active.compliance || analyzeSafe(active.roster); setBundle({ roster: active.roster, compliance: c, source: 'Escala ativa do banco' }); saveRoster(active.roster, 'Escala ativa do banco'); setView('cockpit'); toast.success('Escala ativa carregada.'); } else { toast.message('Nenhuma escala ativa encontrada. Use Importar escala.'); setView('import'); } }).catch(()=>{ toast.error('Não encontrei escala ativa sincronizada.'); setView('import'); }); },
@@ -5008,6 +5520,7 @@ export default function Home() {
   };
 
   return <main className="cz-app" data-version={DEFAULT_VERSION} data-view={view}>
+    <HomeFinancialEstimateProvider accessKey={view} roster={bundle.roster} calculate={homeAllowancePayment}>
     <div className="cz-wallpaper"/>
     <input ref={fileRef} type="file" accept="application/pdf,.pdf" hidden onChange={handleFile}/>
     <div className="cz-global-header" data-global-internal-header="true">
@@ -5017,15 +5530,17 @@ export default function Home() {
     {busy && <div className="cz-busy"><Plane/><strong>Interpretando escala...</strong></div>}
     {showIntro && <OpeningVideo onDone={() => setShowIntro(false)}/>}
     <MenuDrawer open={drawer} close={() => setDrawer(false)} view={view} setView={setView} actions={actions}/>
-    {view === 'cockpit' && <Cockpit events={events} compliance={compliance} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>} 
+    {view === 'cockpit' && <Cockpit events={events} compliance={reviewableCompliance(compliance, bundle.roster)} setView={setView} onUpload={actions.upload} openMenu={() => setDrawer(true)}/>}
+    <FreeDayPostponementAlerts roster={bundle.roster} source={bundle.source} view={view} onOpen={() => setView('alerts')}/>
     {view === 'roster' && <Roster roster={bundle.roster} events={events} setView={setView}/>} 
     {view === 'compare' && <CompareRosterView bundle={bundle} onUpload={actions.upload}/>} 
     {view === 'bids' && <BidsView events={events}/>} 
-    {view === 'alerts' && <Alerts compliance={compliance}/>}
-    {view === 'regulation' && <ManualRegulationView compliance={compliance}/>}
+    {view === 'alerts' && <ReviewedAlerts key={alertAccount() || 'unbound'} compliance={compliance} roster={bundle.roster} onImport={actions.upload} onChoose={() => setView('database')}/>}
+    {view === 'regulation' && <ManualRegulationView compliance={compliance} scheduleDay={regulationDay} program={regulationEvent?.canonical}/>}
     {view === 'departure' && <Departure event={event}/>}
     {view === 'mycar' && <CarView event={event}/>}
     {view === 'iflight' && <IFlightPushView actions={actions}/>}
+    {view === 'notifications' && <NotificationCenter deviceSettings={<><NotificationReadiness/><NotificationPermissionSetting/><NotificationSoundSetting/></>}/>}
     {view === 'settings' && <SettingsView setView={setView} actions={actions}/>}
     {view === 'admin' && <AdminControlView/>}
     {view === 'updates' && <UpdateCenterView/>}
@@ -5037,6 +5552,7 @@ export default function Home() {
     {view === 'concierge' && <TelegramConciergeView bundle={bundle} setBundle={setBundle} setView={setView}/>}
     {view === 'radar' && <RadarView event={flightEvent}/>}
     {view === 'weather' && <WeatherView event={flightEvent}/>}
+    {view === 'currency' && <CurrencyCalculator/>}
     {view === 'perdiem' && <PerDiemView bundle={bundle}/>}
     {view === 'salary' && <SalaryReliableView bundle={bundle}/>}
     {view === 'reports' && <ReportsView bundle={bundle}/>}
@@ -5051,6 +5567,6 @@ export default function Home() {
     {view === 'map' && <MonthlyMapView events={events} actions={actions}/>}
     {view === 'database' && <DatabaseView setBundle={setBundle} setView={setView}/>}
     {view === 'crew' && <CrewToolsView bundle={bundle}/>}
-    <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)} alertCount={actionableComplianceAlerts(compliance).length} alertSignature={complianceAlertSignature(compliance)}/>
-  </main>;
+    <BottomNav view={view} setView={setView} openMenu={() => setDrawer(true)} alertCount={actionableComplianceAlerts(reviewableCompliance(compliance, bundle.roster)).length} alertSignature={complianceAlertSignature(reviewableCompliance(compliance, bundle.roster))}/>
+  </HomeFinancialEstimateProvider></main>;
 }

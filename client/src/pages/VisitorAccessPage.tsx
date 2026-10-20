@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Building2, CalendarDays, KeyRound, LifeBuoy, Loader2, LogOut, Map, MessageCircle, Plane, Send, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import '../visitor-v13-8.css';
+import VisitorPasswordField from '@/components/visitor/VisitorPasswordField';
+import { visitorAccessError, VISITOR_PASSWORD_MIN, VISITOR_PASSWORD_MAX } from '@/lib/visitorAccessUi';
+import './visitor-access.css';
 
 type VisitorData = {
   visitor: { displayName: string; permissions: Record<string, boolean> };
@@ -49,6 +52,7 @@ export default function VisitorAccessPage() {
   const [ownerPublicId, setOwnerPublicId] = useState('');
   const [owners, setOwners] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
+  const accessPending = useRef(false);
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'roster' | 'hotels' | 'map' | 'chat' | 'emergency'>('roster');
   const [helpMessage, setHelpMessage] = useState('');
@@ -81,24 +85,28 @@ export default function VisitorAccessPage() {
   }, [token]);
 
   async function accept() {
-    if (newPassword.length < 10) { setError('A nova senha precisa ter pelo menos 10 caracteres.'); return; }
-    setBusy(true); setError('');
+    if (accessPending.current) return;
+    if (newPassword.length < VISITOR_PASSWORD_MIN || newPassword.length > VISITOR_PASSWORD_MAX) { setError('Use de 10 a 256 caracteres na nova senha.'); return; }
+    accessPending.current = true; setBusy(true); setError('');
     try {
       await visitorRequest('/api/platform/visitor/accept', { method: 'POST', body: JSON.stringify({ token, email, temporaryPassword, newPassword }) });
-      await loadPortal();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível aceitar o convite.'); }
-    finally { setBusy(false); }
+      setTemporaryPassword(''); setNewPassword('');
+      if (!await loadPortal()) setError('Convite aceito. Entre novamente para abrir os dados compartilhados.');
+    } catch (reason) { setError(visitorAccessError(reason)); }
+    finally { accessPending.current = false; setBusy(false); }
   }
 
   async function login() {
-    setBusy(true); setError('');
+    if (accessPending.current) return;
+    accessPending.current = true; setBusy(true); setError('');
     try {
       await visitorRequest('/api/platform/visitor/login', { method: 'POST', body: JSON.stringify({ email, password, ownerPublicId }) });
-      await loadPortal();
+      setPassword('');
+      if (!await loadPortal()) setError('Sessão iniciada. Tente abrir novamente os dados compartilhados.');
     } catch (reason: any) {
       if (reason?.payload?.code === 'OWNER_SELECTION_REQUIRED') setOwners(reason.payload.owners || []);
-      setError(reason instanceof Error ? reason.message : 'Não foi possível entrar.');
-    } finally { setBusy(false); }
+      setError(visitorAccessError(reason));
+    } finally { accessPending.current = false; setBusy(false); }
   }
 
   async function logout() {
@@ -137,7 +145,27 @@ export default function VisitorAccessPage() {
   }
 
   if (mode === 'loading') return <main className="cv-public"><section className="cv-state"><Loader2 className="cv-spin"/><h1>CrewCheck</h1></section></main>;
-  if (mode === 'accept' || mode === 'login') return <main className="cv-public cv-access"><header className="cv-brand"><span><Plane/></span><div><strong>CrewCheck</strong><small>{t.title}</small></div></header><section className="cv-auth"><ShieldCheck/><h1>{mode === 'accept' ? t.invite : t.login}</h1><p>{mode === 'accept' ? `Olá, ${invite?.displayName || ''}. Defina uma senha pessoal no primeiro acesso.` : 'Use os dados do convite enviado pelo CrewCheck.'}</p>{error && <div className="cv-inline-error"><AlertTriangle/>{error}</div>}<label><span>{t.email}</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} readOnly={mode === 'accept'}/></label>{mode === 'accept' ? <><label><span>{t.temporary}</span><input type="password" value={temporaryPassword} onChange={(event) => setTemporaryPassword(event.target.value)}/></label><label><span>{t.next}</span><input type="password" minLength={10} value={newPassword} onChange={(event) => setNewPassword(event.target.value)}/></label><button onClick={accept} disabled={busy || !temporaryPassword || newPassword.length < 10}>{busy ? <Loader2 className="cv-spin"/> : <KeyRound/>}{t.invite}</button></> : <><label><span>{t.password}</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)}/></label>{owners.length > 1 && <label><span>{t.owner}</span><select value={ownerPublicId} onChange={(event) => setOwnerPublicId(event.target.value)}><option value="">Selecione</option>{owners.map((owner) => <option key={owner.publicId} value={owner.publicId}>{owner.displayName} · {owner.publicId}</option>)}</select></label>}<button onClick={login} disabled={busy || !email || !password || (owners.length > 1 && !ownerPublicId)}>{busy ? <Loader2 className="cv-spin"/> : <KeyRound/>}{t.login}</button></>}</section></main>;
+  if (mode === 'accept' || mode === 'login') return <main className="cv-public cv-access">
+    <header className="cv-brand"><span><Plane/></span><div><strong>CrewCheck</strong><small>{t.title}</small></div></header>
+    <form className="cv-auth" aria-labelledby="visitor-access-title" aria-busy={busy} onSubmit={(event) => { event.preventDefault(); void (mode === 'accept' ? accept() : login()); }}>
+      <ShieldCheck aria-hidden="true"/><h1 id="visitor-access-title">{mode === 'accept' ? t.invite : t.login}</h1>
+      <p>{mode === 'accept' ? 'Primeiro acesso: use a senha temporária do convite e crie sua senha.' : 'Entre com o e-mail e a senha de visitante.'}</p>
+      {error && <div className="cv-inline-error" role="alert" id="visitor-access-error"><AlertTriangle aria-hidden="true"/>{error}</div>}
+      <label htmlFor="visitor-email"><span>{t.email}</span></label>
+      <input id="visitor-email" name="username" type="email" autoComplete="username" autoCapitalize="none" spellCheck={false} required value={email} onChange={(event) => setEmail(event.target.value)} readOnly={mode === 'accept'}/>
+      {mode === 'accept' ? <>
+        <VisitorPasswordField id="visitor-temporary" label={t.temporary} value={temporaryPassword} onChange={setTemporaryPassword} autoComplete="current-password"/>
+        <VisitorPasswordField id="visitor-new" label={t.next} value={newPassword} onChange={setNewPassword} autoComplete="new-password" minLength={VISITOR_PASSWORD_MIN} describedBy="visitor-password-rule"/>
+        <small id="visitor-password-rule">De 10 a 256 caracteres. Símbolos são opcionais. Use uma senha exclusiva.</small>
+      </> : <>
+        <VisitorPasswordField id="visitor-password" label={t.password} value={password} onChange={setPassword} autoComplete="current-password"/>
+        {owners.length > 1 && <label><span>{t.owner}</span><select value={ownerPublicId} onChange={(event) => setOwnerPublicId(event.target.value)} required><option value="">Selecione</option>{owners.map((owner) => <option key={owner.publicId} value={owner.publicId}>{owner.displayName} · {owner.publicId}</option>)}</select></label>}
+      </>}
+      <button type="submit" disabled={busy || !email || (mode === 'accept' ? !temporaryPassword || newPassword.length < VISITOR_PASSWORD_MIN : !password || (owners.length > 1 && !ownerPublicId))}>{busy ? <><Loader2 className="cv-spin" aria-hidden="true"/>Aguarde…</> : <><KeyRound aria-hidden="true"/>{mode === 'accept' ? t.invite : t.login}</>}</button>
+      <small>Você verá somente o que o titular autorizar. Este acesso é separado da conta de tripulante.</small>
+      {mode === 'login' && <details><summary>Esqueci a senha de visitante</summary><p>Peça ao titular para reenviar seu convite. A recuperação da conta de tripulante é separada.</p></details>}
+    </form>
+  </main>;
 
   const permissions = data?.visitor.permissions || {};
   const days = data?.roster?.days || [];

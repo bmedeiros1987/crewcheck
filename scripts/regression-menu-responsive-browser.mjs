@@ -9,6 +9,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import * as icons from 'lucide-react';
 import ts from 'typescript';
+const { buildSync } = createRequire(process.env.MENU_ESBUILD_PACKAGE || import.meta.url)('esbuild');
 
 // Actual prepared MenuDrawer + shipped CSS + unmodified theme functions.
 // Synthetic account only. This component test is not full-app/device acceptance.
@@ -51,15 +52,32 @@ const menuPreferenceCode = ts.transpileModule(fs.readFileSync('client/src/lib/me
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
 const menuPreference = await import(`data:text/javascript;base64,${Buffer.from(menuPreferenceCode).toString('base64')}`);
+// Bundle the real helpers/components referenced by the extracted MenuDrawer.
+// Keep React external so hooks use the same renderer instance as this harness.
+const menuDependenciesFile = path.join(output, 'menu-dependencies.cjs');
+buildSync({ stdin: { contents: `
+export * from './client/src/lib/menuUsagePreference';
+export * from './client/src/lib/menuNestedSearch';
+export { MenuPersonalization } from './client/src/components/v1391/MenuPersonalization';
+export { setPendingNavigationContext } from './client/src/lib/navigationContext';
+`, resolveDir: process.cwd(), loader: 'ts' }, bundle: true, platform: 'node', format: 'cjs', jsx: 'automatic',
+  external: ['react', 'react-dom', 'lucide-react'], loader: { '.css': 'empty' },
+  tsconfig: path.resolve('tsconfig.json'), outfile: menuDependenciesFile });
+const dependencyModule = { exports: {} };
 const storedMenuValues = new Map();
 const localStorage = {
   getItem: (key) => storedMenuValues.get(key) ?? null,
   setItem: (key, value) => storedMenuValues.set(key, String(value)),
   removeItem: (key) => storedMenuValues.delete(key),
 };
+
+localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'menu-browser-account', role: 'admin' }));
+const menuWindow = Object.assign(new EventTarget(), { localStorage });
+vm.runInNewContext(fs.readFileSync(menuDependenciesFile, 'utf8'), { module: dependencyModule, exports: dependencyModule.exports, require: createRequire(import.meta.url), localStorage, window: menuWindow }, { timeout: 1000 });
+const menuDependencies = dependencyModule.exports;
 const scope = {
-  React, ...React, ...icons, ...menuPreference, HomeIcon: icons.Home, MapIcon: icons.Map,
-  window: { localStorage },
+  React, ...React, ...icons, ...menuPreference, ...menuDependencies, localStorage, HomeIcon: icons.Home, MapIcon: icons.Map,
+  window: menuWindow,
   storage: { get: (_key, fallback) => fallback, set: () => {} },
   getStoredUser: () => ({ id: 'menu-browser-account', name: 'Tripulante de demonstração com nome longo', email: 'demo@example.invalid' }),
   isAdmin: () => true,
@@ -77,18 +95,8 @@ assert.ok(links, 'Use CSS linked by the real Vite build');
 const themeSource = fs.readFileSync('client/src/lib/themeRuntime.ts', 'utf8');
 const moduleOptions = { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 };
 fs.writeFileSync(path.join(output, 'theme-runtime.js'), ts.transpileModule(themeSource, { compilerOptions: moduleOptions }).outputText);
-// Preparation rewrites themeRuntime; the effective data-crew-theme is applied by
-// App's effect. Include those exact prepared functions, not fabricated attributes.
-const appText = fs.readFileSync('client/src/App.tsx', 'utf8');
-const appSource = ts.createSourceFile('App.tsx', appText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-const themeNames = ['getEffectiveCrewTheme', 'applyCrewThemeMode'];
-const appTheme = appSource.statements.filter(n => ts.isFunctionDeclaration(n) && themeNames.includes(n.name?.text));
-assert.equal(appTheme.length, 2, 'Locate actual effective-theme functions in the prepared App');
-fs.writeFileSync(path.join(output, 'app-theme.js'), ts.transpileModule(
-  appTheme.map(n => n.getText(appSource)).join('\n') + '\nexport { applyCrewThemeMode };',
-  { compilerOptions: moduleOptions },
-).outputText);
-const fixture = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">${links}</head><body><div id="root">${markup}</div><script type="module">import { applyCrewCheckTheme } from './theme-runtime.js'; import { applyCrewThemeMode } from './app-theme.js'; window.applyMenuTestTheme = mode => { applyCrewCheckTheme(mode); applyCrewThemeMode(mode); };</script></body></html>`;
+// Use the composed canonical setter; do not synchronize two independent writers.
+const fixture = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">${links}</head><body><div id="root">${markup}</div><script type="module">import { setCrewCheckThemePreference } from './theme-runtime.js'; window.applyMenuTestTheme = mode => setCrewCheckThemePreference(mode);</script></body></html>`;
 fs.writeFileSync(path.join(output, 'menu.html'), fixture);
 fs.writeFileSync(path.join(output, 'prepared-menu.tsx'), declarations.map(n => n.getText(source)).join('\n'));
 fs.cpSync(path.join(dist, 'assets'), path.join(output, 'assets'), { recursive: true });
@@ -108,9 +116,11 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const url = `http://127.0.0.1:${server.address().port}`;
 const require = createRequire(process.env.MENU_PLAYWRIGHT_PACKAGE || import.meta.url);
 const { chromium } = require('playwright');
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined });
 const matrix = [
+  { name: 'phone-small', width: 320, height: 740, touch: true },
   { name: 'phone-portrait', width: 360, height: 800, touch: true },
+  { name: 'phone-390', width: 390, height: 844, touch: true },
   { name: 'phone-landscape-small', width: 667, height: 375, touch: true },
   { name: 'phone-landscape', width: 844, height: 390, touch: true },
   { name: 'phone-landscape-wide', width: 932, height: 430, touch: true },
@@ -140,6 +150,7 @@ async function inspect(page, label) {
     const panel = document.querySelector('.cz-menu-panel');
     const scroll = document.querySelector('.cz-menu-scroll');
     const buttons = [...document.querySelectorAll('.cc-menu-destination[data-menu-label]')];
+    const favorites = [...document.querySelectorAll('.cc-menu-favorite')];
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
     const context = canvas.getContext('2d', { willReadFrequently: true });
     const rgba = color => {
@@ -156,13 +167,42 @@ async function inspect(page, label) {
     return {
       viewport: { width: innerWidth, height: innerHeight },
       theme: document.documentElement.dataset.crewTheme,
-      expectedColumns: matchMedia('(pointer: coarse) and (min-width: 821px)').matches ? 2 : 1,
+      expectedColumns: document.documentElement.dataset.crewTextSize !== '100' ? 1 : matchMedia('(pointer: coarse) and (min-width: 821px)').matches ? 2 : 1,
       columns: getComputedStyle(document.querySelector('.cz-menu-group')).gridTemplateColumns.split(' ').length,
       panel: box(panel), scroll: { ...box(scroll), scrollWidth: scroll.scrollWidth, clientWidth: scroll.clientWidth },
+      panelOverflow: getComputedStyle(panel).overflowY,
+      header: box(document.querySelector('.cz-menu-header')),
+      chips: [...document.querySelectorAll('.cc-menu-favorite-chip')].map(button => ({
+        button: box(button), icon: box(button.querySelector('svg')), copy: box(button.querySelector('span')),
+      })),
       close: box(document.querySelector('.cz-menu-close')),
       logout: box(document.querySelector('.cz-menu-logout')),
       profile: box(document.querySelector('.cz-menu-profile')),
       count: buttons.length,
+      destinationLabels: [...buttons,...document.querySelectorAll('.cc-menu-favorite-chip[data-menu-label]')].map(button=>button.dataset.menuLabel),
+      chipCount: document.querySelectorAll('.cc-menu-favorite-chip[data-menu-label]').length,
+      editButton: document.querySelector('.cc-menu-edit-favorites')?.textContent || '',
+      favoriteCount: favorites.length,
+      favorites: favorites.map(b => {
+        const glyph = b.querySelector('.cc-menu-favorite-glyph');
+        const buttonStyle = getComputedStyle(b);
+        const glyphStyle = glyph ? getComputedStyle(glyph) : null;
+        const background = buttonStyle.backgroundColor;
+        const color = glyphStyle?.color || buttonStyle.color;
+        return {
+          pressed: b.getAttribute('aria-pressed'),
+          text: glyph?.textContent || '',
+          button: box(b),
+          glyph: glyph ? box(glyph) : null,
+          display: buttonStyle.display,
+          overflow: buttonStyle.overflow,
+          visibility: glyphStyle?.visibility,
+          opacity: glyphStyle?.opacity,
+          color,
+          background,
+          contrast: contrast(color, background),
+        };
+      }),
       rows: buttons.map(b => {
         const copy = b.querySelector(':scope > span');
         const style = getComputedStyle(copy);
@@ -193,8 +233,27 @@ async function inspect(page, label) {
   if (overlap(metrics.close, metrics.logout) || overlap(metrics.profile, metrics.logout) || overlap(metrics.profile, metrics.close)) failures.push('Header actions overlap');
   if (metrics.scroll.height < 100) failures.push('No useful scrolling area');
   if (metrics.scroll.scrollWidth > metrics.scroll.clientWidth + 1) failures.push('Horizontal overflow in menu list');
+  if (metrics.panelOverflow !== 'hidden') failures.push('Panel competes with the content scroller');
+  for (const chip of metrics.chips) {
+    if (chip.button.height < 44 || !inside(chip.copy, chip.button)) failures.push('Favorite label escapes its touch target');
+    if (chip.copy.x < chip.icon.right || chip.copy.x - chip.icon.right > 12) failures.push('Favorite icon and text are not aligned with a compact gap');
+  }
   if (metrics.columns !== metrics.expectedColumns) failures.push('Wrong navigation column count');
-  if (metrics.count !== 40) failures.push(`Expected 40 canonical destinations; got ${metrics.count}`);
+  if (metrics.count + metrics.chipCount !== 42) failures.push(`Expected 42 canonical destinations including currency calculator once each (catalog + favorites); got ${metrics.count} + ${metrics.chipCount}`);
+  if (new Set(metrics.destinationLabels).size !== 42) failures.push('Canonical destinations must remain unique across catalog and favorites');
+  if (metrics.destinationLabels.filter(label=>label==='Calculadora de moedas').length !== 1) failures.push('Currency calculator must appear exactly once');
+  if (metrics.chipCount !== 3) failures.push(`Expected the 3 default favorites above the catalog; got ${metrics.chipCount}`);
+  if (metrics.editButton !== 'Editar favoritos') failures.push('Edit favorites action missing');
+  if (metrics.favoriteCount !== 0) failures.push(`Favorite stars must be hidden outside edit mode; got ${metrics.favoriteCount}`);
+  for (const favorite of metrics.favorites) {
+    if (!favorite.glyph || favorite.glyph.width < 20 || favorite.glyph.height < 20) failures.push('Favorite glyph is missing or clipped');
+    if (!['☆', '★'].includes(favorite.text)) failures.push('Favorite glyph text is missing');
+    if (favorite.button.width < 44 || favorite.button.height < 44) failures.push('Favorite touch target below 44 CSS px');
+    if (favorite.display !== 'flex' && favorite.display !== 'inline-flex') failures.push('Favorite control inherited legacy menu grid');
+    if (favorite.visibility !== 'visible' || Number(favorite.opacity) < .99) failures.push('Favorite glyph is visually hidden');
+    if (favorite.overflow === 'hidden') failures.push('Favorite glyph can be clipped by overflow');
+    if (!(favorite.contrast >= 3)) failures.push('Favorite glyph contrast below 3:1');
+  }
   for (const row of metrics.rows) {
     if (row.visibility !== 'visible' || Number(row.opacity) < 0.99 || row.position === 'absolute') failures.push(`${row.name}: label depends on hover`);
     if (row.button.width < 200 || row.button.height < 44) failures.push(`${row.name}: collapsed navigation row`);
@@ -208,8 +267,10 @@ async function inspect(page, label) {
   const end = await page.evaluate(() => {
     const scroll = document.querySelector('.cz-menu-scroll').getBoundingClientRect();
     const last = [...document.querySelectorAll('.cc-menu-destination[data-menu-label]')].at(-1).getBoundingClientRect();
-    return { scrollTop: scroll.top, scrollBottom: scroll.bottom, top: last.top, bottom: last.bottom };
+    return { scrollTop: scroll.top, scrollBottom: scroll.bottom, top: last.top, bottom: last.bottom,
+      headerTop: document.querySelector('.cz-menu-header').getBoundingClientRect().top };
   });
+  if (!(end.headerTop < metrics.header.y - 20)) failures.push('Menu header must follow scrolling content');
   if (end.top < end.scrollTop - 1 || end.bottom > Math.min(end.scrollBottom, metrics.viewport.height) + 1) failures.push('Last destination unreachable');
   results.push({ label, failures, metrics });
   console.log(`${failures.length ? 'FAIL' : 'PASS'} ${label}: ${failures.join('; ') || 'contained, readable, scrollable'}`);
@@ -223,7 +284,14 @@ try {
     await page.waitForFunction(() => typeof window.applyMenuTestTheme === 'function');
     for (const theme of ['dark', 'light']) {
       await page.evaluate(theme => window.applyMenuTestTheme(theme), theme);
-      await inspect(page, `${device.name}-${theme}`);
+      for (const scale of [100, 150, 200]) {
+        await page.evaluate(scale => {
+          document.documentElement.dataset.crewTextSize = String(scale);
+          document.documentElement.style.setProperty('--cc-text-scale', String(scale / 100));
+        }, scale);
+        await inspect(page, `${device.name}-${theme}-text-${scale}`);
+      }
+      await page.evaluate(() => { document.documentElement.dataset.crewTextSize = '100'; document.documentElement.style.setProperty('--cc-text-scale', '1'); });
     }
     if (device.name === 'phone-portrait') {
       await page.setViewportSize({ width: 844, height: 390 });

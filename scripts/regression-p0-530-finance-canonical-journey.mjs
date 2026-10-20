@@ -64,7 +64,8 @@ try {
   assert.doesNotMatch(home, /processedFlightDays/);
   assert.doesNotMatch(home, /candidate\.day === event\.day/);
   assert.match(home, /const monthlyRows = rowsForNominalFinancialCompetence\(rows, roster\)/);
-  assert.match(home, /const convertedTotalBRL = monthlyRows\.reduce/);
+  assert.match(home, /const monthlySummary = summarizeForecastRows\(monthlyRows,/);
+  assert.match(home, /const convertedTotalBRL = monthlySummary\.convertedTotalBRL/);
   assert.match(home, /monthlyRows,\s*\n\s*monthly: convertedTotalBRL/);
 
   console.log('[p0-530-finance-canonical] PASS — journeyId governa agrupamento e total mensal respeita competência nominal.');

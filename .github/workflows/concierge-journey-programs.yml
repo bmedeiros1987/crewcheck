@@ -1,0 +1,112 @@
+name: CrewCheck Concierge canonical journeys
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+    paths:
+      - 'server/concierge/journey-programs.mjs'
+      - 'server/v1404/**'
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/rosterContinuity.ts'
+      - 'scripts/p1-concierge-journey/**'
+      - 'scripts/regression-concierge-journey-programs.mjs'
+      - 'scripts/v139/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.env.example'
+      - 'scripts/**'
+      - 'server/**'
+      - 'server.mjs'
+      - 'client/**'
+      - 'shared/**'
+      - 'config/**'
+      - 'database/**'
+      - 'tsconfig*.json'
+      - 'vite.config.ts'
+      - '.github/workflows/concierge-journey-programs.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'server/concierge/journey-programs.mjs'
+      - 'server/v1404/**'
+      - 'client/src/lib/canonicalRoster.ts'
+      - 'client/src/lib/rosterContinuity.ts'
+      - 'scripts/p1-concierge-journey/**'
+      - 'scripts/regression-concierge-journey-programs.mjs'
+      - 'scripts/v139/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.env.example'
+      - 'scripts/**'
+      - 'server/**'
+      - 'server.mjs'
+      - 'client/**'
+      - 'shared/**'
+      - 'config/**'
+      - 'database/**'
+      - 'tsconfig*.json'
+      - 'vite.config.ts'
+      - '.github/workflows/concierge-journey-programs.yml'
+permissions:
+  contents: read
+jobs:
+  canonical-journeys:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.23.3'
+      - name: Verify required source path trigger coverage
+        run: |
+          node scripts/regression-staged-concierge-triggers.mjs
+          node scripts/regression-staged-concierge-event.mjs
+      - name: Resolve and validate exact PR or push event inputs
+        id: event
+        run: |
+          node scripts/ci/staged-concierge-event.mjs
+      - name: Install exclusive dependencies without lifecycle scripts or shared cache
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ steps.event.outputs.head }}"
+          job="$RUNNER_TEMP/staged-concierge-job"
+          mkdir -p "$job/dependencies"
+          cp package.json package-lock.json "$job/dependencies/"
+          env -i PATH="$PATH" HOME="$job" npm ci --prefix "$job/dependencies" --cache "$job/npm-cache" --ignore-scripts --no-audit --no-fund
+      - name: Required raw prepared parity idempotency build and final typecheck
+        run: |
+          set -euo pipefail
+          job="$RUNNER_TEMP/staged-concierge-job"
+          head="$(git rev-parse HEAD)"
+          env -i PATH="$PATH" HOME="$job" node scripts/ci/staged-concierge-job.mjs "$GITHUB_WORKSPACE" "$job" raw "$head" head
+          test "$(git rev-parse HEAD)" = "$head"
+          test -z "$(git status --porcelain)"
+      - name: Revalidate exact event base composition without publishing it
+        run: |
+          set -euo pipefail
+          job="$RUNNER_TEMP/staged-concierge-job"
+          base="${{ steps.event.outputs.base }}"
+          head="$(git rev-parse HEAD)"
+          git fetch --no-tags origin "$base"
+          composition="$RUNNER_TEMP/staged-concierge-event-composition"
+          git worktree add --detach "$composition" "$head"
+          git -C "$composition" -c core.hooksPath=/dev/null -c user.name='Disposable CI' -c user.email=fixture@example.invalid merge --no-ff --no-edit "$base"
+          composed="$(git -C "$composition" rev-parse HEAD)"
+          node scripts/ci/capture-composition-evidence.mjs "$composition" "$job/event-base-composition" "$composed" "$head" "$base"
+          env -i PATH="$PATH" HOME="$job" node scripts/ci/staged-concierge-job.mjs "$composition" "$job" raw "$composed" event-base-composition
+          test "$(git rev-parse HEAD)" = "$head"
+          test -z "$(git status --porcelain)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: concierge-staged-build-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/staged-concierge-job/concierge-*-results.json
+            ${{ runner.temp }}/staged-concierge-job/event-base-composition.bundle
+            ${{ runner.temp }}/staged-concierge-job/event-base-composition.json
+          if-no-files-found: error
+          retention-days: 3

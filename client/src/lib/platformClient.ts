@@ -1,4 +1,4 @@
-import { authFetch, getStoredUser } from './authClient';
+import { authFetch, captureAuthSession, getStoredUser } from './authClient';
 
 export type CrewCheckLocale = 'pt-BR' | 'en-US' | 'es-ES';
 export type CrewCheckPlanId = 'free' | 'premium_monthly' | 'premium_annual' | 'premium_unlimited';
@@ -64,17 +64,53 @@ export type PlatformParkingPosition = {
   localOnly?: boolean;
 };
 
-const LOCAL_PROFILE_KEY = 'crewcheck_platform_profile_cache_v1';
+// Older bundles cannot overwrite the cache governed by the cross-tab protocol.
+const LOCAL_PROFILE_KEY = 'crewcheck_platform_profile_cache_v2';
 const LOCAL_BILLING_KEY = 'crewcheck_platform_billing_cache_v1';
 const LOCAL_STAYS_KEY = 'crewcheck_platform_stays_cache_v1';
 const LOCAL_GYM_KEY = 'crewcheck_platform_gym_checkins_local_v1';
 const LOCAL_PARKING_KEY = 'crewcheck_my_car_parking_position_v1';
+/** Never cache a delayed response: all tabs refresh under the same origin lock. */
+async function refreshProfileCache(session: ReturnType<typeof captureAuthSession>, publicId: string): Promise<void> {
+  try {
+    if (!session.isCurrent()) return;
+    if (!navigator.locks?.request) {
+      removeLocal(LOCAL_PROFILE_KEY);
+      return;
+    }
+    await navigator.locks.request(LOCAL_PROFILE_KEY, async () => {
+      if (!session.isCurrent()) return;
+      const email = String(getStoredUser()?.email || '').trim().toLowerCase();
+      let fresh: { ok: boolean; profile: PlatformProfile; billing: PlatformBilling };
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      try {
+        fresh = await authFetch<typeof fresh>('/api/platform/profile', { cache: 'no-store', signal: controller.signal });
+      } catch {
+        if (session.isCurrent()) removeLocal(LOCAL_PROFILE_KEY);
+        return;
+      }
+      finally { clearTimeout(timeout); }
+      if (!session.isCurrent()) return;
+      if (!email || !fresh.ok || !publicId || fresh.profile?.publicId !== publicId || !fresh.profile.displayName?.trim()
+        || String(fresh.profile.email || '').trim().toLowerCase() !== email) {
+        removeLocal(LOCAL_PROFILE_KEY);
+        return;
+      }
+      if (!writeLocal(LOCAL_PROFILE_KEY, fresh.profile)) removeLocal(LOCAL_PROFILE_KEY);
+      writeLocal(LOCAL_BILLING_KEY, fresh.billing);
+    });
+  } catch {
+    // Without cross-tab exclusion, discard the cache rather than promote an old response.
+    try { if (session.isCurrent()) removeLocal(LOCAL_PROFILE_KEY); } catch {}
+  }
+}
 
 function readLocal<T>(key: string, fallback: T): T {
   try { return JSON.parse(localStorage.getItem(key) || '') as T; } catch { return fallback; }
 }
-function writeLocal(key: string, value: unknown): void {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+function writeLocal(key: string, value: unknown): boolean {
+  try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; }
 }
 function removeLocal(key: string): void {
   try { localStorage.removeItem(key); } catch {}
@@ -88,8 +124,10 @@ function localBilling(): PlatformBilling & { ok: boolean; plans: PlatformPlan[];
   return { ok: true, plans: [], localOnly: true, plan, status: cached.status || 'offline', provider: cached.provider || null, productId: cached.productId || null, currentPeriodEnd: cached.currentPeriodEnd || null, cancelAtPeriodEnd: Boolean(cached.cancelAtPeriodEnd), premiumAccess: plan !== 'free', entitlements: cached.entitlements || {}, usage: { kind: 'wakeup_call', monthKey, used, limit, remaining: Math.max(0, limit - used) } };
 }
 function localProfile(): PlatformProfile {
-  const cached = readLocal<Partial<PlatformProfile>>(LOCAL_PROFILE_KEY, {});
   const user: any = getStoredUser?.() || {};
+  const candidate = readLocal<Partial<PlatformProfile>>(LOCAL_PROFILE_KEY, {});
+  const email = String(user.email || '').trim().toLowerCase();
+  const cached = email && String(candidate?.email || '').trim().toLowerCase() === email ? candidate : {};
   return {
     email: cached.email || user.email || '',
     publicId: cached.publicId || 'CC-OFFLINE',
@@ -136,9 +174,9 @@ export async function getPlatformProfile(): Promise<{ ok: boolean; profile: Plat
   let timezone = 'America/Sao_Paulo';
   try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || timezone; } catch {}
   try {
+    const session = captureAuthSession();
     const payload = await authFetch<{ ok: boolean; profile: PlatformProfile; billing: PlatformBilling }>('/api/platform/profile', { headers: { 'x-crewcheck-locale': navigator.language || 'pt-BR', 'x-crewcheck-timezone': timezone } });
-    writeLocal(LOCAL_PROFILE_KEY, payload.profile);
-    writeLocal(LOCAL_BILLING_KEY, payload.billing);
+    if (payload.ok) await refreshProfileCache(session, payload.profile?.publicId);
     return payload;
   } catch {
     return { ok: true, profile: localProfile(), billing: localBilling(), localOnly: true };
@@ -146,16 +184,43 @@ export async function getPlatformProfile(): Promise<{ ok: boolean; profile: Plat
 }
 
 export async function savePlatformProfile(patch: Partial<Pick<PlatformProfile, 'displayName' | 'locale' | 'timezone' | 'sharePresence'>>): Promise<{ ok: boolean; profile: PlatformProfile; billing: PlatformBilling; localOnly?: boolean }> {
-  const local = { ...localProfile(), ...patch };
-  writeLocal(LOCAL_PROFILE_KEY, local);
+  const session = captureAuthSession();
   try {
     const payload = await authFetch<{ ok: boolean; profile: PlatformProfile; billing: PlatformBilling }>('/api/platform/profile', { method: 'PATCH', body: JSON.stringify(patch) });
-    writeLocal(LOCAL_PROFILE_KEY, payload.profile);
-    writeLocal(LOCAL_BILLING_KEY, payload.billing);
+    if (payload.ok) await refreshProfileCache(session, payload.profile?.publicId);
     return payload;
   } catch {
-    return { ok: true, profile: local, billing: localBilling(), localOnly: true };
+    throw new Error('Não foi possível salvar as preferências na conta. Conecte-se e tente novamente.');
   }
+}
+
+/** Confirmed profile only: never substitute a local draft for a server receipt. */
+export async function getConfirmedPlatformProfile(): Promise<PlatformProfile> {
+  const session = captureAuthSession();
+  const email = String(getStoredUser()?.email || '').trim().toLowerCase();
+  const result = await authFetch<{ ok: boolean; profile: PlatformProfile }>('/api/platform/profile', { cache: 'no-store' });
+  if (!session.isCurrent() || !email || !result.ok || !result.profile?.publicId || result.profile.email?.trim().toLowerCase() !== email || !result.profile.displayName?.trim()) {
+    throw new Error('Não foi possível confirmar o perfil desta conta.');
+  }
+  return result.profile;
+}
+
+export async function saveConfirmedDisplayName(value: string): Promise<PlatformProfile> {
+  const displayName = value.normalize('NFC').trim();
+  if (!displayName || displayName.length > 120 || /[\u0000-\u001F\u007F]/.test(displayName)) throw new Error('Informe um nome de até 120 caracteres.');
+  const session = captureAuthSession();
+  const before = await getConfirmedPlatformProfile();
+  if (!session.isCurrent()) throw new Error('A conta mudou. Abra o perfil novamente.');
+  const receipt = await authFetch<{ ok: boolean; profile: PlatformProfile }>('/api/platform/profile', { method: 'PATCH', body: JSON.stringify({ displayName }) });
+  if (!session.isCurrent() || !receipt.ok || receipt.profile?.email !== before.email || receipt.profile?.publicId !== before.publicId || receipt.profile?.displayName !== displayName) {
+    throw new Error('Não foi possível confirmar o nome salvo.');
+  }
+  const confirmed = await getConfirmedPlatformProfile();
+  if (!session.isCurrent() || confirmed.publicId !== before.publicId || confirmed.displayName !== displayName) throw new Error('Não foi possível confirmar o nome salvo.');
+  await refreshProfileCache(session, confirmed.publicId);
+  if (!session.isCurrent()) throw new Error('A conta mudou. Abra o perfil novamente.');
+  window.dispatchEvent(new CustomEvent('crewcheck:profile-name-confirmed', { detail: { owner: session.owner, displayName } }));
+  return confirmed;
 }
 
 export async function getPlatformBilling(): Promise<PlatformBilling & { ok: boolean; plans: PlatformPlan[]; localOnly?: boolean }> {
@@ -183,6 +248,7 @@ export async function cancelSubscription() {
 type AndroidBillingBridge = {
   isReady?: () => boolean;
   queryProducts?: (productIdsJson: string) => void;
+  queryProductsForRequest?: (productIdsJson: string, requestId: string) => void;
   purchase?: (productId: string, obfuscatedAccountId: string) => void;
   restorePurchases?: () => void;
   acknowledge?: (purchaseToken: string) => void;
@@ -199,9 +265,11 @@ export function hasGooglePlayBillingBridge(): boolean {
   return Boolean(window.AndroidCrewCheckBilling && typeof window.AndroidCrewCheckBilling.purchase === 'function');
 }
 
-export function queryGooglePlayProducts(productIds: string[]): void {
-  if (!window.AndroidCrewCheckBilling?.queryProducts) return;
-  window.AndroidCrewCheckBilling.queryProducts(JSON.stringify(productIds.filter(Boolean)));
+export function queryGooglePlayProducts(productIds: string[]): string | null {
+  if (!window.AndroidCrewCheckBilling?.queryProductsForRequest) return null;
+  const requestId=globalThis.crypto.randomUUID();
+  window.AndroidCrewCheckBilling.queryProductsForRequest(JSON.stringify(productIds.filter(Boolean)),requestId);
+  return requestId;
 }
 
 export function startGooglePlayPurchase(productId: string, publicId: string): void {

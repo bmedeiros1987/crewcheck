@@ -1,3 +1,4 @@
+import { crewCheckEmailIdentity, crewCheckEmailSignatureText as institutionalSignatureText } from '../../shared/crewcheckEmailIdentity.mjs';
 import net from 'node:net';
 import tls from 'node:tls';
 import { cleanText, dbPool, env, flag, parseJsonColumn, safeEmail } from './common.mjs';
@@ -14,16 +15,22 @@ async function postJson(url, apiKey, payload, timeoutMs = 12_000) {
   } finally { clearTimeout(timer); }
 }
 
-const defaultLogoUrl = 'https://crewcheck.online/favicon-512x512.png';
+const defaultLogoUrl = 'https://crewcheck.online/assets/brand/crewcheck-app-icon-2026.png';
 const defaultBcc = 'bmedeiros1987@gmail.com';
 
 function escapeHtml(value) {
   return String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 }
 
+export function crewCheckEmailSignatureText() {
+  return institutionalSignatureText;
+}
+
 export function crewCheckEmailSignature() {
-  const logoUrl = env('CREWCHECK_EMAIL_LOGO_URL', defaultLogoUrl);
-  return `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:680px;margin-top:28px;border-radius:18px;overflow:hidden;background:#06162f;color:#fff;font-family:Arial,sans-serif"><tr><td style="padding:22px 24px;border-bottom:1px solid rgba(255,255,255,.14)"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="padding-right:16px"><img src="${escapeHtml(logoUrl)}" width="64" height="64" alt="CrewCheck" style="display:block;border-radius:16px"></td><td><div style="font-size:26px;font-weight:800;line-height:1">CrewCheck</div><div style="margin-top:8px;font-size:12px;letter-spacing:2px;color:#eb4ab3">INTELIGÊNCIA OPERACIONAL PARA PROFISSIONAIS DA AVIAÇÃO</div></td></tr></table></td></tr><tr><td style="padding:22px 24px"><div style="font-size:18px;font-weight:800">Bruno Saraiva de Medeiros</div><div style="margin-top:4px;color:#5fd4ff;font-weight:700">Founder &amp; CEO</div><div style="margin-top:14px;font-size:14px;line-height:1.7;color:#dbe7f5">Bruno Medeiros Tecnologia<br><a href="https://crewcheck.online" style="color:#5fd4ff;text-decoration:none">crewcheck.online</a><br>Brasília – DF | Brasil</div><div style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.14);font-size:12px;letter-spacing:1.2px;color:#d6b1ff">TRANSFORMANDO COMPLEXIDADE OPERACIONAL EM DECISÕES INTELIGENTES.</div></td></tr></table>`;
+  const configuredLogo = env('CREWCHECK_EMAIL_LOGO_URL', defaultLogoUrl);
+  // The former default has no shipped asset; preserve other configured logos.
+  const logoUrl = configuredLogo === 'https://crewcheck.online/favicon-512x512.png' ? defaultLogoUrl : configuredLogo;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:680px;margin-top:28px;border-radius:18px;background:#06162f;color:#fff;font-family:Arial,sans-serif"><tr><td style="padding:22px 24px"><table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="padding-right:16px"><img src="${escapeHtml(logoUrl)}" width="64" height="64" alt="${crewCheckEmailIdentity.name}" style="display:block;border:0;border-radius:16px"></td><td><div style="font-size:26px;font-weight:800;line-height:1.2">${crewCheckEmailIdentity.name}</div><div style="margin-top:8px;font-size:12px;line-height:1.5;color:#dbe7f5">${crewCheckEmailIdentity.description}</div><div style="margin-top:10px"><a href="${crewCheckEmailIdentity.url}" style="color:#5fd4ff;text-decoration:underline">${crewCheckEmailIdentity.websiteLabel}</a></div></td></tr></table></td></tr></table>`;
 }
 
 function optionalEmail(message, key, fallback) {
@@ -36,7 +43,7 @@ function normalizeMessage(message) {
   const bcc = optionalEmail(message, 'bcc', env('CREWCHECK_EMAIL_BCC', defaultBcc));
   const appendSignature = message.appendSignature !== false;
   const html = appendSignature ? `${message.html || `<div style="white-space:pre-wrap">${escapeHtml(message.text)}</div>`}${crewCheckEmailSignature()}` : message.html;
-  const text = appendSignature ? `${message.text || ''}\n\nBruno Saraiva de Medeiros\nFounder & CEO | Bruno Medeiros Tecnologia\nCrewCheck — Inteligência Operacional para Profissionais da Aviação\nhttps://crewcheck.online` : message.text;
+  const text = appendSignature ? `${message.text || ''}\n\n${crewCheckEmailSignatureText()}` : message.text;
   return { ...message, html, text, replyTo, bcc };
 }
 
@@ -126,7 +133,7 @@ export async function sendSystemEmail(message) {
 }
 
 export function telegramToken() { return env('TELEGRAM_BOT_TOKEN', env('CREWCHECK_TELEGRAM_BOT_TOKEN')); }
-export async function sendTelegram(chatId, text) { const token = telegramToken(); if (!token || !chatId) return { ok: false, configured: Boolean(token), provider: 'telegram' }; try { const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: String(chatId), text: String(text).slice(0, 3900), disable_web_page_preview: true }) }); const payload = await response.json().catch(() => ({})); return { ok: Boolean(response.ok && payload.ok !== false), configured: true, provider: 'telegram' }; } catch { return { ok: false, configured: true, provider: 'telegram' }; } }
+export async function sendTelegram(chatId, text) { const token = telegramToken(); if (!token || !chatId) return { ok: false, configured: Boolean(token), provider: 'telegram' }; try { const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(10_000), body: JSON.stringify({ chat_id: String(chatId), text: String(text).slice(0, 3900), disable_web_page_preview: true }) }); const payload = await response.json().catch(() => ({})); return { ok: Boolean(response.ok && payload.ok === true), uncertain: payload.ok !== false && !(response.ok && payload.ok === true), configured: true, provider: 'telegram' }; } catch { return { ok: false, configured: true, provider: 'telegram' }; } }
 export async function telegramLink(db, email) { for (const key of [`link-email:${email}`, `profile:${email}`]) { const [rows] = await db.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? LIMIT 1', [key]); const payload = parseJsonColumn(rows[0]?.payload, null); if (payload?.chatId || payload?.username) return payload; } return null; }
 export async function callTelegram(username, text) { const user = String(username || '').trim().replace(/^@/, ''); if (!flag('CALLMEBOT_TELEGRAM_CALL_ENABLED', true) || !user) return { ok: false, configured: Boolean(user), provider: 'telegram-call' }; try { const url = new URL('https://api.callmebot.com/start.php'); url.searchParams.set('user', `@${user}`); url.searchParams.set('text', cleanText(text, 240)); url.searchParams.set('lang', env('CALLMEBOT_TELEGRAM_LANG', 'pt-BR-Standard-A')); url.searchParams.set('rpt', '1'); url.searchParams.set('cc', 'missed'); url.searchParams.set('timeout', '45'); const response = await fetch(url); const raw = await response.text().catch(() => ''); return { ok: response.ok && !/(error|invalid|unauthor)/i.test(raw), configured: true, provider: 'telegram-call' }; } catch { return { ok: false, configured: true, provider: 'telegram-call' }; } }
 export async function callUsageAllowed(db, email) { const [profiles] = await db.query('SELECT plan FROM crewcheck_platform_profiles WHERE email=? LIMIT 1', [email]); const plan = String(profiles[0]?.plan || 'free'); const limit = plan === 'premium_unlimited' ? Number(env('CREWCHECK_UNLIMITED_CALL_LIMIT', '60')) : plan === 'free' ? Number(env('CREWCHECK_FREE_CALL_LIMIT', '1')) : Number(env('CREWCHECK_PREMIUM_CALL_LIMIT', '20')); const month = new Date().toISOString().slice(0, 7); const [usage] = await db.query('SELECT used FROM crewcheck_platform_usage WHERE email=? AND month_key=? AND usage_kind=? LIMIT 1', [email, month, 'password_reset_call']); return { allowed: Number(usage[0]?.used || 0) < limit, limit, month }; }

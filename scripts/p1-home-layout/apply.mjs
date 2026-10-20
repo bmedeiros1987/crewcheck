@@ -3,6 +3,9 @@ import fs from 'node:fs';
 const path = 'client/src/pages/Home.tsx';
 if (!fs.existsSync(path)) throw new Error(`[p1-home-layout] arquivo ausente: ${path}`);
 let source = fs.readFileSync(path, 'utf8');
+if (!source.includes("from '@/components/v1391/HomeRosterPreview'")) source = "import { HomeRosterPreview } from '@/components/v1391/HomeRosterPreview';\n" + source;
+
+if (!source.includes("from '@/components/finance/HomeFinancialCard'")) source = "import HomeFinancialCard from '@/components/finance/HomeFinancialCard';\n" + source;
 
 const importLine = "import { HomeLayoutShell, type HomeLayoutSlot } from '@/components/v1391/HomeLayoutShell';";
 if (!source.includes(importLine)) {
@@ -19,38 +22,44 @@ if (!source.includes('function PersonalizedCockpit(')) {
   const returnStart = cockpit.lastIndexOf('  return <>');
   const returnEnd = cockpit.lastIndexOf('</>;');
   if (returnStart < 0 || returnEnd < returnStart) throw new Error('[p1-home-layout] retorno canônico do Cockpit não localizado');
-  const wrappedCockpit = cockpit.slice(0, returnStart)
+  let wrappedCockpit = cockpit.slice(0, returnStart)
     + '  return <PersonalizedCockpit events={events} compliance={compliance} setView={setView} onUpload={onUpload} openMenu={openMenu} canonicalContent={<>'
     + cockpit.slice(returnStart + '  return <>'.length, returnEnd)
     + '</>} />;'
     + cockpit.slice(returnEnd + '</>;'.length);
+  const wrapperProps = 'events={events} compliance={compliance} setView={setView} onUpload={onUpload} openMenu={openMenu} contextOnly';
+  wrappedCockpit = wrappedCockpit.replace(/return (<VacationModeCardV14738[^;]+);/, (_, card) => 'return <PersonalizedCockpit ' + wrapperProps + ' canonicalContent={<>' + card + '<HomeFinancialCard onNavigate={setView}/></>}/>;');
+  const emptyStart = wrappedCockpit.indexOf('return <>');
+  if (emptyStart >= 0) {
+    const emptyEnd = wrappedCockpit.indexOf('</>;', emptyStart);
+    if (emptyEnd < 0) throw new Error('[p1-home-layout] retorno vazio não localizado');
+    wrappedCockpit = wrappedCockpit.slice(0, emptyStart) + 'return <PersonalizedCockpit ' + wrapperProps + ' canonicalContent={'
+      + wrappedCockpit.slice(emptyStart + 'return '.length, emptyEnd + 3) + '}/>;' + wrappedCockpit.slice(emptyEnd + 4);
+  }
   source = source.slice(0, start) + wrappedCockpit + source.slice(end);
-  const block = `function PersonalizedCockpit({ events, compliance, setView, onUpload, openMenu, canonicalContent }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void; canonicalContent: React.ReactNode }) {
+  const block = `function PersonalizedCockpit({ events, compliance, setView, onUpload, openMenu, canonicalContent, contextOnly = false }: { events: ZeroLeg[]; compliance: ComplianceResult | null; setView: (v: ZeroView) => void; onUpload: () => void; openMenu: () => void; canonicalContent: React.ReactNode; contextOnly?: boolean }) {
   const event = nextFlight(events);
   const loaded = events.some((event) => !event.placeholder);
   const alertCount = actionableComplianceAlerts(compliance).length;
-  const dutyLimit = event.kind === 'flight' && !event.placeholder ? getPublishedDutyLimitSummary(event.day, compliance?.legalProfile) : null;
+  const dutyMeasurement = !event.placeholder && event.canonical ? measureCanonicalDuty(events.flatMap(item => item.canonical ? [item.canonical] : []), event.canonical.id) : null;
   const slots: HomeLayoutSlot[] = [
     {
       id: 'summary',
       label: 'Resumo operacional',
       description: 'Alertas operacionais e acesso ao painel completo.',
-      content: <button className="cz-mini-status" onClick={() => setView('alerts')}><Bell/><strong>Alertas operacionais</strong><span>{alertCount ? alertCount + ' confirmado(s)' : 'Nenhum alerta confirmado'}</span><ChevronRight/></button>,
+      content: <button className="cz-mini-status cc-operational-alert-link" onClick={() => setView('alerts')}><Bell/><strong>Alertas operacionais</strong><span>{alertCount ? alertCount + ' confirmado(s)' : 'Nenhum alerta confirmado'}</span><ChevronRight/></button>,
     },
     {
       id: 'finance',
       label: 'Atalhos financeiros',
       description: 'Diárias e salário no motor financeiro único.',
-      content: <section className="cz-money-row">
-        <div onClick={() => setView('perdiem')}><BriefcaseBusiness/><span>Diárias</span><strong>Abrir</strong></div>
-        <div onClick={() => setView('salary')}><DollarSign/><span>Salário</span><strong>Financeiro</strong></div>
-      </section>,
+      content: contextOnly ? null : <HomeFinancialCard onNavigate={setView}/>,
     },
     {
       id: 'next',
       label: 'Próxima programação',
       description: 'Ação principal e programação canônica.',
-      content: <>
+      content: contextOnly ? canonicalContent : <>
         <section className="cz-section-head"><h2>Próxima Programação</h2><button onClick={() => setView(loaded ? 'roster' : 'import')}>{loaded ? 'Ver todas' : 'Importar'} <ChevronRight size={18}/></button></section>
         {loaded && !event.placeholder
           ? <FlightCard event={event}/>
@@ -61,19 +70,19 @@ if (!source.includes('function PersonalizedCockpit(')) {
       id: 'limits',
       label: 'Alertas e limites',
       description: 'Alertas operacionais não podem ser ocultados.',
-      content: dutyLimit
-        ? <button className="cz-mini-status" onClick={() => setView('regulation')}><ShieldCheck/><strong>Limite desta jornada</strong><span>{dutyLimit.usedHours.toFixed(1).replace('.', ',')} h de {dutyLimit.maxDutyHours.toFixed(1).replace('.', ',')} h · margem {Math.max(0, dutyLimit.remainingHours).toFixed(1).replace('.', ',')} h</span><ChevronRight/></button>
+      content: !contextOnly && loaded && !event.placeholder
+        ? <CanonicalDutyCard measurement={dutyMeasurement} onOpen={() => openCanonicalDutyDetails(event.canonical, setView)}/>
         : null,
     },
     {
       id: 'smart',
       label: 'Próxima ação inteligente',
       description: 'Contexto da programação sem recalcular regras.',
-      content: <SmartCard event={event} setView={setView}/>,
+      content: contextOnly ? null : <SmartCard event={event} setView={setView}/>,
     },
   ];
 
-  return <HomeLayoutShell slots={slots} standardContent={canonicalContent}/>;
+  return <HomeLayoutShell slots={slots} quickRoster={<HomeRosterPreview events={events} onNavigate={setView}/>} standardContent={canonicalContent} shortcuts={<HomeFavoriteShortcuts setView={setView} openMenu={openMenu}/>}/>;
 }
 `;
   const wrapperAnchor = source.indexOf('\nfunction rosterCode', start);
@@ -81,49 +90,26 @@ if (!source.includes('function PersonalizedCockpit(')) {
 }
 
 
-// Alert visibility is finalized here because later canonical generators materialize Home.tsx.
-const alertVisibilityImports = "import { currentAccountId } from '@/lib/rosterChangeAwareness';\nimport {\n  activeComplianceAlerts,\n  complianceAlertFingerprint,\n  dismissComplianceAlertUntilRosterUpdate,\n  filterActionableComplianceAlerts,\n  informationalComplianceAlerts,\n  readComplianceAlertDismissals,\n  resetComplianceAlertDismissals,\n  visibleInformationalComplianceAlerts,\n} from '@/lib/complianceAlertVisibility';\n";
-if (!source.includes("from '@/lib/complianceAlertVisibility'")) {
-  const typeAnchor = '\ntype ZeroView =';
-  if (!source.includes(typeAnchor)) throw new Error('[p1-home-layout] limite estrutural de alertas não localizado');
-  source = source.replace(typeAnchor, '\n' + alertVisibilityImports + typeAnchor.slice(1));
-}
-const complianceSemanticImport = "import { isActionableComplianceAlert } from '@/lib/complianceAlertSemantics';";
-if (!source.includes(complianceSemanticImport)) {
-  const typeAnchor = '\ntype ZeroView =';
-  if (!source.includes(typeAnchor)) throw new Error('[p1-home-layout] limite estrutural do helper semântico não localizado');
-  source = source.replace(typeAnchor, '\n' + complianceSemanticImport + '\n' + typeAnchor.slice(1));
-}
-const pulseImportBefore = "import { crewCheckNotificationPermission, publishCrewCheckNotice, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';";
-const pulseImportAfter = "import { crewCheckNotificationPermission, currentCrewCheckPulseState, dismissCrewCheckPulse, publishCrewCheckNotice, requestCrewCheckNotificationPermission, setCrewCheckDeviceNotificationsEnabled } from '@/components/pulse/pulseRuntime';";
-if (source.includes(pulseImportBefore)) source = source.replace(pulseImportBefore, pulseImportAfter);
-if (!source.includes('currentCrewCheckPulseState')) throw new Error('[p1-home-layout] runtime Pulse incompatível com visibilidade dos alertas');
-
-if (source.includes('\ntype ComplianceAlertDisposition')) {
-  const actionableStart = source.indexOf('function actionableComplianceAlerts(');
-  const dispositionStart = source.indexOf('\ntype ComplianceAlertDisposition', actionableStart);
-  const analyzeStart = source.indexOf('\nfunction analyzeSafe(', dispositionStart);
-  if (actionableStart < 0 || dispositionStart < 0 || analyzeStart < 0) throw new Error('[p1-home-layout] bloco legado de alertas não localizado');
-  source = source.slice(0, actionableStart) + "function complianceAlertRosterRevision(): string {\n  try {\n    const payload = JSON.parse(storage.get('crewcheck_latest_roster_bundle', 'null'));\n    const roster = payload?.roster || payload;\n    return String(payload?.updatedAt || rosterFingerprint(roster) || 'unversioned-roster');\n  } catch {\n    return 'unversioned-roster';\n  }\n}\n\nfunction complianceAlertStorage(): Storage | null {\n  try { return window.localStorage; } catch { return null; }\n}\n\nfunction actionableComplianceAlerts(compliance: ComplianceResult | null): any[] {\n  const raw = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];\n  const semanticallyActionable = raw.filter((alert: any) => {\n    if (!isActionableComplianceAlert(alert)) return false;\n    return true;\n  });\n  const store = complianceAlertStorage();\n  if (!store) return filterActionableComplianceAlerts(semanticallyActionable);\n  return activeComplianceAlerts(semanticallyActionable, store, currentAccountId(), complianceAlertRosterRevision());\n}\n" + source.slice(analyzeStart + 1);
+if (!source.includes('function HomeFavoriteShortcuts(')) {
+  const menuStart = source.indexOf('function MenuDrawer(');
+  const menuEnd = source.indexOf('\nfunction ', menuStart + 1);
+  const canonicalMenu = source.slice(menuStart, menuEnd);
+  const entries = [...canonicalMenu.matchAll(/\['([^']+)','([^']+)','([^']+)',([A-Za-z0-9_]+)\]/g)];
+  if (entries.length !== 42 || new Set(entries.map(entry=>entry[1])).size !== 42 || !entries.some(entry=>entry[1]==='notifications')) throw new Error('[p1-home-layout] catálogo canônico incompleto');
+  const tuples = entries.map((entry) => `['${entry[1]}','${entry[2]}',${entry[4]}]`).join(',\n');
+  const shortcutBlock = `function HomeFavoriteShortcuts({ setView, openMenu }: { setView: (v: ZeroView) => void; openMenu: () => void }) {
+    const accountId = getStoredUser()?.id || null;
+    const catalog: Array<[ZeroView, string, any]> = [${tuples}];
+    const allowed = catalog.filter(([id]) => isAdmin() || !['updates','maintenance','admin'].includes(id));
+    const favorites = readMenuFavorites(window.localStorage, accountId, allowed.map(([id]) => id));
+    const shortcuts = favorites.map(id => allowed.find(([viewId]) => viewId === id)).filter((item): item is [ZeroView, string, any] => Boolean(item));
+    return <section className="cc-home-shortcuts" aria-label="Seus atalhos"><header><div><small>SEUS FAVORITOS</small><h2>Atalhos do dia</h2></div><button type="button" onClick={openMenu}>Editar no menu</button></header><div>{shortcuts.map(([id,label,Icon]) => <button key={id} type="button" onClick={() => setView(id)}><Icon aria-hidden="true"/><span>{label}</span></button>)}</div>{!shortcuts.length && <p>Escolha seus favoritos no menu para começar.</p>}</section>;
+  }
+`;
+  const shortcutAnchor = source.indexOf('\nfunction rosterCode');
+  source = source.slice(0, shortcutAnchor) + '\n' + shortcutBlock + source.slice(shortcutAnchor);
 }
 
-if (source.includes('function Alerts({ compliance }:')) {
-  const alertsStart = source.indexOf('function Alerts({ compliance }:');
-  const parsedRouteAlertsEnd = source.indexOf('\nfunction parsedRouteMinutes', alertsStart);
-  const routeDurationAlertsEnd = source.indexOf('\nfunction routeDurationMinutes', alertsStart);
-  const alertsEnd = parsedRouteAlertsEnd >= 0 ? parsedRouteAlertsEnd : routeDurationAlertsEnd;
-  if (alertsEnd < 0) throw new Error('[p1-home-layout] tela legada de alertas não localizada');
-  source = source.slice(0, alertsStart) + "function Alerts({ compliance }: { compliance: ComplianceResult | null }) {\n  const [, setDispositionRevision] = useState(0);\n  const store = complianceAlertStorage();\n  const accountId = currentAccountId();\n  const rosterRevision = complianceAlertRosterRevision();\n  const raw = Array.isArray((compliance as any)?.alerts) ? (compliance as any).alerts : [];\n  const list = actionableComplianceAlerts(compliance).slice(0, 12);\n  const informational = store\n    ? visibleInformationalComplianceAlerts(raw, store, accountId, rosterRevision)\n    : informationalComplianceAlerts(raw);\n  const dismissedCount = store\n    ? readComplianceAlertDismissals(store, accountId, rosterRevision).length\n    : 0;\n\n  function ignoreUntilRosterUpdate(alert: any) {\n    if (!store || !dismissComplianceAlertUntilRosterUpdate(store, accountId, rosterRevision, alert)) return;\n    const pulse = currentCrewCheckPulseState().message as ({ category?: string } | null);\n    if (pulse?.category === 'compliance') dismissCrewCheckPulse();\n    setDispositionRevision((value) => value + 1);\n    toast.success('Alerta ocultado até a próxima atualização da escala.', {\n      description: 'Uma nova importação ou sincronização refará a análise e poderá exibi-lo novamente.',\n    });\n  }\n\n  function restoreIgnoredAlerts() {\n    if (!store) return;\n    resetComplianceAlertDismissals(store, accountId);\n    setDispositionRevision((value) => value + 1);\n  }\n\n  return <>\n    <Brand back/>\n    <section className=\"cz-panel-head\">\n      <h1>Irregularidades e alertas</h1>\n      <p>Primeiro aparecem ocorrências que exigem ação. Explicações e análises incompletas ficam recolhidas abaixo.</p>\n    </section>\n    {list.length\n      ? <section className=\"cz-alert-stack\">{list.map((alert: any, idx: number) => {\n          const warning = String(alert.severity || '').toLowerCase() === 'warning';\n          return <article className={alert.severity === 'error' ? 'danger' : 'warn'} key={`${complianceAlertFingerprint(alert)}-${idx}`}>\n            <AlertTriangle/>\n            <div>\n              <h2>{alert.title}</h2>\n              <p>{alert.description}</p>\n              <span>{alert.severity === 'error' ? 'Confirmada' : 'Atenção'}</span>\n              <b>Confiança: {alert.severity === 'error' ? 'alta' : 'média'}</b>\n              {warning && <button type=\"button\" onClick={() => ignoreUntilRosterUpdate(alert)}>Ignorar até a próxima atualização</button>}\n            </div>\n            <ChevronRight/>\n          </article>;\n        })}</section>\n      : <article className=\"cz-empty-real\">\n          <ShieldCheck/>\n          <h2>Nenhuma irregularidade ativa</h2>\n          <p>{dismissedCount ? 'Os avisos dispensados voltarão a ser avaliados na próxima atualização da escala.' : 'Não há ocorrência confirmada que exija ação agora.'}</p>\n        </article>}\n    {dismissedCount > 0 && <article className=\"cz-alert-detail\">\n      <h2>Ocultados até a próxima atualização <b>{dismissedCount}</b></h2>\n      <footer><button onClick={restoreIgnoredAlerts}><RotateCcw/> Mostrar novamente agora</button></footer>\n    </article>}\n    {informational.length > 0 && <details className=\"cz-alert-detail\">\n      <summary>Análises incompletas <b>{informational.length}</b></summary>\n      <div>\n        {informational.map((alert) => <div key={complianceAlertFingerprint(alert)}>\n          <p><strong>{alert.title || 'Histórico insuficiente'}</strong> {alert.description}</p>\n          {alert.coverage?.missingDates?.length ? <p><strong>Cobertura faltante</strong> {alert.coverage.missingDates.length} dia(s) necessários para a janela de {alert.coverage.windowDays || 28} dias.</p> : null}\n          {alert.details ? <p>{alert.details}</p> : null}\n          <button type=\"button\" onClick={() => ignoreUntilRosterUpdate(alert)}>Ignorar até a próxima atualização</button>\n        </div>)}\n      </div>\n    </details>}\n    <details className=\"cz-alert-detail\">\n      <summary>Como o CrewCheck analisa</summary>\n      <div>\n        <p><strong>O que o sistema avalia</strong> Jornada, repouso, madrugadas, limites, reserva, sobreaviso, acionamento, pernoite e alterações.</p>\n        <p><strong>Dados usados</strong> Somente a escala importada ou sincronizada. Dados demonstrativos foram removidos.</p>\n      </div>\n    </details>\n  </>;\n}\n" + source.slice(alertsEnd);
-}
-for (const marker of [
-  "from '@/lib/complianceAlertVisibility'",
-  'function complianceAlertRosterRevision()',
-  'Ignorar até a próxima atualização',
-  'Análises incompletas',
-  'visibleInformationalComplianceAlerts',
-]) {
-  if (!source.includes(marker)) throw new Error('[p1-home-layout] materialização de alertas incompleta: ' + marker);
-}
 
 fs.writeFileSync(path, source, 'utf8');
-console.log('[p1-home-layout] modos Padrão, Personalizada e Mista materializados após finalizadores canônicos.');
+console.log('[p1-home-layout] visual modes materialized; canonical alerts unchanged');

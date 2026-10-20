@@ -48,6 +48,24 @@ export function getStoredUser(): AuthUser | null {
 
 export function isAuthenticated(): boolean { return Boolean(getToken()); }
 
+let authGeneration = 0;
+if (typeof window !== 'undefined') {
+  for (const name of ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired'])
+    window.addEventListener(name, () => { authGeneration += 1; });
+  window.addEventListener('storage', (event) => {
+    if (event.key === null || event.key === TOKEN_KEY || event.key === USER_KEY) authGeneration += 1;
+  });
+}
+
+/** Read fence only: never establishes or changes an account. */
+export function captureAuthSession() {
+  const token = getToken(), generation = authGeneration;
+  const owner = String(getStoredUser()?.id || getStoredUser()?.email || '').trim().toLowerCase();
+  return { token, owner, isCurrent: () => generation === authGeneration && token === getToken()
+    && owner === String(getStoredUser()?.id || getStoredUser()?.email || '').trim().toLowerCase() };
+}
+
+
 export function crewcheckAuthHeader(extra: Record<string, string> = {}): Record<string, string> {
   const token = getToken();
   return { ...extra, ...(token ? { authorization: `Bearer ${token}` } : {}) };
@@ -60,6 +78,7 @@ function persistSession(session: AuthSession) {
     const previousKey = String(previous?.id || previous?.email || '').toLowerCase();
     const nextKey = String(session.user?.id || session.user?.email || '').toLowerCase();
     if (previousKey && nextKey && previousKey !== nextKey) {
+      window.dispatchEvent(new Event('crewcheck:auth-will-change'));
       sessionStorage.removeItem('crewcheck_roster');
       sessionStorage.removeItem('crewcheck_compliance');
       sessionStorage.removeItem('crewcheck_gym');
@@ -70,6 +89,7 @@ function persistSession(session: AuthSession) {
   } catch {}
   localStorage.setItem(TOKEN_KEY, session.token);
   localStorage.setItem(USER_KEY, JSON.stringify(session.user));
+  window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));
 }
 
 /**
@@ -82,13 +102,16 @@ export function persistExternalAuthSession(session: AuthSession) {
 }
 
 export function expireSession() {
+  try { window.dispatchEvent(new Event('crewcheck:auth-will-change')); } catch {}
   localStorage.removeItem(TOKEN_KEY);
   try { window.dispatchEvent(new CustomEvent('crewcheck:auth-expired')); } catch {}
 }
 
 export function clearSession() {
+  window.dispatchEvent(new Event('crewcheck:auth-will-change'));
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));
   try {
     sessionStorage.removeItem('crewcheck_roster');
     sessionStorage.removeItem('crewcheck_compliance');
@@ -167,9 +190,10 @@ function publicApiErrorMessage(payload: any, status: number, reason: AuthErrorRe
   return String(payload?.message || (`Erro HTTP ${status}`));
 }
 
-async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
+async function jsonFetch<T>(url: string, init?: RequestInit, session?: { isCurrent(): boolean; isSameSession(): boolean; onExpired?(): void }): Promise<T> {
   const protectedRequest = !isPublicAuthRequest(url);
-  const token = protectedRequest ? getToken() : null;
+  const requestSession = protectedRequest ? captureAuthSession() : null;
+  const token = requestSession?.token ?? null;
   let response: Response;
   try {
     response = await fetch(url, {
@@ -190,7 +214,10 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.ok === false) {
     const reason = classifyAuthErrorReason(response.status, String(payload?.code || '').toUpperCase(), protectedRequest);
-    if (reason === 'session_expired') expireSession();
+    if (reason === 'session_expired' && token === getToken() && (!requestSession || requestSession.isCurrent()) && (!session || session.isCurrent())) {
+      session?.onExpired?.();
+      if (token === getToken() && (!requestSession || requestSession.isCurrent()) && (!session || session.isSameSession())) expireSession();
+    }
     throw new AuthClientError(publicApiErrorMessage(payload, response.status, reason), response.status, payload?.code, payload, reason);
   }
   return payload as T;
@@ -269,15 +296,24 @@ export async function confirmPasswordReset(payload: { email: string; code: strin
 
 const GET_ME_TIMEOUT_MS = 10_000;
 
-export async function getMe(): Promise<AuthUser> {
+export async function getMe(options: { isCurrent?(): boolean; onSessionExpired?(): void } = {}): Promise<AuthUser> {
+  const session = captureAuthSession();
+  const isCurrent = () => Boolean(session.token) && session.isCurrent() && (options.isCurrent?.() ?? true);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GET_ME_TIMEOUT_MS);
   try {
     // An aborted fetch rejects inside jsonFetch's own try/catch and is classified as
     // backend_unavailable there, the same as any other network failure - a slow backend
     // must fail fast into "try again", not hang the app shell indefinitely.
-    const payload = await jsonFetch<{ ok: boolean; user: AuthUser }>('/api/auth/me', { signal: controller.signal });
+    const payload = await jsonFetch<{ ok: boolean; user: AuthUser }>('/api/auth/me', { signal: controller.signal }, { isCurrent, isSameSession: session.isCurrent, onExpired: options.onSessionExpired });
+    if (!isCurrent()) throw new AuthClientError('Session changed.', 0, 'STALE_SESSION', null, 'other');
     localStorage.setItem(USER_KEY, JSON.stringify(payload.user));
+    const verifiedOwner = String(payload.user?.id || payload.user?.email || '').trim().toLowerCase();
+    if (verifiedOwner !== session.owner) {
+      // An authoritative identity upgrade (for example email -> stable ID)
+      // starts a fresh consumer generation instead of releasing the old one.
+      window.dispatchEvent(new CustomEvent('crewcheck:auth-changed'));
+    }
     return payload.user;
   } finally {
     clearTimeout(timer);

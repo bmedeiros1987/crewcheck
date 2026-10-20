@@ -36,7 +36,7 @@ const preparedMenu = home.slice(menuStart, menuEnd);
 for (const route of [
   'cockpit', 'roster', 'compare', 'departure', 'wakeup', 'weather', 'presentation', 'mycar',
   'radar', 'alerts', 'regulation', 'load', 'emergency', 'import', 'iflight', 'bids', 'map', 'database', 'crewlocker',
-  'perdiem', 'salary', 'crew', 'concierge', 'hotels', 'gyms', 'routine', 'community', 'life',
+  'perdiem', 'salary', 'currency', 'crew', 'concierge', 'hotels', 'gyms', 'routine', 'community', 'life',
   'reports', 'calendar', 'exports', 'plans', 'settings', 'manual', 'guardian', 'support', 'crewlock',
   'updates', 'maintenance', 'admin',
 ]) assert.match(preparedMenu, new RegExp(`\\['${route}',`), `menu index must keep ${route} discoverable`);
@@ -44,9 +44,14 @@ for (const route of [
 assert.match(preparedMenu, /const groups: Array/);
 assert.match(preparedMenu, /CrewCheckMark className="cz-menu-brandmark"/);
 assert.match(preparedMenu, /Buscar função/);
-assert.match(preparedMenu, />Favoritos</);
-assert.match(preparedMenu, /filteredGroups\.map/);
+assert.match(preparedMenu, />Fixados e mais usados</);
 assert.match(preparedMenu, /aria-pressed=\{favorite\}/);
+assert.match(preparedMenu, /Editar favoritos/);
+assert.match(preparedMenu, /catalogGroups\.map/, 'catalog must render the favorites-excluded groups');
+assert.match(preparedMenu, /\{editingFavorites && <button type="button" className="cc-menu-favorite"/, 'stars only render in edit mode');
+assert.match(preparedMenu, /menuQuery\s*\?\s*filteredGroups/, 'search must list every destination once');
+assert.match(preparedMenu, /!visibleShortcutIds\.includes\(viewId\)/, 'catalog must not repeat fixed or frequently used shortcuts');
+assert.doesNotMatch(preparedMenu, /\{filteredGroups\.map/, 'catalog must not bypass the favorites exclusion');
 assert.match(preparedMenu, /storedUser\?\.id \|\| null/);
 assert.match(preparedMenu, /data-menu-label=\{label\}/);
 assert.match(preparedMenu, /data-menu-group=\{group\.title\}/);

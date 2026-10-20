@@ -1,9 +1,23 @@
+importScripts('/crewcheck-push-offline.js');
+const CREWCHECK_UPDATE_BUILD_ID='__CREWCHECK_UPDATE_BUILD_ID__';
+const CREWCHECK_UPDATE_ENTRY='__CREWCHECK_UPDATE_ENTRY__';
+const CREWCHECK_UPDATE_ASSETS=[];
+const CREWCHECK_UPDATE_HTML_HASH='__CREWCHECK_UPDATE_HTML_HASH__';
+async function matchesBuildHtml(response){if(!response)return false;const bytes=await response.clone().arrayBuffer();const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(value=>value.toString(16).padStart(2,'0')).join('');return hash===CREWCHECK_UPDATE_HTML_HASH;}
+const UPDATE_READY_KEY='/__crewcheck_update_ready__';
 const CACHE_NAME = 'crewcheck-v14.3-offline-shell';
 const RUNTIME_CACHE = 'crewcheck-v14.3-offline-runtime';
 const SHARED_PDF_CACHE = 'crewcheck-pwa-shared-pdf-v1';
 const SHARED_PDF_ROUTE = '/__crewcheck_shared_pdf/';
 const SHARED_PDF_TTL_MS = 30 * 60 * 1000;
 const SHARED_PDF_MAX_BYTES = 20 * 1024 * 1024;
+// Install and retirement share one origin-wide exclusive lock. Unsupported browsers
+// still install normally, but retain old caches rather than guess lifecycle safety.
+const BUILD_CACHE_LOCK = 'crewcheck-build-cache-lifecycle-v1';
+function withBuildCacheLock(action, options = {}) {
+  return self.navigator?.locks?.request
+    ? self.navigator.locks.request(BUILD_CACHE_LOCK, options, action) : action();
+}
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icons/crewcheck-icon-v2.png'];
 
 async function trimCache(cacheName, maxEntries = 160) {
@@ -26,12 +40,13 @@ async function precachePreparedShell() {
   const cache = await caches.open(CACHE_NAME);
   const indexResponse = await fetch('/', { cache: 'no-store' });
   if (!indexResponse.ok) throw new Error(`CrewCheck shell unavailable (${indexResponse.status})`);
+  const html = await indexResponse.clone().text();
+  if(/^[a-f0-9]{20}$/.test(CREWCHECK_UPDATE_BUILD_ID)&&!(await matchesBuildHtml(indexResponse)))throw new Error('Announced worker build does not match served entry');
 
   await cache.put('/', indexResponse.clone());
   await cache.put('/index.html', indexResponse.clone());
 
-  const html = await indexResponse.text();
-  const urls = new Set(APP_SHELL);
+  const urls = new Set([...APP_SHELL,...CREWCHECK_UPDATE_ASSETS]);
   const assetPattern = /(?:src|href)=["']([^"']+)["']/g;
   let match;
   while ((match = assetPattern.exec(html))) {
@@ -41,11 +56,15 @@ async function precachePreparedShell() {
     urls.add(`${url.pathname}${url.search}`);
   }
 
-  await Promise.allSettled([...urls].map(async (url) => {
+  await Promise.all([...urls].map(async (url) => {
     if (url === '/' || url === '/index.html') return;
     const response = await fetch(url, { cache: 'no-store' });
-    if (response.ok) await cache.put(url, response.clone());
+    if(!response.ok)throw new Error('Incomplete update download');
+    if(/\.(?:m?js)(?:\?|$)/.test(url)&&!/(?:java|ecma)script/.test(response.headers.get('content-type')||''))throw new Error('Update script was not served');
+    if(/\.css(?:\?|$)/.test(url)&&!/(?:text\/css)/.test(response.headers.get('content-type')||''))throw new Error('Update stylesheet was not served');
+    await cache.put(url, response.clone());
   }));
+  await cache.put(UPDATE_READY_KEY,new Response(JSON.stringify({buildId:CREWCHECK_UPDATE_BUILD_ID,urls:[...urls]}),{headers:{'content-type':'application/json'}}));
 }
 
 async function cleanupSharedPdfs() {
@@ -116,25 +135,60 @@ async function receiveSharedPdf(request) {
 self.addEventListener('install', (event) => {
   // Do not call skipWaiting here. The client coordinator decides when an update
   // can activate without interrupting an active operational session.
-  event.waitUntil(precachePreparedShell());
+  event.waitUntil(withBuildCacheLock(precachePreparedShell));
 });
+
+// A closing window does not fire activate again. A fresh navigation provides
+// another opportunity, but only its brand-new resulting client may be excluded:
+// existing/hidden/uncontrolled documents can still need prior build chunks.
+async function cleanupRetiredBuildCaches(arrivingClientId = '') {
+  if (!self.navigator?.locks?.request || !self.serviceWorker
+      || self.registration.installing || self.registration.waiting) return false;
+  return withBuildCacheLock(async (lock) => {
+    if (!lock) return false;
+    // Object identity distinguishes this execution from a replacement using the
+    // same script URL. Pending workers pin all build caches, even before their
+    // first cache write. The lock prevents installation from writing between
+    // these checks and deletion, including a new install after enumeration.
+    const ownsRetirement = () => self.registration.active === self.serviceWorker
+      && ['activating','activated'].includes(self.serviceWorker.state)
+      && !self.registration.installing && !self.registration.waiting;
+    const hasExistingPages = async () => (await self.clients.matchAll({type:'window',includeUncontrolled:true}))
+      .some(page => page.id !== arrivingClientId);
+    if (!ownsRetirement() || await hasExistingPages()) return false;
+    const names = await caches.keys();
+    for (const name of names) {
+      if (!/^crewcheck-v[\d.]+-(?:offline-)?(?:shell|runtime)(?:-[a-zA-Z0-9]+)*$/.test(name)
+          || [CACHE_NAME,RUNTIME_CACHE,SHARED_PDF_CACHE].includes(name)) continue;
+      if (await hasExistingPages() || !ownsRetirement()) return false;
+      await caches.delete(name);
+    }
+    return true;
+  }, {ifAvailable:true});
+}
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
-    const names = await caches.keys();
-    await Promise.all(
-      names
-        .filter((name) => /crewcheck|workbox|vite/i.test(name) && ![CACHE_NAME, RUNTIME_CACHE, SHARED_PDF_CACHE].includes(name))
-        .map((name) => caches.delete(name)),
-    );
-    await cleanupSharedPdfs();
+    await cleanupRetiredBuildCaches();
+    const openPages=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+    if(openPages.length===0)await cleanupSharedPdfs();
     await self.clients.claim();
   })().catch(() => self.clients.claim()));
 });
 
 self.addEventListener('message', (event) => {
   const type = typeof event.data === 'string' ? event.data : event.data?.type;
-  if (type === 'SKIP_WAITING') event.waitUntil(self.skipWaiting());
+  // Old hidden/idle coordinators must not bypass the new explicit-consent protocol.
+  if(type==='CREWCHECK_UPDATE_INFO'||type==='CREWCHECK_ACTIVATE_UPDATE')event.waitUntil((async()=>{
+    let own=false;try{own=event.source?.type==='window'&&new URL(event.source.url).origin===self.location.origin;}catch{}
+    if(!own)return;
+    const cache=await caches.open(CACHE_NAME),response=await cache.match(UPDATE_READY_KEY),ready=response?await response.json().catch(()=>null):null;
+    const valid=/^[a-f0-9]{20}$/.test(CREWCHECK_UPDATE_BUILD_ID)&&ready?.buildId===CREWCHECK_UPDATE_BUILD_ID&&Array.isArray(ready.urls)&&(await matchesBuildHtml(await cache.match('/index.html')))&&(await Promise.all(ready.urls.map(url=>cache.match(url)))).every(Boolean);
+    if(type==='CREWCHECK_UPDATE_INFO'){event.ports[0]?.postMessage({ready:valid,buildId:CREWCHECK_UPDATE_BUILD_ID});return;}
+    const accepted=valid&&event.data.buildId===CREWCHECK_UPDATE_BUILD_ID;
+    event.ports[0]?.postMessage({accepted,buildId:CREWCHECK_UPDATE_BUILD_ID});
+    if(accepted)await self.skipWaiting();
+  })());
   if (type === 'CLEAR_CREWCHECK_CACHE') {
     event.waitUntil(
       caches.keys()
@@ -188,9 +242,12 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
+      const arrivingClientId = !event.clientId && typeof event.resultingClientId === 'string'
+        ? event.resultingClientId : '';
+      await cleanupRetiredBuildCaches(arrivingClientId).catch(() => undefined);
       try {
         const response = await fetch(request, { cache: 'no-store' });
-        if (response.ok) {
+        if (response.ok && /^[a-f0-9]{20}$/.test(CREWCHECK_UPDATE_BUILD_ID) && (await matchesBuildHtml(response))) {
           const cache = await caches.open(CACHE_NAME);
           await cache.put('/', response.clone());
           await cache.put('/index.html', response.clone());
@@ -207,7 +264,8 @@ self.addEventListener('fetch', (event) => {
   event.respondWith((async () => {
     const shell = await caches.open(CACHE_NAME);
     const runtime = await caches.open(RUNTIME_CACHE);
-    const cached = (await shell.match(request)) || (await runtime.match(request));
+    // Preserve old chunks used by still-open forms/tabs after explicit activation.
+    const cached = (await shell.match(request)) || (await runtime.match(request)) || (await caches.match(request));
     if (cached) return cached;
 
     try {

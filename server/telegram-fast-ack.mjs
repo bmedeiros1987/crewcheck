@@ -1,8 +1,16 @@
+import { handleNotificationDiagnostic } from './notification-diagnostic.mjs';
+import { runCrewCheckPushQueue } from './web-push/bidsProducer.mjs';
+import { handleSimulatedWorker } from './free-day-simulated-worker.mjs';
+import { handlePersonalConsent } from './free-day-personal-consent.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { URL } from 'node:url';
 import { dbPool, requestToken, safeEmail, verifyJwt } from './v139/common.mjs';
 import { sendTelegram, callTelegram } from './v139/delivery.mjs';
+import { handleFreeDayHeld } from './free-day-held.mjs';
+import { handleVoluntarySources } from './free-day-sources.mjs';
+import { handleSourceQueue } from './free-day-source-queue.mjs';
+import { safeScheduleJob, safeCancelJob, dispatchClaimedJob } from './notification-job-safety.mjs';
 import { buildInfobipTtsRequest, infobipPublicStatus } from './v1396/infobip.mjs';
 
 const originalCreateServer = http.createServer.bind(http);
@@ -10,6 +18,7 @@ const RUNTIME_VERSION = '14.1.7-operational-intelligence';
 const INTERVAL_MS = Math.max(15_000, Number(process.env.CREWCHECK_NOTIFICATION_INTERVAL_MS || 30_000));
 let schedulerRunning = false;
 let lastCycle = null;
+let lastHeartbeatWrite = null;
 let lastWebhookCheck = null;
 let lastCommuteCycle = null;
 
@@ -43,7 +52,7 @@ function identity(req) {
   try {
     const payload = verifyJwt(requestToken(req));
     const email = safeEmail(payload?.email);
-    return payload && email ? { email, admin: Boolean(payload.admin) } : null;
+    return payload && email && payload.iss === 'crewcheck' && payload.aud === 'crewcheck-web' && payload.sub && Number.isFinite(Number(payload.exp)) && Number(payload.exp) > Date.now() / 1000 && !payload.mustChangePassword ? { email, id: payload.sub, admin: Boolean(payload.admin) } : null;
   } catch { return null; }
 }
 
@@ -128,27 +137,36 @@ async function ensureSchedulerHeartbeatTable(db) {
 const SCHEDULER_STALE_MS = Math.max(5 * 60_000, INTERVAL_MS * 6);
 function schedulerHealthState(heartbeat, now = Date.now()) {
   if (!heartbeat?.last_started_at) return 'never_run';
-  const startedAt = new Date(heartbeat.last_started_at).getTime();
-  const finishedAt = heartbeat.last_finished_at ? new Date(heartbeat.last_finished_at).getTime() : NaN;
+  const startedAt = heartbeat.started_epoch != null ? Number(heartbeat.started_epoch) : new Date(heartbeat.last_started_at).getTime();
+  const finishedAt = heartbeat.finished_epoch != null ? Number(heartbeat.finished_epoch) : heartbeat.last_finished_at ? new Date(heartbeat.last_finished_at).getTime() : NaN;
   const inProgress = !Number.isFinite(finishedAt) || finishedAt < startedAt;
+  if (!Number.isFinite(startedAt)) return 'unknown';
+  if (!inProgress && now - finishedAt > SCHEDULER_STALE_MS) return 'stale';
   if (inProgress) return Number.isFinite(startedAt) && now - startedAt > SCHEDULER_STALE_MS ? 'stuck' : 'running';
   return heartbeat.last_status === 'error' ? 'last_failure' : 'completed';
 }
 async function recordSchedulerHeartbeat(db, patch) {
   try {
     await ensureSchedulerHeartbeatTable(db);
-    const [rows] = await db.query("SELECT * FROM crewcheck_scheduler_heartbeat WHERE scheduler_key='notifications' LIMIT 1");
-    const current = rows[0] || {};
-    const next = {
-      last_started_at: patch.lastStartedAt !== undefined ? patch.lastStartedAt : current.last_started_at,
-      last_finished_at: patch.lastFinishedAt !== undefined ? patch.lastFinishedAt : current.last_finished_at,
-      last_status: patch.lastStatus !== undefined ? patch.lastStatus : current.last_status,
-      last_summary_json: patch.lastSummary !== undefined ? JSON.stringify(patch.lastSummary) : current.last_summary_json,
-    };
-    await db.query(`INSERT INTO crewcheck_scheduler_heartbeat (scheduler_key,last_started_at,last_finished_at,last_status,last_summary_json) VALUES ('notifications',?,?,?,?)
-      ON DUPLICATE KEY UPDATE last_started_at=VALUES(last_started_at),last_finished_at=VALUES(last_finished_at),last_status=VALUES(last_status),last_summary_json=VALUES(last_summary_json)`,
-      [next.last_started_at, next.last_finished_at, next.last_status, next.last_summary_json]);
-  } catch {}
+    // ISO strings with a Z suffix are not valid strict MySQL DATETIME parameters.
+    // Convert zoned instants in SQL, using the session's timezone on both reads/writes.
+    const instant = value => value == null ? null : new Date(value).getTime();
+    const started = instant(patch.lastStartedAt), finished = instant(patch.lastFinishedAt);
+    if ((started != null && !Number.isFinite(started)) || (finished != null && !Number.isFinite(finished))) throw Object.assign(new Error('Invalid heartbeat instant'), { code: 'INVALID_INSTANT' });
+    await db.query(`INSERT INTO crewcheck_scheduler_heartbeat (scheduler_key,last_started_at,last_finished_at,last_status,last_summary_json)
+      VALUES ('notifications',FROM_UNIXTIME(?/1000),FROM_UNIXTIME(?/1000),?,?)
+      ON DUPLICATE KEY UPDATE
+        last_started_at=IF(?,VALUES(last_started_at),last_started_at),
+        last_finished_at=IF(?,VALUES(last_finished_at),last_finished_at),
+        last_status=IF(?,VALUES(last_status),last_status),
+        last_summary_json=IF(?,VALUES(last_summary_json),last_summary_json)`,
+      [started, finished, patch.lastStatus ?? null, patch.lastSummary === undefined ? null : JSON.stringify(patch.lastSummary),
+        patch.lastStartedAt !== undefined, patch.lastFinishedAt !== undefined, patch.lastStatus !== undefined, patch.lastSummary !== undefined]);
+    lastHeartbeatWrite = { ok: true, checkedAt: new Date().toISOString() };
+  } catch (error) {
+    // Report only the error code, never SQL, parameters, recipient or credentials.
+    lastHeartbeatWrite = { ok: false, code: /^[A-Z0-9_]+$/.test(String(error?.code || '')) ? error.code : 'WRITE_FAILED', checkedAt: new Date().toISOString() };
+  }
 }
 
 async function sendInfobipPhone(phone, message) {
@@ -348,24 +366,18 @@ async function runSchedulerCycle() {
     if (!db) throw new Error('Banco indisponível para notificações.');
     await recordSchedulerHeartbeat(db, { lastStartedAt: summary.startedAt, lastFinishedAt: null });
     await ensureNotificationTable(db);
-    await db.query("UPDATE crewcheck_notification_jobs SET status='pending',locked_at=NULL WHERE status='processing' AND locked_at < DATE_SUB(NOW(3), INTERVAL 5 MINUTE)");
-    const [rows] = await db.query("SELECT * FROM crewcheck_notification_jobs WHERE status='pending' AND scheduled_at <= NOW(3) AND scheduled_at >= DATE_SUB(NOW(3), INTERVAL 24 HOUR) ORDER BY scheduled_at ASC LIMIT 50");
+    await db.query("UPDATE crewcheck_notification_jobs SET status='uncertain',locked_at=NULL WHERE status IN ('processing','dispatching') AND locked_at < DATE_SUB(NOW(3), INTERVAL 5 MINUTE)");
+    await db.query("UPDATE crewcheck_notification_jobs SET status='expired' WHERE status='pending' AND scheduled_at < DATE_SUB(NOW(3), INTERVAL 120 SECOND)");
+    const [rows] = await db.query("SELECT * FROM crewcheck_notification_jobs WHERE status='pending' AND scheduled_at <= NOW(3) AND scheduled_at >= DATE_SUB(NOW(3), INTERVAL 120 SECOND) ORDER BY scheduled_at ASC LIMIT 50");
     summary.selected = rows.length;
     for (const job of rows) {
       const [claim] = await db.query("UPDATE crewcheck_notification_jobs SET status='processing',locked_at=NOW(3),attempts=attempts+1 WHERE id=? AND status='pending'", [job.id]);
       if (!claim.affectedRows) continue;
-      let result;
-      try { result = await deliverJob(job); }
-      catch (error) { result = { ok: false, raw: String(error?.message || error) }; }
-      if (result?.ok) {
-        summary.sent += 1;
-        await db.query("UPDATE crewcheck_notification_jobs SET status='sent',sent_at=NOW(3),last_error=NULL WHERE id=?", [job.id]);
-      } else {
-        summary.failed += 1;
-        const retry = Number(job.attempts || 0) + 1 < 3;
-        await db.query("UPDATE crewcheck_notification_jobs SET status=?,locked_at=NULL,last_error=? WHERE id=?", [retry ? 'pending' : 'failed', String(result?.raw || result?.message || 'Falha no envio').slice(0, 500), job.id]);
-      }
+      const outcome = await dispatchClaimedJob(db, job, { deliver: deliverJob, findLink: linkedTelegramRecord });
+      if (outcome.accepted) summary.sent += 1;
+      else if (!['skipped', 'pending'].includes(outcome.status)) summary.failed += 1;
     }
+    summary.crewCheckPush = await runCrewCheckPushQueue(db);
     summary.commute = await runCommuteMonitorCycle(db);
   } catch (error) {
     summary.error = String(error?.message || error).slice(0, 500);
@@ -403,26 +415,7 @@ async function repairTelegramWebhook() {
 }
 
 async function scheduleJob(req, res) {
-  const user = identity(req);
-  if (!user) return sendJson(res, 401, { ok: false, message: 'Sessão expirada.' });
-  const body = await readJson(req);
-  const scheduledAt = new Date(body.scheduledAt || body.scheduled_at || '');
-  if (Number.isNaN(scheduledAt.getTime())) return sendJson(res, 400, { ok: false, message: 'Informe data e hora válidas.' });
-  if (scheduledAt.getTime() < Date.now() - 60_000) return sendJson(res, 400, { ok: false, message: 'O horário do despertador já passou.' });
-  const channel = String(body.channel || 'telegram').toLowerCase();
-  const jobKey = String(body.jobKey || body.job_key || `manual:${scheduledAt.toISOString()}:${channel}`).slice(0, 220);
-  const message = String(body.message || 'Despertador CrewCheck: está na hora de iniciar sua preparação para a próxima programação.').trim().slice(0, 1000);
-  const db = await dbPool();
-  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
-  await ensureNotificationTable(db);
-  const telegramLink = await linkedTelegramRecord(db, user.email);
-  const chatId = String(body.chatId || telegramLink?.chatId || '');
-  const telegramUsername = String(body.telegramUsername || telegramLink?.username || '').replace(/^@/, '');
-  await db.query(`INSERT INTO crewcheck_notification_jobs (email,job_key,scheduled_at,channel,chat_id,telegram_username,phone,message,status)
-    VALUES(?,?,?,?,?,?,?,?, 'pending')
-    ON DUPLICATE KEY UPDATE scheduled_at=VALUES(scheduled_at),channel=VALUES(channel),chat_id=VALUES(chat_id),telegram_username=VALUES(telegram_username),phone=VALUES(phone),message=VALUES(message),status='pending',attempts=0,locked_at=NULL,sent_at=NULL,last_error=NULL`,
-    [user.email, jobKey, scheduledAt, channel, chatId, telegramUsername, String(body.phone || ''), message]);
-  return sendJson(res, 200, { ok: true, scheduledAt: scheduledAt.toISOString(), channel, jobKey, telegramLinked: Boolean(chatId || telegramUsername), message: 'Despertador agendado no servidor.' });
+  return safeScheduleJob({ req, res, identity, readJson, dbPool, ensureNotificationTable, linkedTelegramRecord, sendJson });
 }
 
 async function listJobs(req, res) {
@@ -430,19 +423,22 @@ async function listJobs(req, res) {
   if (!user) return sendJson(res, 401, { ok: false, message: 'Sessão expirada.' });
   const db = await dbPool();
   if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
+  const [owners] = await db.query('SELECT public_id FROM crewcheck_platform_profiles WHERE email=? LIMIT 1', [user.email]);
+  if (String(owners[0]?.public_id || '') !== String(user.id)) return sendJson(res, 401, { ok: false, message: 'Sessão da conta não é mais válida.' });
   await ensureNotificationTable(db);
-  const [rows] = await db.query('SELECT id,job_key AS jobKey,scheduled_at AS scheduledAt,channel,status,attempts,sent_at AS sentAt,last_error AS lastError FROM crewcheck_notification_jobs WHERE email=? ORDER BY scheduled_at DESC LIMIT 100', [user.email]);
-  return sendJson(res, 200, { ok: true, jobs: rows });
+  const [rows] = await db.query('SELECT id,job_key AS jobKey,ROUND(UNIX_TIMESTAMP(scheduled_at)*1000) AS scheduledEpoch,channel,status,attempts,ROUND(UNIX_TIMESTAMP(sent_at)*1000) AS sentEpoch,last_error AS lastError FROM crewcheck_notification_jobs WHERE email=? ORDER BY scheduled_at DESC LIMIT 100', [user.email]);
+  const linked = await linkedTelegramRecord(db, user.email);
+  const telegramConfigured = Boolean(String(process.env.TELEGRAM_BOT_TOKEN || process.env.CREWCHECK_TELEGRAM_BOT_TOKEN || '').trim());
+  const telegramLinked = Boolean(linked?.chatId && safeEmail(linked.email) === user.email);
+  const jobs = rows.map(({ scheduledEpoch, sentEpoch, ...job }) => ({ ...job,
+    scheduledAt: scheduledEpoch == null ? null : new Date(Number(scheduledEpoch)).toISOString(),
+    sentAt: sentEpoch == null ? null : new Date(Number(sentEpoch)).toISOString(),
+  }));
+  return sendJson(res, 200, { ok: true, jobs, readiness: { telegramConfigured, telegramLinked, remoteAndroidPush: false, webPush: false } });
 }
 
 async function cancelJob(req, res) {
-  const user = identity(req);
-  if (!user) return sendJson(res, 401, { ok: false, message: 'Sessão expirada.' });
-  const body = await readJson(req);
-  const db = await dbPool();
-  if (!db) return sendJson(res, 503, { ok: false, message: 'Banco indisponível.' });
-  const [result] = await db.query("UPDATE crewcheck_notification_jobs SET status='cancelled',locked_at=NULL WHERE email=? AND (id=? OR job_key=?) AND status IN ('pending','processing')", [user.email, Number(body.id || 0), String(body.jobKey || '')]);
-  return sendJson(res, 200, { ok: true, cancelled: result.affectedRows });
+  return safeCancelJob({ req, res, identity, readJson, dbPool, sendJson });
 }
 
 async function registerCommuteMonitor(req, res) {
@@ -514,7 +510,7 @@ async function runtimeHealth(_req, res) {
       await ensureCommuteTables(db);
       database = true;
       await ensureSchedulerHeartbeatTable(db);
-      const [rows] = await db.query("SELECT * FROM crewcheck_scheduler_heartbeat WHERE scheduler_key='notifications' LIMIT 1");
+      const [rows] = await db.query("SELECT *,ROUND(UNIX_TIMESTAMP(last_started_at)*1000) AS started_epoch,ROUND(UNIX_TIMESTAMP(last_finished_at)*1000) AS finished_epoch FROM crewcheck_scheduler_heartbeat WHERE scheduler_key='notifications' LIMIT 1");
       heartbeat = rows[0] || null;
     }
   } catch {}
@@ -530,6 +526,7 @@ async function runtimeHealth(_req, res) {
       persistedLastStartedAt: heartbeat?.last_started_at || null,
       persistedLastFinishedAt: heartbeat?.last_finished_at || null,
       persistedLastStatus: heartbeat?.last_status || null,
+      persistence: lastHeartbeatWrite,
     },
     commute: { enabled: true, lastCycle: lastCommuteCycle, learningWindowDays: 90 },
     telegram: lastWebhookCheck,
@@ -546,6 +543,12 @@ http.createServer = function patchedCreateServer(...args) {
     const path = pathname(req);
     try {
       if (path === '/api/notifications/runtime-health') return runtimeHealth(req, res);
+      if (path === '/api/notifications/diagnostic') return await handleNotificationDiagnostic(req, res, { schedulerHealthState });
+      if (path === '/api/notifications/free-day-simulated-worker') return handleSimulatedWorker(req, res, { identity, readJson, dbPool, sendJson });
+      if (path === '/api/notifications/free-day-personal-consent') return handlePersonalConsent(req, res, { identity, readJson, dbPool, sendJson });
+      if (path === '/api/notifications/free-day-source-queue') return handleSourceQueue(req, res, { identity, readJson, dbPool, sendJson, configured: Boolean(String(process.env.TELEGRAM_BOT_TOKEN || process.env.CREWCHECK_TELEGRAM_BOT_TOKEN || '').trim()) });
+      if (path === '/api/notifications/free-day-sources') return handleVoluntarySources(req, res, { identity, readJson, dbPool, sendJson });
+      if (path === '/api/notifications/free-day-held') return handleFreeDayHeld(req, res, { identity, readJson, dbPool, sendJson, configured: Boolean(String(process.env.TELEGRAM_BOT_TOKEN || process.env.CREWCHECK_TELEGRAM_BOT_TOKEN || '').trim()) });
       if (path === '/api/alarm/schedule' && req.method === 'POST') return scheduleJob(req, res);
       if (path === '/api/alarm/scheduled' && req.method === 'GET') return listJobs(req, res);
       if (path === '/api/alarm/cancel' && req.method === 'POST') return cancelJob(req, res);

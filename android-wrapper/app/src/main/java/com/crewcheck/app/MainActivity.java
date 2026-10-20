@@ -77,6 +77,7 @@ public class MainActivity extends Activity {
 
     private FrameLayout rootLayout;
     private WebView webView;
+    private StayAlarmHostAndroid stayAlarmHost;
     private WebView portalWebView;
     private View portalContainer;
     private TextView portalStatusText;
@@ -149,6 +150,7 @@ public class MainActivity extends Activity {
         rootLayout.addView(webView);
 
         configureWebView(webView, false);
+        stayAlarmHost = StayAlarmHostAndroid.install(this, webView);
         webView.addJavascriptInterface(new CrewCheckIFlightBridge(), "AndroidCrewCheckIFlight");
         webView.addJavascriptInterface(new CrewCheckNativeBridge(), "AndroidCrewCheckNative");
         billingBridge = new CrewCheckBillingBridge(this, webView);
@@ -156,6 +158,10 @@ public class MainActivity extends Activity {
         registerWatchSyncRequestReceiver();
 
         webView.setWebViewClient(new WebViewClient() {
+            @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
+                super.onPageStarted(view, url, icon);
+                if (stayAlarmHost != null) stayAlarmHost.navigationStarted();
+            }
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 if (request != null && request.getUrl() != null) {
@@ -232,6 +238,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        // OS settings can change while the WebView remains mounted and unfocused.
+        dispatchCrewCheckPermissionStatus();
         resumeLifeCompanionMigrationIfNeeded();
         syncLifeCompanionToCrewCheckAndWatch("resume-cached");
         requestLifeCompanionRefresh();
@@ -336,7 +344,7 @@ public class MainActivity extends Activity {
         try {
             NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (manager == null) return;
-            NotificationChannel channel = new NotificationChannel(NOTIFICATION_CHANNEL_ID, "Alertas CrewCheck", NotificationManager.IMPORTANCE_DEFAULT);
+            NotificationChannel channel = new NotificationChannel(NOTIFICATION_CHANNEL_ID, "Alertas CrewCheck", NotificationManager.IMPORTANCE_HIGH);
             channel.setDescription("Escala, saída inteligente, calendário e lembretes do CrewCheck.");
             manager.createNotificationChannel(channel);
         } catch (Exception ignored) {}
@@ -373,6 +381,7 @@ public class MainActivity extends Activity {
                     ? new Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
                     : new Notification.Builder(this);
             builder.setContentTitle(title == null || title.trim().isEmpty() ? "CrewCheck" : title)
+                    .setVisibility(Notification.VISIBILITY_PRIVATE)
                     .setContentText(body == null ? "" : body)
                     .setSmallIcon(android.R.drawable.ic_dialog_info)
                     .setContentIntent(pendingIntent)
@@ -546,39 +555,51 @@ public class MainActivity extends Activity {
         try {
             boolean loc = hasCrewCheckLocationPermission();
             boolean notif = hasCrewCheckNotificationPermission();
+            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            boolean appEnabled = notificationManager != null && (Build.VERSION.SDK_INT < Build.VERSION_CODES.N || notificationManager.areNotificationsEnabled());
+            Boolean channelEnabled = null;
+            if (notificationManager != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationChannel channel = notificationManager.getNotificationChannel(NOTIFICATION_CHANNEL_ID);
+                if (channel != null) channelEnabled = channel.getImportance() != NotificationManager.IMPORTANCE_NONE;
+            }
             boolean unrestricted = isCrewCheckBatteryUnrestricted();
-            return "{\"location\":" + loc + ",\"notifications\":" + notif + ",\"background\":" + unrestricted + ",\"batteryUnrestricted\":" + unrestricted + "}";
+            return "{\"location\":" + loc + ",\"notifications\":" + notif + ",\"notificationAppEnabled\":" + appEnabled + ",\"notificationChannelEnabled\":" + channelEnabled + ",\"background\":" + unrestricted + ",\"batteryUnrestricted\":" + unrestricted + "}";
         } catch (Exception ex) {
             return "{\"location\":false,\"notifications\":false,\"background\":false,\"batteryUnrestricted\":false}";
         }
     }
 
-    private void scheduleCrewCheckNotification(String title, String body, long epochMillis) {
+    private boolean scheduleCrewCheckNotification(String title, String body, long epochMillis) {
         try {
-            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                requestNotificationPermissionIfNeeded();
-                return;
-            }
+            if (epochMillis <= System.currentTimeMillis() || !hasCrewCheckNotificationPermission()) return false;
             ensureCrewCheckNotificationChannel();
-            Intent intent = new Intent(this, CrewCheckNotificationReceiver.class);
-            intent.putExtra("title", title == null || title.trim().isEmpty() ? "CrewCheck" : title);
-            intent.putExtra("body", body == null ? "" : body);
-            int requestCode = (int)(Math.abs((String.valueOf(title) + String.valueOf(body) + epochMillis).hashCode()) % 100000);
-            PendingIntent pendingIntent = PendingIntent.getBroadcast(this, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-            android.app.AlarmManager alarm = (android.app.AlarmManager) getSystemService(Context.ALARM_SERVICE);
-            long when = Math.max(System.currentTimeMillis() + 1000L, epochMillis);
-            if (alarm == null) {
-                showCrewCheckNotification(title, body);
-                return;
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarm.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
-            } else {
-                alarm.set(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
-            }
-        } catch (Exception ex) {
-            showCrewCheckNotification(title, body);
-        }
+            String key = NotificationIdentity.key(title, body, epochMillis);
+            NotificationLedger ledger = new NotificationLedgerAndroid(this).ledger();
+            return ledger.schedule(key, epochMillis, epoch -> {
+                Intent intent = NotificationLedgerAndroid.envelope(this, key);
+                intent.putExtra("notificationKey", key);
+                intent.putExtra("notificationEpoch", epoch);
+                intent.putExtra("title", title == null || title.trim().isEmpty() ? "CrewCheck" : title);
+                intent.putExtra("body", body == null ? "" : body);
+                intent.putExtra("scheduledAt", epochMillis);
+                PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                android.app.AlarmManager alarm = (android.app.AlarmManager) getSystemService(Context.ALARM_SERVICE);
+                long when = epochMillis;
+                if (alarm == null) throw new IllegalStateException("alarm unavailable");
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    // Reuse only an existing grant; never request special access here.
+                    if (Build.VERSION.SDK_INT < 31 || alarm.canScheduleExactAlarms()) {
+                        try {
+                            alarm.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
+                            return;
+                        } catch (SecurityException revoked) { /* grant may change after the check */ }
+                    }
+                    alarm.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
+                } else {
+                    alarm.setExact(android.app.AlarmManager.RTC_WAKEUP, when, pendingIntent);
+                }
+            });
+        } catch (Exception ignored) { return false; }
     }
 
     private boolean isExternalSupportUrl(String url) {
@@ -1193,13 +1214,19 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public boolean setNotificationCancellationScope(final String accountHint) {
+            NotificationLedger ledger = new NotificationLedgerAndroid(MainActivity.this).ledger();
+            if (accountHint != null && accountHint.length() > 512) { ledger.scope(""); return false; }
+            return ledger.scope(accountHint);
+        }
+
+        @JavascriptInterface
         public boolean scheduleNotification(final String title, final String body, final String epochMillis) {
-            runOnUiThread(() -> {
-                long when;
-                try { when = Long.parseLong(epochMillis); } catch (Exception ex) { when = System.currentTimeMillis() + 1000L; }
-                scheduleCrewCheckNotification(title, body, when);
-            });
-            return true;
+            final long when;
+            try { when = Long.parseLong(epochMillis); } catch (Exception ex) { return false; }
+            if (when <= System.currentTimeMillis() || !hasCrewCheckNotificationPermission()) return false;
+            // AlarmManager is callable on the bridge thread; report OS acceptance, not UI enqueue.
+            return scheduleCrewCheckNotification(title, body, when);
         }
 
         @JavascriptInterface
@@ -2719,6 +2746,7 @@ try{
     @Override
     protected void onDestroy() {
         closePortalOnly();
+        if (stayAlarmHost != null) { stayAlarmHost.close(); stayAlarmHost = null; }
         if (billingBridge != null) {
             billingBridge.destroy();
             billingBridge = null;

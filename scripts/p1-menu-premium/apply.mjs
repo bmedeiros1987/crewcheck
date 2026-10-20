@@ -22,11 +22,11 @@ const GROUPS = [
   { title: 'Hoje', views: ['cockpit', 'roster', 'compare'] },
   { title: 'Preparação', views: ['departure', 'wakeup', 'presentation', 'weather', 'mycar'] },
   { title: 'Em operação', views: ['radar', 'alerts', 'regulation', 'load', 'emergency'] },
-  { title: 'Escala e planejamento', views: ['import', 'iflight', 'bids', 'map', 'database'] },
-  { title: 'Financeiro', views: ['perdiem', 'salary', 'crew'] },
   { title: 'Rotina e apoio', views: ['routine', 'life', 'hotels', 'gyms', 'concierge', 'community'] },
+  { title: 'Escala e planejamento', views: ['import', 'iflight', 'bids', 'map', 'database'] },
+  { title: 'Financeiro', views: ['perdiem', 'salary', 'currency', 'crew'] },
   { title: 'Documentos', views: ['crewlocker', 'crewlock', 'reports', 'calendar', 'exports'] },
-  { title: 'Conta, ajuda e segurança', views: ['settings', 'plans', 'guardian', 'manual', 'support'] },
+  { title: 'Conta, ajuda e segurança', views: ['notifications', 'guardian', 'plans', 'settings', 'manual', 'support'] },
 ];
 
 const ADMIN_GROUP = { title: 'Administração', views: ['updates', 'maintenance', 'admin'] };
@@ -69,6 +69,7 @@ const OVERRIDES = {
 
   perdiem: ['Diárias', 'Previsão semanal e mensal', 'Banknote'],
   salary: ['Salário', 'Produção e adicionais', 'DollarSign'],
+  currency: ['Calculadora de moedas', 'Conversão de referência', 'Calculator'],
   crew: ['Tripulação e função', 'Composição e adicionais', 'Users'],
 
   routine: ['Rotina', 'Descanso, treino e preparação', 'Dumbbell'],
@@ -76,7 +77,7 @@ const OVERRIDES = {
   hotels: ['Hotéis', 'Pernoite e entorno', 'Hotel'],
   gyms: ['Locais próximos', 'Academias, saúde e serviços', 'MapPin'],
   concierge: ['Concierge', 'Perguntas sobre a escala', 'MessageCircle'],
-  community: ['Pessoas e visitantes', 'Compartilhamento e contatos', 'UserPlus'],
+  community: ['Pessoas e visitantes', 'Compartilhar escala, adicionar colegas e visitantes', 'UserPlus'],
 
   // Crew Locker e CrewLock são telas diferentes com nomes quase iguais, e estavam em
   // grupos distantes um do outro. Ficam lado a lado, e a descrição diz qual é qual.
@@ -86,9 +87,10 @@ const OVERRIDES = {
   calendar: ['Calendário', 'Google Calendar e ICS', 'CalendarCheck2'],
   exports: ['Exportar', 'PDF e compartilhamento', 'Share2'],
 
+  notifications: ['Notificações', 'O que, por onde e quando', 'Bell'],
   settings: ['Configurações', 'Perfil e preferências', 'Settings'],
   plans: ['Assinaturas', 'Plano e franquias', 'Crown'],
-  guardian: ['Guardian', 'QR de emergência protegido', 'QrCode'],
+  guardian: ['Saúde', 'QR de emergência protegido', 'QrCode'],
   manual: ['Manual CrewCheck', 'Ajuda e orientação de uso', 'BookOpen'],
   support: ['Suporte', 'Problemas e sugestões', 'LifeBuoy'],
 
@@ -99,7 +101,7 @@ const OVERRIDES = {
 
 /** Ícones que a política usa e que o Home.tsx ainda não importa. */
 const REQUIRED_ICONS = [
-  'BellRing', 'Gauge', 'Siren', 'CalendarPlus', 'History', 'Banknote', 'Users', 'UserPlus',
+  'Calculator', 'BellRing', 'Gauge', 'Siren', 'CalendarPlus', 'History', 'Banknote', 'Users', 'UserPlus',
   'FileLock2', 'LockKeyhole', 'BarChart3', 'CalendarCheck2', 'Crown', 'RefreshCw', 'Wrench', 'Shield',
 ];
 
@@ -142,7 +144,9 @@ function boundedSlice(source, open, closeToken, context) {
   return { start, end: end + closeToken.length };
 }
 
-const home = read(HOME);
+let home = read(HOME);
+// Register the account notification destination before canonical grouping.
+if(home.includes("from '@/components/notifications/NotificationCenter'")&&!home.includes("['notifications','Notificações'"))home=home.replace("['settings','Configurações','Perfil e preferências',Settings]", "['notifications','Notificações','O que, por onde e quando',Bell], ['settings','Configurações','Perfil e preferências',Settings]");
 if (home.includes(MARKER)) {
   console.log('[p1-menu-premium] Menu já normalizado; nada a fazer.');
 } else {
@@ -158,6 +162,7 @@ if (home.includes(MARKER)) {
   const adminLiteral = block.slice(adminRange.start, adminRange.end);
 
   const groupItems = parseItems(groupsLiteral);
+  groupItems.set('currency',{view:'currency',label:'Calculadora de moedas',desc:'Conversão de referência',icon:'Calculator'});
   const adminItems = parseItems(adminLiteral);
   if (!groupItems.size) throw new Error('[p1-menu-premium] Nenhum destino encontrado no menu.');
 
@@ -191,7 +196,7 @@ if (home.includes(MARKER)) {
   for (const view of before.keys()) {
     if (!after.has(view)) throw new Error(`[p1-menu-premium] Destino perdido na reorganização: ${view}`);
   }
-  if (after.size !== before.size) throw new Error('[p1-menu-premium] Contagem de destinos mudou na reorganização.');
+  if (!after.has('currency') || after.size !== before.size + (before.has('currency') ? 0 : 1)) throw new Error('[p1-menu-premium] Contagem de destinos mudou além da calculadora.');
 
   let nextHome = home.slice(0, menuStart) + nextBlock + home.slice(menuEnd);
 

@@ -1,0 +1,42 @@
+name: Weather observation alert policy
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server.mjs'
+      - 'server/weather/**'
+      - 'scripts/tests/critical-weather-observation.test.mjs'
+      - '.github/workflows/weather-observation-alert.yml'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
+jobs:
+  weather-observation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Test tracked monitor and pure policy without network
+        run: |
+          node --check server/weather/critical-observation.mjs
+          node --check server.mjs
+          node --test scripts/tests/critical-weather-observation.test.mjs
+          node scripts/regression-weather-monitor-heartbeat-health.mjs
+      - run: npm ci
+      - name: Prepare production sources
+        run: node scripts/v139/apply.mjs
+      - name: Verify prepared monitor retains policy and authorization
+        run: |
+          node --check server.mjs
+          node --test scripts/tests/critical-weather-observation.test.mjs
+          node scripts/regression-weather-monitor-heartbeat-health.mjs

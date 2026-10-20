@@ -5,6 +5,19 @@ on:
     branches: [main]
     paths:
       - 'client/src/components/pulse/**'
+      - 'client/src/components/alerts/**'
+      - 'client/src/components/v1391/RosterLaunchView.tsx'
+      - 'client/src/components/navigation/InternalHeaderFrame.tsx'
+      - 'client/src/lib/alert*.ts'
+      - 'client/src/lib/groundAlertDispositions.ts'
+      - 'client/src/lib/complianceAlertSemantics.ts'
+      - 'client/src/lib/navigationContext.ts'
+      - 'client/src/lib/nightAlertEvidence.ts'
+      - 'client/src/lib/i18n.ts'
+      - 'scripts/pulse-alert-experience/**'
+      - 'scripts/regression-pulse-alert-experience.mjs'
+      - 'scripts/regression-night-alert-evidence-browser.cjs'
+      - 'scripts/v139/apply.mjs'
       - 'client/src/pages/Home.tsx'
       - 'scripts/regression-p1-546-pulse-*.mjs'
       - '.github/workflows/pulse-live-slice2.yml'
@@ -36,7 +49,22 @@ jobs:
         run: node scripts/regression-p1-546-pulse-foundation.mjs
       - name: Validate Pulse live queue and notifications
         run: node scripts/regression-p1-546-pulse-live.mjs
+      - name: Install isolated browser test dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pulse-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/pulse-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Account review and integrated header browser regression
+        env:
+          PULSE_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/pulse-browser/package.json
+        run: |
+          node scripts/regression-pulse-alert-experience.mjs
+          node scripts/regression-pulse-alert-experience.mjs --case=header-close
+          node scripts/regression-pulse-alert-experience.mjs --case=mark-standard
       - name: TypeScript
         run: npx tsc --noEmit
       - name: Build web
         run: npx vite build
+      - name: Night alert evidence and contextual roster navigation (synthetic)
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/pulse-browser/package.json
+        run: node scripts/regression-night-alert-evidence-browser.cjs

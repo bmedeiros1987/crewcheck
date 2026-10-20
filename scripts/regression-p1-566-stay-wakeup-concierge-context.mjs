@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import ts from 'typescript';
 
 const read = (path) => fs.readFileSync(path, 'utf8');
 const home = read('client/src/pages/Home.tsx');
@@ -19,7 +20,12 @@ for (const marker of [
   "policy: 'persistent-until-return'",
 ]) assert.ok(home.includes(marker), `contexto de pernoite ausente: ${marker}`);
 
-assert.match(home, /openStaySurface\(event, 'wakeup'\)/, 'card de pernoite deve abrir Despertador com contexto');
+assert.match(home, /onClick=\{\(\) => openStayProgramEditor\(event\)\}[^>]*><Bell\/> Despertador/, 'card de pernoite deve abrir o editor atual de pernoite/despertador');
+const editorNavigation=read('client/src/lib/stayEditorNavigation.ts');
+assert.match(editorNavigation,/sourceView: 'hotels', targetView: 'presentation', stayId: event.id/, 'editor deve receber identidade explícita do pernoite');
+assert.match(editorNavigation,/binding.token|token !== binding.token/, 'contexto do editor continua vinculado à sessão');
+assert.match(editorNavigation,/returnView: 'hotels'/, 'editor mantém retorno para pernoite');
+assert.doesNotMatch(editorNavigation,/alarm\/schedule|fetch\(|room:|hotelName:|presentationTime:/, 'navegação não pode agendar ou transportar dados privados');
 assert.match(home, /openStaySurface\(event, 'concierge'\)/, 'card de pernoite deve abrir Concierge com contexto');
 assert.match(home, /<StayNavigationContext targetView="wakeup"\/>/, 'Despertador deve oferecer retorno contextual');
 assert.match(home, /<StayNavigationContext targetView="concierge"\/>/, 'Concierge deve oferecer retorno contextual');
@@ -39,7 +45,22 @@ const navigationRuntime = navigation.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\
 assert.doesNotMatch(navigationRuntime, /localStorage|sessionStorage/, 'Navigation Context deve continuar somente em memória');
 
 // Privacy: the context carries the stay id/date/airport, not room, hotel payload, tokens or raw roster.
-const contextCall = home.match(/setPendingNavigationContext\(\{[\s\S]*?policy: 'persistent-until-return',[\s\S]*?\}\);/)?.[0] || '';
+const ast = ts.createSourceFile('Home.tsx', home, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+let stayFunction;
+function findStay(node) {
+  if (ts.isFunctionDeclaration(node) && node.name?.text === 'openStaySurface') stayFunction = node;
+  ts.forEachChild(node, findStay);
+}
+findStay(ast);
+assert.ok(stayFunction, 'função de navegação do pernoite ausente');
+const calls = [];
+function collectContext(node) {
+  if (ts.isCallExpression(node) && node.expression.getText(ast) === 'setPendingNavigationContext') calls.push(node);
+  ts.forEachChild(node, collectContext);
+}
+collectContext(stayFunction);
+assert.equal(calls.length, 1, 'pernoite deve publicar exatamente um contexto');
+const contextCall = calls[0].getText(ast);
 assert.ok(contextCall, 'depósito de Navigation Context do pernoite não localizado');
 assert.doesNotMatch(contextCall, /room|hotelName|address|token|email|cpf|rawText|roster:/i, 'contexto de navegação não deve transportar dado sensível ou payload canônico');
 

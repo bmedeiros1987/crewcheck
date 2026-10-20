@@ -90,14 +90,16 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
         <div><h2>{loaded ? (careContext ? careTitle : (vacationEvent ? 'Férias na escala' : 'Sem programação operacional futura')) : 'Importe a escala oficial'}</h2><p>{loaded ? (careContext ? careContext.presentation.message : (vacationEvent ? 'Sua escala está carregada. O FlightDeck volta a destacar a próxima programação operacional quando houver.' : 'Sua escala está carregada, mas não há uma próxima programação operacional neste período.')) : 'O briefing aparecerá aqui com os dados reais da próxima programação.'}</p></div>
         <button onClick={() => loaded ? setView('roster') : onUpload()}>{loaded ? 'Ver escala' : 'Importar PDF'}</button>
       </article>
+      <HomeFinancialCard onNavigate={setView}/>
       <aside className="cc-flydeck-official-note"><ShieldCheck aria-hidden="true"/><p><strong>Fonte operacional</strong> O CrewCheck organiza dados importados e não substitui a escala oficial nem as comunicações da empresa. Em caso de divergência, prevalece a fonte oficial.</p></aside>
     </main></>;
   }
 
   const isFlight = event.kind === 'flight';
-  const gate = safe(radar?.gate || event.gate, 'A confirmar');
-  const terminal = safe(radar?.terminal || event.terminal, '');
-  const status = safe(radar?.status || event.status, 'Programado');
+  const operationalInfo = radarGateInfo(event, radar);
+  const gate = safe(operationalInfo.gate, 'Não confirmado');
+  const terminal = operationalInfo.gate ? safe(operationalInfo.terminal, '') : '';
+  const status = isFlight ? safe(operationalInfo.status, 'Não confirmado') : safe(event.status, 'Programação publicada');
   const route = isFlight ? `${safe(event.origin, '—')} → ${safe(event.destination, '—')}` : safe(city(event.origin), safe(event.origin, 'Local a confirmar'));
   const programTitle = isFlight ? safe(event.flightNumber, rosterEventTitle(event)) : rosterEventTitle(event);
   const countdown = flyDeckCountdownV14353(event, nowMs);
@@ -136,6 +138,8 @@ function Cockpit({ events, compliance, setView, onUpload, openMenu }: { events: 
         {alertCount > 0 ? <button className="warning" onClick={() => setView('alerts')}><AlertTriangle/> {alertCount} {alertCount === 1 ? 'alerta' : 'alertas'}</button> : null}
       </footer>
     </article>
+
+    <HomeFinancialCard onNavigate={setView}/>
 
     <OperationalDayTimeline events={events} onNavigate={(target) => setView(target as ZeroView)}/>
 

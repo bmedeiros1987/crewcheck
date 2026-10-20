@@ -1,0 +1,21 @@
+✔ exact natural Wellhub declaration keeps the plus tier across accepted spellings (7.226427ms)
+✔ plan words in gym names, questions, negation and other kinds of plans cannot update the preference (0.338127ms)
+✔ saved Basic is replaced by Silver+, survives reload, and remains distinct from the unit minimum (7.217822ms)
+✔ explicit unknown or malformed plan asks for clarification without falling back or saving (8.525099ms)
+✔ unknown access from the search contract is not formatted as included (3.315157ms)
+✔ wellhub gym names and unit tier text leave the persisted user plan untouched (2.526864ms)
+✔ real materializer upgrades the old import and is byte-idempotent on structural fixtures (394.072032ms)
+✔ natural explicit plan changes save the requested destination, including downgrades (35.557601ms)
+✔ unknown or incomplete explicit change requests clarify without saving or searching a fallback plan (11.549131ms)
+✔ negation, hypothetical, third-party and unrelated plans cannot change the saved Wellhub tier (25.723836ms)
+✔ a plan update is not confirmed when no profile or saved snapshot is available (5.181066ms)
+✔ real save functions cannot acknowledge success when storage fails or local and durable tiers disagree (12.882114ms)
+✔ read-back evidence must belong to the same trusted profile key (1.885725ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 530.045864

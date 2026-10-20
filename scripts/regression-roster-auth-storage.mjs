@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+const compile = source => ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+let blocked = false;
+const values = new Map([['crewcheck_auth_user', JSON.stringify({id:'synthetic-a'})], ['crewcheck_auth_token','synthetic-token']]);
+const localStorage = {getItem(key) { if(blocked) throw new DOMException('Synthetic storage denied','SecurityError'); return values.get(key) ?? null; }, setItem(key,value) { values.set(key,value); }};
+const auth = {}, helper = {}, bus = new EventTarget();
+class CustomEvent extends Event {}
+vm.runInNewContext(compile(fs.readFileSync('client/src/lib/authClient.ts','utf8')), {exports:auth, localStorage});
+vm.runInNewContext(compile(fs.readFileSync('client/src/lib/rosterStartup.ts','utf8')), {exports:helper, require: () => auth, localStorage, window:bus, CustomEvent, crypto:{randomUUID:()=> 'synthetic-intent'}});
+let finished = 0; bus.addEventListener('crewcheck:roster-choice-finished',()=>finished++);
+blocked = true;
+let denied; assert.doesNotThrow(()=> {denied=helper.beginRosterChoice();}, 'real auth getters must not escape blocked storage');
+assert.equal(denied(),false); denied.finish(); assert.equal(finished,0);
+blocked = false; assert.equal(denied(),false,'denied choice cannot resurrect when storage recovers');
+const valid = helper.beginRosterChoice(); assert.equal(valid(),true);
+blocked = true; assert.doesNotThrow(()=>assert.equal(valid(),false),'identity becoming unreadable invalidates existing choice'); valid.finish(); assert.equal(finished,0);
+blocked = false; values.delete('crewcheck_auth_token'); assert.equal(helper.beginRosterChoice()(),false,'missing token cannot authorize choice');
+values.set('crewcheck_auth_token','synthetic-token'); values.delete('crewcheck_auth_user'); assert.equal(helper.beginRosterChoice()(),false,'missing owner cannot authorize choice');
+values.set('crewcheck_auth_user',JSON.stringify({id:'synthetic-a'})); const current = helper.beginRosterChoice(); assert.equal(current(),true); current.finish(); assert.equal(finished,1);
+values.set('crewcheck_auth_user',JSON.stringify({id:'synthetic-b'})); assert.equal(current(),false);
+console.log('PASS real auth getters: blocked storage fails closed at creation and commit; recovery, missing identity, valid identity and account switch.');

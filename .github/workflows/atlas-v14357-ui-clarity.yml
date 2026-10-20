@@ -12,6 +12,7 @@ on:
       - 'scripts/regression-v14-3-57-ui-clarity.mjs'
       - 'scripts/regression-p1-548-dynamic-calendar.mjs'
       - 'scripts/regression-p1-atlas-1c-semantic-themes.mjs'
+      - 'scripts/regression-light-bottom-nav-signature.mjs'
       - 'server.mjs'
       - 'server/platform.mjs'
       - 'package.json'
@@ -27,6 +28,7 @@ on:
       - 'scripts/regression-v14-3-57-ui-clarity.mjs'
       - 'scripts/regression-p1-548-dynamic-calendar.mjs'
       - 'scripts/regression-p1-atlas-1c-semantic-themes.mjs'
+      - 'scripts/regression-light-bottom-nav-signature.mjs'
       - 'server.mjs'
       - 'server/platform.mjs'
       - 'package.json'
@@ -68,10 +70,14 @@ jobs:
         run: node scripts/regression-p1-548-dynamic-calendar.mjs 2>&1 | tee "$RUNNER_TEMP/v14357-dynamic-calendar.log"
       - name: Validate Atlas 1C semantic themes after prepare
         run: node scripts/regression-p1-atlas-1c-semantic-themes.mjs 2>&1 | tee "$RUNNER_TEMP/atlas-1c-semantic-themes.log"
+      - name: Validate light bottom navigation after prepare
+        run: node scripts/regression-light-bottom-nav-signature.mjs 2>&1 | tee "$RUNNER_TEMP/light-bottom-nav-signature.log"
       - name: Preserve Smart Departure airport handoff
         run: node scripts/regression-v14-3-47-smart-departure-operational-airport.mjs
       - name: Preserve Daniel and Bruno voices
         run: node scripts/regression-v14-3-48-elevenlabs-dual-voice.mjs
+      - name: Compile canonical Concierge server artifact
+        run: node scripts/p1-concierge-journey/compile.mjs
       - name: Test server
         run: node test-server.mjs
       - name: Upload diagnostics
@@ -86,5 +92,6 @@ jobs:
             ${{ runner.temp }}/v14357-ui-clarity.log
             ${{ runner.temp }}/v14357-dynamic-calendar.log
             ${{ runner.temp }}/atlas-1c-semantic-themes.log
+            ${{ runner.temp }}/light-bottom-nav-signature.log
           if-no-files-found: ignore
           retention-days: 7

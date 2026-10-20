@@ -1,0 +1,65 @@
+name: AIMS vertical roster
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/src/components/v1391/AimsRosterTable.tsx'
+      - 'client/src/components/v1391/aims-vertical.css'
+      - 'client/src/components/v1391/roster-layout.css'
+      - 'client/src/lib/rosterPublication*.ts'
+      - 'scripts/regression-aims-vertical-browser.mjs'
+      - 'scripts/regression-roster-layout-preference.mjs'
+      - '.github/workflows/aims-vertical.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: aims-vertical-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  aims-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Raw source contracts and TypeScript
+        run: |
+          node scripts/regression-roster-layout-preference.mjs
+          npx tsc --noEmit
+          sha256sum client/src/components/v1391/AimsRosterTable.tsx client/src/components/v1391/aims-vertical.css > "$RUNNER_TEMP/aims.sha256"
+      - name: Canonical preparation, byte parity, TypeScript and web build
+        run: |
+          npm run check
+          sha256sum -c "$RUNNER_TEMP/aims.sha256"
+          node scripts/regression-roster-layout-preference.mjs
+          node scripts/regression-roster-publication-review.mjs
+          npx vite build
+      - name: Install isolated browser dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/aims-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/aims-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Actual AIMS component, theme, font, navigation and privacy checks
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/aims-browser/package.json
+        run: node scripts/regression-aims-vertical-browser.mjs
+      - name: Full app import to AIMS history regression
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/aims-browser/package.json
+        run: node scripts/regression-publication-import-flow.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aims-vertical-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/aims-vertical
+            artifacts/publication-import-flow
+          if-no-files-found: warn
+          retention-days: 7

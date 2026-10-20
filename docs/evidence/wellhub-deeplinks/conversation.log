@@ -1,0 +1,30 @@
+Synthetic Wellhub routing evidence: {"channel":"telegram","input":[{"channel":"telegram","text":"/academias"},{"channel":"telegram","text":"Meu plano é silver+"},{"channel":"telegram","text":"/academias"}],"core":["/academias","Meu plano é silver+","/academias"],"gyms":["/academias","Meu plano é silver+","/academias"],"confirmation":"Plano Wellhub atualizado para Silver+ no CrewCheck ✓\nEssa é a preferência usada nas buscas. Sua assinatura no Wellhub não foi alterada.","nextSearchPlan":"silver-plus","savedPlan":"silver-plus"}
+Synthetic Wellhub routing evidence: {"channel":"whatsapp","input":[{"channel":"whatsapp","text":"/academias"},{"channel":"whatsapp","text":"Meu plano é silver+"},{"channel":"whatsapp","text":"/academias"}],"core":["/academias","Meu plano é silver+","/academias"],"gyms":["/academias","Meu plano é silver+","/academias"],"confirmation":"Plano Wellhub atualizado para Silver+ no CrewCheck ✓\nEssa é a preferência usada nas buscas. Sua assinatura no Wellhub não foi alterada.","nextSearchPlan":"silver-plus","savedPlan":"silver-plus"}
+Synthetic Wellhub routing evidence: {"channel":"app","input":[{"channel":"app","text":"/academias"},{"channel":"app","text":"Meu plano é silver+"},{"channel":"app","text":"/academias"}],"core":["/academias","Meu plano é silver+","/academias"],"gyms":["/academias","Meu plano é silver+","/academias"],"confirmation":"Plano Wellhub atualizado para Silver+ no CrewCheck ✓\nEssa é a preferência usada nas buscas. Sua assinatura no Wellhub não foi alterada.","nextSearchPlan":"silver-plus","savedPlan":"silver-plus"}
+✔ telegram: actual gym response → every advertised footer phrase → save → next request (129.076492ms)
+✔ telegram: legacy context requires product naming; /wellhub establishes account-scoped footer context (20.037744ms)
+✔ telegram: product-tagged plan declarations and changes retain Silver+ through the full dispatcher (35.777436ms)
+✔ telegram: unscoped, expired and other-product context cannot update a Wellhub preference (49.257529ms)
+✔ whatsapp: actual gym response → every advertised footer phrase → save → next request (36.597464ms)
+✔ whatsapp: legacy context requires product naming; /wellhub establishes account-scoped footer context (17.322978ms)
+✔ whatsapp: product-tagged plan declarations and changes retain Silver+ through the full dispatcher (29.338805ms)
+✔ whatsapp: unscoped, expired and other-product context cannot update a Wellhub preference (41.573979ms)
+✔ app: actual gym response → every advertised footer phrase → save → next request (32.61673ms)
+✔ app: legacy context requires product naming; /wellhub establishes account-scoped footer context (17.768256ms)
+✔ app: product-tagged plan declarations and changes retain Silver+ through the full dispatcher (25.669957ms)
+✔ app: unscoped, expired and other-product context cannot update a Wellhub preference (39.725448ms)
+✔ preserving gym text also preserves location and prevents negated/third-party activity writes (26.960994ms)
+✔ fresh Wellhub context is bound to the trusted account and originating channel (69.757721ms)
+✔ neutral replies cannot revalidate expired, legacy, foreign-owner or cross-channel Wellhub context (316.948945ms)
+✔ known multiword and legacy single-token activity names remain valid without accepting clauses (42.364204ms)
+✔ interrupted name onboarding cannot consume explicit or contextual Wellhub preferences (87.545381ms)
+✔ unrelated name replies still use the pending identity flow (18.275922ms)
+✔ Fortaleza official catalog through actual Telegram, WhatsApp and app routing (75.831465ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1123.457612

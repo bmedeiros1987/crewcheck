@@ -1,11 +1,20 @@
+import { buildCanonicalRosterEvents } from './server/concierge/generated/canonicalRoster.mjs';
+import { customGateSourceUpdate } from './server/gate-source-update.mjs';
+import { gateQueryDay, findPublishedGateOccurrence, findPublishedGateLeg, publishedGateDate, gateQuerySuppressed, originFlightDate, radarResultDecision } from './shared/gate-query-day.mjs';
+import {verifiedMysqlTls} from './server/mysql-verified-tls.mjs';
+import {assertNotProtectedReleaseKey} from './server/release-journal/namespace.mjs';
+import { defaultCiriumRadarOptions, ciriumRadarInjectionEnabled, ciriumRadarRegistration, ciriumRadarIdentity, runCiriumRadarInjection, ciriumRadarProjection } from './server/cirium-radar-injection.mjs';
+import { weatherCanaryRecipientHash, weatherConsentCommand, sameWeatherCanaryConsent, writeWeatherCanaryConsent, weatherMonitorSettings, weatherMonitorReadiness, weatherCanaryConsent, createWeatherCanaryPolicy, findWeatherCanarySnapshots, acquireWeatherCanaryLease } from './server/weather/monitor-readiness.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { evaluateCriticalWeatherDelivery } from './server/weather/critical-observation.mjs';
 import './server/telegram-fast-ack.mjs';
 import { parsePdfOnServer } from './server/rosterParser.mjs';
 import { handlePlatformRoute, consumePlatformUsage, refundPlatformUsage, handlePlatformVisitorTelegram } from './server/platform.mjs';
+import { loadOwnedPlatformRoster } from './server/platform.mjs';
 import { handleV139Route, handleV139Telegram } from './server/v139/index.mjs';
 import { buildInfobipTtsRequest, infobipConfiguration, infobipPublicStatus } from './server/v1396/infobip.mjs';
 
@@ -47,7 +56,9 @@ function buildFlightContext(value) {
   return { raw, iata, icao, flightAware: icao };
 }
 function publicRadarPayload(item = {}) {
+  if (item.querySuppressed) return gateQuerySuppressed({reason:item.queryReason || 'source-unverified'});
   return {
+    ...ciriumRadarProjection(item),
     ok: Boolean(item.ok),
     configured: Boolean(item.configured),
     flight: firstKnown(item.flight, item.ident),
@@ -55,6 +66,10 @@ function publicRadarPayload(item = {}) {
     gate: firstKnown(item.gate),
     terminal: firstKnown(item.terminal),
     departure: firstKnown(item.departure),
+    scheduledDepartureUtc: item.scheduledDepartureUtc,
+    sourceReceivedAt: item.sourceReceivedAt,
+    gateUpdate: item.gateUpdate?.provider === 'custom' ? item.gateUpdate : null,
+    operationalConflicts: Array.isArray(item.operationalConflicts) ? item.operationalConflicts.filter(field => ['gate','status','registration'].includes(field)) : [],
     arrival: firstKnown(item.arrival),
     origin: firstKnown(item.origin),
     destination: firstKnown(item.destination),
@@ -63,7 +78,7 @@ function publicRadarPayload(item = {}) {
     latencyMs: Number(item.latencyMs || 0),
     quality: Number(item.quality || item.score || 0),
     alternatives: Number(item.alternatives || 0),
-    message: firstKnown(item.message, item.ok ? 'Radar atualizado.' : 'Radar aguardando fonte operacional.'),
+    message: item.ok ? 'Resposta da fonte recebida; confirmação operacional depende da evidência de cada campo.' : firstKnown(item.message, 'Radar aguardando fonte operacional.'),
   };
 }
 function scoreRadar(item = {}, ctx = {}) {
@@ -118,10 +133,11 @@ function normalizeFlightAwareFlight(row = {}, ctx) {
   return {
     ok: true,
     configured: true,
-    flight: firstKnown(row.ident, row.fa_flight_id, ctx.icao),
+    flight: firstKnown(row.ident, row.fa_flight_id),
     status: firstKnown(row.status, row.cancelled ? 'Cancelado' : '', row.progress_percent === 100 ? 'Finalizado' : '', 'Monitorando'),
     gate: firstKnown(row.gate_origin, row.departure_gate),
     terminal: firstKnown(row.terminal_origin, row.departure_terminal),
+    scheduledDepartureUtc: firstKnown(row.scheduled_out, row.filed_departure_time),
     departure: firstKnown(row.estimated_out, row.actual_out, row.scheduled_out, row.filed_departure_time),
     arrival: firstKnown(row.estimated_in, row.actual_in, row.scheduled_in, row.filed_arrival_time),
     origin: firstKnown(row.origin?.code_iata, row.origin?.code, row.origin?.airport_code),
@@ -142,10 +158,13 @@ async function providerFlightAware(ctx, timeoutMs) {
     markProvider('flightaware', false);
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Fonte operacional configurada, mas sem dados agora.' };
   }
-  const flights = Array.isArray(payload?.flights) ? payload.flights : [];
+  const sourceFlights = Array.isArray(payload?.flights) ? payload.flights : [];
+  // Reuse #1143's response-owned occurrence filter on the existing production path.
+  const exactFlights = ctx.gateQueryEvidence ? sourceFlights.filter(item => radarResultDecision(normalizeFlightAwareFlight(item, ctx), ctx.gateQueryEvidence, Date.now()).allowed) : null;
+  const flights = exactFlights ? exactFlights.length === 1 ? exactFlights : [] : sourceFlights;
   const row = flights.find((item) => !item.cancelled && !item.actual_in) || flights[0];
   if (!row) {
-    markProvider('flightaware', false);
+    // Successful no-data/ambiguity is not a provider outage.
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Voo não localizado na fonte operacional.' };
   }
   markProvider('flightaware', true);
@@ -165,14 +184,16 @@ async function providerCustom(ctx, timeoutMs, origin, destination) {
   return {
     ok: true,
     configured: true,
-    flight: firstKnown(payload?.flight, payload?.flight_iata, payload?.flight_icao, ctx.iata),
+    flight: firstKnown(payload?.flight, payload?.flight_iata, payload?.flight_icao),
     status: firstKnown(payload?.status, payload?.flight_status, 'Monitorando'),
     gate: firstKnown(payload?.gate, payload?.departure?.gate),
+    gateUpdate: payload?.departureGateUpdate?.schema === 'crewcheck.departure-gate-update.v1' ? customGateSourceUpdate(payload) : null,
     terminal: firstKnown(payload?.terminal, payload?.departure?.terminal),
+    scheduledDepartureUtc: firstKnown(payload?.scheduledDepartureUtc, payload?.departure?.scheduled),
     departure: firstKnown(payload?.departure?.estimated, payload?.departure?.actual, payload?.departure?.scheduled, payload?.departure),
     arrival: firstKnown(payload?.arrival?.estimated, payload?.arrival?.actual, payload?.arrival?.scheduled, payload?.arrival),
-    origin: firstKnown(payload?.origin, payload?.departure?.iata, origin),
-    destination: firstKnown(payload?.destination, payload?.arrival?.iata, destination),
+    origin: firstKnown(payload?.origin, payload?.departure?.iata),
+    destination: firstKnown(payload?.destination, payload?.arrival?.iata),
     aircraft: firstKnown(payload?.aircraft, payload?.aircraft?.iata, payload?.aircraft?.icao),
     registration: firstKnown(payload?.registration, payload?.aircraft?.registration),
     latencyMs: Date.now() - started,
@@ -198,10 +219,11 @@ async function providerAviationstack(ctx, timeoutMs) {
   return {
     ok: true,
     configured: true,
-    flight: firstKnown(row.flight?.iata, row.flight?.icao, ctx.iata),
+    flight: firstKnown(row.flight?.iata, row.flight?.icao),
     status: firstKnown(row.flight_status, 'Monitorando'),
     gate: firstKnown(row.departure?.gate),
     terminal: firstKnown(row.departure?.terminal),
+    scheduledDepartureUtc: firstKnown(row.departure?.scheduled),
     departure: firstKnown(row.departure?.estimated, row.departure?.actual, row.departure?.scheduled),
     arrival: firstKnown(row.arrival?.estimated, row.arrival?.actual, row.arrival?.scheduled),
     origin: firstKnown(row.departure?.iata, row.departure?.icao),
@@ -227,10 +249,11 @@ async function providerAirLabs(ctx, timeoutMs) {
   return {
     ok: true,
     configured: true,
-    flight: firstKnown(row.flight_iata, row.flight_icao, ctx.iata),
+    flight: firstKnown(row.flight_iata, row.flight_icao),
     status: firstKnown(row.status, 'Monitorando'),
     gate: firstKnown(row.dep_gate),
     terminal: firstKnown(row.dep_terminal),
+    scheduledDepartureUtc: firstKnown(row.dep_time_utc, row.dep_time),
     departure: firstKnown(row.dep_estimated, row.dep_actual, row.dep_time),
     arrival: firstKnown(row.arr_estimated, row.arr_actual, row.arr_time),
     origin: firstKnown(row.dep_iata, row.dep_icao),
@@ -262,10 +285,11 @@ async function providerAeroDataBox(ctx, timeoutMs) {
   return {
     ok: true,
     configured: true,
-    flight: firstKnown(row.number, row.flightNumber, ctx.iata),
+    flight: firstKnown(row.number, row.flightNumber),
     status: firstKnown(row.status, row.statusCode, 'Monitorando'),
     gate: firstKnown(row.departure?.gate),
     terminal: firstKnown(row.departure?.terminal),
+    scheduledDepartureUtc: firstKnown(row.departure?.scheduledTime?.utc, row.departure?.scheduledTime?.local),
     departure: firstKnown(row.departure?.revisedTime?.local, row.departure?.predictedTime?.local, row.departure?.scheduledTime?.local),
     arrival: firstKnown(row.arrival?.revisedTime?.local, row.arrival?.predictedTime?.local, row.arrival?.scheduledTime?.local),
     origin: firstKnown(row.departure?.airport?.iata, row.departure?.airport?.icao),
@@ -278,6 +302,7 @@ async function providerAeroDataBox(ctx, timeoutMs) {
 }
 function configuredProviders() {
   return [
+    ciriumRadarRegistration(),
     { key: 'flightaware', available: Boolean(envAny(['FLIGHTAWARE_AEROAPI_KEY', 'AEROAPI_KEY'])) },
     { key: 'custom', available: Boolean(envAny(['CREWCHECK_FLIGHT_STATUS_URL'])) },
     { key: 'aviationstack', available: Boolean(envAny(['AVIATIONSTACK_API_KEY'])) },
@@ -285,7 +310,18 @@ function configuredProviders() {
     { key: 'aerodatabox', available: Boolean(envAny(['AERODATABOX_API_KEY'])) },
   ];
 }
-async function runRadarRace(ctx, origin, destination) {
+async function runRadarRace(ctx, origin, destination, scheduledDeparture = '') {
+  // Trusted caller must derive this occurrence from the authorized published roster.
+  const evidence = ctx.gateQueryEvidence;
+  scheduledDeparture = evidence?.scheduledDepartureUtc || ''; // Never device time/URL override.
+  const decision = gateQueryDay(evidence);
+  if (!decision.allowed || evidence?.origin !== origin || evidence?.destination !== destination || evidence?.flight !== ctx.raw)
+    return gateQuerySuppressed(decision.allowed ? { reason: 'occurrence-unverified' } : decision);
+  if (ciriumRadarInjectionEnabled(ctx.ciriumRadarOptions)) {
+    const result = await runCiriumRadarInjection(ctx.ciriumRadarIdentity, ctx.ciriumRadarOptions, ctx.raw);
+    if (result?.ok && !radarResultDecision(result,evidence,Date.now()).allowed) return gateQuerySuppressed(radarResultDecision(result,evidence,Date.now()));
+    return publicRadarPayload({...result,sourceReceivedAt:Date.now()});
+  }
   const timeoutMs = Math.max(800, Math.min(5000, Number(process.env.CREWCHECK_RADAR_TIMEOUT_MS || 2400)));
   const started = Date.now();
   const providers = [
@@ -303,18 +339,24 @@ async function runRadarRace(ctx, origin, destination) {
       settled = true;
       const okResults = results.filter((item) => item && item.ok);
       const candidates = okResults.length ? okResults : results.filter(Boolean);
+      if (!okResults.length && results.some(item=>item?.querySuppressed)) { resolve(results.find(item=>item?.querySuppressed)); return; }
       const best = candidates.sort((a, b) => (b.quality - a.quality) || (a.latencyMs - b.latencyMs))[0];
       if (!best) {
         resolve({ ok: false, configured: configuredProviders().some((p) => p.available), status: 'Aguardando', message: 'Nenhuma fonte respondeu dentro do limite operacional.', latencyMs: Date.now() - started, quality: 0, alternatives: 0 });
         return;
       }
-      resolve(publicRadarPayload({ ...best, alternatives: okResults.length || results.filter(Boolean).length }));
+      const operationalConflicts = ['gate', 'status', 'registration'].filter(field =>
+        new Set(okResults.map(row => String(row[field] || '').trim().toUpperCase()).filter(Boolean)).size > 1);
+      resolve(publicRadarPayload({ ...best, operationalConflicts, alternatives: okResults.length || results.filter(Boolean).length }));
     };
     const timer = setTimeout(finish, timeoutMs + 250);
     let pending = providers.length;
     providers.forEach((run) => {
       run().then((raw) => {
         if (raw) {
+          const sourceDecision = radarResultDecision(raw,evidence,Date.now());
+          if (raw.ok && !sourceDecision.allowed) { results.push(gateQuerySuppressed(sourceDecision)); return; }
+          raw = {...raw,sourceReceivedAt:raw.sourceReceivedAt ?? Date.now(),gate:raw.ok ? raw.gate : ''};
           const latencyMs = Number(raw.latencyMs || Date.now() - started);
           const quality = scoreRadar({ ...raw, latencyMs }, ctx);
           const item = { ...raw, latencyMs, quality };
@@ -336,25 +378,60 @@ async function runRadarRace(ctx, origin, destination) {
     });
   });
 }
-async function handleRadar(req, res, url) {
+async function handleRadar(req, res, url, radarOptions = {}) {
   const ctx = buildFlightContext(url.searchParams.get('flight') || '');
   const origin = String(url.searchParams.get('origin') || '').trim();
   const destination = String(url.searchParams.get('destination') || '').trim();
   if (!ctx.raw) return sendJson(res, 200, { ok: false, configured: false, message: 'Voo não identificado na escala.', quality: 0 });
-  const payload = await runRadarRace(ctx, origin, destination);
   const radarUser = telegramRequestUser(req, { email: url.searchParams.get('email') || '', name: url.searchParams.get('name') || '', conciergeKey: url.searchParams.get('conciergeKey') || '' });
   const email = telegramAppRequestAllowed(radarUser) ? conciergeSafeKey(radarUser.email) : '';
-  let exportedToConcierge = false;
-  if (email) {
-    const profile = { email, name: radarUser.name || String(url.searchParams.get('name') || ''), authenticated: radarUser.authenticated, accessKeyHash: radarUser.accessKeyHash };
+  const authorityCurrent = () => { const user=telegramRequestUser(req,{email:url.searchParams.get('email') || '',name:url.searchParams.get('name') || '',conciergeKey:url.searchParams.get('conciergeKey') || ''}); return telegramAppRequestAllowed(user) && conciergeSafeKey(user.email) === email && user.authenticated === radarUser.authenticated && user.accessKeyHash === radarUser.accessKeyHash; };
+  const profile = { email, name: radarUser.name || '', authenticated: radarUser.authenticated, accessKeyHash: radarUser.accessKeyHash };
+  const loadAuthority = async () => {
+    if (!email) return null;
     const snapshot = await conciergeLoadSnapshot(profile);
-    const info = snapshot?.roster && conciergeAccessMatches(profile, snapshot) ? conciergeFindFlight(snapshot.roster, ctx.raw) : null;
-    if (info) {
-      conciergeApplyRadar(snapshot, info, payload);
-      await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source: snapshot.source || 'app-radar', lastRadar: { ...payload, updatedAt: new Date().toISOString() } });
-      exportedToConcierge = true;
+    if (snapshot?.roster) {
+      if (!conciergeAccessMatches(profile, snapshot) || conciergeSafeKey(snapshot.email || snapshot.key || '') !== email || (snapshot.key && conciergeSafeKey(snapshot.key) !== email)) return null;
+      return { kind:'concierge', snapshot, roster:snapshot.roster, id:'', revision:'' };
     }
+    if (!profile.authenticated) return null;
+    const active = await loadOwnedPlatformRoster(req, email);
+    return active ? { ...active, kind:'platform', snapshot:null } : null;
+  };
+  let authority;
+  try { authority = await loadAuthority(); }
+  catch (error) { return sendJson(res, error?.status === 401 ? 401 : error?.status === 403 ? 403 : 503, { ...gateQuerySuppressed({reason:'source-unavailable'}), exportedToConcierge:false }); }
+  ctx.gateQueryEvidence = authority
+    ? findPublishedGateOccurrence(authority.roster, { flight: ctx.raw, origin, destination, departureDate: url.searchParams.get('departureDate') || '', scheduledDepartureUtc: url.searchParams.get('scheduledDepartureUtc') || '' }, buildCanonicalRosterEvents(authority.roster)) : null;
+  if (!authorityCurrent()) return sendJson(res,200,{...gateQuerySuppressed({reason:'account-unverified'}),exportedToConcierge:false});
+  const queryDecision = gateQueryDay(ctx.gateQueryEvidence);
+  if (!queryDecision.allowed) return sendJson(res, 200, { ...gateQuerySuppressed(queryDecision), exportedToConcierge: false });
+  radarOptions = { ...radarOptions, cirium: radarOptions.cirium || defaultCiriumRadarOptions() };
+  if (ciriumRadarInjectionEnabled(radarOptions.cirium)) {
+    ctx.ciriumRadarOptions = radarOptions.cirium;
+    ctx.ciriumRadarIdentity = ciriumRadarIdentity(url.searchParams);
   }
+  const payload = await runRadarRace(ctx, origin, destination);
+  if (!gateQueryDay(ctx.gateQueryEvidence).allowed) return sendJson(res, 200, { ...gateQuerySuppressed({ reason: 'response-context-expired' }), exportedToConcierge: false });
+  if (payload.querySuppressed || payload.provider === 'cirium-sky') return sendJson(res, 200, { ...payload, exportedToConcierge: false });
+  let exportedToConcierge = false;
+  let currentAuthority;
+  try { currentAuthority = await loadAuthority(); }
+  catch (error) { return sendJson(res, error?.status === 401 ? 401 : error?.status === 403 ? 403 : 503, { ...gateQuerySuppressed({reason:'source-unavailable'}), exportedToConcierge:false }); }
+  if (!authorityCurrent() || !gateQueryDay(ctx.gateQueryEvidence).allowed || !currentAuthority)
+    return sendJson(res, 200, {...gateQuerySuppressed({reason:'response-context-expired'}),exportedToConcierge:false});
+  if (currentAuthority.kind !== authority.kind || currentAuthority.id !== authority.id || currentAuthority.revision !== authority.revision)
+    return sendJson(res,200,{...gateQuerySuppressed({reason:'response-occurrence-changed'}),exportedToConcierge:false});
+  const info = findPublishedGateLeg(currentAuthority.roster, ctx.gateQueryEvidence, buildCanonicalRosterEvents(currentAuthority.roster));
+  if (!info) return sendJson(res,200,{...gateQuerySuppressed({reason:'response-occurrence-changed'}),exportedToConcierge:false});
+  if (!payload.ok) return sendJson(res,200,{...payload,exportedToConcierge:false});
+  if (currentAuthority.snapshot) {
+    const snapshot = currentAuthority.snapshot;
+    conciergeApplyRadar(snapshot, info, payload);
+    await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source:snapshot.source || 'app-radar', lastRadar:{...payload,updatedAt:new Date().toISOString()} });
+    exportedToConcierge = true;
+  }
+  if (!authorityCurrent() || !gateQueryDay(ctx.gateQueryEvidence).allowed) return sendJson(res, 200, {...gateQuerySuppressed({reason:'response-context-expired'}),exportedToConcierge:false});
   return sendJson(res, 200, { ...payload, exportedToConcierge });
 }
 function handleRadarHealth(req, res) {
@@ -2030,7 +2107,7 @@ async function conciergeDbPool() {
           connectionLimit: 3,
           connectTimeout: 3500,
           waitForConnections: true,
-          ssl: { rejectUnauthorized: false },
+          ssl: verifiedMysqlTls(parsed.hostname,Number(parsed.port||3306),envAny(['MYSQL_SSL_MODE'])),
         });
         await pool.query('SELECT 1');
         const [schema] = await pool.query(
@@ -2055,6 +2132,7 @@ async function conciergeDbPool() {
 }
 async function conciergeDbPut(key, payload) {
   try {
+    assertNotProtectedReleaseKey(key);
     const pool = await conciergeDbPool();
     if (!pool || !key) return false;
     await pool.query(
@@ -2068,6 +2146,7 @@ async function conciergeDbPut(key, payload) {
 }
 async function conciergeDbGet(key) {
   try {
+    assertNotProtectedReleaseKey(key);
     const pool = await conciergeDbPool();
     if (!pool || !key) return null;
     const [rows] = await pool.query('SELECT payload FROM crewcheck_telegram_state WHERE state_key=? LIMIT 1', [String(key)]);
@@ -2080,6 +2159,7 @@ async function conciergeDbGet(key) {
 }
 async function conciergeDbDelete(key) {
   try {
+    assertNotProtectedReleaseKey(key);
     const pool = await conciergeDbPool();
     if (!pool || !key) return false;
     await pool.query('DELETE FROM crewcheck_telegram_state WHERE state_key=?', [String(key)]);
@@ -2380,18 +2460,40 @@ function conciergeApplyRadar(snapshot, flightInfo, radar) {
   return snapshot;
 }
 async function conciergeRadarReply(text, profile, snapshot) {
+  if (!snapshot || !conciergeAccessMatches(profile,snapshot)) return gateQuerySuppressed({reason:'account-unverified'}).message;
   const roster = snapshot?.roster;
   const requested = conciergeExtractFlight(text);
   const next = conciergeNextProgram(roster);
   const firstFlight = requested ? conciergeFindFlight(roster, requested) : (next?.legs?.length ? { record: next, leg: next.legs[0] } : conciergeFindFlight(roster));
   const flight = requested || firstFlight?.leg?.flightNumber || '';
   if (!flight) return 'Não encontrei um voo na escala ativa. Envie o PDF ou informe o número, por exemplo: /radar LA3730.';
-  const info = firstFlight || conciergeFindFlight(roster, flight);
-  const radar = await runRadarRace(buildFlightContext(flight), info?.leg?.origin || '', info?.leg?.destination || '');
+  const queryContext = buildFlightContext(flight);
+  const canonicalEvents = buildCanonicalRosterEvents(roster);
+  const bindings = new Map();
+  for (const event of canonicalEvents) {
+    if (event.kind !== 'flight' || event.flightNumber !== queryContext.raw) continue;
+    const binding = findPublishedGateLeg(roster, {flight:queryContext.raw,origin:event.origin,destination:event.destination,
+      departureDate:originFlightDate(Date.now(),event.origin),scheduledDepartureUtc:event.startDateTime},canonicalEvents);
+    if (binding && gateQueryDay(binding.identity).allowed) bindings.set(binding.identity.eventId,binding);
+  }
+  if (bindings.size !== 1) return gateQuerySuppressed({reason:'occurrence-unverified'}).message;
+  let info = [...bindings.values()][0];
+  queryContext.gateQueryEvidence = info.identity;
+  const radar = await runRadarRace(queryContext, info?.leg?.origin || '', info?.leg?.destination || '');
+  if (!conciergeAccessMatches(profile,snapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed) return gateQuerySuppressed({ reason: 'response-context-expired' }).message;
+  if (radar.querySuppressed) return radar.message;
+  const currentSnapshot = await conciergeLoadSnapshot(profile);
+  if (!currentSnapshot || !conciergeAccessMatches(profile,currentSnapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed)
+    return gateQuerySuppressed({reason:'response-context-expired'}).message;
+  const currentBinding = findPublishedGateLeg(currentSnapshot.roster,queryContext.gateQueryEvidence,buildCanonicalRosterEvents(currentSnapshot.roster));
+  if (!currentBinding) return gateQuerySuppressed({reason:'response-occurrence-changed'}).message;
+  snapshot = currentSnapshot;
+  info = currentBinding;
   if (snapshot && info?.leg) {
     conciergeApplyRadar(snapshot, info, radar);
     await conciergeSaveSnapshotAsync(profile, snapshot.roster, { source: snapshot.source || 'radar', lastRadar: { ...radar, updatedAt: new Date().toISOString() } });
   }
+  if (!conciergeAccessMatches(profile,snapshot) || !gateQueryDay(queryContext.gateQueryEvidence).allowed) return gateQuerySuppressed({reason:'response-context-expired'}).message;
   const lines = [
     `Radar ${buildFlightContext(flight).iata || flight}`,
     `${info?.leg?.origin || radar.origin || '—'} → ${info?.leg?.destination || radar.destination || '—'}`,
@@ -2441,8 +2543,48 @@ async function conciergeWeatherAlertsReply(text, profile, snapshot) {
   const enabled = !/\b(off|desligar|desativar|parar|0)\b/.test(lower);
   const explicitChange = /\b(on|ligar|ativar|off|desligar|desativar|parar|0|1)\b/.test(lower);
   if (explicitChange) {
+    const settings = criticalWeatherMonitorSettings();
+    const canaryRecipient = settings.canaryConfigurationPresent &&
+      weatherCanaryRecipientHash(profile.email, profile.chatId) === settings.recipientHash;
+    const exactCommand = weatherConsentCommand(text);
+    if (canaryRecipient && !exactCommand) return 'Use /alertameteo on para ativar ou /alertameteo off para desativar os alertas.';
+    // New consent requires an exact command and the already-protected webhook.
+    // Ordinary snapshot writes cannot grant or resurrect this dedicated record.
+    const existingCanaryConsent = exactCommand === 'off' ? await conciergeDbGet(`weather-consent:${conciergeSafeKey(profile.email)}`) : null;
+    const canaryRevocation = exactCommand === 'off' && (canaryRecipient || Boolean(existingCanaryConsent));
+    const canaryGrant = canaryRecipient && settings.mode === 'canary' && exactCommand === 'on' && Boolean(envAny(['TELEGRAM_WEBHOOK_SECRET']));
+    if (canaryRevocation || canaryGrant) {
+      const consent = weatherCanaryConsent({ enabled: exactCommand === 'on', profile,
+        linkByEmail: enabled ? await conciergeDbGet(`link-email:${conciergeSafeKey(profile.email)}`) : null,
+        linkByChat: enabled ? await conciergeDbGet(`link-chat:${String(profile.chatId || '')}`) : null });
+      if (canaryRecipient && enabled && !consent) return 'Não consegui confirmar um comando recente após o vínculo atual. Envie /alertameteo on novamente.';
+      if (consent) {
+        const consentKey = `weather-consent:${conciergeSafeKey(profile.email)}`;
+        const persisted = await writeWeatherCanaryConsent(await conciergeDbPool(), profile.email, profile.chatId, consent, profile.weatherCommandSequence);
+        const verified = persisted ? await conciergeDbGet(consentKey) : null;
+        if ((canaryRecipient || canaryRevocation) && verified?.commandChatId === profile.chatId && Number.isSafeInteger(verified?.commandSequence) && verified.commandSequence > profile.weatherCommandSequence) {
+          return 'Este comando foi substituído por uma preferência mais recente.';
+        }
+        if ((canaryRecipient || canaryRevocation) && (!persisted || !sameWeatherCanaryConsent(verified, persisted))) {
+          return 'Não consegui confirmar a preferência no servidor. Tente novamente em instantes.';
+        }
+      }
+    } else if (canaryRecipient) {
+      return 'O teste meteorológico aguarda a configuração segura do Telegram. Nenhuma ativação foi feita.';
+    }
     const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: { weatherCriticalAlerts: enabled } });
     if (!saved) return 'Não consegui salvar a preferência agora. Tente novamente em instantes.';
+  }
+  const settings = criticalWeatherMonitorSettings();
+  const canaryRecipient = settings.canaryConfigurationPresent &&
+    weatherCanaryRecipientHash(profile.email, profile.chatId) === settings.recipientHash;
+  if (canaryRecipient) {
+    const consent = await conciergeDbGet(`weather-consent:${conciergeSafeKey(profile.email)}`);
+    return [
+      `Preferência de alertas meteorológicos: ${consent?.weatherCriticalAlerts === true ? 'ATIVADA' : 'DESATIVADA'}.`,
+      'O monitor está em teste restrito. Ativação e recebimento precisam ser verificados; esta preferência não comprova entrega.',
+      'Para alterar: /alertameteo on ou /alertameteo off.',
+    ].join('\n');
   }
   const current = explicitChange ? enabled : snapshot?.preferences?.weatherCriticalAlerts !== false;
   return [
@@ -3299,6 +3441,9 @@ async function processTelegramUpdate(update = {}) {
   else if (chatId && message?.location) await handleTelegramLocation(message);
   else if (chatId && text) {
     const profile = await telegramProfileForChatAsync(message);
+    // Telegram per-chat ordering is trusted only through the existing verified webhook.
+    profile.weatherCommandSequence = Number(message?.message_id);
+    profile.weatherCommandDate = message?.date;
     const snapshot = await conciergeLoadSnapshot(profile);
     const normalizedText = normalizeConciergeButtonText(text);
     if (/^\/ligacao(?:@\S+)?\b/i.test(normalizedText)) {
@@ -3372,6 +3517,19 @@ function weatherAlertSchedulerAuthorized(req) {
 }
 const criticalWeatherMonitorMemory = new Map();
 let criticalWeatherMonitorRunning = false;
+let criticalWeatherCanaryRunning = false;
+function criticalWeatherMonitorSettings() {
+  return weatherMonitorSettings({
+    CREWCHECK_WEATHER_MONITOR_ENABLED: envAny(['CREWCHECK_WEATHER_MONITOR_ENABLED']),
+    CREWCHECK_WEATHER_MONITOR_INTERVAL_MINUTES: envAny(['CREWCHECK_WEATHER_MONITOR_INTERVAL_MINUTES']),
+    CREWCHECK_WEATHER_MONITOR_CANARY_ENABLED: process.env.CREWCHECK_WEATHER_MONITOR_CANARY_ENABLED,
+    CREWCHECK_WEATHER_MONITOR_CANARY_RECIPIENT_SHA256: process.env.CREWCHECK_WEATHER_MONITOR_CANARY_RECIPIENT_SHA256,
+  });
+}
+function criticalWeatherCanaryBlocked(settings) {
+  return settings.canaryConfigurationPresent &&
+    (settings.mode !== 'canary' || !envAny(['TELEGRAM_WEBHOOK_SECRET']));
+}
 const WEATHER_MONITOR_HEARTBEAT_KEY = 'scheduler:weather-monitor:heartbeat';
 // Never-run, in-progress and stuck all look identical from the outside without a
 // persisted heartbeat: nothing today records when a cycle last started/finished, so
@@ -3390,9 +3548,19 @@ async function recordWeatherMonitorHeartbeat(patch) {
   await conciergeDbPut(WEATHER_MONITOR_HEARTBEAT_KEY, { ...current, ...patch });
 }
 async function runCriticalWeatherMonitor(now = new Date()) {
-  await recordWeatherMonitorHeartbeat({ lastStartedAt: now.toISOString(), lastFinishedAt: null });
+  const settings = criticalWeatherMonitorSettings();
+  if (criticalWeatherCanaryBlocked(settings)) return { blocked: true, monitored: 0, alerts: 0, failures: 0 };
+  const canaryRun = settings.mode === 'canary';
+  if (canaryRun && criticalWeatherCanaryRunning) return { busy: true, monitored: 0, alerts: 0, failures: 0 };
+  if (canaryRun) criticalWeatherCanaryRunning = true;
+  let canaryLease;
   try {
-    const summary = await runCriticalWeatherMonitorCycle(now);
+    if (canaryRun) {
+      canaryLease = await acquireWeatherCanaryLease(await conciergeDbPool(), settings.recipientHash);
+      if (!canaryLease) return { blocked: true, monitored: 0, alerts: 0, failures: 0 };
+    }
+    await recordWeatherMonitorHeartbeat({ lastStartedAt: now.toISOString(), lastFinishedAt: null });
+    const summary = await runCriticalWeatherMonitorCycle(now, () => Date.now(), canaryLease);
     await recordWeatherMonitorHeartbeat({
       lastFinishedAt: new Date().toISOString(),
       lastStatus: 'ok',
@@ -3402,14 +3570,29 @@ async function runCriticalWeatherMonitor(now = new Date()) {
   } catch (error) {
     await recordWeatherMonitorHeartbeat({ lastFinishedAt: new Date().toISOString(), lastStatus: 'error' });
     throw error;
+  } finally {
+    await canaryLease?.release();
+    if (canaryRun) criticalWeatherCanaryRunning = false;
   }
 }
-async function runCriticalWeatherMonitorCycle(now = new Date()) {
-  const localSnapshots = Object.values(telegramRostersRead().snapshots || {});
-  const databaseSnapshots = await conciergeDbListSnapshots(250);
+async function runCriticalWeatherMonitorCycle(now = new Date(), observationNow = () => Date.now(), canaryLease = null) {
+  const settings = criticalWeatherMonitorSettings();
+  if (criticalWeatherCanaryBlocked(settings) || (settings.mode === 'canary' && !await canaryLease?.isHeld())) {
+    return { blocked: true, snapshots: 0, monitored: 0, reports: 0, alerts: 0, skipped: 0, failures: 0 };
+  }
+  const canary = settings.mode === 'canary' ? createWeatherCanaryPolicy({
+    enabled: true, recipientHash: settings.recipientHash, readRecord: conciergeDbGet,
+  }) : null;
+  const localSnapshots = canary ? [] : Object.values(telegramRostersRead().snapshots || {});
+  const databaseSnapshots = canary
+    ? await findWeatherCanarySnapshots(await conciergeDbPool(), settings.recipientHash)
+    : await conciergeDbListSnapshots(250);
   const snapshots = [...new Map([...databaseSnapshots, ...localSnapshots].filter(Boolean).map((snapshot) => [snapshot.key || snapshot.email || snapshot.chatId, snapshot])).values()];
   const summary = { snapshots: snapshots.length, monitored: 0, reports: 0, alerts: 0, skipped: 0, failures: 0 };
-  for (const snapshot of snapshots.slice(0, 250)) {
+  for (const candidateSnapshot of snapshots.slice(0, 250)) {
+    const selection = canary ? await canary.select(candidateSnapshot) : null;
+    if (canary && !selection) { summary.skipped += 1; continue; }
+    const snapshot = canary ? selection.snapshot : candidateSnapshot;
     if (!snapshot?.chatId || !snapshot?.roster || snapshot?.preferences?.weatherCriticalAlerts === false) { summary.skipped += 1; continue; }
     const candidates = conciergeWeatherCandidates(snapshot, now);
     if (!candidates.length) continue;
@@ -3421,17 +3604,25 @@ async function runCriticalWeatherMonitorCycle(now = new Date()) {
         if (!report?.raw) { summary.failures += 1; continue; }
         summary.reports += 1;
         const stateKey = weatherAlertStateKey(snapshot, candidate);
-        const previous = await conciergeDbGet(stateKey) || criticalWeatherMonitorMemory.get(stateKey) || {};
+        const previous = canary
+          ? await canaryLease.readState(stateKey) || {}
+          : await conciergeDbGet(stateKey) || criticalWeatherMonitorMemory.get(stateKey) || {};
         const change = criticalWeatherChange(previous.raw || '', report.raw);
-        const lastSentAt = new Date(previous.lastSentAt || 0).getTime();
-        const cooldownActive = Number.isFinite(lastSentAt) && now.getTime() - lastSentAt < 90 * 60_000;
-        const severityIncreased = change.severity > Number(previous.severity || 0);
-        const duplicate = previous.fingerprint === change.fingerprint;
-        const shouldSend = Boolean(previous.pendingDelivery && change.severity >= 2) || (change.critical && !duplicate && (!cooldownActive || severityIncreased));
+        const delivery = evaluateCriticalWeatherDelivery({ report, station: candidate.station, previous, change, now: observationNow() });
+        if (!delivery.accepted) { summary.failures += 1; continue; }
+        if (canary && previous.canaryDispatchState === 'submitted' &&
+            previous.fingerprint === change.fingerprint && previous.canaryConsentSequence === selection.commandSequence) {
+          summary.skipped += 1;
+          continue;
+        }
+        const shouldSend = delivery.shouldSend;
         const alertReasons = change.reasons.length ? change.reasons : Array.isArray(previous.reasons) ? previous.reasons : ['condição crítica no boletim'];
         const nextState = { raw: report.raw, fingerprint: change.fingerprint, severity: change.severity, reasons: alertReasons, pendingDelivery: shouldSend, observedAt: report.observedAt || '', checkedAt: now.toISOString(), lastSentAt: previous.lastSentAt || '', source: report.source || '' };
-        criticalWeatherMonitorMemory.set(stateKey, nextState);
-        await conciergeDbPut(stateKey, nextState);
+        if (!canary) criticalWeatherMonitorMemory.set(stateKey, nextState);
+        const observationPersisted = canary
+          ? await canaryLease.writeState(stateKey, nextState)
+          : await conciergeDbPut(stateKey, nextState);
+        if (canary && !observationPersisted) { summary.failures += 1; continue; }
         if (!shouldSend) continue;
         messages.push({ stateKey, nextState, text: [
           `${candidate.role === 'origem' ? 'Origem' : 'Destino'} ${candidate.station} · ${candidate.flight} · ${candidate.route}`,
@@ -3444,6 +3635,20 @@ async function runCriticalWeatherMonitorCycle(now = new Date()) {
       }
     }
     if (messages.length) {
+      if (canary && (!await canaryLease.isHeld() || !await canary.canDispatch(selection))) { summary.skipped += 1; continue; }
+      if (canary) {
+        let reserved = true;
+        for (const message of messages.slice(0, 3)) {
+          const submitted = { ...message.nextState, pendingDelivery: false, canaryDispatchState: 'submitted', canaryConsentSequence: selection.commandSequence };
+          try {
+            if (!await canaryLease.writeState(message.stateKey, submitted)) { reserved = false; break; }
+          } catch { reserved = false; break; }
+          message.nextState = submitted;
+        }
+        if (!reserved) { summary.failures += 1; continue; }
+        // Recheck after durable intent writes. A later revocation can still race transport.
+        if (!await canaryLease.isHeld() || !await canary.canDispatch(selection)) { summary.skipped += 1; continue; }
+      }
       const result = await sendTelegramMessage(snapshot.chatId, [
         '⚠️ Mudança meteorológica crítica na sua escala',
         '',
@@ -3456,8 +3661,13 @@ async function runCriticalWeatherMonitorCycle(now = new Date()) {
         summary.alerts += Math.min(3, messages.length);
         for (const message of messages.slice(0, 3)) {
           const deliveredState = { ...message.nextState, pendingDelivery: false, lastSentAt: now.toISOString() };
-          criticalWeatherMonitorMemory.set(message.stateKey, deliveredState);
-          await conciergeDbPut(message.stateKey, deliveredState);
+          if (canary) {
+            try { if (!await canaryLease.writeState(message.stateKey, deliveredState)) summary.failures += 1; }
+            catch { summary.failures += 1; }
+          } else {
+            criticalWeatherMonitorMemory.set(message.stateKey, deliveredState);
+            await conciergeDbPut(message.stateKey, deliveredState);
+          }
         }
       } else summary.failures += 1;
     }
@@ -3489,6 +3699,11 @@ async function handleCriticalWeatherMonitorHealth(req, res) {
     lastFinishedAt: heartbeat?.lastFinishedAt || null,
     lastStatus: heartbeat?.lastStatus || null,
     lastSummary: heartbeat?.lastSummary || null,
+    readiness: weatherMonitorReadiness({ settings: criticalWeatherMonitorSettings(),
+      schedulerSecretConfigured: authorization.configured,
+      telegramConfigured: telegramConfigured(),
+      telegramWebhookSecretConfigured: Boolean(envAny(['TELEGRAM_WEBHOOK_SECRET'])),
+      persistenceConfigured: Boolean(envAny(['DATABASE_URL', 'CREWCHECK_DATABASE_URL', 'MYSQL_URL'])) }),
     message: state === 'never_run'
       ? 'Monitor meteorológico ainda não executou um ciclo.'
       : state === 'stuck'
@@ -3501,9 +3716,10 @@ async function handleCriticalWeatherMonitorHealth(req, res) {
   });
 }
 function scheduleCriticalWeatherMonitor() {
-  if (String(envAny(['CREWCHECK_WEATHER_MONITOR_ENABLED']) || 'false').toLowerCase() !== 'true') return;
+  const settings = criticalWeatherMonitorSettings();
+  if (!settings.enabled || criticalWeatherCanaryBlocked(settings)) return;
   if (!envAny(['CREWCHECK_SCHEDULER_SECRET', 'WEATHER_ALERT_SCHEDULER_SECRET'])) return;
-  const minutes = Math.min(30, Math.max(5, Number(envAny(['CREWCHECK_WEATHER_MONITOR_INTERVAL_MINUTES']) || 10)));
+  const minutes = settings.intervalMinutes;
   const execute = async () => {
     if (criticalWeatherMonitorRunning) return;
     criticalWeatherMonitorRunning = true;
@@ -3905,7 +4121,7 @@ function serveStatic(req, res, url) {
       return;
     }
     const ext = path.extname(filePath).toLowerCase();
-    const type = ext === '.js' ? 'text/javascript; charset=utf-8' : ext === '.css' ? 'text/css; charset=utf-8' : ext === '.html' ? 'text/html; charset=utf-8' : ext === '.json' ? 'application/json; charset=utf-8' : 'application/octet-stream';
+    const type = (ext === '.js' || ext === '.mjs') ? 'text/javascript; charset=utf-8' : ext === '.css' ? 'text/css; charset=utf-8' : ext === '.html' ? 'text/html; charset=utf-8' : ext === '.json' ? 'application/json; charset=utf-8' : 'application/octet-stream';
     res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store, no-cache, must-revalidate' });
     res.end(data);
   });

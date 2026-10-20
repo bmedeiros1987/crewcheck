@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import fs from "node:fs";
 import path from "node:path";
 import { defineConfig, loadEnv } from "vite";
+import { guardStaticHtml } from './server/static-html-guard.mjs';
+import { stampServiceWorkerBuild } from './scripts/ci/stamp-service-worker-build.mjs';
 
 export default defineConfig(({ mode }) => {
   const runtimeEnv = loadEnv(mode, process.cwd(), "");
@@ -29,8 +31,29 @@ export default defineConfig(({ mode }) => {
   );
   const buildTime = new Date().toISOString();
 
+  let thisShellOutput: string | null = null;
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(),{
+      name: 'crewcheck-worker-build',
+      apply: 'build',
+      configResolved(config) {
+        // SSR/library/in-memory builds do not produce the browser HTML shell.
+        thisShellOutput = !config.build.ssr && !config.build.lib && config.build.write
+          ? path.resolve(config.root, config.build.outDir) : null;
+      },
+      closeBundle() {
+        if (!thisShellOutput) return;
+        const root = thisShellOutput, worker = path.join(root, 'sw.js');
+        const index = path.join(root, 'index.html');
+        const html = guardStaticHtml(fs.readFileSync(index, 'utf8'));
+        fs.writeFileSync(index, html);
+        const assets = fs.readdirSync(path.join(root, 'assets'), { recursive: true })
+          .filter(name => fs.statSync(path.join(root, 'assets', String(name))).isFile())
+          .map(name => '/assets/' + String(name).replaceAll('\\', '/'));
+        const result = stampServiceWorkerBuild(fs.readFileSync(worker, 'utf8'), html, assets);
+        fs.writeFileSync(worker, result.source);
+      },
+    }],
     define: {
       "import.meta.env.VITE_GOOGLE_CLIENT_ID": JSON.stringify(googleClientId),
       "import.meta.env.VITE_CREWCHECK_BUILD_VERSION": JSON.stringify(buildVersion),

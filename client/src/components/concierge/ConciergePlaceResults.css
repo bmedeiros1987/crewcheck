@@ -1,0 +1,285 @@
+.cc-concierge-places {
+  --cc-place-surface: #141d2d;
+  --cc-place-card: #1a2538;
+  --cc-place-border: #30405a;
+  --cc-place-text: #f0f4fc;
+  --cc-place-muted: #abbad0;
+  --cc-place-accent: #9dbbff;
+  --cc-place-accent-bg: #233658;
+  --cc-place-open: #8fe0b7;
+  --cc-place-open-bg: #183d32;
+  --cc-place-closed: #f4c182;
+  --cc-place-closed-bg: #493626;
+  --cc-place-star: #f0cb7a;
+  width: 100%;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--cc-place-border);
+  border-radius: 20px;
+  background: var(--cc-place-surface);
+  color: var(--cc-place-text);
+  font-family: inherit;
+  line-height: 1.45;
+  text-align: left;
+}
+
+[data-crew-theme="light"] .cc-concierge-places {
+  --cc-place-surface: #ffffff;
+  --cc-place-card: #f7f9fd;
+  --cc-place-border: #dce4ef;
+  --cc-place-text: #172842;
+  --cc-place-muted: #53647c;
+  --cc-place-accent: #234da1;
+  --cc-place-accent-bg: #eaf0fc;
+  --cc-place-open: #17643f;
+  --cc-place-open-bg: #e5f4ec;
+  --cc-place-closed: #805021;
+  --cc-place-closed-bg: #fbefdd;
+  --cc-place-star: #946416;
+}
+
+.cc-concierge-places,
+.cc-concierge-places * {
+  box-sizing: border-box;
+}
+
+.cc-concierge-places .cc-concierge-places__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 0;
+}
+
+.cc-concierge-places .cc-concierge-places__icon {
+  display: grid;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 13px;
+  color: var(--cc-place-accent);
+  background: var(--cc-place-accent-bg);
+}
+
+.cc-concierge-places .cc-concierge-places__heading,
+.cc-concierge-places .cc-concierge-places__details {
+  min-width: 0;
+}
+
+.cc-concierge-places .cc-concierge-places__eyebrow {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--cc-place-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.cc-concierge-places h3,
+.cc-concierge-places h4,
+.cc-concierge-places p {
+  margin: 0;
+  color: inherit;
+  overflow-wrap: anywhere;
+}
+
+.cc-concierge-places h3 {
+  font-size: 19px;
+  font-weight: 750;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+
+.cc-concierge-places .cc-concierge-places__reference {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 7px;
+  color: var(--cc-place-muted);
+  font-size: 12px;
+}
+
+.cc-concierge-places .cc-concierge-places__reference svg {
+  flex: 0 0 13px;
+  margin-top: 2px;
+}
+
+.cc-concierge-places .cc-concierge-places__note {
+  margin-bottom: 12px;
+  color: var(--cc-place-muted);
+  font-size: 12px;
+}
+
+.cc-concierge-places .cc-concierge-places__list {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cc-concierge-places .cc-concierge-places__card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--cc-place-border);
+  border-radius: 14px;
+  background: var(--cc-place-card);
+}
+
+.cc-concierge-places .cc-concierge-places__labels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 8px;
+  margin-bottom: 7px;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.cc-concierge-places .cc-concierge-places__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 4px 7px;
+  border-radius: 6px;
+  color: var(--cc-place-muted);
+  background: var(--cc-place-surface);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.cc-concierge-places .cc-concierge-places__status > span {
+  flex: 0 0 5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.cc-concierge-places .cc-concierge-places__status--open {
+  color: var(--cc-place-open);
+  background: var(--cc-place-open-bg);
+}
+
+.cc-concierge-places .cc-concierge-places__status--closed {
+  color: var(--cc-place-closed);
+  background: var(--cc-place-closed-bg);
+}
+
+.cc-concierge-places .cc-concierge-places__category {
+  color: var(--cc-place-muted);
+  overflow-wrap: anywhere;
+}
+
+.cc-concierge-places h4 {
+  margin-bottom: 4px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.cc-concierge-places .cc-concierge-places__address {
+  color: var(--cc-place-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.cc-concierge-places .cc-concierge-places__facts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  margin-top: 8px;
+  color: var(--cc-place-muted);
+  font-size: 11px;
+}
+
+.cc-concierge-places .cc-concierge-places__rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cc-concierge-places .cc-concierge-places__rating svg {
+  color: var(--cc-place-star);
+  fill: var(--cc-place-star);
+}
+
+.cc-concierge-places .cc-concierge-places__route {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 54px;
+  min-height: 58px;
+  padding: 8px 10px;
+  border: 1px solid var(--cc-place-border);
+  border-radius: 11px;
+  color: var(--cc-place-accent);
+  background: var(--cc-place-surface);
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.cc-concierge-places .cc-concierge-places__route:hover,
+.cc-concierge-places .cc-concierge-places__more:hover:not(:disabled) {
+  border-color: var(--cc-place-accent);
+  background: var(--cc-place-accent-bg);
+}
+
+.cc-concierge-places .cc-concierge-places__route:focus-visible,
+.cc-concierge-places .cc-concierge-places__more:focus-visible {
+  outline: 2px solid var(--cc-place-accent);
+  outline-offset: 3px;
+}
+
+.cc-concierge-places .cc-concierge-places__source {
+  margin: 12px 2px 0;
+  color: var(--cc-place-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.cc-concierge-places .cc-concierge-places__empty {
+  color: var(--cc-place-muted);
+  font-size: 13px;
+}
+
+.cc-concierge-places .cc-concierge-places__more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  margin: 13px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--cc-place-border);
+  border-radius: 11px;
+  color: var(--cc-place-accent);
+  background: var(--cc-place-surface);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.cc-concierge-places .cc-concierge-places__more:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+@media (max-width: 420px) {
+  .cc-concierge-places { padding: 14px; border-radius: 17px; }
+  .cc-concierge-places .cc-concierge-places__card { padding: 12px; gap: 9px; }
+  .cc-concierge-places h3 { font-size: 18px; }
+}

@@ -1,3 +1,4 @@
+import { verifiedStayLease } from '../../shared/stay-alarm-lease-policy.mjs';
 import crypto from 'node:crypto';
 import {
   authSecret,
@@ -69,10 +70,27 @@ function blockedDomains() {
     .split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
 }
 
-function loginResponse(res, user, message) {
+function loginResponse(res, user, message, cookie = true) {
   const token = issueJwt(user);
-  setAuthCookie(res, token);
+  if (cookie) setAuthCookie(res, token);
   return sendJson(res, 200, { ok: true, token, user, message });
+}
+
+// OIDC uses the existing account admission and issuer, never a linked role snapshot.
+export async function resolveGoogleLinkedAccount(identity) {
+  const email=safeEmail(identity?.email),db=await dbPool();
+  if(!db) throw new Error('Autenticação temporariamente indisponível.');
+  if(!email||!identity?.sub) throw new Error('Conta CrewCheck inválida.');
+  const [rows]=await db.query('SELECT must_change_password FROM crewcheck_platform_accounts WHERE email=? LIMIT 1',[email]);
+  if(!rows[0]||rows[0].must_change_password) throw new Error('Entre com e-mail e senha e confirme sua conta antes de usar o Google.');
+  const user=await enrichCrewFunction(db,email,await userFromAccount(db,email,false));
+  if(String(user.id)!==String(identity.sub)) throw new Error('O vínculo não corresponde à conta atual.');
+  return user;
+}
+export function issueGoogleLinkedSession(res,user,message) {
+  // JSON-only: a delayed complete must not overwrite another account's HttpOnly
+  // cookie before the client continuity fence admits the returned session.
+  return loginResponse(res,user,message,false);
 }
 
 function resetMessage(code, minutes) {
@@ -380,6 +398,7 @@ async function me(req, res, db) {
     return sendJson(res, 200, {
       ok: true,
       authenticated: true,
+      stayAlarmLease: verifiedStayLease({ exp: payload.exp }),
       user: await enrichCrewFunction(db, email, await userFromAccount(db, email, Boolean(accounts[0]?.must_change_password))),
     });
   } catch (error) {

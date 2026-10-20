@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android masks the icon to a circle with diameter 2/3 of its frame.
+     A square must be <= 2/(3*sqrt(2)) of that frame to retain its corners.
+     27% on each edge leaves 46%, safely below 47.14%. Keep the source PNG intact. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:inset="27%">
+    <bitmap
+        android:src="@drawable/crewcheck_logo_neon"
+        android:gravity="fill"
+        android:filter="true" />
+</inset>

@@ -191,6 +191,12 @@ export function createPulseSession(
 
     dismiss,
 
+    removeWhere(predicate: (message: CrewCheckPulseMessage) => boolean) {
+      queue = queue.filter(item => !predicate(item.message));
+      if (current && predicate(current)) { clearTimer('leave'); showNext(); }
+      else commit();
+    },
+
     clear() {
       clearTimer('auto');
       clearTimer('leave');

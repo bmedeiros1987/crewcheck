@@ -1,0 +1,54 @@
+/* Conversational copy grows in normal flow in both themes. Operational cards
+   elsewhere retain their compact rules. */
+html body #root .cz-app[data-version][data-view="concierge"] :is(.cz-roster-card,.cz-roster-main,.cz-roster-copy) {
+  height: auto !important;
+  max-height: none !important;
+  min-height: 0;
+}
+html body #root .cz-app[data-version][data-view="concierge"] .cz-roster-main {
+  grid-template-columns: auto minmax(0,1fr) !important;
+  align-items: start !important;
+}
+html body #root .cz-app[data-version][data-view="concierge"] .cz-roster-copy :is(h3,p,small) {
+  display: block !important;
+  position: static !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: unset !important;
+  line-clamp: unset !important;
+}
+html body #root .cz-app[data-version][data-view="concierge"] .cz-roster-copy .cc-wellhub-concierge-answer { white-space: pre-wrap !important; }
+html body #root .cz-app[data-version][data-view="concierge"] .cz-roster-card > .cz-routine-strip { position: static !important; margin-top: 12px !important; }
+/* Reserve room inside the action row for a focus ring. No moving target on tap
+   or hover; the existing selected/disabled styles and handlers stay intact. */
+html body #root .cz-app[data-version] :is(.cc-concierge-preferences,.cc-manual-gate) .cz-tool-actions {
+  grid-template-columns: repeat(auto-fit,minmax(min(100%,168px),1fr)) !important;
+  padding: 4px;
+  box-sizing: border-box;
+  overflow: visible !important;
+}
+html body #root .cz-app[data-version] :is(.cc-concierge-preferences,.cc-manual-gate) .cz-tool-actions > button {
+  height: auto !important;
+  min-height: 44px !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  transform: none !important;
+}
+html body #root .cz-app[data-version] :is(.cc-concierge-preferences,.cc-manual-gate) .cz-tool-actions > button:focus-visible {
+  outline: 2px solid var(--cc-accent) !important;
+  outline-offset: 2px !important;
+}
+html body #root .cz-app[data-version] .cc-concierge-preferences > label { display: grid; gap: 8px; margin-top: 12px; }
+html body #root .cz-app[data-version] .cc-manual-gate { margin-bottom: 24px; }
+html body #root .cz-app[data-version] .cc-manual-gate :is(button,.cc-manual-gate-status) {
+  scroll-margin-bottom: calc(var(--cc-fixed-footer-height,100px) + 24px);
+}
+@media (max-width: 390px) {
+  html:is([data-crew-text-size="150"],[data-crew-text-size="200"]) body #root .cz-app[data-version][data-view="concierge"] .cz-roster-main {
+    grid-template-columns: minmax(0,1fr) !important;
+  }
+}

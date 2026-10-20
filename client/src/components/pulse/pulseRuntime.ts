@@ -1,4 +1,7 @@
+import {readAccountNotificationSetting} from '@/lib/notificationPreferences';
+import { playCrewCheckNoticeSound, stopCrewCheckNotificationSound } from './pulseSound';
 import { createPulseSession, type PulseSessionState } from './pulseSession';
+import { alertAccount, alertDigest, alertIsReviewed, saveAlertReview, ALERT_REVIEW_EVENT, type AlertIdentity } from '../../lib/alertReviewStore';
 import type {
   CrewCheckPulseMessage,
   CrewCheckPulsePriority,
@@ -28,7 +31,7 @@ const notificationMemory = new Map<string, number>();
 const session = createPulseSession((next) => {
   runtimeState = next;
   for (const listener of listeners) listener(next);
-});
+}, { queueLimit: Number.MAX_SAFE_INTEGER });
 
 const DEFAULT_PRIORITY: Record<CrewCheckPulseTone, CrewCheckPulsePriority> = {
   informativo: 'normal',
@@ -68,6 +71,8 @@ function normalizeMessage(message: CrewCheckPulseMessage): CrewCheckPulseMessage
   const autoDismissMs = message.autoDismissMs ?? DEFAULT_AUTO_DISMISS[tone];
   return {
     ...message,
+    account: message.account === undefined ? alertAccount() : message.account,
+    review: message.review || { occurrence: alertDigest(['notice', message.dedupeKey || message.id || message.title]), version: alertDigest([message.dedupeKey || message.id || message.title, message.detail || '']) },
     tone,
     priority,
     dismissible: message.dismissible !== false,
@@ -78,7 +83,7 @@ function normalizeMessage(message: CrewCheckPulseMessage): CrewCheckPulseMessage
 }
 
 function pulseEnabled(): boolean {
-  return safeLocalGet(PULSE_ENABLED_KEY, '1') !== '0';
+  return readAccountNotificationSetting(PULSE_ENABLED_KEY,'0') !== '0';
 }
 
 function deviceNotificationsEnabled(): boolean {
@@ -205,16 +210,20 @@ function deliverSystemNotification(message: CrewCheckPulseMessage): boolean {
 export function publishCrewCheckPulse(message: CrewCheckPulseMessage): boolean {
   if (!pulseEnabled() || !message || !String(message.title || '').trim()) return false;
   const normalized = normalizeMessage(message);
-  const dedupeKey = String(normalized.dedupeKey || normalized.id || '').trim();
-  if (dedupeKey && recentlySeen(dedupeKey, Number(normalized.pulseCooldownMs || 0))) return false;
+  if (normalized.account !== alertAccount() || normalized.review && alertIsReviewed(normalized.review)) return false;
+  // A presentation/sound cooldown is never a disposition. Unhandled messages
+  // must be reconstructible after logout and must not fall out of a short queue.
   session.publish(normalized);
   return true;
 }
 
 export function publishCrewCheckNotice(message: CrewCheckPulseMessage): { pulse: boolean; notification: boolean } {
   const normalized = normalizeMessage(message);
+  if (normalized.account !== alertAccount() || normalized.review && alertIsReviewed(normalized.review)) return { pulse: false, notification: false };
   const pulse = publishCrewCheckPulse(normalized);
   const notification = deliverSystemNotification(normalized);
+  const soundKey = `${normalized.account || 'ephemeral'}:${normalized.review?.occurrence}:${normalized.review?.version}`;
+  if (pulse && !recentlySeen(soundKey, Number(normalized.pulseCooldownMs || 0))) playCrewCheckNoticeSound(String(normalized.notificationTag || normalized.dedupeKey || normalized.id || normalized.title));
   return { pulse, notification };
 }
 
@@ -228,17 +237,33 @@ export function currentCrewCheckPulseState(): PulseSessionState {
   return runtimeState;
 }
 
-export function dismissCrewCheckPulse(): void {
-  session.dismiss();
+export function dismissCrewCheckPulse(expectedMessage?: CrewCheckPulseMessage): boolean {
+  const message = runtimeState.message;
+  // A second click from the old render must never acknowledge its successor,
+  // a newer material revision, or an occurrence from another account.
+  if (expectedMessage && expectedMessage !== message) return true;
+  if (!message || message.dismissible === false || message.account !== alertAccount()) return false;
+  const saved = Boolean(message?.review && saveAlertReview({ ...message.review, state: 'dismissed', title: message.title, category: message.category }, message.account || null));
+  stopCrewCheckNotificationSound();
+  if (!saved && message?.account) return false;
+  if (!saved) session.dismiss();
+  return saved;
+}
+
+/** Remove only stale/reviewed notices from this producer, preserving other priorities. */
+export function reconcileCrewCheckPulse(scope: string, active: AlertIdentity[]): void {
+  session.removeWhere(message => message.scope === scope && (!message.review || !active.some(identity => identity.occurrence === message.review!.occurrence && identity.version === message.review!.version)));
 }
 
 export function clearCrewCheckPulse(): void {
+  stopCrewCheckNotificationSound();
   session.clear();
 }
 
 export function setCrewCheckPulseEnabled(enabled: boolean): void {
-  safeLocalSet(PULSE_ENABLED_KEY, enabled ? '1' : '0');
-  if (!enabled) session.clear();
+  // Preferences are edited only in the account Notification Center.
+  if(typeof window!=='undefined')window.dispatchEvent(new CustomEvent('crewcheck:set-view',{detail:'notifications'}));
+  if (!enabled) { stopCrewCheckNotificationSound(); session.clear(); }
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('crewcheck:pulse-preference', { detail: { enabled } }));
   }
@@ -250,8 +275,17 @@ export function setCrewCheckDeviceNotificationsEnabled(enabled: boolean): void {
 
 if (typeof window !== 'undefined' && !window.__crewcheckPulseEventBridgeV2) {
   window.__crewcheckPulseEventBridgeV2 = true;
+  const clearDisabledPreference=()=>{if(!pulseEnabled())clearCrewCheckPulse();};
+  window.addEventListener('crewcheck:notification-preferences-changed',clearDisabledPreference);
+  window.addEventListener('crewcheck:auth-changed',clearCrewCheckPulse);
+  window.addEventListener('crewcheck:auth-expired',clearCrewCheckPulse);
+  window.addEventListener('storage',event=>{if(['crewcheck_auth_token','crewcheck_auth_user'].includes(event.key||''))clearCrewCheckPulse();else if(!event.key||event.key.startsWith('crewcheck:notification-preferences:'))clearDisabledPreference();});
   window.addEventListener(CREWCHECK_PULSE_EVENT, (event: Event) => {
     const detail = (event as CustomEvent<CrewCheckPulseMessage>).detail;
     if (detail?.title) publishCrewCheckPulse(detail);
   });
+  for (const name of ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired']) window.addEventListener(name, clearCrewCheckPulse);
+  const removeReviewed = () => session.removeWhere(message => message.account !== alertAccount() || Boolean(message.review && alertIsReviewed(message.review)));
+  window.addEventListener(ALERT_REVIEW_EVENT, removeReviewed);
+  window.addEventListener('storage', removeReviewed);
 }

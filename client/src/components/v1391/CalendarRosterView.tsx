@@ -1,8 +1,13 @@
+import { rosterDisplayIso, rosterInstantIso, ROSTER_DISPLAY_TIME_ZONE } from '@/lib/rosterDisplayDate';
+import { AimsRosterTable } from './AimsRosterTable';
+import type { RosterZoom } from '@/lib/rosterLayoutPreference';
+
 type CalendarRosterEvent = {
   id: string;
+  operationalTimeZone?: string;
   kind?: string;
   title?: string;
-  date?: Date;
+  date?: Date | string;
   day?: Record<string, any>;
   origin?: string;
   destination?: string;
@@ -10,22 +15,19 @@ type CalendarRosterEvent = {
   presentation?: string;
   departure?: string;
   arrival?: string;
-  canonical?: { startDateTime?: string };
+  canonical?: { date?: string; publishedDay?: { date?: string }; startDateTime?: string };
 };
 
 const weekDays = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
 
-function eventDate(event: CalendarRosterEvent) {
-  const value = new Date(event.canonical?.startDateTime || event.date || Date.now());
-  return Number.isFinite(value.getTime()) ? value : new Date();
-}
+
 
 function isoFromDate(value: Date) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
 }
 
 function isoOf(event: CalendarRosterEvent) {
-  return isoFromDate(eventDate(event));
+  return rosterDisplayIso(event) || '';
 }
 
 function publishedClock(value?: string | null) {
@@ -45,8 +47,8 @@ function activityContext(event: CalendarRosterEvent) {
 function activityTimes(event: CalendarRosterEvent) {
   const values = [
     event.presentation && event.presentation !== 'Conexão/Solo' ? `APZ ${publishedClock(event.presentation)}` : '',
-    publishedClock(event.departure || event.day?.startTime || event.day?.dutyReport),
-    publishedClock(event.arrival || event.day?.endTime || event.day?.dutyDebrief),
+    publishedClock(event.kind === 'flight' ? event.departure : event.day?.dutyReport || event.day?.startTime || event.departure),
+    publishedClock(event.kind === 'flight' ? event.arrival : event.day?.dutyDebrief || event.day?.endTime || event.arrival),
   ].filter(Boolean);
   return Array.from(new Set(values)).join(' · ');
 }
@@ -60,22 +62,32 @@ export function buildCalendarDates(month: string) {
   return Array.from({ length: total }, (_, index) => new Date(year, monthNumber - 1, index - leading + 1));
 }
 
-export function CalendarRosterView({ events, month }: { events: CalendarRosterEvent[]; month: string }) {
+export function CalendarRosterView({ events, month, zoom = 'month', selectedDay, onSelectDay }: { events: CalendarRosterEvent[]; month: string; zoom?: RosterZoom; selectedDay?: string; onSelectDay?: (iso: string) => void }) {
+  const unconfirmed = events.filter(event => !isoOf(event));
+  const unconfirmedView = unconfirmed.length ? <section className="cc-roster-unconfirmed" aria-label="Programações com data não confirmada"><h2>Data não confirmada</h2><p>Estas programações não puderam ser posicionadas no calendário; seus detalhes permanecem disponíveis.</p><AimsRosterTable events={unconfirmed} dayView title="Programações com data não confirmada"/></section> : null;
   const byDate = new Map<string, CalendarRosterEvent[]>();
   for (const event of events) {
     const iso = isoOf(event);
+    if (!iso) continue;
     byDate.set(iso, [...(byDate.get(iso) || []), event]);
   }
   const dates = buildCalendarDates(month);
   const weeks = Array.from({ length: Math.ceil(dates.length / 7) }, (_, index) => dates.slice(index * 7, index * 7 + 7));
-  const todayIso = isoFromDate(new Date());
+  const todayIso = rosterInstantIso(new Date(), ROSTER_DISPLAY_TIME_ZONE);
 
-  return <section className="cc-calendar-roster" aria-labelledby="cc-calendar-roster-title">
+  if (zoom === 'day') {
+    const dayEvents = byDate.get(selectedDay || '') || [];
+    return <>{dayEvents.length
+      ? <AimsRosterTable events={dayEvents} dayView title={`Programações de ${(selectedDay || '').split('-').reverse().join('/')}`}/>
+      : <section className="cc-roster-empty-v1397" role="status"><h2>Nenhuma programação neste dia</h2><p>Escolha outro dia ou volte ao mês completo.</p></section>}{unconfirmedView}</>;
+  }
+
+  return <><section className="cc-calendar-roster" aria-labelledby="cc-calendar-roster-title">
     <header>
       <div>
         <small>FORMATO CALENDÁRIO</small>
         <h2 id="cc-calendar-roster-title">Mês operacional</h2>
-        <p>Todas as programações permanecem visíveis dentro do respectivo dia.</p>
+        <p>Todas as programações do dia.</p>
       </div>
       <span>{events.length} {events.length === 1 ? 'programação' : 'programações'}</span>
     </header>
@@ -91,10 +103,10 @@ export function CalendarRosterView({ events, month }: { events: CalendarRosterEv
               const inside = iso.startsWith(`${month}-`);
               return <td key={iso} data-roster-iso={iso} data-outside-month={inside ? 'false' : 'true'} data-today={iso === todayIso ? 'true' : 'false'}>
                 <div className="cc-calendar-day">
-                  <header><time dateTime={iso}>{date.getDate()}</time>{dayEvents.length > 0 && <span>{dayEvents.length}</span>}</header>
+                  <header><button type="button" disabled={!inside} aria-label={`Abrir dia ${iso.split('-').reverse().join('/')}, ${dayEvents.length} programações`} onClick={() => onSelectDay?.(iso)}><time dateTime={iso}>{date.getDate()}</time></button>{dayEvents.length > 0 && <span>{dayEvents.length}</span>}</header>
                   <div>
-                    {dayEvents.map((event) => <article key={event.id}>
-                      <strong>{activityCode(event)}</strong>
+                    {dayEvents.map((event) => <article key={event.id} data-roster-event-id={event.id}>
+                      <button type="button" aria-label={`Abrir ${activityCode(event)} em ${iso}`} onClick={() => onSelectDay?.(iso)}><strong>{activityCode(event)}</strong></button>
                       <span>{activityContext(event)}</span>
                       {activityTimes(event) && <small>{activityTimes(event)}</small>}
                     </article>)}
@@ -106,5 +118,5 @@ export function CalendarRosterView({ events, month }: { events: CalendarRosterEv
         </tbody>
       </table>
     </div>
-  </section>;
+  </section>{unconfirmedView}</>;
 }

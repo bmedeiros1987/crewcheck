@@ -1,0 +1,200 @@
+.cc-payment-overview {display:grid;grid-template-columns:minmax(0,1fr);gap:16px;margin-bottom:24px;min-width:0}
+html body .cz-app[data-version] .cc-payment-hero {padding:28px;border-radius:24px;background:linear-gradient(130deg,#082c4b,#173e64 65%,#185578);color:#fff;box-sizing:border-box;min-width:0}
+.cc-payment-topline {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.cc-payment-topline>span {display:flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.13em;font-weight:700;color:#b8e9f7}
+.cc-payment-hero .cc-financial-privacy-toggle {border-color:#66849c;background:#ffffff0a;color:white;padding:8px 12px}
+.cc-payment-hero h2 {font-size:clamp(21px,2.4vw,28px);margin:20px 0 8px;letter-spacing:-.02em;color:inherit}
+.cc-payment-caption,.cc-payment-period,.cc-payment-disclaimer {color:#d5e4ee;font-size:14px;line-height:1.6;margin:8px 0}
+.cc-payment-value {display:flex;flex-wrap:wrap;gap:8px 24px;margin:20px 0;min-width:0}
+.cc-payment-value strong {font-size:clamp(28px,4vw,48px);line-height:1.2;letter-spacing:-.035em;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.cc-payment-timing {font-weight:600;font-size:16px;margin:16px 0 6px}
+.cc-payment-disclaimer {margin-top:22px;font-size:12px}
+.cc-payment-actions {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.cc-payment-actions button {display:flex;align-items:center;gap:12px;min-height:76px;padding:16px;border:1px solid var(--cc-review-border,#cad9e5);border-radius:16px;background:var(--cc-review-surface,#fff);color:var(--cc-review-text,#12304d);font:inherit;cursor:pointer;text-align:left;min-width:0}
+.cc-payment-actions button>svg:first-child {color:#0084ac;flex-shrink:0}
+.cc-payment-actions button>svg:last-child {margin-left:auto;width:16px}
+.cc-payment-actions button span {overflow-wrap:anywhere;font-weight:600}
+.cc-payment-pending {padding:22px;border:1px solid var(--cc-review-border,#cad9e5);border-radius:20px;background:var(--cc-review-surface,#fff);color:var(--cc-review-text,#12304d);min-width:0}
+.cc-payment-pending h3 {font-size:17px;margin:0 0 12px}.cc-payment-pending p,.cc-payment-pending li {font-size:14px;line-height:1.65}.cc-payment-pending ul {padding-left:20px}
+.cc-payment-pending button {display:inline-flex;gap:8px;align-items:center;min-height:44px;margin-top:10px;background:transparent;color:inherit;border:0;font:inherit;text-align:left;font-weight:600;cursor:pointer}
+.cc-next-payment-lines {border:1px solid var(--cc-review-border,#cad9e5);border-radius:18px;padding:18px;background:var(--cc-review-surface,#fff);color:var(--cc-review-text,#12304d)}
+.cc-next-payment-lines>summary {min-height:44px;cursor:pointer;font-weight:600;line-height:1.5}.cc-next-payment-lines>summary span {font-size:12px;margin-left:12px;font-weight:400}
+.cc-next-payment-lines p {font-size:13px;line-height:1.65}.cc-next-payment-lines article {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 16px;padding:16px 0;border-top:1px solid var(--cc-review-border,#cad9e5)}
+.cc-next-payment-lines article small {display:block;margin-top:6px}.cc-next-payment-lines article p {grid-column:1/-1;margin:0;overflow-wrap:anywhere}.cc-next-payment-lines article b {font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.cc-payment-overview :is(button,summary):focus-visible {outline:3px solid #00a9d2;outline-offset:4px}
+@media(min-width:900px){.cc-payment-overview {grid-template-columns:minmax(0,1.7fr) minmax(260px,1fr)}.cc-payment-hero {grid-column:1;grid-row:1}.cc-payment-pending {grid-column:2;grid-row:1}.cc-payment-actions,.cc-next-payment-lines {grid-column:1/-1}}
+@media(max-width:600px){html body .cz-app[data-version] .cc-payment-hero {padding:22px 20px;border-radius:20px}.cc-payment-actions {gap:8px}.cc-payment-actions button {flex-direction:column;gap:8px;padding:14px 6px;min-height:96px;text-align:center;font-size:12px}.cc-payment-actions button>svg:last-child {display:none}.cc-payment-topline .cc-financial-privacy-toggle span {display:none}.cc-payment-topline .cc-financial-privacy-toggle {min-width:44px;justify-content:center}.cc-next-payment-lines article {grid-template-columns:minmax(0,1fr)}.cc-next-payment-lines article p {grid-column:1}.cc-payment-value strong {font-size:32px}}
+/* Existing global navigation/surface rules must not turn these local shortcuts
+   into the app navigation, or recolor the hero as a secondary card. */
+html body #root .cz-app[data-version] .cc-payment-overview .cc-payment-hero {
+  background:linear-gradient(130deg,#082c4b,#173e64 65%,#185578)!important;color:#fff!important;border:0!important;padding:28px!important;
+}
+html body #root .cz-app[data-version] .cc-payment-hero :is(h2,strong,p,span,button) {color:#fff!important}
+html body #root .cz-app[data-version] nav.cc-payment-actions {display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:12px!important;background:transparent!important;border:0!important;position:static!important;box-shadow:none!important;padding:0!important;margin:0!important;width:100%!important}
+html body #root .cz-app[data-version] .cc-payment-actions button {display:flex!important;min-width:0!important;min-height:76px!important;padding:16px!important;margin:0!important;border-radius:16px!important}
+html body #root .cz-app[data-version] .cc-payment-value strong {font-size:clamp(28px,4vw,48px)!important;line-height:1.2!important}
+@media(max-width:600px){html body #root .cz-app[data-version] .cc-payment-overview .cc-payment-hero {padding:22px 20px!important}html body #root .cz-app[data-version] nav.cc-payment-actions {gap:8px!important}html body #root .cz-app[data-version] .cc-payment-actions button {flex-direction:column!important;padding:14px 6px!important;min-height:96px!important;font-size:12px!important}html body #root .cz-app[data-version] .cc-payment-value strong {font-size:32px!important}}
+html body #root .cz-app[data-version] .cc-payment-hero .cc-financial-privacy-toggle {background:#ffffff12!important;border:1px solid #87c4df!important;color:#fff!important}
+.cc-payment-pending {align-self:start}
+.cc-financial-bar-track {background:#dce8f0}.cc-financial-bar-track>span {background:#087fa4}
+/* Reuse the existing comparison rows as compact, labeled bar cards. Missing
+   periods remain explicit and disabled; their amounts are never invented. */
+.cc-financial-bars {grid-template-columns:repeat(auto-fit,minmax(180px,1fr));align-items:stretch}
+.cc-financial-bars>button {align-content:start;min-width:0;min-height:112px;box-sizing:border-box}
+.cc-financial-bars>button>span:first-child {line-height:1.4}
+@media(max-width:600px){.cc-financial-bars {grid-template-columns:repeat(2,minmax(0,1fr))}.cc-financial-bars>button {padding:10px;gap:8px}.cc-financial-bars strong {font-size:14px}}
+/* Payment hierarchy: one value, its timing, then compact review actions. */
+html body #root .cz-app[data-version] .cc-payment-overview .cc-payment-hero {
+  background:#102b43!important;border:1px solid #33516a!important;box-shadow:none!important;
+}
+.cc-payment-hero h2 {font-size:20px;margin:16px 0 6px;font-weight:500}
+.cc-payment-caption {margin:0;font-size:13px}
+.cc-payment-value {margin:18px 0 12px}
+.cc-payment-timing {margin:0 0 12px;font-size:18px}
+.cc-payment-period {padding-top:14px;border-top:1px solid #ffffff26;font-size:12px}
+.cc-payment-disclaimer {margin:10px 0 0;max-width:55ch}
+html body #root .cz-app[data-version] .cc-payment-value[data-complete="false"] strong {font-size:clamp(24px,3vw,32px)!important;letter-spacing:-.02em}
+html body #root .cz-app[data-version] .cc-payment-hero .cc-financial-privacy-toggle {min-height:44px;min-width:44px;padding:10px!important}
+.cc-payment-hero .cc-financial-privacy-toggle span {display:none}
+html body #root .cz-app[data-version] .cc-payment-actions button {min-height:48px!important;padding:12px!important;border-radius:12px!important;gap:8px!important;font-size:13px!important;flex-direction:row!important}
+.cc-payment-actions button>svg:first-child {width:18px;height:18px}
+.cc-payment-pending {padding:20px;border-radius:16px}
+.cc-payment-pending h3 {font-size:15px;margin-bottom:8px}
+.cc-payment-pending p,.cc-payment-pending li {font-size:13px;line-height:1.55}
+.cc-payment-pending ul {margin:8px 0}
+.cc-next-payment-lines {padding:16px;border-radius:16px}
+html body #root .cz-app[data-version] .cc-home-finance {padding:20px;border:1px solid var(--cc-review-border,#cad9e5);border-radius:18px;background:var(--cc-review-surface,#fff);color:var(--cc-review-text,#12304d);min-width:0;box-shadow:none}
+.cc-home-finance header>span {font-size:11px;font-weight:700;letter-spacing:.12em;color:inherit}
+.cc-home-finance header h2 {font-size:20px;line-height:1.3;margin:8px 0;font-weight:600}
+.cc-home-finance header p {font-size:13px;line-height:1.5;margin:0 0 16px;color:inherit}
+.cc-home-finance-links {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+html body #root .cz-app[data-version] .cc-home-finance-links button {display:flex;align-items:center;gap:10px;min-height:60px;padding:12px;border:1px solid var(--cc-review-border,#cad9e5);border-radius:12px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;min-width:0;box-shadow:none}
+.cc-home-finance-links button>svg {width:18px;height:18px;flex-shrink:0}
+.cc-home-finance-links button>svg:last-child {margin-left:auto}
+.cc-home-finance-links button span {font-weight:600;overflow-wrap:anywhere}
+.cc-home-finance-links button small {display:block;font-size:12px;line-height:1.5;font-weight:400;margin-top:4px}
+.cc-home-finance button:focus-visible {outline:3px solid #0084ac;outline-offset:3px}
+@media(max-width:600px){.cc-home-finance-links {grid-template-columns:minmax(0,1fr)}html body #root .cz-app[data-version] .cc-payment-actions button {justify-content:center!important;flex-wrap:wrap;text-align:center}.cc-payment-actions button>svg:last-child {display:none}.cc-payment-actions button span {font-weight:500}}
+@media(max-width:600px){html body #root .cz-app[data-version] .cc-payment-actions button {flex-direction:column!important;flex-wrap:nowrap;gap:6px!important;min-height:64px!important}.cc-payment-actions button span {white-space:nowrap;font-size:12px}}
+
+/* Direct financial reading: value and timing first, explanations on demand. */
+.cc-payment-overview {gap:12px;margin-bottom:16px}
+.cc-payment-pending {padding:16px}
+.cc-payment-pending p {margin:6px 0}
+.cc-payment-pending summary,.cc-payment-line-source summary,.cc-financial-help summary,.cc-salary-variable summary {min-height:44px;cursor:pointer;align-content:center;line-height:1.4}
+.cc-payment-line-source {grid-column:1/-1;font-size:13px}
+.cc-payment-line-source p {margin:4px 0 0}
+.cc-next-payment-lines article {padding:10px 0;gap:4px 12px}
+.cc-next-payment-lines article small {margin-top:4px}
+.cc-next-payment-lines article .cc-payment-line-source {grid-column:1/-1}
+.cc-financial-graph>summary small {font-size:12px;font-weight:400;margin-left:8px}
+.cc-financial-help {margin-block:8px;font-size:13px}
+html body #root .cz-app[data-version] .cc-financial-bars {display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:0!important}
+html body #root .cz-app[data-version] .cc-financial-bars>button {display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;align-items:center;min-height:56px!important;padding:10px 4px!important;border:0!important;border-bottom:1px solid var(--cc-review-border,#cad9e5)!important;border-radius:0!important;background:transparent!important;gap:6px 12px!important;font:inherit;text-align:left}
+.cc-financial-bars>button>strong {text-align:right;font-size:13px}
+.cc-financial-bars .cc-financial-bar-track,.cc-financial-bars>button>small {grid-column:1/-1}
+html body #root .cz-app[data-version] .cc-financial-week-list>button {min-height:44px!important;padding:10px 8px!important;border-radius:8px!important;font-size:14px!important}
+html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row {display:grid!important;grid-template-columns:48px minmax(0,1fr) auto!important;align-items:start;gap:6px 10px!important;padding:12px 0!important;min-width:0}
+html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row>span {font-size:12px!important;line-height:1.5}
+html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row>strong {font-size:14px!important;line-height:1.5}
+html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row>b {font-size:14px!important;line-height:1.5;min-width:0;max-width:100%}
+html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row>.cc-per-diem-source {margin:0!important;min-width:0}
+.cc-per-diem-content .cc-per-diem-source>summary {min-height:44px;align-content:center;font-size:13px;line-height:1.4;cursor:pointer}
+.cc-per-diem-content :is(button,summary,input,select):focus-visible {outline:3px solid #0084ac;outline-offset:3px}
+@media(max-width:360px){html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row {grid-template-columns:40px minmax(0,1fr)!important}.cc-per-diem-items .cz-finance-row>b {justify-self:stretch}}
+@media(prefers-reduced-motion:reduce){.cc-per-diem-content * {scroll-behavior:auto!important}}
+html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row {grid-template-columns:48px minmax(0,1fr) minmax(0,40%)!important;grid-template-areas:'date label amount' 'source source source'!important}
+@media(max-width:600px){html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row {grid-template-columns:44px minmax(0,1fr)!important;grid-template-areas:'date label' 'amount amount' 'source source'!important}html body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row>b {justify-self:stretch!important;text-align:left!important}}
+html:is([data-crew-text-size="150"],[data-crew-text-size="200"]) body #root .cz-app[data-version] .cc-per-diem-items .cz-finance-row {grid-template-columns:minmax(0,1fr)!important;grid-template-areas:'date' 'label' 'amount' 'source'!important}
+
+/* Bank-like consultation: statement first, charts on a separate accessible tab. */
+.cc-bank-tabs {display:flex;gap:4px;border-bottom:1px solid var(--cc-review-border,#cad9e5)}
+.cc-bank-tabs button {flex:1;min-width:44px;min-height:44px;background:transparent;color:var(--cc-review-text,#12304d);border:0;border-bottom:3px solid transparent;font:inherit;font-weight:600;cursor:pointer}
+.cc-bank-tabs button[aria-selected="true"] {border-bottom-color:#0084ac;color:var(--cc-review-text,#12304d)}
+.cc-payment-overview>[hidden] {display:none!important}
+.cc-next-payment-lines header h3,.cc-bank-details h3 {margin:0 0 6px;font-size:16px}
+.cc-next-payment-lines header>span,.cc-bank-details>p {font-size:12px;line-height:1.5}
+.cc-bank-transaction {border-top:1px solid var(--cc-review-border,#cad9e5);margin-top:10px;padding:0}
+.cc-bank-transaction>summary {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,45%);align-items:center;gap:12px;min-height:60px;list-style:none;padding:10px 0;box-sizing:border-box;cursor:pointer}
+.cc-bank-transaction>summary::-webkit-details-marker {display:none}
+.cc-bank-transaction summary strong {font-size:14px;line-height:1.4;font-weight:600}
+.cc-bank-transaction summary small {display:block;font-size:12px;line-height:1.5;margin-top:4px}
+.cc-bank-transaction summary b {text-align:right;font-size:14px;line-height:1.4;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.cc-bank-transaction>p {margin:0 0 12px;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.cc-bank-details {padding:16px;border:1px solid var(--cc-review-border,#cad9e5);border-radius:16px;background:var(--cc-review-surface,#fff);color:var(--cc-review-text,#12304d);min-width:0}
+.cc-bank-chart h4 {font-size:13px;margin:18px 0 8px}
+.cc-bank-chart-row {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,45%);gap:6px 12px;padding:12px 0;border-top:1px solid var(--cc-review-border,#cad9e5);font-size:13px;line-height:1.5}
+.cc-bank-chart-row b {text-align:right;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.cc-bank-chart-row small {display:block;font-size:12px}
+.cc-bank-chart-track {grid-column:1/-1;height:10px;border-radius:6px;background:var(--cc-review-border,#dce8f0)}
+.cc-bank-chart-track>span {display:block;height:100%;box-sizing:border-box;min-width:0;border:1px dashed #0084ac;border-radius:6px;background:#0084ac22}
+@media(min-width:900px){.cc-bank-tabs,.cc-bank-details,.cc-next-payment-lines {grid-column:1/-1}}
+@media(max-width:360px){.cc-bank-transaction>summary,.cc-bank-chart-row {grid-template-columns:minmax(0,1fr)}.cc-bank-transaction summary b,.cc-bank-chart-row b {text-align:left}}
+.cc-bank-salary-breakdown {margin-top:24px;padding-top:16px;border-top:1px solid var(--cc-review-border,#cad9e5)}
+.cc-bank-salary-breakdown>p {font-size:12px;line-height:1.5}
+.cc-financial-bar-track>span {box-sizing:border-box;border:1px dashed #0084ac;background:#0084ac22}
+
+/* CrewCheck identity with restrained financial surfaces, in both themes. */
+html body #root .cz-app[data-version] .cc-per-diem-content :is(.cz-panel-head,.cz-toolbox,.cz-finance-table,.cc-financial-period,.cc-financial-range) {background:var(--cc-review-surface)!important;background-image:none!important;box-shadow:none!important;border-color:var(--cc-review-border)!important}
+html body #root .cz-app[data-version] .cc-per-diem-content :is(.cz-panel-head,.cz-toolbox)::before,
+html body #root .cz-app[data-version] .cc-per-diem-content :is(.cz-panel-head,.cz-toolbox)::after,
+html body #root .cz-app[data-version] .cc-per-diem-content .cz-panel-head h1::after {content:none!important;display:none!important}
+html body #root .cz-app[data-version] .cc-per-diem-content .cz-kpi>span {background:transparent!important;color:var(--cc-review-text)!important;box-shadow:none!important;border:0!important}
+
+/* Financial destinations share their month/filter state, never a stacked feed. */
+.cc-financial-screen[hidden] {display:none!important}
+html body #root .cz-app[data-version] .cc-financial-screen>:is(.cz-panel-head,.cz-finance-grid,.cz-toolbox,.cz-finance-table) {width:100%!important;max-width:none!important;margin:0 0 12px!important;box-sizing:border-box}
+html body #root .cz-app[data-version] .cc-financial-screen :is(.cz-panel-head,.cz-toolbox,.cz-finance-table) {padding:16px!important;border:1px solid var(--cc-review-border)!important;border-radius:16px!important}
+.cc-payment-overview[data-financial-screen]:not([data-financial-screen="overview"]) {display:block}
+.cc-financial-screen-head {margin:0 0 16px}
+.cc-financial-screen-head h2 {font-size:24px;margin:8px 0;color:var(--cc-review-text)}
+.cc-financial-screen-head button {min-height:44px;padding:10px 0;border:0;background:transparent;color:var(--cc-review-text);font:inherit;cursor:pointer}
+.cc-financial-pending-line {font-size:13px;line-height:1.6;margin:0;color:var(--cc-review-text)}
+html body #root .cz-app[data-version] nav.cc-financial-screen-links {position:static!important;display:flex!important;flex-direction:column!important;grid-column:1/-1;gap:0!important;width:100%!important;margin:12px 0!important;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important}
+html body #root .cz-app[data-version] .cc-financial-screen-links>button {position:static!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:12px!important;min-width:44px!important;min-height:44px!important;padding:12px 0!important;border:0!important;border-bottom:1px solid var(--cc-review-border)!important;border-radius:0!important;background:transparent!important;color:var(--cc-review-text)!important;box-shadow:none!important;font:inherit!important;text-align:left!important;cursor:pointer}
+.cc-financial-screen .cc-per-diem-items>header h2 {font-size:16px;margin:0 0 6px}
+.cc-financial-screen .cc-per-diem-summary .cz-kpi {border:0!important;background:transparent!important;box-shadow:none!important}
+html body #root .cz-app[data-version] .cc-payment-overview[data-financial-screen="payment"] .cc-payment-hero {background:transparent!important;border:0!important;border-radius:0!important;padding:12px 0!important;box-shadow:none!important}
+html body #root .cz-app[data-version] .cc-payment-overview[data-financial-screen="payment"] .cc-payment-hero :is(h2,strong,p,span,button) {color:var(--cc-review-text)!important}
+.cc-payment-overview[data-financial-screen="payment"] .cc-payment-hero h2,.cc-payment-overview[data-financial-screen="payment"] .cc-payment-topline>span {display:none}
+.cc-financial-history-availability {font-size:12px;line-height:1.6;color:var(--cc-review-muted);margin:12px 0}
+
+html body #root .cz-app[data-version] .cc-payment-hero .cc-payment-value small {display:block;flex-basis:100%;color:#d5e4ee!important;font-size:13px;line-height:1.5;opacity:1!important}
+
+/* Direction is redundant with explicit signs/labels; amounts retain privacy masking. */
+.cc-bank-chart-row[data-money-direction="income"] b {color:var(--cc-financial-income,#0969a5)}
+.cc-bank-chart-row[data-money-direction="outflow"] b {color:var(--error-text,#b42318)}
+.cc-bank-chart-row[data-money-direction="income"] .cc-bank-chart-track>span {background:var(--cc-financial-income,#0969a5);border-color:currentColor}
+.cc-bank-chart-row[data-money-direction="outflow"] .cc-bank-chart-track>span {background:var(--error-text,#b42318);border-color:currentColor}
+
+.cc-bank-transaction[data-money-direction="income"] summary b {color:var(--cc-financial-income,#0969a5)}
+.cc-bank-transaction[data-money-direction="outflow"] summary b {color:var(--error-text,#b42318)}
+
+html body .cz-app[data-version] {--cc-financial-income:#75c5ff;--cc-financial-outflow:#ffb4ab}
+html[data-crew-theme="light"] body .cz-app[data-version] {--cc-financial-income:#0969a5;--cc-financial-outflow:#b42318}
+.cc-bank-chart-row[data-money-direction="outflow"] b,.cc-bank-transaction[data-money-direction="outflow"] summary b {color:var(--cc-financial-outflow)}
+.cc-bank-chart-row[data-money-direction="outflow"] .cc-bank-chart-track>span {background:var(--cc-financial-outflow)}
+
+html body #root .cz-app[data-version] .cc-bank-chart-row[data-money-direction="income"] b,html body #root .cz-app[data-version] .cc-bank-transaction[data-money-direction="income"] summary b {color:var(--cc-financial-income)!important}
+html body #root .cz-app[data-version] .cc-bank-chart-row[data-money-direction="outflow"] b,html body #root .cz-app[data-version] .cc-bank-transaction[data-money-direction="outflow"] summary b {color:var(--cc-financial-outflow)!important}
+
+.cc-payment-topline {position:relative}
+.cc-payment-help {position:static;margin-left:auto;color:inherit}
+.cc-payment-help>summary {display:flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;cursor:pointer;list-style:none}
+.cc-payment-help>summary::-webkit-details-marker {display:none}
+.cc-payment-help>summary>span {display:flex;align-items:center;justify-content:center;width:24px;height:24px;border:2px solid currentColor;border-radius:50%;font-weight:700}
+.cc-payment-help>div {position:absolute;z-index:5;right:0;top:100%;width:min(280px,calc(100vw - 72px));max-height:60vh;overflow:auto;box-sizing:border-box;padding:16px;border:1px solid var(--cc-review-border);border-radius:12px;background:var(--cc-review-surface);box-shadow:0 8px 24px #0003}
+html body #root .cz-app[data-version] .cc-payment-help>div :is(p,li) {color:var(--cc-review-text)!important;font-size:13px;line-height:1.5}
+.cc-payment-help>div ul {padding-left:18px}
+
+/* Consistent financial controls; scoped away from the approved footer. */
+html body #root .cz-app[data-version] .cc-financial-actions {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}
+html body #root .cz-app[data-version] .cc-financial-actions>button,html body #root .cz-app[data-version] .cc-financial-screen-head>button {display:flex!important;align-items:center!important;justify-content:center!important;gap:8px!important;min-height:48px!important;min-width:0!important;padding:10px 14px!important;margin:0!important;box-sizing:border-box!important;border:1px solid var(--cc-review-border)!important;border-radius:12px!important;background:var(--cc-review-surface)!important;color:var(--cc-review-text)!important;font:inherit!important;font-size:14px!important;line-height:1.4!important;text-align:center!important;white-space:normal!important}
+.cc-financial-actions>button>svg{flex:0 0 18px}
+.cc-financial-actions>button:only-child{grid-column:1/-1}
+html body #root .cz-app[data-version] .cc-payment-overview[data-financial-screen="payment"] .cc-payment-value small {color:var(--cc-review-text)!important}
+html body #root .cz-app[data-version] .cc-payment-overview[data-financial-screen="payment"] .cc-payment-hero {padding:16px!important;border:1px solid var(--cc-review-border)!important;border-radius:16px!important;background:var(--cc-review-surface)!important}
+@media(max-width:600px){html body #root .cz-app[data-version] .cc-financial-actions{grid-template-columns:minmax(0,1fr);gap:8px}}
+
+/* Salary rows and their optional source disclosure share one reading column. */
+html body #root .cz-app[data-version] .cc-salary-history [data-salary-items] {display:block!important}

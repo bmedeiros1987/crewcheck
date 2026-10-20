@@ -26,7 +26,10 @@ export function patchRosterCacheIntegrityV14380(source) {
 
   const oldParse = "      const payload = JSON.parse(raw);\n      const roster = payload?.roster ? payload.roster as CrewRoster : payload as CrewRoster;";
   const newParse = "      const payload = JSON.parse(raw);\n      // P0 fail-closed: versões anteriores serializavam o resultado do parser sem\n      // um marcador de compatibilidade. Depois de atualizar o cliente, esse JSON\n      // podia continuar exibindo uma escala produzida por lógica antiga.\n      if (payload?.cacheSchema !== ROSTER_CACHE_SCHEMA) continue;\n      const roster = payload?.roster ? payload.roster as CrewRoster : payload as CrewRoster;";
-  if (!patched.includes(newParse)) {
+  const scopedParse = "if (payload?.cacheSchema !== ROSTER_CACHE_SCHEMA || payload.owner !== startupOwner() || payload.cleared || payload.selection === 'automatic') continue;";
+  // The terminal startup patch adds stricter account/intent gates to this schema.
+  // Replaying the legacy cache patch must preserve that forward-compatible guard.
+  if (!patched.includes(newParse) && !patched.includes(scopedParse)) {
     if (!patched.includes(oldParse)) throw new Error('[v14380] leitura do cache de roster não localizada');
     patched = patched.replace(oldParse, newParse);
   }

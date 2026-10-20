@@ -194,14 +194,50 @@ function scheduleLead(label = '') {
   return label ? `${String(label).replace(/[,.:;]+$/, '')},` : '';
 }
 
-function legSentence(leg = {}, index = 0, radar = null) {
-  const flight = spokenFlightNumber(leg.flightNumber || `etapa ${index + 1}`);
+function legSentence(leg = {}, index = 0) {
+  // Visible text keeps the published identifier; premiumVoiceText owns pronunciation.
+  const flight = String(leg.flightNumber || '').trim().toUpperCase().replace(/\s+/g, '') || `Voo ${index + 1} a confirmar`;
   const departure = spokenTime(leg.departureTime);
   const arrival = spokenTime(leg.arrivalTime);
   const destination = shortAirportName(leg.destination);
-  const gate = radar?.gate || leg.gate;
-  const sequence = index === 0 ? 'Na primeira perna' : `Na perna ${index + 1}`;
-  return `${sequence}, você segue no ${flight}, saindo ${originDeparturePhrase(leg.origin)} às ${departure} e chegando a ${destination} às ${arrival}${gate ? `, pelo portão ${gate}` : ''}.`;
+  // Legacy leg.gate / radar.gate do not carry a verified occurrence here.
+  // Leave gate reporting to the canonical Radar surface; never attach it to arrival.
+  return `${flight}: saída ${originDeparturePhrase(leg.origin)} às ${departure}; chegada em ${destination} às ${arrival}.`;
+}
+
+function publishedPresentationText(display) {
+  if (display?.clockBasis !== 'published-brt' || display.presentationConfirmed !== true || !Number.isFinite(display.publishedStart)) return 'horário e data da apresentação não confirmados';
+  // Same proven instant as departure; never classifier/argument fallback clocks.
+  const wall = new Date(display.publishedStart - 180 * 60_000);
+  if (!Number.isFinite(wall.getTime())) return 'horário e data da apresentação não confirmados';
+  const iso = wall.toISOString();
+  return `${iso.slice(0, 10).split('-').reverse().join('/')} às ${iso.slice(11, 16)}`;
+}
+
+function nextProgramText(record) {
+  const legs = record.legs;
+  const display = record.display?.clockBasis === 'published-brt' ? record.display : null;
+  const date = value => {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return 'data não confirmada';
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+      ? value.split('-').reverse().join('/') : 'data não confirmada';
+  };
+  const clock = value => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value || '')) ? value : 'horário não confirmado';
+  const rows = [
+    `Próxima programação: ${legs.length} voo${legs.length === 1 ? '' : 's'}.${display?.planned ? ' Planejada; não é confirmação operacional.' : ''}`,
+    `APZ: ${publishedPresentationText(display)}.`,
+    ...legs.slice(0, 4).map((leg, index) => {
+      const flight = String(leg.flightNumber || '').trim().toUpperCase().replace(/\s+/g, '') || `Voo ${index + 1} não confirmado`;
+      const dates = display?.legs?.[index];
+      return `${flight}: decolagem prevista ${originDeparturePhrase(leg.origin)} em ${date(dates?.departureDate)} às ${clock(leg.departureTime)}; chegada prevista ao aeroporto de ${shortAirportName(leg.destination)} em ${date(dates?.arrivalDate)} às ${clock(leg.arrivalTime)}.`;
+    }),
+    legs.length > 4 ? `Os outros ${legs.length - 4} voos estão na escala.` : '',
+    record.endKind !== 'duty-debrief' || display?.endConfirmed !== true ? 'Fim publicado da jornada não confirmado.' : `Fim publicado: ${date(display?.endDate)} às ${clock(record.endTime)}.`,
+    display ? 'Relógio da escala: UTC−03; sem conversão para o fuso local do destino.' : 'Fuso não confirmado nesta leitura.',
+    'Hotel/van sem dados vinculados; chegada ao aeroporto não confirma chegada ao hotel.',
+  ];
+  return rows.filter(Boolean).join('\n');
 }
 
 export function buildProgramSummary({ profile = {}, snapshot = {}, record = null, label = '', presentationTime = '', radar = null, includeGreeting = true } = {}) {
@@ -211,16 +247,28 @@ export function buildProgramSummary({ profile = {}, snapshot = {}, record = null
   const presentation = spokenTime(presentationTime || record.startTime);
   const end = spokenTime(record.endTime);
   const lead = scheduleLead(label);
+  const isNext = /proxima programacao|proximo/.test(normalizeIntent(label));
+  if (isNext && (record.display?.cancelled === true || ['cancelled', 'canceled', 'cancelado'].includes(String(record.day?.status || '').trim().toLowerCase()))) return 'Programação consta cancelada no resumo recebido. Voos e apresentação não devem ser usados como programação ativa; confirme a situação na fonte operacional.';
+  if (isNext && !legs.length && record.display?.presentationConfirmed !== true) return 'Próxima atividade: apresentação não confirmada na escala recebida. Não há APZ publicada para informar.';
   if (!legs.length) {
     const activity = String(record.code || 'atividade').toLowerCase();
+    if (isNext) {
+      const dates = record.display;
+      const day = value => value ? value.split('-').reverse().join('/') : 'data não confirmada';
+      return `Próxima atividade: ${activity}.${dates.planned ? ' Planejada; não é confirmação operacional.' : ''} APZ: ${publishedPresentationText(dates)}. ${dates.endConfirmed ? `Fim publicado: ${day(dates.endDate)} às ${record.endTime}.` : 'Fim publicado não confirmado.'} Relógio da escala: UTC−03.`;
+    }
     return `${greeting}${lead ? `${lead} ` : ''}você tem ${activity}. Sua apresentação é às ${presentation}, com término previsto às ${end}.`.trim();
   }
+  if (isNext) return nextProgramText(record);
   const count = legs.length;
   const finalDestination = shortAirportName(legs.at(-1)?.destination);
-  const opening = `${greeting}${lead ? `${lead} ` : ''}você tem ${count} perna${count === 1 ? '' : 's'}. Sua apresentação é às ${presentation}, e a chave termina em ${finalDestination} às ${end}.`;
-  const details = legs.slice(0, 4).map((leg, index) => legSentence(leg, index, index === 0 ? radar : null));
+  const opening = `${greeting}${lead ? `${lead} ` : ''}você tem ${count} perna${count === 1 ? '' : 's'}. Apresentação às ${presentation}. Fim da jornada em ${finalDestination} às ${end}.`;
+  const programOpening = record.endKind === 'arrival'
+    ? `${greeting}${lead ? `${lead} ` : ''}você tem ${count} perna${count === 1 ? '' : 's'}. Sua apresentação é às ${presentation}. A última chegada prevista é em ${finalDestination} às ${end}; o fim publicado da jornada não está confirmado.`
+    : opening;
+  const details = legs.slice(0, 4).map((leg, index) => legSentence(leg, index));
   const remaining = count > 4 ? `As outras ${count - 4} pernas ficam detalhadas no texto da escala.` : '';
-  return [opening, ...details, remaining].filter(Boolean).join('\n');
+  return [programOpening, ...details, remaining].filter(Boolean).join('\n');
 }
 
 export function trafficLevel(route = {}) {
@@ -276,3 +324,4 @@ export function premiumVoiceText(text = '') {
   if (value.length > 700) value = `${value.slice(0, 680).replace(/\s+\S*$/, '')}. Os demais detalhes ficam no texto.`;
   return value;
 }
+

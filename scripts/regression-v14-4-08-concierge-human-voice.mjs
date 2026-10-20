@@ -30,7 +30,8 @@ const human = conciergeHumanizeReplyV14408([
 assert.ok(human.includes('LA3730'), 'dado operacional foi perdido');
 assert.ok(!human.includes('Nota leve:'), 'rótulo robótico de humor não deve aparecer');
 assert.equal(human.split(CONCIERGE_COMPACT_ROSTER_NOTICE_V14408).length - 1, 1, 'aviso de escala deve aparecer uma única vez');
-assert.ok(human.includes('continuo daí'), 'resposta natural deve oferecer continuação contextual');
+assert.ok(!human.includes('continuo daí'), 'não acrescentar continuação genérica não solicitada');
+assert.ok(conciergeHumanizeReplyV14408('Contexto do pernoite: Hotel informado\nResultado.', 'farmácia').includes('Hotel informado'), 'preservar referência factual');
 
 const rawMetar = 'METAR SBBR 251600Z 09005KT CAVOK';
 assert.equal(conciergeHumanizeReplyV14408(rawMetar, '/metar SBBR raw'), rawMetar, 'METAR raw não pode ser reescrito');

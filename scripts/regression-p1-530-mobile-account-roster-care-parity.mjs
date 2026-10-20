@@ -56,12 +56,12 @@ assert.match(
 );
 assert.match(
   home,
-  /preservePlannedRosterBeforeImport\(bundle, remote\.roster\)/,
-  'before replacing a conflicting local publication, mobile must preserve the prior same-period version for comparison',
+  /preservePlannedRosterBeforeImport\(bundle, active\.roster, plannedSession\)/,
+  'before replacing a conflicting local publication, mobile must preserve the prior same-period version under the captured owner/session for comparison',
 );
 assert.match(
   home,
-  /saveRoster\(remote\.roster, 'Escala ativa sincronizada'\)/,
+  /saveRoster\(active\.roster, 'Escala ativa sincronizada', 'automatic'\)/,
   'verified account-active publication must become the mobile active cache after conflict adjudication',
 );
 
@@ -97,7 +97,7 @@ assert.match(
 );
 assert.match(
   home,
-  /saveRoster\(active\.roster, 'Escala ativa sincronizada'\);\s*setBundle\(\{ roster: active\.roster,/,
+  /saveRoster\(active\.roster, 'Escala ativa sincronizada', 'automatic'\);\s*if \(!canCommit\(\)\) return;\s*setBundle\(\{ roster: active\.roster,/,
   'remote-only restore must persist the authenticated roster locally before publishing it into UI state',
 );
 

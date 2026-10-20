@@ -1,3 +1,5 @@
+import { useStartupCopy } from './components/startupCopy';
+import { StartupProgress, type StartupStage } from "./components/StartupProgress";
 import { useEffect, useState, type ReactNode } from "react";
 import { Toaster } from "sonner";
 import { Route, Switch, useLocation } from "wouter";
@@ -14,16 +16,20 @@ import WatchPage from "./pages/WatchPage";
 import VisitorAccessPage from "./pages/VisitorAccessPage";
 import SharedRosterPage from "./pages/SharedRosterPage";
 import AdminPartnerAccountsPage from "./pages/AdminPartnerAccountsPage";
+import PublicUpdatesPage from "./pages/PublicUpdatesPage";
 import AboutUsPage from "./pages/AboutUsPage";
 import SystemStatusPage from "./pages/SystemStatusPage";
 import TelegramConnectPage from "./pages/TelegramConnectPage";
 import GuardianPublicPage from './pages/GuardianPublicPage';
 import VoyagePublicPage from './pages/VoyagePublicPage';
-import { AuthClientError, getMe, getStoredUser, isAuthenticated } from "./lib/authClient";
+import { captureAuthSession, getMe, getStoredUser, isAuthenticated } from "./lib/authClient";
 import { applyDocumentLanguage, installGlobalStaticTranslations } from "./lib/i18n";
 import { installPwaUpdateCoordinator } from "./lib/pwaUpdateCoordinator";
 import TermsGate from "./components/TermsGate";
 import PartnerWelcome from "./components/PartnerWelcome";
+import NativePlayUpdateNotice from './components/NativePlayUpdateNotice';
+import PwaInstallNotice from './components/PwaInstallNotice';
+import { initializeCrewTextSize } from './lib/textSizePreference';
 
 type CrewThemeMode = 'light' | 'dark' | 'system';
 
@@ -51,18 +57,29 @@ function applyCrewThemeMode(mode: CrewThemeMode) {
   } catch {}
 }
 
-function CrewCheckOpeningSplash({ label = "CrewCheck Premium" }: { label?: string }) {
-  return <div className="cc1270-loader" aria-label={label}><div className="cc1270-loader-bg" /><div className="cc1270-loader-card"><img className="cc1270-loader-brand" src="/icons/crewcheck-icon-v2.png" alt="CrewCheck" width="96" height="96" decoding="sync" fetchPriority="high" /><strong>CrewCheck</strong><small>Carregando CrewCheck Premium</small></div></div>;
+function CrewCheckOpeningSplash({ label, stage = "session" }: { label?: string; stage?: StartupStage }) {
+  const copy = useStartupCopy();
+  return <div className="cc1270-loader" aria-label={label || copy.opening}><div className="cc1270-loader-bg" /><div className="cc1270-loader-card"><img className="cc1270-loader-brand" src="/icons/crewcheck-icon-v2.png" alt="CrewCheck" width="96" height="96" decoding="sync" fetchPriority="high" /><strong>CrewCheck</strong><StartupProgress stage={stage} /></div></div>;
 }
 
-async function enablePartnerDemoRoster() {
+async function enablePartnerDemoRoster(isCurrent: () => boolean, accountKey: string) {
+  const controller = new AbortController();
+  let expired = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const response = await fetch('/api/partner/demo-profile', { cache: 'no-store', credentials: 'same-origin' });
-    if (!response.ok) return;
-    const payload = await response.json().catch(() => null);
-    if (!payload?.partner || !payload?.demoRosterEnabled) return;
-    const user = getStoredUser();
-    const accountKey = String(user?.id || user?.email || 'partner').toLowerCase();
+    const deadline = new Promise<null>(resolve => {
+      timer = setTimeout(() => {
+        expired = true;
+        controller.abort();
+        resolve(null);
+      }, 5_000);
+    });
+    const profile = (async () => {
+      const response = await fetch('/api/partner/demo-profile', { cache: 'no-store', credentials: 'same-origin', signal: controller.signal });
+      return response.ok ? response.json().catch(() => null) : null;
+    })();
+    const payload = await Promise.race([profile, deadline]);
+    if (expired || !isCurrent() || !accountKey || !payload?.partner || !payload?.demoRosterEnabled) return;
     const marker = `crewcheck_partner_demo_loaded:${accountKey}`;
     if (window.localStorage.getItem(marker) === '1') return;
     window.localStorage.setItem('crewcheck_demo_mode_seen', '1');
@@ -70,31 +87,65 @@ async function enablePartnerDemoRoster() {
     window.localStorage.setItem('crewcheck_partner_demo_account', accountKey);
     window.localStorage.setItem('crewcheck_partner_name', String(payload.partnerName || 'Parceiro CrewCheck'));
     window.localStorage.setItem(marker, '1');
-  } catch {}
+  } catch {} finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 function Protected({ children }: { children: ReactNode }) {
   const [, setLocation] = useLocation();
   const [ready, setReady] = useState(false);
+  const [startupStage, setStartupStage] = useState<StartupStage>("session");
   useEffect(() => {
-    let mounted = true;
-    const demoMode = window.localStorage.getItem('crewcheck_demo_mode_seen') === '1' || window.sessionStorage.getItem('crewcheck_demo_active') === '1';
-    if (!isAuthenticated() && !demoMode) { setLocation('/login'); return; }
-    if (!isAuthenticated() && demoMode) { setReady(true); return; }
-    getMe().then(() => enablePartnerDemoRoster()).catch((error) => {
-      // Only a confirmed-invalid session (reason 'session_expired', i.e. the backend
-      // itself rejected the token) should ever send someone back to /login. Everything
-      // else - a rate limit, an account-state signal, a network hiccup, a timeout, a 5xx -
-      // means we simply don't know the session is invalid, so the existing local session
-      // and cached data stay exactly as they were; the user keeps working from what's
-      // already on the device instead of being bounced out by a transient backend issue.
-      const reason = error instanceof AuthClientError ? error.reason : 'backend_unavailable';
-      if (reason === 'session_expired') setLocation('/login');
-    }).finally(() => mounted && setReady(true));
-    return () => { mounted = false; };
+    let mounted = true, generation = 0;
+    const start = () => {
+      const request = ++generation;
+      const session = captureAuthSession();
+      const isCurrent = () => mounted && request === generation && session.isCurrent();
+      setReady(false);
+      setStartupStage("session");
+      const demoMode = window.localStorage.getItem('crewcheck_demo_mode_seen') === '1' || window.sessionStorage.getItem('crewcheck_demo_active') === '1';
+      if (!isAuthenticated() && !demoMode) { setLocation('/login'); return; }
+      if (!isAuthenticated() && demoMode) { setReady(true); return; }
+      let expired = false;
+      getMe({ isCurrent, onSessionExpired: () => {
+        if (!isCurrent()) return;
+        expired = true;
+      } }).then(() => {
+        if (!isCurrent()) return;
+        setStartupStage("profile");
+        return enablePartnerDemoRoster(isCurrent, session.owner);
+      }).catch(() => {
+        // Current transient failures retain the existing local session. A
+        // confirmed expiry terminates through the auth-expired listener.
+      }).finally(() => {
+        if (!expired && isCurrent()) setReady(true);
+      });
+    };
+    const onExpired = () => {
+      // Expiry can originate from another current protected request while getMe
+      // is pending. An obsolete event must never route an authenticated account.
+      if (!mounted || isAuthenticated()) return;
+      generation += 1;
+      setReady(false);
+      setLocation('/login');
+    };
+    const storage = (event: StorageEvent) => {
+      if (event.key === null || ['crewcheck_auth_token', 'crewcheck_auth_user'].includes(event.key)) start();
+    };
+    start();
+    window.addEventListener('crewcheck:auth-changed', start);
+    window.addEventListener('crewcheck:auth-expired', onExpired);
+    window.addEventListener('storage', storage);
+    return () => {
+      mounted = false; generation += 1;
+      window.removeEventListener('crewcheck:auth-changed', start);
+      window.removeEventListener('crewcheck:auth-expired', onExpired);
+      window.removeEventListener('storage', storage);
+    };
   }, [setLocation]);
   if (!isAuthenticated() && !(window.localStorage.getItem('crewcheck_demo_mode_seen') === '1' || window.sessionStorage.getItem('crewcheck_demo_active') === '1')) return null;
-  if (!ready) return <CrewCheckOpeningSplash label="CrewCheck Premium" />;
+  if (!ready) return <CrewCheckOpeningSplash stage={startupStage} />;
   return <TermsGate>{children}</TermsGate>;
 }
 
@@ -116,6 +167,7 @@ function Router() {
     <Route path="/share/:token">{(params) => <SharedRosterPage token={params.token} />}</Route>
     <Route path="/admin/partners">{() => <Protected><AdminOnly><AdminPartnerAccountsPage /></AdminOnly></Protected>}</Route>
     <Route path="/telegram">{() => <Protected><TelegramConnectPage /></Protected>}</Route>
+    <Route path="/atualizacoes" component={PublicUpdatesPage} />
     <Route path="/sobre" component={AboutUsPage} />
     <Route path="/about" component={AboutUsPage} />
     <Route path="/status" component={SystemStatusPage} />
@@ -149,6 +201,7 @@ function Router() {
 }
 
 export default function App() {
+  useEffect(initializeCrewTextSize, []);
   const [, setLocation] = useLocation();
   const [appMode, setAppMode] = useState(false);
   const [maintenanceState, setMaintenanceState] = useState<{ enabled?: boolean; message?: string; title?: string; status?: string; adminBypass?: boolean; updatedAt?: string | null; estimatedReturnAt?: string | null; etaMinutes?: number | null } | null>(null);
@@ -197,7 +250,7 @@ export default function App() {
   const storedEmail = String(storedUser?.email || '').toLowerCase();
   const clientAdmin = storedRole.includes('admin') || ['bmedeiros1987@gmail.com', 'bruno@crewcheck.local'].includes(storedEmail);
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';
-  const publicPaths = ['/voyage', '/privacy', '/terms', '/about', '/sobre', '/status', '/system-status', '/oauth-verification', '/google-calendar', '/delete-account', '/guardian', '/visitor', '/share/'];
+  const publicPaths = ['/atualizacoes', '/voyage', '/privacy', '/terms', '/about', '/sobre', '/status', '/system-status', '/oauth-verification', '/google-calendar', '/delete-account', '/guardian', '/visitor', '/share/'];
   const maintenanceBlocks = Boolean(maintenanceState?.enabled && !clientAdmin && currentPath !== '/login' && !publicPaths.some((path) => currentPath.startsWith(path)));
 
   if (!bootSplashDone) return <CrewCheckOpeningSplash label="CrewCheck Premium" />;
@@ -205,6 +258,6 @@ export default function App() {
 
   return <ErrorBoundary>
     <Toaster richColors position={appMode ? "top-center" : "top-right"} />
-    <Router /><CrewCheckGlobalBottomMenu />
+    <NativePlayUpdateNotice /><PwaInstallNotice /><Router /><CrewCheckGlobalBottomMenu />
   </ErrorBoundary>;
 }

@@ -10,6 +10,7 @@ on:
       - 'scripts/v14367/**'
       - 'scripts/v14374/**'
       - 'scripts/regression-v14-3-74-for-cgh.mjs'
+      - 'scripts/regression-aims-civil-timezone.mjs'
       - '.github/workflows/v14374-for-cgh-third-leg.yml'
   workflow_dispatch:
 
@@ -27,8 +28,12 @@ jobs:
           node-version: '22.13.0'
           cache: npm
       - run: npm ci
+      - name: Civil dates in UTC, Sao Paulo and Tokyo before preparation
+        run: node scripts/regression-aims-civil-timezone.mjs --helpers-only
       - name: Prepare canonical CrewCheck source
         run: node scripts/v139/apply.mjs
+      - name: Civil dates and FOR CGH in UTC, Sao Paulo and Tokyo
+        run: node scripts/regression-aims-civil-timezone.mjs
       - name: Reproduce and protect 01 Aug FOR CGH third leg
         run: node scripts/regression-v14-3-74-for-cgh.mjs
       - name: TypeScript check

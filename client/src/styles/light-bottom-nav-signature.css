@@ -1,0 +1,29 @@
+/* Light bottom navigation (#476 follow-up): intensity, contrast, border, depth and
+   active state only. Icon tones stay with Atlas 1C (one semantic tone per destination),
+   the operational timeline is not touched and dark theme has no rule here. */
+html[data-crew-theme='light'] body > nav.cz-bottom-nav[aria-label="Navegação principal"] {
+  background: var(--cc1515-light-surface) !important;
+  border-color: color-mix(in srgb, var(--cc1515-light-line) 72%, var(--cc1515-light-muted)) !important;
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--cc1515-light-title) 10%, transparent),
+    0 10px 28px color-mix(in srgb, var(--cc1515-light-title) 14%, transparent) !important;
+}
+
+/* Inactive destinations stay neutral: no surface, readable label. */
+html[data-crew-theme='light'] body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button:not(.active) > span {
+  color: var(--cc1515-light-text) !important;
+  font-weight: 650 !important;
+}
+
+/* Active destination: discreet CrewCheck pink surface and ring with a blue base line. */
+html[data-crew-theme='light'] body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button.active {
+  background: color-mix(in srgb, var(--cz-pink) 9%, var(--cc1515-light-surface)) !important;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--cz-pink) 34%, transparent),
+    inset 0 -2px 0 color-mix(in srgb, var(--cz-blue) 72%, var(--cc1515-light-title)) !important;
+}
+
+html[data-crew-theme='light'] body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button.active > span {
+  color: var(--cc1515-light-title) !important;
+  font-weight: 800 !important;
+}

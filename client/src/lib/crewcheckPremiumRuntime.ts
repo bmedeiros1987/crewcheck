@@ -55,7 +55,7 @@ async function requestNotifications(): Promise<boolean> {
   }
 }
 
-function permissionStatus(): { location?: boolean; notifications?: boolean } {
+function permissionStatus(): { location?: boolean; notifications?: boolean; notificationAppEnabled?: boolean; notificationChannelEnabled?: boolean | null } {
   const native = bridge();
   try {
     if (native?.permissionStatus) {
@@ -84,13 +84,22 @@ function notify(title: string, body: string): boolean {
 }
 
 function scheduleNotification(title: string, body: string, epochMillis: number): boolean {
+  const timestamp = Number(epochMillis);
+  if (!Number.isFinite(timestamp) || timestamp <= Date.now()) return false;
   const native = bridge();
   try {
-    if (native?.scheduleNotification) return Boolean(native.scheduleNotification(title, body, String(Math.round(epochMillis))));
-  } catch {}
-  const delay = Math.max(0, Number(epochMillis) - Date.now());
-  if (delay <= 2147483647) window.setTimeout(() => notify(title, body), delay);
-  return true;
+    if (native?.scheduleNotification) return native.scheduleNotification(title, body, String(Math.round(epochMillis))) === true;
+  } catch { return false; }
+  const delay = timestamp - Date.now();
+  if (!Number.isFinite(delay) || delay > 2147483647) return false;
+  // This is only an in-page timer, not a background alarm or remote push.
+  try {
+    if (typeof Notification !== 'function' || Notification.permission !== 'granted') return false;
+    window.setTimeout(() => notify(title, body), delay);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function fetchFlightStatus(flight: string, date?: string) {

@@ -134,7 +134,7 @@ export function careStateForScheduleActivity(activity: ScheduleActivityLike): Sc
   // Only a published pairing code may specialize that wrapper; arbitrary labels
   // and raw text remain incapable of creating grief/vacation semantics.
   if (formalState === 'FOLGA' && pairingSensitiveState !== 'NONE') {
-    const coarseDayOff = [...formalTokens].some((token) => ['DO', 'FOLGA'].includes(token));
+    const coarseDayOff = [...formalTokens].some((token) => token === 'DO');
     if (coarseDayOff) return pairingSensitiveState;
   }
   if (formalState !== 'NONE') return formalState;
@@ -149,7 +149,8 @@ export function careStateForScheduleActivity(activity: ScheduleActivityLike): Sc
   // allowed to be specialized by a published pairing code.
   if (formalTokens.size > 0) return 'NONE';
   if (pairingSensitiveState !== 'NONE') return pairingSensitiveState;
-  return resolveCareState(tokensOfValues(fallbackCodeValues(activity)));
+  const fallbackState = resolveCareState(tokensOfValues(fallbackCodeValues(activity)));
+  return fallbackState === 'LUTO' || fallbackState === 'FERIAS' ? 'NONE' : fallbackState;
 }
 
 export function carePresentationForScheduleActivity(
@@ -297,10 +298,12 @@ rosterLaunch = replaceRequired(
               const hours = duration(event);`,
   'Roster calcula apresentação Care por card',
 );
+const rosterCardDate = rosterLaunch.includes('formatDate(rosterLabelDate(event))')
+  ? 'rosterLabelDate(event)' : 'dateOf(event)';
 rosterLaunch = replaceRequired(
   rosterLaunch,
-  `<div><small>{meta.label} · {formatDate(dateOf(event))}</small><h3>{cardTitle(event, mode)}</h3></div>`,
-  `<div><small>{carePresentation?.label || meta.label} · {formatDate(dateOf(event))}</small><h3>{cardTitle(event, mode)}</h3></div>`,
+  `<div><small>{meta.label} · {formatDate(${rosterCardDate})}</small><h3>{cardTitle(event, mode)}</h3></div>`,
+  `<div><small>{carePresentation?.label || meta.label} · {formatDate(${rosterCardDate})}</small><h3>{cardTitle(event, mode)}</h3></div>`,
   'Roster exibe rótulo Care',
 );
 write(rosterLaunchPath, rosterLaunch);

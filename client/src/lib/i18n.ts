@@ -311,7 +311,8 @@ type TranslationKey = keyof typeof dictionaries.pt;
 export function getSavedLanguage(): CrewLanguage {
   try {
     const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('crewcheck_language') : null;
-    if (saved && SUPPORTED.includes(saved as CrewLanguage)) return saved as CrewLanguage;
+    const language = String(saved || '').toLowerCase().split(/[-_]/)[0] as CrewLanguage;
+    if (SUPPORTED.includes(language)) return language;
   } catch {
     // mantém idioma do dispositivo
   }

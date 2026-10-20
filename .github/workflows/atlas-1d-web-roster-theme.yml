@@ -62,6 +62,8 @@ jobs:
         run: node scripts/regression-web-desktop-shell.mjs
       - name: Preserve base-rest classification
         run: node scripts/regression-p0-base-rest-vs-overnight.mjs
+      - name: Compile canonical Concierge server artifact
+        run: node scripts/p1-concierge-journey/compile.mjs
       - name: Test server
         run: node test-server.mjs
       - name: Upload diagnostics

@@ -46,8 +46,14 @@ function replaceAllGymDispatchers(source, canonicalDispatch) {
 
 function patchServer(source) {
   const wellhubImport = "import { buildWellhubRoutineSuggestion, detectWellhubActivityFromText, detectWellhubPlanFromText, handleWellhubRoutineRoute, handleWellhubSearchRoute, isWellhubPlanServer, searchVerifiedWellhub, wellhubPlanLabelServer } from './server/v14407/wellhub.mjs';";
-  const conciergeImport = "import { extractWellhubLocationHintFromText, filterWellhubPartnersForLocation, isWellhubActivityPreferenceMessage, isWellhubPlanPreferenceMessage } from './server/v14410/wellhub-concierge.mjs';";
-  let next = insertAfterRequired(source, wellhubImport, conciergeImport, 'import Wellhub v14.4.07');
+  const previousConciergeImport = "import { extractWellhubLocationHintFromText, filterWellhubPartnersForLocation, isWellhubActivityPreferenceMessage, isWellhubPlanPreferenceMessage } from './server/v14410/wellhub-concierge.mjs';";
+  const declarationConciergeImport = "import { extractWellhubLocationHintFromText, filterWellhubPartnersForLocation, isWellhubActivityPreferenceMessage, isWellhubPlanDeclarationMessage, isWellhubPlanPreferenceMessage } from './server/v14410/wellhub-concierge.mjs';";
+  const conciergeImport = "import { detectWellhubPlanPreferenceFromText, extractWellhubLocationHintFromText, filterWellhubPartnersForLocation, isWellhubActivityPreferenceMessage, isWellhubPlanDeclarationMessage, isWellhubPlanPreferenceMessage } from './server/v14410/wellhub-concierge.mjs';";
+  let next = source.includes(previousConciergeImport)
+    ? source.replace(previousConciergeImport, conciergeImport)
+    : source.includes(declarationConciergeImport)
+      ? source.replace(declarationConciergeImport, conciergeImport)
+      : insertAfterRequired(source, wellhubImport, conciergeImport, 'import Wellhub v14.4.07');
 
   const conciergeTag = '// cc-v14410:concierge-gyms-plan-location';
   const legacyTag = '// cc-v14409:concierge-gyms-plan-location';
@@ -63,6 +69,16 @@ function patchServer(source) {
   // silently persisting gymPlan=wellhub.
   const dispatch = "  if (/^\\/(?:academias?|wellhub)(?:@\\S+)?\\b/i.test(value) || /\\b(academia|wellhub|gympass|smart fit|treino perto)\\b/i.test(lower) || isWellhubPlanPreferenceMessage(value) || isWellhubActivityPreferenceMessage(value)) return conciergeGymsReply(snapshot, value, profile);";
   next = replaceAllGymDispatchers(next, dispatch);
+
+  // Restoring original gym text must not let an interrupted name-onboarding
+  // prompt consume a clear gym request as the user's or Concierge's new name.
+  // Other intents retain the existing identity flow and dispatcher ordering.
+  if (next.includes('async function buildTelegramConciergeReplyCore(')) {
+    next = replaceRequired(next,
+      '  const identity = await conciergeIdentityFlow(value, profile, snapshot);',
+      "  const nameRequest = /^\\/(?:meunome|nomeconcierge|configuracoes)(?:@\\S+)?(?:\\s|$)|^(?:me chama de|pode me chamar de|nome do concierge)(?:\\s|$)/i.test(value);\n  const gymRequest = !nameRequest && (/\\b(?:academia|academias|wellhub|gympass|smart fit|treino perto)\\b/i.test(value) || isWellhubPlanPreferenceMessage(value) || isWellhubActivityPreferenceMessage(value));\n  const identity = gymRequest ? { handled: false, snapshot } : await conciergeIdentityFlow(value, profile, snapshot);",
+      'gym request precedence over pending name capture');
+  }
 
   const whatsappBindingPattern = /configureWhatsAppConcierge\(async \(\{ email, text(?:, location)? \}\) => \{[\s\S]*?\n\}\);\n(?=\nhttp\.createServer)/;
   const whatsappBinding = `configureWhatsAppConcierge(async ({ email, text, location }) => {
@@ -130,7 +146,8 @@ function patchWhatsApp(source) {
 
   const oldTypeGate = `  if (message?.type !== 'text') {\n    await sendWhatsAppText(from, 'Recebi sua mensagem. Nesta primeira etapa do WhatsApp, fale comigo por texto. Áudio, localização e PDF serão liberados separadamente.', { replyToMessageId: message.id });\n    return;\n  }\n  if (!text) return;`;
   const newTypeGate = `  if (!['text', 'location'].includes(message?.type)) {\n    await sendWhatsAppText(from, 'Recebi sua mensagem. Por enquanto o Concierge aceita texto e localização pelo WhatsApp; áudio e PDF serão liberados separadamente.', { replyToMessageId: message.id });\n    return;\n  }\n  if (message?.type === 'text' && !text) return;`;
-  next = replaceRequired(next, oldTypeGate, newTypeGate, 'gate de tipos do WhatsApp');
+  const senderBoundTypeGate = newTypeGate.replace('{ replyToMessageId: message.id }', '{ replyToMessageId: message.id, expectedPhoneNumberId }');
+  if (!next.includes(senderBoundTypeGate)) next = replaceRequired(next, oldTypeGate, newTypeGate, 'gate de tipos do WhatsApp');
 
   const oldCall = "    const result = await whatsappConciergeHandler({ email: String(link.email), text, messageId: message.id });";
   const newCall = "    const result = await whatsappConciergeHandler({ email: String(link.email), text, location: message.location || null, messageType: message.type, messageId: message.id });";

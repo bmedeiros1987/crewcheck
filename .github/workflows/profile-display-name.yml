@@ -1,0 +1,54 @@
+name: Profile display name
+on:
+  pull_request:
+    paths:
+      - 'client/src/components/platform/**'
+      - 'client/src/lib/platformClient.ts'
+      - 'client/src/lib/authClient.ts'
+      - 'server/platform.mjs'
+      - 'scripts/regression-profile-display-name*'
+      - 'scripts/v139/**'
+      - '.github/workflows/profile-display-name.yml'
+permissions:
+  contents: read
+jobs:
+  profile-display-name:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Install isolated synthetic browser
+        run: |
+          npm install --prefix "$RUNNER_TEMP/profile-ui" playwright@1.55.0 --ignore-scripts --no-audit --no-fund
+          "$RUNNER_TEMP/profile-ui/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Verify raw profile behavior and editor
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/profile-ui/package.json
+          PROFILE_UI_EVIDENCE: ${{ runner.temp }}/profile-name-raw
+        run: |
+          node scripts/regression-profile-display-name.mjs
+          node scripts/regression-profile-display-name-browser.cjs
+          node scripts/regression-profile-display-name-shared-browser.cjs
+          # Global TypeScript needs the exports produced by source preparation.
+          # It remains mandatory below, after the canonical build prepares them.
+      - name: Build prepared sources
+        run: npm run build
+      - name: Verify prepared profile behavior and editor
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/profile-ui/package.json
+          PROFILE_UI_EVIDENCE: ${{ runner.temp }}/profile-name-prepared
+        run: |
+          node scripts/regression-profile-display-name.mjs
+          node scripts/regression-profile-display-name-browser.cjs
+          node scripts/regression-profile-display-name-shared-browser.cjs
+          npx tsc --noEmit
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: profile-name-synthetic-ui
+          path: ${{ runner.temp }}/profile-name-*/

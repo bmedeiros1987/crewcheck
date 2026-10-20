@@ -34,7 +34,8 @@ for (const marker of [
   'function CrewLocationAccess(',
   "window.addEventListener('crewcheck:location-updated'",
   'setLocationRevision((value) => value + 1)',
-  '[origin, destination, mapsMode, locationRevision]',
+  '[event.id, event.origin, event.presentation, event.departure, origin, destination, mapsMode, routeAccountId]',
+  'routeLocationRevisionRef.current !== locationRevision',
   "storage.set('crewcheck_location_permission', 'granted')",
   'Serviços de Localização → Sites do Safari',
 ]) assert.ok(before.home.includes(marker), `controle de localização ausente: ${marker}`);
@@ -80,9 +81,9 @@ assert.equal((before.css.match(/CrewCheck v14\.3\.43 — premium layout hardenin
 assert.ok(!before.app.includes('registrations.map((registration) => registration.unregister())'), 'App não pode desregistrar todo service worker a cada inicialização');
 const coordinator = read('client/src/lib/pwaUpdateCoordinator.ts');
 assert.ok(before.app.includes('installPwaUpdateCoordinator()'), 'App deve instalar o coordenador de atualizações');
-assert.ok(coordinator.includes('await current.update()'), 'service worker deve ser atualizado sem desregistro');
-assert.ok(coordinator.includes("document.visibilityState === 'hidden' || Date.now() - lastActivityAt >= idleMs"), 'ativação deve esperar inatividade');
-assert.ok(coordinator.includes('if (!registration?.waiting || !isSafeToActivate()) return;'), 'worker não pode ser ativado durante uso');
+assert.ok(coordinator.includes('await next.update()'), 'service worker deve ser atualizado sem desregistro');
+assert.ok(coordinator.includes('export async function requestPwaUpdate()'), 'ativação depende do aceite explícito, não de inatividade');
+assert.ok(coordinator.includes("!['available','error'].includes(state.phase)"), 'worker exige um download confirmado e aceite explícito');
 assert.ok(!/window\.location\.reload\(\)/.test(coordinator.replace(/\/\*[^]*?\*\//g, '')), 'coordenador não pode forçar reload');
 assert.ok(!before.index.includes('crewcheck-release-watch-v14343') && !before.index.includes('crewcheck-release-watch-v14329'), 'watchers legados devem ser removidos');
 assert.ok(!before.app.includes('caches.delete('), 'inicialização não pode apagar caches ativos');
@@ -111,3 +112,8 @@ for (const [key, relative] of Object.entries(paths)) {
 }
 
 console.log('v14.3.43 iPad premium stability preserved under final v14.4.08: contained touch layout, explicit Settings location, bearer-aware route preview, safe release reload, preserved service worker and protected engines validated.');
+
+// Preserve explicit GPS refresh without duplicating requests across context changes.
+await import('./regression-departure-route-effects.mjs');
+
+await import('./regression-departure-route-effects.mjs');

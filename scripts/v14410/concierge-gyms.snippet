@@ -1,10 +1,13 @@
 // cc-v14410:concierge-gyms-plan-location
-async function conciergeGymsReply(snapshot, text = '', profile = {}) {
+async function conciergeGymsReply(snapshot, text = '', profile = {}, maxReplyCharacters = 3900) {
   const preferences = snapshot?.preferences || {};
-  const detectedPlan = detectWellhubPlanFromText(text);
+  const detectedPlan = detectWellhubPlanPreferenceFromText(text);
   const detectedActivity = detectWellhubActivityFromText(text);
   const planPreference = Boolean(detectedPlan && isWellhubPlanPreferenceMessage(text));
   const activityPreference = Boolean(detectedActivity && isWellhubActivityPreferenceMessage(text));
+  if (!planPreference && isWellhubPlanDeclarationMessage(text)) {
+    return 'Não reconheci o plano Wellhub informado. Não alterei sua preferência no CrewCheck. Diga, por exemplo, “meu plano Wellhub é o Silver+”, usando o nome exato do seu plano.';
+  }
   const planUpdate = planPreference ? detectedPlan : '';
   const activityUpdate = activityPreference ? detectedActivity : '';
   const provider = planPreference || activityPreference
@@ -17,17 +20,41 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   const wellhubPlan = planUpdate || (isWellhubPlanServer(preferences.wellhubPlan) ? preferences.wellhubPlan : 'basic');
   const activity = detectedActivity || String(preferences.gymActivity || '').trim();
 
+  const planSaveUnconfirmed = 'Não consegui confirmar que seu plano Wellhub ficou salvo no CrewCheck. Tente novamente em instantes.';
+  let planSaved = false;
   if ((planUpdate || activityUpdate || provider !== preferences.gymPlan) && profile?.email) {
-    const saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: {
-      gymPlan: provider,
-      ...(planUpdate ? { wellhubPlan: planUpdate } : {}),
-      ...(activityUpdate ? { gymActivity: activityUpdate } : {}),
-    } });
+    let saved;
+    try {
+      saved = await conciergeSaveSnapshotAsync(profile, null, { preferences: {
+        gymPlan: provider,
+        ...(planUpdate ? { wellhubPlan: planUpdate } : {}),
+        ...(activityUpdate ? { gymActivity: activityUpdate } : {}),
+      } });
+    } catch (error) {
+      if (planUpdate) return planSaveUnconfirmed;
+      throw error;
+    }
     if (saved) snapshot = saved;
+    const planOwnerKey = conciergeSafeKey(profile.email);
+    if (planUpdate && planOwnerKey && saved?.key === planOwnerKey) {
+      // The shared save returns a constructed snapshot even when an I/O write
+      // fails. Confirm only when both the next request and durable DB read-back
+      // recover this plan. No second write or shared persistence changes.
+      try {
+        const current = await conciergeLoadSnapshot(profile);
+        const persisted = await conciergeDbGet(`snapshot:${planOwnerKey}`);
+        planSaved = current?.key === planOwnerKey && persisted?.key === planOwnerKey
+          && current?.preferences?.wellhubPlan === planUpdate
+          && persisted?.preferences?.wellhubPlan === planUpdate;
+      } catch { planSaved = false; }
+    }
   }
 
   const planPreferenceOnly = planPreference && !/\b(academia|academias|treino|modalidade|rede|perto|pr[oó]xima|onde)\b/i.test(String(text || ''));
-  if (planPreferenceOnly) return `Plano Wellhub atualizado para ${wellhubPlanLabelServer(wellhubPlan)} ✓`;
+  if (planPreferenceOnly) {
+    if (!planSaved) return planSaveUnconfirmed;
+    return `Plano Wellhub atualizado para ${wellhubPlanLabelServer(wellhubPlan)} no CrewCheck ✓\nEssa é a preferência usada nas buscas. Sua assinatura no Wellhub não foi alterada.`;
+  }
   const activityPreferenceOnly = activityPreference && !/\b(academia|academias|rede|perto|pr[oó]xima|onde|hoje|agora)\b/i.test(String(text || ''));
   if (activityPreferenceOnly) return `Modalidade Wellhub atualizada para ${activityUpdate} ✓`;
 
@@ -47,13 +74,16 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   const currentLocation = locationContext.fresh ? (locationContext.location || {}) : {};
   const informedLocation = extractWellhubLocationHintFromText(text);
   const hasInformedCity = Boolean(String(informedLocation.city || '').trim());
+  // Expired GPS does not establish the user's current city. Do not silently
+  // replace it with the roster's next airport/base; an explicit city can recover.
+  if (locationContext.status === 'stale' && !hasInformedCity) return locationContext.message;
   const airportCity = WEATHER_AIRPORT_POINTS[airport]?.city || '';
   const currentCity = String(informedLocation.city || currentLocation.city || '').trim();
   const currentState = String(hasInformedCity ? informedLocation.state || '' : currentLocation.state || '').trim();
 
   if (locationContext.fresh && !currentCity && !currentState) {
     return [
-      `Wellhub verificado · seu plano ${wellhubPlanLabelServer(wellhubPlan)}${activity ? ` · modalidade ${activity}` : ''}`,
+      `Academias · plano ${wellhubPlanLabelServer(wellhubPlan)}${activity ? ` · modalidade ${activity}` : ''}`,
       `Recebi sua localização atual (${locationContext.label || 'coordenadas compartilhadas'}), mas ainda não consegui confirmar a cidade/UF.`,
       'Não vou usar o aeroporto da escala como substituto. Compartilhe a localização novamente ou diga nesta mensagem, por exemplo, “academia em Canoas”.',
     ].join('\n');
@@ -63,7 +93,7 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   const locationState = currentState;
   if (!locationCity && !locationState) {
     return [
-      `Wellhub verificado · seu plano ${wellhubPlanLabelServer(wellhubPlan)}${activity ? ` · modalidade ${activity}` : ''}`,
+      `Academias · plano ${wellhubPlanLabelServer(wellhubPlan)}${activity ? ` · modalidade ${activity}` : ''}`,
       'Não tenho uma cidade/UF confirmada para pesquisar academias com segurança.',
       'Compartilhe sua localização pelo Telegram/WhatsApp ou informe a cidade na mensagem, por exemplo: “academia em Canoas”.',
     ].join('\n');
@@ -77,28 +107,68 @@ async function conciergeGymsReply(snapshot, text = '', profile = {}) {
   if (!partners.length) {
     const place = locationCity ? ` em ${locationCity}${locationState ? `/${locationState}` : ''}` : locationState ? ` em ${locationState}` : '';
     return [
-      'Wellhub verificado · seu plano ' + wellhubPlanLabelServer(wellhubPlan) + (activity ? ' · ' + activity : ''),
-      `Não encontrei unidade verificada compatível com seu filtro${place} no catálogo oficial atual.`,
+      'Academias · plano ' + wellhubPlanLabelServer(wellhubPlan) + (activity ? ' · ' + activity : ''),
+      `Não há dados suficientes no catálogo consultado para confirmar uma unidade com seu filtro${place}. Isso não significa que não exista parceria ou acesso.`,
+      'Confira unidades e condições na busca oficial: https://wellhub.com/pt-br/search/',
       'Não vou sugerir unidade de outra cidade/estado como se fosse próxima. Posso tentar outra cidade, rede ou modalidade.',
     ].join('\n');
   }
 
+  // Plain text is shared by app, Telegram and WhatsApp. No HTML/Markdown mode
+  // is assumed; each name has its own line and units have a blank separator.
+  const oneLine = value => String(value || '').replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim();
+  const dateLabel = partner => partner.snapshotStatus === 'invalid' ? 'data inválida ou ausente'
+    : partner.snapshotStatus === 'future' ? `${oneLine(partner.verifiedAt)} (data futura não validada)`
+      : oneLine(partner.verifiedAt) || 'data desconhecida';
+  const dates = new Set(partners.map(dateLabel));
   const lines = partners.map((partner, index) => {
-    const activities = partner.activities?.length ? partner.activities.slice(0, 6).join(', ') : activity ? 'modalidade confirmada na página oficial' : 'consulte a página oficial para modalidades';
     const userPlanLabel = wellhubPlanLabelServer(wellhubPlan);
     const minimumPlanLabel = wellhubPlanLabelServer(partner.minimumPlan);
+    const stateNotice = partner.snapshotStatus === 'expired' ? 'Cadastro vencido para uso no CrewCheck; acesso não confirmado.'
+      : partner.snapshotStatus === 'invalid' ? 'Cadastro com data inválida ou ausente; acesso não confirmado.'
+        : partner.snapshotStatus === 'future' ? 'Cadastro com data futura; acesso não confirmado.' : '';
+    const modality = activity && partner.snapshotActivity
+      ? `Modalidade: ${oneLine(partner.snapshotActivity.name)} · mínimo: ${wellhubPlanLabelServer(partner.snapshotActivity.minimumPlan)}`
+      : activity ? 'Modalidade não confirmada no cadastro; consulte o app Wellhub.' : '';
+    const rawUrl = String(partner.sourceUrl || '');
+    const sourceUrl = /^https:\/\/[a-z0-9.-]+\/[^\s<>]*$/i.test(rawUrl) ? rawUrl : '';
     return [
-      `${index + 1}. ${partner.name} · ${partner.city}/${partner.state}`,
-      `   Acesso: ✓ incluído no seu ${userPlanLabel} · mínimo da unidade: ${minimumPlanLabel}`,
-      `   Horário: ${(partner.openingHours || []).join(' | ') || 'não publicado no snapshot'}`,
-      `   Modalidades: ${activities}`,
-      `   Wellhub verificado ✓ ${partner.sourceUrl}`,
+      `${index + 1}. ${oneLine(partner.name)}`,
+      ...(partner.openingStatus ? [partner.openingStatus.label] : []),
+      partner.eligibilityStatus === 'included'
+        ? `Plano mínimo: ${minimumPlanLabel} · compatível com ${userPlanLabel} pelo cadastro`
+        : `Acesso: não confirmado para seu ${userPlanLabel} · mínimo cadastrado: ${minimumPlanLabel}`,
+      ...(stateNotice ? [stateNotice] : []),
+      `Endereço: ${oneLine(partner.address) || 'não confirmado; consulte a fonte oficial'}`,
+      `Horário cadastrado: ${(partner.openingHours || []).map(oneLine).join(' | ') || 'não publicado'}`,
+      ...[partner.accessConditions, partner.accessNote].filter(Boolean).map(value => `Condição: ${oneLine(value).replace(/snapshot/gi, 'cadastro')}`),
+      ...(modality ? [modality] : []),
+      ...(dates.size > 1 ? [`Cadastro consultado em: ${dateLabel(partner)}`] : []),
+      sourceUrl ? `Fonte oficial: ${sourceUrl}` : 'Link oficial indisponível; consulte o app Wellhub.',
     ].join('\n');
   });
+  // All existing channels share this string. Reserve the full footer first and
+  // use the strictest transport ceiling (Telegram 3900, WhatsApp 4000 UTF-16
+  // code units). Never slice a unit, restriction, URL or warning. The optional
+  // smaller budget is internal/test-only; it cannot increase the transport cap.
+  const budget = Math.max(600, Math.min(3900, Number.isFinite(maxReplyCharacters) ? Math.floor(maxReplyCharacters) : 3900));
+  const header = `Academias · ${oneLine(locationCity)}${locationState ? `/${oneLine(locationState)}` : ''} · ${wellhubPlanLabelServer(wellhubPlan)}${activity ? ` · ${oneLine(activity)}` : ''}`;
+  const warning = 'Horário avaliado nesta consulta, sem acompanhamento contínuo. Catálogo parcial, sem atualização automática; fontes não consultadas agora. Acesso, horários e disponibilidade de modalidades atuais não confirmados. O limite técnico de 90 dias do CrewCheck não garante vigência no Wellhub. Confirme acesso e condições no app Wellhub antes de sair.';
+  const preferenceHelp = 'Para alterar: “meu plano é Silver+”, “uso Gold” ou “quero Pilates”.';
+  for (let count = lines.length; count > 0; count--) {
+    const result = [
+      header, '', lines.slice(0, count).join('\n\n'), '',
+      ...(dates.size === 1 ? [`Cadastro consultado em: ${[...dates][0]}.`] : []),
+      ...(count < lines.length ? [`Mostrando ${count} de ${lines.length} unidades deste resultado. Para refinar a busca, informe uma rede ou unidade.`] : []),
+      warning, preferenceHelp,
+    ].join('\n');
+    if (result.length <= budget) return result;
+  }
+  // A single unusually long unit may not fit. Do not publish a fragment or
+  // claim that no matching units exist; offer the existing search path only.
   return [
-    `Wellhub verificado · seu plano ${wellhubPlanLabelServer(wellhubPlan)}${activity ? ` · modalidade ${activity}` : ''}`,
-    `Contexto local: ${locationText}. Resultados fora da cidade/estado confirmado são descartados.`,
-    '', ...lines,
-    '', 'Para alterar, diga naturalmente “meu plano é Silver+”, “uso Gold” ou “quero Pilates”.',
+    'Academias · Wellhub', '',
+    `Nenhuma das ${lines.length} unidades deste resultado cabe completa nesta mensagem. Refine a busca por rede ou unidade.`,
+    'Busca oficial: https://wellhub.com/pt-br/search/', '', warning, preferenceHelp,
   ].join('\n');
 }

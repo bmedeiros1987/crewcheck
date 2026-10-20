@@ -1,0 +1,4 @@
+.cp-profile-name .cp-actions button { min-height:44px; }
+.cp-profile-name .cp-actions button:disabled { opacity:.65; cursor:default; }
+.cp-profile-name [role="status"] { margin-top:12px; }
+[data-crew-theme="light"] .cp-profile-name .cp-actions button:not(.cp-primary) { color:#153f60; background:#f0f6fa; border-color:#b9cedc; box-shadow:none; }

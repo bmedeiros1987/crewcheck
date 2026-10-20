@@ -64,6 +64,17 @@ export type ScheduleActivityCounts = {
   unknown: number;
 };
 
+export type ScheduleCareState = 'LUTO' | 'FERIAS' | 'FOLGA' | 'REPOUSO' | 'NONE';
+
+export type ScheduleCarePresentation = {
+  state: Exclude<ScheduleCareState, 'NONE'>;
+  label: string;
+  message: string;
+  suppressRoutineProactivity: boolean;
+  suppressHumor: boolean;
+  allowCriticalAlerts: boolean;
+};
+
 const DAY_OFF_CODES = new Set([
   'DB',
   'DR',
@@ -109,6 +120,9 @@ const REQUESTED_DAY_OFF_CODES = new Set([
   'DR',
 ]);
 
+const GRIEF_CODES = new Set(['DMO']);
+const VACATION_CODES = new Set(['VC', 'FERIAS']);
+
 const OVERNIGHT_CODES = new Set([
   'LAYOVER',
   'PERNOITE',
@@ -117,6 +131,7 @@ const OVERNIGHT_CODES = new Set([
 ]);
 
 const STANDBY_CODES = new Set([
+  'SA',
   'HSB',
   'HSB1',
   'HSB2',
@@ -224,6 +239,109 @@ function hasCode(activity: ScheduleActivityLike, codes: ReadonlySet<string>): bo
 
 function hasFormalCode(activity: ScheduleActivityLike, codes: ReadonlySet<string>): boolean {
   return matchesCodes(tokensOfValues(formalCodeValues(activity)), codes);
+}
+
+function resolveCareState(tokens: ReadonlySet<string>): ScheduleCareState {
+  if (matchesCodes(tokens, GRIEF_CODES)) return 'LUTO';
+  if (matchesCodes(tokens, VACATION_CODES)) return 'FERIAS';
+  if (matchesCodes(tokens, RECOVERY_REST_CODES)) return 'REPOUSO';
+  if (matchesCodes(tokens, DAY_OFF_CODES)) return 'FOLGA';
+  return 'NONE';
+}
+
+function publishedPairingTokens(activity: ScheduleActivityLike): Set<string> {
+  const published = activity.canonical?.publishedDay;
+  return tokensOfValues([
+    activity.pairingCode,
+    activity.day?.pairingCode,
+    published?.pairingCode,
+  ].map(normalize).filter(Boolean));
+}
+
+/**
+ * Semântica humana separada da classificação operacional.
+ *
+ * O parser legado normaliza alguns códigos publicados de descanso para um tipo
+ * amplo (por exemplo, VC pode chegar como type=DO + pairingCode=VC). Por isso o
+ * código formal continua soberano para decidir que o dia é não-operacional, mas
+ * o pairingCode publicado pode especializar DO em Férias/Luto. Título/rawText
+ * nunca ganham esse poder e não podem inventar um estado sensível.
+ */
+export function careStateForScheduleActivity(activity: ScheduleActivityLike): ScheduleCareState {
+  if (!activity || activity.placeholder) return 'NONE';
+  const formalTokens = tokensOfValues(formalCodeValues(activity));
+  const formalState = resolveCareState(formalTokens);
+  const pairingTokens = publishedPairingTokens(activity);
+  const pairingSensitiveState = matchesCodes(pairingTokens, GRIEF_CODES)
+    ? 'LUTO'
+    : (matchesCodes(pairingTokens, VACATION_CODES) ? 'FERIAS' : 'NONE');
+
+  // DO is a known coarse wrapper emitted by the PDF parser for VC/OFF/DOP.
+  // Only a published pairing code may specialize that wrapper; arbitrary labels
+  // and raw text remain incapable of creating grief/vacation semantics.
+  if (formalState === 'FOLGA' && pairingSensitiveState !== 'NONE') {
+    const coarseDayOff = [...formalTokens].some((token) => token === 'DO');
+    if (coarseDayOff) return pairingSensitiveState;
+  }
+  if (formalState !== 'NONE') return formalState;
+
+  // Label/pairing/title fallbacks may only decide when the formal code
+  // concludes NOTHING at all (formalTokens empty) -- this mirrors the
+  // documented #303 source hierarchy just above (fallbackCodeValues exists
+  // for the "no published code at all" case, e.g. base rest inferred from
+  // continuity). A known-but-unrelated duty/reserve code (e.g. ASB) is a
+  // conclusive formal signal and must never be overwritten by a stray
+  // pairingCode/title/flightNumber: only the coarse DO/FOLGA wrapper above is
+  // allowed to be specialized by a published pairing code.
+  if (formalTokens.size > 0) return 'NONE';
+  if (pairingSensitiveState !== 'NONE') return pairingSensitiveState;
+  const fallbackState = resolveCareState(tokensOfValues(fallbackCodeValues(activity)));
+  return fallbackState === 'LUTO' || fallbackState === 'FERIAS' ? 'NONE' : fallbackState;
+}
+
+export function carePresentationForScheduleActivity(
+  activity: ScheduleActivityLike,
+): ScheduleCarePresentation | null {
+  const state = careStateForScheduleActivity(activity);
+  if (state === 'NONE') return null;
+  if (state === 'LUTO') {
+    return {
+      state,
+      label: 'Luto',
+      message: 'Sua escala marca luto hoje. Sinto muito. Vou ficar mais discreto e só chamar sua atenção para algo realmente importante.',
+      suppressRoutineProactivity: true,
+      suppressHumor: true,
+      allowCriticalAlerts: true,
+    };
+  }
+  if (state === 'FERIAS') {
+    return {
+      state,
+      label: 'Férias',
+      message: 'Você está de férias hoje. O CrewCheck fica quieto e mostra só o que você pedir.',
+      suppressRoutineProactivity: true,
+      suppressHumor: false,
+      allowCriticalAlerts: true,
+    };
+  }
+  if (state === 'FOLGA') {
+    return {
+      state,
+      label: 'Folga',
+      message: 'Hoje é folga. Sem programação operacional.',
+      suppressRoutineProactivity: true,
+      suppressHumor: false,
+      allowCriticalAlerts: true,
+    };
+  }
+  return {
+    state: 'REPOUSO',
+    label: 'Repouso',
+    message: 'Hoje é repouso. Vou respeitar esse período e evitar briefing operacional de rotina.',
+    suppressRoutineProactivity: true,
+    suppressHumor: false,
+    allowCriticalAlerts: true,
+  };
 }
 
 function activityText(activity: ScheduleActivityLike): string {

@@ -46,7 +46,7 @@ function htmlSection(source, id) {
 }
 
 function assertEmergencyParity(reactSource, htmlSource) {
-  const paragraphs = legalSection(reactSource, '3-B. Emergência, Guardian e plano de saúde');
+  const paragraphs = legalSection(reactSource, '3-B. Emergência, Saúde e plano de saúde');
   assert.equal(paragraphs.length, 7, 'All seven emergency privacy paragraphs are required');
   assert.deepEqual(htmlSection(htmlSource, 'emergency-privacy'), paragraphs, 'Public and in-app emergency disclosures must match');
 }
@@ -89,7 +89,7 @@ test('CrewLife privacy paragraphs are identical on both public surfaces', () => 
   assertParity(legal, html);
 });
 
-test('emergency, Guardian and health-plan disclosure is identical on both public surfaces', () => {
+test('emergency, Saúde and health-plan disclosure is identical on both public surfaces', () => {
   assertEmergencyParity(legal, html);
   for (const text of [
     'tipo sanguíneo, alergias, medicação contínua, observações médicas e operadora e código do plano de saúde',

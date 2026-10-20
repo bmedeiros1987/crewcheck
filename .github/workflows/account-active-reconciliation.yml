@@ -1,0 +1,34 @@
+name: Account active reconciliation fences
+on:
+  pull_request:
+    paths:
+      - 'client/src/lib/rosterStartup.ts'
+      - 'client/src/lib/rosterPublicationRuntime.ts'
+      - 'scripts/roster-startup/**'
+      - 'scripts/regression-account-active-reconciliation.mjs'
+      - '.github/workflows/account-active-reconciliation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fenced-reconciliation:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        timezone: [UTC, America/Sao_Paulo, America/New_York]
+    env:
+      TZ: ${{ matrix.timezone }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-account-active-reconciliation.mjs
+      - run: node scripts/regression-roster-startup-state.mjs
+      - run: node scripts/regression-roster-choice-settlement.mjs
+      - run: node scripts/regression-roster-two-tab-bootstrap.mjs
+      - run: node scripts/regression-roster-history-strict.mjs
+      - run: node scripts/regression-v14-3-82-active-roster-bootstrap.mjs

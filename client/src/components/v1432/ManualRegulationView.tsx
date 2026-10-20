@@ -1,3 +1,6 @@
+import type {CanonicalRosterEvent} from '@/lib/canonicalRoster';
+import type {LegalProfileSummary} from '@/lib/actRules';
+import RegulationScenarioView from '@/components/regulation/RegulationScenarioView';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Calculator, CheckCircle2, Clock3, Plane, RotateCcw, ShieldCheck } from 'lucide-react';
 import '../v1392/v1392.css';
@@ -211,19 +214,24 @@ export function regulationForScheduleDay(day?: ScheduleDayLike | null): DayRegul
   };
 }
 
-export default function ManualRegulationView({ compliance, scheduleDay }: { compliance?: ComplianceLike; scheduleDay?: ScheduleDayLike | null }) {
+function LegacyManualRegulationView({ compliance, scheduleDay }: { compliance?: ComplianceLike & {legalProfile?:LegalProfileSummary}; scheduleDay?: ScheduleDayLike | null; program?:CanonicalRosterEvent|null }) {
   const [form, setForm] = useState<FormState>(loadForm);
+  const [sectorsDraft, setSectorsDraft] = useState(() => String(form.sectors));
+  const validSectorsDraft = /^[1-9]$/.test(sectorsDraft);
   const hydratedSchedule = useRef('');
   const scheduleSignature = [scheduleDay?.date, dayCode(scheduleDay), scheduleDay?.dutyReport, scheduleDay?.dutyDebrief, scheduleDay?.legs?.length].join('|');
 
   useEffect(() => {
     if (!scheduleDay || hydratedSchedule.current === scheduleSignature) return;
     hydratedSchedule.current = scheduleSignature;
-    setForm(formFromScheduleDay(scheduleDay));
+    const next = formFromScheduleDay(scheduleDay);
+    setForm(next);
+    setSectorsDraft(String(next.sectors));
   }, [scheduleDay, scheduleSignature]);
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(form)); }, [form]);
 
   const result = useMemo(() => {
+    if (!validSectorsDraft) return null;
     const start = timeMinutes(form.startTime);
     const plannedEnd = timeMinutes(form.plannedEndTime);
     if (start === null || plannedEnd === null) return null;
@@ -253,7 +261,7 @@ export default function ManualRegulationView({ compliance, scheduleDay }: { comp
       publishedCutoff: clockFrom(start, Math.max(0, baseDutyMinutes - 30)),
       projectedEnd: clockFrom(start, projectedDutyMinutes),
     };
-  }, [form]);
+  }, [form, validSectorsDraft]);
 
   const alerts = (compliance?.alerts || []).filter((item) => item.actionable !== false && item.classification !== 'dados_insuficientes' && item.classification !== 'informativa').slice(0, 4);
   const regulatoryProfile = form.role === 'pilot' ? 'Tripulante de voo · RBAC 117 B.1' : 'Tripulante de cabine · RBAC 117 B.1';
@@ -283,12 +291,12 @@ export default function ManualRegulationView({ compliance, scheduleDay }: { comp
           <label><span>Estado de aclimatação</span><select value={form.acclimatization} onChange={(event) => setForm({ ...form, acclimatization: event.target.value as Acclimatization })}><option value="acclimatized">Aclimatizado</option><option value="unknown">Desconhecido (redução de 1 h)</option></select><small>O RBAC 117 determina redução de 1 h quando o estado é desconhecido.</small></label>
           <label><span>{activityLabel}</span><input type="time" value={form.startTime} onChange={(event) => setForm({ ...form, startTime: event.target.value })}/></label>
           <label><span>Fim publicado da jornada</span><input type="time" value={form.plannedEndTime} onChange={(event) => setForm({ ...form, plannedEndTime: event.target.value })}/><small>O fim da jornada ocorre 30 min após o corte.</small></label>
-          <label><span>Número de etapas</span><input type="number" min="1" max="9" value={form.sectors} onChange={(event) => setForm({ ...form, sectors: Math.max(1, Math.min(9, Number(event.target.value || 1))) })}/></label>
+          <label><span>Número de etapas</span><input type="number" min="1" max="9" step="1" value={sectorsDraft} aria-invalid={!validSectorsDraft} aria-describedby={!validSectorsDraft ? "cc-reg-sectors-error" : undefined} onChange={(event) => { const draft = event.target.value; setSectorsDraft(draft); if (/^[1-9]$/.test(draft)) setForm({ ...form, sectors: Number(draft) }); }}/>{!validSectorsDraft && <small id="cc-reg-sectors-error" role="alert">Informe um número inteiro de 1 a 9.</small>}</label>
           <label><span>Tempo de voo acumulado</span><input type="number" min="0" step="15" value={form.flightMinutes} onChange={(event) => setForm({ ...form, flightMinutes: Math.max(0, Number(event.target.value || 0)) })}/><small>Minutos; deixe 0 se ainda não souber.</small></label>
           <label><span>Extensão a avaliar</span><select value={form.extensionMinutes} onChange={(event) => setForm({ ...form, extensionMinutes: Number(event.target.value) })}><option value="0">Sem extensão</option><option value="30">30 minutos</option><option value="60">1 hora</option><option value="90">1h30</option><option value="120">2 horas</option></select></label>
           <label><span>Motivo informado</span><select value={form.extensionReason} onChange={(event) => setForm({ ...form, extensionReason: event.target.value })}><option value="imprevisto-operacional">Imprevisto operacional</option><option value="meteorologia">Meteorologia</option><option value="assistencia-medica">Assistência médica</option><option value="seguranca">Segurança operacional</option><option value="outro">Outro motivo documentado</option></select></label>
         </div>
-        <button className="cc-reg-reset" onClick={() => setForm(formFromScheduleDay(scheduleDay))}><RotateCcw/> Restaurar dados da programação</button>
+        <button className="cc-reg-reset" onClick={() => { const next = formFromScheduleDay(scheduleDay); setForm(next); setSectorsDraft(String(next.sectors)); }}><RotateCcw/> Restaurar dados da programação</button>
       </article>
 
       <article className={`cc-reg-result cc-readable-surface ${result?.withinDuty && result?.withinFlight ? 'ok' : 'danger'}`}>
@@ -317,3 +325,6 @@ export default function ManualRegulationView({ compliance, scheduleDay }: { comp
     <section className="cc-reg-disclaimer cc-readable-surface"><AlertTriangle/><p>Ferramenta de apoio. O corte e o fim da jornada dependem dos dados confirmados, contexto real, ACT, RBAC 117, SGRF/manual aprovado e decisão operacional competente; o resultado não substitui a fonte oficial.</p></section>
   </>;
 }
+
+// New read-only scenario UI; legacy helpers remain unchanged for canonical callers.
+export default function ManualRegulationView(props: { compliance?: ComplianceLike & {legalProfile?:LegalProfileSummary}; scheduleDay?: ScheduleDayLike | null; program?:CanonicalRosterEvent|null }) { return <RegulationScenarioView {...props}/>; }

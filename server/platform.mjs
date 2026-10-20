@@ -1,6 +1,40 @@
+import {createFinancialFxHandler,FINANCIAL_FX_PATH} from './financial-fx.mjs';
+import {createFinancialLedgerHandler, FINANCIAL_LEDGER_PATH, FINANCIAL_UPCOMING_PATH, FINANCIAL_CAPTURE_PATH} from './financial-ledger-route.mjs';
+import {financialLedgerErasureStatements} from './financial-ledger-erasure.mjs';
+import {verifiedMysqlTls} from './mysql-verified-tls.mjs';
+import {eraseWhatsAppAccountState} from './whatsapp-lifecycle.mjs';
+import { PATH as RELEASE_JOURNAL_PATH } from './release-journal/route.mjs';
+import { createProbeOnlyReleaseHandler } from './release-journal/probe-composition.mjs';
+import { mysqlAdapter } from './mysql-platform-adapter.mjs';
+import { amilDocumentaryReferences, AMIL_DOCUMENTARY_NOTICE } from '../shared/amil-documentary-reference.mjs';
+import { amilPlanFamily, amilConfirmedProviders, amilUnknownMessage, AMIL_GUIDE_URL } from '../shared/amil-coverage.mjs';
+import { notificationStateDeletionStatements } from './v139/notificationStateDeletion.mjs';
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { diagnoseCirium, diagnoseCiriumFlight } from './cirium-diagnostic.mjs';
+
+/** Read-only Radar source: token identity owns the active publication, never URL email. */
+export async function loadOwnedPlatformRoster(req, expectedEmail) {
+  const token = verifyJwt(requestToken(req));
+  const email = safeEmail(token?.email);
+  if (token?.aud === 'crewcheck-visitor' || token?.role === 'visitor')
+    throw Object.assign(new Error('Sessão de visitante não autoriza publicação pessoal.'), { status:403, code:'ROSTER_OWNER_MISMATCH' });
+  if (!email || email !== safeEmail(expectedEmail))
+    throw Object.assign(new Error('Sessão não confirmada.'), { status:401, code:'AUTH_REQUIRED' });
+  const db = await pool();
+  if (!db) throw Object.assign(new Error('Publicação indisponível.'), { status:503, code:'DATABASE_OFFLINE' });
+  const result = await db.query('SELECT id,owner_email,roster,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE ORDER BY updated_at DESC,created_at DESC,id DESC LIMIT 1', [email]);
+  const row = result.rows[0];
+  if (!row) return null;
+  if (safeEmail(row.owner_email) !== email)
+    throw Object.assign(new Error('Publicação de outra conta.'), { status:403, code:'ROSTER_OWNER_MISMATCH' });
+  if (row.id === null || row.id === undefined || !Number.isFinite(Date.parse(String(row.updated_at || '')))) return null;
+  let roster = row.roster;
+  if (typeof roster === 'string') { try { roster = JSON.parse(roster); } catch { return null; } }
+  if (!roster || !Array.isArray(roster.days)) return null;
+  return { roster, ownerEmail:email, id:String(row.id), revision:String(row.updated_at || '') };
+}
+
 
 const APP_VERSION = '13.8.8';
 const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
@@ -270,64 +304,8 @@ const PLATFORM_OPTIONAL_TABLES = [
 ];
 
 
-const MYSQL_JSON_COLUMNS = new Set(['metadata', 'roster', 'compliance', 'gym', 'permissions', 'payload', 'channels', 'opening_hours', 'community_status', 'activities', 'constraints', 'salary_rules', 'per_diem_rules', 'last_snapshot', 'offered_duty', 'requested_duty', 'result']);
-const MYSQL_BOOLEAN_COLUMNS = new Set([
-  'share_presence', 'cancel_at_period_end', 'active', 'share_same_hotel',
-  'share_with_visitors', 'must_change_password', 'is_default', 'favorite',
-]);
-
-function normalizeMysqlRows(rows) {
-  if (!Array.isArray(rows)) return [];
-  return rows.map((row) => {
-    if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
-    const normalized = { ...row };
-    for (const [key, value] of Object.entries(normalized)) {
-      if (MYSQL_JSON_COLUMNS.has(key) && typeof value === 'string') {
-        try { normalized[key] = JSON.parse(value); } catch {}
-      }
-      if (MYSQL_BOOLEAN_COLUMNS.has(key)) normalized[key] = Boolean(value);
-    }
-    return normalized;
-  });
-}
-
-function mysqlStatement(sql, params = []) {
-  const values = [];
-  const statement = String(sql).replace(/\$(\d+)/g, (_match, index) => {
-    const value = params[Number(index) - 1];
-    values.push(value && typeof value === 'object' && !(value instanceof Date) && !Buffer.isBuffer(value)
-      ? JSON.stringify(value)
-      : value);
-    return '?';
-  });
-  return { statement, values };
-}
-
-function mysqlAdapter(native, release = null) {
-  const adapter = {
-    dialect: 'mysql',
-    async query(sql, params = []) {
-      const prepared = mysqlStatement(sql, params);
-      const [result] = await native.query(prepared.statement, prepared.values);
-      if (Array.isArray(result)) return { rows: normalizeMysqlRows(result), rowCount: result.length };
-      return { rows: [], rowCount: Number(result?.affectedRows || 0), insertId: result?.insertId || null };
-    },
-    async connect() {
-      if (typeof native.getConnection !== 'function') return adapter;
-      const connection = await native.getConnection();
-      return mysqlAdapter(connection, () => connection.release());
-    },
-    release() {
-      if (release) release();
-    },
-  };
-  return adapter;
-}
-
 function mysqlPoolOptions(connectionString) {
   const parsed = new URL(connectionString);
-  const sslDisabled = /^(?:disable|disabled|false|off)$/i.test(env('MYSQL_SSL_MODE'));
-  const local = ['localhost', '127.0.0.1'].includes(parsed.hostname);
   return {
     host: parsed.hostname,
     port: Number(parsed.port || 3306),
@@ -339,7 +317,7 @@ function mysqlPoolOptions(connectionString) {
     connectTimeout: 5000,
     dateStrings: true,
     decimalNumbers: true,
-    ssl: local || sslDisabled ? undefined : { rejectUnauthorized: false },
+    ssl: verifiedMysqlTls(parsed.hostname,Number(parsed.port||3306),env('MYSQL_SSL_MODE')),
   };
 }
 
@@ -489,14 +467,15 @@ async function ensureProfile(db, identity, patch = {}) {
           UPDATE crewcheck_platform_profiles SET
             public_id=IF(public_id IS NULL OR TRIM(public_id)='', $2, public_id),
             display_name=IF($8, $3, display_name),
-            locale=IF($8, $4, locale),
-            timezone=IF($8, $5, timezone),
-            share_presence=IF($8, $7, share_presence),
+            locale=IF($11, $4, locale),
+            timezone=IF($12, $5, timezone),
+            share_presence=IF($13, $7, share_presence),
             plan=IF($9, 'premium_unlimited', IF($10, $6, plan)),
             updated_at=CURRENT_TIMESTAMP(3)
           WHERE email=$1`, [
           identity.email, candidate, displayName, locale, timezone, requestedPlan || defaultPlan,
-          Boolean(patch.sharePresence), Boolean(patch.apply), forcedUnlimited, Boolean(requestedPlan && identity.admin),
+          Boolean(patch.sharePresence), Boolean(patch.apply && Object.hasOwn(patch, 'displayName')), forcedUnlimited, Boolean(requestedPlan && identity.admin),
+          Boolean(patch.apply && Object.hasOwn(patch, 'locale')), Boolean(patch.apply && Object.hasOwn(patch, 'timezone')), Boolean(patch.apply && Object.hasOwn(patch, 'sharePresence')),
         ]);
       } else {
         await db.query(`
@@ -1015,6 +994,7 @@ async function clearAuthFailures(db, identifier) {
 }
 
 const PLATFORM_METHOD_POLICIES = [
+  [/^\/api\/platform\/finance\/history$/, ['GET', 'POST']],
   [/^\/api\/platform\/catalog$/, ['GET']],
   [/^\/api\/platform\/database\/health$/, ['GET']],
   [/^\/api\/platform\/profile$/, ['GET', 'PATCH']],
@@ -1243,10 +1223,7 @@ function amilSearchText(value = '') {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
-function amilPlanCode(value = '') {
-  const normalized = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  return normalized === 'S450' ? 'S450' : 'S750';
-}
+function amilPlanCode(value = '') { return amilPlanFamily(value); }
 
 function amilProviderCare(provider, planCode) {
   const codes = Array.isArray(provider?.plans?.[planCode]) ? provider.plans[planCode] : [];
@@ -1274,56 +1251,16 @@ function amilServiceLabel(codes = []) {
   return codes.map((code) => labels[code] || code).join(' · ');
 }
 
+function amilSelection(url) {
+  return Object.fromEntries(['identityKind', 'productLabel', 'planCode', 'productCode', 'networkCode', 'serviceCode', 'specialty', 'city', 'state', 'query'].map(key => [key, String(url.searchParams.get(key) || '').trim()]));
+}
 function amilSnapshotSearch(url) {
-  const planCode = amilPlanCode(url.searchParams.get('planCode'));
-  const stateFilter = String(url.searchParams.get('state') || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2);
-  const cityFilter = amilSearchText(url.searchParams.get('city'));
-  const queryFilter = amilSearchText(url.searchParams.get('query') || url.searchParams.get('q'));
-  const careFilter = ['adult_emergency', 'adult_hospital', 'clinic', 'diagnostic', 'pediatric', 'obstetric', 'all'].includes(String(url.searchParams.get('care') || ''))
-    ? String(url.searchParams.get('care')) : 'adult_emergency';
-  const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit')) || 40));
-  if (!stateFilter && !cityFilter && !queryFilter) {
-    return { ok: false, status: 400, planCode, careFilter, message: 'Escolha a UF, informe a cidade ou pesquise o nome do prestador.' };
-  }
-  const matches = [];
-  for (const provider of AMIL_NETWORK_SNAPSHOT.providers || []) {
-    const codes = Array.isArray(provider?.plans?.[planCode]) ? provider.plans[planCode] : [];
-    if (!codes.length) continue;
-    if (stateFilter && provider.state !== stateFilter) continue;
-    const city = amilSearchText(provider.city);
-    if (cityFilter && !city.includes(cityFilter) && !cityFilter.includes(city)) continue;
-    const haystack = amilSearchText([provider.name, provider.city, provider.region, provider.state].join(' '));
-    if (queryFilter && !queryFilter.split(/\s+/).every((word) => haystack.includes(word))) continue;
-    const care = amilProviderCare(provider, planCode);
-    if (careFilter !== 'all' && !care.includes(careFilter)) continue;
-    const source = (AMIL_NETWORK_SNAPSHOT.sources || []).find((item) => item.id === provider.sourceId) || {};
-    matches.push({
-      id: provider.id,
-      name: provider.name,
-      serviceType: amilServiceLabel(codes),
-      serviceCodes: codes,
-      care,
-      address: '',
-      city: provider.city,
-      region: provider.region,
-      state: provider.state,
-      phone: '',
-      open24Hours: null,
-      planCode,
-      covered: true,
-      sourceId: provider.sourceId,
-      sourcePage: provider.sourcePage,
-      sourcePrintedAt: source.printedAt || '',
-      sourceUrl: source.url || AMIL_NETWORK_SNAPSHOT.sourcePage,
-      mapsQuery: [provider.name, provider.city, provider.state].filter(Boolean).join(', '),
-    });
-  }
-  matches.sort((left, right) => {
-    const leftCity = cityFilter && amilSearchText(left.city) === cityFilter ? 1 : 0;
-    const rightCity = cityFilter && amilSearchText(right.city) === cityFilter ? 1 : 0;
-    return rightCity - leftCity || left.city.localeCompare(right.city, 'pt-BR') || left.name.localeCompare(right.name, 'pt-BR');
-  });
-  return { ok: true, planCode, careFilter, providers: matches.slice(0, limit), total: matches.length };
+  const selection = amilSelection(url);
+  const providers = amilConfirmedProviders(AMIL_NETWORK_SNAPSHOT.providers, selection);
+  return { ok: true, planCode: selection.planCode, providers, total: providers.length,
+    coverageStatus: providers.length ? 'confirmed_in_network' : 'unknown',
+    reason: !amilPlanFamily(selection.planCode) ? 'missing_plan_details' : !selection.productCode || !selection.networkCode ? 'ambiguous_plan' : 'source_unavailable',
+    message: providers.length ? 'Fonte oficial confirma produto, rede, unidade e serviço; autorização individual deve ser conferida.' : amilUnknownMessage(selection.planCode) };
 }
 
 async function handleAmilHealth(req, res) {
@@ -1343,14 +1280,21 @@ async function handleAmilHealth(req, res) {
       missingPublishedStates: AMIL_NETWORK_SNAPSHOT.missingPublishedStates || ['AM'],
       sourcePage: AMIL_NETWORK_SNAPSHOT.sourcePage || '',
     },
-    message: snapshotReady ? 'Snapshot S450/S750 publicado e disponível; confirme a rede nos canais oficiais antes do atendimento.' : 'Rede Amil indisponível agora.',
+    coverageStatus: 'unknown',
+    message: amilUnknownMessage(),
   });
 }
 
 async function handleAmilSearch(req, res, url) {
   const context = await requireMain(req, res);
   if (!context) return;
+  const selection = amilSelection(url);
+  if (selection.identityKind === 'official_query_product_label') {
+    const references = amilDocumentaryReferences(selection);
+    return sendJson(res, 200, { ok: true, providers: [], count: 0, total: 0, referenceProviders: references, referenceCount: references.length, coverageStatus: 'unknown', source: 'user_presented_official_query', originalQueryDateKnown: false, sourcePage: AMIL_GUIDE_URL, disclaimer: AMIL_DOCUMENTARY_NOTICE });
+  }
   const config = amilConfiguration();
+  if (!selection.productCode || !selection.networkCode || !selection.state || !selection.city || !selection.serviceCode || !selection.specialty || !amilPlanFamily(selection.planCode)) return sendJson(res, 200, { ok: true, providers: [], count: 0, total: 0, coverageStatus: 'unknown', reason: amilPlanFamily(selection.planCode) ? 'ambiguous_plan' : 'missing_plan_details', sourcePage: AMIL_GUIDE_URL, disclaimer: amilUnknownMessage(selection.planCode) });
   if (!config.configured) {
     const snapshot = amilSnapshotSearch(url);
     if (!snapshot.ok) return sendJson(res, snapshot.status || 400, { ...snapshot, configured: true, source: 'published-pdf-snapshot' });
@@ -1360,12 +1304,12 @@ async function handleAmilSearch(req, res, url) {
       source: 'published-pdf-snapshot',
       count: snapshot.providers.length,
       snapshotGeneratedAt: AMIL_NETWORK_SNAPSHOT.generatedAt || '',
-      sourcePage: AMIL_NETWORK_SNAPSHOT.sourcePage || '',
-      disclaimer: AMIL_NETWORK_SNAPSHOT.disclaimer || 'Confirme cobertura, elegibilidade e atendimento diretamente com a operadora antes do deslocamento.',
+      sourcePage: AMIL_GUIDE_URL,
+      disclaimer: snapshot.message,
     });
   }
   const params = new URLSearchParams();
-  for (const key of ['latitude', 'longitude', 'postalCode', 'city', 'state', 'serviceType', 'planCode', 'care', 'query']) {
+  for (const key of ['city', 'state', 'serviceType', 'planCode', 'productCode', 'networkCode', 'serviceCode', 'specialty', 'care', 'query']) {
     const value = normalizeText(url.searchParams.get(key), 120);
     if (value) params.set(key, value);
   }
@@ -1381,6 +1325,7 @@ async function handleAmilSearch(req, res, url) {
     if (!response.ok) return sendJson(res, 502, { ok: false, configured: true, message: 'A Amil não concluiu a consulta agora.' });
     const candidates = Array.isArray(payload) ? payload : payload?.items || payload?.results || payload?.data || payload?.prestadores || [];
     const providers = Array.isArray(candidates) ? candidates.slice(0, 30).map((item) => ({
+      coverageEvidence: item.coverageEvidence,
       id: normalizeText(item.id || item.codigo || item.providerId, 100),
       name: normalizeText(item.name || item.nome || item.razaoSocial, 180),
       serviceType: normalizeText(item.serviceType || item.tipoServico || item.especialidade, 120),
@@ -1392,21 +1337,28 @@ async function handleAmilSearch(req, res, url) {
       latitude: Number(item.latitude || item.lat) || null,
       longitude: Number(item.longitude || item.lng || item.lon) || null,
     })).filter((item) => item.name) : [];
-    return sendJson(res, 200, { ok: true, configured: true, source: 'official-api', providers, count: providers.length, disclaimer: 'Confirme cobertura, elegibilidade e atendimento diretamente com a operadora antes do deslocamento.' });
+    const confirmed = amilConfirmedProviders(providers, amilSelection(url));
+    return sendJson(res, 200, { ok: true, configured: true, source: 'official-api', providers: confirmed, count: confirmed.length, total: confirmed.length, coverageStatus: confirmed.length ? 'confirmed_in_network' : 'unknown', sourcePage: AMIL_GUIDE_URL, disclaimer: confirmed.length ? 'Confirme autorização individual nos canais oficiais da Amil.' : amilUnknownMessage(url.searchParams.get('planCode')) });
   } finally { clearTimeout(timer); }
 }
 
 async function handleProfile(req, res) {
   const body = req.method === 'PATCH' || req.method === 'POST' ? await readBody(req) : {};
+  if (req.method !== 'GET' && Object.keys(body).some((key) => !['displayName', 'locale', 'timezone', 'sharePresence'].includes(key))) {
+    return sendJson(res, 400, { ok: false, message: 'Altere somente as informações do perfil.' });
+  }
+  if (Object.hasOwn(body, 'displayName') && (typeof body.displayName !== 'string' || !normalizeText(body.displayName, 120) || body.displayName.normalize('NFC').trim().length > 120)) {
+    return sendJson(res, 400, { ok: false, message: 'Informe um nome de até 120 caracteres.' });
+  }
   const context = await requireMain(req, res, body);
   if (!context) return;
   let profile = context.profile;
   if (req.method !== 'GET') profile = await ensureProfile(context.db, context.identity, {
     apply: true,
-    displayName: body.displayName,
-    locale: normalizeLocale(body.locale),
-    timezone: normalizeTimezone(body.timezone),
-    sharePresence: Boolean(body.sharePresence),
+    ...(Object.hasOwn(body, 'displayName') ? { displayName: body.displayName } : {}),
+    ...(Object.hasOwn(body, 'locale') ? { locale: normalizeLocale(body.locale) } : {}),
+    ...(Object.hasOwn(body, 'timezone') ? { timezone: normalizeTimezone(body.timezone) } : {}),
+    ...(Object.hasOwn(body, 'sharePresence') ? { sharePresence: Boolean(body.sharePresence) } : {}),
   });
   const billing = await subscriptionStatus(context.db, profile);
   return sendJson(res, 200, { ok: true, profile: publicProfile(profile), billing, encoding: 'UTF-8' });
@@ -1724,6 +1676,7 @@ async function handleRosterActive(req, res) {
   const result = await context.db.query('SELECT id,roster_key,roster,compliance,gym,source_name,updated_at FROM crewcheck_platform_rosters WHERE owner_email=$1 AND active=TRUE ORDER BY updated_at DESC LIMIT 1', [context.identity.email]);
   return sendJson(res, 200, { ok: true, roster: result.rows[0] || null, databasePrimary: true });
 }
+
 
 async function handleStays(req, res) {
   const body = req.method === 'POST' || req.method === 'PATCH' ? await readBody(req, 500_000) : {};
@@ -2500,6 +2453,9 @@ async function handleAccountDeletion(req, res) {
   const client = await context.db.connect();
   try {
     await client.query('BEGIN');
+    // Same first lock as financial append: erasure cannot race new history.
+    await client.query('SELECT email FROM crewcheck_platform_profiles WHERE email=$1 FOR UPDATE', [context.identity.email]);
+    await eraseWhatsAppAccountState(context.identity.email, {client});
     const visitorRows = await client.query('SELECT id FROM crewcheck_platform_visitors WHERE owner_email=$1 OR email=$1', [context.identity.email]);
     const visitorKeys = new Set(visitorRows.rows.map((row) => `visitor:${row.id}`));
     const threadRows = await client.query('SELECT id,direct_key FROM crewcheck_platform_chat_threads');
@@ -2524,6 +2480,9 @@ async function handleAccountDeletion(req, res) {
     if (await platformTableReady(client, 'crewcheck_platform_parking_positions')) {
       await client.query('DELETE FROM crewcheck_platform_parking_positions WHERE owner_email=$1', [context.identity.email]);
     }
+    for (const [sql, params] of financialLedgerErasureStatements(context.identity.email)) {
+      await deleteIfTableExists(client, sql, params);
+    }
     await client.query('DELETE FROM crewcheck_platform_rosters WHERE owner_email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_platform_usage WHERE email=$1', [context.identity.email]);
     if (await platformTableReady(client, 'crewcheck_platform_terms_acceptances')) {
@@ -2531,7 +2490,10 @@ async function handleAccountDeletion(req, res) {
     }
     await client.query('DELETE FROM crewcheck_platform_subscriptions WHERE email=$1', [context.identity.email]);
     await client.query('DELETE FROM crewcheck_platform_profiles WHERE email=$1', [context.identity.email]);
-    await client.query('DELETE FROM crewcheck_telegram_state WHERE state_key IN ($1,$2) OR state_key=$3', [`link-email:${context.identity.email}`, `snapshot:${context.identity.email}`, `profile:${context.identity.email}`]);
+    for (const [sql, params] of notificationStateDeletionStatements(context.identity.email)) {
+      await deleteIfTableExists(client, sql, params);
+    }
+    await client.query('DELETE FROM crewcheck_telegram_state WHERE state_key IN ($1,$2,$3,$4)', [`link-email:${context.identity.email}`, `snapshot:${context.identity.email}`, `profile:${context.identity.email}`, `weather-consent:${context.identity.email}`]);
     // Perfil médico de emergência, preferências, sessões com localização, alertas e cartões
     // Guardian são dados de saúde do titular: a exclusão da conta precisa alcançá-los.
     for (const [sql, params] of accountHealthDeletionStatements(context.identity.email)) {
@@ -2583,12 +2545,37 @@ export async function deleteIfTableExists(client, sql, params) {
   }
 }
 
+// Financial storage stays off until a separately operated additive migration.
+// Unlike legacy development routes, this path never accepts an email header/body.
+const financialLedgerRoute = createFinancialLedgerHandler({
+  enabled: () => env('CREWCHECK_FINANCIAL_LEDGER_ENABLED', 'false') === 'true',
+  identityProvider: (req) => {
+    const claims = verifyJwt(requestToken(req));
+    const email = safeEmail(claims?.email);
+    if (!email || claims?.aud === 'crewcheck-visitor' || claims?.role === 'visitor') return null;
+    return { authenticated: true, role: 'owner', ownerId: email };
+  },
+  poolProvider: pool,
+  allowedOrigin: () => {
+    try { const url = new URL(env('PUBLIC_APP_URL')); return url.protocol === 'https:' ? url.origin : ''; }
+    catch { return ''; }
+  },
+});
+
+const financialFxRoute=createFinancialFxHandler({enabled:()=>env('CREWCHECK_FINANCIAL_FX_ENABLED','false')==='true',identityProvider:req=>{const claims=verifyJwt(requestToken(req)),email=safeEmail(claims?.email);return !email||claims?.aud==='crewcheck-visitor'||claims?.role==='visitor'?null:{authenticated:true,role:'owner',ownerId:email};}});
+
+// Activation requires independently verified GitHub review and trusted ingress; no env/caller toggle.
+const releaseJournalRoute=createProbeOnlyReleaseHandler({poolProvider:pool});
+
 export async function handlePlatformRoute(req, res, url) {
   const legacy = url.pathname === '/api/db/status' || url.pathname === '/api/stats' || url.pathname === '/api/rosters' || url.pathname.startsWith('/api/rosters/');
   if (!url.pathname.startsWith('/api/platform/') && !legacy) return false;
   if (!legacy && !enforcePlatformMethod(req, res, url.pathname)) return true;
   try {
     if (legacy) { await handleLegacyDatabase(req, res, url); return true; }
+    if(url.pathname===RELEASE_JOURNAL_PATH)return releaseJournalRoute(req,res,url);
+    if(url.pathname===FINANCIAL_FX_PATH)return financialFxRoute(req,res,url);
+    if ([FINANCIAL_LEDGER_PATH, FINANCIAL_UPCOMING_PATH, FINANCIAL_CAPTURE_PATH].includes(url.pathname)) return financialLedgerRoute(req, res, url);
     if (url.pathname === '/api/platform/catalog') { await handleCatalog(req, res); return true; }
     if (url.pathname === '/api/platform/terms/current') { await handleTermsCurrent(req, res); return true; }
     if (url.pathname === '/api/platform/terms/accept') { await handleTermsAccept(req, res); return true; }

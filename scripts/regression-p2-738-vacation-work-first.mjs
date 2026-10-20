@@ -29,7 +29,8 @@ assert.match(block, /Retorno suave/, 'vacation preferences must expose optional 
 assert.doesNotMatch(block, /Voyage|roteiro turístico|restaurante|passeio/i, 'CrewCheck vacation slice must stay work-first and not become a travel planner');
 
 assert.match(home, /const vacationContextV14738 = vacationContextForEventsV14738\(events, nowMs\);/, 'FlyDeck must derive active vacation from the loaded roster');
-const vacationReturn = home.indexOf('if (vacationContextV14738) return <VacationModeCardV14738');
+const vacationReturn = home.indexOf('if (vacationContextV14738) return <');
+assert.match(home.slice(vacationReturn, home.indexOf(';',vacationReturn)), /VacationModeCardV14738/, 'vacation card must remain in the canonical early return, including a presentation wrapper');
 const emptyState = home.indexOf('if (!loaded || event.placeholder)', vacationReturn);
 assert.ok(vacationReturn >= 0 && emptyState > vacationReturn, 'vacation mode must win before roster-empty/reimport semantics');
 
@@ -37,7 +38,7 @@ assert.match(home, /function Departure\(\{ event, events, setView \}/, 'Departur
 const departureVacation = home.indexOf('if (vacationContextV14738 && !prepareVacationReturn)');
 const departurePlaceholder = home.indexOf('if (event.placeholder)', departureVacation);
 assert.ok(departureVacation >= 0 && departurePlaceholder > departureVacation, 'vacation state must win before "awaiting roster" in Departure');
-assert.match(home, /<Departure event=\{(?:departureSurfaceEvent|departureEvent|event)\} events=\{events\} setView=\{setView\}\/>/, 'Home router must provide Departure the current roster context without changing its selected event');
+assert.match(home, /<Departure event=\{(?:departureEvent|event)\} events=\{events\} setView=\{setView\}\/>/, 'Home router must provide Departure the current roster context without changing its selected event');
 assert.match(css, /cc-vacation-mode-v14738/, 'vacation UI must have isolated styling');
 assert.doesNotMatch(css, /@keyframes/i, 'vacation UI must not introduce attention-seeking animation');
 assert.match(prepare, /p2-738-vacation-work-first\/apply\.mjs/, 'canonical source preparation must reapply #738');

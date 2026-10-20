@@ -1,0 +1,41 @@
+name: Visitor grant proposals OFF
+on:
+  pull_request:
+    paths:
+      - 'shared/visitor-access-proposal/**'
+      - 'client/src/components/visitor-proposal/**'
+      - 'scripts/regression-visitor-grants-off.mjs'
+      - 'scripts/regression-visitor-proposal-dom.mjs'
+      - '.github/workflows/visitor-grants-off.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --prefix "$RUNNER_TEMP/visitor-off-dom" --ignore-scripts --no-audit --no-fund --package-lock=false jsdom@26.1.0
+      - name: Test raw OFF contracts and synthetic proposal
+        env:
+          VISITOR_JSDOM_PACKAGE: ${{ runner.temp }}/visitor-off-dom/package.json
+        run: |
+          node scripts/regression-visitor-grants-off.mjs
+          node scripts/regression-visitor-proposal-dom.mjs
+      - name: Prepare existing source and check types
+        run: |
+          node scripts/v139/apply.mjs
+          npx tsc --noEmit
+      - name: Test prepared OFF contracts and synthetic proposal
+        env:
+          VISITOR_JSDOM_PACKAGE: ${{ runner.temp }}/visitor-off-dom/package.json
+        run: |
+          node scripts/regression-visitor-grants-off.mjs
+          node scripts/regression-visitor-proposal-dom.mjs

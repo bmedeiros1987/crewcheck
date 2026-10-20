@@ -13,6 +13,7 @@
 
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import postcss from 'postcss';
 import { loadClientModules, TYPE_ONLY_PDF_PARSER_STUB } from './lib/ts-module-harness.mjs';
 
 const home = fs.readFileSync('client/src/pages/Home.tsx', 'utf8');
@@ -22,52 +23,19 @@ const css = fs.readFileSync('client/src/components/pulse/crewcheck-pulse.css', '
 // começar com asterisco, e o "#546" casa como cor hexadecimal.
 const cssRules = css.replace(/\/\*[\s\S]*?\*\//g, '');
 const tsx = fs.readFileSync('client/src/components/pulse/CrewCheckPulse.tsx', 'utf8');
+const frame = fs.readFileSync('client/src/components/navigation/InternalHeaderFrame.tsx', 'utf8');
+const finalCss = fs.readFileSync('client/src/styles/ipad-header-recovery.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+const main = fs.readFileSync('client/src/main.tsx', 'utf8');
 
-// 1. O Pulse vive no header global em modo compacto e a marca é o fallback
-//    quando não existe alerta. Não existe uma segunda barra permanente.
-assert.match(
-  home,
-  /<CrewCheckPulse compact fallback=\{lockup\}\/>/,
-  'o Brand precisa montar o Pulse compacto com a identidade como fallback',
-);
-assert.match(
-  home,
-  /<Brand pulse back=/,
-  'o header global precisa ativar o modo Pulse',
-);
-assert.ok(
-  !home.includes('<CrewCheckPulse/>'),
-  'não pode existir uma segunda superfície Pulse abaixo do header',
-);
-
-// 2. Sem mensagem importante, o header volta à identidade normal.
-assert.match(
-  tsx,
-  /if \(!message\) return compact \? <>\{fallback\}<\/> : null;/,
-  'sem alerta, o Pulse compacto precisa devolver a identidade do header',
-);
-
-// 3. O resumo é uma linha só. Detalhes aparecem somente quando o usuário expande,
-//    em popover absoluto que não aumenta a altura do shell nem empurra o conteúdo.
-assert.match(
-  cssRules,
-  /\.cc-pulse-compact-trigger \{[^}]*min-height: 44px;/,
-  'o resumo compacto precisa manter alvo de toque de 44px',
-);
-assert.match(
-  cssRules,
-  /\.cc-pulse-compact-trigger > strong \{[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/,
-  'o título do Pulse compacto precisa permanecer em uma linha',
-);
-assert.match(
-  cssRules,
-  /\.cc-pulse-popover \{[^}]*position: absolute;/,
-  'os detalhes precisam abrir em popover absoluto sem empurrar o conteúdo',
-);
-assert.ok(
-  !/--cc-header-clearance|ResizeObserver/.test(css + home),
-  'o Pulse não pode voltar a controlar dinamicamente a geometria do header',
-);
+// Requested integrated header supersedes the former separate notice row.
+assert.equal((home.match(/<InternalHeaderFrame>/g) || []).length, 1);
+assert.ok(frame.includes('global: true, pulse: true'), 'only the global frame owns navigation and Pulse');
+assert.ok(!frame.includes('<CrewCheckPulse'), 'frame must not mount a second notice');
+assert.ok(home.includes('if (!global && !pulse) return null;'), 'nested Brand calls do not duplicate navigation');
+assert.ok(tsx.includes('onClick={toggleDetails}') && tsx.includes('aria-expanded={expanded}'));
+assert.ok(finalCss.includes('.cc-integrated-header-space'), 'terminal cascade includes integrated header');
+assert.ok(main.trimEnd().endsWith('import "./styles/ipad-header-recovery.css";'));
+// Geometry, focus, account persistence and large text are exercised by the browser gate.
 
 // 4. O Pulse continua sem entrar na disputa de !important do shell.
 const importantes = cssRules
@@ -218,4 +186,4 @@ assert.ok(
   'o componente precisa assinar o runtime singleton do Pulse para a fila sobreviver a remontagens',
 );
 
-console.log('[p1-546] Pulse: resumo compacto no header, marca como fallback, detalhes em popover sem empurrar o shell, sem !important/cores literais; fila e dispensa continuam seguras.');
+console.log('[p1-546] Pulse: header único com marca navegável, aviso compacto e detalhes em fluxo completos; tokens/foco/fila/dispensa continuam seguros.');

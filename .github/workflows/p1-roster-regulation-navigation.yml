@@ -4,7 +4,23 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'client/src/components/regulation/RegulationNavigationContext.tsx'
+      - 'client/src/components/regulation/**'
+      - 'client/src/components/CanonicalDutyCard.tsx'
+      - 'client/src/components/canonical-duty-card.css'
+      - 'shared/regulationTemporalScenario.mjs'
+      - 'shared/regulationScenarioPrefill.mjs'
+      - 'scripts/regression-regulation-source-hydration.mjs'
+      - 'shared/regulationContextExplanation.mjs'
+      - 'scripts/regression-regulation-context-explanation*.mjs'
+      - 'scripts/regression-canonical-journey-label.mjs'
+      - 'client/src/lib/canonicalDutyMeasurement.ts'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'scripts/regression-regulation-prefill.mjs'
+      - 'scripts/regression-regulation-prefill-browser.mjs'
+      - 'scripts/regression-regulation-window-selection.mjs'
+      - 'scripts/p0-530-adjacent-month-retention/**'
+      - 'scripts/regression-regulation-temporal-scenario.mjs'
+      - 'scripts/regression-regulation-scenario-ui.cjs'
       - 'client/src/lib/navigationContext.ts'
       - 'client/src/lib/rosterFocus.ts'
       - 'client/src/pages/Home.tsx'
@@ -15,11 +31,28 @@ on:
       - 'scripts/p1-565-roster-regulation-context/**'
       - 'scripts/p0-build-identity/apply.mjs'
       - 'scripts/regression-p1-565-roster-regulation-navigation.mjs'
+      - 'scripts/regression-rbac-sector-input.cjs'
       - '.github/workflows/p1-roster-regulation-navigation.yml'
   push:
     branches: [main]
     paths:
-      - 'client/src/components/regulation/RegulationNavigationContext.tsx'
+      - 'client/src/components/regulation/**'
+      - 'client/src/components/CanonicalDutyCard.tsx'
+      - 'client/src/components/canonical-duty-card.css'
+      - 'shared/regulationTemporalScenario.mjs'
+      - 'shared/regulationScenarioPrefill.mjs'
+      - 'scripts/regression-regulation-source-hydration.mjs'
+      - 'shared/regulationContextExplanation.mjs'
+      - 'scripts/regression-regulation-context-explanation*.mjs'
+      - 'scripts/regression-canonical-journey-label.mjs'
+      - 'client/src/lib/canonicalDutyMeasurement.ts'
+      - 'client/src/lib/complianceEngine.ts'
+      - 'scripts/regression-regulation-prefill.mjs'
+      - 'scripts/regression-regulation-prefill-browser.mjs'
+      - 'scripts/regression-regulation-window-selection.mjs'
+      - 'scripts/p0-530-adjacent-month-retention/**'
+      - 'scripts/regression-regulation-temporal-scenario.mjs'
+      - 'scripts/regression-regulation-scenario-ui.cjs'
       - 'client/src/lib/navigationContext.ts'
       - 'client/src/lib/rosterFocus.ts'
       - 'client/src/pages/Home.tsx'
@@ -30,6 +63,7 @@ on:
       - 'scripts/p1-565-roster-regulation-context/**'
       - 'scripts/p0-build-identity/apply.mjs'
       - 'scripts/regression-p1-565-roster-regulation-navigation.mjs'
+      - 'scripts/regression-rbac-sector-input.cjs'
       - '.github/workflows/p1-roster-regulation-navigation.yml'
 
 permissions:
@@ -65,3 +99,27 @@ jobs:
         run: node scripts/regression-p1-565-roster-regulation-navigation.mjs
       - name: Roster focus compatibility
         run: node scripts/regression-p1-548-dynamic-calendar.mjs
+      - name: Install isolated regulation browser
+        run: |
+          npm install --prefix "$RUNNER_TEMP/regulation-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/regulation-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Retained legacy regulation sector editing regression
+        env:
+          RBAC_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/regulation-browser/package.json
+        run: node scripts/regression-rbac-sector-input.cjs
+      - name: Current conditional temporal scenario regression
+        run: |
+          node scripts/regression-regulation-window-selection.mjs
+          node scripts/regression-regulation-prefill.mjs
+          node scripts/regression-regulation-source-hydration.mjs
+          node scripts/regression-regulation-context-explanation.mjs
+          node scripts/regression-canonical-journey-label.mjs
+          node scripts/regression-regulation-temporal-scenario.mjs
+          npx vite build
+      - name: Current compiled scenario UI and Home shortcut
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/regulation-browser/package.json
+        run: |
+          node scripts/regression-regulation-prefill-browser.mjs
+          node scripts/regression-regulation-context-explanation-browser.mjs
+          node scripts/regression-regulation-scenario-ui.cjs

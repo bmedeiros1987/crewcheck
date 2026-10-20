@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { prepareSourcesOnce } from './preparation-cache.mjs';
 
 function persistPreparationFailure(error) {
   const message = error instanceof Error ? `${error.stack || error.message}` : String(error || 'Erro desconhecido na preparação canônica.');
@@ -15,6 +16,7 @@ function persistPreparationFailure(error) {
 process.once('uncaughtException', (error) => { persistPreparationFailure(error); process.exitCode = 1; });
 process.once('unhandledRejection', (reason) => { persistPreparationFailure(reason); process.exitCode = 1; });
 
+async function prepareSources() {
 const authClientPath = 'client/src/lib/authClient.ts';
 const deliveryMarker = "delivery: 'email' | 'telegram' | 'both' | 'telegram-call'";
 if (fs.existsSync(authClientPath)) {
@@ -178,8 +180,49 @@ await import('../android-play/prepare.mjs');
 await import('../android-play/layout.mjs');
 await import('../p1-546-pulse-live/finalize.mjs');
 await import('../v14411/apply.mjs');
-await import('../p1-home-layout/apply.mjs');
+
+// Selective visual composition; canonical rules and producers remain upstream.
 await import('../p1-menu-5s/apply.mjs');
-await import('../p1-566-departure-program-context/apply.mjs');
-await import('../mobile-google-identity/apply.mjs');
+await import('../p1-home-layout/apply.mjs');
+await import('../ipad-header-recovery.mjs');
+await import('../finalize-theme-runtime.mjs');
+await import('../finalize-operational-layout.mjs');
+await import('../p1-departure-route-state/apply.mjs');
+await import('../p1-publication-review/apply.mjs');
+await import('../p1-menu-organization/apply.mjs');
+await import('../p1-concierge-poi/apply.mjs');
+await import('../p1-whatsapp-sender/apply.mjs');
+await import('../p1-concierge-stay-menu/apply.mjs');
+// Read-only Concierge projection after canonical rule preparation.
+await import('../p1-concierge-journey/apply.mjs');
+await import('../p1-notification-sound/apply.mjs');
+await import('../roster-startup/apply.mjs');
+await import('../home-standby-departure/apply.mjs');
+await import('../transit-availability/apply.mjs');
+await import('../notification-safety/apply.mjs');
+await import('../departure-location-consistency/apply.mjs');
+await import('../departure-location-consistency/positioning-session.mjs');
+await import('../fixed-navigation-headers.mjs');
+await import('../standby-sequence-card/apply.mjs');
+await import('../amil-exact-coverage/apply.mjs');
+await import('../finalize-duty-clock-provenance.mjs');
+await import('../wellhub-hours/apply.mjs');
+await import('../wellhub-deeplinks/apply.mjs');
+await import('../stay-editor/apply.mjs');
+await import('../bids-default/apply.mjs');
+await import('../bids-default/wakeup-layout.mjs');
+await import('../cirium-radar-off/apply.mjs');
+await import('../concierge-gate-functional.mjs');
+await import('../pulse-alert-experience/apply.mjs');
+await import('../p1-infobip-whatsapp-off/apply.mjs');
+await import('../telegram-concierge-menu/apply.mjs');
+
+}
+
+// ESM evaluates this finalizer once per invocation, before the cache snapshot.
+// The terminal import also preserves the canonical-chain ordering contract.
+const finalizeSources = () => import('../ci/sync-canonical-manual.mjs');
+await prepareSourcesOnce(prepareSources, '.', { finalize: finalizeSources });
 await import('../ci/sync-canonical-manual.mjs');
+
+await import('../mobile-google-identity/apply.mjs');

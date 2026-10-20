@@ -18,8 +18,9 @@ assert.ok(!watcher.includes('window.location.reload()'), 'release watcher must n
 assert.ok(!watcher.includes("registration.waiting.postMessage('SKIP_WAITING')"), 'release watcher must not force activation');
 assert.ok(!index.includes('window.location.reload()'), 'materialized PWA HTML must not force reload');
 assert.ok(!index.includes("registration.waiting.postMessage('SKIP_WAITING')"), 'materialized PWA HTML must not force activation');
-assert.ok(coordinator.includes("document.visibilityState === 'hidden'"), 'safe activation must retain hidden-state gate');
-assert.ok(coordinator.includes('Date.now() - lastActivityAt >= idleMs'), 'safe activation must retain idle gate');
+assert.ok(coordinator.includes('export async function requestPwaUpdate()'), 'activation requires an explicit UI action');
+assert.ok(!coordinator.includes("postMessage({ type: 'SKIP_WAITING'"), 'no legacy automatic activation');
+assert.ok(coordinator.includes("type:'CREWCHECK_ACTIVATE_UPDATE',buildId:id"), 'activation is bound to the downloaded build');
 assert.ok(!coordinator.includes('window.location.reload'), 'coordinator must remain reload-free');
 
 console.log('[mobile-pwa-safe-update] OK');

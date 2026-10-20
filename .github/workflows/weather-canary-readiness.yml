@@ -1,0 +1,78 @@
+name: Weather canary readiness
+on:
+  pull_request:
+    paths:
+      - 'server.mjs'
+      - 'server/platform.mjs'
+      - 'server/weather/**'
+      - 'scripts/tests/*weather*.test.mjs'
+      - 'scripts/regression-weather-canary-mysql.mjs'
+      - 'scripts/regression-weather-monitor-heartbeat-health.mjs'
+      - '.github/workflows/weather-canary-readiness.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Check source and isolated policy/integration fixtures
+        shell: bash -eo pipefail {0}
+        run: |
+          node --check server.mjs
+          node --check server/platform.mjs
+          node --check server/weather/monitor-readiness.mjs
+          node --test scripts/tests/weather-monitor-readiness.test.mjs scripts/tests/weather-monitor-canary-integration.test.mjs scripts/tests/critical-weather-observation.test.mjs scripts/tests/weather-canary-account-deletion.test.mjs
+          node scripts/regression-weather-monitor-heartbeat-health.mjs
+      - run: npm ci
+      - name: Start isolated synthetic MySQL without network or published ports
+        run: |
+          mkdir -p /tmp/crewcheck-weather-canary-qa-socket
+          docker run --detach --rm --name crewcheck-weather-canary-qa --network none --mount type=bind,source=/tmp/crewcheck-weather-canary-qa-socket,target=/var/run/mysqld --env MYSQL_ALLOW_EMPTY_PASSWORD=yes --env MYSQL_DATABASE=crewcheck_weather_canary_qa mysql:8.4
+          for attempt in $(seq 1 60); do
+            if docker logs crewcheck-weather-canary-qa 2>&1 | grep -q 'MySQL init process done' && docker exec crewcheck-weather-canary-qa mysql --database=crewcheck_weather_canary_qa --execute='SELECT 1'; then break; fi
+            sleep 1
+          done
+          docker exec crewcheck-weather-canary-qa mysql --database=crewcheck_weather_canary_qa --execute='SELECT 1'
+          docker exec crewcheck-weather-canary-qa chmod 755 /var/run/mysqld
+      - name: Exercise tracked SQL locking, consent ordering and deletion races
+        run: |
+          mkdir -p artifacts/weather-canary
+          node scripts/regression-weather-canary-mysql.mjs > artifacts/weather-canary/mysql-tracked.json
+        env:
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-weather-canary-qa-socket/mysqld.sock
+          CREWCHECK_WEATHER_CANARY_QA: isolated-mysql
+      - name: Prepare production sources
+        run: node scripts/v139/apply.mjs
+      - name: Recheck prepared canary and deletion behavior
+        run: |
+          node --check server.mjs
+          node --check server/platform.mjs
+          node --check server/weather/monitor-readiness.mjs
+          node --test scripts/tests/weather-monitor-readiness.test.mjs scripts/tests/weather-monitor-canary-integration.test.mjs scripts/tests/critical-weather-observation.test.mjs scripts/tests/weather-canary-account-deletion.test.mjs
+          node scripts/regression-weather-monitor-heartbeat-health.mjs
+      - name: Recheck SQL against prepared production sources
+        run: node scripts/regression-weather-canary-mysql.mjs > artifacts/weather-canary/mysql-prepared.json
+        env:
+          CREWCHECK_QA_MYSQL_SOCKET: /tmp/crewcheck-weather-canary-qa-socket/mysqld.sock
+          CREWCHECK_WEATHER_CANARY_QA: isolated-mysql
+      - name: Remove only the synthetic test database container
+        if: always()
+        run: docker rm -f crewcheck-weather-canary-qa || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: weather-canary-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/weather-canary

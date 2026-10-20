@@ -1,0 +1,130 @@
+/* Shared light surfaces. Restrict this foundation to neutral containers:
+   operational event colors, maps, charts and media keep their own treatments. */
+html[data-crew-theme="light"] body .cz-app[data-version] :is(
+  .cz-panel-head, .cz-kpi, .cz-finance-table,
+  .cz-toolbox:not(.warning):not(.danger):not(.warn):not(.ok),
+  .cc139-card:not(.warning):not(.danger):not(.warn):not(.ok)
+) {
+  background: var(--cc-review-surface, #fff) !important;
+  border: 1px solid var(--cc-review-border, #dbe2ea) !important;
+  border-radius: 16px !important;
+  box-shadow: none !important;
+}
+
+html[data-crew-theme="light"] body .cz-app[data-version] .cz-panel-head {
+  padding: 20px !important;
+}
+html[data-crew-theme="light"] body .cz-app[data-version] .cz-panel-head h1 {
+  margin-top: 0 !important;
+  font-size: clamp(1.5rem, 2.5vw, 2rem) !important;
+  line-height: 1.25 !important;
+  color: var(--cc-review-text, #172b3e) !important;
+}
+html[data-crew-theme="light"] body .cz-app[data-version] .cz-panel-head::after,
+html[data-crew-theme="light"] body .cz-app[data-version] .cz-panel-head h1::after {
+  content: none !important;
+}
+html[data-crew-theme="light"] body .cz-app[data-version] .cz-panel-head p {
+  color: var(--cc-review-muted, #526579) !important;
+  line-height: 1.5 !important;
+}
+html[data-crew-theme="light"] body .cz-app[data-version] .cc-location-access :is(span, small) {
+  color: var(--cc-review-muted, #526579) !important;
+}
+
+/* Keyboard focus is independent of semantic icon/event colors. */
+html[data-crew-theme="light"] body .cz-app[data-version] .cz-departure :is(button, a, input, select):focus-visible,
+html[data-crew-theme="light"] body > nav.cz-bottom-nav[aria-label="Navegação principal"] > button:focus-visible {
+  outline-color: #0b65c2 !important;
+}
+
+/* Admin and Guardian counters are neutral information, not severity. */
+html[data-crew-theme="light"] body .cz-app[data-version] .cc-admin-grid > article,
+html[data-crew-theme="light"] body .cz-app[data-version] .cc-guardian-shell .cc-control-kpis > article {
+  background: var(--cc-review-surface, #fff) !important;
+  border-color: var(--cc-review-border, #dbe2ea) !important;
+  border-radius: 16px !important;
+  box-shadow: none !important;
+}
+html[data-crew-theme="light"] body .cz-app[data-version] .cc-admin-grid > article > span,
+html[data-crew-theme="light"] body .cz-app[data-version] .cc-guardian-shell .cc-control-kpis > article > span,
+html[data-crew-theme="light"] body .cz-app[data-version] .cc-roster-estimate-note-v1397 > p {
+  color: var(--cc-review-muted, #526579) !important;
+}
+html[data-crew-theme="light"] body .cz-app[data-version] .cz-alert-stack article.danger > div > span {
+  color: #9f1239 !important;
+}
+html[data-crew-theme="light"] body [data-sonner-toast][data-type="error"] {
+  --error-text: #b42318;
+  color: #b42318;
+}
+
+/* These Routine panels intentionally remain dark. Restore their own text
+   palette without reaching the light action buttons or colored status bars. */
+html[data-crew-theme="light"] body .cz-app[data-version] :is(
+  .cc-life-day-plan-main > h3,
+  .cc-life-day-timeline > span > b,
+  .cc-life-day-breakfast > p > strong,
+  .cc-life-day-nearby > header > div > h3,
+  .cc-life-day-empty > h4,
+  .cc-life-day-place-copy > h4,
+  .cc-life-day-safety > p > strong,
+  .cc-life-day-settings-body > label > span,
+  .cc-life-day-settings-body > label.check > span > strong
+) { color: #eaf5ff !important; }
+html[data-crew-theme="light"] body .cz-app[data-version] :is(
+  .cc-life-day-plan-main > p,
+  .cc-life-day-breakfast > p,
+  .cc-life-day-nearby > header > div > p,
+  .cc-life-day-empty > p,
+  .cc-life-day-place-copy > p,
+  .cc-life-day-safety > p,
+  .cc-life-day-loading,
+  .cc-life-day-message
+) { color: #cfe1ef !important; }
+html[data-crew-theme="light"] body .cz-app[data-version] :is(
+  .cc-life-day-timeline > span > strong,
+  .cc-life-day-place-copy > span,
+  .cc-life-day-settings-body > label > small,
+  .cc-life-day-settings-body > label.check > span > small
+) { color: #b9cfe0 !important; }
+html[data-crew-theme="light"] body .cz-app[data-version] :is(
+  .cc-life-day-plan-main > small,
+  .cc-life-day-nearby > header > div > small,
+  .cc-life-day-place-copy > small
+) { color: #9edcff !important; }
+html[data-crew-theme="light"] body .cz-app[data-version] .cc-life-day-timeline > span:not(.warn) > svg {
+  color: #bae6fd !important;
+}
+html[data-crew-theme="light"] body .cz-app[data-version] .cc-life-day-timeline > span.warn > svg,
+html[data-crew-theme="light"] body .cz-app[data-version] .cc-life-day-breakfast > svg {
+  color: #fde68a !important;
+}
+html[data-crew-theme="light"] body .cz-app[data-version] .cc-life-day-empty > svg,
+html[data-crew-theme="light"] body .cz-app[data-version] .cc-life-day-safety > svg {
+  color: #7dd3fc !important;
+}
+
+/* Long informational copy must occupy its actual height before the next row.
+   Keep operational roster card truncation outside this conversational page. */
+html[data-crew-theme="light"] body .cz-app[data-version][data-view="concierge"] .cz-roster-copy > p {
+  display: block !important;
+  height: auto !important;
+  max-height: none !important;
+  -webkit-line-clamp: unset !important;
+  line-clamp: unset !important;
+}
+
+/* The maintenance illustration and panels keep their dark treatment. */
+html[data-crew-theme="light"] body .cz-app[data-version] .cz-maintenance :is(h1, h2),
+html[data-crew-theme="light"] body .cz-app[data-version] .cz-maintenance > article > :is(span, a),
+html[data-crew-theme="light"] body .cz-app[data-version] .cz-maintenance > article > div:not(.cz-maint-illu) {
+  color: #eaf5ff !important;
+}
+html[data-crew-theme="light"] body .cz-app[data-version] .cz-maintenance p,
+html[data-crew-theme="light"] body .cz-app[data-version] .cz-maintenance .cz-maint-illu > svg {
+  color: #cfe1ef !important;
+}
+html[data-crew-theme="light"] body .cz-app[data-version] .cz-maintenance h2 > b {
+  color: #99f6e4 !important;
+}

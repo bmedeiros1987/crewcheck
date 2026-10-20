@@ -1,3 +1,5 @@
+import './lib/nativeNotificationCancellation';
+import './lib/stayAlarmHost';
 import './lib/crewcheckPremiumRuntime';
 import './lib/themeRuntime';
 import './lib/offlineRuntime';
@@ -20,6 +22,7 @@ import "./styles/web-desktop-shell.css";
 import "./styles/bottom-nav-clarity.css";
 import "./styles/opening-splash-identity.css";
 import "./styles/atlas-1c-semantic-navigation.css";
+import "./styles/light-bottom-nav-signature.css";
 
 createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>
