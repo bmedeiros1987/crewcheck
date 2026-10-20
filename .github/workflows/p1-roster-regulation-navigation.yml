@@ -115,11 +115,13 @@ jobs:
           node scripts/regression-regulation-context-explanation.mjs
           node scripts/regression-canonical-journey-label.mjs
           node scripts/regression-regulation-temporal-scenario.mjs
+          node scripts/regression-regulation-deadline-summary.mjs
           npx vite build
       - name: Current compiled scenario UI and Home shortcut
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/regulation-browser/package.json
         run: |
+          node scripts/regression-regulation-deadline-browser.mjs
           node scripts/regression-regulation-prefill-browser.mjs
           node scripts/regression-regulation-context-explanation-browser.mjs
           node scripts/regression-regulation-scenario-ui.cjs
