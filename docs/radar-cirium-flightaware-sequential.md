@@ -17,3 +17,25 @@ PR1030 remains a separate draft (HEAD1311f198): response-proven published IATAâ†
 Official public references consulted: https://developer.cirium.com/apis/cirium-sky-api/flight-status and https://developer.cirium.com/apis/cirium-sky-api/subscriptions (current browser text shell exposes no usable schema/entitlement evidence); https://developer.flightstats.com/api-docs/flightstatus/v2 documents distinct departure/arrival gates but is the Flex reference, not proof of Sky contract; https://www.flightaware.com/aeroapi/portal/documentation currently exposes a login shell. Existing reviewed transport contracts and synthetic fixtures are reused; no undocumented timestamp is invented.
 
 Validation: regression-radar-sequential.mjs exercises real Cirium normalization, actual Radar race/public projection, actual FlightAware row selection and actual authenticated handler. It covers success without fallback, sequential invocation, errors/timeouts, missing/placeholder/arrival-only gates, wrong identity/UTC/day, stale/absent observations, no-data/ambiguity, context expiration and account/roster revocation before fallback/final response, in three timezones. Existing OFF wiring, bounded Sky transport and source-occurrence regressions remain required before and after canonical preparation. All fixtures are synthetic; no real data, messages, provider query or service configuration is involved.
+
+
+## Local reconciliation and commercial readiness â€” 20 October 2026
+
+The existing four #1143 commits (through 59e712cc) are replayed locally on published main 99850754. Only two server.mjs comment conflicts required resolution; the published unique-occurrence filter and healthy no-data behavior remain intact. No force-push, production registration, credential access or provider query is part of this reconciliation. The independent binding/shared-admission prototype remains at 31aed071 in its existing isolated clone; it is not copied into another implementation.
+
+Bruno has authorized paid development. Lack of a free tier is no longer a development blocker. Subscription purchase, credentials, recurring amount and billable calls with an undefined ceiling remain outside this change. A process-local maxCalls and the MEMORY prototype are not a durable financial limit.
+
+Read-only commercial research found:
+
+| Item | Current evidence | Unresolved account-specific input |
+| --- | --- | --- |
+| Product | Sky subscriptions lists Pay As You Go and Contract; Flight Status by Flight is listed | Exact endpoint/product entitlement for this account |
+| Billing | Pay As You Go is billed monthly; Contract terms are negotiated | Currency, unit rate/tiering, minimum or fixed fee, taxes and reset timezone |
+| Volume | Subscription page advertises unlimited queries | This is not a spend cap; unit definition, empty/error/retry billing, overage and provider-enforced stop remain unconfirmed |
+| Price | Sky links to the FlightStats pricing page | Pricing page requires authentication; no numeric price was visible |
+| Cancellation | No account cancellation rule was established | Notice period, renewal, effective date, minimum term and outstanding usage charges |
+| Account | Shared-browser inventory still shows My Cirium login; no authenticated pricing account was available | Account holder must supply authenticated terms/usage through the parent; no login or new credential was attempted |
+
+Sources read directly: [Sky subscriptions](https://developer.cirium.com/apis/cirium-sky-api/subscriptions), [linked Pay As You Go pricing](https://developer.flightstats.com/getting-started/pricing), and [older evaluation/conversion page](https://developer.cirium.com/apis/cirium-sky-api/get-evaluation-account). The older page describes 30-day/20,000-request evaluation while the dedicated Sky subscriptions page describes 14-day limited evaluation. These are different public descriptions, not proof of this account's allowance. Never promote either trial figure or the historical credential-slot count into remaining billable balance.
+
+The next implementation must reuse the existing shared admission contract, reserve durably before source invocation, retain uncertain attempts without refund, and cover all workers and both potentially billable providers. Any financial estimate also needs a verified upper cost per admitted request, fees and a scope covering external consumption; absent that mapping, an attempts counter cannot guarantee a currency ceiling. No database migration or production adapter is registered here. Actual source-envelope verification remains pending; synthetic fixtures do not establish coverage on the purchased product.
