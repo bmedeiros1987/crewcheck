@@ -123,7 +123,7 @@ import {payrollOperationalCoverage} from '@/lib/payrollPaymentComposition';
 import {salaryDisplaySummary,sumSalaryDisplaySummaries} from '@/lib/salaryDisplayBasis';
 import PayrollPaymentCard from '@/components/finance/PayrollPaymentCard';
 import SalaryBreakdownChart, { salaryDeductionEvidence } from '@/components/finance/SalaryBreakdownChart';
-import FinancialScreen from '@/components/finance/FinancialScreen';
+import FinancialScreen, {useFinancialScreen} from '@/components/finance/FinancialScreen';
 import { nextAllowancePayment } from '@/lib/nextFinancialPayment';
 import {readMonthlyFinancialSettings} from '@/lib/financialMonthlySettings';
 import {applyMonthlySalaryInputs} from '@/lib/monthlySalaryInputs';
@@ -4170,8 +4170,15 @@ function scopedFinancialForecast(snapshots: ReturnType<typeof financeSnapshot>[]
   return { ...base, rows, monthlyRows:rows, unclassifiedItems, monthlyUnclassifiedItems:unclassifiedItems, nativeSummary, monthlySummary, monthly:monthlySummary.convertedTotalBRL, currencySummary, totalsByCurrency:nativeSummary.totalsByCurrency, currencyCount:Object.keys(nativeSummary.totalsByCurrency).length, pendingCurrencies:monthlySummary.pendingCurrencies, convertedComplete:monthlySummary.convertedComplete, scopeIncomplete } as ReturnType<typeof calculatePerDiem> & { scopeIncomplete:boolean };
 }
 function FinancialFreeDayDetails({evaluation}:{evaluation:FreeDayPostponementEvaluation}){
- const {session,review,boundCurrent}=evaluation;
- return session?<FinancialFreeDayComparison key={session} session={session} review={review}><FreeDaySourceConsent key={session} session={session} bound={boundCurrent}/></FinancialFreeDayComparison>:null;
+ const {session,review,boundCurrent,period}=evaluation;
+ const {range}=useFinancialScreen();
+ if(!session)return null;
+ const outside=Boolean(range&&(!range.valid||period&&(period<range.start.slice(0,7)||period>range.end.slice(0,7))));
+ const reference=boundCurrent&&period?period.split('-').reverse().join('/'):null;
+ if(outside)return <section className="cc-financial-free-day" data-comparison-state="outside-period" aria-label="Início de folga"><strong>Início de folga{reference?` · ${reference}`:''}</strong><span role="status">{range?.valid?'Fora do período':'Período inválido'}</span></section>;
+ // Presentation projection only: the canonical review and delivery owner stay unchanged.
+ const visibleReview=range?{...review,alerts:review.alerts.filter(alert=>alert.date>=range.start&&alert.date<=range.end),pending:review.pending.filter(item=>!item.date||item.date>=range.start&&item.date<=range.end)}:review;
+ return <section data-free-day-reference-month={boundCurrent?period||undefined:undefined}>{reference&&<small>Referência · {reference}</small>}<FinancialFreeDayComparison key={session} session={session} review={visibleReview}><FreeDaySourceConsent key={session} session={session} bound={boundCurrent}/></FinancialFreeDayComparison></section>;
 }
 function PerDiemView({ bundle,freeDayEvaluation }: { bundle: BundleState;freeDayEvaluation:FreeDayPostponementEvaluation }) {
   return <FinancialHistoryExplorer roster={bundle.roster} calculate={financeSnapshot} changesDetails={<FinancialFreeDayDetails evaluation={freeDayEvaluation}/>} mode="allowance" metric={snapshot=>snapshot.perdiem.nativeSummary.totalsByCurrency} rangeMetric={(snapshot,range)=>scopedFinancialForecast([snapshot],range,[]).nativeSummary.totalsByCurrency}

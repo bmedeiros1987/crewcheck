@@ -14,7 +14,9 @@ export function useFreeDayPostponementReview(roster:CrewRoster,source:string){
   const planned=loadOwnedPlannedRoster();let boundCurrent=false;
   try{const choice=JSON.parse(localStorage.getItem(startupKey())||'null');boundCurrent=Boolean(!authBoundary.current&&sessionStorage.getItem('crewcheck_admin_audit_mode')!=='1'&&owner&&startupOwner()===owner.toLowerCase()&&choice?.owner===startupOwner()&&choice?.cacheSchema==='p0-operational-date-anchor-v2'&&choice.roster?.days?.length&&freeDayVersion(choice.roster)===freeDayVersion(roster));}catch{/* Unbound input never gains an owner. */}
   const review=reviewFreeDayPostponements(planned&&isCurrentPlannedRoster(planned)?planned:null,roster,source,boundCurrent?owner||'':'',verifiedCabinAct(roster)&&Boolean(planned&&verifiedCabinAct(planned.roster)));
-  return {session:authBoundary.current?null:session,owner,boundCurrent,review,revision};
+  const year=Number(roster.year),month=Number(roster.month);
+  const period=Number.isInteger(year)&&year>=1900&&year<=9998&&Number.isInteger(month)&&month>=1&&month<=12?`${year}-${String(month).padStart(2,'0')}`:null;
+  return {session:authBoundary.current?null:session,owner,boundCurrent,review,revision,period};
  },[session,owner,roster,source,version,revision]);
 }
 export type FreeDayPostponementEvaluation=ReturnType<typeof useFreeDayPostponementReview>;

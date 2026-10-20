@@ -23,6 +23,7 @@ on:
       - 'client/src/lib/financialPayrollPeriods.ts'
       - 'client/src/lib/financialSettingStore.ts'
       - 'client/src/lib/freeDay*.ts'
+      - 'client/src/lib/useFreeDayPostponementReview.ts'
       - 'client/src/components/FreeDayPostponementAlerts.tsx'
       - 'client/src/components/FreeDayReviewPending.tsx'
       - 'scripts/regression-free-day-pending-browser.cjs'
@@ -181,6 +182,7 @@ jobs:
           node scripts/regression-free-day-simulated-worker-browser.mjs
           node scripts/regression-free-day-observational-get-browser.mjs
           node scripts/regression-free-day-browser.cjs
+          node scripts/regression-free-day-shared-review-browser.mjs
       - name: Save synthetic free-day alert evidence
         if: always()
         uses: actions/upload-artifact@v4
