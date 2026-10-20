@@ -638,3 +638,6 @@ html:not([data-crew-theme="light"]) .cc-aims-change-badge {
 .cc-publication-change dd span { display:block; }
 .cc-publication-change p { white-space:normal; }
 .cc-publication-change { box-sizing:border-box; max-width:min(680px,calc(100vw - 80px)); }
+
+.cc-roster-premium-v1397 .cc-roster-changes-link{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;color:inherit;text-decoration:none;border-radius:12px}
+.cc-roster-premium-v1397 .cc-roster-changes-link:focus-visible{outline:2px solid currentColor;outline-offset:2px}
