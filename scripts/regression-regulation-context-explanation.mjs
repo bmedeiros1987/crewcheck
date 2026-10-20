@@ -31,7 +31,13 @@ try {
   assert.equal(explanation.next.field,'Composição da tripulação');
   assert.equal(JSON.stringify(input),before,'reader cannot mutate source/form/results');
   assert.equal(regulationContextExplanation({...input,allowed:false}),null,'no previous owner source may be exposed');
-  assert.doesNotMatch(JSON.stringify(regulationContextExplanation({...input,program:{...program,journeyId:'foreign'}})),/QA4527|QA3036|QA3039|04:10/,'mismatching journey cannot be narrated or given its reference');
+  for (const incompatible of [{...program,journeyId:'foreign'},{...program,id:'missing' },null]) {
+   const stale = regulationContextExplanation({...input,program:incompatible,form:{...form,plannedEndSource:'PRIVATE-OLD-SOURCE',normalEnd:'2032-10-20T13:10'},result:{missing:['PRIVATE-OLD-RESULT']}});
+   assert.doesNotMatch(JSON.stringify(stale),/QA4527|QA3036|QA3039|04:10|2032|11:25|13:10|PRIVATE|B\.1|60 min/,'mismatching sequence must suppress all old dates, clocks, sources, references and result text');
+   assert.deepEqual(stale.facts,[]);assert.equal(stale.hypothesis,'');assert.equal(stale.scenario,'');assert.equal(stale.next,null);assert.equal(stale.pending.length,1);assert.match(stale.pending[0].label,/Selecione novamente ou recarregue/);
+  }
+  const manual = regulationContextExplanation({...input,scheduleDay:null,program:null,reference:null,form:{...form,plannedEndSource:'Encerramento informado pelo usuário'}});
+  assert.match(manual.facts.join(' '),/2032-10-20 · 11:25.*informado pelo usuário/,'genuinely manual scenario without source sequence remains useful');
   const missing = regulationContextExplanation({...input,reference:null});assert.match(missing.hypothesis,/nenhum limite foi inventado/);
   const extension = regulationContextExplanation({...input,form:{...form,extension:true}});assert.match(extension.scenario,/\+60 min.*somente a referência temporal/);
   const detailed = regulationContextExplanation({...input,form:{...form,method:'detailed'}});assert.match(detailed.scenario,/método detalhado.*decolagem estimada/);assert.doesNotMatch(detailed.scenario,/atraso editável/);

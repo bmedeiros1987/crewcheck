@@ -7,7 +7,14 @@ const duration = value => Number.isSafeInteger(value) && value > 0 ? `${Math.flo
 export function regulationContextExplanation({ allowed = false, scheduleDay = null, program = null, reference = null, form = {}, result = null } = {}) {
   if (!allowed) return null;
   const journey = Array.isArray(scheduleDay?.regulationJourney) ? scheduleDay.regulationJourney : [];
-  const scoped = program?.journeyId && journey.length && journey.every(event => event.journeyId === program.journeyId) && journey.some(event => event.id === program.id);
+  const scoped = program?.journeyId && journey.length && journey.every(event => event?.journeyId === program.journeyId) && journey.some(event => event?.id === program.id);
+  // A retained draft/reference can still belong to the previous selection.
+  // With an incompatible source sequence, none of its derived text is safe to
+  // narrate. A genuinely manual scenario (no sequence) remains available below.
+  if (journey.length && !scoped) return {
+    facts: [], hypothesis: '', scenario: '', next: null,
+    pending: [{ label: 'A sequência recebida não corresponde à programação selecionada. Selecione novamente ou recarregue a programação para explicar esta jornada.', field: '' }],
+  };
   const legs = scoped ? journey.map(event => event.leg || {}) : [];
   const facts = [];
   if (scoped) {
