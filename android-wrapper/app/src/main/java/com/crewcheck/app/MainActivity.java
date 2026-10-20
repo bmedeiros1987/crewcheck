@@ -160,6 +160,8 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
                 super.onPageStarted(view, url, icon);
+                operationalWatchTrusted=false;
+                operationalWatchDocument=CrewCheckWatchPublisher.navigation(MainActivity.this);
                 if (stayAlarmHost != null) stayAlarmHost.navigationStarted();
             }
             @Override
@@ -177,6 +179,7 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 if (!isCrewCheckWebUrl(url)) return;
+                operationalWatchTrusted=true;
                 injectCrewCheckBridge();
                 dispatchPendingSharedPdf();
                 syncLifeCompanionToCrewCheckAndWatch("page-finished");
@@ -690,6 +693,9 @@ public class MainActivity extends Activity {
         }
     }
 
+    private volatile String operationalWatchDocument="";
+    private volatile boolean operationalWatchTrusted=false;
+
     private void injectCrewCheckBridge() {
         if (webView == null) return;
         String js = "(function(){" +
@@ -703,8 +709,8 @@ public class MainActivity extends Activity {
                 "try{AndroidCrewCheckIFlight.openPortalAndImport(String(url),JSON.stringify(options||{}),id);}catch(e){resolve({ok:false,error:String(e&&e.message||e)});}" +
                 "});" +
                 "}};" +
-                "window.CrewCheckNative={openExternal:function(url){try{return AndroidCrewCheckNative.openExternal(String(url));}catch(e){return false;}},requestLocation:function(){try{return AndroidCrewCheckNative.requestLocation();}catch(e){return false;}},requestCurrentLocation:function(callbackId){try{return AndroidCrewCheckNative.requestCurrentLocation(String(callbackId||''));}catch(e){return false;}},requestNotifications:function(){try{return AndroidCrewCheckNative.requestNotifications();}catch(e){return false;}},requestBackgroundMode:function(){try{return AndroidCrewCheckNative.requestBackgroundMode();}catch(e){return false;}},openPowerSettings:function(){try{return AndroidCrewCheckNative.openPowerSettings();}catch(e){return false;}},permissionStatus:function(){try{return JSON.parse(AndroidCrewCheckNative.permissionStatus());}catch(e){return {location:false,notifications:false};}},watchSyncAvailable:function(){try{return AndroidCrewCheckNative.watchSyncAvailable();}catch(e){return false;}},syncWatchSnapshot:function(snapshot){try{var raw=(typeof snapshot==='string')?snapshot:JSON.stringify(snapshot||{});return AndroidCrewCheckNative.syncWatchSnapshot(String(raw));}catch(e){return false;}},requestWatchSnapshot:function(){try{return AndroidCrewCheckNative.requestWatchSnapshot();}catch(e){return false;}},notify:function(title,body){try{return AndroidCrewCheckNative.notify(String(title||'CrewCheck'),String(body||''));}catch(e){return false;}},scheduleNotification:function(title,body,epochMillis){try{return AndroidCrewCheckNative.scheduleNotification(String(title||'CrewCheck'),String(body||''),String(epochMillis||Date.now()));}catch(e){return false;}}};" +
-                "if(!window.__crewcheckWatchSnapshotListener){window.__crewcheckWatchSnapshotListener=true;window.addEventListener(\'crewcheck:watch-snapshot\',function(event){try{window.CrewCheckNative.syncWatchSnapshot(event&&event.detail?event.detail:{});}catch(e){}});}" +
+                "window.CrewCheckNative={openExternal:function(url){try{return AndroidCrewCheckNative.openExternal(String(url));}catch(e){return false;}},requestLocation:function(){try{return AndroidCrewCheckNative.requestLocation();}catch(e){return false;}},requestCurrentLocation:function(callbackId){try{return AndroidCrewCheckNative.requestCurrentLocation(String(callbackId||''));}catch(e){return false;}},requestNotifications:function(){try{return AndroidCrewCheckNative.requestNotifications();}catch(e){return false;}},requestBackgroundMode:function(){try{return AndroidCrewCheckNative.requestBackgroundMode();}catch(e){return false;}},openPowerSettings:function(){try{return AndroidCrewCheckNative.openPowerSettings();}catch(e){return false;}},permissionStatus:function(){try{return JSON.parse(AndroidCrewCheckNative.permissionStatus());}catch(e){return {location:false,notifications:false};}},watchSyncAvailable:function(){try{return AndroidCrewCheckNative.watchSyncAvailable();}catch(e){return false;}},revokeWatchHost:function(lease){try{return AndroidCrewCheckNative.revokeWatchHost(String(lease||''));}catch(e){return false;}},admitWatchHost:function(){try{return AndroidCrewCheckNative.admitWatchHost(" + org.json.JSONObject.quote(operationalWatchDocument) + ");}catch(e){return '';}},syncWatchSnapshot:function(snapshot,lease){try{var raw=(typeof snapshot==='string')?snapshot:JSON.stringify(snapshot||{});return AndroidCrewCheckNative.syncWatchSnapshot(String(raw),String(lease||''));}catch(e){return false;}},requestWatchSnapshot:function(){try{return AndroidCrewCheckNative.requestWatchSnapshot();}catch(e){return false;}},notify:function(title,body){try{return AndroidCrewCheckNative.notify(String(title||'CrewCheck'),String(body||''));}catch(e){return false;}},scheduleNotification:function(title,body,epochMillis){try{return AndroidCrewCheckNative.scheduleNotification(String(title||'CrewCheck'),String(body||''),String(epochMillis||Date.now()));}catch(e){return false;}}};" +
+                "if(!window.__crewcheckWatchSnapshotListener){window.__crewcheckWatchSnapshotListener=true;window.addEventListener(\'crewcheck:watch-snapshot\',function(event){try{var d=event&&event.detail; if(d&&d.snapshot&&d.leaseId)window.CrewCheckNative.syncWatchSnapshot(d.snapshot,d.leaseId);}catch(e){}});}" +
                 "window.CrewCheckPremium=window.CrewCheckNative;" +
                 "try{window.dispatchEvent(new CustomEvent('crewcheck:native-ready',{detail:window.CrewCheckNative.permissionStatus()}));}catch(e){}" +
                 "})();";
@@ -1194,7 +1200,26 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public boolean syncWatchSnapshot(final String snapshotJson) {
+        public boolean revokeWatchHost(final String leaseId) {
+            if(!operationalWatchTrusted || leaseId==null || !leaseId.matches("[0-9a-f]{64}")) return false;
+            boolean queued=CrewCheckWatchPublisher.revoke(MainActivity.this,leaseId);
+            dispatchCrewCheckWatchSyncResult(queued,queued?"revoke_queued_locally":CrewCheckWatchPublisher.localStatus(MainActivity.this),
+                    queued?"Revogação salva no celular; aguardando confirmação do relógio.":"Revogação pendente ou incerta; replay bloqueado.");
+            return queued;
+        }
+
+        @JavascriptInterface
+        public String admitWatchHost(final String documentId) {
+            if(!operationalWatchTrusted || !operationalWatchDocument.equals(documentId)) return "";
+            String lease=CrewCheckWatchPublisher.admitHost(MainActivity.this,documentId);
+            if(lease.isEmpty()) dispatchCrewCheckWatchSyncResult(false,CrewCheckWatchPublisher.localStatus(MainActivity.this),
+                    "Sincronização pendente; nenhuma admissão nova.");
+            return lease;
+        }
+
+        @JavascriptInterface
+        public boolean syncWatchSnapshot(final String snapshotJson, final String leaseId) {
+            if(!operationalWatchTrusted) return false;
             if (snapshotJson == null || snapshotJson.trim().isEmpty()) {
                 dispatchCrewCheckWatchSyncResult(false, "invalid_snapshot", "Snapshot vazio.");
                 return false;
@@ -1202,6 +1227,7 @@ public class MainActivity extends Activity {
             CrewCheckWatchPublisher.publish(
                     MainActivity.this,
                     snapshotJson,
+                    leaseId,
                     MainActivity.this::dispatchCrewCheckWatchSyncResult
             );
             return true;

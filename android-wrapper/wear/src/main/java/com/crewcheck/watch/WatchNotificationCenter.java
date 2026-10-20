@@ -40,6 +40,11 @@ public final class WatchNotificationCenter {
         }
     }
 
+    static void clearOperational(Context context) {
+        NotificationManager manager=context.getSystemService(NotificationManager.class);
+        if(manager!=null) manager.cancel(OPS_NOTIFICATION_ID);
+    }
+
     public static void postForSnapshot(Context context, WatchContextSnapshot snapshot) {
         if (context == null || snapshot == null || !isEnabled(context)) return;
         if (Build.VERSION.SDK_INT >= 33

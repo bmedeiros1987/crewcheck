@@ -73,6 +73,18 @@
                     android:pathPrefix="/crewcheck/watch/request-sync/"
                     android:scheme="wear" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:host="*" android:path="/crewcheck/watch/session/challenge/v1" android:scheme="wear" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:host="*" android:path="/crewcheck/watch/session/ack/v1" android:scheme="wear" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:host="*" android:path="/crewcheck/watch/session/revoke-ack/v1" android:scheme="wear" />
+            </intent-filter>
         </service>
     </application>
 </manifest>
