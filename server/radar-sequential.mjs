@@ -31,8 +31,8 @@ function project(result, reason, fallbackAttempted, now) {
 export async function runCiriumFlightAwareSequence({ identity, primary, fallback, admit, now = Date.now } = {}) {
   if (!gateQueryDay(identity, now()).allowed || typeof primary !== 'function' || typeof fallback !== 'function' || typeof admit !== 'function')
     return { ok: false, configured: false, radarRouting: ROUTING, canonicalReadOnly: true, exportedToConcierge: false, message: 'Contexto operacional não confirmado.' };
-  const admitted = async () => { try { return await admit() === true; } catch { return false; } };
-  const denied = () => ({ ok: false, configured: false, radarRouting: ROUTING, canonicalReadOnly: true, exportedToConcierge: false, message: 'Contexto operacional não confirmado.', fallbackReason: 'authority-invalidated' });
+  const admitted = async () => { try { return await admit() === true && gateQueryDay(identity, now()).allowed; } catch { return false; } };
+  const denied = () => ({ ok: false, configured: false, radarRouting: ROUTING, canonicalReadOnly: true, exportedToConcierge: false, message: 'Contexto operacional não confirmado.', fallbackReason: gateQueryDay(identity, now()).allowed ? 'authority-invalidated' : 'context-expired' });
   if (!await admitted()) return denied();
   let first;
   try { first = await primary(); } catch { first = { ok: false, providerState: 'provider_error' }; }

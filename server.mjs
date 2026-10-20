@@ -418,7 +418,7 @@ async function handleRadar(req, res, url, radarOptions = {}) {
     try {
       if (!authorityCurrent() || !gateQueryDay(ctx.gateQueryEvidence).allowed) return false;
       const current = await loadAuthority();
-      return Boolean(authorityCurrent() && current && current.kind === authority.kind && current.id === authority.id && current.revision === authority.revision
+      return Boolean(authorityCurrent() && gateQueryDay(ctx.gateQueryEvidence).allowed && current && current.kind === authority.kind && current.id === authority.id && current.revision === authority.revision
         && findPublishedGateLeg(current.roster, ctx.gateQueryEvidence, buildCanonicalRosterEvents(current.roster)));
     } catch { return false; }
   };
