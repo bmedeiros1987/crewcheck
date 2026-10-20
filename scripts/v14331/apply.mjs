@@ -169,7 +169,8 @@ function departurePositioningPlan(event: ZeroLeg, route: RoutePreviewInfo | null
   const requiresFlight = distanceKm != null && distanceKm > SMART_DEPARTURE_FLIGHT_THRESHOLD_KM;
   const sameDayConfirmed = requiresFlight && departureConfirmedSameDayPositioning(event);
   const travelDate = departurePresentationDateTime(event);
-  if (requiresFlight && !sameDayConfirmed) travelDate.setDate(travelDate.getDate() - 1);
+  // Previous civil day in the fixed UTC-03 publication reference, never device DST.
+  if (requiresFlight && !sameDayConfirmed) travelDate.setTime(travelDate.getTime() - 24 * 60 * 60_000);
   return { requiresFlight, sameDayConfirmed, distanceKm, originAirport: nearestDepartureAirport(origin), travelDate };
 }
 function departureGroundRouteDestination(event: ZeroLeg, origin = eventRouteOrigin(event), route: RoutePreviewInfo | null = null): string {

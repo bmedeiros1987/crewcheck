@@ -8,10 +8,10 @@ const classification={};vm.runInNewContext(compile(fs.readFileSync('client/src/l
 const policy={};vm.runInNewContext(compile(fs.readFileSync('client/src/lib/airportDeparturePolicy.ts','utf8')),{exports:policy,require:()=>classification});
 const home=fs.readFileSync(process.env.DEPARTURE_HOME_SOURCE||'client/src/pages/Home.tsx','utf8');
 const ast=ts.createSourceFile('Home.tsx',home,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
-const names=['validDepartureClock','hasPublishedPresentationForDeparture','departurePresentationDateTime','departureEventCode','isDepartureRestEvent','isDepartureEligibleEvent','nextDepartureEvent','departureEventForContext','departureCivilDateLabel','eventStartDateTime','eventClockDate','smartDepartureEstimate','routeDurationMinutes'];
+const names=['validDepartureClock','hasPublishedPresentationForDeparture','departurePresentationDateTime','departureEventCode','isDepartureRestEvent','isDepartureEligibleEvent','nextDepartureEvent','departureEventForContext','departureCivilDateLabel','eventStartDateTime','eventClockDate','smartDepartureEstimate','routeDurationMinutes','departurePositioningPlan'];
 const functions=ast.statements.filter(node=>ts.isFunctionDeclaration(node)&&names.includes(node.name?.text)).map(node=>'export '+node.getText(ast)).join('\n');
 const selection={};let saved=0;
-vm.runInNewContext(compile(functions),{exports:selection,Date,isAirportDepartureEligible:policy.isAirportDepartureEligible,noFutureLeg:()=>({id:'none',placeholder:true}),transitDeparturePresentation:()=>null,departureRouteMismatch:()=>false,saveDepartureTravelMinutes:()=>saved++,readDepartureTravelMinutes:()=>22,defaultDepartureTravelMinutes:()=>35,eventRouteOrigin:()=> 'Synthetic origin'});
+vm.runInNewContext(compile(functions),{exports:selection,Date,isAirportDepartureEligible:policy.isAirportDepartureEligible,noFutureLeg:()=>({id:'none',placeholder:true}),transitDeparturePresentation:()=>null,departureRouteMismatch:()=>false,saveDepartureTravelMinutes:()=>saved++,readDepartureTravelMinutes:()=>22,defaultDepartureTravelMinutes:()=>35,eventRouteOrigin:()=> 'Synthetic origin',SMART_DEPARTURE_FLIGHT_THRESHOLD_KM:250,departureConfirmedSameDayPositioning:()=>false,nearestDepartureAirport:()=>null});
 const harness=loadClientModules({prefix:'web-departure-selection-',stubs:TYPE_ONLY_PDF_PARSER_STUB,files:['client/src/lib/rosterContinuity.ts','client/src/lib/canonicalRoster.ts']});
 try{
  const flightDay={date:'20/10/2026',type:'VOO',dayOfWeek:'ter',pairingCode:'TEST',dutyReport:'04:10',dutyReportSource:'published',dutyDebrief:'07:00',dutyDebriefSource:'published',rawText:'Voo publicado BSB GRU HOTEL TESTE',legs:[{flightNumber:'TEST0001',origin:'BSB',destination:'GRU',departureTime:'05:10',arrivalTime:'06:30',presentationTime:'04:10',workType:'OP'}]};
@@ -43,6 +43,16 @@ try{
  for(const clock of ['24:00','12:99','unconfirmed'])assert.equal(selection.validDepartureClock(clock),false);
  const initializers=[];function visit(node){if(ts.isVariableDeclaration(node)&&node.name.getText(ast)==='departureEvent'&&node.initializer?.getText(ast).includes('departureEventForContext'))initializers.push(node.initializer.getText(ast));ts.forEachChild(node,visit);}visit(ast);assert.equal(initializers.length,1,'actual Home root resolves scoped departure once');
  const selectedFromWindow=new Function('events','rosterEvents','departureContext','departureEventForContext',`return (${initializers[0]});`)([reserve],events,{programId:flight.id},(items,context)=>selection.departureEventForContext(items,context,now));assert.equal(selectedFromWindow.id,flight.id,'explicit selection uses the displayed owner-fenced collection');
+ // Actual canonical builder + plan + actual UI initializer, not a copied date formula.
+ const dstDay={...flightDay,date:'08/03/2026',dutyReport:'23:30',dutyDebrief:'02:00',isNextDay:true,legs:[{...flightDay.legs[0],departureTime:'00:30(+1)',arrivalTime:'01:30(+1)',presentationTime:'23:30',isNextDay:true}]};
+ const dst=build([dstDay]).find(e=>e.kind==='flight');assert(dst);
+ assert.equal(selection.departurePresentationDateTime(dst).toISOString(),'2026-03-09T02:30:00.000Z');
+ const plan=selection.departurePositioningPlan(dst,{...route,distanceMeters:300000},'Synthetic origin');
+ assert.equal(plan.requiresFlight,true);assert.equal(plan.sameDayConfirmed,false);
+ assert.equal(plan.travelDate.toISOString(),'2026-03-08T02:30:00.000Z','previous BRT civil day must not use a device-local DST setter');
+ let leaveDayInitializer;function findLeaveDay(node){if(ts.isVariableDeclaration(node)&&node.name.getText(ast)==='leaveDayLabel'&&node.initializer?.getText(ast).includes('positioningPlan.travelDate'))leaveDayInitializer=node.initializer.getText(ast);ts.forEachChild(node,findLeaveDay);}findLeaveDay(ast);assert(leaveDayInitializer);
+ const leaveDay=new Function('positioningPlan','positioningUnresolved','event','estimate','departureCivilDateLabel',`return (${leaveDayInitializer});`)(plan,false,dst,selection.smartDepartureEstimate(dst,route,15),selection.departureCivilDateLabel);
+ assert.match(leaveDay,/07 de março de 2026/,'actual previous-day UI expression must show07Mar in every device zone');
  assert.equal(JSON.stringify(events),before,'selection and estimate cannot mutate the roster');
- console.log('PASS real web departure helpers/builder:20Oct04:10 before25OctASB, HOTEL annotation, explicit BRT instants/labels, midnight, real rest, reserve/home standby, removed/past context closed, displayed window, immutable fixtures; TZ='+process.env.TZ);
+ console.log('PASS real web departure helpers/builder:20Oct04:10 before25OctASB, HOTEL annotation, explicit BRT instants/labels, midnight, real rest, reserve/home standby, removed/past context closed, displayed window,300km positioning previous BRT civil day across DST, immutable fixtures; TZ='+process.env.TZ);
 }finally{harness.cleanup();}
