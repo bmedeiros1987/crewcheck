@@ -1,6 +1,7 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {Calculator,ChevronDown,RotateCcw} from 'lucide-react';
 import {getStoredUser,getToken} from '@/lib/authClient';
+import {captureAuthSession} from '@/lib/authClient';
 import {getScheduledDutyLimitReference} from '@/lib/complianceEngine';
 import type {LegalProfileSummary} from '@/lib/actRules';
 import type {CanonicalRosterEvent} from '@/lib/canonicalRoster';
@@ -12,6 +13,8 @@ import type {RosterDay} from '@/lib/pdfParser';
 import type {ScheduleDayLike} from '@/components/v1432/ManualRegulationView';
 import {projectRegulationScenario,explicitInstant} from '@shared/regulationTemporalScenario.mjs';
 import {regulationDeadlineSummary,regulationLastActivity,regulationExtensionMargin} from '@shared/regulationDeadlineSummary.mjs';
+import {ciriumRegulationArrivalEvidence,readRegulationOperationalArrival,regulationOperationalProjection} from '@shared/regulationOperationalArrival.mjs';
+import {originFlightDate} from '@shared/gate-query-day.mjs';
 import RegulationNavigationContext from './RegulationNavigationContext';
 import './regulation-scenario.css';
 const session=()=>{const u=getStoredUser(),t=getToken();return u&&t&&!['visitor','guest'].includes(u.role||'')?[u.id,u.email,t].join(':'):'';};
@@ -19,7 +22,11 @@ const number=(s:string)=>/^\d+$/.test(s)?Number(s):null;
 const dateOf=(s?:string|null)=>{const m=String(s||'').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);return m?`${m[3]}-${m[2]}-${m[1]}`:/^\d{4}-\d{2}-\d{2}$/.test(s||'')?s!:'';};
 const defaults=()=>({takeoff:'',normalEnd:'',offset:'',flight:'',delay:'0',taxi:'',postFlight:'',tasks:'',operation:'',extension:false,reviewed:false,publicationOffsetReviewed:false,composition:'',acclimatization:'unknown',limitSource:'Referência informada para esta simulação',limitBasis:'',presentation:'',presentationReviewed:false,acclimatizedClockReviewed:false,regime:'',timingChange:'flight-delay',changeReviewed:false,method:'schedule',plannedEnd:'',plannedEndSource:'',scheduledArrival:'',reviewRequired:false,manualLastActivity:'unknown'});
 function localClock(instant:string|undefined,offset:string){if(!instant||!/^([+-])(\d{2}):(\d{2})$/.test(offset))return '—';const sign=offset[0]==='-'?-1:1,shift=sign*(Number(offset.slice(1,3))*60+Number(offset.slice(4)))*60000;return new Date(Date.parse(instant)+shift).toISOString().slice(0,16).replace('T',' · ');}
-export default function RegulationScenarioView({scheduleDay,compliance,program}:{scheduleDay?:ScheduleDayLike|null;program?:CanonicalRosterEvent|null;compliance?:{legalProfile?:LegalProfileSummary;alerts?:Array<{title?:string;description?:string;actionable?:boolean;classification?:string;severity?:string}>}}){
+// Optional admitted-host input. No current cache is promoted into admission and
+// no subscription/fetch is created here. captureAuthSession is continuity only;
+// the supplying host must separately confirm authenticated source authority.
+export type RegulationOperationalArrivalInput={candidate:unknown;session:ReturnType<typeof captureAuthSession>;ownerScope:string;revision:string;receivedAt:string;isCurrent:()=>boolean};
+export default function RegulationScenarioView({scheduleDay,compliance,program,operationalArrival}:{scheduleDay?:ScheduleDayLike|null;program?:CanonicalRosterEvent|null;operationalArrival?:RegulationOperationalArrivalInput|null;compliance?:{legalProfile?:LegalProfileSummary;alerts?:Array<{title?:string;description?:string;actionable?:boolean;classification?:string;severity?:string}>}}){
  const details=useRef<HTMLDetailsElement>(null),owner=session(),signature=JSON.stringify(scheduleDay||null),key=owner+'|'+(program?.id||scheduleDay?.date||'manual');
  const admittedOwner=useRef(owner),observedOwner=useRef(owner),sourceAllowed=Boolean(owner&&admittedOwner.current===owner);
  const reference=useMemo(()=>{try{return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(scheduleDay?.dutyReport||'')?getScheduledDutyLimitReference(scheduleDay as RosterDay,compliance?.legalProfile):null;}catch{return null;}},[signature,compliance?.legalProfile]);
@@ -48,6 +55,10 @@ export default function RegulationScenarioView({scheduleDay,compliance,program}:
  },[sourceAllowed,signature,reference,program]),basis=JSON.stringify([signature,program?.startDateTime,reference,compliance?.legalProfile]);
  type Form=ReturnType<typeof defaults>;
  const [draft,setDraft]=useState<{key:string;basis:string;overrides:Partial<Form>}>(()=>({key,basis,overrides:{}})),[,refresh]=useState(0);
+ const [arrivalMode,setArrivalMode]=useState('manual');
+ const [operationalNow,setOperationalNow]=useState(Date.now);
+ useEffect(()=>{if(!operationalArrival)return;setOperationalNow(Date.now());const timer=window.setInterval(()=>setOperationalNow(Date.now()),1000);return()=>window.clearInterval(timer);},[operationalArrival]);
+ useEffect(()=>setArrivalMode('manual'),[key,basis,operationalArrival]);
  const form={...defaults(),...regulationDraftForm(draft,key,seed,basis)} as Form;
  const update=(changes:Partial<Form>)=>setDraft(previous=>({key,basis,overrides:{...(previous.key===key?previous.overrides:{}),...(previous.basis!==basis?{reviewed:false,publicationOffsetReviewed:false}:{}),...changes}}));
  useEffect(()=>{
@@ -67,7 +78,15 @@ export default function RegulationScenarioView({scheduleDay,compliance,program}:
  const baseResult=form.method==='schedule'?regulationScheduleProjection({...form,extension:false}):projectRegulationScenario({...input,extensionMinutes:0});
  const lastActivity=regulationLastActivity(scheduleDay,form.manualLastActivity);
  const hasPositioning=(scheduleDay?.legs||[]).some((leg:any)=>leg.workType==='PS');
- const deadlines=regulationDeadlineSummary(form,baseResult,{lastActivity,hasPositioning});
+ const finalProgram=((scheduleDay as any)?.regulationJourney?.at(-1)) as CanonicalRosterEvent|undefined;
+ const operationalCurrent=()=>{try{const nowSession=captureAuthSession();return Boolean(sourceAllowed&&operationalArrival?.session.token&&operationalArrival.session.owner&&operationalArrival.session.isCurrent()&&operationalArrival.session.owner===nowSession.owner&&operationalArrival.session.token===nowSession.token&&operationalArrival.isCurrent());}catch{return false;}};
+ const admitted=operationalCurrent();
+ const operationalEvidence=admitted?ciriumRegulationArrivalEvidence(operationalArrival?.candidate,{ownerScope:operationalArrival?.ownerScope,revision:operationalArrival?.revision,receivedAt:operationalArrival?.receivedAt}):null;
+ const operationalRead=readRegulationOperationalArrival({evidence:operationalEvidence,admitted,expected:{ownerScope:operationalArrival?.ownerScope,revision:operationalArrival?.revision,lastActivity,occurrence:finalProgram?{flight:finalProgram.flightNumber,departureDate:originFlightDate(finalProgram.startDateTime,finalProgram.origin),origin:finalProgram.origin,destination:finalProgram.destination,scheduledDepartureUtc:finalProgram.startDateTime}:null},now:operationalNow,operation:form.operation,postFlightMinutes:number(form.postFlight),additionalTasksMinutes:number(form.tasks),taxiInMinutes:number(form.taxi)});
+ const operationalProjection=operationalCurrent()?regulationOperationalProjection(operationalRead):null;
+ const useOperational=arrivalMode==='operational'&&Boolean(operationalProjection);
+ const selectedProjection=useOperational?operationalProjection:baseResult;
+ const deadlines=regulationDeadlineSummary(form,selectedProjection,{lastActivity,hasPositioning});
  const extensionMargin=regulationExtensionMargin(deadlines,form.extension);
  const explanation=regulationContextExplanation({allowed:sourceAllowed,scheduleDay,program,reference,form,result});
  const acclimatization=form.acclimatization==='acclimatized'?'Aclimatado':form.acclimatization==='not_acclimatized'?'Não aclimatado':'Indeterminado';
@@ -83,16 +102,18 @@ export default function RegulationScenarioView({scheduleDay,compliance,program}:
     <div><h2>Limite normal da jornada</h2><strong>{localClock(deadlines.normalDutyEnd||undefined,form.offset).split(' · ').at(-1)}</strong><small>{deadlines.normalDutyEnd?localClock(deadlines.normalDutyEnd,form.offset).split(' · ')[0]+' · UTC'+form.offset:'Dados a confirmar'}</small></div>
     <div><h2>Corte dos motores até</h2><strong>{localClock(deadlines.engineStopLimit||undefined,form.offset).split(' · ').at(-1)}</strong><small>{deadlines.engineStopLimit?localClock(deadlines.engineStopLimit,form.offset).split(' · ')[0]+' · UTC'+form.offset:'Confirme pós-voo e tarefas'}</small></div>
    </div>
-   {deadlines.marginMinutes!==null?<p className="cc-reg-margin" role="status">{deadlines.marginMinutes>=0?`${deadlines.marginMinutes} min de margem da programação`:`Excede a referência em ${Math.abs(deadlines.marginMinutes)} min`}</p>:<p role="status">Falta confirmar: {(deadlines.missing.length?deadlines.missing:deadlines.marginMissing).slice(0,3).join(' · ')}{deadlines.missing.length>3?'…':''}.</p>}
+   {deadlines.marginMinutes!==null?<p className="cc-reg-margin" role="status">{deadlines.marginMinutes>=0?`${deadlines.marginMinutes} min de margem ${useOperational?'da previsão operacional':'da programação'}`:`Excede a referência em ${Math.abs(deadlines.marginMinutes)} min`}</p>:<p role="status">Falta confirmar: {(deadlines.missing.length?deadlines.missing:deadlines.marginMissing).slice(0,3).join(' · ')}{deadlines.missing.length>3?'…':''}.</p>}
    {deadlines.projectedDutyEnd&&<p>Encerramento previsto: <b>{localClock(deadlines.projectedDutyEnd,form.offset)}</b></p>}
    {!deadlines.engineStopLimit&&deadlines.normalDutyEnd&&<p>Corte pendente: {deadlines.cutMissing.join(' · ')}.</p>}
    <small>UTC{form.offset||' a confirmar'} · comparação temporal; não autoriza extensão.</small>
    {!deadlines.normalDutyEnd&&<button type="button" onClick={openDetails}>Confirmar dados do limite</button>}
   </section>
   <section className="cc-reg-scenario-actions" aria-label="Cenário de atraso">
+   <label>Fonte da previsão<select aria-label="Fonte da previsão de encerramento" value={arrivalMode} onChange={e=>setArrivalMode(e.target.value)}><option value="manual">Programação e atraso manual</option><option value="operational" disabled={!operationalProjection}>Chegada operacional com evidência</option></select></label>
+   {useOperational?<p role="status">{operationalRead.kind==='actual'?'Pouso real informado':'Pouso estimado'} · {operationalRead.provider} · observado {localClock(operationalRead.observedAt,form.offset)}. Táxi, pós-voo e tarefas informados compõem a previsão; o atraso manual não é somado.</p>:<p role="status">{arrivalMode==='operational'?'Evidência operacional expirou ou deixou de ser admitida; exibindo a programação e o atraso manual.':'Modo manual preservado. A chegada operacional exige evidência válida para a última etapa e táxi informado.'}</p>}
    <h2>Informar atraso</h2>
-   <label>Atraso dos voos (min)<input aria-label="Atraso previsto em minutos" inputMode="numeric" type="number" min="0" max="1440" value={form.delay} onChange={e=>update({delay:e.target.value})}/></label>
-   <div className="cc-reg-delay-options">{[0,15,30,60].map(minutes=><button type="button" key={minutes} aria-pressed={form.delay===String(minutes)} onClick={()=>update({delay:String(minutes)})}>{minutes===0?'Sem atraso':`+${minutes} min`}</button>)}</div>
+   <label>Atraso dos voos (min)<input aria-label="Atraso previsto em minutos" disabled={useOperational} inputMode="numeric" type="number" min="0" max="1440" value={form.delay} onChange={e=>update({delay:e.target.value})}/></label>
+   <div className="cc-reg-delay-options">{[0,15,30,60].map(minutes=><button type="button" key={minutes} disabled={useOperational} aria-pressed={form.delay===String(minutes)} onClick={()=>update({delay:String(minutes)})}>{minutes===0?'Sem atraso':`+${minutes} min`}</button>)}</div>
    <label>O que mudou?<select aria-label="Tipo de alteração da jornada" value={form.timingChange} onChange={e=>update({timingChange:e.target.value,changeReviewed:false,reviewed:false})}><option value="flight-delay">Voos atrasados; mesma apresentação</option><option value="presentation-change">Apresentação alterada</option><option value="reprogramming">Reprogramação / interrupção</option></select></label>
    <p>Recalcula a previsão. O atraso não aumenta o limite da jornada.</p>
   </section>

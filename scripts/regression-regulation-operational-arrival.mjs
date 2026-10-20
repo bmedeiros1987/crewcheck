@@ -8,6 +8,12 @@ const input={evidence,expected:{ownerScope:'synthetic-owner',revision:'synthetic
 for(const zone of ['UTC','America/Sao_Paulo','Asia/Tokyo']){
  process.env.TZ=zone;
  const output=read(input);assert.equal(output.state,'available');assert.equal(output.kind,'estimated');assert.equal(output.dutyEndAt,'2032-10-20T14:40:00.000Z');
+ const at=value=>read({...input,evidence:{...evidence,field:{...evidence.field,at:value}}});
+ assert.equal(at('2032-10-20T13:01:00Z').state,'available','estimate at current instant accepted');
+ assert.equal(at('2032-10-20T13:00:59.999Z').state,'unavailable','past estimate rejected at 1ms boundary');
+ assert.equal(at('2032-10-20T13:01:00.001Z').state,'available');
+ assert.equal(at('2032-10-21T12:30:00Z').state,'available','24h source-plausibility boundary');
+ assert.equal(at('2032-10-21T12:30:00.001Z').state,'unavailable','beyond 24h is not plausible source arrival');
  assert.deepEqual(read({...input,delay:60,manualDelay:60}),output,'no departure/manual delay may be added to arrival');
  const landing=read({...input,taxiInMinutes:10,evidence:{...evidence,field:{...evidence.field,milestone:'landing'}}});assert.equal(landing.dutyEndAt,'2032-10-20T14:50:00.000Z');assert.equal(landing.engineStopKind,'estimated');assert.equal(landing.dutyEndKind,'projected');
  assert.equal(read({...input,evidence:{...evidence,field:{...evidence.field,milestone:'landing'}}}).reason,'taxi_unproved');

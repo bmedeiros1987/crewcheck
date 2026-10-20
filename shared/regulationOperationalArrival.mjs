@@ -14,6 +14,24 @@ function instant(value){
  const stamp=Date.parse(value);
  return Number.isFinite(stamp)&&new Date(stamp+offset*60_000).toISOString().slice(0,10)===m[1]?stamp:null;
 }
+export {instant as regulationOperationalInstant};
+
+// Bridge from the existing normalized Cirium candidate. Admission is supplied by
+// the authenticated host; this function performs no login or ownership inference.
+export function ciriumRegulationArrivalEvidence(candidate,{ownerScope,revision,receivedAt}={}){
+ if(candidate?.provider!=='cirium-sky'||candidate?.ok!==true||candidate.cancelled===true||!['S','A','L'].includes(candidate.statusCode))return null;
+ const fields=candidate.arrivalMilestones;
+ if(!fields)return null;
+ // Once an actual gate arrival exists, an old runway estimate is not a safe
+ // replacement for missing actual runway evidence.
+ const field=fields.actualRunwayArrival?.at?fields.actualRunwayArrival:fields.actualGateArrival?.at?null:fields.estimatedRunwayArrival;
+ if(!field?.at||!field.observedAt||field.milestone!=='landing'||!['ERA','ARA'].includes(field.sourceField))return null;
+ const observed=instant(field.observedAt);
+ if(observed===null)return null;
+ return {schema:'regulation-operational-arrival-v1',ownerScope,revision,
+  occurrence:{flight:candidate.flight,departureDate:candidate.departureDate,origin:candidate.origin,destination:candidate.destination,scheduledDepartureUtc:candidate.scheduledDepartureUtc},
+  field:{kind:field.kind,milestone:field.milestone,at:field.at,source:{provider:'cirium-sky',field:field.sourceField,observedAt:field.observedAt,receivedAt,expiresAt:new Date(observed+MAX_AGE_MS).toISOString()}}};
+}
 function sameOccurrence(left,right){
  return left&&right&&['flight','departureDate','origin','destination'].every(key=>text(left[key])&&left[key]===right[key])
   &&/^\d{4}-\d{2}-\d{2}$/.test(left.departureDate)&&instant(left.departureDate+'T00:00Z')!==null&&/^[A-Z0-9]{2,3}\d{1,5}[A-Z]?$/.test(left.flight)
@@ -38,7 +56,8 @@ export function readRegulationOperationalArrival({evidence,expected,admitted=fal
    ||expires<=now||expires<=observed||expires-observed>MAX_AGE_MS||now-observed>MAX_AGE_MS)return unavailable('field_expired_or_unproved');
  if(!['estimated','actual'].includes(field.kind)||!['engine_stop','landing'].includes(field.milestone))return unavailable('arrival_semantics_unproved');
  const arrival=instant(field.at),departure=instant(expected.occurrence.scheduledDepartureUtc);
- if(arrival===null||arrival<departure||field.kind==='actual'&&arrival>observed)return unavailable('arrival_instant_invalid');
+ if(arrival===null||arrival<departure||arrival-departure>24*60*60_000||field.kind==='actual'&&arrival>observed
+   ||field.kind==='estimated'&&arrival<now)return unavailable('arrival_instant_invalid');
  const minimum=operation==='domestic'?30:operation==='international'?45:null;
  if(minimum===null||!minutes(postFlightMinutes,360)||postFlightMinutes<minimum||!minutes(additionalTasksMinutes,1440))return unavailable('postflight_or_tasks_unproved');
  if(field.milestone==='landing'&&!minutes(taxiInMinutes,240))return unavailable('taxi_unproved');
