@@ -27,6 +27,14 @@ try {
  }
 
  const parsedEvents=canonical.buildCanonicalRosterEvents({days:[parsed],month:10,year:2032,base:'BSB'}).filter(e=>e.kind==='flight');const parsedUI=parsedEvents.map(c=>({id:c.id,kind:c.kind,canonical:c,day:c.publishedDay}));const parsedDay=regulationProgramDay(parsedUI,parsedUI[0]);assert.equal(parsedDay.dutyReport,'');assert.equal(parsedDay.dutyReportSource,'unknown');assert.equal(regulationScenarioSeed(parsedDay,engine.getScheduledDutyLimitReference(parsedDay,null),parsedEvents[0]).normalEnd,'');
+ for(const dutyReport of [null,undefined,'']){
+  const noApz={...parsed,dutyReport,dutyReportSource:'unknown',legs:parsed.legs.map(leg=>({...leg,presentationTime:undefined}))};
+  const ev=canonical.buildCanonicalRosterEvents({days:[noApz],month:10,year:2032,base:'BSB'}).filter(e=>e.kind==='flight');
+  for(const presentation of [undefined,'04:00']){
+   const ui=ev.map(c=>({id:c.id,kind:c.kind,canonical:{...c,presentation},day:c.publishedDay}));const d=regulationProgramDay(ui,ui[0]);
+   assert.equal(d.dutyReport,'','missing APZ must not reuse a canonical display default');assert.equal(engine.getScheduledDutyLimitReference(d,null),null);
+  }
+ }
  const day={date:'20/10/2032',year:2032,month:10,type:'VOO',pairingCode:'SYN',base:'BSB',dutyReport:'04:10',dutyReportSource:'published',dutyDebrief:'07:30',dutyDebriefSource:'estimated',legs:[{flightNumber:'SYN001',origin:'BSB',destination:'GRU',departureTime:'05:00',arrivalTime:'07:00',presentationTime:'04:10',workType:'OP'}]};
  for(const timezone of ['UTC','America/Sao_Paulo','Asia/Tokyo']){
   process.env.TZ=timezone;
