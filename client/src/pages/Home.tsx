@@ -5337,7 +5337,7 @@ export default function Home() {
 
   useEffect(() => {
     const watchSession = captureAuthSession();
-    const watchStayEditorKey=stayEditorKey(getStoredUser()?.id);
+    const watchStayEditorKey=stayEditorKey(getStoredUser()?.id ?? null);
     let watchInvalidated = false;
     const invalidateWatchSnapshot = () => {
       watchInvalidated = true;
