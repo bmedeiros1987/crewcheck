@@ -2,7 +2,7 @@
 
 Base: published main cc66f9aec1db8cd6f8e82853e01e2a9d852fc21f. Synthetic evidence only.
 
-The scenario UI had used `getPublishedDutyLimitSummary`, a measured-usage reader. It returns null when release/other publication evidence is incomplete, so a missing endpoint also suppressed the independently available B.1 ceiling. The new read-only reference reader reuses the existing B.1 table and ACT restriction function; it does not change those rules or the measured summary's semantics. Published presentation and actual sectors are still required.
+The scenario UI had used `getPublishedDutyLimitSummary`, a measured-usage reader. It returns null when release/other publication evidence is incomplete, so a missing endpoint also suppressed the independently available B.1 ceiling. The new read-only reference reader reuses the existing B.1 table and ACT restriction function; it does not change those rules or the measured summary's semantics. The strict published reader requires published presentation and actual sectors. The programmed simulation may separately use an explicitly estimated presentation (see follow-up below).
 
 `regulationProgramDay` also returned an ISO date to consumers of the roster DD/MM/YYYY contract. It now preserves the correct contract and carries the original selected canonical journey into the UI. The UI reads independent published endpoints from that journey, preserving chronology across civil dates instead of reconstructing a flattened day.
 
@@ -15,3 +15,11 @@ Manual field overrides survive source refresh but reset on selected-program/acco
 Tests exercise actual canonical builder, endpoints, compliance reference, geography catalogue and React component with synthetic data: missing/estimated/published release, three device zones, normal-end 13:10 for synthetic APZ04:10, reference independent of measured usage, unknown airport, international/domestic, manual overrides, post-flight/tasks recalculation, invalid chronology, midnight crossing, incompatible applicability, program return and auth reset. Compiled Home departure tests intercept route-preview locally and block every external origin; they never contact a route provider or bypass authentication.
 
 Real-account observation established a blank normal-end and indeterminate result, but did not inspect the user's raw publication evidence. Therefore the exact missing release provenance in that account is not claimed as proved. No private roster is included in these fixtures or the PR. Operational applicability beyond the existing engine remains outside this UI recovery.
+
+## Follow-up: legacy or estimated presentation
+
+Public release54444744 restored estimated end and operation, but a read-only account check still showed an empty ceiling. The exact raw account provenance was not read. A new synthetic counterexample establishes a sufficient code path: a legacy/unknown presentation clock with no leg-level publication is discarded by the adapter and rejected by the strict reader.
+
+The adapter now retains an available first-leg/day presentation clock as an estimate, with no promotion of canonical publication evidence and no borrowing from another journey. An existing canonical presentation estimate may be reused only for the first leg; no new offset/default formula is introduced. `getScheduledDutyLimitReference` reuses the existing B.1/ACT functions for that explicitly estimated clock. `getPublishedDutyLimitReference` retains its strict published-only contract, and the measured Summary/endpoints still reject missing proof. The UI exposes the presentation used and its estimated origin for review; it does not claim a verified legal limit. That source paragraph is owner/session gated and disappears at authentication boundaries.
+
+Synthetic coverage includes estimated, unknown, absent and legacy-unspecified source, no leg presentation, unchanged strict-reader rejection and unchanged canonical endpoint uncertainty. Existing independent-journey tests ensure a later journey cannot inherit the day's presentation. No real roster values or identifiers are used in the fixture.

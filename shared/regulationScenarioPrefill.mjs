@@ -52,7 +52,11 @@ export function regulationProgramDay(events,selected){
  const journey=events.filter(event=>event.canonical?.journeyId===canonical.journeyId&&event.kind==='flight').map(event=>event.canonical).sort((a,b)=>a.startDateTime.localeCompare(b.startDateTime));
  if(!journey.length)return null;
  const first=journey[0],last=journey.at(-1),firstDay=first.publishedDay,lastDay=last.publishedDay;
- const ownReport=clock(first.leg?.presentationTime)?first.leg.presentationTime:first.legIndex===0&&firstDay?.dutyReportSource==='published'?firstDay.dutyReport:'';
+ const explicitLegReport=clock(first.leg?.presentationTime);
+ const publishedReport=explicitLegReport||first.legIndex===0&&firstDay?.dutyReportSource==='published'&&clock(firstDay.dutyReport);
+ // A legacy/estimated clock is useful for a labelled simulation, never for a
+ // published-duration proof. Do not borrow the day's report for a later journey.
+ const ownReport=explicitLegReport?first.leg.presentationTime:first.legIndex===0&&clock(firstDay?.dutyReport)?firstDay.dutyReport:first.legIndex===0&&clock(first.presentation)&&first.presentation!==first.leg?.departureTime?first.presentation:'';
  const ownDebrief=last.legIndex===(lastDay?.legs?.length||0)-1&&lastDay?.dutyDebriefSource==='published'?lastDay.dutyDebrief:'';
  const start=explicitInstant(first.startDateTime?.replace(/\.000Z$/,'Z'));
  let date=regulationCivilDate(firstDay?.date);
@@ -63,7 +67,7 @@ export function regulationProgramDay(events,selected){
   date=new Date(report-(ownReport>departClock?86400000:0)).toISOString().slice(0,10);
  }
  const rosterDate=date?date.slice(8,10)+'/'+date.slice(5,7)+'/'+date.slice(0,4):'';
- return {...firstDay,date:rosterDate,regulationJourney:journey,dutyReport:ownReport,dutyReportSource:clock(ownReport)?'published':'unknown',dutyDebrief:ownDebrief,dutyDebriefSource:clock(ownDebrief)?'published':'unknown',dutyHours:null,flyingHours:null,legs:journey.map(event=>event.leg),isNextDay:journey.some(event=>event.isNextDay)||firstDay?.date!==lastDay?.date};
+ return {...firstDay,date:rosterDate,regulationJourney:journey,dutyReport:ownReport,dutyReportSource:publishedReport?'published':clock(ownReport)?'estimated':'unknown',dutyDebrief:ownDebrief,dutyDebriefSource:clock(ownDebrief)?'published':'unknown',dutyHours:null,flyingHours:null,legs:journey.map(event=>event.leg),isNextDay:journey.some(event=>event.isNextDay)||firstDay?.date!==lastDay?.date};
 }
 
 // Comparison of published/estimated duty end, independent from airborne/taxi.
