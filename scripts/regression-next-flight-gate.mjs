@@ -257,7 +257,7 @@ const radarBase = { ok: true, gate: '9', terminal: '1', status: 'Programado', sc
   assert.match(home, /applyNextFlightToWatchSnapshot\(base, gateInfo/, 'relógio usa a decisão do card');
   assert.match(home, /<ManualGateEditor event=\{event\}\/>/, 'portão manual no Radar');
   assert.match(home, /gateChangeAlertAllowed\(eventStartDateTime\(event\)\.getTime\(\)\) \? 'background' : 'never'/);
-  assert.match(home, /sourceOrigin: evidence\.sourceOrigin \?\? evidence\.origin/);
+  assert.match(home, /sourceOrigin: evidence === previous \? previous\.sourceOrigin : payload\.origin/);
   const css = read('client/src/components/nextflight/next-flight-gate.css');
   assert.doesNotMatch(css, /#(f59e0b|fbbf24|facc15|eab308|fde047|fcd34d|d97706|ca8a04|ffc107|ffd60a|ff9f0a)|\b(amber|yellow|gold)\b/i, 'amarelo é reservado a alterações da escala');
   for (const file of ['client/src/lib/nextFlightGate.ts', 'client/src/lib/nextFlightWatch.ts', 'client/src/components/nextflight/NextFlightGateCard.tsx', 'client/src/components/nextflight/ManualGateEditor.tsx', 'client/src/components/nextflight/useNextFlightGate.ts']) {
