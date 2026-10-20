@@ -95,11 +95,15 @@ test('nonempty ledger with payment beyond 30 days is scoped no_data, not no allo
   const boundary = (await fixture({ records: [record(1, { expectedPaymentDate: '2033-01-18' })] }).request()).body;
   assert.equal(boundary.state, 'available'); assert.equal(boundary.events.length, 1, 'last included day retains the existing allowance');
 });
-test('compact upcoming DTO lacks work period, snapshot revision/update and per-event provenance', async () => {
-  const result = (await fixture({ records: [record(1)] }).request()).body;
-  assert.deepEqual(Object.keys(result.events[0]).sort(), ['id', 'category', 'expectedPaymentDate', 'expectedPaymentTimezone', 'amountMinor', 'currency', 'status'].sort());
-  for (const key of ['periodStart', 'periodEnd', 'revision', 'updatedAt', 'ruleVersion', 'sourceId', 'provenance']) assert(!Object.hasOwn(result.events[0], key));
-  assert.equal(result.source, 'persisted_financial_ledger');
+test('upcoming projects the same latest competence, revision and provenance as history', async () => {
+  const old = record(1), latest = record(1, { revision: 2, amountMinor: 45678 });
+  const f = fixture({ records: [old, latest] });
+  const event = (await f.request()).body.events[0];
+  const history = (await f.request(FINANCIAL_LEDGER_PATH + '?periodStart=2032-12-01&periodEnd=2032-12-01&aggregationLevel=item')).body.records[0];
+  for (const key of ['periodStart','periodEnd','aggregationLevel','revision','sourceId','ruleVersion','amountMinor','currency','status']) assert.equal(event[key], history[key], key);
+  assert.equal(event.revision, 2);
+  for (const key of ['updatedAt','evidence','flightAirport','ownerId']) assert(!Object.hasOwn(event, key));
+  assert.equal(f.calls.writes, 0);
 });
 test('missing payment date stays incomplete; it must not be invented from competence', async () => {
   const result = (await fixture({ records: [record(1, { expectedPaymentDate: undefined })] }).request()).body;
@@ -129,9 +133,26 @@ test('mixed-category cap cannot prove that no allowance exists after local filte
   const result = (await fixture({ records: [payroll, vacation, advance, allowance] }).request()).body;
   assert.equal(result.events.length, 3); assert.equal(result.hasMore, true);
   assert.equal(result.events.filter(item => item.category === 'allowance').length, 0);
-  assert.equal((await fixture({ records: [allowance] }).request()).body.events[0].category, 'allowance');
+  const selected = (await fixture({ records: [payroll, vacation, advance, allowance] }).request(FINANCIAL_UPCOMING_PATH + '?category=allowance')).body;
+  assert.deepEqual(selected.events.map(event => event.id), [allowance.id]); assert.equal(selected.hasMore, false);
+  const salary = (await fixture({ records: [payroll] }).request(FINANCIAL_UPCOMING_PATH + '?category=payroll')).body.events[0];
+  for (const key of ['operationalMonth','payrollMonth','rateMonth','expectedCreditMonth','amountBasis']) assert.equal(salary[key], payroll[key]);
 });
 test('upcoming query rejects invented category/competence selectors and all writes', async () => {
-  for (const query of ['?category=allowance', '?periodStart=2032-12-01', '?ownerId=other']) assert.equal((await fixture().request(FINANCIAL_UPCOMING_PATH + query)).status, 400);
+  for (const query of ['?category=unknown', '?category=allowance&category=payroll', '?category=', '?periodStart=2032-12-01', '?ownerId=other']) assert.equal((await fixture().request(FINANCIAL_UPCOMING_PATH + query)).status, 400);
   for (const method of ['POST', 'PATCH', 'DELETE']) { const f = fixture(); assert.equal((await f.request(FINANCIAL_UPCOMING_PATH, method)).status, 405); assert.equal(f.calls.writes, 0); assert.equal(f.calls.pools, 0); }
+});
+
+test('category selection retains invalid-latest and unknown amounts without reviving old values', async () => {
+  const f = fixture({records:[record(1),record(1,{revision:2,amountMinor:'invalid'}),record(2,{amountMinor:null}),record(3,{amountMinor:0}),record(4,{ownerId:B.ownerId})]});
+  const result = (await f.request(FINANCIAL_UPCOMING_PATH+'?category=allowance')).body;
+  assert.equal(result.state,'incomplete');assert.deepEqual(result.events.map(e=>e.amountMinor),[null,0]);assert.equal(f.calls.writes,0);
+});
+
+test('selected coverage excludes proven other categories, retains unknown or changing lineage', async () => {
+  const selected = async records => (await fixture({records}).request(FINANCIAL_UPCOMING_PATH+'?category=allowance')).body;
+  const invalidVacation = record(2,{category:'vacation',amountMinor:'invalid'});
+  assert.equal((await selected([record(1),invalidVacation])).state,'available');
+  assert.equal((await selected([record(1),{...invalidVacation,category:undefined}])).state,'incomplete');
+  assert.equal((await selected([record(1),record(2),{...invalidVacation,revision:2}])).state,'incomplete');
 });
