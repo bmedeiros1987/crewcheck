@@ -14,7 +14,7 @@ Validation: patch applies cleanly to main456929e0; proposed TSX transpiles; actu
 
 ## Salary audit: confirmed code findings
 
-- `salaryConfig`: owner monthly settings can override the legacy inputs; legacy manual base/rates precede confirmed document rates, then the applicable reference. Audit the provenance and period of each override before replacing it.
+- `loadActCompensationConfig`: owner monthly settings can override the legacy inputs; legacy manual base/rates precede confirmed document rates, then the applicable reference. Audit the provenance and period of each override before replacing it.
 - `privatePayrollExtraction` already distinguishes competence, printed credit date, monthly base, individual earning/debit rows, source locations, missing/zero/conflicting evidence and printed gross/deductions/net reconciliation.
 - `PrivatePayrollPreview` is ephemeral. Importer confirms eligible base/tariffs, not arbitrary extracted deductions or recurring schedules. The recovered document has not been written into the owner's account by this work.
 - `calculateSalary` gross currently sums base, fixed additions, production, chief, instructor, reserve and standby. No explicit DSR component appears in that sum. Confirm the applicable clause and exclusions before adding a DSR formula.
