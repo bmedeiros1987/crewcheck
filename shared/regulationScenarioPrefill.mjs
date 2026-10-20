@@ -8,7 +8,7 @@ export function regulationCivilDate(value){
  return typeof date==='string'&&explicitInstant(date+'T00:00Z')!==null?date:'';
 }
 export function regulationScenarioSeed(day,reference,program){
- const seed={takeoff:'',normalEnd:'',offset:'',flight:'',delay:'0',taxi:'',postFlight:'',tasks:'',operation:'',extension:false,reviewed:false,publicationOffsetReviewed:false,composition:'',acclimatization:'unknown',limitSource:'Referência informada para esta simulação'};
+ const seed={takeoff:'',normalEnd:'',offset:'',flight:'',delay:'0',taxi:'',postFlight:'',tasks:'',operation:'',extension:false,reviewed:false,publicationOffsetReviewed:false,composition:'',acclimatization:'unknown',limitSource:'Referência informada para esta simulação',method:'schedule',plannedEnd:'',plannedEndSource:'',scheduledArrival:''};
  const date=regulationCivilDate(day?.date),leg=program?.leg||day?.legs?.[0];
  if(date&&clock(leg?.departureTime))seed.takeoff=date+'T'+leg.departureTime;
  // Canonical roster instants use the existing BRT publication clock, independent
@@ -26,8 +26,17 @@ export function regulationScenarioSeed(day,reference,program){
  return seed;
 }
 export function regulationDraftForm(draft,key,seed,basis){
- if(draft?.key!==key)return seed;
- const form={...seed,...draft.overrides};
+ const current=draft?.key===key;
+ const form={...seed,...(current?draft.overrides:{})};
+ if(form.plannedEndSource.startsWith('Estimativa:')&&form.scheduledArrival){
+  const arrival=explicitInstant(form.scheduledArrival+'Z');
+  const post=/^\d+$/.test(form.postFlight)?Number(form.postFlight):null;
+  const tasks=form.tasks===''?0:/^\d+$/.test(form.tasks)?Number(form.tasks):null;
+  const minimum=form.operation==='domestic'?30:form.operation==='international'?45:null;
+  form.plannedEnd=arrival!==null&&minimum!==null&&post!==null&&post>=minimum&&post<=360&&tasks!==null&&tasks<=1440?new Date(arrival+(post+tasks)*60000).toISOString().slice(0,16):'';
+  form.plannedEndSource='Estimativa: chegada programada + pós-voo '+(form.tasks===''?'; tarefas adicionais não incluídas':'+ tarefas informadas');
+ }
+ if(!current)return form;
  // A changed publication/profile invalidates confirmation, not user overrides.
  if(draft.basis!==basis){form.reviewed=false;form.publicationOffsetReviewed=false;}
  return form;
@@ -53,5 +62,25 @@ export function regulationProgramDay(events,selected){
   const departClock=departure.toISOString().slice(11,16);
   date=new Date(report-(ownReport>departClock?86400000:0)).toISOString().slice(0,10);
  }
- return {...firstDay,date,dutyReport:ownReport,dutyReportSource:clock(ownReport)?'published':'unknown',dutyDebrief:ownDebrief,dutyDebriefSource:clock(ownDebrief)?'published':'unknown',dutyHours:null,flyingHours:null,legs:journey.map(event=>event.leg),isNextDay:journey.some(event=>event.isNextDay)||firstDay?.date!==lastDay?.date};
+ const rosterDate=date?date.slice(8,10)+'/'+date.slice(5,7)+'/'+date.slice(0,4):'';
+ return {...firstDay,date:rosterDate,regulationJourney:journey,dutyReport:ownReport,dutyReportSource:clock(ownReport)?'published':'unknown',dutyDebrief:ownDebrief,dutyDebriefSource:clock(ownDebrief)?'published':'unknown',dutyHours:null,flyingHours:null,legs:journey.map(event=>event.leg),isNextDay:journey.some(event=>event.isNextDay)||firstDay?.date!==lastDay?.date};
+}
+
+// Comparison of published/estimated duty end, independent from airborne/taxi.
+// No arrival clock is renamed as touchdown or engine stop.
+export function regulationScheduleProjection(form){
+ const end=explicitInstant(form.plannedEnd+form.offset),limit=explicitInstant(form.normalEnd+form.offset);
+ const delay=/^\d+$/.test(form.delay)?Number(form.delay):null;
+ const missing=[];
+ const departure=explicitInstant(form.takeoff+form.offset);
+ if(end!==null&&departure!==null&&end<departure)missing.push('Encerramento anterior à partida da programação');
+ if(end===null)missing.push('Encerramento programado ou estimado da jornada');
+ if(limit===null)missing.push('Limite normal da jornada');
+ if(delay===null||delay>1440)missing.push('Atraso previsto');
+ const manualReviewed=form.reviewed===true&&!form.limitSource?.startsWith('Motor existente');
+ if(form.composition&&form.composition!=='simple'&&!manualReviewed)missing.push('Limite aplicável à composição informada');
+ if(form.acclimatization==='not_acclimatized'&&!manualReviewed)missing.push('Limite aplicável à aclimatação informada');
+ if(missing.length)return {state:'indeterminate',missing,base:{},scenario:{},authorization:'not_assessed'};
+ const scenarioEnd=end+delay*60000,marginMinutes=(limit+(form.extension?60:0)*60000-scenarioEnd)/60000;
+ return {state:marginMinutes>=0?'within_temporal_reference':'exceeds_temporal_reference',missing:[],marginMinutes,crossesReferenceDate:form.plannedEnd.slice(0,10)!==new Date(scenarioEnd+(form.offset[0]==='-'?-1:1)*(Number(form.offset.slice(1,3))*60+Number(form.offset.slice(4)))*60000).toISOString().slice(0,10),base:{dutyEnd:new Date(end).toISOString()},scenario:{dutyEnd:new Date(scenarioEnd).toISOString()},authorization:'not_assessed'};
 }
