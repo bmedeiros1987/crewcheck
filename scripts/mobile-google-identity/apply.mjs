@@ -12,9 +12,11 @@ if (!server.includes(importLine)) {
   server = server.replace(anchor, `${anchor}\n${importLine}`);
 }
 if (!server.includes('handleGoogleIdentityRoute(req, res, url, {')) {
-  const routeAnchor = '  if (await handleGoogleCalendarOAuthRoute(req, res, url, { identity: cc1371Verify(cc1371RequestToken(req)), authRequired: cc1371AuthRequired() })) return;';
-  if (!server.includes(routeAnchor)) throw new Error('[mobile-google-identity] rota Calendar canônica não localizada.');
-  server = server.replace(routeAnchor, `${routeAnchor}\n  if (await handleGoogleIdentityRoute(req, res, url, { identity: cc1371Verify(cc1371RequestToken(req)), sessionKey: googleInitiatorSessionKey(req), resolveAccount: resolveGoogleLinkedAccount, issueSession: issueGoogleLinkedSession })) return;`);
+  // The broad v139 auth dispatcher owns /api/auth/**, including unknown paths.
+  // Register this existing draft's exact namespace BEFORE that dispatcher.
+  const routeAnchor='  if (await handleV139Route(req, res, url)) return;';
+  if(!server.includes(routeAnchor)) throw new Error('[mobile-google-identity] dispatcher auth canônico não localizado.');
+  server=server.replace(routeAnchor,`  if (await handleGoogleIdentityRoute(req, res, url, { identity: cc1371Verify(cc1371RequestToken(req)), sessionKey: googleInitiatorSessionKey(req), resolveAccount: resolveGoogleLinkedAccount, issueSession: issueGoogleLinkedSession })) return;\n${routeAnchor}`);
 }
 fs.writeFileSync(serverPath, server, 'utf8');
 

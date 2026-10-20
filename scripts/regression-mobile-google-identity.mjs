@@ -32,6 +32,7 @@ assert.doesNotMatch(bridge, /persistSession/);
 assert.match(bridge, /database-encrypted/);
 assert.doesNotMatch(bridge, /local-fallback|writeFileSync/);
 assert.match(server, /handleGoogleIdentityRoute\(req, res, url, \{/);
+assert.ok(server.indexOf('if (await handleGoogleIdentityRoute(req, res, url, {') < server.indexOf('if (await handleV139Route(req, res, url)) return;'),'OIDC namespace must precede broad auth dispatcher');
 assert.match(server,/resolveAccount: resolveGoogleLinkedAccount, issueSession: issueGoogleLinkedSession/);
 assert.match(prepare, /mobile-google-identity\/apply\.mjs/);
 assert.match(client, /intent: 'login'/);

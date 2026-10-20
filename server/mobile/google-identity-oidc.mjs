@@ -322,6 +322,7 @@ async function start(req, res, context) {
   if (intent === 'link' && body.confirmLink !== true) {
     return sendJson(res, 400, { ok: false, code: 'EXPLICIT_LINK_CONFIRMATION_REQUIRED', message: 'Confirme explicitamente o vínculo com esta conta CrewCheck.' });
   }
+  if(intent==='link' && (typeof context.sessionKey!=='string'||!/^[a-f0-9]{64}$/.test(context.sessionKey))) return sendJson(res,503,{ok:false,code:'INITIATOR_SESSION_UNAVAILABLE',message:'Não foi possível confirmar sua sessão.'});
   const state = crypto.randomBytes(32).toString('base64url');
   const nonce = crypto.randomBytes(32).toString('base64url');
   const verifier = crypto.randomBytes(48).toString('base64url');
