@@ -39,12 +39,13 @@ function paymentScope(record, now) {
 
 // A small local-app projection of the same owner-bound, latest-revision ledger.
 // No competence-to-payment inference, FX, settlement inference or chat transport.
-export function queryUpcomingFinancialForecast({ identity, records, now = new Date() }) {
+export function queryUpcomingFinancialForecast({ identity, records, now = new Date(), category }) {
   const empty = { source: 'persisted_financial_ledger', horizonDays: 30, events: [], hasMore: false };
   const results = ['item', 'day', 'week', 'month'].map(aggregationLevel => queryFinancialHistory({
     identity, records, aggregationLevel, periodStart: '0001-01-01', periodEnd: '9999-12-31',
   }));
   if (results.some(result => result.access !== 'allowed')) return { ...empty, access: 'denied' };
+  if (category !== undefined && !['allowance', 'advance', 'payroll', 'vacation'].includes(category)) return { ...empty, access: 'allowed', state: 'invalid_category' };
   if (!Number.isFinite(now.getTime())) return { ...empty, access: 'allowed', state: 'unavailable' };
   let incomplete = false;
   const rawGroups = new Map();
@@ -55,11 +56,15 @@ export function queryUpcomingFinancialForecast({ identity, records, now = new Da
   }
   for (const rejected of results.flatMap(result => result.rejected || [])) {
     const group = rawGroups.get(rejected.id) || [];
+    // Only exclude rejection diagnostics when the entire revision lineage
+    // proves one other known category. Unknown/changing categories stay pending.
+    if (category !== undefined && group.length && new Set(group.map(record => record?.category)).size === 1
+      && ['allowance', 'advance', 'payroll', 'vacation'].includes(group[0]?.category) && group[0].category !== category) continue;
     const ordered = group.every(record => Number.isSafeInteger(record?.revision) && record.revision > 0);
     const latest = ordered ? Math.max(...group.map(record => record.revision)) : null;
     if (!group.length || group.filter(record => !ordered || record.revision === latest).some(record => paymentScope(record, now) !== 'outside')) incomplete = true;
   }
-  const currentRecords = results.flatMap(result => result.records);
+  const currentRecords = results.flatMap(result => result.records).filter(record => category === undefined || record.category === category);
   const forecasts = currentRecords.filter(record => record.status === 'forecast');
   const ambiguous = new Set();
   // Different aggregation levels cannot establish whether the same cash event
@@ -90,7 +95,10 @@ export function queryUpcomingFinancialForecast({ identity, records, now = new Da
     if (record.amountMinor === null) incomplete = true;
     events.push({ id: record.id, category: record.category, expectedPaymentDate: date,
       expectedPaymentTimezone: timezone, amountMinor: record.amountMinor, currency: record.currency,
-      status: 'forecast' });
+      status: 'forecast', periodStart: record.periodStart, periodEnd: record.periodEnd,
+      aggregationLevel: record.aggregationLevel, revision: record.revision, sourceId: record.sourceId, ruleVersion: record.ruleVersion,
+      ...(record.category === 'payroll' ? { operationalMonth: record.operationalMonth, payrollMonth: record.payrollMonth,
+        rateMonth: record.rateMonth, expectedCreditMonth: record.expectedCreditMonth, amountBasis: record.amountBasis } : {}) });
   }
   events.sort((a, b) => a.expectedPaymentDate.localeCompare(b.expectedPaymentDate) || a.id.localeCompare(b.id));
   return { ...empty, access: 'allowed', ownerId: identity.ownerId,
