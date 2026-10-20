@@ -47,6 +47,7 @@ jobs:
           npx vite build
       - name: Real builder and departure helpers across device zones
         run: |
+          set -eo pipefail
           mkdir -p artifacts/web-departure-program
           for zone in UTC America/Sao_Paulo Asia/Tokyo America/New_York; do
             TZ="$zone" node scripts/regression-web-departure-program-selection.mjs
@@ -66,7 +67,9 @@ jobs:
       - name: Actual compiled Home with synthetic route response
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/departure-browser/package.json
-        run: node scripts/regression-web-departure-program-browser.cjs | tee artifacts/web-departure-program/browser.log
+        run: |
+          set -eo pipefail
+          node scripts/regression-web-departure-program-browser.cjs | tee artifacts/web-departure-program/browser.log
       - name: Bind evidence to checked out composition
         if: always()
         env:
