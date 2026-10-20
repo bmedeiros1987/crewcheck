@@ -44,6 +44,11 @@ let browser;try{
   assert.equal(await page.getByLabel('Concierge explica esta jornada',{exact:true}).count(),baseline?1:0,'P2 manual explanation hidden in operational mode');
   if(!baseline){const table=page.getByLabel('Marcos da previsão operacional',{exact:true});assert.match(await table.innerText(),/11:20/);assert.match(await table.innerText(),/11:50/);assert.doesNotMatch(await table.innerText(),/12:30/);}
   await page.getByLabel('Método da projeção',{exact:true}).selectOption('schedule');
+  await page.getByLabel('Apresentação da jornada',{exact:true}).fill('2032-10-20T11:30');await page.getByLabel('Confirmei apresentação e etapas',{exact:true}).check();await page.getByLabel('Revisei a referência do limite normal',{exact:true}).check();
+  if(baseline)assert.match(await result.innerText(),/10 min de margem da previsão operacional/,'published defect: engine stop before APZ still produced margin');
+  else{assert.doesNotMatch(await result.innerText(),/min de margem|11:50/);assert.match(await page.locator('body').innerText(),/Chegada operacional incompatível/);assert.equal(await page.getByLabel('Marcos da previsão operacional',{exact:true}).count(),0);assert.equal(await page.getByLabel('Atraso previsto em minutos',{exact:true}).isDisabled(),true,'conflict does not silently select manual');}
+  await page.getByLabel('Apresentação da jornada',{exact:true}).fill('2032-10-20T04:10');await page.getByLabel('Confirmei apresentação e etapas',{exact:true}).check();await page.getByLabel('Revisei a referência do limite normal',{exact:true}).check();
+
 assert.equal(await page.getByLabel('Atraso previsto em minutos',{exact:true}).isDisabled(),true);assert.match(await page.locator('body').innerText(),/Pouso estimado · cirium-sky/);
   await mode.selectOption('manual');assert.match(await result.innerText(),/Excede a referência em 30 min/);assert.equal(await page.getByLabel('Atraso previsto em minutos',{exact:true}).inputValue(),'60');
   await mode.selectOption('operational');await page.evaluate(()=>{window.hostCurrent=false;window.fixtureNow+=1000;});await page.waitForFunction(()=>document.querySelector('[aria-label="Atraso previsto em minutos"]').disabled===false);assert.match(await result.innerText(),/Excede a referência em 30 min/);

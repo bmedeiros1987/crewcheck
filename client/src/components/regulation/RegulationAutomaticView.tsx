@@ -38,7 +38,7 @@ export default function RegulationAutomaticView({scheduleDay,program,compliance,
  function edit(){setEditing(value=>!value);}
  useEffect(()=>{if(editing){details.current?.scrollIntoView({block:'start'});details.current?.querySelector<HTMLInputElement>('input')?.focus({preventScroll:true});}},[editing]);
  if(!current)return <section className="cc-regulation-scenario"><h1>Regulamentação</h1><p>Sessão alterada. Reabra a programação para carregar os dados atuais.</p></section>;
- const composition=form.composition==='augmented'?'composta':form.composition==='relief'?'revezamento':assessment.evidence.composition==='NB_scenario_default'?'simples (padrão NB)':'simples (hipótese)';
+ const composition=!form.composition?'composição não comprovada':form.composition==='augmented'?'composta':form.composition==='relief'?'revezamento':assessment.evidence.composition==='NB_scenario_default'?'simples (padrão NB)':'simples (hipótese)';
  const displayedMargin=assessment.marginMinutes===null?null:Math.floor(assessment.marginMinutes);
  const clockSource=form.offset==='-03:00'?'BRT (convenção de publicação)':'UTC'+form.offset+' (informado)';
  const plannedSource=form.plannedEnd!==context.form.plannedEnd?'encerramento editado':context.plannedEndSource==='published_release'?'liberação publicada':'chegada programada + pós-voo do cenário';
