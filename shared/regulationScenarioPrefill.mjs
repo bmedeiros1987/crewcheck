@@ -56,7 +56,7 @@ export function regulationProgramDay(events,selected){
  const publishedReport=explicitLegReport||first.legIndex===0&&firstDay?.dutyReportSource==='published'&&clock(firstDay.dutyReport);
  // A legacy/estimated clock is useful for a labelled simulation, never for a
  // published-duration proof. Do not borrow the day's report for a later journey.
- const ownReport=explicitLegReport?first.leg.presentationTime:first.legIndex===0&&clock(firstDay?.dutyReport)?firstDay.dutyReport:first.legIndex===0&&clock(first.presentation)&&first.presentation!==first.leg?.departureTime?first.presentation:'';
+ const ownReport=explicitLegReport?first.leg.presentationTime:first.legIndex===0&&clock(firstDay?.dutyReport)&&(firstDay.dutyReportSource==='published'||firstDay.dutyReport!==first.leg?.departureTime)?firstDay.dutyReport:first.legIndex===0&&clock(first.presentation)&&first.presentation!==first.leg?.departureTime?first.presentation:'';
  const ownDebrief=last.legIndex===(lastDay?.legs?.length||0)-1&&lastDay?.dutyDebriefSource==='published'?lastDay.dutyDebrief:'';
  const start=explicitInstant(first.startDateTime?.replace(/\.000Z$/,'Z'));
  let date=regulationCivilDate(firstDay?.date);

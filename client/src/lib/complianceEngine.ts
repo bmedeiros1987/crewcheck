@@ -1337,6 +1337,8 @@ export type PublishedDutyLimitSummary = {
  * up the existing B.1 ceiling. Applicability (simple/acclimatized) is conditional. */
 export function getScheduledDutyLimitReference(day: RosterDay, profile?: LegalProfileSummary | null) {
   if (!day || day.type !== 'VOO' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(day.dutyReport || '') || !day.legs?.length) return null;
+  // The transposed parser uses departure as a placeholder when APZ is absent.
+  if (day.dutyReportSource !== 'published' && day.dutyReport === day.legs[0]?.departureTime) return null;
   const sectors = day.legs.length;
   const limit = applyMostRestrictiveDutyLimit(getRbac117B1SimpleDutyLimit(day.dutyReport, sectors), profile);
   const presentationSource = day.dutyReportSource === 'published' ? 'published' : 'estimate';
