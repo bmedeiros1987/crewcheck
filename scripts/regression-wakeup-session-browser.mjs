@@ -34,19 +34,17 @@ try{
  await context.route('**/*',async route=>{
   const req=route.request(),url=new URL(req.url());if(url.origin!==origin)return route.abort();
   if(!url.pathname.startsWith('/api/'))return route.continue();
-  if(url.pathname==='/api/notifications/diagnostic'){
-    assert.equal(req.method(),'GET');assert(['Bearer A','Bearer B','Bearer A2'].includes(req.headers().authorization));
-    return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,observational:true,wake:{status:'absent',scope:'current_account_wake_history',counts:[]}})});
-  }
+  const diagnostic=url.pathname==='/api/notifications/diagnostic';
   if(url.pathname==='/api/alarm/health'){healthReads++;return route.fulfill({contentType:'application/json',body:'{"ok":true}'});}
-  assert.equal(url.pathname,'/api/alarm/scheduled');assert.equal(req.method(),'GET');
+  assert(diagnostic||url.pathname==='/api/alarm/scheduled');assert.equal(req.method(),'GET');
   const fixturePending=await route.request().frame().evaluate(()=>window.fixturePending===true);
   const confirmedJobs=await route.request().frame().evaluate(()=>window.fixtureConfirmedJobs||[]);
   const token=req.headers().authorization?.replace('Bearer ','');assert(['A','B','A2'].includes(token));reads.push(token);
   if(offline)return route.abort();
   if(holdConfirmation&&confirmedJobs.length)await new Promise(resolve=>confirmationHeld.push(resolve));
-  if(token===holdAllToken){await new Promise(r=>{held.push(r);if(held.length===2)allHeld();});if(offline)return route.abort();}
+  if(token===holdAllToken){await new Promise(r=>{held.push(r);if(held.length===3)allHeld();});if(offline)return route.abort();}
   if(hold&&token==='B'){hold=false;signal();await new Promise(r=>resume=r);}
+  if(diagnostic){const states=['pending','processing','dispatching','sent','failed','expired','uncertain','cancelled','partial','held','other'],active=['A','A2'].includes(token)?['pending','sent','uncertain','expired','cancelled']:[];return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,observational:true,wake:{status:'absent',scope:'current_account_wake_history',counts:[]},alarms:{scope:'current_account_notification_job_history',status:active.length?'recorded':'absent',counts:Object.fromEntries(states.map(state=>[state,active.includes(state)?1:0])),total:active.length,pendingPastDispatchWindow:0,received:null,sentMeaning:'provider_accepted_unconfirmed'}})});}
   return route.fulfill({contentType:'application/json',body:JSON.stringify({ok:true,readiness:{telegramConfigured:true,telegramLinked:['A','A2'].includes(token)||await route.request().frame().evaluate(()=>window.fixtureLinkedB===true)},jobs:['A','A2'].includes(token)?[...confirmedJobs,...(fixturePending?[{id:99,jobKey:'wakeup:synthetic:SYN:10:00:75:telegram',status:'pending',channel:'telegram',scheduledAt:'2032-02-01T08:30:00Z'}]:[]),{id:1,status:'pending',channel:'OWNER_A_FIXTURE',scheduledAt:'2032-02-01T10:00:00Z'},{id:2,status:'sent',channel:'Ligação VoIP',scheduledAt:'2026-10-03T05:05:00Z',sentAt:'2026-10-03T05:05:00Z'},{id:3,status:'uncertain'},{id:4,status:'expired'},{id:5,status:'cancelled'}]:[]})});
  });
  const page=await context.newPage();testPage=page;
@@ -113,19 +111,19 @@ try{
  await sent.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));if(process.env.WAKEUP_SYNTHETIC_SCREENSHOT)await page.screenshot({path:process.env.WAKEUP_SYNTHETIC_SCREENSHOT});
 
  await page.getByText('Diagnóstico da conta',{exact:true}).click();
- await page.getByText('Conta vinculada · entrega não confirmada.',{exact:false}).waitFor();
- assert((await page.getByRole('region',{name:'Entrega fora do app'}).textContent()).includes('1 aceitos pelo provedor'));
- assert((await page.getByRole('region',{name:'Entrega fora do app'}).textContent()).includes('1 com resultado desconhecido'));
+ await page.getByText('5 registro(s) no servidor · recebimento não confirmado.',{exact:false}).waitFor();
+ assert((await page.getByRole('region',{name:'Entrega fora do app'}).textContent()).includes('Aceitos pelo provedor; entrega não confirmada: 1'));
+ assert((await page.getByRole('region',{name:'Entrega fora do app'}).textContent()).includes('Resultado do envio incerto: 1'));
  assert.equal(await page.evaluate(()=>window.permissionsRequested),0);
- offline=true;await page.evaluate(()=>window.dispatchEvent(new Event('online')));await page.getByText('Disponibilidade não verificada.',{exact:false}).waitFor();await page.getByRole('alert').filter({hasText:'Não foi possível consultar'}).waitFor();assert.equal(await page.getByText('Nenhum despertador gravado no servidor.',{exact:true}).count(),0);
- offline=false;await page.evaluate(()=>window.dispatchEvent(new Event('online')));await page.getByText('Conta vinculada · entrega não confirmada.',{exact:false}).waitFor();
+ offline=true;await page.evaluate(()=>window.dispatchEvent(new Event('online')));await page.getByText('Diagnóstico indisponível.',{exact:true}).waitFor();await page.getByRole('alert').filter({hasText:'Não foi possível consultar'}).waitFor();assert.equal(await page.getByText('Nenhum despertador gravado no servidor.',{exact:true}).count(),0);
+ offline=false;await page.evaluate(()=>window.dispatchEvent(new Event('online')));await page.getByText('5 registro(s) no servidor · recebimento não confirmado.',{exact:false}).waitFor();
  const began=new Promise(r=>signal=r);hold=true;
  await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'B'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await began;
- assert.equal(await page.getByText('Conta vinculada · entrega não confirmada.',{exact:false}).count(),0);assert.equal(await page.getByText('OWNER_A_FIXTURE',{exact:false}).count(),0);
- await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'A'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.getByText('Conta vinculada · entrega não confirmada.',{exact:false}).waitFor();resume();
- await page.waitForTimeout(100);assert.equal(await page.getByText('Conta não vinculada.',{exact:false}).count(),0);
- await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'B'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.getByText('Conta não vinculada.',{exact:true}).waitFor();await page.getByText('Nenhum despertador gravado no servidor.',{exact:true}).waitFor();assert.equal(await page.getByText('OWNER_A_FIXTURE',{exact:false}).count(),0);
- await page.evaluate(()=>{localStorage.removeItem('crewcheck_auth_token');localStorage.removeItem('crewcheck_auth_user');window.dispatchEvent(new Event('crewcheck:auth-expired'));});await page.getByText('Disponibilidade não verificada.',{exact:false}).waitFor();await page.getByRole('alert').filter({hasText:'Não foi possível consultar'}).waitFor();assert.equal(await page.getByText('Nenhum despertador gravado no servidor.',{exact:true}).count(),0);
+ assert.equal(await page.getByText('5 registro(s) no servidor · recebimento não confirmado.',{exact:false}).count(),0);assert.equal(await page.getByText('OWNER_A_FIXTURE',{exact:false}).count(),0);
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'A'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.getByText('5 registro(s) no servidor · recebimento não confirmado.',{exact:false}).waitFor();resume();
+ await page.waitForTimeout(100);assert.equal(await page.getByText('Nenhum registro no histórico desta conta.',{exact:false}).count(),0);
+ await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','B');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'B'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});await page.getByText('Nenhum registro no histórico desta conta.',{exact:true}).waitFor();await page.getByText('Nenhum despertador gravado no servidor.',{exact:true}).waitFor();assert.equal(await page.getByText('OWNER_A_FIXTURE',{exact:false}).count(),0);
+ await page.evaluate(()=>{localStorage.removeItem('crewcheck_auth_token');localStorage.removeItem('crewcheck_auth_user');window.dispatchEvent(new Event('crewcheck:auth-expired'));});await page.getByText('Diagnóstico indisponível.',{exact:true}).waitFor();await page.getByRole('alert').filter({hasText:'Não foi possível consultar'}).waitFor();assert.equal(await page.getByText('Nenhum despertador gravado no servidor.',{exact:true}).count(),0);
  // Both child and host requests from A are held; B must keep an empty list
  // after every late A response has been released.
  await page.evaluate(()=>{localStorage.setItem('crewcheck_auth_token','A');localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'A'}));window.dispatchEvent(new Event('crewcheck:auth-changed'));});

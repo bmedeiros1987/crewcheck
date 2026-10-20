@@ -39,7 +39,7 @@ function setupFixture(){
   if(!String(url).startsWith('/api/'))throw Error('External network prohibited');
   let value;
   if(String(url).startsWith('/api/platform/notifications/crewcheck-installation'))value={ownerId:window.qa.account,enabled:false,registered:window.qa.registered===true,revision:0,publicKey:null};
-  else if(url==='/api/alarm/scheduled')value={readiness:{telegramConfigured:false,telegramLinked:false},jobs:[]};
+  else if(url==='/api/notifications/diagnostic')value={ok:true,observational:true,alarms:{scope:'current_account_notification_job_history',status:'absent',counts:Object.fromEntries(['pending','processing','dispatching','sent','failed','expired','uncertain','cancelled','partial','held','other'].map(key=>[key,0])),total:0,pendingPastDispatchWindow:0,received:null,sentMeaning:'provider_accepted_unconfirmed'}};
   else if(url==='/api/platform/bids/default-window')value={ownerId:window.qa.account,revision:0,profile:null};
   else if(url==='/api/platform/notifications/preferences'){
    if(init.method==='POST'){
