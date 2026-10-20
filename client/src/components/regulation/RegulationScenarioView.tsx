@@ -165,7 +165,7 @@ export default function RegulationScenarioView(props:Parameters<typeof DetailedR
  const originalSession=useRef(captureAuthSession()),[invalidated,setInvalidated]=useState(false),[manual,setManual]=useState(false);
  const sourceKey=JSON.stringify([props.scheduleDay,props.program,props.compliance?.legalProfile]);
  useEffect(()=>setManual(false),[sourceKey]);
- useEffect(()=>{window.scrollTo({top:0,behavior:'instant'});},[manual]);
+ useEffect(()=>{const frame=requestAnimationFrame(()=>window.scrollTo({top:0,behavior:'instant'}));return()=>cancelAnimationFrame(frame);},[manual]);
  useEffect(()=>{const reset=()=>{setInvalidated(true);setManual(false);};const storage=(event:StorageEvent)=>{if(event.key===null||['crewcheck_auth_token','crewcheck_auth_user'].includes(event.key)||!originalSession.current.isCurrent())reset();};const names=['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'];for(const name of names)window.addEventListener(name,reset);window.addEventListener('storage',storage);return()=>{for(const name of names)window.removeEventListener(name,reset);window.removeEventListener('storage',storage);};},[]);
  if(!originalSession.current.token||!originalSession.current.owner||['visitor','guest'].includes(getStoredUser()?.role||''))return <section className="cc-regulation-scenario"><h1>Regulamentação</h1><p>Entre na conta para simular.</p></section>;
  if(invalidated||!originalSession.current.isCurrent())return <section className="cc-regulation-scenario"><h1>Regulamentação</h1><p>Sessão alterada. Reabra a programação para carregar os dados atuais.</p></section>;
