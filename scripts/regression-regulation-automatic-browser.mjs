@@ -26,7 +26,7 @@ let browser;try{
   await context.addInitScript(()=>{localStorage.setItem('crewcheck_auth_user',JSON.stringify({id:'synthetic-owner',email:'fixture@example.invalid',role:'user'}));localStorage.setItem('crewcheck_auth_token','synthetic-offline-token');window.fixtureNow=Date.parse('2032-10-20T13:01:00Z');Date.now=()=>window.fixtureNow;});
   const page=await context.newPage();page.setDefaultTimeout(5000);page.on('pageerror',error=>errors.push(error.message));await page.goto(origin);console.log('Loaded fixture',zone);await page.getByRole('button',{name:'Ajustar dados',exact:true}).waitFor();
   const result=page.getByLabel('Resultado automático condicional',{exact:true});
-  assert.match(await result.innerText(),/REFERÊNCIA AUTOMÁTICA/);assert.match(await result.innerText(),/padrão NB/);
+  assert.match(await result.innerText(),/REFERÊNCIA AUTOMÁTICA/);assert.match(await result.innerText(),/Simples\*/);
   assert.equal(await page.locator('input[type=checkbox]').count(),0);
   const deadlines=await page.locator('.cc-reg-deadlines').innerText();
   if(zone==='UTC')await page.screenshot({path:'/tmp/regulation-automatic-closed-390.png',fullPage:true});
@@ -36,7 +36,7 @@ let browser;try{
   if(zone==='UTC')await page.screenshot({path:'/tmp/regulation-automatic-open-390.png',fullPage:true});
   await page.getByLabel('Táxi de chegada em minutos',{exact:true}).fill('10');
   await page.waitForFunction(()=>document.querySelector('[aria-label="Atraso previsto em minutos"]').disabled);
-  assert.match(await result.innerText(),/pouso estimado/);assert.match(await result.innerText(),/11:50/);
+  assert.match(await result.innerText(),/Estimado/);assert.match(await result.innerText(),/11:50/);
   assert.equal(await page.locator('.cc-reg-deadlines').innerText(),deadlines);
   const mode=page.getByLabel('Fonte da previsão de encerramento',{exact:true});await mode.selectOption('manual');
   assert.match(await result.innerText(),/12:30/);assert.equal(await page.getByLabel('Atraso previsto em minutos',{exact:true}).inputValue(),'60');
@@ -45,12 +45,12 @@ let browser;try{
   await page.evaluate(()=>{window.hostCurrent=true;window.fixtureNow+=16*60000;});
   await page.waitForFunction(()=>!document.querySelector('[aria-label="Atraso previsto em minutos"]').disabled);
   await page.getByLabel('Composição da tripulação',{exact:true}).selectOption('augmented');
-  assert.match(await result.innerText(),/—/);assert.doesNotMatch(await result.innerText(),/min de diferença/);
+  assert.match(await result.innerText(),/—/);assert.doesNotMatch(await result.innerText(),/Margem\*/);
   await page.getByRole('button',{name:'Restaurar dados da escala'}).click();
   await page.getByLabel('Apresentação da jornada',{exact:true}).fill('2032-10-20T23:00');assert.match(await page.locator('.cc-reg-deadlines').innerText(),/2032-10-21/,'overnight deadlines retain local date in every device zone');
   await page.getByRole('button',{name:'Restaurar dados da escala'}).click();
   await page.getByLabel('Equipamento da etapa 1',{exact:true}).fill('B789');assert.match(await result.innerText(),/WB/);assert.equal(await page.getByLabel('Composição da tripulação',{exact:true}).inputValue(),'');
-  await page.getByLabel('Equipamento da etapa 1',{exact:true}).fill('UNKNOWN');assert.match(await result.innerText(),/Equipamento não reconhecido/);assert.doesNotMatch(await result.innerText(),/padrão NB/);
+  await page.getByLabel('Equipamento da etapa 1',{exact:true}).fill('UNKNOWN');assert.match(await result.innerText(),/Equipamento \?/);assert.doesNotMatch(await result.innerText(),/\bNB\b/);
   await page.evaluate(()=>window.renderAircraft('B789'));await page.waitForFunction(()=>document.querySelector('[aria-label="Equipamento da etapa 1"]').value==='B789');assert.equal(await page.getByLabel('Atraso previsto em minutos',{exact:true}).inputValue(),'0','source revision clears delay override');assert.equal(await page.getByLabel('Composição da tripulação',{exact:true}).inputValue(),'','new WB source does not inherit NB default');
   await page.getByRole('button',{name:'Simulação manual',exact:true}).click();
   assert.match(await page.locator('body').innerText(),/REFERÊNCIA A CONFIRMAR|Referência a confirmar|Confirmar dados/);
