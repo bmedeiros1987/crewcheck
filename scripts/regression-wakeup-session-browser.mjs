@@ -67,7 +67,7 @@ try{
  await page.evaluate(()=>window.fixtureAlarm('synthetic-quick-other'));await page.waitForFunction(()=>document.querySelector('.cc-wakeup-primary').disabled);
  await page.evaluate(()=>window.fixtureAlarm('synthetic'));await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);
  await page.evaluate(()=>window.fixtureTelegramUnavailable=true);await page.getByRole('button',{name:'Atualizar estado',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.cc-wakeup-primary').disabled);
- assert(await actionable.isDisabled(),'missing server capability blocks even a saved Telegram choice');
+ await page.waitForFunction(()=>document.querySelector('.cc-wakeup-selection>button').disabled);assert(await actionable.isDisabled(),'missing server capability blocks even a saved Telegram choice');
  await page.evaluate(()=>window.fixtureTelegramUnavailable=false);await page.getByRole('button',{name:'Atualizar estado',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('.cc-wakeup-primary').disabled);
  if(process.env.WAKEUP_ACTIONABLE_SCREENSHOT){await page.setViewportSize({width:390,height:844});await page.evaluate(()=>window.fixtureTheme('dark'));await page.screenshot({path:process.env.WAKEUP_ACTIONABLE_SCREENSHOT,fullPage:true});await page.setViewportSize({width:320,height:740});}
 

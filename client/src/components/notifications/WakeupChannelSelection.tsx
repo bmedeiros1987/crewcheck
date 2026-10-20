@@ -30,7 +30,7 @@ export function WakeupChannelSelection({eventId,instant,readiness,onDecision,com
  <p role="status">{message}</p><p className="cc-wakeup-ready" role="status">{dirty?'Salve a escolha antes de habilitar este alarme. Nenhum aviso foi agendado.':decision.reason}</p>{!inherited&&<button type="button" disabled={!contextMatches||!identity||!scope||!selection.length} onClick={save}>Salvar escolha deste alarme</button>}</>;
  return <fieldset className="cc-wakeup-selection" disabled={busy}><legend>{compact?'Canal':'Meios para este alarme'}</legend>{compact?<>
   <button type="button" aria-pressed={chosen} disabled={busy||!contextMatches||!identity||!scope||!telegram.ready} onClick={chooseTelegram}>Mensagem Telegram{chosen?' · selecionada':''}</button>
-  <p role="status">{!contextMatches?'Verificando canal…':!telegram.ready?'Telegram indisponível nesta conta.':chosen?'Seleção pronta · ainda não agendado.':'Escolha Telegram para este aviso.'}</p>
+  <p role="status">{!contextMatches?'Verificando canal…':!telegram.ready?(readiness?.telegramConfigured===false||readiness?.telegramLinked===false?'Telegram indisponível nesta conta.':'Disponibilidade não confirmada.'):chosen?'Telegram selecionado.':'Escolha Telegram para este aviso.'}</p>
   {!telegram.ready&&<button type="button" onClick={()=>openNotificationSettings()}>Ver vínculo e configuração</button>}
   <details><summary>Canais e preferências</summary>{controls}</details>
  </>:controls}</fieldset>;
