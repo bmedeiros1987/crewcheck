@@ -28,6 +28,8 @@ export default function RegulationAutomaticView({scheduleDay,program,compliance,
  const {read:operationalRead,projection:operationalProjection}=useRegulationOperationalArrival({input:operationalArrival,sourceAllowed:current&&form.workTypes.every((type,i)=>type===context.form.workTypes[i]),finalProgram,lastActivity,form});
  const useOperational=forecastMode==='automatic'&&Boolean(operationalProjection);
  const operationalEnd=useOperational?operationalProjection.scenario.dutyEnd:null;
+ // The shared admitted reader validates finite instants and emits ISO strings
+ // for engineStopAt/dutyEndAt before this hook can expose a projection.
  const presentation=explicitInstant(form.presentation+form.offset);
  const operationalConflict=Boolean(useOperational&&(presentation===null||Date.parse(operationalEnd)<presentation||Date.parse(operationalProjection.scenario.engineStop)<presentation));
  const assessment=operationalConflict?{...baseAssessment,projectedDutyEnd:null,marginMinutes:null,missing:['Chegada operacional incompatível com a apresentação; ajuste os dados ou selecione previsão manual']}:operationalEnd?{...baseAssessment,projectedDutyEnd:operationalEnd,marginMinutes:baseAssessment.normalDutyEnd?(Date.parse(baseAssessment.normalDutyEnd)-Date.parse(operationalEnd))/60_000:null}:baseAssessment;

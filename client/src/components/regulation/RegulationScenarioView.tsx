@@ -80,6 +80,8 @@ export function DetailedRegulationScenarioView({scheduleDay,compliance,program,o
  const finalProgram=((scheduleDay as any)?.regulationJourney?.at(-1)) as CanonicalRosterEvent|undefined;
  const {read:operationalRead,projection:operationalProjection}=useRegulationOperationalArrival({input:operationalArrival,sourceAllowed,finalProgram,lastActivity,form});
  const useOperational=arrivalMode==='operational'&&Boolean(operationalProjection);
+ // The shared admitted reader validates finite instants and emits ISO strings
+ // for engineStopAt/dutyEndAt before this hook can expose a projection.
  const presentation=explicitInstant(form.presentation+form.offset);
  const operationalConflict=Boolean(useOperational&&(presentation===null||Date.parse(operationalRead.engineStopAt)<presentation||Date.parse(operationalRead.dutyEndAt)<presentation));
  const selectedProjection=operationalConflict?{state:'indeterminate',missing:['Chegada operacional incompatível com a apresentação'],base:{},scenario:{}}:useOperational?operationalProjection:baseResult;
