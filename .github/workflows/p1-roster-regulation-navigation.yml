@@ -37,6 +37,7 @@ on:
       - 'client/src/lib/useRegulationOperationalArrival.ts'
       - 'scripts/regression-regulation-automatic*.mjs'
       - 'scripts/regression-regulation-review-arrival-composition-browser.mjs'
+      - 'scripts/regression-regulation-native-composition-browser.mjs'
       - 'scripts/regression-regulation-selected-source-browser.mjs'
       - 'scripts/regression-regulation-no-roster-home-browser.mjs'
       - 'scripts/regression-regulation-prefill.mjs'
@@ -93,6 +94,7 @@ on:
       - 'client/src/lib/useRegulationOperationalArrival.ts'
       - 'scripts/regression-regulation-automatic*.mjs'
       - 'scripts/regression-regulation-review-arrival-composition-browser.mjs'
+      - 'scripts/regression-regulation-native-composition-browser.mjs'
       - 'scripts/regression-regulation-selected-source-browser.mjs'
       - 'scripts/regression-regulation-no-roster-home-browser.mjs'
       - 'scripts/regression-regulation-prefill.mjs'
@@ -176,6 +178,7 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/regulation-browser/package.json
         run: |
+          node scripts/regression-regulation-native-composition-browser.mjs
           node scripts/regression-regulation-review-arrival-composition-browser.mjs
           node scripts/regression-regulation-selected-source-browser.mjs
           node scripts/regression-regulation-automatic-browser.mjs
