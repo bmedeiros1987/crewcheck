@@ -77,6 +77,10 @@ function loginResponse(res, user, message, cookie = true) {
 }
 
 // OIDC uses the existing account admission and issuer, never a linked role snapshot.
+export function googleInitiatorSessionKey(req) {
+  const token=requestToken(req);
+  return token ? crypto.createHmac('sha256',authSecret()).update(`google-initiator:${token}`).digest('hex') : '';
+}
 export async function resolveGoogleLinkedAccount(identity) {
   const email=safeEmail(identity?.email),db=await dbPool();
   if(!db) throw new Error('Autenticação temporariamente indisponível.');

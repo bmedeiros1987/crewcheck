@@ -3,7 +3,7 @@ import fs from 'node:fs';
 const serverPath = 'server.mjs';
 if (!fs.existsSync(serverPath)) throw new Error('[mobile-google-identity] server.mjs não localizado.');
 let server = fs.readFileSync(serverPath, 'utf8');
-const accountImport = "import { resolveGoogleLinkedAccount, issueGoogleLinkedSession } from './server/v139/auth.mjs';";
+const accountImport = "import { resolveGoogleLinkedAccount, issueGoogleLinkedSession, googleInitiatorSessionKey } from './server/v139/auth.mjs';";
 if(!server.includes(accountImport)) server=accountImport+'\n'+server;
 const importLine = "import { handleGoogleIdentityRoute } from './server/mobile/google-identity-oidc.mjs';";
 if (!server.includes(importLine)) {
@@ -14,7 +14,7 @@ if (!server.includes(importLine)) {
 if (!server.includes('handleGoogleIdentityRoute(req, res, url, {')) {
   const routeAnchor = '  if (await handleGoogleCalendarOAuthRoute(req, res, url, { identity: cc1371Verify(cc1371RequestToken(req)), authRequired: cc1371AuthRequired() })) return;';
   if (!server.includes(routeAnchor)) throw new Error('[mobile-google-identity] rota Calendar canônica não localizada.');
-  server = server.replace(routeAnchor, `${routeAnchor}\n  if (await handleGoogleIdentityRoute(req, res, url, { identity: cc1371Verify(cc1371RequestToken(req)), resolveAccount: resolveGoogleLinkedAccount, issueSession: issueGoogleLinkedSession })) return;`);
+  server = server.replace(routeAnchor, `${routeAnchor}\n  if (await handleGoogleIdentityRoute(req, res, url, { identity: cc1371Verify(cc1371RequestToken(req)), sessionKey: googleInitiatorSessionKey(req), resolveAccount: resolveGoogleLinkedAccount, issueSession: issueGoogleLinkedSession })) return;`);
 }
 fs.writeFileSync(serverPath, server, 'utf8');
 

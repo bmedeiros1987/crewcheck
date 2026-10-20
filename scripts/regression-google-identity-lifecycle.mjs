@@ -18,11 +18,11 @@ function fixture() {
  exchangeCode:async()=>{exchangeStarted();await new Promise(r=>releaseExchange=r);return{id_token:'synthetic'};},verifyGoogleIdToken:async()=>({sub:'google-synthetic',email:user.email}),callbackHtml:()=>''};
  vm.createContext(sandbox);vm.runInContext(functions+'\nthis.api={complete,completeLink,unlink,callback,stateKey,crewLinkKey,providerLinkKey,epochKey};',sandbox);
  const a=sandbox.api,providerKey=crypto.createHmac('sha256',cfg.encryptionSecret).update('google:google-synthetic').digest('hex'),pk=a.providerLinkKey(providerKey),rk=a.crewLinkKey(user.sub,cfg.encryptionSecret);
- const context={identity:user,resolveAccount:async who=>({id:who.sub,email:who.email,role:'free',name:'Canonical synthetic'}),issueSession:(_res,u)=>issued.push(u)};
+ const context={identity:user,sessionKey:'a'.repeat(64),resolveAccount:async who=>({id:who.sub,email:who.email,role:'free',name:'Canonical synthetic'}),issueSession:(_res,u)=>issued.push(u)};
  return {a,db,issued,context,pk,rk,providerKey,entered,release:()=>releaseExchange(),
  seed(){db.set(pk,{payload:{user,providerKey,linkId:'link-A',revision:'unlinked-v1'}});db.set(rk,{payload:{providerKey,linkId:'link-A',revision:'unlinked-v1'}});},
  ready(state='ready'){db.set(a.stateKey(state),{payload:{status:'ready',intent:'login',user,providerKey,linkId:'link-A',ownerRevision:'unlinked-v1'}});},
- pending(){db.set(a.stateKey('pending'),{payload:{status:'pending',intent:'link',owner:user,ownerRevision:'unlinked-v1',nonce:'n',verifier:'v',expiresAt:Date.now()+60000},consumed:false});}};
+ pending(){db.set(a.stateKey('pending'),{payload:{status:'pending',intent:'link',owner:user,initiatorSession:'a'.repeat(64),ownerRevision:'unlinked-v1',nonce:'n',verifier:'v',expiresAt:Date.now()+60000},consumed:false});}};
 }
 const res=()=>({writeHead(){},end(){}});let cases=0;
 {
@@ -52,6 +52,7 @@ const res=()=>({writeHead(){},end(){}});let cases=0;
  const f=fixture();f.pending();const p=f.a.callback({},res(),new URL('https://example.invalid/callback?state=pending&code=synthetic'),{...f.context,identity:{sub:'owner-B'}});await f.entered;f.release();await p;
  assert.equal(f.db.has(f.pk),false);assert.equal(f.db.has(f.rk),false);assert.equal(f.db.get(f.a.stateKey('pending')).payload.status,'link_ready');
  const r=res();await f.a.completeLink({method:'POST',body:{state:'pending',confirmLink:true}},r,{...f.context,identity:{sub:'owner-B',email:'b@example.invalid',exp:user.exp}});assert.equal(r.status,409);assert.equal(f.db.has(f.pk),false);cases++;
+ const changed=res();await f.a.completeLink({method:'POST',body:{state:'pending',confirmLink:true}},changed,{...f.context,sessionKey:'b'.repeat(64)});assert.equal(changed.status,409);assert.equal(f.db.has(f.pk),false);cases++;
  const success=res();await f.a.completeLink({method:'POST',body:{state:'pending',confirmLink:true}},success,f.context);assert.equal(success.status,200);assert.equal(f.db.get(f.pk).payload.user.sub,user.sub);cases++;
 }
 {

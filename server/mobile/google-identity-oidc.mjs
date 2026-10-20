@@ -329,7 +329,7 @@ async function start(req, res, context) {
   const expiresAt = Date.now() + STATE_TTL_MS;
   await withLinkTransaction(async (tx) => {
     const ownerRevision = owner ? await ownerEpoch(tx, owner.sub, cfg) : null;
-    await tx.put(stateKey(state), { status:'pending', intent, owner, ownerRevision, nonce, verifier, createdAt:Date.now(), expiresAt }, expiresAt);
+    await tx.put(stateKey(state), { status:'pending', intent, owner, initiatorSession: intent==='link' ? context.sessionKey : null, ownerRevision, nonce, verifier, createdAt:Date.now(), expiresAt }, expiresAt);
   });
   const query = new URLSearchParams({
     client_id: cfg.clientId,
@@ -389,7 +389,7 @@ async function callback(_req, res, url, context) {
         if(existingCrewLink?.payload?.providerKey && existingCrewLink.payload.providerKey!==providerKey) throw new Error('Esta conta CrewCheck já possui outra Conta Google vinculada. Desvincule-a antes de trocar.');
         // External callback proves the Google identity only. It cannot finalize
         // a link from a saved owner or a cookie belonging to another browser.
-        await tx.put(stateKey(state),{status:'link_ready',intent:'link',owner,ownerRevision:revision,providerKey,email:String(claims.email).toLowerCase(),expiresAt},expiresAt,true);
+        await tx.put(stateKey(state),{status:'link_ready',intent:'link',owner,initiatorSession:stored.payload.initiatorSession,ownerRevision:revision,providerKey,email:String(claims.email).toLowerCase(),expiresAt},expiresAt,true);
       } else if(existingProviderLink?.payload?.user?.sub && typeof existingProviderLink.payload.linkId==='string') {
         const link=existingProviderLink.payload,owner=sessionIdentity(link.user);
         const reverse=await tx.get(crewLinkKey(owner.sub,cfg.encryptionSecret));
@@ -468,7 +468,7 @@ async function completeLink(req,res,context) {
       const stored=state?await tx.get(stateKey(state)):null,value=stored?.payload;
       if(value?.status!=='link_ready'||!value.owner?.sub) throw new Error('Tentativa de vínculo indisponível.');
       const owner=sessionIdentity(value.owner),current=context.identity;
-      if(current?.sub!==owner.sub||String(current?.email||'').trim().toLowerCase()!==owner.email||!Number.isSafeInteger(current?.exp)||current.exp*1000<=Date.now()) throw new Error('Sua sessão mudou. Inicie o vínculo novamente.');
+      if(typeof value.initiatorSession!=='string'||value.initiatorSession.length!==64||context.sessionKey!==value.initiatorSession||current?.sub!==owner.sub||String(current?.email||'').trim().toLowerCase()!==owner.email||!Number.isSafeInteger(current?.exp)||current.exp*1000<=Date.now()) throw new Error('Sua sessão mudou. Inicie o vínculo novamente.');
       await freshLinkedAccount(context,owner);
       const cfg=config(),revision=await ownerEpoch(tx,owner.sub,cfg);
       if(revision!==value.ownerRevision) throw new Error('O vínculo foi revogado. Inicie uma nova tentativa.');
