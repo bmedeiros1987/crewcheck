@@ -14,6 +14,7 @@ on:
       - 'scripts/mobile-google-identity/**'
       - 'scripts/regression-mobile-google-identity.mjs'
       - 'scripts/regression-google-identity-lifecycle.mjs'
+      - 'scripts/regression-google-identity-innodb.mjs'
       - 'scripts/regression-google-identity-client-continuity.mjs'
       - 'server/v139/auth.mjs'
       - 'scripts/v139/apply.mjs'
@@ -40,3 +41,34 @@ jobs:
       - run: node scripts/regression-google-identity-client-continuity.mjs
       - run: node scripts/regression-google-calendar-session-fence.mjs
       - run: npx tsc --noEmit
+
+  google-identity-innodb:
+    name: Google identity concurrency in disposable InnoDB
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: synthetic-google-qa-only
+          MYSQL_ROOT_HOST: "%"
+          MYSQL_DATABASE: crewcheck_google_identity_qa
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -psynthetic-google-qa-only"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    env:
+      CREWCHECK_GOOGLE_INNODB_QA: github-disposable-mysql
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/regression-google-identity-innodb.mjs
+      - run: node scripts/v139/apply.mjs
+      - run: node scripts/regression-google-identity-innodb.mjs
