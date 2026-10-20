@@ -124,7 +124,7 @@ export function AimsDocumentView({ events, month, day, describe, focusEventId, o
     </div>
     {selected && <div className="cc-doc-detail" tabIndex={-1} ref={detail} role="region" aria-label="Dia ampliado" onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } }}>
       <button type="button" onClick={close}>← Voltar à escala inteira</button>
-      <AimsRosterTable key={events.indexOf(selected)} events={selectedDayEvents} focusEventIndex={selectedDayEvents.indexOf(selected)} focusEventId={selected.id} dayView title={`Dia ${rosterDisplayIso(selected)?.split('-').reverse().join('/') || 'não confirmado'}`}/>
+      <AimsRosterTable key={events.indexOf(selected)} showHistory={false} events={selectedDayEvents} focusEventIndex={selectedDayEvents.indexOf(selected)} focusEventId={selected.id} dayView title={`Dia ${rosterDisplayIso(selected)?.split('-').reverse().join('/') || 'não confirmado'}`}/>
     </div>}
     <p className="cc-doc-help">Horários e códigos preservados da escala. Campo — indica dado não informado; nenhuma atividade é inferida para os dias vazios. As cores seguem a legenda CrewCheck; os rótulos identificam cada tipo.</p>
   </section>;
