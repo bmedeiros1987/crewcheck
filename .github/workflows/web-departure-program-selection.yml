@@ -1,0 +1,93 @@
+name: Web departure program selection
+on:
+  pull_request:
+    branches: [main, fix/regulation-prefill-20261020]
+    paths:
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/v14331/**'
+      - 'scripts/v1406/route-helpers.snippet'
+      - 'scripts/p0-530-adjacent-month-retention/**'
+      - 'scripts/regression-web-departure-program-*'
+      - '.github/workflows/web-departure-program-selection.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/pages/Home.tsx'
+      - 'scripts/v14331/**'
+      - 'scripts/v1406/route-helpers.snippet'
+      - 'scripts/p0-530-adjacent-month-retention/**'
+      - 'scripts/regression-web-departure-program-*'
+      - '.github/workflows/web-departure-program-selection.yml'
+permissions:
+  contents: read
+concurrency:
+  group: web-departure-selection-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  synthetic-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash -e -o pipefail {0}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Raw source compatibility
+        run: npx tsc --noEmit
+      - name: Prepare canonical sources once
+        run: node scripts/v139/apply.mjs
+      - name: Prepared types and build
+        run: |
+          npx tsc --noEmit
+          npx vite build
+      - name: Real builder and departure helpers across device zones
+        run: |
+          set -eo pipefail
+          mkdir -p artifacts/web-departure-program
+          for zone in UTC America/Sao_Paulo Asia/Tokyo America/New_York; do
+            TZ="$zone" node scripts/regression-web-departure-program-selection.mjs
+          done | tee artifacts/web-departure-program/selection.log
+      - name: Retained policy, source preparation and route-state gates
+        run: |
+          node scripts/regression-v14-3-31-smart-departure-canonical.mjs
+          node scripts/regression-home-standby-departure.mjs
+          node scripts/regression-departure-location-consistency.mjs
+          node scripts/regression-positioning-session-isolation.mjs
+          node scripts/regression-p0-530-adjacent-month-retention.mjs
+          node scripts/regression-regulation-window-selection.mjs
+      - name: Install isolated Chromium fixture dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/departure-browser" --ignore-scripts --no-audit --no-fund playwright@1.55.0
+          node "$RUNNER_TEMP/departure-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Actual compiled Home with synthetic route response
+        env:
+          MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/departure-browser/package.json
+        run: |
+          set -eo pipefail
+          node scripts/regression-web-departure-program-browser.cjs | tee artifacts/web-departure-program/browser.log
+      - name: Bind evidence to checked out composition
+        if: always()
+        env:
+          SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_BASE: ${{ github.event.pull_request.base.sha || github.sha }}
+        run: |
+          mkdir -p artifacts/web-departure-program
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import crypto from 'node:crypto';
+          import {execFileSync} from 'node:child_process';
+          const files=['client/src/pages/Home.tsx','scripts/v14331/apply.mjs','scripts/v1406/route-helpers.snippet','scripts/p0-530-adjacent-month-retention/apply.mjs','scripts/regression-web-departure-program-selection.mjs','scripts/regression-web-departure-program-browser.cjs'];
+          const git=ref=>execFileSync('git',['rev-parse',ref],{encoding:'utf8'}).trim();
+          fs.writeFileSync('artifacts/web-departure-program/source.json',JSON.stringify({sourceHead:process.env.SOURCE_HEAD,sourceBase:process.env.SOURCE_BASE,checkedOutCommit:git('HEAD'),tree:git('HEAD^{tree}'),hashes:Object.fromEntries(files.map(p=>[p,crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')]))},null,2));
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-departure-program-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/web-departure-program
+          retention-days: 7
