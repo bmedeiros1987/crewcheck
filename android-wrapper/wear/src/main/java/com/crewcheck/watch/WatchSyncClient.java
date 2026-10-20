@@ -12,7 +12,7 @@ import com.google.android.gms.wearable.Wearable;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Requests the current phone projection and only reports success after a fresh DataItem
@@ -33,7 +33,7 @@ public final class WatchSyncClient {
     public static void refresh(Context context, Callback callback) {
         Context appContext = context.getApplicationContext();
         AtomicBoolean recovered = new AtomicBoolean(false);
-        AtomicLong baselineSentAt = new AtomicLong(0L);
+        AtomicReference<String> baselineRevision = new AtomicReference<>("");
 
         Wearable.getDataClient(appContext).getDataItems()
                 .addOnSuccessListener(buffer -> {
@@ -43,11 +43,11 @@ public final class WatchSyncClient {
                             try {
                                 DataMap map = DataMapItem.fromDataItem(item).getDataMap();
                                 String json = map.getString(WatchContract.DATA_KEY_SNAPSHOT_JSON);
-                                long sentAt = map.getLong("sentAtEpochMs", 0L);
-                                baselineSentAt.set(Math.max(baselineSentAt.get(), sentAt));
                                 if (json != null) {
-                                    new SecureSnapshotStore(appContext).save(json);
-                                    recovered.set(true);
+                                    SecureSnapshotStore store=new SecureSnapshotStore(appContext);
+                                    OperationalReplayFence.Result result=store.accept(item.getUri().getHost(),json,
+                                            map.getString(OperationalTransport.ENVELOPE));
+                                    recovered.set(recovered.get() || result != OperationalReplayFence.Result.REJECTED);
                                 }
                             } catch (Exception ignored) {
                             }
@@ -55,21 +55,22 @@ public final class WatchSyncClient {
                     } finally {
                         buffer.release();
                     }
+                    baselineRevision.set(new SecureSnapshotStore(appContext).acceptedRevisionKey());
                     requestFromConnectedPhone(
                             appContext,
                             recovered.get(),
-                            baselineSentAt.get(),
+                            baselineRevision.get(),
                             callback
                     );
                 })
                 .addOnFailureListener(error ->
-                        requestFromConnectedPhone(appContext, false, 0L, callback));
+                        requestFromConnectedPhone(appContext, false, "", callback));
     }
 
     private static void requestFromConnectedPhone(
             Context context,
             boolean recovered,
-            long baselineSentAt,
+            String baselineRevision,
             Callback callback
     ) {
         Wearable.getNodeClient(context).getConnectedNodes()
@@ -95,7 +96,7 @@ public final class WatchSyncClient {
                             () -> pollForFreshSnapshot(
                                     context,
                                     recovered,
-                                    baselineSentAt,
+                                    baselineRevision,
                                     0,
                                     callback,
                                     handler
@@ -112,7 +113,7 @@ public final class WatchSyncClient {
     private static void pollForFreshSnapshot(
             Context context,
             boolean recovered,
-            long baselineSentAt,
+            String baselineRevision,
             int attempt,
             Callback callback,
             Handler handler
@@ -126,11 +127,12 @@ public final class WatchSyncClient {
                             try {
                                 DataMap map = DataMapItem.fromDataItem(item).getDataMap();
                                 String json = map.getString(WatchContract.DATA_KEY_SNAPSHOT_JSON);
-                                long sentAt = map.getLong("sentAtEpochMs", 0L);
-                                if (json != null && sentAt > baselineSentAt) {
-                                    new SecureSnapshotStore(context).save(json);
-                                    fresh = true;
-                                    break;
+                                if (json != null) {
+                                    OperationalReplayFence.Result result=new SecureSnapshotStore(context).accept(
+                                            item.getUri().getHost(),json,map.getString(OperationalTransport.ENVELOPE));
+                                    String accepted=new SecureSnapshotStore(context).acceptedRevisionKey();
+                                    if(result!=OperationalReplayFence.Result.REJECTED && !accepted.isEmpty()
+                                            && !accepted.equals(baselineRevision)) { fresh=true; break; }
                                 }
                             } catch (Exception ignored) {
                             }
@@ -146,7 +148,7 @@ public final class WatchSyncClient {
                     retryOrFinish(
                             context,
                             recovered,
-                            baselineSentAt,
+                            baselineRevision,
                             attempt,
                             callback,
                             handler
@@ -156,7 +158,7 @@ public final class WatchSyncClient {
                         retryOrFinish(
                                 context,
                                 recovered,
-                                baselineSentAt,
+                                baselineRevision,
                                 attempt,
                                 callback,
                                 handler
@@ -166,7 +168,7 @@ public final class WatchSyncClient {
     private static void retryOrFinish(
             Context context,
             boolean recovered,
-            long baselineSentAt,
+            String baselineRevision,
             int attempt,
             Callback callback,
             Handler handler
@@ -182,7 +184,7 @@ public final class WatchSyncClient {
                 () -> pollForFreshSnapshot(
                         context,
                         recovered,
-                        baselineSentAt,
+                        baselineRevision,
                         attempt + 1,
                         callback,
                         handler

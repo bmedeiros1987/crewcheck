@@ -17,9 +17,12 @@ function fixture() {
     fetch: (url,options) => new Promise((resolve,reject) => requests.push({url, options, reject, respond: (status,payload) => resolve({ok:status>=200&&status<300,status,json:async()=>payload})})) };
   vm.runInNewContext(compile(fs.readFileSync('client/src/lib/authClient.ts','utf8')),context);
   const auth=context.exports;
+  const hostContext={...context,exports:{}};
+  vm.runInNewContext(compile(fs.readFileSync('client/src/lib/watchHostAdmission.ts','utf8')),hostContext);
+  const host=hostContext.exports;
   const select = (id,token=id,emit=true) => { data.set('crewcheck_auth_token',token); data.set('crewcheck_auth_user',JSON.stringify(user(id))); if(emit) window.dispatchEvent(new context.CustomEvent('crewcheck:auth-changed')); };
   let effect,cleanup;
-  const protectedContext={...context,...auth, useEffect: fn=>{effect=fn;},useState: value=>[value,next=>states.push(next)],useLocation:()=>['/app',next=>routes.push(next)],CrewCheckOpeningSplash:()=>null,TermsGate:()=>null};
+  const protectedContext={...context,...auth,...host, useEffect: fn=>{effect=fn;},useState: value=>[value,next=>states.push(next)],useLocation:()=>['/app',next=>routes.push(next)],CrewCheckOpeningSplash:()=>null,TermsGate:()=>null};
   vm.runInNewContext(compile(functions+'\nglobalThis.mount = () => { Protected({children:null}); };'),protectedContext);
   return {auth,select,data,sessionData,requests,routes,states,window,mount(){protectedContext.mount();cleanup=effect();},unmount(){cleanup();}};
 }

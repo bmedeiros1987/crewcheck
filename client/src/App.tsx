@@ -23,6 +23,7 @@ import TelegramConnectPage from "./pages/TelegramConnectPage";
 import GuardianPublicPage from './pages/GuardianPublicPage';
 import VoyagePublicPage from './pages/VoyagePublicPage';
 import { captureAuthSession, getMe, getStoredUser, isAuthenticated } from "./lib/authClient";
+import { admitVerifiedWatchHost } from "./lib/watchHostAdmission";
 import { applyDocumentLanguage, installGlobalStaticTranslations } from "./lib/i18n";
 import { installPwaUpdateCoordinator } from "./lib/pwaUpdateCoordinator";
 import TermsGate from "./components/TermsGate";
@@ -111,8 +112,9 @@ function Protected({ children }: { children: ReactNode }) {
       getMe({ isCurrent, onSessionExpired: () => {
         if (!isCurrent()) return;
         expired = true;
-      } }).then(() => {
+      } }).then((user) => {
         if (!isCurrent()) return;
+        admitVerifiedWatchHost(session, user);
         setStartupStage("profile");
         return enablePartnerDemoRoster(isCurrent, session.owner);
       }).catch(() => {

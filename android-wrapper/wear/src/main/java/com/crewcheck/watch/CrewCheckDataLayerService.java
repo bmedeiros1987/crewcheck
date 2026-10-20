@@ -21,6 +21,12 @@ import java.nio.charset.StandardCharsets;
  * inválido em um canal nunca invalida os outros.
  */
 public final class CrewCheckDataLayerService extends WearableListenerService {
+    @Override public void onPeerDisconnected(com.google.android.gms.wearable.Node peer) {
+        OperationalTransport.topologyChanged(this);
+    }
+    @Override public void onPeerConnected(com.google.android.gms.wearable.Node peer) {
+        OperationalTransport.topologyChanged(this);
+    }
     @Override
     public void onDataChanged(DataEventBuffer dataEvents) {
         for (DataEvent event : dataEvents) {
@@ -42,11 +48,7 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
             try {
                 DataMap dataMap = DataMapItem.fromDataItem(event.getDataItem()).getDataMap();
                 if (WatchContract.SNAPSHOT_PATH.equals(path)) {
-                    String json = dataMap.getString(WatchContract.DATA_KEY_SNAPSHOT_JSON);
-                    if (json != null) {
-                        WatchContextSnapshot snapshot = new SecureSnapshotStore(this).save(json);
-                        WatchNotificationCenter.postForSnapshot(this, snapshot);
-                    }
+                    processOperationalData(event.getDataItem());
                 } else if (WatchContract.CREWLIFE_PATH.equals(path)) {
                     String json = dataMap.getString(WatchContract.DATA_KEY_CREWLIFE_JSON);
                     if (json != null) new WellbeingStore(this).saveCrewLife(json);
@@ -60,18 +62,28 @@ public final class CrewCheckDataLayerService extends WearableListenerService {
         }
     }
 
+    void processOperationalData(com.google.android.gms.wearable.DataItem item) throws Exception {
+        if(item==null || !WatchContract.SNAPSHOT_PATH.equals(item.getUri().getPath())) return;
+        DataMap map=DataMapItem.fromDataItem(item).getDataMap();
+        SecureSnapshotStore store=new SecureSnapshotStore(this);
+        OperationalReplayFence.Result accepted=store.accept(item.getUri().getHost(),
+                map.getString(WatchContract.DATA_KEY_SNAPSHOT_JSON),map.getString(OperationalTransport.ENVELOPE));
+        if(accepted==OperationalReplayFence.Result.ACCEPTED)
+            WatchNotificationCenter.postForSnapshot(this,store.load());
+    }
+
     @Override
     public void onMessageReceived(MessageEvent messageEvent) {
         String path = messageEvent.getPath();
         byte[] data = messageEvent.getData();
         if (path == null || data == null || data.length == 0) return;
+        if (OperationalTransport.message(this,messageEvent.getSourceNodeId(),path,data)) return;
 
         try {
             if (WatchContract.SNAPSHOT_PATH.equals(path)) {
                 if (data.length > WatchContract.MAX_SNAPSHOT_BYTES) return;
-                WatchContextSnapshot snapshot = new SecureSnapshotStore(this)
-                        .save(new String(data, StandardCharsets.UTF_8));
-                WatchNotificationCenter.postForSnapshot(this, snapshot);
+                // Raw legacy messages have no admitted envelope and cannot overwrite cache.
+                return;
             } else if (WatchContract.CREWLIFE_PATH.equals(path)) {
                 if (data.length > WatchContract.MAX_WELLBEING_BYTES) return;
                 new WellbeingStore(this).saveCrewLife(new String(data, StandardCharsets.UTF_8));

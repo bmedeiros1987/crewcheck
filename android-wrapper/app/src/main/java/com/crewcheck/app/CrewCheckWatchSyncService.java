@@ -8,8 +8,13 @@ import com.google.android.gms.wearable.WearableListenerService;
  * CrewCheck Activity is not in the foreground.
  */
 public final class CrewCheckWatchSyncService extends WearableListenerService {
+    @Override public void onPeerConnected(com.google.android.gms.wearable.Node peer) {
+        CrewCheckWatchPublisher.retryRevocations(this);
+    }
     @Override
     public void onMessageReceived(MessageEvent messageEvent) {
+        if (CrewCheckWatchPublisher.sessionMessage(this,messageEvent.getSourceNodeId(),
+                messageEvent.getPath(),messageEvent.getData())) return;
         if (!CrewCheckWatchPublisher.REQUEST_SYNC_PATH.equals(messageEvent.getPath())) return;
         // Fast path: resend the last validated snapshot if one already exists.
         CrewCheckWatchPublisher.republishLast(this);

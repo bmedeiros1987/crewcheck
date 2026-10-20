@@ -98,6 +98,7 @@ import { analyzeCompliance, analyzeDayLoads, getGymRecommendations, getCanonical
 import { parsePDF, type CrewRoster, type FlightLeg, type RosterDay } from '@/lib/pdfParser';
 import { authFetch, getStoredUser, getToken, logout } from '@/lib/authClient';
 import { captureAuthSession } from '@/lib/authClient';
+import { captureWatchHost, watchHostLease, revokeCapturedWatchHost } from '@/lib/watchHostAdmission';
 import { exportReport } from '@/lib/pdfExport';
 import { generateICalendar, downloadCalendarFile } from '@/lib/calendarExport';
 import { shareToWhatsApp, shareToTelegram, copyToClipboard, shareExportedPdfNative } from '@/lib/sharing';
@@ -5312,17 +5313,11 @@ export default function Home() {
 
   useEffect(() => {
     const watchSession = captureAuthSession();
+    const watchHost = captureWatchHost();
     let watchInvalidated = false;
     const invalidateWatchSnapshot = () => {
       watchInvalidated = true;
-      try {
-        const now = Date.now();
-        const empty = buildCrewCheckWatchSnapshot([], { id: 'session-invalidated', kind: 'empty', placeholder: true }, null, now);
-        window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: {
-          ...empty, contextId: 'session-invalidated', validUntilEpochMs: now,
-          headline: 'ABRA O CREWCHECK', detail: 'Sessão alterada. Atualize pelo celular.',
-        } }));
-      } catch {}
+      revokeCapturedWatchHost(watchHost);
     };
     const publishWatchSnapshot = () => {
       if (watchInvalidated || !watchSession.token || !watchSession.owner || !watchSession.isCurrent()) {
@@ -5343,7 +5338,7 @@ export default function Home() {
           nextFlightScheduleId: nextFlightEvent ? (nextFlightEvent.canonical?.id || nextFlightEvent.id) : '',
         });
         if (!watchSession.isCurrent()) { invalidateWatchSnapshot(); return; }
-        window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: snapshot }));
+        window.dispatchEvent(new CustomEvent('crewcheck:watch-snapshot', { detail: { snapshot, leaseId: watchHostLease(watchHost) } }));
       } catch {
         // Watch sync is auxiliary. Never interfere with roster rendering.
       }

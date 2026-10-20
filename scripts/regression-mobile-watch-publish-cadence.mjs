@@ -30,7 +30,7 @@ localStorage.setItem('crewcheck_auth_user', JSON.stringify({ id: 'synthetic-watc
 localStorage.setItem('crewcheck_auth_token', 'synthetic-offline-token');
 // Strip types only; execute real modules in separate scopes with their real imports.
 // This guard also supports current main before the Next Flight imports are integrated.
-function actualModule(name, imports = {}) {
+function actualModule(name, imports = {}, globals = {}) {
   const filename = `client/src/lib/${name}.ts`;
   let executable = stripTypeScriptTypes(fs.readFileSync(filename, 'utf8'));
   if (name === 'watchContext') assert.equal((executable.match(/export function buildCrewCheckWatchSnapshot/g) || []).length, 1);
@@ -42,7 +42,7 @@ function actualModule(name, imports = {}) {
   });
   assert(!/^import /m.test(executable), `Unsupported actual import: ${filename}`);
   return vm.runInNewContext(executable.replace(/^export /gm, '') + `\n({${exported.join(',')}})`,
-    { Date: FixtureDate, localStorage, dependencies: imports }, { filename });
+    { Date: FixtureDate, localStorage, dependencies: imports, ...globals }, { filename });
 }
 const snapshotModule = actualModule('watchContext', { '../../../shared/airport-timezones.mjs': airportTimeZones });
 const gateBindings = {};
@@ -68,7 +68,14 @@ const window = {
   setInterval(handler, delay) { assert.equal(delay, 60_000); timers.set(1, handler); return 1; },
   clearInterval(id) { assert(timers.delete(id)); },
 };
-const context = vm.createContext({ window, events, event, localStorage, Date: FixtureDate, ...gateBindings,
+const nativeRevocations=[];
+const hostWindow={
+  CrewCheckNative:{admitWatchHost:()=> 'synthetic-captured-native-lease',revokeWatchHost:lease=>{nativeRevocations.push(lease);return true;}},
+  addEventListener(){}, // Home's actual event handlers below are exercised explicitly.
+};
+const hostModule=actualModule('watchHostAdmission',{'./authClient':gateBindings},{window:hostWindow});
+hostModule.admitVerifiedWatchHost(gateBindings.captureAuthSession(),gateBindings.getStoredUser());
+const context = vm.createContext({ window, events, event, localStorage, Date: FixtureDate, ...gateBindings, ...hostModule,
   CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
   buildCrewCheckWatchSnapshot(actualEvents, actualEvent) { if (!actualEvent.placeholder) { assert.equal(actualEvents, events); calls++; } return snapshotModule.buildCrewCheckWatchSnapshot(actualEvents, actualEvent, null, now); },
 });
@@ -77,7 +84,8 @@ const cleanup = vm.runInContext(effect, context);
 assert.equal(calls, 1); // Immediate publication, not a minute-long first-sync wait.
 assert.equal(published[0].type, 'crewcheck:watch-snapshot');
 function assertPublished(selected, gate, remoteStand = false) {
-  const snapshot = published.at(-1).detail;
+  const snapshot = published.at(-1).detail.snapshot;
+  assert.equal(published.at(-1).detail.leaseId,'synthetic-captured-native-lease');
   assert.equal(snapshot.contextId, selected.canonical.id);
   if (selected === otherDate) {
     assert.equal(snapshot.currentFlight, '');
@@ -92,8 +100,8 @@ function assertPublished(selected, gate, remoteStand = false) {
   assert.equal(snapshot.source, 'canonical-roster');
 }
 assertPublished(event, '');
-assert.notEqual(published[0].detail.contextId, otherFlight.canonical.id);
-assert.notEqual(published[0].detail.contextId, otherDate.canonical.id);
+assert.notEqual(published[0].detail.snapshot.contextId, otherFlight.canonical.id);
+assert.notEqual(published[0].detail.snapshot.contextId, otherDate.canonical.id);
 for (const name of ['crewcheck:watch-snapshot-request', 'crewcheck:native-ready']) listeners.get(name)();
 assert.equal(calls, 3);
 event.gate = '15'; timers.get(1)(); assertPublished(event, '');
@@ -123,12 +131,9 @@ const countBeforeFailure = published.length;
 Object.defineProperty(event, 'presentation', { get() { throw Error('fictional unavailable snapshot'); } });
 assert.doesNotThrow(() => timers.get(1)()); assert.equal(published.length, countBeforeFailure);
 function assertInvalidated() {
-  const empty = published.at(-1).detail;
-  assert.equal(empty.contextId, 'session-invalidated');
-  assert.equal(empty.state, 'UNKNOWN');
-  assert.equal(empty.validUntilEpochMs, now);
-  for (const field of ['currentFlight', 'currentRoute', 'gate', 'nextFlight', 'nextDetail', 'hotelPickup']) assert.equal(empty[field], '');
-  assert.equal(empty.schedule.length, 0);
+  assert.equal(published.length,countBeforeFailure,'Revocation must not emit legacy expired empty snapshot');
+  assert.deepEqual(nativeRevocations,['synthetic-captured-native-lease'],'One native revoke of captured lease');
+  assert.equal(hostModule.captureWatchHost(),null,'Old host authority removed');
 }
 for (const name of ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired']) {
   listeners.get(name)(); assertInvalidated();
@@ -142,4 +147,4 @@ listeners.get('storage')({key:'crewcheck_auth_user'}); assertInvalidated();
 cleanup(); assert.equal(listeners.size, 0); assert.equal(timers.size, 0);
 const noTokenCleanup = vm.runInContext(effect, context); assertInvalidated(); assert.equal(calls, activeCalls);
 noTokenCleanup(); assert.equal(listeners.size, 0); assert.equal(timers.size, 0);
-console.log('PASS actual Home effect + actual TS snapshot builder: cadence, flight/date isolation, auth invalidation and tokenless retained identity, empty cache replacement and cleanup');
+console.log('PASS actual Home effect + actual TS snapshot builder: cadence, flight/date isolation, auth invalidation and tokenless retained identity, captured-lease native revoke and cleanup');

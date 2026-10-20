@@ -28,7 +28,7 @@ import android.view.ViewGroup;
 import android.widget.TextView;
 import static org.junit.Assert.*;
 
-/** Actual DataLayer message handler, encrypted save/load, SharedPreferences listener,
+/** Actual DataLayer operational DataItem handler, encrypted save/load, SharedPreferences listener,
  * Activity resume/pause, posted minute tick and ambient callbacks. Android Keystore
  * key lookup alone uses a fixed TEST key; no device transport/pairing claim. */
 @RunWith(org.robolectric.RobolectricTestRunner.class)
@@ -51,13 +51,8 @@ public class WatchCacheLifecycleTest {
         return json.put("state","REPORTING").put("presentationTime","18:20").put("primaryTime","18:20").put("gate",gate)
                 .put("validUntilEpochMs",validUntil).toString();
     }
-    private static void deliver(CrewCheckDataLayerService service, String json) {
-        service.onMessageReceived(new MessageEvent() {
-            public int getRequestId(){return 1;}
-            public String getPath(){return WatchContract.SNAPSHOT_PATH;}
-            public byte[] getData(){return json.getBytes(StandardCharsets.UTF_8);}
-            public String getSourceNodeId(){return "synthetic-phone";}
-        });
+    private static void deliver(CrewCheckDataLayerService service, String json) throws Exception {
+        OperationalTestIngress.deliver(service,json);
     }
     private static String text(View view) {
         if(view instanceof TextView)return ((TextView)view).getText().toString();
@@ -80,7 +75,7 @@ public class WatchCacheLifecycleTest {
             long expiry=ShadowSystemClock.currentTimeMillis()+90_000L;
             deliver(service.get(),payload("B123",expiry));settle();
             assertTrue("DataLayer → encrypted cache → listener redraw",text(content(screen)).contains("B123"));
-            String encrypted=context.getSharedPreferences("crewcheck_watch_secure",Context.MODE_PRIVATE).getString("snapshot_payload_v1","");
+            String encrypted=context.getSharedPreferences("crewcheck_watch_secure",Context.MODE_PRIVATE).getString("operational_transport_journal_v1","");
             assertFalse("actual store writes encrypted bytes",encrypted.contains("B123"));assertFalse(encrypted.isEmpty());
             activity.pause();
             deliver(service.get(),payload("C234",expiry));settle();
