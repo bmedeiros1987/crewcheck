@@ -9,6 +9,8 @@ on:
       - 'client/src/components/canonical-duty-card.css'
       - 'shared/regulationTemporalScenario.mjs'
       - 'shared/regulationScenarioPrefill.mjs'
+      - 'scripts/regression-regulation-source-hydration.mjs'
+      - 'client/src/lib/complianceEngine.ts'
       - 'scripts/regression-regulation-prefill.mjs'
       - 'scripts/regression-regulation-prefill-browser.mjs'
       - 'scripts/regression-regulation-window-selection.mjs'
@@ -35,6 +37,8 @@ on:
       - 'client/src/components/canonical-duty-card.css'
       - 'shared/regulationTemporalScenario.mjs'
       - 'shared/regulationScenarioPrefill.mjs'
+      - 'scripts/regression-regulation-source-hydration.mjs'
+      - 'client/src/lib/complianceEngine.ts'
       - 'scripts/regression-regulation-prefill.mjs'
       - 'scripts/regression-regulation-prefill-browser.mjs'
       - 'scripts/regression-regulation-window-selection.mjs'
@@ -99,6 +103,7 @@ jobs:
         run: |
           node scripts/regression-regulation-window-selection.mjs
           node scripts/regression-regulation-prefill.mjs
+          node scripts/regression-regulation-source-hydration.mjs
           node scripts/regression-regulation-temporal-scenario.mjs
           npx vite build
       - name: Current compiled scenario UI and Home shortcut
