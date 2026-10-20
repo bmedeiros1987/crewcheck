@@ -17,9 +17,14 @@ export function authFixture() {
     fetch:(url,options)=>new Promise((resolve,reject)=>{requests.push({url,options,reject,respond:(status,payload)=>resolve({ok:status>=200&&status<300,status,json:async()=>payload})});options?.signal?.addEventListener('abort',()=>reject(new Error('SYNTHETIC_ABORT')),{once:true});})};
   vm.runInNewContext(compile(fs.readFileSync('client/src/lib/authClient.ts','utf8')),context);
   const auth=context.exports;
+  // Protected imports the real host admission module. Keep that dependency in
+  // this fixture too; a missing binding can be swallowed by its auth catch path.
+  const hostContext={...context,exports:{}};
+  vm.runInNewContext(compile(fs.readFileSync('client/src/lib/watchHostAdmission.ts','utf8')),hostContext);
+  const host=hostContext.exports;
   const ast=ts.createSourceFile('App.tsx',fs.readFileSync('client/src/App.tsx','utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   const functions=ast.statements.filter(n=>ts.isFunctionDeclaration(n)&&['Protected','enablePartnerDemoRoster'].includes(n.name?.text)).map(n=>n.getText(ast)).join('\n');
-  const protectedContext={...context,...auth,useEffect:fn=>{effect=fn;},useState:value=>[value,next=>states.push(next)],useLocation:()=>['/app',next=>routes.push(next)],CrewCheckOpeningSplash:()=>null,TermsGate:()=>null};
+  const protectedContext={...context,...auth,...host,useEffect:fn=>{effect=fn;},useState:value=>[value,next=>states.push(next)],useLocation:()=>['/app',next=>routes.push(next)],CrewCheckOpeningSplash:()=>null,TermsGate:()=>null};
   vm.runInNewContext(compile(functions+'\nglobalThis.mount=()=>{Protected({children:null});};'),protectedContext);
   return {auth,data,sessionData,requests,routes,states,timers,window,
     seed(token='expired-synthetic-token',user=syntheticUser){data.set('crewcheck_auth_token',token);data.set('crewcheck_auth_user',JSON.stringify(user));data.set('crewcheck_latest_roster_bundle','SYNTHETIC_ROSTER');sessionData.set('crewcheck_roster','SYNTHETIC_ROSTER');},

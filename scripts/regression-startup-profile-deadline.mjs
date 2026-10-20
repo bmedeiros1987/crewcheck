@@ -6,8 +6,12 @@ for (const phase of ['headers', 'body']) {
   const f = authFixture(); f.seed(); f.mount();
   f.requests[0].respond(200, { ok: true, user: syntheticUser }); await flushAuth();
   // The first verified owner can restart startup; finish the current request.
-  while (f.requests.at(-1).url === '/api/auth/me') {
-    f.requests.at(-1).respond(200, { ok: true, user: syntheticUser }); await flushAuth();
+  for (let attempts = 0; f.requests.at(-1).url === '/api/auth/me'; attempts++) {
+    assert(attempts < 3, 'verified startup must leave the auth retry phase');
+    const currentRequest = f.requests.at(-1);
+    currentRequest.respond(200, { ok: true, user: syntheticUser }); await flushAuth();
+    assert.notEqual(f.requests.at(-1), currentRequest,
+      'verified getMe must progress instead of responding again to a settled request');
   }
   const profile = f.requests.at(-1);
   assert.equal(profile.url, '/api/partner/demo-profile');
