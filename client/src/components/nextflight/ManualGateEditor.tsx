@@ -4,6 +4,7 @@ import { getStoredUser } from '@/lib/authClient';
 import { MANUAL_GATE_EVENT, writeManualGate, type NextFlightLike } from '@/lib/nextFlightGate';
 import { currentManualGateAccount, useNextFlightGate } from './useNextFlightGate';
 import { gateSourceLabel } from './NextFlightGateCard';
+import { ManualGateReview } from './ManualGateReview';
 import './next-flight-gate.css';
 
 function authorLabel(): string {
@@ -49,7 +50,7 @@ export function ManualGateEditor({ event }: { event: NextFlightLike }) {
     <h2 id={`${gateId}-title`}><DoorOpen aria-hidden="true"/> Portão informado por você</h2>
     <p>Vale só para {info.flight} em {info.operationalDate.split('-').reverse().join('/')} ({info.origin} → {info.destination}). Não substitui a fonte: divergências continuam visíveis.</p>
     {manual && <p className="cc-manual-gate-current">{gateSourceLabel({ ...info, gateSource: 'manual' })}: <b>{manual.gate}</b>{manual.terminal ? ` · Terminal ${manual.terminal}` : ''}</p>}
-    {info.divergence && <p className="cc-next-gate-divergence" role="note">{info.divergence.source === 'radar' ? 'O Radar' : 'A escala'} indica portão {info.divergence.sourceGate}. Sua informação foi mantida; confirme no aeroporto.</p>}
+    <ManualGateReview event={event} info={info}/>
     <form onSubmit={submit}>
       <label htmlFor={gateId}>Portão de embarque</label>
       <input id={gateId} value={gate} maxLength={12} autoCapitalize="characters" autoComplete="off" inputMode="text" placeholder="Ex.: 24" onChange={(e) => setGate(e.target.value)}/>
