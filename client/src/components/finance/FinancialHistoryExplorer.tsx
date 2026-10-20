@@ -19,7 +19,8 @@ function session() {
   return user && token && (user.id || user.email) && !['visitor','guest'].includes(user.role || '') ? `${user.id || user.email}:${token}` : '';
 }
 
-export default function FinancialHistoryExplorer<S>({ roster, calculate, metric, rangeMetric, mode, weeks, periodMetric, render }: {
+export default function FinancialHistoryExplorer<S>({ roster, calculate, metric, rangeMetric, mode, weeks, periodMetric, changesDetails, render }: {
+  changesDetails?:ReactNode;
   roster: CrewRoster; calculate: (roster: CrewRoster) => S; metric: (snapshot: S) => Record<string, number>;
   rangeMetric?: (snapshot: S, range: FinancialRange) => Record<string, number>;
   mode: 'allowance' | 'salary'; render: (state: { snapshots: Array<{ roster: CrewRoster; snapshot: S; source: string }>; range: FinancialRange; missing: string[]; controls: ReactNode; graph: ReactNode; coverageReady: boolean; requestRange: (range:FinancialRange)=>void }) => ReactNode;
@@ -135,5 +136,5 @@ export default function FinancialHistoryExplorer<S>({ roster, calculate, metric,
     <p>{mode==='salary'?'Salário-base e descontos são mensais; nenhuma parcela mensal é distribuída artificialmente por semana.':'Toque no mês para consultar o período.'}</p>
     {kind==='month'&&weeks&&<section className="cc-financial-week-list" aria-label="Semanas da competência"><h3>Semanas da competência</h3><p>Datas de trabalho · não são datas de pagamento.</p>{weeks(snapshots.map(item=>item.snapshot),range).map(item=><button type="button" key={item.range.start} onClick={()=>{setKind('custom');setFrom(item.range.start);setTo(item.range.end);}}>{item.range.start} até {item.range.end} · {privacy.text(item.value)}</button>)}</section>}
   </section>;
-  return <FinancialScreenContext.Provider value={{screen,navigate:navigation.navigate,back:navigation.back,currency,setCurrency,controls,history:(screen==='statement'||screen==='charts')?<PersistentFinancialHistory key={mode} entryScope={navigation.scope} range={screen==='charts'?comparisonRange:range} mode={mode} view={screen} comparison={comparison}/>:undefined}}>{render({snapshots,range,missing,controls,graph,coverageReady,requestRange:range=>setRequestedPeriods(financialMonths(range))})}</FinancialScreenContext.Provider>;
+  return <FinancialScreenContext.Provider value={{screen,range,changesDetails,navigate:navigation.navigate,back:navigation.back,currency,setCurrency,controls,history:(screen==='statement'||screen==='charts')?<PersistentFinancialHistory key={mode} entryScope={navigation.scope} range={screen==='charts'?comparisonRange:range} mode={mode} view={screen} comparison={comparison}/>:undefined}}>{render({snapshots,range,missing,controls,graph,coverageReady,requestRange:range=>setRequestedPeriods(financialMonths(range))})}</FinancialScreenContext.Provider>;
 }
