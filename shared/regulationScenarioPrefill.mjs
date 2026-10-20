@@ -10,7 +10,7 @@ export function regulationCivilDate(value){
  return typeof date==='string'&&explicitInstant(date+'T00:00Z')!==null?date:'';
 }
 export function regulationScenarioSeed(day,reference,program){
- const seed={takeoff:'',normalEnd:'',offset:'',flight:'',delay:'0',taxi:'',postFlight:'',tasks:'',operation:'',extension:false,reviewed:false,publicationOffsetReviewed:false,composition:'',acclimatization:'unknown',limitSource:'Referência informada para esta simulação',method:'schedule',plannedEnd:'',plannedEndSource:'',scheduledArrival:''};
+ const seed={takeoff:'',normalEnd:'',offset:'',flight:'',delay:'0',taxi:'',postFlight:'',tasks:'',operation:'',extension:false,reviewed:false,publicationOffsetReviewed:false,composition:'',acclimatization:'unknown',limitSource:'Referência informada para esta simulação',method:'schedule',plannedEnd:'',plannedEndSource:'',scheduledArrival:'',reviewRequired:false};
  const date=regulationCivilDate(day?.date),leg=program?.leg||day?.legs?.[0];
  if(date&&clock(leg?.departureTime))seed.takeoff=date+'T'+leg.departureTime;
  // Canonical roster instants use the existing BRT publication clock, independent
@@ -82,6 +82,8 @@ export function regulationScheduleProjection(form){
  if(end!==null&&departure!==null&&end<departure)missing.push('Encerramento anterior à partida da programação');
  if(end===null)missing.push('Encerramento programado ou estimado da jornada');
  if(limit===null)missing.push('Limite normal da jornada');
+ const engineLimit=form.limitSource?.startsWith('Motor existente');
+ if((!engineLimit||form.reviewRequired===true)&&form.reviewed!==true)missing.push('Limite normal revisado');
  if(delay===null||delay>1440)missing.push('Atraso previsto');
  const manualReviewed=form.reviewed===true&&!form.limitSource?.startsWith('Motor existente');
  if(form.composition&&form.composition!=='simple'&&!manualReviewed)missing.push('Limite aplicável à composição informada');

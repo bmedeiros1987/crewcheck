@@ -16,7 +16,7 @@ try {
    .replace("import { normalizeRosterDays } from './canonicalRoster';",'const normalizeRosterDays=x=>x;');
   source+='\nexport {parseTransposedFlightGroup};';
   const file=path.join(parserDir,'parser.cjs');fs.writeFileSync(file,ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText);
-  const item=(str,x,y)=>({str,x,y,page:1});const items=[item('BSB',0,100),item('05:00',40,100),item('GRU',0,200),item('07:00',40,200),item('LA0001',0,50)];
+  const item=(str,x,y)=>({str,x,y,page:1});const items=[item('BSB 05:00',0,100),item('GRU 07:00',0,200),item('LA0001',0,50)];
   parsed=createRequire(import.meta.url)(file).parseTransposedFlightGroup(items,'SYNTHETIC ONLY',{day:20,month:10,year:2032},'BSB','LA0001');
   assert.equal(parsed.dutyReportSource,'estimated');assert.equal(parsed.dutyReport,parsed.legs[0].departureTime);
  }finally{fs.rmSync(parserDir,{recursive:true,force:true});}
@@ -44,6 +44,8 @@ try {
   for(const form of [{plannedEnd:'2032-10-19T07:00'},{composition:'augmented'},{acclimatization:'not_acclimatized'},{plannedEnd:''}])assert.equal(regulationScheduleProjection({...seed,...form}).state,'indeterminate');
   for(const override of [{postFlight:'0'},{operation:''},{operation:'international',postFlight:'30'}])assert.equal(regulationDraftForm({key:'a',basis:'b',overrides:override},'a',seed,'b').plannedEnd,'');
   assert.equal(regulationScheduleProjection({...seed,composition:'augmented',reviewed:true}).state,'indeterminate','checkbox cannot validate an incompatible B.1 ceiling');
+  const manualLimit={...seed,normalEnd:'2032-10-20T14:00',limitSource:'Referência informada para esta simulação',reviewed:false};assert.equal(regulationScheduleProjection(manualLimit).state,'indeterminate');assert.equal(regulationScheduleProjection({...manualLimit,reviewed:true}).state,'within_temporal_reference');
+  for(const offset of ['+05:30','-03:00'])assert.equal(regulationScheduleProjection({...seed,offset,reviewRequired:true,reviewed:false}).state,'indeterminate','edited timezone requires renewed review');
   const crossing=regulationScheduleProjection({...seed,plannedEnd:'2032-10-20T23:30',delay:'60'});assert.equal(crossing.crossesReferenceDate,true);
   for(const source of ['estimated','absent','unknown'])assert.equal(engine.getPublishedDutyLimitReference({...day,dutyReportSource:source},null),null);
   for(const source of ['estimated','unknown','absent',undefined]){

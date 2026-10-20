@@ -28,6 +28,12 @@ Synthetic coverage includes estimated, unknown, absent and legacy-unspecified so
 
 The automatic inline review of #1139 identified a real transposed-parser boundary: when APZ is absent, that parser intentionally stores departure in dutyReport with estimated provenance. An equal, non-published day clock must not seed a duty ceiling. Both the adapter and the scheduled-reference reader now reject this placeholder; the existing separate canonical fallback is also required to differ from departure. A missing presentation remains pending for manual entry instead of creating usable pre-flight margin.
 
-The regression invokes the actual parseTransposedFlightGroup on synthetic visual items with the flight token after the station clocks (no report token). It proves the parser emits departure/estimated, then verifies both reader and actual canonical/adapted UI path reject it. Browser coverage requires an indeterminate result and no seeded normal end for this case, while a distinct legacy report remains usable only as an identified estimate.
+The regression invokes the actual parseTransposedFlightGroup on synthetic combined airport/clock visual items without a separate report token (both raw and materialized parser). It proves the parser emits departure/estimated, then verifies both reader and actual canonical/adapted UI path reject it. Browser coverage requires an indeterminate result and no seeded normal end for this case, while a distinct legacy report remains usable only as an identified estimate.
 
 The guard compares normalized wall clocks, including unpadded hours and day-offset suffixes, so `05:00`, `5:00` and `05:00(+1)` cannot bypass it through formatting. Independent review supplied the unpadded counterexample before publication of this guard.
+
+## Manual reference review guard
+
+All inline reviews of #1138 and #1139 were read, including P2 requiring review of a manual normal-end limit. A non-engine limit cannot return a programmed comparison while `reviewed` is false. Editing the timezone or explicitly reapplying an engine reference also sets a review requirement; changing back to the original offset cannot silently restore a result. The existing checkbox releases that local comparison only after review, and source changes invalidate it again. Automatic canonical seed references remain explicitly conditional; this guard does not turn them into regulatory authorization.
+
+Both pure and actual React/compiled UI tests cover manual limit editing while the checkbox is unchecked, a reviewed limit becoming usable, and timezone edits (including reverting the offset) invalidating the result until review. Owner/session, manual end overrides and the no-APZ parser guard remain required.
