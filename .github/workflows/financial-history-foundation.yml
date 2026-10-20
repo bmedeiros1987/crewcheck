@@ -53,6 +53,7 @@ on:
       - 'client/src/components/v1391/PublicationChangeDetail.tsx'
       - 'client/src/lib/rosterPublication*.ts'
       - 'scripts/regression-financial-changes-browser.mjs'
+      - 'scripts/regression-financial-changes-home-compiled.mjs'
       - 'client/src/lib/financialHistoryPeriods.ts'
       - 'client/src/lib/nextFinancialPayment.ts'
       - 'client/src/lib/payrollPaymentComposition.ts'
@@ -213,7 +214,9 @@ jobs:
         timeout-minutes: 3
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
-        run: node scripts/regression-financial-changes-browser.mjs
+        run: |
+          node scripts/regression-financial-changes-browser.mjs
+          node scripts/regression-financial-changes-home-compiled.mjs
       - name: Verify actual compiled financial UI with synthetic owner fixtures
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/financial-ui/package.json
