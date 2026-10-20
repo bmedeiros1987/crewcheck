@@ -13,6 +13,7 @@ on:
       - 'scripts/regression-native-settings-return.mjs'
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
       - 'scripts/regression-notification-settings-dom.mjs'
+      - 'scripts/regression-notification-observer-readiness.mjs'
       - 'scripts/regression-notification-center-browser.mjs'
       - 'scripts/regression-notification-readiness-browser.mjs'
       - 'scripts/regression-bids-alert-preferences-browser.mjs'
@@ -31,6 +32,7 @@ on:
       - 'scripts/regression-native-settings-return.mjs'
       - 'android-wrapper/app/src/main/java/com/crewcheck/app/MainActivity.java'
       - 'scripts/regression-notification-settings-dom.mjs'
+      - 'scripts/regression-notification-observer-readiness.mjs'
       - '.github/workflows/notification-settings-ui.yml'
 
 permissions:
@@ -70,6 +72,7 @@ jobs:
           node scripts/regression-web-push-lifecycle.mjs
           node scripts/regression-web-push-user-gesture.mjs
           node scripts/regression-web-push-cancellation-contract.mjs
+          node scripts/regression-notification-observer-readiness.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
           node scripts/regression-notification-center-browser.mjs
@@ -89,6 +92,7 @@ jobs:
           node scripts/regression-web-push-lifecycle.mjs
           node scripts/regression-web-push-user-gesture.mjs
           node scripts/regression-web-push-cancellation-contract.mjs
+          node scripts/regression-notification-observer-readiness.mjs
           node scripts/regression-notification-settings-dom.mjs
           node scripts/regression-notification-readiness-browser.mjs
           node scripts/regression-notification-center-browser.mjs
