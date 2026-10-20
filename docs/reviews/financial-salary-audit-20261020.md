@@ -42,3 +42,15 @@ The source researcher reports repeated payroll evidence for DSR over specified p
 The researcher also reports cent-level discrepancies between printed rounded rates multiplied by printed quantities and paid rubric totals. Preserve source decimal precision and original printed paid values separately. Do not force historical paid lines to equal a recomputation from a rounded display rate, round intermediate rates prematurely, or overwrite a closed ledger to make it reconcile.
 
 Where only individual components lack evidence, expose the supported subtotal and named pending components. Keep the complete gross/net unavailable when material components are missing; a subtotal must not be labelled full salary. Do not disable supported calculation merely because another component needs evidence.
+
+## Official ACT checked directly
+
+Source: https://aeronautas.org.br/wp-content/uploads/2025/12/20251208-ACT-Aeronautas-Comissarios-25-27_v9-site.pdf
+
+- Clause 3.4.8, printed page25: cabin DSR uses narrow-body22/8 or wide-body21/9, irrespective of actual days off, with no retroactive application to the former regime. Do not use actual count of roster days off as this divisor.
+- Clause 3.2.8, printed page15: operational work month, tariff month and payment month differ. Its September example uses October tariffs for payment by the fifth business day of November. Existing month-cycle identity must be retained; do not relabel an operational-month gross as the next bank credit.
+- The clause's printed variable rates are subject to its adjustment notes. A future unknown index cannot be extrapolated. The earlier table is not a replacement for adjusted personal evidence.
+
+Additional integration risk found: `actRules.ts` aircraft inference returns narrow body as a fallback with no evidence, and treats any unrecognized nonempty equipment evidence as narrow body. That legal-display fallback cannot establish the financial DSR regime. This file is owned by the regulation leader and was not edited. Financial integration must use a verified owner/period regime or retain DSR unavailable; it must not silently adopt that fallback or classify a whole payroll regime from one flight.
+
+The current seven-line gross formula has no independent DSR field. A correct integration needs: a separately sourced DSR basis (eligible production/reserve/standby, with paid historical rubrics retained), verified regime, interval/applicability, one rounding at the component boundary, a visible component in progressive details, gross inclusion exactly once, deduction reassessment for net, and propagation through the existing app/Concierge revision. Neither chief formula nor an exact corporate kilometre table has been established by the current motor. Keep those component-level limits explicit while calculating supported subtotals.
