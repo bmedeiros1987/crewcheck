@@ -143,6 +143,8 @@ export type NextFlightGateInfo = {
   manualGateUnlinked: boolean;
   updatedAtEpochMs: number;
   radarUpdatedAtEpochMs: number;
+  /** Internal projection metadata; never serialized into the Wear v1 contract. */
+  automaticFieldValidUntilEpochMs: Partial<Record<'gate' | 'status' | 'registration', number>>;
   /** O portão exibido vem do Radar (base para a validade no relógio). */
   usesRadar: boolean;
   stale: boolean;
@@ -515,6 +517,7 @@ export function resolveNextFlightGate(input: {
     if(blocks)conflicts.gate=true;
     return blocks;
   };
+  const automaticFieldValidUntilEpochMs: NextFlightGateInfo['automaticFieldValidUntilEpochMs'] = {};
   const fieldValue = (field: 'gate' | 'status' | 'registration'): string => {
     if (!radar || !receivedFresh || conflicts[field]) return '';
     const normalize = field === 'gate' ? (value:unknown)=>normalizeBoardingGate(value).gate : field === 'status' ? cleanStatus : cleanRegistration;
@@ -522,10 +525,18 @@ export function resolveNextFlightGate(input: {
     const observed = sourceInstantEpochMs(evidence?.sourceObservedAt);
     if (value && evidence?.version === 1 && typeof evidence.value === 'string' && normalize(evidence.value) === value
       && typeof evidence.provenance === 'string' && Boolean(evidence.provenance.trim()) && Number.isFinite(observed)
-      && observed <= now && observed <= receipt && now - observed <= RADAR_GATE_STALE_MS) return field==='gate'&&gateHistoryBlocks(observed)?'':value;
+      && observed <= now && observed <= receipt && now - observed <= RADAR_GATE_STALE_MS) {
+      if (field === 'gate' && gateHistoryBlocks(observed)) return '';
+      automaticFieldValidUntilEpochMs[field] = Math.min(receipt, observed) + RADAR_GATE_STALE_MS;
+      return value;
+    }
     if (field === 'gate') {
       const proof = sourceGateUpdate(event,radar,now);
-      if (proof && proof.sourceUpdatedAtEpochMs <= receipt && now - proof.sourceUpdatedAtEpochMs <= RADAR_GATE_STALE_MS) return gateHistoryBlocks(proof.sourceUpdatedAtEpochMs)?'':proof.gate;
+      if (proof && proof.sourceUpdatedAtEpochMs <= receipt && now - proof.sourceUpdatedAtEpochMs <= RADAR_GATE_STALE_MS) {
+        if (gateHistoryBlocks(proof.sourceUpdatedAtEpochMs)) return '';
+        automaticFieldValidUntilEpochMs.gate = Math.min(receipt, proof.sourceUpdatedAtEpochMs) + RADAR_GATE_STALE_MS;
+        return proof.gate;
+      }
     }
     return '';
   };
@@ -594,6 +605,7 @@ export function resolveNextFlightGate(input: {
     manualGateUnlinked: Boolean(manual?.gate && !linkedManualGate),
     updatedAtEpochMs,
     radarUpdatedAtEpochMs: radarUpdatedAt,
+    automaticFieldValidUntilEpochMs,
     usesRadar: gateSource === 'radar',
     stale,
     radarRejected,
