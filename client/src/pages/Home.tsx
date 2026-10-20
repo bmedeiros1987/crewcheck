@@ -142,6 +142,9 @@ import { getCurrentTerms, grantUnlimited, publishTerms } from '@/lib/termsClient
 import { CREW_HOTEL_CATALOG, type CrewHotelCatalogEntry } from '@/data/crewHotels';
 import { consumePendingRosterFocus, setPendingRosterFocus } from '@/lib/rosterFocus';
 import { buildCrewCheckWatchSnapshot } from '@/lib/watchContext';
+import {savedStayEditorEvent} from '@/lib/stayEditorStore';
+import {stayEditorKey} from '@shared/stay-editor-store.mjs';
+import {setOperationalRadarContext,beginOperationalRadarRead,retainOperationalRadarResponse,originalOperationalRadarSnapshot,readOperationalRadarAdmission} from '@/lib/operationalRadarAdmission';
 import { retainLatestGateEvidence, nextGateUpdateWatermark, type GateSourceUpdate, type GateUpdateWatermark, canonicalFlightId, RADAR_GATE_STALE_MS, MANUAL_GATE_EVENT, manualGateIdentity, flightOperationalDate, gateChangeAlertAllowed, manualGateAccountKey, resolveNextFlightGate, radarSnapshotStorageKey, readCachedRadarForFlight, readManualGate, selectNextFlight } from '@/lib/nextFlightGate';
 import { applyNextFlightToWatchSnapshot } from '@/lib/nextFlightWatch';
 import { manualGateNoticeIdentity, manualGateNoticeScope, claimManualGateNotice } from '@/lib/manualGateNotices';
@@ -1652,6 +1655,9 @@ type RadarSnapshot = {
   sourceOrigin?: string;
   sourceDestination?: string;
   arrival?: string;
+  arrivalMilestones?: unknown;
+  statusCode?: string;
+  departureDate?: string;
   aircraft?: string;
   registration?: string;
   quality?: number;
@@ -1703,7 +1709,7 @@ function readRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
   try {
     const parsed = JSON.parse(storage.get(radarSnapshotKey(event), 'null')) as RadarSnapshot | null;
     if (!parsed || !parsed.updatedAt || Date.now() - parsed.updatedAt > RADAR_CARD_CACHE_TTL_MS || !radarSnapshotMatchesEvent(parsed, event)) return null;
-    return validatedRadarForEvent(event,parsed);
+    return validatedRadarForEvent(event,originalOperationalRadarSnapshot(radarSnapshotKey(event),parsed));
   } catch {
     return null;
   }
@@ -1713,13 +1719,14 @@ function confirmedRadarGate(value?: string): string {
   if (!normalized || normalized === '—' || normalized === '-' || /CONFIRMAR|INFORMAD|UNKNOWN|N\/A/.test(normalized)) return '';
   return normalized;
 }
-function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot): RadarSnapshot {
+function saveRadarSnapshot(event: ZeroLeg, payload: RadarSnapshot, readTicket: ReturnType<typeof beginOperationalRadarRead> = null, receipt = ""): RadarSnapshot {
   const previous = readRadarSnapshot(event);
   // A origem/destino da fonte ficam preservados para recusar portão de outro trecho.
   const evidence = previous?.gateUpdate ? retainLatestGateEvidence(event, previous, payload) : payload;
   const snapshot = { ...evidence, gateUpdateWatermark: (payload.gateUpdate || previous?.gateUpdateWatermark) ? nextGateUpdateWatermark(event, previous, { ...payload, updatedAt: Date.now() }) : null, operationalDeparture: evidence.operationalDeparture ?? evidence.departure, departure: evidence.scheduledDepartureUtc ?? evidence.departure, sourceOrigin: payload.origin, sourceDestination: payload.destination, flight: evidence.flight || event.flightNumber, operationalDate: radarEventOperationalDate(event), origin: event.origin, destination: event.destination, updatedAt: Date.now() };
   const key = radarSnapshotKey(event);
   storage.set(key, JSON.stringify(snapshot));
+  retainOperationalRadarResponse(snapshot,key,JSON.stringify(event.canonical),readTicket,receipt);
   window.dispatchEvent(new CustomEvent('crewcheck:radar-updated', { detail: { key, snapshot } }));
 
   const manualEntry = readManualGate(localStorage, manualGateAccountKey(getStoredUser()), event);
@@ -1781,6 +1788,7 @@ async function fetchRadarSnapshot(event: ZeroLeg, force = false): Promise<RadarS
   params.set('scheduledDepartureUtc', queryIdentity.scheduledDepartureUtc);
   // Preserve the legacy preparation anchor, then pin its outgoing instant to canonical UTC.
   params.set('scheduledDeparture', queryIdentity.scheduledDepartureUtc);
+  const readTicket=beginOperationalRadarRead();
   let payload: RadarSnapshot;
   try { payload = await authFetch<RadarSnapshot>(`/api/radar-flight?${params.toString()}`, { cache: 'no-store' }); }
   catch (error) { payload = radarFailurePayload(error); }
@@ -1788,7 +1796,7 @@ async function fetchRadarSnapshot(event: ZeroLeg, force = false): Promise<RadarS
     return { ...gateQuerySuppressed({ reason: 'response-context-expired' }), httpStatus: payload.httpStatus };
   if (payload?.ok !== true || payload?.querySuppressed) return payload;
   if (payload?.ok && !radarResultDecision(payload,queryIdentity,Date.now(),RADAR_GATE_STALE_MS).allowed) return gateQuerySuppressed(radarResultDecision(payload,queryIdentity,Date.now(),RADAR_GATE_STALE_MS));
-  return saveRadarSnapshot(event, payload || { ok: false, message: 'Radar indisponível.' });
+  return saveRadarSnapshot(event, payload || { ok: false, message: 'Radar indisponível.' },readTicket,new Date().toISOString());
 }
 function useRadarSnapshot(event: ZeroLeg): RadarSnapshot | null {
   const [snapshot, setSnapshot] = useState<RadarSnapshot | null>(() => readRadarSnapshot(event));
@@ -5287,6 +5295,23 @@ export default function Home() {
   const regulationContext = view === 'regulation' ? peekAlertRosterContext('regulation') : null;
   const regulationEvent = resolveRegulationProgram(events, event, regulationContext);
   const regulationDay = regulationProgramDay(events, regulationEvent);
+  const rosterReadRevision=useMemo(()=>JSON.stringify(bundle.roster),[bundle.roster]);
+  // Changes invalidate original response admission before a new render can use it.
+  setOperationalRadarContext(captureAuthSession().owner,alertRosterOwned(bundle.roster)?rosterReadRevision:'');
+  const [,refreshOperationalArrival]=useState(0);
+  useEffect(()=>{
+    const changed=()=>refreshOperationalArrival(n=>n+1);
+    window.addEventListener('crewcheck:radar-updated',changed);
+    return()=>window.removeEventListener('crewcheck:radar-updated',changed);
+  },[]);
+  const finalRegulationCanonical=(regulationDay as any)?.regulationJourney?.at(-1);
+  const finalRegulationEvent=finalRegulationCanonical?.leg?.workType==='OP'
+    ? events.find(item=>item.canonical?.id===finalRegulationCanonical.id) : undefined;
+  const finalRegulationSnapshot=finalRegulationEvent?readRadarSnapshot(finalRegulationEvent):null;
+  const finalRegulationSignature=finalRegulationEvent?JSON.stringify(finalRegulationEvent.canonical):'';
+  const operationalArrival=useMemo(()=>finalRegulationEvent&&finalRegulationSnapshot
+    ? readOperationalRadarAdmission(finalRegulationSnapshot,radarSnapshotKey(finalRegulationEvent),finalRegulationSignature) : null,
+    [finalRegulationSnapshot,finalRegulationSignature,rosterReadRevision]);
   const gym = currentGym(bundle);
   useWeatherLandingMonitor(flightEvent);
   useOperationalRadarPulse(events);
@@ -5312,6 +5337,7 @@ export default function Home() {
 
   useEffect(() => {
     const watchSession = captureAuthSession();
+    const watchStayEditorKey=stayEditorKey(getStoredUser()?.id ?? null);
     let watchInvalidated = false;
     const invalidateWatchSnapshot = () => {
       watchInvalidated = true;
@@ -5330,7 +5356,12 @@ export default function Home() {
         return;
       }
       try {
-        const base = buildCrewCheckWatchSnapshot(events, event);
+        const now=Date.now();
+        const selected = buildCrewCheckWatchSnapshot(events, event, null, now);
+        const stay=events.find(item=>item.kind==='stay'&&(item.canonical?.id||item.id)===selected.contextId);
+        const hotelReport=stay&&alertRosterOwned(bundle.roster)?savedStayEditorEvent(stay.id,stay):null;
+        if(!watchSession.isCurrent()) { invalidateWatchSnapshot();return; }
+        const base = buildCrewCheckWatchSnapshot(events, event, null, now, hotelReport);
         // Mesmo próximo voo e mesma decisão de portão do card da tela inicial.
         const nextFlightEvent = selectNextFlight(events);
         const gateInfo = nextFlightEvent ? resolveNextFlightGate({
@@ -5355,16 +5386,19 @@ export default function Home() {
     window.addEventListener('crewcheck:native-ready', onRequest);
     window.addEventListener('crewcheck:radar-updated', onRequest);
     window.addEventListener(MANUAL_GATE_EVENT, onRequest);
+    window.addEventListener('crewcheck:stay-editor-saved', onRequest);
     const authEvents = ['crewcheck:auth-will-change', 'crewcheck:auth-changed', 'crewcheck:auth-expired'];
     for (const name of authEvents) window.addEventListener(name, invalidateWatchSnapshot);
     const onAuthStorage = (change: StorageEvent) => {
       if (change.key === null || change.key === 'crewcheck_auth_token' || change.key === 'crewcheck_auth_user') invalidateWatchSnapshot();
+      else if(watchStayEditorKey && change.key===watchStayEditorKey) publishWatchSnapshot();
     };
     window.addEventListener('storage', onAuthStorage);
     const timer = window.setInterval(publishWatchSnapshot, 60_000);
     return () => {
       window.removeEventListener('crewcheck:radar-updated', onRequest);
       window.removeEventListener(MANUAL_GATE_EVENT, onRequest);
+      window.removeEventListener('crewcheck:stay-editor-saved', onRequest);
       window.removeEventListener('crewcheck:watch-snapshot-request', onRequest);
       window.removeEventListener('crewcheck:native-ready', onRequest);
       for (const name of authEvents) window.removeEventListener(name, invalidateWatchSnapshot);
@@ -5536,7 +5570,7 @@ export default function Home() {
     {view === 'compare' && <CompareRosterView bundle={bundle} onUpload={actions.upload}/>} 
     {view === 'bids' && <BidsView events={events}/>} 
     {view === 'alerts' && <ReviewedAlerts key={alertAccount() || 'unbound'} compliance={compliance} roster={bundle.roster} onImport={actions.upload} onChoose={() => setView('database')}/>}
-    {view === 'regulation' && <ManualRegulationView compliance={compliance} scheduleDay={regulationDay} program={regulationEvent?.canonical}/>}
+    {view === 'regulation' && <ManualRegulationView compliance={compliance} scheduleDay={regulationDay} program={regulationEvent?.canonical} operationalArrival={operationalArrival}/>}
     {view === 'departure' && <Departure event={event}/>}
     {view === 'mycar' && <CarView event={event}/>}
     {view === 'iflight' && <IFlightPushView actions={actions}/>}

@@ -1,3 +1,4 @@
+import {loadRadarReadAdmission} from './fixtures/load-radar-read-admission.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -56,7 +57,8 @@ const previous={window:globalThis.window,localStorage:globalThis.localStorage,se
 try{
  const values=new Map();globalThis.localStorage={getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,String(v)),removeItem:k=>values.delete(k)};globalThis.sessionStorage={removeItem:()=>{}};globalThis.window=Object.assign(new EventTarget(),{location:{origin:'https://fixture.invalid'}});
  const code=await build({stdin:{contents:"export * from './client/src/lib/radarAvailability';export * from './client/src/lib/authClient';",resolveDir:process.cwd()},bundle:true,platform:'node',format:'cjs',write:false});const m={exports:{}};Function('module','exports',code.outputFiles[0].text)(m,m.exports);const auth=m.exports;
- const client=vm.createContext({...policy,...auth,URLSearchParams,Map,Date:FixedDate,gateQueryDay:i=>policy.gateQueryDay(i,now),manualGateAccountKey:u=>u?.id||'local',manualGateIdentity:()=> 'synthetic-occurrence',readRadarSnapshot:()=>null,telegramConciergeIdentity:()=>({}),radarQuerySerial:new Map(),RADAR_GATE_STALE_MS:1800000,saveRadarSnapshot:()=>{throw Error('Negative response must not be cached');}});vm.runInContext(extract(process.env.RADAR_HELD_HOME || 'client/src/pages/Home.tsx',['fetchRadarSnapshot']),client);
+ const radarAdmission=await loadRadarReadAdmission();
+ const client=vm.createContext({...radarAdmission,...policy,...auth,URLSearchParams,Map,Date:FixedDate,gateQueryDay:i=>policy.gateQueryDay(i,now),manualGateAccountKey:u=>u?.id||'local',manualGateIdentity:()=> 'synthetic-occurrence',readRadarSnapshot:()=>null,telegramConciergeIdentity:()=>({}),radarQuerySerial:new Map(),RADAR_GATE_STALE_MS:1800000,saveRadarSnapshot:()=>{throw Error('Negative response must not be cached');}});vm.runInContext(extract(process.env.RADAR_HELD_HOME || 'client/src/pages/Home.tsx',['fetchRadarSnapshot']),client);
  const event={id:'synthetic',kind:'flight',flightNumber:'LA3981',origin:'CPV',destination:'GRU',canonical:{startDateTime:identity.scheduledDepartureUtc}};now=Date.parse('2032-10-14T12:00:00Z');
  for(const status of [200,401,403,503]){
   values.set('crewcheck_auth_token','synthetic-A');values.set('crewcheck_auth_user',JSON.stringify({id:'A'}));globalThis.fetch=async()=>new Response(JSON.stringify({ok:false,code:status===401?'AUTH_REQUIRED':'TEST',querySuppressed:true,queryReason:'origin-timezone-unverified',gate:'DO-NOT-DISPLAY',quality:100}),{status,headers:{'content-type':'application/json'}});

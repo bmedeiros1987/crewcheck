@@ -3,7 +3,8 @@ const path = 'client/src/pages/Home.tsx';
 let source = fs.readFileSync(path, 'utf8');
 const marker = '// stay-editor-context-v2';
 if (!source.includes(marker)) {
-  source = `${marker}\nimport { openStayProgramEditor, consumeStayEditorReturn, readStayEditorIntent, returnFromStayProgramEditor, hasStoredStayEditorOrigin, clearStoredStayEditorOrigin } from '@/lib/stayEditorNavigation';\nimport { savedStayEditorEvent } from '@/lib/stayEditorStore';\n` + source;
+  const storeImport = /import\s*\{[^}]*\bsavedStayEditorEvent\b[^}]*\}\s*from\s*['"]@\/lib\/stayEditorStore['"]/.test(source) ? '' : "import { savedStayEditorEvent } from '@/lib/stayEditorStore';\n";
+  source = `${marker}\n${storeImport}import { openStayProgramEditor, consumeStayEditorReturn, readStayEditorIntent, returnFromStayProgramEditor, hasStoredStayEditorOrigin, clearStoredStayEditorOrigin } from '@/lib/stayEditorNavigation';\n` + source;
   const start = source.indexOf('function HotelsView('), end = source.indexOf('\nfunction ', start + 10);
   if (start < 0 || end < 0) throw new Error('Stay editor: HotelsView boundary unavailable');
   let block = source.slice(start, end);
