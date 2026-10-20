@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
-import {Calculator,ChevronDown,RotateCcw,Clock,PlaneLanding,SlidersHorizontal,Info} from 'lucide-react';
+import {Calculator,ChevronDown,RotateCcw,Clock,PlaneLanding,SlidersHorizontal,Info,Power} from 'lucide-react';
 import {captureAuthSession} from '@/lib/authClient';
 import {regulationAutomaticContext,regulationAutomaticAssessment,type AutomaticRegulationForm} from '@/lib/regulationAutomaticScenario';
 import {regulationAircraftEvidence} from '@/lib/regulationAircraftEvidence';
@@ -36,6 +36,7 @@ export default function RegulationAutomaticView({scheduleDay,program,compliance,
  useEffect(()=>{if(editing){details.current?.scrollIntoView({block:'start'});details.current?.querySelector<HTMLInputElement>('input')?.focus({preventScroll:true});}},[editing]);
  if(!current)return <section className="cc-regulation-scenario"><h1>Regulamentação</h1><p>Sessão alterada. Reabra a programação para carregar os dados atuais.</p></section>;
  const composition=form.composition==='augmented'?'composta':form.composition==='relief'?'revezamento':assessment.evidence.composition==='NB_scenario_default'?'simples (padrão NB)':'simples (hipótese)';
+ const displayedMargin=assessment.marginMinutes===null?null:Math.floor(assessment.marginMinutes);
  const clockSource=form.offset==='-03:00'?'BRT (convenção de publicação)':'UTC'+form.offset+' (informado)';
  const plannedSource=form.plannedEnd!==context.form.plannedEnd?'encerramento editado':context.plannedEndSource==='published_release'?'liberação publicada':'chegada programada + pós-voo do cenário';
  return <section className="cc-regulation-scenario cc-reg-automatic" aria-label="Regulamentação automática condicional">
@@ -45,12 +46,12 @@ export default function RegulationAutomaticView({scheduleDay,program,compliance,
    <span>REFERÊNCIA AUTOMÁTICA · HIPÓTESE</span>
    <div className="cc-reg-deadlines">
     <div><h2><Clock size={18} aria-hidden="true"/> Limite da jornada</h2><strong>{localClock(assessment.normalDutyEnd,form.offset).split(' · ').at(-1)}</strong><small>{localClock(assessment.normalDutyEnd,form.offset).split(' · ')[0]}</small></div>
-    <div><h2><PlaneLanding size={18} aria-hidden="true"/> Corte dos motores</h2><strong>{localClock(assessment.engineStopLimit,form.offset).split(' · ').at(-1)}</strong><small>{localClock(assessment.engineStopLimit,form.offset).split(' · ')[0]}</small></div>
+    <div><h2><Power size={18} aria-hidden="true"/> Corte dos motores</h2><strong>{localClock(assessment.engineStopLimit,form.offset).split(' · ').at(-1)}</strong><small>{localClock(assessment.engineStopLimit,form.offset).split(' · ')[0]}</small></div>
    </div>
    <div className="cc-reg-chips" aria-label="Hipóteses do cenário"><span title="Equipamentos reconhecidos somente nesta jornada">{assessment.aircraft.group==='NB'?'NB':assessment.aircraft.group==='WB'?'WB':assessment.aircraft.group==='mixed'?'Misto':'Equipamento ?'}</span><span title={composition}>{form.composition==='augmented'?'Composta':form.composition==='relief'?'Revezamento':'Simples*'}</span><span title={clockSource}>{form.offset==='-03:00'?'BRT*':'UTC'+form.offset}</span><span title="Aclimatado é padrão ajustável do cenário, sem confirmação operacional">{form.acclimatization==='acclimatized'?'Aclimatado*':'Aclimatação ?'}</span></div>
    <small className="cc-reg-hypothesis"><Info size={14} aria-hidden="true"/> * Hipóteses ajustáveis</small>
    {assessment.projectedDutyEnd&&<div className="cc-reg-forecast"><span><PlaneLanding size={16} aria-hidden="true"/> Encerramento previsto</span><b>{localClock(assessment.projectedDutyEnd,form.offset)}</b><small>{useOperational?`${operationalRead.kind==='actual'?'Real':'Estimado'} · ${operationalRead.provider} · obs. ${localClock(operationalRead.observedAt,form.offset)}`:'Escala + atraso manual'}</small></div>}
-   {assessment.marginMinutes!==null&&<p className="cc-reg-margin"><span>Margem*</span> <b>{assessment.marginMinutes>=0?'+':''}{assessment.marginMinutes} min</b></p>}
+   {assessment.marginMinutes!==null&&<p className="cc-reg-margin"><span>Margem*</span> <b>{displayedMargin!==null&&displayedMargin>=0?'+':''}{displayedMargin} min</b></p>}
    {(assessment.missing.length>0||!assessment.normalDutyEnd)&&<p role="status">{assessment.missing[0]||assessment.conditions[0]||'Dados do cenário a completar'}.</p>}
    {!assessment.engineStopLimit&&assessment.normalDutyEnd&&<p role="status">Corte depende de pós-voo, tarefas e última etapa operada conhecidos.</p>}
    <button type="button" aria-expanded={editing} onClick={edit}><SlidersHorizontal size={16} aria-hidden="true"/> Ajustar dados</button>
