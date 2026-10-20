@@ -1,5 +1,6 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {Calculator,ChevronDown,RotateCcw,Clock,PlaneLanding,SlidersHorizontal,Info,Power} from 'lucide-react';
+import {explicitInstant} from '@shared/regulationTemporalScenario.mjs';
 import {captureAuthSession} from '@/lib/authClient';
 import {regulationAutomaticContext,regulationAutomaticAssessment,type AutomaticRegulationForm} from '@/lib/regulationAutomaticScenario';
 import {regulationAircraftEvidence} from '@/lib/regulationAircraftEvidence';
@@ -19,7 +20,7 @@ export default function RegulationAutomaticView({scheduleDay,program,compliance,
  const current=Boolean(!invalidated&&session.current.token&&session.current.owner&&session.current.isCurrent());
  const signature=JSON.stringify([scheduleDay,program,compliance?.legalProfile]);
  const context=useMemo(()=>regulationAutomaticContext(current?scheduleDay as RosterDay:null,current?program:null),[current,signature]);
- const [draft,setDraft]=useState<{key:string;overrides:Partial<AutomaticRegulationForm>}>({key:signature,overrides:{}});
+ const [draft,setDraft]=useState<{key:string;overrides:Partial<AutomaticRegulationForm>;compositionEdited?:boolean}>({key:signature,overrides:{}});
  const form={...context.form,...(current&&draft.key===signature?draft.overrides:{})};
  const baseAssessment=regulationAutomaticAssessment(context,form,current?compliance?.legalProfile:null);
  const [forecastMode,setForecastMode]=useState('automatic');
@@ -27,11 +28,13 @@ export default function RegulationAutomaticView({scheduleDay,program,compliance,
  const {read:operationalRead,projection:operationalProjection}=useRegulationOperationalArrival({input:operationalArrival,sourceAllowed:current&&form.workTypes.every((type,i)=>type===context.form.workTypes[i]),finalProgram,lastActivity,form});
  const useOperational=forecastMode==='automatic'&&Boolean(operationalProjection);
  const operationalEnd=useOperational?operationalProjection.scenario.dutyEnd:null;
- const assessment=operationalEnd?{...baseAssessment,projectedDutyEnd:operationalEnd,marginMinutes:baseAssessment.normalDutyEnd?(Date.parse(baseAssessment.normalDutyEnd)-Date.parse(operationalEnd))/60_000:null}:baseAssessment;
+ const presentation=explicitInstant(form.presentation+form.offset);
+ const operationalConflict=Boolean(useOperational&&(presentation===null||Date.parse(operationalEnd)<presentation||Date.parse(operationalProjection.scenario.engineStop)<presentation));
+ const assessment=operationalConflict?{...baseAssessment,projectedDutyEnd:null,marginMinutes:null,missing:['Chegada operacional incompatível com a apresentação; ajuste os dados ou selecione previsão manual']}:operationalEnd?{...baseAssessment,projectedDutyEnd:operationalEnd,marginMinutes:baseAssessment.normalDutyEnd?(Date.parse(baseAssessment.normalDutyEnd)-Date.parse(operationalEnd))/60_000:null}:baseAssessment;
  useEffect(()=>{setDraft({key:signature,overrides:{}});setForecastMode('automatic');},[signature]);
  useEffect(()=>{const reset=()=>{setInvalidated(true);setDraft({key:'',overrides:{}});};const storage=(event:StorageEvent)=>{if(event.key===null||['crewcheck_auth_token','crewcheck_auth_user'].includes(event.key)||!session.current.isCurrent())reset();};const names=['crewcheck:auth-will-change','crewcheck:auth-changed','crewcheck:auth-expired'];for(const name of names)window.addEventListener(name,reset);window.addEventListener('storage',storage);return()=>{for(const name of names)window.removeEventListener(name,reset);window.removeEventListener('storage',storage);};},[]);
- const update=(changes:Partial<AutomaticRegulationForm>)=>setDraft(previous=>({key:signature,overrides:{...(previous.key===signature?previous.overrides:{}),...changes}}));
- function equipmentAt(index:number,value:string){const equipment=[...form.equipment];equipment[index]=value;const group=regulationAircraftEvidence(context.legs.map((leg,i)=>({...leg,aircraftType:equipment[i]}))).group;update({equipment,composition:group==='NB'?'simple':''});}
+ const update=(changes:Partial<AutomaticRegulationForm>)=>setDraft(previous=>({key:signature,overrides:{...(previous.key===signature?previous.overrides:{}),...changes},compositionEdited:(previous.key===signature&&previous.compositionEdited)||Object.hasOwn(changes,'composition')}));
+ function equipmentAt(index:number,value:string){const equipment=[...form.equipment];equipment[index]=value;const group=regulationAircraftEvidence(context.legs.map((leg,i)=>({...leg,aircraftType:equipment[i]}))).group;setDraft(previous=>{const same=previous.key===signature,edited=Boolean(same&&previous.compositionEdited);return {key:signature,compositionEdited:edited,overrides:{...(same?previous.overrides:{}),equipment,...(!edited?{composition:group==='NB'?'simple':''}:{})}};});}
  function edit(){setEditing(value=>!value);}
  useEffect(()=>{if(editing){details.current?.scrollIntoView({block:'start'});details.current?.querySelector<HTMLInputElement>('input')?.focus({preventScroll:true});}},[editing]);
  if(!current)return <section className="cc-regulation-scenario"><h1>Regulamentação</h1><p>Sessão alterada. Reabra a programação para carregar os dados atuais.</p></section>;
@@ -48,7 +51,7 @@ export default function RegulationAutomaticView({scheduleDay,program,compliance,
     <div><h2><Clock size={18} aria-hidden="true"/> Limite da jornada</h2><strong>{localClock(assessment.normalDutyEnd,form.offset).split(' · ').at(-1)}</strong><small>{localClock(assessment.normalDutyEnd,form.offset).split(' · ')[0]}</small></div>
     <div><h2><Power size={18} aria-hidden="true"/> Corte dos motores</h2><strong>{localClock(assessment.engineStopLimit,form.offset).split(' · ').at(-1)}</strong><small>{localClock(assessment.engineStopLimit,form.offset).split(' · ')[0]}</small></div>
    </div>
-   <div className="cc-reg-chips" aria-label="Hipóteses do cenário"><span title="Equipamentos reconhecidos somente nesta jornada">{assessment.aircraft.group==='NB'?'NB':assessment.aircraft.group==='WB'?'WB':assessment.aircraft.group==='mixed'?'Misto':'Equipamento ?'}</span><span title={composition}>{form.composition==='augmented'?'Composta':form.composition==='relief'?'Revezamento':'Simples*'}</span><span title={clockSource}>{form.offset==='-03:00'?'BRT*':'UTC'+form.offset}</span><span title="Aclimatado é padrão ajustável do cenário, sem confirmação operacional">{form.acclimatization==='acclimatized'?'Aclimatado*':'Aclimatação ?'}</span></div>
+   <div className="cc-reg-chips" aria-label="Hipóteses do cenário"><span title="Equipamentos reconhecidos somente nesta jornada">{assessment.aircraft.group==='NB'?'NB':assessment.aircraft.group==='WB'?'WB':assessment.aircraft.group==='mixed'?'Misto':'Equipamento ?'}</span><span title={composition}>{form.composition==='augmented'?'Composta':form.composition==='relief'?'Revezamento':form.composition==='simple'?'Simples*':'Composição ?'}</span><span title={clockSource}>{form.offset==='-03:00'?'BRT*':'UTC'+form.offset}</span><span title="Aclimatado é padrão ajustável do cenário, sem confirmação operacional">{form.acclimatization==='acclimatized'?'Aclimatado*':'Aclimatação ?'}</span></div>
    <small className="cc-reg-hypothesis"><Info size={14} aria-hidden="true"/> * Hipóteses ajustáveis</small>
    {assessment.projectedDutyEnd&&<div className="cc-reg-forecast"><span><PlaneLanding size={16} aria-hidden="true"/> Encerramento previsto</span><b>{localClock(assessment.projectedDutyEnd,form.offset)}</b><small>{useOperational?`${operationalRead.kind==='actual'?'Real':'Estimado'} · ${operationalRead.provider} · obs. ${localClock(operationalRead.observedAt,form.offset)}`:'Escala + atraso manual'}</small></div>}
    {assessment.marginMinutes!==null&&<p className="cc-reg-margin"><span>Margem*</span> <b>{displayedMargin!==null&&displayedMargin>=0?'+':''}{displayedMargin} min</b></p>}

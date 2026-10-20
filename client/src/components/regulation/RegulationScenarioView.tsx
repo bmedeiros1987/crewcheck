@@ -73,7 +73,7 @@ export function DetailedRegulationScenarioView({scheduleDay,compliance,program,o
  useEffect(()=>{setDraft(previous=>previous.key===key?previous:{key,basis,overrides:{}});window.scrollTo({top:0,behavior:'instant'});},[key]);
  const offsetValid=/^[+-]\d{2}:\d{2}$/.test(form.offset)&&explicitInstant('2026-01-01T00:00'+form.offset)!==null;
  const input={takeoffAt:offsetValid&&form.takeoff?form.takeoff+form.offset:'',normalDutyEndAt:offsetValid&&form.normalEnd?form.normalEnd+form.offset:'',limitReviewed:form.reviewed,flightMinutes:number(form.flight),flightDurationSource:form.flight?'user_estimate':'unknown',delayMinutes:number(form.delay),taxiInMinutes:number(form.taxi),operation:form.operation,postFlightMinutes:number(form.postFlight),additionalTasksMinutes:number(form.tasks),extensionMinutes:form.extension?60:0};
- const detailedResult=projectRegulationScenario(input),result=form.method==='schedule'?regulationScheduleProjection(form):detailedResult,known=result.state!=='indeterminate',within=result.state==='within_temporal_reference';
+ const detailedResult=projectRegulationScenario(input),result=form.method==='schedule'?regulationScheduleProjection(form):detailedResult,manualKnown=result.state!=='indeterminate',within=result.state==='within_temporal_reference';
  const baseResult=form.method==='schedule'?regulationScheduleProjection({...form,extension:false}):projectRegulationScenario({...input,extensionMinutes:0});
  const lastActivity=regulationLastActivity(scheduleDay,form.manualLastActivity);
  const hasPositioning=(scheduleDay?.legs||[]).some((leg:any)=>leg.workType==='PS');
@@ -81,6 +81,8 @@ export function DetailedRegulationScenarioView({scheduleDay,compliance,program,o
  const {read:operationalRead,projection:operationalProjection}=useRegulationOperationalArrival({input:operationalArrival,sourceAllowed,finalProgram,lastActivity,form});
  const useOperational=arrivalMode==='operational'&&Boolean(operationalProjection);
  const selectedProjection=useOperational?operationalProjection:baseResult;
+ const known=useOperational?operationalProjection.state!=='indeterminate':manualKnown;
+ const operationalCrossesDate=useOperational&&localClock(finalProgram?.startDateTime,form.offset).slice(0,10)!==localClock(operationalProjection.scenario.dutyEnd,form.offset).slice(0,10);
  const deadlines=regulationDeadlineSummary(form,selectedProjection,{lastActivity,hasPositioning});
  const extensionMargin=regulationExtensionMargin(deadlines,form.extension);
  const explanation=regulationContextExplanation({allowed:sourceAllowed,scheduleDay,program,reference,form,result});
@@ -112,9 +114,9 @@ export function DetailedRegulationScenarioView({scheduleDay,compliance,program,o
    <label>O que mudou?<select aria-label="Tipo de alteração da jornada" value={form.timingChange} onChange={e=>update({timingChange:e.target.value,changeReviewed:false,reviewed:false})}><option value="flight-delay">Voos atrasados; mesma apresentação</option><option value="presentation-change">Apresentação alterada</option><option value="reprogramming">Reprogramação / interrupção</option></select></label>
    <p>Recalcula a previsão. O atraso não aumenta o limite da jornada.</p>
   </section>
-  {known&&result.crossesReferenceDate&&<p role="status" className="cc-reg-scenario-warning">A projeção muda de data. Madrugadas e histórico precisam ser reavaliados.</p>}
+  {known&&(useOperational?operationalCrossesDate:result.crossesReferenceDate)&&<p role="status" className="cc-reg-scenario-warning">A projeção muda de data. Madrugadas e histórico precisam ser reavaliados.</p>}
   <details className="cc-reg-scenario-details"><summary>Como foi calculado <ChevronDown aria-hidden="true"/></summary>
-  {explanation&&<section className="cc-reg-scenario-details" aria-label="Concierge explica esta jornada">
+  {!useOperational&&explanation&&<section className="cc-reg-scenario-details" aria-label="Concierge explica esta jornada">
    <h2>Concierge · Entenda esta jornada</h2>
    {explanation.facts.map((text:string,index:number)=><p key={index}>{text}</p>)}
    <p>{explanation.hypothesis}</p><p>{explanation.scenario}</p>
@@ -151,9 +153,10 @@ export function DetailedRegulationScenarioView({scheduleDay,compliance,program,o
    {sourceAllowed&&reference&&<button type="button" disabled={hasPositioning||form.presentation!==seed.presentation||form.timingChange!=='flight-delay'||form.composition!=='simple'||form.acclimatization!=='acclimatized'||!form.publicationOffsetReviewed||!offsetValid} onClick={useEngineReference}>Usar referência B.1 do motor</button>}
    <label className="cc-reg-review-limit"><input type="checkbox" aria-label="Revisei a referência do limite normal" checked={form.reviewed} onChange={e=>update({reviewed:e.target.checked})}/>Revisei o limite normal aplicável à simulação.</label>
    <p>{form.limitSource}. Aclimatação informada: {acclimatization}.</p>
-   {!known&&<ul aria-label="Dados pendentes">{result.missing.map((item:string)=><li key={item}>{item}</li>)}</ul>}
-   {known&&<table><caption>Base informada e cenário · UTC{form.offset}</caption><thead><tr><th>Marco</th><th>Sem atraso</th><th>Cenário</th></tr></thead><tbody>{[['Pouso','landing'],['Motores','engineStop'],['Encerramento','dutyEnd']].map(([label,key])=><tr key={key}><th>{label}</th><td>{localClock(result.base[key],form.offset)}</td><td>{localClock(result.scenario[key],form.offset)}</td></tr>)}</tbody></table>}
-   <p>{form.method==='schedule'?'Jornada programada: compara encerramento publicado/estimado + atraso com o limite de referência. Tempos de pouso e táxi não são inferidos. ':''}Conta detalhada: decolagem + atraso + tempo em voo + táxi + pós-voo + tarefas. Limite do cenário: limite normal revisado {form.extension?'+ 60 min':'+ 0 min'}. O tempo de voo não recebe 60 minutos.</p>
+   {!known&&<ul aria-label="Dados pendentes">{selectedProjection.missing.map((item:string)=><li key={item}>{item}</li>)}</ul>}
+   {known&&!useOperational&&<table><caption>Base informada e cenário · UTC{form.offset}</caption><thead><tr><th>Marco</th><th>Sem atraso</th><th>Cenário</th></tr></thead><tbody>{[['Pouso','landing'],['Motores','engineStop'],['Encerramento','dutyEnd']].map(([label,key])=><tr key={key}><th>{label}</th><td>{localClock(result.base[key],form.offset)}</td><td>{localClock(result.scenario[key],form.offset)}</td></tr>)}</tbody></table>}
+   {useOperational&&<table aria-label="Marcos da previsão operacional"><caption>Previsão operacional · {operationalRead.provider} · UTC{form.offset}</caption><thead><tr><th>Marco</th><th>Previsão selecionada</th></tr></thead><tbody><tr><th>Motores</th><td>{localClock(operationalRead.engineStopAt,form.offset)}</td></tr><tr><th>Encerramento</th><td>{localClock(operationalRead.dutyEndAt,form.offset)}</td></tr></tbody></table>}
+   {useOperational?<p>Chegada operacional + táxi informado, pós-voo e tarefas. Atraso manual não somado.</p>:<p>{form.method==='schedule'?'Jornada programada: compara encerramento publicado/estimado + atraso com o limite de referência. Tempos de pouso e táxi não são inferidos. ':''}Conta detalhada: decolagem + atraso + tempo em voo + táxi + pós-voo + tarefas. Limite do cenário: limite normal revisado {form.extension?'+ 60 min':'+ 0 min'}. O tempo de voo não recebe 60 minutos.</p>}
    <details><summary>Hipótese excepcional de extensão</summary><label className="cc-reg-extension-switch"><span>Simular extensão de 1 hora</span><input type="checkbox" role="switch" aria-label="Simular extensão de 1 hora" checked={form.extension} onChange={e=>update({extension:e.target.checked})}/></label><p>A hipótese não altera os dois prazos normais acima e depende das condições e decisão competentes.</p>{extensionMargin!==null&&<p>Margem da hipótese: {extensionMargin} min. Não é autorização operacional.</p>}</details>
    <details><summary>Fontes e condições</summary><p>Lei 13.475/2017, arts. 35 §4 e 40; RBAC 117 EMD01, 117.3(n)(4) e B117.17(b), vigente desde 01/08/2024. Extensão depende de decisão e condições operacionais competentes.</p><p>ACT LATAM comissários 2025/2027, cláusula 3.3.1: adicional remuneratório não autoriza extensão. Manual/SGRF específico não comprovado. Repouso, madrugadas e limites acumulados: indeterminados nesta comparação temporal.</p><a href="https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2017/lei/l13475.htm" target="_blank" rel="noreferrer">Lei do Aeronauta</a><a href="https://pergamum.anac.gov.br/pergamum/vinculos/RBAC117EMD01.pdf" target="_blank" rel="noreferrer">RBAC 117 EMD01</a></details>
    <button type="button" onClick={()=>setDraft({key,basis,overrides:{}})}><RotateCcw aria-hidden="true"/> Restaurar programação</button>

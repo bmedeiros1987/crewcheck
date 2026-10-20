@@ -36,6 +36,8 @@ on:
       - 'client/src/lib/regulationAircraftEvidence.ts'
       - 'client/src/lib/useRegulationOperationalArrival.ts'
       - 'scripts/regression-regulation-automatic*.mjs'
+      - 'scripts/regression-regulation-review-arrival-composition-browser.mjs'
+      - 'scripts/regression-regulation-selected-source-browser.mjs'
       - 'scripts/regression-regulation-no-roster-home-browser.mjs'
       - 'scripts/regression-regulation-prefill.mjs'
       - 'scripts/regression-regulation-prefill-browser.mjs'
@@ -90,6 +92,8 @@ on:
       - 'client/src/lib/regulationAircraftEvidence.ts'
       - 'client/src/lib/useRegulationOperationalArrival.ts'
       - 'scripts/regression-regulation-automatic*.mjs'
+      - 'scripts/regression-regulation-review-arrival-composition-browser.mjs'
+      - 'scripts/regression-regulation-selected-source-browser.mjs'
       - 'scripts/regression-regulation-no-roster-home-browser.mjs'
       - 'scripts/regression-regulation-prefill.mjs'
       - 'scripts/regression-regulation-prefill-browser.mjs'
@@ -172,6 +176,8 @@ jobs:
         env:
           MENU_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/regulation-browser/package.json
         run: |
+          node scripts/regression-regulation-review-arrival-composition-browser.mjs
+          node scripts/regression-regulation-selected-source-browser.mjs
           node scripts/regression-regulation-automatic-browser.mjs
           node scripts/regression-regulation-no-roster-home-browser.mjs
           node scripts/regression-regulation-deadline-browser.mjs
