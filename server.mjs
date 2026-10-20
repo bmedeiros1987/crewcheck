@@ -164,7 +164,8 @@ async function providerFlightAware(ctx, timeoutMs) {
   const flights = exactFlights ? exactFlights.length === 1 ? exactFlights : [] : sourceFlights;
   const row = flights.find((item) => !item.cancelled && !item.actual_in) || flights[0];
   if (!row) {
-    markProvider('flightaware', false);
+    // A healthy API response without this occurrence is flight-level no-data.
+    // It must not suppress unrelated accounts/flights via provider cooldown.
     return { ok: false, configured: true, latencyMs: Date.now() - started, message: 'Voo não localizado na fonte operacional.' };
   }
   markProvider('flightaware', true);
