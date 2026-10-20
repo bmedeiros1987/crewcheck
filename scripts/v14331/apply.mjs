@@ -41,7 +41,7 @@ function patchBlock(source, startMarker, endMarker, label, transform) {
 
 const selectorHelpers = `const SMART_DEPARTURE_FLIGHT_THRESHOLD_KM = 250;
 function validDepartureClock(value: unknown): boolean {
-  return /^\\d{1,2}:\\d{2}$/.test(String(value || '').trim());
+  return /^(?:[01]?\\d|2[0-3]):[0-5]\\d$/.test(String(value || '').trim());
 }
 function hasPublishedPresentationForDeparture(event: ZeroLeg): boolean {
   if (!validDepartureClock(event.presentation)) return false;
@@ -54,16 +54,17 @@ function departurePresentationDateTime(event: ZeroLeg): Date {
   const hasPublishedPresentation = hasPublishedPresentationForDeparture(event);
   const clock = hasPublishedPresentation ? event.presentation : validDepartureClock(event.departure) ? event.departure : '';
   const value = eventClockDate(event, clock);
-  if (!hasPublishedPresentation && validDepartureClock(event.departure)) value.setMinutes(value.getMinutes() - 60);
+  if (!hasPublishedPresentation && validDepartureClock(event.departure)) return new Date(value.getTime() - 60 * 60_000);
   return value;
 }
 function departureEventCode(event: ZeroLeg): string {
-  return [event.flightNumber, (event.day as any)?.type, (event.day as any)?.pairingCode, (event.day as any)?.description, (event.day as any)?.rawText]
+  return [event.flightNumber, (event.day as any)?.type, (event.day as any)?.pairingCode]
     .map((value) => String(value || '').toUpperCase())
     .join(' ');
 }
 function isDepartureRestEvent(event: ZeroLeg): boolean {
-  if (event.placeholder || event.kind === 'stay' || event.canonical?.kind === 'rest') return true;
+  if (event.placeholder || ['stay', 'rest', 'journey-rest'].includes(event.kind) || ['stay', 'rest', 'journey-rest'].includes(event.canonical?.kind || '')) return true;
+  if (event.kind === 'flight') return false;
   const code = departureEventCode(event);
   return /(^|\\s)(DO|DOF|DOP|DOPR|DR|OFF|FOLGA|FERIAS|FÉRIAS|VACATION|VC|DESCANSO|REPOUSO|REST)(\\s|$)/.test(code)
     || /(PERNOITE|LAYOVER|ESTADIA|HOTEL|DESCANSO_BASE_CONTINUIDADE)/.test(code);
@@ -91,10 +92,19 @@ function nextDepartureEvent(events: ZeroLeg[], now = new Date()): ZeroLeg {
   const future = candidates.find((item) => item.presentationAt.getTime() > now.getTime());
   return future?.event || noFutureLeg(events);
 }
-function departureCivilDateLabel(event: ZeroLeg): string {
-  const value = departurePresentationDateTime(event);
+function departureEventForContext(events: ZeroLeg[], context: { programId?: string } | null, now = new Date()): ZeroLeg {
+  if (!context?.programId) return nextDepartureEvent(events, now);
+  const selected = events.find((candidate) => candidate.id === context.programId);
+  if (!selected || !isDepartureEligibleEvent(selected)
+    || !Number.isFinite(departurePresentationDateTime(selected).getTime())
+    || !Number.isFinite(eventStartDateTime(selected).getTime())
+    || eventStartDateTime(selected).getTime() < now.getTime()) return noFutureLeg([]);
+  return selected;
+}
+function departureCivilDateLabel(event: ZeroLeg, departureAt?: Date | null): string {
+  const value = departureAt || departurePresentationDateTime(event);
   if (!Number.isFinite(value.getTime())) return 'Data a confirmar';
-  return new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).format(value);
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: 'Etc/GMT+3', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).format(value);
 }`;
 
 const routeSafetyHelpers = `type DeparturePositioningPlan = {
@@ -271,7 +281,7 @@ update('client/src/pages/Home.tsx', (source) => {
     }
     patched = patched.replace(
       "  const leaveDayLabel = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' }).format(estimate.leaveDate);",
-      "  const leaveDayLabel = positioningPlan.requiresFlight && !positioningPlan.sameDayConfirmed\n    ? new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).format(positioningPlan.travelDate)\n    : departureCivilDateLabel(event);\n  const primaryDepartureLabel = positioningPlan.requiresFlight && !positioningPlan.sameDayConfirmed ? 'Selecionar voo' : routeMismatch ? '—' : estimate.leaveLabel;\n  const routeHeadline = positioningPlan.requiresFlight\n    ? `Posicionamento ${positioningPlan.originAirport?.code || 'aeroporto local'} → ${event.origin}`\n    : event.kind === 'flight' ? `${event.flightNumber} · ${event.origin} → ${event.destination}` : `${event.flightNumber} · ${event.origin}`;",
+      "  const leaveDayLabel = positioningPlan.requiresFlight && !positioningPlan.sameDayConfirmed\n    ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'Etc/GMT+3', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).format(positioningPlan.travelDate)\n    : departureCivilDateLabel(event, estimate.leaveDate);\n  const primaryDepartureLabel = positioningPlan.requiresFlight && !positioningPlan.sameDayConfirmed ? 'Selecionar voo' : routeMismatch ? '—' : estimate.leaveLabel;\n  const routeHeadline = positioningPlan.requiresFlight\n    ? `Posicionamento ${positioningPlan.originAirport?.code || 'aeroporto local'} → ${event.origin}`\n    : event.kind === 'flight' ? `${event.flightNumber} · ${event.origin} → ${event.destination}` : `${event.flightNumber} · ${event.origin}`;",
     );
     patched = patched.replace(
       "  const statusLabel = liveMinutes ? 'TRÂNSITO ATUALIZADO' : routePending ? 'CALCULANDO TRÂNSITO' : 'ESTIMATIVA PROTEGIDA';",
@@ -339,7 +349,7 @@ update('client/src/pages/Home.tsx', (source) => {
     return patched;
   });
 
-  if (!next.includes('const departureEvent = nextDepartureEvent(events);\n  const compliance = currentCompliance(bundle);')) {
+  if (!next.includes('const departureEvent = nextDepartureEvent(events);\n  const compliance = currentCompliance(bundle);') && !next.includes("const departureContext = view === 'departure'")) {
     next = replaceRequired(
       next,
       '  const event = nextFlight(events);\n  const flightEvent = nextRealFlight(events);\n  const compliance = currentCompliance(bundle);',
@@ -347,6 +357,8 @@ update('client/src/pages/Home.tsx', (source) => {
       'evento dedicado da Saída Inteligente no Home',
     );
   }
+  next = next.replace('  const departureEvent = nextDepartureEvent(events);\n  const compliance = currentCompliance(bundle);',
+    "  const departureContext = view === 'departure' ? peekAlertRosterContext('departure') : null;\n  const departureEvent = departureEventForContext(events, departureContext);\n  const compliance = currentCompliance(bundle);");
   next = next.replace("{view === 'departure' && <Departure event={event}/>}", "{view === 'departure' && <Departure event={departureEvent}/>}");
   next = next.replace("{view === 'wakeup' && <WakeupView event={event}/>}", "{view === 'wakeup' && <WakeupView event={departureEvent}/>}");
 

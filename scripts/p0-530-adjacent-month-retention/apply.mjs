@@ -228,6 +228,11 @@ if (home.includes('const regulationContext =')) {
   }
 }
 
+// A scoped departure query uses the owner/publication-fenced displayed window;
+// global departure selection remains on the active operational publication.
+home = home.replace('departureEventForContext(events, departureContext)',
+  'departureEventForContext(departureContext?.programId ? rosterEvents : events, departureContext)');
+
 if (!home.includes('RosterLaunchView events={rosterEvents}')) {
   const rosterPattern = /<RosterLaunchView\s+events=\{events\}(\s+finance=\{financeSnapshot\(bundle\.roster\)\})?\s+setView=\{setView\}\s*\/>/;
   if (!rosterPattern.test(home)) throw new Error(`[${marker}] render da Escala não localizado`);

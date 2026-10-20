@@ -2674,13 +2674,17 @@ function routeDurationMinutes(route: RoutePreviewInfo | null): number {
   return Math.round(hours * 60 + minutes);
 }
 function eventClockDate(event: ZeroLeg, clock: string): Date {
-  const base = eventStartDateTime(event);
-  const match = String(clock || '').match(/(\d{1,2}):(\d{2})/);
-  if (!match) return base;
-  const target = new Date(base);
-  target.setHours(Number(match[1]), Number(match[2]), 0, 0);
-  return target;
+  const match = String(clock || '').trim().match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+  const base = eventStartDateTime(event).getTime();
+  if (!match || !Number.isFinite(base)) return new Date(NaN);
+  // canonicalRoster publishes its civil clock in UTC-03. Never reinterpret it
+  // with device-local setters (or borrow a presentation from another day).
+  const civilDate = new Date(base - 3 * 60 * 60_000).toISOString().slice(0, 10);
+  let instant = Date.parse(`${civilDate}T${match[1].padStart(2, '0')}:${match[2]}:00-03:00`);
+  if (event.kind === 'flight' && clock === event.presentation && instant > base) instant -= 24 * 60 * 60_000;
+  return new Date(instant);
 }
+
 function Departure({ event }: { event: ZeroLeg }) {
   const departureModes = [
     { id: 'automatic', label: 'Automático', detail: 'Meio mais rápido', icon: Navigation },
