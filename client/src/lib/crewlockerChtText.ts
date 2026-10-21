@@ -55,7 +55,7 @@ export function parseChtText(text:string):{recognized:boolean;entries:ValidityEn
     const code=(cells.length>1?cells[0]:plain?.[1])?.replace(/[ \t]+/g,'');
     if(!code||!codePattern.test(code)){
       if(cells.length>1&&/\d/.test(cells[0])&&/\d/.test(cells[1]||''))conflicts.push('Habilitação: código da tabela exige revisão');
-      if(/^[A-Z][A-Z0-9-]*\d[/.]\d/.test(line))conflicts.push('Habilitação: código e validade sem separação inequívoca');
+      if(/^[A-Z][A-Z0-9-]*\d[/.]\d/.test(line.replace(/[ \t]+/g,'')))conflicts.push('Habilitação: código e validade sem separação inequívoca');
       continue;
     }
     let raw=cells.length>1?cells[1]:plain?.[2]||'';

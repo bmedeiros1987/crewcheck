@@ -78,3 +78,5 @@ const twoMedicalDates=parseChtText('CHT\nXIV MEDICAL CERTIFICATE\nSegunda / 17/0
 
 for(const variant of [text.replace('A320 |','A 320 |'),text.replaceAll(' | ',' ').replace('A320 08/2031','A 320 08/2031')]){const p=parseChtText(variant);assert.equal(p.entries.length,4);assert.deepEqual(p.entries.find(e=>e.label==='A320').expiry,{kind:'month',value:'2031-08'});assert.deepEqual(p.conflicts,[]);}
 console.log('PASS explicit spaced rating tokens with pipe and whitespace table columns');
+
+const spacedCompact=parseChtText('CHT\nXII - HABILITAÇÕES / RATINGS\nA 32008/2031');assert.equal(spacedCompact.entries.length,0);assert(spacedCompact.conflicts.length>0,'spaced compact code/date cannot disappear silently');
