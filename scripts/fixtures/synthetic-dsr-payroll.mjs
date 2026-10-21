@@ -1,0 +1,2 @@
+// Fictional payroll amounts and identifiers; no personal document contents.
+export const syntheticDsrPayroll = `TAM LINHAS AEREAS S/A\nCARGO: COMISSARIO VOO\nDEMONSTRATIVO DE PAGAMENTO\nRUBRICA\nCompetência: 09/2026\nData de crédito: 05/10/2026\nSalário-base mensal R$ 2.800,00\nPROVENTOS\n1000 Salário R$ 2.800,00\n1320 KM produção R$ 2.200,00\n1324 Reserva R$ 220,00\n1037 Gratificação chefe R$ 110,00\n1326 DSR R$ 880,00\nDESCONTOS\nINSS R$ 100,00\nTOTAIS 6.210,00 100,00\nLíquido 6.110,00`;
