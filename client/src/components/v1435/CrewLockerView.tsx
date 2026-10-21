@@ -137,7 +137,7 @@ export default function CrewLockerView() {
     finally {if(request===readerGeneration.current&&session===crewLockerSession())setReading(false);}
   }
   async function saveDocument(keepSeparate=false) {
-    if (!key || !file || !holderName.trim() || reading || unlockedSession!==crewLockerSession()) return;
+    if (!key || !file || !holderName.trim() || reading || adjustImport || unlockedSession!==crewLockerSession()) return;
     try {
       const session = crewLockerSession();
       const entries=detected?.entries||[];
@@ -220,7 +220,7 @@ export default function CrewLockerView() {
       </div>
       {!!detected?.entries.length && <details><summary>{detected.entries.length} validades · conferir ou ajustar</summary><ul>{detected.entries.map(entry=><li key={entry.id}>{entry.label} · {validityLabel(entry.expiry)}</li>)}</ul><button type="button" onClick={()=>setAdjustImport(true)}>Ajustar validades</button></details>}
       {adjustImport&&detected&&<CrewValidityEditor initial={detected.entries} onCancel={()=>setAdjustImport(false)} onSave={async entries=>{setDetected({...detected,entries});setAdjustImport(false);}}/>}
-      {duplicateFound&&<p role="status">Mesmas validades já guardadas. <button type="button" onClick={()=>void saveDocument(true)}>Guardar outra cópia</button></p>}
+      {duplicateFound&&<p role="status">Mesmas validades já guardadas. <button type="button" disabled={reading||adjustImport} onClick={()=>void saveDocument(true)}>Guardar outra cópia</button></p>}
       <button className="primary" onClick={()=>void saveDocument()} disabled={!file || !holderName.trim() || reading || adjustImport}><Plus/> Criptografar e guardar offline</button>
     </section>
 
