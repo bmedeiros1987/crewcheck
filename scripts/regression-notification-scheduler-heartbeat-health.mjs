@@ -236,9 +236,12 @@ try {
 const listStart=source.indexOf('async function listJobs('),listEnd=source.indexOf('\nasync function cancelJob',listStart);
 const listFile=path.join(os.tmpdir(),`crewcheck-readiness-api-${process.pid}.mjs`);
 try{
- fs.writeFileSync(listFile,`export let user={email:'a@example.test',id:'A'};export let owner='A',link={email:'a@example.test',chatId:'fictional'};export function state(u,o,l){user=u;owner=o;link=l;}function identity(){return user;}async function dbPool(){return{query:async sql=>[sql.includes('SELECT public_id')?[{public_id:owner}]:[{id:1,status:'sent',scheduledEpoch:1791527085799,sentEpoch:1791527086824}]]};}async function ensureNotificationTable(){}async function linkedTelegramRecord(){return link;}function safeEmail(x){return String(x||'').trim().toLowerCase();}function sendJson(res,status,body){Object.assign(res,{status,body});}${source.slice(listStart,listEnd)};export{listJobs};`);
+ fs.writeFileSync(listFile,`import { phoneScheduleCapability } from ${JSON.stringify(pathToFileURL(path.resolve('server/notification-job-safety.mjs')).href)};export let user={email:'a@example.test',id:'A'};export let owner='A',link={email:'a@example.test',chatId:'fictional'};export function state(u,o,l){user=u;owner=o;link=l;}function identity(){return user;}async function dbPool(){return{query:async sql=>[sql.includes('SELECT public_id')?[{public_id:owner}]:[{id:1,status:'sent',scheduledEpoch:1791527085799,sentEpoch:1791527086824}]]};}async function ensureNotificationTable(){}async function linkedTelegramRecord(){return link;}function safeEmail(x){return String(x||'').trim().toLowerCase();}function sendJson(res,status,body){Object.assign(res,{status,body});}${source.slice(listStart,listEnd)};export{listJobs};`);
  const mod=await import(pathToFileURL(listFile).href);const ask=async()=>{const res={};await mod.listJobs({},res);return res;};
  assert.equal((await ask()).body.readiness.telegramLinked,true);
+ const phoneCapability=(await ask()).body.readiness.phoneCall;
+ assert.equal(phoneCapability.available,false);
+ assert.equal(phoneCapability.reason,'phone_binding_unavailable');
  const job=(await ask()).body.jobs[0];assert.equal(job.scheduledAt,new Date(1791527085799).toISOString());assert.equal(job.sentAt,new Date(1791527086824).toISOString());assert(!('scheduledEpoch' in job));
  mod.state({email:'a@example.test',id:'A'},'A',{email:'b@example.test',chatId:'fictional'});assert.equal((await ask()).body.readiness.telegramLinked,false);
  mod.state({email:'a@example.test',id:'old'},'A',{});assert.equal((await ask()).status,401);
