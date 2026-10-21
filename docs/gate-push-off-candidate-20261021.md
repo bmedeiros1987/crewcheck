@@ -62,7 +62,13 @@ and sealed candidate limits remain separate from fixture success.
    restart, deletion and revocation; the synthetic adapter is not that proof.
 2. Gate-specific opt-in needs the existing authenticated settings/installation
    lifecycle, with an explicit user action and server revision. It is not written
-   by this draft. No production gate consent or installation is presumed.
+   by this draft. No production gate consent or installation is presumed. The
+   existing receiver knows the installation revision, not the separate topic
+   revision checked by this producer. A live topic-consent mutation MUST revoke
+   or rotate that device binding (and cancel pending jobs); otherwise a previously
+   accepted generic envelope could still display after topic revocation. This
+   draft does not certify post-acceptance topic revocation, retract accepted
+   notifications, or claim that its sender checks close that receiver boundary.
 3. Existing PWA worker is reused unchanged. Enabled transport configuration and
    actual supported-device subscription/permission remain unverified. No new
    VAPID/protection key is generated/read/configured and no flag is enabled.
